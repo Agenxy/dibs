@@ -40,6 +40,11 @@ func TestMain(m *testing.M) {
 	// And as `dibs` itself, for the pi extension under test, which asks the
 	// binary what this machine and checkout are (`dibs identity`).
 	if os.Getenv("DIBS_TEST_AS_DIBS") != "" && len(os.Args) > 1 && os.Args[1] == "identity" {
+		// Where the hub is now, as a peer resolution would have found it:
+		// the test names it directly rather than standing up Supgang.
+		if moved := os.Getenv("DIBS_TEST_IDENTITY_ORIGIN"); moved != "" {
+			identityOrigin = func() string { return moved }
+		}
 		if err := identityCmd(os.Args[2:]); err != nil {
 			os.Exit(1)
 		}

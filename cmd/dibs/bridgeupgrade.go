@@ -57,6 +57,12 @@ type bridgeState struct {
 	ClientInfo map[string]any `json:"client_info,omitempty"`
 	WantsUI    bool           `json:"wants_ui,omitempty"`
 	Listens    []string       `json:"listens,omitempty"`
+	// Shipments is every tree the old image was shipping an index for, with
+	// the credential it shipped under. Not carried, an upgraded bridge
+	// shipped nothing until the agent happened to register, resume or move,
+	// and a daemon restarted meanwhile held no index for its tree. Round
+	// twenty-six of the pre-release review.
+	Shipments []shipHandoff `json:"shipments,omitempty"`
 	// WakeToken is the agent token the self-wake watcher subscribes with.
 	// The handoff carried the caller's subscriptions and not this one, so an
 	// upgraded bridge answered every call and never woke its session again
@@ -280,13 +286,14 @@ func openListens() []string {
 // waking its session. The setting is read at start, and an in-place upgrade
 // is a start. Found by the pre-release review, round twenty-eight.
 func restoreCarried(ctx context.Context, client *http.Client, url, secret string,
-	out *syncWriter, streams *sync.WaitGroup, w *inboxWatcher, sockets bool,
+	out *syncWriter, streams *sync.WaitGroup, w *inboxWatcher, sockets bool, timing shipTiming,
 ) {
 	s, ok := carriedState()
 	if !ok {
 		return
 	}
 	lastClientInfo, lastWantsUI = s.ClientInfo, s.WantsUI
+	restoreShipments(ctx, client, url, secret, s.Shipments, timing)
 	if s.Thread != "" {
 		noteThread(s.Thread)
 	}

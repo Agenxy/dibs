@@ -358,3 +358,103 @@ func TestAStalledStatusRequestDoesNotOutliveTheShipper(t *testing.T) {
 		t.Fatal("the status request outlived its context: a stalled daemon holds the shipper forever")
 	}
 }
+
+// A shipment survives the bridge replacing itself.
+//
+// The shippers lived in a map local to the registration hook, so the
+// upgrade handoff (which carries the handshake, the subscriptions and the
+// self-wake) could not see them: the next image shipped nothing until the
+// agent happened to register, resume or move, and a daemon restarted in
+// between held no index for its tree, so matching there was off for as long
+// as the agent kept making ordinary calls. The handoff now carries every
+// tree and its credential, and the next image restarts them. Round
+// twenty-six of the pre-release review.
+func TestAShipmentSurvivesTheBridgeUpgrade(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
+			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t",
+			"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("setup: git %v: %v: %s", args, err, out)
+		}
+	}
+	git("init", "-q")
+	if err := os.WriteFile(filepath.Join(root, "a.go"), []byte("package a\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	git("add", "-A")
+	git("commit", "-q", "--no-gpg-sign", "-m", "a")
+
+	shipped := make(chan string, 16)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/match-status" {
+			_ = json.NewEncoder(w).Encode(matchStatusJSON{Unreadable: []string{root}}) // never served: always wanted
+			return
+		}
+		var body struct {
+			Token string `json:"token"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		shipped <- body.Token
+		_ = json.NewEncoder(w).Encode(map[string]any{"accepted": true})
+	}))
+	defer srv.Close()
+
+	// The old image: a register through the hook starts a shipment.
+	shipments.Lock()
+	shipments.byRoot = nil
+	shipments.Unlock()
+	t.Cleanup(func() {
+		shipments.Lock()
+		shipments.byRoot = nil
+		shipments.Unlock()
+	})
+	oldCtx, endOld := context.WithCancel(context.Background())
+	timing := shipTiming{schedule: []time.Duration{time.Millisecond}, recheck: time.Hour}
+	hook := shipIndexOnRegister(oldCtx, srv.Client(), srv.URL+"/mcp", "secret", timing, func([]byte, []byte) {})
+	inner, _ := json.Marshal(map[string]any{
+		"token": "tok-old", "agent_id": "a",
+		"board": map[string]any{"agents": []map[string]any{{"id": "a", "agent": map[string]any{"cwd": root}}}},
+	})
+	reply, _ := json.Marshal(map[string]any{
+		"jsonrpc": "2.0", "id": 1,
+		"result": map[string]any{"content": []map[string]any{{"type": "text", "text": string(inner)}}},
+	})
+	hook([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"register","arguments":{"name":"a"}}}`), reply)
+	select {
+	case <-shipped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("setup: the old image never shipped")
+	}
+	// What the old image hands over on exec, and the old image goes.
+	carried := handoffState().Shipments
+	if len(carried) != 1 || carried[0].Root != root || carried[0].Token != "tok-old" {
+		t.Fatalf("the handoff carries %+v, want the one shipment with its credential: the next image "+
+			"would ship nothing until the agent registered again", carried)
+	}
+	endOld()
+	shipments.Lock()
+	shipments.byRoot = nil // a fresh process
+	shipments.Unlock()
+
+	// The new image restores what it was handed and ships for it.
+	newCtx, endNew := context.WithCancel(context.Background())
+	defer endNew()
+	restoreShipments(newCtx, srv.Client(), srv.URL+"/mcp", "secret", carried, timing)
+	select {
+	case tok := <-shipped:
+		if tok != "tok-old" {
+			t.Fatalf("the restored shipment carried token %q, want the one handed over", tok)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the upgraded bridge never shipped for the tree the old image was shipping for")
+	}
+}

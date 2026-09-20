@@ -2,8 +2,11 @@ package overlap
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"math"
 	"os/exec"
+	"sort"
 	"strings"
 	"sync"
 	"unicode"
@@ -28,6 +31,9 @@ type Lexical struct {
 
 	mu    sync.RWMutex
 	files []string
+	// fingerprint identifies the coordinate system this scorer answers in:
+	// see Fingerprint.
+	fingerprint string
 	// terms[t] is the set of file indices whose path contains term t.
 	terms map[string][]int
 	idf   map[string]float64
@@ -243,6 +249,11 @@ func lexicalOver(paths []string, cc *CoChange, held map[string]bool) *Lexical {
 	// truth `dibs calibrate` measures against, and the co-change miner already
 	// reads both: this uses what was being thrown away.
 	buildHistory(l, cc, held)
+	history := ""
+	if cc != nil {
+		history = cc.Fingerprint()
+	}
+	l.fingerprint = IndexFingerprint(history, l.files)
 
 	n := float64(len(l.files))
 	for t, posting := range l.terms {
@@ -270,6 +281,44 @@ func (l *Lexical) ID() string { return "lexical+cochange" }
 // version at "1" makes a v1 score and a v2 score indistinguishable in the
 // ledger forever, and they are not the same measurement.
 func (l *Lexical) Version() string { return "2" }
+
+// Fingerprint identifies the coordinate system this scorer answers in: the
+// history it was mined from (CoChange.Fingerprint) AND the tracked files it
+// scores over. Two checkouts at one commit with different working trees (a
+// staged rename in one) share a history and name the same work by two paths;
+// the history alone called them one system, so the engine skipped scoring
+// each declaration in the other and two agents on the same file compared as
+// strangers, which is the zero issue #39 exists to remove. Round twenty-six
+// of the pre-release review.
+func (l *Lexical) Fingerprint() string {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.fingerprint
+}
+
+// IndexFingerprint digests a history fingerprint and a tracked-file list into
+// the identity of the index built from them: the one function both the
+// daemon (over its own tree) and a shipper (Ship) use, so a shipped payload
+// names the same coordinate system the daemon would compute for that tree.
+// Empty when there is nothing to identify.
+func IndexFingerprint(history string, files []string) string {
+	sorted := make([]string, 0, len(files))
+	for _, f := range files {
+		if f = strings.TrimSpace(f); f != "" {
+			sorted = append(sorted, f)
+		}
+	}
+	if history == "" && len(sorted) == 0 {
+		return ""
+	}
+	sort.Strings(sorted)
+	h := sha256.New()
+	_, _ = h.Write([]byte(history + "\n"))
+	for _, f := range sorted {
+		_, _ = h.Write([]byte(f + "\n"))
+	}
+	return hex.EncodeToString(h.Sum(nil))[:16]
+}
 
 // Files reports how many tracked files were indexed.
 func (l *Lexical) Files() int {

@@ -108,6 +108,25 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round twenty-six of the pre-release review: four findings.**
+  - An index is fingerprinted by the files it scores over as well as the
+    history behind it, through one function the daemon and a shipper both
+    use. Two checkouts at one commit with a staged rename in one shared a
+    history fingerprint, so the engine called them one coordinate system
+    and never scored each declaration in the other's index: two agents on
+    the same file compared as strangers, and a shipped payload with a
+    changed file list was "already installed".
+  - The bridge's upgrade handoff carries every tree it ships an index for,
+    with the credential; an upgraded bridge shipped nothing until the agent
+    happened to register, resume or move, and a daemon restarted meanwhile
+    held no index for its tree.
+  - Both plugins dial the hub where it is now: the bridge publishes the
+    origin it dialled (`resolved_origin`, after any `DIBS_BOARD_PEER`
+    resolution) and the opencode plugin reads it; `dibs identity` reports
+    it and the pi extension takes it. Both derived their endpoint from the
+    saved `DIBS_ADDR` and kept dialling a hub that had moved.
+  - A changelog entry from earlier in this cycle said the Linux build was
+    compiled and not run; the CI has run it since, and the entry says so.
 - **Round twenty-five of the pre-release review: two findings.**
   - On Linux a question with no choices no longer offers "Write answer…":
     notify-send carries buttons and no text field, and the press dismissed
@@ -759,8 +778,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   two runs of eight. Linux now reads `utime + stime` in clock ticks from
   `/proc/<pid>/stat` and the age from `starttime` against `/proc/uptime`,
   behind a build tag; the BSD `ps` path is untouched on macOS. The parser is
-  tested here; the Linux build is compiled and vetted here and not run, so
-  the README's "verified on macOS" stands until somebody runs it there.
+  tested here. (When this was written the Linux build was compiled and
+  vetted and not run; later in the same cycle the CI gained a Linux job that
+  runs every package under the race detector, and the README's account of
+  what is verified where follows that, not this sentence.)
 
 - **A verdict the asker has read is not handed back after a restart.** (#76)
   `read_mail` cleared the "read_mail(N)" notice only in memory. The rebuild

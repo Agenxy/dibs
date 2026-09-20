@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -694,4 +695,106 @@ func TestTheOpencodePluginPicksUpTheHostTheBridgePublishesLater(t *testing.T) {
 		t.Fatalf("the guard's hosts across the bridge publishing its answer were %q, want [\"\" \"machine-b\"]: "+
 			"the first answer was kept for the life of the process", hosts)
 	}
+}
+
+// Both plugins dial the hub where it is NOW, not where the config was
+// printed. A joined board's config may name the hub as a Supgang peer; the
+// bridge re-resolves it on every start, and the plugins derived their
+// endpoint from the saved DIBS_ADDR alone, so after the hub moved they went
+// on dialling the old address: opencode lost delivery and failed its guard
+// open, pi's calls failed. opencode reads the origin the bridge published
+// beside the secret; pi takes it from `dibs identity`. Round twenty-six of
+// the pre-release review. DIBS_ADDR here names a port nothing listens on.
+func TestThePluginsFollowTheHubWhereItIsNow(t *testing.T) {
+	bun, err := exec.LookPath("bun")
+	if err != nil {
+		t.Skip("bun is not installed")
+	}
+	var mu sync.Mutex
+	reached := map[string]int{}
+	now := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var got map[string]any
+		_ = json.Unmarshal(body, &got)
+		mu.Lock()
+		reached[fmt.Sprint(got["method"])]++
+		mu.Unlock()
+		if got["method"] == "tools/list" {
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"tools":[]}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{\"decision\":\"deny\",\"reason\":\"held\"}"}]}}`))
+	}))
+	defer now.Close()
+	const stale = "127.0.0.1:9" // the address the config was printed with; nothing answers
+
+	t.Run("opencode", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte("s3cret\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		// What the bridge published when it started beside this plugin.
+		if err := os.WriteFile(filepath.Join(dir, resolvedOriginFile), []byte(now.URL+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		plugin, _ := filepath.Abs(filepath.Join("..", "..", "plugins", "opencode", "dibs.ts"))
+		script := "const { DibsPlugin } = await import(" + strconv.Quote(plugin) + ")\n" +
+			"const hooks = await DibsPlugin({} as any)\n" +
+			"try { await hooks[\"tool.execute.before\"]!({ tool: \"edit\", sessionID: \"s\", callID: \"c\" } as any, " +
+			"{ args: { filePath: \"/w/repo/file.go\" } } as any); console.log(\"allowed\") } catch (e) { console.log(\"denied\") }\n"
+		path := filepath.Join(dir, "drive.ts")
+		if err := os.WriteFile(path, []byte(script), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command(bun, "run", path) // #nosec G204 -- paths this test created
+		cmd.Env = append(os.Environ(), "DIBS_DIR="+dir, "DIBS_ADDR="+stale, "DIBS_HOST_ID=")
+		out, err := cmd.CombinedOutput()
+		if err != nil || !strings.Contains(string(out), "denied") {
+			t.Fatalf("the guard did not reach the hub where it is now (%s): %v %s", now.URL, err, out)
+		}
+	})
+
+	t.Run("pi", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte("s3cret\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		src, err := os.ReadFile(filepath.Join("..", "..", "plugins", "pi", "dibs.ts"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "dibs.ts"), src, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		stub := filepath.Join(dir, "node_modules", "typebox")
+		if err := os.MkdirAll(stub, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(stub, "index.ts"), []byte("export const Type = { Unsafe: (s: unknown) => s }\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		script := `const mod = await import("./dibs.ts")
+const handlers: Record<string, Function> = {}
+mod.default({ on: (name: string, fn: Function) => { handlers[name] = fn }, registerTool: () => {}, registerCommand: () => {} } as any)
+await handlers["before_agent_start"]!({}, { sessionManager: { getSessionId: () => "pi-session-1" } })
+`
+		if err := os.WriteFile(filepath.Join(dir, "drive.ts"), []byte(script), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		mu.Lock()
+		before := reached["tools/call"]
+		mu.Unlock()
+		cmd := exec.Command(bun, "run", filepath.Join(dir, "drive.ts")) // #nosec G204 -- paths this test created
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(), "DIBS_DIR="+dir, "DIBS_ADDR="+stale, "DIBS_HOST_ID=machine-b",
+			"DIBS_BIN="+os.Args[0], "DIBS_TEST_AS_DIBS=1", "DIBS_TEST_IDENTITY_ORIGIN="+now.URL)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("running the extension: %v\n%s", err, out)
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if reached["tools/call"] == before {
+			t.Fatalf("pi's poll never reached the hub where it is now (%s): it dialled the saved address", now.URL)
+		}
+	})
 }

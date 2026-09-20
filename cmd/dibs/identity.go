@@ -22,8 +22,9 @@ import (
 // read by whoever needs them. Round twenty-two of the pre-release review.
 //
 // Output is one JSON object: `host_id` (hostID, which also publishes it for
-// the plugins that read files), `cwd` as the bridge would register it, and
-// `repo` (what repoMeta sends, or null outside a checkout).
+// the plugins that read files), `cwd` as the bridge would register it,
+// `repo` (what repoMeta sends, or null outside a checkout), and `origin`,
+// where the daemon is now (boardOrigin).
 func identityCmd(args []string) error {
 	fs := flag.NewFlagSet("identity", flag.ContinueOnError)
 	cwd := fs.String("cwd", "", "the working directory to describe (default: this process's)")
@@ -43,7 +44,13 @@ func identityCmd(args []string) error {
 	out := map[string]any{
 		"host_id": hostID(),
 		"cwd":     params["arguments"].(map[string]any)["cwd"],
-		"repo":    nil,
+		// Where the daemon is NOW: the saved address, re-pointed at the hub's
+		// current Supgang address when the config names it as a peer, as the
+		// bridge dials (boardOrigin). An integration that derived its endpoint
+		// from DIBS_ADDR alone kept dialling a hub that had moved. Round
+		// twenty-six of the pre-release review.
+		"origin": identityOrigin(),
+		"repo":   nil,
 	}
 	if repo := repoMeta(params); repo != nil {
 		out["repo"] = repo
@@ -51,3 +58,8 @@ func identityCmd(args []string) error {
 	enc := json.NewEncoder(os.Stdout)
 	return enc.Encode(out)
 }
+
+// identityOrigin is where the daemon is now, as `dibs identity` reports it;
+// a variable so the test binary standing in for dibs can name a server the
+// extension under test must follow.
+var identityOrigin = boardOrigin
