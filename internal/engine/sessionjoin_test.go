@@ -35,7 +35,7 @@ func TestAHarnessSessionFindsTheAgentItIsRunning(t *testing.T) {
 		"codex-abc": {SessionID: "codex-abc", CWD: "/repo/app", Seen: now},
 	}
 
-	got := announcedSession(children, st, "/repo/app/", now)
+	got := announcedSession(children, st, "/repo/app/", "", now)
 	if got != "codex-abc" {
 		t.Fatalf("a session that announced itself from this directory was not "+
 			"adopted (%q): the harness's hooks cannot find this agent, and its "+
@@ -62,7 +62,7 @@ func TestTheJoinRefusesToGuess(t *testing.T) {
 			"codex-abc": {SessionID: "codex-abc", CWD: "/repo/app", Seen: now},
 			"planted":   {SessionID: "planted", CWD: "/repo/app", Seen: now},
 		}
-		if got := announcedSession(children, st, "/repo/app", now); got != "" {
+		if got := announcedSession(children, st, "/repo/app", "", now); got != "" {
 			t.Errorf("adopted %q with two sessions claiming one directory: a planted "+
 				"announcement would take delivery of the next agent's mail", got)
 		}
@@ -81,7 +81,7 @@ func TestTheJoinRefusesToGuess(t *testing.T) {
 		children := map[string]Child{
 			"codex-abc": {SessionID: "codex-abc", CWD: "/repo/app", Seen: now},
 		}
-		if got := announcedSession(children, held, "/repo/app", now); got != "" {
+		if got := announcedSession(children, held, "/repo/app", "", now); got != "" {
 			t.Errorf("adopted %q, which another agent holds: its wake digest would "+
 				"be delivered to whoever registered second", got)
 		}
@@ -91,7 +91,7 @@ func TestTheJoinRefusesToGuess(t *testing.T) {
 		children := map[string]Child{
 			"yesterday": {SessionID: "yesterday", CWD: "/repo/app", Seen: now.Add(-2 * time.Hour)},
 		}
-		if got := announcedSession(children, st, "/repo/app", now); got != "" {
+		if got := announcedSession(children, st, "/repo/app", "", now); got != "" {
 			t.Errorf("adopted %q from a dead session: today's agent would answer to "+
 				"yesterday's hooks", got)
 		}
@@ -101,7 +101,7 @@ func TestTheJoinRefusesToGuess(t *testing.T) {
 		children := map[string]Child{
 			"codex-abc": {SessionID: "codex-abc", CWD: "/repo/other", Seen: now},
 		}
-		if got := announcedSession(children, st, "/repo/app", now); got != "" {
+		if got := announcedSession(children, st, "/repo/app", "", now); got != "" {
 			t.Errorf("adopted %q announced from somewhere else entirely", got)
 		}
 	})
@@ -110,7 +110,7 @@ func TestTheJoinRefusesToGuess(t *testing.T) {
 		children := map[string]Child{
 			"codex-abc": {SessionID: "codex-abc", CWD: "", Seen: now},
 		}
-		if got := announcedSession(children, st, "", now); got != "" {
+		if got := announcedSession(children, st, "", "", now); got != "" {
 			t.Errorf("matched %q on an empty directory, which every unknown cwd "+
 				"would then match", got)
 		}
@@ -249,7 +249,7 @@ func TestTheHumansRowDoesNotAdoptAHarnessSession(t *testing.T) {
 	}
 	// The row has no cwd at all, so there is nothing for an announcement to
 	// match: an empty cwd must never be a wildcard.
-	if got := announcedSession(children, st, "", now); got != "" {
+	if got := announcedSession(children, st, "", "", now); got != "" {
 		t.Errorf("the human's row adopted %q: a harness session in that directory "+
 			"would then be handed what people asked the operator", got)
 	}

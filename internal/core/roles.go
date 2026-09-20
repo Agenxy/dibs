@@ -136,6 +136,16 @@ func sortAgentsByID(ls []*Agent) {
 // AgentBySession finds the agent bound to a harness session id. Used by lifecycle
 // hooks, which know their session but hold no agent token.
 func (s *State) AgentBySession(sid string) *Agent {
+	return s.agentBySessionWhere(sid, func(*Agent) bool { return true })
+}
+
+// agentBySessionWhere is AgentBySession over the rows keep admits. The
+// preferences below are the whole answer to "which of several holders", so
+// a lookup that narrows the rows first (to one machine's, in AgentForHookOn)
+// goes through here rather than picking among the narrowed rows its own
+// way: the first version of the host-scoped lookup took whichever holder map
+// iteration reached, and two siblings on one machine swapped per call.
+func (s *State) agentBySessionWhere(sid string, keep func(*Agent) bool) *Agent {
 	if sid == "" {
 		return nil
 	}
@@ -162,7 +172,7 @@ func (s *State) AgentBySession(sid string) *Agent {
 		if l.Status == StatusArchived || l.Status == StatusClosed {
 			continue
 		}
-		if !l.holdsSession(sid) {
+		if !l.holdsSession(sid) || !keep(l) {
 			continue
 		}
 		if !l.GuessedSession(sid) {
@@ -173,9 +183,7 @@ func (s *State) AgentBySession(sid string) *Agent {
 			// session first: it kept its binding and lost its routing. The
 			// earliest row wins; the id decides only between rows created at
 			// once. Found by the pre-release review, round fifty-three.
-			if stated == nil ||
-				(l.Status == StatusActive && stated.Status != StatusActive) ||
-				(l.Status == StatusActive) == (stated.Status == StatusActive) && heldFirst(l, stated) {
+			if preferredHolder(l, stated) {
 				stated = l
 			}
 			continue
@@ -190,6 +198,19 @@ func (s *State) AgentBySession(sid string) *Agent {
 		return stated
 	}
 	return guessed
+}
+
+// preferredHolder reports whether a stated holder l displaces the current
+// best: nothing yet, or active over not, or, both alike, the one that held
+// the session first.
+func preferredHolder(l, best *Agent) bool {
+	if best == nil {
+		return true
+	}
+	if (l.Status == StatusActive) != (best.Status == StatusActive) {
+		return l.Status == StatusActive
+	}
+	return heldFirst(l, best)
 }
 
 // heldFirst reports whether a came before b: created earlier, or the lower
@@ -293,11 +314,11 @@ func (s *State) AgentForHook(sid, cwd string) *Agent {
 // resolving to alpha across two hosts and allowing a write alpha held
 // exclusively.
 func (s *State) AgentForHookOn(sid, cwd, host string) *Agent {
-	if l := s.AgentBySession(sid); l != nil {
-		if hookOnHost(l, host) {
-			return l
-		}
-		return s.sessionHolderOn(sid, host, l)
+	// One lookup, narrowed to the caller's machine, so the holder it picks
+	// is the one AgentBySession would pick if the other machines' rows did
+	// not exist: stated over guessed, active, held first.
+	if l := s.agentBySessionWhere(sid, func(l *Agent) bool { return hookOnHost(l, host) }); l != nil {
+		return l
 	}
 	// A session id that was SUPPLIED and matched nothing is positive evidence
 	// this is a different session, not a hint to go looking for a neighbour.
@@ -336,20 +357,6 @@ func (s *State) AgentForHookOn(sid, cwd, host string) *Agent {
 		found = l
 	}
 	return found
-}
-
-// sessionHolderOn finds a live holder of sid on host other than the
-// preferred one, which is on another machine: the caller, if there is one.
-func (s *State) sessionHolderOn(sid, host string, not *Agent) *Agent {
-	for _, other := range s.Agents {
-		if other.Status == StatusArchived || other.Status == StatusClosed || other == not {
-			continue
-		}
-		if other.holdsSession(sid) && hookOnHost(other, host) {
-			return other
-		}
-	}
-	return nil
 }
 
 // hookOnHost reports whether an agent may be the caller from host: yes when

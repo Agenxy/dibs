@@ -92,3 +92,10 @@ func judgedScore(union float64, ev Evidence, compared bool) float64 {
 	}
 	return ev.Semantic
 }
+
+// unionProvenance is the evidence's PeerSupplied once the union may judge:
+// when nothing was compared, judgedScore scores on the space's retained
+// footprint, and that footprint carries its own provenance (Space.Supplied).
+func unionProvenance(ev Evidence, compared bool, ch *Space) bool {
+	return ev.PeerSupplied || (!compared && ch.Supplied)
+}

@@ -52,7 +52,7 @@ func TestALiveSessionIsNotInheritedByDirectory(t *testing.T) {
 		live: {SessionID: live, CWD: dir, Seen: now, State: "running"},
 	}
 
-	if got := announcedSession(e.children, st, dir, now); got != "" {
+	if got := announcedSession(e.children, st, dir, "", now); got != "" {
 		t.Errorf("the directory inference handed out %q, a live session's id whose "+
 			"agent was swept. The next agent in this directory would receive that "+
 			"session's hooks and its mail", got)
@@ -76,7 +76,7 @@ func TestAnUnclaimedAnnouncedSessionIsStillJoined(t *testing.T) {
 	e.children = map[string]Child{
 		fresh: {SessionID: fresh, CWD: dir, Seen: now, State: "running"},
 	}
-	if got := announcedSession(e.children, st, dir, now); got != fresh {
+	if got := announcedSession(e.children, st, dir, "", now); got != fresh {
 		t.Errorf("got %q, want %q: an id no agent has ever held is what this "+
 			"inference is for, and refusing it turns the join off", got, fresh)
 	}
@@ -101,7 +101,7 @@ func TestAnAliasThatArrivedWithTheCallBeatsTheDirectoryGuess(t *testing.T) {
 	}
 	// Setup: the guess WOULD hand over the other session, so preferring the
 	// supplied id is doing real work here rather than agreeing by luck.
-	if announcedSession(e.children, st, dir, now) != somebodyElse {
+	if announcedSession(e.children, st, dir, "", now) != somebodyElse {
 		t.Fatal("setup: the directory guess does not fire, so this proves nothing")
 	}
 
@@ -130,4 +130,37 @@ func TestAnAliasThatArrivedWithTheCallBeatsTheDirectoryGuess(t *testing.T) {
 			"else's")
 	}
 	_ = time.Second
+}
+
+// A session announced from another machine is not inherited by directory.
+//
+// The hook that announces a session arrives with the machine it came from
+// (HookPollFrom), and the announcement dropped it: the inference matched on
+// the directory alone, so an agent registering on machine A at a path a
+// session had announced from on machine B was handed B's thread as its own.
+// A guard using that thread on A then resolved to A's agent, and the wake
+// for A's agent resumed a thread that exists only on B. The announcement
+// keeps its host and the inference compares it. Round fifteen of the
+// pre-release review.
+func TestASessionAnnouncedFromAnotherMachineIsNotInheritedByDirectory(t *testing.T) {
+	st := core.NewState("t", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	now := t0Engine()
+	const dir = "/w/repo"
+	const thread = "b7804476-3292-4ad9-bddb-16f823328751"
+
+	e.announceHookSessionFrom(thread, dir, "SessionStart", "machine-b")
+	if got := announcedSession(e.children, st, dir, "machine-a", now); got != "" {
+		t.Errorf("an agent on machine-a was handed %q, a thread announced from machine-b: its "+
+			"guard now answers for the wrong agent and its wake resumes a thread that is not "+
+			"on this machine", got)
+	}
+	// The same directory on the announcing machine still inherits it, and a
+	// register that established no host (an older bridge) keeps the old answer.
+	if got := announcedSession(e.children, st, dir, "machine-b", now); got != thread {
+		t.Errorf("machine-b: got %q, want its own announced thread %q", got, thread)
+	}
+	if got := announcedSession(e.children, st, dir, "", now); got != thread {
+		t.Errorf("no host established: got %q, want %q, the answer from before hosts existed", got, thread)
+	}
 }
