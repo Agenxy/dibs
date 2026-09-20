@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/agenxy/dibs/internal/mcp"
 )
@@ -421,8 +422,14 @@ func TestThePiExtensionCarriesItsHost(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Two checkouts of two projects: the one the extension runs in, and
-	// the one an `update` moves the agent to.
+	// the one an `update` moves the agent to; and an alias for the first,
+	// through which a claim is made (round twenty-four: claim paths went
+	// out as typed, and a hub does not resolve a remote caller's paths).
 	checkout, other := filepath.Join(dir, "checkout"), filepath.Join(dir, "other")
+	alias := filepath.Join(dir, "alias")
+	if err := os.Symlink(checkout, alias); err != nil {
+		t.Skipf("symlinks unavailable here: %v", err)
+	}
 	for _, c := range []string{checkout, other} {
 		if err := os.Mkdir(c, 0o700); err != nil {
 			t.Fatal(err)
@@ -461,7 +468,7 @@ func TestThePiExtensionCarriesItsHost(t *testing.T) {
 		calls = append(calls, got)
 		mu.Unlock()
 		if got["method"] == "tools/list" {
-			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"register","inputSchema":{"type":"object"}},{"name":"update","inputSchema":{"type":"object"}}]}}`))
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"register","inputSchema":{"type":"object"}},{"name":"update","inputSchema":{"type":"object"}},{"name":"claim","inputSchema":{"type":"object"}}]}}`))
 			return
 		}
 		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{\"token\":\"t\"}"}]}}`))
@@ -477,6 +484,7 @@ const ctx = { sessionManager: { getSessionId: () => "pi-session-1" } }
 await handlers["before_agent_start"]!({}, ctx)
 await tools["register"].execute("c1", { name: "probe" }, undefined, undefined, ctx)
 await tools["update"].execute("c2", { token: "t", cwd: process.env["OTHER"] }, undefined, undefined, ctx)
+await tools["claim"].execute("c3", { token: "t", path: process.env["CLAIM"], mode: "exclusive" }, undefined, undefined, ctx)
 `
 	if err := os.WriteFile(filepath.Join(dir, "drive.ts"), []byte(script), 0o600); err != nil {
 		t.Fatal(err)
@@ -484,7 +492,8 @@ await tools["update"].execute("c2", { token: "t", cwd: process.env["OTHER"] }, u
 	cmd := exec.Command(bun, "run", filepath.Join(dir, "drive.ts")) // #nosec G204 -- paths this test created
 	cmd.Dir = checkout
 	cmd.Env = append(os.Environ(), "DIBS_DIR="+dir, "DIBS_ADDR="+strings.TrimPrefix(srv.URL, "http://"),
-		"DIBS_BIN="+os.Args[0], "DIBS_TEST_AS_DIBS=1", "DIBS_HOST_ID=", "OTHER="+other)
+		"DIBS_BIN="+os.Args[0], "DIBS_TEST_AS_DIBS=1", "DIBS_HOST_ID=", "OTHER="+other,
+		"CLAIM="+filepath.Join(alias, "pkg", "x.go"))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("running the extension: %v\n%s", err, out)
 	}
@@ -496,7 +505,7 @@ await tools["update"].execute("c2", { token: "t", cwd: process.env["OTHER"] }, u
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	stamped, registered, updated := 0, false, false
+	stamped, registered, updated, claimed := 0, false, false, false
 	for _, c := range calls {
 		if c["method"] != "tools/call" {
 			continue
@@ -508,6 +517,17 @@ await tools["update"].execute("c2", { token: "t", cwd: process.env["OTHER"] }, u
 				"this directory: from a fresh joined directory the extension registered with no machine", host, params)
 		}
 		stamped++
+		if params["name"] == "claim" {
+			claimed = true
+			args, _ := params["arguments"].(map[string]any)
+			resolved, _ := filepath.EvalSymlinks(checkout)
+			if p, _ := args["path"].(string); p != filepath.Join(resolved, "pkg", "x.go") {
+				t.Fatalf("the claim went out as %q, want %q: a hub does not resolve a remote caller's "+
+					"paths, so this claim has no repository-relative key and collides with nothing", p,
+					filepath.Join(resolved, "pkg", "x.go"))
+			}
+			continue
+		}
 		// The checkout each call describes is the one it names: the
 		// process's own on register, the target's on an update that moves
 		// the agent. Round twenty-three: the update carried the original
@@ -534,8 +554,84 @@ await tools["update"].execute("c2", { token: "t", cwd: process.env["OTHER"] }, u
 			t.Fatalf("the %s's cwd is %q, want %q as the bridge would spell it", params["name"], cwd, want)
 		}
 	}
-	if stamped == 0 || !registered || !updated {
-		t.Fatalf("the drive made %d tools/call(s), registered=%v updated=%v: %v", stamped, registered, updated, calls)
+	if stamped == 0 || !registered || !updated || !claimed {
+		t.Fatalf("the drive made %d tools/call(s), registered=%v updated=%v claimed=%v: %v",
+			stamped, registered, updated, claimed, calls)
+	}
+}
+
+// And its transport gives up on a response that never finishes.
+//
+// post() bounded the socket's IDLE time, so a daemon that kept trickling
+// bytes was never cut off, and before_agent_start awaits the poll in front
+// of the user's turn: a stalled daemon held the turn open indefinitely.
+// The bound is elapsed time now. Round twenty-four of the pre-release
+// review. The lifted helper is run against a server that never stops.
+func TestThePiTransportGivesUpOnATricklingResponse(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join("..", "..", "plugins", "pi", "dibs.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const marker = "async function post("
+	start := strings.Index(string(src), marker)
+	if start < 0 {
+		t.Fatal("plugins/pi/dibs.ts no longer defines post()")
+	}
+	end := strings.Index(string(src)[start:], "\n}\n")
+	if end < 0 {
+		t.Fatal("could not find the end of post()")
+	}
+	fn := string(src)[start : start+end+3]
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fl, _ := w.(http.Flusher)
+		for i := 0; i < 100; i++ { // ten seconds of trickle, well past the bound
+			select {
+			case <-r.Context().Done():
+				return
+			case <-time.After(100 * time.Millisecond):
+			}
+			_, _ = w.Write([]byte("x"))
+			if fl != nil {
+				fl.Flush()
+			}
+		}
+	}))
+	defer srv.Close()
+	dir := t.TempDir()
+	script := fn + "\nconst t0 = Date.now()\n" +
+		"const text = await post(process.env.URL! + \"/mcp\", \"{}\", {}, 300, null)\n" +
+		"console.log(JSON.stringify({ text, ms: Date.now() - t0 }))\n"
+	path := filepath.Join(dir, "post.ts")
+	if err := os.WriteFile(path, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ran := 0
+	for _, runtime := range [][]string{{"node", "--experimental-strip-types", path}, {"bun", "run", path}} {
+		bin, err := exec.LookPath(runtime[0])
+		if err != nil {
+			continue
+		}
+		ran++
+		cmd := exec.Command(bin, runtime[1:]...) // #nosec G204 -- paths this test created
+		cmd.Env = append(os.Environ(), "URL="+srv.URL, "NODE_NO_WARNINGS=1")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("%s: %v\n%s", runtime[0], err, out)
+		}
+		var got struct {
+			Text *string `json:"text"`
+			MS   int     `json:"ms"`
+		}
+		if err := json.Unmarshal([]byte(strings.TrimSpace(string(out))), &got); err != nil {
+			t.Fatalf("%s: %v: %s", runtime[0], err, out)
+		}
+		if got.Text != nil || got.MS > 2000 {
+			t.Errorf("%s: a 300ms bound let a trickling response run %dms and answer %v: the user's turn waits on it",
+				runtime[0], got.MS, got.Text)
+		}
+	}
+	if ran == 0 {
+		t.Skip("neither node nor bun is installed")
 	}
 }
 
