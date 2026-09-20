@@ -72,6 +72,9 @@ is not a mystery):
                            when the hub decides one should be woken
                            (--service writes the unit that keeps it running)
   dibs hook-poll          the wake path for a harness whose hooks are subprocesses (Gemini CLI)
+  dibs identity           this machine and checkout as the bridge would stamp
+                           them, as JSON, for an integration that speaks MCP
+                           itself (the pi extension) and so has no bridge
   dibs hook-spawn         PreToolUse hook: stamps a spawned subagent with the
                            agent that spawned it, so a stall can be reported to
                            the agent that caused it. Reads the hook payload on
@@ -213,6 +216,8 @@ func main() {
 		err = hostBridge(os.Args[2:])
 	case "hook-poll":
 		err = hookPoll(os.Args[2:])
+	case "identity":
+		err = identityCmd(os.Args[2:])
 	case "web":
 		err = adminOnly("web", func() error { return webURL(os.Args[2:]) })
 	case "version", "--version", "-V":
@@ -301,7 +306,7 @@ var commands = []string{
 	"await", "probe", "watch", "monitor", "board", "log", "verify", "doctor",
 	"codex-hooks", "calibrate", "version", "help", "man", "completion", "configure", "messages",
 	"web", "admin",
-	"mcp-config", "mcp-stdio", "host-bridge", "hook-spawn", "hook-poll",
+	"mcp-config", "mcp-stdio", "host-bridge", "hook-spawn", "hook-poll", "identity",
 }
 
 // nearestCommand picks the closest verb to what was typed, or "" when nothing

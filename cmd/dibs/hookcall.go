@@ -24,6 +24,12 @@ func callHookTool(tool string, args map[string]any, out any) error {
 		return err
 	}
 	params := map[string]any{"name": tool, "arguments": args}
+	// AS THE BRIDGE SPELLS THEM. A hook forwards the cwd its harness gave it
+	// (`/tmp/repo`); the bridge registered `/private/tmp/repo`; and a hub on
+	// another machine does not resolve a remote caller's paths, so the two
+	// never matched and the hook reported success while delivering nothing.
+	// Round twenty-two of the pre-release review.
+	canonicalisePathArgs(params)
 	// WHICH MACHINE, as the stdio bridge says on every call. The host-scoped
 	// lookups take it from here, and a call without it that arrives on
 	// loopback is stamped as the daemon's own machine: through the
