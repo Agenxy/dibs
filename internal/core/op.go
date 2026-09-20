@@ -399,4 +399,13 @@ type Op struct {
 	// Issue #39.
 	Index      string      `json:"index,omitempty"`
 	Footprints []Footprint `json:"footprints,omitempty"`
+	// IndexSupplied records that the index Predicted came from was SHIPPED by
+	// an agent rather than mined by the daemon: provenance the fold keeps
+	// with the footprint, because the engine's index cache forgets a shipped
+	// index when it is replaced or evicted and the declarations scored in it
+	// outlive that. A supplied index decides no membership (SECURITY.md), on
+	// either side of a comparison, and the check has to hold after the
+	// cache no longer knows the fingerprint. Frozen tag. Round fourteen of
+	// the pre-release review.
+	IndexSupplied bool `json:"index_supplied,omitempty"`
 }

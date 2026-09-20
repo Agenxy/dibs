@@ -782,7 +782,7 @@ func guessOfferedHint(m core.AgentMatch, aboveBar bool, current string) string {
 // space on the strength of the peer's shipped data. Round thirteen of the
 // pre-release review.
 func (e *Engine) suppliedPeerReason(m core.AgentMatch) string {
-	if !e.isSuppliedFingerprint(m.Evidence.PeerIndex) {
+	if !m.Evidence.PeerSupplied && !e.isSuppliedFingerprint(m.Evidence.PeerIndex) {
 		return ""
 	}
 	return "the other side of this match was scored by an index an agent shipped, " +
@@ -1245,6 +1245,7 @@ func toPredFiles(in []overlap.File) []core.PredFile {
 func (e *Engine) repoLensForBoard(ctx context.Context) core.RepoLens {
 	var cwds []string
 	recorded := map[string]*core.AgentInfo{}
+	ambiguous := map[string]bool{}
 	_, _ = e.query(ctx, func() core.Result {
 		for _, l := range e.state.Agents {
 			if l.Agent == nil || l.Agent.CWD == "" {
@@ -1255,11 +1256,20 @@ func (e *Engine) repoLensForBoard(ctx context.Context) core.RepoLens {
 			if info.HostID == "" {
 				info.HostID = e.HostID() // recorded before hosts were: this machine's
 			}
+			// A PATH IS ONE KEY AND TWO MACHINES CAN SHARE IT. Keyed by path
+			// alone, the second machine's identity overwrote the first's and
+			// the lens then read two unrelated projects at /workspace/repo as
+			// one repository. A shared path answers nothing. Round fourteen
+			// of the pre-release review.
+			if prev, seen := recorded[l.Agent.CWD]; seen && prev.HostID != info.HostID {
+				ambiguous[l.Agent.CWD] = true
+				continue
+			}
 			recorded[l.Agent.CWD] = &info
 		}
 		return core.Result{}
 	})
-	return newRepoLensWith(cwds, recorded)
+	return newRepoLensAmbiguous(cwds, recorded, ambiguous)
 }
 
 func predPaths(in []core.PredFile) []string {
@@ -1307,6 +1317,7 @@ func (e *Engine) DoMatched(ctx context.Context, op *core.Op) (core.Result, error
 		// system they share instead of across two. Issue #39.
 		op.Index = index
 		_, cfg := e.scorerForLocation(loc)
+		op.IndexSupplied = e.IndexSuppliedBy(repo) != ""
 		op.Footprints = e.peerFootprints(ctx, repo, op.Text, cfg)
 	}
 	res, err := e.Do(ctx, op)
