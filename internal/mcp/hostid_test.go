@@ -51,13 +51,17 @@ func TestALoopbackCallerIsStampedWithThisDaemonsIdentity(t *testing.T) {
 	}
 }
 
-// AND WHAT THE CALLER SAYS DOES NOT MOVE IT.
+// AND A LOOPBACK CALLER THAT NAMES ANOTHER MACHINE IS ON IT.
 //
-// The host rule removes collisions, so a value an agent controls decides which
-// other agents it stops colliding with. Over loopback the daemon knows better
-// than any assertion could, and taking the assertion anyway would let one agent
-// opt out of the conflicts it is supposed to be reporting.
-func TestALoopbackCallerCannotAssertADifferentMachine(t *testing.T) {
+// The documented transport for a machine without Supgang is an ssh forward,
+// and every call through one arrives from 127.0.0.1 carrying the remote
+// bridge's host id. The daemon used to overrule that ("nothing on loopback
+// can be anywhere but here"), stamp the agent as its own, run its wakes
+// locally and compare its paths as if on this filesystem. The assertion is
+// as strong as the bearer secret the same bridge holds, which NETWORK.md §2
+// already states; a transport that is documented has to work. Found by the
+// pre-release review.
+func TestALoopbackCallerThatAssertsAnotherMachineIsOnIt(t *testing.T) {
 	srv, eng, _ := newServerWithEngine(t)
 	node := eng.NodeID()
 
@@ -68,10 +72,10 @@ func TestALoopbackCallerCannotAssertADifferentMachine(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := hostIDOnBoard(t, b, "kim"); got != node {
-		t.Errorf("a caller on loopback claimed to be on machine %q and the board "+
-			"believed it. An agent that can name its own machine can excuse itself "+
-			"from every path collision on this board", got)
+	if got := hostIDOnBoard(t, b, "kim"); got != "somewhere-else" {
+		t.Errorf("a bridge reaching the hub through an ssh forward asserted its "+
+			"machine and the board recorded %q (the hub's own is %q): its agents would "+
+			"be woken here and compared against this filesystem", got, node)
 	}
 }
 

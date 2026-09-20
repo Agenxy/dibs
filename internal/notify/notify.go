@@ -44,6 +44,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -294,10 +295,45 @@ func Available() bool {
 		// why the same guard does not apply there.
 		return !underTest()
 	case "linux":
-		ok, _ := linuxUsable()
+		ok, _ := linuxProbe()
 		return ok
 	}
 	return false
+}
+
+// linuxProbe is linuxUsable answered once per process.
+//
+// linuxUsable runs notify-send and a D-Bus query, each with a five-second
+// deadline, and Available() is asked on the engine's single-writer loop when
+// an agent writes to the human. Probing there stalled every agent's ops and
+// sweeps behind a slow notification daemon for up to ten seconds per send.
+// The answer changes when libnotify is installed or the session bus appears,
+// which is a restart's worth of rarity; the daemon warms this at startup
+// (Reach, off the loop) so the loop reads a cached bool. Found by the
+// pre-release review.
+func linuxProbe() (bool, string) {
+	probeMu.Lock()
+	defer probeMu.Unlock()
+	if !probeDone {
+		probeOK, probeWhy = linuxUsable()
+		probeDone = true
+	}
+	return probeOK, probeWhy
+}
+
+var (
+	probeMu   sync.Mutex
+	probeDone bool
+	probeOK   bool
+	probeWhy  string
+)
+
+// resetProbe forgets the cached answer; tests that change the stubbed host
+// between calls use it, and nothing else should.
+func resetProbe() {
+	probeMu.Lock()
+	defer probeMu.Unlock()
+	probeDone = false
 }
 
 // goos is the platform the notifier believes it is on. A variable so a test
@@ -411,7 +447,7 @@ func Reach() (ok bool, why string) {
 			if silenced() {
 				return false, "notifications are switched off for this process"
 			}
-			_, why := linuxUsable()
+			_, why := linuxProbe()
 			return false, why
 		}
 		// SAY WHAT THAT MEANS, not just that it is so. "No notification route"

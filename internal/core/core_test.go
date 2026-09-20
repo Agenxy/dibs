@@ -496,3 +496,27 @@ func TestConcurrentFileWorkIsNotAnAlarm(t *testing.T) {
 		t.Fatal("path overlap should be reported as awareness")
 	}
 }
+
+// A backslash is a filename character on unix, and the fold must keep saying so.
+//
+// The first Windows fix folded `\` to `/` inside cleanPath, which changed
+// what an EXISTING op means: a ledger holding an exclusive claim over
+// `/tmp/a\b` beside one over `/tmp/a/b` replayed with the two collapsed, and
+// refused the second claim it had once granted. The fold is replay; it may
+// not learn a new separator. Windows spellings are folded at ingress, where
+// the host is a recorded fact rather than a re-decided one. Found by the
+// pre-release review.
+func TestABackslashIsAFilenameCharacterInTheFold(t *testing.T) {
+	s := NewState("n1", DefaultLimits())
+	reg(t, s, "a", "ta", t0)
+	reg(t, s, "b", "tb", t0)
+	mustApply(t, s, &Op{Kind: OpAckBoard, Token: "ta"}, t0)
+	mustApply(t, s, &Op{Kind: OpAckBoard, Token: "tb"}, t0)
+	mustApply(t, s, &Op{Kind: OpClaim, Token: "ta", Path: `/tmp/a\b`, Mode: ClaimExclusive}, t0)
+	res := mustApply(t, s, &Op{Kind: OpClaim, Token: "tb", Path: "/tmp/a/b", Mode: ClaimExclusive}, t0)
+	if granted, _ := res["granted"].(bool); !granted {
+		t.Fatalf("a claim over /tmp/a/b beside an exclusive one over /tmp/a\\b: %v; "+
+			"the two are different files on unix, and a fold that folds them together "+
+			"replays a claim it once granted as refused, so state stops being fold(ledger)", res)
+	}
+}

@@ -166,3 +166,99 @@ func TestAReconnectingBridgeReplacesTheStaleOne(t *testing.T) {
 	default:
 	}
 }
+
+// A pending wake belongs to one host: another host detaching does not fail
+// it, and a report from the wrong host does not satisfy it.
+//
+// pending was keyed by id alone. Detaching host B sent a failure to every
+// pending wake, including one executing on host A, and ReportWakeResult
+// matched the id and never read res.Host, so a bridge could satisfy a wake it
+// never ran. Found by the pre-release review.
+func TestAPendingWakeIsBoundToItsHost(t *testing.T) {
+	e := hubEngine()
+	e.SetWakeCommands(map[string]WakeCommand{"codex": {Argv: []string{"codex", "resume", "{thread}"}}})
+	reqsA, releaseA, err := e.AttachHostBridge("laptop", []string{"codex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer releaseA()
+	_, releaseB, err := e.AttachHostBridge("desktop", []string{"codex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	far := remoteAgent("far", "laptop")
+	plan, ok := e.wakeFor(far, core.MsgQuestion, questionFor("far"))
+	if !ok {
+		t.Fatal("no wake for the remote agent")
+	}
+	done := make(chan bool, 1)
+	go func() { done <- e.requestRemoteWakeWithin(plan, "far", 5*time.Second) }()
+	var got WakeRequest
+	select {
+	case got = <-reqsA:
+	case <-time.After(5 * time.Second):
+		t.Fatal("laptop's bridge never received the request")
+	}
+	// The OTHER host's bridge goes away: laptop's wake is still running.
+	releaseB()
+	select {
+	case r := <-done:
+		t.Fatalf("laptop's wake finished with %v when desktop detached; it had not reported", r)
+	case <-time.After(300 * time.Millisecond):
+	}
+	// The other host reports on laptop's id: not its wake to report.
+	if e.ReportWakeResult(WakeResult{ID: got.ID, Host: "desktop", OK: true}) {
+		t.Fatal("a report from desktop satisfied a wake laptop was running")
+	}
+	select {
+	case r := <-done:
+		t.Fatalf("the wrong host's report finished the wake with %v", r)
+	case <-time.After(300 * time.Millisecond):
+	}
+	if !e.ReportWakeResult(WakeResult{ID: got.ID, Host: "laptop", OK: true}) {
+		t.Fatal("laptop's own report was refused")
+	}
+	select {
+	case r := <-done:
+		if !r {
+			t.Error("laptop reported success and the wake read as failed")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the wake never finished after its host reported")
+	}
+}
+
+// Wake ids are not reused across hub restarts.
+//
+// The counter started at zero on every start while a reconnecting bridge kept
+// the ids of commands still running, so the restarted hub's request 1 was
+// dropped as a duplicate of the old request 1, and the old command's report
+// then satisfied the new request: a wake reported for an agent whose command
+// never ran. Found by the pre-release review.
+func TestWakeIDsDoNotRestartFromZero(t *testing.T) {
+	first := hubEngine()
+	second := hubEngine()
+	for _, e := range []*Engine{first, second} {
+		e.SetWakeCommands(map[string]WakeCommand{"codex": {Argv: []string{"codex", "resume", "{thread}"}}})
+	}
+	ids := map[uint64]bool{}
+	for _, e := range []*Engine{first, second} {
+		reqs, release, err := e.AttachHostBridge("laptop", []string{"codex"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		far := remoteAgent("far", "laptop")
+		plan, _ := e.wakeFor(far, core.MsgQuestion, questionFor("far"))
+		go func() { e.requestRemoteWakeWithin(plan, "far", 2*time.Second) }()
+		select {
+		case got := <-reqs:
+			if ids[got.ID] {
+				t.Fatalf("two hubs in a row handed a bridge the same wake id %d", got.ID)
+			}
+			ids[got.ID] = true
+		case <-time.After(2 * time.Second):
+			t.Fatal("no request reached the bridge")
+		}
+		release()
+	}
+}

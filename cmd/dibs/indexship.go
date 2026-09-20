@@ -57,10 +57,29 @@ func shipIndexOnRegister(
 	}
 }
 
-// shipWhenUnreadable asks twice, ships once, and says nothing on success:
-// the daemon logs what it installed.
+// shipSchedule is how long to wait between each look at the daemon's verdict.
+//
+// It has to outlast the daemon's own patience with Git. The daemon gives a
+// git call four minutes (cmd/dibd gitDeadline), because on macOS a blocked
+// read is a permission dialog waiting for a person, and only after that does
+// it mark the tree unreadable. This used to look at three and forty-eight
+// seconds and stop, so for the documented TCC hang both looks saw "indexing",
+// nothing shipped, and the fallback this exists for never activated. Found
+// by the pre-release review. Bounded, cheap (one GET each), and it stops the
+// moment there is something to ship.
+var shipSchedule = []time.Duration{
+	3 * time.Second, 45 * time.Second,
+	time.Minute, time.Minute, time.Minute, time.Minute, time.Minute,
+}
+
+// daemonGitDeadline mirrors cmd/dibd's gitDeadline, which this package cannot
+// import; the test beside this holds the schedule to it.
+const daemonGitDeadline = 4 * time.Minute
+
+// shipWhenUnreadable watches the daemon's verdict on the schedule above,
+// ships once, and says nothing on success: the daemon logs what it installed.
 func shipWhenUnreadable(ctx context.Context, client *http.Client, url, secret, token, root string) {
-	for _, wait := range []time.Duration{3 * time.Second, 45 * time.Second} {
+	for _, wait := range shipSchedule {
 		select {
 		case <-ctx.Done():
 			return
