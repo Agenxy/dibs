@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/agenxy/dibs/internal/overlap"
@@ -34,27 +35,68 @@ import (
 // shortly after registering and once more later, then stops: a tree the
 // daemon indexed in between needs nothing from here.
 func shipIndexOnRegister(
-	ctx context.Context, client *http.Client, url, secret string, next func(sent, reply []byte),
+	ctx context.Context, client *http.Client, url, secret string, timing shipTiming, next func(sent, reply []byte),
 ) func(sent, reply []byte) {
+	var (
+		mu       sync.Mutex
+		watching = map[string]bool{} // roots with a shipper already running
+	)
 	return func(sent, reply []byte) {
 		next(sent, reply)
-		if n := toolNameOf(sent); n != "register" && n != "resume" {
+		// THE DIRECTORY THE AGENT REGISTERED, not the one this bridge runs in.
+		// register takes a cwd and update can correct it, and the daemon's
+		// verdict is about that tree; a bridge started outside the checkout
+		// watched its own directory and the verdict for the real one never
+		// triggered a shipment. Round seven of the pre-release review.
+		var tok, cwd string
+		switch toolNameOf(sent) {
+		case "register", "resume":
+			tok, cwd = agentTokenIn(reply), argIn(sent, "cwd")
+		case "update":
+			tok, cwd = argIn(sent, "token"), argIn(sent, "cwd")
+			if cwd == "" {
+				return // an update that did not move the agent
+			}
+		default:
 			return
 		}
-		tok := agentTokenIn(reply)
 		if tok == "" {
 			return
 		}
-		cwd, err := os.Getwd()
-		if err != nil {
-			return
+		if cwd == "" {
+			wd, err := os.Getwd()
+			if err != nil {
+				return
+			}
+			cwd = wd
 		}
 		root := repoRootOf(filepath.Clean(cwd))
 		if root == "" {
 			return // not a checkout; nothing to index anywhere
 		}
-		go shipWhenUnreadable(ctx, client, url, secret, tok, root)
+		mu.Lock()
+		already := watching[root]
+		watching[root] = true
+		mu.Unlock()
+		if already {
+			return // one shipper per tree for the life of the bridge
+		}
+		go shipWhenUnreadable(ctx, client, url, secret, tok, root, timing)
 	}
+}
+
+// argIn reads one string argument of a tools/call, or "".
+func argIn(sent []byte, key string) string {
+	var m struct {
+		Params struct {
+			Arguments map[string]any `json:"arguments"`
+		} `json:"params"`
+	}
+	if json.Unmarshal(sent, &m) != nil {
+		return ""
+	}
+	v, _ := m.Params.Arguments[key].(string)
+	return v
 }
 
 // shipSchedule is how long to wait between each look at the daemon's verdict.
@@ -72,6 +114,20 @@ var shipSchedule = []time.Duration{
 	time.Minute, time.Minute, time.Minute, time.Minute, time.Minute,
 }
 
+// shipTiming is when a shipper looks at the verdict: the bounded schedule
+// after registration, then the slow recheck for the life of the bridge. A
+// value handed to the shipper rather than globals it reads, so a test can
+// shorten it without writing under a goroutine that is reading it.
+type shipTiming struct {
+	schedule []time.Duration
+	recheck  time.Duration
+}
+
+// defaultShipTiming is what the bridge ships on.
+func defaultShipTiming() shipTiming {
+	return shipTiming{schedule: shipSchedule, recheck: shipRecheckEvery}
+}
+
 // daemonGitDeadline mirrors cmd/dibd's gitDeadline, which this package cannot
 // import; the test beside this holds the schedule to it.
 const daemonGitDeadline = 4 * time.Minute
@@ -84,19 +140,18 @@ const daemonGitDeadline = 4 * time.Minute
 // working: the schedule had run out on registration, nothing asked again,
 // and matching stayed unavailable for that tree until another registration
 // happened to ship. One GET every few minutes per bridge is the cost of a
-// verdict that can change. A var, so a test can shorten it. Round five of
-// the pre-release review.
-var shipRecheckEvery = 5 * time.Minute
+// verdict that can change. Round five of the pre-release review.
+const shipRecheckEvery = 5 * time.Minute
 
 // shipWhenUnreadable watches the daemon's verdict on the schedule above and
 // then at shipRecheckEvery for the life of the bridge, ships whenever the
 // daemon wants an index this bridge has not supplied, and says nothing on
 // success: the daemon logs what it installed.
-func shipWhenUnreadable(ctx context.Context, client *http.Client, url, secret, token, root string) {
+func shipWhenUnreadable(ctx context.Context, client *http.Client, url, secret, token, root string, timing shipTiming) {
 	for i := 0; ; i++ {
-		wait := shipRecheckEvery
-		if i < len(shipSchedule) {
-			wait = shipSchedule[i]
+		wait := timing.recheck
+		if i < len(timing.schedule) {
+			wait = timing.schedule[i]
 		}
 		select {
 		case <-ctx.Done():

@@ -56,10 +56,13 @@ the consolidation the role exists for. Onto yourself, you become the reader of
 everything that was sent to that name, which is you granting yourself read
 access to another agent's mail. That is the human's call: `human_unlock` as yourself,
 or name who should hold it with `into`. "Yourself" includes an agent you
-registered from your own session, or a child you vouched for: the board
-records where a registration came from, and an agent you hold the token for
-is you under another name, whichever door the mailbox goes through. An admin
-reads every mailbox already and is not redirected.
+registered from your own session, a child you vouched for, and an agent
+registered with no session the board could record: the board records where
+a registration came from, an agent you hold the token for is you under
+another name, and one with nothing to show for its own hands cannot be told
+apart from that, whichever door the mailbox goes through. The `into` target
+has to have registered through its own harness's bridge (or bound its
+session). An admin reads every mailbox already and is not redirected.
 
 **Take the human's mailbox.** Refused outright, on both the direct call and the
 approve-a-request path. A person's row is dormant most of the time by design,

@@ -2,7 +2,10 @@ package engine
 
 import (
 	"context"
+	"strconv"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/agenxy/dibs/internal/overlap"
 )
@@ -223,5 +226,45 @@ func TestReleasingASuppliedIndexRetractsTheSuppliedStatus(t *testing.T) {
 	}
 	if len(st.Unreadable) != 1 || st.Unreadable[0] != "/repo" {
 		t.Errorf("the tree is not back on the unreadable list, which is what the bridge ships on: %v", st.Unreadable)
+	}
+}
+
+// Releasing a supplied index while an indexing failure is being reported
+// does not deadlock.
+//
+// SetMatchStatus takes the match lock under the status lock
+// (anyScorerServes, for a failure that would switch matching off); round six
+// put the status update of a release under the match lock, so an indexing
+// failure and an eviction at the same moment held each other's next lock,
+// with the writer loop next in line behind either. Round seven of the
+// pre-release review. Bounded here rather than left to the test timeout.
+func TestReleasingASuppliedIndexDoesNotDeadlockWithAFailureReport(t *testing.T) {
+	e := &Engine{}
+	const n = 4000
+	scorer := overlap.NewLexicalFromFiles(nil, nil)
+	for i := range n {
+		root := "/repo/" + strconv.Itoa(i)
+		e.SetIndex(root, scorer, MatchConfig{}, IndexInfo{SuppliedBy: "shipper"})
+		e.NoteSuppliedIndex(root, "shipper")
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		var wg sync.WaitGroup
+		for i := range n {
+			wg.Add(2)
+			root := "/repo/" + strconv.Itoa(i)
+			go func() { defer wg.Done(); e.RemoveScorerForRepo(root) }()
+			go func() {
+				defer wg.Done()
+				e.SetMatchStatus(MatchStatus{Phase: MatchOff, Repo: "/other/" + strconv.Itoa(i), Hint: "failed"})
+			}()
+		}
+		wg.Wait()
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("releasing supplied indexes beside failure reports did not finish: the two locks are taken in both orders")
 	}
 }

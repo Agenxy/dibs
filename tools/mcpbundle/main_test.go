@@ -28,6 +28,16 @@ func TestTheBundleCarriesARunnableServerPerPlatform(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// The macOS helpers, where GoReleaser's hooks leave them: beside dist.
+	helpers := filepath.Dir(dist)
+	for _, rel := range []string{"dibs-presence", "Dibs.app/Contents/Info.plist", "Dibs.app/Contents/MacOS/dibs-notify", "Dibs.app/Contents/Resources/Dibs.icns"} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(helpers, rel)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(helpers, rel), []byte("#!fake "+rel), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
 	out := filepath.Join(dist, "dibs.mcpb")
 	sum, err := Build(dist, "0.0.8", out)
 	if err != nil {
@@ -67,6 +77,10 @@ func TestTheBundleCarriesARunnableServerPerPlatform(t *testing.T) {
 	for path, want := range map[string]string{
 		"server/darwin-arm64/dibs": "#!fake dibs_darwin_arm64_v8.0",
 		"server/darwin-arm64/dibd": "#!fake dibd_darwin_arm64_v8.0",
+		// The helpers the binaries look for beside themselves (round seven
+		// of the pre-release review: the bundle shipped without them).
+		"server/darwin-arm64/dibs-presence":                       "#!fake dibs-presence",
+		"server/darwin-arm64/Dibs.app/Contents/MacOS/dibs-notify": "#!fake Dibs.app/Contents/MacOS/dibs-notify",
 	} {
 		if got[path]&0o111 == 0 {
 			t.Errorf("%s: mode %v, want the executable bit kept (present: %v)", path, got[path], got[path] != 0)

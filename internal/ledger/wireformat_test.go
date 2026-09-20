@@ -277,6 +277,20 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 				"success", tag)
 		}
 	}
+	// AND ITS FINGERPRINT, for the reason the Op's and the Message's have
+	// one: a repository-wide rename of `repo_remote` rewrites the tag and
+	// the entry above together and the two lists stay in step with each
+	// other while every historical op decodes the field as empty. Round
+	// seven of the pre-release review found this list alone unfingerprinted.
+	if got := fingerprint(wantAgent); got != frozenAgentFingerprint {
+		t.Errorf("the frozen agent-identity list changed.\n"+
+			"  got  %s\n  want %s\n\n"+
+			"  If you renamed a tag: every ledger written before the change replays\n"+
+			"  with that field silently zero, and for the repo trio that means the fold\n"+
+			"  can no longer tell one project from another. Put the old tag back.\n"+
+			"  If you genuinely added a field, this is deliberate: set\n"+
+			"    frozenAgentFingerprint = %q", got, frozenAgentFingerprint, got)
+	}
 
 	seenEnvelope := map[string]bool{}
 	seenOp := map[string]bool{}
@@ -380,6 +394,9 @@ const (
 	// passing: the exact co-edited-guard failure AGENTS.md describes, in the
 	// guard written to stop it. Found by a pre-release review.
 	frozenMessageFingerprint = "sha256:b06911065d90611f"
+	// The identity inside op.agent. Set when the fingerprint was added; one
+	// new tag at a time from here, never a rename.
+	frozenAgentFingerprint = "sha256:c630d3cc9f27eb95"
 )
 
 func fingerprint(set map[string]bool) string {

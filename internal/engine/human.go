@@ -442,14 +442,27 @@ func (e *Engine) refuseCoordinatorSelfAdoption(actor *core.Agent, op *core.Op) e
 	if !op.AdoptAuthorised || actor.IsAdmin() || e.isTheHuman(actor.ID) {
 		return nil
 	}
-	if op.Space != "" && op.Space != actor.ID && !actor.SameHands(e.state.Agents[op.Space]) {
+	if op.Space != "" && op.Space != actor.ID && actor.OtherHands(e.state.Agents[op.Space]) {
 		return nil // onto somebody else: custody only
 	}
-	// "Somebody else" is decided by SameHands, not by comparing ids. The
+	// "Somebody else" is decided by OtherHands, not by comparing ids. The
 	// two-call route round three of the pre-release review found: register
 	// a second agent from the same session, keep its token, adopt `into` it,
 	// read with that token. A row minted from a session the coordinator holds
-	// is a name the coordinator holds the token for.
+	// is a name the coordinator holds the token for; and a row minted with no
+	// session at all (round seven: a stateless caller that sent none) cannot
+	// be told from one, so it is not a third party either.
+	if op.Space != "" && op.Space != actor.ID {
+		return &core.Error{
+			Code: "E_NOT_PERMITTED",
+			Msg: "a coordinator may move a mailbox onto a third party, and " + op.Space +
+				" cannot be shown to be one",
+			Hint: "that agent was registered from your own session, or with no session the " +
+				"board could record, so it is not distinguishable from you under another " +
+				"name. Have it register through its own harness's bridge (or bind_session " +
+				"with its session id) and try again, or unlock as yourself with human_unlock",
+		}
+	}
 	return &core.Error{
 		Code: "E_NOT_PERMITTED",
 		Msg:  "a coordinator may move a mailbox but may not move one onto itself",
@@ -484,7 +497,7 @@ func (e *Engine) refuseApprovingOwnAdoption(actor *core.Agent, op *core.Op) erro
 	// another name (SameHands): an agent it registered from its own session
 	// asking for a mailbox it will then read with the token register handed
 	// the coordinator. Round three of the pre-release review.
-	if m.From != actor.ID && !actor.SameHands(e.state.Agents[m.From]) {
+	if m.From != actor.ID && actor.OtherHands(e.state.Agents[m.From]) {
 		return nil
 	}
 	return &core.Error{
