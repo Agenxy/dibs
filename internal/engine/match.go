@@ -137,6 +137,12 @@ func (e *Engine) scorerFor(cwd string) (overlap.Scorer, MatchConfig) {
 // when it could not read the tree).
 type location struct {
 	cwd, repoRoot string
+	// host is the agent's host id when it is on ANOTHER machine than this
+	// daemon, "" for a local agent; identity is what it recorded about its
+	// repository. Both decide whether an index keyed by a path on this disk
+	// says anything about the tree the agent is in.
+	host     string
+	identity *core.AgentInfo
 }
 
 // scorerForLocation is scorerFor with one more rule, for indexes an AGENT
@@ -169,8 +175,12 @@ func (e *Engine) scorerForLocation(loc location) (overlap.Scorer, MatchConfig) {
 		if !inMatchedRepo(loc.cwd, repo) || len(repo) <= len(bestRepo) {
 			continue
 		}
-		if e.indexes[repo].SuppliedBy != "" && loc.repoRoot != "" && loc.repoRoot != repo {
+		info := e.indexes[repo]
+		if info.SuppliedBy != "" && loc.repoRoot != "" && loc.repoRoot != repo {
 			continue // shipped for a tree that is not this agent's repository
+		}
+		if !e.indexSpeaksForHost(repo, info, loc) {
+			continue
 		}
 		best, bestRepo = s, repo
 	}
@@ -193,6 +203,39 @@ func (e *Engine) scorerForLocation(loc location) (overlap.Scorer, MatchConfig) {
 	return best, cfg
 }
 
+// indexSpeaksForHost decides whether an index keyed by a path on this disk
+// says anything about an agent's tree, once the path matches.
+//
+// A path is evidence on one computer. `/workspace/repo` here and
+// `/workspace/repo` on a member can be two projects, and a remote agent
+// declaring from that path was scored by this machine's index of the other
+// one: a confident footprint from a history it has nothing to do with,
+// written into the ledger as what later comparisons match on. For a local
+// agent the path is the whole answer, as it always was. For a remote one, an
+// index this daemon mined applies only when the tree it was mined from and
+// the agent's tree are the same project by the machine-independent facts
+// (remote, root commits): a clone, whose history is the right coordinate
+// system. An index an agent shipped applies only to agents on the shipper's
+// machine, where the root it was shipped for is the tree they are in. Found
+// by the pre-release review, round three.
+func (e *Engine) indexSpeaksForHost(repo string, info IndexInfo, loc location) bool {
+	if loc.host == "" {
+		return true
+	}
+	if info.SuppliedBy != "" {
+		return info.SuppliedHost == loc.host
+	}
+	if loc.identity == nil {
+		return false
+	}
+	mined := info.Identity
+	mined.HostID = e.HostID()
+	if mined.RepoDir == "" {
+		mined.RepoDir = repo
+	}
+	return core.SameProject(&mined, loc.identity)
+}
+
 // IndexInfo is what an index is beyond the tree it was mined from.
 //
 // Fingerprint identifies the mined history (overlap.CoChange.Fingerprint), and
@@ -207,6 +250,10 @@ type IndexInfo struct {
 	// SuppliedBy names the agent that shipped this index, for a tree the
 	// daemon could not read itself (issue #19); "" for one the daemon mined.
 	SuppliedBy string
+	// SuppliedHost is the shipper's host id when it is on another machine
+	// than this daemon, "" when it is local: a shipped index is for a root on
+	// the shipper's disk and scores agents on that machine only.
+	SuppliedHost string
 }
 
 // SetScorerForRepo publishes the index for one repository. Thresholds are
@@ -297,22 +344,25 @@ func (e *Engine) IndexSuppliedBy(repo string) string {
 //
 // repoRoot is the repository root the daemon resolved for the agent at
 // registration, or "" when it could not read the tree: exactly the case a
-// shipped index is for.
-func (e *Engine) AgentLocation(ctx context.Context, token string) (id, cwd, repoRoot string, err error) {
+// shipped index is for. host is the agent's host id when it is on another
+// machine, "" when it is on this one: a tree on another machine is one this
+// daemon cannot read by definition.
+func (e *Engine) AgentLocation(ctx context.Context, token string) (id, cwd, repoRoot, host string, err error) {
 	res, err := e.query(ctx, func() core.Result {
 		l := e.state.AgentByToken(token)
 		if l == nil || l.Agent == nil {
 			return core.Result{}
 		}
-		return core.Result{"id": l.ID, "cwd": l.Agent.CWD, "root": l.Agent.RepoRoot}
+		return core.Result{"id": l.ID, "cwd": l.Agent.CWD, "root": l.Agent.RepoRoot, "host": e.remoteHostOf(l)}
 	})
 	if err != nil {
-		return "", "", "", err
+		return "", "", "", "", err
 	}
 	id, _ = res["id"].(string)
 	cwd, _ = res["cwd"].(string)
 	repoRoot, _ = res["root"].(string)
-	return id, cwd, repoRoot, nil
+	host, _ = res["host"].(string)
+	return id, cwd, repoRoot, host, nil
 }
 
 // TreeIsUnreadable reports the daemon's own verdict that it could not read
@@ -1513,14 +1563,20 @@ func (e *Engine) locationForToken(ctx context.Context, token string) location {
 		if l == nil || l.Agent == nil {
 			return core.Result{}
 		}
-		return core.Result{"cwd": l.Agent.CWD, "root": l.Agent.RepoRoot}
+		info := *l.Agent
+		return core.Result{
+			"cwd": l.Agent.CWD, "root": l.Agent.RepoRoot,
+			"host": e.remoteHostOf(l), "identity": &info,
+		}
 	})
 	if err != nil {
 		return location{}
 	}
 	cwd, _ := res["cwd"].(string)
 	root, _ := res["root"].(string)
-	return location{cwd: cwd, repoRoot: root}
+	host, _ := res["host"].(string)
+	identity, _ := res["identity"].(*core.AgentInfo)
+	return location{cwd: cwd, repoRoot: root, host: host, identity: identity}
 }
 
 // SetCoordinatorClaim installs the check for a launch-time coordinator claim.

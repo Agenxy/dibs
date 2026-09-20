@@ -562,6 +562,33 @@ func (a *Agent) bindHarnessSessionAs(sid string, guessed, v7 bool) string {
 // for engine tests that assert on a binding the ingress made.
 func (a *Agent) HoldsSessionForTest(sid string) bool { return a.holdsSession(sid) }
 
+// SameHands reports whether `other` is, as far as the board can tell, this
+// agent under another name: a row minted from a session this agent holds or
+// was itself minted from, the reverse, or a child this agent vouched for.
+//
+// Exported for the adoption rules in the engine: a coordinator may move a
+// mailbox onto a third party and not onto itself, and a "third party" it
+// registered from its own session holds no token the coordinator lacks.
+func (a *Agent) SameHands(other *Agent) bool {
+	if a == nil || other == nil || a.ID == other.ID {
+		return a != nil && other != nil
+	}
+	if other.ParentProven && other.Parent == a.ID {
+		return true
+	}
+	if a.ParentProven && a.Parent == other.ID {
+		return true
+	}
+	from := func(x, y *Agent) bool {
+		if x.RegisteredFrom == "" {
+			return false
+		}
+		return x.RegisteredFrom == y.RegisteredFrom || x.RegisteredFrom == y.CurrentSession ||
+			y.holdsSession(x.RegisteredFrom)
+	}
+	return from(other, a) || from(a, other)
+}
+
 // GuessedSession reports whether THIS id was inferred for this agent rather
 // than stated by it.
 //

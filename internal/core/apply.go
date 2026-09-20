@@ -657,6 +657,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 		}
 	}
 	s.Agents[id] = l
+	l.RegisteredFrom = op.RegisteredFrom
 	l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed, op.V7Semantics) // the name its hooks use, if different
 	l.currentFrom(op, false)                                                   // a fresh row held nothing
 	if nonce != "" {
@@ -1912,8 +1913,13 @@ func (s *State) applyClaim(l *Agent, op *Op, now time.Time) (Result, []Event, er
 		if c.Agent == l.ID && c.Path == path { // renewal (ledgered: drives expiry)
 			// RepoPath with them: a renewal restates the claim, and an agent that
 			// moved between checkouts since acquiring it would otherwise keep a
-			// portable name derived from where it used to be.
-			c.Renewed, c.Mode, c.Note, c.RepoPath = now, op.Mode, op.Note, repoPath
+			// portable name derived from where it used to be. AND the repository
+			// and host that path is relative to, together: restating the path
+			// alone combined a new relative name with the old project, so a
+			// holder that moved projects at one absolute path renewed a claim
+			// on the project it had left. Round three of the pre-release review.
+			c.Renewed, c.Mode, c.Note = now, op.Mode, op.Note
+			c.RepoPath, c.Repo, c.Host = repoPath, repoIdentityOf(l), hostOf(l)
 			return Result{"granted": true, "renewed": true, "overlaps": ov},
 				[]Event{{Type: "claim.renewed", Agent: l.ID, Data: map[string]any{"path": path, "mode": op.Mode}}}, nil
 		}
@@ -1929,7 +1935,7 @@ func (s *State) applyClaim(l *Agent, op *Op, now time.Time) (Result, []Event, er
 			"global)", s.Limits.MaxClaimsPerAgent, s.Limits.MaxClaimsGlobal)
 	}
 	cl := &Claim{
-		Agent: l.ID, Path: path, RepoPath: repoPath, Repo: repoIdentityOf(l),
+		Agent: l.ID, Path: path, RepoPath: repoPath, Repo: repoIdentityOf(l), Host: hostOf(l),
 		Mode: op.Mode, Note: op.Note, Acquired: now, Renewed: now,
 	}
 	s.Claims = append(s.Claims, cl)

@@ -1,6 +1,10 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 )
@@ -41,5 +45,46 @@ func TestTheShipScheduleOutlastsTheDaemonsGitDeadline(t *testing.T) {
 	if total <= daemonGitDeadline+30*time.Second {
 		t.Fatalf("the ship schedule gives up after %v, before the daemon has finished "+
 			"waiting on Git (%v) and said the tree is unreadable", total, daemonGitDeadline)
+	}
+}
+
+// The fallback asks the daemon it registered with, at the address it
+// registered through.
+//
+// shipWhenUnreadable was handed the resolved URL and used it for the
+// shipment, and asked for the verdict through fetchMatchStatus, which built
+// its own URL from origin(): the configured address, before Supgang
+// resolved the hub's current one. After the hub moved, registration went to
+// the new address and every verdict poll went to the old one, so the index
+// never shipped and nothing said why. Found by the pre-release review,
+// round three.
+func TestTheFallbackAsksTheDaemonItRegisteredWith(t *testing.T) {
+	asked := make(chan string, 8)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked <- r.URL.Path
+		if r.URL.Path == "/api/match-status" {
+			_ = json.NewEncoder(w).Encode(matchStatusJSON{Unreadable: []string{"/not/a/checkout"}})
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	prev := shipSchedule
+	shipSchedule = []time.Duration{time.Millisecond}
+	t.Cleanup(func() { shipSchedule = prev })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	shipWhenUnreadable(ctx, srv.Client(), srv.URL+"/mcp", "secret", "token", "/not/a/checkout")
+
+	select {
+	case p := <-asked:
+		if p != "/api/match-status" {
+			t.Fatalf("first request to the resolved daemon was %q, want the verdict poll", p)
+		}
+	default:
+		t.Fatal("the verdict was never asked of the daemon the bridge registered with: " +
+			"the poll went to the configured address instead")
 	}
 }

@@ -140,6 +140,28 @@ func differentHosts(a, b *Agent) bool {
 	return x != "" && y != "" && x != y
 }
 
+// claimOnAnotherHost is differentHosts for a claim: the machine the claim was
+// TAKEN on, as recorded, against the claimant's. A claim written before the
+// host was recorded falls back to its holder's current identity, which is
+// what it was compared with when it was granted.
+func claimOnAnotherHost(me, them *Agent, c *Claim) bool {
+	if c == nil || c.Host == "" {
+		return differentHosts(me, them)
+	}
+	if me == nil || me.Agent == nil || me.Agent.HostID == "" {
+		return false
+	}
+	return me.Agent.HostID != c.Host
+}
+
+// hostOf is the host id an agent stated, or "".
+func hostOf(l *Agent) string {
+	if l == nil || l.Agent == nil {
+		return ""
+	}
+	return l.Agent.HostID
+}
+
 // The two rules an overlap can fire under, reported so a person can act on the
 // right one. "Held by api-2 at /Users/kim/src/api" and "held by api-2 in
 // another worktree of this repository" send a reader to different places.
@@ -186,7 +208,7 @@ func (s *State) claimOverlap(me *Agent, path, repoPath string, c *Claim) (rule s
 	// The repository rule below is untouched by this and is what carries a real
 	// collision across the gap: two clones of one project on two computers name
 	// the same file identically once each checkout root is subtracted.
-	if !differentHosts(me, them) && pathsOverlap(c.Path, path) {
+	if !claimOnAnotherHost(me, them, c) && pathsOverlap(c.Path, path) {
 		return OverlapByPath, true
 	}
 	if repoPath == "" || c.RepoPath == "" {
@@ -447,7 +469,10 @@ func firstOverlappingPath(me, them *Agent, mine, theirs []string) string {
 			if ra == "" || !sameProject(me, them) {
 				continue
 			}
-			if rb := repoPathOf(them, cb); rb != "" && pathsOverlap(ra, rb) {
+			// repoPathsOverlap, not pathsOverlap: "." is the checkout, and an
+			// ancestor of every path in it. Round three of the pre-release
+			// review found this half still comparing "." as a string.
+			if rb := repoPathOf(them, cb); rb != "" && repoPathsOverlap(ra, rb) {
 				return b
 			}
 		}
