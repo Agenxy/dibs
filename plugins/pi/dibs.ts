@@ -16,7 +16,7 @@
  * .pi/extensions/dibs.ts (project-local). Both are auto-discovered and can be
  * hot-reloaded with /reload.
  *
- * Env: DIBS_ADDR (default 127.0.0.1:4777), DIBS_DIR (default ~/.dibs)
+ * Env: DIBS_ADDR (default 127.0.0.1:4777; a full https:// origin for a joined board), DIBS_DIR (default ~/.dibs)
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { Type } from "typebox"
@@ -28,7 +28,17 @@ import { promisify } from "node:util"
 
 const run = promisify(execFile)
 
+/**
+ * The daemon's origin. DIBS_ADDR is what `dibs mcp-config` writes for the
+ * bridge, and for a hub on another machine that is a full HTTPS origin
+ * (`https://hub:4777`); this prefixed `http://` to whatever it found, so a
+ * joined board became `http://https://hub:4777/mcp` and every hook failed
+ * silently while the bridge beside it connected fine. A scheme given is
+ * kept; a bare host:port is the loopback daemon's plaintext. Round nineteen
+ * of the pre-release review.
+ */
 const ADDR = process.env["DIBS_ADDR"] ?? "127.0.0.1:4777"
+const ORIGIN = /^https?:\/\//i.test(ADDR) ? ADDR.replace(/\/+$/, "") : `http://${ADDR}`
 /**
  * Where the daemon keeps its local secret, resolved the way the daemon
  * resolves it: `~/.dibs`, falling back to a legacy `~/.agents` only when that
@@ -75,6 +85,33 @@ async function secret(): Promise<string | null> {
   return secretCache
 }
 
+/**
+ * What a joined board's certificate is checked against: the certificates
+ * `dibs trust` recorded beside the secret, the same store the bridge dials
+ * with. A hub off loopback serves TLS under a certificate it issued itself,
+ * so without this every https:// call failed the way the http:// prefix
+ * did, silently. Empty for a plaintext daemon or an unjoined directory,
+ * and then the system roots decide as they always did.
+ */
+let trustCache: string | null | undefined
+
+async function trust(): Promise<string | null> {
+  if (trustCache !== undefined) return trustCache
+  if (!ORIGIN.startsWith("https://")) return (trustCache = null)
+  try {
+    trustCache = (await readFile(`${DIR}/trusted-certs.pem`, "utf8")).trim() || null
+  } catch {
+    trustCache = null
+  }
+  return trustCache
+}
+
+/** fetch options that carry the trust store when there is one. */
+async function tlsOptions(): Promise<Record<string, unknown>> {
+  const ca = await trust()
+  return ca ? { tls: { ca } } : {}
+}
+
 let rpcId = 0
 
 /**
@@ -92,11 +129,12 @@ async function rpc(
 ): Promise<any | null> {
   const key = await secret()
   if (!key) return null
-  const res = await fetch(`http://${ADDR}/mcp`, {
+  const res = await fetch(`${ORIGIN}/mcp`, {
     method: "POST",
     headers: { "content-type": "application/json", "X-Dibs-Local": key },
     body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method, params }),
     signal: AbortSignal.timeout(timeoutMs),
+    ...(await tlsOptions()),
   })
   if (!res.ok) return null
   const body = (await res.json()) as { result?: unknown; error?: unknown }

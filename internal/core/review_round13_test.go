@@ -25,9 +25,9 @@ func TestALiveResumeTakesAStatedSessionID(t *testing.T) {
 		t.Fatalf("setup: the register inside the TTL did not resume (%v)", res)
 	}
 	l := s.Agents["r"]
-	if !l.HoldsSessionForTest(b) || l.CurrentSession != b {
+	if !l.HoldsSession(b) || l.CurrentSession != b {
 		t.Errorf("after resuming with session_id %s the agent holds it: %v, current %q. The "+
 			"resume reported success and kept thread %s, so the wake resumes the one it left",
-			b, l.HoldsSessionForTest(b), l.CurrentSession, a)
+			b, l.HoldsSession(b), l.CurrentSession, a)
 	}
 }

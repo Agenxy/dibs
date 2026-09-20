@@ -44,7 +44,7 @@ func TestAnInferredBindingIsRecordedAsAGuessByTheEngine(t *testing.T) {
 	l := st.Agents["inheritor"]
 	// Setup must hold: the inference has to have fired, or there is no binding
 	// whose provenance could be wrong.
-	if !l.HoldsSessionForTest(announced) {
+	if !l.HoldsSession(announced) {
 		// A FAILURE, NOT A SKIP. Skipping here let a disabled inference turn
 		// this guard off and exit zero. Found by the pre-release review,
 		// round fourteen.

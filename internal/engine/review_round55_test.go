@@ -30,7 +30,7 @@ func TestReclaimingAGuessedAliasLeavesTheOwnersStatedPrimary(t *testing.T) {
 		t.Fatal("setup:", err)
 	}
 	owner := st.Agents["owner"]
-	if !owner.HoldsSessionForTest(bridge) || !owner.HoldsSessionForTest(inferred) || !owner.GuessedSession(inferred) {
+	if !owner.HoldsSession(bridge) || !owner.HoldsSession(inferred) || !owner.GuessedSession(inferred) {
 		t.Fatal("setup: the owner does not hold its stated primary and the inferred alias as a guess")
 	}
 	// The session the guess belongs to registers, stating the bridge id and
@@ -38,10 +38,10 @@ func TestReclaimingAGuessedAliasLeavesTheOwnersStatedPrimary(t *testing.T) {
 	if _, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "newcomer", Nonce: "n-newcomer-0123456789", AgentKind: core.KindPersistent, SessionID: bridge, SessionAlias: inferred, Agent: &core.AgentInfo{CWD: t.TempDir()}}); err != nil {
 		t.Fatal("setup:", err)
 	}
-	if !st.Agents["newcomer"].HoldsSessionForTest(inferred) || owner.HoldsSessionForTest(inferred) {
+	if !st.Agents["newcomer"].HoldsSession(inferred) || owner.HoldsSession(inferred) {
 		t.Fatal("setup: the guess was not reclaimed by the session it belongs to")
 	}
-	if !owner.HoldsSessionForTest(bridge) {
+	if !owner.HoldsSession(bridge) {
 		t.Fatal("reclaiming a guessed alias took the owner's STATED primary with it: the owner's hooks " +
 			"resolve to the newcomer")
 	}

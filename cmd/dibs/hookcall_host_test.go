@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"encoding/pem"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -140,5 +141,137 @@ func TestTheResolvedHostIsPublishedForThePlugin(t *testing.T) {
 	b, err := os.ReadFile(filepath.Join(dir, resolvedHostFile))
 	if err != nil || strings.TrimSpace(string(b)) != "machine-b" {
 		t.Fatalf("the resolved host was not published for the plugin: %q, %v", b, err)
+	}
+}
+
+// And it spells paths as the daemon compares them: resolved, not as typed.
+//
+// The daemon resolves symlinks only for a caller on its own machine, so a
+// plugin on another machine that sent `/tmp/review/new.go` was compared
+// against a claim its bridge had stored as `/private/tmp/review/new.go`,
+// and the exclusive claim did not cover the edit. Round nineteen of the
+// pre-release review. The file being written need not exist yet.
+func TestTheOpencodePluginSendsCanonicalPaths(t *testing.T) {
+	bun, err := exec.LookPath("bun")
+	if err != nil {
+		t.Skip("bun is not installed; the plugin cannot be run")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte("s3cret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	real := filepath.Join(dir, "real")
+	if err := os.Mkdir(real, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(dir, "alias")
+	if err := os.Symlink(real, alias); err != nil {
+		t.Skipf("symlinks unavailable here: %v", err)
+	}
+	resolved, err := filepath.EvalSymlinks(real)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		_ = json.Unmarshal(body, &got)
+		mu.Unlock()
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{\"decision\":\"allow\"}"}]}}`))
+	}))
+	defer srv.Close()
+	plugin, err := filepath.Abs(filepath.Join("..", "..", "plugins", "opencode", "dibs.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The edit names a file that does not exist yet, through the alias.
+	edit := filepath.Join(alias, "new.go")
+	script := "const { DibsPlugin } = await import(" + strconv.Quote(plugin) + ")\n" +
+		"const hooks = await DibsPlugin({} as any)\n" +
+		"await hooks[\"tool.execute.before\"]!({ tool: \"write\", sessionID: \"s\", callID: \"c\" } as any, " +
+		"{ args: { filePath: " + strconv.Quote(edit) + " } } as any)\n"
+	path := filepath.Join(dir, "drive.ts")
+	if err := os.WriteFile(path, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(bun, "run", path) // #nosec G204 -- paths this test created
+	cmd.Dir = alias
+	cmd.Env = append(os.Environ(), "DIBS_DIR="+dir, "DIBS_ADDR="+strings.TrimPrefix(srv.URL, "http://"))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("running the plugin: %v\n%s", err, out)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	params, _ := got["params"].(map[string]any)
+	args, _ := params["arguments"].(map[string]any)
+	if p, _ := args["path"].(string); p != filepath.Join(resolved, "new.go") {
+		t.Fatalf("the guard was asked about %q, want the resolved %q: a claim stored resolved does "+
+			"not cover the alias on a hub that will not resolve a remote path", p, filepath.Join(resolved, "new.go"))
+	}
+	if c, _ := args["cwd"].(string); c != resolved {
+		t.Fatalf("the guard's cwd is %q, want the resolved %q", c, resolved)
+	}
+}
+
+// And it reaches a joined board: an https:// DIBS_ADDR as `dibs mcp-config`
+// writes it, under the certificate `dibs trust` recorded.
+//
+// The plugin prefixed `http://` to whatever DIBS_ADDR held, so a joined
+// board became `http://https://hub:4777/mcp` and every hook failed silently
+// while the bridge beside it connected; and a hub off loopback serves a
+// certificate it issued itself, which the plugin had no way to trust.
+// Round nineteen of the pre-release review.
+func TestTheOpencodePluginReachesAJoinedBoardOverTLS(t *testing.T) {
+	bun, err := exec.LookPath("bun")
+	if err != nil {
+		t.Skip("bun is not installed; the plugin cannot be run")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte("s3cret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	reached := 0
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		reached++
+		mu.Unlock()
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{\"decision\":\"deny\",\"reason\":\"held\"}"}]}}`))
+	}))
+	defer srv.Close()
+	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
+	if err := os.WriteFile(filepath.Join(dir, "trusted-certs.pem"), pemBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	plugin, err := filepath.Abs(filepath.Join("..", "..", "plugins", "opencode", "dibs.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The guard's deny is the proof the answer came from the server: a
+	// plugin that could not reach it allows, by design.
+	script := "const { DibsPlugin } = await import(" + strconv.Quote(plugin) + ")\n" +
+		"const hooks = await DibsPlugin({} as any)\n" +
+		"try {\n" +
+		"  await hooks[\"tool.execute.before\"]!({ tool: \"edit\", sessionID: \"s\", callID: \"c\" } as any, " +
+		"{ args: { filePath: \"/w/repo/file.go\" } } as any)\n" +
+		"  console.log(\"allowed\")\n" +
+		"} catch (e) { console.log(\"denied: \" + String(e)) }\n"
+	path := filepath.Join(dir, "drive.ts")
+	if err := os.WriteFile(path, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(bun, "run", path) // #nosec G204 -- paths this test created
+	cmd.Env = append(os.Environ(), "DIBS_DIR="+dir, "DIBS_ADDR="+srv.URL)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("running the plugin: %v\n%s", err, out)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if reached == 0 || !strings.Contains(string(out), "denied: Error: Dibs: held") {
+		t.Fatalf("the plugin did not reach the joined board at %s (reached %d, said %q): its hooks fail "+
+			"silently while the bridge beside it connects", srv.URL, reached, out)
 	}
 }

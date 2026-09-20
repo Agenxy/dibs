@@ -104,7 +104,7 @@ func TestReassertingAnInferredSessionMakesItStated(t *testing.T) {
 			"inherited it, so any other authenticated agent can take it away and " +
 			"redirect this one's wakes")
 	}
-	if !s.Agents["owner"].HoldsSessionForTest(sid) {
+	if !s.Agents["owner"].HoldsSession(sid) {
 		t.Error("the reassertion lost the binding it was confirming")
 	}
 }

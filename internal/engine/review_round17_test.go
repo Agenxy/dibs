@@ -51,13 +51,13 @@ func TestAnExplicitSessionIDTakesAGuessedBinding(t *testing.T) {
 	if _, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "guesser", Nonce: "n-guesser-0123456789", AgentKind: core.KindPersistent, Agent: &core.AgentInfo{CWD: dir}}); err != nil {
 		t.Fatal("setup:", err)
 	}
-	if g := st.Agents["guesser"]; !g.HoldsSessionForTest(announced) || !g.GuessedSession(announced) {
+	if g := st.Agents["guesser"]; !g.HoldsSession(announced) || !g.GuessedSession(announced) {
 		t.Fatal("setup: the inference did not bind the announced session as a guess")
 	}
 	if _, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "rightful", Nonce: "n-rightful-0123456789", AgentKind: core.KindPersistent, SessionID: announced, SessionAlias: announced, Agent: &core.AgentInfo{CWD: t.TempDir()}}); err != nil {
 		t.Fatalf("the rightful agent stating its own session id was refused: %v", err)
 	}
-	if !st.Agents["rightful"].HoldsSessionForTest(announced) || st.Agents["guesser"].HoldsSessionForTest(announced) {
+	if !st.Agents["rightful"].HoldsSession(announced) || st.Agents["guesser"].HoldsSession(announced) {
 		t.Error("the stated session did not move from the agent that guessed it to the one that stated it")
 	}
 }

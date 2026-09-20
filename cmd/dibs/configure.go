@@ -402,6 +402,10 @@ func askBoardName(addr string) string {
 	if !remap.Available() {
 		return ""
 	}
+	if why := nameWithheldFor(addr); why != "" {
+		fmt.Printf("\n%s\n", why)
+		return ""
+	}
 	if err := remapAnswers(); err != nil {
 		fmt.Printf("\nRemap is installed but not answering (%v); the board keeps its address.\n", err)
 		return ""
@@ -434,6 +438,24 @@ or press Enter to leave it unnamed:`)
 	}
 	fmt.Printf("\n  ✓ remap set %s %s\n", name, target)
 	return name
+}
+
+// nameWithheldFor is why the wizard does not offer a name for this address,
+// or "" when it may. A daemon off loopback serves TLS and sets its session
+// cookie Secure; Remap serves a name over plain HTTP; a browser at an
+// http:// origin discards that cookie. The wizard used to register the
+// mapping, report it with a tick and send the operator to a board the name
+// could reach and never unlock, spending the single-use link on the way:
+// the same mismatch `dibs web` (namedLink) and `dibs doctor` now refuse to
+// hide. Round nineteen of the pre-release review.
+func nameWithheldFor(addr string) string {
+	if isLoopbackAddr(addr) {
+		return ""
+	}
+	return "Remap is on this machine, but this board is off loopback and serves TLS: Remap serves " +
+		"names over plain HTTP and the board's session cookie is TLS-only, so a name would reach " +
+		"a board you could not unlock through it. The board keeps its address; reach it at " +
+		"https://" + addr + "/."
 }
 
 // isLoopbackAddr reports a host:port on loopback, which the daemon serves in

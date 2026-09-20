@@ -32,11 +32,11 @@ func TestNonceRecoveryWithASessionIDTakesItFromTheOldHolder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res["agent_id"] != "new" || !s.Agents["new"].HoldsSessionForTest(thread) {
+	if res["agent_id"] != "new" || !s.Agents["new"].HoldsSession(thread) {
 		t.Fatalf("setup: the nonce recovery did not land on \"new\" holding the thread (%v), "+
 			"so the assertion below proves nothing", res)
 	}
-	if s.Agents["old"].HoldsSessionForTest(thread) {
+	if s.Agents["old"].HoldsSession(thread) {
 		t.Error("the old holder still holds the session after a nonce recovery stated it: " +
 			"two stated holders, and its next check_in regains hook routing for the thread")
 	}

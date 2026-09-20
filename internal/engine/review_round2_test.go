@@ -116,10 +116,10 @@ func TestBindSessionTakeoverLeavesTheOldHolder(t *testing.T) {
 	if _, err := e.Do(ctx, &core.Op{Kind: core.OpBindSession, Token: "tok-new", SessionID: thread}); err != nil {
 		t.Fatal(err)
 	}
-	if !st.Agents["new"].HoldsSessionForTest(thread) {
+	if !st.Agents["new"].HoldsSession(thread) {
 		t.Fatal("the bind did not land, so this proves nothing")
 	}
-	if st.Agents["old"].HoldsSessionForTest(thread) {
+	if st.Agents["old"].HoldsSession(thread) {
 		t.Error("the dormant holder still holds the session after bind_session took it: when it " +
 			"returns, two active stated holders, and a hook resolves by id order")
 	}

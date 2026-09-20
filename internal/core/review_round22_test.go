@@ -31,11 +31,11 @@ func TestAnActivePeersUnvettedBindingSurvivesAnotherTake(t *testing.T) {
 	}, t0); err != nil {
 		t.Fatal(err)
 	}
-	if !s.Agents["active-peer"].HoldsSessionForTest(synthetic) {
+	if !s.Agents["active-peer"].HoldsSession(synthetic) {
 		t.Error("the active peer lost its stated session id to a register that was vetted for " +
 			"somebody else's thread: its hooks now resolve to the newcomer")
 	}
-	if s.Agents["dormant-peer"].HoldsSessionForTest(thread) {
+	if s.Agents["dormant-peer"].HoldsSession(thread) {
 		t.Error("the dormant peer the ingress named still holds the thread")
 	}
 }

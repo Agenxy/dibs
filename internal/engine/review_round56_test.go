@@ -37,7 +37,7 @@ func TestAPlainCheckInDoesNotGuessOverAStatedThread(t *testing.T) {
 		t.Fatal("setup:", err)
 	}
 	l := st.Agents["r"]
-	if l.HoldsSessionForTest(threadB) || l.CurrentSession != threadA {
+	if l.HoldsSession(threadB) || l.CurrentSession != threadA {
 		t.Fatalf("a plain check_in bound the directory's guess %s over the stated thread %s (current %q)",
 			threadB, threadA, l.CurrentSession)
 	}
@@ -70,10 +70,10 @@ func TestASuppliedAliasBeatsTheDirectoryGuessThroughIngress(t *testing.T) {
 		t.Fatal("setup:", err)
 	}
 	l := st.Agents["me"]
-	if !l.HoldsSessionForTest(mine) {
+	if !l.HoldsSession(mine) {
 		t.Fatalf("the alias that arrived with the call is not bound: the row holds %v", sessionsOf(l))
 	}
-	if l.HoldsSessionForTest(somebodyElse) {
+	if l.HoldsSession(somebodyElse) {
 		t.Fatalf("the directory's guess %s was bound beside a supplied alias: another session's hooks "+
 			"resolve here", somebodyElse)
 	}
