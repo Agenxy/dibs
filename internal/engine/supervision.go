@@ -75,7 +75,8 @@ func (e *Engine) noteChild(c Child, now time.Time) core.Result {
 	if e.children == nil {
 		e.children = map[string]Child{}
 	}
-	prev, known := e.children[c.SessionID]
+	key := e.childKey(c.Host, c.SessionID)
+	prev, known := e.children[key]
 	if known {
 		// A later event carries less than SessionStart did. Stop has no
 		// transcript_path, so fields are merged rather than replaced.
@@ -105,7 +106,7 @@ func (e *Engine) noteChild(c Child, now time.Time) core.Result {
 			c.Parent = l.ID
 		}
 	}
-	e.children[c.SessionID] = c
+	e.children[key] = c
 	return core.Result{
 		"ok": true, "session_id": c.SessionID, "state": c.State,
 		"parent": c.Parent, "watched": c.Transcript != "",
@@ -114,6 +115,21 @@ func (e *Engine) noteChild(c Child, now time.Time) core.Result {
 		// contract with no way to check it.
 		"progress": c.Progress,
 	}
+}
+
+// childKey is the record a session's announcements land on: the session id
+// for this machine's sessions, and for one announced from another machine,
+// that machine's too. `host-<ppid>` repeats across computers, and one key
+// merged two machines' children into one record: the second kept the
+// first's parent (mergeChild keeps what a later event does not carry) and
+// moved its progress counter. An announcement with no host keeps the plain
+// key, as before hosts existed, because older bridges say nothing. Round
+// eighteen of the pre-release review.
+func (e *Engine) childKey(host, sessionID string) string {
+	if host == "" || host == e.HostID() {
+		return sessionID
+	}
+	return host + "/" + sessionID
 }
 
 // mergeChild keeps what a later, thinner event does not carry.
@@ -206,11 +222,17 @@ func StateForEvent(event string) string {
 // A false answer means "no hook traffic seen for this session", never "the
 // plugin is not installed". Those differ, and the daemon can only see the first.
 func (e *Engine) HookTrafficSeen(ctx context.Context, sessionID string) bool {
+	return e.HookTrafficSeenOn(ctx, sessionID, "")
+}
+
+// HookTrafficSeenOn is HookTrafficSeen for a session on a known machine:
+// the record its hooks landed on is keyed by that machine (childKey).
+func (e *Engine) HookTrafficSeenOn(ctx context.Context, sessionID, host string) bool {
 	if sessionID == "" {
 		return false
 	}
 	res, err := e.query(ctx, func() core.Result {
-		_, ok := e.children[sessionID]
+		_, ok := e.children[e.childKey(host, sessionID)]
 		return core.Result{"seen": ok}
 	})
 	if err != nil {

@@ -108,6 +108,25 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round eighteen of the pre-release review: four findings.**
+  - Reattach by session id is scoped to the caller's machine. `host-<ppid>`
+    repeats across computers and people name agents by role, so a second
+    machine's plain `register` as "reviewer" under host-12345 recovered the
+    first machine's row: token rotated out from under it, mailbox taken. A
+    row or an op that recorded no host keeps the old answer, and no shipped
+    register carries one.
+  - Lifecycle records (`hook_session`, `hook_blocked`, `hook_poll`) are
+    keyed by machine as well as session id, so two machines' children with
+    one id are two records; they merged into one, the second keeping the
+    first's parent and moving its progress counter.
+  - The Codex stanza `dibs mcp-config` prints is built from the same env
+    the JSON block is, so a hub named as a Supgang peer reaches
+    `~/.codex/config.toml` with `DIBS_BOARD_PEER` as it did `.mcp.json`;
+    without it that bridge was fixed to the printed address.
+  - `dibs hook-poll`, `dibs hook`, `await`, `watch` and `monitor` dial the
+    hub where Supgang says it is now, as the bridge does, resolved once per
+    process; they dialled the saved address and timed out after the hub
+    moved.
 - **Round seventeen of the pre-release review: four findings.**
   - Every hook that reaches the daemon without the stdio bridge says which
     machine it is on: `dibs hook-poll` and the other hook subcommands, and

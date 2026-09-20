@@ -46,6 +46,8 @@ func TestAHookCallCarriesItsHost(t *testing.T) {
 	}))
 	defer srv.Close()
 	t.Setenv("DIBS_ADDR", strings.TrimPrefix(srv.URL, "http://"))
+	mcpEndpointOnce, mcpEndpointValue = sync.Once{}, ""
+	t.Cleanup(func() { mcpEndpointOnce, mcpEndpointValue = sync.Once{}, "" })
 
 	var out struct {
 		Agent string `json:"agent"`

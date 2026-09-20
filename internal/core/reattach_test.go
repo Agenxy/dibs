@@ -229,3 +229,52 @@ func TestReattachDoesNotCollapseDistinctSpaces(t *testing.T) {
 		t.Errorf("agent count = %d, want 3", got)
 	}
 }
+
+// A session id repeats across machines, and reattach must not follow it.
+//
+// The bridge derives `host-<ppid>` from its harness's process id, and pids
+// repeat across computers, so two agents on two machines can both state
+// host-12345; people name agents by role, so two named "reviewer" is the
+// ordinary case, not the exotic one. Reattach matched on (name, session id)
+// alone: the second machine's ordinary register recovered the first
+// machine's row, rotated its token out from under it and took its mailbox.
+// Reproduced by the pre-release review, round eighteen. A row on another
+// machine is not this session, however exactly its name and id match.
+// Not retroactive: no shipped register carries a host, and a row or an op
+// without one keeps the old answer.
+func TestRegisterDoesNotReattachAcrossMachines(t *testing.T) {
+	s := NewState("n1", DefaultLimits())
+	now := time.Now()
+	first, _, err := s.Apply(&Op{
+		Kind: OpRegister, Name: "reviewer", SessionID: "host-12345", NewToken: "tok1",
+		Agent: &AgentInfo{CWD: "/w/repo", HostID: "machine-a"}, V7Semantics: true,
+	}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, _, err := s.Apply(&Op{
+		Kind: OpRegister, Name: "reviewer", SessionID: "host-12345", NewToken: "tok2",
+		Agent: &AgentInfo{CWD: "/w/repo", HostID: "machine-b"}, V7Semantics: true,
+	}, now.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second["reattached"] == true || second["agent_id"] == first["agent_id"] {
+		t.Fatalf("a register from machine-b recovered machine-a's row: %v; machine-a's token is "+
+			"now dead and its mail is machine-b's", second)
+	}
+	if l := s.Agents[first["agent_id"].(string)]; l.Token != "tok1" {
+		t.Fatalf("machine-a's token was rotated to %q by a register on another machine", l.Token)
+	}
+	// The same machine, the same session: still its own row.
+	third, _, err := s.Apply(&Op{
+		Kind: OpRegister, Name: "reviewer", SessionID: "host-12345", NewToken: "tok3",
+		Agent: &AgentInfo{CWD: "/w/repo", HostID: "machine-a"}, V7Semantics: true,
+	}, now.Add(2*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if third["agent_id"] != first["agent_id"] || third["reattached"] != true {
+		t.Fatalf("machine-a's own register no longer reattaches: %v", third)
+	}
+}

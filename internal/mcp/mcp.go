@@ -1402,7 +1402,7 @@ func (s *Server) run(
 	// Whether this session's lifecycle hooks are actually live: observed, not
 	// asked about. SessionStart fires before the agent's first turn, so this is
 	// already known by the time it registers.
-	hooksLive := s.eng.HookTrafficSeen(ctx, a.SessionID)
+	hooksLive := s.eng.HookTrafficSeenOn(ctx, a.SessionID, resolveHostID(ctx, params))
 	return attachPluginHint(res, harness, reattached, hooksLive, a.SessionID != ""), nil
 }
 

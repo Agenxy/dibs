@@ -190,3 +190,41 @@ func (e *Engine) childrenSnapshot() map[string]map[string]any {
 	}
 	return out
 }
+
+// One session id on two machines is two children.
+//
+// The records were keyed by session id alone, and `host-<ppid>` repeats
+// across computers: the second machine's announcement merged into the
+// first's record, kept its parent (mergeChild keeps what a later event does
+// not carry, and the parent it kept was another machine's agent), and moved
+// its progress counter. Supervision then reasoned about one child assembled
+// from two machines. Reproduced by the pre-release review, round eighteen.
+// A record from a machine other than this one is keyed by that machine too;
+// an announcement with no host keeps the old key, as before hosts existed.
+func TestOneSessionIDOnTwoMachinesIsTwoChildren(t *testing.T) {
+	e, now := hubEngine(), time.Now()
+	e.noteChild(Child{
+		SessionID: "host-12345", CWD: "/w/repo", Host: "machine-a", Progress: 5,
+		State: StateForEvent("SessionStart"),
+	}, now)
+	e.noteChild(Child{
+		SessionID: "host-12345", CWD: "/w/repo", Host: "machine-b", Progress: 1,
+		State: StateForEvent("SessionStart"),
+	}, now)
+	if len(e.children) != 2 {
+		t.Fatalf("%d record(s) for one session id on two machines, want 2: %+v", len(e.children), e.children)
+	}
+	for _, c := range e.children {
+		want := map[string]int64{"machine-a": 5, "machine-b": 1}[c.Host]
+		if c.Progress != want {
+			t.Errorf("%s: progress %d, want %d: the counters of two machines were merged", c.Host, c.Progress, want)
+		}
+	}
+	// The hub's own machine and an announcement with no host share a key:
+	// both are this machine, and older bridges say nothing.
+	e.noteChild(Child{SessionID: "s-local", CWD: "/w/repo", Host: "hub-node", Progress: 2}, now)
+	e.noteChild(Child{SessionID: "s-local", CWD: "/w/repo", Progress: 3}, now)
+	if c, ok := e.children["s-local"]; !ok || c.Progress != 3 {
+		t.Fatalf("a local announcement and one with no host did not land on one record: %+v", e.children)
+	}
+}
