@@ -33,6 +33,11 @@ func TestSituationalNoticesAreRebuiltFromTheRingAfterARestart(t *testing.T) {
 		// however its watermark reads.
 		"newcomer": {ID: "newcomer", Name: "newcomer", Status: core.StatusActive, AckedSerial: 0, CreatedSerial: 90},
 		"director": {ID: "director", Name: "director", Status: core.StatusActive, AckedSerial: 100, CreatedSerial: 1},
+		// Evicted at 55 and archived since: idle, resumable, and owed the
+		// instruction when it comes back. Closed is the only state with
+		// nobody to tell (round ten of the pre-release review).
+		"dormouse": {ID: "dormouse", Name: "dormouse", Status: core.StatusArchived, AckedSerial: 40, CreatedSerial: 1},
+		"departed": {ID: "departed", Name: "departed", Status: core.StatusClosed, AckedSerial: 40, CreatedSerial: 1},
 	}
 	st.Spaces = map[string]*core.Space{
 		"auth": {ID: "auth", Members: map[string]*core.Membership{"member": {}, "joiner": {}}},
@@ -43,6 +48,8 @@ func TestSituationalNoticesAreRebuiltFromTheRingAfterARestart(t *testing.T) {
 		{Type: "agent.joined", Agent: "caughtup", Serial: 60, TS: at, Data: map[string]any{"agent_id": "auth", "admitted_by": "director"}},
 		{Type: "agent.joined", Agent: "joiner", Serial: 80, TS: at, Data: map[string]any{"agent_id": "auth"}},
 		{Type: "agent.evicted", Agent: "newcomer", Serial: 85, TS: at, Data: map[string]any{"agent_id": "auth", "by": "director"}},
+		{Type: "agent.evicted", Agent: "dormouse", Serial: 55, TS: at, Data: map[string]any{"agent_id": "auth", "by": "director"}},
+		{Type: "agent.evicted", Agent: "departed", Serial: 56, TS: at, Data: map[string]any{"agent_id": "auth", "by": "director"}},
 	}
 
 	restarted := New(st, &memLedger{}, deadProber{}, ring)
@@ -63,6 +70,13 @@ func TestSituationalNoticesAreRebuiltFromTheRingAfterARestart(t *testing.T) {
 	}
 	if got := texts("member"); len(got) != 1 || !strings.Contains(got[0], "joiner") {
 		t.Errorf("member's notices = %v, want to be told joiner arrived in its space", got)
+	}
+	if got := texts("dormouse"); len(got) != 1 || !strings.Contains(got[0], "stop work there") {
+		t.Errorf("an ARCHIVED agent's notices after restart = %v, want the eviction: it resumes, "+
+			"and the instruction it was owed is what it resumes to", got)
+	}
+	if got := texts("departed"); len(got) != 0 {
+		t.Errorf("a closed agent was told something: %v; closed is final and nobody reads it", got)
 	}
 	if got := texts("newcomer"); len(got) != 0 {
 		t.Errorf("an agent registered after the event was told about it: %v (a reused "+
