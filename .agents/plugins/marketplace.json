@@ -1,0 +1,14 @@
+{
+  "name": "dibs",
+  "owner": { "name": "Agenxy" },
+  "metadata": {
+    "description": "Machine-local AI-agent coordination: a shared board, typed mailboxes, and directory claims, with mail delivered into your session."
+  },
+  "plugins": [
+    {
+      "name": "dibs",
+      "source": "./plugins/codex",
+      "description": "Machine-local AI-agent coordination via the Dibs board, with mail delivered at Codex lifecycle boundaries."
+    }
+  ]
+}

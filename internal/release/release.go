@@ -45,6 +45,8 @@ var Manifests = []string{
 	"server.json",
 	"plugins/claude-code/.claude-plugin/plugin.json",
 	"internal/plugins/data/claude-code/.claude-plugin/plugin.json",
+	"plugins/codex/.codex-plugin/plugin.json",
+	"internal/plugins/data/codex/.codex-plugin/plugin.json",
 	"plugins/claude-desktop/manifest.json",
 }
 

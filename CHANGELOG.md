@@ -7,6 +7,22 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A Codex plugin, and `dibs codex-hooks --trust`, the step without which
+  Codex delivers nothing.** The checkout is now a Codex marketplace
+  (`.agents/plugins/marketplace.json`) offering `dibs@dibs`: MCP server over
+  stdio on 2026-07-28, the skill, and the three lifecycle hooks. Since Codex
+  0.153 a hook from a local plugin or the user's config is untrusted until a
+  person reviews it in the TUI, and an untrusted hook is dropped at discovery
+  without a word, so an installed plugin delivered zero `hook_poll` calls per
+  session (measured 2026-09-19 on 0.155.0-alpha.9.2; two with the review
+  bypassed, which is the control). `dibs codex-hooks` lists the Dibs hooks as
+  Codex reports them; `--trust` records their trust the way Codex's own
+  `/hooks` does, through its app-server protocol (`hooks/list` for the key
+  and hash Codex computes, `config/batchWrite` of `hooks.state`), touching
+  nothing that is not a Dibs hook. `dibs doctor` reports the untrusted state
+  until then. Verified: after trust, a plain `codex exec` session delivers
+  SessionStart and Stop.
+
 - **A hub's certificate is verified against the key its computer signed
   through Supgang, so joining it is one command and no fingerprint ceremony.**
   Supgang now carries service advertisements (its ADR 0002): a member signs,
@@ -87,6 +103,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   human's panel never lost it. Measured 71 KB to 36 KB on that board.
 
 ### Fixed
+
+- **`task review:release` fails when the reviewer did not review.** The brief
+  now ends with a `FINDINGS: <count>` line and the runner requires it: a run
+  whose reviewer said in so many words that it could not read the diff (its
+  tool router was broken) had exited 0, and an earlier one exited 0 with no
+  findings and no explanation. A gate that passes on "I did not look" is not a
+  gate; now it names what stopped the reviewer and exits non-zero.
 
 - **`dibs mcp-config` says not to paste its stdio block into
   `claude_desktop_config.json` on a machine with the Claude Code plugin**, at
