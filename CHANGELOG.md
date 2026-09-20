@@ -108,6 +108,21 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round twenty-one of the pre-release review: three findings.**
+  - A session alias is claimed from the holder on the CALLER's machine.
+    The claim looked the holder up across the whole board and a dormant
+    holder yields, so a register on machine B stating the synthetic
+    `host-12345` took that binding from a dormant agent on machine A, whose
+    hooks and guard then resolved to nobody.
+  - Session evidence of one agent under two names (a shared session id, a
+    registration provenance the other holds) speaks for one machine only;
+    two bridges on two machines that shared a pid read as one agent, and a
+    stranded mailbox could not be adopted onto the genuinely separate one.
+    A proven parent still counts across machines.
+  - The pi extension sends `_meta com.dibs/host` on every tool call, read
+    the way the bridge and the opencode plugin read it; a call without one
+    from another machine registered an agent with no machine, and its host
+    bridge was never chosen for a wake.
 - **Round twenty of the pre-release review: three findings.**
   - The fields this cycle added to a registration are bounded at admission
     like the rest: `host_id`, `repo_root`, the session alias and

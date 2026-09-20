@@ -139,6 +139,15 @@ func (s *State) AgentBySession(sid string) *Agent {
 	return s.agentBySessionWhere(sid, func(*Agent) bool { return true })
 }
 
+// AgentBySessionOn is AgentBySession narrowed to the rows that may be on
+// `host` (hookOnHost): the holder a claim from that machine can be taking
+// the id from. `host-<ppid>` repeats across computers, and the global
+// answer let a register on one machine take a dormant holder's binding on
+// another. "" keeps the global answer, as before hosts existed.
+func (s *State) AgentBySessionOn(sid, host string) *Agent {
+	return s.agentBySessionWhere(sid, func(l *Agent) bool { return hookOnHost(l, host) })
+}
+
 // agentBySessionWhere is AgentBySession over the rows keep admits. The
 // preferences below are the whole answer to "which of several holders", so
 // a lookup that narrows the rows first (to one machine's, in AgentForHookOn)
@@ -620,6 +629,16 @@ func (a *Agent) SameHands(other *Agent) bool {
 	}
 	if (other.ParentProven && other.Parent == a.ID) || (a.ParentProven && a.Parent == other.ID) {
 		return true
+	}
+	// Session evidence speaks for ONE MACHINE. `host-<ppid>` and the
+	// provenance copied from it repeat across computers, so two independent
+	// bridges on two machines that shared a pid read as one agent, and a
+	// stranded mailbox could not be adopted onto the genuinely separate one.
+	// Lineage above is proven by a vouched secret and crosses machines; a
+	// row with no recorded machine keeps the old answer. Round twenty-one of
+	// the pre-release review.
+	if !hookOnHost(a, hostOf(other)) {
+		return false
 	}
 	return registeredFromOneAnother(a, other) || a.sharesASessionWith(other)
 }
