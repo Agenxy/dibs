@@ -14,8 +14,10 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
@@ -75,8 +77,46 @@ func run() error {
 	}
 	defer func() { _ = devNull.Close() }()
 	cmd.Stdin = devNull
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	return cmd.Run()
+	// The reviewer's output goes to the terminal AND through a check for the
+	// one line the brief asks it to end with. Twice now a run has exited 0
+	// while reviewing nothing: once with no findings and no explanation, and
+	// once saying in so many words that it could not read the diff (its tool
+	// router was broken) while the task still reported success. A gate that
+	// passes when the reviewer says "I did not look" is not a gate.
+	var seen strings.Builder
+	cmd.Stdout = io.MultiWriter(os.Stdout, &seen)
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	count, ok := findingsLine(seen.String())
+	if !ok {
+		return errors.New("the reviewer did not end with a FINDINGS: <count> line, so it did " +
+			"not review the surface (or did not say so); read its output above, fix what " +
+			"stopped it, and run again")
+	}
+	fmt.Fprintf(os.Stderr, "reviewer reported %d finding(s)\n", count)
+	return nil
+}
+
+// findingsLine finds the brief's closing line. It is the last `FINDINGS: <n>`
+// in the output, so a reviewer that quotes the brief before answering is not
+// mistaken for one that answered.
+func findingsLine(out string) (int, bool) {
+	count, ok := -1, false
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		rest, found := strings.CutPrefix(line, "FINDINGS:")
+		if !found {
+			continue
+		}
+		n, err := strconv.Atoi(strings.TrimSpace(rest))
+		if err != nil {
+			continue
+		}
+		count, ok = n, true
+	}
+	return count, ok
 }
 
 func output(name string, args ...string) (string, error) {
