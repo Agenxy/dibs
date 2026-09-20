@@ -87,7 +87,7 @@ func TestAnUnheldButStillLiveSessionIdIsStillInherited(t *testing.T) {
 		t.Fatal("setup: no agent should hold this id, which is the whole point")
 	}
 
-	got := announcedSession(e.children, st, dir, now)
+	got := announcedSession(e.children, st, dir, "", now)
 	if got != liveSession {
 		t.Skipf("inference did not fire (%q); the join window or cwd cleaning has "+
 			"changed and this case needs rewriting rather than silently passing", got)

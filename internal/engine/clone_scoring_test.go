@@ -516,3 +516,76 @@ func TestASuppliedFootprintStaysSuppliedAfterItsIndexIsReplaced(t *testing.T) {
 	}
 	t.Fatal("near's declaration did not even surface far's space: the fixture does not overlap")
 }
+
+// AND IT OUTLIVES THE DECLARATION. Provenance on the slot decides only while
+// the slot exists: undeclare removes it, and the space keeps the footprint
+// that was merged in when the slot opened it, without the provenance. With
+// no live declaration left to compare against, judgedScore falls back to
+// that retained footprint, and the local agent was joined to the remote
+// peer's space on the strength of the shipped data after all. The space now
+// records that some of its footprint was supplied, and the fallback carries
+// it. Round fifteen of the pre-release review.
+func TestASuppliedFootprintStaysSuppliedAfterItsDeclarationIsRemoved(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	cfg := MatchConfig{JoinThreshold: 0.3, AutoJoin: AutoJoinAlways, Deadline: time.Second}
+	local := t.TempDir()
+	shipped := filepath.Join(local, "remote")
+	e.SetIndex(local, cloneScorer{"local", "shared.go"}, cfg, IndexInfo{Fingerprint: "h-local"})
+	e.SetIndex(shipped, cloneScorer{"shipped", "shared.go"}, cfg,
+		IndexInfo{Fingerprint: "h-shipped", SuppliedBy: "far", SuppliedHost: "member"})
+
+	reg := func(name string, info core.AgentInfo) string {
+		t.Helper()
+		res, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: name, Agent: &info})
+		if err != nil {
+			t.Fatalf("setup: register %s: %v", name, err)
+		}
+		tok, _ := res["token"].(string)
+		if _, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: tok}); err != nil {
+			t.Fatalf("setup: ack %s: %v", name, err)
+		}
+		return tok
+	}
+	far := reg("far", core.AgentInfo{CWD: shipped, RepoRoot: shipped, HostID: "member"})
+	near := reg("near", core.AgentInfo{CWD: local, RepoRoot: local})
+
+	const work = "fix refresh token expiry"
+	resFar, err := e.DoMatched(ctx, &core.Op{Kind: core.OpSetSlot, Token: far, Text: work})
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened := suggestions(t, resFar)
+	if len(opened) != 1 || opened[0].Action != "opened" {
+		t.Fatalf("far's declaration: %+v, want it to open a space", opened)
+	}
+	slot, _ := resFar["slot_id"].(string)
+	if slot == "" {
+		t.Fatalf("setup: far's declaration returned no slot id: %v", resFar)
+	}
+	// The declaration goes; far stays a member, and the space keeps the
+	// footprint the declaration gave it.
+	if _, err := e.Do(ctx, &core.Op{Kind: core.OpClearSlot, Token: far, SlotID: slot}); err != nil {
+		t.Fatalf("setup: undeclare: %v", err)
+	}
+
+	resNear, err := e.DoMatched(ctx, &core.Op{Kind: core.OpSetSlot, Token: near, Text: work})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range suggestions(t, resNear) {
+		if s.Space != opened[0].Space {
+			continue
+		}
+		if s.Action == "joined" || s.Action == "queued" {
+			t.Fatalf("near was %s to far's space on a shipped footprint whose declaration had "+
+				"been removed: %+v", s.Action, s)
+		}
+		return
+	}
+	t.Fatal("near's declaration did not even surface far's space: the fixture does not overlap")
+}

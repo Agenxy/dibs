@@ -14,9 +14,15 @@ import (
 // which files it has open, which works and is a guess; a child that announces
 // its own transcript removes the guess.
 type Child struct {
-	SessionID  string
-	Parent     string // the agent that owns it, "" until attributed
-	CWD        string
+	SessionID string
+	Parent    string // the agent that owns it, "" until attributed
+	CWD       string
+	// Host is the machine the announcement came from, as the transport
+	// established it ("" when it established none): a session id and a
+	// directory repeat across machines, and an inference that ignored this
+	// handed one machine's thread to an agent on another. Round fifteen of
+	// the pre-release review.
+	Host       string
 	Model      string
 	Transcript string
 	AgentID    string // set for a nested subagent
@@ -95,7 +101,7 @@ func (e *Engine) noteChild(c Child, now time.Time) core.Result {
 	// in internal/liveness, not a replacement: two agents in one repo share a
 	// cwd, and the environment does not.
 	if c.Parent == "" && e.state != nil {
-		if l := e.state.AgentForHook(c.SessionID, c.CWD); l != nil {
+		if l := e.state.AgentForHookOn(c.SessionID, c.CWD, c.Host); l != nil {
 			c.Parent = l.ID
 		}
 	}
@@ -119,6 +125,7 @@ func mergeChild(prev, next Child) Child {
 		return a
 	}
 	next.CWD = keep(prev.CWD, next.CWD)
+	next.Host = keep(prev.Host, next.Host)
 	next.Model = keep(prev.Model, next.Model)
 	next.Transcript = keep(prev.Transcript, next.Transcript)
 	next.AgentID = keep(prev.AgentID, next.AgentID)

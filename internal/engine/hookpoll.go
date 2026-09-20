@@ -84,10 +84,17 @@ func (e *Engine) hookOutput(out core.Result, strict bool) core.Result {
 //
 // Callers hold the writer loop: noteChild is not safe off it.
 func (e *Engine) announceHookSession(sessionID, cwd, event string) {
+	e.announceHookSessionFrom(sessionID, cwd, event, "")
+}
+
+// announceHookSessionFrom is announceHookSession with the machine the hook
+// came from, kept on the announcement so the directory inference can tell
+// this machine's sessions from another's.
+func (e *Engine) announceHookSessionFrom(sessionID, cwd, event, host string) {
 	if sessionID == "" {
 		return
 	}
-	e.noteChild(Child{SessionID: sessionID, CWD: cwd, State: StateForEvent(event)}, time.Now())
+	e.noteChild(Child{SessionID: sessionID, CWD: cwd, Host: host, State: StateForEvent(event)}, time.Now())
 }
 
 // hookWakeTerms decides whether there is anything worth a turn, and whether
@@ -196,7 +203,7 @@ func (e *Engine) HookPollFrom(
 ) (core.Result, error) {
 	cwd = foldSeparators(cwd) // as the fold spelled the cwd it is matched against
 	return e.query(ctx, func() core.Result {
-		e.announceHookSession(sessionID, cwd, event)
+		e.announceHookSessionFrom(sessionID, cwd, event, host)
 		l := e.state.AgentForHookOn(sessionID, cwd, host)
 		e.noteHookFor("poll", l, cwd)
 		e.noteTurnState(l, sessionID, event)

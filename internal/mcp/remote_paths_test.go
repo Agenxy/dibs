@@ -129,3 +129,32 @@ func TestAHookFromAnotherMachineDoesNotResolveToThisOnesAgent(t *testing.T) {
 			"for the wrong machine's agent", got)
 	}
 }
+
+// And a session announced on one machine is not inherited on another.
+//
+// The decision is tested in the engine (announcedSession); this is the
+// wiring: the host the transport established for the hook_poll has to
+// reach the announcement, and the host stamped on the register has to
+// reach the inference, or the two compare "" and "" and agree. Round
+// fifteen of the pre-release review reproduced alpha on machine-a
+// acquiring a thread that exists only on machine-b.
+func TestAnAnnouncementOnAnotherMachineIsNotInheritedThroughTheWire(t *testing.T) {
+	srv, _, _ := newServerWithEngine(t)
+	const thread = "b7804476-3292-4ad9-bddb-16f823328751"
+	toolCallWithMeta(t, srv, "hook_poll", map[string]any{
+		"session_id": thread, "event": "SessionStart", "cwd": "/w/repo",
+	}, map[string]any{HostMetaKey: "machine-b"})
+	alpha := toolCallWithMeta(t, srv, "register", map[string]any{
+		"name": "alpha", "cwd": "/w/repo", "session_id": "host-12345",
+	}, map[string]any{HostMetaKey: "machine-a"})
+	if alpha["token"] == nil {
+		t.Fatalf("setup: %v", alpha)
+	}
+	res := toolCallWithMeta(t, srv, "guard_path", map[string]any{
+		"session_id": thread, "cwd": "/w/repo", "path": "/w/repo/file.go",
+	}, map[string]any{HostMetaKey: "machine-a"})
+	if got := res["agent"]; got == "alpha" {
+		t.Fatalf("the thread announced only on machine-b resolves to alpha on machine-a: alpha "+
+			"inherited a session that is not on its machine: %v", res)
+	}
+}

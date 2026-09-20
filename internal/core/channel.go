@@ -142,6 +142,16 @@ type Space struct {
 	// different agents into different agents and make the ledger a work of
 	// fiction. Apply merges what the op carries and nothing else.
 	Predicted []PredFile
+	// Supplied records that some of Predicted came from an index an agent
+	// SHIPPED (Op.IndexSupplied), and is as sticky as Predicted is: the
+	// footprint never shrinks, so neither does what is known about where it
+	// came from. It exists for the one comparison that reads the space's own
+	// footprint rather than a member's declaration: judgedScore falls back
+	// to the union when no member holds a live declaration, which is the
+	// state undeclare leaves behind, and the fallback carried no provenance,
+	// so a shipped footprint decided a membership the moment its declaration
+	// was removed. Round fifteen of the pre-release review.
+	Supplied bool
 }
 
 // mergePredicted folds a new prediction into the agent's footprint, keeping the
@@ -211,6 +221,9 @@ type Membership struct {
 	// was understood to touch, and every later match against that space scored
 	// against a footprint missing a full member's files.
 	Predicted []PredFile
+	// Supplied is Space.Supplied for this footprint, carried for the same
+	// reason Predicted is: it reaches the space when the agent does.
+	Supplied bool
 }
 
 // Announcement is space traffic that must be acknowledged.
@@ -348,7 +361,7 @@ func (s *State) applySpaceOpen(l *Agent, op *Op, now time.Time) (Result, []Event
 	ch := &Space{
 		ID: id, Topic: op.Text, Key: coordKey(s.NodeID, s.Serial), Auto: op.Auto,
 		Members: map[string]*Membership{}, Subs: map[string]bool{},
-		OpenedBy: l.ID, Predicted: mergePredicted(nil, op.Predicted),
+		OpenedBy: l.ID, Predicted: mergePredicted(nil, op.Predicted), Supplied: op.IndexSupplied,
 	}
 	s.Spaces[id] = ch
 	evs := []Event{{Type: "agent.opened", Agent: l.ID, Data: map[string]any{
@@ -391,7 +404,7 @@ func memberFromOp(agent string, op *Op, serial uint64) *Membership {
 		Agent: agent, Score: op.Score, Threshold: op.Threshold,
 		ScorerID: op.ScorerID, ScorerVersion: op.ScorerVersion,
 		Evidence: op.Evidence, Auto: op.Auto, JoinedSerial: serial,
-		Predicted: mergePredicted(nil, op.Predicted),
+		Predicted: mergePredicted(nil, op.Predicted), Supplied: op.IndexSupplied,
 	}
 	if m.ScorerID == "" {
 		m.ScorerID = "explicit" // an agent that asked, rather than a score
@@ -414,6 +427,7 @@ func (ch *Space) promote(agent string, serial uint64) {
 	// The footprint the agent declared while waiting now counts, because the
 	// agent now counts.
 	ch.Predicted = mergePredicted(ch.Predicted, m.Predicted)
+	ch.Supplied = ch.Supplied || m.Supplied
 }
 
 func (s *State) applySpaceJoin(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
@@ -479,6 +493,7 @@ func (s *State) applySpaceJoin(l *Agent, op *Op, now time.Time) (Result, []Event
 	m := memberFromOp(l.ID, op, s.Serial+1)
 	ch.Members[l.ID] = m
 	ch.Predicted = mergePredicted(ch.Predicted, op.Predicted)
+	ch.Supplied = ch.Supplied || op.IndexSupplied
 	delete(ch.Subs, l.ID) // membership supersedes subscription
 	evs := []Event{{Type: "agent.joined", Agent: l.ID, Data: map[string]any{
 		"agent_id": ch.ID, "auto": op.Auto, "score": op.Score,
@@ -1314,6 +1329,7 @@ func (s *State) MatchAgentsEvidence(
 		score, shared := jaccard(pred, fp, discount)
 		ev, rel, compared := s.evidenceAgainstMembers(ch, mine, myCWD, repo, discount,
 			identityFirst{me: s.Agents[agent], fallback: lens})
+		ev.PeerSupplied = unionProvenance(ev, compared, ch)
 		score = judgedScore(score, ev, compared)
 		if worthless(score, sharedRefs, rel) {
 			continue
@@ -1607,6 +1623,7 @@ func (s *State) carryQueue(src, dst *Space) (queued, admitted int) {
 			// of a promotion is a full member whose files the agent has no
 			// record of, which is exactly the hole the promote fix closed.
 			dst.Predicted = mergePredicted(dst.Predicted, m.Predicted)
+			dst.Supplied = dst.Supplied || m.Supplied
 		} else {
 			dst.Members[id] = &Membership{Agent: id, ScorerID: "merge", JoinedSerial: s.Serial + 1}
 		}
@@ -1833,6 +1850,7 @@ func (s *State) applySpaceMerge(l *Agent, op *Op, now time.Time) (Result, []Even
 		moved++
 	}
 	dst.Predicted = mergePredicted(dst.Predicted, src.Predicted)
+	dst.Supplied = dst.Supplied || src.Supplied
 	for id := range src.Subs {
 		if _, isMember := dst.Members[id]; !isMember {
 			dst.Subs[id] = true
@@ -1889,6 +1907,7 @@ func (s *State) applySpaceAdmit(l *Agent, op *Op, now time.Time) (Result, []Even
 		Evidence: op.Evidence, JoinedSerial: s.Serial + 1,
 	}
 	ch.Predicted = mergePredicted(ch.Predicted, op.Predicted)
+	ch.Supplied = ch.Supplied || op.IndexSupplied
 	delete(ch.Subs, target)
 	dequeue(ch, target)
 	evs := []Event{{Type: "agent.joined", Agent: target, To: target, Data: map[string]any{

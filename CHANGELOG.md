@@ -108,6 +108,23 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round fifteen of the pre-release review: three findings.**
+  - A shipped footprint decides no membership after its declaration is
+    gone either. `undeclare` removed the slot that carried the provenance
+    and left the footprint merged into the space; with no live declaration
+    to compare, the score fell back to that footprint and the local agent
+    was joined on it. A space now records that some of its footprint was
+    supplied, and the fallback carries that.
+  - The host-scoped session lookup (a hook or guard from a known machine)
+    keeps every preference the plain one has: stated over guessed, active,
+    held first. It took whichever holder map iteration reached, so two
+    agents through one bridge on one machine resolved to either per call,
+    and a guard attributed to the claim holder allowed the sibling's edit.
+  - A session announced from another machine is not inherited by directory.
+    The announcement dropped the host the transport established, so an
+    agent registering on machine A at a path a session had announced from
+    on machine B was handed B's thread; its guard then answered for A's
+    agent and its wake resumed a thread that exists only on B.
 - **Round fourteen of the pre-release review: two findings, both edges of
   round thirteen.**
   - The repository question is answered from the two ROWS' recorded

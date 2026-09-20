@@ -147,7 +147,7 @@ func TestALongSpaceNameStillDisambiguates(t *testing.T) {
 	// exists to resolve rather than the behaviour under test.
 	seen := map[string]bool{}
 	for i, who := range []string{"one", "two", "three"} {
-		sug := e.openFirstSpace(ctx, token(who), "some work", []string{ref}, "", overlap.Prediction{}, nil)
+		sug := e.openFirstSpace(ctx, token(who), "some work", []string{ref}, "", overlap.Prediction{}, core.Slot{})
 		if sug == nil {
 			t.Fatalf("agent %d got no space at all: every retry collided with the same "+
 				"id, which is the silent failure this guards", i+1)
