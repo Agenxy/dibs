@@ -84,3 +84,48 @@ func TestAResumeMovesTheAgentToTheMachineItResumedOn(t *testing.T) {
 		t.Errorf("after resuming from laptop the row's host is %q: its wakes go to the desktop it left", got)
 	}
 }
+
+// A bridge's session id repeats across machines, and the guard must not
+// resolve one machine's hook to another machine's agent.
+//
+// The stdio bridge derives `host-<ppid>` from its harness process, and pids
+// repeat across computers, so two agents on two machines can both state
+// host-12345. The guard and hook lookups matched on the session id alone:
+// beta's hook resolved to alpha, and beta's guard answered "alpha, allow,
+// no-claim" for a file alpha held exclusively, while the equivalent
+// token-authenticated claim from beta was correctly refused. Round twelve
+// of the pre-release review reproduced it. The machine a hook comes from is
+// what the transport established for the call, and it decides.
+func TestAHookFromAnotherMachineDoesNotResolveToThisOnesAgent(t *testing.T) {
+	srv, _, _ := newServerWithEngine(t)
+	const shared = "host-12345"
+	alpha := toolCallWithMeta(t, srv, "register", map[string]any{
+		"name": "alpha", "cwd": "/w/repo", "session_id": shared,
+	}, map[string]any{HostMetaKey: "machine-a"})
+	beta := toolCallWithMeta(t, srv, "register", map[string]any{
+		"name": "beta", "cwd": "/w/repo", "session_id": shared,
+	}, map[string]any{HostMetaKey: "machine-b"})
+	for _, tok := range []any{alpha["token"], beta["token"]} {
+		if tok == nil {
+			t.Fatalf("setup: %v %v", alpha, beta)
+		}
+		toolCall(t, srv, "check_in", map[string]any{"token": tok})
+	}
+
+	// beta's hook, from machine-b, is beta's.
+	res := toolCallWithMeta(t, srv, "hook_poll", map[string]any{
+		"session_id": shared, "event": "SessionStart", "cwd": "/w/repo",
+	}, map[string]any{HostMetaKey: "machine-b"})
+	if got := res["agent"]; got != "beta" {
+		t.Errorf("a hook from machine-b resolved to %v, want beta", got)
+	}
+	// And so is beta's guard, which alpha's claims do not cover... except by
+	// the repository rule, which is not in play here: two paths, two disks.
+	res = toolCallWithMeta(t, srv, "guard_path", map[string]any{
+		"session_id": shared, "path": "/w/repo/file.go", "cwd": "/w/repo",
+	}, map[string]any{HostMetaKey: "machine-b"})
+	if got := res["agent"]; got != "beta" {
+		t.Errorf("a guard query from machine-b resolved to %v, want beta: the guard is deciding "+
+			"for the wrong machine's agent", got)
+	}
+}

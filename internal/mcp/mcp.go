@@ -1278,8 +1278,8 @@ func (s *Server) run(
 		// compared as a string against the cwd the bridge recorded, and a
 		// harness that passes the alias the user typed (/tmp/x) would never
 		// match an agent registered from the resolved name (/private/tmp/x).
-		return s.eng.HookPoll(ctx, a.SessionID, a.Event, callerPath(ctx, params, a.CWD),
-			truthy(a.StopActive), truthy(a.StrictOutput))
+		return s.eng.HookPollFrom(ctx, a.SessionID, a.Event, callerPath(ctx, params, a.CWD),
+			resolveHostID(ctx, params), truthy(a.StopActive), truthy(a.StrictOutput))
 	case "hook_session":
 		return s.eng.NoteChildSession(ctx, engine.Child{
 			SessionID: a.SessionID, CWD: callerPath(ctx, params, a.CWD), Model: a.Model,
@@ -1294,7 +1294,8 @@ func (s *Server) run(
 			State: "blocked", Blocked: a.ToolName, Turn: a.TurnID,
 		})
 	case "guard_path":
-		return s.eng.GuardPath(ctx, a.SessionID, callerPath(ctx, params, a.Path), callerPath(ctx, params, a.CWD))
+		return s.eng.GuardPathFrom(ctx, a.SessionID, callerPath(ctx, params, a.Path),
+			callerPath(ctx, params, a.CWD), resolveHostID(ctx, params))
 	case "board":
 		return s.showBoard(ctx, a.Token, a.View)
 	case "bind_session":

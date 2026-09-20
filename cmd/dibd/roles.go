@@ -217,9 +217,19 @@ func withdrawUndeclaredRoles(ctx context.Context, eng *engine.Engine, c RolesCon
 			if declared[role][name] && (want == "" || want == pinned) {
 				continue // still declared, still this credential
 			}
+			// THE PIN GOES ONLY WHEN THE WITHDRAWAL IS SETTLED. It was dropped
+			// first and saved whatever withdrawOne then managed, so a lookup
+			// that failed, or a demotion the engine refused, left the role
+			// held and the one record that this mechanism granted it gone:
+			// a transient failure made a revoked privilege permanent. The
+			// pin now stays until the role is withdrawn, or nobody carries
+			// the credential, or a person's decision stands; the next tick
+			// retries the rest. Round twelve of the pre-release review.
+			if !withdrawOne(ctx, eng, role, name, pinned) {
+				continue
+			}
 			delete(byName, name)
 			changed = true
-			withdrawOne(ctx, eng, role, name, pinned)
 		}
 	}
 	if changed {
@@ -239,34 +249,46 @@ func withdrawUndeclaredRoles(ctx context.Context, eng *engine.Engine, c RolesCon
 // either. The fingerprint is what the pin recorded and the holder is whoever
 // carries it, whatever it calls itself now. Found by the pre-release review,
 // round five.
-func withdrawOne(ctx context.Context, eng *engine.Engine, role, name, pinned string) {
+//
+// Reports whether the matter is SETTLED, so the caller may drop the pin:
+// the role withdrawn, or nobody carrying the credential, or already not
+// held, or a person's decision standing. A failure to look up or to demote
+// is not settled, and the pin is the retry.
+func withdrawOne(ctx context.Context, eng *engine.Engine, role, name, pinned string) bool {
 	id, err := eng.AgentByIdentity(ctx, pinned)
 	if err != nil {
-		slog.Warn("could not look up the holder of a declared role's credential",
-			"agent", name, "role", role, "err", err)
-		return
+		slog.Warn("could not look up the holder of a declared role's credential; keeping "+
+			"its pin for the next tick", "agent", name, "role", role, "err", err)
+		return false
 	}
 	if id == "" {
 		slog.Info("a declared role's pin names a credential no agent carries any "+
 			"more, so the pin is dropped and there is nothing to withdraw",
 			"agent", name, "role", role)
-		return
+		return true
 	}
-	if held, err := eng.AgentRole(ctx, id); err != nil || held != role {
-		return // already not holding what was pinned
+	held, err := eng.AgentRole(ctx, id)
+	if err != nil {
+		slog.Warn("could not read the role of a declared role's holder; keeping its pin "+
+			"for the next tick", "agent", name, "role", role, "err", err)
+		return false
+	}
+	if held != role {
+		return true // already not holding what was pinned
 	}
 	res, err := eng.GrantRole(ctx, id, core.RoleMember)
 	if err != nil {
-		slog.Warn("could not withdraw a role no longer declared in dibs.toml",
-			"agent", name, "role", role, "err", err)
-		return
+		slog.Warn("could not withdraw a role no longer declared in dibs.toml; keeping its "+
+			"pin for the next tick", "agent", name, "role", role, "err", err)
+		return false
 	}
 	if res["stands"] != nil {
 		slog.Info("declared role not withdrawn: a person set this agent's role "+
 			"during this run", "agent", name, "role", role, "why", res["stands"])
-		return
+		return true
 	}
 	slog.Info("withdrew a role no longer declared in dibs.toml", "agent", name, "role", role)
+	return true
 }
 
 // grantOne resolves a declared name, grants the role if it may, and reports the

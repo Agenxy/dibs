@@ -107,6 +107,16 @@ type MatchStatus struct {
 	// carries a permissions hint about this machine's disk. Round four of the
 	// pre-release review.
 	Remote []string `json:"remote,omitempty"`
+	// SuppliedHosts and RemoteHosts say WHICH MACHINE each supplied index
+	// and each remote tree belongs to, by root ("" for this machine), and
+	// Host is this machine. Indexes are keyed by path and a path repeats
+	// across machines: without these a bridge on one machine read another
+	// machine's index at its path as "supplied" and never shipped, and
+	// doctor read the same record as the tree being served. Round twelve of
+	// the pre-release review.
+	SuppliedHosts map[string]string `json:"supplied_hosts,omitempty"`
+	RemoteHosts   map[string]string `json:"remote_hosts,omitempty"`
+	Host          string            `json:"host,omitempty"`
 }
 
 type matchStatusState struct {
@@ -208,6 +218,12 @@ func (e *Engine) SetMatchStatus(s MatchStatus) {
 	if s.Remote == nil {
 		s.Remote = e.matchStatus.st.Remote
 	}
+	if s.SuppliedHosts == nil {
+		s.SuppliedHosts = e.matchStatus.st.SuppliedHosts
+	}
+	if s.RemoteHosts == nil {
+		s.RemoteHosts = e.matchStatus.st.RemoteHosts
+	}
 	e.matchStatus.st = s
 }
 
@@ -215,6 +231,12 @@ func (e *Engine) SetMatchStatus(s MatchStatus) {
 // daemon could not read: the tree stops being listed unreadable, because
 // matching works there now, and the agent is named so doctor can say so.
 func (e *Engine) NoteSuppliedIndex(root, agent string) {
+	e.NoteSuppliedIndexFrom(root, agent, "")
+}
+
+// NoteSuppliedIndexFrom is NoteSuppliedIndex with the shipper's machine, ""
+// for this one.
+func (e *Engine) NoteSuppliedIndexFrom(root, agent, host string) {
 	e.matchStatus.mu.Lock()
 	defer e.matchStatus.mu.Unlock()
 	st := e.matchStatus.st
@@ -230,6 +252,12 @@ func (e *Engine) NoteSuppliedIndex(root, agent string) {
 	}
 	supplied[root] = agent
 	st.Supplied = supplied
+	hosts := make(map[string]string, len(st.SuppliedHosts)+1)
+	for k, v := range st.SuppliedHosts {
+		hosts[k] = v
+	}
+	hosts[root] = host
+	st.SuppliedHosts = hosts
 	e.matchStatus.st = st
 }
 
@@ -252,6 +280,13 @@ func (e *Engine) forgetSuppliedIndex(root string, remote bool) {
 		}
 	}
 	st.Supplied = supplied
+	hosts := make(map[string]string, len(st.SuppliedHosts))
+	for k, v := range st.SuppliedHosts {
+		if k != root {
+			hosts[k] = v
+		}
+	}
+	st.SuppliedHosts = hosts
 	if !remote && !slices.Contains(st.Unreadable, root) {
 		st.Unreadable = append(slices.Clone(st.Unreadable), root)
 	}
@@ -277,9 +312,11 @@ func (e *Engine) NoteIndexingTree(cwd string) {
 	}
 	e.matchStatus.st = MatchStatus{
 		Phase: MatchIndexing, Repo: cwd, Since: time.Now(),
-		Unreadable: e.matchStatus.st.Unreadable,
-		Supplied:   e.matchStatus.st.Supplied,
-		Remote:     e.matchStatus.st.Remote,
+		Unreadable:    e.matchStatus.st.Unreadable,
+		Supplied:      e.matchStatus.st.Supplied,
+		Remote:        e.matchStatus.st.Remote,
+		SuppliedHosts: e.matchStatus.st.SuppliedHosts,
+		RemoteHosts:   e.matchStatus.st.RemoteHosts,
 	}
 }
 
@@ -287,17 +324,33 @@ func (e *Engine) NoteIndexingTree(cwd string) {
 // bridge to ship an index for. Nothing about the phase changes: another
 // machine's tree says nothing about what this daemon has indexed.
 func (e *Engine) NoteRemoteTree(cwd string) {
+	e.NoteRemoteTreeOn(cwd, "")
+}
+
+// NoteRemoteTreeOn is NoteRemoteTree with the machine the tree is on.
+func (e *Engine) NoteRemoteTreeOn(cwd, host string) {
 	if cwd == "" {
 		return
 	}
 	e.matchStatus.mu.Lock()
 	defer e.matchStatus.mu.Unlock()
-	for _, seen := range e.matchStatus.st.Remote {
+	st := e.matchStatus.st
+	if host != "" {
+		hosts := make(map[string]string, len(st.RemoteHosts)+1)
+		for k, v := range st.RemoteHosts {
+			hosts[k] = v
+		}
+		hosts[cwd] = host
+		st.RemoteHosts = hosts
+	}
+	for _, seen := range st.Remote {
 		if seen == cwd {
+			e.matchStatus.st = st
 			return
 		}
 	}
-	e.matchStatus.st.Remote = append(e.matchStatus.st.Remote, cwd)
+	st.Remote = append(slices.Clone(st.Remote), cwd)
+	e.matchStatus.st = st
 }
 
 // NoteUnreadableTree records one tree the daemon cannot read, without changing
@@ -344,6 +397,7 @@ func (e *Engine) MatchStatus() MatchStatus {
 	if st.Hint == "" {
 		st.Hint = matchHint(st)
 	}
+	st.Host = e.HostID()
 	return st
 }
 

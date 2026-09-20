@@ -1512,7 +1512,7 @@ func (e *Engine) WorkingDirectories(ctx context.Context) []string {
 				// says so, so that machine's bridge ships for it after a
 				// restart as it did at registration (round five of the
 				// pre-release review found the list empty after boot).
-				e.NoteRemoteTree(a.Agent.CWD)
+				e.NoteRemoteTreeOn(a.Agent.CWD, a.Agent.HostID)
 				continue
 			}
 			seen[a.Agent.CWD] = true
@@ -1547,8 +1547,8 @@ func (e *Engine) noteTreeOf(info *core.AgentInfo) {
 	if info == nil || info.CWD == "" {
 		return
 	}
-	if e.remoteHostOf(&core.Agent{Agent: info}) != "" {
-		e.NoteRemoteTree(info.CWD)
+	if host := e.remoteHostOf(&core.Agent{Agent: info}); host != "" {
+		e.NoteRemoteTreeOn(info.CWD, host)
 		return
 	}
 	e.noteRepoOf(info.CWD)

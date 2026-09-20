@@ -108,6 +108,26 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round twelve of the pre-release review: four findings, all reproduced
+  by the reviewer.**
+  - A bridge's session id (`host-<ppid>`) repeats across machines, and hook
+    and guard lookups matched on it alone: beta's guard resolved to alpha on
+    another machine and allowed a write alpha held exclusively. The machine
+    a hook comes from, as the transport established it, now decides which
+    holder of a repeated id is the caller.
+  - Role withdrawal dropped the pin before the demotion and saved it
+    whatever happened next, so a transient failure (a cancelled context at
+    shutdown) left a revoked role held with no record that the config had
+    granted it. The pin stays until the withdrawal is settled; the next
+    tick retries.
+  - The bridge read another machine's supplied index at its path as its own
+    and never shipped; the status now says which machine each supplied
+    index and each remote tree belongs to, the bridge ships unless the
+    index is its own machine's, and doctor says when a path holds another
+    machine's tree.
+  - The bridge's status request is bounded by the shipper's context and a
+    deadline; a daemon that accepted the connection and never answered held
+    every later recheck and shipment for that tree.
 - **Round eleven of the pre-release review: three findings.**
   - Process ownership (which pid this daemon may probe) is decided from the
     host id before the hostname label: a resume on another machine updates

@@ -103,6 +103,23 @@ func TestTheBridgeShipsForATreeTheDaemonReportsRemote(t *testing.T) {
 	if wantsIndex(matchStatusJSON{Phase: "ready", Remote: []string{"/srv/other"}}, root) {
 		t.Error("some OTHER remote tree triggered a shipment")
 	}
+	// And a supplied index at this path from ANOTHER machine is not ours: the
+	// daemon serves it to that machine only, so this bridge still ships and
+	// hears the daemon's refusal rather than staying silent. Round twelve.
+	st := matchStatusJSON{
+		Remote: []string{root}, Supplied: map[string]string{root: "them"},
+		SuppliedHosts: map[string]string{root: "machine-a"}, Host: "hub",
+	}
+	if suppliedFor(st, root, "machine-b") {
+		t.Error("another machine's index at this path was read as this machine's")
+	}
+	if !suppliedFor(st, root, "machine-a") {
+		t.Error("this machine's own shipment was not recognised")
+	}
+	local := matchStatusJSON{Unreadable: []string{root}, Supplied: map[string]string{root: "me"}, Host: "hub"}
+	if !suppliedFor(local, root, "") || !suppliedFor(local, root, "hub") {
+		t.Error("a local shipment was not recognised by a local bridge")
+	}
 }
 
 // The bridge ships again after the daemon it shipped to has restarted.
@@ -312,5 +329,32 @@ func TestTheShipperFollowsTheRegisteredDirectory(t *testing.T) {
 		<-tokens
 	case <-time.After(5 * time.Second):
 		t.Fatal("no shipment for the directory the agent moved to")
+	}
+}
+
+// A status request that stalls does not hold the shipper past its
+// cancellation. The loop asks through the bridge's streaming client, which
+// has no timeout of its own, and the request was built without a context:
+// a daemon that accepted the connection and never answered held every
+// later recheck and shipment for that tree, and cancelling the shipper did
+// not end the request. Round twelve of the pre-release review.
+func TestAStalledStatusRequestDoesNotOutliveTheShipper(t *testing.T) {
+	hold := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-hold // never answers until the test lets go
+	}))
+	t.Cleanup(func() { close(hold); srv.Close() })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		fetchMatchStatusCtx(ctx, srv.Client(), srv.URL, "secret")
+	}()
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the status request outlived its context: a stalled daemon holds the shipper forever")
 	}
 }

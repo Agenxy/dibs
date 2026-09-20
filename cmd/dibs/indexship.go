@@ -239,8 +239,8 @@ func shipWhenUnreadable(
 		// the configured address before Supgang resolved a moved hub, so the
 		// shipment went one way and every verdict poll the other. Round three
 		// of the pre-release review.
-		st := fetchMatchStatusAt(client, apiBase(url), secret)
-		if !wantsIndex(st, root) || suppliedFor(st, root) {
+		st := fetchMatchStatusCtx(ctx, client, apiBase(url), secret)
+		if !wantsIndex(st, root) || suppliedFor(st, root, hostID()) {
 			continue
 		}
 		if err := shipIndex(ctx, client, url, secret, sh.get(), root); err != nil {
@@ -250,11 +250,28 @@ func shipWhenUnreadable(
 }
 
 // suppliedFor reports whether the daemon already holds a shipped index for
-// this root: after one shipment the verdict still lists the tree (it is
-// still one the daemon cannot read), and Supplied is what says it is served.
-func suppliedFor(st matchStatusJSON, root string) bool {
-	_, ok := st.Supplied[root]
-	return ok
+// this root FROM THIS MACHINE: after one shipment the verdict still lists
+// the tree (it is still one the daemon cannot read), and Supplied is what
+// says it is served. A path repeats across machines and an index is served
+// only to the machine it was shipped from, so another machine's index at
+// this path is not ours: shipping then gets the daemon's plain refusal
+// (one path holds one tree) instead of silence. Round twelve of the
+// pre-release review.
+func suppliedFor(st matchStatusJSON, root, own string) bool {
+	if _, ok := st.Supplied[root]; !ok {
+		return false
+	}
+	if st.Host == "" && st.SuppliedHosts == nil {
+		return true // a daemon from before indexes were per machine: one machine, ours
+	}
+	by := st.SuppliedHosts[root]
+	if by == "" {
+		by = st.Host // shipped from the daemon's own machine
+	}
+	if own == "" {
+		own = st.Host // this bridge asserts nothing: it is on the daemon's machine
+	}
+	return by == own
 }
 
 // wantsIndex reads the daemon's verdict: it tried this tree and could not
