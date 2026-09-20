@@ -108,6 +108,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A session that never registered is a stranger even beside a registered
+  agent, once that agent's own hooks resolve.** The hook-health counters
+  read any unresolved lifecycle call from a directory with an active agent
+  as a misbinding, which is only right while that agent could be the caller.
+  The pre-release reviewer, a Codex session run in this checkout that never
+  registers by design, turned `dibs doctor` red ("somebody's mail is not
+  being delivered") beside an agent whose every hook resolved, and the
+  daemon logged it at INFO as a wake path reaching no one. A miss now counts
+  as a misbinding only while some active agent in that directory has never
+  been reached by a hook of its own; the fault shape is unchanged for an
+  agent no hook has ever resolved to.
 - **The stdio bridge finds its Claude Code session by its parent, not by
   `CLAUDE_PID`.** Claude Code 2.1.275 exports `CLAUDE_PID` to shell children
   and not to MCP servers, so every plugin bridge read no sidecar: `_meta
