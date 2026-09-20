@@ -129,7 +129,8 @@ func (e *Engine) scorerAndCfg() (overlap.Scorer, MatchConfig) {
 // semantic suggestions. It still gets the shared-refs and shared-dirs signals,
 // which are computed in the pure core and need no index at all.
 func (e *Engine) scorerFor(cwd string) (overlap.Scorer, MatchConfig) {
-	return e.scorerForLocation(location{cwd: cwd})
+	s, cfg, _ := e.scorerForLocation(location{cwd: cwd})
+	return s, cfg
 }
 
 // location is where an agent is, as the daemon recorded it: its working
@@ -155,11 +156,18 @@ type location struct {
 // none. The Codex review of #111 read the rule as "never a placed agent" and
 // asked for that; it would refuse the shipper the index it shipped, which is
 // the one agent the index exists for.
-func (e *Engine) scorerForLocation(loc location) (overlap.Scorer, MatchConfig) {
+// THE FINGERPRINT COMES WITH THE SCORER, under one lock. It was read
+// separately afterwards (fingerprintOf), so a shipment replacing the index
+// between the two recorded one index's prediction under another's
+// fingerprint: two coordinate systems then compared as one, which is the
+// comparison issue #39 exists to prevent. Round twenty-eight of the
+// pre-release review.
+// The third return is the fingerprint of the index the scorer answers in.
+func (e *Engine) scorerForLocation(loc location) (overlap.Scorer, MatchConfig, string) {
 	e.matchMu.RLock()
 	defer e.matchMu.RUnlock()
 	if len(e.scorers) == 0 {
-		return e.scorer, e.matchCfg
+		return e.scorer, e.matchCfg, e.indexes[e.matchCfg.Repo].Fingerprint
 	}
 	// Longest matching root wins, so a nested checkout is scored by its own
 	// index rather than by the parent it happens to sit inside. The root is
@@ -194,7 +202,7 @@ func (e *Engine) scorerForLocation(loc location) (overlap.Scorer, MatchConfig) {
 			// thirteen of the pre-release review.
 			cfg.Repo = ""
 		}
-		return nil, cfg
+		return nil, cfg, e.indexes[cfg.Repo].Fingerprint
 	}
 	cfg := e.matchCfg
 	cfg.Repo = bestRepo
@@ -209,7 +217,7 @@ func (e *Engine) scorerForLocation(loc location) (overlap.Scorer, MatchConfig) {
 		cfg.JoinThreshold = 0
 		cfg.AutoJoin = AutoJoinNever
 	}
-	return best, cfg
+	return best, cfg, e.indexes[bestRepo].Fingerprint
 }
 
 // indexSpeaksForHost decides whether an index keyed by a path on this disk
@@ -610,7 +618,7 @@ func (e *Engine) matchDeclaration(
 	ctx context.Context, token string, loc location, decl core.Slot,
 ) ([]Suggestion, matchOutcome) {
 	declaration, declRefs, declDirs := decl.Text, decl.Refs, decl.Dirs
-	scorer, cfg := e.scorerForLocation(loc)
+	scorer, cfg, fingerprint := e.scorerForLocation(loc)
 	declared := len(declRefs) > 0 || len(declDirs) > 0 || len(decl.Holds) > 0
 	if nothingToMatch(scorer, declaration, declRefs, declared, loc.host != "") {
 		return nil, matchedNothing
@@ -643,8 +651,19 @@ func (e *Engine) matchDeclaration(
 	}
 	// mine is the declaration as the board will compare it: its recorded
 	// footprint, and the provenance of the index that produced it.
+	//
+	// AND THE SYSTEM THIS PREDICTION IS IN, which is the one the scorer
+	// above came with and not necessarily the one the op recorded: matching
+	// re-predicts, and an index replaced since the declaration was applied
+	// would have left the fresh footprint labelled with the old
+	// fingerprint, so two systems compared as one. The peers' footprints
+	// keep their own labels, which are still true of them. Round
+	// twenty-eight of the pre-release review.
 	mine := decl
 	mine.Predicted = withDeclaredDirs(toPredFiles(pred.Files), declDirs, cfg.Repo)
+	if fingerprint != "" {
+		mine.Index = fingerprint
+	}
 
 	// Dibs opened before the index was ready carry no footprint and would be
 	// invisible forever; give them one first.
@@ -1212,9 +1231,9 @@ func (e *Engine) Predict(ctx context.Context, declaration string) ([]core.PredFi
 func (e *Engine) predictIn(
 	ctx context.Context, loc location, declaration string,
 ) (pred []core.PredFile, repo, index string) {
-	scorer, cfg := e.scorerForLocation(loc)
+	scorer, cfg, fingerprint := e.scorerForLocation(loc)
 	pred, _, _ = e.predictWith(ctx, scorer, cfg, declaration)
-	return pred, cfg.Repo, e.fingerprintOf(cfg.Repo)
+	return pred, cfg.Repo, fingerprint
 }
 
 func (e *Engine) predictWith(
@@ -1321,7 +1340,7 @@ func (e *Engine) DoMatched(ctx context.Context, op *core.Op) (core.Result, error
 		// clones with divergent histories are compared inside a coordinate
 		// system they share instead of across two. Issue #39.
 		op.Index = index
-		_, cfg := e.scorerForLocation(loc)
+		_, cfg, _ := e.scorerForLocation(loc)
 		op.IndexSupplied = e.IndexSuppliedBy(repo) != ""
 		op.Footprints = e.peerFootprints(ctx, repo, op.Text, cfg)
 	}
