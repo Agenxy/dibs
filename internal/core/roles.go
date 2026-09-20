@@ -280,8 +280,24 @@ func (a *Agent) holdsSession(sid string) bool {
 // where guessing would attribute an edit to the wrong agent, and a wrong
 // attribution here means allowing a write that should have been refused.
 func (s *State) AgentForHook(sid, cwd string) *Agent {
+	return s.AgentForHookOn(sid, cwd, "")
+}
+
+// AgentForHookOn is AgentForHook for a hook that arrived from a known
+// machine: the session id a bridge derives (`host-<ppid>`) repeats across
+// computers, so a match on an agent recorded on ANOTHER machine is not this
+// caller. The daemon's own id for a local caller, the bridge's assertion
+// for a remote one, "" when the transport established none, which keeps
+// every earlier answer. An agent that recorded no host is matched as
+// before. Round twelve of the pre-release review reproduced beta's guard
+// resolving to alpha across two hosts and allowing a write alpha held
+// exclusively.
+func (s *State) AgentForHookOn(sid, cwd, host string) *Agent {
 	if l := s.AgentBySession(sid); l != nil {
-		return l
+		if hookOnHost(l, host) {
+			return l
+		}
+		return s.sessionHolderOn(sid, host, l)
 	}
 	// A session id that was SUPPLIED and matched nothing is positive evidence
 	// this is a different session, not a hint to go looking for a neighbour.
@@ -311,7 +327,7 @@ func (s *State) AgentForHook(sid, cwd string) *Agent {
 		if l.Status == StatusArchived || l.Status == StatusClosed {
 			continue
 		}
-		if l.Agent == nil || cleanPath(l.Agent.CWD) != want {
+		if l.Agent == nil || cleanPath(l.Agent.CWD) != want || !hookOnHost(l, host) {
 			continue
 		}
 		if found != nil {
@@ -320,6 +336,29 @@ func (s *State) AgentForHook(sid, cwd string) *Agent {
 		found = l
 	}
 	return found
+}
+
+// sessionHolderOn finds a live holder of sid on host other than the
+// preferred one, which is on another machine: the caller, if there is one.
+func (s *State) sessionHolderOn(sid, host string, not *Agent) *Agent {
+	for _, other := range s.Agents {
+		if other.Status == StatusArchived || other.Status == StatusClosed || other == not {
+			continue
+		}
+		if other.holdsSession(sid) && hookOnHost(other, host) {
+			return other
+		}
+	}
+	return nil
+}
+
+// hookOnHost reports whether an agent may be the caller from host: yes when
+// either side has no host to compare, and otherwise only when they match.
+func hookOnHost(l *Agent, host string) bool {
+	if host == "" || l == nil || l.Agent == nil || l.Agent.HostID == "" {
+		return true
+	}
+	return l.Agent.HostID == host
 }
 
 // applyVouchChild issues a one-time secret the caller's subagent can present as

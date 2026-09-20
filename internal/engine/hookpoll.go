@@ -185,10 +185,19 @@ func (e *Engine) noteTurnState(l *core.Agent, sessionID, event string) {
 func (e *Engine) HookPoll(
 	ctx context.Context, sessionID, event, cwd string, stopActive, strict bool,
 ) (core.Result, error) {
+	return e.HookPollFrom(ctx, sessionID, event, cwd, "", stopActive, strict)
+}
+
+// HookPollFrom is HookPoll with the machine the hook came from, which decides
+// which holder of a repeated bridge session id is the caller
+// (core.AgentForHookOn).
+func (e *Engine) HookPollFrom(
+	ctx context.Context, sessionID, event, cwd, host string, stopActive, strict bool,
+) (core.Result, error) {
 	cwd = foldSeparators(cwd) // as the fold spelled the cwd it is matched against
 	return e.query(ctx, func() core.Result {
 		e.announceHookSession(sessionID, cwd, event)
-		l := e.state.AgentForHook(sessionID, cwd)
+		l := e.state.AgentForHookOn(sessionID, cwd, host)
 		e.noteHookFor("poll", l, cwd)
 		e.noteTurnState(l, sessionID, event)
 		e.logHookResolution(sessionID, cwd, event, l)
