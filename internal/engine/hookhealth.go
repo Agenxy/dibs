@@ -3,6 +3,8 @@ package engine
 import (
 	"sync/atomic"
 	"time"
+
+	"github.com/agenxy/dibs/internal/core"
 )
 
 // Is anything actually asking?
@@ -64,9 +66,49 @@ type HookHealth struct {
 	Hint    string `json:"hint,omitempty"`
 }
 
+// hookStranger decides, for a lifecycle call that resolved to nobody, whether
+// the caller is an unregistered session (a stranger) or a registered agent the
+// hook cannot reach (a misbinding).
+//
+// The first discriminator was "is any agent active in the directory the hook
+// named". That reads a live agent as the possible caller, which is only right
+// while its own hooks have never resolved. Once they have, the agent is
+// reachable, and a miss beside it is somebody else's session in the same
+// tree: on this project's own board, the pre-release reviewer, a Codex
+// session run in the checkout that never registers by design, turned `dibs
+// doctor` red beside an agent whose every hook resolved. So an unresolved
+// call is a misbinding only while some active agent in that directory has
+// never been reached. `reachedByHook` is per daemon lifetime, like the
+// counters it serves: after a restart the first miss beside a not-yet-reached
+// agent counts against the board until that agent's next hook, which is one
+// call.
+func (e *Engine) hookStranger(cwd string) bool {
+	for _, id := range e.state.ActiveAgentIDsIn(cwd) {
+		if !e.reachedByHook[id] {
+			return false
+		}
+	}
+	return true
+}
+
+// noteHookFor records one lifecycle call against the agent it resolved to, if
+// any, and classifies a miss with hookStranger. Only the engine loop calls it.
+func (e *Engine) noteHookFor(kind string, l *core.Agent, cwd string) {
+	if l != nil {
+		if e.reachedByHook == nil {
+			e.reachedByHook = map[string]bool{}
+		}
+		e.reachedByHook[l.ID] = true
+		e.noteHook(kind, true, false)
+		return
+	}
+	e.noteHook(kind, false, e.hookStranger(cwd))
+}
+
 // noteHook records one lifecycle call. `stranger` is consulted only when the
-// call did not resolve: true means no agent is active in the directory the
-// hook named, so the session is unregistered rather than misbound.
+// call did not resolve: true means no agent that could be the caller is active
+// in the directory the hook named, so the session is unregistered rather than
+// misbound. See hookStranger.
 func (e *Engine) noteHook(kind string, resolved, stranger bool) {
 	e.hooks.lastAt.Store(time.Now().UnixNano())
 	switch {

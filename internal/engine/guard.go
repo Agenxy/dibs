@@ -27,12 +27,13 @@ import (
 func (e *Engine) GuardPath(ctx context.Context, sessionID, path, cwd string) (core.Result, error) {
 	return e.query(ctx, func() core.Result {
 		agent := ""
-		if l := e.state.AgentForHook(sessionID, cwd); l != nil {
+		l := e.state.AgentForHook(sessionID, cwd)
+		if l != nil {
 			agent = l.ID
 		}
 		// Counted whether or not it resolved: a guard that never resolves is
 		// inert, and only the daemon can see that (hookhealth.go).
-		e.noteHook("guard", agent != "", !e.state.ActiveAgentsIn(cwd))
+		e.noteHookFor("guard", l, cwd)
 		v := e.state.GuardPath(agent, path, time.Now())
 		out := core.Result{"decision": v.Decision}
 		if v.Decision == core.GuardAllow {

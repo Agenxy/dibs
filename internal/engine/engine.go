@@ -58,6 +58,10 @@ type Engine struct {
 	// Ephemeral and rebuildable, same tier as `seen`: losing it on restart costs
 	// at most one unnecessary wake.
 	turnEnded map[string]time.Time
+	// reachedByHook: agents at least one lifecycle hook has resolved to, so a
+	// later miss in their directory is somebody else's session rather than
+	// theirs. Telemetry for hookhealth.go, same tier as `seen`.
+	reachedByHook map[string]bool
 
 	// announceSent throttles announcement redelivery, keyed "agent\x00serial".
 	//
