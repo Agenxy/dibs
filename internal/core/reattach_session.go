@@ -121,17 +121,7 @@ func (s *State) pickReattachTarget(op *Op) *Agent {
 				continue
 			}
 		}
-		// A CREDENTIAL THE AGENT CHOSE, not merely one it holds. Since v0.0.7
-		// every registration gets a nonce whether it asked or not, so reading
-		// this as "holds a nonce" refused everybody and turned every returning
-		// agent into a sibling that cannot read its predecessor's mail.
-		if l.Nonce != "" && !l.NonceMinted {
-			continue
-		}
-		if _, eligible := rank[l.Status]; !eligible {
-			continue
-		}
-		if l.Name != op.Name || !l.holdsSession(op.SessionID) {
+		if _, eligible := rank[l.Status]; !eligible || !reattachable(l, op) {
 			continue
 		}
 		out = append(out, l)
@@ -150,6 +140,32 @@ func (s *State) pickReattachTarget(op *Op) *Agent {
 		return a.ID < b.ID
 	})
 	return out[0]
+}
+
+// reattachable says whether a row is one this register may recover: the
+// same name and session, a credential the agent did not choose, and on the
+// caller's machine.
+//
+// A CREDENTIAL THE AGENT CHOSE, not merely one it holds. Since v0.0.7 every
+// registration gets a nonce whether it asked or not, so reading this as
+// "holds a nonce" refused everybody and turned every returning agent into a
+// sibling that cannot read its predecessor's mail.
+//
+// AND ON THIS MACHINE. `host-<ppid>` repeats across computers and people
+// name agents by role, so two machines each running a "reviewer" under
+// host-12345 is ordinary, and the second's plain register recovered the
+// first's row: token rotated out from under it, mailbox taken. Same rule as
+// the hook lookups (hookOnHost): a row or an op that recorded no host keeps
+// the old answer, and no shipped register carries one, so no ledger replays
+// differently. Round eighteen of the pre-release review.
+func reattachable(l *Agent, op *Op) bool {
+	if l.Nonce != "" && !l.NonceMinted {
+		return false
+	}
+	if l.Name != op.Name || !l.holdsSession(op.SessionID) {
+		return false
+	}
+	return op.Agent == nil || hookOnHost(l, op.Agent.HostID)
 }
 
 // ReattachTarget is the row a session-id register would recover, or nil.

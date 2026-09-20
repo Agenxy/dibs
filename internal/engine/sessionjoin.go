@@ -93,7 +93,10 @@ func announcedSession(children map[string]Child, st *core.State, cwd, host strin
 		return ""
 	}
 	var found string
-	for sid, c := range children {
+	// The record's own session id, not its key: a record from another
+	// machine is keyed by that machine too (childKey).
+	for _, c := range children {
+		sid := c.SessionID
 		if sid == "" || len(sid) > maxSessionIDBytes || cleanDir(c.CWD) != want {
 			continue
 		}
