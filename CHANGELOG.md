@@ -108,6 +108,21 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round six of the pre-release review: five findings.**
+  - Role withdrawal now also finds a holder whose credential only the nonce
+    index still carries (a sweep written before v0.0.8 blanked the archived
+    row's nonce and kept the index entry that lets it resume), so an archived
+    holder cannot resume into a role the config withdrew.
+  - A remote agent's wake never falls through to the hub's local command
+    when its bridge detaches between the route decision and the plan.
+  - Releasing a supplied index retracts the status that credited it, so the
+    bridge ships again when the agent returns instead of reading "supplied"
+    forever.
+  - The read-verdict restart test rebuilds from the replayed ledger rather
+    than a copy of live state, so it now fails for the in-memory-only
+    mutation it exists to exclude (shown by making it).
+  - The #113 changelog entry described the rejected fold-side backslash
+    folding; it now describes what shipped.
 - **Round five of the pre-release review: eight findings.**
   - Withdrawing a declared role resolved the declared NAME again, so a
     holder that had renamed itself or been archived was "nobody", the pin
@@ -363,9 +378,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   spelled every claim with `\` while every comparison in the package writes
   `/`: the first Windows run granted an exclusive claim over a file another
   agent held exclusively. A claim is a path an agent supplied and the ledger
-  replays on whichever host holds it, so the fold now uses `path.Clean`
-  after folding `\` to `/`; on unix, where no recorded path carries a
-  backslash, nothing changes. Two tests assumed unix as well (a ledger left
+  replays on whichever host holds it, so the fold now uses `path.Clean`, one
+  separator on every host. The first cut of this folded `\` to `/` inside
+  the fold as well, and the pre-release review caught what that does to a
+  unix ledger: a backslash is an ordinary character in a unix filename, so
+  claims over `/tmp/a\b` and `/tmp/a/b` replayed collapsed into one. Windows
+  spellings are folded at ingress instead, recorded into the op, and the
+  fold never rewrites a recorded path. Two tests assumed unix as well (a ledger left
   open at cleanup, a Windows path in a TOML basic string). The `windows`
   job now runs the state machine, the ledger and the board config alongside
   the scorer and liveness.

@@ -16,8 +16,17 @@ func (e *Engine) RemoveScorerForRepo(repo string) {
 	if _, held := e.scorers[repo]; !held {
 		return
 	}
+	info := e.indexes[repo]
 	delete(e.scorers, repo)
 	delete(e.indexes, repo)
+	if info.SuppliedBy != "" {
+		// The status stops crediting an index that is gone, or the bridge
+		// that would ship it again reads "supplied" and never does: eviction
+		// then meant no matching for that tree until a daemon restart. Off
+		// the match lock's critical path in spirit but not in fact: the
+		// status has its own lock. Round six of the pre-release review.
+		e.forgetSuppliedIndex(repo, info.SuppliedHost != "")
+	}
 
 	// THE FALLBACK PAIR HAS TO NAME ONE TREE.
 	//

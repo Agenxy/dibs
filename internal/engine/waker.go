@@ -946,7 +946,17 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 		// required the word "board" and so passed the steering sentence.
 		Message: wakeNotice,
 	}
-	if host, remote := e.hostRouteFor(l); remote {
+	if host, remote := e.hostRouteFor(l); host != "" {
+		// ANOTHER MACHINE'S AGENT NEVER FALLS THROUGH TO A LOCAL COMMAND.
+		// wakeRoute saw a bridge for this host moments ago under a different
+		// lock; if it detached in between, the answer is no wake, not the
+		// hub starting a process here for a directory that is not here.
+		// Round six of the pre-release review found the fall-through.
+		if !remote {
+			slog.Debug("no wake: the host's bridge detached before the wake was planned",
+				"agent", l.ID, "host", host)
+			return wakePlan{}, false
+		}
 		// The bridge there substitutes these into ITS operator's command,
 		// exactly as f.apply would here: whole argv elements, never parts.
 		return wakePlan{
