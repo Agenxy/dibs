@@ -225,6 +225,17 @@ func Pick(title, body string, choices ...string) (string, error) {
 	return run(pick, append([]string{title, body}, choices...)...)
 }
 
+// CanPrompt reports whether Prompt can open a text field here at all, so a
+// notification does not offer one it cannot deliver. On Linux notify-send
+// carries buttons and no field; the question's notification offered "Write
+// answer…" regardless, and pressing it dismissed the notification, opened
+// nothing, recorded nothing and said nothing: the error Prompt returns was
+// swallowed one layer up, so the only user-facing boundary lied. Round
+// twenty-five of the pre-release review.
+func CanPrompt() bool {
+	return goos != "linux" && !silenced()
+}
+
 // Prompt asks for free text and returns it, or "" if dismissed.
 func Prompt(title, body string) (string, error) {
 	if goos == "linux" {

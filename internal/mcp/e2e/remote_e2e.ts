@@ -377,7 +377,7 @@ const scratchHome = mkdtempSync(join(tmpdir(), "dibs-remote-e2e-home-"))
 const doc = run([dibsBin, "doctor"], { DIBS_ADDR: URL, DIBS_DIR: clientDir, DIBS_HOST_ID: CLIENT_HOST, HOME: scratchHome }, clientDir)
 check("doctor on the joining machine reports no problems", doc.code === 0, doc.out.split("\n").filter((l) => l.includes("✗")).join(" | ").slice(0, 300))
 check("and says the board is served by the hub's daemon, and this machine's wake command reaches its agents through the bridge",
-  doc.out.includes(`served by another daemon (node ${hubNode})`) && doc.out.includes("through the host bridge attached for it"),
+  doc.out.includes(`served by another daemon (node ${hubNode})`) && doc.out.includes("the host bridge attached for this machine can start codex"),
   doc.out.split("\n").find((l) => l.includes("another daemon")) ?? "no such line")
 check("and that the ledger is not here", doc.out.includes("joined board: the ledger lives on the daemon serving it"))
 
