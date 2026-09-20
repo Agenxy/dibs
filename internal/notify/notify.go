@@ -295,8 +295,14 @@ func Available() bool {
 		// why the same guard does not apply there.
 		return !underTest()
 	case "linux":
-		ok, _ := linuxProbe()
-		return ok
+		// NEVER THE PROBE ITSELF, from here: this is asked on the single
+		// writer loop. An answer still being measured is "assume yes": the
+		// send goes off the loop and settles against the real answer there,
+		// which costs one send an accurate hint, where blocking would cost
+		// every op and sweep the probe's ten seconds. Round seven of the
+		// pre-release review found the startup window the cache left.
+		ok, known := linuxProbeCached()
+		return ok || !known
 	}
 	return false
 }
@@ -311,27 +317,77 @@ func Available() bool {
 // which is a restart's worth of rarity; the daemon warms this at startup
 // (Reach, off the loop) so the loop reads a cached bool. Found by the
 // pre-release review.
+//
+// The subprocesses run OUTSIDE the lock: a caller that wants the answer
+// waits on probeReady, and a caller that only wants to know whether there
+// is one yet (Available, on the writer loop) reads the flags and leaves.
 func linuxProbe() (bool, string) {
 	probeMu.Lock()
-	defer probeMu.Unlock()
-	if !probeDone {
-		probeOK, probeWhy = linuxUsable()
-		probeDone = true
+	if probeDone {
+		defer probeMu.Unlock()
+		return probeOK, probeWhy
 	}
+	if probeRunning {
+		ready := probeReady
+		probeMu.Unlock()
+		<-ready
+		probeMu.Lock()
+		defer probeMu.Unlock()
+		return probeOK, probeWhy
+	}
+	probeRunning = true
+	ready := make(chan struct{})
+	probeReady = ready
+	probeMu.Unlock()
+
+	ok, why := probeHost()
+
+	probeMu.Lock()
+	defer probeMu.Unlock()
+	probeOK, probeWhy, probeDone, probeRunning = ok, why, true, false
+	close(ready)
 	return probeOK, probeWhy
 }
 
+// linuxProbeCached is the answer if there is one, without waiting for it,
+// and starts the probe if nobody has. known is false while it is running.
+func linuxProbeCached() (ok, known bool) {
+	probeMu.Lock()
+	done, running, answer := probeDone, probeRunning, probeOK
+	probeMu.Unlock()
+	if done {
+		return answer, true
+	}
+	if !running {
+		go linuxProbe()
+	}
+	return false, false
+}
+
+// probeHost is linuxUsable, a variable so a test can make the measurement
+// slow and see what waits on it and what does not.
+var probeHost = linuxUsable
+
 var (
-	probeMu   sync.Mutex
-	probeDone bool
-	probeOK   bool
-	probeWhy  string
+	probeMu      sync.Mutex
+	probeDone    bool
+	probeRunning bool
+	probeReady   chan struct{}
+	probeOK      bool
+	probeWhy     string
 )
 
 // resetProbe forgets the cached answer; tests that change the stubbed host
-// between calls use it, and nothing else should.
+// between calls use it, and nothing else should. It waits for a probe in
+// flight, so the next call measures rather than joins.
 func resetProbe() {
 	probeMu.Lock()
+	if probeRunning {
+		ready := probeReady
+		probeMu.Unlock()
+		<-ready
+		probeMu.Lock()
+	}
 	defer probeMu.Unlock()
 	probeDone = false
 }
@@ -436,19 +492,19 @@ func run(script string, args ...string) (string, error) {
 // choice and is nobody's fault: the remedy is to allow Dibs to break through, or
 // to expect the ask in Notification Center rather than on screen.
 func Reach() (ok bool, why string) {
+	// MEASURED, not read from the cache: Reach runs off the writer loop (at
+	// startup, from doctor) and is what warms the cache Available reads, so
+	// it waits for the probe where Available must not.
+	if goos == "linux" && !silenced() {
+		ok, why = linuxProbe()
+		return ok, why
+	}
 	if !Available() {
 		switch goos {
 		case "darwin":
 			return false, "notifications are switched off for this process"
 		case "linux":
-			// The Linux notifier is notify-send (linux.go); each way it
-			// cannot ask is its own sentence, and every one names the
-			// board, where the buttons are regardless. Issue #63.
-			if silenced() {
-				return false, "notifications are switched off for this process"
-			}
-			_, why := linuxProbe()
-			return false, why
+			return false, "notifications are switched off for this process"
 		}
 		// SAY WHAT THAT MEANS, not just that it is so. "No notification route"
 		// is true and tells an operator nothing about what happens to a request
