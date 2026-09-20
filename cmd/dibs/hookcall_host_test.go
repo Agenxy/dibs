@@ -228,6 +228,16 @@ func TestTheOpencodePluginReachesAJoinedBoardOverTLS(t *testing.T) {
 	if err != nil {
 		t.Skip("bun is not installed; the plugin cannot be run")
 	}
+	// The two files the bridge trusts: a recorded peer, and the daemon's
+	// own CA. Reading only the first left a hub's own plugin refusing the
+	// daemon its bridge accepted. Round twenty of the pre-release review.
+	for _, store := range []string{"trusted-certs.pem", "tls-ca.pem"} {
+		t.Run(store, func(t *testing.T) { opencodePluginReachesTLS(t, bun, store) })
+	}
+}
+
+func opencodePluginReachesTLS(t *testing.T, bun, store string) {
+	t.Helper()
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte("s3cret\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -242,7 +252,7 @@ func TestTheOpencodePluginReachesAJoinedBoardOverTLS(t *testing.T) {
 	}))
 	defer srv.Close()
 	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
-	if err := os.WriteFile(filepath.Join(dir, "trusted-certs.pem"), pemBytes, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, store), pemBytes, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	plugin, err := filepath.Abs(filepath.Join("..", "..", "plugins", "opencode", "dibs.ts"))
@@ -273,5 +283,63 @@ func TestTheOpencodePluginReachesAJoinedBoardOverTLS(t *testing.T) {
 	if reached == 0 || !strings.Contains(string(out), "denied: Error: Dibs: held") {
 		t.Fatalf("the plugin did not reach the joined board at %s (reached %d, said %q): its hooks fail "+
 			"silently while the bridge beside it connects", srv.URL, reached, out)
+	}
+}
+
+// And pi's transport reaches a joined board under NODE, which is where pi
+// runs: Node's fetch is undici and ignores a `tls` option, so the option
+// that works under bun trusted nothing there and pi installed no tools.
+// The real post() is lifted from the extension and run under every runtime
+// present, against a server whose certificate only the data directory
+// vouches for. Round twenty of the pre-release review.
+func TestThePiTransportReachesAJoinedBoardUnderNode(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join("..", "..", "plugins", "pi", "dibs.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const marker = "async function post("
+	start := strings.Index(string(src), marker)
+	if start < 0 {
+		t.Fatal("plugins/pi/dibs.ts no longer defines post(): the transport was renamed or removed")
+	}
+	end := strings.Index(string(src)[start:], "\n}\n")
+	if end < 0 {
+		t.Fatal("could not find the end of post()")
+	}
+	fn := string(src)[start : start+end+3]
+
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"reached":true}}`))
+	}))
+	defer srv.Close()
+	dir := t.TempDir()
+	ca := filepath.Join(dir, "tls-ca.pem")
+	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
+	if err := os.WriteFile(ca, pemBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	script := fn + "\nconst ca = (await import(\"node:fs/promises\")).readFile(process.env.CA!, \"utf8\")\n" +
+		"const text = await post(process.env.URL! + \"/mcp\", \"{}\", { \"content-type\": \"application/json\" }, 3000, [await ca])\n" +
+		"console.log(text ?? \"NULL\")\n"
+	path := filepath.Join(dir, "post.ts")
+	if err := os.WriteFile(path, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ran := 0
+	for _, runtime := range [][]string{{"node", "--experimental-strip-types", path}, {"bun", "run", path}} {
+		bin, err := exec.LookPath(runtime[0])
+		if err != nil {
+			continue
+		}
+		ran++
+		cmd := exec.Command(bin, runtime[1:]...) // #nosec G204 -- paths this test created
+		cmd.Env = append(os.Environ(), "CA="+ca, "URL="+srv.URL, "NODE_NO_WARNINGS=1")
+		out, err := cmd.CombinedOutput()
+		if err != nil || !strings.Contains(string(out), `"reached":true`) {
+			t.Errorf("%s: the transport did not reach the board under the data directory's CA: %v\n%s", runtime[0], err, out)
+		}
+	}
+	if ran == 0 {
+		t.Skip("neither node nor bun is installed")
 	}
 }

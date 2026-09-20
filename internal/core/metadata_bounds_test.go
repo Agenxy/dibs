@@ -34,6 +34,14 @@ func TestReplayedMetadataIsBounded(t *testing.T) {
 		{"an oversized agent.cwd", &Op{Kind: OpRegister, Agent: &AgentInfo{CWD: huge}}},
 		{"an oversized agent.project", &Op{Kind: OpRegister, Agent: &AgentInfo{Project: longName}}},
 		{"an oversized agent.harness", &Op{Kind: OpRegister, Agent: &AgentInfo{Harness: longName}}},
+		// The fields this cycle added were not in the table above, and a
+		// caller-supplied host id of 17 MiB passed admission, was ledgered,
+		// and then failed the ledger reader's line cap: the daemon could not
+		// replay its own history. Round twenty of the pre-release review.
+		{"an oversized agent.host_id", &Op{Kind: OpRegister, Agent: &AgentInfo{HostID: longName}}},
+		{"an oversized agent.repo_root", &Op{Kind: OpRegister, Agent: &AgentInfo{RepoRoot: huge}}},
+		{"an oversized session_alias", &Op{Kind: OpRegister, SessionAlias: longName}},
+		{"an oversized registered_from", &Op{Kind: OpRegister, RegisteredFrom: longName}},
 	} {
 		if err := Admit(tc.op, lim); err == nil {
 			t.Errorf("%s was admitted: it would sit in the ledger forever", tc.what)

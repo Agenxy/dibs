@@ -86,30 +86,39 @@ async function secret(): Promise<string | null> {
 }
 
 /**
- * What a joined board's certificate is checked against: the certificates
- * `dibs trust` recorded beside the secret, the same store the bridge dials
- * with. A hub off loopback serves TLS under a certificate it issued itself,
- * so without this every https:// call failed the way the http:// prefix
- * did, silently. Empty for a plaintext daemon or an unjoined directory,
- * and then the system roots decide as they always did.
+ * What a board's certificate is checked against, beyond the runtime's own
+ * roots: the certificates `dibs trust` recorded beside the secret, and the
+ * CA the daemon in that directory signs with (`tls-ca.pem`), which is
+ * trusted without a `dibs trust` step because the machine that generated
+ * it is the one authority there is on it. The same two files the bridge
+ * dials with (cmd/dibs/trust.go), and reading only the first left a hub's
+ * own plugin refusing the daemon its bridge accepted. The runtime's roots
+ * are kept so a board fronted by a real certificate still works. Empty for
+ * a plaintext daemon or an unjoined directory. Rounds nineteen and twenty
+ * of the pre-release review.
  */
-let trustCache: string | null | undefined
+let trustCache: string[] | null | undefined
 
-async function trust(): Promise<string | null> {
+async function trust(): Promise<string[] | null> {
   if (trustCache !== undefined) return trustCache
   if (!ORIGIN.startsWith("https://")) return (trustCache = null)
-  try {
-    trustCache = (await readFile(`${DIR}/trusted-certs.pem`, "utf8")).trim() || null
-  } catch {
-    trustCache = null
+  const extra: string[] = []
+  for (const name of ["trusted-certs.pem", "tls-ca.pem"]) {
+    try {
+      const pem = (await readFile(`${DIR}/${name}`, "utf8")).trim()
+      if (pem) extra.push(pem)
+    } catch {
+      // not recorded here
+    }
   }
-  return trustCache
-}
-
-/** fetch options that carry the trust store when there is one. */
-async function tlsOptions(): Promise<Record<string, unknown>> {
-  const ca = await trust()
-  return ca ? { tls: { ca } } : {}
+  if (extra.length === 0) return (trustCache = null)
+  let roots: string[] = []
+  try {
+    roots = [...((await import("node:tls")).rootCertificates ?? [])]
+  } catch {
+    // a runtime without them: the recorded certificates alone, as before
+  }
+  return (trustCache = [...roots, ...extra])
 }
 
 let rpcId = 0
@@ -129,17 +138,56 @@ async function rpc(
 ): Promise<any | null> {
   const key = await secret()
   if (!key) return null
-  const res = await fetch(`${ORIGIN}/mcp`, {
-    method: "POST",
-    headers: { "content-type": "application/json", "X-Dibs-Local": key },
-    body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method, params }),
-    signal: AbortSignal.timeout(timeoutMs),
-    ...(await tlsOptions()),
-  })
-  if (!res.ok) return null
-  const body = (await res.json()) as { result?: unknown; error?: unknown }
+  const text = await post(
+    `${ORIGIN}/mcp`,
+    JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method, params }),
+    { "content-type": "application/json", "X-Dibs-Local": key },
+    timeoutMs,
+    await trust(),
+  )
+  if (text === null) return null
+  const body = JSON.parse(text) as { result?: unknown; error?: unknown }
   if (body.error) return { __error: body.error }
   return body.result ?? null
+}
+
+/**
+ * One POST, through node:http or node:https rather than fetch, and the
+ * difference is the whole TLS story: pi runs under Node, whose fetch is
+ * undici and ignores a `tls` option, so a joined board's self-issued
+ * certificate stayed untrusted however carefully `dibs trust` had recorded
+ * it, and startup installed no tools. Node's request API takes `ca`; so
+ * does Bun's. Returns the body on a 2xx and null on anything else, which
+ * every caller reads as "stay quiet". Round twenty of the pre-release
+ * review.
+ */
+async function post(
+  url: string,
+  body: string,
+  headers: Record<string, string>,
+  timeoutMs: number,
+  ca: string[] | null,
+): Promise<string | null> {
+  const u = new URL(url)
+  const mod = u.protocol === "https:" ? await import("node:https") : await import("node:http")
+  return new Promise((resolve) => {
+    const req = mod.request(
+      u,
+      { method: "POST", headers: { ...headers, "content-length": String(Buffer.byteLength(body)) }, ...(ca ? { ca } : {}) },
+      (res) => {
+        const chunks: Buffer[] = []
+        res.on("data", (c: Buffer) => chunks.push(c))
+        res.on("end", () => {
+          const ok = (res.statusCode ?? 0) >= 200 && (res.statusCode ?? 0) < 300
+          resolve(ok ? Buffer.concat(chunks).toString("utf8") : null)
+        })
+        res.on("error", () => resolve(null))
+      },
+    )
+    req.setTimeout(timeoutMs, () => req.destroy(new Error("timeout")))
+    req.on("error", () => resolve(null))
+    req.end(body)
+  })
 }
 
 type McpTool = {
