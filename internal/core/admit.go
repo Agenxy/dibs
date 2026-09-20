@@ -54,8 +54,16 @@ func Admit(op *Op, lim Limits) error {
 	if err := boundStrings(lim.MaxPathBytes, "holds", op.Holds); err != nil {
 		return err
 	}
-	if len(op.SessionID) > lim.MaxNameBytes {
-		return errTooLarge("session_id", lim.MaxNameBytes)
+	// Every session id the caller can supply, not only the primary: the alias
+	// arrives from `_meta` on every call, and registered_from is copied from
+	// it. Round twenty of the pre-release review.
+	for field, v := range map[string]string{
+		"session_id": op.SessionID, "session_alias": op.SessionAlias,
+		"registered_from": op.RegisteredFrom,
+	} {
+		if len(v) > lim.MaxNameBytes {
+			return errTooLarge(field, lim.MaxNameBytes)
+		}
 	}
 	// A choice is a button label, so it is bounded as a name and there are few of
 	// them. Bounded here rather than in Apply for the reason at the top of this
@@ -129,6 +137,10 @@ func Admit(op *Op, lim Limits) error {
 			"agent.provider": a.Provider, "agent.effort": a.Effort,
 			"agent.title": a.Title, "agent.project": a.Project,
 			"agent.branch": a.Branch, "agent.host": a.Host,
+			// A host id is a key the bridge asserts (docs/NETWORK.md §2), and
+			// an asserted field with no ceiling let a 17 MiB one through to
+			// the ledger, past the reader's line cap. Round twenty.
+			"agent.host_id": a.HostID,
 		} {
 			if len(v) > lim.MaxNameBytes {
 				return errTooLarge(field, lim.MaxNameBytes)
@@ -145,6 +157,7 @@ func Admit(op *Op, lim Limits) error {
 		for field, v := range map[string]string{
 			"agent.cwd": a.CWD, "agent.repo_dir": a.RepoDir,
 			"agent.repo_remote": a.RepoRemote, "agent.repo_roots": a.RepoRoots,
+			"agent.repo_root": a.RepoRoot,
 		} {
 			if len(v) > lim.MaxPathBytes {
 				return errTooLarge(field, lim.MaxPathBytes)

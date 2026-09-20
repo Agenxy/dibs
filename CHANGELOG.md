@@ -108,6 +108,19 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round twenty of the pre-release review: three findings.**
+  - The fields this cycle added to a registration are bounded at admission
+    like the rest: `host_id`, `repo_root`, the session alias and
+    `registered_from`. A caller-supplied 17 MiB host id passed, was
+    ledgered, and then failed the ledger reader's line cap, so the daemon
+    could not replay its own history.
+  - The pi extension posts through Node's own HTTP client rather than
+    `fetch`: pi runs under Node, whose `fetch` ignores a CA, so the
+    round-nineteen trust did nothing there and a joined HTTPS board still
+    installed no tools. Verified under both node and bun.
+  - Both plugins trust the daemon's own CA (`tls-ca.pem`) as well as the
+    recorded peers, as the bridge does, with the runtime's roots kept; a
+    hub's own plugin refused the daemon its bridge accepted.
 - **Round nineteen of the pre-release review: four findings.**
   - A harness whose bridge names the session `host-<ppid>` and whose hooks
     name it by UUID (Gemini CLI) is one session. The bridge's synthetic id
@@ -123,8 +136,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     as `/tmp/x/new.go`.
   - The opencode and pi plugins keep the scheme `DIBS_ADDR` carries and
     check an `https://` board's certificate against the store `dibs trust`
-    recorded; they prefixed `http://` to a joined board's origin and every
-    hook failed silently while the bridge beside it connected. The
+    recorded (the pi half of that only became true in round twenty); they
+    prefixed `http://` to a joined board's origin and every hook failed
+    silently while the bridge beside it connected. The
     opencode README's MCP entry is the stdio bridge, which the plugin's
     session pairing depends on, not a `remote` URL.
   - `dibs configure` no longer offers a Remap name for a board off
