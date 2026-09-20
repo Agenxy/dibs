@@ -1203,7 +1203,7 @@ func (s *Server) run(
 			if op.Agent == nil {
 				op.Agent = &core.AgentInfo{}
 			}
-			resolveLocation(op.Agent, a.CWD)
+			resolveLocationFor(ctx, params, op.Agent, a.CWD)
 		}
 		stampHost(ctx, params, op)
 		// Omitting `description` means "leave it alone", not "erase it".

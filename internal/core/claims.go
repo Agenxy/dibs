@@ -7,18 +7,25 @@ import (
 )
 
 // cleanPath normalizes a claim path: absolute, cleaned, no trailing slash,
-// and spelled with `/` whatever the host's separator is.
+// with `/` as the only separator it knows.
 //
 // A claim is a path an AGENT supplied, recorded in the ledger and replayed
 // on whichever machine holds it. filepath.Clean here made the fold depend on
 // the host: on Windows it rewrote every `/` to `\`, and every comparison in
 // this package, which writes `/`, stopped matching. The first Windows run
 // granted an exclusive claim over a file another agent held exclusively
-// (issue #113). path.Clean is the host-independent one; a Windows agent's
-// `C:\src\x` is folded to `C:/src/x` first, so that the same file claimed
-// from two spellings collides as it does on unix.
+// (issue #113). path.Clean is the host-independent one.
+//
+// It does NOT fold `\` to `/`. That was the first fix for #113, and it was
+// the fold changing what an existing op means: a backslash is an ordinary
+// character in a unix filename, so a ledger holding separate claims over
+// `/tmp/a\b` and `/tmp/a/b` replayed with them collapsed, and refused a claim
+// it had granted. Windows spellings are folded at INGRESS instead
+// (engine.normalizeSeparators), which is where an impure fact such as "this
+// daemon runs on Windows" belongs: recorded into the op, so replay on any
+// host applies the decision that was made. Found by the pre-release review.
 func cleanPath(p string) string {
-	p = path.Clean(strings.ReplaceAll(p, "\\", "/"))
+	p = path.Clean(p)
 	if len(p) > 1 {
 		p = strings.TrimSuffix(p, "/")
 	}
@@ -169,10 +176,24 @@ func (s *State) claimOverlap(me *Agent, path, repoPath string, c *Claim) (rule s
 	if !sameProject(me, them) {
 		return "", false
 	}
-	if pathsOverlap(c.RepoPath, repoPath) {
+	if repoPathsOverlap(c.RepoPath, repoPath) {
 		return OverlapByRepo, true
 	}
 	return "", false
+}
+
+// repoPathsOverlap is pathsOverlap in repository coordinates, where "." is
+// the checkout itself and therefore an ancestor of every path in it.
+//
+// pathsOverlap compares "." and "pkg/x.go" as strings and finds no prefix,
+// so an exclusive claim over a whole checkout (repo path ".") covered nothing
+// in any other worktree of the repository, and the guard, which uses the
+// same comparison, let the write through. Found by the pre-release review.
+func repoPathsOverlap(a, b string) bool {
+	if a == "." || b == "." {
+		return true
+	}
+	return pathsOverlap(a, b)
 }
 
 // overlapping returns all live claims overlapping path, excluding an agent's own.

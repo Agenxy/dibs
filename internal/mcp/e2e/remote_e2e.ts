@@ -67,7 +67,14 @@ mkdirSync(hubDir); mkdirSync(clientDir)
 writeFileSync(join(hubDir, "dibs.toml"), `addr = "${ADDR}"\n`)
 // The daemon's log is its stderr when it is run by hand; kept, because the
 // wake path below is proved by what the hub says it observed.
-const daemon = Bun.spawn({ cmd: [dibd, "-dir", hubDir], stdout: "ignore", stderr: "pipe" })
+// A hub with NO GIT. On one machine the two "machines" share a filesystem,
+// so a hub that can run Git can identify the remote clone itself, which is
+// exactly what a real hub cannot do; the repository rule across hosts then
+// passed for the wrong reason (found by the pre-release review). With Git
+// off the daemon's PATH, every checkout identity on this board has to come
+// from a bridge, which is how a real fleet works.
+const noGit = (process.env.PATH ?? "").split(":").filter((d) => !existsSync(join(d, "git"))).join(":")
+const daemon = Bun.spawn({ cmd: [dibd, "-dir", hubDir], env: { ...process.env, PATH: noGit }, stdout: "ignore", stderr: "pipe" })
 let hubLog = ""
 void (async () => {
   const reader = daemon.stderr.getReader()
@@ -255,9 +262,22 @@ const c2 = await hub.call("claim", { token: hubReg.token, path: shared, mode: "e
 check("the same absolute path on two machines is not a collision", c1.granted === true && c2.granted === true,
   `remote: ${JSON.stringify(c1).slice(0, 160)}  hub: ${JSON.stringify(c2).slice(0, 160)}`)
 
+// The second clone is on a THIRD machine, joined like the first: the hub
+// itself runs no Git, so both identities below reached the board through a
+// bridge or not at all.
+const CLONE_HOST = "d".repeat(64)
+const clone = new Bridge(clientDir, hubRepo, URL, CLONE_HOST)
+await clone.init("clone-harness")
+const cloneReg = await clone.call("register", { name: "clone-worker", description: "on a third machine", pid: 0, nonce: "e2e-clone" })
+await clone.call("check_in", { token: cloneReg.token })
+const rowsAfterClone = await hub.call("check_in", { token: hubReg.token, detail: true })
+const remoteRow = (rowsAfterClone.board?.agents ?? []).find((a: any) => a.id === remoteReg.agent_id)?.agent ?? {}
+check("a remote agent's checkout identity is the one its bridge sent, not one the hub derived (the hub has no Git)",
+  !!remoteRow.repo_root && !!remoteRow.repo_roots && String(remoteRow.cwd ?? "").endsWith("/client/repo"),
+  JSON.stringify(remoteRow).slice(0, 300))
 const r1 = await remote.call("claim", { token: remoteReg.token, path: join(remoteRepo, "probe.go"), mode: "exclusive" })
-const r2 = await hub.call("claim", { token: hubReg.token, path: join(hubRepo, "probe.go"), mode: "exclusive" })
-check("the same file of one repository, in two clones on two machines, IS a collision", r1.granted === true && r2.granted === false,
+const r2 = await clone.call("claim", { token: cloneReg.token, path: join(hubRepo, "probe.go"), mode: "exclusive" })
+check("the same file of one repository, in two clones on two machines, IS a collision (identities from the bridges)", r1.granted === true && r2.granted === false,
   `remote: ${JSON.stringify(r1).slice(0, 160)}  hub: ${JSON.stringify(r2).slice(0, 240)}`)
 const overlap = (r2.overlaps ?? [])[0] ?? {}
 check("and the refusal says which rule fired: the repository, not the path", overlap.rule === "repo" && overlap.repo_path === "probe.go",

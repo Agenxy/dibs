@@ -60,6 +60,63 @@ func resolveLocation(info *core.AgentInfo, cwd string) {
 	info.RepoRoot = id.WorktreeID
 }
 
+// resolveLocationFor picks the resolver by where the caller is: this
+// machine's Git for a local caller, the bridge's word for a remote one.
+func resolveLocationFor(ctx context.Context, params json.RawMessage, info *core.AgentInfo, cwd string) {
+	if remoteCaller(ctx, resolveHostID(ctx, params)) {
+		resolveRemoteLocation(info, cwd, params)
+		return
+	}
+	resolveLocation(info, cwd)
+}
+
+// resolveRemoteLocation is resolveLocation for a caller on ANOTHER machine.
+//
+// The path it sends names nothing on this filesystem, so canonicalising it
+// here (symlinks, /private) and asking Git here both answer about the wrong
+// computer: a remote-only checkout got no repository identity at all, so
+// the portable repository rule, which exists for two clones on two machines,
+// could not fire for the one case it is for. Worse was possible: a checkout
+// of something ELSE at the same path on the hub would have lent its identity.
+// The remote bridge resolves its own checkout and sends it (RepoMetaKey); the
+// hub takes that word for a remote caller, which is the same trust as the
+// host id it arrived with. Found by the pre-release review.
+func resolveRemoteLocation(info *core.AgentInfo, cwd string, params json.RawMessage) {
+	info.CWD = paths.Portable(cwd)
+	r := metaRepo(params)
+	info.RepoDir, info.RepoRemote, info.RepoRoots, info.RepoRoot = r.Dir, r.Remote, r.Roots, r.Root
+	if r.Root != "" {
+		info.Project = paths.PortableBase(r.Root)
+	}
+}
+
+// repoMeta is what a bridge says about the checkout its caller works in.
+type repoMeta struct {
+	Dir    string `json:"dir"`
+	Remote string `json:"remote"`
+	Roots  string `json:"roots"`
+	Root   string `json:"root"`
+}
+
+func metaRepo(params json.RawMessage) repoMeta {
+	var p struct {
+		Meta map[string]json.RawMessage `json:"_meta"`
+	}
+	var r repoMeta
+	if json.Unmarshal(params, &p) != nil {
+		return r
+	}
+	raw, ok := p.Meta[RepoMetaKey]
+	if !ok {
+		return r
+	}
+	_ = json.Unmarshal(raw, &r)
+	for _, f := range []*string{&r.Dir, &r.Remote, &r.Roots, &r.Root} {
+		*f = strings.TrimSpace(*f)
+	}
+	return r
+}
+
 func agentInfo(ctx context.Context, params json.RawMessage, a *toolArgs, session *clientInfoJSON) *core.AgentInfo {
 	info := &core.AgentInfo{
 		// DERIVED, never taken from toolArgs. An agent choosing its own machine
@@ -81,7 +138,7 @@ func agentInfo(ctx context.Context, params json.RawMessage, a *toolArgs, session
 		Branch: a.Branch,
 		Host:   a.Host,
 	}
-	resolveLocation(info, a.CWD)
+	resolveLocationFor(ctx, params, info, a.CWD)
 	h, v := clientIdentity(params)
 	if h == "" && session != nil {
 		// Nothing on this request, but the session introduced itself at
@@ -224,6 +281,19 @@ func clientWantsUI(params json.RawMessage) bool {
 	return v
 }
 
+// remoteCaller reports whether a caller resolved to a machine other than this
+// daemon's. Unknown on either side is not remote: the rules that key on this
+// REMOVE collisions and lend trust, and "no idea" must not do either.
+func remoteCaller(ctx context.Context, hostID string) bool {
+	own, _ := ctx.Value(ownHostKey{}).(string)
+	return hostID != "" && own != "" && hostID != own
+}
+
+// ownHostKey carries this daemon's own host id on every request, so the
+// tool path can tell a remote caller from a local one without reaching for
+// the engine.
+type ownHostKey struct{}
+
 // hostIDKey carries the machine identity the transport established for this
 // request. A context value rather than a parameter because it is a fact about
 // the CONNECTION, and the tool-call path deliberately knows nothing about HTTP:
@@ -239,25 +309,43 @@ type hostIDKey struct{}
 // back to what its own bridge asserts, which is weaker and is documented as
 // weaker.
 func withTransportHost(ctx context.Context, local bool, node string) context.Context {
+	if node != "" {
+		ctx = context.WithValue(ctx, ownHostKey{}, node)
+	}
 	if !local || node == "" {
 		return ctx
 	}
 	return context.WithValue(ctx, hostIDKey{}, node)
 }
 
-// resolveHostID answers which computer this caller is on, preferring what the
-// transport established over what the caller says.
+// resolveHostID answers which computer this caller is on.
 //
-// The order is the whole of the rule. A loopback caller cannot be anywhere but
-// here, so nothing it sends can move it; a remote caller's bridge is the only
-// thing that knows, so its word is taken and marked as its word. Neither branch
-// invents a value: unknown stays empty, and empty behaves exactly as this board
-// did before the field existed.
+// A remote caller's bridge is the only thing that knows, so its word is
+// taken and marked as its word. A loopback caller that asserts nothing is
+// stamped with this daemon's own identity: nothing off this machine reaches
+// loopback, so that much is evidence.
+//
+// A loopback caller that asserts a DIFFERENT machine used to be overruled,
+// on the grounds that it cannot be anywhere but here. It can: the documented
+// transport for a machine without Supgang is `ssh -L`, and every call it
+// forwards arrives from 127.0.0.1 carrying the remote bridge's host id. The
+// overrule stamped those agents as the hub's own, so their wakes were run
+// here instead of through their host bridge and their paths were compared
+// as if on one filesystem. Found by the pre-release review.
+//
+// What the change gives up is small and already given up elsewhere: a
+// bridge on this machine started with a foreign DIBS_HOST_ID can excuse its
+// agents from path collisions here. That bridge holds the bearer secret,
+// which is the whole board; docs/NETWORK.md §2 states host identity is
+// asserted, as strong as the secret and no stronger, until §6 proves it.
 func resolveHostID(ctx context.Context, params json.RawMessage) string {
+	if asserted := metaHost(params); asserted != "" {
+		return asserted
+	}
 	if v, ok := ctx.Value(hostIDKey{}).(string); ok && v != "" {
 		return v
 	}
-	return metaHost(params)
+	return ""
 }
 
 // isLoopback reports whether an address is one nothing off this machine can

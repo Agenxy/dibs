@@ -1432,7 +1432,13 @@ func (e *Engine) WorkingDirectories(ctx context.Context) []string {
 			if a.Retired() || a.Agent == nil || a.Agent.CWD == "" || seen[a.Agent.CWD] {
 				continue
 			}
-			if a.Agent.HostID != "" && a.Agent.HostID != e.state.NodeID {
+			// THE HOST ID, not the ledger's node id: on a Supgang member the
+			// daemon's own agents are stamped with its Supgang identity, and
+			// comparing with the node id read every local checkout as another
+			// machine's, so nothing was indexed after a restart until an agent
+			// registered. remoteHostOf draws the same line for wakes. Found by
+			// the pre-release review.
+			if a.Agent.HostID != "" && a.Agent.HostID != e.HostID() && a.Agent.HostID != e.state.NodeID {
 				continue // another machine's tree: the daemon cannot read it
 			}
 			seen[a.Agent.CWD] = true

@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 // The bridge ships an index only when the daemon has said it could not read
 // the tree: a daemon that read it has a better index than a copy, and one
@@ -25,5 +28,18 @@ func TestTheBridgeShipsOnlyWhenTheDaemonCouldNotRead(t *testing.T) {
 	}
 	if got := indexURL("http://127.0.0.1:4777/mcp"); got != "http://127.0.0.1:4777/api/index" {
 		t.Errorf("indexURL = %q", got)
+	}
+}
+
+// The schedule must outlast the daemon's Git deadline, or the fallback it
+// exists for never fires for the case that motivated it.
+func TestTheShipScheduleOutlastsTheDaemonsGitDeadline(t *testing.T) {
+	var total time.Duration
+	for _, d := range shipSchedule {
+		total += d
+	}
+	if total <= daemonGitDeadline+30*time.Second {
+		t.Fatalf("the ship schedule gives up after %v, before the daemon has finished "+
+			"waiting on Git (%v) and said the tree is unreadable", total, daemonGitDeadline)
 	}
 }

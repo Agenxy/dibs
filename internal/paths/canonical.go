@@ -1,7 +1,9 @@
 package paths
 
 import (
+	"path"
 	"path/filepath"
+	"strings"
 )
 
 // Canonical resolves p to the path the filesystem actually means, so that two
@@ -58,4 +60,29 @@ func Canonical(p string) string {
 		rest = filepath.Join(filepath.Base(cur), rest)
 		cur = parent
 	}
+}
+
+// Portable cleans a path that belongs to ANOTHER machine: lexically, with
+// `/` as the separator, and without touching this filesystem.
+//
+// Canonical resolves symlinks here, which is right for a path on this
+// machine and wrong for one a remote bridge sent: /tmp on the hub is not
+// /tmp on the caller, and what exists here says nothing about there. The
+// remote bridge has already canonicalised on its own machine, so the only
+// work left is spelling.
+func Portable(p string) string {
+	if p == "" {
+		return ""
+	}
+	p = strings.ReplaceAll(p, "\\", "/")
+	p = path.Clean(p)
+	if len(p) > 1 {
+		p = strings.TrimSuffix(p, "/")
+	}
+	return p
+}
+
+// PortableBase is the last element of a Portable path, for a project label.
+func PortableBase(p string) string {
+	return path.Base(Portable(p))
 }

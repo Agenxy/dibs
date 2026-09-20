@@ -52,7 +52,8 @@ func stubNotifySend(t *testing.T, version string) {
 	notifySend = func() string { return self }
 	dbusProbe = func() (string, bool) { return self, false }
 	goos = "linux"
-	t.Cleanup(func() { notifySend, goos, dbusProbe = old, oldGoos, oldProbe })
+	resetProbe()
+	t.Cleanup(func() { notifySend, goos, dbusProbe = old, oldGoos, oldProbe; resetProbe() })
 	t.Setenv("DIBS_TEST_DBUS_CAPS", `array [ string "actions" string "body" ]`)
 	// The gate silences notifications for every test process (DIBS_NOTIFY=off),
 	// which is right for the macOS helper and would make Reach answer
@@ -105,6 +106,7 @@ func TestAskOnLinuxIsOneNotifySendWithButtons(t *testing.T) {
 	// The process's off switch holds here as it does on macOS: nothing is
 	// posted, and Available says so.
 	t.Setenv(silenceEnv, "off")
+	resetProbe()
 	before, _ := os.ReadFile(argv)
 	if _, err := Ask("Dibs", "x", "Approve"); err == nil || Available() {
 		t.Error("DIBS_NOTIFY=off did not stop the Linux route")
@@ -170,5 +172,29 @@ func TestNotifySendVersionsParse(t *testing.T) {
 	}
 	if !atLeast([3]int{0, 7, 10}, minNotifySend) || atLeast([3]int{0, 7, 9}, minNotifySend) || !atLeast([3]int{1, 0, 0}, minNotifySend) {
 		t.Error("atLeast is wrong about the boundary")
+	}
+}
+
+// The engine asks Available() on its writer loop, so the Linux answer must be
+// a cached bool and not a subprocess: one probe per process, however often
+// it is asked, however slow the notification daemon. Found by the
+// pre-release review, which read the five-second deadlines behind a call
+// made while every agent waited.
+func TestTheLinuxProbeRunsOncePerProcess(t *testing.T) {
+	t.Setenv(silenceEnv, "")
+	old, oldGoos, oldProbe := notifySend, goos, dbusProbe
+	calls := 0
+	notifySend = func() string { calls++; return "" }
+	dbusProbe = func() (string, bool) { return "", false }
+	goos = "linux"
+	resetProbe()
+	t.Cleanup(func() { notifySend, goos, dbusProbe = old, oldGoos, oldProbe; resetProbe() })
+
+	for range 5 {
+		_ = Available()
+		_, _ = Reach()
+	}
+	if calls != 1 {
+		t.Fatalf("the host was probed %d times across ten calls; the writer loop pays for every one", calls)
 	}
 }

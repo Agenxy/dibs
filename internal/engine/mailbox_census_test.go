@@ -149,3 +149,54 @@ func TestAnAdminMayAdoptOntoItself(t *testing.T) {
 		t.Errorf("admin adopting onto itself: %v, want it to succeed", err)
 	}
 }
+
+// The same move through the other door: a coordinator sends ITSELF a request
+// carrying `adopt`, then approves it. The direct route refuses that
+// (TestACoordinatorAdoptingOntoItselfIsTheHumansCall); the request route ran
+// only the retired-requester and empty-mailbox checks, so the coordinator
+// became the reader of the stranded mailbox with no human involved. Two
+// routes to one effect, and the rule on one of them: found by the
+// pre-release review.
+func TestACoordinatorCannotApproveItsOwnAdoptionRequest(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+	coordinator, member := censusBoard(t, ctx, e)
+
+	sent, err := e.Do(ctx, &core.Op{
+		Kind: core.OpSendMessage, Token: coordinator, To: "coord",
+		MsgType: core.MsgRequest, Body: "consolidating", Adopt: "stranded",
+	})
+	if err != nil {
+		t.Fatalf("setup: a coordinator's request to itself: %v", err)
+	}
+	var ce *core.Error
+	_, err = e.Do(ctx, &core.Op{
+		Kind: core.OpRespond, Token: coordinator, MsgSerial: sent["msg_serial"].(uint64),
+		Disposition: "approve",
+	})
+	if !errors.As(err, &ce) || ce.Code != "E_NOT_PERMITTED" {
+		t.Fatalf("coordinator approving its own adoption request: %v, want E_NOT_PERMITTED: "+
+			"that is the coordinator making itself the reader of another agent's mail", err)
+	}
+	if got := st.Messages[sent["msg_serial"].(uint64)]; got == nil || got.Terminal() {
+		t.Errorf("the refused request should still be pending, got %+v", got)
+	}
+	// Somebody else asking, and the coordinator approving, is the consolidation
+	// the role exists for: the ASKER becomes the reader, not the coordinator.
+	sent, err = e.Do(ctx, &core.Op{
+		Kind: core.OpSendMessage, Token: member, To: "coord",
+		MsgType: core.MsgRequest, Body: "I will take stranded's mail", Adopt: "stranded",
+	})
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpRespond, Token: coordinator, MsgSerial: sent["msg_serial"].(uint64),
+		Disposition: "approve",
+	}); err != nil {
+		t.Fatalf("coordinator approving a member's adoption request: %v, want it to succeed", err)
+	}
+}
