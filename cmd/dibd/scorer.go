@@ -430,7 +430,7 @@ func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, repo stri
 		// declaring agent is even in it.
 		Repo: dir,
 	}, engine.IndexInfo{
-		Fingerprint: cc.Fingerprint(),
+		Fingerprint: lex.Fingerprint(),
 		Identity:    core.AgentInfo{RepoDir: repoDir, RepoRemote: remote, RepoRoots: roots},
 	})
 	mode := "suggest only"

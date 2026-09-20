@@ -99,7 +99,7 @@ func TestARestoredPendingWakeSharesTheSessionCooldown(t *testing.T) {
 	iw := inboxWatcher{cooldown: 700 * time.Millisecond}
 	var streams sync.WaitGroup
 	out := &syncWriter{w: bufio.NewWriter(io.Discard)}
-	restoreCarried(ctx, srv.Client(), srv.URL, "secret", out, &streams, &iw, true)
+	restoreCarried(ctx, srv.Client(), srv.URL, "secret", out, &streams, &iw, true, shipTiming{})
 	// One notice at once: the owed one and the arriving one share a cooldown.
 	if got := collect(lines, 4, 400*time.Millisecond); len(got) != 2 {
 		t.Fatalf("the restore put %d line(s) into the session at once, want 2: the owed notice and "+
@@ -164,7 +164,7 @@ func TestTheListenRequestNamesTheThreadTheHarnessNamed(t *testing.T) {
 	defer cancel()
 	var streams sync.WaitGroup
 	out := &syncWriter{w: bufio.NewWriter(io.Discard)}
-	restoreCarried(ctx, &http.Client{}, "http://127.0.0.1:1/mcp", "secret", out, &streams, &iw, false)
+	restoreCarried(ctx, &http.Client{}, "http://127.0.0.1:1/mcp", "secret", out, &streams, &iw, false, shipTiming{})
 	if threadServed() != "019a1b2c-3d4e-7f80-9a1b-2c3d4e5f6a7b" {
 		t.Fatalf("after the upgrade the bridge serves thread %q: the restored streams say the wrong session", threadServed())
 	}

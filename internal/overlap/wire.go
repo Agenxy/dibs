@@ -106,5 +106,9 @@ func Ship(ctx context.Context, root string, opt CoChangeOptions) (*Payload, erro
 	if err != nil {
 		return nil, err
 	}
-	return &Payload{Root: root, Fingerprint: cc.Fingerprint(), Files: files, Commits: cc.Records()}, nil
+	// The index's fingerprint, not the history's alone: what the daemon
+	// computes for a tree it indexes itself (Lexical.Fingerprint).
+	return &Payload{
+		Root: root, Fingerprint: IndexFingerprint(cc.Fingerprint(), files), Files: files, Commits: cc.Records(),
+	}, nil
 }

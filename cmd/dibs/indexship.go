@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -37,10 +38,6 @@ import (
 func shipIndexOnRegister(
 	ctx context.Context, client *http.Client, url, secret string, timing shipTiming, next func(sent, reply []byte),
 ) func(sent, reply []byte) {
-	var (
-		mu       sync.Mutex
-		watching = map[string]*shipper{} // one shipper per root, for the life of the bridge
-	)
 	return func(sent, reply []byte) {
 		next(sent, reply)
 		// THE DIRECTORY THE AGENT REGISTERED, not the one this bridge runs in.
@@ -84,21 +81,74 @@ func shipIndexOnRegister(
 		if root == "" {
 			return // not a checkout; nothing to index anywhere
 		}
-		mu.Lock()
-		sh := watching[root]
-		if sh == nil {
-			sh = &shipper{token: tok}
-			watching[root] = sh
-			go shipWhenUnreadable(ctx, client, url, secret, sh, root, timing)
-		} else {
-			// THE CREDENTIAL ROTATES: a resume, or a register that reattached,
-			// returns a fresh token and revokes the one the shipper captured.
-			// A shipment with the old one is a 401 from the daemon and no
-			// index for that tree, however many times the agent re-registers.
-			// Round eight of the pre-release review.
-			sh.set(tok)
+		shipFor(ctx, client, url, secret, root, tok, timing)
+	}
+}
+
+// shipments is every tree this bridge ships for and the credential each
+// ships with: one shipper per root, for the life of the bridge, and carried
+// across an upgrade (currentShipments, restoreShipments). It was a map local
+// to the hook, so the handoff could not see it: an upgraded bridge answered
+// every call and shipped nothing until the agent happened to register,
+// resume or move, while a daemon restarted in between held no index for
+// its tree and matching there stayed off. Round twenty-six of the
+// pre-release review.
+var shipments struct {
+	sync.Mutex
+	byRoot map[string]*shipper
+}
+
+// shipFor starts shipping for root with tok, or hands a running shipper the
+// new credential.
+func shipFor(ctx context.Context, client *http.Client, url, secret, root, tok string, timing shipTiming) {
+	shipments.Lock()
+	defer shipments.Unlock()
+	if shipments.byRoot == nil {
+		shipments.byRoot = map[string]*shipper{}
+	}
+	sh := shipments.byRoot[root]
+	if sh == nil {
+		sh = &shipper{token: tok}
+		shipments.byRoot[root] = sh
+		go shipWhenUnreadable(ctx, client, url, secret, sh, root, timing)
+		return
+	}
+	// THE CREDENTIAL ROTATES: a resume, or a register that reattached,
+	// returns a fresh token and revokes the one the shipper captured. A
+	// shipment with the old one is a 401 from the daemon and no index for
+	// that tree, however many times the agent re-registers. Round eight of
+	// the pre-release review.
+	sh.set(tok)
+}
+
+// shipHandoff is one shipment as the next image needs it.
+type shipHandoff struct {
+	Root  string `json:"root"`
+	Token string `json:"token"`
+}
+
+// currentShipments lists what this image ships for, sorted by root so the
+// handoff is the same whichever order the shippers started in.
+func currentShipments() []shipHandoff {
+	shipments.Lock()
+	defer shipments.Unlock()
+	out := make([]shipHandoff, 0, len(shipments.byRoot))
+	for root, sh := range shipments.byRoot {
+		out = append(out, shipHandoff{Root: root, Token: sh.get()})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Root < out[j].Root })
+	return out
+}
+
+// restoreShipments restarts what the previous image was shipping for.
+func restoreShipments(
+	ctx context.Context, client *http.Client, url, secret string, carried []shipHandoff, timing shipTiming,
+) {
+	for _, s := range carried {
+		if s.Root == "" || s.Token == "" {
+			continue
 		}
-		mu.Unlock()
+		shipFor(ctx, client, url, secret, s.Root, s.Token, timing)
 	}
 }
 
