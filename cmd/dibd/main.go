@@ -115,8 +115,16 @@ func run() error {
 	// without an unbounded file, and the board can show it. Sensitive attrs are
 	// redacted at capture, so no copy ever holds a token or a message body.
 	logRing := logs.NewRing(2048)
+	// DIBS_LOG_DEBUG=1 shows the decisions the daemon makes and does not act
+	// on: why a wake was not attempted, which hook resolved to whom. The
+	// wake path's refusals are Debug because a healthy board makes many, and
+	// a suite that could not see them spent an hour on one. Off by default.
+	level := slog.LevelInfo
+	if os.Getenv("DIBS_LOG_DEBUG") != "" {
+		level = slog.LevelDebug
+	}
 	slog.SetDefault(slog.New(logs.NewHandler(
-		slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}), logRing,
+		slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}), logRing,
 	)))
 
 	cfg, err := loadConfig(*dir)

@@ -131,6 +131,11 @@ Things that have cost real time here, none of which are visible in the diff:
 - **A failing probe is usually a broken probe.** Before concluding the product is
   broken, check that your measurement is sound: assert your setup steps
   succeeded. Three false alarms in one session came from this.
+- **The wake path's refusals are Debug-level.** A healthy board makes many,
+  so they are invisible by default, and an hour went into a two-host suite
+  whose wake had stopped firing before anyone could see why ("called Dibs
+  recently"). `DIBS_LOG_DEBUG=1` on `dibd` shows them, and the remote e2e
+  runs its hub that way and prints the tail of the hub log on a failed wake.
 - **A doc-count guard is only as good as the spellings it knows.** The tool
   count appears in six documents and has now gone stale three times in three
   different shapes: a plain wrong number, `one tool of forty-two`, and

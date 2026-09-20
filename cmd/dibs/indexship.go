@@ -51,7 +51,17 @@ func shipIndexOnRegister(
 		var tok, cwd string
 		switch toolNameOf(sent) {
 		case "register", "resume":
-			tok, cwd = agentTokenIn(reply), argIn(sent, "cwd")
+			// The directory the BOARD recorded for this agent, read from the
+			// board every register and resume reply carries: `resume` takes
+			// no cwd, and a register's argument is what the model typed
+			// before the bridge filled it in. Round nine of the pre-release
+			// review found the resume branch falling back to this bridge's
+			// own directory, which need not be the agent's.
+			tok = agentTokenIn(reply)
+			cwd = agentCWDIn(reply, agentIDIn(reply))
+			if cwd == "" {
+				cwd = argIn(sent, "cwd")
+			}
 		case "update":
 			tok, cwd = argIn(sent, "token"), argIn(sent, "cwd")
 			if cwd == "" {
@@ -109,6 +119,44 @@ func (s *shipper) get() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.token
+}
+
+// agentCWDIn reads, from the board a register or resume reply carries, the
+// working directory recorded for the agent the reply names; "" when the
+// reply has no board or the agent is not on it.
+func agentCWDIn(reply []byte, agentID string) string {
+	if agentID == "" {
+		return ""
+	}
+	var env struct {
+		Result struct {
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"result"`
+	}
+	if json.Unmarshal(reply, &env) != nil || len(env.Result.Content) == 0 {
+		return ""
+	}
+	var res struct {
+		Board struct {
+			Agents []struct {
+				ID    string `json:"id"`
+				Agent struct {
+					CWD string `json:"cwd"`
+				} `json:"agent"`
+			} `json:"agents"`
+		} `json:"board"`
+	}
+	if json.Unmarshal([]byte(env.Result.Content[0].Text), &res) != nil {
+		return ""
+	}
+	for _, a := range res.Board.Agents {
+		if a.ID == agentID {
+			return a.Agent.CWD
+		}
+	}
+	return ""
 }
 
 // argIn reads one string argument of a tools/call, or "".

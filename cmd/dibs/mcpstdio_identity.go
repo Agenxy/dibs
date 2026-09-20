@@ -290,6 +290,9 @@ func enrichRegister(line []byte) []byte {
 	if !touched && lastClientInfo == nil {
 		return line
 	}
+	// Again, after the fill-in: the cwd the sidecar supplies is the
+	// spelling the person typed, and it is compared like any other.
+	canonicalisePathArgs(params)
 	out, err := json.Marshal(msg)
 	if err != nil {
 		return line // never drop a request because enrichment failed
@@ -398,6 +401,14 @@ var pathArgs = map[string][]string{
 	"hook_poll":     {"cwd"},
 	"hook_session":  {"cwd"},
 	"hook_blocked":  {"cwd"},
+	// The working directory an agent states at registration, or corrects,
+	// is compared against the repository root the bridge resolves for it
+	// (repoMeta canonicalises), and against what a remote hub records: a
+	// macOS checkout registered as /tmp/repo beside a root of
+	// /private/tmp/repo had its index shipment refused for naming a root
+	// that was not the agent's. Round nine of the pre-release review.
+	"register": {"cwd"},
+	"update":   {"cwd"},
 }
 
 // canonicalisePathArgs resolves a call's path arguments on the machine they

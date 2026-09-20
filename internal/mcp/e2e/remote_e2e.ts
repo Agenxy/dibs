@@ -74,7 +74,7 @@ writeFileSync(join(hubDir, "dibs.toml"), `addr = "${ADDR}"\n`)
 // off the daemon's PATH, every checkout identity on this board has to come
 // from a bridge, which is how a real fleet works.
 const noGit = (process.env.PATH ?? "").split(":").filter((d) => !existsSync(join(d, "git"))).join(":")
-const daemon = Bun.spawn({ cmd: [dibd, "-dir", hubDir], env: { ...process.env, PATH: noGit }, stdout: "ignore", stderr: "pipe" })
+const daemon = Bun.spawn({ cmd: [dibd, "-dir", hubDir], env: { ...process.env, PATH: noGit, DIBS_LOG_DEBUG: "1" }, stdout: "ignore", stderr: "pipe" })
 let hubLog = ""
 void (async () => {
   const reader = daemon.stderr.getReader()
@@ -314,6 +314,11 @@ const sleeper = await sleeperBridge.call("register", {
   cwd: sleeperRepo, nonce: "e2e-remote-sleeper",
 })
 check("a wakeable agent registers on the joining machine", !!sleeper.token, JSON.stringify(sleeper).slice(0, 200))
+// Its turn ends, as the local suite's does: an agent that registered a moment
+// ago is recently in touch, for a remote agent as for a local one since the
+// ninth review round, and a wake against a running turn is the duplicate the
+// path refuses. The Stop hook is what says the turn is over.
+await sleeperBridge.call("hook_poll", { session_id: THREAD, event: "Stop", cwd: sleeperRepo })
 
 const hostBridge = Bun.spawn({
   cmd: [dibsBin, "host-bridge"], cwd: clientDir,
@@ -321,6 +326,12 @@ const hostBridge = Bun.spawn({
   stdout: "ignore", stderr: "pipe",
 })
 bridges.push(hostBridge)
+let bridgeLog = ""
+;(async () => {
+  const dec = new TextDecoder()
+  const reader = hostBridge.stderr.getReader()
+  for (;;) { const { value, done } = await reader.read(); if (done) break; bridgeLog += dec.decode(value, { stream: true }) }
+})()
 // The hub lists what is attached; the bridge is attached when it appears.
 async function attachedHosts(): Promise<any[]> {
   try {
@@ -345,7 +356,7 @@ const woke = wakes()
 const after = await hub.call("check_in", { token: hubReg.token, detail: true })
 const sleeperRow = (after.board?.agents ?? []).find((a: any) => a.id === sleeper.agent_id)
 check("the joining machine ran ITS OWN wake command for its agent, handed the thread the hub found", woke.length === 1 && woke[0]?.[0] === THREAD,
-  `wakes: ${JSON.stringify(woke).slice(0, 300)}  sleeper: ${JSON.stringify({ session: sleeperRow?.session_id, aliases: sleeperRow?.session_aliases, host: sleeperRow?.agent?.host_id, harness: sleeperRow?.agent?.harness, status: sleeperRow?.status })}  hub-log: ${hubLog.split("\n").filter((l) => l.includes("wake")).slice(-3).join(" | ").slice(0, 400)}`)
+  `wakes: ${JSON.stringify(woke).slice(0, 300)}  sleeper: ${JSON.stringify({ session: sleeperRow?.session_id, aliases: sleeperRow?.session_aliases, host: sleeperRow?.agent?.host_id, harness: sleeperRow?.agent?.harness, status: sleeperRow?.status })}  hub-log: ${hubLog.split("\n").filter((l) => l.includes("wake") || l.includes("hook")).slice(-6).join(" | ").slice(0, 600)}  bridge-log: ${bridgeLog.slice(-800)}`)
 check("with the one fixed sentence, the agent, the sender and the mail type substituted",
   woke[0]?.[1] === "Dibs: check the board." && woke[0]?.[2] === "remote-sleeper" && woke[0]?.[3] === "hub-worker" && woke[0]?.[4] === "question",
   JSON.stringify(woke[0] ?? null))

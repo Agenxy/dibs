@@ -261,9 +261,21 @@ func TestTheShipperFollowsTheRegisteredDirectory(t *testing.T) {
 	t.Cleanup(cancel)
 	timing := shipTiming{schedule: []time.Duration{time.Millisecond}, recheck: 20 * time.Millisecond}
 	hook := shipIndexOnRegister(ctx, srv.Client(), srv.URL+"/mcp", "secret", timing, func([]byte, []byte) {})
-	sent := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"register","arguments":{"name":"a","cwd":` + strconv.Quote(registered) + `}}}`)
-	reply := []byte(`{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{\"token\":\"tok\",\"agent_id\":\"a\"}"}]}}`)
-	hook(sent, reply)
+	// A reply as the daemon writes it: the board carries the directory it
+	// recorded for the agent, which is what the shipper watches.
+	replyFor := func(id int, tok, cwd string) []byte {
+		inner, _ := json.Marshal(map[string]any{
+			"token": tok, "agent_id": "a",
+			"board": map[string]any{"agents": []map[string]any{{"id": "a", "agent": map[string]any{"cwd": cwd}}}},
+		})
+		outer, _ := json.Marshal(map[string]any{
+			"jsonrpc": "2.0", "id": id,
+			"result": map[string]any{"content": []map[string]any{{"type": "text", "text": string(inner)}}},
+		})
+		return outer
+	}
+	sent := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"register","arguments":{"name":"a"}}}`)
+	hook(sent, replyFor(1, "tok", registered))
 	select {
 	case root := <-asked:
 		if root != registered {
@@ -277,8 +289,9 @@ func TestTheShipperFollowsTheRegisteredDirectory(t *testing.T) {
 	// The credential rotates on a resume; the shipper for the same tree
 	// ships with the new one, or every later shipment is a 401. Round eight
 	// of the pre-release review.
-	resumeOp := []byte(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"resume","arguments":{"nonce":"n","resume_id":"r","cwd":` + strconv.Quote(registered) + `}}}`)
-	hook(resumeOp, []byte(`{"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"{\"token\":\"tok-2\",\"agent_id\":\"a\"}"}]}}`))
+	// resume takes no cwd; the reply's board says where the agent is.
+	resumeOp := []byte(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"resume","arguments":{"nonce":"n","resume_id":"r"}}}`)
+	hook(resumeOp, replyFor(3, "tok-2", registered))
 	restarted <- struct{}{} // the daemon forgets the index; the shipper must ship again, with tok-2
 	select {
 	case <-asked:

@@ -2,6 +2,7 @@ package notify
 
 import (
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -50,8 +51,12 @@ func TestNoScriptInThisPackageIsBuiltFromInput(t *testing.T) {
 // The safety argument, against the real interpreter rather than a description
 // of it. A body that would be code if interpolated must come back as text.
 func TestAgentTextCannotBecomeCode(t *testing.T) {
-	if !Available() {
-		t.Skip("no notification route on this platform")
+	// osascript is macOS's interpreter. Available() alone was the gate, and
+	// on Linux it now answers "assume yes" while the notifier probe is still
+	// running (it must not wait, being asked on the writer loop), which sent
+	// this test looking for osascript on a Linux runner.
+	if runtime.GOOS != "darwin" || !Available() {
+		t.Skip("no osascript on this platform")
 	}
 	const echo = `on run argv
   return item 1 of argv
