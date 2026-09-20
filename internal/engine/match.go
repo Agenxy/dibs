@@ -554,6 +554,9 @@ func declarationOf(op *core.Op) core.Slot {
 		// The coordinate systems this declaration was scored in, so the match
 		// compares it to a peer's slot inside one they share. Issue #39.
 		Index: op.Index, Footprints: op.Footprints,
+		// Provenance travels with the footprint into every space it opens or
+		// joins: see Space.Supplied.
+		IndexSupplied: op.IndexSupplied,
 	}
 }
 
@@ -638,7 +641,10 @@ func (e *Engine) matchDeclaration(
 		}
 		pred.Files = nil // carry on with facts alone
 	}
-	recorded := withDeclaredDirs(toPredFiles(pred.Files), declDirs, cfg.Repo)
+	// mine is the declaration as the board will compare it: its recorded
+	// footprint, and the provenance of the index that produced it.
+	mine := decl
+	mine.Predicted = withDeclaredDirs(toPredFiles(pred.Files), declDirs, cfg.Repo)
 
 	// Dibs opened before the index was ready carry no footprint and would be
 	// invisible forever; give them one first.
@@ -658,8 +664,6 @@ func (e *Engine) matchDeclaration(
 		if l.Agent != nil {
 			selfCWD = l.Agent.CWD // where this agent actually is; see inMatchedRepo
 		}
-		mine := decl
-		mine.Predicted = recorded
 		matches = e.state.MatchAgentsEvidence(l.ID, mine, selfCWD, cfg.Repo, lens, overlay, 5)
 		return core.Result{}
 	})
@@ -671,7 +675,7 @@ func (e *Engine) matchDeclaration(
 		return nil, matchedNothing
 	}
 
-	out := e.suggestionsFor(ctx, token, matches, cfg, pred, recorded, selfCWD)
+	out := e.suggestionsFor(ctx, token, matches, cfg, pred, mine, selfCWD)
 
 	// Nothing matched, so OPEN the first agent. SPEC-CHANNELS §3: "If no agent
 	// matched at all, a new agent is opened with the declaration as its topic."
@@ -691,7 +695,7 @@ func (e *Engine) matchDeclaration(
 		if alreadyCoordinating(matches, cfg.NotifyThreshold) {
 			return nil, matchedAlreadyIn
 		}
-		if s := e.openFirstSpace(ctx, token, declaration, declRefs, cfg.Repo, pred, recorded); s != nil {
+		if s := e.openFirstSpace(ctx, token, declaration, declRefs, cfg.Repo, pred, mine); s != nil {
 			return []Suggestion{*s}, matchedNothing
 		}
 		// It was TRIED and did not happen. Saying matchedNothing here claims a
@@ -704,7 +708,7 @@ func (e *Engine) matchDeclaration(
 // suggestionsFor turns scored agents into what the agent is told, joining it to
 // the ones above the bar as it goes.
 func (e *Engine) suggestionsFor(ctx context.Context, token string, matches []core.AgentMatch,
-	cfg MatchConfig, pred overlap.Prediction, recorded []core.PredFile, selfCWD string,
+	cfg MatchConfig, pred overlap.Prediction, mine core.Slot, selfCWD string,
 ) []Suggestion {
 	// Positive evidence that this agent is working somewhere else entirely.
 	// Everything still gets SURFACED; what this withholds is the automatic join.
@@ -752,7 +756,7 @@ func (e *Engine) suggestionsFor(ctx context.Context, token string, matches []cor
 			continue
 		}
 		if aboveBar || len(m.SharedIDs) > 0 {
-			s.Action, s.Position, s.Key = e.attemptJoin(ctx, token, m, cfg, pred, recorded)
+			s.Action, s.Position, s.Key = e.attemptJoin(ctx, token, m, cfg, pred, mine)
 		}
 		out = append(out, s)
 	}
@@ -1065,7 +1069,7 @@ func slug(s string) string {
 // human-named agent, or a lost race with another agent declaring the same thing
 // costs a suggestion, never the declaration.
 func (e *Engine) openFirstSpace(ctx context.Context, token, declaration string,
-	refs []string, repo string, pred overlap.Prediction, recorded []core.PredFile,
+	refs []string, repo string, pred overlap.Prediction, mine core.Slot,
 ) *Suggestion {
 	// The topic keeps the declaration, bounded: it is what a reader sees to
 	// understand what the agent is FOR, and what the next agent reads before
@@ -1103,7 +1107,8 @@ func (e *Engine) openFirstSpace(ctx context.Context, token, declaration string,
 		}
 		res, err = e.Do(ctx, &core.Op{
 			Kind: core.OpSpaceOpen, Token: token, Space: attempted, Text: topic,
-			Predicted: recorded, ScorerID: pred.ScorerID, ScorerVersion: pred.Version,
+			Predicted: mine.Predicted, IndexSupplied: mine.IndexSupplied,
+			ScorerID: pred.ScorerID, ScorerVersion: pred.Version,
 			// Dibs opened this, not an agent, so it may be reclaimed when it
 			// empties, and an agent somebody opened deliberately may not.
 			Auto: true,
@@ -1151,14 +1156,14 @@ func (e *Engine) openFirstSpace(ctx context.Context, token, declaration string,
 // stands, and it can join by hand. Losing the whole match because the agent
 // turned exclusive a moment ago would be worse than telling the agent about it.
 func (e *Engine) attemptJoin(ctx context.Context, token string, m core.AgentMatch,
-	cfg MatchConfig, pred overlap.Prediction, recorded []core.PredFile,
+	cfg MatchConfig, pred overlap.Prediction, mine core.Slot,
 ) (action string, position int, key string) {
 	res, err := e.Do(ctx, &core.Op{
 		Kind: core.OpSpaceJoin, Token: token, Space: m.Space,
 		Score: m.Score, Threshold: cfg.JoinThreshold,
 		ScorerID: pred.ScorerID, ScorerVersion: pred.Version,
 		Evidence: predPaths(m.Shared), Auto: true,
-		Predicted: recorded,
+		Predicted: mine.Predicted, IndexSupplied: mine.IndexSupplied,
 	})
 	switch {
 	case err != nil:

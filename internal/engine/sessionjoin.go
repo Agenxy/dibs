@@ -74,14 +74,17 @@ const sessionJoinWindow = time.Hour
 // past this is not one, and the announcement is ignored rather than stored.
 const maxSessionIDBytes = 256
 
-// announcedSession returns the session id a harness reported at `cwd` through
-// its own lifecycle hook and that no agent has claimed, or "".
+// announcedSession returns the session id a harness reported at `cwd` on
+// `host` through its own lifecycle hook and that no agent has claimed, or "".
+// An announcement from another machine is not this agent's, however exactly
+// the directory matches; one whose machine the transport never established
+// is compared on the directory alone, as before hosts existed.
 //
 // The decision, split from exec() so it can be tested without a loop: on a
 // zero-value Engine, e.query() sends on a nil channel and blocks forever
 // instead of failing, so anything only reachable through the wrapper is
 // effectively untested. See AGENTS.md.
-func announcedSession(children map[string]Child, st *core.State, cwd string, now time.Time) string {
+func announcedSession(children map[string]Child, st *core.State, cwd, host string, now time.Time) string {
 	if cwd == "" || len(children) == 0 {
 		return ""
 	}
@@ -93,6 +96,9 @@ func announcedSession(children map[string]Child, st *core.State, cwd string, now
 	for sid, c := range children {
 		if sid == "" || len(sid) > maxSessionIDBytes || cleanDir(c.CWD) != want {
 			continue
+		}
+		if host != "" && c.Host != "" && c.Host != host {
+			continue // announced from another machine: the same path, a different disk
 		}
 		if now.Sub(c.Seen) > sessionJoinWindow {
 			continue // announced too long ago to be the session registering now

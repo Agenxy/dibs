@@ -61,7 +61,7 @@ func TestTheMatcherCarriesTheCoordinationKeyOutOfAnAutoJoin(t *testing.T) {
 	action, _, key := e.attemptJoin(ctx, joiner,
 		core.AgentMatch{Space: "auth-work", Score: 0.9},
 		MatchConfig{JoinThreshold: 0.33},
-		overlap.Prediction{ScorerID: "test"}, nil)
+		overlap.Prediction{ScorerID: "test"}, core.Slot{})
 
 	if action != "joined" {
 		t.Fatalf("attemptJoin action = %q, want joined: the assertion below cannot "+

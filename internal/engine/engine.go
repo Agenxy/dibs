@@ -543,7 +543,7 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		switch op.Kind {
 		case core.OpRegister, core.OpUpdate:
 			if op.Agent != nil {
-				op.SessionAlias = announcedSession(e.children, e.state, op.Agent.CWD, now)
+				op.SessionAlias = announcedSession(e.children, e.state, op.Agent.CWD, op.Agent.HostID, now)
 			}
 		case core.OpAckBoard:
 			// check_in carries no cwd, so the agent's own registered one is used.
@@ -551,7 +551,7 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 			// have no reason to register again, and check_in is the one call
 			// they all keep making.
 			if l := e.state.AgentByToken(op.Token); l != nil && l.Agent != nil {
-				op.SessionAlias = announcedSession(e.children, e.state, l.Agent.CWD, now)
+				op.SessionAlias = announcedSession(e.children, e.state, l.Agent.CWD, l.Agent.HostID, now)
 			}
 		default:
 			op.SessionAlias = "" // no other op binds an identity
