@@ -274,14 +274,28 @@ func (s *State) applyResume(op *Op, now time.Time) (Result, []Event, error) {
 	}
 	// Generation-aware idempotent retry (SPEC §5): same resume_id returns the
 	// original token iff the generation is unchanged; else superseded.
+	//
+	// AND ONLY WHILE THE ROW STILL HOLDS THAT TOKEN. Archival clears the
+	// token and leaves the activation alone, so a resume retried after the
+	// agent was archived (StaleGrace after dormancy for an ephemeral one,
+	// well inside DedupWindow) matched on the activation, answered
+	// "resumed: true" with a token the board had stopped tracking, and left
+	// the row archived: the next call failed E_BAD_TOKEN and named the very
+	// recovery that had just reported success. A record whose token is gone
+	// is not a replay; it falls through to a fresh activation. Ungated for
+	// the reason the archived branch above is: the replay branch advances
+	// no serial, so no ledger holds a resume that took it. Round sixteen of
+	// the pre-release review.
 	if rec, exists := s.Dedup[dedupKey(id, op.ResumeID)]; exists {
-		if rec.Activation == l.Activation {
+		switch {
+		case rec.Activation != l.Activation:
+			return Result{"agent_id": id, "superseded": true, "activation": rec.Activation}, nil, nil
+		case l.Token == rec.Token:
 			return Result{
 				"agent_id": id, "token": rec.Token, "activation": l.Activation,
 				"serial": s.Serial, "board": s.Board(), "resumed": true,
 			}, nil, nil
 		}
-		return Result{"agent_id": id, "superseded": true, "activation": rec.Activation}, nil, nil
 	}
 	// A RESUME IS AN ACTIVATION IN A NEW SESSION, and this bound none of it.
 	//

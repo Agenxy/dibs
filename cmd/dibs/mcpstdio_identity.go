@@ -139,9 +139,7 @@ func enrichRegister(line []byte) []byte {
 			// cannot ask Git about a path that exists only here, and the
 			// repository rule for two clones on two machines needs the answer;
 			// a daemon on THIS machine ignores it and derives its own.
-			if repo := repoMeta(params); repo != nil {
-				meta[mcp.RepoMetaKey] = repo
-			}
+			stampRepo(params)
 			if tid, _ := meta["threadId"].(string); strings.TrimSpace(tid) != "" {
 				noteThread(strings.TrimSpace(tid))
 			}
@@ -294,6 +292,13 @@ func enrichRegister(line []byte) []byte {
 	// Again, after the fill-in: the cwd the sidecar supplies is the
 	// spelling the person typed, and it is compared like any other.
 	canonicalisePathArgs(params)
+	// AND THE REPOSITORY, AGAIN. The identity above was computed while the
+	// register's cwd was blank, from the bridge's own process directory;
+	// the sidecar has since named the session's real checkout, and a hub on
+	// another machine recorded that directory beside the wrong repository
+	// (or none), so every claim made there carried the wrong
+	// repository-relative key. Round sixteen of the pre-release review.
+	stampRepo(params)
 	out, err := json.Marshal(msg)
 	if err != nil {
 		return line // never drop a request because enrichment failed
@@ -391,6 +396,21 @@ func repoMeta(params map[string]any) map[string]string {
 		return nil
 	}
 	return map[string]string{"dir": dir, "remote": remote, "roots": roots, "root": id.WorktreeID}
+}
+
+// stampRepo puts the checkout the call's cwd names into `_meta`, replacing
+// what an earlier pass wrote, or removing it when the cwd names no checkout:
+// a stale identity beside a corrected directory is worse than none.
+func stampRepo(params map[string]any) {
+	meta, _ := params["_meta"].(map[string]any)
+	if meta == nil {
+		return
+	}
+	if repo := repoMeta(params); repo != nil {
+		meta[mcp.RepoMetaKey] = repo
+		return
+	}
+	delete(meta, mcp.RepoMetaKey)
 }
 
 // pathArgs names, per tool, the arguments that are paths on THIS machine.

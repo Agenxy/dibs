@@ -267,3 +267,52 @@ func TestAnArchivedAgentCanResumeWithItsNonce(t *testing.T) {
 			"recovery guard refuses", l.Nonce)
 	}
 }
+
+// AND A RETRIED RESUME AFTER ARCHIVAL IS A RESUME, NOT A REPLAY.
+//
+// The idempotent retry hands back the cached token when the activation is
+// unchanged. Archival clears the token and leaves the activation alone, so
+// an agent that resumed under resume_id r-1, was archived (five minutes plus
+// thirty for an ephemeral agent; dedup records live a day) and retried the
+// same resume_id was told "resumed: true" and handed a token the board had
+// stopped tracking, with the row still archived. Its next call failed
+// E_BAD_TOKEN and named the recovery it had just been told succeeded. The
+// replay is only a replay while the token it returns is the one on the row.
+// Round sixteen of the pre-release review.
+func TestARetriedResumeAfterArchivalReactivates(t *testing.T) {
+	s := NewState("t", DefaultLimits())
+	now := time.Unix(1700000000, 0)
+
+	if _, _, err := s.Apply(&Op{
+		Kind: OpRegister, Name: "worker", NewToken: "tok-1", Nonce: "n-keepme",
+		AgentKind: KindEphemeral, // archived after StaleGrace, well inside DedupWindow
+	}, now); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	id := s.Nonces["n-keepme"]
+	mustApply(t, s, &Op{Kind: OpResume, Nonce: "n-keepme", ResumeID: "r-1", NewToken: "tok-2"}, now.Add(time.Minute))
+
+	dormant := now.Add(s.Limits.AgentTTL + time.Minute)
+	mustApply(t, s, &Op{Kind: OpSweep, StaleAgents: []string{id}, KeepArchivedNonce: true}, dormant)
+	archived := dormant.Add(s.Limits.StaleGrace + time.Minute)
+	mustApply(t, s, &Op{Kind: OpSweep, KeepArchivedNonce: true}, archived)
+	if got := s.Agents[id]; got.Status != StatusArchived || got.Token != "" {
+		t.Fatalf("setup did not reach the state under test: status %q token %q", got.Status, got.Token)
+	}
+	if _, kept := s.Dedup[dedupKey(id, "r-1")]; !kept {
+		t.Fatal("setup: the dedup record expired before the retry, so this is not the case under test")
+	}
+
+	res, _, err := s.Apply(&Op{
+		Kind: OpResume, Nonce: "n-keepme", ResumeID: "r-1", NewToken: "tok-3",
+	}, archived.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("retried resume: %v", err)
+	}
+	l := s.Agents[id]
+	tok, _ := res["token"].(string)
+	if l.Status != StatusActive || tok == "" || l.Token != tok {
+		t.Fatalf("the retried resume answered %v and left the row %q with token %q: a success "+
+			"whose token the board does not hold", res, l.Status, l.Token)
+	}
+}
