@@ -77,7 +77,7 @@ func TestTheFallbackAsksTheDaemonItRegisteredWith(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	go shipWhenUnreadable(ctx, srv.Client(), srv.URL+"/mcp", "secret", "token", "/not/a/checkout",
+	go shipWhenUnreadable(ctx, srv.Client(), srv.URL+"/mcp", "secret", &shipper{token: "token"}, "/not/a/checkout",
 		shipTiming{schedule: []time.Duration{time.Millisecond}, recheck: time.Hour})
 	time.Sleep(200 * time.Millisecond)
 
@@ -162,7 +162,7 @@ func TestTheBridgeShipsAgainAfterTheDaemonRestarts(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	go shipWhenUnreadable(ctx, srv.Client(), srv.URL+"/mcp", "secret", "token", root,
+	go shipWhenUnreadable(ctx, srv.Client(), srv.URL+"/mcp", "secret", &shipper{token: "token"}, root,
 		shipTiming{schedule: []time.Duration{time.Millisecond}, recheck: 20 * time.Millisecond})
 
 	waitFor := func(want int, why string) {
@@ -225,24 +225,41 @@ func TestTheShipperFollowsTheRegisteredDirectory(t *testing.T) {
 	}
 	registered, moved := mk(), mk()
 
-	asked := make(chan string, 16)
+	asked, tokens := make(chan string, 16), make(chan string, 16)
+	restarted := make(chan struct{}, 1)
+	var mu sync.Mutex
+	supplied := map[string]bool{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		select {
+		case <-restarted:
+			supplied = map[string]bool{} // a restart forgets every supplied index
+		default:
+		}
 		if r.URL.Path == "/api/match-status" {
-			// Whatever tree is asked about is one to ship for.
-			_ = json.NewEncoder(w).Encode(matchStatusJSON{Unreadable: []string{registered, moved}})
+			// Whatever tree is asked about is one to ship for, unless served.
+			st := matchStatusJSON{Unreadable: []string{registered, moved}, Supplied: map[string]string{}}
+			for root := range supplied {
+				st.Supplied[root] = "a"
+			}
+			_ = json.NewEncoder(w).Encode(st)
 			return
 		}
 		var body struct {
-			Root string `json:"root"`
+			Root  string `json:"root"`
+			Token string `json:"token"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
+		supplied[body.Root] = true
 		asked <- body.Root
+		tokens <- body.Token
 		_ = json.NewEncoder(w).Encode(map[string]any{"accepted": true})
 	}))
 	defer srv.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	timing := shipTiming{schedule: []time.Duration{time.Millisecond}, recheck: time.Hour}
+	timing := shipTiming{schedule: []time.Duration{time.Millisecond}, recheck: 20 * time.Millisecond}
 	hook := shipIndexOnRegister(ctx, srv.Client(), srv.URL+"/mcp", "secret", timing, func([]byte, []byte) {})
 	sent := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"register","arguments":{"name":"a","cwd":` + strconv.Quote(registered) + `}}}`)
 	reply := []byte(`{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{\"token\":\"tok\",\"agent_id\":\"a\"}"}]}}`)
@@ -252,17 +269,34 @@ func TestTheShipperFollowsTheRegisteredDirectory(t *testing.T) {
 		if root != registered {
 			t.Fatalf("the first shipment was for %q, want the registered directory %q (the bridge runs in neither)", root, registered)
 		}
+		<-tokens
 	case <-time.After(5 * time.Second):
 		t.Fatal("no shipment for the registered directory")
 	}
 
-	moveOp := []byte(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"update","arguments":{"token":"tok","cwd":` + strconv.Quote(moved) + `}}}`)
+	// The credential rotates on a resume; the shipper for the same tree
+	// ships with the new one, or every later shipment is a 401. Round eight
+	// of the pre-release review.
+	resumeOp := []byte(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"resume","arguments":{"nonce":"n","resume_id":"r","cwd":` + strconv.Quote(registered) + `}}}`)
+	hook(resumeOp, []byte(`{"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"{\"token\":\"tok-2\",\"agent_id\":\"a\"}"}]}}`))
+	restarted <- struct{}{} // the daemon forgets the index; the shipper must ship again, with tok-2
+	select {
+	case <-asked:
+		if got := <-tokens; got != "tok-2" {
+			t.Fatalf("after the resume the shipment carried token %q, want the rotated tok-2: the old one is revoked and the daemon answers 401", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no shipment after the daemon forgot the index")
+	}
+
+	moveOp := []byte(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"update","arguments":{"token":"tok-2","cwd":` + strconv.Quote(moved) + `}}}`)
 	hook(moveOp, []byte(`{"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"{\"ok\":true}"}]}}`))
 	select {
 	case root := <-asked:
 		if root != moved {
 			t.Fatalf("after the agent moved, the shipment was for %q, want %q", root, moved)
 		}
+		<-tokens
 	case <-time.After(5 * time.Second):
 		t.Fatal("no shipment for the directory the agent moved to")
 	}

@@ -102,3 +102,35 @@ func TestAWholeCheckoutDeclarationOverlapsASubdirectoryInAnotherWorktree(t *test
 			"same repository reported %v, want one same-paths overlap", res["overlaps"])
 	}
 }
+
+// Two unrelated repositories at one path on two machines do not share an
+// objective. differentProjects read equal Git-directory strings as one
+// repository without asking which machine, so two strangers declaring
+// issue:42 on two hosts were told they were duplicating each other's work,
+// with distinct remotes and root commits recorded on both. Round eight of
+// the pre-release review.
+func TestSharedReferencesDoNotCrossMachinesOnAPathTheyBothHave(t *testing.T) {
+	s := NewState("t", DefaultLimits())
+	now := time.Unix(1700000000, 0)
+
+	for _, a := range []struct{ name, tok, host, remote, roots string }{
+		{"here", "tok-1", "host-a", "git@example.com:acme/api", "r-api"},
+		{"there", "tok-2", "host-b", "git@example.com:other/web", "r-web"},
+	} {
+		mustApply(t, s, &Op{
+			Kind: OpRegister, Name: a.name, NewToken: a.tok,
+			Agent: &AgentInfo{
+				CWD: "/workspace/repo", HostID: a.host, RepoDir: "/workspace/repo/.git",
+				RepoRoot: "/workspace/repo", RepoRemote: a.remote, RepoRoots: a.roots,
+			},
+		}, now)
+		mustApply(t, s, &Op{Kind: OpAckBoard, Token: a.tok}, now)
+	}
+	mustApply(t, s, &Op{Kind: OpSetSlot, Token: "tok-1", Text: "issue 42", Refs: []string{"issue:42"}}, now)
+
+	res := mustApply(t, s, &Op{Kind: OpSetSlot, Token: "tok-2", Text: "our issue 42", Refs: []string{"issue:42"}}, now)
+	if ov, _ := res["overlaps"].([]SlotOverlap); len(ov) != 0 {
+		t.Fatalf("two different projects on two machines, at one path, were told they share an "+
+			"objective: %v", ov)
+	}
+}

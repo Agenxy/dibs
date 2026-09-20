@@ -63,9 +63,16 @@ func (s *State) applyAdoptAgent(op *Op, l *Agent, now time.Time) (Result, []Even
 	// operation, so an active agent that has just done something can be swept
 	// stale immediately. Found by a pre-release review.
 	l.LastCoordination = now
+	// WHO DID IT, and where the receiver was registered from: the audit
+	// trail SECURITY.md points at for a coordinator moving a mailbox onto a
+	// row it minted. The row keeps its provenance too; the event puts it
+	// beside the act.
 	evs := []Event{{
 		Type: "agent.updated", Agent: into.ID,
-		Data: map[string]any{"adopted_from": from.ID, "messages": moved},
+		Data: map[string]any{
+			"adopted_from": from.ID, "messages": moved, "by": l.ID,
+			"into_registered_from": into.RegisteredFrom,
+		},
 	}}
 	evs = append(evs, s.adoptedMailEvents(into, from)...)
 	serial := s.finish(&evs, now)

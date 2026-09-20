@@ -39,7 +39,7 @@ func shipIndexOnRegister(
 ) func(sent, reply []byte) {
 	var (
 		mu       sync.Mutex
-		watching = map[string]bool{} // roots with a shipper already running
+		watching = map[string]*shipper{} // one shipper per root, for the life of the bridge
 	)
 	return func(sent, reply []byte) {
 		next(sent, reply)
@@ -75,14 +75,40 @@ func shipIndexOnRegister(
 			return // not a checkout; nothing to index anywhere
 		}
 		mu.Lock()
-		already := watching[root]
-		watching[root] = true
-		mu.Unlock()
-		if already {
-			return // one shipper per tree for the life of the bridge
+		sh := watching[root]
+		if sh == nil {
+			sh = &shipper{token: tok}
+			watching[root] = sh
+			go shipWhenUnreadable(ctx, client, url, secret, sh, root, timing)
+		} else {
+			// THE CREDENTIAL ROTATES: a resume, or a register that reattached,
+			// returns a fresh token and revokes the one the shipper captured.
+			// A shipment with the old one is a 401 from the daemon and no
+			// index for that tree, however many times the agent re-registers.
+			// Round eight of the pre-release review.
+			sh.set(tok)
 		}
-		go shipWhenUnreadable(ctx, client, url, secret, tok, root, timing)
+		mu.Unlock()
 	}
+}
+
+// shipper is one tree's shipment loop and the credential it ships with, which
+// the hook replaces on every register or resume that hands out a new one.
+type shipper struct {
+	mu    sync.Mutex
+	token string
+}
+
+func (s *shipper) set(tok string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.token = tok
+}
+
+func (s *shipper) get() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.token
 }
 
 // argIn reads one string argument of a tools/call, or "".
@@ -147,7 +173,9 @@ const shipRecheckEvery = 5 * time.Minute
 // then at shipRecheckEvery for the life of the bridge, ships whenever the
 // daemon wants an index this bridge has not supplied, and says nothing on
 // success: the daemon logs what it installed.
-func shipWhenUnreadable(ctx context.Context, client *http.Client, url, secret, token, root string, timing shipTiming) {
+func shipWhenUnreadable(
+	ctx context.Context, client *http.Client, url, secret string, sh *shipper, root string, timing shipTiming,
+) {
 	for i := 0; ; i++ {
 		wait := timing.recheck
 		if i < len(timing.schedule) {
@@ -167,7 +195,7 @@ func shipWhenUnreadable(ctx context.Context, client *http.Client, url, secret, t
 		if !wantsIndex(st, root) || suppliedFor(st, root) {
 			continue
 		}
-		if err := shipIndex(ctx, client, url, secret, token, root); err != nil {
+		if err := shipIndex(ctx, client, url, secret, sh.get(), root); err != nil {
 			fmt.Fprintln(os.Stderr, "dibs: could not ship the index for", root+":", err)
 		}
 	}

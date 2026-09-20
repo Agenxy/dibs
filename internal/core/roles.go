@@ -616,12 +616,23 @@ func (a *Agent) sessions() []string {
 	return append(out, a.SessionAliases...)
 }
 
-// OtherHands reports whether `other` is POSITIVELY somebody else: not the
-// same hands, and with a session or a registration provenance of its own to
-// show for it. An agent registered with no session information at all (a
-// stateless caller that sent none) cannot be told from one the coordinator
-// minted for itself, so it is not other hands either way. Round seven of
-// the pre-release review found the stateless route around SameHands.
+// OtherHands reports whether `other` is, on the evidence the transport
+// stamped, somebody else: not the same hands, and with a session or a
+// registration provenance of its own to show for it. An agent registered
+// with no session information at all (a stateless caller that sent none)
+// cannot be told from one the coordinator minted for itself, so it is not
+// other hands either way. Round seven of the pre-release review found the
+// stateless route around SameHands.
+//
+// EVIDENCE, NOT PROOF, and SECURITY.md says so where the coordinator role is
+// described. Nothing about a session is proven to the daemon: a caller on
+// the raw API can register a puppet with an invented session id and this
+// reads it as other hands, and no rule applied here can tell that puppet
+// from a stranger. What this closes is every route an agent's own tooling
+// takes, where the bridge stamps the truth; what remains is a coordinator
+// speaking the raw API with the local secret, and that is bounded by the
+// ledger, which records every adoption under the coordinator's name with
+// the target's provenance. Round eight of the pre-release review.
 func (a *Agent) OtherHands(other *Agent) bool {
 	if a == nil || other == nil || a.SameHands(other) {
 		return false

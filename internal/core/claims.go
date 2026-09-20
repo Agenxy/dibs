@@ -343,7 +343,13 @@ func differentProjects(a, b *Agent) bool {
 	if x.RepoDir == "" || y.RepoDir == "" {
 		return false // one of them is not in a checkout, or never said where
 	}
-	if x.RepoDir == y.RepoDir {
+	// A Git directory is a path, and a path is evidence on one computer
+	// only: /workspace/repo/.git on two machines is two repositories, and
+	// the equality read them as one, so two strangers declaring issue:42 on
+	// two hosts were told they shared an objective. The claim rule and the
+	// declared-paths rule already draw this line (sameRepoIdentity); round
+	// eight of the pre-release review found this shortcut still without it.
+	if x.RepoDir == y.RepoDir && !differentHosts(a, b) {
 		return false // one repository, possibly through two linked worktrees
 	}
 	if x.RepoRemote != "" && x.RepoRemote == y.RepoRemote {
