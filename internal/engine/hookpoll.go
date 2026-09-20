@@ -188,7 +188,7 @@ func (e *Engine) HookPoll(
 	return e.query(ctx, func() core.Result {
 		e.announceHookSession(sessionID, cwd, event)
 		l := e.state.AgentForHook(sessionID, cwd)
-		e.noteHook("poll", l != nil, !e.state.ActiveAgentsIn(cwd))
+		e.noteHookFor("poll", l, cwd)
 		e.noteTurnState(l, sessionID, event)
 		e.logHookResolution(sessionID, cwd, event, l)
 		if l == nil {
@@ -1159,6 +1159,13 @@ func (e *Engine) logHookResolution(sessionID, cwd, event string, l *core.Agent) 
 	}
 	if !e.state.AgentsIn(cwd) {
 		slog.Debug("hook resolved to nobody, and this directory has no agents",
+			"session_id", sessionID, "event", event, "cwd", cwd)
+		return
+	}
+	// Same discriminator as the counters: a miss beside agents whose own
+	// hooks all resolve is a session that never registered, not a fault.
+	if e.hookStranger(cwd) {
+		slog.Debug("hook resolved to nobody: an unregistered session beside reachable agents",
 			"session_id", sessionID, "event", event, "cwd", cwd)
 		return
 	}

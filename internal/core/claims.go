@@ -500,19 +500,27 @@ func (s *State) releaseClaims(agent string) []string {
 // not count: a seat that is asleep in a directory says nothing about which
 // session is asking now.
 func (s *State) ActiveAgentsIn(cwd string) bool {
+	return len(s.ActiveAgentIDsIn(cwd)) > 0
+}
+
+// ActiveAgentIDsIn lists the agents ActiveAgentsIn counts, for a caller that
+// needs to ask something of each: the engine's hook-health counters ask
+// whether every one of them has already been reached by its own hooks.
+func (s *State) ActiveAgentIDsIn(cwd string) []string {
 	if cwd == "" {
-		return false
+		return nil
 	}
 	want := cleanPath(cwd)
+	var ids []string
 	for _, l := range s.Agents {
 		if l.Status != StatusActive || l.Agent == nil {
 			continue
 		}
 		if cleanPath(l.Agent.CWD) == want {
-			return true
+			ids = append(ids, l.ID)
 		}
 	}
-	return false
+	return ids
 }
 
 // AgentsIn reports whether any agent that still exists works in this directory,
