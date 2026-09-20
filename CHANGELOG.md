@@ -108,6 +108,28 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round twenty-seven of the pre-release review: three findings, each in
+  the previous two rounds' own code.**
+  - Both plugins spell a path beneath a top-level directory that does not
+    exist yet the way it was written: the resolver took the unresolved tail
+    by slicing off the parent's length, and under `/` that ate the first
+    letter of the name, so the guard asked about a path nobody was writing
+    while the bridge had recorded the claim correctly.
+  - The plugins re-read where the hub is rather than keeping the first
+    answer: the bridge republishes when the hub moves and when it restarts,
+    and a plugin that read the origin once went on dialling an address the
+    bridge had already left. Re-read per call, cached for a second; pi asks
+    the binary again at most once a minute.
+  - The engine tests that arrange a state the tools cannot reach (a
+    coordinator role, a dormant human, an inherited mailbox) do it on the
+    engine's own loop rather than touching `core.State` beside it: sending
+    to the human spawns a handler that registers the person's row, and the
+    Linux runner's race detector caught the unsynchronised read next to it.
+  - `dibs doctor` on a joined machine counts the agents here that have
+    never supplied a harness thread instead of skipping them: no route can
+    wake those whatever the machine configures, and skipping them let the
+    check report that the bridge "covers every wakeable agent recorded
+    here" about a machine whose only agent could not be woken.
 - **Round twenty-six of the pre-release review: four findings.**
   - An index is fingerprinted by the files it scores over as well as the
     history behind it, through one function the daemon and a shipper both

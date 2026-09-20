@@ -31,13 +31,20 @@ func checkJoinedWakeRoutes(dir string, b *boardView, hosts []engine.HostBridgeIn
 			}
 		}
 	}
-	// The agents this machine's bridge is FOR: persistent, wakeable, with a
-	// thread a command could resume, and recorded as being here. One with no
-	// resumable thread is unreachable by any route and is the hub's
-	// "(no resumable thread)" to report, not a gap in this machine's table.
+	// The agents this machine's bridge is FOR: persistent, wakeable, and
+	// recorded as being here. One with no resumable thread is counted
+	// SEPARATELY rather than skipped: the wake is refused for it whatever
+	// the table says (wakeRoute), and skipping it let this report "covers
+	// every wakeable agent recorded here" about a machine whose only agent
+	// could not be woken at all. Round twenty-seven of the pre-release
+	// review; it was round twenty-five's own filter.
 	j.agents = map[string]int{}
 	for _, a := range b.Agents {
-		if a.Kind != "persistent" || !wakeable(a) || !a.Resumable || a.Agent == nil || a.Agent.HostID != hostID() {
+		if a.Kind != "persistent" || !wakeable(a) || a.Agent == nil || a.Agent.HostID != hostID() {
+			continue
+		}
+		if !a.Resumable {
+			j.threadless++
 			continue
 		}
 		h := strings.ToLower(a.Agent.Harness)
@@ -64,6 +71,10 @@ type joinedWake struct {
 	advertised []string
 	attached   bool
 	agents     map[string]int
+	// threadless counts the agents here that no route can wake whatever
+	// this machine configures: they have never supplied a harness thread
+	// for a resume command to name.
+	threadless int
 }
 
 // joinedWakeAdvice is the decision checkJoinedWakeRoutes reports: what is
@@ -122,6 +133,13 @@ func joinedWakeAdvice(j joinedWake, node, dir string) (okMsg, warnMsg, fix strin
 		return "", fmt.Sprintf("this board is served by another daemon (node %s); agents on this machine "+
 				"run harnesses the host bridge attached for it cannot start: %s", node, strings.Join(uncovered, ", ")),
 			"add a [wake.exec.<harness>] block for each to " + toml + " and restart `dibs host-bridge`"
+	case j.threadless > 0:
+		return "", fmt.Sprintf("this board is served by another daemon (node %s); the host bridge attached "+
+				"for this machine can start %s, and %d agent(s) here have never supplied a harness thread "+
+				"for a command to resume, so no route can wake them",
+				node, strings.Join(j.advertised, ", "), j.threadless),
+			"those agents reattach with their nonce inside a session their harness can resume (`resume`), " +
+				"which is what records the thread; until then their mail waits for their next check_in"
 	}
 	return fmt.Sprintf("this board is served by another daemon (node %s); the host bridge attached for "+
 		"this machine can start %s, which covers every wakeable agent recorded here",

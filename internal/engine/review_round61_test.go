@@ -134,7 +134,7 @@ func TestTheHumanRowCannotBeRecoveredByNameAndSession(t *testing.T) {
 	}
 	// The historical state: the archive blanked Agent.Nonce, the nonce index
 	// still points at the row, and it has since been recovered to active.
-	st.Agents[humanID].Nonce = ""
+	onLoop(t, ctx, e, func(st *core.State) { st.Agents[humanID].Nonce = "" })
 	if st.Nonces[humanNonce()] != humanID {
 		t.Fatalf("setup: the nonce index does not resolve the human row: %q", st.Nonces[humanNonce()])
 	}
@@ -171,7 +171,7 @@ func TestARowThatHasAdoptedAMailboxCannotBeRecoveredWithoutItsNonce(t *testing.T
 		t.Fatal("setup:", err)
 	}
 	bossTok, _ := boss["token"].(string)
-	st.Agents["boss"].Role = core.RoleCoordinator
+	onLoop(t, ctx, e, func(st *core.State) { st.Agents["boss"].Role = core.RoleCoordinator })
 
 	// A source with unread private mail, gone dormant so its mailbox is adoptable.
 	src, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "source", NewToken: "s-1", AgentKind: core.KindPersistent, Nonce: "n-src"})

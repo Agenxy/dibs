@@ -91,8 +91,10 @@ func TestAFaultGoesToSomebodyWhoCanReadIt(t *testing.T) {
 		t.Fatal("setup:", err)
 	}
 	// The only coordinator is dormant, which is the case that mattered.
-	st.Agents["boss"].Role = core.RoleCoordinator
-	st.Agents["boss"].Status = core.StatusDormant
+	onLoop(t, ctx, e, func(st *core.State) {
+		st.Agents["boss"].Role = core.RoleCoordinator
+		st.Agents["boss"].Status = core.StatusDormant
+	})
 
 	if got := e.coordinatorOrHuman(); got != humanID {
 		t.Errorf("the report goes to %q; the only coordinator is dormant and the "+
@@ -102,7 +104,7 @@ func TestAFaultGoesToSomebodyWhoCanReadIt(t *testing.T) {
 
 	// With a live coordinator, it goes there: faults are the coordinator's job,
 	// and this must not become "always tell the human".
-	st.Agents["boss"].Status = core.StatusActive
+	onLoop(t, ctx, e, func(st *core.State) { st.Agents["boss"].Status = core.StatusActive })
 	if got := e.coordinatorOrHuman(); got != "boss" {
 		t.Errorf("the report goes to %q with a live coordinator available: "+
 			"administering the board is their role, not the operator's", got)
