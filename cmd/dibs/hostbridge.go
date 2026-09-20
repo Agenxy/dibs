@@ -139,6 +139,13 @@ type wakeBridge struct {
 	running map[uint64]struct{}
 	seen    map[uint64]struct{}
 	order   []uint64
+	// busy is the agent each running command is for, by agent id. One
+	// command per agent at a time, whatever the request id: the hub fails a
+	// pending request when its stream reconnects and retries under a new id
+	// while this machine's first command is still running, and a second
+	// resume against a thread that is mid-turn is the overlap the whole wake
+	// path promises not to produce. Round nine of the pre-release review.
+	busy map[string]uint64
 }
 
 // maxConcurrentWakes is how many wake commands one bridge runs at once.
@@ -169,6 +176,7 @@ func newWakeBridge(origin, secret, host string, routes map[string]boardconfig.Wa
 		reports: make(chan engine.WakeResult, reportQueue),
 		running: map[uint64]struct{}{},
 		seen:    map[uint64]struct{}{},
+		busy:    map[string]uint64{},
 	}
 }
 
@@ -192,11 +200,26 @@ func (b *wakeBridge) admit(id uint64, started bool) bool {
 	return true
 }
 
-// finish moves a running id to the handled set.
-func (b *wakeBridge) finish(id uint64) {
+// engaged reports whether a command for this agent is still running here,
+// and claims the agent for id when not. Caller has taken a slot.
+func (b *wakeBridge) engaged(id uint64, agent string) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if _, running := b.busy[agent]; running {
+		return true
+	}
+	b.busy[agent] = id
+	return false
+}
+
+// finish moves a running id to the handled set and frees its agent.
+func (b *wakeBridge) finish(id uint64, agent string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	delete(b.running, id)
+	if b.busy[agent] == id {
+		delete(b.busy, agent)
+	}
 	b.remember(id)
 }
 
@@ -244,6 +267,19 @@ func (b *wakeBridge) harnesses() []string {
 	return out
 }
 
+// cooldowns is what this machine's [wake.exec] table says per harness, for
+// the hub to spend instead of its own default: a `cooldown = "30m"` here
+// used to be ninety seconds there. Round nine of the pre-release review.
+func (b *wakeBridge) cooldowns() map[string]string {
+	out := map[string]string{}
+	for h, x := range b.routes {
+		if x.Cooldown > 0 {
+			out[h] = x.Cooldown.String()
+		}
+	}
+	return out
+}
+
 // listenBody is the one request this bridge makes of the MCP endpoint: a
 // listen on dibs://wake stating the host and the harnesses.
 func (b *wakeBridge) listenBody() []byte {
@@ -254,6 +290,7 @@ func (b *wakeBridge) listenBody() []byte {
 			"_meta": map[string]any{
 				mcp.HostMetaKey:          b.host,
 				mcp.WakeHarnessesMetaKey: b.harnesses(),
+				mcp.WakeCooldownsMetaKey: b.cooldowns(),
 			},
 		},
 	})
@@ -368,6 +405,17 @@ func (b *wakeBridge) dispatch(ctx context.Context, wr engine.WakeRequest) {
 			slog.Warn("a wake request arrived twice; the second is ignored", "request", wr.ID)
 			return
 		}
+		if b.engaged(wr.ID, wr.Agent) {
+			<-b.slots
+			b.finish(wr.ID, "")
+			slog.Warn("wake refused: a command for this agent is still running here",
+				"request", wr.ID, "agent", wr.Agent)
+			b.refuse(engine.WakeResult{
+				ID: wr.ID, Host: b.host, OK: false,
+				Detail: "this machine's bridge is still running a wake command for " + wr.Agent,
+			})
+			return
+		}
 	default:
 		if !b.admit(wr.ID, false) {
 			slog.Warn("a wake request arrived twice; the second is ignored", "request", wr.ID)
@@ -375,31 +423,35 @@ func (b *wakeBridge) dispatch(ctx context.Context, wr engine.WakeRequest) {
 		}
 		slog.Warn("wake refused: this bridge is already running its bound of wake commands",
 			"request", wr.ID, "agent", wr.Agent, "bound", maxConcurrentWakes)
-		res := engine.WakeResult{
+		b.refuse(engine.WakeResult{
 			ID: wr.ID, Host: b.host, OK: false,
 			Detail: fmt.Sprintf("this machine's bridge is already running %d wake commands", maxConcurrentWakes),
-		}
-		select {
-		case b.reports <- res:
-		default:
-			slog.Warn("wake refused and the refusal dropped: the hub is sending faster than it takes reports",
-				"request", wr.ID)
-		}
+		})
 		return
 	}
 	go func() {
-		defer func() {
-			<-b.slots
-			b.finish(wr.ID)
-		}()
+		defer func() { <-b.slots }()
 		b.serve(ctx, wr)
 	}()
+}
+
+// refuse queues a not-run report, or drops it when the queue is full.
+func (b *wakeBridge) refuse(res engine.WakeResult) {
+	select {
+	case b.reports <- res:
+	default:
+		slog.Warn("wake refused and the refusal dropped: the hub is sending faster than it takes reports",
+			"request", res.ID)
+	}
 }
 
 // serve runs one wake the hub decided on and reports how it went.
 func (b *wakeBridge) serve(ctx context.Context, wr engine.WakeRequest) {
 	res := engine.WakeResult{ID: wr.ID, Host: b.host}
 	res.OK, res.Detail = b.execute(wr)
+	// The agent is free BEFORE the hub hears the outcome: a retry the hub
+	// sends on reading the report must not find the agent still engaged.
+	b.finish(wr.ID, wr.Agent)
 	if res.OK {
 		slog.Info("woke", "agent", wr.Agent, "harness", wr.Harness, "request", wr.ID)
 	} else {

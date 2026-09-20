@@ -63,9 +63,22 @@ func (e *Engine) SubscribeInfo(ctx context.Context, token string) (agentID strin
 		if token == "" {
 			return core.Result{"since": e.state.Serial}
 		}
-		l, errRes := e.authRead(token, now)
-		if errRes != nil {
-			return errRes
+		// AUTHENTICATED, NOT SEEN. A subscription is the bridge's machinery,
+		// opened at registration and reopened on every reconnect; it says the
+		// session's process is alive, not that the model is mid-turn. Counting
+		// it as contact put the agent "recently in touch" AFTER its own Stop
+		// hook, so a question that arrived next was deferred for the whole
+		// cooldown against a turn that had ended: the two-host suite's wake
+		// stopped firing the moment remote agents were given the recency
+		// check local ones have. The rate limit still applies; the liveness
+		// stamps and the wake-if-sleeping do not, since the agent did nothing.
+		// Round nine of the pre-release review, through that suite.
+		l := e.state.AgentByToken(token)
+		if l == nil {
+			return core.Result{"error": core.ErrBadToken}
+		}
+		if !e.allow(l.ID, now) {
+			return core.Result{"error": core.ErrRateLimited}
 		}
 		return core.Result{"agent_id": l.ID, "since": e.state.Serial}
 	})

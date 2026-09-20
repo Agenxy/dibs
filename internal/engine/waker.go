@@ -687,13 +687,7 @@ func (e *Engine) releaseWake(agent string, mine time.Time) {
 // recentlyInTouch reports whether this agent has spoken to the board lately
 // enough that it is certainly running and will see the message on its own.
 func (e *Engine) recentlyInTouch(l *core.Agent) bool {
-	e.wakers.mu.Lock()
-	harness := ""
-	if l.Agent != nil {
-		harness = strings.ToLower(l.Agent.Harness)
-	}
-	cmd, ok := e.wakers.byHarness[harness]
-	e.wakers.mu.Unlock()
+	cooldown, ok := e.wakeCooldownFor(l)
 	if !ok {
 		return false
 	}
@@ -729,7 +723,33 @@ func (e *Engine) recentlyInTouch(l *core.Agent) bool {
 	if done, ok := e.turnEnded[l.ID]; ok && !done.Before(last) {
 		return false
 	}
-	return !last.IsZero() && time.Since(last) < cmd.cooldown
+	return !last.IsZero() && time.Since(last) < cooldown
+}
+
+// wakeCooldownFor is the cooldown of the route that would wake this agent:
+// its host bridge's for an agent on another machine, the hub's [wake.exec]
+// entry for a local one; ok is false when there is no such route, and then
+// recency means nothing because nothing would be started.
+//
+// The recency check used to read the hub's command alone, so a remote agent
+// whose harness the hub had no entry for was never "recently in touch": it
+// could check in, take a question a moment later, and have its bridge start
+// a second resume against the thread it was working in, the exact duplicate
+// this check exists to prevent. Round nine of the pre-release review.
+func (e *Engine) wakeCooldownFor(l *core.Agent) (time.Duration, bool) {
+	if e.remoteHostOf(l) != "" {
+		if _, has := e.hostRouteFor(l); !has {
+			return 0, false
+		}
+		return e.hostCooldownFor(l), true
+	}
+	e.wakers.mu.Lock()
+	cmd, ok := e.wakers.byHarness[wakeHarness(l)]
+	e.wakers.mu.Unlock()
+	if !ok {
+		return 0, false
+	}
+	return cmd.cooldown, true
 }
 
 // wakeFor picks the command for this agent and spends its cooldown.
@@ -780,7 +800,11 @@ func (e *Engine) wakeRoute(l *core.Agent) (cool time.Duration, byCommand, ok boo
 				"agent", l.ID, "host", host)
 			return 0, false, false
 		}
-		return wakeCooldown, true, true
+		// THE JOINED MACHINE'S COOLDOWN, which its bridge stated on attach:
+		// the operator there configured it, and the fixed default here let
+		// a `cooldown = "30m"` machine be woken again after ninety seconds.
+		// Round nine of the pre-release review.
+		return e.hostCooldownFor(l), true, true
 	}
 	harness := ""
 	if l.Agent != nil {
@@ -1210,6 +1234,42 @@ func (e *Engine) PullOnlyNoteFor(ctx context.Context, agentID string) string {
 	return n
 }
 
+// localCommandConfigured reports whether the hub's own [wake.exec] has a
+// command for this harness.
+func (e *Engine) localCommandConfigured(harness string) bool {
+	e.wakers.mu.Lock()
+	defer e.wakers.mu.Unlock()
+	cmd, ok := e.wakers.byHarness[harness]
+	return ok && len(cmd.argv) > 0
+}
+
+// remotePullOnlyNote is PullOnlyNote for an agent on another machine, whose
+// route is that machine's bridge and never the hub's own command. remote is
+// false for a local agent, and the caller goes on to the local answer.
+//
+// PullOnlyNote read the hub's [wake.exec] for everybody, so a remote agent
+// with a working bridge and no hub entry was reported unreachable while its
+// wake ran, and one with a hub entry and no bridge was reported reachable
+// while nothing could reach it. Round nine of the pre-release review.
+func (e *Engine) remotePullOnlyNote(l *core.Agent) (note string, remote bool) {
+	host := e.remoteHostOf(l)
+	if host == "" {
+		return "", false
+	}
+	if _, has := e.hostRouteFor(l); has {
+		return "", true // its bridge runs the wake; core's wording is true as it stands
+	}
+	named := wakeHarness(l)
+	if named == "" {
+		named = "its harness"
+	}
+	return "delivered to " + l.ID + ", which is on another machine (" + host + ") with " +
+		"no bridge attached there that can start " + named + ": nothing can wake it, " +
+		"so this is pull-only and arrives when that agent next calls inbox or check_in. " +
+		"`dibs host-bridge` on that machine, with a [wake.exec] entry for " + named +
+		", is the route", true
+}
+
 // PullOnlyNote warns that mail to this agent will sit until somebody types.
 //
 // `send` already warns when the recipient is DORMANT: "it will see this when it
@@ -1260,10 +1320,10 @@ func (e *Engine) PullOnlyNote(l *core.Agent) string {
 		return ""
 	}
 	harness := wakeHarness(l)
-	e.wakers.mu.Lock()
-	cmd, ok := e.wakers.byHarness[harness]
-	e.wakers.mu.Unlock()
-	configured := ok && len(cmd.argv) > 0
+	if note, remote := e.remotePullOnlyNote(l); remote {
+		return note
+	}
+	configured := e.localCommandConfigured(harness)
 	// CONFIGURED IS NOT THE SAME AS CAPABLE, and this asked only the first.
 	//
 	// wakeFor has a second mandatory condition: the agent must have a
@@ -1367,12 +1427,8 @@ func wakeHarness(l *core.Agent) string {
 // has no configured command, which is the case recentlyInTouch already answers
 // false for; carried anyway so this never returns zero and spins.
 func (e *Engine) recencyWindow(l *core.Agent) time.Duration {
-	harness := wakeHarness(l)
-	e.wakers.mu.Lock()
-	cmd, ok := e.wakers.byHarness[harness]
-	e.wakers.mu.Unlock()
-	if ok && cmd.cooldown > 0 {
-		return cmd.cooldown
+	if d, ok := e.wakeCooldownFor(l); ok && d > 0 {
+		return d
 	}
 	return defaultPeerCooldown
 }

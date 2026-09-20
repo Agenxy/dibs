@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -373,4 +374,116 @@ func TestAnAttachingBridgeWakesTheMailItsAgentsWereOwed(t *testing.T) {
 		t.Fatal("the bridge attached and was never asked to wake the agent whose question " +
 			"had been waiting: the refusal before the attach scheduled no retry")
 	}
+}
+
+// A REMOTE AGENT THAT JUST CHECKED IN IS NOT WOKEN AGAINST ITS RUNNING THREAD.
+//
+// recentlyInTouch read the hub's own [wake.exec] entry to find the cooldown
+// that defines "recently", and a remote agent's route is its host's bridge,
+// which needs no entry here: with none, the agent was never recently in
+// touch, so a question arriving a moment after its check-in had its bridge
+// start a second resume against the thread it was working in, the duplicate
+// this check exists to prevent. The route's cooldown is the bridge's. Round
+// nine of the pre-release review.
+func TestARemoteAgentJustInTouchIsNotWokenByItsBridge(t *testing.T) {
+	e := hubEngine() // no [wake.exec] on the hub at all
+	_, release, err := e.AttachHostBridge("laptop", []string{"Codex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	far := remoteAgent("far", "laptop")
+	far.Status = core.StatusActive
+	e.seen = map[string]time.Time{"far": time.Now()} // checked in a moment ago
+	if !e.recentlyInTouch(far) {
+		t.Fatal("a remote agent that checked in a moment ago is not 'recently in touch' because the " +
+			"hub has no local command for its harness: its bridge will start a second process against " +
+			"the thread it is working in")
+	}
+}
+
+// AND ITS HOST'S COOLDOWN IS THE ONE SPENT. A joined machine configured
+// `cooldown = "30m"` for a harness was woken again after the hub's fixed
+// ninety seconds: the bridge states its table's cooldowns on attach and the
+// hub spends those. Round nine of the pre-release review.
+func TestARemoteWakeSpendsTheHostsCooldown(t *testing.T) {
+	e := hubEngine()
+	_, release, err := e.AttachHostBridgeWith("laptop", []string{"Codex"},
+		map[string]time.Duration{"codex": 30 * time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	far := remoteAgent("far", "laptop")
+	plan, ok := e.wakeFor(far, core.MsgQuestion, questionFor("far"))
+	if !ok {
+		t.Fatal("no wake for a remote agent whose host has a bridge claiming its harness")
+	}
+	if plan.cooldown != 30*time.Minute {
+		t.Errorf("the remote wake carries cooldown %v, want the joined machine's 30m", plan.cooldown)
+	}
+}
+
+// THE DELIVERY NOTE DESCRIBES THE RECIPIENT'S ROUTE, not the hub's. For an
+// agent on another machine that route is its host's bridge: with one
+// attached and no hub command, the sender used to be told nothing could
+// wake the recipient while its wake ran; with a hub command and no bridge,
+// the sender was told nothing while nothing could reach it. Round nine of
+// the pre-release review.
+func TestThePullOnlyNoteReadsTheRemoteAgentsBridge(t *testing.T) {
+	e := hubEngine() // no [wake.exec] on the hub
+	far := remoteAgent("far", "laptop")
+	far.Status = core.StatusDormant
+	if note := e.PullOnlyNote(far); !strings.Contains(note, "no bridge attached") {
+		t.Errorf("with no bridge for the host the note reads %q, want it to say no bridge is attached there", note)
+	}
+	_, release, err := e.AttachHostBridge("laptop", []string{"Codex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	if note := e.PullOnlyNote(far); note != "" {
+		t.Errorf("with a bridge attached that can start its harness, the note reads %q, want none: the wake runs", note)
+	}
+	// And a hub command for the harness changes nothing for a remote agent.
+	release()
+	e.SetWakeCommands(map[string]WakeCommand{"codex": {Argv: []string{"codex", "resume", "{thread}"}}})
+	if note := e.PullOnlyNote(far); !strings.Contains(note, "no bridge attached") {
+		t.Errorf("with a hub command and no bridge the note reads %q: the hub's command is not a route to another machine", note)
+	}
+}
+
+// A SUBSCRIPTION IS NOT CONTACT. The bridge opens one at registration and
+// reopens it on every reconnect; it says the process is alive, not that the
+// model is mid-turn. Counting it as contact put the agent "recently in
+// touch" after its own Stop hook, and the question that arrived next was
+// deferred for the whole cooldown against a turn that had ended. Round nine
+// of the pre-release review, through the two-host suite.
+func TestASubscriptionDoesNotCountAsTheAgentBeingInTouch(t *testing.T) {
+	st := core.NewState("hub-node", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+	e.SetWakeCommands(map[string]WakeCommand{"codex": {Argv: []string{"codex", "resume", "{thread}"}}})
+	res, err := e.Do(ctx, &core.Op{
+		Kind: core.OpRegister, Name: "s", Agent: &core.AgentInfo{Harness: "Codex", CWD: "/w"}, SessionID: remoteThread,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok, _ := res["token"].(string)
+	if _, err := e.HookPoll(ctx, remoteThread, "Stop", "/w", false, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := e.SubscribeInfo(ctx, tok); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = e.query(ctx, func() core.Result {
+		if e.recentlyInTouch(e.state.Agents["s"]) {
+			t.Error("the bridge's subscription, opened after the agent's Stop, made the agent read as " +
+				"mid-turn: its next question is deferred for the whole cooldown")
+		}
+		return core.Result{}
+	})
 }
