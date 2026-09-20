@@ -46,3 +46,28 @@ func TestASuppliedIndexIsNotEvictedUnderItsShipperInASubdirectory(t *testing.T) 
 		t.Errorf("index bookkeeping lost: indexed=%v supplied=%v", f.indexed, f.supplied)
 	}
 }
+
+// A shipment from another machine for a root already held for a first one
+// is refused, whatever its fingerprint: "already installed" was answered to
+// a host the scorer would then refuse the index to. Round four of the
+// pre-release review.
+func TestASecondMachinesShipmentIsRefusedNotDeduplicated(t *testing.T) {
+	eng, ctx := testEngine(t)
+	f := &scorerFlags{
+		indexed:      map[string]bool{"/repo": true},
+		supplied:     map[string]string{"/repo": "first"},
+		suppliedAt:   map[string]string{"/repo": "fp-1"},
+		suppliedHost: map[string]string{"/repo": "host-a"},
+		rootOf:       map[string]string{"/repo": "/repo"},
+	}
+	out := f.installSupplied(ctx, eng, "/repo", "second", "host-b", &overlap.Payload{Fingerprint: "fp-1"})
+	if out["accepted"] != false {
+		t.Errorf("a second machine's shipment at the first's fingerprint was answered %v; the "+
+			"index stays assigned to the first host and the scorer refuses it to the second", out)
+	}
+	// The same machine repeating the same history is still acknowledged.
+	out = f.installSupplied(ctx, eng, "/repo", "first", "host-a", &overlap.Payload{Fingerprint: "fp-1"})
+	if out["accepted"] != true {
+		t.Errorf("the shipper repeating its own history was refused: %v", out)
+	}
+}

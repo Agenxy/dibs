@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -259,6 +260,42 @@ func refuseIfLegacyUnitExists(agentsDir string) error {
 	return nil
 }
 
+// plistEnvironment renders a unit's environment as launchd's
+// EnvironmentVariables block, keys sorted so the file is stable; empty for
+// no variables.
+func plistEnvironment(env map[string]string) string {
+	if len(env) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(env))
+	for k := range env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	b.WriteString("  <key>EnvironmentVariables</key>\n  <dict>\n")
+	for _, k := range keys {
+		fmt.Fprintf(&b, "    <key>%s</key><string>%s</string>\n", xmlText(k), xmlText(env[k]))
+	}
+	b.WriteString("  </dict>\n")
+	return b.String()
+}
+
+// systemdEnvironment renders a unit's environment as `Environment=` lines,
+// keys sorted; empty for no variables.
+func systemdEnvironment(env map[string]string) string {
+	keys := make([]string, 0, len(env))
+	for k := range env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	for _, k := range keys {
+		fmt.Fprintf(&b, "Environment=%s\n", systemdArg(k+"="+env[k]))
+	}
+	return b.String()
+}
+
 func writeLaunchAgent(daemon, dir string) error {
 	agents := filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents")
 	if err := refuseIfLegacyUnitExists(agents); err != nil {
@@ -277,7 +314,7 @@ func writeLaunchAgent(daemon, dir string) error {
     <string>-dir</string>
     <string>` + xmlText(dir) + `</string>
   </array>
-  <key>RunAtLoad</key><true/>
+` + plistEnvironment(unitEnv(nil)) + `  <key>RunAtLoad</key><true/>
   <key>KeepAlive</key>
   <dict><key>SuccessfulExit</key><false/></dict>
   <key>StandardOutPath</key><string>` + xmlText(logPath) + `</string>
@@ -339,7 +376,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=` + systemdArg(daemon) + ` -dir ` + systemdArg(dir) + `
+` + systemdEnvironment(unitEnv(nil)) + `ExecStart=` + systemdArg(daemon) + ` -dir ` + systemdArg(dir) + `
 Restart=on-failure
 RestartSec=2
 

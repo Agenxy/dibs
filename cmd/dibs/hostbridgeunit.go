@@ -56,6 +56,7 @@ func hostBridgeUnit() error {
 			env[k] = v
 		}
 	}
+	env = unitEnv(env)
 	bin := self()
 	for _, v := range append([]string{bin, dir}, valuesOf(env)...) {
 		if err := usableInAUnitFile(v); err != nil {
@@ -91,6 +92,28 @@ func valuesOf(m map[string]string) []string {
 // part is lossy (`hub:4777` and `hub-4777` read the same, and two
 // directories can share a basename), so a digest of the whole absolute path
 // follows it: two directories are two units, whatever they are called.
+// unitEnv adds the installing shell's PATH to a unit's environment.
+//
+// A supervisor starts a job with a PATH of its own (`/usr/bin:/bin:/usr/sbin:
+// /sbin` under launchd, near enough under systemd --user), which has neither
+// ~/.local/bin nor Homebrew in it, which is where `claude` and `codex` live.
+// A wake entry written the way docs/CONFIGURATION.md writes it then failed
+// under the unit with "executable file not found" while it worked from the
+// terminal that installed the unit, and doctor counted the route as covering
+// because the entry was there. The operator's PATH at install time is the
+// PATH their terminal resolved the command on, so the unit gets that one.
+// Found by the pre-release review, round four.
+func unitEnv(env map[string]string) map[string]string {
+	out := make(map[string]string, len(env)+1)
+	for k, v := range env {
+		out[k] = v
+	}
+	if p := strings.TrimSpace(os.Getenv("PATH")); p != "" {
+		out["PATH"] = p
+	}
+	return out
+}
+
 func bridgeUnitSlug(dir string) string {
 	sum := sha256.Sum256([]byte(dir))
 	return readableSlug(filepath.Base(dir)) + "-" + hex.EncodeToString(sum[:4])

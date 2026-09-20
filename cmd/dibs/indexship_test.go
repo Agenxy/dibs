@@ -88,3 +88,16 @@ func TestTheFallbackAsksTheDaemonItRegisteredWith(t *testing.T) {
 			"the poll went to the configured address instead")
 	}
 }
+
+// A tree the daemon reports as being on another machine is one to ship for:
+// the daemon cannot read it by definition and never records an unreadable
+// verdict for it. Round four of the pre-release review.
+func TestTheBridgeShipsForATreeTheDaemonReportsRemote(t *testing.T) {
+	root := "/srv/checkout"
+	if !wantsIndex(matchStatusJSON{Phase: "ready", Remote: []string{root}}, root) {
+		t.Error("a tree listed remote was not shipped for")
+	}
+	if wantsIndex(matchStatusJSON{Phase: "ready", Remote: []string{"/srv/other"}}, root) {
+		t.Error("some OTHER remote tree triggered a shipment")
+	}
+}

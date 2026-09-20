@@ -641,8 +641,8 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 			// them without anybody configuring a path. Not a tree on another
 			// machine: this daemon cannot read it, and the same path on its
 			// own disk is somebody else's project (indexSpeaksForHost).
-			if op.Agent != nil && e.remoteHostOf(&core.Agent{Agent: op.Agent}) == "" {
-				e.noteRepoOf(op.Agent.CWD)
+			if op.Agent != nil {
+				e.noteTreeOf(op.Agent)
 			}
 		case core.OpResume:
 			// Phase 3 for resumes: 1/10s per agent, keyed via nonce.
@@ -718,12 +718,12 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	if op.Kind == core.OpUpdate && op.KeepDescription && actor != nil {
 		op.Description = actor.Description
 	}
-	if op.Kind == core.OpUpdate && op.Agent != nil && e.remoteHostOf(&core.Agent{Agent: op.Agent}) == "" {
+	if op.Kind == core.OpUpdate && op.Agent != nil {
 		// A corrected location is a repository to discover, as a registered
 		// one is: the correction used to update the row and leave matching
 		// unavailable for the repository it named. Found by the pre-release
-		// review, round fifteen. Not on another machine, as at register.
-		e.noteRepoOf(op.Agent.CWD)
+		// review, round fifteen.
+		e.noteTreeOf(op.Agent)
 	}
 
 	// Who may take over an abandoned mailbox. Decided here, where the human's
@@ -880,8 +880,8 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 			// and the agent comes back to matching that says nothing about
 			// its tree until somebody else registers there. Round three of
 			// the pre-release review.
-			if l := e.state.Agents[lid]; l != nil && l.Agent != nil && e.remoteHostOf(l) == "" {
-				e.noteRepoOf(l.Agent.CWD)
+			if l := e.state.Agents[lid]; l != nil && l.Agent != nil {
+				e.noteTreeOf(l.Agent)
 			}
 		}
 	}

@@ -99,6 +99,13 @@ type MatchStatus struct {
 	// shipped its index instead (issue #19), so doctor can say matching works
 	// there and why no grant was needed.
 	Supplied map[string]string `json:"supplied,omitempty"`
+	// Remote lists trees agents on OTHER machines work in. This daemon cannot
+	// read them by definition and does not try, so no unreadable verdict is
+	// ever recorded for them; the bridge on that machine ships on this list
+	// instead (indexship.go). Kept apart from Unreadable because that list
+	// carries a permissions hint about this machine's disk. Round four of the
+	// pre-release review.
+	Remote []string `json:"remote,omitempty"`
 }
 
 type matchStatusState struct {
@@ -197,6 +204,9 @@ func (e *Engine) SetMatchStatus(s MatchStatus) {
 	if s.Supplied == nil {
 		s.Supplied = e.matchStatus.st.Supplied
 	}
+	if s.Remote == nil {
+		s.Remote = e.matchStatus.st.Remote
+	}
 	e.matchStatus.st = s
 }
 
@@ -242,7 +252,26 @@ func (e *Engine) NoteIndexingTree(cwd string) {
 	e.matchStatus.st = MatchStatus{
 		Phase: MatchIndexing, Repo: cwd, Since: time.Now(),
 		Unreadable: e.matchStatus.st.Unreadable,
+		Supplied:   e.matchStatus.st.Supplied,
+		Remote:     e.matchStatus.st.Remote,
 	}
+}
+
+// NoteRemoteTree records one tree on another machine, for that machine's
+// bridge to ship an index for. Nothing about the phase changes: another
+// machine's tree says nothing about what this daemon has indexed.
+func (e *Engine) NoteRemoteTree(cwd string) {
+	if cwd == "" {
+		return
+	}
+	e.matchStatus.mu.Lock()
+	defer e.matchStatus.mu.Unlock()
+	for _, seen := range e.matchStatus.st.Remote {
+		if seen == cwd {
+			return
+		}
+	}
+	e.matchStatus.st.Remote = append(e.matchStatus.st.Remote, cwd)
 }
 
 // NoteUnreadableTree records one tree the daemon cannot read, without changing

@@ -219,11 +219,15 @@ func (e *Engine) scorerForLocation(loc location) (overlap.Scorer, MatchConfig) {
 // machine, where the root it was shipped for is the tree they are in. Found
 // by the pre-release review, round three.
 func (e *Engine) indexSpeaksForHost(repo string, info IndexInfo, loc location) bool {
+	if info.SuppliedBy != "" {
+		// Shipped for a root on the shipper's machine, whichever machine
+		// that is: a local agent at the same path is in a different tree
+		// when the shipper was remote. Round four of the pre-release review
+		// found the local direction unchecked.
+		return info.SuppliedHost == loc.host
+	}
 	if loc.host == "" {
 		return true
-	}
-	if info.SuppliedBy != "" {
-		return info.SuppliedHost == loc.host
 	}
 	if loc.identity == nil {
 		return false
@@ -1526,6 +1530,21 @@ func (e *Engine) WorkingDirectories(ctx context.Context) []string {
 // the life of the process.
 //
 // One layer of dedup, owned by the side that knows whether the work succeeded.
+// noteTreeOf routes a tree an agent works in to the right discovery: this
+// machine's trees are indexed here, and another machine's are listed for its
+// bridge to ship, since this daemon cannot read them and the same path on
+// its own disk is somebody else's project (indexSpeaksForHost).
+func (e *Engine) noteTreeOf(info *core.AgentInfo) {
+	if info == nil || info.CWD == "" {
+		return
+	}
+	if e.remoteHostOf(&core.Agent{Agent: info}) != "" {
+		e.NoteRemoteTree(info.CWD)
+		return
+	}
+	e.noteRepoOf(info.CWD)
+}
+
 func (e *Engine) noteRepoOf(cwd string) {
 	if cwd == "" {
 		return

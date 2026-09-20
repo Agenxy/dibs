@@ -99,24 +99,44 @@ func run() error {
 	return nil
 }
 
-// findingsLine finds the brief's closing line. It is the last `FINDINGS: <n>`
-// in the output, so a reviewer that quotes the brief before answering is not
-// mistaken for one that answered.
+// findingsLine finds the brief's closing line: `FINDINGS: <n>` as the LAST
+// thing the reviewer said, with n a count.
+//
+// It used to be the last such line anywhere in the output, so a reviewer
+// that wrote `FINDINGS: 3` and then "I could not read the diff" passed, and
+// so did a negative count. Closing means closing: everything after it may
+// only be the runner's own trailer (codex exec prints `tokens used` and the
+// number, and hook lines, after the final message). Round four of the
+// pre-release review.
 func findingsLine(out string) (int, bool) {
-	count, ok := -1, false
-	for _, line := range strings.Split(out, "\n") {
-		line = strings.TrimSpace(line)
+	lines := strings.Split(out, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" || isTrailer(line) {
+			continue
+		}
 		rest, found := strings.CutPrefix(line, "FINDINGS:")
 		if !found {
-			continue
+			return -1, false
 		}
 		n, err := strconv.Atoi(strings.TrimSpace(rest))
-		if err != nil {
-			continue
+		if err != nil || n < 0 {
+			return -1, false
 		}
-		count, ok = n, true
+		return n, true
 	}
-	return count, ok
+	return -1, false
+}
+
+// isTrailer is a line the reviewer's harness prints after the final message,
+// not something the reviewer said.
+func isTrailer(line string) bool {
+	if strings.HasPrefix(line, "hook: ") || line == "tokens used" {
+		return true
+	}
+	digits := strings.NewReplacer(",", "", "_", "").Replace(line)
+	_, err := strconv.Atoi(digits)
+	return err == nil
 }
 
 func output(name string, args ...string) (string, error) {

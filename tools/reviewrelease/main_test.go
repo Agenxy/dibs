@@ -19,4 +19,19 @@ func TestOnlyAClosingFindingsLineCountsAsAReview(t *testing.T) {
 	if _, ok := findingsLine("FINDINGS: <count>\n"); ok {
 		t.Error("the brief's placeholder alone is not a count")
 	}
+	// Closing means closing. Round four of the pre-release review: a count
+	// followed by "I could not read the diff" passed, and so did a negative
+	// count.
+	if _, ok := findingsLine("FINDINGS: 3\nI could not read the diff.\n"); ok {
+		t.Error("a FINDINGS line that is not the reviewer's last word was accepted")
+	}
+	if _, ok := findingsLine("FINDINGS: -1\n"); ok {
+		t.Error("a negative count was accepted")
+	}
+	// The harness's own trailer after the final message is not the reviewer
+	// speaking: this is what `codex exec` prints.
+	trailer := "1. core/x.go:12 ...\nFINDINGS: 1\nhook: Stop\nhook: Stop Completed\ntokens used\n380,255\n"
+	if n, ok := findingsLine(trailer); !ok || n != 1 {
+		t.Errorf("the harness trailer after the closing line was read as the reviewer's last word: ok=%v n=%d", ok, n)
+	}
 }

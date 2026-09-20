@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"strings"
 	"time"
 
 	"github.com/agenxy/dibs/internal/sibling"
@@ -143,6 +142,28 @@ type codexHook struct {
 	PluginID    string `json:"pluginId"`
 	SourcePath  string `json:"sourcePath"`
 	CurrentHash string `json:"currentHash"`
+	// The handler, flattened into the entry by Codex (HookHandlerMetadata):
+	// "mcpTool" with a server and a tool, or "command" with a command.
+	HandlerType string `json:"handlerType"`
+	Server      string `json:"server"`
+	Tool        string `json:"tool"`
+}
+
+// isDibsHook is the one shape `--trust` will vouch for: an MCP tool hook
+// calling hook_poll on the dibs server. That is what the plugin ships and
+// what `dibs mcp-config` prints, and nothing else.
+//
+// It used to be "from the dibs plugin, or any loose hook whose JSON mentions
+// hook_poll", and the second half matched the STRING anywhere in the entry:
+// a command hook with `statusMessage: "hook_poll"` qualified whatever its
+// command ran, and so did an MCP hook on another server. `--trust` then
+// recorded that hook's hash, which is Codex's authorisation to run it: a
+// trust command for Dibs's hooks vouching for a stranger's. The plugin id
+// alone is not enough either, since a plugin is named by its marketplace and
+// `dibs@` is a prefix anyone can publish under. Found by the pre-release
+// review, round four.
+func isDibsHook(h codexHook) bool {
+	return h.HandlerType == "mcpTool" && h.Server == "dibs" && h.Tool == "hook_poll"
 }
 
 // appServer is one `codex app-server` process spoken to over newline-framed
@@ -237,8 +258,7 @@ func (a *appServer) call(method string, params any, result any) error {
 }
 
 // dibsHooks lists the hooks Codex discovered for the current directory and
-// keeps the ones that are Dibs's: from the dibs plugin, or a loose hooks.json
-// whose handler calls hook_poll.
+// keeps the ones that are Dibs's, by the handler they run (isDibsHook).
 func (a *appServer) dibsHooks() ([]codexHook, error) {
 	cwd, _ := os.Getwd()
 	var res struct {
@@ -256,8 +276,7 @@ func (a *appServer) dibsHooks() ([]codexHook, error) {
 			if json.Unmarshal(raw, &h) != nil {
 				continue
 			}
-			if strings.HasPrefix(h.PluginID, "dibs@") ||
-				(h.PluginID == "" && strings.Contains(string(raw), `"hook_poll"`)) {
+			if isDibsHook(h) {
 				hooks = append(hooks, h)
 			}
 		}
