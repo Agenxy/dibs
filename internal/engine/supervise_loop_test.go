@@ -196,3 +196,26 @@ func TestARemotePidIsNotProbedLocally(t *testing.T) {
 		})
 	}
 }
+
+// AND THE HOST ID DECIDES BEFORE THE HOSTNAME LABEL. A resume on another
+// machine updates the row's host id and nothing else (it carries no
+// hostname), so an agent registered on the hub and resumed on a laptop kept
+// the hub's label beside the laptop's id: ownsHost read the label, probed
+// the laptop's pid against the hub's kernel, found nothing, and the next
+// sweep marked a healthy agent dormant with its claims released. Round
+// eleven of the pre-release review.
+func TestTheHostIDDecidesProcessOwnershipBeforeTheLabel(t *testing.T) {
+	local := thisHost()
+	if local == "" {
+		t.Skip("no hostname on this machine")
+	}
+	e := &Engine{state: core.NewState("hub-node", core.DefaultLimits())}
+	resumedElsewhere := &core.Agent{PID: 4242, Agent: &core.AgentInfo{Host: local, HostID: "laptop-id"}}
+	if e.ownsHost(resumedElsewhere) {
+		t.Error("an agent whose host id is another machine's was probed here because its hostname label still names this one")
+	}
+	backHome := &core.Agent{PID: 4242, Agent: &core.AgentInfo{Host: local + "-not-this-machine", HostID: "hub-node"}}
+	if !e.ownsHost(backHome) {
+		t.Error("an agent whose host id is this machine's was not probed here because its hostname label is stale")
+	}
+}

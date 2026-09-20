@@ -105,11 +105,11 @@ func TestEvictionKeepsATreeAnAgentReturnedToMidPass(t *testing.T) {
 	f := &scorerFlags{indexed: map[string]bool{"/repo": true}, rootOf: map[string]string{"/repo": "/repo"}}
 	eng.SetIndex("/repo", overlap.NewLexicalFromFiles(nil, nil), engine.MatchConfig{}, engine.IndexInfo{})
 	f.afterSnapshot = func() {
-		// The returning agent's discovery, on the cheap path: the tree is
-		// indexed, so nothing to do but say it was found.
-		f.discoverMu.Lock()
-		f.touchLocked("/repo")
-		f.discoverMu.Unlock()
+		// The returning agent's discovery, through the real entry point: the
+		// directory is known and its tree indexed, so the cheap path answers.
+		// The first version of this test stamped the epoch by hand and
+		// passed while that path stamped nothing (round eleven).
+		f.indexDiscovered(ctx, eng, "/repo")
 	}
 	if f.evictIdleIndexes(ctx, eng) {
 		t.Fatal("the pass evicted a tree an agent had returned to after the snapshot")

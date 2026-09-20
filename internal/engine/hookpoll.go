@@ -185,6 +185,7 @@ func (e *Engine) noteTurnState(l *core.Agent, sessionID, event string) {
 func (e *Engine) HookPoll(
 	ctx context.Context, sessionID, event, cwd string, stopActive, strict bool,
 ) (core.Result, error) {
+	cwd = foldSeparators(cwd) // as the fold spelled the cwd it is matched against
 	return e.query(ctx, func() core.Result {
 		e.announceHookSession(sessionID, cwd, event)
 		l := e.state.AgentForHook(sessionID, cwd)

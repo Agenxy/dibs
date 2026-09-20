@@ -1340,7 +1340,20 @@ func (e *Engine) exhaustedAnnouncements() []uint64 {
 // hosts were recorded, and every agent on this machine whose harness does not
 // report one, must keep being probed exactly as before.
 func (e *Engine) ownsHost(a *core.Agent) bool {
-	if a.Agent == nil || a.Agent.Host == "" {
+	if a.Agent == nil {
+		return true
+	}
+	// THE HOST ID FIRST, when there is one: it is the key the wake path and
+	// the claim rule use, it is what a resume on another machine updates,
+	// and the hostname label beside it is not (a resume carries no
+	// hostname). Deciding from the label alone probed an agent resumed on a
+	// laptop against the hub's kernel, found no such pid, and swept a
+	// healthy agent dormant with its claims released. Round eleven of the
+	// pre-release review.
+	if a.Agent.HostID != "" {
+		return e.remoteHostOf(a) == ""
+	}
+	if a.Agent.Host == "" {
 		return true
 	}
 	return strings.EqualFold(a.Agent.Host, thisHost())
@@ -1840,17 +1853,34 @@ func defaultToPersistent(op *core.Op) (minted bool, err error) {
 // op carries, on Windows only. The GOOS check is the impure input; its
 // outcome is what gets ledgered, never re-decided at replay.
 func normalizeSeparators(op *core.Op) {
-	if runtime.GOOS != "windows" {
+	if !foldsSeparators {
 		return
 	}
-	fold := func(p string) string { return strings.ReplaceAll(p, "\\", "/") }
-	op.Path = fold(op.Path)
+	op.Path = foldSeparators(op.Path)
 	for i, d := range op.Dirs {
-		op.Dirs[i] = fold(d)
+		op.Dirs[i] = foldSeparators(d)
 	}
 	if op.Agent != nil {
-		op.Agent.CWD = fold(op.Agent.CWD)
-		op.Agent.RepoDir = fold(op.Agent.RepoDir)
-		op.Agent.RepoRoot = fold(op.Agent.RepoRoot)
+		op.Agent.CWD = foldSeparators(op.Agent.CWD)
+		op.Agent.RepoDir = foldSeparators(op.Agent.RepoDir)
+		op.Agent.RepoRoot = foldSeparators(op.Agent.RepoRoot)
 	}
+}
+
+// foldsSeparators is whether this daemon folds `\` to `/`: Windows, and
+// nowhere else, since a backslash is an ordinary character in a unix
+// filename. A variable so a test can exercise the fold on the machine it
+// runs on.
+var foldsSeparators = runtime.GOOS == "windows"
+
+// foldSeparators is the fold itself, for the QUERIES as well as the ops:
+// the guard compares a path it is asked about against claims the fold
+// stored with `/`, and a query left with `\` matched nothing, so an
+// exclusive claim on `C:/repo` let `C:\repo\file.go` through. Round eleven
+// of the pre-release review.
+func foldSeparators(p string) string {
+	if !foldsSeparators {
+		return p
+	}
+	return strings.ReplaceAll(p, "\\", "/")
 }
