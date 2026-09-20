@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -394,6 +395,13 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// review, round seventy-four.
 	op.V7Semantics = true
 
+	// A Windows agent spells paths with `\`; the fold compares with `/` and
+	// knows no other separator (core.cleanPath). Folded HERE, on the one host
+	// where a backslash is a separator, and written into the ledger folded:
+	// on unix a backslash is a filename character and is left alone, and
+	// replay on either host sees the paths as they were admitted.
+	normalizeSeparators(op)
+
 	// Registrations minted by THIS version restore a recovered agent's nonce;
 	// ops already on disk do not, and must not start to. Set at ingress and
 	// carried into the ledger, so replay applies the decision that was made
@@ -756,6 +764,9 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 			return nil, err
 		}
 		if err := e.refuseRetiredRequester(op); err != nil {
+			return nil, err
+		}
+		if err := e.refuseApprovingOwnAdoption(actor, op); err != nil {
 			return nil, err
 		}
 		// The same emptiness check as the direct route above.
@@ -1809,4 +1820,23 @@ func defaultToPersistent(op *core.Op) (minted bool, err error) {
 	// path and turns every returning agent into a sibling.
 	op.MintedNonce = nonce
 	return true, nil
+}
+
+// normalizeSeparators folds Windows path separators to `/` in every path an
+// op carries, on Windows only. The GOOS check is the impure input; its
+// outcome is what gets ledgered, never re-decided at replay.
+func normalizeSeparators(op *core.Op) {
+	if runtime.GOOS != "windows" {
+		return
+	}
+	fold := func(p string) string { return strings.ReplaceAll(p, "\\", "/") }
+	op.Path = fold(op.Path)
+	for i, d := range op.Dirs {
+		op.Dirs[i] = fold(d)
+	}
+	if op.Agent != nil {
+		op.Agent.CWD = fold(op.Agent.CWD)
+		op.Agent.RepoDir = fold(op.Agent.RepoDir)
+		op.Agent.RepoRoot = fold(op.Agent.RepoRoot)
+	}
 }

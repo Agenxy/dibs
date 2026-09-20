@@ -456,6 +456,34 @@ func (e *Engine) refuseCoordinatorSelfAdoption(actor *core.Agent, op *core.Op) e
 	}
 }
 
+// refuseApprovingOwnAdoption closes the other door to the same room.
+//
+// refuseCoordinatorSelfAdoption stops `adopt_agent` from making a coordinator
+// the reader of an abandoned mailbox. The request route reached the same
+// effect: a coordinator sends ITSELF a request carrying `adopt`, approves it,
+// and decideRequestEffects moves the mailbox onto the requester, which is the
+// coordinator, with no human involved. Approving a request the responder sent
+// is not a decision anybody else made, so it carries none of the authority
+// that approval exists to record. Same exemptions as the direct rule: an
+// admin reads everything already, and the human unlocked as itself is the
+// human. Found by the pre-release review.
+func (e *Engine) refuseApprovingOwnAdoption(actor *core.Agent, op *core.Op) error {
+	if op.Disposition != "approve" || actor.IsAdmin() || e.isTheHuman(actor.ID) {
+		return nil
+	}
+	m, ok := e.state.Messages[op.MsgSerial]
+	if !ok || m == nil || m.Adopt == "" || m.From != actor.ID {
+		return nil
+	}
+	return &core.Error{
+		Code: "E_NOT_PERMITTED",
+		Msg:  "a coordinator may not approve its own request to adopt a mailbox",
+		Hint: "approving a request you sent makes you the reader of everything sent to " +
+			m.Adopt + ", which is the human's call: unlock as yourself with human_unlock, or " +
+			"adopt it onto the agent that should hold it with adopt_agent(into: ...)",
+	}
+}
+
 // tellTheHuman raises a desktop notification when a message lands for the
 // person, and offers the buttons a `request` is asking for.
 //

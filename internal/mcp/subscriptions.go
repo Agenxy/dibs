@@ -557,6 +557,13 @@ const (
 	// docs/NETWORK.md §2 for why that is a correctness boundary and not yet a
 	// security one.
 	HostMetaKey = "com.dibs/host"
+	// RepoMetaKey is the caller's checkout as ITS machine sees it: the same
+	// four fields resolveLocation derives here (common dir, primary remote,
+	// root commits, worktree root), attached by the stdio bridge on every
+	// call. Read only for a caller on another machine, where the path names
+	// nothing on this filesystem and Git here cannot answer; a local caller's
+	// word is not taken because the daemon can derive the truth itself.
+	RepoMetaKey = "com.dibs/repo"
 )
 
 func resourceUpdated(uri string, subID json.RawMessage, ev core.Event) map[string]any {

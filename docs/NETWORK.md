@@ -95,10 +95,13 @@ Supgang already answers. So:
   MacMarine` resolves the address Supgang has signed for that computer now,
   records the peer (`DIBS_BOARD_PEER`), and the bridge asks again each time it
   starts, so the board follows the hub when its address changes.
-- A caller arriving over loopback is on the daemon's machine (nothing else can
-  reach loopback), so it is stamped and nothing it says moves that. A remote
-  caller's bridge asserts, which is as strong as the bearer secret and no
-  stronger, until §6.
+- A caller arriving over loopback that asserts nothing is on the daemon's
+  machine (nothing else can reach loopback) and is stamped so. A bridge's
+  assertion is taken whatever the transport, because the documented transport
+  for a machine without Supgang is an ssh forward, which arrives over loopback
+  too; an assertion is as strong as the bearer secret the same bridge holds and
+  no stronger, until §6. (This used to overrule loopback assertions, which
+  stamped every forwarded agent as the hub's own.)
 - Without Supgang, which is one machine or an ssh forward, the ledger's node id
   stands in for the daemon and a per-directory `host_id` for a bridge. Absent
   means unknown, and unknown behaves exactly as this board did before the
@@ -138,11 +141,15 @@ absolute strings differ and the file is the same. That is not an exotic
 arrangement here: it is how this project checks a regression test against the
 commit before its fix.
 
-The host half is not built, and the reason is worth recording rather than
-quietly leaving as a gap. It is unreachable until agents are genuinely on
-different machines, and building a fold rule with no reachable behaviour would
-be speculative complexity of the kind PHILOSOPHY.md exists to refuse. It goes in
-with the transport work that makes a remote agent real, not before it.
+The host half is built too (above: `(HostID, path)`, and the remote e2e
+proves both rules against a hub that runs no Git). This paragraph used to say
+it was not, immediately after the section marked it **Built**, because it was
+written when a remote agent was unreachable and never revisited when the
+transport landed; a document that contradicts itself a screen apart is worse
+than one that is merely stale. The portable half's identity comes from the
+agent's own machine: a bridge on another host resolves its checkout locally
+and sends it with every call, and the hub takes that word for a remote caller,
+because Git on the hub cannot answer for a path that exists only elsewhere.
 
 Both halves are recorded at ingress and compared in the fold, which is the
 bargain every other impure input already makes.

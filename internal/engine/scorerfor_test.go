@@ -148,4 +148,17 @@ func TestWorkingDirectoriesAreTheLiveLocalAgents(t *testing.T) {
 	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
 		t.Errorf("WorkingDirectories = %v, want %v: a restarted daemon would index the wrong trees", got, want)
 	}
+
+	// On a Supgang member the daemon's own agents carry its Supgang identity,
+	// not the ledger's node id, and the restart index compared against the
+	// node id: every local checkout read as another machine's and was skipped,
+	// so matching stayed off after every upgrade until something registered.
+	// Found by the pre-release review.
+	e.SetHostID("supgang-identity")
+	reg("member", &core.AgentInfo{CWD: "/work/member", HostID: "supgang-identity"})
+	got = e.WorkingDirectories(ctx)
+	if len(got) != 3 || got[1] != "/work/member" {
+		t.Errorf("WorkingDirectories = %v: an agent stamped with this daemon's own host id "+
+			"(its Supgang identity) is local and must be indexed", got)
+	}
 }

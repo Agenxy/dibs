@@ -352,3 +352,38 @@ func TestTheGuardDoesNotReachAcrossMachines(t *testing.T) {
 			"and they were agreeing about the wrong thing: %+v", v)
 	}
 }
+
+// A claim over the whole checkout covers every file in every other checkout
+// of that repository.
+//
+// The root claim's repository-relative path is ".", and pathsOverlap does not
+// treat "." as an ancestor of "pkg/x.go", so an exclusive claim over /clone-a
+// let another agent take /clone-b/pkg/x.go in the same repository, and the
+// guard shared the gap. The one claim that says "all of it" covered nothing
+// across worktrees. Found by the pre-release review.
+func TestAClaimOverTheCheckoutRootCoversTheOtherWorktree(t *testing.T) {
+	s := NewState("t", DefaultLimits())
+	now := time.Unix(1700000000, 0)
+
+	inRepo(t, s, "one", "tok-1", "/a/main/.git", "/a/wt1", "git@example.com:acme/api", now)
+	two := inRepo(t, s, "two", "tok-2", "/a/main/.git", "/a/wt2", "git@example.com:acme/api", now)
+
+	got := mustApply(t, s, &Op{Kind: OpClaim, Token: "tok-1", Path: "/a/wt1", Mode: ClaimExclusive}, now)
+	if got["granted"] != true {
+		t.Fatalf("setup: the root claim was refused: %v", got)
+	}
+	res := mustApply(t, s, &Op{Kind: OpClaim, Token: "tok-2", Path: "/a/wt2/pkg/x.go", Mode: ClaimExclusive}, now)
+	if res["granted"] != false {
+		t.Fatalf("an exclusive claim over a file was granted to %s while another agent "+
+			"holds the whole repository exclusively through its own worktree: %v", two.ID, res)
+	}
+	ov, _ := res["overlaps"].([]map[string]any)
+	if len(ov) != 1 || ov[0]["rule"] != OverlapByRepo {
+		t.Errorf("the refusal should name the repository rule: %v", res["overlaps"])
+	}
+	// And the guard, which shares the comparison.
+	v := s.GuardPath(two.ID, "/a/wt2/pkg/x.go", now)
+	if v.Decision != GuardDeny {
+		t.Errorf("guard = %+v, want deny: the write lands in a repository somebody else holds whole", v)
+	}
+}

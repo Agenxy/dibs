@@ -85,13 +85,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   same agent, and the exit the board notices when an agent dies. A url client
   gives up all four; the generated configs do not, and say so.
 - **A coordinator may move a mailbox but not onto itself.** (#77) Adoption
-  redirects where mail for a name is delivered. Onto a third party, the
-  coordinator gains nothing, and that is the consolidation the role exists
-  for. Onto itself, it becomes the reader of everything sent to that name:
-  the coordinator granting itself read access to another agent's mail, which
-  is now the human's call (`human_unlock`) or an admin's. The refusal names
-  the census and `into`. Approving another agent's adoption request is
-  untouched: that agent becomes the reader, not the coordinator.
+  moves the messages an abandoned mailbox holds at that moment, once; it is
+  not a standing redirect, and anything sent to the name afterwards still
+  reaches it (the result says so). Onto a third party, the coordinator gains
+  nothing, and that is the consolidation the role exists for. Onto itself, it
+  becomes the reader of that mailbox's contents: the coordinator granting
+  itself read access to another agent's mail, which is now the human's call
+  (`human_unlock`) or an admin's. The refusal names the census and `into`.
+  Approving another agent's adoption request makes that agent the reader,
+  not the coordinator; a coordinator approving a request it sent ITSELF is
+  the same move through the other door and is refused the same way (found by
+  the pre-release review).
 
 - **`check_in` charges for a roster, not the whole board.** (#55) The one
   call every agent must make, once per activation, returned every field of
@@ -103,6 +107,34 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   human's panel never lost it. Measured 71 KB to 36 KB on that board.
 
 ### Fixed
+
+- **Nine findings from the pre-release review, each with a test that fails
+  on the code before it.** A coordinator could adopt a mailbox onto itself
+  by sending itself the request and approving it; refused now like the direct
+  route. The Windows fix for claim paths folded `\` to `/` inside the fold,
+  which changed what unix ledgers meant (a backslash is a filename character
+  there); the fold no longer knows a second separator and Windows spellings
+  are folded at ingress, where the host is a recorded fact. The Linux
+  notifier's probe (two subprocesses, five seconds each) ran on the
+  single-writer loop on every message to the human; it runs once per process
+  and the loop reads a cached answer. A caller on another machine got its
+  checkout identity from Git on the hub, which cannot see that checkout, so
+  the repository rule across hosts never fired for a real remote clone: the
+  bridge now resolves its own checkout and sends it, and the hub takes that
+  word for a remote caller (the remote e2e runs its hub with no Git, so the
+  rule can only pass through the bridge). A remote bridge reaching the hub
+  through the documented ssh forward arrived over loopback and was stamped as
+  the hub's own machine; an asserted host id is honoured whatever the
+  transport. A claim over a whole checkout (repo path `.`) covered nothing in
+  another worktree of the repository, in the fold and in the guard. A
+  pending remote wake was not bound to its host: another host detaching
+  failed it and another host's report satisfied it. Wake ids restarted from
+  zero with the hub while a reconnecting bridge kept the ids of commands
+  still running. On a Supgang member the restart index compared agents with
+  the ledger's node id rather than the daemon's host id and skipped every
+  local checkout. And index shipping stopped looking after forty-eight
+  seconds while the daemon waits four minutes on Git before saying a tree is
+  unreadable, so the fallback never fired for the case that motivated it.
 
 - **`task review:release` fails when the reviewer did not review.** The brief
   now ends with a `FINDINGS: <count>` line and the runner requires it: a run
@@ -294,9 +326,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the honest third of it) "This platform has no notification route" was true
   and said nothing about the consequence: a request that needs the operator
   waits on the board until they look. It now says so, names `dibs web` as the
-  place the buttons are, and names the issue for the notifier itself. The
-  notifier is not built: CI runs on macOS alone, and a Linux backend nothing
-  can exercise would be the class of change this repository refuses.
+  place the buttons are, and names the issue for the notifier itself. (When
+  this was written the notifier was not built and CI ran on macOS alone; both
+  changed within the same cycle, see the Linux notifier entry below and the
+  `linux` job. The sentence is left as the record of what was true on the day,
+  not as a description of this release.)
 
 - **Three tool descriptions still said "agent" where they meant "space".**
   Casualties of the vocabulary rename: `evict` told every agent to "remove an

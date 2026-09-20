@@ -78,8 +78,22 @@ type hostBridge struct {
 type hostWakes struct {
 	mu      sync.Mutex
 	bridges map[string]*hostBridge
-	pending map[uint64]chan WakeResult
-	next    uint64
+	pending map[uint64]pendingWake
+	// next is the last wake id handed out. Seeded from the clock on first
+	// use rather than from zero: a bridge that outlives a hub restart still
+	// holds the ids of commands it is running, and a restarted counter
+	// handed the same small numbers to new requests, which the bridge then
+	// dropped as duplicates and the old commands' reports satisfied. Found
+	// by the pre-release review.
+	next uint64
+}
+
+// pendingWake is a request the hub is waiting on, and the host it went to:
+// only that host's bridge may report it, and only that host's detaching
+// fails it.
+type pendingWake struct {
+	host string
+	ch   chan WakeResult
 }
 
 // wakeRequestBuffer bounds what a bridge that has stopped reading can hold
@@ -129,9 +143,12 @@ func (e *Engine) AttachHostBridge(host string, harnesses []string) (<-chan WakeR
 		}
 		delete(hw.bridges, host)
 		close(b.ch)
-		for id, ch := range hw.pending {
+		for id, p := range hw.pending {
+			if p.host != host {
+				continue // another host's wake, still running there
+			}
 			select {
-			case ch <- WakeResult{ID: id, Host: host, OK: false, Detail: "the host's bridge detached before reporting"}:
+			case p.ch <- WakeResult{ID: id, Host: host, OK: false, Detail: "the host's bridge detached before reporting"}:
 			default:
 			}
 		}
@@ -163,13 +180,13 @@ func (e *Engine) HostBridges() []HostBridgeInfo {
 func (e *Engine) ReportWakeResult(res WakeResult) bool {
 	hw := &e.hostWakes
 	hw.mu.Lock()
-	ch, ok := hw.pending[res.ID]
+	p, ok := hw.pending[res.ID]
 	hw.mu.Unlock()
-	if !ok {
-		return false
+	if !ok || p.host != strings.TrimSpace(res.Host) {
+		return false // nothing waiting, or a host reporting a wake it did not run
 	}
 	select {
-	case ch <- res:
+	case p.ch <- res:
 		return true
 	default:
 		return false
@@ -229,14 +246,17 @@ func (e *Engine) requestRemoteWakeWithin(plan wakePlan, agent string, within tim
 			"agent", agent, "host", plan.host)
 		return false
 	}
+	if hw.next == 0 {
+		hw.next = uint64(time.Now().UnixNano())
+	}
 	hw.next++
 	req := plan.request
 	req.ID = hw.next
 	result := make(chan WakeResult, 1)
 	if hw.pending == nil {
-		hw.pending = map[uint64]chan WakeResult{}
+		hw.pending = map[uint64]pendingWake{}
 	}
-	hw.pending[req.ID] = result
+	hw.pending[req.ID] = pendingWake{host: plan.host, ch: result}
 	hw.mu.Unlock()
 	defer func() {
 		hw.mu.Lock()

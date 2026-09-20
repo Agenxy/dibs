@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/agenxy/dibs/internal/mcp"
+	"github.com/agenxy/dibs/internal/paths"
 )
 
 // enrichRegister fills in who the agent is, using the environment the harness
@@ -131,6 +132,13 @@ func enrichRegister(line []byte) []byte {
 			// is not; only a hub on another computer reads it.
 			if hid := hostID(); hid != "" {
 				meta[mcp.HostMetaKey] = hid
+			}
+			// WHICH CHECKOUT, as this machine sees it. A hub on another computer
+			// cannot ask Git about a path that exists only here, and the
+			// repository rule for two clones on two machines needs the answer;
+			// a daemon on THIS machine ignores it and derives its own.
+			if repo := repoMeta(params); repo != nil {
+				meta[mcp.RepoMetaKey] = repo
 			}
 			if tid, _ := meta["threadId"].(string); strings.TrimSpace(tid) != "" {
 				noteThread(strings.TrimSpace(tid))
@@ -352,4 +360,29 @@ func streamSession() string {
 		return tid
 	}
 	return sessionID()
+}
+
+// repoMeta resolves the checkout the call is about, on this machine, for a
+// hub that may be elsewhere. The cwd is the one the call names (register and
+// update carry it) or the session's own; a call about no directory sends
+// nothing rather than a guess.
+func repoMeta(params map[string]any) map[string]string {
+	cwd := ""
+	if args, ok := params["arguments"].(map[string]any); ok {
+		cwd, _ = args["cwd"].(string)
+	}
+	if strings.TrimSpace(cwd) == "" {
+		if wd, err := os.Getwd(); err == nil {
+			cwd = wd
+		}
+	}
+	if strings.TrimSpace(cwd) == "" {
+		return nil
+	}
+	id := paths.Identify(paths.Canonical(cwd))
+	dir, remote, roots, ok := id.Identity()
+	if !ok && id.WorktreeID == "" {
+		return nil
+	}
+	return map[string]string{"dir": dir, "remote": remote, "roots": roots, "root": id.WorktreeID}
 }

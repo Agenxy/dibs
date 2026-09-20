@@ -15,7 +15,8 @@ func TestReachOnLinuxSaysApprovalsWaitOnTheBoard(t *testing.T) {
 	old, oldFind := goos, notifySend
 	goos = "linux"
 	notifySend = func() string { return "" } // a host without libnotify
-	t.Cleanup(func() { goos, notifySend = old, oldFind })
+	resetProbe()
+	t.Cleanup(func() { goos, notifySend = old, oldFind; resetProbe() })
 
 	ok, why := Reach()
 	if ok {
