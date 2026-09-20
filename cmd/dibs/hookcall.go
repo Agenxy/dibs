@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/agenxy/dibs/internal/mcp"
@@ -35,7 +36,7 @@ func callHookTool(tool string, args map[string]any, out any) error {
 	body, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": params,
 	})
-	req, err := http.NewRequest(http.MethodPost, origin()+"/mcp", bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, mcpEndpoint(), bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -65,3 +66,23 @@ func callHookTool(tool string, args map[string]any, out any) error {
 	}
 	return json.Unmarshal([]byte(env.Result.Content[0].Text), out)
 }
+
+// mcpEndpoint is where a lifecycle hook posts, and every other command that
+// posts to the daemon on an agent's behalf (await, watch, monitor): the hub
+// as Supgang says it is NOW when the config named it as a peer
+// (boardOrigin), not the address the config was printed with. The stdio
+// bridge already dialled through boardOrigin and followed a hub that moved;
+// the `dibs hook-poll` and `dibs hook` subcommands dialled origin() and kept
+// timing out against the saved address, so a Gemini session lost its
+// start-of-session delivery while its bridge reconnected fine. Resolved once
+// per process, as the bridge resolves once per start: a command that polls
+// must not spawn Supgang per poll. Round eighteen of the pre-release review.
+func mcpEndpoint() string {
+	mcpEndpointOnce.Do(func() { mcpEndpointValue = boardOrigin() + "/mcp" })
+	return mcpEndpointValue
+}
+
+var (
+	mcpEndpointOnce  sync.Once
+	mcpEndpointValue string
+)

@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -364,7 +365,7 @@ mcp_2026_07_28 = true
 [mcp_servers.dibs]
 command = %q
 args = ["mcp-stdio"]
-env = { DIBS_ADDR = %q, DIBS_DIR = %q, CODEX_MCP_PROTOCOL_VERSION = "2026-07-28" }
+env = %s
 
 # stdio, not the url form, and from another machine that matters MORE rather
 # than less: this session is the long-lived unattended one. register hands
@@ -374,8 +375,29 @@ env = { DIBS_ADDR = %q, DIBS_DIR = %q, CODEX_MCP_PROTOCOL_VERSION = "2026-07-28"
 # again as a sibling that cannot read its predecessor's mail.
 #
 # Check it: dibs doctor, with the same two variables set.
-`, string(out), self(), remote, dir)
+`, string(out), self(), codexEnv(env))
 	return nil
+}
+
+// codexEnv is the Codex stanza's env table, built from the SAME map the JSON
+// block was, plus the protocol pin only Codex needs. The stanza used to spell
+// its own two variables, so a hub given as a Supgang peer reached the JSON
+// config with DIBS_BOARD_PEER and the Codex config without it: that bridge
+// was fixed to the address the recipe printed and could not follow the hub
+// when it moved, which the recipe had just promised. Round eighteen of the
+// pre-release review.
+func codexEnv(env map[string]string) string {
+	keys := make([]string, 0, len(env))
+	for k := range env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys)+1)
+	for _, k := range keys {
+		parts = append(parts, k+" = "+strconv.Quote(env[k]))
+	}
+	parts = append(parts, `CODEX_MCP_PROTOCOL_VERSION = "2026-07-28"`)
+	return "{ " + strings.Join(parts, ", ") + " }"
 }
 
 // boardShape decides which second step an address calls for: a forward, or

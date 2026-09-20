@@ -58,7 +58,7 @@ func watch(args []string) error {
 			"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 			"params": map[string]any{"name": tool, "arguments": callArgs},
 		})
-		req, err := http.NewRequest(http.MethodPost, origin()+"/mcp", bytes.NewReader(body))
+		req, err := http.NewRequest(http.MethodPost, mcpEndpoint(), bytes.NewReader(body))
 		if err != nil {
 			return nil, err
 		}
