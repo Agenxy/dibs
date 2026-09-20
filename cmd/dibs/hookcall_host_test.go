@@ -64,6 +64,53 @@ func TestAHookCallCarriesItsHost(t *testing.T) {
 	}
 }
 
+// And it spells its paths as the bridge does: resolved, not as the harness
+// gave them. A hub on another machine does not resolve a remote caller's
+// paths, so a hook announcing `/tmp/repo` never matched a registration the
+// bridge had recorded as `/private/tmp/repo`, and reported success while
+// delivering nothing. Round twenty-two of the pre-release review.
+func TestAHookCallSpellsPathsAsTheBridgeDoes(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte("s3cret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	real := filepath.Join(dir, "real")
+	if err := os.Mkdir(real, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(dir, "alias")
+	if err := os.Symlink(real, alias); err != nil {
+		t.Skipf("symlinks unavailable here: %v", err)
+	}
+	resolved, err := filepath.EvalSymlinks(real)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DIBS_DIR", dir)
+	t.Setenv("DIBS_HOST_ID", "machine-b")
+	hostIDOnce, hostIDValue = sync.Once{}, ""
+	t.Cleanup(func() { hostIDOnce, hostIDValue = sync.Once{}, "" })
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &got)
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{}"}]}}`))
+	}))
+	defer srv.Close()
+	t.Setenv("DIBS_ADDR", strings.TrimPrefix(srv.URL, "http://"))
+	mcpEndpointOnce, mcpEndpointValue = sync.Once{}, ""
+	t.Cleanup(func() { mcpEndpointOnce, mcpEndpointValue = sync.Once{}, "" })
+	var out map[string]any
+	if err := callHookTool("hook_poll", map[string]any{"session_id": "s", "event": "SessionStart", "cwd": alias}, &out); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	params, _ := got["params"].(map[string]any)
+	args, _ := params["arguments"].(map[string]any)
+	if cwd, _ := args["cwd"].(string); cwd != resolved {
+		t.Fatalf("the hook announced cwd %q, want %q as the bridge registered it", cwd, resolved)
+	}
+}
+
 // And so does the opencode plugin, which posts its own JSON-RPC from
 // opencode's plugin runtime and never passes through the bridge.
 //
@@ -353,6 +400,17 @@ func TestThePiTransportReachesAJoinedBoardUnderNode(t *testing.T) {
 // Round twenty-one of the pre-release review. The real file is copied
 // beside a stub of its one runtime dependency and driven through its
 // before_agent_start hook at a fake daemon that records what arrived.
+//
+// AND THE CHECKOUT, AND FROM A FRESH DIRECTORY. The extension asked nothing
+// about the repository, so a remote pi agent registered with no checkout
+// and two clones of one repository on two machines were both granted an
+// exclusive claim on the same tracked file; and it read the host from files
+// only a bridge writes, so a joined directory holding just the secret and
+// the trust store registered with no machine at all. It now asks `dibs
+// identity`, the same binary the bridge is, which this test binary stands
+// in for (TestMain). The data directory here holds nothing but the secret:
+// the binary mints the host as the bridge would, and reads the checkout
+// from Git. Round twenty-two of the pre-release review.
 func TestThePiExtensionCarriesItsHost(t *testing.T) {
 	bun, err := exec.LookPath("bun")
 	if err != nil {
@@ -362,8 +420,17 @@ func TestThePiExtensionCarriesItsHost(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte("s3cret\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, resolvedHostFile), []byte("machine-b\n"), 0o600); err != nil {
+	checkout := filepath.Join(dir, "checkout")
+	if err := os.Mkdir(checkout, 0o700); err != nil {
 		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"init", "-q"}, {"remote", "add", "origin", "https://example.invalid/t/checkout.git"}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = checkout
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("setup: git %v: %v: %s", args, err, out)
+		}
 	}
 	src, err := os.ReadFile(filepath.Join("..", "..", "plugins", "pi", "dibs.ts"))
 	if err != nil {
@@ -390,41 +457,69 @@ func TestThePiExtensionCarriesItsHost(t *testing.T) {
 		calls = append(calls, got)
 		mu.Unlock()
 		if got["method"] == "tools/list" {
-			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"tools":[]}}`))
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"register","inputSchema":{"type":"object"}}]}}`))
 			return
 		}
-		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{}"}]}}`))
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{\"token\":\"t\"}"}]}}`))
 	}))
 	defer srv.Close()
+	// The hook, then the register tool the extension fetched, executed as
+	// pi would execute it.
 	script := `const mod = await import("./dibs.ts")
 const handlers: Record<string, Function> = {}
-mod.default({ on: (name: string, fn: Function) => { handlers[name] = fn }, registerTool: () => {}, registerCommand: () => {} } as any)
-await handlers["before_agent_start"]!({}, { sessionManager: { getSessionId: () => "pi-session-1" } })
+const tools: Record<string, any> = {}
+mod.default({ on: (name: string, fn: Function) => { handlers[name] = fn }, registerTool: (t: any) => { tools[t.label] = t }, registerCommand: () => {} } as any)
+const ctx = { sessionManager: { getSessionId: () => "pi-session-1" } }
+await handlers["before_agent_start"]!({}, ctx)
+await tools["register"].execute("c1", { name: "probe" }, undefined, undefined, ctx)
 `
 	if err := os.WriteFile(filepath.Join(dir, "drive.ts"), []byte(script), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	cmd := exec.Command(bun, "run", filepath.Join(dir, "drive.ts")) // #nosec G204 -- paths this test created
-	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "DIBS_DIR="+dir, "DIBS_ADDR="+strings.TrimPrefix(srv.URL, "http://"))
+	cmd.Dir = checkout
+	cmd.Env = append(os.Environ(), "DIBS_DIR="+dir, "DIBS_ADDR="+strings.TrimPrefix(srv.URL, "http://"),
+		"DIBS_BIN="+os.Args[0], "DIBS_TEST_AS_DIBS=1", "DIBS_HOST_ID=")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("running the extension: %v\n%s", err, out)
 	}
+	// Nothing named the machine: the binary minted an id for this fresh
+	// directory, as the bridge would have, and that is the one to expect.
+	minted, err := os.ReadFile(filepath.Join(dir, "host_id"))
+	if err != nil || strings.TrimSpace(string(minted)) == "" {
+		t.Fatalf("no host id was minted in the fresh directory: %v", err)
+	}
 	mu.Lock()
 	defer mu.Unlock()
-	stamped := 0
+	stamped, registered := 0, false
 	for _, c := range calls {
 		if c["method"] != "tools/call" {
 			continue
 		}
 		params, _ := c["params"].(map[string]any)
 		meta, _ := params["_meta"].(map[string]any)
-		if host, _ := meta[mcp.HostMetaKey].(string); host != "machine-b" {
-			t.Fatalf("a tools/call from the extension carried host %q in %v", host, params)
+		if host, _ := meta[mcp.HostMetaKey].(string); host != strings.TrimSpace(string(minted)) {
+			t.Fatalf("a tools/call from the extension carried host %q in %v, want the id minted for "+
+				"this directory: from a fresh joined directory the extension registered with no machine", host, params)
 		}
 		stamped++
+		if params["name"] != "register" {
+			continue
+		}
+		registered = true
+		repo, _ := meta[mcp.RepoMetaKey].(map[string]any)
+		if remote, _ := repo["remote"].(string); remote == "" {
+			t.Fatalf("the register carried no checkout identity in %v: a hub records no repository "+
+				"for it, and two clones of one repository on two machines both get an exclusive "+
+				"claim on the same file", params)
+		}
+		args, _ := params["arguments"].(map[string]any)
+		want, _ := filepath.EvalSymlinks(checkout)
+		if cwd, _ := args["cwd"].(string); cwd != want {
+			t.Fatalf("the register's cwd is %q, want %q as the bridge would spell it", cwd, want)
+		}
 	}
-	if stamped == 0 {
-		t.Fatalf("the hook made no tools/call: %v", calls)
+	if stamped == 0 || !registered {
+		t.Fatalf("the drive made %d tools/call(s), registered=%v: %v", stamped, registered, calls)
 	}
 }

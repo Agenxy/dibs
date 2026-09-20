@@ -25,6 +25,14 @@ against the store `dibs trust` recorded in that directory and the CA a daemon
 there signs with, through Node's own TLS (pi runs under Node, whose `fetch`
 cannot be given a CA).
 
+The extension is pi's whole MCP client, so it says what the stdio bridge
+would say about this machine and checkout (which computer, which repository,
+the working directory as the daemon compares it) by asking `dibs identity`
+once per session: keep `dibs` on `PATH`, or name it with `DIBS_BIN`. Without
+it the extension still works on the daemon's own machine, and a hub on
+another machine records its agents with no repository, so two clones of one
+project there are not told apart.
+
 ## The tool surface is fetched, not copied
 
 At session start the extension calls `tools/list` against the running daemon and

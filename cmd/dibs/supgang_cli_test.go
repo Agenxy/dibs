@@ -37,6 +37,14 @@ func TestMain(m *testing.M) {
 	// the suite ran.
 	supgang.Command = "/nonexistent/supgang-under-test"
 	remap.Command = "/nonexistent/remap-under-test"
+	// And as `dibs` itself, for the pi extension under test, which asks the
+	// binary what this machine and checkout are (`dibs identity`).
+	if os.Getenv("DIBS_TEST_AS_DIBS") != "" && len(os.Args) > 1 && os.Args[1] == "identity" {
+		if err := identityCmd(os.Args[2:]); err != nil {
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
 	os.Exit(m.Run())
 }
 
