@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"testing"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -210,6 +211,50 @@ func TestOneSessionIDAlwaysRecoversTheSameRow(t *testing.T) {
 
 // mayClaim is the verdict alone, for tests written when that was all it gave.
 func mayClaim(e *Engine, sid, tok string) bool {
-	ok, _ := e.mayClaimSession(sid, tok, "")
+	ok, _ := e.mayClaimSession(sid, tok, "", "")
 	return ok
+}
+
+// A synthetic session id on another machine is not this machine's to take.
+//
+// `host-<ppid>` repeats across computers. The alias claim asked who holds
+// the id anywhere on the board, and a dormant holder yields: so a fresh
+// register on machine B stating host-12345 took the binding from a dormant
+// agent on machine A with the same id, and A's lifecycle hooks and write
+// guard resolved to nobody from then on. The host-scoped hook lookups of
+// earlier rounds were tested against the fold directly and never went
+// through this ingress. The holder that matters is the one on the caller's
+// machine. Round twenty-one of the pre-release review.
+func TestASessionTakeoverStaysOnItsOwnMachine(t *testing.T) {
+	const synthetic = "host-12345"
+	st := core.NewState("hub-node", core.DefaultLimits())
+	st.Agents["old"] = &core.Agent{
+		ID: "old", Name: "old", Status: core.StatusDormant, Nonce: "n-old", NonceMinted: true,
+		SessionID: synthetic, Token: "tok-old",
+		Agent: &core.AgentInfo{CWD: "/w/repo", HostID: "machine-a"}, Slots: map[string]core.Slot{},
+	}
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	// What the bridge on machine-b sends: its synthetic id as the primary
+	// and, on every call, as the alias in _meta.
+	res, err := e.Do(ctx, &core.Op{
+		Kind: core.OpRegister, Name: "new", SessionID: synthetic, SessionAlias: synthetic,
+		Agent: &core.AgentInfo{CWD: "/w/repo", HostID: "machine-b"},
+	})
+	if err != nil {
+		t.Fatalf("register on machine-b: %v", err)
+	}
+	if res["agent_id"] == "old" {
+		t.Fatalf("machine-b's register landed on machine-a's row: %v", res)
+	}
+	if l := e.state.AgentForHookOn(synthetic, "/w/repo", "machine-a"); l == nil || l.ID != "old" {
+		t.Fatalf("after a register on machine-b, machine-a's hooks for %s resolve to %v, want old: "+
+			"the binding was taken across machines", synthetic, l)
+	}
+	if l := e.state.AgentForHookOn(synthetic, "/w/repo", "machine-b"); l == nil || l.ID == "old" {
+		t.Fatalf("machine-b's hooks for %s resolve to %v, want the new row", synthetic, l)
+	}
 }

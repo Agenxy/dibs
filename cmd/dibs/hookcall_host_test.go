@@ -343,3 +343,88 @@ func TestThePiTransportReachesAJoinedBoardUnderNode(t *testing.T) {
 		t.Skip("neither node nor bun is installed")
 	}
 }
+
+// And pi's extension stamps the host on every tool call, as the bridge does.
+//
+// The extension is pi's whole MCP client (it registers directly, no bridge),
+// so a call without `_meta com.dibs/host` from another machine registered
+// an agent with no machine, or through an ssh forward with the hub's, and
+// the daemon then never chose that machine's host bridge for a wake.
+// Round twenty-one of the pre-release review. The real file is copied
+// beside a stub of its one runtime dependency and driven through its
+// before_agent_start hook at a fake daemon that records what arrived.
+func TestThePiExtensionCarriesItsHost(t *testing.T) {
+	bun, err := exec.LookPath("bun")
+	if err != nil {
+		t.Skip("bun is not installed; the extension cannot be run")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte("s3cret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, resolvedHostFile), []byte("machine-b\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	src, err := os.ReadFile(filepath.Join("..", "..", "plugins", "pi", "dibs.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "dibs.ts"), src, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stub := filepath.Join(dir, "node_modules", "typebox")
+	if err := os.MkdirAll(stub, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stub, "index.ts"),
+		[]byte("export const Type = { Unsafe: (s: unknown) => s }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	var calls []map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var got map[string]any
+		_ = json.Unmarshal(body, &got)
+		mu.Lock()
+		calls = append(calls, got)
+		mu.Unlock()
+		if got["method"] == "tools/list" {
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"tools":[]}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{}"}]}}`))
+	}))
+	defer srv.Close()
+	script := `const mod = await import("./dibs.ts")
+const handlers: Record<string, Function> = {}
+mod.default({ on: (name: string, fn: Function) => { handlers[name] = fn }, registerTool: () => {}, registerCommand: () => {} } as any)
+await handlers["before_agent_start"]!({}, { sessionManager: { getSessionId: () => "pi-session-1" } })
+`
+	if err := os.WriteFile(filepath.Join(dir, "drive.ts"), []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(bun, "run", filepath.Join(dir, "drive.ts")) // #nosec G204 -- paths this test created
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "DIBS_DIR="+dir, "DIBS_ADDR="+strings.TrimPrefix(srv.URL, "http://"))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("running the extension: %v\n%s", err, out)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	stamped := 0
+	for _, c := range calls {
+		if c["method"] != "tools/call" {
+			continue
+		}
+		params, _ := c["params"].(map[string]any)
+		meta, _ := params["_meta"].(map[string]any)
+		if host, _ := meta[mcp.HostMetaKey].(string); host != "machine-b" {
+			t.Fatalf("a tools/call from the extension carried host %q in %v", host, params)
+		}
+		stamped++
+	}
+	if stamped == 0 {
+		t.Fatalf("the hook made no tools/call: %v", calls)
+	}
+}

@@ -170,14 +170,19 @@ func cleanDir(p string) string {
 // the claim and cleared the alias, so a return from thread B to an earlier
 // thread A left B current and the wake on it. Found by the pre-release
 // review, round twelve.
-func (e *Engine) mayClaimSession(sid, token, nonce string) (ok bool, takenFrom string) {
+// ON THE CALLER'S MACHINE. The holder was looked up across the whole
+// board, and a dormant holder yields, so a register on machine B stating
+// the synthetic `host-12345` took that binding from a dormant agent on
+// machine A: A's hooks and guard resolved to nobody from then on. Round
+// twenty-one of the pre-release review.
+func (e *Engine) mayClaimSession(sid, token, nonce, host string) (ok bool, takenFrom string) {
 	if sid == "" {
 		return false, ""
 	}
 	if len(sid) > maxSessionIDBytes {
 		return false, ""
 	}
-	holder := e.state.AgentBySession(sid)
+	holder := e.state.AgentBySessionOn(sid, host)
 	if holder == nil {
 		return true, "" // unclaimed
 	}

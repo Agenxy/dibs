@@ -47,3 +47,46 @@ func TestAHostScopedSessionLookupPrefersTheFirstHolder(t *testing.T) {
 		}
 	}
 }
+
+// Two agents on two machines with one synthetic session id are two pairs
+// of hands.
+//
+// SameHands reads a shared session, or a registration provenance the other
+// holds, as one agent under two names: that is what a coordinator's puppet
+// looks like, minted from the coordinator's own bridge. Both `host-<ppid>`
+// and the provenance copied from it repeat across computers, so two
+// independent bridges on two machines that happened to share a pid read as
+// one agent, and adopting a stranded mailbox onto the genuinely separate
+// one was refused with E_NOT_PERMITTED and a hint (register through your
+// own bridge) that could not change the answer. Session evidence speaks
+// for one machine only; a proven parent still speaks across them. Round
+// twenty-one of the pre-release review.
+func TestSessionEvidenceOfOneAgentSpeaksForOneMachineOnly(t *testing.T) {
+	on := func(host string) *Agent {
+		return &Agent{
+			ID: "agent-" + host, SessionID: "host-12345", RegisteredFrom: "host-12345",
+			Agent: &AgentInfo{CWD: "/w/repo", HostID: host},
+		}
+	}
+	if on("machine-a").SameHands(on("machine-b")) {
+		t.Fatal("two bridges on two machines sharing a pid read as one agent: adoption onto " +
+			"the genuinely separate one is refused, and its hint cannot change that")
+	}
+	if !on("machine-a").SameHands(on("machine-a")) {
+		t.Fatal("two rows from one bridge on one machine no longer read as one agent: the " +
+			"puppet route is open again")
+	}
+	// A row that recorded no machine keeps the old answer, and so does one
+	// whose partner did not.
+	noHost := on("")
+	if !on("machine-a").SameHands(noHost) || !noHost.SameHands(on("machine-b")) {
+		t.Fatal("a row with no recorded machine stopped matching the session it shares")
+	}
+	// Lineage is proven by a vouched secret, not by a session, and crosses
+	// machines.
+	child := on("machine-b")
+	child.Parent, child.ParentProven = "agent-machine-a", true
+	if !on("machine-a").SameHands(child) {
+		t.Fatal("a proven child on another machine is no longer the parent's hands")
+	}
+}

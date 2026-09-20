@@ -473,7 +473,8 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// the id `codex resume` takes, so this is the identity rather than a
 	// correlation. Vetted, not trusted: see mayClaimSession.
 	if claimed := op.SessionAlias; claimed != "" {
-		ok, takenFrom := e.mayClaimSession(claimed, op.Token, op.Nonce)
+		host := e.hostOfOp(op)
+		ok, takenFrom := e.mayClaimSession(claimed, op.Token, op.Nonce, host)
 		if !ok && op.Kind == core.OpRegister {
 			// ITS OWN THREAD, RE-ASSERTED. A register carrying neither token
 			// nor nonce was refused the alias an active row already held, and
@@ -484,7 +485,7 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 			// same exemption refuseStealingAnotherThreadsSession makes for a
 			// stated session id. Found by the pre-release review, round
 			// thirty-six.
-			if holder := e.state.AgentBySession(claimed); holder != nil && e.registerLandsOn(op, holder) {
+			if holder := e.state.AgentBySessionOn(claimed, host); holder != nil && e.registerLandsOn(op, holder) {
 				ok = true
 			}
 		}
@@ -494,7 +495,7 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		// The same for the alias: "self by token" on a register that mints a
 		// sibling is a take from the row the token belongs to.
 		if ok && takenFrom == "" && op.Kind == core.OpRegister {
-			if holder := e.state.AgentBySession(claimed); holder != nil && !e.registerLandsOn(op, holder) {
+			if holder := e.state.AgentBySessionOn(claimed, host); holder != nil && !e.registerLandsOn(op, holder) {
 				takenFrom = holder.ID
 			}
 		}
@@ -1536,6 +1537,19 @@ func (e *Engine) aliasSaysNothingNew(op *core.Op) bool {
 	}
 	l := e.callerRow(op)
 	return l != nil && l.HoldsSession(op.SessionAlias)
+}
+
+// hostOfOp is the machine an op speaks from: what the ingress stamped on it,
+// else what its caller's row recorded, else "" (a caller that established
+// none, compared as before hosts existed).
+func (e *Engine) hostOfOp(op *core.Op) string {
+	if op.Agent != nil && op.Agent.HostID != "" {
+		return op.Agent.HostID
+	}
+	if l := e.callerRow(op); l != nil && l.Agent != nil {
+		return l.Agent.HostID
+	}
+	return ""
 }
 
 // callerRow is the row an op speaks for, by token or by nonce, or nil.

@@ -121,6 +121,34 @@ async function trust(): Promise<string[] | null> {
   return (trustCache = [...roots, ...extra])
 }
 
+/**
+ * Which machine this session is on, said the way the stdio bridge says it:
+ * the operator's DIBS_HOST_ID, else the id the bridge resolved and
+ * published beside the secret (`resolved_host_id`), else the daemon's own
+ * node id, else the id the bridge minted. Read, never minted. Sent on every
+ * tool call, because the daemon scopes its lookups and its wake routing by
+ * it: a call without one from another machine registered an agent with no
+ * machine (or, through an ssh forward, the hub's), so its host bridge was
+ * never chosen for a wake however correctly it was attached. Round
+ * twenty-one of the pre-release review.
+ */
+let hostCache: string | undefined
+
+async function host(): Promise<string> {
+  if (hostCache !== undefined) return hostCache
+  const stated = process.env["DIBS_HOST_ID"]?.trim()
+  if (stated) return (hostCache = stated)
+  for (const name of ["resolved_host_id", "node_id", "host_id"]) {
+    try {
+      const id = (await readFile(`${DIR}/${name}`, "utf8")).trim()
+      if (id) return (hostCache = id)
+    } catch {
+      // not this file; the next one, or none
+    }
+  }
+  return (hostCache = "")
+}
+
 let rpcId = 0
 
 /**
@@ -138,6 +166,13 @@ async function rpc(
 ): Promise<any | null> {
   const key = await secret()
   if (!key) return null
+  if (method === "tools/call" && params && typeof params === "object") {
+    const hid = await host()
+    if (hid) {
+      const p = params as Record<string, unknown>
+      p["_meta"] = { ...((p["_meta"] as Record<string, unknown> | undefined) ?? {}), "com.dibs/host": hid }
+    }
+  }
   const text = await post(
     `${ORIGIN}/mcp`,
     JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method, params }),
