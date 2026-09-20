@@ -108,6 +108,27 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round seventeen of the pre-release review: four findings.**
+  - Every hook that reaches the daemon without the stdio bridge says which
+    machine it is on: `dibs hook-poll` and the other hook subcommands, and
+    the opencode plugin, now send `_meta com.dibs/host` the way the bridge
+    does. A call without it that arrives on loopback is stamped as the
+    daemon's own machine, so through the documented `ssh -L` forward a
+    remote agent's guard resolved to nobody and its edit went ahead past an
+    exclusive claim. The bridge publishes the host it resolved as
+    `resolved_host_id` beside the secret and the plugin reads that, so the
+    two halves of one machine agree even where the bridge's answer came
+    from Supgang, which the plugin cannot ask.
+  - The named link (`http://<name>/?bt=…`) is printed only for a board
+    served over plain HTTP. Remap serves a name over HTTP and the daemon's
+    session cookie is TLS-only when its own leg is, so for an HTTPS board
+    the link spent the single-use token on a cookie the browser discarded.
+    `dibs web` says why the name is withheld; `dibs doctor` warns.
+  - The delivery note for an agent on another machine asks whether it has a
+    thread id to resume, as the local note does: a bridge attached there is
+    not a route without one, and the sender was told a wake was coming.
+  - The harness survey no longer says Pi "speaks 2025-11-25": it has no MCP
+    client, and an SDK in a lockfile is not one.
 - **Round sixteen of the pre-release review: three findings.**
   - A resume retried after the agent was archived is a resume, not a
     replay. The idempotent retry matched on the activation, which archival

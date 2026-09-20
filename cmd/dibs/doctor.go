@@ -1924,6 +1924,11 @@ func checkBoardName(dir string, ok reportFn, warn fixFn) {
 	case !sameBoardTarget(m.Target, target):
 		warn(fmt.Sprintf("dibs.toml names this board %q, and Remap routes that name to %s, not to this board",
 			cfg.Name, m.Target), "run `"+fix+"`")
+	case schemeFor(target) != schemePlain:
+		// Reaches it, and cannot hold a session there: see namedLink.
+		warn(fmt.Sprintf("http://%s/ reaches this board through Remap, but the board serves TLS and "+
+			"its session cookie is TLS-only, so a session opened through the name is not kept", cfg.Name),
+			"open the board by its address; the name serves plain HTTP")
 	default:
 		ok("http://" + cfg.Name + "/ reaches this board through Remap")
 	}

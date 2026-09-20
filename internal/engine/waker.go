@@ -1256,12 +1256,22 @@ func (e *Engine) remotePullOnlyNote(l *core.Agent) (note string, remote bool) {
 	if host == "" {
 		return "", false
 	}
-	if _, has := e.hostRouteFor(l); has {
-		return "", true // its bridge runs the wake; core's wording is true as it stands
-	}
 	named := wakeHarness(l)
 	if named == "" {
 		named = "its harness"
+	}
+	if _, has := e.hostRouteFor(l); has {
+		// A BRIDGE IS NOT A ROUTE WITHOUT A THREAD TO NAME: wakeRoute refuses
+		// the wake when there is none, as the local branch's note already
+		// says, and this one went quiet on the bridge alone. Round seventeen
+		// of the pre-release review.
+		if threadIDOf(l) == "" {
+			return "delivered to " + l.ID + ", which is on another machine (" + host + ") whose " +
+				"bridge can start " + named + ", but " + l.ID + " has never supplied a harness " +
+				"thread id for it to resume: nothing can wake it, so this is pull-only and " +
+				"arrives when that agent next calls inbox or check_in", true
+		}
+		return "", true // its bridge runs the wake; core's wording is true as it stands
 	}
 	return "delivered to " + l.ID + ", which is on another machine (" + host + ") with " +
 		"no bridge attached there that can start " + named + ": nothing can wake it, " +

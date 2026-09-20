@@ -34,6 +34,7 @@ import (
 // was given.
 func hostID() string {
 	hostIDOnce.Do(func() {
+		defer func() { publishResolvedHostID(paths.DataDir(), hostIDValue) }()
 		// STATED FIRST. DIBS_HOST_ID is the operator saying which computer
 		// this process speaks for, for the cases where the answer below is
 		// wrong: two data directories on one Supgang member standing in for
@@ -64,6 +65,38 @@ var (
 	hostIDOnce  sync.Once
 	hostIDValue string
 )
+
+// resolvedHostFile is where the answer above is published for the one
+// reader that cannot compute it: the opencode plugin, which runs no
+// subprocess and so cannot ask Supgang. It reads this file first, so the
+// host it stamps on a guard is the host the bridge stamped on the
+// registration, whichever source the bridge took it from. Without this the
+// plugin read node_id, the bridge answered with Supgang's id on a member,
+// and the daemon's host-scoped guard resolved the two to different
+// machines: the guard e2e caught it on the first machine with Supgang.
+const resolvedHostFile = "resolved_host_id"
+
+// publishResolvedHostID writes the resolved id beside the secret, whole and
+// only when it changed: a torn read would be a wrong host, which is worse
+// than none, so the bytes land under another name and are renamed into
+// place.
+func publishResolvedHostID(dir, id string) {
+	if dir == "" || id == "" {
+		return
+	}
+	path := filepath.Join(dir, resolvedHostFile)
+	// #nosec G304 -- the user's own data directory
+	if b, err := os.ReadFile(path); err == nil && strings.TrimSpace(string(b)) == id {
+		return
+	}
+	tmp := path + ".new-" + id
+	if err := os.WriteFile(tmp, []byte(id+"\n"), 0o600); err != nil {
+		return // a bridge that cannot publish still works; the plugin falls back
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+	}
+}
 
 func loadOrCreateHostID(dir string) string {
 	if dir == "" {

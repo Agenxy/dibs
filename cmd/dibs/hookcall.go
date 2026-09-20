@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/agenxy/dibs/internal/mcp"
 )
 
 // callHookTool invokes one Dibs tool over the local MCP endpoint on behalf of
@@ -20,9 +22,18 @@ func callHookTool(tool string, args map[string]any, out any) error {
 	if err != nil {
 		return err
 	}
+	params := map[string]any{"name": tool, "arguments": args}
+	// WHICH MACHINE, as the stdio bridge says on every call. The host-scoped
+	// lookups take it from here, and a call without it that arrives on
+	// loopback is stamped as the daemon's own machine: through the
+	// documented `ssh -L` forward, a remote agent's guard then resolved to
+	// nobody and its edit went ahead past an exclusive claim. Round
+	// seventeen of the pre-release review.
+	if hid := hostID(); hid != "" {
+		params["_meta"] = map[string]any{mcp.HostMetaKey: hid}
+	}
 	body, _ := json.Marshal(map[string]any{
-		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-		"params": map[string]any{"name": tool, "arguments": args},
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": params,
 	})
 	req, err := http.NewRequest(http.MethodPost, origin()+"/mcp", bytes.NewReader(body))
 	if err != nil {
