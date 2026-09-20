@@ -68,8 +68,13 @@ arrived since. Nothing is lost by this; what is lost is latency mid-session.
 
 ## Verify
 
-Start a session in a directory where your agent is registered. The daemon's
-log records the hook resolving (`dibs log`), and with mail waiting the session
-opens with the digest in context. If the log says the hook resolved to nobody,
-the session id Gemini gave the hook is not bound to your agent yet: register
-(or `resume`) from inside the session and the next session start finds it.
+Resume a session in which your agent has checked in (`gemini --resume`: the
+same session id). The daemon's log records the hook resolving (`dibs log`),
+and with mail waiting the session opens with the digest in context.
+
+A brand-new session carries a new id, and its start resolves to nobody by
+design: a supplied id that matches nothing is not guessed at, because guessing
+is how one agent's mail ended up in another's context. The agent's first
+`check_in` in that session binds the new id (the hook announced it, the
+directory matches), and that call's `waiting` line carries what a hook would
+have; from the next resume onward the session opens bound.
