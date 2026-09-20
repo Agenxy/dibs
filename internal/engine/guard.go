@@ -25,6 +25,8 @@ import (
 // a broken one, and the blast radius of a missed guard is a merge conflict,
 // while the blast radius of a false deny is an engineer who turns Dibs off.
 func (e *Engine) GuardPath(ctx context.Context, sessionID, path, cwd string) (core.Result, error) {
+	// Spelled as the fold spelled the claims it is compared against.
+	path, cwd = foldSeparators(path), foldSeparators(cwd)
 	return e.query(ctx, func() core.Result {
 		agent := ""
 		l := e.state.AgentForHook(sessionID, cwd)

@@ -611,6 +611,11 @@ func (f *scorerFlags) indexDiscovered(ctx context.Context, eng *engine.Engine, c
 	// at all, so a busy fleet does not spawn a subprocess per registration.
 	f.discoverMu.Lock()
 	if root, known := f.rootOf[cwd]; known && f.indexed[root] {
+		// FOUND, and said so for the eviction pass: this is the path a
+		// returning agent takes, and round eleven of the pre-release review
+		// found the epoch stamp on the slow path only, with the test calling
+		// the stamp by hand instead of this.
+		f.touchLocked(root)
 		f.discoverMu.Unlock()
 		return
 	}
