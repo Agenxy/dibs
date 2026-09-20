@@ -22,9 +22,10 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { Type } from "typebox"
 import { execFile } from "node:child_process"
-import { existsSync } from "node:fs"
+import { existsSync, realpathSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import { homedir, hostname } from "node:os"
+import { dirname, isAbsolute, join, resolve } from "node:path"
 import { promisify } from "node:util"
 
 const run = promisify(execFile)
@@ -196,6 +197,39 @@ async function host(): Promise<string> {
   return (await machineIdentity()).host_id
 }
 
+/** The bridge's pathArgs: per tool, the arguments that are paths here. */
+const PATH_ARGS: Record<string, string[]> = {
+  claim: ["path"],
+  release: ["path"],
+  force_release: ["path"],
+  guard_path: ["path", "cwd"],
+  hook_poll: ["cwd"],
+  hook_session: ["cwd"],
+  hook_blocked: ["cwd"],
+}
+
+/**
+ * A path as the daemon compares it: absolute, every symlink resolved, the
+ * deepest existing ancestor resolved and the rest re-attached for a file
+ * that does not exist yet. Mirrors internal/paths.Canonical, as the
+ * opencode plugin's does.
+ */
+function canonical(p: string): string {
+  if (!p) return p
+  let cur = isAbsolute(p) ? resolve(p) : resolve(process.cwd(), p)
+  let rest = ""
+  for (;;) {
+    try {
+      return rest ? join(realpathSync(cur), rest) : realpathSync(cur)
+    } catch {
+      const parent = dirname(cur)
+      if (parent === cur) return resolve(p)
+      rest = rest ? join(cur.slice(parent.length + 1), rest) : cur.slice(parent.length + 1)
+      cur = parent
+    }
+  }
+}
+
 let rpcId = 0
 
 /**
@@ -230,6 +264,19 @@ async function rpc(
       const at = named ? await identityFor(named) : id
       if (named) args["cwd"] = at.cwd
       if (at.repo) meta["com.dibs/repo"] = at.repo
+      p["arguments"] = args
+    }
+    // AND EVERY OTHER PATH, as the bridge spells them (its pathArgs table):
+    // a hub does not resolve a remote caller's paths, so a claim on
+    // `/tmp/repo/pkg/x.go` from an agent registered at `/private/tmp/repo`
+    // had no repository-relative key and collided with nothing. Round
+    // twenty-four of the pre-release review.
+    const pathArgs = PATH_ARGS[p["name"] as string]
+    if (pathArgs) {
+      const args = (p["arguments"] ?? {}) as Record<string, unknown>
+      for (const k of pathArgs) {
+        if (typeof args[k] === "string" && args[k] !== "") args[k] = canonical(args[k] as string)
+      }
       p["arguments"] = args
     }
     if (Object.keys(meta).length > 0) p["_meta"] = meta
@@ -267,6 +314,18 @@ async function post(
   const u = new URL(url)
   const mod = u.protocol === "https:" ? await import("node:https") : await import("node:http")
   return new Promise((resolve) => {
+    // ELAPSED TIME, not inactivity. req.setTimeout measures the socket's
+    // idle time, so a response that kept trickling bytes never timed out,
+    // and before_agent_start awaits this in front of the user's turn: a
+    // stalled daemon could hold the turn open indefinitely. Round
+    // twenty-four of the pre-release review.
+    let done = false
+    const finish = (v: string | null) => {
+      if (done) return
+      done = true
+      clearTimeout(deadline)
+      resolve(v)
+    }
     const req = mod.request(
       u,
       { method: "POST", headers: { ...headers, "content-length": String(Buffer.byteLength(body)) }, ...(ca ? { ca } : {}) },
@@ -275,13 +334,19 @@ async function post(
         res.on("data", (c: Buffer) => chunks.push(c))
         res.on("end", () => {
           const ok = (res.statusCode ?? 0) >= 200 && (res.statusCode ?? 0) < 300
-          resolve(ok ? Buffer.concat(chunks).toString("utf8") : null)
+          finish(ok ? Buffer.concat(chunks).toString("utf8") : null)
         })
-        res.on("error", () => resolve(null))
+        res.on("error", () => finish(null))
       },
     )
-    req.setTimeout(timeoutMs, () => req.destroy(new Error("timeout")))
-    req.on("error", () => resolve(null))
+    const deadline = setTimeout(() => {
+      // Settled BEFORE the destroy: under bun, destroying the request emits
+      // the response's end synchronously, with whatever had trickled in as
+      // if it were the whole body.
+      finish(null)
+      req.destroy(new Error("timeout"))
+    }, timeoutMs)
+    req.on("error", () => finish(null))
     req.end(body)
   })
 }
