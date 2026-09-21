@@ -16,8 +16,6 @@ import (
 	"sync"
 	"syscall"
 	"time"
-
-	"github.com/agenxy/dibs/internal/paths"
 )
 
 // mcpStdio is a stdio↔HTTP bridge for the Dibs MCP server. A harness that
@@ -64,9 +62,6 @@ func runBridge(_ []string) error {
 		return fmt.Errorf("no local secret yet: start dibd once first: %w", err)
 	}
 	origin := boardOrigin()
-	// Published for the opencode plugin, which has no subprocess to resolve
-	// a peer with and read the saved address instead: see resolvedOriginFile.
-	publishResolvedOrigin(paths.DataDir(), origin)
 	url := origin + "/mcp"
 	client := daemonClient(75 * time.Second)
 	// No timeout: this one is meant to stay open. A deadline here is a stream

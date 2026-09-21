@@ -58,6 +58,31 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The opencode and pi plugins are transports now, not clients: one
+  implementation of every client rule, in Go.** Both spoke to the daemon
+  themselves, and the pre-release review spent rounds nineteen through
+  fifty-seven handing them, one at a time, rules the `dibs mcp-stdio` bridge
+  already had: the host stamp, the repository stamp, canonical paths, the
+  portable spelling of a Windows path, which arguments are paths at all, the
+  exception for a path named on another agent's behalf, a TLS trust store
+  Node's `fetch` cannot be given, an origin that has to be re-read because
+  the hub moves. Each arrived a release after the bridge got it, and each was
+  found in behaviour rather than by a test, because a rule that exists three
+  times drifts and the symptom is silent on the copies nobody runs. Both
+  files now speak JSON-RPC over a pipe to that bridge and decide nothing:
+  1329 lines of TypeScript became 808, the four guards that pinned the copies
+  to each other are replaced by one that forbids client policy in them at
+  all, and the `resolved_host_id` / `resolved_origin` files the bridge wrote
+  for those readers are gone with them. A child per call rather than a
+  long-lived one, measured at 8-17ms against a running daemon with spawn
+  included: under bun a piped child keeps the parent's event loop alive
+  however it is unref'd, so the harness finished its turn and would not exit.
+  Behaviour is unchanged for both harnesses (`task test:guard`, 38 checks
+  against a real daemon), except that a hook call now reaches the daemon with
+  a working directory the bridge supplies when the harness states none, which
+  is where that rule landed when the plugins stopped measuring it.
+
+
 - **The daemon calls itself Dibs everywhere a person can see it.**
   `serverInfo.name`, the string every MCP client puts in its list of
   servers, said `agents`: what this project was called two names ago. The

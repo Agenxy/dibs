@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"log/slog"
@@ -37,9 +36,7 @@ import (
 // was given.
 func hostID() string {
 	hostIDOnce.Do(func() {
-		dir := paths.DataDir()
-		defer func() { publishResolvedHostID(dir, hostIDValue) }()
-		hostIDValue = resolveHostID(dir)
+		hostIDValue = resolveHostID(paths.DataDir())
 	})
 	return hostIDValue
 }
@@ -222,53 +219,6 @@ func recordedHostID(dir string) string {
 		}
 	}
 	return ""
-}
-
-// resolvedHostFile is where the answer above is published for the one
-// reader that cannot compute it: the opencode plugin, which runs no
-// subprocess and so cannot ask Supgang. It reads this file first, so the
-// host it stamps on a guard is the host the bridge stamped on the
-// registration, whichever source the bridge took it from. Without this the
-// plugin read node_id, the bridge answered with Supgang's id on a member,
-// and the daemon's host-scoped guard resolved the two to different
-// machines: the guard e2e caught it on the first machine with Supgang.
-const resolvedHostFile = "resolved_host_id"
-
-// resolvedOriginFile is where the bridge publishes the origin it dialled,
-// after any DIBS_BOARD_PEER resolution, for the same reader: the opencode
-// plugin derived its endpoint from the saved DIBS_ADDR alone, so after a
-// Supgang hub moved, the bridge beside it reconnected and the plugin went on
-// dialling the old address, losing delivery and failing its guard open.
-// Round twenty-six of the pre-release review.
-const resolvedOriginFile = "resolved_origin"
-
-// publishResolvedHostID writes the resolved id beside the secret.
-func publishResolvedHostID(dir, id string) { publishResolved(dir, resolvedHostFile, id) }
-
-// publishResolvedOrigin writes the origin the bridge dialled beside the secret.
-func publishResolvedOrigin(dir, origin string) { publishResolved(dir, resolvedOriginFile, origin) }
-
-// publishResolved writes one resolved value beside the secret, whole and
-// only when it changed: a torn read would be a wrong answer, which is worse
-// than none, so the bytes land under another name and are renamed into
-// place.
-func publishResolved(dir, name, value string) {
-	if dir == "" || value == "" {
-		return
-	}
-	path := filepath.Join(dir, name)
-	// #nosec G304 -- the user's own data directory
-	if b, err := os.ReadFile(path); err == nil && strings.TrimSpace(string(b)) == value {
-		return
-	}
-	sum := sha256.Sum256([]byte(value))
-	tmp := path + ".new-" + hex.EncodeToString(sum[:8])
-	if err := os.WriteFile(tmp, []byte(value+"\n"), 0o600); err != nil {
-		return // a bridge that cannot publish still works; the plugin falls back
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-	}
 }
 
 func loadOrCreateHostID(dir string) string {
