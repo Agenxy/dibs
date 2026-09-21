@@ -233,15 +233,23 @@ func (p *rolePins) check(role, name, fingerprint, want string) error {
 				"and restart; both files are read at startup (%s)", name, role, p.path)
 		}
 		if want != fingerprint {
+			// WHAT THE RECONCILER DOES, which is a withdrawal. This said
+			// the predecessor KEEPS the role until `dibs admin member`
+			// takes it, and told the operator to edit the pin file: the
+			// reconciler withdraws it immediately after this error and
+			// drops the pin itself, so both instructions describe a
+			// version of this that no longer exists, and the pin file is
+			// read once at startup so editing it does nothing to the
+			// running daemon. Round fifty-four of the pre-release review,
+			// the sibling of round fifty-three's withdrawal message.
 			return fmt.Errorf("[roles.identity] names a different fingerprint for %q "+
 				"than the one this board pinned when it granted %s, and the agent "+
 				"holding that name now matches the PIN. So a successor has been named "+
 				"and the predecessor is still registered: granting on the pin alone "+
 				"would keep the old credential authorised against the current "+
-				"configuration. The predecessor KEEPS the role it already holds until "+
-				"`dibs admin member %q` takes it; then remove %q from %s and restart, "+
-				"once the successor is the agent registering under that name",
-				name, role, name, name, p.path)
+				"configuration. The predecessor's role is withdrawn and its pin "+
+				"dropped; the successor is granted once it is the agent registering "+
+				"under %q", name, role, name)
 		}
 		return nil
 	default:

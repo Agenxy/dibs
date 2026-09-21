@@ -12,6 +12,13 @@ import "strings"
 // which half they are editing is one edit away from that, and the file was at
 // its length limit besides.
 
+// MaxFingerprintBytes bounds an index fingerprint and a footprint's root
+// path. A fingerprint is a digest (`sha256:…`, seventy-odd bytes) and a
+// root is a path; three hundred is three orders of magnitude above real
+// use and only ever catches a mistake or an abuse. See the check in
+// Admit for what an unbounded one did to the ledger.
+const MaxFingerprintBytes = 300
+
 // Admit rejects an op arriving from a CALLER. Not called during replay.
 //
 // The distinction is the whole point, and it cost a daemon its own history to
@@ -52,6 +59,22 @@ func Admit(op *Op, lim Limits) error {
 		return errTooLarge("holds", lim.MaxDirs)
 	}
 	if err := boundStrings(lim.MaxPathBytes, "holds", op.Holds); err != nil {
+		return err
+	}
+	// AN INDEX FINGERPRINT IS A DIGEST, and was bounded only by "not
+	// empty". It travels from an agent's shipped index onto every
+	// declaration scored in it, so a 3 MiB one of `<` characters was
+	// accepted, escaped past 18 MiB in the ledger line, and put the
+	// ledger beyond what `dibs verify` can read back: append succeeded
+	// and verification then failed with a scanner error, on every later
+	// declaration too. The honest values are seventy-odd bytes. Round
+	// fifty-four of the pre-release review.
+	fps := make([]string, 0, len(op.Footprints)+1)
+	fps = append(fps, op.Index)
+	for _, f := range op.Footprints {
+		fps = append(fps, f.Index, f.Root)
+	}
+	if err := boundStrings(MaxFingerprintBytes, "index fingerprint", fps); err != nil {
 		return err
 	}
 	// Every session id the caller can supply, not only the primary: the alias
