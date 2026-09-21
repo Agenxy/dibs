@@ -582,3 +582,57 @@ func TestAnAdoptedIdentityStillRecognisesTheOldOne(t *testing.T) {
 		t.Fatalf("another machine's id was rewritten to %q", got)
 	}
 }
+
+// An announcement from a bridge that predates the identity adoption is
+// this machine's, exactly as its hook poll is.
+//
+// A machine that joins the fleet adopts its Supgang id, the rows and
+// claims here are renamed onto it, and the ingress recognises the id
+// this computer used to answer to. HookPollFrom resolved that alias and
+// NoteChildSession did not: a surviving bridge's announcement was filed
+// under a machine no row is on, so hook_blocked answered ok with an
+// empty parent and the next poll made a SECOND record for one session.
+// Blocked state and progress then landed on a record nobody is attached
+// to. Round forty-eight of the pre-release review.
+func TestAnAnnouncementFromABridgeThatPredatesTheAdoptionIsThisMachines(t *testing.T) {
+	const minted, fleet = "minted-1234", "fleet-id"
+	st := core.NewState("hub-node", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	e.SetHostID(fleet)
+	e.SetHostAliases(minted)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	// The bridge still asserts the id this computer used to answer to.
+	if _, err := e.NoteChildSession(ctx, Child{
+		SessionID: "host-12345", CWD: "/w/repo", Host: minted, State: "running",
+	}); err != nil {
+		t.Fatalf("announcement: %v", err)
+	}
+	// A later event from the SAME bridge, and the daemon's own view of
+	// this machine, must land on one record and not two.
+	if _, err := e.NoteChildSession(ctx, Child{
+		SessionID: "host-12345", CWD: "/w/repo", Host: fleet, State: "blocked",
+	}); err != nil {
+		t.Fatalf("second announcement: %v", err)
+	}
+
+	var hosts []string
+	for key := range e.children {
+		hosts = append(hosts, key)
+	}
+	if len(e.children) != 1 {
+		t.Fatalf("one session produced %d records (%v): the announcement carrying the old id "+
+			"was filed under a machine no row is on, and everything recorded against it is "+
+			"attached to nobody", len(e.children), hosts)
+	}
+	for _, c := range e.children {
+		if c.Host != fleet {
+			t.Fatalf("the record is filed under %q, want this machine's current id %q", c.Host, fleet)
+		}
+		if c.State != "blocked" {
+			t.Fatalf("the later event did not reach the record: state %q", c.State)
+		}
+	}
+}

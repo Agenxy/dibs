@@ -128,6 +128,18 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round forty-eight of the pre-release review: two findings.**
+  - A force_release that names a holder is not folded by the caller's
+    platform either. The path belongs to the holder's machine, and the
+    fold asked only whether the CALLER was remote: a coordinator on a
+    Windows hub releasing a unix agent's `/work/a\b` had it folded to
+    `/work/a/b` and released that instead, reporting success while the
+    claim it was asked about stayed held.
+  - A lifecycle announcement from a bridge that predates the identity
+    adoption is recognised as this machine's, which the hook poll already
+    did and this did not: the announcement was filed under a machine no
+    row is on, `hook_blocked` answered ok with an empty parent, and the
+    next poll made a second record for one session.
 - **Round forty-seven of the pre-release review: three findings, each
   the previous round's fix missing a sibling.** The rule was right in one
   place and absent in the next one along, three times over, so each is
