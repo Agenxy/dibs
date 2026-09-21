@@ -60,13 +60,13 @@ func TestARemoteAgentIsNotScoredByTheHubsIndexOfAnotherProjectAtThatPath(t *test
 		RepoRemote: "github.com/acme/hub-project", RepoRoots: "r-hub",
 	})
 
-	if s, _ := e.scorerForLocation(e.locationForToken(ctx, stranger)); s != nil {
+	if s, _, _ := e.scorerForLocation(e.locationForToken(ctx, stranger)); s != nil {
 		t.Errorf("a remote agent in another project at the hub's path was scored by the hub's index")
 	}
-	if s, _ := e.scorerForLocation(e.locationForToken(ctx, clone)); s == nil {
+	if s, _, _ := e.scorerForLocation(e.locationForToken(ctx, clone)); s == nil {
 		t.Errorf("a remote clone of the hub's project was refused the hub's index")
 	}
-	if s, _ := e.scorerForLocation(e.locationForToken(ctx, local)); s == nil {
+	if s, _, _ := e.scorerForLocation(e.locationForToken(ctx, local)); s == nil {
 		t.Errorf("the hub's own agent was refused the hub's index")
 	}
 
@@ -192,7 +192,7 @@ func TestALocalAgentIsNotScoredByAnotherMachinesShippedIndex(t *testing.T) {
 	if err != nil {
 		t.Fatal("setup:", err)
 	}
-	if s, _ := e.scorerForLocation(e.locationForToken(ctx, res["token"].(string))); s != nil {
+	if s, _, _ := e.scorerForLocation(e.locationForToken(ctx, res["token"].(string))); s != nil {
 		t.Error("a local agent was scored by an index shipped from another machine for a tree at the same path")
 	}
 	// The member itself still is.
@@ -202,7 +202,7 @@ func TestALocalAgentIsNotScoredByAnotherMachinesShippedIndex(t *testing.T) {
 	if err != nil {
 		t.Fatal("setup:", err)
 	}
-	if s, _ := e.scorerForLocation(e.locationForToken(ctx, res["token"].(string))); s == nil {
+	if s, _, _ := e.scorerForLocation(e.locationForToken(ctx, res["token"].(string))); s == nil {
 		t.Error("the shipper was refused the index it shipped")
 	}
 }

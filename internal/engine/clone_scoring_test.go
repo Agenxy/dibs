@@ -307,12 +307,12 @@ func TestAShippedIndexScoresOnlyAgentsTheDaemonCannotPlace(t *testing.T) {
 	e.SetIndex(parent, cloneScorer{"shipped", "pkg/auth/refresh.go"}, cfg,
 		IndexInfo{Fingerprint: "hist-shipped", Identity: project, SuppliedBy: "stranger"})
 
-	s, _ := e.scorerForLocation(location{cwd: unplaced})
+	s, _, _ := e.scorerForLocation(location{cwd: unplaced})
 	if s == nil || s.ID() != "shipped" {
 		t.Errorf("an agent the daemon could not place is scored by %v, want the shipped index: "+
 			"that is the whole point of shipping one", s)
 	}
-	s, _ = e.scorerForLocation(location{cwd: filepath.Join(placed, "cmd"), repoRoot: placed})
+	s, _, _ = e.scorerForLocation(location{cwd: filepath.Join(placed, "cmd"), repoRoot: placed})
 	if s == nil || s.ID() != "mine" {
 		t.Errorf("the placed agent is scored by %v, want the daemon's own index", s)
 	}
@@ -320,14 +320,14 @@ func TestAShippedIndexScoresOnlyAgentsTheDaemonCannotPlace(t *testing.T) {
 	// by the index it shipped. Refusing every agent with a recorded root
 	// would refuse the one agent the index exists for; the rule is "never
 	// another repository", not "never a placed agent".
-	s, _ = e.scorerForLocation(location{cwd: filepath.Join(parent, "pkg"), repoRoot: parent})
+	s, _, _ = e.scorerForLocation(location{cwd: filepath.Join(parent, "pkg"), repoRoot: parent})
 	if s == nil || s.ID() != "shipped" {
 		t.Errorf("the shipper is scored by %v, want the index it shipped", s)
 	}
 	nested := filepath.Join(parent, "other")
 	e.SetIndex(nested, cloneScorer{"theirs", "src/main.rs"}, cfg,
 		IndexInfo{Fingerprint: "hist-theirs", Identity: core.AgentInfo{RepoRemote: "github.com/acme/web"}})
-	s, _ = e.scorerForLocation(location{cwd: filepath.Join(parent, "other", "cmd"), repoRoot: nested})
+	s, _, _ = e.scorerForLocation(location{cwd: filepath.Join(parent, "other", "cmd"), repoRoot: nested})
 	if s == nil || s.ID() != "theirs" {
 		t.Errorf("a neighbour under the claimed root is scored by %v, want its own index", s)
 	}
@@ -335,7 +335,7 @@ func TestAShippedIndexScoresOnlyAgentsTheDaemonCannotPlace(t *testing.T) {
 	// still loses to the daemon's placement.
 	e.SetIndex(filepath.Join(placed, "cmd"), cloneScorer{"deep", "x"}, cfg,
 		IndexInfo{Fingerprint: "hist-deep", SuppliedBy: "stranger"})
-	s, _ = e.scorerForLocation(location{cwd: filepath.Join(placed, "cmd", "dibd"), repoRoot: placed})
+	s, _, _ = e.scorerForLocation(location{cwd: filepath.Join(placed, "cmd", "dibd"), repoRoot: placed})
 	if s == nil || s.ID() != "mine" {
 		t.Errorf("a shipped index nested inside the placed checkout scores it: %v", s)
 	}
@@ -377,12 +377,12 @@ func TestASuppliedIndexNeverJoinsAnyone(t *testing.T) {
 	e.SetIndex(mine, cloneScorer{"mine", "a.go"}, cfg, IndexInfo{Fingerprint: "h1"})
 	e.SetIndex(dark, cloneScorer{"shipped", "b.go"}, cfg, IndexInfo{Fingerprint: "h2", SuppliedBy: "stranger"})
 
-	_, got := e.scorerForLocation(location{cwd: filepath.Join(dark, "pkg")})
+	_, got, _ := e.scorerForLocation(location{cwd: filepath.Join(dark, "pkg")})
 	if got.JoinThreshold != 0 || got.AutoJoin != AutoJoinNever {
 		t.Fatalf("a supplied index carries join threshold %v and auto-join %q: the operator's "+
 			"membership policy applied to an agent's own index data", got.JoinThreshold, got.AutoJoin)
 	}
-	_, own := e.scorerForLocation(location{cwd: filepath.Join(mine, "pkg"), repoRoot: mine})
+	_, own, _ := e.scorerForLocation(location{cwd: filepath.Join(mine, "pkg"), repoRoot: mine})
 	if own.JoinThreshold != 0.3 || own.AutoJoin != AutoJoinAlways {
 		t.Errorf("the daemon's own index lost the operator's policy: %+v", own)
 	}
@@ -588,4 +588,37 @@ func TestASuppliedFootprintStaysSuppliedAfterItsDeclarationIsRemoved(t *testing.
 		return
 	}
 	t.Fatal("near's declaration did not even surface far's space: the fixture does not overlap")
+}
+
+// The fingerprint comes back with the scorer that answers in it.
+//
+// It was read separately, after the prediction, so an index replaced in
+// between recorded one index's files under another's fingerprint: two
+// coordinate systems then compared as one, which is the comparison issue
+// #39 exists to prevent. One lock, one answer. Round twenty-eight of the
+// pre-release review.
+func TestTheScorerAndItsFingerprintComeTogether(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	cfg := MatchConfig{Deadline: time.Second}
+	root := t.TempDir()
+	e.SetIndex(root, cloneScorer{"first", "a.go"}, cfg, IndexInfo{Fingerprint: "hist-1"})
+
+	s, _, fp := e.scorerForLocation(location{cwd: filepath.Join(root, "pkg"), repoRoot: root})
+	if s == nil || s.ID() != "first" || fp != "hist-1" {
+		t.Fatalf("scorer %v with fingerprint %q, want first/hist-1", s, fp)
+	}
+	// A shipment replaces it; the next lookup answers with both halves of
+	// the NEW index, never one of each.
+	e.SetIndex(root, cloneScorer{"second", "b.go"}, cfg, IndexInfo{Fingerprint: "hist-2"})
+	s, _, fp = e.scorerForLocation(location{cwd: filepath.Join(root, "pkg"), repoRoot: root})
+	if s == nil || s.ID() != "second" || fp != "hist-2" {
+		t.Fatalf("after the replacement: scorer %v with fingerprint %q, want second/hist-2: a "+
+			"prediction would be recorded in a coordinate system it was not made in", s, fp)
+	}
+	// And a location with no index of its own gets the fallback pair, whose
+	// fingerprint describes whatever that pair is.
+	if _, _, got := e.scorerForLocation(location{cwd: "/elsewhere"}); got != "" && got != "hist-2" {
+		t.Fatalf("the fallback answered with fingerprint %q, which belongs to no index it returned", got)
+	}
 }
