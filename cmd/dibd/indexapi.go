@@ -11,6 +11,7 @@ import (
 
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/overlap"
+	"github.com/agenxy/dibs/internal/paths"
 )
 
 // registerIndexAPI accepts an index an agent mined from its own checkout, for
@@ -49,7 +50,12 @@ func registerIndexAPI(mux *http.ServeMux, eng *engine.Engine, f *scorerFlags) {
 				"and ship the index with the token register returned")
 			return
 		}
-		root := filepath.Clean(body.Root)
+		// Portable, so a UNC root keeps the slashes the registration
+		// recorded: filepath.Clean drops one on a unix hub, the upload
+		// then installs the index under a root the agent is not in, and
+		// scorerForLocation refuses it while the upload said accepted.
+		// Round forty-four of the pre-release review.
+		root := paths.Portable(body.Root)
 		if !underDir(cwd, root) {
 			refuse(w, http.StatusForbidden, "agent "+agent+" is registered from "+cwd+
 				", which is not inside "+root+": an agent may supply the index for the "+
@@ -60,7 +66,7 @@ func registerIndexAPI(mux *http.ServeMux, eng *engine.Engine, f *scorerFlags) {
 		// repository root the daemon resolved may ship only THAT root: a parent
 		// directory claimed as a root would otherwise shape suggestions for
 		// every tree beneath it.
-		if repoRoot != "" && filepath.Clean(repoRoot) != root {
+		if repoRoot != "" && paths.Portable(repoRoot) != root {
 			refuse(w, http.StatusForbidden, "agent "+agent+"'s repository is "+repoRoot+
 				", not "+root+": an agent may supply the index for its own repository and no other")
 			return
@@ -114,7 +120,7 @@ func refuse(w http.ResponseWriter, status int, why string) {
 
 // underDir reports whether p is dir or inside it.
 func underDir(p, dir string) bool {
-	p, dir = filepath.Clean(p), filepath.Clean(dir)
+	p, dir = paths.Portable(p), paths.Portable(dir)
 	return p == dir || strings.HasPrefix(p, dir+string(filepath.Separator))
 }
 

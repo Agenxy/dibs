@@ -723,12 +723,13 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "force_release",
-			"description": "COORDINATOR ONLY. Release a claim held by ANOTHER agent: for " +
-				"unsticking a shared resource whose holder is gone. The holder is notified; " +
-				"this is never silent. Prefer asking the holder first with a request.",
+			"description": "COORDINATOR ONLY. Release another agent's claim, for a resource " +
+				"whose holder is gone. The holder is told; never silent. Ask them first " +
+				"with a request.",
 			"inputSchema": obj(map[string]any{
 				"token": tok, "path": str("claimed path/resource to release"),
-				"note": str("why (shown to the holder)"),
+				"note":  str("why (shown to the holder)"),
+				"agent": str("which holder, when two machines hold this same path"),
 			}, "token", "path"),
 		},
 		{

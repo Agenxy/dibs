@@ -100,6 +100,20 @@ func (s *State) applyForceRelease(l *Agent, op *Op) (Result, []Event, error) {
 		if c.Path != path {
 			continue
 		}
+		// WHICH HOLDER, when the caller said. An absolute path names a
+		// different file on each machine, so two agents holding
+		// /workspace/repo/file.go on two computers is not a collision
+		// and both claims are real; releasing the first match took the
+		// protection off whichever happened to be earlier in the slice,
+		// and left the one the coordinator meant in place. The ingress
+		// refuses an ambiguous call rather than guessing (engine.Do), so
+		// a request that arrives here without a holder is one that could
+		// only mean this claim, or one from a board written before the
+		// selector existed, which behaves exactly as it did. Round
+		// forty-four of the pre-release review.
+		if op.To != "" && c.Agent != op.To {
+			continue
+		}
 		holder := c.Agent
 		s.Claims = append(s.Claims[:i], s.Claims[i+1:]...)
 		return Result{"ok": true, "path": path, "was_held_by": holder},
@@ -107,6 +121,11 @@ func (s *State) applyForceRelease(l *Agent, op *Op) (Result, []Event, error) {
 				Type: "claim.force_released", Agent: l.ID, To: holder,
 				Data: map[string]any{"path": path, "by": l.ID, "note": op.Note},
 			}}, nil
+	}
+	if op.To != "" {
+		return nil, nil, errf("E_NO_CLAIM",
+			"list claims via the board: that path may be held by a different agent, or by nobody",
+			"agent %s holds no claim on %q", op.To, path)
 	}
 	return nil, nil, errf("E_NO_CLAIM", "list claims via the board", "no claim on %q", path)
 }

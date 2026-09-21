@@ -881,3 +881,31 @@ func (e *Engine) HasCoordinator(ctx context.Context) bool {
 	has, _ := res["has"].(bool)
 	return has
 }
+
+// holdersOfPath names every agent holding a claim on exactly this path,
+// with the machine each is on, sorted.
+//
+// A FUNCTION OF THE STATE, not a method that fetches it: its caller is
+// exec, which already runs on the writer loop, and an e.query from there
+// sends on the channel that loop is reading. That is a hang rather than a
+// failure, which is the trap AGENTS.md names, and it cost this test ten
+// minutes of wall clock before the stack made it obvious.
+//
+// The answer is for a refusal message, which is why it carries the host:
+// "two agents hold this" reads as a contradiction until you can see that
+// they are two computers.
+func holdersOfPath(st *core.State, p string) []string {
+	var out []string
+	for _, c := range st.Claims {
+		if c.Path != p {
+			continue
+		}
+		who := c.Agent
+		if c.Host != "" {
+			who += " (on " + c.Host + ")"
+		}
+		out = append(out, who)
+	}
+	sort.Strings(out)
+	return out
+}

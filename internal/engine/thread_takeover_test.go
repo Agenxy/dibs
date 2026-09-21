@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -358,5 +360,89 @@ func TestAResumeOnAnotherMachineTakesTheThreadThere(t *testing.T) {
 	if e.state.Agents["on-b"].HoldsSession(thread) {
 		t.Fatal("the holder the thread was taken from still holds it: two stated holders of " +
 			"one id is a coin flip on every hook")
+	}
+}
+
+// A coordinator releasing one machine's claim does not take another
+// machine's protection off.
+//
+// An absolute path names a different file on each computer, so two agents
+// holding /workspace/repo/file.go on two machines is not a collision and
+// both claims are real. force_release matched on the path alone and
+// dropped whichever was first in the slice, so a coordinator unsticking
+// machine B could remove machine A's protection and leave B's claim
+// exactly where it was: the resource the coordinator was protecting is
+// now unprotected, and the one it meant to free is still held. Round
+// forty-four of the pre-release review.
+func TestForceReleaseDoesNotTakeAnotherMachinesClaim(t *testing.T) {
+	const path = "/workspace/repo/file.go"
+	st := core.NewState("hub-node", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	reg := func(name, host string) string {
+		t.Helper()
+		res, err := e.Do(ctx, &core.Op{
+			Kind: core.OpRegister, Name: name, SessionID: "session-" + name,
+			Agent: &core.AgentInfo{CWD: "/workspace/repo", HostID: host},
+		})
+		if err != nil {
+			t.Fatalf("setup: register %s: %v", name, err)
+		}
+		tok, _ := res["token"].(string)
+		if _, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: tok}); err != nil {
+			t.Fatalf("setup: ack %s: %v", name, err)
+		}
+		return tok
+	}
+	onA, onB, coord := reg("on-a", "machine-a"), reg("on-b", "machine-b"), reg("coord", "hub-node")
+	if _, err := e.Do(ctx, &core.Op{Kind: core.OpGrantRole, To: "coord", Mode: core.RoleCoordinator}); err != nil {
+		t.Fatalf("setup: grant: %v", err)
+	}
+	for _, tok := range []string{onA, onB} {
+		res, err := e.Do(ctx, &core.Op{Kind: core.OpClaim, Token: tok, Path: path, Mode: core.ClaimExclusive})
+		if err != nil {
+			t.Fatalf("setup: claim: %v", err)
+		}
+		if res["granted"] != true {
+			t.Fatalf("setup: a claim on another machine was refused: %v", res)
+		}
+	}
+
+	// Naming no holder is ambiguous, and a guess here unprotects a file
+	// somebody is writing: it is refused, and the refusal says who holds it.
+	_, err := e.Do(ctx, &core.Op{Kind: core.OpForceRelease, Token: coord, Path: path})
+	if err == nil {
+		t.Fatal("force_release with two holders on two machines picked one: whichever it " +
+			"chose, a resource somebody is writing is now unprotected")
+	}
+	var ce *core.Error
+	if !errors.As(err, &ce) || ce.Code != "E_AMBIGUOUS_CLAIM" {
+		t.Fatalf("refused with %v, want E_AMBIGUOUS_CLAIM naming the holders", err)
+	}
+	if !strings.Contains(ce.Msg, "on-a") || !strings.Contains(ce.Msg, "on-b") {
+		t.Errorf("the refusal does not name both holders: %q", ce.Msg)
+	}
+
+	// Named, it releases exactly that one.
+	res, err := e.Do(ctx, &core.Op{Kind: core.OpForceRelease, Token: coord, Path: path, To: "on-b"})
+	if err != nil {
+		t.Fatalf("force_release naming the holder: %v", err)
+	}
+	if res["was_held_by"] != "on-b" {
+		t.Fatalf("force_release released %v, want on-b", res["was_held_by"])
+	}
+	var left []string
+	onLoop(t, ctx, e, func(s *core.State) {
+		for _, c := range s.Claims {
+			if c.Path == path {
+				left = append(left, c.Agent)
+			}
+		}
+	})
+	if len(left) != 1 || left[0] != "on-a" {
+		t.Fatalf("claims left on %s: %v, want on-a's alone", path, left)
 	}
 }
