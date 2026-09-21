@@ -285,3 +285,36 @@ func TestAFailedWithdrawalKeepsThePinForTheNextTick(t *testing.T) {
 		t.Error("the pin outlived the withdrawal")
 	}
 }
+
+// Deleting the [roles.identity] entry withdraws the role too.
+//
+// The fingerprint is what authorises the grant: a declared name with no
+// entry can never BE granted, because a name is free to take. The
+// reconciler read the missing entry as "unchanged" and left an admin in
+// place that the same config could not have granted, which is broader
+// than what SECURITY.md promises. Round thirty-two of the pre-release
+// review.
+func TestDeletingTheIdentityEntryWithdrawsTheRole(t *testing.T) {
+	eng, ctx := testEngine(t)
+	pins := loadRolePins(t.TempDir())
+
+	registerAgentAs(t, eng, "release-manager", "nonce-rm")
+	applyDeclaredRoles(ctx, eng, RolesConfig{
+		Admin:    []string{"release-manager"},
+		Identity: map[string]string{"release-manager": engine.RolePinFingerprint("nonce-rm")},
+	}, pins)
+	if !holdsRole(t, eng, "release-manager", core.RoleAdmin) {
+		t.Fatal("setup: the declared admin was not granted")
+	}
+
+	// The name stays in [roles]; the fingerprint that authorised it is gone.
+	applyDeclaredRoles(ctx, eng, RolesConfig{Admin: []string{"release-manager"}}, pins)
+	if holdsRole(t, eng, "release-manager", core.RoleAdmin) {
+		t.Fatal("release-manager keeps admin after its [roles.identity] entry was deleted: " +
+			"the config that remains could not grant that role to anybody, and the board " +
+			"holds a privilege the file does not authorise")
+	}
+	if _, pinned := pins.Pins[core.RoleAdmin]["release-manager"]; pinned {
+		t.Error("the pin outlived the grant it recorded")
+	}
+}

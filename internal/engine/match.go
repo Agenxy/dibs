@@ -1473,8 +1473,22 @@ func spacesHint(sug []Suggestion) string {
 // discoverable by the second agent.
 func (e *Engine) OpenWithPrediction(ctx context.Context, op *core.Op) (core.Result, error) {
 	if len(op.Predicted) == 0 {
+		// THE OPENER'S OWN INDEX, and its provenance with it.
+		//
+		// This used the GLOBAL scorer, whichever tree was indexed first,
+		// and recorded nothing about where the footprint came from. Two
+		// consequences, and the second is the one SECURITY.md promises
+		// against: the space's footprint could be predicted from a project
+		// the opener has nothing to do with; and when that index was one an
+		// agent SHIPPED, the space carried a footprint from untrusted data
+		// with Supplied false, so the next local agent whose work overlapped
+		// it was joined automatically on the strength of it. Round
+		// thirty-two of the pre-release review.
+		loc := e.locationForToken(ctx, op.Token)
 		// The topic is the declaration here: it is what the agent is FOR.
-		op.Predicted, _, _ = e.Predict(ctx, op.Text)
+		pred, repo, index := e.predictIn(ctx, loc, op.Text)
+		op.Predicted, op.Index = pred, index
+		op.IndexSupplied = repo != "" && e.IndexSuppliedBy(repo) != ""
 	}
 	return e.Do(ctx, op)
 }

@@ -519,9 +519,11 @@ If you genuinely mean to hand the role to a different agent, put the new
 agent's fingerprint here and restart `dibd`. **The config is sufficient on its
 own.** A role this mechanism granted, and can prove it granted through
 `roles.pinned`, is withdrawn on the next reconciler pass when the config stops
-authorising it: the name gone from `[roles]`, or `[roles.identity]` pointed at
-a different fingerprint. The predecessor is demoted to member and its pin is
-dropped.
+authorising it: the name gone from `[roles]`, its `[roles.identity]` entry
+pointed at a different fingerprint, or that entry deleted. The last of those
+is withdrawal for the same reason the others are: a declared name with no
+fingerprint can never be granted, so a config missing it authorises nobody.
+The predecessor is demoted to member and its pin is dropped.
 
 Two things are deliberately NOT withdrawn, and both are recorded in the pin
 file's absence or disagreement. A role a person granted by hand was never this
