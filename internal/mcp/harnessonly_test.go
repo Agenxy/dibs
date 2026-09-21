@@ -93,8 +93,16 @@ func TestToolListingStaysAffordable(t *testing.T) {
 	// Two raises in a night is the guard doing its job, not failing: each one
 	// had to be argued for in the commit that made it, which is the whole point
 	// of a bound that is visible rather than absolute.
+	// Raised from 34900 to 34980 for force_release's `agent`, which names
+	// WHICH holder to release. Two agents holding /workspace/repo/file.go
+	// on two machines is not a collision but two real claims, and without
+	// a selector the fold released whichever came first: a coordinator
+	// unsticking one machine took the other's protection off and left the
+	// one it meant in place. The tool's own description was trimmed to pay
+	// for most of it, and this is the balance. Round forty-four of the
+	// pre-release review.
 	const (
-		budget  = 34900 // ~8.7k tokens
+		budget  = 34980 // ~8.7k tokens
 		perTool = 800   // the average that keeps a description worth reading
 	)
 	if len(b) > budget {

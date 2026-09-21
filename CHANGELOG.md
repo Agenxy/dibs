@@ -128,6 +128,22 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round forty-four of the pre-release review: three findings.**
+  - The hub cleans a remote caller's path and a shipped index's root the
+    portable way, so a UNC share survives the one layer that still
+    collapsed it. `filepath.Clean` on a unix hub dropped a slash at the
+    tool entry point and at the upload, which put every claim outside the
+    checkout its own registration recorded and installed a shipped index
+    under a root its agent is not in: the upload answered `accepted` and
+    the scorer then refused the index.
+  - `force_release` releases the claim it was asked for. It matched on the
+    path alone, and two agents holding `/workspace/repo/file.go` on two
+    machines is not a collision but two real claims, so a coordinator
+    unsticking one machine could take the other's protection off and leave
+    the one it meant in place. It takes an `agent` now, and an ambiguous
+    call is refused at ingress with both holders named rather than
+    guessed. Refused at ingress and not in the fold, because an op that was
+    accepted when it was written must not be refused on replay.
 - **Round forty-three of the pre-release review: three findings.**
   - The space matching opens carries the provenance of the index that
     predicted its footprint. A declaration is predicted twice, and the
@@ -143,12 +159,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     it registers, so an agent on pi sent them as typed and the daemon
     compared them against spellings it had resolved. A test now fails if
     either side gains an argument the other lacks.
-  - A UNC checkout keeps both leading slashes. `path.Clean` collapses
-    them, and `//server/share/repo` is a share on another machine while
+  - A UNC checkout keeps both leading slashes IN THE FOLD AND IN
+    `paths.Portable`. `path.Clean` collapses them, and
+    `//server/share/repo` is a share on another machine while
     `/server/share/repo` is a local directory: a root recorded as one
     with claims cleaned to the other is a prefix that never matches, so
     no claim inside that checkout had a repository-relative key and two
-    hosts could hold one tracked file exclusively.
+    hosts could hold one tracked file exclusively. (The hub's own entry
+    points still cleaned the other way and undid it before the fold ever
+    saw the path; round forty-four below closes that, and this entry said
+    "fixed" when half of the path was.)
 - **Round forty-two of the pre-release review: four findings.**
   - Two declarations are compared only inside a coordinate system both
     carry, which is what SPEC-CHANNELS.md §4 requires. The home-to-home

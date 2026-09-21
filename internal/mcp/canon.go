@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/paths"
@@ -59,7 +58,14 @@ func callerPath(ctx context.Context, params json.RawMessage, p string) string {
 		return ""
 	}
 	if remoteCaller(ctx, resolveHostID(ctx, params)) {
-		return filepath.Clean(p)
+		// paths.Portable, not filepath.Clean: on a unix hub the latter
+		// collapses the `//` of a UNC share, and the registration that
+		// recorded `//server/share/repo` keeps it, so nothing claimed
+		// inside that checkout can be placed in it. Round forty-four of
+		// the pre-release review, on round forty-three's own fix, which
+		// taught the fold and paths.Portable and left the hub's own
+		// entry point cleaning the other way.
+		return paths.Portable(p)
 	}
 	return canonPath(p)
 }
