@@ -76,6 +76,10 @@ type scorerFlags struct {
 	// afterSnapshot runs between eviction's snapshot and its deletion; a
 	// test seam for the window above, nil in the daemon.
 	afterSnapshot func()
+	// beforePublish runs just before a finished index is published, at the
+	// point an eviction or a competing shipment could last get in; a test
+	// seam for publishUnderClaim, nil in the daemon.
+	beforePublish func()
 	// buildMu serialises index construction from shipped payloads.
 	buildMu          sync.Mutex
 	repo             string
@@ -452,20 +456,22 @@ func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, held *cla
 	// system (issue #39). Identify is cached and has already been paid for
 	// by this tree's first registration.
 	repoDir, remote, roots, _ := paths.Identify(dir).Identity()
-	if !f.mayInstall(dir, held.gen) {
+	published := f.publishUnderClaim(dir, held.gen, func() {
+		eng.SetIndex(dir, scorer, engine.MatchConfig{
+			JoinThreshold: f.join, NotifyThreshold: notify, Deadline: f.deadline,
+			DirectorRequired: f.director,
+			AutoJoin:         f.autoJoin,
+			// The tree the index was built from, so auto-join can ask whether
+			// the declaring agent is even in it.
+			Repo: dir,
+		}, engine.IndexInfo{
+			Fingerprint: lex.Fingerprint(),
+			Identity:    core.AgentInfo{RepoDir: repoDir, RepoRemote: remote, RepoRoots: roots},
+		})
+	})
+	if !published {
 		return false
 	}
-	eng.SetIndex(dir, scorer, engine.MatchConfig{
-		JoinThreshold: f.join, NotifyThreshold: notify, Deadline: f.deadline,
-		DirectorRequired: f.director,
-		AutoJoin:         f.autoJoin,
-		// The tree the index was built from, so auto-join can ask whether the
-		// declaring agent is even in it.
-		Repo: dir,
-	}, engine.IndexInfo{
-		Fingerprint: lex.Fingerprint(),
-		Identity:    core.AgentInfo{RepoDir: repoDir, RepoRemote: remote, RepoRoots: roots},
-	})
 	mode, phase := f.matchMode()
 	eng.SetMatchStatus(engine.MatchStatus{
 		Phase: phase, Scorer: scorer.ID(), Repo: dir,
@@ -845,20 +851,37 @@ func (f *scorerFlags) rekeyClaim(from, to string, gen uint64) (uint64, bool) {
 	return f.markClaimLocked(to), true
 }
 
-// mayInstall reports whether a finished build may still be published, and
-// says so in the log when it may not.
+// publishUnderClaim installs a finished index for root, and does it under
+// the same hold of discoverMu that checks the claim is still this build's.
+// It reports whether the index was published.
 //
 // Mining takes minutes, and the last agent leaving during it evicts this
 // root: publishing anyway leaves an index the ceiling does not know about,
 // over the top of whatever claimed the root since. Round thirty-five of the
-// pre-release review.
-func (f *scorerFlags) mayInstall(root string, gen uint64) bool {
-	if f.holdsClaim(root, gen) {
-		return true
+// pre-release review saw that and made it two steps: check, then install.
+//
+// TWO STEPS IS NOT A CHECK. Round thirty-seven: eviction takes discoverMu,
+// deletes the bookkeeping and removes the scorer, all under that lock
+// precisely so nothing can see the half-done state; a check that releases
+// the lock before installing steps straight into the gap it was added to
+// close, and the build then reinstalls an orphan index over the top and
+// reports success. Holding the lock across the install is what makes the
+// two operations one, and it is safe in the same direction eviction
+// already relies on: discoverMu is taken first, the engine's locks second,
+// and never the reverse.
+func (f *scorerFlags) publishUnderClaim(root string, gen uint64, install func()) bool {
+	if f.beforePublish != nil {
+		f.beforePublish()
 	}
-	slog.Info("work-overlap index finished after its tree was evicted or claimed again; "+
-		"not installing it", "repo", root)
-	return false
+	f.discoverMu.Lock()
+	defer f.discoverMu.Unlock()
+	if gen == 0 || f.claimGen[root] != gen {
+		slog.Info("work-overlap index finished after its tree was evicted or claimed again; "+
+			"not installing it", "repo", root)
+		return false
+	}
+	install()
+	return true
 }
 
 // markClaimLocked gives root a fresh claim generation. Caller holds discoverMu.
@@ -869,15 +892,6 @@ func (f *scorerFlags) markClaimLocked(root string) uint64 {
 	f.claimSeq++
 	f.claimGen[root] = f.claimSeq
 	return f.claimSeq
-}
-
-// holdsClaim reports whether root is still held under this generation: an
-// eviction or a later claim while the build ran makes it false, and that
-// build must publish nothing.
-func (f *scorerFlags) holdsClaim(root string, gen uint64) bool {
-	f.discoverMu.Lock()
-	defer f.discoverMu.Unlock()
-	return gen != 0 && f.claimGen[root] == gen
 }
 
 // touchLocked records that root was claimed or found in the current
