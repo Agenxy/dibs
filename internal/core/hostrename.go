@@ -34,8 +34,26 @@ func (s *State) applyHostRenamed(op *Op, now time.Time) (Result, []Event, error)
 	}
 	claims := 0
 	for i := range s.Claims {
+		moved := false
 		if s.Claims[i].Host == was {
 			s.Claims[i].Host = now_
+			moved = true
+		}
+		// AND THE REPOSITORY SNAPSHOT THE CLAIM CARRIES. Two linked
+		// worktrees of one checkout are recognised as one tree by the git
+		// common directory they share, and that evidence is accepted only
+		// between snapshots that speak for the same machine
+		// (sameRepoIdentity). Renaming the row and the claim and leaving
+		// the snapshot behind made a claim held before the adoption read
+		// as another computer's tree, so a conflicting write from the
+		// other worktree of the same checkout stopped colliding with it:
+		// the paths differ there, so nothing else catches it. Round
+		// thirty-nine of the pre-release review.
+		if r := s.Claims[i].Repo; r != nil && r.HostID == was {
+			r.HostID = now_
+			moved = true
+		}
+		if moved {
 			claims++
 		}
 	}
