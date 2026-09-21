@@ -242,3 +242,92 @@ func TestAnAdminReadingOneMailboxGetsThatMailboxOnly(t *testing.T) {
 		}
 	}
 }
+
+// The census counts what an adoption would move, and nothing else.
+//
+// It walked every retained message addressed to the id, which is a
+// THIRD answer to "what is in this mailbox": the watermark that fences
+// a predecessor's mail did not apply, and neither did readable(), so a
+// notify the agent had already acknowledged was counted. A coordinator
+// deciding "recover or prune" was told there was one message, and the
+// adoption it then approved answered E_NOTHING_TO_ADOPT. core.readable
+// says in its own comment that adoption once had a second definition
+// and what that cost; this was the same mistake one call further out.
+// Round fifty-three of the pre-release review.
+func TestTheCensusCountsWhatAnAdoptionWouldMove(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	reg := func(name string) string {
+		t.Helper()
+		res, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: name, SessionID: "session-" + name})
+		if err != nil {
+			t.Fatalf("setup: register %s: %v", name, err)
+		}
+		tok, _ := res["token"].(string)
+		if _, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: tok}); err != nil {
+			t.Fatalf("setup: ack %s: %v", name, err)
+		}
+		return tok
+	}
+	sender, recipient := reg("sender"), reg("recipient")
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpSendMessage, Token: sender, To: "recipient",
+		MsgType: core.MsgNotify, Body: "fyi",
+	}); err != nil {
+		t.Fatalf("setup: send: %v", err)
+	}
+	// The recipient ACKNOWLEDGES it, which is what consumes a notify: it
+	// is terminal and collected, so nothing is left for an adoption to
+	// move. Reading alone does not, which is why the first version of
+	// this test measured nothing.
+	res, err := e.Inbox(ctx, recipient)
+	if err != nil {
+		t.Fatalf("setup: read: %v", err)
+	}
+	msgs, _ := res["messages"].([]*core.Message)
+	if len(msgs) == 0 {
+		t.Fatalf("setup: the recipient's inbox is empty: %v", res)
+	}
+	serial := msgs[0].Serial
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpAckMessage, Token: recipient, MsgSerial: serial,
+	}); err != nil {
+		t.Fatalf("setup: ack: %v", err)
+	}
+	if _, err := e.Do(ctx, &core.Op{Kind: core.OpSweep, StaleAgents: []string{"recipient"}}); err != nil {
+		t.Fatalf("setup: sweep: %v", err)
+	}
+
+	// The two answers have to agree: the census is what a coordinator
+	// reads before approving the adoption that refuseEmptyAdoption then
+	// judges. Asserted against each other rather than against a number,
+	// because the number is whatever the mail lifecycle says and the
+	// CONTRADICTION is the defect.
+	var row MailboxCensus
+	var adoptionRefused bool
+	var inbox int
+	onLoop(t, ctx, e, func(*core.State) {
+		for _, r := range e.mailboxCensus("recipient") {
+			row = r
+		}
+		adoptionRefused = e.refuseEmptyAdoption("recipient") != nil
+		inbox = len(e.state.Inbox("recipient"))
+	})
+	if adoptionRefused && row.Messages > 0 {
+		t.Fatalf("the census reports %d message(s) in a mailbox adoption refuses as empty: "+
+			"a coordinator approves a recovery that then answers E_NOTHING_TO_ADOPT",
+			row.Messages)
+	}
+	if !adoptionRefused && row.Messages == 0 {
+		t.Fatalf("the census reports an empty mailbox that adoption would move %d "+
+			"message(s) out of: the coordinator prunes what it should have recovered", inbox)
+	}
+	if row.Messages != inbox {
+		t.Fatalf("the census counts %d and the mailbox holds %d: two answers to one "+
+			"question, which is how the last two of these got in", row.Messages, inbox)
+	}
+}
