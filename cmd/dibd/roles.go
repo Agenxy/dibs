@@ -214,7 +214,15 @@ func withdrawUndeclaredRoles(ctx context.Context, eng *engine.Engine, c RolesCon
 	for role, byName := range pins.Pins {
 		for name, pinned := range byName {
 			want := c.Identity[name]
-			if declared[role][name] && (want == "" || want == pinned) {
+			// AND THE FINGERPRINT IS WHAT AUTHORISES IT. A declared name
+			// with no `[roles.identity]` entry can never be GRANTED (a name
+			// is free to take), so a config that has lost that entry no
+			// longer authorises anybody for the role: this treated the
+			// missing entry as "unchanged" and left an admin in place that
+			// the same config could not have granted, which is broader than
+			// the guarantee SECURITY.md states. Round thirty-two of the
+			// pre-release review.
+			if declared[role][name] && want == pinned {
 				continue // still declared, still this credential
 			}
 			// THE PIN GOES ONLY WHEN THE WITHDRAWAL IS SETTLED. It was dropped

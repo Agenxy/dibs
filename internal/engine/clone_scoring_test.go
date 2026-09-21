@@ -622,3 +622,72 @@ func TestTheScorerAndItsFingerprintComeTogether(t *testing.T) {
 		t.Fatalf("the fallback answered with fingerprint %q, which belongs to no index it returned", got)
 	}
 }
+
+// A space opened by hand carries the provenance of the index that
+// predicted its footprint.
+//
+// open_space predicted with the GLOBAL scorer, whichever tree was indexed
+// first, and recorded nothing about where the footprint came from. When
+// that index was one an agent had SHIPPED, the space held a footprint
+// built from untrusted data with Supplied false, and the next local agent
+// whose work overlapped it was joined automatically on the strength of it:
+// SECURITY.md's "a supplied index decides no membership", through the one
+// door that did not ask. It predicts in the opener's own index now, and
+// records whether that index was supplied. Round thirty-two of the
+// pre-release review.
+func TestASpaceOpenedByHandCarriesItsIndexsProvenance(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	cfg := MatchConfig{JoinThreshold: 0.3, AutoJoin: AutoJoinAlways, Deadline: time.Second}
+	local := t.TempDir()
+	shipped := filepath.Join(local, "remote")
+	e.SetIndex(local, cloneScorer{"local", "shared.go"}, cfg, IndexInfo{Fingerprint: "h-local"})
+	e.SetIndex(shipped, cloneScorer{"shipped", "shared.go"}, cfg,
+		IndexInfo{Fingerprint: "h-shipped", SuppliedBy: "far", SuppliedHost: "member"})
+
+	reg := func(name string, info core.AgentInfo) string {
+		t.Helper()
+		res, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: name, Agent: &info})
+		if err != nil {
+			t.Fatalf("setup: register %s: %v", name, err)
+		}
+		tok, _ := res["token"].(string)
+		if _, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: tok}); err != nil {
+			t.Fatalf("setup: ack %s: %v", name, err)
+		}
+		return tok
+	}
+	far := reg("far", core.AgentInfo{CWD: shipped, RepoRoot: shipped, HostID: "member"})
+	near := reg("near", core.AgentInfo{CWD: local, RepoRoot: local})
+
+	const work = "fix refresh token expiry"
+	// The remote agent opens a space BY HAND, which is the door declare's
+	// own checks do not cover.
+	if _, err := e.OpenWithPrediction(ctx, &core.Op{
+		Kind: core.OpSpaceOpen, Token: far, Space: "refresh", Text: work,
+	}); err != nil {
+		t.Fatalf("setup: open_space: %v", err)
+	}
+	res, err := e.DoMatched(ctx, &core.Op{Kind: core.OpSetSlot, Token: near, Text: work})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, s := range suggestions(t, res) {
+		if s.Space != "refresh" {
+			continue
+		}
+		found = true
+		if s.Action == "joined" || s.Action == "queued" {
+			t.Fatalf("near was %s to a space whose footprint came from an index an agent shipped: "+
+				"%+v", s.Action, s)
+		}
+	}
+	if !found {
+		t.Fatal("near's declaration did not surface the space at all: the fixture does not overlap")
+	}
+}
