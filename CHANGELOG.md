@@ -108,6 +108,22 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round thirty of the pre-release review: four findings, all in the
+  identification retry the previous round added.**
+  - A daemon's identity is settled before it serves and never changes
+    while it does. The retry called the setter from its goroutine: the
+    identity decides which agents are on this machine, so changing it
+    under a board that already holds claims split it (rows registered
+    before and after read as two computers, and both could take one path
+    exclusively), and the setter writes a field the request path reads,
+    which is a data race. The retry now only remembers the answer, so the
+    next start is right, and says that a restart would pick it up.
+  - It also treated "the remembered id is in use" as "identified", so the
+    case it was added for retried nothing at all.
+  - The pi extension's fallback no longer answers with the saved address
+    when the binary could not be asked: that read as an answer and hid the
+    origin a bridge had published, so with no `dibs` on PATH it kept
+    dialling a hub that had moved.
 - **Round twenty-nine of the pre-release review: two findings, both the
   other half of the previous round's.**
   - The DAEMON keeps the identity this computer is known by when Supgang

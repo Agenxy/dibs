@@ -755,6 +755,57 @@ func TestThePluginsFollowTheHubWhereItIsNow(t *testing.T) {
 		}
 	})
 
+	// And when the binary cannot answer at all, the published origin is
+	// what is left: pi's fallback identity used to carry the SAVED address,
+	// which read as an answer and hid the file. Round thirty.
+	t.Run("pi with no binary", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte("s3cret\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, resolvedOriginFile), []byte(now.URL+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		src, err := os.ReadFile(filepath.Join("..", "..", "plugins", "pi", "dibs.ts"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "dibs.ts"), src, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		stub := filepath.Join(dir, "node_modules", "typebox")
+		if err := os.MkdirAll(stub, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(stub, "index.ts"), []byte("export const Type = { Unsafe: (s: unknown) => s }\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		script := `const mod = await import("./dibs.ts")
+const handlers: Record<string, Function> = {}
+mod.default({ on: (name: string, fn: Function) => { handlers[name] = fn }, registerTool: () => {}, registerCommand: () => {} } as any)
+await handlers["before_agent_start"]!({}, { sessionManager: { getSessionId: () => "pi-session-1" } })
+`
+		if err := os.WriteFile(filepath.Join(dir, "drive.ts"), []byte(script), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		mu.Lock()
+		before := reached["tools/call"]
+		mu.Unlock()
+		cmd := exec.Command(bun, "run", filepath.Join(dir, "drive.ts")) // #nosec G204 -- paths this test created
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(), "DIBS_DIR="+dir, "DIBS_ADDR="+stale, "DIBS_HOST_ID=machine-b",
+			"DIBS_BIN=/nonexistent/dibs-not-installed")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("running the extension: %v\n%s", err, out)
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if reached["tools/call"] == before {
+			t.Fatalf("with no binary, pi never reached the hub the bridge published (%s): its "+
+				"fallback answered with the saved address and hid the file", now.URL)
+		}
+	})
+
 	t.Run("pi", func(t *testing.T) {
 		dir := t.TempDir()
 		if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte("s3cret\n"), 0o600); err != nil {

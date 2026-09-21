@@ -232,7 +232,11 @@ async function identityFor(cwd: string): Promise<Identity> {
   } catch {
     // no dibs here, or one too old to answer: the files below
   }
-  const fallback: Identity = { host_id: process.env["DIBS_HOST_ID"]?.trim() ?? "", cwd, repo: null, origin: SAVED_ORIGIN }
+  // No origin in the fallback: an answer of SAVED_ORIGIN here reads as the
+  // binary having spoken, so origin() accepted it and never reached the
+  // origin a bridge published. Absent means "this did not answer", which
+  // is what it is. Round thirty of the pre-release review.
+  const fallback: Identity = { host_id: process.env["DIBS_HOST_ID"]?.trim() ?? "", cwd, repo: null }
   if (!fallback.host_id) {
     for (const name of ["resolved_host_id", "node_id", "host_id"]) {
       try {
