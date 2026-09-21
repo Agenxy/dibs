@@ -20,7 +20,25 @@ func wakeCovered(a boardAgent, h, hub string, have map[string]bool, bridged map[
 	if have[h] && wakeDirHere(a) && !onAnotherMachine(a, hub) {
 		return true
 	}
-	return a.Agent != nil && bridged[a.Agent.HostID][h]
+	// AND A BRIDGE IS A ROUTE FOR ANOTHER MACHINE'S AGENTS ONLY. The
+	// engine refuses that route for a local agent outright
+	// (hostRouteFor), so counting it here reported a local agent as
+	// covered when a bridge attached FOR THIS HOST advertised its
+	// harness: doctor said the fleet was reachable and the wake had
+	// nowhere to go. Round forty-nine of the pre-release review.
+	return !provablyLocal(a, hub) && a.Agent != nil && bridged[a.Agent.HostID][h]
+}
+
+// provablyLocal is positive evidence that the agent is on the hub itself,
+// which is the case where the daemon refuses the bridge route outright
+// (engine.hostRouteFor). Unknown on either side is NOT provably local: the
+// engine treats a hosted agent as remote when it has no identity of its
+// own, and doctor has to answer the question the same way the wake will.
+// The first version of this asked onAnotherMachine, whose unknown-is-local
+// rule is right for the LOCAL command and wrong here; the existing
+// coverage test, which passes no hub id at all, said so.
+func provablyLocal(a boardAgent, hub string) bool {
+	return a.Agent != nil && a.Agent.HostID != "" && hub != "" && a.Agent.HostID == hub
 }
 
 // onAnotherMachine is positive evidence the agent is not on the hub. Unknown

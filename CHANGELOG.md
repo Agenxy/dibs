@@ -128,6 +128,21 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round forty-nine of the pre-release review: two findings.**
+  - A shipped index is not calibrated against this machine's disk.
+    Calibration samples commits and builds a held-out index by running
+    git in the root, and a shipped index's root is a path on the
+    SHIPPER's machine: if an unrelated checkout sat there, the threshold
+    deciding which suggestions an agent sees was measured on somebody
+    else's history, and if nothing sat there this retried the access the
+    shipment exists to work around. Such an index keeps the configured
+    threshold, unmeasured, which is the honest answer when there is
+    nothing here to measure.
+  - `dibs doctor` counts a host bridge only for another machine's
+    agents. The daemon refuses that route for a local agent outright, so
+    a bridge attached for this host advertising a harness made doctor
+    report a local agent as reachable through a wake that has nowhere to
+    go. The mirror of round thirteen's finding, from the other side.
 - **Round forty-eight of the pre-release review: two findings.**
   - A force_release that names a holder is not folded by the caller's
     platform either. The path belongs to the holder's machine, and the
