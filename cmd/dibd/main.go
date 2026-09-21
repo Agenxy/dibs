@@ -1044,7 +1044,15 @@ func identifyHost(eng *engine.Engine, dir string) bool {
 			"stamped with the board's own node id until it answers", "supgang", err.Error())
 		return false
 	}
+	// The ids this machine answered to before adopting the fleet's: a
+	// bridge started before this restart still asserts one of them, and a
+	// row registered under one is this machine's row. See SetHostAliases.
+	previous := []string{supgang.RememberedNodeID(dir), eng.NodeID()}
+	if b, err := os.ReadFile(filepath.Join(dir, "host_id")); err == nil { // #nosec G304 -- the operator's own -dir
+		previous = append(previous, strings.TrimSpace(string(b)))
+	}
 	eng.SetHostID(id.NodeID)
+	eng.SetHostAliases(previous...)
 	supgang.RememberNodeID(dir, id.NodeID)
 	slog.Info("this computer is a Supgang member; its agents carry that identity",
 		"name", id.Name, "node", id.NodeID)

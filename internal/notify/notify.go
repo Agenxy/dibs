@@ -382,8 +382,18 @@ func linuxProbe() (bool, string) {
 // and starts the probe if nobody has. known is false while it is running.
 func linuxProbeCached() (ok, known bool) {
 	probeMu.Lock()
-	done, running, answer := probeDone, probeRunning, probeOK
+	done, running, answer, at := probeDone, probeRunning, probeOK, probeAt
 	probeMu.Unlock()
+	// A STALE NO IS REMEASURED FROM HERE TOO, which is the path production
+	// takes: Available() asks this one, never linuxProbe, so putting the
+	// retry only in linuxProbe left the fix reachable from tests and from
+	// nothing else. Round thirty-five of the pre-release review, on round
+	// thirty-four's own fix. The measurement runs off this goroutine (this
+	// is the writer loop); the old answer stands until it lands, and
+	// "assume yes while unknown" is Available's rule, not this one's.
+	if done && !answer && time.Since(at) >= probeRetryAfter && !running {
+		go linuxProbe()
+	}
 	if done {
 		return answer, true
 	}

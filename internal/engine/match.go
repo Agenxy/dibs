@@ -1485,10 +1485,19 @@ func (e *Engine) OpenWithPrediction(ctx context.Context, op *core.Op) (core.Resu
 		// it was joined automatically on the strength of it. Round
 		// thirty-two of the pre-release review.
 		loc := e.locationForToken(ctx, op.Token)
+		scorer, cfg, index := e.scorerForLocation(loc)
+		if scorer == nil {
+			// The opener said nothing about where it is, which is ordinary
+			// for a space opened by hand: the daemon's own index answers,
+			// as it did before this predicted per location. Its provenance
+			// is recorded either way, which is the point of the change.
+			scorer, cfg = e.scorerAndCfg()
+			index = e.fingerprintOf(cfg.Repo)
+		}
 		// The topic is the declaration here: it is what the agent is FOR.
-		pred, repo, index := e.predictIn(ctx, loc, op.Text)
+		pred, _, _ := e.predictWith(ctx, scorer, cfg, op.Text)
 		op.Predicted, op.Index = pred, index
-		op.IndexSupplied = repo != "" && e.IndexSuppliedBy(repo) != ""
+		op.IndexSupplied = cfg.Repo != "" && e.IndexSuppliedBy(cfg.Repo) != ""
 	}
 	return e.Do(ctx, op)
 }
