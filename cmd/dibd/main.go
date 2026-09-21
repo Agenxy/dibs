@@ -294,7 +294,7 @@ func run() error {
 	// The declared names are guarded at ingress before their first grant as
 	// well as after: recovery of one of these rows needs its nonce.
 	eng.SetPrivilegedNames(append(append([]string{}, cfg.Roles.Coordinator...), cfg.Roles.Admin...))
-	keepAskingSupgang(ctx, eng, *dir, identified)
+	keepAskingSupgang(ctx, eng, identified)
 	keepDeclaredRolesApplied(ctx, *dir, eng, cfg.Roles)
 	// Clears a pid an older build recorded against the operator's own row, which
 	// made every restart report them as a dead process. One op, once, and only
@@ -1063,7 +1063,7 @@ func identifyHost(eng *engine.Engine, dir string) bool {
 // is a plain field the request path reads, so writing it after the engine
 // started is a data race. An identity is settled before serving or not at
 // all. Round thirty of the pre-release review.
-func keepAskingSupgang(ctx context.Context, eng *engine.Engine, dir string, settled bool) {
+func keepAskingSupgang(ctx context.Context, eng *engine.Engine, settled bool) {
 	if settled {
 		return
 	}
@@ -1083,7 +1083,14 @@ func keepAskingSupgang(ctx context.Context, eng *engine.Engine, dir string, sett
 			if err != nil {
 				continue
 			}
-			supgang.RememberNodeID(dir, id.NodeID)
+			// NOT REMEMBERED HERE. Remembering is how every other process
+			// on this machine learns the identity, and the running daemon
+			// cannot change its own: writing it from the retry meant the
+			// next bridge to start read the fleet id while this daemon and
+			// every older bridge still answered with the other, which is
+			// the split this whole sequence exists to prevent. The daemon
+			// that adopts the identity is the one that remembers it, at
+			// startup. Round thirty-four of the pre-release review.
 			if id.NodeID != serving {
 				slog.Warn("Supgang now identifies this computer, and this daemon is serving under "+
 					"another id: its agents and the bridges here disagree about which machine they "+

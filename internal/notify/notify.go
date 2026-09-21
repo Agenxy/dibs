@@ -53,6 +53,12 @@ import (
 // no bundle and no configuration.
 var ErrUnsupported = errors.New("no desktop notification route on this platform")
 
+// probeRetryAfter is how long a FAILED Linux probe stands before it is
+// measured again: long enough that a board full of sends does not re-probe
+// per send, short enough that a notification daemon coming back is picked
+// up within a turn or two rather than at the next restart.
+const probeRetryAfter = 30 * time.Second
+
 // timeout bounds every prompt. An alert nobody answers must not hold a
 // goroutine, or an unattended machine accumulates one per message.
 const timeout = 2 * time.Minute
@@ -334,9 +340,21 @@ func Available() bool {
 // is one yet (Available, on the writer loop) reads the flags and leaves.
 func linuxProbe() (bool, string) {
 	probeMu.Lock()
-	if probeDone {
+	// A NO IS REMEASURED; A YES IS KEPT. A failing probe was cached for the
+	// life of the process, so a notification daemon that was restarting, or
+	// a five-second deadline missed under load, switched this daemon's
+	// notifications off until somebody restarted it: `dibs doctor` in a
+	// fresh process reported them healthy meanwhile, which is the worst
+	// version of the fault. A yes cannot go stale in a way that matters
+	// (the send itself reports the failure), so only a no is retried, and
+	// rarely enough to stay off the loop's critical path. Round thirty-four
+	// of the pre-release review.
+	if probeDone && (probeOK || time.Since(probeAt) < probeRetryAfter) {
 		defer probeMu.Unlock()
 		return probeOK, probeWhy
+	}
+	if probeDone {
+		probeDone = false // a stale no: measure again below
 	}
 	if probeRunning {
 		ready := probeReady
@@ -355,7 +373,7 @@ func linuxProbe() (bool, string) {
 
 	probeMu.Lock()
 	defer probeMu.Unlock()
-	probeOK, probeWhy, probeDone, probeRunning = ok, why, true, false
+	probeOK, probeWhy, probeDone, probeRunning, probeAt = ok, why, true, false, time.Now()
 	close(ready)
 	return probeOK, probeWhy
 }
@@ -386,6 +404,9 @@ var (
 	probeReady   chan struct{}
 	probeOK      bool
 	probeWhy     string
+	// probeAt is when the last answer was measured: a no older than
+	// probeRetryAfter is measured again. See linuxProbe.
+	probeAt time.Time
 )
 
 // resetProbe forgets the cached answer; tests that change the stubbed host
