@@ -131,19 +131,30 @@ func TestADaemonDoesNotChangeItsIdentityWhileServing(t *testing.T) {
 	oldRetry := identifyRetry
 	identifyRetry = 10 * time.Millisecond
 	t.Cleanup(func() { identifyRetry = oldRetry })
-	keepAskingSupgang(ctx, eng, dir, false)
+	keepAskingSupgang(ctx, eng, false)
 
-	// The answer is remembered for the next start, and the running daemon
-	// keeps the identity it has been serving under all along.
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) && supgang.RememberedNodeID(dir) == "" {
-		time.Sleep(10 * time.Millisecond)
-	}
-	if got := supgang.RememberedNodeID(dir); got != node {
-		t.Fatalf("the retry remembered %q, want %q: the next start would identify wrongly again", got, node)
-	}
+	// The running daemon keeps the identity it has been serving under, and
+	// nothing else on this machine is told otherwise: remembering the new
+	// id here would hand it to the next bridge to start, which is the same
+	// split from the other side. The daemon that ADOPTS the identity is the
+	// one that remembers it, at startup. Round thirty-four of the
+	// pre-release review.
+	time.Sleep(200 * time.Millisecond) // several ticks of the shortened retry
 	if got := eng.HostID(); got != boardNode {
 		t.Fatalf("the daemon changed its identity to %q while serving: agents registered before and "+
 			"after read as two computers, and both can take one path exclusively", got)
+	}
+	if got := supgang.RememberedNodeID(dir); got != "" {
+		t.Fatalf("the retry remembered %q while this daemon serves under %q: the next bridge to "+
+			"start reads that and the machine is split again", got, boardNode)
+	}
+	// And a daemon STARTING now adopts it and remembers it, which is the
+	// transition: one restart, everything agrees.
+	fresh := engineNamed(t)
+	if !identifyHost(fresh, dir) {
+		t.Fatal("a startup lookup that Supgang answered reported itself unsettled")
+	}
+	if got, remembered := fresh.HostID(), supgang.RememberedNodeID(dir); got != node || remembered != node {
+		t.Fatalf("a daemon starting with Supgang up serves under %q and remembered %q, want %q both", got, remembered, node)
 	}
 }
