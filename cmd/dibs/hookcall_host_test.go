@@ -760,6 +760,13 @@ func TestThePluginsFollowTheHubWhereItIsNow(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte("s3cret\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
+		// A file a PREVIOUS bridge left, naming a hub that has since moved.
+		// pi runs without a bridge, so nothing here updates it: preferring
+		// it pinned every call to the old address with nothing ever asking
+		// again. The binary is asked first. Round twenty-nine.
+		if err := os.WriteFile(filepath.Join(dir, resolvedOriginFile), []byte("http://"+stale+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
 		src, err := os.ReadFile(filepath.Join("..", "..", "plugins", "pi", "dibs.ts"))
 		if err != nil {
 			t.Fatal(err)
