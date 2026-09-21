@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
-	"strings"
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/paths"
@@ -40,19 +39,7 @@ func canonPath(p string) string { return paths.Canonical(p) }
 // handling that exists for exactly these callers could run: claim and
 // release were unusable from Windows against a Unix hub. Round thirty-six
 // of the pre-release review.
-func absElsewhere(p string) bool {
-	if strings.HasPrefix(p, "//") || strings.HasPrefix(p, `\\`) {
-		return true // a UNC share
-	}
-	if len(p) < 3 || p[1] != ':' {
-		return false
-	}
-	drive := p[0]
-	if (drive < 'A' || drive > 'Z') && (drive < 'a' || drive > 'z') {
-		return false
-	}
-	return p[2] == '/' || p[2] == '\\'
-}
+func absElsewhere(p string) bool { return paths.AbsElsewhere(p) }
 
 // callerPath is canonPath for a path on the CALLER's machine: resolved
 // here when the caller is on this one, cleaned lexically and otherwise left
@@ -95,7 +82,10 @@ func callerPath(ctx context.Context, params json.RawMessage, p string) string {
 // alias bug happened once already. Say what is wrong and let the caller name the
 // place it means.
 func mustBeAbsolute(field, p string) error {
-	if p == "" || filepath.IsAbs(p) || absElsewhere(p) {
+	// paths.Absolute, not filepath.IsAbs: on a Windows hub the latter
+	// refuses a Unix member's `/w/repo`, the mirror of the defect round
+	// thirty-six fixed in the other direction.
+	if p == "" || paths.Absolute(p) {
 		return nil
 	}
 	return &core.Error{

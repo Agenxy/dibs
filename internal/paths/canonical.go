@@ -90,3 +90,43 @@ func Portable(p string) string {
 func PortableBase(p string) string {
 	return path.Base(Portable(p))
 }
+
+// AbsElsewhere reports a path that is absolute on the machine it came
+// from, though not on this one: a Windows drive path or a UNC share,
+// spelled portably by the bridge there (Portable).
+//
+// ONE IMPLEMENTATION. A Unix hub asked its own filepath.IsAbs, so a
+// Windows bridge's `C:/work/repo/file.go` was refused as relative before
+// the remote-path handling that exists for exactly those callers could
+// run (round thirty-six); round forty found the index upload asking the
+// same question its own way and refusing the same callers. Two copies of
+// one rule is this repository's most expensive recurring bug, so the rule
+// lives here, below everything that needs it.
+func AbsElsewhere(p string) bool {
+	if strings.HasPrefix(p, "//") || strings.HasPrefix(p, `\\`) {
+		return true // a UNC share
+	}
+	if len(p) < 3 || p[1] != ':' {
+		return false
+	}
+	drive := p[0]
+	if (drive < 'A' || drive > 'Z') && (drive < 'a' || drive > 'z') {
+		return false
+	}
+	return p[2] == '/' || p[2] == '\\'
+}
+
+// Absolute reports a path that is absolute for whoever wrote it: rooted
+// at a slash, absolute on this machine, or absolute on the machine it
+// came from.
+//
+// THE LEADING SLASH IS NOT filepath.IsAbs ON WINDOWS, and a hub is not
+// always a Unix one. The first cut of this asked filepath.IsAbs and the
+// drive rule, which is the same answer on a Unix hub and refuses every
+// Unix member's `/w/repo` on a Windows one: the Windows CI job caught it
+// on the commit that introduced it. A path each side spells its own way
+// is exactly what this predicate exists for, so it accepts both
+// spellings on every host.
+func Absolute(p string) bool {
+	return strings.HasPrefix(p, "/") || filepath.IsAbs(p) || AbsElsewhere(p)
+}
