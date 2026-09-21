@@ -108,6 +108,27 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round thirty-eight of the pre-release review: three findings.**
+  - Every path that adopts a host identity keeps this computer's old ids
+    recognisable. The aliases and the rename were given to the branch
+    where Supgang answers; the two fallback branches adopt the same fleet
+    id out of the remembered file and had neither, so a daemon starting
+    while Supgang was down or uninstalled read the agents of a bridge that
+    predates the migration as another machine's, and two of them could
+    hold one path exclusively.
+  - A footprint carries the provenance of the index that predicted it.
+    Prediction runs off the match lock and the supplied-or-not bit was
+    read afterwards, by repository path, from the index map as it stood
+    then: an eviction during the prediction turned a footprint built from
+    an index an agent shipped into one recorded as the daemon's own, and
+    auto-join reads exactly that bit. The provenance now comes back with
+    the scorer that answered.
+  - `open_space` from a tree this daemon has no index for predicts
+    nothing, instead of reaching for whichever project it does hold. A nil
+    scorer meant both "the opener said nothing about where it is", which
+    is what the daemon's own index is for, and "this agent's tree has no
+    index the rules allow here"; the second seeded a space with another
+    repository's files as overlap evidence.
 - **Round thirty-seven of the pre-release review: two findings, and a race
   the gate caught.**
   - The startup host migration reaches the fold. `host_renamed` is the

@@ -1022,7 +1022,7 @@ func identifyHost(eng *engine.Engine, dir string) (settled bool, adopted hostAdo
 		// wake commands for them. Nothing to WAIT for, so no retry; the
 		// identity stands. Round thirty-one of the pre-release review.
 		if remembered := supgang.RememberedNodeID(dir); remembered != "" {
-			eng.SetHostID(remembered)
+			adopted = adoptIdentity(eng, dir, remembered)
 			slog.Info("Supgang is not installed here; this computer keeps the identity it is "+
 				"already known by", "node", remembered)
 		}
@@ -1037,7 +1037,7 @@ func identifyHost(eng *engine.Engine, dir string) (settled bool, adopted hostAdo
 		// twenty-nine of the pre-release review, one round after the same
 		// defect was closed on the bridge side.
 		if remembered := supgang.RememberedNodeID(dir); remembered != "" {
-			eng.SetHostID(remembered)
+			adopted = adoptIdentity(eng, dir, remembered)
 			slog.Warn("Supgang did not answer; this computer keeps the identity it is already "+
 				"known by, and this daemon serves under it until it restarts",
 				"node", remembered, "supgang", err.Error())
@@ -1047,21 +1047,8 @@ func identifyHost(eng *engine.Engine, dir string) (settled bool, adopted hostAdo
 			"stamped with the board's own node id until it answers", "supgang", err.Error())
 		return false, adopted
 	}
-	// The ids this machine answered to before adopting the fleet's: a
-	// bridge started before this restart still asserts one of them, and a
-	// row registered under one is this machine's row. See SetHostAliases.
-	previous := []string{supgang.RememberedNodeID(dir), eng.NodeID()}
-	if b, err := os.ReadFile(filepath.Join(dir, "host_id")); err == nil { // #nosec G304 -- the operator's own -dir
-		previous = append(previous, strings.TrimSpace(string(b)))
-	}
-	eng.SetHostID(id.NodeID)
-	eng.SetHostAliases(previous...)
+	adopted = adoptIdentity(eng, dir, id.NodeID)
 	supgang.RememberNodeID(dir, id.NodeID)
-	// AND THE ROWS AND CLAIMS ALREADY HERE are renamed by the caller, once
-	// the loop is running: recognising the old id at ingress fixes what
-	// arrives, and the board still holds rows registered under it. Round
-	// thirty-six of the pre-release review.
-	adopted = hostAdoption{previous: previous, now: id.NodeID}
 	slog.Info("this computer is a Supgang member; its agents carry that identity",
 		"name", id.Name, "node", id.NodeID)
 	return true, adopted
@@ -1073,6 +1060,35 @@ func identifyHost(eng *engine.Engine, dir string) (settled bool, adopted hostAdo
 type hostAdoption struct {
 	previous []string
 	now      string
+}
+
+// adoptIdentity makes id the identity this daemon serves under: it keeps
+// the ids this computer used to answer to recognisable at ingress, and
+// reports the rename its caller runs once the loop is up.
+//
+// EVERY PATH THAT ADOPTS AN ID USES THIS ONE. Rounds thirty-five and
+// thirty-six gave the aliases and the rename to the branch where Supgang
+// answers, and the two fallback branches adopt the SAME fleet id from the
+// remembered file with neither: a bridge here that predates the migration
+// still asserts the ledger id, and a daemon that starts while Supgang is
+// down or uninstalled reads its agents as another machine's. Two of them
+// then hold one path exclusively, which is the split all of this exists to
+// prevent. Round thirty-eight of the pre-release review.
+func adoptIdentity(eng *engine.Engine, dir, id string) hostAdoption {
+	// A bridge started before this restart still asserts one of these, and
+	// a row registered under one is this machine's row. The id being
+	// adopted is dropped by SetHostAliases, so passing it costs nothing.
+	previous := []string{supgang.RememberedNodeID(dir), eng.NodeID()}
+	if b, err := os.ReadFile(filepath.Join(dir, "host_id")); err == nil { // #nosec G304 -- the operator's own -dir
+		previous = append(previous, strings.TrimSpace(string(b)))
+	}
+	eng.SetHostID(id)
+	eng.SetHostAliases(previous...)
+	// AND THE ROWS AND CLAIMS ALREADY HERE are renamed by the caller, once
+	// the loop is running: recognising the old id at ingress fixes what
+	// arrives, and the board still holds rows registered under it. Round
+	// thirty-six of the pre-release review.
+	return hostAdoption{previous: previous, now: id}
 }
 
 // renameHost rewrites the rows and claims that carry an id this computer
