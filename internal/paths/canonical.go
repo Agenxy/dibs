@@ -79,7 +79,17 @@ func Portable(p string) string {
 	if p == "" {
 		return ""
 	}
+	// A UNC root keeps its two slashes: `//server/share/repo` names a
+	// share on another machine and `/server/share/repo` names a local
+	// directory, and a root recorded as one against paths cleaned to the
+	// other is a prefix that never matches. core.cleanPath says the same
+	// sentence, because core may not import this package; the two must
+	// stay identical. Round forty-three of the pre-release review.
+	unc := strings.HasPrefix(p, "//") && !strings.HasPrefix(p, "///")
 	p = path.Clean(p)
+	if unc && !strings.HasPrefix(p, "//") {
+		p = "/" + p
+	}
 	if len(p) > 1 {
 		p = strings.TrimSuffix(p, "/")
 	}

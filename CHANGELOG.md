@@ -128,6 +128,27 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round forty-three of the pre-release review: three findings.**
+  - The space matching opens carries the provenance of the index that
+    predicted its footprint. A declaration is predicted twice, and the
+    second one relabelled the fresh footprint with the fingerprint of
+    the index that answered while leaving the supplied-or-not bit as the
+    first recorded it: an index replaced by a shipped one in between
+    produced a footprint built from untrusted data and stored as the
+    daemon's own, which is the one bit that stops a shipped index
+    deciding membership. The backfill's provenance comes from the same
+    pick now too.
+  - The pi plugin resolves the same path arguments the bridge does. Its
+    own list was missing the directories an agent declares and the cwd
+    it registers, so an agent on pi sent them as typed and the daemon
+    compared them against spellings it had resolved. A test now fails if
+    either side gains an argument the other lacks.
+  - A UNC checkout keeps both leading slashes. `path.Clean` collapses
+    them, and `//server/share/repo` is a share on another machine while
+    `/server/share/repo` is a local directory: a root recorded as one
+    with claims cleaned to the other is a prefix that never matches, so
+    no claim inside that checkout had a repository-relative key and two
+    hosts could hold one tracked file exclusively.
 - **Round forty-two of the pre-release review: four findings.**
   - Two declarations are compared only inside a coordinate system both
     carry, which is what SPEC-CHANNELS.md §4 requires. The home-to-home
@@ -145,7 +166,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - The directories an agent declares are canonicalised like every other
     path it sends. `declare` was not in the table at all, so the
     strongest signal an agent gives about where it is writing could not
-    be made relative to its own root.
+    be made relative to its own root. (In the Go bridge. The pi plugin
+    kept its own list and was missed; round forty-three below fixes that
+    and makes the two lists agree.)
   - A shipment names its root the way the registration did. The hub
     learned the portable spelling last round and the bridge went on
     sending the native one, so a Windows checkout was answered 403 on

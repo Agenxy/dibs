@@ -668,7 +668,10 @@ func (e *Engine) matchDeclaration(
 	ctx context.Context, token string, loc location, decl core.Slot,
 ) ([]Suggestion, matchOutcome) {
 	declaration, declRefs, declDirs := decl.Text, decl.Refs, decl.Dirs
-	scorer, cfg, fingerprint := e.scorerForLocation(loc)
+	// One pick, so the scorer, the policy, the fingerprint and the
+	// provenance all describe the same index. See indexPick.
+	pick := e.pickForLocation(loc)
+	scorer, cfg, fingerprint := pick.scorer, pick.cfg, pick.fingerprint
 	declared := len(declRefs) > 0 || len(declDirs) > 0 || len(decl.Holds) > 0
 	if nothingToMatch(scorer, declaration, declRefs, declared, loc.host != "") {
 		return nil, matchedNothing
@@ -712,12 +715,25 @@ func (e *Engine) matchDeclaration(
 	mine := decl
 	mine.Predicted = withDeclaredDirs(toPredFiles(pred.Files), declDirs, cfg.Repo)
 	if fingerprint != "" {
-		mine.Index = fingerprint
+		// BOTH HALVES OF THE LABEL, OR NEITHER. The fingerprint was
+		// relabelled here and the supplied-or-not bit beside it was left
+		// as the declaration recorded it, so an index replaced by a
+		// SHIPPED one between the declaration's own prediction and this
+		// one produced a footprint built from untrusted data, stored
+		// under the shipped fingerprint, and marked as the daemon's own.
+		// Everything downstream reads that bit, and it is the whole of
+		// "a supplied index decides no membership". Round forty-three of
+		// the pre-release review.
+		mine.Index, mine.IndexSupplied = fingerprint, pick.supplied
 	}
 
 	// Dibs opened before the index was ready carry no footprint and would be
 	// invisible forever; give them one first.
-	overlay := e.backfillFootprints(sctx, scorer, cfg.Repo != "" && e.IndexSuppliedBy(cfg.Repo) != "")
+	// From the pick, not from the repository path a moment later: an
+	// eviction between the two readings would backfill a supplied
+	// footprint as the daemon's own (round thirty-eight, in the two
+	// paths that were looked at then).
+	overlay := e.backfillFootprints(sctx, scorer, pick.supplied)
 
 	lens := e.repoLensForBoard(ctx)
 

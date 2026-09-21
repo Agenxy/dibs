@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -177,5 +178,51 @@ func TestDeclaredDirectoriesAreCanonicalisedLikeEveryOtherPath(t *testing.T) {
 	// working directory would name a directory nobody meant.
 	if got, _ := dirs[1].(string); got != "relative/stays" {
 		t.Errorf("a relative declared directory was rewritten to %q", got)
+	}
+}
+
+// The bridge and the pi plugin resolve the same path arguments.
+//
+// Both sit between an agent and the daemon, and both have to turn what
+// the agent typed into what the daemon compares against: a symlinked
+// spelling, a Windows separator, a relative entry left alone. They kept
+// separate lists, and pi's was missing `declare.dirs`, `register.cwd`
+// and `update.cwd`, so an agent on pi declared directories the hub could
+// not place inside its own checkout. One list is not possible across two
+// languages; agreeing on the same pairs is, and this is what catches the
+// next one being added to only one side. Round forty-three of the
+// pre-release review.
+func TestTheBridgeAndThePiPluginResolveTheSameArguments(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join("..", "..", "plugins", "pi", "dibs.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const marker = "const PATH_ARGS: Record<string, string[]> = {"
+	start := strings.Index(string(src), marker)
+	if start < 0 {
+		t.Fatal("plugins/pi/dibs.ts no longer defines PATH_ARGS")
+	}
+	end := strings.Index(string(src)[start:], "\n}\n")
+	if end < 0 {
+		t.Fatal("could not find the end of PATH_ARGS")
+	}
+	block := string(src)[start : start+end]
+
+	// Every tool the Go bridge resolves must appear in pi's table with
+	// the same argument names.
+	for tool, keys := range pathArgs {
+		line := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(tool) + `:\s*\[([^\]]*)\]`).
+			FindStringSubmatch(block)
+		if line == nil {
+			t.Errorf("the pi plugin does not resolve %q, which the bridge does: an agent on "+
+				"pi sends that argument as typed, and the daemon compares it against a "+
+				"spelling it resolved", tool)
+			continue
+		}
+		for _, k := range keys {
+			if !strings.Contains(line[1], `"`+k+`"`) {
+				t.Errorf("the pi plugin resolves %q but not its %q argument", tool, k)
+			}
+		}
 	}
 }
