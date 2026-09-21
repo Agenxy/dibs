@@ -1008,6 +1008,16 @@ func absent(path string) (bool, error) {
 // defect this replaces, and a daemon that fell back without saying so would
 // bring it back the first time somebody reinstalled.
 func identifyHost(eng *engine.Engine, dir string) (settled bool, adopted hostAdoption) {
+	// A FLEET IDENTITY A BRIDGE WAS TOLD ABOUT MID-BOOT IS ADOPTED HERE.
+	// It was recorded in the pending file rather than taken up on the
+	// spot, because changing what a running machine answers to splits it
+	// (supgang.PendingNodeIDFile). A start is where that transition
+	// belongs: nothing is racing, and renameHost moves the rows in the
+	// same breath. Round fifty of the pre-release review.
+	if id := supgang.PromotePendingNodeID(dir); id != "" {
+		slog.Info("adopting the fleet identity a bridge was given while this machine "+
+			"was already answering to another", "node", id)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	id, err := supgang.Status(ctx)
