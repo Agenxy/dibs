@@ -132,6 +132,20 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round fifty-five of the pre-release review: two findings, both in the
+  previous round's own fixes.**
+  - A successor that never registers does not cost the predecessor its
+    revocation record. Round fifty-four read the CONFIGURATION as
+    authority to drop the old pin, and the configuration says what an
+    operator intends rather than what happened: a successor nobody has
+    registered left the predecessor holding the role with no pin
+    recording it, so removing the declaration later revoked nothing. The
+    replacement pin has to exist, which is the grant having succeeded.
+  - The pi plugin stamps its repository on a resume, which the Go bridge
+    already did. Without it a resume carries the new machine and no
+    location, so the row keeps the directory it registered with: exactly
+    the defect round fifty-four fixed, in the harness that did not get
+    the fix.
 - **Round fifty-four of the pre-release review: four findings.**
   - A resume records where the agent is NOW. It carried the machine and
     nothing else, so an agent that registered on a desktop and resumed

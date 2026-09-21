@@ -394,3 +394,50 @@ func TestRespellingAConfiguredNameKeepsTheRole(t *testing.T) {
 			"call fails until the next reconciliation tick")
 	}
 }
+
+// A successor that never registers does not lose the predecessor's
+// revocation record.
+//
+// Round fifty-four stopped a respelled name from revoking its own role,
+// by treating another declaration of the same credential as authority
+// to drop the old pin. It asked the CONFIGURATION, which says what the
+// operator intends and not what happened: name a successor that is not
+// registered, and the grant pass cannot resolve it while the withdrawal
+// pass drops the predecessor's pin anyway. The predecessor keeps the
+// role with nothing recording it, so removing the declaration later
+// revokes nothing and the role is held for good. Round fifty-five of
+// the pre-release review.
+func TestAnUnregisteredSuccessorDoesNotDropThePredecessorsPin(t *testing.T) {
+	eng, ctx := testEngine(t)
+	pins := loadRolePins(t.TempDir())
+	fp := engine.RolePinFingerprint("nonce-rm")
+
+	registerAgentAs(t, eng, "lead", "nonce-rm")
+	applyDeclaredRoles(ctx, eng, RolesConfig{
+		Admin: []string{"lead"}, Identity: map[string]string{"lead": fp},
+	}, pins)
+	if !holdsRole(t, eng, "lead", core.RoleAdmin) {
+		t.Fatal("setup: the declared admin was not granted")
+	}
+
+	// The same credential is declared under a name nobody has registered.
+	applyDeclaredRoles(ctx, eng, RolesConfig{
+		Admin: []string{"successor"}, Identity: map[string]string{"successor": fp},
+	}, pins)
+
+	// Either outcome is defensible for the ROLE; what is not defensible
+	// is holding it with no pin, because the pin is what a later
+	// withdrawal works through.
+	if holdsRole(t, eng, "lead", core.RoleAdmin) {
+		if _, pinned := pins.Pins[core.RoleAdmin]["lead"]; !pinned {
+			t.Fatal("the predecessor still holds admin and its pin is gone: removing the " +
+				"declaration later revokes nothing, and the role is held for good")
+		}
+	}
+
+	// And with the declaration withdrawn entirely, the role goes.
+	applyDeclaredRoles(ctx, eng, RolesConfig{}, pins)
+	if holdsRole(t, eng, "lead", core.RoleAdmin) {
+		t.Fatal("admin survived a configuration that declares nobody")
+	}
+}

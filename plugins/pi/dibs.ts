@@ -357,7 +357,16 @@ async function rpc(
     // sends it on every call; this reads it on the calls that record it,
     // for the directory THAT call names when it names one (an update that
     // moves the agent), spelled as the bridge would spell it.
-    if (p["name"] === "register" || p["name"] === "update") {
+    // `resume` is in this list because a resume may be on a DIFFERENT
+    // machine than the registration: it carries a nonce and nothing
+    // about location, so without the stamp the row keeps the directory
+    // and repository identity it registered with, its later claims have
+    // no repository-relative key, and its wakes name a directory on the
+    // machine it left. The Go bridge stamps every call; this one stamps
+    // the calls that record a location, and resume is one of them.
+    // Round fifty-five of the pre-release review, on round fifty-four's
+    // own fix.
+    if (p["name"] === "register" || p["name"] === "update" || p["name"] === "resume") {
       const args = (p["arguments"] ?? {}) as Record<string, unknown>
       const named = typeof args["cwd"] === "string" && args["cwd"] !== "" ? (args["cwd"] as string) : ""
       const at = named ? await identityFor(named) : id
