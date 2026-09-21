@@ -43,6 +43,11 @@ type Payload struct {
 	Commits []Commit `json:"commits"`
 }
 
+// maxFingerprintBytes matches core.MaxFingerprintBytes. Not imported:
+// overlap is below core and stays that way; the two are checked against
+// each other by TestTheShipmentAndTheFoldBoundTheFingerprintAlike.
+const maxFingerprintBytes = 300
+
 // Bounds on a shipped index. The daemon's memory is what a payload lands in,
 // and it arrives from an agent: measured, this repository is ~30 KB for 144
 // commits and about 210 bytes a commit, so the byte cap is thirty times the
@@ -66,6 +71,16 @@ func (p *Payload) Validate() error {
 		// claim path from the same bridge was accepted. Round forty of
 		// the pre-release review.
 		return errors.New("root must be an absolute path")
+	case len(p.Fingerprint) > maxFingerprintBytes:
+		// A DIGEST HAS A SIZE. This was checked for emptiness and not for
+		// length, and the value travels onto every declaration scored in
+		// the index: a 3 MiB fingerprint escaped past 18 MiB in the ledger
+		// line and put the ledger beyond what `dibs verify` can read. The
+		// daemon bounds it at ingress too (core.MaxFingerprintBytes); this
+		// refuses the upload rather than accepting bytes nothing will use.
+		// Round fifty-four of the pre-release review.
+		return fmt.Errorf("fingerprint is %d bytes, over the %d a digest needs",
+			len(p.Fingerprint), maxFingerprintBytes)
 	case strings.TrimSpace(p.Fingerprint) == "":
 		// The fingerprint is the index's identity: what a declaration scored
 		// in it is recorded as, and what marks it as shipped. Ship always

@@ -132,6 +132,33 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round fifty-four of the pre-release review: four findings.**
+  - A resume records where the agent is NOW. It carried the machine and
+    nothing else, so an agent that registered on a desktop and resumed
+    on a laptop kept the desktop's directory and repository identity:
+    its claims had no repository-relative key, two agents could hold one
+    tracked file in clones of one project, and its wakes named a
+    directory on the machine it had left. The bridge stamps its
+    directory on every call now, which is how a call that carries no
+    location of its own learns one.
+  - An index fingerprint is bounded. It was checked for emptiness and
+    not for size, and it travels onto every declaration scored in that
+    index: a three-megabyte one escaped past eighteen megabytes in the
+    ledger line and put the ledger beyond what `dibs verify` can read
+    back, so the append succeeded and verification failed on that line
+    and every later one.
+  - Respelling a configured name does not revoke the role. Everything in
+    the configuration is keyed by the name an operator typed, so
+    changing `admin = ["Fleet Lead"]` to `admin = ["fleet-lead"]` with
+    the same fingerprint is one agent under two spellings: the grant
+    pass accepted the new one and the withdrawal pass took the role away
+    through the old pin, leaving every admin call failing until the next
+    tick.
+  - The handover error says what the reconciler does. It told the
+    operator the predecessor KEEPS its role until `dibs admin member`
+    takes it and to edit the pin file; the role is withdrawn and the pin
+    dropped automatically, and the pin file is read once at startup.
+    The sibling of the message round fifty-three corrected.
 - **Round fifty-three of the pre-release review: four findings.**
   - The mailbox census counts what an adoption would move. It walked
     every retained message addressed to the id, which is a third answer
