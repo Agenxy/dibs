@@ -90,3 +90,67 @@ func TestAWindowsHubDoesNotFoldARemoteAgentsFilename(t *testing.T) {
 			"a Windows agent spells its paths with backslashes and the fold knows one separator", local)
 	}
 }
+
+// The write guard asks about the file the remote agent named, not a
+// different one this hub's platform would spell that way.
+//
+// Round forty-six taught the op path to fold only for this machine's own
+// callers and left the lifecycle hooks and the guard folding
+// unconditionally, so on a Windows hub a unix agent's claim on
+// `/work/a\b` stayed literal while a guard query about the same file
+// became `/work/a/b`: a different path, no claim on it, and `allow`
+// returned for a file somebody holds exclusively. Every entry point asks
+// foldFor now. Round forty-seven of the pre-release review.
+func TestTheGuardDoesNotFoldARemoteAgentsFilename(t *testing.T) {
+	st := core.NewState("hub-node", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	e.SetHostID("hub-node")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	old := foldsSeparators
+	foldsSeparators = true // this daemon is the Windows one
+	t.Cleanup(func() { foldsSeparators = old })
+
+	const odd = `/work/a\b`
+	res, err := e.Do(ctx, &core.Op{
+		Kind: core.OpRegister, Name: "holder", SessionID: "host-1",
+		Agent: &core.AgentInfo{CWD: "/work", HostID: "machine-b"},
+	})
+	if err != nil {
+		t.Fatalf("setup: register: %v", err)
+	}
+	tok, _ := res["token"].(string)
+	if _, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: tok}); err != nil {
+		t.Fatalf("setup: ack: %v", err)
+	}
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpClaim, Token: tok, Path: odd, Mode: core.ClaimExclusive,
+	}); err != nil {
+		t.Fatalf("setup: claim: %v", err)
+	}
+
+	// A DIFFERENT agent on that same machine asks whether it may write
+	// the file the first one holds.
+	other, err := e.Do(ctx, &core.Op{
+		Kind: core.OpRegister, Name: "other", SessionID: "host-2",
+		Agent: &core.AgentInfo{CWD: "/work", HostID: "machine-b"},
+	})
+	if err != nil {
+		t.Fatalf("setup: register other: %v", err)
+	}
+	otok, _ := other["token"].(string)
+	if _, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: otok}); err != nil {
+		t.Fatalf("setup: ack other: %v", err)
+	}
+
+	got, err := e.GuardPathFrom(ctx, "host-2", odd, "/work", "machine-b")
+	if err != nil {
+		t.Fatalf("guard: %v", err)
+	}
+	if got["decision"] == "allow" {
+		t.Fatalf("the guard allowed a write to %q, which another agent holds exclusively: "+
+			"the hub folded the query into a path no claim covers (%v)", odd, got)
+	}
+}

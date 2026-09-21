@@ -9,6 +9,25 @@ import (
 // Decisions the request path makes about WHICH MACHINE an op speaks for,
 // kept together and out of engine.go, which is at its file ceiling.
 
+// foldFor folds Windows separators in a path that came from the machine
+// named by host, and leaves another machine's path exactly as it arrived.
+//
+// EVERY ENTRY POINT ASKS THIS, not just the ones somebody remembered. The
+// daemon's own platform says what a separator means HERE; on a unix
+// machine a backslash is an ordinary filename character, so a Windows hub
+// folding `/work/a\b` turns one file into another. Round forty-six fixed
+// the op path and left the lifecycle hooks and the write guard folding
+// unconditionally, so a claim on a remote unix agent's `/work/a\b` stayed
+// literal while the guard asked about `/work/a/b` and answered `allow` for
+// a file somebody held exclusively. Round forty-seven of the pre-release
+// review.
+func (e *Engine) foldFor(host, p string) string {
+	if host != "" && host != e.HostID() {
+		return p
+	}
+	return foldSeparators(p)
+}
+
 // opIsRemote reports that an op came from a bridge on another machine,
 // against this daemon's own identity. Unknown is local, which is every
 // board written before host ids existed.

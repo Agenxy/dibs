@@ -269,3 +269,65 @@ func TestForceReleaseForAnotherAgentKeepsTheHoldersSpelling(t *testing.T) {
 			"has to meet the one the daemon recorded", got)
 	}
 }
+
+// Pi keeps another agent's path as the board spells it, exactly as the
+// bridge does.
+//
+// Round forty-six gave the Go bridge and the hub the exception and left
+// pi resolving every listed path argument, including a force_release
+// that names somebody else's claim: a Linux holder's /tmp/repo/file.go
+// became this Mac's /private/tmp/repo/file.go, and a Windows holder's
+// C:/repo/file.go picked up this machine's working directory as a
+// prefix. Both are paths no claim on the board matches. One rule, both
+// implementations, one table. Round forty-seven of the pre-release
+// review.
+func TestPiKeepsAnotherAgentsForceReleasePath(t *testing.T) {
+	bun, err := exec.LookPath("bun")
+	if err != nil {
+		t.Skip("bun is not installed; the TypeScript half cannot be run")
+	}
+	src, err := os.ReadFile(filepath.Join("..", "..", "plugins", "pi", "dibs.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The predicate the plugin applies, lifted from the shipped file so a
+	// change there is what gets tested.
+	const marker = `const forAnother = `
+	start := strings.Index(string(src), marker)
+	if start < 0 {
+		t.Fatal("plugins/pi/dibs.ts no longer decides whether a path belongs to another " +
+			"agent: a force_release naming a holder is being resolved on this machine again, " +
+			"and the daemon will answer E_NO_CLAIM while the real claim stays")
+	}
+	end := strings.Index(string(src)[start:], "\n")
+	expr := strings.TrimSpace(string(src)[start+len(marker) : start+end])
+
+	script := "const cases = [\n" +
+		`  { name: "force_release", args: { path: "/tmp/repo/file.go", agent: "far" } },` + "\n" +
+		`  { name: "force_release", args: { path: "/tmp/repo/file.go" } },` + "\n" +
+		`  { name: "claim", args: { path: "/tmp/repo/file.go" } },` + "\n" +
+		"]\nconst out = cases.map((c) => { const p = { name: c.name, arguments: c.args } as Record<string, unknown>\n" +
+		"  const args0 = (p[\"arguments\"] ?? {}) as Record<string, unknown>\n" +
+		"  return " + expr + "\n})\nconsole.log(JSON.stringify(out))\n"
+
+	dir := t.TempDir()
+	file := filepath.Join(dir, "another.ts")
+	if err := os.WriteFile(file, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command(bun, "run", file).Output() // #nosec G204 -- paths this test created
+	if err != nil {
+		t.Fatalf("running the plugin's rule: %v\n%s", err, out)
+	}
+	var got []bool
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatalf("the plugin's rule did not return booleans: %v\n%s", err, out)
+	}
+	want := []bool{true, false, false}
+	for i := range want {
+		if i >= len(got) || got[i] != want[i] {
+			t.Fatalf("pi's rule answered %v, want %v: case 0 is another agent's claim and "+
+				"must be left alone; the other two are this machine's own paths", got, want)
+		}
+	}
+}
