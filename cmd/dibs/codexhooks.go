@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/agenxy/dibs/internal/sibling"
@@ -87,17 +88,10 @@ func codexHooks(out io.Writer, trust bool) error {
 		return nil
 	}
 	_, _ = fmt.Fprintf(out, "codex: %s\n", bin)
-	for _, h := range hooks {
-		_, _ = fmt.Fprintf(out, "  %-14s %-10s %s\n", h.EventName, h.TrustStatus, h.Key)
-	}
-	var pending []codexHook
-	for _, h := range hooks {
-		if h.TrustStatus != "trusted" {
-			pending = append(pending, h)
-		}
-	}
+	listHooks(out, hooks)
+	pending, disabled := sortHooks(hooks)
 	if len(pending) == 0 {
-		_, _ = fmt.Fprintln(out, "all trusted: Codex runs them, and mail reaches its agents at their turn boundaries")
+		reportTrusted(out, hooks, disabled)
 		return nil
 	}
 	if !trust {
@@ -135,6 +129,50 @@ func codexBinary() string {
 	return sibling.Find("codex")
 }
 
+// listHooks prints each hook with the two things that decide whether it
+// runs: Codex's trust, and Codex's own on/off switch.
+func listHooks(out io.Writer, hooks []codexHook) {
+	for _, h := range hooks {
+		state := h.TrustStatus
+		if h.off() {
+			state += ", off"
+		}
+		_, _ = fmt.Fprintf(out, "  %-14s %-14s %s\n", h.EventName, state, h.Key)
+	}
+}
+
+// sortHooks splits the set into the ones still to trust and the ones
+// trusted but switched off, which need different sentences and different
+// remedies: `--trust` fixes the first and cannot touch the second.
+func sortHooks(hooks []codexHook) (pending, disabled []codexHook) {
+	for _, h := range hooks {
+		switch {
+		case h.TrustStatus != "trusted":
+			pending = append(pending, h)
+		case h.off():
+			disabled = append(disabled, h)
+		}
+	}
+	return pending, disabled
+}
+
+// reportTrusted says what a fully trusted set of hooks will actually do,
+// which is not the same question as whether it is trusted: Codex has a
+// separate switch per hook, and `--trust` cannot touch it.
+func reportTrusted(out io.Writer, hooks, disabled []codexHook) {
+	if len(disabled) == 0 {
+		_, _ = fmt.Fprintln(out, "all trusted: Codex runs them, and mail reaches its agents at their turn boundaries")
+		return
+	}
+	names := make([]string, 0, len(disabled))
+	for _, h := range disabled {
+		names = append(names, h.EventName)
+	}
+	_, _ = fmt.Fprintf(out, "all trusted, but Codex has %d of %d switched OFF: %s. "+
+		"A hook that is off does not run, whatever its trust says; turn them back on "+
+		"in the Codex TUI with /hooks\n", len(disabled), len(hooks), strings.Join(names, ", "))
+}
+
 type codexHook struct {
 	Key         string `json:"key"`
 	EventName   string `json:"eventName"`
@@ -147,7 +185,25 @@ type codexHook struct {
 	HandlerType string `json:"handlerType"`
 	Server      string `json:"server"`
 	Tool        string `json:"tool"`
+	// Enabled is Codex's own per-hook switch (`[hooks.state.<key>]
+	// enabled` in its config, toggled in the TUI's hook browser), and it
+	// is separate from trust: `hooks/list` returns disabled hooks too.
+	// Reading trust alone let `dibs codex-hooks` and `dibs doctor` report
+	// "mail is delivered at its lifecycle boundaries" about a hook a
+	// person had switched off. Whether the executor skips a disabled hook
+	// was not measured here; what is certain is that we cannot claim
+	// delivery for one, so the report says what it can see. Round
+	// forty-six of the pre-release review.
+	Enabled *bool `json:"enabled"`
 }
+
+// off reports a hook Codex lists as disabled. A payload with no field at
+// all (an older Codex) is not disabled: absence is not a no, which is the
+// same rule the rest of this codebase applies to an absent fact.
+func (h codexHook) off() bool { return h.Enabled != nil && !*h.Enabled }
+
+// live reports a hook that will actually run: trusted, and not switched off.
+func (h codexHook) live() bool { return h.TrustStatus == "trusted" && !h.off() }
 
 // isDibsHook is the one shape `--trust` will vouch for: an MCP tool hook
 // calling hook_poll on the dibs server. That is what the plugin ships and

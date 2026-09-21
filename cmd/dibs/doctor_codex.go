@@ -138,11 +138,27 @@ func reportCodexHooks(hooks []codexHook, where string, ok reportFn, warn fixFn) 
 				"or that ~/.codex/hooks.json parses; `dibs codex-hooks` shows what Codex sees")
 		return
 	}
-	var untrusted []string
+	// TRUST IS NOT THE ONLY SWITCH. Codex lists a hook a person turned
+	// off in its TUI with trustStatus "trusted" and enabled false, and
+	// this read the first and not the second: doctor said mail was
+	// delivered at every lifecycle boundary for a hook that was off.
+	// Round forty-six of the pre-release review.
+	var untrusted, off []string
 	for _, h := range hooks {
-		if h.TrustStatus != "trusted" {
+		switch {
+		case h.TrustStatus != "trusted":
 			untrusted = append(untrusted, h.EventName+" ("+h.TrustStatus+")")
+		case h.off():
+			off = append(off, h.EventName)
 		}
+	}
+	if len(untrusted) == 0 && len(off) > 0 {
+		warn(fmt.Sprintf("Codex has trusted all %d Dibs hooks and switched %d of them OFF: %s",
+			len(hooks), len(off), strings.Join(off, ", ")),
+			"a hook that is off does not run, whatever its trust says, so those deliveries "+
+				"do not happen. Turn them back on in the Codex TUI with /hooks; `dibs "+
+				"codex-hooks --trust` cannot, because trust and this switch are different things")
+		return
 	}
 	if len(untrusted) == 0 {
 		ok(fmt.Sprintf("Codex has trusted all %d Dibs hooks (mail is delivered at its lifecycle boundaries)",

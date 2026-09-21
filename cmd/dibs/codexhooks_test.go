@@ -37,3 +37,41 @@ func TestTrustVouchesOnlyForDibsHookPollHooks(t *testing.T) {
 		}
 	}
 }
+
+// A hook Codex has switched OFF is not delivering mail, whatever its
+// trust says.
+//
+// `hooks/list` reports trust and enablement separately, and Codex lists
+// disabled hooks too: `[hooks.state.<key>] enabled = false` in its
+// config, which its TUI toggles. This read trust alone, so `dibs
+// codex-hooks` printed "all trusted: Codex runs them, and mail reaches
+// its agents at their turn boundaries" and `dibs doctor` agreed, about a
+// hook that was off. A diagnosis that reports delivery it cannot see is
+// the failure mode this whole surface exists to avoid. Round forty-six
+// of the pre-release review.
+func TestAHookThatIsSwitchedOffIsNotReportedAsDelivering(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		raw       string
+		off, live bool
+	}{
+		{"trusted and on", `{"key":"k1","trustStatus":"trusted","enabled":true}`, false, true},
+		{"trusted and off", `{"key":"k2","trustStatus":"trusted","enabled":false}`, true, false},
+		{"untrusted and on", `{"key":"k3","trustStatus":"untrusted","enabled":true}`, false, false},
+		// An older Codex that reports no such field says nothing about
+		// enablement, and absence is not a no.
+		{"no field at all", `{"key":"k4","trustStatus":"trusted"}`, false, true},
+	} {
+		var h codexHook
+		if err := json.Unmarshal([]byte(tc.raw), &h); err != nil {
+			t.Fatal(err)
+		}
+		if got := h.off(); got != tc.off {
+			t.Errorf("%s: off=%v, want %v", tc.name, got, tc.off)
+		}
+		if got := h.live(); got != tc.live {
+			t.Errorf("%s: live=%v, want %v: a hook reported as delivering mail has to be "+
+				"one Codex will actually run", tc.name, got, tc.live)
+		}
+	}
+}
