@@ -291,13 +291,32 @@ func shipWhenUnreadable(
 		// shipment went one way and every verdict poll the other. Round three
 		// of the pre-release review.
 		st := fetchMatchStatusCtx(ctx, client, apiBase(url), secret)
-		if !wantsIndex(st, root) || suppliedFor(st, root, hostID()) {
+		if !shouldShip(st, root, hostID(), runtime.GOOS) {
 			continue
 		}
 		if err := shipIndex(ctx, client, url, secret, sh.get(), root); err != nil {
 			fmt.Fprintln(os.Stderr, "dibs: could not ship the index for", root+":", err)
 		}
 	}
+}
+
+// shouldShip decides whether this bridge still owes the daemon an index
+// for root: the daemon wants one for that tree, and does not already
+// hold one this machine shipped.
+//
+// SPELLED THE WAY IT WAS SHIPPED. The upload converts the root to its
+// portable form and the daemon keys its status by that, while this asked
+// with the native one: on Windows the two never matched, so a bridge
+// mined and uploaded the whole repository every five minutes for a
+// shipment it had already made, and the daemon's fingerprint check threw
+// the result away after the work and the transfer were done. Round
+// fifty-two of the pre-release review, on round forty-two's own fix,
+// which converted what goes out and left what comes back compared the
+// other way. Separated from the ticker so the decision can be tested:
+// the loop it lived in cannot.
+func shouldShip(st matchStatusJSON, root, own, goos string) bool {
+	asked := spellFor(goos, root)
+	return wantsIndex(st, asked) && !suppliedFor(st, asked, own)
 }
 
 // suppliedFor reports whether the daemon already holds a shipped index for

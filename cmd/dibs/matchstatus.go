@@ -77,23 +77,47 @@ func fetchMatchStatusCtx(ctx context.Context, c *http.Client, base, secret strin
 	return out
 }
 
+// suppliedCovering is the shipped index that serves this tree, and
+// whether there is one.
+//
+// A remote entry is a DIRECTORY AN AGENT IS IN and a shipment names the
+// repository ROOT, so an agent working in /repo/pkg is served by the
+// index shipped for /repo. Comparing the two as strings told the
+// operator that a working bridge had never shipped, and pointed them at
+// troubleshooting it. Round fifty-two of the pre-release review.
+func suppliedCovering(st matchStatusJSON, tree string) (root string, ok bool) {
+	if _, yes := st.Supplied[tree]; yes {
+		return tree, true
+	}
+	for r := range st.Supplied {
+		// The longest root that contains it, so a nested checkout is
+		// answered by its own index rather than by its parent's.
+		if underDir(tree, r) && len(r) > len(root) {
+			root, ok = r, true
+		}
+	}
+	return root, ok
+}
+
 // reportRemoteTrees says, for each tree on another machine, whether its
 // index has arrived and from where: not a fault of this daemon, which cannot
 // read them, and worth a line so "no suggestions for that agent" has a
 // stated reason.
 func reportRemoteTrees(st matchStatusJSON, warn fixFn) {
 	for _, root := range st.Remote {
-		if _, shipped := st.Supplied[root]; !shipped {
+		if _, shipped := suppliedCovering(st, root); !shipped {
 			warn(root+" is on another machine and its index has not arrived",
 				"the bridge on that machine ships it after registering; if it never does, "+
 					"run `dibs doctor` there")
 			continue
 		}
+		covering, _ := suppliedCovering(st, root)
 		// Shipped, but by WHICH machine: a path repeats across machines and an
 		// index is served only to the one it came from, so another machine's
 		// index at this path serves this tree's agent nothing. Round twelve of
-		// the pre-release review.
-		if by, want := st.SuppliedHosts[root], st.RemoteHosts[root]; want != "" && by != want {
+		// the pre-release review. Asked of the root that actually serves this
+		// tree, which is not always the tree itself (suppliedCovering).
+		if by, want := st.SuppliedHosts[covering], st.RemoteHosts[root]; want != "" && by != want {
 			warn(root+" is on another machine and the index held at that path was "+
 				"shipped from a different one", "the daemon holds one tree per path; the "+
 				"agent on that machine gets no suggestions until the first machine's "+
