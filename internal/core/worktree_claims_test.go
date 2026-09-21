@@ -457,3 +457,40 @@ func TestTheSameGitDirectoryPathOnTwoMachinesIsNotOneRepository(t *testing.T) {
 		t.Fatalf("a clone of the same remote on a third machine should collide: %v", res)
 	}
 }
+
+// A claim inside a UNC checkout is placed inside it.
+//
+// cleanPath collapsed the leading `//` and the recorded checkout root
+// kept it, so the root was not a prefix of the path, repoPathOf produced
+// no repository-relative key, and the rule that makes two clones of one
+// repository collide on the same tracked file never fired: both hosts
+// held it exclusively. The fold's cleaner and paths.Portable now agree
+// that two leading slashes are part of the name. Round forty-three of
+// the pre-release review.
+func TestAClaimInsideAUNCCheckoutIsPlacedInsideIt(t *testing.T) {
+	const share = "//server/share/repo"
+	s := NewState("t", DefaultLimits())
+	now := time.Unix(1700000000, 0)
+
+	// Two agents on two machines, in clones of one repository: the
+	// machine-independent facts (remote, roots) say it is one project.
+	onHost(t, s, "a", "tok-a", "machine-a", "", share, "github.com/acme/api", now)
+	onHost(t, s, "b", "tok-b", "machine-b", "", "/w/api", "github.com/acme/api", now)
+
+	if res := mustApply(t, s, &Op{
+		Kind: OpClaim, Token: "tok-a", Path: share + "/internal/core/apply.go", Mode: ClaimExclusive,
+	}, now); res["granted"] != true {
+		t.Fatalf("setup: the first claim was refused: %v", res)
+	}
+	if got := s.Claims[0].Path; got != share+"/internal/core/apply.go" {
+		t.Fatalf("the claim was recorded as %q: the share's own name lost a slash, and no "+
+			"path inside that checkout can be matched against its root again", got)
+	}
+	res := mustApply(t, s, &Op{
+		Kind: OpClaim, Token: "tok-b", Path: "/w/api/internal/core/apply.go", Mode: ClaimExclusive,
+	}, now)
+	if res["granted"] != false {
+		t.Fatalf("two clones of one repository both hold internal/core/apply.go exclusively "+
+			"(%v): the UNC checkout's claims carry no repository-relative key", res)
+	}
+}

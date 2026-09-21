@@ -28,3 +28,28 @@ func TestAbsoluteAcceptsEverySidesSpellingOnEveryHost(t *testing.T) {
 		}
 	}
 }
+
+// A UNC root keeps both of its leading slashes.
+//
+// path.Clean collapses `//` to `/`, and that changes what the path
+// names: `//server/share/repo` is a share on another machine,
+// `/server/share/repo` is a local directory. A checkout root recorded as
+// the first, with claims cleaned to the second, is a prefix that never
+// matches, so no claim inside that checkout gets a repository-relative
+// key and two hosts can hold one file exclusively. core.cleanPath says
+// the same thing for the fold. Round forty-three of the pre-release
+// review.
+func TestPortableKeepsAUNCRoot(t *testing.T) {
+	for in, want := range map[string]string{
+		"//server/share/repo":       "//server/share/repo",
+		"//server/share/repo/":      "//server/share/repo",
+		"//server/share/repo/./pkg": "//server/share/repo/pkg",
+		"///server/share":           "/server/share", // three is not a UNC root
+		"/w/repo/":                  "/w/repo",
+		"/w/repo/./pkg":             "/w/repo/pkg",
+	} {
+		if got := Portable(in); got != want {
+			t.Errorf("Portable(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

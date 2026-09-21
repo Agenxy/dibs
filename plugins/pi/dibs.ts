@@ -267,6 +267,20 @@ const PATH_ARGS: Record<string, string[]> = {
   hook_poll: ["cwd"],
   hook_session: ["cwd"],
   hook_blocked: ["cwd"],
+  // The directories an agent declares are the strongest signal it gives
+  // about where it is writing, and they were the one path argument nobody
+  // resolved: a Mac agent registered under /private/tmp/repo declaring
+  // /tmp/repo/pkg could not be made relative to its own root, so the
+  // overlap it declared matched nothing. The Go bridge learned this in
+  // round forty-two and this plugin did not, which the changelog then
+  // overstated. Round forty-three of the pre-release review.
+  declare: ["dirs"],
+  // The cwd an agent states at registration, or corrects later, is
+  // compared against the root the daemon resolves for it, so it is
+  // resolved here for the same reason (round nine). The Go bridge has
+  // had these two since then.
+  register: ["cwd"],
+  update: ["cwd"],
 }
 
 /**
@@ -360,7 +374,17 @@ async function rpc(
     if (pathArgs) {
       const args = (p["arguments"] ?? {}) as Record<string, unknown>
       for (const k of pathArgs) {
-        if (typeof args[k] === "string" && args[k] !== "") args[k] = canonical(args[k] as string)
+        const v = args[k]
+        if (typeof v === "string" && v !== "") {
+          args[k] = canonical(v)
+        } else if (Array.isArray(v)) {
+          // `dirs` is a list, and a list of paths needs what one path
+          // needs. A relative entry is left alone: declare takes one
+          // against the agent's own root, and resolving it here against
+          // this process's working directory would name a directory
+          // nobody meant.
+          args[k] = v.map((e) => (typeof e === "string" && isAbsolute(e) ? canonical(e) : e))
+        }
       }
       p["arguments"] = args
     }

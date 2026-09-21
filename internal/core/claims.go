@@ -23,9 +23,23 @@ import (
 // it had granted. Windows spellings are folded at INGRESS instead
 // (engine.normalizeSeparators), which is where an impure fact such as "this
 // daemon runs on Windows" belongs: recorded into the op, so replay on any
-// host applies the decision that was made. Found by the pre-release review.
+//
+// A UNC ROOT KEEPS ITS TWO SLASHES. `path.Clean` collapses a leading `//`
+// to one, and that is not cosmetic here: `//server/share/repo` is a share
+// on another machine and `/server/share/repo` is a local directory, so a
+// checkout root recorded as the first and a claim cleaned to the second
+// are no longer prefix and path. Neither collision rule fires, and two
+// hosts working one file in clones of one repository each get an
+// exclusive claim on it. The same rule lives in paths.Portable, because
+// core may not import a package that touches the filesystem; the two are
+// one sentence and must stay identical. Round forty-three of the
+// pre-release review.
 func cleanPath(p string) string {
+	unc := strings.HasPrefix(p, "//") && !strings.HasPrefix(p, "///")
 	p = path.Clean(p)
+	if unc && !strings.HasPrefix(p, "//") {
+		p = "/" + p
+	}
 	if len(p) > 1 {
 		p = strings.TrimSuffix(p, "/")
 	}
