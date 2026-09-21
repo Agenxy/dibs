@@ -243,7 +243,7 @@ func run() error {
 	}
 	led.OnEvents = nil // replay is done; live events flow through the engine
 	eng := engine.New(st, led, liveness.New(), history)
-	identifyHost(eng)
+	identifyHost(eng, *dir) // and retried below, once the root context exists
 	eng.SetBlobs(bs)
 	wake, err := wakePolicy(cfg.Wake)
 	if err != nil {
@@ -292,6 +292,7 @@ func run() error {
 	// The declared names are guarded at ingress before their first grant as
 	// well as after: recovery of one of these rows needs its nonce.
 	eng.SetPrivilegedNames(append(append([]string{}, cfg.Roles.Coordinator...), cfg.Roles.Admin...))
+	keepIdentifying(ctx, eng, *dir)
 	keepDeclaredRolesApplied(ctx, *dir, eng, cfg.Roles)
 	// Clears a pid an older build recorded against the operator's own row, which
 	// made every restart report them as a dead process. One op, once, and only
@@ -1001,19 +1002,70 @@ func absent(path string) (bool, error) {
 // rather than silently ignored: one computer answering to two names is the
 // defect this replaces, and a daemon that fell back without saying so would
 // bring it back the first time somebody reinstalled.
-func identifyHost(eng *engine.Engine) {
+func identifyHost(eng *engine.Engine, dir string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	id, err := supgang.Status(ctx)
 	switch {
 	case errors.Is(err, supgang.ErrNotInstalled):
-		return
+		return true // nothing to wait for: this machine is not in a fleet
 	case err != nil:
+		// A FAILED LOOKUP DOES NOT RENAME THIS COMPUTER, and the daemon
+		// needs that as much as the bridge does (supgang.NodeIDFile). It
+		// used to keep the board's own node id, while every bridge here
+		// carried the Supgang one: the fold then read this machine's own
+		// agents as remote, so the daemon refused its own local wake
+		// commands for them and no host bridge existed to take over. Round
+		// twenty-nine of the pre-release review, one round after the same
+		// defect was closed on the bridge side.
+		if remembered := supgang.RememberedNodeID(dir); remembered != "" {
+			eng.SetHostID(remembered)
+			slog.Warn("Supgang did not answer; this computer keeps the identity it is already "+
+				"known by, and identification will be retried",
+				"node", remembered, "supgang", err.Error())
+			return false
+		}
 		slog.Info("Supgang is installed and did not identify this computer; agents here are "+
-			"stamped with the board's own node id", "supgang", err.Error())
-		return
+			"stamped with the board's own node id until it answers", "supgang", err.Error())
+		return false
 	}
 	eng.SetHostID(id.NodeID)
+	supgang.RememberNodeID(dir, id.NodeID)
 	slog.Info("this computer is a Supgang member; its agents carry that identity",
 		"name", id.Name, "node", id.NodeID)
+	return true
 }
+
+// keepIdentifying retries identifyHost until Supgang answers.
+//
+// Installed-and-not-answering is a state that ends: the service restarts,
+// the machine finishes booting. Without a retry the daemon wore the wrong
+// identity until somebody restarted it, which is the one thing an operator
+// has no reason to do (nothing looks broken from the board).
+func keepIdentifying(ctx context.Context, eng *engine.Engine, dir string) {
+	if eng.HostID() != eng.NodeID() {
+		return // already identified, at startup
+	}
+	if identifyHost(eng, dir) {
+		return
+	}
+	go func() {
+		t := time.NewTicker(identifyRetry)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				if identifyHost(eng, dir) {
+					return
+				}
+			}
+		}
+	}()
+}
+
+// identifyRetry is how often a daemon that could not reach Supgang asks
+// again: often enough that a service restart is picked up within a turn or
+// two, rare enough to be nothing on a machine where Supgang is simply slow.
+const identifyRetry = time.Minute

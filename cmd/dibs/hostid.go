@@ -57,7 +57,7 @@ func hostID() string {
 		id, err := supgang.Status(ctx)
 		if err == nil && id.NodeID != "" {
 			hostIDValue = id.NodeID
-			rememberSupgangNodeID(paths.DataDir(), id.NodeID)
+			supgang.RememberNodeID(paths.DataDir(), id.NodeID)
 			return
 		}
 		// AND ONCE A MACHINE IS KNOWN BY ITS SUPGANG ID, A FAILED LOOKUP
@@ -77,7 +77,7 @@ func hostID() string {
 		// nothing to remember and the minted id is the only answer, which
 		// is the same answer every process there gets until Supgang first
 		// speaks.
-		if remembered := rememberedSupgangNodeID(paths.DataDir()); remembered != "" {
+		if remembered := supgang.RememberedNodeID(paths.DataDir()); remembered != "" {
 			slog.Warn("supgang did not answer; keeping the node id this machine is already known by",
 				"node", remembered, "err", err)
 			hostIDValue = remembered
@@ -102,30 +102,6 @@ var (
 // and the daemon's host-scoped guard resolved the two to different
 // machines: the guard e2e caught it on the first machine with Supgang.
 const resolvedHostFile = "resolved_host_id"
-
-// supgangNodeIDFile remembers the last node id Supgang gave for this
-// machine: see hostID. Written only when it changes, and only ever by a
-// successful lookup.
-const supgangNodeIDFile = "supgang_node_id"
-
-func rememberSupgangNodeID(dir, id string) { publishResolved(dir, supgangNodeIDFile, id) }
-
-// rememberedSupgangNodeID is the last id Supgang gave here, or "".
-func rememberedSupgangNodeID(dir string) string {
-	if dir == "" {
-		return ""
-	}
-	// #nosec G304 -- the user's own data directory
-	b, err := os.ReadFile(filepath.Join(dir, supgangNodeIDFile))
-	if err != nil {
-		return ""
-	}
-	id := strings.TrimSpace(string(b))
-	if len(id) != 64 {
-		return "" // not a node id; the minted one is a better answer than a wrong one
-	}
-	return id
-}
 
 // resolvedOriginFile is where the bridge publishes the origin it dialled,
 // after any DIBS_BOARD_PEER resolution, for the same reader: the opencode

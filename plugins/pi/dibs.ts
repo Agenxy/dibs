@@ -43,33 +43,44 @@ const ADDR = process.env["DIBS_ADDR"] ?? "127.0.0.1:4777"
 const SAVED_ORIGIN = /^https?:\/\//i.test(ADDR) ? ADDR.replace(/\/+$/, "") : `http://${ADDR}`
 
 /**
- * Where the daemon is NOW: the origin a bridge on this machine published
- * beside the secret, else what `dibs identity` reports (the saved address,
- * re-pointed at the hub's current Supgang address when the config names it
- * as a peer, as the bridge dials), else the saved address. Deriving the
- * endpoint from DIBS_ADDR alone kept dialling a hub that had moved (round
- * twenty-six), and keeping the FIRST answer for the life of the process is
- * the same defect one step later, because the bridge republishes when the
- * hub moves or restarts: the published file is re-read, briefly cached, and
- * the binary is asked again at most once a minute. Round twenty-seven of
- * the pre-release review.
+ * Where the daemon is NOW: what `dibs identity` reports (the saved
+ * address, re-pointed at the hub's current Supgang address when the config
+ * names it as a peer, exactly as the bridge dials), else the origin a
+ * bridge on this machine published beside the secret, else the saved
+ * address. Deriving the endpoint from DIBS_ADDR alone kept dialling a hub
+ * that had moved (round twenty-six); keeping the FIRST answer for the life
+ * of the process was the same defect one step later (round twenty-seven);
+ * and preferring a file a previous bridge left pinned the address a third
+ * time (round twenty-nine). Asked again at most once a minute, and the
+ * answer held for a second so a turn's worth of hooks is one question.
  */
 let originCache: { at: number; value: string } | undefined
 
 async function origin(): Promise<string> {
   const now = Date.now()
   if (originCache && now - originCache.at < 1000) return originCache.value
+  // THE BINARY FIRST, the published file only as a stand-in.
+  //
+  // `dibs identity` resolves the peer at the moment it is asked, which is
+  // the answer that follows a hub that moved. The published file is
+  // whatever the last stdio bridge on this machine wrote, and pi runs
+  // without one: a file a previous bridge left could outlive the address
+  // in it, and preferring it pinned every call to a hub that had moved
+  // with nothing ever asking again. Round twenty-nine of the pre-release
+  // review, one round after preferring the file was the fix.
   let value = ""
-  try {
-    const published = (await readFile(`${DIR}/resolved_origin`, "utf8")).trim()
-    if (/^https?:\/\//i.test(published)) value = published.replace(/\/+$/, "")
-  } catch {
-    // no bridge on this machine, or it has not published yet
+  const id = await refreshedIdentity(now)
+  if (id.origin && /^https?:\/\//i.test(id.origin)) {
+    value = id.origin.replace(/\/+$/, "")
+  } else {
+    try {
+      const published = (await readFile(`${DIR}/resolved_origin`, "utf8")).trim()
+      if (/^https?:\/\//i.test(published)) value = published.replace(/\/+$/, "")
+    } catch {
+      // no bridge here either: the saved address below
+    }
   }
-  if (value === "") {
-    const id = await refreshedIdentity(now)
-    value = id.origin && /^https?:\/\//i.test(id.origin) ? id.origin.replace(/\/+$/, "") : SAVED_ORIGIN
-  }
+  if (value === "") value = SAVED_ORIGIN
   originCache = { at: now, value }
   return value
 }
