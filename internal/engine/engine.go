@@ -827,6 +827,35 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		}
 	}
 
+	// AN AMBIGUOUS force_release IS REFUSED, NOT GUESSED.
+	//
+	// An absolute path names a different file on each machine, so two
+	// agents holding /workspace/repo/file.go on two computers is not a
+	// collision and both claims are real. The fold released the first one
+	// it found, so a coordinator unsticking one machine could take the
+	// protection off the other and leave the one it meant in place.
+	//
+	// Refused HERE rather than in the fold: an error from Apply would be
+	// applied to a ledger written before the selector existed, and an op
+	// that was accepted when it was written must not be refused on
+	// replay. Nothing is ledgered by a refusal here. Round forty-four of
+	// the pre-release review.
+	if op.Kind == core.OpForceRelease && op.To == "" {
+		// Read straight off the state: exec already runs on the writer
+		// loop, and e.query from here sends on the channel the loop is
+		// reading, which is a deadlock and not an error (AGENTS.md).
+		if holders := holdersOfPath(e.state, op.Path); len(holders) > 1 {
+			return nil, &core.Error{
+				Code: "E_AMBIGUOUS_CLAIM",
+				Msg: "more than one agent holds " + op.Path + ": " +
+					strings.Join(holders, ", "),
+				Hint: "name the one you mean with `agent`: an absolute path is a " +
+					"different file on each machine, so these are separate claims " +
+					"and releasing the wrong one leaves the resource unprotected",
+			}
+		}
+	}
+
 	if op.Kind == core.OpGrantRole {
 		switch {
 		case op.RoleByHuman:

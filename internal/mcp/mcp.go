@@ -1272,7 +1272,13 @@ func (s *Server) run(
 		}
 		op.Kind, op.Path = core.OpRelease, callerPath(ctx, params, a.Path)
 	case "force_release":
-		op.Kind, op.Path, op.Note = core.OpForceRelease, callerPath(ctx, params, a.Path), a.Note
+		// `agent` names WHICH holder, and travels in To: the op already
+		// reports to the holder, so that is the field that means "the
+		// agent this concerns". Two machines holding one absolute path
+		// is legitimate, and picking the first was how a coordinator
+		// unsticking one machine removed the other's protection.
+		op.Kind, op.Path, op.Note, op.To = core.OpForceRelease,
+			callerPath(ctx, params, a.Path), a.Note, a.AgentRef
 	case "hook_poll":
 		// cwd is canonicalised for the same reason the claim path is: it is
 		// compared as a string against the cwd the bridge recorded, and a
