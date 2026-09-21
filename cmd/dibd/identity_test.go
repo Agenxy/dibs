@@ -60,7 +60,7 @@ func TestADaemonKeepsTheIdentityThisComputerIsKnownBy(t *testing.T) {
 	}
 
 	eng := engineNamed(t)
-	if done := identifyHost(eng, dir); done {
+	if done, _ := identifyHost(eng, dir); done {
 		t.Fatal("a failed lookup reported identification as settled, so nothing would retry")
 	}
 	if got := eng.HostID(); got != node {
@@ -73,7 +73,7 @@ func TestADaemonKeepsTheIdentityThisComputerIsKnownBy(t *testing.T) {
 	// thirty-one of the pre-release review.
 	gone := engineNamed(t)
 	supgang.Command = filepath.Join(dir, "no-supgang-here")
-	if done := identifyHost(gone, dir); !done {
+	if done, _ := identifyHost(gone, dir); !done {
 		t.Error("an uninstalled Supgang is something to wait for: nothing will ever answer")
 	}
 	if got := gone.HostID(); got != node {
@@ -84,7 +84,7 @@ func TestADaemonKeepsTheIdentityThisComputerIsKnownBy(t *testing.T) {
 	// Nothing remembered: the board's own node id stands, as before.
 	fresh := t.TempDir()
 	eng2 := engineNamed(t)
-	identifyHost(eng2, fresh)
+	_, _ = identifyHost(eng2, fresh)
 	if got := eng2.HostID(); got != boardNode {
 		t.Fatalf("with nothing remembered the daemon calls itself %q, want its own node id", got)
 	}
@@ -151,7 +151,7 @@ func TestADaemonDoesNotChangeItsIdentityWhileServing(t *testing.T) {
 	// And a daemon STARTING now adopts it and remembers it, which is the
 	// transition: one restart, everything agrees.
 	fresh := engineNamed(t)
-	if !identifyHost(fresh, dir) {
+	if settled, _ := identifyHost(fresh, dir); !settled {
 		t.Fatal("a startup lookup that Supgang answered reported itself unsettled")
 	}
 	if got, remembered := fresh.HostID(), supgang.RememberedNodeID(dir); got != node || remembered != node {

@@ -332,7 +332,8 @@ func (f *scorerFlags) install(ctx context.Context, eng *engine.Engine) {
 // when does it run) and this one is the work. Every early return here records a
 // STATUS as well as logging, because a feature that switched itself off quietly
 // is indistinguishable from one that is working and found nothing.
-func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, repo string, gen uint64) (installed bool) {
+func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, held *claim) (installed bool) {
+	repo := held.root
 	start := time.Now()
 	topCtx, cancelTop := context.WithTimeout(ctx, gitDeadline)
 	defer cancelTop()
@@ -363,12 +364,13 @@ func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, repo stri
 	// Publishing then checked a claim nobody held and installed nothing:
 	// matching was off for the whole board, which the space e2e caught in
 	// the round that introduced the claim.
-	gen, ok := f.rekeyClaim(repo, dir, gen)
+	gen, ok := f.rekeyClaim(repo, dir, held.gen)
 	if !ok {
 		slog.Info("work-overlap index: this tree is already claimed by another build",
 			"repo", dir)
 		return false
 	}
+	held.root, held.gen = dir, gen
 
 	offBecause := func(what string, err error) {
 		// Every failure sets a STATUS as well as logging: a feature that
@@ -450,7 +452,7 @@ func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, repo stri
 	// system (issue #39). Identify is cached and has already been paid for
 	// by this tree's first registration.
 	repoDir, remote, roots, _ := paths.Identify(dir).Identity()
-	if !f.mayInstall(dir, gen) {
+	if !f.mayInstall(dir, held.gen) {
 		return false
 	}
 	eng.SetIndex(dir, scorer, engine.MatchConfig{
@@ -734,6 +736,13 @@ func (f *scorerFlags) indexDiscovered(ctx context.Context, eng *engine.Engine, c
 // slot latched, and a build whose claim was taken meanwhile must not free
 // somebody else's).
 func (f *scorerFlags) buildAndInstall(ctx context.Context, eng *engine.Engine, root string, gen uint64) {
+	// The claim this build holds, which bringUp may move onto the root git
+	// resolves: releasing the ORIGINAL key then left the resolved one
+	// reserved forever, so a tree whose first build failed (an empty
+	// repository, a git that timed out) could never be indexed again
+	// without an eviction or a restart. Round thirty-six of the
+	// pre-release review.
+	held := claim{root: root, gen: gen}
 	// RELEASED if the bring-up does not produce a scorer.
 	//
 	// The tree was marked indexed before any of the work, so a temporary
@@ -744,14 +753,22 @@ func (f *scorerFlags) buildAndInstall(ctx context.Context, eng *engine.Engine, r
 	// never actually indexed. The mark is a "somebody is doing this" latch
 	// and it has to be dropped when nobody is. Found by a pre-release
 	// review.
-	if !f.bringUp(ctx, eng, root, gen) {
+	if !f.bringUp(ctx, eng, &held) {
 		f.discoverMu.Lock()
-		if f.claimGen[root] == gen {
-			delete(f.indexed, root)
-			delete(f.claimGen, root)
+		if f.claimGen[held.root] == held.gen {
+			delete(f.indexed, held.root)
+			delete(f.claimGen, held.root)
 		}
 		f.discoverMu.Unlock()
 	}
+}
+
+// claim is the index slot a build holds: the root it is keyed by and the
+// generation that says it is still this build's. bringUp moves it onto the
+// root git resolves.
+type claim struct {
+	root string
+	gen  uint64
 }
 
 // claimIndexSlot marks root as being indexed by this goroutine, or reports

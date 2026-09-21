@@ -245,7 +245,7 @@ func run() error {
 	eng := engine.New(st, led, liveness.New(), history)
 	// SETTLED BEFORE SERVING. Nothing changes this identity afterwards; see
 	// keepAskingSupgang.
-	identified := identifyHost(eng, *dir)
+	identified, adopted := identifyHost(eng, *dir)
 	eng.SetBlobs(bs)
 	wake, err := wakePolicy(cfg.Wake)
 	if err != nil {
@@ -294,6 +294,9 @@ func run() error {
 	// The declared names are guarded at ingress before their first grant as
 	// well as after: recovery of one of these rows needs its nonce.
 	eng.SetPrivilegedNames(append(append([]string{}, cfg.Roles.Coordinator...), cfg.Roles.Admin...))
+	// The loop is running now, so the rows this machine already holds can
+	// be renamed onto the identity it adopted above.
+	renameHost(ctx, eng, adopted)
 	keepAskingSupgang(ctx, eng, identified)
 	keepDeclaredRolesApplied(ctx, *dir, eng, cfg.Roles)
 	// Clears a pid an older build recorded against the operator's own row, which
@@ -1004,7 +1007,7 @@ func absent(path string) (bool, error) {
 // rather than silently ignored: one computer answering to two names is the
 // defect this replaces, and a daemon that fell back without saying so would
 // bring it back the first time somebody reinstalled.
-func identifyHost(eng *engine.Engine, dir string) bool {
+func identifyHost(eng *engine.Engine, dir string) (settled bool, adopted hostAdoption) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	id, err := supgang.Status(ctx)
@@ -1023,7 +1026,7 @@ func identifyHost(eng *engine.Engine, dir string) bool {
 			slog.Info("Supgang is not installed here; this computer keeps the identity it is "+
 				"already known by", "node", remembered)
 		}
-		return true // nothing to wait for: this machine is not in a fleet
+		return true, adopted // nothing to wait for: this machine is not in a fleet
 	case err != nil:
 		// A FAILED LOOKUP DOES NOT RENAME THIS COMPUTER, and the daemon
 		// needs that as much as the bridge does (supgang.NodeIDFile). It
@@ -1038,11 +1041,11 @@ func identifyHost(eng *engine.Engine, dir string) bool {
 			slog.Warn("Supgang did not answer; this computer keeps the identity it is already "+
 				"known by, and this daemon serves under it until it restarts",
 				"node", remembered, "supgang", err.Error())
-			return false
+			return false, adopted
 		}
 		slog.Info("Supgang is installed and did not identify this computer; agents here are "+
 			"stamped with the board's own node id until it answers", "supgang", err.Error())
-		return false
+		return false, adopted
 	}
 	// The ids this machine answered to before adopting the fleet's: a
 	// bridge started before this restart still asserts one of them, and a
@@ -1054,9 +1057,52 @@ func identifyHost(eng *engine.Engine, dir string) bool {
 	eng.SetHostID(id.NodeID)
 	eng.SetHostAliases(previous...)
 	supgang.RememberNodeID(dir, id.NodeID)
+	// AND THE ROWS AND CLAIMS ALREADY HERE are renamed by the caller, once
+	// the loop is running: recognising the old id at ingress fixes what
+	// arrives, and the board still holds rows registered under it. Round
+	// thirty-six of the pre-release review.
+	adopted = hostAdoption{previous: previous, now: id.NodeID}
 	slog.Info("this computer is a Supgang member; its agents carry that identity",
 		"name", id.Name, "node", id.NodeID)
-	return true
+	return true, adopted
+}
+
+// hostAdoption is an identity change this daemon is about to make: the ids
+// this computer used to answer to, and the one it answers to now. Empty
+// when nothing changed.
+type hostAdoption struct {
+	previous []string
+	now      string
+}
+
+// renameHost rewrites the rows and claims that carry an id this computer
+// used to answer to. One op per id, each a no-op when nothing carries it.
+//
+// Before the engine serves, on the caller's goroutine: Apply is the loop's,
+// so this goes through the ordinary queue and is ledgered like any other
+// mutating op, which is what makes replay reproduce the substitution.
+func renameHost(ctx context.Context, eng *engine.Engine, adopted hostAdoption) {
+	now := adopted.now
+	if now == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	for _, was := range adopted.previous {
+		if was == "" || was == now {
+			continue
+		}
+		res, err := eng.Do(ctx, &core.Op{Kind: core.OpHostRenamed, HostWas: was, HostNow: now})
+		if err != nil {
+			slog.Warn("could not rename this computer's existing rows onto its fleet identity; "+
+				"they are recognised at ingress meanwhile", "was", was, "now", now, "err", err)
+			continue
+		}
+		if n, _ := res["changed"].(int); n > 0 {
+			slog.Info("this computer's existing agents now carry its fleet identity",
+				"was", was, "now", now, "agents", n, "claims", res["claims"])
+		}
+	}
 }
 
 // keepAskingSupgang goes on asking after a startup lookup that failed, and
