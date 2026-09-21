@@ -108,6 +108,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The repository index ceiling is no longer a lifetime count.** (#40) A
+  tree stayed indexed after the last agent in it was terminal, so a
+  long-running fleet used up the sixteen slots and silently stopped
+  indexing anything new: matching went off for every project opened after
+  that, with nothing said. Idle indexes are evicted against the board's own
+  account of who is still here, and the slot comes back. Thanks to @qtjg
+  (#43), whose eviction key (no remaining non-terminal agent in the tree) is
+  the one everything built on it since depends on.
+
 - **Round forty-one of the pre-release review: two findings.**
   - An agent that resumes on another machine takes the thread there. The
     fold's drop asks which machine the take is from and read it off the
@@ -1024,7 +1033,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   two runs of eight. Linux now reads `utime + stime` in clock ticks from
   `/proc/<pid>/stat` and the age from `starttime` against `/proc/uptime`,
   behind a build tag; the BSD `ps` path is untouched on macOS. The parser is
-  tested here. (When this was written the Linux build was compiled and
+  tested here. Measured and reported by @averyquinnhq (#4), who ran the
+  published v0.0.1 Linux binary against the release checksums. (When this was written the Linux build was compiled and
   vetted and not run; later in the same cycle the CI gained a Linux job that
   runs every package under the race detector, and the README's account of
   what is verified where follows that, not this sentence.)
