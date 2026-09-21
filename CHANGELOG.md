@@ -128,6 +128,26 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round forty-six of the pre-release review: three findings.**
+  - A Windows hub folds separators for its OWN callers only. The daemon's
+    platform says what a separator means here and nothing about the
+    machine an op came from, so a Windows hub rewrote a unix member's
+    `/work/a\b`, one file whose name contains a backslash, into
+    `/work/a/b`, which is another: two resources merged before anything
+    was ledgered. A remote bridge already sends its own machine's paths
+    portably, so there was nothing to fold for it.
+  - A path named on another agent's behalf is not resolved locally.
+    `force_release` with an `agent` quotes the path the board shows,
+    which is the holder's spelling on the holder's machine; the bridge
+    and the hub both resolved it against the caller's filesystem, so a
+    macOS coordinator releasing a Linux agent's `/tmp/repo/file.go` asked
+    for `/private/tmp/repo/file.go`, was told there was no such claim,
+    and left the real one in place.
+  - A Codex hook that is switched off is not reported as delivering mail.
+    `hooks/list` reports trust and enablement separately and lists
+    disabled hooks too; `dibs codex-hooks` and `dibs doctor` read only
+    the first, so both said mail arrived at every lifecycle boundary for
+    a hook a person had turned off in the Codex TUI.
 - **Round forty-five of the pre-release review: two findings.**
   - A Supgang lookup that succeeds does not overrule an identity another
     process here published while it ran. Round forty closed the direction

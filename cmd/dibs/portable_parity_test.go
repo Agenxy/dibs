@@ -226,3 +226,46 @@ func TestTheBridgeAndThePiPluginResolveTheSameArguments(t *testing.T) {
 		}
 	}
 }
+
+// A path named on another agent's behalf is not this machine's to
+// resolve.
+//
+// force_release with an `agent` quotes the path the BOARD shows, which
+// is the holder's spelling on the holder's machine. The bridge resolved
+// it here anyway, so a macOS coordinator releasing a Linux agent's
+// /tmp/repo/file.go asked for /private/tmp/repo/file.go: the daemon
+// answered E_NO_CLAIM and the claim it meant stayed exactly where it
+// was. Round forty-six of the pre-release review.
+func TestForceReleaseForAnotherAgentKeepsTheHoldersSpelling(t *testing.T) {
+	real := t.TempDir()
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+	held := filepath.Join(link, "file.go")
+
+	// Naming the holder: the path travels as the board spells it.
+	params := map[string]any{
+		"name":      "force_release",
+		"arguments": map[string]any{"path": held, "agent": "far"},
+	}
+	canonicalisePathArgs(params)
+	args, _ := params["arguments"].(map[string]any)
+	if got, _ := args["path"].(string); got != held {
+		t.Errorf("the bridge rewrote another agent's path to %q, want %q as the board shows it",
+			got, held)
+	}
+
+	// Naming no holder, it is the caller's own claim and is resolved
+	// here, which is what every other path argument gets.
+	params = map[string]any{
+		"name":      "force_release",
+		"arguments": map[string]any{"path": held},
+	}
+	canonicalisePathArgs(params)
+	args, _ = params["arguments"].(map[string]any)
+	if got, _ := args["path"].(string); got == held {
+		t.Errorf("a coordinator's own path was left unresolved (%q): the spelling it typed "+
+			"has to meet the one the daemon recorded", got)
+	}
+}

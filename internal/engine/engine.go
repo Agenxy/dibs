@@ -408,7 +408,19 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// where a backslash is a separator, and written into the ledger folded:
 	// on unix a backslash is a filename character and is left alone, and
 	// replay on either host sees the paths as they were admitted.
-	normalizeSeparators(op)
+	//
+	// FOR THIS MACHINE'S OWN CALLERS ONLY. The daemon's OS says what a
+	// separator means HERE, and nothing about the machine an op came
+	// from: a Windows hub was rewriting a unix member's `/work/a\b`,
+	// which is one file with a backslash in its name, into `/work/a/b`,
+	// which is another, and merging two distinct resources before
+	// anything was ledgered. A remote bridge already sends the portable
+	// spelling of its own machine's paths (cmd/dibs, portableSpelling),
+	// so there is nothing here to fold for it. Round forty-six of the
+	// pre-release review.
+	if !e.opIsRemote(op) {
+		normalizeSeparators(op)
+	}
 
 	// Registrations minted by THIS version restore a recovered agent's nonce;
 	// ops already on disk do not, and must not start to. Set at ingress and
@@ -827,33 +839,8 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		}
 	}
 
-	// AN AMBIGUOUS force_release IS REFUSED, NOT GUESSED.
-	//
-	// An absolute path names a different file on each machine, so two
-	// agents holding /workspace/repo/file.go on two computers is not a
-	// collision and both claims are real. The fold released the first one
-	// it found, so a coordinator unsticking one machine could take the
-	// protection off the other and leave the one it meant in place.
-	//
-	// Refused HERE rather than in the fold: an error from Apply would be
-	// applied to a ledger written before the selector existed, and an op
-	// that was accepted when it was written must not be refused on
-	// replay. Nothing is ledgered by a refusal here. Round forty-four of
-	// the pre-release review.
-	if op.Kind == core.OpForceRelease && op.To == "" {
-		// Read straight off the state: exec already runs on the writer
-		// loop, and e.query from here sends on the channel the loop is
-		// reading, which is a deadlock and not an error (AGENTS.md).
-		if holders := holdersOfPath(e.state, op.Path); len(holders) > 1 {
-			return nil, &core.Error{
-				Code: "E_AMBIGUOUS_CLAIM",
-				Msg: "more than one agent holds " + op.Path + ": " +
-					strings.Join(holders, ", "),
-				Hint: "name the one you mean with `agent`: an absolute path is a " +
-					"different file on each machine, so these are separate claims " +
-					"and releasing the wrong one leaves the resource unprotected",
-			}
-		}
+	if err := e.refuseAmbiguousRelease(op); err != nil {
+		return nil, err
 	}
 
 	if op.Kind == core.OpGrantRole {
