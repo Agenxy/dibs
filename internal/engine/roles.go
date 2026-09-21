@@ -166,17 +166,25 @@ func (e *Engine) mailboxCensus(only string) []MailboxCensus {
 		}
 		rows[id] = &MailboxCensus{Agent: id, Status: l.Status}
 	}
+	// THROUGH Inbox, WHICH IS THE ONE DEFINITION OF WHAT IS IN A MAILBOX.
+	// This walked every retained message addressed to the id, which is a
+	// THIRD answer to that question: the watermark that fences a
+	// predecessor's mail did not apply, and neither did readable(), so a
+	// notify somebody had already acknowledged was counted. A coordinator
+	// deciding "recover or prune" was told `messages: 1` about a mailbox
+	// whose adoption then answered E_NOTHING_TO_ADOPT. core.readable's
+	// own comment says adoption had a second definition and what that
+	// cost; this is the same mistake one call further out. Round
+	// fifty-three of the pre-release review.
 	senders := map[string]map[string]bool{}
-	for _, m := range e.state.Messages {
-		row := rows[m.To]
-		if row == nil {
-			continue
+	for id, row := range rows {
+		for _, m := range e.state.Inbox(id) {
+			row.count(m)
+			if senders[id] == nil {
+				senders[id] = map[string]bool{}
+			}
+			senders[id][m.From] = true
 		}
-		row.count(m)
-		if senders[m.To] == nil {
-			senders[m.To] = map[string]bool{}
-		}
-		senders[m.To][m.From] = true
 	}
 	out := make([]MailboxCensus, 0, len(rows))
 	for id, row := range rows {

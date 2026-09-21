@@ -450,7 +450,12 @@ func mayHoldDeclaredRole(ctx context.Context, eng *engine.Engine, pins *rolePins
 		// safe: it is a hash of the nonce and reveals nothing that could be
 		// replayed. Without this the feature has a bootstrap step with no way
 		// to complete it.
-		if c.Identity[agent] == "" {
+		// ONLY WHEN NOTHING HAS BEEN GRANTED YET. An agent with a pin is
+		// one this board has granted the role to before, so a missing
+		// [roles.identity] entry is a deliberate WITHDRAWAL, and offering
+		// to paste the entry back tells the operator to undo the thing
+		// they just did. Round fifty-three of the pre-release review.
+		if _, granted := pins.Pins[role][agent]; c.Identity[agent] == "" && !granted {
 			slog.Warn("to grant it, pin this agent's identity in dibs.toml",
 				"agent", agent, "role", role,
 				"add", fmt.Sprintf("[roles.identity]\n%s = %q", tomlKey(agent), fp))

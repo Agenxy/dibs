@@ -81,10 +81,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **SECURITY.md states what a forged lifecycle hook can and cannot do.**
   (#74) `hook_poll` takes a session id with no token, and a peer can claim a
   `Stop` or `SessionStart` for somebody else's session. The consequence was
-  never written down: a forged `Stop` costs at most one spurious wake, and a
-  forged `SessionStart` defers a wake by at most the harness's cooldown,
-  because the deferral re-arms, which a test pins. Nothing on that path
-  reads mail or grants a role. The fix that closes it is a credential per
+  never written down: a forged `Stop` costs at most one spurious wake, and
+  ONE forged `SessionStart` defers a wake by at most the harness's
+  cooldown, because the deferral re-arms, which a test pins. A caller that
+  REPEATS the forgery faster than the cooldown keeps deferring it for as
+  long as it keeps calling, and there is no bound on that beyond the
+  caller's persistence: SECURITY.md says so, and this entry claimed the
+  one-cooldown bound for the repeated case too. Nothing on that path reads
+  mail or grants a role. The fix that closes it is a credential per
   agent (`docs/NETWORK.md` §6); the document now says so instead of
   promising an isolation the design cannot give.
 
@@ -128,6 +132,27 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round fifty-three of the pre-release review: four findings.**
+  - The mailbox census counts what an adoption would move. It walked
+    every retained message addressed to the id, which is a third answer
+    to "what is in this mailbox": a notify the agent had acknowledged was
+    counted, so a coordinator deciding "recover or prune" was told there
+    was mail and the adoption it then approved answered
+    `E_NOTHING_TO_ADOPT`.
+  - `dibs doctor` recommends a wake configuration that can exist. The
+    coverage key carries the reason an agent is uncovered, and the advice
+    stripped two of those decorations and not the third, so it printed
+    `[wake.exec."codex (on review-laptop)"]`: a harness no agent runs.
+    The two cases that produce that key got no usable advice at all.
+  - Withdrawing a role says it was withdrawn. Removing an agent's
+    `[roles.identity]` entry demotes it now, and the messages around that
+    still described the behaviour from before: one told the operator to
+    withdraw it by hand, the other offered to paste back the entry they
+    had deliberately deleted. Following either undoes the revocation.
+  - The changelog's account of a forged `SessionStart` matches
+    SECURITY.md: one forgery defers a wake by a cooldown, and a caller
+    that repeats it defers indefinitely, which the entry above claimed a
+    bound for.
 - **Round fifty-two of the pre-release review: three findings.**
   - A bridge asks the daemon about its index with the spelling it
     shipped. The upload makes the root portable and the daemon keys its
