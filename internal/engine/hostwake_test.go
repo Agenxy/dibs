@@ -517,3 +517,68 @@ func TestThePullOnlyNoteForARemoteAgentNeedsAThreadAsWell(t *testing.T) {
 		t.Errorf("with a thread the note reads %q, want none", note)
 	}
 }
+
+// A machine that adopted its Supgang identity still recognises the id it
+// used to answer to.
+//
+// A machine that ran Dibs before joining the fleet has rows, claims and
+// long-lived bridges carrying the id it minted. Adopting the fleet id at
+// the next daemon start renamed the machine under all of them: the fold
+// reads two ids as two machines, so the daemon's own agents read as
+// remote, its own wake commands were skipped for them, and two agents on
+// one computer could each take an exclusive claim on one path. The old id
+// is recognised and replaced at ingress; nothing is ever stamped with it.
+// Round thirty-five of the pre-release review.
+func TestAnAdoptedIdentityStillRecognisesTheOldOne(t *testing.T) {
+	const minted, fleet = "minted-1234", "a8a37e32c37cdf4fb7634de622bc3f84ccb4636580d1ea26af3fe8ac31d1f152"
+	e := New(core.NewState("hub-node", core.DefaultLimits()), &memLedger{}, deadProber{})
+	e.SetHostID(fleet)
+	e.SetHostAliases(minted)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	// A row registered before the adoption: this machine's, not a
+	// stranger's. Arranged and read ON THE LOOP, which owns core.State.
+	old := &core.Agent{
+		ID: "old", Name: "old", Status: core.StatusActive,
+		Agent: &core.AgentInfo{CWD: "/w/repo", HostID: minted},
+	}
+	var host string
+	if _, err := e.query(ctx, func() core.Result {
+		e.state.Agents["old"] = old
+		host = e.remoteHostOf(old)
+		return core.Result{}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if host != "" {
+		t.Fatalf("a row registered under this machine's previous id reads as remote (%q): its "+
+			"wakes go looking for a host bridge that will never exist", host)
+	}
+
+	// And a bridge still asserting the old id registers ONE machine: what
+	// reaches the ledger is the identity in use.
+	res, err := e.Do(ctx, &core.Op{
+		Kind: core.OpRegister, Name: "still-old", Agent: &core.AgentInfo{CWD: "/w/repo", HostID: minted},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, _ := res["agent_id"].(string)
+	var stamped string
+	if _, err := e.query(ctx, func() core.Result {
+		stamped = e.state.Agents[id].Agent.HostID
+		return core.Result{}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := stamped; got != fleet {
+		t.Fatalf("a register asserting the previous id was recorded as %q: the board holds two "+
+			"ids for one computer, and their claims stop colliding", got)
+	}
+	// A genuinely other machine is untouched.
+	if got := e.canonicalHost("machine-b"); got != "machine-b" {
+		t.Fatalf("another machine's id was rewritten to %q", got)
+	}
+}

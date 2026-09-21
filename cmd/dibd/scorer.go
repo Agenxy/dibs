@@ -64,6 +64,15 @@ type scorerFlags struct {
 	// the deletion that followed. Round ten of the pre-release review.
 	touched map[string]uint64
 	epoch   uint64
+	// claimGen is the generation of the claim each indexed root is held
+	// under, and claimSeq mints them. A build publishes only under the
+	// claim it took: mining takes minutes, and a root evicted (or claimed
+	// again) meanwhile would otherwise be published by a goroutine whose
+	// bookkeeping is gone, leaving an index outside the ceiling and
+	// overwriting whatever replaced it. Round thirty-five of the
+	// pre-release review.
+	claimGen map[string]uint64
+	claimSeq uint64
 	// afterSnapshot runs between eviction's snapshot and its deletion; a
 	// test seam for the window above, nil in the daemon.
 	afterSnapshot func()
@@ -299,7 +308,13 @@ func (f *scorerFlags) install(ctx context.Context, eng *engine.Engine) {
 
 	if repo := f.repo; repo != "" {
 		eng.SetMatchStatus(engine.MatchStatus{Phase: engine.MatchIndexing, Repo: repo})
-		go func() { _ = f.bringUp(ctx, eng, repo) }() // pre-warm: nothing waits on the verdict
+		// The pre-warm takes a claim like any other build, so an eviction
+		// during it stops its publication too; nothing waits on the verdict.
+		go func() {
+			if gen, ok := f.claimIndexSlot(repo); ok {
+				f.buildAndInstall(ctx, eng, repo, gen)
+			}
+		}()
 		return
 	}
 	eng.SetMatchStatus(engine.MatchStatus{
@@ -317,7 +332,7 @@ func (f *scorerFlags) install(ctx context.Context, eng *engine.Engine) {
 // when does it run) and this one is the work. Every early return here records a
 // STATUS as well as logging, because a feature that switched itself off quietly
 // is indistinguishable from one that is working and found nothing.
-func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, repo string) (installed bool) {
+func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, repo string, gen uint64) (installed bool) {
 	start := time.Now()
 	topCtx, cancelTop := context.WithTimeout(ctx, gitDeadline)
 	defer cancelTop()
@@ -341,6 +356,19 @@ func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, repo stri
 		return false
 	}
 	dir := strings.TrimSpace(string(root))
+	// THE CLAIM FOLLOWS THE RESOLVED ROOT. The discovery path claims the
+	// root it already resolved; the pre-warm (-match-repo) claims the path
+	// the operator typed, and git answers with the real one: on macOS
+	// /var/... against /private/var/..., which is two keys for one tree.
+	// Publishing then checked a claim nobody held and installed nothing:
+	// matching was off for the whole board, which the space e2e caught in
+	// the round that introduced the claim.
+	gen, ok := f.rekeyClaim(repo, dir, gen)
+	if !ok {
+		slog.Info("work-overlap index: this tree is already claimed by another build",
+			"repo", dir)
+		return false
+	}
 
 	offBecause := func(what string, err error) {
 		// Every failure sets a STATUS as well as logging: a feature that
@@ -422,6 +450,9 @@ func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, repo stri
 	// system (issue #39). Identify is cached and has already been paid for
 	// by this tree's first registration.
 	repoDir, remote, roots, _ := paths.Identify(dir).Identity()
+	if !f.mayInstall(dir, gen) {
+		return false
+	}
 	eng.SetIndex(dir, scorer, engine.MatchConfig{
 		JoinThreshold: f.join, NotifyThreshold: notify, Deadline: f.deadline,
 		DirectorRequired: f.director,
@@ -433,20 +464,7 @@ func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, repo stri
 		Fingerprint: lex.Fingerprint(),
 		Identity:    core.AgentInfo{RepoDir: repoDir, RepoRemote: remote, RepoRoots: roots},
 	})
-	mode := "suggest only"
-	if f.join > 0 {
-		mode = "auto-join at " + strconv.FormatFloat(f.join, 'f', 3, 64)
-		if f.director {
-			mode = "director-gated at " + strconv.FormatFloat(f.join, 'f', 3, 64)
-		}
-	}
-	phase := engine.MatchReady
-	if f.join == 0 {
-		phase = engine.MatchNoThreshold
-	}
-	if f.degraded {
-		phase = engine.MatchDegraded
-	}
+	mode, phase := f.matchMode()
 	eng.SetMatchStatus(engine.MatchStatus{
 		Phase: phase, Scorer: scorer.ID(), Repo: dir,
 		Files: lex.Files(), Commits: cc.Commits(),
@@ -700,49 +718,149 @@ func (f *scorerFlags) indexDiscovered(ctx context.Context, eng *engine.Engine, c
 			}
 		}
 
-		if !f.claimIndexSlot(root) {
+		gen, ok := f.claimIndexSlot(root)
+		if !ok {
 			return
 		}
-
-		// RELEASED if the bring-up does not produce a scorer.
-		//
-		// The tree was marked indexed before any of the work, so a temporary
-		// failure (a git that timed out, a permissions error, a directory
-		// briefly unreadable) left the flag set with nothing behind it: matching
-		// for that repository stayed off until the daemon restarted, and every
-		// later registration from it was deduplicated against a tree that was
-		// never actually indexed. The mark is a "somebody is doing this" latch
-		// and it has to be dropped when nobody is. Found by a pre-release
-		// review.
-		if !f.bringUp(ctx, eng, root) {
-			f.discoverMu.Lock()
-			delete(f.indexed, root)
-			f.discoverMu.Unlock()
-		}
+		f.buildAndInstall(ctx, eng, root, gen)
 	}()
+}
+
+// buildAndInstall runs one index build under the claim it was given and
+// releases that claim if nothing came of it.
+//
+// Split from indexDiscovered, which had reached its complexity budget: the
+// release is a decision of its own (a temporary failure must not leave the
+// slot latched, and a build whose claim was taken meanwhile must not free
+// somebody else's).
+func (f *scorerFlags) buildAndInstall(ctx context.Context, eng *engine.Engine, root string, gen uint64) {
+	// RELEASED if the bring-up does not produce a scorer.
+	//
+	// The tree was marked indexed before any of the work, so a temporary
+	// failure (a git that timed out, a permissions error, a directory
+	// briefly unreadable) left the flag set with nothing behind it: matching
+	// for that repository stayed off until the daemon restarted, and every
+	// later registration from it was deduplicated against a tree that was
+	// never actually indexed. The mark is a "somebody is doing this" latch
+	// and it has to be dropped when nobody is. Found by a pre-release
+	// review.
+	if !f.bringUp(ctx, eng, root, gen) {
+		f.discoverMu.Lock()
+		if f.claimGen[root] == gen {
+			delete(f.indexed, root)
+			delete(f.claimGen, root)
+		}
+		f.discoverMu.Unlock()
+	}
 }
 
 // claimIndexSlot marks root as being indexed by this goroutine, or reports
 // that it must not be. Split out because the discovery path re-reads this
 // state after releasing the lock for an eviction, and the two reads read
 // better as one named decision than as a second inline copy of it.
-func (f *scorerFlags) claimIndexSlot(root string) bool {
+func (f *scorerFlags) claimIndexSlot(root string) (uint64, bool) {
 	f.discoverMu.Lock()
 	defer f.discoverMu.Unlock()
+	// The discovery path fills these in on its way here; the pre-warm
+	// (-match-repo) reaches this before any registration has, and wrote
+	// into a nil map. A daemon started with -match-repo panicked on boot,
+	// which the space e2e caught within the round that introduced it.
+	if f.indexed == nil {
+		f.indexed = map[string]bool{}
+	}
 	// RE-READ AFTER THE EVICTION, which released the lock: another
 	// registration may have taken the slot just freed, or indexed this very
 	// tree while this goroutine was asking the board.
 	if f.indexed[root] {
-		return false
+		return 0, false
 	}
 	if len(f.indexed) >= maxIndexedRepos {
 		slog.Info("work-overlap matching is at its repository ceiling; this tree is not indexed",
 			"repo", root, "ceiling", maxIndexedRepos)
-		return false
+		return 0, false
 	}
 	f.indexed[root] = true
 	f.touchLocked(root)
-	return true
+	return f.markClaimLocked(root), true
+}
+
+// matchMode is how this daemon's matching is configured, for the log line
+// and for the status an agent reads: what a score does (suggest, join,
+// wait for a coordinator) and which phase that is.
+func (f *scorerFlags) matchMode() (mode string, phase engine.MatchPhase) {
+	mode = "suggest only"
+	if f.join > 0 {
+		mode = "auto-join at " + strconv.FormatFloat(f.join, 'f', 3, 64)
+		if f.director {
+			mode = "director-gated at " + strconv.FormatFloat(f.join, 'f', 3, 64)
+		}
+	}
+	phase = engine.MatchReady
+	switch {
+	case f.degraded:
+		phase = engine.MatchDegraded
+	case f.join == 0:
+		phase = engine.MatchNoThreshold
+	}
+	return mode, phase
+}
+
+// rekeyClaim moves a claim taken under one spelling of a tree onto the
+// resolved root git reports for it, and reports the generation to publish
+// under. Nothing to do when the two agree. False when the resolved root is
+// already held by another build, which is the same tree reached twice.
+func (f *scorerFlags) rekeyClaim(from, to string, gen uint64) (uint64, bool) {
+	if from == to || to == "" {
+		return gen, true
+	}
+	f.discoverMu.Lock()
+	defer f.discoverMu.Unlock()
+	if f.claimGen[from] != gen {
+		return 0, false // ours was taken while git answered
+	}
+	if f.indexed[to] {
+		return 0, false // somebody else has the resolved root
+	}
+	delete(f.indexed, from)
+	delete(f.claimGen, from)
+	f.indexed[to] = true
+	f.touchLocked(to)
+	return f.markClaimLocked(to), true
+}
+
+// mayInstall reports whether a finished build may still be published, and
+// says so in the log when it may not.
+//
+// Mining takes minutes, and the last agent leaving during it evicts this
+// root: publishing anyway leaves an index the ceiling does not know about,
+// over the top of whatever claimed the root since. Round thirty-five of the
+// pre-release review.
+func (f *scorerFlags) mayInstall(root string, gen uint64) bool {
+	if f.holdsClaim(root, gen) {
+		return true
+	}
+	slog.Info("work-overlap index finished after its tree was evicted or claimed again; "+
+		"not installing it", "repo", root)
+	return false
+}
+
+// markClaimLocked gives root a fresh claim generation. Caller holds discoverMu.
+func (f *scorerFlags) markClaimLocked(root string) uint64 {
+	if f.claimGen == nil {
+		f.claimGen = map[string]uint64{}
+	}
+	f.claimSeq++
+	f.claimGen[root] = f.claimSeq
+	return f.claimSeq
+}
+
+// holdsClaim reports whether root is still held under this generation: an
+// eviction or a later claim while the build ran makes it false, and that
+// build must publish nothing.
+func (f *scorerFlags) holdsClaim(root string, gen uint64) bool {
+	f.discoverMu.Lock()
+	defer f.discoverMu.Unlock()
+	return gen != 0 && f.claimGen[root] == gen
 }
 
 // touchLocked records that root was claimed or found in the current
@@ -795,6 +913,7 @@ func (f *scorerFlags) evictIdleIndexes(ctx context.Context, eng *engine.Engine) 
 	}
 	for _, root := range idle {
 		delete(f.indexed, root)
+		delete(f.claimGen, root)
 		delete(f.supplied, root)
 		delete(f.suppliedAt, root)
 		delete(f.suppliedHost, root)

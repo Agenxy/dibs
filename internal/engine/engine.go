@@ -136,6 +136,10 @@ type Engine struct {
 	// plane names it (Supgang's node id) when that is known; "" means the
 	// ledger's own node id stands in. See HostID.
 	hostID string
+	// hostAliases are ids this computer used to answer to: see
+	// SetHostAliases. Written before the engine serves, read on the
+	// request path.
+	hostAliases map[string]bool
 	// verifyClaim answers whether a presented coordinator claim is the one this
 	// daemon minted, and returns the function that spends it once the op it
 	// authorised has been ledgered. Guarded separately: it is installed once at
@@ -416,6 +420,15 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		// to a row that is still live. Same shape, same reason: ops on disk
 		// dropped it, and must go on doing so. See Op.TakeIdentity.
 		op.TakeIdentity = true
+	}
+
+	// AN ID THIS MACHINE USED TO ANSWER TO IS THIS MACHINE. A bridge that
+	// started before the daemon adopted its Supgang identity goes on
+	// asserting the old one for its life; recognised here and replaced
+	// before the op is admitted, so what reaches the ledger is one machine
+	// rather than two. See SetHostAliases.
+	if op.Agent != nil {
+		op.Agent.HostID = e.canonicalHost(op.Agent.HostID)
 	}
 
 	// Ingress-only validation. Deliberately NOT inside Apply: Apply is also the
