@@ -146,6 +146,11 @@ type location struct {
 	identity *core.AgentInfo
 }
 
+// placed reports whether the agent said anything about where it is: a
+// prediction for such an agent comes from its own tree's index or from
+// none, never from whichever project the daemon happens to hold.
+func (l location) placed() bool { return l.cwd != "" || l.repoRoot != "" }
+
 // scorerForLocation is scorerFor with one more rule, for indexes an AGENT
 // shipped (issue #19): such an index scores the agents of the tree it was
 // shipped for, and no agent whose repository is another one. An agent with a
@@ -164,10 +169,51 @@ type location struct {
 // pre-release review.
 // The third return is the fingerprint of the index the scorer answers in.
 func (e *Engine) scorerForLocation(loc location) (overlap.Scorer, MatchConfig, string) {
+	p := e.pickForLocation(loc)
+	return p.scorer, p.cfg, p.fingerprint
+}
+
+// indexPick is one decision about which index answers for a location,
+// taken under a single read of the index map: the scorer, the policy for
+// it, the fingerprint of the history it was mined from, and whether an
+// agent shipped it.
+//
+// THE PROVENANCE TRAVELS WITH THE SCORER. It used to be read afterwards,
+// by repository path, from whatever occupied that slot by then: prediction
+// runs off the lock and an eviction or a replacement during it left a
+// footprint predicted from a SUPPLIED index recorded as `supplied: false`,
+// which is the one bit that stops untrusted data from joining agents to a
+// space. Supplied-ness is a fact about the scorer in hand, so it is
+// answered when the scorer is chosen. Round thirty-eight of the
+// pre-release review.
+type indexPick struct {
+	scorer      overlap.Scorer
+	cfg         MatchConfig
+	fingerprint string
+	supplied    bool
+}
+
+// globalPick is the daemon's own index, for a caller with no location at
+// all, with its provenance read under the same lock.
+func (e *Engine) globalPick() indexPick {
+	e.matchMu.RLock()
+	defer e.matchMu.RUnlock()
+	info := e.indexes[e.matchCfg.Repo]
+	return indexPick{
+		scorer: e.scorer, cfg: e.matchCfg,
+		fingerprint: info.Fingerprint, supplied: info.SuppliedBy != "",
+	}
+}
+
+func (e *Engine) pickForLocation(loc location) indexPick {
 	e.matchMu.RLock()
 	defer e.matchMu.RUnlock()
 	if len(e.scorers) == 0 {
-		return e.scorer, e.matchCfg, e.indexes[e.matchCfg.Repo].Fingerprint
+		info := e.indexes[e.matchCfg.Repo]
+		return indexPick{
+			scorer: e.scorer, cfg: e.matchCfg,
+			fingerprint: info.Fingerprint, supplied: info.SuppliedBy != "",
+		}
 	}
 	// Longest matching root wins, so a nested checkout is scored by its own
 	// index rather than by the parent it happens to sit inside. The root is
@@ -202,7 +248,7 @@ func (e *Engine) scorerForLocation(loc location) (overlap.Scorer, MatchConfig, s
 			// thirteen of the pre-release review.
 			cfg.Repo = ""
 		}
-		return nil, cfg, e.indexes[cfg.Repo].Fingerprint
+		return indexPick{cfg: cfg, fingerprint: e.indexes[cfg.Repo].Fingerprint}
 	}
 	cfg := e.matchCfg
 	cfg.Repo = bestRepo
@@ -213,11 +259,15 @@ func (e *Engine) scorerForLocation(loc location) (overlap.Scorer, MatchConfig, s
 	// agents into a space. Its scores are suggestions, whatever the
 	// operator configured for trees the daemon indexed itself. Found by the
 	// pre-release review.
-	if e.indexes[bestRepo].SuppliedBy != "" {
+	info := e.indexes[bestRepo]
+	if info.SuppliedBy != "" {
 		cfg.JoinThreshold = 0
 		cfg.AutoJoin = AutoJoinNever
 	}
-	return best, cfg, e.indexes[bestRepo].Fingerprint
+	return indexPick{
+		scorer: best, cfg: cfg,
+		fingerprint: info.Fingerprint, supplied: info.SuppliedBy != "",
+	}
 }
 
 // indexSpeaksForHost decides whether an index keyed by a path on this disk
@@ -1228,12 +1278,15 @@ func (e *Engine) Predict(ctx context.Context, declaration string) ([]core.PredFi
 // The third return is the fingerprint of that tree's history: the coordinate
 // system the prediction is in, recorded beside it so a later comparison can
 // tell whether another prediction is in the same one. Issue #39.
+// predictIn returns the prediction AND the pick it was made with, so a
+// caller recording provenance records the index that answered rather than
+// whatever holds that path once the prediction is back.
 func (e *Engine) predictIn(
 	ctx context.Context, loc location, declaration string,
-) (pred []core.PredFile, repo, index string) {
-	scorer, cfg, fingerprint := e.scorerForLocation(loc)
-	pred, _, _ = e.predictWith(ctx, scorer, cfg, declaration)
-	return pred, cfg.Repo, fingerprint
+) (pred []core.PredFile, pick indexPick) {
+	pick = e.pickForLocation(loc)
+	pred, _, _ = e.predictWith(ctx, pick.scorer, pick.cfg, declaration)
+	return pred, pick
 }
 
 func (e *Engine) predictWith(
@@ -1334,15 +1387,16 @@ func (e *Engine) DoMatched(ctx context.Context, op *core.Op) (core.Result, error
 	// declaring agent may never have seen.
 	loc := e.locationForToken(ctx, op.Token)
 	if len(op.Predicted) == 0 && op.Text != "" {
-		pred, repo, index := e.predictIn(ctx, loc, op.Text)
-		op.Predicted = withDeclaredDirs(pred, op.Dirs, repo)
+		pred, pick := e.predictIn(ctx, loc, op.Text)
+		op.Predicted = withDeclaredDirs(pred, op.Dirs, pick.cfg.Repo)
 		// The same declaration in every OTHER index of this project, so two
 		// clones with divergent histories are compared inside a coordinate
 		// system they share instead of across two. Issue #39.
-		op.Index = index
-		_, cfg, _ := e.scorerForLocation(loc)
-		op.IndexSupplied = e.IndexSuppliedBy(repo) != ""
-		op.Footprints = e.peerFootprints(ctx, repo, op.Text, cfg)
+		op.Index = pick.fingerprint
+		// From the pick, not from the repository path a moment later: see
+		// indexPick.
+		op.IndexSupplied = pick.supplied
+		op.Footprints = e.peerFootprints(ctx, pick.cfg.Repo, op.Text, pick.cfg)
 	}
 	res, err := e.Do(ctx, op)
 	if err != nil {
@@ -1485,19 +1539,27 @@ func (e *Engine) OpenWithPrediction(ctx context.Context, op *core.Op) (core.Resu
 		// it was joined automatically on the strength of it. Round
 		// thirty-two of the pre-release review.
 		loc := e.locationForToken(ctx, op.Token)
-		scorer, cfg, index := e.scorerForLocation(loc)
-		if scorer == nil {
-			// The opener said nothing about where it is, which is ordinary
-			// for a space opened by hand: the daemon's own index answers,
-			// as it did before this predicted per location. Its provenance
-			// is recorded either way, which is the point of the change.
-			scorer, cfg = e.scorerAndCfg()
-			index = e.fingerprintOf(cfg.Repo)
+		pick := e.pickForLocation(loc)
+		if pick.scorer == nil && loc.placed() {
+			// A LOCATED OPENER WITH NO INDEX PREDICTS NOTHING. The fallback
+			// below is for an opener that said nothing about where it is,
+			// which is ordinary for a space opened by hand; a nil scorer
+			// also means "this agent's tree has no index the rules allow
+			// here", and falling back then predicted a located agent's
+			// space from whichever unrelated project the daemon happened to
+			// hold, including one an agent shipped. That is the isolation
+			// SECURITY.md promises, undone by the condition rather than by
+			// the policy. Round thirty-eight of the pre-release review.
+			pick = indexPick{cfg: pick.cfg}
+		} else if pick.scorer == nil {
+			// The daemon's own index answers, as it did before this
+			// predicted per location. Its provenance comes with it.
+			pick = e.globalPick()
 		}
 		// The topic is the declaration here: it is what the agent is FOR.
-		pred, _, _ := e.predictWith(ctx, scorer, cfg, op.Text)
-		op.Predicted, op.Index = pred, index
-		op.IndexSupplied = cfg.Repo != "" && e.IndexSuppliedBy(cfg.Repo) != ""
+		pred, _, _ := e.predictWith(ctx, pick.scorer, pick.cfg, op.Text)
+		op.Predicted, op.Index = pred, pick.fingerprint
+		op.IndexSupplied = pick.supplied
 	}
 	return e.Do(ctx, op)
 }

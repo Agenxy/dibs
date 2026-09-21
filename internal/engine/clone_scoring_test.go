@@ -221,8 +221,8 @@ func TestTwoClonesWithDivergentHistoriesAreWarned(t *testing.T) {
 
 	// The two predictions really are disjoint: that is the precondition the
 	// fix exists for, and a fixture where they overlap tests nothing.
-	predA, _, _ := e.predictIn(ctx, location{cwd: after}, work)
-	predB, _, _ := e.predictIn(ctx, location{cwd: before}, work)
+	predA, _ := e.predictIn(ctx, location{cwd: after}, work)
+	predB, _ := e.predictIn(ctx, location{cwd: before}, work)
 	if shared := predPaths(sharedFiles(predA, predB)); len(shared) != 0 {
 		t.Fatalf("the two clones' own predictions share %v: the fixture does not "+
 			"reproduce divergent histories", shared)

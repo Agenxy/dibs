@@ -158,3 +158,74 @@ func TestADaemonDoesNotChangeItsIdentityWhileServing(t *testing.T) {
 		t.Fatalf("a daemon starting with Supgang up serves under %q and remembered %q, want %q both", got, remembered, node)
 	}
 }
+
+// A daemon that falls back to the identity this computer is known by still
+// recognises the ids it used to answer to.
+//
+// Round thirty-five gave the Supgang-answered path its aliases and round
+// thirty-six gave it the rename, for exactly one reason: a machine that
+// ran Dibs before joining the fleet has rows, claims and long-lived
+// bridges carrying the id it minted, and treating those as another
+// computer lets two agents here hold one path exclusively. The fallback
+// paths adopt the SAME fleet id from the remembered file and did neither,
+// so the split came back the first time Supgang was down or uninstalled at
+// startup: a bridge still asserting the ledger id registered agents that
+// the fold read as remote. Round thirty-eight of the pre-release review.
+func TestAFallbackIdentityStillRecognisesThisComputersOldIds(t *testing.T) {
+	const node = "a8a37e32c37cdf4fb7634de622bc3f84ccb4636580d1ea26af3fe8ac31d1f152"
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, supgang.NodeIDFile), []byte(node+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := supgang.Command
+	supgang.Command = filepath.Join(dir, "no-supgang-here") // uninstalled
+	t.Cleanup(func() { supgang.Command = old })
+
+	eng := engineNamed(t)
+	if settled, _ := identifyHost(eng, dir); !settled {
+		t.Fatal("an uninstalled Supgang is nothing to wait for")
+	}
+	if got := eng.HostID(); got != node {
+		t.Fatalf("the daemon serves under %q, want the remembered fleet id", got)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go eng.Run(ctx)
+
+	// Two agents here: one from a bridge started since the restart, one
+	// from a bridge that predates it and still asserts the ledger id.
+	reg := func(name, host string) string {
+		t.Helper()
+		res, err := eng.Do(ctx, &core.Op{
+			Kind: core.OpRegister, Name: name, SessionID: "session-" + name,
+			Agent: &core.AgentInfo{HostID: host},
+		})
+		if err != nil {
+			t.Fatalf("setup: register %s: %v", name, err)
+		}
+		tok, _ := res["token"].(string)
+		if _, err := eng.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: tok}); err != nil {
+			t.Fatalf("setup: ack %s: %v", name, err)
+		}
+		return tok
+	}
+	claims := func(tok string) bool {
+		t.Helper()
+		res, err := eng.Do(ctx, &core.Op{
+			Kind: core.OpClaim, Token: tok, Path: "/one/path", Mode: core.ClaimExclusive,
+		})
+		if err != nil {
+			t.Fatalf("setup: claim: %v", err)
+		}
+		granted, _ := res["granted"].(bool)
+		return granted
+	}
+	if !claims(reg("since-the-restart", node)) {
+		t.Fatal("setup: the first exclusive claim was refused")
+	}
+	if claims(reg("older-bridge", boardNode)) {
+		t.Fatal("two agents on this computer hold one path exclusively: the daemon adopted the " +
+			"fleet id from the remembered file without recognising the id it used to answer to")
+	}
+}
