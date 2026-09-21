@@ -108,6 +108,20 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round thirty-four of the pre-release review: two findings.**
+  - The Supgang retry remembers nothing. Remembering is how every other
+    process on a machine learns its identity, and a running daemon cannot
+    change its own: writing the new id from the retry handed it to the
+    next bridge to start while that daemon and every older bridge still
+    answered with the other, which is the split the whole sequence exists
+    to prevent. The daemon that ADOPTS an identity is the one that
+    remembers it, at startup; the retry says a restart would pick it up.
+  - A failed Linux notification probe is measured again after half a
+    minute. It was cached for the life of the process, so a notification
+    daemon that was restarting, or a deadline missed under load, switched
+    this daemon's notifications off until somebody restarted it, while a
+    fresh `dibs doctor` reported them healthy. A working host is not
+    re-probed: the send itself reports a failure.
 - **Round thirty-three of the pre-release review: two findings.**
   - A machine's identity is the fact its data directory records, and
     Supgang seeds it rather than overriding it. Asking Supgang first was
