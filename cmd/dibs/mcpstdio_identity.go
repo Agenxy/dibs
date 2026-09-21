@@ -476,6 +476,19 @@ func canonicalisePathArgs(params map[string]any) {
 	if !ok {
 		return
 	}
+	// A PATH NAMED ON SOMEBODY ELSE'S BEHALF IS NOT THIS MACHINE'S TO
+	// RESOLVE. force_release with an `agent` quotes the path the board
+	// shows, which is the holder's spelling on the holder's machine;
+	// resolving it here turned a Linux agent's /tmp/repo/file.go into
+	// this Mac's /private/tmp/repo/file.go and the daemon then found no
+	// such claim. Round forty-six of the pre-release review.
+	if name == "force_release" {
+		if args, _ := params["arguments"].(map[string]any); args != nil {
+			if who, _ := args["agent"].(string); who != "" {
+				return
+			}
+		}
+	}
 	args, _ := params["arguments"].(map[string]any)
 	if args == nil {
 		return

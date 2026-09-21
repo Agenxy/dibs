@@ -1278,7 +1278,7 @@ func (s *Server) run(
 		// is legitimate, and picking the first was how a coordinator
 		// unsticking one machine removed the other's protection.
 		op.Kind, op.Path, op.Note, op.To = core.OpForceRelease,
-			callerPath(ctx, params, a.Path), a.Note, a.AgentRef
+			releasedPath(ctx, params, a.Path, a.AgentRef), a.Note, a.AgentRef
 	case "hook_poll":
 		// cwd is canonicalised for the same reason the claim path is: it is
 		// compared as a string against the cwd the bridge recorded, and a

@@ -70,6 +70,24 @@ func callerPath(ctx context.Context, params json.RawMessage, p string) string {
 	return canonPath(p)
 }
 
+// releasedPath is the path a force_release names, resolved here only when
+// it is the caller's own.
+//
+// NOT THE CALLER'S PATH TO RESOLVE when it names somebody else's claim.
+// callerPath resolves against the machine the call came from, so a macOS
+// coordinator releasing a Linux agent's /tmp/repo/file.go asked for
+// /private/tmp/repo/file.go, was told E_NO_CLAIM, and left the claim it
+// meant exactly where it was. With `agent` the coordinator is quoting the
+// path the BOARD shows, which is the holder's own spelling, and the only
+// honest thing to do with it is pass it through. Round forty-six of the
+// pre-release review.
+func releasedPath(ctx context.Context, params json.RawMessage, path, agent string) string {
+	if agent != "" {
+		return path
+	}
+	return callerPath(ctx, params, path)
+}
+
 // mustBeAbsolute rejects a coordination path the caller never anchored.
 //
 // canonPath runs inside dibd, whose working directory is wherever it was
