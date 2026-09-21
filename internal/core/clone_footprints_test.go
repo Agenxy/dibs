@@ -198,3 +198,38 @@ func TestClonesDisjointInEverySharedSystemDoNotScoreOnTheirHomePredictions(t *te
 			ev.Semantic)
 	}
 }
+
+// A peer clone at a long path does not stop declarations.
+//
+// Round fifty-four bounded the index fingerprint, a digest, and applied
+// the same three hundred bytes to a footprint's ROOT, which is a path:
+// peerFootprints fills those roots in by itself, so one indexed clone
+// at a path longer than that made every declaration on the board fail
+// with E_TOO_LARGE. A path is bounded like a path. Round fifty-six of
+// the pre-release review.
+func TestAPeerCloneAtALongPathDoesNotStopDeclarations(t *testing.T) {
+	long := "/" + strings.Repeat("deep/", 76) + "clone" // 384 bytes, a legal path
+	op := &Op{
+		Kind: OpSetSlot, Text: "fix refresh token expiry", Index: "h-home",
+		Footprints: []Footprint{{
+			Index: "h-peer", Root: long,
+			Files: []PredFile{{Path: "internal/core/apply.go", Weight: 1}},
+		}},
+	}
+	if err := Admit(op, DefaultLimits()); err != nil {
+		t.Fatalf("a declaration was refused because another clone of the project sits at a "+
+			"%d-byte path: %v", len(long), err)
+	}
+
+	// And a path that is genuinely out of bounds is still refused, as is
+	// an oversized fingerprint.
+	op.Footprints[0].Root = "/" + strings.Repeat("a", DefaultLimits().MaxPathBytes)
+	if err := Admit(op, DefaultLimits()); err == nil {
+		t.Fatal("a path over the limit was accepted")
+	}
+	op.Footprints[0].Root = long
+	op.Footprints[0].Index = strings.Repeat("f", MaxFingerprintBytes+1)
+	if err := Admit(op, DefaultLimits()); err == nil {
+		t.Fatal("a fingerprint over the limit was accepted")
+	}
+}

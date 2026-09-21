@@ -71,10 +71,33 @@ func Admit(op *Op, lim Limits) error {
 	// fifty-four of the pre-release review.
 	fps := make([]string, 0, len(op.Footprints)+1)
 	fps = append(fps, op.Index)
+	// A ROOT IS A PATH AND A FINGERPRINT IS A DIGEST, and round
+	// fifty-four bounded both at the digest's size: peerFootprints fills
+	// these roots in by itself, so one indexed clone at a path longer
+	// than three hundred bytes made every declaration on the board fail
+	// with E_TOO_LARGE. Paths are bounded like paths. Round fifty-six of
+	// the pre-release review.
+	paths := make([]string, 0, len(op.Footprints)+len(op.Predicted))
 	for _, f := range op.Footprints {
-		fps = append(fps, f.Index, f.Root)
+		fps = append(fps, f.Index)
+		paths = append(paths, f.Root)
+		for _, p := range f.Files {
+			paths = append(paths, p.Path)
+		}
+	}
+	// AND EVERY PREDICTED PATH, which is the other way the same
+	// unbounded string reaches the ledger: a shipped index whose file
+	// list holds a three-megabyte name produced a prediction that was
+	// accepted and written, and the line escaped past what `dibs verify`
+	// can read back. Bounding the fingerprint alone left the hole open
+	// through filenames. Round fifty-six.
+	for _, p := range op.Predicted {
+		paths = append(paths, p.Path)
 	}
 	if err := boundStrings(MaxFingerprintBytes, "index fingerprint", fps); err != nil {
+		return err
+	}
+	if err := boundStrings(lim.MaxPathBytes, "predicted path", paths); err != nil {
 		return err
 	}
 	// Every session id the caller can supply, not only the primary: the alias

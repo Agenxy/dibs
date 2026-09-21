@@ -132,6 +132,19 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round fifty-six of the pre-release review: two findings, both in the
+  fifty-fourth round's bound.**
+  - Every string a shipped index puts into the ledger is bounded, not
+    only the fingerprint: a file path of three megabytes produced an
+    eighteen-megabyte ledger line through the predictions made from that
+    index, which `dibs verify` cannot read back. Bounded at the upload
+    and at ingress, like the fingerprint, and the predicted paths on a
+    declaration with them.
+  - A footprint's root is bounded like a PATH and not like a digest.
+    Round fifty-four applied the three-hundred-byte digest limit to it,
+    and `peerFootprints` fills those roots in by itself, so one indexed
+    clone at a longer path made every declaration on the board fail with
+    `E_TOO_LARGE`.
 - **Round fifty-five of the pre-release review: two findings, both in the
   previous round's own fixes.**
   - A successor that never registers does not cost the predecessor its
@@ -160,7 +173,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     index: a three-megabyte one escaped past eighteen megabytes in the
     ledger line and put the ledger beyond what `dibs verify` can read
     back, so the append succeeded and verification failed on that line
-    and every later one.
+    and every later one. (The fingerprint only. A shipped FILE PATH
+    reached the ledger the same way and is bounded in round fifty-six
+    below, where the digest limit applied to a footprint's root is also
+    corrected: a root is a path.)
   - Respelling a configured name does not revoke the role. Everything in
     the configuration is keyed by the name an operator typed, so
     changing `admin = ["Fleet Lead"]` to `admin = ["fleet-lead"]` with
