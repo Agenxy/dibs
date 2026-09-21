@@ -225,6 +225,21 @@ func withdrawUndeclaredRoles(ctx context.Context, eng *engine.Engine, c RolesCon
 			if declared[role][name] && want == pinned {
 				continue // still declared, still this credential
 			}
+			// AND A RESPELLED NAME IS THE SAME HOLDER. The configuration
+			// keys everything by the name an operator typed, so changing
+			// `admin = ["Fleet Lead"]` to `admin = ["fleet-lead"]` with
+			// the same fingerprint is one agent under two spellings: the
+			// grant pass accepted the new one and this pass then withdrew
+			// the role through the old pin, so the agent lost admin until
+			// the next tick, fifteen seconds later, with every admin call
+			// failing in between. A credential this configuration still
+			// authorises for this role is not a withdrawal. Round
+			// fifty-four of the pre-release review.
+			if pinned != "" && authorisedElsewhere(c, declared, role, name, pinned) {
+				delete(byName, name)
+				changed = true
+				continue
+			}
 			// THE PIN GOES ONLY WHEN THE WITHDRAWAL IS SETTLED. It was dropped
 			// first and saved whatever withdrawOne then managed, so a lookup
 			// that failed, or a demotion the engine refused, left the role
@@ -425,6 +440,24 @@ func resolveDeclared(ctx context.Context, eng *engine.Engine, role, agent string
 			"agent", agent, "role", role, "err", err)
 	}
 	return ""
+}
+
+// authorisedElsewhere reports that this same credential is declared for
+// this same role under a DIFFERENT name: the operator respelled the name
+// and the holder did not change.
+//
+// The pin is dropped by the caller when this is true, because the grant
+// pass has already made a new one under the new spelling and two pins
+// for one credential would withdraw each other on alternate ticks.
+func authorisedElsewhere(c RolesConfig, declared map[string]map[string]bool,
+	role, name, pinned string,
+) bool {
+	for other, fp := range c.Identity {
+		if other != name && fp == pinned && declared[role][other] {
+			return true
+		}
+	}
+	return false
 }
 
 // agent is what the operator wrote, and keys the pin file and [roles.identity];

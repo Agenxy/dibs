@@ -12,17 +12,24 @@ import "testing"
 // project's two clones see each other's conflicts never fires. Round
 // forty-one of the pre-release review.
 func TestRepositoryMetadataTravelsSpelledLikeTheClaim(t *testing.T) {
-	got := repoFields("windows", `C:\work\repo\.git`, "github.com/acme/api", "r1", `C:\work\repo`)
+	got := repoFields("windows", `C:\work\repo\.git`, "github.com/acme/api", "r1",
+		`C:\work\repo`, `C:\work\repo\pkg`)
 	if got["dir"] != "C:/work/repo/.git" || got["root"] != "C:/work/repo" {
 		t.Fatalf("a Windows bridge sent dir=%q root=%q, which no claim path from it can be "+
 			"matched against", got["dir"], got["root"])
+	}
+	// The directory the caller is in travels the same way: `resume`
+	// carries no location of its own and this is how it learns one.
+	if got["cwd"] != "C:/work/repo/pkg" {
+		t.Fatalf("a Windows bridge sent cwd=%q, which no path from it can be matched "+
+			"against", got["cwd"])
 	}
 	// The remote and the root commits are fingerprints, not paths.
 	if got["remote"] != "github.com/acme/api" || got["roots"] != "r1" {
 		t.Fatalf("a fingerprint was rewritten as a path: %+v", got)
 	}
 	// And a unix bridge's backslash is an ordinary filename character.
-	unix := repoFields("linux", `/w/re\po/.git`, "", "", `/w/re\po`)
+	unix := repoFields("linux", `/w/re\po/.git`, "", "", `/w/re\po`, `/w/re\po/pkg`)
 	if unix["dir"] != `/w/re\po/.git` || unix["root"] != `/w/re\po` {
 		t.Fatalf("a unix path was rewritten: %+v", unix)
 	}

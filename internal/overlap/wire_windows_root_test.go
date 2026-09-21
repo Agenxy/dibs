@@ -1,6 +1,9 @@
 package overlap
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // An index shipped from a Windows checkout is accepted.
 //
@@ -26,5 +29,27 @@ func TestAPayloadFromAWindowsCheckoutIsAccepted(t *testing.T) {
 			t.Errorf("a payload rooted at %q was accepted: the root is what every file in it "+
 				"is relative to, so a relative one indexes nothing findable", root)
 		}
+	}
+}
+
+// A fingerprint is bounded, because it travels into the ledger.
+//
+// Validate checked that it was not empty and not that it was a digest,
+// and the value is copied onto every declaration scored in that index:
+// a 3 MiB fingerprint escaped past 18 MiB in the ledger line and put the
+// ledger beyond what `dibs verify` can read back, so the append
+// succeeded and verification then failed on that line and every later
+// one. Round fifty-four of the pre-release review.
+func TestAFingerprintIsBounded(t *testing.T) {
+	payload := func(fp string) *Payload {
+		return &Payload{Root: "/w/repo", Fingerprint: fp, Files: []string{"a.go"}}
+	}
+	if err := payload(strings.Repeat("<", 3<<20)).Validate(); err == nil {
+		t.Fatal("a three-megabyte fingerprint was accepted: it lands in the ledger, escaped, " +
+			"on every declaration scored in that index, and dibs verify cannot read the line back")
+	}
+	// An ordinary digest is not affected.
+	if err := payload("sha256:" + strings.Repeat("a", 64)).Validate(); err != nil {
+		t.Fatalf("an ordinary digest was refused: %v", err)
 	}
 }

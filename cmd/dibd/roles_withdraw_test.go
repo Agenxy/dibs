@@ -358,3 +358,39 @@ func TestWithdrawingARoleDoesNotAdviseUndoingIt(t *testing.T) {
 		t.Errorf("the pin does not say the role was withdrawn: %q", said)
 	}
 }
+
+// Respelling a configured name does not revoke the role.
+//
+// Everything in the configuration is keyed by the name an operator
+// typed, so changing `admin = ["Fleet Lead"]` to `admin =
+// ["fleet-lead"]` with the same fingerprint is one agent under two
+// spellings. The grant pass accepted the new one and the withdrawal
+// pass then took the role away through the old pin: the agent lost
+// admin until the next reconciliation tick, fifteen seconds later, and
+// every admin call in between failed. Round fifty-four of the
+// pre-release review.
+func TestRespellingAConfiguredNameKeepsTheRole(t *testing.T) {
+	eng, ctx := testEngine(t)
+	pins := loadRolePins(t.TempDir())
+	fp := engine.RolePinFingerprint("nonce-rm")
+
+	registerAgentAs(t, eng, "Fleet Lead", "nonce-rm")
+	applyDeclaredRoles(ctx, eng, RolesConfig{
+		Admin: []string{"Fleet Lead"}, Identity: map[string]string{"Fleet Lead": fp},
+	}, pins)
+	// The id is the slug of the name, which is why the two spellings are
+	// one agent in the first place.
+	if !holdsRole(t, eng, "fleet-lead", core.RoleAdmin) {
+		t.Fatal("setup: the declared admin was not granted")
+	}
+
+	// The same agent, the same credential, a different spelling.
+	applyDeclaredRoles(ctx, eng, RolesConfig{
+		Admin: []string{"fleet-lead"}, Identity: map[string]string{"fleet-lead": fp},
+	}, pins)
+	if !holdsRole(t, eng, "fleet-lead", core.RoleAdmin) {
+		t.Fatal("the agent lost admin because its name was respelled in dibs.toml: the " +
+			"credential the configuration authorises has not changed, and every admin " +
+			"call fails until the next reconciliation tick")
+	}
+}

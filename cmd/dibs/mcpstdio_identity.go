@@ -393,9 +393,11 @@ func repoMeta(params map[string]any) map[string]string {
 	id := paths.Identify(paths.Canonical(cwd))
 	dir, remote, roots, ok := id.Identity()
 	if !ok && id.WorktreeID == "" {
-		return nil
+		// Not a checkout, and the directory is still where this caller
+		// is: resume has no other way to say so.
+		return repoFields(runtime.GOOS, "", "", "", "", paths.Canonical(cwd))
 	}
-	return repoFields(runtime.GOOS, dir, remote, roots, id.WorktreeID)
+	return repoFields(runtime.GOOS, dir, remote, roots, id.WorktreeID, paths.Canonical(cwd))
 }
 
 // repoFields is the checkout as it travels: the two PATHS spelled the way
@@ -409,9 +411,19 @@ func repoMeta(params map[string]any) map[string]string {
 // repository-relative path, and the portable rule that exists so a
 // conflict is seen across two clones of one project never fires. Round
 // forty-one of the pre-release review.
-func repoFields(goos, dir, remote, roots, root string) map[string]string {
+func repoFields(goos, dir, remote, roots, root, cwd string) map[string]string {
 	return map[string]string{
-		"dir": spellFor(goos, dir), "remote": remote, "roots": roots, "root": spellFor(goos, root),
+		"dir": spellFor(goos, dir), "remote": remote, "roots": roots,
+		"root": spellFor(goos, root),
+		// AND WHERE THE CALLER IS, which some calls cannot say for
+		// themselves: `resume` takes a nonce and nothing about location,
+		// so an agent that registered on a desktop and resumed on a
+		// laptop kept the desktop's directory and repository identity.
+		// Its new claims then had no repository-relative key and two
+		// agents held one tracked file in clones of one project, and its
+		// wakes named a directory on the machine it had left. Round
+		// fifty-four of the pre-release review.
+		"cwd": spellFor(goos, cwd),
 	}
 }
 

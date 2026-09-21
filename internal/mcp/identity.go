@@ -81,10 +81,23 @@ func resolveLocationFor(ctx context.Context, params json.RawMessage, info *core.
 // review.
 func resumeIdentity(ctx context.Context, params json.RawMessage) *core.AgentInfo {
 	host := resolveHostID(ctx, params)
-	if host == "" {
+	cwd := metaRepo(params).CWD
+	if host == "" && cwd == "" {
 		return nil
 	}
-	return &core.AgentInfo{HostID: host}
+	info := &core.AgentInfo{HostID: host}
+	// AND WHERE IT IS NOW. This recorded the machine and nothing else,
+	// so an agent that registered on a desktop and resumed on a laptop
+	// kept the desktop's directory and repository identity: its claims
+	// had no repository-relative key, two agents could hold one tracked
+	// file in clones of one project, and its wakes named a directory on
+	// the machine it had left. The fold applies the location group only
+	// when a cwd comes with it (mergeIdentity), which is exactly this.
+	// Round fifty-four of the pre-release review.
+	if cwd != "" {
+		resolveLocationFor(ctx, params, info, cwd)
+	}
+	return info
 }
 
 // resolveRemoteLocation is resolveLocation for a caller on ANOTHER machine.
@@ -113,6 +126,9 @@ type repoMeta struct {
 	Remote string `json:"remote"`
 	Roots  string `json:"roots"`
 	Root   string `json:"root"`
+	// CWD is where the caller is, for the calls that carry no directory
+	// of their own. See repoFields in cmd/dibs.
+	CWD string `json:"cwd"`
 }
 
 func metaRepo(params json.RawMessage) repoMeta {
