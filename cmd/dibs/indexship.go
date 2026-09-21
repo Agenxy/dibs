@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"sync"
 	"time"
@@ -344,6 +345,26 @@ func wantsIndex(st matchStatusJSON, root string) bool {
 	return false
 }
 
+// portablePayload spells a shipment's paths the way every other path from
+// this bridge is spelled, so the root it names is the root the agent's own
+// registration recorded.
+//
+// The daemon refuses a shipment whose root is not the root it holds for
+// that agent, and this sent the native `C:\work\repo` against a
+// registration of `C:/work/repo`: 403 every time, so a Windows checkout
+// could never ship the index that is the only way its tree gets matched at
+// all. Round forty's fix taught the HUB to accept the portable spelling and
+// left the bridge sending the native one, which is half a path. The
+// platform is a parameter so a test on any machine can ask what a Windows
+// bridge sends. Round forty-two of the pre-release review.
+func portablePayload(goos string, p *overlap.Payload) {
+	if p == nil {
+		return
+	}
+	p.Root = spellFor(goos, p.Root)
+	p.RepoDir = spellFor(goos, p.RepoDir)
+}
+
 func shipIndex(ctx context.Context, client *http.Client, url, secret, token, root string) error {
 	mctx, cancel := context.WithTimeout(ctx, 4*time.Minute)
 	defer cancel()
@@ -354,6 +375,7 @@ func shipIndex(ctx context.Context, client *http.Client, url, secret, token, roo
 	// The project's identity as this side reads it, so the daemon can pair
 	// this index with another clone's. Its word, and used only for that.
 	payload.RepoDir, payload.RepoRemote, payload.RepoRoots, _ = paths.Identify(root).Identity()
+	portablePayload(runtime.GOOS, payload)
 	body, err := json.Marshal(struct {
 		Token string `json:"token"`
 		*overlap.Payload

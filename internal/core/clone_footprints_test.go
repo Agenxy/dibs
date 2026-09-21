@@ -150,3 +150,51 @@ func TestDeclareRecordsItsCoordinateSystems(t *testing.T) {
 		}
 	}
 }
+
+// Two clones whose shared systems say "unrelated" are unrelated, whatever
+// their two home predictions happen to have in common.
+//
+// The home-to-home comparison is the floor because a slot written before
+// footprints existed can take part in no other, and a floor can only push
+// a score up. When BOTH sides name an index and the two differ, that
+// comparison is the thing issue #39 exists to stop: two coordinate
+// systems read as one. So a pair that is disjoint inside every system
+// they actually share still scored a 1 on a filename both histories
+// happen to contain, and at `auto_join = "always"` that puts an agent
+// into a space on unrelated work. The floor applies where it is valid.
+// Round forty-two of the pre-release review.
+func TestClonesDisjointInEverySharedSystemDoNotScoreOnTheirHomePredictions(t *testing.T) {
+	// One filename both checkouts have, and nothing in common inside
+	// either shared coordinate system.
+	const common = "internal/core/apply.go"
+	a := Slot{
+		Index:     "hist-a",
+		Predicted: []PredFile{{Path: common, Weight: 1}},
+		Footprints: []Footprint{{
+			Index: "hist-b", Root: "/clones/b",
+			Files: []PredFile{{Path: "pkg/a-only.go", Weight: 1}},
+		}},
+	}
+	b := Slot{
+		Index:     "hist-b",
+		Predicted: []PredFile{{Path: common, Weight: 1}},
+		Footprints: []Footprint{{
+			Index: "hist-a", Root: "/clones/a",
+			Files: []PredFile{{Path: "pkg/b-only.go", Weight: 1}},
+		}},
+	}
+	if ev := EvidenceBetween(a, b, "", "", "", nil, nil); ev.Semantic > 0 {
+		t.Fatalf("semantic = %v inside two systems that both say disjoint: the score "+
+			"came from comparing one clone's prediction against the other's across "+
+			"two coordinate systems, which is what the footprints exist to replace",
+			ev.Semantic)
+	}
+	// And a slot that names no index keeps the old comparison, which is
+	// the only one it can take part in.
+	old := Slot{Predicted: []PredFile{{Path: common, Weight: 1}}}
+	if ev := EvidenceBetween(old, b, "", "", "", nil, nil); ev.Semantic <= 0 {
+		t.Fatalf("a slot written before footprints existed scored %v against a current "+
+			"one: it has no footprints, so the home comparison is all it has",
+			ev.Semantic)
+	}
+}
