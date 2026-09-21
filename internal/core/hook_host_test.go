@@ -90,3 +90,52 @@ func TestSessionEvidenceOfOneAgentSpeaksForOneMachineOnly(t *testing.T) {
 		t.Fatal("a proven child on another machine is no longer the parent's hands")
 	}
 }
+
+// A machine renamed onto its fleet identity is one machine again.
+//
+// A machine that ran Dibs before joining the fleet has rows and claims
+// carrying the id it minted, and the fold compares those strings: after
+// the daemon adopted its Supgang identity, an agent registered before and
+// one registered after read as two computers, so both could take an
+// exclusive claim on one path outside a checkout and the guard called
+// neither a collision. Recognising the old id at ingress fixes what
+// arrives; this is what is already here. Round thirty-six of the
+// pre-release review.
+func TestRenamingThisComputerMakesItsOwnAgentsCollideAgain(t *testing.T) {
+	const minted, fleet = "minted-1234", "a8a37e32c37cdf4fb7634de622bc3f84ccb4636580d1ea26af3fe8ac31d1f152"
+	s := NewState("t", DefaultLimits())
+	now := time.Unix(1700000000, 0)
+
+	// Before the adoption: one agent, holding a path outside any checkout.
+	onHost(t, s, "old", "tok-old", minted, "", "", "", now)
+	if res := mustApply(t, s, &Op{Kind: OpClaim, Token: "tok-old", Path: "/tmp/shared", Mode: ClaimExclusive}, now); res["granted"] != true {
+		t.Fatalf("setup: the first claim was refused: %v", res)
+	}
+
+	// The daemon restarts, adopts the fleet identity, and renames what it
+	// already holds.
+	mustApply(t, s, &Op{Kind: OpHostRenamed, HostWas: minted, HostNow: fleet}, now)
+
+	// An agent registered after the adoption is on the SAME machine.
+	onHost(t, s, "new", "tok-new", fleet, "", "", "", now)
+	res := mustApply(t, s, &Op{Kind: OpClaim, Token: "tok-new", Path: "/tmp/shared", Mode: ClaimExclusive}, now)
+	if res["granted"] != false {
+		t.Fatalf("two agents on one computer both hold /tmp/shared exclusively (%v): the rows "+
+			"registered either side of the identity adoption read as two machines", res)
+	}
+	// And the renamed row still holds it: nothing moved but the label.
+	if l := s.Agents["old"]; l.Agent.HostID != fleet {
+		t.Fatalf("the existing row still says %q", l.Agent.HostID)
+	}
+	if len(s.Claims) != 1 || s.Claims[0].Host != fleet {
+		t.Fatalf("claims after the rename: %+v", s.Claims)
+	}
+	// An id nothing carries changes nothing and advances no serial.
+	before := s.Serial
+	if res := mustApply(t, s, &Op{Kind: OpHostRenamed, HostWas: "never-used", HostNow: fleet}, now); res["changed"] != 0 {
+		t.Fatalf("renaming an id no row carries reported %v", res)
+	}
+	if s.Serial != before {
+		t.Fatalf("a no-op rename advanced the serial from %d to %d: the engine would ledger it", before, s.Serial)
+	}
+}

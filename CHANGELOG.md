@@ -108,6 +108,26 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round thirty-six of the pre-release review: four findings.**
+  - A machine that adopts its fleet identity renames the rows and claims
+    it already holds, through a ledgered `host_renamed` op (both ids on
+    the op, so replay makes the same substitution). Recognising the old
+    id at ingress fixed what arrived; the board still held rows
+    registered under it, and the fold compares those strings, so an agent
+    from either side of the adoption could take an exclusive claim on the
+    same path and neither was a collision.
+  - Lifecycle hooks and the write guard recognise an id this machine used
+    to answer to: a surviving bridge's registration was canonicalised
+    while its hooks resolved to nobody, so its mail nudges vanished and
+    the guard took its unidentified-session path.
+  - A failed index build releases the claim it actually holds. `bringUp`
+    moves the claim onto the root git resolves, and the release used the
+    key the build started with, so a tree whose first build failed stayed
+    reserved until an eviction or a restart.
+  - A Unix hub accepts a Windows caller's absolute path (`C:/work/...`, a
+    UNC share): it asked its own `filepath.IsAbs`, so `claim` and
+    `release` from a Windows bridge were refused as relative before the
+    remote-path handling that exists for those callers could run.
 - **Round thirty-five of the pre-release review: three findings.**
   - A machine that adopts its Supgang identity still recognises the id it
     used to answer to. The transition is real and one-way, and a machine

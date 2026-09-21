@@ -71,7 +71,21 @@ const (
 	// the definition of the thing Dibs must never allow, so the caller is
 	// authorised outside the fold (see Op.AdoptAuthorised) by the one party
 	// entitled to decide: the human at the machine, or somebody they promoted.
-	OpAdoptAgent = "adopt_agent"
+	// OpHostRenamed records that one computer is now known by another id:
+	// every row and claim carrying the old one is this machine's still.
+	//
+	// A machine that ran Dibs before joining the fleet answers by an id it
+	// minted, and adopting its Supgang identity renames it under rows and
+	// claims that already exist. The fold reads two ids as two machines,
+	// so its own agents read as remote and two of them could take an
+	// exclusive claim on the same path. Recognising the old id at ingress
+	// (Engine.SetHostAliases) fixes what ARRIVES; this fixes what is
+	// already there. Ledgered, with both ids on the op, so replay makes
+	// the same substitution. A new kind, never a widened meaning for an
+	// old one: no ledger holds this, so there is nothing to be retroactive
+	// about. Round thirty-six of the pre-release review.
+	OpHostRenamed = "host_renamed"
+	OpAdoptAgent  = "adopt_agent"
 	// OpClaimCoordinator is the bootstrap: the agent that started this daemon
 	// takes the coordinator role by presenting a secret only the daemon's own
 	// data directory holds.
@@ -100,6 +114,10 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		// Admin-only: the engine admits this solely on the human's admin path,
 		// so no agent token is consulted and no agent can promote itself.
 		return s.applyGrantRole(op, now)
+	case OpHostRenamed:
+		// The daemon's own, at startup, before it serves: no token, like
+		// the sweep. See applyHostRenamed.
+		return s.applyHostRenamed(op, now)
 	case OpPrune:
 		// Admin-only, same path. Closing another agent is a human's call: an agent
 		// that crashed cannot close itself, and no agent should be able to
