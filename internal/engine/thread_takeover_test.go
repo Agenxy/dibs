@@ -258,3 +258,53 @@ func TestASessionTakeoverStaysOnItsOwnMachine(t *testing.T) {
 		t.Fatalf("machine-b's hooks for %s resolve to %v, want the new row", synthetic, l)
 	}
 }
+
+// A takeover on one machine leaves the other machine's binding alone even
+// when both have a dormant holder of the same synthetic id.
+//
+// Round twenty-one scoped the ingress lookup to the caller's machine, so
+// the holder that YIELDS is chosen here. The fold's drop was never
+// scoped: it visits every row and takes the id from any that is not
+// active, so a register on machine A that legitimately took A's dormant
+// holder also stripped B's. B's hooks and guard then resolved to nobody,
+// which is the exact failure round twenty-one fixed, reached through the
+// other half. The round-twenty-one test misses it because its registering
+// machine has no holder of its own, so the drop returns early. Round
+// forty of the pre-release review.
+func TestATakeoverDoesNotStripTheOtherMachinesDormantHolder(t *testing.T) {
+	const synthetic = "host-12345"
+	st := core.NewState("hub-node", core.DefaultLimits())
+	dormant := func(id, host string) *core.Agent {
+		return &core.Agent{
+			ID: id, Name: id, Status: core.StatusDormant, Nonce: "n-" + id, NonceMinted: true,
+			SessionID: synthetic, Token: "tok-" + id,
+			Agent: &core.AgentInfo{CWD: "/w/repo", HostID: host}, Slots: map[string]core.Slot{},
+		}
+	}
+	st.Agents["on-a"] = dormant("on-a", "machine-a")
+	st.Agents["on-b"] = dormant("on-b", "machine-b")
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	// A new session on machine-a, stating the synthetic id its bridge
+	// derives from the harness pid: it takes machine-a's dormant row.
+	res, err := e.Do(ctx, &core.Op{
+		Kind: core.OpRegister, Name: "fresh", SessionID: synthetic, SessionAlias: synthetic,
+		Agent: &core.AgentInfo{CWD: "/w/repo", HostID: "machine-a"},
+	})
+	if err != nil {
+		t.Fatalf("register on machine-a: %v", err)
+	}
+	fresh, _ := res["agent_id"].(string)
+
+	if l := e.state.AgentForHookOn(synthetic, "/w/repo", "machine-b"); l == nil || l.ID != "on-b" {
+		t.Fatalf("machine-b's hooks for %s resolve to %v, want on-b: a takeover on machine-a "+
+			"took a binding on another computer", synthetic, l)
+	}
+	if l := e.state.AgentForHookOn(synthetic, "/w/repo", "machine-a"); l == nil || l.ID != fresh {
+		t.Fatalf("machine-a's hooks for %s resolve to %v, want the new row: the takeover it "+
+			"was entitled to did not happen", synthetic, l)
+	}
+}

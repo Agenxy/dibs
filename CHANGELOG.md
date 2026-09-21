@@ -108,6 +108,26 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round forty of the pre-release review: three findings.**
+  - A first start on a fleet member cannot leave one computer with two
+    identities. Two bridges starting together against a fresh directory
+    both find nothing recorded; if one Supgang lookup answers and the
+    other times out, the loser used to mint a random id and keep it for
+    its life, which the exclusive publication of `host_id` does not
+    prevent because the two take different branches. A process refused an
+    answer, on a machine where Supgang exists, now waits briefly for the
+    answer another process got, and the minting branch never writes over
+    an identity recorded meanwhile.
+  - A session takeover on one machine leaves the other machine's binding
+    alone. The ingress picks the holder that yields on the caller's
+    machine; the fold's drop visited every row and took the id from any
+    that was not active, so a register on one machine stripped a dormant
+    holder of the same synthetic id on another, and that machine's hooks
+    and guard resolved to nobody.
+  - An index shipped from a Windows checkout is accepted. The upload
+    asked for a leading slash, so `C:/work/repo` was refused as relative
+    while a claim from the same bridge was not. The rule about what is
+    absolute for whoever wrote it now lives in one place.
 - **Round thirty-nine of the pre-release review: one finding.** The
   identity migration carries the repository snapshot a claim holds, not
   just the claim's own host. Two linked worktrees of one checkout are

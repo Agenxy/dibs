@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -36,66 +37,117 @@ import (
 // was given.
 func hostID() string {
 	hostIDOnce.Do(func() {
-		defer func() { publishResolvedHostID(paths.DataDir(), hostIDValue) }()
-		// STATED FIRST. DIBS_HOST_ID is the operator saying which computer
-		// this process speaks for, for the cases where the answer below is
-		// wrong: two data directories on one Supgang member standing in for
-		// two machines (the two-host suite), or a container that must not
-		// share the identity of the machine it runs on. A claim, as every
-		// bridge's host id is (docs/NETWORK.md §2), and no stronger.
-		if id := strings.TrimSpace(os.Getenv("DIBS_HOST_ID")); id != "" {
-			hostIDValue = id
-			return
-		}
-		// THE DATA DIRECTORY'S RECORDED IDENTITY, and Supgang seeds it.
-		//
-		// What every process on one machine must agree about is a single
-		// value at any instant, and a bridge holds its answer for its
-		// life. So the answer is a FACT ON DISK, read the same way by
-		// everything here (the daemon reads the same two files, and the
-		// plugins read what this publishes), and Supgang is consulted only
-		// when the directory has nothing to say:
-		//
-		//   - the id Supgang gave here before (supgang.NodeIDFile), which
-		//     a later failed lookup therefore cannot rename (round
-		//     twenty-eight);
-		//   - the daemon's own node id, or a host id minted here earlier,
-		//     which is what a machine with no Supgang answers by;
-		//   - and only then Supgang itself, remembered so the next process
-		//     needs no lookup.
-		//
-		// Asking Supgang FIRST looked right and was the same split from
-		// the other side: the first bridge started after Supgang became
-		// available answered with the fleet id while every older bridge,
-		// and the running daemon, still answered with the minted one, and
-		// the fold reads two ids as two machines, so two agents on one
-		// computer each took an exclusive claim on the same path outside a
-		// checkout. A machine JOINING the fleet therefore adopts its fleet
-		// identity when the daemon there next starts (it remembers the
-		// answer for everything else), not the instant a lookup succeeds.
-		// Round thirty-three of the pre-release review.
 		dir := paths.DataDir()
-		if remembered := supgang.RememberedNodeID(dir); remembered != "" {
-			hostIDValue = remembered
-			return
-		}
-		if recorded := recordedHostID(dir); recorded != "" {
-			hostIDValue = recorded
-			return
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		id, err := supgang.Status(ctx)
-		if err == nil && id.NodeID != "" {
-			supgang.RememberNodeID(dir, id.NodeID)
-			hostIDValue = id.NodeID
-			return
-		}
-		slog.Debug("no recorded identity for this machine and Supgang did not name it; "+
-			"minting one for this data directory", "err", err)
-		hostIDValue = loadOrCreateHostID(dir)
+		defer func() { publishResolvedHostID(dir, hostIDValue) }()
+		hostIDValue = resolveHostID(dir)
 	})
 	return hostIDValue
+}
+
+// resolveHostID is the decision hostID memoises, without the memoisation:
+// one process asks once, and everything on this machine has to reach the
+// same answer. Separated so it can be tested, because a sync.Once cannot.
+func resolveHostID(dir string) string {
+	// STATED FIRST. DIBS_HOST_ID is the operator saying which computer
+	// this process speaks for, for the cases where the answer below is
+	// wrong: two data directories on one Supgang member standing in for
+	// two machines (the two-host suite), or a container that must not
+	// share the identity of the machine it runs on. A claim, as every
+	// bridge's host id is (docs/NETWORK.md §2), and no stronger.
+	if id := strings.TrimSpace(os.Getenv("DIBS_HOST_ID")); id != "" {
+		return id
+	}
+	// THE DATA DIRECTORY'S RECORDED IDENTITY, and Supgang seeds it.
+	//
+	// What every process on one machine must agree about is a single
+	// value at any instant, and a bridge holds its answer for its
+	// life. So the answer is a FACT ON DISK, read the same way by
+	// everything here (the daemon reads the same two files, and the
+	// plugins read what this publishes), and Supgang is consulted only
+	// when the directory has nothing to say:
+	//
+	//   - the id Supgang gave here before (supgang.NodeIDFile), which
+	//     a later failed lookup therefore cannot rename (round
+	//     twenty-eight);
+	//   - the daemon's own node id, or a host id minted here earlier,
+	//     which is what a machine with no Supgang answers by;
+	//   - and only then Supgang itself, remembered so the next process
+	//     needs no lookup.
+	//
+	// Asking Supgang FIRST looked right and was the same split from
+	// the other side: the first bridge started after Supgang became
+	// available answered with the fleet id while every older bridge,
+	// and the running daemon, still answered with the minted one, and
+	// the fold reads two ids as two machines, so two agents on one
+	// computer each took an exclusive claim on the same path outside a
+	// checkout. A machine JOINING the fleet therefore adopts its fleet
+	// identity when the daemon there next starts (it remembers the
+	// answer for everything else), not the instant a lookup succeeds.
+	// Round thirty-three of the pre-release review.
+	if id := identityOnDisk(dir); id != "" {
+		return id
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	id, err := supgang.Status(ctx)
+	if err == nil && id.NodeID != "" {
+		supgang.RememberNodeID(dir, id.NodeID)
+		return id.NodeID
+	}
+	// A SILENT SUPGANG IS NOT AN ABSENT ONE, and another process here may
+	// be in the middle of the same question.
+	//
+	// Two bridges starting together against a fresh directory on a member
+	// both find nothing recorded. If one lookup answers and the other
+	// times out, the first records the fleet id and the second mints a
+	// random one and keeps it for its life: one computer with two
+	// identities, which is the split all of this exists to prevent, and
+	// the exclusive publication of host_id does not help because the two
+	// take different branches. So a process that was refused an answer,
+	// on a machine where Supgang exists, waits briefly for the answer
+	// somebody else got before minting anything. Round forty of the
+	// pre-release review.
+	if !errors.Is(err, supgang.ErrNotInstalled) {
+		if recorded := waitForRecordedIdentity(dir); recorded != "" {
+			slog.Debug("Supgang did not answer this process; another one here recorded "+
+				"this machine's identity meanwhile", "node", recorded)
+			return recorded
+		}
+	}
+	slog.Debug("no recorded identity for this machine and Supgang did not name it; "+
+		"minting one for this data directory", "err", err)
+	return loadOrCreateHostID(dir)
+}
+
+// identityOnDisk is what this data directory says this machine is: the id
+// Supgang gave here, else the daemon's own node id or a host id minted
+// here earlier. "" when the directory has never named it.
+func identityOnDisk(dir string) string {
+	if remembered := supgang.RememberedNodeID(dir); remembered != "" {
+		return remembered
+	}
+	return recordedHostID(dir)
+}
+
+// identityWait is how long a process whose own Supgang lookup failed
+// gives a sibling to record the answer, polled every identityPoll.
+// Variables so a test can shorten them.
+var (
+	identityWait = 2 * time.Second
+	identityPoll = 100 * time.Millisecond
+)
+
+func waitForRecordedIdentity(dir string) string {
+	deadline := time.Now().Add(identityWait)
+	for {
+		if id := identityOnDisk(dir); id != "" {
+			return id
+		}
+		if !time.Now().Before(deadline) {
+			return ""
+		}
+		time.Sleep(identityPoll)
+	}
 }
 
 var (
@@ -173,18 +225,14 @@ func loadOrCreateHostID(dir string) string {
 	if dir == "" {
 		return ""
 	}
-	// The daemon's own identity, when this machine runs one.
-	if b, err := os.ReadFile(filepath.Join(dir, "node_id")); err == nil { // #nosec G304 -- the user's own data directory
-		if id := strings.TrimSpace(string(b)); id != "" {
-			return id
-		}
+	// WHATEVER THE DIRECTORY SAYS NOW, which includes an id Supgang gave
+	// another process here since this one decided to mint: the caller read
+	// the same files a moment ago, and a moment is the whole window.
+	// Round forty of the pre-release review.
+	if id := identityOnDisk(dir); id != "" {
+		return id
 	}
 	path := filepath.Join(dir, "host_id")
-	if b, err := os.ReadFile(path); err == nil { // #nosec G304 -- the user's own data directory
-		if id := strings.TrimSpace(string(b)); id != "" {
-			return id
-		}
-	}
 	raw := make([]byte, 8)
 	if _, err := rand.Read(raw); err != nil {
 		// EMPTY IS A SAFE ANSWER and a wrong one is not. Unknown makes the fold
