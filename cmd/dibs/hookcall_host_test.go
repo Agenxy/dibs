@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/mcp"
+	"github.com/agenxy/dibs/internal/supgang"
 )
 
 // A hook that reaches the daemon without the stdio bridge still says which
@@ -913,5 +914,52 @@ func TestTheOpencodePluginFollowsTheHubWhenTheBridgeRepublishes(t *testing.T) {
 	if hits["first"] == 0 || hits["second"] == 0 {
 		t.Fatalf("guards reached %v: after the bridge republished, the plugin went on dialling the "+
 			"address it read first", hits)
+	}
+}
+
+// A machine known by its Supgang id keeps it when a lookup fails.
+//
+// hostID fell through to the id it mints in the data directory on ANY
+// error: a timeout, a restarting service, a process that started while
+// Supgang was initialising. That bridge then held the minted id for its
+// life while its neighbours held the Supgang one, and the fold reads two
+// ids as two machines: two agents on one computer each took an exclusive
+// claim on the same path outside a checkout, and the guard allowed both
+// writes. Round twenty-eight of the pre-release review.
+func TestAFailedSupgangLookupDoesNotRenameThisMachine(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("DIBS_DIR", dir)
+	t.Setenv("DIBS_HOST_ID", "")
+	reset := func() {
+		hostIDOnce, hostIDValue = sync.Once{}, ""
+	}
+	t.Cleanup(reset)
+
+	reset()
+	useFakeSupgang(t)
+	fleet := hostID()
+	if len(fleet) != 64 {
+		t.Fatalf("setup: Supgang's answer was %q, want a node id", fleet)
+	}
+
+	// The same machine, a moment later, with Supgang not answering.
+	reset()
+	old := supgang.Command
+	supgang.Command = "/nonexistent/supgang-down"
+	t.Cleanup(func() { supgang.Command = old })
+	if got := hostID(); got != fleet {
+		t.Fatalf("with Supgang down this machine calls itself %q, having been %q: its own agents "+
+			"read as two machines, so two of them take an exclusive claim on one path", got, fleet)
+	}
+
+	// A machine that has never resolved has nothing to remember, and every
+	// process there agrees on the minted id.
+	fresh := t.TempDir()
+	t.Setenv("DIBS_DIR", fresh)
+	reset()
+	first := hostID()
+	reset()
+	if second := hostID(); first == "" || second != first {
+		t.Fatalf("a machine with no Supgang answer minted %q then %q", first, second)
 	}
 }

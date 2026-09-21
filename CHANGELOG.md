@@ -108,6 +108,20 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round twenty-eight of the pre-release review: two findings.**
+  - A machine known by its Supgang node id keeps it when a lookup fails.
+    The bridge fell through to the id it mints in the data directory on ANY
+    error (a timeout, a restarting service, a process that started while
+    Supgang was initialising) and held it for its life while its
+    neighbours held the Supgang one; the fold reads two ids as two
+    machines, so two agents on one computer each took an exclusive claim on
+    the same path outside a checkout and the guard allowed both writes. The
+    first successful answer is remembered beside the secret and stands in.
+  - A prediction and the fingerprint it is recorded under come from one
+    lookup under one lock, and matching labels its fresh prediction with
+    the index that produced it: read separately, a shipment landing in
+    between recorded one index's files under another's fingerprint, and two
+    coordinate systems then compared as one.
 - **Round twenty-seven of the pre-release review: three findings, each in
   the previous two rounds' own code.**
   - Both plugins spell a path beneath a top-level directory that does not

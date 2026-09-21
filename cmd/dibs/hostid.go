@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -53,8 +54,33 @@ func hostID() string {
 		// absent or not initialised does the data directory's own id stand in.
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if id, err := supgang.Status(ctx); err == nil && id.NodeID != "" {
+		id, err := supgang.Status(ctx)
+		if err == nil && id.NodeID != "" {
 			hostIDValue = id.NodeID
+			rememberSupgangNodeID(paths.DataDir(), id.NodeID)
+			return
+		}
+		// AND ONCE A MACHINE IS KNOWN BY ITS SUPGANG ID, A FAILED LOOKUP
+		// DOES NOT RENAME IT.
+		//
+		// This fell straight through to the minted id on ANY error: a
+		// timeout, a service restarting, a process that started while
+		// Supgang was initialising. The bridge then held that id for its
+		// life while its neighbours held the Supgang one, and the fold
+		// reads two ids as two machines: two agents on one computer each
+		// took an exclusive claim on the same path outside a checkout, and
+		// the guard allowed both writes. So the first successful answer is
+		// remembered beside the secret and stands in when a later lookup
+		// fails. Found by round twenty-eight of the pre-release review.
+		//
+		// What is left is a machine that has NEVER resolved: there is
+		// nothing to remember and the minted id is the only answer, which
+		// is the same answer every process there gets until Supgang first
+		// speaks.
+		if remembered := rememberedSupgangNodeID(paths.DataDir()); remembered != "" {
+			slog.Warn("supgang did not answer; keeping the node id this machine is already known by",
+				"node", remembered, "err", err)
+			hostIDValue = remembered
 			return
 		}
 		hostIDValue = loadOrCreateHostID(paths.DataDir())
@@ -76,6 +102,30 @@ var (
 // and the daemon's host-scoped guard resolved the two to different
 // machines: the guard e2e caught it on the first machine with Supgang.
 const resolvedHostFile = "resolved_host_id"
+
+// supgangNodeIDFile remembers the last node id Supgang gave for this
+// machine: see hostID. Written only when it changes, and only ever by a
+// successful lookup.
+const supgangNodeIDFile = "supgang_node_id"
+
+func rememberSupgangNodeID(dir, id string) { publishResolved(dir, supgangNodeIDFile, id) }
+
+// rememberedSupgangNodeID is the last id Supgang gave here, or "".
+func rememberedSupgangNodeID(dir string) string {
+	if dir == "" {
+		return ""
+	}
+	// #nosec G304 -- the user's own data directory
+	b, err := os.ReadFile(filepath.Join(dir, supgangNodeIDFile))
+	if err != nil {
+		return ""
+	}
+	id := strings.TrimSpace(string(b))
+	if len(id) != 64 {
+		return "" // not a node id; the minted one is a better answer than a wrong one
+	}
+	return id
+}
 
 // resolvedOriginFile is where the bridge publishes the origin it dialled,
 // after any DIBS_BOARD_PEER resolution, for the same reader: the opencode
