@@ -108,6 +108,19 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round twenty-nine of the pre-release review: two findings, both the
+  other half of the previous round's.**
+  - The DAEMON keeps the identity this computer is known by when Supgang
+    does not answer, as the bridge now does, and retries every minute
+    until it does. It kept the board's own node id while every bridge here
+    carried the Supgang one, so the fold read this machine's own agents as
+    remote: the daemon refused its own local wake commands for them and no
+    host bridge existed to take over. Both halves read one remembered file
+    (`supgang_node_id`), through one helper.
+  - The pi extension asks `dibs identity` first and falls back to the
+    origin a bridge published, not the other way round: pi runs without a
+    bridge, so a file a previous one left could outlive the address in it
+    and pinned every call to a hub that had moved.
 - **Round twenty-eight of the pre-release review: two findings.**
   - A machine known by its Supgang node id keeps it when a lookup fails.
     The bridge fell through to the id it mints in the data directory on ANY
