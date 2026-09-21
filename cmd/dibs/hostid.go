@@ -112,15 +112,20 @@ func resolveHostID(dir string) string {
 		// published exclusively (loadOrCreateHostID); the fleet id wins at
 		// the next start, where nothing is racing. Round forty-five of the
 		// pre-release review.
-		if minted := mintedHostID(dir); minted != "" && minted != id.NodeID {
+		// THROUGH THE SAME PUBLICATION AS A MINTED ONE. Checking for a
+		// minted file and then writing a different file is not
+		// arbitration: both processes look, both see nothing, and both
+		// writes succeed. Round fifty-one of the pre-release review.
+		won := publishIdentity(dir, id.NodeID)
+		if won != id.NodeID {
 			supgang.RememberPendingNodeID(dir, id.NodeID)
 			slog.Debug("another process here published an identity while Supgang was "+
-				"answering; keeping it until the next start", "published", minted,
+				"answering; keeping it until the next start", "published", won,
 				"supgang", id.NodeID)
-			return minted
+			return won
 		}
-		// Nothing else has published one, so this IS the machine's answer
-		// and the next start should read it back as such.
+		// This process's answer IS the machine's, so the next start reads
+		// it back as the fleet identity rather than as a minted one.
 		supgang.RememberNodeID(dir, id.NodeID)
 		return id.NodeID
 	}
@@ -277,7 +282,6 @@ func loadOrCreateHostID(dir string) string {
 	if id := identityOnDisk(dir); id != "" {
 		return id
 	}
-	path := filepath.Join(dir, "host_id")
 	raw := make([]byte, 8)
 	if _, err := rand.Read(raw); err != nil {
 		// EMPTY IS A SAFE ANSWER and a wrong one is not. Unknown makes the fold
@@ -301,6 +305,33 @@ func loadOrCreateHostID(dir string) string {
 	// Named by the id it holds, which is random, rather than by pid: the
 	// link shares an inode with the published file, so a second writer
 	// reusing the same temporary name would truncate what everybody reads.
+	return publishIdentity(dir, id)
+}
+
+// publishIdentity makes id this data directory's published identity, or
+// returns the one another process published first. ONE FILE DECIDES,
+// whatever the answer came from.
+//
+// Two publication points was the whole of round fifty-one: the Supgang
+// branch wrote supgang_node_id and the minting branch exclusively created
+// host_id, so both could look, see nothing, and then succeed at
+// different files. Two processes, two identities, for their whole lives,
+// on one computer. Exclusivity is only exclusivity when everybody
+// competes for the SAME name.
+//
+// The id goes into a private file and is LINKED into place: a link either
+// succeeds, making this the winner, or fails because the name exists, in
+// which case the bytes there are complete. An exclusive create followed
+// by a write let the loser read an empty file and keep its own id, which
+// the Linux runner did. The temporary is named by the id, which is
+// random, rather than by pid: the link shares an inode with the published
+// file, so a second writer reusing one name would truncate what everybody
+// reads.
+func publishIdentity(dir, id string) string {
+	if dir == "" || id == "" {
+		return id
+	}
+	path := filepath.Join(dir, "host_id")
 	tmp := path + ".new-" + id
 	if err := os.WriteFile(tmp, []byte(id), 0o600); err != nil {
 		// Usable for this process even if it could not be kept. A machine whose

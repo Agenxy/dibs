@@ -2,7 +2,9 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -142,5 +144,110 @@ func TestASuccessfulLookupDoesNotOverruleAPublishedIdentity(t *testing.T) {
 	}
 	if got := supgang.RememberedNodeID(dir); got != fleet {
 		t.Fatalf("after promotion this machine is remembered as %q", got)
+	}
+}
+
+// Two bridges starting together get one identity even when they take
+// DIFFERENT branches to it.
+//
+// Exclusivity is only exclusivity when everybody competes for the same
+// name, and this competed for two: the Supgang branch wrote
+// supgang_node_id and the minting branch exclusively created host_id, so
+// both could look, see nothing, and then both succeed. One computer, two
+// identities, held for the life of both processes; host-scoped claims
+// then miss real conflicts between its own agents and the bridge cannot
+// wake the ones carrying the other name. The tests before this one
+// serialised the two branches, so they never met. Round fifty-one of the
+// pre-release review.
+func TestBridgesTakingDifferentBranchesStillAgreeOnOneIdentity(t *testing.T) {
+	const fleet = "d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3"
+	dir := t.TempDir()
+	// Supgang answers, slowly enough that the minting branch is running
+	// at the same time: the script sleeps before printing.
+	old := supgang.Command
+	supgang.Command = filepath.Join(dir, "supgang")
+	t.Cleanup(func() { supgang.Command = old })
+	// A compiled stand-in rather than a script: this repository ships no
+	// shell, not even into a temporary directory.
+	src := filepath.Join(t.TempDir(), "supgang.go")
+	prog := "package main\n\nimport (\n\t\"fmt\"\n\t\"time\"\n)\n\nfunc main() {\n" +
+		"\ttime.Sleep(150 * time.Millisecond)\n" +
+		"\tfmt.Printf(`{\"schema\":\"supgang.status/v4\",\"status\":\"ok\",\"name\":\"MacSolis\"," +
+		"\"node_id\":\"" + fleet + "\"}`)\n}\n"
+	if err := os.WriteFile(src, []byte(prog), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	build := exec.Command("go", "build", "-o", supgang.Command, src) // #nosec G204 -- paths this test created
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Skipf("cannot build the stand-in Supgang here: %v\n%s", err, out)
+	}
+
+	// One bridge asks Supgang; the other, with no Supgang of its own,
+	// mints. They run at the same time against one directory.
+	answers := make(chan string, 2)
+	go func() { answers <- resolveHostID(dir) }()
+	go func() { answers <- loadOrCreateHostID(dir) }()
+	a, b := <-answers, <-answers
+	if a != b {
+		t.Fatalf("two bridges on one machine answer %q and %q: the hub reads them as two "+
+			"computers, their claims stop colliding, and the bridge cannot wake whichever "+
+			"carries the name it does not know", a, b)
+	}
+	if a == "" {
+		t.Fatal("neither bridge published an identity at all")
+	}
+
+	// AND BOTH COMPETED FOR THE SAME NAME, which is what makes the
+	// agreement above structural rather than lucky. The race the
+	// concurrent run can hit needs one process to pass its check before
+	// the other publishes, and the ordering that produces it is not
+	// something a test can force from outside; what a test CAN state is
+	// that there is one publication point. Before this there were two,
+	// and the Supgang branch never wrote host_id at all.
+	published, err := os.ReadFile(filepath.Join(dir, "host_id"))
+	if err != nil {
+		t.Fatalf("no published identity on disk: %v", err)
+	}
+	if got := strings.TrimSpace(string(published)); got != a {
+		t.Fatalf("the bridges answer %q while the published file holds %q: they are not "+
+			"competing for one name, so two of them can both win", a, got)
+	}
+}
+
+// A Supgang answer is published where a minted one would be, so the two
+// branches cannot both succeed.
+//
+// This is the deterministic half of the case above: whichever branch
+// answers, host_id is where it lands. Round fifty-one of the pre-release
+// review found that the Supgang branch wrote a different file, so both
+// processes could look, see nothing, and each keep its own id.
+func TestASupgangAnswerIsPublishedWhereAMintedOneWouldBe(t *testing.T) {
+	const fleet = "e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4"
+	dir := t.TempDir()
+	old := supgang.Command
+	supgang.Command = filepath.Join(dir, "supgang")
+	t.Cleanup(func() { supgang.Command = old })
+	src := filepath.Join(t.TempDir(), "supgang.go")
+	prog := "package main\n\nimport \"fmt\"\n\nfunc main() {\n" +
+		"\tfmt.Print(`{\"schema\":\"supgang.status/v4\",\"status\":\"ok\"," +
+		"\"name\":\"MacSolis\",\"node_id\":\"" + fleet + "\"}`)\n}\n"
+	if err := os.WriteFile(src, []byte(prog), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	build := exec.Command("go", "build", "-o", supgang.Command, src) // #nosec G204 -- paths this test created
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Skipf("cannot build the stand-in Supgang here: %v\n%s", err, out)
+	}
+
+	if got := resolveHostID(dir); got != fleet {
+		t.Fatalf("a clean start answered %q, want the fleet identity", got)
+	}
+	published, err := os.ReadFile(filepath.Join(dir, "host_id"))
+	if err != nil {
+		t.Fatalf("the Supgang answer was not published where a minted one is (%v): the two "+
+			"branches write different files, so both can win and the machine splits", err)
+	}
+	if got := strings.TrimSpace(string(published)); got != fleet {
+		t.Fatalf("the published identity is %q, want the fleet one", got)
 	}
 }
