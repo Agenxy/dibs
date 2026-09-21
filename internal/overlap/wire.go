@@ -114,6 +114,21 @@ func (p *Payload) Validate() error {
 			return fmt.Errorf("file %q is not a repository-relative path", f)
 		}
 	}
+	// AND THE PATHS INSIDE COMMITS, which co-change expansion copies into
+	// predictions exactly as Files does. Bounding one list and not the
+	// other let an upload answer accepted and then have every declaration
+	// scored in it refused at ingress as too large: a bound that turns a
+	// valid declaration away is worse than the oversized field it guards
+	// against. Round fifty-seven of the pre-release review, on round
+	// fifty-six's own bound.
+	for _, c := range p.Commits {
+		for _, f := range c.Files {
+			if len(f) > maxPathBytes {
+				return fmt.Errorf("a commit names a %d-byte path, over the %d a path needs",
+					len(f), maxPathBytes)
+			}
+		}
+	}
 	return nil
 }
 

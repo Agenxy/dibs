@@ -925,7 +925,7 @@ func (f *scorerFlags) evictIdleIndexes(ctx context.Context, eng *engine.Engine) 
 	f.epoch++
 	started := f.epoch
 	f.discoverMu.Unlock()
-	cwds, err := eng.ActiveAgentCWDs(ctx)
+	places, err := eng.ActiveAgentCWDs(ctx)
 	if err != nil {
 		slog.Debug("work-overlap eviction could not read the board; keeping every index", "err", err)
 		return false
@@ -935,7 +935,7 @@ func (f *scorerFlags) evictIdleIndexes(ctx context.Context, eng *engine.Engine) 
 	}
 
 	f.discoverMu.Lock()
-	live := f.liveRootsLocked(cwds)
+	live := f.liveRootsLocked(places)
 	var idle []string
 	for root := range f.indexed {
 		if !live[root] && f.touched[root] < started {
@@ -973,11 +973,21 @@ func (f *scorerFlags) evictIdleIndexes(ctx context.Context, eng *engine.Engine) 
 
 // liveRootsLocked maps the board's working directories to the indexed roots
 // they are in. Caller holds discoverMu.
-func (f *scorerFlags) liveRootsLocked(cwds []string) map[string]bool {
-	live := make(map[string]bool, len(cwds))
-	for _, cwd := range cwds {
+func (f *scorerFlags) liveRootsLocked(places []engine.AgentPlace) map[string]bool {
+	live := make(map[string]bool, len(places))
+	for _, p := range places {
+		cwd := p.CWD
+		// ON THE MACHINE THE INDEX SERVES. An index is served to the
+		// machine it was shipped from (or to this one, when the daemon
+		// mined it), so only an agent on that machine can be keeping it
+		// alive: an agent elsewhere at the same path is in a different
+		// tree, is refused the index, and was holding the slot its own
+		// shipment needed. Round fifty-seven of the pre-release review.
+		keeps := func(root string) bool { return f.suppliedHost[root] == p.Host }
 		if root := f.rootOf[cwd]; root != "" {
-			live[root] = true
+			if keeps(root) {
+				live[root] = true
+			}
 			continue
 		}
 		// No resolved root for this directory: discovery failed there, which
@@ -988,7 +998,7 @@ func (f *scorerFlags) liveRootsLocked(cwds []string) map[string]bool {
 		// registered from a subdirectory of it. Pre-release review, round
 		// three.
 		for root := range f.indexed {
-			if underDir(cwd, root) {
+			if underDir(cwd, root) && keeps(root) {
 				live[root] = true
 			}
 		}
