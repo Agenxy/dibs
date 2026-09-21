@@ -585,6 +585,12 @@ func servedFromHere(dir, node string) bool {
 
 func checkMatching(client *http.Client, sec string, ok reportFn, warn fixFn) {
 	st := fetchMatchStatus(client, sec)
+	// TREES ON OTHER MACHINES, WHATEVER THE PHASE. This lived inside the
+	// "ready" branch, and the shipped default is suggest-only, which is
+	// also the phase a supplied index installs as: the one configuration
+	// where remote trees are most likely, and the report never ran in
+	// it. Round fifty-two of the pre-release review.
+	defer reportRemoteTrees(st, warn)
 	switch st.Phase {
 	case "off":
 		warn("work-overlap matching has no repository indexed yet", st.Hint)
@@ -632,7 +638,6 @@ func checkMatching(client *http.Client, sec string, ok reportFn, warn fixFn) {
 			ok("index for " + root + " was shipped by agent " + st.Supplied[root] +
 				": the daemon cannot read that tree and did not need to")
 		}
-		reportRemoteTrees(st, warn)
 		if st.Repo != "" {
 			// And say so when that is not where this command was run. Matching is
 			// machine-wide by design, one daemon, one index, so working elsewhere
