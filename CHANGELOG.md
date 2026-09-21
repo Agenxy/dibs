@@ -58,6 +58,26 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The daemon calls itself Dibs everywhere a person can see it.**
+  `serverInfo.name`, the string every MCP client puts in its list of
+  servers, said `agents`: what this project was called two names ago. The
+  renames to Lanes and then to Dibs swept the prose, the verbs, the docs
+  and the manifests and missed the one field a person actually reads. It
+  is `dibs` now, with the human `title` and the project's `websiteUrl`
+  beside it, and a test refuses either retired name.
+
+- **Every request this project makes says what it is.** They all went out
+  as `Go-http-client/1.1`, so a hub's access log could not tell one
+  machine's bridge from another's hook, from an index shipment, or from
+  any other Go program on the network, and the build a caller is running
+  was not there to read. Requests now carry `dibs/<version>
+  (<os>/<arch>)`, stamped in the one client every credential-bearing call
+  already passes through, and a caller that sets its own is left alone.
+
+- **The board and the protocol guide carry the metadata a page is
+  expected to have**: a description, a theme colour for each scheme, and
+  an application name, beside the title and icon they already had.
+
 - **SECURITY.md states what a forged lifecycle hook can and cannot do.**
   (#74) `hook_poll` takes a session id with no token, and a peer can claim a
   `Stop` or `SessionStart` for somebody else's session. The consequence was
