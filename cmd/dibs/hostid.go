@@ -91,7 +91,27 @@ func resolveHostID(dir string) string {
 	defer cancel()
 	id, err := supgang.Status(ctx)
 	if err == nil && id.NodeID != "" {
+		// Remembered whatever happens, so the NEXT start adopts the fleet
+		// identity: that is the documented transition, and it belongs to a
+		// restart rather than to whichever process asked first.
 		supgang.RememberNodeID(dir, id.NodeID)
+		// BUT NOT AHEAD OF A SIBLING THAT ALREADY PUBLISHED ONE. Round
+		// forty found the case where this process is the one that waits
+		// and mints; the other direction was left open, and it splits the
+		// machine the same way: a bridge whose lookup failed fast minted
+		// an id and published it while this lookup was still running, and
+		// this one then answered with the Supgang id for its whole life.
+		// Two identities, one computer, and the hub reads them as two.
+		// The minted file is the arbiter for this boot because it is
+		// published exclusively (loadOrCreateHostID); the fleet id wins at
+		// the next start, where nothing is racing. Round forty-five of the
+		// pre-release review.
+		if minted := mintedHostID(dir); minted != "" && minted != id.NodeID {
+			slog.Debug("another process here published an identity while Supgang was "+
+				"answering; keeping it until the next start", "published", minted,
+				"supgang", id.NodeID)
+			return minted
+		}
 		return id.NodeID
 	}
 	// A SILENT SUPGANG IS NOT AN ABSENT ONE, and another process here may
@@ -117,6 +137,21 @@ func resolveHostID(dir string) string {
 	slog.Debug("no recorded identity for this machine and Supgang did not name it; "+
 		"minting one for this data directory", "err", err)
 	return loadOrCreateHostID(dir)
+}
+
+// mintedHostID is the id a bridge minted for this data directory, and
+// nothing else: not the daemon's node id, which every member has beside
+// its Supgang identity and which must never outrank it.
+func mintedHostID(dir string) string {
+	if dir == "" {
+		return ""
+	}
+	// #nosec G304 -- the user's own data directory
+	b, err := os.ReadFile(filepath.Join(dir, "host_id"))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
 }
 
 // identityOnDisk is what this data directory says this machine is: the id

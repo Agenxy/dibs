@@ -88,3 +88,43 @@ func TestAFailedLookupWaitsForTheIdentityAnotherProcessRecorded(t *testing.T) {
 			"recorded as %q: it mints an id that nothing else here agrees with", got, fleet)
 	}
 }
+
+// A lookup that succeeds does not overrule an identity another process
+// here already published.
+//
+// Round forty closed one direction of this: a bridge whose own lookup
+// failed now waits for the answer a sibling got before minting anything.
+// The other direction was left open. A bridge whose lookup fails FAST
+// mints and publishes an id while a sibling's lookup is still running,
+// and that sibling then answers with the Supgang id for the rest of its
+// life: one computer, two identities, and a hub that reads them as two
+// machines, which is the split every part of this exists to prevent.
+// The minted file is the arbiter for this boot because it is published
+// exclusively; the fleet id is adopted at the next start, where nothing
+// is racing. Round forty-five of the pre-release review.
+func TestASuccessfulLookupDoesNotOverruleAPublishedIdentity(t *testing.T) {
+	const fleet = "c3f2a1b0d9e8776655443322110099aabbccddeeff00112233445566778899aa"
+	dir := t.TempDir()
+	// Supgang answers, and a sibling publishes a minted id while it does:
+	// the race, made deterministic by the script that stands in for it.
+	old := supgang.Command
+	supgang.Command = filepath.Join(dir, "supgang")
+	t.Cleanup(func() { supgang.Command = old })
+	script := "#!/bin/sh\nprintf '%s' 'minted-by-a-sibling' > " + filepath.Join(dir, "host_id") +
+		"\nprintf '%s' '{\"schema\":\"supgang.status/v4\",\"status\":\"ok\"," +
+		"\"name\":\"MacSolis\",\"node_id\":\"" + fleet + "\"}'\n"
+	if err := os.WriteFile(supgang.Command, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := resolveHostID(dir); got != "minted-by-a-sibling" {
+		t.Fatalf("this bridge answers %q while the one that got there first published "+
+			"%q: the machine has two identities for as long as both run", got, "minted-by-a-sibling")
+	}
+	// And the fleet id is remembered, so the next start adopts it and the
+	// daemon's rename moves the rows that were registered under the other.
+	if got := supgang.RememberedNodeID(dir); got != fleet {
+		t.Fatalf("the fleet identity was not remembered (%q), so the next start will not "+
+			"adopt it either", got)
+	}
+}
