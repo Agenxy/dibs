@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -119,9 +118,18 @@ func refuse(w http.ResponseWriter, status int, why string) {
 }
 
 // underDir reports whether p is dir or inside it.
+//
+// Both operands are made portable first, so the separator that joins them
+// has to be the portable one. It was filepath.Separator, which is `\` on
+// Windows: `C:/work/repo/pkg` was not beneath `C:/work/repo`, so a
+// Windows hub answered 403 to an index shipped from a subdirectory and
+// eviction did not count an agent in one as keeping the index alive.
+// Invisible on a unix host, where the two separators are the same
+// character, which is why this shipped. Round forty-five of the
+// pre-release review.
 func underDir(p, dir string) bool {
 	p, dir = paths.Portable(p), paths.Portable(dir)
-	return p == dir || strings.HasPrefix(p, dir+string(filepath.Separator))
+	return p == dir || strings.HasPrefix(p, dir+"/")
 }
 
 // installSupplied builds the index from a shipped payload and publishes it,

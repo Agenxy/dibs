@@ -128,6 +128,22 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round forty-five of the pre-release review: two findings.**
+  - A Supgang lookup that succeeds does not overrule an identity another
+    process here published while it ran. Round forty closed the direction
+    where this process waits and mints; a bridge whose lookup failed fast
+    could still publish a minted id first and leave the one whose lookup
+    succeeded answering with the fleet id for its whole life, which is one
+    computer with two identities and a hub that reads them as two. The
+    published file decides for this boot, and the fleet identity is
+    adopted at the next start, where nothing is racing.
+  - A portable path is contained with the portable separator. `underDir`
+    made both operands portable and then joined them with
+    `filepath.Separator`, so on a Windows hub `C:/work/repo/pkg` was not
+    beneath `C:/work/repo`: an index shipped from a subdirectory was
+    answered 403, and eviction did not count an agent in one as keeping
+    the index alive. Invisible on a unix host, where the two separators
+    are the same character.
 - **Round forty-four of the pre-release review: three findings.**
   - The hub cleans a remote caller's path and a shipped index's root the
     portable way, so a UNC share survives the one layer that still
