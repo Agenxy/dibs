@@ -418,7 +418,7 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// spelling of its own machine's paths (cmd/dibs, portableSpelling),
 	// so there is nothing here to fold for it. Round forty-six of the
 	// pre-release review.
-	if !e.opIsRemote(op) {
+	if !e.opIsRemote(op) && !namesAnotherAgentsPath(op) {
 		normalizeSeparators(op)
 	}
 

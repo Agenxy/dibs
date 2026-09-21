@@ -75,6 +75,16 @@ func (e *Engine) noteChild(c Child, now time.Time) core.Result {
 	if e.children == nil {
 		e.children = map[string]Child{}
 	}
+	// AN ID THIS MACHINE USED TO ANSWER TO IS THIS MACHINE, here as in
+	// the hook poll. A bridge that survived the identity adoption goes on
+	// asserting the old id, and its agent's row has already been migrated
+	// to the new one: keying the child by what arrived filed the
+	// announcement under a machine no row is on, so hook_blocked returned
+	// ok with an empty parent and the next poll made a SECOND record for
+	// one session. Blocked state and progress then landed on a record
+	// nobody is attached to. HookPollFrom resolved the alias and this did
+	// not. Round forty-eight of the pre-release review.
+	c.Host = e.canonicalHost(c.Host)
 	key := e.childKey(c.Host, c.SessionID)
 	prev, known := e.children[key]
 	if known {

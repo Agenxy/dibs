@@ -50,6 +50,21 @@ func (e *Engine) opIsRemote(op *core.Op) bool {
 	return host != "" && host != e.HostID()
 }
 
+// namesAnotherAgentsPath reports an op whose path belongs to a machine
+// other than the caller's, whatever host the CALLER is on.
+//
+// force_release with a holder quotes the path the board shows, which is
+// that holder's spelling on that holder's machine. The fold asked only
+// whether the CALLER was remote, so a coordinator on a Windows hub
+// releasing a unix agent's `/work/a\b` had it folded into `/work/a/b`
+// and released a different claim: ok true, the wrong file freed, the one
+// it asked for still held. The tool path and the bridge already leave
+// this path alone (round forty-six); this is the third place that has to.
+// Round forty-eight of the pre-release review.
+func namesAnotherAgentsPath(op *core.Op) bool {
+	return op.Kind == core.OpForceRelease && op.To != ""
+}
+
 // refuseAmbiguousRelease refuses a force_release that names no holder
 // when more than one agent holds that exact path, and says who they are.
 //
