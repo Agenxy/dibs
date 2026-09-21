@@ -4,6 +4,8 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/agenxy/dibs/internal/core"
 )
 
 // Canonical resolves p to the path the filesystem actually means, so that two
@@ -79,21 +81,17 @@ func Portable(p string) string {
 	if p == "" {
 		return ""
 	}
-	// A UNC root keeps its two slashes: `//server/share/repo` names a
-	// share on another machine and `/server/share/repo` names a local
+	// THE FOLD'S OWN FUNCTION, not a copy of it. This was eight hand-copied
+	// lines with a comment on each side saying the two must stay identical:
+	// a UNC root keeps its two slashes, because `//server/share/repo` names
+	// a share on another machine and `/server/share/repo` names a local
 	// directory, and a root recorded as one against paths cleaned to the
-	// other is a prefix that never matches. core.cleanPath says the same
-	// sentence, because core may not import this package; the two must
-	// stay identical. Round forty-three of the pre-release review.
-	unc := strings.HasPrefix(p, "//") && !strings.HasPrefix(p, "///")
-	p = path.Clean(p)
-	if unc && !strings.HasPrefix(p, "//") {
-		p = "/" + p
-	}
-	if len(p) > 1 {
-		p = strings.TrimSuffix(p, "/")
-	}
-	return p
+	// other is a prefix that never matches. The stated reason for copying
+	// was that core may not import a package that touches the filesystem,
+	// which is true and is the wrong direction: core imports nothing, so
+	// this package can call it. Round forty-three of the pre-release review
+	// wrote the rule; the consolidation before v0.0.8 removed the copy.
+	return core.CleanPath(p)
 }
 
 // PortableBase is the last element of a Portable path, for a project label.

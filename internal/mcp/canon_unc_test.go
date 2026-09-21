@@ -3,13 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
-	"os"
-	"path/filepath"
-	"strconv"
-	"strings"
 	"testing"
-
-	"github.com/agenxy/dibs/internal/core"
 )
 
 // A remote caller's UNC path keeps both of its leading slashes.
@@ -40,33 +34,6 @@ func TestARemoteCallersUNCPathKeepsItsShare(t *testing.T) {
 			t.Errorf("callerPath(%q) = %q, want %q: a claim that loses a slash is outside "+
 				"the checkout its own registration recorded", in, got, want)
 		}
-	}
-}
-
-// The two bounds on a fingerprint are the same number.
-//
-// overlap sits below core and does not import it, so the constant
-// exists twice: the upload refuses an oversized digest and the fold
-// refuses one that arrives another way. Two copies of one number drift,
-// and the failure is silent on whichever side is larger. Round
-// fifty-four of the pre-release review.
-func TestTheShipmentAndTheFoldBoundTheFingerprintAlike(t *testing.T) {
-	src, err := os.ReadFile(filepath.Join("..", "overlap", "wire.go"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := "const maxFingerprintBytes = " + strconv.Itoa(core.MaxFingerprintBytes)
-	if !strings.Contains(string(src), want) {
-		t.Fatalf("internal/overlap does not bound a fingerprint at %d, which is what "+
-			"core.MaxFingerprintBytes says: one of the two accepts what the other refuses, "+
-			"and the larger side decides what reaches the ledger", core.MaxFingerprintBytes)
-	}
-	// The same for a path, which is the other string a shipped index
-	// puts into the ledger (round fifty-six).
-	wantPath := "const maxPathBytes = " + strconv.Itoa(core.DefaultLimits().MaxPathBytes)
-	if !strings.Contains(string(src), wantPath) {
-		t.Fatalf("internal/overlap does not bound a shipped file path at %d, which is what "+
-			"core's limits say", core.DefaultLimits().MaxPathBytes)
 	}
 }
 

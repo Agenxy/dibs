@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// cleanPath normalizes a claim path: absolute, cleaned, no trailing slash,
+// CleanPath normalizes a claim path: absolute, cleaned, no trailing slash,
 // with `/` as the only separator it knows.
 //
 // A claim is a path an AGENT supplied, recorded in the ledger and replayed
@@ -30,11 +30,17 @@ import (
 // checkout root recorded as the first and a claim cleaned to the second
 // are no longer prefix and path. Neither collision rule fires, and two
 // hosts working one file in clones of one repository each get an
-// exclusive claim on it. The same rule lives in paths.Portable, because
-// core may not import a package that touches the filesystem; the two are
-// one sentence and must stay identical. Round forty-three of the
-// pre-release review.
-func cleanPath(p string) string {
+// exclusive claim on it. Round forty-three of the pre-release review.
+//
+// EXPORTED BECAUSE THE EDGE NEEDS THE SAME SENTENCE. `paths.Portable`
+// held a hand-copy of this function with a comment on each saying the
+// two must stay identical, on the reasoning that core may not import a
+// package that touches the filesystem. That is true and it is the wrong
+// direction: core imports nothing, from internal or anywhere else with
+// state, so everything can import core and does not have to copy it.
+// One sentence, one implementation, and no guard needed to keep two of
+// them agreeing.
+func CleanPath(p string) string {
 	unc := strings.HasPrefix(p, "//") && !strings.HasPrefix(p, "///")
 	p = path.Clean(p)
 	if unc && !strings.HasPrefix(p, "//") {
@@ -409,7 +415,7 @@ func (s *State) overlapsFor(refs, dirs []string, excludeAgent string) []SlotOver
 		}
 	}
 	for _, d := range dirs {
-		p := cleanPath(d)
+		p := CleanPath(d)
 		for _, c := range s.overlapping(me, p, repoPathOf(me, p), excludeAgent) {
 			add(SlotOverlap{
 				Agent: c.Agent, Signal: SignalClaim, Kind: "claim",
@@ -477,11 +483,11 @@ func sharedRefs(want map[string]bool, theirs []string) []string {
 // that is the directory the reader has to go and look at.
 func firstOverlappingPath(me, them *Agent, mine, theirs []string) string {
 	for _, a := range mine {
-		ca := cleanPath(a)
+		ca := CleanPath(a)
 		ra := repoPathOf(me, ca)
 		crossMachine := differentHosts(me, them)
 		for _, b := range theirs {
-			cb := cleanPath(b)
+			cb := CleanPath(b)
 			// Same reasoning as claimOverlap: two computers, two namespaces.
 			if !crossMachine && pathsOverlap(ca, cb) {
 				return b
@@ -555,13 +561,13 @@ func (s *State) ActiveAgentIDsIn(cwd string) []string {
 	if cwd == "" {
 		return nil
 	}
-	want := cleanPath(cwd)
+	want := CleanPath(cwd)
 	var ids []string
 	for _, l := range s.Agents {
 		if l.Status != StatusActive || l.Agent == nil {
 			continue
 		}
-		if cleanPath(l.Agent.CWD) == want {
+		if CleanPath(l.Agent.CWD) == want {
 			ids = append(ids, l.ID)
 		}
 	}
@@ -581,12 +587,12 @@ func (s *State) AgentsIn(cwd string) bool {
 	if cwd == "" {
 		return false
 	}
-	want := cleanPath(cwd)
+	want := CleanPath(cwd)
 	for _, l := range s.Agents {
 		if l.Gone() || l.Agent == nil {
 			continue
 		}
-		if cleanPath(l.Agent.CWD) == want {
+		if CleanPath(l.Agent.CWD) == want {
 			return true
 		}
 	}
@@ -612,13 +618,13 @@ func (s *State) ReattachableIn(cwd string) []string {
 	if cwd == "" {
 		return nil
 	}
-	want := cleanPath(cwd)
+	want := CleanPath(cwd)
 	var out []string
 	for _, l := range s.Agents {
 		switch {
 		case l.Status == StatusArchived || l.Status == StatusClosed || l.Status == StatusActive:
 			continue
-		case l.Agent == nil || cleanPath(l.Agent.CWD) != want:
+		case l.Agent == nil || CleanPath(l.Agent.CWD) != want:
 			continue
 		case l.Nonce == "":
 			continue // nobody can reattach to it, so saying so would be cruel

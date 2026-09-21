@@ -1790,7 +1790,7 @@ func (s *State) applyClaim(l *Agent, op *Op, now time.Time) (Result, []Event, er
 	if len(op.Path) > s.Limits.MaxPathBytes || len(op.Note) > s.Limits.MaxNoteBytes {
 		return nil, nil, errTooLarge("path/note", s.Limits.MaxPathBytes)
 	}
-	path := cleanPath(op.Path)
+	path := CleanPath(op.Path)
 	repoPath := repoPathOf(l, path)
 	overlaps := s.overlapping(l, path, repoPath, l.ID)
 	// SPEC §9 matrix: exclusive refused on ANY overlap; shared refused only
@@ -1862,7 +1862,7 @@ func (s *State) applyClaim(l *Agent, op *Op, now time.Time) (Result, []Event, er
 }
 
 func (s *State) applyRelease(l *Agent, op *Op) (Result, []Event, error) {
-	path := cleanPath(op.Path)
+	path := CleanPath(op.Path)
 	for i, c := range s.Claims {
 		if c.Agent == l.ID && c.Path == path {
 			s.Claims = append(s.Claims[:i], s.Claims[i+1:]...)

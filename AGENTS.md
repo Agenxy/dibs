@@ -113,6 +113,18 @@ Things that have cost real time here, none of which are visible in the diff:
   tag is frozen, and `TestLedgerFieldNamesAreFrozen` fingerprints the list
   because the same sweep that renames tags will happily rewrite the list that
   guards them, which is exactly how this got through.
+- **`core` imports nothing, so everything can import `core`.** Rule 1 is
+  usually read as a restriction on core; its more useful half is the
+  permission it grants everyone else. Three packages kept a hand-copy of a
+  rule core already states, each with a comment giving the reason: "core
+  may not import this package", "overlap sits below core and does not
+  import it". Both were true about the direction they named and beside the
+  point: core depends on nothing, so it is at the bottom, and a package
+  that needs one of its rules calls it. When you find yourself about to
+  copy a constant or an eight-line function out of core and write a drift
+  guard for the copy, import core instead.
+  `TestCoreImportsNothingThatCouldMakeItImpure` is what keeps that true.
+
 - **A sweep rewrites the tests and comments that exist to catch the sweep.**
   After any find-and-replace across the tree, read the diff of every *guard*
   first: frozen-string tables, retired-vocabulary lists, fixtures, and the prose
