@@ -15,8 +15,8 @@ func TestActiveAgentCWDsExcludesTerminalAgents(t *testing.T) {
 	}}}
 
 	got := map[string]bool{}
-	for _, cwd := range e.activeAgentCWDs() {
-		got[cwd] = true
+	for _, p := range e.activeAgentPlaces() {
+		got[p.CWD] = true
 	}
 	if !got["/work/api"] || !got["/work/web"] {
 		t.Errorf("activeAgentCWDs() = %v, want active and resumable agents", got)

@@ -132,6 +132,19 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round fifty-seven of the pre-release review: two findings.**
+  - The paths inside a shipped commit are bounded like the file list.
+    Round fifty-six bounded one and not the other, so an upload answered
+    accepted and every declaration scored in that index was then refused
+    at ingress as too large.
+  - Eviction distinguishes machines. It compared working directories and
+    a path names a different tree on each computer: after every agent of
+    one machine left `/repo`, an agent on another machine at `/repo`
+    kept the first machine's index alive, an index it is refused (an
+    index serves the machine it was shipped from), while its own
+    shipment for that root was refused because the slot was held. The
+    index nobody could use survived and the one somebody needed never
+    arrived.
 - **Round fifty-six of the pre-release review: two findings, both in the
   fifty-fourth round's bound.**
   - Every string a shipped index puts into the ledger is bounded, not
