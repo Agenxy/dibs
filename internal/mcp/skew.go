@@ -28,7 +28,18 @@ var daemonStarted = time.Now()
 // serverBuildInfo is what the daemon says about itself, beyond a version.
 func serverBuildInfo() map[string]any {
 	info := map[string]any{
-		"name":       "agents",
+		// THE NAME EVERY HARNESS SHOWS A PERSON. This said "agents", which
+		// is what this project was called two names ago: the rename to
+		// Lanes and then to Dibs swept the prose, the commands and the
+		// docs, and missed the one string that is displayed in every
+		// client's server list. `title` is the human form the 2026
+		// revision asks for beside the identifier.
+		"name":  "dibs",
+		"title": "Dibs",
+		// camelCase, unlike the fields below it: name, title and
+		// websiteUrl are the protocol's, and the rest are this daemon's
+		// own additions to the same object.
+		"websiteUrl": "https://agenxy.org/projects/dibs/",
 		"version":    build.Version,
 		"started_at": daemonStarted.UTC().Format(time.RFC3339),
 		// The panel's content hash, so "which panel is this daemon serving" is

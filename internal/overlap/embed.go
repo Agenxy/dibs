@@ -20,6 +20,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/agenxy/dibs/internal/transport"
 )
 
 // Embed is the tier-2/3 scorer: Dibs owns the index, an external service owns
@@ -104,7 +106,9 @@ func NewEmbed(base, model, key string, timeout time.Duration) *Embed {
 		// 64-chunk batch are not the same request, and one flat value either
 		// strangles the batch or lets a hung probe sit. The deadline is set per
 		// call instead, scaled by batch size: see encode.
-		client: &http.Client{},
+		// Stamped, like every other request this project makes: the
+		// sidecar's operator sees which build is asking.
+		client: transport.Client(&http.Client{}),
 	}
 }
 

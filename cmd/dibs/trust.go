@@ -19,6 +19,7 @@ import (
 	"github.com/agenxy/dibs/internal/boardconfig"
 	"github.com/agenxy/dibs/internal/paths"
 	"github.com/agenxy/dibs/internal/supgang"
+	"github.com/agenxy/dibs/internal/transport"
 )
 
 // Trusting a daemon on another machine, without a certificate authority.
@@ -132,7 +133,12 @@ func daemonClient(timeout time.Duration) *http.Client {
 	// straight past both while attaching X-Dibs-Local, and sometimes the admin
 	// password. Safety that depends on every future caller remembering is not
 	// safety; it is a list of the callers somebody thought of.
-	c.Transport = &guardedTransport{next: rt}
+	// AND IT SAYS WHO IS CALLING. Every request from this binary went out
+	// as `Go-http-client/1.1`, so a hub's access log could not tell a
+	// bridge from a hook from any other Go program on the network, and
+	// the first question about a request ("which build is this?") had no
+	// answer in the log at all.
+	c.Transport = transport.Stamp(&guardedTransport{next: rt})
 	return c
 }
 
