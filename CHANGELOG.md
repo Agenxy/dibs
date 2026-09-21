@@ -108,6 +108,27 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round thirty-five of the pre-release review: three findings.**
+  - A machine that adopts its Supgang identity still recognises the id it
+    used to answer to. The transition is real and one-way, and a machine
+    that ran Dibs before joining the fleet has rows, claims and
+    long-lived bridges carrying the id it minted: renaming it under all of
+    them made its own agents read as remote and let two of them take an
+    exclusive claim on one path. The previous ids are recognised at
+    ingress and replaced with the current one, so the ledger records one
+    machine; nothing is ever stamped with an alias.
+  - The Linux notification retry is reachable from the path the daemon
+    takes. The previous round put it in `linuxProbe`, and `Available()`
+    asks `linuxProbeCached`: the fix was reachable from its own test and
+    from nothing else.
+  - An index build publishes only under the claim it took, and the claim
+    follows the root git resolves (the pre-warm claims the path the
+    operator typed; `/var` and `/private/var` are two keys for one tree).
+    Mining takes minutes, and a root evicted (or claimed again) meanwhile
+    left the finished build installing an index the repository ceiling
+    did not know about, over the top of whatever had replaced it. The
+    same guard covers a supplied index, whose scorer is built outside the
+    lock.
 - **Round thirty-four of the pre-release review: two findings.**
   - The Supgang retry remembers nothing. Remembering is how every other
     process on a machine learns its identity, and a running daemon cannot

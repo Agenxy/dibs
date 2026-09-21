@@ -268,7 +268,9 @@ func (e *Engine) remoteHostOf(l *core.Agent) string {
 	// AND the ledger's node id, which is what this daemon's own agents were
 	// stamped with before a Supgang identity was configured: a row that old
 	// is still local, and WorkingDirectories draws the line the same way.
-	if l.Agent.HostID == e.HostID() || l.Agent.HostID == e.state.NodeID {
+	// AND an id this machine used to answer to, for a row registered before
+	// it adopted its Supgang identity: see SetHostAliases.
+	if l.Agent.HostID == e.HostID() || l.Agent.HostID == e.state.NodeID || e.hostAliases[l.Agent.HostID] {
 		return ""
 	}
 	return l.Agent.HostID

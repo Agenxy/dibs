@@ -183,6 +183,7 @@ func (f *scorerFlags) installSupplied(
 	f.supplied[root] = agent
 	f.suppliedHost[root] = host
 	f.rootOf[root] = root
+	gen := f.markClaimLocked(root)
 	f.discoverMu.Unlock()
 
 	cc := overlap.FromRecords(p.Commits, p.Fingerprint, overlap.CoChangeOptions{MaxCommits: f.history})
@@ -195,6 +196,15 @@ func (f *scorerFlags) installSupplied(
 	// else; the engine refuses supplied indexes as peers regardless, and it
 	// never joins anyone on a supplied index's score (scorerForLocation),
 	// whatever join threshold and auto-join policy are passed here.
+	// STILL OURS? Building the scorer from the payload runs outside the
+	// lock, and an eviction (or another shipment for this root) meanwhile
+	// takes the slot: publishing anyway leaves an index the ceiling does
+	// not know about and overwrites what replaced it. Round thirty-five of
+	// the pre-release review.
+	if !f.holdsClaim(root, gen) {
+		return map[string]any{"accepted": false, "reason": "this tree was claimed by another " +
+			"index while yours was being installed; ship it again"}
+	}
 	eng.SetIndex(root, scorer, engine.MatchConfig{
 		JoinThreshold: f.join, NotifyThreshold: notify, Deadline: f.deadline,
 		DirectorRequired: f.director, AutoJoin: f.autoJoin, Repo: root,

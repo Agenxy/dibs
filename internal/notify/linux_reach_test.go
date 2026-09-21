@@ -70,10 +70,26 @@ func TestAFailedLinuxProbeIsMeasuredAgain(t *testing.T) {
 	if ok, _ := linuxProbe(); ok {
 		t.Error("a failed probe was re-measured immediately: every send would re-probe")
 	}
-	// Past it, the answer is measured again.
+	// Past it, the answer is measured again, THROUGH THE PATH PRODUCTION
+	// TAKES: Available() asks linuxProbeCached, never linuxProbe, so a
+	// retry only the latter performed was reachable from this test and
+	// from nothing else (round thirty-five, on round thirty-four's fix).
 	probeMu.Lock()
 	probeAt = probeAt.Add(-2 * probeRetryAfter)
 	probeMu.Unlock()
+	if ok, known := linuxProbeCached(); ok || !known {
+		t.Fatalf("the cached answer went to %v/%v rather than staying the old no while the "+
+			"re-measurement runs", ok, known)
+	}
+	// The re-measurement runs off this goroutine; linuxProbe joins it
+	// rather than starting a second, so this waits without sleeping.
+	if ok, _ := linuxProbe(); !ok {
+		t.Fatal("the re-measurement Available's path started did not find the host back")
+	}
+	if ok, _ := linuxProbeCached(); !ok {
+		t.Fatal("Available()'s own path never re-measured: the retry is reachable from this " +
+			"test and from nothing the daemon does")
+	}
 	if ok, why := linuxProbe(); !ok {
 		t.Fatalf("the probe still says no (%q) after the notification daemon came back: this "+
 			"daemon's notifications are off until somebody restarts it, while a fresh `dibs "+

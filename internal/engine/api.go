@@ -565,6 +565,42 @@ func (e *Engine) NodeID() string {
 // other one. One identity, the address plane's, wherever it is known.
 func (e *Engine) SetHostID(id string) { e.hostID = strings.TrimSpace(id) }
 
+// SetHostAliases records the ids this computer used to answer to, so a
+// caller still asserting one of them is understood to be here.
+//
+// The transition is real and one-way: a machine that ran Dibs before it
+// joined Supgang has rows, claims and long-lived bridges carrying the id it
+// minted, and adopting the fleet id at the next daemon start renamed the
+// machine under all of them. The fold reads two ids as two machines, so its
+// own agents read as remote and two of them could take an exclusive claim
+// on one path. An alias is not a second identity: nothing is ever stamped
+// with one. It is only recognised, at ingress, and replaced with the
+// current id before the op is admitted, so the ledger records one machine.
+// Called before the engine serves, like SetHostID. Round thirty-five of the
+// pre-release review.
+func (e *Engine) SetHostAliases(ids ...string) {
+	e.hostAliases = nil
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" || id == e.hostID {
+			continue
+		}
+		if e.hostAliases == nil {
+			e.hostAliases = map[string]bool{}
+		}
+		e.hostAliases[id] = true
+	}
+}
+
+// canonicalHost maps an id this machine used to answer to onto the one it
+// answers to now; anything else is returned unchanged.
+func (e *Engine) canonicalHost(id string) string {
+	if id == "" || !e.hostAliases[id] {
+		return id
+	}
+	return e.HostID()
+}
+
 // HostID is which computer this daemon is on, for stamping a loopback caller
 // and for telling a remote agent from a local one: Supgang's node id when
 // set, else the ledger's node id, as it always was.
