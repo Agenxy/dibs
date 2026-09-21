@@ -106,17 +106,23 @@ func codexHooks(out io.Writer, trust bool) error {
 	if err != nil {
 		return err
 	}
-	still := 0
-	for _, h := range after {
-		if h.TrustStatus != "trusted" {
-			still++
-			_, _ = fmt.Fprintf(out, "  still %s: %s\n", h.TrustStatus, h.Key)
-		}
+	stillPending, stillOff := sortHooks(after)
+	for _, h := range stillPending {
+		_, _ = fmt.Fprintf(out, "  still %s: %s\n", h.TrustStatus, h.Key)
 	}
-	if still > 0 {
-		return fmt.Errorf("%d hook(s) are still not trusted after the write: Codex did not accept it", still)
+	if len(stillPending) > 0 {
+		return fmt.Errorf("%d hook(s) are still not trusted after the write: Codex did not accept it",
+			len(stillPending))
 	}
-	_, _ = fmt.Fprintf(out, "trusted %d hook(s); Codex sessions started from now deliver Dibs mail\n", len(pending))
+	// THE SAME QUESTION AFTER WRITING AS BEFORE IT. This reported "Codex
+	// sessions started from now deliver Dibs mail" on trust alone, so
+	// trusting one hook while another was switched off announced a
+	// delivery that does not happen: the Stop hook is how an idle agent
+	// learns it has mail, and an operator who has just been told it works
+	// does not look again. Round forty-seven of the pre-release review,
+	// on round forty-six's own fix, which taught every OTHER report.
+	_, _ = fmt.Fprintf(out, "trusted %d hook(s). ", len(pending))
+	reportTrusted(out, after, stillOff)
 	return nil
 }
 
@@ -161,7 +167,14 @@ func sortHooks(hooks []codexHook) (pending, disabled []codexHook) {
 // separate switch per hook, and `--trust` cannot touch it.
 func reportTrusted(out io.Writer, hooks, disabled []codexHook) {
 	if len(disabled) == 0 {
-		_, _ = fmt.Fprintln(out, "all trusted: Codex runs them, and mail reaches its agents at their turn boundaries")
+		live := 0
+		for _, h := range hooks {
+			if h.live() {
+				live++
+			}
+		}
+		_, _ = fmt.Fprintf(out, "all %d trusted and on: Codex runs them, and mail reaches its "+
+			"agents at their turn boundaries\n", live)
 		return
 	}
 	names := make([]string, 0, len(disabled))

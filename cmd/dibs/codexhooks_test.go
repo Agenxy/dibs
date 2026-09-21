@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -73,5 +74,45 @@ func TestAHookThatIsSwitchedOffIsNotReportedAsDelivering(t *testing.T) {
 			t.Errorf("%s: live=%v, want %v: a hook reported as delivering mail has to be "+
 				"one Codex will actually run", tc.name, got, tc.live)
 		}
+	}
+}
+
+// Every report about Codex hooks asks the same question, including the
+// one printed after --trust writes.
+//
+// The post-write branch checked trust alone, so trusting one hook while
+// another was switched off printed "Codex sessions started from now
+// deliver Dibs mail" with the Stop hook off: the hook that is how an
+// idle agent learns it has mail. An operator who has just been told it
+// works does not look again. Round forty-seven of the pre-release
+// review, on round forty-six's own fix, which taught every other report
+// and missed this one.
+func TestTheReportAfterTrustingSaysWhenAHookIsStillOff(t *testing.T) {
+	off := false
+	on := true
+	hooks := []codexHook{
+		{Key: "k1", EventName: "SessionStart", TrustStatus: "trusted", Enabled: &on},
+		{Key: "k2", EventName: "Stop", TrustStatus: "trusted", Enabled: &off},
+	}
+	_, disabled := sortHooks(hooks)
+	if len(disabled) != 1 || disabled[0].EventName != "Stop" {
+		t.Fatalf("sortHooks put %d hooks in the disabled set: %+v", len(disabled), disabled)
+	}
+
+	var out strings.Builder
+	reportTrusted(&out, hooks, disabled)
+	said := out.String()
+	if strings.Contains(said, "mail reaches its agents") {
+		t.Fatalf("the report claims delivery with a hook switched off: %q", said)
+	}
+	if !strings.Contains(said, "Stop") || !strings.Contains(said, "OFF") {
+		t.Fatalf("the report does not name the hook that is off: %q", said)
+	}
+
+	// And with everything on, it says so plainly.
+	out.Reset()
+	reportTrusted(&out, hooks[:1], nil)
+	if !strings.Contains(out.String(), "mail reaches its agents") {
+		t.Fatalf("a fully live set was not reported as delivering: %q", out.String())
 	}
 }

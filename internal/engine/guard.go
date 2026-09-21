@@ -32,9 +32,10 @@ func (e *Engine) GuardPath(ctx context.Context, sessionID, path, cwd string) (co
 // decides which holder of a repeated bridge session id is the caller
 // (core.AgentForHookOn).
 func (e *Engine) GuardPathFrom(ctx context.Context, sessionID, path, cwd, host string) (core.Result, error) {
-	// Spelled as the fold spelled the claims it is compared against.
-	path, cwd = foldSeparators(path), foldSeparators(cwd)
 	host = e.canonicalHost(host) // an id this machine used to answer to is this machine
+	// Spelled as the fold spelled the claims it is compared against, and
+	// only for a caller on this machine: see foldFor.
+	path, cwd = e.foldFor(host, path), e.foldFor(host, cwd)
 	return e.query(ctx, func() core.Result {
 		agent := ""
 		l := e.state.AgentForHookOn(sessionID, cwd, host)

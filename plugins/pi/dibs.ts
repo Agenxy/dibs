@@ -371,7 +371,18 @@ async function rpc(
     // had no repository-relative key and collided with nothing. Round
     // twenty-four of the pre-release review.
     const pathArgs = PATH_ARGS[p["name"] as string]
-    if (pathArgs) {
+    // A PATH NAMED ON SOMEBODY ELSE'S BEHALF IS NOT THIS MACHINE'S TO
+    // RESOLVE. force_release with an `agent` quotes the path the board
+    // shows, which is the holder's spelling on the holder's machine:
+    // resolving it here turned a Linux agent's /tmp/repo/file.go into
+    // this Mac's /private/tmp/repo/file.go, and a Windows holder's
+    // C:/repo/file.go picked up this machine's working directory as a
+    // prefix. Either way the daemon finds no such claim and the real one
+    // stays. The Go bridge and the hub got this exception in round
+    // forty-six and this plugin did not. Round forty-seven.
+    const args0 = (p["arguments"] ?? {}) as Record<string, unknown>
+    const forAnother = p["name"] === "force_release" && typeof args0["agent"] === "string" && args0["agent"] !== ""
+    if (pathArgs && !forAnother) {
       const args = (p["arguments"] ?? {}) as Record<string, unknown>
       for (const k of pathArgs) {
         const v = args[k]

@@ -201,13 +201,15 @@ func (e *Engine) HookPoll(
 func (e *Engine) HookPollFrom(
 	ctx context.Context, sessionID, event, cwd, host string, stopActive, strict bool,
 ) (core.Result, error) {
-	cwd = foldSeparators(cwd) // as the fold spelled the cwd it is matched against
 	// An id this machine used to answer to is this machine: a bridge that
 	// survived the adoption goes on asserting it, its registration was
 	// canonicalised, and its hooks have to resolve against the same
 	// machine or they find nobody. Round thirty-six of the pre-release
 	// review; see SetHostAliases.
 	host = e.canonicalHost(host)
+	// As the fold spelled the cwd it is matched against, and only for a
+	// caller on this machine: see foldFor.
+	cwd = e.foldFor(host, cwd)
 	return e.query(ctx, func() core.Result {
 		e.announceHookSessionFrom(sessionID, cwd, event, host)
 		l := e.state.AgentForHookOn(sessionID, cwd, host)

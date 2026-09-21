@@ -128,6 +128,21 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round forty-seven of the pre-release review: three findings, each
+  the previous round's fix missing a sibling.** The rule was right in one
+  place and absent in the next one along, three times over, so each is
+  now applied where the decision is made rather than where it was
+  reported.
+  - Every entry point that folds a path separator asks whose machine the
+    path came from (`foldFor`): the write guard and the lifecycle hooks
+    were still folding unconditionally, so a Windows hub answered `allow`
+    for a unix agent's `/work/a\b` while the claim on it stood.
+  - The pi plugin leaves another agent's `force_release` path as the
+    board spells it, which the bridge and the hub already did.
+  - The report printed after `codex-hooks --trust` writes asks whether
+    the hooks are ON as well as trusted, which every other report already
+    did: trusting one hook while the Stop hook was switched off announced
+    a delivery that does not happen.
 - **Round forty-six of the pre-release review: three findings.**
   - A Windows hub folds separators for its OWN callers only. The daemon's
     platform says what a separator means here and nothing about the
@@ -135,19 +150,25 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     `/work/a\b`, one file whose name contains a backslash, into
     `/work/a/b`, which is another: two resources merged before anything
     was ledgered. A remote bridge already sends its own machine's paths
-    portably, so there was nothing to fold for it.
+    portably, so there was nothing to fold for it. (The op path only.
+    The lifecycle hooks and the write guard went on folding
+    unconditionally until round forty-seven below, so the guard could
+    still answer `allow` for a file a remote agent held.)
   - A path named on another agent's behalf is not resolved locally.
     `force_release` with an `agent` quotes the path the board shows,
     which is the holder's spelling on the holder's machine; the bridge
     and the hub both resolved it against the caller's filesystem, so a
     macOS coordinator releasing a Linux agent's `/tmp/repo/file.go` asked
     for `/private/tmp/repo/file.go`, was told there was no such claim,
-    and left the real one in place.
+    and left the real one in place. (In the bridge and the hub. The pi
+    plugin kept resolving it until round forty-seven below.)
   - A Codex hook that is switched off is not reported as delivering mail.
     `hooks/list` reports trust and enablement separately and lists
     disabled hooks too; `dibs codex-hooks` and `dibs doctor` read only
     the first, so both said mail arrived at every lifecycle boundary for
-    a hook a person had turned off in the Codex TUI.
+    a hook a person had turned off in the Codex TUI. (Every report but
+    the one printed after `--trust` writes, which round forty-seven
+    below fixes.)
 - **Round forty-five of the pre-release review: two findings.**
   - A Supgang lookup that succeeds does not overrule an identity another
     process here published while it ran. Round forty closed the direction
