@@ -166,6 +166,11 @@ type Op struct {
 	Mode string `json:"mode,omitempty"`
 	Note string `json:"note,omitempty"`
 
+	// host_renamed: the id this computer used to answer to, and the one it
+	// answers to now. See OpHostRenamed.
+	HostWas string `json:"host_was,omitempty"`
+	HostNow string `json:"host_now,omitempty"`
+
 	// sweep: recorded impure inputs (SPEC §7)
 	//
 	// GiveUpAnnounce lists announcements whose redelivery budget is spent. The

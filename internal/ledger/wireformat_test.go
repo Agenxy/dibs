@@ -131,7 +131,12 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		// has forgotten its fingerprint. A rename would silently let every
 		// recorded footprint decide one on replay.
 		"index_supplied": true,
-		"score":          true, "threshold": true, "scorer_id": true, "scorer_version": true,
+		// The two ids a host_renamed op carries. Renaming either would make
+		// the op a no-op on replay, and the machine would go back to being
+		// two machines to its own board: rows renamed on the day, not on
+		// the next replay.
+		"host_was": true, "host_now": true,
+		"score": true, "threshold": true, "scorer_id": true, "scorer_version": true,
 		"evidence": true, "auto": true,
 		"stale_agents": true, "alive_pids": true,
 		"no_process": true, "adopt_authorised": true, "choices": true, "grant": true, "adopt": true,
@@ -391,7 +396,7 @@ const (
 	// again for `index_supplied`: one new tag each time, no rename. If you are here because a sweep moved
 	// this value, the sweep is the bug, and the tag it renamed is the data
 	// loss.
-	frozenOpFingerprint       = "sha256:020b66796e5be75a"
+	frozenOpFingerprint       = "sha256:37655b6b7bb83921"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`
@@ -477,6 +482,7 @@ func TestOpKindStringsAreFrozen(t *testing.T) {
 		"OpSpaceAnnounce":  {core.OpSpaceAnnounce, "announce"},
 		"OpSpaceAck":       {core.OpSpaceAck, "ack_announcement"},
 		"OpAdoptAgent":     {core.OpAdoptAgent, "adopt_agent"},
+		"OpHostRenamed":    {core.OpHostRenamed, "host_renamed"},
 		"OpSpaceRetitle":   {core.OpSpaceRetitle, "retitle_space"},
 		// THE EIGHT THIS TABLE DID NOT KNOW ABOUT. It called itself the single
 		// authoritative list and omitted these, so renaming any one of them left

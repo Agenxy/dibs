@@ -34,6 +34,7 @@ func (e *Engine) GuardPath(ctx context.Context, sessionID, path, cwd string) (co
 func (e *Engine) GuardPathFrom(ctx context.Context, sessionID, path, cwd, host string) (core.Result, error) {
 	// Spelled as the fold spelled the claims it is compared against.
 	path, cwd = foldSeparators(path), foldSeparators(cwd)
+	host = e.canonicalHost(host) // an id this machine used to answer to is this machine
 	return e.query(ctx, func() core.Result {
 		agent := ""
 		l := e.state.AgentForHookOn(sessionID, cwd, host)
