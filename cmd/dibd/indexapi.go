@@ -227,16 +227,24 @@ func (f *scorerFlags) installSupplied(
 			DirectorRequired: f.director, AutoJoin: f.autoJoin, Repo: root,
 		}, engine.IndexInfo{Fingerprint: p.Fingerprint, SuppliedBy: agent, SuppliedHost: host})
 		f.suppliedAt[root] = p.Fingerprint
+		// AND THE STATUS THAT SAYS SO, under the same hold. These ran
+		// after the lock was released, so an eviction in between removed
+		// the scorer and left the status saying this root has a supplied
+		// index: the shipment answered accepted, matching was gone, and
+		// the bridge then SKIPPED re-shipping because the status still
+		// said its index was installed. Round fifty-one of the
+		// pre-release review; round thirty-seven made the index and the
+		// bookkeeping atomic and left the status outside.
+		eng.NoteSuppliedIndexFrom(root, agent, host)
+		// Suggest-only: a supplied index never joins anyone, see above.
+		eng.SetMatchStatus(engine.MatchStatus{
+			Phase: engine.MatchNoThreshold, Scorer: scorer.ID(), Repo: root,
+			Files: lex.Files(), Commits: cc.Commits(),
+		})
 	}) {
 		return map[string]any{"accepted": false, "reason": "this tree was claimed by another " +
 			"index while yours was being installed; ship it again"}
 	}
-	eng.NoteSuppliedIndexFrom(root, agent, host)
-	// Suggest-only: a supplied index never joins anyone, see above.
-	phase := engine.MatchNoThreshold
-	eng.SetMatchStatus(engine.MatchStatus{
-		Phase: phase, Scorer: scorer.ID(), Repo: root, Files: lex.Files(), Commits: cc.Commits(),
-	})
 	slog.Info("work-overlap matching ready from an agent-supplied index",
 		"repo", root, "agent", agent, "files", lex.Files(), "commits", cc.Commits(),
 		"why", "the daemon cannot read this tree; the agent inside it shipped what the index is built from")

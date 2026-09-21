@@ -128,6 +128,23 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round fifty-one of the pre-release review: two findings.**
+  - Every answer about this machine's identity competes for one file.
+    The Supgang branch wrote `supgang_node_id` and the minting branch
+    exclusively created `host_id`, so two bridges could each look, see
+    nothing, and then each succeed at a different name: two identities
+    on one computer, held for the life of both processes, with
+    host-scoped claims no longer colliding between its own agents.
+    Exclusivity is only exclusivity when everybody competes for the same
+    name, which is the fourth and, structurally, the last shape of this
+    race.
+  - The status that says a tree has a supplied index moves with the
+    index. `NoteSuppliedIndexFrom` and the match status ran after the
+    claim lock was released, so an eviction in between removed the
+    scorer and left the status describing one: the shipment answered
+    accepted, matching was gone, and the bridge then skipped re-shipping
+    because the status said an index was installed. Nothing recovered
+    from that until a restart.
 - **Round fifty of the pre-release review: one finding.** A Supgang
   answer that arrives after this machine has already published an
   identity is recorded as PENDING, and nothing that is serving reads it.
