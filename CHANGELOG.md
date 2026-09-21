@@ -58,6 +58,24 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **`internal/core` owns the pure rules it states, and nothing copies them
+  any more.** Three places kept a hand-copy of something core already says,
+  each with a comment explaining why it had to: `paths.Portable` duplicated
+  the UNC path cleaning ("core may not import this package; the two must
+  stay identical"), and `internal/overlap` duplicated two numeric bounds
+  ("overlap sits below core and does not import it"), guarded by a test in
+  `internal/mcp` that read overlap's source to check the literals still
+  matched. Both premises were true about the direction they named and false
+  about the one that mattered: core imports nothing, so everything can
+  import core. `core.CleanPath` is exported and is now the only
+  implementation; overlap reads `core.MaxFingerprintBytes` and
+  `core.DefaultLimits().MaxPathBytes` directly; the drift guard is gone with
+  the drift. A new check, `TestCoreImportsNothingThatCouldMakeItImpure`,
+  keeps the reasoning true: it fails on a project import, a third-party
+  import, or any standard-library import that could reach the disk, the
+  clock, the network or the process, and it was shown catching all three.
+
+
 - **The opencode and pi plugins are transports now, not clients: one
   implementation of every client rule, in Go.** Both spoke to the daemon
   themselves, and the pre-release review spent rounds nineteen through

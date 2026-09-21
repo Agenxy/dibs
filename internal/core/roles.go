@@ -95,7 +95,7 @@ func (s *State) applyForceRelease(l *Agent, op *Op) (Result, []Event, error) {
 	if !l.IsCoordinator() {
 		return nil, nil, ErrNotCoordinator
 	}
-	path := cleanPath(op.Path)
+	path := CleanPath(op.Path)
 	for i, c := range s.Claims {
 		if c.Path != path {
 			continue
@@ -373,13 +373,13 @@ func (s *State) AgentForHookOn(sid, cwd, host string) *Agent {
 	if cwd == "" {
 		return nil
 	}
-	want := cleanPath(cwd)
+	want := CleanPath(cwd)
 	var found *Agent
 	for _, l := range s.Agents {
 		if l.Status == StatusArchived || l.Status == StatusClosed {
 			continue
 		}
-		if l.Agent == nil || cleanPath(l.Agent.CWD) != want || !hookOnHost(l, host) {
+		if l.Agent == nil || CleanPath(l.Agent.CWD) != want || !hookOnHost(l, host) {
 			continue
 		}
 		if found != nil {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/paths"
 )
 
@@ -43,14 +44,21 @@ type Payload struct {
 	Commits []Commit `json:"commits"`
 }
 
-// maxPathBytes matches core.DefaultLimits().MaxPathBytes, for the same
-// reason and with the same drift guard as maxFingerprintBytes below.
-const maxPathBytes = 1024
-
-// maxFingerprintBytes matches core.MaxFingerprintBytes. Not imported:
-// overlap is below core and stays that way; the two are checked against
-// each other by TestTheShipmentAndTheFoldBoundTheFingerprintAlike.
-const maxFingerprintBytes = 300
+// The fold's own bounds, not copies of them.
+//
+// These were two literals here with a drift guard in internal/mcp reading
+// this file's source to check the numbers still matched, on the reasoning
+// that "overlap sits below core and does not import it". The premise was
+// false: core imports nothing, from internal or anywhere with state, so
+// every package can import it and none has to keep a second copy of a
+// number. Two copies of one bound drift and the failure is silent on
+// whichever side is larger, which is why the guard existed; one bound
+// cannot. Round fifty-four of the pre-release review found the drift, and
+// the consolidation before v0.0.8 removed the second copy.
+var (
+	maxPathBytes        = core.DefaultLimits().MaxPathBytes
+	maxFingerprintBytes = core.MaxFingerprintBytes
+)
 
 // Bounds on a shipped index. The daemon's memory is what a payload lands in,
 // and it arrives from an agent: measured, this repository is ~30 KB for 144

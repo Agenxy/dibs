@@ -65,7 +65,7 @@ func (s *State) GuardPath(agent, path string, now time.Time) GuardVerdict {
 	if agent == "" || path == "" {
 		return guardAllowed
 	}
-	p := cleanPath(path)
+	p := CleanPath(path)
 	// The portable name for the same file, so the guard sees a linked worktree's
 	// claim the way the claim path does. Without it an exclusive claim taken in
 	// /a/wt1 does not stop an edit to the same tracked file through /a/wt2: the
