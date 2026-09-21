@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/engine"
@@ -77,5 +79,52 @@ func TestADaemonKeepsTheIdentityThisComputerIsKnownBy(t *testing.T) {
 	}
 	if supgang.RememberedNodeID(fresh) != "" {
 		t.Fatal("a directory with no successful lookup remembered something")
+	}
+}
+
+// And a daemon that could not identify itself at startup does not change
+// its identity while it is serving.
+//
+// The first retry called SetHostID from its goroutine. Two defects in one:
+// the identity decides which agents are on this machine, so changing it
+// under a board that already holds claims splits it (rows registered
+// before and after read as two computers, and both can take one path
+// exclusively); and the setter writes a plain field the request path
+// reads, which is a data race. The retry now remembers the answer, so the
+// next start is right, and says a restart would pick it up. Round thirty
+// of the pre-release review.
+func TestADaemonDoesNotChangeItsIdentityWhileServing(t *testing.T) {
+	const node = "a8a37e32c37cdf4fb7634de622bc3f84ccb4636580d1ea26af3fe8ac31d1f152"
+	dir := t.TempDir()
+	// Supgang answers now, and did not when this daemon started.
+	old := supgang.Command
+	supgang.Command = filepath.Join(dir, "supgang")
+	t.Cleanup(func() { supgang.Command = old })
+	script := "#!/bin/sh\nprintf '%s' '{\"schema\":\"supgang.status/v4\",\"status\":\"ok\"," +
+		"\"name\":\"MacSolis\",\"node_id\":\"" + node + "\"}'\n"
+	if err := os.WriteFile(supgang.Command, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	eng := engineNamed(t, "board-node")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	oldRetry := identifyRetry
+	identifyRetry = 10 * time.Millisecond
+	t.Cleanup(func() { identifyRetry = oldRetry })
+	keepAskingSupgang(ctx, eng, dir, false)
+
+	// The answer is remembered for the next start, and the running daemon
+	// keeps the identity it has been serving under all along.
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) && supgang.RememberedNodeID(dir) == "" {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := supgang.RememberedNodeID(dir); got != node {
+		t.Fatalf("the retry remembered %q, want %q: the next start would identify wrongly again", got, node)
+	}
+	if got := eng.HostID(); got != "board-node" {
+		t.Fatalf("the daemon changed its identity to %q while serving: agents registered before and "+
+			"after read as two computers, and both can take one path exclusively", got)
 	}
 }
