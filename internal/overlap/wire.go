@@ -43,6 +43,10 @@ type Payload struct {
 	Commits []Commit `json:"commits"`
 }
 
+// maxPathBytes matches core.DefaultLimits().MaxPathBytes, for the same
+// reason and with the same drift guard as maxFingerprintBytes below.
+const maxPathBytes = 1024
+
 // maxFingerprintBytes matches core.MaxFingerprintBytes. Not imported:
 // overlap is below core and stays that way; the two are checked against
 // each other by TestTheShipmentAndTheFoldBoundTheFingerprintAlike.
@@ -95,6 +99,17 @@ func (p *Payload) Validate() error {
 		return fmt.Errorf("%d commits exceeds the %d window", len(p.Commits), MaxPayloadCommits)
 	}
 	for _, f := range p.Files {
+		// STRUCTURE AND SIZE. This checked the shape and not the length,
+		// and a path from a shipped index is copied onto predictions and
+		// into the ledger: a file named `needle/` plus three megabytes of
+		// `<` produced an eighteen-megabyte ledger line, past what `dibs
+		// verify` can read back, so verification stopped two records in.
+		// Round fifty-four bounded the fingerprint and left this open;
+		// round fifty-six of the pre-release review found it.
+		if len(f) > maxPathBytes {
+			return fmt.Errorf("file path is %d bytes, over the %d a path needs",
+				len(f), maxPathBytes)
+		}
 		if !repoRelative(f) {
 			return fmt.Errorf("file %q is not a repository-relative path", f)
 		}

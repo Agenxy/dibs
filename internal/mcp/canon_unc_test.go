@@ -61,6 +61,13 @@ func TestTheShipmentAndTheFoldBoundTheFingerprintAlike(t *testing.T) {
 			"core.MaxFingerprintBytes says: one of the two accepts what the other refuses, "+
 			"and the larger side decides what reaches the ledger", core.MaxFingerprintBytes)
 	}
+	// The same for a path, which is the other string a shipped index
+	// puts into the ledger (round fifty-six).
+	wantPath := "const maxPathBytes = " + strconv.Itoa(core.DefaultLimits().MaxPathBytes)
+	if !strings.Contains(string(src), wantPath) {
+		t.Fatalf("internal/overlap does not bound a shipped file path at %d, which is what "+
+			"core's limits say", core.DefaultLimits().MaxPathBytes)
+	}
 }
 
 // A resume records where the agent is NOW, not where it registered.
