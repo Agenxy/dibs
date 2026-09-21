@@ -47,43 +47,53 @@ func hostID() string {
 			hostIDValue = id
 			return
 		}
-		// SUPGANG FIRST. A machine in the fleet's address plane already has
-		// one identity, and it is the one every other member knows this
-		// computer by; a second id minted here would make the same computer
-		// answer to two names (docs/NETWORK.md §2). Only when Supgang is
-		// absent or not initialised does the data directory's own id stand in.
+		// THE DATA DIRECTORY'S RECORDED IDENTITY, and Supgang seeds it.
+		//
+		// What every process on one machine must agree about is a single
+		// value at any instant, and a bridge holds its answer for its
+		// life. So the answer is a FACT ON DISK, read the same way by
+		// everything here (the daemon reads the same two files, and the
+		// plugins read what this publishes), and Supgang is consulted only
+		// when the directory has nothing to say:
+		//
+		//   - the id Supgang gave here before (supgang.NodeIDFile), which
+		//     a later failed lookup therefore cannot rename (round
+		//     twenty-eight);
+		//   - the daemon's own node id, or a host id minted here earlier,
+		//     which is what a machine with no Supgang answers by;
+		//   - and only then Supgang itself, remembered so the next process
+		//     needs no lookup.
+		//
+		// Asking Supgang FIRST looked right and was the same split from
+		// the other side: the first bridge started after Supgang became
+		// available answered with the fleet id while every older bridge,
+		// and the running daemon, still answered with the minted one, and
+		// the fold reads two ids as two machines, so two agents on one
+		// computer each took an exclusive claim on the same path outside a
+		// checkout. A machine JOINING the fleet therefore adopts its fleet
+		// identity when the daemon there next starts (it remembers the
+		// answer for everything else), not the instant a lookup succeeds.
+		// Round thirty-three of the pre-release review.
+		dir := paths.DataDir()
+		if remembered := supgang.RememberedNodeID(dir); remembered != "" {
+			hostIDValue = remembered
+			return
+		}
+		if recorded := recordedHostID(dir); recorded != "" {
+			hostIDValue = recorded
+			return
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		id, err := supgang.Status(ctx)
 		if err == nil && id.NodeID != "" {
+			supgang.RememberNodeID(dir, id.NodeID)
 			hostIDValue = id.NodeID
-			supgang.RememberNodeID(paths.DataDir(), id.NodeID)
 			return
 		}
-		// AND ONCE A MACHINE IS KNOWN BY ITS SUPGANG ID, A FAILED LOOKUP
-		// DOES NOT RENAME IT.
-		//
-		// This fell straight through to the minted id on ANY error: a
-		// timeout, a service restarting, a process that started while
-		// Supgang was initialising. The bridge then held that id for its
-		// life while its neighbours held the Supgang one, and the fold
-		// reads two ids as two machines: two agents on one computer each
-		// took an exclusive claim on the same path outside a checkout, and
-		// the guard allowed both writes. So the first successful answer is
-		// remembered beside the secret and stands in when a later lookup
-		// fails. Found by round twenty-eight of the pre-release review.
-		//
-		// What is left is a machine that has NEVER resolved: there is
-		// nothing to remember and the minted id is the only answer, which
-		// is the same answer every process there gets until Supgang first
-		// speaks.
-		if remembered := supgang.RememberedNodeID(paths.DataDir()); remembered != "" {
-			slog.Warn("supgang did not answer; keeping the node id this machine is already known by",
-				"node", remembered, "err", err)
-			hostIDValue = remembered
-			return
-		}
-		hostIDValue = loadOrCreateHostID(paths.DataDir())
+		slog.Debug("no recorded identity for this machine and Supgang did not name it; "+
+			"minting one for this data directory", "err", err)
+		hostIDValue = loadOrCreateHostID(dir)
 	})
 	return hostIDValue
 }
@@ -92,6 +102,25 @@ var (
 	hostIDOnce  sync.Once
 	hostIDValue string
 )
+
+// recordedHostID is the identity this data directory already holds: the
+// daemon's own node id, else a host id minted here earlier. "" when the
+// directory has never named this machine, which is the one case Supgang is
+// asked about.
+func recordedHostID(dir string) string {
+	if dir == "" {
+		return ""
+	}
+	for _, name := range []string{"node_id", "host_id"} {
+		// #nosec G304 -- the user's own data directory
+		if b, err := os.ReadFile(filepath.Join(dir, name)); err == nil {
+			if id := strings.TrimSpace(string(b)); id != "" {
+				return id
+			}
+		}
+	}
+	return ""
+}
 
 // resolvedHostFile is where the answer above is published for the one
 // reader that cannot compute it: the opencode plugin, which runs no
