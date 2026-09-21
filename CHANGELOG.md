@@ -58,6 +58,19 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **`dibs doctor` asks the hub which machine is the hub, instead of guessing.**
+  A bridge is a wake route for another machine's agents and never for a local
+  one, and the hub's own `[wake.exec]` is the reverse, so every coverage
+  answer turns on "is this agent on the hub". The engine reads several ids as
+  itself: the one it stamps with, the ledger's node id for rows written before
+  it had a Supgang identity, and every id it used to answer to. Doctor could
+  see none of that and compared with the board's current id alone, so on a
+  machine that adopted a Supgang identity its own older rows read as remote,
+  in both of the directions that report health: the hub's own command stopped
+  counting for them, and a bridge attached for that id started counting, which
+  is the route the engine refuses outright for a local agent. `GET /api/hosts`
+  now carries `self`, the set the daemon reads as itself, and doctor uses it;
+  against a daemon too old to say, the previous comparison stands.
 - **`internal/core` owns the pure rules it states, and nothing copies them
   any more.** Three places kept a hand-copy of something core already says,
   each with a comment explaining why it had to: `paths.Portable` duplicated
@@ -74,7 +87,6 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   keeps the reasoning true: it fails on a project import, a third-party
   import, or any standard-library import that could reach the disk, the
   clock, the network or the process, and it was shown catching all three.
-
 
 - **The opencode and pi plugins are transports now, not clients: one
   implementation of every client rule, in Go.** Both spoke to the daemon

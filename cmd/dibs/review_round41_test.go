@@ -23,7 +23,7 @@ func TestDoctorNamesTheHarnessWithNoWakeCommand(t *testing.T) {
 		}{Harness: "OpenCode"}},
 	}}
 	var fix string
-	reportWakeCoverage(exec, b, nil, t.TempDir(),
+	reportWakeCoverage(exec, b, hubHosts{}, t.TempDir(),
 		func(string) { t.Fatal("an uncovered agent was reported as covered") },
 		func(_, f string) { fix = f })
 	if fix == "" {
@@ -40,7 +40,7 @@ func TestDoctorNamesTheHarnessWithNoWakeCommand(t *testing.T) {
 	fix = ""
 	b.Agents[0].Agent.Harness = "Codex"
 	b.Agents[0].Resumable = false
-	reportWakeCoverage(exec, b, nil, t.TempDir(), func(string) { t.Fatal("reported as covered") }, func(_, f string) { fix = f })
+	reportWakeCoverage(exec, b, hubHosts{}, t.TempDir(), func(string) { t.Fatal("reported as covered") }, func(_, f string) { fix = f })
 	if !strings.Contains(fix, "no thread") {
 		t.Fatalf("a harness with a command and no thread is not told so:\n%s", fix)
 	}
