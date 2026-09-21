@@ -77,3 +77,22 @@ func TestAShippedFilePathIsBounded(t *testing.T) {
 		t.Fatalf("an ordinary payload was refused: %v", err)
 	}
 }
+
+// The paths inside a shipped commit are bounded like the file list.
+//
+// Co-change expansion copies them into predictions exactly as Files are,
+// and round fifty-six bounded Files alone: an upload with a three-megabyte
+// path inside a commit answered accepted, and every declaration scored
+// in that index was then refused at ingress as too large. Round
+// fifty-seven of the pre-release review.
+func TestACommitsPathsAreBoundedLikeTheFileList(t *testing.T) {
+	huge := "needle/" + strings.Repeat("<", 3<<20)
+	p := &Payload{
+		Root: "/w/repo", Fingerprint: "fp-1", Files: []string{"a.go"},
+		Commits: []Commit{{Files: []string{"a.go", huge}}},
+	}
+	if err := p.Validate(); err == nil {
+		t.Fatal("a commit naming a three-megabyte path was accepted: the index installs, " +
+			"and every declaration scored in it is refused as too large")
+	}
+}

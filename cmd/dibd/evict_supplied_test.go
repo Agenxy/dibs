@@ -123,3 +123,55 @@ func TestEvictionKeepsATreeAnAgentReturnedToMidPass(t *testing.T) {
 		t.Fatal("an idle tree nobody returned to was kept")
 	}
 }
+
+// Another machine's agent at the same path does not keep an index alive
+// that it cannot use.
+//
+// Eviction saw working-directory strings and no hosts, and a path is a
+// path on one computer only: after every agent of machine A had left
+// /repo, an agent on machine B at /repo kept A's index there alive. B is
+// refused that index (an index serves the machine it was shipped from),
+// and B's own shipment for the root was refused because A still held the
+// slot. The index nobody could use survived; the one somebody needed
+// never arrived. Round fifty-seven of the pre-release review.
+func TestAnotherMachinesAgentDoesNotKeepAnUnusableIndexAlive(t *testing.T) {
+	eng, ctx := testEngine(t)
+	// Machine A's index at /repo, with A's agents all gone: only B is here.
+	res, err := eng.Do(ctx, &core.Op{
+		Kind: core.OpRegister, Name: "on-b",
+		Agent: &core.AgentInfo{CWD: "/repo/pkg", HostID: "machine-b"},
+	})
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	if _, err := eng.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: res["token"].(string)}); err != nil {
+		t.Fatal("setup:", err)
+	}
+	f := &scorerFlags{
+		indexed:      map[string]bool{"/repo": true},
+		supplied:     map[string]string{"/repo": "on-a"},
+		suppliedHost: map[string]string{"/repo": "machine-a"},
+		rootOf:       map[string]string{"/repo": "/repo"},
+	}
+	eng.SetIndex("/repo", overlap.NewLexicalFromFiles(nil, nil), engine.MatchConfig{},
+		engine.IndexInfo{SuppliedBy: "on-a", SuppliedHost: "machine-a"})
+
+	if !f.evictIdleIndexes(ctx, eng) {
+		t.Fatal("machine A's index at /repo was kept alive by an agent on machine B, which " +
+			"is refused it, and B's own shipment for that root stays refused while A holds the slot")
+	}
+
+	// The control: the same agent on the machine the index serves keeps it.
+	f = &scorerFlags{
+		indexed:      map[string]bool{"/repo": true},
+		supplied:     map[string]string{"/repo": "on-b"},
+		suppliedHost: map[string]string{"/repo": "machine-b"},
+		rootOf:       map[string]string{"/repo": "/repo"},
+	}
+	eng.SetIndex("/repo", overlap.NewLexicalFromFiles(nil, nil), engine.MatchConfig{},
+		engine.IndexInfo{SuppliedBy: "on-b", SuppliedHost: "machine-b"})
+	if f.evictIdleIndexes(ctx, eng) {
+		t.Fatal("an index was evicted under an agent on the machine it serves: this test " +
+			"is not measuring the host, it is evicting everything")
+	}
+}
