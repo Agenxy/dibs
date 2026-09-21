@@ -121,10 +121,26 @@ func TestASuccessfulLookupDoesNotOverruleAPublishedIdentity(t *testing.T) {
 		t.Fatalf("this bridge answers %q while the one that got there first published "+
 			"%q: the machine has two identities for as long as both run", got, "minted-by-a-sibling")
 	}
-	// And the fleet id is remembered, so the next start adopts it and the
-	// daemon's rename moves the rows that were registered under the other.
+	// AND A THIRD BRIDGE STARTING NOW READS THE SAME ANSWER. Recording
+	// the fleet id as this machine's identity, rather than as pending,
+	// is what round fifty found: identityOnDisk reads that file first,
+	// so the next process to start answered with the fleet id while the
+	// two already running answered with the minted one. One machine,
+	// two names, and a hub that reads its agents as two computers.
+	if got := resolveHostID(dir); got != "minted-by-a-sibling" {
+		t.Fatalf("a bridge starting now answers %q while the two already running answer "+
+			"%q: the machine is split three ways", got, "minted-by-a-sibling")
+	}
+	// The fleet id is recorded as PENDING, so nothing serving changes and
+	// the next daemon start adopts it (and renames the rows with it).
+	if got := supgang.RememberedNodeID(dir); got != "" {
+		t.Fatalf("the fleet identity was taken up mid-boot (%q): that is the split above", got)
+	}
+	if got := supgang.PromotePendingNodeID(dir); got != fleet {
+		t.Fatalf("promoting at the next start gave %q, want the fleet identity %q: without "+
+			"it this machine never joins the fleet at all", got, fleet)
+	}
 	if got := supgang.RememberedNodeID(dir); got != fleet {
-		t.Fatalf("the fleet identity was not remembered (%q), so the next start will not "+
-			"adopt it either", got)
+		t.Fatalf("after promotion this machine is remembered as %q", got)
 	}
 }

@@ -91,10 +91,16 @@ func resolveHostID(dir string) string {
 	defer cancel()
 	id, err := supgang.Status(ctx)
 	if err == nil && id.NodeID != "" {
-		// Remembered whatever happens, so the NEXT start adopts the fleet
-		// identity: that is the documented transition, and it belongs to a
-		// restart rather than to whichever process asked first.
-		supgang.RememberNodeID(dir, id.NodeID)
+		// REMEMBERED WHERE IT CHANGES NOTHING UNTIL A RESTART. Recording
+		// it as this machine's identity here is what round fifty found:
+		// every process that starts afterwards reads that file first and
+		// answers with the fleet id while the ones already running answer
+		// with the minted one, so one computer had two names at once and
+		// the hub read its agents as two machines. A late answer goes to
+		// the pending file, which nothing consults for a running
+		// process's identity, and the daemon promotes it at its next
+		// start, where nothing is racing and the rows are renamed in the
+		// same breath.
 		// BUT NOT AHEAD OF A SIBLING THAT ALREADY PUBLISHED ONE. Round
 		// forty found the case where this process is the one that waits
 		// and mints; the other direction was left open, and it splits the
@@ -107,11 +113,15 @@ func resolveHostID(dir string) string {
 		// the next start, where nothing is racing. Round forty-five of the
 		// pre-release review.
 		if minted := mintedHostID(dir); minted != "" && minted != id.NodeID {
+			supgang.RememberPendingNodeID(dir, id.NodeID)
 			slog.Debug("another process here published an identity while Supgang was "+
 				"answering; keeping it until the next start", "published", minted,
 				"supgang", id.NodeID)
 			return minted
 		}
+		// Nothing else has published one, so this IS the machine's answer
+		// and the next start should read it back as such.
+		supgang.RememberNodeID(dir, id.NodeID)
 		return id.NodeID
 	}
 	// A SILENT SUPGANG IS NOT AN ABSENT ONE, and another process here may

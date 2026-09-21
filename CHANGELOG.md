@@ -128,6 +128,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round fifty of the pre-release review: one finding.** A Supgang
+  answer that arrives after this machine has already published an
+  identity is recorded as PENDING, and nothing that is serving reads it.
+  Round forty-five stopped the bridge that got the late answer from using
+  it, and still wrote it down as this machine's identity: the next
+  process to start read that file first and answered with the fleet id
+  while the two already running answered with the minted one. One
+  computer, three bridges, two names, and a hub that reads its agents as
+  two machines. The daemon promotes the pending identity at its next
+  start, which is where the transition belongs and where the rows
+  registered under the old id are renamed with it.
 - **Round forty-nine of the pre-release review: two findings.**
   - A shipped index is not calibrated against this machine's disk.
     Calibration samples commits and builds a held-out index by running
@@ -204,7 +215,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     succeeded answering with the fleet id for its whole life, which is one
     computer with two identities and a hub that reads them as two. The
     published file decides for this boot, and the fleet identity is
-    adopted at the next start, where nothing is racing.
+    adopted at the next start, where nothing is racing. (It was written
+    down as this machine's identity, which the NEXT process to start then
+    read as current: round fifty below records it as pending instead.)
   - A portable path is contained with the portable separator. `underDir`
     made both operands portable and then joined them with
     `filepath.Separator`, so on a Windows hub `C:/work/repo/pkg` was not
