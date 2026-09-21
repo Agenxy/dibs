@@ -218,13 +218,19 @@ func (p *rolePins) check(role, name, fingerprint, want string) error {
 		// below is for: the pin refuses a different agent under the same name,
 		// and the config refuses an agent the operator no longer names.
 		if want == "" {
-			return fmt.Errorf("%q is pinned as the holder of %s, and [roles.identity] "+
-				"no longer names it, so it is not granted again. IT IS NOT DEMOTED "+
-				"EITHER: a role is replayable state and survives restarts until "+
-				"something takes it away, so run `dibs admin member %q` to actually "+
-				"withdraw it. To hand it over instead, put the successor's fingerprint "+
-				"under [roles.identity], remove %q from %s, and restart; both files are "+
-				"read at startup", name, role, name, name, p.path)
+			// SAYS WHAT NOW HAPPENS, which is a withdrawal. This text was
+			// written when removing the entry left the role in place and
+			// told the operator to run `dibs admin member` themselves; the
+			// reconciler demotes the agent immediately after this error
+			// (TestDeletingTheIdentityEntryWithdrawsTheRole), so the
+			// instruction sent them to repeat what had already happened,
+			// and the advice logged beside it offered to restore the entry
+			// they had just deleted. Round fifty-three of the pre-release
+			// review.
+			return fmt.Errorf("%q is pinned as the holder of %s and [roles.identity] "+
+				"no longer names it: the role is withdrawn and the pin dropped. To hand "+
+				"it over instead, put the successor's fingerprint under [roles.identity] "+
+				"and restart; both files are read at startup (%s)", name, role, p.path)
 		}
 		if want != fingerprint {
 			return fmt.Errorf("[roles.identity] names a different fingerprint for %q "+

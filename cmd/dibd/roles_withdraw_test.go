@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -316,5 +317,44 @@ func TestDeletingTheIdentityEntryWithdrawsTheRole(t *testing.T) {
 	}
 	if _, pinned := pins.Pins[core.RoleAdmin]["release-manager"]; pinned {
 		t.Error("the pin outlived the grant it recorded")
+	}
+}
+
+// Withdrawing a role says it was withdrawn, and does not offer to undo
+// it.
+//
+// Removing an agent's [roles.identity] entry demotes it, which
+// TestDeletingTheIdentityEntryWithdrawsTheRole pins. The messages around
+// that still described the behaviour from before the reconciler existed:
+// the pin's error said "IT IS NOT DEMOTED EITHER" and told the operator
+// to run `dibs admin member` to do what had already happened, and the
+// warning logged beside it offered the [roles.identity] line to paste
+// back, which is the entry they had deliberately deleted. Following
+// either undoes a revocation. Round fifty-three of the pre-release
+// review.
+func TestWithdrawingARoleDoesNotAdviseUndoingIt(t *testing.T) {
+	eng, ctx := testEngine(t)
+	pins := loadRolePins(t.TempDir())
+	registerAgentAs(t, eng, "release-manager", "nonce-rm")
+	fp := engine.RolePinFingerprint("nonce-rm")
+	applyDeclaredRoles(ctx, eng, RolesConfig{
+		Admin: []string{"release-manager"}, Identity: map[string]string{"release-manager": fp},
+	}, pins)
+	if !holdsRole(t, eng, "release-manager", core.RoleAdmin) {
+		t.Fatal("setup: the declared admin was not granted")
+	}
+
+	// The pin's own account of what removing the entry does.
+	err := pins.check(core.RoleAdmin, "release-manager", fp, "")
+	if err == nil {
+		t.Fatal("the pin accepted a grant the configuration no longer authorises")
+	}
+	said := err.Error()
+	if strings.Contains(said, "NOT DEMOTED") || strings.Contains(said, "admin member") {
+		t.Errorf("the pin says the role survives and tells the operator to withdraw it by "+
+			"hand, which the reconciler has already done: %q", said)
+	}
+	if !strings.Contains(said, "withdrawn") {
+		t.Errorf("the pin does not say the role was withdrawn: %q", said)
 	}
 }

@@ -656,6 +656,21 @@ func checkMatching(client *http.Client, sec string, ok reportFn, warn fixFn) {
 	}
 }
 
+// bareHarness is the harness name inside a wakeCoverage key, without the
+// parenthesised reason the coverage report appends ("(on laptop)", "(no
+// resumable thread)", "(working directory not on this machine)"). Empty
+// for a row that records no harness at all, which no configuration can
+// help.
+func bareHarness(key string) string {
+	if key == "(no harness recorded)" {
+		return ""
+	}
+	if i := strings.Index(key, " ("); i > 0 {
+		return key[:i]
+	}
+	return key
+}
+
 // checkHooks answers the question no other check can: is the claim guard
 // actually protecting anything?
 //
@@ -1477,19 +1492,27 @@ func reportWakeCoverage(
 	// by the pre-release review, round forty-one.
 	noCommand := 0
 	for _, h := range sortedKeys(missing) {
-		if have[h] || strings.HasSuffix(h, "(no resumable thread)") ||
-			strings.HasSuffix(h, "(working directory not on this machine)") ||
-			h == "(no harness recorded)" {
+		// THE HARNESS, NOT THE LABEL. wakeCoverage decorates its key with
+		// WHY the agent is uncovered, and this enumerated two of those
+		// decorations and missed the third: a key like
+		// `codex (on review-laptop)` is not a harness anybody runs, so
+		// doctor told the operator to configure `[wake.exec."codex (on
+		// review-laptop)"]`, which no agent would ever match, and the two
+		// cases that produce it got no usable advice at all. Stripping
+		// the decoration answers all of them, including the ones added
+		// next. Round fifty-three of the pre-release review.
+		harness := bareHarness(h)
+		if harness == "" || have[harness] {
 			continue
 		}
 		noCommand++
-		if sug, known := suggestedWake[h]; known {
+		if sug, known := suggestedWake[harness]; known {
 			fix += "\n\n" + sug
 			continue
 		}
 		fix += fmt.Sprintf("\n\n[wake.exec.%q]\n# no built-in command for this harness: the argv that resumes one "+
 			"of its threads, with {thread} and {message}; see docs/CONFIGURATION.md\n"+
-			"argv = [\"<command>\", \"{thread}\", \"{message}\"]", h)
+			"argv = [\"<command>\", \"{thread}\", \"{message}\"]", harness)
 	}
 	if noCommand == 0 {
 		// Nothing to paste: every harness here already HAS a command, and what
