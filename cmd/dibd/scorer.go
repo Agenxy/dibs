@@ -448,7 +448,7 @@ func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, held *cla
 	// Only notify. join stays at 0 unless asked for, because auto-JOINING on a
 	// measured-but-unreviewed number is a different risk: a wrong mention costs
 	// a glance, a wrong join costs an agent's membership.
-	notify := f.notifyFor(workCtx, dir, cc, scorer)
+	notify := f.notifyFor(workCtx, dir, cc, scorer, true)
 
 	// WHICH project this tree is, and WHICH history it was mined from. Two
 	// clones of one project are two indexes, and a declaration in either is
@@ -1101,10 +1101,26 @@ func protectedOnMacOS(cwd string) bool {
 
 // notifyFor is the notify bar to run with: the operator's if they set one,
 // otherwise a measured one.
+// readable says whether the daemon may run git in dir. False for an index
+// an agent SHIPPED, whose root names a directory on the shipper's machine.
 func (f *scorerFlags) notifyFor(
-	ctx context.Context, dir string, cc *overlap.CoChange, deployed overlap.Scorer,
+	ctx context.Context, dir string, cc *overlap.CoChange, deployed overlap.Scorer, readable bool,
 ) float64 {
 	if f.notify != 0 {
+		return f.notify
+	}
+	// NOT AGAINST A TREE THIS MACHINE CANNOT READ. Calibration samples
+	// commits and builds a held-out index by running git in the root, and
+	// a shipped index's root is a path on the SHIPPER's machine: if some
+	// unrelated checkout happens to sit at that path here, the threshold
+	// that decides which suggestions an agent sees was measured on it,
+	// and if nothing does, this retries the very access the shipment
+	// exists to avoid. An uncalibrated threshold is the operator's
+	// configured one, which is the honest answer when there is nothing
+	// here to measure. Round forty-nine of the pre-release review.
+	if !readable {
+		slog.Debug("not calibrating against a tree this daemon cannot read; the shipped index "+
+			"keeps the configured notify threshold", "repo", dir, "notify", f.notify)
 		return f.notify
 	}
 	cal, ok := f.calibrateNotify(ctx, dir, cc, deployed)

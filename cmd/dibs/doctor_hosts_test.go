@@ -236,3 +236,36 @@ func TestDoctorDoesNotCountALocalCommandAsCoverageForARemoteAgent(t *testing.T) 
 		t.Fatal("a local agent with a local command was not counted")
 	}
 }
+
+// A bridge attached for the HUB's own host is not a route to the hub's
+// own agents either.
+//
+// The engine refuses the bridge route for a local agent outright
+// (hostRouteFor), so counting it here reported a local agent as covered
+// on the strength of a route the wake will never take: with a bridge
+// attached for this host advertising Codex and no local Codex command,
+// doctor said the agent was reachable and nothing could reach it. The
+// mirror of the finding above, from the other side. Round forty-nine of
+// the pre-release review.
+func TestDoctorDoesNotCountTheHubsOwnBridgeAsCoverageForALocalAgent(t *testing.T) {
+	supgangNamesOnce.Do(func() {})
+	dir := t.TempDir()
+	hub := strings.Repeat("f", 64)
+	near := agentRow("near", "persistent", "codex")
+	near.Agent.HostID = hub
+	near.Agent.CWD = dir
+
+	// A bridge is attached for the hub's own host and claims codex; the
+	// hub itself has a command for claude and not for codex.
+	have := map[string]bool{"claude": true}
+	bridged := map[string]map[string]bool{hub: {"codex": true}}
+	if wakeCovered(near, "codex", hub, have, bridged) {
+		t.Fatal("a local agent was reported covered by a bridge attached for this same " +
+			"machine: the daemon refuses that route for a local agent, so the wake has " +
+			"nowhere to go and doctor says the fleet is reachable")
+	}
+	// With a local command for its harness it is covered, as before.
+	if !wakeCovered(near, "claude", hub, map[string]bool{"claude": true}, nil) {
+		t.Fatal("a local agent with a local command was not counted")
+	}
+}

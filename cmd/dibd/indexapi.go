@@ -203,7 +203,10 @@ func (f *scorerFlags) installSupplied(
 	cc := overlap.FromRecords(p.Commits, p.Fingerprint, overlap.CoChangeOptions{MaxCommits: f.history})
 	lex := overlap.NewLexicalFromFiles(p.Files, cc)
 	scorer := f.withSidecar(ctx, lex)
-	notify := f.notifyFor(ctx, root, cc, scorer)
+	// false: this root is the SHIPPER's path, and git here would either
+	// read somebody else's checkout or retry an access that already
+	// failed. See notifyFor.
+	notify := f.notifyFor(ctx, root, cc, scorer, false)
 	// No Identity: the payload's project fields are the agent's word, and an
 	// index with an identity becomes a PEER of every other index of that
 	// project (issue #39). A shipped index scores its own tree and nothing
