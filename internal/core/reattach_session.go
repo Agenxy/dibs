@@ -227,9 +227,22 @@ func (s *State) dropTakenSession(op *Op, l *Agent) {
 	if op.SessionTakenFrom == "" && op.SessionAliasTakenFrom == "" {
 		return
 	}
+	taker := takerHost(op, l)
 	for _, id := range sortedKeys(s.Agents) {
 		prev := s.Agents[id]
 		if l != nil && prev.ID == l.ID {
+			continue
+		}
+		// AND NOT A ROW ON ANOTHER COMPUTER. The ingress chooses the
+		// holder that yields on the CALLER'S machine (round twenty-one);
+		// the drop visited every row and took the id from any that was
+		// not active, so a register on machine A that legitimately took
+		// A's dormant holder stripped B's synthetic binding too, and B's
+		// hooks and guard resolved to nobody. Positive evidence of two
+		// computers only: a row that stated no host, and every board
+		// written before the field existed, loses the id exactly as it
+		// did. Round forty of the pre-release review.
+		if onAnotherMachine(taker, prev) {
 			continue
 		}
 		for _, sid := range []string{op.SessionID, op.SessionAlias} {
@@ -252,6 +265,29 @@ func (s *State) dropTakenSession(op *Op, l *Agent) {
 			}
 		}
 	}
+}
+
+// takerHost is the machine the take is being made from: the row taking the
+// id when there is one, else what the registration states. "" when
+// nothing said, which keeps every old board's behaviour.
+func takerHost(op *Op, l *Agent) string {
+	if l != nil && l.Agent != nil && l.Agent.HostID != "" {
+		return l.Agent.HostID
+	}
+	if op.Agent != nil {
+		return op.Agent.HostID
+	}
+	return ""
+}
+
+// onAnotherMachine is positive evidence that a row belongs to a computer
+// other than the one taking the id, in the three-valued shape the rest of
+// the fold uses: unknown is not difference.
+func onAnotherMachine(taker string, prev *Agent) bool {
+	if taker == "" || prev == nil || prev.Agent == nil || prev.Agent.HostID == "" {
+		return false
+	}
+	return prev.Agent.HostID != taker
 }
 
 // namesHolderOf reports whether the op's recorded takes name holder as the

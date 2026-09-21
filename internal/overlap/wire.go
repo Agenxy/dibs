@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/agenxy/dibs/internal/paths"
 )
 
 // Payload is an index as an agent ships it: everything the daemon would have
@@ -57,7 +59,12 @@ func (p *Payload) Validate() error {
 	switch {
 	case p == nil:
 		return errors.New("no payload")
-	case strings.TrimSpace(p.Root) == "" || !strings.HasPrefix(p.Root, "/"):
+	case strings.TrimSpace(p.Root) == "" || !paths.Absolute(p.Root):
+		// Absolute FOR WHOEVER SHIPPED IT. This asked for a leading
+		// slash, so an ordinary Windows checkout (`C:/work/repo`) was
+		// refused with 400 and could not ship an index at all, while the
+		// claim path from the same bridge was accepted. Round forty of
+		// the pre-release review.
 		return errors.New("root must be an absolute path")
 	case strings.TrimSpace(p.Fingerprint) == "":
 		// The fingerprint is the index's identity: what a declaration scored
