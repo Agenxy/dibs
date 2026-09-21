@@ -868,6 +868,24 @@ await handlers["before_agent_start"]!({}, { sessionManager: { getSessionId: () =
 // guard then asked about a path nobody was writing while the bridge had
 // recorded the claim correctly. Round twenty-seven of the pre-release
 // review. The real function is lifted from each plugin and run.
+// liftPortable returns the plugin's own portable() so a lifted canonical()
+// can call it, and fails loudly if the plugin stopped defining one: that
+// would mean a Windows agent on that harness had silently gone back to
+// sending native spellings (TestEveryHarnessSpellsAWindowsPathTheSameWay).
+func liftPortable(t *testing.T, src []byte, plugin string) string {
+	t.Helper()
+	const marker = "function portable(p: string, plat: string = process.platform): string {"
+	start := strings.Index(string(src), marker)
+	if start < 0 {
+		t.Fatalf("plugins/%s/dibs.ts no longer defines portable()", plugin)
+	}
+	end := strings.Index(string(src)[start:], "\n}\n")
+	if end < 0 {
+		t.Fatalf("could not find the end of portable() in plugins/%s/dibs.ts", plugin)
+	}
+	return string(src)[start:start+end+3] + "\n"
+}
+
 func TestThePluginsSpellPathsUnderAMissingTopLevelDirectory(t *testing.T) {
 	bun, err := exec.LookPath("bun")
 	if err != nil {
@@ -892,8 +910,12 @@ func TestThePluginsSpellPathsUnderAMissingTopLevelDirectory(t *testing.T) {
 				t.Fatal("could not find the end of canonical()")
 			}
 			fn := string(src)[start : start+end+3]
+			// canonical() ends by spelling its answer the way this
+			// machine's paths travel, so the helper it calls is lifted
+			// with it. Both come from the shipped file: a snippet that
+			// stubbed portable() would test a canonical() nobody runs.
 			script := "import { basename, dirname, isAbsolute, join, resolve } from \"node:path\"\n" +
-				"import { realpathSync } from \"node:fs\"\n" + fn +
+				"import { realpathSync } from \"node:fs\"\n" + liftPortable(t, src, plugin) + fn +
 				"\nconsole.log(canonical(process.env.P!))\n"
 			path := filepath.Join(dir, plugin+".ts")
 			if err := os.WriteFile(path, []byte(script), 0o600); err != nil {

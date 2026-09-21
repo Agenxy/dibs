@@ -447,6 +447,14 @@ var pathArgs = map[string][]string{
 	// that was not the agent's. Round nine of the pre-release review.
 	"register": {"cwd"},
 	"update":   {"cwd"},
+	// THE STRONGEST SIGNAL AN AGENT GIVES, and it was the one path
+	// argument nobody canonicalised: `declare` was not in this table at
+	// all, so a Windows agent's `C:\repo\pkg` never met the `C:/repo`
+	// root its own registration recorded and could be made relative to
+	// nothing, and a macOS agent's /tmp spelling had the same problem
+	// against a resolved /private/tmp root. Round forty-two of the
+	// pre-release review.
+	"declare": {"dirs"},
 }
 
 // canonicalisePathArgs resolves a call's path arguments on the machine they
@@ -473,10 +481,33 @@ func canonicalisePathArgs(params map[string]any) {
 		return
 	}
 	for _, k := range keys {
-		if p, _ := args[k].(string); p != "" && filepath.IsAbs(p) {
-			args[k] = portableSpelling(paths.Canonical(p))
+		switch v := args[k].(type) {
+		case string:
+			if p := canonicaliseOne(v); p != "" {
+				args[k] = p
+			}
+		case []any:
+			// `dirs` is a list, and a list of paths needs the same
+			// treatment one path does. A relative entry is left alone:
+			// declare accepts one, relative to the agent's own root.
+			for i, e := range v {
+				if p := canonicaliseOne(e); p != "" {
+					v[i] = p
+				}
+			}
 		}
 	}
+}
+
+// canonicaliseOne is one path argument resolved here and spelled the way
+// this machine's paths travel, or "" when it is not an absolute path this
+// side should touch.
+func canonicaliseOne(v any) string {
+	p, _ := v.(string)
+	if p == "" || !filepath.IsAbs(p) {
+		return ""
+	}
+	return portableSpelling(paths.Canonical(p))
 }
 
 // portableSpelling is how this machine's paths travel: with `/` as the

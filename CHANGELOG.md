@@ -108,6 +108,28 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round forty-two of the pre-release review: four findings.**
+  - Two declarations are compared only inside a coordinate system both
+    carry, which is what SPEC-CHANNELS.md §4 requires. The home-to-home
+    comparison stayed as an unconditional floor, so a pair that is
+    disjoint inside every index they actually share still scored on one
+    filename both histories happen to contain, and at
+    `auto_join = "always"` that puts an agent into a space on unrelated
+    work. A slot that names no index keeps the old comparison, which is
+    the only one it can take part in.
+  - The opencode and pi plugins spell a Windows path the way the bridge
+    does. They sent `C:\repo\file.go` where the same agent's
+    registration had recorded `C:/repo`, so on a unix hub the claim was
+    not inside the checkout it names and an exclusive claim protected
+    nothing. One table now runs through all three implementations.
+  - The directories an agent declares are canonicalised like every other
+    path it sends. `declare` was not in the table at all, so the
+    strongest signal an agent gives about where it is writing could not
+    be made relative to its own root.
+  - A shipment names its root the way the registration did. The hub
+    learned the portable spelling last round and the bridge went on
+    sending the native one, so a Windows checkout was answered 403 on
+    every upload.
 - **The repository index ceiling is no longer a lifetime count.** (#40) A
   tree stayed indexed after the last agent in it was terminal, so a
   long-running fleet used up the sixteen slots and silently stopped
@@ -147,10 +169,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     that was not active, so a register on one machine stripped a dormant
     holder of the same synthetic id on another, and that machine's hooks
     and guard resolved to nobody.
-  - An index shipped from a Windows checkout is accepted. The upload
-    asked for a leading slash, so `C:/work/repo` was refused as relative
-    while a claim from the same bridge was not. The rule about what is
-    absolute for whoever wrote it now lives in one place.
+  - An index shipped from a Windows checkout is accepted BY THE HUB. The
+    upload asked for a leading slash, so `C:/work/repo` was refused as
+    relative while a claim from the same bridge was not. The rule about
+    what is absolute for whoever wrote it now lives in one place. (The
+    other half of that path, the bridge sending the native spelling, was
+    still broken here and is fixed in round forty-two below: this entry
+    read as though Windows shipments worked, and they did not.)
 - **Round thirty-nine of the pre-release review: one finding.** The
   identity migration carries the repository snapshot a claim holds, not
   just the claim's own host. Two linked worktrees of one checkout are

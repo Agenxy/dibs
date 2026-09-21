@@ -423,8 +423,16 @@ func TestAPeerScoredByASuppliedIndexIsNeverJoinedAutomatically(t *testing.T) {
 		}
 		return tok
 	}
+	// BOTH IN THE SHIPPED TREE, which is where a shared coordinate system
+	// and a supplied index can both exist. Round thirteen reproduced this
+	// with one agent in each tree, and their scores met only through the
+	// home-to-home floor: round forty-two removed that comparison, because
+	// SPEC-CHANNELS.md §4 compares declarations only inside a system both
+	// carry, so the old topology now scores nothing for a reason that has
+	// nothing to do with provenance. Two agents on the shipper's own
+	// machine share h-shipped, and the rule still has to hold for them.
 	far := reg("far", core.AgentInfo{CWD: shipped, RepoRoot: shipped, HostID: "member"})
-	near := reg("near", core.AgentInfo{CWD: local, RepoRoot: local})
+	near := reg("near", core.AgentInfo{CWD: shipped, RepoRoot: shipped, HostID: "member"})
 
 	const work = "fix refresh token expiry"
 	resFar, err := e.DoMatched(ctx, &core.Op{Kind: core.OpSetSlot, Token: far, Text: work})
@@ -439,16 +447,50 @@ func TestAPeerScoredByASuppliedIndexIsNeverJoinedAutomatically(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	surfaced := false
 	for _, s := range suggestions(t, resNear) {
 		if s.Space != opened[0].Space {
 			continue
 		}
+		surfaced = true
 		if s.Action == "joined" || s.Action == "queued" {
-			t.Fatalf("near was %s to far's space on the strength of far's SHIPPED index: %+v", s.Action, s)
+			t.Fatalf("near was %s to far's space on the strength of a SHIPPED index: %+v", s.Action, s)
 		}
-		return
 	}
-	t.Fatal("near's declaration did not even surface far's space: the fixture does not overlap")
+	if !surfaced {
+		t.Fatal("near's declaration did not even surface far's space: the fixture does not " +
+			"overlap, so nothing above was measured")
+	}
+
+	// THE CONTROL. The same two declarations in a tree this daemon mined
+	// itself are joined, so the refusal above is the provenance and not a
+	// fixture that never scored.
+	mined := t.TempDir()
+	e.SetIndex(mined, cloneScorer{"mined", "shared.go"}, cfg, IndexInfo{Fingerprint: "h-mined"})
+	a := reg("mined-a", core.AgentInfo{CWD: mined, RepoRoot: mined})
+	b := reg("mined-b", core.AgentInfo{CWD: mined, RepoRoot: mined})
+	resA, err := e.DoMatched(ctx, &core.Op{Kind: core.OpSetSlot, Token: a, Text: work})
+	if err != nil {
+		t.Fatal(err)
+	}
+	theirs := suggestions(t, resA)
+	if len(theirs) != 1 || theirs[0].Action != "opened" {
+		t.Fatalf("the control's first declaration: %+v, want it to open a space", theirs)
+	}
+	resB, err := e.DoMatched(ctx, &core.Op{Kind: core.OpSetSlot, Token: b, Text: work})
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := false
+	for _, s := range suggestions(t, resB) {
+		if s.Space == theirs[0].Space && s.Action == "joined" {
+			joined = true
+		}
+	}
+	if !joined {
+		t.Fatal("the control was not joined either: this test proves nothing about supplied " +
+			"indexes if an ordinary one does not join")
+	}
 }
 
 // AND THE PROVENANCE OUTLIVES THE CACHE. The check above read "was the
@@ -484,8 +526,11 @@ func TestASuppliedFootprintStaysSuppliedAfterItsIndexIsReplaced(t *testing.T) {
 		}
 		return tok
 	}
+	// Both on the shipper's machine, for the reason given in the test
+	// above: after round forty-two a comparison needs a coordinate system
+	// both declarations carry, and one agent per tree no longer has one.
 	far := reg("far", core.AgentInfo{CWD: shipped, RepoRoot: shipped, HostID: "member"})
-	near := reg("near", core.AgentInfo{CWD: local, RepoRoot: local})
+	near := reg("near", core.AgentInfo{CWD: shipped, RepoRoot: shipped, HostID: "member"})
 
 	const work = "fix refresh token expiry"
 	resFar, err := e.DoMatched(ctx, &core.Op{Kind: core.OpSetSlot, Token: far, Text: work})
@@ -496,25 +541,52 @@ func TestASuppliedFootprintStaysSuppliedAfterItsIndexIsReplaced(t *testing.T) {
 	if len(opened) != 1 || opened[0].Action != "opened" {
 		t.Fatalf("far's declaration: %+v, want it to open a space", opened)
 	}
-	// A newer shipment replaces the index; the cache forgets h-shipped-1.
-	e.SetIndex(shipped, cloneScorer{"shipped", "shared.go"}, cfg,
-		IndexInfo{Fingerprint: "h-shipped-2", SuppliedBy: "far", SuppliedHost: "member"})
-
 	resNear, err := e.DoMatched(ctx, &core.Op{Kind: core.OpSetSlot, Token: near, Text: work})
 	if err != nil {
 		t.Fatal(err)
 	}
+	surfaced := false
 	for _, s := range suggestions(t, resNear) {
 		if s.Space != opened[0].Space {
 			continue
 		}
+		surfaced = true
 		if s.Action == "joined" || s.Action == "queued" {
-			t.Fatalf("near was %s to far's space on a footprint from a shipped index the cache had "+
-				"forgotten: %+v", s.Action, s)
+			t.Fatalf("near was %s to far's space on shipped data: %+v", s.Action, s)
 		}
-		return
 	}
-	t.Fatal("near's declaration did not even surface far's space: the fixture does not overlap")
+	if !surfaced {
+		t.Fatal("the two declarations did not meet at all: nothing above was measured")
+	}
+
+	// A newer shipment replaces the index; the cache forgets h-shipped-1
+	// entirely, and the declarations scored in it stay on the board.
+	e.SetIndex(shipped, cloneScorer{"shipped", "shared.go"}, cfg,
+		IndexInfo{Fingerprint: "h-shipped-2", SuppliedBy: "far", SuppliedHost: "member"})
+	e.RemoveScorerForRepo(shipped)
+
+	// THE PROVENANCE IS ON THE DECLARATION, not in the cache that just
+	// forgot it. Read off the board, because that is where a later judge
+	// reads it from: the space it opened, and the slot that opened it.
+	// The SPACE is where an opener's provenance is kept (its membership
+	// carries a score and a footprint only when it joined on one), and the
+	// space is what a later judge reads.
+	var spaceSupplied, present bool
+	onLoop(t, ctx, e, func(st *core.State) {
+		ch := st.Spaces[opened[0].Space]
+		present = ch != nil
+		if present {
+			spaceSupplied = ch.Supplied
+		}
+	})
+	if !present {
+		t.Fatal("the space far opened is gone")
+	}
+	if !spaceSupplied {
+		t.Fatal("after the shipment was replaced the board no longer says the space was opened " +
+			"on a supplied footprint: the provenance was being read back from an index cache " +
+			"that had forgotten it, which is how a local agent got joined on shipped data")
+	}
 }
 
 // AND IT OUTLIVES THE DECLARATION. Provenance on the slot decides only while

@@ -359,7 +359,17 @@ func EvidenceBetween(
 func semanticBetween(
 	mine, theirs Slot, discount map[string]float64,
 ) (score float64, shared []PredFile, scoredIn string) {
-	score, shared = jaccard(mine.Predicted, theirs.Predicted, discount)
+	// THE FLOOR, WHERE IT IS VALID. The home-to-home comparison is the only
+	// one a slot written before footprints existed can take part in, so it
+	// stays; but when both sides name an index and the two differ, it is
+	// exactly the comparison issue #39 exists to stop, and being a floor it
+	// can only push the score up. A pair disjoint inside every system they
+	// actually share scored a 1 on one filename both histories happen to
+	// contain, which at `auto_join = "always"` puts an agent into a space on
+	// unrelated work. Round forty-two of the pre-release review.
+	if sameCoordinates(mine, theirs) {
+		score, shared = jaccard(mine.Predicted, theirs.Predicted, discount)
+	}
 	bestValid, bestValidShared := score, shared
 	for _, sys := range sharedIndexes(mine, theirs) {
 		s, sh := jaccard(footprintIn(mine, sys), footprintIn(theirs, sys), discount)
@@ -386,6 +396,14 @@ func semanticBetween(
 // sharedIndexes lists the index fingerprints both slots were scored in, home
 // or foreign, in a deterministic order: the fold runs this, so two replays
 // must walk the same systems in the same order and reach the same best.
+// sameCoordinates reports whether two home predictions were made in one
+// coordinate system, or in systems nobody can tell apart: an unnamed index
+// is every board written before fingerprints existed, and unknown is not
+// difference, the way the rest of the fold treats an absent fact.
+func sameCoordinates(a, b Slot) bool {
+	return a.Index == "" || b.Index == "" || a.Index == b.Index
+}
+
 func sharedIndexes(a, b Slot) []string {
 	theirs := map[string]bool{}
 	if b.Index != "" {

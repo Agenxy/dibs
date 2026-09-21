@@ -275,16 +275,33 @@ const PATH_ARGS: Record<string, string[]> = {
  * that does not exist yet. Mirrors internal/paths.Canonical, as the
  * opencode plugin's does.
  */
+/**
+ * How this machine's paths travel: with `/` as the separator when this is a
+ * Windows machine, and untouched otherwise, since a backslash is an ordinary
+ * character in a unix filename.
+ *
+ * The bridge (cmd/dibs, portableSpelling) has done this since round thirteen
+ * and the plugins did not, so a Windows agent through this plugin sent
+ * `C:\\repo\\file.go` where its own registration had recorded `C:/repo`: a
+ * unix hub keeps both spellings as written, the claim is no longer inside the
+ * checkout it names, and an exclusive claim stops protecting anything. The
+ * platform is a parameter so a test on any machine can ask what a Windows
+ * agent sends. Round forty-two of the pre-release review.
+ */
+function portable(p: string, plat: string = process.platform): string {
+  return plat === "win32" ? p.replaceAll("\\", "/") : p
+}
+
 function canonical(p: string): string {
   if (!p) return p
   let cur = isAbsolute(p) ? resolve(p) : resolve(process.cwd(), p)
   let rest = ""
   for (;;) {
     try {
-      return rest ? join(realpathSync(cur), rest) : realpathSync(cur)
+      return portable(rest ? join(realpathSync(cur), rest) : realpathSync(cur))
     } catch {
       const parent = dirname(cur)
-      if (parent === cur) return resolve(p)
+      if (parent === cur) return portable(resolve(p))
       // basename, not a slice by the parent's length: under "/" the parent
       // is one character and the slice dropped the first letter of the
       // name, so a path beneath a top-level directory that does not exist

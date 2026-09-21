@@ -1,0 +1,181 @@
+package main
+
+import (
+	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/agenxy/dibs/internal/overlap"
+)
+
+// Every harness spells a Windows path the same way when it sends it.
+//
+// The rule is one sentence: on Windows, `\` becomes `/` before a path
+// leaves this machine; everywhere else a backslash is an ordinary filename
+// character and nothing is touched. The bridge has applied it since round
+// thirteen and the two TypeScript plugins did not, so a Windows agent on
+// opencode or pi claimed `C:\repo\file.go` while its own registration had
+// recorded the root as `C:/repo`. A unix hub keeps both spellings exactly
+// as they arrive, so the claim was no longer inside the checkout it names:
+// no repository-relative key, no collision, and an exclusive claim that
+// protects nothing. Round forty-two of the pre-release review.
+//
+// One table, run through all three implementations, for the reason the
+// stamp parity test gives: a rule that exists three times drifts, and the
+// symptom is silent on the two copies nobody runs.
+func TestEveryHarnessSpellsAWindowsPathTheSameWay(t *testing.T) {
+	bun, err := exec.LookPath("bun")
+	if err != nil {
+		t.Skip("bun is not installed; the TypeScript halves cannot be run")
+	}
+
+	cases := []string{
+		`C:\work\repo\internal\core\apply.go`,
+		`C:/work/repo/internal/core/apply.go`,
+		`\\share\team\repo\file.go`,
+		`/w/repo/file.go`,
+		`/w/re\po/file.go`, // a unix filename that contains a backslash
+		``,
+	}
+
+	// The Go answer, from the bridge's own function.
+	want := make([]string, len(cases))
+	for i, c := range cases {
+		want[i] = spellFor("windows", c)
+	}
+
+	for _, plugin := range []string{"opencode", "pi"} {
+		path := filepath.Join("..", "..", "plugins", plugin, "dibs.ts")
+		src, err := os.ReadFile(path) // #nosec G304 -- a file in this repository
+		if err != nil {
+			t.Fatalf("reading the %s plugin: %v", plugin, err)
+		}
+		const marker = "function portable(p: string, plat: string = process.platform): string {"
+		start := strings.Index(string(src), marker)
+		if start < 0 {
+			t.Fatalf("plugins/%s/dibs.ts no longer defines portable(): either it was renamed, "+
+				"in which case this test must follow it, or the conversion was removed, in "+
+				"which case a Windows agent on that harness silently claims paths its own "+
+				"registration cannot be matched against", plugin)
+		}
+		end := strings.Index(string(src)[start:], "\n}\n")
+		if end < 0 {
+			t.Fatalf("could not find the end of portable() in plugins/%s/dibs.ts", plugin)
+		}
+		fn := string(src)[start : start+end+3]
+
+		table, err := json.Marshal(cases)
+		if err != nil {
+			t.Fatal(err)
+		}
+		script := fn + "\nconst cases = " + string(table) +
+			" as string[]\nconsole.log(JSON.stringify(cases.map((c) => portable(c, \"win32\"))))\n"
+
+		dir := t.TempDir()
+		file := filepath.Join(dir, "parity.ts")
+		if err := os.WriteFile(file, []byte(script), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		out, err := exec.Command(bun, "run", file).Output() // #nosec G204 -- paths this test created
+		if err != nil {
+			t.Fatalf("running the %s plugin's rule: %v\n%s", plugin, err, out)
+		}
+		var got []string
+		if err := json.Unmarshal(out, &got); err != nil {
+			t.Fatalf("the %s plugin did not return a string list: %v\n%s", plugin, err, out)
+		}
+		if len(got) != len(want) {
+			t.Fatalf("%s returned %d answers for %d cases", plugin, len(got), len(want))
+		}
+		for i, c := range cases {
+			if got[i] != want[i] {
+				t.Errorf("the bridge and the %s plugin disagree about %q: Go sends %q, "+
+					"the plugin sends %q. One of them is naming a path the hub cannot "+
+					"match against what the other registered.", plugin, c, want[i], got[i])
+			}
+		}
+	}
+}
+
+// A shipment names its root the way the registration did.
+//
+// The daemon refuses an index whose root is not the root it recorded for
+// that agent. The bridge registered `C:/work/repo` and shipped
+// `C:\work\repo`, so a Windows checkout was answered 403 on every upload
+// and never got the index that is the only way its tree is matched at
+// all. Round forty taught the hub to accept the portable spelling and
+// left this half sending the native one; the changelog claimed the path
+// worked. Round forty-two of the pre-release review.
+func TestAShipmentNamesItsRootTheWayTheRegistrationDid(t *testing.T) {
+	p := &overlap.Payload{
+		Root: `C:\work\repo`, RepoDir: `C:\work\repo\.git`,
+		RepoRemote: "github.com/acme/api", Fingerprint: "fp-1",
+	}
+	portablePayload("windows", p)
+	if p.Root != "C:/work/repo" || p.RepoDir != "C:/work/repo/.git" {
+		t.Fatalf("a Windows bridge ships root=%q repo_dir=%q, which is not what its "+
+			"registration recorded, so the daemon refuses the upload", p.Root, p.RepoDir)
+	}
+	if p.RepoRemote != "github.com/acme/api" {
+		t.Fatalf("a remote is a fingerprint, not a path, and was rewritten: %q", p.RepoRemote)
+	}
+	// A unix bridge's backslash is an ordinary filename character.
+	u := &overlap.Payload{Root: `/w/re\po`, RepoDir: `/w/re\po/.git`}
+	portablePayload("linux", u)
+	if u.Root != `/w/re\po` || u.RepoDir != `/w/re\po/.git` {
+		t.Fatalf("a unix path was rewritten: root=%q repo_dir=%q", u.Root, u.RepoDir)
+	}
+}
+
+// The directories an agent declares are canonicalised like every other
+// path it sends.
+//
+// `declare` was not in the table at all, so `dirs` went to the daemon
+// exactly as the agent typed it: a Windows agent's `C:\repo\pkg` against
+// a registered root of `C:/repo`, and a macOS agent's /tmp spelling
+// against a resolved /private/tmp root. Neither can be made relative to
+// its own checkout, so the strongest signal an agent gives about where it
+// is writing matched nothing. Round forty-two of the pre-release review.
+func TestDeclaredDirectoriesAreCanonicalisedLikeEveryOtherPath(t *testing.T) {
+	real := t.TempDir()
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+	params := map[string]any{
+		"name": "declare",
+		"arguments": map[string]any{
+			"dirs": []any{filepath.Join(link, "pkg"), "relative/stays"},
+			"text": "some work",
+		},
+	}
+	canonicalisePathArgs(params)
+
+	args, _ := params["arguments"].(map[string]any)
+	dirs, _ := args["dirs"].([]any)
+	if len(dirs) != 2 {
+		t.Fatalf("dirs came back as %v", args["dirs"])
+	}
+	// The temp directory is itself behind a symlink on macOS (/var ->
+	// /private/var), so the expectation resolves too: this test is about
+	// the argument being canonicalised at all, not about which spelling
+	// this machine happens to use.
+	resolved, err := filepath.EvalSymlinks(real)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(resolved, "pkg")
+	if got, _ := dirs[0].(string); got != want {
+		t.Errorf("a declared directory was sent as %q, want %q: the daemon cannot make "+
+			"that relative to the root this agent registered", got, want)
+	}
+	// A relative entry is the agent's own business: declare accepts one
+	// against its root, and rewriting it here against this process's
+	// working directory would name a directory nobody meant.
+	if got, _ := dirs[1].(string); got != "relative/stays" {
+		t.Errorf("a relative declared directory was rewritten to %q", got)
+	}
+}
