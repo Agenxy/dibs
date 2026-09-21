@@ -154,3 +154,76 @@ func TestTheGuardDoesNotFoldARemoteAgentsFilename(t *testing.T) {
 			"the hub folded the query into a path no claim covers (%v)", odd, got)
 	}
 }
+
+// A Windows hub releases the claim the coordinator named, not the one
+// its own platform would spell that way.
+//
+// The fold asked whether the CALLER was remote. A coordinator on the hub
+// is local, so its force_release was folded; but with `agent` the path
+// is the holder's, quoted from the board, and that holder is on a unix
+// machine where `/work/a\b` is one file and `/work/a/b` is another. The
+// hub released the second and left the first held: `ok: true`, the wrong
+// resource unprotected, and the one the coordinator asked about still
+// locked. Round forty-eight of the pre-release review.
+func TestAWindowsHubReleasesTheClaimThatWasNamed(t *testing.T) {
+	st := core.NewState("hub-node", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	e.SetHostID("hub-node")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	old := foldsSeparators
+	foldsSeparators = true // the hub is the Windows one
+	t.Cleanup(func() { foldsSeparators = old })
+
+	reg := func(name, host string) string {
+		t.Helper()
+		res, err := e.Do(ctx, &core.Op{
+			Kind: core.OpRegister, Name: name, SessionID: "session-" + name,
+			Agent: &core.AgentInfo{CWD: "/work", HostID: host},
+		})
+		if err != nil {
+			t.Fatalf("setup: register %s: %v", name, err)
+		}
+		tok, _ := res["token"].(string)
+		if _, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: tok}); err != nil {
+			t.Fatalf("setup: ack %s: %v", name, err)
+		}
+		return tok
+	}
+	// One unix agent holds two files whose names differ only by the
+	// character this hub would fold.
+	far := reg("far", "machine-b")
+	for _, p := range []string{`/work/a\b`, "/work/a/b"} {
+		if _, err := e.Do(ctx, &core.Op{
+			Kind: core.OpClaim, Token: far, Path: p, Mode: core.ClaimExclusive,
+		}); err != nil {
+			t.Fatalf("setup: claim %s: %v", p, err)
+		}
+	}
+	coord := reg("coord", "hub-node")
+	if _, err := e.Do(ctx, &core.Op{Kind: core.OpGrantRole, To: "coord", Mode: core.RoleCoordinator}); err != nil {
+		t.Fatalf("setup: grant: %v", err)
+	}
+
+	res, err := e.Do(ctx, &core.Op{
+		Kind: core.OpForceRelease, Token: coord, Path: `/work/a\b`, To: "far",
+	})
+	if err != nil {
+		t.Fatalf("force_release: %v", err)
+	}
+	if got, _ := res["path"].(string); got != `/work/a\b` {
+		t.Fatalf("the hub released %q when the coordinator named %q: a different file is "+
+			"now unprotected and the one it meant is still held", got, `/work/a\b`)
+	}
+	var left []string
+	onLoop(t, ctx, e, func(s *core.State) {
+		for _, c := range s.Claims {
+			left = append(left, c.Path)
+		}
+	})
+	if len(left) != 1 || left[0] != "/work/a/b" {
+		t.Fatalf("claims left: %v, want /work/a/b alone", left)
+	}
+}
