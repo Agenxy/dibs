@@ -667,7 +667,7 @@ func (e *Engine) matchDeclaration(
 
 	// Dibs opened before the index was ready carry no footprint and would be
 	// invisible forever; give them one first.
-	overlay := e.backfillFootprints(sctx, scorer)
+	overlay := e.backfillFootprints(sctx, scorer, cfg.Repo != "" && e.IndexSuppliedBy(cfg.Repo) != "")
 
 	lens := e.repoLensForBoard(ctx)
 
@@ -1585,11 +1585,21 @@ func (e *Engine) forgetDeadFootprints(live map[string]bool) {
 // prediction and score, which is what replay reconstructs from (§4.3). So
 // deriving a missing one here, at the edge, from the agent's topic costs nothing
 // in determinism, and it is computed once per agent, not per declaration.
-func (e *Engine) backfillFootprints(ctx context.Context, scorer overlap.Scorer) map[string][]core.PredFile {
+// NEVER FROM AN INDEX AN AGENT SHIPPED. The backfill is a convenience, and
+// this one invented a footprint for somebody else's space out of untrusted
+// data and cached it with no provenance: the next local agent whose work
+// overlapped that invention was joined automatically, which is the promise
+// SECURITY.md makes about supplied indexes, broken through a cache. A space
+// with no footprint of its own stays matched on its refs and dirs, which is
+// what it had before this existed. Round thirty-three of the pre-release
+// review.
+func (e *Engine) backfillFootprints(
+	ctx context.Context, scorer overlap.Scorer, supplied bool,
+) map[string][]core.PredFile {
 	need, live := e.agentsNeedingFootprints(ctx)
 	for id, topic := range need {
-		if scorer == nil {
-			break // nothing to predict with; the facts are matched on their own
+		if scorer == nil || supplied {
+			break // nothing trustworthy to predict with; the facts stand alone
 		}
 		p, err := scorer.Predict(ctx, topic, 40)
 		if err != nil || len(p.Files) == 0 {

@@ -108,6 +108,23 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round thirty-three of the pre-release review: two findings.**
+  - A machine's identity is the fact its data directory records, and
+    Supgang seeds it rather than overriding it. Asking Supgang first was
+    the identity split from the other side: the first bridge started after
+    Supgang became available answered with the fleet id while every older
+    bridge, and the running daemon, still answered with the minted one, so
+    two agents on one computer could each take an exclusive claim on the
+    same path outside a checkout. A machine joining the fleet adopts its
+    fleet identity when the daemon there next starts, which is also when
+    it is remembered for everything else.
+  - The footprint backfill never predicts with an index an agent shipped.
+    It invented a footprint for a space that had none, out of untrusted
+    data, and cached it with no provenance, so the next local agent whose
+    work overlapped that invention was joined automatically: SECURITY.md's
+    promise about supplied indexes, broken through a cache. A space with
+    no footprint of its own is matched on its refs and dirs, as it was
+    before the backfill existed.
 - **Round thirty-two of the pre-release review: two findings.**
   - `open_space` predicts the new space's footprint in the OPENER's index
     rather than whichever tree was indexed first, and records whether that

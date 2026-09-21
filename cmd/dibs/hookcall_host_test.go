@@ -1020,4 +1020,18 @@ func TestAFailedSupgangLookupDoesNotRenameThisMachine(t *testing.T) {
 	if second := hostID(); first == "" || second != first {
 		t.Fatalf("a machine with no Supgang answer minted %q then %q", first, second)
 	}
+
+	// AND SUPGANG BECOMING AVAILABLE DOES NOT RENAME IT EITHER, which is
+	// the same split from the other side: a bridge started after Supgang
+	// came up answered with the fleet id while every older bridge, and the
+	// running daemon, still answered with the minted one, so two agents on
+	// one computer could each take an exclusive claim on one path. The
+	// machine adopts its fleet identity when the daemon there next starts
+	// and remembers it. Round thirty-three of the pre-release review.
+	useFakeSupgang(t)
+	reset()
+	if got := hostID(); got != first {
+		t.Fatalf("with Supgang now answering this machine calls itself %q, having been %q "+
+			"a moment ago: its own bridges disagree until every one of them restarts", got, first)
+	}
 }
