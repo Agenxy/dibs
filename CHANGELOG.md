@@ -108,6 +108,20 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round forty-one of the pre-release review: two findings.**
+  - An agent that resumes on another machine takes the thread there. The
+    fold's drop asks which machine the take is from and read it off the
+    row, which on a resume still says where that agent was last time:
+    the ingress authorised the take on the new machine and the fold then
+    skipped that machine's holder as another computer's, leaving two rows
+    holding one thread.
+  - A Windows bridge sends its checkout spelled the way it sends its
+    paths. The claim arguments were made portable and the repository
+    metadata beside them was not, so the hub saw a claim at
+    `C:/work/repo/file.go` against a root at `C:\work\repo`: the root
+    is no longer a prefix, the claim records an empty repository-relative
+    path, and conflicts between two clones of one project stop being
+    seen.
 - **Round forty of the pre-release review: three findings.**
   - A first start on a fleet member cannot leave one computer with two
     identities. Two bridges starting together against a fresh directory

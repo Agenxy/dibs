@@ -395,7 +395,24 @@ func repoMeta(params map[string]any) map[string]string {
 	if !ok && id.WorktreeID == "" {
 		return nil
 	}
-	return map[string]string{"dir": dir, "remote": remote, "roots": roots, "root": id.WorktreeID}
+	return repoFields(runtime.GOOS, dir, remote, roots, id.WorktreeID)
+}
+
+// repoFields is the checkout as it travels: the two PATHS spelled the way
+// every other path this bridge sends is, and the remote and the root
+// commits untouched, because those are fingerprints and not paths.
+//
+// SPELLED LIKE THE CLAIM, or the two never meet. The claim arguments go
+// through portableSpelling and this did not, so a Windows bridge sent the
+// hub `C:/work/repo/file.go` beside a checkout at `C:\work\repo`: the
+// root is not a prefix of the path any more, the claim records an empty
+// repository-relative path, and the portable rule that exists so a
+// conflict is seen across two clones of one project never fires. Round
+// forty-one of the pre-release review.
+func repoFields(goos, dir, remote, roots, root string) map[string]string {
+	return map[string]string{
+		"dir": spellFor(goos, dir), "remote": remote, "roots": roots, "root": spellFor(goos, root),
+	}
 }
 
 // stampRepo puts the checkout the call's cwd names into `_meta`, replacing
@@ -468,8 +485,12 @@ func canonicalisePathArgs(params map[string]any) {
 // the one place that knows which; a daemon on another machine cannot tell
 // a Windows spelling from a unix name with a backslash in it. Round
 // thirteen of the pre-release review.
-func portableSpelling(p string) string {
-	if runtime.GOOS != "windows" {
+func portableSpelling(p string) string { return spellFor(runtime.GOOS, p) }
+
+// spellFor is portableSpelling with the platform named, so a test on any
+// machine can ask what a Windows bridge sends.
+func spellFor(goos, p string) string {
+	if goos != "windows" {
 		return p
 	}
 	return strings.ReplaceAll(p, "\\", "/")
