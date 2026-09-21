@@ -235,7 +235,7 @@ func withdrawUndeclaredRoles(ctx context.Context, eng *engine.Engine, c RolesCon
 			// failing in between. A credential this configuration still
 			// authorises for this role is not a withdrawal. Round
 			// fifty-four of the pre-release review.
-			if pinned != "" && authorisedElsewhere(c, declared, role, name, pinned) {
+			if pinned != "" && authorisedElsewhere(pins, c, declared, role, name, pinned) {
 				delete(byName, name)
 				changed = true
 				continue
@@ -449,11 +449,21 @@ func resolveDeclared(ctx context.Context, eng *engine.Engine, role, agent string
 // The pin is dropped by the caller when this is true, because the grant
 // pass has already made a new one under the new spelling and two pins
 // for one credential would withdraw each other on alternate ticks.
-func authorisedElsewhere(c RolesConfig, declared map[string]map[string]bool,
+func authorisedElsewhere(pins *rolePins, c RolesConfig, declared map[string]map[string]bool,
 	role, name, pinned string,
 ) bool {
 	for other, fp := range c.Identity {
-		if other != name && fp == pinned && declared[role][other] {
+		if other == name || fp != pinned || !declared[role][other] {
+			continue
+		}
+		// THE REPLACEMENT PIN HAS TO EXIST, which is the grant pass
+		// having succeeded. Asking the configuration alone was enough to
+		// drop the old pin for a name that never resolved: an
+		// unregistered successor leaves the predecessor holding the role
+		// with no pin recording it, so removing the declaration later
+		// revokes nothing and the role is held for good. Round fifty-five
+		// of the pre-release review, on round fifty-four's own fix.
+		if _, granted := pins.Pins[role][other]; granted {
 			return true
 		}
 	}
