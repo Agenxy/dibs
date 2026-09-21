@@ -267,15 +267,25 @@ func (s *State) dropTakenSession(op *Op, l *Agent) {
 	}
 }
 
-// takerHost is the machine the take is being made from: the row taking the
-// id when there is one, else what the registration states. "" when
-// nothing said, which keeps every old board's behaviour.
+// takerHost is the machine the take is being made from: the one THIS
+// ACTIVATION is on when the op carries it, else where the row taking the
+// id was last seen. "" when nothing said, which keeps every old board's
+// behaviour.
+//
+// THE OP FIRST, because an agent moves. This read the row first, and a
+// resume runs the drop before the activation's identity is merged, so an
+// agent coming back on machine B still looked like one on machine A: the
+// ingress authorised the take on B and the fold then skipped B's holder
+// as another computer's, leaving two rows there holding one id. An op
+// that carries an identity got it from the connection (mergeIdentity's
+// rule), so it is the better authority on where the caller is now. Round
+// forty-one of the pre-release review, on round forty's own fix.
 func takerHost(op *Op, l *Agent) string {
-	if l != nil && l.Agent != nil && l.Agent.HostID != "" {
-		return l.Agent.HostID
-	}
-	if op.Agent != nil {
+	if op.Agent != nil && op.Agent.HostID != "" {
 		return op.Agent.HostID
+	}
+	if l != nil && l.Agent != nil {
+		return l.Agent.HostID
 	}
 	return ""
 }

@@ -308,3 +308,55 @@ func TestATakeoverDoesNotStripTheOtherMachinesDormantHolder(t *testing.T) {
 			"was entitled to did not happen", synthetic, l)
 	}
 }
+
+// An agent that resumes on a different machine takes the thread there,
+// and the holder it took it from loses it.
+//
+// The drop asks which machine the take is being made from, and read it
+// off the ROW, which on a resume still says where that agent was last
+// time: the fold runs the drop before the activation's identity is
+// merged. So an agent moving from machine A to machine B, taking a
+// harness thread from a dormant holder on B, was authorised by the
+// ingress on B (mayClaimSession, which asks hostOfOp) and then skipped
+// B's holder as another computer's: two rows on B holding one thread,
+// and hooks resolving to whichever. The taker's machine is the one this
+// activation is on. Round forty-one of the pre-release review, on round
+// forty's own fix.
+func TestAResumeOnAnotherMachineTakesTheThreadThere(t *testing.T) {
+	const thread = "019ffe52-0eaf-7f60-81cc-6ab1298d76ec"
+	st := core.NewState("hub-node", core.DefaultLimits())
+	// The row that moves: last seen on machine-a, dormant, with a nonce.
+	st.Agents["mover"] = &core.Agent{
+		ID: "mover", Name: "mover", Status: core.StatusDormant, Nonce: "n-mover", NonceMinted: true,
+		Token: "tok-mover", Agent: &core.AgentInfo{CWD: "/w/repo", HostID: "machine-a"},
+		Slots: map[string]core.Slot{},
+	}
+	st.Nonces = map[string]string{"n-mover": "mover"}
+	// A dormant holder of the same thread, on the machine it moves to.
+	st.Agents["on-b"] = &core.Agent{
+		ID: "on-b", Name: "on-b", Status: core.StatusDormant, Nonce: "n-b", NonceMinted: true,
+		SessionID: "host-4242", SessionAliases: []string{thread}, Token: "tok-b",
+		Agent: &core.AgentInfo{CWD: "/w/repo", HostID: "machine-b"}, Slots: map[string]core.Slot{},
+	}
+	st.Nonces["n-b"] = "on-b"
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpResume, Nonce: "n-mover", ResumeID: "r1", SessionAlias: thread,
+		Agent: &core.AgentInfo{CWD: "/w/repo", HostID: "machine-b"},
+	}); err != nil {
+		t.Fatalf("resume on machine-b: %v", err)
+	}
+
+	if l := e.state.AgentForHookOn(thread, "/w/repo", "machine-b"); l == nil || l.ID != "mover" {
+		t.Fatalf("machine-b's hooks for the thread resolve to %v, want the resumed row: two "+
+			"rows there hold one thread and the drop skipped the one it was taken from", l)
+	}
+	if e.state.Agents["on-b"].HoldsSession(thread) {
+		t.Fatal("the holder the thread was taken from still holds it: two stated holders of " +
+			"one id is a coin flip on every hook")
+	}
+}
