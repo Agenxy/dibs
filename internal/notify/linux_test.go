@@ -53,7 +53,11 @@ func stubNotifySend(t *testing.T, version string) {
 	dbusProbe = func() (string, bool) { return self, false }
 	goos = "linux"
 	resetProbe()
-	t.Cleanup(func() { notifySend, goos, dbusProbe = old, oldGoos, oldProbe; resetProbe() })
+	// resetProbe FIRST: it waits for a probe still in flight, and the
+	// stubs it is reading are what the next line puts back. Restoring them
+	// first is a write to `goos` racing that goroutine's read of it, which
+	// is how CI's race detector reported this.
+	t.Cleanup(func() { resetProbe(); notifySend, goos, dbusProbe = old, oldGoos, oldProbe })
 	t.Setenv("DIBS_TEST_DBUS_CAPS", `array [ string "actions" string "body" ]`)
 	// The gate silences notifications for every test process (DIBS_NOTIFY=off),
 	// which is right for the macOS helper and would make Reach answer

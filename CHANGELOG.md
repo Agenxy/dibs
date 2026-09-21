@@ -108,6 +108,31 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round thirty-seven of the pre-release review: two findings, and a race
+  the gate caught.**
+  - The startup host migration reaches the fold. `host_renamed` is the
+    daemon acting as itself, so it is submitted with no token, and it was
+    not on the engine's list of operations that carry none: authentication
+    refused every one before `Apply` saw it, and the migration the previous
+    round describes ran nowhere but in a test that called the fold
+    directly. Rows registered before an adoption kept the old id, which is
+    the split claim that round was fixing. The op is on the list, refused
+    if it arrives with an agent's token like every other system op, and the
+    regression test goes through the engine.
+  - An index is published under the same hold of the lock that checks the
+    tree is still its own. The previous round checked the claim and then
+    installed; eviction deletes the bookkeeping and removes the scorer
+    under that lock precisely so the half-done state is never observed, and
+    a build finishing between the two steps reinstalled an orphan index
+    over the top and answered the shipper "accepted". Both publication
+    paths, the daemon's own build and an agent-supplied index, now move the
+    claim, the index and the fingerprint together.
+  - A background notifier probe is claimed before it is started. The
+    background start was `go linuxProbe()`, and the flag that says a probe
+    is in flight was set inside the new goroutine: between the two, a
+    caller that waits for the probe to finish sees nothing running and
+    returns. CI's race detector reported the consequence as a write racing
+    a read from a goroutine belonging to a test that had already returned.
 - **Round thirty-six of the pre-release review: four findings.**
   - A machine that adopts its fleet identity renames the rows and claims
     it already holds, through a ledgered `host_renamed` op (both ids on

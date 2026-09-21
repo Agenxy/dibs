@@ -48,3 +48,42 @@ func TestAvailableDoesNotWaitOnTheLinuxProbe(t *testing.T) {
 		t.Error("Available still says yes after the probe measured no")
 	}
 }
+
+// A probe started off the writer loop is claimed before it is started.
+//
+// resetProbe waits for a probe in flight so a test's next call measures
+// again, and it decides by the probeRunning flag. The background start was
+// `go linuxProbe()`, which set that flag from inside the new goroutine:
+// between the `go` and the flag there is a window where a probe is about
+// to read the stubs and nothing says so, and resetProbe walks straight
+// through it. CI's race detector caught the consequence on Linux, one test
+// later, as a write to `goos` racing a read from a goroutine belonging to
+// a test that had already returned.
+//
+// Measured against d5046d2: 200 failures in 200 runs under `-race`, which
+// is how the gate runs, and 2 in 200 without it. The window is real
+// either way and the detector widens it; the honest reading is that
+// this guards the configuration CI uses.
+func TestAProbeIsClaimedBeforeItIsStarted(t *testing.T) {
+	t.Setenv(silenceEnv, "")
+	old, oldProbe := goos, probeHost
+	goos = "linux"
+	release := make(chan struct{})
+	probeHost = func() (bool, string) {
+		<-release
+		return false, "measured: no notifier"
+	}
+	resetProbe()
+	t.Cleanup(func() { close(release); resetProbe(); goos, probeHost = old, oldProbe })
+
+	// Available starts the measurement and does not wait for it.
+	_ = Available()
+
+	probeMu.Lock()
+	running := probeRunning
+	probeMu.Unlock()
+	if !running {
+		t.Fatal("the starter returned before the probe it started was marked running; " +
+			"resetProbe would not wait for it, and its goroutine outlives the test that stubbed the host")
+	}
+}
