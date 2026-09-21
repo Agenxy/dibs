@@ -23,12 +23,29 @@ values are what `dibs mcp-config` prints, including an `https://` origin.
 `~/.config/opencode/plugin/dibs.ts` (global) or `.opencode/plugin/dibs.ts`
 (project-local); opencode scans `{plugin,plugins}/*.{ts,js}`.
 
-## Why this is not a shellout
+## The plugin is a transport, not a client
 
-opencode plugins are **ES modules loaded into opencode's own runtime**. The
-plugin calls Dibs with `fetch`. There is no subprocess, no CLI, no polling loop,
-no thread ownership. Dibs stays a service that gets pulled from: the plugin
-only decides *when* to pull, using a hook opencode already fires.
+It speaks JSON-RPC over a pipe to `dibs mcp-stdio`: the same bridge configured
+above, and the same one every other harness connects through. That binary
+decides everything about what a call carries, which is why the two pieces
+above are not really two clients. The plugin spawns one child per call,
+measured at 8-17ms against a running daemon, spawn included, against the
+1500ms a hook here is allowed. A long-lived child was the first cut and was
+wrong for a reason worth recording: under bun a piped child keeps the
+parent's event loop alive however it is unref'd, so the harness finished its
+turn and would not exit.
+
+It used to call Dibs with `fetch` and be a second client, and the pre-release
+review spent a dozen rounds handing it, one at a time, rules the Go bridge
+already had: the host stamp, canonical paths, the portable spelling of a
+Windows path, a TLS trust store, an origin that has to be re-read because the
+hub moves. Each arrived a release after the bridge got it, because a rule
+that exists twice drifts and the symptom is silent on the copy nobody runs.
+`TestThePluginsHoldNoClientPolicy` is what stops it growing back.
+
+Dibs still stays a service that gets pulled from: the plugin only decides
+*when* to pull, using a hook opencode already fires. It never drives the
+harness and runs no polling loop.
 
 The `import type { Plugin }` is erased at runtime, so the plugin has **no runtime
 dependency** on the opencode SDK.
@@ -69,8 +86,11 @@ Against a live daemon, driving the plugin's exported hook directly:
 | no `local.secret` (fresh machine) | 0 parts, no throw, 0 ms, short-circuits before any I/O |
 
 The last two matter most: a user's turn must never hang or break because Dibs is
-not running. Hence the 1.5 s `AbortSignal.timeout`, the catch-and-return, and the
-secret check before any network call.
+not running. Hence the 1.5 s bound on every call, the catch-and-return, and a
+transport that treats "no bridge on PATH" as silence rather than as an error.
+(Those timings were measured when the plugin dialled the daemon itself. The
+shape of the guarantee is unchanged and the bound is the same; the numbers
+are not re-measured here because the current path is measured above.)
 
 `hook_poll` is read-only (it never consumes mail) so a dropped or timed-out
 response loses nothing.

@@ -17,21 +17,35 @@ cp plugins/pi/dibs.ts ~/.pi/agent/extensions/dibs.ts
 Project-local `.pi/extensions/dibs.ts` works too. Both locations are
 auto-discovered and hot-reload with `/reload`.
 
-Nothing else to configure. The extension finds the daemon at `127.0.0.1:4777`
-and authenticates with `~/.dibs/local.secret`. Override with `DIBS_ADDR` and
-`DIBS_DIR`: the two values `dibs mcp-config` writes for a joined board work
-here unchanged, including an `https://` origin, whose certificate is checked
-against the store `dibs trust` recorded in that directory and the CA a daemon
-there signs with, through Node's own TLS (pi runs under Node, whose `fetch`
-cannot be given a CA).
+Keep `dibs` on `PATH`, or name the binary with `DIBS_BIN`. Nothing else to
+configure: everything about where the daemon is and how to reach it is read
+by that binary, so whatever `dibs mcp-config` writes for the bridge works
+here unchanged, including a joined board's `https://` origin and the
+certificate `dibs trust` recorded for it.
 
-The extension is pi's whole MCP client, so it says what the stdio bridge
-would say about this machine and checkout (which computer, which repository,
-the working directory as the daemon compares it) by asking `dibs identity`
-once per session: keep `dibs` on `PATH`, or name it with `DIBS_BIN`. Without
-it the extension still works on the daemon's own machine, and a hub on
-another machine records its agents with no repository, so two clones of one
-project there are not told apart.
+## The extension is a transport, not a client
+
+It speaks JSON-RPC over a pipe to `dibs mcp-stdio`, the same bridge every
+other harness connects through, and spawns one child per call: measured at
+8-17ms against a running daemon, spawn included, against the 1500ms a hook
+here is allowed. A long-lived child was the first cut and was wrong for a
+reason worth recording: under bun a piped child keeps the parent's event
+loop alive however it is unref'd, so the harness finished its turn and would
+not exit.
+
+This matters more than it sounds. The extension used to be a client, about
+four hundred lines of it, and the pre-release review spent rounds nineteen
+through fifty-seven handing it, one at a time, rules the Go bridge already
+had: the host stamp, the repository stamp, canonical paths, the portable
+spelling of a Windows path, which arguments are paths at all, the exception
+for a path named on another agent's behalf, a TLS trust store Node's `fetch`
+cannot be given, an origin that has to be re-read because the hub moves.
+Each arrived a release after the bridge got it, and each was found in
+behaviour rather than by a test, because a rule that exists twice drifts and
+the symptom is silent on the copy nobody runs.
+
+So there is one implementation, in Go, and this file has none of it.
+`TestThePluginsHoldNoClientPolicy` is what stops it growing back.
 
 ## The tool surface is fetched, not copied
 
@@ -47,14 +61,12 @@ the server, and pi has it on next start.
 If the daemon is not running, the extension registers **nothing**. A tool that
 always fails is worse than an absent one: the model will keep reaching for it.
 
-## Identity is observed, not asked for
+## Identity: the bridge measures it, pi states what only pi knows
 
-The first real pi run registered an agent with a completely empty `agent`, sitting
-on a board next to opencode agents carrying harness, host, cwd and branch. Every
-other harness gets that from the `dibs mcp-stdio` bridge, which fills in blank
-fields on the way past; pi has no bridge.
-
-So the extension observes it directly, and two details are load-bearing:
+Host, working directory, branch and repository are the bridge's, measured on
+the machine it runs on and spelled the way the daemon compares them. What is
+left here is what the user named on pi's own command line, and two details
+are load-bearing:
 
 - **`harness` and `version` travel in `clientInfo`, not in the arguments.** The
   server takes them only from the handshake half of the call, precisely because
@@ -70,10 +82,6 @@ So the extension observes it directly, and two details are load-bearing:
   improved by asking. Re-tested by *instructing* the agent to send a false model;
   the observed value won.
 
-Note this supersedes the `PI_MODEL` / `PI_PROVIDER` environment route the
-earlier draft described. Those are read by the stdio bridge, and pi never
-launches one: the extension is the only path that runs.
-
 The result is the richest identity of any harness Dibs supports:
 
 ```json
@@ -88,10 +96,10 @@ The result is the richest identity of any harness Dibs supports:
 can inject a message, so **pi is a wake surface, not pull-only.** The extension
 polls `hook_poll` and, when there is mail, injects it with
 `customType: "agents-mail"`. No mail means nothing is injected at all: an empty
-turn costs one 1.5-second-bounded HTTP call and adds no tokens.
+turn costs one 1.5-second-bounded call through the bridge and adds no tokens.
 
 Dibs stays a service the agent pulls from. The extension only decides *when* to
-pull; it never drives the harness, spawns a subprocess, or runs a polling loop.
+pull; it never drives the harness and never runs a polling loop.
 See [PHILOSOPHY.md](https://github.com/agenxy/dibs/blob/main/PHILOSOPHY.md) and
 [WAKE-MECHANISMS.md](https://github.com/agenxy/dibs/blob/main/WAKE-MECHANISMS.md).
 
