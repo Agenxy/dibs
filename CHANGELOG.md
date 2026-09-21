@@ -108,6 +108,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round thirty-nine of the pre-release review: one finding.** The
+  identity migration carries the repository snapshot a claim holds, not
+  just the claim's own host. Two linked worktrees of one checkout are
+  recognised as one tree by the git common directory they share, and that
+  evidence counts only between snapshots that speak for the same machine:
+  a claim taken before an adoption read as another computer's tree
+  afterwards, so a conflicting write from the other worktree of the same
+  checkout stopped colliding with it. The paths differ there, which is
+  why nothing else caught it.
 - **Round thirty-eight of the pre-release review: three findings.**
   - Every path that adopts a host identity keeps this computer's old ids
     recognisable. The aliases and the rename were given to the branch

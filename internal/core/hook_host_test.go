@@ -139,3 +139,47 @@ func TestRenamingThisComputerMakesItsOwnAgentsCollideAgain(t *testing.T) {
 		t.Fatalf("a no-op rename advanced the serial from %d to %d: the engine would ledger it", before, s.Serial)
 	}
 }
+
+// The rename carries the claim's repository snapshot with it.
+//
+// A claim keeps a snapshot of the repository its holder was in, host id
+// included, and two linked worktrees of one checkout are recognised as one
+// tree by their shared git common directory: `sameRepoIdentity` accepts
+// that evidence only when both snapshots speak for the same machine. The
+// migration moved the agent rows and the claims' own host and left the
+// snapshots on the old id, so after an adoption a worktree claim stopped
+// colliding with a conflicting write from the same computer, which is the
+// case the whole rename exists for and the one where the paths differ so
+// nothing else catches it. Round thirty-nine of the pre-release review.
+func TestRenamingThisComputerCarriesTheClaimsRepositorySnapshot(t *testing.T) {
+	const minted, fleet = "minted-1234", "a8a37e32c37cdf4fb7634de622bc3f84ccb4636580d1ea26af3fe8ac31d1f152"
+	const common = "/w/api/.git"
+	s := NewState("t", DefaultLimits())
+	now := time.Unix(1700000000, 0)
+
+	// Two linked worktrees of one checkout: one tree, no shared remote or
+	// root fingerprint, so the common directory is the only evidence.
+	onHost(t, s, "old", "tok-old", minted, common, "/w/api", "", now)
+	if res := mustApply(t, s, &Op{
+		Kind: OpClaim, Token: "tok-old", Path: "/w/api/internal/core/apply.go", Mode: ClaimExclusive,
+	}, now); res["granted"] != true {
+		t.Fatalf("setup: the first claim was refused: %v", res)
+	}
+
+	mustApply(t, s, &Op{Kind: OpHostRenamed, HostWas: minted, HostNow: fleet}, now)
+
+	if s.Claims[0].Repo == nil || s.Claims[0].Repo.HostID != fleet {
+		t.Fatalf("the claim's repository snapshot still says %+v: it reads as another "+
+			"machine's tree, so the shared checkout is no longer evidence", s.Claims[0].Repo)
+	}
+	// The other worktree of the same checkout, registered since the
+	// adoption, writing the same file through its own path.
+	onHost(t, s, "new", "tok-new", fleet, common, "/w/api-wt", "", now)
+	res := mustApply(t, s, &Op{
+		Kind: OpClaim, Token: "tok-new", Path: "/w/api-wt/internal/core/apply.go", Mode: ClaimExclusive,
+	}, now)
+	if res["granted"] != false {
+		t.Fatalf("a second worktree of one checkout took the same file exclusively (%v): the "+
+			"claim's snapshot kept the id this computer answered to before the adoption", res)
+	}
+}
