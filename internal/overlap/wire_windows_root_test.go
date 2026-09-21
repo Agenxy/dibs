@@ -53,3 +53,27 @@ func TestAFingerprintIsBounded(t *testing.T) {
 		t.Fatalf("an ordinary digest was refused: %v", err)
 	}
 }
+
+// A shipped file path is bounded, for the same reason a fingerprint is.
+//
+// Validate checked the shape of a path and not its length, and a path
+// from a shipped index is copied onto predictions and into the ledger:
+// `needle/` plus three megabytes of `<` produced an eighteen-megabyte
+// ledger line, past what `dibs verify` can read back, so verification
+// stopped two records in. Round fifty-four bounded the fingerprint and
+// left this open. Round fifty-six of the pre-release review.
+func TestAShippedFilePathIsBounded(t *testing.T) {
+	huge := "needle/" + strings.Repeat("<", 3<<20)
+	p := &Payload{Root: "/w/repo", Fingerprint: "fp-1", Files: []string{huge}}
+	if err := p.Validate(); err == nil {
+		t.Fatal("a three-megabyte file path was accepted: it lands in the ledger through " +
+			"every prediction made from that index, and dibs verify cannot read the line back")
+	}
+	// Ordinary paths are unaffected, including long but sane ones.
+	ok := &Payload{Root: "/w/repo", Fingerprint: "fp-1", Files: []string{
+		"internal/core/apply.go", strings.Repeat("a/", 200) + "file.go",
+	}}
+	if err := ok.Validate(); err != nil {
+		t.Fatalf("an ordinary payload was refused: %v", err)
+	}
+}
