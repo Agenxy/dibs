@@ -1,105 +1,12 @@
 package main
 
 import (
-	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"regexp"
-	"strings"
 	"testing"
 
 	"github.com/agenxy/dibs/internal/overlap"
 )
-
-// Every harness spells a Windows path the same way when it sends it.
-//
-// The rule is one sentence: on Windows, `\` becomes `/` before a path
-// leaves this machine; everywhere else a backslash is an ordinary filename
-// character and nothing is touched. The bridge has applied it since round
-// thirteen and the two TypeScript plugins did not, so a Windows agent on
-// opencode or pi claimed `C:\repo\file.go` while its own registration had
-// recorded the root as `C:/repo`. A unix hub keeps both spellings exactly
-// as they arrive, so the claim was no longer inside the checkout it names:
-// no repository-relative key, no collision, and an exclusive claim that
-// protects nothing. Round forty-two of the pre-release review.
-//
-// One table, run through all three implementations, for the reason the
-// stamp parity test gives: a rule that exists three times drifts, and the
-// symptom is silent on the two copies nobody runs.
-func TestEveryHarnessSpellsAWindowsPathTheSameWay(t *testing.T) {
-	bun, err := exec.LookPath("bun")
-	if err != nil {
-		t.Skip("bun is not installed; the TypeScript halves cannot be run")
-	}
-
-	cases := []string{
-		`C:\work\repo\internal\core\apply.go`,
-		`C:/work/repo/internal/core/apply.go`,
-		`\\share\team\repo\file.go`,
-		`/w/repo/file.go`,
-		`/w/re\po/file.go`, // a unix filename that contains a backslash
-		``,
-	}
-
-	// The Go answer, from the bridge's own function.
-	want := make([]string, len(cases))
-	for i, c := range cases {
-		want[i] = spellFor("windows", c)
-	}
-
-	for _, plugin := range []string{"opencode", "pi"} {
-		path := filepath.Join("..", "..", "plugins", plugin, "dibs.ts")
-		src, err := os.ReadFile(path) // #nosec G304 -- a file in this repository
-		if err != nil {
-			t.Fatalf("reading the %s plugin: %v", plugin, err)
-		}
-		const marker = "function portable(p: string, plat: string = process.platform): string {"
-		start := strings.Index(string(src), marker)
-		if start < 0 {
-			t.Fatalf("plugins/%s/dibs.ts no longer defines portable(): either it was renamed, "+
-				"in which case this test must follow it, or the conversion was removed, in "+
-				"which case a Windows agent on that harness silently claims paths its own "+
-				"registration cannot be matched against", plugin)
-		}
-		end := strings.Index(string(src)[start:], "\n}\n")
-		if end < 0 {
-			t.Fatalf("could not find the end of portable() in plugins/%s/dibs.ts", plugin)
-		}
-		fn := string(src)[start : start+end+3]
-
-		table, err := json.Marshal(cases)
-		if err != nil {
-			t.Fatal(err)
-		}
-		script := fn + "\nconst cases = " + string(table) +
-			" as string[]\nconsole.log(JSON.stringify(cases.map((c) => portable(c, \"win32\"))))\n"
-
-		dir := t.TempDir()
-		file := filepath.Join(dir, "parity.ts")
-		if err := os.WriteFile(file, []byte(script), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		out, err := exec.Command(bun, "run", file).Output() // #nosec G204 -- paths this test created
-		if err != nil {
-			t.Fatalf("running the %s plugin's rule: %v\n%s", plugin, err, out)
-		}
-		var got []string
-		if err := json.Unmarshal(out, &got); err != nil {
-			t.Fatalf("the %s plugin did not return a string list: %v\n%s", plugin, err, out)
-		}
-		if len(got) != len(want) {
-			t.Fatalf("%s returned %d answers for %d cases", plugin, len(got), len(want))
-		}
-		for i, c := range cases {
-			if got[i] != want[i] {
-				t.Errorf("the bridge and the %s plugin disagree about %q: Go sends %q, "+
-					"the plugin sends %q. One of them is naming a path the hub cannot "+
-					"match against what the other registered.", plugin, c, want[i], got[i])
-			}
-		}
-	}
-}
 
 // A shipment names its root the way the registration did.
 //
@@ -181,52 +88,6 @@ func TestDeclaredDirectoriesAreCanonicalisedLikeEveryOtherPath(t *testing.T) {
 	}
 }
 
-// The bridge and the pi plugin resolve the same path arguments.
-//
-// Both sit between an agent and the daemon, and both have to turn what
-// the agent typed into what the daemon compares against: a symlinked
-// spelling, a Windows separator, a relative entry left alone. They kept
-// separate lists, and pi's was missing `declare.dirs`, `register.cwd`
-// and `update.cwd`, so an agent on pi declared directories the hub could
-// not place inside its own checkout. One list is not possible across two
-// languages; agreeing on the same pairs is, and this is what catches the
-// next one being added to only one side. Round forty-three of the
-// pre-release review.
-func TestTheBridgeAndThePiPluginResolveTheSameArguments(t *testing.T) {
-	src, err := os.ReadFile(filepath.Join("..", "..", "plugins", "pi", "dibs.ts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	const marker = "const PATH_ARGS: Record<string, string[]> = {"
-	start := strings.Index(string(src), marker)
-	if start < 0 {
-		t.Fatal("plugins/pi/dibs.ts no longer defines PATH_ARGS")
-	}
-	end := strings.Index(string(src)[start:], "\n}\n")
-	if end < 0 {
-		t.Fatal("could not find the end of PATH_ARGS")
-	}
-	block := string(src)[start : start+end]
-
-	// Every tool the Go bridge resolves must appear in pi's table with
-	// the same argument names.
-	for tool, keys := range pathArgs {
-		line := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(tool) + `:\s*\[([^\]]*)\]`).
-			FindStringSubmatch(block)
-		if line == nil {
-			t.Errorf("the pi plugin does not resolve %q, which the bridge does: an agent on "+
-				"pi sends that argument as typed, and the daemon compares it against a "+
-				"spelling it resolved", tool)
-			continue
-		}
-		for _, k := range keys {
-			if !strings.Contains(line[1], `"`+k+`"`) {
-				t.Errorf("the pi plugin resolves %q but not its %q argument", tool, k)
-			}
-		}
-	}
-}
-
 // A path named on another agent's behalf is not this machine's to
 // resolve.
 //
@@ -270,68 +131,6 @@ func TestForceReleaseForAnotherAgentKeepsTheHoldersSpelling(t *testing.T) {
 	}
 }
 
-// Pi keeps another agent's path as the board spells it, exactly as the
-// bridge does.
-//
-// Round forty-six gave the Go bridge and the hub the exception and left
-// pi resolving every listed path argument, including a force_release
-// that names somebody else's claim: a Linux holder's /tmp/repo/file.go
-// became this Mac's /private/tmp/repo/file.go, and a Windows holder's
-// C:/repo/file.go picked up this machine's working directory as a
-// prefix. Both are paths no claim on the board matches. One rule, both
-// implementations, one table. Round forty-seven of the pre-release
-// review.
-func TestPiKeepsAnotherAgentsForceReleasePath(t *testing.T) {
-	bun, err := exec.LookPath("bun")
-	if err != nil {
-		t.Skip("bun is not installed; the TypeScript half cannot be run")
-	}
-	src, err := os.ReadFile(filepath.Join("..", "..", "plugins", "pi", "dibs.ts"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	// The predicate the plugin applies, lifted from the shipped file so a
-	// change there is what gets tested.
-	const marker = `const forAnother = `
-	start := strings.Index(string(src), marker)
-	if start < 0 {
-		t.Fatal("plugins/pi/dibs.ts no longer decides whether a path belongs to another " +
-			"agent: a force_release naming a holder is being resolved on this machine again, " +
-			"and the daemon will answer E_NO_CLAIM while the real claim stays")
-	}
-	end := strings.Index(string(src)[start:], "\n")
-	expr := strings.TrimSpace(string(src)[start+len(marker) : start+end])
-
-	script := "const cases = [\n" +
-		`  { name: "force_release", args: { path: "/tmp/repo/file.go", agent: "far" } },` + "\n" +
-		`  { name: "force_release", args: { path: "/tmp/repo/file.go" } },` + "\n" +
-		`  { name: "claim", args: { path: "/tmp/repo/file.go" } },` + "\n" +
-		"]\nconst out = cases.map((c) => { const p = { name: c.name, arguments: c.args } as Record<string, unknown>\n" +
-		"  const args0 = (p[\"arguments\"] ?? {}) as Record<string, unknown>\n" +
-		"  return " + expr + "\n})\nconsole.log(JSON.stringify(out))\n"
-
-	dir := t.TempDir()
-	file := filepath.Join(dir, "another.ts")
-	if err := os.WriteFile(file, []byte(script), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	out, err := exec.Command(bun, "run", file).Output() // #nosec G204 -- paths this test created
-	if err != nil {
-		t.Fatalf("running the plugin's rule: %v\n%s", err, out)
-	}
-	var got []bool
-	if err := json.Unmarshal(out, &got); err != nil {
-		t.Fatalf("the plugin's rule did not return booleans: %v\n%s", err, out)
-	}
-	want := []bool{true, false, false}
-	for i := range want {
-		if i >= len(got) || got[i] != want[i] {
-			t.Fatalf("pi's rule answered %v, want %v: case 0 is another agent's claim and "+
-				"must be left alone; the other two are this machine's own paths", got, want)
-		}
-	}
-}
-
 // A bridge asks the daemon about its index with the spelling it shipped.
 //
 // The upload converts the root to its portable form and the daemon keys
@@ -366,5 +165,71 @@ func TestABridgeAsksAboutItsIndexWithTheSpellingItShipped(t *testing.T) {
 	if suppliedFor(st, native, "machine-b") {
 		t.Fatal("the native spelling matched after all: this test is not measuring the " +
 			"difference it was written for")
+	}
+}
+
+// A hook call reaches the daemon with a working directory even when the
+// harness states none.
+//
+// `guard_path`'s cwd is how the daemon finds the agent when the harness's
+// session id is not the one the agent registered under, and the opencode
+// plugin used to measure and canonicalise it itself. It is a transport now
+// and states nothing about this machine, deliberately, so the rule moved to
+// the bridge: this process is spawned by the harness and inherits its
+// directory, which makes it the one place that knows the answer for every
+// harness at once. A rule dropped by one side and not picked up by the
+// other is the shape this consolidation exists to prevent, so it is tested
+// rather than assumed.
+//
+// Measured against the commit before the fix rather than asserted: the same
+// pipeline there (canonicalisePathArgs alone, since supplyWorkingDirectory
+// did not exist) leaves `guard_path` with no cwd key at all, which is the
+// first check below.
+func TestAHookCallCarriesAWorkingDirectoryTheHarnessDidNotState(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range []string{"guard_path", "hook_poll", "hook_session", "hook_blocked"} {
+		params := map[string]any{
+			"name":      tool,
+			"arguments": map[string]any{"session_id": "s", "path": filepath.Join(wd, "x.go")},
+		}
+		supplyWorkingDirectory(params)
+		canonicalisePathArgs(params)
+		args, _ := params["arguments"].(map[string]any)
+		got, _ := args["cwd"].(string)
+		if got == "" {
+			t.Errorf("%s reached the daemon with no cwd: the lookup that finds an agent by "+
+				"its directory has nothing to match, and a guard that resolves nobody allows "+
+				"the edit", tool)
+			continue
+		}
+		if want := canonicaliseOne(wd); got != want {
+			t.Errorf("%s carried cwd %q, want %q as the daemon compares it", tool, got, want)
+		}
+	}
+
+	// What the caller states still wins: `dibs hook` knows Claude Code's
+	// directory, which is not this process's when a hook runs elsewhere.
+	stated := map[string]any{
+		"name":      "guard_path",
+		"arguments": map[string]any{"session_id": "s", "cwd": t.TempDir()},
+	}
+	before, _ := stated["arguments"].(map[string]any)
+	said, _ := before["cwd"].(string)
+	supplyWorkingDirectory(stated)
+	if got, _ := before["cwd"].(string); got != said {
+		t.Errorf("the bridge overwrote a cwd the caller stated: %q became %q", said, got)
+	}
+
+	// And a tool whose cwd is not the harness's directory is left alone:
+	// register takes its own from the harness's sidecar where there is one.
+	reg := map[string]any{"name": "register", "arguments": map[string]any{}}
+	supplyWorkingDirectory(reg)
+	args, _ := reg["arguments"].(map[string]any)
+	if _, filled := args["cwd"]; filled {
+		t.Error("register's cwd was filled from this process: the sidecar's answer is the " +
+			"harness's own directory and is the better one")
 	}
 }

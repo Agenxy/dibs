@@ -5,480 +5,46 @@
  * server config. It has something better: `pi.registerTool()`, plus a
  * `before_agent_start` hook that can inject a message into the turn. That is
  * exactly the two halves Dibs needs: a tool surface, and a place to deliver
- * mail, so this extension provides both by talking to the daemon directly.
+ * mail.
  *
- * The tool surface is NOT hand-copied. It is fetched from the running daemon
- * with tools/list and registered verbatim, so `dibs` and this file can never
- * drift: add a tool to the server and pi gets it on next start. A hand-written
- * mirror of 25 tools would be wrong within a week.
+ * THIS FILE IS A TRANSPORT, NOT A CLIENT. It speaks JSON-RPC over a pipe to
+ * `dibs mcp-stdio`, the same bridge every other harness connects through, and
+ * that binary decides everything about what a call carries: which daemon to
+ * dial (including a hub that has moved), the local secret, the TLS trust
+ * store, which computer this is, which checkout, how a path is spelled and
+ * resolved, and which arguments are paths at all.
+ *
+ * It did not used to. This extension re-implemented all of that in about four
+ * hundred lines of TypeScript, and the pre-release review then spent rounds
+ * nineteen through fifty-five handing it, one at a time, rules the Go bridge
+ * already had: the host stamp, the repository stamp, canonical paths, the
+ * portable spelling of a Windows path, the path-argument table, the exception
+ * for a path named on another agent's behalf, an HTTPS trust store Node's
+ * fetch cannot be given, an origin that has to be re-read because the hub
+ * moves. Each arrived a release late, and each was found in behaviour rather
+ * than by a test. One implementation of a rule is the fix; this is it.
+ *
+ * What stays here is what only pi can know: its own session id, the model and
+ * provider the user named on ITS command line, its version for the handshake,
+ * and the two hooks that make pi a participant at all.
  *
  * Install: copy to ~/.pi/agent/extensions/dibs.ts (global) or
  * .pi/extensions/dibs.ts (project-local). Both are auto-discovered and can be
  * hot-reloaded with /reload.
  *
- * Env: DIBS_ADDR (default 127.0.0.1:4777; a full https:// origin for a joined board),
- *      DIBS_DIR (default ~/.dibs), DIBS_BIN (the dibs binary, default: on PATH; see machineIdentity)
+ * Env: DIBS_BIN (the dibs binary, default: on PATH). DIBS_ADDR and DIBS_DIR
+ * are read by that binary rather than by this file, so whatever
+ * `dibs mcp-config` writes for the bridge works here unchanged.
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { Type } from "typebox"
-import { execFile } from "node:child_process"
-import { existsSync, realpathSync } from "node:fs"
-import { readFile } from "node:fs/promises"
-import { homedir, hostname } from "node:os"
-import { basename, dirname, isAbsolute, join, resolve } from "node:path"
+import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
 import { promisify } from "node:util"
 
 const run = promisify(execFile)
 
-/**
- * The daemon's origin. DIBS_ADDR is what `dibs mcp-config` writes for the
- * bridge, and for a hub on another machine that is a full HTTPS origin
- * (`https://hub:4777`); this prefixed `http://` to whatever it found, so a
- * joined board became `http://https://hub:4777/mcp` and every hook failed
- * silently while the bridge beside it connected fine. A scheme given is
- * kept; a bare host:port is the loopback daemon's plaintext. Round nineteen
- * of the pre-release review.
- */
-const ADDR = process.env["DIBS_ADDR"] ?? "127.0.0.1:4777"
-const SAVED_ORIGIN = /^https?:\/\//i.test(ADDR) ? ADDR.replace(/\/+$/, "") : `http://${ADDR}`
-
-/**
- * Where the daemon is NOW: what `dibs identity` reports (the saved
- * address, re-pointed at the hub's current Supgang address when the config
- * names it as a peer, exactly as the bridge dials), else the origin a
- * bridge on this machine published beside the secret, else the saved
- * address. Deriving the endpoint from DIBS_ADDR alone kept dialling a hub
- * that had moved (round twenty-six); keeping the FIRST answer for the life
- * of the process was the same defect one step later (round twenty-seven);
- * and preferring a file a previous bridge left pinned the address a third
- * time (round twenty-nine). Asked again at most once a minute, and the
- * answer held for a second so a turn's worth of hooks is one question.
- */
-let originCache: { at: number; value: string } | undefined
-
-async function origin(): Promise<string> {
-  const now = Date.now()
-  if (originCache && now - originCache.at < 1000) return originCache.value
-  // THE BINARY FIRST, the published file only as a stand-in.
-  //
-  // `dibs identity` resolves the peer at the moment it is asked, which is
-  // the answer that follows a hub that moved. The published file is
-  // whatever the last stdio bridge on this machine wrote, and pi runs
-  // without one: a file a previous bridge left could outlive the address
-  // in it, and preferring it pinned every call to a hub that had moved
-  // with nothing ever asking again. Round twenty-nine of the pre-release
-  // review, one round after preferring the file was the fix.
-  let value = ""
-  const id = await refreshedIdentity(now)
-  if (id.origin && /^https?:\/\//i.test(id.origin)) {
-    value = id.origin.replace(/\/+$/, "")
-  } else {
-    try {
-      const published = (await readFile(`${DIR}/resolved_origin`, "utf8")).trim()
-      if (/^https?:\/\//i.test(published)) value = published.replace(/\/+$/, "")
-    } catch {
-      // no bridge here either: the saved address below
-    }
-  }
-  if (value === "") value = SAVED_ORIGIN
-  originCache = { at: now, value }
-  return value
-}
-
-// refreshedIdentity re-asks the binary for this directory at most once a
-// minute: the host and the checkout do not move, and the origin can.
-let identityAskedAt = 0
-
-async function refreshedIdentity(now: number): Promise<Identity> {
-  const cwd = process.cwd()
-  if (now - identityAskedAt >= 60_000) {
-    identityAskedAt = now
-    identityCache.delete(cwd)
-  }
-  return identityFor(cwd)
-}
-/**
- * Where the daemon keeps its local secret, resolved the way the daemon
- * resolves it: `~/.dibs`, falling back to a legacy `~/.agents` only when that
- * is the directory that actually exists.
- *
- * This used to default to `~/.agents` alone, and that name was never one Dibs
- * chose: the 0.0.3 rename swept `~/.lanes` up with every other "lane", and the
- * daemon then moved to `~/.dibs` and kept reading the old name for anyone who
- * had one. The plugins never moved. So on every install made since, the secret
- * was read from a directory that does not exist, `secret()` swallowed the
- * failure and returned null, and every hook here returns null on a null key.
- * The agent registered no delivery hook and nothing said so: mail simply never
- * arrived, which is the silent failure this whole plugin exists to prevent.
- */
-function dataDir(): string {
-  const current = `${homedir()}/.dibs`
-  if (existsSync(current)) return current
-  const legacy = `${homedir()}/.agents`
-  return existsSync(legacy) ? legacy : current
-}
-
-const DIR = process.env["DIBS_DIR"] ?? dataDir()
-
-/** Tool names are prefixed so they never collide with pi's built-ins. */
 const PREFIX = "dibs_"
-
-/**
- * Read once and remember. The daemon rewrites the secret only when the data
- * directory is recreated, which cannot happen mid-session.
- *
- * `undefined` means "not looked yet"; `null` means "looked, and there is no
- * daemon here": a distinction that matters because the miss must not be
- * retried on every single turn.
- */
-let secretCache: string | null | undefined
-
-async function secret(): Promise<string | null> {
-  if (secretCache !== undefined) return secretCache
-  try {
-    secretCache = (await readFile(`${DIR}/local.secret`, "utf8")).trim() || null
-  } catch {
-    secretCache = null // daemon never started here: stay quiet
-  }
-  return secretCache
-}
-
-/**
- * What a board's certificate is checked against, beyond the runtime's own
- * roots: the certificates `dibs trust` recorded beside the secret, and the
- * CA the daemon in that directory signs with (`tls-ca.pem`), which is
- * trusted without a `dibs trust` step because the machine that generated
- * it is the one authority there is on it. The same two files the bridge
- * dials with (cmd/dibs/trust.go), and reading only the first left a hub's
- * own plugin refusing the daemon its bridge accepted. The runtime's roots
- * are kept so a board fronted by a real certificate still works. Empty for
- * a plaintext daemon or an unjoined directory. Rounds nineteen and twenty
- * of the pre-release review.
- */
-let trustCache: string[] | null | undefined
-
-async function trust(): Promise<string[] | null> {
-  if (trustCache !== undefined) return trustCache
-  // Not cached: the origin can become https when the bridge republishes.
-  if (!(await origin()).startsWith("https://")) return null
-  const extra: string[] = []
-  for (const name of ["trusted-certs.pem", "tls-ca.pem"]) {
-    try {
-      const pem = (await readFile(`${DIR}/${name}`, "utf8")).trim()
-      if (pem) extra.push(pem)
-    } catch {
-      // not recorded here
-    }
-  }
-  if (extra.length === 0) return (trustCache = null)
-  let roots: string[] = []
-  try {
-    roots = [...((await import("node:tls")).rootCertificates ?? [])]
-  } catch {
-    // a runtime without them: the recorded certificates alone, as before
-  }
-  return (trustCache = [...roots, ...extra])
-}
-
-/**
- * What this machine and checkout are, as the stdio bridge would stamp them.
- *
- * Asked of `dibs identity` (the same binary the bridge is), once per
- * process, rather than re-derived here. This extension is pi's whole MCP
- * client, so it has to say what the bridge says, and it had been growing a
- * TypeScript copy of the bridge's answers one review round at a time: the
- * host, then canonical paths, then the trust store, and still not the
- * repository identity, without which a remote pi agent registered with no
- * checkout and two clones of one repository on two machines were both
- * granted an exclusive claim on the same tracked file. The Go answers
- * change together; a copy drifts. Round twenty-two of the pre-release
- * review.
- *
- * `dibs` is found on PATH or named by DIBS_BIN. Without it (a machine with
- * only this extension), the host is read from the data directory the way
- * the opencode plugin reads it, and no repository identity is sent, which
- * is what this extension sent before. An empty answer is not cached: a
- * bridge may publish the host a moment later.
- */
-type Identity = { host_id: string; cwd: string; repo: Record<string, string> | null; origin?: string }
-const identityCache = new Map<string, Identity>()
-
-async function machineIdentity(): Promise<Identity> {
-  return identityFor(process.cwd())
-}
-
-/**
- * The identity of one directory: this process's for most calls, and the
- * directory an `update` names when the agent moves. The repository was
- * cached once, for the process's own directory, and stamped on every
- * update: an agent moving from /work/a to /work/b recorded b's directory
- * beside a's repository, so its claims under b had no repository-relative
- * path and collided with nothing. Round twenty-three of the pre-release
- * review. Cached per directory, and only when a host was established.
- */
-async function identityFor(cwd: string): Promise<Identity> {
-  const cached = identityCache.get(cwd)
-  if (cached) return cached
-  const bin = process.env["DIBS_BIN"] ?? "dibs"
-  try {
-    const { stdout } = await run(bin, ["identity", "--cwd", cwd], { timeout: 10_000 })
-    const id = JSON.parse(stdout) as Identity
-    if (id && typeof id.host_id === "string" && typeof id.cwd === "string") {
-      const stated = process.env["DIBS_HOST_ID"]?.trim()
-      if (stated) id.host_id = stated
-      if (id.host_id) identityCache.set(cwd, id)
-      return id
-    }
-  } catch {
-    // no dibs here, or one too old to answer: the files below
-  }
-  // No origin in the fallback: an answer of SAVED_ORIGIN here reads as the
-  // binary having spoken, so origin() accepted it and never reached the
-  // origin a bridge published. Absent means "this did not answer", which
-  // is what it is. Round thirty of the pre-release review.
-  const fallback: Identity = { host_id: process.env["DIBS_HOST_ID"]?.trim() ?? "", cwd, repo: null }
-  if (!fallback.host_id) {
-    for (const name of ["resolved_host_id", "node_id", "host_id"]) {
-      try {
-        const v = (await readFile(`${DIR}/${name}`, "utf8")).trim()
-        if (v) {
-          fallback.host_id = v
-          break
-        }
-      } catch {
-        // not this file; the next one, or none
-      }
-    }
-  }
-  if (fallback.host_id) identityCache.set(cwd, fallback)
-  return fallback
-}
-
-async function host(): Promise<string> {
-  return (await machineIdentity()).host_id
-}
-
-/** The bridge's pathArgs: per tool, the arguments that are paths here. */
-const PATH_ARGS: Record<string, string[]> = {
-  claim: ["path"],
-  release: ["path"],
-  force_release: ["path"],
-  guard_path: ["path", "cwd"],
-  hook_poll: ["cwd"],
-  hook_session: ["cwd"],
-  hook_blocked: ["cwd"],
-  // The directories an agent declares are the strongest signal it gives
-  // about where it is writing, and they were the one path argument nobody
-  // resolved: a Mac agent registered under /private/tmp/repo declaring
-  // /tmp/repo/pkg could not be made relative to its own root, so the
-  // overlap it declared matched nothing. The Go bridge learned this in
-  // round forty-two and this plugin did not, which the changelog then
-  // overstated. Round forty-three of the pre-release review.
-  declare: ["dirs"],
-  // The cwd an agent states at registration, or corrects later, is
-  // compared against the root the daemon resolves for it, so it is
-  // resolved here for the same reason (round nine). The Go bridge has
-  // had these two since then.
-  register: ["cwd"],
-  update: ["cwd"],
-}
-
-/**
- * A path as the daemon compares it: absolute, every symlink resolved, the
- * deepest existing ancestor resolved and the rest re-attached for a file
- * that does not exist yet. Mirrors internal/paths.Canonical, as the
- * opencode plugin's does.
- */
-/**
- * How this machine's paths travel: with `/` as the separator when this is a
- * Windows machine, and untouched otherwise, since a backslash is an ordinary
- * character in a unix filename.
- *
- * The bridge (cmd/dibs, portableSpelling) has done this since round thirteen
- * and the plugins did not, so a Windows agent through this plugin sent
- * `C:\\repo\\file.go` where its own registration had recorded `C:/repo`: a
- * unix hub keeps both spellings as written, the claim is no longer inside the
- * checkout it names, and an exclusive claim stops protecting anything. The
- * platform is a parameter so a test on any machine can ask what a Windows
- * agent sends. Round forty-two of the pre-release review.
- */
-function portable(p: string, plat: string = process.platform): string {
-  return plat === "win32" ? p.replaceAll("\\", "/") : p
-}
-
-function canonical(p: string): string {
-  if (!p) return p
-  let cur = isAbsolute(p) ? resolve(p) : resolve(process.cwd(), p)
-  let rest = ""
-  for (;;) {
-    try {
-      return portable(rest ? join(realpathSync(cur), rest) : realpathSync(cur))
-    } catch {
-      const parent = dirname(cur)
-      if (parent === cur) return portable(resolve(p))
-      // basename, not a slice by the parent's length: under "/" the parent
-      // is one character and the slice dropped the first letter of the
-      // name, so a path beneath a top-level directory that does not exist
-      // yet came out as a DIFFERENT path ("/srv/new.go" → "/rv/new.go").
-      // The guard then asked about a file nobody was writing. Round
-      // twenty-seven of the pre-release review.
-      const name = basename(cur)
-      rest = rest ? join(name, rest) : name
-      cur = parent
-    }
-  }
-}
-
-let rpcId = 0
-
-/**
- * One MCP call over the daemon's streamable-HTTP endpoint.
- *
- * `timeoutMs` is a parameter rather than a constant because the two callers
- * have opposite risk profiles: a tool call is work the agent asked for and may
- * legitimately block, while the mail poll sits in front of the user's turn and
- * must never be what makes it feel slow.
- */
-async function rpc(
-  method: string,
-  params: unknown,
-  timeoutMs: number,
-): Promise<any | null> {
-  const key = await secret()
-  if (!key) return null
-  if (method === "tools/call" && params && typeof params === "object") {
-    const p = params as Record<string, unknown>
-    const id = await machineIdentity()
-    const meta: Record<string, unknown> = { ...((p["_meta"] as Record<string, unknown> | undefined) ?? {}) }
-    if (id.host_id) meta["com.dibs/host"] = id.host_id
-    // WHICH CHECKOUT, as this machine sees it: a hub on another computer
-    // cannot ask Git about a path that exists only here, and the repository
-    // rule for two clones on two machines needs the answer. The bridge
-    // sends it on every call; this reads it on the calls that record it,
-    // for the directory THAT call names when it names one (an update that
-    // moves the agent), spelled as the bridge would spell it.
-    // `resume` is in this list because a resume may be on a DIFFERENT
-    // machine than the registration: it carries a nonce and nothing
-    // about location, so without the stamp the row keeps the directory
-    // and repository identity it registered with, its later claims have
-    // no repository-relative key, and its wakes name a directory on the
-    // machine it left. The Go bridge stamps every call; this one stamps
-    // the calls that record a location, and resume is one of them.
-    // Round fifty-five of the pre-release review, on round fifty-four's
-    // own fix.
-    if (p["name"] === "register" || p["name"] === "update" || p["name"] === "resume") {
-      const args = (p["arguments"] ?? {}) as Record<string, unknown>
-      const named = typeof args["cwd"] === "string" && args["cwd"] !== "" ? (args["cwd"] as string) : ""
-      const at = named ? await identityFor(named) : id
-      if (named) args["cwd"] = at.cwd
-      if (at.repo) meta["com.dibs/repo"] = at.repo
-      p["arguments"] = args
-    }
-    // AND EVERY OTHER PATH, as the bridge spells them (its pathArgs table):
-    // a hub does not resolve a remote caller's paths, so a claim on
-    // `/tmp/repo/pkg/x.go` from an agent registered at `/private/tmp/repo`
-    // had no repository-relative key and collided with nothing. Round
-    // twenty-four of the pre-release review.
-    const pathArgs = PATH_ARGS[p["name"] as string]
-    // A PATH NAMED ON SOMEBODY ELSE'S BEHALF IS NOT THIS MACHINE'S TO
-    // RESOLVE. force_release with an `agent` quotes the path the board
-    // shows, which is the holder's spelling on the holder's machine:
-    // resolving it here turned a Linux agent's /tmp/repo/file.go into
-    // this Mac's /private/tmp/repo/file.go, and a Windows holder's
-    // C:/repo/file.go picked up this machine's working directory as a
-    // prefix. Either way the daemon finds no such claim and the real one
-    // stays. The Go bridge and the hub got this exception in round
-    // forty-six and this plugin did not. Round forty-seven.
-    const args0 = (p["arguments"] ?? {}) as Record<string, unknown>
-    const forAnother = p["name"] === "force_release" && typeof args0["agent"] === "string" && args0["agent"] !== ""
-    if (pathArgs && !forAnother) {
-      const args = (p["arguments"] ?? {}) as Record<string, unknown>
-      for (const k of pathArgs) {
-        const v = args[k]
-        if (typeof v === "string" && v !== "") {
-          args[k] = canonical(v)
-        } else if (Array.isArray(v)) {
-          // `dirs` is a list, and a list of paths needs what one path
-          // needs. A relative entry is left alone: declare takes one
-          // against the agent's own root, and resolving it here against
-          // this process's working directory would name a directory
-          // nobody meant.
-          args[k] = v.map((e) => (typeof e === "string" && isAbsolute(e) ? canonical(e) : e))
-        }
-      }
-      p["arguments"] = args
-    }
-    if (Object.keys(meta).length > 0) p["_meta"] = meta
-  }
-  const text = await post(
-    `${await origin()}/mcp`,
-    JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method, params }),
-    { "content-type": "application/json", "X-Dibs-Local": key },
-    timeoutMs,
-    await trust(),
-  )
-  if (text === null) return null
-  const body = JSON.parse(text) as { result?: unknown; error?: unknown }
-  if (body.error) return { __error: body.error }
-  return body.result ?? null
-}
-
-/**
- * One POST, through node:http or node:https rather than fetch, and the
- * difference is the whole TLS story: pi runs under Node, whose fetch is
- * undici and ignores a `tls` option, so a joined board's self-issued
- * certificate stayed untrusted however carefully `dibs trust` had recorded
- * it, and startup installed no tools. Node's request API takes `ca`; so
- * does Bun's. Returns the body on a 2xx and null on anything else, which
- * every caller reads as "stay quiet". Round twenty of the pre-release
- * review.
- */
-async function post(
-  url: string,
-  body: string,
-  headers: Record<string, string>,
-  timeoutMs: number,
-  ca: string[] | null,
-): Promise<string | null> {
-  const u = new URL(url)
-  const mod = u.protocol === "https:" ? await import("node:https") : await import("node:http")
-  return new Promise((resolve) => {
-    // ELAPSED TIME, not inactivity. req.setTimeout measures the socket's
-    // idle time, so a response that kept trickling bytes never timed out,
-    // and before_agent_start awaits this in front of the user's turn: a
-    // stalled daemon could hold the turn open indefinitely. Round
-    // twenty-four of the pre-release review.
-    let done = false
-    const finish = (v: string | null) => {
-      if (done) return
-      done = true
-      clearTimeout(deadline)
-      resolve(v)
-    }
-    const req = mod.request(
-      u,
-      { method: "POST", headers: { ...headers, "content-length": String(Buffer.byteLength(body)) }, ...(ca ? { ca } : {}) },
-      (res) => {
-        const chunks: Buffer[] = []
-        res.on("data", (c: Buffer) => chunks.push(c))
-        res.on("end", () => {
-          const ok = (res.statusCode ?? 0) >= 200 && (res.statusCode ?? 0) < 300
-          finish(ok ? Buffer.concat(chunks).toString("utf8") : null)
-        })
-        res.on("error", () => finish(null))
-      },
-    )
-    const deadline = setTimeout(() => {
-      // Settled BEFORE the destroy: under bun, destroying the request emits
-      // the response's end synchronously, with whatever had trickled in as
-      // if it were the whole body.
-      finish(null)
-      req.destroy(new Error("timeout"))
-    }, timeoutMs)
-    req.on("error", () => finish(null))
-    req.end(body)
-  })
-}
+const BIN = process.env["DIBS_BIN"] ?? "dibs"
 
 type McpTool = {
   name: string
@@ -486,9 +52,130 @@ type McpTool = {
   inputSchema?: Record<string, unknown>
 }
 
+/**
+ * One call to the daemon, through a `dibs mcp-stdio` child of its own.
+ *
+ * A CHILD PER CALL, not a long-lived one. The first cut kept one bridge for
+ * the life of the plugin, and under bun a piped child keeps the parent's
+ * event loop alive however it is unref'd (`stdin.unref` does not even exist
+ * there): the harness finished its turn and would not exit, and the child
+ * outlived it as an orphan. Measured rather than argued: a whole cold call,
+ * spawn included, is 8-17ms against a running daemon, which is nothing
+ * beside the 1500ms a guard is allowed, and it leaves no lifecycle to get
+ * wrong. The child is killed when the call settles, timeout included.
+ *
+ * The handshake rides in front of the call on the same pipe. Lines are
+ * processed in order, so there is nothing to wait for; it exists to state
+ * which harness this is, which the server takes from clientInfo and from
+ * nowhere else.
+ */
+function bridgeCall(
+  method: string,
+  params: unknown,
+  timeoutMs: number,
+  client: { name: string; title: string; version: string },
+): Promise<any | null> {
+  let proc: ChildProcessWithoutNullStreams
+  try {
+    proc = spawn(BIN, ["mcp-stdio"], { stdio: ["pipe", "pipe", "ignore"] })
+  } catch {
+    return Promise.resolve(null) // no dibs here: the plugin is inert, the harness unharmed
+  }
+  return new Promise((resolve) => {
+    let settled = false
+    let buf = ""
+    const finish = (v: any) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      try {
+        proc.kill()
+      } catch {
+        /* already gone */
+      }
+      resolve(v)
+    }
+    const timer = setTimeout(() => finish(null), timeoutMs)
+    proc.stdout.setEncoding("utf8")
+    proc.stdout.on("data", (chunk: string) => {
+      buf += chunk
+      for (;;) {
+        const nl = buf.indexOf("\n")
+        if (nl < 0) break
+        const line = buf.slice(0, nl).trim()
+        buf = buf.slice(nl + 1)
+        if (line === "") continue
+        try {
+          const msg = JSON.parse(line)
+          if (msg?.id === 2) finish(msg)
+        } catch {
+          /* a line this plugin did not ask for */
+        }
+      }
+    })
+    proc.on("error", () => finish(null))
+    proc.on("exit", () => finish(null))
+    try {
+      proc.stdin.write(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "initialize",
+          params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: client },
+        }) + "\n",
+      )
+      proc.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n")
+      proc.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: 2, method, params }) + "\n")
+    } catch {
+      finish(null)
+    }
+  })
+}
+
+/** pi's own harness identity for the handshake, measured once. */
+let clientCache: { name: string; title: string; version: string } | undefined
+
+async function client(): Promise<{ name: string; title: string; version: string }> {
+  if (clientCache) return clientCache
+  let version = ""
+  try {
+    const { stdout } = await run("pi", ["--version"])
+    version = stdout.trim().split(/\s+/).pop() ?? ""
+  } catch {
+    /* version is a nicety; never let it stop registration */
+  }
+  clientCache = { name: "pi", title: "pi", version }
+  return clientCache
+}
+
+/**
+ * `_meta com.dibs/session` carries pi's OWN session id, which the bridge
+ * keeps rather than replacing it with the one it derives from its process
+ * tree: a harness that knows its session is believed, and pi is one. Every
+ * other field of `_meta`, and every path in the arguments, is the bridge's
+ * business and is not touched here.
+ */
+async function rpc(
+  method: string,
+  params: unknown,
+  timeoutMs: number,
+  sessionID?: string,
+): Promise<any | null> {
+  let p = params
+  if (method === "tools/call" && sessionID && params && typeof params === "object") {
+    const call = { ...(params as Record<string, unknown>) }
+    const meta = { ...((call["_meta"] as Record<string, unknown> | undefined) ?? {}) }
+    meta["com.dibs/session"] = sessionID
+    call["_meta"] = meta
+    p = call
+  }
+  const msg = await bridgeCall(method, p, timeoutMs, await client())
+  if (msg === null) return null
+  if (msg.error) return { __error: msg.error }
+  return msg.result ?? null
+}
+
 async function listTools(): Promise<McpTool[]> {
-  // The daemon accepts tools/list without a prior initialize on this transport,
-  // so there is no handshake to keep alive between turns.
   const r = await rpc("tools/list", {}, 4000)
   const tools = r?.tools
   return Array.isArray(tools) ? (tools as McpTool[]) : []
@@ -497,12 +184,17 @@ async function listTools(): Promise<McpTool[]> {
 /**
  * Ask Dibs what this session has waiting. Read-only: hook_poll never consumes
  * mail, so a dropped response loses nothing and the poll is safe to repeat.
+ *
+ * No cwd is passed. The bridge fills in the directory it runs in, resolved
+ * the way the daemon compares it, exactly as it does for every other harness;
+ * a cwd supplied from here is the spelling that used to miss its own agent.
  */
 async function pollMail(sessionID: string): Promise<string | null> {
   const r = await rpc(
     "tools/call",
-    { name: "hook_poll", arguments: { session_id: sessionID, event: "before_agent_start", cwd: (await machineIdentity()).cwd } },
+    { name: "hook_poll", arguments: { session_id: sessionID, event: "before_agent_start" } },
     1500,
+    sessionID,
   )
   const text = r?.content?.[0]?.text
   if (!text) return null
@@ -517,45 +209,7 @@ async function pollMail(sessionID: string): Promise<string | null> {
 }
 
 /**
- * What this agent is, observed rather than asked for.
- *
- * Every other harness gets this from the `dibs mcp-stdio` bridge, which fills
- * in blank identity fields on the way past. pi talks to the daemon directly, so
- * it has no bridge, and the first real pi run registered an agent with a
- * completely empty `agent`, while the opencode agents beside it on the same board
- * carried harness, host, cwd and branch.
- *
- * The rule is the same one SPEC §5.0 states: identity is observed, never
- * self-reported. Models leave these fields blank when asked, every time.
- */
-async function gitBranch(cwd: string): Promise<string> {
-  try {
-    const { stdout } = await run("git", ["-C", cwd, "symbolic-ref", "--short", "-q", "HEAD"])
-    const br = stdout.trim()
-    if (br) return br
-  } catch {
-    /* not a repo, or an unborn branch: fall through to the sha */
-  }
-  try {
-    const { stdout } = await run("git", ["-C", cwd, "rev-parse", "--short", "HEAD"])
-    const sha = stdout.trim()
-    if (sha) return "detached@" + sha
-  } catch {
-    /* not a repo at all */
-  }
-  return ""
-}
-
-/**
- * pi's own session id, via the documented accessor.
- *
- * There is no `ctx.sessionId`: the field this originally reached for. Guessing
- * it cost a whole wake test: registration silently fell back to a per-process
- * id, the poll asked about a different session, and the injected mail never
- * appeared. `ctx.sessionManager.getSessionId()` is the real API.
- */
-/**
- * The agent this session belongs to, or null.
+ * Which agent this session is, for attributing the subagents it spawns.
  *
  * hook_poll names the agent whether or not it has news, precisely so a caller
  * that wants the RELATIONSHIP rather than the mail can ask for it.
@@ -563,8 +217,9 @@ async function gitBranch(cwd: string): Promise<string> {
 async function spaceOf(sessionID: string): Promise<string | null> {
   const r = await rpc(
     "tools/call",
-    { name: "hook_poll", arguments: { session_id: sessionID, event: "tool_call", cwd: (await machineIdentity()).cwd } },
+    { name: "hook_poll", arguments: { session_id: sessionID, event: "tool_call" } },
     1500,
+    sessionID,
   )
   const text = r?.content?.[0]?.text
   if (!text) return null
@@ -626,7 +281,9 @@ let fallbackSession: string | undefined
 
 function sessionIdFallback(): string {
   if (!fallbackSession) {
-    const rand = Math.floor(Math.random() * 0xffffffff).toString(16).padStart(8, "0")
+    const rand = Math.floor(Math.random() * 0xffffffff)
+      .toString(16)
+      .padStart(8, "0")
     fallbackSession = `pi-${process.pid}-${rand}`
   }
   return fallbackSession
@@ -642,51 +299,24 @@ function argvFlag(flag: string): string {
   return ""
 }
 
-let registerCache: Record<string, string> | undefined
-
 /**
- * The identity fields that travel as tool ARGUMENTS.
+ * The identity fields only pi can observe.
  *
- * `harness` and `version` are deliberately NOT here: the server takes those
- * only from the handshake's clientInfo, precisely because the client states
- * them and the model cannot. Putting them in the arguments silently does
- * nothing: the first pi agent came back with no harness at all for exactly
- * that reason.
+ * Host, working directory, branch and the repository belong to the bridge,
+ * which measures them on the machine it runs on and spells them the way the
+ * daemon compares them. What is left is what the user named on pi's command
+ * line, and pi is the one harness that genuinely knows its own model because
+ * of that. `harness` and `version` are deliberately absent: the server takes
+ * those only from the handshake's clientInfo, and putting them in the
+ * arguments silently does nothing.
  */
-async function identity(): Promise<Record<string, string>> {
-  if (registerCache) return registerCache
-  const cwd = (await machineIdentity()).cwd
-  const out: Record<string, string> = {
-    host: hostname().replace(/\.local$/, ""),
-    surface: "cli",
-    cwd,
-  }
-  const br = await gitBranch(cwd)
-  if (br) out["branch"] = br
-  // pi is the one harness that genuinely knows its own model, because the user
-  // names it on the command line. That makes it observable, not self-reported.
+function observedIdentity(): Record<string, string> {
+  const out: Record<string, string> = { surface: "cli" }
   const model = argvFlag("--model")
   if (model) out["model"] = model
   const provider = argvFlag("--provider")
   if (provider) out["provider"] = provider
-  registerCache = out
   return out
-}
-
-/** clientInfo for the handshake half of identity: harness name and version. */
-let clientInfoCache: { name: string; title: string; version: string } | undefined
-
-async function clientInfo() {
-  if (clientInfoCache) return clientInfoCache
-  let version = ""
-  try {
-    const { stdout } = await run("pi", ["--version"])
-    version = stdout.trim().split(/\s+/).pop() ?? ""
-  } catch {
-    /* version is a nicety; never let it stop registration */
-  }
-  clientInfoCache = { name: "pi", title: "pi", version }
-  return clientInfoCache
 }
 
 export default function (pi: ExtensionAPI) {
@@ -712,29 +342,33 @@ export default function (pi: ExtensionAPI) {
         parameters: Type.Unsafe<Record<string, unknown>>(
           t.inputSchema ?? { type: "object", properties: {} },
         ),
-        async execute(_toolCallId: string, params: unknown, _signal: unknown, _onUpdate: unknown, ctx: any) {
+        async execute(
+          _toolCallId: string,
+          params: unknown,
+          _signal: unknown,
+          _onUpdate: unknown,
+          ctx: any,
+        ) {
           let args = (params ?? {}) as Record<string, unknown>
-          const callParams: Record<string, unknown> = { name: t.name }
+          const sessionID = sessionIdOf(ctx)
           if (t.name === "register") {
             // An OBSERVED value overrides whatever the model typed. This is not
             // the bridge's "the agent knows better" rule, and deliberately so:
             // the first pi run reported `model: "gpt-4"` while actually running
             // gpt-oss-120b. A field we can measure is never improved by asking.
-            const merged: Record<string, unknown> = { ...args, ...(await identity()) }
+            const merged: Record<string, unknown> = { ...args, ...observedIdentity() }
             // Without a session_id, re-registering after a context loss forks a
             // sibling agent and the original's mail becomes unreachable.
             if (typeof merged["session_id"] !== "string" || merged["session_id"] === "") {
-              merged["session_id"] = sessionIdOf(ctx)
+              merged["session_id"] = sessionID
             }
             args = merged
-            // harness/version reach the server ONLY through clientInfo.
-            callParams["clientInfo"] = await clientInfo()
           }
-          callParams["arguments"] = args
-          const r = await rpc("tools/call", callParams, 30_000)
+          const r = await rpc("tools/call", { name: t.name, arguments: args }, 30_000, sessionID)
           if (r === null) {
             throw new Error(
-              "Dibs daemon is not reachable at " + ADDR + ": is dibd running?",
+              `Dibs is not reachable through \`${BIN} mcp-stdio\`: is dibd running, and is ` +
+                `${BIN} on PATH (or named by DIBS_BIN)?`,
             )
           }
           if (r.__error) {
@@ -759,13 +393,6 @@ export default function (pi: ExtensionAPI) {
     }
   })
 
-  /**
-   * Deliver mail at the top of the turn.
-   *
-   * This is the pi equivalent of the opencode `chat.message` hook: Dibs stays a
-   * service the agent pulls from, and the extension only decides *when* to pull.
-   * No subprocess, no polling loop, no driving of the harness. See PHILOSOPHY.md.
-   */
   /**
    * Stamp a spawned subagent with the agent that spawned it.
    *
@@ -796,6 +423,13 @@ export default function (pi: ExtensionAPI) {
     }
   })
 
+  /**
+   * Deliver mail at the top of the turn.
+   *
+   * This is the pi equivalent of the opencode `chat.message` hook: Dibs stays
+   * a service the agent pulls from, and the extension only decides *when* to
+   * pull. No polling loop, no driving of the harness. See PHILOSOPHY.md.
+   */
   pi.on("before_agent_start", async (_event, ctx) => {
     // Tools may not be registered yet if the daemon started after pi did.
     try {

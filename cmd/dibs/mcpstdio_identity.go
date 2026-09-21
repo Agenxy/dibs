@@ -122,8 +122,21 @@ func enrichRegister(line []byte) []byte {
 			if lastWantsUI {
 				meta["com.dibs/ui"] = true
 			}
-			if sid := sessionID(); sid != "" {
-				meta["com.dibs/session"] = sid
+			// A CLIENT THAT KNOWS ITS OWN SESSION IS BELIEVED. The id
+			// derived here is a fallback for a client that states none:
+			// this bridge reads a Claude sidecar or falls back to
+			// `host-<ppid>`, neither of which is right for a harness that
+			// has its own session identifier and is speaking through this
+			// bridge on purpose. Overwriting it is what kept pi from
+			// delegating to this binary at all, and made it re-implement
+			// the whole client instead: a thousand lines of policy in
+			// TypeScript, each rule arriving a release late. Same shape
+			// as the caller's own User-Agent, and as a path named for
+			// another agent: what the caller states about ITSELF stands.
+			if _, stated := meta["com.dibs/session"].(string); !stated {
+				if sid := sessionID(); sid != "" {
+					meta["com.dibs/session"] = sid
+				}
 			}
 			// WHICH COMPUTER, for a daemon that serves more than one.
 			//
@@ -139,6 +152,7 @@ func enrichRegister(line []byte) []byte {
 			// cannot ask Git about a path that exists only here, and the
 			// repository rule for two clones on two machines needs the answer;
 			// a daemon on THIS machine ignores it and derives its own.
+			supplyWorkingDirectory(params)
 			stampRepo(params)
 			if tid, _ := meta["threadId"].(string); strings.TrimSpace(tid) != "" {
 				noteThread(strings.TrimSpace(tid))
@@ -425,6 +439,49 @@ func repoFields(goos, dir, remote, roots, root, cwd string) map[string]string {
 		// fifty-four of the pre-release review.
 		"cwd": spellFor(goos, cwd),
 	}
+}
+
+// hookCWD names the hook tools whose `cwd` argument means "the directory
+// the harness is working in". It is deliberately not every tool with a cwd:
+// `register` and `update` take theirs from the harness's own sidecar where
+// there is one, and that answer is better than this process's.
+var hookCWD = map[string]bool{
+	"guard_path": true, "hook_poll": true, "hook_session": true, "hook_blocked": true,
+}
+
+// supplyWorkingDirectory fills in a hook call's `cwd` when the caller left
+// it blank, from the directory this bridge runs in.
+//
+// The bridge is spawned by the harness and inherits its working directory,
+// so this process's cwd IS the harness's, resolved and spelled the way the
+// daemon compares it. The argument's job is to find the agent when the
+// harness's session id differs from the registered one, and a blank one
+// finds nothing.
+//
+// This exists because the rule moved. The opencode plugin used to measure
+// and canonicalise its own cwd and send it; it is a transport now and
+// states nothing about this machine, which is the point. A rule the
+// transport dropped has to land somewhere, and the bridge is the one place
+// that knows the answer for every harness at once. `repoMeta` has made the
+// same fallback for the `_meta` stamp all along, so the two now agree by
+// construction rather than by both being right.
+func supplyWorkingDirectory(params map[string]any) {
+	name, _ := params["name"].(string)
+	if !hookCWD[name] {
+		return
+	}
+	args, _ := params["arguments"].(map[string]any)
+	if args == nil {
+		return
+	}
+	if cur, _ := args["cwd"].(string); strings.TrimSpace(cur) != "" {
+		return // the caller said; canonicalisePathArgs will spell it
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		return // no directory to offer is better than a wrong one
+	}
+	args["cwd"] = wd
 }
 
 // stampRepo puts the checkout the call's cwd names into `_meta`, replacing

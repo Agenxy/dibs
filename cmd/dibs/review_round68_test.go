@@ -145,3 +145,55 @@ func TestACorrectUnitWithASpacedBinaryPathIsNotCalledDrifted(t *testing.T) {
 			"it and discard whatever the operator tuned in it")
 	}
 }
+
+// A client that states its own session id keeps it.
+//
+// This bridge derives one (a Claude sidecar, else `host-<ppid>`) and
+// stamped it over whatever the caller sent. That is right for a harness
+// with no session identity of its own and wrong for one that has it:
+// pi knows its session, and being unable to say so is why pi's
+// extension re-implemented this entire bridge in TypeScript instead of
+// speaking through it. Every client rule then arrived there a release
+// late. What a caller states about ITSELF stands, as with its own
+// User-Agent and with a path it names for another agent.
+func TestAClientsOwnSessionIdIsKept(t *testing.T) {
+	const theirs = "pi-session-019a1b2c"
+	params := map[string]any{
+		"name":      "check_in",
+		"arguments": map[string]any{},
+		"_meta":     map[string]any{"com.dibs/session": theirs},
+	}
+	line, err := json.Marshal(map[string]any{"method": "tools/call", "params": params})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(enrichRegister(line), &out); err != nil {
+		t.Fatal(err)
+	}
+	op, _ := out["params"].(map[string]any)
+	meta, _ := op["_meta"].(map[string]any)
+	if got, _ := meta["com.dibs/session"].(string); got != theirs {
+		t.Fatalf("the bridge replaced the client's own session id with %q: a harness that "+
+			"knows its session cannot speak through this bridge, which is how a second "+
+			"implementation of every client rule gets written", got)
+	}
+
+	// And a caller that states none still gets this bridge's own.
+	line, err = json.Marshal(map[string]any{
+		"method": "tools/call",
+		"params": map[string]any{"name": "check_in", "arguments": map[string]any{}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(enrichRegister(line), &out); err != nil {
+		t.Fatal(err)
+	}
+	op, _ = out["params"].(map[string]any)
+	bm, _ := op["_meta"].(map[string]any)
+	if got, _ := bm["com.dibs/session"].(string); got == "" || got != sessionID() {
+		t.Fatalf("a caller that stated no session got %q, want this bridge's own %q: the "+
+			"self-healing bind depends on it", got, sessionID())
+	}
+}

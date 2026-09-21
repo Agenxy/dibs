@@ -24,7 +24,7 @@
  *
  * Run: bun internal/mcp/e2e/guard_e2e.ts
  */
-import { mkdtempSync, rmSync, mkdirSync, symlinkSync } from "node:fs"
+import { mkdtempSync, rmSync, mkdirSync, symlinkSync, existsSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { daemonReady } from "./ready.ts"
@@ -57,11 +57,23 @@ const cleanup = () => {
 }
 process.on("exit", cleanup)
 
-// The plugin reads DIBS_ADDR/DIBS_DIR once, at module load, and caches the
-// secret. Both must be set before the import below or it will talk to the
-// developer's real board instead of this scratch one.
+// The plugin is a transport: it spawns `dibs mcp-stdio` per call, and that
+// binary reads DIBS_ADDR/DIBS_DIR. Both must be set before the import below
+// or the plugin's children talk to the developer's real board instead of
+// this scratch one.
 process.env.DIBS_ADDR = ADDR
 process.env.DIBS_DIR = dir
+
+// AND DIBS_BIN, which is the one that caught this. Without it the plugin
+// spawns whatever `dibs` is on PATH, so on a developer's machine the suite
+// silently tested the INSTALLED build and passed, while CI, which has no
+// dibs on PATH, ran the plugin with nothing to spawn and reported five
+// checks failed. Naming the binary the suite built is the honest fixture.
+process.env.DIBS_BIN = dibsBin
+if (!existsSync(dibsBin)) {
+  throw new Error(`no dibs binary at ${dibsBin}: the plugin has nothing to spawn and every ` +
+    `check that goes through it would fail as though the product were broken`)
+}
 
 // ── wait for the daemon, then talk to it directly for setup ──────────────
 // Waits for the LISTENER, not for local.secret: see ready.ts. The file appears
