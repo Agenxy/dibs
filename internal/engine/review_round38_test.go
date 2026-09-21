@@ -153,3 +153,82 @@ func TestALocatedOpenerIsNotPredictedFromAnotherProjectsIndex(t *testing.T) {
 			"can never be matched against, which is what predicting at open time is for")
 	}
 }
+
+// The space matching opens carries the provenance of the index that
+// predicted its footprint, not the one the declaration was recorded with.
+//
+// A declaration is predicted twice: once before the op is applied, which
+// is what the ledger records, and once by matching, which re-predicts
+// because the index may have moved on. Round twenty-eight taught the
+// second one to relabel the fresh footprint with the fingerprint of the
+// index that actually answered, and left the supplied-or-not bit beside
+// it as the first prediction recorded. So an index replaced by a SHIPPED
+// one between the two produced a footprint built from untrusted data,
+// stored under the shipped index's fingerprint, and marked as the
+// daemon's own. That bit is the whole of "a supplied index decides no
+// membership". Round forty-three of the pre-release review.
+func TestTheSpaceMatchingOpensCarriesTheIndexThatPredictedIt(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	cfg := MatchConfig{JoinThreshold: 0.3, AutoJoin: AutoJoinAlways, Deadline: 5 * time.Second}
+	tree := t.TempDir()
+	// The daemon's own index, which holds its answer until the test lets
+	// it go: that hold is the window between the two predictions.
+	mined := blockingScorer{
+		id: "mined", path: "shared.go",
+		inside: make(chan struct{}), release: make(chan struct{}),
+	}
+	e.SetIndex(tree, mined, cfg, IndexInfo{Fingerprint: "h-mined"})
+
+	res, err := e.Do(ctx, &core.Op{
+		Kind: core.OpRegister, Name: "one",
+		Agent: &core.AgentInfo{CWD: tree, RepoRoot: tree},
+	})
+	if err != nil {
+		t.Fatalf("setup: register: %v", err)
+	}
+	tok, _ := res["token"].(string)
+	if _, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: tok}); err != nil {
+		t.Fatalf("setup: ack: %v", err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := e.DoMatched(ctx, &core.Op{
+			Kind: core.OpSetSlot, Token: tok, Text: "fix refresh token expiry",
+		})
+		done <- err
+	}()
+
+	// The first prediction is in flight. An agent on this machine ships an
+	// index for the same tree and it takes the slot: everything predicted
+	// from here on is that agent's data.
+	<-mined.inside
+	e.SetIndex(tree, cloneScorer{"shipped", "shared.go"}, cfg,
+		IndexInfo{Fingerprint: "h-shipped", SuppliedBy: "shipper"})
+	close(mined.release)
+	if err := <-done; err != nil {
+		t.Fatalf("declare: %v", err)
+	}
+
+	var spaces int
+	var supplied string
+	onLoop(t, ctx, e, func(s *core.State) {
+		for _, ch := range s.Spaces {
+			spaces++
+			supplied = map[bool]string{true: "yes", false: "no"}[ch.Supplied]
+		}
+	})
+	if spaces != 1 {
+		t.Fatalf("the declaration opened %d spaces, want 1", spaces)
+	}
+	if supplied != "yes" {
+		t.Fatalf("the space says supplied=%s: matching predicted its footprint with an "+
+			"index an agent shipped and recorded it as the daemon's own, so the next "+
+			"agent that overlaps it can be joined automatically on that data", supplied)
+	}
+}
