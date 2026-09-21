@@ -200,18 +200,20 @@ func (f *scorerFlags) installSupplied(
 	// lock, and an eviction (or another shipment for this root) meanwhile
 	// takes the slot: publishing anyway leaves an index the ceiling does
 	// not know about and overwrites what replaced it. Round thirty-five of
-	// the pre-release review.
-	if !f.holdsClaim(root, gen) {
+	// the pre-release review found that; round thirty-seven found that
+	// checking and then installing is still two operations, and eviction
+	// fits between them. The claim, the index and the fingerprint move
+	// together under one hold of discoverMu (publishUnderClaim).
+	if !f.publishUnderClaim(root, gen, func() {
+		eng.SetIndex(root, scorer, engine.MatchConfig{
+			JoinThreshold: f.join, NotifyThreshold: notify, Deadline: f.deadline,
+			DirectorRequired: f.director, AutoJoin: f.autoJoin, Repo: root,
+		}, engine.IndexInfo{Fingerprint: p.Fingerprint, SuppliedBy: agent, SuppliedHost: host})
+		f.suppliedAt[root] = p.Fingerprint
+	}) {
 		return map[string]any{"accepted": false, "reason": "this tree was claimed by another " +
 			"index while yours was being installed; ship it again"}
 	}
-	eng.SetIndex(root, scorer, engine.MatchConfig{
-		JoinThreshold: f.join, NotifyThreshold: notify, Deadline: f.deadline,
-		DirectorRequired: f.director, AutoJoin: f.autoJoin, Repo: root,
-	}, engine.IndexInfo{Fingerprint: p.Fingerprint, SuppliedBy: agent, SuppliedHost: host})
-	f.discoverMu.Lock()
-	f.suppliedAt[root] = p.Fingerprint
-	f.discoverMu.Unlock()
 	eng.NoteSuppliedIndexFrom(root, agent, host)
 	// Suggest-only: a supplied index never joins anyone, see above.
 	phase := engine.MatchNoThreshold

@@ -364,11 +364,32 @@ func linuxProbe() (bool, string) {
 		defer probeMu.Unlock()
 		return probeOK, probeWhy
 	}
+	ready := reserveProbeLocked()
+	probeMu.Unlock()
+	return runProbe(ready)
+}
+
+// reserveProbeLocked claims the right to measure, before whoever is going
+// to do the measuring starts. Caller holds probeMu.
+//
+// THE RESERVATION IS WHAT resetProbe WAITS ON, so it has to be taken by the
+// goroutine that decides to probe and not by the one that probes. The
+// background path was `go linuxProbe()`, and linuxProbe set the flag after
+// it was scheduled and had taken the lock: a resetProbe in between saw
+// nothing running, returned, and the test that called it restored the
+// stubs the probe was still about to read. The race detector on Linux
+// caught it as a write to `goos` racing a read in a goroutine belonging to
+// a test that had already finished.
+func reserveProbeLocked() chan struct{} {
 	probeRunning = true
 	ready := make(chan struct{})
 	probeReady = ready
-	probeMu.Unlock()
+	return ready
+}
 
+// runProbe measures the host outside the lock and publishes the answer to
+// everyone waiting on ready.
+func runProbe(ready chan struct{}) (bool, string) {
 	ok, why := probeHost()
 
 	probeMu.Lock()
@@ -382,8 +403,7 @@ func linuxProbe() (bool, string) {
 // and starts the probe if nobody has. known is false while it is running.
 func linuxProbeCached() (ok, known bool) {
 	probeMu.Lock()
-	done, running, answer, at := probeDone, probeRunning, probeOK, probeAt
-	probeMu.Unlock()
+	defer probeMu.Unlock()
 	// A STALE NO IS REMEASURED FROM HERE TOO, which is the path production
 	// takes: Available() asks this one, never linuxProbe, so putting the
 	// retry only in linuxProbe left the fix reachable from tests and from
@@ -391,14 +411,14 @@ func linuxProbeCached() (ok, known bool) {
 	// thirty-four's own fix. The measurement runs off this goroutine (this
 	// is the writer loop); the old answer stands until it lands, and
 	// "assume yes while unknown" is Available's rule, not this one's.
-	if done && !answer && time.Since(at) >= probeRetryAfter && !running {
-		go linuxProbe()
+	stale := probeDone && !probeOK && time.Since(probeAt) >= probeRetryAfter
+	if !probeRunning && (stale || !probeDone) {
+		// Reserved here, under this lock, and only then started: see
+		// reserveProbeLocked.
+		go runProbe(reserveProbeLocked())
 	}
-	if done {
-		return answer, true
-	}
-	if !running {
-		go linuxProbe()
+	if probeDone {
+		return probeOK, true
 	}
 	return false, false
 }
