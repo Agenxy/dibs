@@ -128,6 +128,23 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round fifty-two of the pre-release review: three findings.**
+  - A bridge asks the daemon about its index with the spelling it
+    shipped. The upload makes the root portable and the daemon keys its
+    status by that, while the bridge asked with the native one: on
+    Windows the two never matched, so it mined and uploaded the whole
+    repository every five minutes for a shipment already held, and the
+    fingerprint check discarded the result after the work and the
+    transfer.
+  - `dibs doctor` reports trees on other machines whatever the matching
+    phase. The report lived inside the `ready` branch, and the shipped
+    default is suggest-only, which is also the phase a supplied index
+    installs as: the configuration where remote trees are most likely
+    was the one the report never ran in.
+  - A shipped index serves the subdirectories of the tree it was shipped
+    for. A remote entry is a directory an agent is IN and a shipment
+    names the repository ROOT, so doctor told the operator that a
+    working bridge had never shipped and sent them to troubleshoot it.
 - **Round fifty-one of the pre-release review: two findings.**
   - Every answer about this machine's identity competes for one file.
     The Supgang branch wrote `supgang_node_id` and the minting branch

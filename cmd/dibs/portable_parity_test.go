@@ -331,3 +331,40 @@ func TestPiKeepsAnotherAgentsForceReleasePath(t *testing.T) {
 		}
 	}
 }
+
+// A bridge asks the daemon about its index with the spelling it shipped.
+//
+// The upload converts the root to its portable form and the daemon keys
+// the status by that; this asked with the native one, so on Windows the
+// two never matched. The bridge mined and uploaded the whole repository
+// every five minutes for a shipment it had already made, and the
+// daemon's fingerprint check threw the result away after the work and
+// the transfer were done. Round fifty-two of the pre-release review, on
+// round forty-two's own fix. Round forty-two converted what goes OUT
+// and left what comes back being compared the other way.
+func TestABridgeAsksAboutItsIndexWithTheSpellingItShipped(t *testing.T) {
+	// Through the decision the ticker makes, with the bridge's own
+	// native root: that is the call site the defect was at.
+	st := matchStatusJSON{
+		Remote:        []string{"C:/work/repo"},
+		Supplied:      map[string]string{"C:/work/repo": "shipper"},
+		SuppliedHosts: map[string]string{"C:/work/repo": "machine-b"},
+		Host:          "hub-node",
+	}
+	const native = `C:\work\repo`
+	if shouldShip(st, native, "machine-b", "windows") {
+		t.Fatal("a Windows bridge would mine and upload this repository again for a " +
+			"shipment the daemon already holds, every five minutes, for as long as it runs")
+	}
+	// And it still ships when the daemon really has nothing.
+	empty := matchStatusJSON{Remote: []string{"C:/work/repo"}, Host: "hub-node"}
+	if !shouldShip(empty, native, "machine-b", "windows") {
+		t.Fatal("a Windows bridge stopped shipping an index the daemon has never received")
+	}
+	// The native spelling is exactly what did not match before: asked
+	// directly, the daemon's answer does not cover it.
+	if suppliedFor(st, native, "machine-b") {
+		t.Fatal("the native spelling matched after all: this test is not measuring the " +
+			"difference it was written for")
+	}
+}
