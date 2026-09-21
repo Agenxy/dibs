@@ -243,7 +243,9 @@ func run() error {
 	}
 	led.OnEvents = nil // replay is done; live events flow through the engine
 	eng := engine.New(st, led, liveness.New(), history)
-	identifyHost(eng, *dir) // and retried below, once the root context exists
+	// SETTLED BEFORE SERVING. Nothing changes this identity afterwards; see
+	// keepAskingSupgang.
+	identified := identifyHost(eng, *dir)
 	eng.SetBlobs(bs)
 	wake, err := wakePolicy(cfg.Wake)
 	if err != nil {
@@ -292,7 +294,7 @@ func run() error {
 	// The declared names are guarded at ingress before their first grant as
 	// well as after: recovery of one of these rows needs its nonce.
 	eng.SetPrivilegedNames(append(append([]string{}, cfg.Roles.Coordinator...), cfg.Roles.Admin...))
-	keepIdentifying(ctx, eng, *dir)
+	keepAskingSupgang(ctx, eng, *dir, identified)
 	keepDeclaredRolesApplied(ctx, *dir, eng, cfg.Roles)
 	// Clears a pid an older build recorded against the operator's own row, which
 	// made every restart report them as a dead process. One op, once, and only
@@ -1021,7 +1023,7 @@ func identifyHost(eng *engine.Engine, dir string) bool {
 		if remembered := supgang.RememberedNodeID(dir); remembered != "" {
 			eng.SetHostID(remembered)
 			slog.Warn("Supgang did not answer; this computer keeps the identity it is already "+
-				"known by, and identification will be retried",
+				"known by, and this daemon serves under it until it restarts",
 				"node", remembered, "supgang", err.Error())
 			return false
 		}
@@ -1036,19 +1038,23 @@ func identifyHost(eng *engine.Engine, dir string) bool {
 	return true
 }
 
-// keepIdentifying retries identifyHost until Supgang answers.
+// keepAskingSupgang goes on asking after a startup lookup that failed, and
+// changes NOTHING about the running daemon: it remembers the answer, so the
+// next start is right, and says that a restart would pick it up.
 //
-// Installed-and-not-answering is a state that ends: the service restarts,
-// the machine finishes booting. Without a retry the daemon wore the wrong
-// identity until somebody restarted it, which is the one thing an operator
-// has no reason to do (nothing looks broken from the board).
-func keepIdentifying(ctx context.Context, eng *engine.Engine, dir string) {
-	if eng.HostID() != eng.NodeID() {
-		return // already identified, at startup
-	}
-	if identifyHost(eng, dir) {
+// The first version of this called SetHostID from the retry goroutine. Two
+// separate defects, one round later: the identity a daemon serves under
+// decides which agents are on this machine, so changing it while agents
+// hold claims splits the board (rows registered before and after read as
+// two computers, and both can take one path exclusively); and the setter
+// is a plain field the request path reads, so writing it after the engine
+// started is a data race. An identity is settled before serving or not at
+// all. Round thirty of the pre-release review.
+func keepAskingSupgang(ctx context.Context, eng *engine.Engine, dir string, settled bool) {
+	if settled {
 		return
 	}
+	serving := eng.HostID()
 	go func() {
 		t := time.NewTicker(identifyRetry)
 		defer t.Stop()
@@ -1057,15 +1063,27 @@ func keepIdentifying(ctx context.Context, eng *engine.Engine, dir string) {
 			case <-ctx.Done():
 				return
 			case <-t.C:
-				if identifyHost(eng, dir) {
-					return
-				}
 			}
+			lookup, cancel := context.WithTimeout(ctx, 5*time.Second)
+			id, err := supgang.Status(lookup)
+			cancel()
+			if err != nil {
+				continue
+			}
+			supgang.RememberNodeID(dir, id.NodeID)
+			if id.NodeID != serving {
+				slog.Warn("Supgang now identifies this computer, and this daemon is serving under "+
+					"another id: its agents and the bridges here disagree about which machine they "+
+					"are on until it restarts (`dibs upgrade` does)",
+					"serving", serving, "supgang", id.NodeID, "name", id.Name)
+			}
+			return
 		}
 	}()
 }
 
 // identifyRetry is how often a daemon that could not reach Supgang asks
-// again: often enough that a service restart is picked up within a turn or
-// two, rare enough to be nothing on a machine where Supgang is simply slow.
-const identifyRetry = time.Minute
+// again: often enough that a service restart is remembered within a turn
+// or two, rare enough to be nothing on a machine where Supgang is simply
+// slow. A variable so a test need not wait a minute for one tick.
+var identifyRetry = time.Minute
