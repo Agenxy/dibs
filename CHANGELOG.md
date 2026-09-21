@@ -108,6 +108,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round thirty-one of the pre-release review: one finding.** Supgang
+  UNINSTALLED is a failed lookup like any other: the daemon returned early
+  and served under its ledger id while every bridge here kept the
+  remembered Supgang one, so it read its own agents as remote and skipped
+  its own wake commands for them. It keeps the identity this computer is
+  already known by, and does not retry, because nothing is coming.
 - **Round thirty of the pre-release review: four findings, all in the
   identification retry the previous round added.**
   - A daemon's identity is settled before it serves and never changes

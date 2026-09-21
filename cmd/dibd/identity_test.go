@@ -13,11 +13,16 @@ import (
 	"github.com/agenxy/dibs/internal/supgang"
 )
 
-// engineNamed is an engine whose board carries the given node id, with a
-// ledger of its own: identifyHost only reads and sets the host identity,
-// so nothing here needs the loop running.
-func engineNamed(t *testing.T, node string) *engine.Engine {
+// boardNode is the ledger id these tests give a board: the identity a
+// daemon serves under when Supgang has never named this computer.
+const boardNode = "board-node"
+
+// engineNamed is an engine whose board carries boardNode, with a ledger of
+// its own: identifyHost only reads and sets the host identity, so nothing
+// here needs the loop running.
+func engineNamed(t *testing.T) *engine.Engine {
 	t.Helper()
+	node := boardNode
 	dir := t.TempDir()
 	box, err := ledger.LoadOrCreateKey(filepath.Join(dir, "key"))
 	if err != nil {
@@ -54,7 +59,7 @@ func TestADaemonKeepsTheIdentityThisComputerIsKnownBy(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	eng := engineNamed(t, "board-node")
+	eng := engineNamed(t)
 	if done := identifyHost(eng, dir); done {
 		t.Fatal("a failed lookup reported identification as settled, so nothing would retry")
 	}
@@ -62,11 +67,25 @@ func TestADaemonKeepsTheIdentityThisComputerIsKnownBy(t *testing.T) {
 		t.Fatalf("the daemon calls this computer %q, and its bridges call it %q: their agents read "+
 			"as remote to it, so it refuses its own local wake commands for them", got, node)
 	}
+	// AND SUPGANG UNINSTALLED IS A FAILED LOOKUP TOO. The bridge keeps the
+	// remembered id whatever the reason; the daemon returned early here
+	// and served under its ledger id, so the two disagreed again. Round
+	// thirty-one of the pre-release review.
+	gone := engineNamed(t)
+	supgang.Command = filepath.Join(dir, "no-supgang-here")
+	if done := identifyHost(gone, dir); !done {
+		t.Error("an uninstalled Supgang is something to wait for: nothing will ever answer")
+	}
+	if got := gone.HostID(); got != node {
+		t.Fatalf("with Supgang uninstalled the daemon calls this computer %q while its bridges "+
+			"call it %q: it reads its own agents as remote and skips its own wake commands", got, node)
+	}
+
 	// Nothing remembered: the board's own node id stands, as before.
 	fresh := t.TempDir()
-	eng2 := engineNamed(t, "board-node")
+	eng2 := engineNamed(t)
 	identifyHost(eng2, fresh)
-	if got := eng2.HostID(); got != "board-node" {
+	if got := eng2.HostID(); got != boardNode {
 		t.Fatalf("with nothing remembered the daemon calls itself %q, want its own node id", got)
 	}
 	// AND THE TWO HALVES AGREE, which is the property: the bridge reads
@@ -106,7 +125,7 @@ func TestADaemonDoesNotChangeItsIdentityWhileServing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	eng := engineNamed(t, "board-node")
+	eng := engineNamed(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	oldRetry := identifyRetry
@@ -123,7 +142,7 @@ func TestADaemonDoesNotChangeItsIdentityWhileServing(t *testing.T) {
 	if got := supgang.RememberedNodeID(dir); got != node {
 		t.Fatalf("the retry remembered %q, want %q: the next start would identify wrongly again", got, node)
 	}
-	if got := eng.HostID(); got != "board-node" {
+	if got := eng.HostID(); got != boardNode {
 		t.Fatalf("the daemon changed its identity to %q while serving: agents registered before and "+
 			"after read as two computers, and both can take one path exclusively", got)
 	}

@@ -1010,6 +1010,19 @@ func identifyHost(eng *engine.Engine, dir string) bool {
 	id, err := supgang.Status(ctx)
 	switch {
 	case errors.Is(err, supgang.ErrNotInstalled):
+		// AND A MACHINE THIS BOARD ALREADY KNOWS BY A NODE ID KEEPS IT.
+		// Supgang uninstalled, or a PATH that lost it, is a failed lookup
+		// like any other: this returned early and the daemon served under
+		// its ledger id while every bridge here kept the remembered
+		// Supgang one (cmd/dibs/hostid.go does not special-case absence),
+		// so the daemon read its own agents as remote and skipped its own
+		// wake commands for them. Nothing to WAIT for, so no retry; the
+		// identity stands. Round thirty-one of the pre-release review.
+		if remembered := supgang.RememberedNodeID(dir); remembered != "" {
+			eng.SetHostID(remembered)
+			slog.Info("Supgang is not installed here; this computer keeps the identity it is "+
+				"already known by", "node", remembered)
+		}
 		return true // nothing to wait for: this machine is not in a fleet
 	case err != nil:
 		// A FAILED LOOKUP DOES NOT RENAME THIS COMPUTER, and the daemon
