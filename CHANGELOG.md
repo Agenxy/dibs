@@ -108,6 +108,20 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round thirty-two of the pre-release review: two findings.**
+  - `open_space` predicts the new space's footprint in the OPENER's index
+    rather than whichever tree was indexed first, and records whether that
+    index was one an agent shipped. It recorded neither, so a space opened
+    by hand could carry a footprint built from untrusted data with no
+    provenance, and the next local agent whose work overlapped it was
+    joined automatically on the strength of it: SECURITY.md's "a supplied
+    index decides no membership", through the one door that did not ask.
+  - A declared role is withdrawn when its `[roles.identity]` entry is
+    DELETED, not only when the name leaves `[roles]` or the fingerprint
+    changes. A declared name with no fingerprint can never be granted, so
+    a config that has lost it authorises nobody; the reconciler read the
+    missing entry as "unchanged" and left an admin in place that the same
+    config could not have granted. `docs/CONFIGURATION.md` says so.
 - **Round thirty-one of the pre-release review: one finding.** Supgang
   UNINSTALLED is a failed lookup like any other: the daemon returned early
   and served under its ledger id while every bridge here kept the
