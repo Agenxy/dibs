@@ -64,16 +64,38 @@ type McpTool = {
  * beside the 1500ms a guard is allowed, and it leaves no lifecycle to get
  * wrong. The child is killed when the call settles, timeout included.
  *
+ * EXCEPT ONE, and it is the reason `linger` exists. Registering starts the
+ * bridge's index shipper, which is what gives a checkout the daemon cannot
+ * read (a peer machine, a directory macOS withholds from a launchd process)
+ * any semantic matching at all, and its first look at the daemon's verdict
+ * is three seconds out. Killing that child at the answer meant pi
+ * registered successfully and shipped nothing, ever. opencode does not have
+ * this problem because it ALSO runs `dibs mcp-stdio` as its MCP server, and
+ * that process lives for the session; pi has no such process, because this
+ * extension is its whole surface. Found by the pre-release review, round
+ * fifty-eight, in this transport's own round.
+ *
+ * So a lingering child is let go of rather than killed: its stdout is
+ * destroyed, because that pipe is what holds the parent's event loop, and
+ * the handle is unref'd. Measured on bun 1.3.14 and on node: the parent
+ * exits at once and the child is still running two seconds later. It ends
+ * when pi does, since the write end of its stdin closes then and a stdio
+ * server reads that as goodbye, so the shipper's life is the session's and
+ * there is nothing to leak. At most one is held; a second replaces it.
+ *
  * The handshake rides in front of the call on the same pipe. Lines are
  * processed in order, so there is nothing to wait for; it exists to state
  * which harness this is, which the server takes from clientInfo and from
  * nowhere else.
  */
+let lingering: ChildProcessWithoutNullStreams | undefined
+
 function bridgeCall(
   method: string,
   params: unknown,
   timeoutMs: number,
   client: { name: string; title: string; version: string },
+  linger = false,
 ): Promise<any | null> {
   let proc: ChildProcessWithoutNullStreams
   try {
@@ -88,10 +110,27 @@ function bridgeCall(
       if (settled) return
       settled = true
       clearTimeout(timer)
-      try {
-        proc.kill()
-      } catch {
-        /* already gone */
+      // A lingering child is kept only when it ANSWERED: one that timed out
+      // or died has no shipper to run and would just be a stray process.
+      if (linger && v !== null) {
+        try {
+          lingering?.kill()
+        } catch {
+          /* already gone */
+        }
+        lingering = proc
+        try {
+          proc.stdout.destroy() // the pipe that would hold pi's event loop
+          proc.unref()
+        } catch {
+          /* nothing to let go of */
+        }
+      } else {
+        try {
+          proc.kill()
+        } catch {
+          /* already gone */
+        }
       }
       resolve(v)
     }
@@ -160,6 +199,7 @@ async function rpc(
   params: unknown,
   timeoutMs: number,
   sessionID?: string,
+  linger = false,
 ): Promise<any | null> {
   let p = params
   if (method === "tools/call" && sessionID && params && typeof params === "object") {
@@ -169,7 +209,7 @@ async function rpc(
     call["_meta"] = meta
     p = call
   }
-  const msg = await bridgeCall(method, p, timeoutMs, await client())
+  const msg = await bridgeCall(method, p, timeoutMs, await client(), linger)
   if (msg === null) return null
   if (msg.error) return { __error: msg.error }
   return msg.result ?? null
@@ -364,7 +404,9 @@ export default function (pi: ExtensionAPI) {
             }
             args = merged
           }
-          const r = await rpc("tools/call", { name: t.name, arguments: args }, 30_000, sessionID)
+          // register is the one call whose bridge is kept: see bridgeCall.
+          const r = await rpc("tools/call", { name: t.name, arguments: args }, 30_000, sessionID,
+            t.name === "register")
           if (r === null) {
             throw new Error(
               `Dibs is not reachable through \`${BIN} mcp-stdio\`: is dibd running, and is ` +

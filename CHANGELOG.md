@@ -56,6 +56,30 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   writes the launchd or systemd unit that keeps the bridge running across
   logins and reboots, carrying the join recipe's variables and nothing else.
 
+### Fixed
+
+- **The pi extension keeps the bridge that registered, so its index shipper
+  runs.** The transport spawns `dibs mcp-stdio` per call and kills it at the
+  answer, which is right for a guard and wrong for `register`: registering is
+  what starts the bridge's index shipper, whose first look at the daemon's
+  verdict is three seconds out, so pi registered successfully and shipped
+  nothing, ever. A checkout the daemon cannot read itself, on a peer machine
+  or behind macOS's file access, then had no semantic matching at all and
+  nothing said so. opencode escapes this because it also runs the bridge as
+  its MCP server; pi has no such process. That one child is now let go of
+  rather than killed (stdout destroyed, handle unref'd), which lets pi exit
+  at once and leaves the shipper running for the session: measured on bun
+  1.3.14 and on node.
+
+- **`internal/core` no longer reads a clock, and the guard that says so can
+  see it.** `ReattachBySessionIDForTest` called `time.Now()` in a non-test
+  file of the package: nothing replays through it, and it is exactly the
+  precedent rule 1 exists to refuse. The caller hands it the clock now. The
+  purity guard added a release-candidate earlier claimed to catch this and
+  could not, because an import list cannot see a call and `time` is allowed
+  on purpose; `TestCoreReadsNoClockAndNoRandomness` inspects the calls and
+  was shown catching the real instance.
+
 ### Changed
 
 - **`dibs doctor` asks the hub which machine is the hub, instead of guessing.**
