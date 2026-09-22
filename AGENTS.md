@@ -164,6 +164,27 @@ Things that have cost real time here, none of which are visible in the diff:
   whose wake had stopped firing before anyone could see why ("called Dibs
   recently"). `DIBS_LOG_DEBUG=1` on `dibd` shows them, and the remote e2e
   runs its hub that way and prints the tail of the hub log on a failed wake.
+- **The macOS firewall swallows a hub, it does not refuse one.** The
+  Application Firewall is on by default and filters inbound connections per
+  executable. A binary that is not in its list is not rejected: the handshake
+  completes, the connection sits in the accept queue and `Accept` never fires,
+  so the client's `connect()` succeeds and its read hangs while the daemon
+  shows an open socket, a clean log and no traffic. It asks the person at the
+  keyboard, and an install over ssh has nobody to ask, so the default stands
+  with no prompt and no line anywhere. The first hub deployment lost an
+  afternoon to it, and two probes made it longer: `/usr/bin/nc` served the same
+  address perfectly (it is IN the list) and a re-signed copy of nc did too
+  (matched as the binary it was copied from), both of which read as proof that
+  the firewall was innocent. What settled it was a listener of our own in each
+  language, ad-hoc signed and unlisted: BOTH hung on the LAN address and both
+  answered instantly on loopback, and `--listapps` explained every case.
+  `--getappblocked` says "permitted" throughout and is not an oracle for this:
+  it reports whether an explicit block rule exists, not whether connections
+  arrive. `internal/appfirewall` reports it now, from `dibd` at startup and
+  from `dibs doctor`. The fix is printed, never run, and on an MDM-managed Mac
+  there is no command to print: `socketfilterfw` refuses every modifying verb,
+  so the hint names the settings pane instead.
+
 - **A doc-count guard is only as good as the spellings it knows.** The tool
   count appears in six documents and has now gone stale three times in three
   different shapes: a plain wrong number, `one tool of forty-two`, and

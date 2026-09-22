@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/supgang"
+	xport "github.com/agenxy/dibs/internal/transport"
 )
 
 // printJoinConfig is `dibs mcp-config --board <addr>`: the config for joining
@@ -426,22 +427,16 @@ func boardShape(addr, served string) (tunnel, trust bool) {
 	if !hasScheme {
 		rest = addr
 	}
-	h, _, err := net.SplitHostPort(rest)
-	if err != nil {
-		h = rest
-	}
-	// An EMPTY host is a wildcard bind, not loopback.
+	// The shared rule, not a copy of it.
 	//
+	// This used to re-derive loopback here and got the wildcard bind wrong:
 	// `:4777` means every interface, which is the one shape that is definitely
-	// reachable from another machine, and this classified it as confined to
-	// this one: a board deliberately bound wide was handed an ssh-forward
-	// recipe instead of the direct one, and on a host without ssh that advice
-	// cannot be followed at all. The shared transport code already reads it
-	// correctly, so the two disagreed.
-	loopback := h == "localhost"
-	if ip := net.ParseIP(strings.Trim(h, "[]")); ip != nil {
-		loopback = ip.IsLoopback()
-	}
+	// reachable from another machine, and it was classified as confined to this
+	// one, so a board bound wide was handed an ssh-forward recipe instead of the
+	// direct one. The comment that recorded the fix said "the shared transport
+	// code already reads it correctly, so the two disagreed", and then kept the
+	// copy. Calling the shared one is what stops the next disagreement.
+	loopback := xport.IsLoopback(rest)
 	if served != "" {
 		return loopback, served == "https"
 	}

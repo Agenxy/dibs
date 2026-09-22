@@ -13,6 +13,7 @@ import (
 	"github.com/agenxy/dibs/internal/boardconfig"
 	"github.com/agenxy/dibs/internal/paths"
 	"github.com/agenxy/dibs/internal/remap"
+	xport "github.com/agenxy/dibs/internal/transport"
 )
 
 // configure is the first-run wizard. It exists because the alternative: making
@@ -425,7 +426,7 @@ or press Enter to leave it unnamed:`)
 		return ""
 	}
 	target := "http://" + addr + "/"
-	if !isLoopbackAddr(addr) {
+	if !xport.IsLoopback(addr) {
 		target = "https://" + addr + "/"
 	}
 	// A bound around the call, not around the person: the deadline starts
@@ -449,24 +450,13 @@ or press Enter to leave it unnamed:`)
 // the same mismatch `dibs web` (namedLink) and `dibs doctor` now refuse to
 // hide. Round nineteen of the pre-release review.
 func nameWithheldFor(addr string) string {
-	if isLoopbackAddr(addr) {
+	if xport.IsLoopback(addr) {
 		return ""
 	}
 	return "Remap is on this machine, but this board is off loopback and serves TLS: Remap serves " +
 		"names over plain HTTP and the board's session cookie is TLS-only, so a name would reach " +
 		"a board you could not unlock through it. The board keeps its address; reach it at " +
 		"https://" + addr + "/."
-}
-
-// isLoopbackAddr reports a host:port on loopback, which the daemon serves in
-// plaintext; anything else it serves over TLS (internal/transport).
-func isLoopbackAddr(addr string) bool {
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		host = addr
-	}
-	ip := net.ParseIP(strings.Trim(host, "[]"))
-	return host == "localhost" || (ip != nil && ip.IsLoopback())
 }
 
 // remapAnswers asks Remap's daemon for its status, within a bound of its own.
