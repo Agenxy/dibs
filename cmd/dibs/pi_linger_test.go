@@ -52,7 +52,7 @@ func TestPiKeepsTheBridgeThatRegisteredAndStillExits(t *testing.T) {
 		"\nconst client = { name: \"pi\", title: \"pi\", version: \"\" }\n" +
 		"const r = await bridgeCall(\"tools/call\", { name: \"register\" }, 5000, client, true)\n" +
 		"if (!r) { console.log(\"NOANSWER\"); process.exit(1) }\n" +
-		"console.log(\"PID \" + (lingering?.pid ?? 0))\n"
+		"console.log(\"PID \" + (lingering.at(-1)?.pid ?? 0))\n"
 	path := filepath.Join(dir, "drive.ts")
 	if err := os.WriteFile(path, []byte(drive), 0o600); err != nil {
 		t.Fatal(err)
@@ -110,7 +110,7 @@ func piTransport(t *testing.T) (transport, fake string) {
 	// The transport itself, lifted from the shipped file so that a change
 	// there is what gets tested. bridgeCall is self-contained above the
 	// pi API it is embedded in.
-	const from = "let lingering: ChildProcessWithoutNullStreams | undefined"
+	const from = "const lingering: ChildProcessWithoutNullStreams[] = []"
 	const to = "\n/**"
 	start := strings.Index(string(raw), from)
 	if start < 0 {
@@ -202,12 +202,12 @@ func refusedPiCallKeepsTheBridge(t *testing.T, bun, fn, fake, dir, shape string)
 		"\nconst client = { name: \"pi\", title: \"pi\", version: \"\" }\n" +
 		"const ok = await bridgeCall(\"tools/call\", { name: \"register\" }, 5000, client, true)\n" +
 		"if (!ok) { console.log(\"NOANSWER\"); process.exit(1) }\n" +
-		"const first = lingering!.pid\n" +
+		"const first = lingering.at(-1)!.pid\n" +
 		"process.env." + envVar + " = \"1\"\n" +
 		"const refused = await bridgeCall(\"tools/call\", { name: \"register\" }, 5000, client, true)\n" +
 		"const isRefusal = !!refused && (!!refused.error || !!refused.result?.isError)\n" +
 		"if (!isRefusal) { console.log(\"NOTREFUSED \" + JSON.stringify(refused)); process.exit(1) }\n" +
-		"console.log(\"PID \" + (lingering?.pid ?? 0) + \" FIRST \" + first)\n"
+		"console.log(\"PID \" + (lingering.at(-1)?.pid ?? 0) + \" FIRST \" + first)\n"
 	path := filepath.Join(dir, "refuse-"+shape+".ts")
 	if err := os.WriteFile(path, []byte(drive), 0o600); err != nil {
 		t.Fatal(err)
@@ -315,6 +315,93 @@ func TestThePiTransportKeepsABridgeForEveryShipperStartingCall(t *testing.T) {
 			t.Errorf("%s: keeps its bridge = %v, want %v. The list is cmd/dibs/indexship.go's "+
 				"(shipIndexOnRegister); too few and the shipper has no process to run in, "+
 				"too many and pi leaves one behind per call.", names[i], got[i], want[i])
+		}
+	}
+}
+
+// A later shipper-starting call does not kill the bridge whose pid the
+// board is watching.
+//
+// `register` stamps the board's `pid` with the BRIDGE's own
+// (cmd/dibs/mcpstdio_identity.go, enrichRegister), because that process
+// starts and ends with the session, and no later call re-stamps it. The
+// round before this kept only the NEWEST shipper-starting bridge, so a
+// relocating `update` killed the register bridge and left the board
+// watching a dead pid: the next liveness sweep reads `process_exited`
+// for an agent that is working and releases its claims. A fix for a
+// stopped index shipper took the agent off the board instead, which is
+// strictly worse than what it fixed.
+//
+// The tests written for that fix could not see it, and the reason is
+// worth keeping: their fake bridge answers calls and never registers an
+// agent, so there was no pid for anything to be wrong about. This one
+// asserts the property directly: every kept bridge is still alive after
+// a later one is kept. Round sixty-one of the pre-release review.
+func TestALaterPiCallDoesNotKillTheBridgeTheBoardIsWatching(t *testing.T) {
+	bun, err := exec.LookPath("bun")
+	if err != nil {
+		t.Skip("bun is not installed; the transport cannot be run")
+	}
+	fn, fake := piTransport(t)
+	dir := filepath.Dir(fake)
+
+	// Register, then resume (a recovery), then a relocating update: the
+	// three calls the bridge starts a shipper for. All three bridges have
+	// to be alive at the end, and the FIRST one most of all.
+	drive := "import { spawn, type ChildProcessWithoutNullStreams } from \"node:child_process\"\n" +
+		"const BIN = " + strconv.Quote(fake) + "\n" +
+		fn +
+		"\nconst client = { name: \"pi\", title: \"pi\", version: \"\" }\n" +
+		"for (const name of [\"register\", \"resume\", \"update\"]) {\n" +
+		"  const r = await bridgeCall(\"tools/call\", { name }, 5000, client, true)\n" +
+		"  if (!r || r.error || r.result?.isError) { console.log(\"FAILED \" + name); process.exit(1) }\n" +
+		"}\n" +
+		"console.log(\"PIDS \" + lingering.map((p) => p.pid).join(\",\"))\n"
+	path := filepath.Join(dir, "three.ts")
+	if err := os.WriteFile(path, []byte(drive), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(bun, "run", path) // #nosec G204 -- paths this test created
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("the transport did not finish cleanly: %v\n%s", err, out)
+	}
+	var pids []int
+	for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if after, ok := strings.CutPrefix(strings.TrimSpace(l), "PIDS "); ok {
+			for _, f := range strings.Split(after, ",") {
+				n, convErr := strconv.Atoi(f)
+				if convErr == nil && n > 0 {
+					pids = append(pids, n)
+				}
+			}
+		}
+	}
+	defer func() {
+		for _, pid := range pids {
+			if p, findErr := os.FindProcess(pid); findErr == nil {
+				_ = p.Kill()
+			}
+		}
+	}()
+	if len(pids) != 3 {
+		t.Fatalf("kept %d bridges for three shipper-starting calls (%v): register, resume "+
+			"and a relocating update each start one, and each needs a process to run in\n%s",
+			len(pids), pids, out)
+	}
+	for i, pid := range pids {
+		p, findErr := os.FindProcess(pid)
+		if findErr != nil {
+			t.Fatalf("finding bridge %d: %v", i, findErr)
+		}
+		if sigErr := p.Signal(syscall.Signal(0)); sigErr != nil {
+			what := "a bridge that started an index shipper"
+			if i == 0 {
+				what = "THE REGISTER BRIDGE, whose pid the board is watching for liveness"
+			}
+			t.Errorf("%s is dead after two later calls (%v). For the register bridge that "+
+				"means the next sweep reads process_exited for a working agent and "+
+				"releases its claims.", what, sigErr)
 		}
 	}
 }

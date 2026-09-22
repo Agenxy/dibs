@@ -135,7 +135,18 @@ func (e *Engine) noteChild(c Child, now time.Time) core.Result {
 // moved its progress counter. An announcement with no host keeps the plain
 // key, as before hosts existed, because older bridges say nothing. Round
 // eighteen of the pre-release review.
+//
+// THE ALIAS IS RESOLVED HERE, in the key itself, and not by the callers.
+// Round forty-eight taught noteChild to canonicalise its host before
+// writing, and the reader went on asking with whatever it was handed: a
+// bridge that survived this machine adopting a Supgang identity files its
+// hooks under the new id and doctor asked under the old, so a fresh
+// registration was told `hooks_live: false` and that nothing was waking
+// the agent. Two call sites, one rule, and the one that reads was the one
+// nobody swept. A key that resolves its own aliases cannot be asked the
+// wrong question. Round sixty-one of the pre-release review.
 func (e *Engine) childKey(host, sessionID string) string {
+	host = e.canonicalHost(host)
 	if host == "" || host == e.HostID() {
 		return sessionID
 	}

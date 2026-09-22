@@ -58,6 +58,26 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A pi agent that moved or recovered could be swept off the board as dead.**
+  `register` stamps the board's `pid` with the bridge's own, because that
+  process starts and ends with the session, and no later call re-stamps it.
+  The extension kept only the newest shipper-starting bridge, so a relocating
+  `update` or a `resume` killed the register bridge and left the board
+  watching a dead pid: the next liveness sweep read `process_exited` for an
+  agent that was working and released its claims. Every kept bridge now stays
+  for the session, and the count is bounded by calls that happen at startup
+  and on a recovery, not per turn.
+
+- **Hook traffic is found by an id this machine used to answer to.** The
+  writer resolved a host alias before filing an announcement and the reader
+  asked with whatever it was handed, so after a machine adopted its Supgang
+  identity a surviving bridge's hooks were filed under the new id and looked
+  up under the old: a working guard reported `hooks_live: false`, which reads
+  as "nothing is waking this agent" and sends an operator to install a plugin
+  that is already installed. The key resolves its own aliases now, so no call
+  site can ask the wrong question.
+
+
 - **A revoked admin could be kept for good by another admin's stale pin.**
   `authorisedElsewhere` treats another declaration of the same credential as
   the same holder respelled, and asked only whether that other name had a pin
