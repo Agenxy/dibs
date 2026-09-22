@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/agenxy/dibs/internal/core"
 )
@@ -95,6 +96,12 @@ func TestALiveAgentTakesAThreadFromADormantHolder(t *testing.T) {
 // once persistent became the default, because the common case is now an agent
 // that parked, holds a nonce it was given rather than chose, and can offer
 // nothing but its thread.
+// A fixed clock, because the fold is handed one and never reads one. The
+// recovery this drives does not branch on the time; the argument exists so
+// that core states the rule it enforces (internal/hygiene, the purity
+// guard) instead of making an exception for a helper.
+var reattachNow = time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+
 func TestAnAgentIsRecoveredByAnyIDItAnswersTo(t *testing.T) {
 	const thread = "01a0696b-9999-7821-a992-9dc7f6a43a11"
 
@@ -124,7 +131,7 @@ func TestAnAgentIsRecoveredByAnyIDItAnswersTo(t *testing.T) {
 			res, _ := st.ReattachBySessionIDForTest(&core.Op{
 				Kind: core.OpRegister, Name: "worker", SessionID: thread, V7Semantics: true,
 				NewToken: "tok-new",
-			})
+			}, reattachNow)
 			if res == nil {
 				t.Fatalf("a %s agent could not be recovered by the one id its harness "+
 					"gives it, so re-registering forks a sibling that cannot read its "+
@@ -141,7 +148,7 @@ func TestAnAgentIsRecoveredByAnyIDItAnswersTo(t *testing.T) {
 		st := mk(t, core.StatusDormant, false)
 		if res, _ := st.ReattachBySessionIDForTest(&core.Op{
 			Kind: core.OpRegister, Name: "worker", SessionID: thread, V7Semantics: true, NewToken: "tok-new",
-		}); res != nil {
+		}, reattachNow); res != nil {
 			t.Error("an agent holding a nonce IT chose was reattached by a session id. " +
 				"A real secret must beat a guessable identifier, which is the whole " +
 				"reason this branch checks the credential at all")
@@ -191,7 +198,7 @@ func TestOneSessionIDAlwaysRecoversTheSameRow(t *testing.T) {
 	for range 50 {
 		res, _ := board().ReattachBySessionIDForTest(&core.Op{
 			Kind: core.OpRegister, Name: "worker", SessionID: thread, V7Semantics: true, NewToken: "tok",
-		})
+		}, reattachNow)
 		if res == nil {
 			t.Fatal("no row was recovered at all, so this proves nothing about which")
 		}
