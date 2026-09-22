@@ -228,8 +228,10 @@ on the machine this was written on; `git fetch origin` each and read
 `origin/HEAD`, never the local branch. For each, the predicate that decides the
 row, and the rule that a capability in source is not a behaviour:
 
-- **Codex** (`openai/codex`): the executor is in main (`CoreHookMcpExecutor` in
-  `core/src/session/session.rs`), and since 0.153 a user or local-plugin hook
+- **Codex** (`openai/codex`): the executor is in main (`CoreHookMcpExecutor`, now in
+  `codex-rs/core/src/hook_mcp_executor.rs` and used from
+  `codex-rs/core/src/session/session.rs`; the path here said `core/src/…`
+  and cost a grep), and since 0.153 a user or local-plugin hook
   is UNTRUSTED until reviewed and dropped silently until then, which is why
   0.153.4 "fired nothing" on 2026-09-05. Install the plugin from this checkout
   (`codex plugin marketplace add <checkout>`, `codex plugin add dibs@dibs`),

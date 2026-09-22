@@ -186,8 +186,17 @@ func (s *State) ReattachTarget(op *Op) *Agent {
 // ReattachBySessionIDForTest exposes the decision to engine tests, which own the
 // fixtures for who may recover whom. Exported for that and nothing else: the
 // live path reaches it through applyRegister.
-func (s *State) ReattachBySessionIDForTest(op *Op) (Result, []Event) {
-	return s.reattachBySessionID(op, time.Now())
+//
+// THE CALLER HANDS IT THE CLOCK, as every other entry into the fold does.
+// This read time.Now() itself, which is rule 1's exact prohibition sitting
+// in a non-test file of this package. Harmless in effect, because nothing
+// replays through it, and not harmless as a precedent: the purity guard
+// that was added to make the rule checkable allows `time` for the values
+// the fold is HANDED, so a clock call here is the one thing an import list
+// cannot see. Found by the pre-release review, round fifty-eight, in the
+// guard's own round.
+func (s *State) ReattachBySessionIDForTest(op *Op, now time.Time) (Result, []Event) {
+	return s.reattachBySessionID(op, now)
 }
 
 // dropTakenSession removes a session id from the row the ingress recorded as

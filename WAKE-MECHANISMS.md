@@ -109,6 +109,15 @@ over plain HTTP (no stdio bridge in the way):
 | Pi | latest | **no MCP at all** | none | none |
 | Gemini CLI | 0.54.0-nightly.20260722 | `initialize` **2025-06-18** | `roots` | initialize, tools/list, resources/list (2026-09-12, over `httpUrl`) |
 
+**Hermes is not in the table because nothing here has watched one of its
+sessions.** What can be measured without a model provider was, on 2026-09-21:
+`tools/mcp_tool.py` takes its handshake revision from the SDK
+(`LATEST_HANDSHAKE_VERSION = LATEST_PROTOCOL_VERSION`), and the pinned
+`mcp==2.0.0`, installed and read rather than inferred, reports `2026-07-28`.
+Without that extra the fallback in the same file is `2025-03-26`. That is a
+measurement of the constant a session will send, not of a session, and the
+distinction is the point of this table.
+
 **Nobody sends `subscriptions/listen`, `resources/subscribe`, or `resources/read`.**
 Codex did not call `resources/list` either when this table was measured, which is
 corrected immediately below and was contradicted by it for a while: on 2026-07-28 it
