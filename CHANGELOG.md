@@ -504,6 +504,22 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The board stopped explaining its own marks when the fleet moved.** The
+  little explainer on an agent badge is closed by `pointerout`, and a board
+  redraws by replacing its HTML, which moves a node out from under the mouse
+  cursor and makes the browser synthesise exactly that event. So a redraw hid
+  an explanation the reader had opened with the keyboard, undoing the careful
+  re-acquisition the redraw handler had just performed. Whether it happened
+  depended on where the mouse happened to be resting, which is why it looked
+  like flakiness in the browser suite for a while, on CI as well as locally,
+  and why it took a trace rather than an argument to find: mutation, adopt,
+  focusin, pointerout, hide, in that order, on a board redrawing by itself.
+  The rule now is that the input which opened the explanation is the input
+  that closes it, in all three directions: a mouse crossing empty board does
+  not close what a tab key opened, and tabbing away does not close what the
+  mouse is resting on. Caught by the release workflow re-running the gate
+  against the tagged commit, which is what that step is for.
+
 - **A bridge no longer goes stale when the board is reset or moves.**
   `dibs mcp-stdio` read `local.secret` once at spawn and sent that string for
   the life of the process, so resetting a board 401d every harness session
