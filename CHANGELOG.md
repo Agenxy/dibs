@@ -58,6 +58,27 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A bridge that dies mid-write no longer takes the harness down with it.**
+  The transport writes to the child's stdin, and a body large enough to
+  buffer completes asynchronously, so a bridge that exits meanwhile (no
+  daemon, a failed preflight) raises `EPIPE` on that stream after the
+  `try`/`catch` around the writes has returned. An `error` event with no
+  listener is an uncaught exception and Node ends the process: the plugin's
+  one promise, that Dibs being down costs the agent nothing, instead cost it
+  the session. Both plugins listen now. Measured under Node, which is the
+  runtime that dies; bun survives it, so a test driven there would have
+  reported the fix verified against code that has the defect.
+
+- **The successor-handover error stops prescribing work the daemon already
+  does.** When `[roles.identity]` already names the agent standing under a
+  pinned name, the withdrawal pass finds the predecessor by its fingerprint,
+  takes the role and drops the pin, and a following pass grants the
+  successor. The message still named four manual steps, so an operator
+  following it demoted by hand an agent that was about to be demoted and
+  edited two files a running daemon reads only at startup. The genuinely
+  manual case still says how.
+
+
 - **A remote that names a path no longer identifies a repository across
   machines.** `sameRepoIdentity` scopes the Git common directory to one host,
   because a path is evidence on one computer; the remote beside it was left
