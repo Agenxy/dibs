@@ -33,7 +33,7 @@ func TestDoctorNamesTheMachineARemoteAgentIsOnThroughSupgang(t *testing.T) {
 	for _, r := range []*boardAgent{&known, &unknown} {
 		r.Agent.CWD = t.TempDir() + "/gone"
 	}
-	_, missing := wakeCoverage(boardOf(known, unknown), map[string]bool{"codex": true}, nil)
+	_, missing := wakeCoverage(boardOf(known, unknown), hubHosts{}, map[string]bool{"codex": true}, nil)
 	if missing["codex (on MacSolis)"] != 1 || missing["codex (on laptop.local)"] != 1 {
 		t.Errorf("missing = %v, want each remote agent bucketed by its machine's name", missing)
 	}
@@ -41,15 +41,15 @@ func TestDoctorNamesTheMachineARemoteAgentIsOnThroughSupgang(t *testing.T) {
 	// there; one that can start only claude does not; the thread is still
 	// required.
 	bridged := map[string]map[string]bool{known.Agent.HostID: {"codex": true}}
-	covered, missing := wakeCoverage(boardOf(known, unknown), map[string]bool{"codex": true}, bridged)
+	covered, missing := wakeCoverage(boardOf(known, unknown), hubHosts{}, map[string]bool{"codex": true}, bridged)
 	if covered != 1 || missing["codex (on MacSolis)"] != 0 || missing["codex (on laptop.local)"] != 1 {
 		t.Errorf("with MacSolis bridged: covered=%d missing=%v", covered, missing)
 	}
-	if c, _ := wakeCoverage(boardOf(known), nil, map[string]map[string]bool{known.Agent.HostID: {"claude code": true}}); c != 0 {
+	if c, _ := wakeCoverage(boardOf(known), hubHosts{}, nil, map[string]map[string]bool{known.Agent.HostID: {"claude code": true}}); c != 0 {
 		t.Error("a bridge that cannot start the agent's harness counted as coverage")
 	}
 	known.Resumable = false
-	if c, _ := wakeCoverage(boardOf(known), nil, bridged); c != 0 {
+	if c, _ := wakeCoverage(boardOf(known), hubHosts{}, nil, bridged); c != 0 {
 		t.Error("a bridged agent with no thread counted as coverage")
 	}
 }
@@ -155,7 +155,7 @@ func TestDoctorReportsBridgeCoverageWithoutALocalWakeTable(t *testing.T) {
 		}
 		board := &boardView{Node: "hub-1", HostID: strings.Repeat("f", 64), Agents: []boardAgent{far}}
 		var oks, warns []string
-		hosts := []engine.HostBridgeInfo{{Host: far.Agent.HostID, Harnesses: []string{"codex"}}}
+		hosts := hubHosts{bridges: []engine.HostBridgeInfo{{Host: far.Agent.HostID, Harnesses: []string{"codex"}}}}
 		checkWakeRoutes(dir, board, hosts, func(m string) { oks = append(oks, m) }, func(w, _ string) { warns = append(warns, w) })
 		if !containsLine(oks, "on other machines have a wake route") || !containsLine(oks, "host bridge(s) attached") {
 			t.Errorf("sockets=%q: an attached bridge covering the remote agent was not reported: oks=%q", sockets, oks)
@@ -164,7 +164,7 @@ func TestDoctorReportsBridgeCoverageWithoutALocalWakeTable(t *testing.T) {
 			t.Errorf("sockets=%q: a covered remote agent was reported as unreachable: %q", sockets, warns)
 		}
 		oks, warns = nil, nil
-		checkWakeRoutes(dir, board, nil, func(m string) { oks = append(oks, m) }, func(w, _ string) { warns = append(warns, w) })
+		checkWakeRoutes(dir, board, hubHosts{}, func(m string) { oks = append(oks, m) }, func(w, _ string) { warns = append(warns, w) })
 		if !containsLine(warns, "1 agent(s) on other machines have no wake route") {
 			t.Errorf("sockets=%q: with no bridge attached the remote agent was not reported: warns=%q", sockets, warns)
 		}
@@ -219,20 +219,20 @@ func TestDoctorDoesNotCountALocalCommandAsCoverageForARemoteAgent(t *testing.T) 
 	far.Agent.CWD = dir
 	hub := strings.Repeat("f", 64)
 	have := map[string]bool{"codex": true}
-	if wakeCovered(far, "codex", hub, have, nil) {
+	if wakeCovered(far, "codex", hub, hubHosts{}, have, nil) {
 		t.Fatal("a remote agent was reported covered by the hub's own command, which the " +
 			"daemon will never run for it")
 	}
 	// The same agent, with its host's bridge attached, is covered through it.
 	bridged := map[string]map[string]bool{far.Agent.HostID: {"codex": true}}
-	if !wakeCovered(far, "codex", hub, have, bridged) {
+	if !wakeCovered(far, "codex", hub, hubHosts{}, have, bridged) {
 		t.Fatal("a remote agent whose host bridge claims its harness was not counted")
 	}
 	// And a local agent is covered by the local command, as before.
 	near := agentRow("near", "persistent", "codex")
 	near.Agent.HostID = hub
 	near.Agent.CWD = dir
-	if !wakeCovered(near, "codex", hub, have, nil) {
+	if !wakeCovered(near, "codex", hub, hubHosts{}, have, nil) {
 		t.Fatal("a local agent with a local command was not counted")
 	}
 }
@@ -259,13 +259,68 @@ func TestDoctorDoesNotCountTheHubsOwnBridgeAsCoverageForALocalAgent(t *testing.T
 	// hub itself has a command for claude and not for codex.
 	have := map[string]bool{"claude": true}
 	bridged := map[string]map[string]bool{hub: {"codex": true}}
-	if wakeCovered(near, "codex", hub, have, bridged) {
+	if wakeCovered(near, "codex", hub, hubHosts{}, have, bridged) {
 		t.Fatal("a local agent was reported covered by a bridge attached for this same " +
 			"machine: the daemon refuses that route for a local agent, so the wake has " +
 			"nowhere to go and doctor says the fleet is reachable")
 	}
 	// With a local command for its harness it is covered, as before.
-	if !wakeCovered(near, "claude", hub, map[string]bool{"claude": true}, nil) {
+	if !wakeCovered(near, "claude", hub, hubHosts{}, map[string]bool{"claude": true}, nil) {
 		t.Fatal("a local agent with a local command was not counted")
+	}
+}
+
+// An agent recorded under an id the hub used to answer to is one of the
+// hub's own, and doctor says so because the hub says so.
+//
+// The engine reads several ids as itself: the one it stamps with now, the
+// ledger's node id for rows written before it had a Supgang identity, and
+// every id it used to answer to (SetHostAliases). Doctor could not see any
+// of that and compared with the board's CURRENT id alone, so a row from
+// before the machine joined Supgang read as remote. Two consequences, both
+// wrong in the direction that reports health: the hub's own [wake.exec]
+// stopped counting as coverage for it, and a bridge attached for that id
+// started counting, which is the route engine.hostRouteFor refuses for a
+// local agent. So the hub states the set at GET /api/hosts and doctor uses
+// it; against a daemon too old to say, the old comparison stands.
+//
+// Both directions measured against the commit before the fix, not
+// asserted: there the hub's own command does not count for this agent and
+// a bridge attached for the hub's own old id does.
+func TestDoctorReadsAnAgentOnAnOldHostIdAsTheHubsOwn(t *testing.T) {
+	supgangNamesOnce.Do(func() {})
+	dir := t.TempDir()
+	hub := strings.Repeat("f", 64)
+	old := strings.Repeat("a", 64) // what this machine answered to before Supgang
+
+	a := agentRow("early", "persistent", "codex")
+	a.Agent.HostID = old
+	a.Agent.CWD = dir
+	have := map[string]bool{"codex": true}
+	// A bridge is attached FOR that old id, as this machine's own bridge
+	// would be if it started before the daemon adopted the new identity.
+	bridged := map[string]map[string]bool{old: {"codex": true}}
+
+	stated := hubHosts{self: map[string]bool{hub: true, old: true}}
+	if !wakeCovered(a, "codex", hub, stated, have, nil) {
+		t.Error("the hub's own command was not counted for an agent on an id the hub " +
+			"answers to: doctor reports no route where the daemon has one")
+	}
+	if wakeCovered(a, "codex", hub, stated, nil, bridged) {
+		t.Error("a bridge counted as a route to one of the hub's OWN agents: " +
+			"engine.hostRouteFor refuses exactly that, so the wake has nowhere to go " +
+			"while doctor reports the fleet reachable")
+	}
+
+	// A genuinely remote agent is unaffected by the hub stating its set.
+	far := agentRow("far", "persistent", "codex")
+	far.Agent.HostID = strings.Repeat("c", 64)
+	far.Agent.CWD = dir
+	if wakeCovered(far, "codex", hub, stated, have, nil) {
+		t.Error("the hub's own command was counted for an agent on another machine")
+	}
+	if !wakeCovered(far, "codex", hub, stated, nil,
+		map[string]map[string]bool{far.Agent.HostID: {"codex": true}}) {
+		t.Error("a remote agent's own host bridge stopped counting")
 	}
 }

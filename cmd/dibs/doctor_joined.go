@@ -16,14 +16,14 @@ import (
 // [wake.exec], run by `dibs host-bridge` (docs/NETWORK.md §5), and that is
 // configured here and can be checked here: the entries exist, and a bridge
 // is attached for this host.
-func checkJoinedWakeRoutes(dir string, b *boardView, hosts []engine.HostBridgeInfo, ok reportFn, warn fixFn) {
+func checkJoinedWakeRoutes(dir string, b *boardView, hosts hubHosts, ok reportFn, warn fixFn) {
 	var j joinedWake
 	if cfg, err := boardconfig.Load(dir); err == nil {
 		for h := range cfg.Wake.Exec {
 			j.configured = append(j.configured, strings.ToLower(h))
 		}
 	}
-	for _, h := range hosts {
+	for _, h := range hosts.bridges {
 		if h.Host == hostID() {
 			j.attached = true
 			for _, name := range h.Harnesses {
@@ -146,15 +146,59 @@ func joinedWakeAdvice(j joinedWake, node, dir string) (okMsg, warnMsg, fix strin
 		node, strings.Join(j.advertised, ", ")), "", ""
 }
 
-// attachedHosts is what the hub reports through GET /api/hosts: the bridges
-// attached now and the harnesses each can start. Empty when it cannot say.
-// Fetched by doctor itself and passed down, never from inside a check.
-func attachedHosts() []engine.HostBridgeInfo {
+// hubHosts is what the hub reports through GET /api/hosts: the bridges
+// attached now with the harnesses each can start, AND the host ids the hub
+// reads as itself.
+//
+// The second is not decoration. A bridge is a route for another machine's
+// agents and never for a local one, and the hub's own [wake.exec] is the
+// reverse, so every coverage answer here turns on "is this agent on the
+// hub". Doctor used to decide that by comparing with the board's host id,
+// which is the hub's CURRENT id and not the whole answer: rows written
+// before the machine adopted a Supgang identity carry the ledger's node
+// id, and rows older still carry an id kept as an alias. Both read as
+// remote, so a local agent was reported covered by a bridge the engine
+// refuses to use for it. The hub knows the set; it states it.
+type hubHosts struct {
+	bridges []engine.HostBridgeInfo
+	// self is empty against a daemon too old to say, and every caller
+	// falls back to the board's host id then rather than calling
+	// everything remote.
+	self map[string]bool
+}
+
+// attachedHosts asks the hub. Zero value when it cannot say. Fetched by
+// doctor itself and passed down, never from inside a check.
+func attachedHosts() hubHosts {
 	var out struct {
 		Hosts []engine.HostBridgeInfo `json:"hosts"`
+		Self  []string                `json:"self"`
 	}
 	if err := get("/api/hosts", &out); err != nil {
-		return nil
+		return hubHosts{}
 	}
-	return out.Hosts
+	h := hubHosts{bridges: out.Hosts}
+	for _, id := range out.Self {
+		if id == "" {
+			continue
+		}
+		if h.self == nil {
+			h.self = map[string]bool{}
+		}
+		h.self[id] = true
+	}
+	return h
+}
+
+// isSelf reports an agent's host as one the hub reads as its own. With no
+// answer from the hub it compares with the board's id, which is what this
+// did before the hub stated the set.
+func (h hubHosts) isSelf(hostID, boardHostID string) bool {
+	if hostID == "" {
+		return false
+	}
+	if len(h.self) > 0 {
+		return h.self[hostID]
+	}
+	return boardHostID != "" && hostID == boardHostID
 }

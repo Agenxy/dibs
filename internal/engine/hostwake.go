@@ -236,6 +236,40 @@ func (e *Engine) HostBridges() []HostBridgeInfo {
 	return out
 }
 
+// SelfHostIDs are every host id this daemon reads as ITSELF: the one it
+// stamps with, the ledger's node id for rows written before it had a
+// Supgang identity, and every id it used to answer to (SetHostAliases).
+//
+// Stated rather than guessed because the guess was wrong. `doctor` has to
+// answer "is this agent on the hub" the same way the waker does, since a
+// bridge is a route for another machine's agents and never for a local
+// one, and the hub's own [wake.exec] is the reverse. Not knowing the
+// aliases or the node id, doctor approximated with "the board's host id",
+// and the approximation is silently wrong on exactly the machines the
+// aliases exist for: a row from before a Supgang identity was adopted
+// reads as remote, so doctor reports a local agent as covered by a bridge
+// the engine will refuse to use. One fact, stated by the side that has it.
+func (e *Engine) SelfHostIDs() []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(id string) {
+		if id == "" || seen[id] {
+			return
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	add(e.HostID())
+	if e.state != nil {
+		add(e.state.NodeID)
+	}
+	for id := range e.hostAliases {
+		add(id)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // ReportWakeResult delivers a bridge's report to the wake waiting on it.
 // False when nothing is waiting: an unknown id, a report for a request the
 // hub already gave up on, or a bridge reporting for a host it did not run.

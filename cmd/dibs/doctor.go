@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/boardconfig"
-	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/humanauth"
 	"github.com/agenxy/dibs/internal/liveness"
 	"github.com/agenxy/dibs/internal/notify"
@@ -471,7 +470,7 @@ func checkHarnessConfigs(sec, addr string, ok reportFn, warn, bad fixFn) {
 // reported healthy throughout. An operator running an unattended fleet is
 // running exactly that mode, and should be told that the only route they have
 // is the one that cannot be confirmed.
-func checkWakeRoutes(dir string, b *boardView, hosts []engine.HostBridgeInfo, ok reportFn, warn fixFn) {
+func checkWakeRoutes(dir string, b *boardView, hosts hubHosts, ok reportFn, warn fixFn) {
 	// THE HUB'S CONFIGURATION IS ON THE HUB. A joining machine runs this
 	// against a remote board with its own data directory, and this read that
 	// directory's dibs.toml as the board's wake configuration: "no wake
@@ -500,7 +499,7 @@ func checkWakeRoutes(dir string, b *boardView, hosts []engine.HostBridgeInfo, ok
 	// no local commands and full coverage, and used to be told the opposite.
 	reportAttachedBridges(hosts, ok)
 	if len(cfg.Wake.Exec) == 0 {
-		reportRemoteCoverage(b, bridgedHarnesses(hosts), ok, warn)
+		reportRemoteCoverage(b, hosts, bridgedHarnesses(hosts), ok, warn)
 	}
 	if cfg.Wake.Sockets != nil && !*cfg.Wake.Sockets && len(cfg.Wake.Exec) == 0 {
 		// NEITHER ROUTE. The operator switched the sockets off and configured
@@ -539,9 +538,9 @@ func checkWakeRoutes(dir string, b *boardView, hosts []engine.HostBridgeInfo, ok
 }
 
 // bridgedHarnesses is host id -> the harnesses that host's bridge can start.
-func bridgedHarnesses(hosts []engine.HostBridgeInfo) map[string]map[string]bool {
+func bridgedHarnesses(hosts hubHosts) map[string]map[string]bool {
 	out := map[string]map[string]bool{}
-	for _, h := range hosts {
+	for _, h := range hosts.bridges {
 		set := map[string]bool{}
 		for _, harness := range h.Harnesses {
 			set[strings.ToLower(harness)] = true
@@ -553,13 +552,13 @@ func bridgedHarnesses(hosts []engine.HostBridgeInfo) map[string]map[string]bool 
 
 // reportAttachedBridges says which machines have a bridge attached, by the
 // name the fleet knows them by.
-func reportAttachedBridges(hosts []engine.HostBridgeInfo, ok reportFn) {
-	if len(hosts) == 0 {
+func reportAttachedBridges(hosts hubHosts, ok reportFn) {
+	if len(hosts.bridges) == 0 {
 		return
 	}
 	loadSupgangPeers()
-	names := make([]string, 0, len(hosts))
-	for _, h := range hosts {
+	names := make([]string, 0, len(hosts.bridges))
+	for _, h := range hosts.bridges {
 		name := supgangNames[h.Host]
 		if name == "" {
 			name = h.Host
@@ -570,7 +569,7 @@ func reportAttachedBridges(hosts []engine.HostBridgeInfo, ok reportFn) {
 		names = append(names, name+" ("+strings.Join(h.Harnesses, ", ")+")")
 	}
 	ok(fmt.Sprintf("%d host bridge(s) attached, running their own [wake.exec] for their agents: %s",
-		len(hosts), strings.Join(names, ", ")))
+		len(hosts.bridges), strings.Join(names, ", ")))
 }
 
 // servedFromHere reports whether the board with node id node is the one the
@@ -1447,7 +1446,7 @@ var suggestedWake = map[string]string{
 // fault on every correctly configured board, and a check that cries wolf is
 // one people stop reading.
 func reportWakeCoverage(
-	exec map[string]boardconfig.WakeExec, b *boardView, hosts []engine.HostBridgeInfo, dir string, ok reportFn, warn fixFn,
+	exec map[string]boardconfig.WakeExec, b *boardView, hosts hubHosts, dir string, ok reportFn, warn fixFn,
 ) {
 	have := map[string]bool{}
 	for h := range exec {
@@ -1463,7 +1462,7 @@ func reportWakeCoverage(
 			"coverage is unknown)", len(exec)))
 		return
 	}
-	covered, missing := wakeCoverage(b, have, bridgedHarnesses(hosts))
+	covered, missing := wakeCoverage(b, hosts, have, bridgedHarnesses(hosts))
 	total := covered
 	for _, n := range missing {
 		total += n
@@ -1626,7 +1625,7 @@ func boardOrNil() *boardView {
 // it, and a function that both decides and renders is one nobody can test
 // either half of.
 func wakeCoverage(
-	b *boardView, have map[string]bool, bridged map[string]map[string]bool,
+	b *boardView, hosts hubHosts, have map[string]bool, bridged map[string]map[string]bool,
 ) (covered int, missing map[string]int) {
 	missing = map[string]int{}
 	for _, a := range b.Agents {
@@ -1651,7 +1650,7 @@ func wakeCoverage(
 		// A worktree that has been removed is the local way to reach that, and
 		// it is ordinary here. An agent on ANOTHER COMPUTER is the other, and
 		// there the hub can do nothing about it at all: see docs/NETWORK.md §5.
-		if wakeCovered(a, h, b.HostID, have, bridged) {
+		if wakeCovered(a, h, b.HostID, hosts, have, bridged) {
 			covered++
 			continue
 		}
@@ -1680,7 +1679,7 @@ func wakeCoverage(
 // machine's bridge can reach them, on a hub whose own table has no commands
 // (with commands, reportWakeCoverage counts them alongside the local ones).
 // Silent when no agent is elsewhere.
-func reportRemoteCoverage(b *boardView, bridged map[string]map[string]bool, ok reportFn, warn fixFn) {
+func reportRemoteCoverage(b *boardView, hosts hubHosts, bridged map[string]map[string]bool, ok reportFn, warn fixFn) {
 	if b == nil {
 		return
 	}
@@ -1691,7 +1690,7 @@ func reportRemoteCoverage(b *boardView, bridged map[string]map[string]bool, ok r
 			continue
 		}
 		h := strings.ToLower(a.Agent.Harness)
-		if wakeCovered(a, h, b.HostID, nil, bridged) {
+		if wakeCovered(a, h, b.HostID, hosts, nil, bridged) {
 			covered++
 			continue
 		}

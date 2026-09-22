@@ -55,7 +55,7 @@ func TestDoctorSaysAnAgentsDirectoryIsNotOnThisMachine(t *testing.T) {
 	}}
 
 	var head, fix string
-	reportWakeCoverage(exec, b, nil, t.TempDir(),
+	reportWakeCoverage(exec, b, hubHosts{}, t.TempDir(),
 		func(string) {
 			t.Fatal("an agent whose working directory is not on this machine was " +
 				"reported as covered: the wake would run in the daemon's own " +
@@ -90,7 +90,7 @@ func TestDoctorStillCoversAnAgentWhoseDirectoryIsHere(t *testing.T) {
 	}}
 
 	var said string
-	reportWakeCoverage(exec, b, nil, t.TempDir(),
+	reportWakeCoverage(exec, b, hubHosts{}, t.TempDir(),
 		func(s string) { said = s },
 		func(h, _ string) { t.Fatalf("an agent that can be woken was reported as uncovered: %s", h) })
 	if !strings.Contains(said, "covering all") {
@@ -111,7 +111,7 @@ func TestDoctorDoesNotWarnAboutAnAgentThatRecordedNoDirectory(t *testing.T) {
 		{ID: "nodir", Kind: "persistent", Resumable: true, Agent: boardAgentInfo("Codex", "")},
 	}}
 
-	reportWakeCoverage(exec, b, nil, t.TempDir(),
+	reportWakeCoverage(exec, b, hubHosts{}, t.TempDir(),
 		func(string) {},
 		func(h, _ string) {
 			t.Fatalf("an agent that never recorded a directory was reported as having "+
