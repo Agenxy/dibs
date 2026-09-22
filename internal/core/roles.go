@@ -316,25 +316,6 @@ func (a *Agent) holdsSession(sid string) bool {
 	return false
 }
 
-// AgentForHook resolves the agent a lifecycle hook is speaking for.
-//
-// A hook knows what its OWN harness calls the session. That is not always what
-// the agent registered with: the stdio bridge supplies `bridge-<pid>-<random>`
-// when the model leaves session_id blank, which it always does, so for
-// opencode, whose plugin knows only opencode's session id, the two identifiers
-// can never match. That mismatch silently disabled both the wake path and the
-// claim guard, because a hook that cannot name an agent simply gets nothing back.
-//
-// cwd is the one identifier both sides observe: the bridge records it from
-// os.Getwd(), and a plugin knows the project it is running in. So it is the
-// fallback, and deliberately a STRICT one: used only when exactly one live
-// agent sits in that directory. Two agents in one checkout is precisely the case
-// where guessing would attribute an edit to the wrong agent, and a wrong
-// attribution here means allowing a write that should have been refused.
-func (s *State) AgentForHook(sid, cwd string) *Agent {
-	return s.AgentForHookOn(sid, cwd, "")
-}
-
 // AgentForHookOn is AgentForHook for a hook that arrived from a known
 // machine: the session id a bridge derives (`host-<ppid>`) repeats across
 // computers, so a match on an agent recorded on ANOTHER machine is not this

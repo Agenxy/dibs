@@ -113,6 +113,22 @@ Things that have cost real time here, none of which are visible in the diff:
   tag is frozen, and `TestLedgerFieldNamesAreFrozen` fingerprints the list
   because the same sweep that renames tags will happily rewrite the list that
   guards them, which is exactly how this got through.
+- **A path is evidence on ONE computer**, and this is the rule this
+  repository has learned six separate times. /workspace/repo on two
+  machines is two unrelated directories, so every lookup, comparison and
+  projection that takes a path needs the host beside it: the claim rule
+  (round 3), differentProjects (8), hook resolution (36), a `file:` remote
+  in sameRepoIdentity (62) and then in differentProjects again (64), the
+  hook-health diagnostic and the compact board (65). Each was fixed where
+  it was named and the next round found another place.
+  `TestNoExportedLookupTakesADirectoryWithoutAMachine` ends that by shape
+  rather than by memory: nothing exported from `internal/core` may take a
+  `cwd`, `dir` or `root` without a host. A caller with no machine to state
+  passes `""`, which every lookup reads as "no evidence of difference", and
+  has to type it. If you are adding a comparison rather than a lookup, the
+  rule still applies and the guard cannot see it: ask what the path means
+  on the other side.
+
 - **`core` imports nothing, so everything can import `core`.** Rule 1 is
   usually read as a restriction on core; its more useful half is the
   permission it grants everyone else. Three packages kept a hand-copy of a
