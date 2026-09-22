@@ -395,7 +395,19 @@ func differentProjects(a, b *Agent) bool {
 	if x.RepoDir == y.RepoDir && !differentHosts(a, b) {
 		return false // one repository, possibly through two linked worktrees
 	}
-	if x.RepoRemote != "" && x.RepoRemote == y.RepoRemote {
+	// AND THE SAME LINE FOR A REMOTE THAT IS A PATH. A repository cloned
+	// from a directory has a remote like `file:/srv/source`, which names
+	// somewhere on ONE computer exactly as RepoDir does. Two strangers
+	// cloned from the same path on two machines were "configured against
+	// the same upstream", so `issue:42` in each was reported as one
+	// objective: the strongest signal Dibs has, between agents who have
+	// never shared a line of code. Round sixty-two gave sameRepoIdentity
+	// this rule and round sixty-four found this call site still without
+	// it, which is the shape AGENTS.md says to expect: when a rule is
+	// found missing, sweep every call site rather than fixing the one
+	// named. These two are now the only places that compare a remote.
+	if x.RepoRemote != "" && x.RepoRemote == y.RepoRemote &&
+		(!differentHosts(a, b) || !localRemote(x.RepoRemote)) {
 		return false // configured against the same upstream
 	}
 	if x.RepoRoots != "" && y.RepoRoots != "" {

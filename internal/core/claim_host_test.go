@@ -134,3 +134,64 @@ func TestSharedReferencesDoNotCrossMachinesOnAPathTheyBothHave(t *testing.T) {
 			"objective: %v", ov)
 	}
 }
+
+// And not when both were cloned from the same LOCAL path either.
+//
+// The test above gives the two agents distinct remotes, so the remote
+// shortcut in differentProjects never fires. A repository cloned from a
+// directory has a remote like `file:/srv/source`, which names somewhere
+// on one computer exactly as the Git directory does, and two strangers
+// cloned from that path on two machines were "configured against the
+// same upstream": issue:42 in each was reported as one objective, the
+// strongest signal Dibs has, between agents who have never shared a
+// line of code.
+//
+// Round sixty-two gave sameRepoIdentity this rule and round sixty-four
+// found differentProjects still without it. Both compare a remote and
+// they are the only two that do, which is the sweep AGENTS.md asks for
+// rather than fixing the call site somebody named.
+func TestSharedReferencesDoNotCrossMachinesOnALocalRemoteTheyBothHave(t *testing.T) {
+	declare := func(t *testing.T, aRoots, bRoots string) []SlotOverlap {
+		t.Helper()
+		s := NewState("t", DefaultLimits())
+		now := time.Unix(1700000000, 0)
+		for _, a := range []struct{ name, tok, host, cwd, roots string }{
+			{"here", "tok-1", "host-a", "/workspace/api", aRoots},
+			{"there", "tok-2", "host-b", "/elsewhere/web", bRoots},
+		} {
+			mustApply(t, s, &Op{
+				Kind: OpRegister, Name: a.name, NewToken: a.tok,
+				Agent: &AgentInfo{
+					CWD: a.cwd, HostID: a.host, RepoDir: a.cwd + "/.git",
+					RepoRoot: a.cwd,
+					// The same local path on both: one directory per machine,
+					// and nothing says they hold the same repository.
+					RepoRemote: "file:/srv/source", RepoRoots: a.roots,
+				},
+			}, now)
+			mustApply(t, s, &Op{Kind: OpAckBoard, Token: a.tok}, now)
+		}
+		mustApply(t, s, &Op{Kind: OpSetSlot, Token: "tok-1", Text: "issue 42", Refs: []string{"issue:42"}}, now)
+		res := mustApply(t, s, &Op{
+			Kind: OpSetSlot, Token: "tok-2", Text: "our issue 42", Refs: []string{"issue:42"},
+		}, now)
+		ov, _ := res["overlaps"].([]SlotOverlap)
+		return ov
+	}
+
+	// Different root commits: positively two projects, and the local
+	// remote must not overrule them.
+	if ov := declare(t, "r-api", "r-web"); len(ov) != 0 {
+		t.Errorf("two projects cloned from the same PATH on two machines were told they "+
+			"share an objective: %v. A `file:` remote is somewhere on one computer, like "+
+			"the Git directory beside it.", ov)
+	}
+	// The same root commits ARE the same project, on any number of
+	// machines, and must still be reported: this rule removes a false
+	// alarm and must not remove a real one.
+	if ov := declare(t, "r-shared", "r-shared"); len(ov) == 0 {
+		t.Error("two clones of ONE repository on two machines stopped sharing an objective: " +
+			"the root commits are the machine-independent evidence, and coordinating " +
+			"across machines on one project is what Dibs is for")
+	}
+}

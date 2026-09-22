@@ -632,8 +632,23 @@ func (e *Engine) noteNewMember(ev core.Event, wants func(agent string) bool) {
 	if auto {
 		how = "was joined automatically, on a work-overlap match, to"
 	}
-	for member := range sp.Members {
+	for member, m := range sp.Members {
 		if member == joiner || !wants(member) {
+			continue
+		}
+		// YOU WERE IN THE SPACE WHEN IT HAPPENED, or it is not news for
+		// you. Membership is read from the board as it is NOW, and on a
+		// restart this runs over the whole ring: every join a space ever
+		// saw was announced to every member it has today, including the
+		// ones who arrived later and were never owed it. Those are not
+		// merely noise. The queue is bounded at maxNotices and keeps the
+		// newest, so seventeen restored joins evict an eviction the agent
+		// had not read, which is the one instruction this rebuild exists
+		// to preserve. Round sixty-four of the pre-release review.
+		//
+		// A membership with no serial is one recorded before the field,
+		// and behaves as it always did: told.
+		if m != nil && m.JoinedSerial > 0 && m.JoinedSerial > ev.Serial {
 			continue
 		}
 		e.pushNotice(member,
