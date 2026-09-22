@@ -4,7 +4,9 @@ import (
 	"crypto/tls"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -324,7 +326,7 @@ func TestABoardSessionCanLoadTheIconAndTheProtocolLink(t *testing.T) {
 		return rec
 	}
 
-	for _, target := range []string{"/icon.svg", "/help"} {
+	for _, target := range []string{"/icon.svg", "/icon-512.png", "/help"} {
 		if got := browse(http.MethodGet, target).Code; got == http.StatusUnauthorized {
 			t.Errorf("GET %s returned 401 for a valid board session: the browser cannot "+
 				"send the page key on this request, so the board's own icon and "+
@@ -390,5 +392,73 @@ func TestTwoBoardsOnOneHostDoNotShareACookieName(t *testing.T) {
 	// name rather than an empty one.
 	if n := newAuthGate("s", "", "not-an-address").sessionCookieName(); n == "" {
 		t.Error("a daemon with an unparseable listen address issues a nameless cookie")
+	}
+}
+
+// Every same-origin asset the board's own HTML points at is reachable
+// with a board session.
+//
+// The list above is a literal, and a literal is a list somebody adds a
+// route to the templates without touching. That happened: the raster
+// icon was added for iOS, where apple-touch-icon has no SVG form, and
+// went into both templates without going into the gate, so a board
+// added to a home screen got a 401 where its tile should be. The same
+// broken-icon symptom the exception was written for, one icon later.
+// Round sixty-six of the pre-release review.
+//
+// So the templates decide what is checked. A browser cannot put a
+// custom header on a <link> or <img> fetch, so anything the document
+// references on its own origin has to pass the cookie-only tier or it
+// is broken for a logged-in operator, and nothing in a build says so.
+func TestEveryAssetTheBoardsHTMLPointsAtIsBrowsable(t *testing.T) {
+	g := newAuthGate("the-secret", filepath.Join(t.TempDir(), "admin.hash"), "127.0.0.1:4777")
+	const token, pageKey = "a-real-session", "a-real-page-key"
+	gate := g.wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	g.sessions[token] = boardSession{exp: time.Now().Add(time.Hour), page: pageKey}
+
+	// href="/x" and src="/x": same-origin, absolute, which is every
+	// asset these templates reference. A relative or remote one would
+	// not be this tier's business.
+	ref := regexp.MustCompile(`(?:href|src)="(/[^"]*)"`)
+	dir := filepath.Join("..", "..", "internal", "web", "templates")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".html") {
+			continue
+		}
+		body, err := os.ReadFile(filepath.Join(dir, e.Name())) // #nosec G304 -- a file in this repository
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range ref.FindAllStringSubmatch(string(body), -1) {
+			target := m[1]
+			if seen[target] {
+				continue
+			}
+			seen[target] = true
+			r := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:4777"+target, nil)
+			r.AddCookie(&http.Cookie{Name: g.sessionCookieName(), Value: token})
+			rec := httptest.NewRecorder()
+			gate.ServeHTTP(rec, r)
+			if rec.Code == http.StatusUnauthorized {
+				t.Errorf("%s references %s and the gate answers 401 to a valid board "+
+					"session.\n  A browser cannot put the page key on a <link> or "+
+					"<img> fetch, so this asset is broken for every logged-in "+
+					"operator. Add it to browsableWithSession, which is a closed "+
+					"list on purpose and therefore has to be added to.",
+					e.Name(), target)
+			}
+		}
+	}
+	if len(seen) == 0 {
+		t.Fatal("the templates reference no same-origin assets at all, so this test " +
+			"measured nothing: it is reading the wrong directory, or the attribute " +
+			"shapes it knows are no longer the ones used")
 	}
 }
