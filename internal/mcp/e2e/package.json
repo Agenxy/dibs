@@ -4,9 +4,9 @@
   "description": "Headless end-to-end test for the MCP Apps board panel.",
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "^2.0.0",
-    "@modelcontextprotocol/sdk": "^1.29.0"
+    "@modelcontextprotocol/sdk": "^1.30.0"
   },
   "devDependencies": {
-    "playwright": "^1.62.0"
+    "playwright": "^1.63.0"
   }
 }
