@@ -330,6 +330,7 @@ func writeLaunchAgent(daemon, dir string) error {
 		"KeepAlive restarts it on a crash but not after a clean `dibs stop`, so\n"+
 		"stopping it stays stopped until you start it again.\nLogs: %s\n",
 		target, target, logPath)
+	sayWhenTheUnitComesBack()
 	return nil
 }
 
@@ -388,7 +389,20 @@ WantedBy=default.target
 	}
 	fmt.Printf("wrote %s\n\nEnable and start it:\n  systemctl --user enable --now dibs\n\n"+
 		"Logs: journalctl --user -u dibs -f\n", target)
+	sayWhenTheUnitComesBack()
 	return nil
+}
+
+// sayWhenTheUnitComesBack is printed by the command that installs the unit,
+// because that is when somebody is deciding what this machine is for. The
+// command's own description says the daemon will "survive a closed terminal
+// and a reboot", and the second half depends on a setting this does not
+// touch: saying so here costs one paragraph, and not saying it costs a board
+// that is down after a power cut with nothing anywhere explaining why.
+func sayWhenTheUnitComesBack() {
+	if state, fix := bootReturnHere(); state == bootAtLogin {
+		fmt.Printf("\nAfter a reboot: %s\n", fix)
+	}
 }
 
 // configHome honours XDG_CONFIG_HOME, because a systemd user unit written to

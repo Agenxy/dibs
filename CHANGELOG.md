@@ -7,6 +7,24 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`dibs configure --service` now says whether the daemon comes back at boot
+  or only when you log in.** Both units it writes are user scoped: a launchd
+  LaunchAgent lives in the `gui/<uid>` domain, which exists while that user is
+  logged in at the screen, and a systemd user manager is torn down with the
+  last session. The command described them as making the daemon "survive a
+  closed terminal and a reboot", and only the first half was unconditional. On
+  a laptop the distinction does not matter; on the always-on host somebody
+  deploys a hub to, it is the difference between a board that survives a power
+  cut and one that does not, and that host is the machine nobody is watching.
+  The command now reports which case this machine is and names the setting
+  that changes it (automatic login or a system LaunchDaemon on macOS,
+  `loginctl enable-linger` on Linux), `dibs host-bridge --service` prints the
+  same line, and `dibs doctor` re-checks it as a warning rather than a
+  problem, because on a laptop the current behaviour is the right one. Found
+  on the first machine Dibs was deployed to as a hub, where
+  `launchctl print gui/501/org.agenxy.dibs` names the domain and the Mac has
+  no automatic login.
+
 - **Dibs now says when the machine's own firewall is swallowing the board.**
   macOS ships the Application Firewall enabled, and it drops inbound
   connections to an executable it has not been told about in the one way that
@@ -36,7 +54,6 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `TestOnlyOnePlaceDecidesWhetherAnAddressIsLoopback` keeps it folded by shape.
   `internal/mcp` keeps its own, deliberately and with the reason recorded: it
   reads a PEER's address, where a name is not proof of anything.
-### Changed
 
 - **A new mark: three agents, one of them holding a claim.** The old one was
   two paths merging into one, drawn when this project was called Lanes and

@@ -26,7 +26,8 @@ import (
 const serviceHelp = `dibs configure --service: keep the daemon running
 
   Writes an init-system unit for the data directory in DIBS_DIR (default
-  ~/.dibs), so the daemon survives a closed terminal and a reboot:
+  ~/.dibs), so the daemon survives a closed terminal and comes back with
+  your session:
 
     macOS   ~/Library/LaunchAgents/org.agenxy.dibs.plist
     Linux   $XDG_CONFIG_HOME/systemd/user/dibs.service
@@ -335,7 +336,7 @@ func configureWithDefaults(dir string) error {
 		prefix = "DIBS_DIR=" + shellArg(dir) + " "
 	}
 	fmt.Println("\nNext:")
-	fmt.Printf("  %sdibs configure --service    keep the daemon running across reboots\n", prefix)
+	fmt.Printf("  %sdibs configure --service    keep the daemon running past this terminal\n", prefix)
 	fmt.Printf("  %sdibd                        start it now\n", prefix)
 	if prefix != "" {
 		fmt.Println("\nDIBS_DIR is not optional there: without it both act on " +
@@ -354,7 +355,10 @@ const configureHelp = `dibs configure [dir]: write the daemon's configuration
                       For a headless host reached by "ssh host command", which
                       has no terminal. Refuses to overwrite an existing config.
   --service           write an init-system unit instead, so the daemon
-                      survives a closed terminal and a reboot
+                      survives a closed terminal. The unit is USER scoped, so
+                      it comes back with your session: on a machine nobody
+                      logs into, that is not at boot, and the command says so
+                      for this machine and names the setting that changes it
 `
 
 // parseConfigureArgs reads EVERY argument before anything is decided.
