@@ -1,37 +1,58 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="Dibs">
   <title>Dibs</title>
-  <!-- Two paths converging into one: the product's one sentence. Two agents
-       declare the same work in different words and end up in the same space
-       before the duplicate effort happens.
+  <!-- Three agents, and one of them has spoken for something.
 
-       It carries its own tile, and that is a decision rather than decoration.
-       Three earlier versions failed on contrast:
+       That is the whole product in one image: a fleet that can see itself,
+       and a claim one of them holds. The peers are drawn at equal weight
+       because none is subordinate, and the coloured one is coloured rather
+       than larger or brighter, because what distinguishes it is not rank.
 
-       1. `currentColor` looked right inline and rendered BLACK through <img>,
-          because an external SVG gets its own document context.
-       2. A prefers-color-scheme block fixed that, but keys off the OS setting
-          rather than the surface behind it: a light-mode browser showing a dark
-          page still drew dark-on-dark.
+       It replaces a mark of two paths merging into one, which was drawn for
+       this project when it was called Lanes and said "lanes converge". The
+       name went in August 2026 and the word is retired everywhere else in
+       the tree, with guards to keep it out; the logo kept saying it for
+       another year because no guard looks at artwork.
+
+       A dot is also the shape that survives being small, which the merging
+       paths did not: at 16px the junction and the three strokes resolved
+       into a smudge. Three filled circles stay three circles.
+
+       It carries its own tile, and that is a decision rather than
+       decoration. Three earlier versions of the old mark failed on
+       contrast:
+
+       1. `currentColor` looked right inline and rendered BLACK through
+          <img>, because an external SVG gets its own document context.
+       2. A prefers-color-scheme block fixed that, but keys off the OS
+          setting rather than the surface behind it: a light-mode browser
+          showing a dark page still drew dark-on-dark.
        3. A favicon has no say in what sits behind it: browser chrome, a tab
-          strip, a bookmark bar, someone's dark theme. The only way to guarantee
-          contrast on a surface you do not control is to bring your own.
+          strip, a bookmark bar, someone's dark theme. The only way to
+          guarantee contrast on a surface you do not control is to bring
+          your own.
 
-       Colours are the board's own tokens converted from OKLCH, not approximations:
-       the tile is bg-0, the paths are fg, and the junction is the accent token (hue 262),
-       which the palette defines as "structure: this view, this lane". The live
-       green (hue 158) would have been wrong: it means "an agent is alive", and
-       a junction is an event about work, not a heartbeat.
+       Colours are the board's own tokens converted from OKLCH, not
+       approximations: the tile is bg, the peers are fg-2, and the holder is
+       the accent token (hue 262), which the palette defines as "structure:
+       this view, this agent". The live green (hue 158) would be wrong: it
+       means "an agent is alive", and a claim is not a heartbeat.
 
-       Fading one lane to suggest depth was also tried and reverted: it read as
-       a drop shadow, which inverts the meaning. Both paths carry equal weight
-       because neither agent is subordinate. -->
+       The peers are fg-2 rather than full fg on purpose. Rendered at full
+       fg the two white dots overpower a mid-blue accent and the holder
+       reads as a hole; at fg-3 they go muddy at 16px. Compared at 120, 64
+       and 32 before choosing.
+
+       NOTE FOR ANYONE EDITING THIS COMMENT: a double hyphen is illegal
+       inside XML, so a CSS custom property cannot be named here with its
+       leading dashes. An SVG that does not parse does not render at all and
+       nothing reports it (internal/hygiene, TestEveryShippedSVGIsWellFormedXML).
+
+       The geometry is nine numbers and is drawn a second time in Swift, for
+       the macOS app icon, which cannot parse SVG without a build dependency:
+       internal/notify/app/icon_darwin.swift, held to this file by
+       TestTheAppIconMatchesTheProductMark. -->
   <rect width="32" height="32" rx="7.5" fill="#131518"/>
-  <g fill="none" stroke="#dcdee2" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M6.5 9.5 h4.5 l5 6.5"/>
-    <path d="M6.5 22.5 h4.5 l5 -6.5"/>
-    <path d="M16 16 h9.5"/>
-  </g>
-  <!-- The junction: where two become one. The only coloured element, because it
-       is the only part that is an event rather than a state. -->
-  <circle cx="16" cy="16" r="2.9" fill="#83a7ea"/>
+  <circle cx="16" cy="9" r="4.3" fill="#83a7ea"/>
+  <circle cx="9.6" cy="20.2" r="4.3" fill="#9aa0a8"/>
+  <circle cx="22.4" cy="20.2" r="4.3" fill="#9aa0a8"/>
 </svg>

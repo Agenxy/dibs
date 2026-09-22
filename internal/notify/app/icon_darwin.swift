@@ -1,10 +1,10 @@
 // dibs-icon: renders the product mark to PNG, at whatever size is asked for.
 //
 // The mark is defined once, in internal/assets/icon.svg, and drawn here rather
-// than parsed from it. That is a deliberate duplication of four primitives: a
-// rounded tile, three round-capped polylines and a dot. Parsing SVG would mean
-// shipping a parser or a build dependency on librsvg to produce an icon, and
-// the whole geometry is nine numbers.
+// than parsed from it. That is a deliberate duplication of two primitives: a
+// rounded tile and three circles. Parsing SVG would mean shipping a parser or
+// a build dependency on librsvg to produce an icon, and the whole geometry is
+// nine numbers.
 //
 // `TestTheAppIconMatchesTheProductMark` keeps the two honest by comparing the
 // numbers in this file with the ones in the SVG, so a mark that changes in one
@@ -44,23 +44,19 @@ ctx.addPath(CGPath(roundedRect: CGRect(x: 0, y: 0, width: 32, height: 32),
                    cornerWidth: 7.5, cornerHeight: 7.5, transform: nil))
 ctx.fillPath()
 
-// <g stroke="#dcdee2" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
-ctx.setStrokeColor(rgb(0xDCDEE2))
-ctx.setLineWidth(2.6)
-ctx.setLineCap(.round)
-ctx.setLineJoin(.round)
-for pts in [[(6.5, 9.5), (11.0, 9.5), (16.0, 16.0)],     // M6.5 9.5 h4.5 l5 6.5
-            [(6.5, 22.5), (11.0, 22.5), (16.0, 16.0)],   // M6.5 22.5 h4.5 l5 -6.5
-            [(16.0, 16.0), (25.5, 16.0)]] {              // M16 16 h9.5
-    ctx.beginPath()
-    ctx.move(to: CGPoint(x: pts[0].0, y: pts[0].1))
-    for p in pts.dropFirst() { ctx.addLine(to: CGPoint(x: p.0, y: p.1)) }
-    ctx.strokePath()
+func dot(_ cx: CGFloat, _ cy: CGFloat, _ r: CGFloat, _ hex: UInt32) {
+    ctx.setFillColor(rgb(hex))
+    ctx.fillEllipse(in: CGRect(x: cx - r, y: cy - r, width: r * 2, height: r * 2))
 }
 
-// <circle cx="16" cy="16" r="2.9" fill="#83a7ea"/>
-ctx.setFillColor(rgb(0x83A7EA))
-ctx.fillEllipse(in: CGRect(x: 16 - 2.9, y: 16 - 2.9, width: 5.8, height: 5.8))
+// Three agents, one of them holding: the accent is the holder, the two
+// peers are equal to each other because neither is subordinate.
+// <circle cx="16" cy="9" r="4.3" fill="#83a7ea"/>
+dot(16, 9, 4.3, 0x83A7EA)
+// <circle cx="9.6" cy="20.2" r="4.3" fill="#9aa0a8"/>
+dot(9.6, 20.2, 4.3, 0x9AA0A8)
+// <circle cx="22.4" cy="20.2" r="4.3" fill="#9aa0a8"/>
+dot(22.4, 20.2, 4.3, 0x9AA0A8)
 
 guard let image = ctx.makeImage(),
       let dest = CGImageDestinationCreateWithURL(
