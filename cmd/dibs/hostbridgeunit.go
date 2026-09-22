@@ -15,9 +15,11 @@ import (
 
 // hostBridgeUnit is `dibs host-bridge --service`: an init-system unit that
 // keeps this machine's bridge to a board elsewhere running, so its agents
-// stay reachable after the terminal that started the bridge is closed and
-// after a reboot. The same reasoning as `dibs configure --service`, for the
-// same reason: a route that a laptop lid can end is not a route.
+// stay reachable after the terminal that started the bridge is closed. The
+// same reasoning as `dibs configure --service`, for the same reason: a route
+// that a laptop lid can end is not a route. It carries that command's caveat
+// too, and prints it: a user-scoped unit comes back with this user's session,
+// which on a machine nobody logs into is not at boot. See bootreturn.go.
 //
 // It writes the unit and prints the command to load it, rather than loading
 // it itself, exactly as the daemon's unit is handled: registering a job that
@@ -71,6 +73,7 @@ func hostBridgeUnit() error {
 		return err
 	}
 	fmt.Printf("wrote %s\n\n%s", target, load)
+	sayWhenTheUnitComesBack()
 	return nil
 }
 

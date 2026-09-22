@@ -84,8 +84,9 @@ is not a mystery):
 setup:
   dibs configure          first-run wizard: picks secure defaults for you
   dibs configure --service write a launchd/systemd unit so the daemon survives a
-                           closed terminal and a reboot; prints the load command
-                           rather than running it
+                           closed terminal; prints the load command rather than
+                           running it, and says whether this machine brings the
+                           daemon back at boot or only when you log in
   dibs man                print this manual as an mdoc(7) page, generated from
                            this very help text; releases run it to ship agents.1
                            (--out FILE writes it, --date D pins the page date)
