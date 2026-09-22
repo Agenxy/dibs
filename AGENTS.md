@@ -224,28 +224,29 @@ green does not mean the cask moved. This used to read as though tagging did ever
 it does not, and a documented guarantee that quietly needs a click is worse than one that
 says so. Closing it properly means a workflow in the tap that watches for `cask-*`.
 
-**Before the tag, a DIFFERENT model reads the whole release surface.** Not
-optional, and not the author's own review: several versions have been spent
-fixing things a careful reader would have caught, and the reader who misses them
-is reliably the one who wrote them. `task review:release` runs it against the
-last tag.
+**Before the tag, read the release surface.** Several versions were spent
+fixing things a careful reader would have caught, and the reader who misses
+them is reliably the one who wrote them, so this step exists. **Do it
+yourself** unless the operator asks for otherwise: that is their standing
+instruction, given after an automated loop spent ~2.96M tokens of their model
+allowance across nine rounds they had already asked to stop.
 
-**IT COSTS THE OPERATOR'S OWN MODEL ALLOWANCE**, 240k to 410k tokens a round,
-and "go round again until a pass turns up nothing" has no budget in it.
-Read as unbounded it is a machine for spending somebody else's money: every
-round's own fixes give the next round something to find, so the sentence
-above will never end the loop by itself. Two rounds after a substantive
-change, then stop and say what is left. If the person paying says stop, the
-loop is over that minute, whatever the last round found. The exit condition
-is a decision about shipping and it is theirs. This is written here because
-it was learned the expensive way, twice, in one release cycle.
+`task review:release` runs a reader against the last tag, and what it costs
+is the operator's own allowance, 240k to 410k tokens a round. It is for a
+decision worth that, not for "let's see if anything turns up". Say what it
+will cost and what would make it the last round BEFORE starting one, run at
+most two after a substantive change, and stop the moment the person paying
+says so, whatever the last round found. Every round's own fixes give the next
+round something to find, so "the last one found two real things" is what the
+loop will say forever; it is not an argument for another.
 
-The value is the second opinion, so run something that is not what wrote the
-code. What matters is what it is pointed at: this repository's recurring bug
-classes (validation in `Apply` instead of `Admit`, an op that changes state
-without advancing the serial, a renamed json tag, anything that reports success
-while doing nothing) and its newest authorisation paths. Fix what it finds, run
-`task ci`, and go round again until a pass turns up nothing worth fixing.
+What to point the reading at, however it is done: this repository's recurring
+bug classes (validation in `Apply` instead of `Admit`, an op that changes
+state without advancing the serial, a renamed json tag, a rule applied at one
+call site and not its siblings, anything that reports success while doing
+nothing) and its newest authorisation paths. Fix what it finds, run `task ci`,
+and then decide about shipping. The exit condition is that decision, not a
+clean round.
 
 **Before the tag, re-run the harness survey**, because the harnesses move and the
 trackers that used to hold this ("recheck on release", issues #23, #25, #26, #27,
