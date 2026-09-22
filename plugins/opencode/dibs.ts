@@ -122,6 +122,17 @@ function bridgeCall(
     })
     proc.on("error", () => finish(null))
     proc.on("exit", () => finish(null))
+    // AND ON THE PIPE ITSELF, which is not the same listener and is the
+    // one that can take the harness down with it. A write big enough to
+    // buffer completes asynchronously, so a bridge that exits meanwhile
+    // (no daemon, a failed preflight) raises EPIPE on this stream AFTER
+    // the try/catch below has returned; an 'error' event with no listener
+    // is an uncaught exception, and Node ends the process. The plugin's
+    // whole contract is that Dibs being down costs the agent nothing, and
+    // without this line it costs it the session. Round sixty-three of the
+    // pre-release review, reproduced with a 32 KiB body and a dibs that
+    // fails preflight.
+    proc.stdin.on("error", () => finish(null))
     try {
       proc.stdin.write(
         JSON.stringify({
