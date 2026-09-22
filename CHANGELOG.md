@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.0.8] - 2026-09-22
+
 ### Added
 
 - **`dibs configure --service` now says whether the daemon comes back at boot
@@ -40,55 +42,6 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   board URL, the port answered a TCP probe, and the board was unreachable from
   every other computer on the LAN.
 
-### Changed
-
-- **Dependabot updates the browser test dependencies through the `bun`
-  ecosystem, not `npm`.** This directory's lockfile is `bun.lock` and the gate
-  installs with `--frozen-lockfile`; under the npm ecosystem Dependabot edited
-  `package.json` and left the lockfile alone, so every pull request it raised
-  there failed on "lockfile had changes, but lockfile is frozen". One sat open
-  red for a week on a public repository, updating nothing. The trade is that
-  the bun ecosystem does version updates and not security updates, which is
-  worth it here: these are browser test dependencies in no shipped artifact,
-  and a security update that cannot merge is not a security update.
-  `@modelcontextprotocol/ext-apps` goes to 2.0.0 with this, the bump that was
-  stuck; the panel suite passes 90/90 against it unchanged.
-
-- **One place decides whether an address is loopback.** There were five: the
-  shared `internal/transport.IsLoopback` and four hand-copies, which disagreed
-  one input at a time. One read a wildcard `:4777` bind as confined to this
-  machine and handed a board bound wide an ssh-forward recipe it could not
-  follow; that was fixed in the copy, with a comment noting that the shared
-  code already read it correctly. Two more carried comments naming
-  `internal/transport` as the real rule while restating it anyway, and one was
-  dead code. The answer decides plaintext versus TLS and forward versus trust,
-  so a second opinion about it is a second answer.
-  `TestOnlyOnePlaceDecidesWhetherAnAddressIsLoopback` keeps it folded by shape.
-  `internal/mcp` keeps its own, deliberately and with the reason recorded: it
-  reads a PEER's address, where a name is not proof of anything.
-
-- **A new mark: three agents, one of them holding a claim.** The old one was
-  two paths merging into one, drawn when this project was called Lanes and
-  saying "lanes converge". The name went in August 2026 and `lane` is retired
-  everywhere else in the tree with guards to keep it out; the logo kept saying
-  it because no guard looks at artwork. Three filled dots also survive being
-  small, which the merging strokes did not: at 16px the junction and the three
-  lines resolved into a smudge. The peers are drawn at equal weight because
-  neither is subordinate, and the holder is distinguished by colour rather
-  than by size, because what sets it apart is not rank.
-
-  `docs/dibs-mark.svg`, a third design drawn for the rename and never wired
-  in, goes with it, and so does `docs/social-preview.png`, a Lanes-era card
-  referenced by nothing and superseded by the one GitHub actually serves. The
-  drift guard now covers the two SVG copies as well as the four PNGs: they
-  diverged once before, the fix landed on the documentation copy alone, and
-  the one compiled into the binary stayed broken while the repository looked
-  repaired.
-
-
-## [0.0.8] - 2026-09-21
-
-### Added
 
 - **A Codex plugin, and `dibs codex-hooks --trust`, the step without which
   Codex delivers nothing.** The checkout is now a Codex marketplace
@@ -138,6 +91,382 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Exercised end to end by the two-host suite. `dibs host-bridge --service`
   writes the launchd or systemd unit that keeps the bridge running across
   logins and reboots, carrying the join recipe's variables and nothing else.
+
+
+- **A board can have a name, routed by Remap.** The Agenxy name plane
+  ([Remap](https://github.com/Agenxy/remap)) maps any hostname a person
+  chooses to a service on their own machines, so Dibs does not grow a way
+  of its own: `dibs configure` offers a name when Remap is installed and
+  answering, registers it (`remap set <name> http://<addr>/`), and writes it
+  to `dibs.toml` as `name`; the daemon accepts that name as its own origin
+  so the board works at `http://<name>/`; `dibs web` prints the named link
+  beside the address; `dibs doctor` says when the name is set and Remap does
+  not route it. `internal/remap` is the whole of the dependency: `remap
+  --json` over argv, its versioned envelope checked, its own codes and hints
+  surfaced. Without Remap nothing changes.
+
+- **The hub wakes agents on other machines through their own machine's
+  bridge (hub half).** docs/NETWORK.md §5: the hub decides THAT an agent is
+  woken, the agent's machine decides HOW. Every wake decision in the daemon
+  (the cooldown, the deferral, the recency window, the attempt count, the
+  exit re-check) now applies to a remote agent unchanged; only execution
+  moves. A bridge on the other machine opens a `dibs://wake` stream naming
+  its host and the harnesses its own `[wake.exec]` can start, the hub hands
+  it each wake as a `resources/updated` notification carrying exactly what a
+  `[wake.exec]` entry substitutes (thread, agent, sender, type, the one fixed
+  sentence), and the bridge's `POST /api/wake-result` stands in for the exit
+  status. The hub never learns a remote argv and never runs one, and its own
+  `[wake.exec]` is no longer tried for an agent on another machine, which
+  used to start a process here in a directory that is not here and spend
+  the mail's one attempt on it. `GET /api/hosts` lists the attached bridges.
+  The bridge command itself (`dibs host-bridge`) and doctor's account of it
+  follow in the next change.
+- **A two-host end-to-end suite.** `task test:remote` binds a hub to this
+  machine's LAN address so that no caller arrives over loopback, joins it
+  from a second data directory by the recipe `dibs mcp-config --board`
+  prints (secret copied, fingerprint pinned with `dibs trust`), registers
+  an agent through the real bridge on each side, and checks what SPEC §16
+  and `docs/NETWORK.md` §3 promise through the real transport: each row
+  carries the host its bridge asserted, the same absolute path on two
+  machines is not a collision, the same file of one repository in two
+  clones is, the refusal names the rule, and `dibs doctor` on the joining
+  machine says whose board it is. Both rules were unit-tested in the fold
+  and had never been exercised through the trust store and the bridge.
+- **Dibs identifies computers through Supgang, and joins a hub by its Supgang
+  name.** An Agenxy-wide decision (2026-09-13): the projects use each other
+  as dependencies rather than duplicate. Dibs kept an identity of its own for
+  each computer (`node_id`, a generated `host_id`) beside the one Supgang
+  already gives it; now, on a Supgang member, the host id every agent carries
+  IS the Supgang node id, on the hub (its own bridges assert it, and a
+  loopback caller that asserts nothing is stamped with it)
+  and on a joining machine (the bridge asserts it), so one computer answers
+  to one name across the fleet; a daemon started before the machine joined
+  its hive is told by `dibs doctor` to restart, since it keeps the ledger's
+  id until then. `dibs mcp-config --board MacMarine` names the
+  hub as a Supgang peer: the address Supgang has signed for it now, Dibs's
+  own port, and `DIBS_BOARD_PEER` in the config so the bridge asks again each
+  time it starts and follows the hub when its address changes. `dibs doctor`
+  names the machine a remote agent is on. `internal/supgang` is the whole of
+  the dependency: `supgang --json` over argv, versioned envelopes checked,
+  Supgang's own words for a computer that has not joined a hive. Without
+  Supgang everything works as before, for one machine or an ssh forward.
+- **The registry entry carries an install path.** (#44) `io.github.Agenxy/dibs`
+  had a name, a description and a repository and no `packages`, so an agent
+  that found Dibs in the MCP registry had nothing that said what to fetch,
+  and took its instructions from whichever aggregator outranked the
+  repository. The release now packs the binaries GoReleaser built into an
+  MCP Bundle (`tools/mcpbundle`: manifest 0.2, `server.type: binary`, the
+  stdio bridge launched from inside the bundle), attaches `dibs.mcpb` and
+  its digest to the release, and the registry job stamps a `packages` entry
+  of type `mcpb` with the asset URL and `fileSha256` into `server.json`. The
+  digest is computed from the bundle as attached, not read from the digest
+  file beside it, and a digest file that disagrees refuses the publish. A
+  release without the bundle publishes without the block and says so; a
+  release that could not be examined fails the stamp rather than publishing
+  the block's absence. The bundle is macOS on Apple silicon only, which is
+  the only Mac build Dibs ships: a manifest selects a binary by operating
+  system and not by architecture, so a Linux entry would hand every Linux
+  host one build, and the compatibility list names darwin and nothing else.
+  It cannot name an architecture, so an Intel Mac is told by the description
+  and nowhere a manifest can enforce. Linux uses the release archives; there
+  is no Windows build to point at, and the bundle no longer says there is
+  (round seven of the pre-release review). Validated against the official
+  `mcpb` CLI on a local snapshot.
+- **A Linux notifier: the operator can be asked, not only shown.** (#63)
+  `notify.Available()` was `runtime.GOOS == "darwin"`, so on Linux a request
+  that needed a person (a role grant, a mailbox adoption) waited on the board
+  until somebody looked, and the mechanism by which a human stays the
+  authority over a fleet was absent there. libnotify's `notify-send` has had
+  buttons (`--action`) and `--wait` since 0.7.10, which is exactly the shape
+  `Ask` needs: one subprocess, argv only, the pressed key on stdout. Each way
+  the machine cannot ask is its own `dibs doctor` sentence: no `notify-send`
+  (install libnotify), no session bus (headless: approvals wait on the board,
+  `dibs web`), or a libnotify older than 0.7.10, which can show and cannot
+  ask and is refused rather than degraded to a banner nobody can answer; and
+  a notification daemon that advertises no `actions` capability
+  (`GetCapabilities` over `dbus-send` or `gdbus`), which is the same refusal
+  one layer down. Text entry has no notify-send form and says so. Exercised
+  against a stub that speaks notify-send's and dbus-send's argv; not yet
+  against a Linux desktop.
+- **Windows builds and vets in CI, and the first run says what does not
+  hold.** (#11) "Not supported and not being worked on" became "nobody has
+  tried" became a runner: `ubuntu-latest` runs the whole suite under the race
+  detector and `windows-latest` builds, vets and runs the packages that hold
+  there. The first run said the state machine, the ledger and the board
+  config failed on path separators and file semantics; each was the test or
+  the fold assuming unix and is fixed in this version (#113, above), so the
+  Windows job now runs core, ledger, board config, the scorer, the liveness
+  parsers and the daemon-registry lock. To get there the daemon's file lock
+  is `LockFileEx` on Windows behind the same three calls `flock` answers on
+  unix, the liveness poller asks the kernel whether a pid still runs, and the
+  tests that send signals carry the unix build tag. The README says what
+  that is and is not: a build, not a support statement; no Windows harness
+  has registered an agent.
+
+- **The daemon no longer needs read access to your checkouts.** (#19)
+  Matching mined the repository itself, so `dibd` needed to read every tree
+  its agents work in, and on macOS a daemon started by launchd is not granted
+  `~/Desktop`, `~/Documents` or `~/Downloads`: `/usr/bin/git` blocks there on
+  a prompt no background process can show, and the only grant that reliably
+  applies is Full Disk Access, which a coordination daemon should not hold.
+  The agent already has the access and is already inside the repository, so
+  its stdio bridge now ships the two bounded things the index is built from
+  (tracked paths, commit subjects with the files each touched; never
+  contents) when, and only when, the daemon reports it could not read the
+  tree. `POST /api/index` accepts it for the tree the agent is registered in
+  and no other, the daemon keeps its own reading of any tree it can read,
+  and `dibs doctor` names the tree and the agent that shipped it. A shipped
+  index predicts what the mined one predicts; the test proves it against this
+  repository's own history.
+- **A Gemini CLI plugin, and `dibs hook-poll` for harnesses whose hooks are
+  subprocesses.** (#24) Gemini's hooks are `command` type only, and its
+  `SessionStart` accepts `additionalContext`, so `plugins/gemini-cli` ships a
+  session-start hook running `dibs hook-poll`: it reads the hook's JSON on
+  stdin, asks the daemon what is waiting for the session's agent, and prints
+  the strict-shape answer Gemini injects as the first turn's context. Past
+  session start Gemini is pull-only, and the README says why in Gemini's own
+  terms: its end-of-turn hook can only reject the model's answer or stop the
+  session, and Dibs will not deliver mail by discarding what an agent said.
+  Measured on 2026-09-12 against 0.54.0-nightly: the hook reached the daemon
+  from a headless session, and Gemini negotiates `2025-06-18` over `httpUrl`
+  (the wake table has the row). `dibs://plugin` knows the harness and its
+  spellings.
+- **A live session that stopped coordinating is told so.** (#53) An agent
+  that registers, declares and then works for hours without calling Dibs
+  reads as dormant while it is busy, and peers writing to it are told so; on
+  this project's board that expired a peer's question and was reported as
+  the product failing. `[wake] remind_stale_after` (default `1h`, `off` to
+  disable) adds one line to the hook digest naming the silence and the
+  corrective call (`check_in`, then `update` or `declare`). It never extends
+  a turn: it rides on a digest delivered for another reason and on the
+  ambient line to the person, and repeats no more often than the interval.
+  A single long turn has no hook to ride, which the documentation says
+  plainly.
+- **A coordinator can count a mailbox without reading it.** (#77)
+  `all_mail(census: true)` returns, per mailbox, how many messages, of which
+  types, from whom, how old, how many still awaiting an answer, and how many
+  never retrieved: never a body. Custody and contents are different
+  capabilities and only one is sensitive; a coordinator consolidating stranded
+  rows needs the first, and the only door to it was the second, which refused.
+  Of three rows consolidated on this project's board, two held nothing, and
+  before this the only way to learn that was to adopt them and look. `agent`
+  names one mailbox, reported even when empty.
+
+- The frozen-json-tag guard now covers `core.AgentInfo` as well as `core.Op`.
+  Those tags travel to disk inside `op.agent` and not one of them was frozen:
+  renaming `repo_dir`, `repo_remote` or `repo_roots` would have replayed as
+  "no evidence" on every historical op, and the fold would have quietly stopped
+  telling one repository from another while reporting success. That is the
+  `lane_kind` failure exactly, in the one struct the guard did not look inside.
+
+- `docs/NETWORK.md`: the design for a board whose agents are not all on one
+  computer. Host identity as a key rather than a hostname, claims keyed by host
+  with a portable repository form beside them, liveness split into presence and
+  identity, and why wake routes must belong to the machine the agent is on
+  rather than to the hub. Written before most of it existed; by this
+  release the liveness split, the host key, the portable repository rule and
+  the per-host bridge are built (each has its own entry here), and the
+  document's status line says what remains.
+
+### Changed
+
+- **Dependabot updates the browser test dependencies through the `bun`
+  ecosystem, not `npm`.** This directory's lockfile is `bun.lock` and the gate
+  installs with `--frozen-lockfile`; under the npm ecosystem Dependabot edited
+  `package.json` and left the lockfile alone, so every pull request it raised
+  there failed on "lockfile had changes, but lockfile is frozen". One sat open
+  red for a week on a public repository, updating nothing. The trade is that
+  the bun ecosystem does version updates and not security updates, which is
+  worth it here: these are browser test dependencies in no shipped artifact,
+  and a security update that cannot merge is not a security update.
+  `@modelcontextprotocol/ext-apps` goes to 2.0.0 with this, the bump that was
+  stuck; the panel suite passes 90/90 against it unchanged.
+
+- **One place decides whether an address is loopback.** There were five: the
+  shared `internal/transport.IsLoopback` and four hand-copies, which disagreed
+  one input at a time. One read a wildcard `:4777` bind as confined to this
+  machine and handed a board bound wide an ssh-forward recipe it could not
+  follow; that was fixed in the copy, with a comment noting that the shared
+  code already read it correctly. Two more carried comments naming
+  `internal/transport` as the real rule while restating it anyway, and one was
+  dead code. The answer decides plaintext versus TLS and forward versus trust,
+  so a second opinion about it is a second answer.
+  `TestOnlyOnePlaceDecidesWhetherAnAddressIsLoopback` keeps it folded by shape.
+  `internal/mcp` keeps its own, deliberately and with the reason recorded: it
+  reads a PEER's address, where a name is not proof of anything.
+
+- **A new mark: three agents, one of them holding a claim.** The old one was
+  two paths merging into one, drawn when this project was called Lanes and
+  saying "lanes converge". The name went in August 2026 and `lane` is retired
+  everywhere else in the tree with guards to keep it out; the logo kept saying
+  it because no guard looks at artwork. Three filled dots also survive being
+  small, which the merging strokes did not: at 16px the junction and the three
+  lines resolved into a smudge. The peers are drawn at equal weight because
+  neither is subordinate, and the holder is distinguished by colour rather
+  than by size, because what sets it apart is not rank.
+
+  `docs/dibs-mark.svg`, a third design drawn for the rename and never wired
+  in, goes with it, and so does `docs/social-preview.png`, a Lanes-era card
+  referenced by nothing and superseded by the one GitHub actually serves. The
+  drift guard now covers the two SVG copies as well as the four PNGs: they
+  diverged once before, the fix landed on the documentation copy alone, and
+  the one compiled into the binary stayed broken while the repository looked
+  repaired.
+
+
+
+- **Every lookup that takes a directory now takes the machine too, by
+  construction.** "A path is evidence on one computer" had been learned six
+  separate times here, five of them the review finding it missing somewhere
+  new, one call site per round. The unscoped lookups are gone rather than
+  documented: `ActiveAgentsIn`, `ActiveAgentIDsIn`, `AgentsIn`,
+  `ReattachableIn` and `AgentForHook` are replaced by their `On` siblings,
+  which take the host. Two of them were wrong in ways nothing had reported:
+  a hook that resolved to nobody was logged as "the wake path is reaching no
+  one" because a peer machine had a directory of the same name, and an
+  unregistered session was offered the names of idle agents **on other
+  machines** to reattach to, which is an invitation to adopt a different
+  computer's identity. `TestNoExportedLookupTakesADirectoryWithoutAMachine`
+  keeps the surface that way.
+
+
+- **Dibs ships its mark where a mark is expected, instead of a placeholder.**
+  The MCP Bundle and the Claude Desktop manifest declared no `icon` at all, so
+  an extension a person installs sat in their list as a grey square beside
+  named ones, and a board added to an iOS home screen took a screenshot of
+  itself for its tile (`apple-touch-icon` has no SVG form). All four now carry
+  the same file as the macOS app icon, held to it by
+  `TestTheMarkIsTheSameFileEverywhereItShips`: `go:embed` and an MCPB `icon`
+  path both need a copy beside them, so the copies are guarded the way
+  `SKILLS.md` is.
+
+
+- **`dibs doctor` asks the hub which machine is the hub, instead of guessing.**
+  A bridge is a wake route for another machine's agents and never for a local
+  one, and the hub's own `[wake.exec]` is the reverse, so every coverage
+  answer turns on "is this agent on the hub". The engine reads several ids as
+  itself: the one it stamps with, the ledger's node id for rows written before
+  it had a Supgang identity, and every id it used to answer to. Doctor could
+  see none of that and compared with the board's current id alone, so on a
+  machine that adopted a Supgang identity its own older rows read as remote,
+  in both of the directions that report health: the hub's own command stopped
+  counting for them, and a bridge attached for that id started counting, which
+  is the route the engine refuses outright for a local agent. `GET /api/hosts`
+  now carries `self`, the set the daemon reads as itself, and doctor uses it;
+  against a daemon too old to say, the previous comparison stands.
+- **`internal/core` owns the pure rules it states, and nothing copies them
+  any more.** Three places kept a hand-copy of something core already says,
+  each with a comment explaining why it had to: `paths.Portable` duplicated
+  the UNC path cleaning ("core may not import this package; the two must
+  stay identical"), and `internal/overlap` duplicated two numeric bounds
+  ("overlap sits below core and does not import it"), guarded by a test in
+  `internal/mcp` that read overlap's source to check the literals still
+  matched. Both premises were true about the direction they named and false
+  about the one that mattered: core imports nothing, so everything can
+  import core. `core.CleanPath` is exported and is now the only
+  implementation; overlap reads `core.MaxFingerprintBytes` and
+  `core.DefaultLimits().MaxPathBytes` directly; the drift guard is gone with
+  the drift. A new check, `TestCoreImportsNothingThatCouldMakeItImpure`,
+  keeps the reasoning true: it fails on a project import, a third-party
+  import, or any standard-library import that could reach the disk, the
+  clock, the network or the process, and it was shown catching all three.
+
+- **The opencode and pi plugins are transports now, not clients: one
+  implementation of every client rule, in Go.** Both spoke to the daemon
+  themselves, and the pre-release review spent rounds nineteen through
+  fifty-seven handing them, one at a time, rules the `dibs mcp-stdio` bridge
+  already had: the host stamp, the repository stamp, canonical paths, the
+  portable spelling of a Windows path, which arguments are paths at all, the
+  exception for a path named on another agent's behalf, a TLS trust store
+  Node's `fetch` cannot be given, an origin that has to be re-read because
+  the hub moves. Each arrived a release after the bridge got it, and each was
+  found in behaviour rather than by a test, because a rule that exists three
+  times drifts and the symptom is silent on the copies nobody runs. Both
+  files now speak JSON-RPC over a pipe to that bridge and decide nothing:
+  1329 lines of TypeScript became 808, the four guards that pinned the copies
+  to each other are replaced by one that forbids client policy in them at
+  all, and the `resolved_host_id` / `resolved_origin` files the bridge wrote
+  for those readers are gone with them. A child per call rather than a
+  long-lived one, measured at 8-17ms against a running daemon with spawn
+  included: under bun a piped child keeps the parent's event loop alive
+  however it is unref'd, so the harness finished its turn and would not exit.
+  Behaviour is unchanged for both harnesses (`task test:guard`, 38 checks
+  against a real daemon), except that a hook call now reaches the daemon with
+  a working directory the bridge supplies when the harness states none, which
+  is where that rule landed when the plugins stopped measuring it.
+
+
+- **The daemon calls itself Dibs everywhere a person can see it.**
+  `serverInfo.name`, the string every MCP client puts in its list of
+  servers, said `agents`: what this project was called two names ago. The
+  renames to Lanes and then to Dibs swept the prose, the verbs, the docs
+  and the manifests and missed the one field a person actually reads. It
+  is `dibs` now, with the human `title` and the project's `websiteUrl`
+  beside it, and a test refuses either retired name.
+
+- **Every request this project makes says what it is.** They all went out
+  as `Go-http-client/1.1`, so a hub's access log could not tell one
+  machine's bridge from another's hook, from an index shipment, or from
+  any other Go program on the network, and the build a caller is running
+  was not there to read. Requests now carry `dibs/<version>
+  (<os>/<arch>)`, stamped in the one client every credential-bearing call
+  already passes through, and a caller that sets its own is left alone.
+
+- **The board and the protocol guide carry the metadata a page is
+  expected to have**: a description, a theme colour for each scheme, and
+  an application name, beside the title and icon they already had.
+
+- **SECURITY.md states what a forged lifecycle hook can and cannot do.**
+  (#74) `hook_poll` takes a session id with no token, and a peer can claim a
+  `Stop` or `SessionStart` for somebody else's session. The consequence was
+  never written down: a forged `Stop` costs at most one spurious wake, and
+  ONE forged `SessionStart` defers a wake by at most the harness's
+  cooldown, because the deferral re-arms, which a test pins. A caller that
+  REPEATS the forgery faster than the cooldown keeps deferring it for as
+  long as it keeps calling, and there is no bound on that beyond the
+  caller's persistence: SECURITY.md says so, and this entry claimed the
+  one-cooldown bound for the repeated case too. Nothing on that path reads
+  mail or grants a role. The fix that closes it is a credential per
+  agent (`docs/NETWORK.md` §6); the document now says so instead of
+  promising an isolation the design cannot give.
+
+- **The scaling numbers are in the architecture document.** (#42) Where
+  Dibs stops scaling was measured rather than guessed: the overlap search is
+  linear in agents and, more to the point, serialised on the writer loop,
+  which is fine at hundreds and the constraint at thousands. The numbers,
+  where a prefix tree would help (paths) and would not (refs, scoring), and
+  the order to do it in are now in `docs/ARCHITECTURE.md`, so the next person
+  reaches for a data structure when the fleet needs one and not before.
+- **The bridge's per-agent cost is stated, and what it buys.** (#60) Nine
+  idle stdio bridges measured 72 MB on one machine, about 8 MB, 13 file
+  descriptors and a connection each, and every generated config prescribes
+  one although the daemon serves MCP over HTTP directly. The README now
+  gives the number and the reason the process is kept anyway: the bridge is
+  the session. It is where `cwd`, `branch` and a real `pid` are observed
+  rather than asked of a model, the key that reattaches the next turn to the
+  same agent, and the exit the board notices when an agent dies. A url client
+  gives up all four; the generated configs do not, and say so.
+- **A coordinator may move a mailbox but not onto itself.** (#77) Adoption
+  moves the messages an abandoned mailbox holds at that moment, once; it is
+  not a standing redirect, and anything sent to the name afterwards still
+  reaches it (the result says so). Onto a third party, the coordinator gains
+  nothing, and that is the consolidation the role exists for. Onto itself, it
+  becomes the reader of that mailbox's contents: the coordinator granting
+  itself read access to another agent's mail, which is now the human's call
+  (`human_unlock`) or an admin's. The refusal names the census and `into`.
+  Approving another agent's adoption request makes that agent the reader,
+  not the coordinator; a coordinator approving a request it sent ITSELF is
+  the same move through the other door and is refused the same way (found by
+  the pre-release review).
+
+- **`check_in` charges for a roster, not the whole board.** (#55) The one
+  call every agent must make, once per activation, returned every field of
+  every row: 41 KB of a 71 KB checkpoint on this project's own 35-agent board,
+  almost none of it read. It now returns one row per agent (id, status, who,
+  what it is doing on one line, host, project, role) with claims whole in
+  shape, and everything the call owes (mail, announcements, updates, the
+  cursor) untouched. `detail: true` returns the full board as before; the
+  human's panel never lost it. Measured 71 KB to 36 KB on that board.
 
 ### Fixed
 
@@ -303,162 +632,6 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   on purpose; `TestCoreReadsNoClockAndNoRandomness` inspects the calls and
   was shown catching the real instance.
 
-### Changed
-
-- **Every lookup that takes a directory now takes the machine too, by
-  construction.** "A path is evidence on one computer" had been learned six
-  separate times here, five of them the review finding it missing somewhere
-  new, one call site per round. The unscoped lookups are gone rather than
-  documented: `ActiveAgentsIn`, `ActiveAgentIDsIn`, `AgentsIn`,
-  `ReattachableIn` and `AgentForHook` are replaced by their `On` siblings,
-  which take the host. Two of them were wrong in ways nothing had reported:
-  a hook that resolved to nobody was logged as "the wake path is reaching no
-  one" because a peer machine had a directory of the same name, and an
-  unregistered session was offered the names of idle agents **on other
-  machines** to reattach to, which is an invitation to adopt a different
-  computer's identity. `TestNoExportedLookupTakesADirectoryWithoutAMachine`
-  keeps the surface that way.
-
-
-- **Dibs ships its mark where a mark is expected, instead of a placeholder.**
-  The MCP Bundle and the Claude Desktop manifest declared no `icon` at all, so
-  an extension a person installs sat in their list as a grey square beside
-  named ones, and a board added to an iOS home screen took a screenshot of
-  itself for its tile (`apple-touch-icon` has no SVG form). All four now carry
-  the same file as the macOS app icon, held to it by
-  `TestTheMarkIsTheSameFileEverywhereItShips`: `go:embed` and an MCPB `icon`
-  path both need a copy beside them, so the copies are guarded the way
-  `SKILLS.md` is.
-
-
-- **`dibs doctor` asks the hub which machine is the hub, instead of guessing.**
-  A bridge is a wake route for another machine's agents and never for a local
-  one, and the hub's own `[wake.exec]` is the reverse, so every coverage
-  answer turns on "is this agent on the hub". The engine reads several ids as
-  itself: the one it stamps with, the ledger's node id for rows written before
-  it had a Supgang identity, and every id it used to answer to. Doctor could
-  see none of that and compared with the board's current id alone, so on a
-  machine that adopted a Supgang identity its own older rows read as remote,
-  in both of the directions that report health: the hub's own command stopped
-  counting for them, and a bridge attached for that id started counting, which
-  is the route the engine refuses outright for a local agent. `GET /api/hosts`
-  now carries `self`, the set the daemon reads as itself, and doctor uses it;
-  against a daemon too old to say, the previous comparison stands.
-- **`internal/core` owns the pure rules it states, and nothing copies them
-  any more.** Three places kept a hand-copy of something core already says,
-  each with a comment explaining why it had to: `paths.Portable` duplicated
-  the UNC path cleaning ("core may not import this package; the two must
-  stay identical"), and `internal/overlap` duplicated two numeric bounds
-  ("overlap sits below core and does not import it"), guarded by a test in
-  `internal/mcp` that read overlap's source to check the literals still
-  matched. Both premises were true about the direction they named and false
-  about the one that mattered: core imports nothing, so everything can
-  import core. `core.CleanPath` is exported and is now the only
-  implementation; overlap reads `core.MaxFingerprintBytes` and
-  `core.DefaultLimits().MaxPathBytes` directly; the drift guard is gone with
-  the drift. A new check, `TestCoreImportsNothingThatCouldMakeItImpure`,
-  keeps the reasoning true: it fails on a project import, a third-party
-  import, or any standard-library import that could reach the disk, the
-  clock, the network or the process, and it was shown catching all three.
-
-- **The opencode and pi plugins are transports now, not clients: one
-  implementation of every client rule, in Go.** Both spoke to the daemon
-  themselves, and the pre-release review spent rounds nineteen through
-  fifty-seven handing them, one at a time, rules the `dibs mcp-stdio` bridge
-  already had: the host stamp, the repository stamp, canonical paths, the
-  portable spelling of a Windows path, which arguments are paths at all, the
-  exception for a path named on another agent's behalf, a TLS trust store
-  Node's `fetch` cannot be given, an origin that has to be re-read because
-  the hub moves. Each arrived a release after the bridge got it, and each was
-  found in behaviour rather than by a test, because a rule that exists three
-  times drifts and the symptom is silent on the copies nobody runs. Both
-  files now speak JSON-RPC over a pipe to that bridge and decide nothing:
-  1329 lines of TypeScript became 808, the four guards that pinned the copies
-  to each other are replaced by one that forbids client policy in them at
-  all, and the `resolved_host_id` / `resolved_origin` files the bridge wrote
-  for those readers are gone with them. A child per call rather than a
-  long-lived one, measured at 8-17ms against a running daemon with spawn
-  included: under bun a piped child keeps the parent's event loop alive
-  however it is unref'd, so the harness finished its turn and would not exit.
-  Behaviour is unchanged for both harnesses (`task test:guard`, 38 checks
-  against a real daemon), except that a hook call now reaches the daemon with
-  a working directory the bridge supplies when the harness states none, which
-  is where that rule landed when the plugins stopped measuring it.
-
-
-- **The daemon calls itself Dibs everywhere a person can see it.**
-  `serverInfo.name`, the string every MCP client puts in its list of
-  servers, said `agents`: what this project was called two names ago. The
-  renames to Lanes and then to Dibs swept the prose, the verbs, the docs
-  and the manifests and missed the one field a person actually reads. It
-  is `dibs` now, with the human `title` and the project's `websiteUrl`
-  beside it, and a test refuses either retired name.
-
-- **Every request this project makes says what it is.** They all went out
-  as `Go-http-client/1.1`, so a hub's access log could not tell one
-  machine's bridge from another's hook, from an index shipment, or from
-  any other Go program on the network, and the build a caller is running
-  was not there to read. Requests now carry `dibs/<version>
-  (<os>/<arch>)`, stamped in the one client every credential-bearing call
-  already passes through, and a caller that sets its own is left alone.
-
-- **The board and the protocol guide carry the metadata a page is
-  expected to have**: a description, a theme colour for each scheme, and
-  an application name, beside the title and icon they already had.
-
-- **SECURITY.md states what a forged lifecycle hook can and cannot do.**
-  (#74) `hook_poll` takes a session id with no token, and a peer can claim a
-  `Stop` or `SessionStart` for somebody else's session. The consequence was
-  never written down: a forged `Stop` costs at most one spurious wake, and
-  ONE forged `SessionStart` defers a wake by at most the harness's
-  cooldown, because the deferral re-arms, which a test pins. A caller that
-  REPEATS the forgery faster than the cooldown keeps deferring it for as
-  long as it keeps calling, and there is no bound on that beyond the
-  caller's persistence: SECURITY.md says so, and this entry claimed the
-  one-cooldown bound for the repeated case too. Nothing on that path reads
-  mail or grants a role. The fix that closes it is a credential per
-  agent (`docs/NETWORK.md` §6); the document now says so instead of
-  promising an isolation the design cannot give.
-
-- **The scaling numbers are in the architecture document.** (#42) Where
-  Dibs stops scaling was measured rather than guessed: the overlap search is
-  linear in agents and, more to the point, serialised on the writer loop,
-  which is fine at hundreds and the constraint at thousands. The numbers,
-  where a prefix tree would help (paths) and would not (refs, scoring), and
-  the order to do it in are now in `docs/ARCHITECTURE.md`, so the next person
-  reaches for a data structure when the fleet needs one and not before.
-- **The bridge's per-agent cost is stated, and what it buys.** (#60) Nine
-  idle stdio bridges measured 72 MB on one machine, about 8 MB, 13 file
-  descriptors and a connection each, and every generated config prescribes
-  one although the daemon serves MCP over HTTP directly. The README now
-  gives the number and the reason the process is kept anyway: the bridge is
-  the session. It is where `cwd`, `branch` and a real `pid` are observed
-  rather than asked of a model, the key that reattaches the next turn to the
-  same agent, and the exit the board notices when an agent dies. A url client
-  gives up all four; the generated configs do not, and say so.
-- **A coordinator may move a mailbox but not onto itself.** (#77) Adoption
-  moves the messages an abandoned mailbox holds at that moment, once; it is
-  not a standing redirect, and anything sent to the name afterwards still
-  reaches it (the result says so). Onto a third party, the coordinator gains
-  nothing, and that is the consolidation the role exists for. Onto itself, it
-  becomes the reader of that mailbox's contents: the coordinator granting
-  itself read access to another agent's mail, which is now the human's call
-  (`human_unlock`) or an admin's. The refusal names the census and `into`.
-  Approving another agent's adoption request makes that agent the reader,
-  not the coordinator; a coordinator approving a request it sent ITSELF is
-  the same move through the other door and is refused the same way (found by
-  the pre-release review).
-
-- **`check_in` charges for a roster, not the whole board.** (#55) The one
-  call every agent must make, once per activation, returned every field of
-  every row: 41 KB of a 71 KB checkpoint on this project's own 35-agent board,
-  almost none of it read. It now returns one row per agent (id, status, who,
-  what it is doing on one line, host, project, role) with claims whole in
-  shape, and everything the call owes (mail, announcements, updates, the
-  cursor) untouched. `detail: true` returns the full board as before; the
-  human's panel never lost it. Measured 71 KB to 36 KB on that board.
-
-### Fixed
 
 - **Round fifty-seven of the pre-release review: two findings.**
   - The paths inside a shipped commit are bounded like the file list.
@@ -1861,183 +2034,6 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reports that the recipient was archived, what it costs to reach it, and how
   long the mailbox is kept, and the engine's own note still wins where it knows
   that nothing on this board can wake it.
-
-### Added
-
-- **A board can have a name, routed by Remap.** The Agenxy name plane
-  ([Remap](https://github.com/Agenxy/remap)) maps any hostname a person
-  chooses to a service on their own machines, so Dibs does not grow a way
-  of its own: `dibs configure` offers a name when Remap is installed and
-  answering, registers it (`remap set <name> http://<addr>/`), and writes it
-  to `dibs.toml` as `name`; the daemon accepts that name as its own origin
-  so the board works at `http://<name>/`; `dibs web` prints the named link
-  beside the address; `dibs doctor` says when the name is set and Remap does
-  not route it. `internal/remap` is the whole of the dependency: `remap
-  --json` over argv, its versioned envelope checked, its own codes and hints
-  surfaced. Without Remap nothing changes.
-
-- **The hub wakes agents on other machines through their own machine's
-  bridge (hub half).** docs/NETWORK.md §5: the hub decides THAT an agent is
-  woken, the agent's machine decides HOW. Every wake decision in the daemon
-  (the cooldown, the deferral, the recency window, the attempt count, the
-  exit re-check) now applies to a remote agent unchanged; only execution
-  moves. A bridge on the other machine opens a `dibs://wake` stream naming
-  its host and the harnesses its own `[wake.exec]` can start, the hub hands
-  it each wake as a `resources/updated` notification carrying exactly what a
-  `[wake.exec]` entry substitutes (thread, agent, sender, type, the one fixed
-  sentence), and the bridge's `POST /api/wake-result` stands in for the exit
-  status. The hub never learns a remote argv and never runs one, and its own
-  `[wake.exec]` is no longer tried for an agent on another machine, which
-  used to start a process here in a directory that is not here and spend
-  the mail's one attempt on it. `GET /api/hosts` lists the attached bridges.
-  The bridge command itself (`dibs host-bridge`) and doctor's account of it
-  follow in the next change.
-- **A two-host end-to-end suite.** `task test:remote` binds a hub to this
-  machine's LAN address so that no caller arrives over loopback, joins it
-  from a second data directory by the recipe `dibs mcp-config --board`
-  prints (secret copied, fingerprint pinned with `dibs trust`), registers
-  an agent through the real bridge on each side, and checks what SPEC §16
-  and `docs/NETWORK.md` §3 promise through the real transport: each row
-  carries the host its bridge asserted, the same absolute path on two
-  machines is not a collision, the same file of one repository in two
-  clones is, the refusal names the rule, and `dibs doctor` on the joining
-  machine says whose board it is. Both rules were unit-tested in the fold
-  and had never been exercised through the trust store and the bridge.
-- **Dibs identifies computers through Supgang, and joins a hub by its Supgang
-  name.** An Agenxy-wide decision (2026-09-13): the projects use each other
-  as dependencies rather than duplicate. Dibs kept an identity of its own for
-  each computer (`node_id`, a generated `host_id`) beside the one Supgang
-  already gives it; now, on a Supgang member, the host id every agent carries
-  IS the Supgang node id, on the hub (its own bridges assert it, and a
-  loopback caller that asserts nothing is stamped with it)
-  and on a joining machine (the bridge asserts it), so one computer answers
-  to one name across the fleet; a daemon started before the machine joined
-  its hive is told by `dibs doctor` to restart, since it keeps the ledger's
-  id until then. `dibs mcp-config --board MacMarine` names the
-  hub as a Supgang peer: the address Supgang has signed for it now, Dibs's
-  own port, and `DIBS_BOARD_PEER` in the config so the bridge asks again each
-  time it starts and follows the hub when its address changes. `dibs doctor`
-  names the machine a remote agent is on. `internal/supgang` is the whole of
-  the dependency: `supgang --json` over argv, versioned envelopes checked,
-  Supgang's own words for a computer that has not joined a hive. Without
-  Supgang everything works as before, for one machine or an ssh forward.
-- **The registry entry carries an install path.** (#44) `io.github.Agenxy/dibs`
-  had a name, a description and a repository and no `packages`, so an agent
-  that found Dibs in the MCP registry had nothing that said what to fetch,
-  and took its instructions from whichever aggregator outranked the
-  repository. The release now packs the binaries GoReleaser built into an
-  MCP Bundle (`tools/mcpbundle`: manifest 0.2, `server.type: binary`, the
-  stdio bridge launched from inside the bundle), attaches `dibs.mcpb` and
-  its digest to the release, and the registry job stamps a `packages` entry
-  of type `mcpb` with the asset URL and `fileSha256` into `server.json`. The
-  digest is computed from the bundle as attached, not read from the digest
-  file beside it, and a digest file that disagrees refuses the publish. A
-  release without the bundle publishes without the block and says so; a
-  release that could not be examined fails the stamp rather than publishing
-  the block's absence. The bundle is macOS on Apple silicon only, which is
-  the only Mac build Dibs ships: a manifest selects a binary by operating
-  system and not by architecture, so a Linux entry would hand every Linux
-  host one build, and the compatibility list names darwin and nothing else.
-  It cannot name an architecture, so an Intel Mac is told by the description
-  and nowhere a manifest can enforce. Linux uses the release archives; there
-  is no Windows build to point at, and the bundle no longer says there is
-  (round seven of the pre-release review). Validated against the official
-  `mcpb` CLI on a local snapshot.
-- **A Linux notifier: the operator can be asked, not only shown.** (#63)
-  `notify.Available()` was `runtime.GOOS == "darwin"`, so on Linux a request
-  that needed a person (a role grant, a mailbox adoption) waited on the board
-  until somebody looked, and the mechanism by which a human stays the
-  authority over a fleet was absent there. libnotify's `notify-send` has had
-  buttons (`--action`) and `--wait` since 0.7.10, which is exactly the shape
-  `Ask` needs: one subprocess, argv only, the pressed key on stdout. Each way
-  the machine cannot ask is its own `dibs doctor` sentence: no `notify-send`
-  (install libnotify), no session bus (headless: approvals wait on the board,
-  `dibs web`), or a libnotify older than 0.7.10, which can show and cannot
-  ask and is refused rather than degraded to a banner nobody can answer; and
-  a notification daemon that advertises no `actions` capability
-  (`GetCapabilities` over `dbus-send` or `gdbus`), which is the same refusal
-  one layer down. Text entry has no notify-send form and says so. Exercised
-  against a stub that speaks notify-send's and dbus-send's argv; not yet
-  against a Linux desktop.
-- **Windows builds and vets in CI, and the first run says what does not
-  hold.** (#11) "Not supported and not being worked on" became "nobody has
-  tried" became a runner: `ubuntu-latest` runs the whole suite under the race
-  detector and `windows-latest` builds, vets and runs the packages that hold
-  there. The first run said the state machine, the ledger and the board
-  config failed on path separators and file semantics; each was the test or
-  the fold assuming unix and is fixed in this version (#113, above), so the
-  Windows job now runs core, ledger, board config, the scorer, the liveness
-  parsers and the daemon-registry lock. To get there the daemon's file lock
-  is `LockFileEx` on Windows behind the same three calls `flock` answers on
-  unix, the liveness poller asks the kernel whether a pid still runs, and the
-  tests that send signals carry the unix build tag. The README says what
-  that is and is not: a build, not a support statement; no Windows harness
-  has registered an agent.
-
-- **The daemon no longer needs read access to your checkouts.** (#19)
-  Matching mined the repository itself, so `dibd` needed to read every tree
-  its agents work in, and on macOS a daemon started by launchd is not granted
-  `~/Desktop`, `~/Documents` or `~/Downloads`: `/usr/bin/git` blocks there on
-  a prompt no background process can show, and the only grant that reliably
-  applies is Full Disk Access, which a coordination daemon should not hold.
-  The agent already has the access and is already inside the repository, so
-  its stdio bridge now ships the two bounded things the index is built from
-  (tracked paths, commit subjects with the files each touched; never
-  contents) when, and only when, the daemon reports it could not read the
-  tree. `POST /api/index` accepts it for the tree the agent is registered in
-  and no other, the daemon keeps its own reading of any tree it can read,
-  and `dibs doctor` names the tree and the agent that shipped it. A shipped
-  index predicts what the mined one predicts; the test proves it against this
-  repository's own history.
-- **A Gemini CLI plugin, and `dibs hook-poll` for harnesses whose hooks are
-  subprocesses.** (#24) Gemini's hooks are `command` type only, and its
-  `SessionStart` accepts `additionalContext`, so `plugins/gemini-cli` ships a
-  session-start hook running `dibs hook-poll`: it reads the hook's JSON on
-  stdin, asks the daemon what is waiting for the session's agent, and prints
-  the strict-shape answer Gemini injects as the first turn's context. Past
-  session start Gemini is pull-only, and the README says why in Gemini's own
-  terms: its end-of-turn hook can only reject the model's answer or stop the
-  session, and Dibs will not deliver mail by discarding what an agent said.
-  Measured on 2026-09-12 against 0.54.0-nightly: the hook reached the daemon
-  from a headless session, and Gemini negotiates `2025-06-18` over `httpUrl`
-  (the wake table has the row). `dibs://plugin` knows the harness and its
-  spellings.
-- **A live session that stopped coordinating is told so.** (#53) An agent
-  that registers, declares and then works for hours without calling Dibs
-  reads as dormant while it is busy, and peers writing to it are told so; on
-  this project's board that expired a peer's question and was reported as
-  the product failing. `[wake] remind_stale_after` (default `1h`, `off` to
-  disable) adds one line to the hook digest naming the silence and the
-  corrective call (`check_in`, then `update` or `declare`). It never extends
-  a turn: it rides on a digest delivered for another reason and on the
-  ambient line to the person, and repeats no more often than the interval.
-  A single long turn has no hook to ride, which the documentation says
-  plainly.
-- **A coordinator can count a mailbox without reading it.** (#77)
-  `all_mail(census: true)` returns, per mailbox, how many messages, of which
-  types, from whom, how old, how many still awaiting an answer, and how many
-  never retrieved: never a body. Custody and contents are different
-  capabilities and only one is sensitive; a coordinator consolidating stranded
-  rows needs the first, and the only door to it was the second, which refused.
-  Of three rows consolidated on this project's board, two held nothing, and
-  before this the only way to learn that was to adopt them and look. `agent`
-  names one mailbox, reported even when empty.
-
-- The frozen-json-tag guard now covers `core.AgentInfo` as well as `core.Op`.
-  Those tags travel to disk inside `op.agent` and not one of them was frozen:
-  renaming `repo_dir`, `repo_remote` or `repo_roots` would have replayed as
-  "no evidence" on every historical op, and the fold would have quietly stopped
-  telling one repository from another while reporting success. That is the
-  `lane_kind` failure exactly, in the one struct the guard did not look inside.
-
-- `docs/NETWORK.md`: the design for a board whose agents are not all on one
-  computer. Host identity as a key rather than a hostname, claims keyed by host
-  with a portable repository form beside them, liveness split into presence and
-  identity, and why wake routes must belong to the machine the agent is on
-  rather than to the hub. Written before most of it existed; by this
-  release the liveness split, the host key, the portable repository rule and
-  the per-host bridge are built (each has its own entry here), and the
-  document's status line says what remains.
 
 ## [0.0.7] - 2026-09-08
 
