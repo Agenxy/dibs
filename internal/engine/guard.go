@@ -44,7 +44,7 @@ func (e *Engine) GuardPathFrom(ctx context.Context, sessionID, path, cwd, host s
 		}
 		// Counted whether or not it resolved: a guard that never resolves is
 		// inert, and only the daemon can see that (hookhealth.go).
-		e.noteHookFor("guard", l, cwd)
+		e.noteHookFor("guard", l, cwd, host)
 		v := e.state.GuardPath(agent, path, time.Now())
 		out := core.Result{"decision": v.Decision}
 		if v.Decision == core.GuardAllow {

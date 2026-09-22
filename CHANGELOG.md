@@ -58,6 +58,27 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`check_in`'s compact board keeps what a claim COVERS, not just where.** A
+  path is evidence on one computer and a repository-relative path on one
+  repository, which is why a claim records its host and repository at claim
+  time rather than reading the holder's current ones. The projection kept the
+  path and dropped all three, so an agent that checked in could not tell a
+  claim on its own `/workspace/repo` from an unrelated machine's, nor
+  recognise its own file under another clone's root: the two mistakes those
+  fields exist to prevent, at the last step before the model reads it. Notes
+  and timestamps are still dropped, which is what the compaction is for.
+
+- **`dibs doctor` no longer reports broken hooks because a peer machine has a
+  directory of the same name.** The diagnostic that decides whether an
+  unresolved hook is a misbinding or just an unregistered session asks whether
+  any active agent in that directory could still be the caller, and compared
+  the path alone. An agent on another machine cannot be the caller of anything
+  here, so a peer holding the bridge's `host-<ppid>` fallback at a path of the
+  same name turned a correctly routed fleet red. Hook resolution has narrowed
+  by host since it learned to; the diagnostic beside it had the host in scope
+  and threw it away.
+
+
 - **A local remote no longer merges two strangers' objectives across
   machines.** The round before this gave `sameRepoIdentity` the rule that a
   `file:` remote names somewhere on one computer, and left `differentProjects`

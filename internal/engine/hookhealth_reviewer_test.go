@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -131,5 +132,77 @@ func TestAStrangerBesideAThreadBoundAgentIsAStrangerBeforeAnyHook(t *testing.T) 
 	if h.Verdict != "only-strangers" {
 		t.Errorf("verdict = %q: one unregistered session beside a thread-bound seat "+
 			"read as an inert guard", h.Verdict)
+	}
+}
+
+// An agent on ANOTHER machine, in a directory of the same name, is not a
+// reason to call this machine's unregistered session a misbinding.
+//
+// The discriminator asks "could some active agent in that directory
+// still be the caller". A directory is a path and a path is evidence on
+// one computer, so /workspace/repo on two machines is two directories
+// and an agent in the other one could not be the caller of anything
+// here. The lookup compared the path alone, so a peer machine's agent
+// holding the bridge's `host-<ppid>` fallback made every unregistered
+// session on this one count as a fault: `dibs doctor` reported broken
+// hooks across a fleet whose routing was correct, which is the verdict
+// nobody can act on.
+//
+// Hook RESOLUTION has narrowed by host since round thirty-six
+// (AgentForHookOn); the diagnostic beside it had the host in scope and
+// threw it away. Round sixty-five of the pre-release review.
+func TestAnAgentOnAnotherMachineIsNotAPossibleCallerHere(t *testing.T) {
+	const dir, here, there = "/workspace/repo", "machine-a", "machine-b"
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	e.SetHostID(here)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	// An agent on the OTHER machine, at the same path, holding the
+	// bridge's fallback session id: the shape that reads as a possible
+	// misbinding when nobody asks which machine it is on.
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpRegister, Name: "far", Nonce: "n-far", SessionID: "host-4242",
+		Agent: &core.AgentInfo{CWD: dir, HostID: there},
+	}); err != nil {
+		t.Fatalf("setup: register: %v", err)
+	}
+
+	// An unregistered session HERE, in a directory of the same name.
+	if _, err := e.HookPollFrom(ctx, "reviewer-session", "SessionStart", dir, here, false, false); err != nil {
+		t.Fatalf("hook_poll: %v", err)
+	}
+	h := e.HookHealth()
+	if h.PollUnresolved != 0 || h.PollStrangers != 1 {
+		t.Errorf("an unregistered session was called a misbinding because an agent on "+
+			"ANOTHER machine works at a path of the same name: unresolved=%d strangers=%d",
+			h.PollUnresolved, h.PollStrangers)
+	}
+	// "only-strangers" is the honest verdict here: nothing has resolved
+	// on this board yet, which is a different state from healthy. What
+	// must NOT happen is a misbinding verdict, which is the one that
+	// tells an operator their wake path is broken.
+	if h.Verdict == "never-resolved" || strings.HasPrefix(h.Verdict, "poll-") {
+		t.Errorf("verdict = %q: a correctly routed fleet reads as broken hooks because a "+
+			"peer machine has a directory of the same name", h.Verdict)
+	}
+
+	// And the fault shape on THIS machine is still a fault, or the host
+	// rule has simply switched the diagnostic off.
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpRegister, Name: "near", Nonce: "n-near", SessionID: "host-99",
+		Agent: &core.AgentInfo{CWD: dir, HostID: here},
+	}); err != nil {
+		t.Fatalf("setup: register near: %v", err)
+	}
+	if _, err := e.HookPollFrom(ctx, "another-session", "SessionStart", dir, here, false, false); err != nil {
+		t.Fatalf("hook_poll: %v", err)
+	}
+	if h := e.HookHealth(); h.PollUnresolved == 0 {
+		t.Errorf("a miss beside an agent on THIS machine whose own hooks never resolved "+
+			"stopped counting: unresolved=%d strangers=%d, and the diagnostic no longer "+
+			"catches what it exists for", h.PollUnresolved, h.PollStrangers)
 	}
 }
