@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -76,7 +77,13 @@ func managedInstall() string {
 func currentStanding() (selfupdate.Release, selfupdate.Standing, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), selfupdate.CheckTimeout)
 	defer cancel()
-	rel, err := selfupdate.Latest(ctx, daemonClient(selfupdate.CheckTimeout))
+	// A PLAIN client, not daemonClient. That one carries this board's trust
+	// store, its user agent and the guard that refuses to send the board's
+	// credentials somewhere they do not belong, all of which are about
+	// talking to a DAEMON. github.com is a third party, and routing a request
+	// to it through the board's credential path conflates two things that
+	// should not be near each other.
+	rel, err := selfupdate.Latest(ctx, &http.Client{Timeout: selfupdate.CheckTimeout})
 	if err != nil {
 		return rel, selfupdate.Unknowable, err
 	}
@@ -121,18 +128,22 @@ func fetchUpgrade(o upgradeOpts) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	c := daemonClient(0)
+	c := &http.Client{Timeout: 0}
 
 	if o.allowUnsigned {
 		fmt.Println(ui.Attn("--allow-unsigned: the release's signature will NOT be checked. " +
 			"The digest below proves the download arrived intact and says nothing about " +
 			"who produced it"))
-	} else if err := selfupdate.Verify(ctx, c, rel, staged); err != nil {
-		return err
+	}
+	var proved string
+	if !o.allowUnsigned {
+		if proved, err = selfupdate.Verify(ctx, c, rel, staged); err != nil {
+			return err
+		}
 	}
 	goos, goarch := selfupdate.Platform()
 	fmt.Printf("fetching %s for %s/%s\n", rel.Tag, goos, goarch)
-	if err := selfupdate.Fetch(ctx, c, rel, goos, goarch, staged); err != nil {
+	if err := selfupdate.Fetch(ctx, c, rel, goos, goarch, staged, proved); err != nil {
 		return err
 	}
 	if err := placePayload(staged, into); err != nil {
@@ -170,20 +181,39 @@ func writable(dir string) error {
 // is byte-identical to a working one. A rename gives a fresh inode and no
 // cached verdict.
 func placePayload(from, into string) error {
-	for _, name := range selfupdate.Payload {
+	// EVERY source is checked before ANY destination is touched.
+	//
+	// The same rule `release.Stamp` learned: it wrote the changelog first and
+	// then rewrote manifests one at a time, so a failure part way left the
+	// release half stamped. Here the stakes are higher, because placing a file
+	// REMOVES the old one first, and a missing entry discovered half way
+	// through would leave this machine with no dibd at all.
+	place := make([][2]string, 0, len(selfupdate.Payload()))
+	for _, name := range selfupdate.Payload() {
 		src := filepath.Join(from, name)
 		if _, err := os.Stat(src); err != nil {
 			if name == "dibs-presence" || name == "Dibs.app" {
 				continue // macOS only; a Linux archive carries neither
 			}
-			return fmt.Errorf("the release archive did not contain %s", name)
+			return fmt.Errorf("the release archive did not contain %s, so nothing has "+
+				"been replaced", name)
 		}
-		dst := filepath.Join(into, name)
-		if err := os.RemoveAll(dst); err != nil {
-			return fmt.Errorf("replacing %s: %w", dst, err)
+		place = append(place, [2]string{src, filepath.Join(into, name)})
+	}
+	for _, p := range place {
+		// `rm` before the rename, deliberately, and the reason is recorded in
+		// the Taskfile for the same operation: macOS caches a binary's
+		// code-signature validation against its INODE. Writing over an
+		// existing executable reuses the inode with new content, the kernel
+		// sees a CDHash that no longer matches, and every later run is
+		// SIGKILLed with exit 137 and no message, from a file that is
+		// byte-identical to a working one. A rename gives a fresh inode and no
+		// cached verdict.
+		if err := os.RemoveAll(p[1]); err != nil {
+			return fmt.Errorf("replacing %s: %w", p[1], err)
 		}
-		if err := os.Rename(src, dst); err != nil {
-			return fmt.Errorf("installing %s: %w", dst, err)
+		if err := os.Rename(p[0], p[1]); err != nil {
+			return fmt.Errorf("installing %s: %w", p[1], err)
 		}
 	}
 	return nil

@@ -32,7 +32,10 @@ const maxAsset = 256 << 20
 // release exists to carry them: shipping the two binaries alone is exactly the
 // hole that put Touch ID and notifications in the documentation and in no
 // published archive for several versions.
-var Payload = []string{"dibs", "dibd", "dibs-presence", "Dibs.app"}
+var payload = []string{"dibs", "dibd", "dibs-presence", "Dibs.app"}
+
+// Payload is what an install consists of.
+func Payload() []string { return append([]string(nil), payload...) }
 
 // Fetch downloads one release, proves it is the one the project published,
 // and lays its payload out in dest.
@@ -40,8 +43,11 @@ var Payload = []string{"dibs", "dibd", "dibs-presence", "Dibs.app"}
 // Nothing is installed here. The caller decides where these files go and when,
 // because putting them in place is the step that has to be ordered against
 // stopping a daemon, and that order is `dibs upgrade`'s to keep.
-func Fetch(ctx context.Context, c *http.Client, rel Release, goos, goarch, dest string) error {
-	return fetchFrom(ctx, c, rel, goos, goarch, dest, releaseBase)
+// checksums is the file Verify proved, handed back so that the digest checked
+// here is read from the bytes whose signature was checked. Empty means
+// nothing was verified (--allow-unsigned) and the file is fetched here.
+func Fetch(ctx context.Context, c *http.Client, rel Release, goos, goarch, dest, checksums string) error {
+	return fetchFrom(ctx, c, rel, goos, goarch, dest, releaseBase, checksums)
 }
 
 // fetchFrom is Fetch against a stated origin, so the digest comparison and
@@ -49,14 +55,26 @@ func Fetch(ctx context.Context, c *http.Client, rel Release, goos, goarch, dest 
 // origin is not a caller's to choose: an update source is a trust decision,
 // and one that could be pointed elsewhere is a way to install somebody else's
 // binary as this machine's daemon.
-func fetchFrom(ctx context.Context, c *http.Client, rel Release, goos, goarch, dest, base string) error {
+func fetchFrom(
+	ctx context.Context, c *http.Client, rel Release, goos, goarch, dest, base, checksums string,
+) error {
 	asset, err := ArchiveName(rel.Version, goos, goarch)
 	if err != nil {
 		return err
 	}
-	checksums, err := getText(ctx, c, assetURL(base, rel.Tag, ChecksumsName))
-	if err != nil {
-		return fmt.Errorf("fetching %s for %s: %w", ChecksumsName, rel.Tag, err)
+	// THE BYTES VERIFY PROVED, not a second copy of them.
+	//
+	// The first version of this had Verify download checksums.txt, check the
+	// signature over it, and then had Fetch download checksums.txt AGAIN and
+	// read the digest out of that. Two fetches, so the file whose signature
+	// was checked and the file the digest came from were not provably the
+	// same bytes, and a server that answered differently the second time
+	// would have been believed. The whole chain hangs on this one file, so it
+	// is read once and passed along.
+	if checksums == "" {
+		if checksums, err = getText(ctx, c, assetURL(base, rel.Tag, ChecksumsName)); err != nil {
+			return fmt.Errorf("fetching %s for %s: %w", ChecksumsName, rel.Tag, err)
+		}
 	}
 	want, err := ChecksumFor(checksums, asset)
 	if err != nil {
@@ -90,18 +108,18 @@ func fetchFrom(ctx context.Context, c *http.Client, rel Release, goos, goarch, d
 // that were documented, printed and not enforced. The refusal names the one
 // command that fixes it, and --allow-unsigned is there for a machine that
 // genuinely cannot have it, typed by a person who has read why.
-func Verify(ctx context.Context, c *http.Client, rel Release, dir string) error {
+func Verify(ctx context.Context, c *http.Client, rel Release, dir string) (string, error) {
 	cosign, err := usableCosign(ctx)
 	if err != nil {
-		return err
+		return "", err
 	}
 	checksums := filepath.Join(dir, ChecksumsName)
 	bundle := filepath.Join(dir, BundleName)
 	if err := saveTo(ctx, c, DownloadURL(rel.Tag, ChecksumsName), checksums); err != nil {
-		return err
+		return "", err
 	}
 	if err := saveTo(ctx, c, DownloadURL(rel.Tag, BundleName), bundle); err != nil {
-		return fmt.Errorf("fetching the signature bundle for %s: %w", rel.Tag, err)
+		return "", fmt.Errorf("fetching the signature bundle for %s: %w", rel.Tag, err)
 	}
 	// The identity is the WORKFLOW at the TAG, not merely "somebody at
 	// Agenxy": a signature is only worth the identity it is bound to, and
@@ -115,11 +133,17 @@ func Verify(ctx context.Context, c *http.Client, rel Release, dir string) error 
 		"--certificate-identity", identity,
 		"--certificate-oidc-issuer", "https://token.actions.githubusercontent.com").CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("the signature over %s did not verify for %s, so this is not the "+
-			"release %s published and nothing has been installed:\n%s",
+		return "", fmt.Errorf("the signature over %s did not verify for %s, so this is not "+
+			"the release %s published and nothing has been installed:\n%s",
 			ChecksumsName, rel.Tag, Repo, strings.TrimSpace(string(out)))
 	}
-	return nil
+	// Read AFTER the signature is checked, and returned so the caller reads
+	// the digest out of exactly what was proved.
+	proved, err := os.ReadFile(checksums) // #nosec G304 -- written by saveTo, in the caller's temp dir
+	if err != nil {
+		return "", err
+	}
+	return string(proved), nil
 }
 
 // usableCosign finds a cosign that can actually run.
@@ -260,7 +284,7 @@ func extract(archive, dir string) error {
 		}
 	}
 	if written == 0 {
-		return fmt.Errorf("%s carried none of %v", filepath.Base(archive), Payload)
+		return fmt.Errorf("%s carried none of %v", filepath.Base(archive), payload)
 	}
 	return nil
 }
@@ -269,7 +293,7 @@ func extract(archive, dir string) error {
 // itself, or something inside a payload directory.
 func wanted(name string) bool {
 	clean := strings.TrimPrefix(filepath.ToSlash(filepath.Clean(name)), "./")
-	for _, p := range Payload {
+	for _, p := range payload {
 		if clean == p || strings.HasPrefix(clean, p+"/") {
 			return true
 		}

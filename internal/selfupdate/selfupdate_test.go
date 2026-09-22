@@ -205,7 +205,7 @@ func TestADownloadThatDoesNotMatchTheReleaseIsRefused(t *testing.T) {
 	// A digest for a DIFFERENT payload: the download is intact and is not the
 	// release.
 	serveChecksums = fmt.Sprintf("%s  %s\n", strings.Repeat("0", 64), asset)
-	err = fetchFrom(context.Background(), srv.Client(), rel, "linux", "arm64", t.TempDir(), srv.URL)
+	err = fetchFrom(context.Background(), srv.Client(), rel, "linux", "arm64", t.TempDir(), srv.URL, "")
 	if err == nil {
 		t.Fatal("a download whose digest does not match must be refused")
 	}
@@ -217,13 +217,62 @@ func TestADownloadThatDoesNotMatchTheReleaseIsRefused(t *testing.T) {
 	sum := sha256.Sum256(archive)
 	serveChecksums = fmt.Sprintf("%s  %s\n", hex.EncodeToString(sum[:]), asset)
 	dest := t.TempDir()
-	if err := fetchFrom(context.Background(), srv.Client(), rel, "linux", "arm64", dest, srv.URL); err != nil {
+	if err := fetchFrom(context.Background(), srv.Client(), rel, "linux", "arm64", dest, srv.URL, ""); err != nil {
 		t.Fatalf("a matching download should unpack: %v", err)
 	}
 	for _, name := range []string{"dibd", "dibs"} {
 		if _, err := os.Stat(filepath.Join(dest, name)); err != nil {
 			t.Errorf("%s was not unpacked: %v", name, err)
 		}
+	}
+}
+
+// The digest is read from the bytes whose signature was checked, not from a
+// second copy fetched afterwards.
+//
+// The first version of this had Verify download checksums.txt and check the
+// signature over it, and then had Fetch download checksums.txt AGAIN and read
+// the digest out of that. The whole chain hangs on that one file, and two
+// fetches mean the file that was proved and the file that was used are not
+// provably the same bytes: a server answering differently the second time
+// would have been believed. Found by reading the release surface before the
+// tag, which is what that step is for.
+func TestTheDigestComesFromTheBytesThatWereVerified(t *testing.T) {
+	archive := tarball(t, map[string]string{"dibd": "payload", "dibs": "cli"})
+	var served int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, ChecksumsName):
+			served++
+			// What a server would answer on a SECOND fetch to get a different
+			// payload accepted. Handing the proved bytes in means it is never
+			// asked, so this is never reached.
+			_, _ = w.Write([]byte(strings.Repeat("0", 64) + "  anything\n"))
+		case strings.HasSuffix(r.URL.Path, ".tar.gz"):
+			_, _ = w.Write(archive)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	rel := Release{Version: "9.9.9", Tag: "v9.9.9"}
+	asset, err := ArchiveName(rel.Version, "linux", "arm64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(archive)
+	proved := fmt.Sprintf("%s  %s\n", hex.EncodeToString(sum[:]), asset)
+
+	dest := t.TempDir()
+	if err := fetchFrom(context.Background(), srv.Client(), rel,
+		"linux", "arm64", dest, srv.URL, proved); err != nil {
+		t.Fatalf("the verified checksums should be the ones used: %v", err)
+	}
+	if served != 0 {
+		t.Fatalf("%s was fetched %d times after being handed in already verified; the "+
+			"file that was proved and the file that was used must be the same bytes",
+			ChecksumsName, served)
 	}
 }
 
