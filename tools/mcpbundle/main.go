@@ -45,6 +45,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	_ "embed"
 )
 
 // A platform's binaries inside the bundle: where they came from in dist/
@@ -166,15 +168,27 @@ var helperFiles = []string{
 	"Dibs.app/Contents/MacOS/dibs-notify",
 }
 
-// assemble writes the zip: the manifest, the README, every platform's two
-// binaries, and the macOS helpers beside them, refusing a dist with any of
-// them missing.
+// icon is Dibs' mark, carried into the bundle because a manifest that
+// names one is the difference between an extension a person recognises in
+// a list and a grey placeholder. The same artwork as the macOS app icon
+// and the board's favicon, so an operator sees one thing in three places
+// rather than three things.
+//
+//go:embed icon-512.png
+var icon []byte
+
+// assemble writes the zip: the manifest, the README, the icon, every
+// platform's two binaries, and the macOS helpers beside them, refusing a
+// dist with any of them missing.
 func assemble(f *os.File, dist, helpers, version string) error {
 	zw := zip.NewWriter(f)
 	if err := addFile(zw, "manifest.json", 0o644, Manifest(version)); err != nil {
 		return err
 	}
 	if err := addFile(zw, "README.md", 0o644, []byte(readme)); err != nil {
+		return err
+	}
+	if err := addFile(zw, "icon.png", 0o644, icon); err != nil {
 		return err
 	}
 	for _, p := range platforms {
@@ -291,6 +305,7 @@ func Manifest(version string) []byte {
 		"repository":       map[string]any{"type": "git", "url": "https://github.com/Agenxy/dibs"},
 		"license":          "Apache-2.0",
 		"keywords":         []string{"agents", "coordination", "fleet", "mcp"},
+		"icon":             "icon.png",
 		"server": map[string]any{
 			"type":        "binary",
 			"entry_point": "server/darwin-arm64/dibs",
