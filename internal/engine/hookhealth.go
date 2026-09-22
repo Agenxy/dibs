@@ -93,8 +93,8 @@ type HookHealth struct {
 // exists to catch. An agent holding a thread id that is not its own (a nested
 // bridge adopting its parent's) reads as reachable here; that case is the
 // bridge's to prevent, and it does (mcpstdio_session.go).
-func (e *Engine) hookStranger(cwd string) bool {
-	for _, id := range e.state.ActiveAgentIDsIn(cwd) {
+func (e *Engine) hookStranger(cwd, host string) bool {
+	for _, id := range e.state.ActiveAgentIDsOn(cwd, host) {
 		if e.reachedByHook[id] {
 			continue
 		}
@@ -108,7 +108,11 @@ func (e *Engine) hookStranger(cwd string) bool {
 
 // noteHookFor records one lifecycle call against the agent it resolved to, if
 // any, and classifies a miss with hookStranger. Only the engine loop calls it.
-func (e *Engine) noteHookFor(kind string, l *core.Agent, cwd string) {
+//
+// The HOST comes with the directory, because both callers already resolved
+// the hook by it and a directory means nothing without it. Round sixty-five
+// of the pre-release review.
+func (e *Engine) noteHookFor(kind string, l *core.Agent, cwd, host string) {
 	if l != nil {
 		if e.reachedByHook == nil {
 			e.reachedByHook = map[string]bool{}
@@ -117,7 +121,7 @@ func (e *Engine) noteHookFor(kind string, l *core.Agent, cwd string) {
 		e.noteHook(kind, true, false)
 		return
 	}
-	e.noteHook(kind, false, e.hookStranger(cwd))
+	e.noteHook(kind, false, e.hookStranger(cwd, host))
 }
 
 // noteHook records one lifecycle call. `stranger` is consulted only when the

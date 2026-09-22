@@ -593,6 +593,25 @@ func (s *State) ActiveAgentsIn(cwd string) bool {
 // needs to ask something of each: the engine's hook-health counters ask
 // whether every one of them has already been reached by its own hooks.
 func (s *State) ActiveAgentIDsIn(cwd string) []string {
+	return s.ActiveAgentIDsOn(cwd, "")
+}
+
+// ActiveAgentIDsOn is ActiveAgentIDsIn narrowed to one machine.
+//
+// A directory is a path and a path is evidence on one computer:
+// /workspace/repo on two machines is two directories, and the plain
+// version answered with both machines' agents. Its one caller is the
+// hook-health diagnostic, which asks "could any active agent here still
+// be the caller of this unresolved hook": an agent on ANOTHER machine
+// could not, and counting it turned a correctly routed fleet red in
+// `dibs doctor`. Hook RESOLUTION has narrowed by host since round
+// thirty-six (AgentForHookOn); the diagnostic beside it kept the
+// machine and threw it away.
+//
+// Unknown on either side is not difference, the rule the rest of this
+// file follows: an agent that never said where it is, and every board
+// written before the field, answers as it always did.
+func (s *State) ActiveAgentIDsOn(cwd, host string) []string {
 	if cwd == "" {
 		return nil
 	}
@@ -600,6 +619,9 @@ func (s *State) ActiveAgentIDsIn(cwd string) []string {
 	var ids []string
 	for _, l := range s.Agents {
 		if l.Status != StatusActive || l.Agent == nil {
+			continue
+		}
+		if !hookOnHost(l, host) {
 			continue
 		}
 		if CleanPath(l.Agent.CWD) == want {
