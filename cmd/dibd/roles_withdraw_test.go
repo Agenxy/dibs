@@ -441,3 +441,63 @@ func TestAnUnregisteredSuccessorDoesNotDropThePredecessorsPin(t *testing.T) {
 		t.Fatal("admin survived a configuration that declares nobody")
 	}
 }
+
+// Another admin's STALE pin is not authority to drop this one's.
+//
+// Round fifty-four let a respelled name keep its role by treating
+// another declaration of the same credential as the same holder, and
+// round fifty-five required that other name to have been granted. Both
+// asked whether a pin EXISTS, and a pin that exists can be for a
+// different credential entirely.
+//
+// Two admins, `alpha → A` and `beta → B`. The operator changes the
+// configuration to `beta → A` alone: alpha is gone from it, and beta is
+// now declared under alpha's credential. Beta still holds its pin for
+// B, and existence alone made that answer for A, so alpha's pin was
+// dropped with no demotion. Alpha then held admin with nothing
+// recording it, and removing every declaration afterwards revoked
+// nothing: a privilege the operator withdrew, kept for good, with no
+// audit trail that anything had ever granted it. Round fifty-nine of
+// the pre-release review, on round fifty-five's own fix.
+func TestAnotherAdminsStalePinDoesNotDropThisOnes(t *testing.T) {
+	eng, ctx := testEngine(t)
+	pins := loadRolePins(t.TempDir())
+	fpA := engine.RolePinFingerprint("nonce-a")
+	fpB := engine.RolePinFingerprint("nonce-b")
+
+	registerAgentAs(t, eng, "alpha", "nonce-a")
+	registerAgentAs(t, eng, "beta", "nonce-b")
+	applyDeclaredRoles(ctx, eng, RolesConfig{
+		Admin:    []string{"alpha", "beta"},
+		Identity: map[string]string{"alpha": fpA, "beta": fpB},
+	}, pins)
+	if !holdsRole(t, eng, "alpha", core.RoleAdmin) || !holdsRole(t, eng, "beta", core.RoleAdmin) {
+		t.Fatal("setup: both declared admins were not granted")
+	}
+	if pins.Pins[core.RoleAdmin]["beta"] != fpB {
+		t.Fatalf("setup: beta's pin is %q, want its own credential: this test is about a "+
+			"STALE pin and there is nothing stale yet", pins.Pins[core.RoleAdmin]["beta"])
+	}
+
+	// Alpha is withdrawn, and beta is respelled onto alpha's credential.
+	// Beta's own pin still says B, and is the stale one.
+	applyDeclaredRoles(ctx, eng, RolesConfig{
+		Admin: []string{"beta"}, Identity: map[string]string{"beta": fpA},
+	}, pins)
+
+	if holdsRole(t, eng, "alpha", core.RoleAdmin) {
+		if pins.Pins[core.RoleAdmin]["alpha"] == "" {
+			t.Fatal("alpha still holds admin and its pin is gone: the operator removed it " +
+				"from the configuration, nothing demoted it, and no later pass can, " +
+				"because the pin is what a withdrawal works through")
+		}
+	}
+
+	// And with every declaration gone, so is the role. This is the half
+	// that made the defect permanent rather than merely late.
+	applyDeclaredRoles(ctx, eng, RolesConfig{}, pins)
+	if holdsRole(t, eng, "alpha", core.RoleAdmin) {
+		t.Fatal("alpha holds admin against a configuration that declares nobody: a revoked " +
+			"privilege survived, which is the guarantee SECURITY.md makes about this file")
+	}
+}

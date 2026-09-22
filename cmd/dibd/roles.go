@@ -463,7 +463,19 @@ func authorisedElsewhere(pins *rolePins, c RolesConfig, declared map[string]map[
 		// with no pin recording it, so removing the declaration later
 		// revokes nothing and the role is held for good. Round fifty-five
 		// of the pre-release review, on round fifty-four's own fix.
-		if _, granted := pins.Pins[role][other]; granted {
+		//
+		// AND IT HAS TO BE A PIN FOR THIS CREDENTIAL. Existence alone is
+		// the same bug one step in: with `alpha → A` and `beta → B` both
+		// admin, an operator who changes the configuration to `beta → A`
+		// alone leaves beta holding a pin for B, and that stale pin
+		// answered for A. Alpha's pin was dropped without a demotion, so
+		// removing every declaration afterwards revoked nothing and alpha
+		// held admin for good, with no record that anything had granted
+		// it. A respelling is one holder under two names, which means one
+		// FINGERPRINT under two names; anything else is a withdrawal and
+		// has to go through withdrawOne. Round fifty-nine of the
+		// pre-release review, on round fifty-five's own fix.
+		if got := pins.Pins[role][other]; got == pinned {
 			return true
 		}
 	}

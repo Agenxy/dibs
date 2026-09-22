@@ -64,24 +64,38 @@ type McpTool = {
  * beside the 1500ms a guard is allowed, and it leaves no lifecycle to get
  * wrong. The child is killed when the call settles, timeout included.
  *
- * EXCEPT ONE, and it is the reason `linger` exists. Registering starts the
- * bridge's index shipper, which is what gives a checkout the daemon cannot
- * read (a peer machine, a directory macOS withholds from a launchd process)
- * any semantic matching at all, and its first look at the daemon's verdict
- * is three seconds out. Killing that child at the answer meant pi
- * registered successfully and shipped nothing, ever. opencode does not have
- * this problem because it ALSO runs `dibs mcp-stdio` as its MCP server, and
- * that process lives for the session; pi has no such process, because this
- * extension is its whole surface. Found by the pre-release review, round
- * fifty-eight, in this transport's own round.
+ * EXCEPT THE CALLS THAT START AN INDEX SHIPPER, which is why `linger`
+ * exists. The shipper is what gives a checkout the daemon cannot read (a
+ * peer machine, a directory macOS withholds from a launchd process) any
+ * semantic matching at all, and its first look at the daemon's verdict is
+ * three seconds out, so killing that child at the answer meant pi
+ * succeeded and shipped nothing, ever. opencode does not have this problem
+ * because it ALSO runs `dibs mcp-stdio` as its MCP server and that process
+ * lives for the session; pi has no such process, because this extension is
+ * its whole surface. Round fifty-eight of the pre-release review.
  *
- * So a lingering child is let go of rather than killed: its stdout is
+ * WHICH CALLS is the bridge's list, not a guess: `shipIndexOnRegister`
+ * starts one for register, for resume, and for an update that moves the
+ * agent (cmd/dibs/indexship.go). The first cut kept only register, so a
+ * recovered or relocated agent lost the shipper again, and worse: resume
+ * ROTATES the token, and the register bridge still held for its shipper
+ * was then shipping with a revoked one, which is a 401 for as long as the
+ * session lasts. Keeping the newest instead means the credential the
+ * shipper holds is the current one. Round fifty-nine, on the round before
+ * it, which is what a fix to a lifecycle earns.
+ *
+ * AND ONLY WHEN THE CALL SUCCEEDED. Any reply at all used to qualify,
+ * including a JSON-RPC error, so one refused re-registration killed the
+ * healthy bridge whose shipper was running and installed one that had
+ * registered nothing. Same round.
+ *
+ * A lingering child is let go of rather than killed: its stdout is
  * destroyed, because that pipe is what holds the parent's event loop, and
  * the handle is unref'd. Measured on bun 1.3.14 and on node: the parent
- * exits at once and the child is still running two seconds later. It ends
- * when pi does, since the write end of its stdin closes then and a stdio
- * server reads that as goodbye, so the shipper's life is the session's and
- * there is nothing to leak. At most one is held; a second replaces it.
+ * exits at once and the child is still running afterwards. It ends when pi
+ * does, since the write end of its stdin closes then and a stdio server
+ * reads that as goodbye, so the shipper's life is the session's and there
+ * is nothing to leak. At most one is held; a later success replaces it.
  *
  * The handshake rides in front of the call on the same pipe. Lines are
  * processed in order, so there is nothing to wait for; it exists to state
@@ -110,9 +124,10 @@ function bridgeCall(
       if (settled) return
       settled = true
       clearTimeout(timer)
-      // A lingering child is kept only when it ANSWERED: one that timed out
-      // or died has no shipper to run and would just be a stray process.
-      if (linger && v !== null) {
+      // Kept only when the call SUCCEEDED. A timeout, a dead child or a
+      // JSON-RPC error starts no shipper, so keeping one would be a stray
+      // process, and replacing the running one with it would be worse.
+      if (linger && v !== null && !v.error && v.result) {
         try {
           lingering?.kill()
         } catch {
@@ -304,6 +319,25 @@ function stampable(cmd: string): boolean {
   return exe === "claude" || exe === "opencode" || exe === "pi"
 }
 
+/**
+ * Whether this call makes the bridge start an index shipper, and so whether
+ * its child has to outlive the answer (see bridgeCall's `linger`).
+ *
+ * MIRRORS cmd/dibs/indexship.go's shipIndexOnRegister, which is the list
+ * that decides it: register and resume always, update only when it names a
+ * cwd, because an update that does not move the agent starts nothing. A
+ * copy of a rule is what this plugin was rewritten to stop holding, and the
+ * honest account of this one is that the rule cannot be asked over the
+ * wire: the bridge decides after the reply and says nothing about it. So it
+ * is a copy, it is three lines, and the cost of it being wrong is a shipper
+ * that does not run rather than a wrong answer. Keeping too many is a
+ * process per call; keeping too few is the defect this exists for.
+ */
+function startsAShipper(tool: string, args: Record<string, unknown>): boolean {
+  if (tool === "register" || tool === "resume") return true
+  return tool === "update" && typeof args["cwd"] === "string" && args["cwd"] !== ""
+}
+
 function sessionIdOf(ctx: any): string {
   const id = ctx?.sessionManager?.getSessionId?.()
   return typeof id === "string" && id !== "" ? id : sessionIdFallback()
@@ -404,9 +438,8 @@ export default function (pi: ExtensionAPI) {
             }
             args = merged
           }
-          // register is the one call whose bridge is kept: see bridgeCall.
           const r = await rpc("tools/call", { name: t.name, arguments: args }, 30_000, sessionID,
-            t.name === "register")
+            startsAShipper(t.name, args))
           if (r === null) {
             throw new Error(
               `Dibs is not reachable through \`${BIN} mcp-stdio\`: is dibd running, and is ` +
