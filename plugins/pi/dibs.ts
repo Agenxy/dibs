@@ -84,10 +84,15 @@ type McpTool = {
  * shipper holds is the current one. Round fifty-nine, on the round before
  * it, which is what a fix to a lifecycle earns.
  *
- * AND ONLY WHEN THE CALL SUCCEEDED. Any reply at all used to qualify,
- * including a JSON-RPC error, so one refused re-registration killed the
- * healthy bridge whose shipper was running and installed one that had
- * registered nothing. Same round.
+ * AND ONLY WHEN THE CALL SUCCEEDED, WHICH HAS TWO SHAPES. A refusal is
+ * not usually a JSON-RPC error: the daemon answers an ordinary tool
+ * failure with a perfectly good response carrying `result.isError` and the
+ * code in its text (internal/mcp/mcp.go), and that is what a refused
+ * register or resume looks like. Checking only for a transport error let
+ * every one of those kill the healthy bridge whose shipper was running and
+ * keep one that had registered nothing. Rounds fifty-nine and sixty, the
+ * second of which found that the first had fixed the rarer half and
+ * written a fixture that only produced the rare shape.
  *
  * A lingering child is let go of rather than killed: its stdout is
  * destroyed, because that pipe is what holds the parent's event loop, and
@@ -127,7 +132,7 @@ function bridgeCall(
       // Kept only when the call SUCCEEDED. A timeout, a dead child or a
       // JSON-RPC error starts no shipper, so keeping one would be a stray
       // process, and replacing the running one with it would be worse.
-      if (linger && v !== null && !v.error && v.result) {
+      if (linger && v !== null && !v.error && v.result && !v.result.isError) {
         try {
           lingering?.kill()
         } catch {

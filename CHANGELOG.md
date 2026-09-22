@@ -76,9 +76,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   extension kept only the register one: a recovered or relocated agent lost
   its shipper, and worse, `resume` rotates the token, so the register bridge
   still held for its shipper went on shipping with a revoked one. And any
-  reply at all used to qualify as success, including a JSON-RPC error, so one
-  refused re-registration killed the healthy bridge and replaced it with one
-  that had registered nothing, taking the agent's shipper with it.
+  reply at all used to qualify as success, so one refused re-registration
+  killed the healthy bridge and replaced it with one that had registered
+  nothing, taking the agent's shipper with it. **A refusal has two shapes**
+  and the first cut of that fix caught only the rarer one: the daemon answers
+  an ordinary tool failure with a perfectly good JSON-RPC response carrying
+  `result.isError`, not with a transport error, and the fixture written for
+  it produced only the transport error, so it passed against code that
+  handled only that. Both shapes now fail the call, and both are driven.
 
 
 - **The pi extension keeps the bridge that registered, so its index shipper
