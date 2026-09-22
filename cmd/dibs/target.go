@@ -22,6 +22,7 @@ import (
 	"github.com/agenxy/dibs/internal/boardconfig"
 	"github.com/agenxy/dibs/internal/paths"
 	"github.com/agenxy/dibs/internal/supgang"
+	xport "github.com/agenxy/dibs/internal/transport"
 )
 
 // defaultAddr is where a daemon nobody configured is listening.
@@ -107,7 +108,7 @@ func originFor(hostPort string) string {
 	// A different daemon, so the address is all there is to go on: this is the
 	// daemon's own default rule, and it is what that daemon resolved from a
 	// bare address unless its config says otherwise.
-	if isLoopbackHostPort(hostPort) {
+	if xport.IsLoopback(hostPort) {
 		return schemePlain + hostPort
 	}
 	return schemeTLS + hostPort
@@ -150,25 +151,10 @@ func origin() string {
 	// and is refused by checkConfigReadable, which the shared transport asks
 	// before any request leaves: not here, because this returns a string and a
 	// caller that cannot be told is a caller that guesses.
-	if isLoopbackHostPort(addr()) {
+	if xport.IsLoopback(addr()) {
 		return schemePlain + addr()
 	}
 	return schemeTLS + addr()
-}
-
-// isLoopbackHostPort mirrors the daemon's own loopback test. A host it cannot
-// parse is treated as remote: assuming plaintext for something unrecognised is
-// the failure that cannot be undone by a retry.
-func isLoopbackHostPort(hostPort string) bool {
-	host, _, err := net.SplitHostPort(hostPort)
-	if err != nil {
-		host = hostPort
-	}
-	if host == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(strings.Trim(host, "[]"))
-	return ip != nil && ip.IsLoopback()
 }
 
 // checkConfigReadable refuses to continue when this data directory's config is

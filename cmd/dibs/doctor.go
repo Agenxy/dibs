@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agenxy/dibs/internal/appfirewall"
 	"github.com/agenxy/dibs/internal/boardconfig"
 	"github.com/agenxy/dibs/internal/humanauth"
 	"github.com/agenxy/dibs/internal/liveness"
@@ -26,6 +27,7 @@ import (
 	"github.com/agenxy/dibs/internal/paths"
 	"github.com/agenxy/dibs/internal/remap"
 	"github.com/agenxy/dibs/internal/supgang"
+	xport "github.com/agenxy/dibs/internal/transport"
 	"github.com/agenxy/dibs/internal/ui"
 )
 
@@ -198,6 +200,7 @@ func (d *diagnosis) run(verbose bool) error {
 		checkSupervision(verbose, ok, warn)
 		checkOneDaemon(verbose, ok, warn)
 		checkCodeSignature(ok, warn)
+		checkIncomingFirewall(ok, bad)
 		checkServiceBinary(ok, warn)
 		return earlyDoctorResult(d.probs, d.warns)
 	}
@@ -239,6 +242,7 @@ func (d *diagnosis) run(verbose bool) error {
 	checkSupervision(verbose, ok, warn)
 	checkOneDaemon(verbose, ok, warn)
 	checkCodeSignature(ok, warn)
+	checkIncomingFirewall(ok, bad)
 	checkServiceBinary(ok, warn)
 	if b, err := boardSnapshot(); err == nil {
 		checkCoordinatorIsReachable(b, ok, warn)
@@ -1184,6 +1188,44 @@ func checkCodeSignature(ok reportFn, warn fixFn) {
 
 // runningDaemonPath is the executable behind the daemon serving this data
 // directory, or "" if it cannot be determined.
+// checkIncomingFirewall answers, for a board other machines are meant to reach,
+// whether this machine's own firewall will let them.
+//
+// The macOS Application Firewall drops inbound connections to an executable it
+// has not been told about, and drops them in the one way that leaves no
+// evidence anywhere: the handshake completes, Accept never fires, and the
+// client waits for a timeout. `dibd up` prints a working-looking board URL, the
+// port answers a TCP probe, and nothing in either log is wrong. It normally
+// asks the person at the keyboard; a daemon installed over ssh has nobody to
+// ask, so the default stands silently. This is a problem rather than a warning:
+// the board is published at an address that cannot serve it.
+func checkIncomingFirewall(ok reportFn, bad fixFn) {
+	// Loopback is never filtered, so a single-machine board has nothing to say.
+	// Asking anyway would put a firewall sentence in front of every operator who
+	// has no firewall question.
+	if xport.IsLoopback(addr()) {
+		return
+	}
+	daemon := runningDaemonPath()
+	if daemon == "" {
+		var err error
+		if daemon, err = exec.LookPath("dibd"); err != nil {
+			return // a missing daemon is already reported above
+		}
+	}
+	switch appfirewall.Check(daemon) {
+	case appfirewall.Allowed, appfirewall.Off:
+		ok("this machine's firewall lets other computers reach " + addr())
+	case appfirewall.Blocked:
+		bad("this machine's firewall is dropping connections to "+addr()+
+			", so the board is unreachable from every other computer",
+			"connections are not refused, they hang, which is why this looks like a "+
+				"network fault. Let the daemon through: "+appfirewall.Fix(daemon))
+	case appfirewall.Unknown:
+		// Nothing honest to say. Saying it anyway is how a report becomes noise.
+	}
+}
+
 func runningDaemonPath() string {
 	daemons, err := paths.LiveDaemons()
 	if err != nil {

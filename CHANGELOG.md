@@ -5,6 +5,37 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Dibs now says when the machine's own firewall is swallowing the board.**
+  macOS ships the Application Firewall enabled, and it drops inbound
+  connections to an executable it has not been told about in the one way that
+  leaves no evidence: the TCP handshake completes and `Accept` never fires, so
+  the client hangs until it times out and the daemon logs a healthy startup and
+  no traffic. It normally asks the person at the keyboard, and a daemon
+  installed over ssh has nobody to ask. `dibd` now warns immediately after
+  `dibd up` when it binds an address other machines can route to and the
+  firewall will not let them through, and `dibs doctor` reports it as a problem
+  and prints the fix. On an MDM-managed Mac it prints a settings pane instead
+  of a command, because `socketfilterfw` refuses every modifying verb there.
+  Found by deploying Dibs as a hub on a second Mac, where `dibd up` printed a
+  board URL, the port answered a TCP probe, and the board was unreachable from
+  every other computer on the LAN.
+
+### Changed
+
+- **One place decides whether an address is loopback.** There were five: the
+  shared `internal/transport.IsLoopback` and four hand-copies, which disagreed
+  one input at a time. One read a wildcard `:4777` bind as confined to this
+  machine and handed a board bound wide an ssh-forward recipe it could not
+  follow; that was fixed in the copy, with a comment noting that the shared
+  code already read it correctly. Two more carried comments naming
+  `internal/transport` as the real rule while restating it anyway, and one was
+  dead code. The answer decides plaintext versus TLS and forward versus trust,
+  so a second opinion about it is a second answer.
+  `TestOnlyOnePlaceDecidesWhetherAnAddressIsLoopback` keeps it folded by shape.
+  `internal/mcp` keeps its own, deliberately and with the reason recorded: it
+  reads a PEER's address, where a name is not proof of anything.
 ### Changed
 
 - **A new mark: three agents, one of them holding a claim.** The old one was
