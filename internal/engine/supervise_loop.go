@@ -233,7 +233,9 @@ func (e *Engine) agentForOwner(owner string) string {
 	if l, ok := e.state.Agents[owner]; ok {
 		return l.ID
 	}
-	if l := e.state.AgentForHook(owner, ""); l != nil {
+	// No cwd and no host: this is a session id looked up by itself, and
+	// the machine narrows nothing when the directory does not.
+	if l := e.state.AgentForHookOn(owner, "", ""); l != nil {
 		return l.ID
 	}
 	return ""

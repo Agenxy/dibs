@@ -45,7 +45,7 @@ func TestReclaimingAGuessedAliasLeavesTheOwnersStatedPrimary(t *testing.T) {
 		t.Fatal("reclaiming a guessed alias took the owner's STATED primary with it: the owner's hooks " +
 			"resolve to the newcomer")
 	}
-	if got := st.AgentForHook(bridge, ""); got == nil || got.ID != "owner" {
+	if got := st.AgentForHookOn(bridge, "", ""); got == nil || got.ID != "owner" {
 		t.Fatalf("hooks quoting %s resolve to %v, not the owner", bridge, got)
 	}
 }

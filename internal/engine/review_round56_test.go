@@ -44,7 +44,7 @@ func TestAPlainCheckInDoesNotGuessOverAStatedThread(t *testing.T) {
 	if got := threadIDOf(l); got != threadA {
 		t.Fatalf("the wake resumes %q, not the stated thread", got)
 	}
-	if got := st.AgentForHook(threadB, dir); got != nil && got.ID == "r" {
+	if got := st.AgentForHookOn(threadB, dir, ""); got != nil && got.ID == "r" {
 		t.Fatalf("the other session's hooks resolve to %s's mailbox", got.ID)
 	}
 }

@@ -575,27 +575,6 @@ func (s *State) releaseClaims(agent string) []string {
 	return released
 }
 
-// ActiveAgentsIn is AgentsIn narrowed to agents that are answering right now.
-//
-// It is the discriminator the hook-health counters need. A lifecycle hook that
-// resolves to nobody has two very different explanations: the session was never
-// registered (the ordinary case for a harness the plugin is installed in but
-// the agent never called register from), or an agent IS live in that directory
-// and the hook is carrying a session id it did not register with, which is the
-// join fault that left a whole board unwakeable. Dormant and stale agents do
-// not count: a seat that is asleep in a directory says nothing about which
-// session is asking now.
-func (s *State) ActiveAgentsIn(cwd string) bool {
-	return len(s.ActiveAgentIDsIn(cwd)) > 0
-}
-
-// ActiveAgentIDsIn lists the agents ActiveAgentsIn counts, for a caller that
-// needs to ask something of each: the engine's hook-health counters ask
-// whether every one of them has already been reached by its own hooks.
-func (s *State) ActiveAgentIDsIn(cwd string) []string {
-	return s.ActiveAgentIDsOn(cwd, "")
-}
-
 // ActiveAgentIDsOn is ActiveAgentIDsIn narrowed to one machine.
 //
 // A directory is a path and a path is evidence on one computer:
@@ -631,22 +610,19 @@ func (s *State) ActiveAgentIDsOn(cwd, host string) []string {
 	return ids
 }
 
-// AgentsIn reports whether any agent that still exists works in this directory,
-// whatever its status.
-//
-// Deliberately NOT ReattachableIn, which answers a different question and was
-// briefly used for this one. That one lists rows somebody could reclaim, so it
-// excludes ACTIVE agents and rows with no nonce. For "did this hook arrive
-// somewhere that coordinates at all", a live agent obviously counts, and it is
-// the case that matters most: a directory whose agents are all busy is exactly
-// where a hook resolving to nobody is a fault rather than background noise.
-func (s *State) AgentsIn(cwd string) bool {
+// AgentsOn is AgentsIn narrowed to one machine, for the same reason
+// ActiveAgentIDsOn is: /workspace/repo on two computers is two
+// directories, and its caller is deciding whether a hook that resolved
+// to nobody landed somewhere that coordinates AT ALL. A peer machine's
+// agent says nothing about that, and counting it turned "this directory
+// has no agents" into "the wake path is reaching no one" in the log.
+func (s *State) AgentsOn(cwd, host string) bool {
 	if cwd == "" {
 		return false
 	}
 	want := CleanPath(cwd)
 	for _, l := range s.Agents {
-		if l.Gone() || l.Agent == nil {
+		if l.Gone() || l.Agent == nil || !hookOnHost(l, host) {
 			continue
 		}
 		if CleanPath(l.Agent.CWD) == want {
@@ -656,22 +632,20 @@ func (s *State) AgentsIn(cwd string) bool {
 	return false
 }
 
-// ReattachableIn names the idle agents that were working in this directory and
-// still hold a nonce, sorted, so the answer is stable.
+// ReattachableOn is ReattachableIn narrowed to one machine, and this one
+// is not a diagnostic.
 //
-// It exists so the hook path can tell an unresolved session that an identity of
-// its own may be waiting, WITHOUT that path re-implementing what "the same
-// directory" means. Two implementations of a path rule is a bug this repository
-// already carries an open issue about.
-//
-// Names only. Whether any of them has mail is deliberately not answered here:
-// the caller has not proved it is any of these agents, and the reason the hook
-// refuses to resolve a supplied session id by directory at all is that an
-// earlier build answered a stranger with another agent's messages.
-//
-// Live agents are excluded: somebody is being them right now, and inviting a
-// second session to reattach would fork the identity rather than recover it.
-func (s *State) ReattachableIn(cwd string) []string {
+// It answers an unregistered session with the names of idle agents that
+// worked in its directory and the advice "if that is you, register with
+// the SAME name and the nonce you kept". A directory is a path, so a
+// dormant agent at /workspace/repo on ANOTHER computer was offered to a
+// session here: an invitation to adopt a different machine's identity,
+// which is the fork the whole session-identity rule exists to prevent.
+// The nonce still stands between the invitation and the act, so nothing
+// was taken; being told to try is wrong on its own. Round sixty-five of
+// the pre-release review, in the sweep after the third round in a row
+// found this same sentence missing somewhere new.
+func (s *State) ReattachableOn(cwd, host string) []string {
 	if cwd == "" {
 		return nil
 	}
@@ -681,7 +655,7 @@ func (s *State) ReattachableIn(cwd string) []string {
 		switch {
 		case l.Status == StatusArchived || l.Status == StatusClosed || l.Status == StatusActive:
 			continue
-		case l.Agent == nil || CleanPath(l.Agent.CWD) != want:
+		case l.Agent == nil || CleanPath(l.Agent.CWD) != want || !hookOnHost(l, host):
 			continue
 		case l.Nonce == "":
 			continue // nobody can reattach to it, so saying so would be cruel
