@@ -761,21 +761,39 @@ const Board = (() => {
       if (by === "focus") again.focus({ preventScroll: true })
     })
 
+    const isOpen = () => { try { return tip.matches(":popover-open") } catch { return false } }
+
     // adopt points the popover at a node without re-running the open sequence,
     // so a redraw does not restart the fade: the reader should not be able to
     // tell that the thing they are reading was rebuilt underneath them.
+    //
+    // It does make sure the thing is OPEN, though, and that is not a detail.
+    // "Anchored to a mark but closed" was a state this could reach and never
+    // leave: a redraw re-acquired the mark without reopening, and `show`
+    // below then returned early for that same mark forever, because it
+    // compared identity alone. The explanation was gone and no amount of
+    // focusing or hovering it brought it back. It presented as a board that
+    // stops explaining its own marks after the fleet moves, which is the one
+    // screen where the fleet moving is the entire point, and as three browser
+    // checks that failed together in changing subsets: the popover survived a
+    // redraw or it did not, and if it did not, every later check in that run
+    // inherited a closed popover with an anchor still set.
     function adopt(el) {
       anchor = el
       el.style.anchorName = "--agents-why"
+      if (!isOpen()) { try { tip.showPopover() } catch { /* nothing to open */ } }
     }
 
     function show(el, how) {
       by = how
-      if (el === anchor) return
+      // IDENTITY AND STATE. Identity alone was the bug above: the same mark
+      // with the popover closed is not "already showing", it is the case that
+      // most needs showing.
+      if (el === anchor && isOpen()) return
       hide()
       adopt(el)
       tip.textContent = el.dataset.why
-      try { tip.showPopover() } catch { return }
+      if (!isOpen()) { try { tip.showPopover() } catch { return } }
       watch.observe(document.body, { childList: true, subtree: true })
     }
     function hide() {
@@ -786,13 +804,36 @@ const Board = (() => {
     }
     const mark = (e) => e.target?.closest?.("[data-why]")
 
+    // THE INPUT THAT OPENED IT IS THE INPUT THAT CLOSES IT.
+    //
+    // Without that rule a redraw closes the explanation a keyboard reader is
+    // in the middle of, and the observer above cannot help: replacing the
+    // board's HTML moves a node out from under the mouse cursor, so the
+    // browser synthesises pointerout for it, `onOut` saw a pointer leaving an
+    // anchor nobody was pointing at, and hid a popover that focus had opened
+    // and that the observer had just carefully re-acquired. Traced, not
+    // guessed: mutation -> adopt -> focusin -> pointerout -> hide, in that
+    // order, on a board that redrew by itself.
+    //
+    // The same reasoning covers the other two directions. A mouse moving
+    // across empty board should not close what a tab key opened, and tabbing
+    // away should not close what the mouse is resting on. `by` already
+    // recorded how the current mark was reached and only `show` was reading
+    // it.
     const onOver = (e) => {
       at = { x: e.clientX, y: e.clientY }
       const m = mark(e)
-      if (m) show(m, "pointer"); else hide()
+      if (m) show(m, "pointer")
+      else if (by === "pointer") hide()
     }
-    const onOut = (e) => { if (anchor && !anchor.contains(e.relatedTarget)) hide() }
-    const onIn = (e) => { const m = mark(e); m ? show(m, "focus") : hide() }
+    const onOut = (e) => {
+      if (by === "pointer" && anchor && !anchor.contains(e.relatedTarget)) hide()
+    }
+    const onIn = (e) => {
+      const m = mark(e)
+      if (m) show(m, "focus")
+      else if (by === "focus") hide()
+    }
     // Escape closes it without moving focus: the reader is mid-scan and being
     // thrown back to the top of the board is a worse outcome than the popover.
     const onKey = (e) => { if (e.key === "Escape" && anchor) { e.stopPropagation(); hide() } }
