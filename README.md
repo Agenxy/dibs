@@ -336,6 +336,17 @@ dibs configure --service     # writes ~/.config/systemd/user/dibs.service
 systemctl --user enable --now dibs
 ```
 
+**On an always-on host, read the line the command prints after that.** Both
+units are USER scoped, so both come back with your session rather than with
+the machine: a LaunchAgent lives in the `gui/<uid>` domain, which exists while
+you are logged in at the screen, and a systemd user manager is torn down when
+your last session ends. On a laptop that is exactly right. On a Mac mini in a
+cupboard that somebody logged into once, it means the board survives a crash
+and not a power cut. `dibs configure --service` says which of the two this
+machine is and names the one setting that changes it (automatic login, or a
+system LaunchDaemon; `loginctl enable-linger` on Linux), and `dibs doctor`
+re-checks it.
+
 To stop the daemon for this data directory, and only that one:
 
 ```sh

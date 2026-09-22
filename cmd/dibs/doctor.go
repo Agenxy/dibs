@@ -201,6 +201,7 @@ func (d *diagnosis) run(verbose bool) error {
 		checkOneDaemon(verbose, ok, warn)
 		checkCodeSignature(ok, warn)
 		checkIncomingFirewall(ok, bad)
+		checkServiceReturnsAfterAReboot(ok, warn)
 		checkServiceBinary(ok, warn)
 		return earlyDoctorResult(d.probs, d.warns)
 	}
@@ -243,6 +244,7 @@ func (d *diagnosis) run(verbose bool) error {
 	checkOneDaemon(verbose, ok, warn)
 	checkCodeSignature(ok, warn)
 	checkIncomingFirewall(ok, bad)
+	checkServiceReturnsAfterAReboot(ok, warn)
 	checkServiceBinary(ok, warn)
 	if b, err := boardSnapshot(); err == nil {
 		checkCoordinatorIsReachable(b, ok, warn)
@@ -1199,6 +1201,30 @@ func checkCodeSignature(ok reportFn, warn fixFn) {
 // asks the person at the keyboard; a daemon installed over ssh has nobody to
 // ask, so the default stands silently. This is a problem rather than a warning:
 // the board is published at an address that cannot serve it.
+// checkServiceReturnsAfterAReboot reports a unit that is installed and will
+// not start until somebody logs in.
+//
+// A warning rather than a problem, and the distinction is the point: on a
+// laptop, coming back at login is exactly right, and calling it broken would
+// be noise on most machines Dibs runs on. On the always-on host somebody
+// deploys a hub to it is the difference between a board that survives a power
+// cut and one that does not, and the operator is the only one who can tell
+// the two machines apart. So this states the fact and names both settings
+// rather than judging which machine this is.
+func checkServiceReturnsAfterAReboot(ok reportFn, warn fixFn) {
+	if unit, _ := unitDaemon(); unit == "" {
+		return // no service installed, so there is nothing to come back
+	}
+	switch state, fix := bootReturnHere(); state {
+	case bootAtBoot:
+		ok("the service starts at boot, with nobody logged in")
+	case bootAtLogin:
+		warn("the service comes back at login, not at boot", fix)
+	case bootUnknown:
+		// Nothing honest to say about this machine.
+	}
+}
+
 func checkIncomingFirewall(ok reportFn, bad fixFn) {
 	// Loopback is never filtered, so a single-machine board has nothing to say.
 	// Asking anyway would put a firewall sentence in front of every operator who

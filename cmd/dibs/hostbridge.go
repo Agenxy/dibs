@@ -67,7 +67,8 @@ func hostBridge(args []string) error {
 		fmt.Println("  printed; the [wake.exec] table is read from that DIBS_DIR's dibs.toml.")
 		fmt.Println()
 		fmt.Println("  --service writes a launchd/systemd unit that keeps the bridge running")
-		fmt.Println("  across logins and reboots, and prints the command to load it.")
+		fmt.Println("  across logins, and prints the command to load it, and says whether")
+		fmt.Println("  this machine brings it back at boot or only when you log in.")
 		return nil
 	}
 	if service {
