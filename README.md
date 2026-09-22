@@ -474,11 +474,31 @@ and `DIBS_DIR` set.
 
 ### Upgrading a running fleet
 
-After installing a new build, one command moves the daemon onto it:
+One command moves the daemon onto a new build, and a flag goes and gets one:
 
 ```sh
-dibs upgrade
+dibs upgrade --check     # is there a newer release? changes nothing
+dibs upgrade --fetch     # get it, prove it, install it, then do the move
+dibs upgrade             # just the move, onto the build you already installed
 ```
+
+`--fetch` verifies the cosign signature over the release's checksums, checks
+the archive against its digest, and installs the whole payload beside the
+daemon this machine runs: both binaries, the Touch ID helper and the notifier
+bundle. It refuses three things on purpose. A **Homebrew** install it leaves to
+Homebrew, because replacing a file brew owns makes brew and the disk disagree
+and the next `brew upgrade` puts the old build back. Without **cosign** it
+refuses rather than warning, because a checksum served beside the file it
+describes proves the download arrived intact and nothing about who produced it
+(`--allow-unsigned` is there if a machine genuinely cannot have it). And a
+cosign that is present but cannot run is reported as a missing tool, not as a
+failed verification, because those mean opposite things.
+
+`dibs doctor` asks the same question as a warning. Nothing runs on a timer and
+the daemon never checks: every request Dibs makes to the network is one
+somebody asked for, and `DIBS_NO_UPDATE_CHECK=1` stops doctor asking too.
+
+The rest of this section is what the move itself does, with or without a fetch.
 
 It is deliberately not `dibs stop && dibd &`, because three things go wrong
 there and all three are silent. The service unit pins an absolute path, so a
@@ -504,7 +524,8 @@ retained, so if the new build itself is the failure, install the previous one.
 Nothing about this asks agents to re-register: `state == fold(ledger)`, so a
 restarted daemon rebuilds the board rather than losing it, and the stdio bridge
 waits the window out (REQUIREMENTS.md R12). `dibs upgrade -n` says what it would
-do and changes nothing.
+do and changes nothing; with `--fetch` it stops after installing, so you can
+look at what landed before a fleet moves onto it.
 
 ### Configuration
 

@@ -47,6 +47,13 @@ import (
 type upgradeOpts struct {
 	dryRun   bool
 	adoptDir bool
+	// fetch and check are the half R12 was missing: nothing told an operator
+	// a newer version existed. Separate flags rather than new behaviour for
+	// the bare command, because a bare `dibs upgrade` is safe to run under a
+	// live fleet and must not become a command that reaches the network.
+	fetch         bool
+	check         bool
+	allowUnsigned bool
 }
 
 func upgradeCmd(args []string) error {
@@ -57,6 +64,12 @@ func upgradeCmd(args []string) error {
 			o.dryRun = true
 		case "--adopt-dir":
 			o.adoptDir = true
+		case "--fetch":
+			o.fetch = true
+		case "--check":
+			o.check = true
+		case "--allow-unsigned":
+			o.allowUnsigned = true
 		case "--help", "-h":
 			fmt.Print(upgradeHelp)
 			return nil
@@ -67,15 +80,38 @@ func upgradeCmd(args []string) error {
 			return fmt.Errorf("dibs upgrade: unknown argument %q\n\n%s", a, upgradeHelp)
 		}
 	}
+	switch {
+	case o.check && o.fetch:
+		return fmt.Errorf("dibs upgrade: --check asks and changes nothing, --fetch does "+
+			"it; pick one\n\n%s", strings.TrimRight(upgradeHelp, "\n"))
+	case o.check:
+		return checkForUpdate()
+	case o.fetch:
+		return fetchUpgrade(o)
+	}
+	if o.allowUnsigned {
+		return fmt.Errorf("dibs upgrade: --allow-unsigned only means anything with "+
+			"--fetch, which is the step that has a signature to check\n\n%s",
+			strings.TrimRight(upgradeHelp, "\n"))
+	}
 	return upgrade(o)
 }
 
 const upgradeHelp = `dibs upgrade: move the running daemon onto the dibd you have installed.
 
-  It does NOT fetch anything. Install the new build first (brew upgrade, or
-  task install from a checkout); this is the step that puts the fleet onto it.
-  Run bare on an up-to-date install and it correctly does nothing, which reads
-  as a failure if you expected it to go and get the release.
+  Bare, it does NOT fetch anything: install the new build first (brew upgrade,
+  or task install from a checkout) and this puts the fleet onto it. Run bare on
+  an up-to-date install and it correctly does nothing.
+
+  --check            ask what the current release is and print where this build
+                     stands. Changes nothing, reaches github.com, and is the
+                     same question "dibs doctor" asks (DIBS_NO_UPDATE_CHECK=1
+                     turns it off there)
+  --fetch            get that release, prove it is the one this project signed,
+                     install it beside the dibd this machine runs, and then do
+                     the cutover below. Refuses on a Homebrew install, which
+                     brew has to upgrade, and refuses without cosign unless
+                     --allow-unsigned says to accept the digest alone
 
   Checks that the new binary can rebuild this board BEFORE stopping anything,
   reconciles a service unit that pins the wrong daemon, restarts, and verifies

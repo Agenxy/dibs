@@ -9,6 +9,37 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`dibs upgrade` can find out about a release and go and get it.** It has
+  always moved a fleet onto the dibd you had INSTALLED and said, in as many
+  words, that it does not fetch: a defensible split that left a hole with
+  nothing in it, because nothing anywhere told an operator a newer version
+  existed. `--check` asks and changes nothing; `--fetch` gets the release,
+  verifies the cosign signature over its checksums, checks the archive's
+  digest, installs the whole payload (both binaries, the Touch ID helper and
+  the notifier bundle) beside the daemon this machine runs, and only then
+  performs the cutover that already existed, which proves the new binary can
+  rebuild this board before stopping anything. `dibs doctor` asks the same
+  question as a warning, and `DIBS_NO_UPDATE_CHECK=1` stops it asking.
+  Nothing runs on a timer and the daemon never checks: every request Dibs
+  makes to the network is one somebody asked for.
+
+  Three refusals are as much of the design as the fetching. A **Homebrew**
+  install is never self-replaced, because overwriting a file brew owns leaves
+  its records and the disk disagreeing and the next `brew upgrade` puts the
+  old build back with nothing explaining why; the operator gets
+  `brew upgrade --cask dibs` instead. Without **cosign** it refuses rather
+  than warning, because a checksum served beside the file it describes proves
+  the download arrived intact and nothing about who made it, and this step
+  decides which binary runs as a daemon; `--allow-unsigned` is there, typed by
+  a person who has read why. And a cosign that is PRESENT but cannot run (a
+  mise or asdf shim with no version selected looks exactly like this, and is
+  what this machine had) is reported as a missing tool rather than as a failed
+  verification: one means "install this" and the other means "do not run this
+  binary", and the first draft said the second.
+
+  Verified against the real v0.0.7 release, signature and all, into a
+  throwaway directory.
+
 - **`dibs configure --service` now says whether the daemon comes back at boot
   or only when you log in.** Both units it writes are user scoped: a launchd
   LaunchAgent lives in the `gui/<uid>` domain, which exists while that user is

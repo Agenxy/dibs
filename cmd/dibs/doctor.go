@@ -202,6 +202,7 @@ func (d *diagnosis) run(verbose bool) error {
 		checkCodeSignature(ok, warn)
 		checkIncomingFirewall(ok, bad)
 		checkServiceReturnsAfterAReboot(ok, warn)
+		reportUpdate(ok, warn)
 		checkServiceBinary(ok, warn)
 		return earlyDoctorResult(d.probs, d.warns)
 	}
@@ -245,6 +246,7 @@ func (d *diagnosis) run(verbose bool) error {
 	checkCodeSignature(ok, warn)
 	checkIncomingFirewall(ok, bad)
 	checkServiceReturnsAfterAReboot(ok, warn)
+	reportUpdate(ok, warn)
 	checkServiceBinary(ok, warn)
 	if b, err := boardSnapshot(); err == nil {
 		checkCoordinatorIsReachable(b, ok, warn)

@@ -104,7 +104,9 @@ setup:
                            unit pinning the wrong daemon, restarts, and checks
                            the fleet came back at the same serial. No agent
                            re-registers (-n dry-run; --adopt-dir also renames a
-                           data directory an older version named)
+                           data directory an older version named; --check asks
+                           whether a newer release exists and --fetch gets it,
+                           signature checked, before doing the move)
 
 human/admin (interactive terminal; the god-view needs the admin password):
   dibs messages           ALL mail, decrypted: prompts admin password
