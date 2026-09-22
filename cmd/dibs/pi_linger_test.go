@@ -128,16 +128,26 @@ func piTransport(t *testing.T) (transport, fake string) {
 	// a bridge with a shipper to run does. The subject is the transport's
 	// lifecycle, not the daemon's.
 	fake = filepath.Join(dir, "fake-dibs")
-	// DIBS_FAKE_ERROR makes it refuse the call the way a rate-limited
-	// re-registration does: a reply, and not a success.
+	// DIBS_FAKE_ERROR refuses the call THE WAY THE DAEMON DOES, which is
+	// the distinction round sixty turned on. An ordinary tool failure is
+	// not a JSON-RPC error: internal/mcp answers with a perfectly good
+	// response carrying `result.isError` and the code in its text, and a
+	// refused register or resume is exactly that. The first version of
+	// this fixture produced a transport error instead, which the daemon
+	// almost never sends, so it passed against code that handled only
+	// that shape. DIBS_FAKE_RPC_ERROR keeps the rarer one, because both
+	// have to fail the same way.
 	script := "#!/usr/bin/env -S bun run\n" +
-		"const fail = process.env.DIBS_FAKE_ERROR === \"1\"\n" +
+		"const fail = process.env.DIBS_FAKE_ERROR === \"1\" || process.env.DIBS_FAKE_RPC_ERROR === \"1\"\n" +
 		"process.stdin.setEncoding(\"utf8\")\n" +
 		"process.stdin.on(\"data\", (c: string) => {\n" +
 		"  for (const l of c.split(\"\\n\")) { if (!l.trim()) continue\n" +
 		"    try { const m = JSON.parse(l); if (m.id !== 2) continue\n" +
-		"      const body = fail ? {jsonrpc:\"2.0\",id:2,error:{code:-32000,message:\"E_RATE_LIMITED\"}}\n" +
-		"                        : {jsonrpc:\"2.0\",id:2,result:{ok:true}}\n" +
+		"      const toolErr = {jsonrpc:\"2.0\",id:2,result:{isError:true,content:[{type:\"text\"," +
+		"text:JSON.stringify({code:\"E_RATE_LIMITED\",message:\"called Dibs recently\"})}]}}\n" +
+		"      const rpcErr = {jsonrpc:\"2.0\",id:2,error:{code:-32000,message:\"E_RATE_LIMITED\"}}\n" +
+		"      const body = process.env.DIBS_FAKE_RPC_ERROR === \"1\" ? rpcErr\n" +
+		"                 : fail ? toolErr : {jsonrpc:\"2.0\",id:2,result:{ok:true}}\n" +
 		"      process.stdout.write(JSON.stringify(body) + \"\\n\")\n" +
 		"    } catch {}\n" +
 		"  }\n" +
@@ -170,6 +180,22 @@ func TestARefusedPiCallLeavesTheShippingBridgeAlone(t *testing.T) {
 
 	// Register (answers), then a second call the daemon refuses. The
 	// first child must still be the lingering one, and still alive.
+	// BOTH SHAPES OF REFUSAL. `tool` is what the daemon actually sends
+	// and is the one the previous round missed; `rpc` is the transport
+	// error, which is rarer and was the only one tested.
+	for _, shape := range []string{"tool", "rpc"} {
+		t.Run(shape+" error", func(t *testing.T) {
+			refusedPiCallKeepsTheBridge(t, bun, fn, fake, dir, shape)
+		})
+	}
+}
+
+func refusedPiCallKeepsTheBridge(t *testing.T, bun, fn, fake, dir, shape string) {
+	t.Helper()
+	envVar := "DIBS_FAKE_ERROR"
+	if shape == "rpc" {
+		envVar = "DIBS_FAKE_RPC_ERROR"
+	}
 	drive := "import { spawn, type ChildProcessWithoutNullStreams } from \"node:child_process\"\n" +
 		"const BIN = " + strconv.Quote(fake) + "\n" +
 		fn +
@@ -177,11 +203,12 @@ func TestARefusedPiCallLeavesTheShippingBridgeAlone(t *testing.T) {
 		"const ok = await bridgeCall(\"tools/call\", { name: \"register\" }, 5000, client, true)\n" +
 		"if (!ok) { console.log(\"NOANSWER\"); process.exit(1) }\n" +
 		"const first = lingering!.pid\n" +
-		"process.env.DIBS_FAKE_ERROR = \"1\"\n" +
+		"process.env." + envVar + " = \"1\"\n" +
 		"const refused = await bridgeCall(\"tools/call\", { name: \"register\" }, 5000, client, true)\n" +
-		"if (!refused || !refused.error) { console.log(\"NOTREFUSED\"); process.exit(1) }\n" +
+		"const isRefusal = !!refused && (!!refused.error || !!refused.result?.isError)\n" +
+		"if (!isRefusal) { console.log(\"NOTREFUSED \" + JSON.stringify(refused)); process.exit(1) }\n" +
 		"console.log(\"PID \" + (lingering?.pid ?? 0) + \" FIRST \" + first)\n"
-	path := filepath.Join(dir, "refuse.ts")
+	path := filepath.Join(dir, "refuse-"+shape+".ts")
 	if err := os.WriteFile(path, []byte(drive), 0o600); err != nil {
 		t.Fatal(err)
 	}
