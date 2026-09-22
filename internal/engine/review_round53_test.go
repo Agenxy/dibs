@@ -29,13 +29,13 @@ func TestANewcomerSharingABridgeSessionDoesNotTakeItsHooks(t *testing.T) {
 	if !st.Agents["victim"].HoldsSession(host) || !st.Agents["aaa"].HoldsSession(host) {
 		t.Fatal("setup: both rows do not hold the shared id")
 	}
-	if got := st.AgentForHook(host, ""); got == nil || got.ID != "victim" {
+	if got := st.AgentForHookOn(host, "", ""); got == nil || got.ID != "victim" {
 		t.Fatalf("hooks quoting %s resolve to %v: the newcomer that sorts first took the routing from "+
 			"the agent that had the session first", host, got)
 	}
 	// A holder that has gone quiet still yields to the live one.
 	st.Agents["victim"].Status = core.StatusDormant
-	if got := st.AgentForHook(host, ""); got == nil || got.ID != "aaa" {
+	if got := st.AgentForHookOn(host, "", ""); got == nil || got.ID != "aaa" {
 		t.Fatalf("with the first holder dormant, hooks resolve to %v, not the live row", got)
 	}
 }

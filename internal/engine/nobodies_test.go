@@ -164,7 +164,7 @@ func TestALiveAgentIsNotOfferedForReattachment(t *testing.T) {
 		ID: "busy", Name: "busy", Status: core.StatusActive, Nonce: "n",
 		Agent: &core.AgentInfo{CWD: "/work/api"}, Slots: map[string]core.Slot{},
 	}
-	if got := st.ReattachableIn("/work/api"); len(got) != 0 {
+	if got := st.ReattachableOn("/work/api", ""); len(got) != 0 {
 		t.Errorf("a live agent was offered for reattachment: %v", got)
 	}
 }
@@ -267,7 +267,7 @@ func TestTheReattachHintAgreesInNumber(t *testing.T) {
 				Agent: &core.AgentInfo{CWD: "/work/api"}, Slots: map[string]core.Slot{},
 			}
 		}
-		return New(st, &memLedger{}, deadProber{}).reattachHint("s", "/work/api", time.Now())
+		return New(st, &memLedger{}, deadProber{}).reattachHint("s", "/work/api", "", time.Now())
 	}
 
 	one, many := mk("dibs-dev"), mk("a-one", "b-two", "c-three")

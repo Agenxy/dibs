@@ -153,16 +153,16 @@ func TestAnUnknownSessionIsNotAttributedToItsNeighbour(t *testing.T) {
 	id, _ := res["agent_id"].(string)
 
 	// The owner is found by its own session id.
-	if l := s.AgentForHook("sess-A", "/repo"); l == nil || l.ID != id {
+	if l := s.AgentForHookOn("sess-A", "/repo", ""); l == nil || l.ID != id {
 		t.Fatal("the real owner must still be resolved by its session id")
 	}
 	// A hook that genuinely does not know its session id is still matched by
 	// directory: that is what the fallback is FOR, and it stays.
-	if l := s.AgentForHook("", "/repo"); l == nil || l.ID != id {
+	if l := s.AgentForHookOn("", "/repo", ""); l == nil || l.ID != id {
 		t.Fatal("a hook sending no session id must still be matched by directory")
 	}
 	// But a session that named itself and matched nothing is somebody else.
-	if l := s.AgentForHook("some-other-session", "/repo"); l != nil {
+	if l := s.AgentForHookOn("some-other-session", "/repo", ""); l != nil {
 		t.Fatalf("an unknown session must not inherit a neighbour's identity, got %q", l.ID)
 	}
 }
@@ -192,7 +192,7 @@ func TestAStrangerIsNotHandedTheClaimHoldersIdentity(t *testing.T) {
 	// Resolved as the holder itself, the guard would allow and say "no claim".
 	// Resolved as nobody, it still allows (failing open is deliberate) but
 	// the reason is honest, and the caller can tell the two apart.
-	stranger := s.AgentForHook("some-other-session", "/repo")
+	stranger := s.AgentForHookOn("some-other-session", "/repo", "")
 	if stranger != nil {
 		t.Fatalf("precondition: the stranger must not resolve, got %q", stranger.ID)
 	}

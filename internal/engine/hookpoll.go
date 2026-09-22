@@ -244,7 +244,7 @@ func (e *Engine) HookPollFrom(
 			// Not an error when there is nothing to say: most sessions have no
 			// agent, and a hook that fails noisily on every turn would be worse
 			// than useless.
-			return unresolvedSession(e.reattachHint(sessionID, cwd, time.Now()), event)
+			return unresolvedSession(e.reattachHint(sessionID, cwd, host, time.Now()), event)
 		}
 		// A HOOK FROM A THREAD THE AGENT HAS LEFT DELIVERS NOTHING. noteTurnState
 		// already refuses to record such a hook's turn state; delivering to it
@@ -1182,7 +1182,7 @@ func (e *Engine) logHookResolution(sessionID, cwd, event, host string, l *core.A
 			"session_id", sessionID, "agent", l.ID, "event", event, "cwd", cwd)
 		return
 	}
-	if !e.state.AgentsIn(cwd) {
+	if !e.state.AgentsOn(cwd, host) {
 		slog.Debug("hook resolved to nobody, and this directory has no agents",
 			"session_id", sessionID, "event", event, "cwd", cwd)
 		return
@@ -1232,7 +1232,7 @@ func (e *Engine) logHookResolution(sessionID, cwd, event, host string, l *core.A
 // pointer that did not land the first time does not land the tenth. An agent
 // that read it and chose not to reattach has DECIDED, and asking again is
 // nagging a decision that was already Dibs's to accept.
-func (e *Engine) reattachHint(sessionID, cwd string, now time.Time) string {
+func (e *Engine) reattachHint(sessionID, cwd, host string, now time.Time) string {
 	if sessionID == "" || cwd == "" {
 		return "" // the directory fallback already handles this case
 	}
@@ -1248,7 +1248,7 @@ func (e *Engine) reattachHint(sessionID, cwd string, now time.Time) string {
 	if _, said := e.hinted[sessionID]; said {
 		return ""
 	}
-	names := e.state.ReattachableIn(cwd)
+	names := e.state.ReattachableOn(cwd, host)
 	if len(names) == 0 {
 		return "" // nothing to point at, so nothing is spent
 	}

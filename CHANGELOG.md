@@ -206,6 +206,21 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Every lookup that takes a directory now takes the machine too, by
+  construction.** "A path is evidence on one computer" had been learned six
+  separate times here, five of them the review finding it missing somewhere
+  new, one call site per round. The unscoped lookups are gone rather than
+  documented: `ActiveAgentsIn`, `ActiveAgentIDsIn`, `AgentsIn`,
+  `ReattachableIn` and `AgentForHook` are replaced by their `On` siblings,
+  which take the host. Two of them were wrong in ways nothing had reported:
+  a hook that resolved to nobody was logged as "the wake path is reaching no
+  one" because a peer machine had a directory of the same name, and an
+  unregistered session was offered the names of idle agents **on other
+  machines** to reattach to, which is an invitation to adopt a different
+  computer's identity. `TestNoExportedLookupTakesADirectoryWithoutAMachine`
+  keeps the surface that way.
+
+
 - **Dibs ships its mark where a mark is expected, instead of a placeholder.**
   The MCP Bundle and the Claude Desktop manifest declared no `icon` at all, so
   an extension a person installs sat in their list as a grey square beside
