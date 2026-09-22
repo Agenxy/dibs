@@ -253,32 +253,60 @@ func (p *rolePins) check(role, name, fingerprint, want string) error {
 		}
 		return nil
 	default:
-		// The repair takes BOTH files and a restart, and saying only half of it
-		// sent the operator down a path that cannot work: pins are read once at
-		// startup, so editing the pin file leaves the running reconciler on its
-		// loaded copy, and a successor with the pin removed still fails against
-		// the old [roles.identity] fingerprint on the next boot. An error that
-		// names a corrective action which does not correct anything is worse
-		// than one that names none.
-		// AND THE PREDECESSOR'S ROLE. This named the three steps that let the
-		// successor in and called them all of them, and none of the three
-		// takes the role away from the predecessor, which may still be
-		// registered under whatever name it has now and holds its grant in
-		// the ledger: following the procedure authorised the successor
-		// without withdrawing the predecessor. The sibling branches name the
-		// revoke; this one did not. Found by the pre-release review, round
-		// forty-six.
-		return fmt.Errorf("the agent now called %q is not the one this board granted "+
-			"%s to. A standing role follows an identity, not a name, and a name is "+
-			"free for anyone to take once its holder is gone. If this is a deliberate "+
-			"handover it takes four steps, all of them: `dibs admin member <the old "+
-			"agent>`, so the predecessor, still registered under whatever name it "+
-			"has now, loses the %s it holds; put the NEW agent's fingerprint under "+
-			"[roles.identity] in dibs.toml; remove %q from %s; and restart dibd. Both "+
-			"files are read at startup, so editing either one under a running daemon "+
-			"changes nothing",
-			name, role, role, name, p.path)
+		return p.nameHeldByAnother(role, name, fingerprint, want)
 	}
+}
+
+// nameHeldByAnother explains a pinned name now held by an identity the
+// pin does not record, which is the one thing a pin exists to catch.
+//
+// Its own function because it has two cases and `check` was at the
+// complexity ceiling with one.
+func (p *rolePins) nameHeldByAnother(role, name, fingerprint, want string) error {
+	// The repair takes BOTH files and a restart, and saying only half of it
+	// sent the operator down a path that cannot work: pins are read once at
+	// startup, so editing the pin file leaves the running reconciler on its
+	// loaded copy, and a successor with the pin removed still fails against
+	// the old [roles.identity] fingerprint on the next boot. An error that
+	// names a corrective action which does not correct anything is worse
+	// than one that names none.
+	// AND THE PREDECESSOR'S ROLE. This named the three steps that let the
+	// successor in and called them all of them, and none of the three
+	// takes the role away from the predecessor, which may still be
+	// registered under whatever name it has now and holds its grant in
+	// the ledger: following the procedure authorised the successor
+	// without withdrawing the predecessor. The sibling branches name the
+	// revoke; this one did not. Found by the pre-release review, round
+	// forty-six.
+	// AND THE HANDOVER MAY ALREADY BE UNDERWAY, in which case naming
+	// four manual steps is wrong in the direction that costs the most:
+	// an operator who follows them demotes an agent by hand that the
+	// reconciler was about to demote, and edits files under a running
+	// daemon that reads them at startup. When [roles.identity] already
+	// names THIS agent, the operator has done the only part that is
+	// theirs; the withdrawal pass finds the predecessor by its
+	// fingerprint, takes the role and drops the pin, and the next pass
+	// grants this one. Round sixty-three of the pre-release review,
+	// which is the fourth message in this file written for a version
+	// of the reconciler that no longer exists.
+	if want == fingerprint {
+		return fmt.Errorf("the agent now called %q is not the one this board granted "+
+			"%s to, and [roles.identity] already names this one: the handover is "+
+			"underway and needs nothing from you. The predecessor is found by its "+
+			"fingerprint, loses the %s and its pin, and this agent is granted on a "+
+			"following pass. Nothing to edit, nothing to restart (%s)",
+			name, role, role, p.path)
+	}
+	return fmt.Errorf("the agent now called %q is not the one this board granted "+
+		"%s to. A standing role follows an identity, not a name, and a name is "+
+		"free for anyone to take once its holder is gone. If this is a deliberate "+
+		"handover it takes four steps, all of them: `dibs admin member <the old "+
+		"agent>`, so the predecessor, still registered under whatever name it "+
+		"has now, loses the %s it holds; put the NEW agent's fingerprint under "+
+		"[roles.identity] in dibs.toml; remove %q from %s; and restart dibd. Both "+
+		"files are read at startup, so editing either one under a running daemon "+
+		"changes nothing",
+		name, role, role, name, p.path)
 }
 
 func (p *rolePins) save() error {

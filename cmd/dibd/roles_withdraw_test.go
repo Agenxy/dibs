@@ -501,3 +501,72 @@ func TestAnotherAdminsStalePinDoesNotDropThisOnes(t *testing.T) {
 			"privilege survived, which is the guarantee SECURITY.md makes about this file")
 	}
 }
+
+// A handover already underway is not reported as four manual steps.
+//
+// The `default` branch of rolePins.check fires when a name is held by an
+// identity the pin does not record, and said the handover takes four
+// steps: demote the predecessor by hand, edit dibs.toml, edit the pin
+// file, restart. That was true of a reconciler that no longer exists.
+// When [roles.identity] already names the agent standing there, the
+// operator has done the only part that is theirs: the withdrawal pass
+// finds the predecessor by its FINGERPRINT (withdrawOne works by
+// credential, not by name), takes the role, drops the pin, and a
+// following pass grants the successor.
+//
+// An error that prescribes work the daemon is already doing is worse
+// than one that prescribes none: the operator demotes an agent by hand
+// that was about to be demoted, and edits two files under a running
+// daemon that reads both at startup. Round sixty-three of the
+// pre-release review, and the fourth message in this file written for a
+// version of the reconciler that has since changed.
+func TestAHandoverAlreadyUnderwayIsNotReportedAsManualWork(t *testing.T) {
+	eng, ctx := testEngine(t)
+	dir := t.TempDir()
+	pins := loadRolePins(dir)
+	before := engine.RolePinFingerprint("nonce-before")
+	after := engine.RolePinFingerprint("nonce-after")
+
+	// The predecessor holds the role under the name.
+	registerAgentAs(t, eng, "lead", "nonce-before")
+	applyDeclaredRoles(ctx, eng, RolesConfig{
+		Admin: []string{"lead"}, Identity: map[string]string{"lead": before},
+	}, pins)
+	if !holdsRole(t, eng, "lead", core.RoleAdmin) {
+		t.Fatal("setup: the declared admin was not granted")
+	}
+
+	// Someone else is standing under that name now, and the operator has
+	// named THEM in the configuration: the handover the daemon completes.
+	err := pins.check(core.RoleAdmin, "lead", after, after)
+	if err == nil {
+		t.Fatal("setup: the pin accepted a different identity under a pinned name, which " +
+			"is the one thing it exists to refuse")
+	}
+	said := err.Error()
+	// The PRESCRIPTIONS, not the words: "Nothing to restart" is the
+	// opposite of telling somebody to restart and contains the word.
+	for _, prescribed := range []string{"dibs admin member", "and restart dibd", "four steps"} {
+		if strings.Contains(said, prescribed) {
+			t.Errorf("the error prescribes %q for a handover the reconciler completes by "+
+				"itself: the operator demotes an agent that was about to be demoted, and "+
+				"edits files a running daemon read at startup.\n%s", prescribed, said)
+		}
+	}
+	if !strings.Contains(said, "underway") {
+		t.Errorf("the error does not say the handover is in progress, so an operator "+
+			"reading it cannot tell this from the case that really is manual:\n%s", said)
+	}
+
+	// And the genuinely manual case still says so: the configuration
+	// names neither the pin nor the agent standing there.
+	third := engine.RolePinFingerprint("nonce-third")
+	manual := pins.check(core.RoleAdmin, "lead", after, third)
+	if manual == nil {
+		t.Fatal("a name held by an identity neither the pin nor the config names was accepted")
+	}
+	if !strings.Contains(manual.Error(), "dibs admin member") {
+		t.Errorf("the case that IS manual stopped saying how: an operator with a genuine "+
+			"handover to perform is told nothing.\n%s", manual.Error())
+	}
+}
