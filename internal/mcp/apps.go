@@ -281,10 +281,13 @@ func boardSummary(sc map[string]any, declaredUI bool) string {
 // host and project labels, the description cut to a line, and the first slot's
 // text cut to one line with its activity.
 //
-// Claims stay whole in shape and lose their notes and timestamps. A claim is
-// coordination's hard edge, and an agent that checked in and could not see
-// that a directory is held exclusively would believe it had looked. Bounded by
-// MaxClaimsGlobal, and each compact row is a few dozen bytes.
+// Claims keep everything that says what they COVER (the holder, the path,
+// the mode, and the host and repository the path is relative to) and lose
+// their notes and timestamps. A claim is coordination's hard edge, and an
+// agent that checked in and could not see that a directory is held
+// exclusively would believe it had looked. Dropping the scope fields was the
+// same failure one step later: the claim was visible and unattributable.
+// Bounded by MaxClaimsGlobal.
 func slimBoard(res core.Result) core.Result {
 	raw, _ := json.Marshal(res["board"])
 	var b struct {
@@ -302,7 +305,27 @@ func slimBoard(res core.Result) core.Result {
 	}
 	claims := make([]map[string]any, 0, len(b.Claims))
 	for _, c := range b.Claims {
-		claims = append(claims, map[string]any{"agent": c["agent"], "path": c["path"], "mode": c["mode"]})
+		row := map[string]any{"agent": c["agent"], "path": c["path"], "mode": c["mode"]}
+		// AND WHAT THE PATH MEANS, which is the rest of the claim's scope.
+		//
+		// A path is evidence on one computer and a repository-relative
+		// path on one repository, which is why the claim records the host
+		// and the repository it was taken in AT CLAIM TIME rather than
+		// reading the holder's current ones. This projection kept the
+		// path and dropped all three, so an agent that checked in could
+		// not tell a claim on its own /workspace/repo from an unrelated
+		// machine's, nor recognise its own file under another clone's
+		// root: exactly the two mistakes those fields exist to prevent,
+		// reintroduced at the last step before the model reads it. They
+		// are omitempty on the claim, so nothing is added for a board
+		// that never had them. Round sixty-five of the pre-release
+		// review.
+		for _, k := range []string{"host", "repo", "repo_path"} {
+			if v, ok := c[k]; ok {
+				row[k] = v
+			}
+		}
+		claims = append(claims, row)
 	}
 	out := core.Result{}
 	for k, v := range res {

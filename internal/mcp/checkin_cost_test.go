@@ -2,7 +2,9 @@ package mcp
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -104,6 +106,82 @@ func TestTheRosterStillShowsClaims(t *testing.T) {
 	if !strings.Contains(text, "/tmp/h/internal/core") || !strings.Contains(text, "exclusive") {
 		t.Fatalf("an exclusive claim is invisible on check_in's roster:\n%s", text[:min(len(text), 600)])
 	}
+}
+
+// And the roster says what the claim COVERS, not just where.
+//
+// A path is evidence on one computer and a repository-relative path on
+// one repository, which is why a claim records the host and the
+// repository it was taken in at claim time rather than reading the
+// holder's current ones. The compact projection kept the path and
+// dropped all three, so an agent that checked in could not tell a claim
+// on its own /workspace/repo from an unrelated machine's, nor recognise
+// its own file under another clone's root: the two mistakes those fields
+// exist to prevent, reintroduced at the last step before the model reads
+// it. Round sixty-five of the pre-release review.
+func TestTheRostersClaimsSayWhichMachineAndWhichRepository(t *testing.T) {
+	srv, _ := newServer(t)
+	repo := t.TempDir()
+	r := toolCall(t, srv, "register", map[string]any{"name": "holder", "cwd": repo})
+	tok, _ := r["token"].(string)
+	toolCall(t, srv, "check_in", map[string]any{"token": tok})
+	toolCall(t, srv, "claim", map[string]any{
+		"token": tok, "path": filepath.Join(repo, "internal", "core"), "mode": "exclusive",
+	})
+	r2 := toolCall(t, srv, "register", map[string]any{"name": "other", "cwd": t.TempDir()})
+	tok2, _ := r2["token"].(string)
+
+	// The FULL board says what a claim carries; the roster must not drop
+	// what it says about scope. Compared against the full one rather than
+	// against a literal, so this cannot pass by asserting a field the
+	// board never had.
+	full := toolCall(t, srv, "board", map[string]any{"token": tok2, "detail": true})
+	fullClaims := claimsOf(t, full)
+	if len(fullClaims) != 1 {
+		t.Fatalf("setup: the full board shows %d claims, want the one just taken", len(fullClaims))
+	}
+	roster := toolCall(t, srv, "check_in", map[string]any{"token": tok2})
+	slim := claimsOf(t, roster)
+	if len(slim) != 1 {
+		t.Fatalf("the roster shows %d claims, want the one just taken", len(slim))
+	}
+	for _, field := range []string{"host", "repo", "repo_path"} {
+		want, had := fullClaims[0][field]
+		if !had {
+			continue // the board never recorded it here; nothing to keep
+		}
+		got, kept := slim[0][field]
+		if !kept {
+			t.Errorf("the roster drops the claim's %q, which the full board carries (%v): "+
+				"an agent that checked in cannot tell this claim from one on another "+
+				"machine, or its own file under another clone's root", field, want)
+			continue
+		}
+		if fmt.Sprint(got) != fmt.Sprint(want) {
+			t.Errorf("the roster's claim %q is %v, the board's is %v", field, got, want)
+		}
+	}
+	// And the fields it is meant to drop are still dropped, or this test
+	// would pass just as well against a roster that is the full board.
+	if _, kept := slim[0]["note"]; kept {
+		t.Error("the roster carries the claim's note, which it exists to leave out")
+	}
+}
+
+// claimsOf pulls the claim rows out of a board-bearing result.
+func claimsOf(t *testing.T, res map[string]any) []map[string]any {
+	t.Helper()
+	raw, err := json.Marshal(res["board"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var b struct {
+		Claims []map[string]any `json:"claims"`
+	}
+	if err := json.Unmarshal(raw, &b); err != nil {
+		t.Fatalf("board is not shaped as expected: %v", err)
+	}
+	return b.Claims
 }
 
 // toolCallText is toolCall's model-facing text, unparsed: the bytes the model

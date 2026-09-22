@@ -213,9 +213,9 @@ func (e *Engine) HookPollFrom(
 	return e.query(ctx, func() core.Result {
 		e.announceHookSessionFrom(sessionID, cwd, event, host)
 		l := e.state.AgentForHookOn(sessionID, cwd, host)
-		e.noteHookFor("poll", l, cwd)
+		e.noteHookFor("poll", l, cwd, host)
 		e.noteTurnState(l, sessionID, event)
-		e.logHookResolution(sessionID, cwd, event, l)
+		e.logHookResolution(sessionID, cwd, event, host, l)
 		if l == nil {
 			// A session that resolves to nobody may still BE somebody, returning.
 			//
@@ -1173,7 +1173,7 @@ func (e *Engine) markWoken(keys []string, now time.Time) {
 // session in a directory nobody has ever coordinated from resolving to nobody
 // is the ordinary case and would drown the signal; a session in a directory
 // that HAS agents, resolving to none of them, is the fault.
-func (e *Engine) logHookResolution(sessionID, cwd, event string, l *core.Agent) {
+func (e *Engine) logHookResolution(sessionID, cwd, event, host string, l *core.Agent) {
 	if sessionID == "" {
 		return
 	}
@@ -1189,7 +1189,7 @@ func (e *Engine) logHookResolution(sessionID, cwd, event string, l *core.Agent) 
 	}
 	// Same discriminator as the counters: a miss beside agents whose own
 	// hooks all resolve is a session that never registered, not a fault.
-	if e.hookStranger(cwd) {
+	if e.hookStranger(cwd, host) {
 		slog.Debug("hook resolved to nobody: an unregistered session beside reachable agents",
 			"session_id", sessionID, "event", event, "cwd", cwd)
 		return
