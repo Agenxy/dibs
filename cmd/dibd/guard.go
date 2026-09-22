@@ -249,9 +249,17 @@ func (g *authGate) holdsPageKey(r *http.Request) bool {
 // broken icon and a dead link, which reads as the board being broken rather
 // than as a security control working. Found by the pre-release review.
 //
-// Safe because neither carries board state: /help renders a static template
-// with nil data, and /icon.svg is an image. A cookie thief that reaches them
-// learns the protocol documentation, which is published.
+// Safe because none of them carries board state: /help renders a static
+// template with nil data, and the two icons are images. A cookie thief that
+// reaches them learns the protocol documentation, which is published.
+//
+// BOTH icons, which is the part that was missed. The raster one exists
+// because iOS has no SVG form of apple-touch-icon, and it went into the
+// templates without going into this list: a board added to a home screen
+// got a 401 where its tile should be, which is the same broken-icon
+// symptom this list was written for, one icon later. A closed list is
+// right and it has to be added to. Round sixty-six of the pre-release
+// review, on the change that shipped the icon.
 //
 // Deliberately a CLOSED list rather than a prefix. The reason the page key
 // exists is that this tier also holds /mcp, where register hands out an agent
@@ -267,7 +275,7 @@ func browsableWithSession(r *http.Request, g *authGate) bool {
 		return false
 	}
 	switch path.Clean(r.URL.Path) {
-	case "/help", "/icon.svg":
+	case "/help", "/icon.svg", "/icon-512.png":
 		return true
 	}
 	return false

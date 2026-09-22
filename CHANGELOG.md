@@ -58,6 +58,22 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The board's home-screen icon reaches the browser.** The raster icon added
+  for iOS went into both templates without going into the gate's closed list
+  of routes a cookie alone may fetch, so a logged-in operator got a 401 where
+  their tile should be: the same broken-icon symptom that list was written
+  for, one icon later. A new check reads the shipped templates and requires
+  every same-origin asset they reference to pass that tier, because a browser
+  cannot put the page key on a `<link>` fetch and nothing else would say so.
+
+- **A stall this machine observed is reported to an agent on this machine.**
+  Supervision watches local processes, and attribution resolved the owner by
+  session id without saying which computer. The bridge's `host-<ppid>`
+  fallback repeats across machines, so another machine's agent could be told
+  its subagent had stopped, and the pid was then marked reported: the agent
+  that owns the stalled child never hears, and never will.
+
+
 - **`check_in`'s compact board keeps what a claim COVERS, not just where.** A
   path is evidence on one computer and a repository-relative path on one
   repository, which is why a claim records its host and repository at claim

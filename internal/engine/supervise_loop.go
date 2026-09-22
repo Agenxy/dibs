@@ -233,9 +233,21 @@ func (e *Engine) agentForOwner(owner string) string {
 	if l, ok := e.state.Agents[owner]; ok {
 		return l.ID
 	}
-	// No cwd and no host: this is a session id looked up by itself, and
-	// the machine narrows nothing when the directory does not.
-	if l := e.state.AgentForHookOn(owner, "", ""); l != nil {
+	// THIS MACHINE'S, because the observation is. Supervision watches
+	// local processes (liveness.Discover), so a stall it saw belongs to
+	// an agent here; a session id does not, since the bridge's
+	// `host-<ppid>` fallback repeats across computers. Passing no host
+	// let the lookup pick a remote holder of the same id, so another
+	// machine's agent was told its subagent had stopped, and
+	// superviseOnce then marked the pid reported: the agent that owns
+	// the stalled child never hears, and never will, because the one
+	// notice went somewhere else.
+	//
+	// The comment here used to say the machine narrows nothing when the
+	// directory does not. It narrows the SESSION, which is the whole
+	// reason AgentForHookOn takes it. Round sixty-six of the pre-release
+	// review, on the sweep in the round before it.
+	if l := e.state.AgentForHookOn(owner, "", e.HostID()); l != nil {
 		return l.ID
 	}
 	return ""

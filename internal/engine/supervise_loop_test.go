@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -217,5 +218,63 @@ func TestTheHostIDDecidesProcessOwnershipBeforeTheLabel(t *testing.T) {
 	backHome := &core.Agent{PID: 4242, Agent: &core.AgentInfo{Host: local + "-not-this-machine", HostID: "hub-node"}}
 	if !e.ownsHost(backHome) {
 		t.Error("an agent whose host id is this machine's was not probed here because its hostname label is stale")
+	}
+}
+
+// A stall this machine observed is reported to an agent on this machine.
+//
+// Supervision watches LOCAL processes (liveness.Discover), so a stalled
+// child it saw belongs to an agent here. Attribution resolves the owner
+// by session id when it is not already an agent id, and the bridge's
+// `host-<ppid>` fallback repeats across computers: with no host, the
+// lookup could pick a remote holder of the same id. Another machine's
+// agent was then told its subagent had stopped, and superviseOnce
+// marked the pid reported, so the agent that actually owns the stalled
+// child never hears and never will, because the one notice went
+// somewhere else. Round sixty-six of the pre-release review, on the
+// sweep in the round before it, whose comment claimed the machine
+// narrows nothing here. It narrows the SESSION.
+func TestAStallIsAttributedToAnAgentOnThisMachine(t *testing.T) {
+	const shared, here, there = "host-4242", "machine-a", "machine-b"
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	e.SetHostID(here)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	// The far agent registers FIRST, so a lookup that does not narrow by
+	// machine can plausibly land on it.
+	for _, a := range []struct{ name, nonce, host string }{
+		{"far", "n-far", there},
+		{"near", "n-near", here},
+	} {
+		if _, err := e.Do(ctx, &core.Op{
+			Kind: core.OpRegister, Name: a.name, Nonce: a.nonce, SessionID: shared,
+			Agent: &core.AgentInfo{CWD: "/workspace/repo", HostID: a.host},
+		}); err != nil {
+			t.Fatalf("setup: register %s: %v", a.name, err)
+		}
+	}
+
+	// On the writer loop, which is where agentForOwner is called from:
+	// e.query is the wrapper that gets there safely.
+	res, err := e.query(ctx, func() core.Result {
+		return core.Result{"owner": e.agentForOwner(shared)}
+	})
+	if err != nil {
+		t.Fatalf("resolving the owner: %v", err)
+	}
+	owner, _ := res["owner"].(string)
+	switch owner {
+	case "near":
+	case "far":
+		t.Fatal("a stall this machine observed was attributed to an agent on ANOTHER " +
+			"machine holding the same bridge session id: that agent is told its " +
+			"subagent stopped, the pid is marked reported, and the agent that owns " +
+			"the stalled child is never told")
+	default:
+		t.Fatalf("the owner resolved to %q, and neither agent was found: this test is not "+
+			"measuring the difference it was written for", owner)
 	}
 }
