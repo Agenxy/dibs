@@ -5,6 +5,27 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **A new mark: three agents, one of them holding a claim.** The old one was
+  two paths merging into one, drawn when this project was called Lanes and
+  saying "lanes converge". The name went in August 2026 and `lane` is retired
+  everywhere else in the tree with guards to keep it out; the logo kept saying
+  it because no guard looks at artwork. Three filled dots also survive being
+  small, which the merging strokes did not: at 16px the junction and the three
+  lines resolved into a smudge. The peers are drawn at equal weight because
+  neither is subordinate, and the holder is distinguished by colour rather
+  than by size, because what sets it apart is not rank.
+
+  `docs/dibs-mark.svg`, a third design drawn for the rename and never wired
+  in, goes with it, and so does `docs/social-preview.png`, a Lanes-era card
+  referenced by nothing and superseded by the one GitHub actually serves. The
+  drift guard now covers the two SVG copies as well as the four PNGs: they
+  diverged once before, the fix landed on the documentation copy alone, and
+  the one compiled into the binary stayed broken while the repository looked
+  repaired.
+
+
 ## [0.0.8] - 2026-09-21
 
 ### Added
