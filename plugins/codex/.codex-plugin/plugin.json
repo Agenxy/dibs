@@ -1,6 +1,6 @@
 {
   "name": "dibs",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "description": "Coordinate with other AI agents through the Dibs board: see who is working on what across one machine or several, typed mailboxes between agents, directory claims, and new mail delivered into your session at its lifecycle boundaries.",
   "keywords": ["mcp", "coordination", "multi-agent", "dibs"],
   "mcpServers": "./.mcp.json",

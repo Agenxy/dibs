@@ -5,7 +5,7 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.0.8] - 2026-09-22
+## [0.0.9] - 2026-09-22
 
 ### Added
 
@@ -2105,6 +2105,21 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reports that the recipient was archived, what it costs to reach it, and how
   long the mailbox is kept, and the engine's own note still wins where it knows
   that nothing on this board can wake it.
+
+## [0.0.8] - never published
+
+The tag `v0.0.8` exists and there is no release behind it. The release
+workflow re-runs the whole gate against the tagged commit before it publishes
+anything, and it stopped on a board defect that had been dismissed as a flaky
+browser check an hour earlier: an explanation the reader had opened with the
+keyboard was closed by a pointer event the board's own redraw synthesised.
+Nothing was published, which is the pipeline working.
+
+Release tags in this repository are immutable by rule, which is deliberate and
+right: a tag that can move is a tag nobody can pin. So the tag stays where it
+is, the version is spent, and everything 0.0.8 was going to be went out as
+0.0.9. If you are looking at the tag list and wondering, that is the whole
+story.
 
 ## [0.0.7] - 2026-09-08
 
