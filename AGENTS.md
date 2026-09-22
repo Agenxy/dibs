@@ -230,6 +230,16 @@ fixing things a careful reader would have caught, and the reader who misses them
 is reliably the one who wrote them. `task review:release` runs it against the
 last tag.
 
+**IT COSTS THE OPERATOR'S OWN MODEL ALLOWANCE**, 240k to 410k tokens a round,
+and "go round again until a pass turns up nothing" has no budget in it.
+Read as unbounded it is a machine for spending somebody else's money: every
+round's own fixes give the next round something to find, so the sentence
+above will never end the loop by itself. Two rounds after a substantive
+change, then stop and say what is left. If the person paying says stop, the
+loop is over that minute, whatever the last round found. The exit condition
+is a decision about shipping and it is theirs. This is written here because
+it was learned the expensive way, twice, in one release cycle.
+
 The value is the second opinion, so run something that is not what wrote the
 code. What matters is what it is pointed at: this repository's recurring bug
 classes (validation in `Apply` instead of `Admit`, an op that changes state
