@@ -94,20 +94,36 @@ type McpTool = {
  * second of which found that the first had fixed the rarer half and
  * written a fixture that only produced the rare shape.
  *
+ * AND NOTHING KEPT IS EVER KILLED TO MAKE ROOM. Keeping only the newest
+ * was worse than the defect it replaced: `register` stamps the board's
+ * `pid` with the BRIDGE's own (cmd/dibs, enrichRegister), because that
+ * process starts and ends with the session, and no later call re-stamps
+ * it. So killing the register bridge when a relocating `update`
+ * succeeded left the board holding a dead pid: the next liveness sweep
+ * read `process_exited` for an agent that was working and released its
+ * claims. Every kept child now stays for the session. Round sixty-one of
+ * the pre-release review, on round fifty-nine's own fix; its tests missed
+ * it because the fake bridge in them never registers an agent, so there
+ * was no pid for anything to be wrong about.
+ *
+ * The count is bounded by how often these calls happen, which is once at
+ * startup and then only on a recovery or a move: not per turn, not per
+ * tool call. Each is a `dibs mcp-stdio` waiting on a pipe, and each ends
+ * when pi does.
+ *
  * A lingering child is let go of rather than killed: its stdout is
  * destroyed, because that pipe is what holds the parent's event loop, and
  * the handle is unref'd. Measured on bun 1.3.14 and on node: the parent
  * exits at once and the child is still running afterwards. It ends when pi
  * does, since the write end of its stdin closes then and a stdio server
- * reads that as goodbye, so the shipper's life is the session's and there
- * is nothing to leak. At most one is held; a later success replaces it.
+ * reads that as goodbye, so the shipper's life is the session's.
  *
  * The handshake rides in front of the call on the same pipe. Lines are
  * processed in order, so there is nothing to wait for; it exists to state
  * which harness this is, which the server takes from clientInfo and from
  * nowhere else.
  */
-let lingering: ChildProcessWithoutNullStreams | undefined
+const lingering: ChildProcessWithoutNullStreams[] = []
 
 function bridgeCall(
   method: string,
@@ -130,15 +146,9 @@ function bridgeCall(
       settled = true
       clearTimeout(timer)
       // Kept only when the call SUCCEEDED. A timeout, a dead child or a
-      // JSON-RPC error starts no shipper, so keeping one would be a stray
-      // process, and replacing the running one with it would be worse.
+      // refusal starts no shipper, so keeping one would be a stray process.
       if (linger && v !== null && !v.error && v.result && !v.result.isError) {
-        try {
-          lingering?.kill()
-        } catch {
-          /* already gone */
-        }
-        lingering = proc
+        lingering.push(proc)
         try {
           proc.stdout.destroy() // the pipe that would hold pi's event loop
           proc.unref()

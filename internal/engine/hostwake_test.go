@@ -636,3 +636,53 @@ func TestAnAnnouncementFromABridgeThatPredatesTheAdoptionIsThisMachines(t *testi
 		}
 	}
 }
+
+// And asking about that session by the id the bridge still asserts finds
+// it.
+//
+// Round forty-eight taught the WRITER to resolve an alias and left the
+// READER asking with whatever it was handed. A bridge that survived this
+// machine adopting its Supgang identity files its hooks under the new id,
+// so `HookTrafficSeenOn` called with the old one found nothing: a fresh
+// registration was told `hooks_live: false`, which reads as "nothing is
+// waking this agent" and sends an operator to install a plugin that is
+// already installed and working. Two call sites and one rule, and the one
+// that reads was the one nobody swept, which is this repository's most
+// expensive recurring shape. The key resolves its own aliases now. Round
+// sixty-one of the pre-release review.
+func TestHookTrafficIsFoundByAnIDThisMachineUsedToAnswerTo(t *testing.T) {
+	const minted, fleet = "minted-1234", "fleet-id"
+	st := core.NewState("hub-node", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	e.SetHostID(fleet)
+	e.SetHostAliases(minted)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	// The hooks arrive from a bridge that predates the adoption.
+	if _, err := e.NoteChildSession(ctx, Child{
+		SessionID: "host-12345", CWD: "/w/repo", Host: minted, State: "running",
+	}); err != nil {
+		t.Fatalf("announcement: %v", err)
+	}
+
+	// Asked by either name, it is the same session.
+	for _, host := range []string{minted, fleet, ""} {
+		if !e.HookTrafficSeenOn(ctx, "host-12345", host) {
+			t.Errorf("hook traffic for this session is invisible when asked about host %q: "+
+				"a working guard reports hooks_live false, and the operator is told to "+
+				"install a plugin that is already installed", host)
+		}
+	}
+	// And a session nobody announced is still unseen: this is not a test
+	// that passes because everything answers yes.
+	if e.HookTrafficSeenOn(ctx, "host-99999", fleet) {
+		t.Error("a session nothing announced was reported as having hook traffic")
+	}
+	// Nor does another machine's session leak into this one's answer.
+	if e.HookTrafficSeenOn(ctx, "host-12345", "some-other-machine") {
+		t.Error("another machine's session id matched this machine's record: `host-<ppid>` " +
+			"repeats across computers, which is why the key carries the host at all")
+	}
+}
