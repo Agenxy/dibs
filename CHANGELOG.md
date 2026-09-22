@@ -38,7 +38,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   binary", and the first draft said the second.
 
   Verified against the real v0.0.7 release, signature and all, into a
-  throwaway directory.
+  throwaway directory. The digest is read from the bytes whose signature was
+  checked rather than from a second copy fetched afterwards, which the first
+  version of this got wrong: two fetches mean the file that was proved and
+  the file that was used are not provably the same bytes. Found by reading
+  the release surface before the tag, which is what that step is for.
 
 - **`dibs configure --service` now says whether the daemon comes back at boot
   or only when you log in.** Both units it writes are user scoped: a launchd
