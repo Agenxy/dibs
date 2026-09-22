@@ -314,7 +314,6 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   repaired.
 
 
-
 - **Every lookup that takes a directory now takes the machine too, by
   construction.** "A path is evidence on one computer" had been learned six
   separate times here, five of them the review finding it missing somewhere
@@ -469,6 +468,27 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   human's panel never lost it. Measured 71 KB to 36 KB on that board.
 
 ### Fixed
+
+- **A bridge no longer goes stale when the board is reset or moves.**
+  `dibs mcp-stdio` read `local.secret` once at spawn and sent that string for
+  the life of the process, so resetting a board 401d every harness session
+  already running, for the rest of its life: nine of them on one machine,
+  each with a live bridge process, a reachable daemon and a credential for a
+  board that no longer existed. The agent saw an authorisation error whose
+  only remedy was "restart your harness", which is not something an agent can
+  do, and the same staleness reached the subscription streams that reconnect
+  on their own and the index shippers that retry for minutes. The credential
+  is now taken from disk on every round trip, in the one transport every
+  credential-bearing request passes through, so no caller has to remember.
+  The board's ADDRESS had the same shape: resolved once and retried against
+  forever, so a daemon that came back somewhere else was unreachable even
+  though the new address was written in the config the bridge reads. It is
+  re-resolved on retry and on stream reconnect, which costs nothing while
+  things work, because a stale address has exactly one symptom. Between them
+  the bridge now remembers nothing about this machine that this machine can
+  change, which is what a stateless protocol asks of a process that outlives
+  a request.
+
 
 - **The board's home-screen icon reaches the browser.** The raster icon added
   for iOS went into both templates without going into the gate's closed list

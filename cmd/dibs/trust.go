@@ -166,7 +166,46 @@ func (g *guardedTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 			"so the request would go to %q instead. Name the host on its own",
 			r.URL.Host, r.URL.User.Username(), r.URL.Hostname())
 	}
+	refreshLocalSecret(r)
 	return g.next.RoundTrip(r)
+}
+
+// refreshLocalSecret replaces the credential on an outgoing request with the
+// one on disk right now.
+//
+// The caller decides WHETHER to authenticate; this decides WITH WHAT, and it
+// is here for the same reason the checks above are: this is the one place
+// every credential-bearing request passes through, and safety that depends on
+// every future caller remembering is a list of the callers somebody thought
+// of.
+//
+// What it fixes: `dibs mcp-stdio` read local.secret once, at spawn, and sent
+// that string for the life of the process. Resetting a board mints a new
+// secret, so every harness session already running got 401 from every Dibs
+// call until it was restarted: nine of them on one machine on 2026-09-22,
+// each with a live bridge, a reachable daemon and a credential for a board
+// that no longer existed. The agent saw an authorisation error whose only
+// remedy was "restart your harness", which is not something an agent can do.
+// The same staleness reached every long lived path built on that string: the
+// subscription streams that reconnect on their own, and the index shippers
+// that retry for minutes.
+//
+// It is also what MCP 2026 asks for. A stateless protocol means a long lived
+// bridge has to behave as though it were spawned for each request, and a
+// credential read once at startup is exactly the session state 2026 removes.
+// The per-call plugins get this by spawning a bridge per call; this one earns
+// it here.
+//
+// A read that fails leaves the request alone. The value the caller set is
+// then the best thing known, and a request that 401s says more than one this
+// layer refused to send.
+func refreshLocalSecret(r *http.Request) {
+	if r.Header.Get("X-Dibs-Local") == "" {
+		return // this caller is not authenticating, which is their decision
+	}
+	if now, err := localSecret(); err == nil && now != "" {
+		r.Header.Set("X-Dibs-Local", now)
+	}
 }
 
 // trustCmd implements `dibs trust <host:port> [--pin <hex>]`.
