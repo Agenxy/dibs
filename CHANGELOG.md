@@ -58,6 +58,26 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A local remote no longer merges two strangers' objectives across
+  machines.** The round before this gave `sameRepoIdentity` the rule that a
+  `file:` remote names somewhere on one computer, and left `differentProjects`
+  beside it without it: two agents cloned from `/srv/source` on two machines
+  were "configured against the same upstream", so `issue:42` in each was
+  reported as one objective, the strongest signal Dibs has, between agents who
+  have never shared a line of code. Those two are the only places that compare
+  a remote and both draw the line now. Root commits still decide it, on any
+  number of machines, which is the case cross-host coordination is built on.
+
+- **A restart no longer invents join notices for spaces you joined later, and
+  they no longer push out a real instruction.** The notice rebuild runs over
+  the whole replayed ring against a space's membership as it is NOW, so every
+  join a space ever saw was announced to every member it has today, including
+  ones who arrived afterwards. The queue is bounded and keeps the newest, so
+  enough restored joins evicted an unread eviction: an agent told to stop work
+  carried on, after the restart that was supposed to make that impossible. A
+  join is news only to members who were already there.
+
+
 - **A bridge that dies mid-write no longer takes the harness down with it.**
   The transport writes to the child's stdin, and a body large enough to
   buffer completes asynchronously, so a bridge that exits meanwhile (no

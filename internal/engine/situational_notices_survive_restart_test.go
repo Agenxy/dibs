@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -111,5 +112,69 @@ func TestAVerdictInBothStateAndRingIsRebuiltOnce(t *testing.T) {
 	if n := len(restarted.notices["asker"]); n != 1 {
 		t.Errorf("%d notices for one approval, want 1: the ring must not duplicate "+
 			"what state already rebuilt", n)
+	}
+}
+
+// A restart does not tell you about joins that happened before you were
+// in the space, and those phantom notices do not push out a real one.
+//
+// Membership is read from the board as it is NOW, and the rebuild runs
+// over the whole ring, so every join a space ever saw was announced to
+// every member it has today, including the ones who arrived later and
+// were never owed it. That is not merely noise: the queue is bounded at
+// maxNotices and keeps the NEWEST, so enough restored joins evict an
+// unread eviction, which is the one instruction this rebuild exists to
+// preserve. An agent told to stop work then carries on, after a restart
+// that was supposed to make that impossible. Round sixty-four of the
+// pre-release review, on the rebuild issue #75 added.
+func TestARestartDoesNotInventJoinNoticesFromBeforeYouArrived(t *testing.T) {
+	const latecomerJoined = 500
+	st := core.NewState("t", core.DefaultLimits())
+	st.Agents = map[string]*core.Agent{
+		"latecomer": {ID: "latecomer", Name: "latecomer", Status: core.StatusActive, AckedSerial: 10, CreatedSerial: 1},
+		"director":  {ID: "director", Name: "director", Status: core.StatusActive, AckedSerial: 10, CreatedSerial: 1},
+	}
+	members := map[string]*core.Membership{"latecomer": {Agent: "latecomer", JoinedSerial: latecomerJoined}}
+	st.Spaces = map[string]*core.Space{"auth": {ID: "auth", Members: members}}
+
+	at := time.Date(2026, 9, 12, 10, 0, 0, 0, time.UTC)
+	// The eviction the agent has not read, and then more historical joins
+	// than the queue can hold. Every one of them predates its membership.
+	ring := []core.Event{
+		{
+			Type: "agent.evicted", Agent: "latecomer", Serial: 20, TS: at,
+			Data: map[string]any{"agent_id": "auth", "by": "director"},
+		},
+	}
+	for i := range maxNotices + 1 {
+		members["old"+strconv.Itoa(i)] = &core.Membership{Agent: "old" + strconv.Itoa(i), JoinedSerial: 30}
+		ring = append(ring, core.Event{
+			Type: "agent.joined", Agent: "old" + strconv.Itoa(i), Serial: uint64(30 + i), TS: at,
+			Data: map[string]any{"agent_id": "auth"},
+		})
+	}
+
+	restarted := New(st, &memLedger{}, deadProber{}, ring)
+
+	var texts []string
+	for _, n := range restarted.notices["latecomer"] {
+		texts = append(texts, n.Text)
+	}
+	for _, got := range texts {
+		if strings.Contains(got, "the space") {
+			t.Errorf("an agent that joined at %d was told about a join from before it "+
+				"arrived: %q", latecomerJoined, got)
+		}
+	}
+	found := false
+	for _, got := range texts {
+		if strings.Contains(got, "stop work there") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the unread eviction is gone after a restart, pushed out of a queue of %d "+
+			"by joins the agent was never owed: %v. An agent told to stop carries on, "+
+			"which is what rebuilding notices exists to prevent.", maxNotices, texts)
 	}
 }
