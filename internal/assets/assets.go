@@ -55,6 +55,16 @@ var GeistMono []byte
 //go:embed icon.svg
 var Icon string
 
+// IconPNG is the same mark as a raster, for the surfaces that cannot take
+// an SVG. iOS is the one that matters: `apple-touch-icon` has no SVG form,
+// so a board added to a home screen got a screenshot of itself, which is
+// unreadable at that size and is the default nobody chose. Same file as
+// the macOS app icon and the MCP bundle's, held to that by
+// TestTheMarkIsTheSameFileEverywhereItShips.
+//
+//go:embed icon-512.png
+var IconPNG []byte
+
 //go:embed board.css
 var boardCSS string
 

@@ -109,6 +109,13 @@ func (s *Server) Register(mux *http.ServeMux) {
 		w.Header().Set("Cache-Control", "public, max-age=86400")
 		_, _ = w.Write([]byte(assets.Icon))
 	})
+	// iOS has no SVG form of apple-touch-icon, so a board added to a home
+	// screen took a screenshot of itself for its tile.
+	mux.HandleFunc("GET /icon-512.png", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		_, _ = w.Write(assets.IconPNG)
+	})
 	mux.HandleFunc("GET /help", s.help)
 	mux.HandleFunc("GET /events", s.sse)
 	mux.HandleFunc("GET /api/board", s.apiBoard)
