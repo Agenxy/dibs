@@ -58,6 +58,29 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A revoked admin could be kept for good by another admin's stale pin.**
+  `authorisedElsewhere` treats another declaration of the same credential as
+  the same holder respelled, and asked only whether that other name had a pin
+  at all. With `alpha → A` and `beta → B` both admin, an operator who changes
+  the configuration to `beta → A` alone leaves beta holding a pin for B, and
+  that stale pin answered for A: alpha's pin was dropped with no demotion,
+  and removing every declaration afterwards revoked nothing, because the pin
+  is what a withdrawal works through. The replacement pin must now be for the
+  same fingerprint. Round fifty-five added the existence check and this is
+  its other half.
+
+- **The pi extension keeps a bridge for every call that starts an index
+  shipper, and only when the call succeeded.** Two halves of the previous
+  release candidate's fix. `shipIndexOnRegister` starts a shipper for
+  `register`, for `resume`, and for an `update` that moves the agent, and the
+  extension kept only the register one: a recovered or relocated agent lost
+  its shipper, and worse, `resume` rotates the token, so the register bridge
+  still held for its shipper went on shipping with a revoked one. And any
+  reply at all used to qualify as success, including a JSON-RPC error, so one
+  refused re-registration killed the healthy bridge and replaced it with one
+  that had registered nothing, taking the agent's shipper with it.
+
+
 - **The pi extension keeps the bridge that registered, so its index shipper
   runs.** The transport spawns `dibs mcp-stdio` per call and kills it at the
   answer, which is right for a guard and wrong for `register`: registering is
