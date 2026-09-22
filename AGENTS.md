@@ -339,6 +339,23 @@ how two manifests sat at `0.0.0` through five releases, and the tagged commit is
 checked against its own tag, so the release fails rather than shipping a version no file
 in it names.
 
+**A failed release burns the version, and that is the rule working.** Release
+tags here are immutable: `refs/tags/v*` refuses deletion, update and
+non-fast-forward, because a tag that can move is a tag nobody can pin. The
+tag workflow re-runs the whole gate against the tagged commit BEFORE it
+publishes, so a tag that fails leaves a tag pointing at a commit with no
+release behind it, and there is no way to repair that tag. The next attempt
+is the next version. v0.0.8 went this way on 2026-09-22, on a board defect
+that had been written off as a flaky browser check an hour earlier; nothing
+was published, which is the point. Two consequences worth knowing before you
+tag. Run the gate locally to a PASS first, and treat "it only fails sometimes
+and passes on CI" as a bug you have not understood rather than as noise.
+And `task release` cannot express this situation: it claims `## [Unreleased]`
+and refuses a version that is not newer than the changelog's top section, so
+re-stamping means folding the burned section back under `[Unreleased]` and
+running it for the next number. Leave a stub for the dead version saying why,
+because somebody will find the tag and look.
+
 **Trunk-based, deliberately: `main` is always the release candidate.** There are no
 release branches, and adding one would create a second place that has to agree with main
 about what is shipping, which is this repository's most expensive recurring bug (see the
