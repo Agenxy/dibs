@@ -42,6 +42,18 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Dependabot updates the browser test dependencies through the `bun`
+  ecosystem, not `npm`.** This directory's lockfile is `bun.lock` and the gate
+  installs with `--frozen-lockfile`; under the npm ecosystem Dependabot edited
+  `package.json` and left the lockfile alone, so every pull request it raised
+  there failed on "lockfile had changes, but lockfile is frozen". One sat open
+  red for a week on a public repository, updating nothing. The trade is that
+  the bun ecosystem does version updates and not security updates, which is
+  worth it here: these are browser test dependencies in no shipped artifact,
+  and a security update that cannot merge is not a security update.
+  `@modelcontextprotocol/ext-apps` goes to 2.0.0 with this, the bump that was
+  stuck; the panel suite passes 90/90 against it unchanged.
+
 - **One place decides whether an address is loopback.** There were five: the
   shared `internal/transport.IsLoopback` and four hand-copies, which disagreed
   one input at a time. One read a wildcard `:4777` bind as confined to this

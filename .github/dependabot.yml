@@ -22,7 +22,19 @@ updates:
         patterns: ["*"]
 
   # The browser end-to-end suites.
-  - package-ecosystem: npm
+  #
+  # `bun`, not `npm`, because this directory's lockfile is bun.lock and the
+  # gate installs with --frozen-lockfile. Under the npm ecosystem Dependabot
+  # edited package.json and left the lockfile alone, so `bun install` refused
+  # and EVERY pull request it raised here failed the gate on
+  # "lockfile had changes, but lockfile is frozen", so it sat open red for a
+  # week, looking like neglect on a public repository while updating nothing.
+  #
+  # The trade is that the bun ecosystem does version updates and not security
+  # updates. Worth it: these are browser test dependencies, they are in no
+  # shipped artifact, and a security update that cannot merge is not a
+  # security update. Revisit if GitHub adds security updates for bun.
+  - package-ecosystem: bun
     directory: "/internal/mcp/e2e"
     schedule:
       interval: weekly
