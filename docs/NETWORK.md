@@ -322,6 +322,25 @@ mismatch, since whatever answered is not that board. `dibs trust --pin` is
 the same comparison for a hub that was not answering at the time. Supgang
 never dials the port: it carries the claim, and the check is Dibs's.
 
+**The host's own firewall is the first thing in the way, and it fails
+silently.** macOS ships the Application Firewall on, and it filters inbound
+connections per executable: a binary it has not been told about is not refused,
+it is swallowed. The kernel completes the TCP handshake and the listener's
+`Accept` never fires, so the client sees a `connect()` that succeeds and a read
+that hangs until the timeout, and the server sees an open socket, a clean log
+and no traffic. Nothing on either side is wrong. Normally the firewall asks the
+person at the keyboard whether to allow the program; a daemon installed over
+ssh has nobody to ask, so the dialog never appears and the default stands. That
+is the deployment this costs: the FIRST hub Dibs was installed on lost an
+afternoon to it, with `dibd up` printing a board URL that answered a port probe
+and served nothing. `dibd` now says so at startup when it binds a reachable
+address, and `dibs doctor` reports it as a problem. Both print the fix rather
+than applying it: a coordination service that can edit the machine's firewall
+is a bigger thing than a coordination service. On an MDM-managed Mac there is
+no command to print at all, because `socketfilterfw` refuses every modifying
+verb there, so the hint names the settings pane; that is the normal case for
+the always-on machine somebody puts a hub on.
+
 **What is not enough for the public internet.** One shared bearer secret
 authenticates every agent as every other agent. On loopback the filesystem is
 the boundary and that is fine. Across a network it is one leak from total

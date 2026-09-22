@@ -28,6 +28,7 @@ import (
 
 	"github.com/agenxy/dibs/internal/boardconfig"
 
+	"github.com/agenxy/dibs/internal/appfirewall"
 	"github.com/agenxy/dibs/internal/blobstore"
 	"github.com/agenxy/dibs/internal/build"
 	"github.com/agenxy/dibs/internal/core"
@@ -428,6 +429,7 @@ func run() error {
 	}
 	up = append(up, "hint", "run `dibs web` for a board link, `dibs mcp-config` for the agent config")
 	slog.Info("dibd up", up...)
+	warnIfTheFirewallWillSwallowThis(listenAddr)
 	serve := func() error { return srv.Serve(ln) }
 	if len(tlsPair) > 0 {
 		// The pair already loaded above, so nothing is read from disk here and
@@ -441,21 +443,35 @@ func run() error {
 	return nil
 }
 
-// isLoopbackAddr reports whether a listen address is confined to this machine.
-// Anything else is reachable by other hosts and must be encrypted.
-func isLoopbackAddr(addr string) bool {
-	host, _, err := net.SplitHostPort(addr)
+// warnIfTheFirewallWillSwallowThis says so when this machine's own firewall
+// will drop the connections the line above just invited.
+//
+// It is placed immediately after "dibd up" deliberately: that line prints a
+// board URL, and on a filtered machine the URL does not work. The failure has
+// no other symptom on this side. The listening socket is open, the port answers
+// a TCP probe, and Accept simply never fires, so an operator reading a healthy
+// log goes and looks at the network. Found by deploying Dibs as a hub on a Mac
+// with the default firewall settings and losing an afternoon to it.
+//
+// Loopback is never filtered, so a single-machine board says nothing here.
+func warnIfTheFirewallWillSwallowThis(listenAddr string) {
+	if xport.IsLoopback(listenAddr) {
+		return
+	}
+	self, err := os.Executable()
 	if err != nil {
-		host = addr
+		return
 	}
-	if host == "" || host == "0.0.0.0" || host == "::" {
-		return false // wildcard binds every interface
+	if appfirewall.Check(self) != appfirewall.Blocked {
+		return
 	}
-	if host == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
+	slog.Warn("this machine's firewall will not let other computers reach the address above",
+		"what", "the macOS Application Firewall is on and dibd is not in its list. "+
+			"Connections are not refused: they complete and then hang, so the board looks "+
+			"up from here and is unreachable from everywhere else",
+		"fix", appfirewall.Fix(self),
+		"why_no_prompt", "the firewall asks the person at the keyboard, and a daemon "+
+			"installed over ssh has nobody to ask")
 }
 
 // firstNonEmpty implements the precedence flag > config file > built-in default.
