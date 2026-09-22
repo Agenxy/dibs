@@ -133,12 +133,35 @@ func sameRepoIdentity(x, y *RepoIdentity) bool {
 	switch {
 	case !twoHosts && x.RepoDir != "" && x.RepoDir == y.RepoDir:
 		return true
-	case x.RepoRemote != "" && x.RepoRemote == y.RepoRemote:
+	case x.RepoRemote != "" && x.RepoRemote == y.RepoRemote &&
+		(!twoHosts || !localRemote(x.RepoRemote)):
 		return true
 	case x.RepoRoots != "" && x.RepoRoots == y.RepoRoots:
 		return true
 	}
 	return false
+}
+
+// localRemote reports a remote that names a path on ONE computer rather
+// than a server two computers can both reach.
+//
+// A repository cloned from a directory has a remote like
+// `/srv/source.git`, and paths.normalizeLocalRemote records that as
+// `file:/srv/source`. That is exactly as machine-bound as RepoDir, which
+// this comparison has scoped to one host since the review found it, and
+// the remote was left machine-independent beside it: two unrelated
+// repositories cloned from the same path on two computers matched, so an
+// exclusive claim on one blocked claims and guarded writes in the other,
+// in a project that machine has never seen. The root commits, which
+// really are machine-independent, still decide it when they are known.
+// Round sixty-two of the pre-release review.
+//
+// The scheme, not a slash: a `file:` remote is the one shape Git gives a
+// local path here, and an ssh or https remote reaching a host by name is
+// the thing this must NOT scope, since agreeing about it across machines
+// is the whole point.
+func localRemote(remote string) bool {
+	return strings.HasPrefix(remote, "file:")
 }
 
 // differentHosts is positive evidence that two agents are on DIFFERENT

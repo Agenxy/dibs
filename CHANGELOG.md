@@ -58,6 +58,20 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A remote that names a path no longer identifies a repository across
+  machines.** `sameRepoIdentity` scopes the Git common directory to one host,
+  because a path is evidence on one computer; the remote beside it was left
+  machine-independent, and most remotes are. But a repository cloned from a
+  directory has a remote like `/srv/source.git`, recorded as
+  `file:/srv/source`, which is as machine-bound as the directory: two
+  unrelated repositories cloned from the same path on two computers were read
+  as one project, so an exclusive claim on one blocked claims and guarded
+  writes in the other, in a checkout that machine has never seen. A shared
+  ssh or https remote still identifies one project across machines, which is
+  what cross-host coordination is built on, and root commits still decide it
+  when they are known.
+
+
 - **A pi agent that moved or recovered could be swept off the board as dead.**
   `register` stamps the board's `pid` with the bridge's own, because that
   process starts and ends with the session, and no later call re-stamps it.

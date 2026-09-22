@@ -319,3 +319,55 @@ func TestBroadTerritoryIsMarkedAsBroad(t *testing.T) {
 		})
 	}
 }
+
+// A remote that names a PATH is evidence on one computer only.
+//
+// sameRepoIdentity scopes RepoDir to one host, because a Git common
+// directory is a path and `/workspace/repo/.git` on two machines is two
+// unrelated repositories. A remote was left machine-independent beside
+// it, and most remotes are: an ssh or https URL names a server both
+// machines reach, and agreeing about it across machines is the whole
+// point. But a repository cloned from a directory has a remote like
+// `/srv/source.git`, which paths.normalizeLocalRemote records as
+// `file:/srv/source`, and that is as machine-bound as RepoDir. Two
+// unrelated repositories cloned from the same path on two computers
+// matched, so an exclusive claim on one blocked claims and guarded
+// writes in the other, in a project that machine has never seen. Round
+// sixty-two of the pre-release review.
+func TestALocalRemoteIsNotEvidenceAcrossMachines(t *testing.T) {
+	const here, there = "machine-a", "machine-b"
+	id := func(host, remote, roots string) *RepoIdentity {
+		return &RepoIdentity{HostID: host, RepoRemote: remote, RepoRoots: roots}
+	}
+
+	// The defect: the same local path on two computers.
+	if sameRepoIdentity(id(here, "file:/srv/source", ""), id(there, "file:/srv/source", "")) {
+		t.Error("two repositories cloned from the same PATH on different computers were " +
+			"read as one project: an exclusive claim on one blocks the other, in a " +
+			"checkout that machine has never seen")
+	}
+	// On ONE computer it is still the same project, which is what a local
+	// remote is good for and the reason it is recorded at all.
+	if !sameRepoIdentity(id(here, "file:/srv/source", ""), id(here, "file:/srv/source", "")) {
+		t.Error("two clones of one local repository on one computer stopped matching: the " +
+			"host scoping is about two machines and must not fire on one")
+	}
+	// A server both machines reach is exactly what must still match: this
+	// is the case the whole field exists for.
+	if !sameRepoIdentity(id(here, "github.com/agenxy/dibs", ""), id(there, "github.com/agenxy/dibs", "")) {
+		t.Error("a shared remote stopped identifying one project across machines, which is " +
+			"what cross-host coordination is built on")
+	}
+	// And the root commits decide it when they are known, local remote or
+	// not: they are the machine-independent fact.
+	if !sameRepoIdentity(id(here, "file:/srv/source", "abc123"), id(there, "file:/other", "abc123")) {
+		t.Error("two clones with the same root commits stopped matching across machines: " +
+			"the commit ids are the evidence that survives the path")
+	}
+	// A host nobody stated is not positive evidence of two machines, as
+	// everywhere else here: an old board goes on behaving as it did.
+	if !sameRepoIdentity(id("", "file:/srv/source", ""), id("", "file:/srv/source", "")) {
+		t.Error("agents that never said which machine they are on stopped matching: " +
+			"absence of evidence is not evidence of difference")
+	}
+}
