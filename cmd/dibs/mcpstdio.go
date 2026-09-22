@@ -10,6 +10,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -57,6 +58,15 @@ func bridgePreflight() error {
 }
 
 func runBridge(_ []string) error {
+	// A PREFLIGHT AND A PLACEHOLDER, not the credential this bridge sends.
+	//
+	// Reading it here answers "is there a board at all" while there is still a
+	// terminal to say it to. The value then only ever marks a request as one
+	// that authenticates: `refreshLocalSecret` in trust.go replaces it with
+	// what is on disk on every round trip, which is what stops a board reset
+	// from 401ing a session for the rest of its life. Do not read it into
+	// anything that outlives a request; the daemon is the only thing that
+	// knows whether a secret is still current, and it finds out per call.
 	secret, err := localSecret()
 	if err != nil {
 		return fmt.Errorf("no local secret yet: start dibd once first: %w", err)
@@ -598,7 +608,8 @@ func dialFailed(err error) bool {
 	return errors.Is(err, syscall.ECONNREFUSED)
 }
 
-// doWithRestartGrace sends one request, waiting out a daemon that is restarting.
+// doWithRestartGrace sends one request, waiting out a daemon that is restarting
+// and following it if it comes back somewhere else.
 func doWithRestartGrace(client *http.Client, req *http.Request, body []byte) (*http.Response, error) {
 	deadline := time.Now().Add(upgradeGrace)
 	for {
@@ -608,13 +619,47 @@ func doWithRestartGrace(client *http.Client, req *http.Request, body []byte) (*h
 		}
 		time.Sleep(150 * time.Millisecond)
 		// A request body is read once, so it has to be rebuilt for the retry.
-		next, buildErr := http.NewRequest(http.MethodPost, req.URL.String(), bytes.NewReader(body))
+		where := boardNow(req.URL)
+		next, buildErr := http.NewRequest(http.MethodPost, where, bytes.NewReader(body))
 		if buildErr != nil {
 			return nil, err
 		}
 		next.Header = req.Header.Clone()
+		if where != req.URL.String() {
+			// A different board needs a different client: the trust store is
+			// read when one is built, so a certificate accepted since this
+			// process started is one the old client cannot validate.
+			client = daemonClient(client.Timeout)
+		}
 		req = next
 	}
+}
+
+// boardNow is where the board is at this moment, keeping the path of the
+// request that was aimed at it.
+//
+// Resolved HERE, on the retry, rather than per request. A bridge that read the
+// address on every call would parse dibs.toml on the happy path and, when the
+// hub is named as a Supgang peer, run a process; and a stale address has
+// exactly one symptom, which is the request that did not arrive. So the
+// re-resolution costs nothing while it is working and happens precisely when
+// it is needed. The endpoint used to be resolved once at spawn and retried
+// against forever, so a daemon that came back at a different address was
+// unreachable for the life of every session already running, even though the
+// address it moved to was written down in the config the bridge reads. That
+// is the same defect as a credential read once at spawn, and the companion to
+// refreshLocalSecret in trust.go: between them, the bridge remembers nothing
+// about this machine that this machine can change.
+func boardNow(previous *url.URL) string {
+	origin := boardOrigin()
+	if previous == nil {
+		return origin
+	}
+	path := previous.EscapedPath()
+	if previous.RawQuery != "" {
+		path += "?" + previous.RawQuery
+	}
+	return origin + path
 }
 
 // followStream keeps a subscriptions/listen stream open across a daemon
@@ -625,13 +670,13 @@ func doWithRestartGrace(client *http.Client, req *http.Request, body []byte) (*h
 // stops hearing, with nothing to notice. Re-issuing the ORIGINAL request is
 // what keeps this honest: whatever the harness subscribed to is what it gets
 // again, decided by the harness rather than reconstructed here.
-func followStream(ctx context.Context, client *http.Client, url, secret string, listen []byte, out *syncWriter) {
+func followStream(ctx context.Context, client *http.Client, endpoint, secret string, listen []byte, out *syncWriter) {
 	deadline := time.Now().Add(upgradeGrace)
 	for {
 		if ctx.Err() != nil {
 			return // the session ended; stop reconnecting
 		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(listen))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(listen))
 		if err != nil {
 			return
 		}
@@ -660,7 +705,22 @@ func followStream(ctx context.Context, client *http.Client, url, secret string, 
 			// again: the grace window restarts, because this stream did work.
 			deadline = time.Now().Add(upgradeGrace)
 		case dialFailed(err) && time.Now().Before(deadline):
-			// Not up yet.
+			// Not up yet, and possibly not here any more.
+			//
+			// Re-resolved on FAILURE and never before the first attempt. A
+			// subscription outlives more of a session than anything else the
+			// bridge does, so it is the path most likely to be holding an
+			// address the board has left; but resolving up front overrides the
+			// endpoint this was CALLED with, which is a decision belonging to
+			// the caller and not to the reconnect loop. Doing it here is free
+			// while the stream works, and a stale address has exactly one
+			// symptom, which is the attempt that did not arrive.
+			if at, perr := url.Parse(endpoint); perr == nil {
+				if moved := boardNow(at); moved != endpoint {
+					endpoint = moved
+					client = daemonClient(client.Timeout)
+				}
+			}
 		default:
 			return
 		}
