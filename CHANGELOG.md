@@ -110,6 +110,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Dibs ships its mark where a mark is expected, instead of a placeholder.**
+  The MCP Bundle and the Claude Desktop manifest declared no `icon` at all, so
+  an extension a person installs sat in their list as a grey square beside
+  named ones, and a board added to an iOS home screen took a screenshot of
+  itself for its tile (`apple-touch-icon` has no SVG form). All four now carry
+  the same file as the macOS app icon, held to it by
+  `TestTheMarkIsTheSameFileEverywhereItShips`: `go:embed` and an MCPB `icon`
+  path both need a copy beside them, so the copies are guarded the way
+  `SKILLS.md` is.
+
+
 - **`dibs doctor` asks the hub which machine is the hub, instead of guessing.**
   A bridge is a wake route for another machine's agents and never for a local
   one, and the hub's own `[wake.exec]` is the reverse, so every coverage
