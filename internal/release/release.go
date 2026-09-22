@@ -251,19 +251,7 @@ func parts(v string) ([3]int, error) {
 	return out, nil
 }
 
-func isNewer(a, b string) (bool, error) {
-	x, err := parts(a)
-	if err != nil {
-		return false, err
-	}
-	y, err := parts(b)
-	if err != nil {
-		return false, err
-	}
-	for i := range x {
-		if x[i] != y[i] {
-			return x[i] > y[i], nil
-		}
-	}
-	return false, nil
-}
+// isNewer is the ordering in semver.go, reached through the name Stamp has
+// always used. One comparison, so the stamper and the update check can never
+// disagree about which of two versions is later.
+func isNewer(a, b string) (bool, error) { return Newer(a, b) }

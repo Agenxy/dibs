@@ -164,6 +164,25 @@ Things that have cost real time here, none of which are visible in the diff:
   whose wake had stopped firing before anyone could see why ("called Dibs
   recently"). `DIBS_LOG_DEBUG=1` on `dibd` shows them, and the remote e2e
   runs its hub that way and prints the tail of the hub log on a failed wake.
+- **A long lived bridge must remember nothing about this machine.** The
+  stdio bridge read `local.secret` once at spawn and sent that string for the
+  life of the process, and resolved the board's address once and retried
+  against it forever. Both are machine facts the machine can change under a
+  running process, and both failed silently and permanently: a board reset
+  mints a new secret, so nine live sessions got 401 from every Dibs call with
+  a working bridge, a reachable daemon and no corrective action an AGENT can
+  take, the remedy being "restart your harness". This is PHILOSOPHY rule 9
+  arriving from an unexpected direction: 2026 is stateless, so a long lived
+  bridge has to behave as though it were spawned for each request, and the
+  per-call plugins (pi, opencode) get that for free by actually doing so. The
+  credential is refreshed in `guardedTransport`, which is the one place every
+  credential-bearing request passes through, so every caller and every
+  reconnecting stream gets it without remembering to; the address is
+  re-resolved on retry and on stream reconnect, which is free on the happy
+  path because a stale address has exactly one symptom. If you add a third
+  thing the bridge reads at startup, ask what happens to a session when an
+  operator changes it.
+
 - **The macOS firewall swallows a hub, it does not refuse one.** The
   Application Firewall is on by default and filters inbound connections per
   executable. A binary that is not in its list is not rejected: the handshake
