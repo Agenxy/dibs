@@ -207,20 +207,25 @@ const asker = await call("register", {
   nonce: "e2e-asker-nonce-0123456789abcdef0123456789abcdef",
 })
 
-// ── an FYI wakes nobody ───────────────────────────────────────────────────
-// Not a caveat: starting a process on the operator's machine for a message
-// nobody is waiting on is the behaviour that would make this feature something
-// an operator turns off.
+// ── MAIL WAKES AN AGENT, an FYI included ──────────────────────────────────
+// This asserted the opposite, on the reasoning that starting a process for a
+// message nobody is waiting on is what makes an operator turn the feature off.
+// The cost is real and it is the operator's to weigh: `[wake] policy =
+// "urgent"` is where that choice lives now, and is tested in the engine. What
+// it was not is a reason for the board to decide that some mail does not
+// arrive. Measured on a live board before this changed: feedback sent as a
+// notify to an idle agent reached it an hour later, through its human.
 await Bun.sleep(1200)
 await call("send", { token: asker.token, to: "sleeper", type: "notify", body: "fyi, no reply needed" })
 await settle()
-check("a notify starts nothing", wakes().length === 0,
-  `${wakes().length} wake(s) for a message nobody is blocked on`)
+const fyi = wakes()
+check("a notify wakes the agent", fyi.length === 1,
+  `${fyi.length} wake(s); an agent that has stopped has no other way to hear about mail`)
 
-// ── a question wakes it, carrying the THREAD ──────────────────────────────
+// ── and a question does too, carrying the THREAD ──────────────────────────
 await call("send", { token: asker.token, to: "sleeper", type: "question", body: "are you there?", deadline_s: 600 })
 await settle()
-const first = wakes()
+const first = wakes().slice(fyi.length)
 check("a question starts the operator's command", first.length === 1,
   `${first.length} wake(s); the agent is not running and nothing else can reach it`)
 if (first.length === 1) {

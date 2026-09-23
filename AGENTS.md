@@ -183,6 +183,21 @@ Things that have cost real time here, none of which are visible in the diff:
   thing the bridge reads at startup, ask what happens to a session when an
   operator changes it.
 
+- **A harness's contract is a measurement, not a memory.** The wake path sent
+  `hookSpecificOutput.additionalContext` on Stop and nothing else, under a
+  comment citing Claude Code's documentation as saying that keeps a
+  conversation going. The current documentation says it "does not by itself
+  block the stop", and `decision: "block"` is what continues one. Every wake
+  delivered on that path had been landing nowhere, with the daemon recording
+  the mail as delivered: the product's one promise, failing silently, on a
+  citation that had gone stale. `stop_hook_active` moved too, and in a
+  direction that makes it dangerous to wire up: it now means "a Stop hook is
+  configured", which is always true where Dibs is installed, so treating it as
+  "this turn was already continued" would switch every delivery off. When a
+  guard's premise is a sentence from somebody else's docs, re-read the docs
+  before trusting the guard, and prefer a rule the daemon can check itself:
+  freshness, not a field the harness defines.
+
 - **The macOS firewall swallows a hub, it does not refuse one.** The
   Application Firewall is on by default and filters inbound connections per
   executable. A binary that is not in its list is not rejected: the handshake

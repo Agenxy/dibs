@@ -25,8 +25,15 @@ func TestAReconnectingWatcherSaysWhereItLeftOff(t *testing.T) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
 		fl, _ := w.(http.Flusher)
-		_, _ = fmt.Fprint(w, `data: {"jsonrpc":"2.0","method":"notifications/resources/updated","params":{"uri":"dibs://inbox","_meta":{"com.dibs/event":"message.sent","com.dibs/msg_type":"notify","com.dibs/serial":7}}}`+"\n\n")
+		_, _ = fmt.Fprint(w, `data: {"jsonrpc":"2.0","method":"notifications/resources/updated","params":{"uri":"dibs://inbox","_meta":{"com.dibs/event":"message.acked","com.dibs/msg_type":"question","com.dibs/serial":7}}}`+"\n\n")
 		fl.Flush()
+		// An ACK, deliberately: this test is about the CURSOR, and the cursor
+		// only advances once a notice has landed in a session. There is no
+		// session here, so anything that wakes would fail to land, keep its
+		// cursor on purpose, and this would be testing the wrong thing. It
+		// used a notify when a notify woke nobody; mail wakes an agent now,
+		// and an ack is this agent's own mail being closed, which is the
+		// event that still correctly wakes nothing.
 		// then the stream ends, and the watcher reconnects
 	}))
 	defer srv.Close()
