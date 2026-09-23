@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -60,6 +61,29 @@ func TestARequiredExecutableMustBeARunnableMachO(t *testing.T) {
 	}
 	want := []string{"dibd", "dibs"}
 	dir := t.TempDir()
+	// SIGNED with the identifiers a release carries, because the check now
+	// includes them and a fixture that cannot pass the sound case turns every
+	// refusal below into a false positive. `-` is ad-hoc, which is all this
+	// needs: the identifier is what is being asserted, not the certificate.
+	signed := func(name, identifier string) []byte {
+		t.Helper()
+		at := filepath.Join(t.TempDir(), name)
+		if err := os.WriteFile(at, image, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		out, cerr := exec.Command("codesign", "--force", "--identifier", identifier,
+			"--sign", "-", "--timestamp=none", at).CombinedOutput()
+		if cerr != nil {
+			t.Fatalf("codesign %s: %v\n%s", name, cerr, out)
+		}
+		b, rerr := os.ReadFile(at)
+		if rerr != nil {
+			t.Fatal(rerr)
+		}
+		return b
+	}
+	dibdImage := signed("dibd", "org.agenxy.dibs")
+	dibsImage := signed("dibs", "org.agenxy.dibs.cli")
 	archive := func(tag string, files map[string]file) string {
 		p := filepath.Join(dir, "dibs_0.0.7_"+tag+"_darwin_"+runtime.GOARCH+".tar.gz")
 		writeArchive(t, p, files)
@@ -67,14 +91,14 @@ func TestARequiredExecutableMustBeARunnableMachO(t *testing.T) {
 	}
 
 	sound := archive("sound", map[string]file{
-		"dibd": {image, 0o755}, "dibs": {image, 0o755},
+		"dibd": {dibdImage, 0o755}, "dibs": {dibsImage, 0o755},
 	})
 	if err := carries(sound, want); err != nil {
 		t.Fatal("setup: a sound archive was refused, so the refusals below prove nothing:", err)
 	}
 
 	script := archive("script", map[string]file{
-		"dibd": {[]byte("#!/bin/sh\nexit 0\n"), 0o755}, "dibs": {image, 0o755},
+		"dibd": {[]byte("#!/bin/sh\nexit 0\n"), 0o755}, "dibs": {dibsImage, 0o755},
 	})
 	if err := carries(script, want); err == nil {
 		t.Error("a shell script under dibd's name passed the check: it is in the file " +
@@ -82,7 +106,7 @@ func TestARequiredExecutableMustBeARunnableMachO(t *testing.T) {
 	}
 
 	inert := archive("inert", map[string]file{
-		"dibd": {image, 0o644}, "dibs": {image, 0o755},
+		"dibd": {dibdImage, 0o644}, "dibs": {dibsImage, 0o755},
 	})
 	if err := carries(inert, want); err == nil {
 		t.Error("dibd carried with mode 0644 passed the check: present in the listing, " +

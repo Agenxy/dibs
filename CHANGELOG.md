@@ -5,6 +5,37 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The published macOS binaries now have an identity of their own.** `dibd`
+  introduced itself to macOS as `a.out`, the Go toolchain's default, with an
+  ad-hoc signature. Two things follow and both land on the operator. macOS
+  records a firewall allowance and a privacy grant against the program's
+  SIGNATURE, and an ad-hoc signature gets a fresh code-directory hash from
+  every build, so every update was a different program: allow the hub through
+  the firewall, upgrade, and be asked again, forever. And `a.out` is not an
+  identity at all, it is what every unsigned Go binary on the machine says, so
+  anything recorded against the name was recorded against all of them.
+  `task install` had set identifiers and signed with a stable identity since
+  the privacy-grant fix; the RELEASE did neither, so a source install was
+  better behaved than the official one. Both now go through `tools/signrelease`,
+  so they cannot drift apart again, and `tools/archivecheck` fails the gate on
+  any shipped executable that does not name itself. Measured: with a
+  certificate the designated requirement is
+  `identifier "org.agenxy.dibs" and certificate root = H"..."`, identical
+  across builds; ad-hoc it is a `cdhash` that changes every time.
+
+  It is a SELF-SIGNED certificate, which is the free half. Gatekeeper still
+  refuses and the first approval is still asked for; removing that needs a
+  Developer ID and notarization, which needs an Apple Developer Program
+  membership, and that is a decision rather than an oversight. Signing is
+  deterministic, so the reproducible-build claim survives for anyone with the
+  same certificate.
+
+  Found by deploying a hub to a second Mac and asking why an update would need
+  somebody physically present.
+
+
 ## [0.0.9] - 2026-09-22
 
 ### Added

@@ -136,8 +136,14 @@ tasks:
       SIGNER:
         sh: go run ./tools/signid
     cmds:
-      - codesign --force -i org.agenxy.dibs -s '{{.SIGNER}}' {{.DEST}}/dibd
-      - codesign --force -i org.agenxy.dibs.cli -s '{{.SIGNER}}' {{.DEST}}/dibs
+      # THROUGH THE SAME TOOL THE RELEASE USES, so an install here and an
+      # install from the published archive present macOS with the same
+      # identity. They did not: this named the identifiers and the release
+      # named none, so a source install was better behaved than the official
+      # one and the identifiers lived in two places.
+      - DIBS_CODESIGN_IDENTITY='{{.SIGNER}}' go run ./tools/signrelease -sign {{.DEST}}/dibd
+      - DIBS_CODESIGN_IDENTITY='{{.SIGNER}}' go run ./tools/signrelease -sign {{.DEST}}/dibs
+      - DIBS_CODESIGN_IDENTITY='{{.SIGNER}}' go run ./tools/signrelease -sign {{.DEST}}/dibs-presence
       # One message, chosen by template. `status:` is a TASK-level field, not a
       # per-command one, so a pair of commands guarded by it printed BOTH: the
       # install claimed in consecutive lines that the grant would and would not
