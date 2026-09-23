@@ -1262,7 +1262,7 @@ func (s *Server) run(
 	case "read_space":
 		return s.spaceRead(ctx, a.Token, a.SpaceID, a.Limit)
 	case "claim":
-		if err := mustBeAbsolute("claim path", a.Path); err != nil {
+		if err := admitClaim(params, a.Path); err != nil {
 			return nil, err
 		}
 		op.Kind, op.Path, op.Mode, op.Note = core.OpClaim, callerPath(ctx, params, a.Path), a.Mode, a.Note

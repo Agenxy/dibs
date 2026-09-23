@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"os"
 	"strings"
@@ -375,10 +376,77 @@ func resolveHostID(ctx context.Context, params json.RawMessage) string {
 	if asserted := metaHost(params); asserted != "" {
 		return asserted
 	}
+	// SAYING "NOWHERE" IS NOT SAYING NOTHING. The stamp below reads silence
+	// as "here", on the evidence that nothing off this machine reaches
+	// loopback. A tunnel relaying a browser tab is the thing that makes that
+	// false, and it is the one caller that can say so. See HostlessMetaKey.
+	if metaHostless(params) {
+		return ""
+	}
 	if v, ok := ctx.Value(hostIDKey{}).(string); ok && v != "" {
 		return v
 	}
 	return ""
+}
+
+// admitClaim is everything that has to be true of a claim before it becomes
+// an op: the path is one both sides can mean, and the claimant is somewhere
+// the path exists. Together rather than inline because `run` is a dispatch
+// table and each case earns its complexity budget one branch at a time.
+func admitClaim(params json.RawMessage, path string) error {
+	if err := mustBeAbsolute("claim path", path); err != nil {
+		return err
+	}
+	return refuseHostlessClaim(params, path)
+}
+
+// refuseHostlessClaim stops a participant with no computer making a statement
+// about somebody's files.
+//
+// A claim says "I am working in this directory", and SPEC §9 lets it block
+// another agent. Both halves need the claimant to be on the filesystem the
+// path names. A ChatGPT conversation relayed through a tunnel is not: it has
+// no directory, cannot open the files, cannot notice when it is done, and
+// cannot be woken to release. Measured before this existed: a conversation
+// took an exclusive claim on a checkout on somebody else's Mac and the board
+// reported no overlap, because it had been stamped with the tunnel host and
+// there was nothing to overlap with.
+//
+// Everything that is coordination stays open to it: register, the board,
+// mail, spaces, requests, and `declare`, which is advisory and names no path.
+// What is refused is the one verb that makes an assertion about a machine it
+// is not on.
+//
+// HERE, not in core. A rule in the fold is retroactive, because replay runs
+// Apply over ops that older code accepted, and a daemon that refuses its own
+// ledger does not boot: AGENTS.md names that as the mistake this repository
+// keeps almost making. This is not an invariant of the state machine, it is
+// what THIS caller may ask for, which is the surface's question.
+func refuseHostlessClaim(params json.RawMessage, path string) error {
+	if !metaHostless(params) {
+		return nil
+	}
+	return &core.Error{
+		Code: "E_NO_MACHINE",
+		Msg: fmt.Sprintf("a participant with no computer cannot claim %q: a claim says you "+
+			"are working in a directory and can block somebody who is, and this session is "+
+			"relayed from elsewhere", path),
+		Hint: "declare(text, refs) instead: it says what you are working on, names no path, " +
+			"and blocks nobody. Everything else is open to you: the roster, mail, spaces " +
+			"and requests",
+	}
+}
+
+// metaHostless reports whether the caller has told us it is on no computer.
+func metaHostless(params json.RawMessage) bool {
+	var p struct {
+		Meta map[string]any `json:"_meta"`
+	}
+	if json.Unmarshal(params, &p) != nil {
+		return false
+	}
+	v, _ := p.Meta[HostlessMetaKey].(bool)
+	return v
 }
 
 // isLoopback reports whether an address is one nothing off this machine can
