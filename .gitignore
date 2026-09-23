@@ -62,6 +62,7 @@ __pycache__/
 /fetchpinned
 /signcheck
 /signid
+/signrelease
 /signstable
 /smoke
 /stampserver
