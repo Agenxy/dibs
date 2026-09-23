@@ -536,31 +536,7 @@ func checkWakeRoutes(dir string, b *boardView, hosts hubHosts, ok reportFn, warn
 		reportWakeCoverage(cfg.Wake.Exec, b, hosts, dir, ok, warn)
 		return
 	}
-	// TWO FIXES, AND THE CHEAP ONE USED TO BE MISSING.
-	//
-	// This said what was wrong and then named only the expensive remedy, which
-	// is the failure the honesty rule exists to prevent: a hint has to name the
-	// corrective call, and "configure a command for every harness on the board"
-	// is not the only one. The hold is a DEFAULT. Claude Code holds a peer
-	// message whose sender asserts no permission-mode class only while the
-	// receiver bypasses prompts, and an explicit crossSessionInbound beats that
-	// default. Measured 2026-09-23 on 2.1.280: two bypassPermissions sessions,
-	// the same frame on each socket, held on one and a turn started on the
-	// other, the only difference being that setting. Printed and never written,
-	// because accepting unattested peer text is the receiving human's call, the
-	// same way internal/appfirewall prints a firewall fix it will not run.
-	warn("no wake command is configured, so the only route is best effort",
-		"the harness session socket needs no setup and is tried first, but the "+
-			"receiving session decides whether to accept a peer message and sends "+
-			"no receipt: a Claude Code session in bypassPermissions mode HOLDS it "+
-			"for its human, which is what an unattended fleet runs in. Nothing "+
-			"will report a wake that was held. Two ways out, and you can take "+
-			"both. Add a [wake.exec.<harness>] block to "+
-			filepath.Join(dir, "dibs.toml")+" for a route this daemon can "+
-			"confirm; or open the socket route on the receiving side by setting "+
-			`"crossSessionInbound": "accept" in ~/.claude/settings.json, which `+
-			"still gives no receipt and lets any local process that can read a "+
-			"session's peer key put a line in front of that agent")
+	reportSocketRoute(dir, ok, warn)
 }
 
 // bridgedHarnesses is host id -> the harnesses that host's bridge can start.

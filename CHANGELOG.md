@@ -7,6 +7,20 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`dibs doctor` reads the setting it advises about.** Naming the socket
+  route's cheap remedy fixed half a problem and created the other half: advice
+  printed unconditionally is advice printed to somebody who has already taken
+  it, and the next real warning then reads like more of the same. The check now
+  reads the effective `crossSessionInbound` across the files that decide it, in
+  the client's own precedence (managed policy, then the user, then a checkout
+  which may only tighten), and reports four states instead of one. Open says so
+  and stops asking. Held names the file that is holding. Refused says that no
+  local change will help and points at `[wake.exec]`. Unset gets both ways out,
+  as before. `internal/peerpolicy` is the new home for that rule, including the
+  one that is easy to get backwards: a checkout asking for `accept` where
+  nothing above it has decided changes nothing, because a repository may only
+  tighten and is compared against `accept` rather than against the default.
+
 - **The socket wake route has a remedy, and Dibs was telling nobody about
   it.** Three documents and a `dibs doctor` warning correctly described a
   Claude Code session in `bypassPermissions` mode as holding peer messages for
