@@ -215,6 +215,12 @@ boundary rather than nothing, which is why Dibs will not write it for you.
 Still no receipt either way: `accept` makes the route work, it does not make
 it confirmable.
 
+`dibs doctor` reads this rather than lecturing about it. Once the setting is in
+place it reports the route as open and stops offering the fix; if a managed
+policy or a checkout is what holds, it names that file instead, because "set
+accept in your own settings" is an afternoon wasted on a machine where somebody
+else has already answered.
+
 The key under `exec` is the harness as agents report it, lowercased: `codex`,
 `claude code`. Each takes `argv` and an optional `cooldown`. Check what your
 agents actually report before trusting a key to match: the board shows values

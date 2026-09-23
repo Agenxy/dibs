@@ -23,6 +23,15 @@ import (
 func TestDoctorSaysWhichWakeRoutesExist(t *testing.T) {
 	run := func(t *testing.T, toml string, board *boardView) (oks, warns []string) {
 		t.Helper()
+		// PIN THE HOME THIS READS, because the socket-route branch now reads
+		// the receiving side's `crossSessionInbound` from the real settings
+		// files, and an empty home is the default state this suite is about.
+		// Left unpinned it read the developer's own machine and passed or
+		// failed by accident: it went red the day that setting was turned on
+		// here, which is the honest outcome of a host-dependent test and not a
+		// regression in the thing under test. What the other states say is
+		// TestTheSocketRouteCheckReadsTheSettingItAdvisesAbout's business.
+		t.Setenv("HOME", t.TempDir())
 		dir := t.TempDir()
 		if toml != "" {
 			if err := os.WriteFile(filepath.Join(dir, "dibs.toml"), []byte(toml), 0o600); err != nil {
@@ -35,7 +44,7 @@ func TestDoctorSaysWhichWakeRoutesExist(t *testing.T) {
 		return
 	}
 
-	t.Run("no command configured", func(t *testing.T) {
+	t.Run("no command configured, and nothing has opened the socket route", func(t *testing.T) {
 		oks, warns := run(t, "", nil)
 		if len(warns) != 1 {
 			t.Fatalf("expected one warning, got oks=%v warns=%v", oks, warns)
