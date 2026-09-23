@@ -133,8 +133,18 @@ func enrichRegister(line []byte) []byte {
 			// TypeScript, each rule arriving a release late. Same shape
 			// as the caller's own User-Agent, and as a path named for
 			// another agent: what the caller states about ITSELF stands.
+			warnIfThisLooksRemote(meta)
 			if _, stated := meta["com.dibs/session"].(string); !stated {
-				if sid := sessionID(); sid != "" {
+				// A remote conversation's session is the one IT names. This
+				// bridge's own session id belongs to the machine running the
+				// tunnel and would bind a browser tab to a process tree it
+				// has nothing to do with.
+				sid := sessionID()
+				if remoteSession {
+					sid = remoteSessionID(meta)
+					remoteRegisterSession = sid
+				}
+				if sid != "" {
 					meta["com.dibs/session"] = sid
 				}
 			}
@@ -145,15 +155,27 @@ func enrichRegister(line []byte) []byte {
 			// would otherwise have carried it. A bridge on the daemon's own
 			// machine asserts the daemon's own id (its data directory holds
 			// the node id), so the daemon reads the same value either way.
-			if hid := hostID(); hid != "" {
+			//
+			// Not for a caller that is not here. Everything below this line
+			// is an observation about THIS computer, and for a relayed
+			// conversation every one of them is a statement about the wrong
+			// machine. See mcpstdio_remote.go.
+			if hid := hostID(); hid != "" && !remoteSession {
 				meta[mcp.HostMetaKey] = hid
+			}
+			if remoteSession {
+				// Stating "nowhere" rather than leaving it blank, because the
+				// daemon reads a blank from loopback as "here".
+				meta[mcp.HostlessMetaKey] = true
 			}
 			// WHICH CHECKOUT, as this machine sees it. A hub on another computer
 			// cannot ask Git about a path that exists only here, and the
 			// repository rule for two clones on two machines needs the answer;
 			// a daemon on THIS machine ignores it and derives its own.
-			supplyWorkingDirectory(params)
-			stampRepo(params)
+			if !remoteSession {
+				supplyWorkingDirectory(params)
+				stampRepo(params)
+			}
 			if tid, _ := meta["threadId"].(string); strings.TrimSpace(tid) != "" {
 				noteThread(strings.TrimSpace(tid))
 			}
@@ -180,6 +202,9 @@ func enrichRegister(line []byte) []byte {
 	// surface come from Claude Code's on-disk sidecar and so are Claude-only.
 	// Anything the caller already filled in wins: we only supply what is blank.
 	for k, v := range sessionContext(clientIs("claude")) {
+		if remoteSession {
+			break // host, cwd and branch are this machine's, and the caller is not on it
+		}
 		if cur, ok := args[k].(string); ok && cur != "" {
 			continue
 		}
@@ -213,7 +238,14 @@ func enrichRegister(line []byte) []byte {
 	// "is this agent still connected" are the same question. The harness's own
 	// pid is not reachable: harnesses wrap the bridge, so the parent is a
 	// watchdog or a launcher, not the agent.
-	if cur, ok := args["pid"].(float64); !ok || cur == 0 {
+	//
+	// Except for a caller that is not here, where this process's liveness
+	// answers the wrong question. One tunnel serves many conversations and
+	// outlives all of them, so a browser tab closed last week would read as
+	// alive for as long as the tunnel runs. No pid suppresses the proc_alive
+	// signal, which leaves `last_coordination_at` to say whether a remote
+	// participant is still about: the only evidence there actually is.
+	if cur, ok := args["pid"].(float64); (!ok || cur == 0) && !remoteSession {
 		args["pid"] = os.Getpid()
 		touched = true
 	}
@@ -297,8 +329,20 @@ func enrichRegister(line []byte) []byte {
 	// sidecar: opencode passes no session identifier at all, and the bridge
 	// process is the right thing to key on there.
 	if cur, ok := args["session_id"].(string); !ok || cur == "" {
-		args["session_id"] = sessionID()
-		touched = true
+		// A relayed conversation's session is the one the client named, and
+		// `host-<ppid>` here would key every ChatGPT conversation coming
+		// through one tunnel to the same id: they would reattach to each
+		// other's agent. Absent, nothing is filled in, because the
+		// documentation for that field says to tolerate its absence and a
+		// made-up id is worse than none.
+		switch {
+		case !remoteSession:
+			args["session_id"] = sessionID()
+			touched = true
+		case remoteRegisterSession != "":
+			args["session_id"] = remoteRegisterSession
+			touched = true
+		}
 	}
 	if !touched && lastClientInfo == nil {
 		return line
@@ -312,7 +356,9 @@ func enrichRegister(line []byte) []byte {
 	// another machine recorded that directory beside the wrong repository
 	// (or none), so every claim made there carried the wrong
 	// repository-relative key. Round sixteen of the pre-release review.
-	stampRepo(params)
+	if !remoteSession {
+		stampRepo(params)
+	}
 	out, err := json.Marshal(msg)
 	if err != nil {
 		return line // never drop a request because enrichment failed

@@ -341,6 +341,22 @@ no command to print at all, because `socketfilterfw` refuses every modifying
 verb there, so the hint names the settings pane; that is the normal case for
 the always-on machine somebody puts a hub on.
 
+**A participant with no computer.** Everything above assumes an agent is
+somewhere: a machine, a directory, a filesystem whose paths mean something. A
+ChatGPT conversation reaching the board through OpenAI's Secure MCP Tunnel is
+none of those. The tunnel runs `dibs mcp-stdio` on somebody's Mac and relays a
+browser tab into it, so the calls arrive on loopback from a client that has no
+working directory and no host. Stamped with the bridge's observations, as
+every other caller correctly is, that conversation claims to be working on the
+tunnel's machine, and §3's claim rule then compares its paths against real
+agents' paths on a filesystem it cannot see. `dibs mcp-stdio --remote-session`
+is the operator saying so: the bridge observes nothing, states `hostless`, and
+the daemon stops reading silence from loopback as "here". Such a participant
+can do everything that is coordination and nothing that is a statement about
+files: it may `declare`, which names no path, and may not `claim`, which does.
+It cannot be woken either, for the reason §5 gives: the wake route belongs to
+the machine the agent is on, and there is no machine.
+
 **What is not enough for the public internet.** One shared bearer secret
 authenticates every agent as every other agent. On loopback the filesystem is
 the boundary and that is fine. Across a network it is one leak from total
