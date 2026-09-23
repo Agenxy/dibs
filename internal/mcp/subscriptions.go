@@ -581,6 +581,25 @@ const (
 	// and docs/NETWORK.md §2 for why that is a correctness boundary and not
 	// yet a security one.
 	HostMetaKey = "com.dibs/host"
+
+	// HostlessMetaKey says the caller is on NO computer, which is a different
+	// statement from saying nothing.
+	//
+	// resolveHostID stamps a loopback caller with this daemon's own identity,
+	// and the reason it gives is sound: nothing off this machine reaches
+	// loopback, so that much is evidence. A relayed conversation is the thing
+	// that makes the premise false. OpenAI's Secure MCP Tunnel runs
+	// `dibs mcp-stdio` on somebody's Mac and pipes a ChatGPT conversation into
+	// it, so calls from a browser tab arrive on loopback and were stamped as
+	// being on the tunnel's machine. Measured: a conversation took an
+	// exclusive claim on a checkout it cannot see, on a machine it is not on,
+	// and the board reported no overlap.
+	//
+	// So the bridge says so, when its operator told it to (`dibs mcp-stdio
+	// --remote-session`), and this is the word for it. An agent with no host
+	// may do everything that is about coordination and nothing that is a
+	// statement about somebody's files.
+	HostlessMetaKey = "com.dibs/hostless"
 	// RepoMetaKey is the caller's checkout as ITS machine sees it: the same
 	// four fields resolveLocation derives here (common dir, primary remote,
 	// root commits, worktree root), attached by the stdio bridge on every

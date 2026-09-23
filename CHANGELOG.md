@@ -5,6 +5,41 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **A ChatGPT conversation can use the board, as a participant with no
+  computer.** OpenAI's Secure MCP Tunnel runs `dibs mcp-stdio` on a Mac and
+  relays a ChatGPT conversation into it, so the transport needed nothing: the
+  bridge is already the thing every harness speaks through, and the local
+  secret never leaves the machine. What it needed was honesty about what is
+  on the other end. A browser tab has no working directory, no repository, no
+  process and no machine, and the bridge stamped it with all four: measured,
+  a relayed conversation registered as `cwd: /private/tmp, host: MacMarine`
+  and then took an EXCLUSIVE claim on a checkout it cannot see, with the board
+  reporting no overlap.
+
+  `dibs mcp-stdio --remote-session` observes nothing and asserts nothing. The
+  conversation arrives with only what is true of it, and with the id ChatGPT
+  gives for correlating one conversation's calls, which is a session id and
+  never a credential: the nonce remains the thing that proves an identity, and
+  OpenAI's own documentation says these fields must never be relied on for
+  authorization. Saying "nowhere" is also different from saying nothing, and
+  the daemon now hears the difference: it stamps a silent loopback caller with
+  its own host, on the sound reasoning that nothing off this machine reaches
+  loopback, and a tunnel is precisely the thing that makes that false.
+
+  Such a participant gets the whole of coordination: the roster, mail, spaces,
+  requests, and `declare`, which is advisory and names no path. It cannot
+  `claim` a directory, and the refusal says why and what to do instead. That
+  rule lives in the MCP surface rather than in the fold, because it is about
+  what a caller may ask for rather than an invariant of the state machine, and
+  a rule added to `Apply` is retroactive.
+
+  It cannot be woken, either: there is no route to a browser tab, so it
+  collects mail with `check_in` rather than being pushed it. No pid is sent
+  for the same reason the host is not: one tunnel outlives every conversation
+  through it, so its liveness would report a tab closed last week as alive.
+
 ### Fixed
 
 - **The published macOS binaries now have an identity of their own.** `dibd`

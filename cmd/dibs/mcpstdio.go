@@ -39,6 +39,15 @@ import (
 // So listen is streamed instead, on its own goroutine, and stdout is
 // serialised because notifications now interleave with ordinary replies.
 func mcpStdio(args []string) error {
+	for _, a := range args {
+		if a == "--help" || a == "-h" {
+			fmt.Print(bridgeHelp)
+			return nil
+		}
+	}
+	if err := parseBridgeArgs(args); err != nil {
+		return err
+	}
 	if err := bridgePreflight(); err != nil {
 		return err
 	}
