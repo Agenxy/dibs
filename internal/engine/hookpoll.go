@@ -42,6 +42,13 @@ func (e *Engine) hookOutput(out core.Result, strict bool) core.Result {
 	for k := range out {
 		switch k {
 		case "continue", "stopReason", "suppressOutput", "systemMessage", "hookSpecificOutput":
+		case "decision", "reason":
+			// Claude Code's way of continuing a stopped turn, and meaningless
+			// to a caller that does not have it. Dropped like the rest, and
+			// WITHOUT the line below: that line exists to say something was
+			// lost, and nothing is. Saying so anyway would put a false alarm
+			// in front of every Codex operator on every delivery.
+			delete(out, k)
 		default:
 			// Logged, not merely dropped, and at a level the daemon actually
 			// emits. The distinction these keys carry, that "the agent was not
@@ -393,10 +400,7 @@ func (e *Engine) HookPollFrom(
 			if stale != "" {
 				notices = append(notices, e.remind(l.ID, "model", stale, now))
 			}
-			out["hookSpecificOutput"] = map[string]any{
-				"hookEventName":     event,
-				"additionalContext": strings.TrimRight(hookDigest(l.ID, mail, announced, notices), "\n"),
-			}
+			addDelivery(out, event, hookDigest(l.ID, mail, announced, notices))
 		} else {
 			// Said out loud, because "the agent was not told" and "there was
 			// nothing to tell" must not look the same from outside.
@@ -794,12 +798,54 @@ func humanNotice(agent string, mail, announced, notices []string) string {
 	return "Dibs · " + strings.Join(parts, ", ") + " for " + agent + " · dibs board to look"
 }
 
+// addDelivery writes the digest into the shape a harness reads, and asks for
+// the continuation that makes it readable.
+//
+// Split out of HookPollFrom to keep that dispatch inside its complexity
+// budget, and because the two halves are one decision: what the agent is told,
+// and the field without which it is told nothing.
+func addDelivery(out core.Result, event, digest string) {
+	digest = strings.TrimRight(digest, "\n")
+	out["hookSpecificOutput"] = map[string]any{
+		"hookEventName": event, "additionalContext": digest,
+	}
+	// THE FIELD THAT ACTUALLY CONTINUES THE TURN.
+	//
+	// This sent additionalContext alone, on the strength of a comment saying
+	// Claude Code's documentation described it as keeping the conversation
+	// going. The documentation says the opposite, in a table: `decision:
+	// "block"` "Prevents Claude from stopping; the conversation continues",
+	// `reason` is "Shown to Claude when decision: block", and
+	// additionalContext "does not by itself block the stop".
+	//
+	// So every wake this path decided to send landed nowhere. Measured on this
+	// machine: mail arrived at 21:10:25 while the agent was idle, its Stop
+	// hook fired twice in the following minutes, the daemon returned the
+	// digest both times, and the agent learned it had mail an hour later when
+	// its operator said so.
+	//
+	// Set freely and filtered at the edge, which is how every other key here
+	// works: hookOutput is the one place that knows what a caller's schema
+	// accepts, and Codex drops these two silently because for Codex they are
+	// not news that went missing.
+	if isStopEvent(event) {
+		out["decision"] = "block"
+		out["reason"] = digest
+	}
+}
+
+// isStopEvent reports the two events that END a turn, and so are the only
+// ones where continuing has to be asked for explicitly.
+func isStopEvent(event string) bool {
+	return event == "Stop" || event == "SubagentStop"
+}
+
 // deliverToModel decides whether this news is worth extending a turn for.
 //
-// On Stop, `additionalContext` does not merely inform: Claude Code's own
-// documentation says it "keeps the conversation going", through the same loop
-// protections as a blocking decision and an eight-continuation cap. So every
-// piece of mail was preventing an agent from finishing, a plain FYI included.
+// On Stop, a delivery genuinely continues the turn: it is sent as
+// `decision: "block"` with a reason, which is the documented way to keep a
+// conversation going, and the same loop protections apply. So every piece of
+// mail delivered here prevents an agent from finishing, a plain FYI included.
 // That is Dibs driving a harness, which PHILOSOPHY.md rule 5 forbids and which
 // the wake path exists specifically not to do.
 //
@@ -837,10 +883,22 @@ func (e *Engine) deliverToModel(event string, fresh, blocked, stopActive bool) b
 		// need a person to type.
 		return false
 	case "Stop", "SubagentStop":
-		// Never twice in a row. stop_hook_active means this turn is ALREADY
-		// running because a stop hook continued it, and continuing again on the
-		// same unread mail is how a wake becomes a loop. This one is not
-		// configurable: it is a loop guard, not a preference.
+		// Never twice in a row, and FRESHNESS is what guarantees that.
+		//
+		// `stopActive` was the guard, on the reading that stop_hook_active
+		// means "this turn is already running because a stop hook continued
+		// it". Claude Code's documentation now defines it as "true when at
+		// least one Stop or SubagentStop hook is configured for this event",
+		// which is ALWAYS true wherever Dibs is installed, because Dibs
+		// configures one. Wiring that field through would therefore switch
+		// every Stop delivery off permanently, and it reads like an obvious
+		// improvement, which is exactly why this says so here. The plugin does
+		// not send it today.
+		//
+		// The real loop guard is `fresh`: markWoken records each message as
+		// announced to this agent, so the same mail cannot continue a turn
+		// twice however many Stop hooks fire. It is kept as a hard condition
+		// rather than a policy for that reason.
 		if stopActive || e.WakePolicy() == WakeNone || !fresh {
 			return false
 		}

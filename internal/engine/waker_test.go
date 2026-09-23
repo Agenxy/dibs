@@ -226,36 +226,56 @@ func TestTheBoardDoesNotStartAnythingItDoesNotNeedTo(t *testing.T) {
 		}
 	})
 
-	// An FYI must not start a process on the operator's machine.
+	// MAIL WAKES AN AGENT, and how much mail is the operator's setting.
 	//
-	// This asked the type-BLIND function and then logged whichever answer it
-	// got, so both branches passed: deleting the production MsgNotify guard
-	// left it green. It was a decoration in the shape of a regression test, and
-	// the rule it names is the one that decides whether an operator leaves this
-	// feature switched on.
+	// This subtest used to assert that a notify never starts a process, on the
+	// reasoning that nobody is blocked on an FYI and that spawning for one is
+	// what makes an operator switch the feature off. The cost is real; the
+	// conclusion was not the service's to draw. The hook path had always asked
+	// `[wake] policy`, whose default is `all`, so the two routes disagreed,
+	// and the one that said no was the only one that could reach an agent that
+	// had STOPPED, which is the product. Measured on a live board: feedback
+	// sent as a notify to an idle agent reached it an hour later, via its
+	// operator.
 	//
-	// maybeWake is the filter, so maybeWake is what gets asked.
-	t.Run("an FYI does not justify starting a process", func(t *testing.T) {
+	// So the protection the old assertion was defending moves to where it
+	// belongs and is tested there: under `urgent` an FYI still starts nothing.
+	t.Run("a notify wakes under the default policy", func(t *testing.T) {
 		l := bridgeAgent("sleeper2", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
 		e.state = &core.State{Agents: map[string]*core.Agent{"sleeper2": l}}
 		e.maybeWake(core.Event{
 			Type: "message.sent", To: "sleeper2",
 			Data: map[string]any{"msg_type": core.MsgNotify, "from": "someone"},
 		})
-		if e.wakeSpent("sleeper2") {
-			t.Error("a notify started the operator's wake command. Nobody is " +
-				"blocked on an FYI: it arrives at the agent's next activation " +
-				"and costs nothing, and spawning a process for one is what " +
-				"makes an operator turn this off")
+		if !e.wakeSpent("sleeper2") {
+			t.Error("a notify did not start the wake command. Mail wakes an agent: " +
+				"a board whose messages arrive only when a human happens to type is " +
+				"the failure this exists to remove")
 		}
-		// And the same agent, one message later, IS woken: otherwise this
-		// passes for an agent that could never be woken at all, which is how a
-		// filter test quietly stops testing the filter.
+	})
+
+	t.Run("and not under urgent, which is what that setting is for", func(t *testing.T) {
+		l := bridgeAgent("sleeper3", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ed")
+		e.state = &core.State{Agents: map[string]*core.Agent{"sleeper3": l}}
+		e.SetWakePolicy(WakeUrgent)
+		defer e.SetWakePolicy(WakeAll)
 		e.maybeWake(core.Event{
-			Type: "message.sent", To: "sleeper2",
+			Type: "message.sent", To: "sleeper3",
+			Data: map[string]any{"msg_type": core.MsgNotify, "from": "someone"},
+		})
+		if e.wakeSpent("sleeper3") {
+			t.Error("`urgent` started a process for an FYI: the setting exists so an " +
+				"operator can say they only want interrupting for work somebody is " +
+				"blocked on")
+		}
+		// And the same agent IS woken by blocking mail, or this passes for an
+		// agent that could never be woken at all, which is how a filter test
+		// quietly stops testing the filter.
+		e.maybeWake(core.Event{
+			Type: "message.sent", To: "sleeper3",
 			Data: map[string]any{"msg_type": core.MsgQuestion, "from": "someone"},
 		})
-		if !e.wakeSpent("sleeper2") {
+		if !e.wakeSpent("sleeper3") {
 			t.Fatal("a question did not wake the same agent either, so the check " +
 				"above proved nothing about the TYPE filter")
 		}

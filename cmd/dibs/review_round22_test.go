@@ -95,7 +95,16 @@ func TestADuplicateNotificationDoesNotQueueASecondWake(t *testing.T) {
 		fl, _ := w.(http.Flusher)
 		q := `data: {"jsonrpc":"2.0","method":"notifications/resources/updated","params":{"uri":"dibs://inbox","_meta":{"com.dibs/event":"message.sent","com.dibs/msg_type":"question","com.dibs/serial":7}}}` + "\n\n"
 		_, _ = fmt.Fprint(w, q, q)
-		_, _ = fmt.Fprint(w, `data: {"jsonrpc":"2.0","method":"notifications/resources/updated","params":{"uri":"dibs://inbox","_meta":{"com.dibs/event":"message.sent","com.dibs/msg_type":"notify","com.dibs/serial":8}}}`+"\n\n")
+		// THE SAME SERIAL AGAIN, which is what a duplicate is.
+		//
+		// This sent serial 8 as a notify, and relied on a notify waking
+		// nobody: a different message that happened to be inert, not a
+		// duplicate at all. Mail wakes an agent now, so that fixture asserted
+		// something the test never meant. Replaying 7 is the case
+		// `alreadySeen` exists for: the daemon hands a resumed subscription
+		// its gap twice, and the second copy must not queue a second wake.
+		_, _ = fmt.Fprint(w, q)
+		_, _ = fmt.Fprint(w, `data: {"jsonrpc":"2.0","method":"notifications/resources/updated","params":{"uri":"dibs://inbox","_meta":{"com.dibs/event":"message.acked","com.dibs/msg_type":"question","com.dibs/serial":8}}}`+"\n\n")
 		fl.Flush()
 		<-hold // the fake daemon holds its stream open until the test is done
 	}))

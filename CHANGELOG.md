@@ -5,6 +5,43 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Mail wakes an agent, which is the product, and it had stopped.** Two
+  independent faults, both silent, found after a peer sent substantial
+  feedback to an idle agent and it surfaced an hour later because the operator
+  mentioned it.
+
+  **A delivery on Stop carried no instruction to continue.** The digest was
+  sent as `hookSpecificOutput.additionalContext` alone, on the strength of a
+  comment saying Claude Code's documentation described that as keeping the
+  conversation going. The documentation says the opposite, in a table:
+  `decision: "block"` "Prevents Claude from stopping; the conversation
+  continues", and additionalContext "does not by itself block the stop". So
+  every wake the hook path decided to send landed nowhere, for every Claude
+  Code agent on every board, while the daemon recorded the mail as delivered
+  and spent its freshness. Both fields are sent now; Codex still gets neither,
+  because its schema refuses unknown keys, and the filter that already knew
+  that is the only place it is decided.
+
+  **And the push route ignored the operator's policy.** It asked a rule that
+  meant "only news somebody is blocked on", so a notify started nobody however
+  the board was configured, while `deliverToModel` ten lines away had always
+  asked `[wake] policy`, whose default is `all`. One question with two
+  answers, and the routes are not interchangeable: the hook path can only
+  reach an agent that is still running, so the route that said no was the only
+  one that could reach an agent that had stopped. Both ask the policy now.
+  Under the default every piece of mail wakes; `[wake] policy = "urgent"`
+  narrows it to work somebody is blocked on, which is where that trade
+  belongs, and `policy = "none"` still turns it off.
+
+  Four tests across the tree encoded the old choice, including two that used a
+  notify as a stand-in for inert mail rather than for itself: a cursor test
+  that needed a notification which wakes nothing, and a duplicate-suppression
+  test whose "duplicate" was a different message. Both now test what they
+  claim.
+
+
 ### Added
 
 - **A ChatGPT conversation can use the board, as a participant with no
