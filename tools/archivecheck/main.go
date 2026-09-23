@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -165,6 +166,74 @@ func carries(path string, want []string) error {
 				"file listing and is inert on half the machines that download it",
 				filepath.Base(path), arch, w, archs)
 		}
+		if ierr := identified(filepath.Base(path), w, e.body); ierr != nil {
+			return ierr
+		}
+	}
+	return nil
+}
+
+// signingIdentifiers is what each executable must tell macOS it is. Kept here
+// rather than imported from tools/signrelease because this check exists to
+// disagree with that tool: a guard that reads its answer from the thing it is
+// checking cannot catch the thing going wrong.
+var signingIdentifiers = map[string]string{
+	"dibd":                                "org.agenxy.dibs",
+	"dibs":                                "org.agenxy.dibs.cli",
+	"dibs-presence":                       "org.agenxy.dibs.presence",
+	"Dibs.app/Contents/MacOS/dibs-notify": "org.agenxy.dibs.notify",
+}
+
+// identified proves a shipped executable introduces itself to macOS under its
+// own name.
+//
+// The published dibd said `a.out`, which is the Go toolchain's default and
+// what every unsigned Go binary on a machine says. macOS records a firewall
+// allowance and a privacy grant against the identifier and the signature, so
+// the published build shared an identity with every other ad-hoc Go program
+// and changed its signature on every release: an operator who allowed the hub
+// through their firewall was asked again on the next upgrade, forever.
+// `task install` had set the identifiers since the privacy-grant fix and the
+// RELEASE had not, so a source install was better behaved than the official
+// one, and nothing anywhere compared the two. This is the thing that compares
+// them.
+func identified(archive, name string, body []byte) error {
+	want, checked := signingIdentifiers[name]
+	if !checked {
+		return nil
+	}
+	dir, err := os.MkdirTemp("", "archivecheck-")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	// codesign reads a FILE, so the entry has to land on disk. The name it
+	// lands under does not matter: the identifier is inside the signature,
+	// which is the point of checking it rather than checking the path.
+	at := filepath.Join(dir, "artifact")
+	if werr := os.WriteFile(at, body, 0o600); werr != nil {
+		return werr
+	}
+	// #nosec G204 -- no shell; `at` is this function's own temp file.
+	out, err := exec.Command("codesign", "-dv", "--verbose=2", at).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s: %s carries no code signature at all (%v). macOS records a "+
+			"firewall allowance against the signature, so an unsigned binary is a new "+
+			"program on every release", archive, name, err)
+	}
+	got := ""
+	for _, line := range strings.Split(string(out), "\n") {
+		if rest, found := strings.CutPrefix(strings.TrimSpace(line), "Identifier="); found {
+			got = rest
+			break
+		}
+	}
+	if got != want {
+		return fmt.Errorf("%s: %s tells macOS it is %q, and it has to say %q.\n\n"+
+			"%q is the Go toolchain's default and is shared by every ad-hoc Go binary on "+
+			"the machine. A firewall allowance or a privacy grant recorded against it is "+
+			"recorded against all of them",
+			archive, name, got, want, "a.out")
 	}
 	return nil
 }

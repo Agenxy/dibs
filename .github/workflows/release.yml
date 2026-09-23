@@ -76,6 +76,29 @@ jobs:
           cosign-release: v3.1.3
       - uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
 
+      # THE MACOS SIGNING IDENTITY, before anything is built.
+      #
+      # Without it the published binaries are ad-hoc signed, which macOS reads
+      # as a different program on every build: an operator who allows dibd
+      # through their firewall, or grants it a folder, is asked again on the
+      # next upgrade, for as long as they keep Dibs. With it the designated
+      # requirement is `identifier "org.agenxy.dibs" and certificate leaf =
+      # H"..."`, which is the same for every release, so one answer lasts.
+      #
+      # This is NOT a Developer ID and does not make Gatekeeper accept the
+      # binary; that needs an Apple Developer Program membership. It is the
+      # free half: the operator still approves once.
+      #
+      # The step is deliberately not conditional on the secret existing. The
+      # tool reports its absence and signs ad-hoc with correct identifiers, so
+      # a fork with no certificate still releases, and the one line saying so
+      # appears in the log.
+      - name: macOS signing identity
+        env:
+          DIBS_SIGNING_P12: ${{ secrets.DIBS_SIGNING_P12 }}
+          DIBS_SIGNING_P12_PASSWORD: ${{ secrets.DIBS_SIGNING_P12_PASSWORD }}
+        run: go run ./tools/signrelease -import
+
       - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
         with:
           version: "2.17.1" # pinned to match mise.toml

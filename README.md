@@ -155,6 +155,16 @@ Two static binaries: `dibd` (daemon, MCP server and web board) and `dibs`
 (the CLI). Both `CGO_ENABLED=0`, byte-for-byte reproducible. No database, no
 Node, no runtime dependencies.
 
+The macOS binaries are code-signed with a stable Agenxy identity, so macOS
+sees one program across versions rather than a new one at every release: a
+firewall allowance or a folder permission you grant once keeps applying. The
+certificate is self-signed, which means Gatekeeper still asks the first time
+and `spctl` still refuses; a Developer ID and notarization are what would
+remove that, and Dibs does not have one yet. Signing is deterministic, so the
+reproducibility above holds for anyone holding the same certificate, and
+everyone else can reproduce the unsigned binaries and compare everything but
+the signature.
+
 ### Homebrew (macOS)
 
 ```sh

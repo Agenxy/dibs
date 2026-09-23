@@ -31,6 +31,7 @@ before:
     # arm64 only: Dibs does not ship a Mac Intel build. See the `ignore` below.
     - swiftc -O -target arm64-apple-macos11 -o dibs-presence internal/humanauth/presence_darwin.swift
     - lipo -info dibs-presence
+    - go run ./tools/signrelease -sign dibs-presence
     # AND THE NOTIFIER BUNDLE, for the same reason and found the same way.
     #
     # internal/notify looks for Dibs.app/Contents/MacOS/dibs-notify beside the
@@ -49,6 +50,10 @@ before:
     # building from source on an Intel Mac, which is the documented escape
     # hatch now that the release does not cover it.
     - go run ./tools/appbundle -o Dibs.app -version {{ .Version }} -target arm64-apple-macos12
+    # AGAIN, and not instead: appbundle signs so that a bundle is always valid,
+    # and signs without an identifier. This is the pass that gives it the one
+    # macOS records a notification grant against.
+    - go run ./tools/signrelease -sign Dibs.app
 
 builds:
   - id: dibd
@@ -69,6 +74,19 @@ builds:
     # point: a fat binary still has to be built, joined and checked on both
     # sides, and the checking is where the last two defects were.
     ignore: [{goos: darwin, goarch: amd64}]
+    # SIGNED HERE, between the build and the archive, because that is the only
+    # moment the file exists and nothing has packed it yet.
+    #
+    # It gives the binary an identifier and, when the release has a
+    # certificate, a signature that does not change between versions. Without
+    # that, macOS sees every update as a different program: the published dibd
+    # introduced itself as `a.out` with an ad-hoc signature, so an operator who
+    # allowed it through the firewall was asked again on the next upgrade, and
+    # so was everybody else. The tool is a no-op on the Linux targets and says
+    # so rather than appearing to have worked.
+    hooks:
+      post:
+        - go run ./tools/signrelease -sign {{ .Path }}
   - id: dibs
     main: ./cmd/dibs
     binary: dibs
@@ -87,6 +105,19 @@ builds:
     # point: a fat binary still has to be built, joined and checked on both
     # sides, and the checking is where the last two defects were.
     ignore: [{goos: darwin, goarch: amd64}]
+    # SIGNED HERE, between the build and the archive, because that is the only
+    # moment the file exists and nothing has packed it yet.
+    #
+    # It gives the binary an identifier and, when the release has a
+    # certificate, a signature that does not change between versions. Without
+    # that, macOS sees every update as a different program: the published dibd
+    # introduced itself as `a.out` with an ad-hoc signature, so an operator who
+    # allowed it through the firewall was asked again on the next upgrade, and
+    # so was everybody else. The tool is a no-op on the Linux targets and says
+    # so rather than appearing to have worked.
+    hooks:
+      post:
+        - go run ./tools/signrelease -sign {{ .Path }}
 
 archives:
   - formats: [tar.gz]
