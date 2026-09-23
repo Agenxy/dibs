@@ -194,6 +194,27 @@ unattended fleet runs in, so for those agents the socket route delivers nothing
 and nothing reports it. A command is the route the daemon can confirm, because
 it sees the exit status. `dibs doctor` tells you which of the two a board has.
 
+**You can open the socket route instead, and it is one line.** The hold is a
+default rather than a rule: Claude Code holds unattested peer messages only
+while a session bypasses permission prompts, and an explicit setting always
+beats that default. In `~/.claude/settings.json`:
+
+```json
+{ "crossSessionInbound": "accept" }
+```
+
+Measured on 2026-09-23 against 2.1.280: with the default, a wake to a
+bypassPermissions session is held with cause `no-mode-asserted` and no turn
+starts; with `accept`, the same bytes start a turn. The trade is real and it is
+yours to make. Permission prompts are what stands between text arriving and an
+agent acting on it, and a bypass session has already removed that check, so
+`accept` means any local process that can read a session's peer key can put a
+line in front of that agent. That is the same boundary `~/.dibs/local.secret`
+sits behind, which is why Dibs is willing to name the setting, and it is a
+boundary rather than nothing, which is why Dibs will not write it for you.
+Still no receipt either way: `accept` makes the route work, it does not make
+it confirmable.
+
 The key under `exec` is the harness as agents report it, lowercased: `codex`,
 `claude code`. Each takes `argv` and an optional `cooldown`. Check what your
 agents actually report before trusting a key to match: the board shows values
