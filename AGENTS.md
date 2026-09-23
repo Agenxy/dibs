@@ -198,6 +198,25 @@ Things that have cost real time here, none of which are visible in the diff:
   before trusting the guard, and prefer a rule the daemon can check itself:
   freshness, not a field the harness defines.
 
+- **A diagnosis is only half a hint until you have found the DEFAULT behind
+  it.** The socket wake route was documented, correctly, as held by a Claude
+  Code session in bypassPermissions mode, and then described as though nothing
+  could be done: "no message a sender can construct changes that". True about
+  the wire and false about the situation. The receiving client's rule is mode
+  PARITY with an explicit `crossSessionInbound` overriding it, so one line in
+  the receiving user's settings turns the free route on, and three documents
+  and a `dibs doctor` warning had all stopped at the problem. Measured
+  2026-09-23 on 2.1.280 the only way that settles it: two headless sessions,
+  both bypassPermissions, the same frame written to each socket, one answering
+  `peer_message_hold` with cause `no-mode-asserted` and no turn, the other
+  starting a turn with a `kind:"peer"` origin. Note also that the rule reads
+  backwards and is not: bypass is strict at the door precisely because it is
+  permissive downstream. When this repository documents somebody else's gate,
+  the finding is not complete until it says whether the gate has a switch, who
+  owns the switch, and what flipping it costs. Same shape as
+  `internal/appfirewall`, which is the pattern to copy: detect, explain, print
+  the fix, never run it.
+
 - **The macOS firewall swallows a hub, it does not refuse one.** The
   Application Firewall is on by default and filters inbound connections per
   executable. A binary that is not in its list is not rejected: the handshake
