@@ -7,6 +7,22 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The socket wake route has a remedy, and Dibs was telling nobody about
+  it.** Three documents and a `dibs doctor` warning correctly described a
+  Claude Code session in `bypassPermissions` mode as holding peer messages for
+  its human, and then stopped, one of them saying outright that no message a
+  sender can construct changes it. True about the wire and false about the
+  situation: the hold is the receiving client's DEFAULT, and an explicit
+  `"crossSessionInbound": "accept"` in that user's `~/.claude/settings.json`
+  beats it. Measured on 2026-09-23 against 2.1.280, twice: two headless
+  sessions, both `bypassPermissions`, the same frame on each session socket,
+  one answering `peer_message_hold` with cause `no-mode-asserted` and starting
+  no turn, the other starting a turn with a `kind:"peer"` origin. `dibs doctor`
+  now names both ways out, says what accepting costs, and writes neither, the
+  way the firewall check already worked. The socket route still sends no
+  receipt, so `accept` makes it work without making it confirmable, and
+  `[wake.exec]` remains the route this daemon can confirm.
+
 - **Mail wakes an agent, which is the product, and it had stopped.** Two
   independent faults, both silent, found after a peer sent substantial
   feedback to an idle agent and it surfaced an hour later because the operator

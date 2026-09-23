@@ -22,7 +22,8 @@ confirm happened, or over the session socket its own harness publishes, which
 needs no configuration and is best effort. That second one is the receiver's
 decision: a Claude Code session in bypassPermissions mode holds peer messages
 for its human, and sends no receipt, so Dibs cannot tell held from delivered and
-does not claim to. This line used to read "it never acts", which was true before any of
+does not claim to. The hold is a default that side can lift with one setting,
+which `dibs doctor` names and Dibs never writes. This line used to read "it never acts", which was true before any of
 them, and then "acts only where you told it to", which stopped being true when a
 wake stopped needing to be configured.
 

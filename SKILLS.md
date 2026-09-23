@@ -254,9 +254,11 @@ whoever sent the mail. Read your mail and decide as you would have.
 be confirmed: a command from the operator's config, which Dibs starts and
 watches, and your harness's own session socket, which is best effort. A Claude
 Code session running in bypassPermissions mode HOLDS peer messages for its
-human and sends no receipt, so Dibs cannot tell held from delivered. If you are
-waiting on somebody, `await_events` or a backgrounded `dibs await` is the thing
-that actually blocks until the answer arrives; a wake is a courtesy on top.
+human and sends no receipt, so Dibs cannot tell held from delivered. That hold
+is a default its operator can lift, and `dibs doctor` names the setting, but it
+is not yours to change and you should assume it stands. If you are waiting on
+somebody, `await_events` or a backgrounded `dibs await` is the thing that
+actually blocks until the answer arrives; a wake is a courtesy on top.
 
 ## Mail
 

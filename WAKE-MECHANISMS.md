@@ -364,12 +364,49 @@ then watching its transcript, nothing arrived at all.
 
 The reason is in the receiving client, not in what Dibs writes. Inbound peer
 messages pass a `crossSessionInbound` policy: accept, hold, or refuse. With no
-explicit setting, a receiver whose permission mode is **bypassPermissions**
-holds any peer message whose sender asserts no mode of its own, and the branch
-that would read an asserted mode sits behind a feature flag that is off by
-default. So for a session running in bypass, which is what an unattended fleet
-runs in, the notice is HELD pending a human, and no message a sender can
-construct changes that.
+explicit setting the rule is mode PARITY, and it is worth stating in full
+because it reads backwards at first glance. A message auto-delivers when the
+sending session's permission-mode class matches the receiver's, bypass to
+bypass or prompting to prompting. A mismatched sender is held. And a sender
+that asserts no class at all is held ONLY while the receiver bypasses
+permission prompts. Dibs asserts no class, because it is a daemon and has no
+permission mode to assert, so it lands in that last case every time.
+
+**Bypass is the strict side here, and that is the point rather than a bug.**
+Permission prompts are the check that stands between text arriving and an agent
+acting on it. A session in bypassPermissions has removed that check
+downstream, so the receiving client moves it to the door: the one mode where
+unattested text would be acted on without anybody seeing it is the one mode
+where unattested text is not let in. A prompting session accepts the same
+message without complaint. Read that way the rule is consistent, and it means
+the class of session an unattended fleet runs is exactly the class that holds.
+
+**MEASURED, on 2026-09-23, against Claude Code 2.1.280, twice.** Two headless
+sessions, both `--permission-mode bypassPermissions`, both handed the same
+frame on their own socket by a reimplementation of `peerwake.Deliver`. The
+first ran with default settings and answered
+`{"subtype":"peer_message_hold","state":"held","lane":"socket","cause":"no-mode-asserted"}`
+with no turn started. The second ran with `crossSessionInbound` set to
+`accept` and started a turn, whose result carried
+`"origin":{"kind":"peer","from":"unknown","verifiedPeerPid":...}`. Same
+binary, same mode, same bytes: the only difference was one line of settings.
+
+**So the operator has a remedy, and this document used to say there was
+none.** It said "no message a sender can construct changes that", which is
+true and was read as "nothing changes that", which is not: an explicit
+`crossSessionInbound` always beats the parity default. `"accept"` in
+`~/.claude/settings.json` makes the free route work on every session that
+reads those settings. What it costs is the check described above, for every
+local process that can read that session's peer key, so it is the operator's
+call and not ours to make quietly. Dibs prints it and never writes it, the
+same way `internal/appfirewall` prints a firewall fix it will not run.
+
+**A hold is not forever, and in a headless session it is not long.** Since
+2.1.280 a session with no approval surface arms a deadline on holds caused by
+`mode-mismatch` or `no-mode-asserted`, and drops them with an expired receipt
+when it passes. The deadline is the user-dialog timeout, five minutes by
+default. A held wake therefore does not wait for the next person to look; it
+is gone before most agents would have finished the turn they were in.
 
 **There is no receipt.** The connection carries a `peer_message_status` control
 frame (held / denied / expired / delivered) addressed back to a `uds:` reply
