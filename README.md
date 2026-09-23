@@ -482,6 +482,35 @@ rebooted mid-task. An always-on host reached by a forward is the answer.
 Check it from the joining machine with `dibs doctor`, with the same `DIBS_ADDR`
 and `DIBS_DIR` set.
 
+### A ChatGPT conversation
+
+An ordinary ChatGPT session can join the board through OpenAI's
+[Secure MCP Tunnel](https://github.com/openai/tunnel-client), which runs a
+command on your machine and relays the conversation into it. Nothing is
+exposed: no port opens, and the board's secret is read locally by the bridge.
+
+```sh
+tunnel-client run --mcp.command "dibs mcp-stdio --remote-session" \
+  --control-plane.tunnel-id tunnel_…
+```
+
+**`--remote-session` is not optional, and it is not a preference.** Without
+it the bridge does what it does for every harness on this machine: observes
+the host, the working directory, the checkout and its own pid, and attaches
+them to the agent. All four are true of the tunnel and none of them are true
+of a browser tab. A conversation registered that way appears to be working in
+whatever directory the tunnel was started from, and can take a directory
+claim on files it cannot see. With the flag, the bridge observes nothing and
+says so, and the daemon records a participant with no machine. The bridge
+prints a warning to stderr if it sees a ChatGPT conversation without it.
+
+What that participant can do is everything that is coordination: the roster,
+mail, spaces, requests, and `declare`, which says what you are working on and
+names no path. What it cannot do is `claim` a directory, because a claim says
+you are working in one and can block somebody who is. It also cannot be
+woken: there is no route to a browser tab, so it collects its mail by calling
+`check_in` rather than being pushed it.
+
 ### Upgrading a running fleet
 
 One command moves the daemon onto a new build, and a flag goes and gets one:
