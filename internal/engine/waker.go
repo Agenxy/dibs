@@ -128,6 +128,23 @@ type WakeCommand struct {
 // maybeWake starts the operator's wake command for an agent that cannot be
 // reached any other way. Called from publish, on the writer loop, and returns
 // immediately: the command itself runs in its own goroutine.
+// wakesFor applies the operator's wake policy to one piece of mail, which is
+// the same question deliverToModel answers for a running session and now has
+// the same answer.
+func (e *Engine) wakesFor(evType, msgType string) bool {
+	if !core.IsMailEvent(evType) {
+		return false
+	}
+	switch e.WakePolicy() {
+	case WakeNone:
+		return false
+	case WakeUrgent:
+		return core.Blocking(evType, msgType)
+	default:
+		return true
+	}
+}
+
 func (e *Engine) maybeWake(ev core.Event) {
 	// Mail AND verdicts. The first version took only message.sent, which
 	// excluded every answer and approval: message.approved, .denied, .answered
@@ -135,10 +152,24 @@ func (e *Engine) maybeWake(ev core.Event) {
 	// asked and then stopped is the single clearest case for starting it again.
 	// Leaving them out recreated, on the new mechanism, the exact defect the
 	// notice work had just fixed on the old one.
-	// Only news somebody is blocked on. The rule is core.WakeWorthy, shared
-	// with the bridge's self-wake so both routes wake for the same mail.
+	// MAIL WAKES AN AGENT. Which mail is the operator's setting, not a rule
+	// hard-coded here, and that is the correction.
+	//
+	// This asked core.WakeWorthy alone, which used to mean "only news somebody
+	// is blocked on", so a notify started nobody however the board was
+	// configured. Meanwhile deliverToModel, ten lines away in hookpoll.go, has
+	// always asked WakePolicy, whose default is `all`. One question with two
+	// answers, and the two routes are not interchangeable: the hook path only
+	// reaches an agent that is still running, so the route that disagreed was
+	// the only one that could reach an agent that had stopped, which is the
+	// entire product.
+	//
+	// Measured: a peer sent substantial feedback as a notify at 21:10:25, the
+	// recipient was idle, nothing was attempted, no line was logged because
+	// this returns before the first Debug, and the agent found out an hour
+	// later when its operator mentioned it.
 	msgType, _ := ev.Data["msg_type"].(string)
-	if !core.WakeWorthy(ev.Type, msgType) {
+	if !e.wakesFor(ev.Type, msgType) {
 		return
 	}
 	if ev.To == "" {

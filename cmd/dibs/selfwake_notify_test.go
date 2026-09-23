@@ -66,14 +66,28 @@ func wakesFor(t *testing.T, notification string) bool {
 // process for one, and the bridge must not put a notice into the session for
 // one either. A question still wakes, and so does a notification from a daemon
 // too old to say what arrived.
-func TestANotifyDoesNotWakeTheSession(t *testing.T) {
+func TestMailWakesTheSession(t *testing.T) {
 	const updated = `{"jsonrpc":"2.0","method":"notifications/resources/updated","params":{"uri":"dibs://inbox"`
-	if wakesFor(t, updated+`,"_meta":{"com.dibs/event":"message.sent","com.dibs/msg_type":"notify"}}}`) {
-		t.Error("a notify put a notice into the session: the bridge interrupts a turn for " +
-			"mail the daemon's own waker would leave for the next check_in")
+	// A notify too, and that is the correction.
+	//
+	// This asserted the opposite, matching a daemon-side rule that said only
+	// blocking mail was worth a wake. That rule was wrong in the one place it
+	// mattered: it also governed the route that reaches an agent whose session
+	// has STOPPED, so an FYI reached nobody until its operator happened to
+	// mention it. Mail wakes an agent; how much mail is `[wake] policy`, and
+	// the daemon applies it before it notifies anybody, so this bridge never
+	// hears about mail the operator asked not to be interrupted for.
+	if !wakesFor(t, updated+`,"_meta":{"com.dibs/event":"message.sent","com.dibs/msg_type":"notify"}}}`) {
+		t.Error("a notify did not put a notice into the session: mail wakes an agent, " +
+			"and this bridge is only told about mail the board already decided to wake for")
 	}
 	if !wakesFor(t, updated+`,"_meta":{"com.dibs/event":"message.sent","com.dibs/msg_type":"question"}}}`) {
-		t.Error("a question did not wake the session, so the rule above is a mute, not a filter")
+		t.Error("a question did not wake the session either")
+	}
+	// Still a filter, not a pass-through: mail LEAVING is not mail arriving.
+	if wakesFor(t, updated+`,"_meta":{"com.dibs/event":"message.acked","com.dibs/msg_type":"question"}}}`) {
+		t.Error("an ack woke the session: that is this agent's own mail being closed, " +
+			"and waking for it is how a wake becomes an echo")
 	}
 	if !wakesFor(t, updated+`}}`) {
 		t.Error("a notification that names no event did not wake: a bridge newer than its " +
