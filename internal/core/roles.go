@@ -316,6 +316,43 @@ func (a *Agent) holdsSession(sid string) bool {
 	return false
 }
 
+// AgentForHookBySessionOn is the first half of AgentForHookOn: the session id
+// alone, with no directory fallback.
+//
+// Separate because whether the fallback runs is the OPERATOR's decision now
+// (`[identity] unidentified`), and a decision with side effects belongs in the
+// engine. Core still owns both rules; it just stopped assuming which one the
+// caller wants.
+func (s *State) AgentForHookBySessionOn(sid, host string) *Agent {
+	return s.agentBySessionWhere(sid, func(l *Agent) bool { return hookOnHost(l, host) })
+}
+
+// AgentForHookByDirectoryOn is the other half: the single live agent working
+// in this directory on this machine, or nil when none or more than one does.
+//
+// AMBIGUITY IS REFUSED, not guessed at, and that has not changed. Two agents
+// in one repository is the normal state of this product.
+func (s *State) AgentForHookByDirectoryOn(cwd, host string) *Agent {
+	if cwd == "" {
+		return nil
+	}
+	want := CleanPath(cwd)
+	var found *Agent
+	for _, l := range s.Agents {
+		if l.Status == StatusArchived || l.Status == StatusClosed {
+			continue
+		}
+		if l.Agent == nil || CleanPath(l.Agent.CWD) != want || !hookOnHost(l, host) {
+			continue
+		}
+		if found != nil {
+			return nil // ambiguous: refuse to guess
+		}
+		found = l
+	}
+	return found
+}
+
 // AgentForHookOn is AgentForHook for a hook that arrived from a known
 // machine: the session id a bridge derives (`host-<ppid>`) repeats across
 // computers, so a match on an agent recorded on ANOTHER machine is not this
@@ -325,6 +362,10 @@ func (a *Agent) holdsSession(sid string) bool {
 // before. Round twelve of the pre-release review reproduced beta's guard
 // resolving to alpha across two hosts and allowing a write alpha held
 // exclusively.
+//
+// Both halves, in order. The engine picks between them when the operator's
+// [identity] policy says the directory guess is not always wanted; this
+// remains the answer for a caller that wants the whole rule.
 func (s *State) AgentForHookOn(sid, cwd, host string) *Agent {
 	// One lookup, narrowed to the caller's machine, so the holder it picks
 	// is the one AgentBySession would pick if the other machines' rows did
@@ -351,24 +392,7 @@ func (s *State) AgentForHookOn(sid, cwd, host string) *Agent {
 	if sid != "" {
 		return nil
 	}
-	if cwd == "" {
-		return nil
-	}
-	want := CleanPath(cwd)
-	var found *Agent
-	for _, l := range s.Agents {
-		if l.Status == StatusArchived || l.Status == StatusClosed {
-			continue
-		}
-		if l.Agent == nil || CleanPath(l.Agent.CWD) != want || !hookOnHost(l, host) {
-			continue
-		}
-		if found != nil {
-			return nil // ambiguous: refuse to guess
-		}
-		found = l
-	}
-	return found
+	return s.AgentForHookByDirectoryOn(cwd, host)
 }
 
 // hookOnHost reports whether an agent may be the caller from host: yes when
