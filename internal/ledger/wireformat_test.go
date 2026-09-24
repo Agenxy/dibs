@@ -117,7 +117,15 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		"registered_from": true,
 		"slot_id":         true, "text": true, "dirs": true, "refs": true,
 		"to": true, "msg_type": true, "body": true, "deadline_sec": true, "op_id": true,
-		"path": true, "mode": true, "note": true,
+		// merge_agents names two rows: `to` is the forked one being absorbed
+		// and this is the seat that survives. A NEW tag rather than a reused
+		// one, deliberately: reusing an existing tag for a second meaning is
+		// the same silent data loss as renaming, with the rename already done.
+		// Renaming THIS later would replay every merge as a merge into the
+		// empty string, which applyMerge reads as an agent that no longer
+		// exists and skips, so the fold would quietly undo repairs.
+		"merge_into": true,
+		"path":       true, "mode": true, "note": true,
 		"space": true, "exclusive": true, "predicted": true,
 		// The coordinate systems a declaration was scored in (#39): the
 		// fingerprint of the history behind `predicted`, and the same
@@ -393,10 +401,11 @@ const (
 	// `purge_mail`, again for `restore_nonce`, again for `session_guessed`
 	// `release_session` and `v7_semantics`, again for `session_taken_from`,
 	// again for `session_alias_taken_from`, again for `registered_from`, and
-	// again for `index_supplied`: one new tag each time, no rename. If you are here because a sweep moved
+	// again for `index_supplied`, and again for `merge_into`: one new tag each
+	// time, no rename. If you are here because a sweep moved
 	// this value, the sweep is the bug, and the tag it renamed is the data
 	// loss.
-	frozenOpFingerprint       = "sha256:37655b6b7bb83921"
+	frozenOpFingerprint       = "sha256:fd7ccd279a31eb41"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`
@@ -502,6 +511,11 @@ func TestOpKindStringsAreFrozen(t *testing.T) {
 		"OpSpaceClose":         {core.OpSpaceClose, "close_space"},
 		"OpSpaceEvict":         {core.OpSpaceEvict, "evict"},
 		"OpSpaceMerge":         {core.OpSpaceMerge, "merge_spaces"},
+		// Folding a forked seat back into the one it should have been. The
+		// kind is matched by VALUE in Apply, so renaming it stops the fold on
+		// every board that has merged one: loudly, unlike a renamed field,
+		// but still fatal at boot.
+		"OpMergeAgents": {core.OpMergeAgents, "merge_agents"},
 	} {
 		// FROZEN AGAIN, at new values, and the break was deliberate. 0.0.3 renamed
 		// the product to Dibs and its vocabulary with it, and these strings went

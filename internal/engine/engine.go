@@ -655,7 +655,13 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// migration worked.
 	system := op.Kind == core.OpSweep || op.Kind == core.OpMarkDelivered || op.Kind == core.OpWake ||
 		op.Kind == core.OpActivityCheckpoint || op.Kind == core.OpGrantRole ||
-		op.Kind == core.OpPrune || op.Kind == core.OpHostRenamed
+		op.Kind == core.OpPrune || op.Kind == core.OpHostRenamed ||
+		// merge_agents is tokenless in the fold, like prune, and gated in
+		// front of it: Engine.MergeAgents refuses anyone who is not admin.
+		// The gate is there rather than here because an ADMIN AGENT may do
+		// this, which is the difference from prune, and an agent has a token
+		// that the system path would refuse.
+		op.Kind == core.OpMergeAgents
 
 	// A system op carries no agent token, and one that does is refused.
 	//

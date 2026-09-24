@@ -514,6 +514,11 @@ type Agent struct {
 	// Replay-safe: every input to it (DeadAgents, StaleAgents, the agent's own
 	// PID) is recorded in the sweep op, never probed during Apply.
 	StaleReason string `json:"stale_reason,omitempty"`
+	// MergedInto names the seat this row was folded into, so a reader who
+	// finds the closed fork is told where its mail went rather than that it
+	// vanished. A merge is a repair, and a repair that leaves no trace is
+	// indistinguishable from data loss.
+	MergedInto string `json:"merged_into,omitempty"`
 
 	Token string `json:"-"`
 	Nonce string `json:"-"`
