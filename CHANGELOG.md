@@ -7,19 +7,31 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- **A reattach no longer forgets who the agent is.** Reported from live use by
-  an agent that had reattached to its own seat three times in eleven hours and
-  noticed its own `model` field going stale. Every reattach path assigned the
-  identity payload wholesale, so a returning session that stated a cwd and a
-  surface silently CLEARED model, provider and title. The agent then reads its
-  own row, copies the gaps forward, and the board forgets its agents one
-  reattach at a time. `update` already had the right rule: `mergeIdentity`
-  fills what was stated, keeps what was not, and moves the location group
-  together so an agent that moved does not keep the repository it used to be
-  in. All four sites use it now. Four, not the three a grep for the assignment
-  found: the one that actually fires on a session move is `takeActivation`, and
-  it turned up because the regression test still failed after the other three
-  were fixed.
+- **A listening session now beats a spawn, and that order was backwards.** The
+  wake path tried the operator's `[wake.exec]` command first and used the
+  session socket only when no command was configured. The reasons were that a
+  command is confirmable by exit status and that the socket was held unread by
+  any session in `bypassPermissions` mode; the second stopped being true
+  earlier in this release, and the first is worth less than it sounds, because
+  a confirmable route that cannot deliver is worth less than a best-effort one
+  that does. What settled it was the harm: a thread IS the agent, so spawning
+  for one that already has a window starts a second body for the same thread,
+  the application refuses the second writer, the command exits non-zero, and
+  the prompt it carried is left in the transcript rendered as though the HUMAN
+  typed it. Four of those in twenty minutes, with empty turns between them, and
+  the operator read it as something signing commits on his behalf. The command
+  keeps the one job only it can do: reaching an agent with no session listening
+  at all. Mail for an agent whose window is shut now waits for `SessionStart`
+  rather than spawning a copy of it; Dibs does not open applications.
+
+- **A wake command that always fails is given up on.** The existing retry is
+  per piece of mail and tries once more, which is right for a transient fault
+  and the wrong shape for an operator's command that exits non-zero every time,
+  for every agent, forever. One board logged "the next message somebody is
+  blocked on will try again" about a CLI whose credentials had expired and
+  meant it, all day. Three consecutive failures now stop it, with one warning
+  naming the command and the fix; a wake that works, or a corrected
+  configuration, starts it being tried again.
 
 - **`dibs doctor` reads the setting it advises about.** Naming the socket
   route's cheap remedy fixed half a problem and created the other half: advice

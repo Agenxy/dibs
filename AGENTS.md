@@ -198,6 +198,21 @@ Things that have cost real time here, none of which are visible in the diff:
   before trusting the guard, and prefer a rule the daemon can check itself:
   freshness, not a field the harness defines.
 
+- **"Passes locally, fails on CI" is usually the two machines producing
+  DIFFERENT ERRORS for the same event, not noise.** The bridge-follows-a-moved-
+  board test failed once on CI and passed 30 times in a row locally. It was not
+  timing. With connection pooling on, the bridge holds an idle connection to the
+  old board, so closing that board makes the next send fail with ECONNRESET;
+  locally the pool happened to be empty, the send dialled fresh, and it got
+  ECONNREFUSED. `dialFailed()` matches refused and NOTHING else, deliberately,
+  because a reset cannot prove the request was not already applied and a
+  retried claim is worse than a failed call. So the test had been asserting
+  something the product promises not to do, and passed only when the pool was
+  empty. The fix was in the test (keep-alives off, so every send is the fresh
+  dial that re-resolution is for), and the lesson is the diagnosis order: read
+  the ERROR the failing machine reported before reaching for "flaky". The error
+  text named the syscall, and the syscall named the branch.
+
 - **When you fix "a rule applied at one site and not its siblings", the grep
   finds the siblings that LOOK right and the test finds the one on the path.**
   Four places assigned an agent's identity payload wholesale where `update`

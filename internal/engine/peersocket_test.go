@@ -620,3 +620,73 @@ func TestTheWakeGateDoesNotWaitOnARefresh(t *testing.T) {
 	}
 	close(release)
 }
+
+// A LISTENING SESSION BEATS A CONFIGURED COMMAND.
+//
+// The thread IS the agent. When its window is open the socket reaches the
+// agent that is already there; a spawn starts a SECOND body for the same
+// thread, somewhere its operator is not looking. Measured on the machine this
+// was written on, the second body also loses: the application holds the thread
+// and refuses another writer, the command exits non-zero, and the prompt it
+// carried is left in the transcript rendered as though the HUMAN typed it.
+// Four of those in twenty minutes is what made this rule explicit, and the
+// operator's own reading of it was that something was signing commits for him.
+//
+// The old order preferred the command because it is confirmable by exit status
+// and because the socket was held unread by any session in bypassPermissions
+// mode. The second half stopped being true: that hold is a default the
+// receiving operator lifts. A confirmable route that cannot deliver is worth
+// less than a best-effort one that does.
+func TestAListeningSessionIsPreferredOverASpawn(t *testing.T) {
+	sock, sessionID := listeningSession(t)
+
+	st := core.NewState("t", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	if _, _, err := st.Apply(&core.Op{
+		Kind: core.OpRegister, Name: "sleeper", NewToken: "tok",
+		SessionID: sessionID,
+		Agent:     &core.AgentInfo{Harness: "Claude Code", CWD: "/w"},
+	}, t0Engine()); err != nil {
+		t.Fatal("setup:", err)
+	}
+	l := st.Agents["sleeper"]
+
+	// A command IS configured, and would be chosen under the old rule. It
+	// writes a file, so if it runs at all this test can prove it.
+	dir := t.TempDir()
+	e.wakers.mu.Lock()
+	e.wakers.byHarness = map[string]wakeCommand{
+		"claude code": {argv: []string{"/usr/bin/touch", filepath.Join(dir, "spawned")}},
+	}
+	e.wakers.mu.Unlock()
+
+	e.primePeerSessions()
+	if _, ok := e.peerSessionFor(sessionsOf(l)); !ok {
+		t.Fatal("setup: the fixture session was not discovered, so the socket " +
+			"could not be preferred for the wrong reason")
+	}
+
+	plan, ok := e.wakeFor(l, core.MsgQuestion, core.Event{
+		Type: "message.sent", To: "sleeper", Agent: "asker",
+		Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
+	})
+	if !ok {
+		t.Fatal("no wake was planned at all")
+	}
+	if len(plan.argv) != 0 {
+		t.Fatalf("a spawn was planned for an agent whose session is listening: %v", plan.argv)
+	}
+
+	got := make(chan string, 1)
+	go func() { got <- readAll(t, sock) }()
+	if !e.runWake(plan, "sleeper") {
+		t.Fatal("the socket wake reported failure")
+	}
+	if wire := <-got; !strings.Contains(wire, plan.notice) {
+		t.Errorf("the notice did not reach the listening session: %s", wire)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "spawned")); err == nil {
+		t.Error("the command ran as well, so the agent got a second body in a " +
+			"thread its application already holds")
+	}
+}
