@@ -684,6 +684,56 @@ deliberate: an earlier design put the nonces here and it was the wrong trade.
 
 ---
 
+## Changing a setting without an editor: `configure`
+
+An agent you have granted **admin** can read and change the settings that take
+effect while the board is running, with the `configure` tool. Reading needs
+only a token; changing needs admin.
+
+```
+configure(token)                                    # list everything
+configure(token, setting: "wake.sockets", value: "false")
+```
+
+The listing gives every settable key, its value now, and who last set it, so
+"the board is behaving differently than I expect" is answerable in one line.
+
+**Only five settings are here**, and the boundary is that the engine can apply
+them immediately: `wake.extend_turn_for`, `wake.notices_wake`, `wake.sockets`,
+`hooks.mail_bodies` and `identity.unidentified`. An address or a certificate
+needs a restart, so `configure` refuses it with `E_NO_SETTING` rather than
+reporting success and doing nothing until somebody happens to restart the
+daemon.
+
+**Admin, not coordinator.** A coordinator runs the fleet: evicting, adopting
+and force-releasing are all visible on the board and undoable from it.
+Changing a setting changes how the board behaves for every agent on it,
+including the ones that will never look at this file, so it is the grant a
+person makes deliberately.
+
+### Where a change is written
+
+Not into `dibs.toml`. That file is mostly your comments and your reasoning,
+and a daemon that rewrites TOML destroys them: it would hand back a file a
+machine can read and a person cannot.
+
+Changes go to `overrides.json` beside it, layered on top at boot:
+
+```json
+{ "set": { "wake.sockets": { "value": "false", "by": "coordinator",
+                             "at": "2026-09-24T14:02:11Z" } } }
+```
+
+Three things follow, all of them wanted. Your hand-written file stays exactly
+as written. Everything an agent changed is in **one** place, so reading that
+file answers what has been done to this board. And deleting it reverts all of
+it without touching anything you wrote.
+
+If the file cannot be read at boot, the daemon says so loudly and runs what
+`dibs.toml` says: refusing to start would let an agent take the board down by
+writing a bad byte, and ignoring it silently would leave settings that are
+written down and not applied.
+
 ## Where else settings come from
 
 - **Flags**: `dibd -h` lists them; a flag beats this file.

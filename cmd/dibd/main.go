@@ -264,6 +264,46 @@ func run() error {
 	// "directory": the value the shipped harnesses need. Validate() has
 	// already refused anything that is neither empty nor a known policy.
 	eng.SetUnidentifiedPolicy(cfg.Identity.Unidentified)
+
+	// THE FILE FIRST, THEN WHAT AN ADMIN CHANGED SINCE. Recorded through
+	// ApplySetting either way, so `configure` with no arguments can say where
+	// each value came from: an operator asking "why is this board behaving
+	// like that" gets the file or an agent's name, not a shrug.
+	for key, v := range map[string]string{
+		"wake.extend_turn_for":  cfg.Wake.ExtendTurnFor,
+		"identity.unidentified": cfg.Identity.Unidentified,
+	} {
+		if v != "" {
+			eng.ApplySetting(key, v)
+		}
+	}
+	for key, p := range map[string]*bool{
+		"wake.notices_wake": cfg.Wake.NoticesWake,
+		"wake.sockets":      cfg.Wake.Sockets,
+		"hooks.mail_bodies": cfg.Hooks.MailBodies,
+	} {
+		if p != nil {
+			eng.ApplySetting(key, strconv.FormatBool(*p))
+		}
+	}
+	over, oerr := boardconfig.LoadOverrides(*dir)
+	if oerr != nil {
+		// LOUD, and then carry on with the file's values. A board that refuses
+		// to boot over an unreadable overrides file is a board an agent can
+		// take down by writing one; a board that ignores it silently is one
+		// whose settings say something the operator can read and cannot see
+		// applied. So: say so, and run what dibs.toml says.
+		slog.Warn("the saved settings could not be read, so the configuration file "+
+			"stands on its own", "err", oerr,
+			"fix", "delete "+filepath.Join(*dir, boardconfig.OverridesName)+
+				" to go back to dibs.toml alone")
+	}
+	for _, key := range over.Keys() {
+		eng.ApplySetting(key, over.Set[key].Value)
+	}
+	eng.SetSettingStore(func(key, value, by string) error {
+		return boardconfig.SaveOverride(*dir, key, value, by)
+	})
 	eng.SetSocketWakes(cfg.Wake.Sockets == nil || *cfg.Wake.Sockets)
 	remind, err := staleReminder(cfg.Wake)
 	if err != nil {
