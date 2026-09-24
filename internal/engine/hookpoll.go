@@ -266,6 +266,9 @@ func (e *Engine) HookPollFrom(
 			return e.hookOutput(core.Result{"agent": l.ID}, strict)
 		}
 		mail := e.pendingMail(l.ID, time.Now())
+		// The agent's own copy carries the mail; `mail` above stays the quiet
+		// version for the human notice and every other surface.
+		agentMail := e.pendingMailQuoted(l.ID, time.Now())
 		announced, announceKeys := e.dueAnnouncements(l.ID, time.Now())
 		// Things done TO this agent that it cannot have inferred: admitted by a
 		// director, promoted from a queue, evicted. Silent until now: an agent
@@ -400,7 +403,7 @@ func (e *Engine) HookPollFrom(
 			if stale != "" {
 				notices = append(notices, e.remind(l.ID, "model", stale, now))
 			}
-			addDelivery(out, event, hookDigest(l.ID, mail, announced, notices))
+			addDelivery(out, event, hookDigest(l.ID, agentMail, announced, notices))
 		} else {
 			// Said out loud, because "the agent was not told" and "there was
 			// nothing to tell" must not look the same from outside.
@@ -469,28 +472,63 @@ func (e *Engine) BindSession(ctx context.Context, token, sessionID string) (core
 	})
 }
 
-// pendingMail lists messages this agent has not yet dealt with.
-// pendingMail summarises what is waiting WITHOUT quoting it.
+// pendingMail lists what is waiting, and since [hooks] mail_bodies it quotes
+// it rather than pointing at it.
 //
-// hook_poll is authenticated by nothing. It takes a session id and a cwd off
-// the wire, with no agent token, because a harness lifecycle hook does not have
-// one: that is the whole reason the endpoint exists. So the caller cannot
-// prove it is the agent it names, and the endpoint must not hand over anything
-// private on the strength of that name.
+// THIS WENT BOTH WAYS AND THE HISTORY IS THE POINT.
 //
-// It used to include 240 characters of the message BODY. Verified against a
-// running daemon: any holder of the coordination secret, which is every agent
-// configured on the machine: could call hook_poll with a peer's session id, or
-// omit the session id and give the peer's working directory, and receive the
-// peer's private message text. "Mail between other agents is private to them"
-// is a promise this surface broke.
+// It used to include 240 characters of the body. That was removed on a
+// measured finding: hook_poll is authenticated by nothing. It takes a session
+// id and a cwd off the wire, with no agent token, because a harness lifecycle
+// hook does not have one, and that is the whole reason the endpoint exists. So
+// any holder of the machine's coordination secret could call it with a peer's
+// session id, or omit the session id and give the peer's working directory,
+// and be handed that peer's private message text.
 //
-// What survives is everything needed to WAKE: how many, from whom, of what
-// kind, and the serial to fetch. The agent then reads the content with
-// read_mail or inbox, which are token-authenticated. One extra call buys back
-// the confidentiality claim.
+// The mechanism is real and still is. The THREAT was wrong. Every agent on a
+// board is the same person's agent, holding the same secret, already able to
+// call every tool on it. A confidentiality boundary between them is not
+// protecting the operator from anyone; it is protecting the operator from
+// themselves, at the price of the product. What it cost was measured too: an
+// agent was woken to be told something had arrived and then spent check_in,
+// read_mail and ack finding out what, with a harness warning preamble in front
+// of it, when the text could have been in the first frame. A message service
+// whose recipient must make three calls to read one message is a polling API
+// with extra steps, which is the thing PHILOSOPHY rule 5 says this must not
+// become.
+//
+// So the body travels. `[hooks] mail_bodies = false` restores the pointer, and
+// the situation that calls for it is a machine whose accounts are not all
+// yours. That is the only situation that calls for it.
+//
+// What still does NOT travel is anything the caller has to be trusted to
+// receive: this quotes mail addressed to the agent the caller resolved to, and
+// the resolution rule is AgentForHookOn's business, not this function's.
 func (e *Engine) pendingMail(agent string, now time.Time) []string {
+	return e.mailLines(agent, now, false)
+}
+
+// pendingMailQuoted is the same list with the message text in it, for the ONE
+// surface that may carry it: the digest injected into the agent's own context.
+//
+// Split from pendingMail rather than switched inside it, because the guard
+// that caught this merging explains why. The risk is not one agent reading
+// another's mail, which is the same person's agent either way. It is that a
+// HOST may attach hook output to the HUMAN's turn, and it has done, three
+// times through three channels, each reported by an operator watching their
+// own prompt box fill with mail addressed to an agent. So the human notice and
+// the ambient waiting line stay counts-only and the split is structural: a
+// future surface gets the quiet version unless it asks for the other one.
+func (e *Engine) pendingMailQuoted(agent string, now time.Time) []string {
+	return e.mailLines(agent, now, true)
+}
+
+func (e *Engine) mailLines(agent string, now time.Time, quote bool) []string {
 	var out []string
+	budget := mailQuoteBudget
+	if !quote {
+		budget = 0
+	}
 	for _, m := range e.state.Inbox(agent) {
 		if m.State == core.MsgStatePending || m.State == core.MsgStateDelivered {
 			// AND THE CALL THAT CLEARS IT, which is not read_mail.
@@ -525,11 +563,64 @@ func (e *Engine) pendingMail(agent string, now time.Time) []string {
 			if age := waitedFor(m.SentAt, now); age != "" {
 				waited = ", waiting " + age
 			}
+			// THE MAIL ITSELF, not a pointer to it, unless the operator said
+			// otherwise. `budget` is shared across the whole digest rather
+			// than per message, because ten messages each trimmed to a
+			// generous length is not a generous digest, it is a wall.
+			if body := e.quoteFor(m, &budget); body != "" {
+				out = append(out, fmt.Sprintf("#%d %s from %q%s: %s %s",
+					m.Serial, m.Type, m.From, waited, body, clears))
+				continue
+			}
 			out = append(out, fmt.Sprintf("#%d %s from %q%s: read it with read_mail(%d), %s",
 				m.Serial, m.Type, m.From, waited, m.Serial, clears))
 		}
 	}
 	return out
+}
+
+// mailQuoteBudget is how much message text one digest may carry, in bytes,
+// across every message in it. A digest rides in a hook's additionalContext and
+// is read by a model at a turn boundary: it is worth real tokens on every
+// activation, so it is bounded once for the whole thing rather than per
+// message, and what does not fit keeps its read_mail pointer.
+const mailQuoteBudget = 1600
+
+// mailQuoteEach caps any single message, so one long one cannot eat the whole
+// digest and leave nine others pointing at themselves.
+const mailQuoteEach = 700
+
+// quoteFor returns the quoted body for one message and spends the budget, or
+// "" when the operator turned quoting off or nothing is left to spend.
+//
+// Runes rather than bytes, because trimRunes already counts that way and one
+// unit of budget should mean the same thing to a reader whatever alphabet the
+// message is in.
+func (e *Engine) quoteFor(m *core.Message, budget *int) string {
+	if m == nil || !e.mailBodies() {
+		return ""
+	}
+	// NEWLINES OUT FIRST, and before the trim rather than after. The digest is
+	// one paragraph per message inside a hook field: a body with its own line
+	// breaks reflows the whole thing and, in a strict harness, can look like
+	// the end of the field. Collapsing after trimming would also make the
+	// budget describe whitespace the reader never sees.
+	body := strings.Join(strings.Fields(m.Body), " ")
+	if body == "" || *budget <= 0 {
+		return ""
+	}
+	room := *budget
+	if room > mailQuoteEach {
+		room = mailQuoteEach
+	}
+	n := len([]rune(body))
+	if n > room {
+		*budget -= room
+		return fmt.Sprintf("%q (trimmed; read_mail(%d) for the rest).",
+			trimRunes(body, room), m.Serial)
+	}
+	*budget -= n
+	return fmt.Sprintf("%q.", body)
 }
 
 // dueAnnouncements lists unacknowledged announcements that are due for another
@@ -1070,6 +1161,22 @@ func (e *Engine) SetNoticesWake(on bool) {
 	e.wake.noticesOff = !on
 }
 
+// SetMailBodies applies `[hooks] mail_bodies`: whether a hook delivery
+// carries the message text or a pointer to it. On by default; see
+// boardconfig.HooksConfig for why it was off for a while and why that was the
+// wrong trade for a board whose agents all belong to one person.
+func (e *Engine) SetMailBodies(on bool) {
+	e.wake.mu.Lock()
+	defer e.wake.mu.Unlock()
+	e.wake.bodiesOff = !on
+}
+
+func (e *Engine) mailBodies() bool {
+	e.wake.mu.RLock()
+	defer e.wake.mu.RUnlock()
+	return !e.wake.bodiesOff
+}
+
 // SetSocketWakes is [wake] sockets: off, and the daemon's peer-socket route
 // neither counts as reachability nor runs.
 func (e *Engine) SetSocketWakes(on bool) {
@@ -1126,6 +1233,10 @@ type wakeState struct {
 	// silently quieter than the specification says, which is exactly the trap
 	// this field is shaped to avoid.
 	noticesOff bool
+	// bodiesOff inverts [hooks] mail_bodies for the same reason noticesOff
+	// inverts its setting: the zero value has to be the documented behaviour,
+	// and the documented behaviour is that a delivery carries the mail.
+	bodiesOff bool
 	// remindAfter is [wake] remind_stale_after; zero is off. See staleReminder.
 	remindAfter time.Duration
 	// socketsOff inverts [wake] sockets the same way.

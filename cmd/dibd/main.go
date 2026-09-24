@@ -257,6 +257,9 @@ func run() error {
 	// "unset" and "explicitly false" are distinguishable, which is the whole
 	// reason a bool setting with a true default needs one.
 	eng.SetNoticesWake(cfg.Wake.NoticesWake == nil || *cfg.Wake.NoticesWake)
+	// Same pointer-for-default shape: unset means the documented behaviour,
+	// which is that a delivery carries the mail rather than a pointer to it.
+	eng.SetMailBodies(cfg.Hooks.MailBodies == nil || *cfg.Hooks.MailBodies)
 	eng.SetSocketWakes(cfg.Wake.Sockets == nil || *cfg.Wake.Sockets)
 	remind, err := staleReminder(cfg.Wake)
 	if err != nil {

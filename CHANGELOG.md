@@ -7,6 +7,33 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Mail now arrives with the mail in it.** A hook delivery told an agent that
+  something had arrived and made it spend `check_in`, `read_mail` and `ack`
+  finding out what, behind a harness warning preamble, when the text could have
+  been in the first frame. A message service whose recipient makes three calls
+  to read one message is a polling API with extra steps.
+
+  The body had been removed on a measured finding, and the finding was right
+  about the mechanism and wrong about the threat. `hook_poll` is authenticated
+  by nothing, so any holder of the machine's coordination secret can name a
+  peer's working directory and be answered as that peer. True, and every agent
+  on a board is the same person's agent, already holding that secret and
+  already able to call every tool. The boundary was protecting the operator
+  from themselves.
+
+  What it WAS protecting against is real and is kept: a host may attach hook
+  output to the HUMAN's turn, which has happened three times through three
+  channels, each reported by an operator watching their own prompt box fill
+  with mail addressed to an agent. So the split is structural rather than
+  conditional. `pendingMailQuoted` has exactly one caller, the digest injected
+  into the agent's own context; the human notice, the ambient `waiting` line
+  and anything added later are built from the quiet `pendingMail` and say only
+  who is waiting and what kind. `[hooks] mail_bodies = false` restores the
+  pointer everywhere, for a machine whose accounts are not all yours, which is
+  the only situation that calls for it. Quoting is bounded by a budget shared
+  across the whole digest, because ten messages each trimmed generously is not
+  a generous digest.
+
 - **A listening session now beats a spawn, and that order was backwards.** The
   wake path tried the operator's `[wake.exec]` command first and used the
   session socket only when no command was configured. The reasons were that a
