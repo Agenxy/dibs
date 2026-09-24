@@ -7,6 +7,24 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The socket wake stopped telling an agent to go and look at what it had
+  just been handed.** The first version of the quoted wake stapled the mail
+  underneath the old fixed sentence, so the frame began "Dibs: check the
+  board." and then printed the board's contents: an imperative in front of the
+  thing it was imperative about, on the one path whose job is to inform rather
+  than steer. The operator read it off their own screen and asked what it was
+  still for. Nothing.
+
+  It builds `hookDigest` now, which is what the comment beside it had already
+  claimed, so the two ways an agent hears about a message are one wording
+  rather than two that resemble each other. That also names Dibs as the sender
+  and says outright that this is coordination data and not an instruction,
+  which matters more on this route than on the hook: a peer message arrives
+  wrapped in the harness's own preamble describing it as "another Claude
+  session", which is not what sent it. The fixed sentence survives for the
+  case it was always right for, which is a wake with nothing to quote, because
+  then there genuinely is somewhere to go and look.
+
 - **The socket wake carries the mail too, which is the half that was still
   missing.** Bodies went into the hook digest, and the same release made the
   session socket the route for an agent that is listening: so the path an
