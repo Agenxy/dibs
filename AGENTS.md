@@ -198,6 +198,21 @@ Things that have cost real time here, none of which are visible in the diff:
   before trusting the guard, and prefer a rule the daemon can check itself:
   freshness, not a field the harness defines.
 
+- **A hook TYPE can be unavailable for a hook EVENT, and the harness says so
+  in a line nobody reads.** Both of Dibs' SessionStart hooks were `mcp_tool`,
+  which Claude Code resolves against the session's connected MCP clients:
+  there are none that early, so the hook is skipped and exits 1. 307 of those
+  errors across 22 projects over six weeks, every session start, all ours, and
+  the event whose whole job is delivering mail to a reopened window had never
+  once fired. Two lessons, and the second is the one worth keeping. A warning
+  printed on every single session start is decoration, not a signal, so
+  "somebody would have noticed" is false for anything that fires always. And
+  it was found while reading the harness binary for an unrelated question,
+  which is the argument for reading a harness you depend on when nothing is
+  known to be wrong, rather than only when something is. Grepping a
+  transcript history for the harness's own error strings takes a minute and
+  would have found it any day in those six weeks.
+
 - **"Passes locally, fails on CI" is usually the two machines producing
   DIFFERENT ERRORS for the same event, not noise.** The bridge-follows-a-moved-
   board test failed once on CI and passed 30 times in a row locally. It was not

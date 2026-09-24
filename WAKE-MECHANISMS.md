@@ -455,7 +455,8 @@ Nothing was taken away from it; it was doing a job the socket does better.
 
 One consequence worth stating, because it is a real loss and not a detail. A
 harness whose window is shut has no socket, so mail for it waits until that
-thread is opened again, when the `SessionStart` hook delivers it at once. Dibs
+thread is opened again, when the `SessionStart` hook delivers it at once
+(which that hook did not do until 2026-09-24: see 5d). Dibs
 does not open applications. Whether the board should instead start a headless
 turn for such an agent is the operator's call and not the default: an agent
 acting where nobody is looking, in a thread its human will later open and read,
@@ -494,6 +495,40 @@ not.
 
 `[hooks] mail_bodies = false` puts the pointer back on both, for a machine
 whose accounts are not all yours.
+
+### 5d. An mcp_tool hook cannot run at SessionStart, and ours did not
+
+Claude Code resolves an `mcp_tool` hook against the session's connected MCP
+clients. At SessionStart there are none: the hook is skipped with `mcp_tool
+hooks are not available for the 'SessionStart' hook event (no MCP client
+context)` and exit 1, recorded as a non-blocking error in the transcript.
+
+Both of Dibs' SessionStart hooks were that type. **Measured 2026-09-24 across
+this operator's own session history: 307 of those errors, 22 projects,
+2026-08-14 to that morning, every one of them ours.** The hook had never run,
+on any version, in any session, on the one event whose job is to hand an agent
+the mail that arrived while its window was shut.
+
+Two things about how it was found, because neither is the obvious one. It was
+not found by a person seeing a red hook error, although one was printed every
+single time for six weeks: a warning that fires at every session start is
+indistinguishable from decoration. And it was not found by looking for it. It
+came out of reading the binary for an unrelated question about how a peer
+message is labelled, which is the argument for reading the harness rather than
+its documentation even when nothing is known to be wrong.
+
+The fix is `command` hooks: `dibs hook-poll`, which already existed for
+harnesses whose hooks are subprocesses, and `dibs hook-session`, which is new.
+Neither needs an MCP client, and the hook's own stdin carries the session id,
+the cwd and the transcript path. Verified in a real 2.1.280 session on the
+same day: `SessionStart:resume`, `outcome: success`, and the digest landing in
+the session's context as a `hook_additional_context` attachment.
+
+A `command` hook's stdout is PARSED, so both are wrapped the way the
+PreToolUse one already was: stdout is emitted only when it starts with `{`,
+and the hook exits 0. An older `dibs` printing its usage text into a hook's
+output is a real failure mode and `TestCommandHooksCannotBreakTheToolTheyDecorate`
+is what remembers it.
 
 ### 5c. The receiving harness says the message came from another Claude session
 

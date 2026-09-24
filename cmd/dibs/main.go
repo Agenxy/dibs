@@ -72,6 +72,9 @@ is not a mystery):
                            when the hub decides one should be woken
                            (--service writes the unit that keeps it running)
   dibs hook-poll          the wake path for a harness whose hooks are subprocesses (Gemini CLI)
+  dibs hook-session       SessionStart hook: reports this session and its
+                           transcript to the board. A subprocess rather than an
+                           MCP call because no MCP client exists that early
   dibs identity           this machine and checkout as the bridge would stamp
                            them, as JSON, for an integration that speaks MCP
                            itself (the pi extension) and so has no bridge
@@ -219,6 +222,8 @@ func main() {
 		err = hostBridge(os.Args[2:])
 	case "hook-poll":
 		err = hookPoll(os.Args[2:])
+	case "hook-session":
+		err = hookSession(os.Args[2:])
 	case "identity":
 		err = identityCmd(os.Args[2:])
 	case "web":
@@ -309,7 +314,8 @@ var commands = []string{
 	"await", "probe", "watch", "monitor", "board", "log", "verify", "doctor",
 	"codex-hooks", "calibrate", "version", "help", "man", "completion", "configure", "messages",
 	"web", "admin",
-	"mcp-config", "mcp-stdio", "host-bridge", "hook-spawn", "hook-poll", "identity",
+	"mcp-config", "mcp-stdio", "host-bridge", "hook-spawn", "hook-poll", "hook-session",
+	"identity",
 }
 
 // nearestCommand picks the closest verb to what was typed, or "" when nothing
