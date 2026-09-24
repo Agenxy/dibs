@@ -198,6 +198,20 @@ Things that have cost real time here, none of which are visible in the diff:
   before trusting the guard, and prefer a rule the daemon can check itself:
   freshness, not a field the harness defines.
 
+- **When you fix "a rule applied at one site and not its siblings", the grep
+  finds the siblings that LOOK right and the test finds the one on the path.**
+  Four places assigned an agent's identity payload wholesale where `update`
+  merged it. A grep for the assignment found three, all three were fixed, and
+  the regression test went on failing: the fourth was `takeActivation`, which
+  is the path a session MOVE takes, and a session move was the event the whole
+  bug report was about. The three that read like the answer were the three that
+  were not on the path. So write the failing test FIRST, fix every site the
+  grep names, and then believe the test rather than the grep. It is also why
+  the probe has to assert its own setup: an earlier version of that test passed
+  against the unfixed code because a register without a pid and a kind was
+  answered as a duplicate retry, nothing was applied, and nothing was dropped
+  because nothing happened.
+
 - **A diagnosis is only half a hint until you have found the DEFAULT behind
   it.** The socket wake route was documented, correctly, as held by a Claude
   Code session in bypassPermissions mode, and then described as though nothing

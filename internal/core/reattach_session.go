@@ -36,7 +36,24 @@ func (s *State) reattachBySessionID(op *Op, now time.Time) (Result, []Event) {
 	l.Status, l.StaleReason = StatusActive, ""
 	l.AckedSerial = 0 // re-arm the awareness gate: this is a new activation
 	if op.Agent != nil {
-		l.Agent = op.Agent
+		// MERGED, NEVER REPLACED, and this was a real drift.
+		//
+		// A returning session states what it knows, and what it knows is
+		// whatever its harness filled in this time. Assigning the payload
+		// wholesale made every field it did NOT state disappear: model,
+		// provider and title all cleared by a reattach that mentioned a cwd
+		// and a surface. An agent then reads its own row, copies the gaps
+		// forward, and the board slowly forgets who its agents are. Reported
+		// from live use by an agent that had reattached three times in eleven
+		// hours and noticed its own model going stale.
+		//
+		// `update` already had the right rule. mergeIdentity fills what was
+		// stated and keeps what was not, and it moves the location group
+		// together so an agent that MOVED does not keep the repository it
+		// used to be in. Three call sites had the replacing version and one
+		// had the merging one, which is this repository's most expensive
+		// recurring shape: a rule applied at one site and not its siblings.
+		l.mergeIdentity(op.Agent)
 	}
 	// THE SAME ACTIVATION RULE AS THE OTHER TWO PATHS. Recovering through a
 	// retained session id after the row had moved on to another thread put
