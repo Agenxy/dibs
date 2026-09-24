@@ -92,12 +92,29 @@ func TestAnAgentWithNoConfiguredCommandIsWokenOverItsSocket(t *testing.T) {
 	}
 }
 
-// A wake carries no message body, over this route as over the other.
+// THE SOCKET CARRIES THE MAIL; THE COMMAND CARRIES A SENTENCE.
 //
-// The exec path has a test for this because an argv is handed to arbitrary
-// operator code. The socket path needs its own: it is a second door to the same
-// room, and a rule enforced at one door is not enforced.
-func TestASocketWakeCarriesNoMessageBody(t *testing.T) {
+// This used to assert that neither did, on the principle that a wake says mail
+// EXISTS and the agent then reads it over an authenticated channel with its
+// own token. The principle was hiding a difference between the two routes that
+// turns out to be the whole point.
+//
+// A command's notice goes in ARGV, which every process on the machine can read
+// out of `ps`. That is an unconditional leak and the fixed sentence stays: see
+// TestAMessageCannotInfluenceWhatTheWakeCommandRuns and its neighbours.
+//
+// The socket is a 0600 endpoint in a 0700 directory the harness refuses to use
+// if it is shared, and delivery authenticates with that session's own peer
+// token from a 0600 key file. It is better authenticated than the hook path
+// that already quotes mail. So the rule is not "one wording for both", it is:
+// content-free only where the channel cannot keep a secret.
+//
+// What this bought is the reason the wake path exists. Since the socket became
+// the route for a session that is listening, a woken agent was told something
+// had arrived and then spent check_in, read_mail and ack finding out what,
+// behind its harness's own warning preamble. The operator sent a screenshot of
+// exactly that, twice, after being told it was fixed.
+func TestASocketWakeCarriesTheMail(t *testing.T) {
 	sock, sessionID := listeningSession(t)
 	st := core.NewState("t", core.DefaultLimits())
 	e := New(st, &memLedger{}, deadProber{})
@@ -123,21 +140,48 @@ func TestASocketWakeCarriesNoMessageBody(t *testing.T) {
 	}
 	e.primePeerSessions()
 
-	plan, ok := e.wakeFor(st.Agents["sleeper"], core.MsgQuestion, core.Event{
-		Type: "message.sent", To: "sleeper", Agent: "sender",
-		Data: map[string]any{"msg_type": core.MsgQuestion, "from": "sender"},
-	})
-	if !ok {
-		t.Fatal("setup: no wake planned, so there is nothing to inspect")
+	deliver := func(t *testing.T) string {
+		t.Helper()
+		plan, ok := e.wakeFor(st.Agents["sleeper"], core.MsgQuestion, core.Event{
+			Type: "message.sent", To: "sleeper", Agent: "sender",
+			Data: map[string]any{"msg_type": core.MsgQuestion, "from": "sender"},
+		})
+		if !ok {
+			t.Fatal("setup: no wake planned, so there is nothing to inspect")
+		}
+		if len(plan.argv) != 0 {
+			t.Fatal("setup: a command was planned, so this is not the socket route")
+		}
+		got := make(chan string, 1)
+		go func() { got <- readAll(t, sock) }()
+		e.runWake(plan, "sleeper")
+		return <-got
 	}
-	got := make(chan string, 1)
-	go func() { got <- readAll(t, sock) }()
-	e.runWake(plan, "sleeper")
-	wire := <-got
-	if strings.Contains(wire, secret) || strings.Contains(wire, "hunter2") {
-		t.Errorf("the message body was delivered to the harness socket. A wake says "+
-			"that mail EXISTS; the agent reads it over the authenticated channel "+
-			"with its own token, which is why mail is encrypted at rest:\n%s", wire)
+
+	wire := deliver(t)
+	if !strings.Contains(wire, "hunter2") {
+		t.Errorf("the mail did not reach the woken session, so the agent is still "+
+			"told only that something arrived:\n%s", wire)
+	}
+	if !strings.Contains(wire, "sender") {
+		t.Errorf("the notice does not say who is waiting:\n%s", wire)
+	}
+
+	// AND THE OPERATOR CAN STILL TURN IT OFF, for a machine whose accounts are
+	// not all theirs, which is the situation that calls for it and the only one.
+	//
+	// Against socketNotice rather than a second delivery: the first wake marked
+	// the mail delivered, so the wake path correctly refuses to send again and
+	// a second end-to-end pass would be testing the cooldown. This is the
+	// function that produced the wire above.
+	e.SetMailBodies(false)
+	off := e.socketNotice(st.Agents["sleeper"], "Dibs: check the board.")
+	if strings.Contains(off, "hunter2") {
+		t.Errorf("[hooks] mail_bodies = false and the socket still quotes the "+
+			"message: %q", off)
+	}
+	if !strings.Contains(off, "Dibs") {
+		t.Errorf("with quoting off the wake says nothing at all: %q", off)
 	}
 }
 

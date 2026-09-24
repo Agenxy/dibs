@@ -698,10 +698,25 @@ if (heard !== "") {
   check("and the notice tells it to check the board",
     msg.type === "user" && /board/i.test(msg.message?.content ?? ""),
     `second line was ${JSON.stringify(lines[1])}`)
-  check("the socket wake carries no message body",
-    !/reached without a wake command/.test(heard),
-    "the question's text was delivered to the harness socket. A wake says mail " +
-    "EXISTS; the agent reads it with its own token, which is why mail is encrypted at rest")
+  // THE SOCKET CARRIES THE MAIL, AND THE COMMAND CARRIES A SENTENCE.
+  //
+  // This asserted the opposite, on the principle that a wake says mail EXISTS
+  // and the agent then reads it with its own token. The principle was hiding
+  // the difference between the two routes. A command's notice goes in ARGV,
+  // which every process reads out of `ps`, so that one keeps the fixed
+  // sentence; this socket is 0600 in a 0700 directory and the frame above
+  // authenticates with the session's own peer token, which is better
+  // authenticated than the hook path that already quotes mail. Content-free
+  // only where the channel cannot keep a secret.
+  //
+  // Without this the socket became the route for a listening agent and went
+  // on saying only "check the board", so a woken agent spent check_in,
+  // read_mail and ack finding out what had arrived. The operator sent a
+  // screenshot of that twice.
+  check("and the socket wake carries the mail itself",
+    /reached without a wake command/.test(heard),
+    "the message text did not reach the socket, so the agent is woken to be " +
+    "told only that something arrived and must spend three calls finding out what")
 }
 
 check("and no process was spawned for it",
