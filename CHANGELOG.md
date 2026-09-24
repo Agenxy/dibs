@@ -5,6 +5,38 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Neither SessionStart hook had ever run, on any version, in any session.**
+  Both were `type: "mcp_tool"`, and Claude Code resolves an `mcp_tool` hook
+  against the session's connected MCP clients, of which there are none that
+  early. Every session start since the hooks shipped answered
+  `mcp_tool hooks are not available for the 'SessionStart' hook event (no MCP
+  client context)`, exit 1. Measured across this operator's own history on
+  2026-09-24: 307 of them, in 22 projects, from 2026-08-14 to that morning.
+
+  What that cost is the promise `WAKE-MECHANISMS.md` makes about a window that
+  was shut. A harness with no window has no socket, so mail waits for the
+  thread to be opened again, "when the `SessionStart` hook delivers it at
+  once". It did not deliver it at once or at all; the mail waited for the
+  first `Stop`, which is after the agent has already done a turn's work
+  without knowing a peer was blocked on it.
+
+  Both are `command` hooks now, running `dibs hook-poll` and the new
+  `dibs hook-session`, which need no MCP client and read the session id and
+  the transcript path off the hook's own stdin. Measured the same day, in a
+  real 2.1.280 session: `SessionStart:resume`, `outcome: success`, and the
+  digest arriving in the session's context as `hook_additional_context`.
+
+  The Stop-side `hook_session` now carries `transcript_path` too. It was only
+  ever passed on SessionStart, so the daemon has never once received it.
+
+  This is the fourth time a hook contract read from somebody else's
+  documentation turned out to be different in the binary, and the second where
+  the daemon recorded a delivery that never happened. The guard that catches
+  the class is a measurement against a real session, which is now what the
+  claim rests on.
+
 ### Changed
 
 - **The standing warning came out of every notification body.** Each hook

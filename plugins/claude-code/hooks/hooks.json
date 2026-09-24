@@ -4,14 +4,8 @@
       {
         "hooks": [
           {
-            "type": "mcp_tool",
-            "server": "plugin:dibs:dibs",
-            "tool": "hook_poll",
-            "input": {
-              "session_id": "${session_id}",
-              "event": "${hook_event_name}",
-              "cwd": "${cwd}"
-            },
+            "type": "command",
+            "command": "out=$(dibs hook-poll 2>/dev/null) && case \"$out\" in \"{\"*) printf %s \"$out\";; esac; exit 0",
             "timeout": 10,
             "statusMessage": "Checking Dibs"
           }
@@ -20,15 +14,8 @@
       {
         "hooks": [
           {
-            "type": "mcp_tool",
-            "server": "plugin:dibs:dibs",
-            "tool": "hook_session",
-            "input": {
-              "session_id": "${session_id}",
-              "event": "${hook_event_name}",
-              "cwd": "${cwd}",
-              "transcript_path": "${transcript_path}"
-            },
+            "type": "command",
+            "command": "out=$(dibs hook-session 2>/dev/null) && case \"$out\" in \"{\"*) printf %s \"$out\";; esac; exit 0",
             "timeout": 10,
             "statusMessage": "Reporting to Dibs"
           }
@@ -80,7 +67,8 @@
             "input": {
               "session_id": "${session_id}",
               "event": "${hook_event_name}",
-              "cwd": "${cwd}"
+              "cwd": "${cwd}",
+              "transcript_path": "${transcript_path}"
             },
             "timeout": 10,
             "statusMessage": "Reporting to Dibs"
@@ -115,7 +103,8 @@
             "input": {
               "session_id": "${session_id}",
               "event": "${hook_event_name}",
-              "cwd": "${cwd}"
+              "cwd": "${cwd}",
+              "transcript_path": "${transcript_path}"
             },
             "timeout": 10,
             "statusMessage": "Reporting to Dibs"
