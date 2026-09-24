@@ -208,6 +208,29 @@ func TestTheBridgeFollowsTheBoardWhenItComesBackSomewhereElse(t *testing.T) {
 				_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"ok":true}}` + "\n"))
 			}),
 		}
+		// NO KEEP-ALIVES, AND THIS IS THE TEST'S WHOLE RELIABILITY.
+		//
+		// This failed on CI and passed 25 times in a row locally, which is the
+		// shape this repository has learned not to write off. The cause is not
+		// timing noise, it is that the two machines produced DIFFERENT ERRORS
+		// for the same event. With pooling on, the bridge keeps an idle
+		// connection to the old board; closing that board makes the next send
+		// fail with ECONNRESET. Locally the pooled connection had already gone,
+		// so the send dialled fresh and got ECONNREFUSED.
+		//
+		// Only one of those is retried, deliberately: dialFailed() is refused
+		// and nothing else, because a reset cannot prove the request was not
+		// already applied and a retried claim is worse than a failed call. So
+		// with pooling on this test was asserting something the product
+		// promises not to do, and it passed only when the pool happened to be
+		// empty.
+		//
+		// Turning keep-alives off makes every send a fresh dial, which is the
+		// case re-resolution is actually for: the board has gone and a new one
+		// is somewhere else. What happens to an in-flight pooled connection is
+		// a different question with a different answer (op_id), and a test that
+		// covers it should say so in its name.
+		srv.SetKeepAlivesEnabled(false)
 		go func() { _ = srv.Serve(ln) }()
 		return srv, ln.Addr().String()
 	}

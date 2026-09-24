@@ -517,7 +517,32 @@ try {
       // is what made the result depend on scheduling.
       await page.evaluate((r) => (window as any).__deliver(r),
         withStatus(boardResult, target, "stale"))
-      await Bun.sleep(900)
+      // WAIT FOR QUIET, DO NOT SLEEP FOR IT.
+      //
+      // The paragraph above had the mechanism right and the instrument wrong.
+      // 900ms comfortably exceeds the .62s the transition runs for, and that is
+      // not the quantity that matters: on a loaded runner the setup transition
+      // STARTS late, so the sleep can elapse while it is still going, the band
+      // change below is swallowed by `running`, and the check reports an empty
+      // list. That is the product behaving correctly, one transition at a time,
+      // being measured by a test that assumed a clock.
+      //
+      // This failed on CI and passed locally, twice on main before the branch
+      // that finally chased it, and it is the same shape as the moved-board
+      // test in cmd/dibs: an assertion about something the product declines to
+      // do under a condition the CI machine happens to be in. Polling for the
+      // absence of both the marker and the animations makes it depend on the
+      // browser being finished rather than on how fast the box is.
+      await page.evaluate(async () => {
+        const doc = (window as any).__panelDoc()
+        for (let i = 0; i < 120; i++) {
+          const marked = doc.documentElement.hasAttribute("data-transition")
+          const animating = doc.getAnimations().some((a: any) =>
+            String(a.effect?.pseudoElement ?? "").includes("view-transition"))
+          if (!marked && !animating) return
+          await new Promise((res) => setTimeout(res, 25))
+        }
+      })
 
       // Time it as well as name it.
       //

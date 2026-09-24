@@ -61,6 +61,20 @@ type wakers struct {
 	// timer left. Cleared on success and when nothing is owed. Found by the
 	// pre-release review, round twenty-three.
 	attempts map[string]int
+	// fails counts CONSECUTIVE failures of an agent's wake command, so a
+	// command that is simply broken stops being run on every message.
+	//
+	// attempts above is per piece of mail and retries once, which is right for
+	// a command that failed for a reason the next message might not hit. This
+	// one is the other case: an operator's command that exits non-zero every
+	// time, for every agent, forever. One board logged "the next message
+	// somebody is blocked on will try again" about a CLI whose credentials had
+	// expired, and it meant it, all day. A retry that repeats identically
+	// cannot fix the thing it is retrying.
+	//
+	// Cleared by a wake that works, and by a configuration reload, which is
+	// what fixing the command looks like from here.
+	fails map[string]int
 	// running: agents whose wake command has not exited yet.
 	//
 	// The cooldown alone was the whole exclusion, and it is a START-time rule:
@@ -95,6 +109,7 @@ func (e *Engine) SetWakeCommands(cmds map[string]WakeCommand) {
 	if e.wakers.byHarness == nil {
 		e.wakers.byHarness = map[string]wakeCommand{}
 	}
+	e.wakers.fails = nil // a changed configuration is what fixing a command looks like
 	for harness, c := range cmds {
 		if len(c.Argv) == 0 {
 			continue
@@ -518,6 +533,40 @@ func (e *Engine) retryWakeDecision(agent string) {
 	}()
 }
 
+// spawnFailureCap is how many times in a row a wake command may fail before
+// the board stops running it. Three, because two is inside the ordinary retry
+// and a fourth has never told anybody anything the third did not.
+const spawnFailureCap = 3
+
+// noteCommandOutcome records whether an agent's wake command worked, and says
+// so once when it gives up on one.
+func (e *Engine) noteCommandOutcome(agent string, argv []string, ok bool) {
+	e.wakers.mu.Lock()
+	defer e.wakers.mu.Unlock()
+	if ok {
+		delete(e.wakers.fails, agent)
+		return
+	}
+	if e.wakers.fails == nil {
+		e.wakers.fails = map[string]int{}
+	}
+	e.wakers.fails[agent]++
+	if e.wakers.fails[agent] == spawnFailureCap {
+		slog.Warn("this agent's wake command has failed every time, so the board "+
+			"will stop running it; its mail waits for the agent's next activation",
+			"agent", agent, "cmd", argv[0], "failures", spawnFailureCap,
+			"fix", "run the command yourself to see what it says, then correct "+
+				"[wake.exec] in dibs.toml. A wake that works, or a restart after "+
+				"changing the configuration, starts it being tried again")
+	}
+}
+
+// spawnGivenUp reports whether this agent's command has failed its way out of
+// being run. Caller holds e.wakers.mu.
+func (e *Engine) spawnGivenUp(agent string) bool {
+	return e.wakers.fails[agent] >= spawnFailureCap
+}
+
 func (e *Engine) noteWakeAttempt(agent string) int {
 	e.wakers.mu.Lock()
 	defer e.wakers.mu.Unlock()
@@ -843,6 +892,39 @@ func (e *Engine) wakeRoute(l *core.Agent) (cool time.Duration, byCommand, ok boo
 	}
 	cmd, found := e.wakers.byHarness[strings.ToLower(harness)]
 	byCommand = found && len(cmd.argv) > 0
+
+	// A LISTENING SESSION BEATS A SPAWN, ALWAYS.
+	//
+	// The thread IS the agent. When its window is open the socket puts the
+	// notice in front of the agent that is already there; spawning instead
+	// starts a SECOND body for the same thread, somewhere its operator is not
+	// looking. Measured here, the second body also loses: the application
+	// holds the thread and refuses another writer, the command exits non-zero,
+	// and the prompt it carried is left in the transcript rendered as though
+	// the HUMAN typed it. Dibs putting words in its operator's mouth is worse
+	// than Dibs being quiet, and the retry did it four times in twenty
+	// minutes.
+	//
+	// The old order preferred the command because it is the route the daemon
+	// can CONFIRM by exit status, and because the socket was held unread by
+	// any session in bypassPermissions mode, which is what an unattended fleet
+	// runs. The second half of that stopped being true: the hold is a default
+	// the receiving operator lifts, and `internal/peerpolicy` now reports
+	// whether they have. A confirmable route that cannot deliver is worth less
+	// than a best-effort one that does.
+	//
+	// The command keeps the job only it can do: reaching an agent with no
+	// session listening at all.
+	if byCommand && e.mightReachOverSocket(l) {
+		return defaultPeerCooldown, false, true
+	}
+	// A COMMAND THAT HAS NEVER WORKED IS NOT A ROUTE.
+	if byCommand && e.spawnGivenUp(l.ID) {
+		if !e.mightReachOverSocket(l) {
+			return 0, false, false
+		}
+		return defaultPeerCooldown, false, true
+	}
 
 	// NO COMMAND IS NO LONGER NO WAKE.
 	//
@@ -1221,7 +1303,10 @@ func (e *Engine) runWake(plan wakePlan, agent string) bool {
 		return e.requestRemoteWake(plan, agent)
 	}
 	if len(plan.argv) > 0 {
-		return wakeexec.RunCommands(plan.argv, plan.fallback, agent, plan.cwd, wakeexec.Timeout, wakeexec.Grace)
+		ok := wakeexec.RunCommands(plan.argv, plan.fallback, agent, plan.cwd,
+			wakeexec.Timeout, wakeexec.Grace)
+		e.noteCommandOutcome(agent, plan.argv, ok)
+		return ok
 	}
 	return e.wakeOverSocket(plan, agent)
 }

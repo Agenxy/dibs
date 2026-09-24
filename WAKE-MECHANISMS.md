@@ -420,6 +420,38 @@ and Dibs sees the exit status. The socket is best-effort and free, worth trying
 because it costs nothing and needs no configuration, and worth nobody's trust
 as the only route. `dibs doctor` says which of the two a board actually has.
 
+**AND THEN THE ORDER BETWEEN THEM TURNED OUT TO BE BACKWARDS.** The command was
+tried first, because it is the one Dibs can confirm and because the socket was
+held unread by any session in bypassPermissions mode. The second half stopped
+being true when that hold turned out to be a default the receiving operator
+lifts with one setting, and the first half is worth less than it sounds: a
+confirmable route that cannot deliver is worth less than a best-effort one that
+does.
+
+What settled it was watching the preference do harm. A thread IS the agent, and
+spawning for one that already has a window starts a SECOND body for the same
+thread. The application holds the thread and refuses another writer, so the
+command exits non-zero, and the prompt it carried is left in the transcript
+rendered as though the HUMAN typed it. Four of those in twenty minutes, with
+empty turns between them, and the operator read it as something signing commits
+on his behalf. Dibs putting words in its operator's mouth is a worse failure
+than Dibs saying nothing, and it is the same rule as §5: the board may wake an
+agent and may not steer one. A wake that arrives indistinguishable from the
+human's own typing has stopped being a wake.
+
+So: **a listening session beats a spawn, always.** The command keeps the one job
+only it can do, which is reaching an agent with no session listening at all.
+Nothing was taken away from it; it was doing a job the socket does better.
+
+One consequence worth stating, because it is a real loss and not a detail. A
+harness whose window is shut has no socket, so mail for it waits until that
+thread is opened again, when the `SessionStart` hook delivers it at once. Dibs
+does not open applications. Whether the board should instead start a headless
+turn for such an agent is the operator's call and not the default: an agent
+acting where nobody is looking, in a thread its human will later open and read,
+is a different product from a board that coordinates the agents somebody is
+running.
+
 **What is unchanged.** One gate for both routes: the cooldown, the
 still-running flag and the deferral are shared, because each was paid for by a
 bug. No command and no socket is still no wake. No process is ever spawned for
