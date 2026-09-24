@@ -7,6 +7,28 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **An admin agent can change the board's settings, with `configure`.**
+  Configuration lived in one place, `dibs.toml`, read at boot, so every
+  adjustment was a person opening an editor and restarting a daemon. That is
+  the wrong shape for a coordination tool whose premise is that agents handle
+  things: an operator who has granted an agent admin should not then have to
+  go and dig through a file on its behalf. Reading needs a token; changing
+  needs admin, because a coordinator's moves are visible on the board and
+  undoable from it while a setting changes how the board behaves for every
+  agent on it.
+
+  Only the five settings the engine can apply immediately are offered, and
+  anything else is refused with `E_NO_SETTING`: accepting `addr` and doing
+  nothing until a restart is the class of bug this repository keeps paying
+  for. Changes are written to `overrides.json` beside `dibs.toml` rather than
+  into it, because that file is mostly the operator's comments and a daemon
+  that rewrites TOML destroys them. Everything an agent changed is therefore
+  in one place that can be deleted to revert, and each entry records who set
+  it and when, so "the board is behaving differently than I expect" is
+  answerable in one line. A value is applied before it is persisted, and a
+  store that fails says the change will not survive a restart rather than
+  swallowing it.
+
 - **Who an unidentified session is taken to be is now the operator's call.**
   A lifecycle hook identifies its agent with a session id; when it cannot, Dibs
   matches the single live agent working in that directory. That fallback is a

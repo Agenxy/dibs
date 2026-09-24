@@ -192,6 +192,18 @@ var toolDefs = func() []map[string]any {
 			}, "token", "nonce"),
 		},
 		{
+			"name": "configure", "description": "Read the board settings that take " +
+				"effect while it runs; as ADMIN, change one. No arguments lists each " +
+				"setting, its value and who set it. Only settings the engine applies " +
+				"immediately are here: an address needs a restart and is refused rather " +
+				"than accepted and ignored. Saved beside dibs.toml, never into it.",
+			"inputSchema": obj(map[string]any{
+				"token":   tok,
+				"setting": str("the setting to change, as listed. Omit to read them all"),
+				"value":   str(`what to set it to: "true"/"false", or a listed word`),
+			}, "token"),
+		},
+		{
 			// It said "sign_off stops an agent, this tidies the record", which
 			// prescribes an order nobody can perform: sign_off blanks the token,
 			// prune authenticates with it, and following the E_BAD_TOKEN hint
