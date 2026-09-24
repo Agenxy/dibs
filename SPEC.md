@@ -690,7 +690,7 @@ as load-bearing until the final ships and hosts migrate.
   initialized`/`ping` retained for 2025-11-25 hosts: today's clients work day one,
   and the legacy path sunsets when hosts migrate.
 
-**Tools (45).** All take `token` except `register`, `resume`,
+**Tools (46).** All take `token` except `register`, `resume`,
 `hook_poll` and `guard_path` (the last two are lifecycle-hook surfaces and have
 no token to give: see SECURITY.md).
 
@@ -702,7 +702,7 @@ space surface (`open_space`, `join_space`, `read_space`, `post`,
 `announce`, `ack_announcement`, `leave_space`, `watch_space`, `admit`,
 `evict`, `merge_spaces`, `lock_space`, `unlock_space`) and
 `vouch_child`, specified in SPEC-CHANNELS.md, plus `force_release`, the
-claim-level counterpart to `unlock_space`. v1.3 added `configure`, the
+claim-level counterpart to `unlock_space`. v1.3 added `configure` and `merge_agents`, the
 admin-gated read and write of the settings the engine can apply while it
 runs; see docs/CONFIGURATION.md for why an address is not among them.
 
@@ -840,7 +840,7 @@ binaries (`dibd` and `dibs`) both CGO_ENABLED=0 and byte-reproducible.
 ledgered wake transitions; ephemeral + persistent agents; resume; awareness gate
 per activation; mailbox (full state machine, read_mail, op_id dedup,
 dormant-recipient semantics); claims (§9 matrix); bounded liveness with bounded
-restart grace; limits incl. state GC; MCP 2026-07-28 dual-version surface (45 tools);
+restart grace; limits incl. state GC; MCP 2026-07-28 dual-version surface (46 tools);
 local access secret + Origin validation; CLI (board/messages/log/verify/mcp-config);
 SSE web board; static binaries (`dibd` + `dibs`, no cgo, no runtime deps).
 

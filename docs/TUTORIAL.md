@@ -330,7 +330,7 @@ dibs doctor: data dir ~/.dibs
 
   ✓ local secret present
   ✓ daemon answering on 127.0.0.1:4777
-  ✓ 45 tools published
+  ✓ 46 tools published
   ! work-overlap matching has no repository indexed yet
       → no repository indexed yet: each one is indexed when an agent first
         registers from it, so this turns itself on. -match-repo only

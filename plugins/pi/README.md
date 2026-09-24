@@ -53,7 +53,7 @@ At session start the extension calls `tools/list` against the running daemon and
 registers every tool it returns, passing the server's own JSON Schema straight
 through via `Type.Unsafe`.
 
-A hand-written mirror of 45 tool definitions is a second source of truth for
+A hand-written mirror of 46 tool definitions is a second source of truth for
 argument shapes the server already validates, and it is wrong the first time a
 tool changes. Fetching means `dibs` and this file cannot drift: add a tool to
 the server, and pi has it on next start.

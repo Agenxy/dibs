@@ -1348,6 +1348,8 @@ func (s *Server) run(
 		op.Kind, op.Space, op.To, op.Note = core.OpSpaceEvict, a.SpaceID, a.To, a.Note
 	case "merge_spaces":
 		op.Kind, op.Space, op.To, op.Note = core.OpSpaceMerge, a.SpaceID, a.To, a.Note
+	case "merge_agents":
+		return s.eng.MergeAgents(ctx, a.Token, a.AgentRef, a.Into)
 	case "configure":
 		return s.eng.Configure(ctx, a.Token, a.Setting, a.Value)
 	case "human_unlock":

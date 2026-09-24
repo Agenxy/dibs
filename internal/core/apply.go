@@ -50,6 +50,7 @@ const (
 	OpPutBlob       = "put_blob"
 	OpGrantRole     = "grant_role"
 	OpPrune         = "prune"
+	OpMergeAgents   = "merge_agents"
 	// OpPruneOwn is an agent tidying up after ITSELF: its own record, or a
 	// child it vouched for. A new kind rather than a token-bearing prune,
 	// because the ownership rule below has to live in Apply (it depends on
@@ -123,6 +124,10 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		// that crashed cannot close itself, and no agent should be able to
 		// evict a peer.
 		return s.applyPrune(op, now)
+	case OpMergeAgents:
+		// Admin-only, same path, and for a stronger reason than prune's: this
+		// redirects one agent's mail into another's mailbox. See applyMerge.
+		return s.applyMerge(op, now)
 	}
 
 	// Actor ops. Live path: token. Replay path: recorded Agent (engine blanks
