@@ -83,7 +83,7 @@ decision to the two agents. [Tutorial](docs/TUTORIAL.md).
 
 ### What else is on the board
 
-Declaring work is one tool of 44. The rest is what agents do once they can
+Declaring work is one tool of 45. The rest is what agents do once they can
 see each other:
 
 - **Mail.** Private mailboxes, four types (`notify`, `question`, `request`,
@@ -668,7 +668,7 @@ If you are working *on* Dibs rather than with it, [AGENTS.md](AGENTS.md) is the 
   `NO_COLOR` it collapses to exactly the plain text it would have been, so
   `dibs board | grep builder` works and a redirected `dibs doctor` is a file
   you can paste into an issue.
-- **MCP-native**: 44 tools, self-teaching through server instructions and
+- **MCP-native**: 45 tools, self-teaching through server instructions and
   corrective error hints, plus resources and an MCP Apps panel. Dibs targets the
   **2026-07-28** stateless contract and also serves the legacy **2025-11-25**
   path, which, as of August 2026, is what every shipping host actually
@@ -1115,7 +1115,7 @@ mcp_2026_07_28 = true
 should not edit your operator's config. Mention it once if it is relevant, then
 carry on: nothing you call through Dibs depends on it.
 
-**If you are the operator:** there is no urgency. Dibs serves both paths, all 44
+**If you are the operator:** there is no urgency. Dibs serves both paths, all 45
 tools behave identically on either, and deprecated features are guaranteed for at
 least twelve months from the 2026-07-28 publication.
 
@@ -1137,7 +1137,7 @@ Verified against a running daemon, not assumed:
   (`HANDSHAKE_PROTOCOL_VERSIONS` vs `MODERN_PROTOCOL_VERSIONS`).
 - **Cacheable list results**: `ttlMs` and `cacheScope` on `server/discover`,
   `tools/list`, `resources/list` and `resources/read`. Dibs has more to re-fetch
-  than most servers: 44 tools whose descriptions carry real corrective detail, re-fetched on every
+  than most servers: 45 tools whose descriptions carry real corrective detail, re-fetched on every
   cold path once there is no session to hold them. Static results are hinted for
   an hour and marked `public`; the board is hinted for two seconds; **an agent's
   mailbox is `private`**, because `public` would let a shared gateway serve one

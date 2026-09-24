@@ -868,6 +868,10 @@ type toolArgs struct {
 	SpaceID string `json:"space"`
 	// AgentRef targets an actual agent, for the tools that act on one.
 	AgentRef string `json:"agent"`
+	// Setting and Value are configure's: which board setting, and what to.
+	// Both empty is a read, which needs only a token.
+	Setting string `json:"setting"`
+	Value   string `json:"value"`
 	// Into is the agent RECEIVING something, distinct from AgentRef, which is
 	// the one being acted on.
 	Into           string   `json:"into"`
@@ -1344,6 +1348,8 @@ func (s *Server) run(
 		op.Kind, op.Space, op.To, op.Note = core.OpSpaceEvict, a.SpaceID, a.To, a.Note
 	case "merge_spaces":
 		op.Kind, op.Space, op.To, op.Note = core.OpSpaceMerge, a.SpaceID, a.To, a.Note
+	case "configure":
+		return s.eng.Configure(ctx, a.Token, a.Setting, a.Value)
 	case "human_unlock":
 		return s.humanUnlock(ctx, a)
 	case "adopt_agent":

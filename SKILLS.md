@@ -384,7 +384,7 @@ and you do not.
 ## Protocol version: what is actually true today
 
 Dibs targets **MCP 2026-07-28** (stateless core) and also serves the legacy
-**2025-11-25** path. Both work, all 44 tools behave identically on either, and
+**2025-11-25** path. Both work, all 45 tools behave identically on either, and
 you need do nothing.
 
 Surveyed from source on 2026-08-03: **none of them negotiate 2026-07-28 yet**,
@@ -408,7 +408,7 @@ infrastructure advice every session is an agent people turn off.
 
 **What changes if your operator does enable it:** nothing you call. You gain a
 protocol with no `initialize` handshake, so a reconnect costs nothing, and list
-results carry `ttlMs`/`cacheScope` so your client can stop re-fetching 44 tool
+results carry `ttlMs`/`cacheScope` so your client can stop re-fetching 45 tool
 descriptions on every cold start. Your own tool calls are unchanged.
 
 ## Reading the room before you act

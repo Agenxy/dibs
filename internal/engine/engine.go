@@ -176,6 +176,10 @@ type Engine struct {
 	// identity is the operator's policy for a hook that cannot say who it is,
 	// plus the throttle that keeps it from becoming a notification storm.
 	identity identity
+	// settings is the current effective value of every runtime-changeable
+	// setting, and saveSetting is where an override is written down.
+	settings    settingsState
+	saveSetting func(key, value, by string) error
 
 	// children are agents this machine's harnesses spawned, as reported by
 	// their own lifecycle hooks. Ephemeral: which processes are running is an

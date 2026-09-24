@@ -96,6 +96,9 @@ func TestDocumentedToolCountMatchesReality(t *testing.T) {
 	//
 	// The same failure as the claim itself, which has gone stale three times in
 	// three spellings. Found by the pre-release review.
+	// released matches the first "## [x.y.z]" heading: everything from there
+	// down is history.
+	released := regexp.MustCompile(`(?m)^## \[[0-9]`)
 	missing := []string{}
 	checked := 0
 	for _, doc := range docs {
@@ -103,6 +106,24 @@ func TestDocumentedToolCountMatchesReality(t *testing.T) {
 		if err != nil {
 			missing = append(missing, doc)
 			continue
+		}
+		// THE CHANGELOG IS GUARDED ONLY WHERE IT MAKES A CLAIM ABOUT NOW.
+		//
+		// Everything below the first released heading is a dated record of
+		// what was measured then. One entry reads "34.0k characters for 44
+		// tools, down from 36.2k for 42", and that pair was true of that
+		// release: bumping the 44 to keep this test quiet would leave a
+		// sentence that is arithmetically incoherent and historically false,
+		// and would do it silently every time a tool is added. A changelog
+		// that is edited to agree with the present is not a changelog.
+		//
+		// [Unreleased] is still checked, because that section describes the
+		// build a reader is about to get.
+		if doc == "CHANGELOG.md" {
+			text := string(body)
+			if i := released.FindStringIndex(text); i != nil {
+				body = []byte(text[:i[0]])
+			}
 		}
 		for _, m := range claim.FindAllStringSubmatch(string(body), -1) {
 			// Whichever alternation matched: one group is the number, the other
