@@ -1583,23 +1583,30 @@ func (e *Engine) recencyWindow(l *core.Agent) time.Duration {
 }
 
 // socketNotice is what a wake says over the session socket: the mail itself
-// when the operator allows it, and the fixed sentence otherwise.
+// when the operator allows it, and the fixed sentence when there is none.
 //
-// The SAME digest the hook path builds, from the same pendingMailQuoted, so
-// the two ways an agent hears about a message do not describe it differently.
-// Falls back to the fixed sentence whenever there is nothing to quote, which
-// covers `[hooks] mail_bodies = false`, a wake for a notice rather than mail,
-// and the moment where the mail was read between the decision and the send.
+// THE SAME DIGEST THE HOOK PATH BUILDS, not the fixed sentence with the mail
+// stapled underneath. The first version did the stapling and it left "Dibs:
+// check the board." in front of the board's own contents: an imperative, on
+// the one path whose whole job is to inform rather than steer, telling an
+// agent to go and fetch something it had just been handed. The operator read
+// it off their own screen and asked what it was still for. Nothing.
 //
-// Caller holds e.wakers.mu, and this reads e.state, which is safe because
-// wakeFor runs on the writer loop.
+// hookDigest also names Dibs as the sender and says outright that this is
+// coordination data rather than an instruction, which matters more here than
+// on the hook path: a peer message arrives wrapped in the harness's own
+// preamble calling it "another Claude session", which is not what sent it.
 func (e *Engine) socketNotice(l *core.Agent, fallback string) string {
 	if l == nil {
 		return fallback
 	}
 	lines := e.pendingMailQuoted(l.ID, time.Now())
 	if len(lines) == 0 {
+		// Nothing to quote: a wake for a notice rather than mail, quoting
+		// turned off, or the mail read between the decision and the send. The
+		// fixed sentence is right for all three, because then there IS
+		// somewhere to go and look.
 		return fallback
 	}
-	return fallback + "\n" + strings.Join(lines, "\n")
+	return strings.TrimRight(hookDigest(l.ID, lines, nil, nil), "\n")
 }
