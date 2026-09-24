@@ -38,7 +38,7 @@ func (e *Engine) GuardPathFrom(ctx context.Context, sessionID, path, cwd, host s
 	path, cwd = e.foldFor(host, path), e.foldFor(host, cwd)
 	return e.query(ctx, func() core.Result {
 		agent := ""
-		l := e.state.AgentForHookOn(sessionID, cwd, host)
+		l := e.resolveHook(sessionID, cwd, host)
 		if l != nil {
 			agent = l.ID
 		}
