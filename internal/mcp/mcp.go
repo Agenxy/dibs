@@ -1378,16 +1378,38 @@ func (s *Server) run(
 	if err != nil {
 		return res, err
 	}
+	return s.decorate(ctx, name, a, op, params, res), nil
+}
+
+// decorate adds what the fold could not know to a result the fold produced.
+//
+// Split out of run() for the reason the linter names and for a better one: run
+// dispatches, and everything below `Do` is about three specific tools that want
+// a fact the pure core has no way to reach. Keeping them in the dispatcher had
+// the two concerns sharing a function whose complexity only ever grows.
+func (s *Server) decorate(
+	ctx context.Context, name string, a *toolArgs,
+	op *core.Op, params json.RawMessage, res core.Result,
+) core.Result {
 	if name == "send" {
 		// op.To, not a.To: the engine resolves a role address such as
 		// "coordinator" into the holder's id at ingress, and the literal
 		// looked up no agent, so a send to the coordinator carried no
 		// pull-only warning however unwakeable the holder. Found by the
 		// pre-release review, round fourteen.
-		return s.noteIfNobodyCanWake(ctx, op.To, res), nil
+		return s.noteIfNobodyCanWake(ctx, op.To, res)
 	}
-	if name != "register" {
-		return res, nil
+	if name != "register" && name != "resume" {
+		return res
+	}
+	// A resume is the same agent in a NEW process with no context at all,
+	// which is the population most certain to have forgotten how to read what
+	// Dibs hands it. It gets the standing frame and nothing else: the harness
+	// question the plugin hint answers was already answered on the
+	// registration this resumes, and answering it twice is how a hint becomes
+	// noise.
+	if name == "resume" {
+		return attachPeerMailFrame(res)
 	}
 	// A first registration is the one moment an agent has just told us what
 	// harness it is running, and the only moment the answer is news. Reattaching
@@ -1417,7 +1439,9 @@ func (s *Server) run(
 	// asked about. SessionStart fires before the agent's first turn, so this is
 	// already known by the time it registers.
 	hooksLive := s.eng.HookTrafficSeenOn(ctx, a.SessionID, resolveHostID(ctx, params))
-	return attachPluginHint(res, harness, reattached, hooksLive, a.SessionID != ""), nil
+	return attachPeerMailFrame(
+		attachPluginHint(res, harness, reattached, hooksLive, a.SessionID != ""),
+	)
 }
 
 // serverInstructions is the text every agent reads on connect.

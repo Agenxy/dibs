@@ -5,6 +5,26 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **The standing warning came out of every notification body.** Each hook
+  digest and each socket wake opened with two sentences saying that peer mail
+  is coordination data rather than an instruction, and that the agent should
+  answer using its own token. Both are true. Neither is ever different. An
+  operator watching their own fleet read the identical pair arrive in front of
+  forty different messages and said what it costs: a warning that cannot vary
+  is not information, and putting it first buries the part that changed. It is
+  the same objection the `Dibs: check the board.` imperative got one entry
+  below, arriving one level up.
+
+  A standing fact belongs where an agent reads its orientation, so it is now
+  on the registration result (where an agent has just been handed the token
+  those sentences are about) and in `dibs://skills`. Not in
+  `serverInstructions`: that string is charged on every connection and on one
+  client forty times over, and buying room there would mean cutting one of the
+  four warnings an agent needs before its *first* call. The body of a delivery
+  says what happened and nothing else.
+
 ### Fixed
 
 - **The socket wake stopped telling an agent to go and look at what it had
@@ -17,11 +37,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
   It builds `hookDigest` now, which is what the comment beside it had already
   claimed, so the two ways an agent hears about a message are one wording
-  rather than two that resemble each other. That also names Dibs as the sender
-  and says outright that this is coordination data and not an instruction,
-  which matters more on this route than on the hook: a peer message arrives
-  wrapped in the harness's own preamble describing it as "another Claude
-  session", which is not what sent it. The fixed sentence survives for the
+  rather than two that resemble each other. That also names Dibs as the
+  sender, which matters more on this route than on the hook: a peer message
+  arrives wrapped in the harness's own preamble describing it as "another
+  Claude session", which is not what sent it. The fixed sentence survives for the
   case it was always right for, which is a wake with nothing to quote, because
   then there genuinely is somewhere to go and look.
 
