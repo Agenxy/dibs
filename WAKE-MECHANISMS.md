@@ -455,8 +455,35 @@ running.
 **What is unchanged.** One gate for both routes: the cooldown, the
 still-running flag and the deferral are shared, because each was paid for by a
 bug. No command and no socket is still no wake. No process is ever spawned for
-a thread that cannot be resumed. The notice is one fixed sentence: no counts,
-no senders, no body.
+a thread that cannot be resumed.
+
+**AND WHAT CHANGED: THE NOTICE IS NO LONGER ONE FIXED SENTENCE ON BOTH.** It
+was, on the principle that one notice should have one wording whichever way it
+travels. That principle was hiding a difference between the two routes that
+turns out to be the point.
+
+A command's notice goes in ARGV, and argv is world-readable: every process on
+the machine can read it out of `ps`. Putting decrypted mail there is an
+unconditional leak, so that route keeps the fixed sentence and always will.
+
+The socket is a 0600 endpoint in a 0700 directory the harness refuses to use
+if it is shared, and delivery authenticates with that session's own peer token
+from a 0600 key file. It is better authenticated than the hook path, which
+already quotes mail. So the rule is not "one wording", it is: **content-free
+only where the channel cannot keep a secret.** One route qualifies.
+
+What that bought is the reason this document exists. Once the socket became
+the route for a session that is listening, a woken agent was told that
+something had arrived and then spent `check_in`, `read_mail` and `ack` finding
+out what, behind its harness's own warning preamble about peer messages. Three
+calls to read one message is a polling API with extra steps, which is what §5
+says this must not become. The operator sent a screenshot of exactly that,
+twice, the second time after being told it was fixed: the hook path had been
+given the mail and the socket path, which is the one they were looking at, had
+not.
+
+`[hooks] mail_bodies = false` puts the pointer back on both, for a machine
+whose accounts are not all yours.
 
 ## 6. Rejected approaches, and why
 

@@ -1105,10 +1105,33 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 		}, true
 	}
 	if !configured {
-		// The socket carries the same sentence the command would have carried.
-		// One notice, one wording, whichever way it travels.
+		// THE SOCKET CARRIES THE MAIL, AND THE COMMAND CARRIES A SENTENCE.
+		//
+		// These used to be the same string, on the principle that one notice
+		// should have one wording whichever way it travels. That principle
+		// was hiding a difference that matters: the two routes are not the
+		// same KIND of channel.
+		//
+		// A command's notice goes in argv, and argv is world-readable. Every
+		// process on the machine can read it out of `ps`, so putting somebody's
+		// decrypted mail there is an unconditional leak and the fixed sentence
+		// stays.
+		//
+		// The socket is a 0600 endpoint in a 0700 directory the harness
+		// refuses to use if it is shared, and delivery authenticates with that
+		// session's own peer token, read from a 0600 key file. It is better
+		// authenticated than the hook path that already quotes mail. So the
+		// rule is not "one wording", it is: content-free only where the
+		// channel cannot keep a secret.
+		//
+		// What this fixes is the thing the whole wake path exists for. Since
+		// the socket became the route for a session that is listening, a
+		// woken agent was told that something had arrived and then had to
+		// spend check_in, read_mail and ack to find out what, behind its
+		// harness's own warning preamble about peer messages. Reported by the
+		// operator, twice, looking at exactly that in their own transcript.
 		return wakePlan{
-			agent: l.ID, sessions: sessionsOf(l), notice: f.Message,
+			agent: l.ID, sessions: sessionsOf(l), notice: e.socketNotice(l, f.Message),
 			cwd: cwdOf(l), cooldown: cooldown, thread: f.Thread,
 		}, true
 	}
@@ -1557,4 +1580,26 @@ func (e *Engine) recencyWindow(l *core.Agent) time.Duration {
 		return d
 	}
 	return defaultPeerCooldown
+}
+
+// socketNotice is what a wake says over the session socket: the mail itself
+// when the operator allows it, and the fixed sentence otherwise.
+//
+// The SAME digest the hook path builds, from the same pendingMailQuoted, so
+// the two ways an agent hears about a message do not describe it differently.
+// Falls back to the fixed sentence whenever there is nothing to quote, which
+// covers `[hooks] mail_bodies = false`, a wake for a notice rather than mail,
+// and the moment where the mail was read between the decision and the send.
+//
+// Caller holds e.wakers.mu, and this reads e.state, which is safe because
+// wakeFor runs on the writer loop.
+func (e *Engine) socketNotice(l *core.Agent, fallback string) string {
+	if l == nil {
+		return fallback
+	}
+	lines := e.pendingMailQuoted(l.ID, time.Now())
+	if len(lines) == 0 {
+		return fallback
+	}
+	return fallback + "\n" + strings.Join(lines, "\n")
 }

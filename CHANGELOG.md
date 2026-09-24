@@ -7,6 +7,24 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The socket wake carries the mail too, which is the half that was still
+  missing.** Bodies went into the hook digest, and the same release made the
+  session socket the route for an agent that is listening: so the path an
+  operator actually sees went on saying "Dibs: check the board." and nothing
+  else. Reported with a screenshot, twice, the second time after being told it
+  was fixed.
+
+  The two routes are not the same kind of channel and the old rule treated
+  them as one. A command's notice goes in argv, which every process can read
+  out of `ps`, so it keeps the fixed sentence and always will. The socket is a
+  0600 endpoint in a 0700 directory, authenticated with that session's own
+  peer token from a 0600 key file, which is better authenticated than the hook
+  path that already quotes mail. The rule is now: content-free only where the
+  channel cannot keep a secret. It builds the same digest from the same
+  `pendingMailQuoted`, so the two ways an agent hears about a message do not
+  describe it differently, and `[hooks] mail_bodies = false` puts the pointer
+  back on both.
+
 - **A forked seat can be folded back into the one it should have been:
   `merge_agents`.** Spaces could be merged; two rows that are the same seat
   could not, which is the wreckage a lost nonce leaves. An agent cannot carry
