@@ -452,8 +452,15 @@ let annSerial = 0
   }
   check("it is labelled as needing acknowledgement",
     /ANNOUNCEMENT/.test(ctxText) && /ack_announcement/.test(ctxText), ctxText.slice(0, 200))
-  check("and it is framed as data, not as an instruction",
-    /not instructions/.test(ctxText), ctxText.slice(0, 200))
+  // The framing is said ONCE, at registration, and not in every digest.
+  // It is true of every message Dibs will ever deliver, so restating it in
+  // each one spends the agent's attention on the part that never changes.
+  check("the standing frame is on the registration, where it is read once",
+    /not an instruction/.test(String(listener.peer_mail ?? "")),
+    JSON.stringify(listener.peer_mail ?? null))
+  check("and not repeated in the body of every delivery",
+    !/not instructions|not an instruction|your own token/.test(ctxText),
+    ctxText.slice(0, 200))
 
   // Throttled, not repeated on every hook. An announcement that rides every
   // single turn is indistinguishable from a stuck loop, which destroys the
