@@ -112,7 +112,7 @@ func (e *Engine) noteChild(c Child, now time.Time) core.Result {
 	// in internal/liveness, not a replacement: two agents in one repo share a
 	// cwd, and the environment does not.
 	if c.Parent == "" && e.state != nil {
-		if l := e.state.AgentForHookOn(c.SessionID, c.CWD, c.Host); l != nil {
+		if l := e.resolveHook(c.SessionID, c.CWD, c.Host); l != nil {
 			c.Parent = l.ID
 		}
 	}

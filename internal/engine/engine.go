@@ -173,6 +173,9 @@ type Engine struct {
 	// admitted by a director, promoted from a queue, evicted. Ephemeral; see
 	// notices.go.
 	notices map[string][]notice
+	// identity is the operator's policy for a hook that cannot say who it is,
+	// plus the throttle that keeps it from becoming a notification storm.
+	identity identity
 
 	// children are agents this machine's harnesses spawned, as reported by
 	// their own lifecycle hooks. Ephemeral: which processes are running is an

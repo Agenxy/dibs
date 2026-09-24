@@ -47,10 +47,40 @@ type Config struct {
 	// set reports whether a key was written in the file, as opposed to holding
 	// its zero value because nobody mentioned it. Unexported, so it is not a
 	// setting; nil for a zero Config, which reads as "nothing was written".
-	set   func(key ...string) bool
-	Roles RolesConfig `toml:"roles"` // standing coordinator/admin agents
-	Wake  WakeConfig  `toml:"wake"`  // which news may extend an agent's turn
-	Hooks HooksConfig `toml:"hooks"` // what a lifecycle-hook delivery carries
+	set      func(key ...string) bool
+	Roles    RolesConfig    `toml:"roles"`    // standing coordinator/admin agents
+	Wake     WakeConfig     `toml:"wake"`     // which news may extend an agent's turn
+	Hooks    HooksConfig    `toml:"hooks"`    // what a lifecycle-hook delivery carries
+	Identity IdentityConfig `toml:"identity"` // who an unidentified session is taken to be
+}
+
+// IdentityConfig is the [identity] table: what to do when a lifecycle hook
+// arrives and cannot say which agent it belongs to.
+//
+// WHEN THAT HAPPENS, measured rather than imagined. A hook carries a session
+// id when its harness can interpolate one: Claude Code and Codex both do.
+// Gemini CLI's hooks are plain commands with no template variables, so it has
+// nothing to pass, and matching the one agent working in that directory is the
+// only reason a Gemini agent can be woken at all. The fallback is a feature
+// before it is anything else.
+//
+// It is also a guess, and whose guess it should be depends on how somebody
+// works. An operator running one agent per checkout wants the guess taken. One
+// running several agents in a monorepo may want a new session to prove who it
+// is. A third would rather be asked. So it is a setting, and `directory` is
+// the default because it is what the shipped harnesses need.
+type IdentityConfig struct {
+	// Unidentified is "directory" (default), "strict", "ask" or "coordinator".
+	//
+	//   directory   - the single live agent working there, as before
+	//   strict      - nobody; the session registers or goes without
+	//   ask         - nobody, and the operator is notified so they can bind it
+	//   coordinator - nobody, and the coordinator agent is told so it can
+	//
+	// The three that resolve to nobody all leave the mail on the board: it is
+	// delivered the moment the session identifies itself, and nothing is lost
+	// except the immediacy that a guess would have bought.
+	Unidentified string `toml:"unidentified"`
 }
 
 // HooksConfig is the [hooks] table: what a delivery through a harness
@@ -488,13 +518,36 @@ func CheckCount(table, key string, raw int) error {
 func (c Config) Validate() error {
 	for _, check := range []func() error{
 		c.validateAddr, c.ValidateName, c.validateTLS, c.validateLimits, c.validateMatch,
-		c.validateSupervise, c.validateWake, c.validateRoles,
+		c.validateSupervise, c.validateWake, c.validateRoles, c.validateIdentity,
 	} {
 		if err := check(); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// Unidentified is every value [identity] unidentified accepts.
+var Unidentified = []string{"directory", "strict", "ask", "coordinator"}
+
+// validateIdentity refuses a policy nobody implements, for the reason the
+// wake validator exists: a misspelled setting that decodes fine reads as
+// applied and silently is not, and this one decides who gets somebody's mail.
+func (c Config) validateIdentity() error {
+	u := c.Identity.Unidentified
+	if u == "" {
+		return nil
+	}
+	for _, p := range Unidentified {
+		if u == p {
+			return nil
+		}
+	}
+	return fmt.Errorf("[identity] unidentified = %q: use \"directory\" (default: "+
+		"the one agent working there, which is how a harness with no session id "+
+		"is reached at all), \"strict\" (nobody; the session registers or goes "+
+		"without), \"ask\" (nobody, and you are notified so you can bind it) or "+
+		"\"coordinator\" (nobody, and the coordinator agent is told)", u)
 }
 
 // validateRoles catches the two ways a standing role reads as configured and

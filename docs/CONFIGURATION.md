@@ -378,6 +378,55 @@ remind_stale_after = "2h"    # or "off"
 
 ---
 
+## `[identity]`: who an unidentified session is taken to be
+
+```toml
+[identity]
+unidentified = "directory"   # the default
+```
+
+A lifecycle hook says which agent it belongs to by passing a session id. When
+it cannot, Dibs matches the single live agent working in that directory. This
+setting decides whether it may.
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `unidentified` | `"directory"` | Who a hook with no session id resolves to: `"directory"`, `"strict"`, `"ask"`, `"coordinator"`. |
+
+- `"directory"` resolves to the one live agent working there. Two agents in
+  one directory is still refused as ambiguous.
+- `"strict"` resolves to nobody. The session registers, or goes without.
+- `"ask"` resolves to nobody, and you get a notification naming the directory
+  and who it would have been.
+- `"coordinator"` resolves to nobody, and the coordinator agent gets a notice
+  saying the same.
+
+**Why the default is `directory`.** It is not laxness, it is the only thing
+that works for a harness which cannot identify itself. Claude Code and Codex
+both interpolate a session id into their hooks. Gemini CLI's hooks are plain
+commands with no template variables, so it has nothing to pass: without the
+fallback a Gemini agent could never be woken at all.
+
+**When to change it.** Several agents in one monorepo, where "the agent working
+in this directory" stops being one agent and you would rather a new session
+prove who it is. `ask` and `coordinator` are for the same situation when you
+want the decision made rather than skipped.
+
+The three that resolve to nobody lose nothing permanently: the mail stays on
+the board and is delivered the moment that session identifies itself. What they
+cost is the immediacy a guess would have bought.
+
+**One rule this setting does not reach.** A session id that was SUPPLIED and
+matched nothing resolves to nobody under every policy, including `directory`.
+That is positive evidence it is a different session, never a hint to look for a
+neighbour: without it, an unregistered session in a shared repository was
+attributed to whichever agent was registered there and handed that agent's
+private mail.
+
+Notifications are throttled per directory, because a harness fires lifecycle
+hooks continuously and an unidentified session in a loop would otherwise raise
+one at every turn boundary.
+
 ## `[hooks]`: what a lifecycle-hook delivery carries
 
 ```toml

@@ -7,6 +7,28 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Who an unidentified session is taken to be is now the operator's call.**
+  A lifecycle hook identifies its agent with a session id; when it cannot, Dibs
+  matches the single live agent working in that directory. That fallback is a
+  feature before it is anything else, and measurably so: Claude Code and Codex
+  interpolate a session id, Gemini CLI's hooks are plain commands with no
+  template variables, so the directory match is the only reason a Gemini agent
+  can be woken at all. It is also a guess, and whether to take it depends on
+  whether somebody runs one agent per checkout or several in a monorepo.
+  `[identity] unidentified` takes `directory` (the default), `strict`, `ask`
+  (a notification naming the directory and who it would have been) or
+  `coordinator` (the same, as a notice to the coordinator agent), throttled per
+  directory because a harness fires hooks continuously. The three that resolve
+  to nobody lose nothing permanently: the mail is delivered the moment that
+  session identifies itself.
+
+  Resolution also moved to ONE place. The same lookup runs for the mail digest,
+  for `guard_path` and for subagent attribution, and a rule applied at one call
+  site and not its siblings is this repository's most expensive recurring bug.
+  `guard_path` is the one that proves it: a stranger resolved to the claim
+  holder once made the guard report a path as unclaimed while its holder held
+  it exclusively.
+
 - **Mail now arrives with the mail in it.** A hook delivery told an agent that
   something had arrived and made it spend `check_in`, `read_mail` and `ack`
   finding out what, behind a harness warning preamble, when the text could have

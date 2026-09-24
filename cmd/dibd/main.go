@@ -260,6 +260,10 @@ func run() error {
 	// Same pointer-for-default shape: unset means the documented behaviour,
 	// which is that a delivery carries the mail rather than a pointer to it.
 	eng.SetMailBodies(cfg.Hooks.MailBodies == nil || *cfg.Hooks.MailBodies)
+	// Empty means the default, which SetUnidentifiedPolicy reads as
+	// "directory": the value the shipped harnesses need. Validate() has
+	// already refused anything that is neither empty nor a known policy.
+	eng.SetUnidentifiedPolicy(cfg.Identity.Unidentified)
 	eng.SetSocketWakes(cfg.Wake.Sockets == nil || *cfg.Wake.Sockets)
 	remind, err := staleReminder(cfg.Wake)
 	if err != nil {

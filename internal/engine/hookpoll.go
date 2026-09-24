@@ -219,7 +219,7 @@ func (e *Engine) HookPollFrom(
 	cwd = e.foldFor(host, cwd)
 	return e.query(ctx, func() core.Result {
 		e.announceHookSessionFrom(sessionID, cwd, event, host)
-		l := e.state.AgentForHookOn(sessionID, cwd, host)
+		l := e.resolveHook(sessionID, cwd, host)
 		e.noteHookFor("poll", l, cwd, host)
 		e.noteTurnState(l, sessionID, event)
 		e.logHookResolution(sessionID, cwd, event, host, l)
