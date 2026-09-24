@@ -378,6 +378,46 @@ remind_stale_after = "2h"    # or "off"
 
 ---
 
+## `[hooks]`: what a lifecycle-hook delivery carries
+
+```toml
+[hooks]
+mail_bodies = true   # the default
+```
+
+When a harness lifecycle hook delivers to an agent, the digest injected into
+that agent's context carries the message text. Set `mail_bodies` to `false` and it
+carries a pointer instead: who is waiting, of what kind, and the `read_mail`
+call that fetches it.
+
+**Why the default is on, and why it was off for a while.** A delivery used to
+say only that something had arrived, so the recipient spent `check_in`,
+`read_mail` and `ack` finding out what, behind its harness's own warning
+preamble. A message service whose recipient makes three calls to read one
+message is a polling API with extra steps.
+
+The body had been removed on a measured finding: `hook_poll` is authenticated
+by nothing, because a harness lifecycle hook has no token to give, so any
+process holding this machine's coordination secret can name a peer's working
+directory and be answered as that peer. That mechanism is real and unchanged.
+The THREAT was wrong. Every agent on a board is the same person's agent,
+holding the same secret and already able to call every tool on it, so a
+confidentiality boundary between them is not protecting you from anyone.
+
+**What turning it off is actually for.** A machine whose accounts are not all
+yours. That is the situation, and it is the only one.
+
+One thing the setting does not reach, because it is structural rather than
+configurable: the surfaces a HOST may attach to YOUR turn never carry a body,
+on or off. The human notice and the ambient `waiting` line say who and what
+kind and nothing else. That rule exists because the opposite shipped three
+times through three different channels, each found by an operator watching
+their own prompt box fill with mail addressed to an agent.
+
+Quoting is bounded by a budget shared across the whole digest rather than
+applied per message: ten messages each trimmed to a generous length is not a
+generous digest. What does not fit keeps its `read_mail` pointer.
+
 ## `[limits]`: coordination timings
 
 | Key | Default | What it decides |

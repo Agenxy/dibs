@@ -50,6 +50,35 @@ type Config struct {
 	set   func(key ...string) bool
 	Roles RolesConfig `toml:"roles"` // standing coordinator/admin agents
 	Wake  WakeConfig  `toml:"wake"`  // which news may extend an agent's turn
+	Hooks HooksConfig `toml:"hooks"` // what a lifecycle-hook delivery carries
+}
+
+// HooksConfig is the [hooks] table: what a delivery through a harness
+// lifecycle hook actually contains.
+//
+// THE DECISION THIS SETTING EXISTS FOR, stated because it was got wrong in
+// both directions. A hook delivery used to carry 240 characters of the message
+// body. That was removed after a measured finding: hook_poll is authenticated
+// by nothing, so any process holding this machine's coordination secret could
+// name a peer's working directory and be handed that peer's private mail.
+//
+// The removal was right about the mechanism and wrong about the threat. Every
+// agent on a Dibs board is the SAME PERSON'S agent, already holding that
+// secret, already able to call every tool. A confidentiality boundary between
+// them costs a round trip on every delivery and buys almost nothing against an
+// adversary who is, by construction, the operator. What it cost was the
+// product: an agent was woken to be told that something had arrived, and then
+// had to spend check_in, read_mail and ack to find out what, with a warning
+// preamble in front of it, when the text could have been in the first frame.
+//
+// So the body travels by default and the operator may turn it off. Off is the
+// right answer for a machine where the accounts are not all yours, and that is
+// the only situation where it is.
+type HooksConfig struct {
+	// MailBodies puts the message text in the hook delivery instead of a
+	// pointer to it. On unless set false. Long bodies are still trimmed, with
+	// read_mail named for the rest.
+	MailBodies *bool `toml:"mail_bodies"`
 }
 
 // WakeConfig is the [wake] table.

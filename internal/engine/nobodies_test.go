@@ -21,6 +21,14 @@ import (
 //   - the `waiting` line, which was always counts-only and is included here so
 //     it stays that way.
 //
+// The AGENT's own digest is no longer in that list, and the reason is that the
+// rule was never about one agent reading another's mail: they are the same
+// person's agents, holding the same machine secret, already able to call every
+// tool. It is about what a host may put in front of the person at the
+// keyboard. So the quoting lives in pendingMailQuoted, which exactly one
+// caller uses, and every surface a host may show a human is built from the
+// quiet pendingMail instead.
+//
 // The rule is one sentence: these surfaces say WHO is waiting and WHAT KIND,
 // never what was said. The content is fetched with `inbox` or `read_mail`,
 // which are token-authenticated and answer down the connection the agent
@@ -63,11 +71,25 @@ func TestNoWakeSurfaceLeaksAMessageBody(t *testing.T) {
 		t.Fatal("setup: no pending mail, so this test would pass vacuously")
 	}
 
+	// THE LINE MOVED, AND IT MOVED TO WHERE THE HOST CANNOT REACH.
+	//
+	// The digest injected into the AGENT's own context now carries the message
+	// text: see boardconfig.HooksConfig. That is not a relaxation of this
+	// test's rule, because this test's rule was never about agents reading
+	// each other's mail. It is about a HOST attaching hook output to the
+	// HUMAN's turn, which is what happened three times above. So the surfaces
+	// a host may show a person stay counts-only, structurally: they are built
+	// from pendingMail, and only pendingMailQuoted quotes.
+	quoted := e.pendingMailQuoted("receiver", time.Now())
+	if !strings.Contains(strings.Join(quoted, "\n"), secret) {
+		t.Error("the agent's own digest does NOT carry the message text, so the " +
+			"recipient is still woken to be told only that something arrived " +
+			"and must spend three calls finding out what")
+	}
 	surfaces := map[string]string{
-		"the wake digest (hook additionalContext)":    hookDigest("receiver", mail, nil, nil),
 		"the human notice (hook systemMessage)":       humanNotice("receiver", mail, nil, nil),
 		"the waiting line (every tool result)":        e.waiting("receiver", time.Now()),
-		"pendingMail (the lines both are built from)": strings.Join(mail, "\n"),
+		"pendingMail (what every quiet surface uses)": strings.Join(mail, "\n"),
 	}
 	for name, text := range surfaces {
 		if strings.Contains(text, secret) {
@@ -287,5 +309,105 @@ func TestTheReattachHintAgreesInNumber(t *testing.T) {
 					"names:\n%s", b, c.text)
 			}
 		}
+	}
+}
+
+// AND THE OPERATOR CAN TURN THE QUOTING OFF.
+//
+// The default carries the mail because every agent on a board belongs to one
+// person, so a boundary between them costs a round trip on every delivery and
+// buys nothing against an adversary who is that person. The situation that
+// calls for the pointer instead is a machine whose accounts are NOT all yours,
+// and it is the only one, which is why this is a setting rather than a rule.
+func TestTheOperatorCanKeepTheMailOutOfTheDigest(t *testing.T) {
+	const secret = "SENSITIVE-BODY-NOBODY-ELSE-MAY-READ"
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	reg := func(name, nonce string) string {
+		r, err := e.Do(ctx, &core.Op{
+			Kind: core.OpRegister, Name: name, AgentKind: core.KindPersistent, Nonce: nonce,
+		})
+		if err != nil {
+			t.Fatal("setup:", err)
+		}
+		tok, _ := r["token"].(string)
+		return tok
+	}
+	senderTok := reg("sender", "n-s")
+	reg("receiver", "n-r")
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpSendMessage, Token: senderTok, To: "receiver",
+		MsgType: core.MsgQuestion, Body: secret,
+	}); err != nil {
+		t.Fatal("setup:", err)
+	}
+
+	// Default on: the mail is there, or the assertion below proves nothing.
+	if !strings.Contains(strings.Join(e.pendingMailQuoted("receiver", time.Now()), "\n"), secret) {
+		t.Fatal("setup: quoting is not on by default, so turning it off proves nothing")
+	}
+
+	e.SetMailBodies(false)
+	got := strings.Join(e.pendingMailQuoted("receiver", time.Now()), "\n")
+	if strings.Contains(got, secret) {
+		t.Errorf("[hooks] mail_bodies = false still quotes the message:\n%s", got)
+	}
+	// And it is still a usable nudge, or the setting has traded a quote for a
+	// silence, which is not what it offers.
+	if !strings.Contains(got, "read_mail") {
+		t.Errorf("with quoting off the digest does not name the call that reads "+
+			"the message, so it is an alarm rather than a nudge:\n%s", got)
+	}
+}
+
+// A long message does not eat the whole digest.
+//
+// The budget is shared across every message in one digest rather than applied
+// per message, because ten messages each trimmed to a generous length is not a
+// generous digest, it is a wall. A digest rides in a hook's additionalContext
+// and costs real tokens at every turn boundary.
+func TestOneLongMessageDoesNotEatTheDigest(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	reg := func(name, nonce string) string {
+		r, err := e.Do(ctx, &core.Op{
+			Kind: core.OpRegister, Name: name, AgentKind: core.KindPersistent, Nonce: nonce,
+		})
+		if err != nil {
+			t.Fatal("setup:", err)
+		}
+		tok, _ := r["token"].(string)
+		return tok
+	}
+	senderTok := reg("sender", "n-s")
+	reg("receiver", "n-r")
+	for i := 0; i < 4; i++ {
+		if _, err := e.Do(ctx, &core.Op{
+			Kind: core.OpSendMessage, Token: senderTok, To: "receiver",
+			MsgType: core.MsgNotify, Body: strings.Repeat("x", 4000),
+		}); err != nil {
+			t.Fatal("setup:", err)
+		}
+	}
+	lines := e.pendingMailQuoted("receiver", time.Now())
+	if len(lines) != 4 {
+		t.Fatalf("setup: want 4 messages waiting, got %d", len(lines))
+	}
+	whole := strings.Join(lines, "\n")
+	if len(whole) > mailQuoteBudget*2 {
+		t.Errorf("the digest is %d bytes for 4 messages: the shared budget of %d "+
+			"is not being shared", len(whole), mailQuoteBudget)
+	}
+	// The ones that did not fit still say how to read them.
+	if !strings.Contains(whole, "read_mail") {
+		t.Error("a message that did not fit the budget lost its pointer too")
 	}
 }

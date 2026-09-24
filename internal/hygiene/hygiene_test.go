@@ -1018,7 +1018,7 @@ func TestEverySettingIsDocumentedAndEveryDocumentedSettingExists(t *testing.T) {
 		// The table names are headings, not settings: they are documented as
 		// the sections they introduce.
 		switch key {
-		case "match", "limits", "supervise", "roles", "wake":
+		case "match", "limits", "supervise", "roles", "wake", "hooks":
 			continue
 		}
 		if !strings.Contains(reference, "`"+key+"`") {
