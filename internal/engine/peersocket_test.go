@@ -166,6 +166,27 @@ func TestASocketWakeCarriesTheMail(t *testing.T) {
 	if !strings.Contains(wire, "sender") {
 		t.Errorf("the notice does not say who is waiting:\n%s", wire)
 	}
+	// AND IT DOES NOT TELL THE AGENT TO GO AND LOOK.
+	//
+	// The first version stapled the mail under "Dibs: check the board.",
+	// leaving an imperative in front of the thing it was imperative about:
+	// go and fetch what you have just been handed. On the one path whose job
+	// is to inform rather than steer. The operator read it off their own
+	// screen and asked what it was for.
+	if strings.Contains(wire, "check the board") {
+		t.Errorf("the wake still tells the agent to check the board, with the "+
+			"board's own contents underneath it:\n%s", wire)
+	}
+	// It still says who it is FROM, which matters more here than on the hook
+	// path: the harness wraps a peer message in its own preamble calling it
+	// "another Claude session", which is not what sent this.
+	if !strings.Contains(wire, "Dibs") {
+		t.Errorf("nothing in the notice identifies Dibs as the sender:\n%s", wire)
+	}
+	if !strings.Contains(wire, "not instructions") {
+		t.Errorf("the notice does not say this is coordination data rather than "+
+			"an instruction, which is the one framing a peer message needs:\n%s", wire)
+	}
 
 	// AND THE OPERATOR CAN STILL TURN IT OFF, for a machine whose accounts are
 	// not all theirs, which is the situation that calls for it and the only one.

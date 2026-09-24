@@ -695,9 +695,20 @@ if (heard !== "") {
     auth.type === "auth" && auth.token === "d".repeat(32),
     `first line was ${JSON.stringify(lines[0])}; the harness refuses a connection ` +
     `whose first line is not the auth line`)
-  check("and the notice tells it to check the board",
-    msg.type === "user" && /board/i.test(msg.message?.content ?? ""),
+  // NAMES THE SENDER AND THE CALL THAT CLOSES IT, rather than telling the
+  // agent to go and look. It used to assert /board/i, which passed on "Dibs:
+  // check the board." and went on passing when the mail was stapled
+  // underneath that sentence: an imperative in front of the thing it was
+  // imperative about. What an agent needs is who it is from, whether anybody
+  // is waiting, and which one call ends it.
+  const body = msg.message?.content ?? ""
+  check("and the notice names the sender and the call that closes it",
+    msg.type === "user" && /from "asker"/.test(body) && /respond\(\d+\)/.test(body),
     `second line was ${JSON.stringify(lines[1])}`)
+  check("and it does not tell the agent to go and look at what it was handed",
+    !/check the board/.test(body),
+    `the wake still says "check the board" with the board's contents under it: ` +
+    JSON.stringify(lines[1]))
   // THE SOCKET CARRIES THE MAIL, AND THE COMMAND CARRIES A SENTENCE.
   //
   // This asserted the opposite, on the principle that a wake says mail EXISTS
