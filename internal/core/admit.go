@@ -55,6 +55,18 @@ func Admit(op *Op, lim Limits) error {
 	if err := boundStrings(lim.MaxPathBytes, "refs", op.Refs); err != nil {
 		return err
 	}
+	// merge_agents names two rows, and the two ways of naming them wrong are
+	// worth their own message: shape here, state in Apply where the State is.
+	if op.Kind == OpMergeAgents {
+		if op.To == "" || op.MergeInto == "" {
+			return errf("E_BAD_REQUEST", "name both: the forked agent and the seat "+
+				"it belongs to", "merge_agents needs an agent to absorb and one to keep")
+		}
+		if op.To == op.MergeInto {
+			return errf("E_BAD_REQUEST", "name two different agents",
+				"cannot merge %q into itself", op.To)
+		}
+	}
 	if len(op.Holds) > lim.MaxDirs {
 		return errTooLarge("holds", lim.MaxDirs)
 	}

@@ -108,7 +108,8 @@ func TestToolListingStaysAffordable(t *testing.T) {
 		// set. Deliberately a literal rather than a product, so that widening
 		// the surface costs somebody a decision here instead of sliding.
 		//
-		// RAISED FROM 34980 (44 tools) WHEN configure LANDED, and the reason
+		// RAISED FOR configure (44 to 45) AND merge_agents (45 to 46), and
+		// the reason both times
 		// is the check below rather than the need. The average was 791, under
 		// the standard, so the surface had got WIDER and not wordier, which is
 		// the case the comment above says a ceiling alone punishes. The
@@ -120,7 +121,7 @@ func TestToolListingStaysAffordable(t *testing.T) {
 		// If this is raised again, say which tool bought it and what the
 		// average was. An average at or near 800 means the answer is to trim,
 		// not to raise.
-		budget = 36000 // 45 tools x perTool, ~9k tokens
+		budget = 36800 // 46 tools x perTool, ~9.2k tokens
 	)
 	if len(b) > budget {
 		t.Errorf("tools/list is %d chars (~%d tokens), over the %d budget. Every agent pays "+

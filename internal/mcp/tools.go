@@ -192,6 +192,19 @@ var toolDefs = func() []map[string]any {
 			}, "token", "nonce"),
 		},
 		{
+			"name": "merge_agents", "description": "As ADMIN, fold a forked row back " +
+				"into the seat it should have been: its mail, claims and space " +
+				"membership move to the survivor, and its nonce follows so the fork " +
+				"cannot reopen. For the sibling a lost nonce leaves behind, not for " +
+				"tidying: a LIVE agent is refused, because two running processes are " +
+				"two agents whatever they are called.",
+			"inputSchema": obj(map[string]any{
+				"token": tok,
+				"agent": str("the forked agent to absorb. It must not be active"),
+				"into":  str("the seat that survives, keeping its name and role"),
+			}, "token", "agent", "into"),
+		},
+		{
 			"name": "configure", "description": "Read the board settings that take " +
 				"effect while it runs; as ADMIN, change one. No arguments lists each " +
 				"setting, its value and who set it. Only settings the engine applies " +

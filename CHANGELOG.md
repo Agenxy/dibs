@@ -7,6 +7,32 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A forked seat can be folded back into the one it should have been:
+  `merge_agents`.** Spaces could be merged; two rows that are the same seat
+  could not, which is the wreckage a lost nonce leaves. An agent cannot carry
+  a secret across a context boundary, so its context ends, the nonce goes with
+  it, the next session registers under the same name and becomes a SIBLING
+  that cannot read a word of its predecessor's mail. The bridge keeping the
+  nonce is the fix; this is the repair for boards that already have the scars,
+  one of which carried nine rows for five roles.
+
+  Mail, claims and space membership move to the survivor, and the fork's nonce
+  follows so the next session cannot reopen the row this just closed. The
+  survivor keeps its own name, role and identity: an admin naming it has said
+  which row is the seat. The closed row records `merged_into`, because a
+  repair that leaves no trace is indistinguishable from data loss.
+
+  Two refusals. A LIVE agent is not a duplicate of anything, whatever it is
+  called, and merging one would redirect a running process's mail mid-flight.
+  And a path both rows claim is a conflict an admin has to see, because
+  folding it silently drops a claim and a claim that vanishes is how two
+  agents end up writing the same file.
+
+  Admin, like `configure`, and for a stronger reason: this has no undo, since
+  the fold is ledgered and replay reproduces it. The fold itself is tokenless
+  like `prune`'s and the gate sits in front of it, so `core` stays the pure
+  decision and who may ask stays a question about the caller.
+
 - **An admin agent can change the board's settings, with `configure`.**
   Configuration lived in one place, `dibs.toml`, read at boot, so every
   adjustment was a person opening an editor and restarting a daemon. That is

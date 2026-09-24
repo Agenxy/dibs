@@ -147,7 +147,12 @@ type Op struct {
 	Holds    []string `json:"holds,omitempty"`
 
 	// send / respond / ack
-	To          string       `json:"to,omitempty"`
+	To string `json:"to,omitempty"`
+	// MergeInto is the agent that SURVIVES a merge_agents; To is the forked
+	// row being absorbed into it. A new tag, never a reused one: renaming a
+	// json tag is a silent data-loss bug here and reusing one for a second
+	// meaning is the same bug with the rename already done.
+	MergeInto   string       `json:"merge_into,omitempty"`
 	MsgType     string       `json:"msg_type,omitempty"`
 	Body        string       `json:"body,omitempty"` // encrypted at rest
 	DeadlineSec int          `json:"deadline_sec,omitempty"`

@@ -13,7 +13,7 @@ Hermes has a first-class CLI for this: prefer it over hand-editing the config:
 hermes mcp add dibs --command "$(which dibs)" --args mcp-stdio
 ```
 
-It connects immediately, lists the 45 tools it found, and asks which to
+It connects immediately, lists the 46 tools it found, and asks which to
 enable. `hermes mcp list` shows the result, `hermes mcp test` re-probes it.
 
 The resulting `~/.hermes/config.yaml` block:
