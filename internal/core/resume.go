@@ -158,7 +158,24 @@ func (s *State) resumeLiveAgent(l *Agent, op *Op, now time.Time) (Result, []Even
 		// took the pid and dropped the cwd. Same gate as the reason it counts
 		// as a change at all.
 		if l.identityDiffers(op) {
-			l.Agent = op.Agent
+			// MERGED, NEVER REPLACED, and this was a real drift.
+			//
+			// A returning session states what it knows, and what it knows is
+			// whatever its harness filled in this time. Assigning the payload
+			// wholesale made every field it did NOT state disappear: model,
+			// provider and title all cleared by a reattach that mentioned a cwd
+			// and a surface. An agent then reads its own row, copies the gaps
+			// forward, and the board slowly forgets who its agents are. Reported
+			// from live use by an agent that had reattached three times in eleven
+			// hours and noticed its own model going stale.
+			//
+			// `update` already had the right rule. mergeIdentity fills what was
+			// stated and keeps what was not, and it moves the location group
+			// together so an agent that MOVED does not keep the repository it
+			// used to be in. Three call sites had the replacing version and one
+			// had the merging one, which is this repository's most expensive
+			// recurring shape: a rule applied at one site and not its siblings.
+			l.mergeIdentity(op.Agent)
 		}
 		s.dropTakenSession(op, l)
 		if op.SessionID != "" {
@@ -229,7 +246,15 @@ func (a *Agent) takeActivation(op *Op) bool {
 		a.PID, a.ProcStart = 0, 0
 	}
 	if op.Agent != nil {
-		a.Agent = op.Agent
+		// MERGED HERE TOO, and this is the site that actually fires.
+		//
+		// The other three were found by grepping for the assignment and this
+		// one was found by the test still failing after all three were fixed,
+		// which is the honest order to record. takeActivation is the path a
+		// session MOVE takes, and a session move is the event the whole report
+		// was about: the three that looked like the answer were the three that
+		// were not on the path.
+		a.mergeIdentity(op.Agent)
 	}
 	return true
 }

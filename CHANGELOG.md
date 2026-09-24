@@ -7,6 +7,20 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A reattach no longer forgets who the agent is.** Reported from live use by
+  an agent that had reattached to its own seat three times in eleven hours and
+  noticed its own `model` field going stale. Every reattach path assigned the
+  identity payload wholesale, so a returning session that stated a cwd and a
+  surface silently CLEARED model, provider and title. The agent then reads its
+  own row, copies the gaps forward, and the board forgets its agents one
+  reattach at a time. `update` already had the right rule: `mergeIdentity`
+  fills what was stated, keeps what was not, and moves the location group
+  together so an agent that moved does not keep the repository it used to be
+  in. All four sites use it now. Four, not the three a grep for the assignment
+  found: the one that actually fires on a session move is `takeActivation`, and
+  it turned up because the regression test still failed after the other three
+  were fixed.
+
 - **`dibs doctor` reads the setting it advises about.** Naming the socket
   route's cheap remedy fixed half a problem and created the other half: advice
   printed unconditionally is advice printed to somebody who has already taken
