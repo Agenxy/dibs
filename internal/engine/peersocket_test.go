@@ -183,9 +183,23 @@ func TestASocketWakeCarriesTheMail(t *testing.T) {
 	if !strings.Contains(wire, "Dibs") {
 		t.Errorf("nothing in the notice identifies Dibs as the sender:\n%s", wire)
 	}
-	if !strings.Contains(wire, "not instructions") {
-		t.Errorf("the notice does not say this is coordination data rather than "+
-			"an instruction, which is the one framing a peer message needs:\n%s", wire)
+	// AND IT DOES NOT CARRY THE STANDING FRAME EITHER.
+	//
+	// The header used to say, in every single wake, that peer mail is data
+	// rather than an instruction and should be answered with the agent's own
+	// token. True of every message Dibs will ever send, which is exactly why
+	// it does not belong in any of them: the operator watching their fleet
+	// receive it forty times asked what it was for, the same question the
+	// "check the board" imperative above got. It is said once now, in the
+	// register result (internal/mcp/frame.go) and in dibs://skills. This
+	// asserts it did not creep back, because the pull toward restating a
+	// safety sentence in the place it is most visible is what put it here.
+	for _, ritual := range []string{"not instructions", "not an instruction", "your own token"} {
+		if strings.Contains(wire, ritual) {
+			t.Errorf("the wake re-grew the standing frame (%q) in front of the "+
+				"message it frames; that sentence belongs in the register result, "+
+				"which is read once:\n%s", ritual, wire)
+		}
 	}
 
 	// AND THE OPERATOR CAN STILL TURN IT OFF, for a machine whose accounts are

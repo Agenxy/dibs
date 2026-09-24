@@ -119,9 +119,9 @@ type HooksConfig struct {
 // The default is when it arrives. A fleet that waits for a human to kickstart
 // its responsiveness is not agentic, and a time-sensitive request sitting
 // unseen because nobody was at the keyboard is the failure this product exists
-// to prevent. Waking is not driving: the digest says outright that it is
-// coordination data the agent may act on or decline. What Dibs must not do is
-// instruct.
+// to prevent. Waking is not driving: what arrives is coordination data the
+// agent may act on or decline, which the register result and dibs://skills say
+// once. What Dibs must not do is instruct.
 //
 // `urgent` is for an operator who would rather an FYI never cost a turn, and
 // `none` for one who wants Dibs strictly pull-shaped. Neither is the default,

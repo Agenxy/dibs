@@ -1592,10 +1592,13 @@ func (e *Engine) recencyWindow(l *core.Agent) time.Duration {
 // agent to go and fetch something it had just been handed. The operator read
 // it off their own screen and asked what it was still for. Nothing.
 //
-// hookDigest also names Dibs as the sender and says outright that this is
-// coordination data rather than an instruction, which matters more here than
-// on the hook path: a peer message arrives wrapped in the harness's own
-// preamble calling it "another Claude session", which is not what sent it.
+// hookDigest also names Dibs as the sender, which matters more here than on
+// the hook path: a peer message arrives wrapped in the harness's own preamble
+// calling it "another Claude session", which is not what sent it. What the
+// notice does NOT carry is the standing frame about peer data not being an
+// instruction. That is true of every message ever sent and so tells the agent
+// nothing about this one; it is stated once, in the register result, where an
+// agent reads the rest of the rules it works under.
 func (e *Engine) socketNotice(l *core.Agent, fallback string) string {
 	if l == nil {
 		return fallback
