@@ -124,6 +124,14 @@ context, so the original reasoning was right about the event it named and is
 now pointing at the wrong end of the turn. Events: SessionStart, SessionEnd,
 BeforeAgent, AfterAgent, BeforeModel, AfterModel, Notification.
 
+All of that is READ, not watched. The `gemini` installed on the survey
+machine runs a bundle built 2026-07-25 from a checkout two months behind, and
+that bundle contains no `BeforeAgent`, no `GEMINI_SESSION_ID` and no
+`hook_event_name`, so it could not have measured any of it. Treat the three
+findings as where Gemini is going and not as what a Gemini agent does today:
+this table's own rule is that a capability in source is not a behaviour, and
+the first version of this paragraph broke it.
+
 **Hermes is not in the table because nothing here has watched one of its
 sessions.** What can be measured without a model provider was, on 2026-09-21:
 `tools/mcp_tool.py` takes its handshake revision from the SDK

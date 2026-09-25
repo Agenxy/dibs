@@ -17,7 +17,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   wired up yet and the docs say so rather than implying otherwise: what is
   missing is a measurement against a live Gemini session.
 
-  Codex delivery re-measured on 0.158.0-alpha.2: one `codex exec`, both hooks
+  Corrected within the hour: all three Gemini findings are SOURCE readings,
+  and the `gemini` installed on the survey machine is a bundle built
+  2026-07-25 that contains none of them, so none has been watched to run. The
+  row said "a capability in source is not a behaviour" and then stated three
+  capabilities as though they were behaviours. `AGENTS.md` now says to record
+  `<tool> --version` beside every row, because fetching a checkout does not
+  update the tool built from it.
+
+  Codex delivery re-measured on 0.158.0-alpha.2, the binary inside ChatGPT.app: one `codex exec`, both hooks
   reported complete, hook-health's poll count up by exactly two. A second flag
   has appeared there, `codex_apps_mcp_2026_07_28`, which looks like the one to
   set and is not: it governs the hosted `codex_apps` server only.

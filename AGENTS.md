@@ -370,7 +370,22 @@ clean round.
 trackers that used to hold this ("recheck on release", issues #23, #25, #26, #27,
 #28, #31) were closed into this step. The checkouts live at `~/Desktop/harnesses`
 on the machine this was written on; `git fetch origin` each and read
-`origin/HEAD`, never the local branch. For each, the predicate that decides the
+`origin/HEAD`, never the local branch. There are six, and `ext-apps`
+(`modelcontextprotocol/ext-apps`, 2.0.3 on 2026-09-25) is not a harness row
+but is the extension surface two rows reference, so fetch it too.
+
+**Fetching a checkout does not update the tool, and the survey has now been
+bitten by that.** `origin/HEAD` answers "where is this project going", which
+is what the rows are for. It does not answer "what does the harness on this
+machine do", and several of these binaries are built from the local checkout
+rather than installed from a release: on 2026-09-25 `gemini` ran a bundle
+built 2026-07-25, two months behind the source that had just been read, and
+`codex` on PATH was a local `0.0.0` build while the delivery measurement used
+ChatGPT.app's 0.158.0-alpha.2. So run `<tool> --version` for each one and
+write it down beside the row, and never let a source reading be phrased as a
+behaviour. The 2026-09-25 Gemini row did exactly that and had to be corrected
+an hour later: three capabilities found in source, none of them present in
+the build installed here, in a row that cited this very rule. For each, the predicate that decides the
 row, and the rule that a capability in source is not a behaviour:
 
 - **Codex** (`openai/codex`): the executor is in main (`CoreHookMcpExecutor`, now in
