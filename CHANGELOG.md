@@ -7,6 +7,32 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The harness survey was re-run (2026-09-25) and Gemini CLI moved under
+  three of our claims at once.** Its hooks are no longer `command` only
+  (`http` and `prompt` exist), its hook input now carries a populated
+  `session_id` and a `transcript_path`, and `BeforeAgent` accepts
+  `additionalContext` and is dispatched. So "a Gemini agent can only be found
+  by its directory" and "past session start Gemini is pull-only" are now
+  statements about `plugins/gemini-cli`, not about the harness. Nothing is
+  wired up yet and the docs say so rather than implying otherwise: what is
+  missing is a measurement against a live Gemini session.
+
+  Codex delivery re-measured on 0.158.0-alpha.2: one `codex exec`, both hooks
+  reported complete, hook-health's poll count up by exactly two. A second flag
+  has appeared there, `codex_apps_mcp_2026_07_28`, which looks like the one to
+  set and is not: it governs the hosted `codex_apps` server only.
+
+  opencode, pi-mono and Hermes re-checked against today's `origin/HEAD` and
+  unchanged. Both SDK claims re-read from the published packages: the
+  TypeScript SDK is 1.30.1 and still `2025-11-25` with no `2026-07-28` in it,
+  and the Python SDK is 2.2.0 with its version registry moved out into a
+  separate `mcp-types` package, where `2026-07-28` is still the only modern
+  version.
+
+  The Claude Desktop row was NOT re-measured and now says so on its face: it
+  was taken against 1.52386.6 and the installed app is 2.9939.2. Re-measuring
+  costs an app restart, so it is a deliberate step rather than a sweep.
+
 - **The settings tool is called `settings`, not `configure`.** `dibs
   configure` is a CLI wizard that writes `dibs.toml` before a board runs; the
   tool reads and changes what takes effect while one IS running. Two different

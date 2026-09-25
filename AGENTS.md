@@ -376,7 +376,10 @@ row, and the rule that a capability in source is not a behaviour:
 - **Codex** (`openai/codex`): the executor is in main (`CoreHookMcpExecutor`, now in
   `codex-rs/core/src/hook_mcp_executor.rs` and used from
   `codex-rs/core/src/session/session.rs`; the path here said `core/src/…`
-  and cost a grep), and since 0.153 a user or local-plugin hook
+  and cost a grep). **Two flags now look like the one to set and only one is**:
+  `mcp_2026_07_28` governs Dibs; `codex_apps_mcp_2026_07_28` is the hosted
+  `codex_apps` HTTP server only and explicitly not third-party HTTP or local
+  stdio servers. Since 0.153 a user or local-plugin hook
   is UNTRUSTED until reviewed and dropped silently until then, which is why
   0.153.4 "fired nothing" on 2026-09-05. Install the plugin from this checkout
   (`codex plugin marketplace add <checkout>`, `codex plugin add dibs@dibs`),
@@ -398,8 +401,13 @@ row, and the rule that a capability in source is not a behaviour:
   a session negotiates is unmeasured. Run one against the scratch daemon.
 - **Pi**: `git grep -il modelcontextprotocol origin/HEAD -- packages/*/src`; a
   lockfile hit is not an MCP client. None as of 2026-09-12.
-- **Gemini CLI**: `initialize` 2025-06-18 over `httpUrl`, hooks are `command`
-  only; `plugins/gemini-cli` covers it (2026-09-12).
+- **Gemini CLI**: `initialize` 2025-06-18 over `httpUrl` (2026-09-12,
+  unchanged). Its HOOKS moved: as of 2026-09-25 (20f7075) the types are
+  `command`, `http` and `prompt`, the hook input carries a real `session_id`
+  and a `transcript_path`, and `BeforeAgent` takes `additionalContext`. So the
+  two sentences this file used to carry about Gemini (command-only, no session
+  id, therefore the directory fallback) are about `plugins/gemini-cli` now and
+  not about the harness. Re-read the predicate here rather than the row.
 
 Update the survey table in `README.md` (re-date its introduction) and the rows
 in `WAKE-MECHANISMS.md` with what was MEASURED, and put the date on each. A row

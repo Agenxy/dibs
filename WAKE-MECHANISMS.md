@@ -109,6 +109,21 @@ over plain HTTP (no stdio bridge in the way):
 | Pi | latest | **no MCP at all** | none | none |
 | Gemini CLI | 0.54.0-nightly.20260722 | `initialize` **2025-06-18** | `roots` | initialize, tools/list, resources/list (2026-09-12, over `httpUrl`) |
 
+**Gemini CLI's hook surface is no longer what §5 and `dibs hook-poll` describe**
+(read 2026-09-25 at `20f7075`, and not yet acted on). Three claims this
+repository makes about it have expired at once. Hooks are not `command` only:
+`http` and `prompt` types exist beside it. The hook input carries `session_id`,
+`cwd`, `hook_event_name` and `transcript_path`, and the id is populated rather
+than declared (`hookEventHandler.ts:379`, and exported to command hooks as
+`GEMINI_SESSION_ID`), so "Gemini agents can only be found by their directory"
+is now a statement about our plugin and not about the harness. And `BeforeAgent`
+accepts `additionalContext` and is dispatched for real (`client.ts:931`), which
+is the per-turn delivery point whose absence is the entire reason `hook-poll`
+forwards `SessionStart` and nothing else. `AfterAgent` still cannot carry
+context, so the original reasoning was right about the event it named and is
+now pointing at the wrong end of the turn. Events: SessionStart, SessionEnd,
+BeforeAgent, AfterAgent, BeforeModel, AfterModel, Notification.
+
 **Hermes is not in the table because nothing here has watched one of its
 sessions.** What can be measured without a model provider was, on 2026-09-21:
 `tools/mcp_tool.py` takes its handshake revision from the SDK
