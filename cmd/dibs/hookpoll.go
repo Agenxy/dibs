@@ -33,6 +33,19 @@ import (
 // the one-shot wake on nothing. Past session start, Gemini is pull-only:
 // check_in each activation, await_events before blocking.
 //
+// THAT NAMED THE RIGHT EVENT AND NOW POINTS AT THE WRONG END OF THE TURN.
+// Re-measured 2026-09-25 at 20f7075: `AfterAgent` still cannot carry context,
+// exactly as above, but `BeforeAgent` now accepts `additionalContext` and is
+// dispatched for real (`client.ts:931`), so a per-turn delivery point exists
+// at the START of a turn, where nothing has to be rejected to use it. The same
+// survey found Gemini's hook input now carries a populated `session_id` and a
+// `transcript_path`, so an agent there need not be found by its directory.
+//
+// Neither is wired up: this still forwards SessionStart and nothing else. Said
+// out loud because a stale "the harness cannot" is how the SessionStart
+// mcp_tool hook sat broken for six weeks. What is missing is a measurement
+// against a live Gemini session, not a reason.
+//
 // # When it fails
 //
 // An event this harness cannot deliver at is not a failure: `{}`, exit 0, and

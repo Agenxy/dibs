@@ -1075,27 +1075,36 @@ identically on either. The reason to know is that a harness reaching the modern
 path is exercising the stateless contract, and if something differs there it is
 worth a bug report rather than a shrug.
 
-Surveyed by reading source, not announcements. Re-checked 2026-09-21 against
+Surveyed by reading source, not announcements. Re-checked 2026-09-25 against
 each project's latest commit (dates on each row). A row carries the date of
-the measurement it states, not the date of the last re-check: the Claude
-Desktop row was measured 2026-09-15 and Codex's delivery on 2026-09-19
-against a binary that has not changed since, so those dates stand.
+the measurement it states, not the date of the last re-check, so a row that
+was not re-measured keeps its older date and says what it was measured
+against. The Claude Desktop row is the one to read that way right now: it was
+measured against 1.52386.6 and the installed app is 2.9939.2, which is a
+different product line, so that row is the stalest thing in this table.
 
 | harness | speaks | why |
 |---|---|---|
-| Claude Desktop | 2025-11-25 | measured 2026-09-15: 1.52386.6's own clients (`claude-ai/0.1.0` for chat, one `local-agent-mode-<server>` per configured server) send `initialize` 2025-11-25 and never `server/discover`, so the 2026-07-28 codec its binary carries is unused. No hooks, so tools only; see [plugins/claude-desktop](plugins/claude-desktop/), including why not to configure it beside the Claude Code plugin |
-| Codex | 2025-11-25 by default, **2026-07-28 when configured** | The flag `mcp_2026_07_28` is stage `UnderDevelopment` and off by default, so an unconfigured Codex sends 2025-06-18, measured. With the flag AND `CODEX_MCP_PROTOCOL_VERSION` on that server's entry, which is what `dibs mcp-config` prints, it runs entirely on 2026-07-28 against Dibs: this row said legacy-only for a while, and the paragraph under the table is what is current. See [plugins/codex](plugins/codex/) |
-| opencode | 2025-11-25 | bound by the TypeScript SDK (1.29.0); no `2026-07-28` outside tests in `packages` as of 2026-09-21 (fe3f3a41) |
-| pi-mono | none | no MCP client in `packages/*/src` as of 2026-09-21 (1a584a7a); the TypeScript SDK (^1.25.2) in its lockfile is a dependency, not a client, so there is no version to speak. Dibs reaches it through [plugins/pi](plugins/pi/) instead |
-| Gemini CLI | 2025-06-18 | measured 2026-09-12: 0.54.0-nightly sends `initialize` 2025-06-18 over `httpUrl`. Hooks are subprocesses; see [plugins/gemini-cli](plugins/gemini-cli/) |
-| Hermes | **2026-07-28** with its `mcp` extra installed | measured 2026-09-21 (524041b9d0): `tools/mcp_tool.py` sets `LATEST_HANDSHAKE_VERSION = LATEST_PROTOCOL_VERSION`, taken from the SDK, and the pinned `mcp==2.0.0` reports `2026-07-28` (installed and read, not inferred). Without that extra the fallback in the same file is `2025-03-26`, which is what was measured before. Measured through the constant Hermes reads rather than by capturing a session's bytes: a session connects its MCP servers only after a model provider is configured, and none is on the survey machine (#27) |
+| Claude Desktop | 2025-11-25, **not re-measured since 1.52386.6** | measured 2026-09-15: 1.52386.6's own clients (`claude-ai/0.1.0` for chat, one `local-agent-mode-<server>` per configured server) send `initialize` 2025-11-25 and never `server/discover`, so the 2026-07-28 codec its binary carries is unused. No hooks, so tools only; see [plugins/claude-desktop](plugins/claude-desktop/), including why not to configure it beside the Claude Code plugin. **The installed app is 2.9939.2 as of 2026-09-25**, several major versions on, and re-measuring costs an app restart (the method needs a `dibs mcp-stdio` entry in `claude_desktop_config.json`, which shadows the plugin's server in Code-tab sessions and has to be removed afterwards), so it is a deliberate step rather than part of a survey sweep |
+| Codex | 2025-11-25 by default, **2026-07-28 when configured** | The flag `mcp_2026_07_28` is stage `UnderDevelopment` and off by default, so an unconfigured Codex sends 2025-06-18, measured 2026-09-12. With the flag AND `CODEX_MCP_PROTOCOL_VERSION` on that server's entry, which is what `dibs mcp-config` prints, it runs entirely on 2026-07-28 against Dibs. **A second flag now exists and is NOT the one that governs Dibs**: `codex_apps_mcp_2026_07_28` applies only to the host-owned `codex_apps` HTTP server, and the app-server README says in as many words that it "does not apply to third-party HTTP or local `codex_app` stdio servers", which is what Dibs is. Setting the new name instead of the old one would change nothing and look like it should (2026-09-25, d5355e95). **Delivery re-measured 2026-09-25 on 0.158.0-alpha.2**: one `codex exec`, `hook: SessionStart Completed` and `hook: Stop Completed` on its own output, and `/api/hook-health`'s poll count rose by exactly two. See [plugins/codex](plugins/codex/) |
+| opencode | 2025-11-25 | bound by the TypeScript SDK (1.29.0); no `2026-07-28` outside tests in `packages` as of 2026-09-25 (adee738d) |
+| pi-mono | none | no MCP client in `packages/*/src` as of 2026-09-25 (d6af72e1); the TypeScript SDK (^1.25.2) in its lockfile is a dependency, not a client, so there is no version to speak. Dibs reaches it through [plugins/pi](plugins/pi/) instead |
+| Gemini CLI | 2025-06-18 | `initialize` 2025-06-18 over `httpUrl`, unchanged (2026-09-12). **Its hook surface moved a long way by 2026-09-25 (20f7075)** and three things Dibs relies on are no longer true there: hooks are not `command` only any more (`http` and `prompt` types exist); the hook input carries `session_id`, `cwd`, `hook_event_name` and `transcript_path`, and `session_id` is populated for real (`hookEventHandler.ts:379`, also exported as `GEMINI_SESSION_ID`), so a Gemini agent no longer has to be found by its directory; and `BeforeAgent` accepts `additionalContext` and is dispatched (`client.ts:931`), so there is now a per-turn delivery point where the row previously said session start was the only one. Events are SessionStart, SessionEnd, BeforeAgent, AfterAgent, BeforeModel, AfterModel, Notification. Dibs has NOT been changed to use any of this yet; see [plugins/gemini-cli](plugins/gemini-cli/) |
+| Hermes | **2026-07-28** with its `mcp` extra installed | measured 2026-09-21, re-checked 2026-09-25 (0c0796bf46) and unchanged: `tools/mcp_tool.py` sets `LATEST_HANDSHAKE_VERSION = LATEST_PROTOCOL_VERSION`, taken from the SDK, and the pinned `mcp==2.0.0` reports `2026-07-28` (installed and read, not inferred). Without that extra the fallback in the same file is `2025-03-26`, which is what was measured before. Measured through the constant Hermes reads rather than by capturing a session's bytes: a session connects its MCP servers only after a model provider is configured, and none is on the survey machine (#27) |
 
 The reason is one level below the harnesses, and it is the useful part:
 
-- The **Python SDK 2.0.0** implements it. Its registry lists `2026-07-28` under
-  `MODERN_PROTOCOL_VERSIONS`, separate from `HANDSHAKE_PROTOCOL_VERSIONS`.
-- The **TypeScript SDK 1.30.0**: the latest published release, and there is no
-  beta space: still declares `LATEST_PROTOCOL_VERSION = '2025-11-25'`.
+- The **Python SDK** implements it. Read from the published sdists on
+  2026-09-25: 2.2.0 is current, and the version registry has moved out into a
+  separate `mcp-types` package, where `MODERN_PROTOCOL_VERSIONS` is exactly
+  `("2026-07-28",)`, still separate from `HANDSHAKE_PROTOCOL_VERSIONS`. (The
+  constant used to live in `mcp/types.py`; a grep there now finds nothing,
+  which reads like a removal and is a move.)
+- The **TypeScript SDK 1.30.1**: the latest published release on 2026-09-25,
+  and there is no beta ahead of it. Still declares
+  `LATEST_PROTOCOL_VERSION = '2025-11-25'`, and the string `2026-07-28` does
+  not appear in its shipped `types.js` at all. Read from the published package
+  rather than the repository, because what a harness installs is the package.
 
 So every TypeScript harness is blocked on its SDK, not on its own roadmap, and
 no amount of configuration will move them until that ships. **Codex is not among
