@@ -12,6 +12,7 @@ package wakeexec
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -20,16 +21,51 @@ import (
 	"time"
 )
 
-// Notice is the whole of what a wake says, on every route and on both sides
-// of a machine boundary: the daemon substitutes it for {message} in its own
-// [wake.exec] commands, and `dibs host-bridge` substitutes it in the
-// machine's, whatever a hub sent. "Check" rather than "you have mail" because
-// a wake can be queued durably and land minutes later, by which time another
-// activation may have read the mail: a resumed thread then finds an empty
-// inbox and reasonably reports the wake as a lie. That happened in this
-// feature's own testing. "Check" is true whenever it arrives. And that is
-// the whole sentence: anything past it is steering (PHILOSOPHY rule 5).
-const Notice = "Dibs: check the board."
+// Compose writes what a wake says on the route that cannot carry mail.
+//
+// THERE IS NO FIXED SENTENCE ANY MORE, and removing it is the correction.
+// This used to be one constant, "Dibs: check the board.", carried by every
+// wake on every route. Two years of reasoning went into that sentence and all
+// of it was about what a wake must not do: not steer, not name tools in
+// order, not claim "you have mail" when a durable wake might land after the
+// mail was read. Every one of those arguments is sound and none of them
+// required an IMPERATIVE. "Check the board" tells an agent to go and look;
+// what it is allowed to do is tell an agent what happened.
+//
+// The operator saw it arrive beside a notice that already carried the whole
+// message, asked what it was for three times across two weeks, and was right
+// every time. The honest answer was "nothing".
+//
+// So this states a fact and stops. `from` and `msgType` are already
+// substituted into the same argv as their own fields, so naming them here
+// leaks nothing that route did not already carry, and the BODY is still never
+// here: argv is world-readable through `ps` and that rule has not moved.
+//
+// Composed rather than stored, which is what keeps the machine boundary
+// honest. `dibs host-bridge` builds this line locally from the structured
+// fields a hub sent it, so a hub still cannot compose text for a command that
+// delivers text into a harness (PHILOSOPHY rule 5). It sends facts; the
+// machine that runs the command writes the sentence.
+// NO NAMES IN IT, and that is a rule rather than a style. The agent id and
+// the sender are already substituted into this argv as their OWN elements, so
+// repeating them inside the message would duplicate them in the one form that
+// is not a whole element. A name is chosen by whoever registers, so it is
+// attacker-influenced, and `TestAMessageCannotInfluenceWhatTheWakeCommandRuns`
+// exists because pasting such a value into a larger string is where quoting
+// bugs live even when there is no shell to blame. The first version of this
+// function did exactly that and produced
+// `Dibs: new request from "; rm -rf / #" for your agent "; rm -rf / #".`
+// as a single argv element. The test caught it; the reasoning is older than
+// the test.
+//
+// The socket route has no such constraint, because its payload is JSON on a
+// 0600 endpoint rather than argv, so it names the sender itself.
+func Compose(msgType string) string {
+	if msgType != "" {
+		return fmt.Sprintf("Dibs: a new %s is waiting.", msgType)
+	}
+	return "Dibs: something is waiting."
+}
 
 // Fields are the only substitutions a wake command gets.
 //

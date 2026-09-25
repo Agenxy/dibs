@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -1067,21 +1068,14 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 		//
 		// "Check" is true whenever it arrives.
 		//
-		// AND THAT IS THE WHOLE SENTENCE. It used to continue "Call check_in,
-		// then inbox, and act on anything there", which names two tools in order
-		// and tells the model what to do with what it finds. That is steering,
-		// and PHILOSOPHY rule 5 draws the line in exactly this place: the board
-		// may WAKE an agent and may not decide what it does next. A wake that
-		// arrives as a sequence of instructions is prompt injection with a
-		// friendly justification, and the justification is the dangerous part
-		// because it is the reason nobody re-read the sentence.
-		//
-		// What survives points at the channel and stops. An agent that has been
-		// woken knows how to read its own mail; if it does not, that is a gap in
-		// dibs://skills rather than something to fix one wake at a time. Found
-		// by the pre-release review, which also noted the test for this only
-		// required the word "board" and so passed the steering sentence.
-		Message: wakeNotice,
+		// AND IT IS NO LONGER AN IMPERATIVE AT ALL. It said "Dibs: check the
+		// board." The reasoning that produced that sentence was about what a
+		// wake must not do: not steer, not name tools in order, not promise
+		// mail that a durable wake might outlive. All of it holds and none of
+		// it required an order. A fact does the same job: what arrived, from
+		// whom, for which agent. The operator asked three times across two
+		// weeks what "check the board" was for, and the answer was nothing.
+		Message: wakeexec.Compose(kind),
 	}
 	if host, remote := e.hostRouteFor(l); host != "" {
 		// ANOTHER MACHINE'S AGENT NEVER FALLS THROUGH TO A LOCAL COMMAND.
@@ -1131,7 +1125,7 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 		// harness's own warning preamble about peer messages. Reported by the
 		// operator, twice, looking at exactly that in their own transcript.
 		return wakePlan{
-			agent: l.ID, sessions: sessionsOf(l), notice: e.socketNotice(l, f.Message),
+			agent: l.ID, sessions: sessionsOf(l), notice: e.socketNotice(l, from, kind),
 			cwd: cwdOf(l), cooldown: cooldown, thread: f.Thread,
 		}, true
 	}
@@ -1202,25 +1196,6 @@ type wakePlan struct {
 	// So the plan carries values, not a pointer into the board.
 	sessions []string
 }
-
-// wakeNotice is every word a wake carries, on either route.
-//
-// A POINTER, NOT AN INSTRUCTION. It read "Dibs: check the board. Call check_in,
-// then inbox, and act on anything there", which names two tools in order and
-// says what to do with what they return: that is deciding what the agent does
-// next, which PHILOSOPHY rule 5 forbids in the same breath as permitting the
-// wake itself. Found by the pre-release review.
-//
-// "Check" rather than "you have mail" because a wake can be queued durably and
-// land minutes later, by which time another activation may have read the mail:
-// a resumed thread then finds an empty inbox and reasonably reports the wake as
-// a lie. That happened in this feature's own testing. "Check" is true whenever
-// it arrives.
-//
-// One constant, so both routes and both machines carry the same words and a
-// test can read them without running a wake; it lives with the runner
-// (internal/wakeexec) because the host bridge enforces it too.
-const wakeNotice = wakeexec.Notice
 
 // defaultPeerCooldown bounds socket wakes the way [wake.exec] entries bound
 // process wakes. Shorter, because nothing is spawned: the cost of one is a
@@ -1599,17 +1574,46 @@ func (e *Engine) recencyWindow(l *core.Agent) time.Duration {
 // instruction. That is true of every message ever sent and so tells the agent
 // nothing about this one; it is stated once, in the register result, where an
 // agent reads the rest of the rules it works under.
-func (e *Engine) socketNotice(l *core.Agent, fallback string) string {
+func (e *Engine) socketNotice(l *core.Agent, from, kind string) string {
 	if l == nil {
-		return fallback
+		return wakeexec.Compose(kind)
 	}
-	lines := e.pendingMailQuoted(l.ID, time.Now())
-	if len(lines) == 0 {
-		// Nothing to quote: a wake for a notice rather than mail, quoting
-		// turned off, or the mail read between the decision and the send. The
-		// fixed sentence is right for all three, because then there IS
-		// somewhere to go and look.
-		return fallback
+	now := time.Now()
+	// ALL THREE, which is the bug this replaced. It passed mail and nil'd
+	// announcements and notices, so a wake triggered by an agent update or an
+	// unacknowledged announcement found nothing to quote and fell back to the
+	// fixed sentence. That is how "Dibs: check the board." went on arriving
+	// after two releases that were supposed to have ended it, and the
+	// operator's screenshot showed it landing beside a notice that carried
+	// the whole message: same board, same second, one route saying nothing
+	// and the other saying everything. The hook path had passed all three
+	// since it was written; only this one did not.
+	mail := e.pendingMailQuoted(l.ID, now)
+	unacked := e.state.Unacked(l.ID)
+	announced, _ := e.dueAnnouncements(l.ID, now)
+	notices := e.pendingNotices(l.ID)
+	if len(mail) == 0 && len(announced) == 0 && len(notices) == 0 && len(unacked) == 0 {
+		// NOTHING READABLE YET, WHICH IS NOT THE SAME AS NOTHING HAPPENING,
+		// and the difference nearly cost a delivery. A wake is planned from
+		// the op that triggered it, and the fold that puts that message in
+		// the inbox is not necessarily visible here: the first version of
+		// this returned "" and had the caller drop the wake, which turned
+		// "sends a useless sentence" into "sends nothing at all" and was
+		// caught by the test for the case the whole socket route exists for.
+		//
+		// So it falls back to what the exec route says: the fact that
+		// triggered this, from whom, for which agent. Never the imperative,
+		// never empty.
+		// Named here, unlike the exec route: this payload is JSON on a 0600
+		// socket, not an argv element, so the sender and the agent are safe
+		// to state and are the only facts worth having.
+		switch {
+		case from != "" && kind != "":
+			return fmt.Sprintf("Dibs: a new %s from %q is waiting for your agent %q.", kind, from, l.ID)
+		case kind != "":
+			return fmt.Sprintf("Dibs: a new %s is waiting for your agent %q.", kind, l.ID)
+		}
+		return fmt.Sprintf("Dibs: something is waiting for your agent %q.", l.ID)
 	}
-	return strings.TrimRight(hookDigest(l.ID, lines, nil, nil), "\n")
+	return strings.TrimRight(hookDigest(l.ID, mail, announced, notices), "\n")
 }

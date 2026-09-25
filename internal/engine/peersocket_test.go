@@ -17,6 +17,7 @@ import (
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/peerwake"
+	"github.com/agenxy/dibs/internal/wakeexec"
 )
 
 // A listening session is an address, so an agent is wakeable with no operator
@@ -87,8 +88,16 @@ func TestAnAgentWithNoConfiguredCommandIsWokenOverItsSocket(t *testing.T) {
 		t.Errorf("no auth line was sent; the harness refuses an unauthenticated "+
 			"connection: %s", wire)
 	}
-	if !strings.Contains(wire, plan.notice) {
-		t.Errorf("the notice did not reach the wire: %s", wire)
+	// ENCODED, not raw. The notice names the sender and the agent in quotes
+	// now, and the wire is JSON, so a raw Contains fails on the escaping
+	// rather than on the content. The retired fixed sentence had no quotes
+	// in it, which is the only reason the raw comparison ever worked.
+	enc, err := json.Marshal(plan.notice)
+	if err != nil {
+		t.Fatalf("setup: the notice does not encode: %v", err)
+	}
+	if !strings.Contains(wire, string(enc[1:len(enc)-1])) {
+		t.Errorf("the notice did not reach the wire.\n  notice: %q\n  wire:   %s", plan.notice, wire)
 	}
 }
 
@@ -210,13 +219,22 @@ func TestASocketWakeCarriesTheMail(t *testing.T) {
 	// a second end-to-end pass would be testing the cooldown. This is the
 	// function that produced the wire above.
 	e.SetMailBodies(false)
-	off := e.socketNotice(st.Agents["sleeper"], "Dibs: check the board.")
+	off := e.socketNotice(st.Agents["sleeper"], "sender", "question")
 	if strings.Contains(off, "hunter2") {
 		t.Errorf("[hooks] mail_bodies = false and the socket still quotes the "+
 			"message: %q", off)
 	}
-	if !strings.Contains(off, "Dibs") {
-		t.Errorf("with quoting off the wake says nothing at all: %q", off)
+	// It still says WHO and WHAT, and names the call that closes it: quoting
+	// off removes the body, not the notice. The old assertion here only
+	// required the word "Dibs", which the retired fixed sentence satisfied,
+	// so it would have passed against a wake that said nothing useful.
+	for _, want := range []string{"sender", "read_mail", "sleeper"} {
+		if !strings.Contains(off, want) {
+			t.Errorf("with quoting off the wake no longer says %q: %q", want, off)
+		}
+	}
+	if strings.Contains(off, "check the board") {
+		t.Errorf("the retired imperative came back on the quoting-off path: %q", off)
 	}
 }
 
@@ -568,7 +586,7 @@ func TestAWakeIntoAnUnrelatedDirectoryIsRefused(t *testing.T) {
 
 	if e.runWake(wakePlan{
 		agent: "stranger", sessions: []string{sessionID},
-		notice: wakeNotice, cwd: "/somewhere/entirely/else",
+		notice: wakeexec.Compose("question"), cwd: "/somewhere/entirely/else",
 	}, "stranger") {
 		t.Error("a wake into a session working elsewhere reported SUCCESS. The " +
 			"retry machinery now believes the agent was reached, so its one " +
@@ -761,8 +779,15 @@ func TestAListeningSessionIsPreferredOverASpawn(t *testing.T) {
 	if !e.runWake(plan, "sleeper") {
 		t.Fatal("the socket wake reported failure")
 	}
-	if wire := <-got; !strings.Contains(wire, plan.notice) {
-		t.Errorf("the notice did not reach the listening session: %s", wire)
+	// json-encoded, not raw: the notice quotes the sender and the agent now,
+	// and the wire is JSON. See the same comparison earlier in this file.
+	encPref, encErr := json.Marshal(plan.notice)
+	if encErr != nil {
+		t.Fatalf("setup: the notice does not encode: %v", encErr)
+	}
+	if wire := <-got; !strings.Contains(wire, string(encPref[1:len(encPref)-1])) {
+		t.Errorf("the notice did not reach the listening session.\n  notice: %q\n  wire:   %s",
+			plan.notice, wire)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "spawned")); err == nil {
 		t.Error("the command ran as well, so the agent got a second body in a " +
