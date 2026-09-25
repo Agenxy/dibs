@@ -287,7 +287,8 @@ own machine decides *how*.
   table in that data directory, attaches for this machine's host id stating
   the harnesses it can start, runs the operator's command here through the
   same runner the daemon uses (`internal/wakeexec`), and reports. It delivers
-  the one fixed sentence whatever the hub sent: the hub decides that, and
+  a line it composes locally from the fields the hub sent, whatever text the
+  hub put in `notice`: the hub decides whether to wake, and
   this machine decides how, and neither side composes text. `dibs doctor` on
   the hub counts an agent whose host has a bridge attached for its harness as
   covered; on the joined machine it names whichever half is missing, the

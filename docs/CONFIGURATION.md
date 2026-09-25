@@ -159,7 +159,8 @@ fallback = ["codex", "queue", "--thread", "{thread}", "--message", "{message}"]
 
 Measured on this machine, both directions. A thread open in the desktop app
 refused `exec resume`, took `queue`, and its own transcript then carried
-"Dibs: check the board." followed by the agent checking in and answering the
+"Dibs: check the board." (the notice of the day; it says what arrived now)
+followed by the agent checking in and answering the
 two questions it had been sent. That case had been reported as unreachable for
 weeks, because only the first command was ever configured. The reverse, a
 closed CLI thread, resumed on the primary and parked on the fallback, which is

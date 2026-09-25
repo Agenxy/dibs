@@ -233,14 +233,22 @@ Do not poll. Two options:
 The same shape works for supervising a subagent you spawned:
 `dibs probe --pid <n> --until stuck,exited` blocks and exits when it matters.
 
-### If "Dibs: check the board." arrives on its own
+### If a one-line notice arrives on its own
 
-That is a wake, and it is the whole message. Somebody sent you mail while you
-were stopped, and Dibs reached your session to say so: over the socket your
-harness publishes, or by a command in the operator's config. It is deliberately
-one fixed sentence. It does not say who wrote, how many are waiting, or what
-they want, because a wake that carried any of that would be deciding what you do
-next, which Dibs does not do.
+Something like `Dibs: a new question is waiting.` That is a wake, and it is the
+whole message. Somebody sent you mail while you were stopped, and Dibs reached
+your session to say so: over the socket your harness publishes, or by a command
+in the operator's config.
+
+It says WHAT arrived and stops. On the socket it names the sender too; on the
+command route it names nobody, because that route puts its text in an argv that
+every process on the machine can read. Neither route tells you what to do about
+it, and that is the line: a wake may say something happened and may not decide
+what you do next.
+
+(It used to be one fixed sentence, `Dibs: check the board.`, on every route.
+That was an imperative carrying no fact, and it is gone. If you ever see it,
+something is running an old build.)
 
 Call `check_in(token)`. That is the one authoritative read: your inbox, your
 cursor, announcements you owe an ack on, and anything that happened to you in a
