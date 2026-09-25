@@ -7,6 +7,43 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **"Dibs: check the board." is gone from every route.** The operator asked
+  three times across two weeks what it was for, and the honest answer was
+  nothing: it is an imperative that carries no fact. It survived two releases
+  that were each supposed to have ended it, because each fixed one route and
+  the sentence lived in four.
+
+  The screenshot that finally settled it showed both halves arriving at one
+  agent seconds apart: "Dibs: check the board." and then a notice carrying the
+  whole message. Same board, same second, one route saying nothing.
+
+  The cause of that pair is the second bug here. `socketNotice` built its
+  digest from MAIL only and passed nil for announcements and notices, so a
+  wake triggered by an agent update or an unacknowledged announcement found
+  nothing to quote and fell back to the fixed sentence. The hook path had
+  passed all three since it was written; the socket path never did.
+
+  What replaces it differs by route, because the routes differ. The socket
+  carries the digest, and when there is nothing folded in yet it names the
+  event and the sender: `Dibs: a new question from "asker" is waiting for
+  your agent "reviewer".` The exec route carries `Dibs: a new question is
+  waiting.` and names NOBODY, because argv is world-readable and a
+  participant name is already its own argv element: the first version of this
+  pasted names into the message and produced
+  `Dibs: new request from "; rm -rf / #" ...` as a single element, which
+  `TestAMessageCannotInfluenceWhatTheWakeCommandRuns` caught.
+
+  `dibs host-bridge` no longer compares the hub's text to a constant; it
+  composes the line locally from the fields the hub sent. That is the same
+  guarantee the fixed sentence gave (a hub cannot write text for a command
+  that delivers text into a harness) without needing a fixed sentence to give
+  it.
+
+  A wake is never dropped for want of something to say. The first version of
+  this returned "" and let the caller skip the wake, which turned "sends a
+  useless sentence" into "sends nothing at all" and was caught by the test for
+  the case the socket route exists for.
+
 - **The harness survey was re-run (2026-09-25) and Gemini CLI moved under
   three of our claims at once.** Its hooks are no longer `command` only
   (`http` and `prompt` exist), its hook input now carries a populated

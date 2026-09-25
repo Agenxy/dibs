@@ -476,16 +476,16 @@ func (b *wakeBridge) execute(wr engine.WakeRequest) (bool, string) {
 	if wr.Thread == "" {
 		return false, "no harness thread to resume"
 	}
-	// THE ONE SENTENCE, decided here and not by the hub. Every wake carries
-	// it; a request carrying anything else is a hub composing text for a
-	// command that delivers text into a harness, which is the line rule 5
-	// draws. The wake still runs, with the sentence, and the substitution is
-	// logged.
-	notice := wr.Notice
-	if notice != wakeexec.Notice {
-		slog.Warn("the hub sent a wake with a notice that is not the fixed sentence; sending the sentence",
-			"request", wr.ID, "sent", notice)
-		notice = wakeexec.Notice
+	// COMPOSED HERE, NOT BY THE HUB, which is the same guarantee the fixed
+	// sentence used to give and does not need a fixed sentence to give it.
+	// The hub sends facts (agent, from, type); this machine writes the words
+	// its own command will carry. A hub composing text for a command that
+	// delivers text into a harness is the line rule 5 draws, and it is still
+	// drawn here: whatever `Notice` a hub sends is discarded.
+	notice := wakeexec.Compose(wr.MsgType)
+	if wr.Notice != "" && wr.Notice != notice {
+		slog.Warn("the hub sent wake text of its own; composing the line locally instead",
+			"request", wr.ID, "sent", wr.Notice)
 	}
 	f := wakeexec.Fields{Thread: wr.Thread, Agent: wr.Agent, From: wr.From, MsgType: wr.MsgType, Message: notice}
 	var fallback []string

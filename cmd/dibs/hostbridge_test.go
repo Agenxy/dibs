@@ -92,7 +92,7 @@ func TestABridgeBoundsWhatAHubCanMakeItRun(t *testing.T) {
 	req := func(id uint64) engine.WakeRequest {
 		return engine.WakeRequest{
 			ID: id, Host: b.host, Agent: "w" + strconv.FormatUint(id, 10), Harness: "codex",
-			Thread: "t", Notice: wakeexec.Notice,
+			Thread: "t", Notice: wakeexec.Compose("question"),
 		}
 	}
 	for id := uint64(1); id <= 20; id++ {
@@ -177,7 +177,7 @@ func TestAFloodWithReportsWithheldStaysBounded(t *testing.T) {
 	defer cancel()
 	go b.reporter(ctx)
 	for id := uint64(1); id <= 1000; id++ {
-		b.dispatch(ctx, engine.WakeRequest{ID: id, Host: b.host, Harness: "codex", Thread: "t", Notice: wakeexec.Notice})
+		b.dispatch(ctx, engine.WakeRequest{ID: id, Host: b.host, Harness: "codex", Thread: "t", Notice: wakeexec.Compose("question")})
 	}
 	time.Sleep(300 * time.Millisecond)
 	if p := atomic.LoadInt64(&peak); p > 1 {
@@ -220,12 +220,12 @@ func TestTheBridgeRunsItsOwnCommandWithTheHubsSubstitutions(t *testing.T) {
 	b := bridgeUnderTest(t, rec)
 	req := engine.WakeRequest{
 		ID: 7, Host: b.host, Agent: "worker", Harness: "Codex", Thread: "t-1",
-		CWD: "/w", From: "asker", MsgType: "question", Notice: wakeexec.Notice,
+		CWD: "/w", From: "asker", MsgType: "question", Notice: wakeexec.Compose("question"),
 	}
 	if ok, detail := b.execute(req); !ok || detail != "" {
 		t.Fatalf("execute = %v %q", ok, detail)
 	}
-	want := []string{"resume", "t-1", wakeexec.Notice, "worker", "asker", "question", "|", "queue", "t-1", wakeexec.Notice}
+	want := []string{"resume", "t-1", wakeexec.Compose("question"), "worker", "asker", "question", "|", "queue", "t-1", wakeexec.Compose("question")}
 	if got := rec.runs[0]; strings.Join(got, " ") != strings.Join(want, " ") || rec.dirs[0] != "/w" {
 		t.Errorf("ran %q in %q, want %q in /w", got, rec.dirs[0], want)
 	}
@@ -235,7 +235,7 @@ func TestTheBridgeRunsItsOwnCommandWithTheHubsSubstitutions(t *testing.T) {
 	if ok, _ := b.execute(req); !ok {
 		t.Fatal("a wake with a foreign notice did not run at all")
 	}
-	if got := rec.runs[1]; got[2] != wakeexec.Notice || strings.Contains(strings.Join(got, " "), "rm -rf") {
+	if got := rec.runs[1]; got[2] != wakeexec.Compose("question") || strings.Contains(strings.Join(got, " "), "rm -rf") {
 		t.Errorf("the hub's sentence reached the command: %q", got)
 	}
 	// Refusals, each with its reason: another host, a harness this machine
@@ -289,7 +289,7 @@ func TestTheBridgeAttachesRunsAndReports(t *testing.T) {
 			_, _ = w.Write([]byte(": keepalive\n\n"))
 			_, _ = w.Write([]byte("data: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/resources/updated\",\"params\":{\"uri\":\"" +
 				mcp.WakeURI + "\",\"_meta\":{\"id\":42,\"host\":\"" + b.host + "\",\"agent\":\"worker\",\"harness\":\"codex\"," +
-				"\"thread\":\"t-9\",\"cwd\":\"/w\",\"from\":\"asker\",\"msg_type\":\"question\",\"notice\":\"" + wakeexec.Notice + "\"}}}\n\n"))
+				"\"thread\":\"t-9\",\"cwd\":\"/w\",\"from\":\"asker\",\"msg_type\":\"question\",\"notice\":\"" + wakeexec.Compose("question") + "\"}}}\n\n"))
 			fl.Flush()
 			// Hold the stream until the report lands, then end it.
 			select {
@@ -385,7 +385,7 @@ func TestABridgeRunsOneCommandPerAgentAtATime(t *testing.T) {
 	defer cancel()
 	go b.reporter(ctx)
 
-	first := engine.WakeRequest{ID: 1, Host: b.host, Agent: "w", Harness: "codex", Thread: "t", Notice: wakeexec.Notice}
+	first := engine.WakeRequest{ID: 1, Host: b.host, Agent: "w", Harness: "codex", Thread: "t", Notice: wakeexec.Compose("question")}
 	b.dispatch(ctx, first)
 	<-blocker.started
 	retry := first

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/wakeexec"
 )
 
 // remoteAgent is an agent whose bridge said it is on another machine: the
@@ -68,7 +69,7 @@ func TestARemoteAgentIsWokenThroughItsHostsBridge(t *testing.T) {
 		t.Fatalf("plan = %+v: a remote wake carries the host and no argv; the hub never learns one", plan)
 	}
 	if r := plan.request; r.Agent != "far" || r.Harness != "codex" || r.Thread != remoteThread ||
-		r.From != "asker" || r.MsgType != core.MsgQuestion || r.Notice != wakeNotice {
+		r.From != "asker" || r.MsgType != core.MsgQuestion || r.Notice != wakeexec.Compose(string(core.MsgQuestion)) {
 		t.Errorf("request = %+v: the bridge substitutes these into its operator's command, so each must be what f.apply would use here", r)
 	}
 

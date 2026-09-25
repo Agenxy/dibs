@@ -15,12 +15,16 @@ import (
 	"github.com/agenxy/dibs/internal/mcp"
 )
 
-// selfWakeNotice is the one sentence every wake route carries.
+// selfWakeNotice is what the in-session watcher puts into its own session.
 //
-// Kept identical to internal/engine's wakeNotice on purpose, and asserted by
-// the wake e2e. Everything past "you have mail" is forbidden on every route:
-// no counts, no senders, no body, nothing an agent wrote.
-const selfWakeNotice = "Dibs: check the board."
+// No longer "Dibs: check the board." That sentence was retired everywhere: an
+// imperative carrying no fact, which the operator asked about three times in
+// two weeks before it came out. This one states what happened and stops.
+//
+// The route's limits have not moved, only the wording: no body, nothing an
+// agent wrote. What is different is that this notice is not an ORDER, which
+// is the half PHILOSOPHY rule 5 was always about.
+const selfWakeNotice = "Dibs: new coordination mail is waiting for your agent."
 
 // watchInboxAndWake keeps this session awake to its own mail.
 //
