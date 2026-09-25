@@ -236,9 +236,14 @@ if (first.length === 1) {
   check("{agent} and {from} name the two ends", agent === "sleeper" && from === "asker",
     JSON.stringify([agent, from]))
   check("{type} is the message type", type === "question", JSON.stringify(type))
-  check("{message} says to check the board", /board/i.test(message ?? ""),
-    `got ${JSON.stringify(message)}: the woken agent must be told where to look, ` +
-    `not merely that mail exists`)
+  // It says WHAT ARRIVED, and names nobody. The fixed sentence "Dibs: check
+  // the board." is retired: it was an imperative that carried no fact, and
+  // the operator asked three times what it was for. A participant name is
+  // already its own argv element and must not be pasted into this one.
+  check("{message} says what arrived", /^Dibs: a new question is waiting\.$/.test(message ?? ""),
+    `got ${JSON.stringify(message)}`)
+  check("and {message} names no participant, which belongs in its own element",
+    !/sleeper|asker/.test(message ?? ""), JSON.stringify(message))
 }
 
 // ── a burst does not scale into processes ────────────────────────────────

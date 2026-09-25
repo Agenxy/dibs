@@ -103,7 +103,7 @@ func TestThePlanCarriesTheSubstitutedFallback(t *testing.T) {
 	if !ok || len(plan.argv) == 0 {
 		t.Fatal("no command plan was made, so this proves nothing about the fallback")
 	}
-	if len(plan.fallback) != 4 || plan.fallback[2] != thread || plan.fallback[3] != wakeNotice {
+	if len(plan.fallback) != 4 || plan.fallback[2] != thread || plan.fallback[3] != wakeexec.Compose(string(core.MsgQuestion)) {
 		t.Errorf("the plan's fallback is %q: the thread and the notice were not "+
 			"substituted, so the command that reaches an open desktop-app thread "+
 			"would run with literal placeholders", plan.fallback)

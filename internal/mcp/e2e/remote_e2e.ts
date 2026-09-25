@@ -357,8 +357,8 @@ const after = await hub.call("check_in", { token: hubReg.token, detail: true })
 const sleeperRow = (after.board?.agents ?? []).find((a: any) => a.id === sleeper.agent_id)
 check("the joining machine ran ITS OWN wake command for its agent, handed the thread the hub found", woke.length === 1 && woke[0]?.[0] === THREAD,
   `wakes: ${JSON.stringify(woke).slice(0, 300)}  sleeper: ${JSON.stringify({ session: sleeperRow?.session_id, aliases: sleeperRow?.session_aliases, host: sleeperRow?.agent?.host_id, harness: sleeperRow?.agent?.harness, status: sleeperRow?.status })}  hub-log: ${hubLog.split("\n").filter((l) => l.includes("wake") || l.includes("hook")).slice(-6).join(" | ").slice(0, 600)}  bridge-log: ${bridgeLog.slice(-800)}`)
-check("with the one fixed sentence, the agent, the sender and the mail type substituted",
-  woke[0]?.[1] === "Dibs: check the board." && woke[0]?.[2] === "remote-sleeper" && woke[0]?.[3] === "hub-worker" && woke[0]?.[4] === "question",
+check("with the line composed on THIS machine, and the agent, sender and type substituted",
+  woke[0]?.[1] === "Dibs: a new question is waiting." && woke[0]?.[2] === "remote-sleeper" && woke[0]?.[3] === "hub-worker" && woke[0]?.[4] === "question",
   JSON.stringify(woke[0] ?? null))
 for (let i = 0; i < 50 && !hubLog.includes("reports the wake ran"); i++) await Bun.sleep(100)
 check("and the hub took the bridge's report as the wake's outcome", hubLog.includes("the agent's host reports the wake ran"),

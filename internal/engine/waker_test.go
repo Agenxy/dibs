@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/wakeexec"
 )
 
 // bridgeAgent is the shape the ORDINARY Codex path produces: the stdio bridge's
@@ -77,7 +78,11 @@ func TestMailForAnAgentThatIsNotRunningStartsTheOperatorsCommand(t *testing.T) {
 	}
 	// And {message} was substituted with SOMETHING, or the check above passes
 	// for a wake that carries no message placeholder at all.
-	if !strings.Contains(strings.ToLower(joined), "board") {
+	// Looked for "board" until the fixed sentence was retired. What the
+	// message carries now is the event, and the point of the check is
+	// unchanged: {message} must have been substituted with something, or the
+	// leak check above was examining an argv with no message in it.
+	if !strings.Contains(joined, "Dibs:") || !strings.Contains(joined, "question") {
 		t.Errorf("argv = %v: {message} carried nothing recognisable, so the "+
 			"body check above had nothing to be a check of", plan.argv)
 	}
@@ -1486,7 +1491,11 @@ func TestTheWakeExitProducesBothOfItsFactsTogether(t *testing.T) {
 // this goes wrong is somebody appending one more helpful clause to a sentence
 // that already works.
 func TestTheWakeNoticePointsRatherThanInstructs(t *testing.T) {
-	notice := wakeNotice
+	// Composed now rather than constant: the fixed sentence was retired
+	// because it was an imperative that said nothing. The rule it was
+	// guarding did not go with it, so this asserts the same ban on what the
+	// exec route actually sends.
+	notice := wakeexec.Compose("question")
 	for _, banned := range []string{
 		"check_in", "inbox", "read_mail", "respond", "ack", // named tools
 		"act on", "then ", "and then", "you should", "make sure",
@@ -1499,8 +1508,27 @@ func TestTheWakeNoticePointsRatherThanInstructs(t *testing.T) {
 				banned, notice)
 		}
 	}
-	if !strings.Contains(strings.ToLower(notice), "board") {
-		t.Errorf("the notice does not point anywhere: %q", notice)
+	// It says WHAT HAPPENED, which is the replacement for pointing. The old
+	// assertion required the word "board", because the notice was "Dibs:
+	// check the board.": an imperative that named a place and no fact. A
+	// wake is allowed to say what arrived and from whom; that is the half
+	// rule 5 permits, and the half the fixed sentence never used.
+	// The exec route's line names the EVENT and no participants: an agent id
+	// is attacker-influenced and is already its own argv element, so it must
+	// not be pasted into this string. The socket route names the sender, and
+	// peersocket_test covers that.
+	if !strings.Contains(notice, "question") {
+		t.Errorf("the notice does not say what arrived, so it carries no fact: %q", notice)
+	}
+	for _, name := range []string{"asker", "reviewer"} {
+		if strings.Contains(notice, name) {
+			t.Errorf("the argv notice names %q: a participant name is already its own "+
+				"argv element, and pasting one into a larger string is the bug "+
+				"TestAMessageCannotInfluenceWhatTheWakeCommandRuns exists for: %q", name, notice)
+		}
+	}
+	if strings.Contains(strings.ToLower(notice), "check the board") {
+		t.Errorf("the retired imperative is back: %q", notice)
 	}
 }
 
