@@ -205,7 +205,7 @@ var toolDefs = func() []map[string]any {
 			}, "token", "agent", "into"),
 		},
 		{
-			"name": "configure", "description": "Read the board settings that take " +
+			"name": "settings", "description": "Read the board settings that take " +
 				"effect while it runs; as ADMIN, change one. No arguments lists each " +
 				"setting, its value and who set it. Only settings the engine applies " +
 				"immediately are here: an address needs a restart and is refused rather " +

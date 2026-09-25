@@ -95,7 +95,10 @@ func TestASettingTheEngineCannotApplyIsRefused(t *testing.T) {
 	if cerr.Code != "E_NO_SETTING" {
 		t.Errorf("code %q, want E_NO_SETTING", cerr.Code)
 	}
-	if !strings.Contains(cerr.Hint, "configure") {
+	// The TOOL's name, which is `settings`: `configure` is the CLI wizard that
+	// writes dibs.toml before a board runs, and an agent sent to that one is
+	// being sent to a different program.
+	if !strings.Contains(cerr.Hint, "settings") {
 		t.Errorf("the hint does not name the call that lists what IS settable:\n%s", cerr.Hint)
 	}
 }

@@ -176,7 +176,7 @@ func (e *Engine) Configure(ctx context.Context, token, key, value string) (core.
 		return nil, &core.Error{
 			Code: "E_NO_SETTING",
 			Msg:  fmt.Sprintf("there is no setting %q that takes effect while the board runs", key),
-			Hint: "call configure with no setting to list the ones there are. " +
+			Hint: "call settings with no setting to list the ones there are. " +
 				"An address or a certificate is not among them: those need a restart, " +
 				"and a call that reported success and did nothing would be worse than this",
 		}
