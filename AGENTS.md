@@ -38,8 +38,13 @@ change it when reality disagrees, and record why).
    from the operator's config, which spawns a process and is the one Dibs can confirm;
    and the session socket the harness publishes, which needs no config and is BEST
    EFFORT, because the receiver decides whether to accept a peer message and sends no
-   receipt. A session in bypassPermissions mode holds them. Both carry one fixed sentence,
-   no shell, nothing an agent said, rate limited, logged. Everything past "you have mail"
+   receipt. A session in bypassPermissions mode holds them. Neither carries an
+   IMPERATIVE and neither carries a body an agent wrote: the socket carries the
+   digest (and, with nothing folded in yet, the event and the sender), the
+   command route carries the event and NO participant names, because argv is
+   world-readable and a name is already its own element. Rate limited, logged,
+   no shell. There is no longer one fixed sentence: `Dibs: check the board.`
+   was retired after the operator asked three times what it was for. Everything past "you have mail"
    is still forbidden: no prompt injection, no session management, no deciding what an
    agent does next. See `WAKE-MECHANISMS.md` §5 and §5b, which argued against both for
    months and now records why that was wrong.
