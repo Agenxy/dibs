@@ -498,7 +498,11 @@ turns out to be the point.
 
 A command's notice goes in ARGV, and argv is world-readable: every process on
 the machine can read it out of `ps`. Putting decrypted mail there is an
-unconditional leak, so that route keeps the fixed sentence and always will.
+unconditional leak, so that route never carries a body and never will. What
+it does carry is the EVENT and no participant names (`Dibs: a new question is
+waiting.`), composed rather than fixed: a name is already its own argv element
+and pasting one into a larger string is the bug
+`TestAMessageCannotInfluenceWhatTheWakeCommandRuns` exists for.
 
 The socket is a 0600 endpoint in a 0700 directory the harness refuses to use
 if it is shared, and delivery authenticates with that session's own peer token
