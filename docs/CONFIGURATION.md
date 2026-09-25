@@ -684,15 +684,19 @@ deliberate: an earlier design put the nonces here and it was the wrong trade.
 
 ---
 
-## Changing a setting without an editor: `configure`
+## Changing a setting without an editor: `settings`
 
 An agent you have granted **admin** can read and change the settings that take
-effect while the board is running, with the `configure` tool. Reading needs
+effect while the board is running, with the `settings` tool. Reading needs
 only a token; changing needs admin.
 
+It is called `settings` and not `configure` because `dibs configure` is a CLI
+wizard that writes `dibs.toml` before a board runs, and two different things
+under one verb is how somebody ends up running the wrong one.
+
 ```
-configure(token)                                    # list everything
-configure(token, setting: "wake.sockets", value: "false")
+settings(token)                                    # list everything
+settings(token, setting: "wake.sockets", value: "false")
 ```
 
 The listing gives every settable key, its value now, and who last set it, so
@@ -701,7 +705,7 @@ The listing gives every settable key, its value now, and who last set it, so
 **Only five settings are here**, and the boundary is that the engine can apply
 them immediately: `wake.extend_turn_for`, `wake.notices_wake`, `wake.sockets`,
 `hooks.mail_bodies` and `identity.unidentified`. An address or a certificate
-needs a restart, so `configure` refuses it with `E_NO_SETTING` rather than
+needs a restart, so `settings` refuses it with `E_NO_SETTING` rather than
 reporting success and doing nothing until somebody happens to restart the
 daemon.
 

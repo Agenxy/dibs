@@ -5,6 +5,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **The settings tool is called `settings`, not `configure`.** `dibs
+  configure` is a CLI wizard that writes `dibs.toml` before a board runs; the
+  tool reads and changes what takes effect while one IS running. Two different
+  things under one verb is how somebody runs the wrong one, and the collision
+  was mine. Renamed before it shipped: 0.0.10 is untagged, so no agent has
+  ever called it by the old name.
+
 ### Fixed
 
 - **Neither SessionStart hook had ever run, on any version, in any session.**
@@ -115,12 +124,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   folding it silently drops a claim and a claim that vanishes is how two
   agents end up writing the same file.
 
-  Admin, like `configure`, and for a stronger reason: this has no undo, since
+  Admin, like `settings`, and for a stronger reason: this has no undo, since
   the fold is ledgered and replay reproduces it. The fold itself is tokenless
   like `prune`'s and the gate sits in front of it, so `core` stays the pure
   decision and who may ask stays a question about the caller.
 
-- **An admin agent can change the board's settings, with `configure`.**
+- **An admin agent can change the board's settings, with `settings`.**
   Configuration lived in one place, `dibs.toml`, read at boot, so every
   adjustment was a person opening an editor and restarting a daemon. That is
   the wrong shape for a coordination tool whose premise is that agents handle
