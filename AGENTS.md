@@ -197,6 +197,37 @@ Things that have cost real time here, none of which are visible in the diff:
   thing the bridge reads at startup, ask what happens to a session when an
   operator changes it.
 
+- **A DORMANT BRIDGE RUNS OLD CODE ON THE ONE PATH NOBODY IS WATCHING, so a
+  wake payload change has to be additive and self-describing.** The stdio
+  bridge checks for a newly installed binary only between serving one request
+  and reading the next. A dormant session serves no requests, and a wake is
+  exactly what arrives when a session is dormant, so the FIRST wake after any
+  install is delivered by the pre-upgrade bridge. Leave that alone: re-execing
+  from anywhere else risks discarding a part-read request, which is worse than
+  the artefact. What must hold instead is the compatibility property. The
+  one-writer change survived its own rollout only because it was
+  self-describing: the daemon stands down on a key (`com.dibs/self_wake`) that
+  an older bridge cannot send, so an old bridge simply never triggers it. A
+  change that is not shaped that way would be mishandled silently by a dormant
+  old bridge, and silently is the operative word, because by definition nobody
+  was looking at that session. There are also more than two images in play: a
+  machine where installs are frequent ran three at once, and the dangerous
+  window is not "before the fix" but "after the declaration and before the
+  thing that makes the declaration safe". Raised by dibs-coordinator, who
+  declined to let this sit in a commit message.
+
+- **A TEST THAT SETS THE FLAG ITSELF IS TESTING THE PLUMBING, NOT THE
+  BEHAVIOUR.** A release added a field, its setter, its reader and the wiring
+  that consumed it, and called the setter from NOWHERE. It shipped: green gate,
+  a passing test, a mutation check, and a PR describing behaviour the binary
+  did not have. The test called the setter by hand and then asserted what the
+  reader did, which is true of dead code; the mutation check was applied to the
+  reader, which was the half that worked. This is the "PASSING probe proves
+  nothing" rule with a specific shape worth recognising. If a test arranges the
+  state it is checking, it cannot tell you the product ever reaches that state.
+  Drive the real path, and when the real path is too awkward to drive, guard
+  the call sites by shape and say in the test why.
+
 - **A harness's contract is a measurement, not a memory.** The wake path sent
   `hookSpecificOutput.additionalContext` on Stop and nothing else, under a
   comment citing Claude Code's documentation as saying that keeps a
