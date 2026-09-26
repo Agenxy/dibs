@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -192,38 +193,72 @@ func TestAHarnessWithNoSocketClaimsNothing(t *testing.T) {
 	}
 }
 
-// BOTH PATHS MUST ACTUALLY CALL IT, and #245 shipped without either.
+// The ambiguous path surrenders too, after the retry, and this DRIVES it.
 //
-// That release added the field, the setter and the reader, wired canReach into
-// listenBody, and called surrender from NOWHERE. It passed its own test because
-// the test flipped the flag by hand and then asserted the plumbing, and passed
-// its mutation check because the mutation was applied to listenBody, which was
-// the half that worked. Dead code, shipped, with a green gate and a PR
-// describing behaviour the binary did not have.
+// A COUNTER WOULD NOT HAVE. The first attempt at guarding this counted
+// `w.surrender()` call sites in the source, and dibs-coordinator took it apart
+// in a line: #245's test entered at the flag, so it tested everything
+// downstream of the flag and nothing that sets it, and a call-site counter
+// enters at the AST, so it asserts a wire-shaped object exists rather than
+// that the wire carries current. It is satisfied by a call in a branch that
+// never runs, which is a SUPERSET of the bug it was written for, because dead
+// code with a call site is still dead. A guard has to enter through the same
+// door as production, and for a wake that door is a failed write.
 //
-// The behavioural test above covers the gone-socket path by driving a real
-// failed delivery. The retry path is harder to drive, because producing a
-// genuinely ambiguous socket error on demand is a fixture of its own, so it is
-// guarded by SHAPE here: this repository's answer whenever a rule is easier to
-// delete than to exercise. Two call sites, and a count that fails if either
-// disappears again.
-func TestTheSurrenderIsActuallyCalledFromBothPaths(t *testing.T) {
-	src, err := os.ReadFile("selfwake.go")
-	if err != nil {
-		t.Fatal(err)
+// ENOTSOCK is the fixture because it is deliberately absent from socketGone: a
+// path that is not a socket is a misconfiguration rather than a session that
+// ended. If it is ever added there, this test needs a different ambiguous
+// error, and it will say so by failing on the first assertion rather than the
+// last.
+func TestAnAmbiguousFailureSurrendersOnlyAfterTheRetry(t *testing.T) {
+	t.Cleanup(func() { recordWakePending(false, "") })
+	// THE ERROR IS INJECTED, AND THE CI GATE IS WHY. The first version dialled
+	// a path that is not a socket, which answers ENOTSOCK on macOS and
+	// ECONNREFUSED on Linux; the second is in socketGone, so the test
+	// exercised the immediate surrender on one machine and the retry on the
+	// other. Its own setup assertion caught that rather than letting it pass
+	// for the wrong reason, which is the argument for asserting your setup.
+	// What this branch is about is what the code does with an ambiguous error,
+	// not which error a kernel happens to pick, so the error is stated here.
+	var attempts atomic.Int32
+	w := &selfWaker{
+		socket: "unused", token: "t", cooldown: 120 * time.Millisecond,
+		deliverFn: func(string) error {
+			attempts.Add(1)
+			return syscall.ETIMEDOUT // ambiguous on every platform: not in socketGone
+		},
 	}
-	if n := strings.Count(string(src), "w.surrender()"); n < 2 {
-		t.Errorf("surrender is called from %d place(s) in selfwake.go, want 2: the "+
-			"immediate one for an error that says the socket is gone, and the retry "+
-			"callback for an error that only said not right now.\n"+
-			"  #245 shipped with ZERO and every test still passed, because they "+
-			"asserted the plumbing after setting the flag themselves. If a call site "+
-			"moved rather than vanished, update this count and say where it went",
-			n)
+	if socketGone(syscall.ETIMEDOUT) {
+		t.Fatal("setup: ETIMEDOUT now counts as a gone socket, so this exercises the " +
+			"IMMEDIATE surrender and proves nothing about the retry path")
 	}
-	if !strings.Contains(string(src), "if socketGone(err) {") {
-		t.Error("the immediate surrender no longer keys on socketGone. Counting attempts " +
-			"instead was the first design, and it paid a fifteen second delay on the " +
-			"COMMON failure to guard the rare one: see selfWaker.surrendered")
+	if err := w.wake("owed"); err == nil {
+		t.Fatal("setup: the injected failure was reported as a delivery")
 	}
+	// Not yet: one ambiguous failure might have been momentary, and giving the
+	// route back costs an agent every wake the daemon's route cannot deliver.
+	if !w.canReach() {
+		t.Error("an ambiguous failure surrendered on the first attempt. The daemon's " +
+			"route is the one a bypassPermissions session HOLDS, so a momentary error " +
+			"must not cost it")
+	}
+	// The retry fires on its own timer and fails the same way; THAT is evidence.
+	deadline := time.Now().Add(4 * time.Second)
+	for w.canReach() && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if w.canReach() {
+		t.Error("two ambiguous failures and the bridge still claims the route: the " +
+			"daemon stays quiet for this agent and nothing announces its mail")
+	}
+	if n := attempts.Load(); n < 2 {
+		t.Errorf("the write was attempted %d time(s); the retry is what makes the "+
+			"second failure evidence, so one attempt means the surrender came from "+
+			"somewhere else", n)
+	}
+	w.mu.Lock()
+	if w.timer != nil {
+		w.timer.Stop()
+	}
+	w.mu.Unlock()
 }

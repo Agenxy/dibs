@@ -612,6 +612,15 @@ var upgradeGrace = 10 * time.Second
 // exactly when a duplicate is least likely to be noticed. Found by a
 // pre-release review; an agent that wants a retry it can trust has op_id, which
 // is what op_id is for.
+// AND ECONNRESET IS CLASSIFIED THE OTHER WAY IN socketGone (selfwake.go),
+// deliberately. Here a reset cannot prove the request was not already applied,
+// and a retried claim is worse than a failed call, so it is excluded. On the
+// surrender path nothing is applied: a wrong answer there costs a duplicate
+// card or a notice held in a bypass session, so the same ambiguity resolves
+// towards treating the peer as gone. Same errno, opposite reading, both
+// correct. Noted at both ends because a sweep that finds them disagreeing has
+// even odds of reconciling them the wrong way, and "a rule applied at one call
+// site and not its siblings" is the recurring class here.
 func dialFailed(err error) bool {
 	if err == nil {
 		return false
