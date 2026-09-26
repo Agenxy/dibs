@@ -48,6 +48,28 @@ type selfWaker struct {
 	pending  bool      // a deferred notice is armed for when the cooldown ends
 	timer    *time.Timer
 	retry    bool // the armed timer is a retry of a delivery that FAILED
+	// surrendered says this bridge has given the session socket back to the
+	// daemon, because it claimed the route and then could not deliver on it.
+	//
+	// THE CLAIM IS EVIDENCE OF CAPABILITY, NOT OF DELIVERY, and that gap is a
+	// way for the one-writer rule to lose mail entirely. The daemon stands
+	// down for an agent whose bridge declared com.dibs/self_wake, so a bridge
+	// whose socket has stopped accepting leaves NOBODY writing: the daemon is
+	// quiet by arrangement and the bridge is failing into the dark. That is
+	// this repository's oldest failure shape, reports success while doing
+	// nothing, reintroduced by the change that removed a duplicate.
+	//
+	// Set only after a RETRY has also failed, which is two attempts fifteen
+	// seconds apart, because surrendering is not free either: the daemon's
+	// route is the one a session in bypassPermissions holds. One transient
+	// error should not cost that. Two, fifteen seconds apart, is evidence.
+	//
+	// Not reclaimed afterwards. Once the daemon is writing again the bridge
+	// has nothing to retry with, and the fallback is correct rather than
+	// degraded: the daemon sends the same digest this route would have. A
+	// session whose socket recovers gets its claim back when its harness next
+	// spawns a bridge.
+	surrendered bool
 }
 
 // selfWakeCooldown is the shortest gap between two notices in one session.
@@ -237,4 +259,27 @@ func (w *selfWaker) deliver(notice string) error {
 		}
 	}
 	return nil
+}
+
+// surrender hands the session socket back to the daemon. See selfWaker.surrendered.
+func (w *selfWaker) surrender() {
+	if w == nil {
+		return
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.surrendered = true
+}
+
+// canReach reports whether this bridge still claims it can wake its own
+// session. Read by listenBody, which declares the claim, and by the watcher,
+// which drops its stream when the answer changes so the next listen states the
+// truth.
+func (w *selfWaker) canReach() bool {
+	if w == nil {
+		return false
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return !w.surrendered
 }
