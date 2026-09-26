@@ -240,6 +240,15 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		// replay every tracked request as untracked and sweep it in fifteen
 		// minutes, under a task its sender is still polling.
 		"track": true,
+		// name_is_an_address: whether THIS update may be refused for taking a
+		// name that is another row's id. Same shape as the flags above and
+		// load-bearing in the same direction: every ledger written before an
+		// agent's name addressed it may hold a rename onto somebody else's id,
+		// and refusing those on replay would stop the daemon booting on history
+		// it wrote itself. Absent decodes false, and such an op folds exactly as
+		// it did. Renaming this tag would switch the refusal off silently, on
+		// the one path where the symptom is somebody else's mail.
+		"name_is_an_address": true,
 	}
 
 	// Every tag the Op DECLARES, not merely the ones this fixture happens to
@@ -431,7 +440,7 @@ const (
 	// this value, the sweep is the bug, and the tag it renamed is the data
 	// loss.
 	// Task queue: eight additive op tags, no renamed/removed historical tags.
-	frozenOpFingerprint       = "sha256:6ca231a45f65e4da"
+	frozenOpFingerprint       = "sha256:68e0e69f94c80f19"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`

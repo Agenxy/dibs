@@ -393,6 +393,27 @@ type Op struct {
 	// The other half, an identical retry that used to short-circuit, needs no
 	// gate: it returned nil events, was never ledgered, and has no past.
 	TakeIdentity bool `json:"take_identity,omitempty"`
+	// NameIsAnAddress says this update was written by a build where an agent's
+	// NAME addresses it, so a rename may not take a string that already
+	// addresses somebody else.
+	//
+	// THE SAME HAZARD AS THE FLAGS ABOVE, and the reason it needs one is the
+	// rule this repository lists first among its recurring bugs: a refusal added
+	// to Apply is RETROACTIVE, because Apply is also the fold. Renaming onto a
+	// live peer's NAME was already refused; renaming onto another row's ID was
+	// not, and any ledger anywhere may hold an update that did exactly that.
+	// Refusing it unconditionally would stop that daemon booting on history it
+	// wrote and acknowledged. An op without this flag keeps the semantics it was
+	// written under and the fold folds it exactly as before.
+	//
+	// WHY IT IS REFUSED AT ALL, given rule 4 says declaring work never fails: a
+	// rename is not work, and an id wins over a name when a reference is
+	// resolved (core.AgentRef). So a rename onto somebody else's id is a
+	// mail-redirection primitive, which is the same reasoning that already
+	// refuses a rename onto somebody else's name, arrived at from the other
+	// side. The agent is one call away from another label; a peer addressing the
+	// name it publishes has no such recourse.
+	NameIsAnAddress bool `json:"name_is_an_address,omitempty"`
 	// RoleByHuman marks a grant_role a person made through the admin API.
 	// Transient, never on the wire: the engine remembers the agent for the
 	// rest of its run and declines the startup reconciler's regrant, on the
