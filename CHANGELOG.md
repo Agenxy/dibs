@@ -7,6 +7,25 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The in-session wake says what arrived, like the other two routes.** It was
+  sending one fixed content-free sentence while holding the best channel in
+  the product: in-session, already authenticated, no argv to leak through, no
+  peer-message preamble wrapped around it. A peer ran a wake-path test on
+  2026-09-25, this is the route that reached the receiver first, and it was
+  the least informative notice on the board.
+
+  The notification's `_meta` already names the message type, so this cost
+  nothing: no extra call, no new field. It says `Dibs: a new question is
+  waiting.` and falls back to the old line only when an older daemon sends no
+  type.
+
+  It still does not carry the DIGEST, and the reason is worth recording. The
+  bridge holds the agent's token and could fetch one over the connection it
+  already has, which is the right end state. `hook_poll` marks mail delivered,
+  so a bridge that polls and then fails to inject has consumed a delivery
+  nobody saw, which is the failure #224 was about. That wants a read which
+  does not consume, not a bolt-on.
+
 - **"Dibs: check the board." is gone from every route.** The operator asked
   three times across two weeks what it was for, and the honest answer was
   nothing: it is an imperative that carries no fact. It survived two releases
