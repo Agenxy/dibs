@@ -523,6 +523,59 @@ not.
 `[hooks] mail_bodies = false` puts the pointer back on both, for a machine
 whose accounts are not all yours.
 
+**AND THEN IT TURNED OUT THERE WERE TWO WRITERS ON THAT SOCKET, WHICH IS WHY
+THE SCREENSHOTS KEPT COMING.** A Claude Code session has exactly one message
+socket, and Dibs was writing to it from two places that knew nothing about each
+other. The daemon writes to it from outside, finding it through the harness's
+`~/.claude/sessions` sidecar, and it sends the digest. The session's own stdio
+bridge writes to it from inside (§5b above, the self-wake), finding it through
+`CLAUDE_CODE_MESSAGING_SOCKET`, and it sent a fixed sentence: the bridge is told
+that the inbox changed and, until now, not what was in it.
+
+The bridge won every race, because it is already in the process and skips the
+sidecar lookup. So the operator got two notifications for one message, in the
+worst possible order: the content-free one on top, the real digest underneath,
+each wrapped in the harness's own "another Claude session" preamble. They asked
+about the first one four times. Three releases retired one placeholder and
+introduced another, because each round read the complaint as being about the
+WORDING. It was about the card.
+
+**One writer, and the choice of which one is forced rather than aesthetic.** The
+bridge declares on its `subscriptions/listen` that it can reach its own session
+(`com.dibs/self_wake`), and for as long as that stream is open the daemon does
+not write to that agent's socket at all. Two facts decide the direction. The
+bridge KNOWS whether it has a socket, where the daemon is reading a file and
+inferring; and a self-sent message is accepted where a stranger's is held by the
+`crossSessionInbound` default described above, so the bridge is also the route
+that actually lands. The daemon cannot even tell a held message from a delivered
+one, which is the same asymmetry this section already records, now used to pick a
+writer instead of just to warn about one.
+
+**The surviving card carries the digest, and it comes from the daemon.** The
+bridge could fetch it over the connection it already holds, and must not: `inbox`
+and `hook_poll` both MARK MAIL DELIVERED, so a bridge that asks and then fails
+to write to its session has consumed a delivery nobody saw. That is this
+repository's most expensive recurring defect and it is not worth re-buying for
+one round trip. The daemon computes the digest on the way out, with a read that
+moves nothing (`engine.WakeDigestFor`), and puts it in the notification's `_meta`
+as `com.dibs/digest`. It is sent only to a stream that declared the self-wake,
+because it quotes message bodies and nobody else has anywhere to put it.
+
+**A notification with no digest wakes nobody, and that is deliberate.** It means
+a daemon older than the key, and such a daemon has not stood down: it is writing
+its own notice to that same socket. A line from the bridge there would be the
+duplicate all over again with nothing in it. The bridge stands mute and the old
+daemon delivers; once it is upgraded it sends the digest and the bridge carries
+it. The legacy 2025-11-25 transport declares nothing and is unchanged, which is
+PHILOSOPHY rule 9 working as intended.
+
+**What this cost, stated plainly, because a release note that only lists wins is
+not a record.** A bridge newer than its daemon now goes quiet on the socket
+route for the length of that mismatch, where before it said something. That is
+the rare direction (the bridge is the process that lags an install, not the
+daemon), the old daemon covers it, and a restart ends it. The alternative was
+keeping a sentence whose entire function was to exist.
+
 ### 5d. An mcp_tool hook cannot run at SessionStart, and ours did not
 
 Claude Code resolves an `mcp_tool` hook against the session's connected MCP

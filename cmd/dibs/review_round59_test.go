@@ -74,21 +74,27 @@ func TestARestoredPendingWakeSharesTheSessionCooldown(t *testing.T) {
 	t.Setenv("CLAUDE_CODE_MESSAGING_TOKEN", "child-token")
 	resetWakeStreams()
 	t.Cleanup(resetWakeStreams)
-	t.Cleanup(func() { recordWakePending(false) })
+	t.Cleanup(func() { recordWakePending(false, "") })
 	lines := listenLines(t, sock)
 	hold := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
 		fl, _ := w.(http.Flusher)
-		_, _ = fmt.Fprint(w, `data: {"jsonrpc":"2.0","method":"notifications/resources/updated","params":{"uri":"dibs://inbox","_meta":{"com.dibs/event":"message.sent","com.dibs/msg_type":"question","com.dibs/serial":9}}}`+"\n\n")
+		_, _ = fmt.Fprint(w, `data: {"jsonrpc":"2.0","method":"notifications/resources/updated","params":{"uri":"dibs://inbox","_meta":{"com.dibs/event":"message.sent","com.dibs/msg_type":"question","com.dibs/serial":9,"com.dibs/digest":"mail for your agent."}}}`+"\n\n")
 		fl.Flush()
 		<-hold
 	}))
 	defer srv.Close()
 	defer close(hold)
 	blob, err := json.Marshal(bridgeState{
-		WakeStreams: []wakeHandoff{{Key: "busy", Token: "carried-token", Since: 4}}, WakePending: true,
+		WakeStreams: []wakeHandoff{{Key: "busy", Token: "carried-token", Since: 4}},
+		// AND WHAT IT SAID. The owed notice used to be a fixed sentence any
+		// image could reproduce from a constant, so the handoff carried a bool.
+		// The notice is the daemon's digest now, delivered on a notification
+		// whose serial the cursor has passed, so the text is the only copy and
+		// it travels with the mark. See bridgeState.WakeNotice.
+		WakePending: true, WakeNotice: "the notice the old image owed",
 	})
 	if err != nil {
 		t.Fatal(err)

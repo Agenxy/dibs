@@ -459,12 +459,24 @@ try {
     check("the fixture has an active agent to take out of touch", Boolean(target), String(target))
     if (target) {
       // Seen active first, so the next push is a real transition.
+      //
+      // WAITED FOR, NOT SLEPT THROUGH, and this is the second time a fixed
+      // sleep here has cost a red gate. A liveness change enters the view
+      // transition pipeline (runPanelTransition), which resolves on a frame, so
+      // the mark is applied asynchronously and 80ms is a bet on how loaded the
+      // machine is. It held on every developer machine and lost twice on CI,
+      // including once on main, where it read as "the transition happened with
+      // no signal at all": a confident accusation against working code.
+      //
+      // Both halves are waited on. The first push has to be ABSORBED before the
+      // second is delivered, or the diff that decides what went quiet is
+      // comparing against a snapshot the panel has not taken yet.
       await page.evaluate((r) => (window as any).__deliver(r), withStatus(boardResult, target, "active"))
-      await Bun.sleep(80)
+      await panel.locator(`.entry[data-agent="${target}"]:not(.went-quiet)`).first()
+        .waitFor({ timeout: 8000 })
       await page.evaluate((r) => (window as any).__deliver(r), withStatus(boardResult, target, "stale"))
-      await Bun.sleep(80)
-      const marked = await panel.locator(`.entry[data-agent="${target}"]`).first()
-        .evaluate((el) => el.classList.contains("went-quiet"))
+      const marked = await panel.locator(`.entry[data-agent="${target}"].went-quiet`).first()
+        .waitFor({ timeout: 8000 }).then(() => true).catch(() => false)
       check("an agent that goes out of touch is marked", marked,
         "the transition happened with no signal at all")
 
@@ -690,8 +702,16 @@ try {
         backAgain.includes("agent-band"), `transitions seen: ${JSON.stringify(backAgain)}`)
 
       // Already stale on arrival is not a change.
+      //
+      // A NEGATIVE ASSERTION NEEDS ITS RENDER WAITED FOR, or it passes for the
+      // wrong reason. This asks that no mark was applied, and a sleep that ends
+      // before the push has rendered answers "no mark yet", which is the same
+      // answer as "no mark ever". So each step waits for the DOM fact that
+      // proves the push landed: the row leaves, the row returns, and only then
+      // is the absence of the mark evidence of anything.
+      const row = `.entry[data-agent="${target}"]`
       await page.evaluate((r) => (window as any).__deliver(r), withStatus(boardResult, target, "active"))
-      await Bun.sleep(80)
+      await panel.locator(row).first().waitFor({ timeout: 8000 })
       const fresh = structuredClone(boardResult)
       for (const l of spaceOf(fresh)) if (l.id === target) l.status = "stale"
       // Drop it from the previous frame entirely, so it ARRIVES stale.
@@ -701,10 +721,10 @@ try {
           spaceOf(without).filter((l: any) => l.id !== target)
       }
       await page.evaluate((r) => (window as any).__deliver(r), without)
-      await Bun.sleep(80)
+      await panel.locator(row).waitFor({ state: "detached", timeout: 8000 })
       await page.evaluate((r) => (window as any).__deliver(r), fresh)
-      await Bun.sleep(80)
-      const remarked = await panel.locator(`.entry[data-agent="${target}"]`).first()
+      await panel.locator(row).first().waitFor({ timeout: 8000 })
+      const remarked = await panel.locator(row).first()
         .evaluate((el) => el.classList.contains("went-quiet"))
       check("an agent that arrives already stale is not marked", !remarked,
         "history was announced as news")

@@ -106,6 +106,11 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request, req *
 		writeRPC(w, http.StatusOK, req.ID, nil, rpcErrFrom(err))
 		return
 	}
+	// BEFORE THE ACKNOWLEDGMENT, so there is no window in which this stream is
+	// live and the daemon still believes it owns the session socket. See
+	// selfWakeRoute.
+	digest, releaseClaim := s.selfWakeRoute(r, p, token, agentID, wantInbox)
+	defer releaseClaim()
 	// A reconnecting subscriber says where it left off, and the gap is
 	// replayed from the ring rather than lost.
 	cursor, resuming := since, false
@@ -182,12 +187,12 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request, req *
 	// restart was handed the mail it had missed, and woke on it. The standing
 	// is re-read as the replay writes, because the agent can move mid-replay.
 	if _, held := standing(); resuming && wantInbox && held &&
-		!s.replayGap(r.Context(), stream, req.ID, agentID, cursor, standing) {
+		!s.replayGap(r.Context(), stream, req.ID, agentID, cursor, standing, digest) {
 		return
 	}
 	s.pump(r, stream, sub, since, req.ID, func() (string, bool, bool) {
 		return agentID, wantInbox, wantBoard
-	}, standing)
+	}, standing, digest)
 }
 
 // WakeURI is the resource a host bridge subscribes to: the wakes the hub has
@@ -306,6 +311,48 @@ func pumpWake(ctx context.Context, stream sseStream, reqs <-chan engine.WakeRequ
 	}
 }
 
+// selfWakeRoute takes the bridge's claim on its own session socket and returns
+// the digest its notifications should carry, plus the release for when the
+// stream ends.
+//
+// ONE WRITER TO THE SESSION SOCKET, chosen by the side that can prove it will
+// deliver.
+//
+// A bridge running inside a Claude Code session declares SelfWakeMetaKey when
+// the harness gave it a message socket. For as long as its stream is open the
+// daemon stops writing to that socket itself, because it was writing to the
+// same one: the operator got two notifications per message, the bridge's
+// content-free line arriving first because it needs no sidecar lookup. In
+// exchange the stream's inbox notifications carry the digest the daemon would
+// have sent, so the surviving card is the informative one.
+//
+// Released with the stream. A bridge that goes away hands the socket route
+// straight back, which is the behaviour of every harness that declares nothing.
+func (s *Server) selfWakeRoute(
+	r *http.Request, p subscriptionParams, token, agentID string, wantInbox bool,
+) (digestFunc, func()) {
+	selfWakes, _ := p.Meta[SelfWakeMetaKey].(bool)
+	if !selfWakes || !wantInbox || token == "" {
+		return nil, func() {}
+	}
+	session, _ := p.Meta[SessionMetaKey].(string)
+	release := s.eng.AttachSelfWaker(agentID, session)
+	return func(ev core.Event) string {
+		from, _ := ev.Data["from"].(string)
+		kind, _ := ev.Data["msg_type"].(string)
+		text, err := s.eng.WakeDigestFor(r.Context(), token, from, kind)
+		if err != nil {
+			// The stream survives a digest this daemon could not build: the
+			// notification still names the event and the message type, and
+			// dropping it instead would turn a formatting failure into a lost
+			// wake. The bridge sends nothing for a notification with no digest,
+			// which is the same position an older daemon leaves it in.
+			return ""
+		}
+		return text
+	}, release
+}
+
 // standingFunc reports, as a notification is about to go out, whether the
 // stream's credential is still live and whether its agent still holds the
 // session it serves. A stream whose token is gone ends; one whose agent has
@@ -333,7 +380,7 @@ type wantsFunc func() (agentID string, inbox, board bool)
 // and not a question, which did not. Found by the pre-release review, round
 // thirty-three.
 func (s *Server) pump(r *http.Request, stream sseStream, sub *engine.Subscription, last uint64,
-	subID json.RawMessage, wants wantsFunc, standing standingFunc,
+	subID json.RawMessage, wants wantsFunc, standing standingFunc, digest digestFunc,
 ) {
 	keepalive := time.NewTicker(25 * time.Second)
 	defer keepalive.Stop()
@@ -342,7 +389,7 @@ func (s *Server) pump(r *http.Request, stream sseStream, sub *engine.Subscriptio
 	// was covered by the caller, so a refill must not repeat it.
 	p := &pumpState{
 		s: s, ctx: ctx, stream: stream, sub: sub, last: last, lastSub: math.MaxInt, subID: subID,
-		wants: wants, standing: standing,
+		wants: wants, standing: standing, digest: digest,
 	}
 	if !p.refill() { // the replay may have run long enough to overflow already
 		return
@@ -387,6 +434,9 @@ type pumpState struct {
 	// standing is asked before each notification goes out; nil for a
 	// stream that answers to no credential.
 	standing standingFunc
+	// digest says what an inbox notification should tell a self-waking
+	// bridge; nil for every stream that did not declare one.
+	digest digestFunc
 }
 
 // seen reports whether ev is at or before the position.
@@ -423,7 +473,7 @@ func (p *pumpState) deliver(ev core.Event) bool {
 				uri = "" // the agent is in another session; its mail wakes that one
 			}
 		}
-		if uri != "" && !p.stream.send(resourceUpdated(uri, p.subID, ev)) {
+		if uri != "" && !p.stream.send(resourceUpdated(uri, p.subID, ev, p.digest)) {
 			return false
 		}
 	}
@@ -567,6 +617,33 @@ const (
 	// review, round twelve.
 	SerialMetaKey = "com.dibs/serial"
 	SinceMetaKey  = "com.dibs/since"
+	// DigestMetaKey is, on an inbox notification, WHAT ARRIVED: the same digest
+	// the daemon's socket route would have written to the session itself.
+	//
+	// The best channel was carrying the least. This notification goes to a
+	// bridge running inside the session it serves, which is the one route that
+	// needs no operator configuration, has no argv to leak through, and is
+	// accepted rather than held in bypassPermissions mode. It carried a fixed
+	// content-free sentence, so the agent was told that something had arrived
+	// and had to spend three calls finding out what, while the less reliable
+	// route two feet away sent the whole thing.
+	//
+	// Sent only to a subscriber that said it will deliver wakes itself
+	// (SelfWakeMetaKey), because computing it costs a read and nobody else has
+	// anywhere to put it. It quotes message bodies, so it goes only to the
+	// stream holding that agent's own token.
+	DigestMetaKey = "com.dibs/digest"
+	// SelfWakeMetaKey is, on a listen request, the bridge saying it can reach
+	// the session it runs in and will deliver this agent's wake notices there.
+	//
+	// A DECLARATION, because the daemon stands down on it. Dibs had two writers
+	// on one Claude Code message socket and the operator got two notifications
+	// for every message; the fix is one writer, and choosing which one cannot
+	// be a guess. This is the side that knows: the bridge either has
+	// CLAUDE_CODE_MESSAGING_SOCKET or it does not, and it is the side whose
+	// message is accepted rather than held. A bridge that says nothing here
+	// gets the old behaviour, which is the daemon writing to the socket itself.
+	SelfWakeMetaKey = "com.dibs/self_wake"
 	// SessionMetaKey is the harness session the caller is running inside,
 	// attached by the stdio bridge to every call. On a listen request it
 	// names the session the stream serves: see standingFunc.
@@ -609,20 +686,39 @@ const (
 	RepoMetaKey = "com.dibs/repo"
 )
 
-func resourceUpdated(uri string, subID json.RawMessage, ev core.Event) map[string]any {
+func resourceUpdated(uri string, subID json.RawMessage, ev core.Event, digest digestFunc) map[string]any {
 	params := map[string]any{"uri": uri}
 	if uri == "dibs://inbox" {
 		msgType, _ := ev.Data["msg_type"].(string)
-		params["_meta"] = map[string]any{EventMetaKey: ev.Type, MsgTypeMetaKey: msgType, SerialMetaKey: ev.Serial}
+		meta := map[string]any{EventMetaKey: ev.Type, MsgTypeMetaKey: msgType, SerialMetaKey: ev.Serial}
+		// WHAT ARRIVED, for the subscriber that is going to announce it.
+		//
+		// Computed here, on the way out, rather than fetched by the bridge:
+		// the two calls that would tell it (inbox, hook_poll) both MARK MAIL
+		// DELIVERED, so a bridge that asks and then fails to write to its
+		// session has consumed a delivery nobody saw. See
+		// engine.WakeDigestFor, which reads and moves nothing.
+		if digest != nil {
+			if text := digest(ev); text != "" {
+				meta[DigestMetaKey] = text
+			}
+		}
+		params["_meta"] = meta
 	}
 	return notification("notifications/resources/updated", params, subID)
 }
+
+// digestFunc is what a wake notice for this inbox event should say, or "" when
+// nothing is owed or the subscriber has nowhere to put it. Nil for every stream
+// that did not declare SelfWakeMetaKey, so the read behind it happens only for
+// a subscriber that will use the answer.
+type digestFunc func(ev core.Event) string
 
 // replayGap hands a resuming subscriber the inbox events it missed, from the
 // ring or, past the ring, from the inbox itself. Reports whether the stream
 // is still writable.
 func (s *Server) replayGap(ctx context.Context, stream sseStream, subID json.RawMessage,
-	agentID string, cursor uint64, standing standingFunc,
+	agentID string, cursor uint64, standing standingFunc, digest digestFunc,
 ) bool {
 	missed, tooOld := s.missedFor(ctx, cursor)
 	if tooOld {
@@ -658,7 +754,7 @@ func (s *Server) replayGap(ctx context.Context, stream sseStream, subID json.Raw
 				return true // moved away: the rest of the gap is the new session's to hear
 			}
 		}
-		if !stream.send(resourceUpdated(uri, subID, ev)) {
+		if !stream.send(resourceUpdated(uri, subID, ev, digest)) {
 			return false
 		}
 	}

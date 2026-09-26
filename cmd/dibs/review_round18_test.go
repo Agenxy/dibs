@@ -26,7 +26,7 @@ func TestAFailedWakeKeepsItsNotification(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		fl, _ := w.(http.Flusher)
 		_, _ = fmt.Fprint(w, `data: {"jsonrpc":"2.0","method":"notifications/subscriptions/acknowledged","params":{"notifications":{},"_meta":{"com.dibs/serial":5}}}`+"\n\n")
-		_, _ = fmt.Fprint(w, `data: {"jsonrpc":"2.0","method":"notifications/resources/updated","params":{"uri":"dibs://inbox","_meta":{"com.dibs/event":"message.sent","com.dibs/msg_type":"question","com.dibs/serial":7}}}`+"\n\n")
+		_, _ = fmt.Fprint(w, `data: {"jsonrpc":"2.0","method":"notifications/resources/updated","params":{"uri":"dibs://inbox","_meta":{"com.dibs/event":"message.sent","com.dibs/msg_type":"question","com.dibs/serial":7,"com.dibs/digest":"mail for your agent."}}}`+"\n\n")
 		fl.Flush()
 	}))
 	defer srv.Close()
@@ -53,7 +53,7 @@ func TestAFailedWakeKeepsItsNotification(t *testing.T) {
 func TestAFailedWakeIsRetriedWhenTheSocketReturns(t *testing.T) {
 	sock := sockPath(t)
 	w := &selfWaker{socket: sock, token: "tok", cooldown: 200 * time.Millisecond}
-	if err := w.wake(selfWakeNotice); err == nil {
+	if err := w.wake(testWakeNotice); err == nil {
 		t.Fatal("setup: a wake with nobody listening reported success")
 	}
 	lines := listenLines(t, sock)

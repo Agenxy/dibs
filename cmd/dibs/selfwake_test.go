@@ -27,6 +27,28 @@ import (
 // would make this an integration test that cannot run in CI, and the thing
 // worth pinning is that an inbox notification becomes exactly one authenticated
 // line on the session socket.
+// testWakeNotice is any notice at all, for the tests about the waker's
+// MECHANICS: the cooldown, the deferral, the retry and the upgrade handoff.
+//
+// A test constant rather than the product's own string, because the product no
+// longer has one. What the in-session route says is whatever the daemon put on
+// the notification (mcp.DigestMetaKey), so a payload the waker is asked to
+// deliver is now a parameter and nothing in these tests depends on its
+// contents. The rules they assert are about counting and timing, and they held
+// against a fixed sentence for exactly the same reason they hold against this.
+const testWakeNotice = "a notice, for a test about when notices are sent"
+
+// wakeIsPending is currentWakePending's bool alone: these tests ask whether a
+// notice is owed, and the handoff now carries what it says as well.
+// fixtureDigest is what the fake daemon puts on its notification, quotes and
+// all: the bridge must deliver it byte for byte.
+const fixtureDigest = `mail for your agent "worker".`
+
+func wakeIsPending() bool {
+	owed, _ := currentWakePending()
+	return owed
+}
+
 func TestTheBridgeWakesItsOwnSession(t *testing.T) {
 	// A stand-in for the harness's session socket.
 	dir := t.TempDir()
@@ -64,7 +86,7 @@ func TestTheBridgeWakesItsOwnSession(t *testing.T) {
 		fl, _ := w.(http.Flusher)
 		_, _ = fmt.Fprint(w, "data: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/subscriptions/acknowledged\"}\n\n")
 		fl.Flush()
-		_, _ = fmt.Fprint(w, "data: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/resources/updated\",\"params\":{\"uri\":\"dibs://inbox\"}}\n\n")
+		_, _ = fmt.Fprint(w, "data: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/resources/updated\",\"params\":{\"uri\":\"dibs://inbox\",\"_meta\":{\"com.dibs/digest\":\"mail for your agent \\\"worker\\\".\"}}}\n\n")
 		fl.Flush()
 		time.Sleep(300 * time.Millisecond)
 	}))
@@ -106,9 +128,14 @@ func TestTheBridgeWakesItsOwnSession(t *testing.T) {
 	if err := json.Unmarshal([]byte(got[1]), &msg); err != nil {
 		t.Fatalf("second line is not JSON: %q", got[1])
 	}
-	if msg.Type != "user" || msg.Message.Content != selfWakeNotice {
-		t.Errorf("second line = %q; want a user message carrying exactly %q",
-			got[1], selfWakeNotice)
+	// EXACTLY WHAT THE DAEMON SENT, which is the whole point of the route now.
+	// The bridge composed its own sentence here for three releases and the
+	// daemon's digest arrived separately, on the same socket, a moment later:
+	// two cards per message, the emptier one on top. This end adds nothing and
+	// subtracts nothing.
+	if msg.Type != "user" || msg.Message.Content != fixtureDigest {
+		t.Errorf("second line = %q; want a user message carrying exactly the digest the "+
+			"daemon sent, %q", got[1], fixtureDigest)
 	}
 }
 
