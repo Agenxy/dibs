@@ -43,6 +43,27 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   than its daemon is quiet on that route until the mismatch ends, which is the
   rare direction and a restart closes it.
 
+- **A bridge that claims the session socket and then cannot deliver hands it
+  back.** The one-writer rule has the daemon stand down for an agent whose
+  bridge declared `com.dibs/self_wake`, and declaring is evidence of
+  CAPABILITY, not of delivery. A bridge whose socket stopped accepting left the
+  daemon quiet by arrangement and itself failing into the dark, so the mail was
+  announced by nothing at all: this repository's oldest failure shape, reports
+  success while doing nothing, reintroduced by the change that removed a
+  duplicate.
+
+  Surrender takes TWO failures, fifteen seconds apart, because it is not free
+  either: the daemon's route is the one a session in bypassPermissions holds,
+  so a single transient error must not cost it. On the second the bridge drops
+  its stream, and the reconnect declares nothing, which is how the daemon
+  learns to resume. The fallback is correct rather than degraded, since the
+  daemon sends the same digest.
+
+  Found by dibs-coordinator, who asked what the stand-down keys off and was one
+  step short of its answer: it keys on the declaration, which is the right
+  thing for the rolling-upgrade case they were worried about, and the wrong
+  thing on its own for a socket that dies under a live claim.
+
 - **There is no fixed sentence on the in-session route any more.** The last one
   said coordination mail was waiting for your agent. The operator asked for it
   out of the codebase, in those words, and it is out: the route sends the

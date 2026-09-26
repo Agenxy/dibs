@@ -2,8 +2,10 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/agenxy/dibs/internal/mcp"
 )
@@ -78,5 +80,67 @@ func TestTheBridgeInventsNoNoticeOfItsOwn(t *testing.T) {
 		t.Error("the in-session route composes a notice again. Compose exists for the " +
 			"exec route, whose argv is world-readable and which genuinely has no digest " +
 			"to send; this route is handed one")
+	}
+}
+
+// A bridge that cannot deliver hands the socket back, or nobody writes at all.
+//
+// THE HOLE THE ONE-WRITER RULE OPENS, found by dibs-coordinator asking the
+// right question one step short of its answer. The daemon stands down for an
+// agent whose bridge declared it can reach its own session. Declaring is
+// evidence of CAPABILITY, not of delivery: a bridge whose socket has stopped
+// accepting leaves the daemon quiet by arrangement and itself failing into the
+// dark, so the mail is announced by nothing. That is the oldest failure shape
+// in this repository, reports success while doing nothing, reintroduced by the
+// change that removed a duplicate.
+//
+// Surrender is not free either, which is why it takes two failures. The
+// daemon's route is the one a session in bypassPermissions holds, so a single
+// transient error must not cost it. Two attempts fifteen seconds apart is
+// evidence rather than noise.
+func TestABridgeThatCannotDeliverHandsTheSocketBack(t *testing.T) {
+	w := &selfWaker{socket: filepath.Join(t.TempDir(), "gone.sock"), token: "t", cooldown: time.Hour}
+	if !w.canReach() {
+		t.Fatal("setup: a fresh waker already claims it cannot reach its session")
+	}
+	// A first failure alone must NOT surrender: the daemon's route is held in
+	// bypassPermissions mode, and giving it back on one hiccup can cost an
+	// agent every wake it would have had.
+	if err := w.wake("first"); err == nil {
+		t.Fatal("setup: writing to a socket that does not exist succeeded")
+	}
+	if !w.canReach() {
+		t.Error("one failed delivery surrendered the route. The daemon's route is the " +
+			"one a bypassPermissions session holds, so this trades a duplicate for a " +
+			"session that may hear nothing at all")
+	}
+	// The retry failing is the second attempt, and that is evidence.
+	w.surrender()
+	if w.canReach() {
+		t.Fatal("surrender did not take")
+	}
+	// And the next listen must say so, or the daemon goes on standing down for
+	// a bridge that has stopped delivering.
+	iw := &inboxWatcher{waker: w}
+	body := string(iw.listenBody(&inboxStream{key: "k", token: "tok"}))
+	if strings.Contains(body, mcp.SelfWakeMetaKey) {
+		t.Errorf("a surrendered bridge still declares it delivers its own wakes: %s.\n"+
+			"  The daemon reads that and stays quiet, and nothing announces this "+
+			"agent's mail", body)
+	}
+}
+
+// A nil waker is the ordinary case for every harness that publishes no socket,
+// and it must never claim the route. This is the path the ChatGPT app and the
+// per-call plugins take.
+func TestAHarnessWithNoSocketClaimsNothing(t *testing.T) {
+	iw := &inboxWatcher{}
+	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", "")
+	t.Setenv("CLAUDE_CODE_MESSAGING_TOKEN", "")
+	body := string(iw.listenBody(&inboxStream{key: "k", token: "tok"}))
+	if strings.Contains(body, mcp.SelfWakeMetaKey) {
+		t.Errorf("a bridge with no session socket told the daemon to stand down: %s.\n"+
+			"  Nothing would then announce this agent's mail: no socket here, and the "+
+			"daemon quiet by arrangement", body)
 	}
 }
