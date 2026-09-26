@@ -43,6 +43,37 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   than its daemon is quiet on that route until the mismatch ends, which is the
   rare direction and a restart closes it.
 
+- **The ECONNRESET divergence is commented at both ends, and measured.** The
+  tree now reads that errno two ways on purpose: `socketGone` treats it as the
+  peer being gone, `dialFailed` excludes it because a reset cannot prove a
+  request was not already applied. The stake differs rather than the ambiguity,
+  since nothing is applied on the surrender path. Both sites now name the other,
+  because a sweep finding them disagreeing has even odds of reconciling them
+  wrongly.
+
+  Measured on AF_UNIX/macOS while writing it: a closing listener unlinks its
+  socket, so the next dial is ENOENT; a write to a closed peer is EPIPE; a path
+  that is not a socket is ENOTSOCK, deliberately not treated as gone.
+  ECONNRESET was not reproducible on this transport and is now documented as
+  defensive rather than left looking measured.
+
+- **And that retry test could not be written portably, which the gate proved.**
+  The fixture for an ambiguous error was a path that is not a socket, which
+  answers ENOTSOCK on macOS and ECONNREFUSED on Linux. The second is in
+  `socketGone`, so one test exercised the immediate surrender on one machine
+  and the retry on the other: the standing rule about two machines producing
+  different errors for one event, met while writing a test about errors. Its
+  own setup assertion caught it rather than letting it pass for the wrong
+  reason. The error is injected now, because the branch is about what the code
+  does with an ambiguous error and not about which one a kernel picks.
+
+- **The call-site counter added with the previous entry is gone, replaced by a
+  test that drives the retry.** Counting `surrender()` call sites enters at the
+  AST: it asserts the call exists, not that anything reaches it, so it is
+  satisfied by a branch that never runs. Both branches have behavioural tests
+  now, each mutation-verified. See AGENTS.md, "a guard must enter through the
+  same door as production".
+
 - **The surrender in the previous entry was never called, and is now.** That
   change added the field, the setter, the reader, and wired it into the listen
   request, and called `surrender` from nowhere at all: dead code, shipped, with

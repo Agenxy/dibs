@@ -89,6 +89,30 @@ type selfWaker struct {
 	// session whose socket recovers gets its claim back when its harness next
 	// spawns a bridge.
 	surrendered bool
+	// deliverFn replaces the write, for the one branch no platform reaches the
+	// same way twice.
+	//
+	// THE AMBIGUOUS FAILURE CANNOT BE PRODUCED PORTABLY, and the CI gate is
+	// what proved it. The retry branch needs an error that is NOT in
+	// socketGone, and the obvious fixture, dialling a path that is not a
+	// socket, answers ENOTSOCK on macOS and ECONNREFUSED on Linux. The second
+	// is in the gone list, so the same test exercised the immediate surrender
+	// on one machine and the retry on the other: the AGENTS.md rule about two
+	// machines producing different errors for one event, met head on while
+	// writing a test about errors.
+	//
+	// A seam rather than a per-platform fixture table, because the branch is
+	// about what the code does with an error and not about which error a
+	// kernel picks. Nil in production, where deliver is the only writer.
+	deliverFn func(notice string) error
+}
+
+// send performs this waker's write: the session socket, or a test's stand-in.
+func (w *selfWaker) send(notice string) error {
+	if w.deliverFn != nil {
+		return w.deliverFn(notice)
+	}
+	return w.deliver(notice)
 }
 
 // selfWakeCooldown is the shortest gap between two notices in one session.
@@ -192,7 +216,7 @@ func (w *selfWaker) wake(notice string) error {
 	w.last = now // claimed, and given back below if nothing was delivered
 	w.mu.Unlock()
 
-	if err := w.deliver(notice); err != nil {
+	if err := w.send(notice); err != nil {
 		// GONE MEANS GONE. No count, no wait: this session's socket is not
 		// there, the daemon has stood down on this bridge's word, and until
 		// the route goes back nothing announces this agent's mail at all.
@@ -324,11 +348,31 @@ func (w *selfWaker) canReach() bool {
 // socketGone reports whether this error says the session's socket is not there
 // any more, as against being momentarily unusable.
 //
-// Deliberately a short list, like dialFailed in mcpstdio.go. Everything here
-// means the other end is absent: the socket file is unlinked (ENOENT), nothing
-// is listening on it (ECONNREFUSED), or the peer closed under the write (EPIPE,
-// ECONNRESET). A timeout is NOT here, and that is the point: it does not
-// distinguish a dead session from a busy one, so it keeps the retry.
+// MEASURED ON AF_UNIX, macOS, 2026-09-26, because a list whose whole job is to
+// be exhaustive should not be guesswork. A listener that closes UNLINKS its
+// socket file, so the next dial is ENOENT; that is the common case and what
+// the end of a session actually looks like. A write to a peer that has closed
+// is EPIPE. A path that is not a socket is ENOTSOCK, which is NOT here on
+// purpose: it means a misconfigured path rather than a session that ended, and
+// the retry costs little.
+//
+// ECONNRESET IS DEFENSIVE AND WAS NOT REPRODUCIBLE HERE. Neither way a peer can
+// go away produced it on this transport; it is the TCP-shaped answer. Kept
+// because the cost of carrying it is nothing and a future platform may differ,
+// and said plainly rather than left looking measured, so the next reader does
+// not spend a week trying to hit it.
+//
+// AND THE SAME ERRNO IS CLASSIFIED THE OTHER WAY, DELIBERATELY, IN dialFailed
+// (mcpstdio.go). That one matches ECONNREFUSED and nothing else, because there
+// a reset cannot prove the request was not already applied and a retried claim
+// is worse than a failed call. The stake is what differs, not the ambiguity:
+// nothing is APPLIED on this path, so a wrong answer here costs a duplicate
+// card or a notice held in a bypass session, where a wrong answer there costs
+// a double write to the board. Same ambiguity, opposite resolution, both
+// correct. Noted at both ends because "a rule applied at one call site and not
+// its siblings" is this repository's recurring class, and a sweep that finds
+// these two disagreeing has even odds of reconciling them the wrong way.
+// Raised by dibs-coordinator, who spotted the divergence before it was written.
 //
 // Being wrong in the permissive direction is cheap here and expensive the other
 // way. An unnecessary surrender hands the route to the daemon, which sends the
