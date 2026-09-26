@@ -132,6 +132,10 @@ type Engine struct {
 	// hostWakes is the hub's side of waking agents on other machines: the
 	// bridges attached per host and the requests awaiting their report.
 	hostWakes hostWakes
+	// selfWakers are the agents whose own bridge will deliver their wake
+	// notices into the session it runs in, so this daemon does not write to
+	// that same socket as well. See selfwakers.go.
+	selfWakers selfWakers
 	// hostID is WHICH COMPUTER this daemon runs on, as the fleet's address
 	// plane names it (Supgang's node id) when that is known; "" means the
 	// ledger's own node id stands in. See HostID.

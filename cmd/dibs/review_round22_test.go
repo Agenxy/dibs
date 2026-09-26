@@ -20,15 +20,15 @@ func TestADeferredNoticeSurvivesAnInPlaceUpgrade(t *testing.T) {
 	sock := sockPath(t)
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", sock)
 	t.Setenv("CLAUDE_CODE_MESSAGING_TOKEN", "child-token")
-	t.Cleanup(func() { recordWakePending(false) })
+	t.Cleanup(func() { recordWakePending(false, "") })
 	lines := listenLines(t, sock)
 	// The old image: one notice delivered, a second arrival deferred to a
 	// cooldown that will never fire in this process.
 	old := &selfWaker{socket: sock, token: "child-token", cooldown: time.Hour}
-	if err := old.wake(selfWakeNotice); err != nil {
+	if err := old.wake(testWakeNotice); err != nil {
 		t.Fatal("setup:", err)
 	}
-	if err := old.wake(selfWakeNotice); err != nil {
+	if err := old.wake(testWakeNotice); err != nil {
 		t.Fatal("setup:", err)
 	}
 	if got := collect(lines, 2, 2*time.Second); len(got) != 2 {
@@ -68,13 +68,13 @@ func TestADeferredNoticeSurvivesAnInPlaceUpgrade(t *testing.T) {
 // A delivery that failed arms a retry, and the handoff says so for as long
 // as that retry is armed: an upgrade in that window must deliver the notice.
 func TestAFailedDeliverysRetryIsOwedInTheHandoff(t *testing.T) {
-	t.Cleanup(func() { recordWakePending(false) })
+	t.Cleanup(func() { recordWakePending(false, "") })
 	sock := sockPath(t)
 	w := &selfWaker{socket: sock, token: "tok", cooldown: time.Hour}
-	if err := w.wake(selfWakeNotice); err == nil {
+	if err := w.wake(testWakeNotice); err == nil {
 		t.Fatal("setup: a wake with nobody listening reported success")
 	}
-	if !currentWakePending() {
+	if !wakeIsPending() {
 		t.Fatal("a failed delivery armed a retry and the handoff says nothing is owed: an " +
 			"upgrade before the retry fires loses the notice with the timer")
 	}
@@ -86,14 +86,14 @@ func TestADuplicateNotificationDoesNotQueueASecondWake(t *testing.T) {
 	sock := sockPath(t)
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", sock)
 	t.Setenv("CLAUDE_CODE_MESSAGING_TOKEN", "child-token")
-	t.Cleanup(func() { recordWakePending(false) })
+	t.Cleanup(func() { recordWakePending(false, "") })
 	lines := listenLines(t, sock)
 	hold := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
 		fl, _ := w.(http.Flusher)
-		q := `data: {"jsonrpc":"2.0","method":"notifications/resources/updated","params":{"uri":"dibs://inbox","_meta":{"com.dibs/event":"message.sent","com.dibs/msg_type":"question","com.dibs/serial":7}}}` + "\n\n"
+		q := `data: {"jsonrpc":"2.0","method":"notifications/resources/updated","params":{"uri":"dibs://inbox","_meta":{"com.dibs/event":"message.sent","com.dibs/msg_type":"question","com.dibs/serial":7,"com.dibs/digest":"mail for your agent."}}}` + "\n\n"
 		_, _ = fmt.Fprint(w, q, q)
 		// THE SAME SERIAL AGAIN, which is what a duplicate is.
 		//
@@ -133,7 +133,7 @@ func TestADuplicateNotificationDoesNotQueueASecondWake(t *testing.T) {
 			t.Fatal("the watcher never reached serial 8")
 		}
 	}
-	if currentWakePending() {
+	if wakeIsPending() {
 		t.Fatal("the replayed copy of a notice already delivered queued a second wake at the cooldown")
 	}
 }

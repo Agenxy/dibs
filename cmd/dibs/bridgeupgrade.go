@@ -81,6 +81,16 @@ type bridgeState struct {
 	// unnoticed for as long as nothing else arrived. The next image delivers
 	// the owed notice. Found by the pre-release review, round twenty-two.
 	WakePending bool `json:"wake_pending,omitempty"`
+	// WakeNotice is WHAT that owed notice said, carried because the digest is
+	// the only copy. The notice used to be a fixed sentence any image could
+	// reproduce from a constant, so the handoff carried a bool and the
+	// replacement composed the text itself. There is no such sentence now: the
+	// daemon computes the digest and sends it on the notification, the cursor
+	// has passed that event, and nothing will build it again. A bool alone
+	// would mean the replacement knew a notice was owed and had nothing to
+	// say, which is how this route came to send placeholders in the first
+	// place.
+	WakeNotice string `json:"wake_notice,omitempty"`
 	// WakeStreams is every agent this bridge watches for, with its
 	// credential and cursor: a bridge serves every agent that registers
 	// through it, and the single WakeToken above carried one. Found by the
@@ -106,18 +116,27 @@ var liveWake struct {
 	mu      sync.Mutex
 	streams map[string]*wakeHandoff // by key: see inboxWatcher.streams
 	pending bool
+	// notice is the text of the deferred notice, kept because it is the only
+	// copy: it came from the daemon on a notification whose serial the cursor
+	// has passed. See bridgeState.WakeNotice.
+	notice string
 }
 
-func recordWakePending(pending bool) {
+func recordWakePending(pending bool, notice string) {
 	liveWake.mu.Lock()
 	defer liveWake.mu.Unlock()
 	liveWake.pending = pending
+	if pending {
+		liveWake.notice = notice
+		return
+	}
+	liveWake.notice = ""
 }
 
-func currentWakePending() bool {
+func currentWakePending() (bool, string) {
 	liveWake.mu.Lock()
 	defer liveWake.mu.Unlock()
-	return liveWake.pending
+	return liveWake.pending, liveWake.notice
 }
 
 // recordWakeStream records the credential and cursor the watcher holds for
@@ -194,7 +213,15 @@ func (a selfIdentity) differs(b selfIdentity) bool {
 // the one the restored streams write through, and a notification arriving
 // during the restore put two interruptions into the session at once. Found
 // by the pre-release review, round fifty-nine.
-func deliverOwedNotice(w *inboxWatcher) {
+func deliverOwedNotice(w *inboxWatcher, notice string) {
+	if notice == "" {
+		// NOTHING TO SAY, so nothing is said, and this is the branch a
+		// downgrade lands on: a state written by an image that carried only
+		// the bool. The mail is still in the inbox and the next arrival
+		// describes it; a placeholder here would be the thing four releases
+		// were spent removing.
+		return
+	}
 	var wk *selfWaker
 	if w != nil {
 		wk = w.sharedWaker()
@@ -204,7 +231,7 @@ func deliverOwedNotice(w *inboxWatcher) {
 	if wk == nil {
 		return
 	}
-	if err := wk.wake(selfWakeNotice); err != nil {
+	if err := wk.wake(notice); err != nil {
 		slog.Debug("could not deliver the notice the old image owed", "err", err)
 	}
 }
@@ -302,7 +329,7 @@ func restoreCarried(ctx context.Context, client *http.Client, url, secret string
 			slog.Debug("[wake] sockets = false: the self-wake the old image held is not restored",
 				"owed", s.WakePending)
 		}
-		s.WakeToken, s.WakeStreams, s.WakePending = "", nil, false
+		s.WakeToken, s.WakeStreams, s.WakePending, s.WakeNotice = "", nil, false, ""
 	}
 	// Every stream the old image held, or the one its single field carried
 	// when it predates WakeStreams.
@@ -316,7 +343,7 @@ func restoreCarried(ctx context.Context, client *http.Client, url, secret string
 		}
 	}
 	if s.WakePending {
-		deliverOwedNotice(w)
+		deliverOwedNotice(w, s.WakeNotice)
 	}
 	for _, listen := range s.Listens {
 		line := []byte(listen)

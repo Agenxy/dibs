@@ -13,48 +13,40 @@ import (
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/mcp"
-	"github.com/agenxy/dibs/internal/wakeexec"
 )
 
-// selfWakeLine is what this wake says, from what the notification carried.
+// selfWakeLine is what this wake says: the digest the daemon computed, or
+// NOTHING AT ALL.
 //
-// THE BEST CHANNEL WAS CARRYING THE LEAST, which is how a peer found it. This
-// route is in-session, already authenticated, has no argv to leak through and
-// no peer-message preamble wrapped around it, and it was sending one fixed
-// content-free sentence while the socket route two feet away sent the whole
-// digest. dibs-coordinator ran a wake-path test on 2026-09-25, this is the
-// route that reached the receiver first, and it was the least informative
-// thing on the board.
+// THERE IS NO SENTENCE OF THIS ROUTE'S OWN ANY MORE, and that is the point of
+// the change rather than a side effect of it. This end used to compose its own
+// line, because it was told an event had happened and not what was in it, and
+// every version of that line was a placeholder: an imperative to go and look at
+// the board, then a sentence saying mail was waiting, then one composed from the
+// message type. Three rewordings in three releases, each of them landing in
+// front of the daemon's own notice, which carried the whole digest. The
+// sentences themselves are not quoted here, at the operator's instruction: they
+// asked for them out of this codebase, and a comment reproducing one is still a
+// grep hit in a tree that is supposed to be rid of them.
+// The operator read the pair off their own screen four times and asked, with
+// diminishing patience, what the first one was for. Nothing. It was for the
+// fact that this process could not see the mail.
 //
-// The notification's `_meta` already names the message type, so saying what
-// arrived costs nothing: no extra call, no new field on the wire.
+// So the daemon sends it: mcp.DigestMetaKey, computed by a read that consumes
+// nothing (engine.WakeDigestFor), on a notification this bridge is already
+// receiving. No extra call, no cursor moved, no second card.
 //
-// WHAT IT STILL DOES NOT DO, and why not yet. The bridge holds the agent's
-// token and could fetch the real digest over the connection it already has.
-// That is the right end state and it has a hazard that has bitten this
-// project before: `hook_poll` MARKS MAIL DELIVERED, so a bridge that polls
-// and then fails to inject has consumed a delivery nobody saw. Doing it
-// safely means a read that does not consume, and that is a change to think
-// about rather than to bolt on at the end of an evening.
+// AN EMPTY ANSWER MEANS SEND NOTHING, and this is the branch to be careful
+// about. A notification with no digest comes from a daemon older than the key,
+// and that daemon has not stood down: it is writing its own notice to this
+// session's socket, so a line from here would be the duplicate all over again
+// with no information in it. Silence here is not a lost wake; it is the other
+// writer still doing its job. Once that daemon is upgraded it takes over the
+// digest and this route carries it.
 func selfWakeLine(meta map[string]any) string {
-	msgType, _ := meta[mcp.MsgTypeMetaKey].(string)
-	if msgType == "" {
-		return selfWakeNotice
-	}
-	return wakeexec.Compose(msgType)
+	digest, _ := meta[mcp.DigestMetaKey].(string)
+	return digest
 }
-
-// selfWakeNotice is what the in-session watcher says when the notification
-// named no message type: an older daemon, or an event that is not mail.
-//
-// No longer "Dibs: check the board." That sentence was retired everywhere: an
-// imperative carrying no fact, which the operator asked about three times in
-// two weeks before it came out. This one states what happened and stops.
-//
-// The route's limits have not moved, only the wording: no body, nothing an
-// agent wrote. What is different is that this notice is not an ORDER, which
-// is the half PHILOSOPHY rule 5 was always about.
-const selfWakeNotice = "Dibs: new coordination mail is waiting for your agent."
 
 // watchInboxAndWake keeps this session awake to its own mail.
 //
@@ -176,6 +168,23 @@ func (iw *inboxWatcher) listenBody(st *inboxStream) []byte {
 	// replace it.
 	if st.session != "" {
 		meta[mcp.SessionMetaKey] = st.session
+	}
+	// I WILL DELIVER THIS AGENT'S WAKES, so the daemon must not also write to
+	// the socket I am about to write to.
+	//
+	// Stated only when the harness actually gave this process a socket, which
+	// is the reason the declaration lives on this side: the bridge knows, and
+	// the daemon can only guess from a sidecar file. On this claim the daemon
+	// stands down for as long as this stream is open, and in exchange every
+	// inbox notification on it carries the digest (mcp.DigestMetaKey) rather
+	// than leaving this end to compose a sentence about a message it has not
+	// been told the contents of.
+	//
+	// Re-stated on every reconnect, like the session and the cursor: the claim
+	// lasts exactly as long as the stream, so a bridge that dies hands the
+	// socket route back with nothing to clean up.
+	if iw.sharedWaker() != nil {
+		meta[mcp.SelfWakeMetaKey] = true
 	}
 	iw.mu.Lock()
 	if st.since > 0 {
@@ -367,7 +376,17 @@ func (iw *inboxWatcher) stream(
 		// event and nothing retried, so a socket that came back found an
 		// agent asleep on stored mail. Found by the pre-release review, round
 		// eighteen.
-		if err := waker.wake(selfWakeLine(msg.Params.Meta)); err != nil {
+		line := selfWakeLine(msg.Params.Meta)
+		if line == "" {
+			// NOTHING TO SAY, so nothing is said. A daemon that sent no digest
+			// is a daemon still writing to this session's socket itself; see
+			// selfWakeLine. The cursor moves, because this notification has
+			// been dealt with and re-reading it on a reconnect would not
+			// produce a digest either.
+			iw.noteSerial(st, msg.Params.Meta)
+			continue
+		}
+		if err := waker.wake(line); err != nil {
 			slog.Debug("could not put a notice into this session; keeping its cursor", "err", err)
 			continue
 		}

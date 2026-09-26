@@ -20,9 +20,9 @@ func TestSocketsOffHoldsAcrossAnInPlaceUpgrade(t *testing.T) {
 	sock := sockPath(t)
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", sock)
 	t.Setenv("CLAUDE_CODE_MESSAGING_TOKEN", "child-token")
-	t.Cleanup(func() { recordWakePending(false) })
+	t.Cleanup(func() { recordWakePending(false, "") })
 	lines := listenLines(t, sock)
-	blob, err := json.Marshal(bridgeState{WakeToken: "carried-token", WakeSince: 4, WakePending: true})
+	blob, err := json.Marshal(bridgeState{WakeToken: "carried-token", WakeSince: 4, WakePending: true, WakeNotice: "the notice the old image owed"})
 	if err != nil {
 		t.Fatal(err)
 	}

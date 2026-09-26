@@ -22,7 +22,7 @@ func TestADeferredNoticeIsDeliveredWhateverBecomesOfItsSubscription(t *testing.T
 	sock := sockPath(t)
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", sock)
 	t.Setenv("CLAUDE_CODE_MESSAGING_TOKEN", "child-token")
-	t.Cleanup(func() { recordWakePending(false) })
+	t.Cleanup(func() { recordWakePending(false, "") })
 	lines := listenLines(t, sock)
 
 	var iw inboxWatcher
@@ -37,17 +37,17 @@ func TestADeferredNoticeIsDeliveredWhateverBecomesOfItsSubscription(t *testing.T
 	iw.mu.Unlock()
 
 	// One notice lands and spends the cooldown.
-	if err := w.wake(selfWakeNotice); err != nil {
+	if err := w.wake(testWakeNotice); err != nil {
 		t.Fatal("setup:", err)
 	}
 	if got := collect(lines, 2, 2*time.Second); len(got) != 2 {
 		t.Fatalf("setup: %d line(s) from the first notice, want 2", len(got))
 	}
 	// A second arrives inside the cooldown and is held back.
-	if err := w.wake(selfWakeNotice); err != nil {
+	if err := w.wake(testWakeNotice); err != nil {
 		t.Fatal(err)
 	}
-	if !currentWakePending() {
+	if !wakeIsPending() {
 		t.Fatal("setup: nothing was deferred, so this proves nothing")
 	}
 	// The subscription is retired entirely before it fires.
@@ -67,13 +67,13 @@ func TestARetriedNoticeIsDeliveredAfterItsSubscriptionGoes(t *testing.T) {
 	sock := sockPath(t) // nothing listening yet, so the first delivery fails
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", sock)
 	t.Setenv("CLAUDE_CODE_MESSAGING_TOKEN", "child-token")
-	t.Cleanup(func() { recordWakePending(false) })
+	t.Cleanup(func() { recordWakePending(false, "") })
 
 	w := &selfWaker{socket: sock, token: "child-token", cooldown: 300 * time.Millisecond}
-	if err := w.wake(selfWakeNotice); err == nil {
+	if err := w.wake(testWakeNotice); err == nil {
 		t.Fatal("setup: delivering to a socket nobody is listening on reported success")
 	}
-	if !currentWakePending() {
+	if !wakeIsPending() {
 		t.Fatal("setup: the failed delivery armed no retry, so this proves nothing")
 	}
 	lines := listenLines(t, sock)

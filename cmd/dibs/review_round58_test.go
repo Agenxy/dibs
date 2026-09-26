@@ -21,7 +21,7 @@ func TestTwoMailboxesShareOneSessionCooldown(t *testing.T) {
 	t.Setenv("CLAUDE_CODE_MESSAGING_TOKEN", "child-token")
 	resetWakeStreams()
 	t.Cleanup(resetWakeStreams)
-	t.Cleanup(func() { recordWakePending(false) })
+	t.Cleanup(func() { recordWakePending(false, "") })
 	lines := listenLines(t, sock)
 	hold := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -39,7 +39,7 @@ func TestTwoMailboxesShareOneSessionCooldown(t *testing.T) {
 		if tok == "tok-second" {
 			serial = 8
 		}
-		_, _ = fmt.Fprintf(w, `data: {"jsonrpc":"2.0","method":"notifications/resources/updated","params":{"uri":"dibs://inbox","_meta":{"com.dibs/event":"message.sent","com.dibs/msg_type":"question","com.dibs/serial":%d}}}`+"\n\n", serial)
+		_, _ = fmt.Fprintf(w, `data: {"jsonrpc":"2.0","method":"notifications/resources/updated","params":{"uri":"dibs://inbox","_meta":{"com.dibs/event":"message.sent","com.dibs/msg_type":"question","com.dibs/serial":%d,"com.dibs/digest":"mail for your agent."}}}`+"\n\n", serial)
 		fl.Flush()
 		<-hold
 	}))

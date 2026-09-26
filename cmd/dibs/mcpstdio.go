@@ -498,12 +498,14 @@ func readLine(in *bufio.Reader) ([]byte, error) {
 // discard: the handshake, the caller's subscriptions, and the self-wake token.
 func handoffState() bridgeState {
 	streams := currentWakeStreams()
+	owed, owedNotice := currentWakePending()
 	st := bridgeState{
 		ClientInfo:  lastClientInfo,
 		WantsUI:     lastWantsUI,
 		Listens:     openListens(),
 		WakeStreams: streams,
-		WakePending: currentWakePending(),
+		WakePending: owed,
+		WakeNotice:  owedNotice,
 		Thread:      threadServed(),
 		Shipments:   currentShipments(),
 	}

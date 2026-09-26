@@ -219,7 +219,19 @@ func (s *Server) serveLegacyStream(w http.ResponseWriter, r *http.Request) {
 				return true, true
 			}
 			return s.eng.StreamStanding(r.Context(), tok, "")
-		})
+		},
+		// NO DIGEST ON THE LEGACY TRANSPORT, and no self-wake claim either.
+		//
+		// The digest and the stand-down that goes with it are one mechanism:
+		// the daemon stops writing to a session's socket because a subscriber
+		// said it will, and that subscriber is then the only thing carrying
+		// what arrived. 2025-11-25 has no place to declare it, since the
+		// subscription arrives as a separate resources/subscribe after the
+		// stream is already open and the stream itself carries no _meta. A
+		// client here says nothing, so the daemon keeps writing to the socket
+		// itself, which is exactly the behaviour this transport has always had.
+		// PHILOSOPHY rule 9: designed for 2026, the legacy path unchanged.
+		nil)
 }
 
 // legacyWants reads this session's subscription state fresh on every event.

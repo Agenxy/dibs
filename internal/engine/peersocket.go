@@ -202,6 +202,35 @@ func (e *Engine) wakeOverSocket(plan wakePlan, agent string) bool {
 	if !e.socketWakesOn() {
 		return false // [wake] sockets = false: the operator asked for no such activation
 	}
+	// THE AGENT'S OWN BRIDGE IS GOING TO DO THIS, so this daemon does not.
+	//
+	// One session, one message socket, and Dibs was writing to it from two
+	// places that did not know about each other: here, through the harness's
+	// session sidecar, and the session's own stdio bridge, through the socket
+	// path the harness hands its children. The bridge is in-process and skips
+	// the sidecar lookup, so it always arrived first, and the operator saw two
+	// cards for one message with the less informative one on top. Reported four
+	// times; reworded three times; counted once.
+	//
+	// Stood down HERE rather than at plan time, which matters. Refusing the
+	// socket plan would send wakeFor on to the operator's [wake.exec] command
+	// and start a process to announce a message that is already being handed to
+	// a live session. The plan stays a socket plan, the write is skipped, and
+	// the attempt counts as spent: the notice is on its way by the route that
+	// does not have to guess whether the receiver will accept it.
+	//
+	// Reported as DELIVERED, which is a stronger claim than this route usually
+	// makes and is justified here. The write below proves only that the kernel
+	// took the bytes; a self-sent message is accepted where a stranger's is
+	// held in bypassPermissions mode, so handing it to the bridge is the better
+	// evidence, not the weaker one.
+	if selfWaking, session := e.SelfWaking(agent); selfWaking {
+		slog.Debug("not writing to this session: the agent's own bridge is "+
+			"subscribed and delivers its own wake notices, and two writers on "+
+			"one socket is two notifications for one message",
+			"agent", agent, "session_id", session)
+		return true
+	}
 	s, ok := e.peerSessionFor(plan.sessions)
 	if !ok {
 		// Not a failure of delivery: there is nobody listening under any name
