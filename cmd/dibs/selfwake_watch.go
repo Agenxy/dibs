@@ -183,7 +183,13 @@ func (iw *inboxWatcher) listenBody(st *inboxStream) []byte {
 	// Re-stated on every reconnect, like the session and the cursor: the claim
 	// lasts exactly as long as the stream, so a bridge that dies hands the
 	// socket route back with nothing to clean up.
-	if iw.sharedWaker() != nil {
+	// canReach, not merely "a socket existed at spawn". A bridge that claimed
+	// the route and then failed to deliver twice hands it back (selfWaker
+	// .surrender), and this is where that becomes visible to the daemon: the
+	// reconnect states the truth and the daemon resumes writing. A claim held
+	// on a socket that no longer accepts means NOBODY writes, which is worse
+	// than the duplicate the claim exists to prevent.
+	if iw.sharedWaker().canReach() {
 		meta[mcp.SelfWakeMetaKey] = true
 	}
 	iw.mu.Lock()
@@ -336,62 +342,89 @@ func (iw *inboxWatcher) stream(
 		if !found {
 			continue
 		}
-		var msg struct {
-			Method string `json:"method"`
-			Params struct {
-				Meta map[string]any `json:"_meta"`
-			} `json:"params"`
-		}
+		var msg streamFrame
 		if json.Unmarshal(bytes.TrimSpace(data), &msg) != nil {
 			continue
 		}
-		// The acknowledgement is not mail. Only an actual resource update means
-		// something arrived for this agent, and only some of that is worth a
-		// notice.
-		if msg.Method == "notifications/subscriptions/acknowledged" {
-			// The cursor to reconnect with, before any mail has moved: a
-			// stream that dropped on an empty inbox used to reconnect blind
-			// and the question that arrived in between woke nobody.
-			iw.noteSerial(st, msg.Params.Meta)
-			continue
+		if !iw.onFrame(st, msg, waker) {
+			return
 		}
-		if msg.Method != "notifications/resources/updated" {
-			continue
-		}
-		// ONCE PER SERIAL. A resumed subscription is handed the gap twice, by
-		// the daemon's filtered replay and by the channel it subscribes on
-		// from the same cursor, and the second copy of a notice already
-		// delivered queued another wake at the cooldown, whether or not the
-		// agent had read the mail by then. Found by the pre-release review,
-		// round twenty-seven.
-		if iw.alreadySeen(st, msg.Params.Meta) {
-			continue
-		}
-		if !worthAWake(msg.Params.Meta) {
-			iw.noteSerial(st, msg.Params.Meta)
-			continue
-		}
-		// THE CURSOR MOVES WHEN THE NOTICE LANDS. Advancing it first consumed
-		// the notification of a wake that failed: the reconnect excluded the
-		// event and nothing retried, so a socket that came back found an
-		// agent asleep on stored mail. Found by the pre-release review, round
-		// eighteen.
-		line := selfWakeLine(msg.Params.Meta)
-		if line == "" {
-			// NOTHING TO SAY, so nothing is said. A daemon that sent no digest
-			// is a daemon still writing to this session's socket itself; see
-			// selfWakeLine. The cursor moves, because this notification has
-			// been dealt with and re-reading it on a reconnect would not
-			// produce a digest either.
-			iw.noteSerial(st, msg.Params.Meta)
-			continue
-		}
-		if err := waker.wake(line); err != nil {
-			slog.Debug("could not put a notice into this session; keeping its cursor", "err", err)
-			continue
-		}
-		iw.noteSerial(st, msg.Params.Meta)
 	}
+}
+
+// streamFrame is one notification off the inbox stream: what happened, and the
+// _meta that says what it was.
+type streamFrame struct {
+	Method string `json:"method"`
+	Params struct {
+		Meta map[string]any `json:"_meta"`
+	} `json:"params"`
+}
+
+// onFrame decides what one notification means, and reports whether the stream
+// should stay open.
+//
+// Split out of the read loop for the reason the loop's own comment already
+// gives about watchOnRegister: that loop sits at the complexity the linter
+// allows, and a wake path is not the thing to spend the last of it on. Keeping
+// the DECISION in a function of its own also makes it testable without a
+// server, which the loop around it is not.
+func (iw *inboxWatcher) onFrame(st *inboxStream, msg streamFrame, waker *selfWaker) bool {
+	// The acknowledgement is not mail. Only an actual resource update means
+	// something arrived for this agent, and only some of that is worth a
+	// notice.
+	if msg.Method == "notifications/subscriptions/acknowledged" {
+		// The cursor to reconnect with, before any mail has moved: a stream
+		// that dropped on an empty inbox used to reconnect blind and the
+		// question that arrived in between woke nobody.
+		iw.noteSerial(st, msg.Params.Meta)
+		return true
+	}
+	if msg.Method != "notifications/resources/updated" {
+		return true
+	}
+	// ONCE PER SERIAL. A resumed subscription is handed the gap twice, by the
+	// daemon's filtered replay and by the channel it subscribes on from the
+	// same cursor, and the second copy of a notice already delivered queued
+	// another wake at the cooldown, whether or not the agent had read the mail
+	// by then. Found by the pre-release review, round twenty-seven.
+	if iw.alreadySeen(st, msg.Params.Meta) {
+		return true
+	}
+	if !worthAWake(msg.Params.Meta) {
+		iw.noteSerial(st, msg.Params.Meta)
+		return true
+	}
+	// THE CLAIM AND THE STREAM MUST AGREE. If this bridge has handed the socket
+	// back since the stream opened, the daemon is still standing down for it,
+	// because the claim lives as long as the subscription. Dropping the stream
+	// is how it is released: run reconnects, and listenBody then declares
+	// nothing.
+	if !waker.canReach() {
+		slog.Debug("dropping the inbox stream so the daemon learns this bridge " +
+			"no longer delivers its own wakes")
+		return false
+	}
+	line := selfWakeLine(msg.Params.Meta)
+	if line == "" {
+		// NOTHING TO SAY, so nothing is said. A daemon that sent no digest is a
+		// daemon still writing to this session's socket itself; see
+		// selfWakeLine. The cursor moves, because this notification has been
+		// dealt with and re-reading it on a reconnect would not produce a
+		// digest either.
+		iw.noteSerial(st, msg.Params.Meta)
+		return true
+	}
+	// THE CURSOR MOVES WHEN THE NOTICE LANDS. Advancing it first consumed the
+	// notification of a wake that failed: the reconnect excluded the event and
+	// nothing retried, so a socket that came back found an agent asleep on
+	// stored mail. Found by the pre-release review, round eighteen.
+	if err := waker.wake(line); err != nil {
+		slog.Debug("could not put a notice into this session; keeping its cursor", "err", err)
+		return true
+	}
+	iw.noteSerial(st, msg.Params.Meta)
+	return true
 }
 
 // watchOnRegister returns the reply hook that starts the local wake watcher.

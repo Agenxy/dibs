@@ -569,6 +569,17 @@ daemon delivers; once it is upgraded it sends the digest and the bridge carries
 it. The legacy 2025-11-25 transport declares nothing and is unchanged, which is
 PHILOSOPHY rule 9 working as intended.
 
+**AND THE CLAIM HAS TO BE GIVEN BACK, which is the half that was missing.**
+Declaring is evidence of CAPABILITY, not of delivery. A bridge whose socket has
+stopped accepting leaves the daemon quiet by arrangement and itself failing
+into the dark, so the mail is announced by nothing: the same "reports success
+while doing nothing" this whole path exists to remove, reintroduced by the fix
+for the duplicate. Two failed deliveries fifteen seconds apart surrender the
+route; the bridge drops its stream and the reconnect declares nothing, so the
+daemon resumes. Two rather than one because surrendering costs something too:
+the daemon's route is the one a bypassPermissions session holds. The fallback
+is correct and not degraded, because the daemon sends the same digest.
+
 **What this cost, stated plainly, because a release note that only lists wins is
 not a record.** A bridge newer than its daemon now goes quiet on the socket
 route for the length of that mismatch, where before it said something. That is
