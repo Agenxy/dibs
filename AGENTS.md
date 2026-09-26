@@ -216,17 +216,37 @@ Things that have cost real time here, none of which are visible in the diff:
   thing that makes the declaration safe". Raised by dibs-coordinator, who
   declined to let this sit in a commit message.
 
-- **A TEST THAT SETS THE FLAG ITSELF IS TESTING THE PLUMBING, NOT THE
-  BEHAVIOUR.** A release added a field, its setter, its reader and the wiring
-  that consumed it, and called the setter from NOWHERE. It shipped: green gate,
-  a passing test, a mutation check, and a PR describing behaviour the binary
-  did not have. The test called the setter by hand and then asserted what the
-  reader did, which is true of dead code; the mutation check was applied to the
-  reader, which was the half that worked. This is the "PASSING probe proves
-  nothing" rule with a specific shape worth recognising. If a test arranges the
-  state it is checking, it cannot tell you the product ever reaches that state.
-  Drive the real path, and when the real path is too awkward to drive, guard
-  the call sites by shape and say in the test why.
+- **A GUARD MUST ENTER THROUGH THE SAME DOOR AS PRODUCTION.** A release added a
+  field, its setter, its reader and the wiring that consumed it, and called the
+  setter from NOWHERE. It shipped: green gate, a passing test, a passing
+  mutation check, and a PR describing behaviour the binary did not have. The
+  test called the setter by hand and then asserted what the reader did, which is
+  true of dead code, so it entered at the flag and tested everything downstream
+  of the flag and nothing that sets it. The mutation check inherited that blind
+  spot exactly, because a mutation check can only be as good as the test it
+  mutates: it was applied to the reader, which was the half that worked. That is
+  worth knowing on its own, since mutation testing is the technique people reach
+  for believing it has none.
+
+  The repair attempt was worse and is the useful part. Counting `surrender()`
+  call sites in the source looked like this repository's shape-guard idiom and
+  is not: it enters at the AST, so it asserts a wire-shaped object exists rather
+  than that the wire carries current, and it is satisfied by a call in a branch
+  that never runs. Dead code with a call site is still dead, so the counter
+  admits a SUPERSET of the bug it was written for.
+
+  The discriminator, because both kinds are legitimate.
+  `TestEveryDeclaredParameterIsReadByAHandler` and
+  `TestNoExportedLookupTakesADirectoryWithoutAMachine` work because "declared
+  and never read" and "takes a path without a host" are true or false
+  STATICALLY, as properties of a signature, with no runtime condition to get
+  wrong. "Surrender is called when delivery fails" is conditioned on runtime
+  state, so no static shape can see it and any guard claiming to is measuring
+  the wrong noun. **Shape guards for static properties, behavioural tests for
+  conditional ones.** When the real path is awkward to drive, find the fixture
+  rather than the syntax: ENOTSOCK drove the ambiguous branch here. Argued by
+  dibs-coordinator, who rejected the counter after the dead code it was meant
+  to guard.
 
 - **A harness's contract is a measurement, not a memory.** The wake path sent
   `hookSpecificOutput.additionalContext` on Stop and nothing else, under a
