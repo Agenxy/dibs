@@ -43,11 +43,20 @@ change it when reality disagrees, and record why).
    digest (and, with nothing folded in yet, the event and the sender), the
    command route carries the event and NO participant names, because argv is
    world-readable and a name is already its own element. Rate limited, logged,
-   no shell. There is no longer one fixed sentence: `Dibs: check the board.`
-   was retired after the operator asked three times what it was for. Everything past "you have mail"
-   is still forbidden: no prompt injection, no session management, no deciding what an
-   agent does next. See `WAKE-MECHANISMS.md` §5 and §5b, which argued against both for
-   months and now records why that was wrong.
+   no shell. There is no fixed sentence left on any route: each retired one was
+   retired after the operator asked what it was for, and the honest answer was
+   nothing. **ONE WRITER PER SESSION SOCKET**, which is the rule that cost the
+   most to learn: the daemon and the session's own stdio bridge were both
+   writing to the same socket with no knowledge of each other, so every message
+   produced two notifications and the emptier one arrived first. A bridge that
+   can reach its own session declares it and the daemon stands down; the
+   surviving notice carries the digest, handed over on the notification because
+   the calls a bridge could fetch it with (`inbox`, `hook_poll`) MARK MAIL
+   DELIVERED. Before adding a third way to reach a session, find out what is
+   already writing to it. Everything past "you have mail" is still forbidden: no
+   prompt injection, no session management, no deciding what an agent does next.
+   See `WAKE-MECHANISMS.md` §5 and §5b, which argued against both for months and
+   now records why that was wrong.
 6. **Honesty in errors.** Every error carries a `hint` that tells a drifted agent the
    corrective call.
 

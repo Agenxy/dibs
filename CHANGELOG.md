@@ -7,24 +7,47 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- **The in-session wake says what arrived, like the other two routes.** It was
-  sending one fixed content-free sentence while holding the best channel in
-  the product: in-session, already authenticated, no argv to leak through, no
-  peer-message preamble wrapped around it. A peer ran a wake-path test on
-  2026-09-25, this is the route that reached the receiver first, and it was
-  the least informative notice on the board.
+- **Dibs was sending two notifications for every message, and now sends one.**
+  A Claude Code session has exactly one message socket. Dibs wrote to it from
+  two places that knew nothing about each other: the daemon, from outside, via
+  the harness's session sidecar, carrying the digest; and the session's own
+  stdio bridge, from inside, via `CLAUDE_CODE_MESSAGING_SOCKET`, carrying a
+  fixed content-free sentence because it was told the inbox had changed and not
+  what was in it.
 
-  The notification's `_meta` already names the message type, so this cost
-  nothing: no extra call, no new field. It says `Dibs: a new question is
-  waiting.` and falls back to the old line only when an older daemon sends no
-  type.
+  The bridge won every race, being already in the process. So the operator saw
+  the empty card first and the real digest underneath, each behind the harness's
+  own "another Claude session" preamble. They asked about the first card four
+  times. Three releases retired one placeholder and introduced another, because
+  each round read the complaint as being about the wording. It was about the
+  card.
 
-  It still does not carry the DIGEST, and the reason is worth recording. The
-  bridge holds the agent's token and could fetch one over the connection it
-  already has, which is the right end state. `hook_poll` marks mail delivered,
-  so a bridge that polls and then fails to inject has consumed a delivery
-  nobody saw, which is the failure #224 was about. That wants a read which
-  does not consume, not a bolt-on.
+  The bridge now declares on its `subscriptions/listen` that it can reach its
+  own session (`com.dibs/self_wake`), and the daemon does not write to that
+  agent's socket while that stream is open. The direction is forced, not chosen:
+  the bridge KNOWS whether it has a socket where the daemon is inferring from a
+  file, and a self-sent message is accepted where a stranger's is held in
+  bypassPermissions mode. The surviving card carries the digest, computed by the
+  daemon on the way out with a read that moves nothing
+  (`engine.WakeDigestFor`) and handed over in the notification's `_meta` as
+  `com.dibs/digest`. The bridge sends that and has nothing of its own to say.
+
+  Not fetched by the bridge, deliberately: `inbox` and `hook_poll` both mark
+  mail delivered, so a bridge that asks and then fails to write to its session
+  has consumed a delivery nobody saw.
+
+  A notification with no digest now wakes nobody. It means a daemon older than
+  the key, and such a daemon has not stood down: it is writing its own notice to
+  that same socket, so a line from the bridge would be the duplicate again with
+  nothing in it. The cost is stated in WAKE-MECHANISMS.md §5b: a bridge newer
+  than its daemon is quiet on that route until the mismatch ends, which is the
+  rare direction and a restart closes it.
+
+- **There is no fixed sentence on the in-session route any more.** The last one
+  said coordination mail was waiting for your agent. The operator asked for it
+  out of the codebase, in those words, and it is out: the route sends the
+  daemon's digest or nothing.
+
 
 - **"Dibs: check the board." is gone from every route.** The operator asked
   three times across two weeks what it was for, and the honest answer was

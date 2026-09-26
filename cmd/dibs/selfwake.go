@@ -83,12 +83,12 @@ func newSelfWaker() *selfWaker {
 // armed it, which is exactly how it came to outlive the subscription too.
 func (w *selfWaker) arm(wait time.Duration, notice string) {
 	w.pending = true
-	recordWakePending(true) // for the in-place upgrade's handoff
+	recordWakePending(true, notice) // for the in-place upgrade's handoff
 	w.timer = time.AfterFunc(wait, func() {
 		w.mu.Lock()
 		w.pending = false
 		w.mu.Unlock()
-		recordWakePending(false)
+		recordWakePending(false, "")
 		if err := w.wake(notice); err != nil {
 			slog.Debug("could not put the deferred notice into this session", "err", err)
 		}
@@ -165,13 +165,13 @@ func (w *selfWaker) wake(notice string) error {
 			// in that window carried "nothing owed" and the notice was gone
 			// with the timer. Found by the pre-release review, round
 			// twenty-five.
-			recordWakePending(true)
+			recordWakePending(true, notice)
 			w.retry = true
 			w.timer = time.AfterFunc(w.cooldown, func() {
 				w.mu.Lock()
 				w.pending, w.retry = false, false
 				w.mu.Unlock()
-				recordWakePending(false)
+				recordWakePending(false, "")
 				if rerr := w.wake(notice); rerr != nil {
 					slog.Debug("the retried notice did not land either", "err", rerr)
 				}
@@ -212,7 +212,7 @@ func (w *selfWaker) delivered() {
 		w.timer.Stop()
 	}
 	w.pending, w.retry = false, false
-	recordWakePending(false)
+	recordWakePending(false, "")
 }
 
 // deliver writes the auth line and one notice to the session socket.

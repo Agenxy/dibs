@@ -70,10 +70,10 @@ func TestAnArrivalInTheCooldownIsDeliveredWhenItEnds(t *testing.T) {
 	lines := listenLines(t, sock)
 	w := &selfWaker{socket: sock, token: "tok", cooldown: 300 * time.Millisecond}
 	started := time.Now()
-	if err := w.wake(selfWakeNotice); err != nil {
+	if err := w.wake(testWakeNotice); err != nil {
 		t.Fatal("setup: the first notice failed:", err)
 	}
-	if err := w.wake(selfWakeNotice); err != nil {
+	if err := w.wake(testWakeNotice); err != nil {
 		t.Fatal("the second wake, inside the cooldown, errored instead of coalescing:", err)
 	}
 	got := collect(lines, 4, 3*time.Second)
@@ -94,11 +94,11 @@ func TestAnArrivalInTheCooldownIsDeliveredWhenItEnds(t *testing.T) {
 func TestAFailedDeliverySpendsNoCooldown(t *testing.T) {
 	sock := sockPath(t)
 	w := &selfWaker{socket: sock, token: "tok", cooldown: time.Minute}
-	if err := w.wake(selfWakeNotice); err == nil {
+	if err := w.wake(testWakeNotice); err == nil {
 		t.Fatal("setup: a wake with nobody listening reported success, so this proves nothing")
 	}
 	lines := listenLines(t, sock)
-	if err := w.wake(selfWakeNotice); err != nil {
+	if err := w.wake(testWakeNotice); err != nil {
 		t.Fatal("the wake after the failed one errored:", err)
 	}
 	if got := collect(lines, 2, 2*time.Second); len(got) != 2 {

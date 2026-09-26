@@ -214,6 +214,39 @@ func (e *Engine) StreamStanding(ctx context.Context, token, session string) (liv
 	return live, held
 }
 
+// WakeDigestFor is what a wake notice for this agent says: the same digest the
+// socket route sends, for a subscriber that is going to deliver it itself.
+//
+// NON-CONSUMING, WHICH IS THE WHOLE REASON THIS EXISTS. The obvious way for a
+// bridge to find out what arrived is to call inbox or hook_poll, and both MARK
+// MAIL DELIVERED. A bridge that polls and then fails to write to its session
+// has spent a delivery nobody saw, which is the exact class of silent loss this
+// project keeps paying for. So the daemon computes the digest on the way out
+// and the bridge sends what it is handed: one read, no cursor moved, no second
+// round trip, and nothing owed if the write fails.
+//
+// Authenticated by the agent's token and NOT rate limited, like StreamStanding
+// alongside it. The digest quotes message bodies, so the token is load-bearing;
+// spending an agent's call budget on the daemon's own notification path is not,
+// and would make a busy mailbox stop describing itself.
+func (e *Engine) WakeDigestFor(ctx context.Context, token, from, kind string) (string, error) {
+	res, err := e.query(ctx, func() core.Result {
+		l := e.state.AgentByToken(token)
+		if l == nil {
+			return core.Result{"error": core.ErrBadToken}
+		}
+		return core.Result{"digest": e.socketNotice(l, from, kind)}
+	})
+	if err != nil {
+		return "", err
+	}
+	if _, bad := res["error"]; bad {
+		return "", core.ErrBadToken
+	}
+	digest, _ := res["digest"].(string)
+	return digest, nil
+}
+
 // SetRateTokens sets an agent's remaining rate budget. A test knob, like
 // SetRingCap: the bucket refills at rateOpsPerSec, so a test that needs "one
 // call left" cannot get there by making calls and staying there.
