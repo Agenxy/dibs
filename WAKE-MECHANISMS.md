@@ -92,6 +92,43 @@ difference is the whole argument:
 Dibs does not, and should not, launch a desktop application. Opening somebody's
 GUI is a different product, and none of the mechanisms above need it.
 
+**MEASURED END TO END ON THE CHATGPT APP, 2026-09-26**, ChatGPT.app 26.924.20706,
+`codex-cli 0.158.0-alpha.2`, from both sides at once: this daemon's log and the
+woken agent's own account of what it saw.
+
+Both commands of the Codex pair were exercised by one delivery, which is the
+case §5's fallback exists for. `codex exec resume` ran and exited 1 because the
+desktop app held the thread OPEN; the daemon read that as the open-thread case
+and ran `codex queue`, which delivered; the log then recorded "woke an agent
+that was not running". The agent reported one user-role message reading exactly
+`Dibs: a new question is waiting.`, no sender, no body, no digest, and NO
+harness wrapper of any kind. Its previous turn had ended and that message began
+the next one with no human in the loop, which is the product's whole claim on a
+harness that publishes no socket.
+
+Two findings beyond the pass. Two questions sent four minutes apart arrived on
+ONE activation, which is the 90s cooldown coalescing rather than interrupting
+twice. And the receiving harness added no preamble at all: the
+"another Claude session" mislabel documented in §5c is Claude Code's, not
+something Dibs emits, and this is the control that shows it.
+
+What the agent could NOT tell from inside, and said so rather than guessing: it
+cannot distinguish an automated queue submission from a human typing the same
+text, nor exec from queue. That distinction lives in this daemon's log, which is
+the argument for measuring a wake from both ends.
+
+**And the delivery failed twice first, for a reason that was not Dibs.** The
+operator's `[wake.exec]` pointed at `/Applications/ChatGPT.app/Contents/Resources/codex`
+and the app had MOVED it to `Contents/Resources/codex-cli/bin/codex`. The wake
+planned, ran, got ENOENT, logged the exact command for a person to run, and
+declined the fallback, because `codex queue` is only correct when the primary
+refused for an open thread and a missing binary is not that. Worth keeping as
+the shape of a healthy failure: loud, specific, reproducible by hand, and not
+compounded by a fallback that would have parked the message silently. An
+operator's wake command names a path inside somebody else's application bundle,
+so it goes stale when that application updates, and nothing in Dibs can know
+that until it tries.
+
 ## 1. Measured, not researched
 
 A daemon with `DIBS_LOG_RPC=1` recorded exactly what each client sends when it connects
