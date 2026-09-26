@@ -1,9 +1,12 @@
 package main
 
 import (
+	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -94,39 +97,83 @@ func TestTheBridgeInventsNoNoticeOfItsOwn(t *testing.T) {
 // in this repository, reports success while doing nothing, reintroduced by the
 // change that removed a duplicate.
 //
-// Surrender is not free either, which is why it takes two failures. The
-// daemon's route is the one a session in bypassPermissions holds, so a single
-// transient error must not cost it. Two attempts fifteen seconds apart is
-// evidence rather than noise.
-func TestABridgeThatCannotDeliverHandsTheSocketBack(t *testing.T) {
-	w := &selfWaker{socket: filepath.Join(t.TempDir(), "gone.sock"), token: "t", cooldown: time.Hour}
+// AT ONCE, because the error said the socket is gone. The first cut counted to
+// two instead, and dibs-coordinator argued the discriminator should be the
+// errno rather than the frequency: a dead socket and a flaky one differ in
+// WHICH error, and the dead one is the common case, so counting paid a fifteen
+// second delay on every ordinary failure to guard an unusual one.
+func TestASocketThatIsGoneSurrendersTheRouteAtOnce(t *testing.T) {
+	// SHORT BASE, and the long name of this test is why. A unix socket path is
+	// bounded near 104 bytes and macOS's temp dir plus a descriptive test name
+	// is longer, so filepath.Join(t.TempDir(), ...) makes the dial fail with
+	// EINVAL rather than ENOENT. EINVAL is not "the socket is gone", so the
+	// surrender correctly did not fire and the test reported the product
+	// broken. The fourth broken probe of the night, and peersocket_test.go
+	// already carries this exact warning.
+	dir, err := os.MkdirTemp("/tmp", "sw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	sock := filepath.Join(dir, "gone.sock")
+	if len(sock) > 100 {
+		t.Fatalf("setup: socket path is %d bytes, so the dial below fails with EINVAL "+
+			"and proves nothing about a socket that is gone", len(sock))
+	}
+	w := &selfWaker{socket: sock, token: "t", cooldown: time.Hour}
 	if !w.canReach() {
 		t.Fatal("setup: a fresh waker already claims it cannot reach its session")
 	}
-	// A first failure alone must NOT surrender: the daemon's route is held in
-	// bypassPermissions mode, and giving it back on one hiccup can cost an
-	// agent every wake it would have had.
+	// A socket path that does not exist is ENOENT: unambiguous, and what the
+	// end of a session actually looks like.
 	if err := w.wake("first"); err == nil {
 		t.Fatal("setup: writing to a socket that does not exist succeeded")
 	}
-	if !w.canReach() {
-		t.Error("one failed delivery surrendered the route. The daemon's route is the " +
-			"one a bypassPermissions session holds, so this trades a duplicate for a " +
-			"session that may hear nothing at all")
-	}
-	// The retry failing is the second attempt, and that is evidence.
-	w.surrender()
 	if w.canReach() {
-		t.Fatal("surrender did not take")
+		t.Error("the bridge still claims the route after its socket turned out not to " +
+			"exist. The daemon stands down on that claim, so nothing at all announces " +
+			"this agent's mail until the session is restarted")
 	}
-	// And the next listen must say so, or the daemon goes on standing down for
-	// a bridge that has stopped delivering.
+	// And the next listen must say so, or the daemon goes on standing down.
 	iw := &inboxWatcher{waker: w}
 	body := string(iw.listenBody(&inboxStream{key: "k", token: "tok"}))
 	if strings.Contains(body, mcp.SelfWakeMetaKey) {
-		t.Errorf("a surrendered bridge still declares it delivers its own wakes: %s.\n"+
-			"  The daemon reads that and stays quiet, and nothing announces this "+
-			"agent's mail", body)
+		t.Errorf("a surrendered bridge still declares it delivers its own wakes: %s", body)
+	}
+}
+
+// Which errors mean gone, and which only mean not right now.
+//
+// The list is deliberately short, like dialFailed one file over. A timeout is
+// the case the retry exists for: it does not distinguish a dead session from a
+// busy one, and surrendering on it would hand the daemon a route that a
+// bypassPermissions session HOLDS, costing an agent every wake it would have
+// had. That cost is why the count survives for the ambiguous errors instead of
+// being deleted outright.
+func TestOnlyAnAbsentPeerCountsAsAGoneSocket(t *testing.T) {
+	gone := []error{syscall.ENOENT, syscall.ECONNREFUSED, syscall.EPIPE, syscall.ECONNRESET}
+	for _, err := range gone {
+		if !socketGone(err) {
+			t.Errorf("%v does not count as a gone socket, but it says the other end is "+
+				"absent: the bridge would wait fifteen seconds and retry into nothing "+
+				"while the daemon stays quiet", err)
+		}
+		// Wrapped the way net and os hand them back.
+		if !socketGone(&net.OpError{Op: "dial", Err: err}) {
+			t.Errorf("%v wrapped in a net.OpError stopped counting: that is the form "+
+				"the dialler actually returns", err)
+		}
+	}
+	ambiguous := []error{syscall.ETIMEDOUT, syscall.EAGAIN, errors.New("something else")}
+	for _, err := range ambiguous {
+		if socketGone(err) {
+			t.Errorf("%v was treated as proof the socket is gone. It is not, and an "+
+				"unnecessary surrender hands the route to the daemon, whose write a "+
+				"bypassPermissions session holds", err)
+		}
+	}
+	if socketGone(nil) {
+		t.Error("a nil error was read as a failure")
 	}
 }
 
@@ -142,5 +189,41 @@ func TestAHarnessWithNoSocketClaimsNothing(t *testing.T) {
 		t.Errorf("a bridge with no session socket told the daemon to stand down: %s.\n"+
 			"  Nothing would then announce this agent's mail: no socket here, and the "+
 			"daemon quiet by arrangement", body)
+	}
+}
+
+// BOTH PATHS MUST ACTUALLY CALL IT, and #245 shipped without either.
+//
+// That release added the field, the setter and the reader, wired canReach into
+// listenBody, and called surrender from NOWHERE. It passed its own test because
+// the test flipped the flag by hand and then asserted the plumbing, and passed
+// its mutation check because the mutation was applied to listenBody, which was
+// the half that worked. Dead code, shipped, with a green gate and a PR
+// describing behaviour the binary did not have.
+//
+// The behavioural test above covers the gone-socket path by driving a real
+// failed delivery. The retry path is harder to drive, because producing a
+// genuinely ambiguous socket error on demand is a fixture of its own, so it is
+// guarded by SHAPE here: this repository's answer whenever a rule is easier to
+// delete than to exercise. Two call sites, and a count that fails if either
+// disappears again.
+func TestTheSurrenderIsActuallyCalledFromBothPaths(t *testing.T) {
+	src, err := os.ReadFile("selfwake.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(string(src), "w.surrender()"); n < 2 {
+		t.Errorf("surrender is called from %d place(s) in selfwake.go, want 2: the "+
+			"immediate one for an error that says the socket is gone, and the retry "+
+			"callback for an error that only said not right now.\n"+
+			"  #245 shipped with ZERO and every test still passed, because they "+
+			"asserted the plumbing after setting the flag themselves. If a call site "+
+			"moved rather than vanished, update this count and say where it went",
+			n)
+	}
+	if !strings.Contains(string(src), "if socketGone(err) {") {
+		t.Error("the immediate surrender no longer keys on socketGone. Counting attempts " +
+			"instead was the first design, and it paid a fifteen second delay on the " +
+			"COMMON failure to guard the rare one: see selfWaker.surrendered")
 	}
 }
