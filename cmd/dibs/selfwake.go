@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -59,10 +60,28 @@ type selfWaker struct {
 	// this repository's oldest failure shape, reports success while doing
 	// nothing, reintroduced by the change that removed a duplicate.
 	//
-	// Set only after a RETRY has also failed, which is two attempts fifteen
-	// seconds apart, because surrendering is not free either: the daemon's
-	// route is the one a session in bypassPermissions holds. One transient
-	// error should not cost that. Two, fifteen seconds apart, is evidence.
+	// THE ERRNO DECIDES, NOT THE COUNT, and the first cut of this had it
+	// wrong. It surrendered after two failures fifteen seconds apart, on the
+	// reasoning that surrendering is not free: the daemon's route is the one a
+	// session in bypassPermissions holds, so one transient error must not cost
+	// it. The caution was right and the discriminator was not, as
+	// dibs-coordinator pointed out with this repository's own precedent.
+	//
+	// A dead socket and a flaky socket differ in the ERROR, not in the
+	// frequency. ENOENT or ECONNREFUSED on a session socket is unambiguous and
+	// is the COMMON case, because it means the session ended; a timeout is
+	// ambiguous and is the rare one. Counting treats them alike, so it paid a
+	// fifteen second delay on every ordinary failure to guard against an
+	// unusual one, and still surrendered on a genuinely flaky socket the
+	// moment the blip happened twice.
+	//
+	// So: an error that says the socket is GONE surrenders at once, and
+	// anything else keeps the retry and surrenders only if that fails too.
+	// Same shape as dialFailed one file over, which matches ECONNREFUSED and
+	// nothing else on purpose, and the same rule as the AGENTS.md entry about
+	// a test that passed thirty times locally: read the error the failing
+	// machine reported, because the error names the syscall and the syscall
+	// names the branch.
 	//
 	// Not reclaimed afterwards. Once the daemon is writing again the bridge
 	// has nothing to retry with, and the fallback is correct rather than
@@ -174,6 +193,15 @@ func (w *selfWaker) wake(notice string) error {
 	w.mu.Unlock()
 
 	if err := w.deliver(notice); err != nil {
+		// GONE MEANS GONE. No count, no wait: this session's socket is not
+		// there, the daemon has stood down on this bridge's word, and until
+		// the route goes back nothing announces this agent's mail at all.
+		if socketGone(err) {
+			w.surrender()
+			slog.Warn("giving the session socket back to the daemon: it is not there "+
+				"any more and this bridge told the daemon it would deliver this "+
+				"agent's wake notices, so nothing would announce them", "err", err)
+		}
 		// AND TRY AGAIN. The socket was absent or busy; the notice is owed
 		// and nothing else will send it until the next arrival. One retry is
 		// armed at the cooldown, and folds into any deferred notice already
@@ -195,7 +223,16 @@ func (w *selfWaker) wake(notice string) error {
 				w.mu.Unlock()
 				recordWakePending(false, "")
 				if rerr := w.wake(notice); rerr != nil {
-					slog.Debug("the retried notice did not land either", "err", rerr)
+					// AMBIGUOUS TWICE IS EVIDENCE. An error naming the socket
+					// as gone surrendered on the first attempt; reaching here
+					// means the failures were the kind that might have been
+					// momentary, and two of those fifteen seconds apart are
+					// not momentary any more.
+					w.surrender()
+					slog.Warn("giving the session socket back to the daemon: two "+
+						"attempts fifteen seconds apart failed, so the daemon must "+
+						"resume writing or nothing announces this agent's mail",
+						"err", rerr)
 				}
 			})
 		}
@@ -282,4 +319,26 @@ func (w *selfWaker) canReach() bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return !w.surrendered
+}
+
+// socketGone reports whether this error says the session's socket is not there
+// any more, as against being momentarily unusable.
+//
+// Deliberately a short list, like dialFailed in mcpstdio.go. Everything here
+// means the other end is absent: the socket file is unlinked (ENOENT), nothing
+// is listening on it (ECONNREFUSED), or the peer closed under the write (EPIPE,
+// ECONNRESET). A timeout is NOT here, and that is the point: it does not
+// distinguish a dead session from a busy one, so it keeps the retry.
+//
+// Being wrong in the permissive direction is cheap here and expensive the other
+// way. An unnecessary surrender hands the route to the daemon, which sends the
+// same digest; a missed one leaves nobody writing at all.
+func socketGone(err error) bool {
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, syscall.ENOENT) ||
+		errors.Is(err, syscall.ECONNREFUSED) ||
+		errors.Is(err, syscall.EPIPE) ||
+		errors.Is(err, syscall.ECONNRESET)
 }

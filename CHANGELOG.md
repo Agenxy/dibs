@@ -43,6 +43,32 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   than its daemon is quiet on that route until the mismatch ends, which is the
   rare direction and a restart closes it.
 
+- **The surrender in the previous entry was never called, and is now.** That
+  change added the field, the setter, the reader, and wired it into the listen
+  request, and called `surrender` from nowhere at all: dead code, shipped, with
+  a green gate and a description of behaviour the binary did not have. The test
+  passed because it set the flag itself and then asserted the plumbing, and the
+  mutation check passed because the mutation was applied to the half that
+  worked. `TestTheSurrenderIsActuallyCalledFromBothPaths` counts the call sites
+  now, and the gone-socket path is driven by a real failed delivery rather than
+  by a flag.
+
+- **The surrender keys on the ERRNO, not on a count of attempts.** The first
+  design surrendered after two failures fifteen seconds apart. dibs-coordinator
+  argued the discriminator was wrong, with this repository's own precedent:
+  `dialFailed` matches ECONNREFUSED and nothing else on purpose, and the
+  AGENTS.md entry about a test that passed thirty times locally ends with "read
+  the error the failing machine reported".
+
+  A dead socket and a flaky one differ in WHICH error, not in how often. ENOENT
+  or ECONNREFUSED on a session socket is unambiguous and is the COMMON case,
+  because it means the session ended; a timeout is ambiguous and rare. Counting
+  treated them alike, paying a fifteen second delay on every ordinary failure to
+  guard an unusual one. Now an error that says the socket is gone surrenders at
+  once, and anything else keeps the retry. The caution behind the count survives
+  where it applies: an unnecessary surrender hands the route to the daemon,
+  whose write a bypassPermissions session holds.
+
 - **A bridge that claims the session socket and then cannot deliver hands it
   back.** The one-writer rule has the daemon stand down for an agent whose
   bridge declared `com.dibs/self_wake`, and declaring is evidence of
