@@ -13,9 +13,39 @@ import (
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/mcp"
+	"github.com/agenxy/dibs/internal/wakeexec"
 )
 
-// selfWakeNotice is what the in-session watcher puts into its own session.
+// selfWakeLine is what this wake says, from what the notification carried.
+//
+// THE BEST CHANNEL WAS CARRYING THE LEAST, which is how a peer found it. This
+// route is in-session, already authenticated, has no argv to leak through and
+// no peer-message preamble wrapped around it, and it was sending one fixed
+// content-free sentence while the socket route two feet away sent the whole
+// digest. dibs-coordinator ran a wake-path test on 2026-09-25, this is the
+// route that reached the receiver first, and it was the least informative
+// thing on the board.
+//
+// The notification's `_meta` already names the message type, so saying what
+// arrived costs nothing: no extra call, no new field on the wire.
+//
+// WHAT IT STILL DOES NOT DO, and why not yet. The bridge holds the agent's
+// token and could fetch the real digest over the connection it already has.
+// That is the right end state and it has a hazard that has bitten this
+// project before: `hook_poll` MARKS MAIL DELIVERED, so a bridge that polls
+// and then fails to inject has consumed a delivery nobody saw. Doing it
+// safely means a read that does not consume, and that is a change to think
+// about rather than to bolt on at the end of an evening.
+func selfWakeLine(meta map[string]any) string {
+	msgType, _ := meta[mcp.MsgTypeMetaKey].(string)
+	if msgType == "" {
+		return selfWakeNotice
+	}
+	return wakeexec.Compose(msgType)
+}
+
+// selfWakeNotice is what the in-session watcher says when the notification
+// named no message type: an older daemon, or an event that is not mail.
 //
 // No longer "Dibs: check the board." That sentence was retired everywhere: an
 // imperative carrying no fact, which the operator asked about three times in
@@ -337,7 +367,7 @@ func (iw *inboxWatcher) stream(
 		// event and nothing retried, so a socket that came back found an
 		// agent asleep on stored mail. Found by the pre-release review, round
 		// eighteen.
-		if err := waker.wake(selfWakeNotice); err != nil {
+		if err := waker.wake(selfWakeLine(msg.Params.Meta)); err != nil {
 			slog.Debug("could not put a notice into this session; keeping its cursor", "err", err)
 			continue
 		}
