@@ -166,6 +166,51 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **An agent's name addresses it now, so a rename works.** Observed on a live
+  board: an agent registered as `codex-primary`, was asked to rename itself
+  `gpt-dibs`, and its row afterwards read `id: codex-primary, name: gpt-dibs`. A
+  peer that did exactly what the board invites and addressed `gpt-dibs` was told
+  no such agent exists, while the one string that worked was the one the board no
+  longer showed as the agent's identity. A second pair on the same board had the
+  identical split, so it was the rule and not an accident.
+
+  This matters because **a rename is what an agent does when it changes role**.
+  Every peer that learns the new role learns an address that reaches nobody, and
+  the address that does work is one no reader of the board would pick. Discovery
+  and addressing disagreed.
+
+  The mailbox does NOT move, and that is the decision rather than a shortcut.
+  Every ledger record that names an agent names it by id: mail `to`/`from`, claim
+  owners, space memberships, role pins, the nonce index, wake plans, the self-wake
+  claim. Moving the id means a remap op over all of them, and `host_renamed` is
+  the measure of what that costs here (rounds 36 and 39 of the pre-release review
+  each found a place it had missed). Instead the **name is accepted wherever a
+  call names an agent**: `send`, `grant_role`, `prune`, `force_release`,
+  `adopt_agent`, `admit`, `evict`, `merge_agents`. An exact id still wins
+  outright, so nothing that worked changes meaning, and mail addressed to the old
+  id keeps arriving forever because the id never stops being the row's key: there
+  is no alias to expire and nothing to lose.
+
+  Resolved **at ingress**, with the id written into the op before it is admitted,
+  which is the mechanism `to: "coordinator"` has always used and for the same
+  reason: a name moves, so an op recording one could be replayed into a delivery
+  to whoever holds that name later. The fold is untouched, so `state ==
+  fold(ledger)` holds for every ledger written before this and no new rule is
+  retroactive.
+
+  A name two live agents hold is **refused** (`E_AMBIGUOUS_AGENT`, naming both
+  ids), never guessed. A retired row never shadows the live agent that took its
+  name over, which is the lesson the role pin learned and which now lives in the
+  one function both ask (`core.AgentRef`; `internal/engine` kept a hand copy of
+  that rule and no longer does). Renaming onto any other row's id is refused like
+  renaming onto another live agent's name already was, because an id wins when a
+  reference is resolved, so taking a peer's id as your label would publish a name
+  that resolves to the peer. Retired rows included: an id resolves while its row
+  exists at all, so that label would otherwise address a tombstone. `update`'s
+  result no longer claims a rename changes "nothing about where your mail
+  arrives": it says the id still works, the new name works too, and the **old
+  name has stopped working**: tell anyone who was waiting on you.
+
 - **The board panel opens only when somebody asks for it.** It used to open
   beside every `check_in`, `inbox`, `send`, `respond` and `await_events`, so
   it appeared on every turn an agent took. Now `board` is the only tool that

@@ -434,6 +434,12 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// review, round seventy-four.
 	op.V7Semantics = true
 
+	// And that a name is an address on this build, so a rename may not take a
+	// string that already addresses somebody else. Its own flag rather than a
+	// rider on the one above, which is already true on every op written since
+	// v0.0.7: see Op.NameIsAnAddress.
+	op.NameIsAnAddress = true
+
 	// A Windows agent spells paths with `\`; the fold compares with `/` and
 	// knows no other separator (core.cleanPath). Folded HERE, on the one host
 	// where a backslash is a separator, and written into the ledger folded:
@@ -501,20 +507,12 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		return nil, core.ErrHumanIdentity
 	}
 
-	// `to: "coordinator"` reaches whoever holds the role.
-	//
-	// An agent asking for its identity back does not know, and should not have
-	// to look up, which of sixteen rows is the coordinator today. The role is
-	// the address; the id is an implementation detail that changes when somebody
-	// hands the role over. Resolved at ingress, so the LEDGER records the agent
-	// it actually went to: a message addressed to a role, replayed after the
-	// role moved, would otherwise be delivered to somebody it was never sent to.
-	if op.Kind == core.OpSendMessage && op.To == core.RoleCoordinator {
-		who := e.state.CoordinatorID()
-		if who == "" {
-			return nil, core.ErrNoCoordinator
-		}
-		op.To = who
+	// WHAT THE CALLER WROTE, TURNED INTO AN ADDRESS: `to: "coordinator"` into
+	// whoever holds the role, and an agent's name into its id. See
+	// addressing.go, including why this must sit at exactly this point.
+	addressed, err := e.resolveAgentRefs(op)
+	if err != nil {
+		return nil, err
 	}
 
 	// An agent whose bridge cannot see the harness session id adopts the one
@@ -1009,6 +1007,10 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 			res["matching"] = st.Phase
 			res["matching_hint"] = matchingHint(st)
 		}
+	}
+	// WHICH ID THE WRITTEN NAME REACHED. See addressedNote.
+	if res != nil && len(addressed) > 0 {
+		res["addressed"] = addressedNote(op, addressed)
 	}
 	// Every authenticated write carries word of anything waiting.
 	//
