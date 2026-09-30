@@ -1152,19 +1152,24 @@ func (s *State) applyWake(l *Agent) (Result, []Event, error) {
 	l.Status, l.StaleReason = StatusActive, ""
 	l.StaleSince, l.DormantSince = time.Time{}, time.Time{}
 
-	// Re-arms the AWARENESS gate: the agent has been away and must look at the
-	// board again, but deliberately does NOT start a new credential epoch:
-	// Activation is unchanged and the token is not rotated.
+	// DOES NOT RE-ARM THE AWARENESS GATE, and it used to.
 	//
-	// The two are separate on purpose. A wake happens inside an ordinary op that
-	// presented the existing token and has nowhere to return a new one, so
-	// rotating here would revoke the caller's credential mid-call. Rotation
-	// belongs to register, reattach and resume, which each hand back the new
-	// token in their result.
+	// A wake is the same session calling again with the same token: nothing
+	// about the agent's awareness changed, only the board's label for it. It
+	// re-armed the gate anyway, and together with the sweep re-arming it on the
+	// way down, that locked live agents out: a process restart the board misread
+	// as a crash got the agent swept, woken by its next call, swept again, with
+	// its acknowledgement erased twice per cycle, so declare was refused forever
+	// under a hint to call check_in, which it had just done. The architect and
+	// k7-dev hit it on the same day.
 	//
-	// Worth naming because "activation" reads as one thing and is two, and
-	// SECURITY.md said tokens rotate per activation on the strength of that.
-	l.AckedSerial = 0
+	// The gate re-arms when the CREDENTIAL rotates, which is exactly when a new
+	// session takes the identity: register, reattach and resume each mint a
+	// token and each re-arm. A wake mints none, deliberately (rotating here would
+	// revoke the caller's credential mid-call), and that same fact is why it no
+	// longer re-arms. "Activation" reads as one thing and is two; the gate now
+	// follows the one that means new awareness. Lael's rule behind it: an agent
+	// that is not archived is live, so a liveness flip must not cost it anything.
 	return Result{"ok": true}, []Event{{Type: ev, Agent: l.ID}}, nil
 }
 
