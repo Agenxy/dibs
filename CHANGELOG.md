@@ -7,6 +7,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **A wrong `respond` disposition now names the one that works.** Every refusal
+  described the disposition it rejected rather than the message in hand, so
+  `approve` on a question got "only requests take approve|deny": what not to do,
+  with the rest left to guess. k7-dev hit it while driving two workers through
+  the loop. The hint is now built from the message's type (a question takes
+  `answer` or `decline`, a request `approve`, `deny` or `decline`, a notify or
+  handoff is closed with `ack`), and the test takes each hint at its word and
+  requires the named disposition to succeed.
+
 - **Liveness is the daemon's job, and it stops asking agents to announce it.**
   A harness lifecycle hook firing is proof that session exists and has just
   taken a turn. The daemon recorded those hooks, judged staleness on a different
