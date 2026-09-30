@@ -7,6 +7,19 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **A liveness flip no longer costs an agent its acknowledgement of the board.**
+  The awareness gate re-armed whenever the sweep marked an agent dormant or
+  stale, and again when its next call woke it. Whenever the board's liveness
+  guess was wrong, that locked a live agent out: a process restart misread as a
+  crash got the agent swept, woken, and swept again, each step erasing its
+  acknowledgement, so `declare` was refused indefinitely under a hint to call
+  `check_in`, which it had just done. The architect and k7-dev hit it the same
+  day. The gate now follows the credential: it re-arms when the token rotates,
+  which is exactly when a new session takes the identity (`register`,
+  `reattach`, `resume`), and a sweep or a wake rotates none. SPEC §6 records the
+  cost, an agent idle for a month keeps its old acknowledgement, accepted because
+  declaring and claiming are advisory. The rule behind it is the operator's: an
+  agent that is not archived is live.
 - **A wrong `respond` disposition now names the one that works.** Every refusal
   described the disposition it rejected rather than the message in hand, so
   `approve` on a question got "only requests take approve|deny": what not to do,
