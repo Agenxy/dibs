@@ -47,7 +47,7 @@ addr = "100.72.14.3:4777"    # a tailnet address: agents on four machines, one b
 | `extend_turn_for` | `all` | Which news may extend an agent's turn: `all`, `urgent`, `none`. |
 | `notices_wake` | `true` | Whether situational awareness alone may extend a turn. |
 | `sockets` | `true` | Whether the session-socket routes run at all: the daemon's peer-socket wake and the bridge's self-wake. |
-| `remind_stale_after` | `1h` | How long a live session may go without coordinating before its digest says so. `off` disables. |
+| `remind_stale_after` | retired | Did nothing since liveness became the daemon's own job. Still parsed so old configs load; delete it. |
 | `exec.<harness>.argv` | *(none)* | The command that reaches that harness when an agent is **not running**. |
 | `exec.<harness>.cooldown` | `90s` | The shortest gap between two wakes of the same agent. |
 
@@ -352,30 +352,37 @@ extend_turn_for = "urgent"   # an FYI should never cost a turn on this machine
 notices_wake = false         # ...and do not spend a turn on situational awareness
 ```
 
-### `remind_stale_after`: a session that stopped coordinating
+### `remind_stale_after`: RETIRED, and the daemon does this itself now
 
-An agent registers, declares, and then works for hours without calling Dibs
-again. Its lease lapses, the board reports it dormant while it is busy, and
-peers writing to it are told "recipient is dormant" and conclude the product
-does not deliver. On this project's own board a seven-hour autonomous run with
-no `check_in` expired a peer's question, and the operator reported Dibs as
-broken. It was not; the agent had stopped participating and nothing said so.
+This governed a line telling a session it had not coordinated with the board
+for hours and should `check_in`. The setting is still parsed so an existing
+`dibs.toml` loads, the daemon says it is retired if you set it, and you can
+delete it.
 
-So a session that is demonstrably taking turns (its hooks fire) and has not
-touched the board for this long is told, with the corrective call: `check_in`,
-then `update` or `declare` if the work has moved on. It never extends a turn.
-It rides on a digest that is being delivered for another reason, and it
-reaches the person on the ambient line at the end of a turn, which extends
-nothing. It repeats no more often than the interval itself.
+The problem it was written for was real: an agent registers, declares, works
+for hours without calling Dibs, its lease lapses, the board reports it dormant
+while it is busy, and peers writing to it are told "recipient is dormant". On
+this project's own board a seven-hour run expired a peer's question and the
+operator reported Dibs as broken.
 
-What it does not reach is the case that motivated it: a single seven-hour turn
-has no `Stop` and makes no calls, so there is no event for a reminder to ride.
-This closes the common case, an agent taking ordinary turns that forgot.
+**The reminder was the wrong half of the fix.** It asked the agent to announce
+something the daemon could already see. Every harness lifecycle hook that fires
+is proof that session exists and just took a turn, and the daemon was recording
+those hooks and then judging staleness on a different clock: it held the
+evidence and complained anyway, in a message delivered BY the hook that was the
+evidence. The operator's report was a Stop hook reading "you have not
+coordinated with the board for 9h33m".
 
-```toml
-[wake]
-remind_stale_after = "2h"    # or "off"
-```
+So liveness is derived rather than requested. Any hook stamps it, the sweep and
+the board row read the same answer, and an agent taking ordinary turns is
+neither swept dormant nor asked to say it is there. `idle_ttl` still governs an
+agent nothing has been heard from at all, which is the case where silence is
+the only evidence there is.
+
+The reminder was not reworded, because after this it could not be true for
+anyone able to receive it: its only delivery route was a hook, so it reached
+exactly the population whose liveness is now provable, and its claim that peers
+might be told they were dormant was false for all of them.
 
 ---
 

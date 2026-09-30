@@ -43,7 +43,16 @@ type Engine struct {
 	streams  map[chan core.Event]*atomic.Bool
 	// seen: ephemeral lease freshness (reads/heartbeats). Never replayed;
 	// folded into recorded sweep decisions (SPEC §2 tier 2).
+	//
+	// IS IT MID-TURN, not merely is it alive: recentlyInTouch reads it to decide
+	// whether a wake would collide with a running turn, so a finishing hook does
+	// not stamp it. Liveness is hookAlive's question; see liveness.go.
 	seen map[string]time.Time
+	// hookAlive: when a harness lifecycle hook last fired for this agent, of
+	// ANY kind, including the finishing ones. The daemon's own evidence that a
+	// session is there, as against anything the agent chose to tell it. See
+	// liveness.go, which explains why this is separate from `seen`.
+	hookAlive map[string]time.Time
 	// turnEnded: when a finishing lifecycle hook (Stop, SessionEnd,
 	// SubagentStop) last said this agent's TURN is over.
 	//
@@ -260,6 +269,7 @@ func New(st *core.State, led Ledger, prober Prober, history ...[]core.Event) *En
 		ringCap: 65536, buckets: map[string]*bucket{},
 		resumeAt: map[string]time.Time{},
 		streams:  map[chan core.Event]*atomic.Bool{}, seen: map[string]time.Time{},
+		hookAlive:    map[string]time.Time{},
 		turnEnded:    map[string]time.Time{},
 		announceSent: map[string]time.Time{}, announceTries: map[string]int{},
 		wokeFor: map[string]time.Time{}, hinted: map[string]time.Time{},
@@ -1169,16 +1179,14 @@ func (e *Engine) sweep(now time.Time) {
 		// agent falls through to the lease below, where silence is judged by the
 		// clock: weaker evidence, and the only honest kind available from here.
 		if l.PID != 0 && e.prober != nil && e.ownsHost(l) {
-			if !e.prober.Alive(l.PID) {
+			if e.prober.Alive(l.PID) {
+				op.AlivePIDs = append(op.AlivePIDs, l.PID)
+			} else if !e.sessionMovedProcess(l) { // moved: judged by evidence below
 				op.DeadAgents = append(op.DeadAgents, id)
 				continue
 			}
-			op.AlivePIDs = append(op.AlivePIDs, l.PID)
 		}
-		eff := l.LastCoordination
-		if t, ok := e.seen[id]; ok && t.After(eff) {
-			eff = t
-		}
+		eff := e.lastEvidenceOf(l)
 		// Silence is judged by the clock only where there is nothing better to
 		// judge by.
 		//

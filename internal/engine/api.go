@@ -665,11 +665,11 @@ func (e *Engine) decoratedBoard() core.Result {
 		if l == nil {
 			continue
 		}
-		seen := l.LastCoordination
-		if t, ok := e.seen[id]; ok && t.After(seen) {
-			seen = t
-		}
-		lm["last_seen"] = seen
+		// THE SAME ANSWER THE SWEEP AND THE REMINDER USE. This row read two of
+		// the three clocks, so a board could show a fresh last_seen beside a
+		// dormant status and a reminder saying nobody had been in touch for
+		// hours, all true of different clocks. See lastEvidenceOf.
+		lm["last_seen"] = e.lastEvidenceOf(l)
 		lm["status"] = l.Status
 		// Which row is the person.
 		//
@@ -698,7 +698,7 @@ func (e *Engine) decoratedBoard() core.Result {
 		// would report a healthy remote agent as dead, or as alive on evidence
 		// about an unrelated local process.
 		if l.PID != 0 && e.prober != nil && e.ownsHost(l) {
-			lm["proc_alive"] = e.prober.Alive(l.PID)
+			lm["proc_alive"] = e.prober.Alive(l.PID) || e.sessionMovedProcess(l)
 		}
 		// WHETHER A COMMAND COULD RESUME THIS AGENT, without saying what to
 		// resume. The id itself stays off the board; this is the one bit a
