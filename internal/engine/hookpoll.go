@@ -220,6 +220,21 @@ func (e *Engine) HookPollFrom(
 	return e.query(ctx, func() core.Result {
 		e.announceHookSessionFrom(sessionID, cwd, event, host)
 		l := e.resolveHook(sessionID, cwd, host)
+		// ANY HOOK AT ALL IS PROOF OF LIFE, and this is the one place every
+		// hook passes through.
+		//
+		// A Stop says this session exists and has just taken a turn. That is
+		// exactly what the board needs in order to decide liveness for itself,
+		// and exactly what it must not read as "busy", which is why it lands
+		// here and not in `seen`: `seen` answers "would a wake collide with a
+		// running turn", and a finished turn is when a wake SHOULD go.
+		//
+		// Not keyed on StateForEvent, deliberately. An unrecognised event is
+		// still a hook, still arrived from a live session, and still proves
+		// the thing being measured. Keying on the recognised states would
+		// leave a thin accidental path on which the daemon holds evidence it
+		// declines to use, which is the defect this whole change is about.
+		e.noteHookAlive(l)
 		e.noteHookFor("poll", l, cwd, host)
 		e.noteTurnState(l, sessionID, event)
 		e.logHookResolution(sessionID, cwd, event, host, l)
@@ -277,13 +292,6 @@ func (e *Engine) HookPollFrom(
 		for _, n := range e.takeNotices(l.ID) {
 			notices = append(notices, n.Text)
 		}
-		// And the one thing that is not news about the board but about this
-		// agent's own silence on it. Kept OUT of the wake terms below: it
-		// never extends a turn, it rides on a digest that is being delivered
-		// anyway, and reaches the person on the ambient line regardless. See
-		// staleReminder.
-		stale := e.staleReminder(l, time.Now())
-
 		if len(mail) == 0 && len(announced) == 0 && len(notices) == 0 {
 			// No news, so nothing to inject, but the agent is still named.
 			//
@@ -300,11 +308,7 @@ func (e *Engine) HookPollFrom(
 			// stays absent is the DIGEST, which is the thing a harness injects
 			// into a model's context, so the silence that matters is unchanged.
 			//
-			// The one thing that may ride here is the ambient reminder to the
-			// PERSON that this agent has stopped coordinating: a systemMessage
-			// extends nothing. See staleReminder.
-			return e.hookOutput(withAmbient(core.Result{"agent": l.ID},
-				e.ambientReminder(l.ID, event, stale, time.Now())), strict)
+			return e.hookOutput(core.Result{"agent": l.ID}, strict)
 		}
 		if event == "" {
 			event = "Stop"
@@ -339,7 +343,6 @@ func (e *Engine) HookPollFrom(
 		// to type anything.
 		if event != "UserPromptSubmit" {
 			out["systemMessage"] = humanNotice(l.ID, mail, announced, notices)
-			withAmbient(out, e.ambientReminder(l.ID, event, stale, time.Now()))
 		}
 		// And the model's copy, only when it is worth extending a turn for.
 		// Anything unread wakes the agent, once. An agent learns about mail when
@@ -400,9 +403,6 @@ func (e *Engine) HookPollFrom(
 			// worked.
 			e.markWoken(wake, now)
 			e.markAnnounced(announceKeys, now)
-			if stale != "" {
-				notices = append(notices, e.remind(l.ID, "model", stale, now))
-			}
 			addDelivery(out, event, hookDigest(l.ID, agentMail, announced, notices))
 		} else {
 			// Said out loud, because "the agent was not told" and "there was
@@ -1055,116 +1055,6 @@ func (e *Engine) SetWakePolicy(p WakePhase) {
 	e.wake.policy = p
 }
 
-// SetStaleReminder applies `[wake] remind_stale_after`: how long a live
-// session may go without coordinating before its digest says so. Zero is off.
-func (e *Engine) SetStaleReminder(after time.Duration) {
-	e.wake.mu.Lock()
-	defer e.wake.mu.Unlock()
-	e.wake.remindAfter = after
-}
-
-func (e *Engine) staleReminderAfter() time.Duration {
-	e.wake.mu.Lock()
-	defer e.wake.mu.Unlock()
-	return e.wake.remindAfter
-}
-
-// staleReminder is the line for a session that is demonstrably taking turns
-// and has stopped telling the board about them.
-//
-// An agent registers, declares, and works for hours without calling Dibs
-// again. Its lease lapses, the board reports it dormant while it is busy, and
-// peers writing to it are told "recipient is dormant" and conclude the product
-// does not deliver. Measured: a seven-hour autonomous run with no check_in
-// expired a peer's question, the peer signed off, and the operator reported
-// Dibs as broken. It was not; the agent had stopped participating and nothing
-// told it so. Issue #53.
-//
-// Three constraints, each from a failure this repository has already had:
-//
-//   - It NEVER extends a turn. deliverToModel refuses to extend for a notify,
-//     and this is less urgent than a notify, so it is not a wake term at all: it
-//     rides on a digest delivered for another reason, and reaches the person on
-//     the ambient systemMessage line, which extends nothing.
-//   - It is throttled to its own interval, per channel (see remind). The
-//     install nudge repeated on every register and was trained away as noise,
-//     which cost the one registration where it was news.
-//   - It says what to do: check_in, then update or declare if the work moved.
-//
-// It does not reach the case that motivated it: a seven-hour single turn has
-// no Stop and makes no calls, so there is no event for this to ride. What it
-// closes is the common case, an agent taking ordinary turns that forgot.
-//
-// LastCoordination moves on every ledgered op the agent is the actor of, so
-// "stale" here means the agent has not touched the board at all, not that it
-// skipped check_in in particular.
-func (e *Engine) staleReminder(l *core.Agent, now time.Time) string {
-	after := e.staleReminderAfter()
-	if after <= 0 || l == nil || l.LastCoordination.IsZero() {
-		return ""
-	}
-	quiet := now.Sub(l.LastCoordination)
-	if quiet < after {
-		return ""
-	}
-	return fmt.Sprintf("you have not coordinated with the board for %s: your declaration "+
-		"reads stale and peers writing to you may be told you are dormant. check_in now, "+
-		"and update or declare if the work has moved on", roughAge(quiet))
-}
-
-// roughAge is a duration as a person reads it over an agent's shoulder: "45m",
-// "2h13m", "3d". Minutes are the finest it goes; a reminder is not a stopwatch.
-func roughAge(d time.Duration) string {
-	switch {
-	case d < time.Hour:
-		return strconv.Itoa(int(d.Minutes())) + "m"
-	case d < 24*time.Hour:
-		return strconv.Itoa(int(d.Hours())) + "h" + strconv.Itoa(int(d.Minutes())%60) + "m"
-	}
-	return strconv.Itoa(int(d.Hours()/24)) + "d"
-}
-
-// withAmbient appends a due reminder to the person's systemMessage line, or
-// sets it when there was no line, and returns the result for chaining.
-func withAmbient(out core.Result, line string) core.Result {
-	if line == "" {
-		return out
-	}
-	if prior, _ := out["systemMessage"].(string); prior != "" {
-		line = prior + " · " + line
-	}
-	out["systemMessage"] = line
-	return out
-}
-
-// ambientReminder is the reminder for the PERSON's line at the end of a turn,
-// or "" when there is none due or the person is typing: a UserPromptSubmit
-// attaches to their own prompt, and telling them about their agent's silence
-// the instant they press return is the same misplacement deliverToModel
-// refuses for mail.
-func (e *Engine) ambientReminder(agent, event, stale string, now time.Time) string {
-	if stale == "" || event == "UserPromptSubmit" {
-		return ""
-	}
-	return e.remind(agent, "human", stale, now)
-}
-
-// remind hands back the reminder if this channel has not carried one within
-// the interval, and "" otherwise. Marked on delivery, per channel, because
-// the person's ambient line and the model's digest are delivered at
-// different moments and one must not silence the other.
-func (e *Engine) remind(agent, channel, text string, now time.Time) string {
-	if text == "" {
-		return ""
-	}
-	key := channel + ":" + agent
-	if last, said := e.reminded[key]; said && now.Sub(last) < e.staleReminderAfter() {
-		return ""
-	}
-	e.reminded[key] = now
-	return text
-}
-
 // SetNoticesWake applies `[wake] notices_wake`: whether situational awareness
 // alone may extend a turn. Off by default; see WakeConfig for the cost argument.
 func (e *Engine) SetNoticesWake(on bool) {
@@ -1249,8 +1139,6 @@ type wakeState struct {
 	// inverts its setting: the zero value has to be the documented behaviour,
 	// and the documented behaviour is that a delivery carries the mail.
 	bodiesOff bool
-	// remindAfter is [wake] remind_stale_after; zero is off. See staleReminder.
-	remindAfter time.Duration
 	// socketsOff inverts [wake] sockets the same way.
 	socketsOff bool
 }

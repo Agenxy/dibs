@@ -7,6 +7,55 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Liveness is the daemon's job, and it stops asking agents to announce it.**
+  A harness lifecycle hook firing is proof that session exists and has just
+  taken a turn. The daemon recorded those hooks, judged staleness on a different
+  clock, swept the row dormant, and delivered, ON THAT SAME HOOK, a line reading
+  "you have not coordinated with the board for 9h33m: your declaration reads
+  stale and peers writing to you may be told you are dormant. check_in now".
+  It held the evidence and complained anyway.
+
+  Three clocks existed and different callers read different combinations:
+  `LastCoordination` is durable and checkpointed once per `AgentTTL/2`, so a
+  healthy agent's is routinely minutes old; `seen` is ephemeral and deliberately
+  NOT stamped by a finishing hook, because it also answers "would a wake collide
+  with a running turn"; and nothing recorded "a hook fired" at all. A board could
+  therefore show a fresh `last_seen` beside a dormant status beside a reminder
+  about hours of silence, each true of a different clock.
+
+  There is now a fourth clock that answers only the liveness question, every
+  hook stamps it, and one helper (`lastEvidenceOf`) reads all of them, so the
+  sweep, the board row and the digest cannot disagree. The wake path is
+  untouched: `seen` keeps its mid-turn meaning, so a Stop still means a wake
+  should go.
+
+- **An agent whose session moved to a new process is no longer swept as
+  crashed, and no longer locked out of `declare`.** Switching the model in
+  Claude Code resumes the same session id in a new process. The agent's row
+  kept the pid it registered with, the sweep probed it, found it gone, and
+  marked the agent `process_exited`. Every call it made woke it again, which
+  re-arms the awareness gate; `check_in` acknowledged the board; the next sweep
+  killed it before the agent's next call. So `declare` was refused on every
+  attempt, with a hint saying to call `check_in`, which it had just done. An
+  agent following the hints looped forever, on a board that showed it crashed
+  while it was talking to the board. Found by the architect, unable to update
+  its own declaration.
+
+  The harness already publishes the answer: each session's sidecar names its
+  live process, and the peer snapshot holds only sessions whose process is
+  alive. A dead recorded pid now counts as death only when no live session
+  stands behind it; otherwise the agent is judged by evidence like any agent
+  with no pid. Crash detection is kept, since a crashed session drops out of
+  the snapshot, and harnesses that publish no sidecar are unchanged.
+
+- **`[wake] remind_stale_after` is retired.** The reminder it governed was not
+  reworded but removed, because after the change above it could not be true for
+  anyone able to receive it: its only delivery route was a hook, so it reached
+  exactly the agents whose liveness is now provable, and its claim that peers
+  might be told they were dormant was false for all of them. The key is still
+  parsed so an existing `dibs.toml` loads, and the daemon says it is retired
+  rather than ignoring it.
+
 - **Dibs was sending two notifications for every message, and now sends one.**
   A Claude Code session has exactly one message socket. Dibs wrote to it from
   two places that knew nothing about each other: the daemon, from outside, via

@@ -305,11 +305,12 @@ func run() error {
 		return boardconfig.SaveOverride(*dir, key, value, by)
 	})
 	eng.SetSocketWakes(cfg.Wake.Sockets == nil || *cfg.Wake.Sockets)
-	remind, err := staleReminder(cfg.Wake)
-	if err != nil {
-		return fmt.Errorf("reading %s/dibs.toml: %w", *dir, err)
+	if retiredStaleReminder(cfg.Wake) {
+		slog.Warn("[wake] remind_stale_after is retired and does nothing; you can delete it. " +
+			"The daemon now decides liveness from its own evidence: every harness " +
+			"lifecycle hook counts as contact, so an agent taking turns is not swept " +
+			"dormant and is not asked to announce that it is still there")
 	}
-	eng.SetStaleReminder(remind)
 	// How to REACH an agent that is not running. Operator's config only: there
 	// is no tool, op or admin route that can set this, because it is arbitrary
 	// code on this machine and only the person at it may name it.

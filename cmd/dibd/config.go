@@ -45,23 +45,25 @@ func wakePolicy(w WakeConfig) (engine.WakePhase, error) {
 // agent_ttl = "10" (meaning minutes, in a field that takes a duration) and got
 // the 5-minute default back would be debugging phantom crashes with no idea the
 // setting had been ignored.
-// staleReminder reads `[wake] remind_stale_after`: one hour unless set, "off"
-// (or "0", "none") to disable, otherwise a duration of at least a minute.
-func staleReminder(w WakeConfig) (time.Duration, error) {
-	switch strings.ToLower(strings.TrimSpace(w.RemindStaleAfter)) {
-	case "":
-		return time.Hour, nil
-	case "off", "0", "none", "false":
-		return 0, nil
-	}
-	d, err := boardconfig.CheckDuration("wake", "remind_stale_after", w.RemindStaleAfter)
-	if err != nil {
-		return 0, err
-	}
-	if d < time.Minute {
-		return 0, fmt.Errorf("[wake] remind_stale_after = %q: use at least \"1m\", or \"off\"", w.RemindStaleAfter)
-	}
-	return d, nil
+// retiredStaleReminder reports whether the operator still sets
+// `[wake] remind_stale_after`, which no longer does anything.
+//
+// STILL PARSED, AND SAID OUT LOUD. The setting governed a line that told a
+// session it had not coordinated with the board for hours and should check_in.
+// That line is gone, because the daemon now establishes liveness for itself:
+// every harness lifecycle hook stamps it (engine.hookAlive), so an agent taking
+// ordinary turns is neither swept dormant nor asked to say so. The reminder's
+// only delivery route was a hook, which means it could only ever reach agents
+// whose liveness was already provable, and its own claim that "peers writing to
+// you may be told you are dormant" had become false for everyone who could
+// receive it.
+//
+// The key keeps parsing so an existing dibs.toml does not fail to load, and the
+// daemon says it is retired rather than ignoring it, because a setting that is
+// read and does nothing is worse than one that is refused. Removed from the
+// struct only once operators have had a release to notice.
+func retiredStaleReminder(w WakeConfig) bool {
+	return strings.TrimSpace(w.RemindStaleAfter) != ""
 }
 
 func applyLimits(c LimitsConfig, base core.Limits) (core.Limits, error) {
