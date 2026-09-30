@@ -1,28 +1,26 @@
 package main
 
-import (
-	"testing"
-	"time"
-)
+import "testing"
 
-// `[wake] remind_stale_after`: an hour unless set, off when said, and never a
-// value short enough to be noise.
-func TestRemindStaleAfterIsReadHonestly(t *testing.T) {
-	for _, tc := range []struct {
-		raw  string
-		want time.Duration
-		err  bool
-	}{
-		{"", time.Hour, false},
-		{"off", 0, false},
-		{"0", 0, false},
-		{"2h", 2 * time.Hour, false},
-		{"5s", 0, true},
-		{"soon", 0, true},
-	} {
-		got, err := staleReminder(WakeConfig{RemindStaleAfter: tc.raw})
-		if (err != nil) != tc.err || got != tc.want {
-			t.Errorf("remind_stale_after = %q: got %v, %v; want %v, err=%v", tc.raw, got, err, tc.want, tc.err)
+// The retired setting still parses, and the daemon says so.
+//
+// `[wake] remind_stale_after` governed a line telling a session it had not
+// coordinated and should check_in. That line is gone: the daemon establishes
+// liveness from its own evidence now, so the reminder could only ever reach
+// agents whose liveness was already provable.
+//
+// The key is not deleted from the config struct, because an operator who set
+// it should not have their daemon fail to start over a setting that stopped
+// mattering. It is reported instead, since a setting that is read and silently
+// does nothing is worse than one that is refused.
+func TestTheRetiredStaleReminderIsReportedRatherThanIgnored(t *testing.T) {
+	if retiredStaleReminder(WakeConfig{}) {
+		t.Error("an operator who never set it is told their config carries a retired key")
+	}
+	for _, v := range []string{"2h", "off", "1m", "  30m  "} {
+		if !retiredStaleReminder(WakeConfig{RemindStaleAfter: v}) {
+			t.Errorf("remind_stale_after = %q was read and silently did nothing. An "+
+				"operator who set it believes something is happening, and nothing is", v)
 		}
 	}
 }
