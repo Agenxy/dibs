@@ -1669,26 +1669,26 @@ func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, 
 	switch op.Disposition {
 	case "answer":
 		if m.Type != MsgQuestion {
-			return nil, nil, errf("E_BAD_DISPOSITION", "only questions take 'answer'", "cannot answer a %s", m.Type)
+			return nil, nil, errf("E_BAD_DISPOSITION", dispositionHint(m.Type), "cannot answer a %s", m.Type)
 		}
 		st = MsgStateAnswered
 	case "approve", "deny":
 		if m.Type != MsgRequest {
 			return nil, nil, errf(
-				"E_BAD_DISPOSITION", "only requests take approve|deny", "cannot %s a %s", op.Disposition, m.Type,
+				"E_BAD_DISPOSITION", dispositionHint(m.Type), "cannot %s a %s", op.Disposition, m.Type,
 			)
 		}
 		st = map[string]string{"approve": MsgStateApproved, "deny": MsgStateDenied}[op.Disposition]
 	case "decline":
 		if !m.Expecting() {
 			return nil, nil, errf(
-				"E_BAD_DISPOSITION", "notify/handoff take ack, not decline", "cannot decline a %s", m.Type,
+				"E_BAD_DISPOSITION", dispositionHint(m.Type), "cannot decline a %s", m.Type,
 			)
 		}
 		st = MsgStateDeclined
 	default:
 		return nil, nil, errf(
-			"E_BAD_DISPOSITION", "use answer|approve|deny|decline", "unknown disposition %q", op.Disposition,
+			"E_BAD_DISPOSITION", dispositionHint(m.Type), "unknown disposition %q", op.Disposition,
 		)
 	}
 	granted, adopted, err := s.decideRequestEffects(m, op, st)
@@ -1930,4 +1930,26 @@ func (s *State) boardAtNextSerial() map[string]any {
 	b := s.Board()
 	b["serial"] = s.Serial + 1
 	return b
+}
+
+// dispositionHint names what THIS message takes, so the error for a wrong one
+// is a call that works.
+//
+// Each refusal used to say what the rejected disposition was for ("only
+// requests take approve|deny") rather than what the message in hand accepts, so
+// an agent answering a question with approve was told what it could not do and
+// left to guess the rest. k7-dev hit exactly that while driving two workers
+// through the loop, and it is the rule every error here is held to: the hint is
+// the corrective call. Built from the type, not listed per branch, so a branch
+// cannot drift out of step with the others.
+func dispositionHint(t string) string {
+	switch t {
+	case MsgQuestion:
+		return "a question takes disposition answer, or decline if you will not answer it"
+	case MsgRequest:
+		return "a request takes disposition approve or deny, or decline if it is not yours to decide"
+	case MsgNotify, MsgHandoff:
+		return "a " + t + " expects no response: close it with ack(msg_serial) instead of respond"
+	}
+	return "question takes answer|decline; request takes approve|deny|decline; notify and handoff take ack"
 }
