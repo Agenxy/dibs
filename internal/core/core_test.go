@@ -50,11 +50,20 @@ func TestAwarenessGatePerActivation(t *testing.T) {
 	mustApply(t, s, &Op{Kind: OpAckBoard, Token: "tokA"}, t0)
 	mustApply(t, s, &Op{Kind: OpSetSlot, Token: "tokA", Text: "w"}, t0)
 
-	// Gate re-arms on the stale transition (SPEC §6).
+	// A liveness flip does NOT re-arm the gate (SPEC §6, revised 2026-09-30).
+	//
+	// This test asserted the opposite for as long as the gate existed: swept
+	// stale, woken, and then refused until check_in again. That is the loop that
+	// locked live agents out whenever the board misread a process restart as a
+	// crash, because the sweep and the wake each erased the acknowledgement and
+	// the next sweep came before the agent's next call. The gate follows the
+	// CREDENTIAL now: a sweep and a wake keep the token, so they keep the ack.
+	// TestANewSessionStillHasToCheckIn holds the half that stays, and
+	// TestALivenessFlipDoesNotCostAnAgentItsAcknowledgement the new half.
 	mustApply(t, s, &Op{Kind: OpSweep, StaleAgents: []string{"alpha"}}, t0.Add(10*time.Minute))
 	mustApply(t, s, &Op{Kind: OpWake, Token: "tokA"}, t0.Add(11*time.Minute))
-	if _, _, err := s.Apply(&Op{Kind: OpSetSlot, Token: "tokA", Text: "w2"}, t0.Add(11*time.Minute)); !errors.Is(err, ErrMustAck) {
-		t.Fatalf("gate must re-arm per activation: got %v", err)
+	if _, _, err := s.Apply(&Op{Kind: OpSetSlot, Token: "tokA", Text: "w2"}, t0.Add(11*time.Minute)); err != nil {
+		t.Fatalf("a flip re-armed the gate on a live session: got %v", err)
 	}
 }
 
@@ -95,7 +104,9 @@ func TestPersistentLifecycleAndResume(t *testing.T) {
 	mustApply(t, s, &Op{Kind: OpClaim, Token: "tok1", Path: "/w", Mode: ClaimExclusive}, t0)
 	mustApply(t, s, &Op{Kind: OpSweep, StaleAgents: []string{"reviewer"}}, t0.Add(10*time.Minute))
 	l := s.Agents["reviewer"]
-	if l.Status != StatusDormant || len(s.Claims) != 0 || l.AckedSerial != 0 {
+	// The acknowledgement survives the flip: the gate follows the credential,
+	// and a sweep rotates none. It re-arms at the resume below, which does.
+	if l.Status != StatusDormant || len(s.Claims) != 0 || l.AckedSerial == 0 {
 		t.Fatalf("dormant transition wrong: status=%s claims=%d acked=%d", l.Status, len(s.Claims), l.AckedSerial)
 	}
 
@@ -112,6 +123,12 @@ func TestPersistentLifecycleAndResume(t *testing.T) {
 	}
 	if l.Status != StatusActive || l.PID != 4242 {
 		t.Fatal("resume must wake and rebind")
+	}
+	// The credential rotated, so this is a new session and the gate re-arms:
+	// the half of the rule that survives, stated where it happens.
+	if l.AckedSerial != 0 {
+		t.Fatalf("resume rotated the token and left the gate open (acked=%d): a new "+
+			"session would declare on its predecessor's awareness", l.AckedSerial)
 	}
 
 	// Idempotent retry with same resume_id → same token (generation unchanged).

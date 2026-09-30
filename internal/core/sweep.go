@@ -85,7 +85,8 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 			// Ownership, not membership: an agent must not stay locked behind an
 			// agent that stopped answering.
 			evs = append(evs, s.yieldChannelOwnership(l.ID)...)
-			l.AckedSerial = 0 // gate re-arms per activation (SPEC §6)
+			// The awareness gate is NOT re-armed here: this is the board's label
+			// changing, not a new session. See applyWake.
 			if l.Kind == KindPersistent {
 				l.Status = StatusDormant
 				l.DormantSince = now
