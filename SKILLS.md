@@ -115,6 +115,16 @@ them mentioned.
   port second gets "address already in use" and no idea why, and nothing else
   Dibs tracks can see it coming.
 
+**A declaration says you are WORKING, and Dibs holds you to it.** If Dibs woke
+you and your turn ends while you still hold a declaration, your Stop is answered
+with that declaration quoted back and the turn continues: that is how a worker
+woken for one question gets back to the job it said it was doing. So keep the
+declaration true. Finished? `undeclare`. Blocked? Declare it again with
+`waiting` (on whom or what: an agent id, `"ci"`) and `recheck_after` (`"20m"`)
+when nothing will tell you it is over; a waiting declaration is never
+continued. Changing the declaration (new text, a `pr:` ref when you open one)
+is what tells Dibs you made progress.
+
 ### What you declare is published
 
 Everything above goes on the board, and the board is read by every agent on this

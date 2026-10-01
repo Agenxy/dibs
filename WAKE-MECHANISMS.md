@@ -170,6 +170,34 @@ so it goes stale when that application updates, and nothing in Dibs can know
 that until it tries.
 
 
+### Continuing a turn that ends with declared work (2026-10-01)
+
+Wake-on-mail worked and the Codex workers still stalled. Measured in
+codex-k7-0's own transcript: mail woke it through the ChatGPT app, the turn's
+only prompt was "Dibs: a new question is waiting.", the model took answering it
+as the whole task, declared "Implementing ... C" seconds before the end, wrote
+"No other messages are pending" and completed. Nothing would ever start it
+again. What was missing was continuation, not delivery.
+
+So a turn Dibs started (a wake it delivered) that ends while the agent holds a
+declaration without `waiting` is continued at Stop: `decision: "block"`, with
+the declaration quoted back as the reason, which both harnesses make the next
+prompt of the same turn. No new process, no app focus, no latency. At most
+twice per version of the declarations; a changed declaration or a 10-minute
+turn resets that. Never after a person's prompt (Claude Code reports those;
+the Codex plugin binds no UserPromptSubmit, so there the guard is the wake
+alone), and never on a turn Codex reports a Stop hook already continued.
+
+**And every Codex Stop delivery before this failed to parse.** Codex's output
+schema is per event with `deny_unknown_fields`, and its Stop takes `decision`
+and `reason` and has no `hookSpecificOutput` (read at rust-v0.159.2, the
+installed tag, and unchanged back to 0.153). The strict filter applied
+SessionStart's schema to every event, so a Codex Stop reply carried the one key
+that fails the parse and had the two that continue a turn removed; the mail was
+marked announced and the agent never told. The test that pinned this had
+transcribed SessionStart's struct and held Stop to it. `codexHookKeys` is now
+per event.
+
 ### Woken in the app it runs in (2026-09-30)
 
 `codex queue` alone turned out not to be a whole wake. The ChatGPT app delivers

@@ -79,18 +79,19 @@ func TestAWakeOnStopCarriesTheFieldThatContinuesTheTurn(t *testing.T) {
 	}
 }
 
-// And a strict caller gets nothing its schema would reject.
+// And a strict caller (Codex) gets the continuation in the shape ITS Stop
+// accepts.
 //
-// Codex validates hook JSON with deny_unknown_fields at every level, so two
-// extra keys do not degrade gracefully: the whole parse fails, the hook is
-// reported FAILED, and the additionalContext it was carrying is dropped with
-// it. The thing that fixes Claude Code must not break the other harness.
+// This asserted the opposite: that a strict Stop must NOT carry decision and
+// reason and must carry hookSpecificOutput. Codex's StopCommandOutputWire has
+// always been the reverse (decision and reason, no hookSpecificOutput, deny
+// unknown fields), so the test pinned the one reply Codex refuses at Stop, and
+// no Codex agent was ever continued for its mail. Read at the installed tag,
+// rust-v0.159.2, and at every tag back to 0.153.
 //
 // This asserts the FILTER, which is the single place that knows what a caller
-// accepts. An earlier version of the fix also guarded at the point the keys
-// are set, and mutation testing showed that guard was unobservable: the
-// filter had already removed them. One rule, one place.
-func TestAStrictHookGetsNoKeysItsSchemaWouldReject(t *testing.T) {
+// accepts. One rule, one place.
+func TestAStrictStopContinuesTheTurnTheWayCodexAccepts(t *testing.T) {
 	st := core.NewState("test", core.DefaultLimits())
 	e := New(st, &memLedger{}, deadProber{})
 	ctx, cancel := context.WithCancel(context.Background())
@@ -118,13 +119,14 @@ func TestAStrictHookGetsNoKeysItsSchemaWouldReject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hook poll: %v", err)
 	}
-	for _, k := range []string{"decision", "reason"} {
-		if _, present := got[k]; present {
-			t.Errorf("a strict response carries %q, which fails the whole parse and "+
-				"takes the digest with it", k)
-		}
+	if _, present := got["hookSpecificOutput"]; present {
+		t.Error("a strict Stop carries hookSpecificOutput, which Codex's Stop schema does " +
+			"not have: the whole parse fails and the agent is told nothing")
 	}
-	if _, ok := got["hookSpecificOutput"]; !ok {
-		t.Error("the strict response still has to carry the digest")
+	if got["decision"] != "block" {
+		t.Errorf(`decision = %v, want "block": it is the only way Codex continues a turn`, got["decision"])
+	}
+	if reason, _ := got["reason"].(string); !strings.Contains(reason, "unread") {
+		t.Errorf("reason = %q: it becomes the model's next prompt, so it has to carry the news", reason)
 	}
 }
