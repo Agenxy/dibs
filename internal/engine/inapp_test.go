@@ -266,6 +266,7 @@ func TestMailForAClosedClaudeAppSessionOpensItInTheApp(t *testing.T) {
 	e := New(core.NewState("test", core.DefaultLimits()), &memLedger{}, deadProber{})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	stopWakeTimersOnCleanup(t, e)
 	go e.Run(ctx)
 	if _, err := e.Do(ctx, &core.Op{
 		Kind: core.OpRegister, Name: "lead", Nonce: "n-lead-0123456789abcdef", SessionID: cli,

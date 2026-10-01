@@ -24,6 +24,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A slow `ps` no longer drops a live Claude Code session.** Session discovery
+  checks each session's process with `ps`, inside 300ms. Just after a daemon
+  restart, while replay and repository indexing load the machine, that probe
+  could time out, and a timeout counted as a dead process: a sender was told a
+  running session was pull-only and the send was not handed to it. A timed-out
+  probe now counts as alive; a process that is really gone still answers `ps`
+  at once with nothing.
+
 - **A misnamed deadline now names the real one.** `send` takes `deadline_s`, in
   seconds; `deadline`, `deadline_minutes`, `timeout` and the like were refused
   without saying so, and a sender who meant hours got the ten-minute default.
