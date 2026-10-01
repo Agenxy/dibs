@@ -32,6 +32,7 @@ func newRelocationBoard(t *testing.T) *relocationBoard {
 	e := New(core.NewState("test", core.DefaultLimits()), led, deadProber{})
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
+	stopWakeTimersOnCleanup(t, e)
 	go e.Run(ctx)
 	b := &relocationBoard{e: e, led: led, ctx: ctx, started: make(chan []string, 4)}
 	prev := relocationRunner
