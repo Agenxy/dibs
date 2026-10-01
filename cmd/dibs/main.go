@@ -350,7 +350,7 @@ var mcpTools = []string{
 	"get_blob", "heartbeat", "human_unlock", "inbox", "join_space",
 	"leave_space", "lock_space", "merge_agents", "merge_spaces", "open_space",
 	"post", "prune",
-	"put_blob", "read_mail", "read_space", "register", "release", "respond",
+	"put_blob", "read_mail", "read_space", "register", "release", "relocate", "respond",
 	"resume", "retitle_space", "send", "settings", "sign_off", "spawned_agents",
 	"undeclare", "unlock_space", "update", "vouch_child", "watch_space",
 }
@@ -1756,8 +1756,11 @@ func printClaims(claims []boardClaim) {
 // at a glance.
 func opStyle(kind string) string {
 	switch kind {
-	case "unlock_space", "evict", "merge_spaces", "prune", "force_release":
-		return ui.Alarm(kind) // a coordinator overrode somebody
+	case "unlock_space", "evict", "merge_spaces", "prune", "force_release",
+		"relocate", "relocate_by_human":
+		return ui.Alarm(kind) // a coordinator overrode somebody, or moved them
+	case "grant_role", "grant_permission", "revoke_permission":
+		return ui.Attn(kind) // changed what somebody may do
 	case "announce", "claim", "lock_space":
 		return ui.Attn(kind) // obliges or blocks others
 	case "register", "check_in", "heartbeat":

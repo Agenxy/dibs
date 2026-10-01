@@ -578,6 +578,9 @@ func (e *Engine) approveForHuman(from, who, body string, serial uint64, grant, a
 	switch {
 	case grant != "" && adopt != "":
 		title = "Dibs · make " + from + " " + grant + " AND give it " + adopt + "'s mail?"
+	case grant == core.PermRelocate:
+		// A permission, not a role, so not "make X relocate?".
+		title = "Dibs · let " + from + " move agents to other environments?"
 	case grant != "":
 		title = "Dibs · make " + from + " " + grant + "?"
 	case adopt != "":

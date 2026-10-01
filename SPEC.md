@@ -702,7 +702,7 @@ as load-bearing until the final ships and hosts migrate.
   initialized`/`ping` retained for 2025-11-25 hosts: today's clients work day one,
   and the legacy path sunsets when hosts migrate.
 
-**Tools (46).** All take `token` except `register`, `resume`,
+**Tools (47).** All take `token` except `register`, `resume`,
 `hook_poll` and `guard_path` (the last two are lifecycle-hook surfaces and have
 no token to give: see SECURITY.md).
 
@@ -717,6 +717,12 @@ space surface (`open_space`, `join_space`, `read_space`, `post`,
 claim-level counterpart to `unlock_space`. v1.3 added `configure` and `merge_agents`, the
 admin-gated read and write of the settings the engine can apply while it
 runs; see docs/CONFIGURATION.md for why an address is not among them.
+v1.4 added `relocate`: running a closed agent's thread in a different
+environment from the one it last ran in, which a wake never does. It needs the
+coordinator or admin role, or the `relocate` permission the human grants
+(`dibs admin may-relocate <agent>`, or by approving a request carrying
+`grant: "relocate"`). Every relocation is ledgered as `agent.relocated` with
+who, the agent, and from and to; the board row shows the last one.
 
 `tools/list` is the authority, it serves `toolDefs` verbatim, so the served
 surface and the advertised one cannot drift. Ask a running daemon rather than
@@ -858,7 +864,7 @@ binaries (`dibd` and `dibs`) both CGO_ENABLED=0 and byte-reproducible.
 ledgered wake transitions; ephemeral + persistent agents; resume; awareness gate
 per activation; mailbox (full state machine, read_mail, op_id dedup,
 dormant-recipient semantics); claims (§9 matrix); bounded liveness with bounded
-restart grace; limits incl. state GC; MCP 2026-07-28 dual-version surface (46 tools);
+restart grace; limits incl. state GC; MCP 2026-07-28 dual-version surface (47 tools);
 local access secret + Origin validation; CLI (board/messages/log/verify/mcp-config);
 SSE web board; static binaries (`dibd` + `dibs`, no cgo, no runtime deps).
 

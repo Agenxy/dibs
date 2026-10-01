@@ -586,6 +586,15 @@ func (s *State) Board() map[string]any {
 		// Role and parent, only when they are not the default. A `role: "member"`
 		// on every agent and a `parent: ""` on almost all of them is payload the
 		// reader and the model both pay for and neither uses.
+		// Grants beyond the role, and the last deliberate move: both are
+		// things a person reading the board needs to explain an agent turning
+		// up somewhere it did not start.
+		if len(l.Permissions) > 0 {
+			lm["permissions"] = l.Permissions
+		}
+		if l.Relocated != nil {
+			lm["relocated"] = l.Relocated
+		}
 		if l.Role != "" && l.Role != RoleMember {
 			lm["role"] = l.Role
 			// Whether that role is held by somebody who can come back.

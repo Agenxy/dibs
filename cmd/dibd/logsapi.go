@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/logs"
 )
@@ -49,6 +50,38 @@ func registerAdminAPI(mux *http.ServeMux, eng *engine.Engine) {
 		_ = json.NewEncoder(w).Encode(res)
 	})
 
+	// Permissions beyond the role, and moving an agent on purpose. The same
+	// gate as role granting: local secret AND admin password, no agent token.
+	mux.HandleFunc("POST /api/admin/permission", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Agent      string `json:"agent"`
+			Permission string `json:"permission"`
+			Held       bool   `json:"held"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		do := eng.RevokePermissionByHuman
+		if body.Held {
+			do = eng.GrantPermissionByHuman
+		}
+		res, err := do(r.Context(), body.Agent, body.Permission)
+		writeAdminResult(w, res, err)
+	})
+	mux.HandleFunc("POST /api/admin/relocate", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Agent       string `json:"agent"`
+			Environment string `json:"environment"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		res, err := eng.RelocateByHuman(r.Context(), body.Agent, body.Environment)
+		writeAdminResult(w, res, err)
+	})
+
 	// Closing another agent is a human's call: a crashed agent cannot close itself,
 	// and no agent should be able to evict a peer. Same gate as role granting,
 	// local secret AND admin password, and no agent token reaches here.
@@ -87,4 +120,16 @@ func registerMatchStatusAPI(mux *http.ServeMux, eng *engine.Engine) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(eng.MatchStatus())
 	})
+}
+
+// writeAdminResult answers an admin call: the result, or the error with 400.
+func writeAdminResult(w http.ResponseWriter, res core.Result, err error) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
+		return
+	}
+	_ = json.NewEncoder(w).Encode(res)
 }

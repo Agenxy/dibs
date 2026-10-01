@@ -516,6 +516,12 @@ func TestOpKindStringsAreFrozen(t *testing.T) {
 		// every board that has merged one: loudly, unlike a renamed field,
 		// but still fatal at boot.
 		"OpMergeAgents": {core.OpMergeAgents, "merge_agents"},
+		// Relocation and the permission it needs: who moved an agent, and
+		// who was allowed to, are exactly what a board must still read back.
+		"OpGrantPermission":  {core.OpGrantPermission, "grant_permission"},
+		"OpRevokePermission": {core.OpRevokePermission, "revoke_permission"},
+		"OpRelocate":         {core.OpRelocate, "relocate"},
+		"OpRelocateByHuman":  {core.OpRelocateByHuman, "relocate_by_human"},
 	} {
 		// FROZEN AGAIN, at new values, and the break was deliberate. 0.0.3 renamed
 		// the product to Dibs and its vocabulary with it, and these strings went
