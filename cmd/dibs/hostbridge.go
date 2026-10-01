@@ -91,6 +91,12 @@ func hostBridge(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	b := newWakeBridge(boardOrigin(), secret, host, routes)
+	// The app opens on THIS machine, so this machine's person decides when.
+	if cfg, cerr := boardconfig.Load(paths.DataDir()); cerr == nil {
+		if idle, ierr := cfg.Wake.OpenAfterIdle(); ierr == nil {
+			b.show.MinIdle = idle
+		}
+	}
 	slog.Info("host bridge attaching", "board", b.origin, "host", host, "harnesses", b.harnesses())
 	return b.follow(ctx)
 }
@@ -508,12 +514,17 @@ func (b *wakeBridge) execute(wr engine.WakeRequest) (bool, string) {
 		// taken here because the app is on this machine: open the thread in
 		// the app the agent runs in when the app is not holding it.
 		app := harnessenv.AppFor(wr.Surface, wr.Harness, wr.Thread)
-		if opened, err := b.show.Show(harnessenv.OpenArgv(app, wr.Thread), wr.Thread); err != nil {
-			slog.Warn("could not open the agent's thread in its app; the message waits there",
-				"request", wr.ID, "err", err)
-		} else if opened {
-			slog.Info("opened the agent's thread in the app it runs in", "request", wr.ID)
-		}
+		b.show.ShowWhenIdle(harnessenv.OpenArgv(app, wr.Thread), wr.Thread, func(opened, deferred bool, err error) {
+			switch {
+			case err != nil:
+				slog.Warn("could not open the agent's thread in its app; the message waits there",
+					"request", wr.ID, "err", err)
+			case deferred:
+				slog.Info("opening the agent's thread in its app once the person here is idle", "request", wr.ID)
+			case opened:
+				slog.Info("opened the agent's thread in the app it runs in", "request", wr.ID)
+			}
+		})
 		return true, ""
 	}
 	return false, "the wake command exited non-zero (the fallback too, when one is configured)"

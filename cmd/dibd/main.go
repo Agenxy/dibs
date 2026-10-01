@@ -253,6 +253,10 @@ func run() error {
 		return fmt.Errorf("reading %s/dibs.toml: %w", *dir, err)
 	}
 	eng.SetWakePolicy(wake)
+	// Validate() already refused a malformed value, so this cannot fail here.
+	if idle, ierr := cfg.Wake.OpenAfterIdle(); ierr == nil {
+		eng.SetOpenAppAfterIdle(idle)
+	}
 	// On unless the operator opted out: see WakeConfig.NoticesWake. A pointer so
 	// "unset" and "explicitly false" are distinguishable, which is the whole
 	// reason a bool setting with a true default needs one.
