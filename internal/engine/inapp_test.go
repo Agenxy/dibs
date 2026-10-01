@@ -207,3 +207,37 @@ func TestADormantAppThreadIsOpenedWhereItWasBorn(t *testing.T) {
 		t.Errorf("an agent whose bridge said it now runs in a terminal was pulled back into the app: %q", app.opened)
 	}
 }
+
+// The wake path goes through the idle gate: with the person active, a thread
+// the app has not loaded is queued for and NOT opened yet.
+func TestAWakeDoesNotOpenTheAppInFrontOfAnActivePerson(t *testing.T) {
+	if _, err := os.Stat("/usr/bin/true"); err != nil {
+		t.Skip("no /usr/bin/true on this platform")
+	}
+	app := &fakeApp{}
+	app.install(t)
+	gate := make(chan struct{})
+	t.Cleanup(func() { close(gate) })
+	shower.Idle = func() (time.Duration, bool) { return time.Second, true }
+	shower.MinIdle = 2 * time.Minute
+	shower.Wait = func(time.Duration) { <-gate }
+	e := New(core.NewState("test", core.DefaultLimits()), &memLedger{}, deadProber{})
+	e.SetWakeCommands(map[string]WakeCommand{"codex": {Argv: []string{"/usr/bin/true", "{thread}"}}})
+	const thread = "0199a0b1-c2d3-4e5f-8a9b-0c1d2e3f4a5c"
+	l := &core.Agent{
+		ID: "worker", Name: "worker", Status: core.StatusDormant, SessionID: thread,
+		Agent: &core.AgentInfo{Harness: "Codex", CWD: t.TempDir(), Surface: harnessenv.ChatGPTApp},
+		Slots: map[string]core.Slot{},
+	}
+	e.state.Agents["worker"] = l
+	plan, ok := e.wakeFor(l, core.MsgQuestion, questionFor("worker"))
+	if !ok {
+		t.Fatal("setup: no wake planned")
+	}
+	if !e.runWake(plan, "worker") {
+		t.Fatal("setup: the queue command failed")
+	}
+	if len(app.opened) != 0 {
+		t.Errorf("the app was opened while the person was active: %q", app.opened)
+	}
+}

@@ -181,6 +181,13 @@ func OpenArgv(surface, thread string) []string {
 type Shower struct {
 	Holds func(thread string) bool
 	Open  func(argv []string) error
+	// Idle, MinIdle, Wait and Poll defer an open until the person has been
+	// away for MinIdle (see idle.go). A nil Idle or a zero MinIdle opens at
+	// once.
+	Idle    func() (time.Duration, bool)
+	MinIdle time.Duration
+	Wait    func(time.Duration)
+	Poll    time.Duration
 }
 
 // RealShower reaches the real app.
@@ -191,6 +198,9 @@ var RealShower = Shower{
 		defer cancel()
 		return exec.CommandContext(ctx, argv[0], argv[1:]...).Run() //nolint:gosec // argv is OpenArgv's, never text from mail
 	},
+	Idle:    UserIdle,
+	MinIdle: DefaultOpenAfterIdle,
+	Wait:    func(d time.Duration) { <-time.After(d) },
 }
 
 // Show opens the thread in its app when the app is not already holding it.

@@ -5,6 +5,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **A wake no longer pulls the ChatGPT app in front of you.** When an agent's
+  thread is not loaded in the app, Dibs now opens it only once you have been
+  idle for `[wake] open_app_after_idle` (2 minutes by default; `"0s"` opens at
+  once). Measured: nothing passed to `open` keeps the app in the background. A
+  loaded thread was never opened and still is not.
+
 ### Fixed
 
 - **A Codex agent's Stop hook could never deliver mail.** Codex validates hook
