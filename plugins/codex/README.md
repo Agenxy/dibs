@@ -357,7 +357,9 @@ thread open in the desktop app. Codex 0.144.3 rejects the file outright
 turn boundaries by these hooks, whatever the rest of this page implies.
 
 What reaches a codex agent is the wake path: `[wake.exec.codex]` with
-`codex exec resume` as the primary and `codex queue` as the fallback, which
-delivers into a thread the desktop app has open. See `docs/CONFIGURATION.md`.
+`codex queue`, which hands the message to the ChatGPT app for the thread it
+holds. Never `codex exec resume`, which this page used to name: that starts a
+headless Codex and runs the thread itself, which is Dibs hosting an agent, and
+the daemon refuses it. See `docs/CONFIGURATION.md`.
 This note stays until somebody measures a codex build that fires these hooks,
 and says which.

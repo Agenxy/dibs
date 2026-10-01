@@ -318,15 +318,9 @@ func run() error {
 		// Each harness keeps its OWN cooldown. Collapsing the table to its
 		// largest value, which this did, let one cautious entry throttle every
 		// other harness while both settings still read as configured.
-		cmds := make(map[string]engine.WakeCommand, len(cfg.Wake.Exec))
-		for harness, x := range cfg.Wake.Exec {
-			if len(x.Argv) == 0 {
-				continue
-			}
-			cmds[harness] = engine.WakeCommand{Argv: x.Argv, Fallback: x.Fallback, Cooldown: x.Cooldown}
-		}
+		cmds := wakeCommandsFrom(cfg.Wake.Exec)
 		eng.SetWakeCommands(cmds)
-		slog.Info("the board can start an agent that is not running",
+		slog.Info("the board can deliver to an agent through its harness",
 			"harnesses", len(cmds))
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

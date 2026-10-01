@@ -7,6 +7,27 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Dibs never hosts an agent.** The recommended Codex wake, `codex exec
+  resume {thread}`, does not deliver to anybody: it starts a headless Codex and
+  runs the thread itself, in a process Dibs started, outside the ChatGPT app,
+  on the operator's model allowance. The Claude Code one, `claude --resume
+  {thread} -p`, did the same. doctor printed both and the Codex plugin notes
+  recommended the first. The operator found two of his ChatGPT threads running
+  in processes the daemon had started, and called it unacceptable: Dibs is a
+  channel into the harness an agent already lives in, never a harness.
+
+  A wake command must now deliver into a running harness. `codex queue`, which
+  hands the message to the ChatGPT app, is the Codex command; Claude Code needs
+  none, being reached through its socket and hooks. The daemon and `dibs
+  host-bridge` both refuse a command that would host an agent, and the old
+  Codex recipe (`exec resume` with `codex queue` as fallback) is repaired rather
+  than rejected, keeping only the queue, so configurations that followed the old
+  advice keep working with no edit. doctor says when it has changed an entry,
+  stops recommending either command, and counts Claude Code agents as covered.
+  AGENTS.md rule 5 states it. What exposed it was the same day's fix for an
+  untrusted directory, which let `exec resume` succeed where Codex's trust check
+  had been quietly refusing it.
+
 - **`dibs await` rides through a daemon restart, and an unreachable daemon has
   its own exit status.** k7-dev lost a background `dibs await -since 469
   -timeout 8h` to an EOF when the daemon restarted. Restarts are routine, and

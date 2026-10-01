@@ -102,14 +102,22 @@ func localWakeRoutes(dir string) (map[string]boardconfig.WakeExec, error) {
 	if err != nil {
 		return nil, err
 	}
+	// THE SAME FILTER AS THE DAEMON'S. A wake command that would run an agent
+	// rather than deliver to one is dropped here too, so a joined machine cannot
+	// host an agent the hub would refuse to. See boardconfig.DeliveringWakeRoutes.
+	delivering, changed := boardconfig.DeliveringWakeRoutes(cfg.Wake.Exec)
+	for h, why := range changed {
+		slog.Warn("a [wake.exec] entry was changed so Dibs does not host an agent",
+			"harness", h, "change", why)
+	}
 	routes := map[string]boardconfig.WakeExec{}
-	for h, x := range cfg.Wake.Exec {
+	for h, x := range delivering {
 		routes[strings.ToLower(strings.TrimSpace(h))] = x
 	}
 	if len(routes) == 0 {
-		return nil, fmt.Errorf("nothing to run: %s has no [wake.exec] entries, so this bridge could start "+
-			"no agent here. Add a [wake.exec.<harness>] block to it (docs/CONFIGURATION.md) and run this again",
-			filepath.Join(dir, "dibs.toml"))
+		return nil, fmt.Errorf("nothing to deliver with: %s has no [wake.exec] entry that delivers into a "+
+			"running harness, so this bridge could reach no agent here. Add one (docs/CONFIGURATION.md) and "+
+			"run this again", filepath.Join(dir, "dibs.toml"))
 	}
 	return routes, nil
 }

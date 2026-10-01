@@ -64,10 +64,10 @@ blocked on arrives for one of its agents that has stopped:
 
 **The command runs on the machine the DAEMON is on, in the agent's own working
 directory.** That is not a detail, it is the constraint the whole thing is
-shaped by: the daemon starts a process, so the process starts here. Both
-documented commands care where they start (`codex exec resume` refuses outside
-a trusted directory), so when the recorded directory is missing the wake runs
-where the daemon does and usually fails, with a warning saying so.
+shaped by: the daemon starts a process, so the process starts here. A command
+can care where it starts (the retired `codex exec resume` refused outside a
+trusted directory), so when the recorded directory is missing the wake runs
+where the daemon does and may fail, with a warning saying so.
 
 Two ways for it to be missing. A removed worktree is the local one. An agent on
 ANOTHER COMPUTER is the other, and there nothing you write in this file can
@@ -83,96 +83,51 @@ agent as covered while its bridge is attached, and on the joined machine says
 which half is missing. See [NETWORK.md](NETWORK.md) for why the hub decides THAT
 an agent is woken and only its own machine can decide how.
 
+**Dibs never hosts an agent.** A wake command must DELIVER a message into the
+harness that already runs the agent, and must never start the agent itself.
+`dibd` and `dibs host-bridge` both refuse a command that would, and repair the
+one recipe this page used to recommend (see below), so a hand-written entry
+cannot turn the board into a harness either. `dibs doctor` says when it has
+done so.
+
 ```toml
 [wake.exec.codex]
-argv     = ["/Applications/ChatGPT.app/Contents/Resources/codex",
-            "exec", "resume", "{thread}", "{message}"]
-fallback = ["/Applications/ChatGPT.app/Contents/Resources/codex",
+argv     = ["/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex",
             "queue", "--thread", "{thread}", "--message", "{message}"]
 cooldown = "90s"
 ```
 
-**Which Codex command, and why this one.** Both were measured on 2026-08-22,
-and the `fallback` on 2026-09-05.
+`codex queue --thread <uuid> --message "<text>"` hands the message to the
+ChatGPT app, which delivers it into the thread it holds: the app's own
+app-server drains the queue and injects it as a user message. That is a
+channel into the harness the agent lives in, which is all a wake may be. On a
+thread the app is not holding, the message waits in the app until somebody
+opens that thread, and that is the honest limit of a channel: Dibs does not open
+it instead.
 
-`codex exec resume <uuid> "<text>"` continues that thread's history in a new
-headless process, which registers, reads its mail and acts. It works for a
-thread nothing has open; a thread the desktop app holds open refuses it, which
-is what the `fallback` line is for (see below), so an entry without one leaves
-open desktop threads unreachable. On builds from
-2026-08-18 it takes a per-thread writer lock, so it refuses rather than colliding
-with a session that is already running; on older builds two of them interleave
-into one transcript, which is a good reason to keep the cooldown.
+**Why not `codex exec resume`, which this page recommended until 2026-09-30.**
+It does not deliver to anybody: it starts a headless Codex and runs the thread
+itself, in a process Dibs started, outside the app the operator was using, on
+their model allowance, with nobody watching. The operator found his ChatGPT
+threads running that way and called it unacceptable, rightly. Every entry that
+followed the old recipe had `exec resume` as `argv` and `codex queue` as
+`fallback`; the daemon now drops the first and runs the second alone, so those
+configurations keep working with no edit. Write the one above.
 
-`codex queue --thread <uuid> --message "<text>"` is the other candidate and is
-**not** sufficient on its own. It enqueues durably and wakes the thread only if
-it is already **loaded** in a running app server. Pointed at a thread whose app
-was not running it returned `Queued message …` and nothing woke: the message
-waits for somebody to open that conversation. Useful when you know the app is
-up and you want the existing window to act; not a wake on its own.
-
-**Claude Code.** Measured on 2026-08-26, the same way.
-
-```toml
-[wake.exec."claude code"]
-argv = ["claude", "--resume", "{thread}", "-p", "{message}"]
-cooldown = "90s"
-```
-
-`claude --resume <session-id> -p "<text>"` continues that session in a new
-headless process. Watched end to end: a seeded session's transcript went from 15
-lines to 56, the notice arrived as a turn, and the agent's first action was to
-call `register` to go and look at the board, which is exactly what a wake is for
-and the whole of what it should cause.
-
-One caveat worth knowing before you rely on it. A headless `-p` process does not
-have the permissions an interactive session does, so an agent woken this way can
-find its own Dibs calls refused, which is what happened on the measured run
-after it decided to look. It still beats not being told: the session is running
-and its own hooks fire from there. If your agents need tool access on a wake,
-give that process the permissions it needs rather than assuming it inherits
-them.
-
-**A harness may refuse to resume a thread it already has open, so give it a
-second command.** `codex exec resume` starts a CLOSED thread and fails on one
-that is open in the Codex desktop app: `thread-store conflict: thread <id>
-already has an active writer`, exit 1, and no configuration changes that. The
-app holds the writer for as long as the thread is open. `codex queue` is the
-other half: it delivers straight into an OPEN thread, where the app's own
-app-server drains it and injects it as a user message, and to a closed thread
-it exits 0 and parks the message where nothing reads it until somebody opens
-that thread by hand. The two are exact inverses.
-
-So a codex entry names both, and the daemon tries them in order. The primary
-is the one that can be confirmed for a closed thread; the fallback runs only
-when the primary exits non-zero AND its output says the thread is open
-(`active writer`, `thread-store conflict`), and is the one that can be
-confirmed for an open one. A primary that fails for any other reason is a
-failed wake and gets the retry every failure gets: `codex queue` exits 0 for a
-closed thread too, parking the message, and that must not count as a wake.
-
-```toml
-[wake.exec.codex]
-argv     = ["codex", "exec", "resume", "{thread}", "{message}"]
-fallback = ["codex", "queue", "--thread", "{thread}", "--message", "{message}"]
-```
-
-Measured on this machine, both directions. A thread open in the desktop app
-refused `exec resume`, took `queue`, and its own transcript then carried
-"Dibs: check the board." (the notice of the day; it says what arrived now)
-followed by the agent checking in and answering the
-two questions it had been sent. That case had been reported as unreachable for
-weeks, because only the first command was ever configured. The reverse, a
-closed CLI thread, resumed on the primary and parked on the fallback, which is
-why the order is not arbitrary.
+**Claude Code needs no `[wake.exec]` entry.** A Claude Code session is reached
+through its own session socket and its hooks, which deliver into the running
+session. The command this page used to give, `claude --resume <id> -p`, started
+a headless Claude Code session of Dibs' own, which is the same thing as above
+and is refused for the same reason. `dibs doctor` counts Claude Code agents as
+covered without a command.
 
 `fallback` obeys every rule `argv` does: whole-element substitution, no shell,
 argv[0] named in this file and never a placeholder.
 
 **A wake runs in the agent's own directory.** It has to, and for a long time it
-did not. `codex exec resume` refuses to start outside a trusted directory, and a
-daemon started by launchd has `/` as its working directory, so every wake it
-attempted exited 1 without reaching anyone.
+did not. The retired `codex exec resume` refused to start outside a trusted
+directory, and a daemon started by launchd has `/` as its working directory, so
+every wake it attempted exited 1 without reaching anyone.
 
 This was diagnosed twice as launchd putting the daemon in a different security
 session with no login keychain. **That was wrong**, and the wrong explanation is

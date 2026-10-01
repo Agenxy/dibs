@@ -523,6 +523,16 @@ func checkWakeRoutes(dir string, b *boardView, hosts hubHosts, ok reportFn, warn
 				"block to "+filepath.Join(dir, "dibs.toml")+", or set sockets = true")
 		return
 	}
+	// A COMMAND THAT WOULD HOST AN AGENT IS SAID HERE, not only in dibd.log.
+	// The daemon refuses or repairs it (boardconfig.DeliveringWakeRoutes), and
+	// the operator should not have to read a log to learn their config was
+	// changed: this is where they look.
+	_, changed := boardconfig.DeliveringWakeRoutes(cfg.Wake.Exec)
+	for h, why := range changed {
+		warn(fmt.Sprintf("[wake.exec.%q] would run an agent, so Dibs changed it: %s", h, why),
+			"Dibs delivers into the harness an agent already runs in and never hosts one. "+
+				"Edit "+filepath.Join(dir, "dibs.toml")+" so it says what is actually run")
+	}
 	if n := len(cfg.Wake.Exec); n > 0 {
 		// COVERAGE, NOT COUNT.
 		//
@@ -1481,26 +1491,29 @@ func isJoinedBoard(dir string) bool {
 	return true
 }
 
-// suggestedWake is the command that resumes a thread, per harness we know.
+// suggestedWake is the command that DELIVERS into a harness already running an
+// agent, per harness we know one for.
 //
-// SUGGESTION ONLY. Dibs does not run any of these unless the operator puts one
-// in their own `dibs.toml`: rule 5 is that the argv comes from the operator's
-// config, and a coordination service that starts paid agent turns nobody asked
-// for would be helping itself to somebody's money. What was missing is not
-// consent, it is the twenty minutes of reading needed to find out what to
-// write, and that part costs nothing to give away.
-//
-// Both were measured on this machine before being printed: `claude --resume`
-// keeps full thread context and resolves a session by UUID from any directory,
-// and `codex exec resume` needs to be run inside the agent's own directory,
-// which the daemon now does.
+// NEVER ONE THAT RUNS THE AGENT. This map used to print `codex exec resume`
+// and `claude --resume {thread} -p`, and both start the agent itself: a
+// headless Codex, a headless Claude Code session, in a process Dibs started,
+// on an operator's thread and model allowance. The operator found his ChatGPT
+// threads running that way and called it what it is: Dibs hosting agents. Dibs
+// is a channel into the harness the agent lives in. For Codex that channel is
+// the ChatGPT app's queue. Claude Code is absent on purpose: its sessions are
+// reached through their own socket and hooks, and need no command at all (see
+// noWakeCommandNeeded). boardconfig.HostsAnAgent refuses the old ones even if
+// they are configured by hand.
 var suggestedWake = map[string]string{
-	"claude code": `[wake.exec."claude code"]` + "\n" +
-		`argv = ["claude", "--resume", "{thread}", "-p", "{message}"]`,
 	"codex": `[wake.exec.codex]` + "\n" +
-		`argv     = ["codex", "exec", "resume", "{thread}", "{message}"]` + "\n" +
-		`fallback = ["codex", "queue", "--thread", "{thread}", "--message", "{message}"]`,
+		`argv = ["codex", "queue", "--thread", "{thread}", "--message", "{message}"]`,
 }
+
+// noWakeCommandNeeded are the harnesses that are reached without a [wake.exec]
+// entry, so an agent on one is not "missing a wake command" and doctor does not
+// tell the operator to write one. Claude Code delivers through its session
+// socket and its hooks.
+var noWakeCommandNeeded = map[string]bool{"claude code": true}
 
 // reportWakeCoverage says how many agents on THIS board the configured wake
 // commands can actually reach.
@@ -1565,7 +1578,7 @@ func reportWakeCoverage(
 		// the decoration answers all of them, including the ones added
 		// next. Round fifty-three of the pre-release review.
 		harness := bareHarness(h)
-		if harness == "" || have[harness] {
+		if harness == "" || have[harness] || noWakeCommandNeeded[harness] {
 			continue
 		}
 		noCommand++
@@ -1573,8 +1586,9 @@ func reportWakeCoverage(
 			fix += "\n\n" + sug
 			continue
 		}
-		fix += fmt.Sprintf("\n\n[wake.exec.%q]\n# no built-in command for this harness: the argv that resumes one "+
-			"of its threads, with {thread} and {message}; see docs/CONFIGURATION.md\n"+
+		fix += fmt.Sprintf("\n\n[wake.exec.%q]\n# no built-in command for this harness: one that DELIVERS a message "+
+			"into the harness already running the agent, with {thread} and {message}. Never one that "+
+			"starts the agent itself: Dibs is a channel, not a harness. See docs/CONFIGURATION.md\n"+
 			"argv = [\"<command>\", \"{thread}\", \"{message}\"]", harness)
 	}
 	if noCommand == 0 {
@@ -1714,7 +1728,12 @@ func wakeCoverage(
 		// A worktree that has been removed is the local way to reach that, and
 		// it is ordinary here. An agent on ANOTHER COMPUTER is the other, and
 		// there the hub can do nothing about it at all: see docs/NETWORK.md §5.
-		if wakeCovered(a, h, b.HostID, hosts, have, bridged) {
+		// REACHED WITHOUT A COMMAND counts as reached. A Claude Code session is
+		// delivered to through its own socket and hooks; it has no wake command
+		// because it needs none, and counting it as uncovered told the operator
+		// to write `[wake.exec."claude code"]`, whose only possible content
+		// starts a Claude Code session of Dibs' own. See noWakeCommandNeeded.
+		if noWakeCommandNeeded[h] || wakeCovered(a, h, b.HostID, hosts, have, bridged) {
 			covered++
 			continue
 		}
