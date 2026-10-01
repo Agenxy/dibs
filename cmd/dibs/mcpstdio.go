@@ -17,6 +17,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/agenxy/dibs/internal/mcp"
 )
 
 // mcpStdio is a stdio↔HTTP bridge for the Dibs MCP server. A harness that
@@ -508,6 +510,7 @@ func handoffState() bridgeState {
 		WakeNotice:  owedNotice,
 		Thread:      threadServed(),
 		Shipments:   currentShipments(),
+		ToolsHash:   mcp.ToolsFingerprint(),
 	}
 	// The single fields too, for an image older than WakeStreams: it
 	// restores one stream, which is what it could hold.

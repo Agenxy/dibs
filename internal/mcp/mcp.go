@@ -587,7 +587,7 @@ func (s *Server) dispatch(
 		return cacheable(map[string]any{
 			"supportedVersions": supportedVersions,
 			"capabilities": map[string]any{
-				"tools": map[string]any{},
+				"tools": map[string]any{"listChanged": true}, // see ToolsFingerprint
 				// SEP-2575: advertise resource subscriptions so clients know they
 				// may open subscriptions/listen for dibs://inbox and dibs://board.
 				"resources": map[string]any{"subscribe": true, "listChanged": true},
@@ -599,7 +599,7 @@ func (s *Server) dispatch(
 		return map[string]any{
 			"protocolVersion": negotiateLegacy(req.Params),
 			"capabilities": map[string]any{
-				"tools": map[string]any{},
+				"tools": map[string]any{"listChanged": true}, // see ToolsFingerprint
 				// Advertise subscribe on the LEGACY path too, because most clients
 				// still arrive here. That was once true of ALL of them and is no
 				// longer: on 2026-08-17, Claude Code 2.1.233 and Codex
