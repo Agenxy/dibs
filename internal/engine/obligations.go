@@ -53,13 +53,47 @@ func (e *Engine) workSlotsOf(l *core.Agent, now time.Time) []core.Slot {
 		if len(body) > maxObligationQuote {
 			body = body[:maxObligationQuote] + "..."
 		}
-		slots = append(slots, core.Slot{
+		owed := core.Slot{
 			ID:            fmt.Sprintf("request %d", m.Serial),
 			Text:          fmt.Sprintf("approved request from %s, not yet reported done: %s", m.From, body),
 			UpdatedSerial: m.Serial,
-		})
+		}
+		if park, ok := parkedBy(slots, m.Serial); ok {
+			owed.Waiting, owed.RecheckSec = park.Waiting, park.RecheckSec
+			owed.UpdatedSerial = max(owed.UpdatedSerial, park.UpdatedSerial)
+		}
+		slots = append(slots, owed)
 	}
 	return slots
+}
+
+// parkedBy is the waiting declaration that names an owed request, if any.
+//
+// An owed request blocked on somebody else could not be parked: it was added
+// as work in progress whatever the agent declared, so a worker whose published
+// work was held by an owner decision was continued for it again and again,
+// and its only way out was a "done" that would have been false. Reported by
+// k7-dev for request #2540. A declaration with `waiting` set and
+// `request:<serial>` (or `msg:<serial>`) in its refs now parks that request:
+// it inherits the wait and the recheck, and is left alone until either is
+// due. Linked explicitly, by the agent, because a wait on one thing is not a
+// wait on everything it owes.
+func parkedBy(slots []core.Slot, serial uint64) (core.Slot, bool) {
+	want := map[string]bool{
+		fmt.Sprintf("request:%d", serial): true,
+		fmt.Sprintf("msg:%d", serial):     true,
+	}
+	for _, s := range slots {
+		if strings.TrimSpace(s.Waiting) == "" {
+			continue
+		}
+		for _, r := range s.Refs {
+			if want[strings.ToLower(strings.TrimSpace(r))] {
+				return s, true
+			}
+		}
+	}
+	return core.Slot{}, false
 }
 
 // owedSerials is the row's `owes`.
