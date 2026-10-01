@@ -45,8 +45,8 @@ func TestAHookCallCarriesItsHost(t *testing.T) {
 	}))
 	defer srv.Close()
 	t.Setenv("DIBS_ADDR", strings.TrimPrefix(srv.URL, "http://"))
-	mcpEndpointOnce, mcpEndpointValue = sync.Once{}, ""
-	t.Cleanup(func() { mcpEndpointOnce, mcpEndpointValue = sync.Once{}, "" })
+	reresolveMCPEndpoint()
+	t.Cleanup(reresolveMCPEndpoint)
 
 	var out struct {
 		Agent string `json:"agent"`
@@ -96,8 +96,8 @@ func TestAHookCallSpellsPathsAsTheBridgeDoes(t *testing.T) {
 	}))
 	defer srv.Close()
 	t.Setenv("DIBS_ADDR", strings.TrimPrefix(srv.URL, "http://"))
-	mcpEndpointOnce, mcpEndpointValue = sync.Once{}, ""
-	t.Cleanup(func() { mcpEndpointOnce, mcpEndpointValue = sync.Once{}, "" })
+	reresolveMCPEndpoint()
+	t.Cleanup(reresolveMCPEndpoint)
 	var out map[string]any
 	if err := callHookTool("hook_poll", map[string]any{"session_id": "s", "event": "SessionStart", "cwd": alias}, &out); err != nil {
 		t.Fatalf("setup: %v", err)

@@ -16,7 +16,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -402,8 +401,8 @@ func TestTheBridgeDialsTheHubWhereSupgangSaysItIsNow(t *testing.T) {
 	// AND SO DO THE COMMAND HOOKS, which dialled origin() and kept the saved
 	// address after the hub moved. Round eighteen of the pre-release review.
 	t.Setenv(boardPeerEnv, "MacSolis")
-	mcpEndpointOnce, mcpEndpointValue = sync.Once{}, ""
-	t.Cleanup(func() { mcpEndpointOnce, mcpEndpointValue = sync.Once{}, "" })
+	reresolveMCPEndpoint()
+	t.Cleanup(reresolveMCPEndpoint)
 	if got := mcpEndpoint(); got != "https://192.168.1.191:4790/mcp" {
 		t.Errorf("a command hook posts to %q, want the hub where Supgang says it is now", got)
 	}
