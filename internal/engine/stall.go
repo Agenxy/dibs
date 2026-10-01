@@ -184,7 +184,7 @@ func (e *Engine) stallTick(now time.Time) {
 		_, started := e.wakers.dibsTurn[l.ID]
 		rec := e.wakers.work[l.ID]
 		e.wakers.mu.Unlock()
-		ended := e.turnEnded[l.ID]
+		ended := e.endedAndQuiet(l)
 		in := workInput{
 			slots: e.workSlotsOf(l, now), started: started, ended: ended,
 			idle: !ended.IsZero() || l.Status != core.StatusActive,
@@ -337,3 +337,22 @@ func (e *Engine) workNotice(l *core.Agent, kind string) string {
 		"slot_id and the `waiting` argument set, which writing \"waiting\" in the text does not do.")
 	return b.String()
 }
+
+// endedAndQuiet is when the agent's last turn ended, or zero if it has shown a
+// sign of life since: a Dibs call or a hook after the Stop means a turn is
+// running, whatever the turn-end record says.
+//
+// Codex reports when a turn ENDS (Stop) and nothing when one starts, so the
+// record of the last Stop outlives the next turn. Measured 2026-10-01: a
+// worker was mid-turn, calling Dibs at 02:21 and 02:28, and the backoff wake
+// fired at 02:26 against the Stop before it. The slack covers the Stop's own
+// hook, which stamps both clocks in the same call.
+func (e *Engine) endedAndQuiet(l *core.Agent) time.Time {
+	ended := e.turnEnded[l.ID]
+	if ended.IsZero() || e.lastEvidenceOf(l).After(ended.Add(stopSlack)) {
+		return time.Time{}
+	}
+	return ended
+}
+
+const stopSlack = 2 * time.Second
