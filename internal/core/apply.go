@@ -1661,6 +1661,10 @@ func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, 
 	if !ok || m.To != l.ID {
 		return nil, nil, errf("E_NO_MESSAGE", "check your inbox", "no message %d addressed to you", op.MsgSerial)
 	}
+	if op.Disposition == "done" {
+		// After approval, which is terminal for every other disposition.
+		return s.applyDone(m, op, now)
+	}
 	if m.Terminal() {
 		// A hint, like every other error here.
 		//
@@ -1975,7 +1979,8 @@ func dispositionHint(t string) string {
 	case MsgQuestion:
 		return "a question takes disposition answer, or decline if you will not answer it"
 	case MsgRequest:
-		return "a request takes disposition approve or deny, or decline if it is not yours to decide"
+		return "a request takes disposition approve or deny, or decline if it is not yours to decide; " +
+			"once you have approved it, done when the work is delivered"
 	case MsgNotify, MsgHandoff:
 		return "a " + t + " expects no response: close it with ack(msg_serial) instead of respond"
 	}

@@ -59,7 +59,10 @@ type wakers struct {
 	// what each was last continued for. See continuation.go.
 	dibsTurn  map[string]time.Time
 	continued map[string]continuation
-	last      map[string]time.Time
+	// work: each agent's progress on its declarations, for the continuation
+	// wakes and the stalled state. See stall.go.
+	work map[string]workRecord
+	last map[string]time.Time
 	// deferred: a re-check armed for when an agent's cooldown expires, because
 	// maybeWake fires once per event and nothing else retries.
 	deferred map[string]*time.Timer
@@ -1585,6 +1588,11 @@ func (e *Engine) recencyWindow(l *core.Agent) time.Duration {
 func (e *Engine) socketNotice(l *core.Agent, from, kind string) string {
 	if l == nil {
 		return wakeexec.Compose(kind)
+	}
+	// The agent's own declared work, quoted: this channel can keep it, unlike
+	// argv. See stall.go.
+	if kind == wakeexec.KindContinuation || kind == wakeexec.KindRecheck {
+		return e.workNotice(l, kind)
 	}
 	now := time.Now()
 	// ALL THREE, which is the bug this replaced. It passed mail and nil'd

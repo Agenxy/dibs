@@ -41,14 +41,14 @@ const Board = (() => {
   // when its STATE says so, not when it happens to carry response text,
   // because a denial and a decline are both terminal and both carry none.
   const TERMINAL = new Set([
-    "answered", "approved", "denied", "declined", "acked",
+    "answered", "approved", "denied", "declined", "done", "acked",
     "expired_unanswered", "expired_recipient_dormant", "expired_recipient_dead",
     "displaced",
   ])
 
   const VERDICT = {
     answered: "Answered", approved: "Approved", denied: "Denied",
-    declined: "Declined", acked: "Acknowledged",
+    declined: "Declined", done: "Done", acked: "Acknowledged",
     expired_unanswered: "Expired, unanswered",
     expired_recipient_dormant: "Expired: recipient dormant",
     expired_recipient_dead: "Expired: recipient gone",
@@ -86,6 +86,19 @@ const Board = (() => {
     process_exited: ["process gone", "its process exited: this agent is not coming back on its own"],
     lease_lapsed: ["no contact", "it stopped checking in; it may be mid-build rather than dead"],
     idle_no_activity: ["idle", "it never gave a pid, so silence says nothing about whether it is alive"],
+  }
+  // What the agent is DOING, which the server derives from its declarations
+  // and from what it has seen, apart from status, which is about a process.
+  // Only the two a person acts on get a tag: a stall needs somebody, and a wait
+  // explains a quiet row.
+  function workHTML(l) {
+    if (l.work === "stalled") {
+      return explained("pill blocked", "stalled", "it declared work, stopped, and did not move on through three wakes: whoever assigned the work has been told")
+    }
+    if (l.work === "waiting") {
+      return explained("pill quiet", "waiting", "its declared work is blocked on someone or something else, by its own account")
+    }
+    return ""
   }
   function staleReasonHTML(l) {
     const why = STALE_WHY[l.stale_reason]
@@ -249,6 +262,7 @@ const Board = (() => {
           ${self ? '<span class="tag self">This agent</span>' : ""}
           ${l.kind === "persistent" ? '<span class="tag">Standing</span>' : ""}
           ${agentBadges(l)}
+          ${workHTML(l)}
           ${staleReasonHTML(l)}
           ${cadenceHTML(l.id, events)}
           <time class="age" datetime="${esc(l.last_coordination_at || "")}">${esc(ago(l.last_coordination_at))}</time>

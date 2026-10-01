@@ -66,7 +66,8 @@ type Engine struct {
 	//
 	// Ephemeral and rebuildable, same tier as `seen`: losing it on restart costs
 	// at most one unnecessary wake.
-	turnEnded map[string]time.Time
+	turnEnded     map[string]time.Time
+	lastStallTick time.Time // paces stallTick; see stall.go
 	// reachedByHook: agents at least one lifecycle hook has resolved to, so a
 	// later miss in their directory is somebody else's session rather than
 	// theirs. Telemetry for hookhealth.go, same tier as `seen`.
@@ -335,6 +336,7 @@ func (e *Engine) Run(ctx context.Context) {
 		case now := <-tick.C:
 			e.sweep(now)
 			e.expireWaiters(now)
+			e.stallTick(now)
 		case s := <-e.subs:
 			e.streams[s.ch] = s.lost
 			// Catch-up replay, deliberately best-effort: the `default` drops
