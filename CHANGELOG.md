@@ -7,6 +7,19 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **A wake that fails is told to the agent waiting on it, and shown on the
+  board.** k7-dev sent two requests to two Codex workers and every wake failed:
+  Codex refused to run in a directory that was not a git repository. The
+  daemon wrote that at WARN into `dibd.log`, which no agent can read, so the
+  sender saw no wake and no failure, both requests sat pending, and after the
+  third failure the board quietly stopped trying. Now the sender gets a notice
+  (the channel for things an agent could not have inferred) saying the wake
+  failed and the message is still owed, once when it fails and once more if the
+  board gives up, never on every retry. The recipient's row carries a `wake`
+  field while it is failing. The notice leaves out the wake command itself,
+  which names the recipient's thread; that stays in `dibd.log` for whoever runs
+  the board.
+
 - **A liveness flip no longer costs an agent its acknowledgement of the board.**
   The awareness gate re-armed whenever the sweep marked an agent dormant or
   stale, and again when its next call woke it. Whenever the board's liveness
