@@ -481,8 +481,14 @@ type Agent struct {
 
 	// Role is "member", "coordinator", or "admin". Only the human, through the
 	// admin path, can grant it: an agent can never promote itself.
-	Role          string `json:"role,omitempty"`
-	CreatedSerial uint64 `json:"created_serial"`
+	Role string `json:"role,omitempty"`
+	// Permissions are grants beyond the role, each one the human's decision:
+	// today only PermRelocate. See relocate.go.
+	Permissions []string `json:"permissions,omitempty"`
+	// Relocated is the last time this agent was moved to another environment
+	// on purpose, and by whom. A wake never sets it.
+	Relocated     *Relocation `json:"relocated,omitempty"`
+	CreatedSerial uint64      `json:"created_serial"`
 	// AckedSerial is the awareness-gate watermark; 0 = gate not passed in the
 	// current activation (cleared by every dormant/stale transition and wake).
 	AckedSerial uint64 `json:"acked_serial"`

@@ -128,7 +128,7 @@ func checkGrantRequest(op *Op) error {
 			"a %s cannot carry a grant", op.MsgType)
 	}
 	switch op.Grant {
-	case RoleCoordinator, RoleMember:
+	case RoleCoordinator, RoleMember, PermRelocate:
 		return nil
 	case RoleAdmin:
 		return errf("E_BAD_ROLE",
@@ -137,7 +137,8 @@ func checkGrantRequest(op *Op) error {
 			"admin cannot be requested")
 	default:
 		return errf("E_BAD_ROLE",
-			"grant takes coordinator (broadcast + force_release) or member (hand it back)",
+			"grant takes coordinator (broadcast + force_release), member (hand it back) "+
+				"or relocate (move an agent to another environment)",
 			"unknown role %q", op.Grant)
 	}
 }

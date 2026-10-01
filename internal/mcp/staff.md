@@ -24,6 +24,18 @@ themselves.
 | `force_release` | break a claim whose holder is gone |
 | `evict`, `admit`, `close_space`, `merge_spaces` | repair a space's membership |
 | `claim_coordinator` | take the role when nobody holds it |
+| `relocate` | run a CLOSED agent's thread in a different environment from the one it last ran in |
+
+`relocate` is the one deliberate exception to the rule every wake keeps: an
+agent is woken in the app it runs in and nowhere else. Moving it is a decision,
+and it is ledgered under your name with where the agent was and where it went,
+because an operator who finds a thread running somewhere it did not start will
+want to know who chose that. `chatgpt-app` opens a Codex thread in the ChatGPT
+app; the other environments are the operator's `[relocate]` entries, which may
+start the agent headless on the operator's model allowance. Refused for an
+agent that is running (two writers on one thread), and for anywhere it already
+runs. A member can be granted it by the human (`grant: "relocate"` on a
+request); you hold it by role.
 
 `prune` used to say "never a peer" and nothing qualified it, so a coordinator
 holding the power read the description, concluded the product could not do this,

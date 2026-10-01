@@ -868,6 +868,8 @@ type toolArgs struct {
 	SpaceID string `json:"space"`
 	// AgentRef targets an actual agent, for the tools that act on one.
 	AgentRef string `json:"agent"`
+	// Environment is where relocate moves an agent to.
+	Environment string `json:"environment"`
 	// Setting and Value are configure's: which board setting, and what to.
 	// Both empty is a read, which needs only a token.
 	Setting string `json:"setting"`
@@ -1233,6 +1235,8 @@ func (s *Server) run(
 		op.Kind = core.OpSignOff
 	case "prune":
 		op.Kind, op.To = core.OpPruneOwn, a.AgentRef
+	case "relocate":
+		return s.eng.Relocate(ctx, a.Token, a.AgentRef, a.Environment)
 	case "claim_coordinator":
 		// The secret rides in `nonce`: it is the same shape of thing, a
 		// credential the caller holds and the daemon checks.

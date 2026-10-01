@@ -675,7 +675,7 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		// The gate is there rather than here because an ADMIN AGENT may do
 		// this, which is the difference from prune, and an agent has a token
 		// that the system path would refuse.
-		op.Kind == core.OpMergeAgents
+		op.Kind == core.OpMergeAgents || core.HumanPathOp(op.Kind)
 
 	// A system op carries no agent token, and one that does is refused.
 	//

@@ -747,6 +747,15 @@ var toolDefs = func() []map[string]any {
 			}, "token", "type", "body"),
 		},
 		{
+			"name": "relocate",
+			"description": "COORDINATOR, or granted relocate. Run a closed agent's " +
+				"thread in another environment (chatgpt-app, or a [relocate] entry). " +
+				"Never a wake; ledgered.",
+			"inputSchema": obj(map[string]any{
+				"token": tok, "agent": str("agent id"), "environment": str("where to run it"),
+			}, "token", "agent", "environment"),
+		},
+		{
 			"name": "force_release",
 			"description": "COORDINATOR ONLY. Release another agent's claim, for a resource " +
 				"whose holder is gone. The holder is told; never silent. Ask them first " +
