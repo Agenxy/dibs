@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -68,4 +69,57 @@ func (e *Engine) owedSerials(agent string, now time.Time) []uint64 {
 		out = append(out, m.Serial)
 	}
 	return out
+}
+
+// UnansweredFrom is the note for a send that looks like an answer and is not
+// one: the caller still owes `to` a response to a question or request `to`
+// sent it, and a send does not give one.
+//
+// Measured 2026-10-01: a worker accepted request #2500 with a notify quoting
+// "request2500", the request expired unanswered ten minutes later, and the
+// task looked dropped although the worker had taken it. A notify is not a
+// verdict, so nothing in the fold can treat it as one; what Dibs can do is
+// say so at the moment it is sent.
+func (e *Engine) UnansweredFrom(ctx context.Context, token, to string) string {
+	res, err := e.query(ctx, func() core.Result {
+		l, errRes := e.authRead(token, time.Now())
+		if errRes != nil || l == nil {
+			return core.Result{}
+		}
+		return core.Result{"note": unansweredNote(e.state, l.ID, to, time.Now())}
+	})
+	if err != nil {
+		return ""
+	}
+	n, _ := res["note"].(string)
+	return n
+}
+
+// unansweredNote is the decision, apart from the engine.
+func unansweredNote(st *core.State, me, to string, now time.Time) string {
+	var owed []*core.Message
+	for _, m := range st.Messages {
+		if m.To == me && m.From == to && m.Expecting() && !m.Terminal() {
+			owed = append(owed, m)
+		}
+	}
+	if len(owed) == 0 {
+		return ""
+	}
+	sort.Slice(owed, func(i, j int) bool { return owed[i].Serial < owed[j].Serial })
+	var parts []string
+	for _, m := range owed {
+		verbs := "answer|decline"
+		if m.Type == core.MsgRequest {
+			verbs = "approve|deny|decline"
+		}
+		left := ""
+		if !m.Deadline.IsZero() {
+			left = fmt.Sprintf(", %s left", m.Deadline.Sub(now).Round(time.Minute))
+		}
+		parts = append(parts, fmt.Sprintf("#%d (a %s%s): respond(%d, %s)", m.Serial, m.Type, left, m.Serial, verbs))
+	}
+	return "sent, but this does not answer what " + to + " is waiting on from you: " +
+		strings.Join(parts, "; ") + ". A message is not a response, so the ask stays open and " +
+		"expires unanswered at its deadline"
 }
