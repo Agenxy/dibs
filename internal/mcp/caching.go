@@ -1,5 +1,11 @@
 package mcp
 
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+)
+
 // Cache hints for the 2026-07-28 stateless core.
 //
 // The spec requires servers to put `ttlMs` and `cacheScope` on every complete
@@ -55,4 +61,19 @@ func cacheable(result map[string]any, ttlMs int, scope string) map[string]any {
 	result["ttlMs"] = ttlMs
 	result["cacheScope"] = scope
 	return result
+}
+
+// ToolsFingerprint identifies the tool list this binary serves, so a stdio
+// bridge that has just replaced itself with a newer build can tell its harness
+// the list changed (notifications/tools/list_changed).
+//
+// Why it matters: a long-running session keeps the tool list it started with.
+// A Codex worker whose session predated `declare`'s `waiting` argument wrote
+// "waiting" into its declaration's text instead, which marks nothing, and was
+// continued in a loop for it (2026-10-01). Claude Code refreshes its tools on
+// the notification; Codex 0.159 only logs it.
+func ToolsFingerprint() string {
+	raw, _ := json.Marshal(agentTools)
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:8])
 }

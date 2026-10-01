@@ -15,6 +15,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A session started before an upgrade now learns the new tools.** A
+  long-running session keeps the tool list it began with, so new arguments
+  (such as `declare`'s `waiting`) were invisible to it. The server now
+  advertises `tools.listChanged`, and the stdio bridge, after replacing itself
+  with a build whose tools differ, sends `notifications/tools/list_changed`.
+  Claude Code refreshes on it; Codex 0.159 only logs it, so Codex workers
+  still learn new arguments from the continuation text and `dibs://skills`.
+
 - **A worker re-declaring on every Stop could be continued in a loop.** A
   changed declaration counts as progress, so a Codex worker whose session
   predated `waiting` and wrote "waiting" into its declaration's text instead was

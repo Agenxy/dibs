@@ -10,6 +10,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/agenxy/dibs/internal/mcp"
 )
 
 // The bridge replaces itself when its binary changes, without the harness
@@ -91,6 +93,10 @@ type bridgeState struct {
 	// say, which is how this route came to send placeholders in the first
 	// place.
 	WakeNotice string `json:"wake_notice,omitempty"`
+	// ToolsHash is the tool list the previous image served (mcp.ToolsFingerprint).
+	// The next image compares it with its own and tells the harness when they
+	// differ, so a session started on an older build learns new arguments.
+	ToolsHash string `json:"tools_hash,omitempty"`
 	// WakeStreams is every agent this bridge watches for, with its
 	// credential and cursor: a bridge serves every agent that registers
 	// through it, and the single WakeToken above carried one. Found by the
@@ -320,6 +326,7 @@ func restoreCarried(ctx context.Context, client *http.Client, url, secret string
 		return
 	}
 	lastClientInfo, lastWantsUI = s.ClientInfo, s.WantsUI
+	announceToolsChanged(out, s.ToolsHash)
 	restoreShipments(ctx, client, url, secret, s.Shipments, timing)
 	if s.Thread != "" {
 		noteThread(s.Thread)
@@ -354,4 +361,21 @@ func restoreCarried(ctx context.Context, client *http.Client, url, secret string
 			followStream(ctx, client, url, secret, line, out)
 		}()
 	}
+}
+
+// toolsChangedNote is the JSON-RPC notification MCP defines for a server whose
+// tool list changed under a connected client.
+var toolsChangedNote = []byte(`{"jsonrpc":"2.0","method":"notifications/tools/list_changed"}`)
+
+// announceToolsChanged tells the harness its cached tool list is stale, after
+// an in-place upgrade whose tools differ from the image it replaced. An image
+// too old to carry a fingerprint counts as different: one refresh is cheap,
+// and a session that never learns a new argument is not.
+func announceToolsChanged(out *syncWriter, previous string) {
+	if previous == mcp.ToolsFingerprint() {
+		return
+	}
+	out.line(toolsChangedNote)
+	slog.Info("told the harness the tool list changed with this upgrade",
+		"was", previous, "now", mcp.ToolsFingerprint())
 }
