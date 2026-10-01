@@ -48,6 +48,7 @@ func bridgeUnderTest(t *testing.T, rec *recordingRun) *wakeBridge {
 		},
 	})
 	b.run = rec.run
+	t.Setenv("CODEX_HOME", t.TempDir()) // never the operator's own threads
 	// Never the real app: a test that reached `open codex://...` would switch
 	// the operator's ChatGPT window every time the suite ran.
 	b.show = harnessenv.Shower{
@@ -461,6 +462,32 @@ func TestTheBridgeOpensTheThreadInTheAppTheAgentRunsIn(t *testing.T) {
 		t.Errorf("an app agent's thread was opened as %q: the queued message waits in a "+
 			"thread the app on this machine never loaded", got)
 	}
+	// No word from a bridge: the thread's own transcript on THIS machine says
+	// it was born in the app.
+	t.Run("born in the app", func(t *testing.T) {
+		b := bridgeUnderTest(t, &recordingRun{ok: true})
+		home := t.TempDir()
+		t.Setenv("CODEX_HOME", home)
+		at := time.UnixMilli(0x01a0f45ecbf8)
+		const born = "01a0f45e-cbf8-7ef0-acb8-79c25cb4343d"
+		dir := filepath.Join(home, "sessions", at.Format("2006"), at.Format("01"), at.Format("02"))
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		head := `{"type":"session_meta","payload":{"id":"` + born + `","originator":"Codex Desktop"}}` + "\n"
+		if err := os.WriteFile(filepath.Join(dir, "rollout-x-"+born+".jsonl"), []byte(head), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		var opened [][]string
+		b.show = harnessenv.Shower{
+			Holds: func(string) bool { return false },
+			Open:  func(argv []string) error { opened = append(opened, argv); return nil },
+		}
+		b.execute(engine.WakeRequest{ID: 2, Host: b.host, Agent: "worker", Harness: "codex", Thread: born, MsgType: "question"})
+		if len(opened) != 1 {
+			t.Errorf("a dormant app thread with no bridge word was not opened in the app: %q", opened)
+		}
+	})
 	if got := run(t, harnessenv.CodexOutsideApp, true); len(got) != 0 {
 		t.Errorf("a terminal Codex's thread was opened in the app: %q", got)
 	}

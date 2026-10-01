@@ -198,6 +198,17 @@ Dibs open its thread in the app, which is moving it to an environment it did
 not run in. A Codex that is NOT under the app states `codex`, so a thread that
 moved from the app to a terminal stops reading as an app thread.
 
+**When no bridge has said, the thread's birthplace decides.** A dormant agent
+makes no call until something wakes it, so after an install every sleeping app
+agent was still on its old bridge and read as unknown, at exactly the wake that
+had to open the app. Codex writes a header as the first line of every thread's
+transcript, naming the client that created it: measured, `"originator":"Codex
+Desktop"` for a thread started in the ChatGPT app and `"codex_exec"` for one
+started headless. With no surface stated, a Codex agent whose thread the app
+created is opened there. A bridge that has stated one still wins, because it
+says where the agent ran LAST: a thread born in the app and since run from a
+terminal stays out of the app.
+
 For an agent on another machine the app is on that machine, so the hub sends
 the surface on the wake request and `dibs host-bridge` opens the thread there.
 The field is additive: a bridge too old to know it keeps queueing, as before.
