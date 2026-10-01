@@ -67,7 +67,11 @@ func (b *continuationBoard) wake(t *testing.T) {
 	if !ok || len(plan.argv) == 0 {
 		t.Fatal("setup: no wake planned, so nothing below tests a turn Dibs started")
 	}
-	if !b.e.runWakeAndReport(plan, "worker") {
+	// As every production wake does: run it, then record that it exited, or
+	// the board believes it is still running and refuses the next one.
+	ok = b.e.runWakeAndReport(plan, "worker")
+	b.e.wakeExited("worker", plan.thread)
+	if !ok {
 		t.Fatal("setup: the stand-in wake command failed")
 	}
 }
@@ -105,6 +109,16 @@ func TestATurnDibsStartedIsContinuedWhileItsDeclarationIsOpen(t *testing.T) {
 	}
 	if _, bad := got["hookSpecificOutput"]; bad {
 		t.Error("a Codex Stop reply carries hookSpecificOutput, which fails its parse")
+	}
+	// A continued Stop is not a turn that ended: the later wakes count from a
+	// real end, and one that was only continued has not happened.
+	if _, err := b.e.query(b.ctx, func() core.Result {
+		if _, ended := b.e.turnEnded["worker"]; ended {
+			t.Error("a continued Stop was recorded as the end of the turn")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
 
 	// Bounded: twice for one version of the declaration, then left alone.

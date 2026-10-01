@@ -367,11 +367,11 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "respond",
-			"description": "Respond to a message in your inbox: answer (questions), approve/deny (requests), or decline " +
-				"(either).",
+			"description": "Respond to a message in your inbox: answer (questions), approve/deny (requests), " +
+				"decline (either), or done (a request you approved, once delivered; until then you owe it).",
 			"inputSchema": obj(map[string]any{
 				"token": tok, "msg_serial": num("serial of the message"),
-				"disposition": map[string]any{"type": "string", "enum": []string{"answer", "approve", "deny", "decline"}},
+				"disposition": map[string]any{"type": "string", "enum": []string{"answer", "approve", "deny", "decline", "done"}},
 				"body":        str("response text (optional for approve/deny/decline)"),
 			}, "token", "msg_serial", "disposition"),
 		},

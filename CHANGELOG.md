@@ -28,6 +28,21 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Approved requests are tracked until they are done.** `respond` takes
+  `done` on a request you approved, once the work is delivered, and the
+  requester is told. Until then the request is an obligation: the row lists it
+  under `owes`, and it counts as declared work for continuation and stall
+  detection. Approvals older than a day are not counted, so history from
+  before this existed does not read as owed.
+
+- **A stalled agent is woken again, and then reported.** An agent woken by
+  Dibs that keeps stopping with its declaration unchanged is woken again 10, 30
+  and 60 minutes after each turn ends; a declared wait with `recheck_after` is
+  woken when it falls due. When those run out, the board row's new `work` field
+  reads `stalled` (also `idle`, `working`, `waiting`, derived from what the
+  agent declared and did rather than from its process) and whoever assigned the
+  work is told. `dibs board` and the web board show it.
+
 - **A turn that ends with declared work still open is continued.** When a turn
   Dibs started (a delivered wake) ends while the agent holds a declaration that
   says it is working, the Stop hook continues the turn with that declaration

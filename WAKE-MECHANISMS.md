@@ -188,6 +188,17 @@ turn resets that. Never after a person's prompt (Claude Code reports those;
 the Codex plugin binds no UserPromptSubmit, so there the guard is the wake
 alone), and never on a turn Codex reports a Stop hook already continued.
 
+**When continuing in the turn is not enough** (stall.go). An agent that
+stops twice in quick succession and then sits is woken again through its
+normal route, 10, 30 and 60 minutes after each turn end, with a fixed sentence
+on argv and its declarations quoted on the socket. A declared wait with
+`recheck_after` is woken when the recheck falls due, three times. When those
+run out with the declaration unchanged the row's `work` reads `stalled` and
+the agent that assigned the work (the sender of the newest request it
+approved; otherwise a coordinator, then the human) is told once. `work` is
+derived from declarations and what the daemon has seen, never from process
+liveness: a Codex agent in the ChatGPT app has no process between calls.
+
 **And every Codex Stop delivery before this failed to parse.** Codex's output
 schema is per event with `deny_unknown_fields`, and its Stop takes `decision`
 and `reason` and has no `hookSpecificOutput` (read at rust-v0.159.2, the

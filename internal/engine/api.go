@@ -186,7 +186,8 @@ func resyncEvents(st *core.State, l *core.Agent, cursor uint64) []core.Event {
 			continue
 		}
 		switch m.State {
-		case core.MsgStateAnswered, core.MsgStateApproved, core.MsgStateDenied, core.MsgStateDeclined:
+		case core.MsgStateAnswered, core.MsgStateApproved, core.MsgStateDenied, core.MsgStateDeclined,
+			core.MsgStateDone:
 			evs = append(evs, core.Event{
 				Serial: m.RespondedAt, TS: m.SentAt, Type: "message." + m.State, Agent: m.To, To: l.ID,
 				Data: map[string]any{"msg_serial": m.Serial, "resynced": true},
@@ -675,6 +676,13 @@ func (e *Engine) decoratedBoard() core.Result {
 		// on the board while every wake for it failed; see wakefail.go.
 		if w := e.wakeStatusOf(id); w != "" {
 			lm["wake"] = w
+		}
+		// What the agent is DOING, from what it declared and what the board has
+		// seen, beside status, which is about its process. See workStateOf.
+		lm["work"] = e.workStateOf(l)
+		// Requests it approved and has not reported done: obligations.go.
+		if owes := e.owedSerials(l.ID, time.Now()); len(owes) > 0 {
+			lm["owes"] = owes
 		}
 		// Which row is the person.
 		//

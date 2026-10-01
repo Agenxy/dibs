@@ -75,9 +75,13 @@ func (e *Engine) notePersonPrompted(agent string) {
 // openDeclarations are the agent's declarations that say it is WORKING:
 // declared and not waiting. Sorted by slot id so the reason reads the same
 // every time.
-func openDeclarations(l *core.Agent) []core.Slot {
+func openDeclarations(l *core.Agent) []core.Slot { return openOf(slotsOf(l)) }
+
+// openOf is openDeclarations over any set of commitments, obligations
+// included (obligations.go).
+func openOf(slots []core.Slot) []core.Slot {
 	var open []core.Slot
-	for _, s := range l.Slots {
+	for _, s := range slots {
 		if strings.TrimSpace(s.Waiting) == "" && strings.TrimSpace(s.Text) != "" {
 			open = append(open, s)
 		}
@@ -144,7 +148,7 @@ func (e *Engine) continueDeclaredWork(l *core.Agent, now time.Time) (string, boo
 	if e.wakers.continued == nil {
 		e.wakers.continued = map[string]continuation{}
 	}
-	reason, next, ok := decideContinuation(openDeclarations(l), started, e.wakers.continued[l.ID], now)
+	reason, next, ok := decideContinuation(openOf(e.workSlotsOf(l, now)), started, e.wakers.continued[l.ID], now)
 	e.wakers.continued[l.ID] = next
 	return reason, ok
 }
@@ -166,6 +170,10 @@ func (e *Engine) continuationReply(l *core.Agent, event string, stopActive bool)
 	if !ok {
 		return nil
 	}
+	// A continued Stop is not a turn that ended: the turn goes on. Recorded
+	// as ended, the later wakes in stall.go would count from a stop that did
+	// not happen. On the writer loop, which owns turnEnded.
+	delete(e.turnEnded, l.ID)
 	return core.Result{"decision": "block", "reason": reason}
 }
 

@@ -159,7 +159,7 @@ func situationalNotice(ev core.Event) (who, text string, blocking bool) {
 	switch ev.Type {
 	case "agent.joined":
 		who, text = ev.Agent, joinedNotice(ev)
-	case "message.approved", "message.denied", "message.answered", "message.declined":
+	case "message.approved", "message.denied", "message.answered", "message.declined", "message.done":
 		// The ANSWER goes to whoever asked.
 		//
 		// A request approved is the single most consequential thing that can
@@ -437,6 +437,9 @@ func answeredNotice(ev core.Event) string {
 				"it is there now and was not before", from)
 		}
 		return s + ". Read it with read_mail to see what they said"
+	case "message.done":
+		return fmt.Sprintf("%s reports your request DONE (msg %d): the work it approved is "+
+			"delivered. read_mail has what it said", by, serial)
 	case "message.denied":
 		return fmt.Sprintf("%s DENIED your request (msg %d). Do not retry the same ask "+
 			"without new reasoning; read_mail has whatever they said", by, serial)
@@ -595,6 +598,8 @@ func verdictEvent(state string) string {
 		return "message.denied"
 	case core.MsgStateAnswered:
 		return "message.answered"
+	case core.MsgStateDone:
+		return "message.done"
 	case core.MsgStateDeclined:
 		return "message.declined"
 	}

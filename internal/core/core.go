@@ -43,11 +43,14 @@ const (
 
 // Message states (SPEC §8).
 const (
-	MsgStatePending        = "pending"
-	MsgStateDelivered      = "delivered"
-	MsgStateAcked          = "acked"
-	MsgStateAnswered       = "answered"
-	MsgStateApproved       = "approved"
+	MsgStatePending   = "pending"
+	MsgStateDelivered = "delivered"
+	MsgStateAcked     = "acked"
+	MsgStateAnswered  = "answered"
+	MsgStateApproved  = "approved"
+	// MsgStateDone: a request the recipient approved and then reported
+	// delivered (respond disposition "done"). See applyDone.
+	MsgStateDone           = "done"
 	MsgStateDenied         = "denied"
 	MsgStateDeclined       = "declined"
 	MsgStateExpiredSilent  = "expired_unanswered"
@@ -716,7 +719,7 @@ type Message struct {
 // capacity, displacement, inbox, retention, and GC.
 func (m *Message) Terminal() bool {
 	switch m.State {
-	case MsgStateAnswered, MsgStateApproved, MsgStateDenied, MsgStateDeclined,
+	case MsgStateAnswered, MsgStateApproved, MsgStateDenied, MsgStateDeclined, MsgStateDone,
 		MsgStateExpiredSilent, MsgStateExpiredDormant, MsgStateExpiredDead,
 		MsgStateDisplaced:
 		return true

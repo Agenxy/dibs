@@ -717,6 +717,10 @@ space surface (`open_space`, `join_space`, `read_space`, `post`,
 claim-level counterpart to `unlock_space`. v1.3 added `configure` and `merge_agents`, the
 admin-gated read and write of the settings the engine can apply while it
 runs; see docs/CONFIGURATION.md for why an address is not among them.
+Every board row carries `work` (`idle`, `working`, `waiting`, `stalled`),
+derived by the daemon from the agent's declarations and the turns it has seen,
+never from process liveness, and outside the ledger like every other liveness
+view. See WAKE-MECHANISMS.md, "Continuing a turn that ends with declared work".
 v1.4 added `relocate`: running a closed agent's thread in a different
 environment from the one it last ran in, which a wake never does. It needs the
 coordinator or admin role, or the `relocate` permission the human grants
@@ -738,7 +742,7 @@ counting a document; this line said 17 for two minor versions.
 | `heartbeat()` | renew lease while idle (implicit on every call) |
 | `declare(slot_id?, text, dirs?, refs?, activity?, holds?, waiting?, recheck_after?)` / `undeclare(slot_id)` | declare/end work units. A declaration without `waiting` says the agent is working: a turn a Dibs wake started that ends while one is open is continued at Stop (at most twice per version of it, never after a person's prompt) |
 | `send(to, type, body, deadline_s?, op_id?)` | → `msg_serial`; `op_id` = durable dedup (§4) |
-| `respond(msg_serial, disposition, body?)` | answer/approve/deny/decline |
+| `respond(msg_serial, disposition, body?)` | answer/approve/deny/decline; `done` on a request you approved, once the work is delivered. An approved request not yet done is an obligation (the row's `owes`, for a day after approval) and counts as declared work |
 | `ack(msg_serial)` | explicit read receipt |
 | `inbox()` | non-terminal + unconsumed terminal mail, decrypted; marks delivery; returns `truncated_before_serial` (§8) |
 | `read_mail(msg_serial)` | full message + response; sender or recipient (§8) |

@@ -1,0 +1,284 @@
+package engine
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/agenxy/dibs/internal/core"
+)
+
+var stallT0 = time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
+
+// The decision, step by step: a Dibs-started agent whose turns keep ending
+// with its declaration unchanged is woken at 10, 30 and 60 minutes after each
+// turn end, then reported stalled, and a changed declaration starts over.
+func TestAStoppedAgentIsWokenOnABackoffAndThenReportedStalled(t *testing.T) {
+	work := []core.Slot{{ID: "s1", Text: "build C", UpdatedSerial: 40}}
+	in := workInput{slots: work, started: true, ended: stallT0, idle: true}
+	rec := workRecord{}
+	step := func(now time.Time, want workAction) {
+		t.Helper()
+		var got workAction
+		got, rec = decideWork(in, rec, now)
+		if got != want {
+			t.Fatalf("at +%v: action %d, want %d (record %+v)", now.Sub(stallT0), got, want, rec)
+		}
+	}
+	step(stallT0.Add(5*time.Minute), workNothing)
+	step(stallT0.Add(10*time.Minute), workContinue)
+	in.ended = stallT0.Add(12 * time.Minute) // that wake ran a turn, which ended
+	step(stallT0.Add(30*time.Minute), workNothing)
+	step(stallT0.Add(42*time.Minute), workContinue)
+	in.ended = stallT0.Add(43 * time.Minute)
+	step(stallT0.Add(103*time.Minute), workContinue)
+	in.ended = stallT0.Add(104 * time.Minute)
+	step(stallT0.Add(105*time.Minute), workStall)
+	step(stallT0.Add(300*time.Minute), workNothing) // stalled stays stalled, and quiet
+
+	in.slots = []core.Slot{{ID: "s1", Text: "build C, pr:1700 open", UpdatedSerial: 52}}
+	in.ended = stallT0.Add(301 * time.Minute)
+	step(stallT0.Add(302*time.Minute), workNothing)
+	if rec.wakes != 0 || !rec.stalledAt.IsZero() {
+		t.Errorf("a changed declaration did not start over: %+v", rec)
+	}
+}
+
+func TestOnlyADibsStartedStoppedAgentIsWokenForItsWork(t *testing.T) {
+	work := []core.Slot{{ID: "s1", Text: "build C", UpdatedSerial: 40}}
+	late := stallT0.Add(3 * time.Hour)
+	for name, in := range map[string]workInput{
+		"a person's session":   {slots: work, started: false, ended: stallT0, idle: true},
+		"a turn still running": {slots: work, started: true, idle: false},
+		"nothing declared":     {started: true, ended: stallT0, idle: true},
+		"waiting, no recheck":  {slots: []core.Slot{{ID: "s1", Text: "x", Waiting: "k7-dev", UpdatedSerial: 1}}, started: true, ended: stallT0, idle: true},
+	} {
+		if got, _ := decideWork(in, workRecord{}, late); got != workNothing {
+			t.Errorf("%s: action %d, want nothing", name, got)
+		}
+	}
+}
+
+// A declared wait with a recheck time is woken at that time, three times, and
+// then reported stalled: it asked to be told, so it is, but not forever.
+func TestADeclaredRecheckIsHonouredAndBounded(t *testing.T) {
+	in := workInput{
+		slots: []core.Slot{{ID: "s1", Text: "PR #1700 CI", Waiting: "ci", RecheckSec: 1200, UpdatedSerial: 9}},
+		idle:  true,
+	}
+	_, rec := decideWork(in, workRecord{}, stallT0) // first seen
+	for i, want := range []workAction{workRecheck, workRecheck, workRecheck, workStall} {
+		var got workAction
+		got, rec = decideWork(in, rec, stallT0.Add(time.Duration(20*(i+1))*time.Minute))
+		if got != want {
+			t.Fatalf("recheck %d: action %d, want %d", i+1, got, want)
+		}
+	}
+	busy := in
+	busy.idle = false
+	if got, _ := decideWork(busy, workRecord{version: 9, versionAt: stallT0}, stallT0.Add(time.Hour)); got != workNothing {
+		t.Error("woke an agent for a recheck while its turn was running")
+	}
+}
+
+// The whole chain on a running engine: an assigned request, a real wake, the
+// agent's own Stop hook, the backoff wakes, the `stalled` row and the notice to
+// the agent that assigned the work.
+func TestAStalledWorkerIsShownAndItsAssignerIsTold(t *testing.T) {
+	if _, err := os.Stat("/usr/bin/touch"); err != nil {
+		t.Skip("no /usr/bin/touch on this platform")
+	}
+	t.Setenv("CODEX_HOME", t.TempDir())
+	cwd := t.TempDir()
+	e := New(core.NewState("test", core.DefaultLimits()), &memLedger{}, deadProber{})
+	e.SetWakeCommands(map[string]WakeCommand{"codex": {
+		Argv: []string{"/usr/bin/touch", "{thread}"}, Cooldown: time.Millisecond,
+	}})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+	do := func(op *core.Op) core.Result {
+		t.Helper()
+		res, err := e.Do(ctx, op)
+		if err != nil {
+			t.Fatalf("setup: %s: %v", op.Kind, err)
+		}
+		return res
+	}
+	worker := do(&core.Op{
+		Kind: core.OpRegister, Name: "worker", Nonce: "n-worker-0123456789abcdef",
+		AgentKind: core.KindPersistent, SessionID: contThread,
+		Agent: &core.AgentInfo{Harness: "Codex", CWD: cwd},
+	})["token"].(string)
+	lead := do(&core.Op{Kind: core.OpRegister, Name: "lead", Nonce: "n-lead-0123456789abcdef"})["token"].(string)
+	do(&core.Op{Kind: core.OpAckBoard, Token: worker})
+	do(&core.Op{Kind: core.OpAckBoard, Token: lead})
+	sent := do(&core.Op{Kind: core.OpSendMessage, Token: lead, To: "worker", MsgType: core.MsgRequest, Body: "build C", OpID: "a1"})
+	serial, _ := sent["msg_serial"].(uint64)
+	do(&core.Op{Kind: core.OpRespond, Token: worker, MsgSerial: serial, Disposition: "approve"})
+	do(&core.Op{Kind: core.OpSetSlot, Token: worker, SlotID: "s1", Text: "build C"})
+
+	b := &continuationBoard{e: e, ctx: ctx, token: worker}
+	b.wake(t) // a Dibs wake starts the turn
+	for range maxContinuations {
+		if !continued(b.stop(t, false)) {
+			t.Fatal("setup: the in-turn continuations did not run")
+		}
+	}
+	if continued(b.stop(t, false)) {
+		t.Fatal("setup: a third in-turn continuation")
+	}
+
+	// THE REAL LOOP drives it from here: no tick is called by hand, so this
+	// fails if Run stops calling stallTick. The backoff is shortened, the
+	// order and count are production's.
+	prevBackoff, prevEvery := continuationBackoff, stallEvery
+	continuationBackoff = []time.Duration{50 * time.Millisecond, 100 * time.Millisecond, 150 * time.Millisecond}
+	stallEvery = 0
+	t.Cleanup(func() { continuationBackoff, stallEvery = prevBackoff, prevEvery })
+
+	touched := filepath.Join(cwd, contThread)
+	_ = os.Remove(touched)
+	waitWoken := func(step string) {
+		t.Helper()
+		for range 500 {
+			if _, err := os.Stat(touched); err == nil {
+				_ = os.Remove(touched)
+				return
+			}
+			<-time.After(10 * time.Millisecond)
+		}
+		t.Fatalf("%s: no wake ran", step)
+	}
+	for i := range continuationBackoff {
+		waitWoken("backoff wake " + string(rune('1'+i)))
+		// The woken turn ends at once, as the stalled worker's did.
+		if _, err := e.HookPoll(ctx, contThread, "Stop", "", true, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stalled := false
+	for range 500 {
+		board, err := e.Board(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, a := range board["agents"].([]map[string]any) {
+			if a["id"] == "worker" && a["work"] == "stalled" {
+				stalled = true
+			}
+		}
+		if stalled {
+			break
+		}
+		<-time.After(10 * time.Millisecond)
+	}
+	if !stalled {
+		t.Error("the stalled worker's row never said `stalled`: an orchestrator has to read logs to find it")
+	}
+	var told bool
+	for range 200 {
+		inbox, err := e.Inbox(ctx, lead)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(fmtResult(inbox), "has stalled") {
+			told = true
+			break
+		}
+		<-time.After(10 * time.Millisecond)
+	}
+	if !told {
+		t.Error("the agent that assigned the work was never told it stalled")
+	}
+}
+
+// fmtResult flattens a result for a substring check, bodies included.
+func fmtResult(r core.Result) string {
+	b, _ := json.Marshal(r)
+	return string(b)
+}
+
+// An approved request is work: with nothing declared, a Dibs-started turn that
+// ends while one is open is continued and quoted, the row lists it as owed,
+// and reporting it done ends both and tells the requester.
+func TestAnApprovedRequestIsOwedUntilReportedDone(t *testing.T) {
+	b := newContinuationBoard(t)
+	lead := b.e
+	res, err := lead.Do(b.ctx, &core.Op{Kind: core.OpRegister, Name: "lead", Nonce: "n-lead-0123456789abcdef"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ltok := res["token"].(string)
+	if _, err := b.e.Do(b.ctx, &core.Op{Kind: core.OpAckBoard, Token: ltok}); err != nil {
+		t.Fatal(err)
+	}
+	sent, err := b.e.Do(b.ctx, &core.Op{Kind: core.OpSendMessage, Token: ltok, To: "worker", MsgType: core.MsgRequest, Body: "build stacked C", OpID: "o1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	serial := sent["msg_serial"].(uint64)
+	if _, err := b.e.Do(b.ctx, &core.Op{Kind: core.OpRespond, Token: b.token, MsgSerial: serial, Disposition: "approve"}); err != nil {
+		t.Fatal(err)
+	}
+	b.wake(t)
+	got := b.stop(t, false)
+	if !continued(got) {
+		t.Fatal("a turn ended with an approved, undelivered request and was not continued")
+	}
+	if r, _ := got["reason"].(string); !strings.Contains(r, "build stacked C") {
+		t.Errorf("the continuation does not say what is owed: %q", r)
+	}
+	owes := func() any {
+		board, err := b.e.Board(b.ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, a := range board["agents"].([]map[string]any) {
+			if a["id"] == "worker" {
+				return a["owes"]
+			}
+		}
+		return nil
+	}
+	if o, _ := owes().([]uint64); len(o) != 1 || o[0] != serial {
+		t.Errorf("the row's owes is %v, want [%d]", owes(), serial)
+	}
+
+	if _, err := b.e.Do(b.ctx, &core.Op{Kind: core.OpRespond, Token: b.token, MsgSerial: serial, Disposition: "done"}); err != nil {
+		t.Fatalf("done: %v", err)
+	}
+	if o := owes(); o != nil {
+		t.Errorf("still owes %v after reporting it done", o)
+	}
+	if continued(b.stop(t, false)) {
+		t.Error("continued for a request already reported done")
+	}
+	inbox, err := b.e.Inbox(b.ctx, ltok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(fmtResult(inbox), "DONE") {
+		t.Errorf("the requester was not told: %s", fmtResult(inbox))
+	}
+}
+
+// Approval predates done, so an approval older than the window is history,
+// not work: an agent with a long past is not woken for it.
+func TestAnOldApprovalIsNotAnObligation(t *testing.T) {
+	e := &Engine{state: core.NewState("test", core.DefaultLimits())}
+	e.state.Messages[7] = &core.Message{
+		Serial: 7, From: "lead", To: "worker", Type: core.MsgRequest,
+		State: core.MsgStateApproved, TerminalAt: stallT0,
+	}
+	if n := len(e.obligationsOf("worker", stallT0.Add(time.Hour))); n != 1 {
+		t.Fatalf("setup: a fresh approval is not owed (%d)", n)
+	}
+	if n := len(e.obligationsOf("worker", stallT0.Add(obligationWindow+time.Minute))); n != 0 {
+		t.Error("an approval older than the window still reads as owed work")
+	}
+}
