@@ -7,12 +7,23 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **An agent is woken in the app it runs in.** The ChatGPT app delivers a
+  queued message only to a thread it has loaded, and after an app update it had
+  loaded none, so `codex queue` left every message waiting until somebody
+  opened the thread. Now, when the app is not holding the thread, Dibs opens it
+  there with the app's own `codex://threads/<id>` route, launching the app if
+  it is closed, and the agent acts where the operator can see it. A thread the
+  app already holds is left alone. Which app an agent runs in is read from its
+  bridge's process tree and sent as `_meta com.dibs/surface`; an agent saying
+  it runs in the app is ignored, so a Codex in a terminal is never opened in
+  the app. `dibs host-bridge` does the same for an agent on its machine.
+
 - **Dibs never hosts an agent.** The recommended Codex wake, `codex exec
   resume {thread}`, does not deliver to anybody: it starts a headless Codex and
   runs the thread itself, in a process Dibs started, outside the ChatGPT app,
   on the operator's model allowance. The Claude Code one, `claude --resume
   {thread} -p`, did the same. doctor printed both and the Codex plugin notes
-  recommended the first. The operator found two of his ChatGPT threads running
+  recommended the first. The operator found two of their ChatGPT threads running
   in processes the daemon had started, and called it unacceptable: Dibs is a
   channel into the harness an agent already lives in, never a harness.
 
@@ -520,7 +531,7 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the application refuses the second writer, the command exits non-zero, and
   the prompt it carried is left in the transcript rendered as though the HUMAN
   typed it. Four of those in twenty minutes, with empty turns between them, and
-  the operator read it as something signing commits on his behalf. The command
+  the operator read it as something signing commits on their behalf. The command
   keeps the one job only it can do: reaching an agent with no session listening
   at all. Mail for an agent whose window is shut now waits for `SessionStart`
   rather than spawning a copy of it; Dibs does not open applications.

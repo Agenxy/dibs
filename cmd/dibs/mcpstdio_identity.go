@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/mcp"
 	"github.com/agenxy/dibs/internal/paths"
 )
@@ -162,6 +163,12 @@ func enrichRegister(line []byte) []byte {
 			// machine. See mcpstdio_remote.go.
 			if hid := hostID(); hid != "" && !remoteSession {
 				meta[mcp.HostMetaKey] = hid
+			}
+			// WHICH APP, from this bridge's own ancestry, never from the model.
+			// See mcp.SurfaceMetaKey. Not for a relayed caller: its app is on
+			// the other end of the tunnel, not above this process.
+			if surf := bridgeSurface(); surf != "" && !remoteSession {
+				meta[mcp.SurfaceMetaKey] = surf
 			}
 			if remoteSession {
 				// Stating "nowhere" rather than leaving it blank, because the
@@ -653,4 +660,27 @@ func spellFor(goos, p string) string {
 		return p
 	}
 	return strings.ReplaceAll(p, "\\", "/")
+}
+
+// bridgeSurface is the app this bridge's harness runs in, worked out once: the
+// bridge is a child of that harness for its whole life, so the answer cannot
+// change under it, and walking the process table per call would be waste.
+var detectedSurface = sync.OnceValue(func() string {
+	return harnessenv.Detect(os.Getpid())
+})
+
+// bridgeSurface is what the bridge states as its app. A Codex that is NOT under
+// the app states that too, rather than nothing: a thread started in the app
+// and later run from a terminal has moved, and a blank would leave the board
+// believing it still lives in the app (identity fields merge, so a blank
+// changes nothing), which would have every wake open the app on a thread the
+// operator is driving somewhere else.
+func bridgeSurface() string {
+	if s := detectedSurface(); s != "" {
+		return s
+	}
+	if clientIs("codex") {
+		return harnessenv.CodexOutsideApp
+	}
+	return ""
 }

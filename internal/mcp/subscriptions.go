@@ -659,6 +659,19 @@ const (
 	// yet a security one.
 	HostMetaKey = "com.dibs/host"
 
+	// SurfaceMetaKey is WHICH APP the caller runs in, derived by the stdio
+	// bridge from its own process ancestry (harnessenv.Detect): "chatgpt-app",
+	// "claude-desktop", "codex" for a Codex that is not under the app, or
+	// absent when the bridge can name none.
+	//
+	// Derived and never asserted, for the reason HostMetaKey is: it decides
+	// where a wake may go. An agent belongs to the environment it started in and
+	// is woken there and nowhere else, so a wake opens the ChatGPT app only for
+	// an agent that runs in it, and an agent that could name its own app could
+	// talk Dibs into opening one it never ran in. It wins over the `surface` an
+	// agent states.
+	SurfaceMetaKey = "com.dibs/surface"
+
 	// HostlessMetaKey says the caller is on NO computer, which is a different
 	// statement from saying nothing.
 	//

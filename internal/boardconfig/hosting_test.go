@@ -11,7 +11,7 @@ import (
 // IT DID, AND IT TOLD OPERATORS TO MAKE IT. The documented Codex wake was
 // `codex exec resume {thread}`, which does not deliver a message to anybody: it
 // starts a headless Codex of its own and runs the thread itself, outside the
-// ChatGPT app the operator was using. the maintainer found Dibs had opened his ChatGPT
+// ChatGPT app the operator was using. The operator found Dibs had opened their ChatGPT
 // threads in its own process and called it unacceptable, rightly: a board that
 // runs agents has become a harness, with the operator's threads doing work
 // nobody watched, on a model allowance nobody approved. doctor printed that

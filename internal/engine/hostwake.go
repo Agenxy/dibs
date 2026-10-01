@@ -50,6 +50,10 @@ type WakeRequest struct {
 	From    string `json:"from"`
 	MsgType string `json:"msg_type"`
 	Notice  string `json:"notice"`
+	// Surface is the app the agent runs in, derived on its own machine
+	// (harnessenv). ADDITIVE: a bridge too old to know it ignores it, which
+	// leaves that bridge exactly as it was, queueing and never opening an app.
+	Surface string `json:"surface,omitempty"`
 }
 
 // WakeResult is the bridge's report on one request: the exit status the hub

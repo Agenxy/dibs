@@ -91,8 +91,10 @@ difference is the whole argument:
   running and ask it to start a turn. It launches nothing; if the daemon is not
   there, the wake does not happen and says so.
 
-Dibs does not, and should not, launch a desktop application. Opening somebody's
-GUI is a different product, and none of the mechanisms above need it.
+Dibs opens one application, for one reason: the app an agent already runs in,
+on that agent's own thread, so the message it queued is delivered where the
+operator can see it. Never another app, and never an app the agent did not
+start in. See "Woken in the app it runs in" below.
 
 ### Dibs never hosts an agent (2026-09-30)
 
@@ -105,9 +107,9 @@ watching. `claude --resume <thread> -p` did the same to Claude Code. doctor
 printed both, the Codex plugin notes recommended the first, and this document
 argued for "the command" as the route for an agent with no session listening.
 
-The operator found two of his ChatGPT threads running in processes the Dibs
+The operator found two of their ChatGPT threads running in processes the Dibs
 daemon had started, and called it unacceptable: Dibs should not host an agent,
-it should only be a communications channel in the existing harnesses. He is
+it should only be a communications channel in the existing harnesses. They are
 right, and the line is not subtle once it is drawn. A channel puts a message
 where the agent's own harness will deliver it. A host runs the agent. The first
 is coordination; the second is Dibs deciding to spend somebody's agent turns.
@@ -121,8 +123,8 @@ of this; the trust check had been hiding it.
 
 So: a wake command must DELIVER into a running harness. For Codex that is
 `codex queue`, which hands the message to the ChatGPT app for the thread it
-holds; on a thread the app is not holding, the message waits until somebody
-opens it, and that is the honest limit of a channel. Claude Code needs no
+holds; on a thread the app is not holding, Dibs opens it in the app (next
+section). Claude Code needs no
 command at all, being reached through its socket and hooks.
 `boardconfig.HostsAnAgent` refuses the hosting commands where every wake command
 is read (the daemon and `dibs host-bridge` alike), and the old Codex recipe is
@@ -166,6 +168,43 @@ compounded by a fallback that would have parked the message silently. An
 operator's wake command names a path inside somebody else's application bundle,
 so it goes stale when that application updates, and nothing in Dibs can know
 that until it tries.
+
+
+### Woken in the app it runs in (2026-09-30)
+
+`codex queue` alone turned out not to be a whole wake. The ChatGPT app delivers
+a queued message only to a thread it has LOADED, and an app update releases
+every thread: afterwards each one showed the message sitting in its queue until
+somebody happened to open it. The operator's rule settles what to do about it:
+an agent is woken in the app it started in, launching the app if it has to, and
+never in another environment unless somebody moves it there on purpose.
+
+So after the queue succeeds, Dibs asks the app to open the thread through the
+app's own route, `open codex://threads/<id>`, when the app is not already
+holding it. Measured: an unloaded thread was held by the app's runtime within a
+second, and the app came to the front. A thread the app already holds is left
+alone, because opening it would pull the app forward for nothing the queue was
+not already doing. "Holding" is read the way the app shows it: its own Codex
+runtime keeps a loaded thread's rollout file open, and `lsof` on the app's
+processes says whether it does.
+
+**Which app is derived, never stated.** The stdio bridge is a child of the
+harness that spawned it, so its process ancestry names the app (a parent under
+`/Applications/ChatGPT.app/` is the ChatGPT app; one under Claude's
+`claude-code` directory is Claude), and it sends that as `_meta
+com.dibs/surface` on every call (`internal/harnessenv`). An agent stating
+`chatgpt-app` about itself is ignored: otherwise a terminal Codex could have
+Dibs open its thread in the app, which is moving it to an environment it did
+not run in. A Codex that is NOT under the app states `codex`, so a thread that
+moved from the app to a terminal stops reading as an app thread.
+
+For an agent on another machine the app is on that machine, so the hub sends
+the surface on the wake request and `dibs host-bridge` opens the thread there.
+The field is additive: a bridge too old to know it keeps queueing, as before.
+
+Running an agent in a DIFFERENT environment from the one it last ran in (a
+headless Codex for a thread that lived in the app, say) is not a wake at all.
+It is a relocation, which a wake never does.
 
 ## 1. Measured, not researched
 
@@ -542,7 +581,7 @@ thread. The application holds the thread and refuses another writer, so the
 command exits non-zero, and the prompt it carried is left in the transcript
 rendered as though the HUMAN typed it. Four of those in twenty minutes, with
 empty turns between them, and the operator read it as something signing commits
-on his behalf. Dibs putting words in its operator's mouth is a worse failure
+on their behalf. Dibs putting words in its operator's mouth is a worse failure
 than Dibs saying nothing, and it is the same rule as §5: the board may wake an
 agent and may not steer one. A wake that arrives indistinguishable from the
 human's own typing has stopped being a wake.
