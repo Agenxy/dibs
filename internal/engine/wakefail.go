@@ -129,8 +129,14 @@ func (e *Engine) wakeStatusOf(agent string) string {
 // goroutine reaches is exactly how #245 shipped a feature called from nowhere,
 // so there is no copy: both call this.
 func (e *Engine) runWakeAndReport(cmd wakePlan, agent string) bool {
+	started := time.Now()
 	if e.runWake(cmd, agent) {
 		e.noteDibsStartedTurn(agent, time.Now())
+		if queues(cmd) {
+			// At the START: a sign of the agent while the command ran is a
+			// delivery, and stamping the end would hide it.
+			e.noteQueuedWake(agent, started)
+		}
 		e.clearWakeAttempts(agent)
 		e.forgetWakeFailures(agent)
 		return true
