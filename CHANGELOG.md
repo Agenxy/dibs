@@ -15,6 +15,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A working agent is no longer woken for its declared work.** Codex reports
+  when a turn ends and never when one starts, so the record of the last Stop
+  outlived the next turn, and a backoff wake fired at a worker that had called
+  Dibs minutes before. A turn end now counts only while the agent has shown no
+  sign of life since.
 - **A session started before an upgrade now learns the new tools.** A
   long-running session keeps the tool list it began with, so new arguments
   (such as `declare`'s `waiting`) were invisible to it. The server now
