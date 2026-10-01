@@ -49,3 +49,17 @@ func (s *State) applyDone(m *Message, op *Op, now time.Time) (Result, []Event, e
 	s.finish(&evs, now)
 	return Result{"ok": true, "state": MsgStateDone}, evs, nil
 }
+
+// ObligationWindow is how long after approval a request counts as owed work.
+// Approval has always existed and "done" has not, so without a bound every
+// request approved before done shipped would read as owed forever.
+const ObligationWindow = 24 * time.Hour
+
+// Owed reports whether this message is a request its recipient approved and
+// has not reported done, inside the window: work the recipient said it would
+// do. A request that carried its own effect (a grant or an adoption) owes
+// nothing, since approving it performed it.
+func (m *Message) Owed(now time.Time) bool {
+	return m.Type == MsgRequest && m.State == MsgStateApproved && m.Grant == "" && m.Adopt == "" &&
+		m.From != m.To && now.Sub(m.TerminalAt) <= ObligationWindow
+}

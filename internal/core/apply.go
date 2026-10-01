@@ -1659,7 +1659,17 @@ func (s *State) oldestDisplaceableNotify(agent string) *Message {
 func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
 	m, ok := s.Messages[op.MsgSerial]
 	if !ok || m.To != l.ID {
-		return nil, nil, errf("E_NO_MESSAGE", "check your inbox", "no message %d addressed to you", op.MsgSerial)
+		hint := "check your inbox"
+		if op.Disposition == "done" {
+			// The one disposition aimed at a FINISHED message, so the one
+			// most likely to find it already swept: before keep_owed an
+			// approval was gone in fifteen minutes, and after it one is kept
+			// for a day. Either way nothing is owed any more.
+			hint = "nothing to close: a request you approved is kept, and counted as owed, " +
+				"for a day after approval, and this one is no longer on the board. If the " +
+				"requester needs to hear it is delivered, send them a notify"
+		}
+		return nil, nil, errf("E_NO_MESSAGE", hint, "no message %d addressed to you", op.MsgSerial)
 	}
 	if op.Disposition == "done" {
 		// After approval, which is terminal for every other disposition.

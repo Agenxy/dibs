@@ -2,7 +2,9 @@ package core
 
 import (
 	"errors"
+	"strings"
 	"testing"
+	"time"
 )
 
 func approvedRequest(t *testing.T) (*State, uint64) {
@@ -57,5 +59,42 @@ func TestDoneIsOnlyForARequestYouApproved(t *testing.T) {
 		if !errors.As(err, &e) || e.Code != "E_BAD_DISPOSITION" || e.Hint == "" {
 			t.Errorf("%s: done gave %v, want E_BAD_DISPOSITION with a hint", name, err)
 		}
+	}
+}
+
+// The reported sequence: request, approve, then done a while later. Responding
+// marks a message consumed, and the sweep deletes consumed finished mail after
+// fifteen minutes, so done found nothing (E_NO_MESSAGE) on both requests a
+// worker tried to close (k7-dev, Dibs #2130). A sweep that says keep_owed
+// keeps a request still owed; one recorded before that flag existed replays as
+// it ran.
+func TestDoneStillWorksAfterTheSweepThatFollowsApproval(t *testing.T) {
+	later := t0.Add(20 * time.Minute)
+
+	s, serial := approvedRequest(t)
+	mustApply(t, s, &Op{Kind: OpSweep, PurgeMail: true, V7Semantics: true, KeepOwed: true}, later)
+	if _, _, err := s.Apply(&Op{Kind: OpRespond, Token: "tw", MsgSerial: serial, Disposition: "done", Body: "delivered"}, later); err != nil {
+		t.Fatalf("done after the sweep: %v (the documented completion path does not work)", err)
+	}
+	if s.Messages[serial].State != MsgStateDone {
+		t.Errorf("state %q", s.Messages[serial].State)
+	}
+
+	old, oldSerial := approvedRequest(t)
+	mustApply(t, old, &Op{Kind: OpSweep, PurgeMail: true, V7Semantics: true}, later)
+	if _, kept := old.Messages[oldSerial]; kept {
+		t.Error("a sweep recorded before keep_owed kept the approved request: replay would " +
+			"rebuild a board its own daemon never held")
+	}
+
+	// And past the window it is history, kept or not.
+	gone, goneSerial := approvedRequest(t)
+	mustApply(t, gone, &Op{Kind: OpSweep, PurgeMail: true, V7Semantics: true, KeepOwed: true},
+		t0.Add(ObligationWindow+time.Hour))
+	_, _, err := gone.Apply(&Op{Kind: OpRespond, Token: "tw", MsgSerial: goneSerial, Disposition: "done"},
+		t0.Add(ObligationWindow+time.Hour))
+	var e *Error
+	if !errors.As(err, &e) || e.Code != "E_NO_MESSAGE" || !strings.Contains(e.Hint, "for a day") {
+		t.Errorf("done on a request past the window: %v, want E_NO_MESSAGE saying why", err)
 	}
 }
