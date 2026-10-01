@@ -321,7 +321,7 @@ type MatchConfig struct {
 // used to be `codex exec resume`, with `codex queue` as a fallback for a
 // thread the app held open. `exec resume` delivers to nobody: it runs the
 // thread itself in a headless Codex Dibs started, which is Dibs hosting an
-// agent, and the operator rejected it on finding his ChatGPT threads running
+// agent, and the operator rejected it on finding their ChatGPT threads running
 // that way. HostsAnAgent refuses it and DeliveringWakeRoutes keeps only the
 // delivering half of the old recipe. Fallback remains for a harness with two
 // delivering commands; it is not how to reach a thread nobody holds open.

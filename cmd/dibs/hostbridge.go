@@ -20,6 +20,7 @@ import (
 
 	"github.com/agenxy/dibs/internal/boardconfig"
 	"github.com/agenxy/dibs/internal/engine"
+	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/mcp"
 	"github.com/agenxy/dibs/internal/paths"
 	"github.com/agenxy/dibs/internal/wakeexec"
@@ -132,6 +133,7 @@ type wakeBridge struct {
 	client  *http.Client // reports
 	streams *http.Client // the listen, with no deadline
 	run     func(argv, fallback []string, agent, dir string, timeout, grace time.Duration) bool
+	show    harnessenv.Shower // opens a thread in its app (replaceable by a test)
 	// EVERYTHING A HUB CAN MAKE THIS MACHINE DO IS BOUNDED HERE. slots
 	// bounds how many wake commands run at once; reports bounds the
 	// refusals waiting to be posted, drained by one goroutine; running and
@@ -181,6 +183,7 @@ func newWakeBridge(origin, secret, host string, routes map[string]boardconfig.Wa
 		client:  daemonClient(30 * time.Second),
 		streams: daemonClient(0),
 		run:     wakeexec.RunCommands,
+		show:    harnessenv.RealShower,
 		slots:   make(chan struct{}, maxConcurrentWakes),
 		reports: make(chan engine.WakeResult, reportQueue),
 		running: map[uint64]struct{}{},
@@ -501,6 +504,15 @@ func (b *wakeBridge) execute(wr engine.WakeRequest) (bool, string) {
 		fallback = f.Apply(x.Fallback)
 	}
 	if b.run(f.Apply(x.Argv), fallback, wr.Agent, wr.CWD, wakeexec.Timeout, wakeexec.Grace) {
+		// Queued. The same step the hub takes for an agent on its own machine,
+		// taken here because the app is on this machine: open the thread in
+		// the app the agent runs in when the app is not holding it.
+		if opened, err := b.show.Show(harnessenv.OpenArgv(wr.Surface, wr.Thread), wr.Thread); err != nil {
+			slog.Warn("could not open the agent's thread in its app; the message waits there",
+				"request", wr.ID, "err", err)
+		} else if opened {
+			slog.Info("opened the agent's thread in the app it runs in", "request", wr.ID)
+		}
 		return true, ""
 	}
 	return false, "the wake command exited non-zero (the fallback too, when one is configured)"

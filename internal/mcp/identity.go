@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/paths"
 )
 
@@ -162,7 +163,7 @@ func agentInfo(ctx context.Context, params json.RawMessage, a *toolArgs, session
 		HostID:   resolveHostID(ctx, params),
 		Model:    a.Model,
 		Provider: a.Provider,
-		Surface:  a.Surface,
+		Surface:  resolveSurface(params, a.Surface),
 		Effort:   a.Effort,
 		Title:    a.Title,
 		// Canonicalised on the way in, because this is not just a label: it is
@@ -496,4 +497,27 @@ func handshakeClient(params json.RawMessage) *clientInfoJSON {
 		return nil
 	}
 	return p.ClientInfo
+}
+
+// resolveSurface is the app the caller runs in: what its bridge derived from
+// the process tree, and what the agent said only when the bridge said nothing.
+//
+// DERIVED BEATS STATED, the line resolveHostID draws for the same reason: the
+// surface decides where a wake may go, and an agent able to name its own app
+// could have Dibs open an app it never ran in. The agent's word is kept for a
+// caller with no bridge, which has no other source, EXCEPT a surface a wake
+// acts on, which is refused when it is only stated (harnessenv.OnlyDerived).
+func resolveSurface(params json.RawMessage, stated string) string {
+	var p struct {
+		Meta map[string]any `json:"_meta"`
+	}
+	if json.Unmarshal(params, &p) == nil {
+		if v, _ := p.Meta[SurfaceMetaKey].(string); strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	if harnessenv.OnlyDerived(strings.TrimSpace(stated)) {
+		return ""
+	}
+	return stated
 }

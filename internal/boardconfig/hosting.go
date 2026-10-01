@@ -14,7 +14,7 @@ import (
 // the thread itself, outside the ChatGPT app the operator was using. Claude
 // Code's was `claude --resume {thread} -p`, which does the same to a Claude Code
 // session. doctor printed both, and the Codex plugin notes recommended the
-// first. The operator found his ChatGPT threads running in a process Dibs had
+// first. The operator found their ChatGPT threads running in a process Dibs had
 // started and called it unacceptable: a board that runs agents has become a
 // harness, with an operator's threads doing work nobody was watching, on a
 // model allowance nobody approved for it.
