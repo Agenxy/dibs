@@ -170,6 +170,21 @@ so it goes stale when that application updates, and nothing in Dibs can know
 that until it tries.
 
 
+### A closed Claude app session is opened in the app (2026-10-01)
+
+The Claude desktop app keeps a Code session's process alive while the app
+runs, so the socket route reaches it; a session with no process (the app was
+quit, or the session never reopened) has no socket and nothing could reach it.
+The app has a link for exactly this, `claude://code/continue?session=<id>`,
+taking the app's own id (`local_...`), which its session records under
+`~/Library/Application Support/Claude/claude-code-sessions` pair with Claude
+Code's session id. Measured on the installed app: a closed session's process
+was up two seconds after the link opened, and its SessionStart hook reached
+Dibs and resolved to its agent. So a wake for a Claude app agent with no
+listening session opens it (after the person has been idle, like every open),
+and the existing 30-second recheck delivers over the socket once it listens.
+A terminal Claude Code session has no app record and is never opened.
+
 ### Continuing a turn that ends with declared work (2026-10-01)
 
 Wake-on-mail worked and the Codex workers still stalled. Measured in
