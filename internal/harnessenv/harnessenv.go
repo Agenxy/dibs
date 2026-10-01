@@ -167,8 +167,11 @@ func OnlyDerived(surface string) bool { return surface == ChatGPTApp }
 // the ONLY place a wake learns how to open an app, so an agent that did not
 // start in an app is never opened in one.
 func OpenArgv(surface, thread string) []string {
-	if surface == ChatGPTApp {
+	switch surface {
+	case ChatGPTApp:
 		return ChatGPTOpenArgv(thread)
+	case ClaudeDesktop:
+		return ClaudeOpenArgv(ClaudeLocalSession(thread)) // reads the app's records: off the writer loop
 	}
 	return nil
 }
@@ -192,7 +195,14 @@ type Shower struct {
 
 // RealShower reaches the real app.
 var RealShower = Shower{
-	Holds: func(thread string) bool { _, holds := ChatGPTHolds(thread); return holds },
+	// Either app: thread ids are UUIDs, so one cannot name the other's.
+	Holds: func(thread string) bool {
+		if ClaudeSessionRunning(thread) {
+			return true
+		}
+		_, holds := ChatGPTHolds(thread)
+		return holds
+	},
 	Open: func(argv []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()

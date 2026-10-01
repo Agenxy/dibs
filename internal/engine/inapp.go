@@ -70,3 +70,28 @@ func surfaceOf(l *core.Agent) string {
 	}
 	return l.Agent.Surface
 }
+
+// openClosedSession opens a Claude app session whose process has ended, so a
+// wake has a running session to reach (harnessenv/claude.go). Only for an
+// agent in the Claude app: a terminal Claude Code session has no app to open
+// in, and the mapping finds no record for it. The open waits for the person
+// to be idle, like every open, and runs off the writer loop because it reads
+// the app's records.
+func (e *Engine) openClosedSession(l *core.Agent) {
+	if surfaceOf(l) != harnessenv.ClaudeDesktop {
+		return
+	}
+	session, agent := threadIDOf(l), l.ID
+	if session == "" {
+		return
+	}
+	go func() {
+		argv := harnessenv.OpenArgv(harnessenv.ClaudeDesktop, session)
+		if argv == nil {
+			return // the app has no record of this session
+		}
+		shower.ShowWhenIdle(argv, session, func(opened, deferred bool, err error) {
+			logShow(opened, deferred, err, "agent", agent)
+		})
+	}()
+}

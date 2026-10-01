@@ -7,6 +7,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **A closed Claude Code session is woken in the Claude app.** A session in
+  the desktop app is reached through its socket, which exists only while its
+  process runs. When mail arrives for one whose process has ended, Dibs now
+  opens it in the Claude app with the app's own
+  `claude://code/continue?session=<id>` link (the app's id, read from its
+  session records), once you have been idle like any other open, and the
+  ordinary socket wake then delivers. Measured: the session's process was up
+  two seconds after the link opened, and its startup hook reached Dibs.
+
 - **A wake no longer pulls the ChatGPT app in front of you.** When an agent's
   thread is not loaded in the app, Dibs now opens it only once you have been
   idle for `[wake] open_app_after_idle` (2 minutes by default; `"0s"` opens at

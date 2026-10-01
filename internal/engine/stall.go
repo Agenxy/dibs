@@ -216,6 +216,9 @@ func (e *Engine) stallTick(now time.Time) {
 func (e *Engine) wakeForWork(l *core.Agent, kind string) {
 	plan, ok := e.wakeFor(l, kind, core.Event{Type: "work." + kind, To: l.ID})
 	if !ok {
+		if e.socketMayHaveAppeared(l) {
+			e.openClosedSession(l) // the next tick's wake finds its socket
+		}
 		return
 	}
 	agent, thread := l.ID, plan.thread

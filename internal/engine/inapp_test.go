@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -239,5 +240,62 @@ func TestAWakeDoesNotOpenTheAppInFrontOfAnActivePerson(t *testing.T) {
 	}
 	if len(app.opened) != 0 {
 		t.Errorf("the app was opened while the person was active: %q", app.opened)
+	}
+}
+
+// A Claude app agent whose session has no process is opened in the Claude
+// app, so the wake that follows finds a running session. Measured: the link
+// started a closed session's process in two seconds.
+func TestMailForAClosedClaudeAppSessionOpensItInTheApp(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	const cli = "6336088d-1111-4222-8333-444455556666"
+	dir := filepath.Join(home, "Library", "Application Support", "Claude", "claude-code-sessions", "a", "o")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "local_08697f65-6786-4c61-96f8-9af1aa07b24e.json"),
+		[]byte(`{"sessionId":"local_08697f65-6786-4c61-96f8-9af1aa07b24e","cliSessionId":"`+cli+`"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	app := &fakeApp{}
+	app.install(t)
+	opened := make(chan []string, 1)
+	shower.Open = func(argv []string) error { opened <- argv; return nil }
+
+	e := New(core.NewState("test", core.DefaultLimits()), &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpRegister, Name: "lead", Nonce: "n-lead-0123456789abcdef", SessionID: cli,
+		AgentKind: core.KindPersistent,
+		Agent:     &core.AgentInfo{Harness: "Claude Code", CWD: t.TempDir(), Surface: harnessenv.ClaudeDesktop},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Do(ctx, &core.Op{Kind: core.OpSweep, DeadAgents: []string{"lead"}}); err != nil {
+		t.Fatal(err)
+	}
+	sender, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "asker", Nonce: "n-asker-0123456789abcdef"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: sender["token"].(string)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpSendMessage, Token: sender["token"].(string), To: "lead",
+		MsgType: core.MsgQuestion, Body: "are you there?", OpID: "q1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case argv := <-opened:
+		if len(argv) != 2 || argv[1] != "claude://code/continue?session=local_08697f65-6786-4c61-96f8-9af1aa07b24e" {
+			t.Errorf("opened %q", argv)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("mail for a closed Claude app session did not open it in the app")
 	}
 }
