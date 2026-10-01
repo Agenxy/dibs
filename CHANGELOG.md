@@ -24,6 +24,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Wakes no longer pile up in the ChatGPT app's queue.** `codex queue` keeps
+  every message, and the app releases one each time a turn ends, so wakes Dibs
+  queued while a thread was not loaded drained later as a run of empty turns
+  ("a new request is waiting", three times in thirty seconds, nothing in the
+  inbox). An agent reached by `codex queue` now has at most one undelivered
+  wake: another is queued only once the agent has shown a sign of life since
+  the last, or after two hours. Other wake commands are unaffected.
+
 - **An owed request blocked on someone else can be parked.** An approved,
   not-done request counted as work in progress whatever the agent declared, so
   a worker whose finished work was held by an owner decision was continued on

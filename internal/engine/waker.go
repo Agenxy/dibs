@@ -62,7 +62,10 @@ type wakers struct {
 	// work: each agent's progress on its declarations, for the continuation
 	// wakes and the stalled state. See stall.go.
 	work map[string]workRecord
-	last map[string]time.Time
+	// queued: when a command wake last succeeded for each agent. See
+	// queuedwake.go.
+	queued map[string]time.Time
+	last   map[string]time.Time
 	// deferred: a re-check armed for when an agent's cooldown expires, because
 	// maybeWake fires once per event and nothing else retries.
 	deferred map[string]*time.Timer
@@ -991,6 +994,9 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 	}
 	thread := threadIDOf(l)
 	now := time.Now()
+	if e.holdForQueuedWakeLocked(l, configured, now) {
+		return wakePlan{}, false
+	}
 	if e.wakers.last == nil {
 		e.wakers.last = map[string]time.Time{}
 	}
