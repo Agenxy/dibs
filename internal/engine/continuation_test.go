@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -198,5 +199,31 @@ func TestALongTurnResetsTheContinuationBudget(t *testing.T) {
 	}
 	if _, _, ok = decideContinuation(open, true, rec, t0.Add(progressTurn)); !ok {
 		t.Error("a turn that ran the full progress window did not reset the budget")
+	}
+}
+
+// A declaration that keeps changing is progress by the per-version rule, and
+// that let a loop through: measured 2026-10-01, a worker rewrote its
+// declaration's text on every Stop and was continued four times in three
+// minutes. At most maxInWindow continuations in continuationWindow, whatever
+// the declaration does.
+func TestRedeclaringOnEveryStopIsNotALicenceToLoop(t *testing.T) {
+	t0 := time.Date(2026, 10, 1, 8, 9, 0, 0, time.UTC)
+	rec := continuation{}
+	allowed := 0
+	for i := range 6 {
+		open := []core.Slot{{ID: "s1", Text: fmt.Sprintf("waiting on CI, refresh %d", i), UpdatedSerial: uint64(100 + i)}}
+		var ok bool
+		_, rec, ok = decideContinuation(open, true, rec, t0.Add(time.Duration(i)*30*time.Second))
+		if ok {
+			allowed++
+		}
+	}
+	if allowed != maxInWindow {
+		t.Errorf("continued %d times in three minutes of re-declaring, want %d", allowed, maxInWindow)
+	}
+	open := []core.Slot{{ID: "s1", Text: "new work", UpdatedSerial: 200}}
+	if _, _, ok := decideContinuation(open, true, rec, t0.Add(continuationWindow+time.Minute)); !ok {
+		t.Error("the window never reopened")
 	}
 }

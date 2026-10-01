@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -43,6 +44,15 @@ import (
 const (
 	maxContinuations = 2
 	progressTurn     = 10 * time.Minute
+	// maxInWindow continuations in continuationWindow, whatever the
+	// declaration does. A changed declaration is progress, and that let a
+	// loop through: measured 2026-10-01, a Codex worker whose session's tool
+	// list predated `waiting` rewrote its declaration's TEXT to say it was
+	// waiting, each rewrite reset the per-version budget, and its Stop was
+	// continued four times in three minutes before it found the field. The
+	// per-version budget asks "did it move on"; this asks "is this a loop".
+	maxInWindow        = 3
+	continuationWindow = 15 * time.Minute
 	// maxQuoted bounds how much of a declaration is quoted back.
 	maxQuoted = 600
 )
@@ -52,6 +62,7 @@ type continuation struct {
 	count   int
 	version uint64 // newest UpdatedSerial among its open declarations
 	at      time.Time
+	recent  []time.Time // every continuation inside continuationWindow
 }
 
 // noteDibsStartedTurn records that a wake Dibs delivered started this agent's
@@ -110,8 +121,19 @@ func decideContinuation(
 	if next.count >= maxContinuations {
 		return "", next, false
 	}
+	var recent []time.Time
+	for _, t := range prev.recent {
+		if now.Sub(t) < continuationWindow {
+			recent = append(recent, t)
+		}
+	}
+	next.recent = recent
+	if len(recent) >= maxInWindow {
+		return "", next, false // a loop, whatever the declaration says: see maxInWindow
+	}
+	recent = append(recent, now)
 	next.count++
-	next.version, next.at = version, now
+	next.version, next.at, next.recent = version, now, recent
 	return continuationReason(open, next.count), next, true
 }
 
@@ -132,9 +154,16 @@ func continuationReason(open []core.Slot, n int) string {
 		}
 		fmt.Fprintf(&b, "\n  %s: %q", s.ID, text)
 	}
+	// THE FIELD, NAMED AS A FIELD. A long-lived session keeps the tool list
+	// it started with, so a worker can be older than `waiting`; one put
+	// "waiting" in its declaration's text, which marks nothing, and was
+	// continued again. Saying it is an argument of declare reaches a model
+	// whose schema does not list it.
 	b.WriteString("\nIf that work is not finished, this turn is yours to continue it. " +
-		"If it is finished, undeclare it. If it is blocked, declare it again with " +
-		"`waiting` (on whom or what) and `recheck_after` if nothing will tell you. ")
+		"If it is finished, undeclare it. If it is blocked, call declare with the same " +
+		"slot_id and the `waiting` argument set (on whom or what, e.g. \"ci\"), plus " +
+		"`recheck_after` (e.g. \"20m\") if nothing will tell you; writing \"waiting\" in " +
+		"the text marks nothing. ")
 	fmt.Fprintf(&b, "(Continuation %d of %d until the declaration changes.)", n, maxContinuations)
 	return b.String()
 }
@@ -150,6 +179,12 @@ func (e *Engine) continueDeclaredWork(l *core.Agent, now time.Time) (string, boo
 	}
 	reason, next, ok := decideContinuation(openOf(e.workSlotsOf(l, now)), started, e.wakers.continued[l.ID], now)
 	e.wakers.continued[l.ID] = next
+	if ok {
+		// Said in the log, because the only other trace is in the agent's
+		// own transcript, which is where the first live check had to look.
+		slog.Info("continued a turn that ended with declared work open",
+			"agent", l.ID, "continuation", next.count, "in_window", len(next.recent))
+	}
 	return reason, ok
 }
 
