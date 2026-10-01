@@ -82,15 +82,53 @@ Being exact about who starts what, because the three paths differ and the
 difference is the whole argument:
 
 - A **hook** starts nothing. The agent calls out at its own turn boundary.
-- **`[wake.exec]`** is Dibs spawning a process: the operator's command, which
-  for Codex starts a headless `codex exec resume`. Headless, and a SUCCESSOR
-  rather than the original thread.
+- **`[wake.exec]`** is Dibs running the operator's command, and the command must
+  DELIVER into the harness that already holds the agent: for Codex, `codex queue`
+  hands the message to the ChatGPT app. It used to be `codex exec resume`, which
+  starts a headless SUCCESSOR running the thread itself. That is hosting, and it
+  is refused now; see "Dibs never hosts an agent" below.
 - **Remote control** would have Dibs open a socket to a daemon that is already
   running and ask it to start a turn. It launches nothing; if the daemon is not
   there, the wake does not happen and says so.
 
 Dibs does not, and should not, launch a desktop application. Opening somebody's
 GUI is a different product, and none of the mechanisms above need it.
+
+### Dibs never hosts an agent (2026-09-30)
+
+**THE RULE THIS DOCUMENT HAD STOPPED SHORT OF.** It said Dibs does not launch a
+desktop application, and then recommended commands that do something worse: run
+the agent itself. `codex exec resume <thread>` does not deliver to anybody. It
+starts a headless Codex and runs the thread in a process Dibs started, outside
+the ChatGPT app the operator was using, on their model allowance, with nobody
+watching. `claude --resume <thread> -p` did the same to Claude Code. doctor
+printed both, the Codex plugin notes recommended the first, and this document
+argued for "the command" as the route for an agent with no session listening.
+
+The operator found two of his ChatGPT threads running in processes the Dibs
+daemon had started, and called it unacceptable: Dibs should not host an agent,
+it should only be a communications channel in the existing harnesses. He is
+right, and the line is not subtle once it is drawn. A channel puts a message
+where the agent's own harness will deliver it. A host runs the agent. The first
+is coordination; the second is Dibs deciding to spend somebody's agent turns.
+
+What made it visible was a fix made the same day. The workers' directory was not
+a git repository, so `exec resume` failed Codex's trust check on every attempt
+and ran nothing; adding `--skip-git-repo-check` to get the `codex queue` fallback
+working also let `exec resume` succeed on any thread the app was not holding, and
+the first such wake ran the thread headless. The recipe had always been capable
+of this; the trust check had been hiding it.
+
+So: a wake command must DELIVER into a running harness. For Codex that is
+`codex queue`, which hands the message to the ChatGPT app for the thread it
+holds; on a thread the app is not holding, the message waits until somebody
+opens it, and that is the honest limit of a channel. Claude Code needs no
+command at all, being reached through its socket and hooks.
+`boardconfig.HostsAnAgent` refuses the hosting commands where every wake command
+is read (the daemon and `dibs host-bridge` alike), and the old Codex recipe is
+repaired rather than rejected, because its fallback was always the right
+command. The §1 measurement below records the exec-then-queue pair as it ran;
+it describes what was measured, not what is recommended.
 
 **MEASURED END TO END ON THE CHATGPT APP, 2026-09-26**, ChatGPT.app 26.924.20706,
 `codex-cli 0.158.0-alpha.2`, from both sides at once: this daemon's log and the

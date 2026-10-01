@@ -28,7 +28,9 @@ func TestTheBridgeUnitCarriesTheJoinRecipeAndNothingElse(t *testing.T) {
 	if err := hostBridgeUnit(); err == nil || !strings.Contains(err.Error(), "no [wake.exec]") {
 		t.Errorf("a bridge that can start nobody got a unit: %v", err)
 	}
-	table := "[wake.exec.codex]\nargv = [\"codex\", \"exec\", \"resume\", \"{thread}\", \"{message}\"]\n"
+	// `codex queue`, the delivering command; `codex exec resume` ran the thread
+	// itself and is refused now.
+	table := "[wake.exec.codex]\nargv = [\"codex\", \"queue\", \"--thread\", \"{thread}\", \"--message\", \"{message}\"]\n"
 	if err := os.WriteFile(filepath.Join(dir, "dibs.toml"), []byte(table), 0o600); err != nil {
 		t.Fatal(err)
 	}

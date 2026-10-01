@@ -75,20 +75,49 @@ func TestDoctorSaysWhichWakeRoutesExist(t *testing.T) {
 	// against that was twelve Claude Code agents unreachable behind a green
 	// line. Configuring something is not covering anything.
 	t.Run("a command that covers only some agents", func(t *testing.T) {
+		// A harness with genuinely no route. This used Claude Code, and asserted
+		// that doctor tell the operator to write `[wake.exec."claude code"]`,
+		// whose only possible content starts a Claude Code session of Dibs' own.
+		// Claude Code is reached through its socket and hooks (next case); the
+		// guarantee here, that configuring something is not covering anything,
+		// is about a harness that has neither.
 		oks, warns := run(t, "[wake.exec.codex]\nargv = [\"echo\", \"{message}\"]\n",
 			boardOf(agentRow("a", "persistent", "codex"),
-				agentRow("b", "persistent", "Claude Code"),
-				agentRow("c", "persistent", "Claude Code")))
+				agentRow("b", "persistent", "OpenCode"),
+				agentRow("c", "persistent", "OpenCode")))
 		if len(oks) != 0 {
 			t.Errorf("reported healthy while two agents cannot be woken: %v", oks)
 		}
 		if len(warns) != 1 {
 			t.Fatalf("expected one warning, got %v", warns)
 		}
-		for _, want := range []string{"2 of 3", "claude code (2)", `[wake.exec."claude code"]`} {
+		for _, want := range []string{"2 of 3", "opencode (2)", `[wake.exec."opencode"]`, "DELIVERS"} {
 			if !strings.Contains(warns[0], want) {
 				t.Errorf("the warning is missing %q, so it does not say who is stranded "+
 					"or what to write: %s", want, warns[0])
+			}
+		}
+	})
+
+	// Claude Code needs no command: it is reached through its socket and hooks.
+	//
+	// doctor counted Claude Code agents as stranded and told the operator to
+	// write `[wake.exec."claude code"]` with `claude --resume -p`, which runs a
+	// headless session of Dibs' own. Dibs is a channel and never hosts an agent,
+	// so these agents are covered as they stand, and the advice must never
+	// contain that block.
+	t.Run("claude code is covered without a command", func(t *testing.T) {
+		oks, warns := run(t, "[wake.exec.codex]\nargv = [\"echo\", \"{message}\"]\n",
+			boardOf(agentRow("a", "persistent", "codex"),
+				agentRow("b", "persistent", "Claude Code"),
+				agentRow("c", "persistent", "Claude Code")))
+		if len(warns) != 0 {
+			t.Errorf("Claude Code agents were reported as having no wake route: %v", warns)
+		}
+		for _, line := range append(oks, warns...) {
+			if strings.Contains(line, `wake.exec."claude code"`) {
+				t.Errorf("doctor told the operator to configure a Claude Code command, which "+
+					"can only start a session of Dibs' own: %s", line)
 			}
 		}
 	})

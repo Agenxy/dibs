@@ -346,7 +346,11 @@ func TestTheBridgeReadsItsOwnRoutesAndRefusesAnEmptyTable(t *testing.T) {
 	if _, err := localWakeRoutes(dir); err == nil || !strings.Contains(err.Error(), "no [wake.exec]") {
 		t.Errorf("an empty table was accepted: %v", err)
 	}
-	body := "[wake.exec.\"Claude Code\"]\nargv = [\"claude\", \"--resume\", \"{thread}\", \"{message}\"]\n"
+	// A DELIVERING command under a mixed-case name. This fixture was
+	// `claude --resume`, which starts a session of its own; the bridge now
+	// refuses that (boardconfig.HostsAnAgent), and lowercasing is what this
+	// test is about, not which command.
+	body := "[wake.exec.\"OpenCode\"]\nargv = [\"opencode-notify\", \"{thread}\", \"{message}\"]\n"
 	if err := os.WriteFile(filepath.Join(dir, "dibs.toml"), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -354,7 +358,7 @@ func TestTheBridgeReadsItsOwnRoutesAndRefusesAnEmptyTable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := routes["claude code"]; !ok || len(routes) != 1 {
+	if _, ok := routes["opencode"]; !ok || len(routes) != 1 {
 		t.Errorf("routes = %v, want the harness lowercased", routes)
 	}
 }

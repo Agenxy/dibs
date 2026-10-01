@@ -257,11 +257,12 @@ var catalog = []struct {
 			"SessionStart can lose that race while Stop is later and likelier. And a " +
 			"hook is a callback on YOUR lifecycle: it delivers when your turn ends, " +
 			"and the hook alone cannot make an idle thread wake. For that the operator " +
-			"configures [wake.exec.codex] in dibs.toml: `codex exec resume {thread}` for " +
-			"a closed thread, with `codex queue` as the fallback for a thread the desktop " +
-			"app holds open, which is Codex's own durable queue used the way Codex " +
-			"documents it. Measured working on 2026-09-05; the recipe is in " +
-			"docs/CONFIGURATION.md.",
+			"configures [wake.exec.codex] in dibs.toml with `codex queue`, which hands " +
+			"the message to the ChatGPT app for the thread it holds: Codex's own " +
+			"durable queue, used the way Codex documents it. Never `codex exec resume`, " +
+			"which starts a headless Codex and runs the thread itself; Dibs is a channel " +
+			"into the harness, not a harness, and the daemon refuses it. The recipe is " +
+			"in docs/CONFIGURATION.md.",
 		root: "~/.codex",
 		setup: []Step{
 			{
