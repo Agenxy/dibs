@@ -32,6 +32,7 @@ func newContinuationBoard(t *testing.T) *continuationBoard {
 	e.SetWakeCommands(map[string]WakeCommand{"codex": {Argv: []string{"/usr/bin/true", "{thread}"}}})
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
+	stopWakeTimersOnCleanup(t, e)
 	go e.Run(ctx)
 	res, err := e.Do(ctx, &core.Op{
 		Kind: core.OpRegister, Name: "worker", Nonce: "n-worker-0123456789abcdef",
@@ -226,4 +227,21 @@ func TestRedeclaringOnEveryStopIsNotALicenceToLoop(t *testing.T) {
 	if _, _, ok := decideContinuation(open, true, rec, t0.Add(continuationWindow+time.Minute)); !ok {
 		t.Error("the window never reopened")
 	}
+}
+
+// stopWakeTimersOnCleanup stops every deferred wake the engine armed, when the
+// test ends. A deferred wake is a time.AfterFunc that reads package state
+// (peerAlive) when it fires, and one armed by a test that sent mail fired
+// seconds later inside a DIFFERENT test that was rewriting that variable: a
+// data race the race detector pinned on the innocent test.
+func stopWakeTimersOnCleanup(t *testing.T, e *Engine) {
+	t.Helper()
+	t.Cleanup(func() {
+		e.wakers.mu.Lock()
+		defer e.wakers.mu.Unlock()
+		for _, tm := range e.wakers.deferred {
+			tm.Stop()
+		}
+		e.wakers.deferred = nil
+	})
 }

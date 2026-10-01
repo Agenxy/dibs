@@ -100,6 +100,7 @@ func TestAStalledWorkerIsShownAndItsAssignerIsTold(t *testing.T) {
 	}})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	stopWakeTimersOnCleanup(t, e)
 	go e.Run(ctx)
 	do := func(op *core.Op) core.Result {
 		t.Helper()

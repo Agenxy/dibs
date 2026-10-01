@@ -215,11 +215,17 @@ func Alive(pid int, procStart string) bool {
 	// that has not answered in this long has answered.
 	ctx, cancel := context.WithTimeout(context.Background(), aliveProbeTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "ps", "-o", "lstart=", "-p", strconv.Itoa(pid)) // #nosec G204 -- pid is an int
-	cmd.Env = append(os.Environ(), "LC_ALL=C", "TZ=UTC")
-	out, err := cmd.Output()
+	out, err := psLstart(ctx, pid)
 	if err != nil {
-		return false
+		// A PROBE THAT TIMED OUT SAID NOTHING ABOUT THE PROCESS. Counting it
+		// as dead dropped a live session from discovery: measured just after
+		// a daemon restart, when replay and repository indexing load the
+		// machine and `ps` outlived its 300ms, a sender was told a running
+		// Claude Code session was pull-only and that send was not handed to
+		// it. A dead process answers `ps` at once with nothing, which is the
+		// case below; a slow answer is not that case. Delivering to a session
+		// that did turn out to be gone fails at the socket, harmlessly.
+		return ctx.Err() == context.DeadlineExceeded
 	}
 	got := strings.TrimSpace(string(out))
 	if got == "" {
@@ -295,4 +301,12 @@ func writeLine(w net.Conn, v map[string]any) error {
 	}
 	_, err = w.Write(append(b, '\n'))
 	return err
+}
+
+// psLstart runs `ps` for a process's start time; a variable so a test can
+// stand in for a slow or failing probe.
+var psLstart = func(ctx context.Context, pid int) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, "ps", "-o", "lstart=", "-p", strconv.Itoa(pid)) // #nosec G204 -- pid is an int
+	cmd.Env = append(os.Environ(), "LC_ALL=C", "TZ=UTC")
+	return cmd.Output()
 }
