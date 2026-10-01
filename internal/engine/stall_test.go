@@ -278,7 +278,7 @@ func TestAnOldApprovalIsNotAnObligation(t *testing.T) {
 	if n := len(e.obligationsOf("worker", stallT0.Add(time.Hour))); n != 1 {
 		t.Fatalf("setup: a fresh approval is not owed (%d)", n)
 	}
-	if n := len(e.obligationsOf("worker", stallT0.Add(obligationWindow+time.Minute))); n != 0 {
+	if n := len(e.obligationsOf("worker", stallT0.Add(core.ObligationWindow+time.Minute))); n != 0 {
 		t.Error("an approval older than the window still reads as owed work")
 	}
 }
@@ -344,5 +344,40 @@ func TestAWorkerSeenSinceItsLastStopIsNotWokenForItsWork(t *testing.T) {
 	<-time.After(200 * time.Millisecond)
 	if _, err := os.Stat(filepath.Join(cwd, contThread)); err == nil {
 		t.Error("woke a worker for its work while it was working")
+	}
+}
+
+// Through the daemon's own sweep, which is the door production takes: an
+// approved request survives the sweep that follows approval, so the worker
+// can report it done and the requester hears.
+func TestTheDaemonsSweepKeepsWorkStillOwed(t *testing.T) {
+	b := newContinuationBoard(t)
+	res, err := b.e.Do(b.ctx, &core.Op{Kind: core.OpRegister, Name: "lead", Nonce: "n-lead-0123456789abcdef"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ltok := res["token"].(string)
+	if _, err := b.e.Do(b.ctx, &core.Op{Kind: core.OpAckBoard, Token: ltok}); err != nil {
+		t.Fatal(err)
+	}
+	sent, err := b.e.Do(b.ctx, &core.Op{Kind: core.OpSendMessage, Token: ltok, To: "worker", MsgType: core.MsgRequest, Body: "build C", OpID: "s1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	serial := sent["msg_serial"].(uint64)
+	if _, err := b.e.Do(b.ctx, &core.Op{Kind: core.OpRespond, Token: b.token, MsgSerial: serial, Disposition: "approve"}); err != nil {
+		t.Fatal(err)
+	}
+	// Both sweeps the daemon makes: the boot sweep after a restart, and the
+	// periodic one. Each builds its own op, and each must keep it.
+	if _, err := b.e.query(b.ctx, func() core.Result {
+		b.e.boot(time.Now().Add(20 * time.Minute))
+		b.e.sweep(time.Now().Add(25 * time.Minute))
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.e.Do(b.ctx, &core.Op{Kind: core.OpRespond, Token: b.token, MsgSerial: serial, Disposition: "done", Body: "pr:1700"}); err != nil {
+		t.Fatalf("done after the daemon's sweep: %v", err)
 	}
 }

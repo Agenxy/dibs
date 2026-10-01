@@ -24,6 +24,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`done` failed on a request approved more than fifteen minutes earlier.**
+  Responding marks a message consumed, and the sweep deleted consumed finished
+  mail after fifteen minutes, so an approved request was gone before the work
+  was, `respond(serial, "done")` returned `E_NO_MESSAGE`, and the obligation
+  vanished with it. Sweeps now keep a request still owed (approved, not done,
+  under a day old); sweeps already in the ledger replay as they ran. Reported
+  by k7-dev from a worker's two failed attempts.
+
 - **A working agent is no longer woken for its declared work.** Codex reports
   when a turn ends and never when one starts, so the record of the last Stop
   outlived the next turn, and a backoff wake fired at a worker that had called

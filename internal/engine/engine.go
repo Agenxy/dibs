@@ -380,7 +380,7 @@ func (e *Engine) boot(now time.Time) {
 		V7Semantics: true,
 		// And a build that leaves an archived agent its nonce. Stamped in both
 		// sweep sites for the reason V7Semantics is: neither passes exec.
-		KeepArchivedNonce: true,
+		KeepArchivedNonce: true, KeepOwed: true, // KeepOwed likewise: see Op.KeepOwed
 	}
 	for id, l := range e.state.Agents {
 		if l.Status != core.StatusActive {
@@ -1147,8 +1147,8 @@ func (e *Engine) sweep(now time.Time) {
 	op := &core.Op{
 		Kind: core.OpSweep, PurgeMail: true,
 		GiveUpAnnounce:    e.exhaustedAnnouncements(),
-		V7Semantics:       true, // see boot: this op never passes exec
-		KeepArchivedNonce: true, // likewise
+		V7Semantics:       true,                 // see boot: this op never passes exec
+		KeepArchivedNonce: true, KeepOwed: true, // likewise
 	}
 	for id, l := range e.state.Agents {
 		if l.Status != core.StatusActive {

@@ -221,7 +221,7 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 		}})
 	}
 
-	gcEvents, pruned := s.gc(now, op.PurgeMail, op.V7Semantics)
+	gcEvents, pruned := s.gc(now, op.PurgeMail, op.V7Semantics, op.KeepOwed)
 	evs = append(evs, gcEvents...)
 	evs = append(evs, s.gcBlobs(now, 0)...) // TTL/cap blob eviction (A5)
 
@@ -287,7 +287,7 @@ func (s *State) archive(l *Agent, op *Op, now time.Time) []Event {
 // purgeMail is the sweep op's own decision, threaded in rather than assumed:
 // see Op.PurgeMail. A sweep from before that field existed keeps the semantics
 // it was written under, because replay runs today's fold over yesterday's ops.
-func (s *State) gc(now time.Time, purgeMail, clampWatermark bool) ([]Event, bool) {
+func (s *State) gc(now time.Time, purgeMail, clampWatermark, keepOwed bool) ([]Event, bool) {
 	var evs []Event
 	// pruned records mutation that emits no event. See applySweep: a deletion the
 	// ledger never hears about is a deletion replay will not repeat.
@@ -300,6 +300,9 @@ func (s *State) gc(now time.Time, purgeMail, clampWatermark bool) ([]Event, bool
 	// retention are evicted oldest-first with the watermark advanced.
 	perAgent := map[string][]*Message{}
 	for serial, m := range s.Messages {
+		if keepOwed && m.Owed(now) {
+			continue // work its recipient still owes: see Op.KeepOwed
+		}
 		if m.Terminal() && m.Consumed && now.Sub(m.TerminalAt) > s.Limits.ConsumedRetention {
 			delete(s.Messages, serial) // sender had its read window (real-agent finding)
 			pruned = true

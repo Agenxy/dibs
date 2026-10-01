@@ -337,6 +337,15 @@ type Op struct {
 	// Only the nonce. A sweep still clears the token, which is what makes the
 	// next call return E_BAD_TOKEN and say how to come back.
 	KeepArchivedNonce bool `json:"keep_archived_nonce,omitempty"`
+	// KeepOwed says this sweep keeps an approved request its recipient still
+	// owes (Message.Owed) instead of deleting it with the consumed mail.
+	// Responding marks a message consumed, so an approved request was gone
+	// fifteen minutes after approval, and respond(serial, "done") then found
+	// nothing: reported by k7-dev, whose worker got E_NO_MESSAGE closing two
+	// it had approved. A flag on the op for the reason KeepArchivedNonce is
+	// one: it changes what an ALREADY LEDGERED kind does, so a sweep recorded
+	// before it existed decodes false and deletes exactly what it deleted.
+	KeepOwed bool `json:"keep_owed,omitempty"`
 	// TakeIdentity says a same-nonce register of a LIVE agent may apply the
 	// identity it carries, and count a differing one as a change.
 	//

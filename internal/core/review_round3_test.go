@@ -35,7 +35,7 @@ func TestTheClampNeverGoesBelowTheRegistrationFence(t *testing.T) {
 		Serial: 9, From: "peer", To: "seat", Type: MsgNotify,
 		State: MsgStateAcked, Consumed: true, TerminalAt: time.Now(),
 	}
-	s.gc(time.Now(), false, true)
+	s.gc(time.Now(), false, true, true)
 	if wm := s.Agents["seat"].TruncatedBefore; wm < 5 {
 		t.Fatalf("the clamp lowered the watermark to %d, below the registration fence at 5: "+
 			"the previous occupant's mail is readable by the agent that reused its name", wm)
