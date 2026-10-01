@@ -100,15 +100,20 @@ cooldown = "90s"
 `codex queue --thread <uuid> --message "<text>"` hands the message to the
 ChatGPT app, which delivers it into the thread it holds: the app's own
 app-server drains the queue and injects it as a user message. That is a
-channel into the harness the agent lives in, which is all a wake may be. On a
-thread the app is not holding, the message waits in the app until somebody
-opens that thread, and that is the honest limit of a channel: Dibs does not open
-it instead.
+channel into the harness the agent lives in, which is all a wake may be.
+
+The app delivers a queued message only to a thread it has loaded, so when the
+app is not holding the thread, Dibs then opens it there with `open
+codex://threads/<id>`, launching the app if it is closed. That happens only for
+an agent whose bridge found the ChatGPT app above it in the process tree; a
+Codex in a terminal is never opened in the app. Nothing to configure: it
+follows from where the agent runs. On another machine, `dibs host-bridge` does
+the same on that machine.
 
 **Why not `codex exec resume`, which this page recommended until 2026-09-30.**
 It does not deliver to anybody: it starts a headless Codex and runs the thread
 itself, in a process Dibs started, outside the app the operator was using, on
-their model allowance, with nobody watching. The operator found his ChatGPT
+their model allowance, with nobody watching. The operator found their ChatGPT
 threads running that way and called it unacceptable, rightly. Every entry that
 followed the old recipe had `exec resume` as `argv` and `codex queue` as
 `fallback`; the daemon now drops the first and runs the second alone, so those

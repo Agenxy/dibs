@@ -17,6 +17,7 @@ import (
 
 	"github.com/agenxy/dibs/internal/boardconfig"
 	"github.com/agenxy/dibs/internal/engine"
+	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/mcp"
 	"github.com/agenxy/dibs/internal/wakeexec"
 )
@@ -47,6 +48,12 @@ func bridgeUnderTest(t *testing.T, rec *recordingRun) *wakeBridge {
 		},
 	})
 	b.run = rec.run
+	// Never the real app: a test that reached `open codex://...` would switch
+	// the operator's ChatGPT window every time the suite ran.
+	b.show = harnessenv.Shower{
+		Holds: func(string) bool { return true },
+		Open:  func([]string) error { t.Error("a bridge test reached for the app"); return nil },
+	}
 	return b
 }
 
@@ -425,5 +432,39 @@ func TestABridgeRunsOneCommandPerAgentAtATime(t *testing.T) {
 	case <-blocker.started:
 	case <-time.After(2 * time.Second):
 		t.Fatal("after the first finished, a new wake for the agent was not started")
+	}
+}
+
+// The bridge takes the same step the hub takes for an agent on its own
+// machine, because the app is on the bridge's machine: after the queue, it
+// opens the thread in the app the agent runs in when the app is not holding it,
+// and does nothing of the kind for an agent that does not run in the app. The
+// surface is an ADDITIVE field, so an older bridge ignores it and keeps
+// queueing, which is exactly what it did before.
+func TestTheBridgeOpensTheThreadInTheAppTheAgentRunsIn(t *testing.T) {
+	const thread = "0199a0b1-c2d3-4e5f-8a9b-0c1d2e3f4a5b"
+	run := func(t *testing.T, surface string, queued bool) [][]string {
+		t.Helper()
+		b := bridgeUnderTest(t, &recordingRun{ok: queued})
+		var opened [][]string
+		b.show = harnessenv.Shower{
+			Holds: func(string) bool { return false },
+			Open:  func(argv []string) error { opened = append(opened, argv); return nil },
+		}
+		b.execute(engine.WakeRequest{
+			ID: 1, Host: b.host, Agent: "worker", Harness: "codex", Thread: thread,
+			MsgType: "question", Surface: surface,
+		})
+		return opened
+	}
+	if got := run(t, harnessenv.ChatGPTApp, true); len(got) != 1 || got[0][1] != "codex://threads/"+thread {
+		t.Errorf("an app agent's thread was opened as %q: the queued message waits in a "+
+			"thread the app on this machine never loaded", got)
+	}
+	if got := run(t, harnessenv.CodexOutsideApp, true); len(got) != 0 {
+		t.Errorf("a terminal Codex's thread was opened in the app: %q", got)
+	}
+	if got := run(t, harnessenv.ChatGPTApp, false); len(got) != 0 {
+		t.Errorf("the thread was opened although the queue failed: %q", got)
 	}
 }

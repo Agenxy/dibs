@@ -812,6 +812,12 @@ the bearer credential that let it in and no stronger: §9's `host` rule is a
 CORRECTNESS boundary, not an authorisation one, and it becomes the latter only
 when a host can prove itself. See `docs/NETWORK.md`.
 
+**An agent's app is recorded the same way.** The bridge reads it from its own
+process ancestry and sends it as `_meta["com.dibs/surface"]`; it wins over the
+`surface` an agent states, and a stated surface a wake acts on (`chatgpt-app`)
+is ignored. A wake for an agent in the ChatGPT app opens its thread there when
+the app is not holding it, and for no other agent (WAKE-MECHANISMS.md).
+
 **Remote agents (v1).** One daemon serves agents on other machines directly: there is
 no sharding, no replication, and therefore no split-brain: a single writer keeps every
 guarantee (notably exclusive claims) trivially true. Bind a reachable address with

@@ -1497,7 +1497,7 @@ func isJoinedBoard(dir string) bool {
 // NEVER ONE THAT RUNS THE AGENT. This map used to print `codex exec resume`
 // and `claude --resume {thread} -p`, and both start the agent itself: a
 // headless Codex, a headless Claude Code session, in a process Dibs started,
-// on an operator's thread and model allowance. The operator found his ChatGPT
+// on an operator's thread and model allowance. The operator found their ChatGPT
 // threads running that way and called it what it is: Dibs hosting agents. Dibs
 // is a channel into the harness the agent lives in. For Codex that channel is
 // the ChatGPT app's queue. Claude Code is absent on purpose: its sessions are
