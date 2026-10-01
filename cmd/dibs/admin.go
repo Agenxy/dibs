@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/adminpw"
+	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/paths"
 )
 
@@ -89,6 +90,21 @@ func adminCmd(args []string) error {
 		}
 		role, agent := args[0], args[1]
 		return adminOnly("admin "+role, func() error { return setAgentRole(agent, role) })
+	case "may-relocate", "may-not-relocate":
+		if len(args) < 2 {
+			return fmt.Errorf("`dibs admin %s` needs an agent name: dibs admin %s <agent>\n"+
+				"  `dibs board` lists the agents on this board", args[0], args[0])
+		}
+		held, agent := args[0] == "may-relocate", args[1]
+		return adminOnly("admin "+args[0], func() error { return setPermission(agent, core.PermRelocate, held) })
+	case "relocate":
+		if len(args) < 3 {
+			return fmt.Errorf("`dibs admin relocate` needs an agent and an environment: " +
+				"dibs admin relocate <agent> <environment>\n" +
+				"  chatgpt-app is built in; the others are your dibs.toml [relocate] entries")
+		}
+		agent, env := args[1], args[2]
+		return adminOnly("admin relocate", func() error { return relocateAgent(agent, env) })
 	default:
 		// A mistyped verb granted nothing and exited 0, which reads as done.
 		// Bare `dibs admin` is a genuine request for the list and still prints
@@ -104,6 +120,13 @@ const adminUsage = `usage:
   dibs admin coordinator <agent>   promote: may broadcast and force-release claims
   dibs admin admin <agent>         promote: everything you can do, INCLUDING reading all mail
   dibs admin member <agent>        demote back to a plain member
+  dibs admin may-relocate <agent>  let it move agents to another environment (coordinators
+                                   and admins already may)
+  dibs admin may-not-relocate <agent>   take that back
+  dibs admin relocate <agent> <environment>
+                                   run a closed agent's thread somewhere else on purpose:
+                                   chatgpt-app, or a [relocate] entry in dibs.toml. A wake
+                                   never does this; it is ledgered as yours
   dibs admin prune [agent]         close finished agents; no argument clears every
                                    agent that is not live (a crashed agent cannot
                                    close itself, so only you can clear it)
@@ -267,4 +290,75 @@ func promptAdminForGodView() (string, error) {
 		return "", fmt.Errorf("no admin password set: run `dibs admin set-password` first")
 	}
 	return readPassword("Dibs admin password: ")
+}
+
+// adminPost sends one admin call with both credentials and returns the body.
+func adminPost(route string, payload any) ([]byte, error) {
+	pass, err := promptAdminForGodView()
+	if err != nil {
+		return nil, err
+	}
+	body, _ := json.Marshal(payload)
+	req, err := http.NewRequest(http.MethodPost, origin()+route, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	if s, serr := localSecret(); serr == nil {
+		req.Header.Set("X-Dibs-Local", s)
+	}
+	req.Header.Set("X-Dibs-Admin", pass)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := daemonClient(0).Do(req)
+	if err != nil {
+		return nil, reachErr(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("%s: %s", resp.Status, strings.TrimSpace(string(raw)))
+	}
+	return raw, nil
+}
+
+func setPermission(agent, perm string, held bool) error {
+	raw, err := adminPost("/api/admin/permission", map[string]any{
+		"agent": agent, "permission": perm, "held": held,
+	})
+	if err != nil {
+		return err
+	}
+	var out struct {
+		Changed bool `json:"changed"`
+	}
+	_ = json.Unmarshal(raw, &out)
+	switch {
+	case held && out.Changed:
+		fmt.Printf("%s may now move agents to another environment\n", agent)
+	case held:
+		fmt.Printf("%s already could\n", agent)
+	case out.Changed:
+		fmt.Printf("%s may no longer move agents (unless its role allows it)\n", agent)
+	default:
+		fmt.Printf("%s did not hold it\n", agent)
+	}
+	return nil
+}
+
+func relocateAgent(agent, env string) error {
+	raw, err := adminPost("/api/admin/relocate", map[string]any{"agent": agent, "environment": env})
+	if err != nil {
+		return err
+	}
+	var out struct {
+		From string `json:"from"`
+		To   string `json:"to"`
+	}
+	_ = json.Unmarshal(raw, &out)
+	from := out.From
+	if from == "" {
+		from = "wherever it last ran"
+	}
+	fmt.Printf("started %s in %s (it was in %s); the daemon log records how the command exited\n",
+		agent, out.To, from)
+	return nil
 }

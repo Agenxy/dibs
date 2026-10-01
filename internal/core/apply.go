@@ -128,6 +128,11 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		// Admin-only, same path, and for a stronger reason than prune's: this
 		// redirects one agent's mail into another's mailbox. See applyMerge.
 		return s.applyMerge(op, now)
+	case OpGrantPermission, OpRevokePermission:
+		// The human's, on the admin path, like grant_role. See relocate.go.
+		return s.applyPermission(op, now)
+	case OpRelocateByHuman:
+		return s.applyRelocate(nil, op, now)
 	}
 
 	// Actor ops. Live path: token. Replay path: recorded Agent (engine blanks
@@ -186,6 +191,8 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		res, evs, err = s.applySpaceAdmit(l, op, now)
 	case OpWake:
 		res, evs, err = s.applyWake(l)
+	case OpRelocate:
+		res, evs, err = s.applyRelocate(l, op, now)
 	case OpActivityCheckpoint:
 		res, evs = Result{"ok": true}, []Event{} // state effect: LastCoordination below
 	case OpAckBoard:
@@ -1743,6 +1750,21 @@ func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, 
 	evs := []Event{{Type: "message." + st, Agent: l.ID, To: m.From, Data: map[string]any{
 		"msg_serial": m.Serial,
 	}}}
+	if granted != nil && m.Grant == PermRelocate {
+		// A permission, not a role: added beside whatever role the agent
+		// holds. Reported under its own key, because the engine reads
+		// "granted" as a ROLE a person set and pins it against dibs.toml.
+		if !granted.HasPermission(PermRelocate) {
+			granted.Permissions = append(granted.Permissions, PermRelocate)
+		}
+		res["granted_permission"], res["to"] = m.Grant, granted.ID
+		evs[0].Data["granted"] = m.Grant
+		evs = append(evs, Event{
+			Type: "agent.permission_changed", Agent: granted.ID,
+			Data: map[string]any{"permission": m.Grant, "held": true, "via": "approved_request"},
+		})
+		granted = nil
+	}
 	if granted != nil {
 		granted.Role = m.Grant
 		res["granted"], res["to"] = m.Grant, granted.ID

@@ -323,6 +323,16 @@ func run() error {
 		slog.Info("the board can deliver to an agent through its harness",
 			"harnesses", len(cmds))
 	}
+	// Where an agent can be MOVED on purpose. Not wake routes: no wake reads
+	// this table, and these are the only commands Dibs runs that host an agent.
+	if len(cfg.Relocate) > 0 {
+		envs := make(map[string]engine.RelocateCommand, len(cfg.Relocate))
+		for name, x := range cfg.Relocate {
+			envs[name] = engine.RelocateCommand{Argv: x.Argv}
+		}
+		eng.SetRelocations(envs)
+		slog.Info("agents can be relocated to operator-configured environments", "environments", len(envs))
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go eng.Run(ctx)

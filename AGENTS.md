@@ -39,7 +39,11 @@ change it when reality disagrees, and record why).
    agent, run a thread, or resume a session in a process of its own. It did, through the
    recommended `codex exec resume` and `claude --resume -p`, and the operator found their
    ChatGPT threads running in a process Dibs had started; `boardconfig.HostsAnAgent` now
-   refuses those wherever a wake command is read. There are two routes and no others:
+   refuses those wherever a wake command is read. Moving an agent to another environment
+   is RELOCATION, a separate act behind its own permission (the human, coordinators and
+   admins, or an agent the human granted it), ledgered with who did it; the operator's
+   `[relocate]` commands are the only ones Dibs runs that host an agent, and no wake reads
+   that table. There are two routes and no others:
    `[wake.exec]`, argv from the operator's config, which must DELIVER into a running
    harness (for Codex, `codex queue` into the ChatGPT app, which Dibs then opens on that
    thread when the app is not holding it, and only for an agent whose bridge found the

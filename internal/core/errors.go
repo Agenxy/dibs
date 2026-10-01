@@ -171,6 +171,16 @@ var (
 			"promotes you and the answer comes back as an ordinary response. You still " +
 			"cannot promote yourself: only they can press it",
 	}
+	// ErrNotPermittedToRelocate refuses moving an agent to another environment
+	// for an agent holding neither a fleet role nor the human's grant.
+	ErrNotPermittedToRelocate = &Error{
+		Code: "E_NOT_PERMITTED",
+		Msg:  "moving an agent to another environment needs the relocate permission",
+		Hint: "ask, and their yes IS the grant: send(to: the board row marked " +
+			"`human: true`, type: \"request\", grant: \"relocate\", body: which agent " +
+			"you want to move, where, and why). A wake never moves an agent; this is the " +
+			"one deliberate way, so it is the human's to hand out",
+	}
 	ErrBlobUnavailable = &Error{
 		Code: "E_BLOB_UNAVAILABLE", Msg: "blob bytes are no longer available",
 		Hint: "the blob was evicted under retention bounds; ask the sender to re-put it",

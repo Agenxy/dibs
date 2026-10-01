@@ -346,6 +346,41 @@ might be told they were dormant was false for all of them.
 
 ---
 
+## `[relocate]`: moving an agent to another environment on purpose
+
+A wake reaches an agent in the environment it runs in and nowhere else: a
+ChatGPT-app thread in the app, a Claude Code session through its own socket,
+and never by starting the agent somewhere of Dibs' choosing. Moving an agent
+is a separate act, done on purpose by somebody allowed to, and recorded.
+
+```toml
+[relocate.headless]
+argv = ["codex", "exec", "resume", "{thread}", "{message}"]
+```
+
+Each entry is an environment an agent can be moved to by name. The command
+runs the agent's thread there, which is exactly what a wake command is refused
+for (see "Dibs never hosts an agent" above): this table is the only place Dibs
+reads a command that hosts an agent, and no wake ever consults it. Placeholders
+are whole argv elements, as for a wake: `{thread}`, `{agent}`, `{message}`
+(a fixed "Dibs: something is waiting." line). `chatgpt-app` is built in and
+needs no entry: it opens a Codex thread in the ChatGPT app with the app's own
+`codex://threads/<id>` route.
+
+**Who may move an agent.** You, always: `dibs admin relocate <agent>
+<environment>`. A coordinator or admin agent, by role, with the `relocate`
+tool. Any other agent only once you have granted it, either with `dibs admin
+may-relocate <agent>` (and `may-not-relocate` to take it back) or by pressing
+Approve on a request it sent carrying `grant: "relocate"`. Every move is
+ledgered as `agent.relocated` with who did it, the agent, and where it was and
+went to, and the agent's board row shows the last one.
+
+**What is refused.** An agent that is running (starting its thread somewhere
+else as well would put two writers on one thread); the environment it already
+runs in; an agent on another machine (the command would run on this one); an
+agent with no harness thread on record; and your own row, since where you work
+is yours to decide.
+
 ## `[identity]`: who an unidentified session is taken to be
 
 ```toml

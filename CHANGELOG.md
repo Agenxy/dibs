@@ -5,6 +5,22 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Relocation: moving an agent to another environment on purpose.** A wake
+  never moves an agent, and now there is a deliberate way to: the `relocate`
+  tool, and `dibs admin relocate <agent> <environment>` for the operator.
+  `chatgpt-app` is built in (it opens a Codex thread in the ChatGPT app);
+  other environments are the operator's `[relocate.<name>]` commands, the only
+  commands Dibs runs that host an agent. Coordinators and admins may relocate
+  by role; any other agent needs the new `relocate` permission, granted by the
+  operator with `dibs admin may-relocate <agent>` or by approving a request
+  carrying `grant: "relocate"`. Every move is ledgered as `agent.relocated`
+  with who made it, and the board row shows the last one. A running agent, the
+  environment it already runs in, an agent on another machine and the person's
+  own row are refused.
+  The server now publishes 47 tools.
+
 ### Changed
 
 - **An agent is woken in the app it runs in.** The ChatGPT app delivers a

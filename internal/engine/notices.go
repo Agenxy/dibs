@@ -423,6 +423,10 @@ func answeredNotice(ev core.Event) string {
 	switch ev.Type {
 	case "message.approved":
 		s := fmt.Sprintf("%s APPROVED your request (msg %d)", by, serial)
+		if g, _ := ev.Data["granted"].(string); g == core.PermRelocate {
+			return s + ": you may now move a closed agent to another environment with " +
+				"relocate. Calls that failed with E_NOT_PERMITTED will work now"
+		}
 		if role, ok := ev.Data["granted"].(string); ok && role != "" {
 			return s + fmt.Sprintf(": you now hold the %s role. Re-read the board; "+
 				"calls that failed with E_NOT_%s will work now. %s",

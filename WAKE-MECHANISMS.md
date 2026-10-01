@@ -215,7 +215,11 @@ The field is additive: a bridge too old to know it keeps queueing, as before.
 
 Running an agent in a DIFFERENT environment from the one it last ran in (a
 headless Codex for a thread that lived in the app, say) is not a wake at all.
-It is a relocation, which a wake never does.
+It is a relocation, which a wake never does. It exists as its own act, behind
+its own permission: the human always, coordinators and admins by role, anyone
+else by the human's grant, each move ledgered with who made it
+(docs/CONFIGURATION.md, `[relocate]`). The operator's `[relocate]` commands are
+the only commands Dibs runs that host an agent.
 
 ## 1. Measured, not researched
 

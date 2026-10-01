@@ -51,7 +51,10 @@ type wakeCommand struct {
 type wakers struct {
 	mu        sync.Mutex
 	byHarness map[string]wakeCommand
-	last      map[string]time.Time
+	// relocations is the operator's [relocate.*] table: NOT wake routes, and
+	// never consulted by a wake. See relocate.go.
+	relocations map[string]RelocateCommand
+	last        map[string]time.Time
 	// deferred: a re-check armed for when an agent's cooldown expires, because
 	// maybeWake fires once per event and nothing else retries.
 	deferred map[string]*time.Timer

@@ -28,6 +28,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/liveness"
 )
 
@@ -52,6 +53,26 @@ type Config struct {
 	Wake     WakeConfig     `toml:"wake"`     // which news may extend an agent's turn
 	Hooks    HooksConfig    `toml:"hooks"`    // what a lifecycle-hook delivery carries
 	Identity IdentityConfig `toml:"identity"` // who an unidentified session is taken to be
+	// Relocate is where an agent can be MOVED on purpose: see RelocateExec.
+	Relocate map[string]RelocateExec `toml:"relocate"`
+}
+
+// RelocateExec is one environment an agent can be moved to on purpose.
+//
+// NOT A WAKE ROUTE, and the difference is the whole design. A wake delivers
+// into the harness an agent already runs in and never hosts one (hosting.go).
+// A relocation runs the agent's thread somewhere else, which is exactly what
+// a wake must never do, so it is a separate act: an agent or a person holding
+// the relocate permission asks for it by name, it is ledgered with who did it,
+// and these commands are the only ones Dibs will run that host an agent.
+//
+//	[relocate.headless]
+//	argv = ["codex", "exec", "resume", "{thread}", "{message}"]
+//
+// Placeholders as for a wake, whole elements only: {thread}, {agent},
+// {message}. The ChatGPT app is built in as `chatgpt-app` and needs no entry.
+type RelocateExec struct {
+	Argv []string `toml:"argv"`
 }
 
 // IdentityConfig is the [identity] table: what to do when a lifecycle hook
@@ -518,6 +539,7 @@ func (c Config) Validate() error {
 	for _, check := range []func() error{
 		c.validateAddr, c.ValidateName, c.validateTLS, c.validateLimits, c.validateMatch,
 		c.validateSupervise, c.validateWake, c.validateRoles, c.validateIdentity,
+		c.validateRelocate,
 	} {
 		if err := check(); err != nil {
 			return err
@@ -1054,14 +1076,14 @@ func validateWakeEntry(harness string, x WakeExec, all map[string]WakeExec) erro
 	// configured, and every wake then failed inside exec before starting
 	// anything. Configuration approved, capability announced, nobody ever
 	// woken: this list's own subject, in the section it was added for.
-	if err := validateWakeArgv(harness, "argv", x.Argv); err != nil {
+	if err := validateWakeArgv("wake.exec."+harness, "argv", x.Argv); err != nil {
 		return err
 	}
 	// The fallback is a second command with the same power, so it gets the
 	// same checks through the same function. Two copies of one rule is how this
 	// repository's most expensive class of bug arrives.
 	if len(x.Fallback) > 0 {
-		if err := validateWakeArgv(harness, "fallback", x.Fallback); err != nil {
+		if err := validateWakeArgv("wake.exec."+harness, "fallback", x.Fallback); err != nil {
 			return err
 		}
 	}
@@ -1070,7 +1092,37 @@ func validateWakeEntry(harness string, x WakeExec, all map[string]WakeExec) erro
 
 // validateWakeArgv is the rule every wake command obeys, whichever key it is
 // under. Called on a non-empty argv.
-func validateWakeArgv(harness, key string, argv []string) error {
+// validateRelocate holds [relocate.*] to the rules a wake command keeps, and
+// refuses the one name Dibs reserves.
+func (c Config) validateRelocate() error {
+	for name, x := range c.Relocate {
+		lower := strings.ToLower(name)
+		if strings.TrimSpace(name) == "" || name != strings.TrimSpace(name) {
+			return fmt.Errorf("[relocate.%q] needs a plain name: it is what an agent "+
+				"or a person types to move an agent there", name)
+		}
+		if lower == harnessenv.ChatGPTApp {
+			return fmt.Errorf("[relocate.%s] is built in: Dibs opens a Codex thread in "+
+				"the ChatGPT app itself. Remove the section, or give it another name", name)
+		}
+		for other := range c.Relocate {
+			if other != name && strings.ToLower(other) == lower {
+				return fmt.Errorf("[relocate] has both %q and %q, which are the same name "+
+					"once lowercased", name, other)
+			}
+		}
+		if len(x.Argv) == 0 {
+			return fmt.Errorf("[relocate.%s] has no argv, so moving an agent there "+
+				"would run nothing. Give it the command that runs a thread, or remove it", name)
+		}
+		if err := validateWakeArgv("relocate."+name, "argv", x.Argv); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateWakeArgv(section, key string, argv []string) error {
 	// TRIMMED, because " " is a perfectly good TOML string and a perfectly
 	// useless program name. It passed `dibd -check`, startup logged "the
 	// board can start an agent that is not running" with one harness
@@ -1078,10 +1130,10 @@ func validateWakeArgv(harness, key string, argv []string) error {
 	// anything. Configuration approved, capability announced, nobody ever
 	// woken: this list's own subject, in the section it was added for.
 	if strings.TrimSpace(argv[0]) == "" {
-		return fmt.Errorf("[wake.exec.%s] %s starts with an empty string, so "+
+		return fmt.Errorf("[%s] %s starts with an empty string, so "+
 			"there is no program to run. The first element is the executable, "+
 			"and the rest are its arguments: there is no shell in this path "+
-			"to work out what was meant", harness, key)
+			"to work out what was meant", section, key)
 	}
 	// NOTHING AN AGENT SAID MAY CHOOSE THE PROGRAM.
 	//
@@ -1093,10 +1145,10 @@ func validateWakeArgv(harness, key string, argv []string) error {
 	// from quoting and the one this project actually states: the wake command
 	// comes from the operator's file and nothing an agent said reaches it.
 	if strings.HasPrefix(argv[0], "{") {
-		return fmt.Errorf("[wake.exec.%s] %s[0] is %q: the program to run must "+
+		return fmt.Errorf("[%s] %s[0] is %q: the program to run must "+
 			"be named in this file and cannot be a placeholder. Substituted "+
 			"values come from agents, and the one thing an agent must never "+
-			"choose is which executable the board starts", harness, key, argv[0])
+			"choose is which executable the board starts", section, key, argv[0])
 	}
 	return nil
 }
