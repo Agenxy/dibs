@@ -302,3 +302,47 @@ func TestADeclarationWithNoRecentSignReadsDeclaredNotWorking(t *testing.T) {
 		t.Errorf("an agent seen just now with open work reads %q", got)
 	}
 }
+
+// A worker that is working is not woken for its work. Codex reports a turn's
+// end and never its start, so the last Stop's record outlives the next turn:
+// measured, a backoff wake fired at a worker that had called Dibs two minutes
+// earlier and again two minutes later. Any sign of life after the Stop means
+// a turn is running.
+func TestAWorkerSeenSinceItsLastStopIsNotWokenForItsWork(t *testing.T) {
+	if _, err := os.Stat("/usr/bin/touch"); err != nil {
+		t.Skip("no /usr/bin/touch on this platform")
+	}
+	b := newContinuationBoard(t)
+	b.e.SetWakeCommands(map[string]WakeCommand{"codex": {Argv: []string{"/usr/bin/touch", "{thread}"}, Cooldown: time.Millisecond}})
+	b.declare(t, "member admission runtime", "")
+	b.wake(t)
+	for range maxContinuations {
+		b.stop(t, false)
+	}
+	b.stop(t, false) // not continued: the turn has ended
+	var ended time.Time
+	if _, err := b.e.query(b.ctx, func() core.Result { ended = b.e.turnEnded["worker"]; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if ended.IsZero() {
+		t.Fatal("setup: no turn end recorded")
+	}
+	// A new turn, started by something Codex does not report, calls Dibs.
+	if _, err := b.e.Do(b.ctx, &core.Op{Kind: core.OpAckBoard, Token: b.token}); err != nil {
+		t.Fatal(err)
+	}
+	var cwd string
+	if _, err := b.e.query(b.ctx, func() core.Result {
+		cwd = b.e.state.Agents["worker"].Agent.CWD
+		_ = os.Remove(filepath.Join(cwd, contThread)) // the setup's own wake made it
+		b.e.seen["worker"] = ended.Add(time.Minute)   // the call landed after the Stop
+		b.e.stallTick(ended.Add(continuationBackoff[0] + time.Minute))
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	<-time.After(200 * time.Millisecond)
+	if _, err := os.Stat(filepath.Join(cwd, contThread)); err == nil {
+		t.Error("woke a worker for its work while it was working")
+	}
+}
