@@ -312,6 +312,10 @@ func (e *Engine) maybeWake(ev core.Event) {
 		// The retry below refreshes the cache before it decides. Found by the
 		// pre-release review, round seven.
 		if e.socketMayHaveAppeared(l) {
+			// No session listening. If it is a Claude app session whose
+			// process has ended, the app can start it again (inapp.go), and
+			// the retry below then finds its socket.
+			e.openClosedSession(l)
 			e.deferWakeLocked(l.ID, peerCacheTTL)
 		}
 		return
