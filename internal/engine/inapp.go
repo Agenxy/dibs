@@ -2,6 +2,7 @@ package engine
 
 import (
 	"log/slog"
+	"time"
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/harnessenv"
@@ -39,14 +40,27 @@ func (e *Engine) showInApp(plan wakePlan, agent string) {
 		return
 	}
 	argv := harnessenv.OpenArgv(harnessenv.AppFor(plan.surface, plan.harness, plan.thread), plan.thread)
-	opened, err := shower.Show(argv, plan.thread)
+	shower.ShowWhenIdle(argv, plan.thread, func(opened, deferred bool, err error) {
+		logShow(opened, deferred, err, "agent", agent)
+	})
+}
+
+// SetOpenAppAfterIdle is `[wake] open_app_after_idle`: how long the person
+// must have been idle before a thread is opened in its app. Called at startup,
+// before any wake runs.
+func (e *Engine) SetOpenAppAfterIdle(d time.Duration) { shower.MinIdle = d }
+
+// logShow says what happened to one open, for whoever reads the log later.
+func logShow(opened, deferred bool, err error, args ...any) {
 	switch {
 	case err != nil:
 		slog.Warn("could not open the agent's thread in its app; the message waits there "+
-			"until the thread is opened", "agent", agent, "err", err)
+			"until the thread is opened", append(args, "err", err)...)
+	case deferred:
+		slog.Info("the agent's thread is not loaded in its app; opening it once the person "+
+			"has been idle, so the app does not jump in front of them", args...)
 	case opened:
-		slog.Info("opened the agent's thread in the app it runs in, so the message is delivered there",
-			"agent", agent)
+		slog.Info("opened the agent's thread in the app it runs in, so the message is delivered there", args...)
 	}
 }
 

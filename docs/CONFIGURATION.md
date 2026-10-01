@@ -47,6 +47,7 @@ addr = "100.72.14.3:4777"    # a tailnet address: agents on four machines, one b
 | `extend_turn_for` | `all` | Which news may extend an agent's turn: `all`, `urgent`, `none`. |
 | `notices_wake` | `true` | Whether situational awareness alone may extend a turn. |
 | `sockets` | `true` | Whether the session-socket routes run at all: the daemon's peer-socket wake and the bridge's self-wake. |
+| `open_app_after_idle` | `2m` | How long you must have been away from the keyboard and mouse before Dibs opens an agent's thread in its app (which brings the app to the front). `0s` opens at once. |
 | `remind_stale_after` | retired | Did nothing since liveness became the daemon's own job. Still parsed so old configs load; delete it. |
 | `exec.<harness>.argv` | *(none)* | The command that reaches that harness when an agent is **not running**. |
 | `exec.<harness>.cooldown` | `90s` | The shortest gap between two wakes of the same agent. |
@@ -106,9 +107,22 @@ The app delivers a queued message only to a thread it has loaded, so when the
 app is not holding the thread, Dibs then opens it there with `open
 codex://threads/<id>`, launching the app if it is closed. That happens only for
 an agent whose bridge found the ChatGPT app above it in the process tree; a
-Codex in a terminal is never opened in the app. Nothing to configure: it
-follows from where the agent runs. On another machine, `dibs host-bridge` does
-the same on that machine.
+Codex in a terminal is never opened in the app. On another machine, `dibs
+host-bridge` does the same on that machine.
+
+Opening a thread brings the app to the front, and nothing passed to `open`
+stops that (measured: `open -g` and handing focus back both lost). So Dibs
+opens it only once you have been away from the keyboard and mouse for a while:
+
+```toml
+[wake]
+open_app_after_idle = "2m"   # the default; "0s" opens at once
+```
+
+The message is queued meanwhile, and only the first wake per thread per app
+run needs an open at all: a loaded thread stays loaded and is delivered to
+silently. A wait that outlasts a day is dropped; the message is still in the
+app for whenever the thread is next opened.
 
 **Why not `codex exec resume`, which this page recommended until 2026-09-30.**
 It does not deliver to anybody: it starts a headless Codex and runs the thread

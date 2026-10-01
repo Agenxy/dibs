@@ -186,6 +186,12 @@ type WakeConfig struct {
 	// so absent reads as true. Found by the pre-release review, round
 	// twenty-seven.
 	Sockets *bool `toml:"sockets"`
+	// OpenAppAfterIdle is how long the person must have been away from the
+	// keyboard and mouse before Dibs opens an agent's thread in its app (the
+	// ChatGPT app), which brings that app to the front: "2m" by default, "0s"
+	// to open at once. Only a thread the app has not loaded needs opening;
+	// a loaded one is delivered to silently. The message is queued either way.
+	OpenAppAfterIdle string `toml:"open_app_after_idle"`
 	// RemindStaleAfter is how long a live session may go without coordinating
 	// before its hook digest says so: "1h" by default, "off" to disable.
 	//
@@ -997,6 +1003,9 @@ func (c Config) validateWake() error {
 			return err
 		}
 	}
+	if _, err := c.Wake.OpenAfterIdle(); err != nil {
+		return err
+	}
 	w := c.Wake.ExtendTurnFor
 	if w == "" {
 		return nil
@@ -1211,4 +1220,19 @@ func hostnameLabel(label string) bool {
 		}
 	}
 	return true
+}
+
+// OpenAfterIdle is [wake] open_app_after_idle as a duration: the default when
+// unset, zero to open at once. The daemon and `dibs host-bridge` both read it
+// here, so the two machines that can open an app agree on what it means.
+func (w WakeConfig) OpenAfterIdle() (time.Duration, error) {
+	if strings.TrimSpace(w.OpenAppAfterIdle) == "" {
+		return harnessenv.DefaultOpenAfterIdle, nil
+	}
+	d, err := time.ParseDuration(w.OpenAppAfterIdle)
+	if err != nil || d < 0 {
+		return 0, fmt.Errorf("[wake] open_app_after_idle = %q: give a duration such as "+
+			"\"2m\", or \"0s\" to open an agent's app at once", w.OpenAppAfterIdle)
+	}
+	return d, nil
 }
