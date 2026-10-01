@@ -32,13 +32,19 @@ change it when reality disagrees, and record why).
 3. **Non-deterministic things live outside the core** as derived, rebuildable views.
    Losing a derived view must not lose coordination state.
 4. **Advisory, not coercive.** Declaring work never fails. Don't add blocking semantics.
-5. **The board may WAKE an agent, and may not steer one.** Reaching an idle agent so it
-   can read its own mail is the product: a message service whose recipient must already
-   be running is a polling API. There are two routes and no others: `[wake.exec]`, argv
-   from the operator's config, which spawns a process and is the one Dibs can confirm;
-   and the session socket the harness publishes, which needs no config and is BEST
-   EFFORT, because the receiver decides whether to accept a peer message and sends no
-   receipt. A session in bypassPermissions mode holds them. Neither carries an
+5. **The board may WAKE an agent, and may not steer one, and it NEVER HOSTS one.**
+   Reaching an idle agent so it can read its own mail is the product: a message service
+   whose recipient must already be running is a polling API. But Dibs is a CHANNEL into
+   the harness the agent already lives in, never a harness itself: it does not start an
+   agent, run a thread, or resume a session in a process of its own. It did, through the
+   recommended `codex exec resume` and `claude --resume -p`, and the operator found his
+   ChatGPT threads running in a process Dibs had started; `boardconfig.HostsAnAgent` now
+   refuses those wherever a wake command is read. There are two routes and no others:
+   `[wake.exec]`, argv from the operator's config, which must DELIVER into a running
+   harness (for Codex, `codex queue` into the ChatGPT app) and is the one Dibs can
+   confirm; and the session socket the harness publishes, which needs no config and is
+   BEST EFFORT, because the receiver decides whether to accept a peer message and sends
+   no receipt. A session in bypassPermissions mode holds them. Neither carries an
    IMPERATIVE and neither carries a body an agent wrote: the socket carries the
    digest (and, with nothing folded in yet, the event and the sender), the
    command route carries the event and NO participant names, because argv is

@@ -312,20 +312,19 @@ type MatchConfig struct {
 // which is the one failure that would be worse than not delivering at all.
 //
 //	[wake.exec.codex]
-//	argv     = ["codex", "exec", "resume", "{thread}", "{message}"]
-//	fallback = ["codex", "queue", "--thread", "{thread}", "--message", "{message}"]
+//	argv = ["codex", "queue", "--thread", "{thread}", "--message", "{message}"]
 //
 // Placeholders, each replaced as a COMPLETE element: {thread}, {agent},
 // {from}, {type}, {message}. Anything else is left alone.
 //
-// TWO COMMANDS, because one harness has two states and a command for each.
-// `codex exec resume` starts a CLOSED thread and refuses one that is open in
-// the desktop app ("already has an active writer"). `codex queue` delivers
-// into an OPEN thread, and to a closed one it exits 0 and parks the message
-// where nothing will read it until somebody opens that thread by hand. They
-// are exact inverses, and neither alone reaches every agent. Measured on the
-// machine this was written on, both ways, after weeks of the desktop-app case
-// being reported as unreachable.
+// A COMMAND DELIVERS INTO A HARNESS, IT NEVER STARTS THE AGENT. This example
+// used to be `codex exec resume`, with `codex queue` as a fallback for a
+// thread the app held open. `exec resume` delivers to nobody: it runs the
+// thread itself in a headless Codex Dibs started, which is Dibs hosting an
+// agent, and the operator rejected it on finding his ChatGPT threads running
+// that way. HostsAnAgent refuses it and DeliveringWakeRoutes keeps only the
+// delivering half of the old recipe. Fallback remains for a harness with two
+// delivering commands; it is not how to reach a thread nobody holds open.
 type WakeExec struct {
 	// Argv is the command and its arguments. Empty means this harness has no
 	// wake command, which is the default and is not an error.

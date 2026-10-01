@@ -668,3 +668,26 @@ func localAddresses(host string) []net.IP {
 	}
 	return out
 }
+
+// wakeCommandsFrom is the operator's [wake.exec] table as the engine runs it,
+// with every command that would host an agent taken out.
+//
+// Dibs is a channel into the harness an agent already lives in and never hosts
+// one; see boardconfig.DeliveringWakeRoutes, which `dibs host-bridge` applies
+// too. A change to the operator's table is said out loud, because a setting
+// read and quietly altered is worse than one refused.
+func wakeCommandsFrom(exec map[string]boardconfig.WakeExec) map[string]engine.WakeCommand {
+	delivering, changed := boardconfig.DeliveringWakeRoutes(exec)
+	for h, why := range changed {
+		slog.Warn("a [wake.exec] entry was changed so Dibs does not host an agent",
+			"harness", h, "change", why)
+	}
+	cmds := make(map[string]engine.WakeCommand, len(delivering))
+	for harness, x := range delivering {
+		if len(x.Argv) == 0 {
+			continue
+		}
+		cmds[harness] = engine.WakeCommand{Argv: x.Argv, Fallback: x.Fallback, Cooldown: x.Cooldown}
+	}
+	return cmds
+}
