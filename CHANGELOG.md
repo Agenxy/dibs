@@ -7,6 +7,18 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **`dibs await` rides through a daemon restart, and an unreachable daemon has
+  its own exit status.** k7-dev lost a background `dibs await -since 469
+  -timeout 8h` to an EOF when the daemon restarted. Restarts are routine, and
+  `-since` makes resuming exact, so a dropped connection is now retried for up
+  to two minutes, re-resolving the daemon's address on each failure so one that
+  came back elsewhere is followed. Any transport error is retried, a reset
+  included, which the bridge does not do for writes: these are reads, so asking
+  twice costs nothing. Three outcomes now have three statuses: 0 events, 1
+  timeout, 75 (EX_TEMPFAIL) the daemon stayed down. Timeout and "board down"
+  both used to exit 1. The "exit 0" in the report was the pipeline it ran
+  under, which reports its last command's status; SKILLS.md now warns against
+  piping the watcher.
 - **A wake that fails is told to the agent waiting on it, and shown on the
   board.** k7-dev sent two requests to two Codex workers and every wake failed:
   Codex refused to run in a directory that was not a git repository. The

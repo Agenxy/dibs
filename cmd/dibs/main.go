@@ -31,7 +31,9 @@ const usage = `dibs: window into the agent coordination board
 agent-safe (agent-scoped or public, fine to run from any agent):
   dibs await              block until events arrive for YOUR agent, then exit 0
                            (token from DIBS_TOKEN; --since N, --timeout 30m,
-                           run as a background task and your harness wakes you)
+                           run as a background task and your harness wakes you;
+                           exit 1 on timeout, 75 if the daemon stays down;
+                           rides through a daemon restart)
   dibs probe --pid N      is a subagent you spawned working, thinking or stuck?
                            (--until stuck,exited blocks and exits when it is,
                            run as a background task and your harness wakes you)
@@ -276,6 +278,12 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Fprintln(os.Stderr, "dibs:", err)
+		// A command that needs an outcome distinguishable from "failed" says so:
+		// `dibs await` exits 75 for an unreachable daemon, apart from a timeout.
+		var status interface{ exitStatus() int }
+		if errors.As(err, &status) {
+			os.Exit(status.exitStatus())
+		}
 		os.Exit(1)
 	}
 }

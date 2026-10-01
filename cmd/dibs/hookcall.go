@@ -84,11 +84,29 @@ func callHookTool(tool string, args map[string]any, out any) error {
 // per process, as the bridge resolves once per start: a command that polls
 // must not spawn Supgang per poll. Round eighteen of the pre-release review.
 func mcpEndpoint() string {
-	mcpEndpointOnce.Do(func() { mcpEndpointValue = boardOrigin() + "/mcp" })
+	mcpEndpointMu.Lock()
+	defer mcpEndpointMu.Unlock()
+	if mcpEndpointValue == "" {
+		mcpEndpointValue = boardOrigin() + "/mcp"
+	}
 	return mcpEndpointValue
 }
 
+// reresolveMCPEndpoint forgets the resolved address, so the next call asks
+// again. Called when a call got no answer at all.
+//
+// RESOLVED ONCE, RE-RESOLVED ON FAILURE: the rule AGENTS.md states for any long
+// lived process, which `dibs await` is (eight hours is an ordinary -timeout).
+// Resolving once keeps a polling command from spawning Supgang per poll; forgetting
+// on failure lets it follow a daemon that came back somewhere else, which is free
+// on the happy path because a stale address has exactly one symptom.
+func reresolveMCPEndpoint() {
+	mcpEndpointMu.Lock()
+	defer mcpEndpointMu.Unlock()
+	mcpEndpointValue = ""
+}
+
 var (
-	mcpEndpointOnce  sync.Once
+	mcpEndpointMu    sync.Mutex
 	mcpEndpointValue string
 )
