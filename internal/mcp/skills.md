@@ -230,6 +230,15 @@ Do not poll. Two options:
   instantly at exit 127 while you report it armed. The flag above is the built-in
   and needs nothing installed.
 
+  **Read its exit status, and do not pipe it.** It exits **0** when events
+  arrived, **1** when the timeout passed with none, and **75** when the daemon
+  stayed unreachable for two minutes. A daemon that only restarted is ridden
+  through and resumed from your cursor, so 75 means the board is really down,
+  not that it blinked. Piping it (`dibs await ... | tail`) replaces its exit
+  status with the last command's, which is 0, so a dead board reads as mail.
+  That is exactly how one agent lost a watcher to a restart and read it as
+  success.
+
 The same shape works for supervising a subagent you spawned:
 `dibs probe --pid <n> --until stuck,exited` blocks and exits when it matters.
 
