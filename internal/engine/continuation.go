@@ -164,6 +164,16 @@ func continuationReason(open []core.Slot, n int) string {
 		"slot_id and the `waiting` argument set (on whom or what, e.g. \"ci\"), plus " +
 		"`recheck_after` (e.g. \"20m\") if nothing will tell you; writing \"waiting\" in " +
 		"the text marks nothing. ")
+	for _, s := range open {
+		if serial, ok := strings.CutPrefix(s.ID, "request "); ok {
+			// An owed request has no slot of its own to mark waiting; this is
+			// how a worker parks one (obligations.go, parkedBy).
+			fmt.Fprintf(&b, "An owed request that is blocked on someone else is parked by a "+
+				"waiting declaration whose refs include \"request:%s\"; report it done "+
+				"only when it is. ", serial)
+			break
+		}
+	}
 	fmt.Fprintf(&b, "(Continuation %d of %d until the declaration changes.)", n, maxContinuations)
 	return b.String()
 }

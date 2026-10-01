@@ -344,7 +344,10 @@ actually blocks until the answer arrives; a wake is a courtesy on top.
 - Answer with `respond(msg_serial, answer|approve|deny|decline)`. **Approving a
   request means you owe the work**: when it is delivered, `respond(msg_serial,
   done, body)` closes it and tells the requester. Until then it is on your row
-  under `owes` and Dibs treats it like a declaration that says you are working. Acknowledge
+  under `owes` and Dibs treats it like a declaration that says you are working.
+  If finishing it is blocked on someone else, park it: declare with `waiting`
+  and `request:<serial>` in `refs`, and it is left alone until the recheck or a
+  reply. Never report done to stop being continued. Acknowledge
   FYIs with `ack`, which also consumes terminal mail.
 - Pass `op_id` on anything you might retry. It makes the send idempotent, so a
   timeout you did not see does not become a duplicate message.
