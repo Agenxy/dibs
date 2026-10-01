@@ -24,6 +24,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **An owed request blocked on someone else can be parked.** An approved,
+  not-done request counted as work in progress whatever the agent declared, so
+  a worker whose finished work was held by an owner decision was continued on
+  it repeatedly, with a false "done" as its only way out. A waiting declaration
+  whose refs include `request:<serial>` (or `msg:<serial>`) now parks that
+  request: it inherits the wait and the recheck. The continuation text says how.
+
 - **A slow `ps` no longer drops a live Claude Code session.** Session discovery
   checks each session's process with `ps`, inside 300ms. Just after a daemon
   restart, while replay and repository indexing load the machine, that probe

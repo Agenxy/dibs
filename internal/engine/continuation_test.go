@@ -65,7 +65,18 @@ func (b *continuationBoard) wake(t *testing.T) {
 	if _, err := b.e.query(b.ctx, func() core.Result { l = b.e.state.Agents["worker"]; return nil }); err != nil {
 		t.Fatal(err)
 	}
-	plan, ok := b.e.wakeFor(l, core.MsgQuestion, questionFor("worker"))
+	// A send in the test may already have started a real wake through the
+	// event path, and wakeFor rightly refuses a second while it runs. On a
+	// slow machine it was still running here, which failed this setup on CI
+	// and nowhere else. Wait for it, as the product would.
+	var plan wakePlan
+	ok := false
+	for range 300 {
+		if plan, ok = b.e.wakeFor(l, core.MsgQuestion, questionFor("worker")); ok {
+			break
+		}
+		<-time.After(10 * time.Millisecond)
+	}
 	if !ok || len(plan.argv) == 0 {
 		t.Fatal("setup: no wake planned, so nothing below tests a turn Dibs started")
 	}

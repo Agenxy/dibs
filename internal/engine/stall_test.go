@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -380,5 +381,69 @@ func TestTheDaemonsSweepKeepsWorkStillOwed(t *testing.T) {
 	}
 	if _, err := b.e.Do(b.ctx, &core.Op{Kind: core.OpRespond, Token: b.token, MsgSerial: serial, Disposition: "done", Body: "pr:1700"}); err != nil {
 		t.Fatalf("done after the daemon's sweep: %v", err)
+	}
+}
+
+// An owed request blocked on someone else can be parked. Reported by k7-dev:
+// codex-k7-1 owed #2540, the work was finished and publishing was held by an
+// owner decision, its declaration said so with `waiting`, and its Stop was
+// continued again and again on the request, leaving it a false "done" as the
+// only way out. A waiting declaration that names the request in its refs
+// (request:<serial>) parks it; one that does not name it leaves it owed.
+func TestAWaitingDeclarationThatNamesAnOwedRequestParksIt(t *testing.T) {
+	b := newContinuationBoard(t)
+	res, err := b.e.Do(b.ctx, &core.Op{Kind: core.OpRegister, Name: "lead", Nonce: "n-lead-0123456789abcdef"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ltok := res["token"].(string)
+	if _, err := b.e.Do(b.ctx, &core.Op{Kind: core.OpAckBoard, Token: ltok}); err != nil {
+		t.Fatal(err)
+	}
+	sent, err := b.e.Do(b.ctx, &core.Op{Kind: core.OpSendMessage, Token: ltok, To: "worker", MsgType: core.MsgRequest, Body: "publish C", OpID: "p1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	serial := sent["msg_serial"].(uint64)
+	if _, err := b.e.Do(b.ctx, &core.Op{Kind: core.OpRespond, Token: b.token, MsgSerial: serial, Disposition: "approve"}); err != nil {
+		t.Fatal(err)
+	}
+	b.wake(t)
+
+	// Waiting, but on something it does not link to the request: still owed.
+	if _, err := b.e.Do(b.ctx, &core.Op{
+		Kind: core.OpSetSlot, Token: b.token, SlotID: "s3", Text: "publication held",
+		Waiting: "owner decision #1639", RecheckSec: 1800, Refs: []string{"pr:1636"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got := b.stop(t, false)
+	if !continued(got) {
+		t.Fatal("setup: an owed request with an unrelated wait was not continued, so nothing below tests parking")
+	}
+	if r, _ := got["reason"].(string); !strings.Contains(r, fmt.Sprintf("request:%d", serial)) {
+		t.Errorf("the continuation does not say how to park the request: %q", r)
+	}
+
+	// Naming it parks it.
+	if _, err := b.e.Do(b.ctx, &core.Op{
+		Kind: core.OpSetSlot, Token: b.token, SlotID: "s3", Text: "publication held",
+		Waiting: "owner decision #1639", RecheckSec: 1800,
+		Refs: []string{"pr:1636", fmt.Sprintf("request:%d", serial)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Same Dibs-started turn chain, a changed declaration: only parking stops it.
+	if got := b.stop(t, false); continued(got) {
+		t.Errorf("an owed request parked by a waiting declaration was continued: %q", got["reason"])
+	}
+	board, err := b.e.Board(b.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range board["agents"].([]map[string]any) {
+		if a["id"] == "worker" && a["work"] != "waiting" {
+			t.Errorf("the parked worker's row says work=%v, want waiting", a["work"])
+		}
 	}
 }
