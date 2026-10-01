@@ -216,6 +216,12 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		// them on replay would rebuild a cwd, a checkout root and every claim's
 		// portable name that the daemon never held. Absent decodes false.
 		"take_identity": true,
+		// waiting and recheck_sec: a declaration that is BLOCKED rather than in
+		// progress, and when to look again. They decide whether a turn ending
+		// with the declaration open is continued, so a rename would silently
+		// turn every recorded wait back into work in progress.
+		"waiting":     true,
+		"recheck_sec": true,
 	}
 
 	// Every tag the Op DECLARES, not merely the ones this fixture happens to
@@ -401,11 +407,12 @@ const (
 	// `purge_mail`, again for `restore_nonce`, again for `session_guessed`
 	// `release_session` and `v7_semantics`, again for `session_taken_from`,
 	// again for `session_alias_taken_from`, again for `registered_from`, and
-	// again for `index_supplied`, and again for `merge_into`: one new tag each
+	// again for `index_supplied`, again for `merge_into`, and again for `waiting`
+	// and `recheck_sec`: one new tag each
 	// time, no rename. If you are here because a sweep moved
 	// this value, the sweep is the bug, and the tag it renamed is the data
 	// loss.
-	frozenOpFingerprint       = "sha256:fd7ccd279a31eb41"
+	frozenOpFingerprint       = "sha256:a00de6a27eb58520"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`

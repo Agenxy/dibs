@@ -143,8 +143,12 @@ type Op struct {
 	Refs   []string `json:"refs,omitempty"` // objective ids: pr:1186, gate:typos …
 	// Activity is the ROLE this agent has on the work (implement, review, test).
 	// Holds are exclusive host resources it needs (port:8080, lock:.git/index).
-	Activity string   `json:"activity,omitempty"`
-	Holds    []string `json:"holds,omitempty"`
+	Activity string `json:"activity,omitempty"`
+	// Waiting and RecheckSec mark a declaration as blocked rather than in
+	// progress: on whom or what, and when to look again. See Slot.Waiting.
+	Waiting    string   `json:"waiting,omitempty"`
+	RecheckSec int      `json:"recheck_sec,omitempty"`
+	Holds      []string `json:"holds,omitempty"`
 
 	// send / respond / ack
 	To string `json:"to,omitempty"`

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/wakeexec"
 )
 
@@ -54,7 +55,11 @@ type wakers struct {
 	// relocations is the operator's [relocate.*] table: NOT wake routes, and
 	// never consulted by a wake. See relocate.go.
 	relocations map[string]RelocateCommand
-	last        map[string]time.Time
+	// dibsTurn: agents whose current turn a Dibs wake started, and continued:
+	// what each was last continued for. See continuation.go.
+	dibsTurn  map[string]time.Time
+	continued map[string]continuation
+	last      map[string]time.Time
 	// deferred: a re-check armed for when an agent's cooldown expires, because
 	// maybeWake fires once per event and nothing else retries.
 	deferred map[string]*time.Timer
@@ -1484,11 +1489,14 @@ func (e *Engine) PullOnlyNote(l *core.Agent) string {
 	// and not an arrival. Found by the pre-release review, round three.
 	socket := e.mightReachOverSocket(l)
 	bestEffort := func(state, why string) string {
-		return "delivered to " + l.ID + ", which is " + state + ". " + why + ", but a session " +
-			"socket for it is open, so a best-effort notice will be tried. Nothing can confirm " +
-			"it arrived: a session in bypassPermissions mode holds peer messages for its human. " +
-			"If it is held, this is pull-only and arrives when that agent next calls inbox or " +
-			"check_in."
+		lead := why + ", but a session socket for it is open, so a best-effort notice will be tried."
+		if harnessenv.NeedsNoWakeCommand(named) {
+			lead = why + ", and one is open for it, so a best-effort notice is being handed to it now."
+		}
+		return "delivered to " + l.ID + ", which is " + state + ". " + lead + " Nothing can confirm " +
+			"it arrived: a session in bypassPermissions mode holds peer messages for its human " +
+			"unless its settings accept them. If it is held, this arrives when that agent next " +
+			"calls inbox or check_in."
 	}
 	// A SLEEPING AGENT NOTHING CAN REACH. Said plainly, because the alternative
 	// is the sender believing a wake is coming.
@@ -1509,13 +1517,7 @@ func (e *Engine) PullOnlyNote(l *core.Agent) string {
 				"a harness thread id for it to resume"
 		}
 		if socket {
-			// The command-side reason, worded as what is MISSING rather than as
-			// "nothing can wake it", since the next clause says something will try.
-			reason := "No wake command is configured for " + named
-			if configured {
-				reason = named + " has a wake command but this agent has never supplied a thread id for it"
-			}
-			return bestEffort(string(l.Status), reason)
+			return bestEffort(string(l.Status), commandSideReason(named, configured))
 		}
 		return "delivered to " + l.ID + ", which is " + string(l.Status) + ", and " +
 			why + ". Nothing will start it: this is NOT a message that will be seen " +
@@ -1524,11 +1526,7 @@ func (e *Engine) PullOnlyNote(l *core.Agent) string {
 			"deadline on it will expire unread."
 	}
 	if socket {
-		why := "No wake command is configured for " + named
-		if configured {
-			why = named + " has a wake command but this agent has never supplied a thread id for it"
-		}
-		return bestEffort("active", why)
+		return bestEffort("active", commandSideReason(named, configured))
 	}
 	if configured {
 		return "delivered to " + l.ID + ", which is active, and " + named + " HAS a wake " +
@@ -1626,4 +1624,24 @@ func (e *Engine) socketNotice(l *core.Agent, from, kind string) string {
 		return fmt.Sprintf("Dibs: something is waiting for your agent %q.", l.ID)
 	}
 	return strings.TrimRight(hookDigest(l.ID, mail, announced, notices), "\n")
+}
+
+// commandSideReason is why the command route is not the one being used,
+// worded as what is MISSING rather than as "nothing can wake it", since the
+// note goes on to say the socket will try.
+//
+// NOT "missing" for a harness that needs no command. This said "No wake
+// command is configured for claude code" about every Claude Code agent, which
+// predates Claude Code being reached through its socket by design (#255), and
+// a sender read it as "this agent is pull-only" about an agent the daemon
+// reached at once. Reported by k7-dev, 2026-09-30.
+func commandSideReason(named string, configured bool) string {
+	switch {
+	case harnessenv.NeedsNoWakeCommand(named):
+		return named + " is reached through its session socket rather than a wake command"
+	case configured:
+		return named + " has a wake command but this agent has never supplied a thread id for it"
+	default:
+		return "No wake command is configured for " + named
+	}
 }

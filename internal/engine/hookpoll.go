@@ -18,50 +18,50 @@ import (
 // few turns.
 const AnnounceRetry = 120 * time.Second
 
-// strict drops the keys that are Dibs' own diagnosis rather than hook output.
+// strict drops the keys that are Dibs' own diagnosis rather than hook output,
+// and the keys the caller's schema for THIS EVENT does not accept.
 //
-// Codex validates a hook's JSON against a schema with deny_unknown_fields at
-// every level: `continue`, `stopReason`, `suppressOutput`, `systemMessage` and
-// `hookSpecificOutput{hookEventName, additionalContext}`, and nothing else. One
-// extra key fails the whole parse, so the hook is reported FAILED and its
-// additionalContext is dropped. Claude Code ignores keys it does not know, which
-// is why `agent` and `queued` were free there and are not here.
+// Codex validates a hook's JSON against a schema with deny_unknown_fields, and
+// the schema is per event: one extra key fails the whole parse, so the hook is
+// reported FAILED and nothing it carried is used. Claude Code ignores keys it
+// does not know, which is why `agent` and `queued` were free there and are not
+// here.
 //
-// Measured against a running daemon: hook_poll on an event that cannot carry
-// news returns exactly {"agent":…,"queued":…}, both rejected. Nothing was due
-// for injection in that case, so the effect is only that Codex marks a
-// correctly behaving hook as failed. That is still worth fixing: an operator
-// reading "Failed" concludes the integration is broken, and a diagnosis nobody
-// can read is not a diagnosis. The reasoning behind those two keys, that "the
-// agent was not told" and "there was nothing to tell" must not look alike, is
-// preserved in the daemon log rather than thrown away.
-func (e *Engine) hookOutput(out core.Result, strict bool) core.Result {
+// PER EVENT, and getting that wrong cost every Codex Stop delivery Dibs ever
+// made. This used one list for all events: the universal keys plus
+// hookSpecificOutput, with decision and reason dropped as "Claude Code's way of
+// continuing a turn, meaningless to Codex". Codex's Stop output is the exact
+// reverse. Read at the installed tag, rust-v0.159.2, and unchanged back to
+// 0.153: Stop and SubagentStop accept decision and reason and have no
+// hookSpecificOutput, so the reply Dibs sent at a Codex Stop carried the one
+// key that fails the parse and had the two that continue a turn removed. The
+// mail was marked announced and the agent was never told. Found while
+// designing continuation for k7-dev, whose workers stopped with work queued.
+// codexHookKeys is the table; when Codex adds an event, read its
+// `<event>.command.output.schema.json` and add a row.
+//
+// Measured against a running daemon, for the diagnostic keys: hook_poll on an
+// event that cannot carry news returns exactly {"agent":…,"queued":…}, both
+// rejected. The reasoning behind those, that "the agent was not told" and
+// "there was nothing to tell" must not look alike, is kept in the daemon log.
+func (e *Engine) hookOutput(out core.Result, strict bool, event string) core.Result {
 	if !strict {
 		return out
 	}
+	allowed := codexHookKeys(event)
 	for k := range out {
-		switch k {
-		case "continue", "stopReason", "suppressOutput", "systemMessage", "hookSpecificOutput":
-		case "decision", "reason":
-			// Claude Code's way of continuing a stopped turn, and meaningless
-			// to a caller that does not have it. Dropped like the rest, and
-			// WITHOUT the line below: that line exists to say something was
-			// lost, and nothing is. Saying so anyway would put a false alarm
-			// in front of every Codex operator on every delivery.
+		switch {
+		case allowed[k]:
+		case k == "decision" || k == "reason" || k == "hookSpecificOutput":
+			// A way of carrying the news that this event's schema does not
+			// have. Dropped without the line below: the same news travels in
+			// the key this event does accept (addDelivery sets both), so
+			// nothing is lost and saying so would be a false alarm.
 			delete(out, k)
 		default:
 			// Logged, not merely dropped, and at a level the daemon actually
-			// emits. The distinction these keys carry, that "the agent was not
-			// told" and "there was nothing to tell" must not look alike, is
-			// worth keeping for whoever is debugging even when the caller's
-			// schema will not accept it on the wire.
-			//
-			// This said the same thing and used Debug, while the daemon starts
-			// at Info: the record was dropped by the handler, so a strict hook
-			// returned {} with nothing anywhere to say which of the two had
-			// happened, and the comment promising otherwise was the only trace.
-			// Info, because it is rare (only when news existed and could not be
-			// carried) and it is exactly what somebody debugging silence needs.
+			// emits: rare (only when news existed and could not be carried)
+			// and exactly what somebody debugging silence needs.
 			slog.Info("dropped from a strict hook response: the caller's schema "+
 				"cannot carry it, and it is not nothing",
 				"key", k, "value", out[k])
@@ -69,6 +69,23 @@ func (e *Engine) hookOutput(out core.Result, strict bool) core.Result {
 		}
 	}
 	return out
+}
+
+// codexHookKeys is what Codex's output schema accepts for a hook event, read
+// from codex-rs/hooks/schema/generated at rust-v0.159.2 (unchanged since
+// 0.153). An event this table does not name gets the universal keys and
+// hookSpecificOutput, which is what SessionStart takes.
+func codexHookKeys(event string) map[string]bool {
+	keys := map[string]bool{"continue": true, "stopReason": true, "suppressOutput": true, "systemMessage": true}
+	switch event {
+	case "Stop", "SubagentStop":
+		keys["decision"], keys["reason"] = true, true
+	case "UserPromptSubmit", "PreToolUse", "PostToolUse":
+		keys["decision"], keys["reason"], keys["hookSpecificOutput"] = true, true, true
+	default:
+		keys["hookSpecificOutput"] = true
+	}
+	return keys
 }
 
 // announceHookSession records the session a hook arrived from, whichever hook
@@ -278,8 +295,10 @@ func (e *Engine) HookPollFrom(
 		// session, or names the current one, delivers as before. Found by the
 		// pre-release review, round sixty-six.
 		if !l.SessionIsCurrent(sessionID) {
-			return e.hookOutput(core.Result{"agent": l.ID}, strict)
+			return e.hookOutput(core.Result{"agent": l.ID}, strict, event)
 		}
+		// Before the no-news return below, which is where most prompts end.
+		e.notePromptFrom(l.ID, event)
 		mail := e.pendingMail(l.ID, time.Now())
 		// The agent's own copy carries the mail; `mail` above stays the quiet
 		// version for the human notice and every other surface.
@@ -293,6 +312,12 @@ func (e *Engine) HookPollFrom(
 			notices = append(notices, n.Text)
 		}
 		if len(mail) == 0 && len(announced) == 0 && len(notices) == 0 {
+			// No news. A turn Dibs started may still be ending with declared
+			// work open, and this is where that case arrives: the stall this
+			// was built for had no mail at all. See continuation.go.
+			if cont := e.continuationReply(l, event, stopActive); cont != nil {
+				return e.hookOutput(cont, strict, event)
+			}
 			// No news, so nothing to inject, but the agent is still named.
 			//
 			// hook_poll is the only token-less path from a harness session to a
@@ -308,7 +333,7 @@ func (e *Engine) HookPollFrom(
 			// stays absent is the DIGEST, which is the thing a harness injects
 			// into a model's context, so the silence that matters is unchanged.
 			//
-			return e.hookOutput(core.Result{"agent": l.ID}, strict)
+			return e.hookOutput(core.Result{"agent": l.ID}, strict, event)
 		}
 		if event == "" {
 			event = "Stop"
@@ -404,6 +429,10 @@ func (e *Engine) HookPollFrom(
 			e.markWoken(wake, now)
 			e.markAnnounced(announceKeys, now)
 			addDelivery(out, event, hookDigest(l.ID, agentMail, announced, notices))
+		} else if cont := e.continuationReply(l, event, stopActive); cont != nil {
+			// News the turn is not extended for, and a turn Dibs started is
+			// ending with declared work open. See continuation.go.
+			out["decision"], out["reason"] = cont["decision"], cont["reason"]
 		} else {
 			// Said out loud, because "the agent was not told" and "there was
 			// nothing to tell" must not look the same from outside.
@@ -414,7 +443,7 @@ func (e *Engine) HookPollFrom(
 				"rather than extending a finished turn"
 			out["agent"] = l.ID
 		}
-		return e.hookOutput(out, strict)
+		return e.hookOutput(out, strict, event)
 	})
 }
 
@@ -928,8 +957,8 @@ func addDelivery(out core.Result, event, digest string) {
 	//
 	// Set freely and filtered at the edge, which is how every other key here
 	// works: hookOutput is the one place that knows what a caller's schema
-	// accepts, and Codex drops these two silently because for Codex they are
-	// not news that went missing.
+	// accepts. For a Codex Stop these two are the ONLY carrier, because its
+	// Stop schema has no hookSpecificOutput (see codexHookKeys).
 	if isStopEvent(event) {
 		out["decision"] = "block"
 		out["reason"] = digest

@@ -206,3 +206,10 @@ func (s Shower) Show(argv []string, thread string) (opened bool, err error) {
 	}
 	return true, nil
 }
+
+// NeedsNoWakeCommand reports the harnesses reached without a [wake.exec]
+// entry, by their lowercased name as an agent reports it. Claude Code delivers
+// through its session socket and its hooks, so an agent on it is not "missing
+// a wake command", and nothing should tell a sender or an operator that it is.
+// One place, read by doctor and by the daemon's notes to senders.
+func NeedsNoWakeCommand(harness string) bool { return harness == "claude code" }

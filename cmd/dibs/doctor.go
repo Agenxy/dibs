@@ -21,6 +21,7 @@ import (
 
 	"github.com/agenxy/dibs/internal/appfirewall"
 	"github.com/agenxy/dibs/internal/boardconfig"
+	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/humanauth"
 	"github.com/agenxy/dibs/internal/liveness"
 	"github.com/agenxy/dibs/internal/notify"
@@ -1509,11 +1510,10 @@ var suggestedWake = map[string]string{
 		`argv = ["codex", "queue", "--thread", "{thread}", "--message", "{message}"]`,
 }
 
-// noWakeCommandNeeded are the harnesses that are reached without a [wake.exec]
-// entry, so an agent on one is not "missing a wake command" and doctor does not
-// tell the operator to write one. Claude Code delivers through its session
-// socket and its hooks.
-var noWakeCommandNeeded = map[string]bool{"claude code": true}
+// noWakeCommandNeeded is harnessenv.NeedsNoWakeCommand: an agent on such a
+// harness is not "missing a wake command", and doctor does not tell the
+// operator to write one.
+func noWakeCommandNeeded(harness string) bool { return harnessenv.NeedsNoWakeCommand(harness) }
 
 // reportWakeCoverage says how many agents on THIS board the configured wake
 // commands can actually reach.
@@ -1578,7 +1578,7 @@ func reportWakeCoverage(
 		// the decoration answers all of them, including the ones added
 		// next. Round fifty-three of the pre-release review.
 		harness := bareHarness(h)
-		if harness == "" || have[harness] || noWakeCommandNeeded[harness] {
+		if harness == "" || have[harness] || noWakeCommandNeeded(harness) {
 			continue
 		}
 		noCommand++
@@ -1733,7 +1733,7 @@ func wakeCoverage(
 		// because it needs none, and counting it as uncovered told the operator
 		// to write `[wake.exec."claude code"]`, whose only possible content
 		// starts a Claude Code session of Dibs' own. See noWakeCommandNeeded.
-		if noWakeCommandNeeded[h] || wakeCovered(a, h, b.HostID, hosts, have, bridged) {
+		if noWakeCommandNeeded(h) || wakeCovered(a, h, b.HostID, hosts, have, bridged) {
 			covered++
 			continue
 		}

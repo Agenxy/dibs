@@ -271,8 +271,18 @@ type Slot struct {
 	// diff, it gets "address already in use" and no idea why.
 	//
 	// Reported by an adversarial review as an entire missing axis, correctly.
-	Holds         []string `json:"holds,omitempty"`
-	UpdatedSerial uint64   `json:"updated_serial"`
+	Holds []string `json:"holds,omitempty"`
+	// Waiting says this declared work is BLOCKED, on whom or what ("k7-dev",
+	// "ci"), as opposed to in progress. The difference decides whether an
+	// agent that stops holding it has stalled: a turn that ends on work in
+	// progress left that work undone, and one that ends while waiting did
+	// what it could. RecheckSec is when to look again, for a wait that no
+	// message will end (CI finishing); zero means the thing waited on will
+	// say so itself. Empty for every declaration made before this existed,
+	// which reads as in progress: the meaning a declaration always had.
+	Waiting       string `json:"waiting,omitempty"`
+	RecheckSec    int    `json:"recheck_sec,omitempty"`
+	UpdatedSerial uint64 `json:"updated_serial"`
 }
 
 // Complementary reports whether two activities are different ROLES on one piece

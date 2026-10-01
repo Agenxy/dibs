@@ -136,6 +136,9 @@ func Admit(op *Op, lim Limits) error {
 	if err := checkPermissionOp(op, lim); err != nil {
 		return err
 	}
+	if err := checkWaiting(op, lim); err != nil {
+		return err
+	}
 	// Choices only mean something on a QUESTION.
 	//
 	// Admit bounded them and never asked what they were attached to, and Apply
@@ -288,6 +291,27 @@ func Admit(op *Op, lim Limits) error {
 		if len(op.Text) > lim.MaxNameBytes {
 			return errTooLarge("topic", lim.MaxNameBytes)
 		}
+	}
+	return nil
+}
+
+// MaxRecheck bounds a declared wait's recheck: a week, the longest a
+// persistent agent's mail may wait.
+const MaxRecheck = 7 * 24 * 60 * 60
+
+// checkWaiting bounds a declaration's wait. Admit, for the reason at the top
+// of this file.
+func checkWaiting(op *Op, lim Limits) error {
+	if len(op.Waiting) > lim.MaxNameBytes {
+		return errTooLarge("waiting", lim.MaxNameBytes)
+	}
+	if op.RecheckSec < 0 || op.RecheckSec > MaxRecheck {
+		return errf("E_BAD_ARG", "recheck_after is a duration up to a week, such as \"20m\"",
+			"recheck of %d seconds is out of range", op.RecheckSec)
+	}
+	if op.RecheckSec > 0 && op.Waiting == "" {
+		return errf("E_BAD_ARG", "say what you are waiting on as well: waiting: \"ci\", recheck_after: \"20m\"",
+			"recheck_after needs waiting")
 	}
 	return nil
 }

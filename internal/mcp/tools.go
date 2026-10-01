@@ -246,14 +246,11 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "declare",
-			"description": "Declare what you are working on (publicly visible). Requires check_in first. " +
-				"To CHANGE what you are doing, pass the slot_id you were given: omitting it ADDS a second " +
-				"declaration, and an agent declaring five things is read by every other agent as doing five things. " +
-				"Omit slot_id only when you have genuinely taken on additional concurrent work. " +
-				"Fill in whichever of dirs/refs/activity/holds are TRUE of your work and leave the rest out. " +
-				"an empty array and an absent field mean the same thing, and a guessed value is worse than " +
-				"either. Reading a file is not working on it: declare where you will WRITE. " +
-				"Dibs compares these against every other agent and tells you what it found and why.",
+			"description": "Declare what you are working on (public). Requires check_in. " +
+				"To CHANGE it, pass the slot_id you were given: omitting it ADDS a declaration. " +
+				"Fill in only the fields that are TRUE; a guessed value is worse than none. " +
+				"A declaration says you are WORKING: if you stop holding one, your turn is continued. " +
+				"Blocked? set waiting. Done? undeclare.",
 			"inputSchema": obj(map[string]any{
 				"token": tok,
 				"slot_id": str("the slot to UPDATE: pass the one declare returned; omit only " +
@@ -278,6 +275,8 @@ var toolDefs = func() []map[string]any {
 						"text, and a parent directory overlaps a child. Reading somewhere does not " +
 						"count. Purely read-only work declares nothing here, which is correct",
 				},
+				"waiting":       str("whom or what this work is blocked on (an agent id, \"ci\")"),
+				"recheck_after": str("with waiting, when to look again if nothing will tell you, e.g. \"20m\""),
 				"activity": map[string]any{
 					"type": "string",
 					"description": "your ROLE on this work: implement, review, test, investigate, " +

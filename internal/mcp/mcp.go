@@ -805,6 +805,8 @@ type toolArgs struct {
 	Text        string            `json:"text"`
 	Dirs        []string          `json:"dirs"`
 	Activity    string            `json:"activity"`
+	Waiting     string            `json:"waiting"`
+	Recheck     string            `json:"recheck_after"`
 	Holds       []string          `json:"holds"`
 	To          string            `json:"to"`
 	Type        string            `json:"type"`
@@ -1246,6 +1248,12 @@ func (s *Server) run(
 	case "declare":
 		op.Kind, op.SlotID, op.Text, op.Dirs = core.OpSetSlot, a.SlotID, a.Text, a.Dirs
 		op.Refs, op.Activity, op.Holds = a.Refs, a.Activity, a.Holds
+		op.Waiting = strings.TrimSpace(a.Waiting)
+		recheck, err := recheckSeconds(a.Recheck)
+		if err != nil {
+			return nil, err
+		}
+		op.RecheckSec = recheck
 		// Declaring work is also the moment to find out who else is doing it.
 		// Matching is additive and never blocks the declaration itself.
 		return s.eng.DoMatched(ctx, op)
@@ -1615,4 +1623,19 @@ func argumentPresent(params json.RawMessage, name string) bool {
 	}
 	_, ok := outer.Arguments[name]
 	return ok
+}
+
+// recheckSeconds reads declare's recheck_after: a duration, or nothing.
+func recheckSeconds(v string) (int, error) {
+	if v == "" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d <= 0 {
+		return 0, &core.Error{
+			Code: "E_BAD_ARG", Msg: "recheck_after is not a duration: " + v,
+			Hint: `a Go duration such as "20m" or "1h30m"`,
+		}
+	}
+	return int(d.Round(time.Second) / time.Second), nil
 }
