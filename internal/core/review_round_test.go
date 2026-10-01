@@ -96,7 +96,7 @@ func TestRetentionDoesNotHideAPendingQuestion(t *testing.T) {
 	// draft of this test swept an hour on and passed against the bug for that
 	// reason. The retention path this guards is the one that evicts young
 	// terminal mail beyond the per-agent count.
-	s.gc(t0.Add(time.Second), false, true)
+	s.gc(t0.Add(time.Second), false, true, true)
 	if s.Messages[n1] != nil {
 		t.Fatal("setup: retention evicted nothing, so the watermark never moved and " +
 			"this proves nothing")

@@ -19,27 +19,20 @@ import (
 // design agreed with k7-dev (Dibs #1129): a worker that approved #1123 and
 // stopped looked exactly like one that had finished it.
 //
-// Bounded to obligationWindow after approval. Approval has always existed and
+// Bounded to core.ObligationWindow after approval. Approval has always existed and
 // "done" has not, so every request approved before this shipped would
 // otherwise read as owed forever, and an agent with a long history would be
 // woken for work it finished weeks ago. A day covers a worker's real
 // backlog; an older approval is history.
 
-const (
-	obligationWindow   = 24 * time.Hour
-	maxObligationQuote = 200
-)
+const maxObligationQuote = 200
 
 // obligationsOf are the requests this agent approved and has not reported
 // done, newest first. On the writer loop.
 func (e *Engine) obligationsOf(agent string, now time.Time) []*core.Message {
 	var owed []*core.Message
 	for _, m := range e.state.Messages {
-		if m.To != agent || m.From == agent || m.Type != core.MsgRequest ||
-			m.State != core.MsgStateApproved || m.Grant != "" || m.Adopt != "" {
-			continue
-		}
-		if now.Sub(m.TerminalAt) > obligationWindow {
+		if m.To != agent || !m.Owed(now) {
 			continue
 		}
 		owed = append(owed, m)
