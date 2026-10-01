@@ -7,24 +7,44 @@ import (
 	"github.com/agenxy/dibs/internal/core"
 )
 
-// A strict hook response may carry ONLY what a hook-output schema accepts.
+// A strict hook response may carry ONLY what Codex's schema for THAT EVENT
+// accepts.
 //
-// Codex validates against Rust structs with deny_unknown_fields at every level:
-// continue, stopReason, suppressOutput, systemMessage, and hookSpecificOutput
-// {hookEventName, additionalContext}. One key it does not recognise fails the
-// whole parse, so the hook is reported FAILED and any additionalContext is
-// discarded. Claude Code ignores extras, which is why hook_poll was free to
-// answer with `agent` and `queued` and why nobody noticed.
+// Codex validates against Rust structs with deny_unknown_fields, one per
+// event. One key it does not recognise fails the whole parse, so the hook is
+// reported FAILED and nothing it carried is used. Claude Code ignores extras,
+// which is why hook_poll was free to answer with `agent` and `queued` and why
+// nobody noticed.
 //
-// Measured against a running daemon before this was written: hook_poll on
-// UserPromptSubmit for an agent with unread mail returned exactly
+// PER EVENT is the correction. This test once transcribed SessionStart's
+// struct ("HookUniversalOutputWire and SessionStartCommandOutputWire", at
+// codex-rs 8e649e3a) and held every event to it, so it required
+// hookSpecificOutput on a Stop. At that very commit StopCommandOutputWire has
+// decision and reason and no hookSpecificOutput, so the test pinned the one
+// shape Codex refuses at Stop, and every Codex Stop delivery failed to parse
+// with the gate green. Transcribed again, per event, from
+// codex-rs/hooks/schema/generated at rust-v0.159.2 (unchanged since 0.153),
+// and deliberately NOT read from the production table: a test that asks the
+// code what is allowed agrees with the code by construction.
+//
+// Measured against a running daemon before the first version was written:
+// hook_poll on UserPromptSubmit for an agent with unread mail returned exactly
 // {"agent":…,"queued":…}. Both rejected.
 func TestAStrictHookResponseCarriesOnlySchemaKeys(t *testing.T) {
-	// Transcribed from codex-rs 8e649e3a, hooks/src/schema.rs:
-	// HookUniversalOutputWire and SessionStartCommandOutputWire.
-	allowed := map[string]bool{
-		"continue": true, "stopReason": true, "suppressOutput": true,
-		"systemMessage": true, "hookSpecificOutput": true,
+	universal := []string{"continue", "stopReason", "suppressOutput", "systemMessage"}
+	allowedFor := map[string][]string{
+		"SessionStart":     append([]string{"hookSpecificOutput"}, universal...),
+		"Stop":             append([]string{"decision", "reason"}, universal...),
+		"SubagentStop":     append([]string{"decision", "reason"}, universal...),
+		"UserPromptSubmit": append([]string{"decision", "reason", "hookSpecificOutput"}, universal...),
+	}
+	allowed := func(event, k string) bool {
+		for _, a := range allowedFor[event] {
+			if a == k {
+				return true
+			}
+		}
+		return false
 	}
 
 	st := core.NewState("test", core.DefaultLimits())
@@ -75,17 +95,17 @@ func TestAStrictHookResponseCarriesOnlySchemaKeys(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hook_poll: %v", err)
 	}
-	hso, ok := delivered["hookSpecificOutput"].(map[string]any)
-	if !ok {
-		t.Fatalf("a Stop with unread mail carried no hookSpecificOutput: %v. The "+
-			"strict filter is allowed to remove Dibs' own diagnosis and nothing "+
-			"else; dropping the payload would deliver a passing hook and no mail",
+	// At a Codex Stop the news travels as decision:block with the digest as
+	// the reason, which Codex turns into the next prompt of the same turn.
+	if delivered["decision"] != "block" {
+		t.Fatalf("a strict Stop with unread mail did not continue the turn: %v. "+
+			"The strict filter is allowed to remove what the schema refuses and "+
+			"nothing else; dropping the payload delivers a passing hook and no mail",
 			keysOf(delivered))
 	}
-	if ctxText, _ := hso["additionalContext"].(string); ctxText == "" {
-		t.Error("hookSpecificOutput has no additionalContext: the hook reports success " +
-			"and the model is told nothing, which is the failure this whole path exists " +
-			"to avoid")
+	if reason, _ := delivered["reason"].(string); reason == "" {
+		t.Error("decision is block with no reason: Codex rejects that as an invalid " +
+			"block and the model is told nothing")
 	}
 
 	// Every event, because the branch that produced the offending keys is the
@@ -97,7 +117,7 @@ func TestAStrictHookResponseCarriesOnlySchemaKeys(t *testing.T) {
 				t.Fatalf("hook_poll: %v", err)
 			}
 			for k := range res {
-				if !allowed[k] {
+				if !allowed(event, k) {
 					t.Errorf("strict response carries %q, which Codex's deny_unknown_fields "+
 						"refuses: the hook is reported failed and any additionalContext in "+
 						"the same object is thrown away. Keys: %v", k, keysOf(res))
@@ -118,7 +138,7 @@ func TestAStrictHookResponseCarriesOnlySchemaKeys(t *testing.T) {
 	}
 	var kept bool
 	for k := range loose {
-		if !allowed[k] {
+		if !allowed("UserPromptSubmit", k) {
 			kept = true
 		}
 	}

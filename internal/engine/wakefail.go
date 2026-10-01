@@ -130,6 +130,7 @@ func (e *Engine) wakeStatusOf(agent string) string {
 // so there is no copy: both call this.
 func (e *Engine) runWakeAndReport(cmd wakePlan, agent string) bool {
 	if e.runWake(cmd, agent) {
+		e.noteDibsStartedTurn(agent, time.Now())
 		e.clearWakeAttempts(agent)
 		e.forgetWakeFailures(agent)
 		return true

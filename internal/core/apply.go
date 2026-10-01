@@ -1316,6 +1316,7 @@ func (s *State) applySetSlot(l *Agent, op *Op) (Result, []Event, error) {
 	l.Slots[id] = Slot{
 		ID: id, Text: op.Text, Dirs: op.Dirs, Refs: op.Refs,
 		Activity: op.Activity, Holds: op.Holds,
+		Waiting: op.Waiting, RecheckSec: op.RecheckSec,
 		// Recorded, never recomputed: replay must reconstruct the same footprint
 		// rather than re-scoring against a reindexed repository.
 		Predicted:     op.Predicted,

@@ -64,8 +64,14 @@ change it when reality disagrees, and record why).
    surviving notice carries the digest, handed over on the notification because
    the calls a bridge could fetch it with (`inbox`, `hook_poll`) MARK MAIL
    DELIVERED. Before adding a third way to reach a session, find out what is
-   already writing to it. Everything past "you have mail" is still forbidden: no
-   prompt injection, no session management, no deciding what an agent does next.
+   already writing to it. Past "you have mail" there is exactly one more thing, and
+   it is the agent's own word: a turn DIBS STARTED that ends while the agent holds a
+   declaration saying it is working (not `waiting`) is continued at Stop, quoting that
+   declaration back, at most twice per version of it, and never after a person
+   prompts (`engine/continuation.go`). The operator's standing rule is that manual
+   intervention is a bug, and workers ending a turn with declared work undone was
+   costing hours. Everything else is still forbidden: no prompt injection, no
+   session management, no deciding what an agent does next.
    See `WAKE-MECHANISMS.md` §5 and §5b, which argued against both for months and
    now records why that was wrong.
 6. **Honesty in errors.** Every error carries a `hint` that tells a drifted agent the

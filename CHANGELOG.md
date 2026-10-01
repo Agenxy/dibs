@@ -5,7 +5,28 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A Codex agent's Stop hook could never deliver mail.** Codex validates hook
+  output per event and its Stop accepts `decision` and `reason` and nothing like
+  `hookSpecificOutput`; Dibs sent exactly the reverse to Codex at Stop, so the
+  reply failed to parse, the mail was marked announced, and the agent was never
+  told. The strict filter is now per event, read from Codex's own schemas at the
+  installed version.
+- **Mail to a Claude Code agent no longer says "no wake command is configured".**
+  Claude Code is reached through its session socket by design; the note now says
+  so, and a sender stops reading it as pull-only.
+
+
 ### Added
+
+- **A turn that ends with declared work still open is continued.** When a turn
+  Dibs started (a delivered wake) ends while the agent holds a declaration that
+  says it is working, the Stop hook continues the turn with that declaration
+  quoted back, at most twice per version of it, never after a person's prompt.
+  `declare` takes `waiting` (on whom or what) and `recheck_after` for blocked
+  work, which is never continued. Built for Codex workers that answered the
+  question they were woken for and stopped with their declared job undone.
 
 - **Relocation: moving an agent to another environment on purpose.** A wake
   never moves an agent, and now there is a deliberate way to: the `relocate`
