@@ -130,7 +130,8 @@ ends, saying your declared work is still open. A declared wait with
 `recheck_after` gets a wake when the recheck is due, up to three times. When
 those run out with nothing changed, your row says `stalled` and whoever
 assigned you the work is told. Every row carries `work`: `idle`, `working`,
-`waiting` or `stalled`.
+`waiting` or `stalled`, and `declared` once you have
+not been seen for 30 minutes: the board says what it knows, not what you claimed.
 
 ### What you declare is published
 

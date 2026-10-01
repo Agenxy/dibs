@@ -135,7 +135,7 @@ func decideRecheck(in workInput, rec workRecord, recheck int, now time.Time) (wo
 	return workRecheck, rec
 }
 
-// workStateOf is the row's `work`: idle, working, waiting or stalled. Derived
+// workStateOf is the row's `work`: idle, working, declared, waiting or stalled. Derived
 // from what the agent declared and what the board has seen it do, never from
 // whether its process is alive: a Codex agent in the ChatGPT app has no
 // process between calls, and its row said "dormant (process gone)" while it
@@ -152,10 +152,22 @@ func (e *Engine) workStateOf(l *core.Agent) string {
 		return "stalled"
 	}
 	if len(openOf(slots)) > 0 {
+		// WORKING NEEDS EVIDENCE, not just a declaration. The first live board
+		// read "working" beside "seen 6d ago" for rows whose declaration nobody
+		// had touched in days: true of what they said, false of what they were
+		// doing. Past workingWithin of silence the row says what the board
+		// actually knows, that the work is declared.
+		if time.Since(e.lastEvidenceOf(l)) > workingWithin {
+			return "declared"
+		}
 		return "working"
 	}
 	return "waiting"
 }
+
+// workingWithin is how recent the last sign of an agent must be for its open
+// declaration to read as work in progress rather than merely declared.
+const workingWithin = 30 * time.Minute
 
 // stallTick runs the decision for every agent. On the writer loop, from Run.
 func (e *Engine) stallTick(now time.Time) {
@@ -321,6 +333,7 @@ func (e *Engine) workNotice(l *core.Agent, kind string) string {
 			fmt.Fprintf(&b, " (waiting on %s)", s.Waiting)
 		}
 	}
-	b.WriteString("\nIf it is finished, undeclare it; if it is blocked, declare it again with `waiting`.")
+	b.WriteString("\nIf it is finished, undeclare it; if it is blocked, call declare with the same " +
+		"slot_id and the `waiting` argument set, which writing \"waiting\" in the text does not do.")
 	return b.String()
 }

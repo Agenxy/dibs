@@ -72,6 +72,8 @@ func agentStatus(l boardAgent) string {
 		return ui.Alarm("STALLED") + ui.Dim(" · "+status)
 	case "working", "waiting":
 		return ui.Good(l.Work) + ui.Dim(" · "+status)
+	case "declared":
+		return ui.Dim("declared · " + status)
 	}
 	switch {
 	case l.Status == "active":
