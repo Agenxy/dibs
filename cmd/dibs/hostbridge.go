@@ -507,7 +507,8 @@ func (b *wakeBridge) execute(wr engine.WakeRequest) (bool, string) {
 		// Queued. The same step the hub takes for an agent on its own machine,
 		// taken here because the app is on this machine: open the thread in
 		// the app the agent runs in when the app is not holding it.
-		if opened, err := b.show.Show(harnessenv.OpenArgv(wr.Surface, wr.Thread), wr.Thread); err != nil {
+		app := harnessenv.AppFor(wr.Surface, wr.Harness, wr.Thread)
+		if opened, err := b.show.Show(harnessenv.OpenArgv(app, wr.Thread), wr.Thread); err != nil {
 			slog.Warn("could not open the agent's thread in its app; the message waits there",
 				"request", wr.ID, "err", err)
 		} else if opened {

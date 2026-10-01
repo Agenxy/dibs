@@ -2,6 +2,7 @@ package engine
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -18,6 +19,11 @@ type fakeApp struct {
 
 func (a *fakeApp) install(t *testing.T) {
 	t.Helper()
+	// Never the operator's own threads: an empty Codex home, unless a test
+	// writes a transcript into it.
+	if os.Getenv("DIBS_TEST_CODEX_HOME_SET") == "" {
+		t.Setenv("CODEX_HOME", t.TempDir())
+	}
 	prev := shower
 	shower = harnessenv.Shower{
 		Holds: func(string) bool { return a.holds },
@@ -149,5 +155,55 @@ func TestARemoteWakeTellsTheBridgeWhichAppTheAgentRunsIn(t *testing.T) {
 	if got.Surface != harnessenv.ChatGPTApp {
 		t.Errorf("the bridge was told the agent runs in %q: it queues the message and never "+
 			"opens the thread in the app on its machine", got.Surface)
+	}
+}
+
+// An agent whose bridge has not said where it runs is opened in the app its
+// thread was born in. This is the case after any install: every dormant app
+// agent is still on its old bridge, and would otherwise read as unknown at
+// exactly the wake that has to open the app. A bridge that DID say a terminal
+// keeps it out of the app even though the thread began there.
+func TestADormantAppThreadIsOpenedWhereItWasBorn(t *testing.T) {
+	if _, err := os.Stat("/usr/bin/true"); err != nil {
+		t.Skip("no /usr/bin/true on this platform")
+	}
+	const thread = "01a0f45e-cbf8-7ef0-acb8-79c25cb4343d"
+	home := t.TempDir()
+	t.Setenv("CODEX_HOME", home)
+	t.Setenv("DIBS_TEST_CODEX_HOME_SET", "1")
+	at := time.UnixMilli(0x01a0f45ecbf8)
+	dir := filepath.Join(home, "sessions", at.Format("2006"), at.Format("01"), at.Format("02"))
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	head := `{"type":"session_meta","payload":{"id":"` + thread + `","originator":"Codex Desktop"}}` + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "rollout-x-"+thread+".jsonl"), []byte(head), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	wake := func(surface string) *fakeApp {
+		t.Helper()
+		app := &fakeApp{}
+		app.install(t)
+		e := New(core.NewState("test", core.DefaultLimits()), &memLedger{}, deadProber{})
+		e.SetWakeCommands(map[string]WakeCommand{"codex": {Argv: []string{"/usr/bin/true", "{thread}"}}})
+		l := &core.Agent{
+			ID: "worker", Name: "worker", Status: core.StatusDormant, SessionID: thread,
+			Agent: &core.AgentInfo{Harness: "Codex", CWD: t.TempDir(), Surface: surface},
+			Slots: map[string]core.Slot{},
+		}
+		e.state.Agents["worker"] = l
+		plan, ok := e.wakeFor(l, core.MsgQuestion, questionFor("worker"))
+		if !ok || len(plan.argv) == 0 {
+			t.Fatal("setup: no command plan")
+		}
+		e.runWake(plan, "worker")
+		return app
+	}
+	if app := wake(""); len(app.opened) != 1 {
+		t.Errorf("a dormant agent whose thread the app created was not opened in the app (%q): "+
+			"its message waits in a thread nobody loaded", app.opened)
+	}
+	if app := wake(harnessenv.CodexOutsideApp); len(app.opened) != 0 {
+		t.Errorf("an agent whose bridge said it now runs in a terminal was pulled back into the app: %q", app.opened)
 	}
 }

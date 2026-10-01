@@ -20,27 +20,26 @@ import (
 // looking at.
 //
 // Never anywhere else. Opening a thread in an app the agent did not run in is a
-// relocation, not a wake, so this happens only for an agent whose surface the
-// bridge DERIVED from its process tree (see harnessenv); a Codex agent in a
+// relocation, not a wake, so this happens only for an agent whose bridge
+// DERIVED the app from its process tree, or, when no bridge has said, whose
+// thread was born in the app (see harnessenv.AppFor). A Codex agent in a
 // terminal is never opened in the app.
 
 // shower is the contact with the real app, replaced by tests.
 var shower = harnessenv.RealShower
 
-// openInAppFor is the command that opens this agent's thread in the app it runs
-// in, or nil when it does not run in one Dibs knows how to reach.
-func openInAppFor(l *core.Agent, thread string) []string {
-	if l == nil || l.Agent == nil {
-		return nil
-	}
-	return harnessenv.OpenArgv(l.Agent.Surface, thread)
-}
-
 // showInApp runs after the message was queued, off the writer loop like every
 // wake. A failure here is logged and does not fail the wake: the message is in
 // the thread's queue, and the app delivers it whenever the thread is opened.
+//
+// Which app is decided HERE, off the writer loop, because when no bridge has
+// stated one it is read from the thread's transcript on disk (harnessenv.AppFor).
 func (e *Engine) showInApp(plan wakePlan, agent string) {
-	opened, err := shower.Show(plan.openInApp, plan.thread)
+	if plan.thread == "" {
+		return
+	}
+	argv := harnessenv.OpenArgv(harnessenv.AppFor(plan.surface, plan.harness, plan.thread), plan.thread)
+	opened, err := shower.Show(argv, plan.thread)
 	switch {
 	case err != nil:
 		slog.Warn("could not open the agent's thread in its app; the message waits there "+

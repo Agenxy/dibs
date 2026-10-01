@@ -17,6 +17,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   bridge's process tree and sent as `_meta com.dibs/surface`; an agent saying
   it runs in the app is ignored, so a Codex in a terminal is never opened in
   the app. `dibs host-bridge` does the same for an agent on its machine.
+  When no bridge has said which app (a dormant agent makes no call until
+  woken, so after an install none had), the thread's own transcript decides:
+  Codex records the client that created it, and a thread the ChatGPT app
+  created is opened there.
 
 - **Dibs never hosts an agent.** The recommended Codex wake, `codex exec
   resume {thread}`, does not deliver to anybody: it starts a headless Codex and

@@ -1145,7 +1145,7 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 	return wakePlan{
 		argv: f.Apply(cmd.argv), fallback: f.Apply(cmd.fallback),
 		cwd: cwdOf(l), cooldown: cooldown, thread: f.Thread,
-		openInApp: openInAppFor(l, f.Thread), // see inapp.go
+		surface: surfaceOf(l), harness: wakeHarness(l), // which app to open: see inapp.go
 	}, true
 }
 
@@ -1171,12 +1171,12 @@ type wakePlan struct {
 	// fallback is the operator's second command, substituted like the first
 	// and run only if the first exits non-zero. Empty when none is configured.
 	fallback []string
-	// openInApp opens the agent's thread in the app it runs in, when the app is
-	// not already holding it; nil unless the agent runs in such an app.
-	openInApp []string
-	agent     string // whose wake this is, for the socket path
-	notice    string // what to say; never a message body
-	cwd       string // where the agent says it works, for the mismatch warning
+	// surface and harness decide which app, if any, the thread is opened in
+	// after the message is queued (inapp.go).
+	surface, harness string
+	agent            string // whose wake this is, for the socket path
+	notice           string // what to say; never a message body
+	cwd              string // where the agent says it works, for the mismatch warning
 	// cooldown is the rate limit THIS route carries.
 	//
 	// Carried rather than re-read, because re-reading it looked up the
