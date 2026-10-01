@@ -204,6 +204,16 @@ var synonyms = map[string]string{
 	"target":  "agent",
 	"to":      "agent",
 	"name":    "agent",
+	// A deadline is in SECONDS here, and the names a caller reaches for are
+	// not: k7-dev tried `deadline` and `deadline_minutes`, both were refused,
+	// and every request then took the ten-minute default. Named, with its unit.
+	"deadline":         "deadline_s",
+	"deadline_minutes": "deadline_s",
+	"deadline_seconds": "deadline_s",
+	"timeout":          "deadline_s",
+	"timeout_s":        "deadline_s",
+	"ttl":              "deadline_s",
+	"expires_in":       "deadline_s",
 }
 
 // wrongTool maps a (tool, argument) that means the caller wanted a DIFFERENT
@@ -242,7 +252,11 @@ func synonymHint(tool string, extra []string) string {
 			continue
 		}
 		if want, ok := synonyms[e]; ok && known[want] {
-			found = append(found, fmt.Sprintf("%q is %q here", e, want))
+			hint := fmt.Sprintf("%q is %q here", e, want)
+			if want == "deadline_s" {
+				hint += ", in seconds (up to 7200, or 7 days to a persistent agent)"
+			}
+			found = append(found, hint)
 		}
 	}
 	if len(found) == 0 {

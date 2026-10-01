@@ -24,6 +24,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A misnamed deadline now names the real one.** `send` takes `deadline_s`, in
+  seconds; `deadline`, `deadline_minutes`, `timeout` and the like were refused
+  without saying so, and a sender who meant hours got the ten-minute default.
+- **A message that looks like an answer says it is not one.** A `send` to an
+  agent you still owe a response (a question or request it sent you) now
+  carries `unanswered`, naming each open ask and the `respond` call that closes
+  it. A worker had accepted a request with a notify, and the request expired
+  unanswered as though the task were dropped.
+
 - **`done` failed on a request approved more than fifteen minutes earlier.**
   Responding marks a message consumed, and the sweep deleted consumed finished
   mail after fifteen minutes, so an approved request was gone before the work

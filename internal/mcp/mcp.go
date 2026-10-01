@@ -1409,7 +1409,15 @@ func (s *Server) decorate(
 		// looked up no agent, so a send to the coordinator carried no
 		// pull-only warning however unwakeable the holder. Found by the
 		// pre-release review, round fourteen.
-		return s.noteIfNobodyCanWake(ctx, op.To, res)
+		res = s.noteIfNobodyCanWake(ctx, op.To, res)
+		// A send to someone this agent still owes an answer: see
+		// engine.UnansweredFrom.
+		if res != nil {
+			if n := s.eng.UnansweredFrom(ctx, a.Token, op.To); n != "" {
+				res["unanswered"] = n
+			}
+		}
+		return res
 	}
 	if name != "register" && name != "resume" {
 		return res
