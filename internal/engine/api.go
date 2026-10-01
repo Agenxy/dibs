@@ -671,6 +671,11 @@ func (e *Engine) decoratedBoard() core.Result {
 		// hours, all true of different clocks. See lastEvidenceOf.
 		lm["last_seen"] = e.lastEvidenceOf(l)
 		lm["status"] = l.Status
+		// HOW IT IS REACHED, when that is going wrong. A worker read `active`
+		// on the board while every wake for it failed; see wakefail.go.
+		if w := e.wakeStatusOf(id); w != "" {
+			lm["wake"] = w
+		}
 		// Which row is the person.
 		//
 		// An agent that wants to reach the operator had no reliable way to find

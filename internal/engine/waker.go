@@ -75,7 +75,8 @@ type wakers struct {
 	//
 	// Cleared by a wake that works, and by a configuration reload, which is
 	// what fixing the command looks like from here.
-	fails map[string]int
+	fails    map[string]int
+	failTold map[string]int // what each waiting sender was told; see wakefail.go
 	// running: agents whose wake command has not exited yet.
 	//
 	// The cooldown alone was the whole exclusion, and it is a START-time rule:
@@ -311,8 +312,7 @@ func (e *Engine) maybeWake(ev core.Event) {
 	go func() {
 		defer e.wakeExited(agent, thread)
 		e.noteWakeAttempt(agent)
-		if e.runWake(cmd, agent) {
-			e.clearWakeAttempts(agent)
+		if e.runWakeAndReport(cmd, agent) {
 			return
 		}
 		// A FAILED wake read nothing, so whatever arrived during it is still
@@ -521,8 +521,7 @@ func (e *Engine) retryWakeDecision(agent string) {
 	go func() {
 		defer e.wakeExited(agent, thread)
 		n := e.noteWakeAttempt(agent)
-		if e.runWake(cmd, agent) {
-			e.clearWakeAttempts(agent)
+		if e.runWakeAndReport(cmd, agent) {
 			return
 		}
 		e.releaseWake(agent, stamp)
