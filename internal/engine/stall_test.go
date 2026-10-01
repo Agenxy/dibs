@@ -282,3 +282,23 @@ func TestAnOldApprovalIsNotAnObligation(t *testing.T) {
 		t.Error("an approval older than the window still reads as owed work")
 	}
 }
+
+// A declaration nobody has acted on for days is not work in progress: the
+// first live board read "working" beside "seen 6d ago". Working needs a recent
+// sign of the agent; past that the row says the work is declared.
+func TestADeclarationWithNoRecentSignReadsDeclaredNotWorking(t *testing.T) {
+	e := New(core.NewState("test", core.DefaultLimits()), &memLedger{}, deadProber{})
+	l := &core.Agent{
+		ID: "w", Name: "w", Status: core.StatusDormant,
+		Slots:            map[string]core.Slot{"s1": {ID: "s1", Text: "visual identity preview", UpdatedSerial: 3}},
+		LastCoordination: time.Now().Add(-6 * 24 * time.Hour),
+	}
+	e.state.Agents["w"] = l
+	if got := e.workStateOf(l); got != "declared" {
+		t.Errorf("a six-day-old declaration reads %q", got)
+	}
+	e.seen["w"] = time.Now()
+	if got := e.workStateOf(l); got != "working" {
+		t.Errorf("an agent seen just now with open work reads %q", got)
+	}
+}

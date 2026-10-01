@@ -717,7 +717,8 @@ space surface (`open_space`, `join_space`, `read_space`, `post`,
 claim-level counterpart to `unlock_space`. v1.3 added `configure` and `merge_agents`, the
 admin-gated read and write of the settings the engine can apply while it
 runs; see docs/CONFIGURATION.md for why an address is not among them.
-Every board row carries `work` (`idle`, `working`, `waiting`, `stalled`),
+Every board row carries `work` (`idle`, `working`, `declared` when the agent
+has not been seen in 30 minutes, `waiting`, `stalled`),
 derived by the daemon from the agent's declarations and the turns it has seen,
 never from process liveness, and outside the ledger like every other liveness
 view. See WAKE-MECHANISMS.md, "Continuing a turn that ends with declared work".

@@ -15,6 +15,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A worker re-declaring on every Stop could be continued in a loop.** A
+  changed declaration counts as progress, so a Codex worker whose session
+  predated `waiting` and wrote "waiting" into its declaration's text instead was
+  continued four times in three minutes. Continuation is now also capped at
+  three per fifteen minutes whatever the declaration does, and its text names
+  `waiting` as an argument of declare.
+- **A row no longer reads `working` on a declaration nobody has touched in
+  days.** `work` is `declared` when the agent has not been seen in 30 minutes;
+  `working` needs a recent sign of it.
+
 - **A Codex agent's Stop hook could never deliver mail.** Codex validates hook
   output per event and its Stop accepts `decision` and `reason` and nothing like
   `hookSpecificOutput`; Dibs sent exactly the reverse to Codex at Stop, so the
