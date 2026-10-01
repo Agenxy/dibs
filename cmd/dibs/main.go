@@ -952,9 +952,10 @@ func atATerminal() bool {
 // name for an old fact.
 type (
 	boardSlot struct {
-		ID   string   `json:"id"`
-		Text string   `json:"text"`
-		Dirs []string `json:"dirs,omitempty"`
+		ID      string   `json:"id"`
+		Text    string   `json:"text"`
+		Dirs    []string `json:"dirs,omitempty"`
+		Waiting string   `json:"waiting,omitempty"`
 	}
 	boardAgent struct {
 		ID          string    `json:"id"`
@@ -965,6 +966,12 @@ type (
 		ProcAlive   bool      `json:"proc_alive"`
 		StaleReason string    `json:"stale_reason,omitempty"`
 		LastSeen    time.Time `json:"last_seen"`
+		// Work is what the agent is DOING (idle, working, waiting, stalled),
+		// derived from its declarations and what the daemon has seen, beside
+		// Status, which is about its process. A Codex agent in the ChatGPT app
+		// has no process between calls, so its status alone read "dormant
+		// (process gone)" while it worked.
+		Work string `json:"work,omitempty"`
 		// Host is which machine the agent is on, blank when it is this one.
 		//
 		// On a single-machine board it is noise, which is why it was never
@@ -1582,84 +1589,6 @@ func verify(args []string) error {
 	return nil
 }
 
-// printAgents lists who is on the board and whether they are working.
-func printAgents(agents []boardAgent) {
-	if len(agents) == 0 {
-		return
-	}
-	fmt.Println(ui.Section("agents"))
-	// Columns sized to what is actually there, not to a guess. A fixed width
-	// wide enough for "stale (process gone)" leaves a gap the width of that
-	// phrase on every healthy row, which is most of them.
-	nameW, statusW := 0, 0
-	for _, l := range agents {
-		if w := lipgloss.Width(agentLabel(l)); w > nameW {
-			nameW = w
-		}
-		if w := lipgloss.Width(l.Status) + len(staleNote(l.StaleReason)); w > statusW {
-			statusW = w
-		}
-	}
-	for _, l := range agents {
-		where := ""
-		if l.Host != "" {
-			where = " on " + l.Host
-		}
-		fmt.Printf("  %s  %s  %s\n",
-			ui.Accent(ui.Pad(agentLabel(l), nameW)),
-			ui.Pad(agentStatus(l), statusW),
-			ui.Dim("seen "+ago(l.LastSeen)+where))
-		if l.Description != "" {
-			fmt.Println("    " + ui.Dim(l.Description))
-		}
-		for _, sl := range l.Slots {
-			line := "    " + sl.Text
-			if len(sl.Dirs) > 0 {
-				// ui.Path, because these are the same coordination paths the
-				// claims rows carry and those rows already shorten them. Grepping
-				// a board for a directory found the claim and silently missed the
-				// slot on that same directory, or the reverse: one board, two
-				// spellings of one path.
-				short := make([]string, 0, len(sl.Dirs))
-				for _, d := range sl.Dirs {
-					short = append(short, ui.Path(d))
-				}
-				line += "  " + ui.Dim("["+strings.Join(short, " ")+"]")
-			}
-			fmt.Println(line)
-		}
-	}
-}
-
-// agentLabel is what a human should read to know who this is.
-//
-// Usually the id. But an id is an ADDRESS and must be ASCII, so an agent named
-// in a non-Latin script gets `agent`: and a fleet of them reads `agent`,
-// `agent-2`, `agent-3`: correct addresses that identify nobody. Where the name
-// could not become the id, show both.
-func agentLabel(l boardAgent) string {
-	if l.DisplayName == "" {
-		return l.ID
-	}
-	return l.DisplayName + " (" + l.ID + ")"
-}
-
-// agentStatus weights liveness the same way the browser board does: working is
-// good, a dead process is worth noticing, anything else is context.
-func agentStatus(l boardAgent) string {
-	status := l.Status + staleNote(l.StaleReason)
-	if l.Status == "stale" && l.ProcAlive {
-		status += " (hung?)"
-	}
-	switch {
-	case l.Status == "active":
-		return ui.Good(status)
-	case l.StaleReason == "process_exited":
-		return ui.Attn(status)
-	}
-	return ui.Dim(status)
-}
-
 // printSpacesOfWork lists the spaces: what work exists and who is in it.
 func printSpacesOfWork(chans []boardChannel) {
 	if len(chans) == 0 {
@@ -1767,18 +1696,6 @@ func opStyle(kind string) string {
 		return ui.Dim(kind) // bookkeeping
 	}
 	return kind
-}
-
-func staleNote(reason string) string {
-	switch reason {
-	case "process_exited":
-		return " (process gone)"
-	case "lease_lapsed":
-		return " (no contact)"
-	case "idle_no_activity":
-		return " (idle, no pid)"
-	}
-	return ""
 }
 
 func ledgerPath() string { return filepath.Join(paths.DataDir(), "ledger.jsonl") }

@@ -45,7 +45,7 @@ const urgentOnly = false
 func IsMailEvent(evType string) bool {
 	switch evType {
 	case "message.approved", "message.denied", "message.answered", "message.declined",
-		"message.sent", "message.adopted":
+		"message.done", "message.sent", "message.adopted":
 		return true
 	}
 	return false
@@ -62,7 +62,7 @@ func IsMailEvent(evType string) bool {
 // a wake.
 func Blocking(evType, msgType string) bool {
 	switch evType {
-	case "message.approved", "message.denied", "message.answered", "message.declined":
+	case "message.approved", "message.denied", "message.answered", "message.declined", "message.done":
 		return true
 	case "message.sent", "message.adopted":
 		// Recovered mail is arrived mail: an adoption that moved a pending
