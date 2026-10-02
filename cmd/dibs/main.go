@@ -990,13 +990,9 @@ type (
 		// has no process between calls, so its status alone read "dormant
 		// (process gone)" while it worked.
 		Work string `json:"work,omitempty"`
-		// Host is which machine the agent is on, blank when it is this one.
-		//
-		// On a single-machine board it is noise, which is why it was never
-		// shown. On a fleet it is the first thing a person asks: four computers
-		// of agents, and a board that will not say which is which answers the
-		// wrong question. Blank for local agents so the common case stays as
-		// quiet as it was.
+		// Host is the derived machine display label shared by rows with one
+		// known host identity. The daemon supplies its own hostname locally;
+		// remote labels come from the newest coordinated visible member.
 		Host string `json:"host,omitempty"`
 		// Role, and whether whoever holds it can come back. A role held by an
 		// agent nobody can reattach to is a power the board shows as filled and

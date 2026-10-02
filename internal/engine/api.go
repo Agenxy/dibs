@@ -758,6 +758,7 @@ func (e *Engine) Board(ctx context.Context) (core.Result, error) {
 
 func (e *Engine) decoratedBoard() core.Result {
 	b := e.state.Board()
+	e.labelBoardHosts(b)
 	// The identity this daemon stamps its own machine's agents with, beside
 	// the ledger's node: doctor compares it with what Supgang says the
 	// machine is now, and a daemon started before the machine joined a hive
@@ -799,16 +800,6 @@ func (e *Engine) decoratedBoard() core.Result {
 		// this daemon's run, not to the ledger.
 		if human != "" && id == human {
 			lm["human"] = true
-		}
-		// Which machine, hoisted to the row.
-		//
-		// It was only ever nested inside the descriptor, which is right for one
-		// machine and wrong for a fleet: "which of my four computers is this
-		// agent on" is the first question a board with remote agents has to
-		// answer, and every reader had to know to dig for it. Omitted when the
-		// agent is here, so a single-machine board reads exactly as before.
-		if l.Agent != nil && l.Agent.Host != "" && !e.ownsHost(l) {
-			lm["host"] = l.Agent.Host
 		}
 		// Probed only where the pid means something. The same rule as the
 		// sweep, and for the same reason: this asks THIS kernel about a number

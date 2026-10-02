@@ -356,12 +356,12 @@ type AgentInfo struct {
 	// different computers, which is a real collision now that one daemon serves
 	// agents on other machines (SPEC §16).
 	//
-	// The daemon derives it rather than believing it, wherever it can. A caller
-	// arriving over loopback is on the daemon's own machine (nothing else can
-	// reach loopback), so it is stamped with the daemon's node id and that is
-	// evidence, not a claim. A genuinely remote caller's is asserted by its own
-	// bridge, which is no stronger than the shared bearer secret that let it in,
-	// and docs/NETWORK.md §2 says so out loud: this is a CORRECTNESS boundary
+	// The daemon supplies its identity for a local caller with no assertion.
+	// An explicit bridge assertion is preserved even over loopback, where an
+	// SSH forward can arrive from another machine. Known old local IDs are
+	// canonicalised at ingress. An assertion is no stronger than the shared
+	// bearer secret that let the bridge in. docs/NETWORK.md §2 says so:
+	// this is a CORRECTNESS boundary
 	// today and becomes a security one only when identity can be proved.
 	//
 	// Empty means unknown, and unknown must behave exactly as this board did
