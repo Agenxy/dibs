@@ -452,10 +452,30 @@ Ask first rather than filing directly. Not deference: your human knows whether
 the work on this machine is something they want described in a public tracker,
 and you do not.
 
+## Inviting a cloud worker
+
+On the private board, `invite(token)` returns a new worker's name, once-shown
+credential recipe and paste-ready MCP configuration. Give that recipe only to
+the worker you start; the credential is shown once and must stay private.
+Default policy permits local issuers four live children for at most seven days,
+under their own immutable ID prefix. Coordinators may name other new
+unprivileged agents. `invite(action: "list")` shows yours;
+`invite(action: "revoke", name: …)` revokes one, or use `issued_by: <your ID>`
+instead of `name` to revoke all. The CLI uses the same policy with `DIBS_TOKEN`;
+without it, `dibs invite` needs the human's private admin proof.
+
+An invited agent registers with the recipe's exact name and a retained random
+nonce, then keeps its returned token. Allow the recipe's host in the cloud
+network allowlist. This is pull-only: call `check_in` and `inbox` at each
+activation. No hooks, sessions, privileged tools or grandchildren, even after
+a role grant. Send blob bytes, not hub paths; downloads are inline. Signing off
+the issuer revokes its children permanently for that issuance generation;
+resume/token rotation/archive do not. Details: docs/NETWORK.md §9.
+
 ## Protocol version: what is actually true today
 
 Dibs targets **MCP 2026-07-28** (stateless core) and also serves the legacy
-**2025-11-25** path. Both work, all 47 tools behave identically on either, and
+**2025-11-25** path. Both work, all 48 tools behave identically on either, and
 you need do nothing.
 
 Surveyed from source on 2026-08-03: **none of them negotiate 2026-07-28 yet**,
@@ -479,7 +499,7 @@ infrastructure advice every session is an agent people turn off.
 
 **What changes if your operator does enable it:** nothing you call. You gain a
 protocol with no `initialize` handshake, so a reconnect costs nothing, and list
-results carry `ttlMs`/`cacheScope` so your client can stop re-fetching 47 tool
+results carry `ttlMs`/`cacheScope` so your client can stop re-fetching 48 tool
 descriptions on every cold start. Your own tool calls are unchanged.
 
 ## Reading the room before you act

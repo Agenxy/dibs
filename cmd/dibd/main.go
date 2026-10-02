@@ -33,6 +33,7 @@ import (
 	"github.com/agenxy/dibs/internal/build"
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/engine"
+	"github.com/agenxy/dibs/internal/invites"
 	"github.com/agenxy/dibs/internal/ledger"
 	"github.com/agenxy/dibs/internal/liveness"
 	"github.com/agenxy/dibs/internal/logs"
@@ -74,6 +75,10 @@ type daemonOpts struct {
 	allowParallel *bool
 	addr          *string
 	check         *bool
+	publicHost    *string
+	publicURL     *string
+	publicAddr    *string
+	acceptACME    *bool
 }
 
 func registerDaemonFlags(fs *flag.FlagSet) (*daemonOpts, *scorerFlags) {
@@ -95,6 +100,14 @@ func registerDaemonFlags(fs *flag.FlagSet) (*daemonOpts, *scorerFlags) {
 				"could take over from the daemon now running. `dibs upgrade` runs it first"),
 	}
 	fs.Bool("man", false, "write this daemon's manual page (mdoc) to stdout and exit")
+	o.publicHost = fs.String("public-host", "",
+		"public invitation-only HTTPS hostname (ACME; public port 443 must reach this listener)")
+	o.publicURL = fs.String("public-url", "",
+		"public HTTPS origin behind a TLS proxy; invitation-only listener stays on loopback")
+	o.publicAddr = fs.String("public-addr", "",
+		"second listener address (default :443 with public-host, 127.0.0.1:4778 with public-url)")
+	o.acceptACME = fs.Bool("acme-accept-terms", false,
+		"operator accepts the ACME CA terms for public-host; no automatic acceptance")
 	return o, registerScorerFlagsOn(fs)
 }
 
@@ -107,6 +120,10 @@ func run() error {
 	opts, scorer := registerDaemonFlags(flag.CommandLine)
 	dir, allowParallel, addr, check := opts.dir, opts.allowParallel, opts.addr, opts.check
 	flag.Parse()
+	publicCfg, err := resolvePublic(opts)
+	if err != nil {
+		return err
+	}
 
 	if err := os.MkdirAll(*dir, 0o700); err != nil {
 		return err
@@ -392,6 +409,10 @@ func run() error {
 	mux := http.NewServeMux()
 	mcpSrv := mcp.New(eng)
 	mcpSrv.SetTaskKey(secret) // task ids survive a restart; see mcp/tasks.go
+	inviteService := &invites.Service{
+		Engine: eng, Store: invites.Store{Dir: *dir}, Policy: cfg.Invites, URL: publicCfg.URL,
+	}
+	mcpSrv.SetInvites(inviteService)
 	mux.Handle("/mcp", mcpSrv)
 	ws, err := web.New(eng)
 	if err != nil {
@@ -403,6 +424,7 @@ func run() error {
 	registerIndexAPI(mux, eng, scorer)
 	registerWakeAPI(mux, eng, secret)
 	registerAdminAPI(mux, eng)
+	registerInvitationAPI(mux, inviteService)
 
 	tr, err := resolveTransport(*dir, listenAddr, askedScheme, cfg)
 	if err != nil {
@@ -475,6 +497,12 @@ func run() error {
 		}
 		tlsPair = []tls.Certificate{cert}
 	}
+	publicFailure, closePublic, err := startPublic(ctx, publicCfg, *dir, eng, secret, stop)
+	if err != nil {
+		_ = ln.Close()
+		return err
+	}
+	defer closePublic()
 	// Roles are the one part of the config that grants standing privilege, and
 	// a typo in an agent name means the grant silently applies to nobody. Saying
 	// what it did lets an operator see that from the log rather than by reading
@@ -499,6 +527,11 @@ func run() error {
 	}
 	if err := serve(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
+	}
+	select {
+	case err := <-publicFailure:
+		return err
+	default:
 	}
 	return nil
 }

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/engine"
 )
 
 // A request its sender follows, as an MCP task (the io.modelcontextprotocol/tasks
@@ -302,6 +303,16 @@ func (s *Server) getTask(ctx context.Context, params json.RawMessage) (any, *rpc
 	}
 	if !found {
 		return nil, errNoTask()
+	}
+	if i, invited := engine.InvitationFrom(ctx); invited {
+		// Task handles are bearer capabilities on the private listener. An
+		// invitation narrows that authority to its own identity as well.
+		if i.Token == "" || (m.From != i.AgentID && m.To != i.AgentID) {
+			return nil, &rpcError{
+				Code: -32602, Message: "task does not belong to this invited agent",
+				Data: hint("use your own task handle and _meta['" + metaTokenKey + "'] agent token"),
+			}
+		}
 	}
 	t := s.detailedTask(m)
 	t["resultType"] = "complete"

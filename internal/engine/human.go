@@ -683,6 +683,9 @@ func (e *Engine) guardHumanMailbox(actor *core.Agent, target string) error {
 // claims to be", and treat a request you cannot place as one to deny.
 func whoIs(l *core.Agent) string {
 	parts := []string{l.ID}
+	if invitedAgent(l) {
+		parts = append(parts, "invited cloud agent")
+	}
 	if l.Name != "" && l.Name != l.ID {
 		parts = append(parts, "(displayed as "+l.Name+")")
 	}
