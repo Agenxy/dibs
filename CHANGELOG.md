@@ -7,6 +7,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Milestone notices explain their own calls.** Progress names the parent
+  request and optional accept/flag review; acknowledging its event only marks
+  the notice seen. Read mail shows each milestone's latest review, and a new
+  report becomes unreviewed. Informational notices delivered at Stop no longer
+  extend later turns for the same update; blocking obligations retain their
+  delivery rules. Wrong event serials produce corrective hints without
+  disclosing another agent's request.
+
 - **Out-of-band, encrypted file transfer.** `upload`/`download` return short-lived
   file descriptors; resumable PATCH/HEAD moves bytes outside MCP and model context.
   `dibs put`/`dibs get` retry cut connections and verify hashes. Versioned DARE 2

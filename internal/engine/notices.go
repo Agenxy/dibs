@@ -80,6 +80,9 @@ type notice struct {
 	// Reported by the operator, who approved a request and then had to go and
 	// tell the agent by hand.
 	Blocking bool
+	// Delivered informational notices remain available to authenticated pulls,
+	// but a Stop that carried their text must not extend another turn for them.
+	Delivered bool
 }
 
 // noteEvent records the events an agent needs told about, so hookPoll can
@@ -771,7 +774,12 @@ func progressNotice(ev core.Event) string {
 	if a, _ := ev.Data["artifact"].(string); a != "" {
 		s += ", to check at " + a
 	}
-	return s + ". read_mail has the note; respond accept or flag to say what you think"
+	s += fmt.Sprintf(". Read read_mail(msg_serial:%d), or dismiss this event with ack(msg_serial:%d)", serial, ev.Serial)
+	if milestone, _ := ev.Data["milestone"].(int); milestone > 0 {
+		s += fmt.Sprintf(". Optional review: respond(msg_serial:%d, disposition:\"accept\"|\"flag\", "+
+			"milestone:%d); flag includes body", serial, milestone)
+	}
+	return s
 }
 
 // reviewNotice tells a worker what the sender of its task thinks of a step.
@@ -782,8 +790,11 @@ func reviewNotice(ev core.Event) string {
 		step = fmt.Sprintf("%q", label)
 	}
 	if ev.Data["review"] == core.ReviewFlagged {
-		return fmt.Sprintf("%s FLAGGED %s on the request you are doing (msg %d): read_mail has what "+
-			"is wrong or what to do instead. The task is still yours", ev.Agent, step, serial)
+		return fmt.Sprintf("%s FLAGGED %s on the request you are doing (msg %d): read_mail(msg_serial:%d) has what "+
+			"is wrong or what to do instead. The task is still yours; ack(msg_serial:%d) dismisses this event only",
+			ev.Agent, step, serial, serial, ev.Serial)
 	}
-	return fmt.Sprintf("%s accepted %s on the request you are doing (msg %d)", ev.Agent, step, serial)
+	return fmt.Sprintf("%s accepted %s on the request you are doing (msg %d). "+
+		"Read read_mail(msg_serial:%d), or dismiss this event with ack(msg_serial:%d)",
+		ev.Agent, step, serial, serial, ev.Serial)
 }

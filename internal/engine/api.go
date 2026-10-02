@@ -631,12 +631,19 @@ func (e *Engine) GetMessage(ctx context.Context, token string, serial uint64) (c
 		// there is no outcome to have read. Issue #76.
 		e.clearNoticesFor(l.ID, serial)
 		e.noteOutcomeRead(l, m, token, now)
-		res := core.Result{"message": m, "serial": e.state.Serial}
-		if m.To == e.humanIdentityLocked() {
-			res["human_delivery"] = e.deliveryForHuman(m)
-		}
-		return res
+		return e.messageReadResult(m)
 	})
+}
+
+func (e *Engine) messageReadResult(m *core.Message) core.Result {
+	res := core.Result{"message": m, "serial": e.state.Serial}
+	if len(m.Milestones) > 0 {
+		res["milestone_reviews"] = m.MilestoneReviews()
+	}
+	if m.To == e.humanIdentityLocked() {
+		res["human_delivery"] = e.deliveryForHuman(m)
+	}
+	return res
 }
 
 // noteOutcomeRead ledgers that the SENDER has read a verdict on its own
