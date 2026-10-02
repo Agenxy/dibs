@@ -325,6 +325,12 @@ receiving native peer turns, another watcher adds no delivery guarantee.
   misrouted and needs nothing installed. If you see `waiting`, call `inbox`.
 - Types are `notify`, `question`, `request`, `handoff`. Pick honestly: a
   `request` obliges someone, a `notify` does not.
+- **A verdict-only review is a question.** Use `send(type: "question")` to ask
+  a reviewer for their verdict on a concrete artifact; they finish with
+  `respond(disposition: "answer", body: <verdict and findings>)`. The answer
+  is terminal and leaves no owed work. Use a request when you are commissioning
+  work beyond the verdict: approving that request accepts an obligation, and
+  the recipient still owes `done` after delivering it.
 - **On a stdio bridge, your nonce is kept for you.** The bridge remembers it per
   project and per name, so registering with the same name in the same checkout
   reattaches you to the same agent with its mail, even after your context ended.

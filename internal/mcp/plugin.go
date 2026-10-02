@@ -31,6 +31,8 @@ func pluginDoc() string {
 			"dibs doctor explains the operator-owned acceptance setting.",
 		"approvals": "Need the person's decision: send a request to human through Dibs; never ask in chat and wait. " +
 			"The human mailbox is created on first authenticated send and uses native notifications or the person's relay.",
+		"reviews": "A verdict-only review is a question, completed by respond answer. " +
+			"A request commissions work: approve accepts it, and done delivers it.",
 		"plugins":     plugins.All(),
 		"marketplace": json.RawMessage(plugins.Marketplace()),
 	}

@@ -317,17 +317,19 @@ const (
 // SlotOverlap is another agent's activity that relates to what you just declared.
 // Informational in every case: declaring work never fails.
 type SlotOverlap struct {
-	Agent  string   `json:"agent"`
-	Signal string   `json:"signal"`
-	Kind   string   `json:"kind"`           // "slot" | "claim"
-	Text   string   `json:"text,omitempty"` // their slot text / claim note
-	Refs   []string `json:"refs,omitempty"` // the shared objective ids, if any
-	Path   string   `json:"path,omitempty"` // the overlapping path, if any
-	Mode   string   `json:"mode,omitempty"` // claims only
+	Agent         string   `json:"agent"`
+	Signal        string   `json:"signal"`
+	Kind          string   `json:"kind"`                    // "slot" | "claim"
+	Text          string   `json:"text,omitempty"`          // their slot text / claim note
+	Refs          []string `json:"refs,omitempty"`          // the shared objective ids, if any
+	Path          string   `json:"path,omitempty"`          // the overlapping path, if any
+	Mode          string   `json:"mode,omitempty"`          // claims only
+	Activity      string   `json:"activity,omitempty"`      // the peer slot's role; presentation only
+	Complementary bool     `json:"complementary,omitempty"` // same item, different roles
 }
 
 // Strong reports whether this overlap likely means duplicated effort.
-func (o SlotOverlap) Strong() bool { return o.Signal == SignalSameObjective }
+func (o SlotOverlap) Strong() bool { return o.Signal == SignalSameObjective && !o.Complementary }
 
 // differentProjects reports POSITIVE evidence that two agents are in different
 // repositories. Absence of evidence is not difference: it returns false when it
@@ -429,7 +431,7 @@ func (s *State) overlapsFor(refs, dirs []string, excludeAgent string) []SlotOver
 	var out []SlotOverlap
 	seen := map[string]bool{}
 	add := func(o SlotOverlap) {
-		k := o.Agent + "\x00" + o.Signal + "\x00" + o.Path + "\x00" + strings.Join(o.Refs, ",")
+		k := o.Agent + "\x00" + o.Signal + "\x00" + o.Path + "\x00" + strings.Join(o.Refs, ",") + "\x00" + o.Activity
 		if !seen[k] {
 			seen[k] = true
 			out = append(out, o)
@@ -472,14 +474,14 @@ func slotOverlaps(me, them *Agent, want map[string]bool, dirs []string) []SlotOv
 		if shared := sharedRefs(want, sl.Refs); len(shared) > 0 && scoped {
 			out = append(out, SlotOverlap{
 				Agent: them.ID, Signal: SignalSameObjective, Kind: "slot",
-				Text: sl.Text, Refs: shared,
+				Text: sl.Text, Refs: shared, Activity: sl.Activity,
 			})
 			continue // strong signal already reported for this slot
 		}
 		if p := firstOverlappingPath(me, them, dirs, sl.Dirs); p != "" {
 			out = append(out, SlotOverlap{
 				Agent: them.ID, Signal: SignalSamePaths, Kind: "slot",
-				Text: sl.Text, Refs: sl.Refs, Path: p,
+				Text: sl.Text, Refs: sl.Refs, Path: p, Activity: sl.Activity,
 			})
 		}
 	}
