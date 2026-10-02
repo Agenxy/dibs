@@ -37,8 +37,14 @@
 // cannot do this" are different facts, and telling somebody to try their finger
 // again on a machine with no sensor is the kind of unhelpful advice this project
 // treats as a defect.
+import CryptoKit
 import Foundation
 import LocalAuthentication
+import Security
+
+if CommandLine.arguments.count > 1 && CommandLine.arguments[1] == "--key" {
+    runKey(Array(CommandLine.arguments.dropFirst(2)))
+}
 
 // Biometrics ONLY, never .deviceOwnerAuthentication. The broader policy falls
 // back to the login password on failure, and a login password proves possession
@@ -78,3 +84,107 @@ context.evaluatePolicy(policy, localizedReason: reason) { ok, err in
 // answers should not become a process that never exits.
 if done.wait(timeout: .now() + 120) == .timedOut { exit(1) }
 exit(verified ? 0 : 1)
+
+// ── the person's key ────────────────────────────────────────────────────────
+//
+// `dibs-presence --key …` holds the person's key in this Mac's Secure Enclave,
+// for a board that runs somewhere else and so cannot read this Mac's sensor:
+// presence has to arrive as something it can CHECK, a signature from a key
+// that signs only after Touch ID. docs/NETWORK.md §8 is the argument.
+//
+// In this binary rather than its own because it is the same job, proving a
+// person, and this one already ships, signed, everywhere a Mac build goes.
+//
+// The key is created with a biometric access control and the Secure Enclave
+// enforces it, not this program. So, unlike the check above, replacing this
+// binary buys an attacker nothing here: whatever runs, the chip still asks for
+// a finger before it signs, and the private half never leaves it. What is
+// stored on disk is the Enclave's own wrapped form, useless on any other Mac.
+//
+//	dibs-presence --key create <file>          writes the key, prints its public half
+//	dibs-presence --key public <file>          prints the public half
+//	dibs-presence --key sign <file> <reason>   signs stdin after Touch ID, prints the signature
+//
+//	0  done; the output is base64 (DER SubjectPublicKeyInfo, or a DER ECDSA signature)
+//	1  a person was asked and did not authenticate (declined, failed, cancelled)
+//	2  this Mac cannot do it (no Secure Enclave or no Touch ID, no key file,
+//	   or a key from another Mac)
+
+func fail(_ code: Int32, _ message: String) -> Never {
+    FileHandle.standardError.write(Data((message + "\n").utf8))
+    exit(code)
+}
+
+func publicB64(_ key: SecureEnclave.P256.Signing.PrivateKey) -> String {
+    key.publicKey.derRepresentation.base64EncodedString()
+}
+
+func runKey(_ args: [String]) -> Never {
+guard args.count >= 2 else {
+    fail(2, "usage: dibs-presence --key create|public|sign <file> [reason]")
+}
+guard SecureEnclave.isAvailable else {
+    fail(2, "this Mac has no Secure Enclave")
+}
+let file = URL(fileURLWithPath: args[1])
+
+switch args[0] {
+case "create":
+    var err: Unmanaged<CFError>?
+    // A finger, and only a finger: biometryAny, not userPresence. The
+    // broader flag falls back to the login password, which proves possession
+    // of something an agent could in principle have been given, the same
+    // reason dibs-presence refuses .deviceOwnerAuthentication. biometryAny
+    // rather than biometryCurrentSet so a finger enrolled later still works.
+    guard let access = SecAccessControlCreateWithFlags(
+        nil, kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+        [.privateKeyUsage, .biometryAny], &err)
+    else {
+        fail(2, "could not describe the key's access control: \(String(describing: err?.takeRetainedValue()))")
+    }
+    do {
+        let key = try SecureEnclave.P256.Signing.PrivateKey(accessControl: access)
+        try FileManager.default.createDirectory(
+            at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try key.dataRepresentation.write(to: file, options: [.atomic])
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+        print(publicB64(key))
+    } catch {
+        fail(2, "could not create the key: \(error.localizedDescription)")
+    }
+
+case "public":
+    guard let blob = try? Data(contentsOf: file) else { fail(2, "no key at \(file.path)") }
+    guard let key = try? SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: blob) else {
+        fail(2, "the key at \(file.path) does not belong to this Mac's Secure Enclave")
+    }
+    print(publicB64(key))
+
+case "sign":
+    guard let blob = try? Data(contentsOf: file) else { fail(2, "no key at \(file.path)") }
+    let message = FileHandle.standardInput.readDataToEndOfFile()
+    // The reason is the one sentence the person reads in the system sheet, so
+    // the caller names the actual act ("approve: make reviewer coordinator").
+    let context = LAContext()
+    context.localizedReason = args.count > 2 && !args[2].isEmpty ? args[2] : "answer as you on the Dibs board"
+    context.localizedCancelTitle = "Cancel"
+    let key: SecureEnclave.P256.Signing.PrivateKey
+    do {
+        key = try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: blob, authenticationContext: context)
+    } catch {
+        fail(2, "the key at \(file.path) does not belong to this Mac's Secure Enclave")
+    }
+    do {
+        let sig = try key.signature(for: message)
+        print(sig.derRepresentation.base64EncodedString())
+    } catch {
+        // Declined, cancelled or failed: the Enclave refused to sign without a
+        // person, which is the guarantee working.
+        fail(1, "not signed: \(error.localizedDescription)")
+    }
+
+default:
+    fail(2, "unknown command \(args[0]): create, public or sign")
+}
+exit(0)
+}

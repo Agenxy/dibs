@@ -407,6 +407,7 @@ func run() error {
 	}
 	gate := newAuthGate(secret, filepath.Join(*dir, "admin.hash"), listenAddr)
 	gate.SetNames(cfg.Name)
+	registerHumanAPI(mux, eng, gate, *dir)
 	srv := &http.Server{
 		Addr: listenAddr, Handler: gate.wrap(mux),
 		ReadHeaderTimeout: 5 * time.Second,

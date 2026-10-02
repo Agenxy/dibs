@@ -404,9 +404,65 @@ because Supgang intends to.
    `dibs://wake` stream and `POST /api/wake-result` on the hub), exercised by
    the two-host suite. This item read "waits for the transport work" for a
    release after it had shipped; the pre-release review caught the drift.
-4. **Proved identity** (§6). The key pin rides Supgang already; per-agent
+4. **The person, wherever the board is** (§8). The human relay first, then
+   the web portal with a passkey login, both independent of the board's
+   operating system and network.
+5. **Per-agent credentials** (§6), which a public address waits on.
+6. **Proved identity** (§6). The key pin rides Supgang already; per-agent
    credentials and a verified `HostID` need Supgang to pass its own
    acceptance first.
+
+## 8. The person, wherever the board is
+
+**The position, stated by the operator.** Dibs runs wherever it is put, on
+macOS or Linux, on a LAN or the public internet, and every client reaches it
+from wherever it is. Nothing a person needs may depend on the board's own
+operating system or on sharing its network. Two things did:
+
+- **Notifications fired on the board's screen.** `tellTheHuman` raised a
+  banner or an alert on the machine running `dibd`. On a server that is a
+  room nobody is in, and on Linux without a desktop it is nothing at all.
+- **Proving a person is present happened on the board's machine.** Touch ID
+  in the gate reads the sensor of the computer the daemon runs on.
+
+**The decision.** The person's devices are clients like any other, and
+presence is a signature the board verifies, never a fact it observes.
+
+- **The human relay** (`dibs human-relay`) runs on the person's Mac. It holds
+  a P-256 key in the Secure Enclave, created with a user-presence access
+  control, so the key signs only after Touch ID and its private half never
+  leaves the chip. Measured 2026-10-02: an ad-hoc signed Swift binary creates
+  one with no entitlement and no prompt; the prompt comes with each use.
+- **Enrolment** is the one step a password covers: `dibs human-relay enroll`
+  sends the public key with the board's admin password, under the same
+  throttle the web board's login uses, and the board records it in
+  `human-keys.json` beside its other credentials. Revocation removes it.
+- **A session** costs one Touch ID: the relay asks for a nonce, signs
+  `dibs-human-session/v1`, the board's node id and the nonce, and gets a
+  session token it holds in memory only. Every agent on the board holds the
+  board's secret, which is why the secret proves nothing here and is not
+  asked for.
+- **Mail to the person** goes to every attached relay instead of the board's
+  screen: questions, requests, handoffs and notes, with what the sender
+  wrote. With no relay attached the board notifies locally as before, which
+  on a laptop running its own board is still the right place.
+- **An answer** rides the session, except one: approving a request that
+  GRANTS something (a role, a permission, another agent's mail) needs a
+  fresh signature over `dibs-human-answer/v1`, the node id, the serial, the
+  disposition and a fresh nonce. That is one Touch ID per grant, on the
+  notification the person just read, and it means a process that steals a
+  session can answer a question but cannot make itself coordinator.
+
+Signatures are verified with the standard library alone, so the check is the
+same on a Linux board as on a Mac one. The relay is macOS-only because the
+Secure Enclave is; a person on another platform uses the web portal, whose
+login is a passkey (WebAuthn), which is the same P-256 check through the
+browser.
+
+**What it does not do yet.** The portal's passkey login and per-agent
+credentials are the next two items in §7. Until the second exists the
+board's secret is shared, so a public address is still not recommended, and
+the relay is built so that nothing about it changes when that lands.
 
 ## What would change this document
 

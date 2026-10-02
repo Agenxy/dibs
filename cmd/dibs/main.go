@@ -73,6 +73,10 @@ is not a mystery):
                            machine's own [wake.exec] commands for its agents
                            when the hub decides one should be woken
                            (--service writes the unit that keeps it running)
+  dibs human-relay        on YOUR Mac, for a board that runs elsewhere: shows
+                           mail addressed to you here and sends your answers
+                           back signed after Touch ID (enroll registers this
+                           Mac with the board's admin password, once)
   dibs hook-poll          the wake path for a harness whose hooks are subprocesses (Gemini CLI)
   dibs hook-session       SessionStart hook: reports this session and its
                            transcript to the board. A subprocess rather than an
@@ -222,6 +226,8 @@ func main() {
 		err = mcpStdio(os.Args[2:])
 	case "host-bridge":
 		err = hostBridge(os.Args[2:])
+	case "human-relay":
+		err = humanRelay(os.Args[2:])
 	case "hook-poll":
 		err = hookPoll(os.Args[2:])
 	case "hook-session":
@@ -322,7 +328,7 @@ var commands = []string{
 	"await", "probe", "watch", "monitor", "board", "log", "verify", "doctor",
 	"codex-hooks", "calibrate", "version", "help", "man", "completion", "configure", "messages",
 	"web", "admin",
-	"mcp-config", "mcp-stdio", "host-bridge", "hook-spawn", "hook-poll", "hook-session",
+	"mcp-config", "mcp-stdio", "host-bridge", "human-relay", "hook-spawn", "hook-poll", "hook-session",
 	"identity",
 }
 

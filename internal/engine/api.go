@@ -148,6 +148,27 @@ func (e *Engine) RecentEvents(ctx context.Context, token string, n int) (core.Re
 	})
 }
 
+func filterEvents(evs []core.Event, agent string, all bool) []core.Event {
+	if all {
+		return evs
+	}
+	var out []core.Event
+	for _, ev := range evs {
+		if visibleTo(ev, agent) {
+			out = append(out, ev)
+		}
+	}
+	return out
+}
+
+func (e *Engine) eventsSince(serial uint64, agent string, all bool) []core.Event {
+	i := 0
+	for i < len(e.ring) && e.ring[i].Serial <= serial {
+		i++
+	}
+	return filterEvents(e.ring[i:], agent, all)
+}
+
 // visibleTo is whether an agent may see an event: anything addressed to
 // nobody in particular, to it, or done by it.
 func visibleTo(ev core.Event, agent string) bool {
