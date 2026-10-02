@@ -28,6 +28,7 @@ import (
 	"github.com/agenxy/dibs/internal/invites"
 	"github.com/agenxy/dibs/internal/ledger"
 	"github.com/agenxy/dibs/internal/mcp"
+	"github.com/agenxy/dibs/internal/transfer"
 )
 
 type cloudFixture struct {
@@ -122,7 +123,8 @@ func newCloudFixture(t *testing.T) *cloudFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fail, closePublic, err := startPublic(ctx, cfg, dir, eng, "board-secret", stop)
+	files := transfer.New(ctx, eng, bs, dir)
+	fail, closePublic, err := startPublic(ctx, cfg, dir, eng, "board-secret", stop, files)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -588,6 +590,32 @@ func TestCloudPublicListenerIsWiredIntoDaemonRun(t *testing.T) {
 	r := f.tool(true, "register", map[string]any{"name": "run-worker", "kind": "persistent", "nonce": "run-kept-nonce"})
 	if r["agent_id"] != "run-worker" || r["token"] == "" {
 		t.Fatalf("production startup never served public registration: %v", r)
+	}
+	plain := []byte("<html><script>localStorage.getItem('page_key')</script></html>")
+	upload := authorizeTestUploadWithMime(f, r["token"].(string), plain, "text/html")
+	response := patchTestUpload(t, proxy.Client(), upload, 0, plain, "?1")
+	defer func() { _ = response.Body.Close() }()
+	var stored map[string]any
+	if err := json.NewDecoder(response.Body).Decode(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != 200 || stored["blob"] == nil {
+		t.Fatalf("production startup byte route missing: %d %v", response.StatusCode, stored)
+	}
+	down := f.tool(true, "download", map[string]any{"token": r["token"], "blob": stored["blob"]})
+	descriptor, ok := down["download"].(map[string]any)
+	if !ok {
+		t.Fatalf("production download wiring: %v", down)
+	}
+	got, err := proxy.Client().Get(descriptor["url"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = got.Body.Close() }()
+	assertDownloadIsData(t, got, "application/octet-stream")
+	bytesOut, err := io.ReadAll(got.Body)
+	if err != nil || got.StatusCode != 200 || !bytes.Equal(bytesOut, plain) {
+		t.Fatalf("production download: %d %v", got.StatusCode, err)
 	}
 }
 

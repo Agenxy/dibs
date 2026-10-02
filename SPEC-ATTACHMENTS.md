@@ -285,6 +285,7 @@ store, not a leak of the encryption-at-rest guarantee:
 | attachments per message | 8 | `E_TOO_LARGE` |
 | total blob store size | 1 GiB | evict unreferenced, oldest `created_serial` first; then last-resort cap eviction (A5) |
 | **per-agent blob quota** | 256 MiB | `E_QUOTA` |
+| concurrent upload staging | independently the store cap globally and owner cap per agent | refuse before byte staging; final registry quota/dedup/eviction unchanged |
 | **pins per agent** | 32 | `E_QUOTA` |
 | blob **grace window** (refcount 0, freshly put) | 10 min, measured from `created_serial` | eligible for eviction after |
 | blob **hard TTL** (unreferenced) | 7 days | `blob.evicted{cause:"ttl"}` |
@@ -299,6 +300,19 @@ The **grace window** (freshly-put, not-yet-attached refcount-0 blob) is distinct
 and shorter than the hard TTL: it bounds the put→send race (a caller has ≥10 min to
 attach a blob before it becomes eligible for eviction) without pinning novel content for
 7 days.
+
+**Two caps, not one.** Live objects plus admitted pending ciphertext can occupy
+the registry cap plus the independent staging cap plus encryption overhead.
+This is NOT a strict instantaneous disk ceiling: an object whose final registry
+admission is refused remains an orphan until the periodic reconcile (30 seconds)
+or startup removes it. The disk-space check below includes those real bytes.
+Materialized `out/` copies
+are bounded separately by the live registry (A8); they are not ciphertext.
+All puts share atomic staging reservations. Admission measures free space on
+the blob filesystem, subtracts concurrent reservations conservatively, and
+keeps a 64 MiB ledger safety margin. `E_STAGING_SPACE` tells the caller to free
+disk or request a smaller transfer. This does not change final registry
+eviction or ownership dedup: a full owner can still re-put its own content.
 
 **Staging is gated by a single admission.** `put_blob` spends exactly one rate token,
 in a pre-auth that runs *before* any bytes are hashed/sealed/written: a throttled or
@@ -338,12 +352,13 @@ A4.1), not inline `data`.
 
 ## A11. Non-goals (deliberate exclusions)
 
-- No streaming/chunked transfer, no resumable uploads: v1 of this feature is
-  whole-blob put/get; a 64 MiB cap keeps it simple. (Revisit only with evidence.)
+- ~~No streaming/chunked transfer, no resumable uploads~~: superseded by A13.
+  The evidence arrived: agents on other machines and in cloud containers,
+  where a path is meaningless and base64 through the model is the wrong pipe.
 - No blob mutation: content-addressed blobs are immutable by definition; "editing"
   means putting new content (new id).
-- No cross-machine blob fetch: that arrives with v2 federation (blobs are already
-  content-addressed, so federation is "fetch missing id from the owning node").
+- No cross-machine blob fetch between BOARDS: that arrives with federation.
+  Agents on other machines fetching from their own board is A13.
 - No public blobs: every blob is scoped to owners/participants; there is no
   "board-wide attachment." (Public sharing, if ever wanted, is a separate proposal.)
 - No revocation of the re-share closure (A6.2) in v1: bounded only by caps + TTL.
@@ -356,9 +371,9 @@ message `attachments` (blob ids + advisory filerefs), the §A8 delivery model
 (mode-locked, bounded `out/`), limits, encryption/access/injection rules, and the
 id-validation + write-ordering + oracle-scoping + pre-buffer-cap hardening.
 
-**Explicitly deferred:** streaming, cross-machine fetch, public blobs, chunking,
-re-share revocation/graph-recording. Build the above after this addendum folds into
-SPEC.md as a numbered section.
+**Explicitly deferred:** cross-board fetch, public blobs and re-share
+revocation/graph-recording. Streaming, chunking and cross-machine access to a
+client's own board are A13, not deferred attachment features.
 
 ---
 
@@ -386,3 +401,116 @@ double-charged the rate limiter and could stage-then-fail → single pre-auth ad
 no re-charge at registration (A9.1 "Staging is gated by a single admission"). The pass
 independently confirmed A1, A2.1, A6/A6.1, P2-3, gcBlobs determinism, P1-3, and A9.1 hold
 as built.
+
+## A13. Transfer out of band: upload and download by URL
+
+**Why.** An agent on another machine or in a cloud container cannot use a path
+(the daemon would read ITS disk, which is the wrong file at best and, for an
+invited agent, a read of the hub's filesystem), and base64 in a tool call puts
+the bytes through the model's context and the JSON-RPC payload: slow, bounded
+by the model, and paid for in tokens. The operator's requirement (2026-10-02):
+an upload and download path through Dibs that is efficient, robust, encrypted
+and negotiated automatically. So the bytes move on a separate HTTPS request,
+and the MCP call only authorizes it.
+
+**Aligned with where MCP is going.** SEP-2631 (File Objects and Transfer,
+open, not merged as of 2026-10-02) proposes `files/authorizeUpload` and
+`files/authorizeDownload` returning HTTPS transfer descriptors, so bytes stay
+out of JSON-RPC. A13 is the same shape as Dibs tools now. When the SEP lands,
+the methods are added beside the tools with the same descriptor and the tools
+stay for hosts that have not moved (PHILOSOPHY rule 9: design the 2026 way).
+
+### A13.1 Tools
+
+| Tool | Returns |
+|---|---|
+| `upload(size?, mime?, sha256?, name?)` | `{file, pending:true, upload}`: SEP-shaped file metadata and descriptor (`transport`, `method`, `url`, `headers?`, `expiresAt`). Until completion this is explicitly pending; without a declared digest its independently random `dibs:pending:` handle is NOT the upload capability and cannot download. Completion returns `{blob:"sha256:…", size, mime, deduped, file}`; the committed blob is attachable to `send`. |
+| `download(blob)` | `{file, download}`: file metadata (`uri`, `size`, `mimeType`, `digest`) and the GET descriptor. `digest` uses `algorithm:"sha-256"` with unpadded base64url, not hexadecimal. A6 access is checked at authorization and again on each transfer request. |
+
+`put_blob(data)` stays for small inline content and for hosts with no way to
+make an HTTP request (a ChatGPT web conversation). `put_blob(path)` and
+`get_blob(as: "path")` stay for an agent on the board's own machine, where
+they are zero-copy, and are refused for an invite (NETWORK.md §9).
+
+### A13.2 The transfer endpoints
+
+- Plain `PUT /files/up/<ticket>` completes one upload; resumable
+  `PATCH`/`HEAD`/`DELETE` use the same upload resource. `GET`/`HEAD /files/<ticket>`
+  downloads on the board's
+  own listeners: the pinned listener for joined machines, the public listener
+  for invites (NETWORK.md §9). Nothing new to configure.
+- **A ticket is a capability**: random, single-purpose (one upload or one
+  blob), bound to the agent that asked, short-lived (default 15 minutes, and
+  the upload ticket stays valid while bytes are arriving), and held in memory
+  only. Possessing it is the authorization for that one transfer and nothing
+  else, so it may be handed to `curl`, but must not be logged. Every request
+  rechecks the creator's immutable ID and creation evidence, blob access, and
+  for invites the verifier digest, issuer generation, expiry and revocation.
+- **Uploads resume across a cut connection**: implement the measured subset
+  of [draft-ietf-httpbis-resumable-upload-12](https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-resumable-upload-12),
+  with interop version 9. Appends use `PATCH` and
+  `application/partial-upload`, structured `Upload-Complete: ?0|?1`, and
+  `Upload-Offset`; `HEAD` returns offset/completeness/length/limits. An offset
+  mismatch is 409 with the correct offset. DELETE cancels. Plain PUT is the
+  convenient complete-upload operation, not a claim that arbitrary partial PUT
+  conforms to the draft.
+- **Downloads take `Range`** and send `ETag` = the blob id, so a client resumes
+  and caches by standard HTTP.
+- **Transferred content is data, never board-origin code.** Every `/files/`
+  response sends `Content-Security-Policy: sandbox; default-src 'none'`,
+  `X-Content-Type-Options: nosniff` and attachment disposition. Downloads use
+  an RFC 6266 `filename*` with a digest basename. HTML, XML (including SVG and
+  `+xml` types) and JavaScript/ECMAScript types are served as
+  `application/octet-stream`; the declared MIME remains in JSON metadata.
+- **Streamed**: bytes go straight to an encrypted temp file in the blob store, hashed as
+  they arrive, never held whole in memory, and are committed to the
+  content-addressed store (encrypted at rest, A3) only when the hash is
+  known. A declared `sha256` that does not match is refused and nothing is
+  stored. Size and quota (A9) are enforced as bytes arrive, not after. Bounded,
+  atomic staging reservations are independent of the live-registry cap (A9),
+  with free-space admission and conservative future ownership checks. They are released on
+  cancellation, expiry or terminal failure; stalled tickets cannot consume
+  unbounded disk, memory or quota.
+
+### A13.3 Encryption and negotiation
+
+- Off the machine, always TLS 1.3, on the same certificate the client already
+  trusts for `/mcp`: the pinned self-signed certificate for joined machines,
+  the public certificate for invites. The client negotiates nothing new.
+- A loopback-only public proxy owns public-edge TLS; forwarded headers are not
+  evidence of it. `dibs doctor` measures the live public origin without sending
+  credentials and warns below TLS 1.3, explaining the operator-owned fix.
+- On the board's own machine the bytes travel over loopback, which never
+  leaves the host. The CLI streams even over loopback: an address alone is not
+  host identity (an SSH forward may point at another machine). Explicit local
+  `put_blob(path)` remains available without silently guessing where a file lives.
+- At rest, versioned streaming objects use pinned `github.com/minio/sio`
+  v0.5.1 DARE 2.0 AES-256-GCM with authenticated final segments and chunk-range
+  readers. Each object has a unique random key, wrapped with its plaintext
+  digest and length under the existing daemon key. Legacy single-shot blobs
+  remain readable. Corruption, truncation and reordering are refused; plaintext
+  never stages on disk. The local-only `transport:"http"` descriptor extension
+  is not SEP-2631's HTTPS transport and is never offered off-machine.
+
+### A13.4 The client side
+
+`dibs put <file> [--mime …]` and `dibs get <blob> [-o path]` do the whole
+exchange: ask the board for a ticket over MCP or HTTP, transfer with resume and
+retries, verify the hash, and print the blob id (put) or write the file
+(get). Any HTTP client works against the descriptor (`curl -T file "$url"`),
+which is what an agent without the CLI uses.
+
+### A13.5 Ledger
+
+Unchanged: a blob's existence and refcount are what A4 already records.
+Tickets are ephemeral: v1 resumes after connection loss, but daemon restart
+loses incomplete uploads. A fresh ticket starts at offset zero, never pretends
+to retain an offset it lost, and costs no coordination state.
+
+**Required phase two, a separate PR:** uploads declaring both digest and size
+resume across daemon restart. Their encrypted temp and a small 24-hour manifest
+remain outside the ledger: creator ID plus creation evidence, declared digest
+and size, offset, expiry, and invite verifier/issuer generation where applicable.
+A newly authorized ticket for that same creator and declared content reattaches
+after revalidating authority and quota. Undeclared uploads remain ephemeral.
+This requirement is not satisfied by v1 connection-resume tests.

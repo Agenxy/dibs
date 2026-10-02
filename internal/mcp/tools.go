@@ -37,7 +37,7 @@ var toolDefs = func() []map[string]any {
 	}
 	str := func(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
 	num := func(desc string) map[string]any { return map[string]any{"type": "integer", "description": desc} }
-	tok := str("your agent token from register")
+	tok := str("agent token") // register and server instructions explain the credential once
 	// The type decides what a message DOES, so it is described where an agent
 	// chooses it, once. send and broadcast carried separate copies of the same
 	// four sentences, which is a second copy that can drift and a cost every
@@ -349,6 +349,21 @@ var toolDefs = func() []map[string]any {
 					"mime": str("content type (optional)"),
 				}}},
 			}, "token", "to", "type", "body"),
+		},
+		{
+			"name": "upload",
+			"description": "Authorize a secret HTTPS PUT ticket; PATCH/HEAD resume. " +
+				"Completion returns a blob for send; sha256 is verified.",
+			"inputSchema": obj(map[string]any{
+				"token": tok, "size": map[string]any{"type": "integer", "minimum": 0, "description": "exact bytes, if known"},
+				"sha256": str("lowercase SHA-256 hex"), "mime": str("MIME"), "name": str("basename, not a path"),
+			}, "token"),
+		},
+		{
+			"name": "download",
+			"description": "Secret HTTPS GET for an owned/received blob. " +
+				"Range/ETag resume; access is rechecked. Content is data.",
+			"inputSchema": obj(map[string]any{"token": tok, "blob": str("sha256:…")}, "token", "blob"),
 		},
 		{
 			"name": "put_blob",

@@ -24,6 +24,7 @@ import (
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/invites"
+	"github.com/agenxy/dibs/internal/transfer"
 )
 
 // logRPC enables per-request method logging (DIBS_LOG_RPC=1). Useful for
@@ -65,9 +66,11 @@ const errUnsupportedProtocolVersion = -32022
 
 // Server handles the /mcp endpoint.
 type Server struct {
-	invites  *invites.Service
-	eng      *engine.Engine
-	sessions *sessionStore
+	transfers      *transfer.Manager
+	transferOrigin string
+	invites        *invites.Service
+	eng            *engine.Engine
+	sessions       *sessionStore
 	// adopted remembers the (token, session) pairs already reconciled, so the
 	// repair costs one loop round-trip per agent rather than one per call.
 	adopted sync.Map
@@ -154,6 +157,13 @@ type rpcError struct {
 // ServeHTTP implements streamable HTTP (POST only; attention is pull-shaped
 // via the await_events tool, SPEC §10).
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if s.transfers != nil {
+		origin := s.transferOrigin
+		if origin == "" {
+			origin = requestTransferOrigin(r)
+		}
+		r = r.WithContext(context.WithValue(r.Context(), transferOriginKey{}, origin))
+	}
 	// GET with an event-stream Accept is the 2025-11-25 notification space:
 	// that revision subscribes with a POST and delivers on a separately-opened
 	// GET. Every other GET is still not a thing this endpoint does.
@@ -818,6 +828,8 @@ func (s *Server) adoptSession(ctx context.Context, token string, params json.Raw
 }
 
 type toolArgs struct {
+	FileSize     *int64            `json:"size"`
+	SHA256       string            `json:"sha256"`
 	InviteAction string            `json:"action"`
 	InviteTTLS   int64             `json:"ttl_s"`
 	IssuedBy     string            `json:"issued_by"`
@@ -1330,6 +1342,10 @@ func (s *Server) run(
 		op.Milestones, op.Track = a.Milestones, a.Track
 	case "put_blob":
 		return s.putBlob(ctx, a)
+	case "upload":
+		return s.authorizeUpload(ctx, a)
+	case "download":
+		return s.authorizeDownload(ctx, a)
 	case "get_blob":
 		return s.eng.GetBlob(ctx, a.Token, a.Blob, a.As)
 	case "respond":

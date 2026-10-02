@@ -41,6 +41,7 @@ import (
 	"github.com/agenxy/dibs/internal/notify"
 	"github.com/agenxy/dibs/internal/paths"
 	"github.com/agenxy/dibs/internal/supgang"
+	"github.com/agenxy/dibs/internal/transfer"
 	xport "github.com/agenxy/dibs/internal/transport"
 	"github.com/agenxy/dibs/internal/web"
 )
@@ -408,6 +409,8 @@ func run() error {
 
 	mux := http.NewServeMux()
 	mcpSrv := mcp.New(eng)
+	files := transfer.New(ctx, eng, bs, *dir)
+	mcpSrv.SetTransfers(files, "")
 	mcpSrv.SetTaskKey(secret) // task ids survive a restart; see mcp/tasks.go
 	inviteService := &invites.Service{
 		Engine: eng, Store: invites.Store{Dir: *dir}, Policy: cfg.Invites, URL: publicCfg.URL,
@@ -425,6 +428,7 @@ func run() error {
 	registerWakeAPI(mux, eng, secret)
 	registerAdminAPI(mux, eng)
 	registerInvitationAPI(mux, inviteService)
+	registerTransferStatus(mux, publicCfg.URL)
 
 	tr, err := resolveTransport(*dir, listenAddr, askedScheme, cfg)
 	if err != nil {
@@ -434,7 +438,7 @@ func run() error {
 	gate.SetNames(cfg.Name)
 	registerHumanAPI(mux, eng, gate, *dir)
 	srv := &http.Server{
-		Addr: listenAddr, Handler: gate.wrap(mux),
+		Addr: listenAddr, Handler: fileRoutes(files, gate.wrap(mux)),
 		ReadHeaderTimeout: 5 * time.Second,
 		// No global write timeout: long-polls and SSE hold connections open.
 	}
@@ -497,7 +501,7 @@ func run() error {
 		}
 		tlsPair = []tls.Certificate{cert}
 	}
-	publicFailure, closePublic, err := startPublic(ctx, publicCfg, *dir, eng, secret, stop)
+	publicFailure, closePublic, err := startPublic(ctx, publicCfg, *dir, eng, secret, stop, files)
 	if err != nil {
 		_ = ln.Close()
 		return err

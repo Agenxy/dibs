@@ -7,6 +7,19 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Out-of-band, encrypted file transfer.** `upload`/`download` return short-lived
+  file descriptors; resumable PATCH/HEAD moves bytes outside MCP and model context.
+  `dibs put`/`dibs get` retry cut connections and verify hashes. Versioned DARE 2
+  chunks authenticate ciphertext and final segments while legacy blobs remain
+  readable. Invitation revocation, identity replacement and blob-access loss
+  invalidate tickets; concurrent staging is bounded. Native off-host transfer
+  requires TLS 1.3; doctor measures the operator's public TLS-proxy edge.
+  Downloads are forced attachments with sandboxed, non-executable response
+  types; uploader-declared types remain metadata, not board-origin authority.
+  Shutdown invalidates interrupted tickets rather than leaving an aborted stage usable.
+  Phase one resumes connections, not incomplete uploads after daemon restart;
+  declared-digest-and-size restart resume is a separate required follow-up.
+
 - **Scoped cloud-agent invitations, without a human per worker.** Local agents
   issue one-agent credentials and paste-ready MCP configuration with `invite`;
   the CLI uses `DIBS_TOKEN` for the same policy. Default: own-prefix children,
@@ -16,7 +29,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   closure and purge bite on the next call; close generations rebuild from full
   replay, so reopening an issuer does not resurrect its children. Invited
   agents cannot mint grandchildren even after a role grant.
-  A separate invite-only public listener opens POST `/mcp`, never private
+  A separate invite-only public listener opens POST `/mcp` and scoped
+  capability-authenticated `/files/` resources, never private
   routes, sessions, wake streams or hub filesystem paths. `--public-url`
   supports a loopback TLS proxy; `--public-host` supports ACME with explicit
   `--acme-accept-terms` and port 443. Trusted-HTTPS fixtures exercise real
@@ -277,7 +291,7 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with who made it, and the board row shows the last one. A running agent, the
   environment it already runs in, an agent on another machine and the person's
   own row are refused.
-  The server now publishes 48 tools, including scoped cloud invitation issuance.
+  The server now publishes 50 tools, including scoped cloud invitations and file transfer.
 
 ### Changed
 

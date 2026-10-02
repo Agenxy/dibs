@@ -14,6 +14,7 @@
 package blobstore
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -225,17 +226,24 @@ func (s *Store) PutFile(path string, maxSize int) (id string, size int64, err er
 	if fi.Size() > int64(maxSize) {
 		return "", 0, ErrTooLarge
 	}
-	// LimitReader guards against races where the file grows after the stat.
-	plain, err := io.ReadAll(io.LimitReader(f, int64(maxSize)+1))
+	u, err := s.BeginUpload(int64(maxSize))
 	if err != nil {
 		return "", 0, err
 	}
-	return s.Put(plain, maxSize)
+	defer u.Abort()
+	if _, err := io.Copy(u, io.LimitReader(f, int64(maxSize)+1)); err != nil {
+		return "", 0, err
+	}
+	return u.Commit("")
 }
 
 // atomicWrite writes to a temp file, fsyncs it, renames into place, and fsyncs
 // the parent dir, so the bytes are durable before the caller ledgers the ref.
 func (s *Store) atomicWrite(dst string, data []byte) error {
+	return s.atomicCopy(dst, bytes.NewReader(data))
+}
+
+func (s *Store) atomicCopy(dst string, source io.Reader) error {
 	dir := filepath.Dir(dst)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
@@ -246,7 +254,7 @@ func (s *Store) atomicWrite(dst string, data []byte) error {
 	}
 	tmpName := tmp.Name()
 	cleanup := func() { _ = tmp.Close(); _ = os.Remove(tmpName) }
-	if _, err := tmp.Write(data); err != nil {
+	if _, err := io.Copy(tmp, source); err != nil {
 		cleanup()
 		return err
 	}
@@ -280,18 +288,12 @@ func fsyncDir(dir string) error {
 
 // Read returns the decrypted bytes of a blob, or ErrMissing if its file is gone.
 func (s *Store) Read(id string) ([]byte, error) {
-	p, err := s.blobPath(id)
+	r, err := s.Open(id)
 	if err != nil {
 		return nil, err
 	}
-	sealed, err := os.ReadFile(p) //nolint:gosec // G304: p derives from a strictly id-validated blobPath
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, ErrMissing
-		}
-		return nil, err
-	}
-	return s.box.OpenBytes(sealed)
+	defer func() { _ = r.Close() }()
+	return io.ReadAll(r)
 }
 
 // Materialize writes a blob's decrypted bytes to out/<id> (0600) and returns
@@ -305,11 +307,12 @@ func (s *Store) Materialize(id string) (string, error) {
 	if fi, statErr := os.Stat(p); statErr == nil && fi.Mode().IsRegular() {
 		return p, nil // already materialized
 	}
-	plain, err := s.Read(id)
+	r, err := s.Open(id)
 	if err != nil {
 		return "", err
 	}
-	if err := s.atomicWrite(p, plain); err != nil {
+	defer func() { _ = r.Close() }()
+	if err := s.atomicCopy(p, r); err != nil {
 		return "", err
 	}
 	return p, nil
