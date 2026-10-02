@@ -301,8 +301,12 @@ and shorter than the hard TTL: it bounds the put→send race (a caller has ≥10
 attach a blob before it becomes eligible for eviction) without pinning novel content for
 7 days.
 
-**Two caps, not one.** Ciphertext disk can hold the live registry cap plus the
-independent staging cap plus encryption overhead. Materialized `out/` copies
+**Two caps, not one.** Live objects plus admitted pending ciphertext can occupy
+the registry cap plus the independent staging cap plus encryption overhead.
+This is NOT a strict instantaneous disk ceiling: an object whose final registry
+admission is refused remains an orphan until the periodic reconcile (30 seconds)
+or startup removes it. The disk-space check below includes those real bytes.
+Materialized `out/` copies
 are bounded separately by the live registry (A8); they are not ciphertext.
 All puts share atomic staging reservations. Admission measures free space on
 the blob filesystem, subtracts concurrent reservations conservatively, and
