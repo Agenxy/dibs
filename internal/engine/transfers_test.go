@@ -132,7 +132,6 @@ func TestTransferFreeSpaceAdmissionAndIdentityFence(t *testing.T) {
 		t.Fatalf("disk admission: %v", err)
 	}
 	if _, err := e.query(ctx, func() core.Result {
-		e.SetBlobs(newMemBlobs())
 		if len(e.transfers) != 0 {
 			t.Error("failed disk admission stranded reservation")
 		}
@@ -140,6 +139,9 @@ func TestTransferFreeSpaceAdmissionAndIdentityFence(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	// Never replace a port on a running engine: the off-thread reconcile owns
+	// the original adapter too. A second real fixture models available space.
+	e, token, ctx = transferEngineFixture(t, newMemBlobs())
 	id, err := e.AuthorizeTransfer(ctx, token, "", &size)
 	if err != nil {
 		t.Fatal(err)

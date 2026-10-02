@@ -6,13 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"net"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	xport "github.com/agenxy/dibs/internal/transport"
 )
 
 func writeJSON(w http.ResponseWriter, status int, value any) {
@@ -126,9 +126,7 @@ func transferTransport(r *http.Request, origin string, proxy bool) error {
 	if given := r.Header.Get("Origin"); given != "" && given != origin {
 		return refusal("E_ORIGIN", "forbidden transfer origin", "use the descriptor's configured origin")
 	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	ip := net.ParseIP(host)
-	loopback := err == nil && ip != nil && ip.IsLoopback()
+	loopback := xport.IsLoopback(r.RemoteAddr)
 	if r.TLS != nil && r.TLS.Version >= tls.VersionTLS13 {
 		return nil
 	}

@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"context"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -32,9 +31,7 @@ func requestTransferOrigin(r *http.Request) string {
 		return ""
 	}
 	if r.TLS == nil {
-		host, _, err := net.SplitHostPort(r.RemoteAddr)
-		ip := net.ParseIP(host)
-		if err != nil || ip == nil || !ip.IsLoopback() || !xport.IsLoopback(u.Host) {
+		if !xport.IsLoopback(r.RemoteAddr) || !xport.IsLoopback(u.Host) {
 			return "" // plaintext descriptors are a same-machine loopback extension only
 		}
 	}
