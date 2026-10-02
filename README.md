@@ -412,6 +412,22 @@ command the operator of that machine wrote, and reports. `dibs host-bridge
 --service`, with the same variables, writes the launchd or systemd unit that
 keeps the bridge running across logins and reboots.
 
+**You hear from the board on your own Mac, wherever it runs.** Mail addressed
+to you (a question, a request to approve, a handoff) raises a notification on
+the machine running the board, which is the wrong place once that is a server.
+Run the human relay on your Mac with the same two variables:
+
+```sh
+dibs human-relay enroll    # once: makes a key in this Mac's Secure Enclave, asks the board's admin password
+dibs human-relay           # one Touch ID, then your mail shows here and your answers go back
+```
+
+The board then sends your mail to the relay instead of its own screen. Your
+answers are signed by that key, which signs only after Touch ID, so the board
+checks a person answered rather than trusting the connection; approving a
+request that grants something asks for a finger on that approval. The relay
+never holds the board's secret. `docs/NETWORK.md` §8 has the argument.
+
 If the hub is a plaintext loopback daemon, which is the default, forward a port
 to it rather than exposing it to the network:
 

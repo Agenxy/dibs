@@ -36,6 +36,7 @@ type Engine struct {
 	blobs    Store
 	prober   Prober
 	ring     []core.Event
+	relays   humanRelays // the person's own Macs, see humanrelay.go
 	ringCap  int
 	buckets  map[string]*bucket
 	resumeAt map[string]time.Time // per-agent resume rate limit (1/10s)
@@ -1048,13 +1049,19 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 			// The daemon already reports this once at startup, as a fault, which
 			// tells the OPERATOR. It does not tell the sender, and the sender is
 			// the one making a decision about whether to keep waiting.
-			if !notify.Available() {
+			switch {
+			case e.HumanRelays() > 0:
+				// The person's own Mac is attached: tell them THERE, not on
+				// this machine's screen, which may be a server nobody is
+				// in front of. docs/NETWORK.md §8.
+				go e.relayOrNotify(from, who, op.MsgType, op.Body, serial, op.Choices, op.Grant, op.Adopt)
+			case !notify.Available():
 				res["notified"] = false
 				res["notify_hint"] = "delivered to their mailbox, but this machine has " +
 					"no way to raise a desktop notification, so they will see it when " +
 					"they next look at the board rather than now. Do not wait on it as " +
 					"though they had been interrupted"
-			} else {
+			default:
 				// Off the loop: an alert waits for somebody to press a button, and
 				// the single writer holding still for two minutes would stop the
 				// board while one person decides.
@@ -1323,27 +1330,6 @@ func (e *Engine) allow(agentID string, now time.Time) bool {
 	}
 	b.tokens--
 	return true
-}
-
-func filterEvents(evs []core.Event, agent string, all bool) []core.Event {
-	if all {
-		return evs
-	}
-	var out []core.Event
-	for _, ev := range evs {
-		if visibleTo(ev, agent) {
-			out = append(out, ev)
-		}
-	}
-	return out
-}
-
-func (e *Engine) eventsSince(serial uint64, agent string, all bool) []core.Event {
-	i := 0
-	for i < len(e.ring) && e.ring[i].Serial <= serial {
-		i++
-	}
-	return filterEvents(e.ring[i:], agent, all)
 }
 
 // SetRingCap bounds the event ring. The default is SPEC §10's 65,536; a test
