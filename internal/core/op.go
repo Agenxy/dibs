@@ -1,5 +1,7 @@
 package core
 
+import "time"
+
 // The command vocabulary: the Op type and nothing that folds it.
 //
 // Split out of apply.go, which reached the 2000-line limit. The division is
@@ -15,6 +17,11 @@ package core
 // decisions rather than recomputing them (SPEC §2, §4).
 type Op struct {
 	Kind string `json:"kind"`
+
+	// RetainUntil records the engine's review-retention decision once, on a
+	// response. Nil preserves historical operations' original GC behavior.
+	// The engine replaces any ingress value; replay applies the recorded date.
+	RetainUntil *time.Time `json:"retain_until,omitempty"`
 
 	// ClaimVerified records that the engine checked a coordinator claim against
 	// the daemon's own data directory. An impure input, so the VERDICT is

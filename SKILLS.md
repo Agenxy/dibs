@@ -397,8 +397,13 @@ receiving native peer turns, another watcher adds no delivery guarantee.
   `milestone_reviews`: unreviewed, accepted or flagged, with who and when.
   A new worker report makes that step unreviewed again. An informational
   notice delivered in a Stop continuation does not keep stopping later turns.
-  A flag wakes you and cancels
-  nothing: the task is still yours. Done wakes the sender and says where the
+  A flag wakes you and cancels nothing. After done, report a correction with
+  progress while a flag remains; the original done verdict and artifact stay
+  intact. A whole-work flag clears only with a milestone-zero progress note or
+  accept, not a numbered step. New answers and completed work stay readable
+  for 24 hours after the latest response; unresolved flags retain the record
+  subject to the existing 128-terminal-message limit and loss watermark.
+  Historical records keep their original retention. Done wakes the sender and says where the
   work landed, so nobody has to watch a file to find out. Add `track: true`
   and a host that supports MCP tasks follows the request as one (`tasks/get`,
   `notifications/tasks`), with the newest step as its status; some hosts

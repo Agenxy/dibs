@@ -506,7 +506,7 @@ Messages go agent → agent; identity = send serial; bodies private (§4, §5).
 retention, and GC):**
 
 ```
-Terminal(m) ⇔ m.state ∈ {answered, approved, denied, declined,
+Terminal(m) ⇔ m.state ∈ {answered, approved, done, denied, declined,
                          expired_unanswered, expired_recipient_dormant,
                          expired_recipient_dead, displaced}
             ∨ (m.state = acked ∧ m.type ∈ {notify, handoff})
@@ -548,12 +548,21 @@ recipient's `respond` (responding proves receipt). GC eligibility requires
   flag above): post-receipt by definition: the client sends it only after it has
   the body. Until consumed, the message keeps appearing in `inbox`/checkpoints
   (idempotent reads); once `Terminal ∧ consumed`, it is GC-eligible **after a
-  15-minute consumed-retention window** (erratum E1, found by real-agent
+  recorded review-retention deadline, or the legacy 15-minute window when no
+  deadline was recorded** (erratum E1, found by real-agent
   testing: without the window, GC raced the *sender's* `read_mail` of the
   response: respond marks consumed instantly, and the outcome vanished within
-  a sweep tick).
+  a sweep tick). New responses record `retain_until` once in the originating
+  op: normally 24 hours after that response. An unresolved review flag uses an
+  explicit distant deadline until correction or acceptance; the terminal cap
+  still applies. Legacy ops omit this field and replay their original GC
+  decisions unchanged. Sweeps do not generate extra retention-update ops.
+  Progress on done is allowed only while a review flag is unresolved, and
+  appends a correction without changing the original done verdict, response,
+  deliverable or owed-work status. Clearing a flag matches its exact milestone;
+  a milestone-zero whole-work flag needs milestone-zero progress or accept.
 - **Loss is observable, not just ledgered.** When retention caps force eviction of
-  *unconsumed* mail (128 terminal/agent, oldest-first), the recipient's replayable
+  retained terminal mail (128 terminal/agent, oldest-first), the recipient's replayable
   **`truncated_before_serial`** watermark advances past the evicted serial and is
   returned by `inbox()` and `check_in()`. A recipient whose cursor precedes its
   watermark *knows* mail in that range may be gone: even after ring rollover or

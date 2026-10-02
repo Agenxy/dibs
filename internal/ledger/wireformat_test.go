@@ -94,7 +94,10 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 	}
 	// The op payload: the union of every tag that reached disk above.
 	wantOp := map[string]bool{
-		"kind": true, "agent": true, "name": true, "pid": true, "token": true,
+		// A new response's recorded review-retention decision. Older operations
+		// omit it and retain their historical GC semantics; never rename it.
+		"retain_until": true,
+		"kind":         true, "agent": true, "name": true, "pid": true, "token": true,
 		"nonce": true, "agent_kind": true, "session_id": true, "agent_id": true,
 		// A nonce the DAEMON generated for a caller that sent none, used only
 		// if the registration creates an agent. Added in v0.0.7 when persistent became the default
@@ -421,18 +424,19 @@ const (
 	// `release_session` and `v7_semantics`, again for `session_taken_from`,
 	// again for `session_alias_taken_from`, again for `registered_from`, and
 	// again for `index_supplied`, again for `merge_into`, again for `waiting`
-	// and `recheck_sec`, and again for `keep_owed`: one new tag each
+	// and `recheck_sec`, again for `keep_owed`, and again for `retain_until`: one new tag each
 	// time, no rename. If you are here because a sweep moved
 	// this value, the sweep is the bug, and the tag it renamed is the data
 	// loss.
-	frozenOpFingerprint       = "sha256:f596ea8497421709"
+	frozenOpFingerprint       = "sha256:fedae2b28c34b631"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`
 	// renames the adjacent `"grant": true` with it and this test goes on
 	// passing: the exact co-edited-guard failure AGENTS.md describes, in the
 	// guard written to stop it. Found by a pre-release review.
-	frozenMessageFingerprint = "sha256:e7b9c032f7150242"
+	// Updated for the newly added retain_until decision, with no renamed tags.
+	frozenMessageFingerprint = "sha256:8f0ece384e9d1b03"
 	// The identity inside op.agent. Set when the fingerprint was added; one
 	// new tag at a time from here, never a rename.
 	frozenAgentFingerprint = "sha256:c630d3cc9f27eb95"
@@ -571,6 +575,7 @@ func TestOpKindStringsAreFrozen(t *testing.T) {
 // the two op kinds above.
 func TestLedgerMessageFieldNamesAreFrozen(t *testing.T) {
 	frozen := map[string]bool{
+		"retain_until": true, // originating response decision, absent on legacy mail
 		// The agent an adoption moved this message FROM, set by the fold on the
 		// move so read_mail can tell mail an heir was given from mail a reused id
 		// inherited. Added in v0.0.7 with the pre-release review's finding that
