@@ -122,6 +122,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Milestone acknowledgments survive a daemon restart.** Dismissing a retained
+  progress or review event before any notice map has been created no longer
+  crashes the board. Acknowledgment remains derived and does not review or
+  consume the parent request.
+
 - **An old cleanup snapshot no longer deletes a newly registered blob.**
   Registration takes its own writer-owned hold before enqueue, surviving caller
   cancellation until commit or refusal, then transfers protection to an extra
