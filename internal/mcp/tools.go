@@ -112,6 +112,21 @@ var toolDefs = func() []map[string]any {
 			}, "nonce", "resume_id"),
 		},
 		{
+			"name": "invite",
+			"description": "Mint cloud access/config; key private, shown once. " +
+				"Local issuers: own prefix, 4 live/7d default. Coordinators may name agents; invitees cannot mint.",
+			"inputSchema": obj(map[string]any{
+				"token": str("issuer token"),
+				"action": map[string]any{
+					"type": "string", "enum": []string{"mint", "list", "revoke"},
+					"description": "default: mint",
+				},
+				"name":      str("default: <issuer>-cloud-N"),
+				"ttl_s":     num("lifetime seconds"),
+				"issued_by": str("revoke own children; name OR issued_by"),
+			}, "token"),
+		},
+		{
 			"name": "check_in",
 			"description": "Acknowledge the board: required once per activation, before declare " +
 				"or claim. One atomic checkpoint: the board (one row per agent; detail true " +

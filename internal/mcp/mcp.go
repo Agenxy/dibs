@@ -23,6 +23,7 @@ import (
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/engine"
+	"github.com/agenxy/dibs/internal/invites"
 )
 
 // logRPC enables per-request method logging (DIBS_LOG_RPC=1). Useful for
@@ -64,6 +65,7 @@ const errUnsupportedProtocolVersion = -32022
 
 // Server handles the /mcp endpoint.
 type Server struct {
+	invites  *invites.Service
 	eng      *engine.Engine
 	sessions *sessionStore
 	// adopted remembers the (token, session) pairs already reconciled, so the
@@ -194,6 +196,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// context, the way clientInfo travels from the handshake.
 	r = r.WithContext(withTransportHost(r.Context(), isLoopback(r.RemoteAddr), s.eng.HostID()))
 	r = r.WithContext(context.WithValue(r.Context(), requestEraKey{}, requestEra(r, req.Params)))
+	inviteCtx, inviteErr := prepareInvitedRequest(r.Context(), &req)
+	if inviteErr != nil {
+		writeRPC(w, http.StatusOK, req.ID, nil, inviteErr)
+		return
+	}
+	r = r.WithContext(inviteCtx)
 
 	if req.ID == nil { // notification (e.g. legacy notifications/initialized)
 		w.WriteHeader(http.StatusAccepted)
@@ -810,53 +818,56 @@ func (s *Server) adoptSession(ctx context.Context, token string, params json.Raw
 }
 
 type toolArgs struct {
-	Token       string            `json:"token"`
-	Name        string            `json:"name"`
-	Description string            `json:"description"`
-	PID         int               `json:"pid"`
-	Nonce       string            `json:"nonce"`
-	ResumeID    string            `json:"resume_id"`
-	Kind        string            `json:"kind"`
-	SlotID      string            `json:"slot_id"`
-	Text        string            `json:"text"`
-	Dirs        []string          `json:"dirs"`
-	Activity    string            `json:"activity"`
-	Waiting     string            `json:"waiting"`
-	Recheck     string            `json:"recheck_after"`
-	Holds       []string          `json:"holds"`
-	To          string            `json:"to"`
-	Type        string            `json:"type"`
-	Body        string            `json:"body"`
-	DeadlineSec int               `json:"deadline_s"`
-	Choices     []string          `json:"choices"`
-	Milestones  []string          `json:"milestones"`
-	Track       bool              `json:"track"`
-	Milestone   int               `json:"milestone"`
-	Deliverable string            `json:"deliverable"`
-	Grant       string            `json:"grant"`
-	Adopt       string            `json:"adopt"`
-	OpID        string            `json:"op_id"`
-	MsgSerial   uint64            `json:"msg_serial"`
-	Disposition string            `json:"disposition"`
-	Path        string            `json:"path"`
-	Mode        string            `json:"mode"`
-	Note        string            `json:"note"`
-	Since       uint64            `json:"since_serial"`
-	TimeoutSec  int               `json:"timeout_s"`
-	Attachments []core.Attachment `json:"attachments"`
-	Data        string            `json:"data"` // put_blob: base64 content
-	Mime        string            `json:"mime"`
-	Blob        string            `json:"blob"` // get_blob: id
-	As          string            `json:"as"`
-	Refs        []string          `json:"refs"`
-	SessionID   string            `json:"session_id"`
-	Transcript  string            `json:"transcript_path"`
-	AgentID     string            `json:"agent_id"`
-	AgentType   string            `json:"agent_type"`
-	ToolName    string            `json:"tool_name"`
-	TurnID      string            `json:"turn_id"`
-	Progress    int64             `json:"progress"`
-	Event       string            `json:"event"`
+	InviteAction string            `json:"action"`
+	InviteTTLS   int64             `json:"ttl_s"`
+	IssuedBy     string            `json:"issued_by"`
+	Token        string            `json:"token"`
+	Name         string            `json:"name"`
+	Description  string            `json:"description"`
+	PID          int               `json:"pid"`
+	Nonce        string            `json:"nonce"`
+	ResumeID     string            `json:"resume_id"`
+	Kind         string            `json:"kind"`
+	SlotID       string            `json:"slot_id"`
+	Text         string            `json:"text"`
+	Dirs         []string          `json:"dirs"`
+	Activity     string            `json:"activity"`
+	Waiting      string            `json:"waiting"`
+	Recheck      string            `json:"recheck_after"`
+	Holds        []string          `json:"holds"`
+	To           string            `json:"to"`
+	Type         string            `json:"type"`
+	Body         string            `json:"body"`
+	DeadlineSec  int               `json:"deadline_s"`
+	Choices      []string          `json:"choices"`
+	Milestones   []string          `json:"milestones"`
+	Track        bool              `json:"track"`
+	Milestone    int               `json:"milestone"`
+	Deliverable  string            `json:"deliverable"`
+	Grant        string            `json:"grant"`
+	Adopt        string            `json:"adopt"`
+	OpID         string            `json:"op_id"`
+	MsgSerial    uint64            `json:"msg_serial"`
+	Disposition  string            `json:"disposition"`
+	Path         string            `json:"path"`
+	Mode         string            `json:"mode"`
+	Note         string            `json:"note"`
+	Since        uint64            `json:"since_serial"`
+	TimeoutSec   int               `json:"timeout_s"`
+	Attachments  []core.Attachment `json:"attachments"`
+	Data         string            `json:"data"` // put_blob: base64 content
+	Mime         string            `json:"mime"`
+	Blob         string            `json:"blob"` // get_blob: id
+	As           string            `json:"as"`
+	Refs         []string          `json:"refs"`
+	SessionID    string            `json:"session_id"`
+	Transcript   string            `json:"transcript_path"`
+	AgentID      string            `json:"agent_id"`
+	AgentType    string            `json:"agent_type"`
+	ToolName     string            `json:"tool_name"`
+	TurnID       string            `json:"turn_id"`
+	Progress     int64             `json:"progress"`
+	Event        string            `json:"event"`
 	// StopActive is the harness's stop_hook_active: this turn is already
 	// running because a stop hook continued it. Typed loosely because it
 	// arrives as the string a template substitution produced on one harness and
@@ -1013,9 +1024,17 @@ func (s *Server) callTool(
 	if rpcErr != nil {
 		return nil, rpcErr
 	}
+	var inviteErr error
+	ctx, inviteErr = prepareInvitedTool(ctx, call.Name, &a)
+	if inviteErr != nil {
+		b, _ := json.Marshal(inviteErr)
+		return map[string]any{"isError": true, "content": []map[string]any{{"type": "text", "text": string(b)}}}, nil
+	}
 	// Attach the agent to the session it is actually running in, if nothing
 	// has. Before the call, so `check_in`'s own answer already reflects it.
-	s.adoptSession(ctx, a.Token, params)
+	if _, invited := engine.InvitationFrom(ctx); !invited {
+		s.adoptSession(ctx, a.Token, params)
+	}
 
 	res, err := s.run(ctx, call.Name, &a, params, sessionClient)
 	if err != nil {
@@ -1216,7 +1235,13 @@ func (s *Server) run(
 	if op.SessionAlias == "" {
 		op.SessionAlias = metaSession(params)
 	}
+	if _, invited := engine.InvitationFrom(ctx); invited {
+		op.SessionAlias = ""
+		op.NoProcess = true
+	}
 	switch name {
+	case "invite":
+		return s.issueInvite(ctx, a)
 	case "register":
 		if strings.TrimSpace(a.Name) == "" {
 			return nil, fmt.Errorf("name is required")
@@ -1430,6 +1455,9 @@ func (s *Server) run(
 	res, err := s.eng.Do(ctx, op)
 	if err != nil {
 		return res, err
+	}
+	if err := bindInvitedAgent(ctx, name, res); err != nil {
+		return nil, err
 	}
 	return s.decorate(ctx, name, a, op, params, res), nil
 }

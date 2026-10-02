@@ -108,6 +108,9 @@ func (e *Engine) forgetWakeFailures(agent string) {
 // nothing is wrong. The row is where the person running the board looks, and
 // until this it showed a worker as active while every wake for it was failing.
 func (e *Engine) wakeStatusOf(agent string) string {
+	if invitedAgent(e.state.Agents[agent]) {
+		return "pull-only (invited cloud agent)"
+	}
 	e.wakers.mu.Lock()
 	defer e.wakers.mu.Unlock()
 	switch n := e.wakers.fails[agent]; {

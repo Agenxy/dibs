@@ -360,6 +360,34 @@ might be told they were dormant was false for all of them.
 
 ---
 
+## `[invites]`: autonomous cloud-worker credentials
+
+The `invites` table controls local issuers on the PRIVATE MCP endpoint; invited
+agents can never mint further invitations, even after a role grant. The
+operator configures the separate public listener once (NETWORK.md §9).
+
+```toml
+[invites]
+who = "any"
+max_live = 4
+max_ttl_s = 604800
+```
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `who` | `"any"` | `"human"` allows only proved private human issuance; `"coordinator"` also allows local coordinators; `"any"` permits any local agent. |
+| `max_live` | `4` | Live invitations per agent issuer, 1..1024. Coordinators have the same cap; human proofs are not capped by agent policy. |
+| `max_ttl_s` | `604800` | Agent invitation lifetime ceiling in seconds, 1s..365d. Omitted lifetime defaults to seven days or this lower ceiling; the human can explicitly choose up to 365d. |
+
+Ordinary agents must use their own immutable ID prefix, and cannot enter
+another existing agent's narrower namespace. Coordinators and the human may
+name other new unprivileged identities. Permission changes govern NEW issuance,
+not existing keys. Only the issuer or human may revoke an invitation (one
+`name`, or all `issued_by` that issuer). Signing off/closing/purging an issuer
+revokes its children; reopening cannot revive them. Resume, token rotation and
+archive do not revoke them. See `invite` and `dibs invite` for configuration
+recipes; use `DIBS_TOKEN` in the CLI to act as an agent, not prompt a human.
+
 ## `[relocate]`: moving an agent to another environment on purpose
 
 A wake reaches an agent in the environment it runs in and nowhere else: a

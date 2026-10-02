@@ -44,6 +44,7 @@ type Config struct {
 	Match             MatchConfig       `toml:"match"`              // work-overlap matching
 	Limits            LimitsConfig      `toml:"limits"`             // coordination timings
 	Supervise         liveness.Settings `toml:"supervise"`          // stalled-subagent detection
+	Invites           InvitesConfig     `toml:"invites"`            // autonomous child invitations
 
 	// set reports whether a key was written in the file, as opposed to holding
 	// its zero value because nobody mentioned it. Unexported, so it is not a
@@ -55,6 +56,44 @@ type Config struct {
 	Identity IdentityConfig `toml:"identity"` // who an unidentified session is taken to be
 	// Relocate is where an agent can be MOVED on purpose: see RelocateExec.
 	Relocate map[string]RelocateExec `toml:"relocate"`
+}
+
+// InvitesConfig is the operator's once-only issuance policy. Human proofs
+// always permit issuance; coordinator/any widen which existing agents may act.
+type InvitesConfig struct {
+	Who     string `toml:"who"`       // human, coordinator or any (default)
+	MaxLive int    `toml:"max_live"`  // per agent issuer; default 4
+	MaxTTLS int64  `toml:"max_ttl_s"` // per agent issuer; default 7 days
+}
+
+// IssuancePolicy supplies defaults without overwriting what the file states.
+func (c InvitesConfig) IssuancePolicy() (who string, maxLive int, maxTTLS int64) {
+	who, maxLive, maxTTLS = c.Who, c.MaxLive, c.MaxTTLS
+	if who == "" {
+		who = "any"
+	}
+	if maxLive == 0 {
+		maxLive = 4
+	}
+	if maxTTLS == 0 {
+		maxTTLS = 7 * 24 * 3600
+	}
+	return
+}
+
+func (c Config) validateInvites() error {
+	if c.set != nil && ((c.set("invites", "max_live") && c.Invites.MaxLive == 0) ||
+		(c.set("invites", "max_ttl_s") && c.Invites.MaxTTLS == 0)) {
+		return errors.New("[invites] max_live and max_ttl_s must be positive; omit them for defaults")
+	}
+	who, live, ttl := c.Invites.IssuancePolicy()
+	if who != "human" && who != "coordinator" && who != "any" {
+		return errors.New("[invites] who must be human, coordinator or any")
+	}
+	if live < 1 || live > 1024 || ttl < 1 || ttl > 365*24*3600 {
+		return errors.New("[invites] max_live must be 1..1024 and max_ttl_s must be 1s..365d (omit for 4 and 7d)")
+	}
+	return nil
 }
 
 // RelocateExec is one environment an agent can be moved to on purpose.
@@ -545,7 +584,7 @@ func (c Config) Validate() error {
 	for _, check := range []func() error{
 		c.validateAddr, c.ValidateName, c.validateTLS, c.validateLimits, c.validateMatch,
 		c.validateSupervise, c.validateWake, c.validateRoles, c.validateIdentity,
-		c.validateRelocate,
+		c.validateRelocate, c.validateInvites,
 	} {
 		if err := check(); err != nil {
 			return err

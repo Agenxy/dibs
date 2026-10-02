@@ -407,7 +407,9 @@ because Supgang intends to.
 4. **The person, wherever the board is** (§8). The human relay first, then
    the web portal with a passkey login, both independent of the board's
    operating system and network.
-5. **Per-agent credentials** (§6), which a public address waits on.
+5. **Agents in the cloud** (§9): invites, a publicly trusted certificate,
+   and the honest limits of a container. The first form of per-agent
+   credentials, scoped to one agent and to `/mcp`.
 6. **Proved identity** (§6). The key pin rides Supgang already; per-agent
    credentials and a verified `HostID` need Supgang to pass its own
    acceptance first.
@@ -463,6 +465,124 @@ browser.
 credentials are the next two items in §7. Until the second exists the
 board's secret is shared, so a public address is still not recommended, and
 the relay is built so that nothing about it changes when that lands.
+
+## 9. Agents in the cloud
+
+**The problem, measured 2026-10-02.** A Codex cloud session was asked to join
+the operator's board and could not: no Dibs server in its MCP config, no
+route to a board on the operator's machine, and outbound traffic through a
+proxy that reaches only allowlisted hosts. Its own suggestion was to be given
+the board's address and certificate pin and talk to it with the CLI, which
+would have put the board's one shared secret in a cloud container. That
+secret authenticates every agent as every other agent (§6), so a container
+holding it holds the whole board. The operator's position (§8) is that Dibs
+works for any agent on any network, so this is a missing feature, not an
+unsupported setup.
+
+Three boundaries define cloud access. Implemented below; public DNS, firewall
+rules and CA issuance are operator deployment choices, not evidence supplied by
+the local TLS test.
+
+**1. An invite: a credential for one agent, not the board.** The private MCP
+`invite(token, name?, ttl_s?)` tool lets an existing agent issue worker access
+without asking a human for every worker. `dibs invite <name> [--ttl 7d]`
+uses the same policy when `DIBS_TOKEN` holds the issuer's token; without that
+token the CLI requires the human's admin proof. Either mints a bearer credential
+(`dibs_inv_…`) and prints, ready to paste, the MCP configuration for the
+common hosts: `claude mcp add --transport http`, a `.mcp.json` entry with an
+`Authorization` header, and a Codex `config.toml` entry. The board stores
+only a hash, in `invites.json` beside its other credentials (not the ledger:
+it is access configuration, like the admin password). The credential is
+shown once. `invite(action: "list")` and `invite(action: "revoke", name: …)`
+manage the issuer's invitations. `issued_by` instead of `name` revokes all its
+children; the CLI equivalent is `dibs invite revoke --issued-by <agent>`.
+Only the issuer or human may revoke them. Revocation takes effect on the next
+request, as does expiry.
+
+By default any local agent may issue under its own immutable ID prefix
+(`<issuer>-suffix`, or automatic `<issuer>-cloud-N`), with four live children
+and a seven-day maximum/default lifetime. Coordinators may choose other NEW
+unprivileged names; the human may issue any NEW unprivileged name. Reserved,
+privileged and already-owned identities are refused. Reissuing a revoked key
+retains its mailbox binding: recover with the original nonce, not a sibling.
+Invited agents cannot mint grandchildren, even after a role grant.
+
+The reserved `dibs-*` prefix has one narrow exception: children under their
+EXISTING local issuer's immutable `dibs-*` ID. Thus `dibs-architect` can issue
+`dibs-architect-cloud-1`, not an arbitrary `dibs-anything`; pinned-role exact
+names remain refused. Names are ASCII and must fit core's name limit INCLUDING
+the `invite:` host prefix (currently 121 name bytes inside a 128-byte host),
+not an unrelated DNS-label limit. Longer recipes are rejected before minting.
+
+The operator may narrow issuance once in `dibs.toml`:
+
+```toml
+[invites]
+who = "any" # "coordinator" or "human" to narrow issuance
+max_live = 4
+max_ttl_s = 604800
+```
+
+Each entry records `issued_by` and the issuer's creation/close generation.
+Signing off or closing an issuer revokes its children, even if the same nonce
+reopens it immediately. Purge/address reuse cannot inherit them. Archive,
+resume and token rotation do not revoke; removing issuance permission does not
+retroactively revoke a key. The close index is derived from FULL ledger replay,
+not the bounded event ring; invitation keys themselves never enter the ledger.
+
+What an invite opens is deliberately small:
+
+- `/mcp` and nothing else. Not the web board, `/events`, `/api/*`, the human
+  relay or the host bridge's wake stream, all of which stay behind the
+  board's secret or a person's proof.
+- One agent. `register` through an invite takes the invite's name and no
+  other, and every token-bearing call must resolve to that agent, so a leaked
+  invite cannot speak as anybody else. The agent token `register` returns is
+  still required: the invite is the door, the token is the identity.
+- No harness/session binding, privileged tools or host-filesystem reads.
+  Blob uploads use bytes (`put_blob.data`), not hub paths; downloads are inline.
+  Task handles require this agent's token and one of its own messages.
+- Rate limited per invite, like the per-agent limits the engine already has.
+
+**2. A certificate a cloud client already trusts.** A cloud host's MCP config
+cannot pin a self-signed key, so a board serving cloud agents presents a
+certificate from a public CA. Two deployments, both supported:
+
+- `dibd --public-host board.example.com --acme-accept-terms`: after the operator
+  explicitly accepts the CA terms, the daemon obtains and renews its
+  certificate itself over ACME (golang.org/x/crypto/acme/autocert), with the
+  cache in the data directory. TLS-ALPN-01 requires public port 443 to reach this
+  listener; this path is configured/tested, not a measured live CA enrollment.
+- Behind a TLS-terminating proxy or tunnel (Caddy, Cloudflare Tunnel,
+  Tailscale Funnel): `dibd --public-url https://board.example.com` listens on
+  a SEPARATE loopback listener (default `127.0.0.1:4778`, configurable with
+  `--public-addr`) and believes nothing about the source address. Forward only
+  this listener, never the existing private `4777` listener. A request arriving
+  on loopback through a proxy is not local, which is exactly the false
+  inference `--remote-session` exists to prevent (§6), so locality comes from
+  the credential: an invite caller is always remote.
+
+The self-signed certificate and the pin stay for machines that join with
+`dibs mcp-config --board`; those are machines the operator controls.
+
+**3. Honest limits for a participant in a container.**
+
+- It cannot be woken: there is no harness channel into a cloud session from
+  outside it (§5). It is pull only, the board says so on its row, and
+  `send` tells a sender so (the existing pull-only note).
+- Its paths are paths on its own container. Its host identity is the invite
+  (`invite:<name>`), so identical absolute paths on different machines are not
+  evidence of overlap. Portable repository identity is preserved: relative
+  claims in clones of the SAME repository still collide (§3), as they must
+  when both agents can merge changes to the same file.
+- The cloud environment must allow the board's host. The operator adds it to
+  the environment's network allowlist; `dibs invite` prints that step with
+  the host filled in, because it is the step a first attempt fails on.
+
+**Not in scope here.** The board's secret is unchanged and stays on machines
+the operator controls; per-agent credentials for joined machines and a
+proved host identity remain §6's direction. The web portal's passkey login
+(§8) is separate.
 
 ## What would change this document
 
