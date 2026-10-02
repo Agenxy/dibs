@@ -7,6 +7,12 @@ import "github.com/agenxy/dibs/internal/core"
 // not a timestamp of the label itself; the fold does not record that timestamp.
 func (e *Engine) labelBoardHosts(b core.Result) {
 	latest := map[string]*core.Agent{}
+	// The board minted these rows, so their host is the board's own. The
+	// person's physical location is unknown (especially on a hub). Use the
+	// reserved nonce indexes, never a caller's chosen name or harness label.
+	// Their empty HostID is deliberate: no process or harness wake route uses
+	// it, and host comparisons keep the conservative unknown-ID behaviour.
+	human, reporter := e.humanRowLocked(), e.dibsRowLocked()
 	rows, _ := b["agents"].([]map[string]any)
 	for _, row := range rows {
 		a := e.state.Agents[row["id"].(string)]
@@ -22,7 +28,12 @@ func (e *Engine) labelBoardHosts(b core.Result) {
 		}
 	}
 	for _, row := range rows {
-		a := e.state.Agents[row["id"].(string)]
+		id := row["id"].(string)
+		if id == human || id == reporter {
+			row["host"] = thisHost()
+			continue
+		}
+		a := e.state.Agents[id]
 		if a == nil || a.Agent == nil {
 			continue
 		}

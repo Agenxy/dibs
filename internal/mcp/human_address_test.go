@@ -106,4 +106,46 @@ func TestSendToHumanCreatesAnOSOwnedMailboxAndNotifiesTheRelay(t *testing.T) {
 	if len(replayed.Agents) != 2 || len(replayed.Messages) != 1 {
 		t.Fatalf("replay duplicated identity/mail: agents=%d mail=%d", len(replayed.Agents), len(replayed.Messages))
 	}
+	assertReplayedHumanDisplayLabel(t, replayed, led, human)
+}
+
+// Only the historical display string is changed in the replay fixture. The
+// identity and its nonce index must come from the actual send alias above.
+func assertReplayedHumanDisplayLabel(t *testing.T, st *core.State, led *ledger.Ledger, human string) {
+	t.Helper()
+	st.Agents[human].Agent.Host = "legacy-human-host"
+	eng := engine.New(st, led, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { eng.Run(ctx); close(done) }()
+	srv := httptest.NewServer(New(eng))
+	defer func() { srv.Close(); cancel(); <-done }()
+	reg := toolCall(t, srv, "register", map[string]any{"name": "requester", "nonce": "human-address-requester-fixture"})
+	token, ok := reg["token"].(string)
+	if !ok {
+		t.Fatalf("setup: reattach: %v", reg)
+	}
+	shown := rawToolResult(t, srv, "board", map[string]any{"token": token})
+	meta := shown["_meta"].(map[string]any)
+	panel := asMap(meta[panelDataMetaKey])
+	board := asMap(panel["board"])
+	var owned, requester map[string]any
+	for _, row := range asMaps(board["agents"]) {
+		if row["id"] == human {
+			owned = row
+		}
+		if row["id"] == "requester" {
+			requester = row
+		}
+	}
+	if owned == nil || requester == nil || requester["host"] == nil {
+		t.Fatalf("setup: missing known board rows: %v", board)
+	}
+	if owned["host"] != requester["host"] || owned["host"] == "legacy-human-host" {
+		t.Errorf("board-minted human display=%v want board host %v", owned["host"], requester["host"])
+	}
+	info := asMap(owned["agent"])
+	if info["host"] != "legacy-human-host" || info["host_id"] != nil {
+		t.Errorf("raw legacy identity changed: %v", info)
+	}
 }
