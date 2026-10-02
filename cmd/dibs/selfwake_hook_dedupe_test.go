@@ -50,6 +50,9 @@ func TestSelfWakeAndStopSharePresentationAfterActualTurnActivity(t *testing.T) {
 	engineCtx, stopEngine := context.WithCancel(context.Background())
 	eng := engine.New(st, led, nil)
 	go eng.Run(engineCtx)
+	if _, err := eng.HookPoll(ctx, streamSession(), "Stop", "", false, false); err != nil {
+		t.Fatal("setup: idle session", err)
+	}
 	srv := httptest.NewServer(mcp.New(eng))
 	t.Cleanup(func() { cancel(); srv.Close(); stopEngine(); _ = led.Close() })
 	iw := &inboxWatcher{cooldown: time.Hour}

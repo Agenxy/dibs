@@ -10,7 +10,10 @@ import (
 )
 
 func TestSocketAndStopSharePresentationOnlyAfterTurnEvidence(t *testing.T) {
-	for _, order := range []string{"accepted socket then Stop", "held socket then Stop", "Stop then socket"} {
+	for _, order := range []string{
+		"accepted socket then Stop", "held socket then Stop", "mid-turn held socket then Stop",
+		"explicit new turn then Stop", "Stop then socket",
+	} {
 		t.Run(order, func(t *testing.T) {
 			sock, sid := listeningSession(t)
 			st := core.NewState("dedupe", core.DefaultLimits())
@@ -44,6 +47,14 @@ func TestSocketAndStopSharePresentationOnlyAfterTurnEvidence(t *testing.T) {
 			t.Cleanup(cancel)
 			stopWakeTimersOnCleanup(t, e)
 			go e.Run(ctx)
+			if order == "accepted socket then Stop" {
+				// Establish an idle session through its lifecycle hook. This
+				// Stop is already active, so it records the boundary without
+				// extending the turn to present the fixture's mail.
+				if _, err := e.HookPoll(ctx, sid, "Stop", "", true, false); err != nil {
+					t.Fatal(err)
+				}
+			}
 			stop := func() core.Result {
 				got, err := e.HookPoll(ctx, sid, "Stop", "", false, false)
 				if err != nil {
@@ -76,7 +87,13 @@ func TestSocketAndStopSharePresentationOnlyAfterTurnEvidence(t *testing.T) {
 				case <-time.After(time.Second):
 					t.Fatal("setup: no socket write")
 				}
-				if order == "accepted socket then Stop" {
+				accepted := order == "accepted socket then Stop" || order == "explicit new turn then Stop"
+				if order == "explicit new turn then Stop" {
+					if _, err := e.HookPoll(ctx, sid, "SessionStart", "", false, false); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if order == "accepted socket then Stop" || order == "mid-turn held socket then Stop" {
 					// Real tool activity, not a timestamp set by the test. Reading
 					// the board is evidence of a new turn but does not read mail.
 					if _, err := e.SpaceRead(ctx, "tok-worker", "missing-space", 1); err == nil {
@@ -84,10 +101,10 @@ func TestSocketAndStopSharePresentationOnlyAfterTurnEvidence(t *testing.T) {
 					}
 				}
 				got := stop()
-				if order == "accepted socket then Stop" && got["reason"] != nil {
+				if accepted && got["reason"] != nil {
 					t.Fatalf("socket plus subsequent turn evidence already presented #%d; Stop duplicated it: %v", serial, got)
 				}
-				if order == "held socket then Stop" && got["reason"] == nil {
+				if !accepted && got["reason"] == nil {
 					t.Fatal("a successful write with no turn evidence suppressed the held socket's Stop fallback")
 				}
 			}

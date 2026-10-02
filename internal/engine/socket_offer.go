@@ -11,13 +11,15 @@ import (
 
 // A socket write has no receipt from the harness. Keep what was offered,
 // without spending presentation, until BOTH the write succeeds and this
-// session shows actual turn activity after the offer. Stop alone is no such
+// session shows new-turn evidence after the offer. Ongoing-turn tool calls
+// cannot confirm mail a permissions gate may have held. Stop alone is no such
 // evidence: a held peer message must still have its hook fallback.
 // Ephemeral and bounded to one offer per agent; no mailbox state is changed.
 type socketOffer struct {
 	id, session         string
 	at                  time.Time
 	written             bool
+	canConfirm          bool
 	mail, announcements []string
 	notices             []string
 }
@@ -37,7 +39,8 @@ func (e *Engine) beginSocketOffer(l *core.Agent, session string) core.Result {
 	_, notices := e.dueNoticeLines(l.ID, now)
 	e.socketOffers[l.ID] = socketOffer{
 		id: id, session: session, at: now,
-		mail: e.wakeKeys(l.ID, now), announcements: announcements, notices: notices,
+		canConfirm: e.turnEnded[l.ID].After(e.seen[l.ID]),
+		mail:       e.wakeKeys(l.ID, now), announcements: announcements, notices: notices,
 	}
 	return core.Result{"digest": text, "offer": id}
 }
@@ -63,13 +66,24 @@ func (e *Engine) settleSocketOffer(agent, session, id string, written bool) {
 // finishing hooks, lease probes or socket bookkeeping itself.
 func (e *Engine) confirmSocketOffer(l *core.Agent, now time.Time) {
 	o, ok := e.socketOffers[l.ID]
-	if !ok || !o.written || !now.After(o.at) || !l.SessionIsCurrent(o.session) {
+	if !ok || !o.written || !o.canConfirm || !now.After(o.at) || !l.SessionIsCurrent(o.session) {
 		return
 	}
 	e.markWoken(o.mail, o.at)
 	e.markAnnounced(o.announcements, o.at)
 	e.markNoticePresentation(o.notices, o.at)
 	delete(e.socketOffers, l.ID)
+}
+
+// A starting lifecycle event explicitly distinguishes a new turn from
+// tool traffic in a turn that was already running when mail was offered.
+func (e *Engine) noteSocketTurnStart(l *core.Agent, now time.Time) {
+	o, ok := e.socketOffers[l.ID]
+	if ok && now.After(o.at) && l.SessionIsCurrent(o.session) {
+		o.canConfirm = true
+		e.socketOffers[l.ID] = o
+	}
+	e.confirmSocketOffer(l, now)
 }
 
 // Delivery timing is separate from the notices themselves. check_in and

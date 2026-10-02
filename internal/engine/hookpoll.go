@@ -202,7 +202,11 @@ func (e *Engine) noteTurnState(l *core.Agent, sessionID, event string) {
 		// clock, and this stamps the contact clock itself.)
 		delete(e.turnEnded, l.ID)
 		e.seen[l.ID] = time.Now()
-		e.confirmSocketOffer(l, e.seen[l.ID])
+		if event == "SessionStart" || event == "UserPromptSubmit" {
+			e.noteSocketTurnStart(l, e.seen[l.ID])
+		} else {
+			e.confirmSocketOffer(l, e.seen[l.ID])
+		}
 	}
 }
 

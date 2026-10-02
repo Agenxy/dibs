@@ -962,20 +962,20 @@ let annSerial = 0
       /admitted to agent "auth-work" by director/.test(txt), txt.slice(0, 200) || "(silent)")
     check("and told what it may now do", /you may start/.test(txt), txt.slice(0, 200))
 
-    // The wake path is token-less (a lifecycle hook has no token) so any
-    // holder of the coordination secret can poll another agent's session. It
-    // therefore may not CONSUME anything: reading it is repeatable and changes
-    // nothing, or a peer could spend a victim's notices on its behalf.
-    //
-    // This check used to assert the opposite ("delivered once"), which was the
-    // consuming design. It is here in its corrected form rather than deleted,
-    // because the property it was guarding: an agent must not be nagged
-    // forever: is real; it is now the AGENT that ends the repetition, by
-    // acknowledging the board, which no peer can do for it.
+    // A lifecycle hook may bound duplicate presentation, but may NEVER spend
+    // the information itself. The session id is a capability for the nudge;
+    // the token-authenticated raw queue remains complete and repeatable.
     const again = await c5("hook_poll", { session_id: "wsid", event: "Stop" })
-    check("a peer polling the wake path cannot consume the notice",
-      /admitted to agent "auth-work" by director/.test(again?.hookSpecificOutput?.additionalContext ?? ""),
+    check("another Stop does not repeat the same update inside its reminder cadence",
+      !/admitted to agent "auth-work" by director/.test(again?.hookSpecificOutput?.additionalContext ?? ""),
       String(again?.hookSpecificOutput?.additionalContext ?? "").slice(0, 120) || "(silent)")
+
+    for (let read = 0; read < 2; read++) {
+      const raw = await c5("inbox", { token: worker })
+      check("presentation cannot consume the authenticated notice, read " + (read + 1),
+        (raw.agent_updates ?? []).some((u: string) => /admitted to agent "auth-work"/.test(u)),
+        JSON.stringify(raw.agent_updates ?? []).slice(0, 160))
+    }
 
     const ackd = await c5("check_in", { token: worker })
     check("the agent's own check_in is what delivers it authoritatively",

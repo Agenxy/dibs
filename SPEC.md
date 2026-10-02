@@ -677,8 +677,9 @@ A newer self-wake notification also advertises `com.dibs/socket_offer: true`.
 A capable writer includes that key on the hidden digest read to reserve the
 current presentation, receives `_meta["com.dibs/socket_offer_id"]`, and reports
 that id with `com.dibs/socket_written` after its attempt. A successful write is
-not a harness receipt: only subsequent actual turn activity in the same current
-session confirms the offered mail, announcements and updates as presented.
+not a harness receipt: subsequent actual activity confirms presentation only
+if that session was idle when offered, or a starting lifecycle event identifies
+a new turn. Tool calls in an already-running turn cannot confirm held mail.
 A held message or a failed write therefore retains its Stop fallback. Stop
 presentation filters a later socket refresh too. This timing is ephemeral,
 changes no ledger/mailbox state, and preserves existing reminder intervals.
