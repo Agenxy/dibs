@@ -23,6 +23,24 @@ func TestOneMachineHasOneDisplayLabelAcrossRegistrations(t *testing.T) {
 	if err != nil || want == "" {
 		t.Fatalf("setup: hostname: %v", err)
 	}
+	// The actual board tool trims its private panel payload independently.
+	// Assert the row field, not agent.host: the latter survives the broken filter.
+	panel := rawToolResult(t, srv, "board", map[string]any{"token": token})
+	meta := panel["_meta"].(map[string]any)
+	payload := asMap(meta[panelDataMetaKey])
+	panelBoard := asMap(payload["board"])
+	panelFound := 0
+	for _, row := range asMaps(panelBoard["agents"]) {
+		if row["id"] == "first" || row["id"] == "second" {
+			panelFound++
+			if row["host"] != want {
+				t.Errorf("actual panel row label=%v want %s", row["host"], want)
+			}
+		}
+	}
+	if panelFound != 2 {
+		t.Fatalf("setup: private panel missing rows: %v", panelBoard)
+	}
 	for _, detail := range []bool{false, true} {
 		result := toolCall(t, srv, "check_in", map[string]any{"token": token, "detail": detail})
 		board := result["board"].(map[string]any)
