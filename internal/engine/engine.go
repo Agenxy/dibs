@@ -227,18 +227,6 @@ type Engine struct {
 	faults faultState
 }
 
-type request struct {
-	op     *core.Op
-	fn     func() core.Result
-	reply  chan reply
-	invite *Invitation
-}
-
-type reply struct {
-	res core.Result
-	err error
-}
-
 type waiter struct {
 	since   uint64
 	agent   string

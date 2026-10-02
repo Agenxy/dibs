@@ -11,6 +11,19 @@ import (
 	"github.com/agenxy/dibs/internal/core"
 )
 
+// request and reply carry submissions across the single-writer boundary.
+type request struct {
+	op     *core.Op
+	fn     func() core.Result
+	reply  chan reply
+	invite *Invitation
+}
+
+type reply struct {
+	res core.Result
+	err error
+}
+
 // Do submits one mutating op to the loop and waits.
 func (e *Engine) Do(ctx context.Context, op *core.Op) (core.Result, error) {
 	req := request{op: op, reply: make(chan reply, 1)}
