@@ -389,7 +389,7 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "read_mail",
-			"description": "Read full sent/received mail and response. human_delivery.posted confirms OS " +
+			"description": "Read mail, response and milestone_reviews. human_delivery.posted confirms OS " +
 				"acceptance, not visibility; receipts may be unknown. ATTACHMENTS: a `blob` handle is " +
 				"content-addressed, so get_blob returns exactly what was sent. A `path` handle " +
 				"(fileref) is the opposite: path, size and hash are the SENDER's claims, recorded " +
@@ -399,8 +399,8 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "respond",
-			"description": "Respond: answer, approve/deny, decline; progress/done on a request you approved " +
-				"(you owe it until done); accept/flag a step of one you sent.",
+			"description": "Answer received mail or accept/flag a milestone of your sent request. " +
+				"Progress/done reports approved work (owed until done). Use the request serial, not an event.",
 			"inputSchema": obj(map[string]any{
 				"token": tok, "msg_serial": num("serial of the message"),
 				"disposition": map[string]any{
@@ -417,8 +417,8 @@ var toolDefs = func() []map[string]any {
 			}, "token", "msg_serial", "disposition"),
 		},
 		{
-			"name": "ack", "description": "Acknowledge a message after reading it (sender is notified). For FYIs " +
-				"this closes them out; on finished messages it marks them consumed so they stop appearing in your inbox.",
+			"name": "ack", "description": "Dismiss a progress/review event without reviewing work. For mail, close a FYI " +
+				"or consume finished mail (sender notified). read_mail(request serial) clears its notices.",
 			"inputSchema": obj(map[string]any{"token": tok, "msg_serial": num("serial of the message")}, "token", "msg_serial"),
 		},
 		{

@@ -93,6 +93,9 @@ func (e *Engine) dueNoticeLines(agent string, now time.Time) (lines, keys []stri
 	for _, n := range e.takeNotices(agent) {
 		key := agent + "\x00" + strconv.FormatUint(n.Serial, 10)
 		live[key] = true
+		if n.Delivered {
+			continue
+		}
 		if at, ok := e.noticePresented[key]; ok && now.Sub(at) < AnnounceRetry {
 			continue
 		}
@@ -104,6 +107,24 @@ func (e *Engine) dueNoticeLines(agent string, now time.Time) (lines, keys []stri
 		}
 	}
 	return lines, keys
+}
+
+// Called only after a delivering Stop has put these exact notices in model
+// text. A socket write has no receipt, and unsupported hooks deliver nothing.
+func (e *Engine) markInformationalNoticesDelivered(event, agent string, keys []string) {
+	if event != "Stop" && event != "SubagentStop" {
+		return
+	}
+	shown := make(map[string]bool, len(keys))
+	for _, key := range keys {
+		shown[key] = true
+	}
+	for i := range e.notices[agent] {
+		n := &e.notices[agent][i]
+		if !n.Blocking && shown[agent+"\x00"+strconv.FormatUint(n.Serial, 10)] {
+			n.Delivered = true
+		}
+	}
 }
 
 func (e *Engine) markNoticePresentation(keys []string, now time.Time) {

@@ -437,6 +437,7 @@ func (e *Engine) HookPollFrom(
 			e.markAnnounced(announceKeys, now)
 			e.markNoticePresentation(noticeKeys, now)
 			addDelivery(out, event, hookDigest(l.ID, agentMail, announced, modelNotices))
+			e.markInformationalNoticesDelivered(event, l.ID, noticeKeys)
 		} else if cont := e.continuationReply(l, event, stopActive); cont != nil {
 			// News the turn is not extended for, and a turn Dibs started is
 			// ending with declared work open. See continuation.go.

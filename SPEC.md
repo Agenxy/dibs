@@ -696,14 +696,26 @@ presentation filters a later socket refresh too. This timing is ephemeral,
 changes no ledger/mailbox state, and preserves existing reminder intervals.
 Plain reads and older writers remain non-consuming; advertising a capability
 does not spend anything before the writer implements its handshake.
-Agent updates share the presentation cadence, but `check_in` and `inbox`
-still expose the complete pending information. Accepting or flagging a milestone
-clears the progress notice for that request, like reading its full message.
+Agent updates share the presentation cadence. Informational updates actually
+included in a delivering Stop are not presented by later hooks again, even
+after the cadence expires; blocking notices retain their reminder rules.
+`check_in` and `inbox` still expose the complete pending information.
+Accepting or flagging a milestone clears the progress notice for that request,
+like reading its full message. `ack` also accepts a retained progress/review
+event serial, dismissing only that event for its intended current-incarnation
+recipient. This derived acknowledgment does not review or consume the parent,
+advance the coordination serial, or write a new ledger op. Strangers and reused
+identities cannot resolve the parent through an event. `respond` on one's own
+event returns a hint naming the parent and review call. `read_mail` derives
+`milestone_reviews` (unreviewed/accepted/flagged, by and at) from ordered entries;
+a newer worker report supersedes an earlier review of that milestone.
 
 The session id is a same-machine capability for a token-less nudge. A local
 peer holding the board secret and knowing that id can call `hook_poll`, or
 forge a starting-hook event, to spend presentation for an `AnnounceRetry`
-interval; repeating that can keep reminders delayed. This accepted trade
+interval, or suppress later hook presentations of informational notices already
+carried by Stop; authenticated pulls still retain them. Repeating a forged
+event can keep blocking reminders delayed. This accepted trade
 does not consume or hide information: the pending mail and agent updates
 remain complete in `inbox` and the agent's own authoritative `check_in`.
 
