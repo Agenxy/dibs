@@ -62,6 +62,11 @@ is not the time the label changed; creation serial and agent id break ties
 deterministically. The raw per-agent label remains at `agent.host` in detail
 views. Unknown host ids keep their individual labels and are never grouped
 by hostname. The compact roster, web board and MCP panel read the row label.
+The board's own human mailbox and fault reporter are identified through their
+reserved nonce indexes and use the board's hostname even when historical
+metadata has no host id. This locates the mailbox, not the person: a human
+using a hub may be anywhere. Their raw metadata and coordination host IDs
+are unchanged.
 
 Dibs therefore needs a `HostID` that is:
 
