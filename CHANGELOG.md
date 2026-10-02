@@ -128,6 +128,7 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the command catalog now includes stop, upgrade, trust and fingerprint.
   File-transfer help names the input file or blob and destination, with each
   command showing only the flags it actually uses.
+  Previously ignored cross-command flags, such as `get -mime`, are now refused.
 
 - **One machine reads as one machine.** Board rows, compact check-ins and the
   shared web/panel renderer use one label per known host identity instead of
