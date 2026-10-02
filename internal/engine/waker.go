@@ -1211,6 +1211,7 @@ type wakePlan struct {
 	// after the message is queued (inapp.go).
 	surface, harness string
 	agent            string // whose outstanding state is rechecked before delivery
+	trackOffer       bool   // production delivery shares presentation with lifecycle hooks
 	notice           string // socket digest; refreshed before production delivery
 	session, kind    string // binding and reason to recheck before a socket write
 	cwd              string // where the agent says it works, for the mismatch warning
@@ -1637,6 +1638,10 @@ func (e *Engine) socketNotice(l *core.Agent, from, kind string) string {
 // currentWakeDigest is a non-consuming snapshot. Empty means nothing is owed,
 // not an invitation to reconstruct the event that used to be waiting.
 func (e *Engine) currentWakeDigest(l *core.Agent) string {
+	return e.wakeDigest(l, true)
+}
+
+func (e *Engine) wakeDigest(l *core.Agent, fresh bool) string {
 	now := time.Now()
 	// ALL THREE, which is the bug this replaced. It passed mail and nil'd
 	// announcements and notices, so a wake triggered by an agent update or an
@@ -1648,8 +1653,11 @@ func (e *Engine) currentWakeDigest(l *core.Agent) string {
 	// and the other saying everything. The hook path had passed all three
 	// since it was written; only this one did not.
 	mail := e.pendingMailQuoted(l.ID, now)
+	if fresh {
+		mail = e.freshMailQuoted(l.ID, now)
+	}
 	announced, _ := e.dueAnnouncements(l.ID, now)
-	notices := e.pendingNotices(l.ID)
+	notices, _ := e.dueNoticeLines(l.ID, now)
 	if len(mail) == 0 && len(announced) == 0 && len(notices) == 0 {
 		return ""
 	}

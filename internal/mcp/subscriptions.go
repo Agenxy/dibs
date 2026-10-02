@@ -741,6 +741,7 @@ func resourceUpdated(uri string, subID json.RawMessage, ev core.Event, digest di
 		// engine.WakeDigestFor, which reads and moves nothing.
 		if digest != nil {
 			meta[DigestRefreshMetaKey] = true
+			meta[SocketOfferMetaKey] = true
 			if text := digest(ev); text != "" {
 				meta[DigestMetaKey] = text
 			}

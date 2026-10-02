@@ -24,7 +24,11 @@ func pluginDoc() string {
 			"mail from something you must remember to poll for into something that " +
 			"arrives in your session. Find your harness below, follow `setup` in " +
 			"order, and check each step rather than assuming it took.",
-		"harnesses":   plugins.Names(),
+		"harnesses": plugins.Names(),
+		"waiting": "Claude Code with loaded Dibs delivery and accepted incoming socket messages " +
+			"already receives native peer turns. Do not start or re-arm an await_events/dibs await watcher there. " +
+			"For an unavailable or held native route, use the waiting fallback in dibs://skills; " +
+			"dibs doctor explains the operator-owned acceptance setting.",
 		"plugins":     plugins.All(),
 		"marketplace": json.RawMessage(plugins.Marketplace()),
 	}

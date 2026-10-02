@@ -76,6 +76,18 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Event observation (`await_events`, `events_since`, `recent_events`) no longer
+  makes an idle session look busy or suppresses a configured-route wake.
+  Claude Code guidance now prefers its working native delivery over an extra
+  background watcher. The reported K7 watcher was unnecessary; transcript
+  evidence showed native peer turns already arriving while it ran.
+
+- Socket and Stop presentation now share timing after a successful socket
+  write and actual activity in the receiving session. Held or failed socket
+  messages retain the hook fallback; raw mail and updates remain available.
+  Agent updates no longer repeat at every Stop, and accepting or flagging a
+  milestone clears the progress notice it answers.
+
 - Deferred socket wakes no longer announce mail already acknowledged or
   agent updates already read. Both the daemon and in-session bridge refresh
   the digest without marking mail delivered, including retries and upgrade
