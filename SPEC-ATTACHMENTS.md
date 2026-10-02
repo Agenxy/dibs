@@ -338,12 +338,13 @@ A4.1), not inline `data`.
 
 ## A11. Non-goals (deliberate exclusions)
 
-- No streaming/chunked transfer, no resumable uploads: v1 of this feature is
-  whole-blob put/get; a 64 MiB cap keeps it simple. (Revisit only with evidence.)
+- ~~No streaming/chunked transfer, no resumable uploads~~: superseded by A13.
+  The evidence arrived: agents on other machines and in cloud containers,
+  where a path is meaningless and base64 through the model is the wrong pipe.
 - No blob mutation: content-addressed blobs are immutable by definition; "editing"
   means putting new content (new id).
-- No cross-machine blob fetch: that arrives with v2 federation (blobs are already
-  content-addressed, so federation is "fetch missing id from the owning node").
+- No cross-machine blob fetch between BOARDS: that arrives with federation.
+  Agents on other machines fetching from their own board is A13.
 - No public blobs: every blob is scoped to owners/participants; there is no
   "board-wide attachment." (Public sharing, if ever wanted, is a separate proposal.)
 - No revocation of the re-share closure (A6.2) in v1: bounded only by caps + TTL.
@@ -386,3 +387,79 @@ double-charged the rate limiter and could stage-then-fail → single pre-auth ad
 no re-charge at registration (A9.1 "Staging is gated by a single admission"). The pass
 independently confirmed A1, A2.1, A6/A6.1, P2-3, gcBlobs determinism, P1-3, and A9.1 hold
 as built.
+
+## A13. Transfer out of band: upload and download by URL
+
+**Why.** An agent on another machine or in a cloud container cannot use a path
+(the daemon would read ITS disk, which is the wrong file at best and, for an
+invited agent, a read of the hub's filesystem), and base64 in a tool call puts
+the bytes through the model's context and the JSON-RPC payload: slow, bounded
+by the model, and paid for in tokens. The operator's requirement (2026-10-02):
+an upload and download path through Dibs that is efficient, robust, encrypted
+and negotiated automatically. So the bytes move on a separate HTTPS request,
+and the MCP call only authorizes it.
+
+**Aligned with where MCP is going.** SEP-2631 (File Objects and Transfer,
+open, not merged as of 2026-10-02) proposes `files/authorizeUpload` and
+`files/authorizeDownload` returning HTTPS transfer descriptors, so bytes stay
+out of JSON-RPC. A13 is the same shape as Dibs tools now. When the SEP lands,
+the methods are added beside the tools with the same descriptor and the tools
+stay for hosts that have not moved (PHILOSOPHY rule 9: design the 2026 way).
+
+### A13.1 Tools
+
+| Tool | Returns |
+|---|---|
+| `upload(size?, mime?, sha256?, name?)` | A transfer descriptor `{method, url, headers, expires_at, max_bytes, resumable}`. The agent sends the bytes there. Completing the transfer returns `{blob:"sha256:…", size, mime, deduped}`, exactly as `put_blob` does, and the blob is then attachable to `send` like any other. |
+| `download(blob)` | `{method:"GET", url, headers, expires_at, size, sha256, mime}`. Access-checked by A6 at authorization time. |
+
+`put_blob(data)` stays for small inline content and for hosts with no way to
+make an HTTP request (a ChatGPT web conversation). `put_blob(path)` and
+`get_blob(as: "path")` stay for an agent on the board's own machine, where
+they are zero-copy, and are refused for an invite (NETWORK.md §9).
+
+### A13.2 The transfer endpoints
+
+- `PUT`/`POST /files/up/<ticket>` and `GET /files/<ticket>` on the board's
+  own listeners: the pinned listener for joined machines, the public listener
+  for invites (NETWORK.md §9). Nothing new to configure.
+- **A ticket is a capability**: random, single-purpose (one upload or one
+  blob), bound to the agent that asked, short-lived (default 15 minutes, and
+  the upload ticket stays valid while bytes are arriving), and held in memory
+  only. Possessing it is the authorization for that one transfer and nothing
+  else, so it is safe to hand to `curl`.
+- **Uploads are resumable**: the IETF resumable-uploads protocol
+  (draft-ietf-httpbis-resumable-upload: `Upload-Offset`, `Upload-Complete`,
+  `HEAD` for the offset), so a dropped connection continues where it stopped
+  instead of restarting a large file.
+- **Downloads take `Range`** and send `ETag` = the blob id, so a client resumes
+  and caches by standard HTTP.
+- **Streamed**: bytes go straight to a temp file in the blob store, hashed as
+  they arrive, never held whole in memory, and are committed to the
+  content-addressed store (encrypted at rest, A3) only when the hash is
+  known. A declared `sha256` that does not match is refused and nothing is
+  stored. Size and quota (A9) are enforced as bytes arrive, not after.
+
+### A13.3 Encryption and negotiation
+
+- Off the machine, always TLS 1.3, on the same certificate the client already
+  trusts for `/mcp`: the pinned self-signed certificate for joined machines,
+  the public certificate for invites. The client negotiates nothing new.
+- On the board's own machine the bytes travel over loopback, which never
+  leaves the host, and the CLI prefers the zero-copy path there.
+- At rest, the blob store's existing encryption applies (A3).
+
+### A13.4 The client side
+
+`dibs put <file> [--mime …]` and `dibs get <blob> [-o path]` do the whole
+exchange: ask the board for a ticket over MCP or HTTP, transfer with resume and
+retries, verify the hash, and print the blob id (put) or write the file
+(get). Any HTTP client works against the descriptor (`curl -T file "$url"`),
+which is what an agent without the CLI uses.
+
+### A13.5 Ledger
+
+Unchanged: a blob's existence and refcount are what A4 already records.
+Tickets are engine-ephemeral, like notices: losing them on restart costs the
+transfer in progress (the client asks again and resumes from the new
+ticket's reported offset), never coordination state.
