@@ -17,10 +17,7 @@ func (e *Engine) labelBoardHosts(b core.Result) {
 			continue
 		}
 		id := e.canonicalHost(a.Agent.HostID)
-		old := latest[id]
-		if old == nil || a.LastCoordination.After(old.LastCoordination) ||
-			(a.LastCoordination.Equal(old.LastCoordination) &&
-				(a.CreatedSerial > old.CreatedSerial || (a.CreatedSerial == old.CreatedSerial && a.ID < old.ID))) {
+		if newerHostLabel(a, latest[id]) {
 			latest[id] = a
 		}
 	}
@@ -29,17 +26,33 @@ func (e *Engine) labelBoardHosts(b core.Result) {
 		if a == nil || a.Agent == nil {
 			continue
 		}
-		label := a.Agent.Host
-		id := e.canonicalHost(a.Agent.HostID)
-		if id != "" {
-			if id == e.HostID() || id == e.state.NodeID || e.hostAliases[id] {
-				label = thisHost()
-			} else if newest := latest[id]; newest != nil {
-				label = newest.Agent.Host
-			}
-		}
+		label := e.boardHostLabel(a.Agent, latest)
 		if label != "" {
 			row["host"] = label
 		}
 	}
+}
+
+func newerHostLabel(a, old *core.Agent) bool {
+	if old == nil || a.LastCoordination.After(old.LastCoordination) {
+		return true
+	}
+	if !a.LastCoordination.Equal(old.LastCoordination) {
+		return false
+	}
+	return a.CreatedSerial > old.CreatedSerial || (a.CreatedSerial == old.CreatedSerial && a.ID < old.ID)
+}
+
+func (e *Engine) boardHostLabel(info *core.AgentInfo, latest map[string]*core.Agent) string {
+	id := e.canonicalHost(info.HostID)
+	if id == "" {
+		return info.Host
+	}
+	if id == e.HostID() || id == e.state.NodeID || e.hostAliases[id] {
+		return thisHost()
+	}
+	if newest := latest[id]; newest != nil {
+		return newest.Agent.Host
+	}
+	return info.Host
 }

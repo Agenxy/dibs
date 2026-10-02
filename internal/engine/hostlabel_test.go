@@ -34,6 +34,8 @@ func TestMachineLabelsAreDerivedFromTheNewestVisibleMember(t *testing.T) {
 		}
 	}
 	check("beta") // Same coordination time: newer creation wins.
+	st.Agents["b"].CreatedSerial = 1
+	check("alpha") // Equal time and creation: agent ID makes selection stable.
 	st.Agents["a"].LastCoordination = stamp.Add(time.Second)
 	check("alpha") // Most recently coordinated wins, without changing its raw label.
 	st.Agents["a"].Status = core.StatusArchived

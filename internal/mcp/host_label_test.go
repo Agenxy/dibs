@@ -54,10 +54,14 @@ func TestOneMachineHasOneDisplayLabelAcrossRegistrations(t *testing.T) {
 func TestRemoteDisplayLabelsAreSharedButUnknownHostsStaySeparate(t *testing.T) {
 	srv, _ := newServer(t)
 	meta := map[string]any{HostMetaKey: "foreign-computer"}
+	var olderToken string
 	for _, a := range []struct{ name, label string }{{"older", "old-remote"}, {"newer", "new-remote"}} {
 		r := toolCallWithMeta(t, srv, "register", map[string]any{"name": a.name, "host": a.label}, meta)
 		if r["token"] == nil {
 			t.Fatalf("setup: %v", r)
+		}
+		if a.name == "older" {
+			olderToken, _ = r["token"].(string)
 		}
 	}
 	for _, a := range []struct{ name, label string }{{"unknown-one", "unproved-one"}, {"unknown-two", "unproved-two"}} {
@@ -92,5 +96,16 @@ func TestRemoteDisplayLabelsAreSharedButUnknownHostsStaySeparate(t *testing.T) {
 	}
 	if len(wants) != 0 {
 		t.Fatalf("setup: missing rows: %v", wants)
+	}
+	// A real later checkpoint selects that member's label for the whole machine.
+	result = toolCall(t, srv, "check_in", map[string]any{"token": olderToken})
+	board = result["board"].(map[string]any)
+	for _, raw := range board["agents"].([]any) {
+		row := raw.(map[string]any)
+		if row["id"] == "older" || row["id"] == "newer" {
+			if row["host"] != "old-remote" {
+				t.Errorf("later checkpoint display=%v", row["host"])
+			}
+		}
 	}
 }
