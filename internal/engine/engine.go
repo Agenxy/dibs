@@ -67,8 +67,11 @@ type Engine struct {
 	//
 	// Ephemeral and rebuildable, same tier as `seen`: losing it on restart costs
 	// at most one unnecessary wake.
-	turnEnded     map[string]time.Time
-	lastStallTick time.Time // paces stallTick; see stall.go
+	turnEnded       map[string]time.Time
+	socketOffers    map[string]socketOffer
+	noticePresented map[string]time.Time
+	nextSocketOffer uint64
+	lastStallTick   time.Time // paces stallTick; see stall.go
 	// reachedByHook: agents at least one lifecycle hook has resolved to, so a
 	// later miss in their directory is somebody else's session rather than
 	// theirs. Telemetry for hookhealth.go, same tier as `seen`.
@@ -949,9 +952,16 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	}
 	if actor != nil {
 		e.seen[actor.ID] = now
+		e.confirmSocketOffer(actor, now)
+		if op.Kind == core.OpRespond && (op.Disposition == "accept" || op.Disposition == "flag") {
+			e.clearNoticesFor(actor.ID, op.MsgSerial)
+		}
 	}
 	if lid, ok := res["agent_id"].(string); ok && lid != "" {
 		e.seen[lid] = now
+		if l := e.state.Agents[lid]; l != nil {
+			e.confirmSocketOffer(l, now)
+		}
 	}
 	if op.Kind == core.OpResume {
 		if lid, ok := res["agent_id"].(string); ok {
@@ -1248,12 +1258,14 @@ func (e *Engine) publish(evs []core.Event) {
 		case "agent.reclaimed":
 			if id, _ := ev.Data["agent_id"].(string); id != "" {
 				e.forgetFootprint(id)
+				e.forgetPresentation(id)
 			}
 		case "agent.merged":
 			// A merge deletes the SOURCE agent, whose id is `from`: not
 			// `agent_id`, which names the coordinator who did it.
 			if id, _ := ev.Data["from"].(string); id != "" {
 				e.forgetFootprint(id)
+				e.forgetPresentation(id)
 			}
 		}
 		e.noteEvent(ev) // record what an agent needs told; drained by hook_poll

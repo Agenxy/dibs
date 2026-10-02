@@ -61,6 +61,16 @@ const hubDir = join(root, "hub")
 const clientDir = join(root, "client")
 mkdirSync(hubDir); mkdirSync(clientDir)
 
+// The fake joined harness must not consult this test runner's live sessions
+// or real app-origin transcripts. Keep its Codex configuration within the
+// fixture, and drop thread credentials inherited from whichever harness ran CI.
+const fixtureCodexHome = join(root, "codex")
+mkdirSync(fixtureCodexHome)
+const fixtureHarnessEnv = { ...process.env, CODEX_HOME: fixtureCodexHome }
+for (const key of ["CODEX_THREAD_ID", "CLAUDE_CODE_SESSION_ID", "DIBS_SESSION_ID", "DIBS_TOKEN"]) {
+  delete fixtureHarnessEnv[key]
+}
+
 // The address goes in dibs.toml, as SPEC §16 has it, rather than on the command
 // line: the CLI on the hub reads the file to tell that machine's own agents
 // where the daemon is, and a flag leaves it nothing to read.
@@ -74,7 +84,7 @@ writeFileSync(join(hubDir, "dibs.toml"), `addr = "${ADDR}"\n`)
 // off the daemon's PATH, every checkout identity on this board has to come
 // from a bridge, which is how a real fleet works.
 const noGit = (process.env.PATH ?? "").split(":").filter((d) => !existsSync(join(d, "git"))).join(":")
-const daemon = Bun.spawn({ cmd: [dibd, "-dir", hubDir], env: { ...process.env, PATH: noGit, DIBS_LOG_DEBUG: "1" }, stdout: "ignore", stderr: "pipe" })
+const daemon = Bun.spawn({ cmd: [dibd, "-dir", hubDir], env: { ...fixtureHarnessEnv, PATH: noGit, DIBS_LOG_DEBUG: "1" }, stdout: "ignore", stderr: "pipe" })
 let hubLog = ""
 void (async () => {
   const reader = daemon.stderr.getReader()
@@ -122,7 +132,7 @@ copyFileSync(join(hubDir, "local.secret"), join(clientDir, "local.secret"))
 chmodSync(join(clientDir, "local.secret"), 0o600)
 
 function run(cmd: string[], env: Record<string, string>, cwd?: string) {
-  const p = Bun.spawnSync({ cmd, cwd, env: { ...process.env, ...env }, stdout: "pipe", stderr: "pipe" })
+  const p = Bun.spawnSync({ cmd, cwd, env: { ...fixtureHarnessEnv, ...env }, stdout: "pipe", stderr: "pipe" })
   return { code: p.exitCode, out: p.stdout.toString() + p.stderr.toString() }
 }
 const trust = run([dibsBin, "trust", ADDR], { DIBS_DIR: clientDir })
@@ -174,7 +184,7 @@ class Bridge {
   constructor(dir: string, cwd: string, addr?: string, hostId?: string) {
     this.proc = Bun.spawn({
       cmd: [dibsBin, "mcp-stdio"], cwd,
-      env: { ...process.env, DIBS_DIR: dir, ...(addr ? { DIBS_ADDR: addr } : {}), ...(hostId ? { DIBS_HOST_ID: hostId } : {}) },
+      env: { ...fixtureHarnessEnv, DIBS_DIR: dir, ...(addr ? { DIBS_ADDR: addr } : {}), ...(hostId ? { DIBS_HOST_ID: hostId } : {}) },
       stdin: "pipe", stdout: "pipe", stderr: "ignore",
     })
     bridges.push(this.proc)
@@ -301,7 +311,10 @@ argv = ["${process.execPath}", "${recorder}", "${wakeLog}", "{thread}", "{messag
 // The agent registers under the thread its harness would quote (the shape
 // wake_e2e's Claude Code block uses), so a resume command has something to
 // name; the hub finds it the way it finds any thread.
-const THREAD = "019ffe52-0eaf-7f60-81cc-6ab1298d76ec"
+// Never name a REAL local session: AppFor then reads its rollout and probes
+// the operator's app before the bridge reports the wake. This fixture tests a
+// joined terminal harness, not that unrelated live app or its scan latency.
+const THREAD = crypto.randomUUID()
 // Its own bridge, named as the harness it stands in for: the daemon records
 // the harness from the MCP client that registered, not from a word in the
 // call, and a directory of its own, where the wake will run.
@@ -322,7 +335,7 @@ await sleeperBridge.call("hook_poll", { session_id: THREAD, event: "Stop", cwd: 
 
 const hostBridge = Bun.spawn({
   cmd: [dibsBin, "host-bridge"], cwd: clientDir,
-  env: { ...process.env, DIBS_ADDR: URL, DIBS_DIR: clientDir, DIBS_HOST_ID: CLIENT_HOST },
+  env: { ...fixtureHarnessEnv, DIBS_ADDR: URL, DIBS_DIR: clientDir, DIBS_HOST_ID: CLIENT_HOST },
   stdout: "ignore", stderr: "pipe",
 })
 bridges.push(hostBridge)
@@ -362,7 +375,7 @@ check("with the line composed on THIS machine, and the agent, sender and type su
   JSON.stringify(woke[0] ?? null))
 for (let i = 0; i < 50 && !hubLog.includes("reports the wake ran"); i++) await Bun.sleep(100)
 check("and the hub took the bridge's report as the wake's outcome", hubLog.includes("the agent's host reports the wake ran"),
-  hubLog.split("\n").filter((l) => l.includes("wake")).slice(-4).join(" | ").slice(0, 600))
+  hubLog.split("\n").filter((l) => l.includes("wake")).slice(-4).join(" | ").slice(0, 600) + " bridge-log: " + bridgeLog.slice(-1500))
 
 // ── doctor on both machines knows which half is where ────────────────────
 const hubDoc = run([dibsBin, "doctor"], { DIBS_DIR: hubDir }, hubDir)

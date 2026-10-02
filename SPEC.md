@@ -99,6 +99,13 @@ an authenticated, well-formed, admitted attempt is real liveness evidence. Calls
 failing phases 1–3 (unauthenticated, malformed, rate-limited) never wake: they are
 never ledgered and must not change state.
 
+**Event observation is not turn activity.** `await_events`, `events_since`,
+`recent_events` and subscriptions authenticate and rate-admit as before, but
+do not wake a dormant agent, refresh its lease/coordination checkpoint, stamp
+`last_seen`, or retract the session's recorded Stop. A watcher may wait between
+turns without making the session look busy. Actual model calls and starting
+hooks remain turn evidence; finishing hooks make the current session wakeable.
+
 ## 3. Serials and ordering
 
 A single `u64` per node. One accepted mutating op = one serial = one ledger line.
@@ -665,6 +672,29 @@ digest, or empty when nothing is owed or the agent no longer holds that session.
 It neither marks mail delivered nor drains agent updates or announcements;
 unlike `inbox` and `hook_poll`, it spends no delivery or agent call budget.
 Credential and session checks share the digest's single writer-loop snapshot.
+
+A newer self-wake notification also advertises `com.dibs/socket_offer: true`.
+A capable writer includes that key on the hidden digest read to reserve the
+current presentation, receives `_meta["com.dibs/socket_offer_id"]`, and reports
+that id with `com.dibs/socket_written` after its attempt. A successful write is
+not a harness receipt: subsequent actual activity confirms presentation only
+if that session was idle when offered, or a starting lifecycle event identifies
+a new turn. Tool calls in an already-running turn cannot confirm held mail.
+A held message or a failed write therefore retains its Stop fallback. Stop
+presentation filters a later socket refresh too. This timing is ephemeral,
+changes no ledger/mailbox state, and preserves existing reminder intervals.
+Plain reads and older writers remain non-consuming; advertising a capability
+does not spend anything before the writer implements its handshake.
+Agent updates share the presentation cadence, but `check_in` and `inbox`
+still expose the complete pending information. Accepting or flagging a milestone
+clears the progress notice for that request, like reading its full message.
+
+The session id is a same-machine capability for a token-less nudge. A local
+peer holding the board secret and knowing that id can call `hook_poll`, or
+forge a starting-hook event, to spend presentation for an `AnnounceRetry`
+interval; repeating that can keep reminders delayed. This accepted trade
+does not consume or hide information: the pending mail and agent updates
+remain complete in `inbox` and the agent's own authoritative `check_in`.
 
 A self-wake inbox notification advertises this read with the additive
 `com.dibs/digest_refresh: true` metadata key. A capable bridge refreshes before

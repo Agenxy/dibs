@@ -8,6 +8,9 @@ import "context"
 const (
 	WakeDigestURI        = "dibs://wake-digest"
 	DigestRefreshMetaKey = "com.dibs/digest_refresh"
+	SocketOfferMetaKey   = "com.dibs/socket_offer"
+	SocketOfferIDMetaKey = "com.dibs/socket_offer_id"
+	SocketWrittenMetaKey = "com.dibs/socket_written"
 )
 
 func (s *Server) readWakeDigest(ctx context.Context, meta map[string]any) (any, *rpcError) {
@@ -19,11 +22,26 @@ func (s *Server) readWakeDigest(ctx context.Context, meta map[string]any) (any, 
 			Data: hint("pass _meta['com.dibs/token'] and _meta['com.dibs/session'] from the bridge's subscription"),
 		}
 	}
-	text, err := s.eng.FreshWakeDigestFor(ctx, token, session)
+	var text, offer string
+	var err error
+	if offers, _ := meta[SocketOfferMetaKey].(bool); offers {
+		id, _ := meta[SocketOfferIDMetaKey].(string)
+		written, _ := meta[SocketWrittenMetaKey].(bool)
+		res, callErr := s.eng.SocketOfferFor(ctx, token, session, id, written)
+		err = callErr
+		text, _ = res["digest"].(string)
+		offer, _ = res["offer"].(string)
+	} else {
+		text, err = s.eng.FreshWakeDigestFor(ctx, token, session)
+	}
 	if err != nil {
 		return nil, rpcErrFrom(err)
 	}
-	return cacheable(map[string]any{"contents": []map[string]any{
+	out := map[string]any{"contents": []map[string]any{
 		{"uri": WakeDigestURI, "mimeType": "text/plain", "text": text},
-	}}, 0, scopePrivate), nil
+	}}
+	if offer != "" {
+		out["_meta"] = map[string]any{SocketOfferIDMetaKey: offer}
+	}
+	return cacheable(out, 0, scopePrivate), nil
 }

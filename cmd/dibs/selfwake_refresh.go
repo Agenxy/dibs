@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -64,24 +65,79 @@ func (iw *inboxWatcher) freshNotice(captured string) (string, error) {
 }
 
 func (s wakeDigestSource) read() (string, error) {
+	text, _, err := s.readOffer(nil)
+	return text, err
+}
+
+// offerNotice keeps receipts LOCAL TO THIS WRITE. Several mailboxes share one
+// socket writer; a failed refresh of any releases the other attempts too.
+func (iw *inboxWatcher) offerNotice(captured string) (string, func(bool), error) {
+	iw.mu.Lock()
+	offers := iw.offerSupported
+	var sources []wakeDigestSource
+	for _, st := range iw.streams {
+		sources = append(sources, st.source)
+	}
+	iw.mu.Unlock()
+	if !offers {
+		text, err := iw.freshNotice(captured)
+		return text, nil, err
+	}
+	sort.Slice(sources, func(i, j int) bool { return sources[i].key < sources[j].key })
+	type receipt struct {
+		source wakeDigestSource
+		id     string
+	}
+	var receipts []receipt
+	finish := func(written bool) {
+		for _, r := range receipts {
+			_, _, err := r.source.readOffer(map[string]any{
+				mcp.SocketOfferMetaKey:   true,
+				mcp.SocketOfferIDMetaKey: r.id, mcp.SocketWrittenMetaKey: written,
+			})
+			if err != nil {
+				slog.Debug("could not report the socket write; hook fallback remains available", "err", err)
+			}
+		}
+	}
+	var texts []string
+	for _, source := range sources {
+		text, id, err := source.readOffer(map[string]any{mcp.SocketOfferMetaKey: true})
+		if err != nil {
+			return "", finish, err
+		}
+		if id != "" {
+			receipts = append(receipts, receipt{source, id})
+		}
+		if text != "" {
+			texts = append(texts, text)
+		}
+	}
+	return strings.Join(texts, "\n"), finish, nil
+}
+
+func (s wakeDigestSource) readOffer(extra map[string]any) (string, string, error) {
+	meta := map[string]any{"com.dibs/token": s.token, mcp.SessionMetaKey: s.session}
+	for k, v := range extra {
+		meta[k] = v
+	}
 	body, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": "dibs-wake-refresh", "method": "resources/read",
-		"params": map[string]any{"uri": mcp.WakeDigestURI, "_meta": map[string]any{
-			"com.dibs/token": s.token, mcp.SessionMetaKey: s.session,
-		}},
+		"params": map[string]any{"uri": mcp.WakeDigestURI, "_meta": meta},
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	resp, err := s.request(ctx, body)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("wake digest read: HTTP %d", resp.StatusCode)
+		return "", "", fmt.Errorf("wake digest read: HTTP %d", resp.StatusCode)
 	}
 	var reply struct {
 		Result *struct {
+			Meta     map[string]any `json:"_meta"`
 			Contents []struct {
 				Text string `json:"text"`
 			} `json:"contents"`
@@ -95,20 +151,21 @@ func (s wakeDigestSource) read() (string, error) {
 		} `json:"error"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&reply); err != nil {
-		return "", err
+		return "", "", err
 	}
 	if reply.Error != nil {
 		// A credential the board revoked no longer owns a notice. Do not
 		// let one obsolete stream surrender the shared writer for live peers.
 		if reply.Error.Data.Code == "E_BAD_TOKEN" {
-			return "", nil
+			return "", "", nil
 		}
-		return "", fmt.Errorf("wake digest read: RPC %d: %s", reply.Error.Code, reply.Error.Message)
+		return "", "", fmt.Errorf("wake digest read: RPC %d: %s", reply.Error.Code, reply.Error.Message)
 	}
 	if reply.Result == nil || len(reply.Result.Contents) != 1 {
-		return "", fmt.Errorf("wake digest read: missing digest content")
+		return "", "", fmt.Errorf("wake digest read: missing digest content")
 	}
-	return reply.Result.Contents[0].Text, nil
+	id, _ := reply.Result.Meta[mcp.SocketOfferIDMetaKey].(string)
+	return reply.Result.Contents[0].Text, id, nil
 }
 
 // Follow a board moved underneath a long-lived bridge, without caching a new

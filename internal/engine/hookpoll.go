@@ -177,7 +177,11 @@ func (e *Engine) noteTurnState(l *core.Agent, sessionID, event string) {
 	if l == nil || !l.SessionIsCurrent(sessionID) {
 		return
 	}
-	switch StateForEvent(event) {
+	state := StateForEvent(event)
+	if event == "PreToolUse" || event == "PostToolUse" {
+		state = "running"
+	}
+	switch state {
 	case "finished":
 		if e.turnEnded == nil {
 			e.turnEnded = map[string]time.Time{}
@@ -198,6 +202,11 @@ func (e *Engine) noteTurnState(l *core.Agent, sessionID, event string) {
 		// clock, and this stamps the contact clock itself.)
 		delete(e.turnEnded, l.ID)
 		e.seen[l.ID] = time.Now()
+		if event == "SessionStart" || event == "UserPromptSubmit" {
+			e.noteSocketTurnStart(l, e.seen[l.ID])
+		} else {
+			e.confirmSocketOffer(l, e.seen[l.ID])
+		}
 	}
 }
 
@@ -302,15 +311,13 @@ func (e *Engine) HookPollFrom(
 		mail := e.pendingMail(l.ID, time.Now())
 		// The agent's own copy carries the mail; `mail` above stays the quiet
 		// version for the human notice and every other surface.
-		agentMail := e.pendingMailQuoted(l.ID, time.Now())
+		agentMail := e.freshMailQuoted(l.ID, time.Now())
 		announced, announceKeys := e.dueAnnouncements(l.ID, time.Now())
 		// Things done TO this agent that it cannot have inferred: admitted by a
 		// director, promoted from a queue, evicted. Silent until now: an agent
 		// told "awaiting_director" had no way to learn the wait had ended.
-		var notices []string
-		for _, n := range e.takeNotices(l.ID) {
-			notices = append(notices, n.Text)
-		}
+		notices := e.pendingNotices(l.ID)
+		modelNotices, noticeKeys := e.dueNoticeLines(l.ID, time.Now())
 		if len(mail) == 0 && len(announced) == 0 && len(notices) == 0 {
 			// No news. A turn Dibs started may still be ending with declared
 			// work open, and this is where that case arrives: the stall this
@@ -385,7 +392,7 @@ func (e *Engine) HookPollFrom(
 		//
 		// Mail is deliberately unaffected: somebody is blocked on an unanswered
 		// question, and nobody is blocked on knowing who joined a space.
-		noticesCount := e.situationalCount(len(notices))
+		noticesCount := e.situationalCount(len(modelNotices))
 		// A notice somebody is WAITING on is not situational awareness, and the
 		// switch above was never meant to cover it. `notices_wake = false`
 		// trades latency for tokens on "somebody joined your space"; it also,
@@ -396,7 +403,7 @@ func (e *Engine) HookPollFrom(
 		// Counted separately and added to both terms, so it survives the switch
 		// and reaches an `urgent` operator too: an answer you are blocked on is
 		// the definition of urgent.
-		waiting := e.blockingNotices(l.ID)
+		waiting := e.dueBlockingNotices(l.ID, time.Now())
 		// Computed, not consumed. The wake is only spent below, if this event
 		// is one that can actually carry it. See wakeKeys.
 		now := time.Now()
@@ -428,7 +435,8 @@ func (e *Engine) HookPollFrom(
 			// worked.
 			e.markWoken(wake, now)
 			e.markAnnounced(announceKeys, now)
-			addDelivery(out, event, hookDigest(l.ID, agentMail, announced, notices))
+			e.markNoticePresentation(noticeKeys, now)
+			addDelivery(out, event, hookDigest(l.ID, agentMail, announced, modelNotices))
 		} else if cont := e.continuationReply(l, event, stopActive); cont != nil {
 			// News the turn is not extended for, and a turn Dibs started is
 			// ending with declared work open. See continuation.go.
@@ -553,12 +561,30 @@ func (e *Engine) pendingMailQuoted(agent string, now time.Time) []string {
 }
 
 func (e *Engine) mailLines(agent string, now time.Time, quote bool) []string {
+	return e.mailLinesFor(agent, now, quote, nil)
+}
+
+func (e *Engine) freshMailQuoted(agent string, now time.Time) []string {
+	keys := e.wakeKeys(agent, now)
+	wanted := make(map[uint64]bool, len(keys))
+	for _, key := range keys {
+		_, serial, _ := strings.Cut(key, "\x00")
+		n, _ := strconv.ParseUint(serial, 10, 64)
+		wanted[n] = true
+	}
+	return e.mailLinesFor(agent, now, true, wanted)
+}
+
+func (e *Engine) mailLinesFor(agent string, now time.Time, quote bool, wanted map[uint64]bool) []string {
 	var out []string
 	budget := mailQuoteBudget
 	if !quote {
 		budget = 0
 	}
 	for _, m := range e.state.Inbox(agent) {
+		if wanted != nil && !wanted[m.Serial] {
+			continue
+		}
 		if m.State == core.MsgStatePending || m.State == core.MsgStateDelivered {
 			// AND THE CALL THAT CLEARS IT, which is not read_mail.
 			//
@@ -1038,7 +1064,7 @@ func (e *Engine) deliverToModel(event string, fresh, blocked, stopActive bool) b
 		// who would rather an FYI never cost a turn.
 		return e.WakePolicy() == WakeAll || blocked
 	default:
-		return true
+		return fresh
 	}
 }
 
