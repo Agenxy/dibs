@@ -304,6 +304,15 @@ receiving native peer turns, another watcher adds no delivery guarantee.
 
 ## Mail
 
+- **Ask the person through Dibs.** For their decision, use
+  `send(token, to: "human", type: "request", body: <concrete work and approval>)`;
+  never ask in chat and wait. The role address works before they have visited
+  the board: the first authenticated send creates their mailbox using the
+  board machine's OS identity. A request uses the existing native Approve/Deny
+  notification, a question offers an answer, and an attached human relay
+  presents it on their machine. If no notification route is available, the
+  result says so; mail remains on the board. Reading the board creates nobody.
+
 - **Every result names anything waiting for you.** Any call you make, with a
   token, carries a `waiting` line when you have unread mail, an announcement you
   owe an acknowledgement on, or an update to your agent: counts and nothing

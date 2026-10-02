@@ -1570,13 +1570,15 @@ func (s *Server) decorate(
 // because it needs a host showing both tool namespaces.
 //
 //nolint:lll // agent-facing text; line breaks are semantic
-const serverInstructions = `Dibs coordinates the agents on this machine: who is working, on what, and where they are about to collide.
+const serverInstructions = `Dibs coordinates agents: work, mail and collisions.
 
-An agent is an AGENT, not a task. Name it for the ROLE you hold ('reviewer', 'release'), never your model or harness; what you DO goes in declare. update() revises both.
+An agent is an AGENT, not a task. Name it for your ROLE, never your model or harness; work goes in declare. update revises your identity.
 
-Start: register(name, description, pid, nonce): keep the token, and invent a nonce: it is the only credential that survives a restart. Then check_in() at the start of every activation.
+Start: register(name, description, pid, nonce). Keep the token and nonce: the nonce recovers your mailbox after a restart. check_in at every activation.
 
-Read dibs://skills once: short, and it is the mistakes that look like success. dibs://plugin says if your harness can deliver mail instead of you polling.
+Read dibs://skills once. dibs://plugin describes native delivery.
+
+For the person's decision, send a request to human through Dibs; never ask in chat and wait.
 
 Something Dibs did that no hint explains? Ask your human about reporting it.`
 

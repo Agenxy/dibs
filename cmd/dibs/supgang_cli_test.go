@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/remap"
 	"github.com/agenxy/dibs/internal/supgang"
 )
@@ -49,7 +50,20 @@ func TestMain(m *testing.M) {
 		}
 		os.Exit(0)
 	}
-	os.Exit(m.Run())
+	dir, err := os.MkdirTemp("", "dibs-cli-codex-")
+	if err != nil {
+		panic(err)
+	}
+	if err := os.Setenv("CODEX_HOME", dir); err != nil {
+		panic(err)
+	}
+	harnessenv.RealShower = harnessenv.Shower{
+		Holds: func(string) bool { panic("unfaked app access in dibs CLI test") },
+		Open:  func([]string) error { panic("unfaked app access in dibs CLI test") },
+	}
+	code := m.Run()
+	_ = os.RemoveAll(dir)
+	os.Exit(code)
 }
 
 func fakeSupgang(args []string) int {
