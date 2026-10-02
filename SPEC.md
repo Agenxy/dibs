@@ -702,6 +702,38 @@ as load-bearing until the final ships and hosts migrate.
   initialized`/`ping` retained for 2025-11-25 hosts: today's clients work day one,
   and the legacy path sunsets when hosts migrate.
 
+**Tracked requests (2026-07-28 tasks extension).** `send(type: "request",
+track: true)` keeps the request for seven days from creation unless its
+recipient is purged first. Shortening archive retention (default seven days)
+can purge that recipient sooner; a board reset also invalidates the handle.
+If that call declares `io.modelcontextprotocol/tasks` in its per-request
+client capabilities, it returns `CreateTaskResult` with `resultType: "task"`;
+otherwise it returns the ordinary send result with an explicit `tracking`
+note explaining that there is no task handle and to follow with `read_mail`.
+Legacy calls always keep the legacy result shape, even when they carry modern
+capability metadata; task methods on that era return `-32601` with a hint to
+use the modern protocol. Tracking is opt-in because
+some hosts wait for a task to finish before returning control to the agent.
+The handle is a bearer capability authenticated by the board's secret and a
+128-bit MAC: possession grants access to that task, not to other mailbox
+items. Task requests also pass the daemon's normal coordination auth gate.
+Handles survive daemon restarts with the same secret and node identity.
+
+`tasks/get`, `tasks/update`, `tasks/cancel`, and listeners requesting
+`notifications.taskIds` require the extension capability on each call;
+absence returns `-32021` with `requiredCapabilities.extensions` naming it.
+Unknown handles return `-32602`. Requests remain `working` through acceptance
+and milestone reports, with progress in `statusMessage`. Done returns
+`completed` with the deliverable; denial, decline and expiry also complete,
+with a tool result carrying `isError: true`, rather than a protocol failure.
+Task listeners send current snapshots as `notifications/tasks`, recover
+dropped events from those snapshots, and end when their followed tasks end.
+Combined resource/task listeners honor the resource subscriptions only and
+omit task IDs from their acknowledgement. No task progress notifications or
+client input requests are emitted. `tasks/update` ignores unsolicited input;
+`tasks/cancel` acknowledges cooperative cancellation without stopping another
+agent's work. A sender asks the worker directly when work should stop.
+
 **Tools (47).** All take `token` except `register`, `resume`,
 `hook_poll` and `guard_path` (the last two are lifecycle-hook surfaces and have
 no token to give: see SECURITY.md).

@@ -390,7 +390,9 @@ func run() error {
 	scorer.install(ctx, eng)
 
 	mux := http.NewServeMux()
-	mux.Handle("/mcp", mcp.New(eng))
+	mcpSrv := mcp.New(eng)
+	mcpSrv.SetTaskKey(secret) // task ids survive a restart; see mcp/tasks.go
+	mux.Handle("/mcp", mcpSrv)
 	ws, err := web.New(eng)
 	if err != nil {
 		return err
