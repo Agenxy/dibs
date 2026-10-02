@@ -320,6 +320,20 @@ func (s Store) Authenticate(token string, now time.Time) (Entry, error) {
 	return out, err
 }
 
+// CheckGeneration revalidates a transfer's admitted verifier without retaining
+// its original invitation key. Revoke/reissue and expiry invalidate old tickets.
+func (s Store) CheckGeneration(entry Entry, now time.Time) error {
+	return s.transaction(false, func(m map[string]Entry) error {
+		current, ok := m[entry.Name]
+		if !ok || current.Digest != entry.Digest || current.Revoked || !now.Before(current.Expires) ||
+			current.AgentID != entry.AgentID || current.IssuedBy != entry.IssuedBy ||
+			current.IssuerCreated != entry.IssuerCreated || current.IssuerClosed != entry.IssuerClosed {
+			return errors.New("invitation generation expired or changed; authorize a new transfer with a live invitation")
+		}
+		return nil
+	})
+}
+
 // Bind is compare-and-set against the credential generation that admitted the
 // request, so a concurrent revoke/reissue cannot be undone by an old request.
 func (s Store) Bind(e Entry, id string) error {

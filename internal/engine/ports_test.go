@@ -30,6 +30,8 @@ func newMemBlobs() *memBlobs {
 	return &memBlobs{data: map[string][]byte{}, inflight: map[string]int{}}
 }
 
+func (m *memBlobs) FreeBytes() (uint64, error) { return 1 << 50, nil }
+
 // The Store contract requires concurrency safety: the engine reconciles on its
 // own goroutine while callers are still staging bytes. A double that does not
 // hold the same guarantee is not a double: it is a different component that

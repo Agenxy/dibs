@@ -50,6 +50,8 @@ type Ledger interface {
 // lock as a result: caught by `go test -race`, which is why it is spelled out
 // here rather than left to be inferred.
 type Store interface {
+	// FreeBytes measures available disk space on the staging filesystem.
+	FreeBytes() (uint64, error)
 	// Put stages plaintext bytes, returning their content id and size.
 	Put(plain []byte, maxSize int) (id string, size int64, err error)
 	// PutFile stages a regular file's contents. Must refuse non-regular files.

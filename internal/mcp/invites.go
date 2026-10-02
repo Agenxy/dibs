@@ -37,7 +37,7 @@ func cloudRefusal(why, hint string) *core.Error {
 func inviteToolAllowed(name string) bool {
 	switch name {
 	case "register", "resume", "check_in", "update", "heartbeat", "sign_off",
-		"declare", "undeclare", "send", "put_blob", "get_blob", "read_mail", "respond",
+		"declare", "undeclare", "send", "put_blob", "get_blob", "upload", "download", "read_mail", "respond",
 		"ack", "inbox", "claim", "release", "events_since", "await_events", "board",
 		"open_space", "join_space", "leave_space", "read_space", "post", "watch_space", "ack_announcement":
 		return true
