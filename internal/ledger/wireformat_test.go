@@ -226,6 +226,11 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		// recipient still owes. Same shape as keep_archived_nonce: absent
 		// decodes false and the sweep deletes what it always deleted.
 		"keep_owed": true,
+		// A request as a task (core/progress.go): the steps its sender names,
+		// the step a progress report ticks, and where done says the work
+		// landed. A rename would replay every task with no steps, no ticks
+		// and no deliverable, reporting success.
+		"milestones": true, "milestone": true, "deliverable": true,
 	}
 
 	// Every tag the Op DECLARES, not merely the ones this fixture happens to
@@ -416,14 +421,14 @@ const (
 	// time, no rename. If you are here because a sweep moved
 	// this value, the sweep is the bug, and the tag it renamed is the data
 	// loss.
-	frozenOpFingerprint       = "sha256:0210a6cc4ffd76c5"
+	frozenOpFingerprint       = "sha256:351944d7d60c00e9"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`
 	// renames the adjacent `"grant": true` with it and this test goes on
 	// passing: the exact co-edited-guard failure AGENTS.md describes, in the
 	// guard written to stop it. Found by a pre-release review.
-	frozenMessageFingerprint = "sha256:b06911065d90611f"
+	frozenMessageFingerprint = "sha256:6f65bd584df3150f"
 	// The identity inside op.agent. Set when the fingerprint was added; one
 	// new tag at a time from here, never a rename.
 	frozenAgentFingerprint = "sha256:c630d3cc9f27eb95"
@@ -570,7 +575,9 @@ func TestLedgerMessageFieldNamesAreFrozen(t *testing.T) {
 		// The serial of the adoption, so only the incarnation of a reused name
 		// that was actually given the mail can read it through the mark.
 		"adopted_serial": true,
-		"serial":         true, "from": true, "to": true, "type": true, "body": true,
+		// A task's steps, what was reported against them, and where it landed.
+		"milestones": true, "progress": true, "deliverable": true,
+		"serial": true, "from": true, "to": true, "type": true, "body": true,
 		"state": true, "consumed": true, "deadline": true, "response": true,
 		"delivered_serial": true, "sent_at": true, "delivered_at": true,
 		"responded_serial": true, "acked_serial": true, "terminal_at": true,

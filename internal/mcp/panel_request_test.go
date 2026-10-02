@@ -1,8 +1,11 @@
 package mcp
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/agenxy/dibs/internal/core"
 )
 
 // The panel opens when somebody asks for it, and at no other time.
@@ -145,5 +148,27 @@ func TestTheBoardPromptAsksForTheBoard(t *testing.T) {
 	})
 	if _, isErr := bad["error"]; !isErr {
 		t.Errorf("an unknown view was accepted: %v", bad)
+	}
+}
+
+// A task's progress notes are text the recipient wrote, so the panel copy that
+// travels through the host blanks them like bodies, in either shape a message
+// reaches the redactor. The milestone numbers stay: the panel counts them.
+func TestProgressNotesDoNotTravelInThePanelCopy(t *testing.T) {
+	typed := &core.Message{Body: "b", Progress: []core.Progress{{Milestone: 1, Note: "SECRET NOTE"}}}
+	normalised := map[string]any{"messages": []any{map[string]any{
+		"body": "b", "progress": []any{map[string]any{"milestone": 1, "note": "SECRET NOTE"}},
+	}}}
+	for name, v := range map[string]any{"typed": core.Result{"m": typed}, "normalised": core.Result(normalised)} {
+		out, _ := json.Marshal(withoutBodies(v.(core.Result)))
+		if strings.Contains(string(out), "SECRET NOTE") {
+			t.Errorf("%s: a progress note reached the panel copy: %s", name, out)
+		}
+		if !strings.Contains(string(out), `"milestone":1`) {
+			t.Errorf("%s: the milestone number was lost: %s", name, out)
+		}
+	}
+	if typed.Progress[0].Note != "SECRET NOTE" {
+		t.Error("redaction blanked the agent's own copy")
 	}
 }

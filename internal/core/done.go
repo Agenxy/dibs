@@ -35,6 +35,7 @@ func (s *State) applyDone(m *Message, op *Op, now time.Time) (Result, []Event, e
 		return nil, nil, errTooLarge("response body", s.Limits.MaxBodyBytes)
 	}
 	m.State = MsgStateDone
+	m.Deliverable = op.Deliverable
 	if op.Body != "" {
 		if m.Response != "" {
 			m.Response += "\n\n"
@@ -43,9 +44,11 @@ func (s *State) applyDone(m *Message, op *Op, now time.Time) (Result, []Event, e
 	}
 	m.TerminalAt = now
 	m.RespondedAt = s.Serial + 1
-	evs := []Event{{Type: "message." + MsgStateDone, Agent: m.To, To: m.From, Data: map[string]any{
-		"msg_serial": m.Serial,
-	}}}
+	data := map[string]any{"msg_serial": m.Serial}
+	if m.Deliverable != "" {
+		data["deliverable"] = m.Deliverable
+	}
+	evs := []Event{{Type: "message." + MsgStateDone, Agent: m.To, To: m.From, Data: data}}
 	s.finish(&evs, now)
 	return Result{"ok": true, "state": MsgStateDone}, evs, nil
 }

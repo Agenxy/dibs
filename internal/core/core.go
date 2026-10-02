@@ -713,6 +713,12 @@ type Message struct {
 	// Adopt is the abandoned agent this request asks to reclaim, for the same
 	// reason and with the same consequence on approval.
 	Adopt string `json:"adopt,omitempty"`
+	// Milestones, Progress and Deliverable make an approved request a task the
+	// sender can follow: the steps it named, what has been reported against
+	// them, and where the work landed. See progress.go.
+	Milestones  []string   `json:"milestones,omitempty"`
+	Progress    []Progress `json:"progress,omitempty"`
+	Deliverable string     `json:"deliverable,omitempty"`
 }
 
 // Terminal implements the exact SPEC §8 predicate, used consistently by
