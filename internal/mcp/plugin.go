@@ -29,6 +29,8 @@ func pluginDoc() string {
 			"already receives native peer turns. Do not start or re-arm an await_events/dibs await watcher there. " +
 			"For an unavailable or held native route, use the waiting fallback in dibs://skills; " +
 			"dibs doctor explains the operator-owned acceptance setting.",
+		"approvals": "Need the person's decision: send a request to human through Dibs; never ask in chat and wait. " +
+			"The human mailbox is created on first authenticated send and uses native notifications or the person's relay.",
 		"plugins":     plugins.All(),
 		"marketplace": json.RawMessage(plugins.Marketplace()),
 	}

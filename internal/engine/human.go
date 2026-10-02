@@ -182,66 +182,35 @@ func humanNonce() string { return "human:" + humanName() }
 // graveyard of `ada-2`, `ada-3`. Their mail and their agent memberships are the
 // things that must survive, and both hang off that identity.
 func (e *Engine) HumanAgent(ctx context.Context) (agent, token string, err error) {
-	// NEVER hold e.human.mu across a trip through the writer loop.
-	//
-	// THE DEADLOCK THIS AVOIDS. This took the mutex and held it, with a defer,
-	// while calling e.query and e.Do. The loop is a single goroutine, and the
-	// requests it serves take the same mutex: humanIdentityLocked, mayAdopt,
-	// and ordinary board rendering all do. So: this locks human.mu, the writer
-	// picks up a board request, that request blocks on human.mu, and this
-	// blocks waiting for the writer that is now stuck behind it. The one
-	// receiver of e.ops is gone and every agent on the board hangs, not just
-	// the caller.
-	//
-	// Snapshot, release, then talk to the loop. Two callers arriving together
-	// can both reach the registration below, and that is harmless: it carries
-	// the same name and the same nonce, so the nonce path returns the same
-	// identity to both and the second write stores what the first already did.
-	// A duplicated registration is a far better failure than a frozen daemon.
-	//
-	// Found by a pre-release review. The race probe beside this cannot see it:
-	// its competing traffic is registrations, which never touch human.mu.
+	res, err := e.query(ctx, func() core.Result {
+		id, tok, mintErr := e.humanAgentLocked(time.Now())
+		if mintErr != nil {
+			return core.Result{"error": mintErr}
+		}
+		return core.Result{"agent_id": id, "token": tok}
+	})
+	if err != nil {
+		return "", "", err
+	}
+	id, _ := res["agent_id"].(string)
+	tok, _ := res["token"].(string)
+	return id, tok, nil
+}
+
+// The single mint path, called on the writer loop by the web action and an
+// authenticated send to the human role. Never re-enter Do/query from here,
+// and never hold human.mu across exec: both would deadlock the single writer.
+// Only this board's OS identity supplies the name, nonce and process policy.
+func (e *Engine) humanAgentLocked(now time.Time) (agent, token string, err error) {
 	e.human.mu.Lock()
 	cachedID, cachedTok := e.human.agent, e.human.token
 	e.human.mu.Unlock()
-
-	if tok := cachedTok; tok != "" {
-		// Confirm the identity still exists: an admin prune, or a data directory
-		// swapped underneath us, would otherwise leave a token that authorises
-		// nothing and fails on the next action with a bare bad-token error.
-		//
-		// Read THROUGH the loop. This called state.AgentByToken directly from
-		// whichever goroutine wanted the human, and that method iterates
-		// State.Agents while the writer mutates it on every registration.
-		// e.human.mu protects the cached fields beside it and nothing in core's
-		// maps, so it was a plain data race: a targeted -race probe reported
-		// several and ended in `fatal error: concurrent map iteration and map
-		// write`, which takes the daemon down.
-		//
-		// RepairHumanProcess and HumanTouch had already been corrected for
-		// exactly this, by an earlier review, and this one was missed both
-		// times. The ordinary suite stays green because nothing in it calls
-		// HumanAgent concurrently with registrations.
-		alive := false
-		if res, qerr := e.query(ctx, func() core.Result {
-			return core.Result{"alive": e.state.AgentByToken(tok) != nil}
-		}); qerr == nil {
-			alive, _ = res["alive"].(bool)
-		}
-		if alive {
-			return cachedID, cachedTok, nil
-		}
-		// Clear only what we actually observed to be dead: another caller may
-		// have replaced it while we were off the mutex.
-		e.human.mu.Lock()
-		if e.human.token == cachedTok {
-			e.human.token, e.human.agent = "", ""
-		}
-		e.human.mu.Unlock()
+	if cachedTok != "" && e.state.AgentByToken(cachedTok) != nil {
+		return cachedID, cachedTok, nil
 	}
 
 	name := humanName()
-	res, err := e.Do(ctx, &core.Op{
+	res, err := e.exec(&core.Op{
 		Kind: core.OpRegister, Name: name,
 		// The one registration allowed to be this identity. See core.Op.HumanMint.
 		HumanMint:   true,
@@ -257,7 +226,7 @@ func (e *Engine) HumanAgent(ctx context.Context) (agent, token string, err error
 		Agent: &core.AgentInfo{
 			Harness: "dibs web", Surface: "web", Host: hostname(),
 		},
-	})
+	}, now)
 	if err != nil {
 		return "", "", err
 	}
@@ -269,15 +238,43 @@ func (e *Engine) HumanAgent(ctx context.Context) (agent, token string, err error
 	// The awareness gate applies to the human exactly as it does to an agent
 	// (SPEC §6): you may not declare work before acknowledging what others are
 	// doing. Doing it here rather than making the UI do it keeps the rule in one
-	// place, and the human HAS just looked at the board, which is the point of
-	// the gate.
-	if _, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: tok}); err != nil {
+	// place. On mailbox creation this precedes the incoming message; it does
+	// not assert that the person has read or answered that message.
+	if _, err := e.exec(&core.Op{Kind: core.OpAckBoard, Token: tok}, now); err != nil {
 		return "", "", err
 	}
 	e.human.mu.Lock()
 	e.human.token, e.human.agent = tok, id
 	e.human.mu.Unlock()
 	return id, tok, nil
+}
+
+// Resolve only after the sender passed structural validation, authentication
+// and rate admission. Reads still create nothing. The ledger stores the actual
+// recipient, never a role that might resolve differently when replayed.
+func (e *Engine) prepareHumanRecipient(op *core.Op, now time.Time) error {
+	if op.Kind != core.OpSendMessage {
+		return nil
+	}
+	if op.To == "human" {
+		id, _, err := e.humanAgentLocked(now)
+		if err != nil {
+			return err
+		}
+		op.To = id
+	}
+	human := e.humanIdentityLocked()
+	// A person's reply may take hours. Preserve the human default, recorded
+	// into the op for replay, for both role and concrete-id addresses.
+	if human != "" && op.To == human && op.DeadlineSec == 0 && op.MsgType != core.MsgNotify {
+		op.DeadlineSec = int(humanDeadline / time.Second)
+	}
+	// Only the person may grant a role; addressing the alias cannot bypass
+	// that existing authorization rule.
+	if op.Grant != "" && (human == "" || op.To != human) {
+		return core.ErrGrantNeedsHuman
+	}
+	return nil
 }
 
 // RepairHumanProcess clears a pid recorded against the human by older code.
