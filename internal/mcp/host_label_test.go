@@ -1,8 +1,9 @@
 package mcp
 
 import (
-	"os"
 	"testing"
+
+	"github.com/agenxy/dibs/internal/hostname"
 )
 
 // Enter through real registration and check_in, including the compact projection.
@@ -19,9 +20,9 @@ func TestOneMachineHasOneDisplayLabelAcrossRegistrations(t *testing.T) {
 	if !ok {
 		t.Fatalf("setup: reader: %v", r)
 	}
-	want, err := os.Hostname()
-	if err != nil || want == "" {
-		t.Fatalf("setup: hostname: %v", err)
+	want := hostname.Name()
+	if want == "" {
+		t.Fatal("setup: display name unavailable")
 	}
 	// The actual board tool trims its private panel payload independently.
 	// Assert the row field, not agent.host: the latter survives the broken filter.
