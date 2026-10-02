@@ -47,6 +47,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **"You will not be asked again today" now holds across a restart.** The
+  pointer an unregistered session gets to an idle agent it may be was
+  remembered only in the daemon's memory, so every restart (every install)
+  told the same session again. It is kept in `reattach-hints.json` in the
+  data directory now. Reported by an agent that was told four times in two
+  days.
+
 - **The panel's Activity tab is no longer blank.** It was filled only by an
   `await_events` result, a call the agents you open from a notification (a
   ChatGPT thread) never make. `board` now carries the 40 most recent events

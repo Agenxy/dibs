@@ -107,7 +107,8 @@ type Engine struct {
 	// session id, which is the only identifier an unresolved session has: it
 	// is not in state, by definition, because being in state is what "resolved"
 	// means. See reattachHint for why once is the whole budget.
-	hinted map[string]time.Time
+	hinted   map[string]time.Time
+	hintFile string // where hinted survives a restart; see hintmemory.go
 	// humanRoles is the set of agents whose role a person set through the
 	// admin API during this run. The startup reconciler reapplies the file
 	// for two minutes, and its regrant of an agent in this set is declined,

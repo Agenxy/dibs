@@ -1354,6 +1354,7 @@ func (e *Engine) reattachHint(sessionID, cwd, host string, now time.Time) string
 		names = names[:3]
 	}
 	e.hinted[sessionID] = now
+	e.saveHints()
 	// Grammar, because this is prose a person reads over their agent's
 	// shoulder: a list of three that "is idle now" reads as a machine talking.
 	were, mine, theirs := "is", "If that is you", "If it is not"
