@@ -91,6 +91,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A reviewer declaring the same work item as its implementer is described as
+  complementary coordination, rather than warned to stand down as duplicate
+  work. Same-role and unknown-role duplicates still warn. Review guidance now
+  uses a question for a verdict, whose answer completes it; a request still
+  obliges its recipient until the work is delivered with `done`.
+
 - Agents can address approvals to `human` before the person has ever acted on
   the board. The first authenticated, admitted send creates the OS-owned
   persistent mailbox and uses the existing notification or human relay route.

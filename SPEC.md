@@ -374,6 +374,15 @@ an abandoned agent looking active.
   expire on their own leases (§9). Registration requires a nonce (§5); reactivation
   is `resume`.
 
+**Review coordination:** a verdict-only review is a `question`, closed by an
+`answer`; an approved `request` remains owed until its worker reports `done`.
+Declarations sharing an objective retain that evidence in `overlaps`. Known
+complementary activities (including implementation and review) explain the
+relationship without a duplicate-work warning. Equal or unknown activities still
+warn, and a peer's complementary slot does not hide its separate duplicate slot.
+This is advisory presentation derived from the recorded activities, not a new
+permission, admission rule or ledger field.
+
 **Awareness gate**: before `declare` or `claim`, an agent must have called
 `check_in()` **with its current credential**: the gate re-arms exactly when the
 token rotates, which is when a new session takes the identity (`register`,
