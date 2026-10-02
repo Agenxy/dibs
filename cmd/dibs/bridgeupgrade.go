@@ -83,15 +83,9 @@ type bridgeState struct {
 	// unnoticed for as long as nothing else arrived. The next image delivers
 	// the owed notice. Found by the pre-release review, round twenty-two.
 	WakePending bool `json:"wake_pending,omitempty"`
-	// WakeNotice is WHAT that owed notice said, carried because the digest is
-	// the only copy. The notice used to be a fixed sentence any image could
-	// reproduce from a constant, so the handoff carried a bool and the
-	// replacement composed the text itself. There is no such sentence now: the
-	// daemon computes the digest and sends it on the notification, the cursor
-	// has passed that event, and nothing will build it again. A bool alone
-	// would mean the replacement knew a notice was owed and had nothing to
-	// say, which is how this route came to send placeholders in the first
-	// place.
+	// WakeNotice is the compatibility copy for a daemon predating refresh.
+	// New images refresh it using the streams' carried Refresh capability;
+	// an acknowledged message must not reappear from an upgrade handoff.
 	WakeNotice string `json:"wake_notice,omitempty"`
 	// ToolsHash is the tool list the previous image served (mcp.ToolsFingerprint).
 	// The next image compares it with its own and tells the harness when they
@@ -111,9 +105,10 @@ type bridgeState struct {
 
 // wakeHandoff is one watched agent in the handoff.
 type wakeHandoff struct {
-	Key   string `json:"key"`
-	Token string `json:"token"`
-	Since uint64 `json:"since,omitempty"`
+	Key     string `json:"key"`
+	Token   string `json:"token"`
+	Since   uint64 `json:"since,omitempty"`
+	Refresh bool   `json:"refresh,omitempty"`
 }
 
 // liveWake is the token the self-wake watcher currently holds, for the
@@ -153,7 +148,11 @@ func recordWakeStream(key, token string, since uint64) {
 	if liveWake.streams == nil {
 		liveWake.streams = map[string]*wakeHandoff{}
 	}
-	liveWake.streams[key] = &wakeHandoff{Key: key, Token: token, Since: since}
+	refresh := false
+	if previous := liveWake.streams[key]; previous != nil {
+		refresh = previous.Refresh
+	}
+	liveWake.streams[key] = &wakeHandoff{Key: key, Token: token, Since: since, Refresh: refresh}
 }
 
 func recordWakeCursor(key string, since uint64) {
@@ -347,6 +346,9 @@ func restoreCarried(ctx context.Context, client *http.Client, url, secret string
 	if w != nil {
 		for _, st := range watched {
 			w.startFor(ctx, client, url, secret, st.Key, st.Token, st.Since)
+			if st.Refresh {
+				w.markRefresh(st.Key)
+			}
 		}
 	}
 	if s.WakePending {

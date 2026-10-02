@@ -656,6 +656,29 @@ Read-only work needs no claim.
 - Polling is a **product choice**: MCP 2026-07-28 offers `subscriptions/listen`;
   adopting it is a v1.x option that changes no semantics (the cursor model stays).
 
+**Bridge-only wake surfaces.** `dibs://wake` is the host bridge's delegated
+wake subscription, not an agent-facing resource. `dibs://wake-digest` is a
+hidden `resources/read` for the in-session socket writer, requiring that
+request's `_meta["com.dibs/token"]` and `_meta["com.dibs/session"]`. It returns
+one private, immediately stale (`ttlMs: 0`) plain-text content item: the current
+digest, or empty when nothing is owed or the agent no longer holds that session.
+It neither marks mail delivered nor drains agent updates or announcements;
+unlike `inbox` and `hook_poll`, it spends no delivery or agent call budget.
+Credential and session checks share the digest's single writer-loop snapshot.
+
+A self-wake inbox notification advertises this read with the additive
+`com.dibs/digest_refresh: true` metadata key. A capable bridge refreshes before
+each socket attempt, including deferred, retry and upgrade-handoff deliveries;
+the daemon refreshes socket, command and delegated plans too. Empty means no notice is written,
+no cooldown is spent, and an obsolete retry is cleared. A failed read never
+falls back to captured text. Coalesced mailboxes share one socket writer and
+one fresh notice. Older daemons and dormant pre-upgrade bridges retain the
+previous behavior until the bridge upgrades between stdio requests; the new
+key does not change the one-writer declaration or add another wake route.
+Pending and delivered mail still requires `ack` or `respond`; `read_mail` alone
+does not silence it. Announcement retries use the existing hook cadence: an
+unacknowledged announcement not yet due does not justify a placeholder wake.
+
 ## 11. Limits (all enforced; defaults, human-tunable)
 
 | Resource | Default | On exceed |
