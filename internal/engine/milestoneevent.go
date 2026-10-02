@@ -35,7 +35,11 @@ func (e *Engine) handleMilestoneEvent(op *core.Op, actor *core.Agent, now time.T
 			kept = append(kept, n)
 		}
 	}
-	e.notices[actor.ID] = kept
+	if len(kept) == 0 {
+		delete(e.notices, actor.ID)
+	} else {
+		e.notices[actor.ID] = kept
+	}
 	e.seen[actor.ID] = now
 	e.confirmSocketOffer(actor, now)
 	return core.Result{"ok": true, "state": "acked"}, nil, true
