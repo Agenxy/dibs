@@ -797,26 +797,8 @@ function notify(method, params) {
   parent.postMessage({ jsonrpc: "2.0", method, params }, "*")
 }
 
-// Mark every call this panel makes through the bridge.
-//
-// The server duplicates check_in's whole checkpoint into structuredContent
-// because, on a host that drops _meta AND forbids an app from calling tools,
-// that is the only carrier that can reach this panel at all. It costs the model
-// a second copy of the board on every activation, and it is only necessary on
-// that one kind of host.
-//
-// This panel is the only party that knows which kind it is running on, and it
-// finds out by succeeding: a call that arrives at the daemon proves the host
-// permits app→tool calls, which means the panel can fetch for itself and the
-// duplicate is dead weight. So say so, in _meta, where it costs the model
-// nothing. The server stops duplicating for this session from then on.
-const PANEL_CALL_META = "com.dibs/panel-call"
-
 function call(method, params) {
   if (tornDown) return Promise.reject(new Error("The host closed this panel"))
-  if (method === "tools/call" && params && typeof params === "object") {
-    params = { ...params, _meta: { ...(params._meta || {}), [PANEL_CALL_META]: true } }
-  }
   const id = nextId++
   return new Promise((res, rej) => {
     const timer = setTimeout(() => {
@@ -1226,6 +1208,20 @@ function mergePanel(redacted, full) {
     : { ...redacted, inbox: { ...redacted.inbox, messages: merged } }
 }
 
+// mailboxOf reads the messages out of any shape a mailbox arrives in: a bare
+// array under `inbox`, `inbox.messages`, or top-level `messages`. A null list
+// is an empty mailbox. Undefined means the result said nothing about mail.
+function mailboxOf(p) {
+  if (!p || typeof p !== "object") return undefined
+  if (Array.isArray(p.inbox)) return p.inbox
+  if (p.inbox && Array.isArray(p.inbox.messages)) return p.inbox.messages
+  if (Object.prototype.hasOwnProperty.call(p, "messages")) {
+    if (p.messages == null) return []
+    return Array.isArray(p.messages) ? p.messages : undefined
+  }
+  return undefined
+}
+
 function toolJSON(result) {
   const raw = result?.content?.find((c) => c?.type === "text")?.text
   if (typeof raw !== "string") return null
@@ -1426,23 +1422,19 @@ async function act(serial, disposition) {
     if (refreshRefusal) throw new Error(refreshRefusal)
     // Same merge as the private fetch above: the redacted carrier is the
     // fallback, not the preference.
-    const panelInbox = mergePanel(
+    //
+    // The mailbox is read out of whichever shape arrived. inbox's own result
+    // carries it as top-level `messages`, null when empty, beside a null
+    // `inbox`; a panel payload carries `inbox` as an array. This read only the
+    // second, which inbox's result stopped carrying when the panel stopped
+    // riding along on inbox, and an empty mailbox then read as "no state" and
+    // left an acknowledged message on screen with its button still live.
+    const merged = mergePanel(
       refreshed?._meta?.["com.dibs/panel"],
       toolJSON(refreshed) || refreshed?.structuredContent)
-    if (panelInbox && Object.prototype.hasOwnProperty.call(panelInbox, "inbox")) {
-      render({ structuredContent: panelInbox })
-    } else {
-      // The trimmed panel payload omits an empty inbox (and some hosts omit the
-      // UI payload entirely): showing a second panel merely to say "nothing
-      // waiting" would be noise. This already-open panel still needs the empty
-      // state, which remains available in the ordinary tool content.
-      const plain = toolJSON(refreshed)
-      const hasMessages = plain &&
-        Object.prototype.hasOwnProperty.call(plain, "messages")
-      if (!hasMessages || (plain.messages != null && !Array.isArray(plain.messages)))
-        throw new Error("The host returned no mailbox state")
-      render({ structuredContent: { inbox: { messages: plain.messages || [] } } })
-    }
+    const messages = mailboxOf(merged)
+    if (!Array.isArray(messages)) throw new Error("The host returned no mailbox state")
+    render({ structuredContent: { inbox: { messages } } })
     state.settled.delete(serial)
     draw()
     landFocus(landOn)
@@ -1700,10 +1692,21 @@ function decorateChannels(el) {
 }
 
 function decorateEvents(el) {
+  // NOT by serial alone: one op emits several events under one serial (a
+  // registration and the join it caused), and two elements sharing a
+  // view-transition-name abort the whole transition with an exception. That
+  // stayed hidden while the tab was filled only by await_events, which rarely
+  // returned such a pair; a board result carries recent activity and does.
+  // Serial and type, then an occurrence count, which is stable across redraws
+  // because the order is.
+  const seen = new Map()
   ;[...el.querySelectorAll(".event")].forEach((node, index) => {
     const event = state.events[index]
     if (!event) return
-    nameTransition(node, "event", event.serial ?? index, "panel-event")
+    const base = `${event.serial ?? index}-${event.type || ""}`
+    const n = seen.get(base) || 0
+    seen.set(base, n + 1)
+    nameTransition(node, "event", n ? `${base}-${n}` : base, "panel-event")
   })
 }
 

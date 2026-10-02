@@ -421,48 +421,6 @@ func inboxCount(box any) int {
 	return 0
 }
 
-// panelTools are the calls that already carry board or mailbox state, so the
-// panel can ride along on work the agent was doing anyway. The human should not
-// need the agent to make a second, ceremonial "now show it" call: reading the
-// board IS the moment to show the board.
-var panelTools = map[string]string{
-	"check_in":     "board",    // orientation: who else is here, what are they on
-	"inbox":        "mail",     // reading mail shows the mail, not the roster
-	"await_events": "activity", // it returned BECAUSE something changed: show that
-	"send":         "mail",     // you just wrote to someone; show the thread
-	"respond":      "mail",
-	"board":        "", // explicit request; honours its own view argument
-}
-
-// panelWorthShowing decides whether this particular result has anything the
-// human has not already seen.
-//
-// The panel riding along on every coordination call was the point, but giving
-// every call the SAME board turned it into three identical dashboards stacked in
-// one conversation. A view that repeats is noise, and noise is what makes people
-// stop looking at a panel that matters. So: draw when there is something to say.
-func panelWorthShowing(tool string, res core.Result) bool {
-	switch tool {
-	case "inbox":
-		// The inbox tool returns {messages,…} at the TOP level: there is no
-		// "inbox" key to look under. Reading the wrong shape here silently
-		// suppressed the panel for a mailbox that had mail in it.
-		if n := inboxCount(res); n > 0 {
-			return true
-		}
-		// An empty mailbox does not need a panel to announce itself; the summary
-		// line already says so in five words.
-		return false
-	case "await_events":
-		// It may have returned on timeout with nothing at all.
-		if evs, ok := res["events"].([]any); ok {
-			return len(evs) > 0
-		}
-		return res["events"] != nil
-	}
-	return true // check_in / board / sends are always deliberate
-}
-
 // showBoardResult shapes the tools/call reply per the MCP Apps contract.
 //
 // declaredUI is the client's own statement that it renders MCP Apps, and it
@@ -766,110 +724,6 @@ func redactAnyContainer(v any) any {
 	}
 }
 
-// panelResult attaches the board panel to a tool that already returns board or
-// mailbox state.
-//
-// The agent's own result is NEVER replaced. check_in is the awareness gate,
-// the model reads the board out of it to learn what its peers are doing, and an
-// earlier version of this swapped that JSON for a prose summary, quietly breaking
-// the thing Dibs exists to do. `content` stays exactly what it was; the panel is
-// additive.
-//
-// The panel copy goes to everyone, and that is a deliberate reversal.
-//
-// It was previously gated on the client declaring io.modelcontextprotocol/ui at
-// initialize. The reference host: the actual AppBridge implementation other
-// hosts build on: declares `"capabilities":{}` and renders the panel anyway,
-// off the tool's _meta.ui.resourceUri. So the declaration is optional in
-// practice, and gating on it silently starves every host that renders without
-// announcing. That failure is invisible from the server side: the panel draws,
-// empty, and looks exactly like a host bug.
-//
-// The cost of being wrong the other way is bounded and measured: the payload is
-// trimmed to the fields the template draws, so a host that cannot render pays
-// ~1.5 KB: still less than the 2.1 KB the same call cost before this feature
-// existed. Bounded waste beats a feature that silently does not work.
-func (s *Server) panelResult(
-	ctx context.Context, res core.Result, view, token string, wantsUI, panelFetches, slim bool,
-) map[string]any {
-	payload := panelPayload(s.panelState(ctx, res, view, token))
-	// The panel above was built from the whole result. What the MODEL is
-	// charged for may be less: see slimBoard.
-	if slim {
-		res = slimBoard(res)
-	}
-	// The bootstrap rides in CONTENT here, never structuredContent, and the
-	// difference is the whole recovery checkpoint.
-	//
-	// board can afford a bootstrap in structuredContent because its content
-	// is one summary line. check_in cannot: its content IS the checkpoint: the
-	// board, the mailbox, what the agent still owes, and this host displays
-	// structuredContent to the model INSTEAD of content. A bootstrap there
-	// therefore replaced the answer with three fields of plumbing, and the agent
-	// read its own token back and learned nothing about the fleet. Caught by
-	// calling check_in as an ordinary agent, not by any test: every assertion
-	// about the tool result still passed, because the checkpoint was present the
-	// whole time in a field this host does not show.
-	//
-	// So nothing model-facing is replaced, and the panel still gets what it needs
-	// on a host that drops _meta: content already carries the board and mailbox
-	// for the agent, and now carries the token to act with: a token the model
-	// supplied in this very call, so it is not new information reaching it.
-	withBoot := res
-	if boot := panelBootstrap(payload); boot != nil {
-		withBoot = core.Result{}
-		for k, v := range res {
-			withBoot[k] = v
-		}
-		for k, v := range boot {
-			if _, taken := withBoot[k]; !taken {
-				withBoot[k] = v
-			}
-		}
-	}
-	plain, _ := json.Marshal(withBoot)
-	_ = wantsUI // retained for the log line; no longer gates the payload
-
-	out := map[string]any{
-		"content": []map[string]any{{"type": "text", "text": string(plain)}},
-		"_meta":   panelMeta(payload),
-	}
-	// The duplicate is dropped once a panel has PROVED it can reach us.
-	//
-	// check_in is called every activation, and the board dominates its size, so
-	// sending it in both content and structuredContent charges the model two
-	// copies of the fleet per turn: on a large board, most of what the tool
-	// costs. The duplication existed for one host shape: drops _meta, forbids an
-	// app from calling tools, and shows the model structuredContent INSTEAD of
-	// content. There, structuredContent is the panel's only carrier, and a slim
-	// one starves the agent, so both had to be whole.
-	//
-	// Those are the same host. A panel that has called a tool through the bridge
-	// has demonstrated the host permits app calls, so it is not that host, so
-	// content is what the model reads, and the panel can fetch the board itself
-	// rather than being handed it. The proof is observed rather than declared:
-	// serverTools is negotiated between host and app, invisible from here, and no
-	// published matrix breaks it down per client. The panel marks its own calls
-	// and the session remembers.
-	//
-	// Unproved means duplicate, always. The first ack of a session pays for both
-	// copies and every one after it does not; a host whose panel never calls keeps
-	// the duplicate forever, which is exactly right, because there it is the only
-	// thing that works. Being wrong in this direction costs bytes. Being wrong in
-	// the other costs the agent its checkpoint.
-	if !panelFetches {
-		// EQUAL, never smaller, when it is sent at all. A shape beside content that
-		// answers LESS is how check_in once returned a token and nothing about the
-		// fleet, on a host that shows structuredContent instead of content. So the
-		// rule was never "structuredContent is allowed" but "it is this exact
-		// object", and dropping it entirely is safe in a way that shrinking it is
-		// not, because a conformant host with no structuredContent falls back to
-		// content, while one handed a smaller object believes it.
-		out["structuredContent"] = withBoot
-	}
-	return out
-}
-
 // panelState fills in whatever the panel needs that the call did not return.
 func (s *Server) panelState(ctx context.Context, res core.Result, view, token string) core.Result {
 	out := core.Result{}
@@ -903,6 +757,13 @@ func (s *Server) panelState(ctx context.Context, res core.Result, view, token st
 	if _, ok := out["agent_id"]; !ok && token != "" {
 		if id, _, err := s.eng.SubscribeInfo(ctx, token); err == nil {
 			out["agent_id"] = id
+		}
+	}
+	// The Activity tab: what happened lately that this agent may see. A result
+	// that already carries events (none does today) keeps its own.
+	if _, ok := out["events"]; !ok && token != "" {
+		if r, err := s.eng.RecentEvents(ctx, token, maxPanelEvents); err == nil {
+			out["events"] = r["events"]
 		}
 	}
 	if view != "" {

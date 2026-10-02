@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -118,6 +119,39 @@ func (e *Engine) EventsSince(ctx context.Context, token string, serial uint64, a
 		}
 		return core.Result{"events": e.eventsSince(serial, agent, all), "serial": e.state.Serial}
 	})
+}
+
+// RecentEvents is the newest n events the caller may see, oldest first: the
+// board panel's Activity tab.
+//
+// The tab used to be filled only by await_events, the one call that returns
+// events as its answer, and the agents a human actually opens the panel
+// beside (a ChatGPT thread reached from a notification) never make it. So the
+// tab was blank on every panel anybody looked at. Metadata only, like
+// EventsSince, and it marks nothing delivered.
+func (e *Engine) RecentEvents(ctx context.Context, token string, n int) (core.Result, error) {
+	return e.query(ctx, func() core.Result {
+		l, errRes := e.authRead(token, time.Now())
+		if errRes != nil {
+			return errRes
+		}
+		// From the newest end: the ring holds up to 65,536 events and the
+		// panel wants a few dozen.
+		evs := []core.Event{}
+		for i := len(e.ring) - 1; i >= 0 && len(evs) < n; i-- {
+			if visibleTo(e.ring[i], l.ID) {
+				evs = append(evs, e.ring[i])
+			}
+		}
+		slices.Reverse(evs)
+		return core.Result{"events": evs, "serial": e.state.Serial}
+	})
+}
+
+// visibleTo is whether an agent may see an event: anything addressed to
+// nobody in particular, to it, or done by it.
+func visibleTo(ev core.Event, agent string) bool {
+	return ev.To == "" || ev.To == agent || ev.Agent == agent
 }
 
 // ResyncFor is what a subscriber missed when its cursor is older than the

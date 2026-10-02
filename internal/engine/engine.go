@@ -1331,7 +1331,7 @@ func filterEvents(evs []core.Event, agent string, all bool) []core.Event {
 	}
 	var out []core.Event
 	for _, ev := range evs {
-		if ev.To == "" || ev.To == agent || ev.Agent == agent {
+		if visibleTo(ev, agent) {
 			out = append(out, ev)
 		}
 	}
