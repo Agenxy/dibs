@@ -146,6 +146,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   errors and recovered adapter panics. Shutdown waits for pruning before
   releasing protection. The store also locks its hold check and unlink together.
 
+- **Every CLI command answers help without authority.** `--help` and `-h`
+  print command usage on stdout and exit successfully before reading stdin,
+  checking credentials or contacting the board. `invite` no longer interprets
+  help as an invalid agent name. Existing flag help retains its defaults, and
+  the command catalog now includes stop, upgrade, trust and fingerprint.
+
 - **One machine reads as one machine.** Board rows, compact check-ins and the
   shared web/panel renderer use one label per known host identity instead of
   each harness's differing hostname. The daemon's hostname labels local agents;
