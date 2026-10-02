@@ -111,6 +111,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   remote labels come from the newest coordinated member, with deterministic
   ties. Unknown identities stay separate and detail retains each raw label.
   Coordination identities, path comparisons and SSH tunnel assertions are unchanged.
+  Board-minted human and fault-reporting rows also use the board's hostname
+  when historical metadata lacks a host ID; this labels their mailbox, not
+  the person's physical location.
 
 - A reviewer declaring the same work item as its implementer is described as
   complementary coordination, rather than warned to stand down as duplicate
