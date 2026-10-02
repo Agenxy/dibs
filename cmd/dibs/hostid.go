@@ -23,12 +23,11 @@ import (
 // that job: it is mutable, duplicable across machines, and asserted, which is
 // why core.AgentInfo.Host carries a warning and this is a separate field.
 //
-// THE DAEMON IGNORES THIS WHENEVER IT CAN. A call arriving over loopback is
-// from this machine by construction, so the daemon stamps its own node id and
-// never reads what was sent. This value therefore matters only for a bridge
-// that joined a hub on another computer, where it is the only thing that knows,
-// and where it is a claim rather than evidence: docs/NETWORK.md §2 states that
-// limit and says what would lift it.
+// The daemon preserves an explicit bridge assertion on every transport,
+// including loopback: an SSH forward can carry a foreign bridge there. Only
+// a local caller with no assertion receives the daemon's identity. Known old
+// local IDs are canonicalised at ingress. The assertion is no stronger than
+// the bridge's bearer secret; docs/NETWORK.md §2 states that limit.
 //
 // node_id first, because a machine that runs a daemon already HAS an identity
 // and having two would mean one computer answering to two names. A machine that

@@ -355,11 +355,12 @@ func rosterRow(a map[string]any) map[string]any {
 		row["who"] = oneLine(d, 100)
 	}
 	if info, _ := a["agent"].(map[string]any); info != nil {
-		for _, k := range []string{"host", "project"} {
-			if v, _ := info[k].(string); v != "" {
-				row[k] = v
-			}
+		if project, _ := info["project"].(string); project != "" {
+			row["project"] = project
 		}
+	}
+	if host, _ := a["host"].(string); host != "" {
+		row["host"] = host
 	}
 	rosterSlot(row, a)
 	return row

@@ -625,6 +625,9 @@ const Board = (() => {
    */
   function agentBadges(l) {
     let out = ""
+    if (l.host) {
+      out += explained("badge machine", l.host, "machine label shared by agents with the same host identity")
+    }
     if (l.role && l.role !== "member") {
       out += explained("badge role", l.role, "granted by a human; can administer agents")
     }
