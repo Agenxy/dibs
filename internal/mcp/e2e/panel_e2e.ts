@@ -743,8 +743,16 @@ try {
   }
 
   // Real CSS: the live pip must actually be the live colour, not merely classed.
-  const pipColour = await panel.locator(".entry.active .pip").first()
-    .evaluate((el) => getComputedStyle(el).backgroundColor)
+  const pipState = await panel.locator(".entry.active .pip").first()
+    .evaluate((el) => {
+      const row = el.closest(".entry")
+      const style = getComputedStyle(el)
+      return {
+        connected: el.isConnected, row: row?.className,
+        color: style.backgroundColor, live: style.getPropertyValue("--live"),
+      }
+    })
+  const pipColour = pipState.color
   // WHY an agent stopped counting as live has to survive the panel's field
   // allowlist (trimBoard). It is dropped silently if it does not: a field
   // added to the board simply never reaches the panel, and nothing says so,
@@ -772,7 +780,7 @@ try {
 
   check("an active agent's pip is rendered in the live colour",
     pipColour !== "rgba(0, 0, 0, 0)" && pipColour !== "",
-    pipColour)
+    JSON.stringify(pipState))
 
   // ── mail ─────────────────────────────────────────────────────────────────
   await panel.locator('.views button[data-view="mail"]').click()
