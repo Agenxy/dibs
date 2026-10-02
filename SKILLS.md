@@ -312,6 +312,12 @@ receiving native peer turns, another watcher adds no delivery guarantee.
   notification, a question offers an answer, and an attached human relay
   presents it on their machine. If no notification route is available, the
   result says so; mail remains on the board. Reading the board creates nobody.
+  `human_route` and `human_relay_count` describe the actual send handoff;
+  `read_mail` returns `human_delivery` with per-source receipts. `posted` means
+  OS acceptance, never that the person saw a banner; `dismissed` is an explicit
+  dismissal/defer, `failed` carries the error, and `answered` is a real response.
+  Queued/pending is unconfirmed, older helpers may supply no receipt, and status
+  is `unknown` after restart until new evidence arrives (answers survive replay).
 
 - **Every result names anything waiting for you.** Any call you make, with a
   token, carries a `waiting` line when you have unread mail, an announcement you

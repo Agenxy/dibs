@@ -130,6 +130,11 @@ func helper() string {
 // icon, which is what every message from an agent was branded with until Dibs
 // had an application of its own.
 func Banner(title, subtitle, body string) error {
+	return BannerWithReceipt(title, subtitle, body, nil)
+}
+
+// BannerWithReceipt reports posting when the helper can confirm OS acceptance.
+func BannerWithReceipt(title, subtitle, body string, receipt Receipt) error {
 	if goos == "linux" {
 		return linuxBanner(title, subtitle, body)
 	}
@@ -138,7 +143,8 @@ func Banner(title, subtitle, body string) error {
 		defer cancel()
 		// #nosec G204 -- h is resolved beside this binary; the rest is data the
 		// helper reads as argv.
-		return exec.CommandContext(ctx, h, title, subtitle, body).Run()
+		_, err := outputWithReceipt(exec.CommandContext(ctx, h, title, subtitle, body), receipt)
+		return err
 	}
 	_, err := run(banner, append([]string{title, subtitle}, body)...)
 	return err
@@ -147,6 +153,11 @@ func Banner(title, subtitle, body string) error {
 // Ask shows an alert with the given buttons and returns the one pressed. The
 // last button is the default. Two or three choices; use Pick for more.
 func Ask(title, body string, buttons ...string) (string, error) {
+	return AskWithReceipt(title, body, nil, buttons...)
+}
+
+// AskWithReceipt supplies delivery evidence separately from the human answer.
+func AskWithReceipt(title, body string, receipt Receipt, buttons ...string) (string, error) {
 	if len(buttons) == 0 || len(buttons) > 3 {
 		return "", errors.New("an alert takes one to three buttons; use Pick for more")
 	}
@@ -179,11 +190,11 @@ func Ask(title, body string, buttons ...string) (string, error) {
 		// explanations that all looked identical from the outside.
 		if silenced := bannersAreSilenced(); silenced {
 			slog.Info("asking in a window", "why", "a focus mode is on and this build cannot mark a notification time-sensitive")
-			return askInAWindow(h, title, body, buttons)
+			return askInAWindowWithReceipt(h, title, body, buttons, receipt)
 		}
 		slog.Info("asking on a banner", "focus", focusOn())
 		// #nosec G204 -- h is resolved beside this binary; the rest is argv data.
-		out, err := exec.CommandContext(ctx, h, args...).Output()
+		out, err := outputWithReceipt(exec.CommandContext(ctx, h, args...), receipt)
 		if err != nil {
 			// Exit 2 means the machine WILL NOT notify: no authorisation, no
 			// bundle. That is not a person deferring, and collapsing the two is
@@ -724,6 +735,10 @@ func bannersAreSilenced() bool {
 // label and nothing else: no token, no message body, nothing worth protecting
 // beyond not leaving litter.
 func askInAWindow(helperPath, title, body string, buttons []string) (string, error) {
+	return askInAWindowWithReceipt(helperPath, title, body, buttons, nil)
+}
+
+func askInAWindowWithReceipt(helperPath, title, body string, buttons []string, receipt Receipt) (string, error) {
 	f, err := os.CreateTemp("", "dibs-answer-*")
 	if err != nil {
 		return "", err
@@ -740,7 +755,7 @@ func askInAWindow(helperPath, title, body string, buttons []string) (string, err
 	}, buttons...)
 	// #nosec G204 -- launchctl is a fixed path, helperPath is resolved beside
 	// this binary, and the rest is argv data the helper never interprets.
-	if err := exec.CommandContext(ctx, "/bin/launchctl", argv...).Run(); err != nil {
+	if _, err := outputWithReceipt(exec.CommandContext(ctx, "/bin/launchctl", argv...), receipt); err != nil {
 		// A dismissed window exits non-zero, which is an answer.
 		var ee *exec.ExitError
 		if !errors.As(err, &ee) {

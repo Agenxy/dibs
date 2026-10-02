@@ -37,6 +37,15 @@ import AppKit
 import Foundation
 import UserNotifications
 
+// Additive receipt protocol. Older callers supply no path; older helpers ignore
+// it. OS acceptance is not evidence that a banner was visible under Focus.
+func receipt(_ state: String) {
+    guard let path = ProcessInfo.processInfo.environment["DIBS_NOTIFY_RECEIPT"] else { return }
+    guard let data = try? JSONSerialization.data(withJSONObject: ["state": state]) else { return }
+    try? data.write(to: URL(fileURLWithPath: path), options: .atomic)
+    try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
+}
+
 let args = Array(CommandLine.arguments.dropFirst())
 
 if args.first == "--status" {
@@ -220,6 +229,9 @@ if args.first == "--ask" {
     for title in Array(rest.dropFirst(2)).reversed() {
         alert.addButton(withTitle: title)
     }
+    DispatchQueue.main.async {
+        if alert.window.isVisible { receipt("posted") }
+    }
     let pressed = alert.runModal()
     let index = pressed.rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
     let buttons = Array(rest.dropFirst(2)).reversed().map { $0 }
@@ -296,8 +308,10 @@ final class Handler: NSObject, UNUserNotificationCenterDelegate {
         // The identifier is the button's own title, so the caller reads back
         // exactly what it offered rather than an index it has to map.
         if r.actionIdentifier == UNNotificationDefaultActionIdentifier {
+            receipt("dismissed")
             finish("")            // clicked the banner itself: not an answer
         } else if r.actionIdentifier == UNNotificationDismissActionIdentifier {
+            receipt("dismissed")
             finish("")
         } else {
             finish(r.actionIdentifier)
@@ -343,7 +357,7 @@ centre.requestAuthorization(options: [.alert, .sound]) { granted, _ in
             UNNotificationAction(identifier: $0, title: $0, options: [.foreground])
         }
         let category = UNNotificationCategory(identifier: "dibs.ask", actions: actions,
-                                              intentIdentifiers: [], options: [])
+                                              intentIdentifiers: [], options: [.customDismissAction])
         centre.setNotificationCategories([category])
         content.categoryIdentifier = "dibs.ask"
     }
@@ -351,6 +365,7 @@ centre.requestAuthorization(options: [.alert, .sound]) { granted, _ in
     centre.add(UNNotificationRequest(identifier: UUID().uuidString,
                                      content: content, trigger: nil)) { err in
         if err != nil { finish(2) }
+        receipt("posted")
 
         // Nothing to wait for when there is nothing to answer.
         if buttons.isEmpty { finish(0) }
