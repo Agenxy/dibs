@@ -385,8 +385,16 @@ receiving native peer turns, another watcher adds no delivery guarantee.
   progress, milestone: 2, body: "one line", deliverable: "<what to check>")`,
   and close with `respond(done, deliverable: "<path or URL>")`. The sender
   hears each step without being woken for it, can open what you pointed at,
-  and answers with `respond(accept, milestone)` or `respond(flag, milestone,
-  body: "what is wrong or what to do instead")`. A flag wakes you and cancels
+  and reviews with `respond(msg_serial: <request serial>, disposition:
+  "accept"|"flag", milestone: <step>, body: "what to change, for a flag")`.
+  Review is optional: `read_mail(msg_serial: <request serial>)` clears its
+  notices; `ack(msg_serial: <event serial>)` dismisses only that progress/review
+  event. Seeing or acknowledging progress does not accept it, and a separate
+  notify is not a review. `read_mail` lists each step's latest review in
+  `milestone_reviews`: unreviewed, accepted or flagged, with who and when.
+  A new worker report makes that step unreviewed again. An informational
+  notice delivered in a Stop continuation does not keep stopping later turns.
+  A flag wakes you and cancels
   nothing: the task is still yours. Done wakes the sender and says where the
   work landed, so nobody has to watch a file to find out. Add `track: true`
   and a host that supports MCP tasks follows the request as one (`tasks/get`,

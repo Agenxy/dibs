@@ -744,6 +744,9 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	if err := e.refuseActingOnInheritedMail(op, actor); err != nil {
 		return nil, err
 	}
+	if res, err, handled := e.handleMilestoneEvent(op, actor, now); handled {
+		return res, err
+	}
 
 	if err := e.refuseAdoptingASuccessor(op); err != nil {
 		return nil, err

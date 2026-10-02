@@ -270,7 +270,8 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 	case OpForceRelease:
 		res, evs, err = s.applyForceRelease(l, op)
 	default:
-		err = errf("E_BAD_OP", "", "unknown op kind %q", op.Kind)
+		err = errf("E_BAD_OP", "use a supported operation; if this came from ledger replay, "+
+			"report the unknown kind before changing history", "unknown op kind %q", op.Kind)
 	}
 	if err != nil {
 		return nil, nil, err
@@ -1786,7 +1787,8 @@ func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, 
 func (s *State) applyAckMessage(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
 	m, ok := s.Messages[op.MsgSerial]
 	if !ok || m.To != l.ID {
-		return nil, nil, errf("E_NO_MESSAGE", "", "no message %d addressed to you", op.MsgSerial)
+		return nil, nil, errf("E_NO_MESSAGE", "use inbox() for mail serials; progress/review notices "+
+			"name their parent request and the event to acknowledge", "no message %d addressed to you", op.MsgSerial)
 	}
 	if m.Terminal() {
 		if m.Consumed {

@@ -17,7 +17,8 @@ package core
 func (s *State) applyOutcomeRead(l *Agent, op *Op) (Result, []Event, error) {
 	m, ok := s.Messages[op.MsgSerial]
 	if !ok || m.From != l.ID {
-		return nil, nil, errf("E_NO_MESSAGE", "", "no message %d sent by you", op.MsgSerial)
+		return nil, nil, errf("E_NO_MESSAGE", "read_mail takes a message you sent or received; "+
+			"use inbox() to find your mail", "no message %d sent by you", op.MsgSerial)
 	}
 	if !m.Terminal() {
 		return nil, nil, errf("E_NOT_TERMINAL", "wait for a verdict; there is nothing to have read yet",
