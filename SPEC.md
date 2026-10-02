@@ -870,8 +870,11 @@ Its first use creates the person's persistent mailbox through the same
 registration path as a web action, with this board machine's OS-owned name and
 nonce and no process identity from the sender. Registration and the concrete
 recipient are ledgered, so replay preserves the row and addressed message.
-Observing the board and `HumanIdentity` still create nothing. Requests and
-questions use the existing native notification or attached human relay route;
+Observing the board and `HumanIdentity` still create nothing.
+Mailbox creation remains ledgered if later send-domain execution refuses the
+message; it is not rolled back with that refusal.
+Requests and questions use the existing native notification or attached human
+relay route;
 when no notification route is available, the send result reports that fact.
 Agents needing the person's decision send a request here rather than waiting
 for a chat they may not read.
