@@ -323,6 +323,10 @@ var toolDefs = func() []map[string]any {
 					"type": "array", "items": map[string]any{"type": "string"},
 					"description": "on a request: up to 8 steps the recipient reports",
 				},
+				"track": map[string]any{
+					"type": "boolean", "description": "on a request: follow it as an MCP task where " +
+						"your host supports them (some hosts then wait for it to finish)",
+				},
 				"attachments": map[string]any{"type": "array", "description": "each is a blob " +
 					"{blob:'sha256:…'} from put_blob, or a fileref {path, size?, hash?} naming a " +
 					"local file (advisory, zero-copy)", "items": map[string]any{"type": "object", "properties": map[string]any{

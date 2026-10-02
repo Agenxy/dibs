@@ -303,6 +303,9 @@ func (s *State) gc(now time.Time, purgeMail, clampWatermark, keepOwed bool) ([]E
 		if keepOwed && m.Owed(now) {
 			continue // work its recipient still owes: see Op.KeepOwed
 		}
+		if m.Tracked && now.Sub(m.SentAt) <= TaskTTL {
+			continue // an MCP task its sender may still poll: see Message.Tracked
+		}
 		if m.Terminal() && m.Consumed && now.Sub(m.TerminalAt) > s.Limits.ConsumedRetention {
 			delete(s.Messages, serial) // sender had its read window (real-agent finding)
 			pruned = true

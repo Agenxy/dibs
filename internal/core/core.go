@@ -719,6 +719,11 @@ type Message struct {
 	Milestones  []string   `json:"milestones,omitempty"`
 	Progress    []Progress `json:"progress,omitempty"`
 	Deliverable string     `json:"deliverable,omitempty"`
+	// Tracked is a request its sender follows as an MCP task: kept for
+	// TaskTTL from when it was sent, finished or not, so tasks/get still
+	// answers, unless the recipient is purged first. Set only by ops that
+	// asked for it, so no older ledger has one.
+	Tracked bool `json:"tracked,omitempty"`
 }
 
 // Terminal implements the exact SPEC §8 predicate, used consistently by

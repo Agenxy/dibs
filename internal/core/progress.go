@@ -41,6 +41,12 @@ const (
 	ReviewFlagged  = "flagged"
 )
 
+// TaskTTL is how long a tracked request is kept from when it was sent, and
+// the ttlMs its MCP task states: a week, because work worth tracking is work
+// that takes a while, and a task that vanishes before its sender polls has
+// told it nothing.
+const TaskTTL = 7 * 24 * time.Hour
+
 // MaxMilestones bounds the steps one request may name: enough for a real
 // plan, few enough that the board can show them as a count.
 const MaxMilestones = 8
@@ -105,6 +111,9 @@ func checkMilestones(op *Op) error {
 func checkTaskRefs(op *Op) error {
 	isRespond := op.Kind == OpRespond
 	switch {
+	case op.Track && (op.Kind != OpSendMessage || op.MsgType != MsgRequest):
+		return errf("E_BAD_ARG", `track follows a request as a task: send it on a "request"`,
+			"track given on a %s", op.MsgType)
 	case op.Milestone < 0:
 		return errf("E_BAD_ARG", "milestones are numbered from 1; 0 or none is a note with no step",
 			"milestone %d", op.Milestone)

@@ -38,6 +38,8 @@ type subscriptionParams struct {
 		PromptsListChanged    bool     `json:"promptsListChanged"`
 		ResourcesListChanged  bool     `json:"resourcesListChanged"`
 		ResourceSubscriptions []string `json:"resourceSubscriptions"`
+		// TaskIDs subscribes to notifications/tasks (the tasks extension).
+		TaskIDs []string `json:"taskIds"`
 	} `json:"notifications"`
 }
 
@@ -82,11 +84,37 @@ func (s sseStream) comment() bool {
 func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request, req *rpcRequest) {
 	var p subscriptionParams
 	_ = json.Unmarshal(req.Params, &p)
-	if containsStr(p.Notifications.ResourceSubscriptions, WakeURI) {
-		s.serveWakeSubscription(w, r, req, p)
+	if s.serveSpecialSubscription(w, r, req, p) {
 		return
 	}
+	s.serveResourceSubscription(w, r, req, p)
+}
 
+// Check task capabilities even when a combined subscription also names
+// resources: requesting task notifications requires them on this call.
+func (s *Server) serveSpecialSubscription(
+	w http.ResponseWriter, r *http.Request, req *rpcRequest, p subscriptionParams,
+) bool {
+	if len(p.Notifications.TaskIDs) > 0 {
+		if err := requireTasks(r.Context(), req.Params); err != nil {
+			writeRPC(w, http.StatusOK, req.ID, nil, err)
+			return true
+		}
+	}
+	if containsStr(p.Notifications.ResourceSubscriptions, WakeURI) {
+		s.serveWakeSubscription(w, r, req, p)
+		return true
+	}
+	if len(p.Notifications.TaskIDs) > 0 && len(p.Notifications.ResourceSubscriptions) == 0 {
+		s.serveTaskSubscription(w, r, req, p.Notifications.TaskIDs)
+		return true
+	}
+	return false
+}
+
+func (s *Server) serveResourceSubscription(
+	w http.ResponseWriter, r *http.Request, req *rpcRequest, p subscriptionParams,
+) {
 	wantBoard := containsStr(p.Notifications.ResourceSubscriptions, "dibs://board")
 	wantInbox := containsStr(p.Notifications.ResourceSubscriptions, "dibs://inbox")
 
