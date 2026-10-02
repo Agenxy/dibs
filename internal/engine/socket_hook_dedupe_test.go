@@ -120,3 +120,41 @@ func TestSocketAndStopSharePresentationOnlyAfterTurnEvidence(t *testing.T) {
 		})
 	}
 }
+
+func TestNeighborStopCannotSpendTheRecipientsFirstPresentation(t *testing.T) {
+	st := core.NewState("neighbor", core.DefaultLimits())
+	for _, id := range []string{"sender", "worker", "neighbor"} {
+		if _, _, err := st.Apply(&core.Op{
+			Kind: core.OpRegister, Name: id, NewToken: "tok-" + id,
+			SessionID: "session-" + id, Agent: &core.AgentInfo{CWD: "/shared"},
+		}, time.Now()); err != nil {
+			t.Fatalf("register setup: %v", err)
+		}
+	}
+	if _, _, err := st.Apply(&core.Op{
+		Kind: core.OpSendMessage, Token: "tok-sender", To: "worker",
+		MsgType: core.MsgQuestion, Body: "neighbor-presentation-marker",
+	}, time.Now()); err != nil {
+		t.Fatalf("send setup: %v", err)
+	}
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go e.Run(ctx)
+	for _, session := range []string{"session-neighbor", "unregistered-neighbor"} {
+		got, err := e.HookPoll(ctx, session, "Stop", "/shared", false, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if reason, _ := got["reason"].(string); strings.Contains(reason, "neighbor-presentation-marker") {
+			t.Fatalf("neighbor received another session's mail: %v", got)
+		}
+	}
+	got, err := e.HookPoll(ctx, "session-worker", "Stop", "/shared", false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reason, _ := got["reason"].(string); !strings.Contains(reason, "neighbor-presentation-marker") {
+		t.Fatalf("neighbor spent the worker's first presentation: %v", got)
+	}
+}
