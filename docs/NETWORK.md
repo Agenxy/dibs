@@ -71,12 +71,18 @@ are unchanged.
 On macOS the board and stdio bridge share HostName, then LocalHostName, then
 ComputerName, read through fixed `scutil --get` arguments within one 100 ms
 budget. A five-second cache refreshes settings rather than fixing the name for
-a process's lifetime. Refresh failure retains the last good label; the kernel
+a process's lifetime. After the first cold lookup, expired labels return at once
+while one background refresh runs, so board reads do not stall the writer.
+Refresh failure retains the last good label; the kernel
 hostname is the initial fallback. Other platforms use the kernel hostname.
 The legacy locality fallback for a row with no HostID still compares the raw
 kernel hostname, independently of this display provider. That cached comparison
 can become stale after a network rename; changing its evidence is a separate
 locality change. Friendly labels never enter host identity or path comparisons.
+The bridge reports a friendly label only alongside its HostID; if that identity
+is unknown it preserves the kernel spelling for the legacy comparison. A failed
+identity-file write still yields the bridge's usable process ID and does not
+make it hostless.
 
 Dibs therefore needs a `HostID` that is:
 

@@ -26,7 +26,7 @@ import (
 // transcripts run to tens of megabytes and we are doing this on registration.
 func sessionContext(isClaude bool) map[string]string {
 	out := map[string]string{}
-	if h := hostname.Name(); h != "" {
+	if h := bridgeHostLabel(hostID()); h != "" {
 		out["host"] = h
 	}
 
@@ -127,6 +127,16 @@ func sessionContext(isClaude bool) map[string]string {
 		}
 	}
 	return out
+}
+
+// Unknown-ID rows still rely on the daemon's legacy kernel-name comparison.
+// A friendly label cannot become evidence for probing another computer's PID.
+func bridgeHostLabel(id string) string {
+	if id != "" {
+		return hostname.Name()
+	}
+	h, _ := os.Hostname()
+	return h
 }
 
 // gitBranch reads the checked-out branch. symbolic-ref is used rather than

@@ -4,10 +4,14 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"testing"
 )
 
 func TestBridgeUsesMacFriendlyNameRatherThanNetworkKernelName(t *testing.T) {
+	t.Setenv("DIBS_HOST_ID", "friendly-host-fixture")
+	hostIDOnce, hostIDValue = sync.Once{}, ""
+	t.Cleanup(func() { hostIDOnce, hostIDValue = sync.Once{}, "" })
 	want := ""
 	for _, key := range []string{"HostName", "LocalHostName", "ComputerName"} {
 		out, err := exec.Command("/usr/sbin/scutil", "--get", key).Output()

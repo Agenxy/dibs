@@ -4,16 +4,18 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
 
 func TestCacheRefreshesNameAndRetainsLastGoodOnFailure(t *testing.T) {
-	now := time.Unix(100, 0)
+	var clock atomic.Int64
+	clock.Store(time.Unix(100, 0).UnixNano())
 	value := "first name"
 	var failure error
 	calls, fallbacks := 0, 0
-	r := resolver{now: func() time.Time { return now }, lookup: func(context.Context) (string, error) { calls++; return value, failure }, fallback: func() (string, error) { fallbacks++; return "kernel", nil }}
+	r := resolver{now: func() time.Time { return time.Unix(0, clock.Load()) }, lookup: func(context.Context) (string, error) { calls++; return value, failure }, fallback: func() (string, error) { fallbacks++; return "kernel", nil }}
 	if got := r.name(); got != value {
 		t.Fatal(got)
 	}
@@ -21,27 +23,28 @@ func TestCacheRefreshesNameAndRetainsLastGoodOnFailure(t *testing.T) {
 	if got := r.name(); got != "first name" || calls != 1 {
 		t.Fatalf("cache did not hold label: %q calls%d", got, calls)
 	}
-	now = now.Add(cacheTTL)
+	refreshForTest(t, &r, &clock)
 	if got := r.name(); got != value || calls != 2 {
 		t.Fatalf("cache did not refresh: %q calls%d", got, calls)
 	}
-	now = now.Add(cacheTTL)
 	failure = errors.New("settings unavailable")
+	refreshForTest(t, &r, &clock)
 	if got := r.name(); got != "renamed" || fallbacks != 0 {
 		t.Fatalf("refresh failure lost last good label: %q fallback%d", got, fallbacks)
 	}
-	now = now.Add(cacheTTL)
 	failure = nil
 	value = "new name"
+	refreshForTest(t, &r, &clock)
 	if got := r.name(); got != value {
 		t.Fatalf("recovery retained stale name: %q", got)
 	}
 }
 
 func TestInitialFailureFallsBackAndLaterRecovers(t *testing.T) {
-	now := time.Unix(100, 0)
+	var clock atomic.Int64
+	clock.Store(time.Unix(100, 0).UnixNano())
 	available := false
-	r := resolver{now: func() time.Time { return now }, lookup: func(context.Context) (string, error) {
+	r := resolver{now: func() time.Time { return time.Unix(0, clock.Load()) }, lookup: func(context.Context) (string, error) {
 		if available {
 			return "friendly", nil
 		}
@@ -51,14 +54,30 @@ func TestInitialFailureFallsBackAndLaterRecovers(t *testing.T) {
 		t.Fatal(got)
 	}
 	available = true
-	now = now.Add(cacheTTL)
+	refreshForTest(t, &r, &clock)
 	if got := r.name(); got != "friendly" {
 		t.Fatal(got)
 	}
 	available = false
-	now = now.Add(cacheTTL)
+	refreshForTest(t, &r, &clock)
 	if got := r.name(); got != "friendly" {
 		t.Fatalf("failure returned network kernel name again: %q", got)
+	}
+}
+
+func refreshForTest(t *testing.T, r *resolver, clock *atomic.Int64) {
+	t.Helper()
+	clock.Add(int64(cacheTTL))
+	r.name() // the production expiry path starts the refresh
+	r.mu.Lock()
+	done := r.refreshing
+	r.mu.Unlock()
+	if done != nil {
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Fatal("refresh did not complete")
+		}
 	}
 }
 
