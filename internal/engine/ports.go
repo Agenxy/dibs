@@ -64,7 +64,10 @@ type Store interface {
 	// Reconcile removes stored objects whose id is not in live. Returns the
 	// number removed.
 	Reconcile(live map[string]bool) (int, error)
-	// Release ends the in-flight hold taken by Put/PutFile.
+	// Hold protects an accepted registration and its older reconcile snapshots.
+	// Each Hold requires exactly one Release, independently of Put's hold.
+	Hold(id string)
+	// Release ends one in-flight hold taken by Put/PutFile or Hold.
 	Release(id string)
 }
 

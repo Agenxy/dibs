@@ -152,7 +152,7 @@ func (e *Engine) transferAgentLocked(ctx context.Context, i TransferIdentity, bl
 func (e *Engine) CommitTransfer(
 	ctx context.Context, i TransferIdentity, blob string, size int64, mime string,
 ) (core.Result, error) {
-	return e.query(ctx, func() core.Result {
+	req := e.registrationRequest(blob, func() core.Result {
 		a, err := e.transferAgentLocked(ctx, i, "")
 		if err != nil {
 			return core.Result{"error": err}
@@ -169,6 +169,7 @@ func (e *Engine) CommitTransfer(
 		delete(e.transfers, i.Reservation)
 		return res
 	})
+	return e.send(ctx, req)
 }
 
 func (e *Engine) admitTransferLocked(identity *TransferIdentity, blob string, size *int64) error {

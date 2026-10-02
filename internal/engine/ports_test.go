@@ -72,6 +72,12 @@ func (m *memBlobs) Reconcile(live map[string]bool) (int, error) {
 	return n, nil
 }
 
+func (m *memBlobs) Hold(id string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.inflight[id]++
+}
+
 func (m *memBlobs) Release(id string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

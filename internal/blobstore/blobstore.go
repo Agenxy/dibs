@@ -119,6 +119,10 @@ func removeTempsIn(dir string) {
 	}
 }
 
+// Hold extends protection across an older live-ID snapshot. The caller must
+// Release exactly once, separately from any hold returned by Put or Commit.
+func (s *Store) Hold(id string) { s.hold(id) }
+
 func (s *Store) hold(id string) {
 	s.mu.Lock()
 	s.inflight[id]++
@@ -138,10 +142,15 @@ func (s *Store) Release(id string) {
 	s.mu.Unlock()
 }
 
-func (s *Store) staging(id string) bool {
+// The staging check and unlink share the same lock as Hold. Checking and then
+// unlocking before Remove would let a new Put slip into the deletion window.
+func (s *Store) pruneUnheld(path, id string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.inflight[id] > 0
+	if s.inflight[id] > 0 {
+		return false
+	}
+	return os.Remove(path) == nil
 }
 
 // blobPath maps an id to its sharded path AFTER strict validation, so no
@@ -359,13 +368,11 @@ func (s *Store) pruneDir(dir string, live map[string]bool) int {
 			continue
 		}
 		id := "sha256:" + name
-		if live[id] || s.staging(id) {
+		if live[id] {
 			continue
 		}
-		if (!core.ValidBlobID(id)) || !live[id] {
-			if os.Remove(filepath.Join(dir, name)) == nil {
-				removed++
-			}
+		if s.pruneUnheld(filepath.Join(dir, name), id) {
+			removed++
 		}
 	}
 	return removed
