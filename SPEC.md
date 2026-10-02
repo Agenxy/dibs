@@ -78,8 +78,10 @@ State is partitioned into three tiers, and the tier boundary is normative:
    buckets, parked long-polls, the event ring. Never replayed, never trusted across
    restart. Ephemeral facts influence replayable state only by being **recorded as
    decisions inside ledgered ops** (sweep's `stale_agents`/`dead_agents`, wake ops).
-3. **Presentation annotations**: `last_seen` (freshest activity incl. reads) and
-   `proc_alive`. These appear in board/CLI/web *views*, computed live by the engine at
+3. **Presentation annotations**: `last_seen` (freshest activity incl. reads),
+   `proc_alive`, and row `host` (one display label per known host identity;
+   raw `agent.host` retained, selection described in docs/NETWORK.md §2).
+   These appear in board/CLI/web *views*, computed live by the engine at
    read time. They are **not replayable state**, not in the agent's ledgered schema, and
    replay does not reconstruct them. (A "quiet sweep" therefore changes no state: it
    only refreshes annotations.)

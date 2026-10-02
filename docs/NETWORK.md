@@ -55,6 +55,14 @@ documented as a LABEL: it comes from the operating system, it is mutable,
 duplicable across machines, and asserted by the caller. Deciding anything with
 it would repeat the mistake `Project` already carries a warning about.
 
+Board rows use one display `host` label per known `host_id`: the daemon's
+hostname for its own identity (including known old aliases), and the label
+of the newest coordinated member for a remote identity. Coordination time
+is not the time the label changed; creation serial and agent id break ties
+deterministically. The raw per-agent label remains at `agent.host` in detail
+views. Unknown host ids keep their individual labels and are never grouped
+by hostname. The compact roster, web board and MCP panel read the row label.
+
 Dibs therefore needs a `HostID` that is:
 
 - stable across reboots, renames, address changes and network moves;
@@ -81,8 +89,8 @@ whose envelopes are versioned and checked) and keeps nothing of its own that
 Supgang already answers. So:
 
 - **Built.** On a machine that is a Supgang member, `HostID` **is** the
-  Supgang node id, on both sides: the daemon stamps every loopback caller with
-  it (`Engine.HostID`, read once at boot), and the bridge on a joining machine
+  Supgang node id, on both sides: the daemon stamps local callers that assert
+  no identity with it (`Engine.HostID`, read once at boot), and the bridge on a joining machine
   asserts it on every call (read once per bridge). One identity per computer,
   the one every other member knows it by, from the next start of whichever
   process predates the hive: a daemon started before `supgang init` keeps the
@@ -98,8 +106,8 @@ Supgang already answers. So:
   MacMarine` resolves the address Supgang has signed for that computer now,
   records the peer (`DIBS_BOARD_PEER`), and the bridge asks again each time it
   starts, so the board follows the hub when its address changes.
-- A caller arriving over loopback that asserts nothing is on the daemon's
-  machine (nothing else can reach loopback) and is stamped so. A bridge's
+- A caller arriving over loopback that asserts nothing is treated as on the
+  daemon's machine and is stamped so. A bridge's
   assertion is taken whatever the transport, because the documented transport
   for a machine without Supgang is an ssh forward, which arrives over loopback
   too; an assertion is as strong as the bearer secret the same bridge holds and
