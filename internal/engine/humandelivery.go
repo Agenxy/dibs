@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -27,6 +28,7 @@ type humanDelivery struct {
 }
 
 type humanReceipt struct {
+	label     string // per-message label; the enrolled device key stays internal
 	State     string `json:"state"`
 	Error     string `json:"error,omitempty"`
 	Posted    bool   `json:"posted,omitempty"`
@@ -92,6 +94,9 @@ func (e *Engine) dispatchHuman(res core.Result) {
 			delete(e.humanDelivery.bySerial, old)
 		}
 	}
+	if d.Route == "desktop" {
+		d.Receipts = map[string]humanReceipt{"desktop": {State: "pending", label: "desktop"}}
+	}
 	e.humanDelivery.bySerial[serial] = d
 	e.humanDelivery.mu.Unlock()
 	res["human_route"], res["human_relay_count"] = d.Route, count
@@ -122,7 +127,7 @@ func (e *Engine) askHumanDesktop(n HumanNotice, ask func(humanask.Message) (huma
 	}
 }
 
-func (e *Engine) recordHumanDelivery(serial uint64, source, state, failure string) {
+func (e *Engine) recordHumanDelivery(serial uint64, source, state, failure string) bool {
 	e.humanDelivery.mu.Lock()
 	defer e.humanDelivery.mu.Unlock()
 	d, ok := e.humanDelivery.bySerial[serial]
@@ -132,7 +137,13 @@ func (e *Engine) recordHumanDelivery(serial uint64, source, state, failure strin
 	if d.Receipts == nil {
 		d.Receipts = map[string]humanReceipt{}
 	}
-	r := d.Receipts[source]
+	r, known := d.Receipts[source]
+	if !known {
+		if len(d.Receipts) >= relayQueue {
+			return false
+		}
+		r.label = receiptLabel(source, d.Receipts)
+	}
 	r.State, r.Error = state, failure
 	r.Posted = r.Posted || state == "posted"
 	r.Dismissed = r.Dismissed || state == "dismissed"
@@ -141,13 +152,7 @@ func (e *Engine) recordHumanDelivery(serial uint64, source, state, failure strin
 	// must not erase affirmative posting evidence from another.
 	d.State, d.Error = "queued", ""
 	for _, r := range d.Receipts {
-		confirmed := r.State
-		if r.Posted && deliveryRank(confirmed) < deliveryRank("posted") {
-			confirmed = "posted"
-		}
-		if r.Dismissed {
-			confirmed = "dismissed"
-		}
+		confirmed := confirmedReceiptState(r)
 		if deliveryRank(confirmed) > deliveryRank(d.State) ||
 			(confirmed == d.State && r.Error < d.Error) {
 			d.State, d.Error = confirmed, r.Error
@@ -157,6 +162,28 @@ func (e *Engine) recordHumanDelivery(serial uint64, source, state, failure strin
 		e.humanDelivery.bySerial = map[uint64]humanDelivery{}
 	}
 	e.humanDelivery.bySerial[serial] = d
+	return true
+}
+
+func receiptLabel(source string, receipts map[string]humanReceipt) string {
+	if source == "desktop" {
+		return "desktop"
+	}
+	count := len(receipts)
+	if _, desktop := receipts["desktop"]; desktop {
+		count--
+	}
+	return "relay-" + strconv.Itoa(count+1)
+}
+
+func confirmedReceiptState(r humanReceipt) string {
+	if r.Dismissed {
+		return "dismissed"
+	}
+	if r.Posted && deliveryRank(r.State) < deliveryRank("posted") {
+		return "posted"
+	}
+	return r.State
 }
 
 func deliveryRank(state string) int {
@@ -175,17 +202,8 @@ func deliveryRank(state string) int {
 // ReportHumanDelivery records a relay's receipt, outside the fold. The HTTP
 // caller authenticates the relay session; this boundary validates its subject.
 func (e *Engine) ReportHumanDelivery(ctx context.Context, serial uint64, source, state, failure string) error {
-	if source == "" || len(source) > 128 {
-		return fmt.Errorf("invalid relay receipt source")
-	}
-	if state != "posted" && state != "dismissed" && state != "failed" {
-		return fmt.Errorf("unsupported notification receipt %q", state)
-	}
-	if len(failure) > 4096 {
-		return fmt.Errorf("notification error exceeds 4096 bytes")
-	}
-	if state == "failed" && strings.TrimSpace(failure) == "" {
-		return fmt.Errorf("a failed receipt needs its error")
+	if err := validateHumanReceipt(source, state, failure); err != nil {
+		return err
 	}
 	var invalid error
 	_, err := e.query(ctx, func() core.Result {
@@ -194,16 +212,10 @@ func (e *Engine) ReportHumanDelivery(ctx context.Context, serial uint64, source,
 			invalid = ErrNotTheHumans
 			return nil
 		}
-		e.humanDelivery.mu.Lock()
-		d := e.humanDelivery.bySerial[serial]
-		_, known := d.Receipts[source]
-		full := !known && len(d.Receipts) >= relayQueue
-		e.humanDelivery.mu.Unlock()
-		if full {
+		if !e.recordHumanDelivery(serial, source, state, failure) {
 			invalid = fmt.Errorf("notification receipt source limit reached (64)")
 			return nil
 		}
-		e.recordHumanDelivery(serial, source, state, failure)
 		return core.Result{"ok": true}
 	})
 	if err != nil {
@@ -215,14 +227,30 @@ func (e *Engine) ReportHumanDelivery(ctx context.Context, serial uint64, source,
 	return invalid
 }
 
+func validateHumanReceipt(source, state, failure string) error {
+	if source == "" || source == "desktop" || len(source) > 128 {
+		return fmt.Errorf("invalid relay receipt source")
+	}
+	if state != "posted" && state != "dismissed" && state != "failed" {
+		return fmt.Errorf("unsupported notification receipt %q", state)
+	}
+	if len(failure) > 4096 {
+		return fmt.Errorf("notification error exceeds 4096 bytes")
+	}
+	if state == "failed" && strings.TrimSpace(failure) == "" {
+		return fmt.Errorf("a failed receipt needs its error")
+	}
+	return nil
+}
+
 // On the writer, after read_mail's ordinary authentication and visibility gate.
 func (e *Engine) deliveryForHuman(m *core.Message) humanDelivery {
 	e.humanDelivery.mu.Lock()
 	d, ok := e.humanDelivery.bySerial[m.Serial]
 	if d.Receipts != nil {
 		copyReceipts := make(map[string]humanReceipt, len(d.Receipts))
-		for source, receipt := range d.Receipts {
-			copyReceipts[source] = receipt
+		for _, receipt := range d.Receipts {
+			copyReceipts[receipt.label] = receipt
 		}
 		d.Receipts = copyReceipts
 	}

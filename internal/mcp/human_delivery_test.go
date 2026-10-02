@@ -2,10 +2,12 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http/httptest"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -80,15 +82,23 @@ func TestHumanDeliveryThroughActualMCP(t *testing.T) {
 				if sent["human_relay_count"] != float64(1) || d["state"] != "queued" {
 					t.Fatalf("relay: %v %v", sent, d)
 				}
-				if err := eng.ReportHumanDelivery(context.Background(), uint64(serial), "relay-1", "posted", ""); err != nil {
+				if err := eng.ReportHumanDelivery(context.Background(), uint64(serial), "enrolled-device-private-id", "posted", ""); err != nil {
 					t.Fatal(err)
 				}
 				if err := eng.ReportHumanDelivery(context.Background(), uint64(serial), "relay-2", "failed", "other Mac offline"); err != nil {
 					t.Fatal(err)
 				}
 			}
-			if d := read(); d["state"] != "posted" {
+			d = read()
+			if d["state"] != "posted" {
 				t.Fatalf("posted: %v", d)
+			}
+			raw, err := json.Marshal(d)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(raw), "enrolled-device-private-id") {
+				t.Fatalf("device key leaked: %s", raw)
 			}
 			if err := eng.AnswerAsHuman(context.Background(), uint64(serial), "answer", "yes"); err != nil {
 				t.Fatal(err)
@@ -173,7 +183,8 @@ func TestFullHumanRelayFallsBackWithoutBlockingMCP(t *testing.T) {
 		}
 		res, err := eng.Do(context.Background(), &core.Op{
 			Kind: core.OpSendMessage, Token: token,
-			To: "human", MsgType: core.MsgNotify, Body: "fill queue fixture"})
+			To: "human", MsgType: core.MsgNotify, Body: "fill queue fixture",
+		})
 		if err != nil || res["error"] != nil || res["human_route"] != "relay" {
 			t.Fatalf("queue setup %d failed: %v %v", i, res, err)
 		}

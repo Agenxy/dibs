@@ -58,6 +58,9 @@ func asReceiptHelper() {
 	if err := os.WriteFile(os.Getenv("DIBS_NOTIFY_RECEIPT"), []byte(`{"state":"posted"}`), 0o600); err != nil {
 		os.Exit(2)
 	}
+	if os.Getenv("DIBS_TEST_RECEIPT_OUTCOME") == "timeout" {
+		os.Exit(1)
+	}
 	for i, arg := range os.Args {
 		if arg == "--out" && i+1 < len(os.Args) {
 			if err := os.WriteFile(os.Args[i+1], []byte("Yes"), 0o600); err != nil {
@@ -100,8 +103,13 @@ func TestPublicNotificationReceiptUsesTheInstalledHelper(t *testing.T) {
 		t.Skip("macOS installed-helper route")
 	}
 	if os.Getenv("DIBS_TEST_RECEIPT_PUBLIC") != "" {
-		for _, api := range []string{"banner", "ask"} {
+		for _, api := range []string{"banner", "ask", "ignored"} {
 			state := ""
+			outcome := ""
+			if api == "ignored" {
+				outcome = "timeout"
+			}
+			t.Setenv("DIBS_TEST_RECEIPT_OUTCOME", outcome)
 			receipt := func(s string) { state = s }
 			var err error
 			if api == "banner" {
@@ -109,7 +117,11 @@ func TestPublicNotificationReceiptUsesTheInstalledHelper(t *testing.T) {
 			} else {
 				var choice string
 				choice, err = AskWithReceipt("fixture", "fixture", receipt, "Yes")
-				if choice != "Yes" {
+				want := "Yes"
+				if api == "ignored" {
+					want = ""
+				}
+				if choice != want {
 					t.Fatalf("ask choice: %q, %v", choice, err)
 				}
 			}
