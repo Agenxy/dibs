@@ -10,6 +10,70 @@ import (
 	"github.com/agenxy/dibs/internal/core"
 )
 
+func TestMilestoneEventAckFirstCallAfterRestart(t *testing.T) {
+	led := &memLedger{}
+	e := New(core.NewState("t", core.DefaultLimits()), led, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); e.Run(ctx) }()
+	t.Cleanup(func() { cancel(); <-done })
+	do := func(op *core.Op) core.Result {
+		t.Helper()
+		r, err := e.Do(ctx, op)
+		if err != nil {
+			t.Fatalf("setup %s: %v", op.Kind, err)
+		}
+		return r
+	}
+	lead := do(&core.Op{Kind: core.OpRegister, Name: "lead", Nonce: "restart-lead"})["token"].(string)
+	worker := do(&core.Op{Kind: core.OpRegister, Name: "worker", Nonce: "restart-worker"})["token"].(string)
+	parent := do(&core.Op{Kind: core.OpSendMessage, Token: lead, To: "worker", MsgType: core.MsgRequest, Body: "proof", Milestones: []string{"proof"}})["msg_serial"].(uint64)
+	do(&core.Op{Kind: core.OpRespond, Token: worker, MsgSerial: parent, Disposition: "approve"})
+	if _, err := e.GetMessage(ctx, lead, parent); err != nil {
+		t.Fatal(err)
+	}
+	do(&core.Op{Kind: core.OpRespond, Token: worker, MsgSerial: parent, Disposition: "progress", Milestone: 1})
+	var ops []*core.Op
+	if _, err := e.query(ctx, func() core.Result { ops = append(ops, led.ops...); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	st := core.NewState("t", core.DefaultLimits())
+	for _, op := range ops {
+		if _, _, err := st.Apply(op, time.Now()); err != nil {
+			t.Fatal("replay:", err)
+		}
+	}
+	cancel()
+	<-done
+	event := st.Messages[parent].Progress[0].Serial
+	serial, consumed := st.Serial, st.Messages[parent].Consumed
+	restartedLedger := &memLedger{}
+	restarted := New(st, restartedLedger, deadProber{})
+	if restarted.notices != nil || restarted.seen == nil {
+		t.Fatal("setup: restart must have no notices and an initialized seen map")
+	}
+	restartCtx, restartCancel := context.WithCancel(context.Background())
+	restartDone := make(chan struct{})
+	go func() { defer close(restartDone); restarted.Run(restartCtx) }()
+	t.Cleanup(func() { restartCancel(); <-restartDone })
+	// The first call is the production operation, with no read or check-in to
+	// populate a derived map first. The retained progress comes from replay.
+	for range 2 {
+		r, err := restarted.Do(restartCtx, &core.Op{Kind: core.OpAckMessage, Token: lead, MsgSerial: event})
+		if err != nil || r["state"] != "acked" {
+			t.Fatalf("ack after restart: %v %v", r, err)
+		}
+	}
+	restartCancel()
+	<-restartDone
+	if st.Serial != serial || len(restartedLedger.ops) != 0 || st.Messages[parent].Consumed != consumed || st.Messages[parent].Progress[0].Review != "" {
+		t.Fatal("derived event ack changed replayable state")
+	}
+	if restarted.seen["lead"].IsZero() {
+		t.Fatal("ack did not touch liveness")
+	}
+}
+
 func TestMilestoneEventAckDoesNotLedgerReviewOrConsumeParent(t *testing.T) {
 	led := &memLedger{}
 	e := New(core.NewState("event-ack", core.DefaultLimits()), led, deadProber{})
