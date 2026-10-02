@@ -1042,6 +1042,9 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 			}
 		}
 	}
+	if board, ok := res["board"].(map[string]any); ok {
+		e.labelBoardHosts(board)
+	}
 	return res, nil
 }
 

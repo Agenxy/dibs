@@ -91,6 +91,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **One machine reads as one machine.** Board rows, compact check-ins and the
+  shared web/panel renderer use one label per known host identity instead of
+  each harness's differing hostname. The daemon's hostname labels local agents;
+  remote labels come from the newest coordinated member, with deterministic
+  ties. Unknown identities stay separate and detail retains each raw label.
+  Coordination identities, path comparisons and SSH tunnel assertions are unchanged.
+
 - A reviewer declaring the same work item as its implementer is described as
   complementary coordination, rather than warned to stand down as duplicate
   work. Same-role and unknown-role duplicates still warn. Review guidance now

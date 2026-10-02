@@ -70,6 +70,7 @@ func panelPayload(raw core.Result) core.Result {
 var (
 	agentFields = []string{
 		"id", "name", "kind", "status", "description", "last_coordination_at", "agent",
+		"host", // the shared renderer displays the derived machine label
 		// WHY an agent stopped counting as live. Without it the panel shows
 		// "out of touch" beside a last-contact time of "now", which reads as a
 		// broken panel rather than a dead agent, and it cannot tell a crashed
