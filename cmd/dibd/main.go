@@ -244,6 +244,7 @@ func run() error {
 	}
 	led.OnEvents = nil // replay is done; live events flow through the engine
 	eng := engine.New(st, led, liveness.New(), history)
+	eng.SetHintFile(filepath.Join(*dir, "reattach-hints.json"))
 	// SETTLED BEFORE SERVING. Nothing changes this identity afterwards; see
 	// keepAskingSupgang.
 	identified, adopted := identifyHost(eng, *dir)
