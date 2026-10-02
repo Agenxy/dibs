@@ -105,7 +105,12 @@ var (
 	// card that shows only the body shows only what the sender chose to say
 	// about it. Redaction blanks body and response by name; these two are the
 	// typed effect and are exactly what the reader needs.
-	msgFields   = []string{"serial", "type", "from", "to", "body", "response", "state", "attachments", "grant", "adopt"}
+	// milestones, progress and deliverable are a request as a task: drawn by
+	// the shared renderer's taskHTML.
+	msgFields = []string{
+		"serial", "type", "from", "to", "body", "response", "state", "attachments", "grant", "adopt",
+		"milestones", "progress", "deliverable",
+	}
 	eventFields = []string{"serial", "type", "agent", "to", "ts"}
 )
 

@@ -319,6 +319,10 @@ var toolDefs = func() []map[string]any {
 						"answering is a press, not a composition; to the human they become " +
 						"the notification's buttons",
 				},
+				"milestones": map[string]any{
+					"type": "array", "items": map[string]any{"type": "string"},
+					"description": "on a request: up to 8 steps the recipient reports",
+				},
 				"attachments": map[string]any{"type": "array", "description": "each is a blob " +
 					"{blob:'sha256:…'} from put_blob, or a fileref {path, size?, hash?} naming a " +
 					"local file (advisory, zero-copy)", "items": map[string]any{"type": "object", "properties": map[string]any{
@@ -363,12 +367,21 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "respond",
-			"description": "Respond to a message in your inbox: answer (questions), approve/deny (requests), " +
-				"decline (either), or done (a request you approved, once delivered; until then you owe it).",
+			"description": "Respond: answer, approve/deny, decline; progress/done on a request you approved " +
+				"(you owe it until done); accept/flag a step of one you sent.",
 			"inputSchema": obj(map[string]any{
 				"token": tok, "msg_serial": num("serial of the message"),
-				"disposition": map[string]any{"type": "string", "enum": []string{"answer", "approve", "deny", "decline", "done"}},
-				"body":        str("response text (optional for approve/deny/decline)"),
+				"disposition": map[string]any{
+					"type": "string",
+					"enum": []string{"answer", "approve", "deny", "decline", "progress", "done", "accept", "flag"},
+				},
+				"body":        str("response text"),
+				"milestone":   num("step number, from 1"),
+				"deliverable": str("path or URL: the work (done), a step's artifact (progress)"),
+				"milestones": map[string]any{
+					"type": "array", "items": map[string]any{"type": "string"},
+					"description": "your steps, on approve",
+				},
 			}, "token", "msg_serial", "disposition"),
 		},
 		{

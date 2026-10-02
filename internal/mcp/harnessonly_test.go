@@ -121,7 +121,13 @@ func TestToolListingStaysAffordable(t *testing.T) {
 		// If this is raised again, say which tool bought it and what the
 		// average was. An average at or near 800 means the answer is to trim,
 		// not to raise.
-		budget = 36800 // 46 tools x perTool, ~9.2k tokens
+		//
+		// Raised to 47 x perTool for tasks (send's milestones; respond's
+		// progress, accept, flag, milestone, milestones and deliverable). It
+		// was still 46 x perTool after a 47th tool landed, and the average
+		// here was 783, under the standard: wider, not wordier. The new
+		// descriptions were trimmed twice before this.
+		budget = 37600 // 47 tools x perTool, ~9.4k tokens
 	)
 	if len(b) > budget {
 		t.Errorf("tools/list is %d chars (~%d tokens), over the %d budget. Every agent pays "+

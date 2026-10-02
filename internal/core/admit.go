@@ -139,6 +139,9 @@ func Admit(op *Op, lim Limits) error {
 	if err := checkWaiting(op, lim); err != nil {
 		return err
 	}
+	if err := checkTask(op); err != nil {
+		return err
+	}
 	// Choices only mean something on a QUESTION.
 	//
 	// Admit bounded them and never asked what they were attached to, and Apply

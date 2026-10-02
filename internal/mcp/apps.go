@@ -612,10 +612,10 @@ func redactBodies(v any) any {
 		// A copy: the original is the AGENT's own result, delivered over the
 		// connection it authenticated on, and it keeps its text.
 		c := *t
-		c.Body, c.Response = "", ""
+		c.Body, c.Response, c.Progress = "", "", blankNotes(c.Progress)
 		return &c
 	case core.Message:
-		t.Body, t.Response = "", ""
+		t.Body, t.Response, t.Progress = "", "", blankNotes(t.Progress)
 		return t
 	case []*core.Message:
 		out := make([]*core.Message, 0, len(t))
@@ -681,14 +681,51 @@ func redactBodies(v any) any {
 // exists precisely to strip content from a copy that goes to everyone, so a
 // value stored under `body` or `response` anywhere inside it is content this
 // must not carry, whatever it is nested in.
+//
+// A task's progress notes are text the recipient wrote, so under `progress`
+// the `note` of every report goes too; the milestone numbers stay, which is
+// what the panel counts.
 func redactField(key string, v any) any {
 	switch key {
 	case "body", "response":
 		if _, isString := v.(string); isString {
 			return ""
 		}
+	case "progress":
+		return blankNoteFields(redactBodies(v))
 	}
 	return redactBodies(v)
+}
+
+// blankNotes copies typed progress reports with their notes removed.
+func blankNotes(ps []core.Progress) []core.Progress {
+	if ps == nil {
+		return nil
+	}
+	out := make([]core.Progress, len(ps))
+	for i, p := range ps {
+		p.Note = ""
+		out[i] = p
+	}
+	return out
+}
+
+// blankNoteFields removes `note` from each report in a normalised progress
+// list, whatever container it arrived in.
+func blankNoteFields(v any) any {
+	switch t := v.(type) {
+	case []any:
+		for _, r := range t {
+			if m, ok := r.(map[string]any); ok {
+				if _, has := m["note"]; has {
+					m["note"] = ""
+				}
+			}
+		}
+	case []core.Progress:
+		return blankNotes(t)
+	}
+	return v
 }
 
 func redactAnyContainer(v any) any {
