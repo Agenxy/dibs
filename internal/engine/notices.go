@@ -168,6 +168,18 @@ func situationalNotice(ev core.Event) (who, text string, blocking bool) {
 		// re-reading a message it had already sent. Nothing told it. Reported
 		// as: "when you approve an agent's request they should be notified."
 		who, text, blocking = ev.To, answeredNotice(ev), true
+	case "message.progress":
+		// Progress on work this agent asked for. NOT blocking: it is news
+		// about a task, not the answer the sender stopped for, so it arrives
+		// with the next thing that reaches the agent rather than waking it
+		// once per milestone. done is the one that wakes.
+		who, text = ev.To, progressNotice(ev)
+	case "message.review":
+		// The sender's verdict on a step goes to the WORKER. A flag can say
+		// "stop, do this instead", so it is blocking and wakes an idle worker;
+		// an acceptance is good news that waits for the next turn.
+		who, text = ev.To, reviewNotice(ev)
+		blocking = ev.Data["review"] == core.ReviewFlagged
 	case "agent.absorbed":
 		// Your agent just gained another space's members, its predicted footprint
 		// and its outstanding announcements, which you may now be required to
@@ -438,6 +450,10 @@ func answeredNotice(ev core.Event) string {
 		}
 		return s + ". Read it with read_mail to see what they said"
 	case "message.done":
+		if d, _ := ev.Data["deliverable"].(string); d != "" {
+			return fmt.Sprintf("%s reports your request DONE (msg %d): delivered at %s. "+
+				"read_mail has what it said", by, serial, d)
+		}
 		return fmt.Sprintf("%s reports your request DONE (msg %d): the work it approved is "+
 			"delivered. read_mail has what it said", by, serial)
 	case "message.denied":
@@ -739,4 +755,36 @@ func trimNotices(all []notice, limit int) []notice {
 		}
 	}
 	return out
+}
+
+// progressNotice says what moved on a task this agent asked for.
+func progressNotice(ev core.Event) string {
+	serial, _ := ev.Data["msg_serial"].(uint64)
+	reached, _ := ev.Data["reached"].(int)
+	total, _ := ev.Data["total"].(int)
+	s := fmt.Sprintf("%s reports progress on your request (msg %d)", ev.Agent, serial)
+	if label, _ := ev.Data["label"].(string); label != "" {
+		s += fmt.Sprintf(": reached %q", label)
+	}
+	if total > 0 {
+		s += fmt.Sprintf(", %d of %d milestones", reached, total)
+	}
+	if a, _ := ev.Data["artifact"].(string); a != "" {
+		s += ", to check at " + a
+	}
+	return s + ". read_mail has the note; respond accept or flag to say what you think"
+}
+
+// reviewNotice tells a worker what the sender of its task thinks of a step.
+func reviewNotice(ev core.Event) string {
+	serial, _ := ev.Data["msg_serial"].(uint64)
+	step := "the work"
+	if label, _ := ev.Data["label"].(string); label != "" {
+		step = fmt.Sprintf("%q", label)
+	}
+	if ev.Data["review"] == core.ReviewFlagged {
+		return fmt.Sprintf("%s FLAGGED %s on the request you are doing (msg %d): read_mail has what "+
+			"is wrong or what to do instead. The task is still yours", ev.Agent, step, serial)
+	}
+	return fmt.Sprintf("%s accepted %s on the request you are doing (msg %d)", ev.Agent, step, serial)
 }

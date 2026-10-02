@@ -427,6 +427,7 @@ const Board = (() => {
         </div>
         <p class="body">${esc(m.body)}</p>
         ${effectHTML(m)}
+        ${taskHTML(m)}
         ${attachmentsHTML(m.attachments)}
         ${settled ? `<div class="reply ${esc(m.state)}">
           <span class="verdict">${esc(verdict)}</span>
@@ -434,6 +435,42 @@ const Board = (() => {
         </div>` : ""}
         ${actionsHTML ? actionsHTML(m) : ""}
       </article>`
+  }
+
+  // A request as a task: the steps, which the worker has reached and with
+  // what to check, what the requester made of each, the latest note, and
+  // where done said the work landed. So the person can follow work on the
+  // board without asking anybody.
+  function taskHTML(m) {
+    const steps = Array.isArray(m.milestones) ? m.milestones : []
+    const entries = Array.isArray(m.progress) ? m.progress : []
+    if (!steps.length && !entries.length && !m.deliverable) return ""
+    const reports = entries.filter((p) => !p.review)
+    const reached = new Set(reports.map((p) => p.milestone).filter((n) => n > 0))
+    const latest = (pred) => [...entries].reverse().find(pred)
+    const items = steps.map((label, i) => {
+      const n = i + 1
+      const done = reached.has(n)
+      const art = latest((p) => !p.review && p.milestone === n && p.artifact)
+      const rev = latest((p) => p.review && p.milestone === n)
+      const verdict = rev
+        ? `<span class="review ${esc(rev.review)}">${rev.review === "flagged" ? "flagged" : "accepted"}</span>`
+        : ""
+      return `<li class="${done ? "reached" : ""}"><span class="tick" aria-hidden="true">${done ? "✓" : "○"}</span>` +
+        `<span class="label">${esc(label)}</span>${verdict}` +
+        `${art ? ` <code class="artifact">${esc(art.artifact)}</code>` : ""}</li>`
+    }).join("")
+    const note = latest((p) => p.note)
+    const noteHTML = note
+      ? `<p class="task-note${note.review === "flagged" ? " flagged" : ""}">` +
+        `${note.review ? `<span class="who">${esc(note.by || m.from)}</span> ` : ""}${esc(note.note)}</p>`
+      : ""
+    return `<div class="task">
+        ${steps.length ? `<div class="task-count">${reached.size} of ${steps.length} milestones</div>
+        <ol class="milestones" aria-label="${reached.size} of ${steps.length} milestones reached">${items}</ol>` : ""}
+        ${noteHTML}
+        ${m.deliverable ? `<p class="deliverable">Delivered at <code>${esc(m.deliverable)}</code></p>` : ""}
+      </div>`
   }
 
   function eventHTML(e) {

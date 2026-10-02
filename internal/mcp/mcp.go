@@ -816,6 +816,9 @@ type toolArgs struct {
 	Body        string            `json:"body"`
 	DeadlineSec int               `json:"deadline_s"`
 	Choices     []string          `json:"choices"`
+	Milestones  []string          `json:"milestones"`
+	Milestone   int               `json:"milestone"`
+	Deliverable string            `json:"deliverable"`
 	Grant       string            `json:"grant"`
 	Adopt       string            `json:"adopt"`
 	OpID        string            `json:"op_id"`
@@ -1266,12 +1269,14 @@ func (s *Server) run(
 		op.Kind, op.To, op.MsgType, op.Body = core.OpSendMessage, a.To, a.Type, a.Body
 		op.DeadlineSec, op.OpID, op.Attachments = a.DeadlineSec, a.OpID, a.Attachments
 		op.Choices, op.Grant, op.Adopt = a.Choices, a.Grant, a.Adopt
+		op.Milestones = a.Milestones
 	case "put_blob":
 		return s.putBlob(ctx, a)
 	case "get_blob":
 		return s.eng.GetBlob(ctx, a.Token, a.Blob, a.As)
 	case "respond":
 		op.Kind, op.MsgSerial, op.Disposition, op.Body = core.OpRespond, a.MsgSerial, a.Disposition, a.Body
+		op.Milestone, op.Deliverable, op.Milestones = a.Milestone, a.Deliverable, a.Milestones
 	case "ack":
 		op.Kind, op.MsgSerial = core.OpAckMessage, a.MsgSerial
 	case "inbox":

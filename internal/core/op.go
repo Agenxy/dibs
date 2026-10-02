@@ -79,10 +79,17 @@ type Op struct {
 	Grant string `json:"grant,omitempty"`
 	// Adopt is the ABANDONED agent a request asks to reclaim, so that approving
 	// it moves that mailbox rather than telling somebody they may go and do it.
-	Adopt     string `json:"adopt,omitempty"`
-	ProcStart int64  `json:"proc_start,omitempty"`
-	NewToken  string `json:"token,omitempty"` // engine-generated; encrypted at rest
-	Nonce     string `json:"nonce,omitempty"` // encrypted at rest
+	Adopt string `json:"adopt,omitempty"`
+	// Milestones are the steps a request's sender names for the work, ticked
+	// off by the recipient with respond(progress). See core/progress.go.
+	Milestones []string `json:"milestones,omitempty"`
+	// Milestone is the 1-based step a progress report ticks, or 0 for a note.
+	Milestone int `json:"milestone,omitempty"`
+	// Deliverable is where finished work landed (a path or a URL), on done.
+	Deliverable string `json:"deliverable,omitempty"`
+	ProcStart   int64  `json:"proc_start,omitempty"`
+	NewToken    string `json:"token,omitempty"` // engine-generated; encrypted at rest
+	Nonce       string `json:"nonce,omitempty"` // encrypted at rest
 	// MintedNonce is a nonce the daemon generated for a caller that sent none,
 	// to be used ONLY if this registration creates a new agent.
 	//

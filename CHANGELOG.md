@@ -7,6 +7,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A request can be a task its sender follows.** A request for work may name
+  up to 8 milestones, at `send` or by its worker at `respond(approve)`. The
+  worker reports each with `respond(progress, milestone, body, deliverable)`,
+  where the deliverable is an artifact the sender can open and check before
+  the work is finished, and closes it with `respond(done, deliverable)`. The
+  sender hears each step as a notice without being woken, and answers a step
+  with `respond(accept)` or `respond(flag, body)`: a flag wakes the worker and
+  cancels nothing. The board shows "2 of 4 milestones", each step with its
+  artifact and verdict, the latest note and the deliverable. Asked for by the
+  operator.
+
 - **`dibs human-relay`: your mail on your own Mac, wherever the board runs.**
   A board on a server used to raise your questions and requests on its own
   screen. The relay attaches your Mac instead: mail to you shows there as the
