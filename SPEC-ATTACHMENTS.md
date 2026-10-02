@@ -135,6 +135,17 @@ id (known up front from the content hash) from before the bytes touch disk until
 caller has registered it, and reconcile skips any held id and any in-progress temp file.
 Reconcile thus reaps only genuine orphans, never live in-flight writes.
 
+**Snapshot handoff.** A snapshot can remain stale after registration: releasing
+the put's last hold while that sweep is still running would expose a live blob
+to deletion. The writer counts sweeps before publishing their snapshots and
+takes one extra per-ID store hold at successful registration while any sweep is
+active. The last completion releases those holds, including error and recovered
+panic paths. Shutdown cancels completion receipts even on a writer panic and
+waits for workers before releasing them; cancellation must not drop protection
+while a worker can still unlink. Hold checks and filesystem unlink share the
+same store mutex, excluding a new put from that deletion window.
+These counts and holds are ephemeral, outside the ledger and the pure core.
+
 ## A5. Lifecycle & GC (bounded: nothing is immortal)
 
 - **Refcount** = (# live, non-GC'd messages attaching the blob) + explicit pins. When a

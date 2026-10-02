@@ -129,9 +129,13 @@ func (e *Engine) reconcileBlobs() {
 	if e.blobs == nil {
 		return
 	}
+	// Count BEFORE handing off the snapshot. A later registration transfers
+	// protection from its caller's stage hold to an extra writer-owned hold.
+	e.blobReconciles++
 	live := make(map[string]bool, len(e.state.Blobs))
 	for id := range e.state.Blobs {
 		live[id] = true
 	}
-	go func() { _, _ = e.blobs.Reconcile(live) }()
+	e.blobReconcileWorkers.Add(1)
+	go e.pruneBlobSnapshot(live)
 }

@@ -27,24 +27,29 @@ import (
 
 // Engine owns all state. Public methods are safe for concurrent use.
 type Engine struct {
-	transfers     map[uint64]transferReservation // ephemeral staging reservations, writer-owned
-	transferNext  uint64
-	inviteClosed  map[string]uint64 // derived from ledgered closes, rebuilt before ring trimming
-	ops           chan request
-	subs          chan subReq
-	unsubs        chan chan core.Event
-	state         *core.State
-	led           Ledger
-	blobs         Store
-	prober        Prober
-	ring          []core.Event
-	humanDelivery humanDeliveries
-	relays        humanRelays // the person's own Macs, see humanrelay.go
-	ringCap       int
-	buckets       map[string]*bucket
-	resumeAt      map[string]time.Time // per-agent resume rate limit (1/10s)
-	watch         []waiter
-	streams       map[chan core.Event]*atomic.Bool
+	transfers    map[uint64]transferReservation // ephemeral staging reservations, writer-owned
+	transferNext uint64
+	inviteClosed map[string]uint64 // derived from ledgered closes, rebuilt before ring trimming
+	ops          chan request
+	subs         chan subReq
+	unsubs       chan chan core.Event
+	state        *core.State
+	led          Ledger
+	blobs        Store
+	// Derived protection against snapshots older than a blob registration.
+	blobReconciles       int
+	blobReconcileHeld    map[string]bool
+	blobReconcileContext context.Context
+	blobReconcileWorkers sync.WaitGroup
+	prober               Prober
+	ring                 []core.Event
+	humanDelivery        humanDeliveries
+	relays               humanRelays // the person's own Macs, see humanrelay.go
+	ringCap              int
+	buckets              map[string]*bucket
+	resumeAt             map[string]time.Time // per-agent resume rate limit (1/10s)
+	watch                []waiter
+	streams              map[chan core.Event]*atomic.Bool
 	// seen: ephemeral lease freshness (reads/heartbeats). Never replayed;
 	// folded into recorded sweep decisions (SPEC §2 tier 2).
 	//
@@ -291,6 +296,12 @@ func New(st *core.State, led Ledger, prober Prober, history ...[]core.Event) *En
 
 // Run drives the loop until ctx is done. Call in exactly one goroutine.
 func (e *Engine) Run(ctx context.Context) {
+	reconcileContext, eCancel := context.WithCancel(ctx)
+	e.blobReconcileContext = reconcileContext
+	defer func() {
+		eCancel() // also unblock completion receipts on a fail-stop writer panic
+		e.finishBlobReconciles()
+	}()
 	e.boot(time.Now())
 	e.reconcileBlobs() // startup reconcile: drop crash orphans (A4.1)
 	// SYNCHRONOUS, and before the loop serves anything.
@@ -1069,6 +1080,9 @@ func (e *Engine) applyAndLedger(op *core.Op, now time.Time) (core.Result, error)
 			panic(fmt.Sprintf("dibs: ledger persistence failure (fail-stop, SPEC §4): %v", lerr))
 		}
 		e.publish(evs)
+	}
+	if op.Kind == core.OpPutBlob {
+		e.protectBlobRegistration(op.Blob)
 	}
 	return res, nil
 }
