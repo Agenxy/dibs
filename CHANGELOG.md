@@ -91,6 +91,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Agents can address approvals to `human` before the person has ever acted on
+  the board. The first authenticated, admitted send creates the OS-owned
+  persistent mailbox and uses the existing notification or human relay route.
+  The concrete recipient is ledgered; observing the board still creates nobody.
+  Agent instructions now direct genuine approvals through Dibs.
+
 - Event observation (`await_events`, `events_since`, `recent_events`) no longer
   makes an idle session look busy or suppresses a configured-route wake.
   Claude Code guidance now prefers its working native delivery over an extra

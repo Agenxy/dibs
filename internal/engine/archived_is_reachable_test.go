@@ -30,6 +30,8 @@ import (
 // The board's whole promise is reaching an agent that is not running. A timer
 // that silently withdraws it is the promise expiring, not the agent.
 func TestAnAgentArchivedByRetentionIsStillWoken(t *testing.T) {
+	// A real delivery must still never inspect or open the operator's app.
+	(&fakeApp{holds: true}).install(t)
 	// A LOOP-BACKED ENGINE, because this test really starts a process.
 	//
 	// maybeWake spawns a goroutine that runs the operator's command and then
@@ -57,9 +59,21 @@ func TestAnAgentArchivedByRetentionIsStillWoken(t *testing.T) {
 	l.StaleReason = "idle_no_activity"
 	l.Token = ""
 	l.LastCoordination = time.Now().Add(-2 * time.Hour)
-	st.Agents = map[string]*core.Agent{"swept": l}
+	st.Agents["swept"] = l
+	if _, _, err := st.Apply(&core.Op{
+		Kind: core.OpRegister, Name: "asker", NewToken: "asker-token", Nonce: "asker-nonce",
+	}, time.Now()); err != nil {
+		t.Fatalf("register sender setup: %v", err)
+	}
+	if _, _, err := st.Apply(&core.Op{
+		Kind: core.OpSendMessage, Token: "asker-token", To: "swept",
+		MsgType: core.MsgQuestion, Body: "retention wake fixture",
+	}, time.Now()); err != nil {
+		t.Fatalf("pending question setup: %v", err)
+	}
 
 	e := New(st, &memLedger{}, deadProber{})
+	stopWakeTimersOnCleanup(t, e)
 	e.SetWakeCommands(map[string]WakeCommand{
 		"codex": {Argv: []string{"echo", "{thread}"}, Cooldown: time.Minute},
 	})
@@ -67,16 +81,28 @@ func TestAnAgentArchivedByRetentionIsStillWoken(t *testing.T) {
 	defer cancel()
 	go e.Run(ctx)
 
-	e.maybeWake(core.Event{
-		Type: "message.sent", To: "swept",
-		Data: map[string]any{"msg_type": core.MsgQuestion},
-	})
-	if !e.wakeSpent("swept") {
-		t.Error("no wake for an agent the sweep archived: its mail and its nonce " +
-			"are both still there, so it can come back, and nothing will ever " +
-			"tell it to")
+	// Enter on the writer like the event path. Observe scheduling before the
+	// fast command can finish through a subsequent writer query. A fabricated
+	// event with no actual mail is correctly discarded by digest refresh.
+	if _, err := e.query(ctx, func() core.Result {
+		e.maybeWake(core.Event{
+			Type: "message.sent", To: "swept",
+			Data: map[string]any{"msg_type": core.MsgQuestion},
+		})
+		e.wakers.mu.Lock()
+		started := e.wakers.running["swept"]
+		e.wakers.mu.Unlock()
+		if !started {
+			t.Error("no wake scheduled for an archived agent holding an actual question")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
-	awaitWakeDone(t, e, "swept")
+	waitWakeDone(t, e, "swept")
+	if !e.wakeSpent("swept") {
+		t.Fatal("the real question's wake was discarded rather than delivered")
+	}
 }
 
 // awaitWakeDone waits for the goroutine maybeWake started to finish.
@@ -108,6 +134,13 @@ func awaitWakeDone(t *testing.T, e *Engine, agent string) {
 		t.Fatalf("no wake is running for %s, so there is nothing to wait for and "+
 			"this helper is measuring nothing", agent)
 	}
+	waitWakeDone(t, e, agent)
+}
+
+// The caller has already observed scheduling; completion may precede this
+// wait when the command is fast. It still waits for the logging goroutine.
+func waitWakeDone(t *testing.T, e *Engine, agent string) {
+	t.Helper()
 	// A BOUNDED WAIT, not a sleep, because the exit has no channel to offer: it
 	// is a map entry cleared on the writer loop by wakeExited, which runs after
 	// the command AND after its log line, so it covers both. The deadline is the
