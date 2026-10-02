@@ -10,8 +10,6 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
-	"github.com/agenxy/dibs/internal/humanask"
-	"github.com/agenxy/dibs/internal/notify"
 )
 
 // The human as a participant.
@@ -503,40 +501,6 @@ func (e *Engine) refuseApprovingOwnAdoption(actor *core.Agent, op *core.Op) erro
 		Hint: "approving a request you sent makes you the reader of everything sent to " +
 			m.Adopt + ", which is the human's call: unlock as yourself with human_unlock, or " +
 			"adopt it onto the agent that should hold it with adopt_agent(into: ...)",
-	}
-}
-
-// tellTheHuman raises a desktop notification on THIS machine when a message
-// lands for the person, and records what they answer.
-//
-// The human is the one participant who is not in a loop. Every other agent
-// learns about mail from a lifecycle hook or from the result of a call it was
-// making anyway; the person learns when they next look at the board, which on
-// a fleet that runs for days means "eventually, or not".
-//
-// Off the writer loop, deliberately. An alert waits for a human to press a
-// button, and the single-writer goroutine holding still for two minutes would
-// stop the whole board while one person decides. The asking itself is
-// humanask's, shared with the human relay so a message reads the same on
-// whichever screen shows it.
-func (e *Engine) tellTheHuman(from, who, msgType, body string, serial uint64, choices []string, grant, adopt string) {
-	if !notify.Available() {
-		return
-	}
-	// Logged because this path has no other evidence it ran.
-	slog.Info("notifying the human", "from", from, "type", msgType, "msg", serial)
-	a, err := humanask.Ask(humanask.Message{
-		Type: msgType, From: from, Who: who, Body: body,
-		Choices: choices, Grant: grant, Adopt: adopt, Serial: serial,
-	})
-	if err != nil {
-		// Nobody saw it. Say so, rather than letting the asker time out
-		// against a notification that never appeared.
-		e.report(err)
-		return
-	}
-	if a.Disposition != "" {
-		e.respondAsHuman(serial, a.Disposition, a.Body)
 	}
 }
 

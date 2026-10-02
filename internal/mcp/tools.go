@@ -309,9 +309,8 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "send",
-			"description": "Message an agent or \"human\" for a decision. First authenticated send creates " +
-				"the human mailbox; OS notifications or their relay deliver it. Questions and requests " +
-				"expire with a diagnosis.",
+			"description": "Message an agent or \"human\" (OS-owned mailbox). Human sends report human_route/" +
+				"human_relay_count; read_mail supplies receipts. Questions/requests expire with a diagnosis.",
 			"inputSchema": obj(map[string]any{
 				"token": tok, "to": str("recipient agent id, \"human\" for the person, or " +
 					"\"coordinator\" for whoever holds that role"),
@@ -390,8 +389,8 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "read_mail",
-			"description": "Fetch one full message by serial, body and response included. Works for " +
-				"messages you sent (read the answer) or received. ATTACHMENTS: a `blob` handle is " +
+			"description": "Read full sent/received mail and response. human_delivery.posted confirms OS " +
+				"acceptance, not visibility; receipts may be unknown. ATTACHMENTS: a `blob` handle is " +
 				"content-addressed, so get_blob returns exactly what was sent. A `path` handle " +
 				"(fileref) is the opposite: path, size and hash are the SENDER's claims, recorded " +
 				"verbatim and never checked, because Dibs does not read your filesystem. Verify the " +

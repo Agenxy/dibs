@@ -77,17 +77,17 @@ func (e *Engine) HumanRelays() int {
 	return len(e.relays.subs)
 }
 
-// relayToHuman hands a notice to every attached relay and reports whether
-// any took it. Never blocks: a full relay is skipped and says so in the log.
-func (e *Engine) relayToHuman(n HumanNotice) bool {
+// enqueueHumanNotice hands a notice to every attached relay and counts
+// those that took it. Never blocks: a full relay is skipped and says so in the log.
+func (e *Engine) enqueueHumanNotice(n HumanNotice) int {
 	r := &e.relays
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	took := false
+	took := 0
 	for id, ch := range r.subs {
 		select {
 		case ch <- n:
-			took = true
+			took++
 		default:
 			slog.Warn("a human relay is not keeping up; this notice skipped it, the mail is on the board",
 				"relay", id, "msg", n.Serial)
@@ -180,19 +180,4 @@ func (e *Engine) AnswerAsHuman(ctx context.Context, serial uint64, disposition, 
 		return ce
 	}
 	return nil
-}
-
-// relayOrNotify hands mail for the person to their relays, and falls back to
-// this machine's own screen when none took it (a relay detached between the
-// check and the send, or every one was full).
-func (e *Engine) relayOrNotify(from, who, msgType, body string, serial uint64, choices []string, grant, adopt string) {
-	n := HumanNotice{
-		Serial: serial, Type: msgType, From: from, Who: who, Body: body,
-		Choices: choices, Grant: grant, Adopt: adopt,
-	}
-	if e.relayToHuman(n) {
-		slog.Info("handed to the human's relay", "from", from, "type", msgType, "msg", serial)
-		return
-	}
-	e.tellTheHuman(from, who, msgType, body, serial, choices, grant, adopt)
 }

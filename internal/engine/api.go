@@ -626,7 +626,11 @@ func (e *Engine) GetMessage(ctx context.Context, token string, serial uint64) (c
 		// there is no outcome to have read. Issue #76.
 		e.clearNoticesFor(l.ID, serial)
 		e.noteOutcomeRead(l, m, token, now)
-		return core.Result{"message": m, "serial": e.state.Serial}
+		res := core.Result{"message": m, "serial": e.state.Serial}
+		if m.To == e.humanIdentityLocked() {
+			res["human_delivery"] = e.deliveryForHuman(m)
+		}
+		return res
 	})
 }
 

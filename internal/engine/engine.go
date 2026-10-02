@@ -22,29 +22,29 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
-	"github.com/agenxy/dibs/internal/notify"
 	"github.com/agenxy/dibs/internal/overlap"
 )
 
 // Engine owns all state. Public methods are safe for concurrent use.
 type Engine struct {
-	transfers    map[uint64]transferReservation // ephemeral staging reservations, writer-owned
-	transferNext uint64
-	inviteClosed map[string]uint64 // derived from ledgered closes, rebuilt before ring trimming
-	ops          chan request
-	subs         chan subReq
-	unsubs       chan chan core.Event
-	state        *core.State
-	led          Ledger
-	blobs        Store
-	prober       Prober
-	ring         []core.Event
-	relays       humanRelays // the person's own Macs, see humanrelay.go
-	ringCap      int
-	buckets      map[string]*bucket
-	resumeAt     map[string]time.Time // per-agent resume rate limit (1/10s)
-	watch        []waiter
-	streams      map[chan core.Event]*atomic.Bool
+	transfers     map[uint64]transferReservation // ephemeral staging reservations, writer-owned
+	transferNext  uint64
+	inviteClosed  map[string]uint64 // derived from ledgered closes, rebuilt before ring trimming
+	ops           chan request
+	subs          chan subReq
+	unsubs        chan chan core.Event
+	state         *core.State
+	led           Ledger
+	blobs         Store
+	prober        Prober
+	ring          []core.Event
+	humanDelivery humanDeliveries
+	relays        humanRelays // the person's own Macs, see humanrelay.go
+	ringCap       int
+	buckets       map[string]*bucket
+	resumeAt      map[string]time.Time // per-agent resume rate limit (1/10s)
+	watch         []waiter
+	streams       map[chan core.Event]*atomic.Bool
 	// seen: ephemeral lease freshness (reads/heartbeats). Never replayed;
 	// folded into recorded sweep decisions (SPEC §2 tier 2).
 	//
@@ -1006,42 +1006,7 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// deadline runs down.
 	if op.Kind == core.OpSendMessage && res != nil {
 		if human := e.humanIdentityLocked(); human != "" && op.To == human {
-			serial, _ := res["msg_serial"].(uint64)
-			from, who := "", ""
-			if actor != nil {
-				from, who = actor.ID, whoIs(actor)
-			}
-			// SAY SO WHEN THE PROMISE DOES NOT APPLY.
-			//
-			// The tool description for `send` tells an agent that writing to the
-			// human "notifies them on their machine". On a machine with no route
-			// to a desktop that is false, and tellTheHuman below simply returned:
-			// the message was stored, the call answered success, and the sender
-			// had no way to learn that the half it was relying on did not
-			// happen. An agent that needs an answer then waits out its deadline
-			// against a person who was never interrupted.
-			//
-			// The daemon already reports this once at startup, as a fault, which
-			// tells the OPERATOR. It does not tell the sender, and the sender is
-			// the one making a decision about whether to keep waiting.
-			switch {
-			case e.HumanRelays() > 0:
-				// The person's own Mac is attached: tell them THERE, not on
-				// this machine's screen, which may be a server nobody is
-				// in front of. docs/NETWORK.md §8.
-				go e.relayOrNotify(from, who, op.MsgType, op.Body, serial, op.Choices, op.Grant, op.Adopt)
-			case !notify.Available():
-				res["notified"] = false
-				res["notify_hint"] = "delivered to their mailbox, but this machine has " +
-					"no way to raise a desktop notification, so they will see it when " +
-					"they next look at the board rather than now. Do not wait on it as " +
-					"though they had been interrupted"
-			default:
-				// Off the loop: an alert waits for somebody to press a button, and
-				// the single writer holding still for two minutes would stop the
-				// board while one person decides.
-				go e.tellTheHuman(from, who, op.MsgType, op.Body, serial, op.Choices, op.Grant, op.Adopt)
-			}
+			e.dispatchHuman(res)
 		}
 	}
 	if board, ok := res["board"].(map[string]any); ok {
