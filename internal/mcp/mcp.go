@@ -78,11 +78,13 @@ type Server struct {
 	// used to fall into. A test seam, nil in production; the regression test
 	// for that window has to put its arrival there rather than hope to.
 	duringReplay func()
+	// taskKey derives MCP task ids; see tasks.go.
+	taskKey []byte
 }
 
 // New returns an MCP server over eng.
 func New(eng *engine.Engine) *Server {
-	srv := &Server{eng: eng, sessions: newSessionStore(), legacy: newLegacySubs()}
+	srv := &Server{eng: eng, sessions: newSessionStore(), legacy: newLegacySubs(), taskKey: randomTaskKey()}
 	// One lifetime for a session. When the store forgets an id, whatever the
 	// legacy transport is holding against it goes too: that map has no ceiling
 	// of its own, and nothing else ever removed from it.
@@ -191,6 +193,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// knows nothing about HTTP and should not learn: the fact travels on the
 	// context, the way clientInfo travels from the handshake.
 	r = r.WithContext(withTransportHost(r.Context(), isLoopback(r.RemoteAddr), s.eng.HostID()))
+	r = r.WithContext(context.WithValue(r.Context(), requestEraKey{}, requestEra(r, req.Params)))
 
 	if req.ID == nil { // notification (e.g. legacy notifications/initialized)
 		w.WriteHeader(http.StatusAccepted)
@@ -588,6 +591,10 @@ func (s *Server) dispatch(
 				"resources": map[string]any{"subscribe": true, "listChanged": true},
 				// One prompt, board: how a PERSON opens the panel. See prompts.go.
 				"prompts": map[string]any{},
+				// A tracked request is an MCP task. 2026-07-28 only: the
+				// extension rides the per-request capabilities that the
+				// legacy handshake does not carry. See tasks.go.
+				"extensions": map[string]any{tasksExt: map[string]any{}},
 			},
 			"serverInfo":   serverBuildInfo(),
 			"instructions": serverInstructions,
@@ -746,6 +753,10 @@ func (s *Server) dispatch(
 				Data: hint("call resources/list: it names every resource this server serves"),
 			}
 		}
+	case "tasks/get":
+		return s.getTask(ctx, req.Params)
+	case "tasks/update", "tasks/cancel":
+		return s.ackTask(ctx, req.Params)
 	case "prompts/list":
 		return listPrompts(), nil
 	case "prompts/get":
@@ -817,6 +828,7 @@ type toolArgs struct {
 	DeadlineSec int               `json:"deadline_s"`
 	Choices     []string          `json:"choices"`
 	Milestones  []string          `json:"milestones"`
+	Track       bool              `json:"track"`
 	Milestone   int               `json:"milestone"`
 	Deliverable string            `json:"deliverable"`
 	Grant       string            `json:"grant"`
@@ -954,24 +966,25 @@ func argErr(err error) string {
 	return err.Error()
 }
 
-func (s *Server) callTool(
-	ctx context.Context, params json.RawMessage, bearerToken, agentNonce string, sessionUI bool,
-	sessionClient *clientInfoJSON,
-) (any, *rpcError) {
-	var call struct {
-		Name string          `json:"name"`
-		Args json.RawMessage `json:"arguments"`
-	}
+type toolCallParams struct {
+	Name string          `json:"name"`
+	Args json.RawMessage `json:"arguments"`
+}
+
+// Decode and validate once before the handler can mutate anything.
+func parseToolCall(params json.RawMessage, bearerToken, agentNonce string) (toolCallParams, toolArgs, *rpcError) {
+	var call toolCallParams
+	var a toolArgs
 	if err := json.Unmarshal(params, &call); err != nil {
-		return nil, &rpcError{
+		return call, a, &rpcError{
 			Code: -32602, Message: "bad params: " + err.Error(),
 			Data: hint(schemaHint("")),
 		}
 	}
-	var a toolArgs
 	if len(call.Args) > 0 {
+		call.Args = unstring(call.Args)
 		if err := json.Unmarshal(call.Args, &a); err != nil {
-			return nil, &rpcError{
+			return call, a, &rpcError{
 				Code: -32602, Message: "bad arguments: " + argErr(err),
 				Data: hint(schemaHint(call.Name)),
 			}
@@ -982,10 +995,21 @@ func (s *Server) callTool(
 	// omitted parameter arrived as a zero value and the handler answered about
 	// it as though the caller had sent it.
 	if err := checkRequired(call.Name, call.Args, bearerToken, agentNonce); err != nil {
-		return nil, &rpcError{
+		return call, a, &rpcError{
 			Code: -32602, Message: err.Error(),
 			Data: hint(schemaHint(call.Name)),
 		}
+	}
+	return call, a, nil
+}
+
+func (s *Server) callTool(
+	ctx context.Context, params json.RawMessage, bearerToken, agentNonce string, sessionUI bool,
+	sessionClient *clientInfoJSON,
+) (any, *rpcError) {
+	call, a, rpcErr := parseToolCall(params, bearerToken, agentNonce)
+	if rpcErr != nil {
+		return nil, rpcErr
 	}
 	// Attach the agent to the session it is actually running in, if nothing
 	// has. Before the call, so `check_in`'s own answer already reflects it.
@@ -1020,6 +1044,13 @@ func (s *Server) callTool(
 	// and the operator asked for it to appear only when somebody asks for it.
 	// check_in is made once per activation, so "every turn" is meant
 	// literally.
+	// A tracked request, to a host that declared tasks on THIS request, is
+	// answered with the task handle rather than the ordinary result.
+	if call.Name == "send" && a.Track {
+		if t, ok := s.trackingResult(ctx, params, res); ok {
+			return t, nil
+		}
+	}
 	if call.Name == "board" {
 		// board exists only to show the human. On a host with no renderer it
 		// can show nothing, so it says that rather than returning a payload
@@ -1269,7 +1300,7 @@ func (s *Server) run(
 		op.Kind, op.To, op.MsgType, op.Body = core.OpSendMessage, a.To, a.Type, a.Body
 		op.DeadlineSec, op.OpID, op.Attachments = a.DeadlineSec, a.OpID, a.Attachments
 		op.Choices, op.Grant, op.Adopt = a.Choices, a.Grant, a.Adopt
-		op.Milestones = a.Milestones
+		op.Milestones, op.Track = a.Milestones, a.Track
 	case "put_blob":
 		return s.putBlob(ctx, a)
 	case "get_blob":

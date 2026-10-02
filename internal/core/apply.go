@@ -1549,7 +1549,7 @@ func (s *State) finishSend(
 	m := &Message{
 		Serial: serial, From: l.ID, To: to.ID, Type: op.MsgType, Body: op.Body,
 		State: MsgStatePending, Deadline: deadline, Attachments: op.Attachments,
-		SentAt: now, Choices: op.Choices, Grant: op.Grant, Adopt: op.Adopt, Milestones: op.Milestones,
+		SentAt: now, Choices: op.Choices, Grant: op.Grant, Adopt: op.Adopt, Milestones: op.Milestones, Tracked: op.Track,
 	}
 	s.Messages[serial] = m
 	evs := []Event{{Type: "message.sent", Agent: l.ID, To: to.ID, Data: map[string]any{

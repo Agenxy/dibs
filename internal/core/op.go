@@ -85,6 +85,9 @@ type Op struct {
 	Milestones []string `json:"milestones,omitempty"`
 	// Milestone is the 1-based step a progress report ticks, or 0 for a note.
 	Milestone int `json:"milestone,omitempty"`
+	// Track asks for a request to be kept as an MCP task its sender's host
+	// can follow (tasks/get) for TaskTTL. See mcp/tasks.go.
+	Track bool `json:"track,omitempty"`
 	// Deliverable is where finished work landed (a path or a URL), on done.
 	Deliverable string `json:"deliverable,omitempty"`
 	ProcStart   int64  `json:"proc_start,omitempty"`

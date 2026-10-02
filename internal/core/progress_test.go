@@ -3,6 +3,7 @@ package core
 import (
 	"errors"
 	"testing"
+	"time"
 )
 
 // taskRequest is approvedRequest with milestones.
@@ -176,5 +177,32 @@ func TestTheWorkerDeclaresTheStepsWhenTheRequesterNamedNone(t *testing.T) {
 	}
 	if s.Messages[named].State != MsgStateApproved && s.Messages[named].State != MsgStateDelivered && s.Messages[named].State != MsgStatePending {
 		t.Errorf("state %q", s.Messages[named].State)
+	}
+}
+
+// A tracked request outlives the sweep for its task's lifetime, finished or
+// not, so a host polling tasks/get after done still gets the result; an
+// untracked one goes as it always did.
+func TestATrackedRequestIsKeptForItsTask(t *testing.T) {
+	keep := func(track bool) bool {
+		s := NewState("n1", DefaultLimits())
+		reg(t, s, "lead", "tl", t0)
+		reg(t, s, "worker", "tw", t0)
+		mustApply(t, s, &Op{Kind: OpAckBoard, Token: "tl"}, t0)
+		mustApply(t, s, &Op{Kind: OpAckBoard, Token: "tw"}, t0)
+		serial := mustApply(t, s, &Op{
+			Kind: OpSendMessage, Token: "tl", To: "worker", MsgType: MsgRequest,
+			Body: "x", OpID: "k", Track: track,
+		}, t0)["msg_serial"].(uint64)
+		mustApply(t, s, &Op{Kind: OpRespond, Token: "tw", MsgSerial: serial, Disposition: "deny"}, t0)
+		mustApply(t, s, &Op{Kind: OpSweep, PurgeMail: true, V7Semantics: true, KeepOwed: true}, t0.Add(2*time.Hour))
+		_, kept := s.Messages[serial]
+		return kept
+	}
+	if !keep(true) {
+		t.Error("a tracked request was swept two hours after it finished, under a task that lives a week")
+	}
+	if keep(false) {
+		t.Error("an untracked request was kept: tracking is opt-in")
 	}
 }

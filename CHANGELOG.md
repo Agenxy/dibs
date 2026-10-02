@@ -7,6 +7,24 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A tracked request is an MCP task.** `send(type: "request", track: true)`,
+  from a host that declares the 2026-07-28 tasks extension
+  (`io.modelcontextprotocol/tasks`) on that call, returns a task handle. The
+  host follows it with `tasks/get` or a `subscriptions/listen` on `taskIds`
+  (`notifications/tasks`): working while it waits and while milestones are
+  reported, the newest step and its artifact in `statusMessage` (the
+  extension forbids progress notifications on tasks), and completed when it
+  is done, with the deliverable in the result. Denied, declined and expired
+  complete with `isError`. Task ids are unguessable and survive a restart
+  with nothing stored; a tracked request is kept for the task's week unless
+  its recipient is purged first (shorter archive retention can do that).
+  Opt-in per send, because a host that predates tasks may wait for one to
+  finish before it answers. Task methods and listeners check the extension
+  capability on every call; slow listeners recover dropped updates from
+  current task snapshots, including the final result.
+  A host that cannot receive a handle gets an explicit tracking note and the
+  ordinary send result; legacy calls keep their legacy result shape.
+
 - **A request can be a task its sender follows.** A request for work may name
   up to 8 milestones, at `send` or by its worker at `respond(approve)`. The
   worker reports each with `respond(progress, milestone, body, deliverable)`,
@@ -57,6 +75,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   loaded thread was never opened and still is not.
 
 ### Fixed
+
+- **A host with an old copy of the tool schema can use new parameters.** A
+  long-running session sends a parameter its schema does not know as a
+  string, so `milestones` arrived as `"[\"a\",\"b\"]"` and was refused.
+  A string is now read as the array, number or boolean the parameter takes
+  when it parses as exactly that, and left alone otherwise. Reported by
+  agenxy-supply.
 
 - **"You will not be asked again today" now holds across a restart.** The
   pointer an unregistered session gets to an idle agent it may be was
