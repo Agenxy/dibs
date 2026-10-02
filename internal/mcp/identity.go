@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/paths"
 )
@@ -374,6 +375,9 @@ func withTransportHost(ctx context.Context, local bool, node string) context.Con
 // which is the whole board; docs/NETWORK.md §2 states host identity is
 // asserted, as strong as the secret and no stronger, until §6 proves it.
 func resolveHostID(ctx context.Context, params json.RawMessage) string {
+	if i, invited := engine.InvitationFrom(ctx); invited {
+		return engine.InvitationHost(i.Name)
+	}
 	if asserted := metaHost(params); asserted != "" {
 		return asserted
 	}

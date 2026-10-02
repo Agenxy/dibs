@@ -28,20 +28,21 @@ import (
 
 // Engine owns all state. Public methods are safe for concurrent use.
 type Engine struct {
-	ops      chan request
-	subs     chan subReq
-	unsubs   chan chan core.Event
-	state    *core.State
-	led      Ledger
-	blobs    Store
-	prober   Prober
-	ring     []core.Event
-	relays   humanRelays // the person's own Macs, see humanrelay.go
-	ringCap  int
-	buckets  map[string]*bucket
-	resumeAt map[string]time.Time // per-agent resume rate limit (1/10s)
-	watch    []waiter
-	streams  map[chan core.Event]*atomic.Bool
+	inviteClosed map[string]uint64 // derived from ledgered closes, rebuilt before ring trimming
+	ops          chan request
+	subs         chan subReq
+	unsubs       chan chan core.Event
+	state        *core.State
+	led          Ledger
+	blobs        Store
+	prober       Prober
+	ring         []core.Event
+	relays       humanRelays // the person's own Macs, see humanrelay.go
+	ringCap      int
+	buckets      map[string]*bucket
+	resumeAt     map[string]time.Time // per-agent resume rate limit (1/10s)
+	watch        []waiter
+	streams      map[chan core.Event]*atomic.Bool
 	// seen: ephemeral lease freshness (reads/heartbeats). Never replayed;
 	// folded into recorded sweep decisions (SPEC §2 tier 2).
 	//
@@ -227,9 +228,10 @@ type Engine struct {
 }
 
 type request struct {
-	op    *core.Op
-	fn    func() core.Result
-	reply chan reply
+	op     *core.Op
+	fn     func() core.Result
+	reply  chan reply
+	invite *Invitation
 }
 
 type reply struct {
@@ -262,7 +264,8 @@ const (
 )
 
 // New assembles an engine over a replayed state and open ledger. history, when
-// given, seeds the event ring so cursors survive a restart.
+// given, must contain FULL replay history: it rebuilds invitation close
+// generations before the ring is bounded and seeds restart-safe cursors.
 func New(st *core.State, led Ledger, prober Prober, history ...[]core.Event) *Engine {
 	var ring []core.Event
 	if len(history) > 0 {
@@ -292,6 +295,7 @@ func New(st *core.State, led Ledger, prober Prober, history ...[]core.Event) *En
 	// get an engine that has skipped it.
 	e.rebuildBlockingNotices()
 	e.rebuildSituationalNotices()
+	e.rebuildInvitationHistory(history)
 	return e
 }
 
@@ -327,6 +331,10 @@ func (e *Engine) Run(ctx context.Context) {
 			e.reconcileBlobs()       // delete evicted/orphan blob files off-thread
 			go e.primePeerSessions() // sessions come and go; keep the cache warm
 		case req := <-e.ops:
+			if err := e.admitInvitation(req.invite, req.op); err != nil {
+				req.reply <- reply{nil, err}
+				continue
+			}
 			if req.fn != nil {
 				res := req.fn()
 				if errv, ok := res["error"].(error); ok {
@@ -593,7 +601,8 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// already holds, is restored if the inference finds nothing. Round
 	// nineteen of the pre-release review.
 	stated := op.SessionAlias
-	if e.aliasSaysNothingNew(op) && !looksLikeThreadID(op.SessionID) && !e.callerHoldsAStatedThread(op) {
+	if !e.invitedOperation(op) && e.aliasSaysNothingNew(op) &&
+		!looksLikeThreadID(op.SessionID) && !e.callerHoldsAStatedThread(op) {
 		// ANYTHING SET BELOW IS A GUESS, AND THIS LINE IS THE WHOLE REPAIR.
 		//
 		// It was missing. The reclaim rule, its test and a changelog entry all
@@ -1241,6 +1250,7 @@ func (e *Engine) sweep(now time.Time) {
 }
 
 func (e *Engine) publish(evs []core.Event) {
+	e.noteInviteClosures(evs)
 	if len(evs) == 0 {
 		return
 	}

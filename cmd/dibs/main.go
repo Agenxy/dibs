@@ -123,6 +123,8 @@ human/admin (interactive terminal; the god-view needs the admin password):
                            where the machine has it (--password to type one instead)
   dibs admin set-password  set/replace the admin password that gates the board
   dibs mcp-config         print MCP host config (contains the local secret)
+  dibs invite <name>      issue one cloud agent's credential and host config
+                           (--ttl 30d; invite list; invite revoke <name>)
 
 env: DIBS_ADDR (default 127.0.0.1:4777), DIBS_DIR, DIBS_TOKEN, DIBS_BOARD_PEER (a Supgang peer the bridge resolves),
      DIBS_ADMIN=1 (bypass the terminal check: for humans scripting)`
@@ -192,6 +194,8 @@ func main() {
 		err = codexHooksCmd(os.Args[2:])
 	case "calibrate":
 		err = calibrate(os.Args[2:])
+	case "invite":
+		err = inviteCmd(os.Args[2:])
 	case "mcp-config":
 		// --board prints a config for SOMEBODY ELSE'S board and reads no secret
 		// of this machine's, so it is not the thing the gate protects: the gate
@@ -327,7 +331,7 @@ func parseFlags(fs *flag.FlagSet, args []string) error {
 var commands = []string{
 	"await", "probe", "watch", "monitor", "board", "log", "verify", "doctor",
 	"codex-hooks", "calibrate", "version", "help", "man", "completion", "configure", "messages",
-	"web", "admin",
+	"web", "admin", "invite",
 	"mcp-config", "mcp-stdio", "host-bridge", "human-relay", "hook-spawn", "hook-poll", "hook-session",
 	"identity",
 }

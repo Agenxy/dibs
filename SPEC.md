@@ -787,7 +787,7 @@ client input requests are emitted. `tasks/update` ignores unsolicited input;
 `tasks/cancel` acknowledges cooperative cancellation without stopping another
 agent's work. A sender asks the worker directly when work should stop.
 
-**Tools (47).** All take `token` except `register`, `resume`,
+**Tools (48).** All take `token` except `register`, `resume`,
 `hook_poll` and `guard_path` (the last two are lifecycle-hook surfaces and have
 no token to give: see SECURITY.md).
 
@@ -826,6 +826,7 @@ counting a document; this line said 17 for two minor versions.
 | `update(name?, description?, title?, branch?, model?, provider?, effort?, surface?)` | revise what the agent says about ITSELF. The id is immutable (it is the address every message, claim and membership keys on), so a rename moves the label only, and a name another live agent holds is refused (`E_NAME_TAKEN`) rather than suffixed. `harness`/`version` are not settable: the client states them at the handshake, which is the only part of an identity that is not self-reported. Empty `description` clears, because already-ledgered `update` ops did that; the fields added later merge when non-empty, so replay of old ops is unchanged |
 | `sign_off()` | lifecycle |
 | `heartbeat()` | renew lease while idle (implicit on every call) |
+| `invite(action?, name?, ttl_s?, issued_by?)` | private local issuers mint scoped cloud credentials and paste-ready configuration; own-prefix children by default, four live/7d; list/revoke own invitations, no invited grandchildren. Public listener and issuer-generation boundaries: docs/NETWORK.md §9 |
 | `declare(slot_id?, text, dirs?, refs?, activity?, holds?, waiting?, recheck_after?)` / `undeclare(slot_id)` | declare/end work units. A declaration without `waiting` says the agent is working: a turn a Dibs wake started that ends while one is open is continued at Stop (at most twice per version of it, never after a person's prompt) |
 | `send(to, type, body, deadline_s?, op_id?)` | → `msg_serial`; `op_id` = durable dedup (§4) |
 | `respond(msg_serial, disposition, body?)` | answer/approve/deny/decline; `done` on a request you approved, once the work is delivered. An approved request not yet done is an obligation (the row's `owes`, for a day after approval) and counts as declared work |
@@ -954,7 +955,7 @@ binaries (`dibd` and `dibs`) both CGO_ENABLED=0 and byte-reproducible.
 ledgered wake transitions; ephemeral + persistent agents; resume; awareness gate
 per activation; mailbox (full state machine, read_mail, op_id dedup,
 dormant-recipient semantics); claims (§9 matrix); bounded liveness with bounded
-restart grace; limits incl. state GC; MCP 2026-07-28 dual-version surface (47 tools);
+restart grace; limits incl. state GC; MCP 2026-07-28 dual-version surface (48 tools);
 local access secret + Origin validation; CLI (board/messages/log/verify/mcp-config);
 SSE web board; static binaries (`dibd` + `dibs`, no cgo, no runtime deps).
 

@@ -308,6 +308,7 @@ func adminPost(route string, payload any) ([]byte, error) {
 	}
 	req.Header.Set("X-Dibs-Admin", pass)
 	req.Header.Set("Content-Type", "application/json")
+	// #nosec G704 -- operator-configured board, authenticated/pinned by daemonClient; no tool argument controls its origin
 	resp, err := daemonClient(0).Do(req)
 	if err != nil {
 		return nil, reachErr(err)

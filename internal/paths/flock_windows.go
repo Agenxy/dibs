@@ -34,6 +34,16 @@ func LockExclusive(f *os.File, wait bool) error {
 	return windows.LockFileEx(windows.Handle(f.Fd()), flags, 0, 1, 0, &ol)
 }
 
+// LockShared locks the same byte as writers, without the exclusive flag.
+func LockShared(f *os.File, wait bool) error {
+	var flags uint32
+	if !wait {
+		flags = windows.LOCKFILE_FAIL_IMMEDIATELY
+	}
+	ol := lockRange()
+	return windows.LockFileEx(windows.Handle(f.Fd()), flags, 0, 1, 0, &ol)
+}
+
 // Unlock releases the byte LockExclusive locked.
 func Unlock(f *os.File) {
 	ol := lockRange()

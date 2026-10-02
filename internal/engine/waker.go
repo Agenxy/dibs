@@ -881,28 +881,8 @@ func (e *Engine) commandFor(l *core.Agent) wakeCommand {
 // Returns the cooldown that route carries and whether a command is what will
 // run; ok is false when neither route can reach this agent at all.
 func (e *Engine) wakeRoute(l *core.Agent) (cool time.Duration, byCommand, ok bool) {
-	// ANOTHER MACHINE'S AGENT IS REACHED BY THAT MACHINE'S BRIDGE, OR NOT AT
-	// ALL. The hub's [wake.exec] starts a process here, in a directory that is
-	// not here, and the hub's sockets are this filesystem's: neither is a route
-	// to a remote agent, however the harness is named in dibs.toml. Before
-	// this branch the hub ran its own command for a remote agent and it
-	// failed, which counted as an attempt and cost the mail its retry.
-	if host := e.remoteHostOf(l); host != "" {
-		if _, has := e.hostRouteFor(l); !has {
-			slog.Debug("no wake: the agent is on another machine and no bridge there can start its harness",
-				"agent", l.ID, "host", host)
-			return 0, false, false
-		}
-		if threadIDOf(l) == "" {
-			slog.Debug("no wake by the host's bridge: no harness thread id for this agent",
-				"agent", l.ID, "host", host)
-			return 0, false, false
-		}
-		// THE JOINED MACHINE'S COOLDOWN, which its bridge stated on attach:
-		// the operator there configured it, and the fixed default here let
-		// a `cooldown = "30m"` machine be woken again after ninety seconds.
-		// Round nine of the pre-release review.
-		return e.hostCooldownFor(l), true, true
+	if cool, by, ok, remote := e.remoteWakeRoute(l); remote {
+		return cool, by, ok
 	}
 	harness := ""
 	if l.Agent != nil {
@@ -983,6 +963,31 @@ func (e *Engine) wakeRoute(l *core.Agent) (cool time.Duration, byCommand, ok boo
 		return defaultPeerCooldown, false, true
 	}
 	return cmd.cooldown, true, true
+}
+
+// remoteWakeRoute settles the remote boundary before considering any local
+// sockets or commands. Joined machines may have a bridge; invites never do.
+// Caller holds e.wakers.mu, just as for wakeRoute.
+func (e *Engine) remoteWakeRoute(l *core.Agent) (cool time.Duration, byCommand, ok, remote bool) {
+	if invitedAgent(l) {
+		return 0, false, false, true
+	}
+	host := e.remoteHostOf(l)
+	if host == "" {
+		return 0, false, false, false
+	}
+	if _, has := e.hostRouteFor(l); !has {
+		slog.Debug("no wake: the agent is on another machine and no bridge there can start its harness",
+			"agent", l.ID, "host", host)
+		return 0, false, false, true
+	}
+	if threadIDOf(l) == "" {
+		slog.Debug("no wake by the host's bridge: no harness thread id for this agent",
+			"agent", l.ID, "host", host)
+		return 0, false, false, true
+	}
+	// The joined machine's cooldown was stated on attach, not the hub's.
+	return e.hostCooldownFor(l), true, true, true
 }
 
 func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan, bool) {
@@ -1411,6 +1416,10 @@ func (e *Engine) localCommandConfigured(harness string) bool {
 // wake ran, and one with a hub entry and no bridge was reported reachable
 // while nothing could reach it. Round nine of the pre-release review.
 func (e *Engine) remotePullOnlyNote(l *core.Agent) (note string, remote bool) {
+	if invitedAgent(l) {
+		return "delivered to " + l.ID + ", an invited cloud agent: pull-only by design. " +
+			"It arrives when that agent next calls inbox or check_in; a host bridge cannot wake it", true
+	}
 	host := e.remoteHostOf(l)
 	if host == "" {
 		return "", false

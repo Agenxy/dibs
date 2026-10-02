@@ -7,6 +7,21 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Scoped cloud-agent invitations, without a human per worker.** Local agents
+  issue one-agent credentials and paste-ready MCP configuration with `invite`;
+  the CLI uses `DIBS_TOKEN` for the same policy. Default: own-prefix children,
+  four live, seven days; coordinators may name new unprivileged identities.
+  The human's proved private CLI route can issue/revoke any invitation. Keys
+  are shown once and only their hashes persist. Revocation, expiry, issuer
+  closure and purge bite on the next call; close generations rebuild from full
+  replay, so reopening an issuer does not resurrect its children. Invited
+  agents cannot mint grandchildren even after a role grant.
+  A separate invite-only public listener opens POST `/mcp`, never private
+  routes, sessions, wake streams or hub filesystem paths. `--public-url`
+  supports a loopback TLS proxy; `--public-host` supports ACME with explicit
+  `--acme-accept-terms` and port 443. Trusted-HTTPS fixtures exercise real
+  daemon wiring; live CA enrollment/public deployment remains unmeasured.
+
 - **A tracked request is an MCP task.** `send(type: "request", track: true)`,
   from a host that declares the 2026-07-28 tasks extension
   (`io.modelcontextprotocol/tasks`) on that call, returns a task handle. The
@@ -87,6 +102,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   messages retain the hook fallback; raw mail and updates remain available.
   Agent updates no longer repeat at every Stop, and accepting or flagging a
   milestone clears the progress notice it answers.
+
+- The joined-host wake fixture no longer uses a live session's UUID or real
+  Codex home. Its hard-coded UUID matched the implementing session on this
+  machine, entering real app probes before the bridge could report; the
+  installed baseline failed 25/26 too. Synthetic identity and isolated harness
+  state pass 26/26 with the same assertions and time budget.
 
 - Deferred socket wakes no longer announce mail already acknowledged or
   agent updates already read. Both the daemon and in-session bridge refresh
@@ -228,7 +249,7 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with who made it, and the board row shows the last one. A running agent, the
   environment it already runs in, an agent on another machine and the person's
   own row are refused.
-  The server now publishes 47 tools.
+  The server now publishes 48 tools, including scoped cloud invitation issuance.
 
 ### Changed
 

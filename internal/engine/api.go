@@ -24,6 +24,9 @@ func (e *Engine) query(ctx context.Context, fn func() core.Result) (core.Result,
 }
 
 func (e *Engine) send(ctx context.Context, req request) (core.Result, error) {
+	if i, ok := InvitationFrom(ctx); ok {
+		req.invite = &i
+	}
 	select {
 	case e.ops <- req:
 	case <-ctx.Done():

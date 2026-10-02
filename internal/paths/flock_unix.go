@@ -19,6 +19,15 @@ func LockExclusive(f *os.File, wait bool) error {
 	return syscall.Flock(int(f.Fd()), how)
 }
 
+// LockShared allows concurrent readers while excluding a configuration writer.
+func LockShared(f *os.File, wait bool) error {
+	flags := syscall.LOCK_SH
+	if !wait {
+		flags |= syscall.LOCK_NB
+	}
+	return syscall.Flock(int(f.Fd()), flags)
+}
+
 // Unlock releases a lock LockExclusive took. Errors are not reported: the
 // file is closed right after, which releases it anyway.
 func Unlock(f *os.File) { _ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) }
