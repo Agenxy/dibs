@@ -689,6 +689,13 @@ Agent updates share the presentation cadence, but `check_in` and `inbox`
 still expose the complete pending information. Accepting or flagging a milestone
 clears the progress notice for that request, like reading its full message.
 
+The session id is a same-machine capability for a token-less nudge. A local
+peer holding the board secret and knowing that id can call `hook_poll`, or
+forge a starting-hook event, to spend presentation for an `AnnounceRetry`
+interval; repeating that can keep reminders delayed. This accepted trade
+does not consume or hide information: the pending mail and agent updates
+remain complete in `inbox` and the agent's own authoritative `check_in`.
+
 A self-wake inbox notification advertises this read with the additive
 `com.dibs/digest_refresh: true` metadata key. A capable bridge refreshes before
 each socket attempt, including deferred, retry and upgrade-handoff deliveries;
