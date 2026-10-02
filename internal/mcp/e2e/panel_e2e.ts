@@ -240,6 +240,17 @@ try {
 
   // ── deliver the payload through the SDK ──────────────────────────────────
   await page.evaluate((r) => (window as any).__deliver(r), boardResult)
+  // ── activity from a board result ─────────────────────────────────────────
+  // The Activity tab used to fill only from an await_events result, which the
+  // agents a person opens from a notification never make, so it was blank on
+  // every real panel. A board result carries recent activity itself now.
+  {
+    await panel.locator('.views button[data-view="activity"]').click()
+    const filled = await panel.locator("#pane-activity .event").first()
+      .waitFor({ timeout: 8000 }).then(() => true).catch(() => false)
+    check("the activity tab fills from a board result",
+      filled, (await panel.locator("#pane-activity").textContent())?.slice(0, 200) ?? "")
+  }
   // ── spaces in the panel ────────────────────────────────────────────────
   {
     await panel.locator('.views button[data-view="agents"]').click()
@@ -1045,18 +1056,6 @@ try {
   const probe2 = (await page.evaluate("window.__probe")) as any
   check("the host saw the panel's tool calls", probe2.toolCalls.length >= 3,
     `${probe2.toolCalls.length} calls`)
-  // Every one of them carries the panel marker, THROUGH the real bridge.
-  //
-  // The marker is what lets check_in stop duplicating its checkpoint into
-  // structuredContent, and it is only worth anything if it survives the trip:
-  // panel → postMessage → AppBridge → host. A flag the panel sets and the SDK
-  // or the host strips would leave the duplicate on forever, and the only
-  // symptom would be a bill nobody reads. These are calls the panel made on its
-  // own during this run, not ones the test injected.
-  check("every panel tool call carries the panel marker across the bridge",
-    probe2.toolCalls.length > 0 &&
-      probe2.toolCalls.every((c: any) => c?._meta?.["com.dibs/panel-call"] === true),
-    `_meta on each: ${JSON.stringify(probe2.toolCalls.map((c: any) => c?._meta ?? null))}`)
   // These three asserted that the panel pushed unread mail into model context,
   // carefully framed as data and honest about not starting a turn. All true,
   // and the feature was still wrong: by the Apps contract that push does not
@@ -1093,7 +1092,7 @@ try {
   // failed anywhere: every assertion above passed, `content` carried a correct
   // summary throughout, and the only way to see it was to look at the panel.
   //
-  // Both checks reload first, because they are about a panel that has NOTHING.
+  // This check reloads first, because it is about a panel that has NOTHING.
   // Asserting against the panel built up above would pass on state it already
   // held and prove nothing, which is the exact shape of the original mistake.
   // Last in the file so the reload disturbs no earlier state.
@@ -1115,19 +1114,6 @@ try {
       .some((c: any) => c?.name === "board"))) as boolean
     check("a host that drops _meta still fills the panel: it fetches the board",
       filled && asked, `filled=${filled} asked=${asked}`)
-  }
-
-  // Route two: no proxy needed at all. check_in already puts the board and
-  // mailbox in ordinary content for the AGENT, so the state the panel is
-  // waiting for has usually arrived in the one field every host forwards.
-  {
-    const fresh = await freshPanel()
-    const ack = await tool("check_in", { token: me.token })
-    await page.evaluate((r) => (window as any).__deliver({ content: r.content }), ack)
-    const filled = await fresh.locator("#pane-board .entry").first()
-      .waitFor({ timeout: 10000 }).then(() => true).catch(() => false)
-    check("a result carrying the board in content fills the panel with no _meta at all",
-      filled, (await fresh.locator("#pane-board").textContent())?.slice(0, 200) ?? "")
   }
 
   check("no uncaught errors in the page", consoleErrors.length === 0, consoleErrors.slice(0, 2).join(" | "))

@@ -125,10 +125,6 @@ var toolDefs = func() []map[string]any {
 					"type": "boolean", "description": "every board field (default: one row per agent)",
 				},
 			}, "token"),
-			"_meta": map[string]any{"ui": map[string]any{
-				"resourceUri": uiBoardURI,
-				"visibility":  []string{"model", "app"},
-			}},
 		},
 		{
 			"name": "vouch_child",
@@ -389,10 +385,6 @@ var toolDefs = func() []map[string]any {
 				"sender's unverified claims. `truncated_before_serial`: mail below it may have " +
 				"been evicted under retention bounds.",
 			"inputSchema": obj(map[string]any{"token": tok}, "token"),
-			"_meta": map[string]any{"ui": map[string]any{
-				"resourceUri": uiBoardURI,
-				"visibility":  []string{"model", "app"},
-			}},
 		},
 		{
 			"name": "claim",
@@ -784,10 +776,6 @@ var toolDefs = func() []map[string]any {
 				"token": tok, "since_serial": num("last serial you have seen"),
 				"timeout_s": num("max seconds to wait (default/max 60)"),
 			}, "token", "since_serial"),
-			"_meta": map[string]any{"ui": map[string]any{
-				"resourceUri": uiBoardURI,
-				"visibility":  []string{"model", "app"},
-			}},
 		},
 	}
 }()

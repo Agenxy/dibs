@@ -469,15 +469,11 @@ func TestEverySurfaceNamesTheSamePanelURI(t *testing.T) {
 	// it did.
 	// The exact set, not a count.
 	//
-	// Requiring "at least one" let three of the four declarations be deleted
-	// while the suite stayed green: check_in, inbox and board would all
-	// have stopped opening the panel, which is most of the ways a human ever
-	// sees it, and only await_events kept the guard satisfied. These four are
-	// named because each is a moment the human is meant to get a board: the
-	// activation checkpoint, reading mail, asking for the board, and waking.
-	mustDeclare := map[string]bool{
-		"check_in": false, "inbox": false, "board": false, "await_events": false,
-	}
+	// Requiring "at least one" once let three of four declarations be deleted
+	// while the suite stayed green. The set is now one tool: the panel opens
+	// when somebody asks for it, through board, and TestOnlyBoardDrawsThePanel
+	// holds that nothing else declares it.
+	mustDeclare := map[string]bool{"board": false}
 	for _, tool := range toolDefs {
 		name, _ := tool["name"].(string)
 		if _, wanted := mustDeclare[name]; !wanted {
