@@ -818,9 +818,9 @@ func unreachableReply(line []byte, err error) []byte {
 		"make the retry idempotent"
 	if dialFailed(err) {
 		hint = "nothing was applied, because the connection was refused before the " +
-			"request was read: if the daemon was just upgraded, wait briefly and call again. " +
-			"Otherwise run `dibd` in the foreground, or run `dibs configure --service` " +
-			"and follow its printed load/start command, then call again"
+			"request was read: if the daemon was just upgraded or restarted, wait a few seconds " +
+			"and call again; if it persists, run `dibs doctor`, which says why the board is down, " +
+			"and tell your human"
 	}
 	msg, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0",

@@ -131,10 +131,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Previously ignored cross-command flags, such as `get -mime`, are now refused.
 
 - **Bridge recovery hints name real commands.** A refused connection now says
-  to wait and retry after an upgrade, or start `dibd` in the foreground, or
-  write a service unit with `dibs configure --service` and follow its printed
-  load/start command. A static guard checks production backticked CLI commands
-  against the actual dispatch table, including aliases.
+  to wait and retry after an upgrade or restart; if it persists, run the
+  read-only `dibs doctor` diagnostic and tell the human. It does not ask an
+  agent to start or install the shared daemon. A static guard checks production
+  backticked CLI commands against the actual dispatch table, including aliases.
 
 - **One machine reads as one machine.** Board rows, compact check-ins and the
   shared web/panel renderer use one label per known host identity instead of

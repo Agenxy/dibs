@@ -132,13 +132,15 @@ func TestTheBridgeSurvivesADaemonThatGoesAwayAndComesBack(t *testing.T) {
 		t.Errorf("hint %q does not say the call did not happen, which is what "+
 			"decides whether the agent may repeat it", hint)
 	}
-	for _, recovery := range []string{"just upgraded", "`dibd`", "`dibs configure --service`", "printed load/start command"} {
+	for _, recovery := range []string{"just upgraded or restarted", "wait a few seconds", "`dibs doctor`", "tell your human"} {
 		if !strings.Contains(hint, recovery) {
 			t.Errorf("connection-refused hint omitted truthful recovery %q: %s", recovery, hint)
 		}
 	}
-	if strings.Contains(hint, "dibs service") {
-		t.Errorf("connection-refused hint names a nonexistent CLI command: %s", hint)
+	for _, forbidden := range []string{"dibs service", "`dibd`", "configure --service"} {
+		if strings.Contains(hint, forbidden) {
+			t.Errorf("agent-facing recovery must not name nonexistent commands or start/install the shared daemon: %s", hint)
+		}
 	}
 
 	select {
