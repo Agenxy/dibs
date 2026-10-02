@@ -35,11 +35,8 @@ import (
 // injected one line using these two variables and it arrived immediately, in a
 // session running in bypassPermissions mode.
 //
-// WHAT THIS IS STILL NOT. It carries the same fixed sentence the other routes
-// carry and nothing else: no counts, no senders, no body, nothing an agent
-// wrote. It cannot read the session, steer it, or see what happens next. The
-// rule is unchanged and this route does not widen it: the board may WAKE an
-// agent and may not tell it what to do.
+// It carries the daemon's authenticated digest, never an instruction invented
+// here. It cannot read the session or decide what the agent does next.
 type selfWaker struct {
 	mu       sync.Mutex
 	socket   string
@@ -105,10 +102,25 @@ type selfWaker struct {
 	// about what the code does with an error and not about which error a
 	// kernel picks. Nil in production, where deliver is the only writer.
 	deliverFn func(notice string) error
+	// refreshFn asks the daemon for current unread state before EVERY write,
+	// including timers, retries and upgrade handoffs. Nil in transport tests.
+	refreshFn func(notice string) (string, error)
 }
+
+var errWakeEmpty = errors.New("the fresh wake digest is empty")
 
 // send performs this waker's write: the session socket, or a test's stand-in.
 func (w *selfWaker) send(notice string) error {
+	if w.refreshFn != nil {
+		var err error
+		notice, err = w.refreshFn(notice)
+		if err != nil {
+			return err
+		}
+		if notice == "" {
+			return errWakeEmpty
+		}
+	}
 	if w.deliverFn != nil {
 		return w.deliverFn(notice)
 	}
@@ -138,8 +150,8 @@ func newSelfWaker() *selfWaker {
 // wake puts one notice into this session's own queue.
 //
 // Returns an error only for a failure worth reporting. Like every other wake
-// route, a nil error means WRITTEN: this protocol answers nothing, so delivery
-// is still the receiver's to decide and nothing here should claim otherwise.
+// route, a nil error means settled: written, deferred, or no longer owed after
+// a fresh read. The protocol answers nothing; acceptance is the receiver's.
 // arm holds one notice back to the end of the cooldown. Caller holds w.mu and
 // has checked that nothing is armed already.
 //
@@ -162,36 +174,13 @@ func (w *selfWaker) arm(wait time.Duration, notice string) {
 
 // wake puts one notice into this session's own queue.
 //
-// A DEFERRED NOTICE IS ALWAYS DELIVERED, and it was not for four rounds.
-//
-// A notice held back by the cooldown used to be re-authorised locally before
-// delivery: the bridge asked whether the subscription that armed it still
-// spoke for this session, and dropped it otherwise. That guard was added
-// because a notice could interrupt a session an agent had left during the
-// cooldown. It is gone, deliberately, and this is the reasoning, because the
-// next reader will be told about that case again.
-//
-// It asked a question the bridge cannot answer. Whether a subscription is
-// still valid depends on token rotation, a session move, a sign-off, a
-// recovery through another bridge, and a refusal at the daemon; the check
-// stood on a pointer in a local map, which captures none of them. Four
-// consecutive review rounds each found another way validity changes without
-// that pointer moving, and two of the repairs in between DROPPED notices that
-// were owed: both calls return success, both cursors advance, and the mail is
-// then announced by nothing at all.
-//
-// The asymmetry decides it. Delivering a notice late costs one fixed sentence,
-// rate limited, into a session that recently held the agent. Dropping one
-// costs the message. The first is the failure this product tolerates; the
-// second is the failure it exists to prevent.
-//
-// And the authorisation was already made, by the party that can make it. The
-// daemon decides who is woken when it sends the notification, and rounds
-// fifty-nine through sixty-eight are that decision. A deferred notice is an
-// authorised notice delivered a few seconds later, not a fresh claim to
-// re-check. Found by the pre-release review, rounds seventy-two, seventy-three,
-// seventy-five and seventy-six, which is three more than this should have
-// taken.
+// Freshness is checked by the DAEMON, not by a local subscription pointer.
+// The old local authorization guard could not see token rotation, movement or
+// sign-off and dropped owed notices across four review rounds. Removing it was
+// right. Keeping a captured digest afterwards was not: mail acknowledged during
+// the cooldown was still called unread when the timer delivered it (#7810).
+// A non-consuming authenticated read now checks state and session binding at
+// delivery. Empty settles the notice; failure retries without stale fallback.
 func (w *selfWaker) wake(notice string) error {
 	if w == nil {
 		return errors.New("no session socket: this harness publishes none")
@@ -217,6 +206,15 @@ func (w *selfWaker) wake(notice string) error {
 	w.mu.Unlock()
 
 	if err := w.send(notice); err != nil {
+		if errors.Is(err, errWakeEmpty) {
+			w.mu.Lock()
+			if w.last.Equal(now) {
+				w.last = prev
+			}
+			w.mu.Unlock()
+			w.delivered() // clear only a retry, not a later arrival's deferral
+			return nil
+		}
 		// GONE MEANS GONE. No count, no wait: this session's socket is not
 		// there, the daemon has stood down on this bridge's word, and until
 		// the route goes back nothing announces this agent's mail at all.

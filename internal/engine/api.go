@@ -303,6 +303,30 @@ func (e *Engine) WakeDigestFor(ctx context.Context, token, from, kind string) (s
 	return digest, nil
 }
 
+// FreshWakeDigestFor is an uncharged, non-consuming read immediately before a
+// bridge's socket write. Check the credential and binding in the SAME snapshot
+// as the digest: local subscription pointers are not authorization evidence.
+func (e *Engine) FreshWakeDigestFor(ctx context.Context, token, session string) (string, error) {
+	res, err := e.query(ctx, func() core.Result {
+		l := e.state.AgentByToken(token)
+		if l == nil {
+			return core.Result{"error": core.ErrBadToken}
+		}
+		if !l.SessionIsCurrent(session) {
+			return core.Result{"digest": ""}
+		}
+		return core.Result{"digest": e.currentWakeDigest(l)}
+	})
+	if err != nil {
+		return "", err
+	}
+	if _, bad := res["error"]; bad {
+		return "", core.ErrBadToken
+	}
+	digest, _ := res["digest"].(string)
+	return digest, nil
+}
+
 // SetRateTokens sets an agent's remaining rate budget. A test knob, like
 // SetRingCap: the bucket refills at rateOpsPerSec, so a test that needs "one
 // call left" cannot get there by making calls and staying there.

@@ -716,6 +716,8 @@ func (s *Server) dispatch(
 			return cacheable(map[string]any{"contents": []map[string]any{
 				{"uri": p.URI, "mimeType": "application/json", "text": string(text)},
 			}}, ttlLive, scopePublic), nil
+		case WakeDigestURI:
+			return s.readWakeDigest(ctx, p.Meta)
 		case "dibs://inbox":
 			tok, _ := p.Meta[metaTokenKey].(string)
 			if tok == "" {

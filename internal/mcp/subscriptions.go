@@ -740,6 +740,7 @@ func resourceUpdated(uri string, subID json.RawMessage, ev core.Event, digest di
 		// session has consumed a delivery nobody saw. See
 		// engine.WakeDigestFor, which reads and moves nothing.
 		if digest != nil {
+			meta[DigestRefreshMetaKey] = true
 			if text := digest(ev); text != "" {
 				meta[DigestMetaKey] = text
 			}

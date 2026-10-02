@@ -1112,6 +1112,7 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 		// exactly as f.apply would here: whole argv elements, never parts.
 		return wakePlan{
 			host: host, cwd: cwdOf(l), cooldown: cooldown, thread: f.Thread,
+			agent: l.ID, session: wakeSessionOf(l), kind: kind,
 			request: WakeRequest{
 				Host: host, Agent: l.ID, Harness: wakeHarness(l), Thread: f.Thread,
 				CWD: cwdOf(l), From: f.From, MsgType: f.MsgType, Notice: f.Message,
@@ -1147,6 +1148,7 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 		// operator, twice, looking at exactly that in their own transcript.
 		return wakePlan{
 			agent: l.ID, sessions: sessionsOf(l), notice: e.socketNotice(l, from, kind),
+			session: wakeSessionOf(l), kind: kind,
 			cwd: cwdOf(l), cooldown: cooldown, thread: f.Thread,
 		}, true
 	}
@@ -1165,9 +1167,22 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 	cmd := e.commandFor(l)
 	return wakePlan{
 		argv: f.Apply(cmd.argv), fallback: f.Apply(cmd.fallback),
+		agent: l.ID, session: wakeSessionOf(l), kind: kind,
 		cwd: cwdOf(l), cooldown: cooldown, thread: f.Thread,
 		surface: surfaceOf(l), harness: wakeHarness(l), // which app to open: see inapp.go
 	}, true
+}
+
+// wakeSessionOf captures the binding even for rows predating CurrentSession.
+// Empty would waive the freshness check if such an agent moved after planning.
+func wakeSessionOf(l *core.Agent) string {
+	if l.CurrentSession != "" {
+		return l.CurrentSession
+	}
+	if thread := threadIDOf(l); thread != "" {
+		return thread
+	}
+	return l.SessionID
 }
 
 // wakePlan is how one wake will be delivered: the operator's command, or the
@@ -1195,8 +1210,9 @@ type wakePlan struct {
 	// surface and harness decide which app, if any, the thread is opened in
 	// after the message is queued (inapp.go).
 	surface, harness string
-	agent            string // whose wake this is, for the socket path
-	notice           string // what to say; never a message body
+	agent            string // whose outstanding state is rechecked before delivery
+	notice           string // socket digest; refreshed before production delivery
+	session, kind    string // binding and reason to recheck before a socket write
 	cwd              string // where the agent says it works, for the mismatch warning
 	// cooldown is the rate limit THIS route carries.
 	//
@@ -1604,6 +1620,23 @@ func (e *Engine) socketNotice(l *core.Agent, from, kind string) string {
 	if kind == wakeexec.KindContinuation || kind == wakeexec.KindRecheck {
 		return e.workNotice(l, kind)
 	}
+	if digest := e.currentWakeDigest(l); digest != "" {
+		return digest
+	}
+	// Planning may precede a readable notification. Actual delivery always
+	// refreshes from the writer loop and never uses this fallback when empty.
+	switch {
+	case from != "" && kind != "":
+		return fmt.Sprintf("Dibs: a new %s from %q is waiting for your agent %q.", kind, from, l.ID)
+	case kind != "":
+		return fmt.Sprintf("Dibs: a new %s is waiting for your agent %q.", kind, l.ID)
+	}
+	return fmt.Sprintf("Dibs: something is waiting for your agent %q.", l.ID)
+}
+
+// currentWakeDigest is a non-consuming snapshot. Empty means nothing is owed,
+// not an invitation to reconstruct the event that used to be waiting.
+func (e *Engine) currentWakeDigest(l *core.Agent) string {
 	now := time.Now()
 	// ALL THREE, which is the bug this replaced. It passed mail and nil'd
 	// announcements and notices, so a wake triggered by an agent update or an
@@ -1615,31 +1648,10 @@ func (e *Engine) socketNotice(l *core.Agent, from, kind string) string {
 	// and the other saying everything. The hook path had passed all three
 	// since it was written; only this one did not.
 	mail := e.pendingMailQuoted(l.ID, now)
-	unacked := e.state.Unacked(l.ID)
 	announced, _ := e.dueAnnouncements(l.ID, now)
 	notices := e.pendingNotices(l.ID)
-	if len(mail) == 0 && len(announced) == 0 && len(notices) == 0 && len(unacked) == 0 {
-		// NOTHING READABLE YET, WHICH IS NOT THE SAME AS NOTHING HAPPENING,
-		// and the difference nearly cost a delivery. A wake is planned from
-		// the op that triggered it, and the fold that puts that message in
-		// the inbox is not necessarily visible here: the first version of
-		// this returned "" and had the caller drop the wake, which turned
-		// "sends a useless sentence" into "sends nothing at all" and was
-		// caught by the test for the case the whole socket route exists for.
-		//
-		// So it falls back to what the exec route says: the fact that
-		// triggered this, from whom, for which agent. Never the imperative,
-		// never empty.
-		// Named here, unlike the exec route: this payload is JSON on a 0600
-		// socket, not an argv element, so the sender and the agent are safe
-		// to state and are the only facts worth having.
-		switch {
-		case from != "" && kind != "":
-			return fmt.Sprintf("Dibs: a new %s from %q is waiting for your agent %q.", kind, from, l.ID)
-		case kind != "":
-			return fmt.Sprintf("Dibs: a new %s is waiting for your agent %q.", kind, l.ID)
-		}
-		return fmt.Sprintf("Dibs: something is waiting for your agent %q.", l.ID)
+	if len(mail) == 0 && len(announced) == 0 && len(notices) == 0 {
+		return ""
 	}
 	return strings.TrimRight(hookDigest(l.ID, mail, announced, notices), "\n")
 }
