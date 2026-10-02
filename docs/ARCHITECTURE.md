@@ -216,6 +216,10 @@ silently. The web board is the **operator's** view over every agent and all mail
 behind proof that a human is here: Touch ID where the machine can check it, and
 the admin password where it cannot.
 
+The panel opens when somebody asks for it: the `board` tool is the only one
+that declares it, and the `board` prompt is how a person asks. It used to ride
+along on every call carrying board or mailbox state, which meant every turn.
+
 They answer different questions for different readers. What they share is what a
 agent, a message and an event *look* like.
 

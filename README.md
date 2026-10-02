@@ -669,7 +669,8 @@ If you are working *on* Dibs rather than with it, [AGENTS.md](AGENTS.md) is the 
   `dibs board | grep builder` works and a redirected `dibs doctor` is a file
   you can paste into an issue.
 - **MCP-native**: 47 tools, self-teaching through server instructions and
-  corrective error hints, plus resources and an MCP Apps panel. Dibs targets the
+  corrective error hints, plus resources, a `board` prompt and an MCP Apps panel
+  that opens when you ask for it. Dibs targets the
   **2026-07-28** stateless contract and also serves the legacy **2025-11-25**
   path, which, as of August 2026, is what every shipping host actually
   negotiates (see [below](#protocol-versions)). Both work; you need do nothing.

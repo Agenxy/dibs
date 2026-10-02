@@ -181,12 +181,6 @@ func TestACheckpointIsNeverReplacedByASmallerShape(t *testing.T) {
 		if err := json.Unmarshal([]byte(text), &plain); err != nil {
 			t.Fatalf("%s content is not JSON: %v", tool, err)
 		}
-		// And the panel's own needs must travel in that same shape, or the fix
-		// for one host breaks the panel on it.
-		if plain["act_token"] != token {
-			t.Errorf("%s content carries no act_token; the panel cannot act on a host "+
-				"that forwards neither _meta nor structuredContent", tool)
-		}
 
 		// structuredContent must be the SAME answer, key for key: never a
 		// smaller one. This was written as "must be absent", which was the right

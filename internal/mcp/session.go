@@ -31,16 +31,7 @@ type sessionStore struct {
 	// identity for the harnesses that use it; this is the same courtesy for the
 	// ones that do not.
 	client map[string]clientInfoJSON
-	// panelCalls remembers that a PANEL for this session reached the daemon.
-	//
-	// It is a capability discovered by success rather than declared: an app tool
-	// call arriving here proves the host permits them, and a host that permits
-	// them is not the one that drops _meta and shows structuredContent instead of
-	// content. That pairing is what makes check_in's duplicate droppable: see
-	// panelResult. Recorded per session because it is a property of the host on
-	// the other end of this connection, not of the daemon.
-	panelCalls map[string]bool
-	fifo       []string
+	fifo   []string
 	// onEvict is told when a session is forgotten, so state kept ELSEWHERE
 	// against the same id goes with it.
 	//
@@ -58,7 +49,6 @@ const maxSessions = 512
 func newSessionStore() *sessionStore {
 	return &sessionStore{
 		ui: map[string]bool{}, client: map[string]clientInfoJSON{},
-		panelCalls: map[string]bool{},
 	}
 }
 
@@ -94,7 +84,6 @@ func (s *sessionStore) insert(id string, wantsUI bool, ci *clientInfoJSON) strin
 	s.fifo = s.fifo[1:]
 	delete(s.ui, evicted)
 	delete(s.client, evicted)
-	delete(s.panelCalls, evicted)
 	return evicted
 }
 
@@ -121,51 +110,6 @@ func (s *sessionStore) wantsUI(r *http.Request) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.ui[id]
-}
-
-// notePanelCall records that a panel on this session reached the daemon.
-func (s *sessionStore) notePanelCall(r *http.Request) {
-	id := r.Header.Get("Mcp-Session-Id")
-	if id == "" {
-		return
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if _, known := s.ui[id]; !known {
-		// Never seen this session at initialize, so there is no entry to hang the
-		// fact on and no eviction bookkeeping for it. Ignoring it is the safe
-		// direction: the duplicate keeps being sent, which is merely expensive.
-		return
-	}
-	s.panelCalls[id] = true
-}
-
-// panelFetches reports whether this session's panel has proved it can call
-// tools. False until proved, because the expensive behaviour is the safe one.
-func (s *sessionStore) panelFetches(r *http.Request) bool {
-	id := r.Header.Get("Mcp-Session-Id")
-	if id == "" {
-		return false
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.panelCalls[id]
-}
-
-// isPanelCall reports whether a tools/call carries this panel's own marker.
-func isPanelCall(params json.RawMessage) bool {
-	var p struct {
-		Meta map[string]any `json:"_meta"`
-	}
-	if json.Unmarshal(params, &p) != nil {
-		return false
-	}
-	v, ok := p.Meta["com.dibs/panel-call"]
-	if !ok {
-		return false
-	}
-	b, _ := v.(bool)
-	return b
 }
 
 // declaresUI reports whether an initialize's capabilities include the MCP Apps

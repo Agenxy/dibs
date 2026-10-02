@@ -7,6 +7,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The board panel opens only when somebody asks for it.** It used to open
+  beside every `check_in`, `inbox`, `send`, `respond` and `await_events`, so
+  it appeared on every turn an agent took. Now `board` is the only tool that
+  draws it: an agent calls it to show you the board, and you ask for it
+  yourself with the new `board` prompt, which hosts list as a slash command
+  or menu entry (an optional `view` opens it on mail or activity).
+  `check_in` and `inbox` return their ordinary result and nothing else.
+
 - **A closed Claude Code session is woken in the Claude app.** A session in
   the desktop app is reached through its socket, which exists only while its
   process runs. When mail arrives for one whose process has ended, Dibs now
@@ -23,6 +31,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   loaded thread was never opened and still is not.
 
 ### Fixed
+
+- **The panel's Activity tab is no longer blank.** It was filled only by an
+  `await_events` result, a call the agents you open from a notification (a
+  ChatGPT thread) never make. `board` now carries the 40 most recent events
+  the agent may see: anything addressed to everyone, to it, or done by it.
 
 - **Wakes no longer pile up in the ChatGPT app's queue.** `codex queue` keeps
   every message, and the app releases one each time a turn ends, so wakes Dibs

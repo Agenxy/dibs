@@ -242,16 +242,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Mcp-Session-Id", id)
 		}
 	}
-	// A panel proving it can reach us is worth remembering: it is what lets
-	// check_in stop duplicating its checkpoint into structuredContent.
-	if req.Method == "tools/call" && isPanelCall(req.Params) {
-		s.sessions.notePanelCall(r)
-	}
 	if s.handledLegacySubscription(w, r, &req) {
 		return
 	}
 	result, rpcErr := s.dispatch(r.Context(), &req, bearer(r), identityFromTransport(r), s.sessions.wantsUI(r),
-		s.sessions.clientFor(r), s.sessions.panelFetches(r))
+		s.sessions.clientFor(r))
 	writeRPC(w, http.StatusOK, req.ID, tagResult(result, requestEra(r, req.Params)), rpcErr)
 }
 
@@ -580,7 +575,7 @@ func (s *Server) serveGET(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) dispatch(
 	ctx context.Context, req *rpcRequest, bearerToken, agentNonce string,
-	sessionUI bool, sessionClient *clientInfoJSON, panelFetches bool,
+	sessionUI bool, sessionClient *clientInfoJSON,
 ) (any, *rpcError) {
 	switch req.Method {
 	case "server/discover": // 2026-07-28 primary discovery
@@ -591,6 +586,8 @@ func (s *Server) dispatch(
 				// SEP-2575: advertise resource subscriptions so clients know they
 				// may open subscriptions/listen for dibs://inbox and dibs://board.
 				"resources": map[string]any{"subscribe": true, "listChanged": true},
+				// One prompt, board: how a PERSON opens the panel. See prompts.go.
+				"prompts": map[string]any{},
 			},
 			"serverInfo":   serverBuildInfo(),
 			"instructions": serverInstructions,
@@ -609,6 +606,8 @@ func (s *Server) dispatch(
 				// subscriptions entirely. Dated deliberately: the previous version of
 				// this comment asserted "none speak 2026 yet" as a standing fact.
 				"resources": map[string]any{"subscribe": true, "listChanged": true},
+				// One prompt, board: how a PERSON opens the panel. See prompts.go.
+				"prompts": map[string]any{},
 			},
 			"serverInfo":   serverBuildInfo(),
 			"instructions": serverInstructions,
@@ -747,13 +746,17 @@ func (s *Server) dispatch(
 				Data: hint("call resources/list: it names every resource this server serves"),
 			}
 		}
+	case "prompts/list":
+		return listPrompts(), nil
+	case "prompts/get":
+		return getPrompt(req.Params)
 	case "tools/call":
-		return s.callTool(ctx, req.Params, bearerToken, agentNonce, sessionUI, sessionClient, panelFetches)
+		return s.callTool(ctx, req.Params, bearerToken, agentNonce, sessionUI, sessionClient)
 	default:
 		return nil, &rpcError{
 			Code: -32601, Message: "method not found: " + req.Method,
 			Data: hint("this server speaks MCP: initialize, tools/list, tools/call, " +
-				"resources/list, resources/read, subscriptions/listen"),
+				"resources/list, resources/read, prompts/list, prompts/get, subscriptions/listen"),
 		}
 	}
 }
@@ -950,7 +953,7 @@ func argErr(err error) string {
 
 func (s *Server) callTool(
 	ctx context.Context, params json.RawMessage, bearerToken, agentNonce string, sessionUI bool,
-	sessionClient *clientInfoJSON, panelFetches bool,
+	sessionClient *clientInfoJSON,
 ) (any, *rpcError) {
 	var call struct {
 		Name string          `json:"name"`
@@ -1004,35 +1007,35 @@ func (s *Server) callTool(
 	if call.Name == "get_blob" {
 		return map[string]any{"content": blobContent(res)}, nil
 	}
-	// Any call that already carries board/mailbox state renders the panel, so
-	// the human sees the board as a side effect of the agent coordinating,
-	// never as a second manual step.
-	if view, ok := panelTools[call.Name]; ok {
-		// Either carrier counts: the stdio bridge injects _meta, a direct HTTP
-		// host is remembered from its initialize.
+	// Only board draws the panel: the human sees it when the agent shows it
+	// on purpose, or when the human asks (the `board` prompt).
+	//
+	// Every call that carried board or mailbox state used to draw it too
+	// (check_in, inbox, send, respond, await_events), on the theory that the
+	// human should not need a second, ceremonial call to look. In practice the
+	// panel then opened on every turn an agent took, in every conversation,
+	// and the operator asked for it to appear only when somebody asks for it.
+	// check_in is made once per activation, so "every turn" is meant
+	// literally.
+	if call.Name == "board" {
+		// board exists only to show the human. On a host with no renderer it
+		// can show nothing, so it says that rather than returning a payload
+		// nobody will look at: see boardSummary.
+		//
+		// The PANEL PAYLOAD is not gated on a declared capability: the
+		// reference host declares none and renders anyway, so gating it
+		// starves real hosts silently. wantsUI (either carrier: the stdio
+		// bridge injects _meta, a direct HTTP host is remembered from its
+		// initialize) decides only whether the board is DUPLICATED into
+		// structuredContent, for hosts that declare a renderer and give the
+		// panel no other way to receive it.
 		wantsUI := clientWantsUI(params) || sessionUI
-		if call.Name == "board" {
-			// board exists only to show the human. On a host with no
-			// renderer it can show nothing, so say that rather than returning a
-			// payload nobody will look at: an agent that is told plainly will
-			// reach for check_in or inbox instead of calling this again.
-			// board is the ONE tool whose detail the model genuinely does not
-			// need (the human is looking at it) so it gets a summary line, unlike
-			// check_in/inbox which must keep their full result because the agent
-			// reads the board out of them.
-			//
-			// The PANEL PAYLOAD is not gated on a declared capability: the
-			// reference host declares none and renders anyway, so gating it
-			// starves real hosts silently. wantsUI decides only whether the board
-			// is DUPLICATED into structuredContent, for hosts that declare a
-			// renderer and give the panel no other way to receive it.
-			return showBoardResult(s.panelState(ctx, res, a.View, a.Token), a.Detail, wantsUI), nil
-		}
-		// check_in's board is one row per agent unless the model asked for
-		// every field. The other panel tools carry no board worth trimming.
-		slim := call.Name == "check_in" && !a.Detail
-		return s.panelResult(ctx, res, view, a.Token,
-			wantsUI && panelWorthShowing(call.Name, res), panelFetches, slim), nil
+		return showBoardResult(s.panelState(ctx, res, a.View, a.Token), a.Detail, wantsUI), nil
+	}
+	// check_in's board is one row per agent unless the model asked for every
+	// field: see slimBoard.
+	if call.Name == "check_in" && !a.Detail {
+		res = slimBoard(res)
 	}
 	text, merr := json.Marshal(res)
 	if merr != nil {
