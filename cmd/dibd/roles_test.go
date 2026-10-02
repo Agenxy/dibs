@@ -143,8 +143,9 @@ func testEngine(t *testing.T) (*engine.Engine, context.Context) {
 	}
 	eng := engine.New(st, led, nil)
 	ctx, cancel := context.WithCancel(context.Background())
-	go eng.Run(ctx)
-	t.Cleanup(func() { cancel(); _ = led.Close() })
+	done := make(chan struct{})
+	go func() { eng.Run(ctx); close(done) }()
+	t.Cleanup(func() { cancel(); <-done; _ = led.Close() })
 	return eng, ctx
 }
 

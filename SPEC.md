@@ -887,7 +887,21 @@ Mailbox creation remains ledgered if later send-domain execution refuses the
 message; it is not rolled back with that refusal.
 Requests and questions use the existing native notification or attached human
 relay route;
-when no notification route is available, the send result reports that fact.
+the send result includes `human_route` (`relay`, `desktop`, `none`) and
+`human_relay_count` (relays whose bounded queue accepted the notice). Full or
+removed relays do not count; no accepted relay falls back to the local desktop
+or `none`, with a corrective hint. This never waits for a person or blocks send.
+`read_mail` includes derived `human_delivery`: route, aggregate state, and each
+source's last receipt/error and retained posting/dismissal evidence. `posted` means
+the OS accepted posting, not that a
+banner appeared or the person saw it; `dismissed` requires explicit dismissal
+or defer evidence, not a timeout. Queued/pending supplies no posting proof.
+Posting/dismissal on one source outranks failure on another; a real human
+response gives `answered`. Receipts grant nothing and use the relay's existing
+authenticated session. No receipt state is ledgered: after restart the route
+and state are `unknown` until new evidence arrives; actual answers replay.
+Old helpers/relays supply no invented receipt. Retrying `op_id` returns the
+original route (or unknown after restart) without another alert.
 Agents needing the person's decision send a request here rather than waiting
 for a chat they may not read.
 

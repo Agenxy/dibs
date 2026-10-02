@@ -125,6 +125,13 @@ func assertReplayedHumanDisplayLabel(t *testing.T, st *core.State, led *ledger.L
 	if !ok {
 		t.Fatalf("setup: reattach: %v", reg)
 	}
+	for serial := range st.Messages {
+		read := toolCall(t, srv, "read_mail", map[string]any{"token": token, "msg_serial": serial})
+		d := asMap(read["human_delivery"])
+		if d["state"] != "unknown" || d["route"] != "unknown" {
+			t.Fatalf("replay invented notification evidence: %v", read)
+		}
+	}
 	shown := rawToolResult(t, srv, "board", map[string]any{"token": token})
 	meta := shown["_meta"].(map[string]any)
 	panel := asMap(meta[panelDataMetaKey])

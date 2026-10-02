@@ -29,6 +29,8 @@ type Message struct {
 	Grant   string
 	Adopt   string
 	Serial  uint64 // for the log only
+	Receipt notify.Receipt
+	ask     func(string, string, notify.Receipt, ...string) (string, error) // test presenter
 }
 
 // Answer is what the person said. An empty Disposition is no answer:
@@ -53,9 +55,9 @@ func Ask(m Message) (Answer, error) {
 		// the asking agent waits out its deadline while they decide whether to.
 		return answer(m)
 	case core.MsgHandoff:
-		return Answer{}, notify.Banner(title, "hands work to you", OneLine(m.Body))
+		return Answer{}, notify.BannerWithReceipt(title, "hands work to you", OneLine(m.Body), m.Receipt)
 	default:
-		return Answer{}, notify.Banner(title, "says", OneLine(m.Body))
+		return Answer{}, notify.BannerWithReceipt(title, "says", OneLine(m.Body), m.Receipt)
 	}
 }
 
@@ -89,7 +91,8 @@ func RequestTitle(from, grant, adopt string) string {
 }
 
 func approve(m Message) (Answer, error) {
-	choice, err := notify.Ask(RequestTitle(m.From, m.Grant, m.Adopt), Said(m.Who, m.Body), "Deny", "Later", "Approve")
+	choice, err := m.askNotification(RequestTitle(m.From, m.Grant, m.Adopt),
+		Said(m.Who, m.Body), "Deny", "Later", "Approve")
 	if errors.Is(err, notify.ErrCannotNotify) {
 		return Answer{}, err
 	}
@@ -104,7 +107,7 @@ func approve(m Message) (Answer, error) {
 		if err != nil {
 			slog.Warn("the human was asked and nothing came back", "from", m.From, "msg", m.Serial, "err", err)
 		}
-		return Answer{}, nil
+		return noAnswer(m, err)
 	}
 	if choice == "Approve" {
 		return Answer{Disposition: "approve", Body: "answered from the desktop notification"}, nil
@@ -129,7 +132,7 @@ func answer(m Message) (Answer, error) {
 	line := Said(m.Who, m.Body)
 	plan := PlanFor(m.Choices, notify.CanPrompt())
 
-	pressed, err := notify.Ask(title, line, plan.Buttons...)
+	pressed, err := m.askNotification(title, line, plan.Buttons...)
 	if errors.Is(err, notify.ErrCannotNotify) {
 		return Answer{}, err
 	}
@@ -163,15 +166,13 @@ func answer(m Message) (Answer, error) {
 }
 
 // noAnswer is the person not answering: dismissed, deferred, or a dialog
-// that failed after they had seen the notification. Not an error to the
-// caller, because the message stays open on the board and inventing an
-// answer would be answering on their behalf; logged, so a dialog that keeps
-// failing is visible.
+// that failed after they had seen the notification. Failures propagate;
+// dismissal supplies no answer and the message stays open on the board.
 func noAnswer(m Message, err error) (Answer, error) {
 	if err != nil {
 		slog.Warn("the human was asked and no answer came back", "from", m.From, "msg", m.Serial, "err", err)
 	}
-	return Answer{}, nil
+	return Answer{}, err
 }
 
 // How an answer is collected once the human has asked to give one.
@@ -248,4 +249,16 @@ func Said(who, body string) string {
 		return line
 	}
 	return who + "\n" + line
+}
+
+func (m Message) askNotification(title, body string, buttons ...string) (string, error) {
+	ask := m.ask
+	if ask == nil {
+		ask = notify.AskWithReceipt
+	}
+	pressed, err := ask(title, body, m.Receipt, buttons...)
+	if pressed == DeferButton && m.Receipt != nil {
+		m.Receipt("dismissed")
+	}
+	return pressed, err
 }

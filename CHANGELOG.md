@@ -20,6 +20,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Phase one resumes connections, not incomplete uploads after daemon restart;
   declared-digest-and-size restart resume is a separate required follow-up.
 
+- **Human notification delivery evidence.** Send reports the actual relay,
+  desktop or unavailable route; read_mail distinguishes queued/pending from
+  OS-confirmed posting, explicit dismissal, failure and an actual answer.
+  Authenticated relays report their own receipts; one failed screen cannot
+  erase another's posting evidence. Posting does not establish banner visibility.
+  Receipt evidence is derived and becomes unknown after restart. Notification
+  failures now propagate instead of being silently treated as deferrals, and
+  retries do not post duplicate alerts.
+
 - **Scoped cloud-agent invitations, without a human per worker.** Local agents
   issue one-agent credentials and paste-ready MCP configuration with `invite`;
   the CLI uses `DIBS_TOKEN` for the same policy. Default: own-prefix children,

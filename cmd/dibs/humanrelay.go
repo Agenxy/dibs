@@ -383,8 +383,10 @@ func (r *relay) handle(n engine.HumanNotice) {
 	a, err := r.ask(humanask.Message{
 		Type: n.Type, From: n.From, Who: n.Who, Body: n.Body,
 		Choices: n.Choices, Grant: n.Grant, Adopt: n.Adopt, Serial: n.Serial,
+		Receipt: func(state string) { r.delivery(n.Serial, state, "") },
 	})
 	if err != nil {
+		r.delivery(n.Serial, "failed", err.Error())
 		slog.Warn("could not show a message on this Mac; it is still on the board", "msg", n.Serial, "err", err)
 		return
 	}
@@ -394,6 +396,19 @@ func (r *relay) handle(n engine.HumanNotice) {
 	if err := r.answer(n, a); err != nil {
 		slog.Warn("your answer did not reach the board; the message is still open there",
 			"msg", n.Serial, "err", err)
+	}
+}
+
+func (r *relay) delivery(serial uint64, state, failure string) {
+	client := *r.client
+	client.Timeout = 3 * time.Second
+	if len(failure) > 4096 {
+		failure = failure[:4096]
+	}
+	_, err := postJSON(&client, r.origin+"/api/human/delivery", r.bearer(),
+		map[string]any{"serial": serial, "state": state, "error": failure}, nil)
+	if err != nil {
+		slog.Warn("notification receipt did not reach the board", "msg", serial, "state", state, "err", err)
 	}
 }
 

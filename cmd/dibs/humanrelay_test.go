@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +13,31 @@ import (
 	"github.com/agenxy/dibs/internal/humanask"
 	"github.com/agenxy/dibs/internal/humankey"
 )
+
+func TestRelayHandlerReportsPostingAndFailureWithoutAnswering(t *testing.T) {
+	var receipts []map[string]any
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/human/delivery", func(w http.ResponseWriter, r *http.Request) {
+		var receipt map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&receipt); err != nil {
+			t.Error(err)
+		}
+		receipts = append(receipts, receipt)
+		_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	r := newRelay(srv.URL, relayState{Key: "relay-fixture", Node: "board-fixture"}, &fakeSigner{},
+		func(m humanask.Message) (humanask.Answer, error) {
+			m.Receipt("posted")
+			return humanask.Answer{}, errors.New("fixture prompt failed")
+		})
+	r.handle(engine.HumanNotice{Serial: 7, Type: "question", From: "sender"})
+	if len(receipts) != 2 || receipts[0]["state"] != "posted" || receipts[1]["state"] != "failed" ||
+		receipts[1]["error"] != "fixture prompt failed" {
+		t.Fatalf("handler receipts: %v", receipts)
+	}
+}
 
 // fakeSigner records what it was asked to sign and why, and needs no finger.
 type fakeSigner struct {

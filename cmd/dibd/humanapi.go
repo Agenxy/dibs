@@ -59,6 +59,30 @@ func registerHumanAPI(mux *http.ServeMux, eng *engine.Engine, gate *authGate, di
 	mux.HandleFunc("POST /api/human/session", h.session)
 	mux.HandleFunc("GET /api/human/stream", h.stream)
 	mux.HandleFunc("POST /api/human/answer", h.answer)
+	mux.HandleFunc("POST /api/human/delivery", h.delivery)
+}
+
+// A receipt proves only what the relay reports about its own OS. It grants
+// nothing, answers no mail and shares the existing authenticated relay session.
+func (h *humanAPI) delivery(w http.ResponseWriter, r *http.Request) {
+	key, ok := h.sessionKey(r)
+	if !ok {
+		humanRefuse(w, http.StatusUnauthorized, "no relay session", "open a session with dibs human-relay")
+		return
+	}
+	var req struct {
+		Serial uint64 `json:"serial"`
+		State  string `json:"state"`
+		Error  string `json:"error"`
+	}
+	if !decodeBody(w, r, &req) {
+		return
+	}
+	if err := h.eng.ReportHumanDelivery(r.Context(), req.Serial, key, req.State, req.Error); err != nil {
+		humanRefuse(w, http.StatusBadRequest, err.Error(), "report posted, dismissed or failed for retained human mail")
+		return
+	}
+	humanJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func humanJSON(w http.ResponseWriter, status int, v any) {

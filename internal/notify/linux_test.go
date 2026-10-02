@@ -12,6 +12,10 @@ import (
 // what a real notify-send would receive, and what it prints back is what a
 // real one prints (the chosen action key on stdout, nothing when dismissed).
 func TestMain(m *testing.M) {
+	if os.Getenv("DIBS_TEST_RECEIPT_PUBLIC") != "" && filepath.Base(os.Args[0]) == "dibs-notify" {
+		asReceiptHelper()
+		os.Exit(0)
+	}
 	if os.Getenv("DIBS_TEST_AS_NOTIFY_SEND") != "" {
 		asNotifySend(os.Args[1:])
 		os.Exit(0)
@@ -66,6 +70,28 @@ func stubNotifySend(t *testing.T, version string) {
 	t.Setenv("DIBS_TEST_AS_NOTIFY_SEND", "1")
 	t.Setenv("DIBS_TEST_NOTIFY_VERSION", version)
 	t.Setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/1000/bus")
+}
+
+func TestLinuxSuccessfulNotifierReportsOSAcceptance(t *testing.T) {
+	stubNotifySend(t, "0.8.2")
+	t.Setenv("DIBS_TEST_NOTIFY_ANSWER", "0")
+	for _, api := range []string{"banner", "ask"} {
+		state := ""
+		receipt := func(s string) { state = s }
+		var err error
+		if api == "banner" {
+			err = BannerWithReceipt("fixture", "", "fixture", receipt)
+		} else {
+			var choice string
+			choice, err = AskWithReceipt("fixture", "fixture", receipt, "Yes")
+			if choice != "Yes" {
+				t.Fatalf("choice: %q %v", choice, err)
+			}
+		}
+		if err != nil || state != "posted" {
+			t.Fatalf("%s receipt: %q %v", api, state, err)
+		}
+	}
 }
 
 // On Linux a question is one notify-send with a button per label, and the
