@@ -115,7 +115,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - **An old cleanup snapshot no longer deletes a newly registered blob.**
-  Registration transfers protection from the caller's stage hold to an extra
+  Registration takes its own writer-owned hold before enqueue, surviving caller
+  cancellation until commit or refusal, then transfers protection to an extra
   hold until every older reconciliation finishes, including overlapping runs,
   errors and recovered adapter panics. Shutdown waits for pruning before
   releasing protection. The store also locks its hold check and unlink together.

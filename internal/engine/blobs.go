@@ -56,7 +56,7 @@ func (e *Engine) PutBlob(ctx context.Context, token string, data []byte, path, m
 		}
 		return nil, err
 	}
-	defer e.blobs.Release(id) // end in-flight protection once registration settles
+	defer e.blobs.Release(id) // the writer owns an extra hold if cancellation returns early
 	return e.CommitTransfer(ctx, identity, id, size, mime)
 }
 

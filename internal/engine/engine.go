@@ -332,21 +332,7 @@ func (e *Engine) Run(ctx context.Context) {
 			e.reconcileBlobs()       // delete evicted/orphan blob files off-thread
 			go e.primePeerSessions() // sessions come and go; keep the cache warm
 		case req := <-e.ops:
-			if err := e.admitInvitation(req.invite, req.op); err != nil {
-				req.reply <- reply{nil, err}
-				continue
-			}
-			if req.fn != nil {
-				res := req.fn()
-				if errv, ok := res["error"].(error); ok {
-					req.reply <- reply{nil, errv}
-				} else {
-					req.reply <- reply{res, nil}
-				}
-				continue
-			}
-			res, err := e.exec(req.op, time.Now())
-			req.reply <- reply{res, err}
+			e.serveRequest(req)
 		case now := <-tick.C:
 			e.sweep(now)
 			e.expireWaiters(now)

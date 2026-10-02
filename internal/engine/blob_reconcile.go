@@ -6,7 +6,7 @@ import (
 	"github.com/agenxy/dibs/internal/core"
 )
 
-// Writer-only. The caller still holds its stage until the registration reply,
+// Writer-only. The request still holds its stage even if the caller canceled,
 // so an extra hold acquired here bridges every older snapshot's stale view.
 func (e *Engine) protectBlobRegistration(id string) {
 	if e.blobs == nil || e.blobReconciles == 0 || e.blobReconcileHeld[id] {

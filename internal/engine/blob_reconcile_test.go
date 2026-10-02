@@ -60,8 +60,17 @@ func TestReconcileFailureDoesNotLeakRegistrationHolds(t *testing.T) {
 				t.Fatalf("registration setup: %v", err)
 			}
 			blob := result["blob"].(string)
-			if id := <-store.released; id != blob {
-				t.Fatal("caller did not release its own stage hold")
+			// Both the original stage and the writer's request hold must be
+			// released before the snapshot hold's later completion receipt.
+			for range 2 {
+				select {
+				case id := <-store.released:
+					if id != blob {
+						t.Fatal("wrong stage hold released")
+					}
+				case <-time.After(2 * time.Second):
+					t.Fatal("caller or writer leaked its stage hold")
+				}
 			}
 			store.resume()
 			select {

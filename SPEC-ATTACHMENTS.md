@@ -137,7 +137,12 @@ Reconcile thus reaps only genuine orphans, never live in-flight writes.
 
 **Snapshot handoff.** A snapshot can remain stale after registration: releasing
 the put's last hold while that sweep is still running would expose a live blob
-to deletion. The writer counts sweeps before publishing their snapshots and
+to deletion. Both registration APIs take a separate request hold before enqueue.
+If enqueue fails the caller releases it; after acceptance only the writer does,
+on completion, refusal or panic. Caller cancellation cannot release a hold while
+the registration's ledger append is still pending. This also covers invitation
+refusal before a registration closure runs. The writer counts sweeps before
+publishing their snapshots and
 takes one extra per-ID store hold at successful registration while any sweep is
 active. The last completion releases those holds, including error and recovered
 panic paths. Shutdown cancels completion receipts even on a writer panic and
