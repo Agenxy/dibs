@@ -478,6 +478,9 @@ func (b *wakeBridge) serve(ctx context.Context, wr engine.WakeRequest) {
 	if err := b.report(ctx, res); err != nil {
 		slog.Warn("the hub did not take the report", "request", wr.ID, "err", err)
 	}
+	if res.OK {
+		b.showQueuedThread(wr)
+	}
 }
 
 // execute is the decision of what to run for one request, and the running
@@ -510,24 +513,28 @@ func (b *wakeBridge) execute(wr engine.WakeRequest) (bool, string) {
 		fallback = f.Apply(x.Fallback)
 	}
 	if b.run(f.Apply(x.Argv), fallback, wr.Agent, wr.CWD, wakeexec.Timeout, wakeexec.Grace) {
-		// Queued. The same step the hub takes for an agent on its own machine,
-		// taken here because the app is on this machine: open the thread in
-		// the app the agent runs in when the app is not holding it.
-		app := harnessenv.AppFor(wr.Surface, wr.Harness, wr.Thread)
-		b.show.ShowWhenIdle(harnessenv.OpenArgv(app, wr.Thread), wr.Thread, func(opened, deferred bool, err error) {
-			switch {
-			case err != nil:
-				slog.Warn("could not open the agent's thread in its app; the message waits there",
-					"request", wr.ID, "err", err)
-			case deferred:
-				slog.Info("opening the agent's thread in its app once the person here is idle", "request", wr.ID)
-			case opened:
-				slog.Info("opened the agent's thread in the app it runs in", "request", wr.ID)
-			}
-		})
 		return true, ""
 	}
 	return false, "the wake command exited non-zero (the fallback too, when one is configured)"
+}
+
+// App visibility is independent of the command outcome already reported to the hub.
+func (b *wakeBridge) showQueuedThread(wr engine.WakeRequest) {
+	// Queued. The same step the hub takes for an agent on its own machine,
+	// taken here because the app is on this machine: open the thread in
+	// the app the agent runs in when the app is not holding it.
+	app := harnessenv.AppFor(wr.Surface, wr.Harness, wr.Thread)
+	b.show.ShowWhenIdle(harnessenv.OpenArgv(app, wr.Thread), wr.Thread, func(opened, deferred bool, err error) {
+		switch {
+		case err != nil:
+			slog.Warn("could not open the agent's thread in its app; the message waits there",
+				"request", wr.ID, "err", err)
+		case deferred:
+			slog.Info("opening the agent's thread in its app once the person here is idle", "request", wr.ID)
+		case opened:
+			slog.Info("opened the agent's thread in the app it runs in", "request", wr.ID)
+		}
+	})
 }
 
 // report posts the outcome; the hub accepts a report once, for a request it

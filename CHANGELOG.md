@@ -121,6 +121,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   installed baseline failed 25/26 too. Synthetic identity and isolated harness
   state pass 26/26 with the same assertions and time budget.
 
+- A remote wake reports its queued command outcome before checking whether
+  the app has the thread loaded. A slow app-visibility probe cannot hold the
+  hub's delivery report hostage. The ChatGPT process probes share a one-second
+  deadline; timeout means thread ownership is unknown, leaving the existing
+  idle/open policy to decide.
+
 - Deferred socket wakes no longer announce mail already acknowledged or
   agent updates already read. Both the daemon and in-session bridge refresh
   the digest without marking mail delivered, including retries and upgrade
