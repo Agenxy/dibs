@@ -309,10 +309,9 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "send",
-			"description": "Send a message to an agent, or to \"human\" for the person's decision. " +
-				"Their mailbox is created on first authenticated send; writing to it uses native " +
-				"notifications or their human relay. Questions and requests carry a deadline, and on expiry " +
-				"you get a diagnosis of why.",
+			"description": "Message an agent or \"human\" for a decision. First authenticated send creates " +
+				"the human mailbox; OS notifications or their relay deliver it. Questions and requests " +
+				"expire with a diagnosis.",
 			"inputSchema": obj(map[string]any{
 				"token": tok, "to": str("recipient agent id, \"human\" for the person, or " +
 					"\"coordinator\" for whoever holds that role"),
