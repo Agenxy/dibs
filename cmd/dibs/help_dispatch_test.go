@@ -72,6 +72,18 @@ func TestEveryDispatchedVerbAnswersHelpWithoutAuthority(t *testing.T) {
 				if !strings.HasPrefix(stdout.String(), "usage: dibs "+verb) {
 					t.Errorf("missing command usage on stdout: %q", stdout.String())
 				}
+				firstLine, _, _ := strings.Cut(stdout.String(), "\n")
+				if verb == "put" && !strings.Contains(firstLine, "<file>") {
+					t.Error("put help does not name its input file")
+				}
+				if verb == "get" {
+					if !strings.Contains(firstLine, "<blob>") || !strings.Contains(firstLine, "<path>") {
+						t.Error("get help does not name its blob and destination")
+					}
+					if strings.Contains(stdout.String(), "-mime") {
+						t.Error("get help advertises a put-only MIME flag")
+					}
+				}
 				if stderr.Len() != 0 {
 					t.Errorf("help wrote a diagnostic: %q", stderr.String())
 				}

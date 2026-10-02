@@ -151,6 +151,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   checking credentials or contacting the board. `invite` no longer interprets
   help as an invalid agent name. Existing flag help retains its defaults, and
   the command catalog now includes stop, upgrade, trust and fingerprint.
+  File-transfer help names the input file or blob and destination, with each
+  command showing only the flags it actually uses.
 
 - **One machine reads as one machine.** Board rows, compact check-ins and the
   shared web/panel renderer use one label per known host identity instead of

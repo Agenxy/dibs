@@ -323,10 +323,16 @@ func main() {
 // that is where a reader pipes it; a bad flag once, to stderr, naming the
 // command so `-sinc` does not send somebody hunting through the wrong page.
 func parseFlags(fs *flag.FlagSet, args []string) error {
+	return parseFlagsUsage(fs, args, "usage: dibs "+fs.Name())
+}
+
+// parseFlagsUsage adds a positional synopsis without putting it in the flag
+// set's name, which also identifies the command in bad-flag corrections.
+func parseFlagsUsage(fs *flag.FlagSet, args []string, synopsis string) error {
 	fs.SetOutput(io.Discard)
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			fmt.Println("usage: dibs " + fs.Name())
+			fmt.Println(synopsis)
 			fs.SetOutput(os.Stdout)
 			fs.PrintDefaults()
 			return flag.ErrHelp

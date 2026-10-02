@@ -37,14 +37,20 @@ type fileResult struct {
 func filesCmd(verb string, args []string) error {
 	fs := flag.NewFlagSet(verb, flag.ContinueOnError)
 	asJSON := fs.Bool("json", false, jsonHelp)
-	mime := fs.String("mime", "application/octet-stream", "put: content type")
-	output := fs.String("o", "", "get: destination file (must not already exist)")
-	fs.StringVar(output, "out", "", "get: destination file (must not already exist)")
+	mime, output := "application/octet-stream", ""
+	synopsis := "usage: dibs put [--mime <type>] <file>"
+	if verb == "put" {
+		fs.StringVar(&mime, "mime", mime, "content type")
+	} else {
+		synopsis = "usage: dibs get <blob> [-o <path>]"
+		fs.StringVar(&output, "o", "", "destination file (must not already exist)")
+		fs.StringVar(&output, "out", "", "destination file (must not already exist)")
+	}
 	// Position-first is the documented spelling; flag-first also works.
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		args = append(append([]string(nil), args[1:]...), args[0])
 	}
-	if err := parseFlags(fs, args); err != nil {
+	if err := parseFlagsUsage(fs, args, synopsis); err != nil {
 		return err
 	}
 	var result fileResult
@@ -55,9 +61,9 @@ func filesCmd(verb string, args []string) error {
 	case os.Getenv("DIBS_TOKEN") == "":
 		err = errors.New("set DIBS_TOKEN to the token returned by register; for public boards also set DIBS_INVITE")
 	case verb == "put":
-		result, err = putFile(fs.Arg(0), *mime)
+		result, err = putFile(fs.Arg(0), mime)
 	default:
-		result, err = getFile(fs.Arg(0), *output)
+		result, err = getFile(fs.Arg(0), output)
 	}
 	if err != nil {
 		if *asJSON {
