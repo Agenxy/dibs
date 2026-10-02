@@ -43,6 +43,7 @@ import (
 func mcpStdio(args []string) error {
 	for _, a := range args {
 		if a == "--help" || a == "-h" {
+			fmt.Println("usage: dibs mcp-stdio")
 			fmt.Print(bridgeHelp)
 			return nil
 		}

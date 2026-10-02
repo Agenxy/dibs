@@ -69,6 +69,7 @@ func stop(args []string) error {
 		}
 	}
 	if help {
+		fmt.Println("usage: dibs stop")
 		fmt.Print(stopHelp)
 		return nil
 	}

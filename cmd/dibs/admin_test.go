@@ -1,11 +1,14 @@
 package main
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -176,22 +179,37 @@ func TestEverySubcommandIsInTheUsageText(t *testing.T) {
 // thing for the wrong reason keeps passing until something unrelated moves.
 func dispatchedVerbs(t *testing.T) []string {
 	t.Helper()
-	src, err := os.ReadFile("main.go")
+	src, err := parser.ParseFile(token.NewFileSet(), "main.go", nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := string(src)
-	start := strings.Index(text, "switch os.Args[1] {")
-	if start < 0 {
-		t.Fatal("the CLI dispatch switch was not found: this test now reads nothing")
-	}
-	end := strings.Index(text[start:], "\n\t}")
-	if end < 0 {
-		t.Fatal("the CLI dispatch switch has no end: this test now reads nothing")
-	}
 	var verbs []string
-	for _, m := range regexp.MustCompile(`case "([a-z-]+)"`).FindAllStringSubmatch(text[start:start+end], -1) {
-		verbs = append(verbs, m[1])
+	for _, decl := range src.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Name.Name != "main" {
+			continue
+		}
+		for _, stmt := range fn.Body.List {
+			sw, ok := stmt.(*ast.SwitchStmt)
+			if !ok {
+				continue
+			}
+			for _, clause := range sw.Body.List {
+				for _, expr := range clause.(*ast.CaseClause).List {
+					lit, ok := expr.(*ast.BasicLit)
+					if !ok || lit.Kind != token.STRING {
+						t.Fatal("CLI dispatch now contains a nonliteral case")
+					}
+					verb, err := strconv.Unquote(lit.Value)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if !strings.HasPrefix(verb, "-") {
+						verbs = append(verbs, verb)
+					}
+				}
+			}
+		}
 	}
 	if len(verbs) < 10 {
 		t.Fatalf("found only %d verbs in the dispatch: the pattern changed and this "+
