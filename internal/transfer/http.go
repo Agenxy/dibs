@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -38,6 +39,11 @@ func (m *Manager) Handler(origin string, trustedProxy bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Referrer-Policy", "no-referrer")
+		// Untrusted bytes share the board's origin, but must never execute there.
+		// Apply these even to refusals and upload responses, before lookup.
+		w.Header().Set("Content-Disposition", "attachment")
+		w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
 		t, key, err := m.lookup(r, origin, trustedProxy)
 		if err != nil {
 			writeError(w, err)
@@ -53,9 +59,12 @@ func (m *Manager) Handler(origin string, trustedProxy bool) http.Handler {
 			m.mu.Lock()
 			stopping := m.stopping
 			m.mu.Unlock()
-			if stopping && t.upload != nil {
-				t.upload.Abort()
-				t.upload = nil
+			if stopping {
+				t.failed = true
+				if t.upload != nil {
+					t.upload.Abort()
+					t.upload = nil
+				}
 			}
 			t.mu.Unlock()
 		}()
@@ -117,9 +126,24 @@ func (m *Manager) serveDownload(w http.ResponseWriter, r *http.Request, t *ticke
 	}
 	defer func() { _ = reader.Close() }()
 	w.Header().Set("ETag", "\""+t.blob+"\"")
-	w.Header().Set("Content-Type", t.id.Mime)
-	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Type", downloadMime(t.id.Mime))
+	// Names are advisory metadata; downloads have a stable digest basename.
+	name := strings.TrimPrefix(t.blob, "sha256:") + ".bin"
+	w.Header().Set("Content-Disposition", "attachment; filename*=UTF-8''"+
+		strings.ReplaceAll(url.QueryEscape(name), "+", "%20"))
 	http.ServeContent(w, r, "", time.Time{}, reader)
+}
+
+func downloadMime(declared string) string {
+	mime := strings.ToLower(declared)
+	switch mime {
+	case "", "text/html", "image/svg+xml", "application/xhtml+xml", "text/xml", "application/xml":
+		return "application/octet-stream"
+	}
+	if strings.HasSuffix(mime, "+xml") || strings.Contains(mime, "javascript") || strings.Contains(mime, "ecmascript") {
+		return "application/octet-stream"
+	}
+	return declared
 }
 
 func transferTransport(r *http.Request, origin string, proxy bool) error {
@@ -311,6 +335,9 @@ func (m *Manager) copyFailure(w http.ResponseWriter, t *ticket, err error) {
 }
 
 func (m *Manager) copyUpload(w http.ResponseWriter, r *http.Request, t *ticket) error {
+	if t.upload == nil {
+		return uploadWriteError{gone()}
+	}
 	controller := http.NewResponseController(w)
 	defer func() { _ = controller.SetReadDeadline(time.Time{}) }()
 	buffer := make([]byte, 32*1024)

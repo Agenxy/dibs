@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -64,6 +65,7 @@ func TestPublicFileTransferRunsThroughProductionListener(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = got.Body.Close() }()
+	assertDownloadIsData(t, got, "application/octet-stream")
 	part, err := io.ReadAll(got.Body)
 	if err != nil {
 		t.Fatal(err)
@@ -74,17 +76,82 @@ func TestPublicFileTransferRunsThroughProductionListener(t *testing.T) {
 	if got.Header.Get("ETag") != `"`+want+`"` {
 		t.Fatalf("wrong content-addressed ETag: %q", got.Header.Get("ETag"))
 	}
+	head, err := f.public.Client().Head(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = head.Body.Close() }()
+	assertDownloadIsData(t, head, "application/octet-stream")
 }
 
 func authorizeTestUpload(f *cloudFixture, token string, plain []byte) string {
+	return authorizeTestUploadWithMime(f, token, plain, "")
+}
+
+func authorizeTestUploadWithMime(f *cloudFixture, token string, plain []byte, mime string) string {
 	f.t.Helper()
 	sum := sha256.Sum256(plain)
-	r := f.tool(true, "upload", map[string]any{"token": token, "size": len(plain), "sha256": hex.EncodeToString(sum[:])})
+	r := f.tool(true, "upload", map[string]any{
+		"token": token, "size": len(plain), "sha256": hex.EncodeToString(sum[:]), "mime": mime,
+	})
 	d, ok := r["upload"].(map[string]any)
 	if !ok {
 		f.t.Fatalf("upload admission: %v", r)
 	}
 	return d["url"].(string)
+}
+
+func assertDownloadIsData(t *testing.T, response *http.Response, mime string) {
+	t.Helper()
+	if !strings.HasPrefix(response.Header.Get("Content-Disposition"), "attachment; filename*=UTF-8''") {
+		t.Error("file can render inline on the board origin")
+	}
+	if response.Header.Get("Content-Security-Policy") != "sandbox; default-src 'none'" {
+		t.Error("file response lacks an opaque-origin sandbox")
+	}
+	if response.Header.Get("Content-Type") != mime || response.Header.Get("X-Content-Type-Options") != "nosniff" {
+		t.Error("file response can execute or sniff its declared active content type")
+	}
+}
+
+func TestPublicDownloadTreatsActiveContentAsData(t *testing.T) {
+	f := newCloudFixture(t)
+	token := cloudRegistered(f)
+	for _, mime := range []string{
+		"text/html", "image/svg+xml", "application/xhtml+xml", "text/xml",
+		"application/atom+xml", "text/javascript", "Text/HTML", "text/plain",
+	} {
+		t.Run(mime, func(t *testing.T) {
+			plain := []byte(mime + "<script>localStorage.getItem('page_key')</script>")
+			target := authorizeTestUploadWithMime(f, token, plain, mime)
+			stored := patchTestUpload(t, f.public.Client(), target, 0, plain, "?1")
+			defer func() { _ = stored.Body.Close() }()
+			var result map[string]any
+			if err := json.NewDecoder(stored.Body).Decode(&result); err != nil || stored.StatusCode != 200 {
+				t.Fatalf("upload setup: %d %v", stored.StatusCode, err)
+			}
+			meta := f.tool(true, "download", map[string]any{"token": token, "blob": result["blob"]})
+			file, ok := meta["file"].(map[string]any)
+			if !ok || file["mimeType"] != result["mime"] {
+				t.Fatalf("declared MIME lost from JSON: %v", meta)
+			}
+			download := meta["download"].(map[string]any)
+			response, err := f.public.Client().Get(download["url"].(string))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = response.Body.Close() }()
+			want := "application/octet-stream"
+			if mime == "text/plain" {
+				want = mime
+			}
+			assertDownloadIsData(t, response, want)
+			got, err := io.ReadAll(response.Body)
+			if err != nil || !bytes.Equal(got, plain) {
+				t.Fatalf("download changed file bytes: %v", err)
+			}
+		})
+	}
 }
 
 func patchTestUpload(t *testing.T, client *http.Client, target string, offset int64, plain []byte, complete string) *http.Response {

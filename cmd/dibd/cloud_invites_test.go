@@ -591,8 +591,8 @@ func TestCloudPublicListenerIsWiredIntoDaemonRun(t *testing.T) {
 	if r["agent_id"] != "run-worker" || r["token"] == "" {
 		t.Fatalf("production startup never served public registration: %v", r)
 	}
-	plain := []byte("file tools wired through the actual daemon startup")
-	upload := authorizeTestUpload(f, r["token"].(string), plain)
+	plain := []byte("<html><script>localStorage.getItem('page_key')</script></html>")
+	upload := authorizeTestUploadWithMime(f, r["token"].(string), plain, "text/html")
 	response := patchTestUpload(t, proxy.Client(), upload, 0, plain, "?1")
 	defer func() { _ = response.Body.Close() }()
 	var stored map[string]any
@@ -612,6 +612,7 @@ func TestCloudPublicListenerIsWiredIntoDaemonRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = got.Body.Close() }()
+	assertDownloadIsData(t, got, "application/octet-stream")
 	bytesOut, err := io.ReadAll(got.Body)
 	if err != nil || got.StatusCode != 200 || !bytes.Equal(bytesOut, plain) {
 		t.Fatalf("production download: %d %v", got.StatusCode, err)

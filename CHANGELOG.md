@@ -14,6 +14,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   readable. Invitation revocation, identity replacement and blob-access loss
   invalidate tickets; concurrent staging is bounded. Native off-host transfer
   requires TLS 1.3; doctor measures the operator's public TLS-proxy edge.
+  Downloads are forced attachments with sandboxed, non-executable response
+  types; uploader-declared types remain metadata, not board-origin authority.
+  Shutdown invalidates interrupted tickets rather than leaving an aborted stage usable.
   Phase one resumes connections, not incomplete uploads after daemon restart;
   declared-digest-and-size restart resume is a separate required follow-up.
 

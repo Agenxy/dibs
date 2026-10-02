@@ -456,6 +456,12 @@ they are zero-copy, and are refused for an invite (NETWORK.md §9).
   conforms to the draft.
 - **Downloads take `Range`** and send `ETag` = the blob id, so a client resumes
   and caches by standard HTTP.
+- **Transferred content is data, never board-origin code.** Every `/files/`
+  response sends `Content-Security-Policy: sandbox; default-src 'none'`,
+  `X-Content-Type-Options: nosniff` and attachment disposition. Downloads use
+  an RFC 6266 `filename*` with a digest basename. HTML, XML (including SVG and
+  `+xml` types) and JavaScript/ECMAScript types are served as
+  `application/octet-stream`; the declared MIME remains in JSON metadata.
 - **Streamed**: bytes go straight to an encrypted temp file in the blob store, hashed as
   they arrive, never held whole in memory, and are committed to the
   content-addressed store (encrypted at rest, A3) only when the hash is

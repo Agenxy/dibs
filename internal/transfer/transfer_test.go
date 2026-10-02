@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -54,6 +55,23 @@ func authorizeEight(t *testing.T, m *Manager, token string) (core.Result, error)
 	t.Helper()
 	size := int64(8)
 	return m.Authorize(context.Background(), "http://127.0.0.1:4777", token, "", "", "", "", &size)
+}
+
+func TestFileRefusalsAreAlsoSandboxedAttachments(t *testing.T) {
+	m, _, _ := transferFixture(t)
+	for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodPatch} {
+		r := httptest.NewRequest(method, "http://127.0.0.1:4777/files/"+strings.Repeat("a", 64), nil)
+		w := httptest.NewRecorder()
+		m.Handler("", false).ServeHTTP(w, r)
+		if w.Code != http.StatusGone {
+			t.Fatalf("refusal setup: %d", w.Code)
+		}
+		if w.Header().Get("Content-Disposition") != "attachment" ||
+			w.Header().Get("Content-Security-Policy") != "sandbox; default-src 'none'" ||
+			w.Header().Get("X-Content-Type-Options") != "nosniff" {
+			t.Fatalf("%s refusal can render on the board origin: %v", method, w.Header())
+		}
+	}
 }
 
 func TestExpiryReleasesStagingDeterministically(t *testing.T) {
@@ -144,5 +162,55 @@ func TestPendingHandleDoesNotDiscloseUploadCapability(t *testing.T) {
 	handle := strings.TrimPrefix(file.URI, "dibs:pending:")
 	if handle == file.URI || len(handle) != 32 || strings.Contains(d.URL, handle) {
 		t.Fatal("pending handle carries upload secret")
+	}
+}
+
+func TestShutdownInvalidatesAnActiveUpload(t *testing.T) {
+	m, token, _ := transferFixture(t)
+	authorized, err := authorizeEight(t, m, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := authorized["upload"].(Descriptor)
+	reader, writer := io.Pipe()
+	defer func() { _ = reader.Close(); _ = writer.Close() }()
+	r := httptest.NewRequest(http.MethodPatch, d.URL, reader)
+	r.RemoteAddr = "127.0.0.1:12345"
+	r.Header.Set("Content-Type", "application/partial-upload")
+	r.Header.Set("Upload-Offset", "0")
+	r.Header.Set("Upload-Complete", "?0")
+	w := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() { m.Handler("", false).ServeHTTP(w, r); close(done) }()
+	if _, err := writer.Write([]byte("12")); err != nil {
+		t.Fatal(err)
+	} // Read proves the handler owns the ticket lock
+	m.cleanup(true)
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("active upload did not finish")
+	}
+	r = httptest.NewRequest(http.MethodPatch, d.URL, strings.NewReader("12345678"))
+	r.RemoteAddr = "127.0.0.1:12345"
+	r.Header.Set("Content-Type", "application/partial-upload")
+	r.Header.Set("Upload-Offset", "0")
+	r.Header.Set("Upload-Complete", "?1")
+	w = httptest.NewRecorder()
+	m.Handler("", false).ServeHTTP(w, r)
+	if w.Code != 410 {
+		t.Fatalf("shutdown ticket remained live: %d", w.Code)
+	}
+}
+
+func TestCopyUploadRefusesMissingStage(t *testing.T) {
+	m, _, _ := transferFixture(t)
+	r := httptest.NewRequest(http.MethodPatch, "/files/up/test", strings.NewReader("12"))
+	ticket := &ticket{deadline: m.now().Add(time.Hour)}
+	if err := m.copyUpload(httptest.NewRecorder(), r, ticket); err == nil {
+		t.Fatal("missing stage accepted")
 	}
 }
