@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	hostdisplay "github.com/agenxy/dibs/internal/hostname"
 )
 
 func TestMachineLabelsAreDerivedFromTheNewestVisibleMember(t *testing.T) {
@@ -22,7 +23,7 @@ func TestMachineLabelsAreDerivedFromTheNewestVisibleMember(t *testing.T) {
 		e.labelBoardHosts(board)
 		for _, row := range board["agents"].([]map[string]any) {
 			if row["id"] == "local" {
-				if row["host"] != thisHost() {
+				if row["host"] != hostdisplay.Name() {
 					t.Errorf("local alias display=%v", row["host"])
 				}
 			} else if row["host"] != want {

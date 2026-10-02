@@ -1371,7 +1371,11 @@ func (e *Engine) ownsHost(a *core.Agent) bool {
 	return strings.EqualFold(a.Agent.Host, thisHost())
 }
 
-// thisHost is the daemon's own hostname, resolved once. A failure to read it
+// thisHost is the legacy locality comparison's KERNEL hostname, resolved once.
+// Friendly display labels are separate (internal/hostname). Unknown-ID rows
+// still use this legacy evidence, which may become stale after a network rename.
+// Changing that locality rule is separate from changing the board's labels.
+// A failure to read it
 // yields "", which compares equal to nothing and therefore probes nothing
 // remote: the safe direction, since the cost of not probing is a slower verdict
 // while the cost of probing wrongly is closing a working agent.

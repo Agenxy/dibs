@@ -15,6 +15,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   delivery rules. Wrong event serials produce corrective hints without
   disclosing another agent's request.
 
+- **Stable friendly Mac labels.** The board and stdio bridge share the Mac's
+  HostName, LocalHostName or ComputerName, with a brief cache and bounded lookup.
+  A failed refresh retains the last good label. Host IDs and legacy kernel-name
+  comparisons remain unchanged; other platforms use their kernel hostname.
+
 - **Out-of-band, encrypted file transfer.** `upload`/`download` return short-lived
   file descriptors; resumable PATCH/HEAD moves bytes outside MCP and model context.
   `dibs put`/`dibs get` retry cut connections and verify hashes. Versioned DARE 2
