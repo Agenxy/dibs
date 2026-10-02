@@ -796,13 +796,14 @@ client input requests are emitted. `tasks/update` ignores unsolicited input;
 `tasks/cancel` acknowledges cooperative cancellation without stopping another
 agent's work. A sender asks the worker directly when work should stop.
 
-**Tools (48).** All take `token` except `register`, `resume`,
+**Tools (50).** All take `token` except `register`, `resume`,
 `hook_poll` and `guard_path` (the last two are lifecycle-hook surfaces and have
 no token to give: see SECURITY.md).
 
 The table below is the v1.0 core, and is kept because §12 is the frozen contract
 those tools were reviewed against. It is NOT the full surface: v1.1 added blobs
-(`put_blob`, `get_blob`), the human/hook surfaces (`hook_poll`, `guard_path`,
+(`put_blob`, `get_blob`; now `upload`, `download` for the out-of-band byte plane
+specified in SPEC-ATTACHMENTS.md A13), the human/hook surfaces (`hook_poll`, `guard_path`,
 `bind_session`, `broadcast`, `all_mail`, `board`), and v1.2 added the
 space surface (`open_space`, `join_space`, `read_space`, `post`,
 `announce`, `ack_announcement`, `leave_space`, `watch_space`, `admit`,
@@ -978,7 +979,7 @@ binaries (`dibd` and `dibs`) both CGO_ENABLED=0 and byte-reproducible.
 ledgered wake transitions; ephemeral + persistent agents; resume; awareness gate
 per activation; mailbox (full state machine, read_mail, op_id dedup,
 dormant-recipient semantics); claims (§9 matrix); bounded liveness with bounded
-restart grace; limits incl. state GC; MCP 2026-07-28 dual-version surface (48 tools);
+restart grace; limits incl. state GC; MCP 2026-07-28 dual-version surface (50 tools);
 local access secret + Origin validation; CLI (board/messages/log/verify/mcp-config);
 SSE web board; static binaries (`dibd` + `dibs`, no cgo, no runtime deps).
 

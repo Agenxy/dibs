@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/invites"
 	"github.com/agenxy/dibs/internal/mcp"
+	"github.com/agenxy/dibs/internal/transfer"
 	xport "github.com/agenxy/dibs/internal/transport"
 	"golang.org/x/crypto/acme/autocert"
 )
@@ -95,11 +97,13 @@ func resolveProxyPublic(o *daemonOpts) (publicConfig, error) {
 }
 
 type publicGate struct {
-	store   invites.Store
-	service *invites.Service
-	origin  string
-	mu      sync.Mutex
-	rates   map[string]*inviteBucket
+	transfers *transfer.Manager
+	proxy     bool
+	store     invites.Store
+	service   *invites.Service
+	origin    string
+	mu        sync.Mutex
+	rates     map[string]*inviteBucket
 }
 
 type inviteBucket struct {
@@ -144,6 +148,10 @@ func publicError(w http.ResponseWriter, status int, code, message, hint string) 
 func (g *publicGate) wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
+		if g.transfers != nil && strings.HasPrefix(r.URL.Path, transfer.Prefix) {
+			g.transfers.Handler(g.origin, g.proxy).ServeHTTP(w, r)
+			return
+		}
 		if r.URL.Path != "/mcp" || r.URL.RawQuery != "" || r.Method != http.MethodPost {
 			publicError(w, http.StatusForbidden, "E_INVITE_SCOPE", "the public listener opens only POST /mcp",
 				"use /mcp for agent coordination; local/human routes are not published here")
@@ -182,6 +190,7 @@ func (g *publicGate) wrap(next http.Handler) http.Handler {
 			IssuedBy: e.IssuedBy, IssuerCreated: e.IssuerCreated, IssuerClosed: e.IssuerClosed,
 		})
 		ctx = mcp.WithInviteBinding(ctx, func(id string) error { return g.store.Bind(e, id) })
+		ctx = transfer.WithInvitationEntry(ctx, e)
 		r = r.Clone(ctx)
 		// Invitation is the door, not the agent token. Never let the normal
 		// MCP bearer fallback reinterpret it as an agent recovery credential.
@@ -194,7 +203,7 @@ func (g *publicGate) wrap(next http.Handler) http.Handler {
 // startPublic binds a second listener; no private mux is ever handed to it.
 // The private/local/pinned endpoint and its credential remain unchanged.
 func startPublic(ctx context.Context, c publicConfig, dir string, eng *engine.Engine,
-	secret string, stop context.CancelFunc,
+	secret string, stop context.CancelFunc, files *transfer.Manager,
 ) (<-chan error, func(), error) {
 	failure := make(chan error, 1)
 	if c.URL == "" {
@@ -206,7 +215,11 @@ func startPublic(ctx context.Context, c publicConfig, dir string, eng *engine.En
 	}
 	s := mcp.New(eng)
 	s.SetTaskKey(secret)
-	g := &publicGate{store: invites.Store{Dir: dir}, origin: c.URL, rates: map[string]*inviteBucket{}}
+	s.SetTransfers(files, c.URL)
+	g := &publicGate{
+		store: invites.Store{Dir: dir}, origin: c.URL, rates: map[string]*inviteBucket{},
+		transfers: files, proxy: c.Host == "",
+	}
 	g.service = &invites.Service{Store: g.store, Engine: eng}
 	srv := &http.Server{
 		Addr: c.Addr, Handler: g.wrap(s), ReadHeaderTimeout: 5 * time.Second,
@@ -218,6 +231,7 @@ func startPublic(ctx context.Context, c publicConfig, dir string, eng *engine.En
 			Cache:  autocert.DirCache(filepath.Join(dir, "acme-cache")), HostPolicy: autocert.HostWhitelist(c.Host),
 		}
 		srv.TLSConfig = manager.TLSConfig()
+		srv.TLSConfig.MinVersion = tls.VersionTLS13
 	}
 	closeFn := func() {
 		shutdown, cancel := context.WithTimeout(context.Background(), 3*time.Second)

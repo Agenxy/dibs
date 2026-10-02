@@ -27,14 +27,23 @@ func (e *Engine) PutBlob(ctx context.Context, token string, data []byte, path, m
 	if e.blobs == nil {
 		return nil, errors.New("blob store not configured")
 	}
-	if _, err := e.authOnly(ctx, token); err != nil {
-		return nil, err // auth + rate + wake, all before staging
+	reserve := int64(len(data))
+	if path != "" {
+		reserve = int64(e.state.Limits.MaxBlobSize) // file size is rechecked by the store; never trust a path hint
 	}
+	identity, err := e.AuthorizeTransfer(ctx, token, "", &reserve)
+	if err != nil {
+		return nil, err // auth + rate + wake + bounded staging, all before bytes
+	}
+	defer func() {
+		cleanup, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = e.ReleaseTransfer(cleanup, identity.Reservation)
+	}()
 	maxSize := e.state.Limits.MaxBlobSize // immutable after init; safe off-loop
 	var (
 		id   string
 		size int64
-		err  error
 	)
 	if path != "" {
 		id, size, err = e.blobs.PutFile(path, maxSize)
@@ -48,23 +57,7 @@ func (e *Engine) PutBlob(ctx context.Context, token string, data []byte, path, m
 		return nil, err
 	}
 	defer e.blobs.Release(id) // end in-flight protection once registration settles
-	// Register ON the loop WITHOUT a second rate charge (pre-auth already
-	// admitted this call); apply directly rather than via the exec phases.
-	op := &core.Op{Kind: core.OpPutBlob, Token: token, Blob: id, Size: size, Mime: mime}
-	res, err := e.query(ctx, func() core.Result {
-		r, aerr := e.applyAndLedger(op, time.Now())
-		if aerr != nil {
-			return core.Result{"error": aerr}
-		}
-		return r
-	})
-	if err != nil {
-		return nil, err
-	}
-	if e2, ok := res["error"].(error); ok {
-		return nil, e2
-	}
-	return res, nil
+	return e.CommitTransfer(ctx, identity, id, size, mime)
 }
 
 // GetBlob returns a blob's content for an authorized caller (A6, A8). Access is
@@ -127,26 +120,6 @@ func mapBlobErr(err error) error {
 		return core.ErrBlobUnavailable
 	}
 	return err
-}
-
-// authOnly runs just the read-path auth+rate+wake phases and returns the agent
-// id, so byte staging can be gated without a full domain op.
-func (e *Engine) authOnly(ctx context.Context, token string) (string, error) {
-	res, err := e.query(ctx, func() core.Result {
-		l, errRes := e.authRead(token, time.Now())
-		if errRes != nil {
-			return errRes
-		}
-		return core.Result{"agent_id": l.ID}
-	})
-	if err != nil {
-		return "", err
-	}
-	if e2, ok := res["error"].(error); ok {
-		return "", e2
-	}
-	id, _ := res["agent_id"].(string)
-	return id, nil
 }
 
 // reconcileBlobs deletes on-disk blob/out files whose ids are no longer live in

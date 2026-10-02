@@ -43,6 +43,9 @@ agent-safe (agent-scoped or public, fine to run from any agent):
                            (generic tail for humans/scripts. Dibs itself never
                            wires this into a harness; agents use await_events)
   dibs board              public board: agents, slots, claims (--json)
+  dibs put <file>         store a file by resumable encrypted transfer (--mime,
+                           --json; DIBS_TOKEN and optional DIBS_INVITE)
+  dibs get <blob>         download and verify content (-o new-path, --json)
   dibs log [--follow]     public event stream (private bodies stay encrypted;
                            --json: one object per event)
   dibs verify [path]      verify ledger hash chain (--json)
@@ -126,7 +129,8 @@ human/admin (interactive terminal; the god-view needs the admin password):
   dibs invite <name>      issue one cloud agent's credential and host config
                            (--ttl 30d; invite list; invite revoke <name>)
 
-env: DIBS_ADDR (default 127.0.0.1:4777), DIBS_DIR, DIBS_TOKEN, DIBS_BOARD_PEER (a Supgang peer the bridge resolves),
+env: DIBS_ADDR (default 127.0.0.1:4777), DIBS_DIR, DIBS_TOKEN, DIBS_INVITE (public file transfer credential),
+     DIBS_BOARD_PEER (a Supgang peer the bridge resolves),
      DIBS_ADMIN=1 (bypass the terminal check: for humans scripting)`
 
 var version = build.Version
@@ -172,6 +176,8 @@ func main() {
 	}
 	var err error
 	switch os.Args[1] {
+	case "put", "get":
+		err = filesCmd(os.Args[1], os.Args[2:])
 	case "board":
 		err = board(os.Args[2:])
 	case "messages":
@@ -329,6 +335,7 @@ func parseFlags(fs *flag.FlagSet, args []string) error {
 // beside the switch it mirrors; admin_test.go already reads those case labels
 // out of this file, so a verb added there and forgotten here is visible.
 var commands = []string{
+	"put", "get",
 	"await", "probe", "watch", "monitor", "board", "log", "verify", "doctor",
 	"codex-hooks", "calibrate", "version", "help", "man", "completion", "configure", "messages",
 	"web", "admin", "invite",
@@ -354,6 +361,7 @@ var commands = []string{
 // import the package, which a _test.go file can do without putting a byte of
 // it in the shipped binary.
 var mcpTools = []string{
+	"upload", "download",
 	"ack", "ack_announcement", "admit", "adopt_agent", "all_mail", "announce",
 	"await_events", "broadcast", "check_in", "claim", "claim_coordinator",
 	"close_space", "declare", "events_since", "evict", "force_release",

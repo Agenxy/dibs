@@ -28,6 +28,8 @@ import (
 
 // Engine owns all state. Public methods are safe for concurrent use.
 type Engine struct {
+	transfers    map[uint64]transferReservation // ephemeral staging reservations, writer-owned
+	transferNext uint64
 	inviteClosed map[string]uint64 // derived from ledgered closes, rebuilt before ring trimming
 	ops          chan request
 	subs         chan subReq

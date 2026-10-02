@@ -140,6 +140,9 @@ func (s *State) agentBlobBytes(agent string) int64 {
 	return total
 }
 
+// AgentBlobBytes is the canonical per-owner quota metric for future ownership admission.
+func (s *State) AgentBlobBytes(agent string) int64 { return s.agentBlobBytes(agent) }
+
 // storeBytes is the total registry size: the global-cap metric (A9).
 func (s *State) storeBytes() int64 {
 	var total int64

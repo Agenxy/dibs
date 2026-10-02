@@ -235,6 +235,7 @@ func (d *diagnosis) run(verbose bool) error {
 	checkDesktopShadowsPlugin(bad)
 	checkCodexHookTrust(ok, warn)
 	checkPanelBuild(client, sec, ok, warn, d.prose)
+	checkPublicTLS(client, sec, ok, warn)
 	checkMatching(client, sec, ok, warn)
 	checkWakeRoutes(dir, boardOrNil(), attachedHosts(), ok, warn)
 	checkHubAdvertisement(dir, boardOrNil(), ok, warn)
