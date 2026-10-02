@@ -442,17 +442,57 @@ func TestABridgeRunsOneCommandPerAgentAtATime(t *testing.T) {
 // and does nothing of the kind for an agent that does not run in the app. The
 // surface is an ADDITIVE field, so an older bridge ignores it and keeps
 // queueing, which is exactly what it did before.
+func TestBridgeReportsAQueuedWakeBeforeCheckingAppVisibility(t *testing.T) {
+	rec := &recordingRun{ok: true}
+	b := bridgeUnderTest(t, rec)
+	checking, release := make(chan struct{}), make(chan struct{})
+	reports := make(chan engine.WakeResult, 1)
+	b.show = harnessenv.Shower{
+		Holds: func(string) bool { close(checking); <-release; return true },
+		Open:  func([]string) error { t.Error("held thread was opened"); return nil },
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var res engine.WakeResult
+		if err := json.NewDecoder(r.Body).Decode(&res); err != nil {
+			t.Error(err)
+		}
+		reports <- res
+		_, _ = w.Write([]byte(`{"accepted":true}`))
+	}))
+	b.origin, b.client = srv.URL, srv.Client()
+	done := make(chan struct{})
+	t.Cleanup(func() { close(release); <-done; srv.Close() })
+	go func() {
+		b.serve(context.Background(), engine.WakeRequest{ID: 99, Host: b.host, Agent: "worker", Harness: "codex", Thread: "fixture-thread", Surface: harnessenv.ChatGPTApp, MsgType: "question"})
+		close(done)
+	}()
+	select {
+	case <-checking:
+	case <-time.After(time.Second):
+		t.Fatal("setup: visibility probe was not entered")
+	}
+	select {
+	case res := <-reports:
+		if res.ID != 99 || !res.OK {
+			t.Fatalf("incorrect queue outcome: %+v", res)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("a successful queue was not reported while app visibility was blocked")
+	}
+}
+
 func TestTheBridgeOpensTheThreadInTheAppTheAgentRunsIn(t *testing.T) {
 	const thread = "0199a0b1-c2d3-4e5f-8a9b-0c1d2e3f4a5b"
 	run := func(t *testing.T, surface string, queued bool) [][]string {
 		t.Helper()
 		b := bridgeUnderTest(t, &recordingRun{ok: queued})
+		bridgeReportServer(t, b)
 		var opened [][]string
 		b.show = harnessenv.Shower{
 			Holds: func(string) bool { return false },
 			Open:  func(argv []string) error { opened = append(opened, argv); return nil },
 		}
-		b.execute(engine.WakeRequest{
+		b.serve(context.Background(), engine.WakeRequest{
 			ID: 1, Host: b.host, Agent: "worker", Harness: "codex", Thread: thread,
 			MsgType: "question", Surface: surface,
 		})
@@ -466,6 +506,7 @@ func TestTheBridgeOpensTheThreadInTheAppTheAgentRunsIn(t *testing.T) {
 	// it was born in the app.
 	t.Run("born in the app", func(t *testing.T) {
 		b := bridgeUnderTest(t, &recordingRun{ok: true})
+		bridgeReportServer(t, b)
 		home := t.TempDir()
 		t.Setenv("CODEX_HOME", home)
 		at := time.UnixMilli(0x01a0f45ecbf8)
@@ -483,7 +524,7 @@ func TestTheBridgeOpensTheThreadInTheAppTheAgentRunsIn(t *testing.T) {
 			Holds: func(string) bool { return false },
 			Open:  func(argv []string) error { opened = append(opened, argv); return nil },
 		}
-		b.execute(engine.WakeRequest{ID: 2, Host: b.host, Agent: "worker", Harness: "codex", Thread: born, MsgType: "question"})
+		b.serve(context.Background(), engine.WakeRequest{ID: 2, Host: b.host, Agent: "worker", Harness: "codex", Thread: born, MsgType: "question"})
 		if len(opened) != 1 {
 			t.Errorf("a dormant app thread with no bridge word was not opened in the app: %q", opened)
 		}
@@ -494,4 +535,13 @@ func TestTheBridgeOpensTheThreadInTheAppTheAgentRunsIn(t *testing.T) {
 	if got := run(t, harnessenv.ChatGPTApp, false); len(got) != 0 {
 		t.Errorf("the thread was opened although the queue failed: %q", got)
 	}
+}
+
+func bridgeReportServer(t *testing.T, b *wakeBridge) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"accepted":true}`))
+	}))
+	t.Cleanup(srv.Close)
+	b.origin, b.client = srv.URL, srv.Client()
 }

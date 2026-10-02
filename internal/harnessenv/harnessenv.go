@@ -105,7 +105,9 @@ func ChatGPTHolds(thread string) (running, holds bool) {
 	if thread == "" {
 		return false, false
 	}
-	out, err := exec.Command("/usr/bin/pgrep", "-f", chatGPTRoot).Output()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	out, err := appProbeOutput(ctx, "/usr/bin/pgrep", "-f", chatGPTRoot)
 	if err != nil {
 		return false, false // pgrep exits 1 when nothing matches: the app is not running
 	}
@@ -114,9 +116,12 @@ func ChatGPTHolds(thread string) (running, holds bool) {
 		if err != nil {
 			continue
 		}
-		//nolint:gosec // a fixed binary and a pid formatted from an int
-		files, err := exec.Command("/usr/sbin/lsof", "-p", strconv.Itoa(pid), "-Fn").Output()
+
+		files, err := appProbeOutput(ctx, "/usr/sbin/lsof", "-p", strconv.Itoa(pid), "-Fn")
 		if err != nil {
+			if ctx.Err() != nil {
+				return true, false // app seen, but whether it holds the thread is unknown
+			}
 			continue
 		}
 		if strings.Contains(string(files), thread) {
@@ -124,6 +129,12 @@ func ChatGPTHolds(thread string) (running, holds bool) {
 		}
 	}
 	return true, false
+}
+
+// Fixed binaries only. The seam lets a fixture block the real API's probe
+// without reaching the operator's app or replacing the timeout policy.
+var appProbeOutput = func(ctx context.Context, binary string, args ...string) ([]byte, error) {
+	return exec.CommandContext(ctx, binary, args...).Output() //nolint:gosec // fixed probe argv above
 }
 
 // ChatGPTOpenArgv is the command that asks the ChatGPT app to open a thread:
