@@ -136,7 +136,11 @@ func Banner(title, subtitle, body string) error {
 // BannerWithReceipt reports posting when the helper can confirm OS acceptance.
 func BannerWithReceipt(title, subtitle, body string, receipt Receipt) error {
 	if goos == "linux" {
-		return linuxBanner(title, subtitle, body)
+		err := linuxBanner(title, subtitle, body)
+		if err == nil && receipt != nil {
+			receipt("posted")
+		}
+		return err
 	}
 	if h := helper(); h != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -162,7 +166,13 @@ func AskWithReceipt(title, body string, receipt Receipt, buttons ...string) (str
 		return "", errors.New("an alert takes one to three buttons; use Pick for more")
 	}
 	if goos == "linux" {
-		return linuxAsk(title, body, buttons)
+		pressed, err := linuxAsk(title, body, buttons)
+		// notify-send waits for dismissal or an action. Success confirms the
+		// OS accepted posting, but supplies no receipt while it is pending.
+		if err == nil && receipt != nil {
+			receipt("posted")
+		}
+		return pressed, err
 	}
 	// The bundle puts the buttons ON the banner, which is the whole reason it
 	// exists: the fallback has to interrupt with a modal alert to ask the same
@@ -753,9 +763,19 @@ func askInAWindowWithReceipt(helperPath, title, body string, buttons []string, r
 		"asuser", strconv.Itoa(os.Getuid()), helperPath, "--ask", "--out", answer,
 		title, body,
 	}, buttons...)
+	dismissed := false
+	observed := receipt
+	if receipt != nil {
+		observed = func(state string) {
+			if state == "dismissed" {
+				dismissed = true
+			}
+			receipt(state)
+		}
+	}
 	// #nosec G204 -- launchctl is a fixed path, helperPath is resolved beside
 	// this binary, and the rest is argv data the helper never interprets.
-	if _, err := outputWithReceipt(exec.CommandContext(ctx, "/bin/launchctl", argv...), receipt); err != nil {
+	if _, err := outputWithReceipt(exec.CommandContext(ctx, "/bin/launchctl", argv...), observed); err != nil {
 		// A dismissed window exits non-zero, which is an answer.
 		var ee *exec.ExitError
 		if !errors.As(err, &ee) {
@@ -776,7 +796,11 @@ func askInAWindowWithReceipt(helperPath, title, body string, buttons []string, r
 	// writes nothing and exits non-zero; a helper that never drew writes
 	// nothing and exits non-zero. Both are "nobody pressed anything", and the
 	// caller needs to know that rather than infer patience.
-	return answerFrom(answer)
+	pressed, err := answerFrom(answer)
+	if dismissed && errors.Is(err, ErrNoAnswer) {
+		return "", nil
+	}
+	return pressed, err
 }
 
 // answerFrom reads the button the helper recorded, or reports that nobody

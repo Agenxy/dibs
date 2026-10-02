@@ -32,10 +32,11 @@ func newServerWithEngine(t *testing.T) (*httptest.Server, *engine.Engine, *Serve
 	}
 	eng := engine.New(st, led, nil)
 	ctx, cancel := context.WithCancel(context.Background())
-	go eng.Run(ctx)
+	done := make(chan struct{})
+	go func() { eng.Run(ctx); close(done) }()
 	s := New(eng)
 	srv := httptest.NewServer(s)
-	t.Cleanup(func() { srv.Close(); cancel(); _ = led.Close() })
+	t.Cleanup(func() { srv.Close(); cancel(); <-done; _ = led.Close() })
 	return srv, eng, s
 }
 

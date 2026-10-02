@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -147,5 +148,38 @@ func TestFailedHumanDesktopIsVisibleToTheMCPCaller(t *testing.T) {
 		case <-timer.C:
 			t.Fatal("failure was not reported")
 		}
+	}
+}
+
+func TestFullHumanRelayFallsBackWithoutBlockingMCP(t *testing.T) {
+	srv, eng, _ := newServerWithEngine(t)
+	eng.SetHumanNotifier(desktopFixture{available: false})
+	_, detach := eng.AttachHumanRelay()
+	defer detach()
+	reg := toolCall(t, srv, "register", map[string]any{"name": "sender", "nonce": "full-relay-fixture"})
+	token, ok := reg["token"].(string)
+	if !ok {
+		t.Fatalf("register: %v", reg)
+	}
+	for i := range 64 {
+		if i%16 == 0 {
+			worker := "queue-worker-" + strconv.Itoa(i/16)
+			reg := toolCall(t, srv, "register", map[string]any{"name": worker, "nonce": worker})
+			var ok bool
+			token, ok = reg["token"].(string)
+			if !ok {
+				t.Fatalf("worker setup: %v", reg)
+			}
+		}
+		res, err := eng.Do(context.Background(), &core.Op{
+			Kind: core.OpSendMessage, Token: token,
+			To: "human", MsgType: core.MsgNotify, Body: "fill queue fixture"})
+		if err != nil || res["error"] != nil || res["human_route"] != "relay" {
+			t.Fatalf("queue setup %d failed: %v %v", i, res, err)
+		}
+	}
+	sent := toolCall(t, srv, "send", map[string]any{"token": token, "to": "human", "type": "question", "body": "overflow fixture"})
+	if sent["human_route"] != "none" || sent["human_relay_count"] != float64(0) {
+		t.Fatalf("full relay was reported as a working route: %v", sent)
 	}
 }

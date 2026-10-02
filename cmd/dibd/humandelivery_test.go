@@ -23,6 +23,9 @@ func TestHumanReceiptRequiresRelayAuthenticationAndHumanMail(t *testing.T) {
 	headers := map[string]string{"Authorization": "Bearer " + session}
 	for _, state := range []string{"posted", "dismissed", "failed"} {
 		body["state"] = state
+		if state == "failed" {
+			body["error"] = "fixture relay could not post"
+		}
 		if code, out := h.post("/api/human/delivery", headers, body); code != http.StatusOK {
 			t.Fatalf("receipt: %d %v", code, out)
 		}

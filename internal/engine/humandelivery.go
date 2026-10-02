@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -26,8 +27,10 @@ type humanDelivery struct {
 }
 
 type humanReceipt struct {
-	State string `json:"state"`
-	Error string `json:"error,omitempty"`
+	State     string `json:"state"`
+	Error     string `json:"error,omitempty"`
+	Posted    bool   `json:"posted,omitempty"`
+	Dismissed bool   `json:"dismissed,omitempty"`
 }
 
 type humanDeliveries struct {
@@ -129,13 +132,25 @@ func (e *Engine) recordHumanDelivery(serial uint64, source, state, failure strin
 	if d.Receipts == nil {
 		d.Receipts = map[string]humanReceipt{}
 	}
-	d.Receipts[source] = humanReceipt{State: state, Error: failure}
+	r := d.Receipts[source]
+	r.State, r.Error = state, failure
+	r.Posted = r.Posted || state == "posted"
+	r.Dismissed = r.Dismissed || state == "dismissed"
+	d.Receipts[source] = r
 	// Each source's last receipt is retained. A failure on one attached Mac
 	// must not erase affirmative posting evidence from another.
 	d.State, d.Error = "queued", ""
 	for _, r := range d.Receipts {
-		if deliveryRank(r.State) > deliveryRank(d.State) {
-			d.State, d.Error = r.State, r.Error
+		confirmed := r.State
+		if r.Posted && deliveryRank(confirmed) < deliveryRank("posted") {
+			confirmed = "posted"
+		}
+		if r.Dismissed {
+			confirmed = "dismissed"
+		}
+		if deliveryRank(confirmed) > deliveryRank(d.State) ||
+			(confirmed == d.State && r.Error < d.Error) {
+			d.State, d.Error = confirmed, r.Error
 		}
 	}
 	if e.humanDelivery.bySerial == nil {
@@ -169,6 +184,9 @@ func (e *Engine) ReportHumanDelivery(ctx context.Context, serial uint64, source,
 	if len(failure) > 4096 {
 		return fmt.Errorf("notification error exceeds 4096 bytes")
 	}
+	if state == "failed" && strings.TrimSpace(failure) == "" {
+		return fmt.Errorf("a failed receipt needs its error")
+	}
 	var invalid error
 	_, err := e.query(ctx, func() core.Result {
 		m := e.state.Messages[serial]
@@ -190,6 +208,9 @@ func (e *Engine) ReportHumanDelivery(ctx context.Context, serial uint64, source,
 	})
 	if err != nil {
 		return err
+	}
+	if invalid == nil && state == "failed" {
+		go e.report(fmt.Errorf("human relay notification failed: %s", failure))
 	}
 	return invalid
 }

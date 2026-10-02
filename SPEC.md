@@ -892,7 +892,8 @@ the send result includes `human_route` (`relay`, `desktop`, `none`) and
 removed relays do not count; no accepted relay falls back to the local desktop
 or `none`, with a corrective hint. This never waits for a person or blocks send.
 `read_mail` includes derived `human_delivery`: route, aggregate state, and each
-source's last receipt/error. `posted` means the OS accepted posting, not that a
+source's last receipt/error and retained posting/dismissal evidence. `posted` means
+the OS accepted posting, not that a
 banner appeared or the person saw it; `dismissed` requires explicit dismissal
 or defer evidence, not a timeout. Queued/pending supplies no posting proof.
 Posting/dismissal on one source outranks failure on another; a real human

@@ -235,7 +235,7 @@ if args.first == "--ask" {
     let pressed = alert.runModal()
     let index = pressed.rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
     let buttons = Array(rest.dropFirst(2)).reversed().map { $0 }
-    guard index >= 0 && index < buttons.count else { exit(1) }
+    guard index >= 0 && index < buttons.count else { receipt("dismissed"); exit(1) }
     // Written to a FILE as well as stdout.
     //
     // The daemon launches this through `launchctl asuser`, which is what gives

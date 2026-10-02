@@ -268,7 +268,7 @@ func (e *Engine) reportNotifyFailure(err error) {
 	defer cancel()
 	e.ReportFault(ctx, Fault{
 		Kind: "notify-failed",
-		What: "A notification to the human could not be delivered: " + err.Error(),
+		What: "A notification to the human failed: " + err.Error(),
 		Remedy: "The message is still on the board and can be read there. " +
 			"`dibs doctor` says whether notifications can reach this machine at all.",
 	})
