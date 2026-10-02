@@ -254,7 +254,18 @@ stay cheap; bytes come solely from an explicit `get_blob`.
 supports (response-only; there is no unsolicited media push, and none is needed):
 
 - `image/*` → `{type:"image", data:<base64>, mimeType}`; `audio/*` →
-  `{type:"audio", …}`; else → `{type:"resource", resource:{blob:<base64>, mimeType}}`.
+  `{type:"audio", …}`. Other types use embedded resources with the stable contents
+  URI `dibs://blob/<sha256:hex>`. Valid UTF-8 `text/*`, `application/json` and
+  `+json` types → `{type:"resource", resource:{uri, text, mimeType}}`; all others,
+  including incorrectly labelled non-UTF-8 text, →
+  `{type:"resource", resource:{uri, blob:<base64>, mimeType}}`. MIME matching is
+  case-insensitive; metadata preserves the sender's spelling. Missing MIME
+  defaults to `application/octet-stream`. Text conversion never changes bytes.
+  These URIs identify **already-embedded content**, not a `resources/read`
+  endpoint. To fetch again, use access-scoped `get_blob`; the URI grants no
+  additional authority. The original binary resource shape omitted the required
+  `uri`, causing strict MCP clients to reject successful inline fetches; both
+  protocol-version schemas now guard actual `tools/call` output.
 - **Inline vs materialize (context hygiene):** inlining a large blob as base64 would
   bloat the agent's context. Default `as:"auto"` inlines only small media (≤ 256 KiB);
   otherwise it **materializes** the decrypted bytes to a path under `~/.dibs/out/` and

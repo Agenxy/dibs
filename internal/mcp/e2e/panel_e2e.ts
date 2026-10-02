@@ -32,6 +32,7 @@ import { chromium, type Browser } from "playwright"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { checkBlobContent } from "./blob_content.ts"
 
 const HERE = import.meta.dir
 const DAEMON = `127.0.0.1:${process.env.PORT ?? 4931}`
@@ -1125,6 +1126,9 @@ try {
   }
 
   check("no uncaught errors in the page", consoleErrors.length === 0, consoleErrors.slice(0, 2).join(" | "))
+  const blobChecks = await checkBlobContent(`http://${DAEMON}/mcp`, secret)
+  check("inline attachments satisfy both MCP content schemas through tools/call", blobChecks > 100,
+    `${blobChecks} schema, provenance and byte-integrity checks`)
 } catch (err) {
   failures++
   console.log("  \x1b[31m✗\x1b[0m threw:", err)
