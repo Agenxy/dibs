@@ -312,7 +312,8 @@ func (e *Engine) pushNoticeAs(who, text string, serial, msg uint64, blocking boo
 	}
 }
 
-// takeNotices returns everything an agent has outstanding, for the wake path.
+// takeNotices returns everything an agent has outstanding, without consuming
+// or throttling the information. pendingNotices and check_in use this raw view.
 //
 // It used to DELETE on read, and the read path is hook_poll, which is
 // token-less, because a harness lifecycle hook has no token. So any holder of
@@ -320,16 +321,14 @@ func (e *Engine) pushNoticeAs(who, text string, serial, msg uint64, blocking boo
 // one-shot notices: the peer was never told it had been admitted, promoted or
 // evicted, and nothing anywhere recorded that the notice had been taken.
 //
-// The first fix throttled delivery instead of destroying it, which was not a
-// fix. Any timeout is shared state mutated by a caller the daemon cannot
-// identify, so a peer polling faster than the window wins every eligibility
-// point and starves the victim indefinitely: a slower leak, not a closed one.
-//
-// So this path now mutates NOTHING. Reading is free, repeatable and harmless,
-// which is the only property that makes a token-less endpoint safe to expose:
-// there is no state for a peer to spend. What bounds repetition is the agent's
-// own check_in, which delivers these (see pendingNotices) and clears them,
-// and check_in is already required once per activation.
+// Throttling this raw view has the same failure: a peer can suppress information
+// before the agent's authenticated checkpoint reads it. This read therefore
+// mutates nothing. Presentation timing lives separately in dueNoticeLines:
+// socket delivery followed by actual turn activity, or a delivering hook,
+// bounds duplicate nudges while check_in still delivers the complete queue.
+// A holder of the session capability can suppress a token-less nudge; it cannot
+// spend the notice itself. Only the agent's authenticated check_in or action
+// on the particular message clears that information.
 func (e *Engine) takeNotices(agent string) []notice {
 	all := e.notices[agent]
 	if len(all) == 0 {

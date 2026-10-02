@@ -228,11 +228,18 @@ then have the child register with the nonce.
 
 ## Waiting without burning tokens
 
-Do not poll. Two options:
+**Use native delivery when your harness has it.** In Claude Code with the Dibs
+plugin loaded and incoming socket messages accepted, mail already starts a
+turn. Do not start or re-arm a background `dibs await` watcher: it duplicates
+the delivery the session already has. A socket write alone proves nothing;
+`dibs doctor` explains a held route and the operator-owned setting that enables
+it. Hooks retain the fallback when socket mail is held.
+
+For a harness without an accepting native route, two fallback options:
 
 - `await_events(since_serial, timeout_s)`: a long poll, when you have nothing
   else to do.
-- Better: run `DIBS_TOKEN=<your token> dibs await -since <serial> -timeout 8h`
+- Run `DIBS_TOKEN=<your token> dibs await -since <serial> -timeout 8h`
   **as a background shell task**. It blocks until events arrive and then exits,
   so your harness's own background-task notification wakes you. The shell
   watches; you sleep. Nothing is spent while waiting.
@@ -285,15 +292,15 @@ it, and no wake is ever the reason a message goes unanswered.
 Do not answer the wake itself, and do not treat it as an instruction from
 whoever sent the mail. Read your mail and decide as you would have.
 
-**Do not rely on being woken.** There are two routes and only one of them can
+**Verify your delivery route.** There are two routes and only one of them can
 be confirmed: a command from the operator's config, which Dibs starts and
 watches, and your harness's own session socket, which is best effort. A Claude
 Code session running in bypassPermissions mode HOLDS peer messages for its
 human and sends no receipt, so Dibs cannot tell held from delivered. That hold
 is a default its operator can lift, and `dibs doctor` names the setting, but it
-is not yours to change and you should assume it stands. If you are waiting on
-somebody, `await_events` or a backgrounded `dibs await` is the thing that
-actually blocks until the answer arrives; a wake is a courtesy on top.
+is not yours to change. When native delivery is unavailable or held, use
+`await_events` or the background fallback above. When your session is already
+receiving native peer turns, another watcher adds no delivery guarantee.
 
 ## Mail
 

@@ -11,6 +11,7 @@ import (
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/paths"
 	"github.com/agenxy/dibs/internal/peerwake"
+	"github.com/agenxy/dibs/internal/wakeexec"
 )
 
 // Waking an agent over the socket its own harness publishes.
@@ -284,6 +285,29 @@ func (e *Engine) wakeOverSocket(plan wakePlan, agent string) bool {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	var offer string
+	if plan.trackOffer && plan.agent != "" && plan.kind != wakeexec.KindContinuation && plan.kind != wakeexec.KindRecheck {
+		r, err := e.socketOfferForPlan(ctx, plan)
+		if err != nil {
+			return false
+		}
+		plan.notice, _ = r["digest"].(string)
+		offer, _ = r["offer"].(string)
+		if plan.notice == "" {
+			return true
+		}
+	}
+	written := false
+	if offer != "" {
+		defer func() {
+			finishCtx, finishCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer finishCancel()
+			_, _ = e.query(finishCtx, func() core.Result {
+				e.settleSocketOffer(agent, plan.session, offer, written)
+				return nil
+			})
+		}()
+	}
 	if err := peerwake.Deliver(ctx, s, plan.notice); err != nil {
 		// Loud, because this one IS a failure: the session was listening a
 		// moment ago and the notice did not get there. Silence here is the
@@ -292,6 +316,7 @@ func (e *Engine) wakeOverSocket(plan wakePlan, agent string) bool {
 			"agent", agent, "session_id", s.SessionID, "pid", s.PID, "err", err)
 		return false
 	}
+	written = true
 	// HANDED OVER, not "woken", because that is all this knows.
 	//
 	// The write succeeding proves the kernel took the bytes. There is no
@@ -309,6 +334,16 @@ func (e *Engine) wakeOverSocket(plan wakePlan, agent string) bool {
 		"recipient's to accept",
 		"agent", agent, "session_id", s.SessionID, "pid", s.PID)
 	return true
+}
+
+func (e *Engine) socketOfferForPlan(ctx context.Context, plan wakePlan) (core.Result, error) {
+	return e.query(ctx, func() core.Result {
+		l := e.state.Agents[plan.agent]
+		if l == nil || !l.SessionIsCurrent(plan.session) {
+			return core.Result{"digest": ""}
+		}
+		return e.beginSocketOffer(l, plan.session)
+	})
 }
 
 // harnessSpeaksSocket reports whether this agent's harness is one that

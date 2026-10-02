@@ -105,13 +105,29 @@ type selfWaker struct {
 	// refreshFn asks the daemon for current unread state before EVERY write,
 	// including timers, retries and upgrade handoffs. Nil in transport tests.
 	refreshFn func(notice string) (string, error)
+	// Additive daemon capability: refresh plus an attempt receipt. The
+	// receipt reports a write, not acceptance; later turn activity confirms it.
+	offerFn func(notice string) (string, func(bool), error)
 }
 
 var errWakeEmpty = errors.New("the fresh wake digest is empty")
 
 // send performs this waker's write: the session socket, or a test's stand-in.
 func (w *selfWaker) send(notice string) error {
-	if w.refreshFn != nil {
+	written := false
+	if w.offerFn != nil {
+		fresh, finish, err := w.offerFn(notice)
+		if finish != nil {
+			defer func() { finish(written) }()
+		}
+		if err != nil {
+			return err
+		}
+		notice = fresh
+		if notice == "" {
+			return errWakeEmpty
+		}
+	} else if w.refreshFn != nil {
 		var err error
 		notice, err = w.refreshFn(notice)
 		if err != nil {
@@ -122,9 +138,13 @@ func (w *selfWaker) send(notice string) error {
 		}
 	}
 	if w.deliverFn != nil {
-		return w.deliverFn(notice)
+		err := w.deliverFn(notice)
+		written = err == nil
+		return err
 	}
-	return w.deliver(notice)
+	err := w.deliver(notice)
+	written = err == nil
+	return err
 }
 
 // selfWakeCooldown is the shortest gap between two notices in one session.

@@ -41,6 +41,22 @@ func (e *Engine) send(ctx context.Context, req request) (core.Result, error) {
 // ephemeral touch, durable checkpoint coalescing. Must run inside the loop.
 // Returns nil (with an error result set) if the caller is not authenticated.
 func (e *Engine) authRead(token string, now time.Time) (*core.Agent, core.Result) {
+	l, refused := e.authObserve(token, now)
+	if refused != nil {
+		return nil, refused
+	}
+	e.wakeIfSleeping(l, now)
+	e.seen[l.ID] = now
+	e.confirmSocketOffer(l, now)
+	e.touchDurable(l, now)
+	return l, nil
+}
+
+// authObserve admits background observation, not a turn. Event polling and
+// subscriptions have identical authentication and rate limits, but neither
+// wakes a sleeping row nor refreshes the model's activity or checkpoint clock.
+// Otherwise a watcher after Stop makes an idle session permanently busy.
+func (e *Engine) authObserve(token string, now time.Time) (*core.Agent, core.Result) {
 	l := e.state.AgentByToken(token)
 	if l == nil {
 		return nil, core.Result{"error": core.ErrBadToken}
@@ -48,9 +64,6 @@ func (e *Engine) authRead(token string, now time.Time) (*core.Agent, core.Result
 	if !e.allow(l.ID, now) {
 		return nil, core.Result{"error": core.ErrRateLimited}
 	}
-	e.wakeIfSleeping(l, now)
-	e.seen[l.ID] = now
-	e.touchDurable(l, now)
 	return l, nil
 }
 
@@ -74,12 +87,9 @@ func (e *Engine) SubscribeInfo(ctx context.Context, token string) (agentID strin
 		// check local ones have. The rate limit still applies; the liveness
 		// stamps and the wake-if-sleeping do not, since the agent did nothing.
 		// Round nine of the pre-release review, through that suite.
-		l := e.state.AgentByToken(token)
-		if l == nil {
-			return core.Result{"error": core.ErrBadToken}
-		}
-		if !e.allow(l.ID, now) {
-			return core.Result{"error": core.ErrRateLimited}
+		l, refused := e.authObserve(token, now)
+		if refused != nil {
+			return refused
 		}
 		return core.Result{"agent_id": l.ID, "since": e.state.Serial}
 	})
@@ -107,7 +117,7 @@ func (e *Engine) EventsSince(ctx context.Context, token string, serial uint64, a
 		now := time.Now()
 		agent := ""
 		if !all {
-			l, errRes := e.authRead(token, now)
+			l, errRes := e.authObserve(token, now)
 			if errRes != nil {
 				return errRes
 			}
@@ -131,7 +141,7 @@ func (e *Engine) EventsSince(ctx context.Context, token string, serial uint64, a
 // EventsSince, and it marks nothing delivered.
 func (e *Engine) RecentEvents(ctx context.Context, token string, n int) (core.Result, error) {
 	return e.query(ctx, func() core.Result {
-		l, errRes := e.authRead(token, time.Now())
+		l, errRes := e.authObserve(token, time.Now())
 		if errRes != nil {
 			return errRes
 		}
@@ -291,7 +301,7 @@ func (e *Engine) WakeDigestFor(ctx context.Context, token, from, kind string) (s
 		if l == nil {
 			return core.Result{"error": core.ErrBadToken}
 		}
-		return core.Result{"digest": e.socketNotice(l, from, kind)}
+		return core.Result{"digest": e.wakeDigest(l, false)}
 	})
 	if err != nil {
 		return "", err
@@ -350,7 +360,7 @@ func (e *Engine) AwaitEvents(
 		now := time.Now()
 		agent := ""
 		if !all {
-			l, errRes := e.authRead(token, now)
+			l, errRes := e.authObserve(token, now)
 			if errRes != nil {
 				return errRes
 			}

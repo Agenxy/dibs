@@ -131,6 +131,7 @@ func (e *Engine) wakeStatusOf(agent string) string {
 // so there is no copy: both call this.
 func (e *Engine) runWakeAndReport(cmd wakePlan, agent string) bool {
 	started := time.Now()
+	cmd.trackOffer = true
 	if cmd.agent != "" {
 		stamp := e.wakeStamp(agent)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

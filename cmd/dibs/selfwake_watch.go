@@ -73,6 +73,7 @@ type inboxWatcher struct {
 	// self-wake. Found by the pre-release review, round fifty-four.
 	streams          map[string]*inboxStream
 	refreshSupported bool // once advertised, never fall back to captured text
+	offerSupported   bool // additive; old dormant bridges cannot assert receipt support
 	// reconnect is the pause between a stream ending and the next attempt;
 	// zero means reconnectAfter. A field, set before start, so a test can
 	// shorten it without writing a global under a running goroutine.
@@ -111,6 +112,7 @@ func (iw *inboxWatcher) sharedWaker() *selfWaker {
 		iw.waker = newSelfWaker()
 		if iw.waker != nil {
 			iw.waker.refreshFn = iw.freshNotice
+			iw.waker.offerFn = iw.offerNotice
 		}
 		if iw.waker != nil && iw.cooldown > 0 {
 			iw.waker.cooldown = iw.cooldown
@@ -418,6 +420,11 @@ func (iw *inboxWatcher) onFrame(st *inboxStream, msg streamFrame, waker *selfWak
 		return false
 	}
 	line := selfWakeLine(msg.Params.Meta)
+	if offers, _ := msg.Params.Meta[mcp.SocketOfferMetaKey].(bool); offers {
+		iw.mu.Lock()
+		iw.offerSupported = true
+		iw.mu.Unlock()
+	}
 	refresh, _ := msg.Params.Meta[mcp.DigestRefreshMetaKey].(bool)
 	if refresh {
 		iw.markRefresh(st.key)
