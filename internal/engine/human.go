@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"os"
 	"os/user"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/humanask"
 	"github.com/agenxy/dibs/internal/notify"
 )
 
@@ -509,223 +509,38 @@ func (e *Engine) refuseApprovingOwnAdoption(actor *core.Agent, op *core.Op) erro
 	}
 }
 
-// tellTheHuman raises a desktop notification when a message lands for the
-// person, and offers the buttons a `request` is asking for.
+// tellTheHuman raises a desktop notification on THIS machine when a message
+// lands for the person, and records what they answer.
 //
 // The human is the one participant who is not in a loop. Every other agent
 // learns about mail from a lifecycle hook or from the result of a call it was
-// making anyway; the person learns when they next look at the board, which on a
-// fleet that runs for days means "eventually, or not". A request addressed to
-// them then sits unanswered while its sender's deadline runs out.
+// making anyway; the person learns when they next look at the board, which on
+// a fleet that runs for days means "eventually, or not".
 //
 // Off the writer loop, deliberately. An alert waits for a human to press a
 // button, and the single-writer goroutine holding still for two minutes would
-// stop the whole board while one person decides.
-//
-// Nothing here is content beyond what the sender wrote to this human, which
-// they are entitled to read: this is their own mailbox arriving by another
-// route, not a broadcast of somebody else's traffic.
+// stop the whole board while one person decides. The asking itself is
+// humanask's, shared with the human relay so a message reads the same on
+// whichever screen shows it.
 func (e *Engine) tellTheHuman(from, who, msgType, body string, serial uint64, choices []string, grant, adopt string) {
 	if !notify.Available() {
 		return
 	}
-	// Logged because this path has no other evidence it ran. It happens on a
-	// goroutine, off the writer loop, and its whole output is a banner on
-	// somebody's screen: if it silently does nothing there is nothing to read.
+	// Logged because this path has no other evidence it ran.
 	slog.Info("notifying the human", "from", from, "type", msgType, "msg", serial)
-	title := "Dibs · " + from
-	switch msgType {
-	case core.MsgRequest:
-		// A request is literally "approve or deny", so ask it that way. An
-		// alert rather than a banner because a banner cannot carry buttons
-		// without an application bundle, which Dibs does not yet ship.
-		go e.approveForHuman(from, who, body, serial, grant, adopt)
-	case core.MsgQuestion:
-		// Answerable, not merely announced. A question that arrives as a banner
-		// is a notification that the board has something on it, which is what
-		// the board already was: the person still has to go and open it, and the
-		// asking agent waits out its deadline while they decide whether to.
-		go e.answerForHuman(from, who, body, serial, choices)
-	case core.MsgHandoff:
-		e.report(notify.Banner(title, "hands work to you", oneLine(body)))
-	default:
-		e.report(notify.Banner(title, "says", oneLine(body)))
-	}
-}
-
-// approveForHuman puts a request to the person and records what they said, as an
-// ordinary response from their own agent: the sender cannot tell it came from a
-// dialog rather than a tool call, which is the point. Everything the human does
-// on this board goes through the same ops an agent sends.
-func (e *Engine) approveForHuman(from, who, body string, serial uint64, grant, adopt string) {
-	// The TITLE is the daemon's sentence, not the sender's.
-	//
-	// It is the only line on the notification that states the EFFECT of pressing
-	// Approve, so it must come from the typed field rather than from the prose
-	// beside it. An agent writes the body; if the body were the only thing the
-	// person read, a request that says "just need to check something" could
-	// carry grant: coordinator and be approved by somebody who never saw the
-	// word. The body is still shown, as the reason, underneath.
-	//
-	// Every effect, not the first one. This was a switch, so a request carrying
-	// BOTH a grant and an adoption rendered as "make X coordinator?" and moved
-	// a mailbox on the same yes. core.Admit now refuses that combination, and
-	// this no longer relies on it: if a second effect ever reaches here, the
-	// person reads it rather than approving it blind. A prompt that can only
-	// describe one of two things is the wrong place to put the assumption that
-	// there is only ever one.
-	title := "Dibs · " + from + " requests"
-	switch {
-	case grant != "" && adopt != "":
-		title = "Dibs · make " + from + " " + grant + " AND give it " + adopt + "'s mail?"
-	case grant == core.PermRelocate:
-		// A permission, not a role, so not "make X relocate?".
-		title = "Dibs · let " + from + " move agents to other environments?"
-	case grant != "":
-		title = "Dibs · make " + from + " " + grant + "?"
-	case adopt != "":
-		title = "Dibs · give " + adopt + "'s mail to " + from + "?"
-	}
-	choice, err := notify.Ask(title, said(who, body), "Deny", "Later", "Approve")
-	if errors.Is(err, notify.ErrCannotNotify) {
-		// Nobody saw it. Say so, rather than letting the asker time out against a
-		// notification that never appeared.
-		e.reportNotifyFailure(err)
+	a, err := humanask.Ask(humanask.Message{
+		Type: msgType, From: from, Who: who, Body: body,
+		Choices: choices, Grant: grant, Adopt: adopt, Serial: serial,
+	})
+	if err != nil {
+		// Nobody saw it. Say so, rather than letting the asker time out
+		// against a notification that never appeared.
+		e.report(err)
 		return
 	}
-	if err != nil || choice == "" || choice == "Later" {
-		// Dismissed or deferred is not an answer, and inventing one would be
-		// answering on their behalf. The request stays open on the board.
-		//
-		// Said out loud when the ASK itself came back empty, because that is the
-		// case where the operator may never have been shown anything, and until
-		// this it was indistinguishable from a deliberate "not now". An agent
-		// then waited out its deadline against a question nobody saw.
-		if err != nil {
-			slog.Warn("the human was asked and nothing came back",
-				"from", from, "msg", serial, "err", err)
-		}
-		return
+	if a.Disposition != "" {
+		e.respondAsHuman(serial, a.Disposition, a.Body)
 	}
-	disposition := "deny"
-	if choice == "Approve" {
-		disposition = "approve"
-	}
-	e.respondAsHuman(serial, disposition, "answered from the desktop notification")
-}
-
-// answerForHuman puts a question to the person and records their answer.
-//
-// Two shapes, because a question has two. When the asker enumerated the answers
-// they become the buttons, and answering is one press with nothing to type and
-// no window to find. When it did not, the notification offers to open a box,
-// and only then does anything take the screen.
-//
-// That order is the whole design. The alternative is to raise the text box on
-// arrival, which is a coordination service deciding that its optional question
-// outranks whatever the person was doing: the same reason Ask goes through the
-// bundle rather than a modal alert. Nothing here steals focus until the human
-// has pressed something asking it to.
-func (e *Engine) answerForHuman(from, who, body string, serial uint64, choices []string) {
-	title := "Dibs · " + from + " asks"
-	line := said(who, body)
-	plan := planAnswerFor(choices, notify.CanPrompt())
-
-	pressed, err := notify.Ask(title, line, plan.Buttons...)
-	if errors.Is(err, notify.ErrCannotNotify) {
-		e.reportNotifyFailure(err)
-		return
-	}
-	if err != nil || pressed == "" || pressed == deferButton {
-		// Dismissed or deferred is not an answer, and inventing one would be
-		// answering on their behalf. The question stays open on the board.
-		return
-	}
-	if plan.Then == "" {
-		e.respondAsHuman(serial, "answer", pressed) // the press WAS the answer
-		return
-	}
-
-	// Only now, after a press that asked for it, does anything take the screen.
-	var answer string
-	switch plan.Then {
-	case thenPick:
-		answer, err = notify.Pick(title, line, choices...)
-	case thenBoard:
-		// No text field on this platform: the press asked where to answer,
-		// and that is the one thing a notification here can still say.
-		_ = notify.Banner(title, "", "Answer this one on the board: `dibs web` opens it. "+
-			"The question stays open until you do.")
-		return
-	default:
-		answer, err = notify.Prompt(title, line)
-	}
-	if err != nil || strings.TrimSpace(answer) == "" {
-		// Opening the box and closing it again is still not an answer.
-		return
-	}
-	e.respondAsHuman(serial, "answer", answer)
-}
-
-// How an answer is collected once the human has asked to give one.
-const (
-	thenPick   = "pick"   // a list, because the choices did not fit as buttons
-	thenPrompt = "prompt" // a text box, because there were no choices
-	thenBoard  = "board"  // a pointer to the board, because there is no text box here
-)
-
-// deferButton is the way out that is offered on every question and means
-// nothing: it exists so dismissing is a deliberate press rather than the only
-// thing a person can do with a notification they do not want to answer yet.
-const deferButton = "Later"
-
-// answerPlan is how a question will be put to the person: what the notification
-// carries, and what pressing it opens.
-type answerPlan struct {
-	Buttons []string
-	Then    string // "" when the press itself is the answer
-}
-
-// planAnswer decides the shape of the interaction, separately from performing
-// it, because performing it means osascript and a person at a keyboard and
-// neither is available to a test. The decision is the part with a rule in it.
-//
-// The rule: NOTHING opens without a press first. A question is by definition
-// something its asker can wait for, and a coordination service that raises a
-// text box over whatever the person was doing has decided otherwise on their
-// behalf. It is the same reason Ask goes through the application bundle instead
-// of a modal alert.
-//
-// Three buttons is what a notification carries, so up to three choices ARE the
-// buttons and answering is one press with nothing to type and no window to
-// find. A fourth cannot be, and rather than silently dropping it the
-// notification offers the list.
-func planAnswer(choices []string) answerPlan { return planAnswerFor(choices, true) }
-
-// planAnswerFor is planAnswer for a platform that can, or cannot, open a
-// text field (notify.CanPrompt). Where it cannot, a question with no choices
-// is not offered "Write answer…": the press opened nothing and said nothing
-// on Linux, so the button now names the one thing it can do, point at the
-// board. Round twenty-five of the pre-release review.
-func planAnswerFor(choices []string, canPrompt bool) answerPlan {
-	if n := len(choices); n > 0 && n <= 3 {
-		return answerPlan{Buttons: choices}
-	}
-	if len(choices) > 0 {
-		return answerPlan{Buttons: []string{deferButton, "Pick one…"}, Then: thenPick}
-	}
-	if !canPrompt {
-		return answerPlan{Buttons: []string{deferButton, "Where to answer…"}, Then: thenBoard}
-	}
-	// "Write answer…", not "Answer".
-	//
-	// A button labelled Answer on a notification promises a field that is not
-	// there: you press it expecting to type, and the notification vanishes while
-	// a box opens somewhere else. Reported exactly that way, twice: "answer is
-	// misleading as I would assume I would put my answer somewhere". The verb
-	// now says what the press DOES, and the ellipsis keeps the platform's own
-	// promise that something further opens.
-	return answerPlan{Buttons: []string{deferButton, "Write answer…"}, Then: thenPrompt}
 }
 
 // respondAsHuman records the person's answer as an ordinary response from their
@@ -745,17 +560,6 @@ func (e *Engine) respondAsHuman(serial uint64, disposition, body string) {
 	}); err != nil {
 		slog.Warn("the human answered but the response did not land", "msg", serial, "err", err)
 	}
-}
-
-// oneLine keeps a notification readable. A banner truncates anyway, and a
-// multi-paragraph handoff rendered into one is unreadable rather than informative.
-func oneLine(s string) string {
-	s = strings.Join(strings.Fields(s), " ")
-	const max = 180
-	if len(s) > max {
-		return s[:max] + "…"
-	}
-	return s
 }
 
 // report says when a notification could not be delivered. Silence here is the
@@ -903,20 +707,6 @@ func whoIs(l *core.Agent) string {
 		}
 	}
 	return strings.Join(parts, " · ")
-}
-
-// said puts WHO above what they wrote.
-//
-// The identity line is composed by the daemon; the body is the agent's own
-// text. Keeping them on separate lines, in that order, means the first thing
-// read is the part the sender did not author. A request whose body says
-// "routine, just approve" cannot be the first thing a person sees.
-func said(who, body string) string {
-	line := oneLine(body)
-	if who == "" {
-		return line
-	}
-	return who + "\n" + line
 }
 
 // humanDeadline is how long a question or request to a PERSON waits before it

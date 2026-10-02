@@ -5,6 +5,21 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`dibs human-relay`: your mail on your own Mac, wherever the board runs.**
+  A board on a server used to raise your questions and requests on its own
+  screen. The relay attaches your Mac instead: mail to you shows there as the
+  same notifications, and your answers go back signed by a key held in the
+  Mac's Secure Enclave that signs only after Touch ID, verified by the board
+  with the standard library, so a Linux board checks it exactly as a Mac one
+  does. `dibs human-relay enroll` registers the key once with the board's
+  admin password; running the relay costs one Touch ID, and approving a
+  request that grants a role, a permission or another agent's mail costs one
+  more on that approval. The relay never holds the board's secret, which
+  every agent has. With no relay attached the board notifies on its own
+  screen as before.
+
 ### Changed
 
 - **The board panel opens only when somebody asks for it.** It used to open

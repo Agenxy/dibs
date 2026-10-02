@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/humanask"
 )
 
 // A person typing is not how an agent finds out it has mail.
@@ -97,7 +98,7 @@ func TestTheHumanIsToldWhoIsAsking(t *testing.T) {
 
 	// And the sender's prose never comes first: a body reading "routine, just
 	// approve" must not be the first thing read.
-	msg := said(who, "routine, just approve")
+	msg := humanask.Said(who, "routine, just approve")
 	if !strings.HasPrefix(msg, who) {
 		t.Errorf("the agent's own text precedes the identity line:\n%s", msg)
 	}

@@ -1,4 +1,4 @@
-package engine
+package humanask
 
 import (
 	"slices"
@@ -26,22 +26,22 @@ func TestNoQuestionOpensAnythingUnprompted(t *testing.T) {
 		{"a", "b", "c"},
 		{"a", "b", "c", "d"},
 	} {
-		plan := planAnswer(choices)
+		plan := PlanFor(choices, true)
 		if len(plan.Buttons) == 0 {
-			t.Errorf("planAnswer(%d choices) offers no buttons: there is no way to answer "+
+			t.Errorf("PlanFor(%d choices, true) offers no buttons: there is no way to answer "+
 				"and no way to decline", len(choices))
 			continue
 		}
 		// A plan that opens something must first offer a way not to.
-		if plan.Then != "" && !slices.Contains(plan.Buttons, deferButton) {
-			t.Errorf("planAnswer(%d choices) opens a %s but offers no %q: the only way out "+
+		if plan.Then != "" && !slices.Contains(plan.Buttons, DeferButton) {
+			t.Errorf("PlanFor(%d choices, true) opens a %s but offers no %q: the only way out "+
 				"of the notification is to trigger the thing that takes the screen",
-				len(choices), plan.Then, deferButton)
+				len(choices), plan.Then, DeferButton)
 		}
 		// Three is what a notification carries. A plan that asks for more would
 		// be rejected by Ask at delivery time, which is a failure nobody sees.
 		if len(plan.Buttons) > 3 {
-			t.Errorf("planAnswer(%d choices) wants %d buttons; a notification carries "+
+			t.Errorf("PlanFor(%d choices, true) wants %d buttons; a notification carries "+
 				"three, so this question would fail to reach anybody",
 				len(choices), len(plan.Buttons))
 		}
@@ -55,13 +55,13 @@ func TestNoQuestionOpensAnythingUnprompted(t *testing.T) {
 // pass the rule above and defeat the feature.
 func TestStatedChoicesBecomeTheButtons(t *testing.T) {
 	choices := []string{"rebase", "merge", "leave it"}
-	plan := planAnswer(choices)
+	plan := PlanFor(choices, true)
 	if !slices.Equal(plan.Buttons, choices) {
-		t.Errorf("planAnswer(%v).Buttons = %v, want the choices themselves: answering a "+
+		t.Errorf("PlanFor(%v, true).Buttons = %v, want the choices themselves: answering a "+
 			"question whose answers are known should be one press", choices, plan.Buttons)
 	}
 	if plan.Then != "" {
-		t.Errorf("planAnswer(%v).Then = %q, want \"\": the press IS the answer, so there "+
+		t.Errorf("PlanFor(%v, true).Then = %q, want \"\": the press IS the answer, so there "+
 			"is nothing further to open", choices, plan.Then)
 	}
 }
@@ -73,19 +73,19 @@ func TestStatedChoicesBecomeTheButtons(t *testing.T) {
 // answer the asker offered) or to refuse the send (a question rejected for
 // being well specified).
 func TestAFourthChoiceIsStillReachable(t *testing.T) {
-	plan := planAnswer([]string{"a", "b", "c", "d"})
-	if plan.Then != thenPick {
+	plan := PlanFor([]string{"a", "b", "c", "d"}, true)
+	if plan.Then != ThenPick {
 		t.Errorf("with %d choices Then = %q, want %q: they do not fit as buttons, so the "+
-			"only way the human sees all of them is the list", core.MaxChoices, plan.Then, thenPick)
+			"only way the human sees all of them is the list", core.MaxChoices, plan.Then, ThenPick)
 	}
 }
 
 // No choices means a text box, on request.
 func TestAnOpenQuestionOffersATextBox(t *testing.T) {
-	plan := planAnswer(nil)
-	if plan.Then != thenPrompt {
-		t.Errorf("planAnswer(nil).Then = %q, want %q: a question nobody enumerated can "+
-			"only be answered in words", plan.Then, thenPrompt)
+	plan := PlanFor(nil, true)
+	if plan.Then != ThenPrompt {
+		t.Errorf("PlanFor(nil, true).Then = %q, want %q: a question nobody enumerated can "+
+			"only be answered in words", plan.Then, ThenPrompt)
 	}
 }
 
@@ -97,19 +97,19 @@ func TestAnOpenQuestionOffersATextBox(t *testing.T) {
 // was swallowed one layer up. The button there now names what it can do.
 // Round twenty-five of the pre-release review.
 func TestNoTextFieldIsOfferedWhereNoneCanOpen(t *testing.T) {
-	plan := planAnswerFor(nil, false)
-	if slices.Contains(plan.Buttons, "Write answer…") || plan.Then == thenPrompt {
-		t.Fatalf("planAnswerFor(no choices, cannot prompt) = %+v: it offers a text field the platform "+
+	plan := PlanFor(nil, false)
+	if slices.Contains(plan.Buttons, "Write answer…") || plan.Then == ThenPrompt {
+		t.Fatalf("PlanFor(no choices, cannot prompt) = %+v: it offers a text field the platform "+
 			"cannot open, and pressing it did nothing", plan)
 	}
-	if plan.Then != thenBoard || !slices.Contains(plan.Buttons, deferButton) || len(plan.Buttons) != 2 {
-		t.Fatalf("planAnswerFor(no choices, cannot prompt) = %+v: want Later and a pointer to the board", plan)
+	if plan.Then != ThenBoard || !slices.Contains(plan.Buttons, DeferButton) || len(plan.Buttons) != 2 {
+		t.Fatalf("PlanFor(no choices, cannot prompt) = %+v: want Later and a pointer to the board", plan)
 	}
 	// Choices are buttons wherever they are: no field is involved.
-	if got := planAnswerFor([]string{"a", "b"}, false); got.Then != "" {
+	if got := PlanFor([]string{"a", "b"}, false); got.Then != "" {
 		t.Fatalf("stated choices are no longer the buttons where nothing can prompt: %+v", got)
 	}
-	if got := planAnswerFor(nil, true); got.Then != thenPrompt {
+	if got := PlanFor(nil, true); got.Then != ThenPrompt {
 		t.Fatalf("where a field can open, a question with no choices no longer opens one: %+v", got)
 	}
 }

@@ -611,34 +611,13 @@ func (g *authGate) wrap(next http.Handler) http.Handler {
 					"a person.)", http.StatusForbidden)
 				return
 			}
-			// Throttle wrong-password attempts: the admin password guards all
-			// decrypted mail, so bound online brute force. After 5 misses,
-			// lock with exponential backoff (5s doubling, capped at 5m).
-			g.mu.Lock()
-			if wait := time.Until(g.adminLockTill); wait > 0 {
-				g.mu.Unlock()
-				w.Header().Set("Retry-After", strconvItoa(int(wait.Seconds())+1))
-				http.Error(w, "too many attempts: wait "+wait.Round(time.Second).String(), http.StatusTooManyRequests)
-				return
-			}
-			g.mu.Unlock()
-			if !adminpw.Verify(r.Header.Get("X-Dibs-Admin"), hash) {
-				g.mu.Lock()
-				g.adminFails++
-				if g.adminFails >= 5 {
-					back := 5 * time.Second << min(g.adminFails-5, 6) // 5s..~5m
-					if back > 5*time.Minute {
-						back = 5 * time.Minute
-					}
-					g.adminLockTill = time.Now().Add(back)
+			if status, why, wait := g.checkAdmin(r.Header.Get("X-Dibs-Admin")); status != 0 {
+				if wait > 0 {
+					w.Header().Set("Retry-After", strconvItoa(int(wait.Seconds())+1))
 				}
-				g.mu.Unlock()
-				http.Error(w, "wrong admin password", http.StatusUnauthorized)
+				http.Error(w, why, status)
 				return
 			}
-			g.mu.Lock()
-			g.adminFails, g.adminLockTill = 0, time.Time{}
-			g.mu.Unlock()
 			// Same as the presence path above: an empty token is a refusal, and
 			// it has to be reported as one.
 			bt := g.mintBootstrap()
@@ -715,6 +694,14 @@ func (g *authGate) wrap(next http.Handler) http.Handler {
 			return
 		}
 
+		// The human relay's routes authenticate themselves, with a key that
+		// signs only after Touch ID or a session one opened, and never with
+		// the board's secret, which every agent holds. See humanapi.go.
+		if humanPath(r.URL.Path) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		if godViewPath(r.URL.Path) {
 			// Decrypted mail must never be cached to disk / bfcache, and must
 			// never leak via Referer.
@@ -748,6 +735,46 @@ func (g *authGate) wrap(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// checkAdmin verifies the admin password under the board's one throttle,
+// and returns 0 when it is right, or the status and sentence to refuse with.
+//
+// One throttle for every door the password opens: the web board's login and
+// a human relay's enrolment. Two would halve the work of guessing.
+//
+// The admin password guards all decrypted mail, so online brute force is
+// bounded: after 5 misses, lock with exponential backoff (5s doubling,
+// capped at 5m).
+func (g *authGate) checkAdmin(password string) (status int, why string, wait time.Duration) {
+	hash := g.adminHash()
+	if hash == "" {
+		return http.StatusForbidden, "no admin password is set on this board: run " +
+			"`dibs admin set-password` on the machine it runs on", 0
+	}
+	g.mu.Lock()
+	if wait := time.Until(g.adminLockTill); wait > 0 {
+		g.mu.Unlock()
+		return http.StatusTooManyRequests, "too many attempts: wait " + wait.Round(time.Second).String(), wait
+	}
+	g.mu.Unlock()
+	if !adminpw.Verify(password, hash) {
+		g.mu.Lock()
+		g.adminFails++
+		if g.adminFails >= 5 {
+			back := 5 * time.Second << min(g.adminFails-5, 6) // 5s..~5m
+			if back > 5*time.Minute {
+				back = 5 * time.Minute
+			}
+			g.adminLockTill = time.Now().Add(back)
+		}
+		g.mu.Unlock()
+		return http.StatusUnauthorized, "wrong admin password", 0
+	}
+	g.mu.Lock()
+	g.adminFails, g.adminLockTill = 0, time.Time{}
+	g.mu.Unlock()
+	return 0, "", 0
 }
 
 func (g *authGate) unauthorized(w http.ResponseWriter, r *http.Request) {
