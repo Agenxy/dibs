@@ -71,7 +71,8 @@ type inboxWatcher struct {
 	// version held one token: registering a second agent retired the first
 	// one's subscription, so only the last registered mailbox kept its
 	// self-wake. Found by the pre-release review, round fifty-four.
-	streams map[string]*inboxStream
+	streams          map[string]*inboxStream
+	refreshSupported bool // once advertised, never fall back to captured text
 	// reconnect is the pause between a stream ending and the next attempt;
 	// zero means reconnectAfter. A field, set before start, so a test can
 	// shorten it without writing a global under a running goroutine.
@@ -97,6 +98,8 @@ type inboxStream struct {
 	session string
 	cancel  context.CancelFunc
 	since   uint64 // the serial of the last notification seen: a reconnect resumes from it
+	refresh bool   // daemon advertised non-consuming refresh; carried on upgrade
+	source  wakeDigestSource
 }
 
 // sharedWaker is the one route to this session's socket, made on first
@@ -106,6 +109,9 @@ func (iw *inboxWatcher) sharedWaker() *selfWaker {
 	defer iw.mu.Unlock()
 	if iw.waker == nil {
 		iw.waker = newSelfWaker()
+		if iw.waker != nil {
+			iw.waker.refreshFn = iw.freshNotice
+		}
 		if iw.waker != nil && iw.cooldown > 0 {
 			iw.waker.cooldown = iw.cooldown
 		}
@@ -288,7 +294,13 @@ func (iw *inboxWatcher) startFor(
 		prev.cancel()
 	}
 	sub, cancel := context.WithCancel(ctx)
-	st := &inboxStream{key: key, token: token, session: session, cancel: cancel, since: since}
+	st := &inboxStream{
+		key: key, token: token, session: session, cancel: cancel, since: since,
+		source: wakeDigestSource{key: key, token: token, session: session, client: client, url: url, secret: secret},
+	}
+	if prev != nil {
+		st.refresh = prev.refresh
+	}
 	iw.streams[key] = st
 	recordWakeStream(key, token, since) // for the in-place upgrade's handoff
 	go iw.run(sub, client, url, secret, st, waker)
@@ -406,7 +418,11 @@ func (iw *inboxWatcher) onFrame(st *inboxStream, msg streamFrame, waker *selfWak
 		return false
 	}
 	line := selfWakeLine(msg.Params.Meta)
-	if line == "" {
+	refresh, _ := msg.Params.Meta[mcp.DigestRefreshMetaKey].(bool)
+	if refresh {
+		iw.markRefresh(st.key)
+	}
+	if line == "" && !refresh {
 		// NOTHING TO SAY, so nothing is said. A daemon that sent no digest is a
 		// daemon still writing to this session's socket itself; see
 		// selfWakeLine. The cursor moves, because this notification has been

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/wakeexec"
 )
 
 // Telling the agent that is waiting that the board could not wake the one it
@@ -130,6 +131,27 @@ func (e *Engine) wakeStatusOf(agent string) string {
 // so there is no copy: both call this.
 func (e *Engine) runWakeAndReport(cmd wakePlan, agent string) bool {
 	started := time.Now()
+	if cmd.agent != "" {
+		stamp := e.wakeStamp(agent)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		fresh, err := e.refreshWakePlan(ctx, cmd)
+		cancel()
+		if err != nil {
+			e.reportWakeFailure(agent)
+			return false
+		}
+		if fresh == "" {
+			// Nothing was delivered, and no turn was started. Settled rather
+			// than failed: a retry must not resurrect the captured old text.
+			e.releaseWake(agent, stamp)
+			e.clearWakeAttempts(agent)
+			e.forgetWakeFailures(agent)
+			return true
+		}
+		if cmd.host == "" && len(cmd.argv) == 0 {
+			cmd.notice = fresh // never copy private mail into command argv
+		}
+	}
 	if e.runWake(cmd, agent) {
 		e.noteDibsStartedTurn(agent, time.Now())
 		if queues(cmd) {
@@ -143,4 +165,34 @@ func (e *Engine) runWakeAndReport(cmd wakePlan, agent string) bool {
 	}
 	e.reportWakeFailure(agent)
 	return false
+}
+
+func (e *Engine) refreshWakePlan(ctx context.Context, cmd wakePlan) (string, error) {
+	res, err := e.query(ctx, func() core.Result {
+		l := e.state.Agents[cmd.agent]
+		text := ""
+		if l != nil && !l.Retired() && l.SessionIsCurrent(cmd.session) {
+			if cmd.kind == wakeexec.KindContinuation || cmd.kind == wakeexec.KindRecheck {
+				if len(e.workSlotsOf(l, time.Now())) > 0 {
+					text = e.workNotice(l, cmd.kind)
+				}
+			} else {
+				text = e.currentWakeDigest(l)
+			}
+		}
+		if text == "" {
+			e.wakers.mu.Lock()
+			if timer := e.wakers.deferred[cmd.agent]; timer != nil {
+				timer.Stop()
+			}
+			delete(e.wakers.deferred, cmd.agent)
+			e.wakers.mu.Unlock()
+		}
+		return core.Result{"digest": text}
+	})
+	if err != nil {
+		return "", err
+	}
+	text, _ := res["digest"].(string)
+	return text, nil
 }

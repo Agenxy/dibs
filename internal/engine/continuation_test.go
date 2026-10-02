@@ -61,6 +61,22 @@ func (b *continuationBoard) declare(t *testing.T, text, waiting string) {
 // wake delivers a wake through the path every wake takes.
 func (b *continuationBoard) wake(t *testing.T) {
 	t.Helper()
+	// A real wake needs actual outstanding mail. A synthetic event with an
+	// empty inbox now correctly settles without starting a turn (#7810).
+	sender, err := b.e.Do(b.ctx, &core.Op{
+		Kind: core.OpRegister, Name: "wake-sender",
+		Nonce: "wake-fixture-0123456789abcdef", AgentKind: core.KindPersistent,
+	})
+	if err != nil {
+		t.Fatal("wake sender setup:", err)
+	}
+	mail, err := b.e.Do(b.ctx, &core.Op{
+		Kind: core.OpSendMessage, Token: sender["token"].(string),
+		To: "worker", MsgType: core.MsgHandoff, Body: "wake fixture",
+	})
+	if err != nil {
+		t.Fatal("wake mail setup:", err)
+	}
 	var l *core.Agent
 	if _, err := b.e.query(b.ctx, func() core.Result { l = b.e.state.Agents["worker"]; return nil }); err != nil {
 		t.Fatal(err)
@@ -86,6 +102,9 @@ func (b *continuationBoard) wake(t *testing.T) {
 	b.e.wakeExited("worker", plan.thread)
 	if !ok {
 		t.Fatal("setup: the stand-in wake command failed")
+	}
+	if _, err := b.e.Do(b.ctx, &core.Op{Kind: core.OpAckMessage, Token: b.token, MsgSerial: mail["msg_serial"].(uint64)}); err != nil {
+		t.Fatal("wake mail acknowledgement:", err)
 	}
 }
 

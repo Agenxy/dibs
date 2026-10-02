@@ -76,6 +76,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Deferred socket wakes no longer announce mail already acknowledged or
+  agent updates already read. Both the daemon and in-session bridge refresh
+  the digest without marking mail delivered, including retries and upgrade
+  handoffs. A moved session receives no other session's digest; an empty
+  refresh sends nothing and spends no cooldown. The additive refresh metadata
+  preserves old-daemon compatibility and the one-writer-per-socket rule.
+  Command/delegated wakes also recheck whether anything is owed before running.
+  Mail still requires `ack`/`respond`; announcements held by their retry cadence
+  no longer cause a placeholder wake merely because they remain unacknowledged.
+
 - **A host with an old copy of the tool schema can use new parameters.** A
   long-running session sends a parameter its schema does not know as a
   string, so `milestones` arrived as `"[\"a\",\"b\"]"` and was refused.
