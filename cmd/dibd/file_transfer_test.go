@@ -13,7 +13,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 )
 
 // This enters at the production public listener, not a hand-wired transfer
@@ -199,34 +198,13 @@ func TestPublicTransferResumesAfterBrokenConnection(t *testing.T) {
 	if _, err = conn.Write(plain[:sent]); err != nil {
 		t.Fatal(err)
 	}
+	// A write to the TLS proxy is NOT receipt by the daemon. Close only once
+	// the real store has encrypted a segment, otherwise offset zero is honest.
+	waitForDaemonUploadReceipt(t, f, target)
 	if err = conn.Close(); err != nil {
 		t.Fatal(err)
 	}
-	var offset int64
-	for range 100 {
-		req, err := http.NewRequest(http.MethodHead, target, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		resp, err := f.public.Client().Do(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		_ = resp.Body.Close()
-		if resp.StatusCode == http.StatusNoContent {
-			offset, err = strconv.ParseInt(resp.Header.Get("Upload-Offset"), 10, 64)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if resp.Header.Get("Upload-Complete") != "?0" {
-				t.Fatal("cut request was finalized")
-			}
-			if offset > 0 {
-				break
-			}
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	offset := interruptedUploadOffset(t, f, target)
 	if offset <= 0 || offset > sent {
 		t.Fatalf("lost accepted offset: %d", offset)
 	}
