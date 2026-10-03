@@ -484,6 +484,12 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	if op.Agent != nil {
 		op.Agent.HostID = e.canonicalHost(op.Agent.HostID)
 	}
+	// Canonicalize agent references before validating relationships between
+	// them: a name and its own ID must not disguise a self-merge.
+	addressed, err := e.resolveAgentRefs(op)
+	if err != nil {
+		return nil, err
+	}
 
 	// Ingress-only validation. Deliberately NOT inside Apply: Apply is also the
 	// fold that replays the ledger, so a rule added there binds history
@@ -510,14 +516,6 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// directly above.
 	if !op.HumanMint && e.wouldTakeHumanIdentity(op) {
 		return nil, core.ErrHumanIdentity
-	}
-
-	// WHAT THE CALLER WROTE, TURNED INTO AN ADDRESS: `to: "coordinator"` into
-	// whoever holds the role, and an agent's name into its id. See
-	// addressing.go, including why this must sit at exactly this point.
-	addressed, err := e.resolveAgentRefs(op)
-	if err != nil {
-		return nil, err
 	}
 
 	// An agent whose bridge cannot see the harness session id adopts the one

@@ -67,7 +67,7 @@ type agentRef struct {
 //
 // Refuses, rather than guessing, when a name belongs to more than one live
 // agent: see core.AgentRef. Nothing is ledgered on a refusal, because this runs
-// before Apply and ledger append, after admission and the human identity guard.
+// before admission, Apply and ledger append. Admission checks canonical IDs.
 func (e *Engine) resolveAgentRefs(op *core.Op) (resolved map[string]string, err error) {
 	if e.state == nil {
 		return nil, nil

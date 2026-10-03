@@ -2,11 +2,38 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/agenxy/dibs/internal/core"
 )
+
+func TestNameAndIdCannotDisguiseASelfMergeAtTheAdminDoor(t *testing.T) {
+	e, ctx, cancel := runningEngine(t)
+	defer cancel()
+	id, worker := regFor(t, e, ctx, "worker")
+	_, admin := regFor(t, e, ctx, "admin")
+	if _, err := e.GrantRole(ctx, "admin", core.RoleAdmin); err != nil {
+		t.Fatal("setup: admin:", err)
+	}
+	rename(t, e, ctx, worker, "worker-label")
+	if _, err := e.Do(ctx, &core.Op{Kind: core.OpSignOff, Token: worker}); err != nil {
+		t.Fatal("setup: sign off source so the live-agent refusal cannot mask self-merge:", err)
+	}
+	var before uint64
+	onLoop(t, ctx, e, func(st *core.State) { before = st.Serial })
+	_, err := e.MergeAgents(ctx, admin, "worker-label", id)
+	var ce *core.Error
+	if !errors.As(err, &ce) || ce.Code != "E_BAD_REQUEST" || !strings.Contains(ce.Msg, "into itself") {
+		t.Fatalf("name plus its own ID bypassed admission: %v", err)
+	}
+	onLoop(t, ctx, e, func(st *core.State) {
+		if st.Serial != before || st.Agents[id].MergedInto != "" {
+			t.Error("refused self-merge changed replayable state")
+		}
+	})
+}
 
 func TestNameAddressingPreservesReplayedHumanAndCoordinatorRoles(t *testing.T) {
 	led := &memLedger{}
