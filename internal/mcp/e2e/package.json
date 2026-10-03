@@ -3,8 +3,8 @@
   "private": true,
   "description": "Headless end-to-end test for the MCP Apps board panel.",
   "dependencies": {
-    "@modelcontextprotocol/ext-apps": "^2.0.0",
-    "@modelcontextprotocol/sdk": "^1.30.0"
+    "@modelcontextprotocol/ext-apps": "^2.0.3",
+    "@modelcontextprotocol/sdk": "^1.31.0"
   },
   "devDependencies": {
     "ajv": "8.20.0",
