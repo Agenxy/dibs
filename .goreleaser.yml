@@ -213,6 +213,18 @@ archives:
 
 checksum:
   name_template: checksums.txt
+  # Hash the final post-codesign images during checksum generation, AFTER
+  # archiving. archivecheck independently extracts every packaged dibs and
+  # requires exact equality with these lines. No earlier build-stage digest,
+  # second manifest or separately signed capability assertion is used.
+  # The namespace names archive members, not extra downloadable release assets.
+  extra_files:
+    - glob: "dist/dibs_darwin_arm64_*/dibs"
+      name_template: members/darwin_arm64/dibs
+    - glob: "dist/dibs_linux_amd64_*/dibs"
+      name_template: members/linux_amd64/dibs
+    - glob: "dist/dibs_linux_arm64_*/dibs"
+      name_template: members/linux_arm64/dibs
 
 sboms:
   - artifacts: archive

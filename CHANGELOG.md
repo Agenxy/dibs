@@ -5,6 +5,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Release checksums name the packaged guest CLI bytes.** The existing
+  `checksums.txt` carries platform-scoped `members/<os>_<arch>/dibs` digests
+  from final code-signed images. The archive gate independently extracts all
+  three published targets and checks exact equality before release. These are
+  member keys, not separate downloadable assets or a second manifest. Guest
+  recipes remain incomplete and the supporting-release minimum stays unset.
+
 ### Fixed
 
 - **Human notifications leave window focus alone.** Questions and requests

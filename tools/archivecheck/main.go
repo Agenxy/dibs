@@ -88,6 +88,9 @@ func run() error {
 			return err
 		}
 	}
+	if err := checkMembers(root); err != nil {
+		return err
+	}
 	fmt.Printf("archivecheck: %d darwin archive(s) carry all %d runtime paths, each "+
 		"runnable on the Mac it is for\n", len(archives), len(want))
 	return nil
