@@ -989,6 +989,21 @@ try {
     (await panel.locator(".msg .reply").first().textContent())?.includes("the stored answer") ?? false)
   check("a settled message offers no actions", (await panel.locator(".act").count()) === 0)
 
+  // Queued work is settled acceptance, with order and urgency visible.
+  await page.evaluate(() => (window as any).__deliver({
+    structuredContent: { view: "mail", inbox: { messages: [
+      { serial: 93, type: "request", from: "peer", to: "reviewer", body: "later work",
+        state: "queued", queue_rank: 2, request_priority: "high", queue_order_locked: true,
+        queue_by: "reviewer", deadline: "2030-01-01T00:00:00Z" },
+    ] } },
+  }))
+  await panel.locator('.msg[data-serial="93"] .task-count').waitFor({ timeout: 5000 })
+  const queuedCard = (await panel.locator('.msg[data-serial="93"]').textContent()) ?? ""
+  check("queued work renders its position, priority, deadline and ordering lock",
+    queuedCard.includes("Queued #2") && queuedCard.includes("high") &&
+      queuedCard.includes("2030-01-01") && queuedCard.includes("ordering locked"), queuedCard)
+  check("queued acceptance does not present unanswered approval actions", (await panel.locator(".act").count()) === 0)
+
   // ── honest failures ─────────────────────────────────────────────────────
   // Tool refusals are MCP isError RESULTS, not rejected JSON-RPC calls.
   await page.evaluate((r) => (window as any).__deliver({

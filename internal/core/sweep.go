@@ -300,6 +300,9 @@ func (s *State) gc(now time.Time, purgeMail, clampWatermark, keepOwed bool) ([]E
 	// retention are evicted oldest-first with the watermark advanced.
 	perAgent := map[string][]*Message{}
 	for serial, m := range s.Messages {
+		if m.DurableDebt() {
+			continue // accepted debt is recorded on the message; old ledger messages have no marker
+		}
 		if keepOwed && m.Owed(now) {
 			continue // work its recipient still owes: see Op.KeepOwed
 		}

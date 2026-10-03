@@ -829,58 +829,63 @@ func (s *Server) adoptSession(ctx context.Context, token string, params json.Raw
 }
 
 type toolArgs struct {
-	FileSize     *int64            `json:"size"`
-	SHA256       string            `json:"sha256"`
-	InviteAction string            `json:"action"`
-	InviteTTLS   int64             `json:"ttl_s"`
-	IssuedBy     string            `json:"issued_by"`
-	Token        string            `json:"token"`
-	Name         string            `json:"name"`
-	Description  string            `json:"description"`
-	PID          int               `json:"pid"`
-	Nonce        string            `json:"nonce"`
-	ResumeID     string            `json:"resume_id"`
-	Kind         string            `json:"kind"`
-	SlotID       string            `json:"slot_id"`
-	Text         string            `json:"text"`
-	Dirs         []string          `json:"dirs"`
-	Activity     string            `json:"activity"`
-	Waiting      string            `json:"waiting"`
-	Recheck      string            `json:"recheck_after"`
-	Holds        []string          `json:"holds"`
-	To           string            `json:"to"`
-	Type         string            `json:"type"`
-	Body         string            `json:"body"`
-	DeadlineSec  int               `json:"deadline_s"`
-	Choices      []string          `json:"choices"`
-	Milestones   []string          `json:"milestones"`
-	Track        bool              `json:"track"`
-	Milestone    int               `json:"milestone"`
-	Deliverable  string            `json:"deliverable"`
-	Grant        string            `json:"grant"`
-	Adopt        string            `json:"adopt"`
-	OpID         string            `json:"op_id"`
-	MsgSerial    uint64            `json:"msg_serial"`
-	Disposition  string            `json:"disposition"`
-	Path         string            `json:"path"`
-	Mode         string            `json:"mode"`
-	Note         string            `json:"note"`
-	Since        uint64            `json:"since_serial"`
-	TimeoutSec   int               `json:"timeout_s"`
-	Attachments  []core.Attachment `json:"attachments"`
-	Data         string            `json:"data"` // put_blob: base64 content
-	Mime         string            `json:"mime"`
-	Blob         string            `json:"blob"` // get_blob: id
-	As           string            `json:"as"`
-	Refs         []string          `json:"refs"`
-	SessionID    string            `json:"session_id"`
-	Transcript   string            `json:"transcript_path"`
-	AgentID      string            `json:"agent_id"`
-	AgentType    string            `json:"agent_type"`
-	ToolName     string            `json:"tool_name"`
-	TurnID       string            `json:"turn_id"`
-	Progress     int64             `json:"progress"`
-	Event        string            `json:"event"`
+	FileSize      *int64            `json:"size"`
+	SHA256        string            `json:"sha256"`
+	InviteAction  string            `json:"action"`
+	InviteTTLS    int64             `json:"ttl_s"`
+	IssuedBy      string            `json:"issued_by"`
+	Token         string            `json:"token"`
+	Name          string            `json:"name"`
+	Description   string            `json:"description"`
+	PID           int               `json:"pid"`
+	Nonce         string            `json:"nonce"`
+	ResumeID      string            `json:"resume_id"`
+	Kind          string            `json:"kind"`
+	SlotID        string            `json:"slot_id"`
+	Text          string            `json:"text"`
+	Dirs          []string          `json:"dirs"`
+	Activity      string            `json:"activity"`
+	Waiting       string            `json:"waiting"`
+	Recheck       string            `json:"recheck_after"`
+	Holds         []string          `json:"holds"`
+	To            string            `json:"to"`
+	Type          string            `json:"type"`
+	Body          string            `json:"body"`
+	DeadlineSec   int               `json:"deadline_s"`
+	Choices       []string          `json:"choices"`
+	Milestones    []string          `json:"milestones"`
+	Track         bool              `json:"track"`
+	Milestone     int               `json:"milestone"`
+	Deliverable   string            `json:"deliverable"`
+	Grant         string            `json:"grant"`
+	Adopt         string            `json:"adopt"`
+	OpID          string            `json:"op_id"`
+	MsgSerial     uint64            `json:"msg_serial"`
+	Disposition   string            `json:"disposition"`
+	Priority      string            `json:"priority"`
+	ResetPriority bool              `json:"reset_priority"`
+	Before        uint64            `json:"before"`
+	Tail          bool              `json:"tail"`
+	Locked        bool              `json:"locked"`
+	Path          string            `json:"path"`
+	Mode          string            `json:"mode"`
+	Note          string            `json:"note"`
+	Since         uint64            `json:"since_serial"`
+	TimeoutSec    int               `json:"timeout_s"`
+	Attachments   []core.Attachment `json:"attachments"`
+	Data          string            `json:"data"` // put_blob: base64 content
+	Mime          string            `json:"mime"`
+	Blob          string            `json:"blob"` // get_blob: id
+	As            string            `json:"as"`
+	Refs          []string          `json:"refs"`
+	SessionID     string            `json:"session_id"`
+	Transcript    string            `json:"transcript_path"`
+	AgentID       string            `json:"agent_id"`
+	AgentType     string            `json:"agent_type"`
+	ToolName      string            `json:"tool_name"`
+	TurnID        string            `json:"turn_id"`
+	Progress      int64             `json:"progress"`
+	Event         string            `json:"event"`
 	// StopActive is the harness's stop_hook_active: this turn is already
 	// running because a stop hook continued it. Typed loosely because it
 	// arrives as the string a template substitution produced on one harness and
@@ -1204,6 +1209,10 @@ func (s *Server) noteIfNobodyCanWake(ctx context.Context, to string, res core.Re
 	if res == nil {
 		return res
 	}
+	if route, _ := res["human_route"].(string); route == "desktop" || route == "relay" {
+		delete(res, "note") // Human handoff has its own delivery receipts, not an agent wake route.
+		return res
+	}
 	// THE ENGINE'S NOTE WINS, and this used to defer to the fold's.
 	//
 	// core writes "it will see this when it next wakes" for any sleeping
@@ -1356,6 +1365,7 @@ func (s *Server) run(
 		op.DeadlineSec, op.OpID, op.Attachments = a.DeadlineSec, a.OpID, a.Attachments
 		op.Choices, op.Grant, op.Adopt = a.Choices, a.Grant, a.Adopt
 		op.Milestones, op.Track = a.Milestones, a.Track
+		op.RequestPriority = a.Priority
 	case "put_blob":
 		return s.putBlob(ctx, a)
 	case "upload":
@@ -1367,6 +1377,11 @@ func (s *Server) run(
 	case "respond":
 		op.Kind, op.MsgSerial, op.Disposition, op.Body = core.OpRespond, a.MsgSerial, a.Disposition, a.Body
 		op.Milestone, op.Deliverable, op.Milestones = a.Milestone, a.Deliverable, a.Milestones
+	case "queue_update":
+		op.Kind, op.MsgSerial = core.OpQueueUpdate, a.MsgSerial
+		op.QueuePriority, op.QueueResetPriority, op.QueueBefore, op.QueueTail = a.Priority, a.ResetPriority, a.Before, a.Tail
+	case "queue_lock":
+		return s.eng.SetQueueOrderLock(ctx, a.Token, a.AgentRef, a.MsgSerial, a.Locked)
 	case "ack":
 		op.Kind, op.MsgSerial = core.OpAckMessage, a.MsgSerial
 	case "inbox":

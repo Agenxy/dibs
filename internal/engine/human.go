@@ -745,7 +745,8 @@ func (e *Engine) refuseEmptyAdoption(from string) error {
 	if src := e.state.Agents[from]; src == nil {
 		return nil
 	}
-	// The SAME rule the recipient's inbox uses, not merely "a record exists".
+	// Recover readable inbox mail and explicitly marked accepted debt shown
+	// in task_queue/owed_work, never merely because a retained record exists.
 	//
 	// This counted any retained record, and a consumed terminal one is retained
 	// for fifteen minutes after it is answered. So: notify an agent, let it
@@ -755,7 +756,7 @@ func (e *Engine) refuseEmptyAdoption(from string) error {
 	// because Inbox excludes exactly those. The one thing the check exists to
 	// prevent, reported as a rescue. Found by a pre-release review, which is the
 	// second time this predicate has been not quite the right one.
-	if len(e.state.Inbox(from)) > 0 {
+	if e.state.RecoveryCount(from) > 0 {
 		return nil
 	}
 	return &core.Error{

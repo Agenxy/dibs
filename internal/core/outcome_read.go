@@ -24,9 +24,15 @@ func (s *State) applyOutcomeRead(l *Agent, op *Op) (Result, []Event, error) {
 		return nil, nil, errf("E_NOT_TERMINAL", "wait for a verdict; there is nothing to have read yet",
 			"message %d has no outcome yet", op.MsgSerial)
 	}
-	if m.OutcomeReadAt != 0 {
+	if !m.HasUnreadOutcome() {
 		return Result{"changed": false}, nil, nil
 	}
 	m.OutcomeReadAt = s.Serial + 1
 	return Result{"changed": true}, []Event{}, nil
+}
+
+// HasUnreadOutcome preserves the historical one-time read marker for old mail.
+// New queued debt also tracks ordering changes recorded after the last read.
+func (m *Message) HasUnreadOutcome() bool {
+	return m.OutcomeReadAt == 0 || (m.QueueDebt && m.QueueChangedSerial > m.OutcomeReadAt)
 }

@@ -29,6 +29,9 @@ func sendDigest(op *Op) string {
 	if op.Track {
 		parts = append(parts, "track")
 	}
+	if op.RequestPriority != "" {
+		parts = append(parts, "request_priority", op.RequestPriority)
+	}
 	parts = append(parts, itoa(len(op.Attachments)))
 	for _, a := range op.Attachments {
 		parts = append(parts, a.Blob, a.Path, a.Hash, a.Mime, itoa(int(a.Size)))

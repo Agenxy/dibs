@@ -160,13 +160,16 @@ func (s *State) readdressMail(from, into *Agent, v7 bool) int {
 		// counted consumed records too and the note beside the count says "read
 		// them with inbox", so a mailbox holding one unread message and one
 		// acknowledged one reported two and showed one. The source keeps its
-		// finished history, which is what the note already promises.
+		// finished history, which is what the note already promises. Explicit
+		// durable debt is still unfinished even with a consumed approval; its
+		// separate task_queue/owed_work view follows the mailbox. Unmarked old
+		// approvals keep the historical readability rule.
 		// The same exemption Inbox applies: mail adopted INTO the source sits
 		// below its watermark by construction and is its to pass on. Without
 		// this a second adoption passed the emptiness check, which reads Inbox,
 		// and moved nothing. Found by the pre-release review, round three.
 		fenced := m.Serial < from.TruncatedBefore && !s.adoptedFor(m, from.ID)
-		if m.To != from.ID || fenced || !m.readable() {
+		if m.To != from.ID || fenced || (!m.readable() && !m.DurableDebt()) {
 			continue
 		}
 		// s.Serial+1 is the serial finish will give this op: the fold's own
@@ -212,4 +215,19 @@ func (s *State) adoptedMailEvents(into, from *Agent) []Event {
 		})
 	}
 	return evs
+}
+
+// RecoveryCount is the mailbox recovery count, including explicitly accepted
+// debt shown through task_queue/owed_work rather than the unread-mail list.
+// It shares the move's ownership fence, including adopted mail below that fence.
+func (s *State) RecoveryCount(agent string) int {
+	count := 0
+	floor := s.mailFloor(agent)
+	for _, m := range s.Messages {
+		if m.To == agent && (m.Serial >= floor || s.adoptedFor(m, agent)) &&
+			(m.readable() || m.DurableDebt()) {
+			count++
+		}
+	}
+	return count
 }

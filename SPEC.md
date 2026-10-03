@@ -830,7 +830,7 @@ client input requests are emitted. `tasks/update` ignores unsolicited input;
 `tasks/cancel` acknowledges cooperative cancellation without stopping another
 agent's work. A sender asks the worker directly when work should stop.
 
-**Tools (50).** All take `token` except `register`, `resume`,
+**Tools (52).** All take `token` except `register`, `resume`,
 `hook_poll` and `guard_path` (the last two are lifecycle-hook surfaces and have
 no token to give: see SECURITY.md).
 
@@ -857,6 +857,26 @@ coordinator or admin role, or the `relocate` permission the human grants
 (`dibs admin may-relocate <agent>`, or by approving a request carrying
 `grant: "relocate"`). Every relocation is ledgered as `agent.relocated` with
 who, the agent, and from and to; the board row shows the last one.
+
+Ordinary work requests can be accepted with `respond(disposition:"queue")`.
+Queued is an approval verdict, but not started work. New acceptance records an
+explicit `queue_debt` marker: queued and approved debt remains owed until done
+or declined, within the mailbox capacity bound. Older unmarked approvals retain
+the historical 24-hour obligation window; replay never infers the new marker.
+`approve` starts queued work; completing it never starts another request.
+
+The queue defaults to descending priority (urgent, high, normal, low), then
+response deadline and arrival serial. New arrivals preserve existing relative
+order. `queue_update` is recipient-owned; it records priority overrides,
+restoration of sender priority, and before/tail ordering. `queue_lock` authenticates
+coordinators/admins inside the writer loop and records their identity for the
+existing `queue_order_lock` permission, scoped to an agent or queued request.
+The existing human HTTP admin gate also grants/revokes it. Locks protect relative
+order, including indirect crossing, and never prevent starting or removing work.
+Public queue projections contain metadata only; mailbox readers see bodies.
+The ordered queue at approve/queue/done, check_in and inbox is the reminder:
+`overdue` and `overdue_s` report whether and how long the response deadline is
+past. There is no separate queued-debt hook reminder or queued-only wake.
 
 `tools/list` is the authority, it serves `toolDefs` verbatim, so the served
 surface and the advertised one cannot drift. Ask a running daemon rather than
@@ -1027,7 +1047,7 @@ binaries (`dibd` and `dibs`) both CGO_ENABLED=0 and byte-reproducible.
 ledgered wake transitions; ephemeral + persistent agents; resume; awareness gate
 per activation; mailbox (full state machine, read_mail, op_id dedup,
 dormant-recipient semantics); claims (§9 matrix); bounded liveness with bounded
-restart grace; limits incl. state GC; MCP 2026-07-28 dual-version surface (50 tools);
+restart grace; limits incl. state GC; MCP 2026-07-28 dual-version surface (52 tools);
 local access secret + Origin validation; CLI (board/messages/log/verify/mcp-config);
 SSE web board; static binaries (`dibd` + `dibs`, no cgo, no runtime deps).
 

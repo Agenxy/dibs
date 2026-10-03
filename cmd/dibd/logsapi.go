@@ -57,12 +57,25 @@ func registerAdminAPI(mux *http.ServeMux, eng *engine.Engine) {
 			Agent      string `json:"agent"`
 			Permission string `json:"permission"`
 			Held       bool   `json:"held"`
+			MsgSerial  uint64 `json:"msg_serial"`
 		}
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
+		if body.MsgSerial != 0 && body.Permission != core.PermQueueOrderLock {
+			writeAdminResult(w, nil, &core.Error{
+				Code: "E_BAD_ARG", Msg: "permission does not take a task scope",
+				Hint: "msg_serial scopes queue_order_lock only; omit it for other permissions",
+			})
+			return
+		}
 		do := eng.RevokePermissionByHuman
+		if body.Permission == core.PermQueueOrderLock {
+			res, err := eng.SetQueueOrderLockByHuman(r.Context(), body.Agent, body.MsgSerial, body.Held)
+			writeAdminResult(w, res, err)
+			return
+		}
 		if body.Held {
 			do = eng.GrantPermissionByHuman
 		}

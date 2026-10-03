@@ -652,13 +652,22 @@ func (l *Agent) CanHoldExclusive() bool {
 // Message is one mailbox item. Body/Response plaintext in memory; ciphertext
 // at rest.
 type Message struct {
-	Serial   uint64 `json:"serial"`
-	From     string `json:"from"`
-	To       string `json:"to"`
-	Type     string `json:"type"`
-	Body     string `json:"body"`
-	State    string `json:"state"`
-	Consumed bool   `json:"consumed"`
+	RequestPriority    string    `json:"request_priority,omitempty"`
+	QueuePriority      string    `json:"queue_priority,omitempty"`
+	QueueDebt          bool      `json:"queue_debt,omitempty"`
+	QueueRank          int       `json:"queue_rank,omitempty"`
+	QueueBy            string    `json:"queue_by,omitempty"`
+	QueueChangedAt     time.Time `json:"queue_changed_at,omitzero"`
+	QueueChangedSerial uint64    `json:"queue_changed_serial,omitempty"`
+	QueueOrderLocked   bool      `json:"queue_order_locked,omitempty"`
+	QueueLockBy        string    `json:"queue_lock_by,omitempty"`
+	Serial             uint64    `json:"serial"`
+	From               string    `json:"from"`
+	To                 string    `json:"to"`
+	Type               string    `json:"type"`
+	Body               string    `json:"body"`
+	State              string    `json:"state"`
+	Consumed           bool      `json:"consumed"`
 	// RetainUntil is copied only from a successful, mutating response carrying
 	// the new recorded decision. Zero preserves the legacy 15-minute window.
 	RetainUntil time.Time `json:"retain_until,omitzero"`
@@ -733,7 +742,7 @@ type Message struct {
 // capacity, displacement, inbox, retention, and GC.
 func (m *Message) Terminal() bool {
 	switch m.State {
-	case MsgStateAnswered, MsgStateApproved, MsgStateDenied, MsgStateDeclined, MsgStateDone,
+	case MsgStateAnswered, MsgStateApproved, MsgStateQueued, MsgStateDenied, MsgStateDeclined, MsgStateDone,
 		MsgStateExpiredSilent, MsgStateExpiredDormant, MsgStateExpiredDead,
 		MsgStateDisplaced:
 		return true

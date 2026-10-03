@@ -140,3 +140,19 @@ func TestPanelCanReachTheBoardOnAHostThatDropsMeta(t *testing.T) {
 		t.Fatal("panel's fetch returned no board; the fallback route is dead")
 	}
 }
+
+func TestQueuedPanelCarriesItsRenderedDeadlineAndOrder(t *testing.T) {
+	out := panelPayload(core.Result{"inbox": core.Result{"messages": []core.Result{{
+		"serial": 7, "type": "request", "state": core.MsgStateQueued, "deadline": "2030-01-01T00:00:00Z",
+		"queue_rank": 2, "request_priority": "high", "queue_order_locked": true, "queue_by": "worker",
+	}}}})
+	encoded, err := json.Marshal(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, rendered := range []string{"deadline", "queue_rank", "request_priority", "queue_order_locked", "queue_by"} {
+		if !strings.Contains(string(encoded), rendered) {
+			t.Errorf("panel dropped rendered queued field %s", rendered)
+		}
+	}
+}

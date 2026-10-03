@@ -41,13 +41,13 @@ const Board = (() => {
   // when its STATE says so, not when it happens to carry response text,
   // because a denial and a decline are both terminal and both carry none.
   const TERMINAL = new Set([
-    "answered", "approved", "denied", "declined", "done", "acked",
+    "answered", "approved", "queued", "denied", "declined", "done", "acked",
     "expired_unanswered", "expired_recipient_dormant", "expired_recipient_dead",
     "displaced",
   ])
 
   const VERDICT = {
-    answered: "Answered", approved: "Approved", denied: "Denied",
+    answered: "Answered", approved: "Approved", queued: "Queued", denied: "Denied",
     declined: "Declined", done: "Done", acked: "Acknowledged",
     expired_unanswered: "Expired, unanswered",
     expired_recipient_dormant: "Expired: recipient dormant",
@@ -263,6 +263,7 @@ const Board = (() => {
           ${l.kind === "persistent" ? '<span class="tag">Standing</span>' : ""}
           ${agentBadges(l)}
           ${workHTML(l)}
+          ${l.queued ? `<span class="tag">${esc(l.queued)} queued</span>` : ""}
           ${staleReasonHTML(l)}
           ${cadenceHTML(l.id, events)}
           <time class="age" datetime="${esc(l.last_coordination_at || "")}">${esc(ago(l.last_coordination_at))}</time>
@@ -444,6 +445,13 @@ const Board = (() => {
   function taskHTML(m) {
     const steps = Array.isArray(m.milestones) ? m.milestones : []
     const entries = Array.isArray(m.progress) ? m.progress : []
+    if (m.state === "queued") {
+      const priority = m.queue_priority || m.request_priority || "normal"
+      return `<p class="task-count">Queued #${esc(m.queue_rank || "")} · ${esc(priority)}` +
+        `${m.deadline ? ` · deadline ${esc(m.deadline)}` : ""}` +
+        `${m.queue_order_locked ? " · ordering locked" : ""}` +
+        `${m.queue_by ? ` · ordered by ${esc(m.queue_by)}` : ""}</p>`
+    }
     if (!steps.length && !entries.length && !m.deliverable) return ""
     const reports = entries.filter((p) => !p.review)
     const reached = new Set(reports.map((p) => p.milestone).filter((n) => n > 0))

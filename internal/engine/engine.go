@@ -290,6 +290,7 @@ func New(st *core.State, led Ledger, prober Prober, history ...[]core.Event) *En
 	// and putting that in the one constructor means an embedder or a test cannot
 	// get an engine that has skipped it.
 	e.rebuildBlockingNotices()
+	e.rebuildQueueNotices()
 	e.rebuildSituationalNotices()
 	e.rebuildInvitationHistory(history)
 	return e
@@ -406,6 +407,12 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// caller's to assert. Checked below, after the actor is known.
 	op.ClaimVerified = false
 	op.AdoptAuthorised = false
+	op.QueueDebt = false
+	op.PermissionActor = ""
+	op.PermissionActorCreated = 0
+	if (op.Kind == core.OpGrantPermission || op.Kind == core.OpRevokePermission) && op.Mode == core.PermQueueOrderLock {
+		op.PermissionActor = core.HumanActor
+	}
 
 	// EVERY op this build writes says which semantics it was written under.
 	//
@@ -841,6 +848,9 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	if err := e.refuseAmbiguousRelease(op); err != nil {
 		return nil, err
 	}
+	if err := e.prepareQueueDebt(op); err != nil {
+		return nil, err
+	}
 
 	if op.Kind == core.OpGrantRole {
 		switch {
@@ -861,6 +871,15 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	res, err := e.applyAndLedger(op, now)
 	if err != nil {
 		return nil, err
+	}
+	e.addQueueCheckpoint(res, actor, op, now)
+	if op.Kind == core.OpRespond && res != nil && (op.Disposition == "approve" || op.Disposition == "queue") {
+		if m := e.state.Messages[op.MsgSerial]; m != nil && m.Owed(now) {
+			res["completion"] = owedCall(m)
+			if m.State == core.MsgStateQueued {
+				res["start"] = fmt.Sprintf("when you choose to start: respond(msg_serial:%d, disposition:\"approve\")", m.Serial)
+			}
+		}
 	}
 	// A GRANT APPROVED BY A PERSON is that person's decision as much as one
 	// made through the admin API: only the human may approve a grant request
@@ -954,6 +973,9 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// authenticated call. Notices had no such path, so suppressing the nudge
 	// suppressed the fact.
 	if op.Kind == core.OpAckBoard && actor != nil {
+		res["task_queue"] = e.taskQueueView(actor.ID)
+		res["owes"] = e.owedSerials(actor.ID, now)
+		res["owed_work"] = e.owedWorkView(actor.ID, now)
 		// Always present, empty when there is nothing.
 		//
 		// Omitting the key when nothing had happened meant an agent could not tell

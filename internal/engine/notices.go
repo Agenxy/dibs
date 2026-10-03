@@ -162,7 +162,7 @@ func situationalNotice(ev core.Event) (who, text string, blocking bool) {
 	switch ev.Type {
 	case "agent.joined":
 		who, text = ev.Agent, joinedNotice(ev)
-	case "message.approved", "message.denied", "message.answered", "message.declined", "message.done":
+	case "message.approved", "message.queued", "message.denied", "message.answered", "message.declined", "message.done":
 		// The ANSWER goes to whoever asked.
 		//
 		// A request approved is the single most consequential thing that can
@@ -171,6 +171,9 @@ func situationalNotice(ev core.Event) (who, text string, blocking bool) {
 		// re-reading a message it had already sent. Nothing told it. Reported
 		// as: "when you approve an agent's request they should be notified."
 		who, text, blocking = ev.To, answeredNotice(ev), true
+	case "message.queue_changed":
+		who, text = ev.To, fmt.Sprintf("Queue position or priority changed for request %d; "+
+			"read_mail has its current order", ev.Data["msg_serial"])
 	case "message.progress":
 		// Progress on work this agent asked for. NOT blocking: it is news
 		// about a task, not the answer the sender stopped for, so it arrives
@@ -435,6 +438,9 @@ func answeredNotice(ev core.Event) string {
 	by := ev.Agent
 	serial, _ := ev.Data["msg_serial"].(uint64)
 	switch ev.Type {
+	case "message.queued":
+		return fmt.Sprintf("%s queued your request (msg %d) at #%v; accepted for later, not started",
+			by, serial, ev.Data["queue_position"])
 	case "message.approved":
 		s := fmt.Sprintf("%s APPROVED your request (msg %d)", by, serial)
 		if g, _ := ev.Data["granted"].(string); g == core.PermRelocate {
@@ -575,6 +581,9 @@ func (e *Engine) rebuildBlockingNotices() {
 		if m.Adopt != "" && m.State == core.MsgStateApproved {
 			ev.Data["adopted"] = m.Adopt
 		}
+		if m.State == core.MsgStateQueued {
+			ev.Data["queue_position"] = e.state.QueuePosition(m)
+		}
 		e.pushNoticeAs(m.From, answeredNotice(ev), m.RespondedAt, m.Serial, true, ev.TS)
 	}
 }
@@ -610,6 +619,8 @@ func (e *Engine) stillOwed(m *core.Message) bool {
 // carry no notice.
 func verdictEvent(state string) string {
 	switch state {
+	case core.MsgStateQueued:
+		return "message.queued"
 	case core.MsgStateApproved:
 		return "message.approved"
 	case core.MsgStateDenied:

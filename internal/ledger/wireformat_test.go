@@ -94,6 +94,8 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 	}
 	// The op payload: the union of every tag that reached disk above.
 	wantOp := map[string]bool{
+		// New task-queue decisions; historical tags below stay byte-for-byte.
+		"request_priority": true, "queue_debt": true, "queue_priority": true, "queue_reset_priority": true, "queue_before": true, "queue_tail": true, "permission_actor": true, "permission_actor_created": true,
 		// A new response's recorded review-retention decision. Older operations
 		// omit it and retain their historical GC semantics; never rename it.
 		"retain_until": true,
@@ -428,7 +430,8 @@ const (
 	// time, no rename. If you are here because a sweep moved
 	// this value, the sweep is the bug, and the tag it renamed is the data
 	// loss.
-	frozenOpFingerprint       = "sha256:fedae2b28c34b631"
+	// Task queue: eight additive op tags, no renamed/removed historical tags.
+	frozenOpFingerprint       = "sha256:6ca231a45f65e4da"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`
@@ -436,7 +439,8 @@ const (
 	// passing: the exact co-edited-guard failure AGENTS.md describes, in the
 	// guard written to stop it. Found by a pre-release review.
 	// Updated for the newly added retain_until decision, with no renamed tags.
-	frozenMessageFingerprint = "sha256:8f0ece384e9d1b03"
+	// Task queue: nine additive message tags, no renamed/removed historical tags.
+	frozenMessageFingerprint = "sha256:c907f83a92bf691c"
 	// The identity inside op.agent. Set when the fingerprint was added; one
 	// new tag at a time from here, never a rename.
 	frozenAgentFingerprint = "sha256:c630d3cc9f27eb95"
@@ -497,6 +501,7 @@ func TestOpKindStringsAreFrozen(t *testing.T) {
 		"OpSetSlot":        {core.OpSetSlot, "declare"},
 		"OpClearSlot":      {core.OpClearSlot, "undeclare"},
 		"OpSendMessage":    {core.OpSendMessage, "send"},
+		"OpQueueUpdate":    {core.OpQueueUpdate, "queue_update"},
 		"OpClaim":          {core.OpClaim, "claim"},
 		"OpRelease":        {core.OpRelease, "release"},
 		"OpSweep":          {core.OpSweep, "sweep"},
@@ -575,6 +580,8 @@ func TestOpKindStringsAreFrozen(t *testing.T) {
 // the two op kinds above.
 func TestLedgerMessageFieldNamesAreFrozen(t *testing.T) {
 	frozen := map[string]bool{
+		// Additive task queue state: no historical field renamed.
+		"request_priority": true, "queue_priority": true, "queue_debt": true, "queue_rank": true, "queue_by": true, "queue_changed_at": true, "queue_changed_serial": true, "queue_order_locked": true, "queue_lock_by": true,
 		"retain_until": true, // originating response decision, absent on legacy mail
 		// The agent an adoption moved this message FROM, set by the fold on the
 		// move so read_mail can tell mail an heir was given from mail a reused id

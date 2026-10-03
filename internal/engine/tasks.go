@@ -18,6 +18,9 @@ func (e *Engine) TrackedMessage(ctx context.Context, serial uint64) (core.Messag
 	_, err := e.query(ctx, func() core.Result {
 		if msg := e.state.Messages[serial]; msg != nil && msg.Tracked {
 			m, found = *msg, true
+			if m.State == core.MsgStateQueued {
+				m.QueueRank = e.state.QueuePosition(msg)
+			}
 			m.Progress = append([]core.Progress(nil), msg.Progress...)
 			m.Milestones = append([]string(nil), msg.Milestones...)
 		}

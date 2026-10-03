@@ -63,6 +63,16 @@ const ObligationWindow = 24 * time.Hour
 // do. A request that carried its own effect (a grant or an adoption) owes
 // nothing, since approving it performed it.
 func (m *Message) Owed(now time.Time) bool {
+	if m.DurableDebt() {
+		return true
+	}
 	return m.Type == MsgRequest && m.State == MsgStateApproved && m.Grant == "" && m.Adopt == "" &&
 		m.From != m.To && now.Sub(m.TerminalAt) <= ObligationWindow
+}
+
+// DurableDebt identifies explicit post-queue acceptance without applying a clock
+// to historical approvals. It is work to recover even when its verdict is consumed.
+func (m *Message) DurableDebt() bool {
+	return m.QueueDebt && m.Type == MsgRequest && (m.State == MsgStateQueued || m.State == MsgStateApproved) &&
+		m.Grant == "" && m.Adopt == "" && m.From != m.To
 }

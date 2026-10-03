@@ -79,6 +79,7 @@ var (
 		// The name a human chose, when the id could not carry it. Without it a
 		// fleet named in a non-Latin script reads `agent`, `agent-2`, `agent-3`.
 		"display_name",
+		"queued",
 	}
 	slotFields = []string{"id", "text", "refs", "dirs"}
 )
@@ -111,6 +112,7 @@ var (
 	msgFields = []string{
 		"serial", "type", "from", "to", "body", "response", "state", "attachments", "grant", "adopt",
 		"milestones", "progress", "deliverable",
+		"request_priority", "queue_priority", "queue_rank", "queue_by", "queue_order_locked", "queue_lock_by",
 	}
 	eventFields = []string{"serial", "type", "agent", "to", "ts"}
 )
@@ -173,7 +175,11 @@ func extractMessages(box any) []map[string]any {
 	}
 	var out []map[string]any
 	for _, m := range asMaps(raw) {
-		out = append(out, pick(m, msgFields))
+		view := pick(m, msgFields)
+		if m["state"] == core.MsgStateQueued {
+			view["deadline"] = m["deadline"]
+		}
+		out = append(out, view)
 	}
 	return out
 }
