@@ -615,7 +615,12 @@ cosign verify-blob checksums.txt \
 
 The identity names the workflow AND the tag, so it has to match the release you
 downloaded. `Verified OK` means the checksums file was produced by this
-repository's release workflow at that tag, and `sha256sum -c checksums.txt` then covers the archives.
+repository's release workflow at that tag. Compare your downloaded archive's
+SHA-256 with its exact filename in that verified file. Releases carrying guest
+CLI evidence additionally name `members/<os>_<arch>/dibs`: these describe the
+executable bytes inside the archive, not separate downloadable assets. A blanket
+`sha256sum -c checksums.txt` reports those member paths missing unless you have
+also laid out the extracted executables at those paths.
 
 The browser board shows decrypted mail and can act as you, so it is gated on
 something the agents do not have: every agent holds the coordination secret, and
