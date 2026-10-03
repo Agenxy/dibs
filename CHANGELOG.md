@@ -53,6 +53,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Endpoint-scoped guest stdio adapter (implementation in progress).**
   **Not ready for guest use:** an issuer-exported recipe is required but not
   available yet. No harness or cloud runtime has been accepted.
+  Issuance now returns the stored invitation's exact expiry and a recovery
+  nonce derived from the retained board key and invitation name. Reissuing an
+  invitation keeps that nonce; no nonce vault or ledger secret is added.
   `dibs mcp-stdio --guest <private absolute JSON file>` uses only the invited
   IPv6 endpoint, constrained CA and bearer; it never initializes a local board
   or imports guest trust into the harness or system. Guest discovery is

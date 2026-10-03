@@ -2,6 +2,7 @@ package invites
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/url"
@@ -22,6 +23,11 @@ type Service struct {
 	Policy   boardconfig.InvitesConfig
 	URL      string
 	Endpoint *PublicEndpoint
+	// RecoveryNonce is a fixed-domain derivation owned by the existing at-rest
+	// Box, not a raw key or an invitation-store field. Issuance discloses it
+	// once beside the bearer; list never receives it and issuance is not ledgered.
+	// A later register seals its supplied nonce under the existing ledger rule.
+	RecoveryNonce func(string) (string, error)
 }
 
 func refused(why, hint string) error {
@@ -135,7 +141,17 @@ func (s *Service) mint(ctx context.Context, issuer Issuance, coordinator bool,
 	if err := s.Engine.InviteNameAvailable(ctx, name, bound, issuer.By); err != nil {
 		return nil, err
 	}
-	key, err := s.Store.MintIssued(name, ttl, time.Now(), issuer)
+	nonce := ""
+	if s.RecoveryNonce != nil {
+		nonce, err = s.RecoveryNonce(name)
+		raw, decodeErr := hex.DecodeString(nonce)
+		if err != nil || decodeErr != nil || len(raw) != 32 {
+			return nil, refused("guest recovery credential is unavailable",
+				"restore the board's original at-rest key and restart; do not replace it or mint a new mailbox silently")
+		}
+	}
+	now := time.Now()
+	key, err := s.Store.MintIssued(name, ttl, now, issuer)
 	if err != nil {
 		return nil, issuanceError(err)
 	}
@@ -146,10 +162,15 @@ func (s *Service) mint(ctx context.Context, issuer Issuance, coordinator bool,
 			"call invite(action: list), revoke the unused invitation by name, "+
 				"and retry only after the public endpoint is restored")
 	}
-	return core.Result{
+	result := core.Result{
 		"name": name, "key": key, "url": info.URL, "issued_by": issuer.By,
-		"config": endpointRecipe(info, name, key),
-	}, nil
+		"config":     endpointRecipe(info, name, key),
+		"expires_at": now.Add(ttl),
+	}
+	if nonce != "" {
+		result["recovery_nonce"] = nonce
+	}
+	return result, nil
 }
 
 func (s *Service) mintEntries(ctx context.Context, entries []Entry) ([]Entry, error) {

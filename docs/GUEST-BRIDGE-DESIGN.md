@@ -183,6 +183,17 @@ within existing invitation policy, not bridge-created work assignments.
 
 Keep caller-provided nonce and agent token unchanged. The issuer mints a recovery
 nonce into the PRIVATE recipe, as sensitive as the invitation key beside it.
+Review 17133/17142 refined issuance: derive it with HKDF-SHA256 from the
+board's existing at-rest key, no salt, info `dibs guest recovery v1\x00` plus
+the invitation name, 32 bytes encoded as hex. Keep derivation inside the
+ledger Box and inject only a fixed-name callback into the issuance service;
+never disclose or newly store the board key. This preserves the same name's
+recovery across invitation, IP and guest-CA reissue without a credential vault.
+The key is board state: back it up with the board. Arbitrary replacement is not
+supported rotation and breaks both ledger decryption and derived guest recovery.
+Any future key migration must carry the original recovery derivation forward
+or require explicit identity recovery; reissuing a recipe alone cannot resume
+a retained mailbox with a changed nonce. An explicit caller nonce still wins.
 A fresh container given the same recipe recovers the same mailbox: its identity
 does not depend on a disposable volume. A supplied nonce wins; otherwise use the
 recipe nonce. Only for older recipes without one, a guest-private, atomic/locked

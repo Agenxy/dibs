@@ -425,7 +425,8 @@ func run() error {
 	mcpSrv.SetTaskKey(secret) // task ids survive a restart; see mcp/tasks.go
 	inviteService := &invites.Service{
 		Engine: eng, Store: invites.Store{Dir: *dir}, Policy: cfg.Invites, URL: publicCfg.URL,
-		Endpoint: publicCfg.Endpoint,
+		Endpoint:      publicCfg.Endpoint,
+		RecoveryNonce: box.GuestRecoveryNonce,
 	}
 	mcpSrv.SetInvites(inviteService)
 	mux.Handle("/mcp", mcpSrv)
