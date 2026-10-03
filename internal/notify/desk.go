@@ -9,6 +9,9 @@ import (
 	"time"
 )
 
+// ErrNotAway means input resumed between the observation and the actual open.
+var ErrNotAway = errors.New("person is no longer away")
+
 // Desk is an observed desktop state, not an elapsed-idle inference.
 // Unknown or absent displays are never evidence that the person is away.
 type Desk struct {
@@ -55,5 +58,11 @@ func OpenWhenAway(url string, minIdle time.Duration) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 	defer cancel()
 	// #nosec G204 -- fixed helper mode; URL is checked again by the native helper.
-	return exec.CommandContext(ctx, path, "--open-away", url, strconv.FormatFloat(minIdle.Seconds(), 'f', -1, 64)).Run()
+	err := exec.CommandContext(ctx, path, "--open-away", url,
+		strconv.FormatFloat(minIdle.Seconds(), 'f', -1, 64)).Run()
+	var exited *exec.ExitError
+	if errors.As(err, &exited) && exited.ExitCode() == 3 {
+		return ErrNotAway
+	}
+	return err
 }

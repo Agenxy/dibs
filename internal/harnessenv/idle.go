@@ -1,11 +1,14 @@
 package harnessenv
 
 import (
+	"errors"
 	"os/exec"
 	"regexp"
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/agenxy/dibs/internal/notify"
 )
 
 // A loaded thread receives its queued notice without opening its app. An
@@ -70,12 +73,11 @@ func (s Shower) ShowWhenIdle(argv []string, thread string, report func(opened, d
 	}
 	if s.ready() {
 		opened, err := s.Show(argv, thread)
-		report(opened, false, err)
-		if err == nil {
-			return
+		if !errors.Is(err, notify.ErrNotAway) {
+			report(opened, false, err)
+			return // success or a permanent helper failure; mail stays queued
 		}
-		// A helper failure leaves mail queued. Keep observing so an updated
-		// helper or a manually loaded thread can settle the pending open.
+
 	}
 	pendingOpens.Lock()
 	if pendingOpens.threads[thread] {
@@ -98,10 +100,11 @@ func (s Shower) ShowWhenIdle(argv []string, thread string, report func(opened, d
 			}
 			if s.ready() {
 				opened, err := s.Show(argv, thread)
-				report(opened, false, err)
-				if err == nil {
+				if !errors.Is(err, notify.ErrNotAway) {
+					report(opened, false, err)
 					return
 				}
+
 			}
 		}
 	}()
