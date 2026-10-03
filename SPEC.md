@@ -437,6 +437,10 @@ and nothing else: the board wakes an agent and does not steer one. See
   running daemon; after restart, existing boot/checkpoint rules apply and a new
   authenticated model call is needed for this override. Process/session metadata
   is not refreshed or rebound by this rule.
+  A member that crashes immediately after qualifying contact can consequently
+  keep an announcement outstanding, rather than blocked, for up to `idle_ttl`
+  (45 minutes by default). Once contact expires, normal crash detection and the
+  blocked-announcement diagnosis resume at the next sweep.
 - **Sweep decisions are recorded** (`stale_agents`, `dead_agents`, `alive_pids`),
   replay applies decisions, never re-probes (§2). Quiet sweeps are unledgered.
 - **Lifecycle clocks run from ledgered transitions, not ledgered activity.** The

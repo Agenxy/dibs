@@ -12,6 +12,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   lease, while diagnostics continue to report the old process as dead. A silent
   caller is still detected as crashed. Boot grace and background subscriptions
   cannot manufacture this evidence, and no process or session binding is changed.
+  An announcement owed by a member that crashes just after contacting Dibs can
+  therefore stay outstanding for up to that lease (45 minutes by default) before
+  it reads blocked.
 
 - **Accepted work has an explicit task queue.** Recipients can accept requests
   for later, reprioritise or reorder them, and start one when ready. Queued work
