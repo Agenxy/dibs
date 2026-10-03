@@ -659,6 +659,9 @@ type Message struct {
 	Body     string `json:"body"`
 	State    string `json:"state"`
 	Consumed bool   `json:"consumed"`
+	// RetainUntil is copied only from a successful, mutating response carrying
+	// the new recorded decision. Zero preserves the legacy 15-minute window.
+	RetainUntil time.Time `json:"retain_until,omitzero"`
 	// AdoptedFrom is the agent this message was addressed to before an
 	// authorised adoption moved it. Set by the fold on the move, so read_mail
 	// can tell mail an heir was GIVEN from mail a reused id merely inherited:

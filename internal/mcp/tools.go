@@ -399,8 +399,8 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "respond",
-			"description": "Answer received mail or accept/flag a milestone of your sent request. " +
-				"Progress/done reports approved work (owed until done). Use the request serial, not an event.",
+			"description": "Answer mail or review a sent request. Progress/done reports approved work; " +
+				"progress can correct flagged done work. Use the request serial, not an event.",
 			"inputSchema": obj(map[string]any{
 				"token": tok, "msg_serial": num("serial of the message"),
 				"disposition": map[string]any{

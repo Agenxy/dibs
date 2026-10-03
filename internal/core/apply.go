@@ -287,6 +287,11 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 	if evs == nil {
 		return res, nil, nil
 	}
+	if op.Kind == OpRespond && op.RetainUntil != nil {
+		if m := s.Messages[op.MsgSerial]; m != nil {
+			m.RetainUntil = op.RetainUntil.UTC()
+		}
+	}
 	// Every ledgered actor op refreshes the durable coordination checkpoint.
 	l.LastCoordination = now
 	// ONE op, ONE serial.

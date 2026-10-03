@@ -141,14 +141,14 @@ func reviewsOrReports(disposition string) bool {
 // State rules, so in the fold: they read the message. "progress" was an
 // unknown disposition to every earlier build, so no ledger holds one.
 func (s *State) applyProgress(m *Message, op *Op, now time.Time) (Result, []Event, error) {
-	if m.Type != MsgRequest || m.State != MsgStateApproved || m.Grant != "" || m.Adopt != "" {
+	if !m.canReportProgress() {
 		state := m.State
 		if state == "" {
 			state = "pending"
 		}
 		return nil, nil, errf("E_BAD_DISPOSITION",
-			"progress reports on a request you APPROVED and have not reported done: approve it "+
-				"first, and once the work is delivered close it with done",
+			"progress reports on an approved request, or a completed request with an unresolved "+
+				"review flag: approve first, and close delivered work with done",
 			"message %d is a %s and %s", m.Serial, m.Type, state)
 	}
 	if op.Milestone > len(m.Milestones) {
@@ -186,6 +186,15 @@ func (s *State) applyProgress(m *Message, op *Op, now time.Time) (Result, []Even
 	evs := []Event{{Type: "message.progress", Agent: m.To, To: m.From, Data: data}}
 	s.finish(&evs, now)
 	return Result{"ok": true, "state": m.State, "reached": reached, "total": total}, evs, nil
+}
+
+// Done work permits correction reports only while a review flag remains.
+// Approval requests that grant roles or move mailboxes never report progress.
+func (m *Message) canReportProgress() bool {
+	if m.Type != MsgRequest || m.Grant != "" || m.Adopt != "" {
+		return false
+	}
+	return m.State == MsgStateApproved || (m.State == MsgStateDone && m.HasUnresolvedReviewFlags())
 }
 
 // Reached counts the distinct milestones the recipient reported, however
@@ -229,7 +238,7 @@ func (s *State) applyReview(l *Agent, op *Op, now time.Time) (Result, []Event, e
 			return nil, nil, errf("E_BAD_ARG", "say what is wrong, or what to do instead: that is "+
 				"the whole of a flag", "a flag with no body")
 		}
-	} else if op.Milestone == 0 {
+	} else if op.Milestone == 0 && !m.unresolvedReviewFlags()[0] {
 		return nil, nil, errf("E_BAD_ARG", "accept names the milestone you checked", "accept with no milestone")
 	}
 	if len(op.Body) > s.Limits.MaxBodyBytes {

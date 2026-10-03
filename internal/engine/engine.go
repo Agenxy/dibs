@@ -1019,6 +1019,7 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 // applyAndLedger applies an op and ledgers it iff the serial advanced.
 // Persistence failure is fail-stop (SPEC §4).
 func (e *Engine) applyAndLedger(op *core.Op, now time.Time) (core.Result, error) {
+	e.stampReviewRetention(op, now)
 	before := e.state.Serial
 	res, evs, err := e.state.Apply(op, now)
 	if err != nil {

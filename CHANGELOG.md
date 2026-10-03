@@ -148,6 +148,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   socket on setup failure before server cleanup can hang. Clients should query
   HEAD after their active PATCH ends, not alongside it.
 
+- **Completed work remains available for review.** New responses keep their
+  records for 24 hours; unresolved flags keep them until correction or
+  acceptance, within the existing terminal-message cap and loss watermark.
+  Flagged done work can append correction progress without reopening its
+  original obligation or changing its verdict and artifact. Whole-work flags
+  clear only through whole-work correction or acceptance. The originating op
+  records retention once; historical ledger records retain their prior rules.
+
 - **Milestone acknowledgments survive a daemon restart.** Dismissing a retained
   progress or review event before any notice map has been created no longer
   crashes the board. Acknowledgment remains derived and does not review or
