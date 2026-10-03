@@ -53,11 +53,20 @@ func (e *Engine) SetQueueOrderLock(
 			Kind: kind, To: agent, Mode: core.PermQueueOrderLock, MsgSerial: serial,
 			PermissionActor: actor.ID, PermissionActorCreated: actor.CreatedSerial,
 		}
+		// This op is built here rather than arriving through exec, so the
+		// name resolution exec does at ingress has to be done here too.
+		addressed, refErr := e.resolveAgentRefs(op)
+		if mutationErr = refErr; mutationErr != nil {
+			return nil
+		}
 		if mutationErr = core.Admit(op, e.state.Limits); mutationErr != nil {
 			return nil
 		}
 		r, applyErr := e.applyAndLedger(op, now)
 		mutationErr = applyErr
+		if r != nil && len(addressed) > 0 {
+			r["addressed"] = addressedNote(op, addressed)
+		}
 		return r
 	})
 	if err != nil {
