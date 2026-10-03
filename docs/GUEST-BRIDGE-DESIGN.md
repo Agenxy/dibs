@@ -1,6 +1,7 @@
 # Endpoint-scoped guest stdio bridge
 
-Status: accepted in independent Dibs review 16380, with refinements below. Operator choice
+Status: accepted in independent Dibs reviews 16380 and 18900, with the release
+version clarification in answer 18918 and refinements below. Operator choice
 recorded in Dibs answer 15770 on 2026-10-03; follows request 14136 and the
 measurements in `docs/GUEST-NATIVE-TRUST.md`. This document is not a runnable
 recipe, verified adapter, release announcement, cloud acceptance or WAN proof.
@@ -276,12 +277,74 @@ task retention and durable board replay are not replaced by a bridge cache.
 One issuance payload must carry exact endpoint/name/expiry/key, guest CA/pin,
 and a **published supporting version**, per-platform immutable release URLs
 and SHA-256 digests. No `latest` URL, guessed checksum, local commit version or
-unreleased snapshot is offered as a ready-to-run recipe. Release pipeline owns
-the asset manifest (same signed checksums/tag/artifacts); derive names from
+unreleased snapshot is offered as a ready-to-run recipe. The release's existing
+signed `checksums.txt` is the artifact record, not a new manifest with another
+schema. Derive archive names from
 `internal/selfupdate` and targets from the release build declarations. Current
 artifacts are tar.gz for Linux amd64/arm64 and macOS arm64; Windows/macOS Intel
 must be reported unsupported by release provisioning, not mapped to the wrong
 binary. An implementation merged on main is not a published bridge binary.
+
+The archive digest already belongs to the signed checksums file. Because this
+path extracts only the named `dibs` member, the release also records that
+member's digest in the same checksums file, with an unambiguous platform-scoped
+name. Compute it from the packaged executable, including any release signing,
+not an earlier build-stage image. No second manifest, signature identity or
+capability JSON is introduced. The exact member-line naming and pipeline wiring
+remain implementation details to verify through the actual release-tool door.
+
+Support is a compiled version fact about the **bridge-to-board contract**, not
+an assertion a downloaded manifest makes. The first supporting minimum stays
+unset until release preparation assigns it; do not invent a next version or
+interpret unset as zero. Missing minimum, missing verified record, old version
+or unsupported target keeps the recipe INCOMPLETE. Tests may exercise an
+explicit fixture floor without making a production supporting-release claim.
+
+### Issuer record, version selection and compatibility
+
+The issuer gets a bounded public record from its own verified install, not from
+GitHub during minting. A signature-checked `dibs upgrade --fetch` persists the
+exact tag, checksum bytes and signature bundle after successful installation,
+outside core and the writer. The evidence must survive staging cleanup;
+`--allow-unsigned` never supplies an admissible record. Evidence describing
+files fetched or staged is not proof that those files became the running board.
+
+Homebrew and source installs can explicitly acquire a record using a separate
+out-of-band `dibs invite --verify-release <tag>` operation (proposed spelling),
+through the same pinned `selfupdate.Verify` boundary. This operation neither
+mints an invitation nor installs binaries. No tag is inferred from a development
+build, an untagged commit or a `latest` URL. Recipe construction freezes public
+metadata separately from secret disclosure and never reaches GitHub.
+
+A released board defaults to its own verified release. An explicitly verified
+tag on a released board may name that tag or a newer one, never an older one.
+A development board may use an explicitly verified supporting tag without
+relabeling itself as a signed release. The recipe's provenance and export output
+must state both facts: `guest bridge: verified release <tag>; board: devel <sha>`
+(or the actual board build description when no revision is available). Do not
+claim that verifying a release verifies the development board or establishes
+runtime compatibility by itself.
+
+Whenever a persisted record is read for admission, re-verify its exact bounded
+checksum bytes against its retained bundle and the pinned workflow identity at
+that tag. A boolean saying a file was verified once, safe filesystem permissions
+or operator-edited JSON does not establish its provenance. This offline check
+runs outside core, the writer and a successful mint's secret-disclosure step;
+only a detached validated public snapshot reaches recipe projection. Failure
+withdraws runnable recipes, not ordinary invitation/list/revoke or fleet access.
+Do not claim offline verification until it is measured with network denied;
+missing verification tools or required verification material is a refusal,
+never permission to use hashes without issuer verification.
+
+A development board can be ahead of its selected released bridge. Its compiled
+guest-contract floor must refuse an older bridge with a corrective verification
+tag hint. This is a compatibility boundary, not new invitation authority. Design
+the check for MCP 2026 per-request/stateless operation first; an `initialize`
+check alone cannot protect `server/discover` or direct modern tool calls.
+Legacy initialize is a courtesy path, not the source of modern bridge state.
+The wire declaration and enforcement at all invited ingress paths require
+real-command modern-without-initialize and legacy probes before this is offered
+as an implemented compatibility guarantee.
 
 The first-time recipe states these steps literally for the cloud agent using its
 available download/hash/archive primitives. No installer program, Python, uv or
@@ -319,9 +382,10 @@ separately reviewed lifecycle boundary:
    used, and the invited IPv6 HTTPS tuple for runtime. Container IPv6, network
    policy and a read-only/noexec filesystem can each prevent use; say which one.
 
-Recipe generation must use bounded cached/operator-supplied **verified public**
-artifact metadata, not do GitHub I/O inside core, writer loop or a successful
-mint's secret disclosure step. A changed runtime feature's minimum version and
+Recipe generation uses the bounded **verified public** install or explicitly
+acquired record above, not arbitrary operator-supplied digest JSON. It does no
+GitHub I/O inside core, writer loop or a successful mint's secret disclosure
+step. A changed runtime feature's minimum version and
 release metadata are checked before offering the bridge recipe. No valid
 metadata means no runnable adapter recipe; invite/list/revoke behavior and
 private fleet access remain intact. No protocol-2026 feature is designed around
@@ -363,7 +427,11 @@ different transport, not retroactive repair of the measurement.
   notifications and next-call recovery: bounded timings and correct uncertainty,
   no duplicate send or fake initialized/tools success. EOF/parent death/signal
   exits even with inherited pipes; stdout is exclusively valid MCP JSON.
-- Provisioner: bad signatures/hashes, missing supporting release, wrong target,
+- Literal bootstrap and issuer record: bad signatures/hashes, edited cached
+  checksum/bundle/tag, unsigned install, missing or unset supporting minimum,
+  older-than-floor record, wrong target, misleading development-build provenance,
+  modern calls without initialize bypassing the compatibility floor,
+  network-denied record re-verification,
   truncated archive, symlink/traversal/duplicate/oversized member, unsafe paths,
   interrupted install and existing user config/binary preservation.
 
@@ -390,3 +458,14 @@ pull/task-polling policy. Its two refinements are an issuer-minted recipe recove
 nonce and literal first-time download/hash/extract steps instead of a provisioner
 bootstrap dependency. Proceed with failing real-command tests first; source
 review, gates, publication and installed/WAN acceptance remain separate work.
+
+Review 18900 refined provisioning to reuse the existing signed checksums file,
+compile the supporting version into the issuer, persist the issuer's verified
+install evidence, and keep first-time guest steps literal and dependency-free.
+Answer 18918 permits an explicitly verified tag on a development board only
+when both build facts remain visible, limits a released board's explicit tag
+to its own or newer, and leaves the first supporting minimum unset until release
+preparation. The compatibility rule must cover modern stateless requests rather
+than silently relying on a legacy initialize. This is still a design: no record,
+release, runnable recipe, installed-harness or cloud/WAN acceptance is supplied
+by this document.
