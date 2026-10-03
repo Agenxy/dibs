@@ -55,7 +55,8 @@ The bounded, versioned JSON file contains:
 
 The placeholders are a shape, not valid issued material. Admit at most 64 KiB, one
 document, known fields, one CA PEM block, no trailing bytes, no duplicate keys,
-and bounded strings. Use private directories (0700) and regular files (0600),
+and bounded strings. Field names use the schema's canonical lowercase spelling;
+case-insensitive aliases are refused too. Use private directories (0700) and regular files (0600),
 reject symlinks/non-regular input and unsafe ownership/permissions, and use
 atomic exclusive creation for provisioning. Never overwrite an existing recipe
 silently. Expiry is advisory locally and authoritative at the server.
@@ -201,7 +202,10 @@ The legacy store lives beside the private recipe, in endpoint/pin/name-hashed
 credential files. All readers/writers take a nonblocking OS lock; contention
 is an actionable refusal, not an unlocked write. A new nonce is synced to a
 private temporary file then atomically renamed before registration can leave
-the bridge. Existing corrupt, non-private or symlinked state is never replaced.
+the bridge. Sync the directory after rename before releasing that nonce, and
+repeat the directory sync before reusing existing state so a retry after a
+failed sync cannot bypass the durability boundary. Existing corrupt,
+non-private or symlinked state is never replaced.
 
 MCP 2026 task support is preserved only when this request declares the extension:
 send(track:true) can return CreateTaskResult; tasks/get/update/cancel and opaque

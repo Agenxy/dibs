@@ -69,6 +69,11 @@ func guestStoredNonce(file string, recipe *guestRecipe) (string, error) {
 		if err != nil || len(decoded) != 32 {
 			return "", errors.New("retained guest nonce is corrupt, refusing to mint a sibling")
 		}
+		// A preceding attempt may have renamed successfully but refused on
+		// directory Sync. Do not let retry bypass that durability boundary.
+		if err := syncGuestNonceDirectory(root); err != nil {
+			return "", err
+		}
 		return nonce, nil
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return "", err
@@ -76,7 +81,16 @@ func guestStoredNonce(file string, recipe *guestRecipe) (string, error) {
 	return writeGuestNonce(root, name)
 }
 
-func writeGuestNonce(root *os.Root, name string) (string, error) {
+// This narrow filesystem seam lets a test fail the directory operation AFTER
+// the production file write and rename, rather than testing a disconnected flag.
+type guestNonceRoot interface {
+	OpenFile(string, int, os.FileMode) (*os.File, error)
+	Open(string) (*os.File, error)
+	Remove(string) error
+	Rename(string, string) error
+}
+
+func writeGuestNonce(root guestNonceRoot, name string) (string, error) {
 	nonce := mintNonce()
 	if nonce == "" {
 		return "", errors.New("secure nonce entropy is unavailable")
@@ -104,7 +118,22 @@ func writeGuestNonce(root *os.Root, name string) (string, error) {
 	if err := root.Rename(tmp, name); err != nil {
 		return "", fmt.Errorf("commit retained guest nonce: %w", err)
 	}
+	if err := syncGuestNonceDirectory(root); err != nil {
+		return "", err
+	}
 	return nonce, nil
+}
+
+func syncGuestNonceDirectory(root guestNonceRoot) error {
+	dir, err := root.Open(".")
+	if err != nil {
+		return fmt.Errorf("open retained guest nonce directory for durability: %w", err)
+	}
+	defer func() { _ = dir.Close() }()
+	if err := dir.Sync(); err != nil {
+		return fmt.Errorf("sync retained guest nonce directory before registration: %w", err)
+	}
+	return nil
 }
 
 // Every reader holds this OS lock: no half-written nonce can be read, and a

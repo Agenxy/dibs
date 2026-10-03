@@ -291,7 +291,7 @@ func TestGuestBridgeInvalidRecipeBeforeHTTP(t *testing.T) {
 	}
 	endpoint, key, hits := nativeGuestFixture(t, config.Certificates[0], "::1")
 	for _, mode := range []string{
-		"public file", "public directory", "symlink", "relative path", "duplicate", "unknown field",
+		"public file", "public directory", "symlink", "relative path", "duplicate", "case alias", "unknown field",
 		"expired", "bad key", "wrong pin", "extra PEM", "DNS URL", "IPv4 URL", "query", "fragment", "userinfo",
 	} {
 		t.Run(mode, func(t *testing.T) {
@@ -346,6 +346,8 @@ func badGuestRecipe(t *testing.T, file, mode string) {
 		b = append([]byte(`{"endpoint":"https://[::1]:1/mcp",`), b[1:]...)
 	case "unknown field":
 		recipe["unknown"] = true
+	case "case alias":
+		recipe["Endpoint"] = recipe["endpoint"]
 	case "expired":
 		recipe["expires_at"] = time.Now().Add(-time.Minute).UTC().Format(time.RFC3339)
 	case "bad key":

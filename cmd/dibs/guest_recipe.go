@@ -214,6 +214,12 @@ func guestJSONObject(d *json.Decoder, depth int) error {
 		if !ok || seen[name] {
 			return errors.New("duplicate recipe JSON field")
 		}
+		// encoding/json also matches struct tags case-insensitively. Accept
+		// only the schema's canonical lowercase keys so Endpoint cannot hide
+		// beside endpoint and silently overwrite the operator's permission.
+		if name != strings.ToLower(name) {
+			return errors.New("noncanonical recipe JSON field; use the original lowercase schema keys")
+		}
 		seen[name] = true
 		if err := guestJSONValue(d, depth+1); err != nil {
 			return err
