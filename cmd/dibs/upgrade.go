@@ -912,11 +912,14 @@ func kickstartUnit(unit string) error {
 	switch runtime.GOOS {
 	case "darwin":
 		label := strings.TrimSuffix(filepath.Base(unit), ".plist")
-		// kickstart -k restarts a running service and starts a stopped one, which
-		// is what makes this safe to run whatever state the daemon was in.
+		// reloadUnit already bootstrapped this definition. RunAtLoad starts it
+		// immediately, so -k killed that replacement and triggered launchd's
+		// ten-second minimum-runtime delay before starting a second one. Plain
+		// kickstart leaves a running replacement alone and starts a definition
+		// whose launch conditions did not run it (including no RunAtLoad).
 		target := fmt.Sprintf("gui/%d/%s", os.Getuid(), label)
 		// #nosec G204 -- label derived from our own unit filename
-		out, err := exec.Command("launchctl", "kickstart", "-k", target).CombinedOutput()
+		out, err := exec.Command("launchctl", "kickstart", target).CombinedOutput()
 		if err == nil {
 			return nil
 		}
