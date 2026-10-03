@@ -41,11 +41,11 @@ func openGuestRecipeExport(path string) (*guestRecipeExport, error) {
 	return &guestRecipeExport{root: root, name: name}, nil
 }
 
-func (e *guestRecipeExport) publish(out map[string]any) error {
+func (e *guestRecipeExport) publish(out map[string]any, requestedName string) error {
 	if code, _ := out["code"].(string); code != "" {
 		return fmt.Errorf("%s: %v; %v", code, out["message"], out["hint"])
 	}
-	body, err := guestExportPayload(out)
+	body, err := guestExportPayload(out, requestedName)
 	if err == nil {
 		err = writeGuestRecipeExclusive(e.root, e.name, body)
 	}
@@ -58,10 +58,13 @@ func (e *guestRecipeExport) publish(out map[string]any) error {
 	return err
 }
 
-func guestExportPayload(out map[string]any) ([]byte, error) {
+func guestExportPayload(out map[string]any, requestedName string) ([]byte, error) {
 	config, _ := out["config"].(map[string]any)
 	r := guestRecipe{Version: 1}
 	r.Name, _ = out["name"].(string)
+	if requestedName == "" || r.Name != requestedName {
+		return nil, errors.New("issuer recipe identity differs from the requested name; refuse a different mailbox")
+	}
 	r.Key, _ = out["key"].(string)
 	r.Nonce, _ = out["recovery_nonce"].(string)
 	r.Endpoint, _ = config["endpoint"].(string)
@@ -126,6 +129,8 @@ func writeGuestRecipeExclusive(root guestExportRoot, name string, body []byte) e
 	if err != nil {
 		return fmt.Errorf("create private export temporary file: %w", err)
 	}
+	// Idempotent cleanup of our random staging link on every exit. After the
+	// explicit removal below this second Remove normally returns not-exist.
 	defer func() { _ = f.Close(); _ = root.Remove(tmp) }()
 	if _, err := f.Write(body); err != nil {
 		return fmt.Errorf("write private export: %w", err)

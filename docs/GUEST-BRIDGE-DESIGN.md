@@ -68,6 +68,9 @@ not provisionable: it contains no invented `bridge_release`, runnable MCP entry,
 download steps or accepted-runtime claim. A release-backed recipe remains owed.
 The flag is mint-only; it is not sent to MCP and does not override an omitted
 `--ttl` or the issuer's policy. Existing invitation display/list/revoke remain.
+The returned identity must exactly match the requested name; a valid but
+different mailbox is refused before file publication, with the unused-invitation
+list/revoke hint rather than an implicit alias or identity substitution.
 
 Before minting, open an existing owned private directory and reject an existing
 destination (including symlinks). Hold that directory handle through issuance,

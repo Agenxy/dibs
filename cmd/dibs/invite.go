@@ -115,7 +115,7 @@ func inviteCmd(args []string) error {
 	}
 	finish := func(out map[string]any) error {
 		if export != nil {
-			return export.publish(out)
+			return export.publish(out, payload["name"].(string))
 		}
 		return printInviteResult(out, payload["action"] == "mint")
 	}

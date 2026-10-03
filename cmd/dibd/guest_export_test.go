@@ -70,6 +70,7 @@ func TestGuestInviteExportThroughActualCLI(t *testing.T) {
 	// not a Go memory fence, so synchronize replacement with both HTTP readers.
 	var endpointMu sync.RWMutex
 	var hits atomic.Int64
+	var swapName atomic.Bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		endpointMu.RLock()
 		defer endpointMu.RUnlock()
@@ -77,6 +78,51 @@ func TestGuestInviteExportThroughActualCLI(t *testing.T) {
 			t.Error("private CLI credential missing")
 		}
 		hits.Add(1)
+		if swapName.Load() {
+			// Preserve a real, complete successful issuance response, changing
+			// only its valid identity name to measure request/result binding.
+			recorded := httptest.NewRecorder()
+			api.ServeHTTP(recorded, r)
+			var envelope map[string]any
+			if err := json.Unmarshal(recorded.Body.Bytes(), &envelope); err != nil {
+				t.Error("identity-swap setup failed to decode RPC")
+				return
+			}
+			result, ok := envelope["result"].(map[string]any)
+			if !ok {
+				t.Error("identity-swap setup has no real result")
+				return
+			}
+			content, ok := result["content"].([]any)
+			if !ok || len(content) == 0 {
+				t.Error("identity-swap setup has no content")
+				return
+			}
+			first, ok := content[0].(map[string]any)
+			if !ok {
+				t.Error("identity-swap setup has no first content block")
+				return
+			}
+			text, ok := first["text"].(string)
+			var issued map[string]any
+			if !ok || json.Unmarshal([]byte(text), &issued) != nil || issued["key"] == nil || issued["recovery_nonce"] == nil {
+				t.Error("identity-swap setup did not mint real credentials")
+				return
+			}
+			issued["name"] = "issuer-other"
+			changed, err := json.Marshal(issued)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			first["text"] = string(changed)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(recorded.Code)
+			if err := json.NewEncoder(w).Encode(envelope); err != nil {
+				t.Error(err)
+			}
+			return
+		}
 		api.ServeHTTP(w, r)
 	}))
 	defer server.Close()
@@ -253,5 +299,13 @@ func TestGuestInviteExportThroughActualCLI(t *testing.T) {
 		} else if registration.ID != firstID || rotatedPin == firstPin || origin == firstEndpoint || fresh["invitation_key"] == firstKey {
 			t.Fatal("rotated endpoint/CA/bearer setup failed or fresh bridge created a sibling mailbox")
 		}
+	}
+	swapName.Store(true)
+	mismatch := filepath.Join(private, "mismatch.json")
+	if out, err := run("issuer-mismatch", "--out", mismatch); err == nil || !bytes.Contains(out, []byte("requested name")) {
+		t.Fatal("actual CLI accepted a complete issuer response for a different mailbox")
+	}
+	if _, err := os.Lstat(mismatch); !os.IsNotExist(err) {
+		t.Fatal("mismatched identity recipe was published")
 	}
 }
