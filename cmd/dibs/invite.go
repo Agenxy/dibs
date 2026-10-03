@@ -41,14 +41,24 @@ func inviteOptions(args []string) (map[string]any, string, error) {
 	ttl := fs.String("ttl", "7d", "invitation lifetime (agent policy defaults to at most 7d)")
 	out := fs.String("out", "", "exclusive absolute private guest JSON destination; "+
 		"INCOMPLETE, not provisionable until a supporting signed release exists; retain the board key for recovery")
+	verify := fs.String("verify-release", "", "verify and retain one exact supporting release tag, without minting or installing")
 	if helpOnly(args) {
 		return nil, "", parseFlags(fs, args)
 	}
 	if len(args) == 0 {
 		return nil, "", errors.New("usage: dibs invite <name> [--ttl 30d] [--out <absolute-private-file>] | " +
-			"list | revoke <name>")
+			"list | revoke <name> | --verify-release <tag>")
 	}
 	action := args[0]
+	if strings.HasPrefix(action, "-") {
+		if err := parseFlags(fs, args); err != nil {
+			return nil, "", err
+		}
+		if fs.NFlag() != 1 || fs.NArg() != 0 || *verify == "" {
+			return nil, "", errors.New("--verify-release needs one exact tag and cannot be combined with mint, list, revoke, --ttl or --out")
+		}
+		return map[string]any{"action": "verify-release", "tag": *verify}, "", nil
+	}
 	if action == "list" && len(args) == 1 {
 		return map[string]any{"action": "list"}, "", nil
 	}
@@ -64,6 +74,11 @@ func inviteOptions(args []string) (map[string]any, string, error) {
 	}
 	if fs.NArg() != 0 {
 		return nil, "", errors.New("usage: dibs invite <name> [--ttl 30d] [--out <absolute-private-file>]")
+	}
+	verifySet := false
+	fs.Visit(func(f *flag.Flag) { verifySet = verifySet || f.Name == "verify-release" })
+	if verifySet {
+		return nil, "", errors.New("--verify-release is a separate operation; omit the invitation name and mint flags")
 	}
 	ttlS, err := inviteMintTTL(fs, *ttl, *out)
 	if err != nil {
@@ -114,6 +129,9 @@ func inviteCmd(args []string) error {
 	payload, destination, err := inviteOptions(args)
 	if err != nil {
 		return err
+	}
+	if payload["action"] == "verify-release" {
+		return verifyInviteRelease(payload["tag"].(string))
 	}
 	var export *guestRecipeExport
 	if destination != "" {

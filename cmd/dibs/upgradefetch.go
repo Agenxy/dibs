@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/build"
+	"github.com/agenxy/dibs/internal/paths"
 	"github.com/agenxy/dibs/internal/selfupdate"
 	"github.com/agenxy/dibs/internal/ui"
 )
@@ -136,10 +137,12 @@ func fetchUpgrade(o upgradeOpts) error {
 			"who produced it"))
 	}
 	var proved string
+	var evidence selfupdate.VerifiedRelease
 	if !o.allowUnsigned {
-		if proved, err = selfupdate.Verify(ctx, c, rel, staged); err != nil {
+		if evidence, err = selfupdate.AcquireVerifiedRelease(ctx, c, rel, staged); err != nil {
 			return err
 		}
+		proved = evidence.Checksums()
 	}
 	goos, goarch := selfupdate.Platform()
 	fmt.Printf("fetching %s for %s/%s\n", rel.Tag, goos, goarch)
@@ -148,6 +151,13 @@ func fetchUpgrade(o upgradeOpts) error {
 	}
 	if err := placePayload(staged, into); err != nil {
 		return err
+	}
+	if !o.allowUnsigned {
+		if err = evidence.Save(paths.DataDir()); err != nil {
+			return fmt.Errorf("binary payload for %s is already installed, but its signed release evidence "+
+				"was not durably retained: %w; the fleet has not been moved. `dibs upgrade` performs "+
+				"that cutover separately; no guest recipe was authorized", rel.Tag, err)
+		}
 	}
 	fmt.Printf("%s %s into %s\n", ui.Good("installed"), rel.Tag, into)
 	if o.dryRun {

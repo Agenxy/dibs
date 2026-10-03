@@ -15,6 +15,9 @@ import (
 // door, rather than calling the comparison directly. It is NOT a cryptographic
 // proof: the real cosign/network-denied release-bundle measurement is separate.
 func TestMain(m *testing.M) {
+	if os.Getenv("DIBS_TEST_COSIGN_RECORD") != "" {
+		os.Exit(recordCosignHelper())
+	}
 	if mode := os.Getenv("DIBS_TEST_COSIGN_ROOT"); mode != "" {
 		rootCosignHelper(mode)
 		return
