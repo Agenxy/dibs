@@ -163,7 +163,8 @@ func LoadVerifiedRelease(ctx context.Context, dir, buildVersion string) (Verifie
 		return VerifiedRelease{}, err
 	}
 	if !info.Mode().IsRegular() {
-		return VerifiedRelease{}, errors.New("release record is not a regular file; retain signed evidence in the board's cache")
+		return VerifiedRelease{}, errors.New("release record is not a regular file; " +
+			"retain signed evidence in the board's cache")
 	}
 	f, err := root.Open(releaseRecordName)
 	if err != nil {
@@ -180,7 +181,7 @@ func LoadVerifiedRelease(ctx context.Context, dir, buildVersion string) (Verifie
 	if err = dec.Decode(&r); err != nil {
 		return VerifiedRelease{}, fmt.Errorf("invalid retained release record: %w", err)
 	}
-	if err = dec.Decode(new(any)); err != io.EOF {
+	if err = dec.Decode(new(any)); !errors.Is(err, io.EOF) {
 		return VerifiedRelease{}, errors.New("retained release record has trailing data")
 	}
 	if err = r.validate(); err != nil {
@@ -198,7 +199,8 @@ func (r releaseRecord) validate() error {
 		return err
 	}
 	if len(r.Checksums) == 0 || len(r.Checksums) > maxChecksums || len(r.Bundle) == 0 || len(r.Bundle) > maxBundle {
-		return errors.New("retained release evidence is missing or exceeds its bounded checksum/bundle size; verify the release explicitly")
+		return errors.New("retained release evidence is missing or exceeds its bounded checksum/bundle size; " +
+			"verify the release explicitly")
 	}
 	return nil
 }

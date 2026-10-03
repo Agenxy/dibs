@@ -152,12 +152,8 @@ func fetchUpgrade(o upgradeOpts) error {
 	if err := placePayload(staged, into); err != nil {
 		return err
 	}
-	if !o.allowUnsigned {
-		if err = evidence.Save(paths.DataDir()); err != nil {
-			return fmt.Errorf("binary payload for %s is already installed, but its signed release evidence "+
-				"was not durably retained: %w; the fleet has not been moved. `dibs upgrade` performs "+
-				"that cutover separately; no guest recipe was authorized", rel.Tag, err)
-		}
+	if err = retainInstalledEvidence(o, evidence, rel.Tag); err != nil {
+		return err
 	}
 	fmt.Printf("%s %s into %s\n", ui.Good("installed"), rel.Tag, into)
 	if o.dryRun {
@@ -165,6 +161,18 @@ func fetchUpgrade(o upgradeOpts) error {
 		return nil
 	}
 	return upgrade(o)
+}
+
+func retainInstalledEvidence(o upgradeOpts, evidence selfupdate.VerifiedRelease, tag string) error {
+	if o.allowUnsigned {
+		return nil
+	}
+	if err := evidence.Save(paths.DataDir()); err != nil {
+		return fmt.Errorf("binary payload for %s is already installed, but its signed release evidence "+
+			"was not durably retained: %w; the fleet has not been moved. `dibs upgrade` performs "+
+			"that cutover separately; no guest recipe was authorized", tag, err)
+	}
+	return nil
 }
 
 // writable refuses early, with the reason, rather than after a download.

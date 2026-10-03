@@ -51,11 +51,12 @@ func TestUpgradeRetainsOnlySignatureVerifiedEvidenceThroughActualCLI(t *testing.
 				t.Fatal(err)
 			}
 			cache := filepath.Join(dir, "guest-release.json")
-			if mode == "cache-refuses" {
+			switch mode {
+			case "cache-refuses":
 				if err := os.Mkdir(cache, 0o700); err != nil {
 					t.Fatal(err)
 				}
-			} else if mode == "unsigned" {
+			case "unsigned":
 				if err := os.WriteFile(cache, []byte("old evidence must not change"), 0o600); err != nil {
 					t.Fatal(err)
 				}
@@ -85,7 +86,8 @@ func TestUpgradeRetainsOnlySignatureVerifiedEvidenceThroughActualCLI(t *testing.
 			if err != nil || string(payload) != "new fixture dibd" {
 				t.Fatalf("setup never traversed actual install: %q %v", payload, err)
 			}
-			if mode == "signed" {
+			switch mode {
+			case "signed":
 				b, err := os.ReadFile(cache)
 				if err != nil {
 					t.Fatal(err)
@@ -97,7 +99,7 @@ func TestUpgradeRetainsOnlySignatureVerifiedEvidenceThroughActualCLI(t *testing.
 				if err = json.Unmarshal(b, &record); err != nil || record.Tag != "v0.0.9" || string(record.Checksums) != upgradeFixtureChecksums() || string(record.Bundle) != "fixture signed bundle\n" {
 					t.Fatalf("exact evidence was not retained: %+v %v", record, err)
 				}
-			} else if mode == "unsigned" {
+			case "unsigned":
 				b, err := os.ReadFile(cache)
 				if err != nil || string(b) != "old evidence must not change" {
 					t.Fatalf("unsigned install manufactured/changed provenance: %q %v", b, err)
@@ -153,6 +155,9 @@ func fakeUpgradeCosign(args []string) int {
 	}
 	if len(args) != 8 || args[0] != "verify-blob" {
 		return 20
+	}
+	if os.Getenv("DIBS_TEST_UPGRADE_SIGNATURE_REFUSE") == "1" {
+		return 25
 	}
 	checksums, err := os.ReadFile(args[1])
 	if err != nil || string(checksums) != upgradeFixtureChecksums() {

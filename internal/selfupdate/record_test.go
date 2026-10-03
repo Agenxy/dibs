@@ -13,8 +13,10 @@ import (
 	"testing"
 )
 
-const fixtureChecksums = "exact signed checksum bytes\n"
-const fixtureBundle = "  {\n \"signature\": \"fixture only\"\n }\n"
+const (
+	fixtureChecksums = "exact signed checksum bytes\n"
+	fixtureBundle    = "  {\n \"signature\": \"fixture only\"\n }\n"
+)
 
 // A process-door wiring test, NOT cryptographic evidence. The real signed
 // v0.0.9 bundle is separately measured through the network-denied CLI.

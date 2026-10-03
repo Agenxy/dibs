@@ -75,7 +75,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   before staging cleanup; unsigned upgrades cannot create this evidence.
   Cache reads reverify offline against Dibs' embedded Sigstore root, never an
   editable verified flag or root. `dibs invite --verify-release <tag>` is a
-  separate verification operation, not a mint or installer; its supporting
+  separate verification operation, not a mint or installer. Only that explicit
+  command can repair a refused cache by freshly verifying online before atomic
+  replacement; offline reads never fetch replacement evidence. Its supporting
   minimum intentionally remains unset, so production refuses before I/O.
   Guest admission, member digests and published/runtime acceptance remain
   pending. Ordinary invitation issuance is unchanged.

@@ -94,8 +94,14 @@ func TestGuestReleaseCLIRealSignedFixture(t *testing.T) {
 			if tc.want && (!strings.Contains(string(out), "actual board build remains devel") || !strings.Contains(string(out), "INCOMPLETE")) {
 				t.Fatal("fixture proof relabelled the devel board or claimed guest readiness")
 			}
-			if !tc.want && (strings.Contains(string(out), "fetching") || strings.Contains(string(out), "Get \"https://")) {
-				t.Fatal("untrusted cache triggered network fallback")
+			if !tc.want && !strings.Contains(string(out), "Retained release evidence was refused:") {
+				t.Fatal("explicit repair hid the original cache verification failure")
+			}
+			if !tc.want {
+				retained, err := os.ReadFile(filepath.Join(dir, "guest-release.json"))
+				if err != nil || string(retained) != string(body) {
+					t.Fatal("failed explicit repair replaced the old cache")
+				}
 			}
 			entries, err := os.ReadDir(dir)
 			if err != nil || len(entries) != 1 {

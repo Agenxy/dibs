@@ -23,7 +23,8 @@ var guestSupportingMinimum = ""
 
 func guestReleaseSelection(tag, minimum, boardVersion string) (selfupdate.Release, error) {
 	if minimum == "" {
-		return selfupdate.Release{}, errors.New("INCOMPLETE: supporting guest release minimum is unset; no release record or invitation was changed")
+		return selfupdate.Release{}, errors.New("INCOMPLETE: supporting guest release minimum is unset; " +
+			"no release record or invitation was changed")
 	}
 	want, err := selfupdate.ReleaseForTag(tag)
 	if err != nil {
@@ -34,13 +35,15 @@ func guestReleaseSelection(tag, minimum, boardVersion string) (selfupdate.Releas
 		return selfupdate.Release{}, errors.New("compiled guest release minimum is invalid; repair the build, not its cache")
 	}
 	if cmp, _ := release.Compare(want.Version, floor.Version); cmp < 0 {
-		return selfupdate.Release{}, fmt.Errorf("release %s predates the compiled guest minimum %s; verify a supporting release instead", tag, minimum)
+		return selfupdate.Release{}, fmt.Errorf("release %s predates the compiled guest minimum %s; "+
+			"verify a supporting release instead", tag, minimum)
 	}
 	// A devel/pseudo-version build is not relabelled as a release. A released
 	// board may use its own tag or a newer supporting tag, never an older one.
 	if own, err := selfupdate.ReleaseForTag("v" + strings.TrimPrefix(boardVersion, "v")); err == nil {
 		if cmp, _ := release.Compare(want.Version, own.Version); cmp < 0 {
-			return selfupdate.Release{}, fmt.Errorf("release %s is older than this board build %s; verify its own or a newer tag", tag, boardVersion)
+			return selfupdate.Release{}, fmt.Errorf("release %s is older than this board build %s; "+
+				"verify its own or a newer tag", tag, boardVersion)
 		}
 	}
 	return want, nil
@@ -61,7 +64,9 @@ func verifyInviteRelease(tag string) error {
 	defer cancel()
 	proved, err := selfupdate.LoadVerifiedRelease(ctx, dir, build.Version)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err // no network replacement of corrupt/unverifiable cache material
+		fmt.Fprintf(os.Stderr, "Retained release evidence was refused: %v.\n"+
+			"This explicit verification command will try fresh signature-checked evidence for %s; "+
+			"the existing record is preserved unless acquisition and atomic publication succeed.\n", err, rel.Tag)
 	}
 	if err != nil || proved.Tag() != rel.Tag {
 		staged, err := os.MkdirTemp("", "dibs-explicit-release-*")
