@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -118,6 +119,19 @@ func TestGuestNonceDoesNotAlterCallerOrOpaqueNumbers(t *testing.T) {
 		if !bytes.Equal(guestRecoveryNonce(given, "recipe-nonce"), given) {
 			t.Fatal("caller nonce was replaced rather than left for server validation")
 		}
+	}
+}
+
+func TestGuestNonceRefusalNeverRendersFilesystemErrors(t *testing.T) {
+	line := []byte(`{"jsonrpc":"2.0","id":9007199254740993,"method":"tools/call"}`)
+	private := "/private/guest-store/secret-path with nonce-material-canary"
+	reply := guestNonceReply(line, errors.New(private))
+	if !bytes.Contains(reply, []byte(`"id":9007199254740993`)) || bytes.Contains(reply, []byte(private)) ||
+		bytes.Contains(reply, []byte("doctor")) || bytes.Contains(reply, []byte("upgrade")) {
+		t.Fatal("nonce-store refusal lost its ID, rendered a filesystem error or offered local-board remedies")
+	}
+	if len(guestNonceReply([]byte(`{"jsonrpc":"2.0","method":"tools/call"}`), errors.New(private))) != 0 {
+		t.Fatal("nonce-store refusal synthesized a notification reply")
 	}
 }
 

@@ -229,7 +229,14 @@ recipe nonce. Only for older recipes without one, a guest-private, atomic/locked
 credential store may fill one, keyed by endpoint +
 CA pin + invitation name, never the board's global `harness-nonces.json`. An
 unwritable/corrupt store is an actionable failure for auto-nonce mode, not a new
-random identity that silently strands mail. Supplied nonce wins. No token is
+random identity that silently strands mail. The bridge refuses only that call
+before HTTP, preserves its exact request ID, and stays alive for later requests;
+notifications receive no synthesized reply. A contended lock's `data.hint`
+asks the caller to retry in a few seconds; corrupt/unsafe state asks for private
+store restoration or an issuer-exported recovery-nonce recipe. Replies never
+include a store path, underlying filesystem error or nonce material. No
+automatic retry or local-board remedy is offered. Recipe/startup configuration
+errors still exit before the protocol starts. Supplied nonce wins. No token is
 printed or automatically substituted into arbitrary tools; registration reply
 remains the authoritative credential. File-backed guest identity surviving a
 context boundary is distinct from promising persistence in an ephemeral cloud

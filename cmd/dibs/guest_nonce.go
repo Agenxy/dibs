@@ -30,6 +30,27 @@ func guestPrepareNonce(line []byte, file string, recipe *guestRecipe) ([]byte, e
 	return guestRecoveryNonce(line, nonce), nil
 }
 
+// This is a per-call refusal BEFORE HTTP, not an uncertain transport outcome.
+// Never render the underlying filesystem error: it may carry a private path.
+func guestNonceReply(line []byte, err error) []byte {
+	id := idOf(line)
+	if string(id) == "null" {
+		return nil // a notification gets no synthesized JSON-RPC response
+	}
+	hint := "restore the private store, or ask the issuer for an export recipe carrying the recovery nonce"
+	if paths.LockHeldElsewhere(err) {
+		hint = "another bridge for this guest is registering; retry the call in a few seconds"
+	}
+	reply, _ := json.Marshal(map[string]any{
+		"jsonrpc": "2.0", "id": id,
+		"error": map[string]any{
+			"code": -32000, "message": "guest recovery store refused registration; no request was sent",
+			"data": map[string]any{"hint": hint},
+		},
+	})
+	return reply
+}
+
 func guestNeedsStoredNonce(line []byte) bool {
 	var call struct {
 		Method string `json:"method"`
