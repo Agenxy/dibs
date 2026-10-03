@@ -209,6 +209,13 @@ identity recovery, not a sibling registration presented as resumed. Verify the
 invitation Bind path reattaches on the same nonce in a new bridge process.
 No local daemon/data directory is created.
 
+A guest that first bound its mailbox with a nonce-less recipe's private stored
+nonce cannot switch silently to a later recipe's derived nonce: recipe nonce
+takes precedence and Bind refuses the mismatch. No production guest used this
+unreleased mode. Such a guest must keep its original nonce explicitly (which
+wins over the recipe), retain its old recipe, or recover its identity explicitly;
+never present a newly minted sibling as recovery.
+
 The legacy store lives beside the private recipe, in endpoint/pin/name-hashed
 credential files. All readers/writers take a nonblocking OS lock; contention
 is an actionable refusal, not an unlocked write. A new nonce is synced to a

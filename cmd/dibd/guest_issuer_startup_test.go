@@ -36,6 +36,7 @@ func TestGuestIssuerRecoveryThroughActualDaemonStartup(t *testing.T) {
 		}
 	}
 	private, public := guestIssuerFreeAddress(t), guestIssuerFreeAddress(t)
+	var logs bytes.Buffer
 	client := &http.Client{Timeout: 2 * time.Second, Transport: &http.Transport{Proxy: nil}}
 	defer client.CloseIdleConnections()
 	post := func(base, path string, payload any, bearer string) map[string]any {
@@ -72,7 +73,8 @@ func TestGuestIssuerRecoveryThroughActualDaemonStartup(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cmd := exec.CommandContext(ctx, bin, "--allow-parallel", "--dir", dir, "--addr", private,
 			"--public-url", origin, "--public-addr", public)
-		cmd.Env = append(nativeProbeEnv(t.TempDir(), "", ""), "DIBS_DIR="+dir)
+		cmd.Env = append(nativeProbeEnv(t.TempDir(), "", ""), "DIBS_DIR="+dir, "DIBS_LOG_RPC=1")
+		cmd.Stderr = &logs
 		if err := cmd.Start(); err != nil {
 			cancel()
 			t.Fatal(err)
@@ -125,10 +127,12 @@ func TestGuestIssuerRecoveryThroughActualDaemonStartup(t *testing.T) {
 	bind := func(out map[string]any) string {
 		t.Helper()
 		key, _ := out["key"].(string)
-		rpc := post(public, "/mcp", map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		rpc := post(public, "/mcp", map[string]any{
+			"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 			"params": map[string]any{"name": "register", "arguments": map[string]any{
 				"name": "guest-worker", "nonce": out["recovery_nonce"], "kind": "persistent",
-			}}}, key)
+			}},
+		}, key)
 		result, _ := rpc["result"].(map[string]any)
 		contents, _ := result["content"].([]any)
 		if rpc["error"] != nil || result["isError"] == true || len(contents) == 0 {
@@ -152,7 +156,7 @@ func TestGuestIssuerRecoveryThroughActualDaemonStartup(t *testing.T) {
 	post(private, "/api/admin/invites", map[string]any{"action": "revoke", "name": "guest-worker"}, "")
 	stop()
 	client.CloseIdleConnections()
-	start("https://[::1]:41002")
+	stop = start("https://[::1]:41002")
 	second := mint()
 	if first["key"] == second["key"] || first["url"] == second["url"] {
 		t.Fatal("reissue setup did not change credential and endpoint")
@@ -160,16 +164,52 @@ func TestGuestIssuerRecoveryThroughActualDaemonStartup(t *testing.T) {
 	if first["recovery_nonce"] != second["recovery_nonce"] || bind(second) != id {
 		t.Fatal("restart/reissue stranded the existing guest mailbox")
 	}
+	decodeTool := func(rpc map[string]any) map[string]any {
+		t.Helper()
+		result, _ := rpc["result"].(map[string]any)
+		contents, _ := result["content"].([]any)
+		if rpc["error"] != nil || result["isError"] == true || len(contents) == 0 {
+			t.Fatal("local tool setup failed")
+		}
+		block, _ := contents[0].(map[string]any)
+		text, _ := block["text"].(string)
+		var value map[string]any
+		if err := json.Unmarshal([]byte(text), &value); err != nil {
+			t.Fatal(err)
+		}
+		return value
+	}
+	localTool := func(name string, args map[string]any) map[string]any {
+		t.Helper()
+		return decodeTool(post(private, "/mcp", map[string]any{
+			"jsonrpc": "2.0", "id": 1,
+			"method": "tools/call", "params": map[string]any{"name": name, "arguments": args},
+		}, ""))
+	}
+	issuer := localTool("register", map[string]any{"name": "issuer", "nonce": "fixture-local-issuer", "kind": "persistent"})
+	issuerToken, _ := issuer["token"].(string)
+	if issuerToken == "" {
+		t.Fatal("local issuer setup returned no token")
+	}
+	other := localTool("invite", map[string]any{"name": "issuer-cloud-1", "token": issuerToken, "ttl_s": 3600})
+	otherNonce, _ := other["recovery_nonce"].(string)
+	if len(otherNonce) != 64 || otherNonce == first["recovery_nonce"] {
+		t.Fatal("MCP issuance omitted recovery or reused a different name's nonce")
+	}
 	listed := post(private, "/api/admin/invites", map[string]any{"action": "list"}, "")
 	listing, err := json.Marshal(listed)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, generation := range []map[string]any{first, second} {
+	stop() // wait for log copying before reading the captured process output
+	if !bytes.Contains(logs.Bytes(), []byte("mcp rpc")) || !bytes.Contains(logs.Bytes(), []byte("tool=invite")) {
+		t.Fatal("DIBS_LOG_RPC setup did not log the actual invite call")
+	}
+	for _, generation := range []map[string]any{first, second, other} {
 		for _, field := range []string{"key", "recovery_nonce"} {
 			secret, _ := generation[field].(string)
-			if secret == "" || bytes.Contains(listing, []byte(secret)) {
-				t.Fatal("invitation list exposed an issuance credential")
+			if secret == "" || bytes.Contains(listing, []byte(secret)) || bytes.Contains(logs.Bytes(), []byte(secret)) {
+				t.Fatal("invitation list or debug RPC log exposed an issuance credential")
 			}
 			for _, name := range []string{"invites.json", "ledger.jsonl"} {
 				stored, err := os.ReadFile(filepath.Join(dir, name))
