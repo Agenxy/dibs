@@ -75,7 +75,7 @@ const bridgeHelp = `dibs mcp-stdio: the stdio bridge, for a host with no HTTP MC
   Normally run by a harness on this machine, named in its MCP config.
 
   --guest <file>     INCOMPLETE: not ready for guest use. Requires an
-                     issuer-exported recipe, not available yet.
+                     release-backed issuer-exported recipe, not available yet.
                      No harness or cloud runtime has been accepted.
                      The adapter uses a private absolute invitation JSON file
                      to reach one literal IPv6 endpoint with exclusive

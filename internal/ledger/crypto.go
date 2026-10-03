@@ -3,8 +3,11 @@ package ledger
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hkdf"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"strings"
@@ -15,7 +18,10 @@ import (
 // Box performs daemon-side encryption of private op fields (message bodies,
 // responses, agent tokens) so ledger readers see ciphertext. Dibs never
 // touch crypto; the human CLI decrypts via the same-user key file.
-type Box struct{ aead cipher.AEAD }
+type Box struct {
+	aead             cipher.AEAD
+	guestRecoveryPRK []byte
+}
 
 const encPrefix = "enc:"
 
@@ -39,6 +45,7 @@ func LoadOrCreateKey(path string) (*Box, error) {
 	if len(key) != 32 {
 		return nil, fmt.Errorf("daemon key %s: want 32 bytes, have %d", path, len(key))
 	}
+	defer clear(key)
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
@@ -47,7 +54,28 @@ func LoadOrCreateKey(path string) (*Box, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Box{aead: aead}, nil
+	prk, err := hkdf.Extract(sha256.New, key, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &Box{aead: aead, guestRecoveryPRK: prk}, nil
+}
+
+// GuestRecoveryNonce derives only this domain-separated credential. The name
+// has already passed invitation admission; neither the raw board key nor an
+// arbitrary derivation context is exposed to the invitation service.
+// The board key is board state: replacing it is not a supported rotation.
+func (b *Box) GuestRecoveryNonce(name string) (string, error) {
+	if b == nil || len(b.guestRecoveryPRK) != 32 || name == "" ||
+		len(name) > core.DefaultLimits().MaxNameBytes {
+		return "", fmt.Errorf("guest recovery requires the retained board key and admitted invitation name")
+	}
+	nonce, err := hkdf.Expand(sha256.New, b.guestRecoveryPRK, "dibs guest recovery v1\x00"+name, 32)
+	if err != nil {
+		return "", err
+	}
+	defer clear(nonce)
+	return hex.EncodeToString(nonce), nil
 }
 
 func (b *Box) seal(plain string) (string, error) {

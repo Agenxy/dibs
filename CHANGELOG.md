@@ -51,8 +51,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - **Endpoint-scoped guest stdio adapter (implementation in progress).**
-  **Not ready for guest use:** an issuer-exported recipe is required but not
+  **Not ready for guest use:** a published release-backed issuer recipe is not
   available yet. No harness or cloud runtime has been accepted.
+  Issuance now returns the stored invitation's exact expiry and a recovery
+  nonce derived from the retained board key and invitation name. Reissuing an
+  invitation keeps that nonce; no nonce vault or ledger secret is added.
+  `dibs invite <name> --out <absolute-private-file>` can export an explicitly
+  incomplete private JSON checkpoint, not a runnable provisioning recipe.
+  Export keeps the issuer's exact expiry, uses exclusive atomic publication
+  and file/directory sync, and refuses existing files instead of replacing them.
+  The export flag alone preserves the board's invitation lifetime default.
   `dibs mcp-stdio --guest <private absolute JSON file>` uses only the invited
   IPv6 endpoint, constrained CA and bearer; it never initializes a local board
   or imports guest trust into the harness or system. Guest discovery is

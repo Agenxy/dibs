@@ -61,6 +61,29 @@ reject symlinks/non-regular input and unsafe ownership/permissions, and use
 atomic exclusive creation for provisioning. Never overwrite an existing recipe
 silently. Expiry is advisory locally and authoritative at the server.
 
+Issuer CLI checkpoint: `dibs invite <name> --out <absolute-private-file>` exports
+the same typed schema used by the guest reader, including exact issuer expiry
+and the derived recovery nonce. This first export is explicitly INCOMPLETE and
+not provisionable: it contains no invented `bridge_release`, runnable MCP entry,
+download steps or accepted-runtime claim. A release-backed recipe remains owed.
+The flag is mint-only; it is not sent to MCP and does not override an omitted
+`--ttl` or the issuer's policy. Existing invitation display/list/revoke remain.
+The returned identity must exactly match the requested name; a valid but
+different mailbox is refused before file publication, with the unused-invitation
+list/revoke hint rather than an implicit alias or identity substitution.
+
+Before minting, open an existing owned private directory and reject an existing
+destination (including symlinks). Hold that directory handle through issuance,
+recheck its privacy, write and sync a new 0600 temporary file, then publish with
+an exclusive hard link. A file appearing after preflight cannot be overwritten.
+Remove the temporary link and sync the directory before reporting success. No
+non-atomic or overwrite fallback is offered when linking is unsupported. A
+post-mint failure may leave an unused invitation or an ambiguously durable final
+file: preserve it, report the failure and tell the issuer to list/revoke the
+unused invitation before retrying. Never print the credential as a fallback.
+The board's original at-rest key is part of its state backup, not an arbitrarily
+rotatable file; future export help retains this identity-recovery contract.
+
 Endpoint validation precedes networking: HTTPS only; canonical unzoned IPv6,
 explicit valid port, exact `/mcp`, no userinfo, query, fragment, encoded alternate
 path or DNS name. Production recipes require the same direct-IP policy as the
@@ -183,6 +206,17 @@ within existing invitation policy, not bridge-created work assignments.
 
 Keep caller-provided nonce and agent token unchanged. The issuer mints a recovery
 nonce into the PRIVATE recipe, as sensitive as the invitation key beside it.
+Review 17133/17142 refined issuance: derive it with HKDF-SHA256 from the
+board's existing at-rest key, no salt, info `dibs guest recovery v1\x00` plus
+the invitation name, 32 bytes encoded as hex. Keep derivation inside the
+ledger Box and inject only a fixed-name callback into the issuance service;
+never disclose or newly store the board key. This preserves the same name's
+recovery across invitation, IP and guest-CA reissue without a credential vault.
+The key is board state: back it up with the board. Arbitrary replacement is not
+supported rotation and breaks both ledger decryption and derived guest recovery.
+Any future key migration must carry the original recovery derivation forward
+or require explicit identity recovery; reissuing a recipe alone cannot resume
+a retained mailbox with a changed nonce. An explicit caller nonce still wins.
 A fresh container given the same recipe recovers the same mailbox: its identity
 does not depend on a disposable volume. A supplied nonce wins; otherwise use the
 recipe nonce. Only for older recipes without one, a guest-private, atomic/locked
@@ -197,6 +231,13 @@ container. A lost volume with a nonce-less legacy recipe requires explicit
 identity recovery, not a sibling registration presented as resumed. Verify the
 invitation Bind path reattaches on the same nonce in a new bridge process.
 No local daemon/data directory is created.
+
+A guest that first bound its mailbox with a nonce-less recipe's private stored
+nonce cannot switch silently to a later recipe's derived nonce: recipe nonce
+takes precedence and Bind refuses the mismatch. No production guest used this
+unreleased mode. Such a guest must keep its original nonce explicitly (which
+wins over the recipe), retain its old recipe, or recover its identity explicitly;
+never present a newly minted sibling as recovery.
 
 The legacy store lives beside the private recipe, in endpoint/pin/name-hashed
 credential files. All readers/writers take a nonblocking OS lock; contention
