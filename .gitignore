@@ -69,3 +69,4 @@ __pycache__/
 /mcpbundle
 /version
 /reviewrelease
+/sigstore-root-check

@@ -74,6 +74,11 @@ jobs:
           # Explicit, so CI and mise.toml install the same cosign. The default
           # floats, and the signing config here is cosign 3 (--bundle).
           cosign-release: v3.1.3
+      # The offline provenance verifier must not silently age past Sigstore
+      # rotations. Authenticated production TUF, fresh isolated cache; differing
+      # bytes refuse publication until reviewed and deliberately updated.
+      - name: embedded Sigstore root is current
+        run: go run ./tools/sigstore-root-check
       - uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
 
       # THE MACOS SIGNING IDENTITY, before anything is built.
