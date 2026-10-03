@@ -430,6 +430,9 @@ and nothing else: the board wakes an agent and does not steer one. See
   registered from has gone. The override uses the existing `idle_ttl`, is fenced
   to the agent incarnation, and never reports the old process as alive. Registration,
   boot grace, event polling and background subscriptions do not create this evidence.
+  A bridge's token-authenticated inbox read counts too; this is not limited to
+  model turns. Tokenless lifecycle `hook_poll` retains its existing hook evidence
+  and does not create this override.
   When it expires, the dead PID again establishes a crash. Evidence is local to the
   running daemon; after restart, existing boot/checkpoint rules apply and a new
   authenticated model call is needed for this override. Process/session metadata
