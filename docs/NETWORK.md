@@ -56,17 +56,33 @@ duplicable across machines, and asserted by the caller. Deciding anything with
 it would repeat the mistake `Project` already carries a warning about.
 
 Board rows use one display `host` label per known `host_id`: the daemon's
-hostname for its own identity (including known old aliases), and the label
+display name for its own identity (including known old aliases), and the label
 of the newest coordinated member for a remote identity. Coordination time
 is not the time the label changed; creation serial and agent id break ties
 deterministically. The raw per-agent label remains at `agent.host` in detail
 views. Unknown host ids keep their individual labels and are never grouped
 by hostname. The compact roster, web board and MCP panel read the row label.
 The board's own human mailbox and fault reporter are identified through their
-reserved nonce indexes and use the board's hostname even when historical
+reserved nonce indexes and use the board's display name even when historical
 metadata has no host id. This locates the mailbox, not the person: a human
 using a hub may be anywhere. Their raw metadata and coordination host IDs
 are unchanged.
+
+On macOS the board and stdio bridge share HostName, then LocalHostName, then
+ComputerName, read through fixed `scutil --get` arguments within one 100 ms
+budget. A five-second cache refreshes settings rather than fixing the name for
+a process's lifetime. After the first cold lookup, expired labels return at once
+while one background refresh runs, so board reads do not stall the writer.
+Refresh failure retains the last good label; the kernel
+hostname is the initial fallback. Other platforms use the kernel hostname.
+The legacy locality fallback for a row with no HostID still compares the raw
+kernel hostname, independently of this display provider. That cached comparison
+can become stale after a network rename; changing its evidence is a separate
+locality change. Friendly labels never enter host identity or path comparisons.
+The bridge reports a friendly label only alongside its HostID; if that identity
+is unknown it preserves the kernel spelling for the legacy comparison. A failed
+identity-file write still yields the bridge's usable process ID and does not
+make it hostless.
 
 Dibs therefore needs a `HostID` that is:
 
