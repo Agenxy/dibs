@@ -113,8 +113,8 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "invite",
-			"description": "Mint cloud access/config; key private, shown once. " +
-				"Local issuers: own prefix, 4 live/7d default. Coordinators may name agents; invitees cannot mint.",
+			"description": "Mint cloud-agent access; key private, once. Own prefix,4 live/7d default; " +
+				"coordinators name; invitees can't.",
 			"inputSchema": obj(map[string]any{
 				"token": str("issuer token"),
 				"action": map[string]any{
@@ -122,7 +122,8 @@ var toolDefs = func() []map[string]any {
 					"description": "default: mint",
 				},
 				"name":      str("default: <issuer>-cloud-N"),
-				"ttl_s":     num("lifetime seconds"),
+				"ttl_s":     num("seconds"),
+				"export":    map[string]any{"type": "boolean", "description": "Mint-only recovery_nonce; default off."},
 				"issued_by": str("revoke own children; name OR issued_by"),
 			}, "token"),
 		},

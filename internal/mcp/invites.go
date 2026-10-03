@@ -19,7 +19,7 @@ func (s *Server) issueInvite(ctx context.Context, a *toolArgs) (core.Result, err
 	if s.invites == nil {
 		return nil, cloudRefusal("invitation service not configured", "ask the operator to configure a public listener")
 	}
-	return s.invites.Handle(ctx, a.Token, a.InviteAction, a.Name, a.IssuedBy, a.InviteTTLS)
+	return s.invites.Handle(ctx, a.Token, a.InviteAction, a.Name, a.IssuedBy, a.InviteTTLS, a.InviteExport)
 }
 
 // WithInviteBinding is called only by the public listener after verifying an

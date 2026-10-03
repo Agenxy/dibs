@@ -16,6 +16,13 @@ func TestInviteCommandBuildsOperatorRequestsAndCloudRecipes(t *testing.T) {
 	if err != nil || defaults["ttl_s"] != int64(0) {
 		t.Fatalf("CLI overrode the board's lifetime default: %v %v", defaults, err)
 	}
+	if _, requested := defaults["export"]; requested {
+		t.Fatal("ordinary CLI mint requested a private recovery credential")
+	}
+	exported, destination, err := inviteOptions([]string{"cloud-worker", "--out", "/private/recipe.json"})
+	if err != nil || destination != "/private/recipe.json" || exported["export"] != true || exported["ttl_s"] != int64(0) {
+		t.Fatal("private export did not request recovery explicitly or overrode board TTL")
+	}
 	for _, args := range [][]string{{"list"}, {"revoke", "cloud-worker"}, {"revoke", "--issued-by", "parent"}} {
 		if _, err := invitePayload(args); err != nil {
 			t.Fatal(err)

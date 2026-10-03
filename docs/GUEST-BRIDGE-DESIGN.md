@@ -66,8 +66,14 @@ the same typed schema used by the guest reader, including exact issuer expiry
 and the derived recovery nonce. This first export is explicitly INCOMPLETE and
 not provisionable: it contains no invented `bridge_release`, runnable MCP entry,
 download steps or accepted-runtime claim. A release-backed recipe remains owed.
-The flag is mint-only; it is not sent to MCP and does not override an omitted
-`--ttl` or the issuer's policy. Existing invitation display/list/revoke remain.
+The destination flag is mint-only and is not sent to MCP. The CLI sets
+`export: true` on that mint request, through MCP or the private admin API;
+only this explicit export response includes `recovery_nonce`. Ordinary mint,
+including `export: false`, omits it. Export on list/revoke is refused. This
+minimizes disclosure of a credential stable across reissues into transcripts;
+the nonce alone still grants no access without a live invitation bearer.
+It does not override an omitted `--ttl` or the issuer's policy. Existing
+invitation display/list/revoke remain.
 The returned identity must exactly match the requested name; a valid but
 different mailbox is refused before file publication, with the unused-invitation
 list/revoke hint rather than an implicit alias or identity substitution.

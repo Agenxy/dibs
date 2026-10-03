@@ -16,12 +16,13 @@ func registerInvitationAPI(mux *http.ServeMux, service *invites.Service) {
 			Name     string `json:"name"`
 			IssuedBy string `json:"issued_by"`
 			TTLS     int64  `json:"ttl_s"`
+			Export   bool   `json:"export"`
 		}
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&p); err != nil {
 			publicError(w, 400, "E_ARGUMENT", "invalid invitation request", "use action: mint, list or revoke")
 			return
 		}
-		result, err := service.Human(r.Context(), p.Action, p.Name, p.IssuedBy, p.TTLS)
+		result, err := service.Human(r.Context(), p.Action, p.Name, p.IssuedBy, p.TTLS, p.Export)
 		if err != nil {
 			publicError(w, 400, "E_INVITE_CONFIG", err.Error(),
 				"review dibs invite list; use a new unprivileged name, or revoke before reissuing")
