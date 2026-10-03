@@ -28,6 +28,17 @@ func recordCosignHelper() int {
 		os.Getenv("TUF_ROOT_JSON") != "" || os.Getenv("TUF_ROOT") == "" {
 		return 20
 	}
+	if receipt := os.Getenv("DIBS_TEST_COSIGN_RECORD_RECEIPT"); receipt != "" {
+		f, err := os.OpenFile(receipt, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+		if err != nil {
+			return 26
+		}
+		_, err = f.WriteString("verify\n")
+		closed := f.Close()
+		if err != nil || closed != nil {
+			return 27
+		}
+	}
 	args := os.Args[2:]
 	if len(args) != 7 && len(args) != 9 {
 		return 21

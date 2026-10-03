@@ -166,13 +166,17 @@ func Verify(ctx context.Context, c *http.Client, rel Release, dir string) (strin
 // So the tool is asked its version first. That is the cheapest call it has,
 // it is made once per fetch, and it turns an unusable shim into the sentence
 // that names it.
+// Not a signature verdict: the caller may retry after repairing the tool
+// without replacing an unchanged, otherwise valid evidence file.
+var errCosignUnavailable = errors.New("signature verifier unavailable")
+
 func usableCosign(ctx context.Context) (string, error) {
 	path, err := exec.LookPath("cosign")
 	if err != nil {
-		return "", errors.New("cosign is not installed, so the release's signature cannot " +
-			"be checked, and a checksum served beside the file it describes proves only " +
-			"that the download arrived intact. `brew install cosign`, then run this " +
-			"again. Signature-backed release evidence cannot be created without it")
+		return "", fmt.Errorf("cosign is not installed, so the release's signature cannot "+
+			"be checked, and a checksum served beside the file it describes proves only "+
+			"that the download arrived intact. `brew install cosign`, then run this "+
+			"again. Signature-backed release evidence cannot be created without it: %w", errCosignUnavailable)
 	}
 	// #nosec G204 -- no shell; the path is whatever LookPath resolved.
 	if out, err := exec.CommandContext(ctx, path, "version").CombinedOutput(); err != nil {
@@ -180,7 +184,7 @@ func usableCosign(ctx context.Context) (string, error) {
 			"signature CANNOT BE CHECKED: this is not a failed verification, it is a "+
 			"missing tool. Fix the install (a mise or asdf shim with no version selected "+
 			"looks exactly like this). Signature-backed release evidence cannot be "+
-			"created without it.\n\n%s", path, strings.TrimSpace(string(out)))
+			"created without it: %w.\n\n%s", path, errCosignUnavailable, strings.TrimSpace(string(out)))
 	}
 	return path, nil
 }

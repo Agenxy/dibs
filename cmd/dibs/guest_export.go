@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/agenxy/dibs/internal/guesttrust"
 	"github.com/agenxy/dibs/internal/invites"
+	"github.com/agenxy/dibs/internal/selfupdate"
 )
 
 // Keep the opened private directory across mint and publication, so a path
@@ -72,6 +74,22 @@ func guestExportPayload(out map[string]any, requestedName string) ([]byte, error
 	r.Endpoint, _ = config["endpoint"].(string)
 	r.PEM, _ = config["ca_pem"].(string)
 	r.Pin, _ = config["ca_spki_sha256"].(string)
+	if metadata := config["bridge_release"]; metadata != nil {
+		b, err := json.Marshal(metadata)
+		if err != nil {
+			return nil, errors.New("issuer release metadata cannot be encoded")
+		}
+		var release selfupdate.GuestReleaseMetadata
+		dec := json.NewDecoder(bytes.NewReader(b))
+		dec.DisallowUnknownFields()
+		if err = dec.Decode(&release); err != nil {
+			return nil, fmt.Errorf("invalid issuer release metadata: %w", err)
+		}
+		if err = release.Validate(); err != nil {
+			return nil, fmt.Errorf("invalid issuer release metadata: %w", err)
+		}
+		r.Release = &release
+	}
 	expires, _ := out["expires_at"].(string)
 	var err error
 	r.Expires, err = time.Parse(time.RFC3339Nano, expires)

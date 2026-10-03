@@ -19,29 +19,21 @@ import (
 
 	"github.com/agenxy/dibs/internal/guesttrust"
 	"github.com/agenxy/dibs/internal/invites"
+	"github.com/agenxy/dibs/internal/selfupdate"
 )
 
-type guestAsset struct {
-	OS         string `json:"goos"`
-	Arch       string `json:"goarch"`
-	URL        string `json:"url"`
-	ArchiveSHA string `json:"archive_sha256"`
-	BinarySHA  string `json:"dibs_sha256"`
-}
+type guestAsset = selfupdate.GuestAsset
 
 type guestRecipe struct {
-	Version  int       `json:"schema_version"`
-	Name     string    `json:"name"`
-	Endpoint string    `json:"endpoint"`
-	Key      string    `json:"invitation_key"`
-	Nonce    string    `json:"recovery_nonce,omitempty"`
-	Expires  time.Time `json:"expires_at"`
-	PEM      string    `json:"ca_pem"`
-	Pin      string    `json:"ca_spki_sha256"`
-	Release  *struct {
-		Tag    string       `json:"tag"`
-		Assets []guestAsset `json:"assets"`
-	} `json:"bridge_release,omitempty"`
+	Version  int                              `json:"schema_version"`
+	Name     string                           `json:"name"`
+	Endpoint string                           `json:"endpoint"`
+	Key      string                           `json:"invitation_key"`
+	Nonce    string                           `json:"recovery_nonce,omitempty"`
+	Expires  time.Time                        `json:"expires_at"`
+	PEM      string                           `json:"ca_pem"`
+	Pin      string                           `json:"ca_spki_sha256"`
+	Release  *selfupdate.GuestReleaseMetadata `json:"bridge_release,omitempty"`
 }
 
 // A guest recipe is immutable permission, not machine discovery. Opening it
@@ -60,10 +52,8 @@ func readGuestRecipe(path string) (*guestRecipe, *url.URL, *x509.Certificate, er
 	if err := dec.Decode(&recipe); err != nil {
 		return nil, nil, nil, fmt.Errorf("invalid guest recipe: %w; ask the issuer for an original version-1 file", err)
 	}
-	if recipe.Version != 1 || !invites.ValidName(recipe.Name) || !guestInvitationKey(recipe.Key) ||
-		recipe.Expires.IsZero() || !time.Now().Before(recipe.Expires) {
-		return nil, nil, nil, errors.New("guest recipe has invalid identity, credential or expiry; " +
-			"ask the issuer for a live version-1 invitation")
+	if err := recipe.validateIdentity(); err != nil {
+		return nil, nil, nil, err
 	}
 	u, ip, err := guestEndpoint(recipe.Endpoint)
 	if err != nil {
@@ -77,6 +67,20 @@ func readGuestRecipe(path string) (*guestRecipe, *url.URL, *x509.Certificate, er
 		return nil, nil, nil, errors.New("guest recovery nonce is malformed; ask the issuer for the original private recipe")
 	}
 	return &recipe, u, ca, nil
+}
+
+func (r guestRecipe) validateIdentity() error {
+	if r.Version != 1 || !invites.ValidName(r.Name) || !guestInvitationKey(r.Key) ||
+		r.Expires.IsZero() || !time.Now().Before(r.Expires) {
+		return errors.New("guest recipe has invalid identity, credential or expiry; " +
+			"ask the issuer for a live version-1 invitation")
+	}
+	if r.Release != nil {
+		if err := r.Release.Validate(); err != nil {
+			return fmt.Errorf("invalid guest release metadata: %w", err)
+		}
+	}
+	return nil
 }
 
 func guestEndpoint(raw string) (*url.URL, netip.Addr, error) {

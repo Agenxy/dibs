@@ -153,45 +153,55 @@ func (v VerifiedRelease) Save(dir string) error {
 // initialize call or admission-time TUF refresh. Missing/corrupt evidence is a
 // refusal, not permission to fetch replacement metadata or emit a guest recipe.
 func LoadVerifiedRelease(ctx context.Context, dir, buildVersion string) (VerifiedRelease, error) {
-	root, err := os.OpenRoot(dir)
+	v, _, err := readReleaseRecord(dir)
 	if err != nil {
 		return VerifiedRelease{}, err
+	}
+	if err = v.verifyOffline(ctx, buildVersion); err != nil {
+		return VerifiedRelease{}, err
+	}
+	return v, nil
+}
+
+// One bounded file snapshot supplies both the content key and the exact bytes
+// checked. Cache users may not hash one read and verify a different second read.
+func readReleaseRecord(dir string) (VerifiedRelease, []byte, error) {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return VerifiedRelease{}, nil, err
 	}
 	defer func() { _ = root.Close() }()
 	info, err := root.Lstat(releaseRecordName)
 	if err != nil {
-		return VerifiedRelease{}, err
+		return VerifiedRelease{}, nil, err
 	}
 	if !info.Mode().IsRegular() {
-		return VerifiedRelease{}, errors.New("release record is not a regular file; " +
+		return VerifiedRelease{}, nil, errors.New("release record is not a regular file; " +
 			"retain signed evidence in the board's cache")
 	}
 	f, err := root.Open(releaseRecordName)
 	if err != nil {
-		return VerifiedRelease{}, err
+		return VerifiedRelease{}, nil, err
 	}
 	defer func() { _ = f.Close() }()
 	b, err := readBounded(f, maxReleaseRecord)
 	if err != nil {
-		return VerifiedRelease{}, err
+		return VerifiedRelease{}, nil, err
 	}
 	var r releaseRecord
 	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.DisallowUnknownFields()
 	if err = dec.Decode(&r); err != nil {
-		return VerifiedRelease{}, fmt.Errorf("invalid retained release record: %w", err)
+		return VerifiedRelease{}, nil, fmt.Errorf("invalid retained release record: %w", err)
 	}
 	if err = dec.Decode(new(any)); !errors.Is(err, io.EOF) {
-		return VerifiedRelease{}, errors.New("retained release record has trailing data")
+		return VerifiedRelease{}, nil, errors.New("retained release record has trailing data")
 	}
 	if err = r.validate(); err != nil {
-		return VerifiedRelease{}, err
+		return VerifiedRelease{}, nil, err
 	}
 	v := VerifiedRelease{tag: r.Tag, checksums: string(r.Checksums), bundle: string(r.Bundle)}
-	if err = v.verifyOffline(ctx, buildVersion); err != nil {
-		return VerifiedRelease{}, err
-	}
-	return v, nil
+	return v, b, nil
 }
 
 func (r releaseRecord) validate() error {
