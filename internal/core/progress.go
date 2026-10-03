@@ -141,8 +141,7 @@ func reviewsOrReports(disposition string) bool {
 // State rules, so in the fold: they read the message. "progress" was an
 // unknown disposition to every earlier build, so no ledger holds one.
 func (s *State) applyProgress(m *Message, op *Op, now time.Time) (Result, []Event, error) {
-	correcting := m.State == MsgStateDone && m.HasUnresolvedReviewFlags()
-	if m.Type != MsgRequest || (m.State != MsgStateApproved && !correcting) || m.Grant != "" || m.Adopt != "" {
+	if !m.canReportProgress() {
 		state := m.State
 		if state == "" {
 			state = "pending"
@@ -187,6 +186,15 @@ func (s *State) applyProgress(m *Message, op *Op, now time.Time) (Result, []Even
 	evs := []Event{{Type: "message.progress", Agent: m.To, To: m.From, Data: data}}
 	s.finish(&evs, now)
 	return Result{"ok": true, "state": m.State, "reached": reached, "total": total}, evs, nil
+}
+
+// Done work permits correction reports only while a review flag remains.
+// Approval requests that grant roles or move mailboxes never report progress.
+func (m *Message) canReportProgress() bool {
+	if m.Type != MsgRequest || m.Grant != "" || m.Adopt != "" {
+		return false
+	}
+	return m.State == MsgStateApproved || (m.State == MsgStateDone && m.HasUnresolvedReviewFlags())
 }
 
 // Reached counts the distinct milestones the recipient reported, however
