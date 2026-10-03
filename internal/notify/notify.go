@@ -15,10 +15,8 @@
 // notification-entitled application, which is why every tool that posts a
 // banner without shipping an app goes through it.
 //
-// Action BUTTONS on a banner are the part this cannot do. Those need a real
-// application bundle, which is the natural next step and the reason the icon
-// work matters; until then anything needing an answer is an alert, which does
-// have buttons and does return which one was pressed.
+// Action buttons require the bundled native notifier. Without it the passive
+// fallback posts a notice and the question stays answerable on the board.
 //
 // # The injection rule, which is the whole safety argument
 //
@@ -37,12 +35,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -63,27 +59,9 @@ const probeRetryAfter = 30 * time.Second
 // goroutine, or an unattended machine accumulates one per message.
 const timeout = 2 * time.Minute
 
-// windowTimeout bounds the escalated ask, which is a WINDOW rather than a
-// banner and therefore stays put until somebody deals with it.
-//
-// Fifteen minutes, not two: a person who steps away from a window comes back to
-// it, which is the entire reason this path exists. Still bounded, because a
-// modal nobody ever answers is a process held open on an unattended machine and
-// a dialog in the way of whatever they do next.
-const windowTimeout = 15 * time.Minute
-
 // banner posts a notification. Arguments, never interpolation.
 const banner = `on run argv
   display notification (item 3 of argv) with title (item 1 of argv) subtitle (item 2 of argv)
-end run`
-
-// alert asks a question with up to three buttons and returns the one pressed.
-const alert = `on run argv
-  set n to count of argv
-  set btns to items 3 thru n of argv
-  set r to display dialog (item 2 of argv) with title (item 1 of argv) ¬
-    buttons btns default button (item n of argv) with icon note
-  return button returned of r
 end run`
 
 // prompt asks for free text.
@@ -154,7 +132,7 @@ func BannerWithReceipt(title, subtitle, body string, receipt Receipt) error {
 	return err
 }
 
-// Ask shows an alert with the given buttons and returns the one pressed. The
+// Ask posts a banner with the given buttons and returns the one pressed. The
 // last button is the default. Two or three choices; use Pick for more.
 func Ask(title, body string, buttons ...string) (string, error) {
 	return AskWithReceipt(title, body, nil, buttons...)
@@ -174,35 +152,13 @@ func AskWithReceipt(title, body string, receipt Receipt, buttons ...string) (str
 		}
 		return pressed, err
 	}
-	// The bundle puts the buttons ON the banner, which is the whole reason it
-	// exists: the fallback has to interrupt with a modal alert to ask the same
-	// question, and a coordination service that steals focus to ask an optional
-	// question is worse than one that waits.
+	// The bundle puts the buttons on the banner. Without it, post a passive
+	// notice and leave the question answerable on the board.
 	if h := helper(); h != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), timeout+30*time.Second)
 		defer cancel()
-		// A banner nobody can see is not an ask.
-		//
-		// Where a Focus mode is active AND this build cannot mark a notification
-		// Time Sensitive, the banner is silenced by construction: it is delivered,
-		// macOS holds it in Notification Centre, and the person finds it whenever
-		// they next go looking, which for a request with a deadline is the same as
-		// never. Measured exactly that way, three times in one evening, on a
-		// request the operator had asked for twice.
-		//
-		// So escalate to a window, which Focus does not silence. Only then: a
-		// service that steals focus for every question is one people turn off,
-		// and that argument is why this is not the default.
+		// Posting never activates a window, including while Focus is on.
 		args := append([]string{title, "", body}, buttons...)
-		// Logged because the CHOICE is the thing nobody could see afterwards.
-		// The daemon recorded that it notified and never which channel it used,
-		// so "I did not get it" had no evidence attached and three different
-		// explanations that all looked identical from the outside.
-		if silenced := bannersAreSilenced(); silenced {
-			slog.Info("asking in a window", "why", "a focus mode is on and this build cannot mark a notification time-sensitive")
-			return askInAWindowWithReceipt(h, title, body, buttons, receipt)
-		}
-		slog.Info("asking on a banner", "focus", focusOn())
 		// #nosec G204 -- h is resolved beside this binary; the rest is argv data.
 		out, err := outputWithReceipt(exec.CommandContext(ctx, h, args...), receipt)
 		if err != nil {
@@ -235,7 +191,7 @@ func AskWithReceipt(title, body string, receipt Receipt, buttons ...string) (str
 		}
 		return strings.TrimSpace(string(out)), nil
 	}
-	return run(alert, append([]string{title, body}, buttons...)...)
+	return "", BannerWithReceipt(title, "answer on the Dibs board", body, receipt)
 }
 
 // Pick offers a list and returns the choice, or "" if dismissed.
@@ -542,7 +498,7 @@ func run(script string, args ...string) (string, error) {
 		// that was never drawn, and nothing anywhere says so. That is the exact
 		// failure this file was written to remove, surviving in the branch that
 		// exists to remove it. Found by a pre-release review, one path along
-		// from the same defect in askInAWindow.
+		// while attempting to report another missing prompt.
 		//
 		// A cancel is AppleScript error -128, and osascript writes it to stderr.
 		// Anything else is the machine failing, not the person declining.
@@ -560,8 +516,8 @@ func run(script string, args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// Reach reports whether a notification raised right now would actually be seen,
-// and says why not when it would not.
+// Reach reports posting capability and an informational Focus observation.
+// Neither a successful probe nor a Focus observation proves visibility.
 //
 // It exists because every layer reported success while nothing appeared. A
 // coordinator request was posted, macOS accepted it, an active Focus swallowed
@@ -610,24 +566,7 @@ func Reach() (ok bool, why string) {
 	out, err := exec.CommandContext(ctx, h, "--status").Output()
 	switch strings.TrimSpace(string(out)) {
 	case "authorized":
-		// Allowed, which is not the same as visible.
-		if f := focusOn(); f != "" {
-			if bannersAreSilenced() {
-				// Do not advise enabling Time Sensitive here. macOS reports it as
-				// notSupported for this build, because it needs an entitlement Dibs
-				// does not carry, so that advice cannot be followed and sends
-				// somebody hunting a switch that is not there.
-				return false, "a Focus mode is on (" + f + ") and this build cannot mark " +
-					"a notification Time Sensitive, which is what would break through " +
-					"one. Banners are silenced by construction, so a question or " +
-					"request to you opens a WINDOW instead, which Focus does not " +
-					"silence. Passive notices still wait in Notification Center"
-			}
-			return false, "a Focus mode is on (" + f + "), which silences banners. A " +
-				"question or request asks to break through as Time Sensitive; allow " +
-				"that for Dibs in System Settings > Notifications if it is not already"
-		}
-		return true, ""
+		return true, FocusPresentation().Reason
 	case "denied":
 		return false, "notifications are turned off for Dibs in System Settings"
 	case "not-determined":
@@ -659,7 +598,7 @@ func focusOn() string {
 		return ""
 	}
 	// #nosec G304 -- a fixed path under the user's own home directory.
-	b, err := os.ReadFile(filepath.Join(home, "Library", "DoNotDisturb", "DB", "Assertions.json"))
+	b, err := readFocusFile(filepath.Join(home, "Library", "DoNotDisturb", "DB", "Assertions.json"))
 	if err != nil {
 		return ""
 	}
@@ -698,131 +637,6 @@ var ErrCannotNotify = errors.New("this machine will not show a notification")
 func notAuthorised(err error) bool {
 	var ee *exec.ExitError
 	return errors.As(err, &ee) && ee.ExitCode() == 2
-}
-
-// bannersAreSilenced reports whether a notification would be delivered and not
-// seen.
-//
-// Two conditions, and it takes both. A Focus mode suppresses banners; Time
-// Sensitive is what breaks through one, and it needs an entitlement this build
-// does not carry, so `timeSensitiveSetting` comes back notSupported. Either
-// alone is survivable. Together they mean a banner is silenced by construction,
-// which is a different thing from a person choosing not to answer.
-//
-// Deliberately conservative: anything it cannot determine reads as "not
-// silenced", so the quiet path stays the default and an escalation happens only
-// on positive evidence that the quiet path cannot work.
-func bannersAreSilenced() bool {
-	if focusOn() == "" {
-		return false
-	}
-	h := helper()
-	if h == "" {
-		return false
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	// #nosec G204 -- h is resolved beside this binary; --settings is a constant.
-	out, err := exec.CommandContext(ctx, h, "--settings").Output()
-	if err != nil {
-		return false
-	}
-	return strings.Contains(string(out), "timeSensitive=0")
-}
-
-// askInAWindow puts the question on screen through the user's GUI session.
-//
-// The daemon is a LaunchAgent, and a process it forks directly has no route to
-// the WindowServer: the helper starts, finds nothing to draw into, and exits at
-// once. Measured three times, each looking like "the notification did not
-// appear", and each time the same helper run from an interactive shell drew the
-// window perfectly. That difference is the whole bug, and it is why the earlier
-// osascript prompt never appeared either.
-//
-// `launchctl asuser <uid>` runs it inside the user's Aqua session, which is
-// where a window can exist. The cost is that stdout does not come back, so the
-// answer is left in a file this side creates and reads. The file holds a button
-// label and nothing else: no token, no message body, nothing worth protecting
-// beyond not leaving litter.
-func askInAWindow(helperPath, title, body string, buttons []string) (string, error) {
-	return askInAWindowWithReceipt(helperPath, title, body, buttons, nil)
-}
-
-func askInAWindowWithReceipt(helperPath, title, body string, buttons []string, receipt Receipt) (string, error) {
-	f, err := os.CreateTemp("", "dibs-answer-*")
-	if err != nil {
-		return "", err
-	}
-	answer := f.Name()
-	_ = f.Close()
-	defer func() { _ = os.Remove(answer) }()
-
-	ctx, cancel := context.WithTimeout(context.Background(), windowTimeout)
-	defer cancel()
-	argv := append([]string{
-		"asuser", strconv.Itoa(os.Getuid()), helperPath, "--ask", "--out", answer,
-		title, body,
-	}, buttons...)
-	dismissed := false
-	observed := receipt
-	if receipt != nil {
-		observed = func(state string) {
-			if state == "dismissed" {
-				dismissed = true
-			}
-			receipt(state)
-		}
-	}
-	// #nosec G204 -- launchctl is a fixed path, helperPath is resolved beside
-	// this binary, and the rest is argv data the helper never interprets.
-	if _, err := outputWithReceipt(exec.CommandContext(ctx, "/bin/launchctl", argv...), observed); err != nil {
-		// A dismissed window exits non-zero, which is an answer.
-		var ee *exec.ExitError
-		if !errors.As(err, &ee) {
-			return "", err
-		}
-	}
-	// Judged on CONTENT, not on whether the file could be read.
-	//
-	// This asked `os.ReadFile` for an error, and that error could never come:
-	// CreateTemp above makes the file, so the read always succeeds and the
-	// branch below was unreachable. A helper that crashed, was never installed,
-	// or drew nothing at all left the empty file exactly as created, and this
-	// returned ("", nil): no answer and no error, which every caller reads as a
-	// deliberate "not now". So the failure this branch was written to report
-	// was the one case it could not report. Found by a pre-release review.
-	//
-	// An empty answer is the honest signal either way. A dismissed window
-	// writes nothing and exits non-zero; a helper that never drew writes
-	// nothing and exits non-zero. Both are "nobody pressed anything", and the
-	// caller needs to know that rather than infer patience.
-	pressed, err := answerFrom(answer)
-	if dismissed && errors.Is(err, ErrNoAnswer) {
-		return "", nil
-	}
-	return pressed, err
-}
-
-// answerFrom reads the button the helper recorded, or reports that nobody
-// pressed one.
-//
-// Split out because the shell-out above cannot be exercised in a test and this
-// decision is the whole of the behaviour: there was no behavioural test of the
-// window path at all, which is how the bug in the comment above survived.
-func answerFrom(path string) (string, error) {
-	out, err := os.ReadFile(path) // #nosec G304 -- a path the caller just created
-	if err == nil {
-		if pressed := strings.TrimSpace(string(out)); pressed != "" {
-			return pressed, nil
-		}
-	}
-	// "Dismissed" and "never drawn" are one answer to the caller and neither is
-	// a decision. Reported as a failure, because a question nobody was shown is
-	// not a question somebody declined: an agent otherwise waits out its
-	// deadline while the operator sees nothing and nothing anywhere says which
-	// of the two happened.
-	return "", fmt.Errorf("%w: the window left no answer, so it was dismissed "+
-		"without a press or never drawn at all", ErrNoAnswer)
 }
 
 // ErrNoAnswer means nothing came back from a question that was asked.

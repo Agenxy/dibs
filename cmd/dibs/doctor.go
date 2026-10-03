@@ -118,6 +118,11 @@ func (d *diagnosis) warn(what, fix string) {
 	d.prose(ui.Fix(fix))
 }
 
+func (d *diagnosis) note(what string) {
+	d.checks = append(d.checks, doctorCheck{Level: "note", What: what})
+	d.prose(ui.Dim(what))
+}
+
 // prose is for the lines that exist only for a person: under --json they go
 // nowhere, because stdout must stay one parseable document and none of them
 // says anything the checks do not.
@@ -196,7 +201,7 @@ func (d *diagnosis) run(verbose bool) error {
 		// could not see that the command never reached it.
 		d.prose("\nthe daemon is down, so nothing that needs it can be checked. What " +
 			"follows reads this machine's own files, and is where the reason usually is.")
-		checkLedgerAndBoard(dir, ok, bad, warn)
+		checkLedgerAndBoard(dir, ok, d.note, bad, warn)
 		checkGit(verbose, ok, bad)
 		checkSupervision(verbose, ok, warn)
 		checkOneDaemon(verbose, ok, warn)
@@ -241,7 +246,7 @@ func (d *diagnosis) run(verbose bool) error {
 	checkHubAdvertisement(dir, boardOrNil(), ok, warn)
 	checkBoardName(dir, ok, warn)
 	checkHooks(client, sec, ok, bad, warn)
-	checkLedgerAndBoard(dir, ok, bad, warn)
+	checkLedgerAndBoard(dir, ok, d.note, bad, warn)
 	checkGit(verbose, ok, bad)
 	checkSupervision(verbose, ok, warn)
 	checkOneDaemon(verbose, ok, warn)
@@ -752,7 +757,7 @@ func checkHooks(client *http.Client, sec string, ok reportFn, bad, warn fixFn) {
 	}
 }
 
-func checkLedgerAndBoard(dir string, ok reportFn, bad, warn fixFn) {
+func checkLedgerAndBoard(dir string, ok, note reportFn, bad, warn fixFn) {
 	// A data directory that JOINS another machine's board holds a credential
 	// and nothing else: the ledger is on the hub, and there is nothing here to
 	// verify.
@@ -804,8 +809,10 @@ func checkLedgerAndBoard(dir string, ok reportFn, bad, warn fixFn) {
 	// exists because the person is not in a loop to notice its absence, so it
 	// must not be the one path that fails quietly.
 	if reaches, why := notify.Reach(); reaches {
-		ok("notifications reach you: a question or request from an agent raises one " +
-			"with buttons on it")
+		ok("Dibs can post native notifications with action buttons; posting does not confirm they were seen")
+		if why != "" {
+			note(why)
+		}
 	} else if why != "" {
 		warn("agents cannot reach you by notification", why)
 	}

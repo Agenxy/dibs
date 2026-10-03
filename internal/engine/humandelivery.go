@@ -20,6 +20,8 @@ type HumanNotifier interface {
 }
 
 type humanDelivery struct {
+	notify.Presentation
+	Posted     bool                    `json:"posted"`
 	Route      string                  `json:"route"`
 	State      string                  `json:"state"`
 	RelayCount int                     `json:"relay_count,omitempty"`
@@ -115,7 +117,12 @@ func (e *Engine) askHumanDesktop(n HumanNotice, ask func(humanask.Message) (huma
 	a, err := ask(humanask.Message{
 		Type: n.Type, From: n.From, Who: n.Who, Body: n.Body,
 		Choices: n.Choices, Grant: n.Grant, Adopt: n.Adopt, Serial: n.Serial,
-		Receipt: func(state string) { e.recordHumanDelivery(n.Serial, "desktop", state, "") },
+		Receipt: func(state string) {
+			if state == "posted" {
+				e.setHumanPresentation(n.Serial, e.humanPresentation(), true)
+			}
+			e.recordHumanDelivery(n.Serial, "desktop", state, "")
+		},
 	})
 	if err != nil {
 		e.recordHumanDelivery(n.Serial, "desktop", "failed", err.Error())
@@ -146,6 +153,7 @@ func (e *Engine) recordHumanDelivery(serial uint64, source, state, failure strin
 	}
 	r.State, r.Error = state, failure
 	r.Posted = r.Posted || state == "posted"
+	d.Posted = d.Posted || r.Posted
 	r.Dismissed = r.Dismissed || state == "dismissed"
 	d.Receipts[source] = r
 	// Each source's last receipt is retained. A failure on one attached Mac

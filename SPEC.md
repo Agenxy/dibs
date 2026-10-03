@@ -982,6 +982,15 @@ authenticated session. No receipt state is ledgered: after restart the route
 and state are `unknown` until new evidence arrives; actual answers replay.
 Old helpers/relays supply no invented receipt. Retrying `op_id` returns the
 original route (or unknown after restart) without another alert.
+Local desktop sends additionally return this derived delivery evidence immediately:
+`posted: false` while pending, becoming true only on OS posting evidence. Active
+macOS Focus supplies its name, `shown: "unknown"` and a hint to check receipts
+and leave the request pending. The posting receipt retains its own Focus snapshot,
+even if Focus changes afterwards. These observations run outside the writer and
+read only bounded non-secure Focus files; no app/contact filter is inspected and
+no visibility claim is inferred from it. Human questions and requests never
+open a decision window automatically, including while Focus is on. A person
+pressing an answer button can still request an answer field or choice list.
 Agents needing the person's decision send a request here rather than waiting
 for a chat they may not read.
 

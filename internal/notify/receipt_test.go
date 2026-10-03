@@ -51,6 +51,17 @@ func TestReceiptChild(t *testing.T) {
 }
 
 func asReceiptHelper() {
+	if os.Getenv("DIBS_TEST_FOCUS_DRIVER") == "1" {
+		if len(os.Args) == 2 && os.Args[1] == "--settings" {
+			_, _ = os.Stdout.WriteString("timeSensitive=0\n")
+			return
+		}
+		for _, arg := range os.Args {
+			if arg == "--ask" {
+				os.Exit(2)
+			}
+		}
+	}
 	if len(os.Args) == 2 && os.Args[1] == "--settings" {
 		_, _ = os.Stdout.WriteString("timeSensitive=1\n")
 		return
@@ -69,31 +80,6 @@ func asReceiptHelper() {
 		}
 	}
 	_, _ = os.Stdout.WriteString("Yes\n")
-}
-
-func TestWindowReceiptUsesTheActualGUICommand(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("launchctl asuser is macOS only")
-	}
-	t.Setenv("DIBS_TEST_RECEIPT_PUBLIC", "1")
-	t.Setenv("DIBS_DIR", t.TempDir())
-	self, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	bytes, err := os.ReadFile(self)
-	if err != nil {
-		t.Fatal(err)
-	}
-	helper := filepath.Join(t.TempDir(), "dibs-notify")
-	if err := os.WriteFile(helper, bytes, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	state := ""
-	choice, err := askInAWindowWithReceipt(helper, "fixture", "fixture", []string{"Yes"}, func(s string) { state = s })
-	if err != nil || choice != "Yes" || state != "posted" {
-		t.Fatalf("GUI command receipt: choice=%q state=%q err=%v", choice, state, err)
-	}
 }
 
 // Enter through the public notifier API and its actual installed-helper
