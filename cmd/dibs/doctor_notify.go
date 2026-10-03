@@ -21,5 +21,4 @@ func checkNotificationRoute(ok, note reportFn, warn fixFn) {
 	} else if why != "" {
 		warn("agents cannot reach you by notification", why)
 	}
-
 }
