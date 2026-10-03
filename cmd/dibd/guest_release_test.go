@@ -152,9 +152,18 @@ func TestGuestReleaseMetadataThroughShippedDaemon(t *testing.T) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	call := func(name string, args map[string]any) map[string]any {
+	type rpcResult struct {
+		IsError bool `json:"isError"`
+		Content []struct {
+			Text string `json:"text"`
+		} `json:"content"`
+		ServerInfo struct {
+			Version string `json:"version"`
+		} `json:"serverInfo"`
+	}
+	rpcCall := func(method string, params map[string]any) rpcResult {
 		t.Helper()
-		wire, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": name, "arguments": args}})
+		wire, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -172,19 +181,31 @@ func TestGuestReleaseMetadataThroughShippedDaemon(t *testing.T) {
 		}
 		defer func() { _ = resp.Body.Close() }()
 		var rpc struct {
-			Result struct {
-				IsError bool `json:"isError"`
-				Content []struct {
-					Text string `json:"text"`
-				} `json:"content"`
-			} `json:"result"`
-			Error any `json:"error"`
+			Result rpcResult `json:"result"`
+			Error  any       `json:"error"`
 		}
-		if err = json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&rpc); err != nil || resp.StatusCode != 200 || rpc.Error != nil || rpc.Result.IsError || len(rpc.Result.Content) == 0 {
-			t.Fatalf("RPC setup refused %s: %d %+v %v", name, resp.StatusCode, rpc, err)
+		if err = json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&rpc); err != nil || resp.StatusCode != 200 || rpc.Error != nil || rpc.Result.IsError {
+			t.Fatalf("RPC setup refused %s: %d %v", method, resp.StatusCode, err)
+		}
+		return rpc.Result
+	}
+	// A clean real.git checkout can resolve a Git-derived module version;
+	// managed worktrees can report only devel. Neither is the selected release.
+	// Compare against the independently reported LIVE MCP version, not a
+	// guessed literal or a looser prefix, and never turn off VCS provenance.
+	actualBuild := rpcCall("server/discover", map[string]any{}).ServerInfo.Version
+	if actualBuild == "" || strings.TrimPrefix(actualBuild, "v") == "0.0.9" {
+		t.Fatalf("daemon provenance setup is missing or claims the fixture release: %q", actualBuild)
+	}
+	t.Logf("shipped daemon reports actual build %q", actualBuild)
+	call := func(name string, args map[string]any) map[string]any {
+		t.Helper()
+		rpc := rpcCall("tools/call", map[string]any{"name": name, "arguments": args})
+		if len(rpc.Content) == 0 {
+			t.Fatalf("tool setup returned no result: %s", name)
 		}
 		var out map[string]any
-		if err = json.Unmarshal([]byte(rpc.Result.Content[0].Text), &out); err != nil || out["ok"] == false {
+		if err = json.Unmarshal([]byte(rpc.Content[0].Text), &out); err != nil || out["ok"] == false {
 			t.Fatalf("tool setup refused %s: %v %v", name, out, err)
 		}
 		return out
@@ -209,8 +230,9 @@ func TestGuestReleaseMetadataThroughShippedDaemon(t *testing.T) {
 	for n := 1; n <= 2; n++ {
 		config := mint(n)
 		metadata, ok := config["bridge_release"].(map[string]any)
-		if !ok || metadata["tag"] != "v0.0.9" || metadata["board_build"] != "devel" {
-			t.Fatal("shipped mint dropped verified guest metadata or relabelled board")
+		if !ok || metadata["tag"] != "v0.0.9" || metadata["board_build"] != actualBuild {
+			t.Fatalf("shipped mint provenance differs from live MCP: present=%t tag=%q board=%q want=%q", ok,
+				metadata["tag"], metadata["board_build"], actualBuild)
 		}
 		assets, ok := metadata["assets"].([]any)
 		if !ok || len(assets) != 3 || metadata["provisioning_status"] != "INCOMPLETE" || !strings.Contains(fmt.Sprint(config["bridge_release_status"]), "INCOMPLETE") {
