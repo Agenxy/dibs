@@ -8,7 +8,7 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - **MCP startup survives a daemon upgrade.** The stdio bridge waits up to
-  twenty-five seconds for modern discovery, legacy initialization and tool
+  25 seconds for modern discovery, legacy initialization and tool
   listing, including a daemon that accepts but never answers. It forwards the
   daemon's actual version and capabilities. Only a refused connection is
   retried; mutating calls retain their existing ten-second retry allowance.
