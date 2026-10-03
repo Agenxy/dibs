@@ -32,41 +32,57 @@ func inviteLifetime(s string) (time.Duration, error) {
 }
 
 func invitePayload(args []string) (map[string]any, error) {
+	payload, _, err := inviteOptions(args)
+	return payload, err
+}
+
+func inviteOptions(args []string) (map[string]any, string, error) {
 	fs := flag.NewFlagSet("invite", flag.ContinueOnError)
 	ttl := fs.String("ttl", "7d", "invitation lifetime (agent policy defaults to at most 7d)")
+	out := fs.String("out", "", "exclusive absolute private guest JSON destination; INCOMPLETE, not provisionable until a supporting signed release exists; retain the board key for recovery")
 	if helpOnly(args) {
-		return nil, parseFlags(fs, args)
+		return nil, "", parseFlags(fs, args)
 	}
 	if len(args) == 0 {
-		return nil, errors.New("usage: dibs invite <name> [--ttl 30d] | list | revoke <name>")
+		return nil, "", errors.New("usage: dibs invite <name> [--ttl 30d] [--out <absolute-private-file>] | list | revoke <name>")
 	}
 	action := args[0]
 	if action == "list" && len(args) == 1 {
-		return map[string]any{"action": "list"}, nil
+		return map[string]any{"action": "list"}, "", nil
 	}
 	if action == "revoke" {
-		return revokePayload(args[1:])
+		payload, err := revokePayload(args[1:])
+		return payload, "", err
 	}
 	if !invites.ValidName(action) || action == "list" || action == "revoke" {
-		return nil, errors.New("invite needs a lowercase ASCII agent name, or list/revoke <name>")
+		return nil, "", errors.New("invite needs a lowercase ASCII agent name, or list/revoke <name>")
 	}
 	if err := parseFlags(fs, args[1:]); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if fs.NArg() != 0 {
-		return nil, errors.New("usage: dibs invite <name> [--ttl 30d]")
+		return nil, "", errors.New("usage: dibs invite <name> [--ttl 30d] [--out <absolute-private-file>]")
 	}
 	// Let the service choose min(7d, configured ceiling) when --ttl is
 	// absent. Sending a hard-coded 7d would break a board capped at 1h.
 	var d time.Duration
-	if fs.NFlag() > 0 {
+	ttlSet := false
+	outSet := false
+	fs.Visit(func(f *flag.Flag) {
+		ttlSet = ttlSet || f.Name == "ttl"
+		outSet = outSet || f.Name == "out"
+	})
+	if outSet && *out == "" {
+		return nil, "", errors.New("--out needs an absolute private file; omit it for the existing invitation display")
+	}
+	if ttlSet {
 		var err error
 		d, err = inviteLifetime(*ttl)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 	}
-	return map[string]any{"action": "mint", "name": action, "ttl_s": int64(d / time.Second)}, nil
+	return map[string]any{"action": "mint", "name": action, "ttl_s": int64(d / time.Second)}, *out, nil
 }
 
 func revokePayload(args []string) (map[string]any, error) {
@@ -85,9 +101,23 @@ func revokePayload(args []string) (map[string]any, error) {
 }
 
 func inviteCmd(args []string) error {
-	payload, err := invitePayload(args)
+	payload, destination, err := inviteOptions(args)
 	if err != nil {
 		return err
+	}
+	var export *guestRecipeExport
+	if destination != "" {
+		export, err = openGuestRecipeExport(destination)
+		if err != nil {
+			return err // refuse before any invitation is minted
+		}
+		defer func() { _ = export.root.Close() }()
+	}
+	finish := func(out map[string]any) error {
+		if export != nil {
+			return export.publish(out)
+		}
+		return printInviteResult(out, payload["action"] == "mint")
 	}
 	if err = checkConfigReadable(); err != nil {
 		return err
@@ -98,7 +128,7 @@ func inviteCmd(args []string) error {
 		if err := callHookTool("invite", payload, &out); err != nil {
 			return err
 		}
-		return printInviteResult(out, payload["action"] == "mint")
+		return finish(out)
 	}
 	return adminOnly("invite", func() error {
 		raw, err := adminPost("/api/admin/invites", payload)
@@ -109,7 +139,7 @@ func inviteCmd(args []string) error {
 		if err = json.Unmarshal(raw, &out); err != nil {
 			return err
 		}
-		return printInviteResult(out, payload["action"] == "mint")
+		return finish(out)
 	})
 }
 

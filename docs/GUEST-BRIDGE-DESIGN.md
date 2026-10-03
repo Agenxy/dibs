@@ -61,6 +61,26 @@ reject symlinks/non-regular input and unsafe ownership/permissions, and use
 atomic exclusive creation for provisioning. Never overwrite an existing recipe
 silently. Expiry is advisory locally and authoritative at the server.
 
+Issuer CLI checkpoint: `dibs invite <name> --out <absolute-private-file>` exports
+the same typed schema used by the guest reader, including exact issuer expiry
+and the derived recovery nonce. This first export is explicitly INCOMPLETE and
+not provisionable: it contains no invented `bridge_release`, runnable MCP entry,
+download steps or accepted-runtime claim. A release-backed recipe remains owed.
+The flag is mint-only; it is not sent to MCP and does not override an omitted
+`--ttl` or the issuer's policy. Existing invitation display/list/revoke remain.
+
+Before minting, open an existing owned private directory and reject an existing
+destination (including symlinks). Hold that directory handle through issuance,
+recheck its privacy, write and sync a new 0600 temporary file, then publish with
+an exclusive hard link. A file appearing after preflight cannot be overwritten.
+Remove the temporary link and sync the directory before reporting success. No
+non-atomic or overwrite fallback is offered when linking is unsupported. A
+post-mint failure may leave an unused invitation or an ambiguously durable final
+file: preserve it, report the failure and tell the issuer to list/revoke the
+unused invitation before retrying. Never print the credential as a fallback.
+The board's original at-rest key is part of its state backup, not an arbitrarily
+rotatable file; future export help retains this identity-recovery contract.
+
 Endpoint validation precedes networking: HTTPS only; canonical unzoned IPv6,
 explicit valid port, exact `/mcp`, no userinfo, query, fragment, encoded alternate
 path or DNS name. Production recipes require the same direct-IP policy as the
