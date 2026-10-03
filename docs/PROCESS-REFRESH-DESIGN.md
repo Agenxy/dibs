@@ -106,3 +106,63 @@ credential possession alone does not prove a measurement occurred.
 
 Priority remains contact fix, then seen-label provenance. Bring the attestation
 back for threat review before requesting any binding-refresh implementation.
+
+## Attestation threat review: request 18594
+
+**Decision: reject recommendation 17870 as sufficient authorization.** Accept
+its own-session scope, but keep automatic refresh unimplemented until the
+requesting process and its particular session are independently authenticated.
+The contact and seen-label fixes are already delivered.
+
+Nothing in `local.secret` prevents its holder from asserting another session's
+ancestry. Today's gate compares that shared credential (`cmd/dibd/guard.go`,
+`headerSecret`); the daemon accepts TCP (`cmd/dibd/main.go`). An attacker with
+their own agent token can submit a real victim harness PID, its real start time
+and its real parent chain, then request that **their own** row deliver into the
+victim's session. They need not steal the victim's agent token. Probing those
+values confirms a process exists; it never establishes that this HTTP caller
+is that process or owns the session. Requiring both bearers on the same request
+does not close that gap. This is a protocol counterexample, not a live attack
+performed against another agent.
+
+An acceptable replacement needs both of these proofs:
+
+- **Caller origin:** obtain process identity from the request transport's
+  kernel-authenticated peer, not JSON, headers, cwd, environment or a bridge's
+  assertion about itself. Independently verify its process generation and
+  exact permitted harness relationship against an already verified binding;
+  arbitrary descendants and a newly asserted parent are insufficient.
+- **Session ownership:** bind that peer to the exact agent incarnation and
+  harness session using an independently established session association.
+  A shared app/ancestor may host several sessions. Ancestry alone cannot select
+  among them, and same-user writable sidecars or inherited environment are
+  observations, not adversarial authentication. If the harness cannot provide
+  this association through protected IPC or an isolated session capability,
+  refuse automatic session replacement and use explicit authorized repair.
+
+Unix peer credentials are a candidate input, not a completed design. Apple
+defines `LOCAL_PEERPID` and `LOCAL_PEERTOKEN` in
+[XNU's local-socket interface](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/sys/un.h).
+Linux's [SO_PEERCRED contract](https://man7.org/linux/man-pages/man7/unix.7.html)
+reports credentials at connection creation. A design must therefore settle
+socket delegation, connection reuse and process-generation races; UID alone,
+a socket pathname or a once-per-initialize check is insufficient. Measure the
+actual supported harness/OS door before accepting it.
+
+Remotely, the authenticated host channel must carry the **host's verified
+caller/session binding**, not merely repeat caller-supplied ancestry. Bind the
+proof to host, agent incarnation, expected binding revision, exact replacement
+and a fresh challenge with expiry/replay rejection. The hub never probes remote
+PIDs locally. Contact-only TCP requests retain their existing behavior.
+
+Scope is another process possessing the shared host credential; compromised
+kernel or trusted verifier is outside it. If untrusted same-UID programs can
+modify the session association or control the attesting process, an independent
+OS isolation boundary or explicit repair authorization is required. Adding a
+bridge secret in that same readable trust domain would not supply the missing
+boundary. No new credential or refresh code is authorized by this note.
+
+Before acceptance, require real-door refusals for a direct caller claiming a
+real victim chain, a nested child, a sibling session under one app, delegated
+or stale connections, PID reuse and replayed remote proof. Proposed mechanism
+and this decision remain subject to architect review.
