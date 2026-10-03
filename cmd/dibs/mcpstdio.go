@@ -48,6 +48,12 @@ func mcpStdio(args []string) error {
 			return nil
 		}
 	}
+	if file, guest, err := guestBridgeArg(args); guest || err != nil {
+		if err != nil {
+			return err
+		}
+		return runGuestBridge(file)
+	}
 	if err := parseBridgeArgs(args); err != nil {
 		return err
 	}

@@ -17,6 +17,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/agenxy/dibs/internal/guesttrust"
 )
 
 // The DNS constraint encoding has one choice. Any change needs a new guest
@@ -113,13 +115,7 @@ func writeGuestIdentity(dir, name, kind string, der []byte, mode os.FileMode) er
 }
 
 func guestScopeMatches(ca *x509.Certificate, ip netip.Addr) bool {
-	if !ca.MaxPathLenZero || !ca.PermittedDNSDomainsCritical || len(ca.PermittedIPRanges) != 1 ||
-		len(ca.ExcludedDNSDomains) != 1 || ca.ExcludedDNSDomains[0] != guestExcludedDNS || len(ca.PermittedDNSDomains) != 0 {
-		return false
-	}
-	rangeIP := ca.PermittedIPRanges[0]
-	ones, bits := rangeIP.Mask.Size()
-	return ones == 128 && bits == 128 && rangeIP.IP.Equal(net.IP(ip.AsSlice()))
+	return guesttrust.ScopeMatches(ca, ip)
 }
 
 // Derive the IP-only leaf in memory. No stale on-disk leaf can outlive scope

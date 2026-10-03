@@ -83,6 +83,25 @@ func suppliedHarnessIdentity(a *toolArgs) bool {
 	return a.SessionID != "" || a.Parent != "" || a.ParentNonce != "" || a.PID != 0
 }
 
+// Project the authenticated listener's actual capabilities at the server,
+// never in a guest bridge. Invitations remain pull-only on both protocol eras.
+// A different authorization context cannot share a discovery response.
+func invitedDiscovery(ctx context.Context, result map[string]any) map[string]any {
+	if _, invited := engine.InvitationFrom(ctx); !invited {
+		return result
+	}
+	caps, _ := result["capabilities"].(map[string]any)
+	caps["tools"] = map[string]any{}
+	caps["resources"] = map[string]any{}
+	if _, modern := result["cacheScope"]; modern {
+		result["cacheScope"] = scopePrivate
+	}
+	result["instructions"] = "Dibs invitation access is pull-only. Register with the invitation's exact name and " +
+		"retained nonce, never pid, session_id or parent identity. Keep the agent token; call check_in and inbox " +
+		"at each activation. Tasks are polled; no subscriptions, local-board secret or wake route is available."
+	return result
+}
+
 func bindInvitedAgent(ctx context.Context, name string, res core.Result) error {
 	if name != "register" {
 		return nil
