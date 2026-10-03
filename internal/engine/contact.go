@@ -13,7 +13,8 @@ type contactEvidence struct {
 
 // Successful token-authenticated model calls prove the identity is present,
 // even when its old harness PID is gone. Subscription machinery uses
-// authObserve and does not enter here. Registration and boot grace also do not.
+// authObserve and does not enter here. The seen stamps in boot and in exec's
+// register/resume result path deliberately do not create authenticated contact.
 func (e *Engine) noteAuthenticatedContact(l *core.Agent, now time.Time) {
 	if e.contact == nil {
 		e.contact = map[string]contactEvidence{}
