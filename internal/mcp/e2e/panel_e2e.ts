@@ -998,7 +998,7 @@ try {
     ] } },
   }))
   await panel.locator('.msg[data-serial="93"] .task-count').waitFor({ timeout: 5000 })
-  const queuedCard = await panel.locator('.msg[data-serial="93"]').innerText()
+  const queuedCard = (await panel.locator('.msg[data-serial="93"]').textContent()) ?? ""
   check("queued work renders its position, priority, deadline and ordering lock",
     queuedCard.includes("Queued #2") && queuedCard.includes("high") &&
       queuedCard.includes("2030-01-01") && queuedCard.includes("ordering locked"), queuedCard)
