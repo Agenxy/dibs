@@ -289,7 +289,16 @@ Loaded threads receive queue-only delivery and are never opened again.
 
 For an agent on another machine the app is on that machine, so the hub sends
 the surface on the wake request and `dibs host-bridge` opens the thread there.
-The field is additive: a bridge too old to know it keeps queueing, as before.
+The surface field is additive: a bridge too old to know it keeps queueing, as before.
+
+The opening policy has its own additive marker, `com.dibs/away_open: 1`,
+announced by the host bridge on `subscriptions/listen`. The hub records it
+for diagnostics only. A pre-away bridge omits it and keeps its existing
+two-minute idle opening behavior until its process is restarted; installing
+a binary does not replace an already running bridge. `/api/hosts` and
+`dibs doctor` identify those bridges and print the remedy: restart
+`dibs host-bridge` on that host to get away-only open. The hub neither
+suppresses delivery to an older bridge nor opens an app on another host.
 
 Running an agent in a DIFFERENT environment from the one it last ran in (a
 headless Codex for a thread that lived in the app, say) is not a wake at all.

@@ -309,6 +309,7 @@ func (b *wakeBridge) listenBody() []byte {
 				mcp.HostMetaKey:          b.host,
 				mcp.WakeHarnessesMetaKey: b.harnesses(),
 				mcp.WakeCooldownsMetaKey: b.cooldowns(),
+				mcp.AwayOpenMetaKey:      1,
 			},
 		},
 	})

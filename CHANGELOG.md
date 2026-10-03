@@ -26,6 +26,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   helper rechecks presence and restores the app previously in front while
   you remain away. Unknown measurements leave the notice queued. The
   `open_app_after_idle` setting keeps its AFK role, with a ten-minute default.
+  Host bridges advertise adoption of this policy; diagnostics name older
+  running bridges and print the restart needed to adopt it.
 
 - **Loaded app threads wake without reopening their window.** The wake check
   uses executable paths and one bounded file query, so an app runtime behind

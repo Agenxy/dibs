@@ -67,9 +67,11 @@ type WakeResult struct {
 
 // HostBridgeInfo describes one attached bridge, for doctor.
 type HostBridgeInfo struct {
-	Host      string    `json:"host"`
-	Harnesses []string  `json:"harnesses"`
-	Since     time.Time `json:"since"`
+	Host       string    `json:"host"`
+	Harnesses  []string  `json:"harnesses"`
+	Since      time.Time `json:"since"`
+	AwayOpen   int       `json:"away_open"`
+	OpenPolicy string    `json:"open_policy"`
 }
 
 type hostBridge struct {
@@ -79,6 +81,7 @@ type hostBridge struct {
 	// its agents, not its own. Round nine of the pre-release review found
 	// every remote route on the fixed default.
 	cooldowns map[string]time.Duration
+	awayOpen  int
 	since     time.Time
 	ch        chan WakeRequest
 }
@@ -133,6 +136,14 @@ func (e *Engine) AttachHostBridge(host string, harnesses []string) (<-chan WakeR
 func (e *Engine) AttachHostBridgeWith(
 	host string, harnesses []string, cooldowns map[string]time.Duration,
 ) (<-chan WakeRequest, func(), error) {
+	return e.AttachHostBridgeCapabilities(host, harnesses, cooldowns, 0)
+}
+
+// AttachHostBridgeCapabilities records the bridge's additive opening-policy version.
+// It is diagnostic only: the hub never changes delivery or opens a remote app.
+func (e *Engine) AttachHostBridgeCapabilities(
+	host string, harnesses []string, cooldowns map[string]time.Duration, awayOpen int,
+) (<-chan WakeRequest, func(), error) {
 	host = strings.TrimSpace(host)
 	if host == "" {
 		return nil, nil, ErrNoHost
@@ -156,7 +167,7 @@ func (e *Engine) AttachHostBridgeWith(
 	}
 	b := &hostBridge{
 		harnesses: map[string]bool{}, cooldowns: map[string]time.Duration{},
-		since: time.Now(), ch: make(chan WakeRequest, wakeRequestBuffer),
+		since: time.Now(), ch: make(chan WakeRequest, wakeRequestBuffer), awayOpen: awayOpen,
 	}
 	for _, h := range harnesses {
 		if h = strings.ToLower(strings.TrimSpace(h)); h != "" {
@@ -234,7 +245,13 @@ func (e *Engine) HostBridges() []HostBridgeInfo {
 			hs = append(hs, h)
 		}
 		sort.Strings(hs)
-		out = append(out, HostBridgeInfo{Host: host, Harnesses: hs, Since: b.since})
+		policy := "legacy idle opening; restart dibs host-bridge on this host to get away-only open"
+		if b.awayOpen == 1 {
+			policy = "away-only opening with focus restoration"
+		}
+		out = append(out, HostBridgeInfo{
+			Host: host, Harnesses: hs, Since: b.since, AwayOpen: b.awayOpen, OpenPolicy: policy,
+		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Since.Before(out[j].Since) })
 	return out
