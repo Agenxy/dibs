@@ -113,8 +113,8 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "invite",
-			"description": "Private key/config once. Local: own prefix,4 live/7d default; " +
-				"coordinators may name; invitees cannot mint.",
+			"description": "Mint cloud-agent access; key private, once. Own prefix,4 live/7d default; " +
+				"coordinators name; invitees can't.",
 			"inputSchema": obj(map[string]any{
 				"token": str("issuer token"),
 				"action": map[string]any{
