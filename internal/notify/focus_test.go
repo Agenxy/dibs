@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -21,18 +22,25 @@ func TestFocusObservationNeverInfersVisibility(t *testing.T) {
 	if err := os.WriteFile(assert, []byte(`{"data":[{"storeAssertionRecords":[{"assertionDetails":{"assertionDetailsModeIdentifier":"com.apple.focus.fixture"}}]}]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	for _, tc := range []struct{ name, body, want string }{
-		{"measured version", `{"header":{"version":3},"data":[{"modeConfigurations":{"com.apple.focus.fixture":{"mode":{"name":"Personal"}}}}]}`, "Personal"},
-		{"unknown version", `{"header":{"version":4},"data":[{"modeConfigurations":{"com.apple.focus.fixture":{"mode":{"name":"Unverified"}}}}]}`, "fixture"},
-		{"wrong name type", `{"header":{"version":3},"data":[{"modeConfigurations":{"com.apple.focus.fixture":{"mode":{"name":4}}}}]}`, "fixture"},
-		{"malformed", `{`, "fixture"},
+	for _, tc := range []struct{ name, body, want, advice string }{
+		{"measured version", `{"header":{"version":3},"data":[{"modeConfigurations":{"com.apple.focus.fixture":{"mode":{"name":"Personal"}}}}]}`, "Personal", "Check Personal"},
+		{"allow list", `{"header":{"version":3},"data":[{"modeConfigurations":{"com.apple.focus.fixture":{"mode":{"name":"Personal"},"configuration":{"applicationConfigurationType":0}}}}]}`, "Personal", "add Dibs to Personal's Allowed Apps"},
+		{"silence list", `{"header":{"version":3},"data":[{"modeConfigurations":{"com.apple.focus.fixture":{"mode":{"name":"Personal"},"configuration":{"applicationConfigurationType":1}}}}]}`, "Personal", "Make sure Dibs isn't in Personal's silenced apps"},
+		{"unknown list", `{"header":{"version":3},"data":[{"modeConfigurations":{"com.apple.focus.fixture":{"mode":{"name":"Personal"},"configuration":{"applicationConfigurationType":2}}}}]}`, "Personal", "Check Personal"},
+		{"unknown version", `{"header":{"version":4},"data":[{"modeConfigurations":{"com.apple.focus.fixture":{"mode":{"name":"Unverified"}}}}]}`, "fixture", "Check fixture"},
+		{"wrong name type", `{"header":{"version":3},"data":[{"modeConfigurations":{"com.apple.focus.fixture":{"mode":{"name":4}}}}]}`, "fixture", "Check fixture"},
+		{"malformed", `{`, "fixture", "Check fixture"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(db, "ModeConfigurations.json"), []byte(tc.body), 0o600); err != nil {
 				t.Fatal(err)
 			}
+			doctor := focusDoctor()
+			if !strings.Contains(doctor, tc.advice) || strings.Contains(doctor, "this") || strings.Contains(doctor, "not confirmed seen") {
+				t.Fatalf("doctor advice: %s", doctor)
+			}
 			p := FocusPresentation()
-			if p.Focus != tc.want || p.Shown != "unknown" || p.Reason == "" {
+			if p.Focus != tc.want || p.Shown != "unknown" || !strings.Contains(p.Reason, "not confirmed seen") || !strings.Contains(p.Reason, tc.advice) {
 				t.Fatalf("observation: %+v", p)
 			}
 		})

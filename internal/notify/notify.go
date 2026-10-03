@@ -566,7 +566,7 @@ func Reach() (ok bool, why string) {
 	out, err := exec.CommandContext(ctx, h, "--status").Output()
 	switch strings.TrimSpace(string(out)) {
 	case "authorized":
-		return true, FocusPresentation().Reason
+		return true, focusDoctor()
 	case "denied":
 		return false, "notifications are turned off for Dibs in System Settings"
 	case "not-determined":

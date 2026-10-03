@@ -19,37 +19,62 @@ type Presentation struct {
 // FocusPresentation runs outside the writer. These private, versioned files
 // are observations, not an OS visibility receipt. Unknown shapes stay unknown.
 func FocusPresentation() Presentation {
-	if goos != "darwin" {
+	name, advice := focusAdvice()
+	if name == "" {
 		return Presentation{}
+	}
+	return Presentation{
+		Focus: name, Shown: "unknown",
+		Reason: "Focus " + name + " is on and may hold this; not confirmed seen. " + advice,
+	}
+}
+
+// focusDoctor describes the route without implying a particular notification
+// exists or was seen. The app-list mode informs advice, never visibility.
+func focusDoctor() string {
+	name, advice := focusAdvice()
+	if name == "" {
+		return ""
+	}
+	return "Focus " + name + " is on. " + advice
+}
+
+func focusAdvice() (string, string) {
+	if goos != "darwin" {
+		return "", ""
 	}
 	id := focusOn()
 	if id == "" {
-		return Presentation{}
+		return "", ""
 	}
-	p := Presentation{Focus: id, Shown: "unknown"}
-	p.Reason = focusReason(id)
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return p
+	name := id
+	var configuration struct {
+		ApplicationConfigurationType *int `json:"applicationConfigurationType"`
 	}
-	db := filepath.Join(home, "Library", "DoNotDisturb", "DB")
-	mode, ok := focusRecord(filepath.Join(db, "ModeConfigurations.json"), "modeConfigurations", id)
-	if !ok {
-		return p
+	if home, err := os.UserHomeDir(); err == nil {
+		db := filepath.Join(home, "Library", "DoNotDisturb", "DB")
+		if mode, ok := focusRecord(filepath.Join(db, "ModeConfigurations.json"), "modeConfigurations", id); ok {
+			var identity struct {
+				Name string `json:"name"`
+			}
+			if json.Unmarshal(mode["mode"], &identity) == nil && len(identity.Name) > 0 && len(identity.Name) <= 100 {
+				name = identity.Name
+			}
+			if json.Unmarshal(mode["configuration"], &configuration) != nil {
+				configuration.ApplicationConfigurationType = nil
+			}
+		}
 	}
-	var name struct {
-		Name string `json:"name"`
+	if configuration.ApplicationConfigurationType != nil {
+		switch *configuration.ApplicationConfigurationType {
+		case 0:
+			return name, "To allow banners, add Dibs to " + name + "'s Allowed Apps in System Settings > Focus."
+		case 1:
+			return name, "Make sure Dibs isn't in " + name + "'s silenced apps; " +
+				"macOS's Intelligent Breakthrough & Silencing can still hold some notifications."
+		}
 	}
-	if json.Unmarshal(mode["mode"], &name) == nil && len(name.Name) > 0 && len(name.Name) <= 100 {
-		p.Focus = name.Name
-		p.Reason = focusReason(name.Name)
-	}
-	return p
-}
-
-func focusReason(name string) string {
-	return "Focus " + name + " is on and may hold this; not confirmed seen. " +
-		"To allow banners, add Dibs to " + name + "'s Allowed Apps in System Settings > Focus, or turn Focus off."
+	return name, "Check " + name + "'s notification settings in System Settings > Focus."
 }
 
 func focusRecord(path, key, id string) (map[string]json.RawMessage, bool) {
