@@ -1,10 +1,13 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -61,6 +64,12 @@ func (b *continuationBoard) declare(t *testing.T, text, waiting string) {
 // wake delivers a wake through the path every wake takes.
 func (b *continuationBoard) wake(t *testing.T) {
 	t.Helper()
+	// Refusals are Debug-level. Preserve the actual production decision's
+	// evidence when this setup times out, rather than guessing why it refused.
+	var wakeLog continuationWakeLog
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&wakeLog, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	defer slog.SetDefault(previous)
 	// A real wake needs actual outstanding mail. A synthetic event with an
 	// empty inbox now correctly settles without starting a turn (#7810).
 	sender, err := b.e.Do(b.ctx, &core.Op{
@@ -94,7 +103,7 @@ func (b *continuationBoard) wake(t *testing.T) {
 		<-time.After(10 * time.Millisecond)
 	}
 	if !ok || len(plan.argv) == 0 {
-		t.Fatal("setup: no wake planned, so nothing below tests a turn Dibs started")
+		t.Fatalf("setup: no wake planned, so nothing below tests a turn Dibs started\nactual wake log:\n%s", wakeLog.String())
 	}
 	// As every production wake does: run it, then record that it exited, or
 	// the board believes it is still running and refuses the next one.
@@ -274,4 +283,27 @@ func stopWakeTimersOnCleanup(t *testing.T, e *Engine) {
 		}
 		e.wakers.deferred = nil
 	})
+}
+
+// The writer loop and wake runner can log concurrently with the failure read.
+// Keep a bounded tail so repeated cooldown refusals do not bury the verdict.
+type continuationWakeLog struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (l *continuationWakeLog) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	n, err := l.buf.Write(p)
+	if l.buf.Len() > 8192 {
+		l.buf.Next(l.buf.Len() - 8192)
+	}
+	return n, err
+}
+
+func (l *continuationWakeLog) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.String()
 }
