@@ -1051,7 +1051,7 @@ func checkReplay(dir string, cfg Config, flagAddr string) error {
 			"  serving a board this binary could not reconstruct, and stopping it is\n"+
 			"  what makes that unrecoverable.\n\n"+
 			"  Stay on the running build, and report this with `dibs verify %s`",
-			dir, err, st.Serial+1, dir)
+			dir, err, st.Serial+1, filepath.Join(dir, "ledger.jsonl"))
 	}
 	fmt.Printf("ok: %s replays %d record(s) to serial %d in %s (%d agent(s), %d space(s))\n",
 		build.Version, n, st.Serial, time.Since(start).Round(time.Microsecond),

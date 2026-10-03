@@ -369,6 +369,9 @@ receiving native peer turns, another watcher adds no delivery guarantee.
   buttons on the notification. Leave it out when the answer is genuinely open;
   a question with invented options is worse than one without.
 - **There is no `subject` field.** Body only. Passing one is rejected outright.
+- A retained question marked `expired_unanswered` still accepts your late
+  `respond(answer)` and notifies its asker. Expiry is not a health verdict.
+  Other finished verdicts stay final; an expired request cannot be approved.
 - Answer with `respond(msg_serial, answer|approve|deny|decline)`. **Approving a
   request means you owe the work**: when it is delivered, `respond(msg_serial,
   done, body)` closes it and tells the requester. Until then it is on your row
