@@ -107,24 +107,31 @@ func ChatGPTHolds(thread string) (running, holds bool) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	out, err := appProbeOutput(ctx, "/usr/bin/pgrep", "-f", chatGPTRoot)
+	out, err := appProbeOutput(ctx, "/bin/ps", "-axo", "pid=,comm=")
 	if err != nil {
-		return false, false // pgrep exits 1 when nothing matches: the app is not running
+		return false, false // process inventory unavailable: no ownership evidence
 	}
-	for _, field := range strings.Fields(string(out)) {
-		pid, err := strconv.Atoi(field)
-		if err != nil {
+	var pids []string
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 || !strings.HasPrefix(strings.Join(fields[1:], " "), chatGPTRoot) {
 			continue
 		}
-
-		files, err := appProbeOutput(ctx, "/usr/sbin/lsof", "-p", strconv.Itoa(pid), "-Fn")
-		if err != nil {
-			if ctx.Err() != nil {
-				return true, false // app seen, but whether it holds the thread is unknown
-			}
-			continue
+		pid, err := strconv.Atoi(fields[0])
+		if err == nil && pid > 0 {
+			pids = append(pids, strconv.Itoa(pid))
 		}
-		if strings.Contains(string(files), thread) {
+	}
+	if len(pids) == 0 {
+		return false, false
+	}
+	// One process-wide query: helpers must not exhaust the shared deadline
+	// before the runtime holding the thread is reached.
+	files, _ := appProbeOutput(ctx, "/usr/sbin/lsof", "-p", strings.Join(pids, ","), "-Fn")
+	// lsof may report a vanished helper with a nonzero exit while returning
+	// valid files for the surviving runtime. Only a file is ownership evidence.
+	for _, line := range strings.Split(string(files), "\n") {
+		if strings.HasPrefix(line, "n") && strings.Contains(line[1:], thread) {
 			return true, true
 		}
 	}

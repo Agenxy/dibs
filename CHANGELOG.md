@@ -7,6 +7,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Loaded app threads wake without reopening their window.** The wake check
+  uses executable paths and one bounded file query, so an app runtime behind
+  many helper processes is still found. Queue delivery leaves the frontmost
+  app alone. Opening an unloaded thread still waits for the existing idle gate.
+- **The board panel is for an explicit human request.** Its tool description
+  directs routine status to `check_in`, and board invocations are logged with
+  the caller and view, without tokens or message bodies.
+
 - **A macOS upgrade starts its replacement once.** Reloading a RunAtLoad
   service already launches it; the following kickstart now leaves that process
   running instead of killing it and triggering launchd's restart throttle.
