@@ -16,7 +16,7 @@ func TestRecordedQueueDebtSurvivesSweepBeyondHistoricalWindow(t *testing.T) {
 	n := mail["msg_serial"].(uint64)
 	mustApply(t, s, &Op{Kind: OpRespond, Token: "tw", MsgSerial: n, Disposition: "queue", QueueDebt: true}, t0)
 	later := t0.Add(ObligationWindow + time.Hour)
-	mustApply(t, s, &Op{Kind: OpSweep, KeepOwed: true}, later)
+	mustApply(t, s, &Op{Kind: OpSweep, KeepOwed: false}, later)
 	m := s.Messages[n]
 	if m == nil || !m.Owed(later) || m.State != MsgStateQueued {
 		t.Fatal("recorded queued debt vanished after the old obligation window")

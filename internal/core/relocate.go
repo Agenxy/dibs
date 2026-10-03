@@ -72,7 +72,7 @@ func checkPermissionOp(op *Op, lim Limits) error {
 	switch op.Kind {
 	case OpGrantPermission, OpRevokePermission:
 		if op.Mode != PermRelocate && op.Mode != PermQueueOrderLock {
-			return errf("E_BAD_PERMISSION", "the one grantable permission is relocate",
+			return errf("E_BAD_PERMISSION", "grantable permissions are relocate and queue_order_lock",
 				"unknown permission %q", op.Mode)
 		}
 	case OpRelocate, OpRelocateByHuman:

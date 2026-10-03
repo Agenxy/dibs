@@ -382,7 +382,7 @@ var mcpTools = []string{
 	"get_blob", "heartbeat", "human_unlock", "inbox", "join_space",
 	"leave_space", "lock_space", "merge_agents", "merge_spaces", "open_space",
 	"post", "prune",
-	"put_blob", "read_mail", "read_space", "register", "release", "relocate", "respond",
+	"put_blob", "queue_lock", "queue_update", "read_mail", "read_space", "register", "release", "relocate", "respond",
 	"resume", "retitle_space", "send", "settings", "sign_off", "spawned_agents",
 	"undeclare", "unlock_space", "update", "vouch_child", "watch_space",
 }
