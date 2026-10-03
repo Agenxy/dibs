@@ -47,7 +47,7 @@ addr = "100.72.14.3:4777"    # a tailnet address: agents on four machines, one b
 | `extend_turn_for` | `all` | Which news may extend an agent's turn: `all`, `urgent`, `none`. |
 | `notices_wake` | `true` | Whether situational awareness alone may extend a turn. |
 | `sockets` | `true` | Whether the session-socket routes run at all: the daemon's peer-socket wake and the bridge's self-wake. |
-| `open_app_after_idle` | `2m` | How long you must have been away from the keyboard and mouse before Dibs opens an agent's thread in its app (which brings the app to the front). `0s` opens at once. |
+| `open_app_after_idle` | `10m` | AFK interval before an unloaded app thread opens. Screen lock or sleeping displays qualify sooner. Unknown presence measurements keep the message queued; `0s` permits immediate opening with measurable idle. |
 | `remind_stale_after` | retired | Did nothing since liveness became the daemon's own job. Still parsed so old configs load; delete it. |
 | `exec.<harness>.argv` | *(none)* | The command that reaches that harness when an agent is **not running**. |
 | `exec.<harness>.cooldown` | `90s` | The shortest gap between two wakes of the same agent. |
@@ -110,13 +110,15 @@ an agent whose bridge found the ChatGPT app above it in the process tree; a
 Codex in a terminal is never opened in the app. On another machine, `dibs
 host-bridge` does the same on that machine.
 
-Opening a thread brings the app to the front, and nothing passed to `open`
-stops that (measured: `open -g` and handing focus back both lost). So Dibs
-opens it only once you have been away from the keyboard and mouse for a while:
+A loaded thread receives queue-only delivery, leaving your frontmost app alone.
+An unloaded thread opens when the screen is locked, all online displays sleep,
+or known HID idle passes the configured interval. The signed native helper
+rechecks that condition just before opening and restores the prior frontmost
+app while you remain away. Unknown measurements leave the message queued.
 
 ```toml
 [wake]
-open_app_after_idle = "2m"   # the default; "0s" opens at once
+open_app_after_idle = "10m"  # AFK fallback; lock or display sleep qualifies sooner
 ```
 
 The message is queued meanwhile, and only the first wake per thread per app

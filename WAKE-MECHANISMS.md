@@ -281,15 +281,28 @@ terminal stays out of the app.
 **Without stealing the screen (2026-10-01).** Opening a thread brings the app
 to the front, whatever is passed: `open -g` (do not activate) still had ChatGPT
 in front within 250ms, and handing focus back to the previous app lost the
-race three times in six seconds as the thread loaded. So the open waits until
-the person has been idle for `[wake] open_app_after_idle` (2 minutes by
-default), read from IOKit's HIDIdleTime, which needs no permission. A thread
-the app already holds is never opened, so this costs latency only on the
-first wake per thread per app run.
+race three times in six seconds as the thread loaded. So the open waits for known screen lock, sleeping online displays, or
+`[wake] open_app_after_idle` (10 minutes by default). Unknown observations leave
+the notice queued. The signed native helper rechecks those signals before
+opening and attempts to restore the previous frontmost app while the person remains away.
+Restoration is best effort: a natural ten-minute idle cycle proved the opening gate,
+but its frontmost app was already ChatGPT, so restoration from another app has
+not yet been observed. A missing frontmost app does not prevent an away opening;
+its receipt reports previous_pid=0 and restored=false.
+Loaded threads receive queue-only delivery and are never opened again.
 
 For an agent on another machine the app is on that machine, so the hub sends
 the surface on the wake request and `dibs host-bridge` opens the thread there.
-The field is additive: a bridge too old to know it keeps queueing, as before.
+The surface field is additive: a bridge too old to know it keeps queueing, as before.
+
+The opening policy has its own additive marker, `com.dibs/away_open: 1`,
+announced by the host bridge on `subscriptions/listen`. The hub records it
+for diagnostics only. A pre-away bridge omits it and keeps its existing
+two-minute idle opening behavior until its process is restarted; installing
+a binary does not replace an already running bridge. `/api/hosts` and
+`dibs doctor` identify those bridges and print the remedy: restart
+`dibs host-bridge` on that host to get away-only open. The hub neither
+suppresses delivery to an older bridge nor opens an app on another host.
 
 Running an agent in a DIFFERENT environment from the one it last ran in (a
 headless Codex for a thread that lived in the app, say) is not a wake at all.

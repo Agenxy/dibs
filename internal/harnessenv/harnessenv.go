@@ -18,10 +18,13 @@ package harnessenv
 
 import (
 	"context"
+	"errors"
 	"os/exec"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/agenxy/dibs/internal/notify"
 )
 
 // The environments Dibs can reach a thread inside. Values are what
@@ -202,9 +205,10 @@ func OpenArgv(surface, thread string) []string {
 type Shower struct {
 	Holds func(thread string) bool
 	Open  func(argv []string) error
-	// Idle, MinIdle, Wait and Poll defer an open until the person has been
-	// away for MinIdle (see idle.go). A nil Idle or a zero MinIdle opens at
-	// once.
+	// Away observes lock/display sleep. Idle and MinIdle permit an AFK open;
+	// both observations fail closed in production. Open also rechecks these
+	// facts natively and restores the prior app. Wait/Poll drive deferral.
+	Away    func() (bool, bool)
 	Idle    func() (time.Duration, bool)
 	MinIdle time.Duration
 	Wait    func(time.Duration)
@@ -222,9 +226,18 @@ var RealShower = Shower{
 		return holds
 	},
 	Open: func(argv []string) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		return exec.CommandContext(ctx, argv[0], argv[1:]...).Run() //nolint:gosec // argv is OpenArgv's, never text from mail
+		if len(argv) != 3 || argv[0] != "/usr/bin/open" {
+			return errors.New("unsupported native app open")
+		}
+		seconds, err := strconv.ParseFloat(argv[2], 64)
+		if err != nil {
+			return err
+		}
+		return notify.OpenWhenAway(argv[1], time.Duration(seconds*float64(time.Second)))
+	},
+	Away: func() (bool, bool) {
+		desk, err := notify.DesktopState()
+		return desk.Away(), err == nil
 	},
 	Idle:    UserIdle,
 	MinIdle: DefaultOpenAfterIdle,
@@ -238,6 +251,9 @@ var RealShower = Shower{
 func (s Shower) Show(argv []string, thread string) (opened bool, err error) {
 	if len(argv) == 0 || s.Holds(thread) {
 		return false, nil
+	}
+	if s.Away != nil {
+		argv = append(append([]string(nil), argv...), strconv.FormatFloat(s.MinIdle.Seconds(), 'f', -1, 64))
 	}
 	if err := s.Open(argv); err != nil {
 		return false, err

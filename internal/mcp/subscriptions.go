@@ -240,6 +240,10 @@ const WakeHarnessesMetaKey = "com.dibs/wake_harnesses"
 // its agents. Absent or zero means the default.
 const WakeCooldownsMetaKey = "com.dibs/wake_cooldowns"
 
+// AwayOpenMetaKey advertises away-only app opening with focus restoration.
+// Absence describes an older bridge, whose opening behavior is left alone.
+const AwayOpenMetaKey = "com.dibs/away_open"
+
 // serveWakeSubscription holds one stream open for one host's bridge and
 // pushes each wake request the hub decides on for that host as a
 // resources/updated notification whose _meta is the request. The bridge runs
@@ -252,7 +256,7 @@ const WakeCooldownsMetaKey = "com.dibs/wake_cooldowns"
 func (s *Server) serveWakeSubscription(w http.ResponseWriter, r *http.Request, req *rpcRequest, p subscriptionParams) {
 	host, _ := p.Meta[HostMetaKey].(string)
 	harnesses := wakeHarnessesIn(p.Meta)
-	reqs, release, err := s.eng.AttachHostBridgeWith(host, harnesses, wakeCooldownsIn(p.Meta))
+	reqs, release, err := s.eng.AttachHostBridgeCapabilities(host, harnesses, wakeCooldownsIn(p.Meta), awayOpenIn(p.Meta))
 	if err != nil {
 		writeRPC(w, http.StatusBadRequest, req.ID, nil, &rpcError{
 			Code: -32602, Message: WakeURI + " subscription requires the bridge's host in _meta['" + HostMetaKey + "']",
@@ -838,4 +842,12 @@ func (s *Server) missedFor(ctx context.Context, cursor uint64) (evs []core.Event
 	}
 	evs, _ = res["events"].([]core.Event)
 	return evs, false
+}
+
+// awayOpenIn accepts only the version whose meaning this daemon knows.
+func awayOpenIn(meta map[string]any) int {
+	if version, ok := meta[AwayOpenMetaKey].(float64); ok && version == 1 {
+		return 1
+	}
+	return 0
 }

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/wakeexec"
 )
 
@@ -108,6 +109,10 @@ func (e *Engine) forgetWakeFailures(agent string) {
 // nothing is wrong. The row is where the person running the board looks, and
 // until this it showed a worker as active while every wake for it was failing.
 func (e *Engine) wakeStatusOf(agent string) string {
+	if l := e.state.Agents[agent]; l != nil && e.remoteHostOf(l) == "" &&
+		!invitedAgent(l) && harnessenv.PendingAppOpen(threadIDOf(l)) {
+		return "queued; the thread opens when you are away or when you open it"
+	}
 	if invitedAgent(e.state.Agents[agent]) {
 		return "pull-only (invited cloud agent)"
 	}

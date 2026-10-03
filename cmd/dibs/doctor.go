@@ -508,6 +508,7 @@ func checkWakeRoutes(dir string, b *boardView, hosts hubHosts, ok reportFn, warn
 	// return on the state of that table: a hub serving only remote agents has
 	// no local commands and full coverage, and used to be told the opposite.
 	reportAttachedBridges(hosts, ok)
+	reportBridgeOpenPolicy(hosts, warn)
 	if len(cfg.Wake.Exec) == 0 {
 		reportRemoteCoverage(b, hosts, bridgedHarnesses(hosts), ok, warn)
 	}

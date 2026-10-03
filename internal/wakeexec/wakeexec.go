@@ -344,7 +344,7 @@ func runForOut(argv []string, agent, dir string, timeout, grace time.Duration) (
 			"will try again", fields...)
 		return false, out
 	}
-	slog.Info("woke an agent that was not running", "agent", agent, "cmd", argv[0])
+	slog.Info("wake command accepted the notice", "agent", agent, "cmd", argv[0])
 	return true, out
 }
 

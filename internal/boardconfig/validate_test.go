@@ -326,7 +326,7 @@ func TestOpenAppAfterIdleIsADuration(t *testing.T) {
 			t.Errorf("open_app_after_idle = %q: err %v", v, err)
 		}
 	}
-	if d, _ := (WakeConfig{}).OpenAfterIdle(); d != 2*time.Minute {
-		t.Errorf("default = %v, want 2m", d)
+	if d, _ := (WakeConfig{}).OpenAfterIdle(); d != 10*time.Minute {
+		t.Errorf("default = %v, want 10m", d)
 	}
 }

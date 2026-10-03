@@ -1,26 +1,26 @@
 package harnessenv
 
 import (
+	"errors"
 	"os/exec"
 	"regexp"
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/agenxy/dibs/internal/notify"
 )
 
-// Opening a thread in the app brings the app to the FRONT, and nothing a
-// caller passes prevents it. Measured 2026-10-01: `open -g` (do not activate)
-// still put ChatGPT in front within 250ms, and handing focus back to the
-// previous app lost the race three times in six seconds as the thread loaded.
-// The operator asked that a wake not disrupt them. So when a thread has to be
-// opened, Dibs waits until the person has been away from the keyboard and
-// mouse for a while, and opens it then. Only the first wake per thread per app
-// run gets here at all: a loaded thread stays loaded, and the queue delivers
-// to it silently.
+// A loaded thread receives its queued notice without opening its app. An
+// unloaded thread waits for positive lock/display-sleep evidence or the
+// configured HID idle interval. Unknown measurements do not authorize an open.
+// The native helper rechecks the same gate and restores the prior app while
+// away; a person returning ends restoration.
 
-// DefaultOpenAfterIdle is how long the person must have been idle before a
-// thread is opened in the app: `[wake] open_app_after_idle`. Zero opens at once.
-const DefaultOpenAfterIdle = 2 * time.Minute
+// DefaultOpenAfterIdle is the AFK fallback: `[wake] open_app_after_idle`.
+// Lock or sleeping displays qualify sooner. Zero explicitly permits immediate
+// opening only when idle is measurable.
+const DefaultOpenAfterIdle = 10 * time.Minute
 
 // maxIdleWait bounds how long one deferred open keeps asking. A day: past it
 // the message is still queued in the app and is delivered whenever the thread
@@ -31,8 +31,8 @@ var hidIdle = regexp.MustCompile(`"HIDIdleTime" = (\d+)`)
 
 // UserIdle is how long since the person last used the keyboard or mouse, from
 // IOKit's HID system, which needs no permission to read. ok is false when it
-// cannot be read (not macOS, ioreg missing): the caller then does not wait,
-// because an unreadable idle time is not evidence that anybody is there.
+// cannot be read (not macOS, ioreg missing). Production then leaves the open
+// queued unless another known away signal qualifies.
 func UserIdle() (time.Duration, bool) {
 	out, err := exec.Command("/usr/sbin/ioreg", "-c", "IOHIDSystem", "-d", "4").Output()
 	if err != nil {
@@ -56,6 +56,14 @@ var pendingOpens = struct {
 	threads map[string]bool
 }{threads: map[string]bool{}}
 
+// PendingAppOpen reports a local, derived waiter. Losing it leaves the notice
+// in the app queue; this is a display diagnostic, never coordination truth.
+func PendingAppOpen(thread string) bool {
+	pendingOpens.Lock()
+	defer pendingOpens.Unlock()
+	return pendingOpens.threads[thread]
+}
+
 // ShowWhenIdle is Show, deferred until the person has been idle for
 // s.MinIdle. It never blocks the caller: a wait runs on its own goroutine.
 // report is told what happened, once, for the caller's log.
@@ -65,8 +73,11 @@ func (s Shower) ShowWhenIdle(argv []string, thread string, report func(opened, d
 	}
 	if s.ready() {
 		opened, err := s.Show(argv, thread)
-		report(opened, false, err)
-		return
+		if !errors.Is(err, notify.ErrNotAway) {
+			report(opened, false, err)
+			return // success or a permanent helper failure; mail stays queued
+		}
+
 	}
 	pendingOpens.Lock()
 	if pendingOpens.threads[thread] {
@@ -89,8 +100,11 @@ func (s Shower) ShowWhenIdle(argv []string, thread string, report func(opened, d
 			}
 			if s.ready() {
 				opened, err := s.Show(argv, thread)
-				report(opened, false, err)
-				return
+				if !errors.Is(err, notify.ErrNotAway) {
+					report(opened, false, err)
+					return
+				}
+
 			}
 		}
 	}()
@@ -98,6 +112,17 @@ func (s Shower) ShowWhenIdle(argv []string, thread string, report func(opened, d
 
 // ready reports whether opening now would not interrupt a person.
 func (s Shower) ready() bool {
+	if s.Away != nil {
+		away, known := s.Away()
+		if known && away {
+			return true
+		}
+		if s.Idle == nil {
+			return false
+		}
+		idle, idleKnown := s.Idle()
+		return idleKnown && idle >= s.MinIdle
+	}
 	if s.MinIdle <= 0 || s.Idle == nil {
 		return true
 	}

@@ -58,7 +58,7 @@ func logShow(opened, deferred bool, err error, args ...any) {
 			"until the thread is opened", append(args, "err", err)...)
 	case deferred:
 		slog.Info("the agent's thread is not loaded in its app; opening it once the person "+
-			"has been idle, so the app does not jump in front of them", args...)
+			"is away; the notice stays queued until then or until they open it", args...)
 	case opened:
 		slog.Info("opened the agent's thread in the app it runs in, so the message is delivered there", args...)
 	}
