@@ -12,13 +12,22 @@ import (
 func TestSendingToTheHumanIsNotCalledPullOnly(t *testing.T) {
 	st := core.NewState("t", core.DefaultLimits())
 	e := New(st, &memLedger{}, deadProber{})
-	if _, _, err := st.Apply(&core.Op{
-		Kind: core.OpRegister, Name: "the maintainer", NewToken: "tok-h",
+	registered, _, err := st.Apply(&core.Op{
+		Kind: core.OpRegister, Name: "maintainer", NewToken: "tok-h",
 		Agent: &core.AgentInfo{Harness: "dibs web", Surface: "web"},
-	}, t0Engine()); err != nil {
+	}, t0Engine())
+	if err != nil {
 		t.Fatal("setup:", err)
 	}
-	l := st.Agents["the maintainer"]
+	// Names are labels, not addresses: registration may slug or suffix them.
+	id, ok := registered["agent_id"].(string)
+	if !ok || id == "" {
+		t.Fatalf("setup: registration returned no agent id: %v", registered)
+	}
+	l := st.Agents[id]
+	if l == nil {
+		t.Fatalf("setup: registered agent %q is absent", id)
+	}
 	if e.PullOnlyNote(l) == "" {
 		t.Fatal("setup: an unwakeable row with no human identity drew no note, so the " +
 			"exemption below proves nothing")
