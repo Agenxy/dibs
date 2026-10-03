@@ -470,6 +470,11 @@ they are zero-copy, and are refused for an invite (NETWORK.md §9).
   mismatch is 409 with the correct offset. DELETE cancels. Plain PUT is the
   convenient complete-upload operation, not a claim that arbitrary partial PUT
   conforms to the draft.
+  Requests on one ticket are serialized: clients must not send HEAD during
+  their own active PATCH, including while that PATCH is still arriving. HEAD
+  can acquire the ticket first and cause PATCH to be refused with
+  `E_TRANSFER_BUSY` (409). After the interrupted request ends, retry HEAD if
+  still busy, then PATCH from the accepted offset.
 - **Downloads take `Range`** and send `ETag` = the blob id, so a client resumes
   and caches by standard HTTP.
 - **Transferred content is data, never board-origin code.** Every `/files/`

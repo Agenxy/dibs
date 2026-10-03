@@ -122,6 +122,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Interrupted-upload verification no longer races its own PATCH with HEAD
+  receipt probes. It observes real staged ciphertext before cutting the
+  connection, preserves the accepted-offset assertions, and closes the raw
+  socket on setup failure before server cleanup can hang. Clients should query
+  HEAD after their active PATCH ends, not alongside it.
+
 - **Milestone acknowledgments survive a daemon restart.** Dismissing a retained
   progress or review event before any notice map has been created no longer
   crashes the board. Acknowledgment remains derived and does not review or

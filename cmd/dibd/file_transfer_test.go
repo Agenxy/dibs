@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -188,6 +189,9 @@ func TestPublicTransferResumesAfterBrokenConnection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Registered after the fixture: close the unfinished request before the
+	// TLS server's cleanup drains it, including on any setup Fatal below.
+	t.Cleanup(func() { _ = conn.Close() })
 	// The byte request is cut, not cancelled or falsely marked incomplete.
 	// Its declared request body is longer than the bytes delivered on the wire.
 	_, err = fmt.Fprintf(conn, "PATCH %s HTTP/1.1\r\nHost: %s\r\nContent-Type: application/partial-upload\r\nUpload-Offset: 0\r\nUpload-Complete: ?1\r\nContent-Length: %d\r\n\r\n", u.Path, u.Host, len(plain))
@@ -200,7 +204,12 @@ func TestPublicTransferResumesAfterBrokenConnection(t *testing.T) {
 	}
 	// A write to the TLS proxy is NOT receipt by the daemon. Close only once
 	// the real store has encrypted a segment, otherwise offset zero is honest.
-	waitForDaemonUploadReceipt(t, f, target)
+	waitForDaemonUploadReceipt(t, f)
+	if os.Getenv(uploadSetupFailureEnv) == "1" {
+		// The child guard fails only after receipt proves the real request is
+		// active, while its body remains incomplete and the socket is open.
+		t.Fatal(uploadSetupFailureMarker)
+	}
 	if err = conn.Close(); err != nil {
 		t.Fatal(err)
 	}
