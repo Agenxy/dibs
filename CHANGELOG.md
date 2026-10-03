@@ -35,6 +35,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - **Endpoint-scoped guest stdio adapter (implementation in progress).**
+  **Not ready for guest use:** an issuer-exported recipe is required but not
+  available yet. No harness or cloud runtime has been accepted.
   `dibs mcp-stdio --guest <private absolute JSON file>` uses only the invited
   IPv6 endpoint, constrained CA and bearer; it never initializes a local board
   or imports guest trust into the harness or system. Guest discovery is
