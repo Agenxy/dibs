@@ -107,7 +107,6 @@ if args.first == "--open-away" {
                        options: .regularExpression) != nil else { exit(2) }
     guard isAway(deskState(), minIdle: minIdle) else { exit(3) }
     let previous = NSWorkspace.shared.frontmostApplication
-    guard previous != nil else { exit(2) }
     // Check again at the actual open boundary. The waiter cannot authorize an
     // open after the person returned between its probe and this invocation.
     guard isAway(deskState(), minIdle: minIdle) else { exit(3) }
@@ -116,7 +115,7 @@ if args.first == "--open-away" {
     // URL handling may activate the recipient more than once while loading.
     // Restore only while away: once present, choosing a frontmost app is theirs.
     var restored = false
-    for _ in 0..<24 {
+    for _ in 0..<(previous == nil ? 0 : 24) {
         Thread.sleep(forTimeInterval: 0.25)
         guard isAway(deskState(), minIdle: minIdle) else { break }
         if NSWorkspace.shared.frontmostApplication?.processIdentifier != previous?.processIdentifier {
@@ -124,7 +123,7 @@ if args.first == "--open-away" {
         }
     }
     printDesk(["opened": true, "restored": restored,
-               "previous_pid": previous!.processIdentifier,
+               "previous_pid": previous?.processIdentifier ?? 0,
                "frontmost_pid": NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0])
     exit(0)
 }

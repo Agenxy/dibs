@@ -284,7 +284,11 @@ in front within 250ms, and handing focus back to the previous app lost the
 race three times in six seconds as the thread loaded. So the open waits for known screen lock, sleeping online displays, or
 `[wake] open_app_after_idle` (10 minutes by default). Unknown observations leave
 the notice queued. The signed native helper rechecks those signals before
-opening and restores the previous frontmost app while the person remains away.
+opening and attempts to restore the previous frontmost app while the person remains away.
+Restoration is best effort: a natural ten-minute idle cycle proved the opening gate,
+but its frontmost app was already ChatGPT, so restoration from another app has
+not yet been observed. A missing frontmost app does not prevent an away opening;
+its receipt reports previous_pid=0 and restored=false.
 Loaded threads receive queue-only delivery and are never opened again.
 
 For an agent on another machine the app is on that machine, so the hub sends
