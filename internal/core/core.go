@@ -652,6 +652,9 @@ func (l *Agent) CanHoldExclusive() bool {
 // Message is one mailbox item. Body/Response plaintext in memory; ciphertext
 // at rest.
 type Message struct {
+	WithdrawalReason   string    `json:"withdrawal_reason,omitempty"`
+	WithdrawnBy        string    `json:"withdrawn_by,omitempty"`
+	SupersededBy       uint64    `json:"superseded_by,omitempty"`
 	RequestPriority    string    `json:"request_priority,omitempty"`
 	QueuePriority      string    `json:"queue_priority,omitempty"`
 	QueueDebt          bool      `json:"queue_debt,omitempty"`
@@ -742,7 +745,7 @@ type Message struct {
 // capacity, displacement, inbox, retention, and GC.
 func (m *Message) Terminal() bool {
 	switch m.State {
-	case MsgStateAnswered, MsgStateApproved, MsgStateQueued, MsgStateDenied, MsgStateDeclined, MsgStateDone,
+	case MsgStateWithdrawn, MsgStateAnswered, MsgStateApproved, MsgStateQueued, MsgStateDenied, MsgStateDeclined, MsgStateDone,
 		MsgStateExpiredSilent, MsgStateExpiredDormant, MsgStateExpiredDead,
 		MsgStateDisplaced:
 		return true

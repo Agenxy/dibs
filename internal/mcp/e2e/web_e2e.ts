@@ -157,6 +157,17 @@ try {
   await tool("send", { token: b.token, to: a.agent_id, type: "notify",
     body: "Evidence attached.", op_id: "w-att",
     attachments: [{ blob: blob.blob ?? blob.id }] })
+  const withdrawn = await tool("send", { token: b.token, to: a.agent_id,
+    type: "request", body: "Work reassigned elsewhere" })
+  const replacement = await tool("send", { token: b.token, to: a.agent_id,
+    type: "request", body: "Replacement work" })
+  const approved = await tool("respond", { token: a.token,
+    msg_serial: withdrawn.msg_serial, disposition: "approve", body: "Earlier approval" })
+  if (approved.state !== "approved") throw new Error("setup: withdrawal request was not approved")
+  const receipt = await tool("respond", { token: b.token,
+    msg_serial: withdrawn.msg_serial, disposition: "withdraw", body: "Reassigned by sender",
+    superseded_by: replacement.msg_serial })
+  if (receipt.state !== "withdrawn") throw new Error("setup: sender withdrawal failed")
   // Two spaces, because one cannot hold every state worth drawing: an
   // exclusive space QUEUES a second agent rather than admitting it, so an agent
   // with a scored member and an agent with a queue have to be different agents.
@@ -669,6 +680,15 @@ try {
   // live board that is every few seconds. A test that covers one composer and
   // is read as covering composers is how that survived.
   await page.locator('.views button[data-view="mail"]').click()
+  const withdrawnCard = page.locator(`[data-serial="${withdrawn.msg_serial}"]`)
+  await withdrawnCard.waitFor({ state: "visible" })
+  const withdrawnText = await withdrawnCard.textContent() ?? ""
+  check("withdrawn work says withdrawn and its reason, without an old approval or delivery claim",
+    withdrawnText.includes("Withdrawn") && withdrawnText.includes("Reassigned by sender")
+      && !withdrawnText.includes("Earlier approval") && !withdrawnText.includes("delivered"), withdrawnText)
+  check("withdrawal links its replacement and has no reply actions",
+    await withdrawnCard.locator(`a[href="#message-${replacement.msg_serial}"]`).count() === 1
+      && await withdrawnCard.locator("button").count() === 0)
   await page.locator("#msg-to").fill("builder")
   await page.locator("#msg-type").selectOption("request")
   await page.locator("#msg-body").fill("half a thought that must survive")

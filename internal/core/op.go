@@ -179,6 +179,7 @@ type Op struct {
 	DeadlineSec            int          `json:"deadline_sec,omitempty"`
 	OpID                   string       `json:"op_id,omitempty"`
 	MsgSerial              uint64       `json:"msg_serial,omitempty"`
+	SupersededBy           uint64       `json:"superseded_by,omitempty"`
 	Disposition            string       `json:"disposition,omitempty"`
 	RequestPriority        string       `json:"request_priority,omitempty"`
 	QueueDebt              bool         `json:"queue_debt,omitempty"`

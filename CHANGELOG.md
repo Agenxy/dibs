@@ -17,6 +17,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   explicit `INCOMPLETE` provisioning status; it adds no download/run steps.
   The supporting minimum remains unset pending publication and runtime acceptance.
 
+- **Senders can withdraw requests without claiming delivery.**
+  `respond(disposition: "withdraw", body: reason, superseded_by: serial)`
+  retracts pending, queued or approved work, clears its queue and owed debt,
+  and gives its recipient an acknowledgement receipt that survives restart.
+  The optional replacement reference does not reassign or start work.
+  Tracked requests become `cancelled`; already-performed approvals stay final.
+
 - **Release checksums name the packaged guest CLI bytes.** The existing
   `checksums.txt` carries platform-scoped `members/<os>_<arch>/dibs` digests
   from final code-signed images. The archive gate independently extracts all

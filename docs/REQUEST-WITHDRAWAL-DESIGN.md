@@ -9,10 +9,12 @@ delivery. Withdrawal must close the obligation without making that assertion.
 
 ## Operation and authority
 
-Add `withdraw(token, msg_serial, reason?, superseded_by?)`, backed by the new
-`OpWithdrawMessage` kind. A separate operation keeps sender authority out of
+Expose `respond(token, msg_serial, disposition: "withdraw", body: reason?,
+superseded_by?)`, backed by the new `OpWithdrawMessage` kind. A separate operation keeps sender authority out of
 the recipient response path, including its approval/grant/adoption guards.
-An additional tool is preferable to widening every `respond` special case.
+The engine resolves the surface disposition before admission, keeping the
+recipient response guards out of the ledger operation. Architect #21066
+accepted this surface refinement to preserve the unchanged tool-list budget.
 Both MCP 2026 and the legacy tools surface call the same engine operation.
 
 The authenticated sender may withdraw an ordinary request in `pending`,
@@ -48,7 +50,8 @@ what superseded this request, not a promise of its current status.
 `core.Admit` validates the new vocabulary and field shapes: required nonzero
 message serial; bounded optional reason using the existing body limit; optional
 nonzero replacement serial distinct from the withdrawn serial; withdrawal
-fields forbidden on unrelated operations. MCP parses the optional serial
+fields forbidden on unrelated operations and recipient-only report fields
+refused on withdrawal. MCP parses the optional serial
 strictly rather than dropping malformed values. No old JSON tag is renamed.
 
 The new fold branch checks ownership, creation serial, message type, state,
@@ -104,12 +107,12 @@ Keep `tasks/cancel` as its current cooperative acknowledgement. The task handle
 is a bearer capability, while withdrawal requires the sender's agent token;
 silently making that handle sender authority would expand its contract. Update
 the explanation to distinguish cancellation acknowledgement from the explicit
-sender withdrawal tool. No agent process is stopped by either.
+sender withdrawal disposition. No agent process is stopped by either.
 
 The board shows a neutral `withdrawn` tag, reason and replacement link, with
 no delivered/completed wording or approve/done actions for that envelope.
 `read_mail.outstanding` says withdrawn rather than owed. Change SPEC, canonical
-SKILLS and its embedded copy, tool-count claims/guards and CHANGELOG together.
+SKILLS and its embedded copy, and CHANGELOG together. The tool count stays unchanged.
 
 ## Proof before shipping
 

@@ -168,6 +168,12 @@ func (s *Server) detailedTask(m core.Message) map[string]any {
 // isError: "failed" is reserved for a JSON-RPC error, which none of these is.
 func taskState(m core.Message) (status, message string, result map[string]any) {
 	switch m.State {
+	case core.MsgStateWithdrawn:
+		text := "sender withdrew this request"
+		if m.WithdrawalReason != "" {
+			text += ": " + m.WithdrawalReason
+		}
+		return "cancelled", text, toolResult(m, text, false)
 	case core.MsgStateQueued:
 		return "working", fmt.Sprintf("queued #%d", m.QueueRank), nil
 	case core.MsgStatePending, core.MsgStateDelivered, "":
@@ -222,6 +228,9 @@ func progressLine(m core.Message) string {
 // CallToolResult with the outcome in text and in structure.
 func toolResult(m core.Message, text string, isErr bool) map[string]any {
 	sc := map[string]any{"msg_serial": m.Serial, "state": m.State}
+	if m.SupersededBy != 0 {
+		sc["superseded_by"] = m.SupersededBy
+	}
 	if m.Deliverable != "" {
 		sc["deliverable"] = m.Deliverable
 	}
