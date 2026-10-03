@@ -122,3 +122,25 @@ func TestTagWorkflowChecksCurrentRootBeforePublishing(t *testing.T) {
 		t.Fatal("tag workflow must check authenticated root after installing cosign and before publishing")
 	}
 }
+
+func TestReleasePreparationChecksRootBeforeClaimingVersion(t *testing.T) {
+	b, err := os.ReadFile("../../Taskfile.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(b)
+	start := strings.Index(s, "\n  release:\n")
+	end := strings.Index(s, "\n  ci:\n")
+	if start < 0 || end < start {
+		t.Fatal("release preparation and ci tasks missing")
+	}
+	prep := s[start:end]
+	guard := strings.Index(prep, "go run ./tools/sigstore-root-check")
+	stamp := strings.Index(prep, "go run ./tools/version -set")
+	if guard < 0 || stamp < 0 || guard >= stamp {
+		t.Fatal("release preparation must check authenticated root before claiming a version")
+	}
+	if strings.Contains(s[end:], "go run ./tools/sigstore-root-check") {
+		t.Fatal("ordinary ci must not require current Sigstore network access")
+	}
+}

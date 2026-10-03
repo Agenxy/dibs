@@ -66,7 +66,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Release publication checks its embedded Sigstore trust root.** A fresh,
   authenticated production-TUF fetch must match the reviewed byte string and
-  frozen SHA-256 pin, or publication refuses until a deliberate rotation.
+  frozen SHA-256 pin. Release preparation refuses before claiming a version,
+  and the tag workflow repeats the check before publication; ordinary CI
+  adds no third-party trust fetch. A rotation is deliberate, never automatic.
   This is preparation for offline issuer-provenance verification, not a
   supporting guest release or a provisionable invitation recipe.
 

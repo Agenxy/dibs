@@ -511,6 +511,10 @@ in `WAKE-MECHANISMS.md` with what was MEASURED, and put the date on each. A row
 that was not re-measured keeps its old date, which is the honest state.
 
 **`task release VERSION=<the next version>` is the one step before the tag.**
+It checks the embedded Sigstore root against authenticated current TUF before
+claiming the version, and the tag workflow repeats that check before publishing:
+discover a rotation before burning an immutable tag, with the workflow as backstop
+and no third-party trust fetch added to ordinary `task ci`.
 This used to name a literal `0.0.6`, which is the version already tagged: the
 command as written refuses, because a release that goes backwards would leave
 every installer offering an older build than the one before it. An instruction

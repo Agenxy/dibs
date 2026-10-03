@@ -526,6 +526,7 @@ tasks:
     requires:
       vars: [VERSION]
     cmds:
+      - go run ./tools/sigstore-root-check
       - go run ./tools/version -set {{.VERSION}}
 
   ci:
