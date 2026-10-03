@@ -11,7 +11,7 @@ import (
 )
 
 func TestSenderWithdrawalThroughMCPAndEncryptedRestart(t *testing.T) {
-	for _, disposition := range []string{"pending", "queue", "approve"} {
+	for _, disposition := range []string{"pending", "acked", "queue", "approve"} {
 		t.Run(disposition, func(t *testing.T) {
 			dir := t.TempDir()
 			srv, _, stop := restartableQueueServer(t, dir)
@@ -20,7 +20,12 @@ func TestSenderWithdrawalThroughMCPAndEncryptedRestart(t *testing.T) {
 			out := rpc(t, srv, "2026-07-28", "tools/call", withTasks(map[string]any{"token": lead, "to": "worker", "type": "request", "body": "private", "track": true}))["result"].(map[string]any)
 			n := out["_meta"].(map[string]any)["com.dibs/msg_serial"].(float64)
 			id := out["taskId"].(string)
-			if disposition != "pending" {
+			if disposition == "acked" {
+				r := toolCall(t, srv, "ack", map[string]any{"token": worker, "msg_serial": n})
+				if r["state"] != "acked" {
+					t.Fatalf("setup: %v", r)
+				}
+			} else if disposition != "pending" {
 				r := toolCall(t, srv, "respond", map[string]any{"token": worker, "msg_serial": n, "disposition": disposition})
 				want := "approved"
 				if disposition == "queue" {

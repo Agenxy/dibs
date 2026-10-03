@@ -42,7 +42,7 @@ func (s *State) applyWithdraw(l *Agent, op *Op, now time.Time) (Result, []Event,
 		return nil, nil, errf("E_NOT_SENDER", "withdraw a request YOU sent; read_mail shows its sender", "not your request")
 	}
 	switch m.State {
-	case MsgStatePending, MsgStateDelivered, MsgStateQueued:
+	case MsgStatePending, MsgStateDelivered, MsgStateAcked, MsgStateQueued:
 	case MsgStateApproved:
 		if m.Grant != "" || m.Adopt != "" {
 			return nil, nil, errf("E_MSG_FINAL", "approval already performed this effect; withdrawal cannot undo it", "request already performed")

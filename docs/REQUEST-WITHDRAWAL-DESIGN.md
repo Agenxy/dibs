@@ -18,7 +18,8 @@ accepted this surface refinement to preserve the unchanged tool-list budget.
 Both MCP 2026 and the legacy tools surface call the same engine operation.
 
 The authenticated sender may withdraw an ordinary request in `pending`,
-`delivered`, `queued` or `approved`. An unapproved grant/adoption request may
+`delivered`, `acked`, `queued` or `approved`. A request's ack proves receipt,
+not acceptance, and is not terminal. An unapproved grant/adoption request may
 also be withdrawn; an approved one has already performed its effect and is
 refused. Done, denied, declined, expired, displaced and other finished states
 are refused with `E_MSG_FINAL` and a hint to send a new request. There is no

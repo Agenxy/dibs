@@ -566,7 +566,7 @@ Messages go agent → agent; identity = send serial; bodies private (§4, §5).
 | `pending/delivered/acked` | `expired_unanswered` \| `expired_recipient_dormant` \| `expired_recipient_dead` | deadline sweep (§7 cascade) | `message.<state>` |
 | `expired_unanswered` (question only) | `answered` | late `respond(answer)` by its recipient; expiry detail cleared and sender's verdict-read marker reset | `message.answered` |
 | `pending/delivered` (notify only) | `displaced` | evicted by a newer notify at mailbox capacity | `message.displaced` (same serial as the displacing send, atomic) |
-| `pending/delivered/queued/approved` (request) | `withdrawn`, unconsumed recipient receipt | sender `respond(withdraw)`; already-performed approvals refused | `message.withdrawn` |
+| `pending/delivered/acked/queued/approved` (request) | `withdrawn`, unconsumed recipient receipt | sender `respond(withdraw)`; already-performed approvals refused | `message.withdrawn` |
 
 **Terminal predicate (exact, used consistently by capacity, displacement, inbox,
 retention, and GC):**
@@ -932,7 +932,7 @@ body: reason?, superseded_by: serial?)`. Engine ingress translates this into the
 new `withdraw_message` ledger op before recipient response guards. Admission
 checks field shapes and rejects work-report fields; the fold checks sender
 ownership, creation-serial privacy fence, request state and replacement. Only
-pending, delivered, queued and approved requests qualify; an approved grant or
+pending, delivered, acknowledged, queued and approved requests qualify; an approved grant or
 adoption already performed its effect and cannot be withdrawn. Questions expire
 and are not withdrawable. Unknown, other-sender or self replacement references
 are refused; a replacement is another ordinary request by the same sender,
