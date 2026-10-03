@@ -32,11 +32,16 @@ func TestNativeQueueObservedThroughEngineAfterReplayRestart(t *testing.T) {
 		if contact {
 			name = "busy-contact-and-restart"
 		}
-		t.Run(name, func(t *testing.T) { exerciseNativeQueueRestart(t, contact) })
+		t.Run(name, func(t *testing.T) { exerciseNativeQueueRestart(t, contact, "") })
 	}
 }
 
-func exerciseNativeQueueRestart(t *testing.T, contact bool) {
+func TestNativeQueuePromptAliasRearmsFallback(t *testing.T) {
+	t.Setenv("DIBS_QUEUE_PROBE_FAIL", "1")
+	exerciseNativeQueueRestart(t, false, "host-queue-hook")
+}
+
+func exerciseNativeQueueRestart(t *testing.T, contact bool, hookAlias string) {
 	home := t.TempDir()
 	t.Setenv("CODEX_HOME", home)
 	t.Setenv("DIBS_DIR", t.TempDir())
@@ -77,7 +82,11 @@ func exerciseNativeQueueRestart(t *testing.T, contact bool) {
 		}
 		return r
 	}
-	worker := do(&core.Op{Kind: core.OpRegister, Name: "worker", Nonce: "worker-queue-restart-nonce", AgentKind: core.KindPersistent, SessionID: contThread, Agent: &core.AgentInfo{Harness: "Codex", CWD: t.TempDir()}})
+	sid, alias := contThread, ""
+	if hookAlias != "" {
+		sid, alias = hookAlias, contThread
+	}
+	worker := do(&core.Op{Kind: core.OpRegister, Name: "worker", Nonce: "worker-queue-restart-nonce", AgentKind: core.KindPersistent, SessionID: sid, SessionAlias: alias, Agent: &core.AgentInfo{Harness: "Codex", CWD: t.TempDir()}})
 	asker := do(&core.Op{Kind: core.OpRegister, Name: "asker", Nonce: "asker-queue-restart-nonce"})
 	do(&core.Op{Kind: core.OpAckBoard, Token: asker["token"].(string)})
 	do(&core.Op{Kind: core.OpSweep, DeadAgents: []string{"worker"}})
@@ -116,6 +125,24 @@ func exerciseNativeQueueRestart(t *testing.T, contact bool) {
 	send("first")
 	if count() != 1 {
 		t.Fatal("first wake did not queue exactly one")
+	}
+	if hookAlias != "" {
+		r, err := e.query(ctx, func() core.Result {
+			l := e.state.Agents["worker"]
+			return core.Result{"thread": threadIDOf(l), "current": l.SessionIsCurrent(hookAlias)}
+		})
+		if err != nil || r["thread"] != contThread || r["current"] != true || hookAlias == contThread {
+			t.Fatalf("setup: alias and queue thread aren't distinct/current: %v %v", r, err)
+		}
+		if _, err = e.HookPoll(ctx, hookAlias, "UserPromptSubmit", "", false, false); err != nil {
+			t.Fatal(err)
+		}
+		do(&core.Op{Kind: core.OpSweep, DeadAgents: []string{"worker"}})
+		send("alias-prompt-rearm")
+		if count() != 2 {
+			t.Fatal("current hook alias did not re-arm the canonical queued thread")
+		}
+		return
 	}
 	if contact {
 		do(&core.Op{Kind: core.OpAckBoard, Token: worker["token"].(string)})

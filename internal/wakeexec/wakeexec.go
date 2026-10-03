@@ -179,6 +179,8 @@ func RunCommands(argv, fallback []string, agent, dir string, timeout, grace time
 		}
 		if (known && pending) || (!known && fallbackPending(thread, time.Now())) {
 			slog.Debug("a Dibs wake is already pending in the app queue", "agent", agent)
+			// The pending item will still start a Dibs-originated turn, so the
+			// engine's existing continuation eligibility remains truthful.
 			return true
 		}
 		queuedThread = thread

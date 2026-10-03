@@ -204,7 +204,9 @@ func (e *Engine) noteTurnState(l *core.Agent, sessionID, event string) {
 		delete(e.turnEnded, l.ID)
 		e.seen[l.ID] = time.Now()
 		if event == "SessionStart" || event == "UserPromptSubmit" {
-			wakeexec.NoteQueuePrompt(sessionID, e.seen[l.ID])
+			// Key by the same resolved thread the queue plan substitutes into
+			// argv. A current hook may instead name a non-UUID session alias.
+			wakeexec.NoteQueuePrompt(threadIDOf(l), e.seen[l.ID])
 			e.wakers.mu.Lock()
 			if e.wakers.queuedPrompt == nil {
 				e.wakers.queuedPrompt = map[string]time.Time{}
