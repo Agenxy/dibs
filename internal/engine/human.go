@@ -413,11 +413,10 @@ func (e *Engine) mayAdopt(l *core.Agent) bool {
 	if l.Role == "admin" || l.Role == "coordinator" {
 		return true
 	}
-	e.human.mu.Lock()
-	defer e.human.mu.Unlock()
-	// The human identity is minted by a presence check (Touch ID, or the admin
-	// password where there is no sensor), so holding it IS the proof.
-	return e.human.agent != "" && e.human.agent == l.ID
+	// Token authentication already proved the caller. The reserved human
+	// identity survives replay; a per-run credential cache does not. Use the
+	// active identity here, not mailbox ownership of an archived human row.
+	return l.ID != "" && l.ID == e.humanIdentityLocked()
 }
 
 // refuseCoordinatorSelfAdoption keeps custody and contents apart on the one

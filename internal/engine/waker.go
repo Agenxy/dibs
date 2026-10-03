@@ -1382,9 +1382,9 @@ func runWakeFor(argv []string, agent, dir string, timeout, grace time.Duration) 
 // to inform: whether to wait for a human's approval. Found by the pre-release
 // review, round six.
 func (e *Engine) isTheHuman(id string) bool {
-	e.human.mu.Lock()
-	defer e.human.mu.Unlock()
-	return e.human.agent != "" && e.human.agent == id
+	// Classification is board ownership, not whether this daemon run has
+	// minted a cached credential yet. All callers are on the writer loop.
+	return id != "" && id == e.humanRowLocked()
 }
 
 // PullOnlyNoteFor is PullOnlyNote by agent id, read inside the loop.
