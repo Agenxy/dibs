@@ -7,6 +7,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A stale harness PID no longer defeats a fresh authenticated call.** Inbox
+  reads and model mutations keep the identity active through its configured idle
+  lease, while diagnostics continue to report the old process as dead. A silent
+  caller is still detected as crashed. Boot grace and background subscriptions
+  cannot manufacture this evidence, and no process or session binding is changed.
+  An announcement owed by a member that crashes just after contacting Dibs can
+  therefore stay outstanding for up to that lease (45 minutes by default) before
+  it reads blocked.
+
 - **Accepted work has an explicit task queue.** Recipients can accept requests
   for later, reprioritise or reorder them, and start one when ready. Queued work
   remains owed across restarts and beyond a day, without triggering work
@@ -23,7 +32,7 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Unloaded app threads wait until you are away.** A known screen lock,
   sleeping displays or ten minutes without input allows opening. The native
-  helper rechecks presence and restores the app previously in front while
+  helper rechecks presence and attempts to restore the app previously in front while
   you remain away. Unknown measurements leave the notice queued. The
   `open_app_after_idle` setting keeps its AFK role, with a ten-minute default.
   Host bridges advertise adoption of this policy; diagnostics name older

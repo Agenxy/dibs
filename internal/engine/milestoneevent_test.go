@@ -25,7 +25,7 @@ func TestMilestoneEventAckFirstCallAfterRestart(t *testing.T) {
 		}
 		return r
 	}
-	lead := do(&core.Op{Kind: core.OpRegister, Name: "lead", Nonce: "restart-lead"})["token"].(string)
+	lead := do(&core.Op{Kind: core.OpRegister, Name: "lead", Nonce: "restart-lead", PID: 424242})["token"].(string)
 	worker := do(&core.Op{Kind: core.OpRegister, Name: "worker", Nonce: "restart-worker"})["token"].(string)
 	parent := do(&core.Op{Kind: core.OpSendMessage, Token: lead, To: "worker", MsgType: core.MsgRequest, Body: "proof", Milestones: []string{"proof"}})["msg_serial"].(uint64)
 	do(&core.Op{Kind: core.OpRespond, Token: worker, MsgSerial: parent, Disposition: "approve"})
@@ -48,7 +48,10 @@ func TestMilestoneEventAckFirstCallAfterRestart(t *testing.T) {
 	event := st.Messages[parent].Progress[0].Serial
 	serial, consumed := st.Serial, st.Messages[parent].Consumed
 	restartedLedger := &memLedger{}
-	restarted := New(st, restartedLedger, deadProber{})
+	restarted := New(st, restartedLedger, onePIDDead{dead: 424242})
+	if st.Agents["lead"].PID != 424242 || restarted.prober.Alive(424242) {
+		t.Fatal("setup: recorded lead PID must be dead after restart")
+	}
 	if restarted.notices != nil || restarted.seen == nil {
 		t.Fatal("setup: restart must have no notices and an initialized seen map")
 	}
@@ -63,6 +66,15 @@ func TestMilestoneEventAckFirstCallAfterRestart(t *testing.T) {
 		if err != nil || r["state"] != "acked" {
 			t.Fatalf("ack after restart: %v %v", r, err)
 		}
+	}
+	if _, err := restarted.query(restartCtx, func() core.Result {
+		restarted.sweep(time.Now())
+		if st.Agents["lead"].Status != core.StatusActive {
+			t.Error("successful derived event ack failed to protect fresh contact from a stale PID")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
 	restartCancel()
 	<-restartDone

@@ -41,6 +41,7 @@ func (e *Engine) handleMilestoneEvent(op *core.Op, actor *core.Agent, now time.T
 		e.notices[actor.ID] = kept
 	}
 	e.seen[actor.ID] = now
+	e.noteAuthenticatedContact(actor, now)
 	e.confirmSocketOffer(actor, now)
 	return core.Result{"ok": true, "state": "acked"}, nil, true
 }

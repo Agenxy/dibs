@@ -68,6 +68,7 @@ func (e *Engine) authRead(token string, now time.Time) (*core.Agent, core.Result
 	}
 	e.wakeIfSleeping(l, now)
 	e.seen[l.ID] = now
+	e.noteAuthenticatedContact(l, now)
 	e.confirmSocketOffer(l, now)
 	e.touchDurable(l, now)
 	return l, nil

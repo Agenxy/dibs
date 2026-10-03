@@ -130,11 +130,12 @@ console.log(`  · join bar measured from this repository: ${JOIN_BAR} (observed 
 // -match-join is the bar measured just above: the same thing `dibs calibrate`
 // does for a real operator. Without both, the daemon runs suggest-only and the
 // auto-join checks below cannot pass.
-const daemon = Bun.spawn({
+const spawnDaemon = () => Bun.spawn({
   cmd: [dibd, "-dir", dir, "-addr", ADDR,
         "-match-repo", repo, "-match-join", String(JOIN_BAR), "-match-notify", "0.15"],
   stdout: "ignore", stderr: "ignore",
 })
+let daemon = spawnDaemon()
 const cleanup = () => {
   daemon.kill()
   try { rmSync(dir, { recursive: true, force: true }) } catch {}
@@ -142,7 +143,7 @@ const cleanup = () => {
 process.on("exit", cleanup)
 
 // Waits for the LISTENER, not for local.secret: see ready.ts.
-const secret = await daemonReady(dir, `http://${ADDR}`, { proc: daemon, label: "space" })
+let secret = await daemonReady(dir, `http://${ADDR}`, { proc: daemon, label: "space" })
 
 let rpcId = 0
 async function raw(name: string, args: Record<string, unknown>): Promise<any> {
@@ -1179,10 +1180,35 @@ let annSerial = 0
   check("and is not reported as blocked yet",
     (await spaceOf(say.token))?.blocked_announcements === undefined)
 
+  const sweepControl = await call("register", { name: "bl-sweep-control", pid: doomed.pid })
   doomed.kill()
   await doomed.exited
-  // The one who could answer answers, leaving only the agent that is gone.
+  const controlDeadline = Date.now() + 10000
+  for (;;) {
+    const response = await fetch(`http://${ADDR}/api/board`, { headers: { "X-Dibs-Local": secret } })
+    if (!response.ok) throw new Error("setup: passive announcement observation refused")
+    const row = (await response.json()).agents
+      .find((agent: any) => agent.id === sweepControl.agent_id)
+    if (row?.status === "dormant" && row.stale_reason === "process_exited") break
+    if (Date.now() >= controlDeadline) throw new Error("setup: silent announcement control missed crash sweep")
+    await Bun.sleep(50)
+  }
   await call("ack_announcement", { token: here.token, msg_serial: ann.serial })
+  const fresh = await spaceOf(say.token)
+  check("a crashed member's fresh contact keeps its announcement outstanding",
+    fresh?.unacked_announcements === 1, JSON.stringify(fresh))
+  check("and the announcement is not blocked during that contact lease",
+    fresh?.blocked_announcements === undefined, JSON.stringify(fresh))
+  await call("sign_off", { token: sweepControl.token })
+  // The authenticated absentee retains its idle lease after the recorded PID
+  // exits. Exercise the blocked-announcement rule with a genuinely silent
+  // cold row: restart this isolated daemon from the actual ledger, then make
+  // no further call as the absentee. Keep all blocked/CLI rendering checks.
+  daemon.kill("SIGTERM")
+  if (await daemon.exited !== 0) throw new Error("setup: space daemon did not shut down cleanly")
+  daemon = spawnDaemon()
+  secret = await daemonReady(dir, `http://${ADDR}`, { proc: daemon, label: "space corpse restart" })
+  // Only the now-silent cold member still owes acknowledgement.
   for (let i = 0; i < 50; i++) {
     if ((await spaceOf(say.token))?.blocked_announcements === 1) break
     await Bun.sleep(200)
