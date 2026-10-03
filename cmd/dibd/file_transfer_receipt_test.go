@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"os"
 	"os/exec"
@@ -50,8 +51,10 @@ func waitForDaemonUploadReceipt(t *testing.T, f *cloudFixture) {
 	}
 }
 
-const uploadSetupFailureEnv = "DIBS_TEST_UPLOAD_SETUP_FAILURE"
-const uploadSetupFailureMarker = "deliberate upload setup failure with an active incomplete request"
+const (
+	uploadSetupFailureEnv    = "DIBS_TEST_UPLOAD_SETUP_FAILURE"
+	uploadSetupFailureMarker = "deliberate upload setup failure with an active incomplete request"
+)
 
 // Enter through the same TLS/public-listener path as the resumability test.
 // A setup Fatal must close its socket before httptest.Server.Close tries to
@@ -62,8 +65,8 @@ func TestPublicTransferSetupFailureClosesRawConnection(t *testing.T) {
 	child := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestPublicTransferResumesAfterBrokenConnection$", "-test.timeout=30s")
 	child.Env = append(os.Environ(), uploadSetupFailureEnv+"=1")
 	out, err := child.CombinedOutput()
-	exit, ok := err.(*exec.ExitError)
-	if !ok || exit.ExitCode() != 1 || ctx.Err() != nil ||
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != 1 || ctx.Err() != nil ||
 		!strings.Contains(string(out), uploadSetupFailureMarker) || strings.Contains(string(out), "test timed out") {
 		t.Fatalf("setup failure did not exit normally through cleanup: %v\n%s", err, out)
 	}
