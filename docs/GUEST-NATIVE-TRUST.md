@@ -6,6 +6,14 @@ No endpoint was enabled, live-board invitation issued, model called, existing th
 resumed, system root imported, or certificate check disabled. Phase B is not
 complete and production `verified_clients` remains empty.
 
+Independent architect review 15488 accepted the evidence and probe at
+`b854eb7`. Decisions 15360/15454 permit a narrowly worded Codex support claim:
+name scope is enforced, public-web-PKI trust remains additive, and the supplied
+CA's SPKI is checked out of band rather than enforced as an exclusive TLS pin.
+The architect is taking transport options to the operator. **Implementation is
+on hold pending that decision.** This change preserves evidence only and does
+not enable a native recipe, weaken the CA, or change the strict probe's result.
+
 ## Exact installed programs
 
 | Program | Version | SHA-256 |
@@ -106,7 +114,11 @@ source is not a runtime measurement of this installed binary. A successful
 extra-CA connection is narrower than an endpoint-scoped, guest-root-only
 transport. The original real-listener Go client uses only its selected root,
 but that property must not be borrowed to describe the native harness. A
-native recipe's precise trust promise still needs an explicit decision.
+native recipe must instead state the precise promise decided in 15454: public
+web PKI plus this IP-scoped CA, with its SPKI verified out of band before use.
+A party able to obtain a publicly trusted certificate for the board's IPv6
+could impersonate the board; additive trust does not prevent that. No such
+native recipe is implemented in this evidence-only change.
 
 Claude Desktop 2.1.284 accepts permissive DNS, IPv4, and IPv6 controls, so the
 extra CA and actual MCP route work. It also accepts an empty-DNS-exclusion-only
