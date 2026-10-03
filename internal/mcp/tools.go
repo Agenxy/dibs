@@ -121,8 +121,10 @@ var toolDefs = func() []map[string]any {
 					"type": "string", "enum": []string{"mint", "list", "revoke"},
 					"description": "default: mint",
 				},
-				"name":      str("default: <issuer>-cloud-N"),
-				"ttl_s":     num("lifetime seconds"),
+				"name":  str("default: <issuer>-cloud-N"),
+				"ttl_s": num("lifetime seconds"),
+				"export": map[string]any{"type": "boolean", "description": "mint only: include private recovery_nonce " +
+					"for recipe export; omitted/false never discloses it"},
 				"issued_by": str("revoke own children; name OR issued_by"),
 			}, "token"),
 		},

@@ -110,7 +110,7 @@ func TestGuestIssuerRecoveryThroughActualDaemonStartup(t *testing.T) {
 	}
 	mint := func() map[string]any {
 		t.Helper()
-		out := post(private, "/api/admin/invites", map[string]any{"name": "guest-worker", "ttl_s": 3600}, "")
+		out := post(private, "/api/admin/invites", map[string]any{"name": "guest-worker", "ttl_s": 3600, "export": true}, "")
 		nonce, _ := out["recovery_nonce"].(string)
 		raw, err := hex.DecodeString(nonce)
 		if err != nil || len(raw) != 32 {
@@ -183,7 +183,10 @@ func TestGuestIssuerRecoveryThroughActualDaemonStartup(t *testing.T) {
 		t.Helper()
 		return decodeTool(post(private, "/mcp", map[string]any{
 			"jsonrpc": "2.0", "id": 1,
-			"method": "tools/call", "params": map[string]any{"name": name, "arguments": args},
+			"method": "tools/call", "params": map[string]any{
+				"name": name, "arguments": args,
+				"_meta": map[string]any{"io.modelcontextprotocol/protocolVersion": "2026-07-28"},
+			},
 		}, ""))
 	}
 	issuer := localTool("register", map[string]any{"name": "issuer", "nonce": "fixture-local-issuer", "kind": "persistent"})
@@ -191,7 +194,42 @@ func TestGuestIssuerRecoveryThroughActualDaemonStartup(t *testing.T) {
 	if issuerToken == "" {
 		t.Fatal("local issuer setup returned no token")
 	}
-	other := localTool("invite", map[string]any{"name": "issuer-cloud-1", "token": issuerToken, "ttl_s": 3600})
+	plain := localTool("invite", map[string]any{"name": "issuer-cloud-plain", "token": issuerToken, "ttl_s": 3600})
+	if plain["key"] == nil || plain["expires_at"] == nil || plain["config"] == nil {
+		t.Fatal("plain MCP mint setup did not return a successful invitation")
+	}
+	if _, disclosed := plain["recovery_nonce"]; disclosed {
+		t.Fatal("plain actual MCP mint disclosed the stable recovery credential")
+	}
+	withoutExport := localTool("invite", map[string]any{
+		"name": "issuer-cloud-false", "token": issuerToken, "export": false,
+	})
+	if withoutExport["key"] == nil {
+		t.Fatal("explicit false export setup failed to mint")
+	}
+	if _, disclosed := withoutExport["recovery_nonce"]; disclosed {
+		t.Fatal("explicit false export disclosed a recovery credential")
+	}
+	adminPlain := post(private, "/api/admin/invites", map[string]any{"name": "guest-plain"}, "")
+	if adminPlain["key"] == nil {
+		t.Fatal("plain private-admin mint setup failed")
+	}
+	if _, disclosed := adminPlain["recovery_nonce"]; disclosed {
+		t.Fatal("plain private-admin mint disclosed the stable recovery credential")
+	}
+	for _, action := range []string{"list", "revoke"} {
+		rpc := post(private, "/mcp", map[string]any{
+			"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+			"params": map[string]any{"name": "invite", "arguments": map[string]any{
+				"token": issuerToken, "name": "issuer-cloud-plain", "action": action, "export": true,
+			}, "_meta": map[string]any{"io.modelcontextprotocol/protocolVersion": "2026-07-28"}},
+		}, "")
+		result, _ := rpc["result"].(map[string]any)
+		if result["isError"] != true {
+			t.Fatal("non-mint export flag was silently accepted")
+		}
+	}
+	other := localTool("invite", map[string]any{"name": "issuer-cloud-1", "token": issuerToken, "ttl_s": 3600, "export": true})
 	otherNonce, _ := other["recovery_nonce"].(string)
 	if len(otherNonce) != 64 || otherNonce == first["recovery_nonce"] {
 		t.Fatal("MCP issuance omitted recovery or reused a different name's nonce")

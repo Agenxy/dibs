@@ -833,6 +833,7 @@ type toolArgs struct {
 	SHA256        string            `json:"sha256"`
 	InviteAction  string            `json:"action"`
 	InviteTTLS    int64             `json:"ttl_s"`
+	InviteExport  bool              `json:"export"`
 	IssuedBy      string            `json:"issued_by"`
 	Token         string            `json:"token"`
 	Name          string            `json:"name"`

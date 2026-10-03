@@ -62,8 +62,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Endpoint-scoped guest stdio adapter (implementation in progress).**
   **Not ready for guest use:** a published release-backed issuer recipe is not
   available yet. No harness or cloud runtime has been accepted.
-  Issuance now returns the stored invitation's exact expiry and a recovery
-  nonce derived from the retained board key and invitation name. Reissuing an
+  Issuance returns the stored invitation's exact expiry. Only an explicit
+  private export mint returns a recovery nonce derived from the retained
+  board key and invitation name; ordinary MCP/admin mints omit it. Reissuing an
   invitation keeps that nonce; no nonce vault or ledger secret is added.
   `dibs invite <name> --out <absolute-private-file>` can export an explicitly
   incomplete private JSON checkpoint, not a runnable provisioning recipe.

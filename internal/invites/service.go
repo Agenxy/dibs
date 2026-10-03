@@ -24,8 +24,9 @@ type Service struct {
 	URL      string
 	Endpoint *PublicEndpoint
 	// RecoveryNonce is a fixed-domain derivation owned by the existing at-rest
-	// Box, not a raw key or an invitation-store field. Issuance discloses it
-	// once beside the bearer; list never receives it and issuance is not ledgered.
+	// Box, not a raw key or an invitation-store field. Only an explicit export
+	// mint discloses it beside the bearer; ordinary mint/list never receive it.
+	// Issuance is not ledgered.
 	// A later register seals its supplied nonce under the existing ledger rule.
 	RecoveryNonce func(string) (string, error)
 }
@@ -55,23 +56,31 @@ func (s *Service) Live(ctx context.Context, e Entry) (bool, error) {
 
 // Handle is the agent-facing invite tool: local agents issue within policy;
 // an invited agent can never create another invitation, even with a staff role.
-func (s *Service) Handle(ctx context.Context, token, action, name, issuedBy string, ttlS int64) (core.Result, error) {
+func (s *Service) Handle(ctx context.Context, token, action, name, issuedBy string,
+	ttlS int64, export bool,
+) (core.Result, error) {
 	a, err := s.Engine.InvitationIssuer(ctx, token)
 	if err != nil {
 		return nil, err
 	}
 	issuer := Issuance{By: a.ID, Created: a.Created, Closed: a.Closed}
-	return s.handle(ctx, issuer, a.Coordinator, action, name, issuedBy, ttlS)
+	return s.handle(ctx, issuer, a.Coordinator, action, name, issuedBy, ttlS, export)
 }
 
 // Human is called only behind the private god-view proof, never by a tool.
-func (s *Service) Human(ctx context.Context, action, name, issuedBy string, ttlS int64) (core.Result, error) {
-	return s.handle(ctx, Issuance{By: core.HumanActor, Human: true}, true, action, name, issuedBy, ttlS)
+func (s *Service) Human(ctx context.Context, action, name, issuedBy string,
+	ttlS int64, export bool,
+) (core.Result, error) {
+	return s.handle(ctx, Issuance{By: core.HumanActor, Human: true}, true, action, name, issuedBy, ttlS, export)
 }
 
 func (s *Service) handle(ctx context.Context, issuer Issuance, coordinator bool,
-	action, name, issuedBy string, ttlS int64,
+	action, name, issuedBy string, ttlS int64, export bool,
 ) (core.Result, error) {
+	if export && action != "" && action != "mint" {
+		return nil, refused("export is available only while minting an invitation",
+			"omit export for list/revoke; use export: true only for a private recipe mint")
+	}
 	entries, err := s.Store.List()
 	if err != nil {
 		return nil, err
@@ -92,7 +101,7 @@ func (s *Service) handle(ctx context.Context, issuer Issuance, coordinator bool,
 		}
 		return core.Result{"revoked": name, "issued_by": issuedBy}, nil
 	case "mint":
-		return s.mint(ctx, issuer, coordinator, entries, name, ttlS)
+		return s.mint(ctx, issuer, coordinator, entries, name, ttlS, export)
 	default:
 		return nil, refused("unknown invite action", "use mint (default), list or revoke")
 	}
@@ -119,7 +128,7 @@ func (s *Service) list(ctx context.Context, issuer Issuance, entries []Entry) (c
 }
 
 func (s *Service) mint(ctx context.Context, issuer Issuance, coordinator bool,
-	entries []Entry, name string, ttlS int64,
+	entries []Entry, name string, ttlS int64, export bool,
 ) (core.Result, error) {
 	issuer, ttl, err := s.mintPolicy(issuer, coordinator, ttlS)
 	if err != nil {
@@ -141,14 +150,9 @@ func (s *Service) mint(ctx context.Context, issuer Issuance, coordinator bool,
 	if err := s.Engine.InviteNameAvailable(ctx, name, bound, issuer.By); err != nil {
 		return nil, err
 	}
-	nonce := ""
-	if s.RecoveryNonce != nil {
-		nonce, err = s.RecoveryNonce(name)
-		raw, decodeErr := hex.DecodeString(nonce)
-		if err != nil || decodeErr != nil || len(raw) != 32 {
-			return nil, refused("guest recovery credential is unavailable",
-				"restore the board's original at-rest key and restart; do not replace it or mint a new mailbox silently")
-		}
+	nonce, err := s.exportRecoveryNonce(name, export)
+	if err != nil {
+		return nil, err
 	}
 	now := time.Now()
 	key, err := s.Store.MintIssued(name, ttl, now, issuer)
@@ -171,6 +175,19 @@ func (s *Service) mint(ctx context.Context, issuer Issuance, coordinator bool,
 		result["recovery_nonce"] = nonce
 	}
 	return result, nil
+}
+
+func (s *Service) exportRecoveryNonce(name string, export bool) (string, error) {
+	if !export || s.RecoveryNonce == nil {
+		return "", nil
+	}
+	nonce, err := s.RecoveryNonce(name)
+	raw, decodeErr := hex.DecodeString(nonce)
+	if err != nil || decodeErr != nil || len(raw) != 32 {
+		return "", refused("guest recovery credential is unavailable",
+			"restore the board's original at-rest key and restart; do not replace it or mint a new mailbox silently")
+	}
+	return nonce, nil
 }
 
 func (s *Service) mintEntries(ctx context.Context, entries []Entry) ([]Entry, error) {

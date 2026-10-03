@@ -69,7 +69,11 @@ func inviteOptions(args []string) (map[string]any, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	return map[string]any{"action": "mint", "name": action, "ttl_s": ttlS}, *out, nil
+	payload := map[string]any{"action": "mint", "name": action, "ttl_s": ttlS}
+	if *out != "" {
+		payload["export"] = true
+	}
+	return payload, *out, nil
 }
 
 // Let the service choose min(7d, configured ceiling) when --ttl is absent.

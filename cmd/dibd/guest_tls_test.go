@@ -105,7 +105,7 @@ func TestDirectIPListenerActuallyServesTLSAndOnlyInvitations(t *testing.T) {
 	client := &http.Client{Timeout: 3 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS13}}}
 	t.Cleanup(client.CloseIdleConnections)
 	service := &invites.Service{Engine: eng, Store: invites.Store{Dir: dir}, URL: cfg.URL, Endpoint: cfg.Endpoint}
-	minted, err := service.Human(ctx, "mint", "another-guest", "", 3600)
+	minted, err := service.Human(ctx, "mint", "another-guest", "", 3600, false)
 	if err != nil {
 		t.Fatalf("private issuer could not mint guest trust recipe: %v", err)
 	}
@@ -190,7 +190,7 @@ func TestDirectIPListenerActuallyServesTLSAndOnlyInvitations(t *testing.T) {
 	if info.Reason == "" || info.URL != "" || info.CAPEM != "" {
 		t.Fatalf("failed renewal left guest recipe available: %+v", info)
 	}
-	if _, err := service.Human(ctx, "mint", "withdrawn-guest", "", 3600); err == nil {
+	if _, err := service.Human(ctx, "mint", "withdrawn-guest", "", 3600, false); err == nil {
 		t.Fatal("private issuer minted a stale guest endpoint after actual listener withdrawal")
 	}
 	if ctx.Err() != nil {
