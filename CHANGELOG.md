@@ -21,10 +21,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Existing human tokens retain their rights; ordinary member tokens do not
   gain adoption or approval authority.
 
+- **Unloaded app threads wait until you are away.** A known screen lock,
+  sleeping displays or ten minutes without input allows opening. The native
+  helper rechecks presence and restores the app previously in front while
+  you remain away. Unknown measurements leave the notice queued. The
+  `open_app_after_idle` setting keeps its AFK role, with a ten-minute default.
+
 - **Loaded app threads wake without reopening their window.** The wake check
   uses executable paths and one bounded file query, so an app runtime behind
   many helper processes is still found. Queue delivery leaves the frontmost
-  app alone. Opening an unloaded thread still waits for the existing idle gate.
+  app alone. Unloaded threads follow the away policy.
 - **The board panel is for an explicit human request.** Its tool description
   directs routine status to `check_in`, and board invocations are logged with
   the caller and view, without tokens or message bodies.

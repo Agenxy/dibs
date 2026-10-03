@@ -33,6 +33,8 @@
 // be delivered sat waiting out its deadline while the board said "delivered",
 // and the operator asked why they never saw anything. Checking has to be
 // possible without raising a banner, or the check is itself an interruption.
+import IOKit
+import CoreGraphics
 import AppKit
 import Foundation
 import UserNotifications
@@ -47,6 +49,85 @@ func receipt(_ state: String) {
 }
 
 let args = Array(CommandLine.arguments.dropFirst())
+
+// These modes use the already signed helper without asking for notification
+// permission or drawing UI. An older helper refuses them; callers must not
+// fall back to an activating open when they are unavailable.
+func hidIdleSeconds() -> Double? {
+    let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOHIDSystem"))
+    guard service != 0 else { return nil }
+    defer { IOObjectRelease(service) }
+    guard let value = IORegistryEntryCreateCFProperty(service, "HIDIdleTime" as CFString,
+                                                     kCFAllocatorDefault, 0)?.takeRetainedValue() as? NSNumber
+        else { return nil }
+    let seconds = value.doubleValue / 1_000_000_000
+    return seconds.isFinite && seconds >= 0 ? seconds : nil
+}
+
+func deskState() -> [String: Any] {
+    let session = CGSessionCopyCurrentDictionary() as? [String: Any]
+    var count: UInt32 = 0
+    let status = CGGetOnlineDisplayList(0, nil, &count)
+    var displays = [CGDirectDisplayID](repeating: 0, count: Int(count))
+    let listed = CGGetOnlineDisplayList(count, &displays, &count)
+    let idle = hidIdleSeconds()
+    return [
+        "idle_known": idle != nil,
+        "idle_seconds": idle ?? 0,
+        "session_known": session != nil,
+        "locked": session?["CGSSessionScreenIsLocked"] as? Bool ?? false,
+        "display_known": status == .success && listed == .success && count > 0,
+        "displays_asleep": !displays.isEmpty && displays.allSatisfy { CGDisplayIsAsleep($0) != 0 },
+        "frontmost_pid": NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
+    ]
+}
+
+func isAway(_ state: [String: Any], minIdle: Double) -> Bool {
+    return (state["session_known"] as? Bool == true && state["locked"] as? Bool == true)
+        || (state["display_known"] as? Bool == true && state["displays_asleep"] as? Bool == true)
+        || (state["idle_known"] as? Bool == true && (state["idle_seconds"] as? Double ?? -1) >= minIdle)
+}
+
+func printDesk(_ state: [String: Any]) {
+    guard let data = try? JSONSerialization.data(withJSONObject: state, options: [.sortedKeys]),
+          let text = String(data: data, encoding: .utf8) else { exit(2) }
+    print(text)
+}
+
+if args.first == "--desk-state" {
+    printDesk(deskState())
+    exit(0)
+}
+
+if args.first == "--open-away" {
+    guard args.count == 3,
+          let minIdle = Double(args[2]), minIdle.isFinite, minIdle >= 0,
+          let url = URL(string: args[1]),
+          args[1].range(of: #"^(codex://threads/[A-Za-z0-9-]{1,128}|claude://code/continue\?session=local_[A-Za-z0-9-]{1,128})$"#,
+                       options: .regularExpression) != nil else { exit(2) }
+    guard isAway(deskState(), minIdle: minIdle) else { exit(3) }
+    let previous = NSWorkspace.shared.frontmostApplication
+    guard previous != nil else { exit(2) }
+    // Check again at the actual open boundary. The waiter cannot authorize an
+    // open after the person returned between its probe and this invocation.
+    guard isAway(deskState(), minIdle: minIdle) else { exit(3) }
+    let opened = NSWorkspace.shared.open(url)
+    guard opened else { exit(2) }
+    // URL handling may activate the recipient more than once while loading.
+    // Restore only while away: once present, choosing a frontmost app is theirs.
+    var restored = false
+    for _ in 0..<24 {
+        Thread.sleep(forTimeInterval: 0.25)
+        guard isAway(deskState(), minIdle: minIdle) else { break }
+        if NSWorkspace.shared.frontmostApplication?.processIdentifier != previous?.processIdentifier {
+            restored = previous?.activate(options: []) ?? false
+        }
+    }
+    printDesk(["opened": true, "restored": restored,
+               "previous_pid": previous!.processIdentifier,
+               "frontmost_pid": NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0])
+    exit(0)
+}
 
 if args.first == "--status" {
     let centre = UNUserNotificationCenter.current()

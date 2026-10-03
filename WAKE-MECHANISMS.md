@@ -281,11 +281,11 @@ terminal stays out of the app.
 **Without stealing the screen (2026-10-01).** Opening a thread brings the app
 to the front, whatever is passed: `open -g` (do not activate) still had ChatGPT
 in front within 250ms, and handing focus back to the previous app lost the
-race three times in six seconds as the thread loaded. So the open waits until
-the person has been idle for `[wake] open_app_after_idle` (2 minutes by
-default), read from IOKit's HIDIdleTime, which needs no permission. A thread
-the app already holds is never opened, so this costs latency only on the
-first wake per thread per app run.
+race three times in six seconds as the thread loaded. So the open waits for known screen lock, sleeping online displays, or
+`[wake] open_app_after_idle` (10 minutes by default). Unknown observations leave
+the notice queued. The signed native helper rechecks those signals before
+opening and restores the previous frontmost app while the person remains away.
+Loaded threads receive queue-only delivery and are never opened again.
 
 For an agent on another machine the app is on that machine, so the hub sends
 the surface on the wake request and `dibs host-bridge` opens the thread there.
