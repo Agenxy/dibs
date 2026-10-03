@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -13,12 +15,16 @@ import (
 
 // Observe the constructor-owned ciphertext temp, not a flag set by the test.
 // SIO flushes a full 64KiB segment only after accepting at least one more byte.
-// While the upload owns its ticket lock HEAD deliberately returns 409, so it
-// cannot report the offset yet; its round trips provide event-driven waiting.
-func waitForDaemonUploadReceipt(t *testing.T, f *cloudFixture, target string) {
+// Do NOT use HEAD as a receipt probe: it takes the same ticket lock as PATCH
+// and can win before PATCH arrives, causing the very upload it observes to be
+// refused with 409. Only observe the store; HEAD is safe after the raw close.
+func waitForDaemonUploadReceipt(t *testing.T, f *cloudFixture) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
+	tick := time.NewTicker(5 * time.Millisecond)
+	defer tick.Stop()
+	var largest int64
 	for {
 		entries, err := os.ReadDir(filepath.Join(f.dir, "blobs"))
 		if err != nil {
@@ -32,22 +38,37 @@ func waitForDaemonUploadReceipt(t *testing.T, f *cloudFixture, target string) {
 			if err != nil {
 				t.Fatalf("setup: staging evidence unavailable: %v", err)
 			}
+			largest = max(largest, info.Size())
 			if info.Size() > 64*1024 {
 				return // a real encrypted package reached the daemon's file
 			}
 		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodHead, target, nil)
-		if err != nil {
-			t.Fatal(err)
+		select {
+		case <-tick.C:
+		case <-ctx.Done():
+			t.Fatalf("setup: no encrypted package staged before cutting the connection (largest stage %d bytes): %v", largest, ctx.Err())
 		}
-		response, err := f.public.Client().Do(req)
-		if err != nil {
-			t.Fatalf("setup: no bytes staged before cutting the connection: %v", err)
-		}
-		_ = response.Body.Close()
-		if response.StatusCode != http.StatusConflict && response.StatusCode != http.StatusNoContent {
-			t.Fatalf("setup: upload refused before bytes were staged: HTTP %d", response.StatusCode)
-		}
+	}
+}
+
+const (
+	uploadSetupFailureEnv    = "DIBS_TEST_UPLOAD_SETUP_FAILURE"
+	uploadSetupFailureMarker = "deliberate upload setup failure with an active incomplete request"
+)
+
+// Enter through the same TLS/public-listener path as the resumability test.
+// A setup Fatal must close its socket before httptest.Server.Close tries to
+// drain its incomplete body. A timeout or an earlier setup failure is NOT proof.
+func TestPublicTransferSetupFailureClosesRawConnection(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	child := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestPublicTransferResumesAfterBrokenConnection$", "-test.timeout=30s")
+	child.Env = append(os.Environ(), uploadSetupFailureEnv+"=1")
+	out, err := child.CombinedOutput()
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != 1 || ctx.Err() != nil ||
+		!strings.Contains(string(out), uploadSetupFailureMarker) || strings.Contains(string(out), "test timed out") {
+		t.Fatalf("setup failure did not exit normally through cleanup: %v\n%s", err, out)
 	}
 }
 
