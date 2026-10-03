@@ -43,9 +43,10 @@ func splitArgs(s string) []string {
 // ChatGPT app keeps every `codex queue` message and releases one per turn
 // end, so wakes queued while a thread was not loaded drained later as a run of
 // empty turns: codex-k7-0 got "a new request is waiting." three times in
-// thirty seconds with nothing in its inbox (k7-dev, Dibs #5052). Once the
-// agent shows a sign of life after the wake, the next one goes.
+// thirty seconds with nothing in its inbox (k7-dev, Dibs #5052). Only a new
+// prompt/start hook is a fallback receipt; tool and MCP traffic are not.
 func TestASecondWakeIsNotQueuedBehindOneNotYetDelivered(t *testing.T) {
+	t.Setenv("DIBS_DIR", t.TempDir())
 	touch, err := filepath.Abs("/usr/bin/touch")
 	if _, serr := os.Stat(touch); err != nil || serr != nil {
 		t.Skip("no /usr/bin/touch on this platform")
@@ -116,7 +117,7 @@ func TestASecondWakeIsNotQueuedBehindOneNotYetDelivered(t *testing.T) {
 		t.Error("a second wake was queued behind one the agent has not picked up: each " +
 			"later becomes an empty turn")
 	}
-	// The agent shows up: its queued wake was delivered.
+	// An ordinary MCP call during a running turn is not a queue receipt.
 	if _, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: worker["token"].(string)}); err != nil {
 		t.Fatal(err)
 	}
@@ -124,6 +125,16 @@ func TestASecondWakeIsNotQueuedBehindOneNotYetDelivered(t *testing.T) {
 		t.Fatal(err)
 	}
 	send("q3")
+	if woke() {
+		t.Error("an MCP call re-armed an undelivered queued wake")
+	}
+	if _, err := e.HookPoll(ctx, contThread, "UserPromptSubmit", cwd, false, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Do(ctx, &core.Op{Kind: core.OpSweep, DeadAgents: []string{"worker"}}); err != nil {
+		t.Fatal(err)
+	}
+	send("q4")
 	if !woke() {
 		t.Error("after the agent picked up its wake, new mail woke nobody")
 	}

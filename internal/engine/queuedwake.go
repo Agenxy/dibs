@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/wakeexec"
 )
 
 // One queued wake at a time.
@@ -21,7 +22,7 @@ import (
 // the next. Reported by k7-dev as wakes with no answerable request behind
 // them, which is exactly what they were.
 //
-// So while a queued wake has not been picked up (no sign of the agent since it
+// So while a queued wake has not been picked up (no prompt/start hook since it
 // was queued), another is not added: when that one delivers, the agent checks
 // in and sees all of its mail, which is what every later wake would have
 // asked it to do. queuedWakeTTL bounds the wait, so a queued message that was
@@ -77,18 +78,23 @@ func (e *Engine) noteQueuedWake(agent string, now time.Time) {
 
 // wakeStillQueuedLocked reports whether the last command wake for this agent is
 // still waiting to be delivered. Caller holds wakers.mu, on the writer loop
-// (lastEvidenceOf reads the loop's clocks).
+// (queuedPrompt is set only by the current thread's prompt/start hook).
 func (e *Engine) wakeStillQueuedLocked(l *core.Agent, now time.Time) bool {
 	at, ok := e.wakers.queued[l.ID]
 	if !ok || now.Sub(at) >= queuedWakeTTL {
 		return false
 	}
-	return !e.lastEvidenceOf(l).After(at)
+	return !e.wakers.queuedPrompt[l.ID].After(at)
 }
 
 // holdForQueuedWakeLocked is the whole decision for wakeFor: a command route
 // that queues, with a wake still undelivered. Caller holds wakers.mu.
 func (e *Engine) holdForQueuedWakeLocked(l *core.Agent, byCommand bool, now time.Time) bool {
+	if cmd, ok := e.wakers.byHarness[wakeHarness(l)]; byCommand && ok && wakeexec.UsesQueueReceipt(cmd.argv) {
+		// The shared runner asks the real queue outside the writer loop. A
+		// cached inference here must not hide its authoritative empty result.
+		return false
+	}
 	if !byCommand || !queuesFor(l, e.wakers.byHarness) || !e.wakeStillQueuedLocked(l, now) {
 		return false
 	}
