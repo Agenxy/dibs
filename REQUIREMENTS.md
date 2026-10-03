@@ -142,6 +142,15 @@ Requirements:
   A timeout may have been received and acted on: it is an error, not a retry.
   This is the whole safety argument, and it is what keeps "survive an upgrade"
   from meaning "silently duplicate work".
+- **A startup failure can disable the session permanently.** Claude Code
+  2.1.284 failed initialization during a real upgrade on 2026-10-03 and did not
+  retry after the board returned. Startup discovery (`server/discover`, legacy
+  `initialize`, and `tools/list`) has a twenty-five-second bound, below the
+  thirty-second defaults of that Claude build and Codex 0.159.2. Mutating calls
+  keep their ten-second refused-dial retry. A harness configured with a shorter
+  startup deadline can give up first: increase its own limit (`MCP_TIMEOUT` in
+  milliseconds for Claude Code, `mcp_servers.dibs.startup_timeout_sec` for Codex)
+  if it must tolerate that downtime. Dibs does not change those settings.
 - **A subscription is re-established by re-issuing the caller's own request**,
   never by reconstructing what we think it wanted. The harness decided what it
   subscribed to; a restart does not make that our decision.

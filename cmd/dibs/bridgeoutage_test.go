@@ -22,9 +22,9 @@ import (
 // working with no board, no mail, and no claims. Measured on this machine after
 // one restart: six live sessions, zero bridge processes.
 //
-// The 10-second grace covers an upgrade, which is drain-swap-start and takes
-// milliseconds. It was never going to cover a rebuild, and a rebuild is what a
-// person actually does to a daemon.
+// Ordinary calls keep their ten-second grace. Startup discovery has a separate
+// bounded allowance: a real upgrade took longer than ten seconds and a failed
+// initialize leaves Claude Code's tools disconnected for the whole session.
 //
 // This drives the REAL loop, over real pipes, because the claim is about what
 // the process does and not about what a helper returns.

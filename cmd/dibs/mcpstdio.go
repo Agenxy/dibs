@@ -227,7 +227,7 @@ func runBridge(_ []string) error {
 // restarts a stdio MCP server: the agent lost Dibs for the rest of its session
 // and was told only that a server had disconnected. Not which one, not that its
 // board was gone, not that the mail it was waiting on would never arrive. The
-// grace window covers an upgrade measured in milliseconds; anything slower,
+// ordinary grace window covers brief outages; anything slower,
 // including an operator rebuilding the daemon they are working on, fell off
 // that cliff. Verified by doing exactly that: one restart left six live
 // sessions with no bridge process at all, and no way back short of restarting
@@ -236,6 +236,13 @@ func runBridge(_ []string) error {
 // Answering and staying up means the next call dials again, so a session
 // reattaches by itself the moment the daemon is back.
 func forward(client *http.Client, req *http.Request, line []byte, out *syncWriter, saw func(req, reply []byte)) {
+	if startupRequest(line) {
+		// Bound the whole response, not just refused dials: a listener that
+		// accepts and never answers must not outlive the harness's startup.
+		ctx, cancel := context.WithTimeout(req.Context(), startupGrace)
+		defer cancel()
+		req = req.WithContext(ctx)
+	}
 	resp, err := doWithRestartGrace(client, req, line)
 	if err != nil {
 		if reply := unreachableReply(line, err); reply != nil {
@@ -599,6 +606,22 @@ func pumpSSE(body io.Reader, out *syncWriter) {
 // test writes it.
 var upgradeGrace = 10 * time.Second
 
+// Claude Code 2.1.284 and Codex 0.159.2 both allow thirty seconds for
+// startup by default. Leave five seconds for tool discovery and delivery.
+// Only discovery has this allowance: a tools/call can mutate, even when its
+// name sounds read-only. Forward the actual daemon's contract because an old
+// bridge image (or a remote board) need not advertise the same capabilities.
+const startupGrace = 25 * time.Second
+
+func startupRequest(body []byte) bool {
+	switch methodOf(body) {
+	case "server/discover", "initialize", "tools/list":
+		return true
+	default:
+		return false
+	}
+}
+
 // dialFailed reports a request that PROVABLY never reached the daemon.
 //
 // Connection refused, and nothing else. Refused means no listener accepted the
@@ -635,7 +658,11 @@ func dialFailed(err error) bool {
 // doWithRestartGrace sends one request, waiting out a daemon that is restarting
 // and following it if it comes back somewhere else.
 func doWithRestartGrace(client *http.Client, req *http.Request, body []byte) (*http.Response, error) {
-	deadline := time.Now().Add(upgradeGrace)
+	grace := upgradeGrace
+	if startupRequest(body) {
+		grace = startupGrace
+	}
+	deadline := time.Now().Add(grace)
 	for {
 		resp, err := client.Do(req)
 		if err == nil || !dialFailed(err) || time.Now().After(deadline) {
@@ -644,7 +671,7 @@ func doWithRestartGrace(client *http.Client, req *http.Request, body []byte) (*h
 		time.Sleep(150 * time.Millisecond)
 		// A request body is read once, so it has to be rebuilt for the retry.
 		where := boardNow(req.URL)
-		next, buildErr := http.NewRequest(http.MethodPost, where, bytes.NewReader(body))
+		next, buildErr := http.NewRequestWithContext(req.Context(), http.MethodPost, where, bytes.NewReader(body))
 		if buildErr != nil {
 			return nil, err
 		}
