@@ -80,6 +80,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   IPv6 endpoint, constrained CA and bearer; it never initializes a local board
   or imports guest trust into the harness or system. Guest discovery is
   pull-only, and recovery uses the recipe's nonce or an isolated private store.
+  A corrupt, unsafe or contended legacy recovery store now refuses only that
+  registration before HTTP, with a cause-specific corrective hint and no
+  private path/nonce in the reply. The bridge stays alive for later calls and
+  never retries the registration or fabricates a notification response.
   Published release-backed recipes and cloud/WAN acceptance remain pending;
   this source change does not make the existing native-client recipe verified.
 

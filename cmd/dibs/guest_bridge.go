@@ -67,10 +67,12 @@ func runGuestBridge(file string) error {
 		if len(line) == 0 {
 			continue
 		}
-		line, rerr = guestPrepareNonce(line, file, recipe)
+		prepared, rerr := guestPrepareNonce(line, file, recipe)
 		if rerr != nil {
-			return rerr
+			guestWriteReply(out, guestNonceReply(line, rerr))
+			continue
 		}
+		line = prepared
 		req, rerr := http.NewRequestWithContext(ctx, http.MethodPost, recipe.Endpoint, bytes.NewReader(line))
 		if rerr != nil {
 			return fmt.Errorf("guest request: %w", rerr)
