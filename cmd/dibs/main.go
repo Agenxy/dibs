@@ -998,6 +998,7 @@ type (
 		ProcAlive   bool      `json:"proc_alive"`
 		StaleReason string    `json:"stale_reason,omitempty"`
 		LastSeen    time.Time `json:"last_seen"`
+		SeenSource  string    `json:"seen_source,omitempty"`
 		// Work is what the agent is DOING (idle, working, declared, waiting, stalled),
 		// derived from its declarations and what the daemon has seen, beside
 		// Status, which is about its process. A Codex agent in the ChatGPT app

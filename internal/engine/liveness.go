@@ -48,17 +48,45 @@ import (
 //
 // Must run inside the loop: it reads the ephemeral maps.
 func (e *Engine) lastEvidenceOf(l *core.Agent) time.Time {
+	at, _ := e.lastEvidenceWithSource(l)
+	return at
+}
+
+type bootEvidence struct {
+	at      time.Time
+	created uint64
+}
+
+// Presentation provenance of the same timestamp used by the sweep. Boot grace
+// stays valid for liveness, but is never presented as an observed client call.
+func (e *Engine) lastEvidenceWithSource(l *core.Agent) (time.Time, string) {
 	if l == nil {
-		return time.Time{}
+		return time.Time{}, "none"
 	}
 	at := l.LastCoordination
-	if t, ok := e.seen[l.ID]; ok && t.After(at) {
-		at = t
+	source := "ledger_activity"
+	if at.IsZero() {
+		source = "none"
+	}
+	if t, ok := e.seen[l.ID]; ok && (t.After(at) || t.Equal(at)) {
+		if t.After(at) {
+			at = t
+		}
+		source = "activity"
+		if grace, ok := e.bootGrace[l.ID]; ok && grace.created == l.CreatedSerial && grace.at.Equal(t) {
+			source = "boot_grace"
+		}
 	}
 	if t, ok := e.hookAlive[l.ID]; ok && t.After(at) {
 		at = t
+		source = "harness_hook"
 	}
-	return at
+	// Acting operations often stamp the durable checkpoint at the exact same
+	// time as contact. The direct observation is the stronger provenance then.
+	if contact, ok := e.contact[l.ID]; ok && contact.created == l.CreatedSerial && contact.at.Equal(at) {
+		source = "authenticated_contact"
+	}
+	return at, source
 }
 
 // noteHookAlive records that a harness hook fired for this agent.

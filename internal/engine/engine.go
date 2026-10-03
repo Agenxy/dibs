@@ -61,6 +61,10 @@ type Engine struct {
 	// Actual model contact, fenced to the row incarnation; boot and registration
 	// grace are not authenticated model calls. See contact.go.
 	contact map[string]contactEvidence
+	// Which seen stamps were granted at boot rather than observed. This map
+	// contains only the bounded startup roster and is fenced to its incarnations.
+	// A real seen stamp supersedes it; the bounded map needs no runtime trim.
+	bootGrace map[string]bootEvidence
 	// hookAlive: when a harness lifecycle hook last fired for this agent, of
 	// ANY kind, including the finishing ones. The daemon's own evidence that a
 	// session is there, as against anything the agent chose to tell it. See
@@ -393,6 +397,10 @@ func (e *Engine) boot(now time.Time) {
 		}
 		if now.Sub(l.LastCoordination) <= e.state.Limits.AgentTTL {
 			e.seen[id] = now // one TTL of boot grace, evidence-backed
+			if e.bootGrace == nil {
+				e.bootGrace = map[string]bootEvidence{}
+			}
+			e.bootGrace[id] = bootEvidence{at: now, created: l.CreatedSerial}
 		} else {
 			op.StaleAgents = append(op.StaleAgents, id)
 		}
