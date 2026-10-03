@@ -746,6 +746,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 					"without redirecting mail meant for it"
 			}
 		}
+		note += s.shadowedNameNote(want, op.Name) // see address.go
 		note += ". Others will address you as " + id + ". If that older agent is YOU, " +
 			"reattach instead: register again with the same name and the same nonce, " +
 			"or the same name and session_id, and you get the agent and its mail back " +
@@ -956,8 +957,16 @@ func (s *State) applyUpdate(l *Agent, op *Op) (Result, []Event, error) {
 					"sharing a name redirects mail between them", op.Name, other.ID)
 		}
 		res["renamed_from"] = l.Name
-		res["address"] = "your id is still " + l.ID + " and that is what others address: " +
-			"a rename changes the label humans read, never where your mail arrives"
+		// WHAT THIS USED TO SAY was "a rename changes the label humans read,
+		// never where your mail arrives", and its second half stopped being true
+		// when the name became an address. The id is still what never moves,
+		// which is the part that matters and the part a rename must not put at
+		// risk; the news is that the new name works too, and that the OLD one
+		// has stopped working unless it was also the id.
+		res["address"] = "your id is still " + l.ID + ", it never changes, and mail already " +
+			"addressed to it still arrives. Peers may now address you as " + op.Name +
+			" as well. What no longer reaches you is the name you just gave up (" + l.Name +
+			"), unless that was your id: tell anyone expecting to find you under it"
 		l.Name = op.Name
 	}
 	l.Description = op.Description

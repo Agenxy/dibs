@@ -19,7 +19,26 @@ import "strings"
 // Admit for what an unbounded one did to the ledger.
 const MaxFingerprintBytes = 300
 
-// Admit rejects an op arriving from a CALLER. Not called during replay.
+// Admit checks both shape and current-state constraints at production ingress.
+// Replay calls Apply directly and never reaches this method.
+func (s *State) Admit(op *Op) error {
+	if err := Admit(op, s.Limits); err != nil {
+		return err
+	}
+	if op.Kind != OpUpdate || op.Name == "" {
+		return nil
+	}
+	l := s.AgentByToken(op.Token)
+	if l == nil || l.Gone() || op.Name == l.Name {
+		// Preserve the fold's authentication error, and don't retroactively
+		// refuse an unchanged label a historical rename already published.
+		return nil
+	}
+	return s.nameIsAnotherAddress(op, l)
+}
+
+// Admit validates a caller op's shape. State.Admit adds current-state checks.
+// Neither is called during replay.
 //
 // The distinction is the whole point, and it cost a daemon its own history to
 // learn: this check first went into Apply, and Apply is also the fold that

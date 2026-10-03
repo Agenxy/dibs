@@ -484,12 +484,18 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	if op.Agent != nil {
 		op.Agent.HostID = e.canonicalHost(op.Agent.HostID)
 	}
+	// Canonicalize agent references before validating relationships between
+	// them: a name and its own ID must not disguise a self-merge.
+	addressed, err := e.resolveAgentRefs(op)
+	if err != nil {
+		return nil, err
+	}
 
 	// Ingress-only validation. Deliberately NOT inside Apply: Apply is also the
 	// fold that replays the ledger, so a rule added there binds history
 	// retroactively and a daemon can refuse to replay ops it wrote itself.
 	// See core.Admit.
-	if err := core.Admit(op, e.state.Limits); err != nil {
+	if err := e.state.Admit(op); err != nil {
 		return nil, err
 	}
 
@@ -510,22 +516,6 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// directly above.
 	if !op.HumanMint && e.wouldTakeHumanIdentity(op) {
 		return nil, core.ErrHumanIdentity
-	}
-
-	// `to: "coordinator"` reaches whoever holds the role.
-	//
-	// An agent asking for its identity back does not know, and should not have
-	// to look up, which of sixteen rows is the coordinator today. The role is
-	// the address; the id is an implementation detail that changes when somebody
-	// hands the role over. Resolved at ingress, so the LEDGER records the agent
-	// it actually went to: a message addressed to a role, replayed after the
-	// role moved, would otherwise be delivered to somebody it was never sent to.
-	if op.Kind == core.OpSendMessage && op.To == core.RoleCoordinator {
-		who := e.state.CoordinatorID()
-		if who == "" {
-			return nil, core.ErrNoCoordinator
-		}
-		op.To = who
 	}
 
 	// An agent whose bridge cannot see the harness session id adopts the one
@@ -1021,6 +1011,10 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 			res["matching"] = st.Phase
 			res["matching_hint"] = matchingHint(st)
 		}
+	}
+	// WHICH ID THE WRITTEN NAME REACHED. See addressedNote.
+	if res != nil && len(addressed) > 0 {
+		res["addressed"] = addressedNote(op, addressed)
 	}
 	// Every authenticated write carries word of anything waiting.
 	//

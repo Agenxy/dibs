@@ -16,6 +16,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Renamed agents can be addressed by their current label.** Agent IDs remain
+  permanent mailbox, queue and contact keys. Names resolve to IDs at ingress;
+  exact IDs and send-time human/coordinator roles win. Ambiguous names are
+  refused with candidate IDs, and queue locks and authorized mailbox reads
+  accept names too. New renames onto another row's ID are refused at admission;
+  historical renames still replay without an added ledger flag.
+
 - **Human notifications leave window focus alone.** Questions and requests
   stay on native banners while Focus is on. Automatic decision windows are
   removed. Send results and mail receipts distinguish pending from actual OS

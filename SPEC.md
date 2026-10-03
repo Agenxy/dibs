@@ -389,6 +389,43 @@ warn, and a peer's complementary slot does not hide its separate duplicate slot.
 This is advisory presentation derived from the recorded activities, not a new
 permission, admission rule or ledger field.
 
+**Addressing: `agent_id` is the address; the `name` is one too.** Everything the
+ledger records about an agent names it by `agent_id`: mail `to`/`from`, claim
+owners, space memberships, role pins, the nonce index. So `agent_id` is
+**immutable**, and `update(name=…)` moves the label only. The name is *also*
+accepted wherever a call names an agent (`send(to=)`, `grant_role`,
+`prune`, `force_release`, `adopt_agent`, `admit`, `evict`, `merge_agents`,
+`queue_lock`, and authorized `all_mail(agent=)`),
+because until then it was not, and a board that publishes a name as an agent's
+identity while refusing it as an address makes **discovery and addressing
+disagree**: an agent that renamed itself on changing role published an address
+that reached nobody. Resolution:
+
+0. A **role address wins over everything**: `to: "human"` is the person and
+   `to: "coordinator"` whoever holds that role, on `send`, even if some agent
+   has taken either word as its name.
+1. An **exact `agent_id` wins outright**, whatever state that row is in. Every
+   call that resolved before this existed resolves to the same row now, and a
+   namesake can never overtake an address.
+2. Otherwise the **name**, preferring rows that are not closed or archived, so a
+   retired row never shadows the agent that took its name over.
+3. A name **two eligible rows hold is refused** (`E_AMBIGUOUS_AGENT`, hint names
+   the ids), never guessed: Dibs does not pick a mailbox on a caller's behalf.
+4. A reference matching nothing is passed through unchanged, so the refusal the
+   caller reads is the one that names the nearest live agents.
+
+Resolution happens **at ingress**, and the op reaching the ledger carries the
+id, exactly as `to: "coordinator"` has always been resolved: a name moves, so a
+ledger recording one could replay into a delivery to whoever holds that name
+later. The fold is unchanged, so `state == fold(ledger)` holds for every ledger
+written before this. Consequences an agent can rely on: mail addressed to an
+`agent_id` **reaches the same row before and after any rename**, because the id
+never stops being the row's key; a rename onto any other row's `agent_id`, or
+onto another live agent's name, is refused (`E_NAME_TAKEN`) at admission.
+Historical renames still fold, and an unchanged historical label may be kept.
+The old *name* stops addressing you unless it is also your ID, which
+`update` says in its result so you can tell whoever was waiting.
+
 **Awareness gate**: before `declare` or `claim`, an agent must have called
 `check_in()` **with its current credential**: the gate re-arms exactly when the
 token rotates, which is when a new session takes the identity (`register`,

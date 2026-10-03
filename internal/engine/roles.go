@@ -98,14 +98,23 @@ func (e *Engine) AllMail(ctx context.Context, token string, census bool, agent s
 		if errRes != nil {
 			return errRes
 		}
-		if census {
-			if !l.IsCoordinator() {
-				return core.Result{"error": core.ErrNotCoordinator}
-			}
-			return core.Result{"census": e.mailboxCensus(agent), "serial": e.state.Serial}
+		// AUTHORISATION FIRST, both branches of it, so nothing below answers a
+		// caller that may not ask. The two gates were inside the branches and
+		// the selector had nothing to resolve; now that it does, resolving
+		// before them would let any authenticated agent learn from the refusal
+		// which ids share a name.
+		if census && !l.IsCoordinator() {
+			return core.Result{"error": core.ErrNotCoordinator}
 		}
-		if !l.IsAdmin() {
+		if !census && !l.IsAdmin() {
 			return core.Result{"error": core.ErrNotAdmin}
+		}
+		agent, errRes = e.mailboxSelector(agent)
+		if errRes != nil {
+			return errRes
+		}
+		if census {
+			return core.Result{"census": e.mailboxCensus(agent), "serial": e.state.Serial}
 		}
 		// `agent` selects one mailbox here as it does for the census. The
 		// schema said so and this path never read it, so an admin asking for
@@ -127,6 +136,29 @@ func (e *Engine) AllMail(ctx context.Context, token string, census bool, agent s
 		return nil, e2
 	}
 	return res, nil
+}
+
+// mailboxSelector resolves all_mail's `agent` into the id a mailbox is keyed on.
+//
+// A NAME NAMES A MAILBOX HERE TOO. This is a read rather than an op, so it never
+// reaches the ingress step that resolves an address (see addressing.go), and it
+// is the call a coordinator makes about an agent it has just watched change
+// role: `agent` is matched against a message's `to`, which is an id, so a name
+// selected nothing and the answer was zeros for a mailbox that was not empty,
+// which is worse than an error.
+//
+// Its own function because it runs after the authorisation gates and before
+// either branch uses the value, and because AllMail is at the complexity ceiling
+// the linter enforces. Runs ON the loop, like everything inside e.query.
+func (e *Engine) mailboxSelector(agent string) (string, core.Result) {
+	id, ambiguous := e.state.AgentRef(agent)
+	if len(ambiguous) > 0 {
+		return "", core.Result{"error": core.ErrAmbiguousAgent(agent, ambiguous)}
+	}
+	if id == "" {
+		return agent, nil // nothing to resolve: the caller's own string, as before
+	}
+	return id, nil
 }
 
 // MailboxCensus is what a coordinator may know about a mailbox it cannot read:
@@ -283,37 +315,29 @@ func (e *Engine) ResolveConfiguredAgent(ctx context.Context, nameOrID string) (s
 // so a test calling the wrapper would block forever rather than fail.
 //
 // Callers run on the writer loop.
+//
+// THE RULE ITSELF IS core.LiveAgentRef's, and used to be eight hand-written
+// lines here. core imports nothing, so everything may import core, and this
+// function had a copy of a resolution rule that the addressing path then needed
+// too: two copies of one rule is how a fix lands at one call site and not its
+// siblings. What the copy knew that is worth keeping is why a role pin is the
+// LIVE variant. An exact id wins outright, because an operator who wrote the id
+// meant the id, but a GONE one must not: a retired `fleet-lead` shadowed the
+// live `fleet-lead-2` that had taken the name over, so the documented handover
+// resolved the predecessor forever. Addressing makes the opposite choice for the
+// opposite reason, and core.AgentRef says so where the choice is made.
 func (e *Engine) resolveConfiguredAgentDecision(nameOrID string) core.Result {
 	if e.state == nil || nameOrID == "" {
 		return core.Result{}
 	}
-	// An exact id wins outright. An operator who wrote the id meant the id, and
-	// it cannot be ambiguous.
-	//
-	// A GONE ONE DOES NOT. The by-name branch below already refuses closed and
-	// archived agents and this did not, and a name IS the first agent's id: a
-	// retired `fleet-lead` therefore shadowed the live `fleet-lead-2` that had
-	// taken the name over, so the documented handover resolved the predecessor
-	// forever and the successor was never considered. It fails closed, at the
-	// pin, which is the right direction and still leaves the board without the
-	// coordinator its config names.
-	if l, ok := e.state.Agents[nameOrID]; ok && !l.Gone() {
-		return core.Result{"id": nameOrID}
-	}
-	var byName []string
-	for id, l := range e.state.Agents {
-		if l != nil && l.Name == nameOrID && !l.Gone() {
-			byName = append(byName, id)
-		}
-	}
-	sort.Strings(byName)
-	switch len(byName) {
-	case 0:
+	id, ambiguous := e.state.LiveAgentRef(nameOrID)
+	switch {
+	case len(ambiguous) > 0:
+		return core.Result{"ambiguous": ambiguous}
+	case id == "":
 		return core.Result{}
-	case 1:
-		return core.Result{"id": byName[0]}
 	}
-	return core.Result{"ambiguous": byName}
+	return core.Result{"id": id}
 }
 
 // AgentByIdentity finds the agent whose credential has this fingerprint, on

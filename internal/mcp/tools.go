@@ -297,8 +297,7 @@ var toolDefs = func() []map[string]any {
 			"description": "Message an agent or \"human\" (OS-owned mailbox). Human sends report human_route/" +
 				"human_relay_count; read_mail supplies receipts. Questions/requests expire with a diagnosis.",
 			"inputSchema": obj(map[string]any{
-				"token": tok, "to": str("recipient agent id, \"human\" for the person, or " +
-					"\"coordinator\" for whoever holds that role"),
+				"token": tok, "to": str("agent id or name, \"human\" for the person, or \"coordinator\" for that role"),
 				"type": msgType,
 				"body": str("message body"), "deadline_s": num("response deadline in seconds (default 600; max 7200, or 7 " +
 					"days to persistent agents)"),
@@ -418,7 +417,7 @@ var toolDefs = func() []map[string]any {
 			"name":        "queue_lock",
 			"description": "Coordinator/admin: set queue_order_lock on an agent or task. Starting stays the recipient's choice.",
 			"inputSchema": obj(map[string]any{
-				"token": tok, "agent": str("queue owner id"),
+				"token": tok, "agent": str("queue owner id or name"),
 				"msg_serial": num("queued request; omit for whole queue"),
 				"locked":     map[string]any{"type": "boolean", "description": "true grants; false revokes"},
 			}, "token", "agent", "locked"),
