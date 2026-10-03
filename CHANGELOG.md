@@ -7,6 +7,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Restart grace is labelled as grace, not a fresh sighting.** The board API
+  carries the origin of its seen timestamp, and the CLI distinguishes boot
+  grace, authenticated contact, harness hooks and ledger activity. Liveness
+  clocks and wake decisions stay the same.
+
 - **A stale harness PID no longer defeats a fresh authenticated call.** Inbox
   reads and model mutations keep the identity active through its configured idle
   lease, while diagnostics continue to report the old process as dead. A silent

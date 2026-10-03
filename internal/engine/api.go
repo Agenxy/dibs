@@ -805,7 +805,7 @@ func (e *Engine) decoratedBoard() core.Result {
 		// the three clocks, so a board could show a fresh last_seen beside a
 		// dormant status and a reminder saying nobody had been in touch for
 		// hours, all true of different clocks. See lastEvidenceOf.
-		lm["last_seen"] = e.lastEvidenceOf(l)
+		lm["last_seen"], lm["seen_source"] = e.lastEvidenceWithSource(l)
 		lm["status"] = l.Status
 		// HOW IT IS REACHED, when that is going wrong. A worker read `active`
 		// on the board while every wake for it failed; see wakefail.go.

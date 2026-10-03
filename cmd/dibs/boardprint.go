@@ -34,13 +34,30 @@ func printAgents(agents []boardAgent) {
 		fmt.Printf("  %s  %s  %s\n",
 			ui.Accent(ui.Pad(agentLabel(l), nameW)),
 			ui.Pad(agentStatus(l), statusW),
-			ui.Dim("seen "+ago(l.LastSeen)+where))
+			ui.Dim(evidenceLabel(l.SeenSource)+" "+ago(l.LastSeen)+where))
 		if l.Description != "" {
 			fmt.Println("    " + ui.Dim(l.Description))
 		}
 		for _, sl := range l.Slots {
 			fmt.Println(slotLine(sl))
 		}
+	}
+}
+
+func evidenceLabel(source string) string {
+	switch source {
+	case "boot_grace":
+		return "boot grace"
+	case "authenticated_contact":
+		return "contact"
+	case "harness_hook":
+		return "hook"
+	case "ledger_activity":
+		return "ledger activity"
+	case "activity":
+		return "activity"
+	default:
+		return "seen" // an older daemon supplied no provenance
 	}
 }
 

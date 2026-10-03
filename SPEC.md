@@ -81,6 +81,8 @@ State is partitioned into three tiers, and the tier boundary is normative:
    restart. Ephemeral facts influence replayable state only by being **recorded as
    decisions inside ledgered ops** (sweep's `stale_agents`/`dead_agents`, wake ops).
 3. **Presentation annotations**: `last_seen` (freshest activity incl. reads),
+   `seen_source` (boot grace, authenticated contact, harness hook, ledger activity,
+   other runtime activity, or none),
    `proc_alive`, and row `host` (one display label per known host identity;
    raw `agent.host` retained, selection described in docs/NETWORK.md §2).
    These appear in board/CLI/web *views*, computed live by the engine at
@@ -352,7 +354,7 @@ you can measure is never improved by asking.
 **Agent**: replayable: `{agent_id, kind, name, description, pid?, status,
 created_serial, acked_serial, activation, last_coordination_at,
 stale_since?/dormant_since?, slots}`; presentation (view-only, §2): `last_seen,
-proc_alive`. Public; writable only by token holder. `agent_id` = uniquified name
+seen_source, proc_alive`. Public; writable only by token holder. `agent_id` = uniquified name
 slug. `activation` is a generation counter incremented by each `resume` (§5).
 `last_coordination_at` is the agent's **latest durable coordination checkpoint**: a
 conservative lower bound on its own last accepted authenticated call (it may trail
@@ -441,6 +443,16 @@ and nothing else: the board wakes an agent and does not steer one. See
   keep an announcement outstanding, rather than blocked, for up to `idle_ttl`
   (45 minutes by default). Once contact expires, normal crash detection and the
   blocked-announcement diagnosis resume at the next sweep.
+- **Seen evidence carries its origin.** Boot grants grace from a recent durable
+  checkpoint; it is not an observed call. `seen_source: "boot_grace"` labels that
+  timestamp explicitly, and the CLI says "boot grace" rather than "seen".
+  Actual token contact becomes `authenticated_contact`; later lifecycle hooks
+  become `harness_hook`. A replayed checkpoint without a newer observation is
+  `ledger_activity`, and other runtime stamps are `activity`. Losing ephemeral
+  provenance falls back to the durable evidence, never invents a client call.
+  These labels do not change the timestamp, lease, sweep or wake decision.
+  Process/session refresh remains a separate design-only proposal in
+  [docs/PROCESS-REFRESH-DESIGN.md](docs/PROCESS-REFRESH-DESIGN.md).
 - **Sweep decisions are recorded** (`stale_agents`, `dead_agents`, `alive_pids`),
   replay applies decisions, never re-probes (§2). Quiet sweeps are unledgered.
 - **Lifecycle clocks run from ledgered transitions, not ledgered activity.** The
