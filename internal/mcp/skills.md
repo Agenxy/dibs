@@ -318,6 +318,12 @@ receiving native peer turns, another watcher adds no delivery guarantee.
   dismissal/defer, `failed` carries the error, and `answered` is a real response.
   Queued/pending is unconfirmed, older helpers may supply no receipt, and status
   is `unknown` after restart until new evidence arrives (answers survive replay).
+  Human notifications never open a decision window automatically. Local desktop
+  sends also return `human_delivery`: `posted: false` until the actual helper
+  receipt, then `posted: true`. An active macOS Focus adds `shown: "unknown"`,
+  its name and the person's own app-exception hint. Focus detection is not proof
+  the banner was hidden. The mail receipt keeps the posting-time Focus snapshot;
+  neither posting nor absence of a Focus caveat proves that the person saw it.
 
 - **Every result names anything waiting for you.** Any call you make, with a
   token, carries a `waiting` line when you have unread mail, an announcement you

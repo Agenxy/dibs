@@ -291,9 +291,11 @@ not yet been observed. A missing frontmost app does not prevent an away opening;
 its receipt reports previous_pid=0 and restored=false.
 Loaded threads receive queue-only delivery and are never opened again.
 
-This policy governs agent wakes. A question or request addressed to the HUMAN
-opens a decision window when Focus is on. That intentional route asks the person
-for a decision and can change focus; it remains separate from agent wake opening.
+This policy governs agent wakes. Human questions and requests post native
+notifications without opening a decision window, including while Focus is on.
+Only pressing an answer button can open an answer field or choice list.
+An active Focus is reported as visibility unknown, never proof that the banner
+was hidden or seen. The person controls app exceptions in System Settings.
 
 For an agent on another machine the app is on that machine, so the hub sends
 the surface on the wake request and `dibs host-bridge` opens the thread there.

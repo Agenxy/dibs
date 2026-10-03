@@ -31,7 +31,11 @@ func (e *Engine) Do(ctx context.Context, op *core.Op) (core.Result, error) {
 	if op != nil && op.Kind == core.OpPutBlob {
 		e.holdRegistration(&req, op.Blob)
 	}
-	return e.send(ctx, req)
+	res, err := e.send(ctx, req)
+	if err == nil && res != nil && res["human_route"] == "desktop" {
+		e.humanSendPresentation(res)
+	}
+	return res, err
 }
 
 // query runs fn inside the loop (read-consistent; may itself exec system ops).

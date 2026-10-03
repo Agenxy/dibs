@@ -7,6 +7,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Human notifications leave window focus alone.** Questions and requests
+  stay on native banners while Focus is on. Automatic decision windows are
+  removed. Send results and mail receipts distinguish pending from actual OS
+  posting and report active Focus as visibility unknown. Doctor reports this
+  as an informational state and names the person's own app-exception switch.
+
 - **Restart grace is labelled as grace, not a fresh sighting.** The board API
   carries the origin of its seen timestamp, and the CLI distinguishes boot
   grace, authenticated contact, harness hooks and ledger activity. Liveness

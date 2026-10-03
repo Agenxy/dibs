@@ -249,7 +249,7 @@ func TestDoctorDoesNotCallAJoinedBoardsMissingLedgerCorruption(t *testing.T) {
 	var bads []string
 	ok := func(msg string) { good = append(good, msg) }
 	fail := func(msg, _ string) { bads = append(bads, msg) }
-	checkLedgerAndBoard(dir, ok, fail, func(msg, _ string) {})
+	checkLedgerAndBoard(dir, ok, func(string) {}, fail, func(msg, _ string) {})
 
 	for _, b := range bads {
 		if strings.Contains(b, "ledger does not verify") {
@@ -271,7 +271,7 @@ func TestDoctorDoesNotCallAJoinedBoardsMissingLedgerCorruption(t *testing.T) {
 		t.Fatal(err)
 	}
 	bads = nil
-	checkLedgerAndBoard(local, func(string) {}, fail, func(msg, _ string) {})
+	checkLedgerAndBoard(local, func(string) {}, func(string) {}, fail, func(msg, _ string) {})
 	if len(bads) == 0 {
 		t.Error("a board directory with no ledger passed silently: the check has been " +
 			"disabled rather than scoped")
@@ -297,7 +297,7 @@ func TestDoctorDoesNotCallAJoinedBoardsMissingLedgerCorruption(t *testing.T) {
 		t.Fatal(err)
 	}
 	good, bads = nil, nil
-	checkLedgerAndBoard(damaged, ok, fail, func(msg, _ string) {})
+	checkLedgerAndBoard(damaged, ok, func(string) {}, fail, func(msg, _ string) {})
 	if strings.Contains(strings.Join(good, "\n"), "joined board") {
 		t.Errorf("a board holding a ledger with no node_id was called a join, so its "+
 			"chain was never verified: ok=%v", good)

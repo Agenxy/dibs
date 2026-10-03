@@ -41,7 +41,7 @@ func TestNoScriptInThisPackageIsBuiltFromInput(t *testing.T) {
 		}
 	}
 	// And every script really is a handler, so its arguments are data.
-	for _, s := range []string{banner, alert, prompt, pick} {
+	for _, s := range []string{banner, prompt, pick} {
 		if !strings.HasPrefix(s, "on run argv") {
 			t.Errorf("a script does not take its input as argv:\n%s", s)
 		}

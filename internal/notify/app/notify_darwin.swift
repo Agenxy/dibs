@@ -253,20 +253,6 @@ if args.first == "--delivered" {
     app.run()
 }
 
-// --ask: the same question as a banner, in a window that Focus cannot silence.
-//
-// A notification is the right shape and is not always available. Measured on the
-// machine this was written on: authorisation granted, alerts enabled, the
-// notification delivered and held by macOS, and never seen, because two Focus
-// modes were active and `timeSensitiveSetting` reports notSupported. Time
-// Sensitive is what breaks through Focus, and Apple gates it behind an
-// entitlement Dibs does not carry, signing being left to whoever installs it.
-//
-// So on that machine a request to the human could not be seen in time, by
-// construction, however correctly it was posted. This is the escalation: same
-// text, same buttons, as a window that activates. It is used only when the quiet
-// path is known to be silenced, never by default, because a service that steals
-// focus for every question is one people turn off.
 // --settings: the notification settings as one line, posting nothing.
 //
 // `--delivered` answers the same question by posting a probe, which is exactly
@@ -281,50 +267,6 @@ if args.first == "--settings" {
         done.signal()
     }
     _ = done.wait(timeout: .now() + 10)
-    exit(0)
-}
-
-if args.first == "--ask" {
-    // --out <path> may precede the rest: where to leave the answer.
-    var rest = Array(args.dropFirst())
-    var outPath: String?
-    if rest.first == "--out", rest.count >= 2 {
-        outPath = rest[1]
-        rest = Array(rest.dropFirst(2))
-    }
-    guard rest.count >= 3 else {
-        FileHandle.standardError.write("usage: dibs-notify --ask <title> <body> <button…>\n".data(using: .utf8)!)
-        exit(2)
-    }
-    let app = NSApplication.shared
-    app.setActivationPolicy(.accessory)
-    app.activate(ignoringOtherApps: true)
-
-    let alert = NSAlert()
-    alert.messageText = rest[0]
-    alert.informativeText = rest[1]
-    alert.alertStyle = .informational
-    // Added in order, and AppKit puts the first button rightmost as the default,
-    // so the caller's last-is-default convention is preserved by reversing.
-    for title in Array(rest.dropFirst(2)).reversed() {
-        alert.addButton(withTitle: title)
-    }
-    DispatchQueue.main.async {
-        if alert.window.isVisible { receipt("posted") }
-    }
-    let pressed = alert.runModal()
-    let index = pressed.rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
-    let buttons = Array(rest.dropFirst(2)).reversed().map { $0 }
-    guard index >= 0 && index < buttons.count else { receipt("dismissed"); exit(1) }
-    // Written to a FILE as well as stdout.
-    //
-    // The daemon launches this through `launchctl asuser`, which is what gives
-    // it a GUI session to draw in, and which does not carry our stdout back.
-    // The answer therefore has to be left somewhere the daemon can read it.
-    if let out = outPath {
-        try? buttons[index].write(toFile: out, atomically: true, encoding: .utf8)
-    }
-    print(buttons[index])
     exit(0)
 }
 
