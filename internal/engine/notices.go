@@ -172,7 +172,8 @@ func situationalNotice(ev core.Event) (who, text string, blocking bool) {
 		// as: "when you approve an agent's request they should be notified."
 		who, text, blocking = ev.To, answeredNotice(ev), true
 	case "message.queue_changed":
-		who, text = ev.To, fmt.Sprintf("Queue position or priority changed for request %d; read_mail has its current order", ev.Data["msg_serial"])
+		who, text = ev.To, fmt.Sprintf("Queue position or priority changed for request %d; "+
+			"read_mail has its current order", ev.Data["msg_serial"])
 	case "message.progress":
 		// Progress on work this agent asked for. NOT blocking: it is news
 		// about a task, not the answer the sender stopped for, so it arrives
@@ -438,7 +439,8 @@ func answeredNotice(ev core.Event) string {
 	serial, _ := ev.Data["msg_serial"].(uint64)
 	switch ev.Type {
 	case "message.queued":
-		return fmt.Sprintf("%s queued your request (msg %d) at #%v; accepted for later, not started", by, serial, ev.Data["queue_position"])
+		return fmt.Sprintf("%s queued your request (msg %d) at #%v; accepted for later, not started",
+			by, serial, ev.Data["queue_position"])
 	case "message.approved":
 		s := fmt.Sprintf("%s APPROVED your request (msg %d)", by, serial)
 		if g, _ := ev.Data["granted"].(string); g == core.PermRelocate {

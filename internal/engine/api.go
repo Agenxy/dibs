@@ -639,13 +639,15 @@ func (e *Engine) GetMessage(ctx context.Context, token string, serial uint64) (c
 }
 
 func (e *Engine) messageReadResult(m *core.Message) core.Result {
-	res := core.Result{"message": m, "serial": e.state.Serial}
+	res := core.Result{"message": e.queueMessageView(m), "serial": e.state.Serial}
 	if m.Owed(time.Now()) {
 		res["outstanding"] = "recipient has accepted this work and has not reported done; " + owedCall(m)
 	}
 	if m.State == core.MsgStateQueued {
 		res["queue_position"] = e.state.QueuePosition(m)
 		res["priority"] = m.EffectivePriority()
+		overdue := queueOverdue(m, time.Now())
+		res["overdue"], res["overdue_s"] = overdue > 0, overdue.Seconds()
 	}
 	if len(m.Milestones) > 0 {
 		res["milestone_reviews"] = m.MilestoneReviews()
@@ -659,7 +661,7 @@ func (e *Engine) messageReadResult(m *core.Message) core.Result {
 // noteOutcomeRead ledgers that the SENDER has read a verdict on its own
 // message, once. See the comment at its call site and issue #76.
 func (e *Engine) noteOutcomeRead(l *core.Agent, m *core.Message, token string, now time.Time) {
-	if m.From != l.ID || !m.Terminal() || m.OutcomeReadAt != 0 {
+	if m.From != l.ID || !m.Terminal() || !m.HasUnreadOutcome() {
 		return
 	}
 	_, _ = e.applyAndLedger(&core.Op{Kind: core.OpOutcomeRead, Token: token, MsgSerial: m.Serial}, now)
@@ -858,7 +860,7 @@ func (e *Engine) AllMessages(ctx context.Context) (core.Result, error) {
 	return e.query(ctx, func() core.Result {
 		out := make([]*core.Message, 0, len(e.state.Messages))
 		for _, m := range e.state.Messages {
-			out = append(out, m)
+			out = append(out, e.queueMessageView(m))
 		}
 		// Announcement bodies ride WITH the mail, and for the same reason.
 		//

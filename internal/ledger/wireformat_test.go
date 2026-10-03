@@ -501,6 +501,7 @@ func TestOpKindStringsAreFrozen(t *testing.T) {
 		"OpSetSlot":        {core.OpSetSlot, "declare"},
 		"OpClearSlot":      {core.OpClearSlot, "undeclare"},
 		"OpSendMessage":    {core.OpSendMessage, "send"},
+		"OpQueueUpdate":    {core.OpQueueUpdate, "queue_update"},
 		"OpClaim":          {core.OpClaim, "claim"},
 		"OpRelease":        {core.OpRelease, "release"},
 		"OpSweep":          {core.OpSweep, "sweep"},

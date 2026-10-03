@@ -7,6 +7,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Accepted work has an explicit task queue.** Recipients can accept requests
+  for later, reprioritise or reorder them, and start one when ready. Queued work
+  remains owed across restarts and beyond a day, without triggering work
+  continuation or stall reports. Finishing never starts the next request.
+  Coordinators, admins and the human can lock queue or task order; locks never
+  block starting. Senders receive recorded ordering news, rebuilt after restart
+  until read, and public views expose metadata without private request bodies.
+
 - **The human remains the human after a daemon restart.** Wake warnings,
   stall exemptions and adoption authority use the replayed reserved identity,
   rather than waiting for an in-memory credential cache to be filled again.
@@ -423,7 +431,7 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with who made it, and the board row shows the last one. A running agent, the
   environment it already runs in, an agent on another machine and the person's
   own row are refused.
-  The server now publishes 50 tools, including scoped cloud invitations and file transfer.
+  The server publishes scoped cloud invitations and file transfer.
 
 ### Changed
 

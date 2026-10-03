@@ -116,7 +116,7 @@ func (e *Engine) AllMail(ctx context.Context, token string, census bool, agent s
 			if agent != "" && m.To != agent {
 				continue
 			}
-			out = append(out, m)
+			out = append(out, e.queueMessageView(m))
 		}
 		return core.Result{"messages": out, "serial": e.state.Serial}
 	})

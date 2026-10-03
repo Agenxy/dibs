@@ -2,15 +2,19 @@ package mcp
 
 import (
 	"context"
-	"github.com/agenxy/dibs/internal/core"
-	"github.com/agenxy/dibs/internal/engine"
-	"github.com/agenxy/dibs/internal/humanask"
-	"github.com/agenxy/dibs/internal/ledger"
+	"encoding/json"
+	"fmt"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
+
+	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/engine"
+	"github.com/agenxy/dibs/internal/humanask"
+	"github.com/agenxy/dibs/internal/ledger"
 )
 
 func restartableQueueServer(t *testing.T, dir string) (*httptest.Server, *engine.Engine, func()) {
@@ -182,6 +186,14 @@ func TestRequestQueueThroughMCP(t *testing.T) {
 	if r["state"] != "done" {
 		t.Fatalf("done: %v", r)
 	}
+	q, ok := r["task_queue"].([]any)
+	if !ok || len(q) != 1 || q[0].(map[string]any)["msg_serial"] != urgent {
+		t.Fatalf("done did not return the remaining ordered queue: %v", r)
+	}
+	if owed, ok := r["owed_work"].([]any); !ok || len(owed) != 1 ||
+		!strings.Contains(fmt.Sprint(owed[0]), "when you choose to start") {
+		t.Fatalf("done omitted the literal next-work call: %v", r)
+	}
 	if r := read(urgent); r["message"].(map[string]any)["state"] != "queued" {
 		t.Fatalf("done started next request: %v", r)
 	}
@@ -208,5 +220,133 @@ func TestHumanHandoffHasNoAgentWakeFailureThroughMCP(t *testing.T) {
 				t.Fatalf("human handoff got agent-wake failure: %v", r)
 			}
 		})
+	}
+}
+
+func TestQueueOrderingNewsIsRebuiltUntilRead(t *testing.T) {
+	dir := t.TempDir()
+	srv, eng, stop := restartableQueueServer(t, dir)
+	lead := toolCall(t, srv, "register", map[string]any{"name": "lead", "nonce": "queue-news-lead"})["token"].(string)
+	worker := toolCall(t, srv, "register", map[string]any{"name": "worker", "nonce": "queue-news-worker"})["token"].(string)
+	send := func(priority string) float64 {
+		t.Helper()
+		r := toolCall(t, srv, "send", map[string]any{
+			"token": lead, "to": "worker", "type": "request", "body": "secret queue body", "priority": priority,
+		})
+		n, ok := r["msg_serial"].(float64)
+		if !ok {
+			t.Fatalf("send setup failed: %v", r)
+		}
+		r = toolCall(t, srv, "respond", map[string]any{"token": worker, "msg_serial": n, "disposition": "queue"})
+		if r["state"] != "queued" {
+			t.Fatalf("queue setup failed: %v", r)
+		}
+		return n
+	}
+	first := send("normal")
+	toolCall(t, srv, "read_mail", map[string]any{"token": lead, "msg_serial": first})
+	second := send("urgent") // insertion changes the first request's position
+	toolCall(t, srv, "read_mail", map[string]any{"token": lead, "msg_serial": second})
+	board, err := eng.Board(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(board)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "secret queue body") {
+		t.Fatal("queue body leaked into public board")
+	}
+	stop()
+	srv, _, stop = restartableQueueServer(t, dir)
+	notices := toolCall(t, srv, "inbox", map[string]any{"token": lead})["agent_updates"]
+	if !strings.Contains(fmt.Sprint(notices), "Queue position or priority changed") {
+		t.Fatalf("lost unread ordering news on replay: %v", notices)
+	}
+	toolCall(t, srv, "read_mail", map[string]any{"token": lead, "msg_serial": first})
+	stop()
+	srv, _, _ = restartableQueueServer(t, dir)
+	notices = toolCall(t, srv, "inbox", map[string]any{"token": lead})["agent_updates"]
+	if strings.Contains(fmt.Sprint(notices), "Queue position or priority changed") {
+		t.Fatalf("read ordering news duplicated on replay: %v", notices)
+	}
+}
+
+func TestQueueMovesWithTheMailboxAndProjectsLiveRanks(t *testing.T) {
+	srv, eng, _ := newServerWithEngine(t)
+	lead := toolCall(t, srv, "register", map[string]any{"name": "lead"})["token"].(string)
+	lost := toolCall(t, srv, "register", map[string]any{"name": "lost"})["token"].(string)
+	heir := toolCall(t, srv, "register", map[string]any{"name": "heir"})["token"].(string)
+	send := func(to, token string) float64 {
+		t.Helper()
+		mail := toolCall(t, srv, "send", map[string]any{
+			"token": lead, "to": to, "type": "request", "body": "private transferred task",
+		})
+		n, ok := mail["msg_serial"].(float64)
+		if !ok {
+			t.Fatalf("send setup: %v", mail)
+		}
+		res := toolCall(t, srv, "respond", map[string]any{"token": token, "msg_serial": n, "disposition": "queue"})
+		if res["state"] != "queued" {
+			t.Fatalf("queue setup: %v", res)
+		}
+		return n
+	}
+	first, second := send("lost", lost), send("heir", heir)
+	if _, err := eng.Do(context.Background(), &core.Op{Kind: core.OpSweep, StaleAgents: []string{"lost"}}); err != nil {
+		t.Fatal(err)
+	}
+	if res := toolCall(t, srv, "adopt_agent", map[string]any{"token": heir, "agent": "lost"}); res["__is_error"] != true || res["code"] != "E_NOT_PERMITTED" {
+		t.Fatalf("ordinary actor adopted another queue: %v", res)
+	}
+	if _, err := eng.Do(context.Background(), &core.Op{Kind: core.OpGrantRole, To: "heir", Mode: core.RoleAdmin}); err != nil {
+		t.Fatal(err)
+	}
+	res := toolCall(t, srv, "adopt_agent", map[string]any{"token": heir, "agent": "lost"})
+	if res["__is_error"] == true {
+		t.Fatalf("authorized mailbox move failed: %v", res)
+	}
+	for i, serial := range []float64{first, second} {
+		read := toolCall(t, srv, "read_mail", map[string]any{"token": heir, "msg_serial": serial})
+		message, ok := read["message"].(map[string]any)
+		if !ok || message["to"] != "heir" || message["queue_rank"] != float64(i+1) {
+			t.Fatalf("moved queue rank/owner stale: %v", read)
+		}
+	}
+	if read := toolCall(t, srv, "read_mail", map[string]any{"token": lost, "msg_serial": first}); read["__is_error"] != true {
+		t.Fatalf("old mailbox still reads transferred queued body: %v", read)
+	}
+}
+
+func TestQueuedCheckpointReportsOverdueWithoutExpiringOrStartingWork(t *testing.T) {
+	srv, _, _ := newServerWithEngine(t)
+	lead := toolCall(t, srv, "register", map[string]any{"name": "lead"})["token"].(string)
+	worker := toolCall(t, srv, "register", map[string]any{"name": "worker"})["token"].(string)
+	mail := toolCall(t, srv, "send", map[string]any{
+		"token": lead, "to": "worker", "type": "request", "body": "later", "deadline_s": 1,
+	})
+	n, ok := mail["msg_serial"].(float64)
+	if !ok {
+		t.Fatalf("send setup: %v", mail)
+	}
+	res := toolCall(t, srv, "respond", map[string]any{"token": worker, "msg_serial": n, "disposition": "queue"})
+	if res["state"] != "queued" {
+		t.Fatalf("queue setup: %v", res)
+	}
+	<-time.After(1100 * time.Millisecond)
+	res = toolCall(t, srv, "check_in", map[string]any{"token": worker})
+	q, ok := res["task_queue"].([]any)
+	if !ok || len(q) != 1 {
+		t.Fatalf("overdue queue lost: %v", res)
+	}
+	item := q[0].(map[string]any)
+	age, ok := item["overdue_s"].(float64)
+	if item["overdue"] != true || !ok || age <= 0 {
+		t.Fatalf("checkpoint hides deadline age: %v", item)
+	}
+	read := toolCall(t, srv, "read_mail", map[string]any{"token": worker, "msg_serial": n})
+	if read["message"].(map[string]any)["state"] != "queued" || read["overdue"] != true {
+		t.Fatalf("deadline expired or started accepted work: %v", read)
 	}
 }

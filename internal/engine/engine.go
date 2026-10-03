@@ -290,6 +290,7 @@ func New(st *core.State, led Ledger, prober Prober, history ...[]core.Event) *En
 	// and putting that in the one constructor means an embedder or a test cannot
 	// get an engine that has skipped it.
 	e.rebuildBlockingNotices()
+	e.rebuildQueueNotices()
 	e.rebuildSituationalNotices()
 	e.rebuildInvitationHistory(history)
 	return e
@@ -871,6 +872,7 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	e.addQueueCheckpoint(res, actor, op, now)
 	if op.Kind == core.OpRespond && res != nil && (op.Disposition == "approve" || op.Disposition == "queue") {
 		if m := e.state.Messages[op.MsgSerial]; m != nil && m.Owed(now) {
 			res["completion"] = owedCall(m)

@@ -63,6 +63,13 @@ func registerAdminAPI(mux *http.ServeMux, eng *engine.Engine) {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
+		if body.MsgSerial != 0 && body.Permission != core.PermQueueOrderLock {
+			writeAdminResult(w, nil, &core.Error{
+				Code: "E_BAD_ARG", Msg: "permission does not take a task scope",
+				Hint: "msg_serial scopes queue_order_lock only; omit it for other permissions",
+			})
+			return
+		}
 		do := eng.RevokePermissionByHuman
 		if body.Permission == core.PermQueueOrderLock {
 			res, err := eng.SetQueueOrderLockByHuman(r.Context(), body.Agent, body.MsgSerial, body.Held)

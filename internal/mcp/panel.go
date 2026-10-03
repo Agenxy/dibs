@@ -175,7 +175,11 @@ func extractMessages(box any) []map[string]any {
 	}
 	var out []map[string]any
 	for _, m := range asMaps(raw) {
-		out = append(out, pick(m, msgFields))
+		view := pick(m, msgFields)
+		if m["state"] == core.MsgStateQueued {
+			view["deadline"] = m["deadline"]
+		}
+		out = append(out, view)
 	}
 	return out
 }

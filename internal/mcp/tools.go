@@ -237,11 +237,9 @@ var toolDefs = func() []map[string]any {
 			//
 			// Your own row does not need pruning: a signed-off agent is swept.
 			// So the description now says whose record this is FOR.
-			"name": "prune", "description": "Remove a finished agent's record: a child " +
-				"you vouched for, or, as COORDINATOR, a dormant peer whose stale " +
-				"declarations you are clearing (dibs://staff). Nobody else may: it " +
-				"would delete the row saying somebody else is doing that work. NOT for " +
-				"yourself: sign_off stops you and the sweep tidies your row.",
+			"name": "prune", "description": "Remove a finished vouched child, or a dormant peer as coordinator " +
+				"(dibs://staff). Nobody else may delete another worker's record. NOT for yourself: sign_off stops " +
+				"you and the sweep tidies your row.",
 			"inputSchema": obj(map[string]any{
 				"token": tok,
 				"agent": map[string]any{
@@ -257,49 +255,35 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "declare",
-			"description": "Declare what you are working on (public). Requires check_in. " +
-				"To CHANGE it, pass the slot_id you were given: omitting it ADDS a declaration. " +
-				"Fill in only the fields that are TRUE; a guessed value is worse than none. " +
-				"A declaration says you are WORKING: if you stop holding one, your turn is continued. " +
-				"Blocked? set waiting. Done? undeclare.",
+			"description": "Public work declaration; check_in first. Reuse slot_id to update; omission adds a slot. " +
+				"State only facts. Ending a Dibs-started turn with working declarations can continue it. " +
+				"Blocked: set waiting. Finished: undeclare.",
 			"inputSchema": obj(map[string]any{
 				"token": tok,
 				"slot_id": str("the slot to UPDATE: pass the one declare returned; omit only " +
 					"to add a second concurrent declaration"),
-				"text": str("what you are doing. Board-visible to every agent on this machine, " +
-					"including ones in unrelated repositories: say what the work IS, not the " +
-					"hostnames, accounts or internal paths it touches"), "refs": map[string]any{
-					"type":  "array",
-					"items": map[string]any{"type": "string"}, "description": "ids this work " +
-						"pursues, and the kind decides what Dibs may do. Ids that NAME something " +
-						"(pr:1186, issue:1140, incident:db-down) are the duplicate-work key and " +
-						"can put you in a space automatically; labels like goal:green-main are " +
-						"context only, since two agents can share a goal while dividing the work. " +
-						"Give a real id when one exists, never an invented one. Strongest is the " +
-						"`key` a space handed you: Dibs issued it, so passing it back matches " +
-						"later work exactly rather than guessing (read_space returns it)",
+				"text": str("public work summary for the fleet; omit private hostnames, accounts and paths"),
+				"refs": map[string]any{
+					"type": "array", "items": map[string]any{"type": "string"},
+					"description": "real work ids (pr:1186, issue:1140, incident:db-down) match duplicate work and may " +
+						"join a space. goal: labels are context only. Prefer the exact key from read_space; never invent ids",
 				},
 				"dirs": map[string]any{
 					"type": "array", "items": map[string]any{"type": "string"},
-					"description": "directories or files this work will WRITE to. The strongest signal " +
-						"you can give about where you are: believed over anything guessed from your " +
-						"text, and a parent directory overlaps a child. Reading somewhere does not " +
-						"count. Purely read-only work declares nothing here, which is correct",
+					"description": "files/directories you will WRITE; overrides inferred paths. Parent/child paths overlap. " +
+						"Omit for read-only work",
 				},
 				"waiting":       str("whom or what this work is blocked on (an agent id, \"ci\")"),
 				"recheck_after": str("with waiting, when to look again if nothing will tell you, e.g. \"20m\""),
 				"activity": map[string]any{
 					"type": "string",
-					"description": "your ROLE on this work: implement, review, test, investigate, " +
-						"document, release. Without it an implementer and a REVIEWER on one PR look " +
-						"identical, and the reviewer is told it is duplicating work",
+					"description": "role on this work: implement, review, test, investigate, document, release; " +
+						"distinguishes a reviewer from a duplicate implementer",
 				},
 				"holds": map[string]any{
 					"type": "array", "items": map[string]any{"type": "string"},
-					"description": "exclusive HOST resources this work needs: port:8080, " +
-						"lock:.git/index, gpu:0, service:postgres. You share a machine, and these " +
-						"collide hard: the second agent to bind a port gets 'address already in " +
-						"use' and no idea why. Nothing else Dibs tracks can see this",
+					"description": "exclusive HOST resources: port:8080, lock:.git/index, gpu:0, service:postgres; " +
+						"declare these to expose collisions",
 				},
 			}, "token", "text"),
 		},
@@ -317,8 +301,11 @@ var toolDefs = func() []map[string]any {
 				"type": msgType,
 				"body": str("message body"), "deadline_s": num("response deadline in seconds (default 600; max 7200, or 7 " +
 					"days to persistent agents)"),
-				"priority": map[string]any{"type": "string", "enum": []string{"low", "normal", "high", "urgent"}, "description": "ordinary request priority; defaults to normal, separate from its response deadline"},
-				"op_id":    str("client-generated id for safe retries (optional, recommended)"),
+				"priority": map[string]any{
+					"type": "string", "enum": []string{"low", "normal", "high", "urgent"},
+					"description": "ordinary request priority (default normal), independent of deadline",
+				},
+				"op_id": str("client-generated id for safe retries (optional, recommended)"),
 				"adopt": str("on a request: ask to reclaim an ABANDONED agent of yours, " +
 					"by id. Their Approve moves its mail onto you"),
 				"grant": map[string]any{
@@ -390,12 +377,9 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "read_mail",
-			"description": "Read mail, response and milestone_reviews. human_delivery.posted confirms OS " +
-				"acceptance, not visibility; receipts may be unknown. ATTACHMENTS: a `blob` handle is " +
-				"content-addressed, so get_blob returns exactly what was sent. A `path` handle " +
-				"(fileref) is the opposite: path, size and hash are the SENDER's claims, recorded " +
-				"verbatim and never checked, because Dibs does not read your filesystem. Verify the " +
-				"hash before relying on it, and treat a missing file as ordinary rather than a fault.",
+			"description": "Read mail, response and milestone reviews. human_delivery.posted means OS acceptance, " +
+				"not visibility; receipts may be unknown. Blob handles guarantee content (get_blob). " +
+				"Path/size/hash are unverified sender claims: verify the hash; a missing file is ordinary.",
 			"inputSchema": obj(map[string]any{"token": tok, "msg_serial": num("serial of the message")}, "token", "msg_serial"),
 		},
 		{
@@ -418,12 +402,25 @@ var toolDefs = func() []map[string]any {
 			}, "token", "msg_serial", "disposition"),
 		},
 		{
-			"name": "queue_update", "description": "Reprioritise or reorder your own queued request. Recorded and reported to senders; locks constrain ordering, never starting.",
-			"inputSchema": obj(map[string]any{"token": tok, "msg_serial": num("your queued request serial"), "priority": map[string]any{"type": "string", "enum": []string{"low", "normal", "high", "urgent"}}, "reset_priority": map[string]any{"type": "boolean", "description": "restore sender priority"}, "before": num("queued sibling serial to precede"), "tail": map[string]any{"type": "boolean", "description": "move to queue tail"}}, "token", "msg_serial"),
+			"name": "queue_update",
+			"description": "Reorder your queued request; changes are recorded and reported. " +
+				"Locks restrict order, never starting.",
+			"inputSchema": obj(map[string]any{
+				"token": tok, "msg_serial": num("your queued request serial"),
+				"priority":       map[string]any{"type": "string", "enum": []string{"low", "normal", "high", "urgent"}},
+				"reset_priority": map[string]any{"type": "boolean", "description": "restore sender priority"},
+				"before":         num("queued sibling to precede"),
+				"tail":           map[string]any{"type": "boolean", "description": "move to tail"},
+			}, "token", "msg_serial"),
 		},
 		{
-			"name": "queue_lock", "description": "Coordinator/admin: grant or revoke the existing queue_order_lock permission, scoped to an agent or one queued task. Starting remains the recipient's choice.",
-			"inputSchema": obj(map[string]any{"token": tok, "agent": str("queue owner agent id"), "msg_serial": num("queued request serial; omit for whole queue"), "locked": map[string]any{"type": "boolean", "description": "true grants lock, false revokes"}}, "token", "agent", "locked"),
+			"name":        "queue_lock",
+			"description": "Coordinator/admin: set queue_order_lock on an agent or task. Starting stays the recipient's choice.",
+			"inputSchema": obj(map[string]any{
+				"token": tok, "agent": str("queue owner id"),
+				"msg_serial": num("queued request; omit for whole queue"),
+				"locked":     map[string]any{"type": "boolean", "description": "true grants; false revokes"},
+			}, "token", "agent", "locked"),
 		},
 		{
 			"name": "ack", "description": "Dismiss a progress/review event without reviewing work. For mail, close a FYI " +

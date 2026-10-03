@@ -531,10 +531,35 @@ ticket, not committed attachment bytes. Reissue expired tickets; phase one loses
 incomplete uploads on daemon restart. `put_blob(data)`/`get_blob(as:"inline")`
 remain the fallback when your harness cannot make byte-plane HTTP requests.
 
+## Accepted work you will start later
+
+For an ordinary request, `respond(msg_serial:N, disposition:"queue")` accepts
+work for later. It stays owed across restarts until done or declined, but does
+not say you are working and does not trigger a Stop continuation or stall.
+`check_in` lists `task_queue` and `owed_work`, including the literal completion
+call. Start one yourself with `respond(msg_serial:N, disposition:"approve")`;
+finish with `respond(msg_serial:N, disposition:"done", body:...)`. Completing
+one never starts the next. Progress uses `disposition:"progress"`.
+
+Senders may set request `priority` to low, normal, high or urgent (default
+normal). Default ordering is priority, then response deadline, then arrival;
+the deadline still means when a response is due, not when work must finish.
+`overdue` and `overdue_s` describe a passed deadline at these checkpoints;
+queued work alone never starts a turn or adds a hook prompt.
+`queue_update` changes your own queued request's priority or position (`before`
+a sibling or `tail`); `reset_priority:true` restores sender priority. Inserting
+new work keeps existing manual relative order. Senders see recorded changes,
+while public views show metadata rather than request bodies.
+
+The human, coordinators and admins may lock a whole queue or one queued task
+with `queue_order_lock` (`queue_lock` for coordinators/admins). A lock protects
+relative order, including another task moving across it. It does not prevent
+the recipient from starting, declining or finishing work.
+
 ## Protocol version: what is actually true today
 
 Dibs targets **MCP 2026-07-28** (stateless core) and also serves the legacy
-**2025-11-25** path. Both work, all 50 tools behave identically on either, and
+**2025-11-25** path. Both work, all 52 tools behave identically on either, and
 you need do nothing.
 
 Surveyed from source on 2026-08-03: **none of them negotiate 2026-07-28 yet**,
@@ -558,7 +583,7 @@ infrastructure advice every session is an agent people turn off.
 
 **What changes if your operator does enable it:** nothing you call. You gain a
 protocol with no `initialize` handshake, so a reconnect costs nothing, and list
-results carry `ttlMs`/`cacheScope` so your client can stop re-fetching 50 tool
+results carry `ttlMs`/`cacheScope` so your client can stop re-fetching 52 tool
 descriptions on every cold start. Your own tool calls are unchanged.
 
 ## Reading the room before you act

@@ -6,8 +6,11 @@ import (
 )
 
 const (
-	MsgStateQueued     = "queued"
-	OpQueueUpdate      = "queue_update"
+	// MsgStateQueued is accepted work the recipient has not started.
+	MsgStateQueued = "queued"
+	// OpQueueUpdate changes recipient-owned ordering or priority.
+	OpQueueUpdate = "queue_update"
+	// PermQueueOrderLock protects ordering, never task execution.
 	PermQueueOrderLock = "queue_order_lock"
 )
 
@@ -29,20 +32,46 @@ func checkQueue(op *Op, lim Limits) error {
 	if op.Kind == OpRespond && op.Disposition == "queue" && len(op.Body) > lim.MaxBodyBytes {
 		return errTooLarge("response body", lim.MaxBodyBytes)
 	}
-	if op.RequestPriority != "" && (op.Kind != OpSendMessage || op.MsgType != MsgRequest || op.Grant != "" || op.Adopt != "" || priorityValue(op.RequestPriority) < 0) {
-		return errf("E_BAD_ARG", "priority is low|normal|high|urgent on an ordinary request", "invalid request priority")
+	if err := checkRequestPriority(op); err != nil {
+		return err
+	}
+	if op.MsgSerial != 0 && (op.Kind == OpGrantPermission || op.Kind == OpRevokePermission) &&
+		op.Mode != PermQueueOrderLock {
+		return errf("E_BAD_ARG", "msg_serial scopes queue_order_lock only", "permission does not take a task scope")
 	}
 	if op.Kind != OpQueueUpdate {
-		if op.QueuePriority != "" || op.QueueResetPriority || op.QueueBefore != 0 || op.QueueTail {
+		if queueChangeRequested(op) {
 			return errf("E_BAD_ARG", "use queue_update for ordering changes", "queue fields on another operation")
 		}
 		return nil
 	}
-	if op.MsgSerial == 0 || (op.QueuePriority == "" && !op.QueueResetPriority && op.QueueBefore == 0 && !op.QueueTail) {
-		return errf("E_BAD_ARG", "name a queued msg_serial and priority, reset_priority, before or tail", "empty queue update")
+	return checkQueueUpdate(op)
+}
+
+func checkRequestPriority(op *Op) error {
+	if op.RequestPriority == "" {
+		return nil
 	}
-	if priorityValue(op.QueuePriority) < 0 || (op.QueuePriority != "" && op.QueueResetPriority) || (op.QueueBefore != 0 && op.QueueTail) || op.QueueBefore == op.MsgSerial {
-		return errf("E_BAD_ARG", "use a valid priority and one ordering action with a different anchor", "conflicting queue update")
+	if op.Kind != OpSendMessage || op.MsgType != MsgRequest || op.Grant != "" || op.Adopt != "" ||
+		priorityValue(op.RequestPriority) < 0 {
+		return errf("E_BAD_ARG", "priority is low|normal|high|urgent on an ordinary request", "invalid request priority")
+	}
+	return nil
+}
+
+func queueChangeRequested(op *Op) bool {
+	return op.QueuePriority != "" || op.QueueResetPriority || op.QueueBefore != 0 || op.QueueTail
+}
+
+func checkQueueUpdate(op *Op) error {
+	if op.MsgSerial == 0 || !queueChangeRequested(op) {
+		return errf("E_BAD_ARG", "name a queued msg_serial and priority, reset_priority, before or tail",
+			"empty queue update")
+	}
+	if priorityValue(op.QueuePriority) < 0 || (op.QueuePriority != "" && op.QueueResetPriority) ||
+		(op.QueueBefore != 0 && op.QueueTail) || op.QueueBefore == op.MsgSerial {
+		return errf("E_BAD_ARG", "use a valid priority and one ordering action with a different anchor",
+			"conflicting queue update")
 	}
 	return nil
 }
@@ -104,7 +133,7 @@ func insertQueued(q []*Message, m *Message) []*Message {
 	return q
 }
 
-func (s *State) setQueueOrder(agent string, q []*Message, by string, now time.Time) {
+func (s *State) setQueueOrder(q []*Message, by string, now time.Time) {
 	for i, m := range q {
 		if m.QueueRank != i+1 {
 			m.QueueRank = i + 1
@@ -141,13 +170,16 @@ func (s *State) applyQueue(l *Agent, m *Message, op *Op, now time.Time) (Result,
 		return Result{"ok": true, "state": MsgStateQueued, "queue_position": s.QueuePosition(m), "changed": false}, nil, nil
 	}
 	if m.Terminal() {
-		return nil, nil, errf("E_MSG_FINAL", "queue an unanswered ordinary request; park started work with declare(waiting)", "message already %s", m.State)
+		return nil, nil, errf("E_MSG_FINAL", "queue an unanswered ordinary request; park started work with declare(waiting)",
+			"message already %s", m.State)
 	}
 	if m.Type != MsgRequest || m.Grant != "" || m.Adopt != "" || m.From == m.To {
-		return nil, nil, errf("E_BAD_DISPOSITION", "queue accepts ordinary work requests only; use approve for a grant or adoption", "not queueable work")
+		return nil, nil, errf("E_BAD_DISPOSITION", "queue accepts ordinary requests; approve grants or adoption",
+			"not queueable work")
 	}
 	if s.AcceptedDebtCount(l.ID) >= s.Limits.MaxMailboxDepth {
-		return nil, nil, errf("E_MAILBOX_FULL", "complete or decline owed work before accepting more", "accepted work capacity reached")
+		return nil, nil, errf("E_MAILBOX_FULL", "complete or decline owed work before accepting more",
+			"accepted work capacity reached")
 	}
 	if err := declareMilestones(m, op, MsgStateQueued); err != nil {
 		return nil, nil, err
@@ -160,7 +192,7 @@ func (s *State) applyQueue(l *Agent, m *Message, op *Op, now time.Time) (Result,
 	m.TerminalAt = now
 	m.RespondedAt = s.Serial + 1
 	m.OutcomeReadAt = 0
-	s.setQueueOrder(l.ID, q, l.ID, now)
+	s.setQueueOrder(q, l.ID, now)
 	evs := s.queueEvents(q, l.ID, "message.queued", m.Serial)
 	s.finish(&evs, now)
 	return Result{"ok": true, "state": MsgStateQueued, "queue_position": s.QueuePosition(m)}, evs, nil
@@ -170,7 +202,14 @@ func (s *State) queueEvents(q []*Message, by, kind string, serial uint64) []Even
 	var evs []Event
 	for _, m := range q {
 		if m.QueueChangedSerial == s.Serial+1 || m.Serial == serial {
-			evs = append(evs, Event{Type: kind, Agent: by, To: m.From, Data: map[string]any{"msg_serial": m.Serial, "queue_position": s.QueuePosition(m), "priority": m.EffectivePriority(), "by": by}})
+			eventKind := kind
+			if m.Serial != serial {
+				eventKind = "message.queue_changed"
+			}
+			evs = append(evs, Event{Type: eventKind, Agent: by, To: m.From, Data: map[string]any{
+				"msg_serial": m.Serial, "queue_position": s.QueuePosition(m),
+				"priority": m.EffectivePriority(), "by": by,
+			}})
 		}
 	}
 	return evs
@@ -179,13 +218,15 @@ func (s *State) queueEvents(q []*Message, by, kind string, serial uint64) []Even
 func (s *State) applyQueueUpdate(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
 	m := s.Messages[op.MsgSerial]
 	if m == nil || m.To != l.ID {
-		return nil, nil, errf("E_NO_MESSAGE", "check_in lists your own queue; use its request serial", "not your queued request")
+		return nil, nil, errf("E_NO_MESSAGE", "check_in lists your own queue; use its request serial",
+			"not your queued request")
 	}
 	if m.State != MsgStateQueued {
 		return nil, nil, errf("E_BAD_DISPOSITION", "queue_update changes queued work only", "request is %s", m.State)
 	}
 	if l.HasPermission(PermQueueOrderLock) || m.QueueOrderLocked {
-		return nil, nil, errf("E_QUEUE_LOCKED", "ask the human or coordinator to revoke the queue_order_lock permission; starting remains allowed", "queue ordering is locked")
+		return nil, nil, errf("E_QUEUE_LOCKED", "ask human or coordinator to revoke queue_order_lock; starting is allowed",
+			"queue ordering is locked")
 	}
 	old := s.TaskQueue(l.ID)
 	q := make([]*Message, 0, len(old))
@@ -194,49 +235,17 @@ func (s *State) applyQueueUpdate(l *Agent, op *Op, now time.Time) (Result, []Eve
 			q = append(q, x)
 		}
 	}
-	nextPriority := m.QueuePriority
-	if op.QueuePriority != "" {
-		nextPriority = op.QueuePriority
-	}
-	if op.QueueResetPriority {
-		nextPriority = ""
-	}
+	nextPriority := queueNextPriority(m, op)
 	// Compute on a copy until every lock check has succeeded.
 	cp := *m
 	cp.QueuePriority = nextPriority
-	if op.QueueBefore != 0 {
-		at := -1
-		for i, x := range q {
-			if x.Serial == op.QueueBefore {
-				at = i
-				break
-			}
-		}
-		if at < 0 {
-			return nil, nil, errf("E_BAD_ARG", "choose before from check_in's current queue", "anchor is not a queued sibling")
-		}
-		q = append(q, nil)
-		copy(q[at+1:], q[at:])
-		q[at] = &cp
-	} else if op.QueueTail {
-		q = append(q, &cp)
-	} else if op.QueuePriority != "" || op.QueueResetPriority {
-		q = insertQueued(q, &cp)
-	} else {
-		return nil, nil, errf("E_BAD_ARG", "provide an ordering change", "no change requested")
+	var err error
+	q, err = queueUpdatedOrder(q, &cp, op)
+	if err != nil {
+		return nil, nil, err
 	}
-	oldIndex := map[uint64]int{}
-	newIndex := map[uint64]int{}
-	for i, x := range old {
-		oldIndex[x.Serial] = i
-	}
-	for i, x := range q {
-		newIndex[x.Serial] = i
-	}
-	for _, x := range old {
-		if x.QueueOrderLocked && (oldIndex[m.Serial] < oldIndex[x.Serial]) != (newIndex[m.Serial] < newIndex[x.Serial]) {
-			return nil, nil, errf("E_QUEUE_LOCKED", "ask the human or coordinator to unlock the task before crossing it", "move crosses locked request %d", x.Serial)
-		}
+	if err := checkQueueCrossing(old, q, m.Serial); err != nil {
+		return nil, nil, err
 	}
 	changed := m.QueuePriority != nextPriority
 	for i, x := range old {
@@ -256,10 +265,59 @@ func (s *State) applyQueueUpdate(l *Agent, op *Op, now time.Time) (Result, []Eve
 			q[i] = m
 		}
 	}
-	s.setQueueOrder(l.ID, q, l.ID, now)
+	s.setQueueOrder(q, l.ID, now)
 	evs := s.queueEvents(q, l.ID, "message.queue_changed", m.Serial)
 	s.finish(&evs, now)
 	return Result{"ok": true, "changed": true, "queue_position": s.QueuePosition(m)}, evs, nil
+}
+
+func queueNextPriority(m *Message, op *Op) string {
+	if op.QueueResetPriority {
+		return ""
+	}
+	if op.QueuePriority != "" {
+		return op.QueuePriority
+	}
+	return m.QueuePriority
+}
+
+func queueUpdatedOrder(q []*Message, m *Message, op *Op) ([]*Message, error) {
+	switch {
+	case op.QueueBefore != 0:
+		for i, x := range q {
+			if x.Serial == op.QueueBefore {
+				q = append(q, nil)
+				copy(q[i+1:], q[i:])
+				q[i] = m
+				return q, nil
+			}
+		}
+		return nil, errf("E_BAD_ARG", "choose before from check_in's current queue", "anchor is not a queued sibling")
+	case op.QueueTail:
+		return append(q, m), nil
+	case op.QueuePriority != "" || op.QueueResetPriority:
+		return insertQueued(q, m), nil
+	default:
+		return nil, errf("E_BAD_ARG", "provide an ordering change", "no change requested")
+	}
+}
+
+func checkQueueCrossing(old, next []*Message, moved uint64) error {
+	oldIndex := map[uint64]int{}
+	newIndex := map[uint64]int{}
+	for i, x := range old {
+		oldIndex[x.Serial] = i
+	}
+	for i, x := range next {
+		newIndex[x.Serial] = i
+	}
+	for _, x := range old {
+		if x.QueueOrderLocked && (oldIndex[moved] < oldIndex[x.Serial]) != (newIndex[moved] < newIndex[x.Serial]) {
+			return errf("E_QUEUE_LOCKED", "ask the human or coordinator to unlock the task before crossing it",
+				"move crosses locked request %d", x.Serial)
+		}
+	}
+	return nil
 }
 
 func (s *State) applyQueuePermission(op *Op, now time.Time) (Result, []Event, error) {
@@ -267,7 +325,8 @@ func (s *State) applyQueuePermission(op *Op, now time.Time) (Result, []Event, er
 	if by != "" && by != HumanActor {
 		a := s.Agents[by]
 		if a == nil || a.CreatedSerial != op.PermissionActorCreated || !a.IsCoordinator() {
-			return nil, nil, errf("E_NOT_PERMITTED", "queue policies require a human, coordinator or admin", "actor cannot change queue policy")
+			return nil, nil, errf("E_NOT_PERMITTED", "queue policies require a human, coordinator or admin",
+				"actor cannot change queue policy")
 		}
 	}
 	owner := s.Agents[op.To]
@@ -292,7 +351,9 @@ func (s *State) applyQueuePermission(op *Op, now time.Time) (Result, []Event, er
 	}
 	m.QueueOrderLocked = grant
 	m.QueueLockBy = by
-	evs := []Event{{Type: "agent.permission_changed", Agent: owner.ID, To: m.From, Data: map[string]any{"permission": PermQueueOrderLock, "held": grant, "msg_serial": m.Serial, "by": by}}}
+	evs := []Event{{Type: "agent.permission_changed", Agent: owner.ID, To: m.From, Data: map[string]any{
+		"permission": PermQueueOrderLock, "held": grant, "msg_serial": m.Serial, "by": by,
+	}}}
 	s.finish(&evs, now)
 	return Result{"ok": true, "changed": true, "held": grant}, evs, nil
 }
