@@ -25,7 +25,7 @@ package core
 // row's key: there is no alias to expire and no mail to lose.
 //
 // WHERE THIS IS CALLED FROM, and why it matters that it is not called from the
-// fold: Engine.exec resolves a written reference into the op before Admit, and
+// fold: Engine.exec resolves a written reference into the op before Apply, and
 // the op that reaches the ledger therefore carries an ID. That is the same
 // mechanism `to: "coordinator"` has always used, for the same reason a role
 // address needed it: a name MOVES, so an op that recorded one could be replayed
@@ -181,13 +181,9 @@ func (s *State) shadowedNameNote(want, name string) string {
 // also the reason register refuses to reuse an id: the ledger's history refers
 // to it.
 //
-// GATED on Op.NameIsAnAddress, and the gate is the point: this is a refusal in
-// the fold, and any ledger written before names were addresses may hold such a
-// rename. An op without the flag folds exactly as it always did.
+// Checked by State.Admit, never Apply: older ledgers may hold this rename,
+// and replay must continue accepting it without a new wire flag.
 func (s *State) nameIsAnotherAddress(op *Op, l *Agent) error {
-	if !op.NameIsAnAddress {
-		return nil
-	}
 	other, taken := s.Agents[op.Name]
 	if !taken || other.ID == l.ID {
 		return nil

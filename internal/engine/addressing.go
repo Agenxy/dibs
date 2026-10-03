@@ -6,7 +6,7 @@ import "github.com/agenxy/dibs/internal/core"
 //
 // See internal/core/address.go for what the board's id/name split cost and why
 // the name is an address now. This file is the other half: the ingress step that
-// turns a written reference into an id BEFORE the op is admitted, so the fold
+// turns a written reference into an id BEFORE the op is applied, so the fold
 // and every ledger already on disk are untouched.
 //
 // It sits beside the role address (`to: "coordinator"`) in Engine.exec for the
@@ -67,7 +67,7 @@ type agentRef struct {
 //
 // Refuses, rather than guessing, when a name belongs to more than one live
 // agent: see core.AgentRef. Nothing is ledgered on a refusal, because this runs
-// before Admit.
+// before Apply and ledger append, after admission and the human identity guard.
 func (e *Engine) resolveAgentRefs(op *core.Op) (resolved map[string]string, err error) {
 	if e.state == nil {
 		return nil, nil

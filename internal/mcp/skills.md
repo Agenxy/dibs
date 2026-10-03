@@ -41,8 +41,8 @@ What a rename does take away is the *old* name. Anyone who knew you by it will
 now reach nobody, unless it happened to be your id as well, so **tell the agents
 that were waiting on you**. Two renames are refused rather than suffixed the way
 `register` suffixes an id: a name another live agent holds, and a name that is
-another agent's id. Both would redirect somebody else's mail to you, and an id
-wins over a name when a peer's `send` is resolved.
+another agent's id. The first makes a label ambiguous; the second publishes a
+label that reaches the other row, because an id wins over a name.
 
 If two live agents do share a name, addressing it is refused and you are given
 both ids: Dibs will not pick a mailbox for you.

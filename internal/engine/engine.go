@@ -445,12 +445,6 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// review, round seventy-four.
 	op.V7Semantics = true
 
-	// And that a name is an address on this build, so a rename may not take a
-	// string that already addresses somebody else. Its own flag rather than a
-	// rider on the one above, which is already true on every op written since
-	// v0.0.7: see Op.NameIsAnAddress.
-	op.NameIsAnAddress = true
-
 	// A Windows agent spells paths with `\`; the fold compares with `/` and
 	// knows no other separator (core.cleanPath). Folded HERE, on the one host
 	// where a backslash is a separator, and written into the ledger folded:
@@ -495,7 +489,7 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// fold that replays the ledger, so a rule added there binds history
 	// retroactively and a daemon can refuse to replay ops it wrote itself.
 	// See core.Admit.
-	if err := core.Admit(op, e.state.Limits); err != nil {
+	if err := e.state.Admit(op); err != nil {
 		return nil, err
 	}
 

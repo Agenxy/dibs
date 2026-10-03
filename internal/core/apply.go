@@ -956,11 +956,6 @@ func (s *State) applyUpdate(l *Agent, op *Op) (Result, []Event, error) {
 				"the name %q belongs to %s, which is still on the board: two live agents "+
 					"sharing a name redirects mail between them", op.Name, other.ID)
 		}
-		// AND A NAME THAT IS ALREADY SOMEBODY ELSE'S ADDRESS: see address.go.
-		// Gated on Op.NameIsAnAddress, because a refusal in Apply is retroactive.
-		if err := s.nameIsAnotherAddress(op, l); err != nil {
-			return nil, nil, err
-		}
 		res["renamed_from"] = l.Name
 		// WHAT THIS USED TO SAY was "a rename changes the label humans read,
 		// never where your mail arrives", and its second half stopped being true

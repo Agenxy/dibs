@@ -287,7 +287,7 @@ func TestAnAmbiguousNameIsRefusedAtTheDoorCallersUse(t *testing.T) {
 				want, ce.Hint)
 		}
 	}
-	// AND NOTHING WAS LEDGERED. The refusal is at ingress, before Admit, which
+	// AND NOTHING WAS LEDGERED. The refusal is at ingress, before Apply, which
 	// is what keeps a refused address out of the record entirely.
 	if got := len(e.state.Messages); got != 0 {
 		t.Errorf("%d messages exist after a refused send", got)

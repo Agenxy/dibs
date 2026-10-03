@@ -107,3 +107,28 @@ func TestAdmitPassesOrdinaryTraffic(t *testing.T) {
 		t.Errorf("the error must name `body`, which is the mistake it exists to catch: %v", err)
 	}
 }
+
+// Old ledgers may contain this rename. Refusing new traffic must not make
+// that history unreadable, or make an unchanged historical label unusable.
+func TestRenameAddressCollisionIsAdmittedOnlyAtIngress(t *testing.T) {
+	s := NewState("replay", DefaultLimits())
+	now := time.Unix(1700000000, 0)
+	mustApply(t, s, &Op{Kind: OpRegister, Name: "first", NewToken: "first-token"}, now)
+	mustApply(t, s, &Op{Kind: OpRegister, Name: "second", NewToken: "second-token"}, now)
+	mustApply(t, s, &Op{Kind: OpUpdate, Token: "second-token", Name: "other"}, now)
+	op := &Op{Kind: OpUpdate, Token: "first-token", Name: "second"}
+	before := s.Serial
+	if err := s.Admit(op); err == nil {
+		t.Fatal("ingress accepted another row's immutable address as a new label")
+	}
+	if s.Serial != before || s.Agents["first"].Name != "first" {
+		t.Fatal("admission changed replayable state")
+	}
+	mustApply(t, s, op, now)
+	if s.Agents["first"].Name != "second" {
+		t.Fatal("historical rename did not fold")
+	}
+	if err := s.Admit(&Op{Kind: OpUpdate, Token: "first-token", Name: "second", Description: "still here"}); err != nil {
+		t.Fatalf("unchanged historical label was retroactively refused: %v", err)
+	}
+}

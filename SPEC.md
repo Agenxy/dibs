@@ -394,7 +394,8 @@ ledger records about an agent names it by `agent_id`: mail `to`/`from`, claim
 owners, space memberships, role pins, the nonce index. So `agent_id` is
 **immutable**, and `update(name=…)` moves the label only. The name is *also*
 accepted wherever a call names an agent (`send(to=)`, `grant_role`,
-`prune`, `force_release`, `adopt_agent`, `admit`, `evict`, `merge_agents`),
+`prune`, `force_release`, `adopt_agent`, `admit`, `evict`, `merge_agents`,
+`queue_lock`, and authorized `all_mail(agent=)`),
 because until then it was not, and a board that publishes a name as an agent's
 identity while refusing it as an address makes **discovery and addressing
 disagree**: an agent that renamed itself on changing role published an address
@@ -420,8 +421,9 @@ later. The fold is unchanged, so `state == fold(ledger)` holds for every ledger
 written before this. Consequences an agent can rely on: mail addressed to an
 `agent_id` **reaches the same row before and after any rename**, because the id
 never stops being the row's key; a rename onto any other row's `agent_id`, or
-onto another live agent's name, is refused (`E_NAME_TAKEN`), so a published name
-never resolves to somebody else; and the old *name* stops addressing you, which
+onto another live agent's name, is refused (`E_NAME_TAKEN`) at admission.
+Historical renames still fold, and an unchanged historical label may be kept.
+The old *name* stops addressing you unless it is also your ID, which
 `update` says in its result so you can tell whoever was waiting.
 
 **Awareness gate**: before `declare` or `claim`, an agent must have called

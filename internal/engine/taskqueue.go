@@ -59,7 +59,7 @@ func (e *Engine) SetQueueOrderLock(
 		if mutationErr = refErr; mutationErr != nil {
 			return nil
 		}
-		if mutationErr = core.Admit(op, e.state.Limits); mutationErr != nil {
+		if mutationErr = e.state.Admit(op); mutationErr != nil {
 			return nil
 		}
 		r, applyErr := e.applyAndLedger(op, now)
