@@ -39,12 +39,14 @@ func invitePayload(args []string) (map[string]any, error) {
 func inviteOptions(args []string) (map[string]any, string, error) {
 	fs := flag.NewFlagSet("invite", flag.ContinueOnError)
 	ttl := fs.String("ttl", "7d", "invitation lifetime (agent policy defaults to at most 7d)")
-	out := fs.String("out", "", "exclusive absolute private guest JSON destination; INCOMPLETE, not provisionable until a supporting signed release exists; retain the board key for recovery")
+	out := fs.String("out", "", "exclusive absolute private guest JSON destination; "+
+		"INCOMPLETE, not provisionable until a supporting signed release exists; retain the board key for recovery")
 	if helpOnly(args) {
 		return nil, "", parseFlags(fs, args)
 	}
 	if len(args) == 0 {
-		return nil, "", errors.New("usage: dibs invite <name> [--ttl 30d] [--out <absolute-private-file>] | list | revoke <name>")
+		return nil, "", errors.New("usage: dibs invite <name> [--ttl 30d] [--out <absolute-private-file>] | " +
+			"list | revoke <name>")
 	}
 	action := args[0]
 	if action == "list" && len(args) == 1 {
@@ -63,26 +65,30 @@ func inviteOptions(args []string) (map[string]any, string, error) {
 	if fs.NArg() != 0 {
 		return nil, "", errors.New("usage: dibs invite <name> [--ttl 30d] [--out <absolute-private-file>]")
 	}
-	// Let the service choose min(7d, configured ceiling) when --ttl is
-	// absent. Sending a hard-coded 7d would break a board capped at 1h.
-	var d time.Duration
+	ttlS, err := inviteMintTTL(fs, *ttl, *out)
+	if err != nil {
+		return nil, "", err
+	}
+	return map[string]any{"action": "mint", "name": action, "ttl_s": ttlS}, *out, nil
+}
+
+// Let the service choose min(7d, configured ceiling) when --ttl is absent.
+// Merely choosing --out must not send hard-coded 7d to a board capped at 1h.
+func inviteMintTTL(fs *flag.FlagSet, ttl, destination string) (int64, error) {
 	ttlSet := false
 	outSet := false
 	fs.Visit(func(f *flag.Flag) {
 		ttlSet = ttlSet || f.Name == "ttl"
 		outSet = outSet || f.Name == "out"
 	})
-	if outSet && *out == "" {
-		return nil, "", errors.New("--out needs an absolute private file; omit it for the existing invitation display")
+	if outSet && destination == "" {
+		return 0, errors.New("--out needs an absolute private file; omit it for the existing invitation display")
 	}
-	if ttlSet {
-		var err error
-		d, err = inviteLifetime(*ttl)
-		if err != nil {
-			return nil, "", err
-		}
+	if !ttlSet {
+		return 0, nil
 	}
-	return map[string]any{"action": "mint", "name": action, "ttl_s": int64(d / time.Second)}, *out, nil
+	d, err := inviteLifetime(ttl)
+	return int64(d / time.Second), err
 }
 
 func revokePayload(args []string) (map[string]any, error) {

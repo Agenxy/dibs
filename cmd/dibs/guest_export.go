@@ -36,7 +36,8 @@ func openGuestRecipeExport(path string) (*guestRecipeExport, error) {
 	name := filepath.Base(path)
 	if _, err := root.Lstat(name); !errors.Is(err, os.ErrNotExist) {
 		_ = root.Close()
-		return nil, errors.New("export destination exists or cannot be checked; choose a new private file, never overwrite a retained recipe")
+		return nil, errors.New("export destination exists or cannot be checked; " +
+			"choose a new private file, never overwrite a retained recipe")
 	}
 	return &guestRecipeExport{root: root, name: name}, nil
 }
@@ -50,11 +51,15 @@ func (e *guestRecipeExport) publish(out map[string]any, requestedName string) er
 		err = writeGuestRecipeExclusive(e.root, e.name, body)
 	}
 	if err != nil {
-		return fmt.Errorf("private guest export failed: %w; the invitation may have been minted. List and revoke the unused invitation by name before retrying; preserve any existing file", err)
+		return fmt.Errorf("private guest export failed: %w; the invitation may have been minted. "+
+			"List and revoke the unused invitation by name before retrying; preserve any existing file", err)
 	}
 	// Never print secrets, a runnable MCP entry or a guessed release. The
 	// credential file is an explicitly incomplete checkpoint, not provisioning.
-	_, err = fmt.Fprintln(os.Stdout, "Private guest JSON exported. INCOMPLETE: not provisionable until supporting signed release metadata and guest runtime acceptance exist. Keep this file private; back up the board's original at-rest key with its state. Replacing that key is not supported recovery. No harness configuration or system trust was changed.")
+	_, err = fmt.Fprintln(os.Stdout, "Private guest JSON exported. INCOMPLETE: not provisionable until "+
+		"supporting signed release metadata and guest runtime acceptance exist. Keep this file private; "+
+		"back up the board's original at-rest key with its state. Replacing that key is not supported recovery. "+
+		"No harness configuration or system trust was changed.")
 	return err
 }
 
@@ -62,9 +67,6 @@ func guestExportPayload(out map[string]any, requestedName string) ([]byte, error
 	config, _ := out["config"].(map[string]any)
 	r := guestRecipe{Version: 1}
 	r.Name, _ = out["name"].(string)
-	if requestedName == "" || r.Name != requestedName {
-		return nil, errors.New("issuer recipe identity differs from the requested name; refuse a different mailbox")
-	}
 	r.Key, _ = out["key"].(string)
 	r.Nonce, _ = out["recovery_nonce"].(string)
 	r.Endpoint, _ = config["endpoint"].(string)
@@ -74,10 +76,11 @@ func guestExportPayload(out map[string]any, requestedName string) ([]byte, error
 	var err error
 	r.Expires, err = time.Parse(time.RFC3339Nano, expires)
 	r.Expires = r.Expires.UTC()
-	nonce, nerr := hex.DecodeString(r.Nonce)
-	if err != nil || !time.Now().Before(r.Expires) || !invites.ValidName(r.Name) || !guestInvitationKey(r.Key) ||
-		nerr != nil || len(nonce) != 32 || hex.EncodeToString(nonce) != r.Nonce {
-		return nil, errors.New("issuer omitted valid guest identity, live exact expiry or 256-bit recovery material; fix the issuer rather than inventing credentials")
+	if err != nil {
+		return nil, errors.New("issuer omitted a valid exact expiry; fix the issuer rather than inventing credentials")
+	}
+	if err := validateGuestExportIdentity(&r, requestedName); err != nil {
+		return nil, err
 	}
 	u, ip, err := guestEndpoint(r.Endpoint)
 	if err != nil {
@@ -102,6 +105,19 @@ func guestExportPayload(out map[string]any, requestedName string) ([]byte, error
 		return nil, errors.New("issuer recipe exceeds the 64 KiB bound")
 	}
 	return body, nil
+}
+
+func validateGuestExportIdentity(r *guestRecipe, requestedName string) error {
+	if requestedName == "" || r.Name != requestedName {
+		return errors.New("issuer recipe identity differs from the requested name; refuse a different mailbox")
+	}
+	nonce, err := hex.DecodeString(r.Nonce)
+	if !time.Now().Before(r.Expires) || !invites.ValidName(r.Name) || !guestInvitationKey(r.Key) ||
+		err != nil || len(nonce) != 32 || hex.EncodeToString(nonce) != r.Nonce {
+		return errors.New("issuer omitted valid guest identity, live exact expiry or 256-bit recovery material; " +
+			"fix the issuer rather than inventing credentials")
+	}
+	return nil
 }
 
 type guestExportRoot interface {
