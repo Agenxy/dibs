@@ -16,8 +16,11 @@ func shiftedWall(t *testing.T, base time.Time, shift time.Duration) time.Time {
 	t.Helper()
 	typ := reflect.TypeFor[time.Time]()
 	f, ok := typ.FieldByName("wall")
-	if !ok || f.Type.Kind() != reflect.Uint64 || f.Offset != 0 || base == base.Round(0) {
+	if !ok || f.Type.Kind() != reflect.Uint64 || f.Offset != 0 {
 		t.Fatal("clock fixture requires Go's packed wall field and a monotonic-bearing Time")
+	}
+	if reflect.ValueOf(base).FieldByName("wall").Uint()&(1<<63) == 0 {
+		t.Fatal("clock fixture requires a monotonic-bearing Time")
 	}
 	if shift%time.Second != 0 {
 		t.Fatal("clock fixture shift must be whole seconds")
@@ -94,7 +97,7 @@ func TestApplyUsesTheClockTheLedgerRecords(t *testing.T) {
 			for _, name := range []string{"sender", "recipient"} {
 				apply(&Op{Kind: OpRegister, Name: name, NewToken: name}, start)
 				apply(&Op{Kind: OpAckBoard, Token: name}, start)
-				if got := live.Agents[name].LastCoordination; got != got.Round(0) {
+				if got := live.Agents[name].LastCoordination; !reflect.DeepEqual(got, got.Round(0)) {
 					t.Fatal("Apply stored a process-local clock the ledger cannot reproduce")
 				}
 			}
