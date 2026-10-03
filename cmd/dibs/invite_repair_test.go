@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/build"
+	"github.com/agenxy/dibs/internal/selfupdate"
 )
 
 func TestInviteExplicitRepairPublishesOnlyFreshSignatureVerifiedEvidence(t *testing.T) {
@@ -118,7 +119,7 @@ func TestCLIInviteRepairProcess(t *testing.T) {
 	if os.Getenv("DIBS_TEST_INVITE_REPAIR") == "" {
 		return
 	}
-	guestSupportingMinimum = "v0.0.9" // TEST-ONLY, not production support
+	selfupdate.GuestSupportingMinimum = "v0.0.9" // TEST-ONLY, not production support
 	build.Version = "devel"
 	http.DefaultTransport = inviteRepairTransport{}
 	for i, arg := range os.Args {

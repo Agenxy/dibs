@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/build"
+	"github.com/agenxy/dibs/internal/selfupdate"
 )
 
 // Enter the real invite handler with unusable board configuration. The floor
@@ -116,7 +117,7 @@ func TestCLIReleaseEvidenceProcess(t *testing.T) {
 		return
 	}
 	// TEST-ONLY fixture floor, not a change to production or a supported tag.
-	guestSupportingMinimum = "v0.0.9"
+	selfupdate.GuestSupportingMinimum = "v0.0.9"
 	build.Version = "devel"
 	for i, arg := range os.Args {
 		if arg == "--" {
@@ -166,7 +167,7 @@ func TestGuestReleaseSelectionUsesCompiledFloorWithoutRelabellingDevel(t *testin
 		{"latest", "v0.0.9", "devel", false},
 		{"v0.0.9", "invalid", "devel", false},
 	} {
-		got, err := guestReleaseSelection(tc.tag, tc.minimum, tc.board)
+		got, err := selfupdate.SelectGuestRelease(tc.tag, tc.minimum, tc.board)
 		if (err == nil) != tc.want || (tc.want && got.Tag != tc.tag) {
 			t.Errorf("%+v: got %+v %v", tc, got, err)
 		}

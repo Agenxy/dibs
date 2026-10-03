@@ -43,6 +43,8 @@ The bounded, versioned JSON file contains:
   "ca_spki_sha256": "<64 lowercase hex digits>",
   "bridge_release": {
     "tag": "<explicit published tag containing this mode>",
+    "board_build": "<actual issuer build, not relabelled as the selected tag>",
+    "provisioning_status": "INCOMPLETE",
     "assets": [{
       "goos": "linux",
       "goarch": "amd64",
@@ -64,9 +66,24 @@ silently. Expiry is advisory locally and authoritative at the server.
 
 Issuer CLI checkpoint: `dibs invite <name> --out <absolute-private-file>` exports
 the same typed schema used by the guest reader, including exact issuer expiry
-and the derived recovery nonce. This first export is explicitly INCOMPLETE and
-not provisionable: it contains no invented `bridge_release`, runnable MCP entry,
-download steps or accepted-runtime claim. A release-backed recipe remains owed.
+and the derived recovery nonce. Export remains explicitly INCOMPLETE and not
+provisionable: it contains no invented `bridge_release`, runnable MCP entry,
+download steps or accepted-runtime claim. With a compiled supporting minimum
+and exact retained evidence, it can carry detached signature-verified release
+metadata for all three published targets, including actual board provenance
+and signed archive/member digests. The compiled minimum remains unset in
+production, so no supporting release is claimed. A complete recipe remains owed.
+
+Admission reads and hashes the bounded record before mint/key disclosure,
+outside core and the single writer. Its process-local derived cache reuses
+successful offline verification only for identical record bytes and build
+version; changed, missing or refused evidence withdraws artifact metadata only.
+No failure is cached: a verifier exit cannot distinguish cryptographic refusal
+from a crash or local I/O/tool error, and stderr prose is not an authority.
+Unchanged evidence can retry after repair. No mint fetches release evidence;
+list/revoke never enters this check. Explicit acquisition and admission use one compiled floor
+and stable own-or-newer selection rule, never an invitation/config override.
+
 The destination flag is mint-only and is not sent to MCP. The CLI sets
 `export: true` on that mint request, through MCP or the private admin API;
 only this explicit export response includes `recovery_nonce`. Ordinary mint,

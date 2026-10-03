@@ -26,6 +26,7 @@ import (
 	"github.com/agenxy/dibs/internal/invites"
 	"github.com/agenxy/dibs/internal/ledger"
 	"github.com/agenxy/dibs/internal/mcp"
+	"github.com/agenxy/dibs/internal/selfupdate"
 )
 
 // The actual CLI dispatches --out through real MCP issuance. This is private
@@ -191,6 +192,62 @@ func TestGuestInviteExportThroughActualCLI(t *testing.T) {
 	if time.Until(recipe.Expires) > time.Hour {
 		t.Fatal("export flag overrode board TTL default")
 	}
+	// The real CLI must carry issuer-verified PUBLIC metadata through private
+	// export without turning it into readiness. Only the verifier executable is
+	// a fixture: Service owns the actual cache/admission path, not a test setter.
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	probe, err := os.ReadFile(self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cosignDir := t.TempDir()
+	if err = os.WriteFile(filepath.Join(cosignDir, "cosign"), probe, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", cosignDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("DIBS_TEST_GUEST_ADMISSION_COSIGN", "1")
+	// Remove only the race stand-in's subprocess exit delay, not race checks.
+	t.Setenv("GORACE", "atexit_sleep_ms=0")
+	t.Setenv("DIBS_TEST_GUEST_ADMISSION_RECEIPT", filepath.Join(t.TempDir(), "receipts"))
+	record, err := json.Marshal(map[string]any{"tag": "v0.0.9", "checksums": []byte(guestAdmissionChecksums()), "bundle": []byte("fixture only, not a signature")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(dir, "guest-release.json"), record, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	endpointMu.Lock()
+	originalFloor := selfupdate.GuestSupportingMinimum
+	selfupdate.GuestSupportingMinimum = "v0.0.9" // fixture only, never production support
+	endpointMu.Unlock()
+	t.Cleanup(func() { endpointMu.Lock(); selfupdate.GuestSupportingMinimum = originalFloor; endpointMu.Unlock() })
+	metadataFile := filepath.Join(private, "release-metadata.json")
+	output, err := run("issuer-metadata", "--out", metadataFile)
+	if err != nil {
+		t.Fatalf("metadata export door: %v %s", err, output)
+	}
+	metadataBody, err := os.ReadFile(metadataFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var withRelease struct {
+		Release *selfupdate.GuestReleaseMetadata `json:"bridge_release"`
+	}
+	if err = json.Unmarshal(metadataBody, &withRelease); err != nil || withRelease.Release == nil || withRelease.Release.Tag != "v0.0.9" || withRelease.Release.Status != "INCOMPLETE" || len(withRelease.Release.Assets) != 3 || !strings.HasPrefix(withRelease.Release.BoardBuild, "devel") {
+		t.Fatal("actual CLI export dropped verified release metadata or actual devel-board provenance")
+	}
+	if err = withRelease.Release.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(output, []byte("INCOMPLETE")) || bytes.Contains(output, []byte("mcp-stdio")) {
+		t.Fatal("metadata export offered runnable provisioning")
+	}
+	endpointMu.Lock()
+	selfupdate.GuestSupportingMinimum = originalFloor
+	endpointMu.Unlock()
 	before := hits.Load()
 	unsafe := t.TempDir()
 	if err := os.Chmod(unsafe, 0o755); err != nil {

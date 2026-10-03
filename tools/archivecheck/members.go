@@ -2,7 +2,6 @@ package main
 
 import (
 	"archive/tar"
-	"bufio"
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
@@ -25,7 +24,7 @@ func checkMembers(root string) error {
 	if err != nil {
 		return err
 	}
-	sums, err := memberChecksums(string(b))
+	sums, err := selfupdate.GuestReleaseDigests(string(b))
 	if err != nil {
 		return err
 	}
@@ -69,23 +68,6 @@ func memberKeyForArchive(name string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("%s is not a published guest target", name)
-}
-
-func memberChecksums(text string) (map[string]string, error) {
-	out := map[string]string{}
-	s := bufio.NewScanner(strings.NewReader(text))
-	for s.Scan() {
-		digest, name, ok := strings.Cut(s.Text(), "  ")
-		decoded, err := hex.DecodeString(digest)
-		if !ok || err != nil || len(decoded) != sha256.Size || name == "" {
-			return nil, errors.New("release checksum input contains a malformed SHA-256 line")
-		}
-		if _, exists := out[name]; exists {
-			return nil, fmt.Errorf("release checksum input repeats %s", name)
-		}
-		out[name] = strings.ToLower(digest)
-	}
-	return out, s.Err()
 }
 
 func packagedMemberDigest(archive string) (string, error) {

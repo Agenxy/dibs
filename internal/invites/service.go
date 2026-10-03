@@ -13,6 +13,7 @@ import (
 	"github.com/agenxy/dibs/internal/boardconfig"
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/engine"
+	"github.com/agenxy/dibs/internal/selfupdate"
 )
 
 // Service combines access configuration with the engine's authenticated,
@@ -29,6 +30,9 @@ type Service struct {
 	// Issuance is not ledgered.
 	// A later register seals its supplied nonce under the existing ledger rule.
 	RecoveryNonce func(string) (string, error)
+	// Rebuildable public verification cache. Service's real mint path owns it,
+	// so daemon construction cannot forget a setter that tests call by hand.
+	releaseEvidence selfupdate.ReleaseEvidenceCache
 }
 
 func refused(why, hint string) error {
@@ -150,6 +154,7 @@ func (s *Service) mint(ctx context.Context, issuer Issuance, coordinator bool,
 	if err := s.Engine.InviteNameAvailable(ctx, name, bound, issuer.By); err != nil {
 		return nil, err
 	}
+	metadata, releaseStatus := s.prepareGuestRelease(ctx, export)
 	nonce, err := s.exportRecoveryNonce(name, export)
 	if err != nil {
 		return nil, err
@@ -166,9 +171,16 @@ func (s *Service) mint(ctx context.Context, issuer Issuance, coordinator bool,
 			"call invite(action: list), revoke the unused invitation by name, "+
 				"and retry only after the public endpoint is restored")
 	}
+	config := endpointRecipe(info, name, key)
+	if releaseStatus != "" {
+		config["bridge_release_status"] = releaseStatus
+	}
+	if metadata != nil {
+		config["bridge_release"] = *metadata
+	}
 	result := core.Result{
 		"name": name, "key": key, "url": info.URL, "issued_by": issuer.By,
-		"config":     endpointRecipe(info, name, key),
+		"config":     config,
 		"expires_at": now.Add(ttl),
 	}
 	if nonce != "" {

@@ -28,6 +28,27 @@ func recordCosignHelper() int {
 		os.Getenv("TUF_ROOT_JSON") != "" || os.Getenv("TUF_ROOT") == "" {
 		return 20
 	}
+	if receipt := os.Getenv("DIBS_TEST_COSIGN_RECORD_RECEIPT"); receipt != "" {
+		f, err := os.OpenFile(receipt, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+		if err != nil {
+			return 26
+		}
+		_, err = f.WriteString("verify\n")
+		closed := f.Close()
+		if err != nil || closed != nil {
+			return 27
+		}
+	}
+	switch os.Getenv("DIBS_TEST_COSIGN_RECORD_FAILURE") {
+	case "signal":
+		p, err := os.FindProcess(os.Getpid())
+		if err != nil || p.Kill() != nil {
+			return 28
+		}
+		return 29 // unreachable after a successful forced termination
+	case "exit":
+		return 37 // deliberately not a classified signature verdict
+	}
 	args := os.Args[2:]
 	if len(args) != 7 && len(args) != 9 {
 		return 21

@@ -7,6 +7,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Guest exports can carry detached verified release metadata.** Admission
+  rechecks bounded retained evidence offline before minting and shares the
+  explicit verification command's compiled release-selection rule. A
+  process-local success-only cache keys the exact record content and running build; changed
+  or refused evidence withdraws only artifact metadata, never ordinary invite,
+  list or revoke access. All three targets need signed archive and executable
+  member digests. The private export records actual board provenance and an
+  explicit `INCOMPLETE` provisioning status; it adds no download/run steps.
+  The supporting minimum remains unset pending publication and runtime acceptance.
+
 - **Release checksums name the packaged guest CLI bytes.** The existing
   `checksums.txt` carries platform-scoped `members/<os>_<arch>/dibs` digests
   from final code-signed images. The archive gate independently extracts all
@@ -101,8 +111,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   command can repair a refused cache by freshly verifying online before atomic
   replacement; offline reads never fetch replacement evidence. Its supporting
   minimum intentionally remains unset, so production refuses before I/O.
-  Guest admission, member digests and published/runtime acceptance remain
-  pending. Ordinary invitation issuance is unchanged.
+  Admission and member-digest publication preparation are now implemented;
+  supporting publication and runtime acceptance remain pending. Ordinary
+  invitation issuance is unchanged.
 
 - **Release publication checks its embedded Sigstore trust root.** A fresh,
   authenticated production-TUF fetch must match the reviewed byte string and
