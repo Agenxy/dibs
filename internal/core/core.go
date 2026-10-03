@@ -745,7 +745,8 @@ type Message struct {
 // capacity, displacement, inbox, retention, and GC.
 func (m *Message) Terminal() bool {
 	switch m.State {
-	case MsgStateWithdrawn, MsgStateAnswered, MsgStateApproved, MsgStateQueued, MsgStateDenied, MsgStateDeclined, MsgStateDone,
+	case MsgStateWithdrawn, MsgStateAnswered, MsgStateApproved, MsgStateQueued,
+		MsgStateDenied, MsgStateDeclined, MsgStateDone,
 		MsgStateExpiredSilent, MsgStateExpiredDormant, MsgStateExpiredDead,
 		MsgStateDisplaced:
 		return true

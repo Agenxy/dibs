@@ -3,7 +3,9 @@ package core
 import "time"
 
 const (
+	// OpWithdrawMessage retracts a sender's unfinished request.
 	OpWithdrawMessage = "withdraw_message"
+	// MsgStateWithdrawn is a retracted request, never completed work.
 	MsgStateWithdrawn = "withdrawn"
 )
 
@@ -22,7 +24,8 @@ func checkWithdrawal(op *Op, lim Limits) error {
 		return errTooLarge("withdrawal reason", lim.MaxBodyBytes)
 	}
 	if op.Milestone != 0 || len(op.Milestones) != 0 || op.Deliverable != "" {
-		return errf("E_BAD_ARG", "withdraw takes body as reason and optional superseded_by, not work reports", "recipient fields on withdrawal")
+		return errf("E_BAD_ARG", "withdraw takes body as reason and optional superseded_by, not work reports",
+			"recipient fields on withdrawal")
 	}
 	return nil
 }
@@ -45,15 +48,18 @@ func (s *State) applyWithdraw(l *Agent, op *Op, now time.Time) (Result, []Event,
 	case MsgStatePending, MsgStateDelivered, MsgStateAcked, MsgStateQueued:
 	case MsgStateApproved:
 		if m.Grant != "" || m.Adopt != "" {
-			return nil, nil, errf("E_MSG_FINAL", "approval already performed this effect; withdrawal cannot undo it", "request already performed")
+			return nil, nil, errf("E_MSG_FINAL", "approval already performed this effect; withdrawal cannot undo it",
+				"request already performed")
 		}
 	default:
-		return nil, nil, errf("E_MSG_FINAL", "this request is finished; send a new request instead", "request already %s", m.State)
+		return nil, nil, errf("E_MSG_FINAL", "this request is finished; send a new request instead",
+			"request already %s", m.State)
 	}
 	if op.SupersededBy != 0 {
 		replacement := s.Messages[op.SupersededBy]
 		if !SenderOwnsRequest(replacement, l) || replacement.Grant != "" || replacement.Adopt != "" {
-			return nil, nil, errf("E_NO_MESSAGE", "superseded_by names another ordinary request YOU sent", "replacement is not your work request")
+			return nil, nil, errf("E_NO_MESSAGE", "superseded_by names another ordinary request YOU sent",
+				"replacement is not your work request")
 		}
 	}
 	queued := m.State == MsgStateQueued
@@ -77,5 +83,7 @@ func (s *State) applyWithdraw(l *Agent, op *Op, now time.Time) (Result, []Event,
 		evs = append(evs, s.queueEvents(s.TaskQueue(m.To), l.ID, "message.queue_changed", 0)...)
 	}
 	s.finish(&evs, now)
-	return Result{"ok": true, "state": MsgStateWithdrawn, "msg_serial": m.Serial, "superseded_by": m.SupersededBy}, evs, nil
+	return Result{
+		"ok": true, "state": MsgStateWithdrawn, "msg_serial": m.Serial, "superseded_by": m.SupersededBy,
+	}, evs, nil
 }

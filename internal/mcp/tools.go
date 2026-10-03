@@ -389,7 +389,9 @@ var toolDefs = func() []map[string]any {
 				"token": tok, "msg_serial": num("serial of the message"),
 				"disposition": map[string]any{
 					"type": "string",
-					"enum": []string{"answer", "queue", "approve", "deny", "decline", "progress", "done", "accept", "flag", "withdraw"},
+					"enum": []string{
+						"answer", "queue", "approve", "deny", "decline", "progress", "done", "accept", "flag", "withdraw",
+					},
 				},
 				"body":          str("response text"),
 				"superseded_by": num("withdraw replacement"),

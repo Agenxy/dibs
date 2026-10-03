@@ -26,7 +26,8 @@ func (e *Engine) rebuildWithdrawalNotices() {
 	}
 	sort.Slice(mail, func(i, j int) bool { return mail[i].RespondedAt < mail[j].RespondedAt })
 	for _, m := range mail {
-		ev := core.Event{Agent: m.WithdrawnBy, To: m.To, Data: map[string]any{"msg_serial": m.Serial, "superseded_by": m.SupersededBy}}
+		ev := core.Event{Agent: m.WithdrawnBy, To: m.To,
+			Data: map[string]any{"msg_serial": m.Serial, "superseded_by": m.SupersededBy}}
 		e.pushNoticeAs(m.To, withdrawalNotice(ev), m.RespondedAt, m.Serial, true, m.TerminalAt)
 	}
 }

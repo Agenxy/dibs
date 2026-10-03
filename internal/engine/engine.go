@@ -944,7 +944,8 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		e.seen[actor.ID] = now
 		e.noteAuthenticatedContact(actor, now)
 		e.confirmSocketOffer(actor, now)
-		if op.Kind == core.OpWithdrawMessage || (op.Kind == core.OpRespond && (op.Disposition == "accept" || op.Disposition == "flag")) {
+		if op.Kind == core.OpWithdrawMessage ||
+			(op.Kind == core.OpRespond && (op.Disposition == "accept" || op.Disposition == "flag")) {
 			e.clearNoticesFor(actor.ID, op.MsgSerial)
 		}
 	}
