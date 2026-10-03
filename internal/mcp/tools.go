@@ -417,7 +417,7 @@ var toolDefs = func() []map[string]any {
 			"name":        "queue_lock",
 			"description": "Coordinator/admin: set queue_order_lock on an agent or task. Starting stays the recipient's choice.",
 			"inputSchema": obj(map[string]any{
-				"token": tok, "agent": str("queue owner id"),
+				"token": tok, "agent": str("queue owner id or name"),
 				"msg_serial": num("queued request; omit for whole queue"),
 				"locked":     map[string]any{"type": "boolean", "description": "true grants; false revokes"},
 			}, "token", "agent", "locked"),

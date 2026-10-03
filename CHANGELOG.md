@@ -186,7 +186,7 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the measure of what that costs here (rounds 36 and 39 of the pre-release review
   each found a place it had missed). Instead the **name is accepted wherever a
   call names an agent**: `send`, `grant_role`, `prune`, `force_release`,
-  `adopt_agent`, `admit`, `evict`, `merge_agents`. An exact id still wins
+  `adopt_agent`, `admit`, `evict`, `merge_agents`, `queue_lock`. An exact id still wins
   outright, so nothing that worked changes meaning, and mail addressed to the old
   id keeps arriving forever because the id never stops being the row's key: there
   is no alias to expire and nothing to lose.

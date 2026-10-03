@@ -500,3 +500,30 @@ func TestAnAgentNamedHumanDoesNotCaptureThePersonsMail(t *testing.T) {
 		t.Fatalf("the agent named human received %d messages meant for the person", got)
 	}
 }
+
+// queue_lock is a door main added beside exec rather than through it: the
+// engine builds the permission op itself, so the resolution exec performs
+// never ran and a coordinator naming the agent the board shows was told
+// "unknown queue owner". Same bug class as the rest of this file, found on
+// the newest sibling, which is where it always is.
+func TestQueueLockTakesAName(t *testing.T) {
+	e, ctx, cancel := runningEngine(t)
+	defer cancel()
+
+	id, tok := regFor(t, e, ctx, "codex-primary")
+	_, leadTok := regFor(t, e, ctx, "lead")
+	rename(t, e, ctx, tok, "gpt-dibs")
+	if _, err := e.GrantRole(ctx, "lead", core.RoleCoordinator); err != nil {
+		t.Fatalf("setup: grant: %v", err)
+	}
+	if e.state.Agents[id].HasPermission(core.PermQueueOrderLock) {
+		t.Fatal("setup: the agent already held queue_order_lock")
+	}
+
+	if _, err := e.SetQueueOrderLock(ctx, leadTok, "gpt-dibs", 0, true); err != nil {
+		t.Fatalf("queue_lock refused the name the board shows: %v", err)
+	}
+	if !e.state.Agents[id].HasPermission(core.PermQueueOrderLock) {
+		t.Fatal("queue_lock by name succeeded but the renamed agent does not hold the lock")
+	}
+}
