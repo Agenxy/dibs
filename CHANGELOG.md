@@ -34,6 +34,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Endpoint-scoped guest stdio adapter (implementation in progress).**
+  `dibs mcp-stdio --guest <private absolute JSON file>` uses only the invited
+  IPv6 endpoint, constrained CA and bearer; it never initializes a local board
+  or imports guest trust into the harness or system. Guest discovery is
+  pull-only, and recovery uses the recipe's nonce or an isolated private store.
+  Published release-backed recipes and cloud/WAN acceptance remain pending;
+  this source change does not make the existing native-client recipe verified.
+
 - **One pending Codex wake per thread.** The command route reads the native
   app queue before enqueuing; repeated events and daemon restarts reuse an
   already pending Dibs wake. The bounded observer lists only, never resumes a

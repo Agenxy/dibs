@@ -601,7 +601,7 @@ func (s *Server) dispatch(
 ) (any, *rpcError) {
 	switch req.Method {
 	case "server/discover": // 2026-07-28 primary discovery
-		return cacheable(map[string]any{
+		return invitedDiscovery(ctx, cacheable(map[string]any{
 			"supportedVersions": supportedVersions,
 			"capabilities": map[string]any{
 				"tools": map[string]any{"listChanged": true}, // see ToolsFingerprint
@@ -617,9 +617,9 @@ func (s *Server) dispatch(
 			},
 			"serverInfo":   serverBuildInfo(),
 			"instructions": serverInstructions,
-		}, ttlStatic, scopePublic), nil
+		}, ttlStatic, scopePublic)), nil
 	case "initialize": // legacy path (SEP-2575 dual-version); echo the client's version
-		return map[string]any{
+		return invitedDiscovery(ctx, map[string]any{
 			"protocolVersion": negotiateLegacy(req.Params),
 			"capabilities": map[string]any{
 				"tools": map[string]any{"listChanged": true}, // see ToolsFingerprint
@@ -637,7 +637,7 @@ func (s *Server) dispatch(
 			},
 			"serverInfo":   serverBuildInfo(),
 			"instructions": serverInstructions,
-		}, nil
+		}), nil
 	case "ping": // legacy path only (removed in 2026-07-28)
 		return map[string]any{}, nil
 	case "tools/list":

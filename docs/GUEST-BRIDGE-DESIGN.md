@@ -1,6 +1,6 @@
 # Endpoint-scoped guest stdio bridge
 
-Status: proposed, for independent review before implementation. Operator choice
+Status: accepted in independent Dibs review 16380, with refinements below. Operator choice
 recorded in Dibs answer 15770 on 2026-10-03; follows request 14136 and the
 measurements in `docs/GUEST-NATIVE-TRUST.md`. This document is not a runnable
 recipe, verified adapter, release announcement, cloud acceptance or WAN proof.
@@ -36,6 +36,7 @@ The bounded, versioned JSON file contains:
   "name": "<exact invitation name>",
   "endpoint": "https://[<literal IPv6>]:<port>/mcp",
   "invitation_key": "<private bearer credential>",
+  "recovery_nonce": "<issuer-minted private 256-bit recovery credential>",
   "expires_at": "<issuer-provided UTC expiry>",
   "ca_pem": "<one guest CA certificate>",
   "ca_spki_sha256": "<64 lowercase hex digits>",
@@ -179,16 +180,28 @@ an illegal harness identity gets the real omit-fields hint. Register must name
 the invitation's exact agent name. Guest role/name/kind are the agent's choices
 within existing invitation policy, not bridge-created work assignments.
 
-Keep caller-provided nonce and agent token unchanged. For a missing nonce, a
-guest-private, atomic/locked credential store may fill one, keyed by endpoint +
+Keep caller-provided nonce and agent token unchanged. The issuer mints a recovery
+nonce into the PRIVATE recipe, as sensitive as the invitation key beside it.
+A fresh container given the same recipe recovers the same mailbox: its identity
+does not depend on a disposable volume. A supplied nonce wins; otherwise use the
+recipe nonce. Only for older recipes without one, a guest-private, atomic/locked
+credential store may fill one, keyed by endpoint +
 CA pin + invitation name, never the board's global `harness-nonces.json`. An
 unwritable/corrupt store is an actionable failure for auto-nonce mode, not a new
 random identity that silently strands mail. Supplied nonce wins. No token is
 printed or automatically substituted into arbitrary tools; registration reply
 remains the authoritative credential. File-backed guest identity surviving a
 context boundary is distinct from promising persistence in an ephemeral cloud
-container. A lost volume requires explicit identity recovery, not a sibling
-registration presented as resumed. No local daemon/data directory is created.
+container. A lost volume with a nonce-less legacy recipe requires explicit
+identity recovery, not a sibling registration presented as resumed. Verify the
+invitation Bind path reattaches on the same nonce in a new bridge process.
+No local daemon/data directory is created.
+
+The legacy store lives beside the private recipe, in endpoint/pin/name-hashed
+credential files. All readers/writers take a nonblocking OS lock; contention
+is an actionable refusal, not an unlocked write. A new nonce is synced to a
+private temporary file then atomically renamed before registration can leave
+the bridge. Existing corrupt, non-private or symlinked state is never replaced.
 
 MCP 2026 task support is preserved only when this request declares the extension:
 send(track:true) can return CreateTaskResult; tasks/get/update/cancel and opaque
@@ -212,8 +225,13 @@ artifacts are tar.gz for Linux amd64/arm64 and macOS arm64; Windows/macOS Intel
 must be reported unsupported by release provisioning, not mapped to the wrong
 binary. An implementation merged on main is not a published bridge binary.
 
-Provisioning steps, to be implemented as tested Python (stdlib, PEP 723, runnable
-with uv) or Go, **not a shell script or curl-pipe-to-shell**:
+The first-time recipe states these steps literally for the cloud agent using its
+available download/hash/archive primitives. No installer program, Python, uv or
+cosign is presumed to exist in the guest; no curl-pipe-to-shell. The guest's root
+of trust is already the human's private handoff (the same channel carries the CA
+pin), so a hash in that handoff has exactly the provenance of the pin. A later
+verified-upgrade subcommand may be implemented in Go, not a script, under its
+separately reviewed lifecycle boundary:
 
 1. Verify release checksums/signature on the issuer using the existing pinned
    workflow identity and signature boundary; freeze artifact digest records.
@@ -306,10 +324,11 @@ authenticated out of band). It is not exclusive CA/SPKI pinning, does not make
 Claude native trust usable, and needs its own exact-build/WAN acceptance. The
 stdio route is the exclusive-trust default once its own evidence exists.
 
-## Decisions requested in this review
+## Independent verdict and implementation boundary
 
-Confirm the private-file CLI and immutable-snapshot/restart trust boundary;
-issuer-verified release manifest + guest independently conveyed hash bootstrap
-(or require direct signature verification on every guest); nonce-store policy;
-and preserving invitation-only pull/task polling rather than adding a guest
-subscription/GET/wake surface. Until accepted, no adapter or recipe changes.
+Review 16380 accepted the private-file CLI, immutable-snapshot/restart boundary,
+issuer-vouched hashes (guest cosign is not mandatory), and unchanged invitation
+pull/task-polling policy. Its two refinements are an issuer-minted recipe recovery
+nonce and literal first-time download/hash/extract steps instead of a provisioner
+bootstrap dependency. Proceed with failing real-command tests first; source
+review, gates, publication and installed/WAN acceptance remain separate work.
