@@ -17,10 +17,11 @@ import (
 // Service combines access configuration with the engine's authenticated,
 // replay-derived issuer evidence. File I/O is always outside the writer loop.
 type Service struct {
-	Store  Store
-	Engine *engine.Engine
-	Policy boardconfig.InvitesConfig
-	URL    string
+	Store    Store
+	Engine   *engine.Engine
+	Policy   boardconfig.InvitesConfig
+	URL      string
+	Endpoint *PublicEndpoint
 }
 
 func refused(why, hint string) error {
@@ -108,7 +109,7 @@ func (s *Service) list(ctx context.Context, issuer Issuance, entries []Entry) (c
 		}
 		out = append(out, e)
 	}
-	return core.Result{"invites": out, "url": s.URL}, nil
+	return core.Result{"invites": out, "url": s.endpointInfo().URL}, nil
 }
 
 func (s *Service) mint(ctx context.Context, issuer Issuance, coordinator bool,
@@ -138,9 +139,16 @@ func (s *Service) mint(ctx context.Context, issuer Issuance, coordinator bool,
 	if err != nil {
 		return nil, issuanceError(err)
 	}
+	info := s.endpointInfo()
+	if info.URL == "" {
+		return nil, refused("guest listener withdrew during issuance; "+
+			"the invitation was stored but its key was not disclosed",
+			"call invite(action: list), revoke the unused invitation by name, "+
+				"and retry only after the public endpoint is restored")
+	}
 	return core.Result{
-		"name": name, "key": key, "url": s.URL, "issued_by": issuer.By,
-		"config": Recipe(name, key, s.URL),
+		"name": name, "key": key, "url": info.URL, "issued_by": issuer.By,
+		"config": endpointRecipe(info, name, key),
 	}, nil
 }
 
@@ -155,9 +163,11 @@ func (s *Service) mintEntries(ctx context.Context, entries []Entry) ([]Entry, er
 }
 
 func (s *Service) mintPolicy(issuer Issuance, coordinator bool, ttlS int64) (Issuance, time.Duration, error) {
-	if s.URL == "" {
+	if s.endpointInfo().URL == "" {
 		return issuer, 0, refused("no public invitation listener configured",
-			"the operator configures --public-url behind TLS or --public-host with --acme-accept-terms once")
+			"the operator configures public-url behind TLS, public-host with ACME consent, "+
+				"or an explicit public-ip with the unverified-client acknowledgement; "+
+				"a withdrawn address must be fixed before inviting")
 	}
 	who, maxLive, maxTTL := s.Policy.IssuancePolicy()
 	issuer.MaxLive = maxLive

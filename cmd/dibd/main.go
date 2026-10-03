@@ -77,6 +77,8 @@ type daemonOpts struct {
 	addr          *string
 	check         *bool
 	publicHost    *string
+	publicIP      *string
+	ackGuest      *bool
 	publicURL     *string
 	publicAddr    *string
 	acceptACME    *bool
@@ -103,10 +105,15 @@ func registerDaemonFlags(fs *flag.FlagSet) (*daemonOpts, *scorerFlags) {
 	fs.Bool("man", false, "write this daemon's manual page (mdoc) to stdout and exit")
 	o.publicHost = fs.String("public-host", "",
 		"public invitation-only HTTPS hostname (ACME; public port 443 must reach this listener)")
+	o.publicIP = fs.String("public-ip", "",
+		"explicit assigned global IPv6 for invitation-only TLS; stability is operator-asserted, not measured")
+	o.ackGuest = fs.Bool("ack-unverified-guest-client", false,
+		"explicitly acknowledge no native guest client is verified yet for the constrained guest CA; required with public-ip")
 	o.publicURL = fs.String("public-url", "",
 		"public HTTPS origin behind a TLS proxy; invitation-only listener stays on loopback")
 	o.publicAddr = fs.String("public-addr", "",
-		"second listener address (default :443 with public-host, 127.0.0.1:4778 with public-url)")
+		"second listener address (default :443 with public-host, 127.0.0.1:4778 with public-url, "+
+			"[public-ip]:4778 with public-ip)")
 	o.acceptACME = fs.Bool("acme-accept-terms", false,
 		"operator accepts the ACME CA terms for public-host; no automatic acceptance")
 	return o, registerScorerFlagsOn(fs)
@@ -408,12 +415,17 @@ func run() error {
 	scorer.install(ctx, eng)
 
 	mux := http.NewServeMux()
+	// Serving only: -check must never mint or replace a guest signing identity.
+	if err := preparePublic(&publicCfg, *dir); err != nil {
+		return err
+	}
 	mcpSrv := mcp.New(eng)
 	files := transfer.New(ctx, eng, bs, *dir)
 	mcpSrv.SetTransfers(files, "")
 	mcpSrv.SetTaskKey(secret) // task ids survive a restart; see mcp/tasks.go
 	inviteService := &invites.Service{
 		Engine: eng, Store: invites.Store{Dir: *dir}, Policy: cfg.Invites, URL: publicCfg.URL,
+		Endpoint: publicCfg.Endpoint,
 	}
 	mcpSrv.SetInvites(inviteService)
 	mux.Handle("/mcp", mcpSrv)
@@ -429,6 +441,9 @@ func run() error {
 	registerAdminAPI(mux, eng)
 	registerInvitationAPI(mux, inviteService)
 	registerTransferStatus(mux, publicCfg.URL)
+	if publicCfg.Endpoint != nil {
+		registerGuestStatus(mux, publicCfg.Endpoint)
+	}
 
 	tr, err := resolveTransport(*dir, listenAddr, askedScheme, cfg)
 	if err != nil {

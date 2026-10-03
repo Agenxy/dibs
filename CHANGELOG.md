@@ -14,6 +14,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   receipt uses session-start/prompt hooks and a two-hour expiry; ordinary MCP
   and tool traffic cannot re-arm an undelivered wake.
 
+- **Opt-in direct IPv6 guest TLS, without a domain or relay.** An explicit
+  assigned global `--public-ip` selects an invitation-only TLS 1.3 listener.
+  Its constrained guest CA and private key are separate from fleet trust;
+  invitations privately carry the CA PEM and SPKI pin. Assignment loss or
+  failed leaf renewal withdraws this endpoint, not the private board.
+  Doctor distinguishes operator-asserted stability and local TLS from WAN
+  proof. No native client is verified yet: enabling requires the explicit
+  `--ack-unverified-guest-client`, and no native-client recipe is offered
+  until exact-runtime malicious-certificate acceptance passes. Supgang
+  automatic address selection and guest-pin advertisement remain follow-ups.
+
 - **Milestone notices explain their own calls.** Progress names the parent
   request and optional accept/flag review; acknowledging its event only marks
   the notice seen. Read mail shows each milestone's latest review, and a new

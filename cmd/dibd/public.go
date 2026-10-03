@@ -9,10 +9,13 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/agenxy/dibs/internal/engine"
@@ -23,7 +26,13 @@ import (
 	"golang.org/x/crypto/acme/autocert"
 )
 
-type publicConfig struct{ URL, Addr, Host string }
+type publicConfig struct {
+	URL, Addr, Host string
+	IP              netip.Addr
+	TLS             *tls.Config
+	Endpoint        *invites.PublicEndpoint
+	guestPoll       time.Duration // zero in production; bounded-clock listener fixtures shorten the timer
+}
 
 func dnsHostname(host string) bool {
 	if len(host) > 253 || host == "" {
@@ -44,6 +53,19 @@ func dnsHostname(host string) bool {
 
 func resolvePublic(o *daemonOpts) (publicConfig, error) {
 	var c publicConfig
+	if *o.publicIP != "" {
+		if *o.publicHost != "" || *o.publicURL != "" || *o.acceptACME {
+			return c, errors.New("choose public-ip OR public-host OR public-url; ACME terms apply only to public-host")
+		}
+		if !*o.ackGuest {
+			return c, errors.New("no native guest client is verified for direct-IP CA trust yet; " +
+				"to opt in explicitly use --ack-unverified-guest-client with --public-ip")
+		}
+		return resolveIPPublic(o)
+	}
+	if *o.ackGuest {
+		return c, errors.New("ack-unverified-guest-client requires public-ip")
+	}
 	if *o.publicHost != "" && *o.publicURL != "" {
 		return c, errors.New("choose public-host OR public-url, not both")
 	}
@@ -57,6 +79,92 @@ func resolvePublic(o *daemonOpts) (publicConfig, error) {
 		return resolveACMEPublic(o, host)
 	}
 	return resolveProxyPublic(o)
+}
+
+// An operator names ONE address, never a wildcard or a discovered candidate.
+// Assignment is measured; stability and WAN reachability are not inferred.
+func resolveIPPublic(o *daemonOpts) (publicConfig, error) {
+	var c publicConfig
+	ip, err := netip.ParseAddr(*o.publicIP)
+	if err != nil || !globalGuestIPv6(ip) {
+		return c, errors.New("public-ip must be an unzoned global IPv6 address, " +
+			"not private, link-local, documentation or an IPv4 address")
+	}
+	c = publicConfig{IP: ip, Addr: firstNonEmpty(*o.publicAddr, net.JoinHostPort(ip.String(), "4778"))}
+	host, port, err := net.SplitHostPort(c.Addr)
+	bound, parseErr := netip.ParseAddr(host)
+	n, portErr := strconv.Atoi(port)
+	if err != nil || parseErr != nil || bound != ip || portErr != nil || n < 1 || n > 65535 {
+		return publicConfig{}, errors.New("public-addr must bind exactly public-ip " +
+			"and a numeric port from 1 through 65535; " +
+			"wildcard listeners are refused")
+	}
+	if err := assignedGuestIP(ip); err != nil {
+		return publicConfig{}, err
+	}
+	c.URL = "https://" + net.JoinHostPort(ip.String(), strconv.Itoa(n))
+	return c, nil
+}
+
+func globalGuestIPv6(ip netip.Addr) bool {
+	// Public global unicast allocation, conservatively excluding reserved
+	// documentation and protocol-assignment blocks. IsGlobalUnicast alone also
+	// admits ULA and documentation addresses, which are not public endpoints.
+	return ip.Is6() && !ip.Is4In6() && ip.Zone() == "" &&
+		netip.MustParsePrefix("2000::/3").Contains(ip) &&
+		!netip.MustParsePrefix("2001::/23").Contains(ip) &&
+		!netip.MustParsePrefix("2001:db8::/32").Contains(ip) &&
+		!netip.MustParsePrefix("3fff::/20").Contains(ip)
+}
+
+func assignedGuestIP(ip netip.Addr) error {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return fmt.Errorf("public-ip assignment could not be measured: %w; retry after checking the interface", err)
+	}
+	if len(interfaces) > 64 {
+		return errors.New("public-ip assignment snapshot exceeds 64 interfaces; " +
+			"reduce the host interface set before advertising a guest endpoint")
+	}
+	count := 0
+	for _, iface := range interfaces {
+		if iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+		addresses, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		count += len(addresses)
+		if count > 256 {
+			return errors.New("public-ip assignment snapshot exceeds 256 addresses; " +
+				"reduce the host address set before advertising a guest endpoint")
+		}
+		for _, addr := range addresses {
+			prefix, err := netip.ParsePrefix(addr.String())
+			if err == nil && prefix.Addr() == ip {
+				return nil
+			}
+		}
+	}
+	return errors.New("public-ip is not assigned to an up interface; " +
+		"choose an address actually assigned on this host (stability remains operator-asserted)")
+}
+
+func preparePublic(c *publicConfig, dir string) error {
+	if !c.IP.IsValid() {
+		return nil
+	}
+	config, caPEM, pin, err := guestTLS(dir, c.IP)
+	if err != nil {
+		return err
+	}
+	c.TLS = config
+	c.Endpoint = invites.NewPublicEndpoint(invites.EndpointInfo{
+		URL: c.URL, Mode: "direct-ip", Address: c.IP.String(), Stability: "operator-asserted",
+		CAPEM: caPEM, CASPKIPin: pin, VerifiedClients: []string{},
+	})
+	return nil
 }
 
 func resolveACMEPublic(o *daemonOpts, host string) (publicConfig, error) {
@@ -209,16 +317,22 @@ func startPublic(ctx context.Context, c publicConfig, dir string, eng *engine.En
 	if c.URL == "" {
 		return failure, func() {}, nil
 	}
+	if c.IP.IsValid() && (c.Endpoint == nil || c.TLS == nil) {
+		if err := preparePublic(&c, dir); err != nil {
+			return nil, nil, err
+		}
+	}
 	ln, err := net.Listen("tcp", c.Addr)
 	if err != nil {
 		return nil, nil, fmt.Errorf("public listener: %w; choose an unused public-addr", err)
 	}
+	directTLS := c.TLS
 	s := mcp.New(eng)
 	s.SetTaskKey(secret)
 	s.SetTransfers(files, c.URL)
 	g := &publicGate{
 		store: invites.Store{Dir: dir}, origin: c.URL, rates: map[string]*inviteBucket{},
-		transfers: files, proxy: c.Host == "",
+		transfers: files, proxy: c.Host == "" && !c.IP.IsValid(),
 	}
 	g.service = &invites.Service{Store: g.store, Engine: eng}
 	srv := &http.Server{
@@ -232,6 +346,8 @@ func startPublic(ctx context.Context, c publicConfig, dir string, eng *engine.En
 		}
 		srv.TLSConfig = manager.TLSConfig()
 		srv.TLSConfig.MinVersion = tls.VersionTLS13
+	} else if directTLS != nil {
+		srv.TLSConfig = directTLS
 	}
 	closeFn := func() {
 		shutdown, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -239,20 +355,93 @@ func startPublic(ctx context.Context, c publicConfig, dir string, eng *engine.En
 		_ = srv.Shutdown(shutdown)
 		_ = ln.Close()
 	}
+	if c.Endpoint != nil && directTLS != nil {
+		startGuestMonitor(ctx, c, dir, srv, ln)
+	}
 	go func() { <-ctx.Done(); closeFn() }()
-	go func() {
-		var err error
-		if c.Host != "" {
-			err = srv.ServeTLS(ln, "", "")
-		} else {
-			err = srv.Serve(ln)
-		}
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			failure <- fmt.Errorf("public listener stopped: %w", err)
-			stop()
-		}
-	}()
+	go servePublic(srv, ln, c.Endpoint, failure, stop)
 	slog.Info("public invitation listener up", "mcp", c.URL+"/mcp", "addr", c.Addr,
 		"mode", "invite-only, pull-only; private routes remain on the original listener")
 	return failure, closeFn, nil
+}
+
+func servePublic(srv *http.Server, ln net.Listener, endpoint *invites.PublicEndpoint,
+	failure chan<- error, stop context.CancelFunc,
+) {
+	var err error
+	if srv.TLSConfig != nil {
+		err = srv.ServeTLS(ln, "", "")
+	} else {
+		err = srv.Serve(ln)
+	}
+	if err == nil || errors.Is(err, http.ErrServerClosed) {
+		return
+	}
+	if endpoint != nil {
+		endpoint.Withdraw("guest listener stopped; restart after fixing the selected address")
+		slog.Warn("guest listener stopped; private board remains available", "error", err)
+		return
+	}
+	failure <- fmt.Errorf("public listener stopped: %w", err)
+	stop()
+}
+
+func startGuestMonitor(ctx context.Context, c publicConfig, dir string, srv *http.Server, ln net.Listener) {
+	// Atomic snapshots keep leaf renewal out of handshakes and races. Never
+	// switch a guest CA under a pinned client. Loss/expiry withdraws only the
+	// guest endpoint; the private fleet board remains available.
+	current := new(atomic.Pointer[tls.Config])
+	current.Store(c.TLS)
+	srv.TLSConfig = c.TLS.Clone()
+	srv.TLSConfig.GetConfigForClient = func(_ *tls.ClientHelloInfo) (*tls.Config, error) { return current.Load(), nil }
+	withdraw := func(err error) {
+		c.Endpoint.Withdraw(err.Error())
+		slog.Warn("public guest endpoint withdrawn", "reason", err.Error(), "hint",
+			"fix the assigned public-ip; changed scope requires fresh guest CA trust and invitations, not fleet CA rotation")
+		closePublicConnections(srv, ln)
+	}
+	go monitorGuest(ctx, c, dir, current, withdraw)
+}
+
+func closePublicConnections(srv *http.Server, ln net.Listener) {
+	// Shutdown lets existing long polls linger; a withdrawn address must not
+	// keep an invitation channel alive through an already-open connection.
+	_ = srv.Close()
+	_ = ln.Close()
+}
+
+func monitorGuest(ctx context.Context, c publicConfig, dir string,
+	current *atomic.Pointer[tls.Config], withdraw func(error),
+) {
+	interval := c.guestPoll
+	if interval <= 0 {
+		interval = 30 * time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := assignedGuestIP(c.IP); err != nil {
+				withdraw(err)
+				return
+			}
+			leaf := current.Load().Certificates[0].Leaf
+			if leaf.NotAfter.After(time.Now().Add(time.Hour)) {
+				continue
+			}
+			renewed, _, pin, err := guestTLS(dir, c.IP)
+			if err != nil {
+				withdraw(err)
+				return
+			}
+			if pin != c.Endpoint.Snapshot().CASPKIPin {
+				withdraw(errors.New("guest CA changed; re-invite with newly verified trust material, not a silent trust update"))
+				return
+			}
+			current.Store(renewed)
+		}
+	}
 }
