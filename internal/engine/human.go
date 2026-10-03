@@ -213,6 +213,7 @@ func (e *Engine) humanAgentLocked(now time.Time) (agent, token string, err error
 	// its old label after dormancy/restart is E_NONCE_IN_USE; recover the row's
 	// current label first, including when archival cleared its nonce field.
 	if id := e.humanRowLocked(); id != "" {
+		// rowForNonce checks the row exists; this is on the single writer loop.
 		name = e.state.Agents[id].Name
 	}
 	res, err := e.exec(&core.Op{
