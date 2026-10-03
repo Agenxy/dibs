@@ -146,6 +146,21 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   errors and recovered adapter panics. Shutdown waits for pruning before
   releasing protection. The store also locks its hold check and unlink together.
 
+- **Every CLI command answers help without authority.** `--help` and `-h`
+  print command usage on stdout and exit successfully before reading stdin,
+  checking credentials or contacting the board. `invite` no longer interprets
+  help as an invalid agent name. Existing flag help retains its defaults, and
+  the command catalog now includes stop, upgrade, trust and fingerprint.
+  File-transfer help names the input file or blob and destination, with each
+  command showing only the flags it actually uses.
+  Previously ignored cross-command flags, such as `get -mime`, are now refused.
+
+- **Bridge recovery hints name real commands.** A refused connection now says
+  to wait and retry after an upgrade or restart; if it persists, run the
+  read-only `dibs doctor` diagnostic and tell the human. It does not ask an
+  agent to start or install the shared daemon. A static guard checks production
+  backticked CLI commands against the actual dispatch table, including aliases.
+
 - **One machine reads as one machine.** Board rows, compact check-ins and the
   shared web/panel renderer use one label per known host identity instead of
   each harness's differing hostname. The daemon's hostname labels local agents;

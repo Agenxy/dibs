@@ -31,6 +31,11 @@ func inviteLifetime(s string) (time.Duration, error) {
 }
 
 func invitePayload(args []string) (map[string]any, error) {
+	fs := flag.NewFlagSet("invite", flag.ContinueOnError)
+	ttl := fs.String("ttl", "7d", "invitation lifetime (agent policy defaults to at most 7d)")
+	if helpOnly(args) {
+		return nil, parseFlags(fs, args)
+	}
 	if len(args) == 0 {
 		return nil, errors.New("usage: dibs invite <name> [--ttl 30d] | list | revoke <name>")
 	}
@@ -41,12 +46,10 @@ func invitePayload(args []string) (map[string]any, error) {
 	if action == "revoke" {
 		return revokePayload(args[1:])
 	}
-	fs := flag.NewFlagSet("invite", flag.ContinueOnError)
-	ttl := fs.String("ttl", "7d", "invitation lifetime (agent policy defaults to at most 7d)")
 	if !invites.ValidName(action) || action == "list" || action == "revoke" {
 		return nil, errors.New("invite needs a lowercase ASCII agent name, or list/revoke <name>")
 	}
-	if err := fs.Parse(args[1:]); err != nil {
+	if err := parseFlags(fs, args[1:]); err != nil {
 		return nil, err
 	}
 	if fs.NArg() != 0 {
@@ -68,7 +71,7 @@ func invitePayload(args []string) (map[string]any, error) {
 func revokePayload(args []string) (map[string]any, error) {
 	fs := flag.NewFlagSet("invite revoke", flag.ContinueOnError)
 	issuer := fs.String("issued-by", "", "revoke all invitations owned by this issuer")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args); err != nil {
 		return nil, err
 	}
 	if *issuer != "" && fs.NArg() == 0 {

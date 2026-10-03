@@ -30,12 +30,13 @@ type Engine struct {
 	transfers    map[uint64]transferReservation // ephemeral staging reservations, writer-owned
 	transferNext uint64
 	inviteClosed map[string]uint64 // derived from ledgered closes, rebuilt before ring trimming
-	ops          chan request
-	subs         chan subReq
-	unsubs       chan chan core.Event
-	state        *core.State
-	led          Ledger
-	blobs        Store
+	// Must stay unbuffered: accepted registration holds belong to the writer.
+	ops    chan request
+	subs   chan subReq
+	unsubs chan chan core.Event
+	state  *core.State
+	led    Ledger
+	blobs  Store
 	// Derived protection against snapshots older than a blob registration.
 	blobReconciles       int
 	blobReconcileHeld    map[string]bool

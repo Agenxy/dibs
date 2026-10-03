@@ -30,7 +30,7 @@ import (
 // the dispatch to gate the whole verb, which is the regression it names, would
 // have left it green. Raised by the pre-release review.
 func mcpConfigEntry(args []string) error {
-	if joiningAnotherBoard(args) {
+	if helpOnly(args) || joiningAnotherBoard(args) {
 		return mcpConfig(args)
 	}
 	return adminOnly("mcp-config", func() error { return mcpConfig(args) })
