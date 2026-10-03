@@ -13,11 +13,15 @@ import (
 )
 
 func main() {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-	if err := selfupdate.CheckCurrentTrustedRoot(ctx); err != nil {
+	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "sigstore-root-check:", err)
 		os.Exit(1)
 	}
 	fmt.Println("sigstore-root-check: authenticated current root matches embedded pin")
+}
+
+func run() error {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	return selfupdate.CheckCurrentTrustedRoot(ctx)
 }

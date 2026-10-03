@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -25,7 +24,6 @@ func TestMain(m *testing.M) {
 
 func rootCosignHelper(mode string) {
 	if len(os.Args) == 2 && os.Args[1] == "version" {
-		fmt.Println("cosign test helper")
 		return
 	}
 	if len(os.Args) != 4 || os.Args[1] != "initialize" || os.Args[2] != "--mirror" ||
