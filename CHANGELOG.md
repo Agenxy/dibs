@@ -128,6 +128,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Sleep cannot split the live board from its ledger.** The fold uses the
+  recorded wall clock for deadlines and retention, not a process-local clock
+  that may pause during sleep. Retained expired-unanswered questions accept
+  late answers, preserving answers older live writers already acknowledged;
+  other verdicts and expired requests remain final. The upgrade preflight's
+  failure hint now names the ledger file that `dibs verify` actually accepts.
+
 - Interrupted-upload verification no longer races its own PATCH with HEAD
   receipt probes. It observes real staged ciphertext before cutting the
   connection, preserves the accepted-offset assertions, and closes the raw

@@ -99,6 +99,11 @@ type Result map[string]any
 // Apply executes op at time now. The ONLY mutation path; pure. On success
 // with a non-nil event slice or a mutating kind, the engine ledgers the op.
 func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
+	// The ledger records wall time only. Process-local monotonic readings can
+	// stop during sleep or disagree after a clock correction; using them here
+	// makes live deadlines/retention differ from the same ops on cold replay.
+	// Strip before BOTH comparisons and storage, through the one mutation door.
+	now = now.Round(0)
 	switch op.Kind {
 	case OpRegister:
 		return s.applyRegister(op, now)
@@ -1638,12 +1643,18 @@ func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, 
 	case "progress":
 		return s.applyProgress(m, op, now)
 	}
-	if m.Terminal() {
+	// A sleeping Mac's monotonic clock once kept a question live past its wall
+	// deadline: the writer accepted its answer, but cold replay expired it first
+	// and refused the recorded answer. Preserve that accepted history without
+	// editing the ledger. Only answers to active-recipient expired questions
+	// may replace expiry; requests (including grants) and other verdicts stay final.
+	lateAnswer := m.Type == MsgQuestion && m.State == MsgStateExpiredSilent && op.Disposition == "answer"
+	if m.Terminal() && !lateAnswer {
 		// A hint, like every other error here.
 		//
 		// This one had none, and it is the error an agent hits precisely when it
 		// has come back late to something it missed: the moment it most needs
-		// telling what to do instead. Answering is genuinely closed, but saying
+		// telling what to do instead. This verdict is genuinely closed, but saying
 		// so and stopping leaves a returning agent with an answer and nowhere to
 		// put it.
 		return nil, nil, errf("E_MSG_FINAL",
@@ -1689,6 +1700,10 @@ func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, 
 		return nil, nil, err
 	}
 	m.State = st
+	if lateAnswer {
+		m.ExpireDetail = ""
+		m.OutcomeReadAt = 0 // reading the expiry was not reading this new answer
+	}
 	m.Response = op.Body
 	m.Consumed = true // responding proves receipt (SPEC §8)
 	m.TerminalAt = now

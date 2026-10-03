@@ -74,6 +74,8 @@ State is partitioned into three tiers, and the tier boundary is normative:
    > **Invariant: an op is ledgered iff it changed replayable state, every change
    > has exactly one serial, and unledgered activity never mutates replayable
    > state.** Replay is exact: `state == fold(ledger)`.
+   `Apply` strips process-local monotonic readings from its supplied `now` before
+   comparisons or storage: the clock in replayable state is the wall clock the ledger records.
 2. **Engine-ephemeral state**: lease freshness touches (from reads/heartbeats), rate
    buckets, parked long-polls, the event ring. Never replayed, never trusted across
    restart. Ephemeral facts influence replayable state only by being **recorded as
@@ -497,6 +499,7 @@ Messages go agent → agent; identity = send serial; bodies private (§4, §5).
 | any terminal state | same state, `outcome_read_serial` set | the **sender** retrieves the verdict via `read_mail` | none (ledgered `outcome_read`, idempotent; it is what stops a restart handing the sender the same verdict notice again) |
 | `pending/delivered/acked` | `answered` / `approved` / `denied` / `declined` | `respond` (per type table) | `message.<state>` |
 | `pending/delivered/acked` | `expired_unanswered` \| `expired_recipient_dormant` \| `expired_recipient_dead` | deadline sweep (§7 cascade) | `message.<state>` |
+| `expired_unanswered` (question only) | `answered` | late `respond(answer)` by its recipient; expiry detail cleared and sender's verdict-read marker reset | `message.answered` |
 | `pending/delivered` (notify only) | `displaced` | evicted by a newer notify at mailbox capacity | `message.displaced` (same serial as the displacing send, atomic) |
 
 **Terminal predicate (exact, used consistently by capacity, displacement, inbox,
@@ -508,6 +511,14 @@ Terminal(m) ⇔ m.state ∈ {answered, approved, denied, declined,
                          expired_recipient_dead, displaced}
             ∨ (m.state = acked ∧ m.type ∈ {notify, handoff})
 ```
+
+An expired-unanswered **question** may receive a late answer while retained.
+Other terminal verdicts remain final, and expiry never reopens a request's
+approval or grant. This narrow exception preserves answers historical live
+writers accepted while a sleeping host's process-local monotonic clock paused:
+the ledger recorded wall time, so cold replay otherwise expired the question and
+refused its already-accepted answer. All new folds normalize the supplied `now`
+to wall time before decisions or storage; no clock is read inside core.
 
 For **expecting types** (question/request), `acked` is non-terminal: the message
 still awaits a response. For **non-expecting types** (notify/handoff), `ack`
