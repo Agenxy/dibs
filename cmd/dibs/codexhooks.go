@@ -56,6 +56,7 @@ func codexHooksCmd(args []string) error {
 		case "--trust":
 			trust = true
 		case "--help", "-h":
+			fmt.Println("usage: dibs codex-hooks [--trust]")
 			fmt.Print(codexHooksHelp)
 			return nil
 		default:

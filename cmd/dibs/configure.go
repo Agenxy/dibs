@@ -97,6 +97,7 @@ func configure(args []string) error {
 		return err
 	}
 	if help {
+		fmt.Println("usage: dibs configure [dir]")
 		fmt.Print(configureHelp)
 		return nil
 	}

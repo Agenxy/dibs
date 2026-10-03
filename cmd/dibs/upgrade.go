@@ -71,6 +71,7 @@ func upgradeCmd(args []string) error {
 		case "--allow-unsigned":
 			o.allowUnsigned = true
 		case "--help", "-h":
+			fmt.Println("usage: dibs upgrade [--dry-run] [--adopt-dir] [--check | --fetch]")
 			fmt.Print(upgradeHelp)
 			return nil
 		default:

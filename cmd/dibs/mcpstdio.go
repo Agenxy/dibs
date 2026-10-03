@@ -43,6 +43,7 @@ import (
 func mcpStdio(args []string) error {
 	for _, a := range args {
 		if a == "--help" || a == "-h" {
+			fmt.Println("usage: dibs mcp-stdio")
 			fmt.Print(bridgeHelp)
 			return nil
 		}
@@ -817,7 +818,9 @@ func unreachableReply(line []byte, err error) []byte {
 		"make the retry idempotent"
 	if dialFailed(err) {
 		hint = "nothing was applied, because the connection was refused before the " +
-			"request was read: start the daemon (`dibs service start`, or `dibd`) and call again"
+			"request was read: if the daemon was just upgraded or restarted, wait a few seconds " +
+			"and call again; if it persists, run `dibs doctor`, which says why the board is down, " +
+			"and tell your human"
 	}
 	msg, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0",

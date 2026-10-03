@@ -28,7 +28,7 @@ import (
 func identityCmd(args []string) error {
 	fs := flag.NewFlagSet("identity", flag.ContinueOnError)
 	cwd := fs.String("cwd", "", "the working directory to describe (default: this process's)")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
 	dir := *cwd

@@ -174,6 +174,9 @@ func main() {
 		fmt.Println(styledUsage())
 		return
 	}
+	if helpOnly(os.Args[2:]) && staticCommandHelp(os.Args[1]) {
+		return
+	}
 	var err error
 	switch os.Args[1] {
 	case "put", "get":
@@ -245,7 +248,11 @@ func main() {
 	case "identity":
 		err = identityCmd(os.Args[2:])
 	case "web":
-		err = adminOnly("web", func() error { return webURL(os.Args[2:]) })
+		if helpOnly(os.Args[2:]) {
+			err = webURL(os.Args[2:])
+		} else {
+			err = adminOnly("web", func() error { return webURL(os.Args[2:]) })
+		}
 	case "version", "--version", "-V":
 		printVersion()
 	case "help", "--help", "-h":
@@ -316,10 +323,16 @@ func main() {
 // that is where a reader pipes it; a bad flag once, to stderr, naming the
 // command so `-sinc` does not send somebody hunting through the wrong page.
 func parseFlags(fs *flag.FlagSet, args []string) error {
+	return parseFlagsUsage(fs, args, "usage: dibs "+fs.Name())
+}
+
+// parseFlagsUsage adds a positional synopsis without putting it in the flag
+// set's name, which also identifies the command in bad-flag corrections.
+func parseFlagsUsage(fs *flag.FlagSet, args []string, synopsis string) error {
 	fs.SetOutput(io.Discard)
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			fmt.Println("usage: dibs " + fs.Name())
+			fmt.Println(synopsis)
 			fs.SetOutput(os.Stdout)
 			fs.PrintDefaults()
 			return flag.ErrHelp
@@ -341,6 +354,7 @@ var commands = []string{
 	"web", "admin", "invite",
 	"mcp-config", "mcp-stdio", "host-bridge", "human-relay", "hook-spawn", "hook-poll", "hook-session",
 	"identity",
+	"stop", "upgrade", "trust", "fingerprint",
 }
 
 // nearestCommand picks the closest verb to what was typed, or "" when nothing
@@ -488,7 +502,7 @@ func mcpConfig(args []string) error {
 	fs := flag.NewFlagSet("mcp-config", flag.ContinueOnError)
 	board := fs.String("board", "", "print the config for joining ANOTHER machine's board, "+
 		"given its address as seen from here (e.g. 127.0.0.1:4777 through an ssh forward)")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
 	// Go stops parsing at the first positional, so `mcp-config junk --board
@@ -878,7 +892,7 @@ func webURL(args []string) error {
 	fs := flag.NewFlagSet("web", flag.ContinueOnError)
 	usePassword := fs.Bool("password", false,
 		"use the admin password even where Touch ID is available")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
 	s, err := localSecret()
