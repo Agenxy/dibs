@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/testport"
 )
 
 // A daemon that goes away does not take the bridge with it.
@@ -40,15 +42,11 @@ func TestTheBridgeSurvivesADaemonThatGoesAwayAndComesBack(t *testing.T) {
 	}
 	t.Setenv("DIBS_DIR", dir)
 
-	// A port with nothing on it, held only long enough to learn its number.
-	probe, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	where := probe.Addr().String()
-	if err := probe.Close(); err != nil {
-		t.Fatal(err)
-	}
+	port := testport.Reserve(t, "tcp", "127.0.0.1:0")
+	where := port.Addr
+	// This outage fixture requires ECONNREFUSED. A held TCP socket instead
+	// queues or times out on macOS; release is unavoidable for this premise.
+	port.ReleaseForOutage(t)
 	t.Setenv("DIBS_ADDR", "http://"+where)
 
 	inR, inW, err := os.Pipe()

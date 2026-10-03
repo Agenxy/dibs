@@ -15,6 +15,7 @@ import (
 
 	"github.com/agenxy/dibs/internal/adminpw"
 	"github.com/agenxy/dibs/internal/invites"
+	"github.com/agenxy/dibs/internal/testport"
 )
 
 // Start the shipped daemon, not a Service whose recovery callback the test
@@ -35,7 +36,7 @@ func TestGuestIssuerRecoveryThroughActualDaemonStartup(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	private, public := guestIssuerFreeAddress(t), guestIssuerFreeAddress(t)
+	var private, public string
 	var logs bytes.Buffer
 	client := &http.Client{Timeout: 2 * time.Second, Transport: &http.Transport{Proxy: nil}}
 	defer client.CloseIdleConnections()
@@ -70,11 +71,16 @@ func TestGuestIssuerRecoveryThroughActualDaemonStartup(t *testing.T) {
 	}
 	start := func(origin string) func() {
 		t.Helper()
+		privatePort := testport.Reserve(t, "tcp", "127.0.0.1:0")
+		publicPort := testport.Reserve(t, "tcp", "127.0.0.1:0")
+		private, public = privatePort.Addr, publicPort.Addr
 		ctx, cancel := context.WithCancel(context.Background())
 		cmd := exec.CommandContext(ctx, bin, "--allow-parallel", "--dir", dir, "--addr", private,
 			"--public-url", origin, "--public-addr", public)
 		cmd.Env = append(nativeProbeEnv(t.TempDir(), "", ""), "DIBS_DIR="+dir, "DIBS_LOG_RPC=1")
 		cmd.Stderr = &logs
+		privatePort.Release(t)
+		publicPort.Release(t)
 		if err := cmd.Start(); err != nil {
 			cancel()
 			t.Fatal(err)
@@ -257,17 +263,4 @@ func TestGuestIssuerRecoveryThroughActualDaemonStartup(t *testing.T) {
 			}
 		}
 	}
-}
-
-func guestIssuerFreeAddress(t *testing.T) string {
-	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	addr := l.Addr().String()
-	if err := l.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return addr
 }

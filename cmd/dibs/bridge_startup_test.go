@@ -20,6 +20,7 @@ import (
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/ledger"
 	"github.com/agenxy/dibs/internal/mcp"
+	"github.com/agenxy/dibs/internal/testport"
 )
 
 // A successful next tool call cannot repair a harness that discarded the
@@ -79,14 +80,11 @@ func lateBridgeStartup(t *testing.T, method string) {
 	if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte(strings.Repeat("a", 64)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	probe, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	addr := probe.Addr().String()
-	if err := probe.Close(); err != nil {
-		t.Fatal(err)
-	}
+	port := testport.Reserve(t, "tcp", "127.0.0.1:0")
+	addr := port.Addr
+	// This outage fixture requires ECONNREFUSED. A held TCP socket instead
+	// queues or times out on macOS; release is unavoidable for this premise.
+	port.ReleaseForOutage(t)
 	cmd := exec.Command(os.Args[0], "-test.run=^TestBridgeStartupHelper$") // own test binary
 	cmd.Env = append(os.Environ(), "DIBS_TEST_STARTUP_BRIDGE=1", "DIBS_DIR="+dir, "DIBS_ADDR=http://"+addr)
 	var stderr bytes.Buffer

@@ -7,7 +7,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"io"
-	"net"
 	"net/http"
 	"net/netip"
 	"os"
@@ -19,6 +18,7 @@ import (
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/invites"
 	"github.com/agenxy/dibs/internal/ledger"
+	"github.com/agenxy/dibs/internal/testport"
 )
 
 func TestDirectIPListenerActuallyServesTLSAndOnlyInvitations(t *testing.T) {
@@ -47,14 +47,8 @@ func TestDirectIPListenerActuallyServesTLSAndOnlyInvitations(t *testing.T) {
 	ctx, stop := context.WithCancel(context.Background())
 	go eng.Run(ctx)
 	t.Cleanup(func() { stop(); _ = led.Close() })
-	reserved, err := net.Listen("tcp6", "[::1]:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	addr := reserved.Addr().String()
-	if err := reserved.Close(); err != nil {
-		t.Fatal(err)
-	}
+	reserved := testport.Reserve(t, "tcp6", "[::1]:0")
+	addr := reserved.Addr
 	// Loopback is the hermetic fixture, not an operator-advertisable global IP.
 	cfg := publicConfig{URL: "https://" + addr, Addr: addr, IP: netip.MustParseAddr("::1")}
 	// Real near-expiry signer: every replacement leaf is renewal-due. A fake
@@ -76,6 +70,7 @@ func TestDirectIPListenerActuallyServesTLSAndOnlyInvitations(t *testing.T) {
 	}
 	// Enter through the real listener with a short fixture clock.
 	cfg.guestPoll = 20 * time.Millisecond
+	reserved.Release(t)
 	fail, closePublic, err := startPublic(ctx, cfg, dir, eng, "never-public-secret", stop, nil)
 	if err != nil {
 		t.Fatal(err)

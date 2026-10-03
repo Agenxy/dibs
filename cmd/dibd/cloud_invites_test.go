@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -18,6 +19,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -28,6 +30,7 @@ import (
 	"github.com/agenxy/dibs/internal/invites"
 	"github.com/agenxy/dibs/internal/ledger"
 	"github.com/agenxy/dibs/internal/mcp"
+	"github.com/agenxy/dibs/internal/testport"
 	"github.com/agenxy/dibs/internal/transfer"
 )
 
@@ -104,14 +107,8 @@ func newCloudFixture(t *testing.T) *cloudFixture {
 	ctx, stop := context.WithCancel(context.Background())
 	go eng.Run(ctx)
 	t.Cleanup(func() { stop(); _ = led.Close() })
-	reserved, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	addr := reserved.Addr().String()
-	if err = reserved.Close(); err != nil {
-		t.Fatal(err)
-	}
+	reserved := testport.Reserve(t, "tcp", "127.0.0.1:0")
+	addr := reserved.Addr
 	proxy := httptest.NewUnstartedServer(nil)
 	publicURL := "https://" + proxy.Listener.Addr().String()
 	fs := cloudFlagSet()
@@ -124,6 +121,7 @@ func newCloudFixture(t *testing.T) *cloudFixture {
 		t.Fatal(err)
 	}
 	files := transfer.New(ctx, eng, bs, dir)
+	reserved.Release(t)
 	fail, closePublic, err := startPublic(ctx, cfg, dir, eng, "board-secret", stop, files)
 	if err != nil {
 		t.Fatal(err)
@@ -504,24 +502,32 @@ func TestCloudPublicListenerIsWiredIntoDaemonRun(t *testing.T) {
 		os.Args = []string{"dibd", "--dir", os.Getenv("DIBS_CLOUD_TEST_DIR"), "--addr", os.Getenv("DIBS_CLOUD_TEST_PRIVATE"), "--public-url", os.Getenv("DIBS_CLOUD_TEST_URL"), "--public-addr", os.Getenv("DIBS_CLOUD_TEST_PUBLIC"), "--allow-parallel"}
 		flag.CommandLine = cloudFlagSet()
 		if err := run(); err != nil {
+			if errors.Is(err, syscall.EADDRINUSE) {
+				if _, writeErr := fmt.Fprintln(os.Stdout, cloudBindCollisionMarker); writeErr != nil {
+					t.Fatal(writeErr)
+				}
+			}
 			t.Fatal(err)
 		}
 		return
 	}
-	dir := t.TempDir()
-	freeAddr := func() string {
-		t.Helper()
-		ln, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			t.Fatal(err)
+	for attempt := 1; attempt <= 3; attempt++ {
+		if cloudDaemonRunAttempt(t, false) {
+			return
 		}
-		a := ln.Addr().String()
-		if err = ln.Close(); err != nil {
-			t.Fatal(err)
-		}
-		return a
+		t.Logf("child bind EADDRINUSE on attempt %d; selecting fresh fixture addresses", attempt)
 	}
-	private, public := freeAddr(), freeAddr()
+	t.Fatal("child bind EADDRINUSE on all three fixture startup attempts")
+}
+
+const cloudBindCollisionMarker = "DIBS_TEST_BIND_ERRNO=EADDRINUSE"
+
+func cloudDaemonRunAttempt(t *testing.T, forceCollision bool) bool {
+	t.Helper()
+	dir := t.TempDir()
+	privatePort := testport.Reserve(t, "tcp", "127.0.0.1:0")
+	publicPort := testport.Reserve(t, "tcp", "127.0.0.1:0")
+	private, public := privatePort.Addr, publicPort.Addr
 	proxy := httptest.NewUnstartedServer(nil)
 	target, err := url.Parse("http://" + public)
 	if err != nil {
@@ -543,6 +549,15 @@ func TestCloudPublicListenerIsWiredIntoDaemonRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	child.Stderr = child.Stdout
+	privatePort.Release(t)
+	publicPort.Release(t)
+	if forceCollision {
+		competitor, err := net.Listen("tcp", public)
+		if err != nil {
+			t.Fatalf("setup: collision fixture failed: %v", err)
+		}
+		defer func() { _ = competitor.Close() }()
+	}
 	if err = child.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -565,7 +580,11 @@ func TestCloudPublicListenerIsWiredIntoDaemonRun(t *testing.T) {
 	}()
 	wait := make(chan error, 1)
 	go func() { wait <- child.Wait() }()
+	exited := false
 	t.Cleanup(func() {
+		if exited {
+			return
+		}
 		_ = child.Process.Signal(os.Interrupt)
 		select {
 		case err := <-wait:
@@ -583,6 +602,13 @@ func TestCloudPublicListenerIsWiredIntoDaemonRun(t *testing.T) {
 	})
 	select {
 	case <-up:
+	case err := <-wait:
+		exited = true
+		<-drained
+		if strings.Contains(logs.String(), "\n"+cloudBindCollisionMarker+"\n") {
+			return false
+		}
+		t.Fatalf("child startup failed without a typed bind collision: %v\n%s", err, logs.String())
 	case <-ctx.Done():
 		t.Fatal("daemon never reached real startup")
 	}
@@ -616,6 +642,16 @@ func TestCloudPublicListenerIsWiredIntoDaemonRun(t *testing.T) {
 	bytesOut, err := io.ReadAll(got.Body)
 	if err != nil || got.StatusCode != 200 || !bytes.Equal(bytesOut, plain) {
 		t.Fatalf("production download: %d %v", got.StatusCode, err)
+	}
+	return true
+}
+
+func TestCloudStartupCollisionIsTypedAndSetupCannotPassSilently(t *testing.T) {
+	if cloudDaemonRunAttempt(t, true) {
+		t.Fatal("occupied public port reached daemon startup")
+	}
+	if !cloudDaemonRunAttempt(t, false) {
+		t.Fatal("fresh fixture unexpectedly collided")
 	}
 }
 
