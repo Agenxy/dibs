@@ -7,6 +7,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A macOS upgrade starts its replacement once.** Reloading a RunAtLoad
+  service already launches it; the following kickstart now leaves that process
+  running instead of killing it and triggering launchd's restart throttle.
+  Services without RunAtLoad are still started explicitly.
+
 - **MCP startup survives a daemon upgrade.** The stdio bridge waits up to
   25 seconds for modern discovery, legacy initialization and tool
   listing, including a daemon that accepts but never answers. It forwards the
