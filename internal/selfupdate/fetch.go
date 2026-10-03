@@ -109,29 +109,35 @@ func fetchFrom(
 // command that fixes it, and --allow-unsigned is there for a machine that
 // genuinely cannot have it, typed by a person who has read why.
 func Verify(ctx context.Context, c *http.Client, rel Release, dir string) (string, error) {
+	canonical, err := ReleaseForTag(rel.Tag)
+	if err != nil || canonical.Version != rel.Version {
+		return "", errors.New("release tag and version are not the same canonical release")
+	}
 	cosign, err := usableCosign(ctx)
 	if err != nil {
 		return "", err
 	}
 	checksums := filepath.Join(dir, ChecksumsName)
 	bundle := filepath.Join(dir, BundleName)
-	if err := saveTo(ctx, c, DownloadURL(rel.Tag, ChecksumsName), checksums); err != nil {
+	if err := saveEvidence(ctx, c, DownloadURL(rel.Tag, ChecksumsName), checksums, maxChecksums); err != nil {
 		return "", err
 	}
-	if err := saveTo(ctx, c, DownloadURL(rel.Tag, BundleName), bundle); err != nil {
+	if err := saveEvidence(ctx, c, DownloadURL(rel.Tag, BundleName), bundle, maxBundle); err != nil {
 		return "", fmt.Errorf("fetching the signature bundle for %s: %w", rel.Tag, err)
 	}
 	// The identity is the WORKFLOW at the TAG, not merely "somebody at
 	// Agenxy": a signature is only worth the identity it is bound to, and
 	// accepting any certificate this repository has ever produced would accept
 	// one from a pull request that never released anything.
-	identity := "https://github.com/" + Repo + "/.github/workflows/release.yml@refs/tags/" + rel.Tag
+	identity := releaseIdentity(rel.Tag)
 	// #nosec G204 -- no shell; every argument is built here from constants and
 	// the tag this release reported, never from caller-supplied text.
-	out, err := exec.CommandContext(ctx, cosign, "verify-blob", checksums,
+	cmd := exec.CommandContext(ctx, cosign, "verify-blob", checksums,
 		"--bundle", bundle,
 		"--certificate-identity", identity,
-		"--certificate-oidc-issuer", "https://token.actions.githubusercontent.com").CombinedOutput()
+		"--certificate-oidc-issuer", "https://token.actions.githubusercontent.com")
+	cmd.Env = productionTUFEnv(os.Environ(), filepath.Join(dir, "production-tuf-cache"))
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("the signature over %s did not verify for %s, so this is not "+
 			"the release %s published and nothing has been installed:\n%s",
@@ -166,16 +172,15 @@ func usableCosign(ctx context.Context) (string, error) {
 		return "", errors.New("cosign is not installed, so the release's signature cannot " +
 			"be checked, and a checksum served beside the file it describes proves only " +
 			"that the download arrived intact. `brew install cosign`, then run this " +
-			"again; `--allow-unsigned` accepts the digest alone if this machine cannot " +
-			"have it")
+			"again. Signature-backed release evidence cannot be created without it")
 	}
 	// #nosec G204 -- no shell; the path is whatever LookPath resolved.
 	if out, err := exec.CommandContext(ctx, path, "version").CombinedOutput(); err != nil {
 		return "", fmt.Errorf("cosign is on PATH at %s but will not run, so the release's "+
 			"signature CANNOT BE CHECKED: this is not a failed verification, it is a "+
 			"missing tool. Fix the install (a mise or asdf shim with no version selected "+
-			"looks exactly like this), or pass `--allow-unsigned` to accept the digest "+
-			"alone.\n\n%s", path, strings.TrimSpace(string(out)))
+			"looks exactly like this). Signature-backed release evidence cannot be "+
+			"created without it.\n\n%s", path, strings.TrimSpace(string(out)))
 	}
 	return path, nil
 }
@@ -190,8 +195,25 @@ func getText(ctx context.Context, c *http.Client, url string) (string, error) {
 	return string(b), err
 }
 
-func saveTo(ctx context.Context, c *http.Client, url, path string) error {
-	_, err := download(ctx, c, url, path)
+func saveEvidence(ctx context.Context, c *http.Client, url, path string, limit int64) error {
+	body, err := fetchBody(ctx, c, url)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = body.Close() }()
+	b, err := readBounded(body, limit)
+	if err != nil {
+		return err
+	}
+	// #nosec G304 -- fixed metadata name in the caller's private staging directory.
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(b)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
 	return err
 }
 

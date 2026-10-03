@@ -41,14 +41,20 @@ func inviteOptions(args []string) (map[string]any, string, error) {
 	ttl := fs.String("ttl", "7d", "invitation lifetime (agent policy defaults to at most 7d)")
 	out := fs.String("out", "", "exclusive absolute private guest JSON destination; "+
 		"INCOMPLETE, not provisionable until a supporting signed release exists; retain the board key for recovery")
+	verify := fs.String("verify-release", "", "verify and retain one exact supporting release tag, "+
+		"without minting or installing")
 	if helpOnly(args) {
 		return nil, "", parseFlags(fs, args)
 	}
 	if len(args) == 0 {
 		return nil, "", errors.New("usage: dibs invite <name> [--ttl 30d] [--out <absolute-private-file>] | " +
-			"list | revoke <name>")
+			"list | revoke <name> | --verify-release <tag>")
 	}
 	action := args[0]
+	if strings.HasPrefix(action, "-") {
+		payload, err := inviteVerifyOptions(fs, args, verify)
+		return payload, "", err
+	}
 	if action == "list" && len(args) == 1 {
 		return map[string]any{"action": "list"}, "", nil
 	}
@@ -62,8 +68,8 @@ func inviteOptions(args []string) (map[string]any, string, error) {
 	if err := parseFlags(fs, args[1:]); err != nil {
 		return nil, "", err
 	}
-	if fs.NArg() != 0 {
-		return nil, "", errors.New("usage: dibs invite <name> [--ttl 30d] [--out <absolute-private-file>]")
+	if err := validateInviteMintFlags(fs); err != nil {
+		return nil, "", err
 	}
 	ttlS, err := inviteMintTTL(fs, *ttl, *out)
 	if err != nil {
@@ -74,6 +80,29 @@ func inviteOptions(args []string) (map[string]any, string, error) {
 		payload["export"] = true
 	}
 	return payload, *out, nil
+}
+
+func inviteVerifyOptions(fs *flag.FlagSet, args []string, verify *string) (map[string]any, error) {
+	if err := parseFlags(fs, args); err != nil {
+		return nil, err
+	}
+	if fs.NFlag() != 1 || fs.NArg() != 0 || *verify == "" {
+		return nil, errors.New("--verify-release needs one exact tag and cannot be combined with " +
+			"mint, list, revoke, --ttl or --out")
+	}
+	return map[string]any{"action": "verify-release", "tag": *verify}, nil
+}
+
+func validateInviteMintFlags(fs *flag.FlagSet) error {
+	if fs.NArg() != 0 {
+		return errors.New("usage: dibs invite <name> [--ttl 30d] [--out <absolute-private-file>]")
+	}
+	verifySet := false
+	fs.Visit(func(f *flag.Flag) { verifySet = verifySet || f.Name == "verify-release" })
+	if verifySet {
+		return errors.New("--verify-release is a separate operation; omit the invitation name and mint flags")
+	}
+	return nil
 }
 
 // Let the service choose min(7d, configured ceiling) when --ttl is absent.
@@ -114,6 +143,9 @@ func inviteCmd(args []string) error {
 	payload, destination, err := inviteOptions(args)
 	if err != nil {
 		return err
+	}
+	if payload["action"] == "verify-release" {
+		return verifyInviteRelease(payload["tag"].(string))
 	}
 	var export *guestRecipeExport
 	if destination != "" {

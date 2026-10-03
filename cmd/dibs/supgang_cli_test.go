@@ -28,6 +28,10 @@ import (
 // one did on 2026-09-13, so the join-by-peer path is exercised against real
 // envelopes.
 func TestMain(m *testing.M) {
+	if os.Getenv("DIBS_TEST_UPGRADE_COSIGN") == "1" && len(os.Args) > 1 &&
+		(os.Args[1] == "version" || os.Args[1] == "verify-blob") {
+		os.Exit(fakeUpgradeCosign(os.Args[1:]))
+	}
 	if os.Getenv("DIBS_TEST_AS_SUPGANG") != "" {
 		os.Exit(fakeSupgang(os.Args[1:]))
 	}
