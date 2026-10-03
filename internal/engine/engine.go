@@ -58,6 +58,9 @@ type Engine struct {
 	// whether a wake would collide with a running turn, so a finishing hook does
 	// not stamp it. Liveness is hookAlive's question; see liveness.go.
 	seen map[string]time.Time
+	// Actual model contact, fenced to the row incarnation; boot and registration
+	// grace are not authenticated model calls. See contact.go.
+	contact map[string]contactEvidence
 	// hookAlive: when a harness lifecycle hook last fired for this agent, of
 	// ANY kind, including the finishing ones. The daemon's own evidence that a
 	// session is there, as against anything the agent chose to tell it. See
@@ -936,6 +939,7 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	}
 	if actor != nil {
 		e.seen[actor.ID] = now
+		e.noteAuthenticatedContact(actor, now)
 		e.confirmSocketOffer(actor, now)
 		if op.Kind == core.OpRespond && (op.Disposition == "accept" || op.Disposition == "flag") {
 			e.clearNoticesFor(actor.ID, op.MsgSerial)
@@ -1119,6 +1123,7 @@ func (e *Engine) touchDurable(l *core.Agent, now time.Time) {
 }
 
 func (e *Engine) sweep(now time.Time) {
+	e.trimContactEvidence(now)
 	// Anything found before the board had anybody on it. See flushFaults.
 	e.flushFaults()
 	op := &core.Op{
@@ -1160,7 +1165,7 @@ func (e *Engine) sweep(now time.Time) {
 		if l.PID != 0 && e.prober != nil && e.ownsHost(l) {
 			if e.prober.Alive(l.PID) {
 				op.AlivePIDs = append(op.AlivePIDs, l.PID)
-			} else if !e.sessionMovedProcess(l) { // moved: judged by evidence below
+			} else if !e.sessionMovedProcess(l) && !e.recentAuthenticatedContact(l, now) {
 				op.DeadAgents = append(op.DeadAgents, id)
 				continue
 			}

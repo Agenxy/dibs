@@ -291,6 +291,10 @@ not yet been observed. A missing frontmost app does not prevent an away opening;
 its receipt reports previous_pid=0 and restored=false.
 Loaded threads receive queue-only delivery and are never opened again.
 
+This policy governs agent wakes. A question or request addressed to the HUMAN
+opens a decision window when Focus is on. That intentional route asks the person
+for a decision and can change focus; it remains separate from agent wake opening.
+
 For an agent on another machine the app is on that machine, so the hub sends
 the surface on the wake request and `dibs host-bridge` opens the thread there.
 The surface field is additive: a bridge too old to know it keeps queueing, as before.

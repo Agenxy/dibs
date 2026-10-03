@@ -419,12 +419,21 @@ and nothing else: the board wakes an agent and does not steer one. See
 | Signal | Mechanism | PROVES | Does NOT prove |
 |---|---|---|---|
 | `dead` | `kill(pid,0)` per sweep + (pid, start-time) identity | The registered process is gone. Caveat: an unreaped zombie still *appears alive* to `kill(0)`; true zombie detection arrives with kqueue `NOTE_EXIT`/pidfd (v1.1) | That its children or in-flight effects stopped |
-| `stale`/`dormant` | Lease lapse: no authenticated call for `agent_ttl` (default 5 min) if the agent gave a PID, or `idle_ttl` (default 45 min) if it did not, silence is weaker evidence than a dead process, and a token-only HTTP client never gives one | The agent stopped *coordinating* | That it stopped *working*, `stale + proc:alive` renders as "hung?", a hint, never a verdict |
+| `stale`/`dormant` | Lease lapse: no model contact for `idle_ttl` (default 45 min); `agent_ttl` (default 5 min) applies only to a recorded PID with no configured prober | The agent stopped *coordinating* | That it stopped *working*, `stale + proc:alive` renders as "hung?", a hint, never a verdict |
 | `expired_unanswered` | Deadline passed, recipient active | This message wasn't answered | Anything about recipient health |
 
-- **Implicit heartbeat**: every authenticated call (reads included) refreshes the
+- **Implicit heartbeat**: authenticated model calls (reads included) refresh the
   ephemeral lease. Explicit `heartbeat` is for otherwise-idle agents; ledgered only
   when it wakes/recovers an agent.
+- **Fresh identity contact beats a stale recorded PID.** A successful token-authenticated
+  model read or mutation proves that identity is present, even if the process it
+  registered from has gone. The override uses the existing `idle_ttl`, is fenced
+  to the agent incarnation, and never reports the old process as alive. Registration,
+  boot grace, event polling and background subscriptions do not create this evidence.
+  When it expires, the dead PID again establishes a crash. Evidence is local to the
+  running daemon; after restart, existing boot/checkpoint rules apply and a new
+  authenticated model call is needed for this override. Process/session metadata
+  is not refreshed or rebound by this rule.
 - **Sweep decisions are recorded** (`stale_agents`, `dead_agents`, `alive_pids`),
   replay applies decisions, never re-probes (§2). Quiet sweeps are unledgered.
 - **Lifecycle clocks run from ledgered transitions, not ledgered activity.** The
