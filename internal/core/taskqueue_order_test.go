@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"testing"
 	"time"
@@ -67,8 +68,8 @@ func (f *queueFoldFixture) refused(op Op, code string) {
 		f.test.Fatal(err)
 	}
 	_, evs, err := f.s.Apply(&op, t0)
-	ce, ok := err.(*Error)
-	if !ok || ce.Code != code || len(evs) != 0 {
+	var ce *Error
+	if !errors.As(err, &ce) || ce.Code != code || len(evs) != 0 {
 		f.test.Fatalf("refusal %v events %v, want %s", err, evs, code)
 	}
 	after, err := json.Marshal(f.s)
