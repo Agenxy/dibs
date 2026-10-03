@@ -22,6 +22,7 @@ import { chromium, type Browser } from "playwright"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { daemonReady } from "./ready"
 
 const ADDR = `127.0.0.1:${process.env.PORT ?? 4932}`
 const PASSWORD = "e2e-scratch-password"
@@ -39,7 +40,7 @@ const dir = mkdtempSync(join(tmpdir(), "agents-web-e2e-"))
 const home = process.env.HOME
 const dibd = process.env.DIBD ?? `${home}/.local/bin/dibd`
 const agents = process.env.DIBS ?? `${home}/.local/bin/dibs`
-const daemon = Bun.spawn({
+let daemon = Bun.spawn({
   cmd: [dibd, "-dir", dir, "-addr", ADDR],
   stdout: "ignore", stderr: "ignore",
 })
@@ -75,6 +76,12 @@ const tool = async (name: string, args: unknown) => {
   const body = await res.json()
   if (body.error) throw new Error(name + ": " + JSON.stringify(body.error))
   return JSON.parse(body.result.content[0].text)
+}
+
+const publicBoard = async () => {
+  const res = await fetch(`http://${ADDR}/api/board`, { headers: { "X-Dibs-Local": secret } })
+  if (!res.ok) throw new Error("setup: passive board observation refused")
+  return res.json()
 }
 
 /**
@@ -181,9 +188,42 @@ try {
   })
   await tool("check_in", { token: ghost.token })
   await tool("join_space", { token: ghost.token, space: "web-render", score: 0.55 })
+  const sweepControl = await tool("register", { name: "ghost-sweep-control", pid: doomed.pid })
+  if (!sweepControl.token) throw new Error("setup: silent sweep control registration refused")
+  const aliveGhost = (await publicBoard()).agents.find((row: any) => row.id === ghost.agent_id)
+  if (!ghost.token || aliveGhost?.proc_alive !== true) throw new Error("setup: ghost process was not alive")
   doomed.kill()
   await doomed.exited
-
+  const silentDeadline = Date.now() + 10000
+  for (;;) {
+    const row = (await publicBoard()).agents.find((row: any) => row.id === sweepControl.agent_id)
+    if (row?.status === "dormant" && row.stale_reason === "process_exited") break
+    if (Date.now() >= silentDeadline) throw new Error("setup: production sweep did not detect silent control")
+    await Bun.sleep(50)
+  }
+  const freshGhost = (await publicBoard()).agents
+    .find((row: any) => row.id === ghost.agent_id)
+  if (!freshGhost || freshGhost.proc_alive !== false ||
+      freshGhost.status !== "active") {
+    throw new Error("setup: authenticated ghost must retain a dead PID and fresh identity contact")
+  }
+  await tool("sign_off", { token: sweepControl.token })
+  // A fresh authenticated identity now outlives its stale PID for the idle
+  // lease. Render a genuinely silent corpse, rather than expecting that lease
+  // to disappear: restart this isolated daemon from the real ledger before
+  // minting admin cookies. No contact from ghost follows the restart.
+  daemon.kill("SIGTERM")
+  if (await daemon.exited !== 0) throw new Error("setup: isolated daemon did not shut down cleanly")
+  daemon = Bun.spawn({ cmd: [dibd, "-dir", dir, "-addr", ADDR], stdout: "ignore", stderr: "ignore" })
+  secret = await daemonReady(dir, `http://${ADDR}`, { proc: daemon, label: "web corpse restart" })
+  const crashDeadline = Date.now() + 10000
+  for (;;) {
+    const row = (await publicBoard()).agents
+      .find((row: any) => row.id === ghost.agent_id)
+    if (row?.status === "dormant" && row.stale_reason === "process_exited") break
+    if (Date.now() >= crashDeadline) throw new Error("setup: silent ghost was not detected by the real sweep")
+    await Bun.sleep(50)
+  }
 
   // ── the admin path, end to end ───────────────────────────────────────────
   const setOut = cli(["admin", "set-password"], `${PASSWORD}\n${PASSWORD}\n`)
