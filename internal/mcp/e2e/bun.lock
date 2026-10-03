@@ -9,6 +9,8 @@
         "@modelcontextprotocol/sdk": "^1.30.0",
       },
       "devDependencies": {
+        "ajv": "8.20.0",
+        "ajv-formats": "3.0.1",
         "playwright": "^1.63.0",
       },
     },

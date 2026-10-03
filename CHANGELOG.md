@@ -139,6 +139,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   crashes the board. Acknowledgment remains derived and does not review or
   consume the parent request.
 
+- **Inline attachments work in strict MCP clients.** Embedded resources now
+  carry a stable contents URI. Text and JSON arrive as readable text when
+  UTF-8 is valid; binary and mislabelled text preserve their exact bytes as
+  base64. The embedded URI is an identity, not an unauthenticated fetch route.
+  Real tool responses are checked against both MCP content schemas.
+
 - **An old cleanup snapshot no longer deletes a newly registered blob.**
   Registration takes its own writer-owned hold before enqueue, surviving caller
   cancellation until commit or refusal, then transfers protection to an extra
