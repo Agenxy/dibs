@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/tls"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -32,5 +33,28 @@ func TestDoctorMeasuresPublicTLSWithoutCredentials(t *testing.T) {
 				t.Fatalf("TLS 1.3 not confirmed: good=%s bad=%s", good, bad)
 			}
 		})
+	}
+}
+
+func TestDoctorReportsWithdrawnGuestEndpointWithoutStaleTLSProbe(t *testing.T) {
+	board := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Dibs-Local") != "private-proof" {
+			t.Error("guest status queried without board proof")
+		}
+		switch r.URL.Path {
+		case "/api/guest-status":
+			_ = json.NewEncoder(w).Encode(map[string]string{"mode": "direct-ip", "address": "2600:1700::1", "stability": "operator-asserted", "withdrawn_reason": "address disappeared"})
+		case "/api/transfer-status":
+			t.Error("withdrawn guest status fell back to stale transfer origin")
+		default:
+			t.Errorf("unexpected probe %s", r.URL.Path)
+		}
+	}))
+	defer board.Close()
+	t.Setenv("DIBS_ADDR", board.URL)
+	var warnings []string
+	checkPublicTLS(board.Client(), "private-proof", func(string) { t.Error("withdrawn endpoint reported healthy") }, func(msg, hint string) { warnings = append(warnings, msg+" "+hint) })
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "withdrawn") || !strings.Contains(warnings[0], "address disappeared") {
+		t.Fatalf("withdrawal not reported: %v", warnings)
 	}
 }

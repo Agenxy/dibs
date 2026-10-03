@@ -36,3 +36,27 @@ func TestInviteCommandBuildsOperatorRequestsAndCloudRecipes(t *testing.T) {
 		}
 	}
 }
+
+func TestInviteResultPreservesGuestTrustAndDoesNotRebuildLegacyClientRecipes(t *testing.T) {
+	result := map[string]any{
+		"name": "guest-worker", "key": "dibs_inv_PRIVATE_TEST", "url": "https://[2600:1700::1]:4778",
+		"config": map[string]any{
+			"ca_pem":         "-----BEGIN CERTIFICATE-----\nPUBLIC_TEST_CA\n-----END CERTIFICATE-----",
+			"ca_spki_sha256": strings.Repeat("a", 64), "verified_clients": []string{}, "address_stability": "operator-asserted",
+		},
+	}
+	out, err := captureStdout(t, func() error { return printInviteResult(result, true) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"No native guest client is verified", "PUBLIC_TEST_CA", strings.Repeat("a", 64), "dibs_inv_PRIVATE_TEST", "https://[2600:1700::1]:4778/mcp", "operator-asserted", "not a WAN proof"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("guest result lost %q", want)
+		}
+	}
+	for _, forbidden := range []string{"claude mcp add", "[mcp_servers.dibs]", "\"mcpServers\""} {
+		if strings.Contains(out, forbidden) {
+			t.Errorf("offered unverified native-client configuration %q", forbidden)
+		}
+	}
+}

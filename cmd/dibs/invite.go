@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/netip"
 	"net/url"
 	"os"
 	"strconv"
@@ -127,7 +128,44 @@ func printInviteResult(out map[string]any, minted bool) error {
 	if name == "" || key == "" || origin == "" {
 		return errors.New("the daemon did not return an invitation recipe")
 	}
+	if config, ok := out["config"].(map[string]any); ok {
+		if _, guest := config["ca_pem"]; guest {
+			return printGuestInvite(os.Stdout, name, key, origin, config)
+		}
+	}
 	return printInviteRecipe(os.Stdout, name, key, origin)
+}
+
+func printGuestInvite(w io.Writer, name, key, origin string, config map[string]any) error {
+	u, err := url.Parse(origin)
+	if err != nil || u.Scheme != "https" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Path != "" {
+		return errors.New("guest invitation needs a literal IPv6 HTTPS origin; ask the issuer to fix its listener")
+	}
+	ip, err := netip.ParseAddr(u.Hostname())
+	if err != nil || !ip.Is6() || ip.Is4In6() || ip.Zone() != "" {
+		return errors.New("guest invitation needs a literal IPv6 HTTPS origin; ask the issuer to fix its listener")
+	}
+	ca, caOK := config["ca_pem"].(string)
+	pin, pinOK := config["ca_spki_sha256"].(string)
+	if !caOK || ca == "" || !pinOK || len(pin) != 64 {
+		return errors.New("the daemon returned incomplete guest CA trust material; " +
+			"list/revoke this invitation and retry after fixing the listener")
+	}
+	_, err = fmt.Fprintf(w, `Invitation for %s. Save this PRIVATE material now: the key cannot be shown again.
+No native guest client is verified yet. No runnable native-client setup is offered.
+Do not import this CA into system trust, disable TLS verification, or send the
+invitation before verifying the intended literal IP. Local TLS is not a WAN proof.
+
+Endpoint: %s/mcp
+Invitation key: %s
+Guest CA SHA-256 SPKI pin: %s
+Address stability: %v
+Guest CA public PEM:
+%s
+Deliver this privately; wait for a verified client adapter before connecting.
+Pull-only; revoke with dibs invite revoke %s (effective on the next request).
+`, name, strings.TrimSuffix(origin, "/"), key, pin, config["address_stability"], ca, name)
+	return err
 }
 
 func printInviteRecipe(w io.Writer, name, key, origin string) error {

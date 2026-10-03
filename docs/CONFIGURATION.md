@@ -388,6 +388,14 @@ revokes its children; reopening cannot revive them. Resume, token rotation and
 archive do not revoke them. See `invite` and `dibs invite` for configuration
 recipes; use `DIBS_TOKEN` in the CLI to act as an agent, not prompt a human.
 
+The standalone direct-IP listener is explicit: `--public-ip <assigned global
+IPv6>` with `--ack-unverified-guest-client`; `--public-addr` must name that
+same IP and a numeric port (default 4778). It uses a separate constrained
+guest CA, never rotates the fleet CA, and currently offers no verified native
+client recipe. The acknowledgement does not prove safe harness trust or WAN
+reachability. Address stability is operator-asserted; address loss withdraws
+recipes. See NETWORK.md §9 for trust material, renewal and re-invitation.
+
 ## `[relocate]`: moving an agent to another environment on purpose
 
 A wake reaches an agent in the environment it runs in and nowhere else: a

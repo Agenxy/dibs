@@ -1,17 +1,28 @@
 package main
 
 import (
+	"crypto/sha256"
 	"crypto/tls"
+	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
+
+	"github.com/agenxy/dibs/internal/invites"
 )
 
 // Ask the live daemon, not saved flags or a guessed public hostname. The
 // private request is board-authenticated; the public probe sends NO credential.
 func checkPublicTLS(client *http.Client, secret string, ok func(string), warn func(string, string)) {
+	if checkGuestTLS(client, secret, ok, warn) {
+		return
+	}
 	req, err := http.NewRequest(http.MethodGet, origin()+"/api/transfer-status", nil)
 	if err != nil {
 		return
@@ -32,6 +43,63 @@ func checkPublicTLS(client *http.Client, secret string, ok func(string), warn fu
 		return
 	}
 	probePublicTLS(client, status.PublicOrigin, ok, warn)
+}
+
+func checkGuestTLS(client *http.Client, secret string, ok func(string), warn func(string, string)) bool {
+	req, err := http.NewRequest(http.MethodGet, origin()+"/api/guest-status", nil)
+	if err != nil {
+		return false
+	}
+	req.Header.Set("X-Dibs-Local", secret)
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return false
+	}
+	var info invites.EndpointInfo
+	if json.NewDecoder(io.LimitReader(resp.Body, 32<<10)).Decode(&info) != nil || info.Mode != "direct-ip" {
+		return false
+	}
+	if info.Reason != "" || info.URL == "" {
+		warn("public guest endpoint withdrawn: "+info.Reason,
+			"fix the selected assigned address and restart; a changed scope requires new guest CA trust and invitations")
+		return true
+	}
+	warn("guest address stability is "+info.Stability+"; inbound WAN reachability is unmeasured",
+		"test IPv6 HTTPS from a separate network; local assignment and local TLS are not a WAN proof")
+	if len(info.VerifiedClients) == 0 {
+		warn("no native guest client has verified CA trust yet",
+			"do not import the guest CA into system trust or disable TLS verification; wait for a verified client adapter")
+	}
+	block, _ := pem.Decode([]byte(info.CAPEM))
+	if block == nil || block.Type != "CERTIFICATE" {
+		warn("guest CA status is not a certificate", "inspect guest-ca.pem; do not replace fleet tls-ca files")
+		return true
+	}
+	ca, err := x509.ParseCertificate(block.Bytes)
+	if err != nil || !ca.IsCA {
+		warn("guest CA status is invalid", "inspect the private guest listener signing identity")
+		return true
+	}
+	pin := sha256.Sum256(ca.RawSubjectPublicKeyInfo)
+	if hex.EncodeToString(pin[:]) != info.CASPKIPin {
+		warn("guest CA pin does not match its PEM", "restore matching guest trust material; never bypass TLS verification")
+		return true
+	}
+	// This one measurement has its OWN roots and transport, not global root
+	// import and not the private board's credential-bearing transport.
+	roots := x509.NewCertPool()
+	roots.AddCert(ca)
+	transport := &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS13}}
+	defer transport.CloseIdleConnections()
+	probePublicTLS(&http.Client{Transport: transport, Timeout: 5 * time.Second}, info.URL,
+		func(msg string) {
+			ok("local guest TLS measurement: " + msg + "; not a WAN or native-client trust proof")
+		}, warn)
+	return true
 }
 
 func probePublicTLS(client *http.Client, publicOrigin string, ok func(string), warn func(string, string)) {
