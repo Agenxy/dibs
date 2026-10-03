@@ -76,11 +76,12 @@ production, so no supporting release is claimed. A complete recipe remains owed.
 
 Admission reads and hashes the bounded record before mint/key disclosure,
 outside core and the single writer. Its process-local derived cache reuses
-offline verification only for identical record bytes and build version; changed,
-missing or refused evidence withdraws artifact metadata only. A missing/broken
-verifier or canceled call is not a signature verdict and can retry unchanged
-evidence after repair. No mint fetches release evidence; list/revoke never
-enters this check. Explicit acquisition and admission use one compiled floor
+successful offline verification only for identical record bytes and build
+version; changed, missing or refused evidence withdraws artifact metadata only.
+No failure is cached: a verifier exit cannot distinguish cryptographic refusal
+from a crash or local I/O/tool error, and stderr prose is not an authority.
+Unchanged evidence can retry after repair. No mint fetches release evidence;
+list/revoke never enters this check. Explicit acquisition and admission use one compiled floor
 and stable own-or-newer selection rule, never an invitation/config override.
 
 The destination flag is mint-only and is not sent to MCP. The CLI sets

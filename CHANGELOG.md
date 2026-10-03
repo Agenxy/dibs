@@ -10,7 +10,7 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Guest exports can carry detached verified release metadata.** Admission
   rechecks bounded retained evidence offline before minting and shares the
   explicit verification command's compiled release-selection rule. A
-  process-local cache keys the exact record content and running build; changed
+  process-local success-only cache keys the exact record content and running build; changed
   or refused evidence withdraws only artifact metadata, never ordinary invite,
   list or revoke access. All three targets need signed archive and executable
   member digests. The private export records actual board provenance and an

@@ -8,7 +8,9 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -120,12 +122,12 @@ func TestGuestEvidenceCacheKeysContentAndBuildNotFileTimestamp(t *testing.T) {
 	}
 	load("devel+newbuild", false)
 	load("devel+newbuild", false)
-	count(3)
+	count(4) // failures are retried, never memoized as cryptographic verdicts
 	// Restore the original content: it was not kept as an alternate authority
 	// after withdrawal, so the changed content must be verified afresh.
 	saveFixtureRecord(t, v, dir)
 	load("devel+newbuild", true)
-	count(4)
+	count(5)
 	if err = os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
@@ -139,12 +141,43 @@ func TestGuestEvidenceCacheRecoversAfterVerifierRepairWithoutRecordChange(t *tes
 	verifierPath := os.Getenv("PATH")
 	t.Setenv("PATH", t.TempDir())
 	var cache ReleaseEvidenceCache
-	if _, err := cache.Load(context.Background(), dir, "devel"); !errors.Is(err, errCosignUnavailable) {
+	if _, err := cache.Load(context.Background(), dir, "devel"); err == nil || !strings.Contains(err.Error(), "cosign is not installed") {
 		t.Fatalf("missing verifier was not diagnosed: %v", err)
 	}
 	t.Setenv("PATH", verifierPath)
 	if got, err := cache.Load(context.Background(), dir, "devel"); err != nil || got.Tag() != v.Tag() {
 		t.Fatalf("repair with unchanged evidence did not recover: %v", err)
+	}
+}
+
+func TestGuestEvidenceCacheRetriesVerifierCrashAndUnclassifiedExit(t *testing.T) {
+	for _, failure := range []string{"signal", "exit"} {
+		t.Run(failure, func(t *testing.T) {
+			v := fixtureRelease(t)
+			dir := t.TempDir()
+			saveFixtureRecord(t, v, dir)
+			receipt := filepath.Join(t.TempDir(), "calls")
+			t.Setenv("DIBS_TEST_COSIGN_RECORD_RECEIPT", receipt)
+			t.Setenv("DIBS_TEST_COSIGN_RECORD_FAILURE", failure)
+			var cache ReleaseEvidenceCache
+			got, err := cache.Load(context.Background(), dir, "devel")
+			var ended *exec.ExitError
+			if got.Tag() != "" || !errors.As(err, &ended) {
+				t.Fatalf("verifier failure setup did not run/refuse: %v", err)
+			}
+			if (failure == "exit" && ended.ExitCode() != 37) ||
+				(failure == "signal" && runtime.GOOS != "windows" && ended.ExitCode() != -1) {
+				t.Fatalf("wrong fixture termination: %v", err)
+			}
+			t.Setenv("DIBS_TEST_COSIGN_RECORD_FAILURE", "")
+			if got, err = cache.Load(context.Background(), dir, "devel"); err != nil || got.Tag() != v.Tag() {
+				t.Fatalf("verifier repair with unchanged bytes stranded the daemon: %v", err)
+			}
+			calls, err := os.ReadFile(receipt)
+			if err != nil || string(calls) != "verify\nverify\n" {
+				t.Fatalf("repair did not enter the verifier again: %q %v", calls, err)
+			}
+		})
 	}
 }
 

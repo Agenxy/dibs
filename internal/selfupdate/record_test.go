@@ -39,6 +39,16 @@ func recordCosignHelper() int {
 			return 27
 		}
 	}
+	switch os.Getenv("DIBS_TEST_COSIGN_RECORD_FAILURE") {
+	case "signal":
+		p, err := os.FindProcess(os.Getpid())
+		if err != nil || p.Kill() != nil {
+			return 28
+		}
+		return 29 // unreachable after a successful forced termination
+	case "exit":
+		return 37 // deliberately not a classified signature verdict
+	}
 	args := os.Args[2:]
 	if len(args) != 7 && len(args) != 9 {
 		return 21
