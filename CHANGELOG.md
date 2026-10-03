@@ -7,6 +7,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The human remains the human after a daemon restart.** Wake warnings,
+  stall exemptions and adoption authority use the replayed reserved identity,
+  rather than waiting for an in-memory credential cache to be filled again.
+  Existing human tokens retain their rights; ordinary member tokens do not
+  gain adoption or approval authority.
+
 - **Loaded app threads wake without reopening their window.** The wake check
   uses executable paths and one bounded file query, so an app runtime behind
   many helper processes is still found. Queue delivery leaves the frontmost

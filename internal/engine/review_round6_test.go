@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"testing"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -32,11 +33,14 @@ func TestSendingToTheHumanIsNotCalledPullOnly(t *testing.T) {
 		t.Fatal("setup: an unwakeable row with no human identity drew no note, so the " +
 			"exemption below proves nothing")
 	}
-	e.human.mu.Lock()
-	e.human.agent = l.ID
-	e.human.mu.Unlock()
-	if n := e.PullOnlyNote(l); n != "" {
-		t.Errorf("a send to the human carried the agent wake warning: %q\n"+
-			"  the sender is told nothing can reach the person the desktop is about to notify", n)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+	human, _, err := e.HumanAgent(ctx)
+	if err != nil {
+		t.Fatal("setup human action:", err)
+	}
+	if n := e.PullOnlyNoteFor(ctx, human); n != "" {
+		t.Errorf("a send to the human carried the agent wake warning: %q", n)
 	}
 }
