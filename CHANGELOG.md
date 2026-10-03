@@ -16,6 +16,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Human mail survives a display-name change and restart.** The reserved
+  nonce identifies the person's row when recovering it, including a dormant
+  or archived row. Renaming remains allowed and the board keeps that display
+  label; `send(to: "human")` still reaches the same mailbox.
+
 - **Renamed agents can be addressed by their current label.** Agent IDs remain
   permanent mailbox, queue and contact keys. Names resolve to IDs at ingress;
   exact IDs and send-time human/coordinator roles win. Ambiguous names are

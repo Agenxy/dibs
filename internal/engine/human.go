@@ -208,6 +208,14 @@ func (e *Engine) humanAgentLocked(now time.Time) (agent, token string, err error
 	}
 
 	name := humanName()
+	// The OS name is the initial label, not the recovery key. A renamed row
+	// still belongs to this person through the reserved nonce. Re-registering
+	// its old label after dormancy/restart is E_NONCE_IN_USE; recover the row's
+	// current label first, including when archival cleared its nonce field.
+	if id := e.humanRowLocked(); id != "" {
+		// rowForNonce checks the row exists; this is on the single writer loop.
+		name = e.state.Agents[id].Name
+	}
 	res, err := e.exec(&core.Op{
 		Kind: core.OpRegister, Name: name,
 		// The one registration allowed to be this identity. See core.Op.HumanMint.
@@ -360,7 +368,9 @@ func (e *Engine) HumanTouch(ctx context.Context) {
 	})
 }
 
-// humanName is what the fleet sees. The OS username, because an agent reading
+// humanName supplies the initial label and reserved nonce's OS identity.
+// The display label may change; the nonce remains tied to the OS username.
+// The OS username is the default because an agent reading
 // "ada asked you to stop" learns something, and "human-1" does not.
 func humanName() string {
 	if u, err := user.Current(); err == nil && u.Username != "" {
