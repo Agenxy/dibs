@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/agenxy/dibs/internal/hostname"
 )
 
 // sessionContext discovers where this agent is working, from what the harness
@@ -24,8 +26,8 @@ import (
 // transcripts run to tens of megabytes and we are doing this on registration.
 func sessionContext(isClaude bool) map[string]string {
 	out := map[string]string{}
-	if h, err := os.Hostname(); err == nil {
-		out["host"] = strings.TrimSuffix(h, ".local")
+	if h := bridgeHostLabel(hostID()); h != "" {
+		out["host"] = h
 	}
 
 	// The bridge is spawned by the harness as a child, so it inherits the
@@ -125,6 +127,16 @@ func sessionContext(isClaude bool) map[string]string {
 		}
 	}
 	return out
+}
+
+// Unknown-ID rows still rely on the daemon's legacy kernel-name comparison.
+// A friendly label cannot become evidence for probing another computer's PID.
+func bridgeHostLabel(id string) string {
+	if id != "" {
+		return hostname.Name()
+	}
+	h, _ := os.Hostname()
+	return h
 }
 
 // gitBranch reads the checked-out branch. symbolic-ref is used rather than

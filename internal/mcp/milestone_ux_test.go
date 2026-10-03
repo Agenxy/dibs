@@ -23,7 +23,11 @@ func TestMilestoneEventAcknowledgmentAndReviewThroughMCP(t *testing.T) {
 	}
 	parent := call("send", map[string]any{"token": tokens["lead"], "to": "worker", "type": "request", "body": "build proof", "milestones": []string{"proof"}})["msg_serial"]
 	call("respond", map[string]any{"token": tokens["worker"], "msg_serial": parent, "disposition": "approve"})
-	call("read_mail", map[string]any{"token": tokens["lead"], "msg_serial": parent})
+	initial := call("read_mail", map[string]any{"token": tokens["lead"], "msg_serial": parent})
+	initialReview := initial["milestone_reviews"].([]any)[0].(map[string]any)
+	if initialReview["status"] != "unreviewed" || initialReview["at"] != nil {
+		t.Fatalf("unreported milestone has an invented timestamp: %v", initialReview)
+	}
 	call("respond", map[string]any{"token": tokens["worker"], "msg_serial": parent, "disposition": "progress", "milestone": 1, "body": "proof ready"})
 	events := call("events_since", map[string]any{"token": tokens["lead"], "since_serial": parent})["events"].([]any)
 	var event any

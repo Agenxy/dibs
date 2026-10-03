@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/agenxy/dibs/internal/core"
+	hostdisplay "github.com/agenxy/dibs/internal/hostname"
 )
 
 func TestTheRealFaultReporterUsesTheDaemonsDisplayLabel(t *testing.T) {
@@ -44,8 +45,8 @@ func TestTheRealFaultReporterUsesTheDaemonsDisplayLabel(t *testing.T) {
 		switch row["id"] {
 		case reporter:
 			found++
-			if row["host"] != thisHost() {
-				t.Errorf("real reporter display=%v want %s", row["host"], thisHost())
+			if row["host"] != hostdisplay.Name() {
+				t.Errorf("real reporter display=%v want %s", row["host"], hostdisplay.Name())
 			}
 			info := row["agent"].(*core.AgentInfo)
 			if info.Host != "legacy-reporter-host" || info.HostID != "" {

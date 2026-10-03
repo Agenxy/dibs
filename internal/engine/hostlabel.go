@@ -1,6 +1,9 @@
 package engine
 
-import "github.com/agenxy/dibs/internal/core"
+import (
+	"github.com/agenxy/dibs/internal/core"
+	hostdisplay "github.com/agenxy/dibs/internal/hostname"
+)
 
 // Display only. Raw per-agent labels and the host IDs used for coordination
 // remain untouched. Remote labels come from the newest coordinated member,
@@ -30,7 +33,7 @@ func (e *Engine) labelBoardHosts(b core.Result) {
 	for _, row := range rows {
 		id := row["id"].(string)
 		if id == human || id == reporter {
-			row["host"] = thisHost()
+			row["host"] = hostdisplay.Name()
 			continue
 		}
 		a := e.state.Agents[id]
@@ -60,7 +63,7 @@ func (e *Engine) boardHostLabel(info *core.AgentInfo, latest map[string]*core.Ag
 		return info.Host
 	}
 	if id == e.HostID() || id == e.state.NodeID || e.hostAliases[id] {
-		return thisHost()
+		return hostdisplay.Name()
 	}
 	if newest := latest[id]; newest != nil {
 		return newest.Agent.Host

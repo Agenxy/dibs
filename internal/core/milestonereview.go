@@ -9,7 +9,7 @@ type MilestoneReview struct {
 	Label     string    `json:"label"`
 	Status    string    `json:"status"`
 	By        string    `json:"by,omitempty"`
-	At        time.Time `json:"at,omitempty"`
+	At        time.Time `json:"at,omitzero"`
 }
 
 // MilestoneReviews reads the latest report or review for each named step.
