@@ -15,7 +15,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"reflect"
 	"strings"
 
@@ -187,7 +186,6 @@ func (s *Server) showBoard(ctx context.Context, token, view string) (core.Result
 	if err != nil {
 		return nil, err
 	}
-	slog.Info("board panel explicitly invoked", "agent", agentID, "view", view)
 	board, err := s.eng.Board(ctx)
 	if err != nil {
 		return nil, err

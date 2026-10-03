@@ -1086,6 +1086,7 @@ func (s *Server) callTool(
 		}
 	}
 	if call.Name == "board" {
+		slog.Info("board tool called", "agent", res["agent_id"], "view", a.View, "detail", a.Detail)
 		// board exists only to show the human. On a host with no renderer it
 		// can show nothing, so it says that rather than returning a payload
 		// nobody will look at: see boardSummary.
