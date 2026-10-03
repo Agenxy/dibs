@@ -242,6 +242,21 @@ not already doing. "Holding" is read the way the app shows it: its own Codex
 runtime keeps a loaded thread's rollout file open, and `lsof` on the app's
 processes says whether it does.
 
+**One pending wake, observed in the app.** A durable queue can accumulate wakes
+while an agent makes MCP calls in a long turn. On 2026-10-02, 22 command wakes
+became a series of empty turns; daemon restarts also forgot the old guard.
+Before the conventional local `codex queue` route enqueues, a one-second
+`codex app-server --listen stdio://` observer sends only initialize, initialized
+and thread/queue/list. It loads no thread and starts no model, as measured on
+the installed binary; a pending Dibs wake already carries every new event's
+invitation to read mail. It never deletes queue items. A changed experimental
+response, unavailable app or alternate operator route uses a retained 0600
+receipt under the board's data directory. Only the current thread's start or
+prompt hook re-arms that fallback, never tool or MCP traffic, and two hours
+bounds a lost receipt. A human prompt may therefore admit one duplicate when
+observation is unavailable; refusing to re-arm could lose a wake. An observed
+empty queue is authoritative and re-arms immediately.
+
 **Which app is derived, never stated.** The stdio bridge is a child of the
 harness that spawned it, so its process ancestry names the app (a parent under
 `/Applications/ChatGPT.app/` is the ChatGPT app; one under Claude's

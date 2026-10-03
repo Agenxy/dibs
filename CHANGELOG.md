@@ -7,6 +7,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **One pending Codex wake per thread.** The command route reads the native
+  app queue before enqueuing; repeated events and daemon restarts reuse an
+  already pending Dibs wake. The bounded observer lists only, never resumes a
+  thread or deletes a message. If inspection is unavailable, a private retained
+  receipt uses session-start/prompt hooks and a two-hour expiry; ordinary MCP
+  and tool traffic cannot re-arm an undelivered wake.
+
 - **Milestone notices explain their own calls.** Progress names the parent
   request and optional accept/flag review; acknowledging its event only marks
   the notice seen. Read mail shows each milestone's latest review, and a new

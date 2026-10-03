@@ -168,8 +168,30 @@ const Grace = 10 * time.Second
 // had been sent. The reverse case, a closed thread, is the one the primary
 // already handled.
 func RunCommands(argv, fallback []string, agent, dir string, timeout, grace time.Duration) bool {
+	var queuedThread string
+	if thread, ok := queueTarget(argv); ok {
+		mu := queueLock(thread)
+		mu.Lock()
+		defer mu.Unlock()
+		pending, known := false, false
+		if nativeQueueRoute(argv) {
+			pending, known = observeQueue(argv[0], thread)
+		}
+		if (known && pending) || (!known && fallbackPending(thread, time.Now())) {
+			slog.Debug("a Dibs wake is already pending in the app queue", "agent", agent)
+			return true
+		}
+		queuedThread = thread
+	}
+	queuedAt := time.Now().UTC()
 	ok, out := runForOut(argv, agent, dir, timeout, grace)
 	if ok {
+		if queuedThread != "" {
+			if err := writeReceipt(queuedThread, queueReceipt{QueuedAt: queuedAt}); err != nil {
+				slog.Warn("could not retain the pending wake receipt; observation still protects the queue",
+					"agent", agent, "err", err)
+			}
+		}
 		return true
 	}
 	if len(fallback) == 0 {
@@ -215,7 +237,7 @@ func openThreadFailure(out []byte) bool {
 func runForOut(argv []string, agent, dir string, timeout, grace time.Duration) (bool, []byte) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	// #nosec G204 -- argv comes from the operator's own config file and nowhere
+	// #nosec G204 G702 -- argv comes from the operator's own config file and nowhere
 	// else: SetWakeCommands is the only writer, no tool or op reaches it, and
 	// substitution replaces whole elements rather than building a string. There
 	// is no shell in this path.

@@ -64,8 +64,9 @@ type wakers struct {
 	work map[string]workRecord
 	// queued: when a command wake last succeeded for each agent. See
 	// queuedwake.go.
-	queued map[string]time.Time
-	last   map[string]time.Time
+	queued       map[string]time.Time
+	queuedPrompt map[string]time.Time
+	last         map[string]time.Time
 	// deferred: a re-check armed for when an agent's cooldown expires, because
 	// maybeWake fires once per event and nothing else retries.
 	deferred map[string]*time.Timer

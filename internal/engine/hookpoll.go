@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/wakeexec"
 )
 
 // AnnounceRetry is how often an unacknowledged announcement is put back in
@@ -203,6 +204,13 @@ func (e *Engine) noteTurnState(l *core.Agent, sessionID, event string) {
 		delete(e.turnEnded, l.ID)
 		e.seen[l.ID] = time.Now()
 		if event == "SessionStart" || event == "UserPromptSubmit" {
+			wakeexec.NoteQueuePrompt(sessionID, e.seen[l.ID])
+			e.wakers.mu.Lock()
+			if e.wakers.queuedPrompt == nil {
+				e.wakers.queuedPrompt = map[string]time.Time{}
+			}
+			e.wakers.queuedPrompt[l.ID] = e.seen[l.ID]
+			e.wakers.mu.Unlock()
 			e.noteSocketTurnStart(l, e.seen[l.ID])
 		} else {
 			e.confirmSocketOffer(l, e.seen[l.ID])
