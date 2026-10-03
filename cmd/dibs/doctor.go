@@ -24,7 +24,6 @@ import (
 	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/humanauth"
 	"github.com/agenxy/dibs/internal/liveness"
-	"github.com/agenxy/dibs/internal/notify"
 	"github.com/agenxy/dibs/internal/paths"
 	"github.com/agenxy/dibs/internal/remap"
 	"github.com/agenxy/dibs/internal/supgang"
@@ -116,11 +115,6 @@ func (d *diagnosis) warn(what, fix string) {
 	d.checks = append(d.checks, doctorCheck{Level: "warning", What: what, Fix: fix})
 	d.prose(ui.Warn(what))
 	d.prose(ui.Fix(fix))
-}
-
-func (d *diagnosis) note(what string) {
-	d.checks = append(d.checks, doctorCheck{Level: "note", What: what})
-	d.prose(ui.Dim(what))
 }
 
 // prose is for the lines that exist only for a person: under --json they go
@@ -800,22 +794,7 @@ func checkLedgerAndBoard(dir string, ok, note reportFn, bad, warn fixFn) {
 	default:
 		ok(fmt.Sprintf("ledger chain intact (%d lines)", res.Lines))
 	}
-	// Whether a notification would actually be SEEN, which is not the same as
-	// whether one can be posted.
-	//
-	// Everything reported success while nothing appeared: a coordinator request
-	// was posted, macOS accepted it, an active Focus swallowed the banner, and
-	// the operator asked why they had seen nothing. This is the one path that
-	// exists because the person is not in a loop to notice its absence, so it
-	// must not be the one path that fails quietly.
-	if reaches, why := notify.Reach(); reaches {
-		ok("Dibs can post native notifications with action buttons; posting does not confirm they were seen")
-		if why != "" {
-			note(why)
-		}
-	} else if why != "" {
-		warn("agents cannot reach you by notification", why)
-	}
+	checkNotificationRoute(ok, note, warn)
 
 	// Two ways in, and this used to report only one of them.
 	//

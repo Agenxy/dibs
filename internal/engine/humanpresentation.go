@@ -45,11 +45,13 @@ func (e *Engine) humanSendPresentation(res core.Result) {
 	}
 	d := e.setHumanPresentation(serial, e.humanPresentation(), false)
 	res["human_delivery"] = d
-	res["notify_hint"] = "The notification is pending until the notifier confirms posting. The request stays pending; do not assume it was seen. Check read_mail for receipts."
+	res["notify_hint"] = "The notification is pending until the notifier confirms posting. " +
+		"The request stays pending; do not assume it was seen. Check read_mail for receipts."
 	if d.Posted {
-		res["notify_hint"] = "macOS accepted posting; this does not confirm the person saw it. The request stays pending until answered."
+		res["notify_hint"] = "macOS accepted posting; this does not confirm the person saw it. " +
+			"The request stays pending until answered."
 	}
 	if d.Reason != "" {
-		res["notify_hint"] = d.Reason + " Check read_mail for posting receipts."
+		res["notify_hint"] = d.Reason + " The request stays pending; check read_mail for posting receipts."
 	}
 }

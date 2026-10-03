@@ -27,7 +27,7 @@ func FocusPresentation() Presentation {
 		return Presentation{}
 	}
 	p := Presentation{Focus: id, Shown: "unknown"}
-	p.Reason = "Focus " + id + " is on and may hold this; not confirmed seen. To allow banners, add Dibs to this mode’s Allowed Apps in System Settings > Focus, or turn Focus off. The request stays pending; check read_mail."
+	p.Reason = focusReason(id)
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return p
@@ -42,9 +42,14 @@ func FocusPresentation() Presentation {
 	}
 	if json.Unmarshal(mode["mode"], &name) == nil && len(name.Name) > 0 && len(name.Name) <= 100 {
 		p.Focus = name.Name
-		p.Reason = "Focus " + name.Name + " is on and may hold this; not confirmed seen. To allow banners, add Dibs to this mode’s Allowed Apps in System Settings > Focus, or turn Focus off. The request stays pending; check read_mail."
+		p.Reason = focusReason(name.Name)
 	}
 	return p
+}
+
+func focusReason(name string) string {
+	return "Focus " + name + " is on and may hold this; not confirmed seen. " +
+		"To allow banners, add Dibs to " + name + "'s Allowed Apps in System Settings > Focus, or turn Focus off."
 }
 
 func focusRecord(path, key, id string) (map[string]json.RawMessage, bool) {
