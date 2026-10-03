@@ -78,7 +78,7 @@ func checkMilestones(op *Op) error {
 		return nil
 	}
 	onSend := op.Kind == OpSendMessage && op.MsgType == MsgRequest
-	onApprove := op.Kind == OpRespond && op.Disposition == "approve"
+	onApprove := op.Kind == OpRespond && (op.Disposition == "approve" || op.Disposition == "queue")
 	if !onSend && !onApprove {
 		return errf("E_BAD_TYPE",
 			`milestones name the steps of work: send them on a "request", or declare them `+
@@ -264,7 +264,7 @@ func (s *State) applyReview(l *Agent, op *Op, now time.Time) (Result, []Event, e
 // declareMilestones lets the recipient name the steps as it approves, when
 // the sender named none: it is often the one who knows what they are.
 func declareMilestones(m *Message, op *Op, st string) error {
-	if len(op.Milestones) == 0 || st != MsgStateApproved {
+	if len(op.Milestones) == 0 || (st != MsgStateApproved && st != MsgStateQueued) {
 		return nil
 	}
 	if len(m.Milestones) > 0 {

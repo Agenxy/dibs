@@ -63,6 +63,9 @@ const ObligationWindow = 24 * time.Hour
 // do. A request that carried its own effect (a grant or an adoption) owes
 // nothing, since approving it performed it.
 func (m *Message) Owed(now time.Time) bool {
+	if m.QueueDebt {
+		return m.Type == MsgRequest && (m.State == MsgStateQueued || m.State == MsgStateApproved) && m.Grant == "" && m.Adopt == "" && m.From != m.To
+	}
 	return m.Type == MsgRequest && m.State == MsgStateApproved && m.Grant == "" && m.Adopt == "" &&
 		m.From != m.To && now.Sub(m.TerminalAt) <= ObligationWindow
 }

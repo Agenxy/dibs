@@ -264,6 +264,8 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		res, evs, err = s.applySend(l, op, now)
 	case OpRespond:
 		res, evs, err = s.applyRespond(l, op, now)
+	case OpQueueUpdate:
+		res, evs, err = s.applyQueueUpdate(l, op, now)
 	case OpAckMessage:
 		res, evs, err = s.applyAckMessage(l, op, now)
 	case OpOutcomeRead:
@@ -1524,7 +1526,9 @@ func (s *State) applySend(l *Agent, op *Op, now time.Time) (Result, []Event, err
 		}
 	}
 	var displaced *Message
-	if nonTerminalCount(s, to.ID) >= s.Limits.MaxMailboxDepth {
+	depth := nonTerminalCount(s,to.ID)
+	if op.QueueDebt { depth += s.AcceptedDebtCount(to.ID) } // recorded opt-in preserves old send folds
+	if depth >= s.Limits.MaxMailboxDepth {
 		// A notify may displace the oldest displaceable notify; nothing
 		// expecting an answer is ever displaced (SPEC §8).
 		displaced = s.oldestDisplaceableNotify(to.ID)
@@ -1574,6 +1578,7 @@ func (s *State) finishSend(
 		Serial: serial, From: l.ID, To: to.ID, Type: op.MsgType, Body: op.Body,
 		State: MsgStatePending, Deadline: deadline, Attachments: op.Attachments,
 		SentAt: now, Choices: op.Choices, Grant: op.Grant, Adopt: op.Adopt, Milestones: op.Milestones, Tracked: op.Track,
+		RequestPriority: op.RequestPriority,
 	}
 	s.Messages[serial] = m
 	evs := []Event{{Type: "message.sent", Agent: l.ID, To: to.ID, Data: map[string]any{
@@ -1642,6 +1647,8 @@ func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, 
 		return nil, nil, errf("E_NO_MESSAGE", hint, "no message %d addressed to you", op.MsgSerial)
 	}
 	switch op.Disposition {
+	case "queue":
+		return s.applyQueue(l, m, op, now)
 	case "done":
 		// After approval, which is terminal for every other disposition.
 		return s.applyDone(m, op, now)
@@ -1654,7 +1661,8 @@ func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, 
 	// editing the ledger. Only answers to active-recipient expired questions
 	// may replace expiry; requests (including grants) and other verdicts stay final.
 	lateAnswer := m.Type == MsgQuestion && m.State == MsgStateExpiredSilent && op.Disposition == "answer"
-	if m.Terminal() && !lateAnswer {
+	startingQueued := m.State == MsgStateQueued && (op.Disposition == "approve" || op.Disposition == "decline")
+	if m.Terminal() && !lateAnswer && !startingQueued {
 		// A hint, like every other error here.
 		//
 		// This one had none, and it is the error an agent hits precisely when it
@@ -1705,6 +1713,14 @@ func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, 
 		return nil, nil, err
 	}
 	m.State = st
+	if op.QueueDebt {
+		m.QueueDebt = true
+	}
+	if startingQueued {
+		m.QueueRank = 0
+		m.OutcomeReadAt = 0
+		s.setQueueOrder(m.To, s.TaskQueue(m.To), l.ID, now)
+	}
 	if lateAnswer {
 		m.ExpireDetail = ""
 		m.OutcomeReadAt = 0 // reading the expiry was not reading this new answer
@@ -1751,6 +1767,7 @@ func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, 
 	evs := []Event{{Type: "message." + st, Agent: l.ID, To: m.From, Data: map[string]any{
 		"msg_serial": m.Serial,
 	}}}
+	if startingQueued {evs=append(evs,s.queueEvents(s.TaskQueue(l.ID),l.ID,"message.queue_changed",0)...)}
 	if granted != nil && m.Grant == PermRelocate {
 		// A permission, not a role: added beside whatever role the agent
 		// holds. Reported under its own key, because the engine reads

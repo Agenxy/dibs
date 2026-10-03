@@ -140,6 +140,9 @@ func (s *Server) detailedTask(m core.Message) map[string]any {
 	if m.TerminalAt.After(updated) {
 		updated = m.TerminalAt
 	}
+	if m.QueueChangedAt.After(updated) {
+		updated = m.QueueChangedAt
+	}
 	for _, p := range m.Progress {
 		if p.At.After(updated) {
 			updated = p.At
@@ -165,6 +168,8 @@ func (s *Server) detailedTask(m core.Message) map[string]any {
 // isError: "failed" is reserved for a JSON-RPC error, which none of these is.
 func taskState(m core.Message) (status, message string, result map[string]any) {
 	switch m.State {
+	case core.MsgStateQueued:
+		return "working", fmt.Sprintf("queued #%d", m.QueueRank), nil
 	case core.MsgStatePending, core.MsgStateDelivered, "":
 		return "working", "sent to " + m.To + "; not yet accepted", nil
 	case core.MsgStateApproved:

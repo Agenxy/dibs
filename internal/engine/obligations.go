@@ -49,6 +49,9 @@ func (e *Engine) obligationsOf(agent string, now time.Time) []*core.Message {
 func (e *Engine) workSlotsOf(l *core.Agent, now time.Time) []core.Slot {
 	slots := slotsOf(l)
 	for _, m := range e.obligationsOf(l.ID, now) {
+		if m.State == core.MsgStateQueued {
+			continue
+		} // accepted for later, not working
 		body := strings.Join(strings.Fields(m.Body), " ")
 		if len(body) > maxObligationQuote {
 			body = body[:maxObligationQuote] + "..."

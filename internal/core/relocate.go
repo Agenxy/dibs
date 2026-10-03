@@ -71,7 +71,7 @@ func (l *Agent) MayRelocate() bool { return l.IsCoordinator() || l.HasPermission
 func checkPermissionOp(op *Op, lim Limits) error {
 	switch op.Kind {
 	case OpGrantPermission, OpRevokePermission:
-		if op.Mode != PermRelocate {
+		if op.Mode != PermRelocate && op.Mode != PermQueueOrderLock {
 			return errf("E_BAD_PERMISSION", "the one grantable permission is relocate",
 				"unknown permission %q", op.Mode)
 		}
@@ -90,6 +90,13 @@ func checkPermissionOp(op *Op, lim Limits) error {
 // applyPermission grants or revokes a permission. The engine admits these only
 // on the admin path, so the fold applies a decision a person already made.
 func (s *State) applyPermission(op *Op, now time.Time) (Result, []Event, error) {
+	if op.Mode == PermQueueOrderLock {
+		return s.applyQueuePermission(op, now)
+	}
+	return s.applyPermissionUnscoped(op, now)
+}
+
+func (s *State) applyPermissionUnscoped(op *Op, now time.Time) (Result, []Event, error) {
 	l, ok := s.Agents[op.To]
 	if !ok {
 		return nil, nil, errf("E_NO_AGENT", "check the board for the agent's id", "no agent %q", op.To)

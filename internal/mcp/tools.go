@@ -317,7 +317,8 @@ var toolDefs = func() []map[string]any {
 				"type": msgType,
 				"body": str("message body"), "deadline_s": num("response deadline in seconds (default 600; max 7200, or 7 " +
 					"days to persistent agents)"),
-				"op_id": str("client-generated id for safe retries (optional, recommended)"),
+				"priority": map[string]any{"type": "string", "enum": []string{"low", "normal", "high", "urgent"}, "description": "ordinary request priority; defaults to normal, separate from its response deadline"},
+				"op_id":    str("client-generated id for safe retries (optional, recommended)"),
 				"adopt": str("on a request: ask to reclaim an ABANDONED agent of yours, " +
 					"by id. Their Approve moves its mail onto you"),
 				"grant": map[string]any{
@@ -405,7 +406,7 @@ var toolDefs = func() []map[string]any {
 				"token": tok, "msg_serial": num("serial of the message"),
 				"disposition": map[string]any{
 					"type": "string",
-					"enum": []string{"answer", "approve", "deny", "decline", "progress", "done", "accept", "flag"},
+					"enum": []string{"answer", "queue", "approve", "deny", "decline", "progress", "done", "accept", "flag"},
 				},
 				"body":        str("response text"),
 				"milestone":   num("step number, from 1"),
@@ -415,6 +416,14 @@ var toolDefs = func() []map[string]any {
 					"description": "your steps, on approve",
 				},
 			}, "token", "msg_serial", "disposition"),
+		},
+		{
+			"name": "queue_update", "description": "Reprioritise or reorder your own queued request. Recorded and reported to senders; locks constrain ordering, never starting.",
+			"inputSchema": obj(map[string]any{"token": tok, "msg_serial": num("your queued request serial"), "priority": map[string]any{"type": "string", "enum": []string{"low", "normal", "high", "urgent"}}, "reset_priority": map[string]any{"type": "boolean", "description": "restore sender priority"}, "before": num("queued sibling serial to precede"), "tail": map[string]any{"type": "boolean", "description": "move to queue tail"}}, "token", "msg_serial"),
+		},
+		{
+			"name": "queue_lock", "description": "Coordinator/admin: grant or revoke the existing queue_order_lock permission, scoped to an agent or one queued task. Starting remains the recipient's choice.",
+			"inputSchema": obj(map[string]any{"token": tok, "agent": str("queue owner agent id"), "msg_serial": num("queued request serial; omit for whole queue"), "locked": map[string]any{"type": "boolean", "description": "true grants lock, false revokes"}}, "token", "agent", "locked"),
 		},
 		{
 			"name": "ack", "description": "Dismiss a progress/review event without reviewing work. For mail, close a FYI " +

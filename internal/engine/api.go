@@ -441,6 +441,9 @@ func (e *Engine) Inbox(ctx context.Context, token string) (core.Result, error) {
 		// Aliased rather than renamed: `messages` is what the tool has always
 		// returned and something will be reading it.
 		res["inbox"] = mail
+		res["task_queue"] = e.taskQueueView(l.ID)
+		res["owes"] = e.owedSerials(l.ID, now)
+		res["owed_work"] = e.owedWorkView(l.ID, now)
 		// BOTH READ PATHS, or this is a fix to one of two doors again.
 		//
 		// check_in carries the same key from the fold. An agent that recovers
@@ -637,6 +640,13 @@ func (e *Engine) GetMessage(ctx context.Context, token string, serial uint64) (c
 
 func (e *Engine) messageReadResult(m *core.Message) core.Result {
 	res := core.Result{"message": m, "serial": e.state.Serial}
+	if m.Owed(time.Now()) {
+		res["outstanding"] = "recipient has accepted this work and has not reported done; " + owedCall(m)
+	}
+	if m.State == core.MsgStateQueued {
+		res["queue_position"] = e.state.QueuePosition(m)
+		res["priority"] = m.EffectivePriority()
+	}
 	if len(m.Milestones) > 0 {
 		res["milestone_reviews"] = m.MilestoneReviews()
 	}
@@ -805,6 +815,10 @@ func (e *Engine) decoratedBoard() core.Result {
 		// Requests it approved and has not reported done: obligations.go.
 		if owes := e.owedSerials(l.ID, time.Now()); len(owes) > 0 {
 			lm["owes"] = owes
+		}
+		if q := e.taskQueueView(l.ID); len(q) > 0 {
+			lm["task_queue"] = q
+			lm["queued"] = len(q)
 		}
 		// Which row is the person.
 		//
