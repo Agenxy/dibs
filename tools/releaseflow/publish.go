@@ -18,10 +18,14 @@ import (
 
 var checksumPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
+const immutableReleaseHint = "hint: the operator must enable repository Settings > General > Releases > " +
+	"Enable release immutability for Agenxy/dibs; verify the public release reports immutable:true"
+
 type releaseStatus struct {
-	Tag    string                  `json:"tag_name"`
-	Draft  bool                    `json:"draft"`
-	Assets []struct{ Name string } `json:"assets"`
+	Tag       string                  `json:"tag_name"`
+	Draft     bool                    `json:"draft"`
+	Immutable bool                    `json:"immutable"`
+	Assets    []struct{ Name string } `json:"assets"`
 }
 
 func status(ctx context.Context, c config, run runner) (releaseStatus, bool, error) {
@@ -59,6 +63,9 @@ func publish(ctx context.Context, c config, run runner) error {
 	}
 	if exists && !s.Draft {
 		// Never rebuild, re-sign, clobber, or un-publish public release bytes.
+		if err = requireImmutablePublic(s); err != nil {
+			return err
+		}
 		dir, err := download(ctx, c, s, run)
 		if err != nil {
 			return err
@@ -113,8 +120,8 @@ func buildSignedStage(ctx context.Context, c config, run runner) error {
 }
 
 func publishDraft(ctx context.Context, c config, run runner) error {
-	// Check again immediately before upload: a public release is never clobbered,
-	// even if someone published a draft while this job was building.
+	// Keep the draft check; the operator-owned immutable-release setting closes
+	// the check/upload race against other authorised writers server-side.
 	s, exists, err := status(ctx, c, run)
 	if err != nil {
 		return err
@@ -122,19 +129,21 @@ func publishDraft(ctx context.Context, c config, run runner) error {
 	if !exists || !s.Draft {
 		return errors.New("draft disappeared or became public; refuse asset mutation and retry read-only verification")
 	}
-	args := []string{"release", "upload", "v" + c.version, "--repo", repository, "--clobber"}
-	for _, name := range assets(c.version) {
-		args = append(args, filepath.Join("dist", name))
-	}
-	if _, err = run(ctx, nil, "gh", args...); err != nil {
-		return err
+	if err = uploadDraft(ctx, c, run); err != nil {
+		// The upload may have been refused because another writer published it,
+		// or its response may have been lost. Never retry a mutation here: accept
+		// only an immutable public release whose verified bytes equal our stage.
+		return confirmPublished(ctx, c, run, err)
 	}
 	s, exists, err = status(ctx, c, run)
 	if err != nil {
 		return err
 	}
-	if !exists || !s.Draft {
-		return errors.New("release no longer the expected draft before verification")
+	if !exists {
+		return errors.New("release disappeared before verification")
+	}
+	if !s.Draft {
+		return verifyPublicStage(ctx, c, s, run)
 	}
 	if err = checkReadback(ctx, c, s, run); err != nil {
 		return err
@@ -143,7 +152,50 @@ func publishDraft(ctx context.Context, c config, run runner) error {
 		return err
 	}
 	_, err = run(ctx, nil, "gh", "release", "edit", "v"+c.version, "--repo", repository, "--draft=false")
+	return confirmPublished(ctx, c, run, err)
+}
+
+func uploadDraft(ctx context.Context, c config, run runner) error {
+	args := []string{"release", "upload", "v" + c.version, "--repo", repository, "--clobber"}
+	for _, name := range assets(c.version) {
+		args = append(args, filepath.Join("dist", name))
+	}
+	_, err := run(ctx, nil, "gh", args...)
 	return err
+}
+
+func requireImmutablePublic(s releaseStatus) error {
+	if s.Draft || !s.Immutable {
+		return fmt.Errorf("release is not immutable and public; %s", immutableReleaseHint)
+	}
+	return nil
+}
+
+func confirmPublished(ctx context.Context, c config, run runner, cause error) error {
+	s, exists, err := status(ctx, c, run)
+	if err != nil {
+		return errors.Join(cause, fmt.Errorf("cannot confirm immutable public release: %w; %s", err, immutableReleaseHint))
+	}
+	if !exists {
+		return errors.Join(cause, fmt.Errorf("public release is absent; %s", immutableReleaseHint))
+	}
+	if err = verifyPublicStage(ctx, c, s, run); err != nil {
+		return errors.Join(cause, err)
+	}
+	return nil
+}
+
+func verifyPublicStage(ctx context.Context, c config, s releaseStatus, run runner) error {
+	if err := requireImmutablePublic(s); err != nil {
+		return err
+	}
+	// Re-read public bytes too: draft bytes could change between verification
+	// and publication. Neither an ambiguous command nor immutable:true alone
+	// proves these are the bytes we staged and signed.
+	if err := checkReadback(ctx, c, s, run); err != nil {
+		return err
+	}
+	return remoteTag(ctx, c, true, run)
 }
 
 func checkReadback(ctx context.Context, c config, s releaseStatus, run runner) error {
@@ -165,7 +217,7 @@ func checkReadback(ctx context.Context, c config, s releaseStatus, run runner) e
 			return err
 		}
 		if staged != uploaded {
-			return fmt.Errorf("draft asset %s differs from verified staging", name)
+			return fmt.Errorf("release asset %s differs from verified staging", name)
 		}
 	}
 	return nil

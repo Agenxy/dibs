@@ -40,6 +40,9 @@ func signedCask(ctx context.Context, c config, run runner) ([]byte, error) {
 	if !exists || s.Draft {
 		return nil, errors.New("cask requires the verified PUBLIC release, not a draft")
 	}
+	if err = requireImmutablePublic(s); err != nil {
+		return nil, err
+	}
 	dir, err := download(ctx, c, s, run)
 	if err != nil {
 		return nil, err

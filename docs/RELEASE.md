@@ -56,6 +56,39 @@ require `rehearsal: false`. Missing, null or malformed values refuse. Compare
 remote refs and releases before and after, and retain source/finalizer/receiver
 run URLs. These rehearsals do NOT authorize a real release.
 
+## Required operator-owned repository setting
+
+**Enable release immutability is required** in the repository's Settings >
+General > Releases. Only the operator owns this setting; the workflow never
+changes it or adds an administration token. The operator can verify it in the
+settings page or, with their own administration-read credential, inspect:
+
+```text
+gh api repos/Agenxy/dibs/immutable-releases
+```
+
+The response must report `enabled: true`. It applies only to future releases,
+not historical mutable releases. The publication job uses its existing token
+to read the release object instead, and requires both `draft: false` and
+`immutable: true` after publishing and on public retries. A missing, false,
+malformed or unreadable value fails loudly with a repository-setting hint;
+no unsigned or mutable fallback exists. Cask publication requires the same
+immutable-public postcondition.
+
+Keep the draft check immediately before uploads. If another authorized writer
+publishes between that check and the upload, GitHub's immutable-release
+enforcement refuses asset mutation. After any upload refusal the publisher
+stops mutating and reads the release: success requires an immutable public
+release, every required asset verified against the exact-tag signature and
+byte-for-byte equal to the local stage, and the exact remote tag object.
+Otherwise it fails; it never retries uploads into a public release. The same
+read-only proof resolves an ambiguous publish response and rechecks public
+bytes after un-drafting, since mutable draft bytes could change before publish.
+Global workflow concurrency still serializes cooperating release jobs.
+
+GitHub documents the [immutable-release protections and draft-first workflow](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases)
+and [the operator's setting and future-release scope](https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/establish-provenance-and-integrity/prevent-release-changes).
+
 Publication is resumable, not a transaction across independent services.
 Build, sign and upload into a draft, verify the complete asset set and exact-tag
 signature, then publish the draft. Never overwrite assets of a public release.

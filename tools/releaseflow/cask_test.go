@@ -10,12 +10,15 @@ import (
 )
 
 func TestCaskRetriesVerifyEquivalenceBeforeAnyPush(t *testing.T) {
-	for _, mode := range []string{"main-matches", "branch-matches", "branch-differs", "key-missing", "new-branch"} {
+	for _, mode := range []string{"main-matches", "branch-matches", "branch-differs", "key-missing", "new-branch", "mutable-public"} {
 		t.Run(mode, func(t *testing.T) {
 			c := fixture(t)
 			useCosignFixture(t)
 			stage := t.TempDir()
 			s := fixtureAssets(t, c, stage)
+			if mode == "mutable-public" {
+				s.Immutable = false
+			}
 			t.Setenv("HOMEBREW_TAP_DEPLOY_KEY", "")
 			if mode == "new-branch" {
 				t.Setenv("HOMEBREW_TAP_DEPLOY_KEY", "fixture secret, not logged")

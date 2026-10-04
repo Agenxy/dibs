@@ -74,7 +74,7 @@ func useCosignFixture(t *testing.T) {
 
 func fixtureAssets(t *testing.T, c config, dir string) releaseStatus {
 	t.Helper()
-	s := releaseStatus{Tag: "v" + c.version}
+	s := releaseStatus{Tag: "v" + c.version, Immutable: true}
 	write(t, filepath.Join(dir, selfupdate.ChecksumsName), "")
 	for _, name := range assets(c.version) {
 		s.Assets = append(s.Assets, struct{ Name string }{name})
@@ -100,12 +100,15 @@ func copyFixture(t *testing.T, source, dest string, c config) {
 }
 
 func TestPublicReleaseRetryOnlyVerifiesNeverBuildsSignsOrWrites(t *testing.T) {
-	for _, mode := range []string{"valid", "tampered", "missing", "signature-refused"} {
+	for _, mode := range []string{"valid", "tampered", "missing", "signature-refused", "mutable-public"} {
 		t.Run(mode, func(t *testing.T) {
 			c := fixture(t)
 			useCosignFixture(t)
 			stage := t.TempDir()
 			s := fixtureAssets(t, c, stage)
+			if mode == "mutable-public" {
+				s.Immutable = false
+			}
 			if mode == "tampered" {
 				write(t, filepath.Join(stage, "dibs.rb"), "tampered")
 			}
@@ -195,6 +198,8 @@ func TestDraftCannotBecomePublicBeforeUploadedBytesVerify(t *testing.T) {
 							t.Fatal("un-drafted before readback")
 						}
 						edited = true
+						s.Draft = false
+						s.Immutable = true
 						return nil, nil
 					}
 				}
