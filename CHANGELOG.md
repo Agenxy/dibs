@@ -10,7 +10,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Claude socket wakes coalesce until a new turn starts.** Busy sessions and
   informational-only mail use their existing full-mail hooks. Idle sessions
   wake for requests, questions, handoffs, human notifications, answers,
-  approvals, flagged reviews and due declared waits; DONE wakes a sender that
+  grant/adoption verdicts, denials, declines, flagged reviews and due declared
+  waits; ordinary work approvals use the hook path. DONE wakes a sender that
   currently declares it is waiting. Due slots keep independent clocks and
   bounded retries. Busy evidence falls back to unknown after 30 minutes of
   silence, so a lost Stop or an external token call cannot disable waking.

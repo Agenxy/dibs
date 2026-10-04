@@ -55,7 +55,8 @@ func (e *Engine) socketMailVersion(l *core.Agent, now time.Time) uint64 {
 	}
 	for _, n := range e.takeNotices(l.ID) {
 		at, shown := e.noticePresented[l.ID+"\x00"+strconv.FormatUint(n.Serial, 10)]
-		if !n.Delivered && (!shown || now.Sub(at) >= AnnounceRetry) && socketActionableNotice(n, l) {
+		if !n.Delivered && (!shown || now.Sub(at) >= AnnounceRetry) &&
+			socketActionableNotice(n, l, e.state.Messages[n.Msg]) {
 			version = max(version, n.Serial)
 		}
 	}

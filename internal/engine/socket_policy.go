@@ -125,7 +125,7 @@ func (e *Engine) socketActionableNotices(l *core.Agent, now time.Time, fresh boo
 		if at, shown := e.noticePresented[key]; fresh && (n.Delivered || (shown && now.Sub(at) < AnnounceRetry)) {
 			continue
 		}
-		if socketActionableNotice(n, l) {
+		if socketActionableNotice(n, l, e.state.Messages[n.Msg]) {
 			return true
 		}
 	}
@@ -136,7 +136,13 @@ func (e *Engine) socketActionableMessage(m *core.Message) bool {
 	return core.Blocking("message.sent", m.Type) || (m.Type == core.MsgNotify && e.isTheHuman(m.From))
 }
 
-func socketActionableNotice(n notice, l *core.Agent) bool {
+func socketActionableNotice(n notice, l *core.Agent, request *core.Message) bool {
+	// Ordinary approval accepts work; grant/adoption approval performs an
+	// effect the requester awaits. Read the typed request, never the prose.
+	if n.Kind == "message.approved" && (request == nil || request.Type != core.MsgRequest ||
+		(request.Grant == "" && request.Adopt == "")) {
+		return false
+	}
 	return n.Blocking && (n.Kind != "message.done" || waitingDeclaration(l))
 }
 
