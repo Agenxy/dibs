@@ -5,6 +5,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Release discovery lists bounded, paginated GitHub releases and matches the
+  exact tag, including an existing draft that the get-by-tag endpoint omits.
+  Duplicate matches, incomplete scans and API failures refuse publication;
+  public releases still receive only immutable, signature-backed verification.
+
 ## [0.0.11] - 2026-10-03
 
 ### Added

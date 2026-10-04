@@ -21,6 +21,11 @@ var checksumPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 const immutableReleaseHint = "hint: the operator must enable repository Settings > General > Releases > " +
 	"Enable release immutability for Agenxy/dibs; verify the public release reports immutable:true"
 
+const (
+	releasePageSize = 100
+	releaseMaxPages = 10
+)
+
 type releaseStatus struct {
 	Tag       string                  `json:"tag_name"`
 	Draft     bool                    `json:"draft"`
@@ -29,22 +34,53 @@ type releaseStatus struct {
 }
 
 func status(ctx context.Context, c config, run runner) (releaseStatus, bool, error) {
-	out, err := run(ctx, nil, "gh", "api", "repos/"+repository+"/releases/tags/v"+c.version)
-	if err != nil {
-		// An auth/network error is not absence and must never create a new draft.
-		if strings.Contains(err.Error(), "(HTTP 404)") {
-			return releaseStatus{}, false, nil
+	// Get-by-tag omits drafts even for a writer. Listing is the measured API
+	// door that includes them. Scan every page, not just until the first match,
+	// so a second exact tag cannot be silently accepted. An incomplete scan
+	// (including a 404 for the repository itself) never proves absence.
+	var found releaseStatus
+	exists := false
+	for page := 1; page <= releaseMaxPages; page++ {
+		releases, err := listReleasePage(ctx, page, run)
+		if err != nil {
+			return releaseStatus{}, false, err
 		}
-		return releaseStatus{}, false, err
+		for _, s := range releases {
+			if s.Tag != "v"+c.version {
+				continue
+			}
+			if exists {
+				return releaseStatus{}, false, fmt.Errorf("multiple releases match v%s; refuse ambiguous publication", c.version)
+			}
+			found, exists = s, true
+		}
+		if len(releases) < releasePageSize {
+			return found, exists, nil
+		}
 	}
-	var s releaseStatus
-	if err = json.Unmarshal(out, &s); err != nil {
-		return s, false, err
+	return releaseStatus{}, false,
+		fmt.Errorf("release discovery exceeded %d pages; refuse incomplete publication", releaseMaxPages)
+}
+
+func listReleasePage(ctx context.Context, page int, run runner) ([]releaseStatus, error) {
+	endpoint := fmt.Sprintf("repos/%s/releases?per_page=%d&page=%d", repository, releasePageSize, page)
+	out, err := run(ctx, nil, "gh", "api", endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("list release page %d: %w", page, err)
 	}
-	if s.Tag != "v"+c.version {
-		return s, false, errors.New("release response is for a different tag")
+	var releases []releaseStatus
+	if err = json.Unmarshal(out, &releases); err != nil {
+		return nil, fmt.Errorf("decode release page %d: %w", page, err)
 	}
-	return s, true, nil
+	if releases == nil || len(releases) > releasePageSize {
+		return nil, fmt.Errorf("release page %d is not a bounded array", page)
+	}
+	for _, s := range releases {
+		if s.Tag == "" {
+			return nil, fmt.Errorf("release page %d contains an entry without tag_name", page)
+		}
+	}
+	return releases, nil
 }
 
 func assets(version string) []string {

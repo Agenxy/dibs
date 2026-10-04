@@ -98,6 +98,39 @@ Retry publication for the same immutable tag/SHA and authenticated receipt.
 A finalizer failure has a documented manual publish-only dispatch fallback.
 No retry moves a tag or blesses a different commit under an existing version.
 
+Release discovery uses the authenticated [list-releases API](https://docs.github.com/en/rest/releases/releases#list-releases),
+not get-by-tag, because the latter omits drafts. Scan up to ten pages of 100
+releases, match `tag_name` exactly and reject duplicate matches. A full final
+page, malformed response or any API failure refuses publication rather than
+guessing absence. The publishing credential must have push access to see
+drafts. On 2026-10-04, a read-only real API measurement found v0.0.11 draft
+402967536 with zero assets while get-by-tag returned HTTP 404. Re-measure the
+actual `status()` subprocess door without any release mutation using:
+
+```text
+DIBS_TEST_RELEASE_DISCOVERY_VERSION=0.0.11 go test ./tools/releaseflow -run '^TestReleaseDiscoveryRealAPI$' -v -count=1
+```
+
+The live probe is opt-in and ordinary CI skips it. By default it reports either
+presence or absence; optional `DIBS_TEST_RELEASE_DISCOVERY_EXISTS=true|false`
+and `DIBS_TEST_RELEASE_DISCOVERY_DRAFT=true|false` assert a measured expectation,
+not a permanent property of the version. After the operator-approved deletion
+of that empty draft on 2026-10-04, v0.0.11 is absent from the real release list.
+
+**Tooling changes do not automatically repair an existing tag's publisher.**
+The current tagged workflow checks out main for receipt authentication, then
+checks out the tag before running the publisher and cask tools. A repair merged
+only to main therefore does not reach those later steps on a tag retry. Keep
+this limitation explicit; neither moving the tag nor relaxing exact-tag
+signature identity is an automatic recovery option.
+
+v0.0.11 is one such frozen failure: the operator approved deleting its empty
+draft, while its tag remains unchanged. It must not be retried with the tagged
+publisher, which would create another draft and then fail to discover it.
+A future version needs the repaired discovery code
+and a separate, real full-publication rehearsal before release approval; the
+earlier offline/delivery rehearsals did not exercise GitHub's draft API.
+
 Acceptance includes a deliberately failing preflight through the production
 entry point, asserting remote refs and releases are unchanged; forged, failed,
 wrong-ref, wrong-version and wrong-SHA receipt refusals; and a hosted rehearsal

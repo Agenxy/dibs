@@ -29,7 +29,7 @@ func TestCaskRetriesVerifyEquivalenceBeforeAnyPush(t *testing.T) {
 				joined := strings.Join(args, " ")
 				calls = append(calls, name+" "+joined)
 				if name == "gh" && args[0] == "api" {
-					return json.Marshal(s)
+					return json.Marshal([]releaseStatus{s})
 				}
 				if name == "gh" && args[0] == "release" && args[1] == "download" {
 					copyFixture(t, stage, args[6], c)

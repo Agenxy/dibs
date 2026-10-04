@@ -23,7 +23,7 @@ func immutableStatusJSON(s releaseStatus, value any, missing bool) ([]byte, erro
 	} else {
 		object["immutable"] = value
 	}
-	return json.Marshal(object)
+	return json.Marshal([]map[string]any{object})
 }
 
 // Enter through the real publisher, not a setter or a stand-alone flag check.
