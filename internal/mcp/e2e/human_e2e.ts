@@ -347,9 +347,10 @@ try {
     token: curious.token, to: "oracle", type: "question",
     body: "which branch should this land on", deadline_s: 600,
   }))
+  const reply = "main: ready for handoff"
   await tool(dev, "respond", {
     token: oracle.token, msg_serial: asked.serial ?? asked.msg_serial,
-    disposition: "answer", body: "main",
+    disposition: "answer", body: reply,
   })
 
   await restart(dev, devBin)
@@ -360,8 +361,19 @@ try {
     (back.agent_updates ?? []).length > 0,
     `agent_updates=${updates}: the answer is in the ledger and nothing will ` +
     `tell the agent that asked`)
-  check("and the rebuilt notice still says who answered and how to read it",
-    updates.includes("oracle") && updates.includes("read_mail"), updates.slice(0, 240))
+  // The words, not a pointer: a fully quoted answer IS a durable read. Keep
+  // the replay-before-first-read scenario, then prove the second restart
+  // cannot resurrect that answer after its body reached the asker.
+  check("and the rebuilt notice says who answered and quotes their actual words",
+    updates.includes("oracle") && updates.includes(reply) && !updates.includes("read_mail"),
+    updates.slice(0, 240))
+  const again = textOf(await tool(dev, "check_in", { token: curious.token }))
+  check("the fully quoted answer is not delivered twice on another checkpoint",
+    (again.agent_updates ?? []).length === 0, JSON.stringify(again.agent_updates ?? []))
+  await restart(dev, devBin)
+  const resumed = textOf(await tool(dev, "inbox", { token: curious.token }))
+  check("the fully quoted answer stays read after another real daemon restart",
+    (resumed.agent_updates ?? []).length === 0, JSON.stringify(resumed.agent_updates ?? []))
 } catch (e) {
   failures++
   console.log(`\n  \x1b[31m✗ suite threw\x1b[0m. ${e}`)
