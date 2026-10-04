@@ -154,11 +154,20 @@ func TestReleaseDiscoveryRealAPI(t *testing.T) {
 		return command(ctx, env, name, args...)
 	}
 	s, exists, err := status(ctx, config{version: version}, run)
-	if err != nil || !exists {
-		t.Fatalf("live release not found: exists=%v err=%v", exists, err)
+	if err != nil {
+		t.Fatalf("live release discovery failed: %v", err)
 	}
-	if want := os.Getenv("DIBS_TEST_RELEASE_DISCOVERY_DRAFT"); want != "" && fmt.Sprint(s.Draft) != want {
-		t.Fatalf("live draft state = %v, want %s", s.Draft, want)
+	if want := os.Getenv("DIBS_TEST_RELEASE_DISCOVERY_EXISTS"); want != "" && fmt.Sprint(exists) != want {
+		t.Fatalf("live release exists = %v, want %s", exists, want)
 	}
-	t.Logf("real production-door API: tag=%s draft=%v immutable=%v assets=%d", s.Tag, s.Draft, s.Immutable, len(s.Assets))
+	if want := os.Getenv("DIBS_TEST_RELEASE_DISCOVERY_DRAFT"); want != "" {
+		if !exists {
+			t.Fatal("live probe usage error: DRAFT expectation requires an existing release")
+		}
+		if fmt.Sprint(s.Draft) != want {
+			t.Fatalf("live draft state = %v, want %s", s.Draft, want)
+		}
+	}
+	t.Logf("real production-door API: tag=v%s exists=%v draft=%v immutable=%v assets=%d",
+		version, exists, s.Draft, s.Immutable, len(s.Assets))
 }

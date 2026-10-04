@@ -108,11 +108,14 @@ drafts. On 2026-10-04, a read-only real API measurement found v0.0.11 draft
 actual `status()` subprocess door without any release mutation using:
 
 ```text
-DIBS_TEST_RELEASE_DISCOVERY_VERSION=0.0.11 DIBS_TEST_RELEASE_DISCOVERY_DRAFT=true go test ./tools/releaseflow -run '^TestReleaseDiscoveryRealAPI$' -v -count=1
+DIBS_TEST_RELEASE_DISCOVERY_VERSION=0.0.11 go test ./tools/releaseflow -run '^TestReleaseDiscoveryRealAPI$' -v -count=1
 ```
 
-The live probe is opt-in and ordinary CI skips it. Its asserted draft state is
-a measurement at that time, not a permanent property of the version.
+The live probe is opt-in and ordinary CI skips it. By default it reports either
+presence or absence; optional `DIBS_TEST_RELEASE_DISCOVERY_EXISTS=true|false`
+and `DIBS_TEST_RELEASE_DISCOVERY_DRAFT=true|false` assert a measured expectation,
+not a permanent property of the version. After the operator-approved deletion
+of that empty draft on 2026-10-04, v0.0.11 is absent from the real release list.
 
 **Tooling changes do not automatically repair an existing tag's publisher.**
 The current tagged workflow checks out main for receipt authentication, then
@@ -121,9 +124,10 @@ only to main therefore does not reach those later steps on a tag retry. Keep
 this limitation explicit; neither moving the tag nor relaxing exact-tag
 signature identity is an automatic recovery option.
 
-v0.0.11 is one such frozen failure: its draft is left untouched and its tag is
-not moved. It must not be retried with the tagged publisher, which would miss
-the existing draft again. A future version needs the repaired discovery code
+v0.0.11 is one such frozen failure: the operator approved deleting its empty
+draft, while its tag remains unchanged. It must not be retried with the tagged
+publisher, which would create another draft and then fail to discover it.
+A future version needs the repaired discovery code
 and a separate, real full-publication rehearsal before release approval; the
 earlier offline/delivery rehearsals did not exercise GitHub's draft API.
 
