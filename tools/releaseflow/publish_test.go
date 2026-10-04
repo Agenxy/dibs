@@ -120,7 +120,7 @@ func TestPublicReleaseRetryOnlyVerifiesNeverBuildsSignsOrWrites(t *testing.T) {
 			}
 			run := func(_ context.Context, _ []string, name string, args ...string) ([]byte, error) {
 				if name == "gh" && len(args) > 0 && args[0] == "api" {
-					return json.Marshal(s)
+					return json.Marshal([]releaseStatus{s})
 				}
 				if name == "gh" && len(args) > 2 && args[0] == "release" && args[1] == "download" {
 					copyFixture(t, stage, args[6], c)
@@ -168,12 +168,12 @@ func TestDraftCannotBecomePublicBeforeUploadedBytesVerify(t *testing.T) {
 				}
 				if name == "gh" && args[0] == "api" {
 					if !created {
-						return nil, errors.New("absent (HTTP 404)")
+						return []byte(`[]`), nil
 					}
 					if mode == "became-public" {
 						s.Draft = false
 					}
-					return json.Marshal(s)
+					return json.Marshal([]releaseStatus{s})
 				}
 				if name == "gh" && args[0] == "release" {
 					switch args[1] {
