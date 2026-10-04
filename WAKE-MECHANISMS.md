@@ -320,8 +320,9 @@ the only commands Dibs runs that host an agent.
 
 ## 1. Measured, not researched
 
-A daemon with `DIBS_LOG_RPC=1` recorded exactly what each client sends when it connects
-over plain HTTP (no stdio bridge in the way):
+A daemon with `DIBS_LOG_RPC=1` recorded the exchanges below. The original
+measurements used plain HTTP; later rows explicitly name stdio or an adapter
+probe. Old rows are historical measurements, not claims about today's binaries:
 
 | Harness | Version | Handshake | Declared capabilities | Methods sent |
 |---|---|---|---|---|
@@ -330,51 +331,62 @@ over plain HTTP (no stdio bridge in the way):
 | Claude Desktop, chat (`claude-ai/0.1.0`) | 1.52386.6 | `initialize` **2025-11-25** | `extensions.io.modelcontextprotocol/ui` only | initialize, tools/list, resources/list (2026-09-15, over the stdio bridge) |
 | Claude Desktop, local agent mode (`local-agent-mode-<server>/1.0.0`) | 1.52386.6 | `initialize` 2025-11-25 | `roots`, `extensions.io.modelcontextprotocol/ui` | initialize, tools/list (2026-09-15) |
 | Codex | 0.144.1 / **0.146.0-alpha.7** | `initialize` **2025-06-18** | `elicitation {form,url}` | initialize, tools/list |
+| Codex configured stdio, isolated trust control | **0.159.2** | `server/discover` **2026-07-28** | `experimental.codex/auth-change`, `elicitation {form,url}` | server/discover, tools/list, two hook_poll calls (SessionStart and Stop), **2026-10-03**; no automatic resources/list |
 | opencode | 1.18.4 | `initialize` **2025-11-25** | `roots` | initialize, tools/list |
 | Copilot CLI | 1.0.75 | 2025-11-25 | none | tools only |
-| Pi | latest | **no MCP at all** | none | none |
 | Gemini CLI | 0.54.0-nightly.20260722 | `initialize` **2025-06-18** | `roots` | initialize, tools/list, resources/list (2026-09-12, over `httpUrl`) |
+| Hermes installed MCP adapter, no model/provider session | **0.20.2**, SDK **1.28.1** | `initialize` **2025-11-25** | `elicitation {form,url}` | initialize, notifications/initialized, tools/list (52 tools), **2026-10-03**, isolated HTTP daemon |
 
-**Gemini CLI's hook surface is no longer what §5 and `dibs hook-poll` describe**
-(read 2026-09-25 at `20f7075`, and not yet acted on). Three claims this
-repository makes about it have expired at once. Hooks are not `command` only:
-`http` and `prompt` types exist beside it. The hook input carries `session_id`,
-`cwd`, `hook_event_name` and `transcript_path`, and the id is populated rather
-than declared (`hookEventHandler.ts:379`, and exported to command hooks as
-`GEMINI_SESSION_ID`), so "Gemini agents can only be found by their directory"
-is now a statement about our plugin and not about the harness. And `BeforeAgent`
-accepts `additionalContext` and is dispatched for real (`client.ts:931`), which
-is the per-turn delivery point whose absence is the entire reason `hook-poll`
-forwards `SessionStart` and nothing else. `AfterAgent` still cannot carry
-context, so the original reasoning was right about the event it named and is
-now pointing at the wrong end of the turn. Events: SessionStart, SessionEnd,
-BeforeAgent, AfterAgent, BeforeModel, AfterModel, Notification.
+**Release survey refreshed 2026-10-03, with source and runtime separated.**
+All available harness checkouts and ext-apps were fetched, and their
+`origin/HEAD` read rather than their local branch. Installed versions were
+observed separately: PATH Codex **0.0.0**, app CLI **0.159.2**, Claude Code
+**2.1.233**, Claude Desktop **2.19675.0**, opencode literal **local**, Pi
+**0.84.2**, Gemini **0.54.0-nightly.20260722.gf743ab579**, Hermes
+**0.20.2 (2026.8.16)**. Older wire rows keep their measurement dates; a
+version check is not a new handshake measurement. Claude Desktop wire behavior
+was not re-measured, because restarting it with a temporary shadowing Dibs
+entry would interrupt live Code sessions.
 
-All of that is READ, not watched. The `gemini` installed on the survey
-machine runs a bundle built 2026-07-25 from a checkout two months behind, and
-that bundle contains no `BeforeAgent`, no `GEMINI_SESSION_ID` and no
-`hook_event_name`, so it could not have measured any of it. Treat the three
-findings as where Gemini is going and not as what a Gemini agent does today:
-this table's own rule is that a capability in source is not a behaviour, and
-the first version of this paragraph broke it.
+- Codex source `550eb505` retains `CoreHookMcpExecutor`, the two-part stdio
+  opt-in and the separate host-owned apps flag. The installed app CLI's isolated
+  MCP-tool hooks fired SessionStart and Stop with the invocation-only reviewed-
+  hook trust control. The same untrusted fixture made zero polls. Both tiny
+  sessions exited 0; daemon hook-health rose from zero to two stranger polls
+  only in the control. This proves execution, not registered-mail delivery,
+  and changes no persisted trust or live board configuration.
+- opencode source `907b3bc5` still has no `2026-07-28` match in `packages`
+  and pins SDK 1.29.0. Its installed launcher runs local `2cba7e22`, not that
+  fetched head; no new wire/session measurement was made.
+- Pi source `20038712` still has no `modelcontextprotocol` match in
+  `packages/*/src`; its SDK lockfile dependency is not a native MCP client.
+- **Gemini source `fb972b2` now has command/runtime hook types**, replacing
+  the previous survey's http/prompt claim. `hookEventHandler.ts:379` populates
+  session/transcript input, `hookRunner.ts:353` exports `GEMINI_SESSION_ID`,
+  and `client.ts:192` dispatches BeforeAgent; its output type accepts added
+  context. These are source readings, not behavior observed in the installed
+  July bundle, which still lacks BeforeAgent/session hook fields. Dibs's
+  plugin remains command/SessionStart-only and does not depend on the removed
+  types.
+- **Hermes source `158fd638` pins SDK 2.0.0, but the installed environment
+  contains 1.28.1.** Loading the actual installed adapter resolves both latest
+  and handshake to 2025-11-25, and its real transport sent the legacy exchange
+  in the new table row. No model/provider agent session was run. Source now
+  reads the SDK's separate handshake constant when available; the old inference
+  from the SDK's newest revision to a session's wire revision is not valid.
+- ext-apps `82221c0`, package **2.0.3**, is unchanged. Source has split 2.0.0
+  SDK peers and a published-1.x interop test; no installed host rendering was
+  re-measured.
 
-**Hermes is not in the table because nothing here has watched one of its
-sessions.** What can be measured without a model provider was, on 2026-09-21:
-`tools/mcp_tool.py` takes its handshake revision from the SDK
-(`LATEST_HANDSHAKE_VERSION = LATEST_PROTOCOL_VERSION`), and the pinned
-`mcp==2.0.0`, installed and read rather than inferred, reports `2026-07-28`.
-Without that extra the fallback in the same file is `2025-03-26`. That is a
-measurement of the constant a session will send, not of a session, and the
-distinction is the point of this table.
-
-**Nobody sends `subscriptions/listen`, `resources/subscribe`, or `resources/read`.**
-Codex did not call `resources/list` either when this table was measured, which is
-corrected immediately below and was contradicted by it for a while: on 2026-07-28 it
-does, and Dibs' resources are visible there. The table is a measurement with a date on
-it, and the paragraph under it is what is true now.
+**None of these measured startup exchanges automatically sent
+`subscriptions/listen`, `resources/subscribe`, or `resources/read`.**
+The August 2026-07-28 Codex probe did call `resources/list`; the installed
+0.159.2 startup probe on 2026-10-03 did not. Resource-read tools remain available,
+but a modern revision alone does not guarantee automatic resource listing.
 
 **"Nobody speaks MCP 2026" was true when measured and is now false. Amended 2026-08-17.**
-Codex runs entirely on 2026-07-28 against Dibs today. That took a fix here, and the
+Configured Codex ran entirely on 2026-07-28 against Dibs in that measurement.
+That took a fix here, and the
 correction is the useful part: Codex ASKED for 2026, was answered in the legacy era, and
 fell back to 2025 for every real call, because Dibs read the protocol version from an
 HTTP header that stdio does not have. For a day that looked exactly like a client without
@@ -412,7 +424,8 @@ session resolves to nobody. With the Claude Code plugin installed, do not also c
 Dibs at the app level. The same-name shadowing is the app's; the consequence is ours.
 
 The lesson this table keeps teaching is that every row is true on its date and not after.
-Per-harness re-checks are tracked as issues rather than as prose here.
+Per-harness re-checks are now the before-tag survey in AGENTS.md, not an
+assumption that a historical row still describes an installed build.
 
 ## A wake delivers; it does not instruct
 

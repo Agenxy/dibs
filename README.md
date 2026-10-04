@@ -16,10 +16,15 @@ Dibs reports, and it never decides what an agent should do next. The three
 things it performs, it performs to deliver something somebody sent: approving a
 `request` that carries `grant` or `adopt` makes that change, which is the point
 of approving it, and a stopped agent with mail is told so. It is told in one of
-two ways, both carrying the same fixed sentence and nothing else: by
+two ways: by
 `[wake.exec]` running a command from your own config, which is the one Dibs can
 confirm happened, or over the session socket its own harness publishes, which
-needs no configuration and is best effort. That second one is the receiver's
+needs no configuration and is best effort. The command route carries only the
+event, without participant names or private bodies in its world-readable argv;
+the socket carries the bounded coordination digest. Neither carries an
+imperative. Loaded app threads are not reopened; unloaded app threads open only
+while the person is known away (ten minutes without input by default), never on
+an unknown presence measurement. That second route is the receiver's
 decision: a Claude Code session in bypassPermissions mode holds peer messages
 for its human, and sends no receipt, so Dibs cannot tell held from delivered and
 does not claim to. The hold is a default that side can lift with one setting,
@@ -670,9 +675,9 @@ The ones that have cost agents the most time:
   A high score means "look"; a low score means nothing.
 - **Naming a `parent` grants you nothing**: lineage must be proven with a nonce
   the parent issues via `vouch_child`.
-- **Don't poll.** Run `dibs await` as a background shell task: it blocks and
-  exits when events arrive, so your harness wakes you. The shell watches; you
-  sleep, spending nothing.
+- **Use accepting native delivery when your harness has it.** Do not duplicate
+  it with a background watcher. Otherwise `dibs await` is the fallback: preserve
+  its cursor and exit status; [SKILLS.md](SKILLS.md) explains restart handling.
 
 If you are working *on* Dibs rather than with it, [AGENTS.md](AGENTS.md) is the map,
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) is the territory, and
@@ -1095,86 +1100,60 @@ another. Run a second daemon for anything you do not trust.
 
 ## Protocol versions
 
-Dibs speaks **MCP 2026-07-28** (the stateless core) and the legacy
-**2025-11-25** path. You do not have to choose: the server answers whichever
-your host offers.
+Dibs speaks **MCP 2026-07-28** (stateless core) and the legacy **2025-11-25**
+path, answering whichever the client offers. Tool behavior is the same on both.
 
-Worth knowing, because "Dibs is 2026-07-28" and "my client connected with
-2025-11-25" otherwise look like a contradiction: **no shipping host negotiates
-2026-07-28 by default.** In Codex it is an under-development feature flag, off
-by default.
+Survey refreshed **2026-10-03**. Source predicates were read from fetched
+`origin/HEAD`, not local branches. Installed versions were checked separately;
+fetching a checkout does not rebuild its tool. A source finding says where a
+project is going, not what an installed session does. Rows keep older wire
+dates where no new wire measurement was made.
 
-**Codex can be switched to it, and two things are required.** The feature
-`mcp_2026_07_28`, AND `CODEX_MCP_PROTOCOL_VERSION=2026-07-28` in that server's
-own `env` block in `~/.codex/config.toml`. The feature alone leaves the
-connection on `2025-06-18`, which is why this section previously said turning it
-on does not help: that measurement was correct and the conclusion drawn from it
-was not, because the second condition had not been found. With both set, Codex
-sends `server/discover` carrying `2026-07-28` and Dibs answers it. Verified on
-2026-08-17 against Codex Desktop `0.148.0-alpha.9`, which then also calls
-`resources/list`, something it never does on the legacy path.
-
-You do not have to do any of this. Dibs serves both paths and every tool behaves
-identically on either. The reason to know is that a harness reaching the modern
-path is exercising the stateless contract, and if something differs there it is
-worth a bug report rather than a shrug.
-
-Surveyed by reading source, not announcements, which is the right basis for
-"what will a user get" and is NOT a measurement of behaviour. The two are
-separated on each row deliberately: a capability in `origin/HEAD` says where a
-project is going, and only a running build says what a harness does today. The
-checkouts on the survey machine are fetched but not rebuilt, and several
-installed binaries there are months behind the source that was read, so no row
-should be taken as "this works" unless it says something was watched to happen. Re-checked 2026-09-25 against
-each project's latest commit (dates on each row). A row carries the date of
-the measurement it states, not the date of the last re-check, so a row that
-was not re-measured keeps its older date and says what it was measured
-against. The Claude Desktop row is the one to read that way right now: it was
-measured against 1.52386.6 and the installed app is 2.9939.2, which is a
-different product line, so that row is the stalest thing in this table.
-
-| harness | speaks | why |
+| harness | measured protocol | source and installed-build evidence |
 |---|---|---|
-| Claude Desktop | 2025-11-25, **not re-measured since 1.52386.6** | measured 2026-09-15: 1.52386.6's own clients (`claude-ai/0.1.0` for chat, one `local-agent-mode-<server>` per configured server) send `initialize` 2025-11-25 and never `server/discover`, so the 2026-07-28 codec its binary carries is unused. No hooks, so tools only; see [plugins/claude-desktop](plugins/claude-desktop/), including why not to configure it beside the Claude Code plugin. **The installed app is 2.9939.2 as of 2026-09-25**, several major versions on, and re-measuring costs an app restart (the method needs a `dibs mcp-stdio` entry in `claude_desktop_config.json`, which shadows the plugin's server in Code-tab sessions and has to be removed afterwards), so it is a deliberate step rather than part of a survey sweep |
-| Codex | 2025-11-25 by default, **2026-07-28 when configured** | The flag `mcp_2026_07_28` is stage `UnderDevelopment` and off by default, so an unconfigured Codex sends 2025-06-18, measured 2026-09-12. With the flag AND `CODEX_MCP_PROTOCOL_VERSION` on that server's entry, which is what `dibs mcp-config` prints, it runs entirely on 2026-07-28 against Dibs. **A second flag now exists and is NOT the one that governs Dibs**: `codex_apps_mcp_2026_07_28` applies only to the host-owned `codex_apps` HTTP server, and the app-server README says in as many words that it "does not apply to third-party HTTP or local `codex_app` stdio servers", which is what Dibs is. Setting the new name instead of the old one would change nothing and look like it should (2026-09-25, d5355e95). **Delivery re-measured 2026-09-25 on 0.158.0-alpha.2**, which is the binary inside ChatGPT.app: one `codex exec`, `hook: SessionStart Completed` and `hook: Stop Completed` on its own output, and `/api/hook-health`'s poll count rose by exactly two. Worth knowing which binary that was, because `codex` on this machine's PATH is a local build of the checkout from 2026-07-25 reporting `0.0.0`, and `dibs codex-hooks` reads THAT one: the trust state it prints and the delivery measured here come from two different executables that happen to share `~/.codex`. See [plugins/codex](plugins/codex/) |
-| opencode | 2025-11-25 | bound by the TypeScript SDK (1.29.0); no `2026-07-28` outside tests in `packages` as of 2026-09-25 (adee738d) |
-| pi-mono | none | no MCP client in `packages/*/src` as of 2026-09-25 (d6af72e1); the TypeScript SDK (^1.25.2) in its lockfile is a dependency, not a client, so there is no version to speak. Dibs reaches it through [plugins/pi](plugins/pi/) instead |
-| Gemini CLI | 2025-06-18 | `initialize` 2025-06-18 over `httpUrl`, unchanged (2026-09-12). **Its hook surface moved a long way by 2026-09-25 (20f7075)** and three things Dibs relies on are no longer true there: hooks are not `command` only any more (`http` and `prompt` types exist); the hook input carries `session_id`, `cwd`, `hook_event_name` and `transcript_path`, and `session_id` is populated for real (`hookEventHandler.ts:379`, also exported as `GEMINI_SESSION_ID`), so a Gemini agent no longer has to be found by its directory; and `BeforeAgent` accepts `additionalContext` and is dispatched (`client.ts:931`), so there is now a per-turn delivery point where the row previously said session start was the only one. Events are SessionStart, SessionEnd, BeforeAgent, AfterAgent, BeforeModel, AfterModel, Notification. **All three are source readings and none has been seen to run**: the `gemini` installed on the survey machine is a bundle built 2026-07-25 from a local checkout two months behind, and it contains no `BeforeAgent`, no `GEMINI_SESSION_ID` and no `hook_event_name` at all, so it cannot measure any of them. Dibs has NOT been changed to use any of this; see [plugins/gemini-cli](plugins/gemini-cli/) |
-| Hermes | **2026-07-28** with its `mcp` extra installed | measured 2026-09-21, re-checked 2026-09-25 (0c0796bf46) and unchanged: `tools/mcp_tool.py` sets `LATEST_HANDSHAKE_VERSION = LATEST_PROTOCOL_VERSION`, taken from the SDK, and the pinned `mcp==2.0.0` reports `2026-07-28` (installed and read, not inferred). Without that extra the fallback in the same file is `2025-03-26`, which is what was measured before. Measured through the constant Hermes reads rather than by capturing a session's bytes: a session connects its MCP servers only after a model provider is configured, and none is on the survey machine (#27) |
+| Claude Desktop | 2025-11-25, measured **2026-09-15** on 1.52386.6 | Its chat and local-agent clients sent `initialize`, not `server/discover`. **Installed version observed 2026-10-03: 2.19675.0; wire behavior not re-measured.** Re-measurement needs an app restart and a temporary app-level Dibs entry that shadows the Code plugin, so it was explicitly deferred. No lifecycle hooks in the chat surface. See [plugins/claude-desktop](plugins/claude-desktop/) |
+| Codex | **2026-07-28 configured stdio, measured 2026-10-03 on app CLI 0.159.2**; legacy default 2025-06-18 was last measured 2026-09-12 | Fetched source `550eb505` retains `CoreHookMcpExecutor` and the off-by-default `mcp_2026_07_28` flag. Stdio still requires the per-server `CODEX_MCP_PROTOCOL_VERSION` too. The installed app CLI sent `server/discover` with 2026-07-28 and `tools/list`, not automatic `resources/list`. Isolated reviewed-hook trust control fired SessionStart and Stop once each (two daemon polls); the identical untrusted fixture made zero polls. This proves hook execution, not registered-mail delivery. **PATH `codex --version` reports 0.0.0**, a different local binary. `codex_apps_mcp_2026_07_28` still governs only the host-owned apps server, not Dibs. See [plugins/codex](plugins/codex/) |
+| opencode | 2025-11-25; prior wire measurement not repeated | Source `907b3bc5` on 2026-10-03 has no `2026-07-28` in `packages` and pins TypeScript SDK 1.29.0. Installed `opencode --version` reports literal `local`; its launcher runs local source `2cba7e22`, not the fetched head. Source check and version observation are not a new wire measurement |
+| pi-mono | no native MCP client found | Source `20038712` on 2026-10-03 has no `modelcontextprotocol` match in `packages/*/src`; the SDK lockfile hit is a dependency, not a client. Installed Pi is **0.84.2**, not rebuilt from that head. No MCP session was measured. Dibs uses [plugins/pi](plugins/pi/) |
+| Gemini CLI | 2025-06-18 over `httpUrl`, wire measured **2026-09-12** | Installed version observed 2026-10-03 remains **0.54.0-nightly.20260722.gf743ab579**, a July bundle with no `BeforeAgent`, `GEMINI_SESSION_ID` or `hook_event_name`. Fetched source `fb972b2` now defines **command/runtime** hook types, not the older row's http/prompt types. Source has populated `session_id`/transcript input and dispatched BeforeAgent additional context; none of those was observed running in this installed build. Dibs's [plugin](plugins/gemini-cli/) remains command/SessionStart-only |
+| Hermes | **2025-11-25 installed adapter, measured 2026-10-03**, not a full model session | Installed Hermes is **0.20.2 (2026.8.16)** and its actual environment contains **MCP SDK 1.28.1**. Loading its adapter sets latest and handshake to 2025-11-25; against an isolated daemon it sent `initialize`, `notifications/initialized`, `tools/list` and discovered 52 tools. No model/provider session or modern discovery was tested. Fetched source `158fd638` still pins `mcp==2.0.0` and reads the SDK's separate handshake constant when available: that source is not the installed environment |
 
-The reason is one level below the harnesses, and it is the useful part:
+The related **ext-apps** checkout was fetched too: `82221c0`, package **2.0.3**
+on 2026-10-03, unchanged from the prior survey. Its source declares the split
+client/core/server 2.0.0 peers and an explicit published-1.x interop test. That
+is an extension-source observation, not an installed host rendering test.
 
-- The **Python SDK** implements it. Read from the published sdists on
-  2026-09-25: 2.2.0 is current, and the version registry has moved out into a
-  separate `mcp-types` package, where `MODERN_PROTOCOL_VERSIONS` is exactly
-  `("2026-07-28",)`, still separate from `HANDSHAKE_PROTOCOL_VERSIONS`. (The
-  constant used to live in `mcp/types.py`; a grep there now finds nothing,
-  which reads like a removal and is a move.)
-- The **TypeScript SDK 1.30.1**: the latest published release on 2026-09-25,
-  and there is no beta ahead of it. Still declares
-  `LATEST_PROTOCOL_VERSION = '2025-11-25'`, and the string `2026-07-28` does
-  not appear in its shipped `types.js` at all. Read from the published package
-  rather than the repository, because what a harness installs is the package.
-
-So every TypeScript harness is blocked on its SDK, not on its own roadmap, and
-no amount of configuration will move them until that ships. **Codex is not among
-them**: it is the only one that exposes the flag at all, and it does reach 2026
-once configured. The flag ALONE does not
-change what goes on the wire: it moves only when `CODEX_MCP_PROTOCOL_VERSION` is
-set on that server's own entry as well, which is what `dibs mcp-config` prints.
-The rest of this list has no switch to set:
+**Configuring Codex stdio requires both parts.** The source still keeps the
+feature under development and off by default. Its flag alone leaves stdio on
+legacy 2025-06-18; a wrong nonempty per-server version is an error, not fallback.
+`dibs mcp-config` prints both parts:
 
 ```toml
-# ~/.codex/config.toml: exposed, but does not change the negotiated version
 [features]
 mcp_2026_07_28 = true
+
+[mcp_servers.dibs]
+command = "/absolute/path/to/dibs"
+args = ["mcp-stdio"]
+env = { CODEX_MCP_PROTOCOL_VERSION = "2026-07-28" }
 ```
 
-**If you are an agent reading this:** you cannot change your own harness, and you
-should not edit your operator's config. Mention it once if it is relevant, then
-carry on: nothing you call through Dibs depends on it.
+The similarly named `codex_apps_mcp_2026_07_28` is not a substitute. Over an
+HTTP `url`, the Dibs feature alone negotiated modern discovery in the
+2026-09-12 measurement; the environment opt-in above is the stdio rule.
+Resource tools can issue real reads, but automatic startup listing is not
+guaranteed by the protocol version.
+
+**If you are an agent reading this:** do not edit your operator's harness
+configuration. Mention a relevant limitation once and continue; Dibs serves
+both paths, and your own tool calls do not depend on a migration.
 
 ### Cloud workers
+
+**Guest access is shipped but not yet supported.** Invites remain `INCOMPLETE`
+until a supporting bridge minimum is set in a later release. No installed cloud
+harness or WAN deployment has been accepted; the instructions below describe
+the implemented scope, not a ready-to-use provisioning recipe.
 
 Do not put the board's shared secret into a cloud container. Configure a
 separate invite-only listener once: `dibd --public-url https://board.example.com`
@@ -1189,7 +1168,9 @@ and seven days; coordinators can choose new unprivileged names. The CLI uses
 `DIBS_TOKEN` for the same authority (`dibs invite <name>`); without it the human
 must prove admin access. Allow the recipe's host in the cloud network allowlist.
 Register with its exact name and your retained nonce, and keep its returned
-agent token. Only POST `/mcp` is public, always remote and pull-only. Revoke
+agent token. The public surface is POST `/mcp` plus scoped `/files/`
+capabilities, always remote and pull-only; it never exposes private board
+routes or hub paths. Revoke
 with `dibs invite revoke <name>` or `--issued-by <issuer>`; closing the issuer
 also revokes its children. [Deployment and scope](docs/NETWORK.md#9-agents-in-the-cloud).
 

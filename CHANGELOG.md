@@ -5,1220 +5,324 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.0.10] - 2026-10-03
+
 ### Added
 
-- **Private guest exports have literal provisioning steps, gated off until a
-  supporting release is assigned.** Admitted snapshots render credential-free,
-  per-target download, per-archive hash, stdout-only single-member extraction,
-  executable hash and exclusive versioned publication steps plus mergeable
-  stdio configuration. Ordinary mints carry no steps, and an unset minimum
-  offers neither metadata nor provisioning. Each invited HTTP request carries
-  the guest bridge's actual compiled version; a set floor refuses missing,
-  development, prerelease or old declarations before MCP dispatch, without
-  relying on initialize or granting authority. Private fleet access is unchanged.
-  Exports remain `INCOMPLETE`; no installed-harness or WAN support is claimed.
+- **Cloud-agent (guest) access is shipped but not yet supported.** Invitations
+  remain `INCOMPLETE` until the supporting minimum is set in a later release;
+  no installed cloud harness or WAN deployment has been accepted. The
+  endpoint-scoped `dibs mcp-stdio --guest <absolute-private-file>` adapter
+  uses only the invited endpoint, constrained guest CA and bearer, without
+  creating a local board or importing trust into the harness or system.
+  Recovery uses the recipe's nonce or an isolated private store.
 
-- **Guest exports can carry detached verified release metadata.** Admission
-  rechecks bounded retained evidence offline before minting and shares the
-  explicit verification command's compiled release-selection rule. A
-  process-local success-only cache keys the exact record content and running build; changed
-  or refused evidence withdraws only artifact metadata, never ordinary invite,
-  list or revoke access. All three targets need signed archive and executable
-  member digests. The private export records actual board provenance and an
-  explicit `INCOMPLETE` provisioning status. Provisioning is a separate
-  export-only projection from the same frozen snapshot.
-  The supporting minimum remains unset pending publication and runtime acceptance.
+- **Private guest exports prepare a verified bridge without installing it.**
+  `dibs invite <name> --out <absolute-private-file>` returns the issuer's
+  exact expiry and an export-only recovery nonce. Reissuance keeps that nonce;
+  ordinary mints disclose neither the nonce nor provisioning instructions.
+  Publication is exclusive, atomic and synced, never an overwrite.
+  Admitted release snapshots can render credential-free steps for Darwin arm64,
+  Linux amd64 and Linux arm64: download, archive hash, stdout-only member
+  extraction, executable hash and exclusive versioned publication, plus
+  mergeable stdio configuration. Every error stops provisioning; existing
+  versions stay intact. The unset minimum currently offers neither release
+  metadata nor provisioning. Exports remain `INCOMPLETE`.
 
-- **Senders can withdraw requests without claiming delivery.**
+- **Signature-backed release evidence is retained for offline guest admission.**
+  Signed upgrades retain the exact tag, checksums and signature bundle.
+  `dibs invite --verify-release <tag>` is a separate explicit verification
+  operation, not a mint or installer; only it may repair refused evidence
+  online. Admission re-verifies bounded retained evidence offline against the
+  embedded Sigstore root. Its success-only cache keys exact record content
+  and the running build; changed or refused evidence withdraws only artifact
+  metadata, not ordinary invite/list/revoke access. An unset supporting
+  minimum refuses verification before I/O.
+
+- **Release integrity covers the packaged guest CLI.** Signed
+  `checksums.txt` includes platform-scoped executable-member digests from
+  final code-signed images. The archive gate extracts all three targets and
+  checks exact equality with the signing input. Release preparation checks
+  the embedded Sigstore root against authenticated production TUF before
+  stamping a version; the tag workflow repeats that check. Ordinary CI does
+  not fetch third-party trust, and root rotation is never automatic.
+
+- **Opt-in direct IPv6 guest TLS.** An operator-asserted global
+  `--public-ip` selects an invitation-only TLS 1.3 listener without a domain
+  or relay. Its constrained CA and private key are separate from fleet trust.
+  Assignment loss or failed leaf renewal withdraws that endpoint, not the
+  private board. Enabling requires `--ack-unverified-guest-client`; a
+  native-client recipe remains withheld pending exact-runtime malicious-
+  certificate acceptance. Automatic Supgang address selection and guest-pin
+  advertisement remain follow-ups.
+
+- **Scoped invitations can be issued by local agents.** Default policy permits
+  four live own-ID-prefixed children for seven days; coordinators may name new
+  unprivileged identities. The human's proved private CLI route may issue or
+  revoke any invitation. Only credential hashes persist. Revocation, expiry,
+  issuer closure and purge take effect on the next call; reopening an issuer
+  does not restore its children. Invited agents cannot mint grandchildren.
+  The separate public listener exposes POST `/mcp` and scoped `/files/`
+  capabilities, never private board routes, wake streams or hub paths.
+  `--public-url` supports a loopback TLS proxy; `--public-host` supports
+  ACME with explicit terms acceptance. Live public deployment is unmeasured.
+
+- **Encrypted out-of-band file transfer.** `upload`/`download` return
+  short-lived descriptors; resumable PATCH/HEAD moves bytes outside MCP and
+  model context. `dibs put`/`dibs get` retry cut connections and verify
+  hashes. Versioned DARE 2 chunks authenticate ciphertext and final segments
+  while legacy blobs remain readable. Revocation, identity replacement and
+  access loss invalidate tickets, and concurrent staging is bounded.
+  Native off-host transfer requires TLS 1.3. Downloads are sandboxed forced
+  attachments, not executable board-origin content. Phase one resumes
+  connections, not incomplete uploads after daemon restart; declared-size-
+  and-digest restart resume remains a required follow-up.
+
+- **Accepted work has a durable recipient-owned task queue.** Recipients can
+  accept work for later, reprioritise or reorder it, and start it themselves.
+  Queued work stays owed across restarts without triggering continuation or
+  stall reports. Completing work never starts the next request. The human,
+  coordinators and admins may lock order, but cannot prevent starting.
+  Senders receive recorded ordering news; public views omit private bodies.
+
+- **Senders can withdraw unfinished ordinary requests.**
   `respond(disposition: "withdraw", body: reason, superseded_by: serial)`
-  retracts pending, queued or approved work, clears its queue and owed debt,
-  and gives its recipient an acknowledgement receipt that survives restart.
-  The optional replacement reference does not reassign or start work.
-  Tracked requests become `cancelled`; already-performed approvals stay final.
+  retracts pending, queued or approved work without claiming delivery,
+  clears queue/owed debt and gives the recipient a restart-safe acknowledgment
+  receipt. A replacement reference neither assigns nor starts work. Tracked
+  requests become cancelled; performed grant/adoption approvals stay final.
 
-- **Release checksums name the packaged guest CLI bytes.** The existing
-  `checksums.txt` carries platform-scoped `members/<os>_<arch>/dibs` digests
-  from final code-signed images. The archive gate independently extracts all
-  three published targets and checks exact equality before release. These are
-  member keys, not separate downloadable assets or a second manifest. Guest
-  recipes remain incomplete and the supporting-release minimum stays unset.
+- **Milestones make long work reviewable.** Requests may name up to eight
+  milestones. Workers report progress and deliverables, and close delivered
+  work with `done`; senders may accept or flag each step without cancelling
+  it. The board shows progress, artifacts and latest review. Acknowledging a
+  notice is not a review, and a new report becomes unreviewed. A flagged
+  completed request can receive corrections without changing its original
+  verdict or artifact. New terminal responses remain readable for 24 hours;
+  unresolved flags retain them within the terminal cap and loss watermark.
 
-### Fixed
+- **A tracked request is an MCP task.** A per-call-capable 2026-07-28 host
+  using `send(type: "request", track: true)` receives a task handle and
+  follows progress with `tasks/get` or task subscriptions. Denied, declined
+  and expired requests complete with an error; delivered work carries its
+  artifact. Handles survive restart, are unguessable and retain the request
+  for the task's week unless the recipient is purged first. Unsupported hosts
+  get an explicit tracking note and the ordinary result, not a task handle.
+  Task capability and authorization are checked on every call.
 
-- **Human mail survives a display-name change and restart.** The reserved
-  nonce identifies the person's row when recovering it, including a dormant
-  or archived row. Renaming remains allowed and the board keeps that display
-  label; `send(to: "human")` still reaches the same mailbox.
+- **Human notifications have delivery evidence.** Send reports the actual
+  relay, desktop or unavailable route. Mail receipts distinguish pending from
+  OS-confirmed posting, explicit dismissal, failure and an answer. Posting
+  never proves visibility; evidence is derived and becomes unknown after
+  restart. Failed notification attempts propagate their errors without
+  duplicate alerts.
 
-- **Renamed agents can be addressed by their current label.** Agent IDs remain
-  permanent mailbox, queue and contact keys. Names resolve to IDs at ingress;
-  exact IDs and send-time human/coordinator roles win. Ambiguous names are
-  refused with candidate IDs, and queue locks and authorized mailbox reads
-  accept names too. New renames onto another row's ID are refused at admission;
-  historical renames still replay without an added ledger flag.
+- **`dibs human-relay` puts human mail on the person's own Mac.** Enrollment
+  binds a Secure Enclave key with the board's admin proof; running costs Touch
+  ID, and an approval granting authority or another mailbox costs another
+  confirmation. Answers return signed, including to Linux boards. The relay
+  never holds the board's coordination secret. Without one, the board uses
+  its own notification route.
 
-- **Human notifications leave window focus alone.** Questions and requests
-  stay on native banners while Focus is on. Automatic decision windows are
-  removed. Send results and mail receipts distinguish pending from actual OS
-  posting and report active Focus as visibility unknown. Doctor reports this
-  as an informational state and gives advice for the mode's allow list or
-  silence list, falling back to general settings advice for an unknown mode.
+- **ChatGPT conversations can participate without claiming a computer.**
+  `dibs mcp-stdio --remote-session` works through OpenAI's Secure MCP Tunnel
+  without asserting a host, process, directory or repository. Conversation
+  IDs correlate calls and grant no authority. These participants may use
+  mail, spaces, requests and path-free declarations, but cannot claim a
+  directory or receive a wake; they collect mail at activation.
 
-- **Restart grace is labelled as grace, not a fresh sighting.** The board API
-  carries the origin of its seen timestamp, and the CLI distinguishes boot
-  grace, authenticated contact, harness hooks and ledger activity. Liveness
-  clocks and wake decisions stay the same.
+- **Blocked work can be parked honestly.** A `waiting` declaration whose
+  refs include the owed request parks it with an optional timed recheck.
+  Delivered Dibs wakes may continue a turn ending with declared work open,
+  at most twice per declaration version and three times per fifteen minutes,
+  never after a person's prompt. Stalled work is retried on bounded backoff
+  and reported to its requester. Waiting work is not continued.
 
-- **A stale harness PID no longer defeats a fresh authenticated call.** Inbox
-  reads and model mutations keep the identity active through its configured idle
-  lease, while diagnostics continue to report the old process as dead. A silent
-  caller is still detected as crashed. Boot grace and background subscriptions
-  cannot manufacture this evidence, and no process or session binding is changed.
-  An announcement owed by a member that crashes just after contacting Dibs can
-  therefore stay outstanding for up to that lease (45 minutes by default) before
-  it reads blocked.
-
-- **Accepted work has an explicit task queue.** Recipients can accept requests
-  for later, reprioritise or reorder them, and start one when ready. Queued work
-  remains owed across restarts and beyond a day, without triggering work
-  continuation or stall reports. Finishing never starts the next request.
-  Coordinators, admins and the human can lock queue or task order; locks never
-  block starting. Senders receive recorded ordering news, rebuilt after restart
-  until read, and public views expose metadata without private request bodies.
-
-- **The human remains the human after a daemon restart.** Wake warnings,
-  stall exemptions and adoption authority use the replayed reserved identity,
-  rather than waiting for an in-memory credential cache to be filled again.
-  Existing human tokens retain their rights; ordinary member tokens do not
-  gain adoption or approval authority.
-
-- **Unloaded app threads wait until you are away.** A known screen lock,
-  sleeping displays or ten minutes without input allows opening. The native
-  helper rechecks presence and attempts to restore the app previously in front while
-  you remain away. Unknown measurements leave the notice queued. The
-  `open_app_after_idle` setting keeps its AFK role, with a ten-minute default.
-  Host bridges advertise adoption of this policy; diagnostics name older
-  running bridges and print the restart needed to adopt it.
-
-- **Loaded app threads wake without reopening their window.** The wake check
-  uses executable paths and one bounded file query, so an app runtime behind
-  many helper processes is still found. Queue delivery leaves the frontmost
-  app alone. Unloaded threads follow the away policy.
-- **The board panel is for an explicit human request.** Its tool description
-  directs routine status to `check_in`, and board invocations are logged with
-  the caller and view, without tokens or message bodies.
-
-- **A macOS upgrade starts its replacement once.** Reloading a RunAtLoad
-  service already launches it; the following kickstart now leaves that process
-  running instead of killing it and triggering launchd's restart throttle.
-  Services without RunAtLoad are still started explicitly.
-
-- **MCP startup survives a daemon upgrade.** The stdio bridge waits up to
-  25 seconds for modern discovery, legacy initialization and tool
-  listing, including a daemon that accepts but never answers. It forwards the
-  daemon's actual version and capabilities. Only a refused connection is
-  retried; mutating calls retain their existing ten-second retry allowance.
-
-### Added
-
-- **Retained, signature-backed release evidence (guest preparation).** Signed
-  upgrades retain the exact release tag, checksum bytes and signature bundle
-  before staging cleanup; unsigned upgrades cannot create this evidence.
-  Cache reads reverify offline against Dibs' embedded Sigstore root, never an
-  editable verified flag or root. `dibs invite --verify-release <tag>` is a
-  separate verification operation, not a mint or installer. Only that explicit
-  command can repair a refused cache by freshly verifying online before atomic
-  replacement; offline reads never fetch replacement evidence. Its supporting
-  minimum intentionally remains unset, so production refuses before I/O.
-  Admission and member-digest publication preparation are now implemented;
-  supporting publication and runtime acceptance remain pending. Ordinary
-  invitation issuance is unchanged.
-
-- **Release publication checks its embedded Sigstore trust root.** A fresh,
-  authenticated production-TUF fetch must match the reviewed byte string and
-  frozen SHA-256 pin. Release preparation refuses before claiming a version,
-  and the tag workflow repeats the check before publication; ordinary CI
-  adds no third-party trust fetch. A rotation is deliberate, never automatic.
-  This is preparation for offline issuer-provenance verification, not a
-  supporting guest release or a provisionable invitation recipe.
-
-- **Endpoint-scoped guest stdio adapter (implementation in progress).**
-  **Not ready for guest use:** a published release-backed issuer recipe is not
-  available yet. No harness or cloud runtime has been accepted.
-  Issuance returns the stored invitation's exact expiry. Only an explicit
-  private export mint returns a recovery nonce derived from the retained
-  board key and invitation name; ordinary MCP/admin mints omit it. Reissuing an
-  invitation keeps that nonce; no nonce vault or ledger secret is added.
-  `dibs invite <name> --out <absolute-private-file>` can export an explicitly
-  incomplete private JSON checkpoint, not a runnable provisioning recipe.
-  Export keeps the issuer's exact expiry, uses exclusive atomic publication
-  and file/directory sync, and refuses existing files instead of replacing them.
-  The export flag alone preserves the board's invitation lifetime default.
-  `dibs mcp-stdio --guest <private absolute JSON file>` uses only the invited
-  IPv6 endpoint, constrained CA and bearer; it never initializes a local board
-  or imports guest trust into the harness or system. Guest discovery is
-  pull-only, and recovery uses the recipe's nonce or an isolated private store.
-  A corrupt, unsafe or contended legacy recovery store now refuses only that
-  registration before HTTP, with a cause-specific corrective hint and no
-  private path/nonce in the reply. The bridge stays alive for later calls and
-  never retries the registration or fabricates a notification response.
-  Published release-backed recipes and cloud/WAN acceptance remain pending;
-  this source change does not make the existing native-client recipe verified.
-
-- **One pending Codex wake per thread.** The command route reads the native
-  app queue before enqueuing; repeated events and daemon restarts reuse an
-  already pending Dibs wake. The bounded observer lists only, never resumes a
-  thread or deletes a message. If inspection is unavailable, a private retained
-  receipt uses session-start/prompt hooks and a two-hour expiry; ordinary MCP
-  and tool traffic cannot re-arm an undelivered wake.
-
-- **Opt-in direct IPv6 guest TLS, without a domain or relay.** An explicit
-  assigned global `--public-ip` selects an invitation-only TLS 1.3 listener.
-  Its constrained guest CA and private key are separate from fleet trust;
-  invitations privately carry the CA PEM and SPKI pin. Assignment loss or
-  failed leaf renewal withdraws this endpoint, not the private board.
-  Doctor distinguishes operator-asserted stability and local TLS from WAN
-  proof. No native client is verified yet: enabling requires the explicit
-  `--ack-unverified-guest-client`, and no native-client recipe is offered
-  until exact-runtime malicious-certificate acceptance passes. Supgang
-  automatic address selection and guest-pin advertisement remain follow-ups.
-
-- **Milestone notices explain their own calls.** Progress names the parent
-  request and optional accept/flag review; acknowledging its event only marks
-  the notice seen. Read mail shows each milestone's latest review, and a new
-  report becomes unreviewed. Unreported milestones omit an absent timestamp
-  rather than displaying year 0001. Informational notices delivered at Stop no longer
-  extend later turns for the same update; blocking obligations retain their
-  delivery rules. Wrong event serials produce corrective hints without
-  disclosing another agent's request.
-
-- **Stable friendly Mac labels.** The board and stdio bridge share the Mac's
-  HostName, LocalHostName or ComputerName, with a brief cache and bounded lookup.
-  A failed refresh retains the last good label. Host IDs and legacy kernel-name
-  comparisons remain unchanged; other platforms use their kernel hostname.
-
-- **Out-of-band, encrypted file transfer.** `upload`/`download` return short-lived
-  file descriptors; resumable PATCH/HEAD moves bytes outside MCP and model context.
-  `dibs put`/`dibs get` retry cut connections and verify hashes. Versioned DARE 2
-  chunks authenticate ciphertext and final segments while legacy blobs remain
-  readable. Invitation revocation, identity replacement and blob-access loss
-  invalidate tickets; concurrent staging is bounded. Native off-host transfer
-  requires TLS 1.3; doctor measures the operator's public TLS-proxy edge.
-  Downloads are forced attachments with sandboxed, non-executable response
-  types; uploader-declared types remain metadata, not board-origin authority.
-  Shutdown invalidates interrupted tickets rather than leaving an aborted stage usable.
-  Phase one resumes connections, not incomplete uploads after daemon restart;
-  declared-digest-and-size restart resume is a separate required follow-up.
-
-- **Human notification delivery evidence.** Send reports the actual relay,
-  desktop or unavailable route; read_mail distinguishes queued/pending from
-  OS-confirmed posting, explicit dismissal, failure and an actual answer.
-  Authenticated relays report their own receipts; one failed screen cannot
-  erase another's posting evidence. Posting does not establish banner visibility.
-  Receipt evidence is derived and becomes unknown after restart. Notification
-  failures now propagate instead of being silently treated as deferrals, and
-  retries do not post duplicate alerts.
-
-- **Scoped cloud-agent invitations, without a human per worker.** Local agents
-  issue one-agent credentials and paste-ready MCP configuration with `invite`;
-  the CLI uses `DIBS_TOKEN` for the same policy. Default: own-prefix children,
-  four live, seven days; coordinators may name new unprivileged identities.
-  The human's proved private CLI route can issue/revoke any invitation. Keys
-  are shown once and only their hashes persist. Revocation, expiry, issuer
-  closure and purge bite on the next call; close generations rebuild from full
-  replay, so reopening an issuer does not resurrect its children. Invited
-  agents cannot mint grandchildren even after a role grant.
-  A separate invite-only public listener opens POST `/mcp` and scoped
-  capability-authenticated `/files/` resources, never private
-  routes, sessions, wake streams or hub filesystem paths. `--public-url`
-  supports a loopback TLS proxy; `--public-host` supports ACME with explicit
-  `--acme-accept-terms` and port 443. Trusted-HTTPS fixtures exercise real
-  daemon wiring; live CA enrollment/public deployment remains unmeasured.
-
-- **A tracked request is an MCP task.** `send(type: "request", track: true)`,
-  from a host that declares the 2026-07-28 tasks extension
-  (`io.modelcontextprotocol/tasks`) on that call, returns a task handle. The
-  host follows it with `tasks/get` or a `subscriptions/listen` on `taskIds`
-  (`notifications/tasks`): working while it waits and while milestones are
-  reported, the newest step and its artifact in `statusMessage` (the
-  extension forbids progress notifications on tasks), and completed when it
-  is done, with the deliverable in the result. Denied, declined and expired
-  complete with `isError`. Task ids are unguessable and survive a restart
-  with nothing stored; a tracked request is kept for the task's week unless
-  its recipient is purged first (shorter archive retention can do that).
-  Opt-in per send, because a host that predates tasks may wait for one to
-  finish before it answers. Task methods and listeners check the extension
-  capability on every call; slow listeners recover dropped updates from
-  current task snapshots, including the final result.
-  A host that cannot receive a handle gets an explicit tracking note and the
-  ordinary send result; legacy calls keep their legacy result shape.
-
-- **A request can be a task its sender follows.** A request for work may name
-  up to 8 milestones, at `send` or by its worker at `respond(approve)`. The
-  worker reports each with `respond(progress, milestone, body, deliverable)`,
-  where the deliverable is an artifact the sender can open and check before
-  the work is finished, and closes it with `respond(done, deliverable)`. The
-  sender hears each step as a notice without being woken, and answers a step
-  with `respond(accept)` or `respond(flag, body)`: a flag wakes the worker and
-  cancels nothing. The board shows "2 of 4 milestones", each step with its
-  artifact and verdict, the latest note and the deliverable. Asked for by the
-  operator.
-
-- **`dibs human-relay`: your mail on your own Mac, wherever the board runs.**
-  A board on a server used to raise your questions and requests on its own
-  screen. The relay attaches your Mac instead: mail to you shows there as the
-  same notifications, and your answers go back signed by a key held in the
-  Mac's Secure Enclave that signs only after Touch ID, verified by the board
-  with the standard library, so a Linux board checks it exactly as a Mac one
-  does. `dibs human-relay enroll` registers the key once with the board's
-  admin password; running the relay costs one Touch ID, and approving a
-  request that grants a role, a permission or another agent's mail costs one
-  more on that approval. The relay never holds the board's secret, which
-  every agent has. With no relay attached the board notifies on its own
-  screen as before.
+- **Relocation is separate from waking.** The `relocate` tool and operator
+  CLI deliberately move a closed agent into another environment, ledgering
+  who asked. Coordinators/admins may relocate; other agents need a human-
+  granted permission. Running agents, cross-machine moves and the human row
+  are refused. No wake reads or runs the relocation command table.
 
 ### Changed
 
-- **The board panel opens only when somebody asks for it.** It used to open
-  beside every `check_in`, `inbox`, `send`, `respond` and `await_events`, so
-  it appeared on every turn an agent took. Now `board` is the only tool that
-  draws it: an agent calls it to show you the board, and you ask for it
-  yourself with the new `board` prompt, which hosts list as a slash command
-  or menu entry (an optional `view` opens it on mail or activity).
-  `check_in` and `inbox` return their ordinary result and nothing else.
+- **Wakes deliver into the agent's existing harness; Dibs never hosts one.**
+  Agent-hosting resume commands are refused. The retired Codex recipe is
+  repaired to `codex queue`, never headless `exec resume`. Loaded app
+  threads receive queued mail without opening their window. Unloaded app
+  threads open only while the person is known away: screen locked, displays
+  asleep or no input for `open_app_after_idle` (ten minutes by default).
+  Presence is rechecked; unknown measurements leave mail queued. The helper
+  attempts to restore the previous frontmost app while the person remains
+  away. Bridge ancestry identifies the app, with transcript provenance as
+  fallback; terminal sessions are never opened in an app.
+  Closed Claude app sessions use the app's own continuation link, then their
+  ordinary socket/startup route. Old bridges need a restart to adopt the policy.
 
-- **A closed Claude Code session is woken in the Claude app.** A session in
-  the desktop app is reached through its socket, which exists only while its
-  process runs. When mail arrives for one whose process has ended, Dibs now
-  opens it in the Claude app with the app's own
-  `claude://code/continue?session=<id>` link (the app's id, read from its
-  session records), once you have been idle like any other open, and the
-  ordinary socket wake then delivers. Measured: the session's process was up
-  two seconds after the link opened, and its startup hook reached Dibs.
+- **The board panel opens only for an explicit human request.** `board`
+  is the only tool that draws it, with an optional mail/activity view; the
+  `board` prompt gives hosts a human entry point. Routine status uses
+  `check_in` or `inbox`. Board calls log caller/view, never tokens or
+  bodies. Activity now carries the most recent forty visible events.
 
-- **A wake no longer pulls the ChatGPT app in front of you.** When an agent's
-  thread is not loaded in the app, Dibs now opens it only once you have been
-  idle for `[wake] open_app_after_idle` (2 minutes by default; `"0s"` opens at
-  once). Measured: nothing passed to `open` keeps the app in the background. A
-  loaded thread was never opened and still is not.
+- **Socket and lifecycle deliveries carry the digest, not an imperative.**
+  Socket delivery carries bounded mail/update/announcement context; the
+  configured command route carries only the event, with no participant names
+  or private body in world-readable argv. Empty socket digests send nothing.
+  Standing coordination guidance lives in registration and `dibs://skills`,
+  not every notice. `[hooks] mail_bodies = false` restores pointer-only
+  delivery; human/ambient notices never quote private bodies.
+
+- **One writer owns each session socket.** A capable in-session bridge
+  declares `com.dibs/self_wake` and the daemon stands down while that stream
+  is open. Digests travel on the notification without a delivery-marking
+  inbox read. If the socket is definitively gone, the bridge surrenders
+  immediately; ambiguous failures keep the bounded retry before surrender.
+  Reconnection then lets the daemon resume delivery. A new bridge facing an
+  older daemon stays quiet rather than duplicating its notice.
+
+- **Observation no longer suppresses wakes.** Event reads and background
+  subscriptions do not manufacture active work. Native accepting delivery
+  takes precedence over another watcher. Socket and Stop presentation share
+  freshness only after successful socket delivery and receiver activity;
+  held/failed sockets keep the hook fallback. Deferred wakes refresh their
+  digest, omit already-handled mail and spend no cooldown on empty refreshes.
+
+- **Liveness follows evidence, not a request for agents to announce it.**
+  Authenticated contact, lifecycle hooks and ledger activity inform the
+  board and sweep consistently. Boot grace is labelled as grace, not a
+  sighting. Fresh authenticated calls keep a row active through its idle
+  lease even if its recorded PID is stale; diagnostics still show that PID
+  dead, and a silent crashed session is detected. Background observers and
+  boot grace cannot create this evidence. A declaration untouched for thirty
+  minutes reads `declared`, not `working`.
+
+- **`dibs await` survives restarts.** Read-only reconnection follows the
+  daemon's current address for up to two minutes and resumes from the cursor.
+  Exit statuses distinguish events (0), timeout (1), and sustained daemon
+  unreachability (75). Its exit status must not be hidden behind a pipeline.
+
+- **Runtime settings and identity repair are explicit.** `settings` offers
+  only immediately applicable settings, with admin authority for changes and
+  recorded overrides separate from the operator's TOML. Unsupported keys
+  refuse rather than pretending to work. `merge_agents` folds an abandoned
+  duplicate's mailbox, claims and memberships into a survivor with traceable
+  identity history; live sources and conflicting claims refuse. Unidentified
+  hook sessions follow the operator's directory/strict/ask/coordinator policy.
 
 ### Fixed
 
-- **Sleep cannot split the live board from its ledger.** The fold uses the
-  recorded wall clock for deadlines and retention, not a process-local clock
-  that may pause during sleep. Retained expired-unanswered questions accept
-  late answers, preserving answers older live writers already acknowledged;
-  other verdicts and expired requests remain final. The upgrade preflight's
-  failure hint now names the ledger file that `dibs verify` actually accepts.
-
-- Interrupted-upload verification no longer races its own PATCH with HEAD
-  receipt probes. It observes real staged ciphertext before cutting the
-  connection, preserves the accepted-offset assertions, and closes the raw
-  socket on setup failure before server cleanup can hang. Clients should query
-  HEAD after their active PATCH ends, not alongside it.
-
-- **Completed work remains available for review.** New responses keep their
-  records for 24 hours; unresolved flags keep them until correction or
-  acceptance, within the existing terminal-message cap and loss watermark.
-  Flagged done work can append correction progress without reopening its
-  original obligation or changing its verdict and artifact. Whole-work flags
-  clear only through whole-work correction or acceptance. The originating op
-  records retention once; historical ledger records retain their prior rules.
-
-- **Milestone acknowledgments survive a daemon restart.** Dismissing a retained
-  progress or review event before any notice map has been created no longer
-  crashes the board. Acknowledgment remains derived and does not review or
-  consume the parent request.
-
-- **Inline attachments work in strict MCP clients.** Embedded resources now
-  carry a stable contents URI. Text and JSON arrive as readable text when
-  UTF-8 is valid; binary and mislabelled text preserve their exact bytes as
-  base64. The embedded URI is an identity, not an unauthenticated fetch route.
-  Real tool responses are checked against both MCP content schemas.
-
-- **An old cleanup snapshot no longer deletes a newly registered blob.**
-  Registration takes its own writer-owned hold before enqueue, surviving caller
-  cancellation until commit or refusal, then transfers protection to an extra
-  hold until every older reconciliation finishes, including overlapping runs,
-  errors and recovered adapter panics. Shutdown waits for pruning before
-  releasing protection. The store also locks its hold check and unlink together.
-
-- **Every CLI command answers help without authority.** `--help` and `-h`
-  print command usage on stdout and exit successfully before reading stdin,
-  checking credentials or contacting the board. `invite` no longer interprets
-  help as an invalid agent name. Existing flag help retains its defaults, and
-  the command catalog now includes stop, upgrade, trust and fingerprint.
-  File-transfer help names the input file or blob and destination, with each
-  command showing only the flags it actually uses.
-  Previously ignored cross-command flags, such as `get -mime`, are now refused.
-
-- **Bridge recovery hints name real commands.** A refused connection now says
-  to wait and retry after an upgrade or restart; if it persists, run the
-  read-only `dibs doctor` diagnostic and tell the human. It does not ask an
-  agent to start or install the shared daemon. A static guard checks production
-  backticked CLI commands against the actual dispatch table, including aliases.
-
-- **One machine reads as one machine.** Board rows, compact check-ins and the
-  shared web/panel renderer use one label per known host identity instead of
-  each harness's differing hostname. The daemon's hostname labels local agents;
-  remote labels come from the newest coordinated member, with deterministic
-  ties. Unknown identities stay separate and detail retains each raw label.
-  Coordination identities, path comparisons and SSH tunnel assertions are unchanged.
-  Board-minted human and fault-reporting rows also use the board's hostname
-  when historical metadata lacks a host ID; this labels their mailbox, not
-  the person's physical location.
-
-- A reviewer declaring the same work item as its implementer is described as
-  complementary coordination, rather than warned to stand down as duplicate
-  work. Same-role and unknown-role duplicates still warn. Review guidance now
-  uses a question for a verdict, whose answer completes it; a request still
-  obliges its recipient until the work is delivered with `done`.
-
-- Agents can address approvals to `human` before the person has ever acted on
-  the board. The first authenticated, admitted send creates the OS-owned
-  persistent mailbox and uses the existing notification or human relay route.
-  The concrete recipient is ledgered; observing the board still creates nobody.
-  Agent instructions now direct genuine approvals through Dibs.
-
-- Event observation (`await_events`, `events_since`, `recent_events`) no longer
-  makes an idle session look busy or suppresses a configured-route wake.
-  Claude Code guidance now prefers its working native delivery over an extra
-  background watcher. The reported K7 watcher was unnecessary; transcript
-  evidence showed native peer turns already arriving while it ran.
-
-- Socket and Stop presentation now share timing after a successful socket
-  write and actual activity in the receiving session. Held or failed socket
-  messages retain the hook fallback; raw mail and updates remain available.
-  Agent updates no longer repeat at every Stop, and accepting or flagging a
-  milestone clears the progress notice it answers.
-
-- The joined-host wake fixture no longer uses a live session's UUID or real
-  Codex home. Its hard-coded UUID matched the implementing session on this
-  machine, entering real app probes before the bridge could report; the
-  installed baseline failed 25/26 too. Synthetic identity and isolated harness
-  state pass 26/26 with the same assertions and time budget.
-
-- A remote wake reports its queued command outcome before checking whether
-  the app has the thread loaded. A slow app-visibility probe cannot hold the
-  hub's delivery report hostage. The ChatGPT process probes share a one-second
-  deadline; timeout means thread ownership is unknown, leaving the existing
-  idle/open policy to decide.
-
-- Deferred socket wakes no longer announce mail already acknowledged or
-  agent updates already read. Both the daemon and in-session bridge refresh
-  the digest without marking mail delivered, including retries and upgrade
-  handoffs. A moved session receives no other session's digest; an empty
-  refresh sends nothing and spends no cooldown. The additive refresh metadata
-  preserves old-daemon compatibility and the one-writer-per-socket rule.
-  Command/delegated wakes also recheck whether anything is owed before running.
-  Mail still requires `ack`/`respond`; announcements held by their retry cadence
-  no longer cause a placeholder wake merely because they remain unacknowledged.
-
-- **A host with an old copy of the tool schema can use new parameters.** A
-  long-running session sends a parameter its schema does not know as a
-  string, so `milestones` arrived as `"[\"a\",\"b\"]"` and was refused.
-  A string is now read as the array, number or boolean the parameter takes
-  when it parses as exactly that, and left alone otherwise. Reported by
-  agenxy-supply.
-
-- **"You will not be asked again today" now holds across a restart.** The
-  pointer an unregistered session gets to an idle agent it may be was
-  remembered only in the daemon's memory, so every restart (every install)
-  told the same session again. It is kept in `reattach-hints.json` in the
-  data directory now. Reported by an agent that was told four times in two
-  days.
-
-- **The panel's Activity tab is no longer blank.** It was filled only by an
-  `await_events` result, a call the agents you open from a notification (a
-  ChatGPT thread) never make. `board` now carries the 40 most recent events
-  the agent may see: anything addressed to everyone, to it, or done by it.
-
-- **Wakes no longer pile up in the ChatGPT app's queue.** `codex queue` keeps
-  every message, and the app releases one each time a turn ends, so wakes Dibs
-  queued while a thread was not loaded drained later as a run of empty turns
-  ("a new request is waiting", three times in thirty seconds, nothing in the
-  inbox). An agent reached by `codex queue` now has at most one undelivered
-  wake: another is queued only once the agent has shown a sign of life since
-  the last, or after two hours. Other wake commands are unaffected.
-
-- **An owed request blocked on someone else can be parked.** An approved,
-  not-done request counted as work in progress whatever the agent declared, so
-  a worker whose finished work was held by an owner decision was continued on
-  it repeatedly, with a false "done" as its only way out. A waiting declaration
-  whose refs include `request:<serial>` (or `msg:<serial>`) now parks that
-  request: it inherits the wait and the recheck. The continuation text says how.
-
-- **A slow `ps` no longer drops a live Claude Code session.** Session discovery
-  checks each session's process with `ps`, inside 300ms. Just after a daemon
-  restart, while replay and repository indexing load the machine, that probe
-  could time out, and a timeout counted as a dead process: a sender was told a
-  running session was pull-only and the send was not handed to it. A timed-out
-  probe now counts as alive; a process that is really gone still answers `ps`
-  at once with nothing.
-
-- **A misnamed deadline now names the real one.** `send` takes `deadline_s`, in
-  seconds; `deadline`, `deadline_minutes`, `timeout` and the like were refused
-  without saying so, and a sender who meant hours got the ten-minute default.
-- **A message that looks like an answer says it is not one.** A `send` to an
-  agent you still owe a response (a question or request it sent you) now
-  carries `unanswered`, naming each open ask and the `respond` call that closes
-  it. A worker had accepted a request with a notify, and the request expired
-  unanswered as though the task were dropped.
-
-- **`done` failed on a request approved more than fifteen minutes earlier.**
-  Responding marks a message consumed, and the sweep deleted consumed finished
-  mail after fifteen minutes, so an approved request was gone before the work
-  was, `respond(serial, "done")` returned `E_NO_MESSAGE`, and the obligation
-  vanished with it. Sweeps now keep a request still owed (approved, not done,
-  under a day old); sweeps already in the ledger replay as they ran. Reported
-  by k7-dev from a worker's two failed attempts.
-
-- **A working agent is no longer woken for its declared work.** Codex reports
-  when a turn ends and never when one starts, so the record of the last Stop
-  outlived the next turn, and a backoff wake fired at a worker that had called
-  Dibs minutes before. A turn end now counts only while the agent has shown no
-  sign of life since.
-- **A session started before an upgrade now learns the new tools.** A
-  long-running session keeps the tool list it began with, so new arguments
-  (such as `declare`'s `waiting`) were invisible to it. The server now
-  advertises `tools.listChanged`, and the stdio bridge, after replacing itself
-  with a build whose tools differ, sends `notifications/tools/list_changed`.
-  Claude Code refreshes on it; Codex 0.159 only logs it, so Codex workers
-  still learn new arguments from the continuation text and `dibs://skills`.
-
-- **A worker re-declaring on every Stop could be continued in a loop.** A
-  changed declaration counts as progress, so a Codex worker whose session
-  predated `waiting` and wrote "waiting" into its declaration's text instead was
-  continued four times in three minutes. Continuation is now also capped at
-  three per fifteen minutes whatever the declaration does, and its text names
-  `waiting` as an argument of declare.
-- **A row no longer reads `working` on a declaration nobody has touched in
-  days.** `work` is `declared` when the agent has not been seen in 30 minutes;
-  `working` needs a recent sign of it.
-
-- **A Codex agent's Stop hook could never deliver mail.** Codex validates hook
-  output per event and its Stop accepts `decision` and `reason` and nothing like
-  `hookSpecificOutput`; Dibs sent exactly the reverse to Codex at Stop, so the
-  reply failed to parse, the mail was marked announced, and the agent was never
-  told. The strict filter is now per event, read from Codex's own schemas at the
-  installed version.
-- **Mail to a Claude Code agent no longer says "no wake command is configured".**
-  Claude Code is reached through its session socket by design; the note now says
-  so, and a sender stops reading it as pull-only.
-
-
-### Added
-
-- **Approved requests are tracked until they are done.** `respond` takes
-  `done` on a request you approved, once the work is delivered, and the
-  requester is told. Until then the request is an obligation: the row lists it
-  under `owes`, and it counts as declared work for continuation and stall
-  detection. Approvals older than a day are not counted, so history from
-  before this existed does not read as owed.
-
-- **A stalled agent is woken again, and then reported.** An agent woken by
-  Dibs that keeps stopping with its declaration unchanged is woken again 10, 30
-  and 60 minutes after each turn ends; a declared wait with `recheck_after` is
-  woken when it falls due. When those run out, the board row's new `work` field
-  reads `stalled` (also `idle`, `working`, `waiting`, derived from what the
-  agent declared and did rather than from its process) and whoever assigned the
-  work is told. `dibs board` and the web board show it.
-
-- **A turn that ends with declared work still open is continued.** When a turn
-  Dibs started (a delivered wake) ends while the agent holds a declaration that
-  says it is working, the Stop hook continues the turn with that declaration
-  quoted back, at most twice per version of it, never after a person's prompt.
-  `declare` takes `waiting` (on whom or what) and `recheck_after` for blocked
-  work, which is never continued. Built for Codex workers that answered the
-  question they were woken for and stopped with their declared job undone.
-
-- **Relocation: moving an agent to another environment on purpose.** A wake
-  never moves an agent, and now there is a deliberate way to: the `relocate`
-  tool, and `dibs admin relocate <agent> <environment>` for the operator.
-  `chatgpt-app` is built in (it opens a Codex thread in the ChatGPT app);
-  other environments are the operator's `[relocate.<name>]` commands, the only
-  commands Dibs runs that host an agent. Coordinators and admins may relocate
-  by role; any other agent needs the new `relocate` permission, granted by the
-  operator with `dibs admin may-relocate <agent>` or by approving a request
-  carrying `grant: "relocate"`. Every move is ledgered as `agent.relocated`
-  with who made it, and the board row shows the last one. A running agent, the
-  environment it already runs in, an agent on another machine and the person's
-  own row are refused.
-  The server publishes scoped cloud invitations and file transfer.
-
-### Changed
-
-- **An agent is woken in the app it runs in.** The ChatGPT app delivers a
-  queued message only to a thread it has loaded, and after an app update it had
-  loaded none, so `codex queue` left every message waiting until somebody
-  opened the thread. Now, when the app is not holding the thread, Dibs opens it
-  there with the app's own `codex://threads/<id>` route, launching the app if
-  it is closed, and the agent acts where the operator can see it. A thread the
-  app already holds is left alone. Which app an agent runs in is read from its
-  bridge's process tree and sent as `_meta com.dibs/surface`; an agent saying
-  it runs in the app is ignored, so a Codex in a terminal is never opened in
-  the app. `dibs host-bridge` does the same for an agent on its machine.
-  When no bridge has said which app (a dormant agent makes no call until
-  woken, so after an install none had), the thread's own transcript decides:
-  Codex records the client that created it, and a thread the ChatGPT app
-  created is opened there.
-
-- **Dibs never hosts an agent.** The recommended Codex wake, `codex exec
-  resume {thread}`, does not deliver to anybody: it starts a headless Codex and
-  runs the thread itself, in a process Dibs started, outside the ChatGPT app,
-  on the operator's model allowance. The Claude Code one, `claude --resume
-  {thread} -p`, did the same. doctor printed both and the Codex plugin notes
-  recommended the first. The operator found two of their ChatGPT threads running
-  in processes the daemon had started, and called it unacceptable: Dibs is a
-  channel into the harness an agent already lives in, never a harness.
-
-  A wake command must now deliver into a running harness. `codex queue`, which
-  hands the message to the ChatGPT app, is the Codex command; Claude Code needs
-  none, being reached through its socket and hooks. The daemon and `dibs
-  host-bridge` both refuse a command that would host an agent, and the old
-  Codex recipe (`exec resume` with `codex queue` as fallback) is repaired rather
-  than rejected, keeping only the queue, so configurations that followed the old
-  advice keep working with no edit. doctor says when it has changed an entry,
-  stops recommending either command, and counts Claude Code agents as covered.
-  AGENTS.md rule 5 states it. What exposed it was the same day's fix for an
-  untrusted directory, which let `exec resume` succeed where Codex's trust check
-  had been quietly refusing it.
-
-- **`dibs await` rides through a daemon restart, and an unreachable daemon has
-  its own exit status.** k7-dev lost a background `dibs await -since 469
-  -timeout 8h` to an EOF when the daemon restarted. Restarts are routine, and
-  `-since` makes resuming exact, so a dropped connection is now retried for up
-  to two minutes, re-resolving the daemon's address on each failure so one that
-  came back elsewhere is followed. Any transport error is retried, a reset
-  included, which the bridge does not do for writes: these are reads, so asking
-  twice costs nothing. Three outcomes now have three statuses: 0 events, 1
-  timeout, 75 (EX_TEMPFAIL) the daemon stayed down. Timeout and "board down"
-  both used to exit 1. The "exit 0" in the report was the pipeline it ran
-  under, which reports its last command's status; SKILLS.md now warns against
-  piping the watcher.
-- **A wake that fails is told to the agent waiting on it, and shown on the
-  board.** k7-dev sent two requests to two Codex workers and every wake failed:
-  Codex refused to run in a directory that was not a git repository. The
-  daemon wrote that at WARN into `dibd.log`, which no agent can read, so the
-  sender saw no wake and no failure, both requests sat pending, and after the
-  third failure the board quietly stopped trying. Now the sender gets a notice
-  (the channel for things an agent could not have inferred) saying the wake
-  failed and the message is still owed, once when it fails and once more if the
-  board gives up, never on every retry. The recipient's row carries a `wake`
-  field while it is failing. The notice leaves out the wake command itself,
-  which names the recipient's thread; that stays in `dibd.log` for whoever runs
-  the board.
-
-- **A liveness flip no longer costs an agent its acknowledgement of the board.**
-  The awareness gate re-armed whenever the sweep marked an agent dormant or
-  stale, and again when its next call woke it. Whenever the board's liveness
-  guess was wrong, that locked a live agent out: a process restart misread as a
-  crash got the agent swept, woken, and swept again, each step erasing its
-  acknowledgement, so `declare` was refused indefinitely under a hint to call
-  `check_in`, which it had just done. The architect and k7-dev hit it the same
-  day. The gate now follows the credential: it re-arms when the token rotates,
-  which is exactly when a new session takes the identity (`register`,
-  `reattach`, `resume`), and a sweep or a wake rotates none. SPEC §6 records the
-  cost, an agent idle for a month keeps its old acknowledgement, accepted because
-  declaring and claiming are advisory. The rule behind it is the operator's: an
-  agent that is not archived is live.
-- **A wrong `respond` disposition now names the one that works.** Every refusal
-  described the disposition it rejected rather than the message in hand, so
-  `approve` on a question got "only requests take approve|deny": what not to do,
-  with the rest left to guess. k7-dev hit it while driving two workers through
-  the loop. The hint is now built from the message's type (a question takes
-  `answer` or `decline`, a request `approve`, `deny` or `decline`, a notify or
-  handoff is closed with `ack`), and the test takes each hint at its word and
-  requires the named disposition to succeed.
-
-- **Liveness is the daemon's job, and it stops asking agents to announce it.**
-  A harness lifecycle hook firing is proof that session exists and has just
-  taken a turn. The daemon recorded those hooks, judged staleness on a different
-  clock, swept the row dormant, and delivered, ON THAT SAME HOOK, a line reading
-  "you have not coordinated with the board for 9h33m: your declaration reads
-  stale and peers writing to you may be told you are dormant. check_in now".
-  It held the evidence and complained anyway.
-
-  Three clocks existed and different callers read different combinations:
-  `LastCoordination` is durable and checkpointed once per `AgentTTL/2`, so a
-  healthy agent's is routinely minutes old; `seen` is ephemeral and deliberately
-  NOT stamped by a finishing hook, because it also answers "would a wake collide
-  with a running turn"; and nothing recorded "a hook fired" at all. A board could
-  therefore show a fresh `last_seen` beside a dormant status beside a reminder
-  about hours of silence, each true of a different clock.
-
-  There is now a fourth clock that answers only the liveness question, every
-  hook stamps it, and one helper (`lastEvidenceOf`) reads all of them, so the
-  sweep, the board row and the digest cannot disagree. The wake path is
-  untouched: `seen` keeps its mid-turn meaning, so a Stop still means a wake
-  should go.
-
-- **An agent whose session moved to a new process is no longer swept as
-  crashed, and no longer locked out of `declare`.** Switching the model in
-  Claude Code resumes the same session id in a new process. The agent's row
-  kept the pid it registered with, the sweep probed it, found it gone, and
-  marked the agent `process_exited`. Every call it made woke it again, which
-  re-arms the awareness gate; `check_in` acknowledged the board; the next sweep
-  killed it before the agent's next call. So `declare` was refused on every
-  attempt, with a hint saying to call `check_in`, which it had just done. An
-  agent following the hints looped forever, on a board that showed it crashed
-  while it was talking to the board. Found by the architect, unable to update
-  its own declaration.
-
-  The harness already publishes the answer: each session's sidecar names its
-  live process, and the peer snapshot holds only sessions whose process is
-  alive. A dead recorded pid now counts as death only when no live session
-  stands behind it; otherwise the agent is judged by evidence like any agent
-  with no pid. Crash detection is kept, since a crashed session drops out of
-  the snapshot, and harnesses that publish no sidecar are unchanged.
-
-- **`[wake] remind_stale_after` is retired.** The reminder it governed was not
-  reworded but removed, because after the change above it could not be true for
-  anyone able to receive it: its only delivery route was a hook, so it reached
-  exactly the agents whose liveness is now provable, and its claim that peers
-  might be told they were dormant was false for all of them. The key is still
-  parsed so an existing `dibs.toml` loads, and the daemon says it is retired
-  rather than ignoring it.
-
-- **Dibs was sending two notifications for every message, and now sends one.**
-  A Claude Code session has exactly one message socket. Dibs wrote to it from
-  two places that knew nothing about each other: the daemon, from outside, via
-  the harness's session sidecar, carrying the digest; and the session's own
-  stdio bridge, from inside, via `CLAUDE_CODE_MESSAGING_SOCKET`, carrying a
-  fixed content-free sentence because it was told the inbox had changed and not
-  what was in it.
-
-  The bridge won every race, being already in the process. So the operator saw
-  the empty card first and the real digest underneath, each behind the harness's
-  own "another Claude session" preamble. They asked about the first card four
-  times. Three releases retired one placeholder and introduced another, because
-  each round read the complaint as being about the wording. It was about the
-  card.
-
-  The bridge now declares on its `subscriptions/listen` that it can reach its
-  own session (`com.dibs/self_wake`), and the daemon does not write to that
-  agent's socket while that stream is open. The direction is forced, not chosen:
-  the bridge KNOWS whether it has a socket where the daemon is inferring from a
-  file, and a self-sent message is accepted where a stranger's is held in
-  bypassPermissions mode. The surviving card carries the digest, computed by the
-  daemon on the way out with a read that moves nothing
-  (`engine.WakeDigestFor`) and handed over in the notification's `_meta` as
-  `com.dibs/digest`. The bridge sends that and has nothing of its own to say.
-
-  Not fetched by the bridge, deliberately: `inbox` and `hook_poll` both mark
-  mail delivered, so a bridge that asks and then fails to write to its session
-  has consumed a delivery nobody saw.
-
-  A notification with no digest now wakes nobody. It means a daemon older than
-  the key, and such a daemon has not stood down: it is writing its own notice to
-  that same socket, so a line from the bridge would be the duplicate again with
-  nothing in it. The cost is stated in WAKE-MECHANISMS.md §5b: a bridge newer
-  than its daemon is quiet on that route until the mismatch ends, which is the
-  rare direction and a restart closes it.
-
-- **The ECONNRESET divergence is commented at both ends, and measured.** The
-  tree now reads that errno two ways on purpose: `socketGone` treats it as the
-  peer being gone, `dialFailed` excludes it because a reset cannot prove a
-  request was not already applied. The stake differs rather than the ambiguity,
-  since nothing is applied on the surrender path. Both sites now name the other,
-  because a sweep finding them disagreeing has even odds of reconciling them
-  wrongly.
-
-  Measured on AF_UNIX/macOS while writing it: a closing listener unlinks its
-  socket, so the next dial is ENOENT; a write to a closed peer is EPIPE; a path
-  that is not a socket is ENOTSOCK, deliberately not treated as gone.
-  ECONNRESET was not reproducible on this transport and is now documented as
-  defensive rather than left looking measured.
-
-- **And that retry test could not be written portably, which the gate proved.**
-  The fixture for an ambiguous error was a path that is not a socket, which
-  answers ENOTSOCK on macOS and ECONNREFUSED on Linux. The second is in
-  `socketGone`, so one test exercised the immediate surrender on one machine
-  and the retry on the other: the standing rule about two machines producing
-  different errors for one event, met while writing a test about errors. Its
-  own setup assertion caught it rather than letting it pass for the wrong
-  reason. The error is injected now, because the branch is about what the code
-  does with an ambiguous error and not about which one a kernel picks.
-
-- **The call-site counter added with the previous entry is gone, replaced by a
-  test that drives the retry.** Counting `surrender()` call sites enters at the
-  AST: it asserts the call exists, not that anything reaches it, so it is
-  satisfied by a branch that never runs. Both branches have behavioural tests
-  now, each mutation-verified. See AGENTS.md, "a guard must enter through the
-  same door as production".
-
-- **The surrender in the previous entry was never called, and is now.** That
-  change added the field, the setter, the reader, and wired it into the listen
-  request, and called `surrender` from nowhere at all: dead code, shipped, with
-  a green gate and a description of behaviour the binary did not have. The test
-  passed because it set the flag itself and then asserted the plumbing, and the
-  mutation check passed because the mutation was applied to the half that
-  worked. `TestTheSurrenderIsActuallyCalledFromBothPaths` counts the call sites
-  now, and the gone-socket path is driven by a real failed delivery rather than
-  by a flag.
-
-- **The surrender keys on the ERRNO, not on a count of attempts.** The first
-  design surrendered after two failures fifteen seconds apart. dibs-coordinator
-  argued the discriminator was wrong, with this repository's own precedent:
-  `dialFailed` matches ECONNREFUSED and nothing else on purpose, and the
-  AGENTS.md entry about a test that passed thirty times locally ends with "read
-  the error the failing machine reported".
-
-  A dead socket and a flaky one differ in WHICH error, not in how often. ENOENT
-  or ECONNREFUSED on a session socket is unambiguous and is the COMMON case,
-  because it means the session ended; a timeout is ambiguous and rare. Counting
-  treated them alike, paying a fifteen second delay on every ordinary failure to
-  guard an unusual one. Now an error that says the socket is gone surrenders at
-  once, and anything else keeps the retry. The caution behind the count survives
-  where it applies: an unnecessary surrender hands the route to the daemon,
-  whose write a bypassPermissions session holds.
-
-- **A bridge that claims the session socket and then cannot deliver hands it
-  back.** The one-writer rule has the daemon stand down for an agent whose
-  bridge declared `com.dibs/self_wake`, and declaring is evidence of
-  CAPABILITY, not of delivery. A bridge whose socket stopped accepting left the
-  daemon quiet by arrangement and itself failing into the dark, so the mail was
-  announced by nothing at all: this repository's oldest failure shape, reports
-  success while doing nothing, reintroduced by the change that removed a
-  duplicate.
-
-  Surrender takes TWO failures, fifteen seconds apart, because it is not free
-  either: the daemon's route is the one a session in bypassPermissions holds,
-  so a single transient error must not cost it. On the second the bridge drops
-  its stream, and the reconnect declares nothing, which is how the daemon
-  learns to resume. The fallback is correct rather than degraded, since the
-  daemon sends the same digest.
-
-  Found by dibs-coordinator, who asked what the stand-down keys off and was one
-  step short of its answer: it keys on the declaration, which is the right
-  thing for the rolling-upgrade case they were worried about, and the wrong
-  thing on its own for a socket that dies under a live claim.
-
-- **There is no fixed sentence on the in-session route any more.** The last one
-  said coordination mail was waiting for your agent. The operator asked for it
-  out of the codebase, in those words, and it is out: the route sends the
-  daemon's digest or nothing.
-
-
-- **"Dibs: check the board." is gone from every route.** The operator asked
-  three times across two weeks what it was for, and the honest answer was
-  nothing: it is an imperative that carries no fact. It survived two releases
-  that were each supposed to have ended it, because each fixed one route and
-  the sentence lived in four.
-
-  The screenshot that finally settled it showed both halves arriving at one
-  agent seconds apart: "Dibs: check the board." and then a notice carrying the
-  whole message. Same board, same second, one route saying nothing.
-
-  The cause of that pair is the second bug here. `socketNotice` built its
-  digest from MAIL only and passed nil for announcements and notices, so a
-  wake triggered by an agent update or an unacknowledged announcement found
-  nothing to quote and fell back to the fixed sentence. The hook path had
-  passed all three since it was written; the socket path never did.
-
-  What replaces it differs by route, because the routes differ. The socket
-  carries the digest, and when there is nothing folded in yet it names the
-  event and the sender: `Dibs: a new question from "asker" is waiting for
-  your agent "reviewer".` The exec route carries `Dibs: a new question is
-  waiting.` and names NOBODY, because argv is world-readable and a
-  participant name is already its own argv element: the first version of this
-  pasted names into the message and produced
-  `Dibs: new request from "; rm -rf / #" ...` as a single element, which
-  `TestAMessageCannotInfluenceWhatTheWakeCommandRuns` caught.
-
-  `dibs host-bridge` no longer compares the hub's text to a constant; it
-  composes the line locally from the fields the hub sent. That is the same
-  guarantee the fixed sentence gave (a hub cannot write text for a command
-  that delivers text into a harness) without needing a fixed sentence to give
-  it.
-
-  A wake is never dropped for want of something to say. The first version of
-  this returned "" and let the caller skip the wake, which turned "sends a
-  useless sentence" into "sends nothing at all" and was caught by the test for
-  the case the socket route exists for.
-
-- **The harness survey was re-run (2026-09-25) and Gemini CLI moved under
-  three of our claims at once.** Its hooks are no longer `command` only
-  (`http` and `prompt` exist), its hook input now carries a populated
-  `session_id` and a `transcript_path`, and `BeforeAgent` accepts
-  `additionalContext` and is dispatched. So "a Gemini agent can only be found
-  by its directory" and "past session start Gemini is pull-only" are now
-  statements about `plugins/gemini-cli`, not about the harness. Nothing is
-  wired up yet and the docs say so rather than implying otherwise: what is
-  missing is a measurement against a live Gemini session.
-
-  Corrected within the hour: all three Gemini findings are SOURCE readings,
-  and the `gemini` installed on the survey machine is a bundle built
-  2026-07-25 that contains none of them, so none has been watched to run. The
-  row said "a capability in source is not a behaviour" and then stated three
-  capabilities as though they were behaviours. `AGENTS.md` now says to record
-  `<tool> --version` beside every row, because fetching a checkout does not
-  update the tool built from it.
-
-  Codex delivery re-measured on 0.158.0-alpha.2, the binary inside ChatGPT.app: one `codex exec`, both hooks
-  reported complete, hook-health's poll count up by exactly two. A second flag
-  has appeared there, `codex_apps_mcp_2026_07_28`, which looks like the one to
-  set and is not: it governs the hosted `codex_apps` server only.
-
-  opencode, pi-mono and Hermes re-checked against today's `origin/HEAD` and
-  unchanged. Both SDK claims re-read from the published packages: the
-  TypeScript SDK is 1.30.1 and still `2025-11-25` with no `2026-07-28` in it,
-  and the Python SDK is 2.2.0 with its version registry moved out into a
-  separate `mcp-types` package, where `2026-07-28` is still the only modern
-  version.
-
-  The Claude Desktop row was NOT re-measured and now says so on its face: it
-  was taken against 1.52386.6 and the installed app is 2.9939.2. Re-measuring
-  costs an app restart, so it is a deliberate step rather than a sweep.
-
-- **The settings tool is called `settings`, not `configure`.** `dibs
-  configure` is a CLI wizard that writes `dibs.toml` before a board runs; the
-  tool reads and changes what takes effect while one IS running. Two different
-  things under one verb is how somebody runs the wrong one, and the collision
-  was mine. Renamed before it shipped: 0.0.10 is untagged, so no agent has
-  ever called it by the old name.
-
-### Fixed
-
-- **Neither SessionStart hook had ever run, on any version, in any session.**
-  Both were `type: "mcp_tool"`, and Claude Code resolves an `mcp_tool` hook
-  against the session's connected MCP clients, of which there are none that
-  early. Every session start since the hooks shipped answered
-  `mcp_tool hooks are not available for the 'SessionStart' hook event (no MCP
-  client context)`, exit 1. Measured across this operator's own history on
-  2026-09-24: 307 of them, in 22 projects, from 2026-08-14 to that morning.
-
-  What that cost is the promise `WAKE-MECHANISMS.md` makes about a window that
-  was shut. A harness with no window has no socket, so mail waits for the
-  thread to be opened again, "when the `SessionStart` hook delivers it at
-  once". It did not deliver it at once or at all; the mail waited for the
-  first `Stop`, which is after the agent has already done a turn's work
-  without knowing a peer was blocked on it.
-
-  Both are `command` hooks now, running `dibs hook-poll` and the new
-  `dibs hook-session`, which need no MCP client and read the session id and
-  the transcript path off the hook's own stdin. Measured the same day, in a
-  real 2.1.280 session: `SessionStart:resume`, `outcome: success`, and the
-  digest arriving in the session's context as `hook_additional_context`.
-
-  The Stop-side `hook_session` now carries `transcript_path` too. It was only
-  ever passed on SessionStart, so the daemon has never once received it.
-
-  This is the fourth time a hook contract read from somebody else's
-  documentation turned out to be different in the binary, and the second where
-  the daemon recorded a delivery that never happened. The guard that catches
-  the class is a measurement against a real session, which is now what the
-  claim rests on.
-
-### Changed
-
-- **The standing warning came out of every notification body.** Each hook
-  digest and each socket wake opened with two sentences saying that peer mail
-  is coordination data rather than an instruction, and that the agent should
-  answer using its own token. Both are true. Neither is ever different. An
-  operator watching their own fleet read the identical pair arrive in front of
-  forty different messages and said what it costs: a warning that cannot vary
-  is not information, and putting it first buries the part that changed. It is
-  the same objection the `Dibs: check the board.` imperative got one entry
-  below, arriving one level up.
-
-  A standing fact belongs where an agent reads its orientation, so it is now
-  on the registration result (where an agent has just been handed the token
-  those sentences are about) and in `dibs://skills`. Not in
-  `serverInstructions`: that string is charged on every connection and on one
-  client forty times over, and buying room there would mean cutting one of the
-  four warnings an agent needs before its *first* call. The body of a delivery
-  says what happened and nothing else.
-
-### Fixed
-
-- **The socket wake stopped telling an agent to go and look at what it had
-  just been handed.** The first version of the quoted wake stapled the mail
-  underneath the old fixed sentence, so the frame began "Dibs: check the
-  board." and then printed the board's contents: an imperative in front of the
-  thing it was imperative about, on the one path whose job is to inform rather
-  than steer. The operator read it off their own screen and asked what it was
-  still for. Nothing.
-
-  It builds `hookDigest` now, which is what the comment beside it had already
-  claimed, so the two ways an agent hears about a message are one wording
-  rather than two that resemble each other. That also names Dibs as the
-  sender, which matters more on this route than on the hook: a peer message
-  arrives wrapped in the harness's own preamble describing it as "another
-  Claude session", which is not what sent it. The fixed sentence survives for the
-  case it was always right for, which is a wake with nothing to quote, because
-  then there genuinely is somewhere to go and look.
-
-- **The socket wake carries the mail too, which is the half that was still
-  missing.** Bodies went into the hook digest, and the same release made the
-  session socket the route for an agent that is listening: so the path an
-  operator actually sees went on saying "Dibs: check the board." and nothing
-  else. Reported with a screenshot, twice, the second time after being told it
-  was fixed.
-
-  The two routes are not the same kind of channel and the old rule treated
-  them as one. A command's notice goes in argv, which every process can read
-  out of `ps`, so it keeps the fixed sentence and always will. The socket is a
-  0600 endpoint in a 0700 directory, authenticated with that session's own
-  peer token from a 0600 key file, which is better authenticated than the hook
-  path that already quotes mail. The rule is now: content-free only where the
-  channel cannot keep a secret. It builds the same digest from the same
-  `pendingMailQuoted`, so the two ways an agent hears about a message do not
-  describe it differently, and `[hooks] mail_bodies = false` puts the pointer
-  back on both.
-
-- **A forked seat can be folded back into the one it should have been:
-  `merge_agents`.** Spaces could be merged; two rows that are the same seat
-  could not, which is the wreckage a lost nonce leaves. An agent cannot carry
-  a secret across a context boundary, so its context ends, the nonce goes with
-  it, the next session registers under the same name and becomes a SIBLING
-  that cannot read a word of its predecessor's mail. The bridge keeping the
-  nonce is the fix; this is the repair for boards that already have the scars,
-  one of which carried nine rows for five roles.
-
-  Mail, claims and space membership move to the survivor, and the fork's nonce
-  follows so the next session cannot reopen the row this just closed. The
-  survivor keeps its own name, role and identity: an admin naming it has said
-  which row is the seat. The closed row records `merged_into`, because a
-  repair that leaves no trace is indistinguishable from data loss.
-
-  Two refusals. A LIVE agent is not a duplicate of anything, whatever it is
-  called, and merging one would redirect a running process's mail mid-flight.
-  And a path both rows claim is a conflict an admin has to see, because
-  folding it silently drops a claim and a claim that vanishes is how two
-  agents end up writing the same file.
-
-  Admin, like `settings`, and for a stronger reason: this has no undo, since
-  the fold is ledgered and replay reproduces it. The fold itself is tokenless
-  like `prune`'s and the gate sits in front of it, so `core` stays the pure
-  decision and who may ask stays a question about the caller.
-
-- **An admin agent can change the board's settings, with `settings`.**
-  Configuration lived in one place, `dibs.toml`, read at boot, so every
-  adjustment was a person opening an editor and restarting a daemon. That is
-  the wrong shape for a coordination tool whose premise is that agents handle
-  things: an operator who has granted an agent admin should not then have to
-  go and dig through a file on its behalf. Reading needs a token; changing
-  needs admin, because a coordinator's moves are visible on the board and
-  undoable from it while a setting changes how the board behaves for every
-  agent on it.
-
-  Only the five settings the engine can apply immediately are offered, and
-  anything else is refused with `E_NO_SETTING`: accepting `addr` and doing
-  nothing until a restart is the class of bug this repository keeps paying
-  for. Changes are written to `overrides.json` beside `dibs.toml` rather than
-  into it, because that file is mostly the operator's comments and a daemon
-  that rewrites TOML destroys them. Everything an agent changed is therefore
-  in one place that can be deleted to revert, and each entry records who set
-  it and when, so "the board is behaving differently than I expect" is
-  answerable in one line. A value is applied before it is persisted, and a
-  store that fails says the change will not survive a restart rather than
-  swallowing it.
-
-- **Who an unidentified session is taken to be is now the operator's call.**
-  A lifecycle hook identifies its agent with a session id; when it cannot, Dibs
-  matches the single live agent working in that directory. That fallback is a
-  feature before it is anything else, and measurably so: Claude Code and Codex
-  interpolate a session id, Gemini CLI's hooks are plain commands with no
-  template variables, so the directory match is the only reason a Gemini agent
-  can be woken at all. It is also a guess, and whether to take it depends on
-  whether somebody runs one agent per checkout or several in a monorepo.
-  `[identity] unidentified` takes `directory` (the default), `strict`, `ask`
-  (a notification naming the directory and who it would have been) or
-  `coordinator` (the same, as a notice to the coordinator agent), throttled per
-  directory because a harness fires hooks continuously. The three that resolve
-  to nobody lose nothing permanently: the mail is delivered the moment that
-  session identifies itself.
-
-  Resolution also moved to ONE place. The same lookup runs for the mail digest,
-  for `guard_path` and for subagent attribution, and a rule applied at one call
-  site and not its siblings is this repository's most expensive recurring bug.
-  `guard_path` is the one that proves it: a stranger resolved to the claim
-  holder once made the guard report a path as unclaimed while its holder held
-  it exclusively.
-
-- **Mail now arrives with the mail in it.** A hook delivery told an agent that
-  something had arrived and made it spend `check_in`, `read_mail` and `ack`
-  finding out what, behind a harness warning preamble, when the text could have
-  been in the first frame. A message service whose recipient makes three calls
-  to read one message is a polling API with extra steps.
-
-  The body had been removed on a measured finding, and the finding was right
-  about the mechanism and wrong about the threat. `hook_poll` is authenticated
-  by nothing, so any holder of the machine's coordination secret can name a
-  peer's working directory and be answered as that peer. True, and every agent
-  on a board is the same person's agent, already holding that secret and
-  already able to call every tool. The boundary was protecting the operator
-  from themselves.
-
-  What it WAS protecting against is real and is kept: a host may attach hook
-  output to the HUMAN's turn, which has happened three times through three
-  channels, each reported by an operator watching their own prompt box fill
-  with mail addressed to an agent. So the split is structural rather than
-  conditional. `pendingMailQuoted` has exactly one caller, the digest injected
-  into the agent's own context; the human notice, the ambient `waiting` line
-  and anything added later are built from the quiet `pendingMail` and say only
-  who is waiting and what kind. `[hooks] mail_bodies = false` restores the
-  pointer everywhere, for a machine whose accounts are not all yours, which is
-  the only situation that calls for it. Quoting is bounded by a budget shared
-  across the whole digest, because ten messages each trimmed generously is not
-  a generous digest.
-
-- **A listening session now beats a spawn, and that order was backwards.** The
-  wake path tried the operator's `[wake.exec]` command first and used the
-  session socket only when no command was configured. The reasons were that a
-  command is confirmable by exit status and that the socket was held unread by
-  any session in `bypassPermissions` mode; the second stopped being true
-  earlier in this release, and the first is worth less than it sounds, because
-  a confirmable route that cannot deliver is worth less than a best-effort one
-  that does. What settled it was the harm: a thread IS the agent, so spawning
-  for one that already has a window starts a second body for the same thread,
-  the application refuses the second writer, the command exits non-zero, and
-  the prompt it carried is left in the transcript rendered as though the HUMAN
-  typed it. Four of those in twenty minutes, with empty turns between them, and
-  the operator read it as something signing commits on their behalf. The command
-  keeps the one job only it can do: reaching an agent with no session listening
-  at all. Mail for an agent whose window is shut now waits for `SessionStart`
-  rather than spawning a copy of it; Dibs does not open applications.
-
-- **A wake command that always fails is given up on.** The existing retry is
-  per piece of mail and tries once more, which is right for a transient fault
-  and the wrong shape for an operator's command that exits non-zero every time,
-  for every agent, forever. One board logged "the next message somebody is
-  blocked on will try again" about a CLI whose credentials had expired and
-  meant it, all day. Three consecutive failures now stop it, with one warning
-  naming the command and the fix; a wake that works, or a corrected
-  configuration, starts it being tried again.
-
-- **`dibs doctor` reads the setting it advises about.** Naming the socket
-  route's cheap remedy fixed half a problem and created the other half: advice
-  printed unconditionally is advice printed to somebody who has already taken
-  it, and the next real warning then reads like more of the same. The check now
-  reads the effective `crossSessionInbound` across the files that decide it, in
-  the client's own precedence (managed policy, then the user, then a checkout
-  which may only tighten), and reports four states instead of one. Open says so
-  and stops asking. Held names the file that is holding. Refused says that no
-  local change will help and points at `[wake.exec]`. Unset gets both ways out,
-  as before. `internal/peerpolicy` is the new home for that rule, including the
-  one that is easy to get backwards: a checkout asking for `accept` where
-  nothing above it has decided changes nothing, because a repository may only
-  tighten and is compared against `accept` rather than against the default.
-
-- **The socket wake route has a remedy, and Dibs was telling nobody about
-  it.** Three documents and a `dibs doctor` warning correctly described a
-  Claude Code session in `bypassPermissions` mode as holding peer messages for
-  its human, and then stopped, one of them saying outright that no message a
-  sender can construct changes it. True about the wire and false about the
-  situation: the hold is the receiving client's DEFAULT, and an explicit
-  `"crossSessionInbound": "accept"` in that user's `~/.claude/settings.json`
-  beats it. Measured on 2026-09-23 against 2.1.280, twice: two headless
-  sessions, both `bypassPermissions`, the same frame on each session socket,
-  one answering `peer_message_hold` with cause `no-mode-asserted` and starting
-  no turn, the other starting a turn with a `kind:"peer"` origin. `dibs doctor`
-  now names both ways out, says what accepting costs, and writes neither, the
-  way the firewall check already worked. The socket route still sends no
-  receipt, so `accept` makes it work without making it confirmable, and
-  `[wake.exec]` remains the route this daemon can confirm.
-
-- **Mail wakes an agent, which is the product, and it had stopped.** Two
-  independent faults, both silent, found after a peer sent substantial
-  feedback to an idle agent and it surfaced an hour later because the operator
-  mentioned it.
-
-  **A delivery on Stop carried no instruction to continue.** The digest was
-  sent as `hookSpecificOutput.additionalContext` alone, on the strength of a
-  comment saying Claude Code's documentation described that as keeping the
-  conversation going. The documentation says the opposite, in a table:
-  `decision: "block"` "Prevents Claude from stopping; the conversation
-  continues", and additionalContext "does not by itself block the stop". So
-  every wake the hook path decided to send landed nowhere, for every Claude
-  Code agent on every board, while the daemon recorded the mail as delivered
-  and spent its freshness. Both fields are sent now; Codex still gets neither,
-  because its schema refuses unknown keys, and the filter that already knew
-  that is the only place it is decided.
-
-  **And the push route ignored the operator's policy.** It asked a rule that
-  meant "only news somebody is blocked on", so a notify started nobody however
-  the board was configured, while `deliverToModel` ten lines away had always
-  asked `[wake] policy`, whose default is `all`. One question with two
-  answers, and the routes are not interchangeable: the hook path can only
-  reach an agent that is still running, so the route that said no was the only
-  one that could reach an agent that had stopped. Both ask the policy now.
-  Under the default every piece of mail wakes; `[wake] policy = "urgent"`
-  narrows it to work somebody is blocked on, which is where that trade
-  belongs, and `policy = "none"` still turns it off.
-
-  Four tests across the tree encoded the old choice, including two that used a
-  notify as a stand-in for inert mail rather than for itself: a cursor test
-  that needed a notification which wakes nothing, and a duplicate-suppression
-  test whose "duplicate" was a different message. Both now test what they
-  claim.
-
-
-### Added
-
-- **A ChatGPT conversation can use the board, as a participant with no
-  computer.** OpenAI's Secure MCP Tunnel runs `dibs mcp-stdio` on a Mac and
-  relays a ChatGPT conversation into it, so the transport needed nothing: the
-  bridge is already the thing every harness speaks through, and the local
-  secret never leaves the machine. What it needed was honesty about what is
-  on the other end. A browser tab has no working directory, no repository, no
-  process and no machine, and the bridge stamped it with all four: measured,
-  a relayed conversation registered as `cwd: /private/tmp, host: MacMarine`
-  and then took an EXCLUSIVE claim on a checkout it cannot see, with the board
-  reporting no overlap.
-
-  `dibs mcp-stdio --remote-session` observes nothing and asserts nothing. The
-  conversation arrives with only what is true of it, and with the id ChatGPT
-  gives for correlating one conversation's calls, which is a session id and
-  never a credential: the nonce remains the thing that proves an identity, and
-  OpenAI's own documentation says these fields must never be relied on for
-  authorization. Saying "nowhere" is also different from saying nothing, and
-  the daemon now hears the difference: it stamps a silent loopback caller with
-  its own host, on the sound reasoning that nothing off this machine reaches
-  loopback, and a tunnel is precisely the thing that makes that false.
-
-  Such a participant gets the whole of coordination: the roster, mail, spaces,
-  requests, and `declare`, which is advisory and names no path. It cannot
-  `claim` a directory, and the refusal says why and what to do instead. That
-  rule lives in the MCP surface rather than in the fold, because it is about
-  what a caller may ask for rather than an invariant of the state machine, and
-  a rule added to `Apply` is retroactive.
-
-  It cannot be woken, either: there is no route to a browser tab, so it
-  collects mail with `check_in` rather than being pushed it. No pid is sent
-  for the same reason the host is not: one tunnel outlives every conversation
-  through it, so its liveness would report a tab closed last week as alive.
-
-### Fixed
-
-- **The published macOS binaries now have an identity of their own.** `dibd`
-  introduced itself to macOS as `a.out`, the Go toolchain's default, with an
-  ad-hoc signature. Two things follow and both land on the operator. macOS
-  records a firewall allowance and a privacy grant against the program's
-  SIGNATURE, and an ad-hoc signature gets a fresh code-directory hash from
-  every build, so every update was a different program: allow the hub through
-  the firewall, upgrade, and be asked again, forever. And `a.out` is not an
-  identity at all, it is what every unsigned Go binary on the machine says, so
-  anything recorded against the name was recorded against all of them.
-  `task install` had set identifiers and signed with a stable identity since
-  the privacy-grant fix; the RELEASE did neither, so a source install was
-  better behaved than the official one. Both now go through `tools/signrelease`,
-  so they cannot drift apart again, and `tools/archivecheck` fails the gate on
-  any shipped executable that does not name itself. Measured: with a
-  certificate the designated requirement is
-  `identifier "org.agenxy.dibs" and certificate root = H"..."`, identical
-  across builds; ad-hoc it is a `cdhash` that changes every time.
-
-  It is a SELF-SIGNED certificate, which is the free half. Gatekeeper still
-  refuses and the first approval is still asked for; removing that needs a
-  Developer ID and notarization, which needs an Apple Developer Program
-  membership, and that is a decision rather than an oversight. Signing is
-  deterministic, so the reproducible-build claim survives for anyone with the
-  same certificate.
-
-  Found by deploying a hub to a second Mac and asking why an update would need
-  somebody physically present.
+- **Human identity survives rename and replay.** The reserved nonce restores
+  the human row even dormant or archived, retaining its display name and
+  mailbox. `send(to: "human")` works before the person visits the board;
+  wake warnings, stall exemptions and adoption authority use the replayed
+  identity. Ordinary member tokens gain no human authority.
+
+- **Renamed agents are addressable without moving mailboxes.** IDs remain
+  permanent mailbox/queue/contact keys; current names resolve at ingress.
+  Exact IDs and human/coordinator role addresses win. Ambiguous names refuse
+  with candidate IDs, and new renames onto another row's ID are refused.
+  Historical records still replay without added ledger flags.
+
+- **Human notifications leave focus alone.** Questions and requests use native
+  banners, including during macOS Focus; no automatic decision window opens.
+  Receipts preserve posting-time Focus as visibility unknown, with the
+  person's exception hint. Doctor distinguishes allow-list and silence-list
+  modes without claiming that a banner was hidden or seen.
+
+- **Sleep no longer splits the live state from its ledger.** Deadlines and
+  retention use the recorded wall clock. Retained expired-unanswered questions
+  accept late answers; other expired verdicts remain final. Upgrade preflight
+  names the ledger that `dibs verify` actually accepts.
+
+- **Guest recovery refusal no longer kills its bridge.** Unsafe, corrupt or
+  contended recovery stores refuse only that registration before HTTP with a
+  cause-specific hint and no private path or nonce. Later calls still work;
+  the bridge neither retries the refused mutation nor invents a notification
+  response. Every invited HTTP request declares its actual compiled bridge
+  version; once a floor is assigned, missing, development, prerelease and old
+  versions refuse before MCP dispatch, without depending on initialize or
+  granting authority. Private fleet traffic is unchanged.
+
+- **MCP startup rides through daemon upgrades.** The stdio bridge gives
+  modern discovery, legacy initialize and listing a bounded 25-second
+  allowance, including an accepted connection that never answers. It forwards
+  the daemon's real capabilities/version. Only refused connections are retried;
+  mutation retries retain their existing ten-second bound.
+
+- **Deferred and queued wakes no longer pile up.** Native queue observation
+  reuses a pending Codex wake without resuming a thread or deleting messages.
+  When observation is unavailable, a retained receipt is rearmed only by a
+  session-start/prompt hook or expiry, not ordinary tool traffic. Commands
+  recheck whether mail is still owed before running. One failed wake notifies
+  the sender and appears on the board; repeated command failures back off
+  rather than failing forever. A fresh agent call defeats a stale Stop record.
+
+- **Lifecycle delivery matches each harness's output contract.** Claude Code
+  SessionStart uses command hooks before its MCP clients exist; Stop sends
+  the continuation decision as well as context. Codex Stop gets only the
+  decision/reason its schema accepts. The push and hook routes both honor the
+  configured wake policy. Informational updates delivered at Stop do not
+  continue later turns, and milestone review clears its matching notice.
+
+- **Accepting work no longer loses it to retention.** Approved and queued
+  ordinary requests remain owed until delivered or declined, including across
+  restart. Milestone acknowledgment before derived notice maps exist no
+  longer crashes. Whole-work flags clear only through whole-work correction
+  or acceptance; historical ledger retention keeps its original rules.
+
+- **CLI help is side-effect free.** Every command answers `--help`/`-h`
+  successfully before stdin, credentials or board contact. Usage includes
+  actual flags and aliases; previously ignored cross-command flags now refuse.
+  Bridge recovery hints name wait/retry and the read-only diagnostic, never
+  ask an agent to install or start the shared daemon.
+
+- **Inline attachments satisfy strict MCP schemas.** Embedded resources
+  have stable contents URIs. Valid UTF-8 text/JSON remains readable; binary
+  and mislabelled bytes preserve exact content as base64. These identities
+  are not unauthenticated download routes.
+
+- **Blob reconciliation cannot delete a newly registered attachment.**
+  Writer-owned holds survive cancellation through commit/refusal, transfer
+  across older overlapping cleanup snapshots and remain protected during
+  shutdown. Hold checks and unlink share the store lock. Interrupted-upload
+  clients now query HEAD after PATCH, not while their write is active.
+
+- **A moved live session keeps its agent identity.** Live harness sidecars
+  override a stale PID for crash decisions. Reattachment merges identity
+  metadata rather than dropping existing fields. The awareness gate follows
+  credential rotation, not sweep/wake guesses, so a live agent can declare
+  after checking in. The retired stale reminder is diagnosed, not repeated.
+
+- **Peer policy advice reflects the receiver's actual settings.** Doctor
+  reads effective `crossSessionInbound` with managed/user/project precedence,
+  distinguishes accepting, held, refused and unset, and prints the
+  operator-owned remedy without applying it. Session socket delivery remains
+  best effort, without a receipt.
+
+- **Machine labels and paths retain their proper scope.** The board, CLI and
+  bridge share a stable friendly label per host identity, including human and
+  reporting rows. Raw labels remain in detail; unknown identities stay
+  distinct. Repository/path/SSH identity rules are unchanged.
+
+- **Review coordination is not duplicate implementation.** Complementary
+  roles on the same item are described as such; same/unknown-role duplicates
+  still warn. Deadline mistakes name `deadline_s`; sends that leave an ask
+  unanswered name the required response. Once-a-day reattachment hints survive
+  restarts, and old schemas' stringified typed arguments are safely coerced.
+
+- **Upgraded bridges announce tool changes.** The server advertises
+  `tools.listChanged`, and a re-executed bridge emits the changed-list notice.
+  Claude Code refreshes it; measured Codex 0.159 only logs it, so its workers
+  still rely on corrective hints and orientation for new arguments.
+
+- **macOS replacement and release identity are stable.** A RunAtLoad
+  replacement starts once, avoiding launchd restart throttling. Published
+  binaries and source installs share the signing tool and explicit executable
+  identities; the archive gate checks them. Stable self-signed identity
+  preserves privacy/firewall grants across builds but does not remove
+  Gatekeeper's first approval; Developer ID/notarization remains a separate
+  membership decision.
 
 
 ## [0.0.9] - 2026-09-22

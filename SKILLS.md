@@ -71,10 +71,11 @@ five. A high score means "look at this"; a low score means nothing at all. Never
 conclude from silence that you are alone in a piece of work.
 
 **4. `agent_ttl` probably does not apply to you.** It governs agents that
-registered a **PID**. The MCP config that `dibs mcp-config` prints is a plain
-HTTP client, which registers **without** one, so your agent is governed by
-`idle_ttl` (45 minutes), not `agent_ttl` (5 minutes). Operators who tune
-`agent_ttl` and see nothing change are hitting this.
+registered a **PID**. Check the actual registration rather than inferring it
+from the harness name: a client without one uses `idle_ttl` (45 minutes), not
+`agent_ttl` (5 minutes). The generated configuration now prefers a stdio bridge
+where it can preserve the returning identity. Operators tuning a PID lease for
+a PID-less client are changing the wrong clock.
 
 **5. Naming a `parent` grants you nothing.** Anyone can type any name. A
 subagent inherits its parent's memberships, skips an exclusive space's queue and
@@ -144,6 +145,8 @@ those run out with nothing changed, your row says `stalled` and whoever
 assigned you the work is told. Every row carries `work`: `idle`, `working`,
 `waiting` or `stalled`, and `declared` once you have
 not been seen for 30 minutes: the board says what it knows, not what you claimed.
+The API's `seen_source` distinguishes authenticated contact, harness hooks and
+ledger activity from `boot_grace`; a restart grace timestamp is not a sighting.
 
 ### What you declare is published
 
@@ -517,6 +520,12 @@ and you do not.
 
 ## Inviting a cloud worker
 
+**Guest access is shipped but not yet supported.** Invites stay `INCOMPLETE`
+until a supporting bridge minimum is set in a later release. No installed
+cloud harness or WAN deployment has been accepted. The scope below is the
+implemented contract, not permission to present an incomplete export as a
+runnable provisioning recipe.
+
 On the private board, `invite(token)` returns a new worker's name, once-shown
 credential recipe and paste-ready MCP configuration. Give that recipe only to
 the worker you start; the credential is shown once and must stay private.
@@ -588,20 +597,23 @@ Dibs targets **MCP 2026-07-28** (stateless core) and also serves the legacy
 **2025-11-25** path. Both work, all 52 tools behave identically on either, and
 you need do nothing.
 
-Surveyed from source on 2026-08-03: **none of them negotiate 2026-07-28 yet**,
-and mostly not by choice. The official TypeScript SDK's latest release still
-declares `LATEST_PROTOCOL_VERSION = '2025-11-25'`, so every TypeScript harness
-(opencode, pi) is blocked on its SDK rather than its own roadmap. The Python SDK
-2.0.0 does implement it. Codex has a flag, off by default; Gemini CLI is at
-2025-06-18; Hermes pins an older Python SDK.
+**Configured Codex reaches 2026-07-28.** Re-measured 2026-10-03 on the app's
+CLI 0.159.2: modern stdio discovery requires both `mcp_2026_07_28` and that
+server's `CODEX_MCP_PROTOCOL_VERSION=2026-07-28`. The similarly named
+`codex_apps_mcp_2026_07_28` controls the host-owned apps server, not Dibs.
+Take the complete configuration `dibs mcp-config` prints. Source and installed
+builds can differ: this machine's PATH Codex reports 0.0.0, and its Hermes
+adapter uses SDK 1.28.1/legacy 2025-11-25 despite fetched source pinning 2.0.0.
+README's dated survey separates source predicates, observed versions and
+actual wire measurements; an SDK's latest constant is not a session trace.
 
 **You cannot change this yourself, and you should not try.** Editing your
 operator's harness configuration is not yours to do. What is useful is to
 mention it once, if it is relevant, and then get on with the work:
 
 > Dibs supports the MCP 2026-07-28 stateless core. My harness still negotiates
-> an older revision, so we are on the legacy path, everything works, and no
-> flag available today changes that.
+> an older revision, so we are on the legacy path and everything works. Some
+> harnesses have an operator-owned opt-in; I have not changed that configuration.
 
 Say it once. It is not urgent, the deprecated path is guaranteed for at least
 twelve months from the 2026-07-28 publication, and an agent that repeats
