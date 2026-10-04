@@ -770,6 +770,20 @@ It neither marks mail delivered nor drains agent updates or announcements;
 unlike `inbox` and `hook_poll`, it spends no delivery or agent call budget.
 Credential and session checks share the digest's single writer-loop snapshot.
 
+**App reconnect recovery.** Local stdio bridges attach their own PID and process
+start stamp as additive per-request metadata, including modern discovery and
+legacy startup. On macOS the daemon independently observes the owning ChatGPT app's PID
+and start time, once per bridge incarnation in a bounded cache. A previously
+unseen app incarnation triggers one normal delivery reconsideration for existing
+app-owned rows on that host with pending requests, questions, handoffs or notices.
+No identity, activity, session binding or ledger state changes. Inferred queued
+receipts are invalidated by app generation, independent of wall-clock ordering;
+an authoritative pending app notice renews that generation without duplication.
+Mail is rechecked before delivery; ordinary cooldown, loaded-thread and away
+opening policy still apply. Empty mailboxes and informational-only FYI mail do
+not cause reconnect wakes. Lost derived caches permit one bounded recheck.
+Sender notes distinguish observed queue acceptance from an unconfirmed attempt.
+
 A newer self-wake notification also advertises `com.dibs/socket_offer: true`.
 A capable writer includes that key on the hidden digest read to reserve the
 current presentation, receives `_meta["com.dibs/socket_offer_id"]`, and reports

@@ -41,6 +41,18 @@ func TestNativeQueueRouteCoalescesAndRearmsAcrossProcesses(t *testing.T) {
 	if got := count(); got != 1 {
 		t.Fatalf("N events across independent calls queued %d entries, want 1", got)
 	}
+	if err := NoteQueueReconnect("fixture-thread", "replacement-app"); err != nil {
+		t.Fatal(err)
+	}
+	if !RunCommands(argv, nil, "worker", "", time.Second, time.Second) || count() != 1 {
+		t.Fatal("reconnect duplicated an authoritative pending wake")
+	}
+	// The real observation must remain useful if the next probe is unavailable.
+	t.Setenv("DIBS_QUEUE_PROBE_FAIL", "1")
+	if !RunCommands(argv, nil, "worker", "", time.Second, time.Second) || count() != 1 {
+		t.Fatal("unknown probe duplicated a wake retained on reconnect")
+	}
+	t.Setenv("DIBS_QUEUE_PROBE_FAIL", "")
 	if err := os.WriteFile(filepath.Join(home, "pending.json"), []byte("[]"), 0o600); err != nil {
 		t.Fatal(err)
 	}

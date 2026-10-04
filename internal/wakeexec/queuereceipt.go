@@ -18,8 +18,9 @@ const pendingWakeTTL = 2 * time.Hour
 var queueLocks [32]sync.Mutex
 
 type queueReceipt struct {
-	QueuedAt time.Time `json:"queued_at"`
-	PromptAt time.Time `json:"prompt_at"`
+	QueuedAt   time.Time `json:"queued_at"`
+	PromptAt   time.Time `json:"prompt_at"`
+	Generation string    `json:"generation,omitempty"`
 }
 
 func receiptPath(thread string) string {
@@ -94,5 +95,26 @@ func NoteQueuePrompt(thread string, at time.Time) {
 func fallbackPending(thread string, now time.Time) bool {
 	r := readReceipt(thread)
 	p := readReceiptFile(receiptPath(thread) + ".prompt")
-	return !r.QueuedAt.IsZero() && now.Sub(r.QueuedAt) < pendingWakeTTL && !p.PromptAt.After(r.QueuedAt)
+	reconnect := readReceiptFile(receiptPath(thread) + ".reconnect")
+	return !r.QueuedAt.IsZero() && now.Sub(r.QueuedAt) < pendingWakeTTL &&
+		!p.PromptAt.After(r.QueuedAt) && r.Generation == reconnect.Generation
+}
+
+func reconnectGeneration(thread string) string {
+	return readReceiptFile(receiptPath(thread) + ".reconnect").Generation
+}
+
+// NoteQueueReconnect invalidates inference, not a real pending app item. A
+// separate atomic record also handles a command that writes its old receipt
+// after the reconnect was observed, without making the writer wait on it.
+func NoteQueueReconnect(thread, generation string) error {
+	if thread == "" {
+		return nil
+	}
+	if err := writeReceiptFile(receiptPath(thread)+".reconnect", queueReceipt{Generation: generation}); err != nil {
+		slog.Warn("could not invalidate the inferred pending wake after reconnect", "err", err,
+			"hint", "restore write access to the board data directory")
+		return err
+	}
+	return nil
 }

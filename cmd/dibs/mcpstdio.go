@@ -196,9 +196,9 @@ func runBridge(_ []string) error {
 		if len(line) == 0 {
 			continue
 		}
-		// Registration is the one message worth touching: the harness environment we were
-		// spawned into knows things the agent does not.
-		line = enrichRegister(line)
+		// The bridge supplies its own process evidence before a model call;
+		// registration also gains facts from the harness it was spawned into.
+		line = enrichRegister(enrichBridgeProcess(line))
 		req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(line))
 		if err != nil {
 			return err
