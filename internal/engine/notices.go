@@ -375,7 +375,7 @@ func (e *Engine) takeNotices(agent string) []notice {
 			if count == maxInlineOutcomes {
 				break
 			}
-			out = append(out, notice{Serial: u.serial, Msg: group.message.Serial, Text: u.text, At: u.at, Blocking: u.blocking})
+			out = append(out, notice{Kind: u.kind, Serial: u.serial, Msg: group.message.Serial, Text: u.text, At: u.at, Blocking: u.blocking})
 			count++
 		}
 		if count == maxInlineOutcomes {

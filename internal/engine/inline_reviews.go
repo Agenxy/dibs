@@ -45,7 +45,8 @@ func (e *Engine) reviewUnits(m *core.Message) []outcomeUnit {
 		}
 		units = append(units, outcomeUnit{
 			serial: p.Serial, text: text, body: p.Note,
-			at: p.At, blocking: p.Review == core.ReviewFlagged,
+			kind: "message.review",
+			at:   p.At, blocking: p.Review == core.ReviewFlagged,
 		})
 	}
 	return units

@@ -10,10 +10,10 @@ import (
 )
 
 type outcomeUnit struct {
-	serial     uint64
-	text, body string
-	at         time.Time
-	blocking   bool
+	serial           uint64
+	kind, text, body string
+	at               time.Time
+	blocking         bool
 }
 
 // Bounded presentations leave the unshown suffix in state for the next read.
@@ -160,6 +160,7 @@ func (e *Engine) outcomeUnits(m *core.Message) []outcomeUnit {
 	if verdictEvent(m.State) != "" && (m.OutcomeReadAt == 0 || m.RespondedAt > m.OutcomeReadAt) {
 		units = append(units, outcomeUnit{
 			serial: m.RespondedAt, text: e.outcomeHeader(m),
+			kind: verdictEvent(m.State),
 			body: outcomeWords(m.Response, m.Deliverable), at: m.TerminalAt, blocking: true,
 		})
 	}
@@ -173,12 +174,14 @@ func (e *Engine) outcomeUnits(m *core.Message) []outcomeUnit {
 		}
 		units = append(units, outcomeUnit{
 			serial: p.Serial, text: text,
+			kind: "message.progress",
 			body: outcomeWords(p.Note, p.Artifact), at: p.At,
 		})
 	}
 	if m.QueueDebt && m.QueueChangedSerial > m.OutcomeReadAt && m.QueueChangedSerial != m.RespondedAt {
 		units = append(units, outcomeUnit{
 			serial: m.QueueChangedSerial, at: m.QueueChangedAt,
+			kind: "message.queue_changed",
 			text: fmt.Sprintf("Queue position or priority changed for request %d: position %d, priority %s",
 				m.Serial, e.state.QueuePosition(m), m.EffectivePriority()),
 		})

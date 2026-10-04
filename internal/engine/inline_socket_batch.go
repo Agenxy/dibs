@@ -56,12 +56,16 @@ func (e *Engine) socketBatchPresentation(
 		if work := e.socketWorkDigest(a, now); work != "" {
 			text = strings.TrimSpace(text + "\n" + work)
 		}
+		// Every authenticated participant owns the shared reservation, even
+		// the requester whose own mailbox currently has no presentation. Its
+		// write receipt must settle/release the batch; only quoted prefixes
+		// are readable through the separately recorded outcome map.
+		member.offer.outcomes = prefixes[a.ID]
+		presented[a.ID] = member.offer
 		if text == "" {
 			continue
 		}
 		texts = append(texts, text)
-		member.offer.outcomes = prefixes[a.ID]
-		presented[a.ID] = member.offer
 	}
 	return texts, presented
 }
