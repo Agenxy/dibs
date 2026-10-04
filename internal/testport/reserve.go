@@ -58,3 +58,27 @@ func (r *Reservation) ReleaseForOutage(t testing.TB) {
 		t.Fatalf("setup: outage fixture did not refuse connections: %v", err)
 	}
 }
+
+// Bind keeps the address reserved through preparation and retries only a real
+// address-in-use error from a same-process bind. Even the short release/bind gap
+// collided during the full gate; parallel outbound connections can reuse an
+// ephemeral port, so this environmental collision has a typed, bounded retry.
+// Real-built daemon fixtures cannot use this: their exit loses the syscall error.
+func Bind(t testing.TB, network, address string, prepare func(string), bind func() error) string {
+	t.Helper()
+	for attempt := 1; attempt <= 3; attempt++ {
+		port := Reserve(t, network, address)
+		prepare(port.Addr)
+		port.Release(t)
+		err := bind()
+		if err == nil {
+			return port.Addr
+		}
+		if !errors.Is(err, syscall.EADDRINUSE) {
+			t.Fatalf("fixture bind failed without an address collision: %v", err)
+		}
+		t.Logf("fixture bind EADDRINUSE on attempt %d; selecting a fresh address", attempt)
+	}
+	t.Fatal("fixture bind EADDRINUSE on all three attempts")
+	return ""
+}

@@ -107,25 +107,28 @@ func newCloudFixture(t *testing.T) *cloudFixture {
 	ctx, stop := context.WithCancel(context.Background())
 	go eng.Run(ctx)
 	t.Cleanup(func() { stop(); _ = led.Close() })
-	reserved := testport.Reserve(t, "tcp", "127.0.0.1:0")
-	addr := reserved.Addr
 	proxy := httptest.NewUnstartedServer(nil)
 	publicURL := "https://" + proxy.Listener.Addr().String()
-	fs := cloudFlagSet()
-	opts, _ := registerDaemonFlags(fs)
-	if err = fs.Parse([]string{"--public-url", publicURL, "--public-addr", addr}); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := resolvePublic(opts)
-	if err != nil {
-		t.Fatal(err)
-	}
 	files := transfer.New(ctx, eng, bs, dir)
-	reserved.Release(t)
-	fail, closePublic, err := startPublic(ctx, cfg, dir, eng, "board-secret", stop, files)
-	if err != nil {
-		t.Fatal(err)
-	}
+	var cfg publicConfig
+	var fail <-chan error
+	var closePublic func()
+	addr := testport.Bind(t, "tcp", "127.0.0.1:0", func(addr string) {
+		fs := cloudFlagSet()
+		opts, _ := registerDaemonFlags(fs)
+		if err := fs.Parse([]string{"--public-url", publicURL, "--public-addr", addr}); err != nil {
+			t.Fatal(err)
+		}
+		var err error
+		cfg, err = resolvePublic(opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}, func() error {
+		var err error
+		fail, closePublic, err = startPublic(ctx, cfg, dir, eng, "board-secret", stop, files)
+		return err
+	})
 	t.Cleanup(func() {
 		closePublic()
 		select {

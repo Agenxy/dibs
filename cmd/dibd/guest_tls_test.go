@@ -47,10 +47,8 @@ func TestDirectIPListenerActuallyServesTLSAndOnlyInvitations(t *testing.T) {
 	ctx, stop := context.WithCancel(context.Background())
 	go eng.Run(ctx)
 	t.Cleanup(func() { stop(); _ = led.Close() })
-	reserved := testport.Reserve(t, "tcp6", "[::1]:0")
-	addr := reserved.Addr
 	// Loopback is the hermetic fixture, not an operator-advertisable global IP.
-	cfg := publicConfig{URL: "https://" + addr, Addr: addr, IP: netip.MustParseAddr("::1")}
+	cfg := publicConfig{IP: netip.MustParseAddr("::1")}
 	// Real near-expiry signer: every replacement leaf is renewal-due. A fake
 	// leaf deadline would reset on the first renewal and miss the failure.
 	ca, signer, err := ensureGuestCA(dir, cfg.IP)
@@ -65,16 +63,20 @@ func TestDirectIPListenerActuallyServesTLSAndOnlyInvitations(t *testing.T) {
 	if err := writePEM(filepath.Join(dir, "guest-ca.pem"), "CERTIFICATE", caDER, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := preparePublic(&cfg, dir); err != nil {
-		t.Fatal(err)
-	}
-	// Enter through the real listener with a short fixture clock.
-	cfg.guestPoll = 20 * time.Millisecond
-	reserved.Release(t)
-	fail, closePublic, err := startPublic(ctx, cfg, dir, eng, "never-public-secret", stop, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	var fail <-chan error
+	var closePublic func()
+	addr := testport.Bind(t, "tcp6", "[::1]:0", func(addr string) {
+		cfg = publicConfig{URL: "https://" + addr, Addr: addr, IP: netip.MustParseAddr("::1")}
+		if err := preparePublic(&cfg, dir); err != nil {
+			t.Fatal(err)
+		}
+		// Enter through the real listener with a short fixture clock.
+		cfg.guestPoll = 20 * time.Millisecond
+	}, func() error {
+		var err error
+		fail, closePublic, err = startPublic(ctx, cfg, dir, eng, "never-public-secret", stop, nil)
+		return err
+	})
 	t.Cleanup(func() {
 		closePublic()
 		select {
