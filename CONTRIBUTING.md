@@ -39,7 +39,8 @@ The gate splits, if you are working on one area: `task test` (Go only, seconds),
 Run the whole chain before opening a pull request.
 
 That is the whole gate: vet, lint, `go test -race` in both build
-configurations, the browser end-to-end suites, the human-flow suite, the
+configurations, a release-stamped race pass over version-sensitive packages,
+the browser end-to-end suites, the human-flow suite, the
 coverage floor on `core` and `ledger`, a cross-compile matrix, and govulncheck.
 It is the same set the pull-request workflow runs, so a green `task ci` locally
 should mean a green CI.

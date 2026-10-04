@@ -5,7 +5,7 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.0.10] - 2026-10-03
+## [0.0.11] - 2026-10-03
 
 ### Added
 
@@ -213,6 +213,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Release validation covers stable-stamped builds before tagging.** The
+  daemon, CLI, updater and build-provenance packages run with a stable linker
+  stamp in the local/main/PR gate. Guest fixtures use explicit versions rather
+  than assuming an unstamped child is a development image; released issuers
+  still refuse older bridge evidence.
+
 - **Human identity survives rename and replay.** The reserved nonce restores
   the human row even dormant or archived, retaining its display name and
   mailbox. `send(to: "human")` works before the person visits the board;
@@ -325,6 +331,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Gatekeeper's first approval; Developer ID/notarization remains a separate
   membership decision.
 
+
+## [0.0.10] - 2026-10-03
+
+Burned: the immutable tag's release gate failed on two guest tests whose
+development-version assumptions changed in a tagged checkout. No artifacts
+were published and the registry job was skipped. The unreleased changes
+above are carried forward to the next version; this tag will not be moved.
 
 ## [0.0.9] - 2026-09-22
 
