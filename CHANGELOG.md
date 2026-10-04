@@ -213,6 +213,18 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The full release gate precedes the remote tag.** Protected-main dispatch
+  proves the local annotated-tag environment and production-stamped packages
+  before a separate job can push. An authenticated Actions receipt hands off
+  to exact-tag publication, retaining the installed Sigstore identity. Draft
+  assets are verified before publication; public retries never overwrite them.
+  Registry and signed-cask retries require equivalence. Non-publishing
+  rehearsals exercise failure and token delivery without creating a release.
+  GitHub release immutability is a required operator-owned setting. Publication
+  and cask retries require an immutable public release; an upload/publication
+  race or lost response succeeds only after read-only verification of the
+  exact signed assets, staged bytes and tag, never by retrying a public upload.
+
 - **Release validation covers stable-stamped builds before tagging.** The
   daemon, CLI, updater and build-provenance packages run with a stable linker
   stamp in the local/main/PR gate. Guest fixtures use explicit versions rather

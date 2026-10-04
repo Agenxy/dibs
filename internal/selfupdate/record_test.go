@@ -18,6 +18,27 @@ const (
 	fixtureBundle    = "  {\n \"signature\": \"fixture only\"\n }\n"
 )
 
+func TestVerifyReleaseEvidenceUsesTheExistingOfflineExactTagDoor(t *testing.T) {
+	useRecordCosign(t)
+	ctx := context.Background()
+	v, err := VerifyReleaseEvidence(ctx, "v0.0.9", []byte(fixtureChecksums), []byte(fixtureBundle))
+	if err != nil || v.Tag() != "v0.0.9" || v.Checksums() != fixtureChecksums {
+		t.Fatalf("%v %v", v, err)
+	}
+	for _, tag := range []string{"main", "v0.0.11", "v0.0.9-extra"} {
+		if _, err := VerifyReleaseEvidence(ctx, tag, []byte(fixtureChecksums), []byte(fixtureBundle)); err == nil {
+			t.Fatalf("different identity accepted: %s", tag)
+		}
+	}
+	if _, err := VerifyReleaseEvidence(ctx, "v0.0.9", []byte(strings.Repeat("x", maxChecksums+1)), []byte(fixtureBundle)); err == nil {
+		t.Fatal("unbounded evidence accepted")
+	}
+	t.Setenv("DIBS_TEST_COSIGN_RECORD_FAILURE", "exit")
+	if _, err := VerifyReleaseEvidence(ctx, "v0.0.9", []byte(fixtureChecksums), []byte(fixtureBundle)); err == nil {
+		t.Fatal("signature failure accepted")
+	}
+}
+
 // A process-door wiring test, NOT cryptographic evidence. The real signed
 // v0.0.9 bundle is separately measured through the network-denied CLI.
 func recordCosignHelper() int {

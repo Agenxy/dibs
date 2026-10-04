@@ -70,3 +70,5 @@ __pycache__/
 /version
 /reviewrelease
 /sigstore-root-check
+/releaseflow
+/registrypublish
