@@ -13,6 +13,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `task install` before signing or replacing installed binaries; clean-clone
   installs retain their normal version shape.
 
+- **Over-budget outcomes share one pointer per request.** Unquoted selected
+  progress/review/verdict units collapse into one counted `read_mail` summary,
+  preserving both the global unit limit and the unread suffix. Complete words
+  remain quoted and durably read; summaries never count as read receipts.
+
 - **Codex queue wakes coalesce across verdicts and writer processes.** Pending
   answer and other verdict notices now reuse the core event vocabulary. A
   private OS file lock covers observation, enqueue and receipt retention across
