@@ -2,6 +2,7 @@ package wakeexec
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -10,16 +11,26 @@ import (
 	"github.com/agenxy/dibs/internal/paths"
 )
 
+type queueCommandOutcome struct {
+	ok        bool
+	out       []byte
+	contended bool
+}
+
 // runQueuedCommand serializes observe -> enqueue -> retain across the daemon
 // and every bridge on this board. A process-local mutex allowed both writers
 // to observe the same empty queue before either committed its item.
-func runQueuedCommand(argv []string, thread, agent, dir string, timeout, grace time.Duration) (bool, []byte) {
+func runQueuedCommand(argv []string, thread, agent, dir string, timeout, grace time.Duration) queueCommandOutcome {
 	release, err := lockQueueAdmission(thread, timeout)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			slog.Debug("app queue writer is busy; this wake will retry later", "agent", agent)
+			return queueCommandOutcome{contended: true}
+		}
 		slog.Warn("could not coordinate admission to the app queue; the wake was not sent",
 			"agent", agent, "err", err, "hint", "retry after the other queue writer settles; "+
 				"restore write access to the board data directory if it cannot be locked")
-		return false, nil
+		return queueCommandOutcome{}
 	}
 	defer release()
 	generation := reconnectGeneration(thread)
@@ -40,7 +51,7 @@ func runQueuedCommand(argv []string, thread, agent, dir string, timeout, grace t
 	if (known && pending) || (!known && fallbackPending(thread, time.Now())) {
 		slog.Debug("a Dibs wake is already pending in the app queue", "agent", agent,
 			"observation_known", known)
-		return true, nil
+		return queueCommandOutcome{ok: true}
 	}
 	slog.Debug("admitting a wake to the app queue", "agent", agent,
 		"observation_known", known)
@@ -49,7 +60,7 @@ func runQueuedCommand(argv []string, thread, agent, dir string, timeout, grace t
 	if ok {
 		retainQueueReceipt(thread, queueReceipt{QueuedAt: queuedAt, Generation: generation}, agent)
 	}
-	return ok, out
+	return queueCommandOutcome{ok: ok, out: out}
 }
 
 // The OS releases this lock on process exit. Never unlink it: replacing a

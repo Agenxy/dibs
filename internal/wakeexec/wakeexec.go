@@ -171,7 +171,11 @@ func RunCommands(argv, fallback []string, agent, dir string, timeout, grace time
 	var ok bool
 	var out []byte
 	if thread, queued := queueTarget(argv); queued {
-		ok, out = runQueuedCommand(argv, thread, agent, dir, timeout, grace)
+		result := runQueuedCommand(argv, thread, agent, dir, timeout, grace)
+		if result.contended {
+			return false
+		}
+		ok, out = result.ok, result.out
 	} else {
 		ok, out = runForOut(argv, agent, dir, timeout, grace)
 	}

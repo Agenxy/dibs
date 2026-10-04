@@ -47,8 +47,17 @@ inferred causes, and actual consumption re-arms immediately.
 Every upgraded writer using the same board receipt directory takes the OS
 lock. It remains on disk, because unlinking a held lock would create two
 independent inodes; process exit releases ownership. Acquisition is bounded
-by the command timeout, and failure sends nothing and reports failure. A
-still-running old writer does not acquire this new lock, so the guarantee
+by the command timeout, and failure sends nothing and reports failure. A busy
+writer timeout is a distinct outcome: it logs at Debug, executes no fallback
+and leaves retry to the engine. A real lock I/O or permission error retains
+its warning and existing fallback qualification. The two-process timeout
+regression pauses the first command beyond the second admission's deadline
+and checks that the second runs neither queue nor fallback command. The
+parent already ran no fallback because its output lacked the required
+active-writer marker; that test's parent failure is the warning and incorrect
+failure diagnosis, not a claim of fallback execution.
+
+A still-running old writer does not acquire this new lock, so the guarantee
 requires both writers to upgrade. No payload or capability contract changes.
 
 The fix adds no queue-deletion operation and cannot remove a pre-existing

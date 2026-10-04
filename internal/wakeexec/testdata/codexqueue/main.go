@@ -18,6 +18,12 @@ func main() {
 		fmt.Println("thread already has an active writer")
 		os.Exit(1)
 	}
+	if len(os.Args) == 2 && os.Args[1] == "fallback-marker" {
+		if err := os.WriteFile(filepath.Join(os.Getenv("CODEX_HOME"), "fallback-ran"), nil, 0o600); err != nil {
+			panic(err)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "queue" {
 		var thread, message string
 		for i := 2; i+1 < len(os.Args); i++ {

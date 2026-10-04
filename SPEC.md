@@ -840,7 +840,9 @@ Sender notes distinguish observed queue acceptance from an unconfirmed attempt.
 kind coalesces later notices. The native runner serializes observation, enqueue
 and retained receipt with a private per-thread OS file lock shared by daemon
 and bridge processes using that board directory. Queue fallbacks use the same
-door. Failed admission does not enqueue or report acceptance. Older running
+door. Failed admission does not enqueue or report acceptance. Contention timeout
+is logged at Debug, skips fallback execution and leaves the engine to retry.
+Real lock errors retain their warning and ordinary fallback qualification. Older running
 writers do not participate until upgraded. When observation is unavailable,
 the retained fallback may add at most one duplicate per current prompt, new
 reconnect generation or two-hour receipt expiry; this preserves lost-wake

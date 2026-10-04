@@ -276,6 +276,8 @@ file lock in the board's private receipt directory covers observation, enqueue
 and receipt retention across daemon and bridge processes. A queue fallback
 enters that same admission door. The lock is released on exit and is never
 unlinked; a failed or timed-out acquisition reports failure without enqueueing.
+Contention timeout logs at Debug and skips fallback execution; real lock
+errors retain their warning and ordinary fallback qualification.
 An old writer still running pre-upgrade code does not participate in this lock.
 
 When observation is unavailable, the retained fallback deliberately permits
