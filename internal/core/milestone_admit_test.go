@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -15,6 +16,10 @@ func TestAcceptUnreportedMilestoneIsAdmitOnly(t *testing.T) {
 	err := s.Admit(op)
 	if codeOf(err) != "E_MILESTONE_UNREPORTED" || !strings.Contains(err.Error(), "3") {
 		t.Errorf("unreported step accepted or missing corrective report indices: %v", err)
+	}
+	var problem *Error
+	if !errors.As(err, &problem) || !strings.HasPrefix(problem.Hint, "did you mean milestone 3?") {
+		t.Errorf("single reported step is not named first: %v", err)
 	}
 	if s.Serial != before {
 		t.Fatal("Admit changed state")

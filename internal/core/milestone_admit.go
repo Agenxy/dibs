@@ -27,8 +27,12 @@ func (s *State) admitReportedMilestone(op *Op) error {
 			return nil
 		}
 	}
-	return errf("E_MILESTONE_UNREPORTED", fmt.Sprintf(
+	hint := fmt.Sprintf(
 		"reported milestone indices are %v; read_mail(%d) shows their proofs, then "+
-			"respond(accept, milestone:<reported index>)", reported, m.Serial),
+			"respond(accept, milestone:<reported index>)", reported, m.Serial)
+	if len(reported) == 1 {
+		hint = fmt.Sprintf("did you mean milestone %d? ", reported[0]) + hint
+	}
+	return errf("E_MILESTONE_UNREPORTED", hint,
 		"milestone %d has not been reported; reported indices: %v", op.Milestone, reported)
 }
