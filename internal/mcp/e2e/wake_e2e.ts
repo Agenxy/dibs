@@ -668,6 +668,15 @@ check("an agent on a harness with no configured command still registers",
   socketAgent.session_id === PEER_SESSION,
   `session_id = ${JSON.stringify(socketAgent.session_id)}`)
 
+// This is an idle-wake probe, so establish idle through the actual lifecycle
+// hook. Registration alone leaves lifecycle unknown and correctly retains its
+// bounded startup grace; sleeping for 1.2s is no evidence of a finished turn.
+const socketIdle = await call("hook_poll",
+  { session_id: PEER_SESSION, event: "Stop", cwd: project })
+check("the socket fixture's Stop resolves to its own agent",
+  socketIdle.agent === "socket-sleeper",
+  `the idle hook resolved to ${JSON.stringify(socketIdle)}`)
+
 const beforeSocket = wakes().length
 await Bun.sleep(1200)
 await call("send", { token: asker.token, to: "socket-sleeper", type: "question",
