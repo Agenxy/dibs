@@ -8,6 +8,20 @@ import (
 	"github.com/agenxy/dibs/internal/core"
 )
 
+// Enter only from production boot, before any mail can be served or woken.
+func (e *Engine) initializeReviewRead(now time.Time) {
+	if e.state.ReviewReadCutoff != 0 {
+		return
+	}
+	op := &core.Op{Kind: core.OpInitializeReviewRead, ReviewReadCutoff: e.state.Serial + 1}
+	if err := e.state.Admit(op); err != nil {
+		panic(err)
+	}
+	if _, err := e.applyAndLedger(op, now); err != nil {
+		panic(err)
+	}
+}
+
 func (e *Engine) reviewUnits(m *core.Message) []outcomeUnit {
 	if m.State != core.MsgStateApproved && m.State != core.MsgStateDone {
 		return nil

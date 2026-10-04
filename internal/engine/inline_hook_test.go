@@ -32,6 +32,11 @@ func TestInlineHookDeliveryIsReadButSocketWriteIsNot(t *testing.T) {
 			}
 			n := do(&core.Op{Kind: core.OpSendMessage, Token: tokens["lead"], To: "worker", MsgType: core.MsgRequest, Body: "work"})["msg_serial"].(uint64)
 			do(&core.Op{Kind: core.OpRespond, Token: tokens["worker"], MsgSerial: n, Disposition: "approve", Body: "exact-inline-approval"})
+			// The socket policy requires a real idle boundary, not silence after
+			// fixture tool calls. An already-active Stop records it, not delivery.
+			if _, err := e.HookPoll(ctx, "lead-session", "Stop", "", true, false); err != nil {
+				t.Fatal(err)
+			}
 			offer, err := e.SocketOfferFor(ctx, tokens["lead"], "lead-session", "", false)
 			if err != nil || !strings.Contains(fmt.Sprint(offer["digest"]), "exact-inline-approval") {
 				t.Fatalf("socket offer: %v %v", offer, err)
@@ -158,6 +163,15 @@ func TestConfirmedSocketReadsOnlyTheFullyQuotedPrefix(t *testing.T) {
 	}
 	for _, body := range []string{"complete-socket-report", strings.Repeat("λ", mailQuoteEach+1)} {
 		do(&core.Op{Kind: core.OpRespond, Token: worker, MsgSerial: parent, Disposition: "progress", Body: body})
+	}
+	// Progress is informational. The existing socket policy needs independent
+	// actionable mail before it may carry the shared digest's reports.
+	do(&core.Op{
+		Kind: core.OpSendMessage, Token: worker, To: "lead",
+		MsgType: core.MsgQuestion, Body: "socket cause",
+	})
+	if _, err := e.HookPoll(ctx, "lead-session", "Stop", "", true, false); err != nil {
+		t.Fatal(err)
 	}
 	offer, err := e.SocketOfferFor(ctx, lead, "lead-session", "", false)
 	if err != nil || !strings.Contains(fmt.Sprint(offer["digest"]), "complete-socket-report") ||

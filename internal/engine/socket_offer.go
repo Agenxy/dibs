@@ -46,14 +46,7 @@ func (e *Engine) beginSocketOffers(agents []*core.Agent, session string) core.Re
 		}
 		delete(e.socketEpochs, key)
 	}
-	var texts []string
-	var presented []*core.Agent
-	for _, a := range agents {
-		if text := e.socketDigest(a, now); text != "" {
-			texts = append(texts, text)
-			presented = append(presented, a)
-		}
-	}
+	texts, presented := e.socketBatchPresentation(agents, now)
 	if len(texts) == 0 {
 		return core.Result{"digest": ""}
 	}
@@ -66,16 +59,9 @@ func (e *Engine) beginSocketOffers(agents []*core.Agent, session string) core.Re
 		e.socketEpochs = map[string]socketEpoch{}
 	}
 	e.socketEpochs[key] = socketEpoch{id: id, at: now}
-	for _, a := range presented {
-		_, announcements := e.dueAnnouncements(a.ID, now)
-		_, outcomes, notices := e.wakePresentation(a, true)
-		_, work := e.dueSocketWaits(a, now)
-		e.socketOffers[a.ID] = socketOffer{
-			id: id, session: session, at: now,
-			canConfirm: e.socketLifecycle(a, now) == "idle",
-			mail:       e.wakeKeys(a.ID, now), announcements: announcements, notices: notices,
-			work: work, backoff: e.socketBackoff[a.ID], outcomes: outcomes,
-		}
+	for agent, offer := range presented {
+		offer.id, offer.session, offer.at = id, session, now
+		e.socketOffers[agent] = offer
 	}
 	e.logSocketOffer(l, now, id)
 	return core.Result{"digest": strings.Join(texts, "\n"), "offer": id}
@@ -170,6 +156,17 @@ func (e *Engine) dueNoticeLines(agent string, now time.Time) (lines, keys []stri
 func (e *Engine) dueNoticeLinesBudget(
 	agent string, now time.Time, budget *int,
 ) (lines, keys []string, through map[uint64]uint64) {
+	keys = e.dueNoticeKeys(agent, now)
+	wanted := make(map[string]bool, len(keys))
+	for _, key := range keys {
+		wanted[key] = true
+	}
+	lines, through = e.presentUpdates(agent, budget, wanted)
+	return lines, keys, through
+}
+
+func (e *Engine) dueNoticeKeys(agent string, now time.Time) []string {
+	var keys []string
 	live := map[string]bool{}
 	for _, n := range e.takeNotices(agent) {
 		key := agent + "\x00" + strconv.FormatUint(n.Serial, 10)
@@ -187,12 +184,7 @@ func (e *Engine) dueNoticeLinesBudget(
 			delete(e.noticePresented, key)
 		}
 	}
-	wanted := make(map[string]bool, len(keys))
-	for _, key := range keys {
-		wanted[key] = true
-	}
-	lines, through = e.presentUpdates(agent, budget, wanted)
-	return lines, keys, through
+	return keys
 }
 
 // Called only after a delivering Stop has put these exact notices in model

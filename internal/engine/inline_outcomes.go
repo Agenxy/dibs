@@ -20,6 +20,7 @@ type outcomeUnit struct {
 const maxInlineOutcomes = 16
 
 type outcomeGroup struct {
+	agent   string
 	message *core.Message
 	units   []outcomeUnit
 }
@@ -27,11 +28,16 @@ type outcomeGroup struct {
 func (e *Engine) outcomeGroups(agent string) []outcomeGroup {
 	var groups []outcomeGroup
 	for _, m := range e.sentOutcomes(agent) {
-		groups = append(groups, outcomeGroup{m, e.outcomeUnits(m)})
+		groups = append(groups, outcomeGroup{agent, m, e.outcomeUnits(m)})
 	}
 	for _, m := range e.receivedReviews(agent) {
-		groups = append(groups, outcomeGroup{m, e.reviewUnits(m)})
+		groups = append(groups, outcomeGroup{agent, m, e.reviewUnits(m)})
 	}
+	sortOutcomeGroups(groups)
+	return groups
+}
+
+func sortOutcomeGroups(groups []outcomeGroup) {
 	sort.Slice(groups, func(i, j int) bool {
 		a, b := groups[i], groups[j]
 		as, bs := a.units[len(a.units)-1].serial, b.units[len(b.units)-1].serial
@@ -40,7 +46,6 @@ func (e *Engine) outcomeGroups(agent string) []outcomeGroup {
 		}
 		return a.message.Serial > b.message.Serial
 	})
-	return groups
 }
 
 func noticeKey(agent string, serial uint64) string {
@@ -49,6 +54,11 @@ func noticeKey(agent string, serial uint64) string {
 
 func (e *Engine) presentUpdates(agent string, budget *int, wanted map[string]bool) ([]string, map[uint64]uint64) {
 	lines, through := e.presentOutcomes(agent, budget, wanted)
+	return append(lines, e.presentGenericUpdates(agent, budget, wanted)...), through
+}
+
+func (e *Engine) presentGenericUpdates(agent string, budget *int, wanted map[string]bool) []string {
+	var lines []string
 	for _, n := range e.takeNotices(agent) {
 		if wanted != nil && !wanted[noticeKey(agent, n.Serial)] {
 			continue
@@ -63,7 +73,7 @@ func (e *Engine) presentUpdates(agent string, budget *int, wanted map[string]boo
 		}
 		lines = append(lines, e.presentOtherNotice(agent, n, budget))
 	}
-	return lines, through
+	return lines
 }
 
 // The withdrawal receipt is the recipient's, and its durable Consumed bit
@@ -219,29 +229,43 @@ func approvedGrantBriefing(grant string) string {
 func (e *Engine) presentOutcomes(
 	agent string, budget *int, wanted map[string]bool,
 ) (lines []string, through map[uint64]uint64) {
-	through = map[uint64]uint64{}
-	for _, group := range e.outcomeGroups(agent) {
-		if len(lines) >= maxInlineOutcomes {
+	byAgent, prefixes := e.presentGroupedOutcomes(e.outcomeGroups(agent), budget, wanted)
+	return byAgent[agent], prefixes[agent]
+}
+
+func (e *Engine) presentGroupedOutcomes(
+	groups []outcomeGroup, budget *int, wanted map[string]bool,
+) (map[string][]string, map[string]map[uint64]uint64) {
+	lines := map[string][]string{}
+	through := map[string]map[uint64]uint64{}
+	count := 0
+	sortOutcomeGroups(groups)
+	for _, group := range groups {
+		if count >= maxInlineOutcomes {
 			break
 		}
-		quoted, prefix := e.presentOutcomeGroup(agent, group, budget, wanted, maxInlineOutcomes-len(lines))
-		lines = append(lines, quoted...)
+		quoted, prefix := e.presentOutcomeGroup(group, budget, wanted, maxInlineOutcomes-count)
+		lines[group.agent] = append(lines[group.agent], quoted...)
+		count += len(quoted)
 		if prefix != 0 {
-			through[group.message.Serial] = prefix
+			if through[group.agent] == nil {
+				through[group.agent] = map[uint64]uint64{}
+			}
+			through[group.agent][group.message.Serial] = prefix
 		}
 	}
 	return lines, through
 }
 
 func (e *Engine) presentOutcomeGroup(
-	agent string, group outcomeGroup, budget *int, wanted map[string]bool, limit int,
+	group outcomeGroup, budget *int, wanted map[string]bool, limit int,
 ) (lines []string, through uint64) {
 	blocked := false
 	for _, u := range group.units {
 		if len(lines) >= limit {
 			break
 		}
-		if wanted != nil && !wanted[noticeKey(agent, u.serial)] {
+		if wanted != nil && !wanted[noticeKey(group.agent, u.serial)] {
 			blocked = true // never read through an unquoted earlier unit
 			continue
 		}

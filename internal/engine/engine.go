@@ -387,15 +387,7 @@ func (e *Engine) Run(ctx context.Context) {
 // durable coordination checkpoint is within one TTL; the rest transition now,
 // ledgered, healed later by wake if the agent lives.
 func (e *Engine) boot(now time.Time) {
-	if e.state.ReviewReadCutoff == 0 {
-		op := &core.Op{Kind: core.OpInitializeReviewRead, ReviewReadCutoff: e.state.Serial + 1}
-		if err := e.state.Admit(op); err != nil {
-			panic(err)
-		}
-		if _, err := e.applyAndLedger(op, now); err != nil {
-			panic(err)
-		}
-	}
+	e.initializeReviewRead(now)
 	// STAMPED HERE, because this op never passes exec, where every other op
 	// gets its V7Semantics. The retention watermark repair is gated on that
 	// flag, so a sweep built without it ran the old rule on every production
