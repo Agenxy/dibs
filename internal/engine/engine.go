@@ -387,6 +387,7 @@ func (e *Engine) Run(ctx context.Context) {
 // durable coordination checkpoint is within one TTL; the rest transition now,
 // ledgered, healed later by wake if the agent lives.
 func (e *Engine) boot(now time.Time) {
+	e.initializeReviewRead(now)
 	// STAMPED HERE, because this op never passes exec, where every other op
 	// gets its V7Semantics. The retention watermark repair is gated on that
 	// flag, so a sweep built without it ran the old rule on every production
@@ -955,6 +956,11 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		if op.Kind == core.OpWithdrawMessage ||
 			(op.Kind == core.OpRespond && (op.Disposition == "accept" || op.Disposition == "flag")) {
 			e.clearNoticesFor(actor.ID, op.MsgSerial)
+			if op.Kind == core.OpRespond {
+				if m := e.state.Messages[op.MsgSerial]; m != nil {
+					e.noteOutcomeRead(actor, m, op.Token, now)
+				}
+			}
 		}
 	}
 	if lid, ok := res["agent_id"].(string); ok && lid != "" {
@@ -1000,11 +1006,15 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		// recovery checkpoint, reached by an agent that has just lost its context,
 		// that ambiguity is the opposite of the reassurance it exists to give,
 		// and it was reported as a defect by the first agent to use it that way.
-		pending := e.pendingNotices(actor.ID)
+		pending, readErr := e.pullUpdates(actor, now)
+		if readErr != nil {
+			return nil, readErr
+		}
 		if pending == nil {
 			pending = []string{}
 		}
 		res["agent_updates"] = pending
+		res["serial"] = e.state.Serial
 		e.AckNotices(actor.ID)
 		// Whether overlap detection is working AT ALL, on the one call
 		// documented as the atomic checkpoint.

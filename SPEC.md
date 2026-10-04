@@ -182,7 +182,9 @@ Ledgered op kinds: `register, resume, wake, activity_checkpoint,
 check_in, update, sign_off, heartbeat` (recovery only), `declare,
 undeclare, send, respond, ack, claim` (incl. renewals), `release,
 sweep` (only when it changed state), `mark_delivered`, `outcome_read`
-(the sender read a verdict; written by `read_mail`, once per message).
+(a durable outcome/review read prefix; historical full sender reads retain
+their original meaning), `initialize_review_read` (one recorded upgrade
+cutoff; historical reviews at or below it are already read).
 
 ### 5.0 Agent identity is observed, never self-reported
 
@@ -561,7 +563,8 @@ Messages go agent → agent; identity = send serial; bodies private (§4, §5).
 | `pending` | `delivered` | recipient **retrieves the body** via `inbox` or `read_mail`, metadata polls (`events_since`/`await_events`) do NOT deliver | `message.delivered` (via ledgered `mark_delivered`, idempotent) |
 | `pending/delivered` | `acked` (terminal + consumed for notify/handoff; non-terminal for question/request) | `ack` | `message.acked` |
 | any terminal state | same state, `consumed` set | `ack` on terminal mail = consumption (§below) | `message.consumed` |
-| any terminal state | same state, `outcome_read_serial` set | the **sender** retrieves the verdict via `read_mail` | none (ledgered `outcome_read`, idempotent; it is what stops a restart handing the sender the same verdict notice again) |
+| any terminal state | same state, `outcome_read_serial` advanced | **sender** `read_mail`, fully quoted inline outcome prefix, or progress-event `ack` | none (ledgered `outcome_read`, idempotent) |
+| retained approved/done request | same state, `review_read_serial` advanced | **recipient** `read_mail`, fully quoted inline review prefix, or review-event `ack` | none (independent ledgered read; never consumes the sender's outcome view) |
 | `pending/delivered/acked` | `answered` / `approved` / `denied` / `declined` | `respond` (per type table) | `message.<state>` |
 | `pending/delivered/acked` | `expired_unanswered` \| `expired_recipient_dormant` \| `expired_recipient_dead` | deadline sweep (§7 cascade) | `message.<state>` |
 | `expired_unanswered` (question only) | `answered` | late `respond(answer)` by its recipient; expiry detail cleared and sender's verdict-read marker reset | `message.answered` |
@@ -607,6 +610,17 @@ recipient's `respond` (responding proves receipt). GC eligibility requires
 - **`read_mail(msg_serial)`**: full message including body and response, authorized
   for **sender or recipient**. This is how a question's sender reads the answer
   (terminal events carry serials, never bodies). Recipient reads mark delivery.
+- **Inline outcomes:** `check_in`, `inbox`, delivering lifecycle hooks and
+  socket digests share a mail-first body budget of 1,600 Unicode characters,
+  700 per body, and at most 16 outcome units. Newest requests first, oldest
+  unread prefix within a request. Complete units advance a durable read prefix;
+  partial quotes and pointers do not. Socket writes alone never do; the existing
+  confirmed new-turn receipt may read only the exact participant prefix quoted.
+  Outcome and recipient-review reads are independent from envelope consumption.
+  Event `ack` reads the acknowledged prefix, returning older unread event serials
+  in `also_read`; repeating it appends nothing. `initialize_review_read` records
+  the first upgraded serial once, treating older reviews as read without changing
+  any historical op. Downgrading past this new op kind is not supported.
 - **Reading never consumes: acknowledgement consumes.** A crash between fsync and
   reply must not lose mail the caller never received, so no read (`inbox`,
   `read_mail`, `check_in`) ever commits consumption. Consumption happens only via

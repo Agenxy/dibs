@@ -185,12 +185,7 @@ func (e *Engine) socketParticipants(l *core.Agent) []*core.Agent {
 // the full formatter directly. A successful write is coalesced until a real
 // turn begins, even when a held peer generated no turn at all.
 func (e *Engine) socketDigest(l *core.Agent, now time.Time) string {
-	state := e.socketLifecycle(l, now)
-	if state == "busy" || state == "grace" || !e.socketHasCause(l, now) {
-		return ""
-	}
-	key := socketSessionKey(l)
-	if epoch, ok := e.socketEpochs[key]; ok && epoch.written {
+	if !e.socketCanPresent(l, now) {
 		return ""
 	}
 	text := e.currentWakeDigest(l)
@@ -201,6 +196,18 @@ func (e *Engine) socketDigest(l *core.Agent, now time.Time) string {
 		text += work
 	}
 	return text
+}
+
+func (e *Engine) socketCanPresent(l *core.Agent, now time.Time) bool {
+	state := e.socketLifecycle(l, now)
+	if state == "busy" || state == "grace" || !e.socketHasCause(l, now) {
+		return false
+	}
+	key := socketSessionKey(l)
+	if epoch, ok := e.socketEpochs[key]; ok && epoch.written {
+		return false
+	}
+	return true
 }
 
 // SocketReadyEvent is a derived readiness hint on the existing subscription,

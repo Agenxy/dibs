@@ -459,19 +459,17 @@ func (e *Engine) Inbox(ctx context.Context, token string) (core.Result, error) {
 		if gone := e.state.UnanswerableSenders(mail); len(gone) > 0 {
 			res["unanswerable_senders"] = gone
 		}
-		// Surfaced here, but NOT cleared here. Exactly one call consumes a
-		// notice, check_in, the documented checkpoint, because two owners of
-		// a clear is how the first version of this went wrong twice over: it
-		// cleared without returning anything (destroying unseen notices on an
-		// ordinary read), and once that was fixed, whichever of inbox and
-		// check_in an agent happened to call first silently decided which
-		// response carried them.
-		//
-		// Read-only here is free: repeating a notice on inbox costs a line,
-		// while losing one costs the agent the fact that it was admitted.
-		if pending := e.pendingNotices(l.ID); len(pending) > 0 {
+		// Generic situational notices remain visible until check_in. Outcomes
+		// and recipient reviews are different: only their fully quoted prefix
+		// is durably read here; an omitted or partial body remains unread.
+		pending, readErr := e.pullUpdates(l, now)
+		if readErr != nil {
+			return core.Result{"error": readErr}
+		}
+		if len(pending) > 0 {
 			res["agent_updates"] = pending
 		}
+		res["serial"] = e.state.Serial
 		return res
 	})
 }
@@ -669,10 +667,19 @@ func (e *Engine) messageReadResult(m *core.Message) core.Result {
 // noteOutcomeRead ledgers that the SENDER has read a verdict on its own
 // message, once. See the comment at its call site and issue #76.
 func (e *Engine) noteOutcomeRead(l *core.Agent, m *core.Message, token string, now time.Time) {
+	if m.To == l.ID && m.From != l.ID && m.LatestReviewSerial() > m.ReviewReadAt {
+		_, _ = e.applyAndLedger(&core.Op{
+			Kind: core.OpOutcomeRead, Token: token,
+			MsgSerial: m.Serial, OutcomeThroughSerial: m.LatestReviewSerial(),
+		}, now)
+	}
 	if m.From != l.ID || !m.Terminal() || !m.HasUnreadOutcome() {
 		return
 	}
-	_, _ = e.applyAndLedger(&core.Op{Kind: core.OpOutcomeRead, Token: token, MsgSerial: m.Serial}, now)
+	_, _ = e.applyAndLedger(&core.Op{
+		Kind: core.OpOutcomeRead, Token: token,
+		MsgSerial: m.Serial, OutcomeThroughSerial: m.LatestOutcomeSerial(),
+	}, now)
 }
 
 // pendingFor is the mail this agent has just been shown and not yet been

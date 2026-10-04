@@ -79,8 +79,8 @@ func TestNoWakeSurfaceLeaksAMessageBody(t *testing.T) {
 	// each other's mail. It is about a HOST attaching hook output to the
 	// HUMAN's turn, which is what happened three times above. So the surfaces
 	// a host may show a person stay counts-only, structurally: they are built
-	// from pendingMail, and only pendingMailQuoted quotes.
-	quoted := e.pendingMailQuoted("receiver", time.Now())
+	// from pendingMail, and only mailLines with quote=true quotes.
+	quoted := e.mailLines("receiver", time.Now(), true)
 	if !strings.Contains(strings.Join(quoted, "\n"), secret) {
 		t.Error("the agent's own digest does NOT carry the message text, so the " +
 			"recipient is still woken to be told only that something arrived " +
@@ -347,12 +347,12 @@ func TestTheOperatorCanKeepTheMailOutOfTheDigest(t *testing.T) {
 	}
 
 	// Default on: the mail is there, or the assertion below proves nothing.
-	if !strings.Contains(strings.Join(e.pendingMailQuoted("receiver", time.Now()), "\n"), secret) {
+	if !strings.Contains(strings.Join(e.mailLines("receiver", time.Now(), true), "\n"), secret) {
 		t.Fatal("setup: quoting is not on by default, so turning it off proves nothing")
 	}
 
 	e.SetMailBodies(false)
-	got := strings.Join(e.pendingMailQuoted("receiver", time.Now()), "\n")
+	got := strings.Join(e.mailLines("receiver", time.Now(), true), "\n")
 	if strings.Contains(got, secret) {
 		t.Errorf("[hooks] mail_bodies = false still quotes the message:\n%s", got)
 	}
@@ -397,7 +397,7 @@ func TestOneLongMessageDoesNotEatTheDigest(t *testing.T) {
 			t.Fatal("setup:", err)
 		}
 	}
-	lines := e.pendingMailQuoted("receiver", time.Now())
+	lines := e.mailLines("receiver", time.Now(), true)
 	if len(lines) != 4 {
 		t.Fatalf("setup: want 4 messages waiting, got %d", len(lines))
 	}

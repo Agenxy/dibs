@@ -65,8 +65,8 @@ func TestStopDeliversProgressOnceWithoutRequiringReview(t *testing.T) {
 				if len(e.state.Messages[parent].Progress) != 1 {
 					t.Error("delivery invented a review")
 				}
-				if len(e.pendingNotices("lead")) != 1 {
-					t.Error("tokenless Stop consumed authenticated notice data")
+				if len(e.pendingNotices("lead")) != 0 || e.state.Messages[parent].OutcomeReadAt == 0 {
+					t.Error("fully quoted Stop report was not durably read")
 				}
 				return nil
 			}); err != nil {

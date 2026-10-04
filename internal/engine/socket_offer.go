@@ -24,6 +24,7 @@ type socketOffer struct {
 	notices             []string
 	work                []socketWorkKey
 	backoff             socketBackoff
+	outcomes            map[uint64]uint64 // only the fully quoted prefix in this offer
 }
 
 func (e *Engine) beginSocketOffer(l *core.Agent, session string) core.Result {
@@ -45,12 +46,7 @@ func (e *Engine) beginSocketOffers(agents []*core.Agent, session string) core.Re
 		}
 		delete(e.socketEpochs, key)
 	}
-	var texts []string
-	for _, a := range agents {
-		if text := e.socketDigest(a, now); text != "" {
-			texts = append(texts, text)
-		}
-	}
+	texts, presented := e.socketBatchPresentation(agents, now)
 	if len(texts) == 0 {
 		return core.Result{"digest": ""}
 	}
@@ -63,16 +59,9 @@ func (e *Engine) beginSocketOffers(agents []*core.Agent, session string) core.Re
 		e.socketEpochs = map[string]socketEpoch{}
 	}
 	e.socketEpochs[key] = socketEpoch{id: id, at: now}
-	for _, a := range agents {
-		_, announcements := e.dueAnnouncements(a.ID, now)
-		_, notices := e.dueNoticeLines(a.ID, now)
-		_, work := e.dueSocketWaits(a, now)
-		e.socketOffers[a.ID] = socketOffer{
-			id: id, session: session, at: now,
-			canConfirm: e.socketLifecycle(a, now) == "idle",
-			mail:       e.wakeKeys(a.ID, now), announcements: announcements, notices: notices,
-			work: work, backoff: e.socketBackoff[a.ID],
-		}
+	for agent, offer := range presented {
+		offer.id, offer.session, offer.at = id, session, now
+		e.socketOffers[agent] = offer
 	}
 	e.logSocketOffer(l, now, id)
 	return core.Result{"digest": strings.Join(texts, "\n"), "offer": id}
@@ -135,6 +124,9 @@ func (e *Engine) confirmSocketOffer(l *core.Agent, now time.Time) {
 		e.markWoken(o.mail, o.at)
 		e.markAnnounced(o.announcements, o.at)
 		e.markNoticePresentation(o.notices, o.at)
+		if err := e.consumeOutcomes(who, o.outcomes, now); err != nil {
+			panic(err)
+		}
 		delete(e.socketOffers, who)
 	}
 }
@@ -156,6 +148,25 @@ func (e *Engine) noteSocketTurnStart(l *core.Agent, now time.Time) {
 // Delivery timing is separate from the notices themselves. check_in and
 // read_mail still return every owed notice regardless of this throttle.
 func (e *Engine) dueNoticeLines(agent string, now time.Time) (lines, keys []string) {
+	budget := mailQuoteBudget
+	lines, keys, _ = e.dueNoticeLinesBudget(agent, now, &budget)
+	return lines, keys
+}
+
+func (e *Engine) dueNoticeLinesBudget(
+	agent string, now time.Time, budget *int,
+) (lines, keys []string, through map[uint64]uint64) {
+	keys = e.dueNoticeKeys(agent, now)
+	wanted := make(map[string]bool, len(keys))
+	for _, key := range keys {
+		wanted[key] = true
+	}
+	lines, through = e.presentUpdates(agent, budget, wanted)
+	return lines, keys, through
+}
+
+func (e *Engine) dueNoticeKeys(agent string, now time.Time) []string {
+	var keys []string
 	live := map[string]bool{}
 	for _, n := range e.takeNotices(agent) {
 		key := agent + "\x00" + strconv.FormatUint(n.Serial, 10)
@@ -166,14 +177,14 @@ func (e *Engine) dueNoticeLines(agent string, now time.Time) (lines, keys []stri
 		if at, ok := e.noticePresented[key]; ok && now.Sub(at) < AnnounceRetry {
 			continue
 		}
-		lines, keys = append(lines, n.Text), append(keys, key)
+		keys = append(keys, key)
 	}
 	for key := range e.noticePresented {
 		if len(key) > len(agent) && key[:len(agent)+1] == agent+"\x00" && !live[key] {
 			delete(e.noticePresented, key)
 		}
 	}
-	return lines, keys
+	return keys
 }
 
 // Called only after a delivering Stop has put these exact notices in model

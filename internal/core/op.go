@@ -173,12 +173,16 @@ type Op struct {
 	// row being absorbed into it. A new tag, never a reused one: renaming a
 	// json tag is a silent data-loss bug here and reusing one for a second
 	// meaning is the same bug with the rename already done.
-	MergeInto              string       `json:"merge_into,omitempty"`
-	MsgType                string       `json:"msg_type,omitempty"`
-	Body                   string       `json:"body,omitempty"` // encrypted at rest
-	DeadlineSec            int          `json:"deadline_sec,omitempty"`
-	OpID                   string       `json:"op_id,omitempty"`
-	MsgSerial              uint64       `json:"msg_serial,omitempty"`
+	MergeInto   string `json:"merge_into,omitempty"`
+	MsgType     string `json:"msg_type,omitempty"`
+	Body        string `json:"body,omitempty"` // encrypted at rest
+	DeadlineSec int    `json:"deadline_sec,omitempty"`
+	OpID        string `json:"op_id,omitempty"`
+	MsgSerial   uint64 `json:"msg_serial,omitempty"`
+	// Zero keeps historical read_mail's read-all semantics. A bounded inline
+	// delivery records only the fully quoted prefix, never a later pointer.
+	OutcomeThroughSerial   uint64       `json:"outcome_through_serial,omitempty"`
+	ReviewReadCutoff       uint64       `json:"review_read_cutoff_serial,omitempty"`
 	SupersededBy           uint64       `json:"superseded_by,omitempty"`
 	Disposition            string       `json:"disposition,omitempty"`
 	RequestPriority        string       `json:"request_priority,omitempty"`

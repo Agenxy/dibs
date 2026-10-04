@@ -23,9 +23,10 @@ import (
 // that matched nothing without saying why, and it deserves the same fix: the
 // agent is TOLD, through the wake path it already has.
 //
-// EPHEMERAL, like announceSent and for the same reason: whether a notice has
-// been shown is delivery bookkeeping, not coordination state. Writing it to the
-// ledger from a read path would be an unledgered mutation. It is REBUILT on
+// Generic notices are EPHEMERAL, like announceSent. Outcomes and reviews are
+// state-derived bounded views with independent ledgered read prefixes; losing
+// the cache cannot lose them or repeat a fully delivered body. Generic notices
+// are REBUILT on
 // restart: verdicts from state (rebuildBlockingNotices) and everything
 // situational from the replayed event ring (rebuildSituationalNotices), each
 // gated on the agent's awareness watermark. The cost of a restart is at most
@@ -354,10 +355,36 @@ func (e *Engine) pushNoticeKind(who, text string, serial, msg uint64, blocking b
 // on the particular message clears that information.
 func (e *Engine) takeNotices(agent string) []notice {
 	all := e.notices[agent]
-	if len(all) == 0 {
-		return nil
+	var out []notice
+	for _, n := range all {
+		// Sent-request updates come from the retained envelope and its read
+		// watermark, not this bounded/ephemeral pointer cache.
+		if e.state != nil {
+			if m := e.state.Messages[n.Msg]; m != nil && m.From == agent && m.Expecting() {
+				continue
+			}
+			if m := e.state.Messages[n.Msg]; m != nil && m.To == agent && noticeIsReview(m, n.Serial) {
+				continue
+			}
+		}
+		out = append(out, n)
 	}
-	out := append([]notice(nil), all...)
+	count := 0
+	for _, group := range e.outcomeGroups(agent) {
+		for _, u := range group.units {
+			if count == maxInlineOutcomes {
+				break
+			}
+			out = append(out, notice{
+				Kind: u.kind, Serial: u.serial, Msg: group.message.Serial,
+				Text: u.text, At: u.at, Blocking: u.blocking,
+			})
+			count++
+		}
+		if count == maxInlineOutcomes {
+			break
+		}
+	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Serial < out[j].Serial })
 	return out
 }
@@ -367,17 +394,9 @@ func (e *Engine) takeNotices(agent string) []notice {
 // best-effort and a peer can interfere with it, so the agent's own
 // token-authenticated call is what actually has to be complete.
 func (e *Engine) pendingNotices(agent string) []string {
-	all := e.notices[agent]
-	if len(all) == 0 {
-		return nil
-	}
-	sorted := append([]notice(nil), all...)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Serial < sorted[j].Serial })
-	out := make([]string, 0, len(sorted))
-	for _, n := range sorted {
-		out = append(out, n.Text)
-	}
-	return out
+	budget := mailQuoteBudget
+	lines, _ := e.presentUpdates(agent, &budget, nil)
+	return lines
 }
 
 // oldestNotice is when the earliest outstanding notice for this agent actually
@@ -433,7 +452,7 @@ func (e *Engine) clearNoticesFor(agent string, serial uint64) {
 // down, and must not thereby turn off being woken for an approval.
 func (e *Engine) blockingNotices(agent string) int {
 	n := 0
-	for _, x := range e.notices[agent] {
+	for _, x := range e.takeNotices(agent) {
 		if x.Blocking {
 			n++
 		}

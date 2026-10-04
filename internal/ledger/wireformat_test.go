@@ -242,6 +242,8 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		"track": true,
 		// New withdrawal op's replacement reference; all old tags stay frozen.
 		"superseded_by": true,
+		// Additive delivery prefix and recorded review upgrade epoch; no retags.
+		"outcome_through_serial": true, "review_read_cutoff_serial": true,
 	}
 
 	// Every tag the Op DECLARES, not merely the ones this fixture happens to
@@ -434,7 +436,8 @@ const (
 	// loss.
 	// Task queue: eight additive op tags, no renamed/removed historical tags.
 	// Withdrawal: one additive replacement reference; all old tags unchanged.
-	frozenOpFingerprint       = "sha256:0ffc9a21e796a2a3"
+	// Inline reads add two tags; all historical tags stay frozen.
+	frozenOpFingerprint       = "sha256:6027d7f772cdf195"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`
@@ -444,7 +447,8 @@ const (
 	// Updated for the newly added retain_until decision, with no renamed tags.
 	// Task queue: nine additive message tags, no renamed/removed historical tags.
 	// Withdrawal: three additive receipt fields; all old tags unchanged.
-	frozenMessageFingerprint = "sha256:52cedd948f3c7aa2"
+	// Worker review reads add one scalar; sender watermark is unchanged.
+	frozenMessageFingerprint = "sha256:45ff11fcc88b6704"
 	// The identity inside op.agent. Set when the fingerprint was added; one
 	// new tag at a time from here, never a rename.
 	frozenAgentFingerprint = "sha256:c630d3cc9f27eb95"
@@ -495,38 +499,39 @@ func TestOpKindStringsAreFrozen(t *testing.T) {
 	// here so a kind added to the table brings its expected string with it or
 	// does not compile.
 	for name, pair := range map[string]struct{ got, want string }{
-		"OpRegister":        {core.OpRegister, "register"},
-		"OpResume":          {core.OpResume, "resume"},
-		"OpWake":            {core.OpWake, "wake"},
-		"OpAckBoard":        {core.OpAckBoard, "check_in"},
-		"OpUpdate":          {core.OpUpdate, "update"},
-		"OpSignOff":         {core.OpSignOff, "sign_off"},
-		"OpHeartbeat":       {core.OpHeartbeat, "heartbeat"},
-		"OpSetSlot":         {core.OpSetSlot, "declare"},
-		"OpClearSlot":       {core.OpClearSlot, "undeclare"},
-		"OpSendMessage":     {core.OpSendMessage, "send"},
-		"OpQueueUpdate":     {core.OpQueueUpdate, "queue_update"},
-		"OpWithdrawMessage": {core.OpWithdrawMessage, "withdraw_message"},
-		"OpClaim":           {core.OpClaim, "claim"},
-		"OpRelease":         {core.OpRelease, "release"},
-		"OpSweep":           {core.OpSweep, "sweep"},
-		"OpMarkDelivered":   {core.OpMarkDelivered, "mark_delivered"},
-		"OpOutcomeRead":     {core.OpOutcomeRead, "outcome_read"},
-		"OpPutBlob":         {core.OpPutBlob, "put_blob"},
-		"OpGrantRole":       {core.OpGrantRole, "grant_role"},
-		"OpPrune":           {core.OpPrune, "prune"},
-		"OpForceRelease":    {core.OpForceRelease, "force_release"},
-		"OpSpaceOpen":       {core.OpSpaceOpen, "open_space"},
-		"OpSpaceJoin":       {core.OpSpaceJoin, "join_space"},
-		"OpSpaceLeave":      {core.OpSpaceLeave, "leave_space"},
-		"OpSpaceSubscribe":  {core.OpSpaceSubscribe, "watch_space"},
-		"OpSpaceExclusive":  {core.OpSpaceExclusive, "lock_space"},
-		"OpSpacePost":       {core.OpSpacePost, "post"},
-		"OpSpaceAnnounce":   {core.OpSpaceAnnounce, "announce"},
-		"OpSpaceAck":        {core.OpSpaceAck, "ack_announcement"},
-		"OpAdoptAgent":      {core.OpAdoptAgent, "adopt_agent"},
-		"OpHostRenamed":     {core.OpHostRenamed, "host_renamed"},
-		"OpSpaceRetitle":    {core.OpSpaceRetitle, "retitle_space"},
+		"OpRegister":             {core.OpRegister, "register"},
+		"OpResume":               {core.OpResume, "resume"},
+		"OpWake":                 {core.OpWake, "wake"},
+		"OpAckBoard":             {core.OpAckBoard, "check_in"},
+		"OpUpdate":               {core.OpUpdate, "update"},
+		"OpSignOff":              {core.OpSignOff, "sign_off"},
+		"OpHeartbeat":            {core.OpHeartbeat, "heartbeat"},
+		"OpSetSlot":              {core.OpSetSlot, "declare"},
+		"OpClearSlot":            {core.OpClearSlot, "undeclare"},
+		"OpSendMessage":          {core.OpSendMessage, "send"},
+		"OpQueueUpdate":          {core.OpQueueUpdate, "queue_update"},
+		"OpWithdrawMessage":      {core.OpWithdrawMessage, "withdraw_message"},
+		"OpClaim":                {core.OpClaim, "claim"},
+		"OpRelease":              {core.OpRelease, "release"},
+		"OpSweep":                {core.OpSweep, "sweep"},
+		"OpMarkDelivered":        {core.OpMarkDelivered, "mark_delivered"},
+		"OpOutcomeRead":          {core.OpOutcomeRead, "outcome_read"},
+		"OpInitializeReviewRead": {core.OpInitializeReviewRead, "initialize_review_read"},
+		"OpPutBlob":              {core.OpPutBlob, "put_blob"},
+		"OpGrantRole":            {core.OpGrantRole, "grant_role"},
+		"OpPrune":                {core.OpPrune, "prune"},
+		"OpForceRelease":         {core.OpForceRelease, "force_release"},
+		"OpSpaceOpen":            {core.OpSpaceOpen, "open_space"},
+		"OpSpaceJoin":            {core.OpSpaceJoin, "join_space"},
+		"OpSpaceLeave":           {core.OpSpaceLeave, "leave_space"},
+		"OpSpaceSubscribe":       {core.OpSpaceSubscribe, "watch_space"},
+		"OpSpaceExclusive":       {core.OpSpaceExclusive, "lock_space"},
+		"OpSpacePost":            {core.OpSpacePost, "post"},
+		"OpSpaceAnnounce":        {core.OpSpaceAnnounce, "announce"},
+		"OpSpaceAck":             {core.OpSpaceAck, "ack_announcement"},
+		"OpAdoptAgent":           {core.OpAdoptAgent, "adopt_agent"},
+		"OpHostRenamed":          {core.OpHostRenamed, "host_renamed"},
+		"OpSpaceRetitle":         {core.OpSpaceRetitle, "retitle_space"},
 		// THE EIGHT THIS TABLE DID NOT KNOW ABOUT. It called itself the single
 		// authoritative list and omitted these, so renaming any one of them left
 		// this test green while every ledger containing it stopped replaying.
@@ -609,6 +614,7 @@ func TestLedgerMessageFieldNamesAreFrozen(t *testing.T) {
 		// rebuild after a restart reads it; renamed, every read outcome on the
 		// board would be handed back once more on the next start.
 		"outcome_read_serial": true,
+		"review_read_serial":  true, // independent worker awareness
 		// 0.0.6.
 		"choices": true, "grant": true, "adopt": true,
 	}

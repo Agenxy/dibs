@@ -53,9 +53,9 @@ func TestMilestoneEventAcknowledgmentAndReviewThroughMCP(t *testing.T) {
 	if acked["state"] != "acked" {
 		t.Fatalf("event acknowledgment: %v", acked)
 	}
-	updates = call("inbox", map[string]any{"token": tokens["lead"]})["agent_updates"].([]any)
-	if len(updates) != 1 {
-		t.Fatalf("event ack cleared a newer report or failed to clear its own: %v", updates)
+	updates, _ = call("inbox", map[string]any{"token": tokens["lead"]})["agent_updates"].([]any)
+	if len(updates) != 0 {
+		t.Fatalf("reports already quoted by inbox repeated after event ack: %v", updates)
 	}
 	wrong := toolCall(t, srv, "respond", map[string]any{"token": tokens["lead"], "msg_serial": event, "disposition": "accept", "milestone": 1})
 	if wrong["__is_error"] != true || !strings.Contains(fmt.Sprint(wrong["hint"]), fmt.Sprintf("respond(msg_serial:%.0f", parent)) {
