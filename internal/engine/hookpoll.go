@@ -1043,13 +1043,12 @@ func isStopEvent(event string) bool {
 // they chose a type. A question or a request has somebody blocked on the
 // answer. A handoff is work its sender has stopped doing, so the only thing
 // between it and nobody doing it is this agent noticing. An unacknowledged
-// announcement carries collision risk by definition. An agent update changes
-// what this agent may do NEXT, so acting without it is acting on a stale board.
-// Those are worth a turn. A notify is not: it waits for the next activation,
-// which costs the sender nothing and the recipient nothing.
+// announcement carries collision risk by definition. Typed grant/adoption
+// verdicts and flagged reviews need a decision too. Other updates and peer FYIs
+// wait for the next natural activation or ride an actionable digest.
 //
-// Every other event is already a boundary. UserPromptSubmit and SessionStart
-// interrupt nothing, so everything is delivered there.
+// SessionStart carries fresh information at a natural activation.
+// UserPromptSubmit stays silent so the human's prompt is never a mail trigger.
 func (e *Engine) deliverToModel(event string, fresh, blocked, stopActive bool) bool {
 	switch event {
 	case "UserPromptSubmit":
@@ -1092,9 +1091,8 @@ func (e *Engine) deliverToModel(event string, fresh, blocked, stopActive bool) b
 		if stopActive || e.WakePolicy() == WakeNone || !fresh {
 			return false
 		}
-		// `all` is the default: anything the agent has not been told wakes it.
-		// `urgent` narrows that to work somebody is blocked on, for an operator
-		// who would rather an FYI never cost a turn.
+		// Both enabled policies require the typed actionable cause selected
+		// by hookDeliveryCauses; an informational update alone never continues.
 		return e.WakePolicy() == WakeAll || blocked
 	default:
 		return fresh

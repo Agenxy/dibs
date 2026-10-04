@@ -923,6 +923,7 @@ let annSerial = 0
       })
       const b = await res.json() as any
       if (b.error) throw new Error(`${name}: ${JSON.stringify(b.error)}`)
+      if (b.result?.isError) throw new Error(`${name}: ${b.result.content?.[0]?.text ?? "unknown tool error"}`)
       return JSON.parse(b.result.content[0].text)
     }
     const mk = async (n: string, sid: string) => {
@@ -957,17 +958,21 @@ let annSerial = 0
       /admit/.test(String(m?.hint)), String(m?.hint))
 
     await c5("admit", { token: dir, space: "auth-work", to: "worker" })
-    const poll = await c5("hook_poll", { session_id: "wsid", event: "Stop" })
+    const held = await c5("hook_poll", { session_id: "wsid", event: "Stop" })
+    check("informational admission does not buy another model turn at Stop",
+      held?.decision !== "block" && !held?.reason && !held?.hookSpecificOutput?.additionalContext,
+      JSON.stringify(held).slice(0, 200))
+    const poll = await c5("hook_poll", { session_id: "wsid", event: "SessionStart" })
     const txt: string = poll?.hookSpecificOutput?.additionalContext ?? ""
-    check("the admitted agent is TOLD, through the wake path",
+    check("the admitted agent is told at its next natural activation",
       /admitted to agent "auth-work" by director/.test(txt), txt.slice(0, 200) || "(silent)")
     check("and told what it may now do", /you may start/.test(txt), txt.slice(0, 200))
 
     // A lifecycle hook may bound duplicate presentation, but may NEVER spend
     // the information itself. The session id is a capability for the nudge;
     // the token-authenticated raw queue remains complete and repeatable.
-    const again = await c5("hook_poll", { session_id: "wsid", event: "Stop" })
-    check("another Stop does not repeat the same update inside its reminder cadence",
+    const again = await c5("hook_poll", { session_id: "wsid", event: "SessionStart" })
+    check("another natural activation does not repeat the update inside its reminder cadence",
       !/admitted to agent "auth-work" by director/.test(again?.hookSpecificOutput?.additionalContext ?? ""),
       String(again?.hookSpecificOutput?.additionalContext ?? "").slice(0, 120) || "(silent)")
 
@@ -989,8 +994,12 @@ let annSerial = 0
       String(settled?.hookSpecificOutput?.additionalContext ?? "").slice(0, 120))
 
     await c5("evict", { token: dir, space: "auth-work", to: "worker" })
-    const ev = await c5("hook_poll", { session_id: "wsid", event: "Stop" })
-    check("eviction reaches the agent too, with what to do about it",
+    const evHeld = await c5("hook_poll", { session_id: "wsid", event: "Stop" })
+    check("informational eviction does not buy another model turn at Stop",
+      evHeld?.decision !== "block" && !evHeld?.reason && !evHeld?.hookSpecificOutput?.additionalContext,
+      JSON.stringify(evHeld).slice(0, 200))
+    const ev = await c5("hook_poll", { session_id: "wsid", event: "SessionStart" })
+    check("eviction reaches the next natural activation with what to do about it",
       /removed from agent "auth-work"/.test(ev?.hookSpecificOutput?.additionalContext ?? "") &&
       /stop work there/.test(ev?.hookSpecificOutput?.additionalContext ?? ""),
       String(ev?.hookSpecificOutput?.additionalContext ?? "").slice(0, 200) || "(silent)")
