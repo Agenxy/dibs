@@ -431,13 +431,15 @@ receiving native peer turns, another watcher adds no delivery guarantee.
 - A retained question marked `expired_unanswered` still accepts your late
   `respond(answer)` and notifies its asker. Expiry is not a health verdict.
   Other finished verdicts stay final; an expired request cannot be approved.
-- As sender, retract your unfinished request with
+- As sender, retract your unfinished request or unanswered question with
   `respond(msg_serial, disposition: "withdraw", body: reason, superseded_by: replacement)`.
   Reason and replacement are optional; the replacement must be another ordinary
-  request you sent. Withdrawal clears queued/owed work without claiming delivery
+  message of the same type you sent. Withdrawal clears queued/owed work without claiming delivery
   or stopping an agent. The recipient reads the withdrawal and `ack(msg_serial)`
   acknowledges it. An already-performed grant/adoption approval cannot be undone.
-  Questions expire and are not withdrawable. `tasks/cancel` only acknowledges
+  Answered or expired questions stay final. Human notifications receive a
+  best-effort removal request; this does not prove the banner was unseen or gone.
+  Unidentified older notifications cannot be removed this way. `tasks/cancel` only acknowledges
   cooperative cancellation; it does not grant sender withdrawal authority.
 - Answer with `respond(msg_serial, answer|approve|deny|decline)`. **Approving a
   request means you owe the work**: when it is delivered, `respond(msg_serial,

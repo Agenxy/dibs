@@ -22,6 +22,7 @@ import (
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/humanask"
 	"github.com/agenxy/dibs/internal/humankey"
+	"github.com/agenxy/dibs/internal/notify"
 	"github.com/agenxy/dibs/internal/paths"
 )
 
@@ -330,6 +331,8 @@ func sleepCtx(ctx context.Context, d time.Duration) {
 }
 
 func (r *relay) attach(ctx context.Context) error {
+	cleanupJobs, stopCleanup := r.startCleanupWorker(ctx)
+	defer stopCleanup()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, r.origin+"/api/human/stream", nil)
 	if err != nil {
 		return err
@@ -353,24 +356,53 @@ func (r *relay) attach(ctx context.Context) error {
 	sc := bufio.NewScanner(resp.Body)
 	sc.Buffer(make([]byte, 64<<10), 1<<20)
 	for sc.Scan() {
-		line := sc.Text()
-		data, ok := strings.CutPrefix(line, "data: ")
-		if !ok {
-			continue
-		}
-		var n engine.HumanNotice
-		if json.Unmarshal([]byte(data), &n) != nil || n.Serial == 0 {
-			continue
-		}
-		r.mu.Lock()
-		showing := r.busy[n.Serial]
-		r.busy[n.Serial] = true
-		r.mu.Unlock()
-		if !showing {
-			go r.handle(n)
+		data, ok := strings.CutPrefix(sc.Text(), "data: ")
+		if ok {
+			r.receiveNotice(data, cleanupJobs)
 		}
 	}
 	return sc.Err()
+}
+
+func (r *relay) startCleanupWorker(ctx context.Context) (chan<- *engine.NotificationCleanup, context.CancelFunc) {
+	cleanupCtx, stopCleanup := context.WithCancel(ctx)
+	cleanupJobs := make(chan *engine.NotificationCleanup, notify.CleanupBatch)
+	go func() {
+		for {
+			select {
+			case <-cleanupCtx.Done():
+				return
+			case batch := <-cleanupJobs:
+				r.cleanupNotifications(batch)
+			}
+		}
+	}()
+	return cleanupJobs, stopCleanup
+}
+
+func (r *relay) receiveNotice(data string, cleanupJobs chan<- *engine.NotificationCleanup) {
+	var n engine.HumanNotice
+	if json.Unmarshal([]byte(data), &n) != nil {
+		return
+	}
+	if n.Cleanup != nil {
+		select {
+		case cleanupJobs <- n.Cleanup:
+		default:
+			slog.Warn("notification cleanup queue full; removal is best effort")
+		}
+		return
+	}
+	if n.Serial == 0 {
+		return
+	}
+	r.mu.Lock()
+	showing := r.busy[n.Serial]
+	r.busy[n.Serial] = true
+	r.mu.Unlock()
+	if !showing {
+		go r.handle(n)
+	}
 }
 
 // handle shows one notice and sends back whatever the person said.
@@ -382,8 +414,10 @@ func (r *relay) handle(n engine.HumanNotice) {
 	}()
 	a, err := r.ask(humanask.Message{
 		Type: n.Type, From: n.From, Who: n.Who, Body: n.Body,
-		Choices: n.Choices, Grant: n.Grant, Adopt: n.Adopt, Serial: n.Serial,
-		Receipt: func(state string) { r.delivery(n.Serial, state, "") },
+		Choices: n.Choices, Grant: n.Grant, Adopt: n.Adopt, Serial: n.Serial, Node: r.st.Node,
+		Receipt: func(state string) {
+			r.delivery(n.Serial, state, "")
+		},
 	})
 	if err != nil {
 		r.delivery(n.Serial, "failed", err.Error())
@@ -409,6 +443,18 @@ func (r *relay) delivery(serial uint64, state, failure string) {
 		map[string]any{"serial": serial, "state": state, "error": failure}, nil)
 	if err != nil {
 		slog.Warn("notification receipt did not reach the board", "msg", serial, "state", state, "err", err)
+	}
+}
+
+func (r *relay) cleanupNotifications(batch *engine.NotificationCleanup) {
+	// The authenticated board may request cleanup only in the enrolled node's
+	// namespace. RemoveMessages validates all IDs and caps the batch again.
+	if batch.Node == "" || batch.Node != r.st.Node {
+		return
+	}
+	result := notify.RemoveMessages(batch.Node, batch.Serials)
+	for _, serial := range batch.Serials {
+		r.delivery(serial, "cleanup_"+result.State, result.Error)
 	}
 }
 

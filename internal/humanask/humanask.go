@@ -28,7 +28,8 @@ type Message struct {
 	Choices []string
 	Grant   string
 	Adopt   string
-	Serial  uint64 // for the log only
+	Serial  uint64 // stable message identity on Node
+	Node    string // board identity; serials are not global
 	Receipt notify.Receipt
 	ask     func(string, string, notify.Receipt, ...string) (string, error) // test presenter
 }
@@ -255,6 +256,11 @@ func (m Message) askNotification(title, body string, buttons ...string) (string,
 	ask := m.ask
 	if ask == nil {
 		ask = notify.AskWithReceipt
+		if m.Node != "" {
+			ask = func(title, body string, receipt notify.Receipt, buttons ...string) (string, error) {
+				return notify.AskMessage(m.Node, m.Serial, title, body, receipt, buttons...)
+			}
+		}
 	}
 	pressed, err := ask(title, body, m.Receipt, buttons...)
 	if pressed == DeferButton && m.Receipt != nil {

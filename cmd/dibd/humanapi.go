@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -226,7 +227,7 @@ func (h *humanAPI) stream(w http.ResponseWriter, r *http.Request) {
 	// the two is lost. A notice can then arrive twice, which a relay drops.
 	feed, detach := h.eng.AttachHumanRelay()
 	defer detach()
-	pending, err := h.eng.PendingForHuman(r.Context())
+	pending, err := h.initialHumanNotices(r.Context())
 	if err != nil {
 		humanRefuse(w, http.StatusServiceUnavailable, err.Error(), "try again shortly")
 		return
@@ -267,6 +268,18 @@ func (h *humanAPI) stream(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 	}
+}
+
+func (h *humanAPI) initialHumanNotices(ctx context.Context) ([]engine.HumanNotice, error) {
+	pending, err := h.eng.PendingForHuman(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cleanup, err := h.eng.HumanCleanupForRelay(ctx)
+	if cleanup != nil {
+		pending = append(pending, engine.HumanNotice{Cleanup: cleanup})
+	}
+	return pending, err
 }
 
 func (h *humanAPI) answer(w http.ResponseWriter, r *http.Request) {

@@ -77,7 +77,7 @@ own Mac and report a distinct cleanup receipt. Apply the late-post check there
 too. Validate receipt subjects through the existing human-message gate.
 
 On restart/relay reconnect, derive bounded cleanup requests from retained human
-question/request outcomes. Lost derived receipts remain unknown; rebuilding
+question/request outcomes, capped at 64 in one batched helper invocation. Lost derived receipts remain unknown; rebuilding
 cleanup never changes the ledger or invents delivery. Already garbage-collected
 messages and unidentified pre-upgrade UUID notifications are explicit limits.
 No new wake mechanism, autonomous answer or harness management is involved.

@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -51,6 +52,25 @@ func TestReceiptChild(t *testing.T) {
 }
 
 func asReceiptHelper() {
+	if os.Getenv("DIBS_TEST_CLEANUP_DRIVER") == "1" {
+		if len(os.Args) == 2 && strings.HasPrefix(os.Args[1], "--remove-messages=") {
+			mode := os.Getenv("DIBS_TEST_CLEANUP_MODE")
+			if mode == "old" {
+				os.Exit(2)
+			}
+			if mode == "crash" {
+				os.Exit(3)
+			}
+			if os.Args[1] != "--remove-messages=dibs.msg.board-A.7,dibs.msg.board-A.8" {
+				os.Exit(3)
+			}
+			_, _ = os.Stdout.WriteString(`{"cleanup":"requested"}`)
+			return
+		}
+		if os.Getenv("DIBS_NOTIFY_ID") != "dibs.msg.board-A.7" {
+			os.Exit(3)
+		}
+	}
 	if os.Getenv("DIBS_TEST_FOCUS_DRIVER") == "1" {
 		if len(os.Args) == 2 && os.Args[1] == "--settings" {
 			_, _ = os.Stdout.WriteString("timeSensitive=0\n")

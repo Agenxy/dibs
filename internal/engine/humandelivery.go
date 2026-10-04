@@ -27,20 +27,23 @@ type humanDelivery struct {
 	RelayCount int                     `json:"relay_count,omitempty"`
 	Error      string                  `json:"error,omitempty"`
 	Receipts   map[string]humanReceipt `json:"receipts,omitempty"`
+	Cleanup    *notify.Cleanup         `json:"notification_cleanup,omitempty"`
 }
 
 type humanReceipt struct {
-	label     string // per-message label; the enrolled device key stays internal
-	State     string `json:"state"`
-	Error     string `json:"error,omitempty"`
-	Posted    bool   `json:"posted,omitempty"`
-	Dismissed bool   `json:"dismissed,omitempty"`
+	label     string          // per-message label; the enrolled device key stays internal
+	State     string          `json:"state"`
+	Error     string          `json:"error,omitempty"`
+	Posted    bool            `json:"posted,omitempty"`
+	Dismissed bool            `json:"dismissed,omitempty"`
+	Cleanup   *notify.Cleanup `json:"notification_cleanup,omitempty"`
 }
 
 type humanDeliveries struct {
 	mu       sync.Mutex
 	notifier HumanNotifier
 	bySerial map[uint64]humanDelivery
+	cleanup  chan NotificationCleanup
 }
 
 // SetHumanNotifier supplies a desktop implementation; relay dispatch is unchanged.
@@ -116,12 +119,15 @@ func (e *Engine) dispatchHuman(res core.Result) {
 func (e *Engine) askHumanDesktop(n HumanNotice, ask func(humanask.Message) (humanask.Answer, error)) {
 	a, err := ask(humanask.Message{
 		Type: n.Type, From: n.From, Who: n.Who, Body: n.Body,
-		Choices: n.Choices, Grant: n.Grant, Adopt: n.Adopt, Serial: n.Serial,
+		Choices: n.Choices, Grant: n.Grant, Adopt: n.Adopt, Serial: n.Serial, Node: n.Node,
 		Receipt: func(state string) {
 			if state == "posted" {
 				e.setHumanPresentation(n.Serial, e.humanPresentation(), true)
 			}
 			e.recordHumanDelivery(n.Serial, "desktop", state, "")
+			if state == "posted" {
+				e.cleanupLateHumanPost(n.Serial)
+			}
 		},
 	})
 	if err != nil {
@@ -137,6 +143,9 @@ func (e *Engine) askHumanDesktop(n HumanNotice, ask func(humanask.Message) (huma
 func (e *Engine) recordHumanDelivery(serial uint64, source, state, failure string) bool {
 	e.humanDelivery.mu.Lock()
 	defer e.humanDelivery.mu.Unlock()
+	if e.humanDelivery.bySerial == nil {
+		e.humanDelivery.bySerial = map[uint64]humanDelivery{}
+	}
 	d, ok := e.humanDelivery.bySerial[serial]
 	if !ok {
 		d = humanDelivery{Route: "relay", State: "queued"}
@@ -151,13 +160,28 @@ func (e *Engine) recordHumanDelivery(serial uint64, source, state, failure strin
 		}
 		r.label = receiptLabel(source, d.Receipts)
 	}
+	if strings.HasPrefix(state, "cleanup_") {
+		r.Cleanup = &notify.Cleanup{State: strings.TrimPrefix(state, "cleanup_"), BestEffort: true, Error: failure}
+		d.Receipts[source] = r
+		if source == "desktop" {
+			d.Cleanup = r.Cleanup
+		}
+		e.humanDelivery.bySerial[serial] = d
+		return true
+	}
 	r.State, r.Error = state, failure
 	r.Posted = r.Posted || state == "posted"
 	d.Posted = d.Posted || r.Posted
 	r.Dismissed = r.Dismissed || state == "dismissed"
 	d.Receipts[source] = r
-	// Each source's last receipt is retained. A failure on one attached Mac
-	// must not erase affirmative posting evidence from another.
+	recomputeHumanDelivery(&d)
+	e.humanDelivery.bySerial[serial] = d
+	return true
+}
+
+// Each source's last receipt is retained. A failure on one attached Mac
+// must not erase affirmative posting evidence from another.
+func recomputeHumanDelivery(d *humanDelivery) {
 	d.State, d.Error = "queued", ""
 	for _, r := range d.Receipts {
 		confirmed := confirmedReceiptState(r)
@@ -166,11 +190,6 @@ func (e *Engine) recordHumanDelivery(serial uint64, source, state, failure strin
 			d.State, d.Error = confirmed, r.Error
 		}
 	}
-	if e.humanDelivery.bySerial == nil {
-		e.humanDelivery.bySerial = map[uint64]humanDelivery{}
-	}
-	e.humanDelivery.bySerial[serial] = d
-	return true
 }
 
 func receiptLabel(source string, receipts map[string]humanReceipt) string {
@@ -224,6 +243,9 @@ func (e *Engine) ReportHumanDelivery(ctx context.Context, serial uint64, source,
 			invalid = fmt.Errorf("notification receipt source limit reached (64)")
 			return nil
 		}
+		if state == "posted" && humanDecision(m) {
+			e.requestHumanCleanup([]uint64{serial})
+		}
 		return core.Result{"ok": true}
 	})
 	if err != nil {
@@ -239,13 +261,15 @@ func validateHumanReceipt(source, state, failure string) error {
 	if source == "" || source == "desktop" || len(source) > 128 {
 		return fmt.Errorf("invalid relay receipt source")
 	}
-	if state != "posted" && state != "dismissed" && state != "failed" {
+	if state != "posted" && state != "dismissed" && state != "failed" &&
+		state != "cleanup_requested" && state != "cleanup_failed" && state != "cleanup_unsupported" {
 		return fmt.Errorf("unsupported notification receipt %q", state)
 	}
 	if len(failure) > 4096 {
 		return fmt.Errorf("notification error exceeds 4096 bytes")
 	}
-	if state == "failed" && strings.TrimSpace(failure) == "" {
+	failureState := state == "failed" || state == "cleanup_failed" || state == "cleanup_unsupported"
+	if failureState && strings.TrimSpace(failure) == "" {
 		return fmt.Errorf("a failed receipt needs its error")
 	}
 	return nil
@@ -268,7 +292,7 @@ func (e *Engine) deliveryForHuman(m *core.Message) humanDelivery {
 	}
 	// The answer is replayable evidence, unlike notification receipts.
 	if m.RespondedAt != 0 {
-		d.State = "answered"
+		d.State = m.State
 		d.Error = ""
 	}
 	return d
