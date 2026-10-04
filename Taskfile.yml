@@ -71,6 +71,10 @@ tasks:
     vars:
       DEST: '{{.DEST | default (printf "%s/.local/bin" .HOME)}}'
     cmds:
+      # A one-off GOFLAGS -X changed a clean source install's pseudo-version
+      # into devel+sha and silently changed guest/update version policy. Check
+      # the actual built images before signing or replacing anything.
+      - go run ./tools/installstamp
       # rm before cp, deliberately.
       #
       # macOS caches a binary's code-signature validation against its INODE.
