@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/boardconfig"
+	"github.com/agenxy/dibs/internal/build"
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/invites"
@@ -32,6 +33,13 @@ import (
 // The actual CLI dispatches --out through real MCP issuance. This is private
 // export acceptance, not published-artifact, harness or external WAN acceptance.
 func TestGuestInviteExportThroughActualCLI(t *testing.T) {
+	// This in-process issuer exercises development provisioning. Its version
+	// is a fixture, not the ambient parent test binary's linker stamp; released
+	// issuer refusal is covered through the shipped-daemon door separately.
+	const fixtureVersion = "devel+guest-fixture"
+	priorVersion := build.Version
+	build.Version = fixtureVersion
+	t.Cleanup(func() { build.Version = priorVersion })
 	bin := filepath.Join(t.TempDir(), "dibs")
 	if out, err := exec.Command("go", "build", "-o", bin, "../dibs").CombinedOutput(); err != nil {
 		t.Fatalf("build CLI: %v %s", err, out)
@@ -242,8 +250,8 @@ func TestGuestInviteExportThroughActualCLI(t *testing.T) {
 		Release      *selfupdate.GuestReleaseMetadata `json:"bridge_release"`
 		Provisioning json.RawMessage                  `json:"bridge_provisioning"`
 	}
-	if err = json.Unmarshal(metadataBody, &withRelease); err != nil || withRelease.Release == nil || withRelease.Release.Tag != "v0.0.9" || withRelease.Release.Status != "INCOMPLETE" || len(withRelease.Release.Assets) != 3 || !strings.HasPrefix(withRelease.Release.BoardBuild, "devel") {
-		t.Fatal("actual CLI export dropped verified release metadata or actual devel-board provenance")
+	if err = json.Unmarshal(metadataBody, &withRelease); err != nil || withRelease.Release == nil || withRelease.Release.Tag != "v0.0.9" || withRelease.Release.Status != "INCOMPLETE" || len(withRelease.Release.Assets) != 3 || withRelease.Release.BoardBuild != fixtureVersion {
+		t.Fatal("actual CLI export dropped verified release metadata or exact issuer provenance")
 	}
 	if err = withRelease.Release.Validate(); err != nil {
 		t.Fatal(err)
