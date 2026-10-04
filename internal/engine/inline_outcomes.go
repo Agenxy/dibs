@@ -40,6 +40,11 @@ func (e *Engine) outcomeGroups(agent string) []outcomeGroup {
 func sortOutcomeGroups(groups []outcomeGroup) {
 	sort.Slice(groups, func(i, j int) bool {
 		a, b := groups[i], groups[j]
+		// A review can expire between eligibility and the fresh unit snapshot.
+		// Empty groups quote/read nothing and sort behind retained outcomes.
+		if len(a.units) == 0 || len(b.units) == 0 {
+			return len(a.units) > len(b.units)
+		}
 		as, bs := a.units[len(a.units)-1].serial, b.units[len(b.units)-1].serial
 		if as != bs {
 			return as > bs
