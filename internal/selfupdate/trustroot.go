@@ -22,6 +22,17 @@ import (
 //go:embed sigstore-trusted-root.json
 var sigstoreTrustedRoot string
 
+// PinnedSigstoreRoot returns an owned copy of the same embedded, pin-checked
+// verification root used for installed release evidence. It grants no signing
+// identity or installation authority; callers still need their closed policy.
+func PinnedSigstoreRoot() ([]byte, error) {
+	data := []byte(sigstoreTrustedRoot)
+	if err := checkTrustedRoot(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
 const (
 	sigstoreTrustedRootSHA256 = "6494e21ea73fa7ee769f85f57d5a3e6a08725eae1e38c755fc3517c9e6bc0b66"
 	sigstoreTUFMirror         = "https://tuf-repo-cdn.sigstore.dev"

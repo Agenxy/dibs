@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -26,7 +27,7 @@ const (
 	workflowPath = ".github/workflows/release.yml"
 	artifactName = "release-preflight"
 	phases       = "validate, preflight, commit-tag, authorize-receipt, authorize, finalize, " +
-		"delivery-rehearsal, publish or cask"
+		"delivery-rehearsal, full-publication-validate, full-publication, publish or cask"
 )
 
 var (
@@ -36,21 +37,27 @@ var (
 
 type config struct {
 	version, sha, phase, receiptPath, runID, attempt, workflowSHA string
+	target, publicationRun                                        string
+	negativeControl                                               bool
+	destination                                                   publicationTarget
+	publicationAudit                                              *publicationAudit
+	publicClient                                                  *http.Client
 	rehearsal                                                     bool
 	deliveryRehearsal                                             bool
 }
 
 type receipt struct {
-	Schema      int    `json:"schema"`
-	Repository  string `json:"repository"`
-	RunID       string `json:"run_id"`
-	Attempt     string `json:"attempt"`
-	WorkflowSHA string `json:"workflow_sha"`
-	Version     string `json:"version"`
-	SHA         string `json:"sha"`
-	Tree        string `json:"tree"`
-	TagOID      string `json:"tag_oid"`
-	Rehearsal   *bool  `json:"rehearsal"`
+	Schema         int    `json:"schema"`
+	Repository     string `json:"repository"`
+	RunID          string `json:"run_id"`
+	Attempt        string `json:"attempt"`
+	WorkflowSHA    string `json:"workflow_sha"`
+	Version        string `json:"version"`
+	SHA            string `json:"sha"`
+	Tree           string `json:"tree"`
+	TagOID         string `json:"tag_oid"`
+	Rehearsal      *bool  `json:"rehearsal"`
+	PublicationRun string `json:"full_publication_run,omitempty"`
 }
 
 // command is a test seam at the subprocess boundary, not a second release path.
@@ -58,10 +65,11 @@ type receipt struct {
 type runner func(context.Context, []string, string, ...string) ([]byte, error)
 
 func command(ctx context.Context, env []string, name string, args ...string) ([]byte, error) {
-	// #nosec G204 -- fixed executable names, typed argv, canonical version/SHA.
+	// #nosec G204,G702 -- call sites use fixed executables, typed argv and validated version/SHA.
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Env = append(os.Environ(), env...)
-	if name != "git" && name != "gh" {
+	verify := name == "cosign" && len(args) > 0 && args[0] == "verify-blob"
+	if name != "git" && name != "gh" && !verify {
 		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 		if err := cmd.Run(); err != nil {
 			return nil, fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err)
@@ -83,6 +91,8 @@ func main() {
 		receiptPath: os.Getenv("DIBS_RELEASE_RECEIPT"), runID: os.Getenv("DIBS_PREFLIGHT_RUN"),
 		attempt: os.Getenv("GITHUB_RUN_ATTEMPT"), workflowSHA: os.Getenv("GITHUB_SHA"),
 		rehearsal: os.Getenv("DIBS_RELEASE_REHEARSAL") == "true",
+		target:    os.Getenv("DIBS_RELEASE_TARGET"), publicationRun: os.Getenv("DIBS_FULL_PUBLICATION_RUN"),
+		negativeControl: os.Getenv("DIBS_RELEASE_DISCOVERY_NEGATIVE_CONTROL") == "true",
 	}
 	if c.runID == "" {
 		c.runID = os.Getenv("GITHUB_RUN_ID")
@@ -98,6 +108,11 @@ func main() {
 }
 
 func execute(ctx context.Context, c config, run runner) error {
+	destination, err := resolveTarget(c)
+	if err != nil {
+		return err
+	}
+	c.destination = destination
 	if c.phase == "finalize" {
 		return finalize(ctx, c, run)
 	}
@@ -110,10 +125,9 @@ func execute(ctx context.Context, c config, run runner) error {
 	case "commit-tag":
 		return commitTag(ctx, c, run)
 	case "validate":
-		if err := mainContext(); err != nil {
-			return err
-		}
-		return candidate(ctx, c, run)
+		return validateCandidate(ctx, c, run)
+	case "full-publication-validate", "full-publication":
+		return fullPublication(ctx, c, run)
 	case "authorize", "authorize-receipt":
 		return authorize(ctx, c, run)
 	case "delivery-rehearsal":
@@ -133,6 +147,16 @@ func execute(ctx context.Context, c config, run runner) error {
 	}
 }
 
+func validateCandidate(ctx context.Context, c config, run runner) error {
+	if err := mainContext(); err != nil {
+		return err
+	}
+	if err := candidate(ctx, c, run); err != nil {
+		return err
+	}
+	return requirePublication(ctx, c, run)
+}
+
 func finalize(ctx context.Context, c config, run runner) error {
 	r, err := authenticatedReceipt(ctx, c.runID, run)
 	if errors.Is(err, errNotPreflight) {
@@ -146,9 +170,18 @@ func finalize(ctx context.Context, c config, run runner) error {
 	if *r.Rehearsal {
 		ref, mode = "main", "delivery-rehearsal"
 	}
-	_, err = run(ctx, nil, "gh", "workflow", "run", "release.yml", "--repo", repository,
-		"--ref", ref, "-f", "mode="+mode, "-f", "version="+r.Version,
-		"-f", "sha="+r.SHA, "-f", "preflight_run="+r.RunID)
+	args := []string{
+		"workflow", "run", "release.yml", "--repo", repository,
+		"--ref", ref, "-f", "mode=" + mode, "-f", "version=" + r.Version,
+		"-f", "sha=" + r.SHA, "-f", "preflight_run=" + r.RunID,
+	}
+	if !*r.Rehearsal {
+		if !positiveID(r.PublicationRun) {
+			return errors.New("authenticated preflight lacks a full-publication run; refuse publication dispatch")
+		}
+		args = append(args, "-f", "full_publication_run="+r.PublicationRun)
+	}
+	_, err = run(ctx, nil, "gh", args...)
 	return err
 }
 
@@ -167,7 +200,13 @@ func commitTag(ctx context.Context, c config, run runner) error {
 	if *r.Rehearsal {
 		return errors.New("rehearsal receipt can NEVER create a tag")
 	}
+	if err = bindPublicationRun(&c, r); err != nil {
+		return err
+	}
 	if err = candidate(ctx, c, run); err != nil {
+		return err
+	}
+	if err = requirePublication(ctx, c, run); err != nil {
 		return err
 	}
 	if err = localTag(ctx, c, run); err != nil {
@@ -197,6 +236,12 @@ func authorize(ctx context.Context, c config, run runner) error {
 	}
 	if *r.Rehearsal {
 		return errors.New("rehearsal receipt can NEVER sign or publish")
+	}
+	if err = bindPublicationRun(&c, r); err != nil {
+		return err
+	}
+	if err = requirePublication(ctx, c, run); err != nil {
+		return err
 	}
 	if c.phase == "authorize" {
 		if err = checkoutMatches(ctx, c.sha, r.Tree, run); err != nil {
@@ -242,6 +287,13 @@ func mainContext() error {
 }
 
 func preflight(ctx context.Context, c config, run runner) error {
+	if err := preparePreflight(ctx, c, run); err != nil {
+		return err
+	}
+	return buildPreflight(ctx, c, run)
+}
+
+func preparePreflight(ctx context.Context, c config, run runner) error {
 	if err := mainContext(); err != nil {
 		return err
 	}
@@ -251,9 +303,16 @@ func preflight(ctx context.Context, c config, run runner) error {
 	if err := candidate(ctx, c, run); err != nil {
 		return err
 	}
+	if err := requirePublication(ctx, c, run); err != nil {
+		return err
+	}
 	if err := localTag(ctx, c, run); err != nil {
 		return err
 	}
+	return nil
+}
+
+func buildPreflight(ctx context.Context, c config, run runner) error {
 	if c.rehearsal {
 		return errors.New("deliberate preflight gate failure: no receipt, remote tag or publication")
 	}
@@ -299,6 +358,7 @@ func writeReceipt(ctx context.Context, c config, run runner) error {
 		Schema: 1, Repository: repository, RunID: c.runID, Attempt: c.attempt, WorkflowSHA: c.workflowSHA,
 		Version: c.version, SHA: c.sha, Tree: strings.TrimSpace(string(tree)),
 		TagOID: strings.TrimSpace(string(tag)), Rehearsal: &rehearsal,
+		PublicationRun: c.publicationRun,
 	}
 	data, err := json.Marshal(r)
 	if err != nil {
@@ -361,7 +421,7 @@ func candidate(ctx context.Context, c config, run runner) error {
 }
 
 func remoteTag(ctx context.Context, c config, required bool, run runner) error {
-	ref := "refs/tags/v" + c.version
+	ref := "refs/tags/" + targetOf(c).tag
 	out, err := run(ctx, nil, "git", "ls-remote", "--tags", "origin", ref, ref+"^{}")
 	if err != nil {
 		return err

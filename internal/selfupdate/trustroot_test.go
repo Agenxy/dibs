@@ -68,6 +68,21 @@ func TestEmbeddedSigstoreRootHasFrozenPin(t *testing.T) {
 	}
 }
 
+func TestPinnedSigstoreRootReturnsOwnedSameTrustBytes(t *testing.T) {
+	root, err := PinnedSigstoreRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(root) != sigstoreTrustedRoot {
+		t.Fatal("shared verifier root differs from installed trust")
+	}
+	root[0] ^= 1
+	fresh, err := PinnedSigstoreRoot()
+	if err != nil || string(fresh) != sigstoreTrustedRoot {
+		t.Fatal("caller modified embedded authority")
+	}
+}
+
 func TestReleaseRootGateUsesFreshAuthenticatedProductionTUF(t *testing.T) {
 	exe, err := os.Executable()
 	if err != nil {

@@ -1,0 +1,52 @@
+name: release proof check
+
+# The SAME production validation entry, in a separate non-publishing job.
+# Its name deliberately does not match release-finalize.yml's release filter.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Canonical version of the committed candidate
+        type: string
+        required: true
+      sha:
+        description: Full current protected-main candidate SHA
+        type: string
+        required: true
+      full_publication_run:
+        description: Successful exact-candidate closed-scratch publication run
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  DIBS_RELEASE_VERSION: ${{ inputs.version }}
+  DIBS_RELEASE_SHA: ${{ inputs.sha }}
+  DIBS_FULL_PUBLICATION_RUN: ${{ inputs.full_publication_run }}
+  GH_TOKEN: ${{ github.token }}
+  GITHUB_TOKEN: ${{ github.token }}
+
+jobs:
+  proof-check:
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    steps:
+      # Trusted current main, never the unchecked SHA supplied by a dispatch.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: 2026.7.7
+          experimental: true
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
+      - name: exact production candidate and public signed evidence validation only
+        run: go run ./tools/releaseflow -phase validate
