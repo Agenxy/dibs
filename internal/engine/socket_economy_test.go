@@ -92,6 +92,88 @@ func (f *daemonEconomyFixture) receive(t *testing.T, within time.Duration) strin
 	}
 }
 
+// Advance only the already-observed busy timestamp on the writer loop. The
+// fixture must enter busy through production auth/hooks, never a flag setter.
+func (f *daemonEconomyFixture) ageBusy(t *testing.T, age time.Duration) {
+	t.Helper()
+	_, err := f.e.query(f.ctx, func() core.Result {
+		key := socketSessionKey(f.e.state.Agents["worker"])
+		turn := f.e.socketTurns[key]
+		if turn.state != "busy" || turn.at.IsZero() {
+			t.Error("setup: no production busy observation to advance")
+			return nil
+		}
+		turn.at = time.Now().Add(-age)
+		f.e.socketTurns[key] = turn
+		f.e.socketReadyTick(time.Now())
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSocketEconomyAuthenticatedBusyWithoutStopRecovers(t *testing.T) {
+	f := newDaemonEconomyFixture(t)
+	// A real token-authenticated call, with no subsequent Stop, is the failure
+	// door: an external CLI call or lost hook must not suppress mail forever.
+	f.do(t, &core.Op{Kind: core.OpAckBoard, Token: f.token})
+	f.do(t, &core.Op{Kind: core.OpSendMessage, Token: f.sender, To: "worker", MsgType: core.MsgRequest, Body: "missing-stop-first"})
+	f.ageBusy(t, 30*time.Minute-time.Second)
+	if !f.e.wakeStamp("worker").IsZero() {
+		t.Fatal("busy evidence scheduled a native writer before its ceiling")
+	}
+	select {
+	case text := <-f.wire:
+		t.Fatalf("busy evidence wrote before its ceiling: %q", text)
+	default:
+	}
+	f.ageBusy(t, 30*time.Minute)
+	if text := f.receive(t, time.Second); !strings.Contains(text, "missing-stop-first") {
+		t.Fatalf("expired busy evidence lost actionable mail: %q", text)
+	}
+	// The recovery is unknown, not an invented idle observation, and a second
+	// actionable message cannot spend another socket wake in the same epoch.
+	f.do(t, &core.Op{Kind: core.OpSendMessage, Token: f.sender, To: "worker", MsgType: core.MsgQuestion, Body: "missing-stop-second"})
+	r, err := f.e.query(f.ctx, func() core.Result {
+		l := f.e.state.Agents["worker"]
+		f.e.socketReadyTick(time.Now())
+		return core.Result{"lifecycle": f.e.socketLifecycle(l, time.Now()), "offers": f.e.nextSocketOffer}
+	})
+	if err != nil || r["lifecycle"] != "unknown" || r["offers"] != uint64(1) {
+		t.Fatalf("recovery was not one coalesced unknown wake: %v %v", r, err)
+	}
+	select {
+	case text := <-f.wire:
+		t.Fatalf("silent busy recovery wrote a second frame: %q", text)
+	default:
+	}
+}
+
+func TestSocketEconomyBusyCeilingRefreshesAtProductionActivity(t *testing.T) {
+	for _, event := range []string{"authenticated call", "PreToolUse", "PostToolUse", "UserPromptSubmit", "PermissionRequest"} {
+		t.Run(event, func(t *testing.T) {
+			f := newDaemonEconomyFixture(t)
+			f.do(t, &core.Op{Kind: core.OpAckBoard, Token: f.token})
+			f.ageBusy(t, 29*time.Minute)
+			before := time.Now()
+			if event == "authenticated call" {
+				f.do(t, &core.Op{Kind: core.OpAckBoard, Token: f.token})
+			} else {
+				f.hook(t, event, false)
+			}
+			r, err := f.e.query(f.ctx, func() core.Result {
+				l := f.e.state.Agents["worker"]
+				turn := f.e.socketTurns[socketSessionKey(l)]
+				return core.Result{"fresh": !turn.at.Before(before), "lifecycle": f.e.socketLifecycle(l, turn.at.Add(29*time.Minute))}
+			})
+			if err != nil || r["fresh"] != true || r["lifecycle"] != "busy" {
+				t.Fatalf("production activity did not refresh the busy ceiling: %v %v", r, err)
+			}
+		})
+	}
+}
+
 func TestSocketEconomyDaemonFallbackUsesLifecycleAndDueSlots(t *testing.T) {
 	for _, mode := range []string{"busy", "informational", "idle", "due waits"} {
 		t.Run(mode, func(t *testing.T) {

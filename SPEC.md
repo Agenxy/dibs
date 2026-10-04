@@ -770,9 +770,13 @@ It neither marks mail delivered nor drains agent updates or announcements;
 unlike `inbox` and `hook_poll`, it spends no delivery or agent call budget.
 Credential and session checks share the digest's single writer-loop snapshot.
 
-Socket digests require an actionable cause and an idle lifecycle observation.
-Starting hooks and actual model calls establish busy until a finishing hook;
-busy never expires into idle. Unknown lifecycle retains the existing bounded
+Socket digests require an actionable cause and idle or recovered unknown lifecycle.
+Starting and tool hooks and every authenticated model/tool call establish or
+refresh busy; observer subscriptions do not. A token can also be used by a CLI,
+subagent or plugin outside the session's turn, and a finishing hook can be lost.
+After 30 minutes without a busy observation, busy becomes unknown, never idle,
+so missing Stop evidence cannot permanently disable waking. A finishing hook
+establishes idle immediately. Unknown lifecycle retains the existing bounded
 contact/boot grace, then permits one coalesced actionable or due-wait wake.
 FYI, progress, accepted reviews and queue updates do not independently cause
 socket delivery. Requests, questions, handoffs, human notifications, approvals,

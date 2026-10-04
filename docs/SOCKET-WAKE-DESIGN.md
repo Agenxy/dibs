@@ -51,8 +51,8 @@ the ended marker too. Recency timeout alone is not an idle proof, especially
 for a long-running turn. Socket eligibility must therefore use explicit
 lifecycle state, retaining the current-session boundary and host identity.
 Use three states: a current finishing hook establishes idle; a starting hook
-or actual model/tool activity establishes busy and stays busy until the next
-finishing hook; absent observations are unknown. A blocked/continued Stop
+or authenticated model/tool activity establishes busy and refreshes its age;
+a finishing hook establishes idle. Absent observations are unknown. A blocked/continued Stop
 retracts idle. These are derived observations, never core or ledger fields.
 
 Recovery rule accepted in 27721: unknown after a daemon restart retains
@@ -61,8 +61,12 @@ actionable mail or a due wait. Unknown never qualifies informational-only
 items, and logs must call it unknown rather than idle. This preserves idle
 agents' reachability when the prior Stop was lost; its explicit limit is one
 possible unnecessary wake before the first lifecycle observation. A known
-busy turn never ages into idle, however long it lasts. Requiring a new Stop
-in the unknown case would strand already-idle sessions indefinitely.
+busy turn never ages into idle. Review 28532 added a 30-minute silence ceiling:
+busy becomes unknown when no starting/tool/permission hook or authenticated
+call has refreshed it. A CLI, subagent or plugin can use the token outside the
+session's turn, and a Stop can be lost; neither can permanently disable waking.
+Fresh activity keeps a long turn busy. Requiring a new Stop in the unknown
+case would strand already-idle sessions indefinitely.
 
 The daemon and a claiming stdio bridge remain alternative writers. Do not
 add a third writer or surrender the bridge merely because a particular

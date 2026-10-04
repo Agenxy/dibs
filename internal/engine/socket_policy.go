@@ -11,8 +11,8 @@ import (
 )
 
 // Lifecycle and delivery epochs are observations, not coordination state.
-// Neither survives replay. A lost Stop therefore becomes unknown, never busy
-// inferred from a lease or idle inferred from silence.
+// Neither survives replay. A lost Stop becomes unknown after bounded silence,
+// never busy inferred from a lease or idle inferred from silence.
 type socketTurn struct {
 	state string
 	at    time.Time
@@ -63,10 +63,17 @@ func (e *Engine) noteSocketIdle(l *core.Agent, now time.Time) {
 	e.socketTurns[socketSessionKey(l)] = socketTurn{state: "idle", at: now}
 }
 
-// Actual lifecycle observations never time out. Only unknown has a grace,
-// using the existing route contact window (also used for boot/registration).
+// Authenticated calls can come from outside the session's turn, and a Stop can
+// be lost. Silence cannot prove idle, but must not suppress wakes forever.
+const socketBusyCeiling = 30 * time.Minute
+
+// Fresh busy observations suppress sockets; stale ones become unknown. Only
+// unobserved lifecycle has the route contact/boot grace before recovery.
 func (e *Engine) socketLifecycle(l *core.Agent, now time.Time) string {
 	if turn := e.socketTurns[socketSessionKey(l)]; turn.state != "" {
+		if turn.state == "busy" && now.Sub(turn.at) >= socketBusyCeiling {
+			return "unknown"
+		}
 		return turn.state
 	}
 	if last := e.lastEvidenceOf(l); !last.IsZero() && now.Sub(last) < e.recencyWindow(l) {

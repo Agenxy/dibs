@@ -12,7 +12,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   wake for requests, questions, handoffs, human notifications, answers,
   approvals, flagged reviews and due declared waits; DONE wakes a sender that
   currently declares it is waiting. Due slots keep independent clocks and
-  bounded retries. Unknown sessions retain a bounded recovery grace. Shared
+  bounded retries. Busy evidence falls back to unknown after 30 minutes of
+  silence, so a lost Stop or an external token call cannot disable waking.
+  Unknown sessions retain a bounded recovery grace. Shared
   mailboxes use one authenticated batch and one host/session wake epoch;
   failed writes retain hook fallback. Senders are told when a positively dead
   harness has no delivery route. Routine strict-hook identity omission is
