@@ -350,7 +350,7 @@ func TestSocketEconomyUsesLifecycleAndPreservesHookDelivery(t *testing.T) {
 }
 
 func TestSocketEconomyVerdictsUseCurrentWaitingAndCanonicalKind(t *testing.T) {
-	for _, mode := range []string{"approved", "answered", "flag", "flag-after-done", "progress", "accepted", "done-waiting", "done-unblocked"} {
+	for _, mode := range []string{"approved", "grant-approved", "answered", "flag", "flag-after-done", "progress", "accepted", "done-waiting", "done-unblocked"} {
 		t.Run(mode, func(t *testing.T) {
 			f := newEconomyFixture(t)
 			f.tool(t, "check_in", map[string]any{"token": f.worker})
@@ -360,12 +360,22 @@ func TestSocketEconomyVerdictsUseCurrentWaitingAndCanonicalKind(t *testing.T) {
 				from, to = f.sender, "worker"
 			}
 			kind := "request"
+			approver := f.sender
 			if mode == "answered" {
 				kind = "question"
 			}
 			args := map[string]any{"token": from, "to": to, "type": kind, "body": "verdict fixture"}
 			if kind == "request" {
 				args["milestones"] = []string{"build"}
+			}
+			if mode == "grant-approved" {
+				human, token, err := f.eng.HumanAgent(t.Context())
+				if err != nil || human == "" || token == "" {
+					t.Fatalf("setup: human approval identity: %v", err)
+				}
+				args["to"], args["grant"] = "human", "coordinator"
+				delete(args, "milestones")
+				approver = token // the OS-owned actor must approve its own request
 			}
 			sent := f.tool(t, "send", args)
 			serial := sent["msg_serial"]
@@ -375,7 +385,7 @@ func TestSocketEconomyVerdictsUseCurrentWaitingAndCanonicalKind(t *testing.T) {
 				f.hook(t, "UserPromptSubmit")
 				f.waitOffer(t)
 			}
-			worker := f.sender
+			worker := approver
 			if review {
 				worker = f.worker
 			}
@@ -386,7 +396,7 @@ func TestSocketEconomyVerdictsUseCurrentWaitingAndCanonicalKind(t *testing.T) {
 				}
 				f.tool(t, "respond", a)
 			}
-			if mode != "approved" && mode != "answered" {
+			if mode != "approved" && mode != "grant-approved" && mode != "answered" {
 				respond("approve", false)
 				if !review {
 					if got := f.waitOffer(t); got != "" {
@@ -407,7 +417,7 @@ func TestSocketEconomyVerdictsUseCurrentWaitingAndCanonicalKind(t *testing.T) {
 			}
 			f.idle(t)
 			switch mode {
-			case "approved":
+			case "approved", "grant-approved":
 				respond("approve", false)
 			case "answered":
 				respond("answer", false)
@@ -421,14 +431,17 @@ func TestSocketEconomyVerdictsUseCurrentWaitingAndCanonicalKind(t *testing.T) {
 				respond("done", false)
 			}
 			text := f.waitOffer(t)
-			wakes := mode == "approved" || mode == "answered" || mode == "flag" || mode == "flag-after-done" || mode == "done-waiting"
+			wakes := mode == "grant-approved" || mode == "answered" || mode == "flag" || mode == "flag-after-done" || mode == "done-waiting"
 			if wakes {
 				if text == "" || len(collect(f.lines, 2, time.Second)) != 2 {
 					t.Fatalf("idle %s produced no real socket wake: %q", mode, text)
 				}
 				f.waitWritten(t)
-			} else if text != "" || len(collect(f.lines, 1, 100*time.Millisecond)) != 0 {
-				t.Fatalf("informational %s wrote a socket wake: %q", mode, text)
+			} else {
+				wire := collect(f.lines, 2, 100*time.Millisecond)
+				if text != "" || len(wire) != 0 {
+					t.Fatalf("informational %s offered %q and wrote frames %v", mode, text, wire)
+				}
 			}
 			if got := f.hook(t, "Stop"); !strings.Contains(got, "AGENT:") {
 				t.Fatalf("%s lost its full hook fallback: %s", mode, got)

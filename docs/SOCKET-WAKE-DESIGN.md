@@ -101,8 +101,11 @@ contract, instead of assuming a mailbox digest already contains them.
 Quote all qualifying due slots; do not call a later wait due merely because
 a shorter wait is ready. Preserve the existing bounded recheck cadence.
 
-Classification accepted in 27721: approvals, answers and flagged reviews
-wake an idle agent; progress, accepted reviews and queue changes do not.
+Classification refined in 28814 after live use: answers, denials, declines,
+flagged reviews and grant/adoption verdicts wake an idle agent. Approval of an
+ordinary work request is informational, alongside progress, accepted reviews
+and queue changes. The request's typed `grant` and `adopt` fields distinguish
+an approval with an effect from acceptance of work; never match its prose.
 DONE wakes an idle sender only when that sender currently holds a declaration
 whose `waiting` field is set. Otherwise it rides the next hook or actionable
 delivery. Evaluate the current declarations at wake time, never ledger this

@@ -192,8 +192,9 @@ lifecycle and cause decision. Busy sessions use their full-mail Stop hook;
 informational-only mail waits for that hook or the next actionable wake. An
 idle session gets one coalesced write for actionable mail or due waits until
 actual turn evidence. Unknown lifecycle gets the existing bounded grace and
-then one recovery write, explicitly logged as unknown. Answers, approvals and
-flagged reviews qualify; DONE qualifies for a sender currently declaring a
+then one recovery write, explicitly logged as unknown. Answers, denials,
+declines, grant/adoption verdicts and flagged reviews qualify; ordinary work
+approvals use the hook path. DONE qualifies for a sender currently declaring a
 wait. A successful kernel write remains best effort, with hook fallback until
 turn evidence. Due waits keep independent clocks and retry limits. See
 `docs/SOCKET-WAKE-DESIGN.md` for the measured baseline, additive batch protocol

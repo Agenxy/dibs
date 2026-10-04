@@ -779,8 +779,11 @@ so missing Stop evidence cannot permanently disable waking. A finishing hook
 establishes idle immediately. Unknown lifecycle retains the existing bounded
 contact/boot grace, then permits one coalesced actionable or due-wait wake.
 FYI, progress, accepted reviews and queue updates do not independently cause
-socket delivery. Requests, questions, handoffs, human notifications, approvals,
-answers and flagged reviews do; DONE qualifies only when the sender currently
+socket delivery. Requests, questions, handoffs, human notifications, answers,
+denials, declines, flagged reviews and grant/adoption verdicts do. Approval of
+an ordinary work request is informational: it accepts work without performing
+a permission or mailbox effect. Eligibility reads the request's typed `grant`
+and `adopt` fields, never the notice text. DONE qualifies only when the sender currently
 holds a declaration with `waiting` set. Full outstanding mail remains available
 to delivering hooks and authenticated pulls.
 
