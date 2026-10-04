@@ -26,3 +26,24 @@ func TestReleaseTriggerAndGlobalConcurrencyBoundary(t *testing.T) {
 		t.Fatal("release is dispatch-only; a tag push must never publish")
 	}
 }
+
+func TestRehearsalWorkflowHasClosedInputsAndNoProductionSecretsOrDownstreamWrites(t *testing.T) {
+	b, err := os.ReadFile("../../" + publicationWorkflow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(b)
+	for _, forbidden := range []string{"secrets.", "repository:", "certificate_identity:", "registry-publish", "./tools/registrypublish", "./tools/stampserver", "git push", "\n  push:", "actions/upload-artifact"} {
+		if strings.Contains(s, forbidden) {
+			t.Fatalf("scratch workflow widens authority: %s", forbidden)
+		}
+	}
+	for _, required := range []string{"DIBS_RELEASE_TARGET: rehearsal", "-phase full-publication-validate", "-phase full-publication", "cancel-in-progress: false"} {
+		if !strings.Contains(s, required) {
+			t.Fatalf("scratch workflow missing %s", required)
+		}
+	}
+	if strings.Index(s, "-phase full-publication-validate") >= strings.Index(s, "uses: sigstore/cosign-installer") {
+		t.Fatal("closed source validation must precede signing setup")
+	}
+}

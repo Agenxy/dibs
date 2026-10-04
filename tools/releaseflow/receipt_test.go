@@ -15,6 +15,7 @@ func proofFixture(c config, rehearsal bool) receipt {
 		Schema: 1, Repository: repository, RunID: c.runID, Attempt: c.attempt,
 		WorkflowSHA: c.workflowSHA, Version: c.version, SHA: c.sha,
 		Tree: strings.Repeat("b", 40), TagOID: strings.Repeat("c", 40), Rehearsal: &rehearsal,
+		PublicationRun: c.publicationRun,
 	}
 }
 
@@ -59,6 +60,9 @@ func TestAuthenticatedHandoffRoutesRehearsalOnlyToReadOnlyReceiver(t *testing.T)
 		t.Run(map[bool]string{false: "publish", true: "rehearsal"}[rehearsal], func(t *testing.T) {
 			c := fixture(t)
 			c.phase = "finalize"
+			if !rehearsal {
+				c.publicationRun = "456"
+			}
 			r := proofFixture(c, rehearsal)
 			var dispatched []string
 			run := receiptRunner(t, r, passedJob, func(_ context.Context, _ []string, name string, args ...string) ([]byte, error) {
@@ -76,6 +80,9 @@ func TestAuthenticatedHandoffRoutesRehearsalOnlyToReadOnlyReceiver(t *testing.T)
 				ref, mode = "main", "delivery-rehearsal"
 			}
 			want := "workflow run release.yml --repo " + repository + " --ref " + ref + " -f mode=" + mode + " -f version=0.0.11 -f sha=" + c.sha + " -f preflight_run=123"
+			if !rehearsal {
+				want += " -f full_publication_run=456"
+			}
 			if strings.Join(dispatched, " ") != want {
 				t.Fatalf("wrong handoff: %v", dispatched)
 			}
@@ -178,6 +185,7 @@ func TestPublisherAuthenticatesExactReceiptCommitTreeAndTagObject(t *testing.T) 
 				t.Fatal(err)
 			}
 			git(t, "push", "origin", "refs/tags/v0.0.11")
+			proofRun := withPublicationFixture(t, &c, command)
 			r := proofFixture(c, false)
 			r.Tree = git(t, "rev-parse", "HEAD^{tree}")
 			r.TagOID = git(t, "rev-parse", "refs/tags/v0.0.11")
@@ -191,7 +199,7 @@ func TestPublisherAuthenticatesExactReceiptCommitTreeAndTagObject(t *testing.T) 
 			}
 			t.Setenv("GITHUB_REF", "refs/tags/v0.0.11")
 			c.phase = "authorize"
-			err := execute(context.Background(), c, receiptRunner(t, r, passedJob, command))
+			err := execute(context.Background(), c, receiptRunner(t, r, passedJob, proofRun))
 			if (err == nil) != (mode == "exact") {
 				t.Fatalf("%s: %v", mode, err)
 			}

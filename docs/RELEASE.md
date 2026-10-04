@@ -32,14 +32,14 @@ even when it peels to the same candidate.
 After the owner approves the actual release, dispatch from main:
 
 ```text
-gh workflow run release.yml --ref main -f mode=preflight -f version=0.0.11 -f sha=<full-current-main-sha>
+gh workflow run release.yml --ref main -f mode=preflight -f version=<canonical-version> -f sha=<full-current-main-sha> -f full_publication_run=<successful-exact-candidate-rehearsal-run>
 ```
 
 If the finalizer or a downstream service fails, authenticate the successful
 preflight run and retry publication without rebuilding a public release:
 
 ```text
-gh workflow run release.yml --ref v0.0.11 -f mode=publish-only -f version=0.0.11 -f sha=<proven-sha> -f preflight_run=<successful-run-id>
+gh workflow run release.yml --ref v<canonical-version> -f mode=publish-only -f version=<canonical-version> -f sha=<proven-sha> -f preflight_run=<successful-run-id> -f full_publication_run=<authenticated-rehearsal-run>
 ```
 
 Receipts are retained for 90 days. An expired or missing receipt is not silently
@@ -130,6 +130,87 @@ publisher, which would create another draft and then fail to discover it.
 A future version needs the repaired discovery code
 and a separate, real full-publication rehearsal before release approval; the
 earlier offline/delivery rehearsals did not exercise GitHub's draft API.
+
+## Closed full-publication rehearsal: source ready, external measurement pending
+
+`release-rehearsal.yml` has exactly one scratch target, bound in source, not a
+repository, URL or signing identity supplied by a dispatch. That binding is
+currently EMPTY. It refuses before any build, signature or release mutation
+until the operator chooses and authorizes the repository, visibility, immutable
+release setting and setup. No live scratch run or downstream acceptance has
+been measured. Do not interpret the local tests as that evidence.
+
+Mirror the exact reviewed candidate commit (without rewriting its SHA) and use
+`rehearsal-v<version>-<full-candidate-sha>`. The workflow and tool tree must be
+identical to the production candidate; a later main commit, including a docs-only
+change, requires a new rehearsal. A separate bootstrap ref can configure the
+scratch repository, but cannot supply a production-eligible receipt. Ordinary
+preflight cannot mint this proof: the scratch publication runs first, avoiding a
+circular preflight prerequisite.
+
+The full rehearsal drives the same draft discovery, create, build, keyless sign,
+upload, download/readback and publication code as production. Titles and notes
+say `REHEARSAL, not a Dibs release, do not install`. It receives no production
+Apple signing, Homebrew or registry credential. Apple signing is ad-hoc only;
+this is not acceptance of the production certificate. After immutable public
+verification, another call to the same publisher must succeed through an
+explicit read-only operation allow-list. Registry and cask plans validate the
+canonical version, bundle/sidecar digest and archive URL/checksum pairs, but
+never publish, push, merge, install or claim service acceptance.
+
+The separate scratch signature verifier requires its exact repository,
+`release-rehearsal.yml` and unique tag with the fixed issuer and reviewed trusted
+root. It returns no installed `VerifiedRelease`. Installed production identity
+remains unchanged; neither rehearsal namespaces nor configurable identities are
+accepted by self-update or guest provisioning.
+
+Production validation/preflight and the separate tag job each re-fetch the
+successful run's latest attempt and exactly one successful full-publication job
+over public HTTPS. A SECOND immutable evidence release is created only AFTER the
+payload is immutable and its real read-only retry succeeded. It holds the bounded
+receipt and its keyless Sigstore bundle, signed under the ORIGINAL candidate
+workflow/tag identity. Signature verification, not API permission or immutable
+storage, is the receipt authority. There is no Actions-artifact proof path. Bindings
+include repository, run/attempt, workflow/ref, version, SHA, the whole Git tree,
+explicit workflow/tool/build objects, release ID and all asset digests. Every
+door has an explicit positive outcome; missing/null flags and negative controls
+refuse. The gate also downloads and verifies the current immutable public scratch
+bytes. Publication authenticates that proof again from its preflight receipt.
+
+The evidence tag is derived, not supplied:
+`rehearsal-proof-v<version>-<sha>-<run>-<attempt>`. The signed receipt must name
+that exact tag; an attempt-1 receipt cannot be accepted under attempt 2. An
+existing evidence release, including an empty draft, is a collision: refuse,
+never reuse or overwrite it. Payload and evidence are separate because adding
+post-publication proof assets to an already immutable payload is impossible.
+
+This design requires a PUBLIC scratch repository. Production uses plain HTTPS
+with no Authorization header or new credential to fetch metadata, receipt,
+bundle and payload bytes, then verifies the signatures offline with the same
+embedded pin-checked root as installed release evidence. The actual public
+network/Actions/signing doors remain unmeasured until the operator authorizes
+setup and dispatch. A refusal remains a blocker; no local-file or unsigned proof
+fallback exists. A private scratch repository would require a different approved
+credential design and is not supported by this path.
+
+The old get-by-tag negative control changes ONLY discovery inside the scratch
+factory. Run it first against an absent unique target. It must build and sign
+through the same code, then fail specifically because the exact empty draft is
+visible through LIST but not get-by-tag, before any upload or publication. It
+produces no eligible receipt. The corrected run can then reuse that empty draft.
+An auth, ref, version, root, build or signing failure is not the negative proof.
+
+Local canonical-version measurement on 2026-10-04 used GoReleaser 2.17.1 with
+`GORELEASER_CURRENT_TAG=v0.0.11` and snapshot version `0.0.11`, first with only
+the canonical fixture tag and then with the unique rehearsal tag beside it.
+Both snapshot builds and archive-member gates exited zero. All six Go binary
+hashes, all 39 archive member contents/non-time metadata and the MCP bundle hash
+matched. The cask's version/URLs/paths matched, but its three archive checksum
+lines did not: binary mtimes changed the archive wrapper hashes. This is exact
+canonical build-version evidence, not bit-reproducible archives, a production
+macOS certificate or a live publication measurement. The raw receipt remains
+at `/private/tmp/dibs-version-rehearsal.kVAC3u/measurement.md` on the measuring
+machine; that path is not evidence on another host.
 
 Acceptance includes a deliberately failing preflight through the production
 entry point, asserting remote refs and releases are unchanged; forged, failed,

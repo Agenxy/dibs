@@ -34,6 +34,13 @@ func fixture(t *testing.T) config {
 	for _, path := range release.Manifests {
 		write(t, path, `{"version":"0.0.11"}`)
 	}
+	for _, path := range publicationObjects {
+		if strings.HasPrefix(path, "tools/") || strings.HasPrefix(path, "cmd/") || strings.HasPrefix(path, "internal/") {
+			write(t, filepath.Join(path, "fixture.txt"), "source fixture: "+path)
+		} else {
+			write(t, path, "source fixture: "+path)
+		}
+	}
 	git(t, "add", ".")
 	git(t, "commit", "-m", "fixture")
 	git(t, "remote", "add", "origin", origin)
@@ -81,6 +88,7 @@ func TestFailingPreflightCannotCreateRemoteTagOrReceipt(t *testing.T) {
 		}
 		return nil, errors.New("must not reach any post-gate command")
 	}
+	run = withPublicationFixture(t, &c, run)
 	if err := execute(context.Background(), c, run); err == nil || !strings.Contains(err.Error(), "deliberate task ci failure") {
 		t.Fatalf("wrong failure: %v", err)
 	}
@@ -123,6 +131,7 @@ func TestSuccessfulPreflightStillWritesNoRemoteTagUntilSeparateCommitJob(t *test
 		}
 		return nil, nil
 	}
+	run = withPublicationFixture(t, &c, run)
 	if err := execute(context.Background(), c, run); err != nil {
 		t.Fatal(err)
 	}
@@ -134,14 +143,15 @@ func TestSuccessfulPreflightStillWritesNoRemoteTagUntilSeparateCommitJob(t *test
 		t.Fatalf("missing gate/build/signing proof: %v", calls)
 	}
 	c.phase = "commit-tag"
-	if err := execute(context.Background(), c, command); err != nil {
+	proofRun := withPublicationFixture(t, &c, command)
+	if err := execute(context.Background(), c, proofRun); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(git(t, "ls-remote", "--tags", "origin", "refs/tags/v0.0.11^{}"), c.sha) {
 		t.Fatal("successful separate commit job did not push exact candidate")
 	}
 	// Idempotent, but never with different provenance.
-	if err := execute(context.Background(), c, command); err != nil {
+	if err := execute(context.Background(), c, proofRun); err != nil {
 		t.Fatal(err)
 	}
 	c.sha = strings.Repeat("a", 40)

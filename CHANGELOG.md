@@ -5,6 +5,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- A closed-target full-publication rehearsal shares the release publisher and
+  records exact source objects, draft discovery/upload/readback, immutable public
+  asset hashes and a read-only retry. Production preflight, tag creation and
+  publication authenticate that exact-candidate Actions proof again. Its scratch
+  repository is deliberately unbound until the operator chooses one; no live
+  rehearsal or release is claimed. Rehearsal signatures cannot satisfy installed
+  production trust, and registry/cask outputs are dry plans, not live acceptance.
+
 ### Fixed
 
 - **Source installs reject conflicting version overrides before replacement.**

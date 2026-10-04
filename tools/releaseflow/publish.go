@@ -27,6 +27,7 @@ const (
 )
 
 type releaseStatus struct {
+	ID        uint64                  `json:"id"`
 	Tag       string                  `json:"tag_name"`
 	Draft     bool                    `json:"draft"`
 	Immutable bool                    `json:"immutable"`
@@ -34,6 +35,13 @@ type releaseStatus struct {
 }
 
 func status(ctx context.Context, c config, run runner) (releaseStatus, bool, error) {
+	if c.negativeControl {
+		return legacyDiscovery(ctx, c, run)
+	}
+	return listedStatus(ctx, c, run)
+}
+
+func listedStatus(ctx context.Context, c config, run runner) (releaseStatus, bool, error) {
 	// Get-by-tag omits drafts even for a writer. Listing is the measured API
 	// door that includes them. Scan every page, not just until the first match,
 	// so a second exact tag cannot be silently accepted. An incomplete scan
@@ -41,12 +49,12 @@ func status(ctx context.Context, c config, run runner) (releaseStatus, bool, err
 	var found releaseStatus
 	exists := false
 	for page := 1; page <= releaseMaxPages; page++ {
-		releases, err := listReleasePage(ctx, page, run)
+		releases, err := listReleasePage(ctx, c, page, run)
 		if err != nil {
 			return releaseStatus{}, false, err
 		}
 		for _, s := range releases {
-			if s.Tag != "v"+c.version {
+			if s.Tag != targetOf(c).tag {
 				continue
 			}
 			if exists {
@@ -62,8 +70,8 @@ func status(ctx context.Context, c config, run runner) (releaseStatus, bool, err
 		fmt.Errorf("release discovery exceeded %d pages; refuse incomplete publication", releaseMaxPages)
 }
 
-func listReleasePage(ctx context.Context, page int, run runner) ([]releaseStatus, error) {
-	endpoint := fmt.Sprintf("repos/%s/releases?per_page=%d&page=%d", repository, releasePageSize, page)
+func listReleasePage(ctx context.Context, c config, page int, run runner) ([]releaseStatus, error) {
+	endpoint := fmt.Sprintf("repos/%s/releases?per_page=%d&page=%d", targetOf(c).repository, releasePageSize, page)
 	out, err := run(ctx, nil, "gh", "api", endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("list release page %d: %w", page, err)
@@ -107,7 +115,7 @@ func publish(ctx context.Context, c config, run runner) error {
 			return err
 		}
 		defer func() { _ = os.RemoveAll(dir) }()
-		return validateAssets(ctx, c, dir)
+		return validateTargetAssets(ctx, c, dir, run)
 	}
 	if !exists {
 		if err = createDraft(ctx, c, run); err != nil {
@@ -121,13 +129,20 @@ func publish(ctx context.Context, c config, run runner) error {
 }
 
 func createDraft(ctx context.Context, c config, run runner) error {
+	d := targetOf(c)
 	body := "Install: `brew install agenxy/tap/dibs`.\n\n" +
 		"Verify checksums.txt with checksums.txt.bundle using cosign 3, OIDC issuer " +
 		"https://token.actions.githubusercontent.com and certificate identity https://github.com/" +
 		repository + "/" + workflowPath + "@refs/tags/v" + c.version + ".\n\n" +
 		"Full notes: https://github.com/" + repository + "/blob/v" + c.version + "/CHANGELOG.md\n"
-	_, err := run(ctx, nil, "gh", "release", "create", "v"+c.version, "--repo", repository,
-		"--verify-tag", "--draft", "--title", "v"+c.version, "--generate-notes", "--notes", body)
+	title := d.tag
+	if d.rehearsal {
+		title = rehearsalWarning + " (" + d.tag + ")"
+		body = rehearsalWarning + ".\n\nLocal-only cask and registry plans; no downstream publication.\n" +
+			"Exact rehearsal identity: " + d.identity() + "\n"
+	}
+	_, err := run(ctx, nil, "gh", "release", "create", d.tag, "--repo", d.repository,
+		"--verify-tag", "--draft", "--title", title, "--generate-notes", "--notes", body)
 	return err
 }
 
@@ -136,6 +151,11 @@ func buildSignedStage(ctx context.Context, c config, run runner) error {
 	// generation. Publishing is deliberately split out so no public bytes exist
 	// before the complete asset set and exact-tag signature are verified.
 	env := []string{"HOMEBREW_TAP_DEPLOY_KEY=unused-offline-generation"}
+	if targetOf(c).rehearsal {
+		// Measured on the installed GoReleaser: this fixes the canonical build
+		// version while GITHUB_REF (and therefore OIDC) stays on the unique ref.
+		env = append(env, "GORELEASER_CURRENT_TAG=v"+c.version)
+	}
 	if _, err := run(ctx, env, "goreleaser", "release", "--clean", "--skip=sign,publish,announce"); err != nil {
 		return err
 	}
@@ -152,8 +172,11 @@ func buildSignedStage(ctx context.Context, c config, run runner) error {
 		filepath.Join("dist", selfupdate.BundleName), filepath.Join("dist", selfupdate.ChecksumsName)); err != nil {
 		return err
 	}
-	return validateAssets(ctx, c, "dist")
+	return validateTargetAssets(ctx, c, "dist", run)
 }
+
+var errDraftDisappeared = errors.New("draft disappeared or became public; " +
+	"refuse asset mutation and retry read-only verification")
 
 func publishDraft(ctx context.Context, c config, run runner) error {
 	// Keep the draft check; the operator-owned immutable-release setting closes
@@ -163,13 +186,19 @@ func publishDraft(ctx context.Context, c config, run runner) error {
 		return err
 	}
 	if !exists || !s.Draft {
-		return errors.New("draft disappeared or became public; refuse asset mutation and retry read-only verification")
+		return errDraftDisappeared
+	}
+	if c.publicationAudit != nil {
+		c.publicationAudit.draftDiscovered = true
 	}
 	if err = uploadDraft(ctx, c, run); err != nil {
 		// The upload may have been refused because another writer published it,
 		// or its response may have been lost. Never retry a mutation here: accept
 		// only an immutable public release whose verified bytes equal our stage.
 		return confirmPublished(ctx, c, run, err)
+	}
+	if c.publicationAudit != nil {
+		c.publicationAudit.uploaded = true
 	}
 	s, exists, err = status(ctx, c, run)
 	if err != nil {
@@ -184,15 +213,20 @@ func publishDraft(ctx context.Context, c config, run runner) error {
 	if err = checkReadback(ctx, c, s, run); err != nil {
 		return err
 	}
+	if c.publicationAudit != nil {
+		c.publicationAudit.draftReadback = true
+	}
 	if err = remoteTag(ctx, c, true, run); err != nil {
 		return err
 	}
-	_, err = run(ctx, nil, "gh", "release", "edit", "v"+c.version, "--repo", repository, "--draft=false")
+	d := targetOf(c)
+	_, err = run(ctx, nil, "gh", "release", "edit", d.tag, "--repo", d.repository, "--draft=false")
 	return confirmPublished(ctx, c, run, err)
 }
 
 func uploadDraft(ctx context.Context, c config, run runner) error {
-	args := []string{"release", "upload", "v" + c.version, "--repo", repository, "--clobber"}
+	d := targetOf(c)
+	args := []string{"release", "upload", d.tag, "--repo", d.repository, "--clobber"}
 	for _, name := range assets(c.version) {
 		args = append(args, filepath.Join("dist", name))
 	}
@@ -240,7 +274,7 @@ func checkReadback(ctx context.Context, c config, s releaseStatus, run runner) e
 		return err
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
-	if err = validateAssets(ctx, c, dir); err != nil {
+	if err = validateTargetAssets(ctx, c, dir, run); err != nil {
 		return err
 	}
 	for _, name := range assets(c.version) {
@@ -262,6 +296,9 @@ func checkReadback(ctx context.Context, c config, s releaseStatus, run runner) e
 func download(ctx context.Context, c config, s releaseStatus, run runner) (string, error) {
 	seen := make(map[string]bool)
 	for _, a := range s.Assets {
+		if seen[a.Name] {
+			return "", fmt.Errorf("release has duplicate asset %s", a.Name)
+		}
 		seen[a.Name] = true
 	}
 	for _, name := range assets(c.version) {
@@ -273,7 +310,8 @@ func download(ctx context.Context, c config, s releaseStatus, run runner) (strin
 	if err != nil {
 		return "", err
 	}
-	args := []string{"release", "download", "v" + c.version, "--repo", repository, "--dir", dir}
+	d := targetOf(c)
+	args := []string{"release", "download", d.tag, "--repo", d.repository, "--dir", dir}
 	for _, name := range assets(c.version) {
 		args = append(args, "--pattern", name)
 	}
@@ -286,7 +324,7 @@ func download(ctx context.Context, c config, s releaseStatus, run runner) (strin
 
 func completeChecksums(c config, dir string) error {
 	path := filepath.Join(dir, selfupdate.ChecksumsName)
-	// #nosec G304 -- fixed checksum filename in the runner-owned staging directory.
+	// #nosec G304,G703 -- fixed checksum filename in the runner-owned staging directory.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
@@ -376,6 +414,7 @@ func validateAssets(ctx context.Context, c config, dir string) error {
 }
 
 func digest(path string) (string, error) {
+	// #nosec G703 -- fixed asset basename under this call's owned stage/download directory.
 	info, err := os.Lstat(path)
 	if err != nil {
 		return "", err
@@ -383,7 +422,7 @@ func digest(path string) (string, error) {
 	if !info.Mode().IsRegular() {
 		return "", errors.New("release asset is not a regular file")
 	}
-	// #nosec G304 -- fixed asset names in an owned stage, checked above.
+	// #nosec G304,G703 -- fixed asset names in an owned stage, checked above.
 	f, err := os.Open(path)
 	if err != nil {
 		return "", err

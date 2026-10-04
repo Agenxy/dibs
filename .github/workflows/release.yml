@@ -22,6 +22,10 @@ on:
         description: Successful main preflight run ID (publish-only)
         type: string
         required: false
+      full_publication_run:
+        description: Successful closed-scratch full-publication run for this exact candidate
+        type: string
+        required: false
       rehearsal_fail:
         description: Deliberately fail preflight; no remote tag may be created
         type: boolean
@@ -41,6 +45,7 @@ concurrency:
 env:
   DIBS_RELEASE_VERSION: ${{ inputs.version }}
   DIBS_RELEASE_SHA: ${{ inputs.sha }}
+  DIBS_FULL_PUBLICATION_RUN: ${{ inputs.full_publication_run }}
   GH_TOKEN: ${{ github.token }}
   GITHUB_TOKEN: ${{ github.token }}
 
@@ -50,6 +55,7 @@ jobs:
     runs-on: macos-latest
     permissions:
       contents: read
+      actions: read
     env:
       DIBS_RELEASE_REHEARSAL: ${{ inputs.rehearsal_fail }}
       DIBS_RELEASE_DELIVERY_REHEARSAL: ${{ inputs.delivery_rehearsal }}
