@@ -158,6 +158,34 @@ func TestWithdrawalDoesNotResurrectReportsOrConsumeItsReceipt(t *testing.T) {
 	call("ack", map[string]any{"token": worker, "msg_serial": n})
 }
 
+func TestDisabledBodyQuotesDoNotReadTheOutcome(t *testing.T) {
+	srv, eng, _ := newServerWithEngine(t)
+	call := func(name string, args map[string]any) map[string]any {
+		t.Helper()
+		r := toolCall(t, srv, name, args)
+		if r["__is_error"] == true {
+			t.Fatalf("setup %s: %v", name, r)
+		}
+		return r
+	}
+	lead := call("register", map[string]any{"name": "lead", "nonce": "disabled-body-lead"})["token"]
+	worker := call("register", map[string]any{"name": "worker", "nonce": "disabled-body-worker"})["token"]
+	call("check_in", map[string]any{"token": lead})
+	n := call("send", map[string]any{"token": lead, "to": "worker", "type": "question", "body": "question"})["msg_serial"]
+	call("respond", map[string]any{
+		"token": worker, "msg_serial": n,
+		"disposition": "answer", "body": "actual-unread-outcome",
+	})
+	eng.SetMailBodies(false)
+	if got := fmt.Sprint(call("check_in", map[string]any{"token": lead})["agent_updates"]); strings.Contains(got, "actual-unread-outcome") || !strings.Contains(got, "read_mail") {
+		t.Fatalf("body-disable setting ignored or pointer missing: %s", got)
+	}
+	eng.SetMailBodies(true)
+	if got := fmt.Sprint(call("check_in", map[string]any{"token": lead})["agent_updates"]); !strings.Contains(got, "actual-unread-outcome") {
+		t.Fatal("pointer-only delivery silently read the outcome")
+	}
+}
+
 func TestFlagAfterDoneSurvivesEncryptedRestartAndReadsOnce(t *testing.T) {
 	for _, read := range []string{"check_in", "read_mail", "ack"} {
 		t.Run(read, func(t *testing.T) {
