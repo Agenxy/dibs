@@ -30,6 +30,24 @@ func TestTaskInstallKeepsTheComputedStampBeforeReplacingAnything(t *testing.T) {
 	head := strings.TrimSpace(installCommand(t, ctx, root, nil, "git", "rev-parse", "HEAD"))
 	scratch := t.TempDir()
 	clone, dest := filepath.Join(scratch, "repo"), filepath.Join(scratch, "installed")
+	if runtime.GOOS == "darwin" {
+		// Normal install registers its notifier bundle. Unregister only this
+		// test's exact bundle before TempDir removes it; never leave a deleted
+		// fixture as another Launch Services candidate for the live product.
+		t.Cleanup(func() {
+			app := filepath.Join(dest, "Dibs.app")
+			if _, err := os.Stat(app); os.IsNotExist(err) {
+				return
+			}
+			cleanup, done := context.WithTimeout(context.Background(), 10*time.Second)
+			defer done()
+			cmd := exec.CommandContext(cleanup,
+				"/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister", "-u", app)
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Errorf("unregister own fixture app: %v: %s", err, out)
+			}
+		})
+	}
 	installCommand(t, ctx, root, nil, "git", "clone", "--quiet", "--no-local", ".", clone)
 	installCommand(t, ctx, clone, nil, "git", "checkout", "--quiet", "--detach", head)
 	// The runner is pinned by this clone's config, exactly as for a source
