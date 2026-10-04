@@ -822,6 +822,11 @@ prefixes. Held information is delivered through SessionStart, `check_in` or
 quote budget. UserPromptSubmit remains silent. Due declared waits and bounded
 declared-work continuation remain independent Stop causes.
 
+A send result's live route note distinguishes mailbox acceptance from a socket
+wake: informational mail waits for a natural activation without buying a wake,
+and actionable mail to a busy session is deferred until its turn ends. Socket
+availability alone never claims that informational mail was handed over.
+
 The additive socket-offer handshake reserves one derived wake epoch per host
 identity and current session. A successful kernel write holds that epoch until
 actual turn evidence; it proves no receiver acceptance. Failed writes release

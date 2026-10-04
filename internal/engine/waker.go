@@ -1412,6 +1412,19 @@ func (e *Engine) PullOnlyNoteFor(ctx context.Context, agentID string) string {
 	return n
 }
 
+// SendDeliveryNoteFor reads the route decision for this exact accepted
+// message. Observation neither confirms a socket outcome nor consumes mail.
+func (e *Engine) SendDeliveryNoteFor(ctx context.Context, agentID string, msgSerial uint64) string {
+	res, err := e.query(ctx, func() core.Result {
+		return core.Result{"note": e.sendDeliveryNote(e.state.Agents[agentID], e.state.Messages[msgSerial], time.Now())}
+	})
+	if err != nil {
+		return ""
+	}
+	n, _ := res["note"].(string)
+	return n
+}
+
 // localCommandConfigured reports whether the hub's own [wake.exec] has a
 // command for this harness.
 func (e *Engine) localCommandConfigured(harness string) bool {

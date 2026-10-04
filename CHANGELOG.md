@@ -43,6 +43,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   current waiting declaration. Due waits and declared-work continuation retain
   their existing bounds. UserPromptSubmit remains silent.
 
+- **A send result describes whether socket mail buys a wake.** Informational
+  mail to an idle socket session now says it waits in the mailbox for a natural
+  activation; an open socket alone no longer claims a wake was handed over.
+  An actionable message to a busy session reports deferral until its turn ends.
+
 - **Source installs reject conflicting version overrides before replacement.**
   Both built images are checked against their module/VCS-derived stamp. A
   hand-set `build.Version` that changes the normal pseudo-version now stops

@@ -1,9 +1,42 @@
 package engine
 
 import (
+	"time"
+
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/harnessenv"
 )
+
+// A socket's existence says where a wake could go, not whether this mail
+// buys one. Classify the actual recorded message by the writer's shared rule.
+func (e *Engine) sendDeliveryNote(l *core.Agent, m *core.Message, now time.Time) string {
+	if l == nil {
+		return ""
+	}
+	if l.Retired() || e.isTheHuman(l.ID) || m == nil || m.To != l.ID {
+		return e.PullOnlyNote(l)
+	}
+	if note, remote := e.remotePullOnlyNote(l); remote {
+		return note
+	}
+	if e.localCommandConfigured(wakeHarness(l)) && threadIDOf(l) != "" {
+		return e.PullOnlyNote(l)
+	}
+	self, _ := e.SelfWaking(l.ID)
+	if !self && !e.mightReachOverSocket(l) {
+		return e.PullOnlyNote(l)
+	}
+	if !e.socketActionableMessage(m) {
+		return "delivered to " + l.ID + "'s mailbox; informational, so no wake was sent: " +
+			"it arrives at " + l.ID + "'s next activation (check_in, inbox, SessionStart " +
+			"or its next actionable delivery)."
+	}
+	if e.socketLifecycle(l, now) == "busy" {
+		return "delivered to " + l.ID + "'s mailbox; it is mid-turn; " +
+			"its wake is deferred until the turn ends."
+	}
+	return e.PullOnlyNote(l)
+}
 
 func bestEffortSocketNote(l *core.Agent, named, state, why string) string {
 	lead := why + ", but a session socket for it is open, so a best-effort notice will be tried."
