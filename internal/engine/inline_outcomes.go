@@ -310,6 +310,11 @@ func (e *Engine) consumeOutcomes(agent string, through map[uint64]uint64, now ti
 	}
 	sort.Slice(serials, func(i, j int) bool { return serials[i] < serials[j] })
 	for _, serial := range serials {
+		// A held socket offer may be confirmed after retention GC. The bytes
+		// were offered, but a vanished envelope has no read state to advance.
+		if e.state.Messages[serial] == nil {
+			continue
+		}
 		// This is the already-authorized own-session/pull path. Engine ingress
 		// strips AgentID from caller ops; only this trusted path supplies it.
 		if _, err := e.applyAndLedger(&core.Op{
