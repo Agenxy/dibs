@@ -66,7 +66,7 @@ func TestGuestProvisioningLiteralPrimitivesStopBeforeUse(t *testing.T) {
 			t.Fatal("required fixture primitive unavailable:", tool, err)
 		}
 	}
-	for _, mode := range []string{"good", "archive mismatch", "missing checksum", "member mismatch", "symlink member", "duplicate member", "existing version", "late competitor", "interrupted"} {
+	for _, mode := range []string{"good", "archive mismatch", "missing checksum", "member mismatch", "symlink member", "duplicate member", "existing version", "late competitor", "late directory", "interrupted"} {
 		t.Run(mode, func(t *testing.T) {
 			payload := []byte("exact packaged executable fixture; never executed\n")
 			var compressed bytes.Buffer
@@ -161,6 +161,14 @@ func TestGuestProvisioningLiteralPrimitivesStopBeforeUse(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
+				if mode == "late directory" && i == 10 {
+					if err := os.Mkdir(installed, 0o700); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(filepath.Join(installed, "retained"), []byte("retained"), 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
 				replace := func(s string) string {
 					return strings.ReplaceAll(strings.ReplaceAll(s, "<absolute-version-parent>", parent), "<staging>", staging)
 				}
@@ -207,7 +215,7 @@ func TestGuestProvisioningLiteralPrimitivesStopBeforeUse(t *testing.T) {
 					}
 				}
 			}
-			wantStop := map[string]int{"good": -1, "archive mismatch": 3, "missing checksum": 2, "member mismatch": 7, "duplicate member": 7, "existing version": 9, "late competitor": 10, "interrupted": 8}
+			wantStop := map[string]int{"good": -1, "archive mismatch": 3, "missing checksum": 2, "member mismatch": 7, "duplicate member": 7, "existing version": 9, "late competitor": 10, "late directory": 10, "interrupted": 8}
 			if mode == "symlink member" {
 				if stopped != 5 && stopped != 7 {
 					t.Fatalf("link member reached use: stopped%d", stopped)
@@ -224,6 +232,13 @@ func TestGuestProvisioningLiteralPrimitivesStopBeforeUse(t *testing.T) {
 			case "existing version", "late competitor":
 				if readErr != nil || string(body) != "retained" {
 					t.Fatal("existing executable was overwritten")
+				}
+			case "late directory":
+				if sentinel, err := os.ReadFile(filepath.Join(installed, "retained")); err != nil || string(sentinel) != "retained" {
+					t.Fatal("competing directory was changed")
+				}
+				if _, err := os.Stat(filepath.Join(installed, "dibs")); !os.IsNotExist(err) {
+					t.Fatal("publication silently nested inside competing directory")
 				}
 			default:
 				if !os.IsNotExist(readErr) {

@@ -91,7 +91,7 @@ func renderGuestProvisioning(m GuestReleaseMetadata) (GuestProvisioning, error) 
 			"Set an adequate startup timeout only where the harness supports it.",
 		"INCOMPLETE: instructions do not prove installed-harness or WAN support. A noexec/read-only filesystem, " +
 			"unavailable download/hash/archive primitive, container IPv6 or network policy can prevent use; " +
-			"report the actual boundary rather than bypass it.",
+			"report the actual boundary rather than bypass it. BusyBox/Alpine userlands are untested.",
 	}}
 	// Fixed target ordering makes projection stable even when received metadata
 	// lists assets in another order. Every value was validated before rendering.
@@ -136,7 +136,7 @@ func renderGuestProvisioning(m GuestReleaseMetadata) (GuestProvisioning, error) 
 				guestLiteralStep("Create exclusive versioned target directory; existing means STOP, not overwrite", "", "",
 					"mkdir", "-m", "700", "<absolute-version-parent>/"+platform),
 				guestLiteralStep("Atomically publish the verified executable without replacing any existing file", "", "",
-					"ln", "<staging>/"+member, "<absolute-version-parent>/"+platform+"/dibs"),
+					"ln", "<staging>/"+member, "<absolute-version-parent>/"+platform),
 			},
 			MCP: GuestMCPEntry{
 				Command: "<absolute-version-parent>/" + platform + "/dibs",
