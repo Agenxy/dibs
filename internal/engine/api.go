@@ -645,6 +645,9 @@ func (e *Engine) GetMessage(ctx context.Context, token string, serial uint64) (c
 
 func (e *Engine) messageReadResult(m *core.Message) core.Result {
 	res := core.Result{"message": e.queueMessageView(m), "serial": e.state.Serial}
+	if m.State == core.MsgStateWithdrawn {
+		res["outstanding"] = "sender withdrew this request; no work is owed"
+	}
 	if m.Owed(time.Now()) {
 		res["outstanding"] = "recipient has accepted this work and has not reported done; " + owedCall(m)
 	}

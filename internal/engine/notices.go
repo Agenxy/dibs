@@ -133,6 +133,13 @@ func (e *Engine) noteEvent(ev core.Event) {
 // restart can replay the ring and tell only the agents that have not caught
 // up. Live processing wants everybody: the event is newer than any watermark.
 func (e *Engine) noteEventFor(ev core.Event, wants func(agent string) bool) {
+	if ev.Type == "message.withdrawn" {
+		msg, _ := ev.Data["msg_serial"].(uint64)
+		if !e.withdrawalReceiptBelongs(e.state.Messages[msg]) {
+			return
+		}
+		e.clearNoticesFor(ev.To, msg) // withdrawal replaces earlier review/queue notices
+	}
 	if ev.Type == "agent.joined" {
 		// And tell the people already in the space.
 		//
@@ -160,6 +167,8 @@ func (e *Engine) noteEventFor(ev core.Event, wants func(agent string) bool) {
 // so the rebuild and live processing cannot word the same event differently.
 func situationalNotice(ev core.Event) (who, text string, blocking bool) {
 	switch ev.Type {
+	case "message.withdrawn":
+		who, text, blocking = ev.To, withdrawalNotice(ev), true
 	case "agent.joined":
 		who, text = ev.Agent, joinedNotice(ev)
 	case "message.approved", "message.queued", "message.denied", "message.answered", "message.declined", "message.done":
@@ -534,6 +543,7 @@ func (e *Engine) rebuildBlockingNotices() {
 	if e.state == nil {
 		return
 	}
+	e.rebuildWithdrawalNotices()
 	owed := make([]*core.Message, 0, 8)
 	for _, m := range e.state.Messages {
 		if e.stillOwed(m) {

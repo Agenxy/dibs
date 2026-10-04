@@ -862,6 +862,7 @@ type toolArgs struct {
 	Adopt         string            `json:"adopt"`
 	OpID          string            `json:"op_id"`
 	MsgSerial     uint64            `json:"msg_serial"`
+	SupersededBy  uint64            `json:"superseded_by"`
 	Disposition   string            `json:"disposition"`
 	Priority      string            `json:"priority"`
 	ResetPriority bool              `json:"reset_priority"`
@@ -1377,6 +1378,7 @@ func (s *Server) run(
 		return s.eng.GetBlob(ctx, a.Token, a.Blob, a.As)
 	case "respond":
 		op.Kind, op.MsgSerial, op.Disposition, op.Body = core.OpRespond, a.MsgSerial, a.Disposition, a.Body
+		op.SupersededBy = a.SupersededBy
 		op.Milestone, op.Deliverable, op.Milestones = a.Milestone, a.Deliverable, a.Milestones
 	case "queue_update":
 		op.Kind, op.MsgSerial = core.OpQueueUpdate, a.MsgSerial

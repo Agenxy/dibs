@@ -383,18 +383,20 @@ var toolDefs = func() []map[string]any {
 			"inputSchema": obj(map[string]any{"token": tok, "msg_serial": num("serial of the message")}, "token", "msg_serial"),
 		},
 		{
-			"name": "respond",
-			"description": "Answer mail or review a sent request. Progress/done reports approved work; " +
-				"progress can correct flagged done work. Use the request serial, not an event.",
+			"name":        "respond",
+			"description": "Answer/review/withdraw mail. Progress/done report work; progress corrects flags.",
 			"inputSchema": obj(map[string]any{
 				"token": tok, "msg_serial": num("serial of the message"),
 				"disposition": map[string]any{
 					"type": "string",
-					"enum": []string{"answer", "queue", "approve", "deny", "decline", "progress", "done", "accept", "flag"},
+					"enum": []string{
+						"answer", "queue", "approve", "deny", "decline", "progress", "done", "accept", "flag", "withdraw",
+					},
 				},
-				"body":        str("response text"),
-				"milestone":   num("step number, from 1"),
-				"deliverable": str("path or URL: the work (done), a step's artifact (progress)"),
+				"body":          str("response text"),
+				"superseded_by": num("withdraw replacement"),
+				"milestone":     num("step number, from 1"),
+				"deliverable":   str("path or URL: the work (done), a step's artifact (progress)"),
 				"milestones": map[string]any{
 					"type": "array", "items": map[string]any{"type": "string"},
 					"description": "your steps, on approve",

@@ -264,6 +264,8 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		res, evs, err = s.applySend(l, op, now)
 	case OpRespond:
 		res, evs, err = s.applyRespond(l, op, now)
+	case OpWithdrawMessage:
+		res, evs, err = s.applyWithdraw(l, op, now)
 	case OpQueueUpdate:
 		res, evs, err = s.applyQueueUpdate(l, op, now)
 	case OpAckMessage:

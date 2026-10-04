@@ -41,12 +41,14 @@ const Board = (() => {
   // when its STATE says so, not when it happens to carry response text,
   // because a denial and a decline are both terminal and both carry none.
   const TERMINAL = new Set([
+    "withdrawn",
     "answered", "approved", "queued", "denied", "declined", "done", "acked",
     "expired_unanswered", "expired_recipient_dormant", "expired_recipient_dead",
     "displaced",
   ])
 
   const VERDICT = {
+    withdrawn: "Withdrawn",
     answered: "Answered", approved: "Approved", queued: "Queued", denied: "Denied",
     declined: "Declined", done: "Done", acked: "Acknowledged",
     expired_unanswered: "Expired, unanswered",
@@ -417,7 +419,7 @@ const Board = (() => {
     const who = (id) =>
       `<span class="who${selfId != null && id === selfId ? " focal" : ""}">${esc(id || ", ")}</span>`
     return `
-      <article class="msg ${settled ? "" : "open"}${overdue ? " overdue" : ""}" data-serial="${esc(String(m.serial))}">
+      <article id="message-${esc(String(m.serial))}" class="msg ${settled ? "" : "open"}${overdue ? " overdue" : ""}" data-serial="${esc(String(m.serial))}">
         <div class="msg-head">
           <span class="serial">#${esc(m.serial ?? "")}</span>
           <span class="kind ${esc(t)}">${esc(t)}</span>
@@ -432,7 +434,8 @@ const Board = (() => {
         ${attachmentsHTML(m.attachments)}
         ${settled ? `<div class="reply ${esc(m.state)}">
           <span class="verdict">${esc(verdict)}</span>
-          ${m.response ? esc(m.response) : '<span class="none">No message given</span>'}
+          ${m.state === "withdrawn" ? esc(m.withdrawal_reason || "No reason given") : (m.response ? esc(m.response) : '<span class="none">No message given</span>')}
+          ${m.state === "withdrawn" && m.superseded_by ? `<a href="#message-${esc(m.superseded_by)}">Superseded by request #${esc(m.superseded_by)}</a>` : ""}
         </div>` : ""}
         ${actionsHTML ? actionsHTML(m) : ""}
       </article>`

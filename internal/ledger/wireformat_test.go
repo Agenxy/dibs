@@ -240,6 +240,8 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		// replay every tracked request as untracked and sweep it in fifteen
 		// minutes, under a task its sender is still polling.
 		"track": true,
+		// New withdrawal op's replacement reference; all old tags stay frozen.
+		"superseded_by": true,
 	}
 
 	// Every tag the Op DECLARES, not merely the ones this fixture happens to
@@ -431,7 +433,8 @@ const (
 	// this value, the sweep is the bug, and the tag it renamed is the data
 	// loss.
 	// Task queue: eight additive op tags, no renamed/removed historical tags.
-	frozenOpFingerprint       = "sha256:6ca231a45f65e4da"
+	// Withdrawal: one additive replacement reference; all old tags unchanged.
+	frozenOpFingerprint       = "sha256:0ffc9a21e796a2a3"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`
@@ -440,7 +443,8 @@ const (
 	// guard written to stop it. Found by a pre-release review.
 	// Updated for the newly added retain_until decision, with no renamed tags.
 	// Task queue: nine additive message tags, no renamed/removed historical tags.
-	frozenMessageFingerprint = "sha256:c907f83a92bf691c"
+	// Withdrawal: three additive receipt fields; all old tags unchanged.
+	frozenMessageFingerprint = "sha256:52cedd948f3c7aa2"
 	// The identity inside op.agent. Set when the fingerprint was added; one
 	// new tag at a time from here, never a rename.
 	frozenAgentFingerprint = "sha256:c630d3cc9f27eb95"
@@ -491,37 +495,38 @@ func TestOpKindStringsAreFrozen(t *testing.T) {
 	// here so a kind added to the table brings its expected string with it or
 	// does not compile.
 	for name, pair := range map[string]struct{ got, want string }{
-		"OpRegister":       {core.OpRegister, "register"},
-		"OpResume":         {core.OpResume, "resume"},
-		"OpWake":           {core.OpWake, "wake"},
-		"OpAckBoard":       {core.OpAckBoard, "check_in"},
-		"OpUpdate":         {core.OpUpdate, "update"},
-		"OpSignOff":        {core.OpSignOff, "sign_off"},
-		"OpHeartbeat":      {core.OpHeartbeat, "heartbeat"},
-		"OpSetSlot":        {core.OpSetSlot, "declare"},
-		"OpClearSlot":      {core.OpClearSlot, "undeclare"},
-		"OpSendMessage":    {core.OpSendMessage, "send"},
-		"OpQueueUpdate":    {core.OpQueueUpdate, "queue_update"},
-		"OpClaim":          {core.OpClaim, "claim"},
-		"OpRelease":        {core.OpRelease, "release"},
-		"OpSweep":          {core.OpSweep, "sweep"},
-		"OpMarkDelivered":  {core.OpMarkDelivered, "mark_delivered"},
-		"OpOutcomeRead":    {core.OpOutcomeRead, "outcome_read"},
-		"OpPutBlob":        {core.OpPutBlob, "put_blob"},
-		"OpGrantRole":      {core.OpGrantRole, "grant_role"},
-		"OpPrune":          {core.OpPrune, "prune"},
-		"OpForceRelease":   {core.OpForceRelease, "force_release"},
-		"OpSpaceOpen":      {core.OpSpaceOpen, "open_space"},
-		"OpSpaceJoin":      {core.OpSpaceJoin, "join_space"},
-		"OpSpaceLeave":     {core.OpSpaceLeave, "leave_space"},
-		"OpSpaceSubscribe": {core.OpSpaceSubscribe, "watch_space"},
-		"OpSpaceExclusive": {core.OpSpaceExclusive, "lock_space"},
-		"OpSpacePost":      {core.OpSpacePost, "post"},
-		"OpSpaceAnnounce":  {core.OpSpaceAnnounce, "announce"},
-		"OpSpaceAck":       {core.OpSpaceAck, "ack_announcement"},
-		"OpAdoptAgent":     {core.OpAdoptAgent, "adopt_agent"},
-		"OpHostRenamed":    {core.OpHostRenamed, "host_renamed"},
-		"OpSpaceRetitle":   {core.OpSpaceRetitle, "retitle_space"},
+		"OpRegister":        {core.OpRegister, "register"},
+		"OpResume":          {core.OpResume, "resume"},
+		"OpWake":            {core.OpWake, "wake"},
+		"OpAckBoard":        {core.OpAckBoard, "check_in"},
+		"OpUpdate":          {core.OpUpdate, "update"},
+		"OpSignOff":         {core.OpSignOff, "sign_off"},
+		"OpHeartbeat":       {core.OpHeartbeat, "heartbeat"},
+		"OpSetSlot":         {core.OpSetSlot, "declare"},
+		"OpClearSlot":       {core.OpClearSlot, "undeclare"},
+		"OpSendMessage":     {core.OpSendMessage, "send"},
+		"OpQueueUpdate":     {core.OpQueueUpdate, "queue_update"},
+		"OpWithdrawMessage": {core.OpWithdrawMessage, "withdraw_message"},
+		"OpClaim":           {core.OpClaim, "claim"},
+		"OpRelease":         {core.OpRelease, "release"},
+		"OpSweep":           {core.OpSweep, "sweep"},
+		"OpMarkDelivered":   {core.OpMarkDelivered, "mark_delivered"},
+		"OpOutcomeRead":     {core.OpOutcomeRead, "outcome_read"},
+		"OpPutBlob":         {core.OpPutBlob, "put_blob"},
+		"OpGrantRole":       {core.OpGrantRole, "grant_role"},
+		"OpPrune":           {core.OpPrune, "prune"},
+		"OpForceRelease":    {core.OpForceRelease, "force_release"},
+		"OpSpaceOpen":       {core.OpSpaceOpen, "open_space"},
+		"OpSpaceJoin":       {core.OpSpaceJoin, "join_space"},
+		"OpSpaceLeave":      {core.OpSpaceLeave, "leave_space"},
+		"OpSpaceSubscribe":  {core.OpSpaceSubscribe, "watch_space"},
+		"OpSpaceExclusive":  {core.OpSpaceExclusive, "lock_space"},
+		"OpSpacePost":       {core.OpSpacePost, "post"},
+		"OpSpaceAnnounce":   {core.OpSpaceAnnounce, "announce"},
+		"OpSpaceAck":        {core.OpSpaceAck, "ack_announcement"},
+		"OpAdoptAgent":      {core.OpAdoptAgent, "adopt_agent"},
+		"OpHostRenamed":     {core.OpHostRenamed, "host_renamed"},
+		"OpSpaceRetitle":    {core.OpSpaceRetitle, "retitle_space"},
 		// THE EIGHT THIS TABLE DID NOT KNOW ABOUT. It called itself the single
 		// authoritative list and omitted these, so renaming any one of them left
 		// this test green while every ledger containing it stopped replaying.
@@ -580,6 +585,8 @@ func TestOpKindStringsAreFrozen(t *testing.T) {
 // the two op kinds above.
 func TestLedgerMessageFieldNamesAreFrozen(t *testing.T) {
 	frozen := map[string]bool{
+		// Additive withdrawal receipt; existing response/progress remain intact.
+		"withdrawal_reason": true, "withdrawn_by": true, "superseded_by": true,
 		// Additive task queue state: no historical field renamed.
 		"request_priority": true, "queue_priority": true, "queue_debt": true, "queue_rank": true, "queue_by": true, "queue_changed_at": true, "queue_changed_serial": true, "queue_order_locked": true, "queue_lock_by": true,
 		"retain_until": true, // originating response decision, absent on legacy mail

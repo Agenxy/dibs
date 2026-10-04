@@ -413,6 +413,11 @@ func (e *Engine) boot(now time.Time) {
 
 // exec runs the request phases for a mutating op.
 func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
+	// Surface vocabulary is resolved before admission; the ledger records the
+	// new sender operation, never a changed interpretation of old responses.
+	if op.Kind == core.OpRespond && op.Disposition == "withdraw" {
+		op.Kind = core.OpWithdrawMessage
+	}
 	op.AgentID = "" // replay-only actor field; never trusted from ingress
 	// Same rule: the claim VERDICT is the engine's to record, never the
 	// caller's to assert. Checked below, after the actor is known.
@@ -939,7 +944,8 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		e.seen[actor.ID] = now
 		e.noteAuthenticatedContact(actor, now)
 		e.confirmSocketOffer(actor, now)
-		if op.Kind == core.OpRespond && (op.Disposition == "accept" || op.Disposition == "flag") {
+		if op.Kind == core.OpWithdrawMessage ||
+			(op.Kind == core.OpRespond && (op.Disposition == "accept" || op.Disposition == "flag")) {
 			e.clearNoticesFor(actor.ID, op.MsgSerial)
 		}
 	}

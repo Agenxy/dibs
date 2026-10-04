@@ -215,6 +215,12 @@ func (e *Engine) maybeWake(ev core.Event) {
 	if e.state == nil {
 		return
 	}
+	if ev.Type == "message.withdrawn" {
+		msg, _ := ev.Data["msg_serial"].(uint64)
+		if !e.withdrawalReceiptBelongs(e.state.Messages[msg]) {
+			return
+		}
+	}
 	l, ok := e.state.Agents[ev.To]
 	if !ok {
 		return

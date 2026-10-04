@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -17,6 +16,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/testport"
 )
 
 // This recording executable proves process/issuer wiring, NOT cryptography.
@@ -113,14 +114,8 @@ func TestGuestReleaseMetadataThroughShippedDaemon(t *testing.T) {
 	if err = os.WriteFile(filepath.Join(dir, "guest-release.json"), body, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	reserved, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	addr := reserved.Addr().String()
-	if err = reserved.Close(); err != nil {
-		t.Fatal(err)
-	}
+	reserved := testport.Reserve(t, "tcp", "127.0.0.1:0")
+	addr := reserved.Addr
 	receipt := filepath.Join(t.TempDir(), "receipts")
 	logFile, err := os.CreateTemp(t.TempDir(), "daemon-log-")
 	if err != nil {
@@ -132,6 +127,7 @@ func TestGuestReleaseMetadataThroughShippedDaemon(t *testing.T) {
 	// grace period to each subprocess. Race detection itself remains enabled.
 	cmd.Env = append(os.Environ(), "GORACE=atexit_sleep_ms=0", "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "DIBS_NOTIFY=off", "DIBS_TEST_GUEST_ADMISSION_COSIGN=1", "DIBS_TEST_GUEST_ADMISSION_RECEIPT="+receipt)
 	cmd.Stdout, cmd.Stderr = logFile, logFile
+	reserved.Release(t)
 	if err = cmd.Start(); err != nil {
 		t.Fatal(err)
 	}

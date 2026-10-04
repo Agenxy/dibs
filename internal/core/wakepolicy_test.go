@@ -33,6 +33,7 @@ func TestMailWakesAnAgent(t *testing.T) {
 		{"message.approved", "", true},
 		{"message.denied", "", true},
 		{"message.declined", "", true},
+		{"message.withdrawn", "", true},
 		{"message.adopted", MsgQuestion, true},
 		{"message.adopted", MsgNotify, true},
 		// Still not everything the board publishes: an ack is mail LEAVING,
@@ -59,6 +60,7 @@ func TestBlockingIsStillTheUrgentSubset(t *testing.T) {
 		{"message.approved", ""},
 		{"message.denied", ""},
 		{"message.declined", ""},
+		{"message.withdrawn", ""},
 		{"message.adopted", MsgQuestion},
 	}
 	for _, c := range blocking {

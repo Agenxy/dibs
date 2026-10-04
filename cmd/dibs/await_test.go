@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"errors"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,6 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/testport"
 )
 
 // awaitEnv points `dibs await` at addr with a local secret it can read.
@@ -103,16 +104,14 @@ func TestAwaitRidesThroughADaemonRestart(t *testing.T) {
 // "nothing can happen, the board is down". 75 is EX_TEMPFAIL in sysexits: a
 // temporary failure, try again later, which is exactly the situation.
 func TestAwaitSaysTheDaemonIsGoneWithItsOwnExitCode(t *testing.T) {
-	probe, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	where := probe.Addr().String()
-	_ = probe.Close() // nothing listens there now
+	port := testport.Reserve(t, "tcp", "127.0.0.1:0")
+	// This outage fixture requires ECONNREFUSED. A held TCP socket instead
+	// queues or times out on macOS; release is unavoidable for this premise.
+	where := port.ReleaseForOutage(t)
 	awaitEnv(t, where)
 	awaitReconnectFor = 300 * time.Millisecond
 
-	err = await([]string{"-since", "5", "-timeout", "10s"})
+	err := await([]string{"-since", "5", "-timeout", "10s"})
 	var coded interface{ exitStatus() int }
 	if !errors.As(err, &coded) || coded.exitStatus() != exitTempFail {
 		t.Fatalf("an unreachable daemon returned %v; want exit status %d, distinct from a "+

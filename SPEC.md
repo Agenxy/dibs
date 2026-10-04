@@ -566,12 +566,13 @@ Messages go agent → agent; identity = send serial; bodies private (§4, §5).
 | `pending/delivered/acked` | `expired_unanswered` \| `expired_recipient_dormant` \| `expired_recipient_dead` | deadline sweep (§7 cascade) | `message.<state>` |
 | `expired_unanswered` (question only) | `answered` | late `respond(answer)` by its recipient; expiry detail cleared and sender's verdict-read marker reset | `message.answered` |
 | `pending/delivered` (notify only) | `displaced` | evicted by a newer notify at mailbox capacity | `message.displaced` (same serial as the displacing send, atomic) |
+| `pending/delivered/acked/queued/approved` (request) | `withdrawn`, unconsumed recipient receipt | sender `respond(withdraw)`; already-performed approvals refused | `message.withdrawn` |
 
 **Terminal predicate (exact, used consistently by capacity, displacement, inbox,
 retention, and GC):**
 
 ```
-Terminal(m) ⇔ m.state ∈ {answered, approved, done, denied, declined,
+Terminal(m) ⇔ m.state ∈ {answered, approved, queued, done, withdrawn, denied, declined,
                          expired_unanswered, expired_recipient_dormant,
                          expired_recipient_dead, displaced}
             ∨ (m.state = acked ∧ m.type ∈ {notify, handoff})
@@ -893,7 +894,10 @@ Combined resource/task listeners honor the resource subscriptions only and
 omit task IDs from their acknowledgement. No task progress notifications or
 client input requests are emitted. `tasks/update` ignores unsolicited input;
 `tasks/cancel` acknowledges cooperative cancellation without stopping another
-agent's work. A sender asks the worker directly when work should stop.
+agent's work or granting sender authority. Sender `respond(withdraw)` retracts
+an unfinished request and maps its tracked task to `cancelled`, with a factual
+result and optional replacement reference. Task listeners publish this terminal
+snapshot and stop following it. Neither operation stops an agent process.
 
 **Tools (52).** All take `token` except `register`, `resume`,
 `hook_poll` and `guard_path` (the last two are lifecycle-hook surfaces and have
@@ -923,10 +927,28 @@ coordinator or admin role, or the `relocate` permission the human grants
 `grant: "relocate"`). Every relocation is ledgered as `agent.relocated` with
 who, the agent, and from and to; the board row shows the last one.
 
+The sender can retract an unfinished request with `respond(disposition:"withdraw",
+body: reason?, superseded_by: serial?)`. Engine ingress translates this into the
+new `withdraw_message` ledger op before recipient response guards. Admission
+checks field shapes and rejects work-report fields; the fold checks sender
+ownership, creation-serial privacy fence, request state and replacement. Only
+pending, delivered, acknowledged, queued and approved requests qualify; an approved grant or
+adoption already performed its effect and cannot be withdrawn. Questions expire
+and are not withdrawable. Unknown, other-sender or self replacement references
+are refused; a replacement is another ordinary request by the same sender,
+possibly to a different recipient, and this operation never starts it.
+Withdrawal retains approval/progress history in separate fields, clears queue
+debt/rank/task ordering lock, compacts remaining ranks and notifies the recipient
+without an imperative. The terminal envelope becomes unconsumed until recipient
+`ack`, and its receipt is rebuilt from that state after restart. Sender receipt
+is the successful call; no delivery is asserted. No work is owed on a withdrawn
+request, and no declaration or agent process is altered. Historical ops retain
+their exact semantics; old field names remain unchanged.
+
 Ordinary work requests can be accepted with `respond(disposition:"queue")`.
 Queued is an approval verdict, but not started work. New acceptance records an
-explicit `queue_debt` marker: queued and approved debt remains owed until done
-or declined, within the mailbox capacity bound. Older unmarked approvals retain
+explicit `queue_debt` marker: queued and approved debt remains owed until done,
+declined or withdrawn, within the mailbox capacity bound. Older unmarked approvals retain
 the historical 24-hour obligation window; replay never infers the new marker.
 `approve` starts queued work; completing it never starts another request.
 
