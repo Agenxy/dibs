@@ -57,6 +57,12 @@ parent already ran no fallback because its output lacked the required
 active-writer marker; that test's parent failure is the warning and incorrect
 failure diagnosis, not a claim of fallback execution.
 
+Contention returns `false` through the existing command result, so the engine
+counts it as a failed wake attempt for retry and stall reporting. A stall
+reported as "wake failed" can therefore include admission timeouts even though
+no queue command ran. This is an accepted limit: contention means another
+writer is admitting a wake at that moment and is expected to be rare.
+
 A still-running old writer does not acquire this new lock, so the guarantee
 requires both writers to upgrade. No payload or capability contract changes.
 
