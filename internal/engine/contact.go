@@ -20,6 +20,7 @@ func (e *Engine) noteAuthenticatedContact(l *core.Agent, now time.Time) {
 		e.contact = map[string]contactEvidence{}
 	}
 	e.contact[l.ID] = contactEvidence{at: now, created: l.CreatedSerial}
+	e.noteSocketBusy(l, now)
 }
 
 // Use the existing idle lease, not a new clock. Once direct contact expires,

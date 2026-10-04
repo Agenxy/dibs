@@ -22,12 +22,36 @@ type socketOffer struct {
 	canConfirm          bool
 	mail, announcements []string
 	notices             []string
+	work                []socketWorkKey
+	backoff             socketBackoff
 }
 
 func (e *Engine) beginSocketOffer(l *core.Agent, session string) core.Result {
+	return e.beginSocketOffers([]*core.Agent{l}, session)
+}
+
+// One reservation for the whole session, including daemon fallback writers.
+// A bridge holding several tokens supplies them together, so aggregation and
+// reservation are atomic without granting one token another mailbox's text.
+func (e *Engine) beginSocketOffers(agents []*core.Agent, session string) core.Result {
 	now := time.Now()
-	text := e.currentWakeDigest(l)
-	if text == "" {
+	l := agents[0]
+	key := socketSessionKey(l)
+	if old, ok := e.socketEpochs[key]; ok {
+		// A writer disappearing before settlement cannot wedge the route.
+		// Written epochs have no timer: a held peer is not a reason to repeat.
+		if old.written || now.Sub(old.at) < 15*time.Second {
+			return core.Result{"digest": ""}
+		}
+		delete(e.socketEpochs, key)
+	}
+	var texts []string
+	for _, a := range agents {
+		if text := e.socketDigest(a, now); text != "" {
+			texts = append(texts, text)
+		}
+	}
+	if len(texts) == 0 {
 		return core.Result{"digest": ""}
 	}
 	if e.socketOffers == nil {
@@ -35,53 +59,96 @@ func (e *Engine) beginSocketOffer(l *core.Agent, session string) core.Result {
 	}
 	e.nextSocketOffer++
 	id := strconv.FormatUint(e.nextSocketOffer, 10)
-	_, announcements := e.dueAnnouncements(l.ID, now)
-	_, notices := e.dueNoticeLines(l.ID, now)
-	e.socketOffers[l.ID] = socketOffer{
-		id: id, session: session, at: now,
-		canConfirm: e.turnEnded[l.ID].After(e.seen[l.ID]),
-		mail:       e.wakeKeys(l.ID, now), announcements: announcements, notices: notices,
+	if e.socketEpochs == nil {
+		e.socketEpochs = map[string]socketEpoch{}
 	}
-	return core.Result{"digest": text, "offer": id}
+	e.socketEpochs[key] = socketEpoch{id: id, at: now}
+	for _, a := range agents {
+		_, announcements := e.dueAnnouncements(a.ID, now)
+		_, notices := e.dueNoticeLines(a.ID, now)
+		_, work := e.dueSocketWaits(a, now)
+		e.socketOffers[a.ID] = socketOffer{
+			id: id, session: session, at: now,
+			canConfirm: e.socketLifecycle(a, now) == "idle",
+			mail:       e.wakeKeys(a.ID, now), announcements: announcements, notices: notices,
+			work: work, backoff: e.socketBackoff[a.ID],
+		}
+	}
+	e.logSocketOffer(l, now, id)
+	return core.Result{"digest": strings.Join(texts, "\n"), "offer": id}
 }
 
 func (e *Engine) settleSocketOffer(agent, session, id string, written bool) {
 	o, ok := e.socketOffers[agent]
-	if !ok || o.id != id || o.session != session {
+	if !ok || o.id != id || o.session != session || o.written {
 		return
 	}
 	l := e.state.Agents[agent]
 	if !written || l == nil || !l.SessionIsCurrent(session) {
-		delete(e.socketOffers, agent)
+		if l != nil && e.socketEpochs[socketSessionKey(l)].id == id {
+			delete(e.socketEpochs, socketSessionKey(l))
+		}
+		for who, other := range e.socketOffers {
+			if other.id == id {
+				delete(e.socketOffers, who)
+			}
+		}
 		return
 	}
-	o.written = true
-	e.socketOffers[agent] = o
-	if e.seen[agent].After(o.at) {
-		e.confirmSocketOffer(l, e.seen[agent])
+	key := socketSessionKey(l)
+	if epoch := e.socketEpochs[key]; epoch.id == id {
+		epoch.written = true
+		e.socketEpochs[key] = epoch
+	}
+	for who, other := range e.socketOffers {
+		if other.id != id {
+			continue
+		}
+		e.settleSocketParticipant(who, key, other)
+	}
+}
+
+func (e *Engine) settleSocketParticipant(who, key string, offer socketOffer) {
+	row := e.state.Agents[who]
+	if row == nil || !row.SessionIsCurrent(offer.session) || socketSessionKey(row) != key {
+		delete(e.socketOffers, who)
+		return
+	}
+	offer.written = true
+	e.socketOffers[who] = offer
+	e.markSocketWork(row, offer.work, offer.backoff, time.Now(), true)
+	if e.seen[who].After(offer.at) {
+		e.confirmSocketOffer(row, e.seen[who])
 	}
 }
 
 // Called only by model activity and starting hooks, never event observers,
 // finishing hooks, lease probes or socket bookkeeping itself.
 func (e *Engine) confirmSocketOffer(l *core.Agent, now time.Time) {
-	o, ok := e.socketOffers[l.ID]
-	if !ok || !o.written || !o.canConfirm || !now.After(o.at) || !l.SessionIsCurrent(o.session) {
-		return
+	key := socketSessionKey(l)
+	for who, o := range e.socketOffers {
+		row := e.state.Agents[who]
+		if row == nil || socketSessionKey(row) != key || !row.SessionIsCurrent(o.session) ||
+			!o.written || !o.canConfirm || !now.After(o.at) {
+			continue
+		}
+		e.markWoken(o.mail, o.at)
+		e.markAnnounced(o.announcements, o.at)
+		e.markNoticePresentation(o.notices, o.at)
+		delete(e.socketOffers, who)
 	}
-	e.markWoken(o.mail, o.at)
-	e.markAnnounced(o.announcements, o.at)
-	e.markNoticePresentation(o.notices, o.at)
-	delete(e.socketOffers, l.ID)
 }
 
 // A starting lifecycle event explicitly distinguishes a new turn from
 // tool traffic in a turn that was already running when mail was offered.
 func (e *Engine) noteSocketTurnStart(l *core.Agent, now time.Time) {
-	o, ok := e.socketOffers[l.ID]
-	if ok && now.After(o.at) && l.SessionIsCurrent(o.session) {
-		o.canConfirm = true
-		e.socketOffers[l.ID] = o
+	key := socketSessionKey(l)
+	for who, o := range e.socketOffers {
+		row := e.state.Agents[who]
+		if row != nil && socketSessionKey(row) == key && now.After(o.at) && row.SessionIsCurrent(o.session) {
+			o.canConfirm = true
+			e.socketOffers[who] = o
+		}
 	}
 	e.confirmSocketOffer(l, now)
 }
@@ -163,18 +230,54 @@ func (e *Engine) dueBlockingNotices(agent string, now time.Time) int {
 // Authentication and session binding are checked on the writer loop. A plain
 // digest read remains non-consuming for dormant pre-upgrade bridges.
 func (e *Engine) SocketOfferFor(ctx context.Context, token, session, id string, written bool) (core.Result, error) {
-	return e.query(ctx, func() core.Result {
-		l := e.state.AgentByToken(token)
-		if l == nil {
-			return core.Result{"error": core.ErrBadToken}
-		}
-		if !l.SessionIsCurrent(session) {
+	return e.SocketOffersFor(ctx, []string{token}, session, id, written)
+}
+
+// SocketOffersFor atomically reserves a session's owned mailboxes. Each token
+// authenticates its own text; unrelated hosts or current sessions never join.
+func (e *Engine) SocketOffersFor(
+	ctx context.Context, tokens []string, session, id string, written bool,
+) (core.Result, error) {
+	res, err := e.query(ctx, func() core.Result {
+		agents := e.socketAuthorizedParticipants(tokens, session)
+		if len(agents) == 0 {
+			if len(tokens) == 1 && e.state.AgentByToken(tokens[0]) == nil {
+				return core.Result{"error": core.ErrBadToken}
+			}
 			return core.Result{"digest": ""}
 		}
 		if id != "" {
-			e.settleSocketOffer(l.ID, session, id, written)
+			for _, l := range agents {
+				e.settleSocketOffer(l.ID, session, id, written)
+			}
 			return core.Result{"digest": ""}
 		}
-		return e.beginSocketOffer(l, session)
+		return e.beginSocketOffers(agents, session)
 	})
+	if err != nil {
+		return nil, err
+	}
+	if refused, ok := res["error"].(error); ok {
+		return nil, refused
+	}
+	return res, nil
+}
+
+func (e *Engine) socketAuthorizedParticipants(tokens []string, session string) []*core.Agent {
+	var agents []*core.Agent
+	seen := map[string]bool{}
+	for _, token := range tokens {
+		l := e.state.AgentByToken(token)
+		if l == nil || !l.SessionIsCurrent(session) {
+			continue // a moved/revoked mailbox cannot suppress its live peers
+		}
+		if len(agents) > 0 && socketSessionKey(l) != socketSessionKey(agents[0]) {
+			continue // never aggregate another host or current session
+		}
+		if !seen[l.ID] {
+			seen[l.ID] = true
+			agents = append(agents, l)
+		}
+	}
+	return agents
 }

@@ -128,6 +128,9 @@ func TestASelfWakingBridgeIsHandedTheDigestAndTheDaemonStandsDown(t *testing.T) 
 			"writing to the same socket and the operator gets two notifications for " +
 			"every message")
 	}
+	toolCall(t, srv, "hook_poll", map[string]any{
+		"session_id": "9f1e2d3c-4b5a-4c6d-8e7f-0a1b2c3d4e5f", "event": "Stop", "stop_hook_active": true,
+	})
 
 	toolCall(t, srv, "send", map[string]any{
 		"token": asker["token"], "to": "busy", "type": "question", "body": "does the fold hold?",

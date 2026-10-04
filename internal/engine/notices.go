@@ -38,6 +38,10 @@ import (
 const maxNotices = 16
 
 type notice struct {
+	// The canonical event kind, including on rebuild. DONE eligibility depends
+	// on current declarations; it cannot be inferred from rendered text or the
+	// message's later state (a flag can arrive after DONE).
+	Kind string
 	// Serial is the EVENT that produced this notice, used for ordering.
 	Serial uint64
 	// Msg is the MESSAGE the notice points at, when it points at one, so that
@@ -160,7 +164,7 @@ func (e *Engine) noteEventFor(ev core.Event, wants func(agent string) bool) {
 	// The message this notice points at, when it points at one. ev.Serial is
 	// the event; msg_serial is what the agent is told to read.
 	msg, _ := ev.Data["msg_serial"].(uint64)
-	e.pushNoticeAs(who, text, ev.Serial, msg, blocking, ev.TS)
+	e.pushNoticeKind(who, text, ev.Serial, msg, blocking, ev.TS, ev.Type)
 }
 
 // situationalNotice is what one event tells the agent it happened to: pure,
@@ -301,6 +305,10 @@ func (e *Engine) pushNoticeFor(who, text string, serial, msg uint64, at time.Tim
 
 // pushNoticeAs is pushNoticeFor plus whether somebody is waiting on it.
 func (e *Engine) pushNoticeAs(who, text string, serial, msg uint64, blocking bool, at time.Time) {
+	e.pushNoticeKind(who, text, serial, msg, blocking, at, "")
+}
+
+func (e *Engine) pushNoticeKind(who, text string, serial, msg uint64, blocking bool, at time.Time, kind string) {
 	if who == "" || text == "" {
 		return
 	}
@@ -311,7 +319,7 @@ func (e *Engine) pushNoticeAs(who, text string, serial, msg uint64, blocking boo
 	// newest matter most: being told you were admitted an hour ago and then
 	// evicted is worse than being told only the eviction.
 	e.notices[who] = append(e.notices[who],
-		notice{Serial: serial, Msg: msg, Text: text, Blocking: blocking, At: at})
+		notice{Serial: serial, Msg: msg, Text: text, Blocking: blocking, At: at, Kind: kind})
 	if n := len(e.notices[who]); n > maxNotices {
 		// BLOCKING ONES SURVIVE THE TRIM.
 		//
@@ -594,7 +602,7 @@ func (e *Engine) rebuildBlockingNotices() {
 		if m.State == core.MsgStateQueued {
 			ev.Data["queue_position"] = e.state.QueuePosition(m)
 		}
-		e.pushNoticeAs(m.From, answeredNotice(ev), m.RespondedAt, m.Serial, true, ev.TS)
+		e.pushNoticeKind(m.From, answeredNotice(ev), m.RespondedAt, m.Serial, true, ev.TS, ev.Type)
 	}
 }
 

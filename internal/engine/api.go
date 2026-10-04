@@ -327,7 +327,7 @@ func (e *Engine) WakeDigestFor(ctx context.Context, token, from, kind string) (s
 		if l == nil {
 			return core.Result{"error": core.ErrBadToken}
 		}
-		return core.Result{"digest": e.wakeDigest(l, false)}
+		return core.Result{"digest": e.socketDigest(l, time.Now())}
 	})
 	if err != nil {
 		return "", err
@@ -351,7 +351,7 @@ func (e *Engine) FreshWakeDigestFor(ctx context.Context, token, session string) 
 		if !l.SessionIsCurrent(session) {
 			return core.Result{"digest": ""}
 		}
-		return core.Result{"digest": e.currentWakeDigest(l)}
+		return core.Result{"digest": e.socketDigest(l, time.Now())}
 	})
 	if err != nil {
 		return "", err

@@ -46,8 +46,10 @@ func TestSocketAndStopSharePresentationOnlyAfterTurnEvidence(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			t.Cleanup(cancel)
 			stopWakeTimersOnCleanup(t, e)
-			go e.Run(ctx)
-			if order == "accepted socket then Stop" {
+			joined := make(chan struct{})
+			go func() { e.Run(ctx); close(joined) }()
+			t.Cleanup(func() { cancel(); <-joined })
+			{
 				// Establish an idle session through its lifecycle hook. This
 				// Stop is already active, so it records the boundary without
 				// extending the turn to present the fixture's mail.
@@ -62,6 +64,11 @@ func TestSocketAndStopSharePresentationOnlyAfterTurnEvidence(t *testing.T) {
 				}
 				return got
 			}
+			if order == "mid-turn held socket then Stop" {
+				if _, err := e.HookPoll(ctx, sid, "UserPromptSubmit", "", false, false); err != nil {
+					t.Fatal(err)
+				}
+			}
 			if order == "Stop then socket" {
 				if stop()["reason"] == nil {
 					t.Fatal("setup: Stop did not present the question")
@@ -72,11 +79,14 @@ func TestSocketAndStopSharePresentationOnlyAfterTurnEvidence(t *testing.T) {
 			if !e.runWakeAndReport(plan, "worker") {
 				t.Fatal("socket delivery failed")
 			}
-			if order == "Stop then socket" {
+			if order == "Stop then socket" || order == "mid-turn held socket then Stop" {
 				select {
 				case got := <-wire:
-					t.Fatalf("Stop already presented #%d; socket duplicated it: %s", serial, got)
+					t.Fatalf("a presented message or busy turn produced a socket write for #%d: %s", serial, got)
 				case <-time.After(150 * time.Millisecond):
+				}
+				if order == "mid-turn held socket then Stop" && stop()["reason"] == nil {
+					t.Fatal("mid-turn socket suppression lost the Stop fallback")
 				}
 			} else {
 				select {
@@ -93,7 +103,7 @@ func TestSocketAndStopSharePresentationOnlyAfterTurnEvidence(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				if order == "accepted socket then Stop" || order == "mid-turn held socket then Stop" {
+				if order == "accepted socket then Stop" {
 					// Real tool activity, not a timestamp set by the test. Reading
 					// the board is evidence of a new turn but does not read mail.
 					if _, err := e.SpaceRead(ctx, "tok-worker", "missing-space", 1); err == nil {

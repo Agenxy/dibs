@@ -74,6 +74,7 @@ func (s wakeDigestSource) read() (string, error) {
 func (iw *inboxWatcher) offerNotice(captured string) (string, func(bool), error) {
 	iw.mu.Lock()
 	offers := iw.offerSupported
+	batch := iw.batchSupported
 	var sources []wakeDigestSource
 	for _, st := range iw.streams {
 		sources = append(sources, st.source)
@@ -84,6 +85,9 @@ func (iw *inboxWatcher) offerNotice(captured string) (string, func(bool), error)
 		return text, nil, err
 	}
 	sort.Slice(sources, func(i, j int) bool { return sources[i].key < sources[j].key })
+	if batch && len(sources) > 0 {
+		return batchSocketOffer(sources)
+	}
 	type receipt struct {
 		source wakeDigestSource
 		id     string
@@ -114,6 +118,27 @@ func (iw *inboxWatcher) offerNotice(captured string) (string, func(bool), error)
 		}
 	}
 	return strings.Join(texts, "\n"), finish, nil
+}
+
+func batchSocketOffer(sources []wakeDigestSource) (string, func(bool), error) {
+	var tokens []string
+	for _, source := range sources {
+		if source.session == sources[0].session {
+			tokens = append(tokens, source.token)
+		}
+	}
+	meta := map[string]any{mcp.SocketOfferMetaKey: true, mcp.SocketTokensMetaKey: tokens}
+	text, id, err := sources[0].readOffer(meta)
+	finish := func(written bool) {
+		if id == "" {
+			return
+		}
+		meta[mcp.SocketOfferIDMetaKey], meta[mcp.SocketWrittenMetaKey] = id, written
+		if _, _, err := sources[0].readOffer(meta); err != nil {
+			slog.Debug("could not settle this session's socket offer; hook fallback remains", "err", err)
+		}
+	}
+	return text, finish, err
 }
 
 func (s wakeDigestSource) readOffer(extra map[string]any) (string, string, error) {

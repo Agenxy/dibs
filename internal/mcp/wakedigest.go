@@ -11,6 +11,8 @@ const (
 	SocketOfferMetaKey   = "com.dibs/socket_offer"
 	SocketOfferIDMetaKey = "com.dibs/socket_offer_id"
 	SocketWrittenMetaKey = "com.dibs/socket_written"
+	SocketBatchMetaKey   = "com.dibs/socket_batch"
+	SocketTokensMetaKey  = "com.dibs/socket_tokens" //nolint:gosec // metadata key name, not a credential
 )
 
 func (s *Server) readWakeDigest(ctx context.Context, meta map[string]any) (any, *rpcError) {
@@ -27,7 +29,15 @@ func (s *Server) readWakeDigest(ctx context.Context, meta map[string]any) (any, 
 	if offers, _ := meta[SocketOfferMetaKey].(bool); offers {
 		id, _ := meta[SocketOfferIDMetaKey].(string)
 		written, _ := meta[SocketWrittenMetaKey].(bool)
-		res, callErr := s.eng.SocketOfferFor(ctx, token, session, id, written)
+		tokens := []string{token}
+		if raw, ok := meta[SocketTokensMetaKey].([]any); ok {
+			for _, v := range raw {
+				if t, ok := v.(string); ok && len(tokens) < 512 {
+					tokens = append(tokens, t)
+				}
+			}
+		}
+		res, callErr := s.eng.SocketOffersFor(ctx, tokens, session, id, written)
 		err = callErr
 		text, _ = res["digest"].(string)
 		offer, _ = res["offer"].(string)

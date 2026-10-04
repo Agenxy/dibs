@@ -225,6 +225,9 @@ func (e *Engine) maybeWake(ev core.Event) {
 	if !ok {
 		return
 	}
+	if e.socketOwnsDelivery(l) {
+		return // readiness is rebuilt on the tick; do not spend a suppressed wake
+	}
 	// A RETIRED IDENTITY IS NOT WOKEN.
 	//
 	// Answering a closed asker is allowed and returns delivered:false, saying
@@ -1162,7 +1165,8 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 		return wakePlan{
 			agent: l.ID, sessions: sessionsOf(l), notice: e.socketNotice(l, from, kind),
 			session: wakeSessionOf(l), kind: kind,
-			cwd: cwdOf(l), cooldown: cooldown, thread: f.Thread,
+			socketVersion: e.socketCauseVersion(l, now),
+			cwd:           cwdOf(l), cooldown: cooldown, thread: f.Thread,
 		}, true
 	}
 	// cwd ON THIS BRANCH TOO, and this is the branch that needs it.
@@ -1225,6 +1229,8 @@ type wakePlan struct {
 	surface, harness string
 	agent            string // whose outstanding state is rechecked before delivery
 	trackOffer       bool   // production delivery shares presentation with lifecycle hooks
+	socketWritten    *bool  // actual kernel write, distinct from an empty settled plan
+	socketVersion    uint64 // actionable cohort captured before a native attempt
 	notice           string // socket digest; refreshed before production delivery
 	session, kind    string // binding and reason to recheck before a socket write
 	cwd              string // where the agent says it works, for the mismatch warning
@@ -1537,16 +1543,10 @@ func (e *Engine) PullOnlyNote(l *core.Agent) string {
 	// "nothing on this board can wake" an agent the daemon was about to nudge.
 	// Best effort is still best effort, so the wording promises an attempt
 	// and not an arrival. Found by the pre-release review, round three.
-	socket := e.mightReachOverSocket(l)
-	bestEffort := func(state, why string) string {
-		lead := why + ", but a session socket for it is open, so a best-effort notice will be tried."
-		if harnessenv.NeedsNoWakeCommand(named) {
-			lead = why + ", and one is open for it, so a best-effort notice is being handed to it now."
-		}
-		return "delivered to " + l.ID + ", which is " + state + ". " + lead + " Nothing can confirm " +
-			"it arrived: a session in bypassPermissions mode holds peer messages for its human " +
-			"unless its settings accept them. If it is held, this arrives when that agent next " +
-			"calls inbox or check_in."
+	self, _ := e.SelfWaking(l.ID)
+	socket := e.mightReachOverSocket(l) || self
+	if note := e.closedHarnessNote(l, socket); note != "" {
+		return note
 	}
 	// A SLEEPING AGENT NOTHING CAN REACH. Said plainly, because the alternative
 	// is the sender believing a wake is coming.
@@ -1561,22 +1561,10 @@ func (e *Engine) PullOnlyNote(l *core.Agent) string {
 	// agent is the clearest instance of that. It is also the state whose sender
 	// most needs the warning, since recovering it costs a re-registration.
 	if l.Sleeping() || l.Status == core.StatusArchived {
-		why := "nothing on this board can wake " + named
-		if configured {
-			why = named + " has a wake command, but " + l.ID + " has never supplied " +
-				"a harness thread id for it to resume"
-		}
-		if socket {
-			return bestEffort(string(l.Status), commandSideReason(named, configured))
-		}
-		return "delivered to " + l.ID + ", which is " + string(l.Status) + ", and " +
-			why + ". Nothing will start it: this is NOT a message that will be seen " +
-			"when it next wakes, because nothing is going to wake it. It waits until " +
-			"a person starts that agent again. The message is not lost, and any " +
-			"deadline on it will expire unread."
+		return sleepingPullOnlyNote(l, named, configured, socket)
 	}
 	if socket {
-		return bestEffort("active", commandSideReason(named, configured))
+		return bestEffortSocketNote(l, named, "active", commandSideReason(named, configured))
 	}
 	if configured {
 		return "delivered to " + l.ID + ", which is active, and " + named + " HAS a wake " +

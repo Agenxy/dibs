@@ -189,6 +189,13 @@ func (e *Engine) stallTick(now time.Time) {
 			slots: e.workSlotsOf(l, now), started: started, ended: ended,
 			idle: !ended.IsZero() || l.Status != core.StatusActive,
 		}
+		// Socket waits use per-slot clocks and the same offer door as mail.
+		// An active turn must not spend retries, even if its lease went stale.
+		var waitsOnly bool
+		if in, waitsOnly = e.socketWorkInput(l, in, now); waitsOnly {
+			e.socketWaitStall(l, rec, now)
+			continue
+		}
 		action, next := decideWork(in, rec, now)
 		e.wakers.mu.Lock()
 		if e.wakers.work == nil {
@@ -214,6 +221,17 @@ func (e *Engine) stallTick(now time.Time) {
 
 // wakeForWork wakes an agent for its own work through the route mail takes.
 func (e *Engine) wakeForWork(l *core.Agent, kind string) {
+	if harnessSpeaksSocket(l) {
+		if e.socketBackoff == nil {
+			e.socketBackoff = map[string]socketBackoff{}
+		}
+		version, _, _ := summarizeSlots(e.workSlotsOf(l, time.Now()))
+		e.socketBackoff[l.ID] = socketBackoff{kind, version}
+		if own, _ := e.SelfWaking(l.ID); own {
+			e.signalSocketReady(l)
+			return
+		}
+	}
 	plan, ok := e.wakeFor(l, kind, core.Event{Type: "work." + kind, To: l.ID})
 	if !ok {
 		if e.socketMayHaveAppeared(l) {
@@ -320,25 +338,7 @@ func sortedAgentIDs(s *core.State) []string {
 // workNotice is a continuation or recheck wake as the socket carries it: the
 // declarations in the agent's own words, which argv may not carry.
 func (e *Engine) workNotice(l *core.Agent, kind string) string {
-	var b strings.Builder
-	if kind == wakeexec.KindRecheck {
-		b.WriteString("Dibs: a wait you declared is due for a recheck:")
-	} else {
-		b.WriteString("Dibs: work you declared is still open and no turn is running:")
-	}
-	for _, s := range e.workSlotsOf(l, time.Now()) {
-		text := s.Text
-		if len(text) > maxQuoted {
-			text = text[:maxQuoted] + "..."
-		}
-		fmt.Fprintf(&b, "\n  %s: %q", s.ID, text)
-		if s.Waiting != "" {
-			fmt.Fprintf(&b, " (waiting on %s)", s.Waiting)
-		}
-	}
-	b.WriteString("\nIf it is finished, undeclare it; if it is blocked, call declare with the same " +
-		"slot_id and the `waiting` argument set, which writing \"waiting\" in the text does not do.")
-	return b.String()
+	return workSlotsNotice(e.workSlotsOf(l, time.Now()), kind)
 }
 
 // endedAndQuiet is when the agent's last turn ended, or zero if it has shown a

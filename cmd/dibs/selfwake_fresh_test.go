@@ -31,11 +31,19 @@ func TestDeferredSelfWakeDropsAcknowledgedMail(t *testing.T) {
 	t.Cleanup(resetWakeStreams)
 	t.Cleanup(func() { recordWakePending(false, "") })
 	lines := listenLines(t, sock)
+	const fixtureSession = "81f97290-0001-4000-8000-111111111111"
+	previousThread := threadServed()
+	noteThread(fixtureSession)
+	t.Cleanup(func() { noteThread(previousThread) })
 	st := core.NewState("fresh", core.DefaultLimits())
 	for _, id := range []string{"sender", "worker"} {
+		sid := ""
+		if id == "worker" {
+			sid = fixtureSession
+		}
 		if _, _, err := st.Apply(&core.Op{
 			Kind: core.OpRegister, Name: id, NewToken: "tok-" + id,
-			SessionID: streamSession(),
+			SessionID: sid,
 		}, time.Now()); err != nil {
 			t.Fatal("register setup:", err)
 		}
@@ -83,6 +91,9 @@ func TestDeferredSelfWakeDropsAcknowledgedMail(t *testing.T) {
 		if _, err := eng.Do(ctx, &core.Op{Kind: core.OpAckMessage, Token: "tok-worker", MsgSerial: serial}); err != nil {
 			t.Fatal("ack setup:", err)
 		}
+	}
+	if _, err := eng.HookPoll(ctx, streamSession(), "Stop", "", true, false); err != nil {
+		t.Fatal("setup: establish the idle lifecycle:", err)
 	}
 	first := send("first notice")
 	if got := collect(lines, 2, time.Second); len(got) != 2 {

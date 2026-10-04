@@ -59,6 +59,11 @@ func (e *Engine) hookOutput(out core.Result, strict bool, event string) core.Res
 			// the key this event does accept (addDelivery sets both), so
 			// nothing is lost and saying so would be a false alarm.
 			delete(out, k)
+		case k == "agent":
+			// Resolution diagnosis, never delivery text. A normal empty Stop
+			// has this field, so INFO made successful hooks look like failures.
+			slog.Debug("strict hook omits agent resolution diagnosis", "agent", out[k])
+			delete(out, k)
 		default:
 			// Logged, not merely dropped, and at a level the daemon actually
 			// emits: rare (only when news existed and could not be carried)
@@ -188,6 +193,7 @@ func (e *Engine) noteTurnState(l *core.Agent, sessionID, event string) {
 			e.turnEnded = map[string]time.Time{}
 		}
 		e.turnEnded[l.ID] = time.Now()
+		e.noteSocketIdle(l, e.turnEnded[l.ID])
 	case "running":
 		// The stop is retracted, and liveness recorded.
 		//
@@ -203,6 +209,7 @@ func (e *Engine) noteTurnState(l *core.Agent, sessionID, event string) {
 		// clock, and this stamps the contact clock itself.)
 		delete(e.turnEnded, l.ID)
 		e.seen[l.ID] = time.Now()
+		e.noteSocketBusy(l, e.seen[l.ID])
 		if event == "SessionStart" || event == "UserPromptSubmit" {
 			// Key by the same resolved thread the queue plan substitutes into
 			// argv. A current hook may instead name a non-UUID session alias.
@@ -217,6 +224,9 @@ func (e *Engine) noteTurnState(l *core.Agent, sessionID, event string) {
 		} else {
 			e.confirmSocketOffer(l, e.seen[l.ID])
 		}
+	case "blocked":
+		// Waiting for a permission response is still the current turn.
+		e.noteSocketBusy(l, time.Now())
 	}
 }
 
@@ -328,7 +338,8 @@ func (e *Engine) HookPollFrom(
 		// told "awaiting_director" had no way to learn the wait had ended.
 		notices := e.pendingNotices(l.ID)
 		modelNotices, noticeKeys := e.dueNoticeLines(l.ID, time.Now())
-		if len(mail) == 0 && len(announced) == 0 && len(notices) == 0 {
+		work := e.socketWorkDigest(l, time.Now())
+		if len(mail) == 0 && len(announced) == 0 && len(notices) == 0 && work == "" {
 			// No news. A turn Dibs started may still be ending with declared
 			// work open, and this is where that case arrives: the stall this
 			// was built for had no mail at all. See continuation.go.
@@ -420,6 +431,7 @@ func (e *Engine) HookPollFrom(
 		wake := e.wakeKeys(l.ID, now)
 		fresh, blocked := hookWakeTerms(len(wake), len(announced), noticesCount,
 			waiting, e.somebodyIsWaiting(l.ID))
+		fresh, blocked = fresh || work != "", blocked || work != ""
 		if e.deliverToModel(event, fresh, blocked, stopActive) {
 			// Marked on DELIVERY, and that is a deliberate trade rather than an
 			// oversight, so it is written down here and in SECURITY.md.
@@ -446,8 +458,10 @@ func (e *Engine) HookPollFrom(
 			e.markWoken(wake, now)
 			e.markAnnounced(announceKeys, now)
 			e.markNoticePresentation(noticeKeys, now)
-			addDelivery(out, event, hookDigest(l.ID, agentMail, announced, modelNotices))
+			digest := e.deliveringHookDigest(l, agentMail, announced, modelNotices, now)
+			addDelivery(out, event, digest)
 			e.markInformationalNoticesDelivered(event, l.ID, noticeKeys)
+			e.noteDeliveringHook(l, event, now)
 		} else if cont := e.continuationReply(l, event, stopActive); cont != nil {
 			// News the turn is not extended for, and a turn Dibs started is
 			// ending with declared work open. See continuation.go.
@@ -464,6 +478,22 @@ func (e *Engine) HookPollFrom(
 		}
 		return e.hookOutput(out, strict, event)
 	})
+}
+
+func (e *Engine) deliveringHookDigest(l *core.Agent, mail, announced, notices []string, now time.Time) string {
+	digest := hookDigest(l.ID, mail, announced, notices)
+	if work := e.socketWorkDigest(l, now); work != "" {
+		digest += "\n" + work
+		_, keys := e.dueSocketWaits(l, now)
+		e.markSocketWork(l, keys, e.socketBackoff[l.ID], now, false)
+	}
+	return digest
+}
+
+func (e *Engine) noteDeliveringHook(l *core.Agent, event string, now time.Time) {
+	if isStopEvent(event) {
+		e.noteSocketBusy(l, now) // this Stop blocked; the turn continues
+	}
 }
 
 // AdoptSession attaches a harness session to an agent that has none.
