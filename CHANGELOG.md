@@ -7,6 +7,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Private guest exports have literal provisioning steps, gated off until a
+  supporting release is assigned.** Admitted snapshots render credential-free,
+  per-target download, per-archive hash, stdout-only single-member extraction,
+  executable hash and exclusive versioned publication steps plus mergeable
+  stdio configuration. Ordinary mints carry no steps, and an unset minimum
+  offers neither metadata nor provisioning. Each invited HTTP request carries
+  the guest bridge's actual compiled version; a set floor refuses missing,
+  development, prerelease or old declarations before MCP dispatch, without
+  relying on initialize or granting authority. Private fleet access is unchanged.
+  Exports remain `INCOMPLETE`; no installed-harness or WAN support is claimed.
+
 - **Guest exports can carry detached verified release metadata.** Admission
   rechecks bounded retained evidence offline before minting and shares the
   explicit verification command's compiled release-selection rule. A
@@ -14,7 +25,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   or refused evidence withdraws only artifact metadata, never ordinary invite,
   list or revoke access. All three targets need signed archive and executable
   member digests. The private export records actual board provenance and an
-  explicit `INCOMPLETE` provisioning status; it adds no download/run steps.
+  explicit `INCOMPLETE` provisioning status. Provisioning is a separate
+  export-only projection from the same frozen snapshot.
   The supporting minimum remains unset pending publication and runtime acceptance.
 
 - **Senders can withdraw requests without claiming delivery.**

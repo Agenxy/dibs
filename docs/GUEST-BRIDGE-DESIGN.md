@@ -363,6 +363,19 @@ The wire declaration and enforcement at all invited ingress paths require
 real-command modern-without-initialize and legacy probes before this is offered
 as an implemented compatibility guarantee.
 
+The implemented declaration is `X-Dibs-Guest-Version`, overwritten from the
+bridge's actual compiled `build.Version` on every request. Harness `clientInfo`,
+recipe tags and legacy session IDs cannot supply it. After invitation
+authentication and valid JSON-RPC framing, MCP refuses incompatible versions
+before dispatch on **every** method; no initialize state is cached as permission.
+Missing, ambiguous duplicate, development, pseudo-version, prerelease and
+build-metadata declarations fail once the compiled floor is set. Notifications
+are dropped with an empty 202 response, not given synthesized RPC errors.
+This is compatibility, not executable attestation or authentication: a raw HTTP
+caller can lie about a version, but a version grants no invitation or token.
+An invalid compiled floor asks the issuer to repair the board build, not to
+edit a guest recipe. The production floor is still unset.
+
 The first-time recipe states these steps literally for the cloud agent using its
 available download/hash/archive primitives. No installer program, Python, uv or
 cosign is presumed to exist in the guest; no curl-pipe-to-shell. The guest's root
@@ -381,16 +394,32 @@ separately reviewed lifecycle boundary:
    without cosign independently verified the release signature. Direct signature
    verification remains available; the existing upgrade verifier is not weakened.
 3. Download into an exclusive temporary directory with byte/deadline limits and
-   no bearer credential, verify archive SHA-256 before extracting, then extract
-   only regular `dibs`, LICENSE and NOTICE entries with safe relative names and
-   no traversal, link, duplicate-member or decompression-bomb acceptance. Verify
-   the extracted executable digest too; do not install/run dibd, presence helpers
-   or notification services in a guest. An operator-provided offline artifact
-   enters the same hash/extraction checks.
+   no bearer credential. Save the `checksums_txt` subset from the private
+   handoff verbatim, select the **exact archive line** with `grep -F -x` into
+   its own file, then run `sha256sum -c` (Linux) or `shasum -a 256 -c` (macOS).
+   Never check the all-target file against archives that were not downloaded.
+   A missing line or failed check is a hard stop. Only then use
+   `tar -xOzf <archive> -- dibs` to stream that one named member to the explicitly
+   chosen staging file: no archive-provided paths are written. Select/check the
+   exact signed `members/<platform>/dibs` digest before chmod or installation.
+   This is not a manual inspection checklist or a generic safe-tar validator:
+   the archive check establishes the exact issuer-vouched release bytes before
+   extraction, stdout extraction cannot create archive paths, and the member
+   check establishes the exact executable bytes afterward. Changed, truncated
+   or oversized untrusted download bytes fail before extraction; content
+   changes, links yielding no executable and extra duplicate-member bytes fail
+   before use. A signed malicious producer is outside that integrity guarantee;
+   a visual checklist would not repair it. Do not install/run dibd, presence
+   helpers or notification services in a guest. An operator-provided offline
+   archive enters the same two hash checks.
 4. Atomically install into a guest-writable, versioned directory, e.g.
    `<user-home>/.local/lib/dibs/guest/<version>/<platform>/`, never a system path,
    board install or implicit PATH replacement. Keep prior verified binaries
-   recoverable. Write the private invitation and credential-store directory
+   recoverable. The literal projection uses a private existing version parent,
+   exclusive target-directory creation, and a same-filesystem hard link of the
+   already-verified executable; neither step replaces an existing path. Stop on
+   any failure; interrupted staging is not a completed install. Write the
+   private invitation and credential-store directory
    separately; use an absolute executable/config path in the MCP entry.
 5. Print mergeable stdio MCP config (`command`, `args`, and supported startup
    timeout), not overwrite a harness config, install a hook or start a session.

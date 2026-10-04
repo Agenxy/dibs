@@ -193,8 +193,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeRPC(w, http.StatusOK, req.ID, nil, &rpcError{Code: -32700, Message: err.Error()})
 		return
 	}
-	if err := validEnvelope(&req); err != nil {
-		writeRPC(w, http.StatusOK, req.ID, nil, err)
+	if refuseRPCAdmission(w, r, &req) {
 		return
 	}
 	s.logRequest(r, &req)

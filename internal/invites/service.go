@@ -154,7 +154,7 @@ func (s *Service) mint(ctx context.Context, issuer Issuance, coordinator bool,
 	if err := s.Engine.InviteNameAvailable(ctx, name, bound, issuer.By); err != nil {
 		return nil, err
 	}
-	metadata, releaseStatus := s.prepareGuestRelease(ctx, export)
+	metadata, provisioning, releaseStatus := s.prepareGuestRelease(ctx, export)
 	nonce, err := s.exportRecoveryNonce(name, export)
 	if err != nil {
 		return nil, err
@@ -177,6 +177,9 @@ func (s *Service) mint(ctx context.Context, issuer Issuance, coordinator bool,
 	}
 	if metadata != nil {
 		config["bridge_release"] = *metadata
+	}
+	if provisioning != nil {
+		config["bridge_provisioning"] = *provisioning
 	}
 	result := core.Result{
 		"name": name, "key": key, "url": info.URL, "issued_by": issuer.By,

@@ -25,15 +25,16 @@ import (
 type guestAsset = selfupdate.GuestAsset
 
 type guestRecipe struct {
-	Version  int                              `json:"schema_version"`
-	Name     string                           `json:"name"`
-	Endpoint string                           `json:"endpoint"`
-	Key      string                           `json:"invitation_key"`
-	Nonce    string                           `json:"recovery_nonce,omitempty"`
-	Expires  time.Time                        `json:"expires_at"`
-	PEM      string                           `json:"ca_pem"`
-	Pin      string                           `json:"ca_spki_sha256"`
-	Release  *selfupdate.GuestReleaseMetadata `json:"bridge_release,omitempty"`
+	Version      int                              `json:"schema_version"`
+	Name         string                           `json:"name"`
+	Endpoint     string                           `json:"endpoint"`
+	Key          string                           `json:"invitation_key"`
+	Nonce        string                           `json:"recovery_nonce,omitempty"`
+	Expires      time.Time                        `json:"expires_at"`
+	PEM          string                           `json:"ca_pem"`
+	Pin          string                           `json:"ca_spki_sha256"`
+	Release      *selfupdate.GuestReleaseMetadata `json:"bridge_release,omitempty"`
+	Provisioning *selfupdate.GuestProvisioning    `json:"bridge_provisioning,omitempty"`
 }
 
 // A guest recipe is immutable permission, not machine discovery. Opening it
@@ -78,6 +79,14 @@ func (r guestRecipe) validateIdentity() error {
 	if r.Release != nil {
 		if err := r.Release.Validate(); err != nil {
 			return fmt.Errorf("invalid guest release metadata: %w", err)
+		}
+	}
+	if r.Provisioning != nil {
+		if r.Release == nil {
+			return errors.New("guest provisioning lacks release metadata; ask the issuer for the original private export")
+		}
+		if err := r.Provisioning.Validate(*r.Release); err != nil {
+			return err
 		}
 	}
 	return nil
