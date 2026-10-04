@@ -37,6 +37,21 @@ func (v VerifiedRelease) Tag() string { return v.tag }
 // Checksums returns the exact bytes verified, never a second network copy.
 func (v VerifiedRelease) Checksums() string { return v.checksums }
 
+// VerifyReleaseEvidence checks supplied public evidence through the SAME
+// offline exact-tag/root policy as the retained cache. Release staging uses
+// it before a draft becomes public; no main-ref alias or network fallback.
+func VerifyReleaseEvidence(ctx context.Context, tag string, checksums, bundle []byte) (VerifiedRelease, error) {
+	r := releaseRecord{Tag: tag, Checksums: checksums, Bundle: bundle}
+	if err := r.validate(); err != nil {
+		return VerifiedRelease{}, err
+	}
+	v := VerifiedRelease{tag: tag, checksums: string(checksums), bundle: string(bundle)}
+	if err := v.verifyOffline(ctx, ""); err != nil {
+		return VerifiedRelease{}, err
+	}
+	return v, nil
+}
+
 // Byte slices marshal as base64, preserving the exact bundle byte string. This
 // is a derived local cache, NOT a new signed release artifact or trust store.
 type releaseRecord struct {

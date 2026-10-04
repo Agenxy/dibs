@@ -76,8 +76,8 @@ func Current(root string) (string, error) {
 // Stamp claims the Unreleased section for version and writes that version into
 // every manifest. It reports the files it changed.
 //
-// It does not commit and does not tag, deliberately. Tagging is the moment a
-// release becomes real and is the owner's to perform; a tool that did it as a
+// It does not commit and does not tag, deliberately. Release dispatch is an
+// owner's decision; a tool that did it as a
 // side effect of stamping would be deciding that on their behalf. Same shape as
 // `dibs configure --service`, which writes the unit and prints the load command
 // rather than running it.

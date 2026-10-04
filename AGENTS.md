@@ -407,15 +407,22 @@ Things that have cost real time here, none of which are visible in the diff:
 
 ## Distribution
 
-Releases are cut by tagging: the workflow re-runs the whole gate against the tagged
-commit, then publishes signed artifacts, attaches an MCP Bundle (`dibs.mcpb`, built by
+Releases begin with an owner-approved `release.yml` dispatch on protected main,
+naming the full candidate SHA and canonical version. Read `docs/RELEASE.md` for
+the commands and proof boundaries. A read-only preflight creates the exact
+annotated tag LOCALLY, runs the whole gate and a production-stamped offline build,
+and records an immutable Actions receipt. Only a separate job behind success
+pushes that tag. A completed-success finalizer dispatches publication AT THE TAG,
+preserving the exact-tag Sigstore identity installed clients already require.
+Publication verifies a complete draft before making it public; public retries
+verify existing bytes, never overwrite them. It attaches an MCP Bundle (`dibs.mcpb`, built by
 `tools/mcpbundle` from the same binaries) with its digest, and publishes `server.json`
 to the official MCP Registry as `io.github.Agenxy/dibs` with a `packages` entry naming
 that bundle. No source is updated by hand: if those disagree, that is a bug in the
 pipeline, not a chore.
 
 **The Homebrew cask is the one step that still needs a person, and it is worth knowing
-why.** The tap requires changes through a pull request, so GoReleaser pushes the updated
+why.** The tap requires changes through a pull request, so the publisher pushes the signed
 cask to a `cask-<version>` branch of `agenxy/homebrew-tap` over SSH; merging it is a
 click. It cannot open the PR itself: a deploy key can push and cannot call the API, which
 is the trade the key was chosen for. Until that branch is merged, the release is
@@ -424,7 +431,7 @@ green does not mean the cask moved. This used to read as though tagging did ever
 it does not, and a documented guarantee that quietly needs a click is worse than one that
 says so. Closing it properly means a workflow in the tap that watches for `cask-*`.
 
-**Before the tag, read the release surface.** Several versions were spent
+**Before release dispatch, read the release surface.** Several versions were spent
 fixing things a careful reader would have caught, and the reader who misses
 them is reliably the one who wrote them, so this step exists. **Do it
 yourself** unless the operator asks for otherwise: that is their standing
@@ -448,7 +455,7 @@ nothing) and its newest authorisation paths. Fix what it finds, run `task ci`,
 and then decide about shipping. The exit condition is that decision, not a
 clean round.
 
-**Before the tag, re-run the harness survey**, because the harnesses move and the
+**Before release dispatch, re-run the harness survey**, because the harnesses move and the
 trackers that used to hold this ("recheck on release", issues #23, #25, #26, #27,
 #28, #31) were closed into this step. The checkouts live at `~/Desktop/harnesses`
 on the machine this was written on; `git fetch origin` each and read
@@ -510,9 +517,9 @@ Update the survey table in `README.md` (re-date its introduction) and the rows
 in `WAKE-MECHANISMS.md` with what was MEASURED, and put the date on each. A row
 that was not re-measured keeps its old date, which is the honest state.
 
-**`task release VERSION=<the next version>` is the one step before the tag.**
+**`task release VERSION=<the next version>` prepares a candidate, not a release.**
 It checks the embedded Sigstore root against authenticated current TUF before
-claiming the version, and the tag workflow repeats that check before publishing:
+claiming the version, and preflight and publication repeat that check:
 discover a rotation before burning an immutable tag, with the workflow as backstop
 and no third-party trust fetch added to ordinary `task ci`.
 This used to name a literal `0.0.6`, which is the version already tagged: the
@@ -521,21 +528,28 @@ every installer offering an older build than the one before it. An instruction
 that cannot be followed is worse than none, and this one sits at the step where
 somebody is following instructions exactly. It claims the
 changelog's `## [Unreleased]` section for that version and stamps every manifest that
-states one, then stops: tagging publishes, so it stays yours to do. Doing it by hand is
+states one, then stops: merge the reviewed, gated preparation and dispatch
+protected-main preflight only with the owner's release approval. A hand-pushed
+tag triggers nothing. Doing it by hand is
 how two manifests sat at `0.0.0` through five releases, and the tagged commit is now
 checked against its own tag, so the release fails rather than shipping a version no file
 in it names.
 
-**A failed release burns the version, and that is the rule working.** Release
+**A failed preflight does not burn a version; an immutable tag cannot be repaired.** Release
 tags here are immutable: `refs/tags/v*` refuses deletion, update and
 non-fast-forward, because a tag that can move is a tag nobody can pin. The
-tag workflow re-runs the whole gate against the tagged commit BEFORE it
-publishes, so a tag that fails leaves a tag pointing at a commit with no
-release behind it, and there is no way to repair that tag. The next attempt
-is the next version. v0.0.8 went this way on 2026-09-22, on a board defect
+old tag-push workflow ran the gate AFTER tagging, so a gate failure left a
+tag pointing at a broken candidate with no release behind it. v0.0.8 went
+this way on 2026-09-22, on a board defect
 that had been written off as a flaky browser check an hour earlier; nothing
-was published, which is the point. Two consequences worth knowing before you
-tag. Run the gate locally to a PASS first, and treat "it only fails sometimes
+was published. v0.0.10 was likewise burned on release-stamped test failures.
+The new preflight runs before any remote tag write: repair a failed preflight
+and retry the SAME version on the repaired main tip. Once a successful
+preflight pushes its tag, publication retries use the SAME tag/SHA/receipt;
+service or upload failures do not require a new version. Never move a tag to
+different code. A candidate defect requiring a new commit after tagging still
+requires the next version and a burned-version stub. Run the gate locally to
+a PASS first, and treat "it only fails sometimes
 and passes on CI" as a bug you have not understood rather than as noise.
 And `task release` cannot express this situation: it claims `## [Unreleased]`
 and refuses a version that is not newer than the changelog's top section, so

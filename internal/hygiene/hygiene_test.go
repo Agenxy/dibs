@@ -807,7 +807,7 @@ func TestATaggedCommitAgreesWithItsChangelog(t *testing.T) {
 	}
 	t.Errorf("HEAD is tagged %v but the changelog's newest release is %q: this commit "+
 		"would publish artifacts, a Homebrew cask and a registry entry under a version "+
-		"that no file in it names. Run `task release VERSION=…` and move the tag onto "+
+		"that no file in it names. Run `task release VERSION=…` and dispatch protected-main preflight on "+
 		"the commit it produces", tags, want)
 }
 

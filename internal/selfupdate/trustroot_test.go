@@ -118,9 +118,15 @@ func TestTagWorkflowChecksCurrentRootBeforePublishing(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(b)
+	start := strings.Index(s, "\n  release:\n")
+	end := strings.Index(s, "\n  registry:\n")
+	if start < 0 || end <= start {
+		t.Fatal("publication job boundary missing")
+	}
+	s = s[start:end]
 	guard := strings.Index(s, "run: go run ./tools/sigstore-root-check")
 	cosign := strings.Index(s, "uses: sigstore/cosign-installer@")
-	publish := strings.Index(s, "uses: goreleaser/goreleaser-action@")
+	publish := strings.Index(s, "run: go run ./tools/releaseflow -phase publish")
 	if guard < 0 || cosign < 0 || publish < 0 || guard <= cosign || guard >= publish {
 		t.Fatal("tag workflow must check authenticated root after installing cosign and before publishing")
 	}

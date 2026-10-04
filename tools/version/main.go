@@ -6,12 +6,11 @@
 // disagree, that is a bug in the pipeline, not a chore", and this was the one
 // part still done by hand. It drifted exactly as you would expect, twice.
 //
-// It stops short of committing and tagging on purpose. A tag is the moment a
-// release becomes real: it publishes signed artifacts and writes to the MCP
-// registry, and that is the owner's to perform.
+// It stops short of committing and dispatching on purpose. The owner starts a
+// protected-main preflight; only its successful gate may create an immutable tag.
 //
-// It does not move the Homebrew cask, which this said for a while. GoReleaser
-// pushes the new cask to a `cask-<version>` branch of the tap and cannot open
+// It does not move the Homebrew cask, which this said for a while. Releaseflow
+// pushes the signed cask to a `cask-<version>` branch of the tap and cannot open
 // the pull request, because the deploy key can push and cannot call the API, so
 // `brew upgrade` serves the previous build until a person merges it.
 package main
@@ -56,12 +55,13 @@ func run(version string) error {
 		fmt.Println("  stamped", f)
 	}
 	fmt.Printf("\n%s is written down. Nothing is committed and nothing is tagged.\n\n"+
-		"  Read the diff, then:\n\n"+
+		"  Read the diff, commit it and merge the fully gated PR to protected main:\n\n"+
 		"    git commit -am \"release %s\"\n"+
-		"    git tag -a v%s -m \"v%s\" && git push origin main --tags\n\n"+
-		"  The tag re-runs the whole gate against that commit before it publishes\n"+
-		"  anything, and a manifest that disagrees with it fails there.\n",
-		version, version, version, version)
+		"    gh workflow run release.yml --ref main -f mode=preflight -f version=%s -f sha=<merged-main-sha>\n\n"+
+		"  Preflight runs the WHOLE gate with a local tag BEFORE creating any remote tag.\n"+
+		"  Failure leaves the version reusable. Successful publication preserves exact-tag\n"+
+		"  signing identity and is resumable; docs/RELEASE.md records the fallback.\n",
+		version, version, version)
 	return nil
 }
 
