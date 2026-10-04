@@ -3,12 +3,21 @@ package core
 import "time"
 
 // A recorded cutoff, not a boot-time wall-clock rule. Replay before this op
-// behaves exactly as it did; historical reviews do not flood every worker.
+// behaves exactly as it did; historical progress/reviews do not flood workers.
+// This op first appeared in unreleased #335. Adding its deterministic awareness
+// snapshot changes no released ledger's fold, and replay of that unreleased op
+// derives the snapshot from the same prior state, without changing old read ops.
 func (s *State) applyInitializeReviewRead(op *Op, now time.Time) (Result, []Event, error) {
 	if s.ReviewReadCutoff != 0 {
 		return Result{"changed": false}, nil, nil
 	}
 	s.ReviewReadCutoff = op.ReviewReadCutoff
+	s.LegacyAckAtCutoff = map[string]LegacyAckSnapshot{}
+	for id, agent := range s.Agents {
+		if !agent.Retired() {
+			s.LegacyAckAtCutoff[id] = LegacyAckSnapshot{agent.CreatedSerial, agent.AckedSerial}
+		}
+	}
 	evs := []Event{}
 	s.finish(&evs, now)
 	return Result{"changed": true}, evs, nil
