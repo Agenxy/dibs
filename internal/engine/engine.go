@@ -170,7 +170,9 @@ type Engine struct {
 	// hostID is WHICH COMPUTER this daemon runs on, as the fleet's address
 	// plane names it (Supgang's node id) when that is known; "" means the
 	// ledger's own node id stands in. See HostID.
-	hostID string
+	hostID        string
+	appReconnects map[string]time.Time // derived app process incarnations, writer-owned
+	reconnectMail map[string]uint64    // row incarnation awaiting one reconnect reconsideration
 	// hostAliases are ids this computer used to answer to: see
 	// SetHostAliases. Written before the engine serves, read on the
 	// request path.

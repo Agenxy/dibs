@@ -13,12 +13,18 @@ import (
 func main() {
 	path := filepath.Join(os.Getenv("CODEX_HOME"), "pending.json")
 	if len(os.Args) > 1 && os.Args[1] == "queue" {
+		var thread string
+		for i := 2; i+1 < len(os.Args); i++ {
+			if os.Args[i] == "--thread" {
+				thread = os.Args[i+1]
+			}
+		}
 		b, _ := os.ReadFile(path)
 		var rows []map[string]any
 		_ = json.Unmarshal(b, &rows)
-		rows = append(rows, map[string]any{"id": fmt.Sprint(len(rows) + 1), "input": []map[string]string{{"type": "text", "text": "Dibs: a new question is waiting."}}, "clientUserMessageId": "fixture"})
+		rows = append(rows, map[string]any{"id": fmt.Sprint(len(rows) + 1), "threadId": thread, "input": []map[string]string{{"type": "text", "text": "Dibs: a new question is waiting."}}, "clientUserMessageId": "fixture"})
 		b, _ = json.Marshal(rows)
-		if err := os.WriteFile(path, b, 0600); err != nil {
+		if err := writeQueue(path, b); err != nil {
 			panic(err)
 		}
 		return
@@ -39,6 +45,9 @@ func main() {
 		var req struct {
 			ID     any    `json:"id"`
 			Method string `json:"method"`
+			Params struct {
+				Thread string `json:"threadId"`
+			} `json:"params"`
 		}
 		if json.Unmarshal(s.Bytes(), &req) != nil {
 			os.Exit(3)
@@ -62,7 +71,13 @@ func main() {
 			b, _ := os.ReadFile(path)
 			rows := []map[string]any{}
 			_ = json.Unmarshal(b, &rows)
-			result = map[string]any{"data": rows, "nextCursor": nil}
+			selected := []map[string]any{}
+			for _, row := range rows {
+				if row["threadId"] == req.Params.Thread {
+					selected = append(selected, row)
+				}
+			}
+			result = map[string]any{"data": selected, "nextCursor": nil}
 		} else if req.Method != "initialize" {
 			os.Exit(4)
 		}
@@ -70,4 +85,22 @@ func main() {
 			panic(err)
 		}
 	}
+}
+
+// The real app commits its queue transaction atomically. An observer must
+// never see the fixture's truncate/write interval as an empty or broken queue.
+func writeQueue(path string, data []byte) error {
+	f, err := os.CreateTemp(filepath.Dir(path), ".queue-")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(f.Name()) }()
+	if _, err = f.Write(data); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err = f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(f.Name(), path)
 }

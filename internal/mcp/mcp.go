@@ -75,6 +75,7 @@ type Server struct {
 	// adopted remembers the (token, session) pairs already reconciled, so the
 	// repair costs one loop round-trip per agent rather than one per call.
 	adopted sync.Map
+	bridges observedBridges
 	// legacy holds 2025-11-25 resource subscriptions, which outlive the request
 	// that created them: that revision subscribes on a POST and delivers on a
 	// separately-opened GET, so the interest has to be remembered in between.
@@ -212,6 +213,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r = r.WithContext(inviteCtx)
+	s.observeBridge(r.Context(), req.Params)
 
 	if req.ID == nil { // notification (e.g. legacy notifications/initialized)
 		w.WriteHeader(http.StatusAccepted)

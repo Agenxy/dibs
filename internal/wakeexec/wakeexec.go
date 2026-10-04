@@ -169,13 +169,25 @@ const Grace = 10 * time.Second
 // already handled.
 func RunCommands(argv, fallback []string, agent, dir string, timeout, grace time.Duration) bool {
 	var queuedThread string
+	var generation string
 	if thread, ok := queueTarget(argv); ok {
 		mu := queueLock(thread)
 		mu.Lock()
 		defer mu.Unlock()
+		generation = reconnectGeneration(thread)
 		pending, known := false, false
 		if nativeQueueRoute(argv) {
 			pending, known = observeQueue(argv[0], thread)
+		}
+		if known && pending {
+			// A real app item wins over inference. Retain that observation in
+			// this incarnation so a later unavailable probe does not duplicate it.
+			r := readReceipt(thread)
+			if r.QueuedAt.IsZero() {
+				r.QueuedAt = time.Now().UTC()
+			}
+			r.Generation = generation
+			retainQueueReceipt(thread, r, agent)
 		}
 		if (known && pending) || (!known && fallbackPending(thread, time.Now())) {
 			slog.Debug("a Dibs wake is already pending in the app queue", "agent", agent)
@@ -189,10 +201,7 @@ func RunCommands(argv, fallback []string, agent, dir string, timeout, grace time
 	ok, out := runForOut(argv, agent, dir, timeout, grace)
 	if ok {
 		if queuedThread != "" {
-			if err := writeReceipt(queuedThread, queueReceipt{QueuedAt: queuedAt}); err != nil {
-				slog.Warn("could not retain the pending wake receipt; observation still protects the queue",
-					"agent", agent, "err", err)
-			}
+			retainQueueReceipt(queuedThread, queueReceipt{QueuedAt: queuedAt, Generation: generation}, agent)
 		}
 		return true
 	}
@@ -215,6 +224,13 @@ func RunCommands(argv, fallback []string, agent, dir string, timeout, grace time
 	slog.Info("the wake command found the thread open; trying the fallback",
 		"agent", agent, "cmd", argv[0], "fallback", fallback[0])
 	return Run(fallback, agent, dir, timeout, grace)
+}
+
+func retainQueueReceipt(thread string, r queueReceipt, agent string) {
+	if err := writeReceipt(thread, r); err != nil {
+		slog.Warn("could not retain the pending wake receipt; observation still protects the queue",
+			"agent", agent, "err", err)
+	}
 }
 
 // openThreadMarkers are what the measured harness prints when it refuses to

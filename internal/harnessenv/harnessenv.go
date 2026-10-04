@@ -19,6 +19,7 @@ package harnessenv
 import (
 	"context"
 	"errors"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -144,7 +145,11 @@ func ChatGPTHolds(thread string) (running, holds bool) {
 // Fixed binaries only. The seam lets a fixture block the real API's probe
 // without reaching the operator's app or replacing the timeout policy.
 var appProbeOutput = func(ctx context.Context, binary string, args ...string) ([]byte, error) {
-	return exec.CommandContext(ctx, binary, args...).Output() //nolint:gosec // fixed probe argv above
+	cmd := exec.CommandContext(ctx, binary, args...) //nolint:gosec // fixed probe argv above
+	// Process start stamps must agree across bridges and the daemon even when
+	// their inherited locales or timezones differ. No participant-supplied environment.
+	cmd.Env = append(os.Environ(), "LC_ALL=C", "TZ=UTC")
+	return cmd.Output()
 }
 
 // ChatGPTOpenArgv is the command that asks the ChatGPT app to open a thread:

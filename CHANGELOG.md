@@ -12,6 +12,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Duplicate matches, incomplete scans and API failures refuse publication;
   public releases still receive only immutable, signature-backed verification.
 
+- **App reconnects reconsider waiting mail before a model call.** A new
+  ChatGPT app process observed by its stdio bridges triggers one bounded
+  recovery decision for app-owned agents on the same host. Inferred pending
+  receipts are invalidated; an actual queued notice is retained. Delivery
+  rechecks current mail and uses the existing loaded-thread and away policy,
+  without changing agent identity or coordination history. Sender notes now
+  distinguish confirmed app queue acceptance from an unconfirmed attempt.
+
 ## [0.0.11] - 2026-10-03
 
 ### Added

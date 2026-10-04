@@ -491,12 +491,12 @@ func (e *Engine) retryWakeDecision(agent string) {
 	// stranded exactly as before, one window later. Only while somebody is still
 	// blocked, which is what ends the loop.
 	if e.recentlyInTouch(l) {
-		if e.hasBlockingMail(agent) {
+		if e.hasRetryMail(agent) {
 			e.deferWakeLocked(agent, e.recencyWindow(l))
 		}
 		return
 	}
-	if !e.hasBlockingMail(agent) {
+	if !e.hasRetryMail(agent) {
 		e.clearWakeAttempts(agent) // nothing owed: the next mail starts its own count
 		return
 	}
@@ -543,6 +543,7 @@ func (e *Engine) retryWakeDecision(agent string) {
 	stamp := e.wakeStamp(agent)
 	cool := cmd.cooldown
 	thread := cmd.thread
+	delete(e.reconnectMail, agent) // this cohort gets one ordinary reconsideration
 	go func() {
 		defer e.wakeExited(agent, thread)
 		n := e.noteWakeAttempt(agent)
@@ -1521,6 +1522,9 @@ func (e *Engine) PullOnlyNote(l *core.Agent) string {
 	// caught that my own test fixture had no thread id and therefore pinned the
 	// wrong behaviour while reading as if it proved the right one.
 	if configured && threadIDOf(l) != "" {
+		if note := e.appQueueNote(l); note != "" {
+			return note
+		}
 		return "" // a wake can really run, so core's wording is true as it stands
 	}
 	named := harness
