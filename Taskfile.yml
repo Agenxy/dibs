@@ -518,9 +518,9 @@ tasks:
     # five releases and the Claude Desktop one still did, both valid JSON,
     # both passing every validator, neither caught by anything.
     #
-    # Stamps and stops. Tagging publishes signed artifacts and writes to the MCP
-    # registry, so it stays the owner's to perform; this prints the commands
-    # rather than running them.
+    # Stamps and stops. The owner dispatches a protected-main preflight AFTER
+    # merging the gated preparation. Its WHOLE gate precedes any remote tag;
+    # a failed gate cannot burn a version. No dispatch runs as a stamper side effect.
     #
     # It does NOT move the Homebrew cask, which this line used to claim.
     # GoReleaser pushes the updated cask to a `cask-<version>` branch of the tap

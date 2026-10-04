@@ -1,153 +1,216 @@
 name: release
 
-# Nothing ran GoReleaser. The config was complete and validated and had never
-# been executed by anything but a human, which meant tagging a release produced
-# a tag and no artifacts, and the Homebrew cask, being generated at release
-# time, did not exist at all.
+# No tag-push trigger. Prove the exact tag environment locally BEFORE pushing;
+# then dispatch publication at the tag to preserve the installed OIDC policy.
 on:
-  push:
-    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [preflight, publish-only, delivery-rehearsal]
+        default: preflight
+        required: true
+      version:
+        description: Canonical version without v
+        type: string
+        required: true
+      sha:
+        description: Full protected-main candidate SHA
+        type: string
+        required: true
+      preflight_run:
+        description: Successful main preflight run ID (publish-only)
+        type: string
+        required: false
+      rehearsal_fail:
+        description: Deliberately fail preflight; no remote tag may be created
+        type: boolean
+        default: false
+      delivery_rehearsal:
+        description: Run full preflight and rehearse token dispatch, never tag or publish
+        type: boolean
+        default: false
 
 permissions:
-  contents: write # create the release and upload artifacts
-  id-token: write # keyless cosign signing via OIDC
+  contents: read
 
-# Third-party actions are pinned to full commit SHAs, not tags.
-#
-# A tag is mutable: whoever controls the action's repository can move v7 to
-# different code, and this workflow holds `contents: write` and `id-token: write`
-# for keyless signing, so a moved tag could sign and publish artifacts nobody
-# wrote. The project already pins its Go toolchain, its linter, GoReleaser, syft
-# and cosign for weaker reasons than that. The trailing comment is the human
-# readable version; the SHA is what is enforced.
+concurrency:
+  group: release-${{ inputs.version }}
+  cancel-in-progress: false
+
+env:
+  DIBS_RELEASE_VERSION: ${{ inputs.version }}
+  DIBS_RELEASE_SHA: ${{ inputs.sha }}
+  GH_TOKEN: ${{ github.token }}
+  GITHUB_TOKEN: ${{ github.token }}
 
 jobs:
-  # THE REGISTRY ENTRY, AFTER THE RELEASE AND ONLY IF IT SUCCEEDED.
-  #
-  # It used to listen for the same tag push this workflow does, which orders
-  # nothing: it could publish to the official MCP Registry while the gate below
-  # was still running, or after it had failed and produced no release at all.
-  # `needs:` is the only thing that makes "after" true, and a called workflow is
-  # how that happens without a second copy of the publish steps.
-  #
-  # Declared here rather than at the bottom because job order in this file is
-  # not execution order; `needs` is.
-  release:
-    # macOS, matching the CI gate. The binaries are CGO_ENABLED=0 and
-    # cross-compiled, so the host only decides where the build ran, but it is
-    # the platform this project verifies on, and a release built somewhere the
-    # tests have never run is a different artifact than the one that was tested.
+  preflight:
+    if: inputs.mode == 'preflight' && github.ref == 'refs/heads/main'
     runs-on: macos-latest
+    permissions:
+      contents: read
+    env:
+      DIBS_RELEASE_REHEARSAL: ${{ inputs.rehearsal_fail }}
+      DIBS_RELEASE_DELIVERY_REHEARSAL: ${{ inputs.delivery_rehearsal }}
+      PW_CHANNEL: ""
     steps:
+      # Trusted workflow commit, NOT an arbitrary dispatch SHA before validation.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          fetch-depth: 0 # GoReleaser needs full history for the changelog
-
-      # The gate runs again here rather than trusting that it ran on the commit.
-      # A tag can point at anything, including a commit that never saw CI.
-      #
-      # It has to be the WHOLE gate. This ran `go test -race ./...` alone, which
-      # is the part of the chain least likely to catch a release-breaking
-      # problem: it does not build the panel, drive a browser, exercise the
-      # spaces, or enforce the coverage floor. A tag could therefore publish
-      # signed binaries whose end-to-end suites had never been run against them.
-      # The action, not `curl https://mise.run | sh`.
-      #
-      # Piping a mutable URL into a shell in a job that holds `contents: write`
-      # and `id-token: write` undoes the pinning three lines above it: whoever
-      # controls that host can run anything, with those permissions, and no
-      # version or digest was recorded. The action is pinned to a SHA like
-      # everything else here, and it handles trust + install itself.
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: 2026.7.7
           experimental: true
+      - name: validate exact protected-main candidate before secrets or build
+        run: go run ./tools/releaseflow -phase validate
       - name: Playwright browser
         run: task e2e:deps
-      - name: task ci
-        env:
-          PW_CHANNEL: ""
-        run: mise exec -- task ci
-
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
-          # Explicit, so CI and mise.toml install the same cosign. The default
-          # floats, and the signing config here is cosign 3 (--bundle).
           cosign-release: v3.1.3
-      # The offline provenance verifier must not silently age past Sigstore
-      # rotations. Authenticated production TUF, fresh isolated cache; differing
-      # bytes refuse publication until reviewed and deliberately updated.
+      - uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+      - name: macOS signing preflight
+        if: '!inputs.rehearsal_fail && !inputs.delivery_rehearsal'
+        env:
+          DIBS_SIGNING_P12: ${{ secrets.DIBS_SIGNING_P12 }}
+          DIBS_SIGNING_P12_PASSWORD: ${{ secrets.DIBS_SIGNING_P12_PASSWORD }}
+        run: go run ./tools/signrelease -import
+      - name: local tag, WHOLE gate, production-stamped offline build and receipt
+        run: go run ./tools/releaseflow -phase preflight
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-preflight-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/dibs-preflight.json
+          if-no-files-found: error
+          retention-days: 90
+
+  commit-tag:
+    needs: preflight
+    if: inputs.mode == 'preflight' && github.ref == 'refs/heads/main' && !inputs.delivery_rehearsal
+    runs-on: macos-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: 2026.7.7
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-preflight-${{ github.run_attempt }}
+          path: ${{ runner.temp }}
+      - name: push only the proven annotated tag
+        run: go run ./tools/releaseflow -phase commit-tag
+
+  release:
+    if: inputs.mode == 'publish-only' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: macos-latest
+    permissions:
+      contents: write
+      actions: read
+      id-token: write
+    env:
+      DIBS_PREFLIGHT_RUN: ${{ inputs.preflight_run }}
+    steps:
+      # Authenticate with protected-main tooling BEFORE executing tag source.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: 2026.7.7
+          experimental: true
+      - name: authenticate receipt before tag checkout or signing
+        run: go run ./tools/releaseflow -phase authorize-receipt
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: authenticate exact candidate checkout
+        run: go run ./tools/releaseflow -phase authorize
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
       - name: embedded Sigstore root is current
         run: go run ./tools/sigstore-root-check
       - uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
-
-      # THE MACOS SIGNING IDENTITY, before anything is built.
-      #
-      # Without it the published binaries are ad-hoc signed, which macOS reads
-      # as a different program on every build: an operator who allows dibd
-      # through their firewall, or grants it a folder, is asked again on the
-      # next upgrade, for as long as they keep Dibs. With it the designated
-      # requirement is `identifier "org.agenxy.dibs" and certificate leaf =
-      # H"..."`, which is the same for every release, so one answer lasts.
-      #
-      # This is NOT a Developer ID and does not make Gatekeeper accept the
-      # binary; that needs an Apple Developer Program membership. It is the
-      # free half: the operator still approves once.
-      #
-      # The step is deliberately not conditional on the secret existing. The
-      # tool reports its absence and signs ad-hoc with correct identifiers, so
-      # a fork with no certificate still releases, and the one line saying so
-      # appears in the log.
       - name: macOS signing identity
         env:
           DIBS_SIGNING_P12: ${{ secrets.DIBS_SIGNING_P12 }}
           DIBS_SIGNING_P12_PASSWORD: ${{ secrets.DIBS_SIGNING_P12_PASSWORD }}
         run: go run ./tools/signrelease -import
-
-      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
-        with:
-          version: "2.17.1" # pinned to match mise.toml
-          args: release --clean
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # A separate token, because the cask is committed to ANOTHER
-          # repository (agenxy/homebrew-tap) and the default GITHUB_TOKEN is
-          # scoped to this one. Without it the release succeeds and the cask
-          # silently is not published, which is the failure mode most likely to
-          # go unnoticed: the artifacts are all there, and `brew upgrade` just
-          # never sees the new version.
-          HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
-
-      # The cask is the one step a person still finishes, so say so here rather
-      # than leaving a green job to imply otherwise. GoReleaser pushed the
-      # updated cask to a branch; until it is merged, `brew upgrade` serves the
-      # previous build.
-      # THE BUNDLE, so the registry entry has an install path (#44). Built
-      # from the binaries GoReleaser just produced, attached to the release
-      # beside them, and the registry job below stamps its URL and digest
-      # into server.json. The tag arrives through the environment; the tool
-      # reads it there, which is why this is one command and not a script.
-      - name: MCP Bundle
-        if: success()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: go run ./tools/mcpbundle -upload
-
-      - name: say what the cask still needs
-        if: success()
-        run: go run ./tools/casknote
+      - name: draft, stage, sign, verify uploaded bytes, publish; public retries are read-only
+        run: go run ./tools/releaseflow -phase publish
 
   registry:
     needs: release
     uses: ./.github/workflows/publish-mcp.yml
-    # A called workflow gets only what the caller grants. id-token proves the
-    # io.github.agenxy namespace is ours; nothing here writes to the repository.
     permissions:
       id-token: write
       contents: read
     with:
-      # The tag itself; tools/stampserver strips the leading v. The release
-      # that just succeeded is the one being announced, and taking the version
-      # from anywhere else is how the registry ends up naming one nobody
-      # released.
-      version: ${{ github.ref_name }}
+      version: ${{ inputs.version }}
+
+  cask:
+    needs: [release, registry]
+    runs-on: macos-latest
+    permissions:
+      contents: read
+      actions: read
+    env:
+      DIBS_PREFLIGHT_RUN: ${{ inputs.preflight_run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: 2026.7.7
+      - name: authenticate receipt before tag checkout
+        run: go run ./tools/releaseflow -phase authorize-receipt
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
+      - name: push signed cask review branch or verify already done
+        env:
+          HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+        run: go run ./tools/releaseflow -phase cask
+      - name: say what the cask still needs
+        run: go run ./tools/casknote
+
+  delivery-rehearsal:
+    if: inputs.mode == 'delivery-rehearsal' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: 2026.7.7
+      - name: authenticate delivered rehearsal receipt; only this run record is written
+        env:
+          DIBS_PREFLIGHT_RUN: ${{ inputs.preflight_run }}
+        run: go run ./tools/releaseflow -phase delivery-rehearsal

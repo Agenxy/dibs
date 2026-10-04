@@ -28,7 +28,7 @@ func run() error {
 	version := strings.TrimPrefix(os.Getenv("GITHUB_REF_NAME"), "v")
 	if version == "" {
 		return fmt.Errorf("GITHUB_REF_NAME is empty, so there is no version to " +
-			"name a cask branch after. This runs on a tag push")
+			"name a cask branch after. This runs on a tag-ref publication dispatch")
 	}
 	summary := os.Getenv("GITHUB_STEP_SUMMARY")
 	if summary == "" {
@@ -46,8 +46,8 @@ func run() error {
 	defer func() { _ = f.Close() }()
 	_, err = fmt.Fprintf(f, `### Homebrew cask
 
-Pushed to `+"`cask-%s`"+` on agenxy/homebrew-tap.
-**`+"`brew upgrade`"+` serves the previous build until that branch is merged.**
+Verified the signed release cask on tap main or `+"`cask-%s`"+` in agenxy/homebrew-tap.
+**If the review branch is not merged, `+"`brew upgrade`"+` still serves the previous build.**
 
 https://github.com/Agenxy/homebrew-tap/compare/cask-%s?expand=1
 `, version, version)
