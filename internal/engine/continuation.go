@@ -219,6 +219,7 @@ func (e *Engine) continuationReply(l *core.Agent, event string, stopActive bool)
 	// as ended, the later wakes in stall.go would count from a stop that did
 	// not happen. On the writer loop, which owns turnEnded.
 	delete(e.turnEnded, l.ID)
+	e.noteSocketBusy(l, time.Now())
 	return core.Result{"decision": "block", "reason": reason}
 }
 

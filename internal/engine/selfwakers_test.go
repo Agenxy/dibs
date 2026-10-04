@@ -179,7 +179,7 @@ func TestReadingTheWakeDigestConsumesNothing(t *testing.T) {
 	// bug that was not there: the probe, not the product.
 	now := time.Now()
 	for _, op := range []*core.Op{
-		{Kind: core.OpRegister, Name: "worker", NewToken: "worker-tok"},
+		{Kind: core.OpRegister, Name: "worker", NewToken: "worker-tok", SessionID: "digest-worker"},
 		{Kind: core.OpRegister, Name: "asker", NewToken: "asker-tok"},
 		{
 			Kind: core.OpSendMessage, Token: "asker-tok", To: "worker", MsgType: core.MsgQuestion,
@@ -199,6 +199,9 @@ func TestReadingTheWakeDigestConsumesNothing(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go e.Run(ctx)
+	if _, err := e.HookPoll(ctx, "digest-worker", "Stop", "", true, false); err != nil {
+		t.Fatal("setup: establish idle through a real hook:", err)
+	}
 	digest, err := e.WakeDigestFor(ctx, "worker-tok", "asker", string(core.MsgQuestion))
 	if err != nil {
 		t.Fatal(err)

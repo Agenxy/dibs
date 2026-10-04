@@ -74,6 +74,7 @@ type inboxWatcher struct {
 	streams          map[string]*inboxStream
 	refreshSupported bool // once advertised, never fall back to captured text
 	offerSupported   bool // additive; old dormant bridges cannot assert receipt support
+	batchSupported   bool // atomic reservation of this session's owned mailboxes
 	// reconnect is the pause between a stream ending and the next attempt;
 	// zero means reconnectAfter. A field, set before start, so a test can
 	// shorten it without writing a global under a running goroutine.
@@ -425,6 +426,11 @@ func (iw *inboxWatcher) onFrame(st *inboxStream, msg streamFrame, waker *selfWak
 		iw.offerSupported = true
 		iw.mu.Unlock()
 	}
+	if batch, _ := msg.Params.Meta[mcp.SocketBatchMetaKey].(bool); batch {
+		iw.mu.Lock()
+		iw.batchSupported = true
+		iw.mu.Unlock()
+	}
 	refresh, _ := msg.Params.Meta[mcp.DigestRefreshMetaKey].(bool)
 	if refresh {
 		iw.markRefresh(st.key)
@@ -462,6 +468,12 @@ func (iw *inboxWatcher) onFrame(st *inboxStream, msg streamFrame, waker *selfWak
 // notification that names no event comes from a daemon older than the field,
 // and wakes as before. Found by the pre-release review, round four.
 func worthAWake(meta map[string]any) bool {
+	if offers, _ := meta[mcp.SocketOfferMetaKey].(bool); offers {
+		// The engine's write-time decision includes answers, flagged reviews
+		// and due work. Reclassifying those from event metadata here would
+		// silently undo it. Empty offers cost no socket or model turn.
+		return true
+	}
 	evType, ok := meta[mcp.EventMetaKey].(string)
 	if !ok {
 		return true

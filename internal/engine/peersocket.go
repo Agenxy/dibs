@@ -11,7 +11,6 @@ import (
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/paths"
 	"github.com/agenxy/dibs/internal/peerwake"
-	"github.com/agenxy/dibs/internal/wakeexec"
 )
 
 // Waking an agent over the socket its own harness publishes.
@@ -286,7 +285,7 @@ func (e *Engine) wakeOverSocket(plan wakePlan, agent string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	var offer string
-	if plan.trackOffer && plan.agent != "" && plan.kind != wakeexec.KindContinuation && plan.kind != wakeexec.KindRecheck {
+	if plan.trackOffer && plan.agent != "" {
 		r, err := e.socketOfferForPlan(ctx, plan)
 		if err != nil {
 			return false
@@ -317,6 +316,9 @@ func (e *Engine) wakeOverSocket(plan wakePlan, agent string) bool {
 		return false
 	}
 	written = true
+	if plan.socketWritten != nil {
+		*plan.socketWritten = true
+	}
 	// HANDED OVER, not "woken", because that is all this knows.
 	//
 	// The write succeeding proves the kernel took the bytes. There is no
@@ -339,10 +341,16 @@ func (e *Engine) wakeOverSocket(plan wakePlan, agent string) bool {
 func (e *Engine) socketOfferForPlan(ctx context.Context, plan wakePlan) (core.Result, error) {
 	return e.query(ctx, func() core.Result {
 		l := e.state.Agents[plan.agent]
-		if l == nil || !l.SessionIsCurrent(plan.session) {
+		if l == nil || !l.SessionIsCurrent(plan.session) || !e.socketDaemonReady(l, time.Now()) {
 			return core.Result{"digest": ""}
 		}
-		return e.beginSocketOffer(l, plan.session)
+		rows := e.socketParticipants(l)
+		for _, row := range rows {
+			if own, _ := e.SelfWaking(row.ID); own {
+				return core.Result{"digest": ""} // one bridge writer for this host/session
+			}
+		}
+		return e.beginSocketOffers(rows, plan.session)
 	})
 }
 

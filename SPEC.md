@@ -770,6 +770,37 @@ It neither marks mail delivered nor drains agent updates or announcements;
 unlike `inbox` and `hook_poll`, it spends no delivery or agent call budget.
 Credential and session checks share the digest's single writer-loop snapshot.
 
+Socket digests require an actionable cause and an idle lifecycle observation.
+Starting hooks and actual model calls establish busy until a finishing hook;
+busy never expires into idle. Unknown lifecycle retains the existing bounded
+contact/boot grace, then permits one coalesced actionable or due-wait wake.
+FYI, progress, accepted reviews and queue updates do not independently cause
+socket delivery. Requests, questions, handoffs, human notifications, approvals,
+answers and flagged reviews do; DONE qualifies only when the sender currently
+holds a declaration with `waiting` set. Full outstanding mail remains available
+to delivering hooks and authenticated pulls.
+
+The additive socket-offer handshake reserves one derived wake epoch per host
+identity and current session. A successful kernel write holds that epoch until
+actual turn evidence; it proves no receiver acceptance. Failed writes release
+the reservation. Starting hooks confirm presentation of every owned mailbox
+quoted in the accepted batch, without consuming raw mail. A bridge may supply
+additional mailbox tokens in `com.dibs/socket_tokens` only when the daemon
+advertises `com.dibs/socket_batch`; every token is authenticated separately and
+other host/session rows are excluded. Old dormant bridges can deliver one
+pre-upgrade scheduled notice and may quote only one mailbox under the new
+shared reservation; full hook/pull fallback remains available.
+
+Due declared waits use per-slot clocks and quote only the slots due now. A
+derived `socket.ready` hint on the existing subscription has no ledger serial
+or ring cursor. Busy suppression spends no retry; hook delivery advances the
+cadence without spending a native-write retry. Native due rechecks retain the
+three-write bound and stalled-row/assigner reporting; open-work backoff remains
+10/30/60 minutes. Daemon socket failures retain one retry for the current
+actionable cohort, while a changed cause or real turn rearms it. All lifecycle,
+reservation and presentation records are derived; losing them can repeat a
+notice but cannot lose coordination state.
+
 **App reconnect recovery.** Local stdio bridges attach their own PID and process
 start stamp as additive per-request metadata, including modern discovery and
 legacy startup. On macOS the daemon independently observes the owning ChatGPT app's PID

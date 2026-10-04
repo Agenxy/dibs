@@ -85,6 +85,11 @@ type Engine struct {
 	// at most one unnecessary wake.
 	turnEnded       map[string]time.Time
 	socketOffers    map[string]socketOffer
+	socketTurns     map[string]socketTurn
+	socketEpochs    map[string]socketEpoch
+	socketWaits     map[string]socketWait
+	socketBackoff   map[string]socketBackoff
+	socketFailures  map[string]socketFailure
 	noticePresented map[string]time.Time
 	nextSocketOffer uint64
 	lastStallTick   time.Time // paces stallTick; see stall.go
@@ -348,6 +353,7 @@ func (e *Engine) Run(ctx context.Context) {
 			e.sweep(now)
 			e.expireWaiters(now)
 			e.stallTick(now)
+			e.socketReadyTick(now)
 		case s := <-e.subs:
 			e.streams[s.ch] = s.lost
 			// Catch-up replay, deliberately best-effort: the `default` drops

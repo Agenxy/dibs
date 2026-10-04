@@ -140,6 +140,11 @@ func (e *Engine) wakeStatusOf(agent string) string {
 func (e *Engine) runWakeAndReport(cmd wakePlan, agent string) bool {
 	started := time.Now()
 	cmd.trackOffer = true
+	native := cmd.host == "" && len(cmd.argv) == 0
+	written := false
+	if native {
+		cmd.socketWritten = &written
+	}
 	if cmd.agent != "" {
 		stamp := e.wakeStamp(agent)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -162,6 +167,13 @@ func (e *Engine) runWakeAndReport(cmd wakePlan, agent string) bool {
 		}
 	}
 	if e.runWake(cmd, agent) {
+		if native && !written {
+			e.releaseWake(agent, e.wakeStamp(agent))
+			return true // reservation lost or suppressed; no turn was started
+		}
+		if native {
+			e.recordSocketOutcome(cmd, true)
+		}
 		e.noteDibsStartedTurn(agent, time.Now())
 		if queues(cmd) {
 			// At the START: a sign of the agent while the command ran is a
@@ -172,6 +184,9 @@ func (e *Engine) runWakeAndReport(cmd wakePlan, agent string) bool {
 		e.forgetWakeFailures(agent)
 		return true
 	}
+	if native {
+		e.recordSocketOutcome(cmd, false)
+	}
 	e.reportWakeFailure(agent)
 	return false
 }
@@ -181,13 +196,7 @@ func (e *Engine) refreshWakePlan(ctx context.Context, cmd wakePlan) (string, err
 		l := e.state.Agents[cmd.agent]
 		text := ""
 		if l != nil && !l.Retired() && l.SessionIsCurrent(cmd.session) {
-			if cmd.kind == wakeexec.KindContinuation || cmd.kind == wakeexec.KindRecheck {
-				if len(e.workSlotsOf(l, time.Now())) > 0 {
-					text = e.workNotice(l, cmd.kind)
-				}
-			} else {
-				text = e.currentWakeDigest(l)
-			}
+			text = e.freshPlanText(l, cmd, time.Now())
 		}
 		if text == "" {
 			e.wakers.mu.Lock()
@@ -204,4 +213,20 @@ func (e *Engine) refreshWakePlan(ctx context.Context, cmd wakePlan) (string, err
 	}
 	text, _ := res["digest"].(string)
 	return text, nil
+}
+
+func (e *Engine) freshPlanText(l *core.Agent, cmd wakePlan, now time.Time) string {
+	switch {
+	case cmd.host == "" && len(cmd.argv) == 0:
+		if e.socketDaemonReady(l, now) {
+			return e.socketDigest(l, now)
+		}
+	case cmd.kind == wakeexec.KindContinuation || cmd.kind == wakeexec.KindRecheck:
+		if len(e.workSlotsOf(l, now)) > 0 {
+			return e.workNotice(l, cmd.kind)
+		}
+	default:
+		return e.currentWakeDigest(l)
+	}
+	return ""
 }

@@ -121,10 +121,11 @@ func (e *Engine) rememberAppReconnect(key string, at time.Time) {
 	e.appReconnects[key] = at
 }
 
-// Reconnect adds outstanding notices to the ordinary blocking-mail decision.
-// FYI notify messages alone still do not start an idle agent.
+// Reconnect shares actionable classification with socket wakes. Informational
+// updates remain available at the next hook; an app restart is not a reason to
+// spend a turn on them. This check uses current waiting declarations for DONE.
 func (e *Engine) hasReconnectMail(agent string) bool {
-	return e.hasBlockingMail(agent) || len(e.takeNotices(agent)) > 0
+	return e.actionableSocketMail(e.state.Agents[agent], time.Now(), false)
 }
 
 func (e *Engine) hasRetryMail(agent string) bool {

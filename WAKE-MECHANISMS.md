@@ -187,6 +187,18 @@ A terminal Claude Code session has no app record and is never opened.
 
 ### Continuing a turn that ends with declared work (2026-10-01)
 
+**Socket economy (2026-10-04).** Socket writers now share an engine-owned
+lifecycle and cause decision. Busy sessions use their full-mail Stop hook;
+informational-only mail waits for that hook or the next actionable wake. An
+idle session gets one coalesced write for actionable mail or due waits until
+actual turn evidence. Unknown lifecycle gets the existing bounded grace and
+then one recovery write, explicitly logged as unknown. Answers, approvals and
+flagged reviews qualify; DONE qualifies for a sender currently declaring a
+wait. A successful kernel write remains best effort, with hook fallback until
+turn evidence. Due waits keep independent clocks and retry limits. See
+`docs/SOCKET-WAKE-DESIGN.md` for the measured baseline, additive batch protocol
+and dormant older-bridge limitation.
+
 Wake-on-mail worked and the Codex workers still stalled. Measured in
 codex-k7-0's own transcript: mail woke it through the ChatGPT app, the turn's
 only prompt was "Dibs: a new question is waiting.", the model took answering it

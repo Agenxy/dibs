@@ -509,7 +509,7 @@ func (p *pumpState) deliver(ev core.Event) bool {
 			return false
 		}
 	}
-	if ev.Serial > p.last || (ev.Serial == p.last && ev.Sub > p.lastSub) {
+	if ev.Type != engine.SocketReadyEvent && (ev.Serial > p.last || (ev.Serial == p.last && ev.Sub > p.lastSub)) {
 		p.last, p.lastSub = ev.Serial, ev.Sub
 	}
 	return true
@@ -577,7 +577,7 @@ func (s *Server) eventsAfter(ctx context.Context, pos uint64, wants wantsFunc) [
 
 // matchedURI returns the subscribed resource URI an event changed, or "".
 func matchedURI(ev core.Event, agentID string, wantInbox, wantBoard bool) string {
-	if wantInbox && ev.To == agentID && strings.HasPrefix(ev.Type, "message.") {
+	if wantInbox && ev.To == agentID && (strings.HasPrefix(ev.Type, "message.") || ev.Type == engine.SocketReadyEvent) {
 		return "dibs://inbox"
 	}
 	if wantBoard && isBoardEvent(ev) {
@@ -736,6 +736,11 @@ func resourceUpdated(uri string, subID json.RawMessage, ev core.Event, digest di
 	if uri == "dibs://inbox" {
 		msgType, _ := ev.Data["msg_type"].(string)
 		meta := map[string]any{EventMetaKey: ev.Type, MsgTypeMetaKey: msgType, SerialMetaKey: ev.Serial}
+		if ev.Type == engine.SocketReadyEvent {
+			// Derived readiness has no ledger cursor or durable event kind.
+			// Old claiming bridges treat an absent event as a refresh hint.
+			meta = map[string]any{"com.dibs/socket_ready": true}
+		}
 		// WHAT ARRIVED, for the subscriber that is going to announce it.
 		//
 		// Computed here, on the way out, rather than fetched by the bridge:
@@ -746,6 +751,7 @@ func resourceUpdated(uri string, subID json.RawMessage, ev core.Event, digest di
 		if digest != nil {
 			meta[DigestRefreshMetaKey] = true
 			meta[SocketOfferMetaKey] = true
+			meta[SocketBatchMetaKey] = true
 			if text := digest(ev); text != "" {
 				meta[DigestMetaKey] = text
 			}

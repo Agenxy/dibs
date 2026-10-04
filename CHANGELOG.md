@@ -7,6 +7,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Claude socket wakes coalesce until a new turn starts.** Busy sessions and
+  informational-only mail use their existing full-mail hooks. Idle sessions
+  wake for requests, questions, handoffs, human notifications, answers,
+  approvals, flagged reviews and due declared waits; DONE wakes a sender that
+  currently declares it is waiting. Due slots keep independent clocks and
+  bounded retries. Unknown sessions retain a bounded recovery grace. Shared
+  mailboxes use one authenticated batch and one host/session wake epoch;
+  failed writes retain hook fallback. Senders are told when a positively dead
+  harness has no delivery route. Routine strict-hook identity omission is
+  logged at Debug, with actual dropped information still at Info.
+
 - Release discovery lists bounded, paginated GitHub releases and matches the
   exact tag, including an existing draft that the get-by-tag endpoint omits.
   Duplicate matches, incomplete scans and API failures refuse publication;
