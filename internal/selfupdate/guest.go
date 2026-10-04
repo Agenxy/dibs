@@ -16,6 +16,22 @@ import (
 // before then; no environment, board config or invitation can lower this floor.
 var GuestSupportingMinimum = ""
 
+// GuestVersionHeader is an HTTP compatibility declaration, NOT authentication.
+// The bridge stamps its actual build on every request; harness clientInfo,
+// recipe metadata and a legacy session never supply this evidence.
+const GuestVersionHeader = "X-Dibs-Guest-Version"
+
+// CheckGuestBridgeVersion refuses non-release images once the compiled floor
+// is assigned. Unset is the unreleased checkpoint, not version zero: it offers
+// no provisioning, while leaving existing invitation transport unchanged.
+func CheckGuestBridgeVersion(version, minimum string) error {
+	if minimum == "" {
+		return nil
+	}
+	_, err := SelectGuestRelease("v"+strings.TrimPrefix(version, "v"), minimum, "")
+	return err
+}
+
 // SelectGuestRelease is the single issuer rule used by explicit acquisition
 // and daemon admission. A development board is not relabelled as a release.
 func SelectGuestRelease(tag, minimum, boardVersion string) (Release, error) {

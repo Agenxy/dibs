@@ -13,6 +13,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/build"
+	"github.com/agenxy/dibs/internal/selfupdate"
 )
 
 type guestRoundTripFunc func(*http.Request) (*http.Response, error)
@@ -30,6 +33,10 @@ func TestGuestTransportScopeEveryRequest(t *testing.T) {
 					if r.Header.Get("Authorization") != "Bearer invitation-only" {
 						t.Fatal("invitation credential was not the sole bearer source")
 					}
+					versions := r.Header.Values(selfupdate.GuestVersionHeader)
+					if len(versions) != 1 || versions[0] != build.Version {
+						t.Fatal("guest compatibility declaration did not override caller with actual build")
+					}
 					return &http.Response{StatusCode: 200, Body: http.NoBody}, nil
 				}),
 			}
@@ -38,6 +45,8 @@ func TestGuestTransportScopeEveryRequest(t *testing.T) {
 				t.Fatal(err)
 			}
 			r.Header.Set("Authorization", "Bearer caller-override")
+			r.Header.Add(selfupdate.GuestVersionHeader, "99.0.0")
+			r.Header.Add(selfupdate.GuestVersionHeader, "99.0.1")
 			switch mode {
 			case "GET":
 				r.Method = http.MethodGet
@@ -55,6 +64,9 @@ func TestGuestTransportScopeEveryRequest(t *testing.T) {
 				g.expires = time.Now().Add(-time.Second)
 			}
 			response, rerr := g.RoundTrip(r)
+			if len(r.Header.Values(selfupdate.GuestVersionHeader)) != 2 || r.Header.Get("Authorization") != "Bearer caller-override" {
+				t.Fatal("transport altered caller-owned headers")
+			}
 			err = rerr
 			if response != nil {
 				_ = response.Body.Close()

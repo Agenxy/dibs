@@ -90,8 +90,12 @@ func guestExportPayload(out map[string]any, requestedName string) ([]byte, error
 		}
 		r.Release = &release
 	}
-	expires, _ := out["expires_at"].(string)
 	var err error
+	r.Provisioning, err = guestExportProvisioning(config["bridge_provisioning"], r.Release)
+	if err != nil {
+		return nil, err
+	}
+	expires, _ := out["expires_at"].(string)
 	r.Expires, err = time.Parse(time.RFC3339Nano, expires)
 	r.Expires = r.Expires.UTC()
 	if err != nil {
@@ -123,6 +127,29 @@ func guestExportPayload(out map[string]any, requestedName string) ([]byte, error
 		return nil, errors.New("issuer recipe exceeds the 64 KiB bound")
 	}
 	return body, nil
+}
+
+func guestExportProvisioning(raw any, release *selfupdate.GuestReleaseMetadata) (*selfupdate.GuestProvisioning, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	if release == nil {
+		return nil, errors.New("issuer provisioning lacks admitted release metadata")
+	}
+	b, err := json.Marshal(raw)
+	if err != nil {
+		return nil, errors.New("issuer provisioning cannot be encoded")
+	}
+	var p selfupdate.GuestProvisioning
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.DisallowUnknownFields()
+	if err = dec.Decode(&p); err != nil {
+		return nil, fmt.Errorf("invalid issuer provisioning: %w", err)
+	}
+	if err = p.Validate(*release); err != nil {
+		return nil, err
+	}
+	return &p, nil
 }
 
 func validateGuestExportIdentity(r *guestRecipe, requestedName string) error {

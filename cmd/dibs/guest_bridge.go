@@ -21,6 +21,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/agenxy/dibs/internal/build"
+	"github.com/agenxy/dibs/internal/selfupdate"
 	"github.com/agenxy/dibs/internal/transport"
 )
 
@@ -153,6 +155,7 @@ func (g *guestTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	}
 	next := r.Clone(r.Context())
 	next.Header.Set("Authorization", "Bearer "+g.credential)
+	next.Header.Set(selfupdate.GuestVersionHeader, build.Version)
 	return g.next.RoundTrip(next)
 }
 

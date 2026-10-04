@@ -154,15 +154,16 @@ func TestGuestInviteExportThroughActualCLI(t *testing.T) {
 		t.Fatal("actual CLI did not publish the private recipe")
 	}
 	var recipe struct {
-		Version  int       `json:"schema_version"`
-		Name     string    `json:"name"`
-		Endpoint string    `json:"endpoint"`
-		Key      string    `json:"invitation_key"`
-		Nonce    string    `json:"recovery_nonce"`
-		Expires  time.Time `json:"expires_at"`
-		CA       string    `json:"ca_pem"`
-		Pin      string    `json:"ca_spki_sha256"`
-		Release  any       `json:"bridge_release"`
+		Version      int       `json:"schema_version"`
+		Name         string    `json:"name"`
+		Endpoint     string    `json:"endpoint"`
+		Key          string    `json:"invitation_key"`
+		Nonce        string    `json:"recovery_nonce"`
+		Expires      time.Time `json:"expires_at"`
+		CA           string    `json:"ca_pem"`
+		Pin          string    `json:"ca_spki_sha256"`
+		Release      any       `json:"bridge_release"`
+		Provisioning any       `json:"bridge_provisioning"`
 	}
 	if err := json.Unmarshal(body, &recipe); err != nil {
 		t.Fatal(err)
@@ -176,7 +177,7 @@ func TestGuestInviteExportThroughActualCLI(t *testing.T) {
 		t.Fatal("issuance setup did not create exactly one entry")
 	}
 	if recipe.Version != 1 || recipe.Name != "issuer-cloud" || recipe.Endpoint != "https://[::1]:4778/mcp" ||
-		recipe.Nonce != expected || recipe.Key == "" || !recipe.Expires.Equal(entries[0].Expires) || recipe.CA != ca || recipe.Pin != pin || recipe.Release != nil {
+		recipe.Nonce != expected || recipe.Key == "" || !recipe.Expires.Equal(entries[0].Expires) || recipe.CA != ca || recipe.Pin != pin || recipe.Release != nil || recipe.Provisioning != nil {
 		t.Fatal("export lost issuer identity/expiry/trust or invented release metadata")
 	}
 	info, err := os.Stat(file)
@@ -224,6 +225,10 @@ func TestGuestInviteExportThroughActualCLI(t *testing.T) {
 	selfupdate.GuestSupportingMinimum = "v0.0.9" // fixture only, never production support
 	endpointMu.Unlock()
 	t.Cleanup(func() { endpointMu.Lock(); selfupdate.GuestSupportingMinimum = originalFloor; endpointMu.Unlock() })
+	ordinary, err := run("issuer-ordinary")
+	if err != nil || bytes.Contains(ordinary, []byte("bridge_provisioning")) || bytes.Contains(ordinary, []byte("tar -xOzf")) {
+		t.Fatalf("ordinary mint leaked provisioning or failed: %v %s", err, ordinary)
+	}
 	metadataFile := filepath.Join(private, "release-metadata.json")
 	output, err := run("issuer-metadata", "--out", metadataFile)
 	if err != nil {
@@ -234,13 +239,59 @@ func TestGuestInviteExportThroughActualCLI(t *testing.T) {
 		t.Fatal(err)
 	}
 	var withRelease struct {
-		Release *selfupdate.GuestReleaseMetadata `json:"bridge_release"`
+		Release      *selfupdate.GuestReleaseMetadata `json:"bridge_release"`
+		Provisioning json.RawMessage                  `json:"bridge_provisioning"`
 	}
 	if err = json.Unmarshal(metadataBody, &withRelease); err != nil || withRelease.Release == nil || withRelease.Release.Tag != "v0.0.9" || withRelease.Release.Status != "INCOMPLETE" || len(withRelease.Release.Assets) != 3 || !strings.HasPrefix(withRelease.Release.BoardBuild, "devel") {
 		t.Fatal("actual CLI export dropped verified release metadata or actual devel-board provenance")
 	}
 	if err = withRelease.Release.Validate(); err != nil {
 		t.Fatal(err)
+	}
+	if len(withRelease.Provisioning) == 0 || !bytes.Contains(withRelease.Provisioning, []byte("tar -xOzf")) ||
+		!bytes.Contains(withRelease.Provisioning, []byte("shasum -a 256 -c")) ||
+		!bytes.Contains(withRelease.Provisioning, []byte("sha256sum -c")) ||
+		!bytes.Contains(withRelease.Provisioning, []byte("mcp-stdio")) {
+		t.Fatal("actual CLI export dropped verified literal guest provisioning")
+	}
+	var provisioning selfupdate.GuestProvisioning
+	if err = json.Unmarshal(withRelease.Provisioning, &provisioning); err != nil || provisioning.Validate(*withRelease.Release) != nil {
+		t.Fatal("actual CLI changed canonical issuer instructions")
+	}
+	if len(metadataBody) > 64<<10 {
+		t.Fatal("actual provisioning export exceeded its private-file bound")
+	}
+	goodCtx, cancelGood := context.WithTimeout(context.Background(), 5*time.Second)
+	goodCmd := exec.CommandContext(goodCtx, bin, "mcp-stdio", "--guest", metadataFile)
+	goodCmd.Env = nativeProbeEnv(t.TempDir(), "", "")
+	goodOutput, goodErr := goodCmd.CombinedOutput() // EOF: parse only, no network request
+	cancelGood()
+	if goodErr != nil || len(goodOutput) != 0 {
+		t.Fatalf("actual guest command rejected canonical private provisioning: %v %s", goodErr, goodOutput)
+	}
+	// The actual guest command must understand this additive private field and
+	// refuse altered instructions BEFORE any runtime connection. Identity/CA
+	// remain sound so the refusal discriminates the new parser boundary.
+	var altered map[string]any
+	if err = json.Unmarshal(metadataBody, &altered); err != nil {
+		t.Fatal(err)
+	}
+	altered["bridge_provisioning"].(map[string]any)["status"] = "READY"
+	badBody, err := json.Marshal(altered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	badFile := filepath.Join(private, "altered-instructions.json")
+	if err = os.WriteFile(badFile, badBody, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	badCtx, cancelBad := context.WithTimeout(context.Background(), 5*time.Second)
+	badCmd := exec.CommandContext(badCtx, bin, "mcp-stdio", "--guest", badFile)
+	badCmd.Env = nativeProbeEnv(t.TempDir(), "", "")
+	badOutput, badErr := badCmd.CombinedOutput()
+	cancelBad()
+	if badErr == nil || !bytes.Contains(badOutput, []byte("differs from its exact release projection")) {
+		t.Fatalf("actual guest command failed to refuse altered provisioning: %v %s", badErr, badOutput)
 	}
 	if !bytes.Contains(output, []byte("INCOMPLETE")) || bytes.Contains(output, []byte("mcp-stdio")) {
 		t.Fatal("metadata export offered runnable provisioning")
