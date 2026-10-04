@@ -32,6 +32,12 @@ func TestInlineHookDeliveryIsReadButSocketWriteIsNot(t *testing.T) {
 			}
 			n := do(&core.Op{Kind: core.OpSendMessage, Token: tokens["lead"], To: "worker", MsgType: core.MsgRequest, Body: "work"})["msg_serial"].(uint64)
 			do(&core.Op{Kind: core.OpRespond, Token: tokens["worker"], MsgSerial: n, Disposition: "approve", Body: "exact-inline-approval"})
+			// Ordinary approval is informational. This tests body delivery and
+			// read receipts, so provide an independent actionable wake cause.
+			do(&core.Op{
+				Kind: core.OpSendMessage, Token: tokens["worker"], To: "lead",
+				MsgType: core.MsgQuestion, Body: "inline delivery cause",
+			})
 			// The socket policy requires a real idle boundary, not silence after
 			// fixture tool calls. An already-active Stop records it, not delivery.
 			if _, err := e.HookPoll(ctx, "lead-session", "Stop", "", true, false); err != nil {
