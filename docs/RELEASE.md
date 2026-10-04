@@ -139,8 +139,15 @@ not a repository, URL or signing identity supplied by a dispatch:
 on 2026-10-04. Its public visibility, enabled immutable releases and Actions with
 read-default workflow permissions were independently checked through GitHub's
 API. A different repository or source refuses before build, signature or release
-mutation. No live scratch run or downstream acceptance has been measured yet.
-Do not interpret the local tests or repository settings as that evidence.
+mutation. The initial 2026-10-04 negative run
+[37237878575](https://github.com/Agenxy/dibs-release-rehearsal/actions/runs/37237878575)
+confirmed the old get-by-tag discovery failure against an exact empty draft.
+The positive run
+[37238179799](https://github.com/Agenxy/dibs-release-rehearsal/actions/runs/37238179799)
+published immutable payload `403225432` with 11 assets, then failed its dry cask
+URL check before producing eligible evidence. That failed attempt is retained,
+not reused or deleted. No successful full-publication or downstream acceptance
+is claimed; the repair requires a new exact-candidate run and unique tag.
 
 Mirror the exact reviewed candidate commit (without rewriting its SHA) and use
 `rehearsal-v<version>-<full-candidate-sha>`. The workflow and tool tree must be
@@ -164,6 +171,14 @@ verification, another call to the same publisher must succeed through an
 explicit read-only operation allow-list. Registry and cask plans validate the
 canonical version, bundle/sidecar digest and archive URL/checksum pairs, but
 never publish, push, merge, install or claim service acceptance.
+
+GoReleaser generates scratch cask URLs with the scratch repository but the
+canonical build tag, which exists only locally. Before checksums and signing,
+the scratch-only stage verifies exactly three canonical generated URL/digest
+pairs against the actual archives, then binds its dry cask to the closed scratch
+repository and unique public payload tag. The signed readback validates those
+exact payload URLs and digests. Production cask bytes are copied unchanged;
+neither arbitrary URLs nor scratch identities enter production trust.
 
 The separate scratch signature verifier requires its exact repository,
 `release-rehearsal.yml` and unique tag with the fixed issuer and reviewed trusted
