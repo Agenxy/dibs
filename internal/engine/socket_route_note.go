@@ -19,10 +19,10 @@ func (e *Engine) sendDeliveryNote(l *core.Agent, m *core.Message, now time.Time)
 	if note, remote := e.remotePullOnlyNote(l); remote {
 		return note
 	}
-	if e.localCommandConfigured(wakeHarness(l)) && threadIDOf(l) != "" {
+	self, _ := e.SelfWaking(l.ID)
+	if !self && e.localCommandConfigured(wakeHarness(l)) && threadIDOf(l) != "" {
 		return e.PullOnlyNote(l)
 	}
-	self, _ := e.SelfWaking(l.ID)
 	if !self && !e.mightReachOverSocket(l) {
 		return e.PullOnlyNote(l)
 	}
