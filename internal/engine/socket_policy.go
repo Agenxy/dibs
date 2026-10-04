@@ -98,6 +98,14 @@ func (e *Engine) actionableSocketMail(l *core.Agent, now time.Time, fresh bool) 
 	if l.Retired() {
 		return false
 	}
+	// A required acknowledgment is an outstanding obligation. Use the same
+	// due-announcement cadence as the delivering hook, without spending it.
+	if !fresh && len(e.state.Unacked(l.ID)) > 0 {
+		return true
+	}
+	if due, _ := e.dueAnnouncements(l.ID, now); len(due) > 0 {
+		return true
+	}
 	wanted := map[string]bool{}
 	if fresh {
 		for _, key := range e.wakeKeys(l.ID, now) {

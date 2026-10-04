@@ -183,8 +183,10 @@ func TestTheOperatorCanNarrowOrSilenceTheWake(t *testing.T) {
 	if got, err := fresh.HookPoll(ctx, "sess-"+freshID, "Stop", "", false, false); err != nil || deliveredSomething(got) {
 		t.Fatalf("the default spent a turn on an FYI: %v %v", got, err)
 	}
-	if _, err := fresh.Do(ctx, &core.Op{Kind: core.OpSendMessage, Token: s2, To: freshID,
-		MsgType: core.MsgQuestion, Body: "actionable"}); err != nil {
+	if _, err := fresh.Do(ctx, &core.Op{
+		Kind: core.OpSendMessage, Token: s2, To: freshID,
+		MsgType: core.MsgQuestion, Body: "actionable",
+	}); err != nil {
 		t.Fatal(err)
 	}
 	fresh.SetWakePolicy(WakeNone)

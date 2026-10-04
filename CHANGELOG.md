@@ -38,7 +38,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   remain unread at a non-blocking Stop. SessionStart, authenticated pulls or
   the next actionable digest deliver them. Stop shares the socket classifier:
   questions, requests, handoffs, human notifications, answers, grant/adoption
-  verdicts, denials, declines and flagged reviews qualify; DONE requires a
+  verdicts, denials, declines, flagged reviews and announcements awaiting an
+  acknowledgment qualify; DONE requires a
   current waiting declaration. Due waits and declared-work continuation retain
   their existing bounds. UserPromptSubmit remains silent.
 

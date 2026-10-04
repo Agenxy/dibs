@@ -419,15 +419,7 @@ func (e *Engine) HookPollFrom(
 		wake := e.wakeKeys(l.ID, now)
 		fresh, blocked := hookWakeTerms(len(wake), len(announced), noticesCount,
 			waiting, e.somebodyIsWaiting(l.ID))
-		fresh, blocked = fresh || work != "", blocked || work != ""
-		if isStopEvent(event) {
-			// Continuing a finished turn costs a model turn. Use the same
-			// typed cause as the native socket route, rather than the presence
-			// of any unread digest line. Informational units remain unconsumed
-			// until a delivery that actually reaches model context.
-			actionable := e.actionableSocketMail(l, now, true) || work != ""
-			fresh, blocked = actionable, actionable
-		}
+		fresh, blocked = e.hookDeliveryCauses(l, event, now, work, fresh, blocked)
 		if e.deliverToModel(event, fresh, blocked, stopActive) {
 			// Marked on DELIVERY, and that is a deliberate trade rather than an
 			// oversight, so it is written down here and in SECURITY.md.
@@ -1107,6 +1099,17 @@ func (e *Engine) deliverToModel(event string, fresh, blocked, stopActive bool) b
 	default:
 		return fresh
 	}
+}
+
+// Continuing a finished turn costs a model turn. Stop shares the native
+// socket's typed cause, rather than any unread digest line. Informational
+// units remain unconsumed until delivery actually reaches model context.
+func (e *Engine) hookDeliveryCauses(l *core.Agent, event string, now time.Time, work string, fresh, blocked bool) (bool, bool) {
+	if isStopEvent(event) {
+		actionable := e.actionableSocketMail(l, now, true) || work != ""
+		return actionable, actionable
+	}
+	return fresh || work != "", blocked || work != ""
 }
 
 // WakePhase is which news may extend a turn.

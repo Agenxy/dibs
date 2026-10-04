@@ -811,6 +811,8 @@ and `adopt` fields, never the notice text. DONE qualifies only when the sender c
 holds a declaration with `waiting` set. Full outstanding mail remains available
 to delivering hooks and authenticated pulls.
 
+Due announcements awaiting this agent's required acknowledgment also qualify,
+under the existing presentation cadence; acknowledgment quiets both routes.
 Stop and SubagentStop use this same typed actionable cause before blocking a
 finished turn. Informational progress, ordinary approvals, accepted reviews,
 queue acceptance/position changes and peer FYIs do not independently block.

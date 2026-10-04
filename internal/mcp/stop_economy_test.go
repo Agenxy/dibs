@@ -33,8 +33,10 @@ func readStopLedger(t *testing.T, dir string) *core.State {
 // hand-set notices or decision flags. Informational progress must survive a
 // Stop which sends no model context, then arrive once through check_in.
 func TestStopEconomyThroughMCP(t *testing.T) {
-	for _, item := range []string{"progress", "ordinary-approval", "accepted-review", "notify", "queue", "done-without-wait",
-		"question", "request", "handoff", "human-notify", "answer", "deny", "decline", "flagged-review", "grant", "adopt", "done-with-wait"} {
+	for _, item := range []string{
+		"progress", "ordinary-approval", "accepted-review", "notify", "queue", "done-without-wait",
+		"question", "request", "handoff", "human-notify", "answer", "deny", "decline", "flagged-review", "grant", "adopt", "done-with-wait", "announcement",
+	} {
 		for _, event := range []string{"Stop", "SubagentStop"} {
 			t.Run(item+"/"+event, func(t *testing.T) {
 				dir := t.TempDir()
@@ -58,15 +60,22 @@ func TestStopEconomyThroughMCP(t *testing.T) {
 				case "progress", "ordinary-approval", "accepted-review", "notify", "queue", "done-without-wait":
 					actionable = false
 				}
-				if item == "notify" || item == "question" || item == "request" || item == "handoff" {
+				switch item {
+				case "notify", "question", "request", "handoff":
 					call("send", map[string]any{"token": worker, "to": "lead", "type": item, "body": marker})
-				} else if item == "human-notify" {
+				case "human-notify":
 					_, humanToken, err := eng.HumanAgent(context.Background())
 					if err != nil {
 						t.Fatal("setup: human:", err)
 					}
 					call("send", map[string]any{"token": humanToken, "to": "lead", "type": "notify", "body": marker})
-				} else if item == "grant" || item == "adopt" {
+				case "announcement":
+					call("open_space", map[string]any{"token": worker, "space": "stop-proof", "topic": "proof"})
+					call("join_space", map[string]any{"token": lead, "space": "stop-proof"})
+					call("check_in", map[string]any{"token": worker})
+					call("announce", map[string]any{"token": worker, "space": "stop-proof", "body": "announcement"})
+					marker = "ack_announcement"
+				case "grant", "adopt":
 					human, humanToken, err := eng.HumanAgent(context.Background())
 					if err != nil {
 						t.Fatal("setup: human:", err)
@@ -84,7 +93,7 @@ func TestStopEconomyThroughMCP(t *testing.T) {
 					}
 					n := call("send", args)["msg_serial"]
 					call("respond", map[string]any{"token": humanToken, "msg_serial": n, "disposition": "approve", "body": marker})
-				} else {
+				default:
 					kind := "request"
 					if item == "answer" {
 						kind = "question"

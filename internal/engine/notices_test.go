@@ -843,13 +843,17 @@ func TestHookPollDeliversAnApproval(t *testing.T) {
 	if err != nil {
 		t.Fatal("setup: human:", err)
 	}
-	ask, err := e.Do(ctx, &core.Op{Kind: core.OpSendMessage, Token: res["token"].(string), To: humanID,
-		MsgType: core.MsgRequest, Body: "grant coordinator", Grant: core.RoleCoordinator})
+	ask, err := e.Do(ctx, &core.Op{
+		Kind: core.OpSendMessage, Token: res["token"].(string), To: humanID,
+		MsgType: core.MsgRequest, Body: "grant coordinator", Grant: core.RoleCoordinator,
+	})
 	if err != nil {
 		t.Fatal("setup: grant request:", err)
 	}
-	if _, err := e.Do(ctx, &core.Op{Kind: core.OpRespond, Token: humanToken,
-		MsgSerial: ask["msg_serial"].(uint64), Disposition: "approve"}); err != nil {
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpRespond, Token: humanToken,
+		MsgSerial: ask["msg_serial"].(uint64), Disposition: "approve",
+	}); err != nil {
 		t.Fatal("setup: grant approval:", err)
 	}
 
