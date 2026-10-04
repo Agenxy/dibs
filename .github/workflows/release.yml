@@ -55,7 +55,6 @@ jobs:
     runs-on: macos-latest
     permissions:
       contents: read
-      actions: read
     env:
       DIBS_RELEASE_REHEARSAL: ${{ inputs.rehearsal_fail }}
       DIBS_RELEASE_DELIVERY_REHEARSAL: ${{ inputs.delivery_rehearsal }}
@@ -79,6 +78,8 @@ jobs:
         with:
           cosign-release: v3.1.3
       - uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          syft-version: v1.50.0
       - name: macOS signing preflight
         if: '!inputs.rehearsal_fail && !inputs.delivery_rehearsal'
         env:
@@ -151,6 +152,8 @@ jobs:
       - name: embedded Sigstore root is current
         run: go run ./tools/sigstore-root-check
       - uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          syft-version: v1.50.0
       - name: macOS signing identity
         env:
           DIBS_SIGNING_P12: ${{ secrets.DIBS_SIGNING_P12 }}

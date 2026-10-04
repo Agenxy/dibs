@@ -77,8 +77,8 @@ func TestUnsignedOrWrongIdentityReceiptCannotAuthorizeProduction(t *testing.T) {
 				}
 				return base(ctx, env, name, args...)
 			}
-			if err := execute(context.Background(), c, run); err == nil {
-				t.Fatal("immutable evidence was accepted without authenticating the receipt signature: " + reason)
+			if err := execute(context.Background(), c, run); err == nil || !strings.Contains(err.Error(), reason) {
+				t.Fatalf("receipt did not reach exact signature refusal %q: %v", reason, err)
 			}
 			if git(t, "tag", "--list") != "" || git(t, "ls-remote", "--tags", "origin") != "" {
 				t.Fatal("untrusted signed receipt created a tag")

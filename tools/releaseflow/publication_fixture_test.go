@@ -31,6 +31,7 @@ func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { retu
 // checks are wiring evidence; no fixture verdict is called crypto acceptance.
 func newPublicationFixture(t *testing.T, c *config, next runner) *publicationFixture {
 	t.Helper()
+	t.Setenv("GITHUB_TOKEN", "job-token-fixture")
 	old := rehearsalRepository
 	rehearsalRepository = "Agenxy/dibs-private-test-fixture"
 	t.Cleanup(func() { rehearsalRepository = old })
@@ -67,8 +68,12 @@ func newPublicationFixture(t *testing.T, c *config, next runner) *publicationFix
 	f.seal(t)
 	base := *c
 	c.publicClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		if r.Method != "GET" || r.Header.Get("Authorization") != "" {
-			t.Fatal("public proof used a credential or mutation")
+		wantAuth := ""
+		if r.URL.Host == "api.github.com" {
+			wantAuth = "Bearer job-token-fixture"
+		}
+		if r.Method != "GET" || r.Header.Get("Authorization") != wantAuth {
+			t.Fatal("proof escaped GET/API-only job-token boundary")
 		}
 		var body []byte
 		var err error

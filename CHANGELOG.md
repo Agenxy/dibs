@@ -14,6 +14,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   repository is deliberately unbound until the operator chooses one; no live
   rehearsal or release is claimed. Rehearsal signatures cannot satisfy installed
   production trust, and registry/cask outputs are dry plans, not live acceptance.
+  Metadata reads use only the existing job token at the GitHub API origin for
+  rate limits, never as signature authority or on asset/CDN requests. Shared
+  workflow tool/action pins are checked for parity; Syft is explicitly pinned.
 
 ### Fixed
 

@@ -152,7 +152,12 @@ The full rehearsal drives the same draft discovery, create, build, keyless sign,
 upload, download/readback and publication code as production. Titles and notes
 say `REHEARSAL, not a Dibs release, do not install`. It receives no production
 Apple signing, Homebrew or registry credential. Apple signing is ad-hoc only;
-this is not acceptance of the production certificate. After immutable public
+the production codesign/notarize identity is NOT exercised or accepted. Neither
+the tap push nor the registry write is exercised. A static workflow guard checks
+identical shared setup action SHAs and inputs for checkout, mise, cosign and
+Syft; cosign/Syft versions match the exact shared mise pins, including the
+GoReleaser pin. This guards declared toolchain parity, not Apple/downstream
+credential acceptance or bit-reproducible output. After immutable public
 verification, another call to the same publisher must succeed through an
 explicit read-only operation allow-list. Registry and cask plans validate the
 canonical version, bundle/sidecar digest and archive URL/checksum pairs, but
@@ -184,14 +189,27 @@ existing evidence release, including an empty draft, is a collision: refuse,
 never reuse or overwrite it. Payload and evidence are separate because adding
 post-publication proof assets to an already immutable payload is impossible.
 
-This design requires a PUBLIC scratch repository. Production uses plain HTTPS
-with no Authorization header or new credential to fetch metadata, receipt,
-bundle and payload bytes, then verifies the signatures offline with the same
-embedded pin-checked root as installed release evidence. The actual public
-network/Actions/signing doors remain unmeasured until the operator authorizes
-setup and dispatch. A refusal remains a blocker; no local-file or unsigned proof
-fallback exists. A private scratch repository would require a different approved
-credential design and is not supported by this path.
+This design requires a PUBLIC scratch repository. API metadata GETs to the exact
+HTTPS `api.github.com` origin require the existing job's `GITHUB_TOKEN` for
+rate-limit authentication, not a new cross-repository credential. GitHub's
+[unauthenticated limit is 60/hour per originating IP](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api);
+the job token avoids making hosted acceptance depend on that shared allowance.
+The token is never sent to release-asset/CDN URLs or non-API redirects. Receipt,
+bundle and payload downloads remain public HTTPS; signatures are verified offline
+with the same embedded pin-checked root as installed release evidence. An
+authenticated HTTP 200 proves NO signature, identity or successful publication.
+
+Preflight does not add `actions: read` for these public metadata calls. The
+[run API](https://docs.github.com/en/rest/actions/workflow-runs#get-a-workflow-run)
+and [job API](https://docs.github.com/en/rest/actions/workflow-jobs#list-jobs-for-a-workflow-run-attempt)
+allow public reads without that permission. The production job's actual token
+access to scratch run/jobs/release metadata still MUST be measured in the first
+authorized live run; this is not claimed from a local fixture or a general
+statement about installation tokens. The actual public network/Actions/signing
+doors remain unmeasured until setup and dispatch are authorized. Missing tokens,
+HTTP refusals or missing evidence remain blockers: no anonymous, local-file or
+unsigned proof fallback exists. A private scratch repository would require a
+different approved credential design and is not supported by this path.
 
 The old get-by-tag negative control changes ONLY discovery inside the scratch
 factory. Run it first against an absent unique target. It must build and sign

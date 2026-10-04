@@ -16,31 +16,49 @@ import (
 func publicResponse(ctx context.Context, c config, url string) (*http.Response, error) {
 	client := c.publicClient // Only a private test seam; no URL/client option in main.
 	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			host := req.URL.Hostname()
-			if req.URL.Scheme != "https" || req.URL.User != nil || len(via) >= 5 ||
-				(host != "github.com" && host != "api.github.com" && !strings.HasSuffix(host, ".githubusercontent.com")) {
-				return errors.New("public proof redirect is not bounded HTTPS")
-			}
-			return nil
-		}}
+		client = &http.Client{Timeout: 30 * time.Second}
 	}
+	// The transport is the seam, not the security policy. Even fixture clients
+	// enter the production redirect/token boundary; do not mutate a shared client.
+	clientCopy := *client
+	clientCopy.CheckRedirect = publicProofRedirect
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("User-Agent", "dibs-releaseflow")
-	// Deliberately no token, Authorization, netrc or participant-supplied URL.
-	resp, err := client.Do(req)
+	if req.URL.Scheme == "https" && req.URL.Host == "api.github.com" {
+		token := strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))
+		if token == "" {
+			return nil, errors.New("GitHub API proof reads require the existing job GITHUB_TOKEN; " +
+				"no anonymous or local-file fallback")
+		}
+		// Rate-limit authentication ONLY: neither this token nor HTTP 200 is
+		// proof authority. Asset/CDN requests never carry it. No new credential.
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := clientCopy.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
 		_ = resp.Body.Close()
 		return nil, fmt.Errorf("public proof GET %s returned HTTP %d; "+
-			"no credential or local-file fallback", url, resp.StatusCode)
+			"verify the job token's public-read access; no anonymous or local-file fallback", url, resp.StatusCode)
 	}
 	return resp, nil
+}
+
+func publicProofRedirect(req *http.Request, via []*http.Request) error {
+	host := req.URL.Hostname()
+	if req.URL.Scheme != "https" || req.URL.User != nil || len(via) >= 5 ||
+		(host != "github.com" && host != "api.github.com" && !strings.HasSuffix(host, ".githubusercontent.com")) {
+		return errors.New("public proof redirect is not bounded HTTPS")
+	}
+	if req.URL.Host != "api.github.com" {
+		req.Header.Del("Authorization")
+	}
+	return nil
 }
 
 func publicBytes(ctx context.Context, c config, url string, limit int64) ([]byte, error) {
