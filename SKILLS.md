@@ -187,8 +187,10 @@ what it tells you before doing anything else.
 
 Outcome updates quote actual responder notes and deliverables, with one
 mail-first budget: 1,600 Unicode characters total, 700 per body, and at most
-16 outcome units. Newest requests come first; within one request, the oldest
-unread prefix comes first. A complete inline outcome/review is already read
+16 outcome units. Unquoted units of one request share one counted `read_mail`
+summary instead of repeating a pointer for every unit. Newest requests come
+first; within one request, the oldest unread prefix comes first. A complete
+inline outcome/review is already read
 and does not need `read_mail` to clear it. A trimmed quote or pointer is NOT
 read: use `read_mail` for the rest. A socket write alone is not a receipt.
 `ack` on a newer progress/review event durably reads its prefix and names older

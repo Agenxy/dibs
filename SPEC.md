@@ -612,7 +612,9 @@ recipient's `respond` (responding proves receipt). GC eligibility requires
   (terminal events carry serials, never bodies). Recipient reads mark delivery.
 - **Inline outcomes:** `check_in`, `inbox`, delivering lifecycle hooks and
   socket digests share a mail-first body budget of 1,600 Unicode characters,
-  700 per body, and at most 16 outcome units. Newest requests first, oldest
+  700 per body, and at most 16 outcome units. Unquoted selected units within a
+  request collapse into one counted `read_mail` summary; that summary does not
+  consume them or enlarge the unit allowance. Newest requests first, oldest
   unread prefix within a request. Complete units advance a durable read prefix;
   partial quotes and pointers do not. Socket writes alone never do; the existing
   confirmed new-turn receipt may read only the exact participant prefix quoted.

@@ -252,9 +252,9 @@ func (e *Engine) presentGroupedOutcomes(
 		if count >= maxInlineOutcomes {
 			break
 		}
-		quoted, prefix := e.presentOutcomeGroup(group, budget, wanted, maxInlineOutcomes-count)
+		quoted, prefix, selected := e.presentOutcomeGroup(group, budget, wanted, maxInlineOutcomes-count)
 		lines[group.agent] = append(lines[group.agent], quoted...)
-		count += len(quoted)
+		count += selected // summaries do not enlarge the global unit allowance
 		if prefix != 0 {
 			if through[group.agent] == nil {
 				through[group.agent] = map[uint64]uint64{}
@@ -267,17 +267,24 @@ func (e *Engine) presentGroupedOutcomes(
 
 func (e *Engine) presentOutcomeGroup(
 	group outcomeGroup, budget *int, wanted map[string]bool, limit int,
-) (lines []string, through uint64) {
+) (lines []string, through uint64, selected int) {
 	blocked := false
+	omitted := 0
 	for _, u := range group.units {
-		if len(lines) >= limit {
+		if selected >= limit {
 			break
 		}
 		if wanted != nil && !wanted[noticeKey(group.agent, u.serial)] {
 			blocked = true // never read through an unquoted earlier unit
 			continue
 		}
+		selected++
 		quote, full := e.quoteOutcome(group.message.Serial, u.body, budget, blocked)
+		if quote == "" && !full {
+			omitted++
+			blocked = true
+			continue
+		}
 		lines = append(lines, u.text+": "+quote)
 		if full {
 			through = u.serial
@@ -285,16 +292,24 @@ func (e *Engine) presentOutcomeGroup(
 			blocked = true
 		}
 	}
-	return lines, through
+	if omitted != 0 {
+		label := fmt.Sprintf("%d unquoted updates", omitted)
+		if len(lines) != 0 {
+			label = fmt.Sprintf("+%d more updates", omitted)
+		}
+		if omitted == 1 {
+			label = strings.TrimSuffix(label, "s")
+		}
+		lines = append(lines, fmt.Sprintf("%s on %d: read_mail(%d) has the rest",
+			label, group.message.Serial, group.message.Serial))
+	}
+	return lines, through, selected
 }
 
 func (e *Engine) quoteOutcome(serial uint64, body string, budget *int, blocked bool) (string, bool) {
 	quote, full := "", false
 	if !blocked {
 		quote, full = e.quoteText(serial, body, budget)
-	}
-	if quote == "" && !full {
-		quote = fmt.Sprintf("read_mail(%d) has the response", serial)
 	}
 	return quote, full
 }

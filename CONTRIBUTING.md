@@ -46,6 +46,11 @@ It is the same set the pull-request workflow runs, so a green `task ci` locally
 should mean a green CI.
 
 `task install` builds and puts `dibs` and `dibd` in `~/.local/bin`.
+It checks both built images before replacing anything: a hand-set
+`-X github.com/agenxy/dibs/internal/build.Version=...` must match the version
+Go computed from the module/VCS data. Keep the normal pseudo-version from a
+clean clone; do not replace missing worktree metadata with a `devel+sha`
+override. That changes version policy as well as the displayed provenance.
 
 ### Working on the human actions, without a fingerprint
 
