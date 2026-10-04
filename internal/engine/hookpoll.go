@@ -1104,7 +1104,9 @@ func (e *Engine) deliverToModel(event string, fresh, blocked, stopActive bool) b
 // Continuing a finished turn costs a model turn. Stop shares the native
 // socket's typed cause, rather than any unread digest line. Informational
 // units remain unconsumed until delivery actually reaches model context.
-func (e *Engine) hookDeliveryCauses(l *core.Agent, event string, now time.Time, work string, fresh, blocked bool) (bool, bool) {
+func (e *Engine) hookDeliveryCauses(
+	l *core.Agent, event string, now time.Time, work string, fresh, blocked bool,
+) (bool, bool) {
 	if isStopEvent(event) {
 		actionable := e.actionableSocketMail(l, now, true) || work != ""
 		return actionable, actionable
