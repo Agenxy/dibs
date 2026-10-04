@@ -17,6 +17,7 @@ import (
 // objects make workflow/tool/build provenance inspectable as well.
 var publicationObjects = []string{
 	".github/workflows/release.yml", publicationWorkflow,
+	".github/workflows/release-proof-check.yml",
 	".github/workflows/release-finalize.yml", ".github/workflows/publish-mcp.yml",
 	"tools/releaseflow", "tools/signrelease", "tools/archivecheck", "tools/mcpbundle",
 	"tools/stampserver", "tools/registrypublish", ".goreleaser.yml", "mise.toml",

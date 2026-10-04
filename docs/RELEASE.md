@@ -131,14 +131,16 @@ A future version needs the repaired discovery code
 and a separate, real full-publication rehearsal before release approval; the
 earlier offline/delivery rehearsals did not exercise GitHub's draft API.
 
-## Closed full-publication rehearsal: source ready, external measurement pending
+## Closed full-publication rehearsal: target bound, external measurement pending
 
-`release-rehearsal.yml` has exactly one scratch target, bound in source, not a
-repository, URL or signing identity supplied by a dispatch. That binding is
-currently EMPTY. It refuses before any build, signature or release mutation
-until the operator chooses and authorizes the repository, visibility, immutable
-release setting and setup. No live scratch run or downstream acceptance has
-been measured. Do not interpret the local tests as that evidence.
+`release-rehearsal.yml` has exactly one scratch target, bound in reviewed source,
+not a repository, URL or signing identity supplied by a dispatch:
+`Agenxy/dibs-release-rehearsal`. The operator authorized this public repository
+on 2026-10-04. Its public visibility, enabled immutable releases and Actions with
+read-default workflow permissions were independently checked through GitHub's
+API. A different repository or source refuses before build, signature or release
+mutation. No live scratch run or downstream acceptance has been measured yet.
+Do not interpret the local tests or repository settings as that evidence.
 
 Mirror the exact reviewed candidate commit (without rewriting its SHA) and use
 `rehearsal-v<version>-<full-candidate-sha>`. The workflow and tool tree must be
@@ -210,6 +212,24 @@ doors remain unmeasured until setup and dispatch are authorized. Missing tokens,
 HTTP refusals or missing evidence remain blockers: no anonymous, local-file or
 unsigned proof fallback exists. A private scratch repository would require a
 different approved credential design and is not supported by this path.
+
+After the final release surfaces are stamped and merged, measure the production
+repository's cross-repository job-token reads without entering a real preflight:
+
+```text
+gh workflow run release-proof-check.yml --repo Agenxy/dibs --ref main -f version=<canonical-version> -f sha=<full-current-main-sha> -f full_publication_run=<successful-exact-candidate-rehearsal-run>
+```
+
+This separate non-publishing job calls the unchanged production
+`go run ./tools/releaseflow -phase validate` entry. It uses trusted current-main
+source and the same validation tool/action pins and `contents: read` job token.
+Neither workflow nor job has write or OIDC permissions; no secrets, build,
+preflight receipt, tag or publishing step exists. Its workflow name is
+`release proof check`, excluded from the finalizer's exact `release` name filter.
+It proves that validation door only, not the whole actual production preflight.
+Until its exact-candidate hosted run succeeds, cross-repository access remains
+unmeasured. Any later source change, including version stamping or documentation,
+requires a new exact-candidate scratch rehearsal and proof check.
 
 The old get-by-tag negative control changes ONLY discovery inside the scratch
 factory. Run it first against an absent unique target. It must build and sign

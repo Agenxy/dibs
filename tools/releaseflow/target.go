@@ -15,11 +15,11 @@ const (
 	rehearsalWarning    = "REHEARSAL, not a Dibs release, do not install"
 )
 
-// Unbound until the operator chooses ONE repository and its reviewed source
-// binding is committed. Not an environment variable, dispatch input, URL or
-// signing-identity option. Its empty shipped value makes rehearsal refuse.
+// The operator chose this ONE public, immutable-release repository on 2026-10-04.
+// This reviewed source binding is not an environment variable, dispatch input,
+// URL or signing-identity option. An empty or production binding still refuses.
 // Tests substitute a private fixture binding; production has no setter.
-var rehearsalRepository string
+var rehearsalRepository = "Agenxy/dibs-release-rehearsal"
 
 var repositoryPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$`)
 

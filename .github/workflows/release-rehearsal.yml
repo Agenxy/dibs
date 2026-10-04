@@ -3,8 +3,8 @@ name: full-publication rehearsal
 # Mirror the EXACT candidate commit into the ONE operator-approved scratch
 # repository, then dispatch at its unique tag. No production repository input,
 # credentials, tag writer, registry publication or cask push lives here.
-# The source target is UNBOUND until the operator chooses it: this file cannot
-# enable itself, and the validator refuses before build/sign/publication.
+# The operator-approved public target is bound in reviewed source. The validator
+# refuses a different repository or source before build/sign/publication.
 on:
   workflow_dispatch:
     inputs:

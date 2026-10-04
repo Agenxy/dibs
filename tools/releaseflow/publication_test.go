@@ -58,6 +58,9 @@ func TestUnknownPublicationTargetNeverReachesASubprocess(t *testing.T) {
 }
 
 func TestUnboundRehearsalTargetNeverReachesASubprocess(t *testing.T) {
+	old := rehearsalRepository
+	rehearsalRepository = ""
+	t.Cleanup(func() { rehearsalRepository = old })
 	c := fixture(t)
 	c.phase, c.target = "full-publication", "rehearsal"
 	run := func(context.Context, []string, string, ...string) ([]byte, error) {
@@ -66,6 +69,19 @@ func TestUnboundRehearsalTargetNeverReachesASubprocess(t *testing.T) {
 	}
 	if err := execute(context.Background(), c, run); err == nil || !strings.Contains(err.Error(), "not bound") {
 		t.Fatalf("unnamed rehearsal target did not refuse explicitly: %v", err)
+	}
+}
+
+func TestReviewedRehearsalTargetMatchesOperatorChoice(t *testing.T) {
+	c := fixture(t)
+	c.phase, c.target = "full-publication", "rehearsal"
+	d, err := resolveTarget(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.repository != "Agenxy/dibs-release-rehearsal" || !d.rehearsal ||
+		d.workflow != publicationWorkflow || d.tag != "rehearsal-v"+c.version+"-"+c.sha {
+		t.Fatalf("reviewed closed target changed: %+v", d)
 	}
 }
 
