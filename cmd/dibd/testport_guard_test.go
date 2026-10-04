@@ -57,6 +57,7 @@ func TestNoTestHelperReturnsAClosedListenerAddress(t *testing.T) {
 						"bridge_startup_test.go": "lateBridgeStartup",
 						"bridgeoutage_test.go":   "TestTheBridgeSurvivesADaemonThatGoesAwayAndComesBack",
 						"await_test.go":          "TestAwaitSaysTheDaemonIsGoneWithItsOwnExitCode",
+						"reserve_test.go":        "TestOutageSelectionChangesAddressOnlyBeforeTheTestStarts",
 					}
 					if allowed[filepath.Base(path)] != name {
 						t.Errorf("%s: only the named connection-refused fixtures may release for an outage",

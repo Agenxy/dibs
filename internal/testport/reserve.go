@@ -46,17 +46,32 @@ func (r *Reservation) Release(t testing.TB) {
 // ReleaseForOutage makes the named outage fixtures' unavoidable ownership gap
 // explicit, and verifies the connection-refused premise before testing retries.
 // A held socket queues or times out on macOS instead of refusing connections.
-func (r *Reservation) ReleaseForOutage(t testing.TB) {
+func (r *Reservation) ReleaseForOutage(t testing.TB) string {
 	t.Helper()
-	r.Release(t)
-	conn, err := net.DialTimeout("tcp", r.Addr, time.Second)
-	if err == nil {
-		_ = conn.Close()
-		t.Fatal("setup: another listener took the outage fixture's address")
+	port := r
+	for attempt := 1; attempt <= 3; attempt++ {
+		port.Release(t)
+		conn, err := net.DialTimeout("tcp", port.Addr, time.Second)
+		if errors.Is(err, syscall.ECONNREFUSED) {
+			return port.Addr
+		}
+		if err != nil {
+			t.Fatalf("setup: outage fixture did not refuse connections: %v", err)
+		}
+		if err := conn.Close(); err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("outage setup address occupied on attempt %d; selecting a fresh address", attempt)
+		if attempt < 3 {
+			host, _, err := net.SplitHostPort(port.Addr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			port = Reserve(t, "tcp", net.JoinHostPort(host, "0"))
+		}
 	}
-	if !errors.Is(err, syscall.ECONNREFUSED) {
-		t.Fatalf("setup: outage fixture did not refuse connections: %v", err)
-	}
+	t.Fatal("setup: another listener occupied all three outage addresses")
+	return ""
 }
 
 // Bind keeps the address reserved through preparation and retries only a real

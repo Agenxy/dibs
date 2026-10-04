@@ -81,10 +81,9 @@ func lateBridgeStartup(t *testing.T, method string) {
 		t.Fatal(err)
 	}
 	port := testport.Reserve(t, "tcp", "127.0.0.1:0")
-	addr := port.Addr
 	// This outage fixture requires ECONNREFUSED. A held TCP socket instead
 	// queues or times out on macOS; release is unavoidable for this premise.
-	port.ReleaseForOutage(t)
+	addr := port.ReleaseForOutage(t)
 	cmd := exec.Command(os.Args[0], "-test.run=^TestBridgeStartupHelper$") // own test binary
 	cmd.Env = append(os.Environ(), "DIBS_TEST_STARTUP_BRIDGE=1", "DIBS_DIR="+dir, "DIBS_ADDR=http://"+addr)
 	var stderr bytes.Buffer

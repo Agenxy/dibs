@@ -9,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 )
 
 func TestReservationOwnsPortUntilExplicitRelease(t *testing.T) {
@@ -70,6 +71,28 @@ func TestBindRetriesTheActualCollisionWithFreshOwnership(t *testing.T) {
 	defer func() { _ = listener.Close() }()
 	if attempts != 2 || bound != listener.Addr().String() {
 		t.Fatalf("bind did not recover the actual collision: attempts=%d bound=%s", attempts, bound)
+	}
+}
+
+func TestOutageSelectionChangesAddressOnlyBeforeTheTestStarts(t *testing.T) {
+	port := Reserve(t, "tcp", "127.0.0.1:0")
+	port.Release(t)
+	competitor, err := net.Listen("tcp", port.Addr)
+	if err != nil {
+		t.Fatalf("setup: competitor could not bind: %v", err)
+	}
+	defer func() { _ = competitor.Close() }()
+	address := port.ReleaseForOutage(t)
+	if address == port.Addr {
+		t.Fatal("outage selector returned the occupied address")
+	}
+	conn, err := net.DialTimeout("tcp", address, time.Second)
+	if err == nil {
+		_ = conn.Close()
+		t.Fatal("selected outage address is listening")
+	}
+	if !errors.Is(err, syscall.ECONNREFUSED) {
+		t.Fatalf("outage premise changed: %v", err)
 	}
 }
 

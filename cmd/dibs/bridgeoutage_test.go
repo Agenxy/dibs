@@ -43,10 +43,9 @@ func TestTheBridgeSurvivesADaemonThatGoesAwayAndComesBack(t *testing.T) {
 	t.Setenv("DIBS_DIR", dir)
 
 	port := testport.Reserve(t, "tcp", "127.0.0.1:0")
-	where := port.Addr
 	// This outage fixture requires ECONNREFUSED. A held TCP socket instead
 	// queues or times out on macOS; release is unavoidable for this premise.
-	port.ReleaseForOutage(t)
+	where := port.ReleaseForOutage(t)
 	t.Setenv("DIBS_ADDR", "http://"+where)
 
 	inR, inW, err := os.Pipe()
