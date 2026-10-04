@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -82,15 +81,12 @@ func TestReviewReadUpgradeOnCopiedRealLedger(t *testing.T) {
 	done := make(chan struct{})
 	go func() { e.Run(ctx); close(done) }()
 	t.Cleanup(func() { cancel(); <-done })
+	unreadVerdicts := 0
 	_, err = e.query(ctx, func() core.Result {
 		if e.state.ReviewReadCutoff != before+1 {
 			t.Error("production Run did not record the upgrade cutoff")
 		}
-		for id := range e.state.Agents {
-			if len(e.outcomeGroups(id)) != 0 {
-				t.Error("historical progress, verdict or review would redeliver at upgrade")
-			}
-		}
+		unreadVerdicts = assertHistoricalUpgradeUnits(t, e)
 		return nil
 	})
 	if err != nil {
@@ -119,7 +115,7 @@ func TestReviewReadUpgradeOnCopiedRealLedger(t *testing.T) {
 		t.Fatal("upgrade cutoff was only in memory")
 	}
 	if !t.Failed() {
-		t.Logf("pre-upgrade serial=%d; retained historical reviews=%d progress=%d; boot outcome redeliveries=0; fresh progress exactly once; cutoff=%d survives encrypted replay", before, retainedReviews, retainedProgress, replayedState.ReviewReadCutoff)
+		t.Logf("pre-upgrade serial=%d; retained historical reviews=%d progress=%d; old progress/review redeliveries=0; preserved unread legacy verdicts=%d; fresh progress exactly once; cutoff=%d survives encrypted replay", before, retainedReviews, retainedProgress, unreadVerdicts, replayedState.ReviewReadCutoff)
 	}
 }
 
@@ -183,8 +179,9 @@ func assertFreshUpgradeProgress(t *testing.T, e *Engine, ctx context.Context, le
 }
 
 func TestUpgradeReadCutoffSuppressesHistoricalSenderUnits(t *testing.T) {
-	for _, legacyRead := range []bool{false, true} {
-		t.Run(fmt.Sprintf("legacy-read-%t", legacyRead), func(t *testing.T) {
+	for _, method := range []string{"unread", "read_mail", "check_in"} {
+		t.Run(method, func(t *testing.T) {
+			legacyRead := method == "read_mail"
 			st := core.NewState("upgrade-outcomes", core.DefaultLimits())
 			now := time.Now()
 			apply := func(op *core.Op) core.Result {
@@ -207,6 +204,9 @@ func TestUpgradeReadCutoffSuppressesHistoricalSenderUnits(t *testing.T) {
 			if legacyRead {
 				apply(&core.Op{Kind: core.OpOutcomeRead, Token: "lead-token", MsgSerial: parent})
 			}
+			if method == "check_in" {
+				apply(&core.Op{Kind: core.OpAckBoard, Token: "lead-token"})
+			}
 			apply(&core.Op{Kind: core.OpRespond, Token: "worker-token", MsgSerial: parent, Disposition: "progress", Body: "old progress", Milestone: 1})
 			if legacyRead {
 				beforeRead := st.Messages[parent].OutcomeReadAt
@@ -228,16 +228,119 @@ func TestUpgradeReadCutoffSuppressesHistoricalSenderUnits(t *testing.T) {
 				if e.state.ReviewReadCutoff != before+1 {
 					t.Error("production boot did not record the upgrade read cutoff")
 				}
-				for _, id := range []string{"lead", "worker"} {
-					if len(e.outcomeGroups(id)) != 0 {
-						t.Error("pre-upgrade sender/recipient units would redeliver")
-					}
-				}
+				assertHistoricalUpgradeUnits(t, e)
 				return nil
 			}); err != nil {
 				t.Fatal(err)
 			}
+			// An approval never read before the upgrade is still due, unlike
+			// the old progress whose receipts were not persisted.
+			r, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: "lead-token"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			lines := r["agent_updates"].([]string)
+			want := 0
+			if method == "unread" {
+				want = 1
+			}
+			if len(lines) != want || (want == 1 && !strings.Contains(lines[0], "old approval")) {
+				t.Errorf("upgrade dropped an unread approval or replayed progress: got %d units, want %d", len(lines), want)
+			}
 			assertFreshUpgradeProgress(t, e, ctx, "lead-token", "worker-token", parent)
+		})
+	}
+}
+
+func assertHistoricalUpgradeUnits(t *testing.T, e *Engine) int {
+	t.Helper()
+	want := map[uint64]bool{}
+	for _, m := range e.state.Messages {
+		l := e.state.Agents[m.From]
+		if l == nil || l.Retired() || (l.CreatedSerial > 0 && m.Serial < l.CreatedSerial) {
+			continue
+		}
+		if e.stillOwed(m) {
+			want[m.RespondedAt] = true
+		}
+		if m.State == core.MsgStateQueued && m.QueueChangedSerial > m.RespondedAt &&
+			m.QueueChangedSerial > m.OutcomeReadAt && m.QueueChangedSerial > l.AckedSerial {
+			want[m.QueueChangedSerial] = true
+		}
+	}
+	seen := map[uint64]bool{}
+	for id := range e.state.Agents {
+		for _, group := range e.outcomeGroups(id) {
+			for _, unit := range group.units {
+				if unit.kind == "message.progress" || unit.kind == "message.review" {
+					t.Error("historical progress or review would redeliver at upgrade")
+				} else if !want[unit.serial] {
+					t.Error("a previously read historical verdict/queue unit would redeliver")
+				} else {
+					seen[unit.serial] = true
+				}
+			}
+		}
+	}
+	if len(seen) != len(want) {
+		t.Errorf("upgrade lost durable unread legacy units: got %d, want %d", len(seen), len(want))
+	}
+	return len(seen)
+}
+
+func TestUpgradeReadCutoffPreservesUnreadLegacyVerdicts(t *testing.T) {
+	for _, kind := range []string{"answer", "queue change"} {
+		t.Run(kind, func(t *testing.T) {
+			st := core.NewState("upgrade-unread", core.DefaultLimits())
+			apply := func(op *core.Op) core.Result {
+				t.Helper()
+				r, _, err := st.Apply(op, time.Now())
+				if err != nil {
+					t.Fatalf("pre-upgrade setup %s: %v", op.Kind, err)
+				}
+				return r
+			}
+			for _, id := range []string{"lead", "worker"} {
+				apply(&core.Op{Kind: core.OpRegister, Name: id, NewToken: id + "-token", Nonce: "unread-" + id})
+				apply(&core.Op{Kind: core.OpAckBoard, Token: id + "-token"})
+			}
+			msgType, disposition, body := core.MsgQuestion, "answer", "legacy-unread-answer"
+			if kind == "queue change" {
+				msgType, disposition, body = core.MsgRequest, "queue", "queue accepted"
+			}
+			parent := apply(&core.Op{
+				Kind: core.OpSendMessage, Token: "lead-token", To: "worker",
+				MsgType: msgType, Body: "work", QueueDebt: kind == "queue change",
+			})["msg_serial"].(uint64)
+			apply(&core.Op{
+				Kind: core.OpRespond, Token: "worker-token", MsgSerial: parent,
+				Disposition: disposition, Body: body, QueueDebt: kind == "queue change",
+			})
+			want := body
+			if kind == "queue change" {
+				apply(&core.Op{Kind: core.OpOutcomeRead, Token: "lead-token", MsgSerial: parent})
+				apply(&core.Op{Kind: core.OpQueueUpdate, Token: "worker-token", MsgSerial: parent, QueuePriority: "urgent"})
+				want = "Queue position or priority changed"
+			}
+			e := New(st, &memLedger{}, deadProber{})
+			e.SetSocketWakes(false)
+			e.SetWakePolicy(WakeNone)
+			ctx, cancel := context.WithCancel(context.Background())
+			done := make(chan struct{})
+			go func() { e.Run(ctx); close(done) }()
+			t.Cleanup(func() { cancel(); <-done })
+			for read := range 2 {
+				r, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: "lead-token"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				lines := r["agent_updates"].([]string)
+				if read == 0 && (len(lines) != 1 || !strings.Contains(lines[0], want)) {
+					t.Errorf("genuinely unread pre-upgrade %s lost: got %d units", kind, len(lines))
+				} else if read == 1 && len(lines) != 0 {
+					t.Errorf("durably read %s repeated", kind)
+				}
+			}
 		})
 	}
 }

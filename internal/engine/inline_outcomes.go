@@ -153,17 +153,35 @@ func (e *Engine) hasReadLegacyOutcome(l *core.Agent, m *core.Message) bool {
 	if e.state.ReviewReadCutoff != 0 && latest > e.state.ReviewReadCutoff {
 		return false
 	}
-	return l.AckedSerial >= latest ||
+	return e.legacyAwareness(l) >= latest ||
 		(m.OutcomeReadAt != 0 && (!m.QueueDebt || m.QueueChangedSerial <= m.OutcomeReadAt))
+}
+
+func (e *Engine) legacyAwareness(l *core.Agent) uint64 {
+	if l == nil {
+		return 0
+	}
+	if e.state.ReviewReadCutoff == 0 {
+		return l.AckedSerial
+	}
+	snapshot, ok := e.state.LegacyAckAtCutoff[l.ID]
+	if !ok || snapshot.CreatedSerial != l.CreatedSerial {
+		return 0 // post-cutoff or replaced identity has no old read evidence
+	}
+	return snapshot.AckedSerial
 }
 
 func (e *Engine) outcomeUnits(m *core.Message) []outcomeUnit {
 	if m.State == core.MsgStateWithdrawn {
 		return nil
 	}
-	// Upgrade reads belong to this derived view, not to the historical fold.
-	// Legacy read_mail and progress-event acks did not persist progress reads.
-	through := max(m.OutcomeReadAt, e.state.ReviewReadCutoff)
+	// Only legacy progress lacked durable reads. Verdict/queue units retain
+	// their old read evidence, frozen at the cutoff, never a live check-in.
+	through := m.OutcomeReadAt
+	if e.state.ReviewReadCutoff != 0 {
+		through = max(through, e.legacyAwareness(e.state.Agents[m.From]))
+	}
+	progressThrough := max(m.OutcomeReadAt, e.state.ReviewReadCutoff)
 	var units []outcomeUnit
 	if verdictEvent(m.State) != "" && (through == 0 || m.RespondedAt > through) {
 		units = append(units, outcomeUnit{
@@ -173,7 +191,7 @@ func (e *Engine) outcomeUnits(m *core.Message) []outcomeUnit {
 		})
 	}
 	for _, p := range m.Progress {
-		if p.Review != "" || p.Serial <= through {
+		if p.Review != "" || p.Serial <= progressThrough {
 			continue
 		}
 		text := fmt.Sprintf("%s reports progress on your request (msg %d)", m.To, m.Serial)

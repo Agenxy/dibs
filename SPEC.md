@@ -184,8 +184,12 @@ undeclare, send, respond, ack, claim` (incl. renewals), `release,
 sweep` (only when it changed state), `mark_delivered`, `outcome_read`
 (a durable outcome/review read prefix; historical full sender reads retain
 their original meaning), `initialize_review_read` (one recorded upgrade
-read cutoff; historical sender outcome and recipient review units at or below
-it are already read in the derived views, without changing historical folds).
+read cutoff; historical sender progress and recipient review units at or below
+it are already read in the derived views, without changing historical folds
+or discarding genuinely unread legacy verdicts and queue changes).
+The unreleased cutoff op also snapshots each retained identity incarnation's
+legacy awareness watermark, so later check-ins cannot turn an unquoted or
+partly quoted old verdict into read evidence. Historical read ops are unchanged.
 
 ### 5.0 Agent identity is observed, never self-reported
 
@@ -622,9 +626,11 @@ recipient's `respond` (responding proves receipt). GC eligibility requires
   Outcome and recipient-review reads are independent from envelope consumption.
   Event `ack` reads the acknowledged prefix, returning older unread event serials
   in `also_read`; repeating it appends nothing. `initialize_review_read` records
-  the first upgraded serial once, treating older sender outcome and recipient
+  the first upgraded serial once, treating older sender progress and recipient
   review units as read in the derived views without changing
   any historical op. Downgrading past this new op kind is not supported.
+  Genuinely unread legacy verdicts and queue changes retain their existing
+  durable read rules and still deliver after an upgrade.
 - **Reading never consumes: acknowledgement consumes.** A crash between fsync and
   reply must not lose mail the caller never received, so no read (`inbox`,
   `read_mail`, `check_in`) ever commits consumption. Consumption happens only via

@@ -844,19 +844,26 @@ type Event struct {
 	Data   map[string]any `json:"data,omitempty"`
 }
 
+// LegacyAckSnapshot binds old awareness to the identity incarnation that had it.
+type LegacyAckSnapshot struct {
+	CreatedSerial uint64 `json:"created_serial"`
+	AckedSerial   uint64 `json:"acked_serial"`
+}
+
 // State is the entire replayable truth. Only Apply mutates it.
 type State struct {
 	NodeID string
 	Serial uint64
 	// Upgrade read cutoff, recorded once. Zero means old code, not unread old units.
-	ReviewReadCutoff uint64
-	Limits           Limits
-	Agents           map[string]*Agent
-	Messages         map[uint64]*Message // keyed by send serial
-	Claims           []*Claim
-	Nonces           map[string]string    // nonce → agent_id
-	Dedup            map[string]*DedupRec // key: agent_id + "\x00" + id
-	Blobs            map[string]*Blob     // id → registry entry (bytes live in blobstore)
+	ReviewReadCutoff  uint64
+	LegacyAckAtCutoff map[string]LegacyAckSnapshot `json:"legacy_ack_at_cutoff,omitempty"`
+	Limits            Limits
+	Agents            map[string]*Agent
+	Messages          map[uint64]*Message // keyed by send serial
+	Claims            []*Claim
+	Nonces            map[string]string    // nonce → agent_id
+	Dedup             map[string]*DedupRec // key: agent_id + "\x00" + id
+	Blobs             map[string]*Blob     // id → registry entry (bytes live in blobstore)
 
 	// Spaces of work, and the announcements awaiting acknowledgement in them
 	// (SPEC-CHANNELS.md). Keyed by space id and by announce serial.

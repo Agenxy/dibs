@@ -464,6 +464,38 @@ func fingerprint(set map[string]bool) string {
 	return "sha256:" + hex.EncodeToString(sum[:])[:16]
 }
 
+// Additive state from the unreleased upgrade op; no historical op/tag changed.
+func TestUpgradeAwarenessSnapshotFieldsAreFrozen(t *testing.T) {
+	raw, err := json.Marshal(core.State{LegacyAckAtCutoff: map[string]core.LegacyAckSnapshot{
+		"agent": {CreatedSerial: 7, AckedSerial: 11},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var state map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &state); err != nil {
+		t.Fatal(err)
+	}
+	var agents map[string]json.RawMessage
+	if err := json.Unmarshal(state["legacy_ack_at_cutoff"], &agents); err != nil {
+		t.Fatal("frozen snapshot field missing:", err)
+	}
+	var snapshot map[string]json.RawMessage
+	if err := json.Unmarshal(agents["agent"], &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if string(snapshot["created_serial"]) != "7" || string(snapshot["acked_serial"]) != "11" || len(snapshot) != 2 {
+		t.Fatal("frozen incarnation/awareness fields changed")
+	}
+	fields := map[string]bool{"legacy_ack_at_cutoff": true}
+	for field := range snapshot {
+		fields[field] = true
+	}
+	if fingerprint(fields) != "sha256:5bdef97d48678053" {
+		t.Fatal("frozen upgrade-snapshot field list changed")
+	}
+}
+
 func opKind(op map[string]json.RawMessage) string {
 	var k string
 	_ = json.Unmarshal(op["kind"], &k)
