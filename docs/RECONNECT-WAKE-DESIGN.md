@@ -43,6 +43,12 @@ from the same app incarnation do not retrigger the cohort. Losing the cache
 at daemon restart permits one bounded recheck, not loss of coordination state.
 The process probe fixes locale and timezone so bridges and daemon observe the
 same start stamp even when their inherited environments differ.
+The observation cache reserves only an in-flight bridge incarnation under
+its mutex. Distinct bridges probe and recover concurrently; duplicate calls
+for an in-flight incarnation proceed without another probe. Transient errors
+release the reservation for retry. Both seen and in-flight sets are bounded.
+Metadata enriches requests and notifications only; responses to sampling,
+elicitation or roots requests pass through byte-identical.
 
 ## Recovery decision
 
@@ -55,6 +61,11 @@ cohort to one reconsideration per row; an authoritative pending queue item is
 retained rather than duplicated. Even with a retained item, the ordinary
 loaded-thread/opening step must be reconsidered, which is what matters if
 restart only unloaded the thread.
+
+Follow-up 26745 will share its reviewed eligibility rule with reconnect:
+actionable mail and due waits qualify, informational-only agent updates do
+not. Currently outstanding notices still qualify here; this PR does not
+silently implement the separate notification-policy change.
 
 Receipt invalidation compares app-incarnation generations, not wall-clock
 ordering. A clock moving backward cannot keep the old receipt active. An

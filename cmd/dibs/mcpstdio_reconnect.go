@@ -30,12 +30,15 @@ func enrichBridgeProcess(line []byte) []byte {
 	if remoteSession {
 		return line
 	}
-	started := bridgeStarted()
-	if started == "" {
-		return line
-	}
 	var msg map[string]any
 	if json.Unmarshal(line, &msg) != nil {
+		return line
+	}
+	if _, request := msg["method"]; !request {
+		return line // a response to a server request has no params member
+	}
+	started := bridgeStarted()
+	if started == "" {
 		return line
 	}
 	params, _ := msg["params"].(map[string]any)

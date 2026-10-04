@@ -19,8 +19,43 @@ const (
 )
 
 type observedBridges struct {
-	mu   sync.Mutex
-	seen map[string]bool
+	mu       sync.Mutex
+	seen     map[string]bool
+	inFlight map[string]bool
+	// probe is a fixture seam for a bounded process scan; nil uses the real probe.
+	probe func(int, string) (harnessenv.AppIncarnation, bool, error)
+}
+
+// Reserve only the incarnation key. Whole-system probing and cohort receipt
+// I/O must never hold this mutex: other bridges' MCP calls are independent.
+func (b *observedBridges) begin(key string) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.seen[key] || b.inFlight[key] || len(b.inFlight) >= maxObservedBridges {
+		return false
+	}
+	if b.inFlight == nil {
+		b.inFlight = map[string]bool{}
+	}
+	b.inFlight[key] = true
+	return true
+}
+
+func (b *observedBridges) finish(key string, observed bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	delete(b.inFlight, key)
+	if !observed {
+		return // transient failures remain retryable on a later request
+	}
+	if len(b.seen) >= maxObservedBridges {
+		// Re-probing is safe: the engine independently coalesces app cohorts.
+		b.seen = nil
+	}
+	if b.seen == nil {
+		b.seen = map[string]bool{}
+	}
+	b.seen[key] = true
 }
 
 // The observation grants no identity, session binding, or access to mail.
@@ -39,19 +74,16 @@ func (s *Server) observeBridge(ctx context.Context, params json.RawMessage) {
 		return
 	}
 	key := fmt.Sprintf("%d@%s", pid, started)
-	s.bridges.mu.Lock()
-	defer s.bridges.mu.Unlock()
-	if s.bridges.seen[key] {
+	if !s.bridges.begin(key) {
 		return
 	}
-	if len(s.bridges.seen) >= maxObservedBridges {
-		// Re-probing is safe: the engine independently coalesces app cohorts.
-		s.bridges.seen = nil
+	observed := false
+	defer func() { s.bridges.finish(key, observed) }()
+	probe := s.bridges.probe
+	if probe == nil {
+		probe = harnessenv.AppForBridge
 	}
-	if s.bridges.seen == nil {
-		s.bridges.seen = map[string]bool{}
-	}
-	app, ok, err := harnessenv.AppForBridge(pid, started)
+	app, ok, err := probe(pid, started)
 	if err != nil {
 		return // unknown is retryable; do not cache a transient failed probe
 	}
@@ -60,7 +92,7 @@ func (s *Server) observeBridge(ctx context.Context, params json.RawMessage) {
 			return
 		}
 	}
-	s.bridges.seen[key] = true
+	observed = true
 }
 
 func bridgeProcessMetadata(params json.RawMessage) (int, string) {
