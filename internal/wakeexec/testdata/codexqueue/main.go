@@ -8,21 +8,63 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/agenxy/dibs/internal/paths"
 )
 
 func main() {
 	path := filepath.Join(os.Getenv("CODEX_HOME"), "pending.json")
+	if len(os.Args) == 2 && os.Args[1] == "primary" {
+		fmt.Println("thread already has an active writer")
+		os.Exit(1)
+	}
+	if len(os.Args) == 2 && os.Args[1] == "fallback-marker" {
+		if err := os.WriteFile(filepath.Join(os.Getenv("CODEX_HOME"), "fallback-ran"), nil, 0o600); err != nil {
+			panic(err)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "queue" {
-		var thread string
+		var thread, message string
 		for i := 2; i+1 < len(os.Args); i++ {
 			if os.Args[i] == "--thread" {
 				thread = os.Args[i+1]
 			}
+			if os.Args[i] == "--message" {
+				message = os.Args[i+1]
+			}
 		}
+		if thread == "" || message == "" {
+			os.Exit(2)
+		}
+		if tag := os.Getenv("DIBS_QUEUE_RACE_HELPER"); tag != "" && thread == "race-thread" {
+			if err := os.WriteFile(filepath.Join(os.Getenv("CODEX_HOME"), "command-ready-"+tag), nil, 0o600); err != nil {
+				panic(err)
+			}
+			deadline := time.Now().Add(10 * time.Second)
+			for {
+				if _, err := os.Stat(filepath.Join(os.Getenv("CODEX_HOME"), "command-release")); err == nil {
+					break
+				}
+				if time.Now().After(deadline) {
+					os.Exit(6)
+				}
+				time.Sleep(5 * time.Millisecond)
+			}
+		}
+		// Model the app's atomic queue transaction across independent writers.
+		lock, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR, 0o600)
+		if err != nil {
+			panic(err)
+		}
+		if err = paths.LockExclusive(lock, true); err != nil {
+			panic(err)
+		}
+		defer func() { paths.Unlock(lock); _ = lock.Close() }()
 		b, _ := os.ReadFile(path)
 		var rows []map[string]any
 		_ = json.Unmarshal(b, &rows)
-		rows = append(rows, map[string]any{"id": fmt.Sprint(len(rows) + 1), "threadId": thread, "input": []map[string]string{{"type": "text", "text": "Dibs: a new question is waiting."}}, "clientUserMessageId": "fixture"})
+		rows = append(rows, map[string]any{"id": fmt.Sprint(len(rows) + 1), "threadId": thread, "input": []map[string]string{{"type": "text", "text": message}}, "clientUserMessageId": "fixture"})
 		b, _ = json.Marshal(rows)
 		if err := writeQueue(path, b); err != nil {
 			panic(err)

@@ -50,10 +50,12 @@ change it when reality disagrees, and record why).
    app in its own process tree) and is the one Dibs can confirm; and the session socket the harness publishes, which needs no config and is
    BEST EFFORT, because the receiver decides whether to accept a peer message and sends
    no receipt. A session in bypassPermissions mode holds them. Neither carries an
-   IMPERATIVE and neither carries a body an agent wrote: the socket carries the
-   digest (and, with nothing folded in yet, the event and the sender), the
-   command route carries the event and NO participant names, because argv is
-   world-readable and a name is already its own element. Rate limited, logged,
+   IMPERATIVE. The socket digest may carry another agent's words only as quoted,
+   bounded, labelled DATA: mail and outcome bodies, with `read_mail` for the rest,
+   never instructions to the receiver. With nothing folded in yet it carries
+   the event and the sender. The command route carries the event and NO
+   participant names or message bodies, because argv is world-readable and a
+   name is already its own element. Rate limited, logged,
    no shell. There is no fixed sentence left on any route: each retired one was
    retired after the operator asked what it was for, and the honest answer was
    nothing. **ONE WRITER PER SESSION SOCKET**, which is the rule that cost the

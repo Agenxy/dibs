@@ -836,6 +836,20 @@ opening policy still apply. Empty mailboxes and informational-only FYI mail do
 not cause reconnect wakes. Lost derived caches permit one bounded recheck.
 Sender notes distinguish observed queue acceptance from an unconfirmed attempt.
 
+**Native queue admission.** A pending Dibs notice of any canonical mail-event
+kind coalesces later notices. The native runner serializes observation, enqueue
+and retained receipt with a private per-thread OS file lock shared by daemon
+and bridge processes using that board directory. Queue fallbacks use the same
+door. Failed admission does not enqueue or report acceptance. Contention timeout
+is logged at Debug, skips fallback execution and leaves the engine to retry.
+Real lock errors retain their warning and ordinary fallback qualification. Older running
+writers do not participate until upgraded. When observation is unavailable,
+the retained fallback may add at most one duplicate per current prompt, new
+reconnect generation or two-hour receipt expiry; this preserves lost-wake
+recovery. An observed empty queue re-arms immediately, and an observed pending
+notice wins over those inferred causes. App opening keeps its existing away
+policy. No queue item is deleted and no coordination state is changed.
+
 A newer self-wake notification also advertises `com.dibs/socket_offer: true`.
 A capable writer includes that key on the hidden digest read to reserve the
 current presentation, receives `_meta["com.dibs/socket_offer_id"]`, and reports

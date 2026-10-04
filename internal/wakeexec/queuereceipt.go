@@ -7,15 +7,12 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"sync"
 	"time"
 
 	"github.com/agenxy/dibs/internal/paths"
 )
 
 const pendingWakeTTL = 2 * time.Hour
-
-var queueLocks [32]sync.Mutex
 
 type queueReceipt struct {
 	QueuedAt   time.Time `json:"queued_at"`
@@ -69,11 +66,6 @@ func writeReceiptFile(path string, r queueReceipt) error {
 		return err
 	}
 	return os.Rename(f.Name(), path)
-}
-
-func queueLock(thread string) *sync.Mutex {
-	k := sha256.Sum256([]byte(thread))
-	return &queueLocks[k[0]%32]
 }
 
 // NoteQueuePrompt records only the current session's start/prompt hook. MCP

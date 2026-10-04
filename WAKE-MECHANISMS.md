@@ -270,6 +270,23 @@ bounds a lost receipt. A human prompt may therefore admit one duplicate when
 observation is unavailable; refusing to re-arm could lose a wake. An observed
 empty queue is authoritative and re-arms immediately.
 
+The observed notice includes verdicts, using the core mail-event vocabulary;
+an answer already invites the next turn to read every newer message. An OS
+file lock in the board's private receipt directory covers observation, enqueue
+and receipt retention across daemon and bridge processes. A queue fallback
+enters that same admission door. The lock is released on exit and is never
+unlinked; a failed or timed-out acquisition reports failure without enqueueing.
+Contention timeout logs at Debug and skips fallback execution; real lock
+errors retain their warning and ordinary fallback qualification.
+An old writer still running pre-upgrade code does not participate in this lock.
+
+When observation is unavailable, the retained fallback deliberately permits
+at most one additional notice per re-arm cause: a current prompt, a new app
+reconnect generation or expiry of the two-hour receipt. That possible empty
+turn is the chosen trade against losing a wake. These limits do not establish
+the cause of each historical queue entry; see `docs/QUEUE-WAKE-DESIGN.md` for
+the measured gaps and regression evidence.
+
 **Which app is derived, never stated.** The stdio bridge is a child of the
 harness that spawned it, so its process ancestry names the app (a parent under
 `/Applications/ChatGPT.app/` is the ChatGPT app; one under Claude's
