@@ -161,8 +161,11 @@ func (e *Engine) outcomeUnits(m *core.Message) []outcomeUnit {
 	if m.State == core.MsgStateWithdrawn {
 		return nil
 	}
+	// Upgrade reads belong to this derived view, not to the historical fold.
+	// Legacy read_mail and progress-event acks did not persist progress reads.
+	through := max(m.OutcomeReadAt, e.state.ReviewReadCutoff)
 	var units []outcomeUnit
-	if verdictEvent(m.State) != "" && (m.OutcomeReadAt == 0 || m.RespondedAt > m.OutcomeReadAt) {
+	if verdictEvent(m.State) != "" && (through == 0 || m.RespondedAt > through) {
 		units = append(units, outcomeUnit{
 			serial: m.RespondedAt, text: e.outcomeHeader(m),
 			kind: verdictEvent(m.State),
@@ -170,7 +173,7 @@ func (e *Engine) outcomeUnits(m *core.Message) []outcomeUnit {
 		})
 	}
 	for _, p := range m.Progress {
-		if p.Review != "" || p.Serial <= m.OutcomeReadAt {
+		if p.Review != "" || p.Serial <= through {
 			continue
 		}
 		text := fmt.Sprintf("%s reports progress on your request (msg %d)", m.To, m.Serial)
@@ -183,7 +186,7 @@ func (e *Engine) outcomeUnits(m *core.Message) []outcomeUnit {
 			body: outcomeWords(p.Note, p.Artifact), at: p.At,
 		})
 	}
-	if m.QueueDebt && m.QueueChangedSerial > m.OutcomeReadAt && m.QueueChangedSerial != m.RespondedAt {
+	if m.QueueDebt && m.QueueChangedSerial > through && m.QueueChangedSerial != m.RespondedAt {
 		units = append(units, outcomeUnit{
 			serial: m.QueueChangedSerial, at: m.QueueChangedAt,
 			kind: "message.queue_changed",

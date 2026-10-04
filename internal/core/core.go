@@ -848,7 +848,7 @@ type Event struct {
 type State struct {
 	NodeID string
 	Serial uint64
-	// Recorded once at upgrade. Zero means old code, not unread old reviews.
+	// Upgrade read cutoff, recorded once. Zero means old code, not unread old units.
 	ReviewReadCutoff uint64
 	Limits           Limits
 	Agents           map[string]*Agent

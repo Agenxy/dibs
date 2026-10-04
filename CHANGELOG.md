@@ -25,6 +25,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Upgrades do not replay historical sender progress.** The recorded upgrade
+  read cutoff now covers sender progress, verdicts and queue changes as well as
+  recipient reviews. Historical ledger operations still fold unchanged; fresh
+  post-cutoff units retain their durable, bounded read semantics.
+
 - **Source installs reject conflicting version overrides before replacement.**
   Both built images are checked against their module/VCS-derived stamp. A
   hand-set `build.Version` that changes the normal pseudo-version now stops

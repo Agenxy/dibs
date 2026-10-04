@@ -8,7 +8,8 @@ import (
 	"github.com/agenxy/dibs/internal/core"
 )
 
-// Enter only from production boot, before any mail can be served or woken.
+// Record the upgrade read cutoff only from production boot, before any mail
+// can be served or woken. The op name and JSON field remain frozen.
 func (e *Engine) initializeReviewRead(now time.Time) {
 	if e.state.ReviewReadCutoff != 0 {
 		return
