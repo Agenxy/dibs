@@ -7,6 +7,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Codex queue wakes coalesce across verdicts and writer processes.** Pending
+  answer and other verdict notices now reuse the core event vocabulary. A
+  private OS file lock covers observation, enqueue and receipt retention across
+  daemon and bridge processes, and queue fallbacks use the same admission door.
+  The unavailable-observer fallback retains its documented bounded duplicate
+  trade against losing a wake; app-opening policy stays the same.
+
 - **Claude socket wakes coalesce until a new turn starts.** Busy sessions and
   informational-only mail use their existing full-mail hooks. Idle sessions
   wake for requests, questions, handoffs, human notifications, answers,

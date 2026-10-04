@@ -7,9 +7,11 @@ import (
 	"io"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/agenxy/dibs/internal/boardconfig"
+	"github.com/agenxy/dibs/internal/core"
 )
 
 const queueProbeTimeout = time.Second
@@ -168,11 +170,22 @@ func queuePage(raw json.RawMessage) (pending, known bool, next *string) {
 }
 
 func isDibsWake(text string) bool {
-	kinds := []string{"", "notify", "notice", "question", "request", "handoff", KindContinuation, KindRecheck}
+	kinds := []string{
+		"", core.MsgNotify, core.MsgQuestion, core.MsgRequest, core.MsgHandoff,
+		"notice", KindContinuation, KindRecheck,
+	}
 	for _, kind := range kinds {
 		if text == Compose(kind) {
 			return true
 		}
 	}
-	return false
+	// Verdict names come from the event vocabulary, not a second hand-written
+	// table. The command door composes message.answered as "answered", for
+	// example, and that item already invites the next turn to read all mail.
+	kind, ok := strings.CutPrefix(text, "Dibs: a new ")
+	if !ok {
+		return false
+	}
+	kind, ok = strings.CutSuffix(kind, " is waiting.")
+	return ok && text == Compose(kind) && core.IsMailEvent("message."+kind)
 }

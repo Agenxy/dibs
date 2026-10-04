@@ -168,41 +168,20 @@ const Grace = 10 * time.Second
 // had been sent. The reverse case, a closed thread, is the one the primary
 // already handled.
 func RunCommands(argv, fallback []string, agent, dir string, timeout, grace time.Duration) bool {
-	var queuedThread string
-	var generation string
-	if thread, ok := queueTarget(argv); ok {
-		mu := queueLock(thread)
-		mu.Lock()
-		defer mu.Unlock()
-		generation = reconnectGeneration(thread)
-		pending, known := false, false
-		if nativeQueueRoute(argv) {
-			pending, known = observeQueue(argv[0], thread)
-		}
-		if known && pending {
-			// A real app item wins over inference. Retain that observation in
-			// this incarnation so a later unavailable probe does not duplicate it.
-			r := readReceipt(thread)
-			if r.QueuedAt.IsZero() {
-				r.QueuedAt = time.Now().UTC()
-			}
-			r.Generation = generation
-			retainQueueReceipt(thread, r, agent)
-		}
-		if (known && pending) || (!known && fallbackPending(thread, time.Now())) {
-			slog.Debug("a Dibs wake is already pending in the app queue", "agent", agent)
-			// The pending item will still start a Dibs-originated turn, so the
-			// engine's existing continuation eligibility remains truthful.
-			return true
-		}
-		queuedThread = thread
+	var ok bool
+	var out []byte
+	if thread, queued := queueTarget(argv); queued {
+		ok, out = runQueuedCommand(argv, thread, agent, dir, timeout, grace)
+	} else {
+		ok, out = runForOut(argv, agent, dir, timeout, grace)
 	}
-	queuedAt := time.Now().UTC()
-	ok, out := runForOut(argv, agent, dir, timeout, grace)
+	// Admission is released before trying another route, including a queue
+	// fallback for this same thread. Otherwise that route would lock itself.
+	return runFallback(argv, fallback, agent, dir, timeout, grace, ok, out)
+}
+
+func runFallback(argv, fallback []string, agent, dir string, timeout, grace time.Duration, ok bool, out []byte) bool {
 	if ok {
-		if queuedThread != "" {
-			retainQueueReceipt(queuedThread, queueReceipt{QueuedAt: queuedAt, Generation: generation}, agent)
-		}
 		return true
 	}
 	if len(fallback) == 0 {
@@ -223,7 +202,7 @@ func RunCommands(argv, fallback []string, agent, dir string, timeout, grace time
 	}
 	slog.Info("the wake command found the thread open; trying the fallback",
 		"agent", agent, "cmd", argv[0], "fallback", fallback[0])
-	return Run(fallback, agent, dir, timeout, grace)
+	return RunCommands(fallback, nil, agent, dir, timeout, grace)
 }
 
 func retainQueueReceipt(thread string, r queueReceipt, agent string) {
