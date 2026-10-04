@@ -18,30 +18,37 @@ func CheckInstallStamp(info *debug.BuildInfo) error {
 		if setting.Key != "-ldflags" {
 			continue
 		}
-		args, err := linkerArgs(setting.Value)
-		if err != nil {
+		if err := checkLinkerStamp(setting.Value, resolve(info)); err != nil {
 			return err
 		}
-		for i := 0; i < len(args); i++ {
-			assignment := ""
-			if args[i] == "-X" {
-				i++
-				if i == len(args) {
-					return fmt.Errorf("linker -X has no assignment")
-				}
-				assignment = args[i]
-			} else if strings.HasPrefix(args[i], "-X=") {
-				assignment = strings.TrimPrefix(args[i], "-X=")
+	}
+	return nil
+}
+
+func checkLinkerStamp(text, computed string) error {
+	args, err := linkerArgs(text)
+	if err != nil {
+		return err
+	}
+	for i := 0; i < len(args); i++ {
+		assignment := ""
+		if args[i] == "-X" {
+			i++
+			if i == len(args) {
+				return fmt.Errorf("linker -X has no assignment")
 			}
-			symbol, value, ok := strings.Cut(assignment, "=")
-			if !ok || symbol != versionSymbol {
-				continue
-			}
-			if computed := resolve(info); value != computed {
-				return fmt.Errorf("linked Version %q differs from computed stamp %q; "+
-					"remove the build.Version -X override from GOFLAGS and rebuild; "+
-					"use a clean clone with reachable tags for normal source installs", value, computed)
-			}
+			assignment = args[i]
+		} else if strings.HasPrefix(args[i], "-X=") {
+			assignment = strings.TrimPrefix(args[i], "-X=")
+		}
+		symbol, value, ok := strings.Cut(assignment, "=")
+		if !ok || symbol != versionSymbol {
+			continue
+		}
+		if value != computed {
+			return fmt.Errorf("linked Version %q differs from computed stamp %q; "+
+				"remove the build.Version -X override from GOFLAGS and rebuild; "+
+				"use a clean clone with reachable tags for normal source installs", value, computed)
 		}
 	}
 	return nil

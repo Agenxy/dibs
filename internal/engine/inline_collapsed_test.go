@@ -27,22 +27,28 @@ func TestOverBudgetProgressCollapsesWithoutReadingTheSuffix(t *testing.T) {
 		tokens[id] = do(&core.Op{Kind: core.OpRegister, Name: id, Nonce: "collapsed-" + id})["token"].(string)
 		do(&core.Op{Kind: core.OpAckBoard, Token: tokens[id]})
 	}
-	parent := do(&core.Op{Kind: core.OpSendMessage, Token: tokens["lead"], To: "worker",
-		MsgType: core.MsgRequest, Body: "work"})["msg_serial"].(uint64)
+	parent := do(&core.Op{
+		Kind: core.OpSendMessage, Token: tokens["lead"], To: "worker",
+		MsgType: core.MsgRequest, Body: "work",
+	})["msg_serial"].(uint64)
 	do(&core.Op{Kind: core.OpRespond, Token: tokens["worker"], MsgSerial: parent, Disposition: "approve"})
 	if _, err := e.GetMessage(ctx, tokens["lead"], parent); err != nil {
 		t.Fatal(err)
 	}
 	for i := 1; i <= 3; i++ {
 		body := fmt.Sprintf("report-%d-", i) + strings.Repeat("λ", 691)
-		do(&core.Op{Kind: core.OpRespond, Token: tokens["worker"], MsgSerial: parent,
-			Disposition: "progress", Body: body})
+		do(&core.Op{
+			Kind: core.OpRespond, Token: tokens["worker"], MsgSerial: parent,
+			Disposition: "progress", Body: body,
+		})
 	}
 	// Real pending mail consumes 900 of the shared 1600-rune budget. Only
 	// the first 700-rune progress body fits; the other two stay unread.
 	for _, size := range []int{700, 200} {
-		do(&core.Op{Kind: core.OpSendMessage, Token: tokens["worker"], To: "lead",
-			MsgType: core.MsgNotify, Body: strings.Repeat("μ", size)})
+		do(&core.Op{
+			Kind: core.OpSendMessage, Token: tokens["worker"], To: "lead",
+			MsgType: core.MsgNotify, Body: strings.Repeat("μ", size),
+		})
 	}
 	lines := do(&core.Op{Kind: core.OpAckBoard, Token: tokens["lead"]})["agent_updates"].([]string)
 	want := fmt.Sprintf("+2 more updates on %d: read_mail(%d) has the rest", parent, parent)
