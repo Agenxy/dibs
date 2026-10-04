@@ -163,7 +163,10 @@ func TestGuestContractVersionComesFromShippedBridge(t *testing.T) {
 	}
 	endpoint, key, _ := nativeGuestFixture(t, config.Certificates[0], "::1")
 	file := guestCommandRecipe(t, endpoint, key, pem, pin)
-	for _, version := range []string{"0.0.8", "0.0.9", "devel"} {
+	// "devel" is build's unstamped sentinel: Go can resolve it to the
+	// checkout's release tag. Use an explicit non-sentinel development image
+	// through the production linker seam, not an assumption about this clone.
+	for _, version := range []string{"0.0.8", "0.0.9", "devel+guest-fixture"} {
 		bin := filepath.Join(t.TempDir(), "dibs")
 		cmd := exec.Command("go", "build", "-ldflags", "-X github.com/agenxy/dibs/internal/build.Version="+version, "-o", bin, "../dibs")
 		if out, err := cmd.CombinedOutput(); err != nil {

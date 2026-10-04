@@ -86,11 +86,28 @@ func TestGuestReleaseMetadataThroughShippedDaemon(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix daemon lifecycle fixture; Windows has no published guest target")
 	}
+	for _, fixture := range []struct {
+		version string
+		admit   bool
+	}{
+		{"devel+guest-fixture", true},
+		{"0.0.8", true},   // selected record is newer than this issuer
+		{"0.0.9", true},   // selected record is this issuer's own release
+		{"0.0.10", false}, // selected record is older than this issuer
+	} {
+		t.Run(fixture.version, func(t *testing.T) {
+			testGuestReleaseMetadataThroughShippedDaemon(t, fixture.version, fixture.admit)
+		})
+	}
+}
+
+func testGuestReleaseMetadataThroughShippedDaemon(t *testing.T, version string, admit bool) {
+	t.Helper()
 	bin := t.TempDir()
 	daemon := filepath.Join(bin, "dibd")
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	build := exec.CommandContext(ctx, "go", "build", "-ldflags", "-X github.com/agenxy/dibs/internal/selfupdate.GuestSupportingMinimum=v0.0.9 -X github.com/agenxy/dibs/internal/build.Version=devel", "-o", daemon, ".")
+	build := exec.CommandContext(ctx, "go", "build", "-ldflags", "-X github.com/agenxy/dibs/internal/selfupdate.GuestSupportingMinimum=v0.0.9 -X github.com/agenxy/dibs/internal/build.Version="+version, "-o", daemon, ".")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("daemon build setup: %v %s", err, out)
 	}
@@ -185,13 +202,12 @@ func TestGuestReleaseMetadataThroughShippedDaemon(t *testing.T) {
 		}
 		return rpc.Result
 	}
-	// A clean real.git checkout can resolve a Git-derived module version;
-	// managed worktrees can report only devel. Neither is the selected release.
-	// Compare against the independently reported LIVE MCP version, not a
-	// guessed literal or a looser prefix, and never turn off VCS provenance.
+	// Assert the linker fixture reached the LIVE MCP door. "devel" alone is
+	// the unstamped sentinel and may resolve to an ambient checkout tag, so it
+	// cannot fix a development fixture's version. Keep VCS provenance enabled.
 	actualBuild := rpcCall("server/discover", map[string]any{}).ServerInfo.Version
-	if actualBuild == "" || strings.TrimPrefix(actualBuild, "v") == "0.0.9" {
-		t.Fatalf("daemon provenance setup is missing or claims the fixture release: %q", actualBuild)
+	if actualBuild != version {
+		t.Fatalf("daemon linker fixture did not reach live MCP: got %q want %q", actualBuild, version)
 	}
 	t.Logf("shipped daemon reports actual build %q", actualBuild)
 	call := func(name string, args map[string]any) map[string]any {
@@ -225,6 +241,15 @@ func TestGuestReleaseMetadataThroughShippedDaemon(t *testing.T) {
 	}
 	for n := 1; n <= 2; n++ {
 		config := mint(n)
+		if !admit {
+			// Refusal is the correct product behavior, not a missing-metadata
+			// failure. Ordinary issuance still succeeds, without provisioning.
+			if config["bridge_release"] != nil || config["bridge_provisioning"] != nil ||
+				!strings.Contains(fmt.Sprint(config["bridge_release_status"]), "own or a newer supporting tag") {
+				t.Fatal("released issuer offered an older record or omitted its corrective status")
+			}
+			continue
+		}
 		metadata, ok := config["bridge_release"].(map[string]any)
 		if !ok || metadata["tag"] != "v0.0.9" || metadata["board_build"] != actualBuild {
 			t.Fatalf("shipped mint provenance differs from live MCP: present=%t tag=%q board=%q want=%q", ok,

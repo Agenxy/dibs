@@ -226,6 +226,16 @@ tasks:
       - go build -tags dibdev ./...
       - go test -race -tags dibdev ./internal/humanauth/ ./internal/mcp/ ./cmd/dibd/
 
+  test:release:
+    desc: Version-sensitive packages with a stable release linker stamp
+    env:
+      DIBS_NOTIFY: "off"
+    # v0.0.10 burned because only the tag exposed release-version assumptions.
+    # A fixed stable stamp is a regression fixture, not a claimed release:
+    # every local/main/PR gate must exercise this branch before another tag.
+    cmds:
+      - go test -race -count=1 -ldflags "-X github.com/agenxy/dibs/internal/build.Version=0.0.10" ./cmd/dibd/ ./cmd/dibs/ ./internal/selfupdate/ ./internal/build/
+
   test:minimal:
     desc: "The stripped diagnostic panel: a serving mode the default suite never enters"
     # DIBS_PANEL_MINIMAL is a real mode: it serves 483 bytes so a person can tell
@@ -536,6 +546,7 @@ tasks:
       - task: lint
       - task: test
       - task: test:dev
+      - task: test:release
       - task: build
       - task: smoke
       - task: test:panel
