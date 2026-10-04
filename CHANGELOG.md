@@ -153,8 +153,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   threads open only while the person is known away: screen locked, displays
   asleep or no input for `open_app_after_idle` (ten minutes by default).
   Presence is rechecked; unknown measurements leave mail queued. The helper
-  attempts to restore the previous frontmost app while the person remains
-  away. Bridge ancestry identifies the app, with transcript provenance as
+  makes a best-effort attempt to restore the previous frontmost app while the
+  person remains away; restoration from a different app has not yet been
+  observed. Bridge ancestry identifies the app, with transcript provenance as
   fallback; terminal sessions are never opened in an app.
   Closed Claude app sessions use the app's own continuation link, then their
   ordinary socket/startup route. Old bridges need a restart to adopt the policy.
