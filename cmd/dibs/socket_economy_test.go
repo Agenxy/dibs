@@ -300,6 +300,14 @@ func (f *economyFixture) hook(t *testing.T, event string) string {
 	return string(b)
 }
 
+func (f *economyFixture) informationalStop(t *testing.T) {
+	t.Helper()
+	r := f.tool(t, "hook_poll", map[string]any{"session_id": f.sid, "event": "Stop"})
+	if r["decision"] == "block" || r["reason"] != nil || r["hookSpecificOutput"] != nil {
+		t.Fatalf("informational-only Stop forced a model turn: %v", r)
+	}
+}
+
 func (f *economyFixture) waitOffer(t *testing.T) string {
 	t.Helper()
 	select {
@@ -342,8 +350,13 @@ func TestSocketEconomyUsesLifecycleAndPreservesHookDelivery(t *testing.T) {
 					t.Errorf("%s mail wrote to the actual session socket: %v", mode, wire)
 				}
 			}
-			if got := f.hook(t, "Stop"); !strings.Contains(got, marker) {
-				t.Fatalf("suppression or a held socket lost the Stop fallback: %s", got)
+			event := "Stop"
+			if mode == "informational" {
+				f.informationalStop(t)
+				event = "SessionStart"
+			}
+			if got := f.hook(t, event); !strings.Contains(got, marker) {
+				t.Fatalf("suppression or a held socket lost the full-mail fallback: %s", got)
 			}
 		})
 	}
@@ -443,7 +456,12 @@ func TestSocketEconomyVerdictsUseCurrentWaitingAndCanonicalKind(t *testing.T) {
 					t.Fatalf("informational %s offered %q and wrote frames %v", mode, text, wire)
 				}
 			}
-			if got := f.hook(t, "Stop"); !strings.Contains(got, "AGENT:") {
+			event := "Stop"
+			if !wakes {
+				f.informationalStop(t)
+				event = "SessionStart"
+			}
+			if got := f.hook(t, event); !strings.Contains(got, "AGENT:") {
 				t.Fatalf("%s lost its full hook fallback: %s", mode, got)
 			}
 		})
