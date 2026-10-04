@@ -110,10 +110,9 @@ type Engine struct {
 	announceSent map[string]time.Time
 	// wokeFor throttles the WAKE itself, keyed "agent\x00serial".
 	//
-	// An agent must learn about mail when it arrives, not when a human next
-	// types: that is the whole of situational awareness, and a fleet that waits
-	// for a person to kickstart its responsiveness is not agentic. So the wake
-	// fires for anything unread.
+	// Actionable mail may wake an agent independently of a person's prompt.
+	// Stop and socket delivery require that typed cause; information alone
+	// remains available at a natural activation.
 	//
 	// What it must not do is fire for the SAME thing every turn. An agent that
 	// read a message and chose not to act on it has decided, and re-waking it

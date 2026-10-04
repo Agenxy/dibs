@@ -9,7 +9,7 @@ import (
 	"github.com/agenxy/dibs/internal/core"
 )
 
-func TestStopDeliversProgressOnceWithoutRequiringReview(t *testing.T) {
+func TestStopHoldsProgressForNaturalDeliveryWithoutRequiringReview(t *testing.T) {
 	for _, event := range []string{"Stop", "SubagentStop"} {
 		t.Run(event, func(t *testing.T) {
 			e := New(core.NewState("milestone-stop", core.DefaultLimits()), &memLedger{}, deadProber{})
@@ -45,8 +45,20 @@ func TestStopDeliversProgressOnceWithoutRequiringReview(t *testing.T) {
 				return r
 			}
 			first := stop()
-			if first["decision"] != "block" || !strings.Contains(first["reason"].(string), "reports progress") {
-				t.Fatalf("first Stop must deliver progress: %v", first)
+			if first["decision"] == "block" || deliveredSomething(first) {
+				t.Fatalf("informational progress spent a Stop turn: %v", first)
+			}
+			if _, err := e.query(ctx, func() core.Result {
+				if len(e.pendingNotices("lead")) == 0 || e.state.Messages[parent].OutcomeReadAt >= e.state.Messages[parent].Progress[0].Serial {
+					t.Error("non-delivering Stop spent progress")
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			natural, err := e.HookPoll(ctx, "lead-stop-session", "SessionStart", "", false, false)
+			if err != nil || !strings.Contains(fmtResult(natural), "reports progress") {
+				t.Fatalf("natural delivery lost held progress: %v %v", natural, err)
 			}
 			// Expire the presentation cadence, without acting on or reviewing mail.
 			// Otherwise an immediate second Stop tests only the existing two-minute throttle.
@@ -66,7 +78,7 @@ func TestStopDeliversProgressOnceWithoutRequiringReview(t *testing.T) {
 					t.Error("delivery invented a review")
 				}
 				if len(e.pendingNotices("lead")) != 0 || e.state.Messages[parent].OutcomeReadAt == 0 {
-					t.Error("fully quoted Stop report was not durably read")
+					t.Error("fully quoted natural delivery was not durably read")
 				}
 				return nil
 			}); err != nil {

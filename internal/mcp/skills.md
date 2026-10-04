@@ -439,8 +439,10 @@ receiving native peer turns, another watcher adds no delivery guarantee.
   event. Seeing or acknowledging progress does not accept it, and a separate
   notify is not a review. `read_mail` lists each step's latest review in
   `milestone_reviews`: unreviewed, accepted or flagged, with who and when.
-  A new worker report makes that step unreviewed again. An informational
-  notice delivered in a Stop continuation does not keep stopping later turns.
+  A new worker report makes that step unreviewed again. Informational updates
+  alone do not extend a finished turn. They remain unread until SessionStart,
+  your own `check_in`/`inbox`, or a digest carrying actionable news; fully quoted
+  outcome prefixes are then durably read. A non-blocking Stop spends nothing.
   A flag wakes you and cancels nothing. After done, report a correction with
   progress while a flag remains; the original done verdict and artifact stay
   intact. A whole-work flag clears only with a milestone-zero progress note or

@@ -802,13 +802,11 @@ func TestTheNoticeBoundHoldsForIdenticalNotices(t *testing.T) {
 	}
 }
 
-// And HookPoll ITSELF spends a turn on an approval.
+// And HookPoll ITSELF spends a turn on a typed grant approval.
 //
-// The test above proves the pieces work when a test connects them: it takes
-// blockingNotices, hands the result to hookWakeTerms, and calls
-// deliverToModel. What it cannot prove is that PRODUCTION connects them.
-// Deleting the `waiting` lookup inside HookPoll, or passing zero, leaves it
-// green, and that lookup is the entire approval fix.
+// The test above connects classifier and delivery pieces by hand. This test
+// enters through production request/approval operations and HookPoll, so a
+// disconnected typed cause cannot pass just because the pieces work alone.
 //
 // So this asks HookPoll, the way a harness Stop hook does.
 func TestHookPollDeliversAnApproval(t *testing.T) {
@@ -838,13 +836,22 @@ func TestHookPollDeliversAnApproval(t *testing.T) {
 			"an approval from the ordinary case", quiet)
 	}
 
-	// The human approves the thing this agent stopped for. Notices are turned
+	// The human approves the permission this agent stopped for. Notices are turned
 	// DOWN, because that switch is what the Blocking flag has to survive.
 	e.SetNoticesWake(false)
-	e.noteEvent(core.Event{
-		Type: "message.approved", Agent: "the maintainer", To: "asker", Serial: 11,
-		Data: map[string]any{"msg_serial": uint64(7)},
-	})
+	humanID, humanToken, err := e.HumanAgent(ctx)
+	if err != nil {
+		t.Fatal("setup: human:", err)
+	}
+	ask, err := e.Do(ctx, &core.Op{Kind: core.OpSendMessage, Token: res["token"].(string), To: humanID,
+		MsgType: core.MsgRequest, Body: "grant coordinator", Grant: core.RoleCoordinator})
+	if err != nil {
+		t.Fatal("setup: grant request:", err)
+	}
+	if _, err := e.Do(ctx, &core.Op{Kind: core.OpRespond, Token: humanToken,
+		MsgSerial: ask["msg_serial"].(uint64), Disposition: "approve"}); err != nil {
+		t.Fatal("setup: grant approval:", err)
+	}
 
 	got, err := e.HookPoll(ctx, sid, "Stop", "", false, false)
 	if err != nil {
@@ -853,8 +860,7 @@ func TestHookPollDeliversAnApproval(t *testing.T) {
 	if !deliveredSomething(got) {
 		t.Errorf("HookPoll delivered nothing after an approval: %v\n"+
 			"The agent asked, stopped, and has no other way to learn the answer. "+
-			"The request is terminal, so it is not pending mail anywhere and "+
-			"check_in cannot reconstruct it", got)
+			"The request is terminal, so the typed outcome must supply the cause", got)
 	}
 }
 

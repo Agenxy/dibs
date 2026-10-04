@@ -215,7 +215,14 @@ func TestSocketEconomyDaemonFallbackUsesLifecycleAndDueSlots(t *testing.T) {
 				case <-time.After(1100 * time.Millisecond):
 				}
 			}
-			if text := fmtResult(f.hook(t, "Stop", false)); !strings.Contains(text, marker) {
+			event := "Stop"
+			if mode == "informational" {
+				if got := f.hook(t, "Stop", false); got["decision"] == "block" || deliveredSomething(got) {
+					t.Fatalf("informational-only mail forced a Stop delivery: %v", got)
+				}
+				event = "SessionStart"
+			}
+			if text := fmtResult(f.hook(t, event, false)); !strings.Contains(text, marker) {
 				t.Fatalf("native route lost its held-peer/full-mail hook fallback: %q", text)
 			}
 			_, err := f.e.query(f.ctx, func() core.Result {

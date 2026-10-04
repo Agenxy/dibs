@@ -33,6 +33,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   awareness per identity incarnation; old read operations are unchanged and
   fresh units retain durable, bounded read semantics.
 
+- **Stop hooks spend a model turn only for actionable news.** Progress,
+  ordinary work approvals, accepted reviews, queue updates and peer FYIs
+  remain unread at a non-blocking Stop. SessionStart, authenticated pulls or
+  the next actionable digest deliver them. Stop shares the socket classifier:
+  questions, requests, handoffs, human notifications, answers, grant/adoption
+  verdicts, denials, declines and flagged reviews qualify; DONE requires a
+  current waiting declaration. Due waits and declared-work continuation retain
+  their existing bounds. UserPromptSubmit remains silent.
+
 - **Source installs reject conflicting version overrides before replacement.**
   Both built images are checked against their module/VCS-derived stamp. A
   hand-set `build.Version` that changes the normal pseudo-version now stops

@@ -811,6 +811,15 @@ and `adopt` fields, never the notice text. DONE qualifies only when the sender c
 holds a declaration with `waiting` set. Full outstanding mail remains available
 to delivering hooks and authenticated pulls.
 
+Stop and SubagentStop use this same typed actionable cause before blocking a
+finished turn. Informational progress, ordinary approvals, accepted reviews,
+queue acceptance/position changes and peer FYIs do not independently block.
+A non-blocking Stop neither marks those items delivered nor reads their outcome
+prefixes. Held information is delivered through SessionStart, `check_in` or
+`inbox`, or included in the next actionable Stop/socket digest under the shared
+quote budget. UserPromptSubmit remains silent. Due declared waits and bounded
+declared-work continuation remain independent Stop causes.
+
 The additive socket-offer handshake reserves one derived wake epoch per host
 identity and current session. A successful kernel write holds that epoch until
 actual turn evidence; it proves no receiver acceptance. Failed writes release

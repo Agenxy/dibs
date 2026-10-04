@@ -189,7 +189,9 @@ A terminal Claude Code session has no app record and is never opened.
 
 **Socket economy (2026-10-04).** Socket writers now share an engine-owned
 lifecycle and cause decision. Busy sessions use their full-mail Stop hook;
-informational-only mail waits for that hook or the next actionable wake. An
+informational-only mail waits for SessionStart, an authenticated pull or the
+next actionable digest. Stop and SubagentStop use the same actionable cause as
+the socket; a non-blocking Stop consumes nothing. UserPromptSubmit stays silent. An
 idle session gets one coalesced write for actionable mail or due waits until
 actual turn evidence. Unknown lifecycle gets the existing bounded grace and
 then one recovery write, explicitly logged as unknown. Answers, denials,
@@ -489,7 +491,7 @@ reads its orientation; the body says what happened.
 
 What genuinely deserved the name was **nagging**, and that is a different fix:
 
-- **Each message wakes its recipient once.** An agent that read something and
+- **Each actionable message wakes its recipient once.** An agent that read something and
   chose not to act has exercised exactly the judgement the digest grants it, and
   re-waking it every turn would be taking that back.
 - **Work somebody is BLOCKED on comes back**, on the same retry an
@@ -507,13 +509,15 @@ that empties takes its entries with it.
 
 ```toml
 [wake]
-extend_turn_for = "all"      # default: anything unread wakes the agent, once
+extend_turn_for = "all"      # default route policy; Stop and sockets require actionable news
 # extend_turn_for = "urgent" # only work somebody is blocked on
 # extend_turn_for = "none"   # never extend a turn; systemMessage and `waiting` only
 ```
 
-`all` is the default because the alternatives trade awareness for tokens, and
-that is a trade only the person paying should make deliberately.
+`all` is the default route policy. Stop and socket admission always require
+actionable news or due declared work; informational mail cannot force a new
+model turn through either route. It remains available at SessionStart and
+authenticated pulls, and can ride the next actionable digest.
 
 The human is told either way. `systemMessage` goes to the person on every poll
 with news, whatever was decided about the model, because "your agent has mail"

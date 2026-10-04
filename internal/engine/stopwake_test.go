@@ -47,7 +47,7 @@ func TestAWakeOnStopCarriesTheFieldThatContinuesTheTurn(t *testing.T) {
 	}
 	if _, err := e.Do(ctx, &core.Op{
 		Kind: core.OpSendMessage, Token: sender["token"].(string), To: "sleeper",
-		MsgType: "notify", Body: "a peer needs you to know something",
+		MsgType: core.MsgQuestion, Body: "a peer needs an answer",
 	}); err != nil {
 		t.Fatalf("setup: send: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestAStrictStopContinuesTheTurnTheWayCodexAccepts(t *testing.T) {
 	}
 	if _, err := e.Do(ctx, &core.Op{
 		Kind: core.OpSendMessage, Token: sender["token"].(string), To: "codexish",
-		MsgType: "notify", Body: "something to read",
+		MsgType: core.MsgQuestion, Body: "something to answer",
 	}); err != nil {
 		t.Fatalf("setup: send: %v", err)
 	}

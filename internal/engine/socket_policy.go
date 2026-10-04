@@ -137,6 +137,11 @@ func (e *Engine) socketActionableMessage(m *core.Message) bool {
 }
 
 func socketActionableNotice(n notice, l *core.Agent, request *core.Message) bool {
+	// Queue acceptance and position changes report scheduling, not a new
+	// decision the sender must act on. Keep them for the next real delivery.
+	if n.Kind == "message.queued" || n.Kind == "message.queue_changed" {
+		return false
+	}
 	// Ordinary approval accepts work; grant/adoption approval performs an
 	// effect the requester awaits. Read the typed request, never the prose.
 	if n.Kind == "message.approved" && (request == nil || request.Type != core.MsgRequest ||
