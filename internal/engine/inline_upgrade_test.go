@@ -272,11 +272,12 @@ func assertHistoricalUpgradeUnits(t *testing.T, e *Engine) int {
 	for id := range e.state.Agents {
 		for _, group := range e.outcomeGroups(id) {
 			for _, unit := range group.units {
-				if unit.kind == "message.progress" || unit.kind == "message.review" {
+				switch {
+				case unit.kind == "message.progress" || unit.kind == "message.review":
 					t.Error("historical progress or review would redeliver at upgrade")
-				} else if !want[unit.serial] {
+				case !want[unit.serial]:
 					t.Error("a previously read historical verdict/queue unit would redeliver")
-				} else {
+				default:
 					seen[unit.serial] = true
 				}
 			}
