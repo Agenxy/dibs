@@ -8,7 +8,7 @@ import (
 	"github.com/agenxy/dibs/internal/core"
 )
 
-func TestStopNoticeCadencePreservesTheAuthenticatedQueue(t *testing.T) {
+func TestStopBodyDeliveryDoesNotRepeatOnAuthenticatedPull(t *testing.T) {
 	e := New(core.NewState("notice-presentation", core.DefaultLimits()), &memLedger{}, deadProber{})
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -44,8 +44,8 @@ func TestStopNoticeCadencePreservesTheAuthenticatedQueue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := r["agent_updates"].([]string); len(got) != 1 {
-		t.Fatalf("throttling lost raw inbox notice: %v", r)
+	if got, _ := r["agent_updates"].([]string); len(got) != 0 {
+		t.Fatalf("already quoted Stop answer repeated on inbox: %v", r)
 	}
 	if _, err := e.query(ctx, func() core.Result {
 		for key := range e.noticePresented {
@@ -55,10 +55,10 @@ func TestStopNoticeCadencePreservesTheAuthenticatedQueue(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	stop(true)
+	stop(false) // cadence expiration cannot unread delivered words
 	r = do(&core.Op{Kind: core.OpAckBoard, Token: tokens["asker"]})
-	if got, _ := r["agent_updates"].([]string); len(got) != 1 {
-		t.Fatalf("presentation lost check_in notice: %v", r)
+	if got, _ := r["agent_updates"].([]string); len(got) != 0 {
+		t.Fatalf("already read answer repeated on check_in: %v", r)
 	}
 	stop(false)
 }

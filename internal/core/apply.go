@@ -39,15 +39,16 @@ const (
 	// of its own, for the reason mark_delivered is written when a recipient
 	// pulls a body: the fact decides what an agent is told after a restart,
 	// so it has to be in the fold. Issue #76.
-	OpOutcomeRead   = "outcome_read"
-	OpClaim         = "claim"
-	OpRelease       = "release"
-	OpSweep         = "sweep"
-	OpMarkDelivered = "mark_delivered"
-	OpPutBlob       = "put_blob"
-	OpGrantRole     = "grant_role"
-	OpPrune         = "prune"
-	OpMergeAgents   = "merge_agents"
+	OpOutcomeRead          = "outcome_read"
+	OpInitializeReviewRead = "initialize_review_read"
+	OpClaim                = "claim"
+	OpRelease              = "release"
+	OpSweep                = "sweep"
+	OpMarkDelivered        = "mark_delivered"
+	OpPutBlob              = "put_blob"
+	OpGrantRole            = "grant_role"
+	OpPrune                = "prune"
+	OpMergeAgents          = "merge_agents"
 	// OpPruneOwn is an agent tidying up after ITSELF: its own record, or a
 	// child it vouched for. A new kind rather than a token-bearing prune,
 	// because the ownership rule below has to live in Apply (it depends on
@@ -105,6 +106,8 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 	// Strip before BOTH comparisons and storage, through the one mutation door.
 	now = now.Round(0)
 	switch op.Kind {
+	case OpInitializeReviewRead:
+		return s.applyInitializeReviewRead(op, now)
 	case OpRegister:
 		return s.applyRegister(op, now)
 	case OpResume:

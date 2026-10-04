@@ -25,6 +25,12 @@ func (s *State) Admit(op *Op) error {
 	if err := Admit(op, s.Limits); err != nil {
 		return err
 	}
+	if err := s.admitReportedMilestone(op); err != nil {
+		return err
+	}
+	if err := s.admitOutcomeRead(op); err != nil {
+		return err
+	}
 	if op.Kind != OpUpdate || op.Name == "" {
 		return nil
 	}

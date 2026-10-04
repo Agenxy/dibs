@@ -35,9 +35,11 @@ func newServer(t *testing.T) (*httptest.Server, context.CancelFunc) {
 	}
 	eng := engine.New(st, led, nil)
 	ctx, cancel := context.WithCancel(context.Background())
-	go eng.Run(ctx)
+	done := make(chan struct{})
+	go func() { eng.Run(ctx); close(done) }()
 	srv := httptest.NewServer(New(eng))
-	t.Cleanup(func() { srv.Close(); cancel(); _ = led.Close() })
+	// Join the writer before closing its ledger, including boot-only tests.
+	t.Cleanup(func() { srv.Close(); cancel(); <-done; _ = led.Close() })
 	return srv, cancel
 }
 

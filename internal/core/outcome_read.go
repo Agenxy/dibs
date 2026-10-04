@@ -16,6 +16,14 @@ package core
 // concerns and it is the one doing the reading.
 func (s *State) applyOutcomeRead(l *Agent, op *Op) (Result, []Event, error) {
 	m, ok := s.Messages[op.MsgSerial]
+	// Only the new explicit field opts recipients into review reads.
+	if ok && m.To == l.ID && m.From != l.ID && op.OutcomeThroughSerial != 0 {
+		if op.OutcomeThroughSerial <= max(m.ReviewReadAt, s.ReviewReadCutoff) {
+			return Result{"changed": false}, nil, nil
+		}
+		m.ReviewReadAt = op.OutcomeThroughSerial
+		return Result{"changed": true}, []Event{}, nil
+	}
 	if !ok || m.From != l.ID {
 		return nil, nil, errf("E_NO_MESSAGE", "read_mail takes a message you sent or received; "+
 			"use inbox() to find your mail", "no message %d sent by you", op.MsgSerial)
@@ -24,15 +32,46 @@ func (s *State) applyOutcomeRead(l *Agent, op *Op) (Result, []Event, error) {
 		return nil, nil, errf("E_NOT_TERMINAL", "wait for a verdict; there is nothing to have read yet",
 			"message %d has no outcome yet", op.MsgSerial)
 	}
-	if !m.HasUnreadOutcome() {
+	through := op.OutcomeThroughSerial
+	if through == 0 {
+		// Old read ops never carried a prefix. Preserve their one-time verdict
+		// meaning even when later reports exist; replay must not invent a read.
+		if !m.hasUnreadLegacyOutcome() {
+			return Result{"changed": false}, nil, nil
+		}
+		through = s.Serial + 1 // historical full read
+	}
+	if through <= m.OutcomeReadAt || !m.HasUnreadOutcome() {
 		return Result{"changed": false}, nil, nil
 	}
-	m.OutcomeReadAt = s.Serial + 1
+	m.OutcomeReadAt = through
+	if m.From == m.To && op.OutcomeThroughSerial != 0 {
+		m.ReviewReadAt = max(m.ReviewReadAt, through)
+	}
 	return Result{"changed": true}, []Event{}, nil
 }
 
-// HasUnreadOutcome preserves the historical one-time read marker for old mail.
-// New queued debt also tracks ordering changes recorded after the last read.
-func (m *Message) HasUnreadOutcome() bool {
+func (m *Message) hasUnreadLegacyOutcome() bool {
 	return m.OutcomeReadAt == 0 || (m.QueueDebt && m.QueueChangedSerial > m.OutcomeReadAt)
+}
+
+// HasUnreadOutcome includes retained reports for new explicit-prefix reads.
+// Historical zero-prefix operations use their original one-time rule above.
+func (m *Message) HasUnreadOutcome() bool {
+	return m.OutcomeReadAt == 0 || m.LatestOutcomeSerial() > m.OutcomeReadAt
+}
+
+// LatestOutcomeSerial includes reports made after an approval was read.
+// Sender reviews are not new reports to that same sender.
+func (m *Message) LatestOutcomeSerial() uint64 {
+	latest := m.RespondedAt
+	if m.QueueDebt && m.QueueChangedSerial > latest {
+		latest = m.QueueChangedSerial
+	}
+	for _, p := range m.Progress {
+		if (p.Review == "" || m.From == m.To) && p.Serial > latest {
+			latest = p.Serial
+		}
+	}
+	return latest
 }

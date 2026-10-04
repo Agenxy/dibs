@@ -331,13 +331,14 @@ func (e *Engine) HookPollFrom(
 		mail := e.pendingMail(l.ID, time.Now())
 		// The agent's own copy carries the mail; `mail` above stays the quiet
 		// version for the human notice and every other surface.
-		agentMail := e.freshMailQuoted(l.ID, time.Now())
+		quoteBudget := mailQuoteBudget
+		agentMail := e.freshMailQuotedBudget(l.ID, time.Now(), &quoteBudget)
 		announced, announceKeys := e.dueAnnouncements(l.ID, time.Now())
 		// Things done TO this agent that it cannot have inferred: admitted by a
 		// director, promoted from a queue, evicted. Silent until now: an agent
 		// told "awaiting_director" had no way to learn the wait had ended.
 		notices := e.pendingNotices(l.ID)
-		modelNotices, noticeKeys := e.dueNoticeLines(l.ID, time.Now())
+		modelNotices, noticeKeys, outcomeThrough := e.dueNoticeLinesBudget(l.ID, time.Now(), &quoteBudget)
 		work := e.socketWorkDigest(l, time.Now())
 		if len(mail) == 0 && len(announced) == 0 && len(notices) == 0 && work == "" {
 			// No news. A turn Dibs started may still be ending with declared
@@ -455,13 +456,9 @@ func (e *Engine) HookPollFrom(
 			// the marking only on events that cannot deliver, which is what the
 			// probe for it used, so the probe passed while a spoofed Stop still
 			// worked.
-			e.markWoken(wake, now)
-			e.markAnnounced(announceKeys, now)
-			e.markNoticePresentation(noticeKeys, now)
 			digest := e.deliveringHookDigest(l, agentMail, announced, modelNotices, now)
-			addDelivery(out, event, digest)
-			e.markInformationalNoticesDelivered(event, l.ID, noticeKeys)
-			e.noteDeliveringHook(l, event, now)
+			return e.deliverHookDigest(out, event, strict, l, digest,
+				wake, announceKeys, noticeKeys, outcomeThrough, now)
 		} else if cont := e.continuationReply(l, event, stopActive); cont != nil {
 			// News the turn is not extended for, and a turn Dibs started is
 			// ending with declared work open. See continuation.go.
@@ -494,6 +491,23 @@ func (e *Engine) noteDeliveringHook(l *core.Agent, event string, now time.Time) 
 	if isStopEvent(event) {
 		e.noteSocketBusy(l, now) // this Stop blocked; the turn continues
 	}
+}
+
+func (e *Engine) deliverHookDigest(
+	out core.Result, event string, strict bool, l *core.Agent, digest string,
+	wake, announceKeys, noticeKeys []string,
+	through map[uint64]uint64, now time.Time,
+) core.Result {
+	e.markWoken(wake, now)
+	e.markAnnounced(announceKeys, now)
+	e.markNoticePresentation(noticeKeys, now)
+	addDelivery(out, event, digest)
+	if err := e.consumeOutcomes(l.ID, through, now); err != nil {
+		return core.Result{"error": err}
+	}
+	e.markInformationalNoticesDelivered(event, l.ID, noticeKeys)
+	e.noteDeliveringHook(l, event, now)
+	return e.hookOutput(out, strict, event)
 }
 
 // AdoptSession attaches a harness session to an agent that has none.
@@ -586,7 +600,7 @@ func (e *Engine) pendingMail(agent string, now time.Time) []string {
 	return e.mailLines(agent, now, false)
 }
 
-// pendingMailQuoted is the same list with the message text in it, for the ONE
+// mailLines with quote=true carries the message text for the ONE
 // surface that may carry it: the digest injected into the agent's own context.
 //
 // Split from pendingMail rather than switched inside it, because the guard
@@ -597,15 +611,16 @@ func (e *Engine) pendingMail(agent string, now time.Time) []string {
 // own prompt box fill with mail addressed to an agent. So the human notice and
 // the ambient waiting line stay counts-only and the split is structural: a
 // future surface gets the quiet version unless it asks for the other one.
-func (e *Engine) pendingMailQuoted(agent string, now time.Time) []string {
-	return e.mailLines(agent, now, true)
-}
-
 func (e *Engine) mailLines(agent string, now time.Time, quote bool) []string {
 	return e.mailLinesFor(agent, now, quote, nil)
 }
 
 func (e *Engine) freshMailQuoted(agent string, now time.Time) []string {
+	budget := mailQuoteBudget
+	return e.freshMailQuotedBudget(agent, now, &budget)
+}
+
+func (e *Engine) freshMailQuotedBudget(agent string, now time.Time, budget *int) []string {
 	keys := e.wakeKeys(agent, now)
 	wanted := make(map[uint64]bool, len(keys))
 	for _, key := range keys {
@@ -613,15 +628,19 @@ func (e *Engine) freshMailQuoted(agent string, now time.Time) []string {
 		n, _ := strconv.ParseUint(serial, 10, 64)
 		wanted[n] = true
 	}
-	return e.mailLinesFor(agent, now, true, wanted)
+	return e.mailLinesForBudget(agent, now, wanted, budget)
 }
 
 func (e *Engine) mailLinesFor(agent string, now time.Time, quote bool, wanted map[uint64]bool) []string {
-	var out []string
 	budget := mailQuoteBudget
 	if !quote {
 		budget = 0
 	}
+	return e.mailLinesForBudget(agent, now, wanted, &budget)
+}
+
+func (e *Engine) mailLinesForBudget(agent string, now time.Time, wanted map[uint64]bool, budget *int) []string {
+	var out []string
 	for _, m := range e.state.Inbox(agent) {
 		if wanted != nil && !wanted[m.Serial] {
 			continue
@@ -663,7 +682,7 @@ func (e *Engine) mailLinesFor(agent string, now time.Time, quote bool, wanted ma
 			// otherwise. `budget` is shared across the whole digest rather
 			// than per message, because ten messages each trimmed to a
 			// generous length is not a generous digest, it is a wall.
-			if body := e.quoteFor(m, &budget); body != "" {
+			if body := e.quoteFor(m, budget); body != "" {
 				out = append(out, fmt.Sprintf("#%d %s from %q%s: %s %s",
 					m.Serial, m.Type, m.From, waited, body, clears))
 				continue
@@ -675,7 +694,7 @@ func (e *Engine) mailLinesFor(agent string, now time.Time, quote bool, wanted ma
 	return out
 }
 
-// mailQuoteBudget is how much message text one digest may carry, in bytes,
+// mailQuoteBudget is how much message text one digest may carry, in runes,
 // across every message in it. A digest rides in a hook's additionalContext and
 // is read by a model at a turn boundary: it is worth real tokens on every
 // activation, so it is bounded once for the whole thing rather than per
@@ -693,7 +712,7 @@ const mailQuoteEach = 700
 // unit of budget should mean the same thing to a reader whatever alphabet the
 // message is in.
 func (e *Engine) quoteFor(m *core.Message, budget *int) string {
-	if m == nil || !e.mailBodies() {
+	if m == nil {
 		return ""
 	}
 	// NEWLINES OUT FIRST, and before the trim rather than after. The digest is
@@ -701,22 +720,8 @@ func (e *Engine) quoteFor(m *core.Message, budget *int) string {
 	// breaks reflows the whole thing and, in a strict harness, can look like
 	// the end of the field. Collapsing after trimming would also make the
 	// budget describe whitespace the reader never sees.
-	body := strings.Join(strings.Fields(m.Body), " ")
-	if body == "" || *budget <= 0 {
-		return ""
-	}
-	room := *budget
-	if room > mailQuoteEach {
-		room = mailQuoteEach
-	}
-	n := len([]rune(body))
-	if n > room {
-		*budget -= room
-		return fmt.Sprintf("%q (trimmed; read_mail(%d) for the rest).",
-			trimRunes(body, room), m.Serial)
-	}
-	*budget -= n
-	return fmt.Sprintf("%q.", body)
+	quote, _ := e.quoteText(m.Serial, m.Body, budget)
+	return quote
 }
 
 // dueAnnouncements lists unacknowledged announcements that are due for another

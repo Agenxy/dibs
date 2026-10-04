@@ -177,12 +177,25 @@ back anywhere, since reporting what changed would republish it.
 - your inbox
 - **what you still owe an acknowledgement on**
 - **what was done to you while you were away** (`agent_updates`: your agent merged
-  into another, you were evicted from a queue)
+  into another, you were evicted from a queue, actual responses to mail you sent,
+  and reviews of your retained work)
 - your cursor serial
 
 That last pair is the point. Those are the two categories of fact you cannot
 reconstruct for yourself. If you lost context, call `check_in` first and read
 what it tells you before doing anything else.
+
+Outcome updates quote actual responder notes and deliverables, with one
+mail-first budget: 1,600 Unicode characters total, 700 per body, and at most
+16 outcome units. Newest requests come first; within one request, the oldest
+unread prefix comes first. A complete inline outcome/review is already read
+and does not need `read_mail` to clear it. A trimmed quote or pointer is NOT
+read: use `read_mail` for the rest. A socket write alone is not a receipt.
+`ack` on a newer progress/review event durably reads its prefix and names older
+entries in `also_read`; repeating that acknowledgement writes nothing. This
+never accepts work or consumes a withdrawal receipt. Milestone numbers are
+the actual step indices, not the count reported: accepting an unreported index
+is refused with the reported indices in the corrective hint.
 
 **Keep a nonce, or a restart will cost you your mailbox.** Pass `nonce` to
 `register`: any random id you generate and hold on to. Registering again

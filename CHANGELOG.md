@@ -21,6 +21,19 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   harness has no delivery route. Routine strict-hook identity omission is
   logged at Debug, with actual dropped information still at Info.
 
+- **Outcome updates carry the responder's actual words.** Authenticated pulls,
+  delivering lifecycle hooks and socket digests share the mail-first body budget
+  (1,600 Unicode characters total, 700 per body). Complete outcome prefixes are
+  durably read; partial quotes and pointers stay unread. Socket writes alone
+  are not a read receipt. Requests are newest-first, reports within a request
+  oldest-first, with at most 16 outcome units per delivery.
+- **Reviews after DONE survive a restart.** Retained recipient reviews have
+  an independent durable read marker. A recorded upgrade cutoff suppresses
+  historical review floods. Acknowledging a newer progress/review event reads
+  its prefix, names older entries in `also_read`, and repeating it writes
+  nothing. Acceptance of an unreported milestone index is refused only at
+  ingress; historical operations still replay unchanged.
+
 - Release discovery lists bounded, paginated GitHub releases and matches the
   exact tag, including an existing draft that the get-by-tag endpoint omits.
   Duplicate matches, incomplete scans and API failures refuse publication;

@@ -29,21 +29,53 @@ func (e *Engine) handleMilestoneEvent(op *core.Op, actor *core.Agent, now time.T
 			Code: "E_WRONG_KIND", Msg: "respond needs the request serial, not a milestone event", Hint: hint,
 		}, true
 	}
-	kept := e.notices[actor.ID][:0]
-	for _, n := range e.notices[actor.ID] {
-		if n.Serial != p.Serial {
+	alsoRead, err := e.acknowledgeOutcomeEvent(actor.ID, op.Token, m, p, now)
+	if err != nil {
+		return nil, err, true
+	}
+	e.dismissMilestoneNotice(actor.ID, p.Serial)
+	e.seen[actor.ID] = now
+	e.noteAuthenticatedContact(actor, now)
+	e.confirmSocketOffer(actor, now)
+	result := core.Result{"ok": true, "state": "acked"}
+	if len(alsoRead) > 0 {
+		result["also_read"] = alsoRead
+	}
+	return result, nil, true
+}
+
+func (e *Engine) acknowledgeOutcomeEvent(
+	agent, token string, m *core.Message, p core.Progress, now time.Time,
+) ([]uint64, error) {
+	var alsoRead []uint64
+	units := e.outcomeUnits(m)
+	if m.From != agent {
+		units = e.reviewUnits(m)
+	}
+	for _, older := range units {
+		if older.serial < p.Serial {
+			alsoRead = append(alsoRead, older.serial)
+		}
+	}
+	_, err := e.applyAndLedger(&core.Op{
+		Kind: core.OpOutcomeRead, Token: token,
+		MsgSerial: m.Serial, OutcomeThroughSerial: p.Serial,
+	}, now)
+	return alsoRead, err
+}
+
+func (e *Engine) dismissMilestoneNotice(agent string, serial uint64) {
+	kept := e.notices[agent][:0]
+	for _, n := range e.notices[agent] {
+		if n.Serial != serial {
 			kept = append(kept, n)
 		}
 	}
 	if len(kept) == 0 {
-		delete(e.notices, actor.ID)
+		delete(e.notices, agent)
 	} else {
-		e.notices[actor.ID] = kept
+		e.notices[agent] = kept
 	}
-	e.seen[actor.ID] = now
-	e.noteAuthenticatedContact(actor, now)
-	e.confirmSocketOffer(actor, now)
-	return core.Result{"ok": true, "state": "acked"}, nil, true
 }
 
 func (e *Engine) milestoneEventFor(actor *core.Agent, serial uint64) (*core.Message, core.Progress) {

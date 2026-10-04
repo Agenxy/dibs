@@ -707,16 +707,18 @@ type Message struct {
 	DeliveredTime time.Time `json:"delivered_at,omitzero"`
 	RespondedAt   uint64    `json:"responded_serial,omitempty"`
 	AckedAt       uint64    `json:"acked_serial,omitempty"`
-	// OutcomeReadAt is the serial at which the SENDER read this message's
-	// verdict. The one fact about a message that is the asker's rather than
+	// OutcomeReadAt is the SENDER's fully read outcome prefix (or, for
+	// historical full reads, the read operation's serial). The asker's rather than
 	// the recipient's: Consumed is set when the recipient answers, so it is
 	// true for every verdict that exists and cannot say whether the asker has
 	// seen it. Read by the notice rebuild after a restart, so an outcome the
 	// asker has already read is not handed back. Issue #76.
-	OutcomeReadAt uint64       `json:"outcome_read_serial,omitempty"`
-	TerminalAt    time.Time    `json:"terminal_at,omitzero"` // when it reached a terminal state
-	ExpireDetail  string       `json:"expire_detail,omitempty"`
-	Attachments   []Attachment `json:"attachments,omitempty"` // blob handles + filerefs (A2)
+	OutcomeReadAt uint64 `json:"outcome_read_serial,omitempty"`
+	// Worker review reads and sender report reads are independent.
+	ReviewReadAt uint64       `json:"review_read_serial,omitempty"`
+	TerminalAt   time.Time    `json:"terminal_at,omitzero"` // when it reached a terminal state
+	ExpireDetail string       `json:"expire_detail,omitempty"`
+	Attachments  []Attachment `json:"attachments,omitempty"` // blob handles + filerefs (A2)
 	// Choices is the answer space of a question, stated by its sender. Ledgered
 	// with the message because it is part of what was ASKED: a question whose
 	// options were lost on replay is a different question.
@@ -844,15 +846,17 @@ type Event struct {
 
 // State is the entire replayable truth. Only Apply mutates it.
 type State struct {
-	NodeID   string
-	Serial   uint64
-	Limits   Limits
-	Agents   map[string]*Agent
-	Messages map[uint64]*Message // keyed by send serial
-	Claims   []*Claim
-	Nonces   map[string]string    // nonce → agent_id
-	Dedup    map[string]*DedupRec // key: agent_id + "\x00" + id
-	Blobs    map[string]*Blob     // id → registry entry (bytes live in blobstore)
+	NodeID string
+	Serial uint64
+	// Recorded once at upgrade. Zero means old code, not unread old reviews.
+	ReviewReadCutoff uint64
+	Limits           Limits
+	Agents           map[string]*Agent
+	Messages         map[uint64]*Message // keyed by send serial
+	Claims           []*Claim
+	Nonces           map[string]string    // nonce → agent_id
+	Dedup            map[string]*DedupRec // key: agent_id + "\x00" + id
+	Blobs            map[string]*Blob     // id → registry entry (bytes live in blobstore)
 
 	// Spaces of work, and the announcements awaiting acknowledgement in them
 	// (SPEC-CHANNELS.md). Keyed by space id and by announce serial.

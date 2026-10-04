@@ -78,8 +78,12 @@ func TestMilestoneEventAckFirstCallAfterRestart(t *testing.T) {
 	}
 	restartCancel()
 	<-restartDone
-	if st.Serial != serial || len(restartedLedger.ops) != 0 || st.Messages[parent].Consumed != consumed || st.Messages[parent].Progress[0].Review != "" {
-		t.Fatal("derived event ack changed replayable state")
+	// Explicit dismissal now persists via the NEW additive outcome-read prefix,
+	// not by changing historical ack's fold. It must survive a daemon restart.
+	if st.Serial != serial+1 || len(restartedLedger.ops) != 1 ||
+		st.Messages[parent].OutcomeReadAt != event || st.Messages[parent].Consumed != consumed ||
+		st.Messages[parent].Progress[0].Review != "" {
+		t.Fatal("event ack lost its read marker or consumed/reviewed the parent")
 	}
 	if restarted.seen["lead"].IsZero() {
 		t.Fatal("ack did not touch liveness")
@@ -132,8 +136,9 @@ func TestMilestoneEventAckDoesNotLedgerReviewOrConsumeParent(t *testing.T) {
 		do(&core.Op{Kind: core.OpAckMessage, Token: lead, MsgSerial: events[0]})
 	}
 	if _, err := e.query(ctx, func() core.Result {
-		if e.state.Serial != serial || len(led.ops) != records {
-			t.Error("derived event ack wrote coordination history")
+		// One durable read, never a fabricated review or a repeat read op.
+		if e.state.Serial != serial+1 || len(led.ops) != records+1 {
+			t.Error("event ack did not persist exactly one read")
 		}
 		if len(e.notices["lead"]) != 1 || e.notices["lead"][0].Serial != events[1] {
 			t.Errorf("ack cleared unrelated notice: %v", e.notices["lead"])

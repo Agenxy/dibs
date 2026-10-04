@@ -1650,6 +1650,11 @@ func (e *Engine) currentWakeDigest(l *core.Agent) string {
 }
 
 func (e *Engine) wakeDigest(l *core.Agent, fresh bool) string {
+	text, _, _ := e.wakePresentation(l, fresh)
+	return text
+}
+
+func (e *Engine) wakePresentation(l *core.Agent, fresh bool) (string, map[uint64]uint64, []string) {
 	now := time.Now()
 	// ALL THREE, which is the bug this replaced. It passed mail and nil'd
 	// announcements and notices, so a wake triggered by an agent update or an
@@ -1660,16 +1665,19 @@ func (e *Engine) wakeDigest(l *core.Agent, fresh bool) string {
 	// the whole message: same board, same second, one route saying nothing
 	// and the other saying everything. The hook path had passed all three
 	// since it was written; only this one did not.
-	mail := e.pendingMailQuoted(l.ID, now)
+	budget := mailQuoteBudget
+	var mail []string
 	if fresh {
-		mail = e.freshMailQuoted(l.ID, now)
+		mail = e.freshMailQuotedBudget(l.ID, now, &budget)
+	} else {
+		mail = e.mailLinesForBudget(l.ID, now, nil, &budget)
 	}
 	announced, _ := e.dueAnnouncements(l.ID, now)
-	notices, _ := e.dueNoticeLines(l.ID, now)
+	notices, noticeKeys, through := e.dueNoticeLinesBudget(l.ID, now, &budget)
 	if len(mail) == 0 && len(announced) == 0 && len(notices) == 0 {
-		return ""
+		return "", nil, nil
 	}
-	return strings.TrimRight(hookDigest(l.ID, mail, announced, notices), "\n")
+	return strings.TrimRight(hookDigest(l.ID, mail, announced, notices), "\n"), through, noticeKeys
 }
 
 // commandSideReason is why the command route is not the one being used,
