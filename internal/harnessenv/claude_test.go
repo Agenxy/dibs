@@ -61,7 +61,7 @@ func TestARunningClaudeSessionIsNotOpenedAgain(t *testing.T) {
 	}
 	// Through the shower production uses: a running session is held, so no
 	// open is made and the app does not jump forward.
-	if !RealShower.Holds(cli) {
+	if !RealShower.holds(cli) {
 		t.Error("the production shower would open a Claude session that is already running")
 	}
 	if ClaudeSessionRunning("99999999-2222-4333-8444-555566667777") {

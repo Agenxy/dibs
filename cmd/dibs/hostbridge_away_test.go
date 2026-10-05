@@ -15,7 +15,7 @@ import (
 
 // The capability enters at the actual producer's listen body, through the MCP
 // server, into the derived bridge view. Calling an engine setter cannot prove it.
-func TestBridgeAdvertisesAwayOpeningThroughTheActualListen(t *testing.T) {
+func TestBridgeAdvertisesPromptOpeningThroughTheActualListen(t *testing.T) {
 	for _, legacy := range []bool{false, true} {
 		t.Run(map[bool]string{false: "current", true: "pre-away"}[legacy], func(t *testing.T) {
 			b := bridgeUnderTest(t, &recordingRun{ok: true})
@@ -25,8 +25,8 @@ func TestBridgeAdvertisesAwayOpeningThroughTheActualListen(t *testing.T) {
 				t.Fatal(err)
 			}
 			meta := request["params"].(map[string]any)["_meta"].(map[string]any)
-			if meta["com.dibs/away_open"] != float64(1) {
-				t.Fatalf("production bridge did not advertise away opening: %v", meta)
+			if meta["com.dibs/away_open"] != float64(2) {
+				t.Fatalf("production bridge did not advertise prompt bounded opening: %v", meta)
 			}
 			if legacy {
 				delete(meta, "com.dibs/away_open") // the pre-upgrade wire shape
@@ -61,7 +61,7 @@ func TestBridgeAdvertisesAwayOpeningThroughTheActualListen(t *testing.T) {
 			if len(bridges) != 1 || bridges[0].Host != b.host || len(bridges[0].Harnesses) != 1 {
 				t.Fatalf("bridge route lost: %+v", bridges)
 			}
-			want := 1
+			want := 2
 			if legacy {
 				want = 0
 			}

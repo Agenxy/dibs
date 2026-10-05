@@ -10,7 +10,7 @@ import (
 // Unknown HID idle cannot authorize an open even with a zero threshold.
 // The source-build native helper is missing, so presence is unknown and the
 // actual production gate must fail closed.
-func TestRealShowerDoesNotOpenOnUnknownPresence(t *testing.T) {
+func TestRealShowerClaudeRecoveryDoesNotOpenOnUnknownPresence(t *testing.T) {
 	s := RealShower
 	var opened atomic.Int32
 	var held atomic.Bool

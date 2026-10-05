@@ -11,15 +11,12 @@ import (
 	"github.com/agenxy/dibs/internal/notify"
 )
 
-// A loaded thread receives its queued notice without opening its app. An
-// unloaded thread waits for positive lock/display-sleep evidence or the
-// configured HID idle interval. Unknown measurements do not authorize an open.
-// The native helper rechecks the same gate and restores the prior app while
-// away; a person returning ends restoration.
+// Claude closed-session recovery waits for positive lock/display-sleep evidence
+// or the configured HID idle interval. ChatGPT queued mail takes the prompt,
+// bounded background path in app_open.go and does not consult this gate.
 
-// DefaultOpenAfterIdle is the AFK fallback: `[wake] open_app_after_idle`.
-// Lock or sleeping displays qualify sooner. Zero explicitly permits immediate
-// opening only when idle is measurable.
+// DefaultOpenAfterIdle is Claude recovery's AFK fallback:
+// `[wake] open_app_after_idle`. Lock or sleeping displays qualify sooner.
 const DefaultOpenAfterIdle = 10 * time.Minute
 
 // maxIdleWait bounds how long one deferred open keeps asking. A day: past it
@@ -68,7 +65,14 @@ func PendingAppOpen(thread string) bool {
 // s.MinIdle. It never blocks the caller: a wait runs on its own goroutine.
 // report is told what happened, once, for the caller's log.
 func (s Shower) ShowWhenIdle(argv []string, thread string, report func(opened, deferred bool, err error)) {
-	if len(argv) == 0 || s.Holds(thread) {
+	// ChatGPT mail is wakeable whatever the person is doing. Claude's closed
+	// session recovery retains its separate away policy.
+	if isChatGPTOpen(argv) {
+		opened, err := s.showChatGPT(argv, thread)
+		report(opened, false, err)
+		return
+	}
+	if len(argv) == 0 || s.holds(thread) {
 		return
 	}
 	if s.ready() {
@@ -95,7 +99,7 @@ func (s Shower) ShowWhenIdle(argv []string, thread string, report func(opened, d
 		}()
 		for waited := time.Duration(0); waited < maxIdleWait; waited += s.poll() {
 			s.Wait(s.poll())
-			if s.Holds(thread) {
+			if s.holds(thread) {
 				return // somebody opened it, or the app loaded it: nothing to do
 			}
 			if s.ready() {

@@ -17,7 +17,7 @@ func TestAwayOpenPermanentFailureStopsAfterOneAttempt(t *testing.T) {
 		Open:  func([]string) error { attempts.Add(1); return errors.New("helper unavailable") },
 		Wait:  func(time.Duration) { waits.Add(1) },
 	}
-	s.ShowWhenIdle([]string{"/usr/bin/open", "codex://threads/test"}, "permanent-error-test", func(bool, bool, error) {
+	s.ShowWhenIdle([]string{"/usr/bin/open", "claude://code/continue?session=local_test"}, "permanent-error-test", func(bool, bool, error) {
 		reports.Add(1)
 	})
 	if attempts.Load() != 1 || reports.Load() != 1 || PendingAppOpen("permanent-error-test") {
@@ -40,7 +40,7 @@ func TestAwayOpenPresenceRaceWaitsQuietly(t *testing.T) {
 		},
 		Wait: func(time.Duration) {},
 	}
-	s.ShowWhenIdle([]string{"/usr/bin/open", "codex://threads/test"}, "presence-race-test",
+	s.ShowWhenIdle([]string{"/usr/bin/open", "claude://code/continue?session=local_test"}, "presence-race-test",
 		func(opened, _ bool, err error) {
 			if err != nil {
 				errorsReported.Add(1)

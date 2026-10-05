@@ -91,7 +91,8 @@ func hostBridge(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	b := newWakeBridge(boardOrigin(), secret, host, routes)
-	// The app opens on THIS machine, so this machine's person decides when.
+	// Claude closed-session recovery keeps this host's idle setting. ChatGPT
+	// opens promptly through the bounded per-thread background opener.
 	if cfg, cerr := boardconfig.Load(paths.DataDir()); cerr == nil {
 		if idle, ierr := cfg.Wake.OpenAfterIdle(); ierr == nil {
 			b.show.MinIdle = idle
@@ -309,7 +310,7 @@ func (b *wakeBridge) listenBody() []byte {
 				mcp.HostMetaKey:          b.host,
 				mcp.WakeHarnessesMetaKey: b.harnesses(),
 				mcp.WakeCooldownsMetaKey: b.cooldowns(),
-				mcp.AwayOpenMetaKey:      1,
+				mcp.AwayOpenMetaKey:      2,
 			},
 		},
 	})

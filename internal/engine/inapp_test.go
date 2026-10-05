@@ -20,6 +20,7 @@ type fakeApp struct {
 
 func (a *fakeApp) install(t *testing.T) {
 	t.Helper()
+	t.Setenv("DIBS_DIR", t.TempDir())
 	// Never the operator's own threads: an empty Codex home, unless a test
 	// writes a transcript into it.
 	if os.Getenv("DIBS_TEST_CODEX_HOME_SET") == "" {
@@ -79,7 +80,7 @@ func TestAWakeOpensTheThreadInTheAppTheAgentRunsIn(t *testing.T) {
 		if !wake(t, app, harnessenv.ChatGPTApp, "/usr/bin/true") {
 			t.Fatal("setup: the queue command was reported as failing")
 		}
-		if len(app.opened) != 1 || len(app.opened[0]) != 2 || app.opened[0][1] != "codex://threads/"+thread {
+		if len(app.opened) != 1 || len(app.opened[0]) != 3 || app.opened[0][1] != "-g" || app.opened[0][2] != "codex://threads/"+thread {
 			t.Fatalf("asked the app for %q: the message is queued for a thread the app has "+
 				"not loaded, and nobody can see the agent act on it", app.opened)
 		}
@@ -209,9 +210,8 @@ func TestADormantAppThreadIsOpenedWhereItWasBorn(t *testing.T) {
 	}
 }
 
-// The wake path goes through the idle gate: with the person active, a thread
-// the app has not loaded is queued for and NOT opened yet.
-func TestAWakeDoesNotOpenTheAppInFrontOfAnActivePerson(t *testing.T) {
+// A dormant app agent is wakeable even while the person is active.
+func TestAWakeOpensAnUnloadedAppThreadWhileThePersonIsActive(t *testing.T) {
 	if _, err := os.Stat("/usr/bin/true"); err != nil {
 		t.Skip("no /usr/bin/true on this platform")
 	}
@@ -238,8 +238,8 @@ func TestAWakeDoesNotOpenTheAppInFrontOfAnActivePerson(t *testing.T) {
 	if !e.runWake(plan, "worker") {
 		t.Fatal("setup: the queue command failed")
 	}
-	if len(app.opened) != 0 {
-		t.Errorf("the app was opened while the person was active: %q", app.opened)
+	if len(app.opened) != 1 {
+		t.Errorf("dormant agent waited for idle instead of opening promptly: %q", app.opened)
 	}
 }
 

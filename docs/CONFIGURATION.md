@@ -47,7 +47,7 @@ addr = "100.72.14.3:4777"    # a tailnet address: agents on four machines, one b
 | `extend_turn_for` | `all` | Which news may extend an agent's turn: `all`, `urgent`, `none`. |
 | `notices_wake` | `true` | Whether situational awareness alone may extend a turn. |
 | `sockets` | `true` | Whether the session-socket routes run at all: the daemon's peer-socket wake and the bridge's self-wake. |
-| `open_app_after_idle` | `10m` | AFK interval before an unloaded app thread opens. Screen lock or sleeping displays qualify sooner. Unknown presence measurements keep the message queued; `0s` permits immediate opening with measurable idle. |
+| `open_app_after_idle` | `10m` | Claude closed-session recovery only: AFK interval, with lock or display sleep qualifying sooner. ChatGPT queued wakes open promptly with a per-thread bound, independently of presence. |
 | `remind_stale_after` | retired | Did nothing since liveness became the daemon's own job. Still parsed so old configs load; delete it. |
 | `exec.<harness>.argv` | *(none)* | The command that reaches that harness when an agent is **not running**. |
 | `exec.<harness>.cooldown` | `90s` | The shortest gap between two wakes of the same agent. |
@@ -104,21 +104,26 @@ app-server drains the queue and injects it as a user message. That is a
 channel into the harness the agent lives in, which is all a wake may be.
 
 The app delivers a queued message only to a thread it has loaded, so when the
-app is not holding the thread, Dibs then opens it there with `open
+app is not holding the thread, Dibs then opens it there with `open -g
 codex://threads/<id>`, launching the app if it is closed. That happens only for
 an agent whose bridge found the ChatGPT app above it in the process tree; a
 Codex in a terminal is never opened in the app. On another machine, `dibs
 host-bridge` does the same on that machine.
 
-A loaded thread receives queue-only delivery, leaving your frontmost app alone.
-An unloaded thread opens when the screen is locked, all online displays sleep,
-or known HID idle passes the configured interval. The signed native helper
-rechecks that condition just before opening and restores the prior frontmost
-app while you remain away. Unknown measurements leave the message queued.
+A loaded thread receives queue-only delivery. An unloaded ChatGPT thread opens
+promptly even while you are active. `-g` requests background opening; measured
+on the current app, it can still briefly activate ChatGPT before focus returns.
+A per-thread memo prevents repeated opens for ten minutes, including when the
+ownership probe is unavailable. A new app incarnation or an observed loaded
+then unloaded thread can re-arm sooner, subject to a twenty-second rate limit.
+Messages themselves do not reset the memo. No decision window is opened.
+
+`open_app_after_idle` now applies only to Claude closed-session recovery. Its
+signed helper still checks lock, sleeping displays or measurable HID idle.
 
 ```toml
 [wake]
-open_app_after_idle = "10m"  # AFK fallback; lock or display sleep qualifies sooner
+open_app_after_idle = "10m"  # Claude recovery only; ChatGPT wakes do not wait
 ```
 
 The message is queued meanwhile, and only the first wake per thread per app

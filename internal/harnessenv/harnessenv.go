@@ -21,6 +21,8 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -106,40 +108,79 @@ const chatGPTRoot = "/Applications/ChatGPT.app/"
 // running is false when no process from the app is up at all, which is the
 // case where opening the thread has to launch the app.
 func ChatGPTHolds(thread string) (running, holds bool) {
+	state := ChatGPTOwnership(thread)
+	return state.Running, state.Loaded
+}
+
+// ThreadOwnership keeps a failed observation distinct from an unloaded thread.
+// Epoch is the app's process incarnation, never a message or model turn.
+type ThreadOwnership struct {
+	Running, Known, Loaded bool
+	Epoch                  string
+}
+
+// ChatGPTOwnership probes only the bundled Codex runtimes, not the app's many
+// renderer and tool helpers. The native app tool's notLoaded view is not a
+// public endpoint dibd can call; spawning another app-server would inspect the
+// wrong runtime. A missing/changed probe therefore remains UNKNOWN.
+func ChatGPTOwnership(thread string) ThreadOwnership {
 	if thread == "" {
-		return false, false
+		return ThreadOwnership{}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	out, err := appProbeOutput(ctx, "/bin/ps", "-axo", "pid=,comm=")
-	if err != nil {
-		return false, false // process inventory unavailable: no ownership evidence
+	out, err := appProbeOutput(ctx, "/bin/ps", "-axo", "pid=,lstart=,comm=")
+	if err != nil || len(out) > 4<<20 {
+		return ThreadOwnership{}
 	}
-	var pids []string
+	var pids, epochs []string
+	var appEpoch string
+	running := false
 	for _, line := range strings.Split(string(out), "\n") {
 		fields := strings.Fields(line)
-		if len(fields) < 2 || !strings.HasPrefix(strings.Join(fields[1:], " "), chatGPTRoot) {
+		if len(fields) < 7 {
 			continue
 		}
+		path := strings.Join(fields[6:], " ")
+		if !strings.HasPrefix(path, chatGPTRoot) {
+			continue
+		}
+		running = true
 		pid, err := strconv.Atoi(fields[0])
-		if err == nil && pid > 0 {
+		if err != nil || pid <= 0 {
+			continue
+		}
+		epoch := fields[0] + ":" + strings.Join(fields[1:6], " ")
+		if path == chatGPTRoot+"Contents/MacOS/ChatGPT" {
+			appEpoch = epoch
+		}
+		if filepath.Base(path) == "codex" {
 			pids = append(pids, strconv.Itoa(pid))
+			epochs = append(epochs, epoch)
 		}
 	}
-	if len(pids) == 0 {
-		return false, false
+	if !running {
+		return ThreadOwnership{Known: true, Epoch: "absent"}
 	}
-	// One process-wide query: helpers must not exhaust the shared deadline
-	// before the runtime holding the thread is reached.
-	files, _ := appProbeOutput(ctx, "/usr/sbin/lsof", "-p", strings.Join(pids, ","), "-Fn")
+	if appEpoch == "" {
+		sort.Strings(epochs)
+		appEpoch = strings.Join(epochs, ",")
+	}
+	state := ThreadOwnership{Running: true, Epoch: appEpoch}
+	if len(pids) == 0 {
+		return state // app present, runtime inventory unknown
+	}
+	files, err := appProbeOutput(ctx, "/usr/sbin/lsof", "-a", "-p", strings.Join(pids, ","), "-Fn")
 	// lsof may report a vanished helper with a nonzero exit while returning
 	// valid files for the surviving runtime. Only a file is ownership evidence.
 	for _, line := range strings.Split(string(files), "\n") {
 		if strings.HasPrefix(line, "n") && strings.Contains(line[1:], thread) {
-			return true, true
+			state.Known, state.Loaded = true, true
+			return state
 		}
 	}
-	return true, false
+	state.Known = err == nil && ctx.Err() == nil
+	return state
 }
 
 // Fixed binaries only. The seam lets a fixture block the real API's probe
@@ -154,7 +195,7 @@ var appProbeOutput = func(ctx context.Context, binary string, args ...string) ([
 
 // ChatGPTOpenArgv is the command that asks the ChatGPT app to open a thread:
 // the app's own codex:// route, which loads the thread in the app's runtime and
-// brings it to the front, launching the app first if it is not running. That is
+// requests background opening, launching the app first if it is not running. That is
 // the thread waking in the app it was started in, which is the whole of what a
 // wake may do. Measured: an unloaded thread was held by the app within a second.
 //
@@ -165,7 +206,7 @@ func ChatGPTOpenArgv(thread string) []string {
 	if !isThreadID(thread) {
 		return nil
 	}
-	return []string{"/usr/bin/open", "codex://threads/" + thread}
+	return []string{"/usr/bin/open", "-g", "codex://threads/" + thread}
 }
 
 func isThreadID(s string) bool {
@@ -204,13 +245,16 @@ func OpenArgv(surface, thread string) []string {
 
 // Shower makes sure a thread a message was just queued for is loaded in its
 // app, so the app delivers the message to the agent the operator can see. Its
-// two contacts with the real app are fields so a test can stand in for them: a
+// contacts with the real app are fields so a test can stand in for them: a
 // test that reached the real `open codex://...` would switch the operator's
 // ChatGPT window every time the suite ran.
 type Shower struct {
 	Holds func(thread string) bool
 	Open  func(argv []string) error
-	// Away observes lock/display sleep. Idle and MinIdle permit an AFK open;
+	// Ownership is the production tri-state probe. Holds is the test seam and
+	// takes precedence when supplied; false there is positive unloaded evidence.
+	Ownership func(thread string) ThreadOwnership
+	// Claude recovery only: Away observes lock/display sleep. Idle and MinIdle permit an AFK open;
 	// both observations fail closed in production. Open also rechecks these
 	// facts natively and restores the prior app. Wait/Poll drive deferral.
 	Away    func() (bool, bool)
@@ -222,17 +266,16 @@ type Shower struct {
 
 // RealShower reaches the real app.
 var RealShower = Shower{
-	// Either app: thread ids are UUIDs, so one cannot name the other's.
-	Holds: func(thread string) bool {
-		if ClaudeSessionRunning(thread) {
-			return true
-		}
-		_, holds := ChatGPTHolds(thread)
-		return holds
-	},
+	Ownership: ChatGPTOwnership,
 	Open: func(argv []string) error {
 		if len(argv) != 3 || argv[0] != "/usr/bin/open" {
 			return errors.New("unsupported native app open")
+		}
+		if argv[1] == "-g" && strings.HasPrefix(argv[2], "codex://threads/") &&
+			isThreadID(strings.TrimPrefix(argv[2], "codex://threads/")) {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			return exec.CommandContext(ctx, "/usr/bin/open", "-g", argv[2]).Run() //nolint:gosec // fixed binary, validated thread URL
 		}
 		seconds, err := strconv.ParseFloat(argv[2], 64)
 		if err != nil {
@@ -250,11 +293,14 @@ var RealShower = Shower{
 }
 
 // Show opens the thread in its app when the app is not already holding it.
-// Opening brings the app to the front, so a thread the app already has loaded
+// Opening may briefly activate the app despite -g, so a thread it already has loaded
 // is left alone: the queue delivers to it without help. opened reports whether
 // it asked the app to open the thread.
 func (s Shower) Show(argv []string, thread string) (opened bool, err error) {
-	if len(argv) == 0 || s.Holds(thread) {
+	if isChatGPTOpen(argv) {
+		return s.showChatGPT(argv, thread)
+	}
+	if len(argv) == 0 || s.holds(thread) {
 		return false, nil
 	}
 	if s.Away != nil {
@@ -264,6 +310,13 @@ func (s Shower) Show(argv []string, thread string) (opened bool, err error) {
 		return false, err
 	}
 	return true, nil
+}
+
+func (s Shower) holds(thread string) bool {
+	if s.Holds != nil {
+		return s.Holds(thread)
+	}
+	return ClaudeSessionRunning(thread)
 }
 
 // NeedsNoWakeCommand reports the harnesses reached without a [wake.exec]
