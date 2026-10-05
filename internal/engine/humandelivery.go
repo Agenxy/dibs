@@ -154,8 +154,8 @@ func (e *Engine) askHumanDesktop(n HumanNotice, ask func(humanask.Message) (huma
 	}
 }
 
-func (e *Engine) recordDesktopDelivery(serial uint64, state, failure string) bool {
-	return e.recordHumanReceipt(serial, "desktop", notify.ReceiptData{State: state}, failure)
+func (e *Engine) recordDesktopDelivery(serial uint64, state, failure string) {
+	e.recordHumanReceipt(serial, "desktop", notify.ReceiptData{State: state}, failure)
 }
 
 func (e *Engine) recordHumanReceipt(serial uint64, source string, data notify.ReceiptData, failure string) bool {

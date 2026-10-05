@@ -112,10 +112,11 @@ func (s *Settings) Information() string {
 			"Upgrade the Dibs notifier to measure them; posting does not confirm visibility."
 	}
 	var info []string
-	if s.TimeSensitiveSetting == "not-supported" {
+	switch s.TimeSensitiveSetting {
+	case "not-supported":
 		info = append(info, "time-sensitive: not supported (this build is not provisioned for it). "+
 			"Requests cannot rely on time-sensitive delivery through Focus.")
-	} else if s.TimeSensitiveSetting == "unknown" {
+	case "unknown":
 		info = append(info, "Time Sensitive notification permission is unknown; "+
 			"requesting it does not prove it is available.")
 	}
