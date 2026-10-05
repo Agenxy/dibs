@@ -16,6 +16,9 @@ import (
 // Process-door wiring proof, NOT a crypto proof. The real cosign policy stays
 // untouched; this executable checks its arguments and controlled exit verdict.
 func TestMain(m *testing.M) {
+	if os.Getenv("DIBS_TEST_RELEASE_GC_HOOK") == "1" {
+		os.Exit(releaseFixtureGCHook())
+	}
 	if os.Getenv("DIBS_TEST_RELEASE_COSIGN") == "1" {
 		os.Exit(cosignFixture())
 	}
