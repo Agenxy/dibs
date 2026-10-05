@@ -114,7 +114,8 @@ func (m appOpenMemo) suppresses(state ThreadOwnership, now time.Time) bool {
 		return false
 	}
 	newEpoch := state.Epoch != "" && m.Epoch != "" && state.Epoch != m.Epoch
-	return !newEpoch && !(state.Known && m.Loaded)
+	unloaded := state.Known && m.Loaded
+	return !newEpoch && !unloaded
 }
 
 func readAppOpen(path string) (appOpenMemo, error) {
