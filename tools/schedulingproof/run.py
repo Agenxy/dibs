@@ -83,7 +83,7 @@ class Experiment:
             p = run("launchctl", "print", target, check=False)
             (folder / "launchctl.txt").write_text(p.stdout + p.stderr)
             m = re.search(r"^\s*pid = (\d+)\s*$", p.stdout, re.M)
-            if m:
+            if m and re.search(r"^\s*state = running\s*$", p.stdout, re.M):
                 pid = int(m[1])
                 (folder / "ps.txt").write_text(run("ps", "-p", str(pid), "-o", "pid,ppid,pri,nice,state,%cpu,time").stdout)
                 (folder / "threads.txt").write_text(run("ps", "-M", "-p", str(pid)).stdout)
