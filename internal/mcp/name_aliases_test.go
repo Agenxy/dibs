@@ -234,7 +234,7 @@ func TestAliasRebuildAndCrashBetweenRecoveryAndRenameThroughMCP(t *testing.T) {
 	stop()
 	srv, eng, _ = aliasReplayServer(t, dir)
 	r = aliasCall(t, srv, "register", map[string]any{"name": "after-crash", "nonce": "restart-worker"})
-	if r["agent_id"] != id {
+	if r["agent_id"] != id || r["name"] != "after-crash" {
 		t.Fatalf("retry conflicted with its own row: %v", r)
 	}
 	tok = r["token"].(string)

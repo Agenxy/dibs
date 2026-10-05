@@ -87,7 +87,11 @@ func TestAliasLimitAndMixedReleaseEnterThroughMCP(t *testing.T) {
 	if r["code"] != "E_TOO_LARGE" || !strings.Contains(fmt.Sprint(r["hint"]), "release") {
 		t.Fatalf("65th former name was admitted: %v", r)
 	}
+	before := aliasBoard(t, eng)
 	r = aliasCall(t, srv, "update", map[string]any{"token": tok, "name": "label-65", "release_names": []string{"label-00"}})
+	if got := aliasBoard(t, eng)["serial"].(uint64); got != before["serial"].(uint64)+1 {
+		t.Fatalf("mixed release did not record exactly one ordinary update: %d", got)
+	}
 	if r["name"] != "label-65" {
 		t.Fatalf("mixed release/rename did not commit: %v", r)
 	}
