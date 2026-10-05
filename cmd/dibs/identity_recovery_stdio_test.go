@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -25,6 +26,10 @@ import (
 )
 
 func TestIdentityRecoveryBridgeProcess(t *testing.T) {
+	if nonce := os.Getenv("DIBS_TEST_CACHE_WRITE_NONCE"); nonce != "" {
+		rememberNonce(os.Getenv("DIBS_TEST_CACHE_PROJECT"), "worker", nonce)
+		return
+	}
 	if os.Getenv("DIBS_TEST_IDENTITY_RECOVERY_BRIDGE") != "1" {
 		return
 	}
@@ -34,14 +39,20 @@ func TestIdentityRecoveryBridgeProcess(t *testing.T) {
 }
 
 type recoveryStdio struct {
-	dir  string
-	srv  *httptest.Server
-	eng  *engine.Engine
-	call func(string, map[string]any) map[string]any
-	drop atomic.Bool
+	dir       string
+	srv       *httptest.Server
+	eng       *engine.Engine
+	call      func(string, map[string]any) map[string]any
+	drop      atomic.Bool
+	refuse    atomic.Bool
+	registers atomic.Int64
 }
 
 func newRecoveryStdio(t *testing.T) *recoveryStdio {
+	return newRecoveryStdioWithPin(t, "")
+}
+
+func newRecoveryStdioWithPin(t *testing.T, pin string) *recoveryStdio {
 	t.Helper()
 	dir := t.TempDir()
 	box, err := ledger.LoadOrCreateKey(filepath.Join(dir, "key"))
@@ -59,7 +70,25 @@ func newRecoveryStdio(t *testing.T) *recoveryStdio {
 	f := &recoveryStdio{dir: dir, eng: eng}
 	server := mcp.New(eng)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if f.drop.Swap(false) {
+		b, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		r.Body = io.NopCloser(bytes.NewReader(b))
+		register := bytes.Contains(b, []byte(`"name":"register"`))
+		if f.refuse.Load() {
+			if register {
+				f.registers.Add(1)
+			}
+			if bytes.Contains(b, []byte(`"recovery_nonces"`)) {
+				// The old-schema RPC refusal is independently measured by the
+				// real old-source MCP controls. Here it drives the new bridge.
+				_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":1,"error":{"code":-32602,"message":"register does not take recovery_nonces; nothing was changed"}}`)
+				return
+			}
+		}
+		if register && f.drop.Swap(false) {
 			server.ServeHTTP(httptest.NewRecorder(), r)
 			w.WriteHeader(http.StatusBadGateway) // accepted op, deliberately lost reply
 			return
@@ -84,6 +113,9 @@ func newRecoveryStdio(t *testing.T) *recoveryStdio {
 	cmd := exec.CommandContext(childCtx, os.Args[0], "-test.run=^TestIdentityRecoveryBridgeProcess$")
 	cmd.Dir = dir
 	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + dir, "USERPROFILE=" + dir, "SYSTEMROOT=" + os.Getenv("SYSTEMROOT"), "DIBS_TEST_IDENTITY_RECOVERY_BRIDGE=1", "DIBS_DIR=" + dir, "DIBS_ADDR=" + strings.TrimPrefix(srv.URL, "http://"), "DIBS_HOST_ID=recovery-host", "DIBS_NOTIFY=off"}
+	if pin != "" {
+		cmd.Env = append(cmd.Env, "DIBS_AGENT_NONCE="+pin)
+	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	in, err := cmd.StdinPipe()
@@ -146,7 +178,9 @@ func recoveryStdioResult(t *testing.T, b []byte) map[string]any {
 
 func recoveryStdioOK(t *testing.T, r map[string]any) map[string]any {
 	t.Helper()
-	if r["ok"] != true {
+	id, _ := r["agent_id"].(string)
+	token, _ := r["token"].(string)
+	if r["ok"] != true && (id == "" || token == "") && r["message"] == nil {
 		t.Fatalf("setup/operation failed: %v", r)
 	}
 	return r
@@ -223,9 +257,13 @@ func TestIdentityRecoveryRealStdioNativeCase(t *testing.T) {
 }
 
 func TestIdentityRecoveryRealStdioLegacyConflict(t *testing.T) {
-	for _, mode := range []string{"two-valid", "one-valid", "none-valid", "over-limit", "response-loss"} {
+	for _, mode := range []string{"two-valid", "one-valid", "none-valid", "over-limit", "response-loss", "old-daemon-refusal", "one-alias", "same-credential", "explicit", "transport-pin"} {
 		t.Run(mode, func(t *testing.T) {
-			f := newRecoveryStdio(t)
+			pin := ""
+			if mode == "transport-pin" {
+				pin = "new-secret"
+			}
+			f := newRecoveryStdioWithPin(t, pin)
 			root := t.TempDir()
 			// A symlink is native same-file evidence on Linux too. The Darwin
 			// case-only fixture above separately proves the measured failure.
@@ -240,6 +278,12 @@ func TestIdentityRecoveryRealStdioLegacyConflict(t *testing.T) {
 				t.Fatal("setup: no sibling")
 			}
 			entries := map[string]string{root + "\x00worker": "new-secret", alias + "\x00worker": "old-secret"}
+			if mode == "one-alias" {
+				delete(entries, root+"\x00worker")
+			}
+			if mode == "same-credential" {
+				entries[root+"\x00worker"] = "old-secret"
+			}
 			if mode == "one-valid" {
 				entries[root+"\x00worker"] = "unknown"
 			}
@@ -265,7 +309,48 @@ func TestIdentityRecoveryRealStdioLegacyConflict(t *testing.T) {
 			if mode == "response-loss" {
 				f.drop.Store(true)
 			}
-			got := f.call("register", map[string]any{"name": "worker", "cwd": root})
+			if mode == "old-daemon-refusal" {
+				f.refuse.Store(true)
+			}
+			args := map[string]any{"name": "worker", "cwd": root}
+			if mode == "explicit" {
+				args["nonce"] = "new-secret"
+			}
+			got := f.call("register", args)
+			if mode == "one-alias" || mode == "same-credential" || mode == "explicit" || mode == "transport-pin" {
+				recoveryStdioOK(t, got)
+				want := old["agent_id"]
+				if mode == "explicit" || mode == "transport-pin" {
+					want = newer["agent_id"]
+				}
+				if got["agent_id"] != want || got["recovery_nonce_index"] != nil {
+					t.Fatal("single credential or explicit/pinned precedence failed")
+				}
+			}
+			if mode == "old-daemon-refusal" {
+				if got["rpc_error"] == nil || f.registers.Load() != 1 {
+					t.Fatal("old daemon's refusal was hidden or retried")
+				}
+				after, err := f.eng.Board(context.Background())
+				if err != nil {
+					t.Fatal(err)
+				}
+				if after["serial"] != before["serial"] {
+					t.Fatal("old-daemon refusal changed state")
+				}
+				b, err := os.ReadFile(filepath.Join(f.dir, "harness-nonces.json"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				var untouched map[string]string
+				if err := json.Unmarshal(b, &untouched); err != nil {
+					t.Fatal(err)
+				}
+				if len(untouched) != len(entries) {
+					t.Fatal("old-daemon refusal minted or committed a credential")
+				}
+				return
+			}
 			if mode == "response-loss" {
 				if got["rpc_error"] == nil {
 					t.Fatal("setup: accepted response was not lost")
@@ -291,7 +376,7 @@ func TestIdentityRecoveryRealStdioLegacyConflict(t *testing.T) {
 				if got["recovery_nonce_index"] == nil {
 					t.Fatal("real bridge did not ask for credential selection")
 				}
-			} else {
+			} else if mode == "none-valid" || mode == "over-limit" {
 				want := "E_RECOVERY_UNPROVEN"
 				if mode == "over-limit" {
 					want = "E_BAD_ARG"
@@ -321,5 +406,46 @@ func TestIdentityRecoveryRealStdioLegacyConflict(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestConcurrentRecoveryCacheWritesRetainEveryCredential(t *testing.T) {
+	dir, project := t.TempDir(), t.TempDir()
+	key := project + "\x00worker"
+	writeLegacyRecoveryCache(t, dir, map[string]string{key: "legacy-secret"})
+	var wg sync.WaitGroup
+	for i := range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestIdentityRecoveryBridgeProcess$")
+			cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + dir, "USERPROFILE=" + dir, "SYSTEMROOT=" + os.Getenv("SYSTEMROOT"), "DIBS_DIR=" + dir, "DIBS_TEST_CACHE_PROJECT=" + project, "DIBS_TEST_CACHE_WRITE_NONCE=" + fmt.Sprintf("held-secret-%d", i)}
+			if err := cmd.Run(); err != nil {
+				t.Error("setup: credential writer failed:", err)
+			}
+		}()
+	}
+	wg.Wait()
+	b, err := os.ReadFile(filepath.Join(dir, "harness-nonces.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored map[string]string
+	if err := json.Unmarshal(b, &stored); err != nil {
+		t.Fatal("old bridge cannot read cache after concurrent writers")
+	}
+	if stored[key] != "legacy-secret" {
+		t.Fatal("concurrent writers replaced the retained legacy credential")
+	}
+	for i := range 8 {
+		found := false
+		for _, nonce := range stored {
+			found = found || nonce == fmt.Sprintf("held-secret-%d", i)
+		}
+		if !found {
+			t.Fatal("concurrent writers lost a held credential")
+		}
 	}
 }

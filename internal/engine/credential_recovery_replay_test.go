@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -10,6 +11,10 @@ import (
 )
 
 func TestCredentialRecoveryWritesOnlySelectedNonceAndReplays(t *testing.T) {
+	var logs continuationWakeLog
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(previous) })
 	st := core.NewState("retention", core.DefaultLimits())
 	led := &retentionLedger{}
 	e := New(st, led, deadProber{})
@@ -50,6 +55,14 @@ func TestCredentialRecoveryWritesOnlySelectedNonceAndReplays(t *testing.T) {
 		t.Fatal(err)
 	}
 	(&retentionBoard{t: t, e: e, ctx: ctx, led: led}).assertReplay()
+	if !strings.Contains(logs.String(), "retained credentials resolved to oldest identity") {
+		t.Fatal("setup: recovery diagnostic was not captured")
+	}
+	for _, secret := range []string{"new-secret", "old-secret"} {
+		if strings.Contains(logs.String(), secret) {
+			t.Fatal("recovery diagnostic exposed a credential")
+		}
+	}
 }
 
 func TestCredentialRecoveryCannotBecomeTheHuman(t *testing.T) {

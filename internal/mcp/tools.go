@@ -60,8 +60,7 @@ var toolDefs = func() []map[string]any {
 			"description": "Register an agent: who you are, publicly. Returns your token and the " +
 				"board. PASS A NONCE: a random id >=128-bit that you keep. It is the only credential " +
 				"that survives your harness restarting: the same nonce returns you to your " +
-				"agent, its mail and its claims instead of forking a second agent that cannot read " +
-				"the first one's mail. Omit name to keep it, or supply a new label to rename the " +
+				"agent, mail and claims without creating a sibling. Omit name to keep it, or rename the " +
 				"same identity. `resumed:true` = active retry, same token; `reattached:true` = " +
 				"nonce recovered a stopped row, TOKEN HAS ROTATED. Use the returned token. Without a nonce, reattach " +
 				"works only within a session. kind 'persistent' is for standing roles that " +
@@ -75,11 +74,8 @@ var toolDefs = func() []map[string]any {
 				"kind": map[string]any{"type": "string", "enum": []string{"persistent", "ephemeral"}, "description": "persistent " +
 					"(default): a mailbox that outlives your process, so you can be woken. " +
 					"ephemeral: dies with the session"},
-				"nonce": str("random id >=128-bit that YOU generate: a secret, and KEEP IT. The only " +
-					"credential that survives your process; omitted, one is minted"),
-				"recovery_nonces": stringArray("2 to 16 distinct retained SECRET credentials from conflicting " +
-					"bridge-cache aliases. Requires name and no explicit/transport nonce. The oldest existing " +
-					"identity matching name and host is recovered; no match fails without creating an agent"),
+				"nonce":           str("secret random id >=128-bit; KEEP IT to recover after restart. Omitted: minted"),
+				"recovery_nonces": stringArray("2–16 distinct secrets; oldest name/host match. No explicit/transport nonce; no match: error"),
 				"session_id": str("your harness session id, so lifecycle hooks find your mailbox " +
 					"and mail is pushed rather than polled. Filled in when omitted; dies with " +
 					"the harness process"),
