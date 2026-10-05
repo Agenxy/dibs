@@ -20,6 +20,8 @@ jobs:
           experimental: true
       - name: isolated Python runner
         run: mise install uv@0.9.5
+      - name: retain the exact pre-feature parent source
+        run: git fetch --no-tags origin refs/pull/375/head:refs/focusproof/old
       - name: current GREEN and labeled old and mutation RED
         run: mise exec uv@0.9.5 -- uv run --script tools/focusproof.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

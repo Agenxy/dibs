@@ -72,7 +72,8 @@ def run(label, package, pattern, expected_failures, diagnostic=None):
 
 ROUTES = ["TestRealShowerRoutesChatGPTToNativeBackgroundMode",
           "TestBackgroundPairContentionNeverRecordsAnAttempt",
-          "TestBackgroundPairDefersAndOpensAfterRelease"]
+          "TestBackgroundPairDefersAndOpensAfterRelease",
+          "TestBackgroundPairSerializesDifferentBoards"]
 NATIVE = "TestNativeBackgroundOpenDecisionsThroughProductionMode"
 NATIVE_CASES = ["restore", "foreground", "input", "autorepeat", "active-input",
                 "unknown-input", "unknown-app", "unknown-observation", "third-app",
@@ -96,14 +97,28 @@ try:
             body += "\nvar appOpenFixture func(mode, url string, minIdle time.Duration) error\n"
         if path.endswith("app_open.go"):
             body += '\nvar ErrAppOpenPairBusy = errors.New("compile-only old-code carrier")\n'
+            body += '\nvar backgroundPairCacheDir = os.UserCacheDir\n'
         (ROOT / path).write_text(body)
     diagnostics = ["production selector did not use the explicit fake native contact",
-                   "contended pair opened app", "deferred pair outcome"]
+                   "contended pair opened app", "deferred pair outcome",
+                   "different boards overlapped their desktop pair"]
     for index, name in enumerate(ROUTES):
         run(f"old-go-{index + 1}", "./internal/harnessenv", "^" + name + "$", [name], diagnostics[index])
 finally:
     for path, body in saved.items():
         (ROOT / path).write_text(body)
+
+# New cache-unavailability behavior needs a mutation of its new resolver.
+pair_path = ROOT / "internal/harnessenv/app_open.go"
+pair_body = pair_path.read_text()
+try:
+    pair_path.write_text(replace_once(pair_body,
+        'return lockBackgroundPairFile(dir)', 'return nil, errors.New("mutated cache failure refusal")'))
+    name = "TestUnavailableDesktopCachePreservesBoardWake"
+    run("mutation-cache-failure-strands-wake", "./internal/harnessenv", "^" + name + "$", [name],
+        "cache failure stranded board wake")
+finally:
+    pair_path.write_text(pair_body)
 
 # The Swift file is byte-for-byte old production source. It sees --status,
 # never the unknown new mode. The Go driver's private legacy port is also fake.
