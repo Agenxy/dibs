@@ -72,14 +72,14 @@ func TestNonceRenameRefusalPrecedesRecoveryThroughMCP(t *testing.T) {
 
 func TestAliasLimitAndMixedReleaseEnterThroughMCP(t *testing.T) {
 	dir := t.TempDir()
-	srv, eng, stop := aliasReplayServer(t, dir)
+	srv, _, stop := aliasReplayServer(t, dir)
 	id, tok := aliasRegister(t, srv, "worker-id", "bounded-worker")
 	for n := 0; n <= 64; n++ {
 		// Reset the ordinary rate bucket by a real restart, not an index setter
 		// or a testing exemption. Every chunk also exercises full-history replay.
 		if n > 0 && n%20 == 0 {
 			stop()
-			srv, eng, stop = aliasReplayServer(t, dir)
+			srv, _, stop = aliasReplayServer(t, dir)
 		}
 		aliasRename(t, srv, tok, fmt.Sprintf("label-%02d", n))
 	}
