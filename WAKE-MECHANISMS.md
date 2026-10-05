@@ -378,10 +378,10 @@ probe. Old rows are historical measurements, not claims about today's binaries:
 | Gemini CLI | 0.54.0-nightly.20260722 | `initialize` **2025-06-18** | `roots` | initialize, tools/list, resources/list (2026-09-12, over `httpUrl`) |
 | Hermes installed MCP adapter, no model/provider session | **0.20.2**, SDK **1.28.1** | `initialize` **2025-11-25** | `elicitation {form,url}` | initialize, notifications/initialized, tools/list (52 tools), **2026-10-03**, isolated HTTP daemon |
 
-**Release survey refreshed 2026-10-03, with source and runtime separated.**
+**Release survey refreshed 2026-10-04, with source and runtime separated.**
 All available harness checkouts and ext-apps were fetched, and their
 `origin/HEAD` read rather than their local branch. Installed versions were
-observed separately: PATH Codex **0.0.0**, app CLI **0.159.2**, Claude Code
+observed separately: PATH Codex **0.0.0**, app CLI **0.160.0**, Claude Code
 **2.1.233**, Claude Desktop **2.19675.0**, opencode literal **local**, Pi
 **0.84.2**, Gemini **0.54.0-nightly.20260722.gf743ab579**, Hermes
 **0.20.2 (2026.8.16)**. Older wire rows keep their measurement dates; a
@@ -389,18 +389,24 @@ version check is not a new handshake measurement. Claude Desktop wire behavior
 was not re-measured, because restarting it with a temporary shadowing Dibs
 entry would interrupt live Code sessions.
 
-- Codex source `550eb505` retains `CoreHookMcpExecutor`, the two-part stdio
-  opt-in and the separate host-owned apps flag. The installed app CLI's isolated
-  MCP-tool hooks fired SessionStart and Stop with the invocation-only reviewed-
+- Codex source `7f892275e` retains `CoreHookMcpExecutor`, the two-part stdio
+  opt-in and the separate host-owned apps flag. The 2026-10-03 app CLI 0.159.2
+  isolated MCP-tool hooks fired SessionStart and Stop with the invocation-only reviewed-
   hook trust control. The same untrusted fixture made zero polls. Both tiny
   sessions exited 0; daemon hook-health rose from zero to two stranger polls
   only in the control. This proves execution, not registered-mail delivery,
-  and changes no persisted trust or live board configuration.
+  and changes no persisted trust or live board configuration. The currently
+  installed app CLI 0.160.0 was version-checked only; its wire and hooks were
+  not re-measured, and the older table row does not claim them.
 - opencode source `907b3bc5` still has no `2026-07-28` match in `packages`
   and pins SDK 1.29.0. Its installed launcher runs local `2cba7e22`, not that
   fetched head; no new wire/session measurement was made.
-- Pi source `20038712` still has no `modelcontextprotocol` match in
-  `packages/*/src`; its SDK lockfile dependency is not a native MCP client.
+- Pi source `b2b5c42f` has a built-in MCP extension and its own
+  `@earendil-works/pi-mcp` client in `packages/mcp`. The client enters
+  `initialize` and declares latest protocol 2025-11-25. The previous survey's
+  grep for the upstream SDK name missed this implementation, so its
+  no-native-client conclusion was wrong. Installed Pi remains 0.84.2; no
+  installed MCP session or wire behavior was measured.
 - **Gemini source `fb972b2` now has command/runtime hook types**, replacing
   the previous survey's http/prompt claim. `hookEventHandler.ts:379` populates
   session/transcript input, `hookRunner.ts:353` exports `GEMINI_SESSION_ID`,
@@ -409,7 +415,7 @@ entry would interrupt live Code sessions.
   July bundle, which still lacks BeforeAgent/session hook fields. Dibs's
   plugin remains command/SessionStart-only and does not depend on the removed
   types.
-- **Hermes source `158fd638` pins SDK 2.0.0, but the installed environment
+- **Hermes source `7653424356` pins SDK 2.0.0, but the installed environment
   contains 1.28.1.** Loading the actual installed adapter resolves both latest
   and handshake to 2025-11-25, and its real transport sent the legacy exchange
   in the new table row. No model/provider agent session was run. Source now

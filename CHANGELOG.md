@@ -12,7 +12,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   asset hashes and a read-only retry. Production preflight, tag creation and
   publication authenticate that exact-candidate Actions proof again. Its scratch
   repository is the operator-approved public `Agenxy/dibs-release-rehearsal`;
-  no live rehearsal or release is claimed. Rehearsal signatures cannot satisfy
+  the exact-candidate pilot is recorded in `docs/RELEASE.md`, not a production
+  release claim. Rehearsal signatures cannot satisfy
   installed production trust, and registry/cask outputs are dry plans, not live
   acceptance.
   Metadata reads use only the existing job token at the GitHub API origin for
@@ -120,8 +121,6 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rechecks current mail and uses the existing loaded-thread and away policy,
   without changing agent identity or coordination history. Sender notes now
   distinguish confirmed app queue acceptance from an unconfirmed attempt.
-
-## [0.0.11] - 2026-10-03
 
 ### Added
 
@@ -459,6 +458,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Gatekeeper's first approval; Developer ID/notarization remains a separate
   membership decision.
 
+
+## [0.0.11] - not published
+
+The tagged publisher used get-by-tag and could not discover its empty draft.
+The operator approved deleting that draft; the immutable tag remains frozen at
+`0b8c05d` and will not be moved or retried with its broken publisher. No release
+artifacts were published. Its changes are carried forward under [Unreleased]
+above for the next version.
 
 ## [0.0.10] - 2026-10-03
 
