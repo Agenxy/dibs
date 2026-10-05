@@ -8,21 +8,9 @@ import (
 	"github.com/agenxy/dibs/internal/core"
 )
 
-// An agent hears about mail when it ARRIVES, not when a human next types.
-//
-// This test previously asserted the opposite for an FYI, on the reasoning that
-// extending a turn is driving the harness. That reads the rule wrong. Driving a
-// harness means instructing it, and the digest says outright that it is
-// coordination data the agent may act on or decline: the agency is in the
-// content, not in withholding delivery. A fleet that waits for somebody to type
-// before its members hear anything is not independent, and a time-sensitive
-// request sitting unseen because nobody was at the keyboard is the failure this
-// product exists to prevent.
-//
-// Corrected by the operator, who put it better: "having to wait for a human to
-// kickstart the responsiveness to mail and requests takes the agency out of
-// agentic."
-func TestEveryKindOfMailWakesItsRecipientOnArrival(t *testing.T) {
+// Every authored message reaches the agent without a person having to type,
+// including a notify that asks for no reply. Generated updates are distinct.
+func TestStopDeliversEveryAuthoredMessage(t *testing.T) {
 	for _, kind := range []string{core.MsgNotify, core.MsgQuestion, core.MsgRequest, core.MsgHandoff} {
 		t.Run(kind, func(t *testing.T) {
 			e, id := boardWithAgent(t)
@@ -38,9 +26,8 @@ func TestEveryKindOfMailWakesItsRecipientOnArrival(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got["hookSpecificOutput"] == nil {
-				t.Errorf("a %s did not reach its recipient until somebody typed: that is not "+
-					"situational awareness, and nothing else was going to tell it", kind)
+			if got["decision"] != "block" || got["hookSpecificOutput"] == nil {
+				t.Errorf("actionable %s did not continue the turn: %v", kind, got)
 			}
 			if got["systemMessage"] == nil {
 				t.Error("the human was not told")
@@ -59,19 +46,24 @@ func TestAWakeDoesNotNagAboutSomethingAlreadyDelivered(t *testing.T) {
 	sender := registerAgent(t, e, "sender")
 	if _, err := e.Do(ctx, &core.Op{
 		Kind: core.OpSendMessage, Token: sender, To: id,
-		MsgType: core.MsgNotify, Body: "an FYI",
+		MsgType: core.MsgQuestion, Body: "an unanswered question",
 	}); err != nil {
 		t.Fatal(err)
 	}
 
-	first, _ := e.HookPoll(ctx, "sess-"+id, "Stop", "", false, false)
+	first, err := e.HookPoll(ctx, "sess-"+id, "Stop", "", false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if first["hookSpecificOutput"] == nil {
 		t.Fatal("the arrival did not wake it: this test cannot see what it guards")
 	}
-	second, _ := e.HookPoll(ctx, "sess-"+id, "Stop", "", false, false)
+	second, err := e.HookPoll(ctx, "sess-"+id, "Stop", "", false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if second["hookSpecificOutput"] != nil {
-		t.Error("the same FYI woke the agent twice: an agent that decided not to act on it " +
-			"would be interrupted every turn for the rest of its life")
+		t.Error("the same question woke the agent twice inside the reminder cadence")
 	}
 	// The human keeps being told, because "unread" is still true and it costs
 	// the agent nothing.
@@ -170,7 +162,8 @@ func TestTheOperatorCanNarrowOrSilenceTheWake(t *testing.T) {
 	if quiet["systemMessage"] == nil {
 		t.Error("`none` stopped telling the human, which is not what it means")
 	}
-	// And the default is awareness.
+	// The default delivers authored FYIs. The operator can still silence
+	// later blocking mail without consuming its presentation.
 	fresh, freshID := boardWithAgent(t)
 	s2 := registerAgent(t, fresh, "sender2")
 	if _, err := fresh.Do(ctx, &core.Op{
@@ -178,9 +171,22 @@ func TestTheOperatorCanNarrowOrSilenceTheWake(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := fresh.HookPoll(ctx, "sess-"+freshID, "Stop", "", false, false); got["hookSpecificOutput"] == nil {
-		t.Error("the DEFAULT held an FYI back: a fleet with nobody at the keyboard would " +
-			"never hear about it")
+	if got, err := fresh.HookPoll(ctx, "sess-"+freshID, "Stop", "", false, false); err != nil || got["decision"] != "block" {
+		t.Fatalf("the default lost an authored FYI: %v %v", got, err)
+	}
+	if _, err := fresh.Do(ctx, &core.Op{
+		Kind: core.OpSendMessage, Token: s2, To: freshID,
+		MsgType: core.MsgQuestion, Body: "actionable",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fresh.SetWakePolicy(WakeNone)
+	if got, err := fresh.HookPoll(ctx, "sess-"+freshID, "Stop", "", false, false); err != nil || deliveredSomething(got) {
+		t.Fatalf("none spent an actionable wake: %v %v", got, err)
+	}
+	fresh.SetWakePolicy(WakeAll)
+	if got, err := fresh.HookPoll(ctx, "sess-"+freshID, "Stop", "", false, false); err != nil || got["decision"] != "block" {
+		t.Fatalf("default lost the actionable cause: %v %v", got, err)
 	}
 }
 
