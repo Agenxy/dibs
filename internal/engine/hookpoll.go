@@ -823,9 +823,9 @@ func hookDigest(agent string, mail, announced, notices []string) string {
 // something is waiting, and it costs nothing on the overwhelmingly common path
 // where nothing is.
 //
-// Counts only, never content: the same rule pendingMail follows. What this
-// buys is the agent knowing to CALL inbox, which is authenticated and returns
-// the real thing.
+// Counts and corrective read calls, never content: the same rule pendingMail
+// follows. The reads are authenticated and return the real thing; a shortened
+// inbox update names its full parent read so the agent can actually clear it.
 func (e *Engine) waiting(agent string, now time.Time) string {
 	// ONE walk of the inbox, for both the count and the age.
 	//
@@ -846,11 +846,39 @@ func (e *Engine) waiting(agent string, now time.Time) string {
 		return ""
 	}
 	line := waitingCounts(mail, announced, notices) +
-		": call inbox to read them."
+		": " + waitingReadHint(mail, announced, e.takeNotices(agent))
 	if age := waitedFor(e.oldestWaiting(oldestMail, agent, unacked), now); age != "" {
 		line += " The oldest has been waiting " + age + "."
 	}
 	return line
+}
+
+// Point at the full envelope for outcomes and reviews: inbox may only quote a
+// shortened body and cannot then durably mark it read. Generic news, ordinary
+// mail and announcements still use inbox. Parent ids are bounded by the shown
+// notice view, deduplicated and ordered by their first outstanding event.
+func waitingReadHint(mail, announced int, notices []notice) string {
+	inbox := mail > 0 || announced > 0
+	seen := map[uint64]bool{}
+	var parents []string
+	for _, n := range notices {
+		if !n.ReadParent || n.Msg == 0 {
+			inbox = true
+			continue
+		}
+		if !seen[n.Msg] {
+			parents = append(parents, fmt.Sprintf("read_mail(%d)", n.Msg))
+			seen[n.Msg] = true
+		}
+	}
+	var reads []string
+	if inbox {
+		reads = append(reads, "call inbox for mail, announcements and other updates")
+	}
+	if len(parents) > 0 {
+		reads = append(reads, strings.Join(parents, ", ")+" to read and clear their updates")
+	}
+	return strings.Join(reads, "; ") + "."
 }
 
 // unreadAndOldest counts what is unread and when the earliest of it was sent,

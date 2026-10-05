@@ -55,6 +55,9 @@ type notice struct {
 	// the wake path repeated it every turn.
 	Msg  uint64
 	Text string
+	// ReadParent marks an envelope outcome/review whose full read_mail clears
+	// its durable unread prefix. A trimmed inbox rendering deliberately cannot.
+	ReadParent bool
 	// At is when the thing being reported HAPPENED, not when this notice was
 	// queued, and the difference is the whole reason it is a parameter rather
 	// than a time.Now() in pushNoticeAs.
@@ -377,7 +380,7 @@ func (e *Engine) takeNotices(agent string) []notice {
 			}
 			out = append(out, notice{
 				Kind: u.kind, Serial: u.serial, Msg: group.message.Serial,
-				Text: u.text, At: u.at, Blocking: u.blocking,
+				Text: u.text, At: u.at, Blocking: u.blocking, ReadParent: true,
 			})
 			count++
 		}
@@ -399,15 +402,17 @@ func (e *Engine) pendingNotices(agent string) []string {
 	return lines
 }
 
-// oldestNotice is when the earliest outstanding notice for this agent actually
-// happened, or the zero time if none of them knows.
+// oldestNotice is the age of the shown outstanding items (the view is bounded),
+// or the zero time if none of them knows when it happened.
 //
-// Separate from pendingNotices because that one renders text for the model and
-// this one is a fact about the queue. Notices with no time are skipped rather
-// than treated as ancient: an unknown age must not become the loudest one.
+// Use the same outstanding view as presentation. The raw pointer cache can
+// still hold a verdict after inbox has durably read it; borrowing that stale
+// timestamp makes fresh mail or a fresh update look hours old. Conversely an
+// outstanding outcome reconstructed from the envelope may have no cache entry.
+// Notices with no time are skipped: unknown age must not become ancient mail.
 func (e *Engine) oldestNotice(agent string) time.Time {
 	var oldest time.Time
-	for _, n := range e.notices[agent] {
+	for _, n := range e.takeNotices(agent) {
 		if n.At.IsZero() {
 			continue
 		}

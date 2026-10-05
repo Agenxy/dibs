@@ -370,14 +370,18 @@ receiving native peer turns, another watcher adds no delivery guarantee.
 
 - **Every result names anything waiting for you.** Any call you make, with a
   token, carries a `waiting` line when you have unread mail, an announcement you
-  owe an acknowledgement on, or an update to your agent: counts and nothing
-  else, with `inbox` named as the way to read them. This exists because push
-  delivery is a stack of ifs: your harness needs lifecycle hooks, the plugin has
-  to be installed, it has to have loaded before this session began, and you have
-  to have registered with the session id the hook will quote. Every one of those
+  owe an acknowledgement on, or an update to your agent: counts and the read
+  calls. Outcome/review updates name their parent `read_mail(serial)` calls;
+  read those to see the full update and clear it. A shortened update in `inbox`
+  stays unread. Mail, announcements and other updates name `inbox`. This exists
+  because push delivery is a stack of ifs: your harness needs lifecycle hooks,
+  the plugin has to be installed, it has to have loaded before this session
+  began, and you have to have registered with the session id the hook will
+  quote. Every one of those
   is a real way to end up believing mail arrives by itself while it sits unread.
   A result comes back down the connection you authenticated on, so it cannot be
-  misrouted and needs nothing installed. If you see `waiting`, call `inbox`.
+  misrouted and needs nothing installed. If you see `waiting`, follow its read
+  calls.
 - Types are `notify`, `question`, `request`, `handoff`. Pick honestly: a
   `request` obliges someone, a `notify` does not.
   Under default `all`, every authored message, including notify, qualifies for delivery: one wake
