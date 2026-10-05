@@ -53,7 +53,8 @@ func TestRenamedAddressIsPresentedAcrossBothMCPVersions(t *testing.T) {
 					(target != id && !strings.Contains(note, "current-name")) {
 					t.Fatalf("%q did not present the current address: %v", target, sent)
 				}
-				mail := call("read_mail", map[string]any{"token": tok, "msg_serial": sent["msg_serial"]})["message"].(map[string]any)
+				read := call("read_mail", map[string]any{"token": tok, "msg_serial": sent["msg_serial"]})
+				mail := read["message"].(map[string]any)
 				if mail["to"] != id || mail["from"] != senderID ||
 					mail["to_name"] != "current-name" || mail["from_name"] != "sender-id" {
 					t.Fatalf("%q changed stable identity or omitted names: %v", target, mail)
@@ -99,7 +100,8 @@ func TestReleasedFormerNameReassignmentIsExplicitThroughBothMCPVersions(t *testi
 				!strings.Contains(note, "now-first") || !strings.Contains(note, "second-id") {
 				t.Fatalf("reused name did not identify new and former holders: %v", sent)
 			}
-			mail := call("read_mail", map[string]any{"token": secondTok, "msg_serial": sent["msg_serial"]})["message"].(map[string]any)
+			read := call("read_mail", map[string]any{"token": secondTok, "msg_serial": sent["msg_serial"]})
+			mail := read["message"].(map[string]any)
 			if mail["to"] != second["agent_id"] || mail["to_name"] != "reused-name" {
 				t.Fatalf("reused name reached the wrong mailbox: %v", mail)
 			}
