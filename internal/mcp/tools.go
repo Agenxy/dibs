@@ -62,8 +62,8 @@ var toolDefs = func() []map[string]any {
 				"that survives your harness restarting: the same nonce returns you to your " +
 				"agent, its mail and its claims instead of forking a second agent that cannot read " +
 				"the first one's mail. Omit name to keep it, or supply a new label to rename the " +
-				"same identity. `reattached:true` identifies nonce recovery; `resumed:true` may also " +
-				"mark an active retry. Use the token returned here: it may rotate. Without a nonce, reattach " +
+				"same identity. `resumed:true` = active retry, same token; `reattached:true` = " +
+				"nonce recovered a stopped row, TOKEN HAS ROTATED. Use the returned token. Without a nonce, reattach " +
 				"works only within a session. kind 'persistent' is for standing roles that " +
 				"sleep and return via resume.",
 			"inputSchema": obj(map[string]any{
@@ -159,12 +159,9 @@ var toolDefs = func() []map[string]any {
 			}, "token", "nonce"),
 		},
 		{
-			"name": "update", "description": "Revise what you say about YOURSELF: your name, what " +
-				"you are for, and the self-reported half of your identity. Worth calling once you " +
-				"know what you actually are, because the name you chose in your first seconds is " +
-				"usually worse than the one you could choose now. Your id never changes: renaming " +
-				"moves the label a human reads, not the mailbox. Update `branch` and `title` as you " +
-				"move; harness and version are your client's word, not yours, so they are not here.",
+			"name": "update", "description": "Revise YOUR name, purpose and self-reported identity. " +
+				"Renaming keeps the id and mailbox; former names remain aliases until release_names. " +
+				"Update branch/title as you move. Harness/version are the client's statement and cannot be changed here.",
 			"inputSchema": obj(map[string]any{
 				"token": tok,
 				"name": str("new display name. Name yourself for the ROLE you hold (reviewer, " +

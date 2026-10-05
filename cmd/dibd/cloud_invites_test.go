@@ -444,15 +444,15 @@ func TestCloudInvitationLocalIssuerNeedsNoHumanAndCannotEscalate(t *testing.T) {
 	if r := f.tool(false, "sign_off", map[string]any{"token": token}); r["ok"] != true {
 		t.Fatalf("setup: close failed: %v", r)
 	}
-	// register CAN reopen a closed row on this path: prove the setup, then
-	// prove that today's active status does not resurrect the earlier child.
-	reopened := f.tool(false, "register", map[string]any{"name": "local-lead", "kind": "persistent", "nonce": "local-lead-nonce"})
-	if reopened["token"] == nil {
-		t.Fatalf("setup: issuer did not reopen: %v", reopened)
+	// Live registration now refuses a closed identity. Historical reopening
+	// and its invitation fence remain covered by the engine replay guard.
+	refused := f.tool(false, "register", map[string]any{"name": "local-lead", "kind": "persistent", "nonce": "local-lead-nonce"})
+	if refused["code"] != "E_AGENT_CLOSED" {
+		t.Fatalf("closed issuer recovered through live registration: %v", refused)
 	}
 	code, _ := f.post(f.public, "/mcp", map[string]string{"Authorization": "Bearer " + f.key}, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "ping"})
 	if code != 401 {
-		t.Fatal("closed-then-reopened issuer resurrected old child")
+		t.Fatal("closed issuer left an old child authorized")
 	}
 }
 

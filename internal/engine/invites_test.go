@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -43,7 +44,27 @@ func TestInviteIssuerClosureSurvivesReplayAndReopening(t *testing.T) {
 	}
 	assertLive(e, true) // Closing a space must not close its director's children.
 	do(&core.Op{Kind: core.OpSignOff, Token: token})
-	reopened := do(&core.Op{Kind: core.OpRegister, Name: "issuer", Nonce: "retained-issuer", AgentKind: core.KindPersistent})
+	_, err = e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "issuer", Nonce: "retained-issuer", AgentKind: core.KindPersistent})
+	var refused *core.Error
+	if !errors.As(err, &refused) || refused.Code != "E_AGENT_CLOSED" {
+		t.Fatalf("live registration reopened a closed identity: %v", err)
+	}
+	// Older writers accepted this register. Admission may now refuse it, but
+	// the historical fold must still replay it without resurrecting invitations
+	// issued before closure. Feed the historical op through the writer's ledger
+	// path; do not manufacture an active row or a closure-index entry.
+	var reopened core.Result
+	var historicalErr error
+	if _, err := e.query(ctx, func() core.Result {
+		reopened, historicalErr = e.applyAndLedger(&core.Op{
+			Kind: core.OpRegister, Name: "issuer", Nonce: "retained-issuer",
+			AgentKind: core.KindPersistent, NewToken: "historical-reopen-token",
+			V7Semantics: true, RestoreNonce: true, TakeIdentity: true,
+		}, time.Now())
+		return core.Result{}
+	}); err != nil || historicalErr != nil {
+		t.Fatalf("historical reopen fixture failed: query=%v fold=%v", err, historicalErr)
+	}
 	current, err := e.InvitationIssuer(ctx, reopened["token"].(string))
 	if err != nil || current.Closed == issuer.Closed {
 		t.Fatalf("closure not recorded: %+v %v", current, err)

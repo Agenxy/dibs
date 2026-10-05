@@ -114,3 +114,18 @@ func bareRelease(op *Op, l *Agent) bool {
 	return op.Name == "" && op.Description == l.Description &&
 		op.Agent == nil && op.SessionAlias == "" && !op.NoProcess && len(op.ReleaseNames) == 0
 }
+
+// IdentityWouldChange applies the existing merge rule to an owned copy, so
+// admission can recognize repeated transport host metadata without maintaining
+// another version of that rule. No part of the original identity is mutated.
+func (a *Agent) IdentityWouldChange(in *AgentInfo) bool {
+	if in == nil {
+		return false
+	}
+	copy := *a
+	if a.Agent != nil {
+		info := *a.Agent
+		copy.Agent = &info
+	}
+	return len(copy.mergeIdentity(in)) > 0 || a.Agent == nil
+}

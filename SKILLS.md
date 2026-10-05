@@ -47,7 +47,8 @@ adding another. Releasing an already absent alias changes nothing.
 Your **nonce recovers your id**, even after renaming: `register(nonce: ...)`
 keeps the current name; adding `name` revises that same row after recovery.
 Keep and use the returned token. A refused name is checked before recovery can
-rotate a token or wake the row. A new identity still needs a name. Configured
+rotate a token or wake the row. A new identity still needs a name; a closed
+identity requires a new nonce. Configured
 role names keep working through aliases; `dibs doctor` shows alias resolution
 and warns about shadowing. Role fingerprints still prevent another name owner
 inheriting a role.
@@ -216,8 +217,9 @@ the final delivery report, not a report for its earlier intermediate steps.
 
 **Keep a nonce, or a restart will cost you your mailbox.** Pass `nonce` to
 `register`: any random id you generate and hold on to. Registering again
-with the same `name` and the same `nonce` reattaches you to your existing agent,
-its mail and its claims, with a fresh token (`reattached: true`).
+with the same `nonce` recovers your existing agent, its mail and its claims.
+Omit `name` to keep its current label. An active retry returns `resumed: true`
+with the same token; a stopped row returns `reattached: true` with a fresh token.
 
 Without one you can still reattach within a session, via `name` + `session_id`,
 but that id names your *harness process*, so it does not survive your harness

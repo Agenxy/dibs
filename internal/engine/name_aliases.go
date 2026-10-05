@@ -56,10 +56,12 @@ func (e *Engine) prepareAliasUpdate(op *core.Op, actor *core.Agent) (core.Result
 	}
 	op.ReleaseNames = released
 	if requested && len(released) == 0 && aliasReleaseOnly(op, actor) {
-		return core.Result{"ok": true, "id": actor.ID, "name": actor.Name,
+		return core.Result{
+			"ok": true, "id": actor.ID, "name": actor.Name,
 			"description": actor.Description, "name_aliases": e.nameAliases.Names(e.state, actor.ID),
 			"released_names": []string{}, "changed": false, "serial": e.state.Serial,
-			"names": "none of these former names is retained by you; nothing changed or was recorded"}, nil
+			"names": "none of these former names is retained by you; nothing changed or was recorded",
+		}, nil
 	}
 	return nil, nil
 }
@@ -69,7 +71,7 @@ func aliasReleaseOnly(op *core.Op, actor *core.Agent) bool {
 	// binding has an effect of its own and must pass through the normal update.
 	sameSession := op.SessionAlias == "" || (!op.SessionGuessed && op.SessionAlias == actor.CurrentSession)
 	return (op.Name == "" || op.Name == actor.Name) && op.Description == actor.Description &&
-		op.Agent == nil && !op.NoProcess && !op.ReleaseSession && sameSession
+		!actor.IdentityWouldChange(op.Agent) && !op.NoProcess && !op.ReleaseSession && sameSession
 }
 
 // Both records execute on the same writer, after pre-admission and the
@@ -93,7 +95,7 @@ func (e *Engine) finishNonceName(plan *nonceNameRecovery, res core.Result, now t
 			res[key] = updated[key]
 		}
 	}
-	res["reattached"], res["via"], res["name"] = true, "nonce", l.Name
+	res["via"], res["name"] = "nonce", l.Name
 	res["serial"], res["board"] = e.state.Serial, e.decoratedBoard()
 	res["name_aliases"] = e.nameAliases.Names(e.state, l.ID)
 	res["name_note"] = "reattached as " + l.ID + "; the nonce recovers this identity and its mailbox. " +

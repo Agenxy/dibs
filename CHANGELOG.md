@@ -23,7 +23,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   mailbox with an omitted or changed name, with rename admission before token
   or activation changes. Alias ownership rebuilds across restart and is fenced
   from id reuse. Configured role aliases and shadowing appear in `dibs doctor`;
-  fingerprint checks remain required.
+  fingerprint checks remain required. Live registration refuses to reopen a
+  deliberately closed identity; historical reopen records still replay and
+  cannot restore invitations issued before closure.
 
 - A closed-target full-publication rehearsal shares the release publisher and
   records exact source objects, draft discovery/upload/readback, immutable public

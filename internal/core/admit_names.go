@@ -66,8 +66,22 @@ func AdmitNameChange(st *State, aliases *AgentNameAliases, l *Agent, op *Op) ([]
 		owned[l.Name] = true
 	}
 	delete(owned, next)
+	released, err := admitOwnedNameReleases(st, aliases, l, next, owned, op.ReleaseNames)
+	if err != nil {
+		return nil, err
+	}
+	if next != l.Name && len(owned) > MaxFormerNames {
+		return nil, errf("E_TOO_LARGE", "release some former names with update(release_names) before adding another",
+			"a rename would retain %d former names; limit %d", len(owned), MaxFormerNames)
+	}
+	return released, nil
+}
+
+func admitOwnedNameReleases(st *State, aliases *AgentNameAliases, l *Agent,
+	next string, owned map[string]bool, names []string,
+) ([]string, error) {
 	var released []string
-	for _, name := range op.ReleaseNames {
+	for _, name := range names {
 		if name == next || st.Agents[name] != nil {
 			return nil, errf("E_BAD_ARG", "release a former label; current names and immutable ids stay addresses",
 				"cannot release current name or id %q", name)
@@ -80,10 +94,6 @@ func AdmitNameChange(st *State, aliases *AgentNameAliases, l *Agent, op *Op) ([]
 			return nil, errf("E_NOT_PERMITTED", "release only a former name of your own identity",
 				"%q is another agent's alias", name)
 		}
-	}
-	if next != l.Name && len(owned) > MaxFormerNames {
-		return nil, errf("E_TOO_LARGE", "release some former names with update(release_names) before adding another",
-			"a rename would retain %d former names; limit %d", len(owned), MaxFormerNames)
 	}
 	slices.Sort(released)
 	return released, nil
