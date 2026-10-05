@@ -59,3 +59,28 @@ func TestWithdrawalShapeStaysAtAdmission(t *testing.T) {
 		}
 	}
 }
+
+func TestQuestionWithdrawalOwnershipFinalityAndExactFold(t *testing.T) {
+	f := newQueueFoldFixture(t)
+	send := func(kind string) uint64 {
+		return f.apply(Op{Kind: OpSendMessage, Token: "t-lead", To: "worker", MsgType: kind, Body: "question"})["msg_serial"].(uint64)
+	}
+	n, replacement, wrongType := send(MsgQuestion), send(MsgRequest), send(MsgNotify)
+	f.refused(Op{Kind: OpWithdrawMessage, Token: "t-worker", MsgSerial: n}, "E_NOT_SENDER")
+	f.refused(Op{Kind: OpWithdrawMessage, Token: "t-lead", MsgSerial: wrongType}, "E_BAD_DISPOSITION")
+	f.refused(Op{Kind: OpWithdrawMessage, Token: "t-lead", MsgSerial: n, SupersededBy: wrongType}, "E_NO_MESSAGE")
+	f.s.Agents["lead"].CreatedSerial = n + 1
+	f.refused(Op{Kind: OpWithdrawMessage, Token: "t-lead", MsgSerial: n}, "E_NOT_SENDER")
+	f.s.Agents["lead"].CreatedSerial = 0
+	f.apply(Op{Kind: OpWithdrawMessage, Token: "t-lead", MsgSerial: n, Body: "answered elsewhere", SupersededBy: replacement})
+	// Restore the fixture's preexisting creation fence before replay comparison.
+	// These temporary checks did not append an operation.
+	f.s.Agents["lead"].CreatedSerial = 1
+	f.refused(Op{Kind: OpWithdrawMessage, Token: "t-lead", MsgSerial: n}, "E_MSG_FINAL")
+	f.apply(Op{Kind: OpRespond, Token: "t-worker", MsgSerial: replacement, Disposition: "deny", Body: "no"})
+	f.refused(Op{Kind: OpWithdrawMessage, Token: "t-lead", MsgSerial: replacement}, "E_MSG_FINAL")
+	if m := f.s.Messages[n]; m.State != MsgStateWithdrawn || m.Response != "" || m.WithdrawalReason != "answered elsewhere" {
+		t.Fatalf("withdrawal forged an answer: %+v", m)
+	}
+	f.replay()
+}

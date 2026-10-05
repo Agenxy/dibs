@@ -435,7 +435,7 @@ const Board = (() => {
         ${settled ? `<div class="reply ${esc(m.state)}">
           <span class="verdict">${esc(verdict)}</span>
           ${m.state === "withdrawn" ? esc(m.withdrawal_reason || "No reason given") : (m.response ? esc(m.response) : '<span class="none">No message given</span>')}
-          ${m.state === "withdrawn" && m.superseded_by ? `<a href="#message-${esc(m.superseded_by)}">Superseded by request #${esc(m.superseded_by)}</a>` : ""}
+          ${m.state === "withdrawn" && m.superseded_by ? `<a href="#message-${esc(m.superseded_by)}">Superseded by message #${esc(m.superseded_by)}</a>` : ""}
         </div>` : ""}
         ${actionsHTML ? actionsHTML(m) : ""}
       </article>`

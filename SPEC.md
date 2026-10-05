@@ -616,6 +616,7 @@ Messages go agent → agent; identity = send serial; bodies private (§4, §5).
 | `expired_unanswered` (question only) | `answered` | late `respond(answer)` by its recipient; expiry detail cleared and sender's verdict-read marker reset | `message.answered` |
 | `pending/delivered` (notify only) | `displaced` | evicted by a newer notify at mailbox capacity | `message.displaced` (same serial as the displacing send, atomic) |
 | `pending/delivered/acked/queued/approved` (request) | `withdrawn`, unconsumed recipient receipt | sender `respond(withdraw)`; already-performed approvals refused | `message.withdrawn` |
+| `pending/delivered/acked` (question) | `withdrawn`, unconsumed recipient receipt | sender `respond(withdraw)`; no answer fabricated | `message.withdrawn` |
 
 **Terminal predicate (exact, used consistently by capacity, displacement, inbox,
 retention, and GC):**
@@ -1126,16 +1127,20 @@ coordinator or admin role, or the `relocate` permission the human grants
 `grant: "relocate"`). Every relocation is ledgered as `agent.relocated` with
 who, the agent, and from and to; the board row shows the last one.
 
-The sender can retract an unfinished request with `respond(disposition:"withdraw",
+The sender can retract an unfinished request or unanswered question with `respond(disposition:"withdraw",
 body: reason?, superseded_by: serial?)`. Engine ingress translates this into the
 new `withdraw_message` ledger op before recipient response guards. Admission
 checks field shapes and rejects work-report fields; the fold checks sender
-ownership, creation-serial privacy fence, request state and replacement. Only
+ownership, creation-serial privacy fence, message state and replacement. Only
 pending, delivered, acknowledged, queued and approved requests qualify; an approved grant or
-adoption already performed its effect and cannot be withdrawn. Questions expire
-and are not withdrawable. Unknown, other-sender or self replacement references
-are refused; a replacement is another ordinary request by the same sender,
+adoption already performed its effect and cannot be withdrawn. Pending, delivered
+and acknowledged questions qualify; answered and expired questions do not.
+Unknown, other-sender or self replacement references
+are refused; a replacement is another ordinary question or request by the same sender,
 possibly to a different recipient, and this operation never starts it.
+An own notify or handoff is refused as `E_BAD_DISPOSITION`, naming its actual
+type; a final question/request is refused as `E_MSG_FINAL`, naming its state.
+`E_NOT_SENDER` is reserved for a missing or foreign-incarnation sender identity.
 Withdrawal retains approval/progress history in separate fields, clears queue
 debt/rank/task ordering lock, compacts remaining ranks and notifies the recipient
 without an imperative. The terminal envelope becomes unconsumed until recipient
@@ -1143,6 +1148,18 @@ without an imperative. The terminal envelope becomes unconsumed until recipient
 is the successful call; no delivery is asserted. No work is owed on a withdrawn
 request, and no declaration or agent process is altered. Historical ops retain
 their exact semantics; old field names remain unchanged.
+
+For human questions and requests, a committed decision or withdrawal requests
+best-effort removal of the delivered notification through the bundled macOS
+helper and authenticated relay feed. Identifiers include the board node and
+message serial. Cleanup receipts are derived observations, never ledger ops,
+and preserve posting evidence separately from the message outcome. `requested`
+means the asynchronous OS removal call was issued, not that the banner was unseen
+or its absence measured. Old UUID notifications remain unidentified; unsupported
+helpers and platforms report that limit. Late posting receipts recheck the
+committed outcome and request cleanup again. Restart/reconnect cleanup derives
+at most 64 retained outcomes and uses one batched helper invocation; no global
+notification clearing or polling watcher is introduced.
 
 Ordinary work requests can be accepted with `respond(disposition:"queue")`.
 Queued is an approval verdict, but not started work. New acceptance records an

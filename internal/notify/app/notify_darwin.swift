@@ -50,6 +50,42 @@ func receipt(_ state: String) {
 
 let args = Array(CommandLine.arguments.dropFirst())
 
+func validMessageID(_ id: String) -> Bool {
+    id.range(of: #"^dibs\.msg\.[A-Za-z0-9-]{1,128}\.[1-9][0-9]{0,19}$"#,
+             options: .regularExpression) != nil
+}
+
+if args.count == 1, args[0].hasPrefix("--message-delivered=") {
+    let id = String(args[0].dropFirst("--message-delivered=".count))
+    guard validMessageID(id) else { exit(2) }
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+    UNUserNotificationCenter.current().getDeliveredNotifications { notices in
+        let present = notices.contains { $0.request.identifier == id }
+        guard let data = try? JSONSerialization.data(withJSONObject: ["present": present]),
+              let text = String(data: data, encoding: .utf8) else { exit(2) }
+        print(text)
+        exit(0)
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 5) { exit(2) }
+    app.run()
+}
+
+if args.count == 1, args[0].hasPrefix("--remove-messages=") {
+    let ids = String(args[0].dropFirst("--remove-messages=".count)).components(separatedBy: ",")
+    guard !ids.isEmpty, ids.count <= 64, ids.allSatisfy(validMessageID) else { exit(2) }
+    // Asynchronous, with no completion callback: this confirms the request,
+    // never that a person did not see the notification or that it is absent.
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+    UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ids)
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+        print(#"{"cleanup":"requested"}"#)
+        exit(0)
+    }
+    app.run()
+}
+
 // These modes use the already signed helper without asking for notification
 // permission or drawing UI. An older helper refuses them; callers must not
 // fall back to an activating open when they are unavailable.
@@ -384,7 +420,9 @@ centre.requestAuthorization(options: [.alert, .sound]) { granted, _ in
         content.categoryIdentifier = "dibs.ask"
     }
 
-    centre.add(UNNotificationRequest(identifier: UUID().uuidString,
+    let keyed = ProcessInfo.processInfo.environment["DIBS_NOTIFY_ID"]
+    if let keyed, !validMessageID(keyed) { finish(2) }
+    centre.add(UNNotificationRequest(identifier: keyed ?? UUID().uuidString,
                                      content: content, trigger: nil)) { err in
         if err != nil { finish(2) }
         receipt("posted")

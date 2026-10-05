@@ -387,7 +387,7 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name":        "respond",
-			"description": "Answer/review/withdraw mail. Progress/done report work; progress corrects flags.",
+			"description": "Answer/review/report work; withdraw only your unanswered question or unfinished request.",
 			"inputSchema": obj(map[string]any{
 				"token": tok, "msg_serial": num("serial of the message"),
 				"disposition": map[string]any{

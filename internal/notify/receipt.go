@@ -44,7 +44,10 @@ func outputWithReceipt(cmd *exec.Cmd, receipt Receipt) ([]byte, error) {
 	name := filepath.Join(dir, "receipt")
 	_ = f.Close()
 	defer func() { _ = os.Remove(name) }()
-	cmd.Env = append(os.Environ(), "DIBS_NOTIFY_RECEIPT="+name)
+	if cmd.Env == nil {
+		cmd.Env = os.Environ()
+	}
+	cmd.Env = append(cmd.Env, "DIBS_NOTIFY_RECEIPT="+name)
 	stop, done := make(chan struct{}), make(chan struct{})
 	go func() {
 		defer close(done)

@@ -140,6 +140,19 @@ func Ask(title, body string, buttons ...string) (string, error) {
 
 // AskWithReceipt supplies delivery evidence separately from the human answer.
 func AskWithReceipt(title, body string, receipt Receipt, buttons ...string) (string, error) {
+	return askWithID("", title, body, receipt, buttons...)
+}
+
+// AskMessage keys a human question/request to its board and ledger serial.
+func AskMessage(node string, serial uint64, title, body string, receipt Receipt, buttons ...string) (string, error) {
+	id, err := MessageID(node, serial)
+	if err != nil {
+		return "", err
+	}
+	return askWithID(id, title, body, receipt, buttons...)
+}
+
+func askWithID(id, title, body string, receipt Receipt, buttons ...string) (string, error) {
 	if len(buttons) == 0 || len(buttons) > 3 {
 		return "", errors.New("an alert takes one to three buttons; use Pick for more")
 	}
@@ -160,7 +173,11 @@ func AskWithReceipt(title, body string, receipt Receipt, buttons ...string) (str
 		// Posting never activates a window, including while Focus is on.
 		args := append([]string{title, "", body}, buttons...)
 		// #nosec G204 -- h is resolved beside this binary; the rest is argv data.
-		out, err := outputWithReceipt(exec.CommandContext(ctx, h, args...), receipt)
+		cmd := exec.CommandContext(ctx, h, args...) // #nosec G204 -- bundled helper; argv is data
+		if id != "" {
+			cmd.Env = append(os.Environ(), "DIBS_NOTIFY_ID="+id)
+		}
+		out, err := outputWithReceipt(cmd, receipt)
 		if err != nil {
 			// Exit 2 means the machine WILL NOT notify: no authorisation, no
 			// bundle. That is not a person deferring, and collapsing the two is

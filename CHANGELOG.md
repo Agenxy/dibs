@@ -28,6 +28,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Unanswered questions can be withdrawn without inventing an answer.** The
+  sender can retract pending, delivered or acknowledged questions with a reason;
+  their recipients receive the same durable withdrawal receipt as requests.
+  Human decisions and withdrawals request best-effort notification cleanup on
+  macOS, including relay Macs, using board-scoped message identifiers. Removal
+  requests remain distinct from measured disappearance; old UUID notifications
+  and unsupported routes remain explicit limits.
+
 - Agent renames retain former names as explicit, releasable aliases. Addressed
   results identify the actual recipient; current names and immutable ids keep
   precedence, and ambiguous aliases are refused. Nonces recover the same

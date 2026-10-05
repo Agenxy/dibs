@@ -3,9 +3,9 @@ package core
 import "time"
 
 const (
-	// OpWithdrawMessage retracts a sender's unfinished request.
+	// OpWithdrawMessage retracts a sender's unfinished request or question.
 	OpWithdrawMessage = "withdraw_message"
-	// MsgStateWithdrawn is a retracted request, never completed work.
+	// MsgStateWithdrawn is a retracted message, never an answer or completed work.
 	MsgStateWithdrawn = "withdrawn"
 )
 
@@ -18,7 +18,8 @@ func checkWithdrawal(op *Op, lim Limits) error {
 		return nil
 	}
 	if op.MsgSerial == 0 || op.SupersededBy == op.MsgSerial {
-		return errf("E_BAD_ARG", "name a request serial and a different replacement, if any", "invalid withdrawal serial")
+		return errf("E_BAD_ARG", "name a request or question serial and a different replacement, if any",
+			"invalid withdrawal serial")
 	}
 	if len(op.Body) > lim.MaxBodyBytes {
 		return errTooLarge("withdrawal reason", lim.MaxBodyBytes)
@@ -33,33 +34,36 @@ func checkWithdrawal(op *Op, lim Limits) error {
 // SenderOwnsRequest uses the same creation fence as read_mail, in both
 // directions. Adoption grants recipient access, never sender authority.
 func SenderOwnsRequest(m *Message, l *Agent) bool {
-	return m != nil && l != nil && m.Type == MsgRequest && m.From == l.ID &&
+	return senderOwnsMessage(m, l) && m.Type == MsgRequest
+}
+
+func senderOwnsMessage(m *Message, l *Agent) bool {
+	return m != nil && l != nil && m.From == l.ID &&
 		(l.CreatedSerial == 0 || m.Serial >= l.CreatedSerial)
+}
+
+func senderOwnsWithdrawable(m *Message, l *Agent) bool {
+	return senderOwnsMessage(m, l) && (m.Type == MsgRequest || m.Type == MsgQuestion)
 }
 
 // Only this NEW op reaches these state checks. Historical responses keep
 // exactly their old interpretation on replay.
 func (s *State) applyWithdraw(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
 	m := s.Messages[op.MsgSerial]
-	if !SenderOwnsRequest(m, l) {
-		return nil, nil, errf("E_NOT_SENDER", "withdraw a request YOU sent; read_mail shows its sender", "not your request")
+	if !senderOwnsMessage(m, l) {
+		return nil, nil, errf("E_NOT_SENDER",
+			"withdraw a message YOU sent in this identity incarnation; read_mail shows its sender",
+			"message is not owned by your current sender identity")
 	}
-	switch m.State {
-	case MsgStatePending, MsgStateDelivered, MsgStateAcked, MsgStateQueued:
-	case MsgStateApproved:
-		if m.Grant != "" || m.Adopt != "" {
-			return nil, nil, errf("E_MSG_FINAL", "approval already performed this effect; withdrawal cannot undo it",
-				"request already performed")
-		}
-	default:
-		return nil, nil, errf("E_MSG_FINAL", "this request is finished; send a new request instead",
-			"request already %s", m.State)
+	if err := withdrawalEligibility(m); err != nil {
+		return nil, nil, err
 	}
 	if op.SupersededBy != 0 {
 		replacement := s.Messages[op.SupersededBy]
-		if !SenderOwnsRequest(replacement, l) || replacement.Grant != "" || replacement.Adopt != "" {
-			return nil, nil, errf("E_NO_MESSAGE", "superseded_by names another ordinary request YOU sent",
-				"replacement is not your work request")
+		if !senderOwnsWithdrawable(replacement, l) ||
+			replacement.Grant != "" || replacement.Adopt != "" {
+			return nil, nil, errf("E_NO_MESSAGE", "superseded_by names another ordinary question or request YOU sent",
+				"replacement is not your ordinary question or request")
 		}
 	}
 	queued := m.State == MsgStateQueued
@@ -73,7 +77,7 @@ func (s *State) applyWithdraw(l *Agent, op *Op, now time.Time) (Result, []Event,
 	if op.RetainUntil != nil {
 		m.RetainUntil = op.RetainUntil.UTC()
 	}
-	data := map[string]any{"msg_serial": m.Serial}
+	data := map[string]any{"msg_serial": m.Serial, "message_type": m.Type}
 	if m.SupersededBy != 0 {
 		data["superseded_by"] = m.SupersededBy
 	}
@@ -86,4 +90,29 @@ func (s *State) applyWithdraw(l *Agent, op *Op, now time.Time) (Result, []Event,
 	return Result{
 		"ok": true, "state": MsgStateWithdrawn, "msg_serial": m.Serial, "superseded_by": m.SupersededBy,
 	}, evs, nil
+}
+
+func withdrawalEligibility(m *Message) error {
+	if m.Type != MsgRequest && m.Type != MsgQuestion {
+		return errf("E_BAD_DISPOSITION",
+			"withdraw only an unfinished request or unanswered question YOU sent; "+
+				"notify and handoff cannot be withdrawn",
+			"cannot withdraw a %s", m.Type)
+	}
+	switch m.State {
+	case MsgStatePending, MsgStateDelivered, MsgStateAcked:
+		return nil
+	case MsgStateQueued:
+		if m.Type == MsgRequest {
+			return nil
+		}
+	case MsgStateApproved:
+		if m.Type == MsgRequest && m.Grant == "" && m.Adopt == "" {
+			return nil
+		}
+		return errf("E_MSG_FINAL", "approval already performed this effect; withdrawal cannot undo it",
+			"request already performed")
+	}
+	return errf("E_MSG_FINAL", "this message is finished; send a new request or question instead",
+		"message already %s", m.State)
 }
