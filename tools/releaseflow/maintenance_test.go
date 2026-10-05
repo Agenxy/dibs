@@ -80,7 +80,8 @@ func probeFixtureMaintenance(t *testing.T, strategy, target string, enabled bool
 		hook = "'" + strings.ReplaceAll(hook, "'", "'\\''") + "'"
 	}
 	ambient := fmt.Sprintf("[gc]\n\tauto = 1\n\tautoDetach = true\n\tpruneExpire = 1.hour.ago\n\trecentObjectsHook = %s\n"+
-		"[maintenance]\n\tauto = true\n\tautoDetach = true\n\tstrategy = %s\n\tgeometric-repack.auto = 1\n", strconv.Quote(hook), strategy)
+		"[maintenance]\n\tauto = true\n\tautoDetach = true\n\tstrategy = %s\n"+
+		"[maintenance \"geometric-repack\"]\n\tauto = 1\n", strconv.Quote(hook), strategy)
 	write(t, global, ambient)
 	t.Setenv("DIBS_TEST_RELEASE_GC_HOOK", "1")
 	t.Setenv("DIBS_TEST_RELEASE_GC_CONTROL", p.control)
