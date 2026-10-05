@@ -222,7 +222,7 @@ func TestQuestionWithdrawalEligibilityIsVisibleInBothToolLists(t *testing.T) {
 					continue
 				}
 				description := tool["description"].(string)
-				for _, rule := range []string{"unfinished request", "unanswered question", "notify, handoff and final", "superseded_by"} {
+				for _, rule := range []string{"withdraw only your", "unanswered question", "unfinished request"} {
 					if !strings.Contains(description, rule) {
 						t.Errorf("withdrawal tool omitted %q: %s", rule, description)
 					}
