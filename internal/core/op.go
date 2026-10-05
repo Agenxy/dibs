@@ -46,6 +46,10 @@ type Op struct {
 	// caller, so replay sees the ordinary registration it always was.
 	HumanMint bool `json:"-"`
 
+	// Compile-only transient carrier for the old-source regression controls.
+	// No admission, dispatcher, selection, ledger or replay behavior is added.
+	RecoveryNonces []string `json:"-"`
+
 	// KeepDescription means the caller OMITTED `description`, so the engine
 	// fills the current one in rather than letting the fold assign "".
 	//
