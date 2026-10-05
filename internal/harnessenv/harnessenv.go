@@ -278,6 +278,11 @@ type Shower struct {
 	Poll    time.Duration
 }
 
+// appOpenFixture replaces only the native contact, keeping RealShower's
+// production route selector in the test. Nil is the only production value.
+// Unlike an environment switch, this cannot turn a built child into a fake.
+var appOpenFixture func(mode, url string, minIdle time.Duration) error
+
 // RealShower reaches the real app.
 var RealShower = Shower{
 	Ownership: ChatGPTOwnership,
@@ -285,12 +290,12 @@ var RealShower = Shower{
 		// A package may copy RealShower before its TestMain installs a fake.
 		// Fail the test, even if its caller discards the returned error, rather
 		// than opening the person's app from a test subprocess.
-		if testing.Testing() {
+		if appOpenFixture == nil && testing.Testing() {
 			panic("unfaked real app opener in a Go test")
 		}
 		// TestMain passes this to built helper binaries, where
 		// testing.Testing() is false. A child must still never open the app.
-		if os.Getenv("DIBS_TEST_FORBID_APP_OPEN") == "1" {
+		if appOpenFixture == nil && os.Getenv("DIBS_TEST_FORBID_APP_OPEN") == "1" {
 			return errors.New("real app opener forbidden by DIBS_TEST_FORBID_APP_OPEN")
 		}
 		if len(argv) != 3 || argv[0] != "/usr/bin/open" {
@@ -298,14 +303,17 @@ var RealShower = Shower{
 		}
 		if argv[1] == "-g" && strings.HasPrefix(argv[2], "codex://threads/") &&
 			isThreadID(strings.TrimPrefix(argv[2], "codex://threads/")) {
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			defer cancel()
-			//nolint:gosec // fixed binary, validated thread URL
-			return exec.CommandContext(ctx, "/usr/bin/open", "-g", argv[2]).Run()
+			if appOpenFixture != nil {
+				return appOpenFixture("chatgpt-background", argv[2], 0)
+			}
+			return notify.OpenChatGPTBackground(argv[2])
 		}
 		seconds, err := strconv.ParseFloat(argv[2], 64)
 		if err != nil {
 			return err
+		}
+		if appOpenFixture != nil {
+			return appOpenFixture("claude-away", argv[1], time.Duration(seconds*float64(time.Second)))
 		}
 		return notify.OpenWhenAway(argv[1], time.Duration(seconds*float64(time.Second)))
 	},

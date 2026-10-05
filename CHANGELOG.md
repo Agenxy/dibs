@@ -46,6 +46,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Background ChatGPT opens attempt to return focus to the previous app.**
+  The native helper makes one bounded restoration attempt and yields to new
+  input, an app change, or uncertain observations. Local daemon, bridge and
+  restart-sweep opens share one pair lock; contention does not record an open
+  that never happened. Activation can still briefly show ChatGPT, and this
+  does not restore its selected chat. Older helpers are detected harmlessly;
+  an unsupported helper leaves the wake queued instead of activating through
+  a fallback route.
+
 - **Returning identities survive native directory case aliases.** Local path
   canonicalization corrects Darwin filesystem spelling. The stdio nonce cache
   migrates aliases while preserving legacy credentials; conflicting retained

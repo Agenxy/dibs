@@ -24,6 +24,11 @@ const (
 	appOpenRate   = 20 * time.Second
 )
 
+// ErrAppOpenPairBusy leaves the attempt memo unchanged. ShowWhenIdle defers
+// this off the writer; callers using Show directly can retry while mail stays
+// queued. Contention is never an attempted open.
+var ErrAppOpenPairBusy = errors.New("another local background open/restore pair is active; defer the open, mail remains queued")
+
 type appOpenMemo struct {
 	OpenedAt time.Time `json:"opened_at"`
 	Epoch    string    `json:"epoch"`
@@ -89,6 +94,26 @@ func (s Shower) showChatGPT(_ []string, thread string) (bool, error) {
 	if memo.suppresses(state, now) {
 		return false, nil
 	}
+	// Every thread and every local producer uses this lock, acquired after
+	// the per-thread lock and before recording the attempt. Keep it for the
+	// complete native open/restore pair; two overlapping pairs could restore
+	// each other's temporarily frontmost ChatGPT window.
+	// #nosec G304 -- fixed filename inside the private local data directory.
+	pair, err := os.OpenFile(filepath.Join(filepath.Dir(path), "background-pair.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = pair.Close() }()
+	if err := paths.LockExclusive(pair, false); err != nil {
+		if paths.LockHeldElsewhere(err) {
+			return false, ErrAppOpenPairBusy
+		}
+		return false, err
+	}
+	defer paths.Unlock(pair)
+	// The probe and lock acquisition are inputs off the writer; record the
+	// actual attempted boundary, rather than the time we began probing.
+	now = time.Now().UTC()
 	memo.OpenedAt, memo.Loaded = now, false
 	if state.Epoch != "" {
 		memo.Epoch = state.Epoch

@@ -119,6 +119,14 @@ func receipt(_ state: String) {
 
 let args = Array(CommandLine.arguments.dropFirst())
 
+// Capability negotiation must precede every other status extension, including
+// one inherited from the caller's environment. It never touches notification
+// settings, asks permission, or creates an application window.
+if args == ["--status"], ProcessInfo.processInfo.environment["DIBS_BACKGROUND_OPEN_V1"] == "1" {
+    printDesk(["background_open": 1])
+    exit(0)
+}
+
 // Existing mode plus an additive environment capability. An old helper ignores
 // the environment and returns its old word; callers retain UNKNOWN metadata.
 if args == ["--status"], ProcessInfo.processInfo.environment["DIBS_NOTIFY_SETTINGS_V1"] == "1" {
@@ -213,6 +221,194 @@ func printDesk(_ state: [String: Any]) {
     guard let data = try? JSONSerialization.data(withJSONObject: state, options: [.sortedKeys]),
           let text = String(data: data, encoding: .utf8) else { exit(2) }
     print(text)
+}
+
+// Background-open decisions and their native contacts share this one path.
+// The compile-time fixture factory is absent from the shipped binary; tests
+// drive the real mode with fake OS observations rather than opening an app.
+struct BackgroundApp: Codable, Equatable, Sendable {
+    let pid: Int32
+    let launch: String
+    let bundle: String
+}
+
+struct BackgroundObservation: Codable {
+    let app: BackgroundApp?
+    let counter: UInt32?
+    let idle: Double?
+    let interveningActivation: Bool
+}
+
+struct BackgroundOpenContact {
+    let target: BackgroundApp?
+    let observe: () -> BackgroundObservation
+    let elapsed: () -> Double
+    let wait: () -> Void
+    let open: (URL) -> Bool
+    let live: (BackgroundApp) -> Bool
+    let restore: (BackgroundApp) -> Bool
+    let cleanup: () -> Void
+}
+
+func backgroundOpen(_ url: URL, contact: BackgroundOpenContact) -> [String: Any] {
+    defer { contact.cleanup() }
+    let before = contact.observe()
+    let start = contact.elapsed()
+    var result: [String: Any] = ["version": 1, "opened": false,
+        "restore_attempted": false, "restore_accepted": false, "reason": "open-failed",
+        "previous_pid": before.app?.pid ?? 0, "frontmost_pid": before.app?.pid ?? 0]
+    guard contact.open(url) else { return result }
+    result["opened"] = true
+    guard let previous = before.app else { result["reason"] = "previous-app-unknown"; return result }
+    guard previous.bundle != "com.openai.codex" else {
+        result["reason"] = "already-foreground"; return result
+    }
+    guard let target = contact.target else { result["reason"] = "target-incarnation-unknown"; return result }
+    // Input counters omit auto-repeat (Apple's documented contract). Require
+    // idle evidence too; activity already in progress must win over restoration.
+    guard let counter = before.counter, let idle = before.idle, idle.isFinite, idle >= 0.25 else {
+        result["reason"] = "input-unknown-or-active"; return result
+    }
+    while contact.elapsed() - start <= 0.25 {
+        let now = contact.observe()
+        result["frontmost_pid"] = now.app?.pid ?? 0
+        guard let current = now.app, let currentCounter = now.counter,
+              let currentIdle = now.idle, currentIdle.isFinite, currentIdle >= 0 else {
+            result["reason"] = "observation-unknown"; return result
+        }
+        guard currentCounter == counter,
+              currentIdle + 0.01 >= idle + (contact.elapsed() - start) else {
+            result["reason"] = "user-input"; return result
+        }
+        guard !now.interveningActivation else {
+            result["reason"] = "user-app-change"; return result
+        }
+        guard contact.live(previous) else { result["reason"] = "previous-app-gone"; return result }
+        if current == previous { contact.wait(); continue }
+        guard current == target else {
+            result["reason"] = "user-app-change"; return result
+        }
+        // Recheck input and incarnation immediately at the restoration boundary.
+        let final = contact.observe()
+        guard final.app == current, final.counter == counter,
+              let finalIdle = final.idle, finalIdle.isFinite,
+              finalIdle + 0.01 >= idle + (contact.elapsed() - start),
+              !final.interveningActivation, contact.live(previous) else {
+            result["reason"] = "restore-boundary-changed"; return result
+        }
+        result["restore_attempted"] = true
+        let restored = contact.restore(previous)
+        result["restore_accepted"] = restored
+        result["reason"] = restored ? "restore-accepted" : "restore-refused"
+        result["frontmost_pid"] = contact.observe().app?.pid ?? 0
+        return result // exactly one attempt, even when activation is refused
+    }
+    result["reason"] = "activation-timeout"
+    return result
+}
+
+func backgroundIdentity(_ app: NSRunningApplication?) -> BackgroundApp? {
+    guard let app, !app.isTerminated, let launched = app.launchDate,
+          let bundle = app.bundleIdentifier else { return nil }
+    return BackgroundApp(pid: app.processIdentifier,
+        launch: String(launched.timeIntervalSince1970), bundle: bundle)
+}
+
+// Workspace notifications may be delivered on another thread. Preserve a
+// single cancellation bit with a lock; it is never reset during an open.
+final class BackgroundActivation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var changed = false
+    func cancel() { lock.lock(); changed = true; lock.unlock() }
+    func cancelled() -> Bool { lock.lock(); defer { lock.unlock() }; return changed }
+}
+
+func nativeBackgroundContact() -> BackgroundOpenContact {
+    let workspace = NSWorkspace.shared
+    let previous = backgroundIdentity(workspace.frontmostApplication)
+    let target = backgroundIdentity(NSRunningApplication.runningApplications(withBundleIdentifier: "com.openai.codex").first)
+    let activation = BackgroundActivation()
+    let observer = workspace.notificationCenter.addObserver(
+        forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: nil) { notification in
+        let activated = backgroundIdentity(notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)
+        if activated == nil || (activated != previous && activated?.bundle != "com.openai.codex") {
+            activation.cancel()
+        }
+    }
+    return BackgroundOpenContact(target: target, observe: {
+        // kCGAnyInputEventType is (~0), from Apple's CGEventTypes.h. This
+        // observes counts, never key contents, and requests no event-tap access.
+        let anyInput = CGEventType(rawValue: UInt32.max)
+        let session = CGSessionCopyCurrentDictionary() as? [String: Any]
+        let counter: UInt32? = anyInput.flatMap { type in
+            session == nil ? nil : CGEventSource.counterForEventType(.combinedSessionState, eventType: type)
+        }
+        return BackgroundObservation(app: backgroundIdentity(workspace.frontmostApplication),
+            counter: counter, idle: hidIdleSeconds(), interveningActivation: activation.cancelled())
+    }, elapsed: { ProcessInfo.processInfo.systemUptime }, wait: {
+        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.01))
+    }, open: { workspace.open($0) }, live: { identity in
+        backgroundIdentity(NSRunningApplication(processIdentifier: identity.pid)) == identity
+    }, restore: { identity in
+        guard let app = NSRunningApplication(processIdentifier: identity.pid),
+              backgroundIdentity(app) == identity else { return false }
+        return app.activate(options: [])
+    }, cleanup: { workspace.notificationCenter.removeObserver(observer) })
+}
+
+#if DIBS_BACKGROUND_OPEN_FIXTURE
+// Compiled only by hosted regression tests. The normal mode dispatcher and
+// decision above stay identical; every contact with the desktop is replaced.
+struct BackgroundFixture: Decodable {
+    let target: BackgroundApp?
+    let observations: [BackgroundObservation]
+    let openSuccess: Bool
+    let previousLive: Bool
+    let restoreSuccess: Bool
+}
+var backgroundFixtureRestoreCount = 0
+var backgroundFixtureOpenCount = 0
+func fixtureBackgroundContact() -> BackgroundOpenContact? {
+    guard let raw = ProcessInfo.processInfo.environment["DIBS_BACKGROUND_OPEN_FIXTURE"],
+          let data = raw.data(using: .utf8),
+          let fixture = try? JSONDecoder().decode(BackgroundFixture.self, from: data),
+          !fixture.observations.isEmpty else { return nil }
+    var index = 0
+    var time = 0.0
+    return BackgroundOpenContact(target: fixture.target, observe: {
+        let value = fixture.observations[min(index, fixture.observations.count - 1)]
+        index += 1
+        return BackgroundObservation(app: value.app, counter: value.counter,
+            idle: value.idle.map { $0 + time }, interveningActivation: value.interveningActivation)
+    }, elapsed: { time }, wait: { time += 0.01 }, open: { _ in
+        backgroundFixtureOpenCount += 1
+        return fixture.openSuccess
+    }, live: { _ in fixture.previousLive }, restore: { _ in
+        backgroundFixtureRestoreCount += 1
+        return fixture.restoreSuccess
+    }, cleanup: {})
+}
+#endif
+
+if args.first == "--open-background" {
+    guard args.count == 2, let url = URL(string: args[1]),
+          args[1].range(of: #"^codex://threads/[A-Za-z0-9-]{1,128}$"#,
+                        options: .regularExpression) != nil else { exit(2) }
+    let contact: BackgroundOpenContact
+    #if DIBS_BACKGROUND_OPEN_FIXTURE
+    guard let fixture = fixtureBackgroundContact() else { exit(2) }
+    contact = fixture
+    #else
+    guard ProcessInfo.processInfo.environment["DIBS_TEST_FORBID_APP_OPEN"] != "1" else { exit(2) }
+    contact = nativeBackgroundContact()
+    #endif
+    var result = backgroundOpen(url, contact: contact)
+    #if DIBS_BACKGROUND_OPEN_FIXTURE
+    result["fixture_restore_count"] = backgroundFixtureRestoreCount
+    result["fixture_open_count"] = backgroundFixtureOpenCount
+    #endif
+    printDesk(result)
+    exit(result["opened"] as? Bool == true ? 0 : 2)
 }
 
 if args.first == "--desk-state" {
