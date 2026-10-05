@@ -51,7 +51,8 @@ func senderOwnsWithdrawable(m *Message, l *Agent) bool {
 func (s *State) applyWithdraw(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
 	m := s.Messages[op.MsgSerial]
 	if !senderOwnsMessage(m, l) {
-		return nil, nil, errf("E_NOT_SENDER", "withdraw a message YOU sent in this identity incarnation; read_mail shows its sender",
+		return nil, nil, errf("E_NOT_SENDER",
+			"withdraw a message YOU sent in this identity incarnation; read_mail shows its sender",
 			"message is not owned by your current sender identity")
 	}
 	if err := withdrawalEligibility(m); err != nil {
@@ -93,7 +94,9 @@ func (s *State) applyWithdraw(l *Agent, op *Op, now time.Time) (Result, []Event,
 
 func withdrawalEligibility(m *Message) error {
 	if m.Type != MsgRequest && m.Type != MsgQuestion {
-		return errf("E_BAD_DISPOSITION", "withdraw only an unfinished request or unanswered question YOU sent; notify and handoff cannot be withdrawn",
+		return errf("E_BAD_DISPOSITION",
+			"withdraw only an unfinished request or unanswered question YOU sent; "+
+				"notify and handoff cannot be withdrawn",
 			"cannot withdraw a %s", m.Type)
 	}
 	switch m.State {
