@@ -28,6 +28,9 @@ import (
 // one did on 2026-09-13, so the join-by-peer path is exercised against real
 // envelopes.
 func TestMain(m *testing.M) {
+	if os.Getenv("DIBS_SETTINGS_HELPER_MODE") != "" && filepath.Base(os.Args[0]) == "dibs-notify" {
+		os.Exit(notificationSettingsHelper())
+	}
 	if os.Getenv("DIBS_TEST_RELAY_CLEANUP_DRIVER") == "1" && filepath.Base(os.Args[0]) == "dibs-notify" {
 		os.Exit(relayCleanupHelper())
 	}

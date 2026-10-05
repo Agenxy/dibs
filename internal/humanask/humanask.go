@@ -21,19 +21,20 @@ import (
 
 // Message is one message for the person.
 type Message struct {
-	Type      string // question, request, handoff, notify
-	From      string
-	FromName  string // current name; From stays the stable ID
-	Who       string // the daemon's line about the sender, never the sender's own words
-	Body      string
-	Choices   []string
-	Grant     string
-	Adopt     string
-	AdoptName string // current name; Adopt stays the stable ID
-	Serial    uint64 // stable message identity on Node
-	Node      string // board identity; serials are not global
-	Receipt   notify.Receipt
-	ask       func(string, string, notify.Receipt, ...string) (string, error) // test presenter
+	Type            string // question, request, handoff, notify
+	From            string
+	FromName        string // current name; From stays the stable ID
+	Who             string // the daemon's line about the sender, never the sender's own words
+	Body            string
+	Choices         []string
+	Grant           string
+	Adopt           string
+	AdoptName       string // current name; Adopt stays the stable ID
+	Serial          uint64 // stable message identity on Node
+	Node            string // board identity; serials are not global
+	Receipt         notify.Receipt
+	DeliveryReceipt notify.DeliveryReceipt
+	ask             func(string, string, notify.Receipt, ...string) (string, error) // test presenter
 }
 
 func (m Message) displayFrom() string {
@@ -76,8 +77,14 @@ func Ask(m Message) (Answer, error) {
 		// the asking agent waits out its deadline while they decide whether to.
 		return answer(m)
 	case core.MsgHandoff:
+		if m.DeliveryReceipt != nil {
+			return Answer{}, notify.BannerWithDeliveryReceipt(title, "hands work to you", OneLine(m.Body), m.DeliveryReceipt)
+		}
 		return Answer{}, notify.BannerWithReceipt(title, "hands work to you", OneLine(m.Body), m.Receipt)
 	default:
+		if m.DeliveryReceipt != nil {
+			return Answer{}, notify.BannerWithDeliveryReceipt(title, "says", OneLine(m.Body), m.DeliveryReceipt)
+		}
 		return Answer{}, notify.BannerWithReceipt(title, "says", OneLine(m.Body), m.Receipt)
 	}
 }
@@ -273,6 +280,19 @@ func Said(who, body string) string {
 }
 
 func (m Message) askNotification(title, body string, buttons ...string) (string, error) {
+	if m.ask == nil && m.DeliveryReceipt != nil {
+		var pressed string
+		var err error
+		if m.Node == "" {
+			pressed, err = notify.AskWithDeliveryReceipt(title, body, m.DeliveryReceipt, buttons...)
+		} else {
+			pressed, err = notify.AskMessageWithDeliveryReceipt(m.Node, m.Serial, title, body, m.DeliveryReceipt, buttons...)
+		}
+		if pressed == DeferButton {
+			m.DeliveryReceipt(notify.ReceiptData{State: "dismissed"})
+		}
+		return pressed, err
+	}
 	ask := m.ask
 	if ask == nil {
 		ask = notify.AskWithReceipt

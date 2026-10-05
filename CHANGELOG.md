@@ -90,6 +90,19 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is saved only after mail commits; losing or failing to
   save the derived marker can repeat advice without losing coordination state.
 
+- **Human posting receipts explain macOS presentation settings.** Each desktop
+  or relay source retains its posting helper's versioned authorization, alert
+  style, Notification Center, lock-screen, Time Sensitive and already-authorized
+  Focus observations. Banners and silent styles recommend persistent Alerts for
+  approval controls. Doctor reads the same settings without posting or requesting
+  permission; it warns about actionable settings and combines unprovisioned
+  Time Sensitive and unobservable Focus into one informational note. Receipts
+  retain those structured limits without repeating standing hints on every message.
+  Older/malformed helper metadata stays unknown, and every source's visibility
+  stays unconfirmed even when the OS accepted posting. Signing and app identity
+  remain unchanged; provisioning and its settings migration are a follow-up
+  decision.
+
 - **Queued notices state when they were issued, even if mail is already handled.**
   The canonical native Codex queue route includes the local admission attempt's
   UTC date and time to the second and says the notice may already be handled.

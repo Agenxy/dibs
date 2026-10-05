@@ -13,6 +13,7 @@ import (
 
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/humankey"
+	"github.com/agenxy/dibs/internal/notify"
 )
 
 // The human relay's door: the person's own Mac, on a board that runs
@@ -72,14 +73,19 @@ func (h *humanAPI) delivery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Serial uint64 `json:"serial"`
-		State  string `json:"state"`
-		Error  string `json:"error"`
+		Serial            uint64          `json:"serial"`
+		State             string          `json:"state"`
+		Error             string          `json:"error"`
+		Settings          json.RawMessage `json:"settings"`
+		InterruptionLevel json.RawMessage `json:"interruption_level"`
 	}
 	if !decodeBody(w, r, &req) {
 		return
 	}
-	if err := h.eng.ReportHumanDelivery(r.Context(), req.Serial, key, req.State, req.Error); err != nil {
+	var level string
+	_ = json.Unmarshal(req.InterruptionLevel, &level)
+	data := notify.ReceiptData{State: req.State, Settings: notify.DecodeSettings(req.Settings), InterruptionLevel: level}
+	if err := h.eng.ReportHumanReceipt(r.Context(), req.Serial, key, data, req.Error); err != nil {
 		humanRefuse(w, http.StatusBadRequest, err.Error(), "report posted, dismissed or failed for retained human mail")
 		return
 	}
