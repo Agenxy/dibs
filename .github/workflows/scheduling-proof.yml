@@ -25,7 +25,7 @@ jobs:
         run: mise exec -- go build -o bin/dibd ./cmd/dibd
       - name: Rootless policy and real MCP CPU-load experiment
         run: mise exec -- uv run tools/schedulingproof/run.py --hosted --daemon bin/dibd --out scheduling-results/latency
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: scheduling-45633
