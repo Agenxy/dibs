@@ -97,7 +97,10 @@ func TestSocketEconomyClosedHarnessNoteUsesProcessEvidence(t *testing.T) {
 	}
 }
 
-func TestSocketEconomyStrictHookKeepsLossDiagnosticAtInfo(t *testing.T) {
+// WakeNone deliberately holds mail for a natural activation. The old guard
+// required an INFO loss alarm for that choice, although the question was still
+// present. Unknown unsupported output has its separate INFO/redaction guard.
+func TestSocketEconomyStrictHookKeepsDisabledWakeMailForNextActivation(t *testing.T) {
 	var log economyLog
 	previous := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&log, &slog.HandlerOptions{Level: slog.LevelInfo})))
@@ -111,20 +114,45 @@ func TestSocketEconomyStrictHookKeepsLossDiagnosticAtInfo(t *testing.T) {
 	if _, err = e.HookPoll(ctx, sid, "Stop", "", true, true); err != nil {
 		t.Fatal(err)
 	}
-	if text := log.String(); strings.Contains(text, "key=agent") {
-		t.Fatalf("normal resolution diagnosis was logged as loss at INFO: %s", text)
-	}
+	const marker = "strict-unpresentable-mail"
 	if _, err = e.Do(ctx, &core.Op{
 		Kind: core.OpSendMessage, Token: r["token"].(string), To: "worker",
-		MsgType: core.MsgQuestion, Body: "strict-unpresentable-mail",
+		MsgType: core.MsgQuestion, Body: marker,
 	}); err != nil {
 		t.Fatal(err)
 	}
 	e.SetWakePolicy(WakeNone)
-	if _, err = e.HookPoll(ctx, sid, "Stop", "", false, true); err != nil {
+	held, err := e.HookPoll(ctx, sid, "Stop", "", false, true)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if text := log.String(); !strings.Contains(text, "key=queued") || strings.Contains(text, "key=agent") {
-		t.Fatalf("actual unpresented-mail diagnostic lost its INFO severity: %s", text)
+	if held["decision"] != nil || held["reason"] != nil || held["hookSpecificOutput"] != nil {
+		t.Fatalf("disabled wake unexpectedly carried model context: %v", held)
+	}
+	for field := range held {
+		switch field {
+		case "continue", "stopReason", "suppressOutput", "systemMessage":
+		default:
+			t.Fatalf("held Stop contains a field outside its strict schema: %q", field)
+		}
+	}
+	delivered, err := e.HookPoll(ctx, sid, "SessionStart", "", false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	carrier, _ := delivered["hookSpecificOutput"].(map[string]any)
+	digest, _ := carrier["additionalContext"].(string)
+	if carrier["hookEventName"] != "SessionStart" || !strings.Contains(digest, marker) {
+		t.Fatalf("deliberately held mail was lost before the next natural activation: %v", delivered)
+	}
+	again, err := e.HookPoll(ctx, sid, "SessionStart", "", false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again["hookSpecificOutput"] != nil || again["reason"] != nil || again["decision"] != nil {
+		t.Fatalf("the held question was presented twice: %v", again)
+	}
+	if text := log.String(); strings.Contains(text, "dropped from a strict hook response") {
+		t.Fatalf("successful intentional deferral was reported as lost information at INFO: %s", text)
 	}
 }
