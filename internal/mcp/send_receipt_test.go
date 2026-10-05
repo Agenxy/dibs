@@ -16,6 +16,7 @@ import (
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/engine"
+	"github.com/agenxy/dibs/internal/humanask"
 	"github.com/agenxy/dibs/internal/ledger"
 )
 
@@ -214,5 +215,63 @@ func assertSendReceiptRetry(t *testing.T, r sendReceiptReply, serial uint64) {
 	t.Helper()
 	if r.err != nil || r.isError || r.payload["ok"] != true || r.payload["deduplicated"] != true || r.payload["msg_serial"] != float64(serial) {
 		t.Fatalf("same op_id did not return the original accepted serial: %+v, expected %d", r, serial)
+	}
+}
+
+// Available is the production route-advisory port, reached by dispatchHuman
+// after the real ledger append. Blocking it does not fake an accepted send or
+// call a test-only setter: the whole request still enters through HTTP.
+type slowSendAdvisory struct {
+	entered chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (n *slowSendAdvisory) Available() bool {
+	n.once.Do(func() { close(n.entered) })
+	<-n.release
+	return false
+}
+
+func (*slowSendAdvisory) Ask(humanask.Message) (humanask.Answer, error) {
+	return humanask.Answer{}, nil
+}
+
+func TestSendKnownReceiptSurvivesSlowRouteAdvisoryThroughMCP(t *testing.T) {
+	for _, version := range []string{"2026-07-28", "2025-11-25"} {
+		t.Run(version, func(t *testing.T) {
+			srv, eng, _ := newServerWithEngine(t)
+			n := &slowSendAdvisory{entered: make(chan struct{}), release: make(chan struct{})}
+			var unblock sync.Once
+			release := func() { unblock.Do(func() { close(n.release) }) }
+			t.Cleanup(release) // before fixture cleanup, even on a failed assertion
+			eng.SetHumanNotifier(n)
+			sender, _ := sendReceiptSetup(t, srv, version)
+			args := map[string]any{"token": sender, "to": "human", "type": "question", "body": "slow route advice", "op_id": "known-receipt"}
+			ctx, cancel := context.WithTimeout(context.Background(), 6500*time.Millisecond)
+			defer cancel()
+			answer := make(chan sendReceiptReply, 1)
+			go func() { answer <- sendReceiptHTTP(ctx, srv, version, args) }()
+			select {
+			case <-n.entered:
+			case reply := <-answer:
+				t.Fatalf("setup: send never entered the production route advisory: %+v", reply)
+			case <-time.After(3 * time.Second):
+				t.Fatal("setup: route advisory was never reached")
+			}
+			reply := <-answer
+			if reply.err != nil || reply.isError || reply.payload["ok"] != true || reply.payload["msg_serial"] == nil {
+				t.Fatalf("slow advisory stole the already durable receipt: %+v", reply)
+			}
+			if reply.payload["human_route"] != nil || reply.payload["note"] != nil || reply.payload["advisories"] == nil {
+				t.Fatalf("bounded receipt invented an unfinished delivery advisory: %v", reply.payload)
+			}
+			release()
+			serial, ok := reply.payload["msg_serial"].(float64)
+			if !ok {
+				t.Fatalf("accepted serial has wrong shape: %v", reply.payload)
+			}
+			assertSendReceiptRetry(t, sendReceiptHTTP(context.Background(), srv, version, args), uint64(serial))
+		})
 	}
 }
