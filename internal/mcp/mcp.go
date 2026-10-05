@@ -213,9 +213,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r = r.WithContext(inviteCtx)
-	if !isSendCall(&req) {
-		s.observeBridge(r.Context(), req.Params)
-	}
+	s.observeRequest(r.Context(), &req)
 
 	if req.ID == nil { // notification (e.g. legacy notifications/initialized)
 		w.WriteHeader(http.StatusAccepted)
@@ -270,11 +268,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if s.handledLegacySubscription(w, r, &req) {
 		return
 	}
-	dispatch := s.dispatch
-	if isSendCall(&req) {
-		dispatch = s.dispatchSend
-	}
-	result, rpcErr := dispatch(r.Context(), &req, bearer(r), identityFromTransport(r), s.sessions.wantsUI(r),
+	result, rpcErr := s.dispatchWithSendBudget(r.Context(), &req, bearer(r), identityFromTransport(r), s.sessions.wantsUI(r),
 		s.sessions.clientFor(r))
 	writeRPC(w, http.StatusOK, req.ID, tagResult(result, requestEra(r, req.Params)), rpcErr)
 }

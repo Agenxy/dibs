@@ -24,6 +24,23 @@ type sendRPCReply struct {
 	err    *rpcError
 }
 
+// Send observation belongs inside its response budget; all other RPCs retain
+// their original observation point, including subscriptions and notifications.
+func (s *Server) observeRequest(ctx context.Context, req *rpcRequest) {
+	if !isSendCall(req) {
+		s.observeBridge(ctx, req.Params)
+	}
+}
+
+func (s *Server) dispatchWithSendBudget(
+	ctx context.Context, req *rpcRequest, bearerToken, nonce string, ui bool, client *clientInfoJSON,
+) (any, *rpcError) {
+	if isSendCall(req) {
+		return s.dispatchSend(ctx, req, bearerToken, nonce, ui, client)
+	}
+	return s.dispatch(ctx, req, bearerToken, nonce, ui, client)
+}
+
 // The budget includes bridge observation, session adoption, the writer,
 // human presentation and task projection. A context deadline alone cannot
 // interrupt a filesystem probe or another blocking implementation port, so

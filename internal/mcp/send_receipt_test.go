@@ -19,6 +19,7 @@ import (
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/humanask"
 	"github.com/agenxy/dibs/internal/ledger"
+	"github.com/agenxy/dibs/internal/notify"
 )
 
 // Block only AFTER the real encrypted ledger has appended and fsynced the
@@ -47,7 +48,7 @@ func (l *sendReceiptLedger) Append(serial uint64, now time.Time, op *core.Op) er
 
 func (l *sendReceiptLedger) unblock() { l.once.Do(func() { close(l.release) }) }
 
-func sendReceiptServer(t *testing.T, dir string) (*httptest.Server, *sendReceiptLedger, func()) {
+func sendReceiptServer(t *testing.T, dir string, configure ...func(*engine.Engine)) (*httptest.Server, *sendReceiptLedger, func()) {
 	t.Helper()
 	box, err := ledger.LoadOrCreateKey(filepath.Join(dir, "key"))
 	if err != nil {
@@ -64,6 +65,9 @@ func sendReceiptServer(t *testing.T, dir string) (*httptest.Server, *sendReceipt
 	}
 	gate := &sendReceiptLedger{Ledger: journal, entered: make(chan uint64, 1), release: make(chan struct{})}
 	eng := engine.New(st, gate, nil)
+	for _, option := range configure {
+		option(eng)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { eng.Run(ctx); close(done) }()
@@ -366,6 +370,68 @@ func TestSendStageTimingIsDebugOnlyAndPrivateThroughMCP(t *testing.T) {
 				if strings.Contains(raw, secret) {
 					t.Error("send timing leaked a body or credential")
 				}
+			}
+		})
+	}
+}
+
+type slowSendPresentation struct {
+	armed   atomic.Bool
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (*slowSendPresentation) Available() bool { return true }
+
+func (*slowSendPresentation) Ask(humanask.Message) (humanask.Answer, error) {
+	return humanask.Answer{}, nil
+}
+
+func (n *slowSendPresentation) Presentation() notify.Presentation {
+	if n.armed.CompareAndSwap(true, false) {
+		close(n.entered)
+		<-n.release
+	}
+	return notify.Presentation{}
+}
+
+func TestDeduplicatedSendKeepsOriginalReceiptAtBudgetThroughMCP(t *testing.T) {
+	for _, version := range []string{"2026-07-28", "2025-11-25"} {
+		t.Run(version, func(t *testing.T) {
+			n := &slowSendPresentation{entered: make(chan struct{}), release: make(chan struct{})}
+			srv, journal, _ := sendReceiptServer(t, t.TempDir(), func(e *engine.Engine) { e.SetHumanNotifier(n) })
+			var unblock sync.Once
+			release := func() { unblock.Do(func() { close(n.release) }) }
+			t.Cleanup(release)
+			sender := sendReceiptSetup(t, srv, version)
+			args := map[string]any{"token": sender, "to": "human", "type": "question", "body": "same identified request", "op_id": "bounded-dedup"}
+			first := sendReceiptHTTP(context.Background(), srv, version, args)
+			serial, ok := first.payload["msg_serial"].(float64)
+			if first.err != nil || first.isError || !ok || first.payload["human_route"] != "desktop" {
+				t.Fatalf("setup: initial identified desktop send failed: %+v", first)
+			}
+			before := journal.appends.Load()
+			n.armed.Store(true)
+			ctx, cancel := context.WithTimeout(context.Background(), 6500*time.Millisecond)
+			defer cancel()
+			answer := make(chan sendReceiptReply, 1)
+			go func() { answer <- sendReceiptHTTP(ctx, srv, version, args) }()
+			select {
+			case <-n.entered:
+			case reply := <-answer:
+				t.Fatalf("setup: retry never reached the production presentation port: %+v", reply)
+			case <-time.After(3 * time.Second):
+				t.Fatal("setup: retry presentation was never reached")
+			}
+			reply := <-answer
+			assertSendReceiptRetry(t, reply, uint64(serial))
+			if reply.payload["advisories"] == nil || journal.appends.Load() != before {
+				t.Fatalf("bounded retry lost its advisory boundary or appended again: %v", reply.payload)
+			}
+			release()
+			assertSendReceiptRetry(t, sendReceiptHTTP(context.Background(), srv, version, args), uint64(serial))
+			if journal.appends.Load() != before {
+				t.Fatal("completed identified retry appended another operation")
 			}
 		})
 	}
