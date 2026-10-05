@@ -28,8 +28,8 @@ func (e *Engine) prepareCredentialRecovery(op *core.Op) (*credentialRecovery, er
 	plan := &credentialRecovery{index: -1}
 	for i, nonce := range op.RecoveryNonces {
 		row := e.state.Agents[e.state.Nonces[nonce]]
-		if row == nil || row.Gone() || row.Name != op.Name || host == "" ||
-			e.canonicalHost(row.HostID) != host {
+		if row == nil || row.Gone() || row.Agent == nil || row.Name != op.Name || host == "" ||
+			e.canonicalHost(row.Agent.HostID) != host {
 			continue
 		}
 		plan.ids = append(plan.ids, row.ID)
@@ -71,9 +71,9 @@ func (e *Engine) finishCredentialRecovery(plan *credentialRecovery, op *core.Op,
 	id, _ := res["agent_id"].(string)
 	var older *core.Agent
 	for _, row := range e.state.Agents {
-		if row.ID == id || row.Name != op.Name ||
+		if row.ID == id || row.Agent == nil || row.Name != op.Name ||
 			(row.Status != core.StatusDormant && row.Status != core.StatusStale) ||
-			e.canonicalHost(row.HostID) != op.Agent.HostID {
+			e.canonicalHost(row.Agent.HostID) != op.Agent.HostID {
 			continue
 		}
 		if older == nil || row.CreatedSerial < older.CreatedSerial ||
