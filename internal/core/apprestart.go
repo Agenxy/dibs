@@ -146,3 +146,18 @@ func (s *State) applyReadAppRestart(l *Agent) (Result, []Event) {
 	}
 	return Result{"notice": b.String()}, []Event{}
 }
+
+// gcRestartNotices discards snapshots that no surviving incarnation can read.
+// It runs inside a sweep, so this silent deletion advances the serial and is
+// recorded in the ledger just like the other deterministic GC work.
+func (s *State) gcRestartNotices() bool {
+	pruned := false
+	for id, notice := range s.RestartNotices {
+		l := s.Agents[id]
+		if l == nil || l.Retired() || l.CreatedSerial != notice.CreatedSerial {
+			delete(s.RestartNotices, id)
+			pruned = true
+		}
+	}
+	return pruned
+}

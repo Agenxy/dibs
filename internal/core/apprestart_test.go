@@ -12,7 +12,9 @@ func TestRestartSettingsAreCoordinatorScopedAndReplayable(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	reg(t, s, "member", "tm", t0)
 	reg(t, s, "lead", "tl", t0)
+	reg(t, s, "boss", "tb", t0)
 	mustApply(t, s, &Op{Kind: OpGrantRole, To: "lead", Mode: RoleCoordinator}, t0)
+	mustApply(t, s, &Op{Kind: OpGrantRole, To: "boss", Mode: RoleAdmin}, t0)
 	base := s.Serial
 	if _, _, err := s.Apply(&Op{Kind: OpSetRestartSetting, Token: "tm", SettingKey: "wake.resume_after_app_restart", SettingValue: "1h"}, t0); !errors.Is(err, ErrNotCoordinator) {
 		t.Fatalf("member changed restart setting: %v", err)
@@ -28,16 +30,64 @@ func TestRestartSettingsAreCoordinatorScopedAndReplayable(t *testing.T) {
 	if got := s.RestartSettings[op.SettingKey]; got.Value != "1h" || got.By != "lead" || !got.At.Equal(t0) {
 		t.Fatalf("setting provenance = %+v", got)
 	}
+	adminOp := &Op{Kind: OpSetRestartSetting, Token: "tb", SettingKey: RestartIntervalSetting, SettingValue: "2s"}
+	mustApply(t, s, adminOp, t0)
+	if got := s.RestartSettings[adminOp.SettingKey]; got.Value != "2s" || got.By != "boss" {
+		t.Fatalf("admin setting provenance = %+v", got)
+	}
 	replay := NewState("n1", DefaultLimits())
 	reg(t, replay, "member", "tm", t0)
 	reg(t, replay, "lead", "tl", t0)
+	reg(t, replay, "boss", "tb", t0)
 	mustApply(t, replay, &Op{Kind: OpGrantRole, To: "lead", Mode: RoleCoordinator}, t0)
+	mustApply(t, replay, &Op{Kind: OpGrantRole, To: "boss", Mode: RoleAdmin}, t0)
 	mustApply(t, replay, &Op{Kind: OpSetRestartSetting, AgentID: "lead", SettingKey: op.SettingKey, SettingValue: op.SettingValue}, t0)
+	mustApply(t, replay, &Op{Kind: OpSetRestartSetting, AgentID: "boss", SettingKey: adminOp.SettingKey, SettingValue: adminOp.SettingValue}, t0)
 	if replay.RestartSettings[op.SettingKey] != s.RestartSettings[op.SettingKey] {
 		t.Fatal("replay differs from live setting")
 	}
+	if replay.RestartSettings[adminOp.SettingKey] != s.RestartSettings[adminOp.SettingKey] {
+		t.Fatal("replay differs from live admin setting")
+	}
 	if err := Admit(&Op{Kind: OpSetRestartSetting, SettingKey: op.SettingKey, SettingValue: "-1h"}, DefaultLimits()); err == nil {
 		t.Fatal("negative duration admitted")
+	}
+}
+
+func TestRestartNoticesArePrunedByLedgeredSweep(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		retire func(*testing.T, *State)
+	}{
+		{name: "closed", retire: func(t *testing.T, s *State) {
+			mustApply(t, s, &Op{Kind: OpSignOff, Token: "tw"}, t0)
+		}},
+		{name: "replaced incarnation", retire: func(_ *testing.T, s *State) {
+			s.Agents["worker"].CreatedSerial++
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := NewState("n1", DefaultLimits())
+			reg(t, s, "worker", "tw", t0)
+			l := s.Agents["worker"]
+			s.RestartNotices[l.ID] = RestartNotice{AgentID: l.ID, CreatedSerial: l.CreatedSerial}
+			tc.retire(t, s)
+			base := s.Serial
+			res, evs, err := s.Apply(&Op{Kind: OpSweep}, t0.Add(time.Second))
+			// Silent GC emits no event; its changed result and serial advance
+			// are what cause the engine to append the sweep to the ledger.
+			if err != nil || res["changed"] != true || len(evs) != 0 || s.Serial != base+1 {
+				t.Fatalf("notice-only sweep not ledgerable: res=%v events=%v serial=%d err=%v", res, evs, s.Serial, err)
+			}
+			if len(s.RestartNotices) != 0 {
+				t.Fatalf("stale restart notice retained: %v", s.RestartNotices)
+			}
+			base = s.Serial
+			res, evs, err = s.Apply(&Op{Kind: OpSweep}, t0.Add(2*time.Second))
+			if err != nil || res["changed"] != false || evs != nil || s.Serial != base {
+				t.Fatalf("repeat sweep changed state: res=%v events=%v serial=%d err=%v", res, evs, s.Serial, err)
+			}
+		})
 	}
 }
 
