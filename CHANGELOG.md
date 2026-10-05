@@ -466,8 +466,7 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 The tagged publisher used get-by-tag and could not discover its empty draft.
 The operator approved deleting that draft; the immutable tag remains frozen at
 `0b8c05d` and will not be moved or retried with its broken publisher. No release
-artifacts were published. Its changes are carried forward under [Unreleased]
-above for the next version.
+artifacts were published. Its changes are carried into [0.0.12] above.
 
 ## [0.0.10] - 2026-10-03
 
