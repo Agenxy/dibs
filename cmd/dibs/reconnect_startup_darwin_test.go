@@ -278,8 +278,24 @@ func appReconnectContract(t *testing.T, lost, clockBack, legacy bool) {
 	if er != nil {
 		t.Fatal(er)
 	}
+	// Queue commands settle asynchronously; a short quiet interval cannot
+	// prove this row was excluded. Startup writes the real reconnect receipt
+	// synchronously for each selected target before returning the RPC reply.
+	fyiKey := sha256.Sum256([]byte(fyiSession))
+	fyiReconnect := filepath.Join(dir, "queued-wakes", hex.EncodeToString(fyiKey[:])+".json.reconnect")
+	if _, er = os.Stat(fyiReconnect); !os.IsNotExist(er) {
+		t.Fatalf("setup: FYI already has a reconnect receipt: %v", er)
+	}
 	newStartup, _ := startApp()
 	newStartup(0) // no token, register, check_in, or model turn
+	workerKey := sha256.Sum256([]byte(thread))
+	workerReconnect := filepath.Join(dir, "queued-wakes", hex.EncodeToString(workerKey[:])+".json.reconnect")
+	if _, er = os.Stat(workerReconnect); er != nil {
+		t.Fatalf("setup: actual app startup did not reconsider the unread worker: %v", er)
+	}
+	if _, er = os.Stat(fyiReconnect); !os.IsNotExist(er) {
+		t.Fatalf("presented unacked FYI was incorrectly selected for app reconnect: %v", er)
+	}
 	waitQueueCount(t, home, 1)
 	if !lost {
 		deadline := time.Now().Add(2 * time.Second)
