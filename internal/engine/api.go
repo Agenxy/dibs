@@ -13,11 +13,12 @@ import (
 
 // request and reply carry submissions across the single-writer boundary.
 type request struct {
-	op     *core.Op
-	fn     func() core.Result
-	reply  chan reply
-	invite *Invitation
-	finish func()
+	op      *core.Op
+	fn      func() core.Result
+	reply   chan reply
+	invite  *Invitation
+	finish  func()
+	receipt chan core.Result
 }
 
 type reply struct {
@@ -27,7 +28,7 @@ type reply struct {
 
 // Do submits one mutating op to the loop and waits.
 func (e *Engine) Do(ctx context.Context, op *core.Op) (core.Result, error) {
-	req := request{op: op, reply: make(chan reply, 1)}
+	req := request{op: op, reply: make(chan reply, 1), receipt: sendReceiptFrom(ctx)}
 	if op != nil && op.Kind == core.OpPutBlob {
 		e.holdRegistration(&req, op.Blob)
 	}

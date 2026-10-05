@@ -213,7 +213,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r = r.WithContext(inviteCtx)
-	s.observeBridge(r.Context(), req.Params)
+	s.observeRequest(r.Context(), &req)
 
 	if req.ID == nil { // notification (e.g. legacy notifications/initialized)
 		w.WriteHeader(http.StatusAccepted)
@@ -268,8 +268,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if s.handledLegacySubscription(w, r, &req) {
 		return
 	}
-	result, rpcErr := s.dispatch(r.Context(), &req, bearer(r), identityFromTransport(r), s.sessions.wantsUI(r),
-		s.sessions.clientFor(r))
+	result, rpcErr := s.dispatchWithSendBudget(r.Context(), &req, bearer(r), identityFromTransport(r),
+		s.sessions.wantsUI(r), s.sessions.clientFor(r))
 	writeRPC(w, http.StatusOK, req.ID, tagResult(result, requestEra(r, req.Params)), rpcErr)
 }
 
@@ -1201,35 +1201,6 @@ func stampHost(ctx context.Context, params json.RawMessage, op *core.Op) {
 	op.Agent.HostID = host
 }
 
-// noteIfNobodyCanWake projects the accepted message's live route decision.
-// It replaces any generic sleeping note with what the engine can observe.
-//
-// Out of line because run() is the busiest function in this file and sits on a
-// complexity ceiling, which this tipped over when it was three inline branches.
-func (s *Server) noteIfNobodyCanWake(ctx context.Context, to string, res core.Result) core.Result {
-	if res == nil {
-		return res
-	}
-	if route, _ := res["human_route"].(string); route == "desktop" || route == "relay" {
-		delete(res, "note") // Human handoff has its own delivery receipts, not an agent wake route.
-		return res
-	}
-	// THE ENGINE'S NOTE WINS, and this used to defer to the fold's.
-	//
-	// core writes "it will see this when it next wakes" for any sleeping
-	// recipient, which is true only if something can wake it. Whether anything
-	// can depends on the operator's wake configuration, which the fold cannot
-	// read and must not: it is impure and not replayable. So when the engine
-	// has something to say here it knows strictly more, and skipping it left the
-	// sender holding the false half of the two.
-	serial, _ := res["msg_serial"].(uint64)
-	if n := s.eng.SendDeliveryNoteFor(ctx, to, serial); n != "" {
-		res["note"] = n
-		return res
-	}
-	return res
-}
-
 func (s *Server) run(
 	ctx context.Context, name string, a *toolArgs,
 	params json.RawMessage, sessionClient *clientInfoJSON,
@@ -1513,29 +1484,13 @@ func (s *Server) run(
 // decorate adds what the fold could not know to a result the fold produced.
 //
 // Split out of run() for the reason the linter names and for a better one: run
-// dispatches, and everything below `Do` is about three specific tools that want
+// dispatches, and everything below `Do` is about registration tools that want
 // a fact the pure core has no way to reach. Keeping them in the dispatcher had
 // the two concerns sharing a function whose complexity only ever grows.
 func (s *Server) decorate(
 	ctx context.Context, name string, a *toolArgs,
 	op *core.Op, params json.RawMessage, res core.Result,
 ) core.Result {
-	if name == "send" {
-		// op.To, not a.To: the engine resolves a role address such as
-		// "coordinator" into the holder's id at ingress, and the literal
-		// looked up no agent, so a send to the coordinator carried no
-		// pull-only warning however unwakeable the holder. Found by the
-		// pre-release review, round fourteen.
-		res = s.noteIfNobodyCanWake(ctx, op.To, res)
-		// A send to someone this agent still owes an answer: see
-		// engine.UnansweredFrom.
-		if res != nil {
-			if n := s.eng.UnansweredFrom(ctx, a.Token, op.To); n != "" {
-				res["unanswered"] = n
-			}
-		}
-		return res
-	}
 	if name != "register" && name != "resume" {
 		return res
 	}

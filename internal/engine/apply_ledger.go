@@ -10,9 +10,15 @@ import (
 // applyAndLedger applies an op and ledgers it iff the serial advanced.
 // Persistence failure is fail-stop (SPEC §4).
 func (e *Engine) applyAndLedger(op *core.Op, now time.Time) (core.Result, error) {
+	return e.applyAndLedgerWithReceipt(op, now, nil)
+}
+
+func (e *Engine) applyAndLedgerWithReceipt(op *core.Op, now time.Time, receipt chan core.Result) (core.Result, error) {
 	e.stampReviewRetention(op, now)
 	before := e.state.Serial
+	applied := beginSendStage(op, "apply")
 	res, evs, err := e.state.Apply(op, now)
+	applied()
 	if err != nil {
 		// A handler that advanced the serial and THEN failed has committed a
 		// transition nobody will ever record: the op is not appended, so the
@@ -58,11 +64,20 @@ func (e *Engine) applyAndLedger(op *core.Op, now time.Time) (core.Result, error)
 		))
 	}
 	if e.state.Serial != before {
+		appended := beginSendStage(op, "ledger append")
 		if lerr := e.led.Append(e.state.Serial, now, op); lerr != nil {
 			panic(fmt.Sprintf("dibs: ledger persistence failure (fail-stop, SPEC §4): %v", lerr))
 		}
+		appended()
+	}
+	if op.Kind == core.OpSendMessage {
+		captureSendReceipt(receipt, res)
+	}
+	if e.state.Serial != before {
+		published := beginSendStage(op, "publish")
 		e.observeNameAliases(op, evs)
 		e.publish(evs)
+		published()
 	}
 	if op.Kind == core.OpPutBlob {
 		e.protectBlobRegistration(op.Blob)

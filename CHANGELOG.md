@@ -7,6 +7,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A send returns a bounded, honest acceptance outcome.** The HTTP send
+  response has a five-second server budget. Wake-route and unanswered-request
+  advice share the accepting writer request instead of submitting later reads.
+  A receipt captured after persistence survives slow delivery advisories; an
+  unknown outcome names the original retry id and requires the same id and
+  payload. Sends without an id do not claim a safe retry, and existing durable
+  dedup, replay and fail-stop persistence rules are unchanged. Debug-only
+  per-stage timings help diagnose another stall without logging mail bodies or
+  credentials. The reported 75-second incident's original cause remains
+  unproven; this closes the measured unbounded-response hole.
+
 - **Final delivery can be reviewed after DONE without numbered progress.**
   The milestone-acceptance guard now recognizes completion as the final named
   step's report. Unreported intermediate steps and unfinished final work stay

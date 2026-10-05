@@ -424,6 +424,12 @@ func (e *Engine) boot(now time.Time) {
 
 // exec runs the request phases for a mutating op.
 func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
+	return e.execWithReceipt(op, now, nil)
+}
+
+func (e *Engine) execWithReceipt(op *core.Op, now time.Time, receipt chan core.Result) (core.Result, error) {
+	admitted := beginSendStage(op, "admit")
+	defer admitted()
 	// Surface vocabulary is resolved before admission; the ledger records the
 	// new sender operation, never a changed interpretation of old responses.
 	if op.Kind == core.OpRespond && op.Disposition == "withdraw" {
@@ -887,7 +893,8 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 			}, nil
 		}
 	}
-	res, err := e.applyAndLedger(op, now)
+	admitted()
+	res, err := e.applyAndLedgerWithReceipt(op, now, receipt)
 	if err != nil {
 		return nil, err
 	}

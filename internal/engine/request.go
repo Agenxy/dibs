@@ -40,7 +40,10 @@ func (e *Engine) serveRequest(req request) {
 		}
 		return
 	}
-	res, err := e.exec(req.op, time.Now())
+	res, err := e.execWithReceipt(req.op, time.Now(), req.receipt)
+	if err == nil {
+		e.sendAdvisories(req.op, res, time.Now())
+	}
 	req.reply <- reply{res, err}
 }
 
