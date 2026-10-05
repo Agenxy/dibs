@@ -164,8 +164,10 @@ func seedAdvisoryBoard(t *testing.T, dir string, repos []string) {
 			t.Error("setup: close ledger:", err)
 		}
 	}()
-	reg, err := eng.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "advice-reader", Nonce: "reader-nonce",
-		AgentKind: core.KindPersistent, NoProcess: true})
+	reg, err := eng.Do(ctx, &core.Op{
+		Kind: core.OpRegister, Name: "advice-reader", Nonce: "reader-nonce",
+		AgentKind: core.KindPersistent, NoProcess: true,
+	})
 	if err != nil || reg["agent_id"] != "advice-reader" {
 		t.Fatalf("setup: reader registration: %v %v", reg, err)
 	}
@@ -173,9 +175,11 @@ func seedAdvisoryBoard(t *testing.T, dir string, repos []string) {
 		t.Fatal("setup: coordinator grant:", err)
 	}
 	for n, repo := range repos {
-		if _, err := eng.Do(ctx, &core.Op{Kind: core.OpRegister, Name: fmt.Sprintf("worker-%d", n),
+		if _, err := eng.Do(ctx, &core.Op{
+			Kind: core.OpRegister, Name: fmt.Sprintf("worker-%d", n),
 			Nonce: fmt.Sprintf("worker-nonce-%d", n), AgentKind: core.KindPersistent, NoProcess: true,
-			Agent: &core.AgentInfo{CWD: repo}}); err != nil {
+			Agent: &core.AgentInfo{CWD: repo},
+		}); err != nil {
 			t.Fatal("setup: worker registration:", err)
 		}
 	}
@@ -192,8 +196,10 @@ func advisoryDaemonBoot(t *testing.T, dir string, repos []string, notify, join, 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestScorerAdvisoryThroughDaemonBoot$")
-	args := []string{"dibd", "--dir", dir, "--addr", port.Addr, "--allow-parallel",
-		"--match-repo", repos[2], "--match-notify", notify, "--match-join", join, "--match-history", history}
+	args := []string{
+		"dibd", "--dir", dir, "--addr", port.Addr, "--allow-parallel",
+		"--match-repo", repos[2], "--match-notify", notify, "--match-join", join, "--match-history", history,
+	}
 	cmd.Env = append(nativeProbeEnv(t.TempDir(), "", ""), "DIBS_NOTIFY=off", "GORACE=atexit_sleep_ms=0",
 		"DIBS_ADVISORY_TEST_CHILD=1", "DIBS_ADVISORY_TEST_ARGS="+strings.Join(args, "\n"))
 	logFile, err := os.CreateTemp(t.TempDir(), "boot-log-")
@@ -309,11 +315,13 @@ func registerLaterAdviceTrees(t *testing.T, dir, addr string, repos []string) {
 	client := &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{Proxy: nil}}
 	defer client.CloseIdleConnections()
 	for n, repo := range repos {
-		body, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": n + 1, "method": "tools/call",
+		body, err := json.Marshal(map[string]any{
+			"jsonrpc": "2.0", "id": n + 1, "method": "tools/call",
 			"params": map[string]any{"name": "register", "arguments": map[string]any{
 				"name": fmt.Sprintf("later-worker-%d", n), "nonce": fmt.Sprintf("later-nonce-%d", n),
 				"kind": "persistent", "cwd": repo, "pid": os.Getpid(),
-			}}})
+			}},
+		})
 		if err != nil {
 			t.Fatal("setup: registration envelope:", err)
 		}
