@@ -652,6 +652,23 @@ silently changes who gets auto-joined.
 Small repository: tier 0 is genuinely enough. Large one, or one where the top of
 the list matters: an embedding sidecar is where the accuracy comes from.
 
+For a locally mined repository with at least 1,000 tracked files and no
+configured embeddings service, Dibs sends standing configuration advice to
+the coordinator, or the human when no coordinator is available. A derived
+`scorer-advisories.json` in the selected daemon data directory remembers the
+local host/repository and deployed scorer/configuration fingerprint, including
+the effective notify and join thresholds. Ordinary corpus commits and daemon
+builds do not participate. Advice is spent only after its ordinary notify mail
+commits; absent recipients and failed sends leave it pending.
+
+Startup discovery and prewarming wait for their index builds before releasing
+one combined advisory. Later lazy discoveries coalesce after one quiet second;
+only newly relevant repositories appear in that message. Unchanged restarts
+are silent, while changed scorer settings or thresholds permit one new report.
+The marker is outside the fold and contains hashes, never credentials or raw
+repository paths. Losing it, a failed save, or a crash between committed mail
+and the marker save can repeat advice; it cannot lose coordination state.
+
 There is therefore no default to fall back to, by design: with no calibration
 Dibs runs at `notify` only and says so, rather than silently guessing a bar it
 cannot know.

@@ -248,6 +248,9 @@ type Engine struct {
 	// What Dibs has already told the coordinator about itself, so a fault that
 	// recurs every sweep does not become a message every sweep.
 	faults faultState
+	// Standing advice has durable derived suppression and a batched sender,
+	// separate from faults that should be reported again after a restart.
+	advisories advisoryState
 }
 
 type waiter struct {
@@ -1111,6 +1114,7 @@ func (e *Engine) sweep(now time.Time) {
 	e.trimContactEvidence(now)
 	// Anything found before the board had anybody on it. See flushFaults.
 	e.flushFaults()
+	e.flushAdvisories()
 	op := &core.Op{
 		Kind: core.OpSweep, PurgeMail: true,
 		GiveUpAnnounce:    e.exhaustedAnnouncements(),
