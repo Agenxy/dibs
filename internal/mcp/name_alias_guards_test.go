@@ -192,7 +192,13 @@ func TestConfiguredRoleAliasesExposeShadowingThroughProductionBoard(t *testing.T
 	id, tok := aliasRegister(t, srv, "worker-id", "configured-worker")
 	peer, peerTok := aliasRegister(t, srv, "peer-id", "configured-peer")
 	aliasRename(t, srv, tok, "configured-label")
+	if resolved, err := eng.ResolveConfiguredAgent(context.Background(), "configured-label"); err != nil || resolved != id {
+		t.Fatalf("setup: current configured name did not resolve: %s %v", resolved, err)
+	}
 	aliasRename(t, srv, tok, "worker-current")
+	// A configured name can become an alias between reconciler ticks. The
+	// board must diagnose it immediately, before the next role resolution.
+	aliasConfiguredBoard(t, eng, "alias", id, "")
 	resolved, err := eng.ResolveConfiguredAgent(context.Background(), "configured-label")
 	if err != nil || resolved != id {
 		t.Fatalf("configured alias lost: %s %v", resolved, err)

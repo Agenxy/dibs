@@ -17,7 +17,7 @@ type configuredNameAddress struct {
 
 func (e *Engine) noteConfiguredName(name, id string, ambiguous []string) {
 	aliases := e.nameAliases.Candidates(e.state, name, true)
-	if len(aliases) == 0 {
+	if len(aliases) == 0 && id == "" {
 		delete(e.configuredNames, name)
 		return
 	}
@@ -51,7 +51,8 @@ func (e *Engine) configuredNameView() []configuredNameAddress {
 	for _, name := range names {
 		id, ambiguous := e.nameAliases.Resolve(e.state, name, true)
 		e.noteConfiguredName(name, id, ambiguous)
-		if view, ok := e.configuredNames[name]; ok {
+		if view, ok := e.configuredNames[name]; ok &&
+			(view.Via == "alias" || len(view.Shadowed) > 0 || len(view.Ambiguous) > 0) {
 			views = append(views, view)
 		}
 	}
