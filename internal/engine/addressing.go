@@ -110,7 +110,7 @@ func (e *Engine) resolveAgentRefs(op *core.Op) (resolved map[string]string, err 
 	}
 	for _, ref := range refs {
 		was := *ref.at
-		id, ambiguous := e.state.AgentRef(was)
+		id, ambiguous := e.nameAliases.Resolve(e.state, was, false)
 		if len(ambiguous) > 0 {
 			return nil, core.ErrAmbiguousAgent(was, ambiguous)
 		}
@@ -151,7 +151,7 @@ func addressedNote(op *core.Op, resolved map[string]string) string {
 		if note != "" {
 			note += "; "
 		}
-		note += label + ": " + was + " is the NAME of " + id
+		note += label + ": " + was + " resolves to " + id
 	}
 	if note == "" {
 		return ""

@@ -37,9 +37,22 @@ so mail sent to it arrives whatever you have renamed yourself to, and it is the
 string to quote when you tell somebody who did a piece of work. Your **name is an
 address too**, `send(to: <your name>)` finds you, which is what makes a rename
 usable at all: the board shows your name, so peers address what they can see.
-What a rename does take away is the *old* name. Anyone who knew you by it will
-now reach nobody, unless it happened to be your id as well, so **tell the agents
-that were waiting on you**. Two renames are refused rather than suffixed the way
+A successful rename keeps the old name as a **former-name alias**, until you
+release it with `update(release_names: ["old-name"])`. An id wins over a current
+name, and a current name wins over an alias; the send result identifies the
+actual recipient. Two eligible alias owners are refused with both ids, so use
+the intended id. New renames retain at most 64 former names; release some before
+adding another. Releasing an already absent alias changes nothing.
+
+Your **nonce recovers your id**, even after renaming: `register(nonce: ...)`
+keeps the current name; adding `name` revises that same row after recovery.
+Keep and use the returned token. A refused name is checked before recovery can
+rotate a token or wake the row. A new identity still needs a name. Configured
+role names keep working through aliases; `dibs doctor` shows alias resolution
+and warns about shadowing. Role fingerprints still prevent another name owner
+inheriting a role.
+
+Two renames are refused rather than suffixed the way
 `register` suffixes an id: a name another live agent holds, and a name that is
 another agent's id. The first makes a label ambiguous; the second publishes a
 label that reaches the other row, because an id wins over a name.
@@ -389,7 +402,7 @@ receiving native peer turns, another watcher adds no delivery guarantee.
   context that the nonce exists to outlive, so it never survived.
 - **If your name was taken, ask for your old mailbox back.** Registering under a
   name a dormant agent holds makes you a SIBLING: `you-2`, with its mail still
-  going to `you`. Reattaching with the same name and nonce is the clean fix;
+  going to `you`. Reattaching with your nonce is the clean fix;
   when you kept no nonce, `send(to: "coordinator", type: "request", adopt:
   "<the old id>", body: why it is yours)` and their Approve moves the mailbox
   onto you. Do not carry on as a sibling. Every `-2` and `-3` on a board is an

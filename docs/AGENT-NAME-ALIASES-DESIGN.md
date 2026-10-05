@@ -1,8 +1,8 @@
 # Agent names, aliases and nonce-first recovery
 
 Proposal for request 31579. Source baseline: merged main
-`0afbd9d384f5dff8b591dd779f1aa63d57e46dbd`. Design only; implementation
-requires architect acceptance. Stop 342 is merged and normally installed with
+`0afbd9d384f5dff8b591dd779f1aa63d57e46dbd`. Accepted by the architect in
+33131 at design commit dfbc212; implementation is under review. Stop 342 is merged and normally installed with
 verified live build, signatures and retained agent identities. The compiler
 window has been returned; this work remains source-only.
 

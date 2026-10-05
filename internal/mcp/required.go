@@ -64,9 +64,6 @@ var knownParams = func() map[string][]string {
 // Authorization header instead of the arguments object.
 func checkRequired(tool string, raw json.RawMessage, bearerToken, agentNonce string) error {
 	req := requiredParams[tool]
-	if len(req) == 0 {
-		return nil
-	}
 	present := map[string]bool{}
 	if len(raw) > 0 {
 		var got map[string]json.RawMessage

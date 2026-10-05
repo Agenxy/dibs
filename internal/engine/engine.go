@@ -174,9 +174,11 @@ type Engine struct {
 	// hostID is WHICH COMPUTER this daemon runs on, as the fleet's address
 	// plane names it (Supgang's node id) when that is known; "" means the
 	// ledger's own node id stands in. See HostID.
-	hostID        string
-	appReconnects map[string]time.Time // derived app process incarnations, writer-owned
-	reconnectMail map[string]uint64    // row incarnation awaiting one reconnect reconsideration
+	hostID          string
+	appReconnects   map[string]time.Time // derived app process incarnations, writer-owned
+	nameAliases     *core.AgentNameAliases
+	configuredNames map[string]configuredNameAddress // derived role-address diagnostics
+	reconnectMail   map[string]uint64                // row incarnation awaiting one reconnect reconsideration
 	// hostAliases are ids this computer used to answer to: see
 	// SetHostAliases. Written before the engine serves, read on the
 	// request path.
@@ -306,6 +308,7 @@ func New(st *core.State, led Ledger, prober Prober, history ...[]core.Event) *En
 	e.rebuildQueueNotices()
 	e.rebuildSituationalNotices()
 	e.rebuildInvitationHistory(history)
+	e.nameAliases = core.NewAgentNameAliases(st, ring)
 	return e
 }
 
@@ -530,6 +533,10 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	if !op.HumanMint && e.wouldTakeHumanIdentity(op) {
 		return nil, core.ErrHumanIdentity
 	}
+	nameRecovery, err := e.prepareNonceName(op)
+	if err != nil {
+		return nil, err
+	}
 
 	// An agent whose bridge cannot see the harness session id adopts the one
 	// its harness announced from the same directory.
@@ -726,6 +733,14 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 			if !e.allow(actor.ID, now) {
 				return nil, core.ErrRateLimited // admitted nothing; no wake
 			}
+			if res, err := e.prepareAliasUpdate(op, actor); err != nil || res != nil {
+				if err == nil {
+					e.seen[actor.ID] = now
+					e.noteAuthenticatedContact(actor, now)
+					e.confirmSocketOffer(actor, now)
+				}
+				return res, err
+			}
 			if err := e.prepareHumanRecipient(op, now); err != nil {
 				return nil, err
 			}
@@ -774,16 +789,6 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		return nil, err
 	}
 
-	// An omitted description keeps the one the agent already has.
-	//
-	// Resolved at ingress and written INTO the op, so the ledger records the
-	// text that was actually in force and replay reaches the same board without
-	// consulting a board that has moved on. The fold still assigns
-	// unconditionally, which it must: an op already on disk that cleared a
-	// description meant to clear it.
-	if op.Kind == core.OpUpdate && op.KeepDescription && actor != nil {
-		op.Description = actor.Description
-	}
 	if op.Kind == core.OpUpdate && op.Agent != nil {
 		// A corrected location is a repository to discover, as a registered
 		// one is: the correction used to update the row and leave matching
@@ -886,6 +891,12 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := e.finishNonceName(nameRecovery, res, now); err != nil {
+		return nil, err
+	}
+	if op.Kind == core.OpUpdate && actor != nil {
+		res["name_aliases"] = e.nameAliases.Names(e.state, actor.ID)
+	}
 	e.addQueueCheckpoint(res, actor, op, now)
 	if op.Kind == core.OpRespond && res != nil && (op.Disposition == "approve" || op.Disposition == "queue") {
 		if m := e.state.Messages[op.MsgSerial]; m != nil && m.Owed(now) {
@@ -938,7 +949,7 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	if mintedNonce && res != nil && res["nonce"] != nil {
 		res["nonce_hint"] = "KEEP THIS. You did not send a nonce, so one was made for " +
 			"you: it is the only credential that survives your process. Register again " +
-			"with the same name and this nonce to come back as yourself, with your " +
+			"with this nonce to come back as yourself, with your " +
 			"mailbox and claims. Without it a new session is a stranger to this row."
 	}
 	// After the apply, never before it. Holding the secret is not sufficient:
@@ -1063,68 +1074,6 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	}
 	if board, ok := res["board"].(map[string]any); ok {
 		e.labelBoardHosts(board)
-	}
-	return res, nil
-}
-
-// applyAndLedger applies an op and ledgers it iff the serial advanced.
-// Persistence failure is fail-stop (SPEC §4).
-func (e *Engine) applyAndLedger(op *core.Op, now time.Time) (core.Result, error) {
-	e.stampReviewRetention(op, now)
-	before := e.state.Serial
-	res, evs, err := e.state.Apply(op, now)
-	if err != nil {
-		// A handler that advanced the serial and THEN failed has committed a
-		// transition nobody will ever record: the op is not appended, so the
-		// ledger skips that serial forever and every later one is off by one.
-		// A real board did exactly this: serial 447 allocated, never written,
-		// and the daemon then refused to replay its own ledger on restart.
-		//
-		// Fail-stop for the same reason a persistence failure does (SPEC §4).
-		// The in-memory state is already wrong; continuing would write more ops
-		// on top of a divergence, and restarting replays cleanly from the last
-		// good line. Loud and immediate beats silent and permanent.
-		if e.state.Serial != before {
-			panic(fmt.Sprintf(
-				"dibs: %s advanced the serial %d→%d then failed (%v). "+
-					"a transition was committed but cannot be ledgered (fail-stop, SPEC §4)",
-				op.Kind, before, e.state.Serial, err,
-			))
-		}
-		return nil, err
-	}
-	// ONE op, ONE serial. A handler that allocates two writes only its last,
-	// leaving a hole, and the record at the hole is a state transition that
-	// happened and was never recorded, so every later replay reconstructs a
-	// different board than the one that ran.
-	//
-	// That is not theoretical. This board reached a state where `sign_off`
-	// appeared twice for one agent with no re-registration between them: live it
-	// resolved a token that replay cannot see (Op.Token is `json:"-"`, so replay
-	// resolves by agent id instead), and the op that must have re-created that
-	// agent is sitting in one of the holes. The daemon then refused to start,
-	// correctly, and with no way back until `dibs admin repair-ledger` existed.
-	//
-	// Fail-stop for the same reason the advance-then-fail case above does, and
-	// louder than the gap WARNING at replay: by the time replay warns, the
-	// transition is already lost. Here it is still on the stack, and the op kind
-	// that did it is in the message.
-	if e.state.Serial > before+1 {
-		panic(fmt.Sprintf(
-			"dibs: %s advanced the serial %d→%d: one op must allocate exactly one "+
-				"serial, or the ledger gets a hole where a real transition happened "+
-				"(fail-stop, SPEC §4)",
-			op.Kind, before, e.state.Serial,
-		))
-	}
-	if e.state.Serial != before {
-		if lerr := e.led.Append(e.state.Serial, now, op); lerr != nil {
-			panic(fmt.Sprintf("dibs: ledger persistence failure (fail-stop, SPEC §4): %v", lerr))
-		}
-		e.publish(evs)
-	}
-	if op.Kind == core.OpPutBlob {
-		e.protectBlobRegistration(op.Blob)
 	}
 	return res, nil
 }

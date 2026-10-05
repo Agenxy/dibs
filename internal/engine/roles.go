@@ -151,7 +151,7 @@ func (e *Engine) AllMail(ctx context.Context, token string, census bool, agent s
 // either branch uses the value, and because AllMail is at the complexity ceiling
 // the linter enforces. Runs ON the loop, like everything inside e.query.
 func (e *Engine) mailboxSelector(agent string) (string, core.Result) {
-	id, ambiguous := e.state.AgentRef(agent)
+	id, ambiguous := e.nameAliases.Resolve(e.state, agent, false)
 	if len(ambiguous) > 0 {
 		return "", core.Result{"error": core.ErrAmbiguousAgent(agent, ambiguous)}
 	}
@@ -330,7 +330,8 @@ func (e *Engine) resolveConfiguredAgentDecision(nameOrID string) core.Result {
 	if e.state == nil || nameOrID == "" {
 		return core.Result{}
 	}
-	id, ambiguous := e.state.LiveAgentRef(nameOrID)
+	id, ambiguous := e.nameAliases.Resolve(e.state, nameOrID, true)
+	e.noteConfiguredName(nameOrID, id, ambiguous)
 	switch {
 	case len(ambiguous) > 0:
 		return core.Result{"ambiguous": ambiguous}

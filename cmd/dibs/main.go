@@ -992,6 +992,7 @@ type (
 	boardAgent struct {
 		ID          string    `json:"id"`
 		Name        string    `json:"name,omitempty"`
+		NameAliases []string  `json:"name_aliases,omitempty"`
 		Description string    `json:"description,omitempty"`
 		DisplayName string    `json:"display_name,omitempty"`
 		Status      string    `json:"status"`
@@ -1073,12 +1074,13 @@ type (
 		Departed  int           `json:"departed_unacked"`
 	}
 	boardView struct {
-		Serial uint64         `json:"serial"`
-		Node   string         `json:"node"`
-		HostID string         `json:"host_id"`
-		Agents []boardAgent   `json:"agents"`
-		Claims []boardClaim   `json:"claims"`
-		Spaces []boardChannel `json:"spaces"`
+		ConfiguredNames []configuredNameAddress `json:"configured_name_addresses,omitempty"`
+		Serial          uint64                  `json:"serial"`
+		Node            string                  `json:"node"`
+		HostID          string                  `json:"host_id"`
+		Agents          []boardAgent            `json:"agents"`
+		Claims          []boardClaim            `json:"claims"`
+		Spaces          []boardChannel          `json:"spaces"`
 	}
 )
 
