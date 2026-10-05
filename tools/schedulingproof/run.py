@@ -164,6 +164,11 @@ class Experiment:
             rows.append(row)
         return {"work": sum(r["work"] for r in rows), "cpu_s": sum(r["cpu_s"] for r in rows)}
 
+    def daemon_cpu(self, pid):
+        text = run("ps", "-p", str(pid), "-o", "time=").stdout.strip()
+        minutes, seconds = text.split(":")
+        return int(minutes) * 60 + float(seconds)
+
     def arm(self, tag, policy, samples, loaded):
         home = self.out / (tag + "-home")
         home.mkdir()
@@ -196,6 +201,7 @@ class Experiment:
         for _ in range(10):
             self.call(url, secret, "check_in", {"token": agents[0]["token"]})
         load_before = self.load_snapshot() if loaded else None
+        cpu_before = self.daemon_cpu(pid)
         start = time.monotonic()
         for i in range(samples):
             pace = time.monotonic()
@@ -213,13 +219,15 @@ class Experiment:
             time.sleep(max(0, 0.05 - (time.monotonic() - pace)))
         wall = time.monotonic() - start
         load_after = self.load_snapshot() if loaded else None
+        cpu_after = self.daemon_cpu(pid)
         self.stop(target)
         (folder / "samples.json").write_text(json.dumps(rows))
         # Secrets and ledger keys are fixture credentials, never artifacts.
         for name in ["local.secret", "key"]:
             (board / name).unlink(missing_ok=True)
         summary = {"tag": tag, "policy": policy, "loaded": loaded, "pairs": samples,
-                   "wall_s": wall, "errors": 0, "send": stats(rows, "send"), "respond": stats(rows, "respond")}
+                   "wall_s": wall, "daemon_cpu_s": cpu_after-cpu_before,
+                   "errors": 0, "send": stats(rows, "send"), "respond": stats(rows, "respond")}
         if loaded:
             assert load_after["work"] > load_before["work"], "load made no progress"
             summary["competitor_work_s"] = (load_after["work"] - load_before["work"]) / wall
@@ -280,6 +288,9 @@ def main():
     finally:
         if exp:
             exp.cleanup()
+        for home in out.glob("*-home"):
+            for name in ["local.secret", "key"]:
+                (home / "board" / name).unlink(missing_ok=True)
         (out / "summary.json").write_text(json.dumps(result, indent=2))
 
 
