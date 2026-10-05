@@ -73,6 +73,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Repository scorer advice no longer repeats on every daemon restart.**
+  Standing advice is remembered per local repository and deployed scorer
+  configuration outside the ledger. Startup indexes and prewarming produce
+  one combined message; repositories discovered later are batched after a
+  quiet second. Changed scorer settings or operator thresholds make advice
+  relevant again; changes in automatically calibrated bars do not. Suppression
+  is saved only after mail commits; losing or failing to
+  save the derived marker can repeat advice without losing coordination state.
+
 - **Queued notices state when they were issued, even if mail is already handled.**
   The canonical native Codex queue route includes the local admission attempt's
   UTC date and time to the second and says the notice may already be handled.

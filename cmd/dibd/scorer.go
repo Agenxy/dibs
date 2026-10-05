@@ -308,17 +308,23 @@ func (f *scorerFlags) install(ctx context.Context, eng *engine.Engine) {
 	// them at boot: every `dibs upgrade` switched matching off for the whole
 	// board until some agent happened to register, and on a board of
 	// long-lived agents that could be days. See Engine.WorkingDirectories.
-	go f.indexKnownTrees(ctx, eng)
-
-	if repo := f.repo; repo != "" {
-		eng.SetMatchStatus(engine.MatchStatus{Phase: engine.MatchIndexing, Repo: repo})
-		// The pre-warm takes a claim like any other build, so an eviction
-		// during it stops its publication too; nothing waits on the verdict.
-		go func() {
+	// A restart rebuilds several trees concurrently. Advice is one batch only
+	// after ALL of that work, including the independent pre-warm, finishes.
+	finishAdvice := eng.BeginAdvisoryBatch()
+	go func() {
+		defer finishAdvice()
+		var builds sync.WaitGroup
+		builds.Go(func() { f.indexKnownTrees(ctx, eng) })
+		if repo := f.repo; repo != "" {
 			if gen, ok := f.claimIndexSlot(repo); ok {
 				f.buildAndInstall(ctx, eng, repo, gen)
 			}
-		}()
+		}
+		builds.Wait()
+	}()
+
+	if repo := f.repo; repo != "" {
+		eng.SetMatchStatus(engine.MatchStatus{Phase: engine.MatchIndexing, Repo: repo})
 		return
 	}
 	eng.SetMatchStatus(engine.MatchStatus{
@@ -430,7 +436,6 @@ func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, held *cla
 		return false
 	}
 	scorer := f.withSidecar(ctx, lex)
-	f.recommendSidecar(ctx, eng, dir, lex.Files())
 
 	// Calibrate the notify bar unless the operator set one.
 	//
@@ -472,6 +477,9 @@ func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, held *cla
 	if !published {
 		return false
 	}
+	// A failed or evicted build has no installed configuration to recommend
+	// against. Use the actual deployed scorer and calibrated threshold.
+	f.recommendSidecar(eng, dir, lex.Files(), scorer.ID(), notify)
 	mode, phase := f.matchMode()
 	eng.SetMatchStatus(engine.MatchStatus{
 		Phase: phase, Scorer: scorer.ID(), Repo: dir,
@@ -595,6 +603,7 @@ func (f *scorerFlags) withSidecar(ctx context.Context, base overlap.Scorer) over
 // registration from each would have done.
 func (f *scorerFlags) indexKnownTrees(ctx context.Context, eng *engine.Engine) {
 	seen := map[string]bool{}
+	var builds []<-chan struct{}
 	for _, cwd := range eng.WorkingDirectories(ctx) {
 		root, err := repoRootOf(ctx, cwd)
 		if err != nil {
@@ -617,7 +626,14 @@ func (f *scorerFlags) indexKnownTrees(ctx context.Context, eng *engine.Engine) {
 			continue
 		}
 		seen[root] = true
-		f.indexDiscovered(ctx, eng, root)
+		builds = append(builds, f.indexDiscovered(ctx, eng, root))
+	}
+	for _, done := range builds {
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return
+		}
 	}
 }
 
@@ -632,7 +648,8 @@ func (f *scorerFlags) indexKnownTrees(ctx context.Context, eng *engine.Engine) {
 // Bounded, because indexing is git log mining and a machine could in principle
 // have an agent registered from anywhere. Past the bound the tree is named in
 // the log rather than silently ignored.
-func (f *scorerFlags) indexDiscovered(ctx context.Context, eng *engine.Engine, cwd string) {
+func (f *scorerFlags) indexDiscovered(ctx context.Context, eng *engine.Engine, cwd string) <-chan struct{} {
+	done := make(chan struct{})
 	// Cheap path first: a cwd already resolved to an indexed tree needs no git
 	// at all, so a busy fleet does not spawn a subprocess per registration.
 	f.discoverMu.Lock()
@@ -643,11 +660,13 @@ func (f *scorerFlags) indexDiscovered(ctx context.Context, eng *engine.Engine, c
 		// the stamp by hand instead of this.
 		f.touchLocked(root)
 		f.discoverMu.Unlock()
-		return
+		close(done)
+		return done
 	}
 	f.discoverMu.Unlock()
 
 	go func() {
+		defer close(done)
 		// Say that work has STARTED, before any of it happens.
 		//
 		// Indexing begins when an agent first registers from a repository, and
@@ -732,6 +751,7 @@ func (f *scorerFlags) indexDiscovered(ctx context.Context, eng *engine.Engine, c
 		}
 		f.buildAndInstall(ctx, eng, root, gen)
 	}()
+	return done
 }
 
 // buildAndInstall runs one index build under the claim it was given and
@@ -1280,20 +1300,21 @@ const sidecarWorthIt = 1000
 // operator asked for exactly this to be surfaced, and the machinery already
 // existed for Dibs to report its own shortcomings as ordinary mail.
 //
-// Silent when a sidecar is configured, and once per repository per daemon run:
-// a recommendation repeated every index is an alarm, and the Kind dedupes it.
-func (f *scorerFlags) recommendSidecar(ctx context.Context, eng *engine.Engine, dir string, files int) {
+// Silent when a sidecar is configured. Standing advice is remembered outside
+// the fold across restarts, and batched with other newly relevant repositories.
+func (f *scorerFlags) recommendSidecar(eng *engine.Engine, dir string, files int, scorer string, notify float64) {
 	if f.embedURL != "" || files < sidecarWorthIt {
 		return
 	}
-	eng.ReportFault(ctx, engine.Fault{
-		Kind:   "scorer-below-repo-size:" + dir,
-		Remedy: recommendationFor(f, dir, files),
-		What: fmt.Sprintf("%s has %d files, and the built-in scorer is measured well below its "+
-			"best at that size. Tier-0 recall@10 is 0.488 on a 121-file repository and about "+
-			"0.20 from 6,000 files upward, because shared vocabulary dilutes while the file "+
-			"count does not. Matching still answers; it answers less precisely, and an absence "+
-			"of overlap warnings here is weaker evidence than it looks.", dir, files),
+	eng.QueueAdvisory(engine.Advisory{
+		Key:      scorerAdviceKey(eng.HostID(), dir),
+		Revision: f.scorerAdviceRevision(scorer),
+		Remedy: "The built-in scorer is measured below its best at this size: tier-0 recall@10 " +
+			"is 0.488 at 121 files and about 0.20 from 6,000 files upward. Matching still answers " +
+			"less precisely; an absence of overlap warnings is weaker evidence than it looks.\n\n" +
+			recommendationFor(f, dir, files),
+		What: fmt.Sprintf("%s: %d tracked files, scorer %s, notify threshold %g, join threshold %g.",
+			dir, files, scorer, notify, f.join),
 	})
 }
 
