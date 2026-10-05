@@ -53,8 +53,13 @@ func TestDoneReportsTheFinalMilestoneForAdmission(t *testing.T) {
 				t.Errorf("DONE final milestone falsely refused: %v", err)
 			}
 			op.Milestone = 1
-			if err := s.Admit(op); codeOf(err) != "E_MILESTONE_UNREPORTED" {
+			err := s.Admit(op)
+			if codeOf(err) != "E_MILESTONE_UNREPORTED" {
 				t.Errorf("DONE invented an intermediate milestone report: %v", err)
+			}
+			var problem *Error
+			if !errors.As(err, &problem) || !strings.HasPrefix(problem.Hint, "did you mean milestone 2?") {
+				t.Errorf("hint omits the reviewable final delivery: %v", err)
 			}
 			if s.Serial != before || s.Messages[serial].Reached() != 0 {
 				t.Fatal("admission changed state or invented numbered progress")

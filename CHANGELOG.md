@@ -5,6 +5,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Final delivery can be reviewed after DONE without numbered progress.**
+  The milestone-acceptance guard now recognizes completion as the final named
+  step's report. Unreported intermediate steps and unfinished final work stay
+  protected, corrective hints name the reviewable final step, and historical
+  replay, progress counts and the original completion artifact are unchanged.
+
 ## [0.0.12] - 2026-10-05
 
 ### Added

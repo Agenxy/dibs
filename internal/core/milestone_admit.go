@@ -4,6 +4,8 @@ import "fmt"
 
 // New ingress policy, not a fold rule: old accepted-but-unreported milestones
 // remain replayable. A count of reports is not a set of milestone indices.
+// Done reports the final delivery even if earlier progress had no index; it
+// does not invent numbered reports for the intermediate steps.
 func (s *State) admitReportedMilestone(op *Op) error {
 	if op.Kind != OpRespond || op.Disposition != "accept" || op.Milestone <= 0 {
 		return nil
@@ -15,6 +17,10 @@ func (s *State) admitReportedMilestone(op *Op) error {
 	}
 	var reported []int
 	for i := 1; i <= len(m.Milestones); i++ {
+		if m.State == MsgStateDone && i == len(m.Milestones) {
+			reported = append(reported, i)
+			continue
+		}
 		for _, p := range m.Progress {
 			if p.Review == "" && p.Milestone == i {
 				reported = append(reported, i)
