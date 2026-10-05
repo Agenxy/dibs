@@ -1034,18 +1034,18 @@ func isStopEvent(event string) bool {
 //
 // On Stop, a delivery genuinely continues the turn: it is sent as
 // `decision: "block"` with a reason, which is the documented way to keep a
-// conversation going, and the same loop protections apply. So every piece of
-// mail delivered here prevents an agent from finishing, a plain FYI included.
-// That is Dibs driving a harness, which PHILOSOPHY.md rule 5 forbids and which
-// the wake path exists specifically not to do.
+// conversation going, and the same loop protections apply. Every message an
+// agent or human wrote to this recipient deserves that delivery, a plain FYI
+// included. Generated updates alone do not buy another model turn.
 //
 // Dibs already knows how urgent a thing is, because the sender said so when
 // they chose a type. A question or a request has somebody blocked on the
 // answer. A handoff is work its sender has stopped doing, so the only thing
 // between it and nobody doing it is this agent noticing. An unacknowledged
 // announcement carries collision risk by definition. Typed grant/adoption
-// verdicts and flagged reviews need a decision too. Other updates and peer FYIs
-// wait for the next natural activation or ride an actionable digest.
+// verdicts and flagged reviews need a decision too. Generated progress, queue
+// updates, ordinary approvals and accepted reviews wait for the next natural
+// activation or ride an actionable digest.
 //
 // SessionStart carries fresh information at a natural activation.
 // UserPromptSubmit stays silent so the human's prompt is never a mail trigger.
@@ -1117,7 +1117,7 @@ type WakePhase string
 
 const (
 	// WakeAll is the default route policy. Stop and sockets additionally
-	// require the shared typed actionable cause; informational mail waits
+	// require the shared typed actionable cause; generated updates wait
 	// for a natural activation or rides an actual delivering digest.
 	WakeAll WakePhase = "all"
 	// WakeUrgent restricts the wake to work somebody is blocked on: questions,

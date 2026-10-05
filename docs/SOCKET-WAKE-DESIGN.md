@@ -42,6 +42,13 @@ notices and DONE to a currently waiting sender are exceptions under 27721;
 historical waiting state was not measured, so 776 is a candidate count rather
 than a promised saving for the final policy.
 
+The person's correction in request 31760 supersedes the earlier FYI exclusion:
+every message an agent or human wrote to the recipient, including notify,
+qualifies. The historical informational bucket above must not be read as a
+current suppression or savings claim for authored FYIs. Generated progress,
+queue updates, ordinary approvals and accepted reviews stay quiet alone;
+DONE still requires a current waiting declaration.
+
 ## Existing contract to reuse
 
 The engine already owns current-session turn state. `noteTurnState` records
@@ -79,8 +86,9 @@ empty. No mailbox delivery or notice acknowledgement happens on suppression.
 The bridge's stream gets a digest from `WakeDigestFor`; deferred delivery
 uses `FreshWakeDigestFor` or the additive `SocketOfferFor` handshake. These
 socket-specific entry points can return an empty digest for a running turn
-or informational-only mail while Stop/SessionStart retain their own full
-digest. The plain digest read remains non-consuming. Do not gate the shared
+or generated informational updates. Stop uses the same cause as sockets:
+authored notify blocks once, generated updates alone do not. SessionStart
+retains the full digest. The plain digest read remains non-consuming. Do not gate the shared
 formatter used by hooks. Direct daemon socket plans need the same rule.
 
 Coalescing must hold through the idle wake epoch, not merely fifteen seconds

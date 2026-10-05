@@ -95,7 +95,7 @@ func waitingDeclaration(l *core.Agent) bool {
 // No rendered-text matching and no state table that can confuse an earlier
 // approval with a later DONE or a flagged review of already completed work.
 func (e *Engine) actionableSocketMail(l *core.Agent, now time.Time, fresh bool) bool {
-	if l.Retired() {
+	if l.Retired() || e.WakePolicy() == WakeNone {
 		return false
 	}
 	// A required acknowledgment is an outstanding obligation. Use the same
@@ -133,7 +133,7 @@ func (e *Engine) socketActionableNotices(l *core.Agent, now time.Time, fresh boo
 		if at, shown := e.noticePresented[key]; fresh && (n.Delivered || (shown && now.Sub(at) < AnnounceRetry)) {
 			continue
 		}
-		if socketActionableNotice(n, l, e.state.Messages[n.Msg]) {
+		if wakeCauseAllowed(e.WakePolicy(), false, socketActionableNotice(n, l, e.state.Messages[n.Msg])) {
 			return true
 		}
 	}
@@ -141,7 +141,16 @@ func (e *Engine) socketActionableNotices(l *core.Agent, now time.Time, fresh boo
 }
 
 func (e *Engine) socketActionableMessage(m *core.Message) bool {
-	return core.Blocking("message.sent", m.Type) || (m.Type == core.MsgNotify && e.isTheHuman(m.From))
+	// Authored mail deserves delivery even when it asks for no reply. Only
+	// generated notices use the narrower decision rule below.
+	return wakeCauseAllowed(e.WakePolicy(), true, core.Blocking("message.sent", m.Type))
+}
+
+// One phase rule for authored mail and typed generated notices, used by
+// sockets, Stop hooks and the operator's command route. Explicit opt-outs
+// belong to the operator; default delivery includes authored FYIs.
+func wakeCauseAllowed(phase WakePhase, authored, blocking bool) bool {
+	return phase != WakeNone && (blocking || (authored && phase == WakeAll))
 }
 
 func socketActionableNotice(n notice, l *core.Agent, request *core.Message) bool {

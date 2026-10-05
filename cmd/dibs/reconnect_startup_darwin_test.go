@@ -205,18 +205,24 @@ func appReconnectContract(t *testing.T, lost, clockBack, legacy bool) {
 	thread := "01a0aaaa-bbbb-7ccc-8ddd-eeeeeeeeeeee"
 	worker := do(&core.Op{Kind: core.OpRegister, Name: "worker", Description: "app-owned worker", AgentKind: core.KindPersistent, Nonce: "worker-nonce", SessionID: thread, Agent: &core.AgentInfo{Harness: "Codex", Surface: "chatgpt-app", HostID: "reconnect-host", CWD: home}})
 	asker := do(&core.Op{Kind: core.OpRegister, Name: "asker", Description: "sender", Nonce: "asker-nonce"})
+	var fyiToken string
 	for _, row := range []struct{ id, host string }{{"empty", "reconnect-host"}, {"other-host", "another-computer"}, {"fyi-only", "reconnect-host"}} {
 		sid := strings.Replace(thread, "aaaa", map[string]string{"empty": "1111", "other-host": "2222", "fyi-only": "3333"}[row.id], 1)
-		do(&core.Op{Kind: core.OpRegister, Name: row.id, Description: "cohort exclusion fixture", AgentKind: core.KindPersistent, Nonce: row.id + "-nonce", SessionID: sid, Agent: &core.AgentInfo{Harness: "Codex", Surface: "chatgpt-app", HostID: row.host, CWD: home}})
+		registered := do(&core.Op{Kind: core.OpRegister, Name: row.id, Description: "cohort exclusion fixture", AgentKind: core.KindPersistent, Nonce: row.id + "-nonce", SessionID: sid, Agent: &core.AgentInfo{Harness: "Codex", Surface: "chatgpt-app", HostID: row.host, CWD: home}})
+		if row.id == "fyi-only" {
+			fyiToken = registered["token"].(string)
+		}
 	}
 	do(&core.Op{Kind: core.OpAckBoard, Token: asker["token"].(string)})
 	do(&core.Op{Kind: core.OpSendMessage, Token: asker["token"].(string), To: "other-host", MsgType: core.MsgQuestion, Body: "another computer's mail"})
 	do(&core.Op{Kind: core.OpSendMessage, Token: asker["token"].(string), To: worker["agent_id"].(string), MsgType: core.MsgQuestion, Body: "mail must survive app restart", OpID: "receipt-check"})
 	waitQueueCount(t, home, 1)
-	do(&core.Op{Kind: core.OpSendMessage, Token: asker["token"].(string), To: "fyi-only", MsgType: core.MsgNotify, Body: "FYI alone must not restart a turn on reconnect"})
+	fyi := do(&core.Op{Kind: core.OpSendMessage, Token: asker["token"].(string), To: "fyi-only", MsgType: core.MsgNotify, Body: "authored FYI must reach its recipient"})
 	waitQueueCount(t, home, 2)
-	// The app consumed the earlier FYI wake while its mail remains unacked.
-	// Reconnect must not queue that informational-only row again.
+	// An app consuming a queue entry is not an agent reading it. Close the
+	// authored FYI through the actual acknowledgment door before asserting
+	// that reconnect does not wake this now-empty mailbox again.
+	do(&core.Op{Kind: core.OpAckMessage, Token: fyiToken, MsgSerial: fyi["msg_serial"].(uint64)})
 	queued, er := os.ReadFile(filepath.Join(home, "pending.json"))
 	if er != nil {
 		t.Fatal(er)

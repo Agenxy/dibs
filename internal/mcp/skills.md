@@ -367,6 +367,12 @@ receiving native peer turns, another watcher adds no delivery guarantee.
   misrouted and needs nothing installed. If you see `waiting`, call `inbox`.
 - Types are `notify`, `question`, `request`, `handoff`. Pick honestly: a
   `request` obliges someone, a `notify` does not.
+  Under default `all`, every authored message, including notify, qualifies for delivery: one wake
+  per idle socket epoch, or one blocking Stop delivery while the recipient is
+  busy. Generated progress and queue updates stay quiet alone and ride the
+  next delivery or natural activation. A socket write cannot confirm receipt.
+  The operator's explicit `urgent` suppresses FYI wakes on every route; `none`
+  suppresses mail wakes. Suppressed mail remains available through pulls.
 - **A verdict-only review is a question.** Use `send(type: "question")` to ask
   a reviewer for their verdict on a concrete artifact; they finish with
   `respond(disposition: "answer", body: <verdict and findings>)`. The answer

@@ -320,21 +320,22 @@ func (f *economyFixture) waitOffer(t *testing.T) string {
 }
 
 func TestSocketEconomyUsesLifecycleAndPreservesHookDelivery(t *testing.T) {
-	for _, mode := range []string{"mid-turn", "idle", "informational"} {
+	for _, mode := range []string{"mid-turn-question", "mid-turn-notify", "idle-question", "idle-notify"} {
 		t.Run(mode, func(t *testing.T) {
 			f := newEconomyFixture(t)
 			f.hook(t, "Stop")
-			if mode == "mid-turn" {
+			busy := strings.HasPrefix(mode, "mid-turn-")
+			if busy {
 				f.hook(t, "UserPromptSubmit")
 			}
 			kind := "question"
-			if mode == "informational" {
+			if strings.HasSuffix(mode, "notify") {
 				kind = "notify"
 			}
 			marker := "socket-economy-" + mode
 			f.tool(t, "send", map[string]any{"token": f.sender, "to": "worker", "type": kind, "body": marker})
 			text := f.waitOffer(t)
-			if mode == "idle" {
+			if !busy {
 				if !strings.Contains(text, marker) {
 					t.Fatalf("idle actionable offer lost mail: %q", text)
 				}
@@ -342,6 +343,7 @@ func TestSocketEconomyUsesLifecycleAndPreservesHookDelivery(t *testing.T) {
 				if len(wire) != 2 || !strings.Contains(strings.Join(wire, "\n"), marker) {
 					t.Fatalf("idle actionable mail produced no actual socket frame: %v", wire)
 				}
+				f.waitWritten(t)
 			} else {
 				if text != "" {
 					t.Errorf("%s mail offered a socket wake: %q", mode, text)
@@ -350,15 +352,63 @@ func TestSocketEconomyUsesLifecycleAndPreservesHookDelivery(t *testing.T) {
 					t.Errorf("%s mail wrote to the actual session socket: %v", mode, wire)
 				}
 			}
-			event := "Stop"
-			if mode == "informational" {
-				f.informationalStop(t)
-				event = "SessionStart"
+			got := f.tool(t, "hook_poll", map[string]any{"session_id": f.sid, "event": "Stop", "strict_output": true})
+			if got["decision"] != "block" || !strings.Contains(fmt.Sprint(got), marker) {
+				t.Fatalf("authored mail lost its blocking Stop fallback: %v", got)
 			}
-			if got := f.hook(t, event); !strings.Contains(got, marker) {
-				t.Fatalf("suppression or a held socket lost the full-mail fallback: %s", got)
+			if wire := collect(f.lines, 1, 1100*time.Millisecond); len(wire) != 0 {
+				t.Fatalf("Stop delivery wrote an extra native frame: %v", wire)
 			}
 		})
+	}
+}
+
+func TestSocketEconomyBridgeHonorsConfiguredPhase(t *testing.T) {
+	for _, phase := range []string{"all", "urgent", "none"} {
+		for _, kind := range []string{"notify", "question"} {
+			t.Run(phase+"/"+kind, func(t *testing.T) {
+				f := newEconomyFixture(t)
+				f.eng.ApplySetting("wake.extend_turn_for", phase)
+				// A configured command must not hide the bridge's real route
+				// in the send result. The bridge claimed through registration.
+				f.eng.SetWakeCommands(map[string]engine.WakeCommand{
+					"claude code": {Argv: []string{os.Args[0], "-test.run=^TestSocketEconomyBridgeHelper$"}, Cooldown: time.Minute},
+				})
+				f.idle(t)
+				marker := "bridge-phase-" + phase + "-" + kind
+				sent := f.tool(t, "send", map[string]any{"token": f.sender, "to": "worker", "type": kind, "body": marker})
+				text := f.waitOffer(t)
+				wakes := phase != "none" && (phase == "all" || kind == "question")
+				if wakes {
+					if !strings.Contains(fmt.Sprint(sent["note"]), "bridge owns the socket route") {
+						t.Fatalf("configured command hid the claiming bridge's actual send route: %v", sent)
+					}
+					if !strings.Contains(text, marker) {
+						t.Fatalf("enabled phase lost authored bridge mail: %q", text)
+					}
+					wire := collect(f.lines, 2, time.Second)
+					if len(wire) != 2 || !strings.Contains(strings.Join(wire, "\n"), marker) {
+						t.Fatalf("enabled phase had no actual bridge frame: %v", wire)
+					}
+					f.waitWritten(t)
+					got := f.tool(t, "hook_poll", map[string]any{"session_id": f.sid, "event": "Stop", "strict_output": true})
+					if got["decision"] != "block" || !strings.Contains(fmt.Sprint(got), marker) {
+						t.Fatalf("enabled bridge phase lost Stop fallback: %v", got)
+					}
+				} else {
+					if text != "" {
+						t.Fatalf("suppressed phase offered a wake: %q", text)
+					}
+					f.informationalStop(t)
+					if got := f.hook(t, "SessionStart"); !strings.Contains(got, marker) {
+						t.Fatalf("suppressed mail disappeared at natural activation: %s", got)
+					}
+				}
+				if wire := collect(f.lines, 1, 1100*time.Millisecond); len(wire) != 0 {
+					t.Fatalf("suppressed or already-delivered phase wrote a frame: %v", wire)
+				}
+			})
+		}
 	}
 }
 
@@ -577,11 +627,16 @@ func TestSocketEconomyBatchesOwnedMailboxesAndRearmerUsesReceipt(t *testing.T) {
 		}
 	}
 	f.idle(t)
+	f.hook(t, "UserPromptSubmit")
 	f.tool(t, "send", map[string]any{"token": f.sender, "to": "worker", "type": "notify", "body": "owned-fyi"})
 	if got := f.waitOffer(t); got != "" {
-		t.Fatalf("FYI woke the shared session before an actionable cause: %q", got)
+		t.Fatalf("authored notify interrupted the shared busy session: %q", got)
 	}
 	f.tool(t, "send", map[string]any{"token": f.sender, "to": "worker-alt", "type": "question", "body": "owned-question"})
+	if got := f.waitOffer(t); got != "" {
+		t.Fatalf("question interrupted the shared busy session: %q", got)
+	}
+	f.idle(t)
 	got := f.waitOffer(t)
 	if !strings.Contains(got, "owned-fyi") || !strings.Contains(got, "owned-question") {
 		t.Fatalf("atomic owned batch lost a mailbox: %q", got)

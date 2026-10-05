@@ -354,8 +354,10 @@ func TestAnApprovalReachesTheSubprocessWake(t *testing.T) {
 			})
 			l := bridgeAgent("asker", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
 			st.Agents = map[string]*core.Agent{"asker": l}
-
-			e.maybeWake(core.Event{Type: evType, To: "asker", Data: map[string]any{}})
+			// Approval qualifies when it performs a permission effect. An
+			// ordinary work approval is a generated update that stays quiet.
+			st.Messages[7] = &core.Message{Type: core.MsgRequest, Grant: "coordinator"}
+			e.maybeWake(core.Event{Type: evType, To: "asker", Data: map[string]any{"msg_serial": uint64(7)}})
 			if !e.wakeSpent("asker") {
 				t.Errorf("%s did not reach the wake path: the agent asked, stopped, "+
 					"and has no other way to learn the answer", evType)

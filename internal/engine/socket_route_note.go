@@ -19,23 +19,40 @@ func (e *Engine) sendDeliveryNote(l *core.Agent, m *core.Message, now time.Time)
 	if note, remote := e.remotePullOnlyNote(l); remote {
 		return note
 	}
-	self, _ := e.SelfWaking(l.ID)
-	if !self && e.localCommandConfigured(wakeHarness(l)) && threadIDOf(l) != "" {
-		return e.PullOnlyNote(l)
-	}
-	if !self && !e.mightReachOverSocket(l) {
+	socket, self := e.sendNoteSocketRoute(l)
+	command := e.localCommandConfigured(wakeHarness(l)) && threadIDOf(l) != ""
+	if !socket && !command {
 		return e.PullOnlyNote(l)
 	}
 	if !e.socketActionableMessage(m) {
-		return "delivered to " + l.ID + "'s mailbox; informational, so no wake was sent: " +
+		return "delivered to " + l.ID + "'s mailbox; the operator's wake policy suppresses this wake: " +
 			"it arrives at " + l.ID + "'s next activation (check_in, inbox, SessionStart " +
 			"or its next actionable delivery)."
 	}
+	if !socket {
+		return e.PullOnlyNote(l)
+	}
 	if e.socketLifecycle(l, now) == "busy" {
 		return "delivered to " + l.ID + "'s mailbox; it is mid-turn; " +
-			"its wake is deferred until the turn ends."
+			"delivery is deferred until its Stop hook at the end of the turn."
 	}
-	return e.PullOnlyNote(l)
+	why := "its session socket is the selected delivery route"
+	if self {
+		why = "its in-session bridge owns the socket route"
+	}
+	if epoch := e.socketEpochs[socketSessionKey(l)]; epoch.written {
+		return "delivered to " + l.ID + "'s mailbox; " + why + "; a best-effort notice was already written " +
+			"in this idle epoch, so no additional socket frame was sent. This mail remains " +
+			"available at Stop or its next activation; the earlier write confirms no receiver acceptance."
+	}
+	return bestEffortSocketNote(l, wakeHarness(l), string(l.Status), why)
+}
+
+// A claiming bridge has its own socket evidence. Consult daemon discovery
+// only when no bridge owns this mailbox, preserving the one-writer route.
+func (e *Engine) sendNoteSocketRoute(l *core.Agent) (socket, bridge bool) {
+	bridge, _ = e.SelfWaking(l.ID)
+	return bridge || e.mightReachOverSocket(l), bridge
 }
 
 func bestEffortSocketNote(l *core.Agent, named, state, why string) string {

@@ -34,8 +34,8 @@ func readStopLedger(t *testing.T, dir string) *core.State {
 // Stop which sends no model context, then arrive once through check_in.
 func TestStopEconomyThroughMCP(t *testing.T) {
 	for _, item := range []string{
-		"progress", "ordinary-approval", "accepted-review", "notify", "queue", "done-without-wait",
-		"question", "request", "handoff", "human-notify", "answer", "deny", "decline", "flagged-review", "grant", "adopt", "done-with-wait", "announcement",
+		"progress", "ordinary-approval", "accepted-review", "queue", "done-without-wait",
+		"notify", "question", "request", "handoff", "human-notify", "answer", "deny", "decline", "flagged-review", "grant", "adopt", "done-with-wait", "announcement",
 	} {
 		for _, event := range []string{"Stop", "SubagentStop"} {
 			t.Run(item+"/"+event, func(t *testing.T) {
@@ -57,7 +57,7 @@ func TestStopEconomyThroughMCP(t *testing.T) {
 				marker := "typed-stop-" + item
 				actionable := true
 				switch item {
-				case "progress", "ordinary-approval", "accepted-review", "notify", "queue", "done-without-wait":
+				case "progress", "ordinary-approval", "accepted-review", "queue", "done-without-wait":
 					actionable = false
 				}
 				switch item {
@@ -138,6 +138,12 @@ func TestStopEconomyThroughMCP(t *testing.T) {
 					if got["decision"] != "block" || !mentions(got, marker) {
 						t.Fatalf("actionable %s not delivered: %v", item, got)
 					}
+					if item == "notify" {
+						again := call("hook_poll", map[string]any{"session_id": session, "event": event, "strict_output": true})
+						if again["decision"] == "block" || again["reason"] != nil || again["hookSpecificOutput"] != nil {
+							t.Fatalf("the same authored notify blocked twice: %v", again)
+						}
+					}
 					return
 				}
 				if got["decision"] == "block" || got["reason"] != nil || got["hookSpecificOutput"] != nil {
@@ -158,7 +164,7 @@ func TestStopEconomyThroughMCP(t *testing.T) {
 					t.Fatalf("held item disappeared: %v", first)
 				}
 				second := call("check_in", map[string]any{"token": token})
-				if item != "notify" && strings.Contains(fmt.Sprint(second["agent_updates"]), marker) {
+				if strings.Contains(fmt.Sprint(second["agent_updates"]), marker) {
 					t.Fatalf("outcome repeated after real read: %v", second)
 				}
 			})

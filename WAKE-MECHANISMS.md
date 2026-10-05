@@ -188,11 +188,13 @@ A terminal Claude Code session has no app record and is never opened.
 ### Continuing a turn that ends with declared work (2026-10-01)
 
 **Socket economy (2026-10-04).** Socket writers now share an engine-owned
-lifecycle and cause decision. Busy sessions use their full-mail Stop hook;
-informational-only mail waits for SessionStart, an authenticated pull or the
+lifecycle and cause decision. Every agent- or human-written message, including
+plain notify, qualifies. Busy sessions receive authored mail at their blocking
+Stop hook, with no socket frame. Dibs-generated progress, queue updates,
+ordinary approvals and accepted reviews wait for SessionStart, an authenticated pull or the
 next actionable digest. Stop and SubagentStop use the same actionable cause as
 the socket; a non-blocking Stop consumes nothing. UserPromptSubmit stays silent. An
-idle session gets one coalesced write for actionable mail or due waits until
+idle session gets one coalesced write for authored mail, actionable verdicts or due waits until
 actual turn evidence. Unknown lifecycle gets the existing bounded grace and
 then one recovery write, explicitly logged as unknown. Answers, denials,
 declines, grant/adoption verdicts and flagged reviews qualify; ordinary work
@@ -201,6 +203,13 @@ wait. A successful kernel write remains best effort, with hook fallback until
 turn evidence. Due waits keep independent clocks and retry limits. See
 `docs/SOCKET-WAKE-DESIGN.md` for the measured baseline, additive batch protocol
 and dormant older-bridge limitation.
+
+The send result uses the same message decision: an idle notify reports a
+best-effort wake attempt; a busy recipient reports delivery deferred to Stop.
+An authored FYI is not a generated progress unit. The person's correction on
+2026-10-04 restored FYI delivery after the economy rule had incorrectly
+suppressed it; the saving comes from quiet generated updates and coalescing,
+not disabling authored mail.
 
 Wake-on-mail worked and the Codex workers still stalled. Measured in
 codex-k7-0's own transcript: mail woke it through the ChatGPT app, the turn's
@@ -515,9 +524,15 @@ extend_turn_for = "all"      # default route policy; Stop and sockets require ac
 ```
 
 `all` is the default route policy. Stop and socket admission always require
-actionable news or due declared work; informational mail cannot force a new
-model turn through either route. It remains available at SessionStart and
+actionable news or due declared work. Every authored message, including notify,
+is actionable under the default `all`; generated informational updates cannot force a new
+model turn through either route. They remain available at SessionStart and
 authenticated pulls, and can ride the next actionable digest.
+
+An explicit `urgent` keeps the operator's FYI opt-out on socket, Stop and
+command delivery alike; blocking mail still qualifies. `none` stays muted.
+The route note applies that same phase and describes suppressed mail as
+waiting for a natural activation, never as a wake already handed over.
 
 The human is told either way. `systemMessage` goes to the person on every poll
 with news, whatever was decided about the model, because "your agent has mail"

@@ -175,11 +175,12 @@ func TestSocketEconomyBusyCeilingRefreshesAtProductionActivity(t *testing.T) {
 }
 
 func TestSocketEconomyDaemonFallbackUsesLifecycleAndDueSlots(t *testing.T) {
-	for _, mode := range []string{"busy", "informational", "idle", "due waits"} {
+	for _, mode := range []string{"busy-question", "busy-notify", "idle-question", "idle-notify", "due waits"} {
 		t.Run(mode, func(t *testing.T) {
 			f := newDaemonEconomyFixture(t)
 			marker := "fallback-" + mode
-			if mode == "busy" {
+			busy := strings.HasPrefix(mode, "busy-")
+			if busy {
 				f.hook(t, "UserPromptSubmit", false)
 			}
 			if mode == "due waits" {
@@ -197,11 +198,11 @@ func TestSocketEconomyDaemonFallbackUsesLifecycleAndDueSlots(t *testing.T) {
 				return
 			}
 			kind := core.MsgQuestion
-			if mode == "informational" {
+			if strings.HasSuffix(mode, "notify") {
 				kind = core.MsgNotify
 			}
 			r := f.do(t, &core.Op{Kind: core.OpSendMessage, Token: f.sender, To: "worker", MsgType: kind, Body: marker})
-			if mode == "idle" {
+			if !busy {
 				if text := f.receive(t, time.Second); !strings.Contains(text, marker) {
 					t.Fatalf("daemon lost idle actionable mail: %q", text)
 				}
@@ -215,15 +216,14 @@ func TestSocketEconomyDaemonFallbackUsesLifecycleAndDueSlots(t *testing.T) {
 				case <-time.After(1100 * time.Millisecond):
 				}
 			}
-			event := "Stop"
-			if mode == "informational" {
-				if got := f.hook(t, "Stop", false); got["decision"] == "block" || deliveredSomething(got) {
-					t.Fatalf("informational-only mail forced a Stop delivery: %v", got)
-				}
-				event = "SessionStart"
+			got := f.hook(t, "Stop", false)
+			if got["decision"] != "block" || !strings.Contains(fmtResult(got), marker) {
+				t.Fatalf("authored mail lost its blocking Stop fallback: %v", got)
 			}
-			if text := fmtResult(f.hook(t, event, false)); !strings.Contains(text, marker) {
-				t.Fatalf("native route lost its held-peer/full-mail hook fallback: %q", text)
+			select {
+			case text := <-f.wire:
+				t.Fatalf("Stop delivery wrote an extra native frame: %q", text)
+			case <-time.After(1100 * time.Millisecond):
 			}
 			_, err := f.e.query(f.ctx, func() core.Result {
 				if f.e.state.Messages[r["msg_serial"].(uint64)].Consumed {

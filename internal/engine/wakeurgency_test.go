@@ -8,10 +8,9 @@ import (
 	"github.com/agenxy/dibs/internal/core"
 )
 
-// Actionable mail reaches the agent without a person having to type. FYI
-// waits for a natural activation or rides the next actionable digest, because
-// continuing a finished turn solely for information costs a model turn.
-func TestStopUsesTypedMailCausesAndPreservesInformationalMail(t *testing.T) {
+// Every authored message reaches the agent without a person having to type,
+// including a notify that asks for no reply. Generated updates are distinct.
+func TestStopDeliversEveryAuthoredMessage(t *testing.T) {
 	for _, kind := range []string{core.MsgNotify, core.MsgQuestion, core.MsgRequest, core.MsgHandoff} {
 		t.Run(kind, func(t *testing.T) {
 			e, id := boardWithAgent(t)
@@ -27,15 +26,7 @@ func TestStopUsesTypedMailCausesAndPreservesInformationalMail(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if kind == core.MsgNotify {
-				if got["decision"] == "block" || deliveredSomething(got) {
-					t.Fatalf("FYI spent a finished turn: %v", got)
-				}
-				natural, err := e.HookPoll(ctx, "sess-"+id, "SessionStart", "", false, false)
-				if err != nil || !deliveredSomething(natural) {
-					t.Fatalf("natural activation lost FYI: %v %v", natural, err)
-				}
-			} else if got["decision"] != "block" || got["hookSpecificOutput"] == nil {
+			if got["decision"] != "block" || got["hookSpecificOutput"] == nil {
 				t.Errorf("actionable %s did not continue the turn: %v", kind, got)
 			}
 			if got["systemMessage"] == nil {
@@ -171,8 +162,8 @@ func TestTheOperatorCanNarrowOrSilenceTheWake(t *testing.T) {
 	if quiet["systemMessage"] == nil {
 		t.Error("`none` stopped telling the human, which is not what it means")
 	}
-	// The default also holds informational mail, then quotes it alongside an
-	// actual cause. The operator can still silence that actionable wake.
+	// The default delivers authored FYIs. The operator can still silence
+	// later blocking mail without consuming its presentation.
 	fresh, freshID := boardWithAgent(t)
 	s2 := registerAgent(t, fresh, "sender2")
 	if _, err := fresh.Do(ctx, &core.Op{
@@ -180,8 +171,8 @@ func TestTheOperatorCanNarrowOrSilenceTheWake(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := fresh.HookPoll(ctx, "sess-"+freshID, "Stop", "", false, false); err != nil || deliveredSomething(got) {
-		t.Fatalf("the default spent a turn on an FYI: %v %v", got, err)
+	if got, err := fresh.HookPoll(ctx, "sess-"+freshID, "Stop", "", false, false); err != nil || got["decision"] != "block" {
+		t.Fatalf("the default lost an authored FYI: %v %v", got, err)
 	}
 	if _, err := fresh.Do(ctx, &core.Op{
 		Kind: core.OpSendMessage, Token: s2, To: freshID,
