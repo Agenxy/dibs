@@ -13,12 +13,14 @@ import (
 // opened object for its native path, then check it still names that object.
 // Failure keeps today's spelling; this is filesystem evidence, not authority.
 func nativeSpelling(p string) string {
-	f, err := os.OpenFile(p, syscall.O_EVTONLY, 0) // #nosec G304 -- local canonicalization; event-only cannot block on a FIFO
+	// #nosec G304 -- local canonicalization; event-only cannot block on a FIFO
+	f, err := os.OpenFile(p, syscall.O_EVTONLY, 0)
 	if err != nil {
 		return p
 	}
 	defer func() { _ = f.Close() }()
 	var buf [1024]byte // Darwin MAXPATHLEN, required by F_GETPATH
+	// #nosec G103 -- fixed F_GETPATH command writes only MAXPATHLEN into this live, fixed-size buffer
 	_, _, errno := syscall.Syscall(syscall.SYS_FCNTL, f.Fd(), syscall.F_GETPATH, uintptr(unsafe.Pointer(&buf[0])))
 	if errno != 0 {
 		return p

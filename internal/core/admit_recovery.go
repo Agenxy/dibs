@@ -2,6 +2,7 @@ package core
 
 import "strings"
 
+// MaxRecoveryNonces bounds one ingress-only credential group.
 const MaxRecoveryNonces = 16
 
 func admitRecoveryNonces(op *Op, lim Limits) error {

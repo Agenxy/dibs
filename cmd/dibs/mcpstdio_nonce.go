@@ -114,6 +114,10 @@ func recordNonce(project, name, nonce string, chosen bool) {
 	if chosen {
 		all[choice] = nonce // explicit/pinned intent survives removal of the pin
 	}
+	writeNonces(path, all)
+}
+
+func writeNonces(path string, all map[string]string) {
 	b, err := json.MarshalIndent(all, "", "  ")
 	if err != nil {
 		return
@@ -223,19 +227,10 @@ func nonceCandidates(project, name string) []string {
 	}
 	add(all[nonceKey(project, name)])
 	add(all[canonical])
-	current, statErr := os.Stat(project)
+	current, _ := os.Stat(project)
 	for key, nonce := range all {
-		if strings.HasPrefix(key, canonical+"\x00") {
+		if strings.HasPrefix(key, canonical+"\x00") || nonceAliasOf(key, name, current) {
 			add(nonce)
-		} else if statErr == nil && current.IsDir() {
-			other, role, found := strings.Cut(key, "\x00")
-			if !found || role != name || strings.HasPrefix(other, "dir:v1:") {
-				continue
-			}
-			old, err := os.Stat(other)
-			if err == nil && os.SameFile(current, old) {
-				add(nonce)
-			}
 		}
 		if len(seen) > core.MaxRecoveryNonces {
 			break
@@ -247,6 +242,18 @@ func nonceCandidates(project, name string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func nonceAliasOf(key, name string, current os.FileInfo) bool {
+	if current == nil || !current.IsDir() {
+		return false
+	}
+	other, role, found := strings.Cut(key, "\x00")
+	if !found || role != name || strings.HasPrefix(other, "dir:v1:") {
+		return false
+	}
+	old, err := os.Stat(other)
+	return err == nil && os.SameFile(current, old)
 }
 
 func noncePath() string {
@@ -369,7 +376,7 @@ func enrichNonce(args map[string]any, pinned string) {
 		rememberChosenNonce(project, name, supplied)
 		return
 	}
-	if _, supplied := args["recovery_nonces"]; supplied {
+	if supplied := args["recovery_nonces"]; supplied != nil {
 		return // explicit candidate group is validated by the daemon
 	}
 	candidates := nonceCandidates(project, name)
