@@ -142,6 +142,19 @@ func TestBackgroundPairSerializesDifferentBoards(t *testing.T) {
 	if opened, err := first.Show(ChatGPTOpenArgv("first-board"), "first-board"); err != nil || !opened {
 		t.Fatalf("first board open: opened=%v err=%v", opened, err)
 	}
+	for _, want := range []struct {
+		path string
+		mode os.FileMode
+		dir  bool
+	}{
+		{filepath.Join(cache, "dibs"), 0o700, true},
+		{filepath.Join(cache, "dibs", "background-pair.lock"), 0o600, false},
+	} {
+		info, err := os.Stat(want.path)
+		if err != nil || info.IsDir() != want.dir || info.Mode().Perm() != want.mode {
+			t.Fatalf("desktop pair permissions: path=%s info=%v err=%v", want.path, info, err)
+		}
+	}
 	if opened, err := second.Show(ChatGPTOpenArgv("second-board"), "second-board"); err != nil || !opened || secondOpens != 1 {
 		t.Fatalf("second board after release: opened=%v calls=%d err=%v", opened, secondOpens, err)
 	}

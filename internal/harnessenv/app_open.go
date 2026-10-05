@@ -131,6 +131,7 @@ func lockBackgroundPair(dir string) (*os.File, error) {
 		cache = filepath.Join(cache, "dibs")
 		err = os.MkdirAll(cache, 0o700)
 		if err == nil {
+			// #nosec G302 -- private directory needs owner traversal; no group/other access.
 			err = os.Chmod(cache, 0o700)
 		}
 		if err == nil {
