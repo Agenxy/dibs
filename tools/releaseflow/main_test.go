@@ -20,12 +20,20 @@ func fixture(t *testing.T) config {
 	if _, err := command(context.Background(), nil, "git", "init", "--bare", origin); err != nil {
 		t.Fatal(err)
 	}
+	// Automatic maintenance can outlive push's receive-pack and race TempDir
+	// cleanup. Set both switches on the bare remote before any fixture push.
+	git(t, "--git-dir="+origin, "config", "--local", "gc.auto", "0")
+	git(t, "--git-dir="+origin, "config", "--local", "maintenance.auto", "false")
 	repo := filepath.Join(dir, "repo")
 	if err := os.Mkdir(repo, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	t.Chdir(repo)
 	git(t, "init", "-b", "main")
+	// The working repository also runs automatic maintenance after commit/tag.
+	// The test's explicit forced-enabled controls override these local values.
+	git(t, "config", "--local", "gc.auto", "0")
+	git(t, "config", "--local", "maintenance.auto", "false")
 	git(t, "config", "user.name", "Release fixture")
 	git(t, "config", "user.email", "fixture@example.invalid")
 	git(t, "config", "commit.gpgsign", "false")
