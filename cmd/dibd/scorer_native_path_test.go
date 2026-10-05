@@ -28,10 +28,10 @@ func TestScorerNativeCaseRootAndSuppressionKey(t *testing.T) {
 		t.Fatalf("setup did not prove one root: %v", err)
 	}
 	if repositoryOf(alias) != repositoryOf(root) {
-		t.Fatal("discovery indexed the same native root under two spellings")
+		t.Error("discovery indexed the same native root under two spellings")
 	}
 	if scorerAdviceKey("local", alias) != scorerAdviceKey("local", root) {
-		t.Fatal("native root spelling reset scorer suppression")
+		t.Error("native root spelling reset scorer suppression")
 	}
 	if scorerAdviceKey("one", root) == scorerAdviceKey("two", root) {
 		t.Fatal("suppression key lost the host")

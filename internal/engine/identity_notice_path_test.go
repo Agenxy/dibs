@@ -10,7 +10,8 @@ import (
 	"github.com/agenxy/dibs/internal/core"
 )
 
-func TestIdentityNoticeHostAndNativePathThroughHookPoll(t *testing.T) {
+func identityNoticeCalls(t *testing.T) (func() int, func(string, string)) {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	e := New(core.NewState("notice-local", core.DefaultLimits()), &memLedger{}, deadProber{})
 	done := make(chan struct{})
@@ -37,6 +38,11 @@ func TestIdentityNoticeHostAndNativePathThroughHookPoll(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	return count, poll
+}
+
+func TestIdentityNoticeHostThroughHookPoll(t *testing.T) {
+	count, poll := identityNoticeCalls(t)
 	poll("/remote/repo", "remote-one")
 	before := count()
 	if before != 1 {
@@ -50,9 +56,13 @@ func TestIdentityNoticeHostAndNativePathThroughHookPoll(t *testing.T) {
 	if count() != before+1 {
 		t.Fatal("same host/path was not throttled")
 	}
+}
+
+func TestIdentityNoticeNativePathThroughHookPoll(t *testing.T) {
 	if runtime.GOOS != "darwin" {
-		return
+		t.Skip("native case spelling requires Darwin F_GETPATH")
 	}
+	count, poll := identityNoticeCalls(t)
 	root := filepath.Join(t.TempDir(), "Supgang")
 	if err := os.Mkdir(root, 0o700); err != nil {
 		t.Fatal(err)
@@ -64,14 +74,13 @@ func TestIdentityNoticeHostAndNativePathThroughHookPoll(t *testing.T) {
 	}
 	b, err := os.Stat(alias)
 	if os.IsNotExist(err) {
-		t.Log("native alias subcase unavailable on case-sensitive fixture volume")
-		return
+		t.Skip("native alias subcase unavailable on case-sensitive fixture volume")
 	}
 	if err != nil || !os.SameFile(a, b) {
 		t.Fatalf("setup: native alias evidence missing: %v", err)
 	}
 	poll(root, "notice-local")
-	before = count()
+	before := count()
 	poll(alias, "notice-local")
 	if count() != before {
 		t.Fatal("native case alias repeated the local notice")
