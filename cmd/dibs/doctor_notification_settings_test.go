@@ -27,13 +27,14 @@ func TestDoctorMeasuresNativeNotificationSettings(t *testing.T) {
 	if os.Getenv("DIBS_SETTINGS_DOCTOR_DRIVER") == "1" {
 		for _, tc := range []struct {
 			name, style, sensitive, want string
+			warn                         bool
 		}{
-			{"banner", "banner", "enabled", "System Settings > Notifications > Dibs > Alerts"},
-			{"silent", "none", "enabled", "System Settings > Notifications > Dibs > Alerts"},
-			{"disabled-sensitive", "alert", "disabled", "Time Sensitive"},
-			{"unprovisioned", "alert", "not-supported", "this build is not provisioned"},
-			{"old-helper", "old", "enabled", "settings are unknown"},
-			{"malformed-helper", "malformed", "enabled", "settings are unknown"},
+			{"banner", "banner", "enabled", "System Settings > Notifications > Dibs > Alerts", true},
+			{"silent", "none", "enabled", "System Settings > Notifications > Dibs > Alerts", true},
+			{"disabled-sensitive", "alert", "disabled", "Time Sensitive", true},
+			{"unprovisioned", "alert", "not-supported", "this build is not provisioned", false},
+			{"old-helper", "old", "enabled", "settings are unknown", false},
+			{"malformed-helper", "malformed", "enabled", "settings are unknown", true},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				settings := map[string]any{
@@ -51,10 +52,15 @@ func TestDoctorMeasuresNativeNotificationSettings(t *testing.T) {
 				var lines []string
 				line := func(s string) { lines = append(lines, s) }
 				warned := false
-				checkNotificationRoute(line, line, func(what, fix string) { warned = true; lines = append(lines, what, fix) })
+				notes := 0
+				checkNotificationRoute(line, func(s string) { notes++; line(s) },
+					func(what, fix string) { warned = true; lines = append(lines, what, fix) })
 				got := strings.Join(lines, "\n")
-				if !warned {
-					t.Fatalf("actual doctor did not warn about the measured presentation limit: %s", got)
+				if warned != tc.warn {
+					t.Fatalf("actual doctor warning=%t, want %t: %s", warned, tc.warn, got)
+				}
+				if tc.name == "unprovisioned" && notes != 1 {
+					t.Fatalf("standing provisioning/Focus limits must be a single informational note: %s", got)
 				}
 				if !strings.Contains(got, tc.want) {
 					t.Fatalf("actual doctor lacks %q: %s", tc.want, got)

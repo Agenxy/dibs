@@ -33,11 +33,11 @@ func TestHumanSettingsThroughAuthenticatedRelayReceipt(t *testing.T) {
 	}{
 		{"banner", "banner", "enabled", "System Settings > Notifications > Dibs > Alerts", false},
 		{"silent", "none", "enabled", "System Settings > Notifications > Dibs > Alerts", false},
-		{"alert", "alert", "enabled", "Focus is not observable", false},
+		{"alert", "alert", "enabled", "", false},
 		{"disabled-sensitive", "alert", "disabled", "Time Sensitive", false},
-		{"unprovisioned", "alert", "not-supported", "this build is not provisioned", false},
-		{"old-receipt", "old", "enabled", "settings are unknown", true},
-		{"malformed-receipt", "malformed", "enabled", "settings are unknown", true},
+		{"unprovisioned", "alert", "not-supported", "", false},
+		{"old-receipt", "old", "enabled", "", true},
+		{"malformed-receipt", "malformed", "enabled", "", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			sent, err := h.eng.Do(ctx, &core.Op{Kind: core.OpSendMessage, Token: token, To: human, MsgType: core.MsgRequest, Body: "settings fixture approval"})
@@ -93,6 +93,12 @@ func TestHumanSettingsThroughAuthenticatedRelayReceipt(t *testing.T) {
 			}
 			if !strings.Contains(receipt.Hint, tc.hint) {
 				t.Fatalf("receipt lacks %q: %s", tc.hint, raw)
+			}
+			if tc.hint == "" && receipt.Hint != "" {
+				t.Fatalf("receipt repeated a standing limitation rather than an actionable hint: %s", raw)
+			}
+			if strings.Contains(receipt.Hint, "not provisioned") || strings.Contains(receipt.Hint, "not observable") {
+				t.Fatalf("informational provisioning/Focus limits were repeated in a receipt: %s", raw)
 			}
 			if tc.unknown {
 				return
