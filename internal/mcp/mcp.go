@@ -268,8 +268,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if s.handledLegacySubscription(w, r, &req) {
 		return
 	}
-	result, rpcErr := s.dispatchWithSendBudget(r.Context(), &req, bearer(r), identityFromTransport(r), s.sessions.wantsUI(r),
-		s.sessions.clientFor(r))
+	result, rpcErr := s.dispatchWithSendBudget(r.Context(), &req, bearer(r), identityFromTransport(r),
+		s.sessions.wantsUI(r), s.sessions.clientFor(r))
 	writeRPC(w, http.StatusOK, req.ID, tagResult(result, requestEra(r, req.Params)), rpcErr)
 }
 
