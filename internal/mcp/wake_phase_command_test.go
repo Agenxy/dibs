@@ -22,15 +22,27 @@ func TestWakePhaseCommandHelper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
+	previous, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	// The reader treats publication as completion. Creating the final file
+	// before Write let it observe an empty receipt between those syscalls.
+	// Keep earlier command rows, then publish the complete next version by a
+	// same-directory rename: the reader sees the old file or the whole new one.
+	f, err := os.CreateTemp(filepath.Dir(path), ".command-receipt-*")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = f.Write(append(body, '\n')); err != nil {
+	defer os.Remove(f.Name())
+	if _, err = f.Write(append(previous, append(body, '\n')...)); err != nil {
 		_ = f.Close()
 		t.Fatal(err)
 	}
 	if err = f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Rename(f.Name(), path); err != nil {
 		t.Fatal(err)
 	}
 }
