@@ -13,7 +13,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -115,6 +117,83 @@ func TestScorerAdvisoryThroughDaemonBoot(t *testing.T) {
 			t.Errorf("unchanged restart repeated later advice: before %d, after %d", previous, len(mail))
 		}
 	})
+	t.Run("different calibrated bars with unchanged flags are silent", func(t *testing.T) {
+		autoRepos := []string{advisoryBootRepo(t), advisoryBootRepo(t), advisoryBootRepo(t)}
+		autoDir := t.TempDir()
+		for _, repo := range autoRepos {
+			advisoryCalibrationCommit(t, repo, "nectarine.go", "nectarine")
+			advisoryCalibrationCommit(t, repo, "quasar.go", "quasar")
+		}
+		seedAdvisoryBoard(t, autoDir, autoRepos[:2])
+		firstLog := advisoryDaemonBoot(t, autoDir, autoRepos, "auto", "0", "2000")
+		firstBars := actualCalibrationBars(t, firstLog, autoRepos)
+		before := committedScorerAdvice(t, autoDir)
+		if len(before) != 1 {
+			t.Errorf("first auto-calibrated startup sent %d advisories, want one batch", len(before))
+		}
+		// A new, unrelated file described with both older terms makes unrelated
+		// predictions overlap. It changes the measured bar through real history,
+		// not a fake scorer, setter, or timing assumption.
+		for _, repo := range autoRepos {
+			advisoryCalibrationCommit(t, repo, "nebula.go", "nectarine quasar")
+		}
+		secondLog := advisoryDaemonBoot(t, autoDir, autoRepos, "auto", "0", "2000")
+		secondBars := actualCalibrationBars(t, secondLog, autoRepos)
+		for _, repo := range autoRepos {
+			if firstBars[repo] == secondBars[repo] {
+				t.Fatalf("setup: real calibration did not change for %s: %s -> %s", repo, firstBars[repo], secondBars[repo])
+			}
+			t.Logf("actual daemon calibration changed for %s: %s -> %s with unchanged flags", repo, firstBars[repo], secondBars[repo])
+		}
+		if after := committedScorerAdvice(t, autoDir); len(after) != len(before) {
+			t.Errorf("corpus-derived calibration drift resent advice: before %d, after %d", len(before), len(after))
+		}
+	})
+}
+
+func advisoryCalibrationCommit(t *testing.T, repo, file, message string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(repo, file), []byte("package fixture\n"), 0o600); err != nil {
+		t.Fatal("setup: calibration file:", err)
+	}
+	for _, args := range [][]string{{"add", file}, {"commit", "-q", "--no-gpg-sign", "-m", message}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repo
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
+			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t", "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("setup: calibration commit: git %v: %v: %s", args, err, out)
+		}
+	}
+}
+
+func actualCalibrationBars(t *testing.T, logs string, repos []string) map[string]string {
+	t.Helper()
+	notify := regexp.MustCompile(`notify="?([0-9.]+)`)
+	bars := map[string]string{}
+	for _, line := range strings.Split(logs, "\n") {
+		if !strings.Contains(line, "work-overlap matching calibrated itself") {
+			continue
+		}
+		match := notify.FindStringSubmatch(line)
+		if len(match) != 2 {
+			t.Fatalf("setup: actual calibration has no numeric bar: %s", line)
+		}
+		if _, err := strconv.ParseFloat(match[1], 64); err != nil {
+			t.Fatalf("setup: actual calibration bar is invalid: %s", line)
+		}
+		for _, repo := range repos {
+			if strings.Contains(line, repo) {
+				bars[repo] = match[1]
+			}
+		}
+	}
+	for _, repo := range repos {
+		if _, ok := bars[repo]; !ok {
+			t.Fatalf("setup: daemon did not measure a calibration for %s\n%s", repo, logs)
+		}
+	}
+	return bars
 }
 
 func advisoryBootRepo(t *testing.T) string {
@@ -198,7 +277,10 @@ func advisoryDaemonBoot(t *testing.T, dir string, repos []string, notify, join, 
 	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestScorerAdvisoryThroughDaemonBoot$")
 	args := []string{
 		"dibd", "--dir", dir, "--addr", port.Addr, "--allow-parallel",
-		"--match-repo", repos[2], "--match-notify", notify, "--match-join", join, "--match-history", history,
+		"--match-repo", repos[2], "--match-join", join, "--match-history", history,
+	}
+	if notify != "auto" {
+		args = append(args, "--match-notify", notify)
 	}
 	cmd.Env = append(nativeProbeEnv(t.TempDir(), "", ""), "DIBS_NOTIFY=off", "GORACE=atexit_sleep_ms=0",
 		"DIBS_ADVISORY_TEST_CHILD=1", "DIBS_ADVISORY_TEST_ARGS="+strings.Join(args, "\n"))

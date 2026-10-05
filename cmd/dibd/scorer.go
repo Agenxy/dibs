@@ -1308,7 +1308,7 @@ func (f *scorerFlags) recommendSidecar(eng *engine.Engine, dir string, files int
 	}
 	eng.QueueAdvisory(engine.Advisory{
 		Key:      scorerAdviceKey(eng.HostID(), dir),
-		Revision: f.scorerAdviceRevision(scorer, notify),
+		Revision: f.scorerAdviceRevision(scorer),
 		Remedy: "The built-in scorer is measured below its best at this size: tier-0 recall@10 " +
 			"is 0.488 at 121 files and about 0.20 from 6,000 files upward. Matching still answers " +
 			"less precisely; an absence of overlap warnings is weaker evidence than it looks.\n\n" +

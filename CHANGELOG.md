@@ -77,8 +77,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Standing advice is remembered per local repository and deployed scorer
   configuration outside the ledger. Startup indexes and prewarming produce
   one combined message; repositories discovered later are batched after a
-  quiet second. Changed scorer settings or thresholds make advice relevant
-  again. Suppression is saved only after mail commits; losing or failing to
+  quiet second. Changed scorer settings or operator thresholds make advice
+  relevant again; changes in automatically calibrated bars do not. Suppression
+  is saved only after mail commits; losing or failing to
   save the derived marker can repeat advice without losing coordination state.
 
 - **Queued notices state when they were issued, even if mail is already handled.**
