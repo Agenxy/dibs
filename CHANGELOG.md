@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.0.12] - 2026-10-05
+
 ### Added
 
 - A closed-target full-publication rehearsal shares the release publisher and
