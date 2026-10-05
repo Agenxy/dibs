@@ -106,7 +106,9 @@ func (s *Server) dispatchSend(
 	return boundedSendResult(req.Params, receipts, attempt), nil
 }
 
-func boundedSendResult(params json.RawMessage, receipts <-chan core.Result, attempt *engine.SendAttempt) map[string]any {
+func boundedSendResult(
+	params json.RawMessage, receipts <-chan core.Result, attempt *engine.SendAttempt,
+) map[string]any {
 	select {
 	case receipt := <-receipts:
 		receipt["advisories"] = "Acceptance is durable; delivery advisories were unavailable within the response budget. " +
@@ -124,7 +126,8 @@ func boundedSendResult(params json.RawMessage, receipts <-chan core.Result, atte
 		return sendTextResult(core.Result{
 			"code": "E_SEND_NOT_SENT", "op_id": call.Arguments.OpID,
 			"message": "The send timed out before writer admission; no message was sent.",
-			"hint":    "Resend the payload. Supply an op_id so any later uncertain outcome can be retried safely with the same id and payload.",
+			"hint": "Resend the payload. Supply an op_id so any later uncertain outcome " +
+				"can be retried safely with the same id and payload.",
 		}, true)
 	}
 	hint := "The send may or may not have been accepted. Retry with the exact same op_id and the same payload " +

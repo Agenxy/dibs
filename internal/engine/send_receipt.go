@@ -30,10 +30,7 @@ func (a *SendAttempt) maySubmit() bool {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.abandoned {
-		return false
-	}
-	return true
+	return !a.abandoned
 }
 
 // admitToWriter is the writer's first act after receiving a request. It makes

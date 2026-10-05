@@ -429,7 +429,9 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	return e.execWithReceipt(op, now, nil, nil)
 }
 
-func (e *Engine) execWithReceipt(op *core.Op, now time.Time, receipt chan core.Result, attempt *SendAttempt) (core.Result, error) {
+func (e *Engine) execWithReceipt(
+	op *core.Op, now time.Time, receipt chan core.Result, attempt *SendAttempt,
+) (core.Result, error) {
 	admitted := beginSendStage(op, "admit")
 	defer admitted()
 	// Surface vocabulary is resolved before admission; the ledger records the

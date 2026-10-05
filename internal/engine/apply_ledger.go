@@ -13,7 +13,9 @@ func (e *Engine) applyAndLedger(op *core.Op, now time.Time) (core.Result, error)
 	return e.applyAndLedgerWithReceipt(op, now, nil, nil)
 }
 
-func (e *Engine) applyAndLedgerWithReceipt(op *core.Op, now time.Time, receipt chan core.Result, attempt *SendAttempt) (core.Result, error) {
+func (e *Engine) applyAndLedgerWithReceipt(
+	op *core.Op, now time.Time, receipt chan core.Result, attempt *SendAttempt,
+) (core.Result, error) {
 	e.stampReviewRetention(op, now)
 	before := e.state.Serial
 	applied := beginSendStage(op, "apply")
