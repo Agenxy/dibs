@@ -127,9 +127,11 @@ class Experiment:
             row = {"policy": policy, "requested_nice": nice, "pid": pid}
             if pid:
                 deadline = time.monotonic() + 10
-                while time.monotonic() < deadline and not (folder / "stdout.log").read_text().strip():
+                output = folder / "stdout.log"
+                while time.monotonic() < deadline and (not output.exists() or not output.read_text().strip()):
                     time.sleep(0.1)
-                row["native_fixture"] = json.loads((folder / "stdout.log").read_text().splitlines()[0])
+                assert output.exists() and output.read_text().strip(), "native fixture started without its QoS report"
+                row["native_fixture"] = json.loads(output.read_text().splitlines()[0])
                 assert row["native_fixture"]["uid"] == os.getuid() != 0
                 row["loaded_policy"] = re.search(r"spawn type = (.+)", (folder / "launchctl.txt").read_text()).group(1)
                 self.stop(target)
