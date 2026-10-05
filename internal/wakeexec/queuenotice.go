@@ -21,12 +21,12 @@ func queueNoticeAt(argv []string, at time.Time) []string {
 	if !ok {
 		return argv
 	}
-	if kind == "" {
+	if kind == "" || kind == "notice" {
 		kind = "coordination"
 	}
 	out := append([]string(nil), argv...)
-	out[5] = fmt.Sprintf("Dibs: a %s notice was issued at %s%s",
-		kind, at.UTC().Format(time.RFC3339Nano), queueNoticeSuffix)
+	out[5] = fmt.Sprintf("Dibs: %s notice issued at %s%s",
+		kind, at.UTC().Truncate(time.Second).Format(time.RFC3339), queueNoticeSuffix)
 	return out
 }
 
@@ -51,11 +51,11 @@ func legacyWakeKind(text string) (string, bool) {
 }
 
 func timestampedWake(text string) bool {
-	body, ok := strings.CutPrefix(text, "Dibs: a ")
+	body, ok := strings.CutPrefix(text, "Dibs: ")
 	if !ok {
 		return false
 	}
-	kind, stamp, ok := strings.Cut(body, " notice was issued at ")
+	kind, stamp, ok := strings.Cut(body, " notice issued at ")
 	if !ok {
 		return false
 	}
@@ -63,13 +63,13 @@ func timestampedWake(text string) bool {
 	if !ok {
 		return false
 	}
-	at, err := time.Parse(time.RFC3339Nano, stamp)
-	if err != nil || stamp != at.UTC().Format(time.RFC3339Nano) {
+	at, err := time.Parse(time.RFC3339, stamp)
+	if err != nil || stamp != at.UTC().Truncate(time.Second).Format(time.RFC3339) {
 		return false
 	}
 	if kind == "coordination" {
 		return true
 	}
 	got, known := legacyWakeKind(Compose(kind))
-	return known && got == kind && kind != ""
+	return known && got == kind && kind != "" && kind != "notice"
 }

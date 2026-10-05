@@ -29,7 +29,7 @@ identify its queued item or prove a causal race.
 Use a factual notice with a locally generated UTC timestamp on the native
 queue route, for example:
 
-> Dibs: a question notice was issued at 2026-10-05T09:50:00Z. It may already be handled.
+> Dibs: question notice issued at 2026-10-05T09:50:00Z. It may already be handled.
 
 The time means the queue attempt's admission time, before executing the CLI;
 it is not a receipt proving the app accepted or displayed it. It includes a
@@ -37,6 +37,10 @@ date and UTC offset, so it remains useful across midnight and machine time
 zones. The notice makes no present claim that unread mail exists. It has no
 imperative, participant names or message body. It does not prevent the model
 turn bought by an already queued item; it makes that item's meaning honest.
+Architect answer 37116 refines the accepted text to remove the article and
+duplicate word, maps both the blank kind and `notice` to `coordination`, and
+uses second precision. The observer requires a strict UTC RFC3339 round trip;
+fractional seconds and alternative offsets are not the emitted wire format.
 
 Format at the shared native queue admission door in `internal/wakeexec`, after
 the pending-item decision, so both daemon and host-bridge commands use it.

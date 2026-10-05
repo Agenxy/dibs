@@ -303,7 +303,7 @@ the measured gaps and regression evidence.
 `queue list` and `queue delete` reject the subcommand with exit 2. This is a
 supported-CLI measurement, not a claim about all app-server capabilities.
 Dibs therefore dates the notice at the shared canonical native admission
-door: `Dibs: a question notice was issued at 2026-10-05T09:50:00Z. It may already be handled.`
+door: `Dibs: question notice issued at 2026-10-05T09:50:00Z. It may already be handled.`
 The time is the local attempt, not app acceptance or display. Later mail does
 not refresh a pending item's date; neither does the format cancel its eventual
 model turn. New observers recognize historical and dated notices, while
