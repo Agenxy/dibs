@@ -36,6 +36,9 @@ var toolDefs = func() []map[string]any {
 		return s
 	}
 	str := func(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
+	stringArray := func(desc string) map[string]any {
+		return map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": desc}
+	}
 	num := func(desc string) map[string]any { return map[string]any{"type": "integer", "description": desc} }
 	tok := str("agent token") // register and server instructions explain the credential once
 	// The type decides what a message DOES, so it is described where an agent
@@ -56,15 +59,16 @@ var toolDefs = func() []map[string]any {
 			"name": "register",
 			"description": "Register an agent: who you are, publicly. Returns your token and the " +
 				"board. PASS A NONCE: a random id >=128-bit that you keep. It is the only credential " +
-				"that survives your harness restarting: same name + same nonce returns you to your " +
+				"that survives your harness restarting: the same nonce returns you to your " +
 				"agent, its mail and its claims instead of forking a second agent that cannot read " +
-				"the first one's mail. `resumed:true` = it was still active and this was a retry, " +
-				"same token; `reattached:true` = it had stopped and the nonce recovered it, and YOUR " +
-				"TOKEN HAS ROTATED, so use the one in this result. Without a nonce, reattach " +
+				"the first one's mail. Omit name to keep it, or supply a new label to rename the " +
+				"same identity. `resumed:true` = active retry, same token; `reattached:true` = " +
+				"nonce recovered a stopped row, TOKEN HAS ROTATED. Use the returned token. Without a nonce, reattach " +
 				"works only within a session. kind 'persistent' is for standing roles that " +
 				"sleep and return via resume.",
 			"inputSchema": obj(map[string]any{
-				"name": str("WHO YOU ARE: a stable name others address mail to ('reviewer', " +
+				"name": str("required for a new identity; optional with your existing nonce. " +
+					"WHO YOU ARE: a stable name others address mail to ('reviewer', " +
 					"'codex-1'), never what you are doing: mail addressed to 'refactor-auth' " +
 					"reads as nonsense, and work goes in declare. update() changes it later"),
 				"description": str("one line on your standing purpose, e.g. 'reviewing PRs for the release'"),
@@ -99,7 +103,7 @@ var toolDefs = func() []map[string]any {
 				"harness": str("the tool you run inside: 'claude-code', 'codex' (bridge fills in)"),
 				"host": str("the machine's name, a label for humans (bridge fills in); which " +
 					"machine you are on is derived by the daemon, not read from this"),
-			}, "name"),
+			}),
 		},
 		{
 			"name": "resume",
@@ -155,24 +159,23 @@ var toolDefs = func() []map[string]any {
 			}, "token", "nonce"),
 		},
 		{
-			"name": "update", "description": "Revise what you say about YOURSELF: your name, what " +
-				"you are for, and the self-reported half of your identity. Worth calling once you " +
-				"know what you actually are, because the name you chose in your first seconds is " +
-				"usually worse than the one you could choose now. Your id never changes: renaming " +
-				"moves the label a human reads, not the mailbox. Update `branch` and `title` as you " +
-				"move; harness and version are your client's word, not yours, so they are not here.",
+			"name": "update", "description": "Revise YOUR name, purpose and self-reported identity. " +
+				"Renaming keeps the id and mailbox; former names remain aliases until release_names. " +
+				"Update branch/title as you move. Harness/version are the client's statement and cannot be changed here.",
 			"inputSchema": obj(map[string]any{
 				"token": tok,
 				"name": str("new display name. Name yourself for the ROLE you hold (reviewer, " +
 					"ledger-surgeon, release), not for your model or harness. Refused if another " +
 					"live agent holds it"),
 				"description": str("what you are for. Sent empty, it clears"),
-				"title":       str("what this session is called, for a human scanning the fleet"),
-				"branch":      str("the branch you are on now"),
-				"model":       str("the model behind you, if it changed"),
-				"provider":    str("who serves that model"),
-				"effort":      str("reasoning effort, if your harness exposes it"),
-				"surface":     str("where you run: cli, claude-desktop, ide"),
+				"release_names": stringArray("former names of YOUR identity to release. Current names and " +
+					"immutable ids cannot be released. Already absent names change nothing; maximum 64 entries"),
+				"title":    str("what this session is called, for a human scanning the fleet"),
+				"branch":   str("the branch you are on now"),
+				"model":    str("the model behind you, if it changed"),
+				"provider": str("who serves that model"),
+				"effort":   str("reasoning effort, if your harness exposes it"),
+				"surface":  str("where you run: cli, claude-desktop, ide"),
 				"cwd": str("the directory you work in, if it was wrong at register or you " +
 					"have moved: your project and repository are re-derived from it"),
 				"release_session": map[string]any{"type": "boolean", "description": "give up " +

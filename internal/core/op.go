@@ -63,7 +63,10 @@ type Op struct {
 	// register / resume / update
 	Name        string `json:"name,omitempty"`
 	Description string `json:"description,omitempty"`
-	PID         int    `json:"pid,omitempty"`
+	// ReleaseNames is an additive update effect. The alias projection consumes
+	// its regenerated event; the ledger remains the authority for a release.
+	ReleaseNames []string `json:"release_names,omitempty"`
+	PID          int      `json:"pid,omitempty"`
 	// NoProcess says this participant HAS no process, which is different from
 	// omitting a pid.
 	//

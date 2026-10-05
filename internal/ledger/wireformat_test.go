@@ -94,6 +94,8 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 	}
 	// The op payload: the union of every tag that reached disk above.
 	wantOp := map[string]bool{
+		// Former-name release is one additive effect; no historical tag changes.
+		"release_names": true,
 		// New task-queue decisions; historical tags below stay byte-for-byte.
 		"request_priority": true, "queue_debt": true, "queue_priority": true, "queue_reset_priority": true, "queue_before": true, "queue_tail": true, "permission_actor": true, "permission_actor_created": true,
 		// A new response's recorded review-retention decision. Older operations
@@ -437,7 +439,8 @@ const (
 	// Task queue: eight additive op tags, no renamed/removed historical tags.
 	// Withdrawal: one additive replacement reference; all old tags unchanged.
 	// Inline reads add two tags; all historical tags stay frozen.
-	frozenOpFingerprint       = "sha256:6027d7f772cdf195"
+	// Alias release adds one tag; every historical spelling stays frozen.
+	frozenOpFingerprint       = "sha256:65b2f4d12dc7bb5b"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`

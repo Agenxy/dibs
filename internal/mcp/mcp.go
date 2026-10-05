@@ -838,6 +838,7 @@ type toolArgs struct {
 	IssuedBy      string            `json:"issued_by"`
 	Token         string            `json:"token"`
 	Name          string            `json:"name"`
+	ReleaseNames  []string          `json:"release_names"`
 	Description   string            `json:"description"`
 	PID           int               `json:"pid"`
 	Nonce         string            `json:"nonce"`
@@ -1281,9 +1282,6 @@ func (s *Server) run(
 	case "invite":
 		return s.issueInvite(ctx, a)
 	case "register":
-		if strings.TrimSpace(a.Name) == "" {
-			return nil, fmt.Errorf("name is required")
-		}
 		op.Agent = agentInfo(ctx, params, a, sessionClient)
 		op.Kind, op.Name, op.Description, op.PID = core.OpRegister, a.Name, a.Description, a.PID
 		op.Nonce, op.AgentKind, op.SessionID = a.Nonce, core.AgentKind(a.Kind), a.SessionID
@@ -1304,6 +1302,7 @@ func (s *Server) run(
 		op.Kind, op.Name, op.Description = core.OpUpdate, a.Name, a.Description
 		op.Agent = selfReported(a)
 		op.ReleaseSession = a.ReleaseSession
+		op.ReleaseNames = a.ReleaseNames
 		// A CORRECTED cwd, which had no way in at all.
 		//
 		// register short-circuits a same-nonce retry inside one TTL and returns

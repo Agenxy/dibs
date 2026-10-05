@@ -17,6 +17,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Agent renames retain former names as explicit, releasable aliases. Addressed
+  results identify the actual recipient; current names and immutable ids keep
+  precedence, and ambiguous aliases are refused. Nonces recover the same
+  mailbox with an omitted or changed name, with rename admission before token
+  or activation changes. Alias ownership rebuilds across restart and is fenced
+  from id reuse. Configured role aliases and shadowing appear in `dibs doctor`;
+  fingerprint checks remain required. Live registration refuses to reopen a
+  deliberately closed identity; historical reopen records still replay and
+  cannot restore invitations issued before closure.
+
 - A closed-target full-publication rehearsal shares the release publisher and
   records exact source objects, draft discovery/upload/readback, immutable public
   asset hashes and a read-only retry. Production preflight, tag creation and

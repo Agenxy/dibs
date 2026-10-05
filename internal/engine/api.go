@@ -801,6 +801,9 @@ func (e *Engine) Board(ctx context.Context) (core.Result, error) {
 
 func (e *Engine) decoratedBoard() core.Result {
 	b := e.state.Board()
+	if names := e.configuredNameView(); len(names) > 0 {
+		b["configured_name_addresses"] = names
+	}
 	e.labelBoardHosts(b)
 	// The identity this daemon stamps its own machine's agents with, beside
 	// the ledger's node: doctor compares it with what Supgang says the
@@ -815,6 +818,7 @@ func (e *Engine) decoratedBoard() core.Result {
 		if l == nil {
 			continue
 		}
+		e.decorateAgentNames(lm, id)
 		// THE SAME ANSWER THE SWEEP AND THE REMINDER USE. This row read two of
 		// the three clocks, so a board could show a fresh last_seen beside a
 		// dormant status and a reminder saying nobody had been in touch for

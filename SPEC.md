@@ -296,10 +296,17 @@ you can measure is never improved by asking.
   registration therefore has one (§6). A minted nonce is weaker than a chosen
   one and the result says so: the row stays recoverable by name and session id,
   which a chosen nonce closes. Constant-time comparison. Two roles:
-  - *Response-loss retry*: `register` with a nonce it has seen, while the agent is
-    active and was created within one agent TTL, returns the original result
-    (`resumed: true`). Outside that window: `E_NONCE_IN_USE` with hint → `resume`.
-  - *Recovery credential* for persistent agents via `resume`. **Treat a
+  - *Response-loss retry and nonce-first recovery*: `register` resolves a known
+    nonce to its immutable id before considering `name`. Omitted name keeps the
+    current label; supplied name renames that same row after the existing
+    register recovery. An active retry reports `resumed: true` with the same
+    token; recovering a stopped row reports `reattached: true` with a rotated
+    token. Always use the returned token.
+    A proposed rename is admitted before recovery changes a token or activation.
+    A crash between the recovery record and update leaves the old label on the
+    same id; the same nonce/new-name retry completes it. Unknown nonces require
+    a name for a new identity; closed identities remain closed.
+  - *Recovery credential* also for persistent agents via `resume`. **Treat a
     persistent agent's nonce as a secret equal to its token.**
   - *Presented by the harness, on any transport.* An agent cannot carry a secret
     across a context boundary. Its context ends, which is the event the nonce
@@ -430,8 +437,24 @@ written before this. Consequences an agent can rely on: mail addressed to an
 never stops being the row's key; a rename onto any other row's `agent_id`, or
 onto another live agent's name, is refused (`E_NAME_TAKEN`) at admission.
 Historical renames still fold, and an unchanged historical label may be kept.
-The old *name* stops addressing you unless it is also your ID, which
-`update` says in its result so you can tell whoever was waiting.
+Former names remain aliases until the owner releases them with
+`update(release_names: string[])`. Reserved role routing keeps its existing
+precedence, followed by exact id, current name, and then former-name aliases,
+with the same live/retired eligibility rules each caller already applies.
+Multiple eligible alias owners give `E_AMBIGUOUS_AGENT` with sorted ids; a
+resolved operation reports the actual recipient and records the immutable id.
+
+Aliases are a derived projection of regenerated `agent.updated` events, outside
+State, fenced by owner id and creation serial. Cold replay rebuilds them from
+full history before the event ring is bounded. Historical names are never
+truncated. Admission caps new retained names at 64 per row, bounds release lists
+to 64, and refuses releasing current names, immutable ids or another row's alias.
+An effective release records one ordinary update with the additive frozen tag
+`release_names`. A release-only retry for absent names changes no serial or
+activation and appends nothing. Mixed rename/release is admitted before either
+effect. Purging/reusing an id never revives its previous occupant's aliases.
+Configured role names use the live resolver and keep their credential fingerprint
+checks; `doctor` exposes alias resolution and shadowing, which is logged at Info.
 
 **Awareness gate**: before `declare` or `claim`, an agent must have called
 `check_in()` **with its current credential**: the gate re-arms exactly when the
@@ -1115,7 +1138,7 @@ counting a document; this line said 17 for two minor versions.
 
 | Tool | Purpose |
 |---|---|
-| `register(name, description?, pid?, nonce?, kind?)` | → `{agent_id, token, serial, board, nonce?}`; a nonce is expected for `kind: persistent` and MINTED when omitted, never refused (§4) |
+| `register(name?, description?, pid?, nonce?, kind?)` | → `{agent_id, token, serial, board, nonce?}`; name may be omitted with a known nonce (§5); a nonce is expected for `kind: persistent` and MINTED when omitted, never refused (§4) |
 | `resume(nonce, resume_id, pid?)` | reactivate a persistent agent: rotates token, bumps activation generation, rebinds PID, wakes, re-arms gate; idempotent per resume_id (§5) |
 | `check_in()` | pass the awareness gate (per credential: a new session must look again); → atomic `{board, inbox, serial}` checkpoint (§10) |
 | `update(name?, description?, title?, branch?, model?, provider?, effort?, surface?)` | revise what the agent says about ITSELF. The id is immutable (it is the address every message, claim and membership keys on), so a rename moves the label only, and a name another live agent holds is refused (`E_NAME_TAKEN`) rather than suffixed. `harness`/`version` are not settable: the client states them at the handshake, which is the only part of an identity that is not self-reported. Empty `description` clears, because already-ledgered `update` ops did that; the fields added later merge when non-empty, so replay of old ops is unchanged |
