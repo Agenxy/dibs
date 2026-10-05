@@ -2,10 +2,14 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"cmp"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -71,6 +75,46 @@ func TestScorerAdvisoryThroughDaemonBoot(t *testing.T) {
 			previous = len(mail)
 		})
 	}
+	later := []string{advisoryBootRepo(t), advisoryBootRepo(t)}
+	t.Run("later discoveries batch only newly relevant trees", func(t *testing.T) {
+		logs := advisoryDaemonBoot(t, dir, repos, "0.35", "0.5", "2", func(addr string) {
+			registerLaterAdviceTrees(t, dir, addr, later)
+		})
+		// Assert setup reached real publication for BOTH later repositories.
+		for _, repo := range later {
+			found := false
+			for _, line := range strings.Split(logs, "\n") {
+				found = found || (strings.Contains(line, "work-overlap matching ready") && strings.Contains(line, repo))
+			}
+			if !found {
+				t.Fatalf("setup: later repository was never indexed: %s\n%s", repo, logs)
+			}
+		}
+		mail := committedScorerAdvice(t, dir)
+		if added := len(mail) - previous; added != 1 {
+			t.Errorf("later registrations added %d advisories, want one combined new-repo message", added)
+		}
+		for _, m := range mail[previous:] {
+			for _, repo := range later {
+				if !strings.Contains(m.Body, repo) {
+					t.Errorf("later advisory %d did not include new repository %s", m.Serial, repo)
+				}
+			}
+			for _, repo := range repos {
+				if strings.Contains(m.Body, repo) {
+					t.Errorf("later advisory %d repeated already-covered repository %s", m.Serial, repo)
+				}
+			}
+		}
+		previous = len(mail)
+	})
+	t.Run("restart after later discovery is silent", func(t *testing.T) {
+		all := append(append([]string{}, repos...), later...)
+		advisoryDaemonBoot(t, dir, all, "0.35", "0.5", "2")
+		if mail := committedScorerAdvice(t, dir); len(mail) != previous {
+			t.Errorf("unchanged restart repeated later advice: before %d, after %d", previous, len(mail))
+		}
+	})
 }
 
 func advisoryBootRepo(t *testing.T) string {
@@ -140,7 +184,9 @@ func seedAdvisoryBoard(t *testing.T, dir string, repos []string) {
 	}
 }
 
-func advisoryDaemonBoot(t *testing.T, dir string, repos []string, notify, join, history string) {
+func advisoryDaemonBoot(t *testing.T, dir string, repos []string, notify, join, history string,
+	afterStartup ...func(string),
+) string {
 	t.Helper()
 	port := testport.Reserve(t, "tcp", "127.0.0.1:0")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -237,7 +283,70 @@ func advisoryDaemonBoot(t *testing.T, dir string, repos []string, notify, join, 
 	case <-ctx.Done():
 		t.Fatal("setup: daemon observation timed out")
 	}
+	for _, after := range afterStartup {
+		after(port.Addr)
+		timer.Reset(3 * time.Second)
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			t.Fatal("setup: later discovery observation timed out")
+		}
+	}
 	stop()
+	raw, err := os.ReadFile(logFile.Name())
+	if err != nil {
+		t.Fatal("setup: read real daemon log:", err)
+	}
+	return string(raw)
+}
+
+func registerLaterAdviceTrees(t *testing.T, dir, addr string, repos []string) {
+	t.Helper()
+	secret, err := os.ReadFile(filepath.Join(dir, "local.secret"))
+	if err != nil {
+		t.Fatal("setup: local credential:", err)
+	}
+	client := &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{Proxy: nil}}
+	defer client.CloseIdleConnections()
+	for n, repo := range repos {
+		body, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": n + 1, "method": "tools/call",
+			"params": map[string]any{"name": "register", "arguments": map[string]any{
+				"name": fmt.Sprintf("later-worker-%d", n), "nonce": fmt.Sprintf("later-nonce-%d", n),
+				"kind": "persistent", "cwd": repo, "pid": os.Getpid(),
+			}}})
+		if err != nil {
+			t.Fatal("setup: registration envelope:", err)
+		}
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "http://"+addr+"/mcp", bytes.NewReader(body))
+		if err != nil {
+			t.Fatal("setup: registration request:", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("MCP-Protocol-Version", "2026-07-28")
+		req.Header.Set("X-Dibs-Local", strings.TrimSpace(string(secret)))
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal("setup: actual later registration:", err)
+		}
+		raw, readErr := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		_ = resp.Body.Close()
+		var rpc struct {
+			Error  any `json:"error"`
+			Result struct {
+				IsError bool                    `json:"isError"`
+				Content []struct{ Text string } `json:"content"`
+			} `json:"result"`
+		}
+		if err := json.Unmarshal(raw, &rpc); err != nil || readErr != nil || resp.StatusCode != 200 ||
+			rpc.Error != nil || rpc.Result.IsError || len(rpc.Result.Content) == 0 {
+			t.Fatalf("setup: actual later registration refused: %d %s (%v, %v)", resp.StatusCode, raw, err, readErr)
+		}
+		var registered map[string]any
+		if err := json.Unmarshal([]byte(rpc.Result.Content[0].Text), &registered); err != nil ||
+			registered["agent_id"] != fmt.Sprintf("later-worker-%d", n) || registered["token"] == nil {
+			t.Fatalf("setup: later identity was not registered: %v %v", registered, err)
+		}
+	}
 }
 
 func committedScorerAdvice(t *testing.T, dir string) []*core.Message {
