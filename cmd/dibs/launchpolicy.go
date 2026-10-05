@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -18,11 +19,29 @@ func standardLaunchPolicy(body []byte) ([]byte, error) {
 	if len(body) > 1<<20 {
 		return nil, fmt.Errorf("LaunchAgent exceeds 1 MiB")
 	}
+	root, err := readPolicyPlist(body)
+	if err != nil {
+		return nil, err
+	}
+	policy, err := topLevelPolicy(root)
+	if err != nil {
+		return nil, err
+	}
+	if policy == nil || policy.text != "Background" {
+		return nil, nil // An explicit operator policy is left alone.
+	}
+	out := append([]byte(nil), body[:policy.start]...)
+	out = append(out, "Standard"...)
+	out = append(out, body[policy.end:]...)
+	return out, nil
+}
+
+func readPolicyPlist(body []byte) (*policyElement, error) {
 	d := xml.NewDecoder(bytes.NewReader(body))
 	var root *policyElement
 	for {
 		tok, err := d.Token()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -43,6 +62,10 @@ func standardLaunchPolicy(body []byte) ([]byte, error) {
 			}
 		}
 	}
+	return root, nil
+}
+
+func topLevelPolicy(root *policyElement) (*policyElement, error) {
 	if root == nil || root.name != "plist" || len(root.children) != 1 || root.children[0].name != "dict" {
 		return nil, fmt.Errorf("expected an XML plist with one top-level dictionary")
 	}
@@ -65,13 +88,7 @@ func standardLaunchPolicy(body []byte) ([]byte, error) {
 			policy = val
 		}
 	}
-	if policy == nil || policy.text != "Background" {
-		return nil, nil // An explicit operator policy is left alone.
-	}
-	out := append([]byte(nil), body[:policy.start]...)
-	out = append(out, "Standard"...)
-	out = append(out, body[policy.end:]...)
-	return out, nil
+	return policy, nil
 }
 
 type policyElement struct {
@@ -178,7 +195,7 @@ func (p *plan) migratePolicy() error {
 	if err != nil {
 		return err
 	}
-	defer os.Remove(f.Name())
+	defer func() { _ = os.Remove(f.Name()) }()
 	if err := f.Chmod(st.Mode().Perm()); err != nil {
 		_ = f.Close()
 		return err

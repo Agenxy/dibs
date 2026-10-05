@@ -125,7 +125,8 @@ func TestLaunchPolicyRefusesMalformedBeforeStop(t *testing.T) {
 
 func TestLaunchPolicyRefusesChangedUnit(t *testing.T) {
 	p, unit, before := policyUpgradeFixture(t, `<key>ProcessType</key><string>Background</string>`)
-	changed := append(before, []byte("<!-- edited concurrently -->")...)
+	changed := append([]byte(nil), before...)
+	changed = append(changed, "<!-- edited concurrently -->"...)
 	if err := os.WriteFile(unit, changed, 0o640); err != nil {
 		t.Fatal(err)
 	}

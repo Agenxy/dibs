@@ -293,7 +293,8 @@ func runningOrigin(p *plan) string {
 // serves the build the installed binary reported for itself, and the
 // service unit and data directory need no repair.
 func (p *plan) nothingToDo(info buildInfo) bool {
-	return p.serving && !p.unitWrong && !p.moveDir && len(p.policyAfter) == 0 && p.policyErr == nil && alreadyOn(info, p.checked)
+	return p.serving && !p.unitWrong && !p.moveDir && len(p.policyAfter) == 0 &&
+		p.policyErr == nil && alreadyOn(info, p.checked)
 }
 
 // alreadyOn reports whether the serving daemon is on the build the installed
