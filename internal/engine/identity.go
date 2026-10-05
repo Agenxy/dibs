@@ -7,6 +7,7 @@ import (
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/notify"
+	"github.com/agenxy/dibs/internal/paths"
 )
 
 // Who an unidentified lifecycle hook is taken to be.
@@ -65,8 +66,10 @@ type identity struct {
 	// harness fires lifecycle hooks continuously: an unidentified session in a
 	// loop would otherwise notify the operator once per turn boundary, which
 	// is the shape of every alert nobody reads.
-	asked map[string]time.Time
+	asked map[identityNoticeKey]time.Time
 }
+
+type identityNoticeKey struct{ host, path string }
 
 // askAgain is how long before the same directory may raise a second notice.
 const askAgain = 30 * time.Minute
@@ -123,7 +126,7 @@ func (e *Engine) declined(p unidentifiedPolicy, cwd, host string, would *core.Ag
 	}
 	slog.Debug("a hook named no session and the policy declines to guess",
 		"cwd", cwd, "host", host, "would_have_been", who, "policy", int(p))
-	if p == refuseDirectory || !e.askOnce(cwd) {
+	if p == refuseDirectory || !e.askOnce(cwd, host) {
 		return
 	}
 	body := "A session in " + cwd + " asked Dibs for its mail and named no " +
@@ -160,16 +163,21 @@ func (e *Engine) declined(p unidentifiedPolicy, cwd, host string, would *core.Ag
 
 // askOnce throttles per directory. A harness fires hooks continuously and an
 // unidentified one would otherwise notify once per turn boundary.
-func (e *Engine) askOnce(cwd string) bool {
+func (e *Engine) askOnce(cwd, host string) bool {
+	host = e.canonicalHost(host)
+	if host != "" && host == e.HostID() {
+		cwd = paths.Canonical(cwd)
+	}
+	key := identityNoticeKey{host: host, path: cwd}
 	e.identity.mu.Lock()
 	defer e.identity.mu.Unlock()
 	if e.identity.asked == nil {
-		e.identity.asked = map[string]time.Time{}
+		e.identity.asked = map[identityNoticeKey]time.Time{}
 	}
 	now := time.Now()
-	if last, seen := e.identity.asked[cwd]; seen && now.Sub(last) < askAgain {
+	if last, seen := e.identity.asked[key]; seen && now.Sub(last) < askAgain {
 		return false
 	}
-	e.identity.asked[cwd] = now
+	e.identity.asked[key] = now
 	return true
 }

@@ -46,6 +46,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Returning identities survive native directory case aliases.** Local path
+  canonicalization corrects Darwin filesystem spelling. The stdio nonce cache
+  migrates aliases while preserving legacy credentials; conflicting retained
+  secrets recover the oldest matching identity through a bounded register
+  argument, without probing or creating a sibling on failure. A newly registered
+  sibling names the old mailbox and a ready adoption request to a coordinator,
+  falling back to the human only when no coordinator exists. Scorer root keys
+  and host-aware unidentified-session notices use the same local spelling.
+  During upgrade, older claims with non-native spellings may miss overlap warnings until they expire.
+
 - **Waiting-note ages describe outstanding updates.** A verdict already read
   through the authenticated inbox no longer lends its cached timestamp to fresh
   mail or a new update. Outcome/review reminders name the parent `read_mail`

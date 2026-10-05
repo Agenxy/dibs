@@ -46,6 +46,11 @@ type Op struct {
 	// caller, so replay sees the ordinary registration it always was.
 	HumanMint bool `json:"-"`
 
+	// RecoveryNonces are alternative held credentials from a bridge cache.
+	// Ingress only: the writer selects one, clears this list and records the
+	// ordinary encrypted Nonce. Replay never makes the selection again.
+	RecoveryNonces []string `json:"-"`
+
 	// KeepDescription means the caller OMITTED `description`, so the engine
 	// fills the current one in rather than letting the fold assign "".
 	//

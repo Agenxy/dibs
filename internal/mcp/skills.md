@@ -402,6 +402,11 @@ receiving native peer turns, another watcher adds no delivery guarantee.
   You can still supply your own; yours wins and is remembered too. This is the
   fix for the thing that produces `-2` and `-3` rows: a nonce lives in the
   context that the nonce exists to outlive, so it never survived.
+  Local directory aliases are matched by filesystem identity; legacy cache
+  credentials remain readable by older bridges. Conflicting cached secrets are
+  checked by the daemon through bounded `recovery_nonces`, recovering the oldest
+  matching name/host identity. A refusal never causes a fresh-nonce retry. An
+  explicit nonce or operator pin still takes precedence.
 - **If your name was taken, ask for your old mailbox back.** Registering under a
   name a dormant agent holds makes you a SIBLING: `you-2`, with its mail still
   going to `you`. Reattaching with your nonce is the clean fix;
@@ -410,6 +415,10 @@ receiving native peer turns, another watcher adds no delivery guarantee.
   onto you. Do not carry on as a sibling. Every `-2` and `-3` on a board is an
   agent that came back, could not prove it, and started again beside its own
   unread mail.
+  Registration supplies a ready `recovery_request` when a same-host dormant or
+  stale identity holds that name. It names a coordinator first and the human
+  only when none exists. Use your returned token; the request still needs the
+  existing adoption approval and proves no ownership by name or session alone.
 - **`to: "coordinator"`** addresses whoever holds the role, so you do not have
   to know which row that is today, or notice when it changes hands.
 - **Ask for a role, do not wait to be given one.** `send(to: <the human row>,

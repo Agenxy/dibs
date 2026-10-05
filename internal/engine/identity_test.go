@@ -145,7 +145,7 @@ func TestTheCoordinatorPolicyLeavesANoticeRatherThanGuessing(t *testing.T) {
 	// And it comes back after the window, because an unidentified session that
 	// is STILL unidentified half an hour later is news again.
 	e.identity.mu.Lock()
-	e.identity.asked[dir] = time.Now().Add(-askAgain - time.Minute)
+	e.identity.asked[identityNoticeKey{path: dir}] = time.Now().Add(-askAgain - time.Minute)
 	e.identity.mu.Unlock()
 	e.resolveHook("", dir, "")
 	if after := len(e.takeNotices("boss")); after == before {

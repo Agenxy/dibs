@@ -830,66 +830,67 @@ func (s *Server) adoptSession(ctx context.Context, token string, params json.Raw
 }
 
 type toolArgs struct {
-	FileSize      *int64            `json:"size"`
-	SHA256        string            `json:"sha256"`
-	InviteAction  string            `json:"action"`
-	InviteTTLS    int64             `json:"ttl_s"`
-	InviteExport  bool              `json:"export"`
-	IssuedBy      string            `json:"issued_by"`
-	Token         string            `json:"token"`
-	Name          string            `json:"name"`
-	ReleaseNames  []string          `json:"release_names"`
-	Description   string            `json:"description"`
-	PID           int               `json:"pid"`
-	Nonce         string            `json:"nonce"`
-	ResumeID      string            `json:"resume_id"`
-	Kind          string            `json:"kind"`
-	SlotID        string            `json:"slot_id"`
-	Text          string            `json:"text"`
-	Dirs          []string          `json:"dirs"`
-	Activity      string            `json:"activity"`
-	Waiting       string            `json:"waiting"`
-	Recheck       string            `json:"recheck_after"`
-	Holds         []string          `json:"holds"`
-	To            string            `json:"to"`
-	Type          string            `json:"type"`
-	Body          string            `json:"body"`
-	DeadlineSec   int               `json:"deadline_s"`
-	Choices       []string          `json:"choices"`
-	Milestones    []string          `json:"milestones"`
-	Track         bool              `json:"track"`
-	Milestone     int               `json:"milestone"`
-	Deliverable   string            `json:"deliverable"`
-	Grant         string            `json:"grant"`
-	Adopt         string            `json:"adopt"`
-	OpID          string            `json:"op_id"`
-	MsgSerial     uint64            `json:"msg_serial"`
-	SupersededBy  uint64            `json:"superseded_by"`
-	Disposition   string            `json:"disposition"`
-	Priority      string            `json:"priority"`
-	ResetPriority bool              `json:"reset_priority"`
-	Before        uint64            `json:"before"`
-	Tail          bool              `json:"tail"`
-	Locked        bool              `json:"locked"`
-	Path          string            `json:"path"`
-	Mode          string            `json:"mode"`
-	Note          string            `json:"note"`
-	Since         uint64            `json:"since_serial"`
-	TimeoutSec    int               `json:"timeout_s"`
-	Attachments   []core.Attachment `json:"attachments"`
-	Data          string            `json:"data"` // put_blob: base64 content
-	Mime          string            `json:"mime"`
-	Blob          string            `json:"blob"` // get_blob: id
-	As            string            `json:"as"`
-	Refs          []string          `json:"refs"`
-	SessionID     string            `json:"session_id"`
-	Transcript    string            `json:"transcript_path"`
-	AgentID       string            `json:"agent_id"`
-	AgentType     string            `json:"agent_type"`
-	ToolName      string            `json:"tool_name"`
-	TurnID        string            `json:"turn_id"`
-	Progress      int64             `json:"progress"`
-	Event         string            `json:"event"`
+	FileSize       *int64            `json:"size"`
+	SHA256         string            `json:"sha256"`
+	InviteAction   string            `json:"action"`
+	InviteTTLS     int64             `json:"ttl_s"`
+	InviteExport   bool              `json:"export"`
+	IssuedBy       string            `json:"issued_by"`
+	Token          string            `json:"token"`
+	Name           string            `json:"name"`
+	ReleaseNames   []string          `json:"release_names"`
+	Description    string            `json:"description"`
+	PID            int               `json:"pid"`
+	Nonce          string            `json:"nonce"`
+	RecoveryNonces []string          `json:"recovery_nonces"`
+	ResumeID       string            `json:"resume_id"`
+	Kind           string            `json:"kind"`
+	SlotID         string            `json:"slot_id"`
+	Text           string            `json:"text"`
+	Dirs           []string          `json:"dirs"`
+	Activity       string            `json:"activity"`
+	Waiting        string            `json:"waiting"`
+	Recheck        string            `json:"recheck_after"`
+	Holds          []string          `json:"holds"`
+	To             string            `json:"to"`
+	Type           string            `json:"type"`
+	Body           string            `json:"body"`
+	DeadlineSec    int               `json:"deadline_s"`
+	Choices        []string          `json:"choices"`
+	Milestones     []string          `json:"milestones"`
+	Track          bool              `json:"track"`
+	Milestone      int               `json:"milestone"`
+	Deliverable    string            `json:"deliverable"`
+	Grant          string            `json:"grant"`
+	Adopt          string            `json:"adopt"`
+	OpID           string            `json:"op_id"`
+	MsgSerial      uint64            `json:"msg_serial"`
+	SupersededBy   uint64            `json:"superseded_by"`
+	Disposition    string            `json:"disposition"`
+	Priority       string            `json:"priority"`
+	ResetPriority  bool              `json:"reset_priority"`
+	Before         uint64            `json:"before"`
+	Tail           bool              `json:"tail"`
+	Locked         bool              `json:"locked"`
+	Path           string            `json:"path"`
+	Mode           string            `json:"mode"`
+	Note           string            `json:"note"`
+	Since          uint64            `json:"since_serial"`
+	TimeoutSec     int               `json:"timeout_s"`
+	Attachments    []core.Attachment `json:"attachments"`
+	Data           string            `json:"data"` // put_blob: base64 content
+	Mime           string            `json:"mime"`
+	Blob           string            `json:"blob"` // get_blob: id
+	As             string            `json:"as"`
+	Refs           []string          `json:"refs"`
+	SessionID      string            `json:"session_id"`
+	Transcript     string            `json:"transcript_path"`
+	AgentID        string            `json:"agent_id"`
+	AgentType      string            `json:"agent_type"`
+	ToolName       string            `json:"tool_name"`
+	TurnID         string            `json:"turn_id"`
+	Progress       int64             `json:"progress"`
+	Event          string            `json:"event"`
 	// StopActive is the harness's stop_hook_active: this turn is already
 	// running because a stop hook continued it. Typed loosely because it
 	// arrives as the string a template substitution produced on one harness and
@@ -1257,6 +1258,7 @@ func (s *Server) run(
 		op.Agent = agentInfo(ctx, params, a, sessionClient)
 		op.Kind, op.Name, op.Description, op.PID = core.OpRegister, a.Name, a.Description, a.PID
 		op.Nonce, op.AgentKind, op.SessionID = a.Nonce, core.AgentKind(a.Kind), a.SessionID
+		op.RecoveryNonces = a.RecoveryNonces
 		op.Parent, op.ParentNonce = a.Parent, a.ParentNonce
 		// Where this register CAME FROM, kept apart from the alias the engine
 		// vets: the vetting clears a session another agent holds, and that is

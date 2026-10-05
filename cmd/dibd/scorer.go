@@ -1266,11 +1266,12 @@ func repositoryOf(worktree string) string {
 	if worktree == "" {
 		return worktree
 	}
+	worktree = paths.Canonical(worktree)
 	common, _, _, ok := paths.Identify(worktree).Identity()
 	if !ok || filepath.Base(common) != ".git" {
 		return worktree
 	}
-	primary := filepath.Dir(common)
+	primary := paths.Canonical(filepath.Dir(common))
 	if primary == "" || primary == worktree {
 		return worktree
 	}
