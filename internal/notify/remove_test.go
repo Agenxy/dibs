@@ -37,6 +37,14 @@ func TestPublicMessageNotificationAndCleanupUseInstalledHelper(t *testing.T) {
 		t.Skip("macOS native-helper lookup")
 	}
 	if os.Getenv("DIBS_TEST_CLEANUP_DRIVER") == "1" {
+		// The parent put copies of this test binary at both lookup paths.
+		// Clear the gate's kill switch only inside that isolated child: the
+		// helper asserts argv and writes receipts, never calls the desktop OS.
+		self, err := os.Executable()
+		if err != nil || helper() != filepath.Join(filepath.Dir(self), helperName) {
+			t.Fatalf("setup: private copied helper is not the actual lookup: %v", err)
+		}
+		t.Setenv(silenceEnv, "")
 		state := ""
 		choice, err := AskMessage("board-A", 7, "fixture", "fixture", func(s string) { state = s }, "Yes")
 		if err != nil || choice != "Yes" || state != "posted" {

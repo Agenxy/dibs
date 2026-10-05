@@ -386,10 +386,8 @@ var toolDefs = func() []map[string]any {
 			"inputSchema": obj(map[string]any{"token": tok, "msg_serial": num("serial of the message")}, "token", "msg_serial"),
 		},
 		{
-			"name": "respond",
-			"description": "Answer/review/withdraw mail. Withdraw your unfinished request or unanswered question; " +
-				"notify, handoff and final messages cannot be withdrawn. superseded_by names your ordinary question or request. " +
-				"Progress/done report work; progress corrects flags.",
+			"name":        "respond",
+			"description": "Answer/review/report work; withdraw only your unanswered question or unfinished request.",
 			"inputSchema": obj(map[string]any{
 				"token": tok, "msg_serial": num("serial of the message"),
 				"disposition": map[string]any{

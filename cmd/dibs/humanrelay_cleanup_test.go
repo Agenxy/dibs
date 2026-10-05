@@ -29,6 +29,10 @@ func TestActualRelayStreamRemovesThroughItsNativeHelper(t *testing.T) {
 		t.Skip("native macOS relay route")
 	}
 	if os.Getenv("DIBS_TEST_RELAY_CLEANUP_DRIVER") == "1" {
+		// Only this child has the private copied helper below. The gate's
+		// kill switch must still silence real notifications in every other
+		// test process; this helper validates argv without desktop OS calls.
+		t.Setenv("DIBS_NOTIFY", "")
 		testRelayCleanupStream(t)
 		return
 	}
