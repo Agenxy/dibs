@@ -1,0 +1,32 @@
+name: scheduling-proof-45633
+on:
+  pull_request:
+    paths:
+      - .github/workflows/scheduling-proof.yml
+      - tools/schedulingproof/**
+permissions:
+  contents: read
+jobs:
+  scheduling:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c
+        with:
+          version: 2026.7.7
+          experimental: true
+      - name: Regression and old-code controls
+        run: mise exec -- uv run tools/schedulingproof/controls.py
+      - name: Real daemon binary
+        run: mise exec -- go build -o bin/dibd ./cmd/dibd
+      - name: Rootless policy and real MCP CPU-load experiment
+        run: mise exec -- uv run tools/schedulingproof/run.py --hosted --daemon bin/dibd --out scheduling-results/latency
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scheduling-45633
+          path: scheduling-results
