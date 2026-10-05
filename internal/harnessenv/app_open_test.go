@@ -256,3 +256,55 @@ func TestAppIncarnationRearmsAnOpenWithoutAProbeResult(t *testing.T) {
 		t.Fatalf("new incarnation failed to re-arm under rate limit: %d", opens)
 	}
 }
+
+func TestCorruptAppOpenMemoRecoversAfterTheBoundedInterval(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("DIBS_DIR", dir)
+	const thread = "corrupt-open-fixture"
+	key := sha256.Sum256([]byte(thread))
+	path := filepath.Join(dir, "app-opens", hex.EncodeToString(key[:])+".json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("garbage"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	opens := 0
+	s := Shower{
+		Holds: func(string) bool { return false },
+		Open:  func([]string) error { opens++; return nil },
+	}
+	wake := func() {
+		s.ShowWhenIdle(ChatGPTOpenArgv(thread), thread, func(_, deferred bool, err error) {
+			if deferred || err != nil {
+				t.Fatalf("open: deferred=%v err=%v", deferred, err)
+			}
+		})
+	}
+	wake()
+	wake()
+	if opens != 0 {
+		t.Fatalf("corruption immediately re-armed opening: %d", opens)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var receipt map[string]any
+	if err := json.Unmarshal(raw, &receipt); err != nil {
+		t.Fatal("garbage memo was not repaired:", err)
+	}
+	receipt["opened_at"] = time.Now().Add(-11 * time.Minute).UTC().Format(time.RFC3339Nano)
+	raw, err = json.Marshal(receipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	wake()
+	wake()
+	if opens != 1 {
+		t.Fatalf("repaired memo did not restore a bounded future wake: %d", opens)
+	}
+}

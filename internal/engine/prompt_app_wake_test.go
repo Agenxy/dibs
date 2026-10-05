@@ -29,8 +29,8 @@ func TestPromptAppWakeReachesADormantThreadWhileThePersonIsActive(t *testing.T) 
 			e := New(core.NewState("test", core.DefaultLimits()), &memLedger{}, deadProber{})
 			e.SetWakeCommands(map[string]WakeCommand{"codex": {Argv: []string{"/usr/bin/true", "queue", "{thread}"}}})
 			worker := &core.Agent{
-				ID: "prompt-worker", Status: core.StatusDormant, SessionID: "prompt-active-fixture",
-				Agent: &core.AgentInfo{Harness: "Codex", Surface: harnessenv.ChatGPTApp},
+				ID: "prompt-worker", Status: core.StatusDormant, SessionID: "0199a0b1-c2d3-4e5f-8a9b-0c1d2e3f4a6c",
+				Agent: &core.AgentInfo{Harness: "Codex", CWD: t.TempDir(), Surface: harnessenv.ChatGPTApp},
 				Slots: map[string]core.Slot{},
 			}
 			e.state.Agents[worker.ID] = worker
@@ -65,8 +65,8 @@ func TestRapidSuccessfulCommandWakesOpenAThreadOnlyOnce(t *testing.T) {
 	e := New(core.NewState("test", core.DefaultLimits()), &memLedger{}, deadProber{})
 	e.SetWakeCommands(map[string]WakeCommand{"codex": {Argv: []string{"/usr/bin/true", "queue", "{thread}"}}})
 	worker := &core.Agent{
-		ID: "rapid-worker", Status: core.StatusDormant, SessionID: "rapid-command-fixture",
-		Agent: &core.AgentInfo{Harness: "Codex", Surface: harnessenv.ChatGPTApp},
+		ID: "rapid-worker", Status: core.StatusDormant, SessionID: "0199a0b1-c2d3-4e5f-8a9b-0c1d2e3f4a6d",
+		Agent: &core.AgentInfo{Harness: "Codex", CWD: t.TempDir(), Surface: harnessenv.ChatGPTApp},
 		Slots: map[string]core.Slot{},
 	}
 	e.state.Agents[worker.ID] = worker

@@ -17,7 +17,8 @@ func TestBridgePromptAppWakeIsImmediateAndBoundedAcrossProducers(t *testing.T) {
 	release := make(chan struct{})
 	t.Cleanup(func() { close(release) })
 	for i := uint64(1); i <= 8; i++ {
-		b := bridgeUnderTest(t, &recordingRun{ok: true})
+		recorder := &recordingRun{ok: true}
+		b := bridgeUnderTest(t, recorder)
 		bridgeReportServer(t, b)
 		b.show = harnessenv.Shower{
 			Holds: func(string) bool { return false },
@@ -37,6 +38,9 @@ func TestBridgePromptAppWakeIsImmediateAndBoundedAcrossProducers(t *testing.T) {
 			ID: i, Host: b.host, Agent: "worker", Harness: "codex", Thread: "bridge-prompt-fixture",
 			Surface: harnessenv.ChatGPTApp, MsgType: "question",
 		})
+		if len(recorder.runs) != 1 {
+			t.Fatalf("setup: bridge did not execute the successful queue route: %q", recorder.runs)
+		}
 	}
 	if opens != 1 {
 		t.Fatalf("eight producers opened one dormant thread %d times, want one", opens)
