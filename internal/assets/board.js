@@ -394,7 +394,9 @@ const Board = (() => {
         `<strong>${esc(m.grant)}</strong>`)
     }
     if (m.adopt) {
-      bits.push(`approving moves <strong>${esc(m.adopt)}</strong>'s mailbox to ` +
+      const source = m.adopt_name && m.adopt_name !== m.adopt
+        ? `${m.adopt_name} (formerly ${m.adopt})` : m.adopt
+      bits.push(`approving moves <strong>${esc(source)}</strong>'s mailbox to ` +
         `<strong>${esc(m.from_name || m.from)}</strong>`)
     }
     if (!bits.length) return ""

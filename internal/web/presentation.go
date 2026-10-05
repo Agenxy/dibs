@@ -12,8 +12,9 @@ type eventPresentation struct {
 
 type messagePresentation struct {
 	*core.Message
-	FromName string `json:"from_name"`
-	ToName   string `json:"to_name"`
+	FromName  string `json:"from_name"`
+	ToName    string `json:"to_name"`
+	AdoptName string `json:"adopt_name,omitempty"`
 }
 
 func displayName(names map[string]string, id string) string {

@@ -24,17 +24,18 @@ import (
 
 // HumanNotice is one message for the person, as a relay shows it.
 type HumanNotice struct {
-	Serial   uint64               `json:"serial"`
-	Type     string               `json:"type"`
-	From     string               `json:"from"`
-	FromName string               `json:"from_name,omitempty"`
-	Who      string               `json:"who,omitempty"`
-	Body     string               `json:"body"`
-	Choices  []string             `json:"choices,omitempty"`
-	Grant    string               `json:"grant,omitempty"`
-	Adopt    string               `json:"adopt,omitempty"`
-	Node     string               `json:"node,omitempty"`
-	Cleanup  *NotificationCleanup `json:"notification_cleanup,omitempty"`
+	Serial    uint64               `json:"serial"`
+	Type      string               `json:"type"`
+	From      string               `json:"from"`
+	FromName  string               `json:"from_name,omitempty"`
+	Who       string               `json:"who,omitempty"`
+	Body      string               `json:"body"`
+	Choices   []string             `json:"choices,omitempty"`
+	Grant     string               `json:"grant,omitempty"`
+	Adopt     string               `json:"adopt,omitempty"`
+	AdoptName string               `json:"adopt_name,omitempty"`
+	Node      string               `json:"node,omitempty"`
+	Cleanup   *NotificationCleanup `json:"notification_cleanup,omitempty"`
 }
 
 // Privileged is whether approving this grants something: a role, a
@@ -132,6 +133,9 @@ func (e *Engine) noticeOf(m *core.Message) HumanNotice {
 	}
 	if a := e.state.Agents[m.From]; a != nil {
 		n.Who = whoIs(a)
+	}
+	if m.Adopt != "" {
+		n.AdoptName = e.agentName(m.Adopt)
 	}
 	return n
 }

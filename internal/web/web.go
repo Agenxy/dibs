@@ -375,10 +375,14 @@ func (s *Server) apiMessages(w http.ResponseWriter, r *http.Request) {
 			if messages, ok := res["messages"].([]*core.Message); ok {
 				views := make([]messagePresentation, 0, len(messages))
 				for _, m := range messages {
-					views = append(views, messagePresentation{
+					view := messagePresentation{
 						Message:  m,
 						FromName: displayName(names, m.From), ToName: displayName(names, m.To),
-					})
+					}
+					if m.Adopt != "" {
+						view.AdoptName = displayName(names, m.Adopt)
+					}
+					views = append(views, view)
 				}
 				res["messages"] = views
 			}

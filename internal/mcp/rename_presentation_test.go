@@ -33,6 +33,13 @@ func TestRenamedAddressIsPresentedAcrossBothMCPVersions(t *testing.T) {
 			call("check_in", map[string]any{"token": senderTok})
 			call("update", map[string]any{"token": tok, "name": "former-name"})
 			call("update", map[string]any{"token": tok, "name": "current-name"})
+			collision := toolCallOn(t, srv, version, "update", map[string]any{
+				"token": senderTok, "name": id,
+			})
+			if collision["code"] != "E_NAME_TAKEN" ||
+				!strings.Contains(collision["message"].(string), "current-name") {
+				t.Fatalf("id collision did not name its current holder: %v", collision)
+			}
 			board := call("board", map[string]any{"token": senderTok, "detail": true})["board"].(map[string]any)
 			found := false
 			for _, raw := range board["agents"].([]any) {

@@ -414,7 +414,8 @@ func (r *relay) handle(n engine.HumanNotice) {
 	}()
 	a, err := r.ask(humanask.Message{
 		Type: n.Type, From: n.From, FromName: n.FromName, Who: n.Who, Body: n.Body,
-		Choices: n.Choices, Grant: n.Grant, Adopt: n.Adopt, Serial: n.Serial, Node: r.st.Node,
+		Choices: n.Choices, Grant: n.Grant, Adopt: n.Adopt, AdoptName: n.AdoptName,
+		Serial: n.Serial, Node: r.st.Node,
 		Receipt: func(state string) {
 			r.delivery(n.Serial, state, "")
 		},
@@ -464,9 +465,13 @@ func (r *relay) answer(n engine.HumanNotice, a humanask.Answer) error {
 	if n.Privileged() && a.Disposition == "approve" {
 		from := n.From
 		if n.FromName != "" {
-			from = n.FromName
+			from = humanask.OneLine(n.FromName)
 		}
-		reason := "Approve: " + strings.TrimPrefix(humanask.RequestTitle(from, n.Grant, n.Adopt), "Dibs · ")
+		adopt := n.Adopt
+		if n.AdoptName != "" && n.AdoptName != n.Adopt {
+			adopt = humanask.OneLine(n.AdoptName) + " (formerly " + n.Adopt + ")"
+		}
+		reason := "Approve: " + strings.TrimPrefix(humanask.RequestTitle(from, n.Grant, adopt), "Dibs · ")
 		nonce, sig, err := r.challenge(func(node, nonce string) []byte {
 			return humankey.AnswerMessage(node, n.Serial, a.Disposition, nonce)
 		}, reason)

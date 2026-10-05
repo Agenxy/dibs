@@ -31,3 +31,23 @@ func TestHumanNotificationsShowCurrentNameWithoutChangingSenderID(t *testing.T) 
 		})
 	}
 }
+
+func TestAdoptionApprovalTitleUsesCurrentNameWithoutChangingTargetID(t *testing.T) {
+	var title string
+	m := Message{
+		Type: core.MsgRequest, From: "asker-id", FromName: "current-asker",
+		Adopt: "old-target-id", AdoptName: "current-target",
+		ask: func(got, _ string, _ notify.Receipt, _ ...string) (string, error) {
+			title = got
+			return "", nil
+		},
+	}
+	_, _ = Ask(m)
+	if !strings.Contains(title, "current-asker") || !strings.Contains(title, "current-target (formerly old-target-id)") ||
+		strings.Contains(title, "asker-id") {
+		t.Fatalf("adoption approval title omitted a current name: %q", title)
+	}
+	if m.Adopt != "old-target-id" {
+		t.Fatal("presentation changed the stable adoption target")
+	}
+}

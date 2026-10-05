@@ -21,18 +21,19 @@ import (
 
 // Message is one message for the person.
 type Message struct {
-	Type     string // question, request, handoff, notify
-	From     string
-	FromName string // current name; From stays the stable ID
-	Who      string // the daemon's line about the sender, never the sender's own words
-	Body     string
-	Choices  []string
-	Grant    string
-	Adopt    string
-	Serial   uint64 // stable message identity on Node
-	Node     string // board identity; serials are not global
-	Receipt  notify.Receipt
-	ask      func(string, string, notify.Receipt, ...string) (string, error) // test presenter
+	Type      string // question, request, handoff, notify
+	From      string
+	FromName  string // current name; From stays the stable ID
+	Who       string // the daemon's line about the sender, never the sender's own words
+	Body      string
+	Choices   []string
+	Grant     string
+	Adopt     string
+	AdoptName string // current name; Adopt stays the stable ID
+	Serial    uint64 // stable message identity on Node
+	Node      string // board identity; serials are not global
+	Receipt   notify.Receipt
+	ask       func(string, string, notify.Receipt, ...string) (string, error) // test presenter
 }
 
 func (m Message) displayFrom() string {
@@ -40,6 +41,17 @@ func (m Message) displayFrom() string {
 		return OneLine(m.FromName)
 	}
 	return m.From
+}
+
+func (m Message) displayAdopt() string {
+	if m.AdoptName != "" {
+		name := OneLine(m.AdoptName)
+		if name != m.Adopt {
+			return name + " (formerly " + m.Adopt + ")"
+		}
+		return name
+	}
+	return m.Adopt
 }
 
 // Answer is what the person said. An empty Disposition is no answer:
@@ -100,7 +112,7 @@ func RequestTitle(from, grant, adopt string) string {
 }
 
 func approve(m Message) (Answer, error) {
-	choice, err := m.askNotification(RequestTitle(m.displayFrom(), m.Grant, m.Adopt),
+	choice, err := m.askNotification(RequestTitle(m.displayFrom(), m.Grant, m.displayAdopt()),
 		Said(m.Who, m.Body), "Deny", "Later", "Approve")
 	if errors.Is(err, notify.ErrCannotNotify) {
 		return Answer{}, err

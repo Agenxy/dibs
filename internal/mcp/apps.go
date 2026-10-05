@@ -846,7 +846,11 @@ func boardRows(agents []any) string {
 		// Current name is the address a reader should use. Keep a changed id
 		// subordinate for durable references and older callers.
 		who := id
-		if name, _ := m["name"].(string); name != "" && name != id {
+		name, _ := m["name"].(string)
+		if name == "" {
+			name, _ = m["display_name"].(string) // older/full board payloads
+		}
+		if name != "" && name != id {
 			who = firstLine(name, 22) + " (formerly " + id + ")"
 		}
 		what := "(nothing declared)"

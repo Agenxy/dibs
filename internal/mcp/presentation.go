@@ -10,8 +10,9 @@ import (
 // Message itself is a ledger type: its from/to JSON fields must remain IDs.
 type messagePresentation struct {
 	*core.Message
-	FromName string `json:"from_name"`
-	ToName   string `json:"to_name"`
+	FromName  string `json:"from_name"`
+	ToName    string `json:"to_name"`
+	AdoptName string `json:"adopt_name,omitempty"`
 }
 
 type eventPresentation struct {
@@ -42,7 +43,11 @@ func (s *Server) presentNames(ctx context.Context, res core.Result) {
 		return id
 	}
 	wrap := func(m *core.Message) messagePresentation {
-		return messagePresentation{Message: m, FromName: name(m.From), ToName: name(m.To)}
+		view := messagePresentation{Message: m, FromName: name(m.From), ToName: name(m.To)}
+		if m.Adopt != "" {
+			view.AdoptName = name(m.Adopt)
+		}
+		return view
 	}
 	if one {
 		res["message"] = wrap(res["message"].(*core.Message))

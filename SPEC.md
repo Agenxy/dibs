@@ -474,7 +474,7 @@ Presentation resolves current names at read time: board, CLI, wake digest,
 human notification, and browser event/mail views show the name first. A changed
 id appears as `formerly <id>` or in detail. Existing structured `from`, `to`,
 `by`, `agent`, and owner fields remain immutable ids for plugins, hooks and old
-bridges; additive `from_name`, `to_name`, and `agent_name` fields give readers
+bridges; additive `from_name`, `to_name`, `adopt_name`, and `agent_name` fields give readers
 the current address. An alias that was released can be acquired by another
 agent: a send to it reaches the new holder, and the addressed note identifies
 both the new and former holders when the latter is still retained. Use a
