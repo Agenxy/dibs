@@ -115,6 +115,11 @@ func TestAbsentAliasReleaseDoesNotWakeSleepingOwnerThroughMCP(t *testing.T) {
 	if r["changed"] != false || before["serial"] != after["serial"] || fmt.Sprint(aliasRow(t, eng, id)["status"]) != "dormant" {
 		t.Fatalf("absent release woke or ledgered: result=%v before=%v after=%v", r, before, after)
 	}
+	r = aliasCall(t, srv, "update", map[string]any{"token": tok, "release_names": []string{}})
+	after = aliasBoard(t, eng)
+	if r["changed"] != false || before["serial"] != after["serial"] {
+		t.Fatalf("empty release recorded a fictitious effect: %v", r)
+	}
 }
 
 func TestArchivedNonceRenameAndPurgedAliasFencingThroughMCP(t *testing.T) {

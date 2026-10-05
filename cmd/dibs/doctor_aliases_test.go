@@ -18,6 +18,7 @@ func TestDoctorReportsConfiguredNameAliasesFromTheBoard(t *testing.T) {
 	}{
 		{"alias", `{"name":"prior-role","id":"worker-id","via":"alias"}`, "former-name alias", ""},
 		{"shadow", `{"name":"prior-role","id":"peer-id","via":"current","shadowed_aliases":["worker-id"]}`, "shadows former names of worker-id", "immutable agent id"},
+		{"ambiguous", `{"name":"prior-role","via":"alias","ambiguous":["worker-id","peer-id"]}`, "ambiguous former name", "immutable agent id"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			dir := t.TempDir()
