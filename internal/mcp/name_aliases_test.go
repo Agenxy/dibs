@@ -15,7 +15,7 @@ import (
 
 // Rebuild through the production encrypted replay/event/engine construction
 // path. Neither an index setter nor a test-supplied alias enters this fixture.
-func aliasReplayServer(t *testing.T, dir string) (*httptest.Server, *engine.Engine, func()) {
+func aliasReplayServer(t *testing.T, dir string, limits ...core.Limits) (*httptest.Server, *engine.Engine, func()) {
 	t.Helper()
 	box, err := ledger.LoadOrCreateKey(filepath.Join(dir, "key"))
 	if err != nil {
@@ -25,7 +25,11 @@ func aliasReplayServer(t *testing.T, dir string) (*httptest.Server, *engine.Engi
 	if err != nil {
 		t.Fatal(err)
 	}
-	st := core.NewState("alias-fixture", core.DefaultLimits())
+	lim := core.DefaultLimits()
+	if len(limits) > 0 {
+		lim = limits[0]
+	}
+	st := core.NewState("alias-fixture", lim)
 	var history []core.Event
 	led.OnEvents = func(events []core.Event) { history = append(history, events...) }
 	if _, err := led.Replay(st); err != nil {
@@ -88,7 +92,8 @@ func aliasSend(t *testing.T, srv *httptest.Server, sender, target, recipient, bo
 	if !ok {
 		t.Fatalf("no message serial: %v", r)
 	}
-	if target != recipient && !strings.Contains(r["addressed"].(string), recipient) {
+	addressed, _ := r["addressed"].(string)
+	if target != recipient && !strings.Contains(addressed, recipient) {
 		t.Fatalf("resolved recipient is missing: %v", r)
 	}
 	return n
@@ -127,9 +132,12 @@ func TestNonceFirstRegisterRenameAndNamelessRecoveryThroughMCP(t *testing.T) {
 				if _, err := eng.Do(context.Background(), &core.Op{Kind: core.OpSweep, StaleAgents: []string{id}}); err != nil {
 					t.Fatal("setup:", err)
 				}
+				if got := aliasRow(t, eng, id)["status"]; got != core.StatusDormant {
+					t.Fatalf("setup: sleep was not applied: %v", got)
+				}
 			}
 			r := aliasCall(t, srv, "register", map[string]any{"name": "new-label", "nonce": "nonce-first-worker"})
-			if r["agent_id"] != id || r["reattached"] != true {
+			if r["agent_id"] != id || r["reattached"] != true || r["name"] != "new-label" {
 				t.Fatalf("nonce forked instead of recovering: %v", r)
 			}
 			tok, _ = r["token"].(string)
