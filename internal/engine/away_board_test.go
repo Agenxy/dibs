@@ -30,7 +30,7 @@ func TestBoardNamesAThreadWaitingForAwayOpening(t *testing.T) {
 	var held atomic.Bool
 	release := make(chan struct{})
 	finished := make(chan struct{})
-	shower = harnessenv.Shower{
+	shower = &harnessenv.Shower{
 		Holds:   func(string) bool { return held.Load() },
 		Open:    func([]string) error { t.Error("opened while present"); return nil },
 		Idle:    func() (time.Duration, bool) { return time.Second, true },

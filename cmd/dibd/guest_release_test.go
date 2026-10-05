@@ -23,6 +23,11 @@ import (
 // This recording executable proves process/issuer wiring, NOT cryptography.
 // The real historical signed bundle has a separate network-denied probe.
 func TestMain(m *testing.M) {
+	// This suite builds and runs real dibs/dibd children. They are not Go
+	// test binaries, so testing.Testing() cannot guard their app opener.
+	if err := os.Setenv("DIBS_TEST_FORBID_APP_OPEN", "1"); err != nil {
+		panic(err)
+	}
 	if os.Getenv("DIBS_SETTINGS_DESKTOP_DRIVER") == "1" && filepath.Base(os.Args[0]) == "dibs-notify" {
 		os.Exit(desktopSettingsHelper())
 	}

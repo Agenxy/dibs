@@ -28,6 +28,9 @@ import (
 // one did on 2026-09-13, so the join-by-peer path is exercised against real
 // envelopes.
 func TestMain(m *testing.M) {
+	if err := os.Setenv("DIBS_TEST_FORBID_APP_OPEN", "1"); err != nil {
+		panic(err)
+	}
 	if os.Getenv("DIBS_SETTINGS_HELPER_MODE") != "" && filepath.Base(os.Args[0]) == "dibs-notify" {
 		os.Exit(notificationSettingsHelper())
 	}

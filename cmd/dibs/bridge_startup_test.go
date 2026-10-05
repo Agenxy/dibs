@@ -18,6 +18,7 @@ import (
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/engine"
+	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/ledger"
 	"github.com/agenxy/dibs/internal/mcp"
 	"github.com/agenxy/dibs/internal/testport"
@@ -40,8 +41,38 @@ func TestBridgeStartupHelper(t *testing.T) {
 	if os.Getenv("DIBS_TEST_STARTUP_BRIDGE") != "1" {
 		return
 	}
+	if os.Getenv("DIBS_TEST_RECONNECT_OPEN_LOG") != "" {
+		installReconnectFakeAppOpen()
+	}
 	if err := runBridge(nil); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A reconnect fixture runs the real bridge, but its app contact is a
+// per-process fake. TestMain's generic guard is installed too late for a
+// package-init copy of RealShower, so the production shower must retain a
+// reference to this injected value rather than a copy.
+func installReconnectFakeAppOpen() {
+	logPath := os.Getenv("DIBS_TEST_RECONNECT_OPEN_LOG")
+	harnessenv.RealShower = harnessenv.Shower{
+		Ownership: harnessenv.ChatGPTOwnership,
+		Open: func(argv []string) error {
+			if len(argv) != 3 || argv[0] != "/usr/bin/open" || argv[1] != "-g" ||
+				!strings.HasPrefix(argv[2], "codex://threads/") {
+				return fmt.Errorf("unexpected reconnect app open: %q", argv)
+			}
+			f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+			if err != nil {
+				return err
+			}
+			_, err = fmt.Fprintln(f, argv[2])
+			closeErr := f.Close()
+			if err != nil {
+				return err
+			}
+			return closeErr
+		},
 	}
 }
 
