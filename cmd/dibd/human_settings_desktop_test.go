@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -166,7 +167,8 @@ func TestNativeHelperSettingsModeIsPermissionFree(t *testing.T) {
 	cmd.Env = append(os.Environ(), "DIBS_NOTIFY_SETTINGS_V1=1")
 	out, err := cmd.Output()
 	if err != nil {
-		if ee, ok := err.(*exec.ExitError); !ok || ee.ExitCode() != 2 {
+		var ee *exec.ExitError
+		if !errors.As(err, &ee) || ee.ExitCode() != 2 {
 			t.Fatalf("native status execution failed: %v\n%s", err, out)
 		}
 	}
