@@ -219,7 +219,7 @@ func TestNativeQueueHistoricalAndUnrecognizedItemsKeepDeliverySafe(t *testing.T)
 		if err != nil {
 			t.Fatal("setup: read fixture:", err)
 		}
-		if err = os.WriteFile(plain, image, 0700); err != nil {
+		if err = os.WriteFile(plain, image, 0o700); err != nil {
 			t.Fatal("setup: copy ordinary operator command:", err)
 		}
 		text := Compose("question")
