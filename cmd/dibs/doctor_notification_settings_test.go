@@ -50,8 +50,12 @@ func TestDoctorMeasuresNativeNotificationSettings(t *testing.T) {
 				t.Setenv("DIBS_SETTINGS_GUARD_MODE", tc.style)
 				var lines []string
 				line := func(s string) { lines = append(lines, s) }
-				checkNotificationRoute(line, line, func(what, fix string) { lines = append(lines, what, fix) })
+				warned := false
+				checkNotificationRoute(line, line, func(what, fix string) { warned = true; lines = append(lines, what, fix) })
 				got := strings.Join(lines, "\n")
+				if !warned {
+					t.Fatalf("actual doctor did not warn about the measured presentation limit: %s", got)
+				}
 				if !strings.Contains(got, tc.want) {
 					t.Fatalf("actual doctor lacks %q: %s", tc.want, got)
 				}

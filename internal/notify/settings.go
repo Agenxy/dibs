@@ -117,3 +117,12 @@ func (s *Settings) Summary() string {
 		", alerts " + s.AlertSetting + ", Notification Center " + s.NotificationCenterSetting +
 		", lock screen " + s.LockScreenSetting + ", time-sensitive " + s.TimeSensitiveSetting + "."
 }
+
+// NeedsAttention is about the measured settings, never about actual visibility.
+func (s *Settings) NeedsAttention() bool {
+	s = s.Normalized()
+	return s == nil || s.AlertStyle != "alert" ||
+		s.AlertSetting != "enabled" || s.NotificationCenterSetting == "disabled" ||
+		s.LockScreenSetting == "disabled" || s.TimeSensitiveSetting != "enabled" ||
+		(s.Focus.Observable && *s.Focus.IsFocused)
+}

@@ -570,34 +570,41 @@ func run(script string, args ...string) (string, error) {
 // choice and is nobody's fault: the remedy is to allow Dibs to break through, or
 // to expect the ask in Notification Center rather than on screen.
 func Reach() (ok bool, why string) {
+	ok, why, _ = ReachWithSettings()
+	return ok, why
+}
+
+// ReachWithSettings uses the same single permission-free status probe as
+// Reach, exposing its observation so doctor can classify actual settings.
+func ReachWithSettings() (ok bool, why string, settings *Settings) {
 	// MEASURED, not read from the cache: Reach runs off the writer loop (at
 	// startup, from doctor) and is what warms the cache Available reads, so
 	// it waits for the probe where Available must not.
 	if goos == "linux" && !silenced() {
 		ok, why = linuxProbe()
-		return ok, why
+		return ok, why, nil
 	}
 	if !Available() {
 		switch goos {
 		case "darwin":
-			return false, "notifications are switched off for this process"
+			return false, "notifications are switched off for this process", nil
 		case "linux":
-			return false, "notifications are switched off for this process"
+			return false, "notifications are switched off for this process", nil
 		}
 		// SAY WHAT THAT MEANS, not just that it is so. "No notification route"
 		// is true and tells an operator nothing about what happens to a request
 		// that needs them: it waits, on the board, until they go and look.
 		return false, "this build has no notifier for " + goos + ", so nothing on this " +
 			"machine can ASK you anything: a request that needs your approval waits " +
-			"on the board until you look. Open it with `dibs web`; the buttons are there"
+			"on the board until you look. Open it with `dibs web`; the buttons are there", nil
 	}
 	if goos == "linux" {
-		return true, ""
+		return true, "", nil
 	}
 	h := helper()
 	if h == "" {
 		return false, "Dibs.app is not installed beside the binary, so notifications " +
-			"would be posted by osascript under Script Editor's name, without buttons"
+			"would be posted by osascript under Script Editor's name, without buttons", nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -610,29 +617,29 @@ func Reach() (ok bool, why string) {
 	if settings := DecodeSettings(out); settings != nil {
 		why := settings.Summary() + " " + settings.Hints(true)
 		if err != nil {
-			return false, why
+			return false, why, settings
 		}
 		authorized := settings.AuthorizationStatus == "authorized" || settings.AuthorizationStatus == "provisional"
-		return authorized && settings.AlertSetting == "enabled", why
+		return authorized && settings.AlertSetting == "enabled", why, settings
 	}
 	switch strings.TrimSpace(string(out)) {
 	case "authorized":
-		return true, (*Settings)(nil).Hints(true) + " " + focusDoctor()
+		return true, (*Settings)(nil).Hints(true) + " " + focusDoctor(), nil
 	case "denied":
-		return false, "notifications are turned off for Dibs in System Settings"
+		return false, "notifications are turned off for Dibs in System Settings", nil
 	case "not-determined":
 		return false, "Dibs has never been granted notification permission. macOS ties " +
 			"that grant to the app's SIGNATURE, so an ad-hoc rebuild revokes it: give " +
 			"Dibs a signing identity of its own (see `task install`) or it will keep " +
-			"asking and keep being silent in between"
+			"asking and keep being silent in between", nil
 	case "alerts-off":
 		return false, "Dibs holds notification permission with every alert style off, " +
-			"so nothing is ever shown"
+			"so nothing is ever shown", nil
 	}
 	if err != nil {
-		return false, "the notifier could not be asked: " + err.Error()
+		return false, "the notifier could not be asked: " + err.Error(), nil
 	}
-	return false, "the notifier gave no usable settings answer. " + (*Settings)(nil).Hints(true)
+	return false, "the notifier gave no usable settings answer. " + (*Settings)(nil).Hints(true), nil
 }
 
 // focusOn returns the active Focus mode's identifier, or "".

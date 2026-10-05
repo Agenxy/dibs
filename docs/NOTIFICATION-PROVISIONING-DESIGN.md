@@ -1,19 +1,19 @@
 # Proposed notification identity and Time Sensitive provisioning
 
-This is a follow-up decision for the person, requested by the architect39924.
+This is a follow-up decision for the person, requested by the architect (#39924).
 It is not implemented in v0.0.12. That release keeps signing and identity
 unchanged, reports actual settings and does not claim Time Sensitive capability.
 
 ## What was measured
 
-On2026-10-05 the installed helper's CFBundleIdentifier and designated requirement
+On 2026-10-05 the installed helper's CFBundleIdentifier and designated requirement
 identifier are `org.agenxy.dibs`. It is signed by Dibs Local Codesign with no team
 identifier or reported entitlements. The one authorized same-identity temporary
 probe verified strict signatures and exact designated-requirement equality. It
 read authorization authorized, alert style banner, alerts/Notification Center/
 lock screen enabled, Time Sensitive not-supported, and Focus not-determined /
-not observable. The probe read took0.475s,37,060,608 bytes peak RSS; its temporary
-bundle/cache was removed after10.052s and the installed executable was unchanged.
+not observable. The probe read took 0.475s with 37,060,608 bytes peak RSS; its temporary
+bundle/cache was removed after 10.052s and the installed executable was unchanged.
 No permission request, posting, settings mutation or install occurred.
 
 The app builder's plist uses `org.agenxy.dibs`, while the release signing tool
@@ -55,7 +55,7 @@ Alerts settings survived, and require the person's settings fix if they did not.
 Only an enabled timeSensitiveSetting is positive settings evidence; a requested
 level, signed entitlement or accepted post alone still cannot prove visibility.
 The native resource/probe window must be coordinated separately; the one-build
-measurement exception for38702 is already consumed.
+measurement exception for #38702 is already consumed.
 
 ## Why a profile belongs to the decision
 
