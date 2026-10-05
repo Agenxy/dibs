@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +15,38 @@ import (
 
 	"github.com/agenxy/dibs/internal/core"
 )
+
+// TestMain dispatches the private copied helper before test flag parsing.
+func desktopSettingsHelper() int {
+	const settings = `{"version":1,"authorization_status":"authorized","alert_style":"banner","alert_setting":"enabled","notification_center_setting":"enabled","lock_screen_setting":"enabled","time_sensitive_setting":"not-supported","focus":{"authorization":"not-determined","observable":false}}`
+	if len(os.Args) == 2 && os.Args[1] == "--status" {
+		if os.Getenv("DIBS_NOTIFY_SETTINGS_V1") == "1" {
+			_, _ = os.Stdout.WriteString(settings)
+		} else {
+			_, _ = os.Stdout.WriteString("authorized\n")
+		}
+		return 0
+	}
+	if len(os.Args) < 4 {
+		return 3
+	}
+	level := "active"
+	if len(os.Args) > 4 {
+		level = "timeSensitive"
+	}
+	if err := os.WriteFile(os.Getenv("DIBS_SETTINGS_HELPER_MARKER"), []byte("posted"), 0o600); err != nil {
+		return 4
+	}
+	data := fmt.Sprintf(`{"state":"posted","settings":%s,"interruption_level":%q}`, settings, level)
+	if err := os.WriteFile(os.Getenv("DIBS_NOTIFY_RECEIPT"), []byte(data), 0o600); err != nil {
+		return 5
+	}
+	time.Sleep(300 * time.Millisecond)
+	if level == "timeSensitive" {
+		_, _ = os.Stdout.WriteString("Later\n")
+	}
+	return 0
+}
 
 // The default engine presenter invokes actual humanask and notifier code. Only
 // the private OS helper is a fixture; no receipt setter is called by this test.
@@ -36,6 +69,8 @@ func TestDesktopSettingsComeFromThePostingHelper(t *testing.T) {
 		token := reg["token"].(string)
 		for _, kind := range []string{core.MsgRequest, core.MsgNotify} {
 			t.Run(kind, func(t *testing.T) {
+				marker := filepath.Join(t.TempDir(), "helper-executed")
+				t.Setenv("DIBS_SETTINGS_HELPER_MARKER", marker)
 				sent, err := eng.Do(ctx, &core.Op{Kind: core.OpSendMessage, Token: token, To: human, MsgType: kind, Body: "desktop settings fixture"})
 				serial, ok := sent["msg_serial"].(uint64)
 				if err != nil || !ok || serial == 0 || sent["human_route"] != "desktop" {
@@ -65,6 +100,9 @@ func TestDesktopSettingsComeFromThePostingHelper(t *testing.T) {
 					}
 					r := d.Receipts["desktop"]
 					if r.Posted {
+						if data, err := os.ReadFile(marker); err != nil || string(data) != "posted" {
+							t.Fatalf("setup: actual private posting helper did not execute: %s %v", data, err)
+						}
 						wantLevel := "active"
 						if kind == core.MsgRequest {
 							wantLevel = "timeSensitive"
@@ -83,7 +121,7 @@ func TestDesktopSettingsComeFromThePostingHelper(t *testing.T) {
 					if time.Now().After(deadline) {
 						t.Fatalf("private posting helper never confirmed acceptance: %s", raw)
 					}
-					time.Sleep(20 * time.Millisecond)
+					time.Sleep(200 * time.Millisecond) // below the unchanged 10 calls/s rate limit
 				}
 			})
 		}
@@ -106,26 +144,7 @@ func TestDesktopSettingsComeFromThePostingHelper(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(helper), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	const stub = `#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.11"
-# dependencies = []
-# ///
-import json, os, sys, time
-settings={"version":1,"authorization_status":"authorized","alert_style":"banner","alert_setting":"enabled","notification_center_setting":"enabled","lock_screen_setting":"enabled","time_sensitive_setting":"not-supported","focus":{"authorization":"not-determined","observable":False}}
-if sys.argv[1:]==["--status"]:
-    print(json.dumps(settings) if os.getenv("DIBS_NOTIFY_SETTINGS_V1")=="1" else "authorized")
-    sys.exit(0)
-if len(sys.argv)<4:
-    sys.exit(3)
-level="timeSensitive" if len(sys.argv)>4 else "active"
-with open(os.environ["DIBS_NOTIFY_RECEIPT"],"w") as f:
-    json.dump({"state":"posted","settings":settings,"interruption_level":level},f)
-time.sleep(0.3)
-if level=="timeSensitive":
-    print("Later")
-`
-	if err := os.WriteFile(helper, []byte(stub), 0o700); err != nil {
+	if err := os.WriteFile(helper, bytes, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)

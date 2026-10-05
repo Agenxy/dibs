@@ -23,6 +23,9 @@ import (
 // This recording executable proves process/issuer wiring, NOT cryptography.
 // The real historical signed bundle has a separate network-denied probe.
 func TestMain(m *testing.M) {
+	if os.Getenv("DIBS_SETTINGS_DESKTOP_DRIVER") == "1" && filepath.Base(os.Args[0]) == "dibs-notify" {
+		os.Exit(desktopSettingsHelper())
+	}
 	if os.Getenv("DIBS_TEST_GUEST_ADMISSION_COSIGN") == "1" && len(os.Args) > 1 {
 		if os.Args[1] == "version" {
 			os.Exit(0)
