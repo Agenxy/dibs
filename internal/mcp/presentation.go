@@ -59,8 +59,10 @@ func (s *Server) presentNames(ctx context.Context, res core.Result) {
 	if es, ok := res["events"].([]core.Event); ok {
 		views := make([]eventPresentation, 0, len(es))
 		for _, ev := range es {
-			views = append(views, eventPresentation{Event: ev,
-				AgentName: name(ev.Agent), ToName: name(ev.To)})
+			views = append(views, eventPresentation{
+				Event:     ev,
+				AgentName: name(ev.Agent), ToName: name(ev.To),
+			})
 		}
 		res["events"] = views
 	}

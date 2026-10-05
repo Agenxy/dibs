@@ -17,8 +17,10 @@ func owedCall(m *core.Message) string {
 func (e *Engine) owedWorkView(agent string, now time.Time) []core.Result {
 	var out []core.Result
 	for _, m := range e.obligationsOf(agent, now) {
-		r := core.Result{"msg_serial": m.Serial, "from": m.From, "from_name": e.agentName(m.From),
-			"state": m.State, "completion": owedCall(m)}
+		r := core.Result{
+			"msg_serial": m.Serial, "from": m.From, "from_name": e.agentName(m.From),
+			"state": m.State, "completion": owedCall(m),
+		}
 		if m.State == core.MsgStateQueued {
 			r["start"] = fmt.Sprintf("when you choose to start: respond(msg_serial:%d, disposition:\"approve\")", m.Serial)
 		}

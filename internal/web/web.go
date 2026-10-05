@@ -171,8 +171,10 @@ func (s *Server) boardJSONAt(r *http.Request) ([]byte, uint64, error) {
 	}
 	events := make([]eventPresentation, 0, 50)
 	for _, ev := range s.log.recent(50) {
-		events = append(events, eventPresentation{Event: ev,
-			AgentName: displayName(names, ev.Agent), ToName: displayName(names, ev.To)})
+		events = append(events, eventPresentation{
+			Event:     ev,
+			AgentName: displayName(names, ev.Agent), ToName: displayName(names, ev.To),
+		})
 	}
 	out, err := json.Marshal(map[string]any{
 		"board":  map[string]any(board),
@@ -373,8 +375,10 @@ func (s *Server) apiMessages(w http.ResponseWriter, r *http.Request) {
 			if messages, ok := res["messages"].([]*core.Message); ok {
 				views := make([]messagePresentation, 0, len(messages))
 				for _, m := range messages {
-					views = append(views, messagePresentation{Message: m,
-						FromName: displayName(names, m.From), ToName: displayName(names, m.To)})
+					views = append(views, messagePresentation{
+						Message:  m,
+						FromName: displayName(names, m.From), ToName: displayName(names, m.To),
+					})
 				}
 				res["messages"] = views
 			}
