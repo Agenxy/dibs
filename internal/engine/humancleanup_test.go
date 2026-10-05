@@ -253,3 +253,61 @@ func TestHumanCleanupRebuildIsOneCappedRetainedBatch(t *testing.T) {
 		t.Fatal("no boot cleanup batch")
 	}
 }
+
+func TestHumanCleanupDoesNotActOnNonhumanOrRefusedDecisions(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	n := &cleanupNotifier{removed: make(chan NotificationCleanup, 8)}
+	e := New(core.NewState("cleanup-node", core.DefaultLimits()), &memLedger{}, deadProber{})
+	e.SetHumanNotifier(n)
+	go e.Run(ctx)
+	human, _, err := e.HumanAgent(ctx)
+	if err != nil {
+		t.Fatal("setup human:", err)
+	}
+	register := func(name string) string {
+		t.Helper()
+		r, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: name, Nonce: "cleanup-" + name})
+		if err != nil || r["token"] == nil {
+			t.Fatalf("setup register: %v %v", r, err)
+		}
+		return r["token"].(string)
+	}
+	sender, worker := register("sender"), register("worker")
+	feed, detach := e.AttachHumanRelay()
+	defer detach()
+	send := func(to string) uint64 {
+		t.Helper()
+		r, err := e.Do(ctx, &core.Op{Kind: core.OpSendMessage, Token: sender, To: to, MsgType: core.MsgQuestion, Body: "question"})
+		if err != nil || r["msg_serial"] == nil {
+			t.Fatalf("setup send: %v %v", r, err)
+		}
+		return r["msg_serial"].(uint64)
+	}
+	private := send("worker")
+	if _, err := e.Do(ctx, &core.Op{Kind: core.OpRespond, Token: worker, MsgSerial: private, Disposition: "answer"}); err != nil {
+		t.Fatal("setup private answer:", err)
+	}
+	public := send(human)
+	select {
+	case notice := <-feed:
+		if notice.Serial != public || notice.Cleanup != nil {
+			t.Fatalf("setup human notice: %+v", notice)
+		}
+	case <-ctx.Done():
+		t.Fatal("setup human notice missing")
+	}
+	if _, err := e.Do(ctx, &core.Op{Kind: core.OpRespond, Token: worker, MsgSerial: public, Disposition: "withdraw"}); err == nil {
+		t.Fatal("foreign sender withdrew human question")
+	}
+	select {
+	case notice := <-feed:
+		t.Fatalf("nonhuman or refused decision produced relay cleanup: %+v", notice)
+	default:
+	}
+	select {
+	case batch := <-n.removed:
+		t.Fatalf("nonhuman or refused decision produced local cleanup: %+v", batch)
+	default:
+	}
+}

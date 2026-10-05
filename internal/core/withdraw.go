@@ -50,19 +50,19 @@ func senderOwnsWithdrawable(m *Message, l *Agent) bool {
 // exactly their old interpretation on replay.
 func (s *State) applyWithdraw(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
 	m := s.Messages[op.MsgSerial]
-	if !senderOwnsWithdrawable(m, l) {
-		return nil, nil, errf("E_NOT_SENDER", "withdraw a request or question YOU sent; read_mail shows its sender",
-			"not your request or question")
+	if !senderOwnsMessage(m, l) {
+		return nil, nil, errf("E_NOT_SENDER", "withdraw a message YOU sent in this identity incarnation; read_mail shows its sender",
+			"message is not owned by your current sender identity")
 	}
 	if err := withdrawalEligibility(m); err != nil {
 		return nil, nil, err
 	}
 	if op.SupersededBy != 0 {
 		replacement := s.Messages[op.SupersededBy]
-		if !senderOwnsWithdrawable(replacement, l) || replacement.Type != m.Type ||
+		if !senderOwnsWithdrawable(replacement, l) ||
 			replacement.Grant != "" || replacement.Adopt != "" {
-			return nil, nil, errf("E_NO_MESSAGE", "superseded_by names another ordinary message of the same type YOU sent",
-				"replacement is not your message of the same type")
+			return nil, nil, errf("E_NO_MESSAGE", "superseded_by names another ordinary question or request YOU sent",
+				"replacement is not your ordinary question or request")
 		}
 	}
 	queued := m.State == MsgStateQueued
@@ -92,6 +92,10 @@ func (s *State) applyWithdraw(l *Agent, op *Op, now time.Time) (Result, []Event,
 }
 
 func withdrawalEligibility(m *Message) error {
+	if m.Type != MsgRequest && m.Type != MsgQuestion {
+		return errf("E_BAD_DISPOSITION", "withdraw only an unfinished request or unanswered question YOU sent; notify and handoff cannot be withdrawn",
+			"cannot withdraw a %s", m.Type)
+	}
 	switch m.State {
 	case MsgStatePending, MsgStateDelivered, MsgStateAcked:
 		return nil

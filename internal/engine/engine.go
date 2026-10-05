@@ -316,11 +316,13 @@ func New(st *core.State, led Ledger, prober Prober, history ...[]core.Event) *En
 func (e *Engine) Run(ctx context.Context) {
 	reconcileContext, eCancel := context.WithCancel(ctx)
 	e.blobReconcileContext = reconcileContext
+	e.startHumanCleanup(reconcileContext)
 	defer func() {
 		eCancel() // also unblock completion receipts on a fail-stop writer panic
 		e.finishBlobReconciles()
 	}()
 	e.boot(time.Now())
+	e.requestHumanCleanup(e.humanCleanupAt(time.Now()))
 	e.reconcileBlobs() // startup reconcile: drop crash orphans (A4.1)
 	// SYNCHRONOUS, and before the loop serves anything.
 	//

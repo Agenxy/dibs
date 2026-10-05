@@ -1131,13 +1131,16 @@ The sender can retract an unfinished request or unanswered question with `respon
 body: reason?, superseded_by: serial?)`. Engine ingress translates this into the
 new `withdraw_message` ledger op before recipient response guards. Admission
 checks field shapes and rejects work-report fields; the fold checks sender
-ownership, creation-serial privacy fence, request state and replacement. Only
+ownership, creation-serial privacy fence, message state and replacement. Only
 pending, delivered, acknowledged, queued and approved requests qualify; an approved grant or
 adoption already performed its effect and cannot be withdrawn. Pending, delivered
 and acknowledged questions qualify; answered and expired questions do not.
 Unknown, other-sender or self replacement references
-are refused; a replacement is another ordinary message of the same type by the same sender,
+are refused; a replacement is another ordinary question or request by the same sender,
 possibly to a different recipient, and this operation never starts it.
+An own notify or handoff is refused as `E_BAD_DISPOSITION`, naming its actual
+type; a final question/request is refused as `E_MSG_FINAL`, naming its state.
+`E_NOT_SENDER` is reserved for a missing or foreign-incarnation sender identity.
 Withdrawal retains approval/progress history in separate fields, clears queue
 debt/rank/task ordering lock, compacts remaining ranks and notifies the recipient
 without an imperative. The terminal envelope becomes unconsumed until recipient

@@ -78,6 +78,7 @@ func (e *Engine) applyAndLedgerWithReceipt(op *core.Op, now time.Time, receipt c
 		e.observeNameAliases(op, evs)
 		e.publish(evs)
 		published()
+		e.noteHumanCleanup(evs)
 	}
 	if op.Kind == core.OpPutBlob {
 		e.protectBlobRegistration(op.Blob)

@@ -18,7 +18,7 @@ Vocabulary and argument shape stay in Admit; ownership and current state stay
 in the fold. Use the existing additive withdrawal fields, reason, retention,
 recipient acknowledgement and event. Do not change old JSON tags or the
 interpretation of historical response operations. An optional replacement must
-be another sender-owned message of the same type; ordinary-request restrictions
+be another sender-owned question or request; ordinary-request restrictions
 remain. Withdrawal records `withdrawn`, never `answered` or `expired`, and does
 not stop a process, start a replacement, or manufacture the person's answer.
 
@@ -81,6 +81,13 @@ question/request outcomes, capped at 64 in one batched helper invocation. Lost d
 cleanup never changes the ledger or invents delivery. Already garbage-collected
 messages and unidentified pre-upgrade UUID notifications are explicit limits.
 No new wake mechanism, autonomous answer or harness management is involved.
+
+Request 36136 brings this checkpoint into v0.0.12. Ownership is checked before
+type eligibility: a sender's notify or handoff receives `E_BAD_DISPOSITION` with
+the actual type rule, and a finished question/request receives `E_MSG_FINAL`
+with its actual state. Neither is falsely described as another sender's mail.
+Replacement references may cross between questions and ordinary requests;
+the board therefore labels the reference as a message, without guessing its type.
 
 ## Proof before shipping
 

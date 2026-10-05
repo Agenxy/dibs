@@ -434,7 +434,7 @@ receiving native peer turns, another watcher adds no delivery guarantee.
 - As sender, retract your unfinished request or unanswered question with
   `respond(msg_serial, disposition: "withdraw", body: reason, superseded_by: replacement)`.
   Reason and replacement are optional; the replacement must be another ordinary
-  message of the same type you sent. Withdrawal clears queued/owed work without claiming delivery
+  question or request you sent. Withdrawal clears queued/owed work without claiming delivery
   or stopping an agent. The recipient reads the withdrawal and `ack(msg_serial)`
   acknowledges it. An already-performed grant/adoption approval cannot be undone.
   Answered or expired questions stay final. Human notifications receive a
