@@ -27,7 +27,7 @@ func (a *fakeApp) install(t *testing.T) {
 		t.Setenv("CODEX_HOME", t.TempDir())
 	}
 	prev := shower
-	shower = harnessenv.Shower{
+	shower = &harnessenv.Shower{
 		Holds: func(string) bool { return a.holds },
 		Open:  func(argv []string) error { a.opened = append(a.opened, argv); return nil },
 	}

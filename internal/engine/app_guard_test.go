@@ -22,7 +22,7 @@ func TestMain(m *testing.M) {
 		Open:  func([]string) error { panic("unfaked app access in engine test") },
 	}
 	harnessenv.RealShower = guard
-	shower = guard
+	shower = &guard
 	code := m.Run()
 	_ = os.RemoveAll(dir)
 	os.Exit(code)

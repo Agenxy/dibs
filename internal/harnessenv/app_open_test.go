@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -14,6 +15,22 @@ import (
 	"testing"
 	"time"
 )
+
+// This is deliberately a subprocess: reaching the production opener in a
+// Go test must fail the test rather than activate the operator's app, even if
+// a caller copied RealShower before its TestMain installed a fake.
+func TestRealAppOpenerFailsClosedInGoTest(t *testing.T) {
+	if os.Getenv("DIBS_TEST_UNFAKED_REAL_OPEN") == "1" {
+		_ = RealShower.Open([]string{"/usr/bin/open", "-g", "codex://threads/01a0aaaa-bbbb-7ccc-8ddd-eeeeeeeeeeee"})
+		t.Fatal("real app opener returned in a Go test")
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestRealAppOpenerFailsClosedInGoTest$")
+	cmd.Env = append(os.Environ(), "DIBS_TEST_UNFAKED_REAL_OPEN=1")
+	out, err := cmd.CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "unfaked real app opener in a Go test") {
+		t.Fatalf("unfaked opener did not fail the test: %v %s", err, out)
+	}
+}
 
 // Enter the production Shower and its real ownership probe, replacing only
 // the fixed OS contact and actual open. #304/7428955 repaired a probe that

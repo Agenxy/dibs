@@ -26,8 +26,10 @@ import (
 // thread was born in the app (see harnessenv.AppFor). A Codex agent in a
 // terminal is never opened in the app.
 
-// shower is the contact with the real app, replaced by tests.
-var shower = harnessenv.RealShower
+// shower is the contact with the real app, replaced by tests. Keep a pointer:
+// a copied value at package init precedes TestMain's fake and can retain the
+// real opener in a test binary.
+var shower = &harnessenv.RealShower
 
 // showInApp runs after the message was queued, off the writer loop like every
 // wake. A failure here is logged and does not fail the wake: the message is in

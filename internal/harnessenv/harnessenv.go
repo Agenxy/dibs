@@ -25,6 +25,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/agenxy/dibs/internal/notify"
@@ -281,6 +282,12 @@ type Shower struct {
 var RealShower = Shower{
 	Ownership: ChatGPTOwnership,
 	Open: func(argv []string) error {
+		// A package may copy RealShower before its TestMain installs a fake.
+		// Fail the test, even if its caller discards the returned error, rather
+		// than opening the person's app from a test subprocess.
+		if testing.Testing() {
+			panic("unfaked real app opener in a Go test")
+		}
 		if len(argv) != 3 || argv[0] != "/usr/bin/open" {
 			return errors.New("unsupported native app open")
 		}

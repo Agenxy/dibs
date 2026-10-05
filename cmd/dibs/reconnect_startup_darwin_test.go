@@ -18,6 +18,7 @@ import (
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/engine"
+	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/ledger"
 	"github.com/agenxy/dibs/internal/mcp"
 	"github.com/agenxy/dibs/internal/notify"
@@ -106,6 +107,11 @@ func TestReconnectAppFixtureHelper(t *testing.T) {
 
 func appReconnectContract(t *testing.T, lost, clockBack, legacy bool) {
 	t.Helper()
+	oldShower := harnessenv.RealShower
+	t.Cleanup(func() { harnessenv.RealShower = oldShower })
+	openLog := filepath.Join(t.TempDir(), "fake-app-opens")
+	t.Setenv("DIBS_TEST_RECONNECT_OPEN_LOG", openLog)
+	installReconnectFakeAppOpen()
 	if _, err := notify.DesktopState(); err == nil {
 		t.Fatal("fixture must not resolve a native desktop helper")
 	}
@@ -312,6 +318,19 @@ func appReconnectContract(t *testing.T, lost, clockBack, legacy bool) {
 	}
 	newStartup(1) // another bridge in the same app is not another reconnect
 	newStartup(0)
+	// The fixture must have exercised the injected app opener. A passing
+	// queue-only test would not prove that the real app path was hermetic.
+	openDeadline := time.Now().Add(2 * time.Second)
+	for {
+		opened, readErr := os.ReadFile(openLog)
+		if readErr == nil && bytes.Contains(opened, []byte("codex://threads/"+thread)) {
+			break
+		}
+		if time.Now().After(openDeadline) {
+			t.Fatalf("reconnect never exercised fake app opener: %v %s", readErr, opened)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 	time.Sleep(100 * time.Millisecond) // allow an erroneous second async queue command to settle
 	if n := reconnectQueueCount(t, home); n != 1 {
 		t.Fatalf("same app incarnation duplicated queued wake: %d", n)
