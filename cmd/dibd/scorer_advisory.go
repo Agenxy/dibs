@@ -5,12 +5,15 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strconv"
+
+	"github.com/agenxy/dibs/internal/paths"
 )
 
 // A path identifies a repository on THIS host, never on another machine.
 // The daemon only recommends against locally mined indexes. Hashes keep raw
 // repository names out of the derived suppression file beside the ledger.
 func scorerAdviceKey(host, root string) string {
+	root = paths.Canonical(root) // only locally mined repository roots reach this key
 	sum := sha256.Sum256([]byte(host + "\x00" + root))
 	return hex.EncodeToString(sum[:])
 }

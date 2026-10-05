@@ -266,14 +266,13 @@ func enrichRegister(line []byte) []byte {
 	// Same rule as every other field above: what the agent supplied wins, and
 	// this only fills a blank. A supplied nonce is remembered too, so an agent
 	// that manages its own credential once does not have to manage it twice.
-	if _, had := args["nonce"]; !had {
-		enrichNonce(args, pinnedNonce())
-		if _, now := args["nonce"]; now {
-			touched = true
-		}
-	} else {
-		// Remembers what the agent supplied, so it need not manage it twice.
-		enrichNonce(args, pinnedNonce())
+	_, hadNonce := args["nonce"]
+	_, hadRecovery := args["recovery_nonces"]
+	enrichNonce(args, pinnedNonce())
+	_, hasNonce := args["nonce"]
+	_, hasRecovery := args["recovery_nonces"]
+	if (!hadNonce && hasNonce) || (!hadRecovery && hasRecovery) {
+		touched = true
 	}
 	// DIBS_HARNESS names the harness when its MCP client will not.
 	//

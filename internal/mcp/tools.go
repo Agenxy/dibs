@@ -77,6 +77,9 @@ var toolDefs = func() []map[string]any {
 					"ephemeral: dies with the session"},
 				"nonce": str("random id >=128-bit that YOU generate: a secret, and KEEP IT. The only " +
 					"credential that survives your process; omitted, one is minted"),
+				"recovery_nonces": stringArray("2 to 16 distinct retained SECRET credentials from conflicting " +
+					"bridge-cache aliases. Requires name and no explicit/transport nonce. The oldest existing " +
+					"identity matching name and host is recovered; no match fails without creating an agent"),
 				"session_id": str("your harness session id, so lifecycle hooks find your mailbox " +
 					"and mail is pushed rather than polled. Filled in when omitted; dies with " +
 					"the harness process"),

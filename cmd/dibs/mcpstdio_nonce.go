@@ -2,12 +2,17 @@ package main
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
+
+	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/paths"
 )
 
 // The nonce lives where the HARNESS can find it, not where the agent's context
@@ -47,14 +52,25 @@ func rememberedNonce(project, name string) string {
 	if project == "" || name == "" {
 		return ""
 	}
-	all := loadNonces()
-	return all[nonceKey(project, name)]
+	candidates := nonceCandidates(project, name)
+	if len(candidates) == 1 {
+		return candidates[0]
+	}
+	return ""
 }
 
 // rememberNonce records the nonce for next time. Best effort: a failure here
 // costs a sibling, which is what happened before this existed, and must never
 // cost the registration itself.
 func rememberNonce(project, name, nonce string) {
+	recordNonce(project, name, nonce, false)
+}
+
+func rememberChosenNonce(project, name, nonce string) {
+	recordNonce(project, name, nonce, true)
+}
+
+func recordNonce(project, name, nonce string, chosen bool) {
 	if project == "" || name == "" || nonce == "" {
 		return
 	}
@@ -82,10 +98,22 @@ func rememberNonce(project, name, nonce string) {
 
 	all := loadNonces()
 	key := nonceKey(project, name)
-	if all[key] == nonce {
+	canonical := canonicalNonceKey(project, name)
+	// Old bridges keep reading their exact legacy spelling. Never replace a
+	// different credential there; keep every canonical credential as well so
+	// an explicit change cannot erase a still-owned identity's recovery secret.
+	saved := canonical + "\x00" + fmtNonceDigest(nonce)
+	choice := canonical + "\x00choice"
+	if all[canonical] == nonce && all[saved] == nonce && all[key] != "" && (!chosen || all[choice] == nonce) {
 		return
 	}
-	all[key] = nonce
+	if all[key] == "" {
+		all[key] = nonce
+	}
+	all[canonical], all[saved] = nonce, nonce
+	if chosen {
+		all[choice] = nonce // explicit/pinned intent survives removal of the pin
+	}
 	b, err := json.MarshalIndent(all, "", "  ")
 	if err != nil {
 		return
@@ -164,6 +192,62 @@ func mintNonce() string {
 }
 
 func nonceKey(project, name string) string { return project + "\x00" + name }
+
+func canonicalNonceKey(project, name string) string {
+	return "dir:v1:" + paths.Canonical(project) + "\x00" + name
+}
+
+func fmtNonceDigest(nonce string) string {
+	sum := sha256.Sum256([]byte(nonce))
+	return hex.EncodeToString(sum[:])
+}
+
+// Credentials are grouped by a real directory on this machine, never by a
+// case-folded string. Missing/unreadable paths keep their exact legacy key.
+// A 17th distinct credential is returned to the admission gate as an error,
+// rather than truncating the group to 16 and silently choosing a subset.
+func nonceCandidates(project, name string) []string {
+	if project == "" || name == "" {
+		return nil
+	}
+	all := loadNonces()
+	canonical := canonicalNonceKey(project, name)
+	if chosen := all[canonical+"\x00choice"]; chosen != "" {
+		return []string{chosen}
+	}
+	seen := map[string]bool{}
+	add := func(nonce string) {
+		if nonce != "" {
+			seen[nonce] = true
+		}
+	}
+	add(all[nonceKey(project, name)])
+	add(all[canonical])
+	current, statErr := os.Stat(project)
+	for key, nonce := range all {
+		if strings.HasPrefix(key, canonical+"\x00") {
+			add(nonce)
+		} else if statErr == nil && current.IsDir() {
+			other, role, found := strings.Cut(key, "\x00")
+			if !found || role != name || strings.HasPrefix(other, "dir:v1:") {
+				continue
+			}
+			old, err := os.Stat(other)
+			if err == nil && os.SameFile(current, old) {
+				add(nonce)
+			}
+		}
+		if len(seen) > core.MaxRecoveryNonces {
+			break
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for nonce := range seen {
+		out = append(out, nonce)
+	}
+	sort.Strings(out)
+	return out
+}
 
 func noncePath() string {
 	dir := os.Getenv("DIBS_DIR")
@@ -278,14 +362,25 @@ func enrichNonce(args map[string]any, pinned string) {
 	// Remembered, so a later run WITHOUT the variable still reattaches to the
 	// identity the operator chose, and then left alone: the header carries it.
 	if pinned != "" {
-		rememberNonce(project, name, pinned)
+		rememberChosenNonce(project, name, pinned)
 		return
 	}
 	if supplied, _ := args["nonce"].(string); supplied != "" {
-		rememberNonce(project, name, supplied)
+		rememberChosenNonce(project, name, supplied)
 		return
 	}
-	nonce := rememberedNonce(project, name)
+	if _, supplied := args["recovery_nonces"]; supplied {
+		return // explicit candidate group is validated by the daemon
+	}
+	candidates := nonceCandidates(project, name)
+	if len(candidates) > 1 {
+		args["recovery_nonces"] = candidates
+		return // proof is required; never mint or probe a candidate here
+	}
+	nonce := ""
+	if len(candidates) == 1 {
+		nonce = candidates[0]
+	}
 	if nonce == "" {
 		nonce = mintNonce()
 		rememberNonce(project, name, nonce)

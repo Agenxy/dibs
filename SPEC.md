@@ -331,6 +331,17 @@ you can measure is never improved by asking.
     A crash between the recovery record and update leaves the old label on the
     same id; the same nonce/new-name retry completes it. Unknown nonces require
     a name for a new identity; closed identities remain closed.
+  - *Conflicting retained credentials*: `register(recovery_nonces: [...])`
+    accepts 2–16 distinct secret nonces with a current `name` and no effective
+    explicit/transport nonce. On the single writer, the existing nonce index
+    selects the eligible identity of that name and canonical nonempty host
+    having the lowest `CreatedSerial` (id tie-break). All ordinary nonce,
+    session and human-identity guards still apply. No candidate match fails
+    without allocating an identity; only the selected nonce is encrypted in
+    the ordinary register record. The candidate group is never ledgered.
+    `recovery_nonce_index` identifies the selected input without echoing secrets.
+    Old daemons refuse the new argument before applying a registration; bridges
+    surface that refusal and do not retry with a newly minted nonce.
   - *Recovery credential* also for persistent agents via `resume`. **Treat a
     persistent agent's nonce as a secret equal to its token.**
   - *Presented by the harness, on any transport.* An agent cannot carry a secret

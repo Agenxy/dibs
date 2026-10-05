@@ -272,6 +272,7 @@ func forward(client *http.Client, req *http.Request, line []byte, out *syncWrite
 		return
 	}
 	if len(body) > 0 {
+		rememberRegistrationNonce(line, body)
 		out.line(body) // empty means a notification / 202: no response line
 		if saw != nil {
 			saw(line, body)

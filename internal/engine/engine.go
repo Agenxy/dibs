@@ -527,6 +527,10 @@ func (e *Engine) execWithReceipt(
 	if err := e.state.Admit(op); err != nil {
 		return nil, err
 	}
+	recovery, err := e.prepareCredentialRecovery(op)
+	if err != nil {
+		return nil, err
+	}
 
 	// The operator's own agent is not registrable from a tool call.
 	//
@@ -908,6 +912,7 @@ func (e *Engine) execWithReceipt(
 	if err := e.finishNonceName(nameRecovery, res, now); err != nil {
 		return nil, err
 	}
+	e.finishCredentialRecovery(recovery, op, res)
 	if op.Kind == core.OpUpdate && actor != nil {
 		res["name_aliases"] = e.nameAliases.Names(e.state, actor.ID)
 	}

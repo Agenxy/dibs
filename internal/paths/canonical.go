@@ -53,7 +53,7 @@ func Canonical(p string) string {
 	cur := p
 	for {
 		if resolved, err := filepath.EvalSymlinks(cur); err == nil {
-			return filepath.Join(resolved, rest)
+			return filepath.Join(nativeSpelling(resolved), rest)
 		}
 		parent := filepath.Dir(cur)
 		if parent == cur {
