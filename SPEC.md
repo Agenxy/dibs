@@ -819,6 +819,10 @@ Stop and SubagentStop use this same typed actionable cause before blocking a
 finished turn. Informational progress, ordinary approvals, accepted reviews,
 queue acceptance/position changes do not independently block. An authored
 notify blocks once and delivers its words; a repeated Stop does not deliver it again.
+Leaving an already-presented notify unacknowledged does not rearm it across
+later idle epochs, command reconsideration or app reconnect. A confirmed
+socket presentation and ledgered mailbox delivery count; an unconfirmed
+socket write and command execution alone do not count as read receipts.
 A non-blocking Stop neither marks those items delivered nor reads their outcome
 prefixes. Held information is delivered through SessionStart, `check_in` or
 `inbox`, or included in the next actionable Stop/socket digest under the shared

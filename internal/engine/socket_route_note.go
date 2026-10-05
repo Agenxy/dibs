@@ -24,10 +24,8 @@ func (e *Engine) sendDeliveryNote(l *core.Agent, m *core.Message, now time.Time)
 	if !socket && !command {
 		return e.PullOnlyNote(l)
 	}
-	if !e.socketActionableMessage(m) {
-		return "delivered to " + l.ID + "'s mailbox; the operator's wake policy suppresses this wake: " +
-			"it arrives at " + l.ID + "'s next activation (check_in, inbox, SessionStart " +
-			"or its next actionable delivery)."
+	if note := e.sendWakeCauseNote(l, m); note != "" {
+		return note
 	}
 	if !socket {
 		return e.PullOnlyNote(l)
@@ -46,6 +44,19 @@ func (e *Engine) sendDeliveryNote(l *core.Agent, m *core.Message, now time.Time)
 			"available at Stop or its next activation; the earlier write confirms no receiver acceptance."
 	}
 	return bestEffortSocketNote(l, wakeHarness(l), string(l.Status), why)
+}
+
+func (e *Engine) sendWakeCauseNote(l *core.Agent, m *core.Message) string {
+	if e.notifyPresented(l.ID, m) {
+		return "delivered to " + l.ID + "'s mailbox; this notify was already presented, so " +
+			"no new wake was sent. It remains readable until acknowledged."
+	}
+	if !e.socketActionableMessage(m) {
+		return "delivered to " + l.ID + "'s mailbox; the operator's wake policy suppresses this wake: " +
+			"it arrives at " + l.ID + "'s next activation (check_in, inbox, SessionStart " +
+			"or its next actionable delivery)."
+	}
+	return ""
 }
 
 // A claiming bridge has its own socket evidence. Consult daemon discovery

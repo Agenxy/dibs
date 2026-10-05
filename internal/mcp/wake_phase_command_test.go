@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,12 +18,25 @@ func TestWakePhaseCommandHelper(t *testing.T) {
 	if path == "" {
 		return
 	}
-	if err := os.WriteFile(path, []byte(strings.Join(os.Args, "\n")), 0o600); err != nil {
+	body, err := json.Marshal(os.Args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.Write(append(body, '\n')); err != nil {
+		_ = f.Close()
+		t.Fatal(err)
+	}
+	if err = f.Close(); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestWakePhaseCommandThroughMCP(t *testing.T) {
+	const session = "e2c03160-6000-4000-8000-000000000002"
 	for _, phase := range []string{"all", "urgent", "none"} {
 		for _, kind := range []string{"notify", "question", "ordinary-approval"} {
 			t.Run(phase+"/"+kind, func(t *testing.T) {
@@ -45,7 +59,7 @@ func TestWakePhaseCommandThroughMCP(t *testing.T) {
 					return sendNoteCall(t, srv, name, args)
 				}
 				worker := call("register", map[string]any{
-					"name": "worker", "session_id": "e2c03160-6000-4000-8000-000000000002", "harness": "policy-fixture",
+					"name": "worker", "session_id": session, "harness": "policy-fixture",
 				})
 				sender := call("register", map[string]any{"name": "sender"})
 				call("check_in", map[string]any{"token": sender["token"]})
@@ -88,6 +102,54 @@ func TestWakePhaseCommandThroughMCP(t *testing.T) {
 						break
 					}
 					<-tick.C
+				}
+				if phase == "all" && kind == "notify" {
+					presented := call("check_in", map[string]any{"token": worker["token"]})
+					if !mentions(presented, "private body must stay off argv") {
+						t.Fatal("setup: command-woken FYI was not presented")
+					}
+					for range 2 {
+						call("hook_poll", map[string]any{"session_id": session, "event": "PreToolUse"})
+						got := call("hook_poll", map[string]any{
+							"session_id": session, "event": "Stop", "strict_output": true,
+						})
+						if got["decision"] == "block" || got["reason"] != nil || got["hookSpecificOutput"] != nil {
+							t.Fatalf("presented command FYI blocked a later Stop: %v", got)
+						}
+					}
+					until = time.Now().Add(1600 * time.Millisecond)
+					for {
+						body, er := os.ReadFile(path)
+						if er != nil || len(strings.Split(strings.TrimSpace(string(body)), "\n")) != 1 {
+							t.Fatalf("presented FYI ran additional commands: %q %v", body, er)
+						}
+						if time.Now().After(until) {
+							break
+						}
+						<-tick.C
+					}
+					// A genuinely new question still wakes after contact deferral;
+					// oldestBlocking must not label it with the already-read FYI.
+					call("check_in", map[string]any{"token": worker["token"]})
+					call("send", map[string]any{"token": sender["token"], "to": "worker", "type": "question", "body": "new work"})
+					until = time.Now().Add(5 * time.Second)
+					for {
+						body, er := os.ReadFile(path)
+						if er != nil {
+							t.Fatal(er)
+						}
+						rows := strings.Split(strings.TrimSpace(string(body)), "\n")
+						if len(rows) >= 2 {
+							if len(rows) != 2 || !strings.Contains(rows[1], "question") || strings.Contains(rows[1], "notify") {
+								t.Fatalf("retry used an already-presented FYI instead of the new question: %q", body)
+							}
+							break
+						}
+						if time.Now().After(until) {
+							t.Fatal("a new blocking question was lost after FYI presentation")
+						}
+						<-tick.C
+					}
 				}
 			})
 		}

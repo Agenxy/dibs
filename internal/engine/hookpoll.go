@@ -1279,6 +1279,9 @@ func (e *Engine) wakeKeys(agent string, now time.Time) []string {
 		}
 		key := agent + "\x00" + strconv.FormatUint(m.Serial, 10)
 		live[key] = true
+		if e.notifyPresented(agent, m) {
+			continue // raw delivered FYIs stay readable, without buying another turn
+		}
 		last, seen := e.wokeFor[key]
 		switch {
 		case !seen:

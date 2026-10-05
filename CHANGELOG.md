@@ -51,7 +51,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   attempt still cannot confirm that the harness accepted it. Later sends in the
   same written epoch report that no additional frame was sent. Explicit
   `urgent` and `none` settings retain their opt-outs consistently on socket,
-  Stop and command routes, including deferred command retries.
+  Stop and command routes, including deferred command retries. Presented FYIs
+  left unacknowledged remain readable without waking again in later idle
+  epochs or app reconnects.
 
 - **Source installs reject conflicting version overrides before replacement.**
   Both built images are checked against their module/VCS-derived stamp. A

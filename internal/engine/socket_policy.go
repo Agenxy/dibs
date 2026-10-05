@@ -117,6 +117,9 @@ func (e *Engine) actionableSocketMail(l *core.Agent, now time.Time, fresh bool) 
 			continue
 		}
 		key := l.ID + "\x00" + strconv.FormatUint(m.Serial, 10)
+		if e.notifyPresented(l.ID, m) {
+			continue // once, even on reconnect's fresh=false path
+		}
 		if fresh && !wanted[key] {
 			continue
 		}
@@ -144,6 +147,19 @@ func (e *Engine) socketActionableMessage(m *core.Message) bool {
 	// Authored mail deserves delivery even when it asks for no reply. Only
 	// generated notices use the narrower decision rule below.
 	return wakeCauseAllowed(e.WakePolicy(), true, core.Blocking("message.sent", m.Type))
+}
+
+// Raw FYIs stay in the mailbox until ack. A ledgered mailbox presentation or
+// a confirmed hook/socket digest is enough to spend their one wake; neither
+// an unconfirmed socket write nor command execution is a read receipt.
+func (e *Engine) notifyPresented(agent string, m *core.Message) bool {
+	if m.Type != core.MsgNotify {
+		return false
+	}
+	_, shown := e.wokeFor[agent+"\x00"+strconv.FormatUint(m.Serial, 10)]
+	// A later adoption must not inherit the prior recipient's presentation.
+	deliveredHere := m.State == core.MsgStateDelivered && m.DeliveredAt >= m.AdoptedAt
+	return deliveredHere || shown
 }
 
 // One phase rule for authored mail and typed generated notices, used by

@@ -624,7 +624,8 @@ func (e *Engine) clearWakeAttempts(agent string) {
 func (e *Engine) oldestBlocking(agent string) (kind, from string) {
 	var oldest *core.Message
 	for _, m := range e.state.Inbox(agent) {
-		if (m.State != core.MsgStatePending && m.State != core.MsgStateDelivered) || !e.socketActionableMessage(m) {
+		if (m.State != core.MsgStatePending && m.State != core.MsgStateDelivered) ||
+			!e.socketActionableMessage(m) || e.notifyPresented(agent, m) {
 			continue
 		}
 		if oldest == nil || m.Serial < oldest.Serial {
@@ -638,6 +639,9 @@ func (e *Engine) oldestBlocking(agent string) (kind, from string) {
 }
 
 // hasBlockingMail reports whether anybody is still waiting on this agent.
+// It excludes authored FYIs by obligation, regardless of their wake policy.
+// Command delivery uses hasRetryMail's phase/freshness decision; its event
+// label comes from oldestBlocking, which includes only unpresented FYIs.
 //
 // Callers run on the writer loop.
 func (e *Engine) hasBlockingMail(agent string) bool {

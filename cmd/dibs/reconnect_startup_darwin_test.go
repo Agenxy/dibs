@@ -219,10 +219,25 @@ func appReconnectContract(t *testing.T, lost, clockBack, legacy bool) {
 	waitQueueCount(t, home, 1)
 	fyi := do(&core.Op{Kind: core.OpSendMessage, Token: asker["token"].(string), To: "fyi-only", MsgType: core.MsgNotify, Body: "authored FYI must reach its recipient"})
 	waitQueueCount(t, home, 2)
-	// An app consuming a queue entry is not an agent reading it. Close the
-	// authored FYI through the actual acknowledgment door before asserting
-	// that reconnect does not wake this now-empty mailbox again.
-	do(&core.Op{Kind: core.OpAckMessage, Token: fyiToken, MsgSerial: fyi["msg_serial"].(uint64)})
+	// Consuming an app queue entry is not an agent reading it. Present the
+	// authored FYI through a real check-in, deliberately leave it unacked,
+	// and prove two later idle epochs and app reconnect do not wake it again.
+	presented := do(&core.Op{Kind: core.OpAckBoard, Token: fyiToken})
+	mail, ok := presented["inbox"].([]*core.Message)
+	if !ok || len(mail) != 1 || mail[0].Serial != fyi["msg_serial"].(uint64) ||
+		mail[0].State != core.MsgStateDelivered || mail[0].Consumed {
+		t.Fatal("setup: authored FYI was not presented once and left unacked")
+	}
+	fyiSession := strings.Replace(thread, "aaaa", "3333", 1)
+	for range 2 {
+		if _, er := eng.HookPoll(ctx, fyiSession, "PreToolUse", "", false, true); er != nil {
+			t.Fatal("setup: next FYI turn:", er)
+		}
+		got, er := eng.HookPoll(ctx, fyiSession, "Stop", "", false, true)
+		if er != nil || got["decision"] == "block" || got["reason"] != nil || got["hookSpecificOutput"] != nil {
+			t.Fatalf("presented unacked FYI blocked a later Stop: %v %v", got, er)
+		}
+	}
 	queued, er := os.ReadFile(filepath.Join(home, "pending.json"))
 	if er != nil {
 		t.Fatal(er)
