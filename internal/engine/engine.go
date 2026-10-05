@@ -1062,7 +1062,13 @@ func (e *Engine) execWithReceipt(
 	}
 	// WHICH ID THE WRITTEN NAME REACHED. See addressedNote.
 	if res != nil && len(addressed) > 0 {
-		res["addressed"] = addressedNote(op, addressed)
+		res["addressed"] = e.addressedNote(op, addressed)
+	}
+	if op.Kind == core.OpSendMessage && res != nil {
+		res["to_name"] = e.agentName(op.To)
+		if actor != nil {
+			res["from_name"] = e.agentName(actor.ID)
+		}
 	}
 	// Every authenticated write carries word of anything waiting.
 	//

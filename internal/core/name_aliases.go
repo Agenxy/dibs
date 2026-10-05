@@ -6,7 +6,13 @@ import "slices"
 // never part of State. The engine owns it on its single-writer loop. A row's
 // creation serial fences the aliases of an earlier occupant of the same id.
 type AgentNameAliases struct {
-	owners map[string]nameAliasOwner
+	owners   map[string]nameAliasOwner
+	released map[string]nameAliasRelease // diagnostic only, never routing
+}
+
+type nameAliasRelease struct {
+	id      string
+	created uint64
 }
 
 type nameAliasOwner struct {
@@ -16,7 +22,7 @@ type nameAliasOwner struct {
 
 // NewAgentNameAliases rebuilds ownership from the complete regenerated history.
 func NewAgentNameAliases(st *State, history []Event) *AgentNameAliases {
-	n := &AgentNameAliases{owners: map[string]nameAliasOwner{}}
+	n := &AgentNameAliases{owners: map[string]nameAliasOwner{}, released: map[string]nameAliasRelease{}}
 	n.Observe(st, history)
 	return n
 }
@@ -46,6 +52,7 @@ func (n *AgentNameAliases) Observe(st *State, events []Event) {
 		released, _ := ev.Data["release_names"].([]string)
 		for _, name := range released {
 			delete(owner.names, name)
+			n.released[name] = nameAliasRelease{id: l.ID, created: created}
 		}
 		if len(owner.names) == 0 {
 			delete(n.owners, l.ID)
@@ -53,6 +60,19 @@ func (n *AgentNameAliases) Observe(st *State, events []Event) {
 			n.owners[l.ID] = owner
 		}
 	}
+}
+
+// LastReleaser is a diagnostic only. A released name no longer routes to this
+// agent, and a later current owner can legitimately receive mail sent to it.
+func (n *AgentNameAliases) LastReleaser(st *State, name string) string {
+	if n == nil {
+		return ""
+	}
+	last := n.released[name]
+	if l := st.Agents[last.id]; l != nil && l.CreatedSerial == last.created {
+		return last.id
+	}
+	return ""
 }
 
 // Prune bounds the view by retained rows. Called on sweep/prune, not every
@@ -64,6 +84,11 @@ func (n *AgentNameAliases) Prune(st *State) {
 	for id, owner := range n.owners {
 		if l := st.Agents[id]; l == nil || l.CreatedSerial != owner.created {
 			delete(n.owners, id)
+		}
+	}
+	for name, release := range n.released {
+		if l := st.Agents[release.id]; l == nil || l.CreatedSerial != release.created {
+			delete(n.released, name)
 		}
 	}
 }

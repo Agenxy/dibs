@@ -1115,6 +1115,7 @@ func (s *Server) callTool(
 	if call.Name == "check_in" && !a.Detail {
 		res = slimBoard(res)
 	}
+	s.presentNames(ctx, res)
 	text, merr := json.Marshal(res)
 	if merr != nil {
 		return nil, &rpcError{Code: -32603, Message: merr.Error()}

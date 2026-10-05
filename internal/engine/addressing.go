@@ -1,6 +1,10 @@
 package engine
 
-import "github.com/agenxy/dibs/internal/core"
+import (
+	"fmt"
+
+	"github.com/agenxy/dibs/internal/core"
+)
 
 // Resolving the agent a caller NAMED into the id the ledger records.
 //
@@ -132,7 +136,7 @@ func (e *Engine) resolveAgentRefs(op *core.Op) (resolved map[string]string, err 
 // a label and the mail went to an id, and the id is the thing to quote
 // afterwards, to a coordinator or in a handoff. A name is a label its owner may
 // change again tomorrow.
-func addressedNote(op *core.Op, resolved map[string]string) string {
+func (e *Engine) addressedNote(op *core.Op, resolved map[string]string) string {
 	note := ""
 	for _, label := range []string{"to", "merge_into", "into"} {
 		was, ok := resolved[label]
@@ -151,11 +155,15 @@ func addressedNote(op *core.Op, resolved map[string]string) string {
 		if note != "" {
 			note += "; "
 		}
-		note += label + ": " + was + " resolves to " + id
+		name := e.agentName(id)
+		note += fmt.Sprintf("%s: %s reaches %s (stable id %s)", label, was, name, id)
+		if prior := e.nameAliases.LastReleaser(e.state, was); prior != "" && prior != id {
+			note += fmt.Sprintf("; %s is now %s's name; its former holder is %s (stable id %s)",
+				was, name, e.agentName(prior), prior)
+		}
 	}
 	if note == "" {
 		return ""
 	}
-	return note + ". Resolved to the id, which is the address that never moves: quote " +
-		"that when you refer to this agent, because a name is a label its owner may revise"
+	return note + ". For a durable reference use the stable id; for this mail use respond(msg_serial)."
 }

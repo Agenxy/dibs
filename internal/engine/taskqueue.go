@@ -17,7 +17,8 @@ func owedCall(m *core.Message) string {
 func (e *Engine) owedWorkView(agent string, now time.Time) []core.Result {
 	var out []core.Result
 	for _, m := range e.obligationsOf(agent, now) {
-		r := core.Result{"msg_serial": m.Serial, "from": m.From, "state": m.State, "completion": owedCall(m)}
+		r := core.Result{"msg_serial": m.Serial, "from": m.From, "from_name": e.agentName(m.From),
+			"state": m.State, "completion": owedCall(m)}
 		if m.State == core.MsgStateQueued {
 			r["start"] = fmt.Sprintf("when you choose to start: respond(msg_serial:%d, disposition:\"approve\")", m.Serial)
 		}
@@ -65,7 +66,7 @@ func (e *Engine) SetQueueOrderLock(
 		r, applyErr := e.applyAndLedger(op, now)
 		mutationErr = applyErr
 		if r != nil && len(addressed) > 0 {
-			r["addressed"] = addressedNote(op, addressed)
+			r["addressed"] = e.addressedNote(op, addressed)
 		}
 		return r
 	})
@@ -92,13 +93,15 @@ func (e *Engine) taskQueueView(agent string) []core.Result {
 	now := time.Now()
 	for i, m := range e.state.TaskQueue(agent) {
 		r := core.Result{
-			"msg_serial": m.Serial, "from": m.From, "position": i + 1, "priority": m.EffectivePriority(),
+			"msg_serial": m.Serial, "from": m.From, "from_name": e.agentName(m.From),
+			"position": i + 1, "priority": m.EffectivePriority(),
 			"sender_priority": m.RequestPriority, "deadline": m.Deadline,
 			"overdue": queueOverdue(m, now) > 0, "overdue_s": queueOverdue(m, now).Seconds(),
 			"locked": m.QueueOrderLocked || (owner != nil && owner.HasPermission(core.PermQueueOrderLock)),
 		}
 		if m.QueueBy != "" {
 			r["by"] = m.QueueBy
+			r["by_name"] = e.agentName(m.QueueBy)
 		}
 		out = append(out, r)
 	}

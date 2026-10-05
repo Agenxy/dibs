@@ -1159,6 +1159,8 @@ func messages() error {
 		Messages []struct {
 			Serial               uint64
 			From, To, Type, Body string
+			FromName             string `json:"from_name"`
+			ToName               string `json:"to_name"`
 			State, Response      string
 			ExpireDetail         string `json:"expire_detail"`
 		}
@@ -1171,7 +1173,14 @@ func messages() error {
 		return nil
 	}
 	for _, msg := range m.Messages {
-		fmt.Printf("#%-5d %s → %s  %-9s %-22s %s\n", msg.Serial, msg.From, msg.To, msg.Type, msg.State, msg.Body)
+		from, to := msg.From, msg.To
+		if msg.FromName != "" {
+			from = msg.FromName
+		}
+		if msg.ToName != "" {
+			to = msg.ToName
+		}
+		fmt.Printf("#%-5d %s → %s  %-9s %-22s %s\n", msg.Serial, from, to, msg.Type, msg.State, msg.Body)
 		if msg.Response != "" {
 			fmt.Printf("       ↳ %s\n", msg.Response)
 		}

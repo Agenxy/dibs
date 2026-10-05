@@ -68,9 +68,8 @@ var toolDefs = func() []map[string]any {
 				"sleep and return via resume.",
 			"inputSchema": obj(map[string]any{
 				"name": str("required for a new identity; optional with your existing nonce. " +
-					"WHO YOU ARE: a stable name others address mail to ('reviewer', " +
-					"'codex-1'), never what you are doing: mail addressed to 'refactor-auth' " +
-					"reads as nonsense, and work goes in declare. update() changes it later"),
+					"Your current name is your human-facing address; choose one peers can recognize. " +
+					"Work goes in declare, and update(name) changes this address later"),
 				"description": str("one line on your standing purpose, e.g. 'reviewing PRs for the release'"),
 				"pid":         num("your process id, for crash detection (optional)"),
 				"kind": map[string]any{"type": "string", "enum": []string{"persistent", "ephemeral"}, "description": "persistent " +
@@ -164,9 +163,8 @@ var toolDefs = func() []map[string]any {
 				"Update branch/title as you move. Harness/version are the client's statement and cannot be changed here.",
 			"inputSchema": obj(map[string]any{
 				"token": tok,
-				"name": str("new display name. Name yourself for the ROLE you hold (reviewer, " +
-					"ledger-surgeon, release), not for your model or harness. Refused if another " +
-					"live agent holds it"),
+				"name": str("new current name and human-facing address. Refused if another " +
+					"live agent holds it; former names remain aliases until released"),
 				"description": str("what you are for. Sent empty, it clears"),
 				"release_names": stringArray("former names of YOUR identity to release. Current names and " +
 					"immutable ids cannot be released. Already absent names change nothing; maximum 64 entries"),

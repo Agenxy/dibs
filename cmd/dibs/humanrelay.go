@@ -413,7 +413,7 @@ func (r *relay) handle(n engine.HumanNotice) {
 		r.mu.Unlock()
 	}()
 	a, err := r.ask(humanask.Message{
-		Type: n.Type, From: n.From, Who: n.Who, Body: n.Body,
+		Type: n.Type, From: n.From, FromName: n.FromName, Who: n.Who, Body: n.Body,
 		Choices: n.Choices, Grant: n.Grant, Adopt: n.Adopt, Serial: n.Serial, Node: r.st.Node,
 		Receipt: func(state string) {
 			r.delivery(n.Serial, state, "")
@@ -462,7 +462,11 @@ func (r *relay) answer(n engine.HumanNotice, a humanask.Answer) error {
 	body := map[string]any{"serial": n.Serial, "disposition": a.Disposition, "body": a.Body}
 	// A grant needs a finger on THIS answer: the board refuses it otherwise.
 	if n.Privileged() && a.Disposition == "approve" {
-		reason := "Approve: " + strings.TrimPrefix(humanask.RequestTitle(n.From, n.Grant, n.Adopt), "Dibs · ")
+		from := n.From
+		if n.FromName != "" {
+			from = n.FromName
+		}
+		reason := "Approve: " + strings.TrimPrefix(humanask.RequestTitle(from, n.Grant, n.Adopt), "Dibs · ")
 		nonce, sig, err := r.challenge(func(node, nonce string) []byte {
 			return humankey.AnswerMessage(node, n.Serial, a.Disposition, nonce)
 		}, reason)

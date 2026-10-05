@@ -428,10 +428,11 @@ warn, and a peer's complementary slot does not hide its separate duplicate slot.
 This is advisory presentation derived from the recorded activities, not a new
 permission, admission rule or ledger field.
 
-**Addressing: `agent_id` is the address; the `name` is one too.** Everything the
+**Addressing: current `name` is the human-facing address; `agent_id` is the
+stable key and remains an address too.** Everything the
 ledger records about an agent names it by `agent_id`: mail `to`/`from`, claim
 owners, space memberships, role pins, the nonce index. So `agent_id` is
-**immutable**, and `update(name=…)` moves the label only. The name is *also*
+**immutable**, and `update(name=…)` moves the human-facing address only. The name is
 accepted wherever a call names an agent (`send(to=)`, `grant_role`,
 `prune`, `force_release`, `adopt_agent`, `admit`, `evict`, `merge_agents`,
 `queue_lock`, and authorized `all_mail(agent=)`),
@@ -468,6 +469,16 @@ precedence, followed by exact id, current name, and then former-name aliases,
 with the same live/retired eligibility rules each caller already applies.
 Multiple eligible alias owners give `E_AMBIGUOUS_AGENT` with sorted ids; a
 resolved operation reports the actual recipient and records the immutable id.
+
+Presentation resolves current names at read time: board, CLI, wake digest,
+human notification, and browser event/mail views show the name first. A changed
+id appears as `formerly <id>` or in detail. Existing structured `from`, `to`,
+`by`, `agent`, and owner fields remain immutable ids for plugins, hooks and old
+bridges; additive `from_name`, `to_name`, and `agent_name` fields give readers
+the current address. An alias that was released can be acquired by another
+agent: a send to it reaches the new holder, and the addressed note identifies
+both the new and former holders when the latter is still retained. Use a
+message serial or stable id for a durable reference.
 
 Aliases are a derived projection of regenerated `agent.updated` events, outside
 State, fenced by owner id and creation serial. Cold replay rebuilds them from
@@ -1197,7 +1208,7 @@ counting a document; this line said 17 for two minor versions.
 | `register(name?, description?, pid?, nonce?, kind?)` | → `{agent_id, token, serial, board, nonce?}`; name may be omitted with a known nonce (§5); a nonce is expected for `kind: persistent` and MINTED when omitted, never refused (§4) |
 | `resume(nonce, resume_id, pid?)` | reactivate a persistent agent: rotates token, bumps activation generation, rebinds PID, wakes, re-arms gate; idempotent per resume_id (§5) |
 | `check_in()` | pass the awareness gate (per credential: a new session must look again); → atomic `{board, inbox, serial}` checkpoint (§10) |
-| `update(name?, description?, title?, branch?, model?, provider?, effort?, surface?)` | revise what the agent says about ITSELF. The id is immutable (it is the address every message, claim and membership keys on), so a rename moves the label only, and a name another live agent holds is refused (`E_NAME_TAKEN`) rather than suffixed. `harness`/`version` are not settable: the client states them at the handshake, which is the only part of an identity that is not self-reported. Empty `description` clears, because already-ledgered `update` ops did that; the fields added later merge when non-empty, so replay of old ops is unchanged |
+| `update(name?, description?, title?, branch?, model?, provider?, effort?, surface?)` | revise the agent's current human-facing name/address and self-description. The id remains the stable key, and a name another live agent holds is refused (`E_NAME_TAKEN`) rather than suffixed. `harness`/`version` are not settable: the client states them at the handshake, which is the only part of an identity that is not self-reported. Empty `description` clears, because already-ledgered `update` ops did that; the fields added later merge when non-empty, so replay of old ops is unchanged |
 | `sign_off()` | lifecycle |
 | `heartbeat()` | renew lease while idle (implicit on every call) |
 | `invite(action?, name?, ttl_s?, issued_by?, export?)` | private local issuers mint scoped cloud credentials and configuration; own-prefix children by default, four live/7d; list/revoke own invitations, no invited grandchildren. Only `export: true` on mint returns the private stable recovery nonce; ordinary/false mints omit it, and export on list/revoke is refused. This avoids unnecessary recovery-credential disclosure in ordinary agent transcripts. Direct-IP mode returns guest CA PEM/pin and explicitly no verified native-client configuration yet. Public listener and issuer-generation boundaries: docs/NETWORK.md §9 |

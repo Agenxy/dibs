@@ -51,7 +51,7 @@ func (e *Engine) socketBatchPresentation(
 		notices = append(notices, e.presentGenericUpdates(a.ID, &budget, wanted)...)
 		text := ""
 		if len(member.mail)+len(member.announced)+len(notices) > 0 {
-			text = strings.TrimRight(hookDigest(a.ID, member.mail, member.announced, notices), "\n")
+			text = strings.TrimRight(hookDigest(e.agentName(a.ID), member.mail, member.announced, notices), "\n")
 		}
 		if work := e.socketWorkDigest(a, now); work != "" {
 			text = strings.TrimSpace(text + "\n" + work)

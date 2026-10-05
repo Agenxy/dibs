@@ -21,17 +21,25 @@ import (
 
 // Message is one message for the person.
 type Message struct {
-	Type    string // question, request, handoff, notify
-	From    string
-	Who     string // the daemon's line about the sender, never the sender's own words
-	Body    string
-	Choices []string
-	Grant   string
-	Adopt   string
-	Serial  uint64 // stable message identity on Node
-	Node    string // board identity; serials are not global
-	Receipt notify.Receipt
-	ask     func(string, string, notify.Receipt, ...string) (string, error) // test presenter
+	Type     string // question, request, handoff, notify
+	From     string
+	FromName string // current name; From stays the stable ID
+	Who      string // the daemon's line about the sender, never the sender's own words
+	Body     string
+	Choices  []string
+	Grant    string
+	Adopt    string
+	Serial   uint64 // stable message identity on Node
+	Node     string // board identity; serials are not global
+	Receipt  notify.Receipt
+	ask      func(string, string, notify.Receipt, ...string) (string, error) // test presenter
+}
+
+func (m Message) displayFrom() string {
+	if m.FromName != "" {
+		return OneLine(m.FromName)
+	}
+	return m.From
 }
 
 // Answer is what the person said. An empty Disposition is no answer:
@@ -44,7 +52,7 @@ type Answer struct {
 // Ask raises the message and waits for the person. notify.ErrCannotNotify
 // means nobody saw it, which the caller reports.
 func Ask(m Message) (Answer, error) {
-	title := "Dibs · " + m.From
+	title := "Dibs · " + m.displayFrom()
 	switch m.Type {
 	case core.MsgRequest:
 		// A request is literally "approve or deny", so ask it that way.
@@ -92,7 +100,7 @@ func RequestTitle(from, grant, adopt string) string {
 }
 
 func approve(m Message) (Answer, error) {
-	choice, err := m.askNotification(RequestTitle(m.From, m.Grant, m.Adopt),
+	choice, err := m.askNotification(RequestTitle(m.displayFrom(), m.Grant, m.Adopt),
 		Said(m.Who, m.Body), "Deny", "Later", "Approve")
 	if errors.Is(err, notify.ErrCannotNotify) {
 		return Answer{}, err
@@ -129,7 +137,7 @@ func approve(m Message) (Answer, error) {
 // through the bundle rather than a modal alert. Nothing here steals focus
 // until the human has pressed something asking it to.
 func answer(m Message) (Answer, error) {
-	title := "Dibs · " + m.From + " asks"
+	title := "Dibs · " + m.displayFrom() + " asks"
 	line := Said(m.Who, m.Body)
 	plan := PlanFor(m.Choices, notify.CanPrompt())
 

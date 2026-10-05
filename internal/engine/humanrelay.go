@@ -24,16 +24,17 @@ import (
 
 // HumanNotice is one message for the person, as a relay shows it.
 type HumanNotice struct {
-	Serial  uint64               `json:"serial"`
-	Type    string               `json:"type"`
-	From    string               `json:"from"`
-	Who     string               `json:"who,omitempty"`
-	Body    string               `json:"body"`
-	Choices []string             `json:"choices,omitempty"`
-	Grant   string               `json:"grant,omitempty"`
-	Adopt   string               `json:"adopt,omitempty"`
-	Node    string               `json:"node,omitempty"`
-	Cleanup *NotificationCleanup `json:"notification_cleanup,omitempty"`
+	Serial   uint64               `json:"serial"`
+	Type     string               `json:"type"`
+	From     string               `json:"from"`
+	FromName string               `json:"from_name,omitempty"`
+	Who      string               `json:"who,omitempty"`
+	Body     string               `json:"body"`
+	Choices  []string             `json:"choices,omitempty"`
+	Grant    string               `json:"grant,omitempty"`
+	Adopt    string               `json:"adopt,omitempty"`
+	Node     string               `json:"node,omitempty"`
+	Cleanup  *NotificationCleanup `json:"notification_cleanup,omitempty"`
 }
 
 // Privileged is whether approving this grants something: a role, a
@@ -125,7 +126,7 @@ func (e *Engine) PendingForHuman(ctx context.Context) ([]HumanNotice, error) {
 // noticeOf renders one stored message as a notice. On the loop.
 func (e *Engine) noticeOf(m *core.Message) HumanNotice {
 	n := HumanNotice{
-		Serial: m.Serial, Type: m.Type, From: m.From, Body: m.Body,
+		Serial: m.Serial, Type: m.Type, From: m.From, FromName: e.agentName(m.From), Body: m.Body,
 		Choices: m.Choices, Grant: m.Grant, Adopt: m.Adopt,
 		Node: e.state.NodeID,
 	}

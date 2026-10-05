@@ -118,7 +118,7 @@ func (e *Engine) dispatchHuman(res core.Result) {
 
 func (e *Engine) askHumanDesktop(n HumanNotice, ask func(humanask.Message) (humanask.Answer, error)) {
 	a, err := ask(humanask.Message{
-		Type: n.Type, From: n.From, Who: n.Who, Body: n.Body,
+		Type: n.Type, From: n.From, FromName: n.FromName, Who: n.Who, Body: n.Body,
 		Choices: n.Choices, Grant: n.Grant, Adopt: n.Adopt, Serial: n.Serial, Node: n.Node,
 		Receipt: func(state string) {
 			if state == "posted" {

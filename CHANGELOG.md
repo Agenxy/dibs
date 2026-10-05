@@ -7,6 +7,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Renamed agents are addressed by their current names throughout human-facing
+  views.** The board, CLI, wake digest, browser mail/event feed and desktop
+  notices show the current name first; changed stable ids remain available as
+  history or detail. MCP mail and send results add current-name fields without
+  changing the stable id fields or ledger. Released-name reassignment reports
+  the new and former holders when the latter is retained, so a sender can
+  verify which mailbox received the message.
+
 - **Timed-out sends distinguish a provable non-send from an uncertain handoff.**
   A send whose response budget expires before writer admission returns
   `E_SEND_NOT_SENT` and can be resent. A raced or accepted admission still

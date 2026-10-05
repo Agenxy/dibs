@@ -53,6 +53,21 @@ func TestRenamedAddressIsPresentedAcrossBothMCPVersions(t *testing.T) {
 					(target != id && !strings.Contains(note, "current-name")) {
 					t.Fatalf("%q did not present the current address: %v", target, sent)
 				}
+				for _, readTool := range []string{"inbox", "check_in"} {
+					box := call(readTool, map[string]any{"token": tok})
+					items := box["inbox"].([]any)
+					found := false
+					for _, item := range items {
+						m := item.(map[string]any)
+						if m["serial"] == sent["msg_serial"] {
+							found = m["to"] == id && m["to_name"] == "current-name" &&
+								m["from"] == senderID && m["from_name"] == "sender-id"
+						}
+					}
+					if !found {
+						t.Fatalf("%s did not preserve ids and present current names: %v", readTool, box)
+					}
+				}
 				read := call("read_mail", map[string]any{"token": tok, "msg_serial": sent["msg_serial"]})
 				mail := read["message"].(map[string]any)
 				if mail["to"] != id || mail["from"] != senderID ||
@@ -108,7 +123,7 @@ func TestReleasedFormerNameReassignmentIsExplicitThroughBothMCPVersions(t *testi
 			miss := toolCallOn(t, srv, version, "read_mail", map[string]any{
 				"token": firstTok, "msg_serial": sent["msg_serial"],
 			})
-			if miss["code"] != "E_NO_MESSAGE" {
+			if miss["code"] != "E_NOT_YOUR_MESSAGE" {
 				t.Fatalf("former holder could read reassigned mail: %v", miss)
 			}
 		})

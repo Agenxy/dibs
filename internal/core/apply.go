@@ -761,10 +761,8 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 	// An id that owes nothing to the name asked for is a surprise, and the agent
 	// is the only party that can correct it.
 	if op.Name != "" && slug(op.Name) == "" {
-		res["name_note"] = "your id is " + id + ", not " + op.Name + ": ids are addresses and " +
-			"must be ASCII, and nothing in that name survived. Others will address you as " +
-			id + ": register with an ASCII name if you want a meaningful one. Your original " +
-			"name is kept and shown to humans on the board."
+		res["name_note"] = "your current name is " + op.Name + "; your stable id is " + id +
+			" because ids must be ASCII. Others can address you by either."
 	}
 	// A name that says nothing. Not an error: a name is advisory, and refusing
 	// one would be coercion over a label.
@@ -777,13 +775,9 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 	// this can be said to the party that can fix it, and `update` is now the fix,
 	// so say both.
 	if generic := genericAgentName(op.Name); generic != "" {
-		res["naming"] = "\"" + op.Name + "\" names your species, not you: on a board of " +
-			"nine agents every row would read as a synonym for \"an agent\", and the human " +
-			"reading it cannot tell which of them to interrupt. Name yourself for the ROLE " +
-			"you hold (reviewer, ledger-surgeon, docs) or the seat you occupy, not for the " +
-			"model or the harness running you: those are already on the board beside your " +
-			"name. Your id is fixed at " + id + ", but the name is not: call update(name=…) " +
-			"once you know what you are, and put the rest in description."
+		res["naming"] = "\"" + op.Name + "\" may not distinguish you from other agents: " +
+			"a human scanning the board needs to know which row to address. Your id is fixed at " +
+			id + ", but your current name is not: call update(name=…) when you have a clearer address."
 	}
 	// An agent whose only recovery credential is a session id is reclaimable by
 	// anyone who learns that id, and the bridge derives it from a process id

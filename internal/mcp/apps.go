@@ -807,6 +807,10 @@ func (s *Server) panelState(ctx context.Context, res core.Result, view, token st
 	if view != "" {
 		out["view"] = view
 	}
+	if nested, ok := out["inbox"].(core.Result); ok {
+		s.presentNames(ctx, nested)
+	}
+	s.presentNames(ctx, out)
 	return out
 }
 
@@ -839,15 +843,11 @@ func boardRows(agents []any) string {
 		}
 		id, _ := m["id"].(string)
 		status, _ := m["status"].(string)
-		// display_name, when there is one.
-		//
-		// It exists because a name that is not Latin collapses to a generic
-		// addressable id ("agent", "agent-2"), and showing only the id tells a
-		// terminal agent the wrong thing about who it is looking at. The id is
-		// kept alongside because it is what mail is addressed to.
+		// Current name is the address a reader should use. Keep a changed id
+		// subordinate for durable references and older callers.
 		who := id
-		if dn, _ := m["display_name"].(string); dn != "" && dn != id {
-			who = firstLine(dn, 22) + " (" + id + ")"
+		if name, _ := m["name"].(string); name != "" && name != id {
+			who = firstLine(name, 22) + " (formerly " + id + ")"
 		}
 		what := "(nothing declared)"
 		slots, _ := m["slots"].([]any)
