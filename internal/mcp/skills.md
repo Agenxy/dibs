@@ -197,7 +197,9 @@ read: use `read_mail` for the rest. A socket write alone is not a receipt.
 entries in `also_read`; repeating that acknowledgement writes nothing. This
 never accepts work or consumes a withdrawal receipt. Milestone numbers are
 the actual step indices, not the count reported: accepting an unreported index
-is refused with the reported indices in the corrective hint.
+is refused with the reported indices in the corrective hint. A DONE request's
+final named milestone is reviewable even if progress carried no index: DONE is
+the final delivery report, not a report for its earlier intermediate steps.
 
 **Keep a nonce, or a restart will cost you your mailbox.** Pass `nonce` to
 `register`: any random id you generate and hold on to. Registering again

@@ -917,6 +917,11 @@ identities cannot resolve the parent through an event. `respond` on one's own
 event returns a hint naming the parent and review call. `read_mail` derives
 `milestone_reviews` (unreviewed/accepted/flagged, by and at) from ordered entries;
 a newer worker report supersedes an earlier review of that milestone.
+Accepting a numbered step requires its worker report. A DONE request itself
+reports its final named milestone, including when progress carried no index;
+it does not fabricate reports for unreported intermediate steps. This admission
+rule does not change historical replay, numbered-progress counts, the original
+DONE verdict, or its deliverable.
 
 The session id is a same-machine capability for a token-less nudge. A local
 peer holding the board secret and knowing that id can call `hook_poll`, or
