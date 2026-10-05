@@ -74,8 +74,9 @@ var toolDefs = func() []map[string]any {
 				"kind": map[string]any{"type": "string", "enum": []string{"persistent", "ephemeral"}, "description": "persistent " +
 					"(default): a mailbox that outlives your process, so you can be woken. " +
 					"ephemeral: dies with the session"},
-				"nonce":           str("secret random id >=128-bit; KEEP IT to recover after restart. Omitted: minted"),
-				"recovery_nonces": stringArray("2–16 distinct secrets; oldest name/host match. No explicit/transport nonce; no match: error"),
+				"nonce": str("secret random id >=128-bit; KEEP IT to recover after restart. Omitted: minted"),
+				"recovery_nonces": stringArray("2–16 distinct secrets; oldest name/host match. " +
+					"No explicit/transport nonce; no match: error"),
 				"session_id": str("your harness session id, so lifecycle hooks find your mailbox " +
 					"and mail is pushed rather than polled. Filled in when omitted; dies with " +
 					"the harness process"),

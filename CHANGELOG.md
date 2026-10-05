@@ -50,8 +50,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   canonicalization corrects Darwin filesystem spelling. The stdio nonce cache
   migrates aliases while preserving legacy credentials; conflicting retained
   secrets recover the oldest matching identity through a bounded register
-  argument, without probing or creating a sibling on failure. An unproved
-  recovery names the old mailbox and a ready adoption request to a coordinator,
+  argument, without probing or creating a sibling on failure. A newly registered
+  sibling names the old mailbox and a ready adoption request to a coordinator,
   falling back to the human only when no coordinator exists. Scorer root keys
   and host-aware unidentified-session notices use the same local spelling.
 

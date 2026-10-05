@@ -368,7 +368,8 @@ func TestIdentityRecoveryRealStdioLegacyConflict(t *testing.T) {
 				}
 				got = f.call("register", map[string]any{"name": "worker", "cwd": root})
 			}
-			if mode == "two-valid" || mode == "one-valid" || mode == "response-loss" {
+			switch mode {
+			case "two-valid", "one-valid", "response-loss":
 				recoveryStdioOK(t, got)
 				if got["agent_id"] != old["agent_id"] {
 					t.Fatalf("cache migration chose the wrong identity: %v", got)
@@ -376,7 +377,7 @@ func TestIdentityRecoveryRealStdioLegacyConflict(t *testing.T) {
 				if got["recovery_nonce_index"] == nil {
 					t.Fatal("real bridge did not ask for credential selection")
 				}
-			} else if mode == "none-valid" || mode == "over-limit" {
+			case "none-valid", "over-limit":
 				want := "E_RECOVERY_UNPROVEN"
 				if mode == "over-limit" {
 					want = "E_BAD_ARG"
