@@ -72,14 +72,14 @@ func TestNonceRenameRefusalPrecedesRecoveryThroughMCP(t *testing.T) {
 
 func TestAliasLimitAndMixedReleaseEnterThroughMCP(t *testing.T) {
 	dir := t.TempDir()
-	srv, _, stop := aliasReplayServer(t, dir)
+	srv, eng, stop := aliasReplayServer(t, dir)
 	id, tok := aliasRegister(t, srv, "worker-id", "bounded-worker")
 	for n := 0; n <= 64; n++ {
 		// Reset the ordinary rate bucket by a real restart, not an index setter
 		// or a testing exemption. Every chunk also exercises full-history replay.
 		if n > 0 && n%20 == 0 {
 			stop()
-			srv, _, stop = aliasReplayServer(t, dir)
+			srv, eng, stop = aliasReplayServer(t, dir)
 		}
 		aliasRename(t, srv, tok, fmt.Sprintf("label-%02d", n))
 	}
@@ -87,7 +87,11 @@ func TestAliasLimitAndMixedReleaseEnterThroughMCP(t *testing.T) {
 	if r["code"] != "E_TOO_LARGE" || !strings.Contains(fmt.Sprint(r["hint"]), "release") {
 		t.Fatalf("65th former name was admitted: %v", r)
 	}
+	before := aliasBoard(t, eng)
 	r = aliasCall(t, srv, "update", map[string]any{"token": tok, "name": "label-65", "release_names": []string{"label-00"}})
+	if got := aliasBoard(t, eng)["serial"].(uint64); got != before["serial"].(uint64)+1 {
+		t.Fatalf("mixed release did not record exactly one ordinary update: %d", got)
+	}
 	if r["name"] != "label-65" {
 		t.Fatalf("mixed release/rename did not commit: %v", r)
 	}
