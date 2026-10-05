@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
@@ -138,7 +139,7 @@ func TestWaitingAgeIgnoresAnOutcomeReadThroughMCP(t *testing.T) {
 // The reported unread-count incident no longer reproduced on the live board.
 // These controls measure the candidates separately instead of assuming owed
 // work or acknowledged notifications were the cause. They must pass on the old
-// source too; only the age guard above is expected to fail there.
+// source too; the age and full-read hint guards are expected to fail there.
 func TestWaitingCountMatchesTheMCPInboxAfterDisposition(t *testing.T) {
 	for _, version := range []string{"2026-07-28", "2025-11-25"} {
 		for _, disposition := range []string{"ack", "approve", "queue"} {
@@ -185,5 +186,129 @@ func TestWaitingCountMatchesTheMCPInboxAfterDisposition(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestWaitingHintClearsTrimmedProgressThroughMCP(t *testing.T) {
+	for _, version := range []string{"2026-07-28", "2025-11-25"} {
+		for _, mixedMail := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/mixed-mail=%t", version, mixedMail), func(t *testing.T) {
+				srv, _ := newServer(t)
+				call := func(name string, args map[string]any) map[string]any {
+					return waitingCall(t, srv, version, name, args)
+				}
+				lead := call("register", map[string]any{"name": "lead"})["token"]
+				worker := call("register", map[string]any{"name": "worker"})["token"]
+				var parents []float64
+				long := strings.Repeat("private-full-progress-marker ", 100)
+				for range 2 {
+					sent := call("send", map[string]any{"token": lead, "to": "worker", "type": "request", "body": "hint probe"})
+					parent := sent["msg_serial"].(float64)
+					parents = append(parents, parent)
+					call("respond", map[string]any{"token": worker, "msg_serial": parent, "disposition": "approve"})
+					call("read_mail", map[string]any{"token": lead, "msg_serial": parent})
+					// Two updates on one parent must still name just one read call.
+					for range 2 {
+						call("respond", map[string]any{"token": worker, "msg_serial": parent, "disposition": "progress", "body": long})
+					}
+				}
+				var incoming any
+				if mixedMail {
+					incoming = call("send", map[string]any{"token": worker, "to": "lead", "type": "notify", "body": "private incoming marker"})["msg_serial"]
+				}
+				for _, read := range []string{"inbox", "check_in"} {
+					visible := call(read, map[string]any{"token": lead})
+					updates, ok := visible["agent_updates"].([]any)
+					if !ok || len(updates) == 0 || !strings.Contains(fmt.Sprint(updates), "trimmed") {
+						t.Fatalf("setup: %s did not show a trimmed update: %v", read, visible)
+					}
+				}
+				written := call("update", map[string]any{"token": lead, "description": "follow the waiting hint"})
+				waiting, _ := written["waiting"].(string)
+				if !strings.Contains(waiting, "update(s) to you") {
+					t.Fatalf("setup: shortened updates were already cleared: %v", written)
+				}
+				for _, parent := range parents {
+					read := fmt.Sprintf("read_mail(%.0f)", parent)
+					if strings.Count(waiting, read) != 1 {
+						t.Errorf("waiting must name each parent read once, including updates on the same parent: %q; want %s", waiting, read)
+					}
+				}
+				if !strings.Contains(waiting, "read and clear") {
+					t.Errorf("waiting did not explain the full read that clears shortened updates: %q", waiting)
+				}
+				if strings.Contains(waiting, "inbox") != mixedMail {
+					t.Errorf("inbox hint does not match ordinary mail alongside envelope updates: %q", waiting)
+				}
+				if strings.Contains(waiting, "private") {
+					t.Errorf("waiting hint exposed a message body: %q", waiting)
+				}
+				// Obey the named calls through the same door. Reading one parent
+				// must not consume the other; the final full read clears both.
+				for i, parent := range parents {
+					read := call("read_mail", map[string]any{"token": lead, "msg_serial": parent})
+					progress := read["message"].(map[string]any)["progress"].([]any)
+					if len(progress) != 2 || progress[1].(map[string]any)["note"] != long {
+						t.Fatalf("full parent read did not actually return the complete update: %v", read)
+					}
+					written = call("update", map[string]any{"token": lead, "description": "full update read"})
+					waiting, _ = written["waiting"].(string)
+					if i == 0 {
+						if !strings.Contains(waiting, "update(s) to you") {
+							t.Errorf("reading one parent consumed the other parent's update: %v", written)
+						}
+					} else if strings.Contains(waiting, "update(s) to you") {
+						t.Errorf("obeying the full read hint did not clear the updates: %v", written)
+					}
+				}
+				if mixedMail {
+					if !strings.Contains(waiting, "1 unread message(s)") {
+						t.Errorf("reading updates consumed unrelated ordinary mail: %v", written)
+					}
+					call("ack", map[string]any{"token": lead, "msg_serial": incoming})
+				}
+				written = call("update", map[string]any{"token": lead, "description": "all pending items handled"})
+				if waiting, _ := written["waiting"].(string); waiting != "" {
+					t.Errorf("waiting did not clear after the instructed reads: %q", waiting)
+				}
+			})
+		}
+	}
+}
+
+func TestWaitingHintClearsTrimmedReviewThroughMCP(t *testing.T) {
+	for _, version := range []string{"2026-07-28", "2025-11-25"} {
+		t.Run(version, func(t *testing.T) {
+			srv, _ := newServer(t)
+			call := func(name string, args map[string]any) map[string]any {
+				return waitingCall(t, srv, version, name, args)
+			}
+			lead := call("register", map[string]any{"name": "lead"})["token"]
+			worker := call("register", map[string]any{"name": "worker"})["token"]
+			parent := call("send", map[string]any{"token": lead, "to": "worker", "type": "request", "body": "review probe", "milestones": []string{"step"}})["msg_serial"].(float64)
+			call("respond", map[string]any{"token": worker, "msg_serial": parent, "disposition": "approve"})
+			call("respond", map[string]any{"token": worker, "msg_serial": parent, "disposition": "progress", "milestone": 1, "body": "step complete"})
+			long := strings.Repeat("private-full-review-marker ", 100)
+			call("respond", map[string]any{"token": lead, "msg_serial": parent, "disposition": "accept", "milestone": 1, "body": long})
+			visible := call("inbox", map[string]any{"token": worker})
+			updates, ok := visible["agent_updates"].([]any)
+			if !ok || len(updates) != 1 || !strings.Contains(updates[0].(string), "trimmed") {
+				t.Fatalf("setup: actual review was not shortened: %v", visible)
+			}
+			written := call("update", map[string]any{"token": worker, "description": "read the whole review"})
+			waiting, _ := written["waiting"].(string)
+			if !strings.Contains(waiting, fmt.Sprintf("read_mail(%.0f)", parent)) || !strings.Contains(waiting, "read and clear") || strings.Contains(waiting, "inbox") {
+				t.Errorf("review reminder did not name the full parent read: %q", waiting)
+			}
+			read := call("read_mail", map[string]any{"token": worker, "msg_serial": parent})
+			progress := read["message"].(map[string]any)["progress"].([]any)
+			if progress[len(progress)-1].(map[string]any)["note"] != long {
+				t.Fatalf("setup: full review was not returned: %v", read)
+			}
+			written = call("update", map[string]any{"token": worker, "description": "review read"})
+			if waiting, _ := written["waiting"].(string); waiting != "" {
+				t.Errorf("following the review's read hint did not clear it: %q", waiting)
+			}
+		})
 	}
 }
