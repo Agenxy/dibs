@@ -240,7 +240,9 @@ const WakeHarnessesMetaKey = "com.dibs/wake_harnesses"
 // its agents. Absent or zero means the default.
 const WakeCooldownsMetaKey = "com.dibs/wake_cooldowns"
 
-// AwayOpenMetaKey advertises away-only app opening with focus restoration.
+// AwayOpenMetaKey is retained on the wire. Version 1 is away-only opening;
+// version 2 opens ChatGPT promptly with -g and a shared per-thread memo while
+// retaining away-only Claude recovery. Older readers ignore unknown versions.
 // Absence describes an older bridge, whose opening behavior is left alone.
 const AwayOpenMetaKey = "com.dibs/away_open"
 
@@ -852,8 +854,8 @@ func (s *Server) missedFor(ctx context.Context, cursor uint64) (evs []core.Event
 
 // awayOpenIn accepts only the version whose meaning this daemon knows.
 func awayOpenIn(meta map[string]any) int {
-	if version, ok := meta[AwayOpenMetaKey].(float64); ok && version == 1 {
-		return 1
+	if version, ok := meta[AwayOpenMetaKey].(float64); ok && (version == 1 || version == 2) {
+		return int(version)
 	}
 	return 0
 }

@@ -482,6 +482,7 @@ func TestBridgeReportsAQueuedWakeBeforeCheckingAppVisibility(t *testing.T) {
 }
 
 func TestTheBridgeOpensTheThreadInTheAppTheAgentRunsIn(t *testing.T) {
+	t.Setenv("DIBS_DIR", t.TempDir())
 	const thread = "0199a0b1-c2d3-4e5f-8a9b-0c1d2e3f4a5b"
 	run := func(t *testing.T, surface string, queued bool) [][]string {
 		t.Helper()
@@ -498,7 +499,7 @@ func TestTheBridgeOpensTheThreadInTheAppTheAgentRunsIn(t *testing.T) {
 		})
 		return opened
 	}
-	if got := run(t, harnessenv.ChatGPTApp, true); len(got) != 1 || got[0][1] != "codex://threads/"+thread {
+	if got := run(t, harnessenv.ChatGPTApp, true); len(got) != 1 || len(got[0]) != 3 || got[0][1] != "-g" || got[0][2] != "codex://threads/"+thread {
 		t.Errorf("an app agent's thread was opened as %q: the queued message waits in a "+
 			"thread the app on this machine never loaded", got)
 	}

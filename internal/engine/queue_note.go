@@ -22,9 +22,11 @@ func (e *Engine) appQueueNote(agent *core.Agent) string {
 	}
 	if e.wakeStillQueuedLocked(agent, time.Now()) {
 		return "delivered to " + agent.ID + ". Its wake notice is queued in the app; " +
-			"it runs when the thread is open, or when Dibs opens it while the person is away."
+			"a loaded thread receives it directly; Dibs opens an unloaded thread promptly in the background, " +
+			"at most once per bounded wake epoch."
 	}
 	return "delivered to " + agent.ID + ". Dibs delivers wake notices through its app queue; " +
-		"they run when the thread is open, or when Dibs opens it while the person is away. " +
+		"a loaded thread receives them directly; Dibs opens an unloaded thread promptly in the background, " +
+		"at most once per bounded wake epoch. " +
 		"Queue acceptance has not been confirmed for this delivery."
 }

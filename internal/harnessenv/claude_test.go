@@ -61,9 +61,19 @@ func TestARunningClaudeSessionIsNotOpenedAgain(t *testing.T) {
 	}
 	// Through the shower production uses: a running session is held, so no
 	// open is made and the app does not jump forward.
-	if !RealShower.Holds(cli) {
+	if !RealShower.holds(cli) {
 		t.Error("the production shower would open a Claude session that is already running")
 	}
+	// Also enter the production open door: its ownership dispatch must reach
+	// ClaudeSessionRunning, not ChatGPT-only Ownership or the presence gate.
+	s := RealShower
+	s.Open = func([]string) error { t.Error("running Claude session was re-opened"); return nil }
+	s.Away = func() (bool, bool) { t.Error("running Claude session reached away gate"); return true, true }
+	s.ShowWhenIdle(ClaudeOpenArgv("local_live-fixture"), cli, func(opened, deferred bool, err error) {
+		if opened || deferred || err != nil {
+			t.Errorf("running Claude session entered open path: %v %v %v", opened, deferred, err)
+		}
+	})
 	if ClaudeSessionRunning("99999999-2222-4333-8444-555566667777") {
 		t.Error("a session with no file reads as running")
 	}

@@ -319,18 +319,37 @@ created is opened there. A bridge that has stated one still wins, because it
 says where the agent ran LAST: a thread born in the app and since run from a
 terminal stays out of the app.
 
-**Without stealing the screen (2026-10-01).** Opening a thread brings the app
-to the front, whatever is passed: `open -g` (do not activate) still had ChatGPT
-in front within 250ms, and handing focus back to the previous app lost the
-race three times in six seconds as the thread loaded. So the open waits for known screen lock, sleeping online displays, or
-`[wake] open_app_after_idle` (10 minutes by default). Unknown observations leave
-the notice queued. The signed native helper rechecks those signals before
-opening and attempts to restore the previous frontmost app while the person remains away.
-Restoration is best effort: a natural ten-minute idle cycle proved the opening gate,
-but its frontmost app was already ChatGPT, so restoration from another app has
-not yet been observed. A missing frontmost app does not prevent an away opening;
-its receipt reports previous_pid=0 and restored=false.
-Loaded threads receive queue-only delivery and are never opened again.
+**Prompt dormant wakes, bounded app opening (2026-10-04).** The person clarified
+that dormant agents must be wakeable whatever they are doing; the bug was live
+agents repeatedly switching the app. ChatGPT queued wakes therefore no longer
+wait for lock, display sleep or HID idle. Dibs always uses `open -g` for their
+thread links. Measurement on the installed app and codex-cli 0.160.0: an unloaded
+throwaway thread drained its queued marker after this background open, with a
+roughly 0.6-second ChatGPT foreground blip and focus returning without help.
+Background opening does not promise zero activation. No decision window or
+focus restoration is added.
+
+Loaded threads receive queue-only delivery and are never opened. The bounded
+ownership probe selects the app's actual bundled Codex runtimes before lsof,
+not its many helpers. Probe failure is UNKNOWN, not evidence of an unloaded
+thread. The native app tool's status view is unavailable to dibd; starting a
+separate app-server would inspect the wrong runtime and is not a substitute.
+A private per-thread memo/OS lock shared by the daemon and host bridge records
+an attempt before opening. Rapid wakes, even with a permanently failing probe,
+produce at most one open. Corrupt JSON is repaired as an attempt made now,
+without opening this time, so expiry still recovers later wakes; other I/O
+errors refuse opening. A new message never resets it. An app incarnation
+change or observed loaded-to-unloaded transition can re-arm after the
+20-second rate limit; a fixed ten-minute expiry also re-arms, so an unknown
+probe cannot prevent all future wakes. No waiter or watcher is needed.
+
+The old switching path was queue success -> `showInApp` / bridge
+`showQueuedThread` -> immediate `ShowWhenIdle` -> `Show`. That immediate branch
+had no memo; #304/7428955 repaired an ownership probe that missed loaded
+runtimes behind helpers, but another unknown/false result could still open on
+every queued wake. The shared production opener now bounds that branch itself.
+Claude closed-session recovery retains its separate away policy and signed
+native helper.
 
 This policy governs agent wakes. Human questions and requests post native
 notifications without opening a decision window, including while Focus is on.
@@ -342,14 +361,14 @@ For an agent on another machine the app is on that machine, so the hub sends
 the surface on the wake request and `dibs host-bridge` opens the thread there.
 The surface field is additive: a bridge too old to know it keeps queueing, as before.
 
-The opening policy has its own additive marker, `com.dibs/away_open: 1`,
-announced by the host bridge on `subscriptions/listen`. The hub records it
-for diagnostics only. A pre-away bridge omits it and keeps its existing
-two-minute idle opening behavior until its process is restarted; installing
-a binary does not replace an already running bridge. `/api/hosts` and
-`dibs doctor` identify those bridges and print the remedy: restart
-`dibs host-bridge` on that host to get away-only open. The hub neither
-suppresses delivery to an older bridge nor opens an app on another host.
+The retained wire key `com.dibs/away_open` advertises an additive policy version
+on `subscriptions/listen`: 1 means away-only opening, 2 means prompt bounded
+ChatGPT opening with away-only Claude recovery. Older readers ignore version 2.
+The hub records this for diagnostics only. An older running bridge keeps its
+previous opening behavior until restarted; installing a binary does not replace
+it. `/api/hosts` and `dibs doctor` print the remedy: restart `dibs host-bridge`
+on that host for prompt bounded ChatGPT opening. The hub neither suppresses
+delivery to an older bridge nor opens an app on another host.
 
 Running an agent in a DIFFERENT environment from the one it last ran in (a
 headless Codex for a thread that lived in the app, say) is not a wake at all.

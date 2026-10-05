@@ -60,11 +60,10 @@ func (d *fakeDesk) wait(t *testing.T) {
 	}
 }
 
-var argv = []string{"/usr/bin/open", "codex://threads/x"}
+var argv = []string{"/usr/bin/open", "claude://code/continue?session=local_x"}
 
-// The operator asked that a wake not disrupt them, and opening a thread brings
-// the app to the front whatever is passed (measured: `open -g` and handing
-// focus back both lost). So an open waits until the person has been idle.
+// Claude closed-session recovery retains its away policy. ChatGPT queued
+// wakes have a separate prompt background opener, tested in app_open_test.go.
 func TestAThreadIsOpenedOnlyOnceThePersonIsIdle(t *testing.T) {
 	d := &fakeDesk{idle: []time.Duration{5 * time.Second, 30 * time.Second, 3 * time.Minute}, done: make(chan struct{})}
 	s := d.shower(2 * time.Minute)

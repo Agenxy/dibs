@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -14,6 +16,15 @@ import (
 // A queued notice is not evidence that a turn started. Drive the actual app
 // deferral door and then read the real decorated board while it waits.
 func TestBoardNamesAThreadWaitingForAwayOpening(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := filepath.Join(home, "Library", "Application Support", "Claude", "claude-code-sessions", "fixture", "sessions")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "local_away-fixture.json"), []byte(`{"sessionId":"local_away-fixture","cliSessionId":"01876543-1234-4567-8901-234567890abc"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	original := shower
 	t.Cleanup(func() { shower = original })
 	var held atomic.Bool
@@ -34,13 +45,13 @@ func TestBoardNamesAThreadWaitingForAwayOpening(t *testing.T) {
 	const thread = "01876543-1234-4567-8901-234567890abc"
 	reg, err := e.Do(ctx, &core.Op{
 		Kind: core.OpRegister, Name: "away-worker", SessionID: thread,
-		Agent: &core.AgentInfo{Harness: "Codex", Surface: harnessenv.ChatGPTApp},
+		Agent: &core.AgentInfo{Harness: "Claude Code", Surface: harnessenv.ClaudeDesktop},
 	})
 	if err != nil {
 		t.Fatal("setup:", err)
 	}
 	id := reg["agent_id"].(string)
-	e.showInApp(wakePlan{thread: thread, harness: "Codex", surface: harnessenv.ChatGPTApp}, id)
+	e.showInApp(wakePlan{thread: thread, harness: "Claude Code", surface: harnessenv.ClaudeDesktop}, id)
 	board, err := e.Board(ctx)
 	if err != nil {
 		t.Fatal(err)

@@ -45,9 +45,8 @@ func (e *Engine) showInApp(plan wakePlan, agent string) {
 	})
 }
 
-// SetOpenAppAfterIdle is `[wake] open_app_after_idle`: how long the person
-// must have been idle before a thread is opened in its app. Called at startup,
-// before any wake runs.
+// SetOpenAppAfterIdle controls Claude closed-session recovery only. ChatGPT
+// queued mail opens promptly through its separately bounded background path.
 func (e *Engine) SetOpenAppAfterIdle(d time.Duration) { shower.MinIdle = d }
 
 // logShow says what happened to one open, for whoever reads the log later.

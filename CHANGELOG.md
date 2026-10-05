@@ -36,6 +36,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Dormant ChatGPT agents wake promptly while the person is active.** Queued
+  wakes use `open -g`, with loaded-thread refusal and a shared per-thread memo
+  preventing rapid repeated app opens. Ownership timeouts remain UNKNOWN;
+  runtime-only probes avoid querying renderer/tool helpers. New messages do
+  not reset the memo; incarnation/unload evidence or its ten-minute expiry
+  re-arm it under a twenty-second rate limit. The measured background open
+  drains a dormant thread's queue but can briefly activate ChatGPT. Human
+  decision windows remain button-only; Claude recovery keeps its away policy.
+
 - **Upgrades do not replay historical sender progress.** The recorded upgrade
   read cutoff now covers sender progress as well as recipient reviews, the
   classes whose old reads were not persisted. Genuinely unread verdicts and
@@ -275,12 +284,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Agent-hosting resume commands are refused. The retired Codex recipe is
   repaired to `codex queue`, never headless `exec resume`. Loaded app
   threads receive queued mail without opening their window. Unloaded app
-  threads open only while the person is known away: screen locked, displays
-  asleep or no input for `open_app_after_idle` (ten minutes by default).
-  Presence is rechecked; unknown measurements leave mail queued. The helper
-  makes a best-effort attempt to restore the previous frontmost app while the
-  person remains away; restoration from a different app has not yet been
-  observed. Bridge ancestry identifies the app, with transcript provenance as
+  ChatGPT threads open promptly with `-g` under the per-thread bound above.
+  Claude recovery opens only while the person is known away, using its native
+  helper. Bridge ancestry identifies the app, with transcript provenance as
   fallback; terminal sessions are never opened in an app.
   Closed Claude app sessions use the app's own continuation link, then their
   ordinary socket/startup route. Old bridges need a restart to adopt the policy.

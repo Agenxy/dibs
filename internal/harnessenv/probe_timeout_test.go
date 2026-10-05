@@ -16,7 +16,7 @@ func TestChatGPTHoldsBoundsItsOwnProcessProbes(t *testing.T) {
 			timedOut := false
 			appProbeOutput = func(ctx context.Context, binary string, _ ...string) ([]byte, error) {
 				if binary != stuck {
-					return []byte("101 /Applications/ChatGPT.app/Contents/MacOS/ChatGPT\n"), nil
+					return []byte("101 Mon Oct 5 06:01:00 2026 /Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex\n"), nil
 				}
 				if _, bounded := ctx.Deadline(); !bounded {
 					t.Error("production API gave its app probe no deadline")
@@ -44,17 +44,17 @@ func TestChatGPTHoldsFindsRuntimeBehindManyHelpers(t *testing.T) {
 	t.Cleanup(func() { appProbeOutput = original })
 	appProbeOutput = func(ctx context.Context, binary string, args ...string) ([]byte, error) {
 		if binary == "/bin/ps" || binary == "/usr/bin/pgrep" {
-			return []byte("101 /Applications/ChatGPT.app/helper\n" +
-				"102 /Applications/ChatGPT.app/helper\n" +
-				"103 /Applications/ChatGPT.app/helper\n" +
-				"999 /Applications/ChatGPT.app/runtime\n"), nil
+			return []byte("101 Mon Oct 5 06:01:00 2026 /Applications/ChatGPT.app/helper\n" +
+				"102 Mon Oct 5 06:01:00 2026 /Applications/ChatGPT.app/helper\n" +
+				"103 Mon Oct 5 06:01:00 2026 /Applications/ChatGPT.app/helper\n" +
+				"999 Mon Oct 5 06:01:00 2026 /Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex\n"), nil
 		}
 		if binary != "/usr/sbin/lsof" {
 			t.Fatalf("unexpected probe %s", binary)
 		}
-		// A runtime behind helpers is visible to one aggregate lsof query. Every
+		// A runtime behind helpers is visible to one runtime-only lsof query. Every
 		// per-process query consumes the same budget that hid it on the live Mac.
-		if strings.Contains(strings.Join(args, " "), "101,102,103,999") {
+		if strings.Join(args, " ") == "-a -p 999 -Fn" {
 			return []byte("p999\nn/tmp/rollout-fixture-thread.jsonl\n"), nil
 		}
 		select {

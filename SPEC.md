@@ -867,8 +867,8 @@ app-owned rows on that host with pending requests, questions, handoffs or notice
 No identity, activity, session binding or ledger state changes. Inferred queued
 receipts are invalidated by app generation, independent of wall-clock ordering;
 an authoritative pending app notice renews that generation without duplication.
-Mail is rechecked before delivery; ordinary cooldown, loaded-thread and away
-opening policy still apply. Empty mailboxes and generated informational updates alone do
+Mail is rechecked before delivery; ordinary cooldown and loaded-thread refusal
+still apply. ChatGPT opening uses the prompt background policy below. Empty mailboxes and generated informational updates alone do
 not cause reconnect wakes. Lost derived caches permit one bounded recheck.
 Sender notes distinguish observed queue acceptance from an unconfirmed attempt.
 
@@ -889,8 +889,25 @@ writers do not participate until upgraded. When observation is unavailable,
 the retained fallback may add at most one duplicate per current prompt, new
 reconnect generation or two-hour receipt expiry; this preserves lost-wake
 recovery. An observed empty queue re-arms immediately, and an observed pending
-notice wins over those inferred causes. App opening keeps its existing away
-policy. No queue item is deleted and no coordination state is changed.
+notice wins over those inferred causes. ChatGPT opening follows the separately
+bounded prompt background policy. No queue item is deleted and no coordination state is changed.
+
+**Prompt ChatGPT opening.** After a successful queue outcome, an app-owned
+thread opens promptly via `/usr/bin/open -g codex://threads/<id>` even while
+the person is active. A loaded thread is never opened. A bounded one-second
+process probe observes only bundled Codex runtimes; failure is UNKNOWN, never
+positive unloaded evidence. A private per-thread memo and OS lock are shared
+by local daemon and host-bridge producers using the same board directory. The
+attempt is saved before opening, including failure. Corrupt JSON is replaced
+with a fresh attempt receipt and no open this time; I/O errors still refuse
+opening. New messages do not reset it. App incarnation changes and an observed loaded-to-unloaded transition
+re-arm an epoch, subject to a twenty-second per-thread rate limit; otherwise
+a ten-minute expiry permits another attempt so an unavailable probe cannot
+strand future wakes. Lost derived memos permit a bounded extra attempt and
+never lose coordination mail. Measured on 2026-10-04: -g loaded an unloaded
+thread and drained its queue, but briefly activated ChatGPT for about 0.6s
+before focus returned without assistance. No window escalation or focus
+restoration is attempted. Claude closed-session recovery retains its away gate.
 
 A newer self-wake notification also advertises `com.dibs/socket_offer: true`.
 A capable writer includes that key on the hidden digest read to reserve the
