@@ -25,9 +25,11 @@ func TestNativeQueueVerdictCoalescesThroughCommandDoor(t *testing.T) {
 			t.Setenv("CODEX_HOME", home)
 			t.Setenv("DIBS_DIR", t.TempDir())
 			argv := []string{binary, "queue", "--thread", "verdict-thread", "--message", Compose(kind)}
+			started := time.Now().UTC()
 			if !RunCommands(argv, nil, "worker", "", time.Second, time.Second) {
 				t.Fatal("setup: first verdict wake failed")
 			}
+			finished := time.Now().UTC()
 			readQueue := func() []struct {
 				Input []struct{ Text string }
 			} {
@@ -45,9 +47,10 @@ func TestNativeQueueVerdictCoalescesThroughCommandDoor(t *testing.T) {
 				return rows
 			}
 			rows := readQueue()
-			if len(rows) != 1 || len(rows[0].Input) != 1 || rows[0].Input[0].Text != Compose(kind) {
+			if len(rows) != 1 || len(rows[0].Input) != 1 {
 				t.Fatalf("setup: fixture didn't retain the actual command notice: %#v", rows)
 			}
+			assertIssuedQueueNotice(t, rows[0].Input[0].Text, kind, started, finished)
 			// A current prompt and an old receipt must not override the actual
 			// pending verdict. This is also the unloaded/away queue: no fixture
 			// consumer runs until the queue is explicitly cleared below.
