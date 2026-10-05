@@ -119,6 +119,11 @@ type restartCandidate struct {
 	activity time.Time
 }
 
+// The only test seam for restart queue admission. The integration guard enters
+// sendRestartQueue and replaces the external queue command, not the shared
+// app-open path that follows confirmed admission.
+var restartQueue = wakeexec.RunRestartQueue
+
 // snapshotAppRestart runs on the writer loop while the known app epoch still
 // owns the process. It reads state only; no ledger entry on every tick.
 func (e *Engine) snapshotAppRestart(now time.Time) []restartCandidate {
@@ -270,7 +275,7 @@ func (e *Engine) deliverAppRestart(ctx context.Context, epoch string, plans []wa
 }
 
 func (e *Engine) sendRestartQueue(ctx context.Context, epoch string, plan wakePlan) bool {
-	out := wakeexec.RunRestartQueue(plan.argv, plan.agent, plan.cwd)
+	out := restartQueue(plan.argv, plan.agent, plan.cwd)
 	if out.Retryable {
 		// The lock was never acquired, so no command ran. One retry is safe;
 		// nonzero command exits are ambiguous and are never retried blindly.
@@ -285,7 +290,7 @@ func (e *Engine) sendRestartQueue(ctx context.Context, epoch string, plan wakePl
 		if !known || current != epoch {
 			return false
 		}
-		out = wakeexec.RunRestartQueue(plan.argv, plan.agent, plan.cwd)
+		out = restartQueue(plan.argv, plan.agent, plan.cwd)
 	}
 	if out.Retryable {
 		slog.Warn("app-restart queue admission remained contended after one retry", "agent", plan.agent)
