@@ -1,0 +1,38 @@
+name: temporary release preparation
+
+# NEVER MERGE: operator-approved, read-only stamping receipt for this stub only.
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  stamp:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'codex/release-0-0-12-preparation'
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: 6afa0026166601c20ee266acedc86ea7a3d12005
+          path: source
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: 2026.7.7
+          experimental: true
+      - name: unchanged task release on exact unpublished-notes stub
+        run: mise exec -- go run ./.github/release-prep/main.go source release-stamp-proof 6afa0026166601c20ee266acedc86ea7a3d12005
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: release-stamp-0.0.12
+          path: release-stamp-proof
+          if-no-files-found: error
+          retention-days: 90
