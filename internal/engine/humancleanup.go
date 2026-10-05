@@ -57,7 +57,7 @@ func (e *Engine) startHumanCleanup(ctx context.Context) {
 			case batch := <-jobs:
 				result := remove(batch.Node, batch.Serials)
 				for _, serial := range batch.Serials {
-					e.recordHumanDelivery(serial, "desktop", "cleanup_"+result.State, result.Error)
+					e.recordDesktopDelivery(serial, "cleanup_"+result.State, result.Error)
 				}
 			}
 		}
@@ -78,7 +78,7 @@ func (e *Engine) requestHumanCleanup(serials []uint64) {
 	case jobs <- batch:
 	default:
 		for _, serial := range serials {
-			e.recordHumanDelivery(serial, "desktop", "cleanup_failed", "notification cleanup queue is full or unavailable")
+			e.recordDesktopDelivery(serial, "cleanup_failed", "notification cleanup queue is full or unavailable")
 		}
 	}
 }
@@ -114,7 +114,7 @@ func (e *Engine) cleanupLateHumanPost(serial uint64) {
 		return nil
 	})
 	if err != nil {
-		e.recordHumanDelivery(serial, "desktop", "cleanup_failed", fmt.Sprintf("late posting check: %v", err))
+		e.recordDesktopDelivery(serial, "cleanup_failed", fmt.Sprintf("late posting check: %v", err))
 	}
 }
 

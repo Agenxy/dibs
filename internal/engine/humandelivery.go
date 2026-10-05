@@ -129,7 +129,7 @@ func (e *Engine) askHumanDesktop(n HumanNotice, ask func(humanask.Message) (huma
 			if state == "posted" {
 				e.setHumanPresentation(n.Serial, e.humanPresentation(), true)
 			}
-			e.recordHumanDelivery(n.Serial, "desktop", state, "")
+			e.recordDesktopDelivery(n.Serial, state, "")
 			if state == "posted" {
 				e.cleanupLateHumanPost(n.Serial)
 			}
@@ -145,7 +145,7 @@ func (e *Engine) askHumanDesktop(n HumanNotice, ask func(humanask.Message) (huma
 		},
 	})
 	if err != nil {
-		e.recordHumanDelivery(n.Serial, "desktop", "failed", err.Error())
+		e.recordDesktopDelivery(n.Serial, "failed", err.Error())
 		e.report(err)
 		return
 	}
@@ -154,8 +154,8 @@ func (e *Engine) askHumanDesktop(n HumanNotice, ask func(humanask.Message) (huma
 	}
 }
 
-func (e *Engine) recordHumanDelivery(serial uint64, source, state, failure string) bool {
-	return e.recordHumanReceipt(serial, source, notify.ReceiptData{State: state}, failure)
+func (e *Engine) recordDesktopDelivery(serial uint64, state, failure string) bool {
+	return e.recordHumanReceipt(serial, "desktop", notify.ReceiptData{State: state}, failure)
 }
 
 func (e *Engine) recordHumanReceipt(serial uint64, source string, data notify.ReceiptData, failure string) bool {
@@ -262,7 +262,9 @@ func (e *Engine) ReportHumanDelivery(ctx context.Context, serial uint64, source,
 
 // ReportHumanReceipt carries the posting source's versioned native observation.
 // Unknown metadata never erases OS acceptance or answers/grants human mail.
-func (e *Engine) ReportHumanReceipt(ctx context.Context, serial uint64, source string, data notify.ReceiptData, failure string) error {
+func (e *Engine) ReportHumanReceipt(
+	ctx context.Context, serial uint64, source string, data notify.ReceiptData, failure string,
+) error {
 	state := data.State
 	if err := validateHumanReceipt(source, state, failure); err != nil {
 		return err

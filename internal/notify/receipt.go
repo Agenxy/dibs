@@ -18,6 +18,7 @@ type Receipt func(state string)
 // Legacy callbacks still receive states; they never invent settings evidence.
 type DeliveryReceipt func(ReceiptData)
 
+// ReceiptData separates OS acceptance, requested level and native settings.
 type ReceiptData struct {
 	State             string    `json:"state"`
 	Settings          *Settings `json:"settings"`
@@ -31,6 +32,7 @@ func stateReceipt(receipt Receipt) DeliveryReceipt {
 	return func(data ReceiptData) { receipt(data.State) }
 }
 
+// Normalized returns a bounded independent observation from a helper or relay.
 func (r ReceiptData) Normalized() ReceiptData {
 	r.Settings = r.Settings.Normalized()
 	r.InterruptionLevel = enum(r.InterruptionLevel, "active", "timeSensitive")

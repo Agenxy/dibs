@@ -1278,13 +1278,15 @@ original route (or unknown after restart) without another alert.
 Each source additionally reports `settings` (version1 native authorization,
 alert style, alerts, Notification Center, lock screen, Time Sensitive and Focus
 observations), the helper's requested `interruption_level`, `shown:
-"unconfirmed"`, and a corrective `hint`. Old, unavailable or malformed helper
+"unconfirmed"`, and an actionable corrective `hint` when there is one.
+Old, unavailable or malformed helper
 metadata is `settings: null`, never evidence that presentation is quiet or fine.
 The settings come from the actual posting invocation and survive its later
 state-only dismissal receipt; different sources keep their own observations.
 Banners on a request recommend System Settings > Notifications > Dibs > Alerts,
 because the Approve controls should persist. Disabled Time Sensitive has its own
-setting hint; not-supported says this build is not provisioned for it. A requested
+setting hint. Structured not-supported and unobservable Focus remain in the
+receipt, without repeating standing informational prose on each message. A requested
 timeSensitive level does not establish the entitlement or permission to bypass
 Focus. Requests/questions with controls request timeSensitive; notify is active;
 none requests critical interruption.
@@ -1292,6 +1294,10 @@ none requests critical interruption.
 settings changes. The helper's existing `--status` mode accepts the additive
 `DIBS_NOTIFY_SETTINGS_V1=1` environment capability and returns versioned JSON;
 old helpers ignore it and their word-only reply retains unknown settings.
+Doctor warns for actionable presentation settings. Unprovisioned Time Sensitive
+and unobservable Focus share one informational note, including
+`time-sensitive: not supported (this build is not provisioned for it)`; neither
+creates a standing warning by itself.
 Public Focus status is read only when access is already authorized and the
 observation is non-nil. Otherwise it is explicitly not observable; no prompt is
 requested and absence never implies Focus is off or a notification was visible.

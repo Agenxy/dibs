@@ -19,6 +19,7 @@ type Settings struct {
 	Focus                     FocusStatus `json:"focus"`
 }
 
+// FocusStatus reports only an observation the native helper was allowed to read.
 type FocusStatus struct {
 	Authorization string `json:"authorization"`
 	Observable    bool   `json:"observable"`
@@ -66,12 +67,12 @@ func (s *Settings) Normalized() *Settings {
 	return &copy
 }
 
-// Hints diagnoses settings only. Even an alert with Focus off is not proof that
-// a particular notification appeared or that its person read it.
+// Hints names only settings the person can act on. Standing capability limits
+// belong in doctor's Information, rather than being repeated on every receipt.
 func (s *Settings) Hints(action bool) string {
 	s = s.Normalized()
 	if s == nil {
-		return "Notification settings are unknown; the notifier supplied no current settings evidence. Upgrade the Dibs notifier to measure them; posting does not confirm visibility."
+		return ""
 	}
 	var hints []string
 	if s.AuthorizationStatus == "denied" || s.AuthorizationStatus == "not-determined" {
@@ -80,34 +81,52 @@ func (s *Settings) Hints(action bool) string {
 	if s.AlertStyle == "none" || s.AlertSetting == "disabled" {
 		hints = append(hints, "Dibs has no visible alert style. Choose System Settings > Notifications > Dibs > Alerts.")
 	} else if action && s.AlertStyle == "banner" {
-		hints = append(hints, "Dibs uses banners, which vanish after a few seconds. For requests with Approve buttons, choose System Settings > Notifications > Dibs > Alerts.")
+		hints = append(hints, "Dibs uses banners, which vanish after a few seconds. For requests with Approve buttons, "+
+			"choose System Settings > Notifications > Dibs > Alerts.")
 	}
 	if s.NotificationCenterSetting == "disabled" {
-		hints = append(hints, "Enable Notification Center in System Settings > Notifications > Dibs to retain notifications there.")
+		hints = append(hints, "Enable Notification Center in System Settings > Notifications > Dibs "+
+			"to retain notifications there.")
 	}
 	if s.LockScreenSetting == "disabled" {
-		hints = append(hints, "Lock-screen notifications are disabled for Dibs; enable them in System Settings > Notifications > Dibs if wanted.")
+		hints = append(hints, "Lock-screen notifications are disabled for Dibs; "+
+			"enable them in System Settings > Notifications > Dibs if wanted.")
 	}
-	switch s.TimeSensitiveSetting {
-	case "disabled":
-		if action {
-			hints = append(hints, "Time Sensitive notifications are disabled. Enable Time Sensitive in System Settings > Notifications > Dibs if requests should be allowed through Focus.")
-		}
-	case "not-supported":
-		hints = append(hints, "time-sensitive: not supported (this build is not provisioned for it). Requests cannot rely on time-sensitive delivery through Focus.")
-	case "unknown":
-		if action {
-			hints = append(hints, "Time Sensitive notification permission is unknown; requesting it does not prove it is available.")
-		}
+	if action && s.TimeSensitiveSetting == "disabled" {
+		hints = append(hints, "Time Sensitive notifications are disabled. "+
+			"Enable Time Sensitive in System Settings > Notifications > Dibs "+
+			"if requests should be allowed through Focus.")
 	}
-	if !s.Focus.Observable {
-		hints = append(hints, "Focus is not observable (authorization "+s.Focus.Authorization+"); no permission was requested, and missing evidence does not mean Focus is off.")
-	} else if *s.Focus.IsFocused {
-		hints = append(hints, "Focus is on and may hold notifications. Check Dibs in System Settings > Focus; posting does not confirm visibility.")
+	if s.Focus.Observable && *s.Focus.IsFocused {
+		hints = append(hints, "Focus is on and may hold notifications. "+
+			"Check Dibs in System Settings > Focus; posting does not confirm visibility.")
 	}
 	return strings.Join(hints, " ")
 }
 
+// Information explains standing limitations once in doctor, without a warning.
+func (s *Settings) Information() string {
+	s = s.Normalized()
+	if s == nil {
+		return "Notification settings are unknown; the notifier supplied no current settings evidence. " +
+			"Upgrade the Dibs notifier to measure them; posting does not confirm visibility."
+	}
+	var info []string
+	if s.TimeSensitiveSetting == "not-supported" {
+		info = append(info, "time-sensitive: not supported (this build is not provisioned for it). "+
+			"Requests cannot rely on time-sensitive delivery through Focus.")
+	} else if s.TimeSensitiveSetting == "unknown" {
+		info = append(info, "Time Sensitive notification permission is unknown; "+
+			"requesting it does not prove it is available.")
+	}
+	if !s.Focus.Observable {
+		info = append(info, "Focus is not observable (authorization "+s.Focus.Authorization+"); "+
+			"no permission was requested, and missing evidence does not mean Focus is off.")
+	}
+	return strings.Join(info, " ")
+}
+
+// Summary reports the settings the helper actually observed.
 func (s *Settings) Summary() string {
 	s = s.Normalized()
 	if s == nil {
@@ -121,8 +140,9 @@ func (s *Settings) Summary() string {
 // NeedsAttention is about the measured settings, never about actual visibility.
 func (s *Settings) NeedsAttention() bool {
 	s = s.Normalized()
-	return s == nil || s.AlertStyle != "alert" ||
-		s.AlertSetting != "enabled" || s.NotificationCenterSetting == "disabled" ||
-		s.LockScreenSetting == "disabled" || s.TimeSensitiveSetting != "enabled" ||
-		(s.Focus.Observable && *s.Focus.IsFocused)
+	return s != nil && (s.AuthorizationStatus == "denied" || s.AuthorizationStatus == "not-determined" ||
+		s.AlertStyle == "banner" || s.AlertStyle == "none" ||
+		s.AlertSetting == "disabled" || s.NotificationCenterSetting == "disabled" ||
+		s.LockScreenSetting == "disabled" || s.TimeSensitiveSetting == "disabled" ||
+		(s.Focus.Observable && *s.Focus.IsFocused))
 }

@@ -149,6 +149,7 @@ func AskWithReceipt(title, body string, receipt Receipt, buttons ...string) (str
 	return askWithID("", title, body, receipt, buttons...)
 }
 
+// AskWithDeliveryReceipt retains the posting helper's native settings evidence.
 func AskWithDeliveryReceipt(title, body string, receipt DeliveryReceipt, buttons ...string) (string, error) {
 	return askWithDeliveryID("", title, body, receipt, buttons...)
 }
@@ -162,7 +163,10 @@ func AskMessage(node string, serial uint64, title, body string, receipt Receipt,
 	return askWithID(id, title, body, receipt, buttons...)
 }
 
-func AskMessageWithDeliveryReceipt(node string, serial uint64, title, body string, receipt DeliveryReceipt, buttons ...string) (string, error) {
+// AskMessageWithDeliveryReceipt keys settings evidence to the board and serial.
+func AskMessageWithDeliveryReceipt(
+	node string, serial uint64, title, body string, receipt DeliveryReceipt, buttons ...string,
+) (string, error) {
 	id, err := MessageID(node, serial)
 	if err != nil {
 		return "", err
@@ -606,6 +610,10 @@ func ReachWithSettings() (ok bool, why string, settings *Settings) {
 		return false, "Dibs.app is not installed beside the binary, so notifications " +
 			"would be posted by osascript under Script Editor's name, without buttons", nil
 	}
+	return nativeReachSettings(h)
+}
+
+func nativeReachSettings(h string) (bool, string, *Settings) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	// #nosec G204 -- h is resolved beside this binary; --status is a constant.
@@ -615,7 +623,7 @@ func ReachWithSettings() (ok bool, why string, settings *Settings) {
 	cmd.Env = append(os.Environ(), "DIBS_NOTIFY_SETTINGS_V1=1")
 	out, err := cmd.Output()
 	if settings := DecodeSettings(out); settings != nil {
-		why := settings.Summary() + " " + settings.Hints(true)
+		why := strings.TrimSpace(settings.Summary() + " " + settings.Information() + " " + settings.Hints(true))
 		if err != nil {
 			return false, why, settings
 		}
@@ -624,7 +632,7 @@ func ReachWithSettings() (ok bool, why string, settings *Settings) {
 	}
 	switch strings.TrimSpace(string(out)) {
 	case "authorized":
-		return true, (*Settings)(nil).Hints(true) + " " + focusDoctor(), nil
+		return true, (*Settings)(nil).Information() + " " + focusDoctor(), nil
 	case "denied":
 		return false, "notifications are turned off for Dibs in System Settings", nil
 	case "not-determined":
@@ -639,7 +647,7 @@ func ReachWithSettings() (ok bool, why string, settings *Settings) {
 	if err != nil {
 		return false, "the notifier could not be asked: " + err.Error(), nil
 	}
-	return false, "the notifier gave no usable settings answer. " + (*Settings)(nil).Hints(true), nil
+	return false, "the notifier gave no usable settings answer. " + (*Settings)(nil).Information(), nil
 }
 
 // focusOn returns the active Focus mode's identifier, or "".

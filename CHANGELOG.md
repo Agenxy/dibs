@@ -94,8 +94,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   or relay source retains its posting helper's versioned authorization, alert
   style, Notification Center, lock-screen, Time Sensitive and already-authorized
   Focus observations. Banners and silent styles recommend persistent Alerts for
-  approval controls; an unprovisioned build reports Time Sensitive unavailable.
-  Doctor reads the same settings without posting or requesting permission.
+  approval controls. Doctor reads the same settings without posting or requesting
+  permission; it warns about actionable settings and combines unprovisioned
+  Time Sensitive and unobservable Focus into one informational note. Receipts
+  retain those structured limits without repeating standing hints on every message.
   Older/malformed helper metadata stays unknown, and every source's visibility
   stays unconfirmed even when the OS accepted posting. Signing and app identity
   remain unchanged; provisioning and its settings migration are a follow-up

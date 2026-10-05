@@ -2,6 +2,7 @@ package main
 
 import (
 	"runtime"
+	"strings"
 
 	"github.com/agenxy/dibs/internal/notify"
 	"github.com/agenxy/dibs/internal/ui"
@@ -17,11 +18,13 @@ func checkNotificationRoute(ok, note reportFn, warn fixFn) {
 	// state. Neither can establish whether a banner was actually seen.
 	if reaches, why, settings := notify.ReachWithSettings(); reaches {
 		ok("Dibs can post native notifications with action buttons; posting does not confirm they were seen")
-		if runtime.GOOS == "darwin" && settings.NeedsAttention() {
-			if summary := settings.Summary(); summary != "" {
-				note(summary)
+		if runtime.GOOS == "darwin" {
+			if info := strings.TrimSpace(settings.Summary() + " " + settings.Information()); info != "" {
+				note(info)
 			}
-			warn("Dibs notification settings may hide or shorten approvals", settings.Hints(true))
+			if settings.NeedsAttention() {
+				warn("Dibs notification settings may hide or shorten approvals", settings.Hints(true))
+			}
 		} else if why != "" {
 			note(why)
 		}

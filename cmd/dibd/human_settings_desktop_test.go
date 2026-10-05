@@ -75,6 +75,9 @@ func TestDesktopSettingsComeFromThePostingHelper(t *testing.T) {
 						if kind == core.MsgRequest && !strings.Contains(r.Hint, "System Settings > Notifications > Dibs > Alerts") {
 							t.Fatalf("approval banner has no persistent-alert hint: %s", raw)
 						}
+						if kind == core.MsgNotify && r.Hint != "" {
+							t.Fatalf("notify repeated a standing capability/Focus hint: %s", raw)
+						}
 						break
 					}
 					if time.Now().After(deadline) {
