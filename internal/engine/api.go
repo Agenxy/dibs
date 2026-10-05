@@ -54,7 +54,7 @@ func (e *Engine) send(ctx context.Context, req request) (core.Result, error) {
 		req.complete()
 		return nil, err
 	}
-	if !req.attempt.beginSubmission() {
+	if !req.attempt.maySubmit() {
 		req.complete()
 		return nil, context.Canceled
 	}

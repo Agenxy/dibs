@@ -433,6 +433,81 @@ func TestPreSubmissionTimeoutIsNotSent(t *testing.T) {
 	}
 }
 
+// After NOT_SENT, releasing the stalled pre-writer worker must not turn the
+// negative result into a late message. Exercise both MCP envelopes over HTTP.
+func TestLateWorkerCannotApplyAfterNotSentThroughMCP(t *testing.T) {
+	for _, version := range []string{"2026-07-28", "2025-11-25"} {
+		t.Run(version, func(t *testing.T) {
+			srv, gate, _ := sendReceiptServer(t, t.TempDir())
+			sender := sendReceiptSetup(t, srv, version)
+			before, err := gate.mcp.eng.EventsSince(context.Background(), "", 0, true)
+			if err != nil {
+				t.Fatal("setup events:", err)
+			}
+			serial, ok := before["serial"].(uint64)
+			if !ok {
+				t.Fatalf("setup serial missing: %v", before)
+			}
+			entered := make(chan struct{})
+			release := make(chan struct{})
+			var once sync.Once
+			unblock := func() { once.Do(func() { close(release) }) }
+			gate.mcp.bridges.probe = func(int, string) (harnessenv.AppIncarnation, bool, error) {
+				close(entered)
+				<-release
+				return harnessenv.AppIncarnation{}, false, nil
+			}
+			short := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				ctx, cancel := context.WithTimeout(r.Context(), 100*time.Millisecond)
+				defer cancel()
+				gate.mcp.ServeHTTP(w, r.WithContext(ctx))
+			}))
+			t.Cleanup(func() {
+				unblock()
+				short.Close()
+			})
+			meta := map[string]any{
+				BridgePIDMetaKey: 90125, BridgeStartMetaKey: "Mon Oct 5 02:00:02 2026",
+				HostMetaKey: gate.mcp.eng.HostID(),
+			}
+			answer := make(chan sendReceiptReply, 1)
+			go func() {
+				answer <- sendReceiptHTTPMeta(context.Background(), short, version, map[string]any{
+					"token": sender, "to": "worker", "type": "notify", "body": "must not arrive late",
+				}, meta)
+			}()
+			select {
+			case <-entered:
+			case reply := <-answer:
+				t.Fatalf("setup: observation did not block: %+v", reply)
+			case <-time.After(time.Second):
+				t.Fatal("setup: observation did not start")
+			}
+			reply := <-answer
+			if reply.err != nil || !reply.isError || reply.payload["code"] != "E_SEND_NOT_SENT" {
+				t.Fatalf("pre-writer timeout did not prove non-send: %+v", reply)
+			}
+			events, cancelEvents := gate.mcp.eng.Subscribe(serial)
+			defer cancelEvents()
+			unblock()
+			// Watch the writer after releasing the worker: a late message is
+			// observable through the same event stream clients receive.
+			select {
+			case event := <-events:
+				t.Fatalf("NOT_SENT published a late event: %v", event)
+			case <-time.After(250 * time.Millisecond):
+			}
+			after, err := gate.mcp.eng.EventsSince(context.Background(), "", serial, true)
+			if err != nil || after["serial"] != serial {
+				t.Fatalf("NOT_SENT changed serial after late worker: before=%d after=%v err=%v", serial, after, err)
+			}
+			if evs, _ := after["events"].([]core.Event); len(evs) != 0 {
+				t.Fatalf("NOT_SENT published events after late worker: %v", evs)
+			}
+		})
+	}
+}
+
 type sendTimingLog struct {
 	mu sync.Mutex
 	b  bytes.Buffer
@@ -521,7 +596,11 @@ func TestSlowSendNamesStageAtInfoWithoutPrivateFields(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("setup: send did not enter ledger gate")
 	}
-	time.Sleep(1200 * time.Millisecond)
+	select {
+	case reply := <-answer:
+		t.Fatalf("setup: send escaped slow ledger gate: %+v", reply)
+	case <-time.After(1200 * time.Millisecond):
+	}
 	gate.unblock()
 	if reply := <-answer; reply.err != nil || reply.isError || reply.payload["ok"] != true {
 		t.Fatalf("slow but accepted send failed: %+v", reply)

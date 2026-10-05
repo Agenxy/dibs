@@ -13,18 +13,18 @@ type sendReceiptKey struct{}
 
 type sendAttemptKey struct{}
 
-// SendAttempt records only timings and the handoff boundary. A bounded caller
-// may refuse an attempt that has not even begun submission; once submission
-// starts, only a durable receipt can settle its outcome.
+// SendAttempt records only timings and the writer admission boundary. The
+// deadline and writer decide admission under one lock: either the writer owns
+// the request, or the deadline closes the gate and the writer must discard it.
 type SendAttempt struct {
-	mu         sync.Mutex
-	submitting bool
-	abandoned  bool
-	started    map[string]time.Time
-	durations  map[string]time.Duration
+	mu        sync.Mutex
+	admitted  bool
+	abandoned bool
+	started   map[string]time.Time
+	durations map[string]time.Duration
 }
 
-func (a *SendAttempt) beginSubmission() bool {
+func (a *SendAttempt) maySubmit() bool {
 	if a == nil {
 		return true
 	}
@@ -33,19 +33,34 @@ func (a *SendAttempt) beginSubmission() bool {
 	if a.abandoned {
 		return false
 	}
-	a.submitting = true
 	return true
 }
 
-// AbandonBeforeSubmission is the only negative receipt the bounded transport
-// can prove. A racing or accepted handoff remains unknown without persistence.
-func (a *SendAttempt) AbandonBeforeSubmission() bool {
+// admitToWriter is the writer's first act after receiving a request. It makes
+// ownership atomic with the deadline's abandonment decision.
+func (a *SendAttempt) admitToWriter() bool {
+	if a == nil {
+		return true
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.abandoned {
+		return false
+	}
+	a.admitted = true
+	return true
+}
+
+// AbandonBeforeWriter is the only negative receipt the bounded transport can
+// prove. If the writer got there first, the result remains uncertain until a
+// durable receipt arrives.
+func (a *SendAttempt) AbandonBeforeWriter() bool {
 	if a == nil {
 		return false
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.submitting {
+	if a.admitted {
 		return false
 	}
 	a.abandoned = true

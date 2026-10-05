@@ -167,10 +167,10 @@ filesystem writes (§9). It is a **coordination generation**, not a fencing toke
     unavailable. Acceptance confirms neither wake nor recipient visibility.
     Both the wake-route note and the unanswered-request note are computed in
     the accepting writer request, not through later writer queries.
-    If the budget expires before writer submission begins, the attempt is
-    atomically abandoned and returns `E_SEND_NOT_SENT` with a resend hint; its
-    late worker cannot submit it. A submission racing the deadline remains
-    uncertain without a durable receipt. If acceptance is still unknown at
+    If the budget expires before writer admission, the attempt is atomically
+    abandoned and returns `E_SEND_NOT_SENT` with a resend hint; a request that
+    arrives late at the writer is discarded. Writer admission racing the
+    deadline remains uncertain without a durable receipt. If acceptance is still unknown at
     the budget, the MCP error payload is
     `E_SEND_OUTCOME_UNKNOWN` with the original `op_id` and a hint to retry the
     exact same id and payload within the existing dedup bounds. Without an id,

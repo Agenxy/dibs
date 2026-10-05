@@ -120,10 +120,10 @@ func boundedSendResult(params json.RawMessage, receipts <-chan core.Result, atte
 		} `json:"arguments"`
 	}
 	_ = json.Unmarshal(params, &call)
-	if attempt.AbandonBeforeSubmission() {
+	if attempt.AbandonBeforeWriter() {
 		return sendTextResult(core.Result{
 			"code": "E_SEND_NOT_SENT", "op_id": call.Arguments.OpID,
-			"message": "The send timed out before submission to the writer; no message was sent.",
+			"message": "The send timed out before writer admission; no message was sent.",
 			"hint":    "Resend the payload. Supply an op_id so any later uncertain outcome can be retried safely with the same id and payload.",
 		}, true)
 	}
