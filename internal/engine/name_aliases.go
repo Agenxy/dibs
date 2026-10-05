@@ -85,8 +85,10 @@ func (e *Engine) finishNonceName(plan *nonceNameRecovery, res core.Result, now t
 	l := e.state.Agents[plan.id]
 	if l.Name != plan.name {
 		token, _ := res["token"].(string)
-		update := &core.Op{Kind: core.OpUpdate, Token: token, Name: plan.name,
-			Description: l.Description, V7Semantics: true}
+		update := &core.Op{
+			Kind: core.OpUpdate, Token: token, Name: plan.name,
+			Description: l.Description, V7Semantics: true,
+		}
 		updated, err := e.applyAndLedger(update, now)
 		if err != nil {
 			return err
