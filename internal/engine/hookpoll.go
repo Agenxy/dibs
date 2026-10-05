@@ -59,18 +59,19 @@ func (e *Engine) hookOutput(out core.Result, strict bool, event string) core.Res
 			// the key this event does accept (addDelivery sets both), so
 			// nothing is lost and saying so would be a false alarm.
 			delete(out, k)
-		case k == "agent":
-			// Resolution diagnosis, never delivery text. A normal empty Stop
-			// has this field, so INFO made successful hooks look like failures.
-			slog.Debug("strict hook omits agent resolution diagnosis", "agent", out[k])
+		case k == "agent" || k == "queued":
+			// Resolution and deliberate deferral are diagnoses, not delivery
+			// text. Held information still reaches the next activation; INFO
+			// made a successful hook look as though it had lost that news.
+			slog.Debug("strict hook omits Dibs diagnosis",
+				"event", event, "field", k, "value", out[k])
 			delete(out, k)
 		default:
-			// Logged, not merely dropped, and at a level the daemon actually
-			// emits: rare (only when news existed and could not be carried)
-			// and exactly what somebody debugging silence needs.
+			// Unknown unsupported fields remain visible at INFO. "field"
+			// names a JSON member; "key" would be redacted as a credential.
 			slog.Info("dropped from a strict hook response: the caller's schema "+
 				"cannot carry it, and it is not nothing",
-				"key", k, "value", out[k])
+				"event", event, "field", k, "value", out[k])
 			delete(out, k)
 		}
 	}

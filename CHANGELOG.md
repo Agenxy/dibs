@@ -66,6 +66,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   drains a dormant thread's queue but can briefly activate ChatGPT. Human
   decision windows remain button-only; Claude recovery keeps its away policy.
 
+- **Strict hooks do not report deliberate deferral as lost information.**
+  Agent-resolution and queued-update diagnoses are Debug-level; retained
+  information still reaches the next activation. Unknown unsupported fields
+  stay visible at Info, naming the hook event and field without an attribute
+  that the credential redactor would hide. Hook payloads are unchanged.
+
 - **Upgrades do not replay historical sender progress.** The recorded upgrade
   read cutoff now covers sender progress as well as recipient reviews, the
   classes whose old reads were not persisted. Genuinely unread verdicts and
