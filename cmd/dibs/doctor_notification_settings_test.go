@@ -18,6 +18,42 @@ import (
 	"github.com/agenxy/dibs/internal/humanask"
 )
 
+// The private copied test binary is the helper, requiring no interpreter or
+// PATH dependency on the hosted Mac. The marker proves the real subprocess ran.
+func notificationSettingsHelper() int {
+	if os.Getenv("DIBS_SETTINGS_HELPER_MODE") == "doctor" {
+		if len(os.Args) != 2 || os.Args[1] != "--status" {
+			return 3 // A new positional flag could post on an old helper.
+		}
+		if err := os.WriteFile(os.Getenv("DIBS_SETTINGS_HELPER_MARKER"), []byte("status"), 0o600); err != nil {
+			return 4
+		}
+		mode := os.Getenv("DIBS_SETTINGS_GUARD_MODE")
+		switch {
+		case mode == "old" || os.Getenv("DIBS_NOTIFY_SETTINGS_V1") != "1":
+			_, _ = os.Stdout.WriteString("authorized\n")
+		case mode == "malformed":
+			_, _ = os.Stdout.WriteString(`{"version":1,"alert_style":42}`)
+		default:
+			_, _ = os.Stdout.WriteString(os.Getenv("DIBS_SETTINGS_GUARD_VALUE"))
+		}
+		return 0
+	}
+	if len(os.Args) != 7 || os.Getenv("DIBS_NOTIFY_ID") != "dibs.msg.fixture-node.7" {
+		return 3
+	}
+	if err := os.WriteFile(os.Getenv("DIBS_SETTINGS_HELPER_MARKER"), []byte("posted"), 0o600); err != nil {
+		return 4
+	}
+	const receipt = `{"state":"posted","settings":{"version":1,"authorization_status":"authorized","alert_style":"banner","alert_setting":"enabled","notification_center_setting":"enabled","lock_screen_setting":"enabled","time_sensitive_setting":"not-supported","focus":{"authorization":"not-determined","observable":false}},"interruption_level":"timeSensitive"}`
+	if err := os.WriteFile(os.Getenv("DIBS_NOTIFY_RECEIPT"), []byte(receipt), 0o600); err != nil {
+		return 5
+	}
+	time.Sleep(300 * time.Millisecond)
+	_, _ = os.Stdout.WriteString("Later\n")
+	return 0
+}
+
 // Drive doctor's actual notification check, installed-helper lookup and status
 // subprocess. An old helper must never be given an unknown positional flag.
 func TestDoctorMeasuresNativeNotificationSettings(t *testing.T) {
@@ -25,6 +61,7 @@ func TestDoctorMeasuresNativeNotificationSettings(t *testing.T) {
 		t.Skip("native macOS notification settings")
 	}
 	if os.Getenv("DIBS_SETTINGS_DOCTOR_DRIVER") == "1" {
+		t.Setenv("DIBS_SETTINGS_HELPER_MODE", "doctor")
 		for _, tc := range []struct {
 			name, style, sensitive, want string
 			warn                         bool
@@ -49,12 +86,17 @@ func TestDoctorMeasuresNativeNotificationSettings(t *testing.T) {
 				}
 				t.Setenv("DIBS_SETTINGS_GUARD_VALUE", string(raw))
 				t.Setenv("DIBS_SETTINGS_GUARD_MODE", tc.style)
+				marker := filepath.Join(t.TempDir(), "helper-executed")
+				t.Setenv("DIBS_SETTINGS_HELPER_MARKER", marker)
 				var lines []string
 				line := func(s string) { lines = append(lines, s) }
 				warned := false
 				notes := 0
 				checkNotificationRoute(line, func(s string) { notes++; line(s) },
 					func(what, fix string) { warned = true; lines = append(lines, what, fix) })
+				if data, err := os.ReadFile(marker); err != nil || string(data) != "status" {
+					t.Fatalf("setup: actual private status helper did not execute: %s %v", data, err)
+				}
 				got := strings.Join(lines, "\n")
 				if warned != tc.warn {
 					t.Fatalf("actual doctor warning=%t, want %t: %s", warned, tc.warn, got)
@@ -91,23 +133,7 @@ func TestDoctorMeasuresNativeNotificationSettings(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(helper), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	const stub = `#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.11"
-# dependencies = []
-# ///
-import os, sys
-if sys.argv[1:] != ["--status"]:
-    sys.exit(3)  # A new positional flag could post on an old helper.
-mode = os.getenv("DIBS_SETTINGS_GUARD_MODE")
-if mode == "old" or os.getenv("DIBS_NOTIFY_SETTINGS_V1") != "1":
-    print("authorized")
-elif mode == "malformed":
-    print('{"version":1,"alert_style":42}')
-else:
-    print(os.environ["DIBS_SETTINGS_GUARD_VALUE"])
-`
-	if err := os.WriteFile(helper, []byte(stub), 0o700); err != nil {
+	if err := os.WriteFile(helper, bytes, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -129,6 +155,9 @@ func TestRelayCarriesThePostingHelpersActualSettings(t *testing.T) {
 	if os.Getenv("DIBS_SETTINGS_RELAY_DRIVER") == "1" {
 		t.Setenv("DIBS_NOTIFY", "")
 		t.Setenv("DIBS_DIR", t.TempDir())
+		t.Setenv("DIBS_SETTINGS_HELPER_MODE", "relay")
+		marker := filepath.Join(t.TempDir(), "helper-executed")
+		t.Setenv("DIBS_SETTINGS_HELPER_MARKER", marker)
 		var mu sync.Mutex
 		var receipts []map[string]any
 		mux := http.NewServeMux()
@@ -150,6 +179,9 @@ func TestRelayCarriesThePostingHelpersActualSettings(t *testing.T) {
 		r := newRelay(srv.URL, relayState{Key: "fixture-key", Node: "fixture-node"}, &fakeSigner{}, humanask.Ask)
 		r.session = "fixture-session"
 		r.handle(engine.HumanNotice{Serial: 7, Type: "request", From: "sender", Body: "private relay settings fixture"})
+		if data, err := os.ReadFile(marker); err != nil || string(data) != "posted" {
+			t.Fatalf("setup: actual private posting helper did not execute: %s %v", data, err)
+		}
 		mu.Lock()
 		defer mu.Unlock()
 		for _, data := range receipts {
@@ -181,21 +213,7 @@ func TestRelayCarriesThePostingHelpersActualSettings(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(helper), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	const stub = `#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.11"
-# dependencies = []
-# ///
-import json, os, sys, time
-if len(sys.argv)!=7 or os.getenv("DIBS_NOTIFY_ID")!="dibs.msg.fixture-node.7":
-    sys.exit(3)
-settings={"version":1,"authorization_status":"authorized","alert_style":"banner","alert_setting":"enabled","notification_center_setting":"enabled","lock_screen_setting":"enabled","time_sensitive_setting":"not-supported","focus":{"authorization":"not-determined","observable":False}}
-with open(os.environ["DIBS_NOTIFY_RECEIPT"],"w") as f:
-    json.dump({"state":"posted","settings":settings,"interruption_level":"timeSensitive"},f)
-time.sleep(0.3)
-print("Later")
-`
-	if err := os.WriteFile(helper, []byte(stub), 0o700); err != nil {
+	if err := os.WriteFile(helper, bytes, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
