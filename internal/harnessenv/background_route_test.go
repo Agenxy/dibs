@@ -45,6 +45,9 @@ func TestBackgroundPairContentionNeverRecordsAnAttempt(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, "app-opens", "background-pair.lock")
+	previousCache := backgroundPairCacheDir
+	backgroundPairCacheDir = func() (string, error) { return "", errors.New("fixture cache unavailable") }
+	t.Cleanup(func() { backgroundPairCacheDir = previousCache })
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		t.Fatal(err)
@@ -74,6 +77,9 @@ func TestBackgroundPairDefersAndOpensAfterRelease(t *testing.T) {
 		t.Fatal(err)
 	}
 	f, err := os.OpenFile(filepath.Join(dir, "app-opens", "background-pair.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	previousCache := backgroundPairCacheDir
+	backgroundPairCacheDir = func() (string, error) { return "", errors.New("fixture cache unavailable") }
+	t.Cleanup(func() { backgroundPairCacheDir = previousCache })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,5 +113,50 @@ func TestBackgroundPairDefersAndOpensAfterRelease(t *testing.T) {
 	}
 	if len(opens) != 1 {
 		t.Fatalf("pair opened %d times", len(opens))
+	}
+}
+
+func TestBackgroundPairSerializesDifferentBoards(t *testing.T) {
+	cache, firstDir, secondDir := t.TempDir(), t.TempDir(), t.TempDir()
+	previousCache := backgroundPairCacheDir
+	backgroundPairCacheDir = func() (string, error) { return cache, nil }
+	t.Cleanup(func() { backgroundPairCacheDir = previousCache })
+	t.Setenv("DIBS_DIR", firstDir)
+	first, second := RealShower, RealShower
+	first.Holds = func(string) bool { return false }
+	second.Holds = first.Holds
+	secondOpens := 0
+	second.Open = func([]string) error { secondOpens++; return nil }
+	first.Open = func([]string) error {
+		t.Setenv("DIBS_DIR", secondDir)
+		opened, err := second.Show(ChatGPTOpenArgv("second-board"), "second-board")
+		if opened || !errors.Is(err, ErrAppOpenPairBusy) || secondOpens != 0 {
+			t.Fatalf("different boards overlapped their desktop pair: opened=%v calls=%d err=%v", opened, secondOpens, err)
+		}
+		files, err := filepath.Glob(filepath.Join(secondDir, "app-opens", "*.json"))
+		if err != nil || len(files) != 0 {
+			t.Fatalf("unattempted second-board open recorded: %q %v", files, err)
+		}
+		return nil
+	}
+	if opened, err := first.Show(ChatGPTOpenArgv("first-board"), "first-board"); err != nil || !opened {
+		t.Fatalf("first board open: opened=%v err=%v", opened, err)
+	}
+	if opened, err := second.Show(ChatGPTOpenArgv("second-board"), "second-board"); err != nil || !opened || secondOpens != 1 {
+		t.Fatalf("second board after release: opened=%v calls=%d err=%v", opened, secondOpens, err)
+	}
+}
+
+func TestUnavailableDesktopCachePreservesBoardWake(t *testing.T) {
+	previousCache := backgroundPairCacheDir
+	backgroundPairCacheDir = func() (string, error) { return "", errors.New("fixture cache unavailable") }
+	t.Cleanup(func() { backgroundPairCacheDir = previousCache })
+	t.Setenv("DIBS_DIR", t.TempDir())
+	s := RealShower
+	s.Holds = func(string) bool { return false }
+	opens := 0
+	s.Open = func([]string) error { opens++; return nil }
+	if opened, err := s.Show(ChatGPTOpenArgv("cache-unavailable"), "cache-unavailable"); err != nil || !opened || opens != 1 {
+		t.Fatalf("cache failure stranded board wake: opened=%v calls=%d err=%v", opened, opens, err)
 	}
 }

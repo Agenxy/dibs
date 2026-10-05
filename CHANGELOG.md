@@ -49,7 +49,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Background ChatGPT opens attempt to return focus to the previous app.**
   The native helper makes one bounded restoration attempt and yields to new
   input, an app change, or uncertain observations. Local daemon, bridge and
-  restart-sweep opens share one pair lock; contention does not record an open
+  restart-sweep opens share one user-desktop pair lock across local boards;
+  an unavailable user cache retains board-scoped locking with a diagnostic.
+  Contention does not record an open
   that never happened. Activation can still briefly show ChatGPT, and this
   does not restore its selected chat. Older helpers are detected harmlessly;
   when restoration support is unavailable, wakes retain the previous background

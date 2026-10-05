@@ -354,8 +354,13 @@ new command. An unavailable or unsupported helper retains the previous
 INFO diagnostic. This fallback keeps dormant agents wakeable during a mixed
 install. An uncertain receipt after an attempted native open is never retried.
 
-Local producers serialize each open/restore pair, across threads and processes
-sharing the local Dibs data directory. Contention does not advance the attempt
+Local producers serialize each open/restore pair across threads, processes and
+boards under the same user cache root: `os.UserCacheDir()/dibs/background-pair.lock`,
+independent of `DIBS_DIR`, with a private directory and file. An unavailable cache
+path falls back to the board's pair lock with an INFO diagnostic, preserving
+wakes while giving up cross-board serialization. Removing an active lock file
+can break serialization until outstanding pairs finish; cache cleanup is not a
+coordination receipt. Contention does not advance the attempt
 memo. The off-writer delivery path coalesces and waits up to ten seconds for
 that pair, plus any already-started bounded probe/helper call; if it cannot
 proceed, it reports the queued wake without claiming an open. No decision
