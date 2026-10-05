@@ -17,6 +17,7 @@ func TestPromptAppWakeReachesADormantThreadWhileThePersonIsActive(t *testing.T) 
 	}
 	for _, loaded := range []bool{false, true} {
 		t.Run(map[bool]string{false: "dormant", true: "loaded"}[loaded], func(t *testing.T) {
+			t.Setenv("DIBS_DIR", t.TempDir())
 			app := &fakeApp{holds: loaded}
 			app.install(t)
 			shower.Away = func() (bool, bool) { return false, true }
@@ -57,6 +58,7 @@ func TestRapidSuccessfulCommandWakesOpenAThreadOnlyOnce(t *testing.T) {
 	if _, err := os.Stat("/usr/bin/true"); err != nil {
 		t.Skip("no /usr/bin/true on this platform")
 	}
+	t.Setenv("DIBS_DIR", t.TempDir())
 	app := &fakeApp{}
 	app.install(t)
 	shower.Away = func() (bool, bool) { return true, true }
