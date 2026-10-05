@@ -86,11 +86,7 @@ func (s Shower) showChatGPT(_ []string, thread string) (bool, error) {
 		return false, saveAppOpen(path, memo)
 	}
 	now := time.Now().UTC()
-	elapsed := now.Sub(memo.OpenedAt)
-	newEpoch := state.Epoch != "" && memo.Epoch != "" && state.Epoch != memo.Epoch
-	unloaded := state.Known && memo.Loaded
-	if !memo.OpenedAt.IsZero() && (elapsed < appOpenRate ||
-		(elapsed < appOpenExpiry && !newEpoch && !unloaded)) {
+	if memo.suppresses(state, now) {
 		return false, nil
 	}
 	memo.OpenedAt, memo.Loaded = now, false
@@ -104,6 +100,21 @@ func (s Shower) showChatGPT(_ []string, thread string) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+func (m appOpenMemo) suppresses(state ThreadOwnership, now time.Time) bool {
+	if m.OpenedAt.IsZero() {
+		return false
+	}
+	elapsed := now.Sub(m.OpenedAt)
+	if elapsed < appOpenRate {
+		return true
+	}
+	if elapsed >= appOpenExpiry {
+		return false
+	}
+	newEpoch := state.Epoch != "" && m.Epoch != "" && state.Epoch != m.Epoch
+	return !newEpoch && !(state.Known && m.Loaded)
 }
 
 func readAppOpen(path string) (appOpenMemo, error) {
