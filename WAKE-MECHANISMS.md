@@ -336,7 +336,9 @@ thread. The native app tool's status view is unavailable to dibd; starting a
 separate app-server would inspect the wrong runtime and is not a substitute.
 A private per-thread memo/OS lock shared by the daemon and host bridge records
 an attempt before opening. Rapid wakes, even with a permanently failing probe,
-produce at most one open. A new message never resets it. An app incarnation
+produce at most one open. Corrupt JSON is repaired as an attempt made now,
+without opening this time, so expiry still recovers later wakes; other I/O
+errors refuse opening. A new message never resets it. An app incarnation
 change or observed loaded-to-unloaded transition can re-arm after the
 20-second rate limit; a fixed ten-minute expiry also re-arms, so an unknown
 probe cannot prevent all future wakes. No waiter or watcher is needed.

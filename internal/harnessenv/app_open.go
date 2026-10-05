@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -50,7 +51,7 @@ func (s Shower) ownership(thread string) ThreadOwnership {
 // The attempt is saved BEFORE opening, including failure, so a hung command
 // or failing ownership probe cannot recreate #304/7428955's repeated switching.
 func (s Shower) showChatGPT(_ []string, thread string) (bool, error) {
-	argv := ChatGPTOpenArgv(thread)
+	argv := chatGPTWakeArgv(thread)
 	if argv == nil {
 		return false, nil
 	}
@@ -107,7 +108,7 @@ func (s Shower) showChatGPT(_ []string, thread string) (bool, error) {
 
 func readAppOpen(path string) (appOpenMemo, error) {
 	var memo appOpenMemo
-	// #nosec G304 -- same derived path, bounded decode; a corrupt view fails closed.
+	// #nosec G304 -- same derived path, bounded read.
 	previous, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return memo, nil
@@ -116,8 +117,22 @@ func readAppOpen(path string) (appOpenMemo, error) {
 		return memo, err
 	}
 	defer func() { _ = previous.Close() }()
-	err = json.NewDecoder(io.LimitReader(previous, 4096)).Decode(&memo)
-	return memo, err
+	raw, err := io.ReadAll(io.LimitReader(previous, 4096))
+	if err != nil {
+		return memo, err // I/O failure is not evidence of corrupt content
+	}
+	if err := json.Unmarshal(raw, &memo); err == nil {
+		return memo, nil
+	}
+	// A corrupt derived view must not strand every future wake. Conservatively
+	// retain a fresh attempt now and repair it; this wake cannot open, and the
+	// normal expiry permits a later one. Still refuse if the repair cannot save.
+	memo = appOpenMemo{OpenedAt: time.Now().UTC()}
+	if err := saveAppOpen(path, memo); err != nil {
+		return memo, err
+	}
+	slog.Warn("rebuilt corrupt app-open memo; this wake will not reopen the thread", "path", path)
+	return memo, nil
 }
 
 func saveAppOpen(path string, memo appOpenMemo) error {

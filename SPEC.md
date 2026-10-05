@@ -898,8 +898,9 @@ the person is active. A loaded thread is never opened. A bounded one-second
 process probe observes only bundled Codex runtimes; failure is UNKNOWN, never
 positive unloaded evidence. A private per-thread memo and OS lock are shared
 by local daemon and host-bridge producers using the same board directory. The
-attempt is saved before opening, including failure. New messages do not reset
-it. App incarnation changes and an observed loaded-to-unloaded transition
+attempt is saved before opening, including failure. Corrupt JSON is replaced
+with a fresh attempt receipt and no open this time; I/O errors still refuse
+opening. New messages do not reset it. App incarnation changes and an observed loaded-to-unloaded transition
 re-arm an epoch, subject to a twenty-second per-thread rate limit; otherwise
 a ten-minute expiry permits another attempt so an unavailable probe cannot
 strand future wakes. Lost derived memos permit a bounded extra attempt and

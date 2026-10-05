@@ -200,11 +200,9 @@ var appProbeOutput = func(ctx context.Context, binary string, args ...string) ([
 	return cmd.Output()
 }
 
-// ChatGPTOpenArgv is the command that asks the ChatGPT app to open a thread:
-// the app's own codex:// route, which loads the thread in the app's runtime and
-// requests background opening, launching the app first if it is not running. That is
-// the thread waking in the app it was started in, which is the whole of what a
-// wake may do. Measured: an unloaded thread was held by the app within a second.
+// ChatGPTOpenArgv is the app's thread URL for an explicit relocation. Wakes
+// add the background option through chatGPTWakeArgv below. Both use the app's
+// own runtime, launching it if needed, never a headless agent process.
 //
 // nil for a thread id that is not one: the id is the agent's to state, and it
 // becomes part of a URL, so anything but the characters a thread id is made of
@@ -213,7 +211,15 @@ func ChatGPTOpenArgv(thread string) []string {
 	if !isThreadID(thread) {
 		return nil
 	}
-	return []string{"/usr/bin/open", "-g", "codex://threads/" + thread}
+	return []string{"/usr/bin/open", "codex://threads/" + thread}
+}
+
+func chatGPTWakeArgv(thread string) []string {
+	argv := ChatGPTOpenArgv(thread)
+	if argv == nil {
+		return nil
+	}
+	return []string{argv[0], "-g", argv[1]}
 }
 
 func isThreadID(s string) bool {
@@ -243,7 +249,7 @@ func OnlyDerived(surface string) bool { return surface == ChatGPTApp }
 func OpenArgv(surface, thread string) []string {
 	switch surface {
 	case ChatGPTApp:
-		return ChatGPTOpenArgv(thread)
+		return chatGPTWakeArgv(thread)
 	case ClaudeDesktop:
 		return ClaudeOpenArgv(ClaudeLocalSession(thread)) // reads the app's records: off the writer loop
 	}
