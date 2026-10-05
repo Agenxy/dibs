@@ -120,6 +120,18 @@ try:
 finally:
     pair_path.write_text(pair_body)
 
+try:
+    for label, before, after in [
+        ("cache-directory-permissions", "os.Chmod(cache, 0o700)", "os.Chmod(cache, 0o750)"),
+        ("pair-file-permissions", "pair.Chmod(0o600)", "pair.Chmod(0o640)"),
+    ]:
+        pair_path.write_text(replace_once(pair_body, before, after))
+        name = "TestBackgroundPairSerializesDifferentBoards"
+        run("mutation-" + label, "./internal/harnessenv", "^" + name + "$", [name],
+            "desktop pair permissions")
+finally:
+    pair_path.write_text(pair_body)
+
 # The Swift file is byte-for-byte old production source. It sees --status,
 # never the unknown new mode. The Go driver's private legacy port is also fake.
 swift = ROOT / "internal/notify/app/notify_darwin.swift"
