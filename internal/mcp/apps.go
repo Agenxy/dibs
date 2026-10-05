@@ -845,14 +845,7 @@ func boardRows(agents []any) string {
 		status, _ := m["status"].(string)
 		// Current name is the address a reader should use. Keep a changed id
 		// subordinate for durable references and older callers.
-		who := id
-		name, _ := m["name"].(string)
-		if name == "" {
-			name, _ = m["display_name"].(string) // older/full board payloads
-		}
-		if name != "" && name != id {
-			who = firstLine(name, 22) + " (formerly " + id + ")"
-		}
+		who := boardRowName(m, id)
 		what := "(nothing declared)"
 		slots, _ := m["slots"].([]any)
 		if len(slots) > 0 {
@@ -871,6 +864,17 @@ func boardRows(agents []any) string {
 		fmt.Fprintf(&b, "  %-28s %-9s %s\n", who, status, what)
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+func boardRowName(row map[string]any, id string) string {
+	name, _ := row["name"].(string)
+	if name == "" {
+		name, _ = row["display_name"].(string) // older/full board payloads
+	}
+	if name != "" && name != id {
+		return firstLine(name, 22) + " (formerly " + id + ")"
+	}
+	return id
 }
 
 // firstLine is one line of at most n runes, for a table cell.
