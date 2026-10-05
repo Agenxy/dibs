@@ -97,8 +97,10 @@ try:
         if path.endswith("app_open.go"):
             body += '\nvar ErrAppOpenPairBusy = errors.New("compile-only old-code carrier")\n'
         (ROOT / path).write_text(body)
+    diagnostics = ["production selector did not use the explicit fake native contact",
+                   "contended pair opened app", "deferred pair outcome"]
     for index, name in enumerate(ROUTES):
-        run(f"old-go-{index + 1}", "./internal/harnessenv", "^" + name + "$", [name])
+        run(f"old-go-{index + 1}", "./internal/harnessenv", "^" + name + "$", [name], diagnostics[index])
 finally:
     for path, body in saved.items():
         (ROOT / path).write_text(body)
