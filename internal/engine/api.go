@@ -818,9 +818,7 @@ func (e *Engine) decoratedBoard() core.Result {
 		if l == nil {
 			continue
 		}
-		if names := e.nameAliases.Names(e.state, id); len(names) > 0 {
-			lm["name_aliases"] = names
-		}
+		e.decorateAgentNames(lm, id)
 		// THE SAME ANSWER THE SWEEP AND THE REMINDER USE. This row read two of
 		// the three clocks, so a board could show a fresh last_seen beside a
 		// dormant status and a reminder saying nobody had been in touch for

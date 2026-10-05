@@ -14,6 +14,7 @@ type nameAliasOwner struct {
 	names   map[string]bool
 }
 
+// NewAgentNameAliases rebuilds ownership from the complete regenerated history.
 func NewAgentNameAliases(st *State, history []Event) *AgentNameAliases {
 	n := &AgentNameAliases{owners: map[string]nameAliasOwner{}}
 	n.Observe(st, history)
@@ -67,6 +68,7 @@ func (n *AgentNameAliases) Prune(st *State) {
 	}
 }
 
+// Names returns the sorted former labels retained by this row incarnation.
 func (n *AgentNameAliases) Names(st *State, id string) []string {
 	if n == nil {
 		return nil
@@ -84,6 +86,7 @@ func (n *AgentNameAliases) Names(st *State, id string) []string {
 	return names
 }
 
+// Candidates returns sorted alias owners under the existing eligibility rules.
 func (n *AgentNameAliases) Candidates(st *State, ref string, liveOnly bool) []string {
 	if n == nil || ref == "" {
 		return nil

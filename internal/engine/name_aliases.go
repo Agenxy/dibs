@@ -20,10 +20,6 @@ func (e *Engine) prepareNonceName(op *core.Op) (*nonceNameRecovery, error) {
 	id := e.state.Nonces[op.Nonce]
 	l := e.state.Agents[id]
 	if op.Nonce == "" || l == nil {
-		if op.Name == "" {
-			return nil, &core.Error{Code: "E_BAD_ARG", Msg: "a new registration needs a name",
-				Hint: "supply name for a new identity; omit it only with your existing recovery nonce"}
-		}
 		return nil, nil
 	}
 	next := op.Name
@@ -35,6 +31,12 @@ func (e *Engine) prepareNonceName(op *core.Op) (*nonceNameRecovery, error) {
 	}
 	op.Name = l.Name
 	return &nonceNameRecovery{id: id, name: next}, nil
+}
+
+func (e *Engine) decorateAgentNames(row map[string]any, id string) {
+	if names := e.nameAliases.Names(e.state, id); len(names) > 0 {
+		row["name_aliases"] = names
+	}
 }
 
 // Resolve omitted descriptions before admission. An already-absent release

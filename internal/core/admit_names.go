@@ -9,6 +9,17 @@ import (
 // release old labels before another rename, without losing its mailbox.
 const MaxFormerNames = 64
 
+func (st *State) admitRegistrationName(op *Op) error {
+	if op.Kind != OpRegister || strings.TrimSpace(op.Name) != "" {
+		return nil
+	}
+	if op.Nonce != "" && st.Agents[st.Nonces[op.Nonce]] != nil {
+		return nil
+	}
+	return errf("E_BAD_ARG", "supply name for a new identity; omit it only with your existing recovery nonce",
+		"a new registration needs a name")
+}
+
 func admitReleaseNames(op *Op, lim Limits) error {
 	if op.ReleaseNames == nil {
 		return nil
@@ -44,16 +55,8 @@ func AdmitNameChange(st *State, aliases *AgentNameAliases, l *Agent, op *Op) ([]
 	if op.Name != "" {
 		next = op.Name
 	}
-	if len(next) > st.Limits.MaxNameBytes {
-		return nil, errTooLarge("name", st.Limits.MaxNameBytes)
-	}
-	if next != l.Name {
-		if err := st.nameIsAnotherAddress(op, l); err != nil {
-			return nil, err
-		}
-		if other := st.siblingByName(next, l.ID); other != nil {
-			return nil, errf("E_NAME_TAKEN", "pick another name, or leave name out to keep your existing label", "the name %q belongs to %s", next, other.ID)
-		}
+	if err := st.admitNextName(l, op, next); err != nil {
+		return nil, err
 	}
 	owned := map[string]bool{}
 	for _, name := range aliases.Names(st, l.ID) {
@@ -66,18 +69,39 @@ func AdmitNameChange(st *State, aliases *AgentNameAliases, l *Agent, op *Op) ([]
 	var released []string
 	for _, name := range op.ReleaseNames {
 		if name == next || st.Agents[name] != nil {
-			return nil, errf("E_BAD_ARG", "release a former label; current names and immutable ids stay addresses", "cannot release current name or id %q", name)
+			return nil, errf("E_BAD_ARG", "release a former label; current names and immutable ids stay addresses",
+				"cannot release current name or id %q", name)
 		}
 		if owned[name] {
 			released = append(released, name)
 			delete(owned, name)
-		} else if candidates := aliases.Candidates(st, name, false); len(candidates) > 0 && !slices.Contains(candidates, l.ID) {
-			return nil, errf("E_NOT_PERMITTED", "release only a former name of your own identity", "%q is another agent's alias", name)
+		} else if candidates := aliases.Candidates(st, name, false); len(candidates) > 0 &&
+			!slices.Contains(candidates, l.ID) {
+			return nil, errf("E_NOT_PERMITTED", "release only a former name of your own identity",
+				"%q is another agent's alias", name)
 		}
 	}
 	if next != l.Name && len(owned) > MaxFormerNames {
-		return nil, errf("E_TOO_LARGE", "release some former names with update(release_names) before adding another", "a rename would retain %d former names; limit %d", len(owned), MaxFormerNames)
+		return nil, errf("E_TOO_LARGE", "release some former names with update(release_names) before adding another",
+			"a rename would retain %d former names; limit %d", len(owned), MaxFormerNames)
 	}
 	slices.Sort(released)
 	return released, nil
+}
+
+func (st *State) admitNextName(l *Agent, op *Op, next string) error {
+	if len(next) > st.Limits.MaxNameBytes {
+		return errTooLarge("name", st.Limits.MaxNameBytes)
+	}
+	if next == l.Name {
+		return nil
+	}
+	if err := st.nameIsAnotherAddress(op, l); err != nil {
+		return err
+	}
+	if other := st.siblingByName(next, l.ID); other != nil {
+		return errf("E_NAME_TAKEN", "pick another name, or leave name out to keep your existing label",
+			"the name %q belongs to %s", next, other.ID)
+	}
+	return nil
 }

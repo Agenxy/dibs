@@ -39,3 +39,20 @@ func TestNameReleaseAdmissionDoesNotBindHistoricalFold(t *testing.T) {
 		})
 	}
 }
+
+func TestRegistrationNameIsRequiredOnlyForAnUnknownNonceAtAdmission(t *testing.T) {
+	for _, name := range []string{"", "   "} {
+		st := NewState("registration-name", DefaultLimits())
+		op := &Op{Kind: OpRegister, Name: name, Nonce: "unknown-fixture-nonce", NewToken: "fixture-token"}
+		if err := st.Admit(op); err == nil {
+			t.Fatalf("unknown nonce registered without a name: %q", name)
+		}
+		// History is folded without the new ingress rule, including empty names.
+		if _, _, err := st.Apply(op, time.Unix(1234, 0)); err != nil {
+			t.Fatalf("new name admission bound old registration history: %v", err)
+		}
+		if err := st.Admit(&Op{Kind: OpRegister, Nonce: "unknown-fixture-nonce"}); err != nil {
+			t.Fatalf("known nonce could not omit its label: %v", err)
+		}
+	}
+}

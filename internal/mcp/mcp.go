@@ -1282,10 +1282,6 @@ func (s *Server) run(
 	case "invite":
 		return s.issueInvite(ctx, a)
 	case "register":
-		if strings.TrimSpace(a.Name) == "" && a.Nonce == "" {
-			return nil, &core.Error{Code: "E_BAD_ARG", Msg: "name is required for a new identity",
-				Hint: "supply name, or your existing nonce to recover your identity without renaming it"}
-		}
 		op.Agent = agentInfo(ctx, params, a, sessionClient)
 		op.Kind, op.Name, op.Description, op.PID = core.OpRegister, a.Name, a.Description, a.PID
 		op.Nonce, op.AgentKind, op.SessionID = a.Nonce, core.AgentKind(a.Kind), a.SessionID
