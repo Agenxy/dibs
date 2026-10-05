@@ -57,6 +57,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Queued notices state when they were issued, even if mail is already handled.**
+  The canonical native Codex queue route includes the local admission attempt's
+  UTC date and time to the second and says the notice may already be handled.
+  It does not cancel an old item or prevent its model turn. Pending notices retain their
+  original timestamp; the observer recognizes historical and dated formats,
+  and unrecognized items cannot suppress a wake. During the first install, an
+  old live bridge may queue one extra old-format notice per thread.
+
 - **Dormant ChatGPT agents wake promptly while the person is active.** Queued
   wakes use `open -g`, with loaded-thread refusal and a shared per-thread memo
   preventing rapid repeated app opens. Ownership timeouts remain UNKNOWN;

@@ -56,7 +56,7 @@ func runQueuedCommand(argv []string, thread, agent, dir string, timeout, grace t
 	slog.Debug("admitting a wake to the app queue", "agent", agent,
 		"observation_known", known)
 	queuedAt := time.Now().UTC()
-	ok, out := runForOut(argv, agent, dir, timeout, grace)
+	ok, out := runForOut(queueNoticeAt(argv, queuedAt), agent, dir, timeout, grace)
 	if ok {
 		retainQueueReceipt(thread, queueReceipt{QueuedAt: queuedAt, Generation: generation}, agent)
 	}

@@ -298,6 +298,20 @@ turn is the chosen trade against losing a wake. These limits do not establish
 the cause of each historical queue entry; see `docs/QUEUE-WAKE-DESIGN.md` for
 the measured gaps and regression evidence.
 
+**A durable notice can outlive its mail.** Measured on the bundled
+`codex-cli 0.160.0` on 2026-10-05: `queue --help` exposes enqueue only, while
+`queue list` and `queue delete` reject the subcommand with exit 2. This is a
+supported-CLI measurement, not a claim about all app-server capabilities.
+Dibs therefore dates the notice at the shared canonical native admission
+door: `Dibs: question notice issued at 2026-10-05T09:50:00Z. It may already be handled.`
+The time is the local attempt, not app acceptance or display. Later mail does
+not refresh a pending item's date; neither does the format cancel its eventual
+model turn. New observers recognize historical and dated notices, while
+unrecognized text never suppresses delivery. The architect accepted a
+one-stage rollout: an old live bridge may add one extra old-format notice per
+thread during the first install, a bounded duplicate rather than a lost wake.
+See `docs/STALE-QUEUE-WAKES-DESIGN.md` for the measurement and rollout decision.
+
 **Which app is derived, never stated.** The stdio bridge is a child of the
 harness that spawned it, so its process ancestry names the app (a parent under
 `/Applications/ChatGPT.app/` is the ChatGPT app; one under Claude's
