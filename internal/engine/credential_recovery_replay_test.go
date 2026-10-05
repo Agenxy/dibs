@@ -32,7 +32,7 @@ func TestCredentialRecoveryWritesOnlySelectedNonceAndReplays(t *testing.T) {
 	}
 	old := register("old-secret")
 	_ = register("new-secret")
-	if _, err := e.Do(ctx, &core.Op{Kind: core.OpSignOff, Token: old["token"].(string)}); err != nil {
+	if _, err := e.Do(ctx, &core.Op{Kind: core.OpSweep, StaleAgents: []string{old["agent_id"].(string)}}); err != nil {
 		t.Fatal(err)
 	}
 	r, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "worker", RecoveryNonces: []string{"new-secret", "old-secret"}, Agent: &core.AgentInfo{HostID: "retention"}})
