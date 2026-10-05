@@ -933,6 +933,19 @@ recovery. An observed empty queue re-arms immediately, and an observed pending
 notice wins over those inferred causes. ChatGPT opening follows the separately
 bounded prompt background policy. No queue item is deleted and no coordination state is changed.
 
+The canonical local queue route writes a factual notice such as
+`Dibs: a question notice was issued at 2026-10-05T09:50:00Z. It may already be handled.`
+The UTC date and time record the local admission attempt before executing the
+CLI, not app acceptance or visibility. They make no claim that mail remains
+unread when the durable item arrives. Later coalesced mail never refreshes that
+item's timestamp. The observer recognizes both historical notices and this
+complete format, with a canonical UTC RFC3339Nano timestamp and a known event
+kind. Unrecognized, malformed or unowned text cannot suppress a wake. During
+the first install an old live bridge may queue one extra old-format notice per
+thread; this accepted transition fails toward waking. Ordinary exec and socket
+wording are unchanged. A queued notice can still start an empty turn after mail
+was handled; this format does not cancel it.
+
 **Prompt ChatGPT opening.** After a successful queue outcome, an app-owned
 thread opens promptly via `/usr/bin/open -g codex://threads/<id>` even while
 the person is active. A loaded thread is never opened. A bounded one-second

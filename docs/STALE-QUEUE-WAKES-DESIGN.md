@@ -24,7 +24,7 @@ specific item later consumed. Another observed activation of this worker at
 at serial 36275 contained no unread mail. That observation alone does not
 identify its queued item or prove a causal race.
 
-## Proposed fallback
+## Accepted fallback
 
 Use a factual notice with a locally generated UTC timestamp on the native
 queue route, for example:
@@ -46,7 +46,7 @@ historical notices and the complete new format, including strict timestamp
 validation, in the queue observer. Leave admission locking, delivery marks,
 replay and wake policy unchanged.
 
-## Rollout question requiring a concrete decision
+## Accepted one-stage rollout
 
 An old live host-bridge's `isDibsWake` recognizes only exact historical text.
 After a new writer queues the timestamped notice, that old observer reports
@@ -55,14 +55,21 @@ duplicate. New code accepting old wording solves only one direction. The
 in-session stdio socket bridge is a separate route and cannot be assumed to
 be the writer in this case.
 
-Therefore a one-stage format switch does not meet the repository's dormant
-bridge compatibility rule. A safe candidate is a staged rollout: first ship
-recognition of the future format while emitting the historical one, then enable
-timestamped emission only after old native queue writers are proven gone.
-That proof/enablement mechanism is not settled here. Restarting all old writers
-by assumption, changing a shape guard, or calling a green retry a proof would
-not settle it. Architect review must choose a measured additive mechanism or
-explicitly resolve the transition before implementing emission.
+Architect answer 36967 accepts the text and a one-stage switch, without an
+enablement mechanism. The dormant-bridge rule protects against silent loss or
+misreading. Here the transition failure is toward waking: an old live bridge
+may queue one extra old-format notice per thread alongside the new item. That
+extra item says exactly what the old writer already said; it cannot suppress
+delivery. New writers recognize both formats and coalesce an old pending
+item. Unknown, malformed or unowned text never counts as a pending Dibs wake.
+
+The mixed-image interval ends as old writers are replaced or re-exec. It is
+not a claim that every live writer has already upgraded. A staged reader-first
+switch would need a new liveness/version proof to establish that old writers
+were gone, in order to prevent a bounded duplicate. The accepted trade follows
+the operator's rule that waking agents is non-negotiable: tolerate that
+duplicate rather than introduce a mechanism that can strand a wake. The first
+install's caveat belongs in the CHANGELOG as well as this note.
 
 ## Required guards
 
@@ -72,6 +79,9 @@ text and parseable admission timestamp, no participant/body disclosure, an
 unchanged timestamp and one pending item after subsequent mail, and continued
 coalescing across independent processes. Cover old and new pending formats,
 new event vocabulary, unavailable observation, and ordinary non-queue text.
-Drive the old/new-writer transition through the same command door. Each new
-behavioural guard must fail on old production, then pass on the fixed source;
-use hosted full gates while the shared local compiler seat belongs to K7.
+Drive the old-text-pending/new-writer transition through the same command door.
+The new emission and dated-item recognition assertions must fail on old
+production, then pass on the fixed source. Legacy coalescing, unchanged
+ordinary commands and conservative fallback are preservation controls, not
+claims of newly failing old behaviour. Use hosted full gates while the shared
+local compiler seat belongs to K7.
