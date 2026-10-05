@@ -62,7 +62,9 @@ func TestCredentialRecoveryChoosesOldestThroughMCP(t *testing.T) {
 			}
 			recoveryOK(t, call("check_in", map[string]any{"token": newer["token"]}))
 			mail := recoveryOK(t, call("send", map[string]any{"token": newer["token"], "to": older["agent_id"], "type": "question", "body": "original mail"}))
-			recoveryOK(t, call("sign_off", map[string]any{"token": older["token"]}))
+			if _, err := eng.Do(context.Background(), &core.Op{Kind: core.OpSweep, StaleAgents: []string{older["agent_id"].(string)}}); err != nil {
+				t.Fatal("setup: stale original:", err)
+			}
 			got := recoveryOK(t, call("register", map[string]any{"name": "worker", "recovery_nonces": []string{"new-secret", "old-secret"}}))
 			if got["agent_id"] != older["agent_id"] || got["recovery_nonce_index"] != float64(1) {
 				t.Fatalf("oldest credential not selected: %v", got)
@@ -164,14 +166,14 @@ func TestCredentialRecoveryFailureAndGuardPaths(t *testing.T) {
 
 func TestCredentialRecoveryAdoptHintCoordinatorFirst(t *testing.T) {
 	for _, version := range []string{"2026-07-28", "2025-11-25"} {
-		for _, coordinator := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/coordinator-%t", version, coordinator), func(t *testing.T) {
+		for _, coordinator := range []string{"none", "active", "dormant"} {
+			t.Run(fmt.Sprintf("%s/coordinator-%s", version, coordinator), func(t *testing.T) {
 				srv, eng, _ := newServerWithEngine(t)
 				call := func(name string, args map[string]any, sid string) map[string]any {
 					return recoveryCall(t, srv, version, name, args, map[string]any{"threadId": sid})
 				}
 				boss := recoveryOK(t, call("register", map[string]any{"name": "boss", "nonce": "boss-secret"}, "boss-session"))
-				if coordinator {
+				if coordinator != "none" {
 					if _, err := eng.Do(context.Background(), &core.Op{Kind: core.OpGrantRole, To: "boss", Mode: core.RoleCoordinator, RoleByHuman: true}); err != nil {
 						t.Fatal(err)
 					}
@@ -179,20 +181,27 @@ func TestCredentialRecoveryAdoptHintCoordinatorFirst(t *testing.T) {
 				recoveryOK(t, call("check_in", map[string]any{"token": boss["token"]}, "boss-session"))
 				old := recoveryOK(t, call("register", map[string]any{"name": "worker", "nonce": "old-secret"}, "old-session"))
 				mail := recoveryOK(t, call("send", map[string]any{"token": boss["token"], "to": old["agent_id"], "type": "question", "body": "stranded original"}, "boss-session"))
-				recoveryOK(t, call("sign_off", map[string]any{"token": old["token"]}, "old-session"))
+				if _, err := eng.Do(context.Background(), &core.Op{Kind: core.OpSweep, StaleAgents: []string{old["agent_id"].(string)}}); err != nil {
+					t.Fatal("setup: stale original:", err)
+				}
+				if coordinator == "dormant" {
+					if _, err := eng.Do(context.Background(), &core.Op{Kind: core.OpSweep, DeadAgents: []string{boss["agent_id"].(string)}}); err != nil {
+						t.Fatal("setup: dormant coordinator:", err)
+					}
+				}
 				fresh := recoveryOK(t, call("register", map[string]any{"name": "worker", "nonce": "fresh-secret"}, "new-session"))
 				hint, ok := fresh["recovery_request"].(map[string]any)
 				if !ok {
 					t.Fatalf("no ready adoption request: %v", fresh)
 				}
 				want := "human"
-				if coordinator {
+				if coordinator != "none" {
 					want = "coordinator"
 				}
 				if hint["to"] != want || hint["adopt"] != old["agent_id"] || !strings.Contains(fresh["name_note"].(string), "await approval") {
 					t.Fatalf("wrong fallback: %v", fresh)
 				}
-				if !coordinator {
+				if coordinator == "none" {
 					return
 				} // do not raise a native human notification
 				recoveryOK(t, call("check_in", map[string]any{"token": fresh["token"]}, "new-session"))
