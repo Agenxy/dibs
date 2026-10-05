@@ -53,17 +53,17 @@ func staleQueueRows(t *testing.T, home string) []staleQueueRow {
 
 func assertIssuedQueueNotice(t *testing.T, text, kind string, started, finished time.Time) {
 	t.Helper()
-	if kind == "" {
+	if kind == "" || kind == "notice" {
 		kind = "coordination"
 	}
-	prefix := "Dibs: a " + kind + " notice was issued at "
+	prefix := "Dibs: " + kind + " notice issued at "
 	const suffix = ". It may already be handled."
 	if !strings.HasPrefix(text, prefix) || !strings.HasSuffix(text, suffix) {
 		t.Fatalf("queued notice still claims current unread mail or lacks its issuance time: %q", text)
 	}
 	stamp := strings.TrimSuffix(strings.TrimPrefix(text, prefix), suffix)
-	at, err := time.Parse(time.RFC3339Nano, stamp)
-	if err != nil || stamp != at.UTC().Format(time.RFC3339Nano) || at.Before(started) || at.After(finished) {
+	at, err := time.Parse(time.RFC3339, stamp)
+	if err != nil || stamp != at.UTC().Truncate(time.Second).Format(time.RFC3339) || at.Before(started.Truncate(time.Second)) || at.After(finished) {
 		t.Fatalf("notice has no valid UTC admission time within the real command call: %q, %v", stamp, err)
 	}
 }
@@ -123,10 +123,10 @@ func seedStaleQueue(t *testing.T, binary, text string) {
 
 func TestNativeQueueRecognizesDatedPendingItemsThroughCommandDoor(t *testing.T) {
 	binary := staleQueueFixture(t)
-	for _, kind := range []string{"coordination", "notify", "question", "request", "handoff", "notice", "continuation", "recheck", "answered", "approved", "done", "adopted"} {
+	for _, kind := range []string{"coordination", "notify", "question", "request", "handoff", "continuation", "recheck", "answered", "approved", "done", "adopted"} {
 		t.Run(kind, func(t *testing.T) {
 			home := staleQueueHome(t)
-			text := fmt.Sprintf("Dibs: a %s notice was issued at 2026-01-01T00:00:00Z. It may already be handled.", kind)
+			text := fmt.Sprintf("Dibs: %s notice issued at 2026-01-01T00:00:00Z. It may already be handled.", kind)
 			seedStaleQueue(t, binary, text)
 			if rows := staleQueueRows(t, home); len(rows) != 1 || rows[0].Input[0].Text != text {
 				t.Fatal("setup: historical dated item was not retained")
@@ -152,10 +152,12 @@ func TestNativeQueueHistoricalAndUnrecognizedItemsKeepDeliverySafe(t *testing.T)
 		{"legacy question", Compose("question"), true},
 		{"legacy verdict", Compose("answered"), true},
 		{"unowned item", "ordinary operator input", false},
-		{"unknown kind", "Dibs: a future-kind notice was issued at 2026-01-01T00:00:00Z. It may already be handled.", false},
-		{"invalid date", "Dibs: a question notice was issued at nonsense. It may already be handled.", false},
-		{"noncanonical offset", "Dibs: a question notice was issued at 2026-01-01T00:00:00+00:00. It may already be handled.", false},
-		{"extra text", "Dibs: a question notice was issued at 2026-01-01T00:00:00Z. It may already be handled. arbitrary", false},
+		{"unknown kind", "Dibs: future-kind notice issued at 2026-01-01T00:00:00Z. It may already be handled.", false},
+		{"invalid date", "Dibs: question notice issued at nonsense. It may already be handled.", false},
+		{"noncanonical offset", "Dibs: question notice issued at 2026-01-01T00:00:00+00:00. It may already be handled.", false},
+		{"fractional second", "Dibs: question notice issued at 2026-01-01T00:00:00.123Z. It may already be handled.", false},
+		{"duplicated notice kind", "Dibs: notice notice issued at 2026-01-01T00:00:00Z. It may already be handled.", false},
+		{"extra text", "Dibs: question notice issued at 2026-01-01T00:00:00Z. It may already be handled. arbitrary", false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

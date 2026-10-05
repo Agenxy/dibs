@@ -17,6 +17,7 @@ func TestNativeQueueVerdictCoalescesThroughCommandDoor(t *testing.T) {
 		t.Fatalf("setup: fixture build %v: %s", err, b)
 	}
 	for _, kind := range []string{
+		"", core.MsgNotify, core.MsgRequest, core.MsgHandoff, "notice", KindContinuation, KindRecheck,
 		core.MsgQuestion, core.MsgStateAnswered, core.MsgStateApproved, core.MsgStateDenied,
 		core.MsgStateDeclined, core.MsgStateDone, core.MsgStateWithdrawn, "adopted",
 	} {
