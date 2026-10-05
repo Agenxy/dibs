@@ -41,6 +41,7 @@ import (
 // takes two deliberate edits, and that is the entire point of it.
 //
 // A Go identifier may be renamed freely; the tag it carries may not.
+// New transient ingress fields tagged json:"-" never reach disk and need no frozen entry.
 func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 	led, path := newLedger(t)
 	st := core.NewState("test", core.DefaultLimits())

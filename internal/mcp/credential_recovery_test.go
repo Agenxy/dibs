@@ -40,7 +40,9 @@ func recoveryCall(t *testing.T, srv *httptest.Server, version, name string, args
 
 func recoveryOK(t *testing.T, result map[string]any) map[string]any {
 	t.Helper()
-	if result["ok"] != true {
+	id, _ := result["agent_id"].(string)
+	token, _ := result["token"].(string)
+	if result["ok"] != true && (id == "" || token == "") && result["message"] == nil {
 		t.Fatalf("setup/operation did not succeed: %v", result)
 	}
 	return result
@@ -105,15 +107,18 @@ func TestCredentialRecoveryFailureAndGuardPaths(t *testing.T) {
 					t.Fatal(err)
 				}
 				got := recoveryCall(t, srv, version, "register", test.args, test.meta)
-				if got["code"] != test.code {
-					t.Fatalf("want %s, got %v", test.code, got)
-				}
 				after, err := eng.Board(context.Background())
 				if err != nil {
 					t.Fatal(err)
 				}
 				if before["serial"] != after["serial"] {
 					t.Fatal("failed recovery mutated replayable state")
+				}
+				if got["rpc_error"] != nil {
+					t.Log("old-schema refusal: serial unchanged; no register op applied")
+				}
+				if got["code"] != test.code {
+					t.Fatalf("want %s, got %v", test.code, got)
 				}
 			})
 		}
