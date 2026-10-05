@@ -7,6 +7,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Waiting-note ages describe outstanding updates.** A verdict already read
+  through the authenticated inbox no longer lends its cached timestamp to fresh
+  mail or a new update. Approved and queued work remains in `owed_work`, and
+  acknowledged notifications remain outside the unread mailbox count.
+
 - **Renamed agents are addressed by their current names throughout human-facing
   views.** The board, CLI, wake digest, browser mail/event feed and desktop
   notices show the current name first; changed stable ids remain available as

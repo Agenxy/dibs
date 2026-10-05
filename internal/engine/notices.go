@@ -402,12 +402,14 @@ func (e *Engine) pendingNotices(agent string) []string {
 // oldestNotice is when the earliest outstanding notice for this agent actually
 // happened, or the zero time if none of them knows.
 //
-// Separate from pendingNotices because that one renders text for the model and
-// this one is a fact about the queue. Notices with no time are skipped rather
-// than treated as ancient: an unknown age must not become the loudest one.
+// Use the same outstanding view as presentation. The raw pointer cache can
+// still hold a verdict after inbox has durably read it; borrowing that stale
+// timestamp makes fresh mail or a fresh update look hours old. Conversely an
+// outstanding outcome reconstructed from the envelope may have no cache entry.
+// Notices with no time are skipped: unknown age must not become ancient mail.
 func (e *Engine) oldestNotice(agent string) time.Time {
 	var oldest time.Time
-	for _, n := range e.notices[agent] {
+	for _, n := range e.takeNotices(agent) {
 		if n.At.IsZero() {
 			continue
 		}
