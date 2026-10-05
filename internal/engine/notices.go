@@ -399,8 +399,8 @@ func (e *Engine) pendingNotices(agent string) []string {
 	return lines
 }
 
-// oldestNotice is when the earliest outstanding notice for this agent actually
-// happened, or the zero time if none of them knows.
+// oldestNotice is the age of the shown outstanding items (the view is bounded),
+// or the zero time if none of them knows when it happened.
 //
 // Use the same outstanding view as presentation. The raw pointer cache can
 // still hold a verdict after inbox has durably read it; borrowing that stale
