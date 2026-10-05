@@ -33,7 +33,8 @@ func TestHistoricalNameAliasesAreNotTruncatedOnReplay(t *testing.T) {
 			t.Fatal("setup:", err)
 		}
 	}
-	writeHistorical(&core.Op{Kind: core.OpRegister, Name: "worker-id", Nonce: "historical-worker",
+	writeHistorical(&core.Op{
+		Kind: core.OpRegister, Name: "worker-id", Nonce: "historical-worker",
 		AgentKind: core.KindPersistent, NewToken: "historical-fixture-token"})
 	for n := 0; n <= 70; n++ {
 		writeHistorical(&core.Op{Kind: core.OpUpdate, Token: "historical-fixture-token", Name: fmt.Sprintf("historic-%02d", n)})
