@@ -271,6 +271,10 @@ func validateDryCask(c config, dir string) error {
 	if err != nil {
 		return err
 	}
+	return validateCaskBytes(c, dir, cask, targetOf(c))
+}
+
+func validateCaskBytes(c config, dir string, cask []byte, d publicationTarget) error {
 	if !strings.Contains(string(cask), `version "`+c.version+`"`) {
 		return errors.New("dry cask plan has a different canonical version")
 	}
@@ -292,12 +296,41 @@ func validateDryCask(c config, dir string) error {
 		if err != nil {
 			return err
 		}
-		url := "https://github.com/" + repository + "/releases/download/v" + c.version + "/" + name
+		url := "https://github.com/" + d.repository + "/releases/download/" + d.tag + "/" + name
 		if caskSums[url] != sum {
 			return fmt.Errorf("dry cask plan lacks verified archive URL/checksum for %s", name)
 		}
 	}
 	return nil
+}
+
+// GoReleaser uses the scratch repository but the canonical build tag in its
+// generated cask. That tag is LOCAL ONLY and has no scratch release. Before
+// signing, prove the three generated pairs and bind this dry plan to the real
+// unique-tag payload. Production cask bytes are never rewritten here.
+func stageCask(c config, cask []byte) ([]byte, error) {
+	d := targetOf(c)
+	if !d.rehearsal {
+		return cask, nil
+	}
+	generated := d
+	generated.tag = "v" + c.version
+	if err := validateCaskBytes(c, "dist", cask, generated); err != nil {
+		return nil, fmt.Errorf("generated scratch cask: %w", err)
+	}
+	expanded := strings.ReplaceAll(string(cask), "#{version}", c.version)
+	for _, pair := range [][2]string{{"darwin", "arm64"}, {"linux", "amd64"}, {"linux", "arm64"}} {
+		name, _ := selfupdate.ArchiveName(c.version, pair[0], pair[1])
+		prefix := "https://github.com/" + d.repository + "/releases/download/"
+		from := `url "` + prefix + generated.tag + "/" + name + `"`
+		to := `url "` + prefix + d.tag + "/" + name + `"`
+		expanded = strings.ReplaceAll(expanded, from, to)
+	}
+	staged := []byte(expanded)
+	if err := validateCaskBytes(c, "dist", staged, d); err != nil {
+		return nil, err
+	}
+	return staged, nil
 }
 
 func dryDownstreamPlans(c config, dir string) error {

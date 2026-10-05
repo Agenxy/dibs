@@ -55,6 +55,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   left unacknowledged remain readable without waking again in later idle
   epochs or app reconnects.
 
+- **Scratch cask plans name the actual immutable rehearsal payload.** The three
+  generated archive URL/checksum pairs are verified before the rehearsal-only
+  signing stage binds them to its closed repository and unique release tag.
+  Production cask bytes and production signature trust remain unchanged. The
+  initial public rehearsal exposed this mismatch after publishing its payload
+  but before eligible evidence; that immutable failed attempt is retained.
+
 - **Source installs reject conflicting version overrides before replacement.**
   Both built images are checked against their module/VCS-derived stamp. A
   hand-set `build.Version` that changes the normal pseudo-version now stops

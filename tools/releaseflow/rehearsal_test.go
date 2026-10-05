@@ -89,7 +89,9 @@ func TestFullPublicationTraversesDraftDoorsAndDiscoveryOnlyNegativeControl(t *te
 						if err != nil {
 							t.Fatal(err)
 						}
-						fmt.Fprintf(&body, " sha256 \"%s\"\n url \"https://github.com/%s/releases/download/v#{version}/%s\"\n", sum, repository, strings.ReplaceAll(asset, c.version, "#{version}"))
+						// Measured on the real scratch run: GoReleaser derives the
+						// repository from the job, but still uses the canonical tag.
+						fmt.Fprintf(&body, " sha256 \"%s\"\n url \"https://github.com/%s/releases/download/v#{version}/%s\"\n", sum, d.repository, strings.ReplaceAll(asset, c.version, "#{version}"))
 					}
 					body.WriteString("end\n")
 					write(t, "dist/homebrew/Casks/dibs.rb", body.String())
@@ -203,7 +205,7 @@ func TestFullPublicationTraversesDraftDoorsAndDiscoveryOnlyNegativeControl(t *te
 				wantSigns = 1
 			}
 			if builds != 1 || signs != wantSigns || verifications < 1 {
-				t.Fatalf("negative diverged before discovery: build=%d sign=%d verify=%d", builds, signs, verifications)
+				t.Fatalf("unexpected build/sign/verify count: build=%d sign=%d verify=%d err=%v", builds, signs, verifications, err)
 			}
 			switch {
 			case negative:

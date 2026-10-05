@@ -139,8 +139,31 @@ not a repository, URL or signing identity supplied by a dispatch:
 on 2026-10-04. Its public visibility, enabled immutable releases and Actions with
 read-default workflow permissions were independently checked through GitHub's
 API. A different repository or source refuses before build, signature or release
-mutation. No live scratch run or downstream acceptance has been measured yet.
-Do not interpret the local tests or repository settings as that evidence.
+mutation. The initial 2026-10-04 negative run
+[37237878575](https://github.com/Agenxy/dibs-release-rehearsal/actions/runs/37237878575)
+confirmed the old get-by-tag discovery failure against an exact empty draft.
+The positive run
+[37238179799](https://github.com/Agenxy/dibs-release-rehearsal/actions/runs/37238179799)
+published immutable payload `403225432` with 11 assets, then failed its dry cask
+URL check before producing eligible evidence. That failed attempt is retained,
+not reused or deleted.
+
+The repaired candidate `6c9d961b24183298a44f67b36731e3eb7c5e07e9` then ran the
+[second discovery negative control](https://github.com/Agenxy/dibs-release-rehearsal/actions/runs/37240834531),
+which failed at the intended discovery door, followed by the
+[successful scratch publication](https://github.com/Agenxy/dibs-release-rehearsal/actions/runs/37241664375).
+It produced immutable payload `403239482` with 11 assets and immutable signed
+evidence `403244095` with two assets, including a real read-only public retry.
+Both OIDC bundles were independently verified against the pinned trust root and
+exact scratch workflow identity. The 21 source objects, payload digests, three
+guest CLI members, three cask URL/checksum pairs and four Darwin runtime members
+across the archive and MCP Bundle were independently checked.
+
+That is pilot proof for **only that candidate**, not for subsequent documentation
+or source changes, nor the final v0.0.12 candidate. Production-job-token access
+to the public evidence has not yet been measured. Final exact-candidate negative
+and positive runs plus production validation are still required; scratch success
+does not claim downstream installation, registry or tap acceptance.
 
 Mirror the exact reviewed candidate commit (without rewriting its SHA) and use
 `rehearsal-v<version>-<full-candidate-sha>`. The workflow and tool tree must be
@@ -164,6 +187,14 @@ verification, another call to the same publisher must succeed through an
 explicit read-only operation allow-list. Registry and cask plans validate the
 canonical version, bundle/sidecar digest and archive URL/checksum pairs, but
 never publish, push, merge, install or claim service acceptance.
+
+GoReleaser generates scratch cask URLs with the scratch repository but the
+canonical build tag, which exists only locally. Before checksums and signing,
+the scratch-only stage verifies exactly three canonical generated URL/digest
+pairs against the actual archives, then binds its dry cask to the closed scratch
+repository and unique public payload tag. The signed readback validates those
+exact payload URLs and digests. Production cask bytes are copied unchanged;
+neither arbitrary URLs nor scratch identities enter production trust.
 
 The separate scratch signature verifier requires its exact repository,
 `release-rehearsal.yml` and unique tag with the fixed issuer and reviewed trusted

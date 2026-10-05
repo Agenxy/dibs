@@ -372,6 +372,10 @@ func stageUnsigned(c config) error {
 	if err != nil {
 		return err
 	}
+	cask, err = stageCask(c, cask)
+	if err != nil {
+		return err
+	}
 	// #nosec G703 -- fixed output in the GoReleaser stage, never a dispatch input.
 	if err = os.WriteFile(filepath.Join("dist", "dibs.rb"), cask, 0o600); err != nil {
 		return err
