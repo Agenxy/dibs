@@ -295,7 +295,7 @@ func New(st *core.State, led Ledger, prober Prober, history ...[]core.Event) *En
 		ops:  make(chan request), subs: make(chan subReq), unsubs: make(chan chan core.Event),
 		state: st, led: led, prober: prober,
 		restartIntervalDefault: 2 * time.Second,
-		ringCap: 65536, buckets: map[string]*bucket{},
+		ringCap:                65536, buckets: map[string]*bucket{},
 		resumeAt: map[string]time.Time{},
 		streams:  map[chan core.Event]*atomic.Bool{}, seen: map[string]time.Time{},
 		hookAlive:    map[string]time.Time{},
