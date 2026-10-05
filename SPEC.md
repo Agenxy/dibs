@@ -157,6 +157,24 @@ filesystem writes (§9). It is a **coordination generation**, not a fencing toke
     only under sustained bursts, and the contract states both bounds rather than
     promising the larger. `resume_id` records follow the same bound (the 1/10 s
     resume rate makes eviction there a non-issue in practice).
+  - **Bounded send receipts:** HTTP `send` has a five-second server response
+    budget, including session/bridge observations and result projection. The
+    acceptance receipt is captured only after persistence succeeds (or from an
+    existing dedup record), before wake publication and advisory work. A slow
+    advisory cannot erase known acceptance: the bounded response returns the
+    original `msg_serial`, explicitly stating that delivery advisories are
+    unavailable. Acceptance confirms neither wake nor recipient visibility.
+    Both the wake-route note and the unanswered-request note are computed in
+    the accepting writer request, not through later writer queries.
+    If acceptance is still unknown at the budget, the MCP error payload is
+    `E_SEND_OUTCOME_UNKNOWN` with the original `op_id` and a hint to retry the
+    exact same id and payload within the existing dedup bounds. Without an id,
+    there is no safe deduplicated retry: a new id cannot identify the earlier
+    attempt. A timeout does not cancel an already-enqueued mutation or assert
+    that it failed. This budget starts after the bounded JSON-RPC body has been
+    decoded/admitted; it is not a socket/body-upload timeout. Debug-only stage
+    timings name admission, apply, ledger append, publication, advisories and
+    response without logging bodies or credentials.
   - Torn final line: truncated on replay (expected crash artifact, not corruption).
 - **Encryption at rest**: message bodies, responses, and agent tokens sealed with
   AES-256-GCM under `~/.dibs/key` (0600). Public fields stay plaintext (`tail -f |

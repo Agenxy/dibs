@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -133,7 +134,7 @@ func sendReceiptHTTP(ctx context.Context, srv *httptest.Server, version string, 
 	return sendReceiptReply{payload: payload, isError: out.Result.IsError}
 }
 
-func sendReceiptSetup(t *testing.T, srv *httptest.Server, version string) (string, string) {
+func sendReceiptSetup(t *testing.T, srv *httptest.Server, version string) string {
 	t.Helper()
 	if version == "2025-11-25" {
 		out := rpc(t, srv, "", "initialize", map[string]any{"protocolVersion": version})
@@ -153,7 +154,7 @@ func sendReceiptSetup(t *testing.T, srv *httptest.Server, version string) (strin
 		}
 		tokens[name] = token
 	}
-	return tokens["sender"], tokens["worker"]
+	return tokens["sender"]
 }
 
 func TestSendUnknownHasServerBudgetAndDurableRetryThroughMCP(t *testing.T) {
@@ -161,7 +162,7 @@ func TestSendUnknownHasServerBudgetAndDurableRetryThroughMCP(t *testing.T) {
 		t.Run(version, func(t *testing.T) {
 			dir := t.TempDir()
 			srv, gate, stop := sendReceiptServer(t, dir)
-			sender, _ := sendReceiptSetup(t, srv, version)
+			sender := sendReceiptSetup(t, srv, version)
 			args := map[string]any{"token": sender, "to": "worker", "type": "notify", "body": "one durable message", "op_id": "bounded-retry"}
 			gate.armed.Store(true)
 			ctx, cancel := context.WithTimeout(context.Background(), 6500*time.Millisecond)
@@ -246,7 +247,7 @@ func TestSendKnownReceiptSurvivesSlowRouteAdvisoryThroughMCP(t *testing.T) {
 			release := func() { unblock.Do(func() { close(n.release) }) }
 			t.Cleanup(release) // before fixture cleanup, even on a failed assertion
 			eng.SetHumanNotifier(n)
-			sender, _ := sendReceiptSetup(t, srv, version)
+			sender := sendReceiptSetup(t, srv, version)
 			args := map[string]any{"token": sender, "to": "human", "type": "question", "body": "slow route advice", "op_id": "known-receipt"}
 			ctx, cancel := context.WithTimeout(context.Background(), 6500*time.Millisecond)
 			defer cancel()
@@ -272,6 +273,100 @@ func TestSendKnownReceiptSurvivesSlowRouteAdvisoryThroughMCP(t *testing.T) {
 				t.Fatalf("accepted serial has wrong shape: %v", reply.payload)
 			}
 			assertSendReceiptRetry(t, sendReceiptHTTP(context.Background(), srv, version, args), uint64(serial))
+		})
+	}
+}
+
+func TestSendUnknownWithoutIDDoesNotPromiseDeduplicatedRetryThroughMCP(t *testing.T) {
+	for _, version := range []string{"2026-07-28", "2025-11-25"} {
+		t.Run(version, func(t *testing.T) {
+			srv, gate, _ := sendReceiptServer(t, t.TempDir())
+			sender := sendReceiptSetup(t, srv, version)
+			args := map[string]any{"token": sender, "to": "worker", "type": "notify", "body": "unidentified send"}
+			gate.armed.Store(true)
+			ctx, cancel := context.WithTimeout(context.Background(), 6500*time.Millisecond)
+			defer cancel()
+			answer := make(chan sendReceiptReply, 1)
+			go func() { answer <- sendReceiptHTTP(ctx, srv, version, args) }()
+			select {
+			case <-gate.entered:
+			case reply := <-answer:
+				t.Fatalf("setup: unidentified send bypassed the real ledger gate: %+v", reply)
+			case <-time.After(3 * time.Second):
+				t.Fatal("setup: unidentified send did not reach ledger gate")
+			}
+			reply := <-answer
+			if reply.err != nil || !reply.isError || reply.payload["code"] != "E_SEND_OUTCOME_UNKNOWN" || reply.payload["op_id"] != "" {
+				t.Fatalf("unidentified send did not report UNKNOWN: %+v", reply)
+			}
+			hint, _ := reply.payload["hint"].(string)
+			if !strings.Contains(hint, "safe deduplicated retry is unavailable") || !strings.Contains(hint, "new op_id cannot identify") {
+				t.Fatalf("unidentified send invented safe retry: %v", reply.payload)
+			}
+			gate.unblock()
+		})
+	}
+}
+
+type sendTimingLog struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (l *sendTimingLog) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *sendTimingLog) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
+}
+
+func TestSendStageTimingIsDebugOnlyAndPrivateThroughMCP(t *testing.T) {
+	for _, level := range []slog.Level{slog.LevelInfo, slog.LevelDebug} {
+		t.Run(level.String(), func(t *testing.T) {
+			var log sendTimingLog
+			original := slog.Default()
+			slog.SetDefault(slog.New(slog.NewJSONHandler(&log, &slog.HandlerOptions{Level: level})))
+			t.Cleanup(func() { slog.SetDefault(original) })
+			srv, _, _ := newServerWithEngine(t)
+			sender := sendReceiptSetup(t, srv, "2026-07-28")
+			args := map[string]any{"token": sender, "to": "worker", "type": "notify", "body": "private-stage-body-31653", "op_id": "private-stage-id-31653"}
+			reply := sendReceiptHTTP(context.Background(), srv, "2026-07-28", args)
+			if reply.err != nil || reply.isError || reply.payload["ok"] != true {
+				t.Fatalf("setup: healthy send failed: %+v", reply)
+			}
+			raw := log.String()
+			if level == slog.LevelInfo {
+				if strings.Contains(raw, "send stage") {
+					t.Fatalf("stage timing escaped Debug level: %s", raw)
+				}
+				return
+			}
+			stages := map[string]bool{}
+			for _, line := range strings.Split(strings.TrimSpace(raw), "\n") {
+				var event map[string]any
+				if err := json.Unmarshal([]byte(line), &event); err != nil {
+					t.Fatalf("timing log was not JSON: %v", err)
+				}
+				if event["msg"] == "send stage" && event["event"] == "complete" {
+					stage, _ := event["stage"].(string)
+					stages[stage] = event["elapsed"] != nil && event["level"] == "DEBUG"
+				}
+			}
+			for _, stage := range []string{"admit", "apply", "ledger append", "publish", "advisories", "response"} {
+				if !stages[stage] {
+					t.Errorf("missing measured Debug stage %q: %s", stage, raw)
+				}
+			}
+			for _, secret := range []string{sender, "private-stage-body-31653", "private-stage-id-31653"} {
+				if strings.Contains(raw, secret) {
+					t.Error("send timing leaked a body or credential")
+				}
+			}
 		})
 	}
 }
