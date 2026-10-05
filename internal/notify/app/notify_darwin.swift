@@ -38,17 +38,102 @@ import CoreGraphics
 import AppKit
 import Foundation
 import UserNotifications
+import Intents
+
+func notificationSetting(_ value: UNNotificationSetting) -> String {
+    switch value {
+    case .enabled: return "enabled"
+    case .disabled: return "disabled"
+    case .notSupported: return "not-supported"
+    @unknown default: return "unknown"
+    }
+}
+
+func notificationAuthorization(_ value: UNAuthorizationStatus) -> String {
+    switch value {
+    case .authorized: return "authorized"
+    case .denied: return "denied"
+    case .notDetermined: return "not-determined"
+    case .provisional: return "provisional"
+    @unknown default: return "unknown"
+    }
+}
+
+func notificationStyle(_ value: UNAlertStyle) -> String {
+    switch value {
+    case .none: return "none"
+    case .banner: return "banner"
+    case .alert: return "alert"
+    @unknown default: return "unknown"
+    }
+}
+
+func focusObservation() -> [String: Any] {
+    let centre = INFocusStatusCenter.default
+    let authorization: String
+    switch centre.authorizationStatus {
+    case .authorized: authorization = "authorized"
+    case .denied: authorization = "denied"
+    case .notDetermined: authorization = "not-determined"
+    case .restricted: authorization = "restricted"
+    @unknown default: authorization = "unknown"
+    }
+    var result: [String: Any] = ["authorization": authorization, "observable": false]
+    // Never request access. Not-determined, denied and nil are UNKNOWN,
+    // rather than an invented observation that Focus is off.
+    if centre.authorizationStatus == .authorized,
+       let focused = centre.focusStatus.isFocused {
+        result["observable"] = true
+        result["is_focused"] = focused
+    }
+    return result
+}
+
+func notificationSettings(_ s: UNNotificationSettings) -> [String: Any] {
+    [
+        "version": 1,
+        "authorization_status": notificationAuthorization(s.authorizationStatus),
+        "alert_style": notificationStyle(s.alertStyle),
+        "alert_setting": notificationSetting(s.alertSetting),
+        "notification_center_setting": notificationSetting(s.notificationCenterSetting),
+        "lock_screen_setting": notificationSetting(s.lockScreenSetting),
+        "time_sensitive_setting": notificationSetting(s.timeSensitiveSetting),
+        "focus": focusObservation()
+    ]
+}
+
+var receiptSettings: [String: Any]?
+var receiptInterruptionLevel = "unknown"
 
 // Additive receipt protocol. Older callers supply no path; older helpers ignore
 // it. OS acceptance is not evidence that a banner was visible under Focus.
 func receipt(_ state: String) {
     guard let path = ProcessInfo.processInfo.environment["DIBS_NOTIFY_RECEIPT"] else { return }
-    guard let data = try? JSONSerialization.data(withJSONObject: ["state": state]) else { return }
+    var payload: [String: Any] = ["state": state, "interruption_level": receiptInterruptionLevel]
+    if let settings = receiptSettings { payload["settings"] = settings }
+    else { payload["settings"] = NSNull() }
+    guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
     try? data.write(to: URL(fileURLWithPath: path), options: .atomic)
     try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
 }
 
 let args = Array(CommandLine.arguments.dropFirst())
+
+// Existing mode plus an additive environment capability. An old helper ignores
+// the environment and returns its old word; callers retain UNKNOWN metadata.
+if args == ["--status"], ProcessInfo.processInfo.environment["DIBS_NOTIFY_SETTINGS_V1"] == "1" {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+    UNUserNotificationCenter.current().getNotificationSettings { s in
+        guard let data = try? JSONSerialization.data(withJSONObject: notificationSettings(s), options: [.sortedKeys]),
+              let text = String(data: data, encoding: .utf8) else { exit(2) }
+        print(text)
+        let authorized = s.authorizationStatus == .authorized || s.authorizationStatus == .provisional
+        exit(authorized && s.alertSetting == .enabled ? 0 : 2)
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 10) { exit(2) }
+    app.run()
+}
 
 func validMessageID(_ id: String) -> Bool {
     id.range(of: #"^dibs\.msg\.[A-Za-z0-9-]{1,128}\.[1-9][0-9]{0,19}$"#,
@@ -384,9 +469,14 @@ let handler = Handler { choice in
 }
 centre.delegate = handler
 
-centre.requestAuthorization(options: [.alert, .sound]) { granted, _ in
-    guard granted else { finish(2) }
-
+// The main queue owns this barrier, including the bounded settings fallback.
+// Missing diagnostic evidence must not delay or duplicate the actual posting.
+var beganPosting = false
+func postNotification(_ settings: [String: Any]?) {
+    guard !beganPosting else { return }
+    beganPosting = true
+    receiptSettings = settings
+    receiptInterruptionLevel = buttons.isEmpty ? "active" : "timeSensitive"
     let content = UNMutableNotificationContent()
     content.title = title
     if !subtitle.isEmpty { content.subtitle = subtitle }
@@ -405,11 +495,9 @@ centre.requestAuthorization(options: [.alert, .sound]) { granted, _ in
         // reported success. The operator saw nothing and the agent waited out
         // half an hour.
         //
-        // Apple gates .timeSensitive behind an entitlement, which Dibs does not
-        // carry because signing is left to whoever installs it. Setting it is
-        // still right: where it is honoured the ask arrives, and where it is not
-        // this is exactly what happened anyway. `dibs doctor` reports an active
-        // Focus either way, so the failure is never silent again.
+        // This is a REQUESTED level, never proof of the capability. The receipt
+        // reports the actual timeSensitiveSetting; an unprovisioned build stays
+        // honestly not-supported. Nothing requests critical interruption.
         content.interruptionLevel = .timeSensitive
         let actions = buttons.map {
             UNNotificationAction(identifier: $0, title: $0, options: [.foreground])
@@ -430,6 +518,15 @@ centre.requestAuthorization(options: [.alert, .sound]) { granted, _ in
         // Nothing to wait for when there is nothing to answer.
         if buttons.isEmpty { finish(0) }
     }
+}
+
+centre.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+    guard granted else { finish(2) }
+    centre.getNotificationSettings { s in
+        let settings = notificationSettings(s)
+        DispatchQueue.main.async { postNotification(settings) }
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { postNotification(nil) }
 }
 
 // Bounded. A banner nobody answers must not hold a process open on an

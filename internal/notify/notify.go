@@ -113,10 +113,16 @@ func Banner(title, subtitle, body string) error {
 
 // BannerWithReceipt reports posting when the helper can confirm OS acceptance.
 func BannerWithReceipt(title, subtitle, body string, receipt Receipt) error {
+	return BannerWithDeliveryReceipt(title, subtitle, body, stateReceipt(receipt))
+}
+
+// BannerWithDeliveryReceipt keeps native settings on the same invocation as
+// its posting receipt; a separate startup probe is not a message observation.
+func BannerWithDeliveryReceipt(title, subtitle, body string, receipt DeliveryReceipt) error {
 	if goos == "linux" {
 		err := linuxBanner(title, subtitle, body)
 		if err == nil && receipt != nil {
-			receipt("posted")
+			receipt(ReceiptData{State: "posted"})
 		}
 		return err
 	}
@@ -125,7 +131,7 @@ func BannerWithReceipt(title, subtitle, body string, receipt Receipt) error {
 		defer cancel()
 		// #nosec G204 -- h is resolved beside this binary; the rest is data the
 		// helper reads as argv.
-		_, err := outputWithReceipt(exec.CommandContext(ctx, h, title, subtitle, body), receipt)
+		_, err := outputWithDeliveryReceipt(exec.CommandContext(ctx, h, title, subtitle, body), receipt)
 		return err
 	}
 	_, err := run(banner, append([]string{title, subtitle}, body)...)
@@ -143,6 +149,10 @@ func AskWithReceipt(title, body string, receipt Receipt, buttons ...string) (str
 	return askWithID("", title, body, receipt, buttons...)
 }
 
+func AskWithDeliveryReceipt(title, body string, receipt DeliveryReceipt, buttons ...string) (string, error) {
+	return askWithDeliveryID("", title, body, receipt, buttons...)
+}
+
 // AskMessage keys a human question/request to its board and ledger serial.
 func AskMessage(node string, serial uint64, title, body string, receipt Receipt, buttons ...string) (string, error) {
 	id, err := MessageID(node, serial)
@@ -152,7 +162,19 @@ func AskMessage(node string, serial uint64, title, body string, receipt Receipt,
 	return askWithID(id, title, body, receipt, buttons...)
 }
 
+func AskMessageWithDeliveryReceipt(node string, serial uint64, title, body string, receipt DeliveryReceipt, buttons ...string) (string, error) {
+	id, err := MessageID(node, serial)
+	if err != nil {
+		return "", err
+	}
+	return askWithDeliveryID(id, title, body, receipt, buttons...)
+}
+
 func askWithID(id, title, body string, receipt Receipt, buttons ...string) (string, error) {
+	return askWithDeliveryID(id, title, body, stateReceipt(receipt), buttons...)
+}
+
+func askWithDeliveryID(id, title, body string, receipt DeliveryReceipt, buttons ...string) (string, error) {
 	if len(buttons) == 0 || len(buttons) > 3 {
 		return "", errors.New("an alert takes one to three buttons; use Pick for more")
 	}
@@ -161,7 +183,7 @@ func askWithID(id, title, body string, receipt Receipt, buttons ...string) (stri
 		// notify-send waits for dismissal or an action. Success confirms the
 		// OS accepted posting, but supplies no receipt while it is pending.
 		if err == nil && receipt != nil {
-			receipt("posted")
+			receipt(ReceiptData{State: "posted"})
 		}
 		return pressed, err
 	}
@@ -177,7 +199,7 @@ func askWithID(id, title, body string, receipt Receipt, buttons ...string) (stri
 		if id != "" {
 			cmd.Env = append(os.Environ(), "DIBS_NOTIFY_ID="+id)
 		}
-		out, err := outputWithReceipt(cmd, receipt)
+		out, err := outputWithDeliveryReceipt(cmd, receipt)
 		if err != nil {
 			// Exit 2 means the machine WILL NOT notify: no authorisation, no
 			// bundle. That is not a person deferring, and collapsing the two is
@@ -208,7 +230,7 @@ func askWithID(id, title, body string, receipt Receipt, buttons ...string) (stri
 		}
 		return strings.TrimSpace(string(out)), nil
 	}
-	return "", BannerWithReceipt(title, "answer on the Dibs board", body, receipt)
+	return "", BannerWithDeliveryReceipt(title, "answer on the Dibs board", body, receipt)
 }
 
 // Pick offers a list and returns the choice, or "" if dismissed.
@@ -580,10 +602,22 @@ func Reach() (ok bool, why string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	// #nosec G204 -- h is resolved beside this binary; --status is a constant.
-	out, err := exec.CommandContext(ctx, h, "--status").Output()
+	cmd := exec.CommandContext(ctx, h, "--status") // #nosec G204 -- installed helper, existing constant mode
+	// Additive capability request: every older helper already understands
+	// --status and ignores the environment. Never send it a new positional flag.
+	cmd.Env = append(os.Environ(), "DIBS_NOTIFY_SETTINGS_V1=1")
+	out, err := cmd.Output()
+	if settings := DecodeSettings(out); settings != nil {
+		why := settings.Summary() + " " + settings.Hints(true)
+		if err != nil {
+			return false, why
+		}
+		authorized := settings.AuthorizationStatus == "authorized" || settings.AuthorizationStatus == "provisional"
+		return authorized && settings.AlertSetting == "enabled", why
+	}
 	switch strings.TrimSpace(string(out)) {
 	case "authorized":
-		return true, focusDoctor()
+		return true, (*Settings)(nil).Hints(true) + " " + focusDoctor()
 	case "denied":
 		return false, "notifications are turned off for Dibs in System Settings"
 	case "not-determined":
@@ -598,17 +632,15 @@ func Reach() (ok bool, why string) {
 	if err != nil {
 		return false, "the notifier could not be asked: " + err.Error()
 	}
-	return false, "the notifier gave no answer"
+	return false, "the notifier gave no usable settings answer. " + (*Settings)(nil).Hints(true)
 }
 
 // focusOn returns the active Focus mode's identifier, or "".
 //
-// Read from the file macOS keeps rather than asked of an API, because there is
-// no public one: NSUserNotificationCenter never exposed Focus, and Apple's
-// supported answer for an app is to set an interruption level and accept the
-// outcome. That is fine for DELIVERING and useless for DIAGNOSING, and this is
-// the diagnosis path. Missing or unreadable means "no Focus", which is the
-// honest reading: absence of evidence, and it only ever downgrades a warning.
+// This legacy private-file observation can name a mode without a permission
+// prompt. The public INFocusStatusCenter observation in the helper requires
+// already-granted access and can only say whether Focus is on. Missing or
+// unreadable private evidence is unknown, never proof that Focus is off.
 func focusOn() string {
 	home, err := os.UserHomeDir()
 	if err != nil {

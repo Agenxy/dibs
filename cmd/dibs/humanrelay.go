@@ -419,6 +419,9 @@ func (r *relay) handle(n engine.HumanNotice) {
 		Receipt: func(state string) {
 			r.delivery(n.Serial, state, "")
 		},
+		DeliveryReceipt: func(data notify.ReceiptData) {
+			r.deliveryReceipt(n.Serial, data, "")
+		},
 	})
 	if err != nil {
 		r.delivery(n.Serial, "failed", err.Error())
@@ -435,13 +438,22 @@ func (r *relay) handle(n engine.HumanNotice) {
 }
 
 func (r *relay) delivery(serial uint64, state, failure string) {
+	r.deliveryReceipt(serial, notify.ReceiptData{State: state}, failure)
+}
+
+func (r *relay) deliveryReceipt(serial uint64, data notify.ReceiptData, failure string) {
+	data = data.Normalized()
+	state := data.State
 	client := *r.client
 	client.Timeout = 3 * time.Second
 	if len(failure) > 4096 {
 		failure = failure[:4096]
 	}
 	_, err := postJSON(&client, r.origin+"/api/human/delivery", r.bearer(),
-		map[string]any{"serial": serial, "state": state, "error": failure}, nil)
+		map[string]any{
+			"serial": serial, "state": state, "error": failure,
+			"settings": data.Settings, "interruption_level": data.InterruptionLevel,
+		}, nil)
 	if err != nil {
 		slog.Warn("notification receipt did not reach the board", "msg", serial, "state", state, "err", err)
 	}

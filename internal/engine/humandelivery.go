@@ -31,12 +31,16 @@ type humanDelivery struct {
 }
 
 type humanReceipt struct {
-	label     string          // per-message label; the enrolled device key stays internal
-	State     string          `json:"state"`
-	Error     string          `json:"error,omitempty"`
-	Posted    bool            `json:"posted,omitempty"`
-	Dismissed bool            `json:"dismissed,omitempty"`
-	Cleanup   *notify.Cleanup `json:"notification_cleanup,omitempty"`
+	label             string           // per-message label; the enrolled device key stays internal
+	State             string           `json:"state"`
+	Error             string           `json:"error,omitempty"`
+	Posted            bool             `json:"posted,omitempty"`
+	Dismissed         bool             `json:"dismissed,omitempty"`
+	Cleanup           *notify.Cleanup  `json:"notification_cleanup,omitempty"`
+	Settings          *notify.Settings `json:"settings"`
+	InterruptionLevel string           `json:"interruption_level,omitempty"`
+	Shown             string           `json:"shown"`
+	Hint              string           `json:"hint,omitempty"`
 }
 
 type humanDeliveries struct {
@@ -130,6 +134,15 @@ func (e *Engine) askHumanDesktop(n HumanNotice, ask func(humanask.Message) (huma
 				e.cleanupLateHumanPost(n.Serial)
 			}
 		},
+		DeliveryReceipt: func(data notify.ReceiptData) {
+			if data.State == "posted" {
+				e.setHumanPresentation(n.Serial, e.humanPresentation(), true)
+			}
+			e.recordHumanReceipt(n.Serial, "desktop", data, "")
+			if data.State == "posted" {
+				e.cleanupLateHumanPost(n.Serial)
+			}
+		},
 	})
 	if err != nil {
 		e.recordHumanDelivery(n.Serial, "desktop", "failed", err.Error())
@@ -142,6 +155,12 @@ func (e *Engine) askHumanDesktop(n HumanNotice, ask func(humanask.Message) (huma
 }
 
 func (e *Engine) recordHumanDelivery(serial uint64, source, state, failure string) bool {
+	return e.recordHumanReceipt(serial, source, notify.ReceiptData{State: state}, failure)
+}
+
+func (e *Engine) recordHumanReceipt(serial uint64, source string, data notify.ReceiptData, failure string) bool {
+	data = data.Normalized()
+	state := data.State
 	e.humanDelivery.mu.Lock()
 	defer e.humanDelivery.mu.Unlock()
 	if e.humanDelivery.bySerial == nil {
@@ -171,6 +190,14 @@ func (e *Engine) recordHumanDelivery(serial uint64, source, state, failure strin
 		return true
 	}
 	r.State, r.Error = state, failure
+	if data.Settings != nil {
+		r.Settings = data.Settings
+	}
+	if data.InterruptionLevel == "active" || data.InterruptionLevel == "timeSensitive" {
+		r.InterruptionLevel = data.InterruptionLevel
+	}
+	r.Shown = "unconfirmed"
+	r.Hint = r.Settings.Hints(r.InterruptionLevel == "timeSensitive")
 	r.Posted = r.Posted || state == "posted"
 	d.Posted = d.Posted || r.Posted
 	r.Dismissed = r.Dismissed || state == "dismissed"
@@ -230,6 +257,13 @@ func deliveryRank(state string) int {
 // ReportHumanDelivery records a relay's receipt, outside the fold. The HTTP
 // caller authenticates the relay session; this boundary validates its subject.
 func (e *Engine) ReportHumanDelivery(ctx context.Context, serial uint64, source, state, failure string) error {
+	return e.ReportHumanReceipt(ctx, serial, source, notify.ReceiptData{State: state}, failure)
+}
+
+// ReportHumanReceipt carries the posting source's versioned native observation.
+// Unknown metadata never erases OS acceptance or answers/grants human mail.
+func (e *Engine) ReportHumanReceipt(ctx context.Context, serial uint64, source string, data notify.ReceiptData, failure string) error {
+	state := data.State
 	if err := validateHumanReceipt(source, state, failure); err != nil {
 		return err
 	}
@@ -240,7 +274,7 @@ func (e *Engine) ReportHumanDelivery(ctx context.Context, serial uint64, source,
 			invalid = ErrNotTheHumans
 			return nil
 		}
-		if !e.recordHumanDelivery(serial, source, state, failure) {
+		if !e.recordHumanReceipt(serial, source, data, failure) {
 			invalid = fmt.Errorf("notification receipt source limit reached (64)")
 			return nil
 		}
@@ -283,6 +317,9 @@ func (e *Engine) deliveryForHuman(m *core.Message) humanDelivery {
 	if d.Receipts != nil {
 		copyReceipts := make(map[string]humanReceipt, len(d.Receipts))
 		for _, receipt := range d.Receipts {
+			receipt.Settings = receipt.Settings.Normalized()
+			receipt.Shown = "unconfirmed"
+			receipt.Hint = receipt.Settings.Hints(m.Type == core.MsgRequest || m.Type == core.MsgQuestion)
 			copyReceipts[receipt.label] = receipt
 		}
 		d.Receipts = copyReceipts

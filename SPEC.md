@@ -1275,12 +1275,33 @@ authenticated session. No receipt state is ledgered: after restart the route
 and state are `unknown` until new evidence arrives; actual answers replay.
 Old helpers/relays supply no invented receipt. Retrying `op_id` returns the
 original route (or unknown after restart) without another alert.
+Each source additionally reports `settings` (version1 native authorization,
+alert style, alerts, Notification Center, lock screen, Time Sensitive and Focus
+observations), the helper's requested `interruption_level`, `shown:
+"unconfirmed"`, and a corrective `hint`. Old, unavailable or malformed helper
+metadata is `settings: null`, never evidence that presentation is quiet or fine.
+The settings come from the actual posting invocation and survive its later
+state-only dismissal receipt; different sources keep their own observations.
+Banners on a request recommend System Settings > Notifications > Dibs > Alerts,
+because the Approve controls should persist. Disabled Time Sensitive has its own
+setting hint; not-supported says this build is not provisioned for it. A requested
+timeSensitive level does not establish the entitlement or permission to bypass
+Focus. Requests/questions with controls request timeSensitive; notify is active;
+none requests critical interruption.
+`dibs doctor` measures the same settings without posting, permission prompts or
+settings changes. The helper's existing `--status` mode accepts the additive
+`DIBS_NOTIFY_SETTINGS_V1=1` environment capability and returns versioned JSON;
+old helpers ignore it and their word-only reply retains unknown settings.
+Public Focus status is read only when access is already authorized and the
+observation is non-nil. Otherwise it is explicitly not observable; no prompt is
+requested and absence never implies Focus is off or a notification was visible.
 Local desktop sends additionally return this derived delivery evidence immediately:
 `posted: false` while pending, becoming true only on OS posting evidence. Active
 macOS Focus supplies its name, `shown: "unknown"` and a hint to check receipts
 and leave the request pending. The posting receipt retains its own Focus snapshot,
 even if Focus changes afterwards. These observations run outside the writer and
-read only bounded non-secure Focus files; no app/contact filter is inspected and
+read only bounded non-secure Focus files alongside the helper's permission-free
+public status observation; no app/contact filter is inspected and
 no visibility claim is inferred from it. Human questions and requests never
 open a decision window automatically, including while Focus is on. A person
 pressing an answer button can still request an answer field or choice list.

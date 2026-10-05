@@ -14,11 +14,38 @@ import (
 // does not establish that a banner was visible or that a person saw it.
 type Receipt func(state string)
 
+// DeliveryReceipt carries the helper's actual settings alongside OS acceptance.
+// Legacy callbacks still receive states; they never invent settings evidence.
+type DeliveryReceipt func(ReceiptData)
+
+type ReceiptData struct {
+	State             string    `json:"state"`
+	Settings          *Settings `json:"settings"`
+	InterruptionLevel string    `json:"interruption_level,omitempty"`
+}
+
+func stateReceipt(receipt Receipt) DeliveryReceipt {
+	if receipt == nil {
+		return nil
+	}
+	return func(data ReceiptData) { receipt(data.State) }
+}
+
+func (r ReceiptData) Normalized() ReceiptData {
+	r.Settings = r.Settings.Normalized()
+	r.InterruptionLevel = enum(r.InterruptionLevel, "active", "timeSensitive")
+	return r
+}
+
 // A private 0700 per-invocation directory below the data directory makes
 // the receipt protocol additive: an older helper
 // ignores the environment variable and supplies no receipt. It also survives
 // launchctl asuser, which does not carry the helper's stdout back to us.
 func outputWithReceipt(cmd *exec.Cmd, receipt Receipt) ([]byte, error) {
+	return outputWithDeliveryReceipt(cmd, stateReceipt(receipt))
+}
+
+func outputWithDeliveryReceipt(cmd *exec.Cmd, receipt DeliveryReceipt) ([]byte, error) {
 	if receipt == nil {
 		return cmd.Output()
 	}
@@ -57,12 +84,16 @@ func outputWithReceipt(cmd *exec.Cmd, receipt Receipt) ([]byte, error) {
 		read := func() {
 			b, readErr := root.ReadFile("receipt") // confined to the private directory
 			var r struct {
-				State string `json:"state"`
+				State             string          `json:"state"`
+				Settings          json.RawMessage `json:"settings"`
+				InterruptionLevel json.RawMessage `json:"interruption_level"`
 			}
 			if readErr == nil && json.Unmarshal(b, &r) == nil &&
-				(r.State == "posted" || r.State == "dismissed") && r.State != last {
-				last = r.State
-				receipt(r.State)
+				(r.State == "posted" || r.State == "dismissed") && string(b) != last {
+				last = string(b)
+				var level string
+				_ = json.Unmarshal(r.InterruptionLevel, &level)
+				receipt(ReceiptData{State: r.State, Settings: DecodeSettings(r.Settings), InterruptionLevel: level}.Normalized())
 			}
 		}
 		for {
