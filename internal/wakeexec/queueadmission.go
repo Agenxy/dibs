@@ -17,6 +17,30 @@ type queueCommandOutcome struct {
 	contended bool
 }
 
+// RestartQueueOutcome distinguishes a confirmed queue/admission from lock
+// contention, which proves no command was run and permits one bounded retry.
+type RestartQueueOutcome struct {
+	OK, Retryable bool
+}
+
+// RunRestartQueue uses the same serialized native queue admission as ordinary
+// wakes, but exposes only the one failure class safe to retry automatically.
+func RunRestartQueue(argv []string, agent, dir string) RestartQueueOutcome {
+	kind, recognised := "", false
+	if nativeQueueRoute(argv) {
+		kind, recognised = legacyWakeKind(argv[5])
+	}
+	if !recognised || kind != KindAppRestart {
+		return RestartQueueOutcome{}
+	}
+	thread, valid := queueTarget(argv)
+	if !valid {
+		return RestartQueueOutcome{}
+	}
+	out := runQueuedCommand(argv, thread, agent, dir, Timeout, Grace)
+	return RestartQueueOutcome{OK: out.ok, Retryable: out.contended}
+}
+
 // runQueuedCommand serializes observe -> enqueue -> retain across the daemon
 // and every bridge on this board. A process-local mutex allowed both writers
 // to observe the same empty queue before either committed its item.

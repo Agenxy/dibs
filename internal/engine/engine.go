@@ -174,11 +174,16 @@ type Engine struct {
 	// hostID is WHICH COMPUTER this daemon runs on, as the fleet's address
 	// plane names it (Supgang's node id) when that is known; "" means the
 	// ledger's own node id stands in. See HostID.
-	hostID          string
-	appReconnects   map[string]time.Time // derived app process incarnations, writer-owned
-	nameAliases     *core.AgentNameAliases
-	configuredNames map[string]configuredNameAddress // derived role-address diagnostics
-	reconnectMail   map[string]uint64                // row incarnation awaiting one reconnect reconsideration
+	hostID        string
+	appReconnects map[string]time.Time // derived app process incarnations, writer-owned
+	// Operator defaults; ledgered coordinator overrides live in core.State.
+	restartResumeDefault    time.Duration
+	restartIntervalDefault  time.Duration
+	restartResumeFromFile   bool
+	restartIntervalFromFile bool
+	nameAliases             *core.AgentNameAliases
+	configuredNames         map[string]configuredNameAddress // derived role-address diagnostics
+	reconnectMail           map[string]uint64                // row incarnation awaiting one reconnect reconsideration
 	// hostAliases are ids this computer used to answer to: see
 	// SetHostAliases. Written before the engine serves, read on the
 	// request path.
@@ -289,7 +294,8 @@ func New(st *core.State, led Ledger, prober Prober, history ...[]core.Event) *En
 		ring: ring,
 		ops:  make(chan request), subs: make(chan subReq), unsubs: make(chan chan core.Event),
 		state: st, led: led, prober: prober,
-		ringCap: 65536, buckets: map[string]*bucket{},
+		restartIntervalDefault: 2 * time.Second,
+		ringCap:                65536, buckets: map[string]*bucket{},
 		resumeAt: map[string]time.Time{},
 		streams:  map[chan core.Event]*atomic.Bool{}, seen: map[string]time.Time{},
 		hookAlive:    map[string]time.Time{},
@@ -325,6 +331,7 @@ func (e *Engine) Run(ctx context.Context) {
 		e.finishBlobReconciles()
 	}()
 	e.boot(time.Now())
+	go e.watchAppRestarts(ctx)
 	e.requestHumanCleanup(e.humanCleanupAt(time.Now()))
 	e.reconcileBlobs() // startup reconcile: drop crash orphans (A4.1)
 	// SYNCHRONOUS, and before the loop serves anything.
@@ -678,7 +685,8 @@ func (e *Engine) execWithReceipt(
 	// refused it before the fold ever saw it, every adoption silently kept
 	// the old id on rows registered before it, and the CHANGELOG said the
 	// migration worked.
-	system := op.Kind == core.OpSweep || op.Kind == core.OpMarkDelivered || op.Kind == core.OpWake ||
+	system := op.Kind == core.OpSweep || op.Kind == core.OpMarkDelivered ||
+		op.Kind == core.OpWake || op.Kind == core.OpAppRestartObserved ||
 		op.Kind == core.OpActivityCheckpoint || op.Kind == core.OpGrantRole ||
 		op.Kind == core.OpPrune || op.Kind == core.OpHostRenamed ||
 		// merge_agents is tokenless in the fold, like prune, and gated in
@@ -1038,6 +1046,11 @@ func (e *Engine) execWithReceipt(
 		pending, readErr := e.pullUpdates(actor, now)
 		if readErr != nil {
 			return nil, readErr
+		}
+		if restart, err := e.readAppRestart(actor.Token, now); err != nil {
+			return nil, err
+		} else if restart != "" {
+			pending = append(pending, restart)
 		}
 		if pending == nil {
 			pending = []string{}

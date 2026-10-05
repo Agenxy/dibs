@@ -5,6 +5,20 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- An opt-in ChatGPT app-restart sweep can queue a factual `app-restarted`
+  notice for local Codex threads with Dibs activity inside the configured
+  window, even when they have no mail. The daemon samples the prior app epoch's
+  declaration slot versions, records the selected roster and references (not
+  declaration text) in the ledger, and quotes unchanged text or marks updated
+  and cleared slots once on each agent's next authenticated `check_in` or
+  `inbox`. `[wake] resume_after_app_restart` defaults to `0s` (off);
+  `restart_open_interval` defaults to `2s`. Coordinators may change only these
+  two controls through `settings`; the changes and provenance are ledgered.
+  Delivery needs the operator's existing `codex queue` route and a known local
+  ChatGPT-app thread. Observation across daemon downtime is best effort.
+
 ## [0.0.12] - 2026-10-05
 
 ### Added

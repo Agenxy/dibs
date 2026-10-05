@@ -48,6 +48,8 @@ addr = "100.72.14.3:4777"    # a tailnet address: agents on four machines, one b
 | `notices_wake` | `true` | Whether situational awareness alone may extend a turn. |
 | `sockets` | `true` | Whether the session-socket routes run at all: the daemon's peer-socket wake and the bridge's self-wake. |
 | `open_app_after_idle` | `10m` | Claude closed-session recovery only: AFK interval, with lock or display sleep qualifying sooner. ChatGPT queued wakes open promptly with a per-thread bound, independently of presence. |
+| `resume_after_app_restart` | `0s` (off) | Recent Dibs-activity window for reopening local ChatGPT-app Codex threads after an observed app process restart. Needs an existing `codex queue` wake entry. |
+| `restart_open_interval` | `2s` | Minimum gap between the restart sweep's thread opens. |
 | `remind_stale_after` | retired | Did nothing since liveness became the daemon's own job. Still parsed so old configs load; delete it. |
 | `exec.<harness>.argv` | *(none)* | The command that reaches that harness when an agent is **not running**. |
 | `exec.<harness>.cooldown` | `90s` | The shortest gap between two wakes of the same agent. |
@@ -120,6 +122,20 @@ Messages themselves do not reset the memo. No decision window is opened.
 
 `open_app_after_idle` now applies only to Claude closed-session recovery. Its
 signed helper still checks lock, sleeping displays or measurable HID idle.
+
+App-restart recovery is separate and off by default. Set
+`resume_after_app_restart = "1h"` to select local ChatGPT-app threads whose
+Dibs activity was observed within the previous hour, whether or not they have
+queued mail. Dibs samples their own declaration slot IDs and update serials while
+the old app process is running, records those references at a stable replacement, queues
+a dated factual notice, and opens selected threads at least
+`restart_open_interval` apart. Its next token-authenticated `check_in` or
+`inbox` quotes full text for unchanged slots once. A changed slot is labelled
+updated since restart, and a cleared slot is identified without stale text.
+No declaration text is copied into the restart ledger op. A daemon restart loses the
+in-memory observation baseline, so a replacement during daemon downtime may
+not be detected. A queued notice or successful open does not prove the model
+acted.
 
 ```toml
 [wake]
@@ -748,7 +764,8 @@ deliberate: an earlier design put the nonces here and it was the wrong trade.
 
 An agent you have granted **admin** can read and change the settings that take
 effect while the board is running, with the `settings` tool. Reading needs
-only a token; changing needs admin.
+only a token; changing normally needs admin. A coordinator can change only
+the two app-restart controls.
 
 It is called `settings` and not `configure` because `dibs configure` is a CLI
 wizard that writes `dibs.toml` before a board runs, and two different things
@@ -762,14 +779,17 @@ settings(token, setting: "wake.sockets", value: "false")
 The listing gives every settable key, its value now, and who last set it, so
 "the board is behaving differently than I expect" is answerable in one line.
 
-**Only five settings are here**, and the boundary is that the engine can apply
-them immediately: `wake.extend_turn_for`, `wake.notices_wake`, `wake.sockets`,
-`hooks.mail_bodies` and `identity.unidentified`. An address or a certificate
+The five admin file overrides are `wake.extend_turn_for`,
+`wake.notices_wake`, `wake.sockets`, `hooks.mail_bodies` and
+`identity.unidentified`. The two restart controls are
+`wake.resume_after_app_restart` and `wake.restart_open_interval`; coordinator
+or admin changes to those are ledgered with the actor and time. All seven take
+effect immediately. An address or a certificate
 needs a restart, so `settings` refuses it with `E_NO_SETTING` rather than
 reporting success and doing nothing until somebody happens to restart the
 daemon.
 
-**Admin, not coordinator.** A coordinator runs the fleet: evicting, adopting
+**Admin for the five general settings.** A coordinator runs the fleet: evicting, adopting
 and force-releasing are all visible on the board and undoable from it.
 Changing a setting changes how the board behaves for every agent on it,
 including the ones that will never look at this file, so it is the grant a
@@ -781,17 +801,18 @@ Not into `dibs.toml`. That file is mostly your comments and your reasoning,
 and a daemon that rewrites TOML destroys them: it would hand back a file a
 machine can read and a person cannot.
 
-Changes go to `overrides.json` beside it, layered on top at boot:
+The five admin overrides go to `overrides.json` beside it, layered on top at
+boot. The two restart controls go into the append-only ledger and override
+their `dibs.toml` values on replay:
 
 ```json
 { "set": { "wake.sockets": { "value": "false", "by": "coordinator",
                              "at": "2026-09-24T14:02:11Z" } } }
 ```
 
-Three things follow, all of them wanted. Your hand-written file stays exactly
-as written. Everything an agent changed is in **one** place, so reading that
-file answers what has been done to this board. And deleting it reverts all of
-it without touching anything you wrote.
+The hand-written file stays exactly as written. Deleting `overrides.json`
+reverts only the five general overrides; it cannot erase ledgered restart
+control changes. Use `settings` to revise those and see their setter and time.
 
 If the file cannot be read at boot, the daemon says so loudly and runs what
 `dibs.toml` says: refusing to start would let an agent take the board down by

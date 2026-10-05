@@ -228,6 +228,11 @@ type WakeConfig struct {
 	// OpenAppAfterIdle is Claude closed-session recovery's away interval.
 	// ChatGPT queued wakes open promptly with their own per-thread bound.
 	OpenAppAfterIdle string `toml:"open_app_after_idle"`
+	// ResumeAfterAppRestart is the eligible Dibs-activity window for a ChatGPT
+	// app process replacement. Zero (the default) disables the sweep.
+	ResumeAfterAppRestart string `toml:"resume_after_app_restart"`
+	// RestartOpenInterval paces global ChatGPT thread opens; default 2s.
+	RestartOpenInterval string `toml:"restart_open_interval"`
 	// RemindStaleAfter is how long a live session may go without coordinating
 	// before its hook digest says so: "1h" by default, "off" to disable.
 	//
@@ -1042,6 +1047,9 @@ func (c Config) validateWake() error {
 	if _, err := c.Wake.OpenAfterIdle(); err != nil {
 		return err
 	}
+	if _, _, err := c.Wake.AppRestart(); err != nil {
+		return err
+	}
 	w := c.Wake.ExtendTurnFor
 	if w == "" {
 		return nil
@@ -1270,4 +1278,28 @@ func (w WakeConfig) OpenAfterIdle() (time.Duration, error) {
 			"\"10m\", or \"0s\" for immediate Claude recovery", w.OpenAppAfterIdle)
 	}
 	return d, nil
+}
+
+// AppRestart returns the disabled-by-default activity window and paced-open
+// interval. Both values are validated at config load, before any wake runs.
+func (w WakeConfig) AppRestart() (time.Duration, time.Duration, error) {
+	window, interval := time.Duration(0), 2*time.Second
+	for _, item := range []struct {
+		key, raw string
+		out      *time.Duration
+	}{
+		{"resume_after_app_restart", w.ResumeAfterAppRestart, &window},
+		{"restart_open_interval", w.RestartOpenInterval, &interval},
+	} {
+		if strings.TrimSpace(item.raw) == "" {
+			continue
+		}
+		d, err := time.ParseDuration(item.raw)
+		if err != nil || d < 0 || d > 24*time.Hour || (item.key == "restart_open_interval" && d == 0) {
+			return 0, 0, fmt.Errorf("[wake] %s = %q: give a duration from 0 to 24h "+
+				"(interval must be positive)", item.key, item.raw)
+		}
+		*item.out = d
+	}
+	return window, interval, nil
 }

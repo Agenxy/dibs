@@ -223,6 +223,9 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 
 	gcEvents, pruned := s.gc(now, op.PurgeMail, op.V7Semantics, op.KeepOwed)
 	evs = append(evs, gcEvents...)
+	if s.gcRestartNotices() {
+		pruned = true
+	}
 	evs = append(evs, s.gcBlobs(now, 0)...) // TTL/cap blob eviction (A5)
 
 	// Ledger the sweep if it MUTATED anything, not only if it announced

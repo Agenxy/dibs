@@ -95,6 +95,12 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 	}
 	// The op payload: the union of every tag that reached disk above.
 	wantOp := map[string]bool{
+		// App-restart observation and coordinator settings are new op kinds,
+		// not reinterpretations of older fields. These names are frozen once
+		// the first restart/setting is written to the ledger.
+		"restart_epoch": true, "restart_baseline": true,
+		"restart_observed_at": true, "restart_notices": true,
+		"setting_key": true, "setting_value": true,
 		// Former-name release is one additive effect; no historical tag changes.
 		"release_names": true,
 		// New task-queue decisions; historical tags below stay byte-for-byte.
@@ -441,7 +447,8 @@ const (
 	// Withdrawal: one additive replacement reference; all old tags unchanged.
 	// Inline reads add two tags; all historical tags stay frozen.
 	// Alias release adds one tag; every historical spelling stays frozen.
-	frozenOpFingerprint       = "sha256:65b2f4d12dc7bb5b"
+	// App restart adds four observation tags and two setting tags; none renamed.
+	frozenOpFingerprint       = "sha256:e57817acc9be9f90"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`
@@ -500,6 +507,50 @@ func TestUpgradeAwarenessSnapshotFieldsAreFrozen(t *testing.T) {
 	}
 }
 
+// restart_notices is a nested payload on app_restart_observed. Freezing the
+// outer Op tag alone would not catch a rename of the incarnation or slot
+// fields within it: replay would report success and deliver the wrong notice.
+func TestAppRestartNoticeFieldsAreFrozen(t *testing.T) {
+	want := map[string]bool{
+		"agent_id": true, "created_serial": true, "slots": true,
+		"epoch": true, "observed_at": true,
+	}
+	got := declaredTagsOf(reflect.TypeOf(core.RestartNotice{}))
+	if len(got) != len(want) {
+		t.Fatalf("restart notice fields changed: %v", got)
+	}
+	for _, field := range got {
+		if !want[field] {
+			t.Errorf("unfrozen restart notice field %q", field)
+		}
+	}
+	const frozenRestartNoticeFingerprint = "sha256:c98002d4e7cbbeff"
+	if hash := fingerprint(want); hash != frozenRestartNoticeFingerprint {
+		t.Errorf("restart notice field fingerprint changed: got %s, want %s", hash,
+			frozenRestartNoticeFingerprint)
+	}
+}
+
+// The slot reference is the compact, replayable link to declaration text.
+// A tag rename would silently erase the version fence during ledger replay.
+func TestAppRestartSlotReferenceFieldsAreFrozen(t *testing.T) {
+	want := map[string]bool{"id": true, "updated_serial": true}
+	got := declaredTagsOf(reflect.TypeOf(core.RestartSlotRef{}))
+	if len(got) != len(want) {
+		t.Fatalf("restart slot reference fields changed: %v", got)
+	}
+	for _, field := range got {
+		if !want[field] {
+			t.Errorf("unfrozen restart slot reference field %q", field)
+		}
+	}
+	const frozenRestartSlotReferenceFingerprint = "sha256:aa9f0391db1ce33a"
+	if hash := fingerprint(want); hash != frozenRestartSlotReferenceFingerprint {
+		t.Errorf("restart slot reference field fingerprint changed: got %s, want %s", hash,
+			frozenRestartSlotReferenceFingerprint)
+	}
+}
+
 func opKind(op map[string]json.RawMessage) string {
 	var k string
 	_ = json.Unmarshal(op["kind"], &k)
@@ -538,6 +589,9 @@ func TestOpKindStringsAreFrozen(t *testing.T) {
 		"OpRegister":             {core.OpRegister, "register"},
 		"OpResume":               {core.OpResume, "resume"},
 		"OpWake":                 {core.OpWake, "wake"},
+		"OpAppRestartObserved":   {core.OpAppRestartObserved, "app_restart_observed"},
+		"OpSetRestartSetting":    {core.OpSetRestartSetting, "set_restart_setting"},
+		"OpReadAppRestart":       {core.OpReadAppRestart, "read_app_restart"},
 		"OpAckBoard":             {core.OpAckBoard, "check_in"},
 		"OpUpdate":               {core.OpUpdate, "update"},
 		"OpSignOff":              {core.OpSignOff, "sign_off"},

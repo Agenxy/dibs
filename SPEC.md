@@ -530,6 +530,28 @@ where the harness publishes one, is tried best-effort. Both carry "you have mail
 and nothing else: the board wakes an agent and does not steer one. See
 `WAKE-MECHANISMS.md` §5 and §5b.
 
+**Optional ChatGPT app-restart recovery.** `[wake]
+resume_after_app_restart = "1h"` enables a local, macOS-only sweep of known
+ChatGPT-app Codex threads with Dibs activity in that window; absent means
+`0s`, disabled. A process epoch must be observed stable twice. The daemon
+keeps a read-only snapshot while the old epoch is running, then ledgers the
+new epoch, selected agent incarnations, and slot IDs plus update serials.
+Declaration text is not copied into the restart op: it already lives in
+replayable state, keeping one fleet sweep below the ledger's record bound.
+An existing `codex queue` wake command is required; there is no new executable,
+socket route, or relocation. Queue notices contain only the dated event, never
+participant text. Opens are globally paced by `restart_open_interval` (default
+`2s`) and use the normal bounded ChatGPT app-open path. Queue acceptance and an
+open request do not prove the model acted. The next authenticated `check_in`
+or `inbox` returns and consumes the saved slot-version snapshot once. If a slot
+still has its observed update serial, its full text is quoted as pre-restart;
+if it changed or was cleared, the notice says so rather than pretending to
+quote old text. The
+coordinator or admin may change these two keys through `settings`; those
+changes are ledgered with actor and time and override `dibs.toml`. A daemon
+restart resets the observation baseline, so detection during its downtime is
+best effort, not a promised catch-up.
+
 ## 7. Liveness: three signals, honestly labeled
 
 | Signal | Mechanism | PROVES | Does NOT prove |
