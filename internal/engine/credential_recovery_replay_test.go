@@ -5,14 +5,13 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/agenxy/dibs/internal/core"
 )
 
 func TestCredentialRecoveryWritesOnlySelectedNonceAndReplays(t *testing.T) {
-	st := core.NewState("recovery-replay", core.DefaultLimits())
-	led := &memLedger{}
+	st := core.NewState("retention", core.DefaultLimits())
+	led := &retentionLedger{}
 	e := New(st, led, deadProber{})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -20,7 +19,7 @@ func TestCredentialRecoveryWritesOnlySelectedNonceAndReplays(t *testing.T) {
 	t.Cleanup(func() { cancel(); <-done })
 	register := func(nonce string) core.Result {
 		t.Helper()
-		r, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "worker", Nonce: nonce, Agent: &core.AgentInfo{HostID: "recovery-replay"}})
+		r, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "worker", Nonce: nonce, Agent: &core.AgentInfo{HostID: "retention"}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -28,36 +27,29 @@ func TestCredentialRecoveryWritesOnlySelectedNonceAndReplays(t *testing.T) {
 	}
 	old := register("old-secret")
 	_ = register("new-secret")
-	r, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "worker", RecoveryNonces: []string{"new-secret", "old-secret"}, Agent: &core.AgentInfo{HostID: "recovery-replay"}})
+	if _, err := e.Do(ctx, &core.Op{Kind: core.OpSignOff, Token: old["token"].(string)}); err != nil {
+		t.Fatal(err)
+	}
+	r, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "worker", RecoveryNonces: []string{"new-secret", "old-secret"}, Agent: &core.AgentInfo{HostID: "retention"}})
 	if err != nil || r["agent_id"] != old["agent_id"] {
 		t.Fatalf("credential selection failed: %v / %v", r, err)
 	}
 	_, err = e.query(ctx, func() core.Result {
-		fold := core.NewState("recovery-replay", core.DefaultLimits())
-		for _, op := range led.ops {
-			if len(op.RecoveryNonces) != 0 {
-				t.Error("candidate credentials reached append")
-			}
-			raw, jerr := json.Marshal(op)
-			if jerr != nil {
-				t.Error(jerr)
-				continue
-			}
-			if strings.Contains(string(raw), "recovery_nonces") {
-				t.Error("transient candidate list entered on-disk format")
-			}
-			if _, _, aerr := fold.Apply(op, time.Now()); aerr != nil {
-				t.Error(aerr)
-			}
+		raw := led.records[len(led.records)-1].op
+		var recorded core.Op
+		if err := json.Unmarshal(raw, &recorded); err != nil {
+			t.Error(err)
 		}
-		if fold.Nonces["old-secret"] != st.Nonces["old-secret"] || len(fold.Agents) != len(st.Agents) || fold.Serial != st.Serial {
-			t.Error("selected registration did not replay to the same identities/serial")
+		if recorded.Kind != core.OpRegister || recorded.Nonce != "old-secret" ||
+			strings.Contains(string(raw), "new-secret") || strings.Contains(string(raw), "recovery_nonces") {
+			t.Error("append did not receive only the selected credential in the ordinary register op")
 		}
 		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	(&retentionBoard{t: t, e: e, ctx: ctx, led: led}).assertReplay()
 }
 
 func TestCredentialRecoveryCannotBecomeTheHuman(t *testing.T) {
