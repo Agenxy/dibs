@@ -41,8 +41,12 @@ func TestPublicMessageNotificationAndCleanupUseInstalledHelper(t *testing.T) {
 		// Clear the gate's kill switch only inside that isolated child: the
 		// helper asserts argv and writes receipts, never calls the desktop OS.
 		self, err := os.Executable()
+		if err != nil {
+			t.Fatal(err)
+		}
+		self, err = filepath.EvalSymlinks(self)
 		if err != nil || helper() != filepath.Join(filepath.Dir(self), helperName) {
-			t.Fatalf("setup: private copied helper is not the actual lookup: %v", err)
+			t.Fatalf("setup: private copied helper is not the actual lookup beside %q: %v", self, err)
 		}
 		t.Setenv(silenceEnv, "")
 		state := ""
