@@ -1226,6 +1226,10 @@ string when the caller has unread mail, an unacknowledged announcement, or a
 pending agent update. Counts and the corrective call (`inbox`) only, never
 content: the body stays behind the authenticated mailbox. Absent when there is
 nothing, and absent on `check_in`, which has just returned the inbox itself.
+Past the age floor, the oldest timestamp comes from those same outstanding
+items. A cached verdict already read through `inbox` cannot age fresh mail or
+an update. Approved/queued work appears separately in `owed_work`; acknowledged
+notifications and consumed terminal mail do not count as unread.
 
 This is a delivery guarantee, not a convenience. Push delivery through lifecycle
 hooks is conditional on the harness having hooks, the plugin being installed and
