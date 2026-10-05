@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"sort"
+	"sync/atomic"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -43,6 +44,20 @@ type appEpochWatch struct {
 	before           []restartCandidate
 }
 
+// Tests replace only this process-observation edge. Production always uses
+// the bounded /bin/ps probe; the watcher and every delivery recheck still
+// enter through the same path when an app epoch changes. Atomic replacement
+// keeps test teardown safe while the watcher goroutine is winding down.
+var appRestartEpoch = func() *atomic.Value {
+	v := new(atomic.Value)
+	v.Store(harnessenv.ChatGPTAppEpoch)
+	return v
+}()
+
+func currentAppRestartEpoch() (string, bool) {
+	return appRestartEpoch.Load().(func() (string, bool))()
+}
+
 func (e *Engine) watchAppRestarts(ctx context.Context) {
 	tick := time.NewTicker(2 * time.Second)
 	defer tick.Stop()
@@ -61,7 +76,7 @@ func (e *Engine) watchAppRestarts(ctx context.Context) {
 			watch = appEpochWatch{}
 			continue // off means no process probe and no wake
 		}
-		epoch, known := harnessenv.ChatGPTAppEpoch()
+		epoch, known := currentAppRestartEpoch()
 		if err := watch.observe(ctx, e, epoch, known); err != nil {
 			slog.Warn("app-restart observation was not recorded", "err", err)
 		}
@@ -264,7 +279,7 @@ func (e *Engine) deliverAppRestart(ctx context.Context, epoch string, plans []wa
 			case <-timer.C:
 			}
 		}
-		current, known := harnessenv.ChatGPTAppEpoch()
+		current, known := currentAppRestartEpoch()
 		if !known || current != epoch {
 			return // a later app incarnation owns any further sweep
 		}
@@ -286,7 +301,7 @@ func (e *Engine) sendRestartQueue(ctx context.Context, epoch string, plan wakePl
 			return false
 		case <-timer.C:
 		}
-		current, known := harnessenv.ChatGPTAppEpoch()
+		current, known := currentAppRestartEpoch()
 		if !known || current != epoch {
 			return false
 		}
