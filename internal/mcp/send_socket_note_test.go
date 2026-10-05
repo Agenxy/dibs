@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/peerwake"
 )
 
@@ -218,6 +219,75 @@ func TestGeneratedProgressKeepsSocketAndStopQuietThroughMCP(t *testing.T) {
 	again := call("check_in", map[string]any{"token": worker["token"]})
 	if strings.Contains(fmt.Sprint(again["agent_updates"]), "quiet-progress") {
 		t.Fatalf("read progress was delivered again: %v", again)
+	}
+}
+
+func TestPresentedNotifyNeverRearmsAcrossIdleEpochsThroughMCP(t *testing.T) {
+	for _, through := range []string{"Stop", "check_in", "socket"} {
+		t.Run(through, func(t *testing.T) {
+			session, wire := sendNoteSocket(t)
+			dir := t.TempDir()
+			srv, _, _ := restartableQueueServer(t, dir)
+			call := func(name string, args map[string]any) map[string]any {
+				t.Helper()
+				return sendNoteCall(t, srv, name, args)
+			}
+			worker := call("register", map[string]any{"name": "worker", "session_id": session, "harness": "Claude Code"})
+			sender := call("register", map[string]any{"name": "sender"})
+			call("check_in", map[string]any{"token": worker["token"]})
+			call("check_in", map[string]any{"token": sender["token"]})
+			if through == "socket" {
+				call("hook_poll", map[string]any{"session_id": session, "event": "Stop", "stop_hook_active": true})
+			} else {
+				call("hook_poll", map[string]any{"session_id": session, "event": "PreToolUse"})
+			}
+			marker := "notify-once-" + through
+			args := map[string]any{
+				"token": sender["token"], "to": "worker", "type": "notify", "body": marker, "op_id": "notify-once",
+			}
+			n := call("send", args)["msg_serial"]
+			switch through {
+			case "Stop":
+				got := call("hook_poll", map[string]any{"session_id": session, "event": "Stop", "strict_output": true})
+				if got["decision"] != "block" || !mentions(got, marker) {
+					t.Fatalf("setup: Stop did not present the authored FYI: %v", got)
+				}
+			case "check_in":
+				if got := call("check_in", map[string]any{"token": worker["token"]}); !mentions(got, marker) {
+					t.Fatalf("setup: authenticated call did not present the FYI: %v", got)
+				}
+			case "socket":
+				select {
+				case frame := <-wire:
+					if !strings.Contains(frame, marker) {
+						t.Fatalf("setup: wrong first FYI frame: %q", frame)
+					}
+				case <-time.After(3 * time.Second):
+					t.Fatal("setup: the authored FYI never reached the socket")
+				}
+				// Actual starting-hook evidence confirms the socket presentation;
+				// a kernel write alone must retain the held-peer fallback.
+				call("hook_poll", map[string]any{"session_id": session, "event": "SessionStart"})
+			}
+			for range 2 {
+				call("hook_poll", map[string]any{"session_id": session, "event": "PreToolUse"})
+				got := call("hook_poll", map[string]any{"session_id": session, "event": "Stop", "strict_output": true})
+				if got["decision"] == "block" || got["reason"] != nil || got["hookSpecificOutput"] != nil {
+					t.Fatalf("presented FYI blocked another idle epoch: %v", got)
+				}
+				noSendNoteFrame(t, wire)
+			}
+			retried := call("send", args)
+			if retried["msg_serial"] != n || !strings.Contains(fmt.Sprint(retried["note"]), "already presented") ||
+				!strings.Contains(fmt.Sprint(retried["note"]), "no new wake was sent") {
+				t.Fatalf("idempotent retry claimed another FYI wake: %v", retried)
+			}
+			noSendNoteFrame(t, wire)
+			m := readStopLedger(t, dir).Messages[uint64(n.(float64))]
+			if m == nil || m.Consumed || (m.State != core.MsgStatePending && m.State != core.MsgStateDelivered) {
+				t.Fatalf("one-shot wake guard lost or acknowledged raw FYI mail: %+v", m)
+			}
+		})
 	}
 }
 
