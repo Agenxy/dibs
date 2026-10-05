@@ -62,7 +62,7 @@ func AdmitNameChange(st *State, aliases *AgentNameAliases, l *Agent, op *Op) ([]
 	for _, name := range aliases.Names(st, l.ID) {
 		owned[name] = true
 	}
-	if next != l.Name && l.Name != l.ID {
+	if next != l.Name && l.Name != "" && l.Name != l.ID {
 		owned[l.Name] = true
 	}
 	delete(owned, next)
