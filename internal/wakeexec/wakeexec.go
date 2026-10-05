@@ -70,6 +70,8 @@ func Compose(msgType string) string {
 		return "Dibs: work you declared is still open and no turn is running. check_in shows it."
 	case KindRecheck:
 		return "Dibs: a wait you declared is due for a recheck. check_in shows it."
+	case KindAppRestart:
+		return "Dibs: the ChatGPT app restarted. Your pre-restart declarations are on the board."
 	}
 	if msgType != "" {
 		return fmt.Sprintf("Dibs: a new %s is waiting.", msgType)
@@ -81,6 +83,7 @@ func Compose(msgType string) string {
 const (
 	KindContinuation = "continuation"
 	KindRecheck      = "recheck"
+	KindAppRestart   = "app-restarted"
 )
 
 // Fields are the only substitutions a wake command gets.

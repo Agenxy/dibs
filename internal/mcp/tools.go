@@ -218,15 +218,15 @@ var toolDefs = func() []map[string]any {
 			}, "token", "agent", "into"),
 		},
 		{
-			"name": "settings", "description": "Read the board settings that take " +
-				"effect while it runs; as ADMIN, change one. No arguments lists each " +
-				"setting, its value and who set it. Only settings the engine applies " +
-				"immediately are here: an address needs a restart and is refused rather " +
-				"than accepted and ignored. Saved beside dibs.toml, never into it.",
+			"name": "settings", "description": "Read current board settings. Admins " +
+				"may change any listed key; coordinators may change only the two " +
+				"app-restart controls. No arguments lists values and setters. Changes " +
+				"take effect immediately; restart controls are ledgered, while other " +
+				"overrides are saved beside dibs.toml.",
 			"inputSchema": obj(map[string]any{
 				"token":   tok,
 				"setting": str("the setting to change, as listed. Omit to read them all"),
-				"value":   str(`what to set it to: "true"/"false", or a listed word`),
+				"value":   str(`new value: boolean, listed word, or duration (for restart controls)`),
 			}, "token"),
 		},
 		{

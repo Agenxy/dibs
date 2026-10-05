@@ -90,8 +90,11 @@ const (
 	// data directory holds.
 	OpClaimCoordinator = "claim_coordinator"
 	// OpVouchChild is how a parent proves it really is spawning a subagent.
-	OpVouchChild   = "vouch_child"
-	OpForceRelease = "force_release"
+	OpVouchChild         = "vouch_child"
+	OpForceRelease       = "force_release"
+	OpSetRestartSetting  = "set_restart_setting"
+	OpAppRestartObserved = "app_restart_observed"
+	OpReadAppRestart     = "read_app_restart"
 )
 
 // Result is the caller-facing op result.
@@ -108,6 +111,8 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 	switch op.Kind {
 	case OpInitializeReviewRead:
 		return s.applyInitializeReviewRead(op, now)
+	case OpAppRestartObserved:
+		return s.applyAppRestartObserved(op, now)
 	case OpRegister:
 		return s.applyRegister(op, now)
 	case OpResume:
@@ -196,6 +201,10 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		res, evs, err = s.applySpaceAdmit(l, op, now)
 	case OpWake:
 		res, evs, err = s.applyWake(l)
+	case OpSetRestartSetting:
+		res, evs, err = s.applyRestartSetting(l, op, now)
+	case OpReadAppRestart:
+		res, evs = s.applyReadAppRestart(l)
 	case OpRelocate:
 		res, evs, err = s.applyRelocate(l, op, now)
 	case OpActivityCheckpoint:

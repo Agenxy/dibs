@@ -280,6 +280,10 @@ func run() error {
 		return fmt.Errorf("reading %s/dibs.toml: %w", *dir, err)
 	}
 	eng.SetWakePolicy(wake)
+	if window, interval, err := cfg.Wake.AppRestart(); err == nil {
+		eng.SetAppRestartDefaults(window, interval,
+			cfg.Wake.ResumeAfterAppRestart != "", cfg.Wake.RestartOpenInterval != "")
+	}
 	// Validate() already refused a malformed value, so this cannot fail here.
 	if idle, ierr := cfg.Wake.OpenAfterIdle(); ierr == nil {
 		eng.SetOpenAppAfterIdle(idle)

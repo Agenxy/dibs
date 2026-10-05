@@ -36,6 +36,14 @@ func nativeQueueRoute(argv []string) bool {
 // pending item. An upstream inferred hold must not override an observed empty queue.
 func UsesQueueReceipt(argv []string) bool { _, ok := queueTarget(argv); return ok }
 
+// NativeQueueTemplate is the exact operator-owned queue shape the app-restart
+// sweep may reuse. A hard-coded thread or message is not a route to this
+// agent, even if it happens to be a valid command for another purpose.
+func NativeQueueTemplate(argv []string) bool {
+	_, ok := queueTarget(argv)
+	return ok && nativeQueueRoute(argv) && argv[3] == "{thread}" && argv[5] == "{message}"
+}
+
 // observeQueue uses the harness's own experimental API, never its database.
 // initialize and list load no thread (measured on the installed binary).
 // An unsupported or changed response is UNKNOWN, never an empty queue.

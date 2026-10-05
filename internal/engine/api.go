@@ -479,6 +479,11 @@ func (e *Engine) Inbox(ctx context.Context, token string) (core.Result, error) {
 		if readErr != nil {
 			return core.Result{"error": readErr}
 		}
+		if restart, err := e.readAppRestart(token, now); err != nil {
+			return core.Result{"error": err}
+		} else if restart != "" {
+			pending = append(pending, restart)
+		}
 		if len(pending) > 0 {
 			res["agent_updates"] = pending
 		}

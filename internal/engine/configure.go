@@ -20,7 +20,7 @@ import (
 // is that agents handle things: an operator who has granted an agent admin
 // should not then have to go and dig through a file on its behalf.
 //
-// WHY ONLY THESE FIVE. Every one has an engine setter that takes effect on the
+// WHY ONLY THESE FIVE FILE OVERRIDES. Every one has an engine setter that takes effect on the
 // next decision. An address or a TLS certificate does not: changing one would
 // report success and do nothing until a restart, which is the class of bug
 // this repository keeps paying for. So the boundary is honest rather than
@@ -139,10 +139,12 @@ func (e *Engine) ApplySetting(key, value string) {
 	e.noteSetting(key, got, "the configuration file")
 }
 
-// Configure reads or changes a setting. Reading needs a token; changing needs
-// admin.
+// Configure reads or changes a setting. Reading needs a token; the two
+// app-restart controls are coordinator-scoped and ledgered. Other changes
+// remain admin-only file overrides.
 //
-// ADMIN, NOT COORDINATOR, and the difference is the point. A coordinator runs
+// ADMIN, NOT COORDINATOR for the five file overrides. The two app-restart
+// controls are a narrow exception, ledgered with actor and time. A coordinator runs
 // the fleet: it evicts, adopts and force-releases, all of which are visible on
 // the board and undoable from it. Changing a setting changes how the board
 // itself behaves for every agent on it, including the ones that will never
@@ -154,7 +156,7 @@ func (e *Engine) Configure(ctx context.Context, token, key, value string) (core.
 		if l == nil {
 			return core.Result{"error": core.ErrBadToken}
 		}
-		if change && !l.IsAdmin() {
+		if change && !l.IsAdmin() && (!restartSettingKey(key) || !l.IsCoordinator()) {
 			return core.Result{"error": core.ErrNotAdmin}
 		}
 		return core.Result{"agent": l.ID}
@@ -168,7 +170,11 @@ func (e *Engine) Configure(ctx context.Context, token, key, value string) (core.
 	}
 	who, _ := res["agent"].(string)
 	if !change {
-		return core.Result{"settings": e.listSettings()}, nil
+		return e.query(ctx, func() core.Result { return core.Result{"settings": e.listSettings()} })
+	}
+	if restartSettingKey(key) {
+		op := &core.Op{Kind: core.OpSetRestartSetting, Token: token, SettingKey: key, SettingValue: value}
+		return e.Do(ctx, op)
 	}
 
 	s, ok := settings[key]
@@ -236,5 +242,37 @@ func (e *Engine) listSettings() []map[string]any {
 		}
 		out = append(out, row)
 	}
+	for _, item := range []struct {
+		key, meaning string
+		fallback     time.Duration
+		fromFile     bool
+	}{
+		{
+			core.RestartResumeSetting,
+			"Dibs-activity window for ChatGPT app-restart resumption; 0 disables it",
+			e.restartResumeDefault, e.restartResumeFromFile,
+		},
+		{
+			core.RestartIntervalSetting, "minimum interval between app-restart thread opens",
+			e.restartIntervalDefault, e.restartIntervalFromFile,
+		},
+	} {
+		source := "default"
+		if item.fromFile {
+			source = "dibs.toml"
+		}
+		row := map[string]any{
+			"setting": item.key, "means": item.meaning,
+			"value": item.fallback.String(), "set_by": source,
+		}
+		if entry, ok := e.state.RestartSettings[item.key]; ok {
+			row["value"], row["set_by"], row["set_at"] = entry.Value, entry.By, entry.At
+		}
+		out = append(out, row)
+	}
 	return out
+}
+
+func restartSettingKey(key string) bool {
+	return key == core.RestartResumeSetting || key == core.RestartIntervalSetting
 }

@@ -852,8 +852,11 @@ type LegacyAckSnapshot struct {
 
 // State is the entire replayable truth. Only Apply mutates it.
 type State struct {
-	NodeID string
-	Serial uint64
+	NodeID          string
+	Serial          uint64
+	RestartEpoch    string
+	RestartSettings map[string]RestartSetting
+	RestartNotices  map[string]RestartNotice
 	// Upgrade read cutoff, recorded once. Zero means old code, not unread old units.
 	ReviewReadCutoff  uint64
 	LegacyAckAtCutoff map[string]LegacyAckSnapshot `json:"legacy_ack_at_cutoff,omitempty"`
@@ -874,13 +877,15 @@ type State struct {
 // NewState returns an empty state for a node.
 func NewState(nodeID string, lim Limits) *State {
 	return &State{
-		NodeID:   nodeID,
-		Limits:   lim,
-		Agents:   map[string]*Agent{},
-		Messages: map[uint64]*Message{},
-		Nonces:   map[string]string{},
-		Dedup:    map[string]*DedupRec{},
-		Blobs:    map[string]*Blob{},
+		NodeID:          nodeID,
+		Limits:          lim,
+		Agents:          map[string]*Agent{},
+		RestartSettings: map[string]RestartSetting{},
+		RestartNotices:  map[string]RestartNotice{},
+		Messages:        map[uint64]*Message{},
+		Nonces:          map[string]string{},
+		Dedup:           map[string]*DedupRec{},
+		Blobs:           map[string]*Blob{},
 
 		Spaces:        map[string]*Space{},
 		Announcements: map[uint64]*Announcement{},

@@ -662,6 +662,20 @@ model) per `codex-rs/rmcp-client/src/logging_client_handler.rs`.
 
 ## 5. What Dibs implements
 
+The opt-in ChatGPT app-restart sweep is independent of mail. When enabled, a
+stable replacement of the app's process epoch selects only local ChatGPT-app
+Codex threads whose real Dibs activity was within the configured window. It
+uses the operator's existing `codex queue` command followed by paced,
+background app opens; it does not start or relocate an agent. The command
+carries only `app-restarted` and a timestamp. The agent's own declarations
+are sampled as slot IDs and update serials while the prior epoch is running;
+only those references are ledgered at the transition. The next
+token-authenticated read quotes full text for unchanged slots, and marks
+changed or cleared slots rather than misquoting old text.
+With the window off by default, no app process probe runs. Detection through
+daemon downtime is best effort. The focus consequences of background opens
+remain a separate app-boundary concern, not evidence that a thread acted.
+
 - **`await_events`**: a Dibs tool that blocks server-side (parks a waiter, event-driven,
   ≤60s) and returns a **batch** of everything since the caller's cursor. Works on every
   MCP host today. This is the floor and the product.

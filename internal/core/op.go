@@ -18,6 +18,17 @@ import "time"
 type Op struct {
 	Kind string `json:"kind"`
 
+	// App-restart inputs are observed outside the pure fold. One op records the
+	// process epoch and the exact eligible roster and declarations at that time.
+	RestartEpoch      string          `json:"restart_epoch,omitempty"`
+	RestartBaseline   bool            `json:"restart_baseline,omitempty"`
+	RestartObservedAt time.Time       `json:"restart_observed_at,omitzero"`
+	RestartNotices    []RestartNotice `json:"restart_notices,omitempty"`
+	// The two restart controls alone are mutable by a coordinator. The actor is
+	// authenticated through Token live and frozen as AgentID in the ledger.
+	SettingKey   string `json:"setting_key,omitempty"`
+	SettingValue string `json:"setting_value,omitempty"`
+
 	// RetainUntil records the engine's review-retention decision once, on a
 	// response. Nil preserves historical operations' original GC behavior.
 	// The engine replaces any ingress value; replay applies the recorded date.
