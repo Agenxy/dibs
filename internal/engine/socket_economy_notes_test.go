@@ -129,18 +129,27 @@ func TestSocketEconomyStrictHookKeepsDisabledWakeMailForNextActivation(t *testin
 	if held["decision"] != nil || held["reason"] != nil || held["hookSpecificOutput"] != nil {
 		t.Fatalf("disabled wake unexpectedly carried model context: %v", held)
 	}
+	for field := range held {
+		switch field {
+		case "continue", "stopReason", "suppressOutput", "systemMessage":
+		default:
+			t.Fatalf("held Stop contains a field outside its strict schema: %q", field)
+		}
+	}
 	delivered, err := e.HookPoll(ctx, sid, "SessionStart", "", false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(fmtResult(delivered), marker) {
+	carrier, _ := delivered["hookSpecificOutput"].(map[string]any)
+	digest, _ := carrier["additionalContext"].(string)
+	if carrier["hookEventName"] != "SessionStart" || !strings.Contains(digest, marker) {
 		t.Fatalf("deliberately held mail was lost before the next natural activation: %v", delivered)
 	}
 	again, err := e.HookPoll(ctx, sid, "SessionStart", "", false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(fmtResult(again), marker) {
+	if again["hookSpecificOutput"] != nil || again["reason"] != nil || again["decision"] != nil {
 		t.Fatalf("the held question was presented twice: %v", again)
 	}
 	if text := log.String(); strings.Contains(text, "dropped from a strict hook response") {
