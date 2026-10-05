@@ -756,6 +756,9 @@ func TestAnAgentThatSignedOffIsNotResumed(t *testing.T) {
 	l := bridgeAgent("retired", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
 	l.Status = core.StatusClosed
 	st0.Agents["retired"] = l
+	// Ordinary work approvals stay quiet. A role-grant approval still
+	// performs the permission effect the requester was waiting to learn.
+	st0.Messages[7] = &core.Message{Type: core.MsgRequest, Grant: "coordinator"}
 
 	// A verdict on something it asked before it went: the case that actually
 	// happens, and the one with the strongest claim on a wake if the agent were
@@ -775,6 +778,7 @@ func TestAnAgentThatSignedOffIsNotResumed(t *testing.T) {
 	// waking nobody.
 	e, st := wakeEngine(t, WakeCommand{Argv: []string{"echo", "{thread}"}, Cooldown: time.Minute})
 	st.Agents["here"] = bridgeAgent("here", "Codex", "019fff00-1111-7f60-81cc-6ab1298d76ec")
+	st.Messages[7] = &core.Message{Type: core.MsgRequest, Grant: "coordinator"}
 	e.maybeWake(core.Event{
 		Type: "message.approved", Agent: "the maintainer", To: "here",
 		Data: map[string]any{"msg_serial": uint64(7)},
