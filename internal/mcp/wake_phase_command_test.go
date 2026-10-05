@@ -34,7 +34,11 @@ func TestWakePhaseCommandHelper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(f.Name())
+	defer func() {
+		if err := os.Remove(f.Name()); err != nil && !os.IsNotExist(err) {
+			t.Error("remove temporary command receipt:", err)
+		}
+	}()
 	if _, err = f.Write(append(previous, append(body, '\n')...)); err != nil {
 		_ = f.Close()
 		t.Fatal(err)
