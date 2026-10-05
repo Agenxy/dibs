@@ -165,9 +165,20 @@ func (s *Server) boardJSONAt(r *http.Request) ([]byte, uint64, error) {
 	// The board and the log stay: they are who is working on what, which every
 	// agent on this machine can already see. Mail is fetched separately from
 	// /api/messages, which needs the page key.
+	names, err := s.eng.AgentNames(r.Context())
+	if err != nil {
+		return nil, 0, err
+	}
+	events := make([]eventPresentation, 0, 50)
+	for _, ev := range s.log.recent(50) {
+		events = append(events, eventPresentation{
+			Event:     ev,
+			AgentName: displayName(names, ev.Agent), ToName: displayName(names, ev.To),
+		})
+	}
 	out, err := json.Marshal(map[string]any{
 		"board":  map[string]any(board),
-		"events": s.log.recent(50),
+		"events": events,
 	})
 	return out, serial, err
 }
@@ -357,5 +368,32 @@ func (s *Server) apiBoard(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) apiMessages(w http.ResponseWriter, r *http.Request) {
 	res, err := s.eng.AllMessages(r.Context())
+	if err == nil {
+		var names map[string]string
+		names, err = s.eng.AgentNames(r.Context())
+		if err == nil {
+			if messages, ok := res["messages"].([]*core.Message); ok {
+				views := make([]messagePresentation, 0, len(messages))
+				for _, m := range messages {
+					view := messagePresentation{
+						Message:  m,
+						FromName: displayName(names, m.From), ToName: displayName(names, m.To),
+					}
+					if m.Adopt != "" {
+						view.AdoptName = displayName(names, m.Adopt)
+					}
+					views = append(views, view)
+				}
+				res["messages"] = views
+			}
+			if announced, ok := res["announcements"].([]core.Result); ok {
+				for _, row := range announced {
+					if from, _ := row["from"].(string); from != "" {
+						row["from_name"] = displayName(names, from)
+					}
+				}
+			}
+		}
+	}
 	writeJSON(w, res, err)
 }

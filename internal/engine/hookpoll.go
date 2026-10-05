@@ -466,7 +466,7 @@ func (e *Engine) HookPollFrom(
 }
 
 func (e *Engine) deliveringHookDigest(l *core.Agent, mail, announced, notices []string, now time.Time) string {
-	digest := hookDigest(l.ID, mail, announced, notices)
+	digest := hookDigest(e.agentName(l.ID), mail, announced, notices)
 	if work := e.socketWorkDigest(l, now); work != "" {
 		digest += "\n" + work
 		_, keys := e.dueSocketWaits(l, now)
@@ -672,11 +672,11 @@ func (e *Engine) mailLinesForBudget(agent string, now time.Time, wanted map[uint
 			// generous length is not a generous digest, it is a wall.
 			if body := e.quoteFor(m, budget); body != "" {
 				out = append(out, fmt.Sprintf("#%d %s from %q%s: %s %s",
-					m.Serial, m.Type, m.From, waited, body, clears))
+					m.Serial, m.Type, e.agentName(m.From), waited, body, clears))
 				continue
 			}
 			out = append(out, fmt.Sprintf("#%d %s from %q%s: read it with read_mail(%d), %s",
-				m.Serial, m.Type, m.From, waited, m.Serial, clears))
+				m.Serial, m.Type, e.agentName(m.From), waited, m.Serial, clears))
 		}
 	}
 	return out

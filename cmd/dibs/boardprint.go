@@ -63,15 +63,17 @@ func evidenceLabel(source string) string {
 
 // agentLabel is what a human should read to know who this is.
 //
-// Usually the id. But an id is an ADDRESS and must be ASCII, so an agent named
-// in a non-Latin script gets `agent`: and a fleet of them reads `agent`,
-// `agent-2`, `agent-3`: correct addresses that identify nobody. Where the name
-// could not become the id, show both.
+// The current name is the human address. Keep a changed stable id visible as
+// history, not as the headline.
 func agentLabel(l boardAgent) string {
-	if l.DisplayName == "" {
+	name := l.Name
+	if name == "" {
+		name = l.DisplayName
+	}
+	if name == "" || name == l.ID {
 		return l.ID
 	}
-	return l.DisplayName + " (" + l.ID + ")"
+	return name + " (formerly " + l.ID + ")"
 }
 
 // agentStatus weights liveness the same way the browser board does: working is

@@ -111,7 +111,7 @@ func (st *State) admitNextName(l *Agent, op *Op, next string) error {
 	}
 	if other := st.siblingByName(next, l.ID); other != nil {
 		return errf("E_NAME_TAKEN", "pick another name, or leave name out to keep your existing label",
-			"the name %q belongs to %s", next, other.ID)
+			"the name %q belongs to %s (currently named %q)", next, other.ID, other.Name)
 	}
 	return nil
 }

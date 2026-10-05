@@ -192,6 +192,6 @@ func (s *State) nameIsAnotherAddress(op *Op, l *Agent) error {
 		"pick another name: "+op.Name+" is an ADDRESS, and an id wins over a "+
 			"name when a peer resolves one, so that label would resolve to "+
 			other.ID+" rather than to you",
-		"%q is the id of %s, which is on the board (%s)",
-		op.Name, other.ID, other.Status)
+		"%q is the id of %s (currently named %q), which is on the board (%s)",
+		op.Name, other.ID, other.Name, other.Status)
 }

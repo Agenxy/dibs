@@ -1656,7 +1656,7 @@ function decorateMail(el) {
     node.dataset.serial = String(m.serial ?? "")
     node.dataset.type = m.type || "notify"
     node.setAttribute("aria-label",
-      `${m.type || "notification"} from ${m.from || "unknown sender"}: ${m.body || ""}`)
+      `${m.type || "notification"} from ${m.from_name || m.from || "unknown sender"}: ${m.body || ""}`)
     if (state.pending.has(m.serial)) node.setAttribute("aria-busy", "true")
     else node.removeAttribute("aria-busy")
     nameTransition(node, "mail", m.serial, "panel-mail")

@@ -259,8 +259,8 @@ const Board = (() => {
     const head = `
         <div class="entry-head">
           <span class="pip"></span>
-          <span class="name">${esc(l.display_name || l.id || l.name)}</span>
-          ${l.display_name ? explained("tag", l.id, "its addressable id: ids must be ASCII, and nothing in that name survived") : ""}
+          <span class="name">${esc(l.name || l.display_name || l.id)}</span>
+          ${l.name && l.name !== l.id ? explained("tag", `formerly ${l.id}`, "stable id; this agent's current name is its address") : ""}
           ${self ? '<span class="tag self">This agent</span>' : ""}
           ${l.kind === "persistent" ? '<span class="tag">Standing</span>' : ""}
           ${agentBadges(l)}
@@ -390,12 +390,14 @@ const Board = (() => {
   function effectHTML(m) {
     const bits = []
     if (m.grant) {
-      bits.push(`approving makes <strong>${esc(m.from)}</strong> ` +
+      bits.push(`approving makes <strong>${esc(m.from_name || m.from)}</strong> ` +
         `<strong>${esc(m.grant)}</strong>`)
     }
     if (m.adopt) {
-      bits.push(`approving moves <strong>${esc(m.adopt)}</strong>'s mailbox to ` +
-        `<strong>${esc(m.from)}</strong>`)
+      const source = m.adopt_name && m.adopt_name !== m.adopt
+        ? `${m.adopt_name} (formerly ${m.adopt})` : m.adopt
+      bits.push(`approving moves <strong>${esc(source)}</strong>'s mailbox to ` +
+        `<strong>${esc(m.from_name || m.from)}</strong>`)
     }
     if (!bits.length) return ""
     return `<p class="effect"><span class="pill attn">effect</span> ${bits.join("; ")}</p>`
@@ -416,8 +418,8 @@ const Board = (() => {
     // confidently-wrong shape this codebase keeps removing, in motion instead of
     // in words. Overdue goes still, and says so.
     const overdue = !settled && m.deadline && new Date(m.deadline) < new Date()
-    const who = (id) =>
-      `<span class="who${selfId != null && id === selfId ? " focal" : ""}">${esc(id || ", ")}</span>`
+    const who = (id, name) =>
+      `<span class="who${selfId != null && id === selfId ? " focal" : ""}">${esc(name || id || ", ")}</span>`
     return `
       <article id="message-${esc(String(m.serial))}" class="msg ${settled ? "" : "open"}${overdue ? " overdue" : ""}" data-serial="${esc(String(m.serial))}">
         <div class="msg-head">
@@ -426,7 +428,7 @@ const Board = (() => {
           ${overdue ? explained("pill attn", "past its deadline", "the deadline on this message has passed and nobody has answered. Dibs is still waiting, but nothing is in flight") : ""}
         </div>
         <div class="route">
-          ${who(m.from)}<span class="wire"></span><span class="arrow">▶</span>${who(m.to)}
+          ${who(m.from, m.from_name)}<span class="wire"></span><span class="arrow">▶</span>${who(m.to, m.to_name)}
         </div>
         <p class="body">${esc(m.body)}</p>
         ${effectHTML(m)}
@@ -474,7 +476,7 @@ const Board = (() => {
     const note = latest((p) => p.note)
     const noteHTML = note
       ? `<p class="task-note${note.review === "flagged" ? " flagged" : ""}">` +
-        `${note.review ? `<span class="who">${esc(note.by || m.from)}</span> ` : ""}${esc(note.note)}</p>`
+        `${note.review ? `<span class="who">${esc(note.by_name || note.by || m.from_name || m.from)}</span> ` : ""}${esc(note.note)}</p>`
       : ""
     return `<div class="task">
         ${steps.length ? `<div class="task-count">${reached.size} of ${steps.length} milestones</div>
@@ -494,7 +496,7 @@ const Board = (() => {
       <div class="event ${esc(cls)}">
         <span class="e-serial">#${esc(e.serial ?? "")}</span>
         <span class="e-when">${esc(when)}</span>
-        <span class="e-agent">${esc(e.agent || ", ")}${e.to ? ` <i>▶</i> ${esc(e.to)}` : ""}</span>
+        <span class="e-agent">${esc(e.agent_name || e.agent || ", ")}${e.to ? ` <i>▶</i> ${esc(e.to_name || e.to)}` : ""}</span>
         <span class="e-type">${esc(kind)}</span>
       </div>`
   }

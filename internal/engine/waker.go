@@ -1648,11 +1648,11 @@ func (e *Engine) socketNotice(l *core.Agent, from, kind string) string {
 	// refreshes from the writer loop and never uses this fallback when empty.
 	switch {
 	case from != "" && kind != "":
-		return fmt.Sprintf("Dibs: a new %s from %q is waiting for your agent %q.", kind, from, l.ID)
+		return fmt.Sprintf("Dibs: a new %s from %q is waiting for your agent %q.", kind, e.agentName(from), e.agentName(l.ID))
 	case kind != "":
-		return fmt.Sprintf("Dibs: a new %s is waiting for your agent %q.", kind, l.ID)
+		return fmt.Sprintf("Dibs: a new %s is waiting for your agent %q.", kind, e.agentName(l.ID))
 	}
-	return fmt.Sprintf("Dibs: something is waiting for your agent %q.", l.ID)
+	return fmt.Sprintf("Dibs: something is waiting for your agent %q.", e.agentName(l.ID))
 }
 
 // currentWakeDigest is a non-consuming snapshot. Empty means nothing is owed,
@@ -1689,7 +1689,7 @@ func (e *Engine) wakePresentation(l *core.Agent, fresh bool) (string, map[uint64
 	if len(mail) == 0 && len(announced) == 0 && len(notices) == 0 {
 		return "", nil, nil
 	}
-	return strings.TrimRight(hookDigest(l.ID, mail, announced, notices), "\n"), through, noticeKeys
+	return strings.TrimRight(hookDigest(e.agentName(l.ID), mail, announced, notices), "\n"), through, noticeKeys
 }
 
 // commandSideReason is why the command route is not the one being used,

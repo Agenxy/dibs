@@ -43,8 +43,8 @@ func (s *State) applyUpdate(l *Agent, op *Op) (Result, []Event, error) {
 					"sharing a name redirects mail between them", op.Name, other.ID)
 		}
 		res["renamed_from"] = l.Name
-		res["address"] = "your id is still " + l.ID + ", it never changes. Peers may now " +
-			"address you as " + op.Name + "; former names remain aliases unless released " +
+		res["address"] = "your current address is now " + op.Name + "; the stable id " + l.ID +
+			" still reaches your mailbox. Former names remain aliases unless released " +
 			"or shadowed by an id or another agent's current name. The send result names the actual recipient"
 		l.Name = op.Name
 	}
