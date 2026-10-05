@@ -124,6 +124,24 @@ func TestAbsentAliasReleaseDoesNotWakeSleepingOwnerThroughMCP(t *testing.T) {
 	if r["changed"] != false || before["serial"] != after["serial"] {
 		t.Fatalf("empty release recorded a fictitious effect: %v", r)
 	}
+	// A repeated transport host is not a change, but a real identity revision
+	// must still reach the normal update path when paired with an absent release.
+	r = aliasCall(t, srv, "update", map[string]any{
+		"token": tok, "release_names": []string{"former-label"}, "branch": "codex/moved",
+	})
+	after = aliasBoard(t, eng)
+	identity, _ := r["identity"].([]any)
+	if len(identity) != 1 || identity[0] != "branch" || before["serial"] == after["serial"] ||
+		fmt.Sprint(aliasRow(t, eng, id)["status"]) != "active" {
+		t.Fatalf("absent release swallowed a real identity revision: %v", r)
+	}
+	before = after
+	r = aliasCall(t, srv, "update", map[string]any{
+		"token": tok, "release_names": []string{"former-label"}, "branch": "codex/moved",
+	})
+	if r["changed"] != false || before["serial"] != aliasBoard(t, eng)["serial"] {
+		t.Fatalf("repeating the identity revision appended a fictitious change: %v", r)
+	}
 }
 
 func TestArchivedNonceRenameAndPurgedAliasFencingThroughMCP(t *testing.T) {
@@ -132,31 +150,31 @@ func TestArchivedNonceRenameAndPurgedAliasFencingThroughMCP(t *testing.T) {
 	dir := t.TempDir()
 	srv, eng, stop := aliasReplayServer(t, dir, lim)
 	id, tok := aliasRegister(t, srv, "worker-id", "archived-worker")
+	senderID, sender := aliasRegister(t, srv, "sender", "archived-sender")
+	if _, err := eng.GrantRole(context.Background(), senderID, "admin"); err != nil {
+		t.Fatal("setup:", err)
+	}
 	aliasRename(t, srv, tok, "former-label")
 	aliasRename(t, srv, tok, "before-archive")
 	aliasSweep(t, eng, id)
 	aliasSweep(t, eng, "")
-	if got := fmt.Sprint(aliasRow(t, eng, id)["status"]); got != "archived" {
-		t.Fatalf("setup: expected archived, got %s", got)
+	census := aliasCall(t, srv, "all_mail", map[string]any{"token": sender, "census": true, "agent": id})
+	rows, _ := census["census"].([]any)
+	if len(rows) != 1 || rows[0].(map[string]any)["status"] != "archived" {
+		t.Fatalf("setup: expected a retained archived row, got %v", census)
 	}
 	r := aliasCall(t, srv, "register", map[string]any{"nonce": "archived-worker", "name": "recovered-label"})
 	if r["agent_id"] != id || r["name"] != "recovered-label" {
 		t.Fatalf("archived recovery forked or kept the wrong label: %v", r)
 	}
-	_, sender := aliasRegister(t, srv, "sender", "archived-sender")
 	tok = r["token"].(string)
 	aliasRead(t, srv, tok, aliasSend(t, srv, sender, "former-label", id, "after archive"), id, "after archive")
 	aliasSweep(t, eng, id)
 	aliasSweep(t, eng, "") // archive
 	aliasSweep(t, eng, "") // purge after zero retention
-	b, err := eng.Board(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, row := range b["agents"].([]map[string]any) {
-		if row["id"] == id {
-			t.Fatal("setup: old owner was not purged")
-		}
+	census = aliasCall(t, srv, "all_mail", map[string]any{"token": sender, "census": true, "agent": id})
+	if rows, _ := census["census"].([]any); len(rows) != 0 {
+		t.Fatal("setup: old owner was not purged")
 	}
 	replacement, _ := aliasRegister(t, srv, "worker-id", "replacement-worker")
 	if replacement != id {

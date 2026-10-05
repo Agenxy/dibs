@@ -137,8 +137,14 @@ func TestNonceFirstRegisterRenameAndNamelessRecoveryThroughMCP(t *testing.T) {
 				}
 			}
 			r := aliasCall(t, srv, "register", map[string]any{"name": "new-label", "nonce": "nonce-first-worker"})
-			if r["agent_id"] != id || r["reattached"] != true || r["name"] != "new-label" {
+			if r["agent_id"] != id || r["name"] != "new-label" {
 				t.Fatalf("nonce forked instead of recovering: %v", r)
+			}
+			if asleep && r["reattached"] != true {
+				t.Fatalf("sleeping recovery did not report its token rotation: %v", r)
+			}
+			if !asleep && (r["resumed"] != true || r["token"] != tok || r["reattached"] == true) {
+				t.Fatalf("active retry changed its existing continuity contract: %v", r)
 			}
 			tok, _ = r["token"].(string)
 			if tok == "" {
