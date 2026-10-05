@@ -10,14 +10,18 @@ import (
 // applyAndLedger applies an op and ledgers it iff the serial advanced.
 // Persistence failure is fail-stop (SPEC §4).
 func (e *Engine) applyAndLedger(op *core.Op, now time.Time) (core.Result, error) {
-	return e.applyAndLedgerWithReceipt(op, now, nil)
+	return e.applyAndLedgerWithReceipt(op, now, nil, nil)
 }
 
-func (e *Engine) applyAndLedgerWithReceipt(op *core.Op, now time.Time, receipt chan core.Result) (core.Result, error) {
+func (e *Engine) applyAndLedgerWithReceipt(
+	op *core.Op, now time.Time, receipt chan core.Result, attempt *SendAttempt,
+) (core.Result, error) {
 	e.stampReviewRetention(op, now)
 	before := e.state.Serial
 	applied := beginSendStage(op, "apply")
+	applyStage := attempt.StartStage("writer_apply")
 	res, evs, err := e.state.Apply(op, now)
+	applyStage()
 	applied()
 	if err != nil {
 		// A handler that advanced the serial and THEN failed has committed a
@@ -65,13 +69,16 @@ func (e *Engine) applyAndLedgerWithReceipt(op *core.Op, now time.Time, receipt c
 	}
 	if e.state.Serial != before {
 		appended := beginSendStage(op, "ledger append")
+		fsyncStage := attempt.StartStage("fsync")
 		if lerr := e.led.Append(e.state.Serial, now, op); lerr != nil {
 			panic(fmt.Sprintf("dibs: ledger persistence failure (fail-stop, SPEC §4): %v", lerr))
 		}
+		fsyncStage()
 		appended()
 	}
 	if op.Kind == core.OpSendMessage {
 		captureSendReceipt(receipt, res)
+		attempt.StopStage("receipt")
 	}
 	if e.state.Serial != before {
 		published := beginSendStage(op, "publish")

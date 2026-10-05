@@ -158,7 +158,8 @@ filesystem writes (§9). It is a **coordination generation**, not a fencing toke
     promising the larger. `resume_id` records follow the same bound (the 1/10 s
     resume rate makes eviction there a non-issue in practice).
   - **Bounded send receipts:** HTTP `send` has a five-second server response
-    budget, including session/bridge observations and result projection. The
+    budget. Advisory bridge observation has its own 500 ms cap, so a slow
+    process scan cannot consume the send's whole response budget. The
     acceptance receipt is captured only after persistence succeeds (or from an
     existing dedup record), before wake publication and advisory work. A slow
     advisory cannot erase known acceptance: the bounded response returns the
@@ -166,15 +167,21 @@ filesystem writes (§9). It is a **coordination generation**, not a fencing toke
     unavailable. Acceptance confirms neither wake nor recipient visibility.
     Both the wake-route note and the unanswered-request note are computed in
     the accepting writer request, not through later writer queries.
-    If acceptance is still unknown at the budget, the MCP error payload is
+    If the budget expires before writer admission, the attempt is atomically
+    abandoned and returns `E_SEND_NOT_SENT` with a resend hint; a request that
+    arrives late at the writer is discarded. Writer admission racing the
+    deadline remains uncertain without a durable receipt. If acceptance is still unknown at
+    the budget, the MCP error payload is
     `E_SEND_OUTCOME_UNKNOWN` with the original `op_id` and a hint to retry the
     exact same id and payload within the existing dedup bounds. Without an id,
     there is no safe deduplicated retry: a new id cannot identify the earlier
     attempt. A timeout does not cancel an already-enqueued mutation or assert
     that it failed. This budget starts after the bounded JSON-RPC body has been
-    decoded/admitted; it is not a socket/body-upload timeout. Debug-only stage
+    decoded/admitted; it is not a socket/body-upload timeout. Debug stage
     timings name admission, apply, ledger append, publication, advisories and
-    response without logging bodies or credentials.
+    response. Only sends exceeding one second also log an INFO slow-path line
+    with bridge observation, enqueue wait, writer apply, fsync, receipt and
+    advisory durations. Neither line logs bodies, names, paths, tokens or op ids.
   - Torn final line: truncated on replay (expected crash artifact, not corruption).
 - **Encryption at rest**: message bodies, responses, and agent tokens sealed with
   AES-256-GCM under `~/.dibs/key` (0600). Public fields stay plaintext (`tail -f |

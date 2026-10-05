@@ -19,6 +19,7 @@ type request struct {
 	invite  *Invitation
 	finish  func()
 	receipt chan core.Result
+	attempt *SendAttempt
 }
 
 type reply struct {
@@ -28,7 +29,7 @@ type reply struct {
 
 // Do submits one mutating op to the loop and waits.
 func (e *Engine) Do(ctx context.Context, op *core.Op) (core.Result, error) {
-	req := request{op: op, reply: make(chan reply, 1), receipt: sendReceiptFrom(ctx)}
+	req := request{op: op, reply: make(chan reply, 1), receipt: sendReceiptFrom(ctx), attempt: sendAttemptFrom(ctx)}
 	if op != nil && op.Kind == core.OpPutBlob {
 		e.holdRegistration(&req, op.Blob)
 	}
@@ -49,9 +50,20 @@ func (e *Engine) send(ctx context.Context, req request) (core.Result, error) {
 	if i, ok := InvitationFrom(ctx); ok {
 		req.invite = &i
 	}
+	if err := ctx.Err(); err != nil {
+		req.complete()
+		return nil, err
+	}
+	if !req.attempt.maySubmit() {
+		req.complete()
+		return nil, context.Canceled
+	}
+	enqueued := req.attempt.StartStage("enqueue_wait")
 	select {
 	case e.ops <- req:
+		enqueued()
 	case <-ctx.Done():
+		enqueued()
 		req.complete() // enqueue failed: ownership never passed to the writer
 		return nil, ctx.Err()
 	}

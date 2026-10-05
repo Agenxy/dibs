@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -27,6 +28,10 @@ func (req request) complete() {
 // returned cancellation; the buffered reply must not require a waiting caller.
 func (e *Engine) serveRequest(req request) {
 	defer req.complete()
+	if !req.attempt.admitToWriter() {
+		req.reply <- reply{nil, context.Canceled}
+		return
+	}
 	if err := e.admitInvitation(req.invite, req.op); err != nil {
 		req.reply <- reply{nil, err}
 		return
@@ -40,9 +45,11 @@ func (e *Engine) serveRequest(req request) {
 		}
 		return
 	}
-	res, err := e.execWithReceipt(req.op, time.Now(), req.receipt)
+	res, err := e.execWithReceipt(req.op, time.Now(), req.receipt, req.attempt)
 	if err == nil {
+		advisories := req.attempt.StartStage("advisories")
 		e.sendAdvisories(req.op, res, time.Now())
+		advisories()
 	}
 	req.reply <- reply{res, err}
 }

@@ -17,6 +17,7 @@ import (
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/engine"
+	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/humanask"
 	"github.com/agenxy/dibs/internal/ledger"
 	"github.com/agenxy/dibs/internal/notify"
@@ -27,6 +28,7 @@ import (
 // This is the indeterminate-outcome window, not a persistence failure.
 type sendReceiptLedger struct {
 	*ledger.Ledger
+	mcp     *Server
 	armed   atomic.Bool
 	appends atomic.Int64
 	entered chan uint64
@@ -71,7 +73,9 @@ func sendReceiptServer(t *testing.T, dir string, configure ...func(*engine.Engin
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { eng.Run(ctx); close(done) }()
-	srv := httptest.NewServer(New(eng))
+	mcp := New(eng)
+	gate.mcp = mcp
+	srv := httptest.NewServer(mcp)
 	var once sync.Once
 	stop := func() {
 		once.Do(func() {
@@ -97,9 +101,17 @@ type sendReceiptReply struct {
 // Unlike toolCall helpers, this preserves the MCP isError bit and bounds the
 // CLIENT only as a failing probe limit. The product must answer first.
 func sendReceiptHTTP(ctx context.Context, srv *httptest.Server, version string, args map[string]any) sendReceiptReply {
+	return sendReceiptHTTPMeta(ctx, srv, version, args, nil)
+}
+
+func sendReceiptHTTPMeta(ctx context.Context, srv *httptest.Server, version string, args, meta map[string]any) sendReceiptReply {
+	params := map[string]any{"name": "send", "arguments": args}
+	if meta != nil {
+		params["_meta"] = meta
+	}
 	body, err := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-		"params": map[string]any{"name": "send", "arguments": args},
+		"params": params,
 	})
 	if err != nil {
 		return sendReceiptReply{err: err}
@@ -312,6 +324,190 @@ func TestSendUnknownWithoutIDDoesNotPromiseDeduplicatedRetryThroughMCP(t *testin
 	}
 }
 
+// The real MCP door must not make a send wait for advisory process discovery.
+// Against the old implementation this returned UNKNOWN after five seconds.
+func TestBlockedBridgeObservationDoesNotStealSendBudgetThroughMCP(t *testing.T) {
+	for _, version := range []string{"2026-07-28", "2025-11-25"} {
+		t.Run(version, func(t *testing.T) {
+			srv, gate, _ := sendReceiptServer(t, t.TempDir())
+			sender := sendReceiptSetup(t, srv, version)
+			entered := make(chan struct{})
+			release := make(chan struct{})
+			var once sync.Once
+			t.Cleanup(func() { once.Do(func() { close(release) }) })
+			gate.mcp.bridges.probe = func(int, string) (harnessenv.AppIncarnation, bool, error) {
+				close(entered)
+				<-release
+				return harnessenv.AppIncarnation{}, false, nil
+			}
+			meta := map[string]any{
+				BridgePIDMetaKey: 90123, BridgeStartMetaKey: "Mon Oct 5 02:00:00 2026",
+				HostMetaKey: gate.mcp.eng.HostID(),
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 6500*time.Millisecond)
+			defer cancel()
+			answer := make(chan sendReceiptReply, 1)
+			go func() {
+				answer <- sendReceiptHTTPMeta(ctx, srv, version, map[string]any{
+					"token": sender, "to": "worker", "type": "notify", "body": "bounded observation",
+				}, meta)
+			}()
+			select {
+			case <-entered:
+			case reply := <-answer:
+				t.Fatalf("setup: send never entered bridge observation: %+v", reply)
+			case <-time.After(3 * time.Second):
+				t.Fatal("setup: bridge observation did not start")
+			}
+			select {
+			case reply := <-answer:
+				if reply.err != nil || reply.isError || reply.payload["ok"] != true || reply.payload["msg_serial"] == nil {
+					t.Fatalf("advisory probe stole the send budget: %+v", reply)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("send waited for advisory bridge observation")
+			}
+		})
+	}
+}
+
+// A deadline while still in pre-writer observation is a provable negative,
+// not UNKNOWN. This drives the production dispatcher and the old code returns
+// UNKNOWN for the identical request.
+func TestPreSubmissionTimeoutIsNotSent(t *testing.T) {
+	srv, gate, _ := sendReceiptServer(t, t.TempDir())
+	sender := sendReceiptSetup(t, srv, "2026-07-28")
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	t.Cleanup(func() { once.Do(func() { close(release) }) })
+	gate.mcp.bridges.probe = func(int, string) (harnessenv.AppIncarnation, bool, error) {
+		close(entered)
+		<-release
+		return harnessenv.AppIncarnation{}, false, nil
+	}
+	params, err := json.Marshal(map[string]any{
+		"name": "send", "arguments": map[string]any{
+			"token": sender, "to": "worker", "type": "notify", "body": "not submitted",
+		},
+		"_meta": map[string]any{
+			BridgePIDMetaKey: 90124, BridgeStartMetaKey: "Mon Oct 5 02:00:01 2026",
+			HostMetaKey: gate.mcp.eng.HostID(),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(
+		withTransportHost(context.Background(), true, gate.mcp.eng.HostID()), 100*time.Millisecond,
+	)
+	defer cancel()
+	answer := make(chan sendRPCReply, 1)
+	go func() {
+		result, rpcErr := gate.mcp.dispatchSend(ctx, &rpcRequest{Method: "tools/call", Params: params}, "", "", false, nil)
+		answer <- sendRPCReply{result, rpcErr}
+	}()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("setup: pre-writer observation was not entered")
+	}
+	reply := <-answer
+	if reply.err != nil {
+		t.Fatalf("send returned RPC error: %+v", reply.err)
+	}
+	result, ok := reply.result.(map[string]any)
+	if !ok || result["isError"] != true {
+		t.Fatalf("send did not return a structured tool error: %#v", reply.result)
+	}
+	content, ok := result["content"].([]map[string]any)
+	if !ok || len(content) != 1 {
+		t.Fatalf("send error lost its content: %#v", reply.result)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(content[0]["text"].(string)), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["code"] != "E_SEND_NOT_SENT" || !strings.Contains(payload["hint"].(string), "Resend") {
+		t.Fatalf("pre-writer timeout was mislabeled as uncertain: %v", payload)
+	}
+}
+
+// After NOT_SENT, releasing the stalled pre-writer worker must not turn the
+// negative result into a late message. Exercise both MCP envelopes over HTTP.
+func TestLateWorkerCannotApplyAfterNotSentThroughMCP(t *testing.T) {
+	for _, version := range []string{"2026-07-28", "2025-11-25"} {
+		t.Run(version, func(t *testing.T) {
+			srv, gate, _ := sendReceiptServer(t, t.TempDir())
+			sender := sendReceiptSetup(t, srv, version)
+			before, err := gate.mcp.eng.EventsSince(context.Background(), "", 0, true)
+			if err != nil {
+				t.Fatal("setup events:", err)
+			}
+			serial, ok := before["serial"].(uint64)
+			if !ok {
+				t.Fatalf("setup serial missing: %v", before)
+			}
+			entered := make(chan struct{})
+			release := make(chan struct{})
+			var once sync.Once
+			unblock := func() { once.Do(func() { close(release) }) }
+			gate.mcp.bridges.probe = func(int, string) (harnessenv.AppIncarnation, bool, error) {
+				close(entered)
+				<-release
+				return harnessenv.AppIncarnation{}, false, nil
+			}
+			short := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				ctx, cancel := context.WithTimeout(r.Context(), 100*time.Millisecond)
+				defer cancel()
+				gate.mcp.ServeHTTP(w, r.WithContext(ctx))
+			}))
+			t.Cleanup(func() {
+				unblock()
+				short.Close()
+			})
+			meta := map[string]any{
+				BridgePIDMetaKey: 90125, BridgeStartMetaKey: "Mon Oct 5 02:00:02 2026",
+				HostMetaKey: gate.mcp.eng.HostID(),
+			}
+			answer := make(chan sendReceiptReply, 1)
+			go func() {
+				answer <- sendReceiptHTTPMeta(context.Background(), short, version, map[string]any{
+					"token": sender, "to": "worker", "type": "notify", "body": "must not arrive late",
+				}, meta)
+			}()
+			select {
+			case <-entered:
+			case reply := <-answer:
+				t.Fatalf("setup: observation did not block: %+v", reply)
+			case <-time.After(time.Second):
+				t.Fatal("setup: observation did not start")
+			}
+			reply := <-answer
+			if reply.err != nil || !reply.isError || reply.payload["code"] != "E_SEND_NOT_SENT" {
+				t.Fatalf("pre-writer timeout did not prove non-send: %+v", reply)
+			}
+			events, cancelEvents := gate.mcp.eng.Subscribe(serial)
+			defer cancelEvents()
+			unblock()
+			// Watch the writer after releasing the worker: a late message is
+			// observable through the same event stream clients receive.
+			select {
+			case event := <-events:
+				t.Fatalf("NOT_SENT published a late event: %v", event)
+			case <-time.After(250 * time.Millisecond):
+			}
+			after, err := gate.mcp.eng.EventsSince(context.Background(), "", serial, true)
+			if err != nil || after["serial"] != serial {
+				t.Fatalf("NOT_SENT changed serial after late worker: before=%d after=%v err=%v", serial, after, err)
+			}
+			if evs, _ := after["events"].([]core.Event); len(evs) != 0 {
+				t.Fatalf("NOT_SENT published events after late worker: %v", evs)
+			}
+		})
+	}
+}
+
 type sendTimingLog struct {
 	mu sync.Mutex
 	b  bytes.Buffer
@@ -375,6 +571,57 @@ func TestSendStageTimingIsDebugOnlyAndPrivateThroughMCP(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestSlowSendNamesStageAtInfoWithoutPrivateFields(t *testing.T) {
+	srv, gate, _ := sendReceiptServer(t, t.TempDir())
+	sender := sendReceiptSetup(t, srv, "2026-07-28")
+	var log sendTimingLog
+	original := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&log, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	t.Cleanup(func() { slog.SetDefault(original) })
+	gate.armed.Store(true)
+	answer := make(chan sendReceiptReply, 1)
+	go func() {
+		answer <- sendReceiptHTTP(context.Background(), srv, "2026-07-28", map[string]any{
+			"token": sender, "to": "worker", "type": "notify",
+			"body": "private-slow-body-38583", "op_id": "private-slow-id-38583",
+		})
+	}()
+	select {
+	case <-gate.entered:
+	case reply := <-answer:
+		t.Fatalf("setup: send never entered slow ledger gate: %+v", reply)
+	case <-time.After(3 * time.Second):
+		t.Fatal("setup: send did not enter ledger gate")
+	}
+	select {
+	case reply := <-answer:
+		t.Fatalf("setup: send escaped slow ledger gate: %+v", reply)
+	case <-time.After(1200 * time.Millisecond):
+	}
+	gate.unblock()
+	if reply := <-answer; reply.err != nil || reply.isError || reply.payload["ok"] != true {
+		t.Fatalf("slow but accepted send failed: %+v", reply)
+	}
+	raw := log.String()
+	if strings.Contains(raw, sender) || strings.Contains(raw, "private-slow-body-38583") ||
+		strings.Contains(raw, "private-slow-id-38583") {
+		t.Fatalf("slow-send log exposed private request data: %s", raw)
+	}
+	found := false
+	for _, line := range strings.Split(strings.TrimSpace(raw), "\n") {
+		var event map[string]any
+		if json.Unmarshal([]byte(line), &event) != nil || event["msg"] != "slow send" {
+			continue
+		}
+		found = event["level"] == "INFO" && event["kind"] == "send" &&
+			event["bridge_observation"] != nil && event["enqueue_wait"] != nil &&
+			event["writer_apply"] != nil && event["fsync"] != nil && event["receipt"] != nil
+	}
+	if !found {
+		t.Fatalf("slow send had no stage diagnosis at INFO: %s", raw)
 	}
 }
 

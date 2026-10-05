@@ -7,6 +7,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Timed-out sends distinguish a provable non-send from an uncertain handoff.**
+  A send whose response budget expires before writer admission returns
+  `E_SEND_NOT_SENT` and can be resent. A raced or accepted admission still
+  returns an uncertain outcome until a durable receipt exists. Advisory bridge
+  discovery has its own 500 ms cap, and only sends slower than one second log
+  privacy-safe stage timings at INFO. No wake, install or release behavior is
+  inferred from an absent receipt.
+
 - **A send returns a bounded, honest acceptance outcome.** The HTTP send
   response has a five-second server budget. Wake-route and unanswered-request
   advice share the accepting writer request instead of submitting later reads.
