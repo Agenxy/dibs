@@ -246,9 +246,10 @@ func (e *Engine) HostBridges() []HostBridgeInfo {
 		}
 		sort.Strings(hs)
 		policy := "legacy idle opening; restart dibs host-bridge on this host for prompt bounded ChatGPT opening"
-		if b.awayOpen == 1 {
+		switch b.awayOpen {
+		case 1:
 			policy = "away-only opening with focus restoration"
-		} else if b.awayOpen == 2 {
+		case 2:
 			policy = "prompt background ChatGPT opening, bounded per thread; away-only Claude recovery"
 		}
 		out = append(out, HostBridgeInfo{

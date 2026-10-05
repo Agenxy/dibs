@@ -18,8 +18,10 @@ import (
 // minutes, not one forever and not one per message. A new app incarnation or
 // an observed loaded -> unloaded transition re-arms sooner, but the per-thread
 // rate limit still applies. This is derived local delivery state, not the ledger.
-const appOpenExpiry = 10 * time.Minute
-const appOpenRate = 20 * time.Second
+const (
+	appOpenExpiry = 10 * time.Minute
+	appOpenRate   = 20 * time.Second
+)
 
 type appOpenMemo struct {
 	OpenedAt time.Time `json:"opened_at"`
@@ -70,14 +72,8 @@ func (s Shower) showChatGPT(_ []string, thread string) (bool, error) {
 		return false, err
 	}
 	defer paths.Unlock(f)
-	var memo appOpenMemo
-	// #nosec G304 -- same derived path, bounded decode; a corrupt view fails closed.
-	previous, err := os.Open(path)
-	if err == nil {
-		err = json.NewDecoder(io.LimitReader(previous, 4096)).Decode(&memo)
-		_ = previous.Close()
-	}
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
+	memo, err := readAppOpen(path)
+	if err != nil {
 		return false, err
 	}
 	state := s.ownership(thread)
@@ -107,6 +103,21 @@ func (s Shower) showChatGPT(_ []string, thread string) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+func readAppOpen(path string) (appOpenMemo, error) {
+	var memo appOpenMemo
+	// #nosec G304 -- same derived path, bounded decode; a corrupt view fails closed.
+	previous, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return memo, nil
+	}
+	if err != nil {
+		return memo, err
+	}
+	defer func() { _ = previous.Close() }()
+	err = json.NewDecoder(io.LimitReader(previous, 4096)).Decode(&memo)
+	return memo, err
 }
 
 func saveAppOpen(path string, memo appOpenMemo) error {

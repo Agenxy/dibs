@@ -133,10 +133,31 @@ func ChatGPTOwnership(thread string) ThreadOwnership {
 	if err != nil || len(out) > 4<<20 {
 		return ThreadOwnership{}
 	}
+	state, pids := appProcessEvidence(string(out))
+	if !state.Running {
+		return state
+	}
+	if len(pids) == 0 {
+		return state // app present, runtime inventory unknown
+	}
+	files, err := appProbeOutput(ctx, "/usr/sbin/lsof", "-a", "-p", strings.Join(pids, ","), "-Fn")
+	// lsof may report a vanished helper with a nonzero exit while returning
+	// valid files for the surviving runtime. Only a file is ownership evidence.
+	for _, line := range strings.Split(string(files), "\n") {
+		if strings.HasPrefix(line, "n") && strings.Contains(line[1:], thread) {
+			state.Known, state.Loaded = true, true
+			return state
+		}
+	}
+	state.Known = err == nil && ctx.Err() == nil
+	return state
+}
+
+func appProcessEvidence(raw string) (ThreadOwnership, []string) {
 	var pids, epochs []string
 	var appEpoch string
 	running := false
-	for _, line := range strings.Split(string(out), "\n") {
+	for _, line := range strings.Split(raw, "\n") {
 		fields := strings.Fields(line)
 		if len(fields) < 7 {
 			continue
@@ -160,27 +181,13 @@ func ChatGPTOwnership(thread string) ThreadOwnership {
 		}
 	}
 	if !running {
-		return ThreadOwnership{Known: true, Epoch: "absent"}
+		return ThreadOwnership{Known: true, Epoch: "absent"}, nil
 	}
 	if appEpoch == "" {
 		sort.Strings(epochs)
 		appEpoch = strings.Join(epochs, ",")
 	}
-	state := ThreadOwnership{Running: true, Epoch: appEpoch}
-	if len(pids) == 0 {
-		return state // app present, runtime inventory unknown
-	}
-	files, err := appProbeOutput(ctx, "/usr/sbin/lsof", "-a", "-p", strings.Join(pids, ","), "-Fn")
-	// lsof may report a vanished helper with a nonzero exit while returning
-	// valid files for the surviving runtime. Only a file is ownership evidence.
-	for _, line := range strings.Split(string(files), "\n") {
-		if strings.HasPrefix(line, "n") && strings.Contains(line[1:], thread) {
-			state.Known, state.Loaded = true, true
-			return state
-		}
-	}
-	state.Known = err == nil && ctx.Err() == nil
-	return state
+	return ThreadOwnership{Running: true, Epoch: appEpoch}, pids
 }
 
 // Fixed binaries only. The seam lets a fixture block the real API's probe
@@ -275,7 +282,8 @@ var RealShower = Shower{
 			isThreadID(strings.TrimPrefix(argv[2], "codex://threads/")) {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
-			return exec.CommandContext(ctx, "/usr/bin/open", "-g", argv[2]).Run() //nolint:gosec // fixed binary, validated thread URL
+			//nolint:gosec // fixed binary, validated thread URL
+			return exec.CommandContext(ctx, "/usr/bin/open", "-g", argv[2]).Run()
 		}
 		seconds, err := strconv.ParseFloat(argv[2], 64)
 		if err != nil {
