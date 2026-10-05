@@ -163,18 +163,15 @@ type WakeCommand struct {
 // wakesFor applies the operator's wake policy to one piece of mail, which is
 // the same question deliverToModel answers for a running session and now has
 // the same answer.
-func (e *Engine) wakesFor(evType, msgType string) bool {
-	if !core.IsMailEvent(evType) {
-		return false
+func (e *Engine) wakesFor(ev core.Event, l *core.Agent) bool {
+	if ev.Type == "message.sent" || ev.Type == "message.adopted" {
+		kind, _ := ev.Data["msg_type"].(string)
+		return e.socketActionableMessage(&core.Message{Type: kind})
 	}
-	switch e.WakePolicy() {
-	case WakeNone:
-		return false
-	case WakeUrgent:
-		return core.Blocking(evType, msgType)
-	default:
-		return true
-	}
+	_, _, blocking := situationalNotice(ev)
+	msg, _ := ev.Data["msg_serial"].(uint64)
+	n := notice{Kind: ev.Type, Blocking: blocking}
+	return wakeCauseAllowed(e.WakePolicy(), false, socketActionableNotice(n, l, e.state.Messages[msg]))
 }
 
 func (e *Engine) maybeWake(ev core.Event) {
@@ -201,9 +198,6 @@ func (e *Engine) maybeWake(ev core.Event) {
 	// this returns before the first Debug, and the agent found out an hour
 	// later when its operator mentioned it.
 	msgType, _ := ev.Data["msg_type"].(string)
-	if !e.wakesFor(ev.Type, msgType) {
-		return
-	}
 	if ev.To == "" {
 		return
 	}
@@ -223,6 +217,9 @@ func (e *Engine) maybeWake(ev core.Event) {
 	}
 	l, ok := e.state.Agents[ev.To]
 	if !ok {
+		return
+	}
+	if !e.wakesFor(ev, l) {
 		return
 	}
 	if e.socketOwnsDelivery(l) {
@@ -613,7 +610,8 @@ func (e *Engine) clearWakeAttempts(agent string) {
 }
 
 // oldestBlocking names the work a re-check is being run for: the type and
-// sender of the longest-waiting blocking message.
+// sender of the longest-waiting authored message allowed by the phase.
+// Its historical name includes authored FYIs under the default all policy.
 //
 // "notice" when the reason is a blocking notice rather than mail, which is a
 // real case (an approval, an eviction) and has no sender. Not one of the four
@@ -626,10 +624,8 @@ func (e *Engine) clearWakeAttempts(agent string) {
 func (e *Engine) oldestBlocking(agent string) (kind, from string) {
 	var oldest *core.Message
 	for _, m := range e.state.Inbox(agent) {
-		blocking := m.Expecting() &&
-			(m.State == core.MsgStatePending || m.State == core.MsgStateDelivered)
-		blocking = blocking || (m.Type == core.MsgHandoff && m.State != core.MsgStateAcked)
-		if !blocking {
+		if (m.State != core.MsgStatePending && m.State != core.MsgStateDelivered) ||
+			!e.socketActionableMessage(m) || e.notifyPresented(agent, m) {
 			continue
 		}
 		if oldest == nil || m.Serial < oldest.Serial {
@@ -643,6 +639,9 @@ func (e *Engine) oldestBlocking(agent string) (kind, from string) {
 }
 
 // hasBlockingMail reports whether anybody is still waiting on this agent.
+// It excludes authored FYIs by obligation, regardless of their wake policy.
+// Command delivery uses hasRetryMail's phase/freshness decision; its event
+// label comes from oldestBlocking, which includes only unpresented FYIs.
 //
 // Callers run on the writer loop.
 func (e *Engine) hasBlockingMail(agent string) bool {
@@ -1407,6 +1406,19 @@ func (e *Engine) PullOnlyNoteFor(ctx context.Context, agentID string) string {
 	})
 	if err != nil {
 		return "" // never fail a delivered send over an advisory note
+	}
+	n, _ := res["note"].(string)
+	return n
+}
+
+// SendDeliveryNoteFor reads the route decision for this exact accepted
+// message. Observation neither confirms a socket outcome nor consumes mail.
+func (e *Engine) SendDeliveryNoteFor(ctx context.Context, agentID string, msgSerial uint64) string {
+	res, err := e.query(ctx, func() core.Result {
+		return core.Result{"note": e.sendDeliveryNote(e.state.Agents[agentID], e.state.Messages[msgSerial], time.Now())}
+	})
+	if err != nil {
+		return ""
 	}
 	n, _ := res["note"].(string)
 	return n

@@ -205,18 +205,39 @@ func appReconnectContract(t *testing.T, lost, clockBack, legacy bool) {
 	thread := "01a0aaaa-bbbb-7ccc-8ddd-eeeeeeeeeeee"
 	worker := do(&core.Op{Kind: core.OpRegister, Name: "worker", Description: "app-owned worker", AgentKind: core.KindPersistent, Nonce: "worker-nonce", SessionID: thread, Agent: &core.AgentInfo{Harness: "Codex", Surface: "chatgpt-app", HostID: "reconnect-host", CWD: home}})
 	asker := do(&core.Op{Kind: core.OpRegister, Name: "asker", Description: "sender", Nonce: "asker-nonce"})
+	var fyiToken string
 	for _, row := range []struct{ id, host string }{{"empty", "reconnect-host"}, {"other-host", "another-computer"}, {"fyi-only", "reconnect-host"}} {
 		sid := strings.Replace(thread, "aaaa", map[string]string{"empty": "1111", "other-host": "2222", "fyi-only": "3333"}[row.id], 1)
-		do(&core.Op{Kind: core.OpRegister, Name: row.id, Description: "cohort exclusion fixture", AgentKind: core.KindPersistent, Nonce: row.id + "-nonce", SessionID: sid, Agent: &core.AgentInfo{Harness: "Codex", Surface: "chatgpt-app", HostID: row.host, CWD: home}})
+		registered := do(&core.Op{Kind: core.OpRegister, Name: row.id, Description: "cohort exclusion fixture", AgentKind: core.KindPersistent, Nonce: row.id + "-nonce", SessionID: sid, Agent: &core.AgentInfo{Harness: "Codex", Surface: "chatgpt-app", HostID: row.host, CWD: home}})
+		if row.id == "fyi-only" {
+			fyiToken = registered["token"].(string)
+		}
 	}
 	do(&core.Op{Kind: core.OpAckBoard, Token: asker["token"].(string)})
 	do(&core.Op{Kind: core.OpSendMessage, Token: asker["token"].(string), To: "other-host", MsgType: core.MsgQuestion, Body: "another computer's mail"})
 	do(&core.Op{Kind: core.OpSendMessage, Token: asker["token"].(string), To: worker["agent_id"].(string), MsgType: core.MsgQuestion, Body: "mail must survive app restart", OpID: "receipt-check"})
 	waitQueueCount(t, home, 1)
-	do(&core.Op{Kind: core.OpSendMessage, Token: asker["token"].(string), To: "fyi-only", MsgType: core.MsgNotify, Body: "FYI alone must not restart a turn on reconnect"})
+	fyi := do(&core.Op{Kind: core.OpSendMessage, Token: asker["token"].(string), To: "fyi-only", MsgType: core.MsgNotify, Body: "authored FYI must reach its recipient"})
 	waitQueueCount(t, home, 2)
-	// The app consumed the earlier FYI wake while its mail remains unacked.
-	// Reconnect must not queue that informational-only row again.
+	// Consuming an app queue entry is not an agent reading it. Present the
+	// authored FYI through a real check-in, deliberately leave it unacked,
+	// and prove two later idle epochs and app reconnect do not wake it again.
+	presented := do(&core.Op{Kind: core.OpAckBoard, Token: fyiToken})
+	mail, ok := presented["inbox"].([]*core.Message)
+	if !ok || len(mail) != 1 || mail[0].Serial != fyi["msg_serial"].(uint64) ||
+		mail[0].State != core.MsgStateDelivered || mail[0].Consumed {
+		t.Fatal("setup: authored FYI was not presented once and left unacked")
+	}
+	fyiSession := strings.Replace(thread, "aaaa", "3333", 1)
+	for range 2 {
+		if _, er := eng.HookPoll(ctx, fyiSession, "PreToolUse", "", false, true); er != nil {
+			t.Fatal("setup: next FYI turn:", er)
+		}
+		got, er := eng.HookPoll(ctx, fyiSession, "Stop", "", false, true)
+		if er != nil || got["decision"] == "block" || got["reason"] != nil || got["hookSpecificOutput"] != nil {
+			t.Fatalf("presented unacked FYI blocked a later Stop: %v %v", got, er)
+		}
+	}
 	queued, er := os.ReadFile(filepath.Join(home, "pending.json"))
 	if er != nil {
 		t.Fatal(er)
@@ -257,8 +278,24 @@ func appReconnectContract(t *testing.T, lost, clockBack, legacy bool) {
 	if er != nil {
 		t.Fatal(er)
 	}
+	// Queue commands settle asynchronously; a short quiet interval cannot
+	// prove this row was excluded. Startup writes the real reconnect receipt
+	// synchronously for each selected target before returning the RPC reply.
+	fyiKey := sha256.Sum256([]byte(fyiSession))
+	fyiReconnect := filepath.Join(dir, "queued-wakes", hex.EncodeToString(fyiKey[:])+".json.reconnect")
+	if _, er = os.Stat(fyiReconnect); !os.IsNotExist(er) {
+		t.Fatalf("setup: FYI already has a reconnect receipt: %v", er)
+	}
 	newStartup, _ := startApp()
 	newStartup(0) // no token, register, check_in, or model turn
+	workerKey := sha256.Sum256([]byte(thread))
+	workerReconnect := filepath.Join(dir, "queued-wakes", hex.EncodeToString(workerKey[:])+".json.reconnect")
+	if _, er = os.Stat(workerReconnect); er != nil {
+		t.Fatalf("setup: actual app startup did not reconsider the unread worker: %v", er)
+	}
+	if _, er = os.Stat(fyiReconnect); !os.IsNotExist(er) {
+		t.Fatalf("presented unacked FYI was incorrectly selected for app reconnect: %v", er)
+	}
 	waitQueueCount(t, home, 1)
 	if !lost {
 		deadline := time.Now().Add(2 * time.Second)

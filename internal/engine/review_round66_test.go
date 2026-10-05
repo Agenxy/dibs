@@ -72,10 +72,10 @@ func TestAStaleThreadsHookDoesNotConsumeTheCurrentThreadsWake(t *testing.T) {
 	if got := st.Agents["mover"].CurrentSession; got != threadB {
 		t.Fatalf("setup: the agent's current session is %q, not thread B; the move did not take", got)
 	}
-	// A pending notify is waiting: it wakes once.
+	// A pending question is waiting: it can continue the current thread.
 	if _, err := e.Do(ctx, &core.Op{
 		Kind: core.OpSendMessage, Token: asker["token"].(string),
-		To: "mover", MsgType: core.MsgNotify, Body: "one-shot",
+		To: "mover", MsgType: core.MsgQuestion, Body: "one-shot",
 	}); err != nil {
 		t.Fatal("setup:", err)
 	}
@@ -87,7 +87,7 @@ func TestAStaleThreadsHookDoesNotConsumeTheCurrentThreadsWake(t *testing.T) {
 	}
 	if _, ok := got["hookSpecificOutput"]; ok {
 		t.Fatal("a Stop from the thread the agent LEFT was handed the digest and spent the " +
-			"notify's one wake: the current thread will never hear of it")
+			"question's wake: the current thread will never hear of it")
 	}
 
 	// The current thread B still receives it.
@@ -97,7 +97,7 @@ func TestAStaleThreadsHookDoesNotConsumeTheCurrentThreadsWake(t *testing.T) {
 	}
 	out, ok := got["hookSpecificOutput"].(map[string]any)
 	if !ok {
-		t.Fatalf("the current thread B was handed no digest for its pending notify: %v", got)
+		t.Fatalf("the current thread B was handed no digest for its pending question: %v", got)
 	}
 	if ctxText, _ := out["additionalContext"].(string); ctxText == "" {
 		t.Fatalf("the current thread B got an empty digest: %v", got)

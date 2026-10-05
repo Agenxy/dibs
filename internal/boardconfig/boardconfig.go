@@ -1054,8 +1054,8 @@ func (c Config) validateWake() error {
 			return nil
 		}
 	}
-	return fmt.Errorf("[wake] extend_turn_for = %q: use \"all\" (default: anything "+
-		"unread wakes the agent once), \"urgent\" (only work somebody is blocked on) "+
+	return fmt.Errorf("[wake] extend_turn_for = %q: use \"all\" (default route policy; "+
+		"Stop and sockets require actionable news), \"urgent\" (only work somebody is blocked on) "+
 		"or \"none\" (never extend a turn)", w)
 }
 

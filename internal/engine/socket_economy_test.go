@@ -175,11 +175,12 @@ func TestSocketEconomyBusyCeilingRefreshesAtProductionActivity(t *testing.T) {
 }
 
 func TestSocketEconomyDaemonFallbackUsesLifecycleAndDueSlots(t *testing.T) {
-	for _, mode := range []string{"busy", "informational", "idle", "due waits"} {
+	for _, mode := range []string{"busy-question", "busy-notify", "idle-question", "idle-notify", "due waits"} {
 		t.Run(mode, func(t *testing.T) {
 			f := newDaemonEconomyFixture(t)
 			marker := "fallback-" + mode
-			if mode == "busy" {
+			busy := strings.HasPrefix(mode, "busy-")
+			if busy {
 				f.hook(t, "UserPromptSubmit", false)
 			}
 			if mode == "due waits" {
@@ -197,11 +198,11 @@ func TestSocketEconomyDaemonFallbackUsesLifecycleAndDueSlots(t *testing.T) {
 				return
 			}
 			kind := core.MsgQuestion
-			if mode == "informational" {
+			if strings.HasSuffix(mode, "notify") {
 				kind = core.MsgNotify
 			}
 			r := f.do(t, &core.Op{Kind: core.OpSendMessage, Token: f.sender, To: "worker", MsgType: kind, Body: marker})
-			if mode == "idle" {
+			if !busy {
 				if text := f.receive(t, time.Second); !strings.Contains(text, marker) {
 					t.Fatalf("daemon lost idle actionable mail: %q", text)
 				}
@@ -215,8 +216,14 @@ func TestSocketEconomyDaemonFallbackUsesLifecycleAndDueSlots(t *testing.T) {
 				case <-time.After(1100 * time.Millisecond):
 				}
 			}
-			if text := fmtResult(f.hook(t, "Stop", false)); !strings.Contains(text, marker) {
-				t.Fatalf("native route lost its held-peer/full-mail hook fallback: %q", text)
+			got := f.hook(t, "Stop", false)
+			if got["decision"] != "block" || !strings.Contains(fmtResult(got), marker) {
+				t.Fatalf("authored mail lost its blocking Stop fallback: %v", got)
+			}
+			select {
+			case text := <-f.wire:
+				t.Fatalf("Stop delivery wrote an extra native frame: %q", text)
+			case <-time.After(1100 * time.Millisecond):
 			}
 			_, err := f.e.query(f.ctx, func() core.Result {
 				if f.e.state.Messages[r["msg_serial"].(uint64)].Consumed {
@@ -228,6 +235,38 @@ func TestSocketEconomyDaemonFallbackUsesLifecycleAndDueSlots(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+func TestSocketEconomyAnnouncementWritesAndAcknowledgmentQuietsBothRoutes(t *testing.T) {
+	f := newDaemonEconomyFixture(t)
+	f.do(t, &core.Op{Kind: core.OpAckBoard, Token: f.sender})
+	f.do(t, &core.Op{Kind: core.OpAckBoard, Token: f.token})
+	f.do(t, &core.Op{Kind: core.OpSpaceOpen, Token: f.sender, Space: "announcement-proof", Text: "proof"})
+	f.do(t, &core.Op{Kind: core.OpSpaceJoin, Token: f.token, Space: "announcement-proof"})
+	f.do(t, &core.Op{Kind: core.OpAckBoard, Token: f.sender})
+	f.hook(t, "Stop", true) // real idle boundary, no presentation
+	announcement := f.do(t, &core.Op{
+		Kind: core.OpSpaceAnnounce, Token: f.sender,
+		Space: "announcement-proof", Body: "required acknowledgment",
+	})["serial"].(uint64)
+	if text := f.receive(t, 2*time.Second); !strings.Contains(text, "ack_announcement") {
+		t.Fatalf("idle native route omitted required announcement: %q", text)
+	}
+	f.do(t, &core.Op{Kind: core.OpSpaceAck, Token: f.token, MsgSerial: announcement})
+	if got := f.hook(t, "Stop", false); got["decision"] == "block" || deliveredSomething(got) {
+		t.Fatalf("acknowledged announcement continued Stop: %v", got)
+	}
+	// The authenticated acknowledgment entered a new busy epoch and cleared
+	// the old written reservation. A quiet offer cannot pass by inheriting it.
+	offer, err := f.e.SocketOfferFor(f.ctx, f.token, f.sid, "", false)
+	if err != nil || offer["digest"] != "" {
+		t.Fatalf("acknowledged announcement offered another native wake: %v %v", offer, err)
+	}
+	select {
+	case text := <-f.wire:
+		t.Fatalf("acknowledged announcement wrote again: %q", text)
+	case <-time.After(1100 * time.Millisecond):
 	}
 }
 

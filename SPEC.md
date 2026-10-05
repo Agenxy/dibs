@@ -802,14 +802,40 @@ After 30 minutes without a busy observation, busy becomes unknown, never idle,
 so missing Stop evidence cannot permanently disable waking. A finishing hook
 establishes idle immediately. Unknown lifecycle retains the existing bounded
 contact/boot grace, then permits one coalesced actionable or due-wait wake.
-FYI, progress, accepted reviews and queue updates do not independently cause
-socket delivery. Requests, questions, handoffs, human notifications, answers,
+Every message written by an agent or human to the recipient independently
+qualifies for delivery, including a plain notify that asks for no reply.
+Dibs-generated progress, accepted reviews and queue updates do not independently cause
+socket delivery. Answers,
 denials, declines, flagged reviews and grant/adoption verdicts do. Approval of
 an ordinary work request is informational: it accepts work without performing
 a permission or mailbox effect. Eligibility reads the request's typed `grant`
 and `adopt` fields, never the notice text. DONE qualifies only when the sender currently
 holds a declaration with `waiting` set. Full outstanding mail remains available
 to delivering hooks and authenticated pulls.
+
+Due announcements awaiting this agent's required acknowledgment also qualify,
+under the existing presentation cadence; acknowledgment quiets both routes.
+Stop and SubagentStop use this same typed actionable cause before blocking a
+finished turn. Informational progress, ordinary approvals, accepted reviews,
+queue acceptance/position changes do not independently block. An authored
+notify blocks once and delivers its words; a repeated Stop does not deliver it again.
+Leaving an already-presented notify unacknowledged does not rearm it across
+later idle epochs, command reconsideration or app reconnect. A confirmed
+socket presentation and ledgered mailbox delivery count; an unconfirmed
+socket write and command execution alone do not count as read receipts.
+A non-blocking Stop neither marks those items delivered nor reads their outcome
+prefixes. Held information is delivered through SessionStart, `check_in` or
+`inbox`, or included in the next actionable Stop/socket digest under the shared
+quote budget. UserPromptSubmit remains silent. Due declared waits and bounded
+declared-work continuation remain independent Stop causes.
+
+A send result's live route note uses the same authored-message decision as
+socket and Stop delivery. Idle authored notify receives a best-effort wake
+attempt; authored mail to a busy session reports delivery deferred until its
+Stop hook. That Stop blocks and delivers the mail without a socket frame.
+Socket availability and kernel writes cannot confirm receiver acceptance.
+Later mail in an already-written idle epoch reports coalescing without claiming
+that another frame was sent; it remains available to the next delivery.
 
 The additive socket-offer handshake reserves one derived wake epoch per host
 identity and current session. A successful kernel write holds that epoch until
@@ -842,9 +868,15 @@ No identity, activity, session binding or ledger state changes. Inferred queued
 receipts are invalidated by app generation, independent of wall-clock ordering;
 an authoritative pending app notice renews that generation without duplication.
 Mail is rechecked before delivery; ordinary cooldown, loaded-thread and away
-opening policy still apply. Empty mailboxes and informational-only FYI mail do
+opening policy still apply. Empty mailboxes and generated informational updates alone do
 not cause reconnect wakes. Lost derived caches permit one bounded recheck.
 Sender notes distinguish observed queue acceptance from an unconfirmed attempt.
+
+All three delivery routes share the configured phase: default `all` admits
+authored notify; explicit `urgent` suppresses FYIs while admitting blocking
+mail, and `none` suppresses mail wakes. Generated updates never qualify solely
+because the phase is `all`. Suppressed mail remains available to natural
+activations and authenticated pulls.
 
 **Native queue admission.** A pending Dibs notice of any canonical mail-event
 kind coalesces later notices. The native runner serializes observation, enqueue

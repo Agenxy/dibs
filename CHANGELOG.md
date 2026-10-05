@@ -33,6 +33,28 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   awareness per identity incarnation; old read operations are unchanged and
   fresh units retain durable, bounded read semantics.
 
+- **Stop hooks spend a model turn only for actionable news.** Generated progress,
+  ordinary work approvals, accepted reviews and queue updates
+  remain unread at a non-blocking Stop. SessionStart, authenticated pulls or
+  the next actionable digest deliver them. Stop shares the socket classifier:
+  every agent- or human-written message, including notify, plus answers, grant/adoption
+  verdicts, denials, declines, flagged reviews and announcements awaiting an
+  acknowledgment qualify; DONE requires a
+  current waiting declaration. Due waits and declared-work continuation retain
+  their existing bounds. UserPromptSubmit remains silent.
+
+- **Authored FYIs reach idle sessions and send notes describe the actual route.**
+  A notify qualifies for one socket wake per idle epoch and one delivery at
+  Stop. Generated updates stay quiet alone. Busy authored mail reports delivery
+  deferred until Stop; its Stop delivery produces no socket frame. A claiming
+  bridge takes precedence over the daemon's command capability, and a socket
+  attempt still cannot confirm that the harness accepted it. Later sends in the
+  same written epoch report that no additional frame was sent. Explicit
+  `urgent` and `none` settings retain their opt-outs consistently on socket,
+  Stop and command routes, including deferred command retries. Presented FYIs
+  left unacknowledged remain readable without waking again in later idle
+  epochs or app reconnects.
+
 - **Source installs reject conflicting version overrides before replacement.**
   Both built images are checked against their module/VCS-derived stamp. A
   hand-set `build.Version` that changes the normal pseudo-version now stops
@@ -51,9 +73,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   The unavailable-observer fallback retains its documented bounded duplicate
   trade against losing a wake; app-opening policy stays the same.
 
-- **Claude socket wakes coalesce until a new turn starts.** Busy sessions and
-  informational-only mail use their existing full-mail hooks. Idle sessions
-  wake for requests, questions, handoffs, human notifications, answers,
+- **Claude socket wakes coalesce until a new turn starts.** Busy sessions use
+  their full-mail Stop hooks; generated informational updates wait for a
+  natural activation or ride an actionable digest. Idle sessions
+  wake for every authored message, including notify, plus answers,
   grant/adoption verdicts, denials, declines, flagged reviews and due declared
   waits; ordinary work approvals use the hook path. DONE wakes a sender that
   currently declares it is waiting. Due slots keep independent clocks and

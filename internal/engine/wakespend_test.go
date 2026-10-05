@@ -42,7 +42,7 @@ func TestTypingDoesNotSpendTheWakeThatStopNeeds(t *testing.T) {
 
 	if _, err := e.Do(ctx, &core.Op{
 		Kind: core.OpSendMessage, Token: sender, To: "worker",
-		MsgType: core.MsgNotify, Body: "something happened",
+		MsgType: core.MsgQuestion, Body: "what happened?",
 	}); err != nil {
 		t.Fatalf("send: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestAPollThatDeliversNothingSpendsNothing(t *testing.T) {
 	}
 	if _, err := e.Do(ctx, &core.Op{
 		Kind: core.OpSendMessage, Token: sender, To: "victim",
-		MsgType: core.MsgNotify, Body: "for the victim only",
+		MsgType: core.MsgQuestion, Body: "for the victim only",
 	}); err != nil {
 		t.Fatal(err)
 	}

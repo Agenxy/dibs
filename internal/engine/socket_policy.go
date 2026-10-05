@@ -95,8 +95,16 @@ func waitingDeclaration(l *core.Agent) bool {
 // No rendered-text matching and no state table that can confuse an earlier
 // approval with a later DONE or a flagged review of already completed work.
 func (e *Engine) actionableSocketMail(l *core.Agent, now time.Time, fresh bool) bool {
-	if l.Retired() {
+	if l.Retired() || e.WakePolicy() == WakeNone {
 		return false
+	}
+	// A required acknowledgment is an outstanding obligation. Use the same
+	// due-announcement cadence as the delivering hook, without spending it.
+	if !fresh && len(e.state.Unacked(l.ID)) > 0 {
+		return true
+	}
+	if due, _ := e.dueAnnouncements(l.ID, now); len(due) > 0 {
+		return true
 	}
 	wanted := map[string]bool{}
 	if fresh {
@@ -109,6 +117,9 @@ func (e *Engine) actionableSocketMail(l *core.Agent, now time.Time, fresh bool) 
 			continue
 		}
 		key := l.ID + "\x00" + strconv.FormatUint(m.Serial, 10)
+		if e.notifyPresented(l.ID, m) {
+			continue // once, even on reconnect's fresh=false path
+		}
 		if fresh && !wanted[key] {
 			continue
 		}
@@ -125,7 +136,7 @@ func (e *Engine) socketActionableNotices(l *core.Agent, now time.Time, fresh boo
 		if at, shown := e.noticePresented[key]; fresh && (n.Delivered || (shown && now.Sub(at) < AnnounceRetry)) {
 			continue
 		}
-		if socketActionableNotice(n, l, e.state.Messages[n.Msg]) {
+		if wakeCauseAllowed(e.WakePolicy(), false, socketActionableNotice(n, l, e.state.Messages[n.Msg])) {
 			return true
 		}
 	}
@@ -133,10 +144,37 @@ func (e *Engine) socketActionableNotices(l *core.Agent, now time.Time, fresh boo
 }
 
 func (e *Engine) socketActionableMessage(m *core.Message) bool {
-	return core.Blocking("message.sent", m.Type) || (m.Type == core.MsgNotify && e.isTheHuman(m.From))
+	// Authored mail deserves delivery even when it asks for no reply. Only
+	// generated notices use the narrower decision rule below.
+	return wakeCauseAllowed(e.WakePolicy(), true, core.Blocking("message.sent", m.Type))
+}
+
+// Raw FYIs stay in the mailbox until ack. A ledgered mailbox presentation or
+// a confirmed hook/socket digest is enough to spend their one wake; neither
+// an unconfirmed socket write nor command execution is a read receipt.
+func (e *Engine) notifyPresented(agent string, m *core.Message) bool {
+	if m.Type != core.MsgNotify {
+		return false
+	}
+	_, shown := e.wokeFor[agent+"\x00"+strconv.FormatUint(m.Serial, 10)]
+	// A later adoption must not inherit the prior recipient's presentation.
+	deliveredHere := m.State == core.MsgStateDelivered && m.DeliveredAt >= m.AdoptedAt
+	return deliveredHere || shown
+}
+
+// One phase rule for authored mail and typed generated notices, used by
+// sockets, Stop hooks and the operator's command route. Explicit opt-outs
+// belong to the operator; default delivery includes authored FYIs.
+func wakeCauseAllowed(phase WakePhase, authored, blocking bool) bool {
+	return phase != WakeNone && (blocking || (authored && phase == WakeAll))
 }
 
 func socketActionableNotice(n notice, l *core.Agent, request *core.Message) bool {
+	// Queue acceptance and position changes report scheduling, not a new
+	// decision the sender must act on. Keep them for the next real delivery.
+	if n.Kind == "message.queued" || n.Kind == "message.queue_changed" {
+		return false
+	}
 	// Ordinary approval accepts work; grant/adoption approval performs an
 	// effect the requester awaits. Read the typed request, never the prose.
 	if n.Kind == "message.approved" && (request == nil || request.Type != core.MsgRequest ||

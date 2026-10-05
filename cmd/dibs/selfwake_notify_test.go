@@ -62,10 +62,8 @@ func wakesFor(t *testing.T, notification string) bool {
 	}
 }
 
-// A notify is news nobody is blocked on: the daemon's waker never starts a
-// process for one, and the bridge must not put a notice into the session for
-// one either. A question still wakes, and so does a notification from a daemon
-// too old to say what arrived.
+// Authored notify and question both qualify after the daemon's route policy.
+// The bridge carries the daemon's digest, never a replacement notice of its own.
 func TestMailWakesTheSession(t *testing.T) {
 	const updated = `{"jsonrpc":"2.0","method":"notifications/resources/updated","params":{"uri":"dibs://inbox"`
 	// The digest is what the bridge SENDS, so every case that should wake has

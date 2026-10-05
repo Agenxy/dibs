@@ -129,7 +129,7 @@ func (e *Engine) hasReconnectMail(agent string) bool {
 }
 
 func (e *Engine) hasRetryMail(agent string) bool {
-	if e.hasBlockingMail(agent) {
+	if e.actionableSocketMail(e.state.Agents[agent], time.Now(), true) {
 		return true
 	}
 	row := e.state.Agents[agent]

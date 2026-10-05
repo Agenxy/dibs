@@ -1200,11 +1200,8 @@ func stampHost(ctx context.Context, params json.RawMessage, op *core.Op) {
 	op.Agent.HostID = host
 }
 
-// noteIfNobodyCanWake adds the pull-only warning when core said nothing.
-//
-// Only when core said nothing: a dormant recipient already gets a better
-// sentence from sleepingNote, and two warnings about one delivery is how an
-// agent learns to skim the one that mattered.
+// noteIfNobodyCanWake projects the accepted message's live route decision.
+// It replaces any generic sleeping note with what the engine can observe.
 //
 // Out of line because run() is the busiest function in this file and sits on a
 // complexity ceiling, which this tipped over when it was three inline branches.
@@ -1224,7 +1221,8 @@ func (s *Server) noteIfNobodyCanWake(ctx context.Context, to string, res core.Re
 	// read and must not: it is impure and not replayable. So when the engine
 	// has something to say here it knows strictly more, and skipping it left the
 	// sender holding the false half of the two.
-	if n := s.eng.PullOnlyNoteFor(ctx, to); n != "" {
+	serial, _ := res["msg_serial"].(uint64)
+	if n := s.eng.SendDeliveryNoteFor(ctx, to, serial); n != "" {
 		res["note"] = n
 		return res
 	}

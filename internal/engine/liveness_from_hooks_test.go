@@ -136,7 +136,7 @@ func TestTheDigestDoesNotAskALiveAgentToAnnounceItself(t *testing.T) {
 		return core.Result{}
 	})
 	if _, err := e.Do(ctx, &core.Op{
-		Kind: core.OpSendMessage, Token: peer, To: "quiet", MsgType: core.MsgNotify, Body: "fyi",
+		Kind: core.OpSendMessage, Token: peer, To: "quiet", MsgType: core.MsgQuestion, Body: "liveness-proof-question",
 	}); err != nil {
 		t.Fatal("setup:", err)
 	}
@@ -161,7 +161,7 @@ func TestTheDigestDoesNotAskALiveAgentToAnnounceItself(t *testing.T) {
 		}
 	}
 	// The mail is still delivered: this removed a nag, not a notification.
-	if !strings.Contains(text, "fyi") && !strings.Contains(text, "notify") {
+	if !strings.Contains(text, "liveness-proof-question") {
 		t.Errorf("the mail went missing along with the reminder: %s", text)
 	}
 }

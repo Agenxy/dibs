@@ -1,9 +1,70 @@
 package engine
 
 import (
+	"time"
+
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/harnessenv"
 )
+
+// A socket's existence says where a wake could go, not whether this mail
+// buys one. Classify the actual recorded message by the writer's shared rule.
+func (e *Engine) sendDeliveryNote(l *core.Agent, m *core.Message, now time.Time) string {
+	if l == nil {
+		return ""
+	}
+	if l.Retired() || e.isTheHuman(l.ID) || m == nil || m.To != l.ID {
+		return e.PullOnlyNote(l)
+	}
+	if note, remote := e.remotePullOnlyNote(l); remote {
+		return note
+	}
+	socket, self := e.sendNoteSocketRoute(l)
+	command := e.localCommandConfigured(wakeHarness(l)) && threadIDOf(l) != ""
+	if !socket && !command {
+		return e.PullOnlyNote(l)
+	}
+	if note := e.sendWakeCauseNote(l, m); note != "" {
+		return note
+	}
+	if !socket {
+		return e.PullOnlyNote(l)
+	}
+	if e.socketLifecycle(l, now) == "busy" {
+		return "delivered to " + l.ID + "'s mailbox; it is mid-turn; " +
+			"delivery is deferred until its Stop hook at the end of the turn."
+	}
+	why := "its session socket is the selected delivery route"
+	if self {
+		why = "its in-session bridge owns the socket route"
+	}
+	if epoch := e.socketEpochs[socketSessionKey(l)]; epoch.written {
+		return "delivered to " + l.ID + "'s mailbox; " + why + "; a best-effort notice was already written " +
+			"in this idle epoch, so no additional socket frame was sent. This mail remains " +
+			"available at Stop or its next activation; the earlier write confirms no receiver acceptance."
+	}
+	return bestEffortSocketNote(l, wakeHarness(l), string(l.Status), why)
+}
+
+func (e *Engine) sendWakeCauseNote(l *core.Agent, m *core.Message) string {
+	if e.notifyPresented(l.ID, m) {
+		return "delivered to " + l.ID + "'s mailbox; this notify was already presented, so " +
+			"no new wake was sent. It remains readable until acknowledged."
+	}
+	if !e.socketActionableMessage(m) {
+		return "delivered to " + l.ID + "'s mailbox; the operator's wake policy suppresses this wake: " +
+			"it arrives at " + l.ID + "'s next activation (check_in, inbox, SessionStart " +
+			"or its next actionable delivery)."
+	}
+	return ""
+}
+
+// A claiming bridge has its own socket evidence. Consult daemon discovery
+// only when no bridge owns this mailbox, preserving the one-writer route.
+func (e *Engine) sendNoteSocketRoute(l *core.Agent) (socket, bridge bool) {
+	bridge, _ = e.SelfWaking(l.ID)
+	return bridge || e.mightReachOverSocket(l), bridge
+}
 
 func bestEffortSocketNote(l *core.Agent, named, state, why string) string {
 	lead := why + ", but a session socket for it is open, so a best-effort notice will be tried."

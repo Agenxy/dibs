@@ -398,22 +398,9 @@ func (e *Engine) HookPollFrom(
 		if event != "UserPromptSubmit" {
 			out["systemMessage"] = humanNotice(l.ID, mail, announced, notices)
 		}
-		// And the model's copy, only when it is worth extending a turn for.
-		// Anything unread wakes the agent, once. An agent learns about mail when
-		// it arrives, not when a human next types.
-		// A NOTICE is situational awareness, and whether it is worth resuming a
-		// session for is the operator's call, not ours.
-		//
-		// Waking an agent extends a turn on a thread that may be long and whose
-		// prompt cache is cold, which on a fleet of idle sessions is a real bill
-		// to pay for "somebody joined your space". ON by default even so, because
-		// "an agent is told what happened to it" is a guarantee this project
-		// already makes; an operator who would rather have the tokens sets
-		// `notices_wake = false`, and loses latency rather than delivery, since
-		// the notice still arrives in full at the agent's own check_in.
-		//
-		// Mail is deliberately unaffected: somebody is blocked on an unanswered
-		// question, and nobody is blocked on knowing who joined a space.
+		// Natural activations can carry fresh information under the operator's
+		// situational-notice setting. Stop applies the shared typed actionable
+		// cause below: information alone cannot buy another model turn.
 		noticesCount := e.situationalCount(len(modelNotices))
 		// A notice somebody is WAITING on is not situational awareness, and the
 		// switch above was never meant to cover it. `notices_wake = false`
@@ -432,7 +419,7 @@ func (e *Engine) HookPollFrom(
 		wake := e.wakeKeys(l.ID, now)
 		fresh, blocked := hookWakeTerms(len(wake), len(announced), noticesCount,
 			waiting, e.somebodyIsWaiting(l.ID))
-		fresh, blocked = fresh || work != "", blocked || work != ""
+		fresh, blocked = e.hookDeliveryCauses(l, event, now, work, fresh, blocked)
 		if e.deliverToModel(event, fresh, blocked, stopActive) {
 			// Marked on DELIVERY, and that is a deliberate trade rather than an
 			// oversight, so it is written down here and in SECURITY.md.
@@ -1047,22 +1034,21 @@ func isStopEvent(event string) bool {
 //
 // On Stop, a delivery genuinely continues the turn: it is sent as
 // `decision: "block"` with a reason, which is the documented way to keep a
-// conversation going, and the same loop protections apply. So every piece of
-// mail delivered here prevents an agent from finishing, a plain FYI included.
-// That is Dibs driving a harness, which PHILOSOPHY.md rule 5 forbids and which
-// the wake path exists specifically not to do.
+// conversation going, and the same loop protections apply. Every message an
+// agent or human wrote to this recipient deserves that delivery, a plain FYI
+// included. Generated updates alone do not buy another model turn.
 //
 // Dibs already knows how urgent a thing is, because the sender said so when
 // they chose a type. A question or a request has somebody blocked on the
 // answer. A handoff is work its sender has stopped doing, so the only thing
 // between it and nobody doing it is this agent noticing. An unacknowledged
-// announcement carries collision risk by definition. An agent update changes
-// what this agent may do NEXT, so acting without it is acting on a stale board.
-// Those are worth a turn. A notify is not: it waits for the next activation,
-// which costs the sender nothing and the recipient nothing.
+// announcement carries collision risk by definition. Typed grant/adoption
+// verdicts and flagged reviews need a decision too. Generated progress, queue
+// updates, ordinary approvals and accepted reviews wait for the next natural
+// activation or ride an actionable digest.
 //
-// Every other event is already a boundary. UserPromptSubmit and SessionStart
-// interrupt nothing, so everything is delivered there.
+// SessionStart carries fresh information at a natural activation.
+// UserPromptSubmit stays silent so the human's prompt is never a mail trigger.
 func (e *Engine) deliverToModel(event string, fresh, blocked, stopActive bool) bool {
 	switch event {
 	case "UserPromptSubmit":
@@ -1105,29 +1091,34 @@ func (e *Engine) deliverToModel(event string, fresh, blocked, stopActive bool) b
 		if stopActive || e.WakePolicy() == WakeNone || !fresh {
 			return false
 		}
-		// `all` is the default: anything the agent has not been told wakes it.
-		// `urgent` narrows that to work somebody is blocked on, for an operator
-		// who would rather an FYI never cost a turn.
+		// Both enabled policies require the typed actionable cause selected
+		// by hookDeliveryCauses; an informational update alone never continues.
 		return e.WakePolicy() == WakeAll || blocked
 	default:
 		return fresh
 	}
 }
 
+// Continuing a finished turn costs a model turn. Stop shares the native
+// socket's typed cause, rather than any unread digest line. Informational
+// units remain unconsumed until delivery actually reaches model context.
+func (e *Engine) hookDeliveryCauses(
+	l *core.Agent, event string, now time.Time, work string, fresh, blocked bool,
+) (bool, bool) {
+	if isStopEvent(event) {
+		actionable := e.actionableSocketMail(l, now, true) || work != ""
+		return actionable, actionable
+	}
+	return fresh || work != "", blocked || work != ""
+}
+
 // WakePhase is which news may extend a turn.
 type WakePhase string
 
 const (
-	// WakeAll is the default: anything unread wakes the agent, once.
-	//
-	// An agentic fleet is meant to be independent. Mail that waits for a human
-	// to type before its recipient hears about it is not situational awareness,
-	// and a time-sensitive request sitting unseen because nobody was at the
-	// keyboard is the failure this product exists to prevent. Waking is not
-	// driving: what an agent is handed is coordination data it may act on or
-	// decline, said once where an agent reads its orientation rather than in
-	// every digest, and the agent still decides. What Dibs must not do is
-	// instruct.
+	// WakeAll is the default route policy. Stop and sockets additionally
+	// require the shared typed actionable cause; generated updates wait
+	// for a natural activation or rides an actual delivering digest.
 	WakeAll WakePhase = "all"
 	// WakeUrgent restricts the wake to work somebody is blocked on: questions,
 	// requests, handoffs, unacknowledged announcements, changes to the agent's
@@ -1288,6 +1279,9 @@ func (e *Engine) wakeKeys(agent string, now time.Time) []string {
 		}
 		key := agent + "\x00" + strconv.FormatUint(m.Serial, 10)
 		live[key] = true
+		if e.notifyPresented(agent, m) {
+			continue // raw delivered FYIs stay readable, without buying another turn
+		}
 		last, seen := e.wokeFor[key]
 		switch {
 		case !seen:
