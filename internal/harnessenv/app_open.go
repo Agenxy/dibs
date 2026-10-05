@@ -24,6 +24,16 @@ const (
 	appOpenRate   = 20 * time.Second
 )
 
+// ErrAppOpenPairBusy leaves the attempt memo unchanged. ShowWhenIdle defers
+// this off the writer; callers using Show directly can retry while mail stays
+// queued. Contention is never an attempted open.
+var ErrAppOpenPairBusy = errors.New(
+	"another local background open/restore pair is active; defer the open, mail remains queued")
+
+// Tests replace only this filesystem edge, never the lock decision. The
+// production cache root is independent of the board's DIBS_DIR.
+var backgroundPairCacheDir = os.UserCacheDir
+
 type appOpenMemo struct {
 	OpenedAt time.Time `json:"opened_at"`
 	Epoch    string    `json:"epoch"`
@@ -89,6 +99,19 @@ func (s Shower) showChatGPT(_ []string, thread string) (bool, error) {
 	if memo.suppresses(state, now) {
 		return false, nil
 	}
+	// Every thread and every local producer uses this lock, acquired after
+	// the per-thread lock and before recording the attempt. Keep it for the
+	// complete native open/restore pair; two overlapping pairs could restore
+	// each other's temporarily frontmost ChatGPT window.
+	pair, err := lockBackgroundPair(filepath.Dir(path))
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = pair.Close() }()
+	defer paths.Unlock(pair)
+	// The probe and lock acquisition are inputs off the writer; record the
+	// actual attempted boundary, rather than the time we began probing.
+	now = time.Now().UTC()
 	memo.OpenedAt, memo.Loaded = now, false
 	if state.Epoch != "" {
 		memo.Epoch = state.Epoch
@@ -100,6 +123,48 @@ func (s Shower) showChatGPT(_ []string, thread string) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+func lockBackgroundPair(dir string) (*os.File, error) {
+	cache, err := backgroundPairCacheDir()
+	if err == nil {
+		cache = filepath.Join(cache, "dibs")
+		err = os.MkdirAll(cache, 0o700)
+		if err == nil {
+			// #nosec G302 -- private directory needs owner traversal; no group/other access.
+			err = os.Chmod(cache, 0o700)
+		}
+		if err == nil {
+			var pair *os.File
+			pair, err = lockBackgroundPairFile(cache)
+			if err == nil || errors.Is(err, ErrAppOpenPairBusy) {
+				return pair, err // contention must never bypass the desktop lock
+			}
+		}
+	}
+	slog.Info("desktop-wide background-open lock unavailable; using board-scoped lock",
+		"error", err, "hint", "restore access to the user's Dibs cache directory to serialize all local boards")
+	return lockBackgroundPairFile(dir)
+}
+
+func lockBackgroundPairFile(dir string) (*os.File, error) {
+	// #nosec G304 -- fixed filename inside the private local data directory.
+	pair, err := os.OpenFile(filepath.Join(dir, "background-pair.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err := pair.Chmod(0o600); err != nil {
+		_ = pair.Close()
+		return nil, err
+	}
+	if err := paths.LockExclusive(pair, false); err != nil {
+		_ = pair.Close()
+		if paths.LockHeldElsewhere(err) {
+			return nil, ErrAppOpenPairBusy
+		}
+		return nil, err
+	}
+	return pair, nil
 }
 
 func (m appOpenMemo) suppresses(state ThreadOwnership, now time.Time) bool {

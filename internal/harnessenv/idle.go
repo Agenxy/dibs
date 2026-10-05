@@ -68,8 +68,7 @@ func (s Shower) ShowWhenIdle(argv []string, thread string, report func(opened, d
 	// ChatGPT mail is wakeable whatever the person is doing. Claude's closed
 	// session recovery retains its separate away policy.
 	if isChatGPTOpen(argv) {
-		opened, err := s.showChatGPT(argv, thread)
-		report(opened, false, err)
+		s.showChatGPTWhenIdle(argv, thread, report)
 		return
 	}
 	if len(argv) == 0 || s.holds(thread) {
@@ -111,6 +110,51 @@ func (s Shower) ShowWhenIdle(argv []string, thread string, report func(opened, d
 
 			}
 		}
+	}()
+}
+
+func (s Shower) showChatGPTWhenIdle(argv []string, thread string, report func(bool, bool, error)) {
+	opened, err := s.showChatGPT(argv, thread)
+	if errors.Is(err, ErrAppOpenPairBusy) {
+		s.deferChatGPTPair(argv, thread, report)
+		return
+	}
+	report(opened, false, err)
+}
+
+// The app's global open/restore pair can be held by another thread or process.
+// Wait only on this bounded delivery worker, never on the engine writer. The
+// per-thread map coalesces repeated wakes while the attempt memo stays untouched.
+func (s Shower) deferChatGPTPair(argv []string, thread string, report func(bool, bool, error)) {
+	pendingOpens.Lock()
+	if pendingOpens.threads[thread] {
+		pendingOpens.Unlock()
+		return
+	}
+	pendingOpens.threads[thread] = true
+	pendingOpens.Unlock()
+	report(false, true, nil)
+	go func() {
+		defer func() {
+			pendingOpens.Lock()
+			delete(pendingOpens.threads, thread)
+			pendingOpens.Unlock()
+		}()
+		deadline := time.Now().Add(10 * time.Second)
+		for time.Now().Before(deadline) {
+			if s.Wait != nil {
+				s.Wait(25 * time.Millisecond)
+			} else {
+				<-time.After(25 * time.Millisecond)
+			}
+			opened, err := s.showChatGPT(argv, thread)
+			if errors.Is(err, ErrAppOpenPairBusy) {
+				continue
+			}
+			report(opened, false, err)
+			return
+		}
+		report(false, false, ErrAppOpenPairBusy)
 	}()
 }
 

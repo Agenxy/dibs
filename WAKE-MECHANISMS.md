@@ -336,12 +336,35 @@ terminal stays out of the app.
 **Prompt dormant wakes, bounded app opening (2026-10-04).** The person clarified
 that dormant agents must be wakeable whatever they are doing; the bug was live
 agents repeatedly switching the app. ChatGPT queued wakes therefore no longer
-wait for lock, display sleep or HID idle. Dibs always uses `open -g` for their
+wait for lock, display sleep or HID idle. Earlier Dibs used `open -g` for their
 thread links. Measurement on the installed app and codex-cli 0.160.0: an unloaded
 throwaway thread drained its queued marker after this background open, with a
 roughly 0.6-second ChatGPT foreground blip and focus returning without help.
-Background opening does not promise zero activation. No decision window or
-focus restoration is added.
+That was a historical observation, not a guarantee that focus returns. On
+2026-10-05, five loaded-thread comparisons activated ChatGPT on every background
+open, while five background queue-only comparisons did not. The native helper
+now opens the thread and attempts one restoration during a bounded 250 ms
+observation interval. New input, another app activation, process-incarnation
+changes, unknown observations or a failed restoration end that attempt; there
+is no retry. This mitigates a persistent switch with a possible blip, and does
+not promise zero activation or restoration of ChatGPT's selected chat. A
+capability query uses the old helper's harmless status mode before sending the
+new command. An unavailable or unsupported helper retains the previous
+`/usr/bin/open -g` wake, with no restoration and a once-per-unavailability-episode
+INFO diagnostic. This fallback keeps dormant agents wakeable during a mixed
+install. An uncertain receipt after an attempted native open is never retried.
+
+Local producers serialize each open/restore pair across threads, processes and
+boards under the same user cache root: `os.UserCacheDir()/dibs/background-pair.lock`,
+independent of `DIBS_DIR`, with a private directory and file. An unavailable cache
+path falls back to the board's pair lock with an INFO diagnostic, preserving
+wakes while giving up cross-board serialization. Removing an active lock file
+can break serialization until outstanding pairs finish; cache cleanup is not a
+coordination receipt. Contention does not advance the attempt
+memo. The off-writer delivery path coalesces and waits up to ten seconds for
+that pair, plus any already-started bounded probe/helper call; if it cannot
+proceed, it reports the queued wake without claiming an open. No decision
+window is introduced for agent mail.
 
 Loaded threads receive queue-only delivery and are never opened. The bounded
 ownership probe selects the app's actual bundled Codex runtimes before lsof,
