@@ -5,6 +5,45 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.0.12] - 2026-10-05
+
+### Added
+
+- **Unanswered questions can be withdrawn without inventing an answer.** The
+  sender can retract pending, delivered or acknowledged questions with a reason;
+  their recipients receive the same durable withdrawal receipt as requests.
+  Human decisions and withdrawals request best-effort notification cleanup on
+  macOS, including relay Macs, using board-scoped message identifiers. Removal
+  requests remain distinct from measured disappearance; old UUID notifications
+  and unsupported routes remain explicit limits.
+
+- Agent renames retain former names as explicit, releasable aliases. Addressed
+  results identify the actual recipient; current names and immutable ids keep
+  precedence, and ambiguous aliases are refused. Nonces recover the same
+  mailbox with an omitted or changed name, with rename admission before token
+  or activation changes. Alias ownership rebuilds across restart and is fenced
+  from id reuse. Configured role aliases and shadowing appear in `dibs doctor`;
+  fingerprint checks remain required. Live registration refuses to reopen a
+  deliberately closed identity; historical reopen records still replay and
+  cannot restore invitations issued before closure.
+
+- A closed-target full-publication rehearsal shares the release publisher and
+  records exact source objects, draft discovery/upload/readback, immutable public
+  asset hashes and a read-only retry. Production preflight, tag creation and
+  publication authenticate that exact-candidate Actions proof again. Its scratch
+  repository is the operator-approved public `Agenxy/dibs-release-rehearsal`;
+  the exact-candidate pilot is recorded in `docs/RELEASE.md`, not a production
+  release claim. Rehearsal signatures cannot satisfy
+  installed production trust, and registry/cask outputs are dry plans, not live
+  acceptance.
+  Metadata reads use only the existing job token at the GitHub API origin for
+  rate limits, never as signature authority or on asset/CDN requests. Shared
+  workflow tool/action pins are checked for parity; Syft is explicitly pinned.
+  A separately named read-only workflow enters the unchanged production
+  validator with the production repository's job token, without a build, tag,
+  publication or release-finalizer trigger. This is a measurement door, not a
+  successful cross-repository or live release claim.
+
 ### Fixed
 
 - **Waiting-note ages describe outstanding updates.** A verdict already read
@@ -46,47 +85,6 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   step's report. Unreported intermediate steps and unfinished final work stay
   protected, corrective hints name the reviewable final step, and historical
   replay, progress counts and the original completion artifact are unchanged.
-
-## [0.0.12] - 2026-10-05
-
-### Added
-
-- **Unanswered questions can be withdrawn without inventing an answer.** The
-  sender can retract pending, delivered or acknowledged questions with a reason;
-  their recipients receive the same durable withdrawal receipt as requests.
-  Human decisions and withdrawals request best-effort notification cleanup on
-  macOS, including relay Macs, using board-scoped message identifiers. Removal
-  requests remain distinct from measured disappearance; old UUID notifications
-  and unsupported routes remain explicit limits.
-
-- Agent renames retain former names as explicit, releasable aliases. Addressed
-  results identify the actual recipient; current names and immutable ids keep
-  precedence, and ambiguous aliases are refused. Nonces recover the same
-  mailbox with an omitted or changed name, with rename admission before token
-  or activation changes. Alias ownership rebuilds across restart and is fenced
-  from id reuse. Configured role aliases and shadowing appear in `dibs doctor`;
-  fingerprint checks remain required. Live registration refuses to reopen a
-  deliberately closed identity; historical reopen records still replay and
-  cannot restore invitations issued before closure.
-
-- A closed-target full-publication rehearsal shares the release publisher and
-  records exact source objects, draft discovery/upload/readback, immutable public
-  asset hashes and a read-only retry. Production preflight, tag creation and
-  publication authenticate that exact-candidate Actions proof again. Its scratch
-  repository is the operator-approved public `Agenxy/dibs-release-rehearsal`;
-  the exact-candidate pilot is recorded in `docs/RELEASE.md`, not a production
-  release claim. Rehearsal signatures cannot satisfy
-  installed production trust, and registry/cask outputs are dry plans, not live
-  acceptance.
-  Metadata reads use only the existing job token at the GitHub API origin for
-  rate limits, never as signature authority or on asset/CDN requests. Shared
-  workflow tool/action pins are checked for parity; Syft is explicitly pinned.
-  A separately named read-only workflow enters the unchanged production
-  validator with the production repository's job token, without a build, tag,
-  publication or release-finalizer trigger. This is a measurement door, not a
-  successful cross-repository or live release claim.
-
-### Fixed
 
 - **Repository scorer advice no longer repeats on every daemon restart.**
   Standing advice is remembered per local repository and deployed scorer
