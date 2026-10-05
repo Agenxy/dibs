@@ -123,8 +123,10 @@ func (e *Engine) deliverAdvisories(batch []Advisory) {
 	if err != nil || from == to {
 		return
 	}
-	if _, err := e.Do(ctx, &core.Op{Kind: core.OpSendMessage, Token: token, To: to,
-		MsgType: core.MsgNotify, Body: advisoryBody(batch)}); err != nil {
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpSendMessage, Token: token, To: to,
+		MsgType: core.MsgNotify, Body: advisoryBody(batch),
+	}); err != nil {
 		slog.Warn("could not deliver standing advice; retrying", "err", err)
 		return
 	}
