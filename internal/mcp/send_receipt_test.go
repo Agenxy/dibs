@@ -352,6 +352,9 @@ func TestSendStageTimingIsDebugOnlyAndPrivateThroughMCP(t *testing.T) {
 			}
 			stages := map[string]bool{}
 			for _, line := range strings.Split(strings.TrimSpace(raw), "\n") {
+				if strings.TrimSpace(line) == "" {
+					continue
+				}
 				var event map[string]any
 				if err := json.Unmarshal([]byte(line), &event); err != nil {
 					t.Fatalf("timing log was not JSON: %v", err)
