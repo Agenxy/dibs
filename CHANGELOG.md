@@ -5,6 +5,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- macOS daemon LaunchAgents use `ProcessType=Standard`, removing the CPU and I/O
+  restrictions of Background during competing host work. `dibs upgrade` also
+  migrates an existing board-matching Background unit when the binary already
+  matches, preserving other settings and retaining the original plist. An
+  operator's explicit alternative policy is retained. This is a scheduling
+  policy, not a guarantee of request latency on an overloaded host.
+
 ### Added
 
 - An opt-in ChatGPT app-restart sweep can queue a factual `app-restarted`

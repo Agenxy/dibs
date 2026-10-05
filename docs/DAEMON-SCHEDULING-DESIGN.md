@@ -27,7 +27,8 @@ necessary for a changed plist to take effect.
 
 ## Proposed policy
 
-Use `ProcessType=Interactive`, leave nice at its default 0, and add no runtime
+Architect accepted in 45687 with Standard preferred. Use `ProcessType=Standard`,
+leave nice at its default 0, and add no runtime
 thread QoS calls. Dibs serves requests whose delay stalls the person's running
 agents. Apple's installed `launchd.plist(5)` says Interactive has application
 resource limits, while Background intentionally limits CPU and I/O. Adaptive
@@ -35,6 +36,7 @@ changes class on XPC activity; Dibs' HTTP/socket traffic cannot supply that
 relationship. Apple explicitly identifies that limitation for non-XPC IPC in
 [its Apple silicon guidance](https://developer.apple.com/documentation/apple-silicon/tuning-your-code-s-performance-for-apple-silicon).
 
+Interactive is approved only if the hosted Standard arm proves insufficient.
 This removes a discretionary background restriction; it promises neither
 capacity nor bounded latency. All daemon work, including indexing, shares that
 process policy. Greater competition with other applications and greater energy

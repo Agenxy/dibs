@@ -132,6 +132,9 @@ type plan struct {
 	installed          string
 	unit, pinned       string
 	unitWrong, moveDir bool
+	// A policy-only migration preserves the operator's other plist bytes.
+	policyBefore, policyAfter []byte
+	policyErr                 error
 	// checked is the version the installed daemon reported for itself when
 	// the preflight asked it to rebuild the board: the replacement's own
 	// build, which is not this CLI's. See nothingToDo.
@@ -290,7 +293,7 @@ func runningOrigin(p *plan) string {
 // serves the build the installed binary reported for itself, and the
 // service unit and data directory need no repair.
 func (p *plan) nothingToDo(info buildInfo) bool {
-	return p.serving && !p.unitWrong && !p.moveDir && alreadyOn(info, p.checked)
+	return p.serving && !p.unitWrong && !p.moveDir && len(p.policyAfter) == 0 && p.policyErr == nil && alreadyOn(info, p.checked)
 }
 
 // alreadyOn reports whether the serving daemon is on the build the installed
@@ -436,10 +439,22 @@ func (p *plan) findDrift() {
 	}
 	p.unitWrong = p.unit != "" && p.pinned != "" && !sameBinary(p.pinned, p.installed)
 	p.moveDir = p.inherited != "" && p.opts.adoptDir
+	if runtime.GOOS == "darwin" && p.unit != "" && !p.unitWrong && !p.moveDir {
+		p.policyBefore, p.policyErr = os.ReadFile(p.unit)
+		if p.policyErr == nil {
+			p.policyAfter, p.policyErr = standardLaunchPolicy(p.policyBefore)
+		}
+	}
 }
 
 func (p *plan) report() error {
+	if p.policyErr != nil {
+		return p.policyFailure(p.policyErr)
+	}
 	step("dry run: nothing below was done")
+	if len(p.policyAfter) != 0 {
+		say("  would change %s ProcessType from Background to Standard, preserving other settings", ui.Path(p.unit))
+	}
 	if p.unitWrong {
 		say("  would rewrite %s, which pins %s", ui.Path(p.unit), ui.Path(p.pinned))
 	}
@@ -462,6 +477,17 @@ func (p *plan) report() error {
 // read at load time, and a directory cannot be moved out from under the process
 // holding its lock.
 func (p *plan) preflight() error {
+	if p.policyErr != nil {
+		return p.policyFailure(p.policyErr)
+	}
+	if len(p.policyAfter) != 0 {
+		if err := p.checkPolicyUnit(); err != nil {
+			return p.policyFailure(err)
+		}
+		if err := p.policyWritable(); err != nil {
+			return p.policyFailure(err)
+		}
+	}
 	if p.unitWrong || p.moveDir {
 		if err := unitIsWritable(p.unit); err != nil {
 			return fmt.Errorf("the service unit cannot be rewritten, so nothing has been "+
@@ -636,6 +662,11 @@ func (p *plan) reconcile() (newDir string, err error) {
 		unitWrong = p.unit != ""
 	}
 	if !unitWrong {
+		if len(p.policyAfter) != 0 {
+			if err := p.migratePolicy(); err != nil {
+				return newDir, err
+			}
+		}
 		return newDir, nil
 	}
 	step("rewriting " + filepath.Base(p.unit))
