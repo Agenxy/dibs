@@ -46,7 +46,7 @@ func probeFixtureMaintenance(t *testing.T, strategy, target string, enabled bool
 	p.trace = filepath.Join(p.control, "trace.jsonl")
 	// Defer, not an early t.Cleanup: release/reap runs BEFORE fixture TempDir's
 	// cleanup even on t.Fatal. The control directory outlives the repository.
-	defer p.finish(t)
+	defer func() { p.finish(t) }()
 	global := filepath.Join(p.control, "global.gitconfig")
 	t.Setenv("GIT_CONFIG_GLOBAL", global)
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
