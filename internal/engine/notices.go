@@ -55,6 +55,9 @@ type notice struct {
 	// the wake path repeated it every turn.
 	Msg  uint64
 	Text string
+	// ReadParent marks an envelope outcome/review whose full read_mail clears
+	// its durable unread prefix. A trimmed inbox rendering deliberately cannot.
+	ReadParent bool
 	// At is when the thing being reported HAPPENED, not when this notice was
 	// queued, and the difference is the whole reason it is a parameter rather
 	// than a time.Now() in pushNoticeAs.
@@ -377,7 +380,7 @@ func (e *Engine) takeNotices(agent string) []notice {
 			}
 			out = append(out, notice{
 				Kind: u.kind, Serial: u.serial, Msg: group.message.Serial,
-				Text: u.text, At: u.at, Blocking: u.blocking,
+				Text: u.text, At: u.at, Blocking: u.blocking, ReadParent: true,
 			})
 			count++
 		}

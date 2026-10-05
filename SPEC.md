@@ -1223,13 +1223,17 @@ counting a document; this line said 17 for two minor versions.
 
 **`waiting`**: every authenticated result from a mutating call carries a `waiting`
 string when the caller has unread mail, an unacknowledged announcement, or a
-pending agent update. Counts and the corrective call (`inbox`) only, never
+pending agent update. Counts and the corrective read calls only, never
 content: the body stays behind the authenticated mailbox. Absent when there is
 nothing, and absent on `check_in`, which has just returned the inbox itself.
 Past the age floor, the oldest timestamp comes from those same outstanding
 items. A cached verdict already read through `inbox` cannot age fresh mail or
 an update. Approved/queued work appears separately in `owed_work`; acknowledged
 notifications and consumed terminal mail do not count as unread.
+Envelope outcomes/reviews name their bounded, deduplicated parent
+`read_mail(serial)` calls to read and clear the updates. Mail, announcements and
+generic updates name `inbox`. A shortened inbox update does not clear its
+durable unread prefix; following the full-envelope hint does.
 
 This is a delivery guarantee, not a convenience. Push delivery through lifecycle
 hooks is conditional on the harness having hooks, the plugin being installed and
