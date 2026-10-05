@@ -11,18 +11,121 @@ import (
 
 type sendReceiptKey struct{}
 
+type sendAttemptKey struct{}
+
+// SendAttempt records only timings and the handoff boundary. A bounded caller
+// may refuse an attempt that has not even begun submission; once submission
+// starts, only a durable receipt can settle its outcome.
+type SendAttempt struct {
+	mu         sync.Mutex
+	submitting bool
+	abandoned  bool
+	started    map[string]time.Time
+	durations  map[string]time.Duration
+}
+
+func (a *SendAttempt) beginSubmission() bool {
+	if a == nil {
+		return true
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.abandoned {
+		return false
+	}
+	a.submitting = true
+	return true
+}
+
+// AbandonBeforeSubmission is the only negative receipt the bounded transport
+// can prove. A racing or accepted handoff remains unknown without persistence.
+func (a *SendAttempt) AbandonBeforeSubmission() bool {
+	if a == nil {
+		return false
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.submitting {
+		return false
+	}
+	a.abandoned = true
+	return true
+}
+
+// StartStage records a privacy-safe duration for a slow-send diagnostic. The
+// caller may snapshot an in-progress stage at its response deadline.
+func (a *SendAttempt) StartStage(stage string) func() {
+	if a == nil {
+		return func() {}
+	}
+	a.mu.Lock()
+	if a.started == nil {
+		a.started = make(map[string]time.Time)
+	}
+	a.started[stage] = time.Now()
+	a.mu.Unlock()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			a.StopStage(stage)
+		})
+	}
+}
+
+// StopStage may be called by the writer after the HTTP goroutine started the
+// receipt clock. It is harmless when admission failed before any receipt.
+func (a *SendAttempt) StopStage(stage string) {
+	if a == nil {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if started, ok := a.started[stage]; ok {
+		if a.durations == nil {
+			a.durations = make(map[string]time.Duration)
+		}
+		a.durations[stage] += time.Since(started)
+		delete(a.started, stage)
+	}
+}
+
+// StageDurations copies completed and active timings without exposing request
+// content, identities, paths or op ids.
+func (a *SendAttempt) StageDurations() map[string]time.Duration {
+	result := make(map[string]time.Duration)
+	if a == nil {
+		return result
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for stage, duration := range a.durations {
+		result[stage] = duration
+	}
+	for stage, started := range a.started {
+		result[stage] += time.Since(started)
+	}
+	return result
+}
+
 // WithSendReceipt lets a bounded transport retain the acceptance receipt even
 // when presentation or advisory work has not finished. Only the original
 // writer publishes it, after persistence returned successfully. It carries
 // no live state, and receiving it says nothing about recipient delivery.
-func WithSendReceipt(ctx context.Context) (context.Context, <-chan core.Result) {
+func WithSendReceipt(ctx context.Context) (context.Context, <-chan core.Result, *SendAttempt) {
 	receipt := make(chan core.Result, 1)
-	return context.WithValue(ctx, sendReceiptKey{}, receipt), receipt
+	attempt := &SendAttempt{}
+	ctx = context.WithValue(ctx, sendReceiptKey{}, receipt)
+	return context.WithValue(ctx, sendAttemptKey{}, attempt), receipt, attempt
 }
 
 func sendReceiptFrom(ctx context.Context) chan core.Result {
 	receipt, _ := ctx.Value(sendReceiptKey{}).(chan core.Result)
 	return receipt
+}
+
+func sendAttemptFrom(ctx context.Context) *SendAttempt {
+	attempt, _ := ctx.Value(sendAttemptKey{}).(*SendAttempt)
+	return attempt
 }
 
 func captureSendReceipt(receipt chan core.Result, res core.Result) {

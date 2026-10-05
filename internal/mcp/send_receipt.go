@@ -10,7 +10,10 @@ import (
 	"github.com/agenxy/dibs/internal/engine"
 )
 
-const sendResponseBudget = 5 * time.Second
+const (
+	sendResponseBudget      = 5 * time.Second
+	bridgeObservationBudget = 500 * time.Millisecond
+)
 
 func isSendCall(req *rpcRequest) bool {
 	var call struct {
@@ -50,16 +53,46 @@ func (s *Server) dispatchSend(
 	ctx context.Context, req *rpcRequest, bearerToken, nonce string, ui bool, client *clientInfoJSON,
 ) (any, *rpcError) {
 	started := time.Now()
+	var attempt *engine.SendAttempt
 	slog.Debug("send stage", "stage", "response", "event", "begin")
 	defer func() {
-		slog.Debug("send stage", "stage", "response", "event", "complete", "elapsed", time.Since(started))
+		elapsed := time.Since(started)
+		slog.Debug("send stage", "stage", "response", "event", "complete", "elapsed", elapsed)
+		if elapsed >= time.Second {
+			timings := attempt.StageDurations()
+			// Only slow sends produce an INFO line. Durations and a fixed op
+			// kind diagnose the stage without logging names, mail, paths or ids.
+			slog.Info("slow send", "kind", "send", "elapsed", elapsed,
+				"bridge_observation", timings["bridge_observation"],
+				"enqueue_wait", timings["enqueue_wait"],
+				"writer_apply", timings["writer_apply"],
+				"fsync", timings["fsync"],
+				"receipt", timings["receipt"],
+				"advisories", timings["advisories"])
+		}
 	}()
 	ctx, cancel := context.WithTimeout(ctx, sendResponseBudget)
 	defer cancel()
-	ctx, receipts := engine.WithSendReceipt(ctx)
+	var receipts <-chan core.Result
+	ctx, receipts, attempt = engine.WithSendReceipt(ctx)
+	attempt.StartStage("receipt") // duration until durable acceptance, or still pending at the budget
 	done := make(chan sendRPCReply, 1)
 	go func() {
-		s.observeBridge(ctx, req.Params)
+		// Bridge process discovery is advisory. Its process scan or reconnect
+		// receipt must not consume the send's entire response budget.
+		observing := attempt.StartStage("bridge_observation")
+		observeCtx, stop := context.WithTimeout(ctx, bridgeObservationBudget)
+		observed := make(chan struct{})
+		go func() {
+			s.observeBridge(observeCtx, req.Params)
+			close(observed)
+		}()
+		select {
+		case <-observed:
+		case <-observeCtx.Done():
+		}
+		stop()
+		observing()
 		result, err := s.dispatch(ctx, req, bearerToken, nonce, ui, client)
 		done <- sendRPCReply{result, err}
 	}()
@@ -70,10 +103,10 @@ func (s *Server) dispatchSend(
 		}
 	case <-ctx.Done():
 	}
-	return boundedSendResult(req.Params, receipts), nil
+	return boundedSendResult(req.Params, receipts, attempt), nil
 }
 
-func boundedSendResult(params json.RawMessage, receipts <-chan core.Result) map[string]any {
+func boundedSendResult(params json.RawMessage, receipts <-chan core.Result, attempt *engine.SendAttempt) map[string]any {
 	select {
 	case receipt := <-receipts:
 		receipt["advisories"] = "Acceptance is durable; delivery advisories were unavailable within the response budget. " +
@@ -87,6 +120,13 @@ func boundedSendResult(params json.RawMessage, receipts <-chan core.Result) map[
 		} `json:"arguments"`
 	}
 	_ = json.Unmarshal(params, &call)
+	if attempt.AbandonBeforeSubmission() {
+		return sendTextResult(core.Result{
+			"code": "E_SEND_NOT_SENT", "op_id": call.Arguments.OpID,
+			"message": "The send timed out before submission to the writer; no message was sent.",
+			"hint":    "Resend the payload. Supply an op_id so any later uncertain outcome can be retried safely with the same id and payload.",
+		}, true)
+	}
 	hint := "The send may or may not have been accepted. Retry with the exact same op_id and the same payload " +
 		"to retrieve its original receipt without duplicating it, within the existing dedup window " +
 		"(24 hours or 256 identified ops, whichever is less)."
