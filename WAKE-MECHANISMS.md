@@ -349,7 +349,10 @@ changes, unknown observations or a failed restoration end that attempt; there
 is no retry. This mitigates a persistent switch with a possible blip, and does
 not promise zero activation or restoration of ChatGPT's selected chat. A
 capability query uses the old helper's harmless status mode before sending the
-new command; an unsupported helper leaves the wake queued with a diagnostic.
+new command. An unavailable or unsupported helper retains the previous
+`/usr/bin/open -g` wake, with no restoration and a once-per-unavailability-episode
+INFO diagnostic. This fallback keeps dormant agents wakeable during a mixed
+install. An uncertain receipt after an attempted native open is never retried.
 
 Local producers serialize each open/restore pair, across threads and processes
 sharing the local Dibs data directory. Contention does not advance the attempt

@@ -37,8 +37,10 @@ func TestNativeBackgroundOpenDecisionsThroughProductionMode(t *testing.T) {
 	if info, err := os.Stat(binary); err != nil || info.Size() == 0 {
 		t.Fatalf("native fixture setup artifact: %v %v", info, err)
 	}
-	oldHelper, oldOutput := backgroundHelper, backgroundOpenFixture
-	t.Cleanup(func() { backgroundHelper, backgroundOpenFixture = oldHelper, oldOutput })
+	oldHelper, oldOutput, oldLegacy := backgroundHelper, backgroundOpenFixture, backgroundLegacyFixture
+	t.Cleanup(func() {
+		backgroundHelper, backgroundOpenFixture, backgroundLegacyFixture = oldHelper, oldOutput, oldLegacy
+	})
 	backgroundHelper = func() string { return binary }
 	prior := map[string]any{"pid": 1, "launch": "prior-epoch", "bundle": "com.apple.Safari"}
 	target := map[string]any{"pid": 2, "launch": "target-epoch", "bundle": "com.openai.codex"}
@@ -79,16 +81,21 @@ func TestNativeBackgroundOpenDecisionsThroughProductionMode(t *testing.T) {
 				t.Fatal(err)
 			}
 			var receipt map[string]any
-			modeCalls, statusCalls := 0, 0
+			modeCalls, statusCalls, legacyCalls := 0, 0, 0
+			backgroundLegacyFixture = func(context.Context, []string) error {
+				legacyCalls++ // old-code proof must not open the person's app
+				return nil
+			}
 			backgroundOpenFixture = func(ctx context.Context, path string, argv, env []string) ([]byte, error) {
 				if path != binary {
 					t.Fatal("fixture helper resolution drifted:", path)
 				}
-				if reflect.DeepEqual(argv, []string{"--status"}) {
+				switch {
+				case reflect.DeepEqual(argv, []string{"--status"}):
 					statusCalls++
-				} else if reflect.DeepEqual(argv, []string{"--open-background", "codex://threads/focus-fixture"}) {
+				case reflect.DeepEqual(argv, []string{"--open-background", "codex://threads/focus-fixture"}):
 					modeCalls++
-				} else {
+				default:
 					t.Fatal("unexpected helper argv:", argv)
 				}
 				cmd := exec.CommandContext(ctx, path, argv...)
@@ -103,8 +110,8 @@ func TestNativeBackgroundOpenDecisionsThroughProductionMode(t *testing.T) {
 				return raw, err
 			}
 			err = OpenChatGPTBackground("codex://threads/focus-fixture")
-			if statusCalls != 1 || modeCalls != 1 {
-				t.Fatalf("production native mode missing: status=%d mode=%d err=%v", statusCalls, modeCalls, err)
+			if statusCalls != 1 || modeCalls != 1 || legacyCalls != 0 {
+				t.Fatalf("native mode missing: status=%d mode=%d legacy=%d err=%v", statusCalls, modeCalls, legacyCalls, err)
 			}
 			if (err == nil) != tc.open {
 				t.Fatalf("open outcome: err=%v open=%v", err, tc.open)

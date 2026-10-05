@@ -52,8 +52,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   restart-sweep opens share one pair lock; contention does not record an open
   that never happened. Activation can still briefly show ChatGPT, and this
   does not restore its selected chat. Older helpers are detected harmlessly;
-  an unsupported helper leaves the wake queued instead of activating through
-  a fallback route.
+  when restoration support is unavailable, wakes retain the previous background
+  open and log a diagnostic once. Uncertain outcomes after an attempted native
+  open are never retried.
 
 - **Returning identities survive native directory case aliases.** Local path
   canonicalization corrects Darwin filesystem spelling. The stdio nonce cache

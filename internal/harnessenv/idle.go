@@ -68,12 +68,7 @@ func (s Shower) ShowWhenIdle(argv []string, thread string, report func(opened, d
 	// ChatGPT mail is wakeable whatever the person is doing. Claude's closed
 	// session recovery retains its separate away policy.
 	if isChatGPTOpen(argv) {
-		opened, err := s.showChatGPT(argv, thread)
-		if errors.Is(err, ErrAppOpenPairBusy) {
-			s.deferChatGPTPair(argv, thread, report)
-			return
-		}
-		report(opened, false, err)
+		s.showChatGPTWhenIdle(argv, thread, report)
 		return
 	}
 	if len(argv) == 0 || s.holds(thread) {
@@ -116,6 +111,15 @@ func (s Shower) ShowWhenIdle(argv []string, thread string, report func(opened, d
 			}
 		}
 	}()
+}
+
+func (s Shower) showChatGPTWhenIdle(argv []string, thread string, report func(bool, bool, error)) {
+	opened, err := s.showChatGPT(argv, thread)
+	if errors.Is(err, ErrAppOpenPairBusy) {
+		s.deferChatGPTPair(argv, thread, report)
+		return
+	}
+	report(opened, false, err)
 }
 
 // The app's global open/restore pair can be held by another thread or process.
