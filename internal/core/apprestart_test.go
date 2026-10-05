@@ -70,7 +70,13 @@ func TestRestartNoticesArePrunedByLedgeredSweep(t *testing.T) {
 			s := NewState("n1", DefaultLimits())
 			reg(t, s, "worker", "tw", t0)
 			l := s.Agents["worker"]
-			s.RestartNotices[l.ID] = RestartNotice{AgentID: l.ID, CreatedSerial: l.CreatedSerial}
+			mustApply(t, s, &Op{
+				Kind: OpAppRestartObserved, RestartEpoch: "app:2", RestartObservedAt: t0,
+				RestartNotices: []RestartNotice{{AgentID: l.ID, CreatedSerial: l.CreatedSerial}},
+			}, t0)
+			if len(s.RestartNotices) != 1 {
+				t.Fatalf("setup did not record restart notice: %v", s.RestartNotices)
+			}
 			tc.retire(t, s)
 			base := s.Serial
 			res, evs, err := s.Apply(&Op{Kind: OpSweep}, t0.Add(time.Second))
