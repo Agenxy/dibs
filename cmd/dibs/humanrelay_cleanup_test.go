@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -32,6 +33,22 @@ func TestActualRelayStreamRemovesThroughItsNativeHelper(t *testing.T) {
 		// Only this child has the private copied helper below. The gate's
 		// kill switch must still silence real notifications in every other
 		// test process; this helper validates argv without desktop OS calls.
+		self, err := os.Executable()
+		if err != nil {
+			t.Fatal(err)
+		}
+		self, err = filepath.EvalSymlinks(self)
+		if err != nil {
+			t.Fatal(err)
+		}
+		driver, err := os.ReadFile(self)
+		if err != nil {
+			t.Fatal(err)
+		}
+		helper, err := os.ReadFile(filepath.Join(filepath.Dir(self), "Dibs.app/Contents/MacOS/dibs-notify"))
+		if err != nil || !bytes.Equal(driver, helper) {
+			t.Fatalf("setup: relay helper is not the private copied test binary: %v", err)
+		}
 		t.Setenv("DIBS_NOTIFY", "")
 		testRelayCleanupStream(t)
 		return
