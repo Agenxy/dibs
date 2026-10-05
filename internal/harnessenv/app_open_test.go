@@ -21,7 +21,9 @@ import (
 // a caller copied RealShower before its TestMain installed a fake.
 func TestRealAppOpenerFailsClosedInGoTest(t *testing.T) {
 	if os.Getenv("DIBS_TEST_UNFAKED_REAL_OPEN") == "1" {
-		_ = RealShower.Open([]string{"/usr/bin/open", "-g", "codex://threads/01a0aaaa-bbbb-7ccc-8ddd-eeeeeeeeeeee"})
+		// Invalid thread ID: on pre-fix code this fails validation without
+		// executing /usr/bin/open, so the negative control is desktop-safe.
+		_ = RealShower.Open([]string{"/usr/bin/open", "-g", "codex://threads/not-a-uuid"})
 		t.Fatal("real app opener returned in a Go test")
 	}
 	cmd := exec.Command(os.Args[0], "-test.run=^TestRealAppOpenerFailsClosedInGoTest$")
@@ -29,6 +31,20 @@ func TestRealAppOpenerFailsClosedInGoTest(t *testing.T) {
 	out, err := cmd.CombinedOutput()
 	if err == nil || !strings.Contains(string(out), "unfaked real app opener in a Go test") {
 		t.Fatalf("unfaked opener did not fail the test: %v %s", err, out)
+	}
+}
+
+func TestBuiltChildInheritsAppOpenRefusal(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "app-open-guard")
+	build := exec.Command("go", "build", "-o", bin, "./testdata/appopenguard")
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build child opener probe: %v %s", err, out)
+	}
+	child := exec.Command(bin)
+	child.Env = append(os.Environ(), "DIBS_TEST_FORBID_APP_OPEN=1")
+	out, err := child.CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "real app opener forbidden by DIBS_TEST_FORBID_APP_OPEN") {
+		t.Fatalf("built child did not receive app-open refusal: %v %s", err, out)
 	}
 }
 

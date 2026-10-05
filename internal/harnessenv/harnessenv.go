@@ -288,6 +288,11 @@ var RealShower = Shower{
 		if testing.Testing() {
 			panic("unfaked real app opener in a Go test")
 		}
+		// TestMain passes this to built helper binaries, where
+		// testing.Testing() is false. A child must still never open the app.
+		if os.Getenv("DIBS_TEST_FORBID_APP_OPEN") == "1" {
+			return errors.New("real app opener forbidden by DIBS_TEST_FORBID_APP_OPEN")
+		}
 		if len(argv) != 3 || argv[0] != "/usr/bin/open" {
 			return errors.New("unsupported native app open")
 		}

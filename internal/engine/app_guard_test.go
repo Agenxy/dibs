@@ -10,6 +10,9 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	if err := os.Setenv("DIBS_TEST_FORBID_APP_OPEN", "1"); err != nil {
+		panic(err)
+	}
 	dir, err := os.MkdirTemp("", "dibs-engine-codex-")
 	if err != nil {
 		panic(err)
