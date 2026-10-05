@@ -2,8 +2,9 @@ package engine
 
 import (
 	"fmt"
-	"github.com/agenxy/dibs/internal/core"
 	"time"
+
+	"github.com/agenxy/dibs/internal/core"
 )
 
 // applyAndLedger applies an op and ledgers it iff the serial advanced.
