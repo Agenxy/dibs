@@ -146,8 +146,24 @@ The positive run
 [37238179799](https://github.com/Agenxy/dibs-release-rehearsal/actions/runs/37238179799)
 published immutable payload `403225432` with 11 assets, then failed its dry cask
 URL check before producing eligible evidence. That failed attempt is retained,
-not reused or deleted. No successful full-publication or downstream acceptance
-is claimed; the repair requires a new exact-candidate run and unique tag.
+not reused or deleted.
+
+The repaired candidate `6c9d961b24183298a44f67b36731e3eb7c5e07e9` then ran the
+[second discovery negative control](https://github.com/Agenxy/dibs-release-rehearsal/actions/runs/37240834531),
+which failed at the intended discovery door, followed by the
+[successful scratch publication](https://github.com/Agenxy/dibs-release-rehearsal/actions/runs/37241664375).
+It produced immutable payload `403239482` with 11 assets and immutable signed
+evidence `403244095` with two assets, including a real read-only public retry.
+Both OIDC bundles were independently verified against the pinned trust root and
+exact scratch workflow identity. The 21 source objects, payload digests, three
+guest CLI members, three cask URL/checksum pairs and four Darwin runtime members
+across the archive and MCP Bundle were independently checked.
+
+That is pilot proof for **only that candidate**, not for subsequent documentation
+or source changes, nor the final v0.0.12 candidate. Production-job-token access
+to the public evidence has not yet been measured. Final exact-candidate negative
+and positive runs plus production validation are still required; scratch success
+does not claim downstream installation, registry or tap acceptance.
 
 Mirror the exact reviewed candidate commit (without rewriting its SHA) and use
 `rehearsal-v<version>-<full-candidate-sha>`. The workflow and tool tree must be
