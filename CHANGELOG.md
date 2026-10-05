@@ -54,6 +54,7 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   sibling names the old mailbox and a ready adoption request to a coordinator,
   falling back to the human only when no coordinator exists. Scorer root keys
   and host-aware unidentified-session notices use the same local spelling.
+  During upgrade, older claims with non-native spellings may miss overlap warnings until they expire.
 
 - **Waiting-note ages describe outstanding updates.** A verdict already read
   through the authenticated inbox no longer lends its cached timestamp to fresh
