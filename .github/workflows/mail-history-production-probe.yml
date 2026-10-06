@@ -43,6 +43,16 @@ jobs:
           DIBS_HISTORY_PROBE_ARM: baseline
         run: mise exec -- go test -count=1 -timeout=20m -run '^TestMailHistoryProductionProbe$' -v ./internal/ledger
       - name: Production replay with its single-fold observer and full compact index
+        id: production
         env:
           DIBS_HISTORY_PROBE_ARM: production
         run: mise exec -- go test -count=1 -timeout=20m -run '^TestMailHistoryProductionProbe$' -v ./internal/ledger
+      - name: Profile a failed 1M simple replay diagnostically
+        id: profile
+        if: ${{ failure() && steps.production.outcome == 'failure' && matrix.records == 1000000 && matrix.case == 'simple' }}
+        env:
+          DIBS_HISTORY_PROBE_ARM: production
+        run: mise exec -- go test -count=1 -timeout=20m -cpuprofile=/tmp/dibs-history-production.cpu -run '^TestMailHistoryProductionProbe$' -v ./internal/ledger
+      - name: Show CPU costs without replacing the unprofiled acceptance measurement
+        if: ${{ always() && steps.profile.outcome != 'skipped' && steps.profile.outcome != '' }}
+        run: mise exec -- go tool pprof -top -nodecount=35 /tmp/dibs-history-production.cpu
