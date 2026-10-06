@@ -49,7 +49,7 @@ func (s *historyReplay) run(ctx context.Context, index *mailhistory.Index) error
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		raw, err := reader.ReadBytes('\n')
+		raw, err := readHistoryLine(reader)
 		if err != nil {
 			return fmt.Errorf("history bootstrap at record %d: %w", n, err)
 		}
@@ -79,7 +79,8 @@ func (s *historyReplay) run(ctx context.Context, index *mailhistory.Index) error
 }
 
 func (s *historyReplay) foldRecord(raw []byte, previous [32]byte, shadow *core.State,
-	scratch *mailhistory.Snapshot, projector *mailhistory.ReplayProjector, ctx context.Context, ordinal uint64, offset int64,
+	scratch *mailhistory.Snapshot, projector *mailhistory.ReplayProjector,
+	ctx context.Context, ordinal uint64, offset int64,
 ) (mailhistory.Record, error) {
 	var rec Line
 	line := raw[:len(raw)-1]
@@ -106,7 +107,9 @@ func (s *historyReplay) foldRecord(raw []byte, previous [32]byte, shadow *core.S
 	}
 	shadow.Serial = rec.S // same survivable forward-gap rule as boot Replay
 	sum := sha256.Sum256(line)
-	record := mailhistory.Record{Serial: rec.S, At: rec.T, Offset: offset, End: offset + int64(len(raw)), Prev: previous, Hash: sum}
+	record := mailhistory.Record{
+		Serial: rec.S, At: rec.T, Offset: offset, End: offset + int64(len(raw)), Prev: previous, Hash: sum,
+	}
 	if err := projector.Observe(ctx, ordinal, record, before, shadow, rec.Op, events); err != nil {
 		return mailhistory.Record{}, err
 	}
@@ -114,11 +117,28 @@ func (s *historyReplay) foldRecord(raw []byte, previous [32]byte, shadow *core.S
 }
 
 func historyStateHash(st *core.State) ([32]byte, error) {
-	// encoding/json orders map keys and omits no replayable State fields. This
-	// canary covers the complete canonical board, not a hand-maintained subset.
+	// encoding/json orders map keys and follows core's existing credential
+	// redactions. The canary covers that canonical board encoding without a
+	// separately maintained projection of its fields.
 	raw, err := json.Marshal(st)
 	if err != nil {
 		return [32]byte{}, err
 	}
 	return sha256.Sum256(raw), nil
+}
+
+// The next read may reuse the buffer: the fold, hash and projector finish
+// before that read. Large historical lines keep Replay's behavior, with one
+// owned line only when the fixed reader buffer cannot contain it.
+func readHistoryLine(reader *bufio.Reader) ([]byte, error) {
+	raw, err := reader.ReadSlice('\n')
+	if !errors.Is(err, bufio.ErrBufferFull) {
+		return raw, err
+	}
+	owned := append([]byte(nil), raw...)
+	for errors.Is(err, bufio.ErrBufferFull) {
+		raw, err = reader.ReadSlice('\n')
+		owned = append(owned, raw...)
+	}
+	return owned, err
 }

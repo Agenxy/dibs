@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,33 +12,6 @@ import (
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/mailhistory"
 )
-
-func historyBootFixture(t *testing.T) (*Ledger, *core.State) {
-	t.Helper()
-	l, _ := newLedger(t)
-	limits := core.DefaultLimits()
-	limits.MaxMailboxDepth = 7 // the shadow must receive these actual limits
-	limits.ConsumedRetention = 2 * time.Hour
-	st := core.NewState("test", limits)
-	apply(t, st, l, &core.Op{Kind: core.OpRegister, Name: "sender", NewToken: "sender-token", Nonce: "sender-nonce", AgentKind: core.KindPersistent}, t0)
-	apply(t, st, l, &core.Op{Kind: core.OpRegister, Name: "worker", NewToken: "worker-token", Nonce: "worker-nonce", AgentKind: core.KindPersistent}, t0)
-	apply(t, st, l, &core.Op{Kind: core.OpSendMessage, Token: "sender-token", To: "worker", MsgType: core.MsgNotify, Body: "original ledger body"}, t0)
-	live := core.NewState("test", limits)
-	if n, err := l.Replay(live); err != nil || n != 3 || live.Serial != 3 {
-		t.Fatal("setup: actual boot replay", n, err)
-	}
-	return l, live
-}
-
-// This enters through Open + Replay, not a builder flag or a mock observer.
-// The former production path captured every boot transition and fails here.
-func TestHistoryBootReplayDoesNoPerRecordProjection(t *testing.T) {
-	l, _ := historyBootFixture(t)
-	m := l.MailHistory().Measurement()
-	if m.Started || m.Ready || m.Failed || m.Records != 3 || m.CapturedUnits != 0 || m.QueuedBytes != 0 || m.Units != 0 || m.Blocks != 0 {
-		t.Fatalf("boot captured or encoded history before serving: %+v", m)
-	}
-}
 
 func TestHistoryBootstrapOwnsPrivateStateAndKeepsLiveCommitAfterS0(t *testing.T) {
 	l, live := historyBootFixture(t)
@@ -99,5 +73,30 @@ func awaitBootHistory(t *testing.T, index *mailhistory.Index) mailhistory.Measur
 			t.Fatal("background history did not catch up")
 		case <-tick.C:
 		}
+	}
+}
+
+func TestHistoryBootstrapPreservesRecordBeyondReaderBuffer(t *testing.T) {
+	// Encryption expands this real ledger record beyond the production reader's
+	// 1 MiB buffer. Exercise its fallback through Replay and actual Accept.
+	l, live := historyBootFixtureWith(t, strings.Repeat("large historical body ", 60000))
+	expected, err := historyStateHash(live)
+	if err != nil {
+		t.Fatal("setup: board canary", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	srv.Listener = l.MailHistory().ServingListener(ctx, srv.Listener)
+	srv.Start()
+	defer srv.Close()
+	res, err := srv.Client().Get(srv.URL)
+	if err != nil {
+		t.Fatal("setup: serving", err)
+	}
+	_ = res.Body.Close()
+	m := awaitBootHistory(t, l.MailHistory())
+	if m.BootSerial != 3 || m.BootHash != expected || m.Conversations != 1 {
+		t.Fatal("large committed record was truncated or folded differently", m)
 	}
 }

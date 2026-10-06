@@ -115,12 +115,15 @@ func projectMessage(
 	}
 	return emit(snapshotUnit{
 		Position: position{rec.Serial, serial, ordinal}, At: rec.At,
-		Kind: kind, Metadata: meta, Author: author, Content: hasContent(op, serial, existed, m != nil), AfterKnown: m != nil, Evicted: m == nil,
+		Kind: kind, Metadata: meta, Author: author, Content: hasContent(op, serial, existed, m != nil),
+		AfterKnown: m != nil, Evicted: m == nil,
 		FromCreated: from.Created, ToCreated: to.Created,
 	})
 }
 
-func inheritParties(old, current Metadata, before Snapshot, st *core.State, inherit func(partyKey, partyKey) error) error {
+func inheritParties(
+	old, current Metadata, before Snapshot, st *core.State, inherit func(partyKey, partyKey) error,
+) error {
 	for _, pair := range [][2]string{{old.From, current.From}, {old.To, current.To}} {
 		if pair[0] != "" && pair[0] != pair[1] {
 			if err := inherit(before.key(pair[0], st), before.key(pair[1], st)); err != nil {

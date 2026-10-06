@@ -150,14 +150,28 @@ func (i *Index) buildChunk(ctx context.Context, c *rawChunk) error {
 
 func (i *Index) build(ctx context.Context) {
 	defer i.Invalidate() // context cancellation never leaves a complete-looking stale view
-	if i.bootstrap != nil {
-		if err := i.bootstrap(ctx, i); err != nil {
-			return
-		}
-		i.mu.Lock()
-		i.bootstrap = nil // the reader's private shadow and its closure are no longer retained
-		i.mu.Unlock()
+	if err := i.buildBootstrap(ctx); err != nil {
+		return
 	}
+	i.drain(ctx)
+}
+
+func (i *Index) buildBootstrap(ctx context.Context) error {
+	i.mu.RLock()
+	read := i.bootstrap
+	i.mu.RUnlock()
+	if read != nil {
+		if err := read(ctx, i); err != nil {
+			return err
+		}
+	}
+	i.mu.Lock()
+	i.bootstrap = nil // the reader's private shadow and its closure are no longer retained
+	i.mu.Unlock()
+	return nil
+}
+
+func (i *Index) drain(ctx context.Context) {
 	for {
 		if ctx.Err() != nil {
 			return

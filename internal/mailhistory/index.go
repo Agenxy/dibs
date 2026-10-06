@@ -60,7 +60,10 @@ type Index struct {
 
 // New returns an empty derived index for a fresh ledger.
 func New() *Index {
-	return &Index{parties: map[partyKey]*party{}, ready: true, ended: true, signal: make(chan struct{}, 1), queueLimit: liveQueueBytes}
+	return &Index{
+		parties: map[partyKey]*party{}, ready: true, ended: true,
+		signal: make(chan struct{}, 1), queueLimit: liveQueueBytes,
+	}
 }
 
 // Invalidate refuses history queries when a committed-record anchor is unusable.

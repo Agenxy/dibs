@@ -29,6 +29,7 @@ type ReplayProjector struct {
 	numbers []uint64
 }
 
+// ReplayProjector returns independent background scratch, never writer scratch.
 func (i *Index) ReplayProjector() *ReplayProjector { return &ReplayProjector{index: i} }
 
 // Observe encodes one validated shadow transition directly into bounded codec
@@ -83,6 +84,7 @@ func (p *ReplayProjector) Progress(rec Record) {
 	p.index.mu.Unlock()
 }
 
+// Finish records the canonical S0 canary without retaining the shadow State.
 func (p *ReplayProjector) Finish(rec Record, stateHash [32]byte) {
 	p.index.mu.Lock()
 	p.index.builtHead = rec

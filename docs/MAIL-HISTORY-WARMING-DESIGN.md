@@ -22,6 +22,23 @@ allowed increments were 67,108,864 and 134,217,728 bytes. Capture is rejected,
 even though its retained compressed index fits. A profiled repeat is a
 diagnostic result, never a substitute acceptance measurement.
 
+The first private-fold checkpoint 3efb598 was also not fully accepted. Hosted
+37548603179 passed 0, 1M/2M simple, 1M many, rich and adoption/merge cases, but
+100k simple failed peak: 11,552,880 bytes peak minus 4,551,232 steady gives
+7,001,648 bytes, above the unchanged 6,710,886.4-byte allowance. Steady there
+was 39.966640 incremental B/record. The reader now borrows in-buffer lines and
+owns only oversized lines; its allocation effect must be measured afresh.
+
+At 3efb598, 1M/2M steady increments were 26.083480/25.246108 B/record. Peak
+above steady was 25,747,224/47,485,336 bytes, both within the 64/128 MiB
+allowances including shadow. Warm-up took 8.937024/15.420722 seconds; real
+writer p99 was 2.635831/0.626879 ms with 3,984/7,709 samples. Boot Replay alone
+was 5.962309/11.222768 seconds versus 6.064754/11.207122 for the first baseline.
+First-reply comparisons were -6.914%/-7.719%, with 6.898%/7.403% control spread;
+these are passing bounds, not evidence of a speed improvement. ALL3 at 3efb598
+failed Mac lint (complexity, line lengths, exported comments), corrected in
+source without changing thresholds. The replacement source is unmeasured.
+
 ## Boot boundary and private canonical fold
 
 Replay retains the existing single Apply, event reconstruction, chain and
@@ -47,7 +64,8 @@ shadow State and its transient metadata scratch. The reader yields every 256
 records. Actual warming wall time and writer p99 decide whether that suffices.
 
 The final serial, committed byte boundary and chain hash must match S0. A
-canonical full-State JSON hash, computed in the background, is the regression
+canonical State JSON hash (with core's existing credential redactions),
+computed in the background, is the regression
 canary: tests compare it with the actual live board at S0 using nondefault
 Limits and changed live objects. No shadow State or scratch escapes the reader;
 both are dropped at S0. Later records use only the live observer, without
