@@ -82,7 +82,7 @@ func TestARequiredExecutableMustBeARunnableMachO(t *testing.T) {
 		}
 		return b
 	}
-	dibdImage := signed("dibd", "org.agenxy.dibs")
+	dibdImage := signed("dibd", "org.agenxy.dibs.daemon")
 	dibsImage := signed("dibs", "org.agenxy.dibs.cli")
 	archive := func(tag string, files map[string]file) string {
 		p := filepath.Join(dir, "dibs_0.0.7_"+tag+"_darwin_"+runtime.GOARCH+".tar.gz")

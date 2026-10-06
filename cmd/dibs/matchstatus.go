@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"runtime"
+	"slices"
 	"time"
 )
 
@@ -35,6 +37,27 @@ type matchStatusJSON struct {
 	SuppliedHosts map[string]string `json:"supplied_hosts"`
 	RemoteHosts   map[string]string `json:"remote_hosts"`
 	Host          string            `json:"host"`
+}
+
+// The daemon made this observation under its own identity. A CLI filesystem
+// probe would instead test the CLI's grant and cannot settle daemon access.
+func reportUnreadableTrees(st matchStatusJSON, warn fixFn) {
+	for _, root := range st.Unreadable {
+		if slices.Contains(st.Remote, root) {
+			continue
+		}
+		covering, shipped := suppliedCovering(st, root)
+		if host := st.SuppliedHosts[covering]; shipped && (host == "" || host == st.Host) {
+			continue
+		}
+		hint := "the daemon reported this tree unreadable; the cause is unknown. " +
+			"Check that it exists and dibd can read it"
+		if runtime.GOOS == "darwin" {
+			hint += "; after an identity change, re-allow dibd's Desktop/Documents access " +
+				"in System Settings > Privacy & Security. This observation does not prove a TCC refusal"
+		}
+		warn(root+" cannot be read by the daemon, so overlap indexing there is unavailable", hint)
+	}
 }
 
 // fetchMatchStatus asks the daemon why matching is or is not working. Failure

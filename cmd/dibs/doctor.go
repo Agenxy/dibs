@@ -605,6 +605,7 @@ func checkMatching(client *http.Client, sec string, ok reportFn, warn fixFn) {
 	// where remote trees are most likely, and the report never ran in
 	// it. Round fifty-two of the pre-release review.
 	defer reportRemoteTrees(st, warn)
+	defer reportUnreadableTrees(st, warn)
 	switch st.Phase {
 	case "off":
 		warn("work-overlap matching has no repository indexed yet", st.Hint)

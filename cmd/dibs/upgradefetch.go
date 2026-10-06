@@ -109,6 +109,7 @@ func fetchUpgrade(o upgradeOpts) error {
 	if standing == selfupdate.Current || standing == selfupdate.Ahead {
 		fmt.Printf("%s (%s); the newest release is %s. Nothing to fetch\n",
 			ui.Good("already current"), build.Version, rel.Tag)
+		reportUpgradeNotifications()
 		return nil
 	}
 
@@ -149,7 +150,7 @@ func fetchUpgrade(o upgradeOpts) error {
 	if err := selfupdate.Fetch(ctx, c, rel, goos, goarch, staged, proved); err != nil {
 		return err
 	}
-	if err := placePayload(staged, into); err != nil {
+	if err := installFetchedPayload(staged, into, rel.Tag); err != nil {
 		return err
 	}
 	if err = retainInstalledEvidence(o, evidence, rel.Tag); err != nil {
@@ -158,9 +159,21 @@ func fetchUpgrade(o upgradeOpts) error {
 	fmt.Printf("%s %s into %s\n", ui.Good("installed"), rel.Tag, into)
 	if o.dryRun {
 		fmt.Println("dry run: the fleet has NOT been moved onto it. `dibs upgrade` does that")
+		reportUpgradeNotifications()
 		return nil
 	}
 	return upgrade(o)
+}
+
+func installFetchedPayload(staged, into, tag string) error {
+	if err := placePayload(staged, into); err != nil {
+		return err
+	}
+	if err := registerInstalledNotifier(into); err != nil {
+		return fmt.Errorf("%s payload is installed, but notification registration failed: %w; "+
+			"the fleet has not been moved. Run `dibs doctor` before `dibs upgrade`", tag, err)
+	}
+	return nil
 }
 
 func retainInstalledEvidence(o upgradeOpts, evidence selfupdate.VerifiedRelease, tag string) error {

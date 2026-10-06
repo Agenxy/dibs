@@ -34,6 +34,15 @@ func TestMain(m *testing.M) {
 	if os.Getenv("DIBS_SETTINGS_HELPER_MODE") != "" && filepath.Base(os.Args[0]) == "dibs-notify" {
 		os.Exit(notificationSettingsHelper())
 	}
+	if os.Getenv("DIBS_TEST_UPGRADE_BARE") == "1" && filepath.Base(os.Args[0]) == "dibd" {
+		if len(os.Args) != 6 || os.Args[1] != "-check" || os.Args[2] != "-dir" ||
+			os.Args[3] != os.Getenv("DIBS_DIR") || os.Args[4] != "-addr" ||
+			os.Args[5] != "http://127.0.0.1:49998" {
+			os.Exit(3)
+		}
+		_, _ = os.Stdout.WriteString("ok: 0.0.9 replays 0 record(s) to serial 0\n")
+		os.Exit(0)
+	}
 	if os.Getenv("DIBS_TEST_RELAY_CLEANUP_DRIVER") == "1" && filepath.Base(os.Args[0]) == "dibs-notify" {
 		os.Exit(relayCleanupHelper())
 	}

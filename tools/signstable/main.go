@@ -172,12 +172,26 @@ func compare(dest string, now map[string]string, adhoc bool) error {
 			"  macOS keys your Desktop/Documents permission to that requirement, so it has\n"+
 			"  just stopped matching and you will be asked for access again. Rebuilding does\n"+
 			"  NOT do this: the requirement names the identifier and the signing certificate,\n"+
-			"  and neither changes when the code does. Something is wrong with the identity:\n"+
-			"    security find-identity -v -p codesigning   (should list \"Dibs Local Codesign\")\n"+
-			"    go run ./tools/signid                      (should print the same name)",
-			strings.Join(moved, "\n  "))
+			"  and neither changes when the code does.\n%s",
+			strings.Join(moved, "\n  "), identityChangeHint(prev, now))
 	}
 	return nil
+}
+
+func identityChangeHint(prev, now map[string]string) string {
+	const oldID = `identifier "org.agenxy.dibs"`
+	const newID = `identifier "org.agenxy.dibs.daemon"`
+	was := prev["dibd"]
+	if strings.Contains(was, oldID) && strings.Replace(was, oldID, newID, 1) == now["dibd"] {
+		return "  dibd's move to org.agenxy.dibs.daemon is an intentional one-time identity change.\n" +
+			"  Review and re-allow its Desktop/Documents access in System Settings > Privacy & Security.\n" +
+			"  On hubs, run `dibs doctor` and use the firewall allow command it prints if needed.\n" +
+			"  The install remains failed for this permission review; the stamp records the new identity.\n" +
+			"  After reviewing permissions, rerun `task install` to finish the stopped install."
+	}
+	return "  Something is wrong with the identity:\n" +
+		"    security find-identity -v -p codesigning   (should list \"Dibs Local Codesign\")\n" +
+		"    go run ./tools/signid                      (should print the same name)"
 }
 
 // signedBefore reports whether a previous install recorded a real signing

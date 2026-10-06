@@ -11,6 +11,35 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   A main-scoped read-only diagnostic checks the stored secret's raw and
   normalized parsing before the next release, without exposing key material.
 
+- macOS release notifier signing now uses the actual app bundle identifier.
+  v0.0.12 signed the helper as `org.agenxy.dibs.notify` while its bundle was
+  `org.agenxy.dibs`; on the measured Mac, notification authorization was refused
+  without a prompt. Release signing refuses a disagreement in the actual
+  bundle metadata or resulting signature. Older inspected v0.0.7/v0.0.9 helpers
+  had coherent identifiers and ad-hoc signatures; their users' permissions were
+  not measured. Source and release signing certificates remain distinct unless
+  the operator deliberately aligns them; a route change can require a new grant.
+  Older ad-hoc grants were tied to a changing code hash. Moving to the coherent
+  stable release identity can require one more permission grant; later upgrades
+  using the same certificate and identifier retain that identity.
+  Upgrade and fetched installs inspect notification permission without posting,
+  including an already-current install, and explain lost or unknown permission.
+  Fetched macOS bundles are refreshed in LaunchServices. Notification failure
+  advisories no longer assert that the person's configuration caused a failure.
+  The daemon now signs as `org.agenxy.dibs.daemon`, separating its identity from
+  the notifier under the same certificate. This is a one-time privacy grant
+  boundary for release and source installs: after upgrading, re-allow dibd's
+  Desktop/Documents access in System Settings > Privacy & Security. Background
+  access can fail without a prompt and stop overlap indexing of those repos.
+  Run `dibs doctor`: it names trees the daemon cannot read; that is a signal to
+  review permissions, not proof of a TCC refusal. Source installs retain the signature
+  guard's refusal and explain the review before rerunning `task install`.
+  Hubs such as MacSolis may need one firewall re-allow; `dibs doctor` and daemon
+  startup print the corrective command. The operator runs it explicitly.
+  The independent archive check also compares the packaged notifier's signed
+  identity with its actual Info.plist and refuses a daemon/notifier identity
+  collision, even if both expectation tables were changed together.
+
 ## [0.0.12] - 2026-10-05
 
 ### Added
