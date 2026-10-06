@@ -11,6 +11,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reserved and pruning cannot free it. An admin can reconcile an accidental
   duplicate, while the caller must choose another name. Address ownership is unchanged.
 
+- ChatGPT queue wake status now distinguishes adapter admission from its last
+  pending observation on the board and in send receipts, with observation and
+  notice ages where known. Unsupported thread state and legacy notice age remain
+  unknown; queue admission does not claim a started turn or read mail.
+
 ## [0.0.13] - 2026-10-05
 
 ### Fixed

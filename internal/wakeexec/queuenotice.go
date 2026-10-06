@@ -51,25 +51,33 @@ func legacyWakeKind(text string) (string, bool) {
 }
 
 func timestampedWake(text string) bool {
+	_, known := noticeIssuedAt(text)
+	return known
+}
+
+func noticeIssuedAt(text string) (time.Time, bool) {
 	body, ok := strings.CutPrefix(text, "Dibs: ")
 	if !ok {
-		return false
+		return time.Time{}, false
 	}
 	kind, stamp, ok := strings.Cut(body, " notice issued at ")
 	if !ok {
-		return false
+		return time.Time{}, false
 	}
 	stamp, ok = strings.CutSuffix(stamp, queueNoticeSuffix)
 	if !ok {
-		return false
+		return time.Time{}, false
 	}
 	at, err := time.Parse(time.RFC3339, stamp)
 	if err != nil || stamp != at.UTC().Truncate(time.Second).Format(time.RFC3339) {
-		return false
+		return time.Time{}, false
 	}
 	if kind == "coordination" {
-		return true
+		return at, true
 	}
 	got, known := legacyWakeKind(Compose(kind))
-	return known && got == kind && kind != "" && kind != "notice"
+	if known && got == kind && kind != "" && kind != "notice" {
+		return at, true
+	}
+	return time.Time{}, false
 }

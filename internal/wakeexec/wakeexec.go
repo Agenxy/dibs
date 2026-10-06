@@ -171,10 +171,21 @@ const Grace = 10 * time.Second
 // had been sent. The reverse case, a closed thread, is the one the primary
 // already handled.
 func RunCommands(argv, fallback []string, agent, dir string, timeout, grace time.Duration) bool {
+	return RunCommandsObserved(argv, fallback, agent, dir, timeout, grace, nil)
+}
+
+// RunCommandsObserved exposes observations made by the existing queue adapter.
+// It adds no probe, retry or admission policy; callbacks receive values only.
+func RunCommandsObserved(
+	argv, fallback []string, agent, dir string, timeout, grace time.Duration, observe func(QueueObservation),
+) bool {
 	var ok bool
 	var out []byte
 	if thread, queued := queueTarget(argv); queued {
 		result := runQueuedCommand(argv, thread, agent, dir, timeout, grace)
+		if observe != nil {
+			observe(result.observation)
+		}
 		if result.contended {
 			return false
 		}
@@ -184,10 +195,13 @@ func RunCommands(argv, fallback []string, agent, dir string, timeout, grace time
 	}
 	// Admission is released before trying another route, including a queue
 	// fallback for this same thread. Otherwise that route would lock itself.
-	return runFallback(argv, fallback, agent, dir, timeout, grace, ok, out)
+	return runFallback(argv, fallback, agent, dir, timeout, grace, ok, out, observe)
 }
 
-func runFallback(argv, fallback []string, agent, dir string, timeout, grace time.Duration, ok bool, out []byte) bool {
+func runFallback(
+	argv, fallback []string, agent, dir string, timeout, grace time.Duration,
+	ok bool, out []byte, observe func(QueueObservation),
+) bool {
 	if ok {
 		return true
 	}
@@ -209,7 +223,7 @@ func runFallback(argv, fallback []string, agent, dir string, timeout, grace time
 	}
 	slog.Info("the wake command found the thread open; trying the fallback",
 		"agent", agent, "cmd", argv[0], "fallback", fallback[0])
-	return RunCommands(fallback, nil, agent, dir, timeout, grace)
+	return RunCommandsObserved(fallback, nil, agent, dir, timeout, grace, observe)
 }
 
 func retainQueueReceipt(thread string, r queueReceipt, agent string) {

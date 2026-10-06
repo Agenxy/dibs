@@ -12,9 +12,10 @@ import (
 )
 
 type queueCommandOutcome struct {
-	ok        bool
-	out       []byte
-	contended bool
+	ok          bool
+	out         []byte
+	contended   bool
+	observation QueueObservation
 }
 
 // RestartQueueOutcome distinguishes a confirmed queue/admission from lock
@@ -45,23 +46,30 @@ func RunRestartQueue(argv []string, agent, dir string) RestartQueueOutcome {
 // and every bridge on this board. A process-local mutex allowed both writers
 // to observe the same empty queue before either committed its item.
 func runQueuedCommand(argv []string, thread, agent, dir string, timeout, grace time.Duration) queueCommandOutcome {
+	observation := QueueObservation{Admission: "not_attempted", Pending: "unknown", At: time.Now().UTC()}
 	release, err := lockQueueAdmission(thread, timeout)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			slog.Debug("app queue writer is busy; this wake will retry later", "agent", agent)
-			return queueCommandOutcome{contended: true}
+			return queueCommandOutcome{contended: true, observation: observation}
 		}
 		slog.Warn("could not coordinate admission to the app queue; the wake was not sent",
 			"agent", agent, "err", err, "hint", "retry after the other queue writer settles; "+
 				"restore write access to the board data directory if it cannot be locked")
-		return queueCommandOutcome{}
+		return queueCommandOutcome{observation: observation}
 	}
 	defer release()
 	generation := reconnectGeneration(thread)
 	pending, known := false, false
 	if nativeQueueRoute(argv) {
-		pending, known = observeQueue(argv[0], thread)
+		probe := observeQueueDetail(argv[0], thread)
+		pending, known = probe.pending, probe.known
+		observation.IssuedAt = probe.issuedAt
+		if !probe.issuedAt.IsZero() {
+			observation.AgeSource = "notice"
+		}
 	}
+	observation.At = time.Now().UTC()
 	if known && pending {
 		// A real app item wins over inference, including after a prompt,
 		// receipt expiry or reconnect. Retain it for an unavailable next probe.
@@ -75,7 +83,13 @@ func runQueuedCommand(argv []string, thread, agent, dir string, timeout, grace t
 	if (known && pending) || (!known && fallbackPending(thread, time.Now())) {
 		slog.Debug("a Dibs wake is already pending in the app queue", "agent", agent,
 			"observation_known", known)
-		return queueCommandOutcome{ok: true}
+		observation.Admission = "retained"
+		if known {
+			observation.Pending = "pending"
+		} else {
+			observation.ReceiptAt = readReceipt(thread).QueuedAt
+		}
+		return queueCommandOutcome{ok: true, observation: observation}
 	}
 	slog.Debug("admitting a wake to the app queue", "agent", agent,
 		"observation_known", known)
@@ -83,8 +97,15 @@ func runQueuedCommand(argv []string, thread, agent, dir string, timeout, grace t
 	ok, out := runForOut(queueNoticeAt(argv, queuedAt), agent, dir, timeout, grace)
 	if ok {
 		retainQueueReceipt(thread, queueReceipt{QueuedAt: queuedAt, Generation: generation}, agent)
+		observation.Admission = "accepted"
+		observation.IssuedAt, observation.AgeSource = queuedAt, "local_admission"
+	} else {
+		observation.Admission = "failed"
 	}
-	return queueCommandOutcome{ok: ok, out: out}
+	// Acceptance is not a post-admission list observation. Do not manufacture
+	// pending=true from exit zero, even when the pre-admission list was empty.
+	observation.At = time.Now().UTC()
+	return queueCommandOutcome{ok: ok, out: out, observation: observation}
 }
 
 // The OS releases this lock on process exit. Never unlink it: replacing a

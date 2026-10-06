@@ -341,16 +341,12 @@ func appReconnectContract(t *testing.T, lost, clockBack, legacy bool) {
 	}
 	// The sender-facing receipt must describe the actual accepted queue route,
 	// rather than inheriting the fold's "dormant, when it next wakes" note.
-	deadline := time.Now().Add(time.Second)
-	for {
-		note := reconnectSendNote(t, srv, asker["token"].(string))
-		if strings.Contains(note, "queued in the app") && !strings.Contains(note, "currently dormant") {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("send did not report actual queue acceptance: %q", note)
-		}
-		time.Sleep(5 * time.Millisecond)
+	receipt := reconnectSendReceipt(t, srv, asker["token"].(string))
+	view := receipt.QueueWake
+	if (view.Admission != "accepted" && view.Admission != "retained") || view.ObservedAt.IsZero() ||
+		view.ThreadState != "unknown" || strings.Contains(receipt.Note, "currently dormant") ||
+		!strings.Contains(receipt.Note, "Queue admission does not confirm a started turn or read mail") {
+		t.Fatalf("send did not report the observed queue admission honestly: %+v", receipt)
 	}
 }
 
@@ -378,7 +374,16 @@ func waitFutureQueueReceipt(t *testing.T, path string) {
 	}
 }
 
-func reconnectSendNote(t *testing.T, srv *httptest.Server, token string) string {
+type reconnectReceipt struct {
+	Note      string
+	QueueWake struct {
+		Admission   string
+		ObservedAt  time.Time `json:"observed_at"`
+		ThreadState string    `json:"thread_state"`
+	} `json:"queue_wake"`
+}
+
+func reconnectSendReceipt(t *testing.T, srv *httptest.Server, token string) reconnectReceipt {
 	t.Helper()
 	request := map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": "send", "arguments": map[string]any{"token": token, "to": "worker", "type": "question", "body": "mail must survive app restart", "op_id": "receipt-check"}}}
 	b, err := json.Marshal(request)
@@ -399,11 +404,11 @@ func reconnectSendNote(t *testing.T, srv *httptest.Server, token string) string 
 	if err = json.NewDecoder(response.Body).Decode(&reply); err != nil || reply.Result.IsError || len(reply.Result.Content) == 0 {
 		t.Fatalf("send receipt setup failed: %+v %v", reply, err)
 	}
-	var result struct{ Note string }
+	var result reconnectReceipt
 	if err = json.Unmarshal([]byte(reply.Result.Content[0].Text), &result); err != nil {
 		t.Fatal(err)
 	}
-	return result.Note
+	return result
 }
 
 func reconnectQueueCount(t *testing.T, home string) int {

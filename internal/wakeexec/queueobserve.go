@@ -48,11 +48,16 @@ func NativeQueueTemplate(argv []string) bool {
 // initialize and list load no thread (measured on the installed binary).
 // An unsupported or changed response is UNKNOWN, never an empty queue.
 func observeQueue(binary, thread string) (pending, known bool) {
+	p := observeQueueDetail(binary, thread)
+	return p.pending, p.known
+}
+
+func observeQueueDetail(binary, thread string) queueProbe {
 	ctx, cancel := context.WithTimeout(context.Background(), queueProbeTimeout)
 	defer cancel()
 	argv := []string{binary, "app-server", "--listen", "stdio://"}
 	if !boardconfig.ReadOnlyQueueProbe(argv) {
-		return false, false
+		return queueProbe{}
 	}
 	// #nosec G204 G702 -- binary is the operator's queue executable; all probe
 	// arguments are fixed literals, separately refused by ReadOnlyQueueProbe.
@@ -60,28 +65,30 @@ func observeQueue(binary, thread string) (pending, known bool) {
 	cmd.WaitDelay = 100 * time.Millisecond
 	in, err := cmd.StdinPipe()
 	if err != nil {
-		return false, false
+		return queueProbe{}
 	}
 	out, err := cmd.StdoutPipe()
 	if err != nil {
-		return false, false
+		return queueProbe{}
 	}
 	if err = cmd.Start(); err != nil {
-		return false, false
+		return queueProbe{}
 	}
 	stop := context.AfterFunc(ctx, func() { _ = out.Close() })
 	defer stop()
 	defer func() { _ = in.Close(); _ = cmd.Process.Kill(); _ = cmd.Wait() }()
 	rpc := queueRPC{enc: json.NewEncoder(in), dec: json.NewDecoder(io.LimitReader(out, 4<<20))}
 	if err = rpc.initialize(); err != nil {
-		return false, false
+		return queueProbe{}
 	}
-	return rpc.list(thread)
+	pending, known := rpc.list(thread)
+	return queueProbe{pending: pending, known: known, issuedAt: rpc.issuedAt}
 }
 
 type queueRPC struct {
-	enc *json.Encoder
-	dec *json.Decoder
+	enc      *json.Encoder
+	dec      *json.Decoder
+	issuedAt time.Time
 }
 
 func (r queueRPC) call(id int, method string, params any) (json.RawMessage, error) {
@@ -119,18 +126,19 @@ func (r queueRPC) initialize() error {
 	return r.enc.Encode(map[string]any{"method": "initialized", "params": map[string]any{}})
 }
 
-func (r queueRPC) list(thread string) (pending, known bool) {
+func (r *queueRPC) list(thread string) (pending, known bool) {
 	var cursor *string
 	for page := 0; page < 16; page++ {
 		raw, er := r.call(page+2, "thread/queue/list", map[string]any{"threadId": thread, "limit": 100, "cursor": cursor})
 		if er != nil {
 			return false, false
 		}
-		p, k, next := queuePage(raw)
+		p, k, next, issued := queuePageDetail(raw)
 		if !k {
 			return false, false
 		}
 		if p {
+			r.issuedAt = issued
 			return true, true
 		}
 		if next == nil {
@@ -142,37 +150,60 @@ func (r queueRPC) list(thread string) (pending, known bool) {
 }
 
 func queuePage(raw json.RawMessage) (pending, known bool, next *string) {
+	p, k, n, _ := queuePageDetail(raw)
+	return p, k, n
+}
+
+func queuePageDetail(raw json.RawMessage) (pending, known bool, next *string, issued time.Time) {
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(raw, &fields) != nil {
-		return false, false, nil
+		return false, false, nil, time.Time{}
 	}
 	data, ok := fields["data"]
 	if !ok || string(data) == "null" {
-		return false, false, nil
+		return false, false, nil, time.Time{}
 	}
 	nc, ok := fields["nextCursor"]
 	if !ok || json.Unmarshal(nc, &next) != nil {
-		return false, false, nil
+		return false, false, nil, time.Time{}
 	}
-	var rows []struct {
-		ID    string `json:"id"`
-		Input []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		} `json:"input"`
-	}
+	var rows []queueItem
 	if json.Unmarshal(data, &rows) != nil {
-		return false, false, nil
+		return false, false, nil, time.Time{}
 	}
+	p := observeQueueItems(rows)
+	return p.pending, p.known, next, p.issuedAt
+}
+
+type queueItem struct {
+	ID    string `json:"id"`
+	Input []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	} `json:"input"`
+}
+
+func observeQueueItems(rows []queueItem) queueProbe {
+	var pending bool
+	var issued time.Time
+	legacyAge := false
 	for _, r := range rows {
 		if r.ID == "" || r.Input == nil {
-			return false, false, nil
+			return queueProbe{}
 		}
 		if len(r.Input) == 1 && r.Input[0].Type == "text" && isDibsWake(r.Input[0].Text) {
 			pending = true
+			at, _ := noticeIssuedAt(r.Input[0].Text)
+			legacyAge = legacyAge || at.IsZero()
+			if !at.IsZero() && (issued.IsZero() || at.Before(issued)) {
+				issued = at
+			}
 		}
 	}
-	return pending, true, next
+	if legacyAge {
+		issued = time.Time{} // do not date a legacy backlog from its newer sibling
+	}
+	return queueProbe{pending: pending, known: true, issuedAt: issued}
 }
 
 func isDibsWake(text string) bool {
