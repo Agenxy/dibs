@@ -346,7 +346,7 @@ func rosterRow(a map[string]any) map[string]any {
 	if n, _ := a["name"].(string); n != "" && n != a["id"] {
 		row["name"] = n
 	}
-	for _, k := range []string{"role", "human", "wake", "queued"} {
+	for _, k := range []string{"role", "human", "wake", "queued", "queue_wake"} {
 		if v, ok := a[k]; ok && v != "" && v != false {
 			row[k] = v
 		}

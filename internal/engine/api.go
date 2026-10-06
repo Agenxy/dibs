@@ -848,6 +848,9 @@ func (e *Engine) decoratedBoard() core.Result {
 		if w := e.wakeStatusOf(id); w != "" {
 			lm["wake"] = w
 		}
+		if view := e.queueWakeView(l, time.Now()); view != nil {
+			lm["queue_wake"] = view
+		}
 		// What the agent is DOING, from what it declared and what the board has
 		// seen, beside status, which is about its process. See workStateOf.
 		lm["work"] = e.workStateOf(l)

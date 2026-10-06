@@ -108,6 +108,17 @@ const Board = (() => {
     return explained(`tag why ${esc(l.stale_reason)}`, why[0], why[1])
   }
 
+  function queueWakeHTML(l) {
+    const q = l.queue_wake
+    if (!q) return ""
+    const age = q.issued_at ? ago(q.issued_at) : "age unknown"
+    const state = q.pending === "pending" ? "last seen pending" :
+      q.admission === "accepted" ? "admitted" : "pending unknown"
+    const observed = q.observed_at ? `last observed ${ago(q.observed_at)} ago` : "not yet observed"
+    return explained("tag", `wake ${state}, ${age}`,
+      `${observed}; thread state unknown. Admission to the queue does not confirm a started turn or read mail.`)
+  }
+
   /**
    * How recently this agent was heard from, as something CSS can select on.
    *
@@ -265,6 +276,7 @@ const Board = (() => {
           ${l.kind === "persistent" ? '<span class="tag">Standing</span>' : ""}
           ${agentBadges(l)}
           ${workHTML(l)}
+          ${queueWakeHTML(l)}
           ${l.queued ? `<span class="tag">${esc(l.queued)} queued</span>` : ""}
           ${staleReasonHTML(l)}
           ${cadenceHTML(l.id, events)}

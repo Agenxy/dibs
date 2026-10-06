@@ -985,6 +985,21 @@ recovery. An observed empty queue re-arms immediately, and an observed pending
 notice wins over those inferred causes. ChatGPT opening follows the separately
 bounded prompt background policy. No queue item is deleted and no coordination state is changed.
 
+Board rows (including compact `check_in`) and agent `send` receipts expose
+`queue_wake` for a configured local ChatGPT queue route. This derived view holds
+the last adapter observation, never a fresh read: `admission` is accepted,
+retained, failed, not_attempted or unconfirmed; `pending` is pending or unknown.
+`observed_at` and `observation_age_seconds` date that observation. When known,
+`issued_at`, `wake_age_seconds` and `age_source` distinguish a timestamped notice
+from this command's local admission. An unavailable probe may expose
+`retained_receipt_at` and `receipt_age_seconds`, dating only the retained fallback
+receipt, with notice age unknown; legacy notice age also stays unknown.
+`thread_state` is unknown because the supported queue list interface does not
+report the app's running turn. Queue admission, turn start and mail consumption
+are distinct; this view confirms neither of the latter. No thread or item ID is
+published, no private harness database is read, and reads add no probes. Session
+rebinding or loss of this rebuildable cache returns the view to unknown.
+
 The canonical local queue route writes a factual notice such as
 `Dibs: question notice issued at 2026-10-05T09:50:00Z. It may already be handled.`
 The UTC date and time record the local admission attempt before executing the

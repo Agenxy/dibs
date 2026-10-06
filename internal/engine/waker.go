@@ -64,9 +64,11 @@ type wakers struct {
 	work map[string]workRecord
 	// queued: when a command wake last succeeded for each agent. See
 	// queuedwake.go.
-	queued       map[string]time.Time
-	queuedPrompt map[string]time.Time
-	last         map[string]time.Time
+	queued        map[string]time.Time
+	queuedPrompt  map[string]time.Time
+	queueObserved map[string]queueWakeRecord
+	queueEpoch    uint64
+	last          map[string]time.Time
 	// deferred: a re-check armed for when an agent's cooldown expires, because
 	// maybeWake fires once per event and nothing else retries.
 	deferred map[string]*time.Timer
@@ -126,7 +128,9 @@ func (e *Engine) SetWakeCommands(cmds map[string]WakeCommand) {
 	if e.wakers.byHarness == nil {
 		e.wakers.byHarness = map[string]wakeCommand{}
 	}
-	e.wakers.fails = nil // a changed configuration is what fixing a command looks like
+	e.wakers.fails = nil         // a changed configuration is what fixing a command looks like
+	e.wakers.queueObserved = nil // observations describe the previous route
+	e.wakers.queueEpoch++
 	for harness, c := range cmds {
 		if len(c.Argv) == 0 {
 			continue
@@ -1184,6 +1188,7 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 	return wakePlan{
 		argv: f.Apply(cmd.argv), fallback: f.Apply(cmd.fallback),
 		agent: l.ID, session: wakeSessionOf(l), kind: kind,
+		createdSerial: l.CreatedSerial, queueEpoch: e.wakers.queueEpoch,
 		cwd: cwdOf(l), cooldown: cooldown, thread: f.Thread,
 		surface: surfaceOf(l), harness: wakeHarness(l), // which app to open: see inapp.go
 	}, true
@@ -1219,7 +1224,9 @@ type wakePlan struct {
 	// thread is the harness thread this wake targets, or "" for a socket
 	// route or an agent with none. Carried out so the exit can tell whether
 	// the turn it ends is still the agent's current one.
-	thread string
+	thread        string
+	createdSerial uint64 // fence derived observations to this agent incarnation
+	queueEpoch    uint64 // fence command observations to the operator's configuration
 	// fallback is the operator's second command, substituted like the first
 	// and run only if the first exits non-zero. Empty when none is configured.
 	fallback []string
@@ -1361,8 +1368,10 @@ func (e *Engine) runWake(plan wakePlan, agent string) bool {
 		return e.requestRemoteWake(plan, agent)
 	}
 	if len(plan.argv) > 0 {
-		ok := wakeexec.RunCommands(plan.argv, plan.fallback, agent, plan.cwd,
-			wakeexec.Timeout, wakeexec.Grace)
+		ok := wakeexec.RunCommandsObserved(plan.argv, plan.fallback, agent, plan.cwd,
+			wakeexec.Timeout, wakeexec.Grace, func(observation wakeexec.QueueObservation) {
+				e.noteQueueObservation(plan, agent, observation)
+			})
 		e.noteCommandOutcome(agent, plan.argv, ok)
 		if ok {
 			e.showInApp(plan, agent) // queued; now make sure its app will deliver it
