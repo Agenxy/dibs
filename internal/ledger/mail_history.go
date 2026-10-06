@@ -21,5 +21,7 @@ func (l *Ledger) ObserveMail(before mailhistory.Snapshot, st *core.State, op *co
 func (l *Ledger) recordMail(serial uint64, at time.Time, offset, length int64, previous, hash [32]byte) {
 	// The chain's native bytes come from the preceding successful append or
 	// validated replay record, with no fallible hex decode or stale fallback.
-	l.lastMail = mailhistory.Record{Serial: serial, At: at, Offset: offset, End: offset + length, Prev: previous, Hash: hash}
+	l.lastMail = mailhistory.Record{
+		Serial: serial, At: at, Offset: offset, End: offset + length, Prev: previous, Hash: hash,
+	}
 }
