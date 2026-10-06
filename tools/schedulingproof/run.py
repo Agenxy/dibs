@@ -21,6 +21,7 @@ import subprocess
 import sys
 import time
 import urllib.request
+import urllib.error
 import uuid
 
 
@@ -110,7 +111,12 @@ class Experiment:
         return payload["result"]
 
     def call(self, url, secret, name, args, measured=False):
-        result = self.rpc(url, secret, "tools/call", {"name": name, "arguments": args})
+        try:
+            result = self.rpc(url, secret, "tools/call", {"name": name, "arguments": args})
+        except (OSError, TimeoutError, urllib.error.URLError) as exc:
+            if measured:
+                return {"measurement_error": {"code": "TRANSPORT_ERROR", "detail": str(exc)}}
+            raise
         if result.get("isError"):
             if measured:
                 return {"measurement_error": json.loads(result["content"][0]["text"])}
@@ -175,7 +181,7 @@ class Experiment:
         minutes, seconds = text.split(":")
         return int(minutes) * 60 + float(seconds)
 
-    def arm(self, tag, policy, samples, loaded):
+    def prepare_arm(self, tag, policy):
         home = self.out / (tag + "-home")
         home.mkdir()
         board = home / "board"
@@ -203,9 +209,17 @@ class Experiment:
         assert all(a.get("token") and a.get("agent_id") for a in agents), "register setup did not return identities"
         for a in agents:
             self.call(url, secret, "check_in", {"token": a["token"]})
-        rows = []
         for _ in range(10):
             self.call(url, secret, "check_in", {"token": agents[0]["token"]})
+        return folder, target, pid, url, secret, agents, board
+
+    def arm(self, tag, policy, samples, loaded, prepared=None):
+        folder, target, pid, url, secret, agents, board = prepared or self.prepare_arm(tag, policy)
+        # A persistent row may have slept while earlier arms ran. Reactivate
+        # through the normal agent call before measuring, never by editing state.
+        for a in agents:
+            self.call(url, secret, "check_in", {"token": a["token"]})
+        rows = []
         load_before = self.load_snapshot() if loaded else None
         cpu_before = self.daemon_cpu(pid)
         start = time.monotonic()
@@ -295,12 +309,19 @@ def main():
         result["capabilities"] = exp.capabilities()
         for p in ["Background", "Standard", "Interactive"]:
             result["arms"].append(exp.arm(f"idle-{p}", p, 100, False))
-        exp.start_load()
+        plan = []
         for pair, policies in enumerate([["Background", "Standard"], ["Standard", "Interactive"]]):
             for round_ in range(3):
                 for arm, p in enumerate([policies[0], policies[1], policies[1], policies[0]]):
-                    result["arms"].append(exp.arm(f"load-{pair}-{round_}-{arm}", p, 50, True))
-                    (out / "summary.json").write_text(json.dumps(result, indent=2))
+                    plan.append((f"load-{pair}-{round_}-{arm}", p))
+        # Test requests on an already-running service, as on the operator's
+        # machine. Starting a new Background job under load can itself stall;
+        # that is separate evidence and must not obstruct the paired RTT proof.
+        prepared = {tag: exp.prepare_arm(tag, policy) for tag, policy in plan}
+        exp.start_load()
+        for tag, policy in plan:
+            result["arms"].append(exp.arm(tag, policy, 50, True, prepared[tag]))
+            (out / "summary.json").write_text(json.dumps(result, indent=2))
         result["status"] = "measured; interpret paired samples, not a universal latency guarantee"
     except Exception as exc:
         result["error"] = str(exc)
