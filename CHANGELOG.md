@@ -12,6 +12,7 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The tap deploy key is newline-normalized and validated before a cask push.
   A main-scoped read-only diagnostic checks the stored secret's raw and
   normalized parsing before the next release, without exposing key material.
+  v0.0.12 was not published to the Homebrew tap because of the notifier defect; brew users upgrade directly from the previous cask to v0.0.13.
 
 - macOS release notifier signing now uses the actual app bundle identifier.
   v0.0.12 signed the helper as `org.agenxy.dibs.notify` while its bundle was
