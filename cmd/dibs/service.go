@@ -319,7 +319,7 @@ func writeLaunchAgent(daemon, dir string) error {
   <dict><key>SuccessfulExit</key><false/></dict>
   <key>StandardOutPath</key><string>` + xmlText(logPath) + `</string>
   <key>StandardErrorPath</key><string>` + xmlText(logPath) + `</string>
-  <key>ProcessType</key><string>Background</string>
+  <key>ProcessType</key><string>Standard</string>
 </dict>
 </plist>
 `
