@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - internal/ledger/mail_history_memory_probe_test.go
+      - internal/ledger/mail_history_compact_probe_test.go
       - .github/workflows/mail-history-memory-probe.yml
 
 permissions:

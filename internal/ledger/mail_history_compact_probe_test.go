@@ -143,6 +143,7 @@ type historyCompactProbe struct {
 	Pending []historyProbeAuditUnit
 	Units   int
 	Raw     int
+	Tail    []byte // reserved bounded mutable JSON tail for the live observer
 }
 
 func (p *historyCompactProbe) add(t *testing.T, u historyProbeAuditUnit, keys []historyProbeParty) {
@@ -238,8 +239,8 @@ func (p *historyCompactProbe) receipt() any {
 		refs += party.N
 	}
 	return struct {
-		Units, Blocks, Conversations, PartyReferences, RawSnapshotBytes, CompressedBytes int
-	}{p.Units, len(p.Blocks), p.Serials.N, refs, p.Raw, compressed}
+		Units, Blocks, Conversations, PartyReferences, RawSnapshotBytes, CompressedBytes, ReservedTailBytes int
+	}{p.Units, len(p.Blocks), p.Serials.N, refs, p.Raw, compressed, cap(p.Tail)}
 }
 
 func buildHistoryCompactProbe(t *testing.T, l *Ledger, records int) *historyCompactProbe {
@@ -249,7 +250,7 @@ func buildHistoryCompactProbe(t *testing.T, l *Ledger, records int) *historyComp
 	}
 	r := bufio.NewReaderSize(l.f, 1<<20)
 	st := core.NewState("million", core.DefaultLimits())
-	p := &historyCompactProbe{Party: map[historyProbeParty]*historyProbeU32{}}
+	p := &historyCompactProbe{Party: map[historyProbeParty]*historyProbeU32{}, Tail: make([]byte, 0, 128<<10)}
 	for n := 0; n < records; n++ {
 		raw, err := r.ReadBytes('\n')
 		if err != nil {
