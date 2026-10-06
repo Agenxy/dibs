@@ -62,10 +62,7 @@ func queueWakeObservationCase(t *testing.T, binary, mode string) {
 		}
 		return out
 	}
-	worker := call("register", map[string]any{
-		"name": "queue-worker", "nonce": "queue-observation-worker-nonce",
-		"session_id": thread, "harness": "Codex", "surface": harnessenv.ChatGPTApp, "cwd": home,
-	})
+	worker := registerObservationAppWorker(t, srv, eng, thread, home)
 	sender := call("register", map[string]any{"name": "queue-sender", "nonce": "queue-observation-sender-nonce"})
 	token := sender["token"]
 	call("check_in", map[string]any{"token": token})
@@ -149,6 +146,32 @@ func queueWakeObservationCase(t *testing.T, binary, mode string) {
 	if err = json.Unmarshal(items, &rows); err != nil || len(rows) != 1 {
 		t.Fatalf("existing coalescer changed: %d pending items: %v", len(rows), err)
 	}
+}
+
+func registerObservationAppWorker(t *testing.T, srv *httptest.Server, eng *engine.Engine, thread, home string) map[string]any {
+	t.Helper()
+	worker := toolCallWithMeta(t, srv, "register", map[string]any{
+		"name": "queue-worker", "nonce": "queue-observation-worker-nonce",
+		"session_id": thread, "harness": "Codex", "cwd": home,
+	}, map[string]any{SurfaceMetaKey: harnessenv.ChatGPTApp})
+	if worker["token"] == nil || worker["code"] != nil {
+		t.Fatalf("setup: app-owned worker registration: %v", worker)
+	}
+	board, err := eng.Board(context.Background())
+	if err != nil {
+		t.Fatal("setup: recorded app identity:", err)
+	}
+	for _, row := range board["agents"].([]map[string]any) {
+		if row["id"] == "queue-worker" {
+			info, ok := row["agent"].(*core.AgentInfo)
+			if !ok || info.Surface != harnessenv.ChatGPTApp {
+				t.Fatalf("setup: worker has no bridge-derived app surface: %v", row)
+			}
+			return worker
+		}
+	}
+	t.Fatal("setup: app-owned worker is absent from the board")
+	return nil
 }
 
 func writeObservationQueue(t *testing.T, home, thread, text string) {
