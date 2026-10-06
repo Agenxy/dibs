@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/mailhistory"
 )
 
 // Ports: the engine depends on these interfaces, never on concrete
@@ -28,6 +29,13 @@ import (
 // adapter must not silently drop or reorder.
 type Ledger interface {
 	Append(serial uint64, ts time.Time, op *core.Op) error
+}
+
+// MailHistorySource is an optional derived ledger view. Canonical before/after
+// observation occurs only after successful append; no second fold is allowed.
+type MailHistorySource interface {
+	MailHistory() *mailhistory.Index
+	ObserveMail(mailhistory.Snapshot, *core.State, *core.Op, []core.Event)
 }
 
 // Store holds attachment bytes outside the replay model (the blob store,
