@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -22,6 +23,10 @@ func TestSocketEconomyTimeoutDiagnosticsHelper(t *testing.T) {
 	release := make(chan struct{})
 	f := newEconomyFixtureWith(t, "71f97290-0001-4000-8000-111111111111", func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				next.ServeHTTP(w, r)
+				return
+			}
 			b, err := io.ReadAll(r.Body)
 			if err != nil {
 				t.Error("setup: HTTP body:", err)
@@ -36,6 +41,7 @@ func TestSocketEconomyTimeoutDiagnosticsHelper(t *testing.T) {
 				return
 			}
 			if req.Params.Name == "board" {
+				fmt.Fprintln(os.Stderr, "DIAGNOSTIC_CONTROL_HOLDS_BOARD_REPLY")
 				<-release
 			}
 			next.ServeHTTP(w, r)
@@ -56,6 +62,7 @@ func TestSocketEconomyTimeoutReportsActualBridgeDiagnostics(t *testing.T) {
 		t.Fatalf("setup: real blocked-HTTP timeout control did not fail normally: %v %v\n%s", err, ctx.Err(), out)
 	}
 	for _, required := range []string{
+		"DIAGNOSTIC_CONTROL_HOLDS_BOARD_REPLY",
 		"board did not reply within 5s", "stdout read=pending: ReadBytes has not returned",
 		"child exit=running or exit not yet reaped", "stderr tail (max 65536 bytes)",
 		"bridge goroutines:", "runBridge(", "net/http.(*persistConn).roundTrip",
@@ -63,5 +70,8 @@ func TestSocketEconomyTimeoutReportsActualBridgeDiagnostics(t *testing.T) {
 		if !strings.Contains(string(out), required) {
 			t.Errorf("real timeout lost diagnostic %q:\n%s", required, out)
 		}
+	}
+	if strings.Contains(string(out), "setup: actual stdio request was not JSON") || strings.Contains(string(out), "setup: HTTP body:") {
+		t.Fatalf("control setup failed before its intended timeout:\n%s", out)
 	}
 }
