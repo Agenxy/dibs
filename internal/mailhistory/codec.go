@@ -41,23 +41,33 @@ type block struct {
 // The raw live tail has a hard byte bound. No decoded unit or content is
 // retained after sealing a block. The compressor is reused and charged.
 type codec struct {
-	blocks  []block
-	tail    []byte
-	scratch []byte
-	count   uint64
-	units   uint64
-	lastOp  uint64
-	writer  *flate.Writer
+	blocks   []block
+	tail     []byte
+	scratch  []byte
+	count    uint64
+	units    uint64
+	lastOp   uint64
+	writer   *flate.Writer
+	previous snapshotUnit
 }
 
 func (c *codec) add(u snapshotUnit) error {
-	raw, err := encodeUnit(c.scratch, u)
+	var previous *snapshotUnit
+	if c.count > 0 {
+		previous = &c.previous
+	}
+	raw, err := encodeUnit(c.scratch, u, previous)
 	c.scratch = raw[:0]
 	if err != nil || len(raw) > blockBytes {
 		return errors.New("history snapshot exceeds its bounded block")
 	}
 	if c.count == blockUnits || len(c.tail)+len(raw) > blockBytes {
 		if err := c.flush(); err != nil {
+			return err
+		}
+		raw, err = encodeUnit(c.scratch, u, nil)
+		c.scratch = raw[:0]
+		if err != nil {
 			return err
 		}
 	}
@@ -68,6 +78,7 @@ func (c *codec) add(u snapshotUnit) error {
 	c.count++
 	c.units++
 	c.lastOp = u.Position.Op
+	c.previous = u
 	return nil
 }
 
@@ -94,6 +105,7 @@ func (c *codec) flush() error {
 	c.blocks = append(c.blocks, block{c.units - c.count, c.lastOp, c.count, len(c.tail), bytes.Clone(out.Bytes())})
 	c.tail = c.tail[:0]
 	c.count = 0
+	c.previous = snapshotUnit{}
 	return nil
 }
 

@@ -37,6 +37,22 @@ a stale anchor after a failed decode. The baseline skips all history record
 bookkeeping, not only Observe; earlier baseline arms included that small common
 cost, so their overhead figures are historical measurements of that arm.
 
+Same-runner controls at 1c34fc7 (run 37533666507) put baseline time spread at
+1.411% for simple 1M, 0.485% for simple 2M, 0.714% for 50 parties, 0.821%
+for rich metadata and 0.639% for adoption/merge. Actual overhead remained
+26.032%, 27.871%, 20.216%, 18.030% and 17.771% respectively: a real failure,
+not runner noise. Memory now passes at 100k (46.243280 B/record), 1M simple
+(33.476800), 2M simple (32.771120), 50 parties (37.665224), rich metadata
+(35.912248) and adoption/merge (25.153776).
+
+The next disposable codec format encodes a full first snapshot in each block
+and only changed primitive fields afterwards. Blocks remain independently
+decodable and retain the same unit/byte caps. A byte split re-encodes the next
+unit in full before appending it to a new block. A behavioural guard changes
+every snapshot leaf separately and reverts it, so a forgotten future field
+fails the real codec rather than hiding behind a manually maintained literal.
+No authority, cursor or ledger field depends on this internal format.
+
 The first actual production representation (b952d51) failed its bounds. Paired
 hosted run 37531622245 measured these incremental retained-heap and replay
 wall-time results; these are failures, not an accepted representation:

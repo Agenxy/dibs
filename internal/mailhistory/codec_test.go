@@ -40,8 +40,8 @@ func TestCompactSnapshotsRetainEveryFieldAndSplitOnActualBytes(t *testing.T) {
 		t.Fatalf("all-field fixture should fit one bounded block: %d", len(c.blocks))
 	}
 	var sized codec
-	u.Author.Host = strings.Repeat("h", 70000)
-	for range 2 {
+	for _, letter := range []string{"h", "j"} {
+		u.Author.Host = strings.Repeat(letter, 70000)
 		if err := sized.add(u); err != nil {
 			t.Fatal(err)
 		}
@@ -62,6 +62,9 @@ func TestCompactSnapshotsRetainEveryFieldAndSplitOnActualBytes(t *testing.T) {
 	}
 	if _, err := decode([]byte("corrupt"), 7, 1); err == nil {
 		t.Fatal("corrupt block accepted")
+	}
+	if _, err := decodeRaw([]byte{2, 0, 0, 0, 0}, 1); err == nil {
+		t.Fatal("a block started with a delta that had no predecessor")
 	}
 }
 
