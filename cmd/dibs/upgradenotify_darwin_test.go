@@ -78,9 +78,10 @@ func TestUpgradeFetchReportsInstalledNotificationPermission(t *testing.T) {
 					t.Fatalf("actual fixture upgrade failed: %v %s", err, out)
 				}
 				setup := "fleet has NOT been moved"
-				if route == "current-fetch" {
+				switch route {
+				case "current-fetch":
 					setup = "Nothing to fetch"
-				} else if route == "current-bare" {
+				case "current-bare":
 					setup = "nothing to do"
 				}
 				if !strings.Contains(string(out), setup) {

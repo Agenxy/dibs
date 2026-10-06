@@ -40,12 +40,13 @@ func TestReleaseRefusesActualPostSignMismatch(t *testing.T) {
 	}
 	t.Setenv("PATH", bin+":/usr/bin:/bin")
 	app := signerBundle(t, "org.agenxy.dibs")
-	if err := signOne(app); err == nil || !strings.Contains(err.Error(), "signed notifier identifier") {
-		t.Fatalf("real codesign produced a wrong identifier, but packaging was not refused: %v", err)
-	}
+	signErr := signOne(app)
 	out, err := exec.Command("/usr/bin/codesign", "-dv", app).CombinedOutput()
 	if err != nil || !strings.Contains(string(out), "Identifier=org.agenxy.dibs.wrong\n") {
 		t.Fatalf("negative setup did not actually mis-sign the fixture: %v %s", err, out)
+	}
+	if signErr == nil || !strings.Contains(signErr.Error(), "signed notifier identifier") {
+		t.Fatalf("real codesign produced a wrong identifier, but packaging was not refused: %v", signErr)
 	}
 }
 
