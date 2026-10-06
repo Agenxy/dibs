@@ -147,11 +147,25 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 	// audit stream reordered itself on replay.
 	for _, serial := range sortedKeys(s.Messages) {
 		m := s.Messages[serial]
-		if m.Terminal() || !m.Expecting() || m.Deadline.IsZero() || now.Before(m.Deadline) {
+		if m.Terminal() || !m.Expecting() {
+			continue
+		}
+		neverDelivered := m.Deadline.IsZero() && !m.NeverDeliveredAt.IsZero() && !now.Before(m.NeverDeliveredAt)
+		if !neverDelivered && (m.Deadline.IsZero() || now.Before(m.Deadline)) {
 			continue
 		}
 		to := s.Agents[m.To]
 		switch {
+		case neverDelivered:
+			m.State = MsgStateExpiredSilent
+			if to == nil || to.Status != StatusActive {
+				m.State = MsgStateExpiredDormant
+			}
+			m.ExpireDetail = "never delivered: recipient " + m.To +
+				" did not read this before the undelivered ceiling; it cannot receive an answer now"
+			if c := s.Contacts[m.ContactEscalatedAt]; c != nil {
+				m.ExpireDetail += "; human contact escalated at " + c.WindowStart.Format(time.RFC3339)
+			}
 		case to != nil && to.Status == StatusActive:
 			m.State = MsgStateExpiredSilent
 			m.ExpireDetail = "recipient alive but did not answer; their claims still stand"
@@ -190,7 +204,7 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 		m.TerminalAt = now
 		evs = append(evs, Event{
 			Type: "message." + m.State, Agent: m.To, To: m.From,
-			Data: map[string]any{"msg_serial": m.Serial, "detail": m.ExpireDetail},
+			Data: map[string]any{"msg_serial": m.Serial, "detail": m.ExpireDetail, "never_delivered": neverDelivered},
 		})
 	}
 
@@ -555,6 +569,19 @@ func (s *State) gc(now time.Time, purgeMail, clampWatermark, keepOwed bool) ([]E
 			pruned = true
 		}
 	}
+	// Completed contact windows are an audit convenience, not unbounded board
+	// state. Outstanding ones stay until an actual posting receipt; losing the
+	// relay must never make the board pretend the person was reached.
+	for serial, c := range s.Contacts {
+		settled := c.NotifiedAt
+		if c.ResolvedAt.After(settled) {
+			settled = c.ResolvedAt
+		}
+		if !settled.IsZero() && now.Sub(settled) > 7*24*time.Hour {
+			delete(s.Contacts, serial)
+			pruned = true
+		}
+	}
 	return evs, pruned
 }
 
@@ -650,6 +677,16 @@ func (s *State) Board() map[string]any {
 	slices.SortFunc(claims, func(a, b *Claim) int { return strings.Compare(a.Path, b.Path) })
 	spaces := s.channelBoard()
 	out := map[string]any{"serial": s.Serial, "node": s.NodeID, "agents": agents, "claims": claims}
+	var contacts []*ContactEscalation
+	for _, serial := range sortedKeys(s.Contacts) {
+		c := s.Contacts[serial]
+		if c.NotifiedAt.IsZero() && c.ResolvedAt.IsZero() {
+			contacts = append(contacts, c)
+		}
+	}
+	if len(contacts) > 0 {
+		out["contact_alerts"] = contacts
+	}
 	if len(spaces) > 0 {
 		out["spaces"] = spaces
 	}

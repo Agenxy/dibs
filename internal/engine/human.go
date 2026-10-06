@@ -270,6 +270,12 @@ func (e *Engine) prepareHumanRecipient(op *core.Op, now time.Time) error {
 		op.To = id
 	}
 	human := e.humanIdentityLocked()
+	// Only agent-directed asks use delivery-start semantics. A person's
+	// notification route is independent of inbox reads and keeps its existing
+	// fixed response deadline. Record this decision in the new send op so old
+	// ledger entries replay with their original send-time deadline.
+	op.DeliveryStart = op.To != human &&
+		(op.MsgType == core.MsgQuestion || op.MsgType == core.MsgRequest)
 	// A person's reply may take hours. Preserve the human default, recorded
 	// into the op for replay, for both role and concrete-id addresses.
 	if human != "" && op.To == human && op.DeadlineSec == 0 && op.MsgType != core.MsgNotify {

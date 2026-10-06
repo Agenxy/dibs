@@ -1719,7 +1719,7 @@ function draw() {
   const opts = { selfId: state.agent, actionsHTML }
 
   const boardEl = document.getElementById("pane-board")
-  patchHTML(boardEl, Board.rosterHTML(state.board?.agents, {
+  patchHTML(boardEl, Board.contactAlertsHTML(state.board?.contact_alerts) + Board.rosterHTML(state.board?.agents, {
     selfId: state.agent,
     events: state.events,
     expanded: state.expanded,

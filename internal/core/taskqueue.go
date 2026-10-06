@@ -184,6 +184,14 @@ func (s *State) applyQueue(l *Agent, m *Message, op *Op, now time.Time) (Result,
 	if err := declareMilestones(m, op, MsgStateQueued); err != nil {
 		return nil, nil, err
 	}
+	// Queueing is authenticated recipient awareness even when the caller never
+	// made a separate inbox/check_in call. Start before queueLess observes the
+	// deadline so ordering and the returned checkpoint use the same clock.
+	if m.ResponseWindowSec > 0 && m.Deadline.IsZero() {
+		m.DeliveredAt = s.Serial + 1
+		m.DeliveredTime = now
+		startResponseClock(m, now)
+	}
 	q := insertQueued(s.TaskQueue(l.ID), m)
 	m.State = MsgStateQueued
 	m.QueueDebt = op.QueueDebt

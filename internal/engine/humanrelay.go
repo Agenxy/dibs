@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/humanask"
 )
 
 // The human relay: the person's own Mac, attached to a board that runs
@@ -36,6 +37,7 @@ type HumanNotice struct {
 	AdoptName string               `json:"adopt_name,omitempty"`
 	Node      string               `json:"node,omitempty"`
 	Cleanup   *NotificationCleanup `json:"notification_cleanup,omitempty"`
+	Contact   *humanask.Contact    `json:"contact,omitempty"`
 }
 
 // Privileged is whether approving this grants something: a role, a
@@ -104,11 +106,9 @@ func (e *Engine) enqueueHumanNotice(n HumanNotice) int {
 // that has just attached: what arrived while nothing was there to show it.
 func (e *Engine) PendingForHuman(ctx context.Context) ([]HumanNotice, error) {
 	var out []HumanNotice
+	plans := map[uint64]contactLinkPlan{}
 	_, err := e.query(ctx, func() core.Result {
 		human := e.humanIdentityLocked()
-		if human == "" {
-			return nil
-		}
 		for _, m := range e.state.Messages {
 			if m.To != human || m.Terminal() {
 				continue
@@ -118,8 +118,21 @@ func (e *Engine) PendingForHuman(ctx context.Context) ([]HumanNotice, error) {
 			}
 			out = append(out, e.noticeOf(m))
 		}
+		for _, c := range e.state.Contacts {
+			if !c.NotifiedAt.IsZero() || !c.ResolvedAt.IsZero() {
+				continue
+			}
+			n, plan := e.contactNotice(c)
+			out = append(out, n)
+			plans[n.Serial] = plan
+		}
 		return nil
 	})
+	for i := range out {
+		if plan, ok := plans[out[i].Serial]; ok {
+			enrichContactURL(&out[i], plan)
+		}
+	}
 	slices.SortFunc(out, func(a, b HumanNotice) int { return cmp.Compare(a.Serial, b.Serial) })
 	return out, err
 }

@@ -82,17 +82,21 @@ func (e *Engine) openClosedSession(l *core.Agent) {
 	if surfaceOf(l) != harnessenv.ClaudeDesktop {
 		return
 	}
-	session, agent := threadIDOf(l), l.ID
+	session, agent, created := threadIDOf(l), l.ID, l.CreatedSerial
 	if session == "" {
 		return
 	}
 	go func() {
 		argv := harnessenv.OpenArgv(harnessenv.ClaudeDesktop, session)
 		if argv == nil {
+			e.contactAfterAppFailure(agent, created)
 			return // the app has no record of this session
 		}
 		shower.ShowWhenIdle(argv, session, func(opened, deferred bool, err error) {
 			logShow(opened, deferred, err, "agent", agent)
+			if err != nil && !deferred {
+				e.contactAfterAppFailure(agent, created)
+			}
 		})
 	}()
 }

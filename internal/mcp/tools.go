@@ -47,11 +47,9 @@ var toolDefs = func() []map[string]any {
 	// agent pays on every cold connection.
 	msgType := map[string]any{
 		"type": "string", "enum": []string{"notify", "question", "request", "handoff"},
-		"description": "what the message DOES. notify: no reply. All authored messages, including notify, " +
-			"arrive at their NEXT ACTIVATION: a turn boundary, " +
-			"their next Dibs call, or a best-effort wake if [wake.exec] is configured or their " +
-			"harness publishes a socket. A short deadline expires while they work. To the HUMAN " +
-			"a request raises a notification with Approve; the press returns as a response",
+		"description": "what it DOES. notify: no reply. All mail, including notify, arrives at NEXT ACTIVATION: " +
+			"turn boundary, next Dibs call, or best-effort configured wake/socket. Agent question/request " +
+			"deadline begins at first read, not send. Human request notifies with Approve.",
 	}
 
 	return []map[string]any{
@@ -295,12 +293,13 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "send",
-			"description": "Message an agent or \"human\" (OS-owned mailbox). Human sends report human_route/" +
-				"human_relay_count; read_mail supplies receipts. Questions/requests expire with a diagnosis.",
+			"description": "Message an agent or human. Human route and receipts appear in send/read_mail. " +
+				"Agent asks start deadline at first read; unread ceiling 7d. Unreachable unread " +
+				"question/request/handoff raises metadata-only human contact.",
 			"inputSchema": obj(map[string]any{
 				"token": tok, "to": str("agent id or name, \"human\" for the person, or \"coordinator\" for that role"),
 				"type": msgType,
-				"body": str("message body"), "deadline_s": num("response deadline in seconds (default 600; max 7200, or 7 " +
+				"body": str("message body"), "deadline_s": num("response window in seconds (default 600; max 7200, or 7 " +
 					"days to persistent agents)"),
 				"priority": map[string]any{
 					"type": "string", "enum": []string{"low", "normal", "high", "urgent"},

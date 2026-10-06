@@ -112,6 +112,7 @@ var (
 	msgFields = []string{
 		"serial", "type", "from", "to", "body", "response", "state", "attachments", "grant", "adopt",
 		"milestones", "progress", "deliverable",
+		"response_window_s",
 		"request_priority", "queue_priority", "queue_rank", "queue_by", "queue_order_locked", "queue_lock_by",
 	}
 	eventFields = []string{"serial", "type", "agent", "to", "ts"}
@@ -141,6 +142,11 @@ func trimBoard(b map[string]any) core.Result {
 		agents = append(agents, l)
 	}
 	out["agents"] = agents
+	// Contact alerts are daemon-authored metadata only. The panel needs them
+	// to show the same outstanding human-contact state as the web board.
+	if alerts, ok := b["contact_alerts"]; ok {
+		out["contact_alerts"] = alerts
+	}
 
 	// Spaces, trimmed the same way and for the same reason: this payload is
 	// sent to every host on every board call, so anything the template does not
@@ -176,7 +182,7 @@ func extractMessages(box any) []map[string]any {
 	var out []map[string]any
 	for _, m := range asMaps(raw) {
 		view := pick(m, msgFields)
-		if m["state"] == core.MsgStateQueued {
+		if m["state"] == core.MsgStateQueued || m["response_window_s"] != nil {
 			view["deadline"] = m["deadline"]
 		}
 		out = append(out, view)

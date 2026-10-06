@@ -174,6 +174,9 @@ func (e *Engine) noteEventFor(ev core.Event, wants func(agent string) bool) {
 // situationalNotice is what one event tells the agent it happened to: pure,
 // so the rebuild and live processing cannot word the same event differently.
 func situationalNotice(ev core.Event) (who, text string, blocking bool) {
+	if who, text, blocking, handled := specialSituationalNotice(ev); handled {
+		return who, text, blocking
+	}
 	switch ev.Type {
 	case "message.withdrawn":
 		who, text, blocking = ev.To, withdrawalNotice(ev), true
@@ -244,14 +247,36 @@ func situationalNotice(ev core.Event) (who, text string, blocking bool) {
 			"you were removed from agent %q by %s: stop work there and coordinate before resuming", agent, by,
 		)
 	case "agent.exclusive":
-		agent, _ := ev.Data["agent_id"].(string)
-		if owner, ok := ev.Data["owner"].(string); ok && owner == ev.Agent {
-			return "", "", false // you took it yourself; your own tool result already said so
-		} else {
-			who, text = ev.Agent, fmt.Sprintf("agent %q is now exclusive to %s", agent, owner)
-		}
+		who, text = exclusiveNotice(ev)
 	}
 	return who, text, blocking
+}
+
+func specialSituationalNotice(ev core.Event) (who, text string, blocking, handled bool) {
+	if ev.Type == "contact.escalated" {
+		if ev.To == "" {
+			return "", "", false, true
+		}
+		return ev.To, fmt.Sprintf(
+			"Dibs cannot reach agent %q about unread mail; contact alert %d is also going to the person. "+
+				"Read the board's contact_alerts; do not start or relocate its session on Dibs' behalf.",
+			ev.Agent, ev.Data["contact_serial"]), true, true
+	}
+	if ev.Data["never_delivered"] == true {
+		return ev.To, fmt.Sprintf(
+			"Message %d expired before its recipient read it: %s. Read_mail for the outcome.",
+			ev.Data["msg_serial"], ev.Data["detail"]), true, true
+	}
+	return "", "", false, false
+}
+
+func exclusiveNotice(ev core.Event) (string, string) {
+	agent, _ := ev.Data["agent_id"].(string)
+	owner, _ := ev.Data["owner"].(string)
+	if owner == ev.Agent {
+		return "", "" // your own tool result already said so
+	}
+	return ev.Agent, fmt.Sprintf("agent %q is now exclusive to %s", agent, owner)
 }
 
 // rebuildSituationalNotices restores, from the replayed event ring, every

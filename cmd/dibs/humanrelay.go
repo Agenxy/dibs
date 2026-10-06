@@ -412,8 +412,14 @@ func (r *relay) handle(n engine.HumanNotice) {
 		delete(r.busy, n.Serial)
 		r.mu.Unlock()
 	}()
+	// A link for the daemon's own Mac is not authority to open a thread on
+	// another Mac. The relay compares machine identity before showing Open.
+	if n.Contact != nil && n.Contact.OpenHost != hostID() {
+		n.Contact.OpenURL = ""
+	}
 	a, err := r.ask(humanask.Message{
 		Type: n.Type, From: n.From, FromName: n.FromName, Who: n.Who, Body: n.Body,
+		Contact: n.Contact,
 		Choices: n.Choices, Grant: n.Grant, Adopt: n.Adopt, AdoptName: n.AdoptName,
 		Serial: n.Serial, Node: r.st.Node,
 		Receipt: func(state string) {

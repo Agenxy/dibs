@@ -196,8 +196,13 @@ type Op struct {
 	MsgType     string `json:"msg_type,omitempty"`
 	Body        string `json:"body,omitempty"` // encrypted at rest
 	DeadlineSec int    `json:"deadline_sec,omitempty"`
-	OpID        string `json:"op_id,omitempty"`
-	MsgSerial   uint64 `json:"msg_serial,omitempty"`
+	// DeliveryStart is stamped by new-build ingress for agent questions and
+	// requests. Historical send ops omit it and keep their send-time deadline.
+	DeliveryStart bool   `json:"delivery_start,omitempty"`
+	OpID          string `json:"op_id,omitempty"`
+	MsgSerial     uint64 `json:"msg_serial,omitempty"`
+	// ContactSerial names a daemon-authored contact window, not participant mail.
+	ContactSerial uint64 `json:"contact_serial,omitempty"`
 	// Zero keeps historical read_mail's read-all semantics. A bounded inline
 	// delivery records only the fully quoted prefix, never a later pointer.
 	OutcomeThroughSerial   uint64       `json:"outcome_through_serial,omitempty"`

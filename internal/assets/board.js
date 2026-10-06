@@ -343,6 +343,19 @@ const Board = (() => {
       </section>`).join("")
   }
 
+  // The contact record is a system summary, not the private mail that caused
+  // it. Every board reader may see whom Dibs could not reach and whether a
+  // person has yet been notified, without receiving the sender's body.
+  function contactAlertsHTML(alerts) {
+    if (!Array.isArray(alerts) || !alerts.length) return ""
+    return `<section class="contact-alerts" aria-labelledby="contact-alerts-title">
+      <h2 id="contact-alerts-title">Needs human contact <span>${alerts.length}</span></h2>
+      <ul>${alerts.map((c) => `<li>Cannot reach ${esc(c.recipient)} for unread mail
+        (first #${esc(c.oldest_serial)}, ${esc(c.count)} coalesced).
+        Human notification not yet confirmed.</li>`).join("")}</ul>
+    </section>`
+  }
+
   // The reader is a human, so an agent is named like everyone else: second
   // person would ask the reader to be the agent.
   //
@@ -438,6 +451,9 @@ const Board = (() => {
           <span class="serial">#${esc(m.serial ?? "")}</span>
           <span class="kind ${esc(t)}">${esc(t)}</span>
           ${overdue ? explained("pill attn", "past its deadline", "the deadline on this message has passed and nobody has answered. Dibs is still waiting, but nothing is in flight") : ""}
+          ${m.response_window_s && !settled ? (m.deadline
+            ? explained("pill", "response due " + m.deadline, "the response window began when the recipient first read this message; it does not pause if they close")
+            : explained("pill", "clock starts on first read", "the response window has not begun; unread mail has a separate seven-day ceiling")) : ""}
         </div>
         <div class="route">
           ${who(m.from, m.from_name)}<span class="wire"></span><span class="arrow">▶</span>${who(m.to, m.to_name)}
@@ -1056,7 +1072,7 @@ const Board = (() => {
 
   return {
     esc, ago, TERMINAL, VERDICT,
-    identHTML, laneHTML, cadenceHTML, rosterHTML, messageHTML, eventHTML, agentBadges, explained, explainer, transition, ticker, recency,
+    identHTML, laneHTML, cadenceHTML, rosterHTML, contactAlertsHTML, messageHTML, eventHTML, agentBadges, explained, explainer, transition, ticker, recency,
     channelHTML, channelsHTML,
     summaryHTML, emptyHTML, firstRunHTML,
   }

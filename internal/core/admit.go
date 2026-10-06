@@ -25,6 +25,9 @@ func (s *State) Admit(op *Op) error {
 	if err := Admit(op, s.Limits); err != nil {
 		return err
 	}
+	if err := s.admitContact(op); err != nil {
+		return err
+	}
 	if err := s.admitRegistrationName(op); err != nil {
 		return err
 	}
@@ -44,6 +47,27 @@ func (s *State) Admit(op *Op) error {
 		return nil
 	}
 	return s.nameIsAnotherAddress(op, l)
+}
+
+func (s *State) admitContact(op *Op) error {
+	switch op.Kind {
+	case OpContactEscalate:
+		m := s.Messages[op.MsgSerial]
+		if m == nil || m.Terminal() || m.State != MsgStatePending ||
+			(m.Type != MsgQuestion && m.Type != MsgRequest && m.Type != MsgHandoff) {
+			return errf("E_BAD_CONTACT",
+				"escalate only unread, open questions, requests or handoffs",
+				"message %d is not eligible", op.MsgSerial)
+		}
+		if l := s.Agents[m.To]; l == nil || l.Retired() {
+			return errf("E_BAD_CONTACT", "the recipient must still be recoverable", "recipient of %d is retired", op.MsgSerial)
+		}
+	case OpContactNotified, OpContactResolved:
+		if s.Contacts[op.ContactSerial] == nil {
+			return errf("E_NO_CONTACT", "read the outstanding contact notices", "contact %d is gone", op.ContactSerial)
+		}
+	}
+	return nil
 }
 
 // Admit validates a caller op's shape. State.Admit adds current-state checks.
@@ -302,6 +326,10 @@ func Admit(op *Op, lim Limits) error {
 				"`body` is empty: a post needs something to say")
 		}
 	case OpSendMessage:
+		if op.DeliveryStart && op.MsgType != MsgQuestion && op.MsgType != MsgRequest {
+			return errf("E_BAD_ARG", "delivery-start timing applies to questions and requests only",
+				"delivery_start on a %s", op.MsgType)
+		}
 		// `adopt` is copied permanently into the message and therefore into the
 		// ledger, before anything looks up whether that agent exists. It was
 		// checked for message TYPE and never for length, so one authenticated

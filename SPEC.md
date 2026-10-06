@@ -757,10 +757,33 @@ recipient's `respond` (responding proves receipt). GC eligibility requires
 displace the oldest notify; if nothing is displaceable, sends fail `E_MAILBOX_FULL`.
 Nothing expecting an answer is ever displaced.
 
-**Deadlines**: default 10 min, max 2 h: except sends to `persistent` agents, where
-`deadline_s` may extend to 7 days (dormancy-aware). Sending to a dormant agent succeeds
-and returns a warning: pick a deadline matching expected wake latency, or use
-`notify`/`handoff` (no deadline).
+**Deadlines**: for new agent-to-agent questions and requests, `deadline_s` is
+the response window (10 min default, 2 h max, or 7 d to persistent agents).
+The window starts when the recipient first retrieves the mail with `check_in`,
+`inbox`, or `read_mail`, or acknowledges/queues/responds to it; a wake attempt
+does not start it. Once started, it does not pause again if the recipient closes;
+this limitation is stated in the send result, not hidden as a promise of
+continuous availability. Until then the send result has `deadline_pending: true` and
+`response_window_s`, not a fabricated absolute deadline. Mail never retrieved
+expires at a separate 7-day ceiling from send (or later if its allowed response
+window is longer). Older ledgered sends retain their original send-time
+deadline on replay. Sends to the human retain their existing deadline behavior.
+Sending to a dormant agent succeeds and warns about expected wake latency;
+`notify` and `handoff` have no response deadline.
+
+**Closed-harness contact escalation**: if a question, request, or handoff is
+still unread and Dibs has no usable wake/open route to its recipient, Dibs
+ledgers a `contact_escalated` record with recipient, oldest message serial,
+high-water serial, count, and window start. Unposted messages coalesce into one
+outstanding contact; a posted alert permits a new contact after ten minutes.
+FYI `notify` never escalates. The coordinator receives a metadata-only notice,
+and a human relay or local desktop gets a contact alert with a validated app
+link only when the recipient's app/thread provenance permits one. This asks a
+person to open the original harness; Dibs does not host or relocate the agent.
+Queuing an alert is not posting it: only a reported OS posting is ledgered as
+`contact_notified`. Unposted contacts are retried. Recipient retrieval or
+terminal handling resolves the contact. `contact_alerts` on the board contains
+metadata, never participant bodies.
 
 **Mappings** (v2 gateway / v1.x Tasks): A2A. `pending/delivered → submitted/working`,
 `answered/approved → completed`, `denied/declined → rejected`, `expired_* → failed
@@ -1104,7 +1127,7 @@ unacknowledged announcement not yet due does not justify a placeholder wake.
 | agent lease TTL | 5 min | → `stale`/`dormant` |
 | stale grace / dormancy max | 30 min / 30 days (from the ledgered transition, §7) | archived |
 | claim lease / hard max | 15 min / 24 h | `claim.expired` |
-| deadline | 10 min default; 2 h max (7 d to persistent agents) | §7 cascade |
+| response window | 10 min default; 2 h max (7 d to persistent agents); new agent asks start at first awareness, with a separate 7 d never-delivered ceiling | §7 cascade, §8 deadlines |
 | await_events timeout | 60 s | returns empty |
 | event ring | 65,536 | `E_CURSOR_TOO_OLD` → §10 checkpoint |
 

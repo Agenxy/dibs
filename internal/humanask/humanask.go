@@ -13,9 +13,12 @@ package humanask
 import (
 	"errors"
 	"log/slog"
+	"os/exec"
+	"strconv"
 	"strings"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/notify"
 )
 
@@ -26,6 +29,7 @@ type Message struct {
 	FromName        string // current name; From stays the stable ID
 	Who             string // the daemon's line about the sender, never the sender's own words
 	Body            string
+	Contact         *Contact // daemon-authored reachability notice, never participant body
 	Choices         []string
 	Grant           string
 	Adopt           string
@@ -35,6 +39,20 @@ type Message struct {
 	Receipt         notify.Receipt
 	DeliveryReceipt notify.DeliveryReceipt
 	ask             func(string, string, notify.Receipt, ...string) (string, error) // test presenter
+}
+
+// Contact contains only a system-composed summary. OpenURL is permitted only
+// after the daemon proved that the recipient belongs to the named local app;
+// the button validates its exact link grammar again at the point of use.
+type Contact struct {
+	Recipient string `json:"recipient"`
+	Sender    string `json:"sender"`
+	Kind      string `json:"kind"`
+	Message   uint64 `json:"message"`
+	Count     int    `json:"count"`
+	OpenURL   string `json:"open_url,omitempty"`
+	OpenHost  string `json:"open_host,omitempty"`
+	OpenHint  string `json:"open_hint"`
 }
 
 func (m Message) displayFrom() string {
@@ -67,6 +85,8 @@ type Answer struct {
 func Ask(m Message) (Answer, error) {
 	title := "Dibs · " + m.displayFrom()
 	switch m.Type {
+	case "contact":
+		return askContact(m)
 	case core.MsgRequest:
 		// A request is literally "approve or deny", so ask it that way.
 		return approve(m)
@@ -87,6 +107,53 @@ func Ask(m Message) (Answer, error) {
 		}
 		return Answer{}, notify.BannerWithReceipt(title, "says", OneLine(m.Body), m.Receipt)
 	}
+}
+
+var openContact = func(argv []string) error {
+	// #nosec G204 -- argv is reconstructed by the two validated app-link
+	// builders below, with a fixed /usr/bin/open executable and no shell.
+	return exec.Command(argv[0], argv[1:]...).Run()
+}
+
+func contactOpenArgv(url string) []string {
+	if thread, ok := strings.CutPrefix(url, "codex://threads/"); ok {
+		argv := harnessenv.ChatGPTOpenArgv(thread)
+		if len(argv) == 2 && argv[1] == url {
+			return argv
+		}
+	}
+	if local, ok := strings.CutPrefix(url, "claude://code/continue?session="); ok {
+		argv := harnessenv.ClaudeOpenArgv(local)
+		if len(argv) == 2 && argv[1] == url {
+			return argv
+		}
+	}
+	return nil
+}
+
+func askContact(m Message) (Answer, error) {
+	c := m.Contact
+	if c == nil {
+		return Answer{}, errors.New("contact notice has no system summary")
+	}
+	title := "Dibs · " + OneLine(c.Sender) + " needs " + OneLine(c.Recipient)
+	line := "Unread " + OneLine(c.Kind) + " #" + strconv.FormatUint(c.Message, 10) +
+		"; " + OneLine(c.OpenHint)
+	if c.Count > 1 {
+		line += "; " + strconv.Itoa(c.Count) + " messages coalesced"
+	}
+	argv := contactOpenArgv(c.OpenURL)
+	if argv == nil {
+		if m.DeliveryReceipt != nil {
+			return Answer{}, notify.BannerWithDeliveryReceipt(title, "cannot reach this agent", line, m.DeliveryReceipt)
+		}
+		return Answer{}, notify.BannerWithReceipt(title, "cannot reach this agent", line, m.Receipt)
+	}
+	pressed, err := m.askNotification(title, line, "Later", "Open")
+	if err != nil || pressed != "Open" {
+		return Answer{}, err
+	}
+	return Answer{}, openContact(argv)
 }
 
 // RequestTitle is the line that states what pressing Approve DOES.

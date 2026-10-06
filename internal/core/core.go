@@ -685,10 +685,15 @@ type Message struct {
 	// younger than the adoption and must not inherit through it. Compared
 	// against the reader's CreatedSerial. Found by the pre-release review,
 	// round four.
-	AdoptedAt   uint64    `json:"adopted_serial,omitempty"`
-	Deadline    time.Time `json:"deadline,omitzero"`
-	Response    string    `json:"response,omitempty"`
-	DeliveredAt uint64    `json:"delivered_serial,omitempty"`
+	AdoptedAt uint64    `json:"adopted_serial,omitempty"`
+	Deadline  time.Time `json:"deadline,omitzero"`
+	// Only new delivery-start sends set these. Historical messages keep both
+	// zero, so replay preserves the deadline written at send time.
+	ResponseWindowSec  int       `json:"response_window_s,omitempty"`
+	NeverDeliveredAt   time.Time `json:"never_delivered_at,omitzero"`
+	ContactEscalatedAt uint64    `json:"contact_escalated_serial,omitempty"`
+	Response           string    `json:"response,omitempty"`
+	DeliveredAt        uint64    `json:"delivered_serial,omitempty"`
 	// SentAt and DeliveredTime are wall-clock, and they exist so an agent can
 	// tell what happened to it.
 	//
@@ -862,7 +867,8 @@ type State struct {
 	LegacyAckAtCutoff map[string]LegacyAckSnapshot `json:"legacy_ack_at_cutoff,omitempty"`
 	Limits            Limits
 	Agents            map[string]*Agent
-	Messages          map[uint64]*Message // keyed by send serial
+	Messages          map[uint64]*Message           // keyed by send serial
+	Contacts          map[uint64]*ContactEscalation // keyed by first escalation serial
 	Claims            []*Claim
 	Nonces            map[string]string    // nonce → agent_id
 	Dedup             map[string]*DedupRec // key: agent_id + "\x00" + id
@@ -883,6 +889,7 @@ func NewState(nodeID string, lim Limits) *State {
 		RestartSettings: map[string]RestartSetting{},
 		RestartNotices:  map[string]RestartNotice{},
 		Messages:        map[uint64]*Message{},
+		Contacts:        map[uint64]*ContactEscalation{},
 		Nonces:          map[string]string{},
 		Dedup:           map[string]*DedupRec{},
 		Blobs:           map[string]*Blob{},
