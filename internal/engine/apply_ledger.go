@@ -21,7 +21,7 @@ func (e *Engine) applyAndLedgerWithReceipt(
 	before := e.state.Serial
 	var mailBefore mailhistory.Snapshot
 	if e.mailSource != nil {
-		mailBefore = mailhistory.Capture(e.state, op)
+		mailBefore = mailhistory.Capture(e.state, op, &e.mailScratch)
 	}
 	applied := beginSendStage(op, "apply")
 	applyStage := attempt.StartStage("writer_apply")

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/mailhistory"
 	"github.com/agenxy/dibs/internal/overlap"
 )
 
@@ -31,13 +32,14 @@ type Engine struct {
 	transferNext uint64
 	inviteClosed map[string]uint64 // derived from ledgered closes, rebuilt before ring trimming
 	// Must stay unbuffered: accepted registration holds belong to the writer.
-	ops        chan request
-	subs       chan subReq
-	unsubs     chan chan core.Event
-	state      *core.State
-	led        Ledger
-	mailSource MailHistorySource
-	blobs      Store
+	ops         chan request
+	subs        chan subReq
+	unsubs      chan chan core.Event
+	state       *core.State
+	led         Ledger
+	mailSource  MailHistorySource
+	mailScratch mailhistory.Snapshot // writer-owned transient metadata, never retained by queries
+	blobs       Store
 	// Derived protection against snapshots older than a blob registration.
 	blobReconciles       int
 	blobReconcileHeld    map[string]bool

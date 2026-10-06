@@ -33,6 +33,7 @@ type Index struct {
 	latest     vector
 	parties    map[partyKey]*party
 	anchors    []Anchor
+	numbers    []uint64 // bounded writer scratch for sorted canonical changes
 	records    uint64
 	head       Record
 	generation string
@@ -58,6 +59,7 @@ func (i *Index) BeginReplay() {
 	i.codec, i.serials, i.latest = codec{}, vector{}, vector{}
 	i.parties = map[partyKey]*party{}
 	i.anchors = nil
+	i.numbers = nil
 	i.records, i.head, i.generation = 0, Record{}, ""
 	i.ready, i.failed = false, false
 }
