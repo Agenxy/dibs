@@ -51,6 +51,17 @@ func TestAFaultReportSaysWhatToDoAboutIt(t *testing.T) {
 	}
 }
 
+func TestNotificationFailureDoesNotInventConfigurationCause(t *testing.T) {
+	for _, kind := range []string{"notify-failed", "notify-unreachable"} {
+		t.Run(kind, func(t *testing.T) {
+			body := faultBody(Fault{Kind: kind, What: "notification authorization not-determined", Remedy: "The message remains on the board."})
+			if strings.Contains(body, "configuration on this machine, not a defect") || !strings.Contains(body, "not-determined") || !strings.Contains(body, "identity") || !strings.Contains(body, "dibs doctor") {
+				t.Fatalf("notification failure blamed the person or hid the measured state/remedy: %s", body)
+			}
+		})
+	}
+}
+
 // A report with no remedy is an alarm, and this package exists to not produce
 // those. Refused at the door rather than delivered as "something went wrong".
 func TestAReportWithoutARemedyIsRefused(t *testing.T) {

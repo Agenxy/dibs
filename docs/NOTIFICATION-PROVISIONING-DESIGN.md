@@ -97,6 +97,17 @@ Behavioral install/upgrade fixtures must enter those actual paths, assert their
 setup, preserve no-post semantics and fail on the old code. Run the unchanged
 full hosted gate and obtain source review before merging the permanent repair.
 
+Release-history inspection found that v0.0.7 and v0.0.9 used coherent
+`org.agenxy.dibs` identifiers with ad-hoc designated requirements (code hashes),
+not v0.0.12's identifier mismatch. The release signer was introduced after the
+v0.0.9 tag, and the next published release was v0.0.12. The historical archives'
+exact-tag cosign signatures verified; this is artifact evidence, not evidence
+of every Homebrew user's notification permission. An ad-hoc code hash changes
+with the binary, whereas subsequent releases signed by the same stable
+certificate and coherent identifier retain their designated requirement.
+The first transition can require a one-time permission grant; do not describe
+all releases before v0.0.13 as never having worked.
+
 ## One decision, with a migration cost
 
 Choose the canonical helper app identity and approve the matching Time Sensitive

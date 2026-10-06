@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/build"
+	"github.com/agenxy/dibs/internal/paths"
 	"github.com/agenxy/dibs/internal/selfupdate"
 )
 
@@ -175,6 +176,15 @@ func fakeUpgradeCosign(args []string) int {
 type upgradeRecordTransport struct{}
 
 func (upgradeRecordTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if os.Getenv("DIBS_TEST_UPGRADE_BARE") == "1" && req.URL.Host == "127.0.0.1:49998" {
+		body := `{"serial":42,"agents":[]}`
+		if req.Method == http.MethodPost && req.URL.Path == "/mcp" {
+			body = `{"jsonrpc":"2.0","result":{"serverInfo":{"name":"dibs","version":"0.0.9"}}}`
+		} else if req.Method != http.MethodGet || req.URL.Path != "/api/board" {
+			return nil, fmt.Errorf("unexpected bare upgrade fixture request: %s %s", req.Method, req.URL)
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body))}, nil
+	}
 	if req.Method != http.MethodGet || req.Header.Get("Authorization") != "" {
 		return nil, fmt.Errorf("unexpected credential-bearing fixture request")
 	}
@@ -202,6 +212,16 @@ func TestCLIUpgradeRecordProcess(t *testing.T) {
 		return
 	}
 	build.Version = "0.0.8" // fixture: force the actual --fetch path, not Current
+	if os.Getenv("DIBS_TEST_UPGRADE_CURRENT") == "1" {
+		build.Version = "0.0.9"
+	}
+	if os.Getenv("DIBS_TEST_UPGRADE_BARE") == "1" {
+		release, err := paths.Claim(paths.Daemon{PID: os.Getpid(), Addr: "127.0.0.1:49998", Dir: os.Getenv("DIBS_DIR"), Scheme: "http"}, true)
+		if err != nil {
+			t.Fatal("bare fixture registry setup:", err)
+		}
+		defer release()
+	}
 	http.DefaultTransport = upgradeRecordTransport{}
 	for i, arg := range os.Args {
 		if arg == "--" {

@@ -51,7 +51,7 @@ var identifiers = map[string]string{
 	"dibd":          "org.agenxy.dibs",
 	"dibs":          "org.agenxy.dibs.cli",
 	"dibs-presence": "org.agenxy.dibs.presence",
-	"Dibs.app":      "org.agenxy.dibs.notify",
+	"Dibs.app":      "org.agenxy.dibs",
 }
 
 const (
@@ -239,6 +239,15 @@ func signOne(path string) error {
 		fmt.Printf("%s is not a macOS binary; not signing\n", path)
 		return nil
 	}
+	if name == "Dibs.app" {
+		bundleID, err := bundleIdentifier(path)
+		if err != nil {
+			return err
+		}
+		if bundleID != id {
+			return fmt.Errorf("notifier bundle identifier %q disagrees with release identifier %q; align them before signing", bundleID, id)
+		}
+	}
 	identity := strings.TrimSpace(os.Getenv(identityEnv))
 	if identity == "" {
 		identity = "-"
@@ -258,8 +267,40 @@ func signOne(path string) error {
 	if out, err := exec.Command("codesign", args...).CombinedOutput(); err != nil {
 		return fmt.Errorf("codesign %s: %w\n%s", path, err, strings.TrimSpace(string(out)))
 	}
+	if name == "Dibs.app" {
+		out, err := exec.Command("codesign", "-dv", path).CombinedOutput() // #nosec G204 -- same release artifact as the signing call
+		if err != nil {
+			return fmt.Errorf("reading signed notifier identity: %w: %s", err, out)
+		}
+		var signedID string
+		for _, line := range strings.Split(string(out), "\n") {
+			if value, found := strings.CutPrefix(line, "Identifier="); found {
+				if signedID != "" {
+					return errors.New("signed notifier reports multiple identifiers; refuse packaging")
+				}
+				signedID = value
+			}
+		}
+		if signedID != id {
+			return fmt.Errorf("signed notifier identifier %q disagrees with bundle identifier %q; refuse packaging", signedID, id)
+		}
+	}
 	fmt.Printf("signed %s as %s (%s)\n", path, id, identity)
 	return nil
+}
+
+func bundleIdentifier(path string) (string, error) {
+	// plutil reads the actual plist, including binary plists; two constants
+	// agreeing would not prove the app that is about to ship agrees.
+	out, err := exec.Command("plutil", "-extract", "CFBundleIdentifier", "raw", "-o", "-", filepath.Join(path, "Contents", "Info.plist")).CombinedOutput() // #nosec G204 -- release artifact metadata, no shell
+	if err != nil {
+		return "", fmt.Errorf("reading notifier bundle identifier: %w: %s", err, out)
+	}
+	id := strings.TrimSpace(string(out))
+	if id == "" || strings.ContainsAny(id, "\r\n") {
+		return "", errors.New("notifier bundle has no single identifier; refuse signing")
+	}
+	return id, nil
 }
 
 // isMachO reports whether a path is something codesign can sign: a Mach-O

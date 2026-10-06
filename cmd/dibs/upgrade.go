@@ -273,9 +273,14 @@ func upgrade(o upgradeOpts) error {
 	// pre-release review, round fifty-three.
 	if info, ierr := daemonBuildAt(runningOrigin(p)); ierr == nil && p.nothingToDo(info) {
 		fmt.Printf("already on %s: the daemon is serving the build you installed, nothing to do\n", info.Version)
+		reportUpgradeNotifications()
 		return nil
 	}
-	return p.cutover()
+	if err := p.cutover(); err != nil {
+		return err
+	}
+	reportUpgradeNotifications()
+	return nil
 }
 
 // runningOrigin is where the daemon the plan will replace answers, from the

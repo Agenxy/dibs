@@ -187,7 +187,11 @@ func faultBody(f Fault) string {
 			"very welcome.")
 		return b.String()
 	}
-	b.WriteString("This is configuration on this machine, not a defect.\n\n")
+	if f.Kind == "notify-failed" || f.Kind == "notify-unreachable" {
+		b.WriteString("The notification failure has not been classified. An install or upgrade can change the notifier's identity and lose an existing permission; this is not evidence that the person denied a prompt. Run `dibs doctor` to inspect the installed helper and its current authorization.\n\n")
+	} else {
+		b.WriteString("This is configuration on this machine, not a defect.\n\n")
+	}
 	b.WriteString(f.Remedy)
 	b.WriteString("\n\nIf you follow that and it still happens, it is ours: " + repoURL)
 	return b.String()
