@@ -43,6 +43,14 @@ type Index struct {
 // New returns an empty derived index for a fresh ledger.
 func New() *Index { return &Index{parties: map[partyKey]*party{}, ready: true} }
 
+// Invalidate refuses history queries when a committed-record anchor is unusable.
+// The derived view cannot turn a malformed anchor into a prior record's history.
+func (i *Index) Invalidate() {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.failed = true
+}
+
 // BeginReplay discards a derived view and refuses queries until replay finishes.
 func (i *Index) BeginReplay() {
 	i.mu.Lock()
@@ -90,12 +98,13 @@ func (i *Index) add(u snapshotUnit, keys []partyKey) {
 		return
 	}
 	n := sort.Search(i.serials.n, func(n int) bool { return i.serials.get(n) >= u.Position.Msg })
-	if n == i.serials.n {
+	switch {
+	case n == i.serials.n:
 		i.serials.add(u.Position.Msg)
 		i.latest.add(ref)
-	} else if i.serials.get(n) == u.Position.Msg {
+	case i.serials.get(n) == u.Position.Msg:
 		i.latest.set(n, ref)
-	} else {
+	default:
 		i.failed = true // no silently misplaced latest authorization header
 		return
 	}

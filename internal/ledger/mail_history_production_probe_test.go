@@ -173,6 +173,7 @@ func generateProductionHistory(t *testing.T, path string, box *Box, count int, m
 		ids[n] = fmt.Sprintf("party-%02d", n)
 		p.write(&core.Op{
 			Kind: core.OpRegister, Name: ids[n], NewToken: ids[n], PID: 1,
+			Nonce:     "production-history-fixture-nonce-" + ids[n],
 			AgentKind: core.KindPersistent, V7Semantics: true,
 			Agent: &core.AgentInfo{HostID: "fixture-host-" + strconv.Itoa(n), CWD: "/fixture/never-opened"},
 		})

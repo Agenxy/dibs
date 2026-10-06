@@ -34,7 +34,8 @@ type snapshotUnit struct {
 
 type block struct {
 	first, lastOp uint64
-	count, raw    int
+	count         uint64
+	raw           int
 	data          []byte
 }
 
@@ -43,7 +44,7 @@ type block struct {
 type codec struct {
 	blocks []block
 	tail   []byte
-	count  int
+	count  uint64
 	units  uint64
 	lastOp uint64
 	writer *flate.Writer
@@ -92,13 +93,13 @@ func (c *codec) flush() error {
 	if err := c.writer.Close(); err != nil {
 		return err
 	}
-	c.blocks = append(c.blocks, block{c.units - uint64(c.count), c.lastOp, c.count, len(c.tail), bytes.Clone(out.Bytes())})
+	c.blocks = append(c.blocks, block{c.units - c.count, c.lastOp, c.count, len(c.tail), bytes.Clone(out.Bytes())})
 	c.tail = c.tail[:0]
 	c.count = 0
 	return nil
 }
 
-func decode(data []byte, rawBytes, count int) ([]snapshotUnit, error) {
+func decode(data []byte, rawBytes int, count uint64) ([]snapshotUnit, error) {
 	r := flate.NewReader(bytes.NewReader(data))
 	defer func() { _ = r.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(r, blockBytes+1))
@@ -108,13 +109,13 @@ func decode(data []byte, rawBytes, count int) ([]snapshotUnit, error) {
 	return decodeRaw(raw, count)
 }
 
-func decodeRaw(raw []byte, count int) ([]snapshotUnit, error) {
+func decodeRaw(raw []byte, count uint64) ([]snapshotUnit, error) {
 	array := make([]byte, 0, len(raw)+2)
 	array = append(array, '[')
 	array = append(array, raw...)
 	array = append(array, ']')
 	var units []snapshotUnit
-	if err := json.Unmarshal(array, &units); err != nil || len(units) != count {
+	if err := json.Unmarshal(array, &units); err != nil || uint64(len(units)) != count {
 		return nil, errors.New("invalid history snapshot count")
 	}
 	return units, nil
@@ -124,7 +125,7 @@ func decodeRaw(raw []byte, count int) ([]snapshotUnit, error) {
 // block references and the raw tail, then decode outside the writer and lock.
 func (c *codec) unit(ref uint64) (snapshotUnit, error) {
 	n := sort.Search(len(c.blocks), func(n int) bool {
-		return c.blocks[n].first+uint64(c.blocks[n].count) > ref
+		return c.blocks[n].first+c.blocks[n].count > ref
 	})
 	var units []snapshotUnit
 	var first uint64
@@ -134,7 +135,7 @@ func (c *codec) unit(ref uint64) (snapshotUnit, error) {
 		first = b.first
 		units, err = decode(b.data, b.raw, b.count)
 	} else {
-		first = c.units - uint64(c.count)
+		first = c.units - c.count
 		units, err = decodeRaw(c.tail, c.count)
 	}
 	if err != nil || ref < first || ref-first >= uint64(len(units)) {

@@ -20,11 +20,15 @@ func (l *Ledger) ObserveMail(before mailhistory.Snapshot, st *core.State, op *co
 }
 
 func (l *Ledger) recordMail(serial uint64, at time.Time, offset, length int64, previous string, hash [32]byte) {
+	l.lastMail = mailhistory.Record{}
 	var prev [32]byte
 	if previous != "" {
 		decoded, err := hex.DecodeString(previous)
 		if err != nil || len(decoded) != len(prev) {
-			return // normal chain validation still owns any error
+			if l.mail != nil {
+				l.mail.Invalidate()
+			}
+			return // normal chain validation still owns any ledger error
 		}
 		copy(prev[:], decoded)
 	}
