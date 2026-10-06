@@ -52,12 +52,14 @@ type historyProbeMetadata struct {
 }
 
 func historyProbeMeta(st *core.State, m *core.Message) historyProbeMetadata {
-	return historyProbeMetadata{From: m.From, To: m.To, Type: m.Type, State: m.State, Consumed: m.Consumed,
+	return historyProbeMetadata{
+		From: m.From, To: m.To, Type: m.Type, State: m.State, Consumed: m.Consumed,
 		AdoptedFrom: m.AdoptedFrom, AdoptedAt: m.AdoptedAt, Delivered: m.DeliveredAt, Responded: m.RespondedAt, Acked: m.AckedAt,
 		OutcomeRead: m.OutcomeReadAt, ReviewRead: m.ReviewReadAt, ReviewCutoff: st.ReviewReadCutoff, Superseded: m.SupersededBy,
 		SentAt: m.SentAt, DeliveredAt: m.DeliveredTime, TerminalAt: m.TerminalAt, RetainUntil: m.RetainUntil, Deadline: m.Deadline,
 		QueuePriority: m.QueuePriority, QueueRank: m.QueueRank, QueueDebt: m.QueueDebt, QueueOrderLocked: m.QueueOrderLocked, QueueChanged: m.QueueChangedSerial,
-		Milestones: len(m.Milestones), Progress: len(m.Progress)}
+		Milestones: len(m.Milestones), Progress: len(m.Progress),
+	}
 }
 
 type historyProbeAuthor struct {
@@ -346,13 +348,17 @@ func observeHistoryCompactProbe(t *testing.T, p *historyCompactProbe, rec Line, 
 
 func TestHistoryCompactProbeAllFieldsRoundTrip(t *testing.T) {
 	at := time.Date(2026, 10, 6, 6, 0, 0, 12345, time.UTC)
-	meta := historyProbeMetadata{From: "sender", To: "heir", Type: core.MsgRequest, State: core.MsgStateDone, Consumed: true,
+	meta := historyProbeMetadata{
+		From: "sender", To: "heir", Type: core.MsgRequest, State: core.MsgStateDone, Consumed: true,
 		AdoptedFrom: "previous", AdoptedAt: 20, Delivered: 21, Responded: 22, Acked: 23, OutcomeRead: 24, ReviewRead: 25, ReviewCutoff: 26, Superseded: 27,
 		SentAt: at, DeliveredAt: at.Add(time.Second), TerminalAt: at.Add(2 * time.Second), RetainUntil: at.Add(time.Hour), Deadline: at.Add(time.Minute),
-		QueuePriority: "high", QueueRank: 3, QueueDebt: true, QueueOrderLocked: true, QueueChanged: 28, Milestones: 4, Progress: 2}
+		QueuePriority: "high", QueueRank: 3, QueueDebt: true, QueueOrderLocked: true, QueueChanged: 28, Milestones: 4, Progress: 2,
+	}
 	p := &historyCompactProbe{Party: map[historyProbeParty]*historyProbeU32{}}
-	u := historyProbeAuditUnit{OpSerial: 30, MsgSerial: 10, Ordinal: 1, At: at, Kind: "message.test", Meta: meta,
-		Author: historyProbeAuthor{ID: "heir", Created: 19, Host: "recorded-host"}, Content: true, AfterKnown: true, Evicted: true}
+	u := historyProbeAuditUnit{
+		OpSerial: 30, MsgSerial: 10, Ordinal: 1, At: at, Kind: "message.test", Meta: meta,
+		Author: historyProbeAuthor{ID: "heir", Created: 19, Host: "recorded-host"}, Content: true, AfterKnown: true, Evicted: true,
+	}
 	p.add(t, u, []historyProbeParty{{"sender", 1}, {"heir", 19}})
 	p.flush(t)
 	if !reflect.DeepEqual(p.unit(t, 0), u) {

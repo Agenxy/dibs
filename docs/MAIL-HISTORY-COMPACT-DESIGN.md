@@ -1,7 +1,7 @@
 # Compact mail history: request 23228
 
-Status: representation prototype only; full measurement and architect review
-pending. No production history door or observer is implemented by PR #386.
+Status: representation prototype measured; architect review pending. No
+production history door or observer is implemented by PR #386.
 This replaces the materialized representation accepted at bef678c, while
 preserving its API, authorization, read-only semantics and page bounds.
 
@@ -20,6 +20,26 @@ Every allocation for history counts: snapshots, authority lookup, duplicated
 party references, anchors, allocation slack and the mutable tail. Compare
 paired production `Ledger.Replay` arms after forced GC on the same runner.
 Report raw baseline/candidate heap and growth at 100k, 1M and 2M records.
+
+Hosted run **37425446240** succeeded at source **e80d657** on all three scales.
+Each pair used the same generated encrypted ledger on the same Ubuntu runner,
+through production replay and a forced GC. The complete representation includes
+the 128 KiB reserved live tail and both copies of party references.
+
+| Ledger records | Baseline heap B | Candidate heap B | Increment B | B/record | Increment MiB |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 100,000 | 307,872 | 3,654,888 | 3,347,016 | 33.470 | 3.192 |
+| 1,000,000 | 320,120 | 31,146,152 | 30,826,032 | 30.826 | 29.398 |
+| 2,000,000 | 321,880 | 61,645,592 | 61,323,712 | 30.662 | 58.483 |
+
+The 1M arm holds 999,996 audit units, 333,332 latest-header references and
+1,999,992 party references. Its 324,710,279 raw snapshot bytes compress to
+16,382,677 bytes. The 2M arm holds 1,999,996 units and 3,999,992 party references.
+Growth from 1M to 2M adds 30,497,680 bytes for one million additional records.
+These results fit both new bounds on this fixture; they do not establish the
+cost of adoption, richer metadata or many parties. Ordinary gate status is
+separate: source e80d657 failed only gofumpt, corrected in the subsequent source
+revision. No measurement pass is being called a full gate pass.
 
 ## Representation proposed for measurement
 
@@ -51,11 +71,22 @@ header object is necessary.
 Per-party/incarnation candidate vectors use chunked unit references. The probe
 charges both copies, without relying on the fixture's unusually compressible
 party ranges. Coalescing adjacent references into ranges may reduce this cost;
-it must never widen authority. Adoption/merge must bring earlier candidate
-units into the new party's enumeration while current-header checks remove
-authority from stale references. The production design still needs a bounded
-representation for inherited candidate unions; the simple fixture does not
-validate this path or its cost.
+it must never widen authority. When a canonical ownership change moves mail,
+the new party also gains an immutable prefix reference to the previous party's
+candidate vector. Snapshot the prefix length at the move: later mail to the
+source is not automatically included. Inherited prefixes are flattened to base
+vectors, deduplicated by vector identity and merged in unit order. Never retain
+a cyclic party-to-party pointer graph or copy every historical unit on a move.
+
+A prefix may contain conversations the move did not transfer; those are only
+candidates and always fail the latest-header permission check. No names,
+metadata, body or examined-candidate counts may be emitted for them. Empty
+progress pages remain permitted by the original contract. Prefix descriptors,
+incarnation keys and bounded merge/decode working space must count in the
+follow-up adoption/many-party measurements. The simple two-party fixture has
+no inherited prefixes and does not validate this path or its cost. A high
+source fanout must have a measured bound or fail the derived view explicitly,
+never silently drop a source or use an unbounded query allocation.
 
 Sparse ledger anchors retain serial, byte offset and the previous hash at most
 4096 records apart. A content seek validates the chain against the next anchor
