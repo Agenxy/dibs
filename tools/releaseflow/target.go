@@ -49,12 +49,14 @@ func resolveTarget(c config) (publicationTarget, error) {
 		if c.negativeControl {
 			return publicationTarget{}, errors.New("discovery negative control is rehearsal-only; NEVER production")
 		}
-		if c.phase == "full-publication" || c.phase == "full-publication-validate" {
-			return publicationTarget{}, errors.New("full-publication requires the closed rehearsal target")
+		if c.phase == "full-publication" || c.phase == "full-publication-validate" ||
+			c.phase == "prepare-rehearsal" {
+			return publicationTarget{}, errors.New("scratch preparation and full-publication " +
+				"require the closed rehearsal target")
 		}
 		return productionTarget(c), nil
 	case "rehearsal":
-		if c.phase != "full-publication" && c.phase != "full-publication-validate" {
+		if c.phase != "full-publication" && c.phase != "full-publication-validate" && c.phase != "prepare-rehearsal" {
 			return publicationTarget{}, errors.New("rehearsal target cannot enter a production phase")
 		}
 		return rehearsalTarget(c)

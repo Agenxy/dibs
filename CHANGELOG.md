@@ -9,6 +9,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Scratch release preparation now leases its default-branch mirror to the exact
+  candidate before pushing the unique rehearsal tag, preserving prior proof
+  tags/releases while preventing a workflow-token proof-tag refusal.
+
 - The tap deploy key is newline-normalized and validated before a cask push.
   A main-scoped read-only diagnostic checks the stored secret's raw and
   normalized parsing before the next release, without exposing key material.

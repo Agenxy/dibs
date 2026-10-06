@@ -180,13 +180,30 @@ to the public evidence has not yet been measured. Final exact-candidate negative
 and positive runs plus production validation are still required; scratch success
 does not claim downstream installation, registry or tap acceptance.
 
-Mirror the exact reviewed candidate commit (without rewriting its SHA) and use
-`rehearsal-v<version>-<full-candidate-sha>`. The workflow and tool tree must be
-identical to the production candidate; a later main commit, including a docs-only
-change, requires a new rehearsal. A separate bootstrap ref can configure the
-scratch repository, but cannot supply a production-eligible receipt. Ordinary
-preflight cannot mint this proof: the scratch publication runs first, avoiding a
-circular preflight prerequisite.
+From the clean, stamped, exact production-main checkout, prepare the scratch
+mirror with the reviewed release tool:
+
+```text
+DIBS_RELEASE_TARGET=rehearsal DIBS_RELEASE_VERSION=<canonical-version> DIBS_RELEASE_SHA=<full-current-main-sha> go run ./tools/releaseflow -phase prepare-rehearsal
+```
+
+It verifies production main and the absent unique target, refuses a scratch
+default branch other than `main`, snapshots every `rehearsal-proof-*` tag and
+release, then moves scratch main to the exact candidate with a lease on the
+observed old SHA BEFORE pushing `rehearsal-v<version>-<full-candidate-sha>`.
+A fast-forward is ordinary; a divergent mirror is explicitly reset and logged
+with old and new SHAs. Any concurrent move or changed proof inventory refuses
+the unique tag. Scratch main is a mirror, not a release record: prior proof tags
+and releases retain their commits and must be unchanged by the move. This
+ordering is necessary because GitHub's workflow token
+cannot create the later evidence tag when the candidate changes a workflow
+file relative to scratch's default branch: `Contents: write` alone receives
+HTTP 403 and the token cannot hold `Workflows: write`. The workflow and tool
+tree remain identical to the production candidate; a later main commit,
+including a docs-only change, requires a new rehearsal. A separate bootstrap
+ref can configure the scratch repository, but cannot supply a
+production-eligible receipt. Ordinary preflight cannot mint this proof: the
+scratch publication runs first, avoiding a circular preflight prerequisite.
 
 The full rehearsal drives the same draft discovery, create, build, keyless sign,
 upload, download/readback and publication code as production. Titles and notes
