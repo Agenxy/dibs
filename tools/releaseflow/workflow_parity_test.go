@@ -118,16 +118,33 @@ func TestReleaseAndRehearsalPinIdenticalToolchains(t *testing.T) {
 	if err := releaseRehearsalParity(release, rehearsal, mise); err != nil {
 		t.Fatal(err)
 	}
-	for _, mutation := range []struct{ from, to string }{
+	mutations := []struct{ from, to string }{
 		{"cosign-release: v3.1.3", "cosign-release: v3.1.2"},
 		{"syft-version: v1.50.0", "syft-version: v1.49.0"},
 		{"version: 2026.7.7", "version: 2026.7.6"},
-		{"jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c", "jdx/mise-action@" + strings.Repeat("1", 40)},
-		{"cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6", "cosign-installer@" + strings.Repeat("1", 40)},
-		{"download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26", "download-syft@" + strings.Repeat("1", 40)},
-		{"checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", "checkout@" + strings.Repeat("1", 40)},
 		{"experimental: true", "experimental: true\n          install_args: goreleaser@2.16.0"},
+	}
+	// Action pins are read from the rehearsal workflow rather than written
+	// here: a copied SHA went stale on the first Dependabot bump and reported
+	// the guard as broken when only the fixture was. The list of actions is
+	// still fixed, so a pin vanishing from the workflow fails instead of
+	// quietly shrinking what this test mutates.
+	pins := map[string]string{}
+	for _, m := range regexp.MustCompile(`uses: ([^@\s]+)@([0-9a-f]{40})`).FindAllStringSubmatch(rehearsal, -1) {
+		pins[m[1]] = m[2]
+	}
+	for _, action := range []string{
+		"jdx/mise-action", "sigstore/cosign-installer", "anchore/sbom-action/download-syft", "actions/checkout",
 	} {
+		sha, ok := pins[action]
+		if !ok {
+			t.Fatalf("rehearsal workflow no longer pins %s by SHA", action)
+		}
+		mutations = append(mutations, struct{ from, to string }{
+			action + "@" + sha, action + "@" + strings.Repeat("1", 40),
+		})
+	}
+	for _, mutation := range mutations {
 		changed := strings.ReplaceAll(rehearsal, mutation.from, mutation.to)
 		if changed == rehearsal || releaseRehearsalParity(release, changed, mise) == nil {
 			t.Fatalf("guard missed setup drift: %s", mutation.from)
