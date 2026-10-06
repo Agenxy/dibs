@@ -85,6 +85,45 @@ func TestReleaseRefusesDifferentNotifierBundleIdentity(t *testing.T) {
 	}
 }
 
+func TestReleasedDaemonAndNotifierHaveDistinctActualIdentities(t *testing.T) {
+	t.Setenv(identityEnv, "")
+	t.Setenv(keychainEnv, "")
+	app := signerBundle(t, "org.agenxy.dibs")
+	daemon := filepath.Join(t.TempDir(), "dibd")
+	data, err := os.ReadFile("/usr/bin/true")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(daemon, data, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{daemon, app} {
+		if err := signOne(path); err != nil {
+			t.Fatal(err)
+		}
+		if out, err := exec.Command("/usr/bin/codesign", "--verify", "--strict", path).CombinedOutput(); err != nil {
+			t.Fatalf("actual signed fixture invalid: %v %s", err, out)
+		}
+	}
+	readID := func(path string) string {
+		out, err := exec.Command("/usr/bin/codesign", "-dv", path).CombinedOutput()
+		if err != nil {
+			t.Fatalf("reading actual identity: %v %s", err, out)
+		}
+		for _, line := range strings.Split(string(out), "\n") {
+			if id, ok := strings.CutPrefix(line, "Identifier="); ok {
+				return id
+			}
+		}
+		t.Fatalf("no actual identity: %s", out)
+		return ""
+	}
+	daemonID, notifierID := readID(daemon), readID(app)
+	if daemonID != "org.agenxy.dibs.daemon" || notifierID != "org.agenxy.dibs" || daemonID == notifierID {
+		t.Fatalf("actual daemon/notifier identities must be distinct and coherent: %q / %q", daemonID, notifierID)
+	}
+}
+
 func signerBundle(t *testing.T, id string) string {
 	t.Helper()
 	app := filepath.Join(t.TempDir(), "Dibs.app")
