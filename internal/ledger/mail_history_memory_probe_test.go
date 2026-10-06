@@ -28,10 +28,10 @@ func TestMailHistoryMemoryDesignProbe(t *testing.T) {
 	if arm == "" {
 		t.Skip("hosted-only isolated design measurement")
 	}
-	dir := os.Getenv("DIBS_HISTORY_PROBE_DIR")
-	if dir == "" {
-		t.Fatal("setup: DIBS_HISTORY_PROBE_DIR is required")
-	}
+	// Each hosted job has a fresh checkout. Use a fixed package-local fixture
+	// directory across its separate processes, never an environment-owned path
+	// passed into production key or ledger readers.
+	const dir = ".history-design-probe"
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
