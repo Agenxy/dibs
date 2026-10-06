@@ -27,7 +27,8 @@ const (
 	workflowPath = ".github/workflows/release.yml"
 	artifactName = "release-preflight"
 	phases       = "validate, preflight, commit-tag, authorize-receipt, authorize, finalize, " +
-		"delivery-rehearsal, full-publication-validate, full-publication, publish, cask or cask-key-diagnose"
+		"delivery-rehearsal, prepare-rehearsal, full-publication-validate, full-publication, " +
+		"publish, cask or cask-key-diagnose"
 )
 
 var (
@@ -133,6 +134,8 @@ func executePhase(ctx context.Context, c config, run runner) error {
 		return validateCandidate(ctx, c, run)
 	case "full-publication-validate", "full-publication":
 		return fullPublication(ctx, c, run)
+	case "prepare-rehearsal":
+		return prepareRehearsalRemote(ctx, c, run)
 	case "authorize", "authorize-receipt":
 		return authorize(ctx, c, run)
 	case "delivery-rehearsal":
