@@ -2,10 +2,13 @@ package ledger
 
 import (
 	"bufio"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -16,6 +19,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/engine"
 )
 
 // Separate hosted processes replay the identical encrypted fixture. The
@@ -48,7 +52,8 @@ func TestMailHistoryProductionProbe(t *testing.T) {
 	if !baselineArm && arm != "production" {
 		t.Fatal("setup: unknown arm", arm)
 	}
-	l, err := OpenReadOnly(path, "history-probe", box)
+	path = copyHistoryProbeLedger(t, path, filepath.Join(dir, arm+".ledger.jsonl"))
+	l, err := Open(path, "history-probe", box)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,24 +64,61 @@ func TestMailHistoryProductionProbe(t *testing.T) {
 	st := core.NewState("history-probe", core.DefaultLimits())
 	started := time.Now()
 	n, err := l.Replay(st)
-	seconds := time.Since(started).Seconds()
+	replaySeconds := time.Since(started).Seconds()
 	if err != nil || n != count || st.Serial != uint64(count) {
 		t.Fatalf("setup: production replay count=%d serial=%d error=%v", n, st.Serial, err)
 	}
 	var representation any
 	if l.mail != nil {
 		representation = l.mail.Measurement()
-		if m := l.mail.Measurement(); m.Records != uint64(count) || m.Failed || !m.Ready {
+		if m := l.mail.Measurement(); m.Records != uint64(count) || m.Failed || m.Started || m.Units != 0 || m.Blocks != 0 {
 			t.Fatal("setup: observer did not visit every committed record")
 		}
 	}
+	liveMessages, liveAgents := len(st.Messages), len(st.Agents)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	eng := engine.New(st, l, nil)
+	joined := make(chan struct{})
+	go func() { eng.Run(ctx); close(joined) }()
+	defer func() { cancel(); <-joined }()
+	if _, _, err := eng.SubscribeInfo(ctx, ""); err != nil {
+		t.Fatal("setup: writer did not reach serving:", err)
+	}
+	bootSeconds := time.Since(started).Seconds()
 	runtime.GC()
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
+	captureHeap := mem.HeapAlloc
+	// Enter the same net/http Accept boundary as dibd. Starting the builder
+	// before this boundary would buy boot timing by measuring the wrong door.
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	if l.mail != nil {
+		srv.Listener = l.mail.ServingListener(ctx, srv.Listener)
+	}
+	servingAt := time.Now()
+	srv.Start()
+	defer srv.Close()
+	res, serveErr := srv.Client().Get(srv.URL)
+	if serveErr != nil {
+		t.Fatal("setup: serving boundary:", serveErr)
+	}
+	_ = res.Body.Close()
+	seconds := bootSeconds + time.Since(servingAt).Seconds()
+	var warmSeconds, p99 float64
+	peak := captureHeap
+	if l.mail != nil {
+		warmSeconds, peak, p99 = measureProductionWarm(t, ctx, eng, l, peak)
+		representation = l.mail.Measurement()
+	}
+	runtime.GC()
+	runtime.ReadMemStats(&mem)
 	receipt := map[string]any{
 		"arm": arm, "case": mode, "records": n, "heap_alloc_bytes": mem.HeapAlloc,
-		"heap_inuse_bytes": mem.HeapInuse, "replay_seconds": seconds, "live_messages": len(st.Messages),
-		"live_agents": len(st.Agents), "representation": representation,
+		"heap_inuse_bytes": mem.HeapInuse, "replay_seconds": seconds, "capture_replay_seconds": replaySeconds,
+		"live_messages": liveMessages, "live_agents": liveAgents, "representation": representation,
+		"capture_heap_bytes": captureHeap, "warming_peak_heap_bytes": peak,
+		"warm_seconds": warmSeconds, "warming_coordination_p99_seconds": p99,
 	}
 	raw, err := json.Marshal(receipt)
 	if err != nil {
@@ -88,9 +130,15 @@ func TestMailHistoryProductionProbe(t *testing.T) {
 	t.Logf("HISTORY_PRODUCTION_MEASUREMENT %s", raw)
 	if arm == "production" {
 		assertProductionHistoryBudget(t, dir, count, mem.HeapAlloc, seconds)
+		baseline := readProductionProbeArm(t, dir, "baseline")
+		if count > 0 && float64(peak)-float64(mem.HeapAlloc) > float64(count)*float64(64<<20)/1_000_000 {
+			t.Error("warming peak exceeds steady heap plus 64 MiB per million records")
+		}
+		t.Logf("HISTORY_WARMING_CAPTURE capture_increment_bytes=%d peak_increment_bytes=%d warm_seconds=%.9f coordination_p99_seconds=%.9f", int64(captureHeap)-int64(baseline.Heap), int64(peak)-int64(baseline.Heap), warmSeconds, p99)
 	}
 	runtime.KeepAlive(st)
 	runtime.KeepAlive(l)
+	runtime.KeepAlive(eng)
 }
 
 func assertProductionHistoryBudget(t *testing.T, dir string, records int, heap uint64, seconds float64) {

@@ -1,6 +1,7 @@
 package mailhistory
 
 import (
+	"encoding/binary"
 	"reflect"
 	"testing"
 	"time"
@@ -54,6 +55,21 @@ func TestDeltaSnapshotsPreserveEveryChangedLeafAndItsReversion(t *testing.T) {
 	got, err := decode(b.data, b.raw, b.count)
 	if err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("changed or reverted metadata lost: %v", err)
+	}
+}
+
+func TestCanonicalComparisonAllocatesNothing(t *testing.T) {
+	u := snapshotUnit{Position: position{17, 11, 1}, Metadata: Metadata{RequestPriority: "urgent"}}
+	previous := u
+	previous.Position.Op = 16
+	previous.Metadata.RequestPriority = "normal"
+	var mask uint64
+	if n := testing.AllocsPerRun(1000, func() { mask = changedFields(&u, &previous) }); n != 0 {
+		t.Fatalf("canonical comparison allocated %v times per unit", n)
+	}
+	raw, err := encodeUnit(nil, u, &previous)
+	if err != nil || binary.LittleEndian.Uint64(raw[1:9]) != mask || mask != 1|1<<32 {
+		t.Fatal("production encoder did not consume the canonical change mask", err)
 	}
 }
 

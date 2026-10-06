@@ -14,7 +14,13 @@ import (
 // normal coordination usable and must fail history queries closed.
 func (i *Index) Observe(rec Record, before Snapshot, st *core.State, op *core.Op, events []core.Event) {
 	i.mu.Lock()
-	defer i.mu.Unlock()
+	defer func() {
+		i.mu.Unlock()
+		select {
+		case i.signal <- struct{}{}:
+		default:
+		}
+	}()
 	if i.failed {
 		return
 	}
@@ -26,6 +32,7 @@ func (i *Index) Observe(rec Record, before Snapshot, st *core.State, op *core.Op
 	}
 	i.records++
 	i.head = rec
+	i.ready = false
 	numbers := i.numbers[:0]
 	for serial, old := range before.Mail {
 		if m := st.Messages[serial]; m == nil || stateMetadata(st, m) != old {
@@ -65,10 +72,6 @@ func (i *Index) observeMessage(
 		meta = stateMetadata(st, m)
 	}
 	from, to := before.key(meta.From, st), before.key(meta.To, st)
-	keys := []partyKey{from}
-	if to != from {
-		keys = append(keys, to)
-	}
 	if existed {
 		i.inheritMovedParty(old.From, meta.From, before, st)
 		i.inheritMovedParty(old.To, meta.To, before, st)
@@ -78,10 +81,11 @@ func (i *Index) observeMessage(
 		for _, ev := range events {
 			n, _ := ev.Data["msg_serial"].(uint64)
 			if n == serial && strings.HasPrefix(ev.Type, "message.") {
-				i.add(snapshotUnit{
+				i.capture(snapshotUnit{
 					Position: position{rec.Serial, serial, ordinal}, At: rec.At,
 					Kind: ev.Type, Metadata: old, Author: author,
-				}, keys)
+					FromCreated: from.Created, ToCreated: to.Created,
+				})
 				ordinal++
 			}
 		}
@@ -92,19 +96,19 @@ func (i *Index) observeMessage(
 	}
 	content := m != nil && ((!existed && op.Kind == core.OpSendMessage) ||
 		(serial == op.MsgSerial && (op.Kind == core.OpRespond || op.Kind == core.OpWithdrawMessage)))
-	i.add(snapshotUnit{
+	i.capture(snapshotUnit{
 		Position: position{rec.Serial, serial, ordinal}, At: rec.At,
 		Kind: kind, Metadata: meta, Author: author, Content: content, AfterKnown: m != nil, Evicted: m == nil,
-	}, keys)
+		FromCreated: from.Created, ToCreated: to.Created,
+	})
 }
 
 func (i *Index) inheritMovedParty(old, current string, before Snapshot, st *core.State) {
 	if old == "" || old == current {
 		return
 	}
-	destination := i.party(before.key(current, st))
-	source := i.parties[before.key(old, st)]
-	if !destination.inherit(source) {
-		i.failed = true
-	}
+	i.ensureCapture()
+	i.active.moves = append(i.active.moves, rawMove{
+		before: i.active.count, from: before.key(old, st), to: before.key(current, st),
+	})
 }

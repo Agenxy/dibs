@@ -543,6 +543,9 @@ func run() error {
 	up = append(up, "hint", "run `dibs web` for a board link, `dibs mcp-config` for the agent config")
 	slog.Info("dibd up", up...)
 	warnIfTheFirewallWillSwallowThis(listenAddr)
+	if mail := led.MailHistory(); mail != nil {
+		ln = mail.ServingListener(ctx, ln)
+	}
 	serve := func() error { return srv.Serve(ln) }
 	if len(tlsPair) > 0 {
 		// The pair already loaded above, so nothing is read from disk here and

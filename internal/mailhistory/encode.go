@@ -8,8 +8,8 @@ import (
 )
 
 // This format is a disposable derived view, never a ledger field or cursor.
-// Positional primitives avoid allocating JSON and formatting seven timestamps
-// on the canonical writer for every unit. Every block is independently decoded.
+// Serialization happens on the background builder, never canonical replay.
+// Every block is independently decoded.
 type encoder struct {
 	buf []byte
 	err error
@@ -66,97 +66,24 @@ func (e *encoder) timestamp(t time.Time) {
 	}
 }
 
-type deltaEncoder struct {
-	encoder
-	mask uint32
-	bit  uint
-	full bool
-}
-
-func (e *deltaEncoder) changed(changed bool) bool {
-	write := e.full || changed
-	if write {
-		e.mask |= uint32(1) << e.bit
-	}
-	e.bit++
-	return write
-}
-
-func (e *deltaEncoder) number(n, previous uint64) {
-	if e.changed(n != previous) {
-		e.encoder.number(n)
-	}
-}
-
-func (e *deltaEncoder) integer(n, previous int) {
-	if e.changed(n != previous) {
-		e.encoder.integer(n)
-	}
-}
-
-func (e *deltaEncoder) text(s, previous string) {
-	if e.changed(s != previous) {
-		e.encoder.text(s)
-	}
-}
-
-func (e *deltaEncoder) timestamp(t, previous time.Time) {
-	if e.changed(t != previous) {
-		e.encoder.timestamp(t)
-	}
-}
-
 func encodeUnit(buf []byte, u snapshotUnit, previous *snapshotUnit) ([]byte, error) {
-	e := deltaEncoder{encoder: encoder{buf: append(buf[:0], 2, 0, 0, 0, 0)}, full: previous == nil}
-	if previous == nil {
-		previous = &snapshotUnit{}
-	}
-	m, p := &u.Metadata, &previous.Metadata
-	e.number(u.Position.Op, previous.Position.Op)
-	e.number(u.Position.Msg, previous.Position.Msg)
-	e.number(uint64(u.Position.Ord), uint64(previous.Position.Ord))
-	e.timestamp(u.At, previous.At)
-	e.text(u.Kind, previous.Kind)
-	e.text(m.From, p.From)
-	e.text(m.To, p.To)
-	e.text(m.Type, p.Type)
-	e.text(m.State, p.State)
-	e.text(m.AdoptedFrom, p.AdoptedFrom)
-	e.number(snapshotFlags(u), snapshotFlags(*previous))
-	for _, pair := range [...][2]uint64{
-		{m.AdoptedAt, p.AdoptedAt},
-		{m.Delivered, p.Delivered},
-		{m.Responded, p.Responded},
-		{m.Acked, p.Acked},
-		{m.OutcomeRead, p.OutcomeRead},
-		{m.ReviewRead, p.ReviewRead},
-		{m.ReviewCutoff, p.ReviewCutoff},
-		{m.Superseded, p.Superseded},
-		{m.QueueChanged, p.QueueChanged},
-		{u.Author.Created, previous.Author.Created},
-	} {
-		e.number(pair[0], pair[1])
-	}
-	for _, pair := range [...][2]time.Time{
-		{m.SentAt, p.SentAt},
-		{m.DeliveredAt, p.DeliveredAt},
-		{m.TerminalAt, p.TerminalAt},
-		{m.RetainUntil, p.RetainUntil},
-		{m.Deadline, p.Deadline},
-	} {
-		e.timestamp(pair[0], pair[1])
-	}
-	e.text(m.QueuePriority, p.QueuePriority)
-	e.integer(m.QueueRank, p.QueueRank)
-	e.integer(m.Milestones, p.Milestones)
-	e.integer(m.Progress, p.Progress)
-	e.text(u.Author.ID, previous.Author.ID)
-	e.text(u.Author.Host, previous.Author.Host)
-	if e.err == nil && e.bit != 32 {
-		e.err = errors.New("invalid history field count")
-	}
-	if e.err == nil {
-		binary.LittleEndian.PutUint32(e.buf[1:5], e.mask)
+	mask := changedFields(&u, previous)
+	e := encoder{buf: append(buf[:0], 3, 0, 0, 0, 0, 0, 0, 0, 0)}
+	binary.LittleEndian.PutUint64(e.buf[1:9], mask)
+	for bit, value := range canonicalFields(&u) {
+		if mask&(uint64(1)<<bit) == 0 {
+			continue
+		}
+		switch fieldKinds[bit] {
+		case wideField, narrowField:
+			e.number(value.number)
+		case signedField:
+			e.integer(int(value.number)) // #nosec G115 -- native signed bit pattern
+		case textField:
+			e.text(value.text)
+		case timeField:
+			e.timestamp(value.at)
+		}
 	}
 	return e.buf, e.err
 }
