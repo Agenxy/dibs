@@ -1,0 +1,27 @@
+name: old history boot-deferral guard
+
+on:
+  pull_request:
+    paths:
+      - internal/ledger/mail_history_boot_deferral_test.go
+      - .github/workflows/history-boot-deferral-old-proof.yml
+
+permissions:
+  contents: read
+
+jobs:
+  old-boot-deferral:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+        with:
+          version: 2026.7.7
+          experimental: true
+      - name: Unchanged production-door guard must reject boot snapshot capture
+        run: mise exec -- go test -race -count=1 -timeout=2m -run '^TestHistoryBootReplayDoesNoPerRecordProjection$' -v ./internal/ledger
