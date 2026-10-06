@@ -2,6 +2,51 @@
 
 Request 45633, 2026-10-05. Proposal; no installed policy has changed.
 
+## Accepted measurement
+
+Architect 46109 accepted Standard and stopped further experiments. The hosted
+receipt is run [37392623433](https://github.com/Agenxy/dibs/actions/runs/37392623433)
+at proof head 052d23c, whose production source is 7d32560. This is a partial ABBA
+comparison, not a completed three-round result. On rootless uid 501, macOS
+26.6.2 (25G83), arm64, three logical CPUs and six CPU workers:
+
+| Loaded arm | Send attempts | Unknown outcomes | Send p95 | Send maximum | Respond p95 |
+|---|---:|---:|---:|---:|---:|
+| Background | 15 | 10 | 14,797.87 ms | 14,797.87 ms | 7,641.15 ms |
+| Standard 1 | 50 | 0 | 11.68 ms | 20.61 ms | 13.10 ms |
+| Standard 2 | 50 | 0 | 14.79 ms | 23.77 ms | 9.88 ms |
+
+The Background arm hit its 120-second wall budget (129.12 seconds including
+the final calls); the Standard arms took 6.86 and 7.38 seconds. All requests
+used the same real daemon binary and authenticated stateless MCP. Unknown
+initial sends were recorded without retrying or fabricating a response serial.
+The next Background launch never reached running within the fixture's
+20-second startup bound, preventing the remaining arms. These observations
+support removing the Background restriction; they neither isolate all causes
+of the operator's earlier four-minute gap nor establish a universal SLA.
+
+Competitor work was 954,776 units/s in Background versus 782,604 and 889,381
+units/s in Standard (about 7–18% lower). Different arm lengths, timer pacing and
+a single hosted machine limit that cost comparison. This is not an energy
+measurement. Daemon CPU time was 0.09 seconds in Background and 0.15/0.12
+seconds in Standard; those totals also cover different sample counts.
+
+Rootless capability probes showed launchd honoring Background, Standard,
+Adaptive and Interactive and a requested Nice=-5. The native fixture's default
+thread QoS values were respectively 9, 17, 21 and 21; a separate pthread
+user-initiated request returned success and self QoS 25 in all three tested
+Background/Standard/Interactive processes. This measures that native thread's
+requested class, not the effective scheduling of every Go thread or the
+daemon's migrating writer goroutine. Standard alone suffices for this fix;
+neither negative nice nor a runtime thread-QoS adapter is shipped.
+
+The product Go source has not changed since this measurement. Later fixture
+work that prewarms services was canceled at the architect's direction; its
+unrun extensions are not evidence for these figures. All nine new regression
+leaf cases were intended RED on a3fa018, with current guards and the unchanged
+operator-policy/other-board controls GREEN in this hosted receipt. Full
+three-platform CI must pass on the final source commit before merging.
+
 ## Observation and boundary
 
 The operator reported load average 29, a 4m22s daemon log gap, a two-second
