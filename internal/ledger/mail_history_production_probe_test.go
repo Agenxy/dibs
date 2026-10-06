@@ -27,7 +27,7 @@ func TestMailHistoryProductionProbe(t *testing.T) {
 		t.Skip("hosted-only paired memory and replay wall-time measurement")
 	}
 	count, err := strconv.Atoi(os.Getenv("DIBS_HISTORY_PROBE_RECORDS"))
-	if err != nil || count < 100 {
+	if err != nil || count < 0 || (count > 0 && count < 100) {
 		t.Fatal("setup: invalid record count")
 	}
 	mode := os.Getenv("DIBS_HISTORY_PROBE_CASE")
@@ -44,7 +44,8 @@ func TestMailHistoryProductionProbe(t *testing.T) {
 		generateProductionHistory(t, path, box, count, mode)
 		return
 	}
-	if arm != "baseline" && arm != "production" {
+	baselineArm := arm == "baseline" || arm == "baseline-repeat-1" || arm == "baseline-repeat-2"
+	if !baselineArm && arm != "production" {
 		t.Fatal("setup: unknown arm", arm)
 	}
 	l, err := OpenReadOnly(path, "history-probe", box)
@@ -52,7 +53,7 @@ func TestMailHistoryProductionProbe(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = l.Close() }()
-	if arm == "baseline" {
+	if baselineArm {
 		l.mail = nil
 	}
 	st := core.NewState("history-probe", core.DefaultLimits())
@@ -94,24 +95,40 @@ func TestMailHistoryProductionProbe(t *testing.T) {
 
 func assertProductionHistoryBudget(t *testing.T, dir string, records int, heap uint64, seconds float64) {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join(dir, "baseline.json"))
-	var baseline struct {
-		Heap    uint64  `json:"heap_alloc_bytes"`
-		Seconds float64 `json:"replay_seconds"`
-	}
-	if err != nil || json.Unmarshal(raw, &baseline) != nil || baseline.Seconds <= 0 {
-		t.Fatal("setup: paired baseline receipt unavailable:", err)
-	}
+	baseline := readProductionProbeArm(t, dir, "baseline")
+	first := readProductionProbeArm(t, dir, "baseline-repeat-1")
+	second := readProductionProbeArm(t, dir, "baseline-repeat-2")
+	spread := max(baseline.Seconds, first.Seconds, second.Seconds) - min(baseline.Seconds, first.Seconds, second.Seconds)
+	t.Logf("HISTORY_BASELINE_NOISE original_seconds=%.9f repeat1_seconds=%.9f repeat2_seconds=%.9f spread_seconds=%.9f spread_percent=%.3f", baseline.Seconds, first.Seconds, second.Seconds, spread, 100*spread/baseline.Seconds)
 	increment := int64(heap) - int64(baseline.Heap)
+	if records == 0 {
+		t.Logf("HISTORY_PRODUCTION_EMPTY incremental_bytes=%d replay_delta_seconds=%.9f; lazy codec buffers have not been allocated", increment, seconds-baseline.Seconds)
+		return
+	}
 	perRecord := float64(increment) / float64(records)
 	overhead := seconds/baseline.Seconds - 1
-	t.Logf("HISTORY_PRODUCTION_BUDGET increment_bytes=%d bytes_per_record=%.6f replay_overhead_percent=%.3f", increment, perRecord, 100*overhead)
+	t.Logf("HISTORY_PRODUCTION_BUDGET increment_bytes=%d bytes_per_record=%.6f replay_delta_seconds=%.9f replay_overhead_percent=%.3f", increment, perRecord, seconds-baseline.Seconds, 100*overhead)
 	if perRecord > 48 || float64(increment) > float64(records)*float64(64<<20)/1_000_000 {
 		t.Error("production representation exceeds accepted retained-memory ceiling")
 	}
-	if overhead > 0.15 {
+	if records >= 1_000_000 && overhead > 0.15 {
 		t.Error("single-fold production replay exceeds the 15 percent overhead target")
 	}
+}
+
+type productionProbeArm struct {
+	Heap    uint64  `json:"heap_alloc_bytes"`
+	Seconds float64 `json:"replay_seconds"`
+}
+
+func readProductionProbeArm(t *testing.T, dir, arm string) productionProbeArm {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(dir, arm+".json"))
+	var result productionProbeArm
+	if err != nil || json.Unmarshal(raw, &result) != nil || result.Seconds <= 0 {
+		t.Fatal("setup: paired baseline receipt unavailable:", arm, err)
+	}
+	return result
 }
 
 type productionFixture struct {

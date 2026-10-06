@@ -60,8 +60,20 @@ wall time and forced-GC heap, and retain the actual complete representation.
 Simple cases cover 100k, 1M and 2M records; 1M cases also cover 50 parties, rich
 metadata and repeated adoption with merges. The probe checks every setup step,
 prints raw values, and fails on more than 48 incremental B/record, more than
-64 MiB per 1M records, or more than 15 percent replay overhead. A failure is
+64 MiB per 1M records, or more than 15 percent replay overhead at 1M/2M. At
+100k the absolute time delta and percentage are reported together, because
+fixed setup costs dominate; architect 55242 requires two same-runner baseline
+repeats to measure their spread first. All three baseline times and their
+spread are reported. The acceptance comparison keeps the first baseline;
+no favourable control is selected to make the overhead smaller. A failure is
 an unfinished implementation, never permission to relax a bound.
+
+Architect 55350 also requires the actual empty-ledger increment and growth
+slope. A zero-record case now enters the same Replay door. Its codec is lazy,
+so zero-record heap does not include the compressor and raw tail allocated
+after the first mail unit; that distinction must accompany the number. The
+100k memory ceiling stays in force until a measured fixed ceiling and slope
+are explicitly reviewed; it has not been replaced with a fitted estimate.
 
 Still required: bounded stateless query and cursor, current creation/adoption
 authority, chain-validated content seeks, no-consumption authObserve, real MCP
