@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.0.13] - 2026-10-05
+
 ### Fixed
 
 - The tap deploy key is newline-normalized and validated before a cask push.
