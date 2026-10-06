@@ -5,6 +5,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- The tap deploy key is newline-normalized and validated before a cask push.
+  A main-scoped read-only diagnostic checks the stored secret's raw and
+  normalized parsing before the next release, without exposing key material.
+
 ## [0.0.12] - 2026-10-05
 
 ### Added

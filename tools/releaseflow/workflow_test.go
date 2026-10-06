@@ -27,6 +27,36 @@ func TestReleaseTriggerAndGlobalConcurrencyBoundary(t *testing.T) {
 	}
 }
 
+func TestCaskKeyDiagnosisIsReadOnlyAndMainScoped(t *testing.T) {
+	b, err := os.ReadFile("../../.github/workflows/release.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(b)
+	start := strings.Index(s, "\n  cask-key-diagnose:\n")
+	end := strings.Index(s[start+1:], "\n  delivery-rehearsal:\n")
+	if start < 0 || end < 0 {
+		t.Fatal("cask-key diagnosis job boundary missing")
+	}
+	job := s[start : start+1+end]
+	for _, required := range []string{
+		"if: inputs.mode == 'cask-key-diagnose' && github.ref == 'refs/heads/main'",
+		"contents: read", "actions: read", "persist-credentials: false",
+		"-phase cask-key-diagnose", "secrets.HOMEBREW_TAP_DEPLOY_KEY",
+	} {
+		if !strings.Contains(job, required) {
+			t.Fatalf("cask-key diagnosis lacks %s", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"contents: write", "id-token: write", "-phase publish", "-phase commit-tag", "-phase cask\n", "git push",
+	} {
+		if strings.Contains(job, forbidden) {
+			t.Fatalf("cask-key diagnosis widens authority with %s", forbidden)
+		}
+	}
+}
+
 func TestRehearsalWorkflowHasClosedInputsAndNoProductionSecretsOrDownstreamWrites(t *testing.T) {
 	b, err := os.ReadFile("../../" + publicationWorkflow)
 	if err != nil {

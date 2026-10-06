@@ -42,6 +42,21 @@ preflight run and retry publication without rebuilding a public release:
 gh workflow run release.yml --ref v<canonical-version> -f mode=publish-only -f version=<canonical-version> -f sha=<proven-sha> -f preflight_run=<successful-run-id> -f full_publication_run=<authenticated-rehearsal-run>
 ```
 
+Before the next release, a main-scoped read-only diagnostic can measure whether
+the tap deploy key stored in Actions parses as-is and after newline normalization:
+
+```text
+gh workflow run release.yml --ref main -f mode=cask-key-diagnose -f version=<current-version> -f sha=<current-main-sha>
+```
+
+It reports only two booleans, not key material or the derived public key, and
+does not sign, tag, publish or push. A missing or still-invalid normalized key
+is a credential failure, not a reason to use a personal credential. The normal
+tagged cask job validates the normalized key before its first tap mutation.
+The tap branch still requires a person to merge its PR. v0.0.12 was published
+without a cask branch; do not create one, because its notifier has an installed
+macOS identity defect. Homebrew users should receive the fixed next release.
+
 Receipts are retained for 90 days. An expired or missing receipt is not silently
 trusted: repeat a successful preflight on the same candidate (which must still
 be main's tip), or investigate explicitly. No fallback accepts an unsigned
