@@ -26,6 +26,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   including an already-current install, and explain lost or unknown permission.
   Fetched macOS bundles are refreshed in LaunchServices. Notification failure
   advisories no longer assert that the person's configuration caused a failure.
+  The daemon now signs as `org.agenxy.dibs.daemon`, separating its identity from
+  the notifier under the same certificate. This is a one-time privacy grant
+  boundary for release and source installs: review Desktop/Documents access in
+  System Settings > Privacy & Security. Source installs retain the signature
+  guard's refusal and explain the review before rerunning `task install`.
+  Hubs such as MacSolis may need one firewall re-allow; `dibs doctor` and daemon
+  startup print the corrective command. The operator runs it explicitly.
 
 ## [0.0.12] - 2026-10-05
 

@@ -68,7 +68,24 @@ a disagreement; after signing, compare the actual code identifier to that bundle
 ID and refuse a mismatch before packaging. Enter the regression through the
 release signer and inspect an actually signed temporary bundle on hosted macOS.
 The guard must fail on v0.0.12's signer, rather than comparing two constants.
-Keep CLI, daemon and presence identifiers unchanged.
+Keep CLI and presence identifiers unchanged. The daemon moves to
+`org.agenxy.dibs.daemon`, so its requirement cannot equal the notifier's under
+the same signing certificate. Inspect both actual signed artifacts in the native
+guard, rather than comparing the identifier map with itself.
+
+This daemon change is a deliberate one-time grant boundary for both release and
+source installs. Review its Desktop/Documents permission under System Settings >
+Privacy & Security. The source install's `signstable` guard still refuses the
+changed requirement and records the new stamp; its transition hint explains the
+permission review before rerunning `task install`. A simultaneous certificate
+change remains the ordinary identity-fault refusal, not this narrow migration.
+Hubs such as MacSolis may need one firewall re-allow: `internal/appfirewall`
+already detects and prints the corrective command through `dibs doctor` and
+daemon startup. The operator runs that printed command; the upgrade does not
+change the firewall. MacMarine's firewall was disabled during measurement, so
+that local observation does not prove a hub's allowance survived. Published
+v0.0.7/v0.0.9 daemons were ad-hoc; v0.0.12 and historical source installs used
+the stable daemon identifier `org.agenxy.dibs`.
 
 After a successful upgrade or fetched-payload install, read the installed helper's
 existing permission-free settings mode and report lost notification authorization

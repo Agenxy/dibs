@@ -20,11 +20,16 @@ func reportUpgradeNotifications() {
 	}
 	ok, why, settings := notify.ReachWithSettings()
 	if settings == nil || settings.AuthorizationStatus == "unknown" {
-		fmt.Println("warning: notification authorization is unknown after upgrade. Run `dibs doctor` to inspect the installed notifier; posting and daemon version equality do not prove permission.")
+		fmt.Println("warning: notification authorization is unknown after upgrade. " +
+			"Run `dibs doctor` to inspect the installed notifier; " +
+			"posting and daemon version equality do not prove permission.")
 		return
 	}
 	if !ok {
-		fmt.Printf("warning: notification authorization after upgrade: %s. %s An install can change the helper's signing identity and lose a prior grant; this does not mean you denied a prompt. Run `dibs doctor` before relying on human approval notifications.\n", settings.AuthorizationStatus, why)
+		fmt.Printf("warning: notification authorization after upgrade: %s. %s "+
+			"An install can change the helper's signing identity and lose a prior grant; "+
+			"this does not mean you denied a prompt. Run `dibs doctor` "+
+			"before relying on human approval notifications.\n", settings.AuthorizationStatus, why)
 		return
 	}
 	if hint := settings.Hints(true); hint != "" {
@@ -45,10 +50,12 @@ func registerInstalledNotifier(into string) error {
 		}
 		return fmt.Errorf("installed notifier %s: %w", app, err)
 	}
-	const registrar = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+	const registrar = "/System/Library/Frameworks/CoreServices.framework/" +
+		"Frameworks/LaunchServices.framework/Support/lsregister"
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, registrar, "-f", app).CombinedOutput() // #nosec G204 -- fixed registrar and verified installed bundle, no shell
+	// #nosec G204 -- fixed registrar and verified installed bundle, no shell
+	out, err := exec.CommandContext(ctx, registrar, "-f", app).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("registering %s: %w: %s", app, err, out)
 	}

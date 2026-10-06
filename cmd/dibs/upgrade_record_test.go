@@ -215,18 +215,20 @@ func TestCLIUpgradeRecordProcess(t *testing.T) {
 	if os.Getenv("DIBS_TEST_UPGRADE_CURRENT") == "1" {
 		build.Version = "0.0.9"
 	}
+	releaseRegistry := func() {}
 	if os.Getenv("DIBS_TEST_UPGRADE_BARE") == "1" {
 		release, err := paths.Claim(paths.Daemon{PID: os.Getpid(), Addr: "127.0.0.1:49998", Dir: os.Getenv("DIBS_DIR"), Scheme: "http"}, true)
 		if err != nil {
 			t.Fatal("bare fixture registry setup:", err)
 		}
-		defer release()
+		releaseRegistry = release
 	}
 	http.DefaultTransport = upgradeRecordTransport{}
 	for i, arg := range os.Args {
 		if arg == "--" {
 			os.Args = append([]string{"dibs"}, os.Args[i+1:]...)
 			main()
+			releaseRegistry()
 			os.Exit(0)
 		}
 	}
