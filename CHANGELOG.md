@@ -28,8 +28,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   advisories no longer assert that the person's configuration caused a failure.
   The daemon now signs as `org.agenxy.dibs.daemon`, separating its identity from
   the notifier under the same certificate. This is a one-time privacy grant
-  boundary for release and source installs: review Desktop/Documents access in
-  System Settings > Privacy & Security. Source installs retain the signature
+  boundary for release and source installs: after upgrading, re-allow dibd's
+  Desktop/Documents access in System Settings > Privacy & Security. Background
+  access can fail without a prompt and stop overlap indexing of those repos.
+  Run `dibs doctor`: it names trees the daemon cannot read; that is a signal to
+  review permissions, not proof of a TCC refusal. Source installs retain the signature
   guard's refusal and explain the review before rerunning `task install`.
   Hubs such as MacSolis may need one firewall re-allow; `dibs doctor` and daemon
   startup print the corrective command. The operator runs it explicitly.

@@ -74,8 +74,14 @@ the same signing certificate. Inspect both actual signed artifacts in the native
 guard, rather than comparing the identifier map with itself.
 
 This daemon change is a deliberate one-time grant boundary for both release and
-source installs. Review its Desktop/Documents permission under System Settings >
-Privacy & Security. The source install's `signstable` guard still refuses the
+source installs. After upgrading, re-allow dibd's Desktop/Documents permission
+under System Settings > Privacy & Security. A background daemon can lose access
+without a prompt, leaving overlap indexing unable to read repos under ~/Desktop.
+`dibs doctor` already names the daemon's unreadable trees, but its status view
+does not retain a per-tree errno and cannot prove TCC caused the refusal. A
+stat/open from the CLI would measure a different code identity's grant, so no
+such probe is added or called proof of daemon access here.
+The source install's `signstable` guard still refuses the
 changed requirement and records the new stamp; its transition hint explains the
 permission review before rerunning `task install`. A simultaneous certificate
 change remains the ordinary identity-fault refusal, not this narrow migration.
