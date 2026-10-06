@@ -18,10 +18,32 @@ deduplicate by identity and freeze their lengths. A maximum of 256 sources
 fails the derived view explicitly instead of dropping inherited candidates.
 Latest shared core authorization will decide access; a prefix grants nothing.
 
-Production references are uint64 to avoid the prototype's uint32 overflow.
-The compressor is reused with BestSpeed, and both its retained workspace and
-all vector allocation slack count. These choices have not yet been measured;
-the prototype's earlier 30.8 B/record is not a result for this implementation.
+Every production reference retains uint64 range. Chunks store low words and
+allocate an upper-word plane only when needed; a behavioural guard crosses
+both chunk boundaries and 32/64-bit values, then clears an upper word. The
+compressor is reused with BestSpeed, and both its retained workspace and all
+vector allocation slack count. The bounded derived format encodes primitive
+values directly, preserving all metadata fields and timestamps, instead of
+allocating and formatting JSON on the canonical writer. Only current mail
+parties and the op's actor need their pre-fold identity captured. There is no
+change to the ledger format and no second Apply.
+
+The first actual production representation (b952d51) failed its bounds. Paired
+hosted run 37531622245 measured these incremental retained-heap and replay
+wall-time results; these are failures, not an accepted representation:
+
+| Workload | Records | Bytes/record | Replay overhead |
+|---|---:|---:|---:|
+| Simple | 100k | 64.420640 | 72.757% |
+| Simple | 1M | 51.788560 | 76.140% |
+| Simple | 2M | 52.840072 | 72.286% |
+| 50 parties | 1M | 55.669336 | 87.580% |
+| Rich metadata | 1M | 54.352936 | 73.123% |
+
+The adoption/merge fixture stopped on a no-op sweep before measurement and
+now checks the target's status before recording its death. The new encoding,
+reference planes and narrower identity capture must be measured afresh. The
+prototype's earlier 30.8 B/record is not a result for this implementation.
 
 The hosted paired probe generates one encrypted ledger per case. Separate
 baseline and production processes enter the real Replay once, measure replay

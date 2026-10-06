@@ -3,7 +3,6 @@ package mailhistory
 import (
 	"bytes"
 	"compress/flate"
-	"encoding/json"
 	"errors"
 	"io"
 	"sort"
@@ -42,29 +41,28 @@ type block struct {
 // The raw live tail has a hard byte bound. No decoded unit or content is
 // retained after sealing a block. The compressor is reused and charged.
 type codec struct {
-	blocks []block
-	tail   []byte
-	count  uint64
-	units  uint64
-	lastOp uint64
-	writer *flate.Writer
+	blocks  []block
+	tail    []byte
+	scratch []byte
+	count   uint64
+	units   uint64
+	lastOp  uint64
+	writer  *flate.Writer
 }
 
 func (c *codec) add(u snapshotUnit) error {
-	raw, err := json.Marshal(u)
-	if err != nil || len(raw)+2 > blockBytes {
+	raw, err := encodeUnit(c.scratch, u)
+	c.scratch = raw[:0]
+	if err != nil || len(raw) > blockBytes {
 		return errors.New("history snapshot exceeds its bounded block")
 	}
-	if c.count == blockUnits || len(c.tail)+len(raw)+2 > blockBytes {
+	if c.count == blockUnits || len(c.tail)+len(raw) > blockBytes {
 		if err := c.flush(); err != nil {
 			return err
 		}
 	}
 	if c.tail == nil {
 		c.tail = make([]byte, 0, blockBytes)
-	}
-	if c.count > 0 {
-		c.tail = append(c.tail, ',')
 	}
 	c.tail = append(c.tail, raw...)
 	c.count++
@@ -107,18 +105,6 @@ func decode(data []byte, rawBytes int, count uint64) ([]snapshotUnit, error) {
 		return nil, errors.New("invalid bounded history block")
 	}
 	return decodeRaw(raw, count)
-}
-
-func decodeRaw(raw []byte, count uint64) ([]snapshotUnit, error) {
-	array := make([]byte, 0, len(raw)+2)
-	array = append(array, '[')
-	array = append(array, raw...)
-	array = append(array, ']')
-	var units []snapshotUnit
-	if err := json.Unmarshal(array, &units); err != nil || uint64(len(units)) != count {
-		return nil, errors.New("invalid history snapshot count")
-	}
-	return units, nil
 }
 
 // Called under the index read lock. Page queries will copy bounded immutable

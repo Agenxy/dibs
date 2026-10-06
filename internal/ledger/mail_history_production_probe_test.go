@@ -212,7 +212,9 @@ func (p *productionFixture) cycle(ids []string, cycle int, mode string) {
 	}
 	serial := result["msg_serial"].(uint64)
 	if mode == "adopt-merge" && p.state.Serial+3 <= p.limit {
-		p.write(&core.Op{Kind: core.OpSweep, DeadAgents: []string{to}, V7Semantics: true})
+		if p.state.Agents[to].Status == core.StatusActive || p.state.Agents[to].Status == core.StatusStale {
+			p.write(&core.Op{Kind: core.OpSweep, DeadAgents: []string{to}, V7Semantics: true})
+		}
 		heir := ids[(cycle+2)%len(ids)]
 		p.write(&core.Op{Kind: core.OpAdoptAgent, Token: heir, To: to, AdoptAuthorised: true, V7Semantics: true})
 		to = heir
