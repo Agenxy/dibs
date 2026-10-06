@@ -64,6 +64,7 @@ jobs:
         run: mise exec -- go test -count=1 -timeout=20m -cpuprofile=/tmp/dibs-history-production.cpu -run '^TestMailHistoryProductionProbe$' -v ./internal/ledger
       - name: Show CPU costs without replacing the unprofiled acceptance measurement
         if: ${{ always() && steps.profile.outcome != 'skipped' && steps.profile.outcome != '' }}
-        run: |
-          mise exec -- go tool pprof -top -nodecount=35 /tmp/dibs-history-production.cpu
-          mise exec -- go tool pprof -top -cum -focus=mailhistory -nodecount=25 /tmp/dibs-history-production.cpu
+        run: mise exec -- go tool pprof -top -nodecount=35 /tmp/dibs-history-production.cpu
+      - name: Show cumulative history CPU costs
+        if: ${{ always() && steps.profile.outcome != 'skipped' && steps.profile.outcome != '' }}
+        run: mise exec -- go tool pprof -top -cum -focus=mailhistory -nodecount=25 /tmp/dibs-history-production.cpu
