@@ -77,7 +77,7 @@ This daemon change is a deliberate one-time grant boundary for both release and
 source installs. After upgrading, re-allow dibd's Desktop/Documents permission
 under System Settings > Privacy & Security. A background daemon can lose access
 without a prompt, leaving overlap indexing unable to read repos under ~/Desktop.
-`dibs doctor` already names the daemon's unreadable trees, but its status view
+`dibs doctor` now names the daemon's unreadable trees, but its status view
 does not retain a per-tree errno and cannot prove TCC caused the refusal. A
 stat/open from the CLI would measure a different code identity's grant, so no
 such probe is added or called proof of daemon access here.
