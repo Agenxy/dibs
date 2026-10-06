@@ -14,7 +14,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Dibs records a coalesced, metadata-only contact alert for the coordinator
   and person to reopen the recipient's existing harness. It does not start or
   relocate a session. A reported OS posting, not an attempted notification,
-  settles the alert's posting status.
+  settles the alert's posting status. Once a `contact_*` operation is ledgered,
+  an older `dibd` refuses replay because the operation kind is unknown;
+  downgrading below this release is not supported.
 
 ### Fixed
 
