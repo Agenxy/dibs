@@ -15,6 +15,12 @@ type queueWakeRecord struct {
 	observation   wakeexec.QueueObservation
 }
 
+func (e *Engine) decorateQueueWake(row map[string]any, agent *core.Agent, now time.Time) {
+	if view := e.queueWakeView(agent, now); view != nil {
+		row["queue_wake"] = view
+	}
+}
+
 // Callback from the actual command route, off the writer. Only plan values
 // cross this boundary. The view checks the current incarnation and session.
 func (e *Engine) noteQueueObservation(plan wakePlan, agent string, observation wakeexec.QueueObservation) {
