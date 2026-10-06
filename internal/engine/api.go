@@ -823,6 +823,7 @@ func (e *Engine) decoratedBoard() core.Result {
 		b["configured_name_addresses"] = names
 	}
 	e.labelBoardHosts(b)
+	e.decorateBoardQueueWakes(b, time.Now())
 	// The identity this daemon stamps its own machine's agents with, beside
 	// the ledger's node: doctor compares it with what Supgang says the
 	// machine is now, and a daemon started before the machine joined a hive
@@ -848,7 +849,6 @@ func (e *Engine) decoratedBoard() core.Result {
 		if w := e.wakeStatusOf(id); w != "" {
 			lm["wake"] = w
 		}
-		e.decorateQueueWake(lm, l, time.Now())
 		// What the agent is DOING, from what it declared and what the board has
 		// seen, beside status, which is about its process. See workStateOf.
 		lm["work"] = e.workStateOf(l)

@@ -87,17 +87,17 @@ func queueWakeObservationCase(t *testing.T, binary, mode string) {
 	// Confirm the real subprocess door ran before checking a new field. On old
 	// code the setup remains green, and only the missing visibility is RED.
 	awaitObservationQueueCommand(t, home)
+	awaitQueueAppContact(t, contacts)
 	wantAdmission, wantPending := "accepted", "unknown"
 	if mode == "pending-aged" || mode == "legacy-age" {
 		wantAdmission, wantPending = "retained", "pending"
 	}
-	view := awaitQueueWakeView(t, srv, token, wantAdmission, wantPending)
-	awaitQueueAppContact(t, contacts)
+	view := assertQueueWakeView(t, srv, token, wantAdmission, wantPending)
 	if mode == "probe-unknown" {
 		t.Setenv("DIBS_QUEUE_PROBE_FAIL", "1")
 		send()
-		view = awaitQueueWakeView(t, srv, token, "retained", "unknown")
 		awaitQueueAppContact(t, contacts)
+		view = assertQueueWakeView(t, srv, token, "retained", "unknown")
 		if view["age_source"] != "unknown" || view["wake_age_seconds"] != nil || view["receipt_age_seconds"] == nil {
 			t.Fatalf("unavailable probe lost its receipt age or invented a notice age: %v", view)
 		}
@@ -133,7 +133,7 @@ func queueWakeObservationCase(t *testing.T, binary, mode string) {
 		if changed["code"] != nil {
 			t.Fatalf("setup: rebind: %v", changed)
 		}
-		view = awaitQueueWakeView(t, srv, token, "unconfirmed", "unknown")
+		view = assertQueueWakeView(t, srv, token, "unconfirmed", "unknown")
 		if view["issued_at"] != nil || view["observed_at"] != nil {
 			t.Fatalf("new session inherited another session's receipt: %v", view)
 		}
@@ -184,30 +184,27 @@ func awaitObservationQueueCommand(t *testing.T, home string) {
 	}
 }
 
-func awaitQueueWakeView(t *testing.T, srv *httptest.Server, token any, admission, pending string) map[string]any {
+func assertQueueWakeView(t *testing.T, srv *httptest.Server, token any, admission, pending string) map[string]any {
 	t.Helper()
-	until := time.Now().Add(5 * time.Second)
-	var found map[string]any
-	for {
-		out := toolCall(t, srv, "check_in", map[string]any{"token": token})
-		board, ok := out["board"].(map[string]any)
-		if !ok {
-			t.Fatalf("setup: checkpoint has no board: %v", out)
-		}
-		for _, a := range board["agents"].([]any) {
-			row := a.(map[string]any)
-			if row["id"] == "queue-worker" {
-				found, _ = row["queue_wake"].(map[string]any)
-			}
-		}
-		if found != nil && found["admission"] == admission && found["pending"] == pending {
-			return found
-		}
-		if time.Now().After(until) {
-			t.Fatalf("board lost actual queue observation %s/%s: %v", admission, pending, found)
-		}
-		<-time.After(10 * time.Millisecond)
+	// The actual app-contact event happens after the adapter publishes its
+	// observation. One checkpoint is sufficient; a 10ms polling loop exhausted
+	// the real read limit and hid the intended assertion behind E_RATE_LIMITED.
+	out := toolCall(t, srv, "check_in", map[string]any{"token": token})
+	board, ok := out["board"].(map[string]any)
+	if !ok {
+		t.Fatalf("setup: checkpoint has no board: %v", out)
 	}
+	var found map[string]any
+	for _, a := range board["agents"].([]any) {
+		row := a.(map[string]any)
+		if row["id"] == "queue-worker" {
+			found, _ = row["queue_wake"].(map[string]any)
+		}
+	}
+	if found == nil || found["admission"] != admission || found["pending"] != pending {
+		t.Fatalf("board lost actual queue observation %s/%s: %v", admission, pending, found)
+	}
+	return found
 }
 
 func awaitQueueAppContact(t *testing.T, contacts <-chan struct{}) {

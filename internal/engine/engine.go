@@ -1112,6 +1112,7 @@ func (e *Engine) execWithReceipt(
 	}
 	if board, ok := res["board"].(map[string]any); ok {
 		e.labelBoardHosts(board)
+		e.decorateBoardQueueWakes(board, now)
 	}
 	return res, nil
 }
