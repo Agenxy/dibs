@@ -129,6 +129,13 @@ func carries(path string, want []string) error {
 			strings.Join(missing, "\n  "), strings.Join(listed, "\n  "))
 	}
 
+	if err := coherentArchiveIdentity(filepath.Base(path), have); err != nil {
+		return err
+	}
+	return carriesExecutables(path, want, have)
+}
+
+func carriesExecutables(path string, want []string, have map[string]entry) error {
 	// AND THE ARCHITECTURE, because a file at the right path that cannot execute
 	// is not a working installation. The notifier returns its exec error rather
 	// than falling back, so on the wrong Mac it fails silently to a person who
@@ -181,10 +188,10 @@ func carries(path string, want []string) error {
 // disagree with that tool: a guard that reads its answer from the thing it is
 // checking cannot catch the thing going wrong.
 var signingIdentifiers = map[string]string{
-	"dibd":                                "org.agenxy.dibs",
+	"dibd":                                "org.agenxy.dibs.daemon",
 	"dibs":                                "org.agenxy.dibs.cli",
 	"dibs-presence":                       "org.agenxy.dibs.presence",
-	"Dibs.app/Contents/MacOS/dibs-notify": "org.agenxy.dibs.notify",
+	"Dibs.app/Contents/MacOS/dibs-notify": "org.agenxy.dibs",
 }
 
 // identified proves a shipped executable introduces itself to macOS under its
@@ -205,9 +212,22 @@ func identified(archive, name string, body []byte) error {
 	if !checked {
 		return nil
 	}
-	dir, err := os.MkdirTemp("", "archivecheck-")
+	got, err := signedIdentifier(archive, name, body)
 	if err != nil {
 		return err
+	}
+	if got != want {
+		return fmt.Errorf("%s: %s tells macOS it is %q, and it has to say %q. "+
+			"Align the artifact's signing identity before packaging; a changed identity "+
+			"can invalidate firewall and privacy grants", archive, name, got, want)
+	}
+	return nil
+}
+
+func signedIdentifier(archive, name string, body []byte) (string, error) {
+	dir, err := os.MkdirTemp("", "archivecheck-")
+	if err != nil {
+		return "", err
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 	// codesign reads a FILE, so the entry has to land on disk. The name it
@@ -215,12 +235,12 @@ func identified(archive, name string, body []byte) error {
 	// which is the point of checking it rather than checking the path.
 	at := filepath.Join(dir, "artifact")
 	if werr := os.WriteFile(at, body, 0o600); werr != nil {
-		return werr
+		return "", werr
 	}
 	// #nosec G204 -- no shell; `at` is this function's own temp file.
 	out, err := exec.Command("codesign", "-dv", "--verbose=2", at).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("%s: %s carries no code signature at all (%v). macOS records a "+
+		return "", fmt.Errorf("%s: %s carries no code signature at all (%v). macOS records a "+
 			"firewall allowance against the signature, so an unsigned binary is a new "+
 			"program on every release", archive, name, err)
 	}
@@ -231,14 +251,10 @@ func identified(archive, name string, body []byte) error {
 			break
 		}
 	}
-	if got != want {
-		return fmt.Errorf("%s: %s tells macOS it is %q, and it has to say %q.\n\n"+
-			"%q is the Go toolchain's default and is shared by every ad-hoc Go binary on "+
-			"the machine. A firewall allowance or a privacy grant recorded against it is "+
-			"recorded against all of them",
-			archive, name, got, want, "a.out")
+	if got == "" {
+		return "", fmt.Errorf("%s: %s reports no signed identifier; refuse packaging", archive, name)
 	}
-	return nil
+	return got, nil
 }
 
 // archArchitecture reads the target out of a GoReleaser archive name.

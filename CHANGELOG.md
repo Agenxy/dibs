@@ -36,6 +36,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   guard's refusal and explain the review before rerunning `task install`.
   Hubs such as MacSolis may need one firewall re-allow; `dibs doctor` and daemon
   startup print the corrective command. The operator runs it explicitly.
+  The independent archive check also compares the packaged notifier's signed
+  identity with its actual Info.plist and refuses a daemon/notifier identity
+  collision, even if both expectation tables were changed together.
 
 ## [0.0.12] - 2026-10-05
 

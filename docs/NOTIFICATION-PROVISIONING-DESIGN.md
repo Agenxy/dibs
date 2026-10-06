@@ -72,6 +72,10 @@ Keep CLI and presence identifiers unchanged. The daemon moves to
 `org.agenxy.dibs.daemon`, so its requirement cannot equal the notifier's under
 the same signing certificate. Inspect both actual signed artifacts in the native
 guard, rather than comparing the identifier map with itself.
+The archive checker retains its independent expected-ID contract and also
+checks the relations on actual packaged bytes: notifier Identifier equals
+Info.plist CFBundleIdentifier, and dibd's Identifier differs from the notifier's.
+Changing both expectation tables cannot make an incoherent package pass.
 
 This daemon change is a deliberate one-time grant boundary for both release and
 source installs. After upgrading, re-allow dibd's Desktop/Documents permission
