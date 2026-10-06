@@ -1,0 +1,48 @@
+name: mail-history production resource probe
+
+on:
+  pull_request:
+    paths:
+      - internal/mailhistory/**
+      - internal/ledger/mail_history*.go
+      - internal/ledger/ledger.go
+      - .github/workflows/mail-history-production-probe.yml
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {records: 100000, case: simple}
+          - {records: 1000000, case: simple}
+          - {records: 2000000, case: simple}
+          - {records: 1000000, case: many}
+          - {records: 1000000, case: rich}
+          - {records: 1000000, case: adopt-merge}
+    env:
+      DIBS_HISTORY_PROBE_RECORDS: ${{ matrix.records }}
+      DIBS_HISTORY_PROBE_CASE: ${{ matrix.case }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: 2026.7.7
+          experimental: true
+      - name: Generate identical encrypted ledger for both arms
+        env:
+          DIBS_HISTORY_PROBE_ARM: generate
+        run: mise exec -- go test -count=1 -timeout=20m -run '^TestMailHistoryProductionProbe$' -v ./internal/ledger
+      - name: Baseline replay without the derived observer
+        env:
+          DIBS_HISTORY_PROBE_ARM: baseline
+        run: mise exec -- go test -count=1 -timeout=20m -run '^TestMailHistoryProductionProbe$' -v ./internal/ledger
+      - name: Production replay with its single-fold observer and full compact index
+        env:
+          DIBS_HISTORY_PROBE_ARM: production
+        run: mise exec -- go test -count=1 -timeout=20m -run '^TestMailHistoryProductionProbe$' -v ./internal/ledger

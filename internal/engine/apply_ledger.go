@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/mailhistory"
 )
 
 // applyAndLedger applies an op and ledgers it iff the serial advanced.
@@ -18,6 +19,10 @@ func (e *Engine) applyAndLedgerWithReceipt(
 ) (core.Result, error) {
 	e.stampReviewRetention(op, now)
 	before := e.state.Serial
+	var mailBefore mailhistory.Snapshot
+	if e.mailSource != nil {
+		mailBefore = mailhistory.Capture(e.state)
+	}
 	applied := beginSendStage(op, "apply")
 	applyStage := attempt.StartStage("writer_apply")
 	res, evs, err := e.state.Apply(op, now)
@@ -82,6 +87,9 @@ func (e *Engine) applyAndLedgerWithReceipt(
 	}
 	if e.state.Serial != before {
 		published := beginSendStage(op, "publish")
+		if e.mailSource != nil {
+			e.mailSource.ObserveMail(mailBefore, e.state, op, evs)
+		}
 		e.observeNameAliases(op, evs)
 		e.publish(evs)
 		published()
