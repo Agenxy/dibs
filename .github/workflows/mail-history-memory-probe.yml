@@ -13,6 +13,11 @@ jobs:
   measure:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      matrix:
+        records: [100000, 1000000, 2000000]
+    env:
+      DIBS_HISTORY_PROBE_RECORDS: ${{ matrix.records }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
@@ -34,4 +39,8 @@ jobs:
       - name: Packed authorization header memory floor with sparse anchors
         env:
           DIBS_HISTORY_PROBE_ARM: headers
+        run: mise exec -- go test -count=1 -timeout=15m -run '^TestMailHistoryMemoryDesignProbe$' -v ./internal/ledger
+      - name: Complete canonical snapshot blocks with authority and party references
+        env:
+          DIBS_HISTORY_PROBE_ARM: compact
         run: mise exec -- go test -count=1 -timeout=15m -run '^TestMailHistoryMemoryDesignProbe$' -v ./internal/ledger

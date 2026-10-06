@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"testing"
 	"time"
 
@@ -32,6 +33,7 @@ func TestMailHistoryMemoryDesignProbe(t *testing.T) {
 	// directory across its separate processes, never an environment-owned path
 	// passed into production key or ledger readers.
 	const dir = ".history-design-probe"
+	records := historyProbeCount(t)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -41,10 +43,10 @@ func TestMailHistoryMemoryDesignProbe(t *testing.T) {
 	}
 	path := filepath.Join(dir, "ledger.jsonl")
 	if arm == "generate" {
-		generateHistoryProbe(t, path, box)
+		generateHistoryProbe(t, path, box, records)
 		return
 	}
-	if arm != "baseline" && arm != "sparse" && arm != "headers" {
+	if arm != "baseline" && arm != "sparse" && arm != "headers" && arm != "compact" {
 		t.Fatalf("setup: unknown arm %q", arm)
 	}
 	l, err := OpenReadOnly(path, "million", box)
@@ -56,7 +58,7 @@ func TestMailHistoryMemoryDesignProbe(t *testing.T) {
 	var headers []historyProbeHeader
 	if arm == "headers" {
 		// Exact fixture capacity avoids charging slice growth to the floor.
-		headers = make([]historyProbeHeader, 0, (historyProbeRecords-4)/3)
+		headers = make([]historyProbeHeader, 0, (records-2)/3)
 		l.OnEvents = func(events []core.Event) {
 			for _, ev := range events {
 				if ev.Type != "message.sent" {
@@ -73,24 +75,32 @@ func TestMailHistoryMemoryDesignProbe(t *testing.T) {
 	}
 	started := time.Now()
 	count, err := l.Replay(st)
-	if err != nil || count != historyProbeRecords || st.Serial != historyProbeRecords {
+	if err != nil || count != records || st.Serial != uint64(records) {
 		t.Fatalf("setup: production replay count=%d serial=%d error=%v", count, st.Serial, err)
 	}
-	if len(st.Agents) != 2 || len(st.Messages) != 0 {
+	expectedMail := 0
+	if (records-4)%3 != 0 {
+		expectedMail = 1
+	}
+	if len(st.Agents) != 2 || len(st.Messages) != expectedMail {
 		t.Fatalf("setup: unexpected final coordination state: agents=%d messages=%d", len(st.Agents), len(st.Messages))
 	}
 	var seeks []historyProbeSeek
 	if arm != "baseline" {
-		seeks = historyProbeSeeks(t, l)
+		seeks = historyProbeSeeks(t, l, records)
 	}
-	if arm == "headers" && len(headers) != (historyProbeRecords-4)/3 {
-		t.Fatalf("setup: expected %d canonical headers, got %d", (historyProbeRecords-4)/3, len(headers))
+	if arm == "headers" && len(headers) != (records-2)/3 {
+		t.Fatalf("setup: expected %d canonical headers, got %d", (records-2)/3, len(headers))
 	}
 	// These two coalesced ranges are only the fixture's party lookup floor.
 	// Arbitrary interleavings and inherited histories need additional structure.
 	var ranges []historyProbeRange
 	if arm != "baseline" {
-		ranges = []historyProbeRange{{Party: 1, Created: 1, First: 5, Last: historyProbeRecords}, {Party: 2, Created: 3, First: 5, Last: historyProbeRecords}}
+		ranges = []historyProbeRange{{Party: 1, Created: 1, First: 5, Last: uint64(records)}, {Party: 2, Created: 3, First: 5, Last: uint64(records)}}
+	}
+	var compact *historyCompactProbe
+	if arm == "compact" {
+		compact = buildHistoryCompactProbe(t, l, records)
 	}
 	runtime.GC()
 	var mem runtime.MemStats
@@ -107,7 +117,11 @@ func TestMailHistoryMemoryDesignProbe(t *testing.T) {
 		Seeks         int     `json:"seeks"`
 		SeekCap       int     `json:"seek_capacity"`
 		Ranges        int     `json:"party_ranges"`
-	}{arm, count, mem.HeapAlloc, mem.HeapInuse, time.Since(started).Seconds(), len(st.Messages), len(headers), cap(headers), len(seeks), cap(seeks), len(ranges)}
+		Compact       any     `json:"compact,omitempty"`
+	}{arm, count, mem.HeapAlloc, mem.HeapInuse, time.Since(started).Seconds(), len(st.Messages), len(headers), cap(headers), len(seeks), cap(seeks), len(ranges), nil}
+	if compact != nil {
+		receipt.Compact = compact.receipt()
+	}
 	raw, err := json.MarshalIndent(receipt, "", "  ")
 	if err != nil {
 		t.Fatal(err)
@@ -121,6 +135,20 @@ func TestMailHistoryMemoryDesignProbe(t *testing.T) {
 	runtime.KeepAlive(headers)
 	runtime.KeepAlive(seeks)
 	runtime.KeepAlive(ranges)
+	runtime.KeepAlive(compact)
+}
+
+func historyProbeCount(t *testing.T) int {
+	t.Helper()
+	raw := os.Getenv("DIBS_HISTORY_PROBE_RECORDS")
+	if raw == "" {
+		return historyProbeRecords
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || (n != 100_000 && n != 1_000_000 && n != 2_000_000) {
+		t.Fatalf("setup: unsupported record count %q", raw)
+	}
+	return n
 }
 
 // 32 bytes per message without Go pointers, metadata or duplicated party refs.
@@ -142,16 +170,16 @@ type historyProbeRange struct {
 	Party                uint32
 }
 
-func historyProbeSeeks(t *testing.T, l *Ledger) []historyProbeSeek {
+func historyProbeSeeks(t *testing.T, l *Ledger, records int) []historyProbeSeek {
 	t.Helper()
 	if _, err := l.f.Seek(0, io.SeekStart); err != nil {
 		t.Fatal(err)
 	}
 	r := bufio.NewReaderSize(l.f, 1<<20)
-	seeks := make([]historyProbeSeek, 0, (historyProbeRecords+4095)/4096)
+	seeks := make([]historyProbeSeek, 0, (records+4095)/4096)
 	var offset int64
 	var prev [32]byte
-	for n := 0; n < historyProbeRecords; n++ {
+	for n := 0; n < records; n++ {
 		raw, err := r.ReadBytes('\n')
 		if err != nil {
 			t.Fatalf("setup: sparse pass at record %d: %v", n, err)
@@ -176,7 +204,7 @@ func historyProbeSeeks(t *testing.T, l *Ledger) []historyProbeSeek {
 	return seeks
 }
 
-func generateHistoryProbe(t *testing.T, path string, box *Box) {
+func generateHistoryProbe(t *testing.T, path string, box *Box, records int) {
 	t.Helper()
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
@@ -212,13 +240,19 @@ func generateHistoryProbe(t *testing.T, path string, box *Box) {
 		write(&core.Op{Kind: core.OpRegister, Name: id, NewToken: id, PID: 1, V7Semantics: true})
 		write(&core.Op{Kind: core.OpAckBoard, Token: id})
 	}
-	for s.Serial < historyProbeRecords {
+	for s.Serial < uint64(records) {
 		n := write(&core.Op{Kind: core.OpSendMessage, Token: "lead", To: "worker", MsgType: core.MsgNotify, Body: "one authored field in the encrypted ledger"})["msg_serial"].(uint64)
+		if s.Serial == uint64(records) {
+			break
+		}
 		write(&core.Op{Kind: core.OpAckMessage, Token: "worker", MsgSerial: n})
+		if s.Serial == uint64(records) {
+			break
+		}
 		now = now.Add(20 * time.Minute)
 		write(&core.Op{Kind: core.OpSweep, V7Semantics: true})
 	}
-	if s.Serial != historyProbeRecords {
+	if s.Serial != uint64(records) {
 		t.Fatalf("setup: generated serial %d", s.Serial)
 	}
 	if err := w.Flush(); err != nil {
