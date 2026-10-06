@@ -217,11 +217,17 @@ func (p *productionFixture) cycle(ids []string, cycle int, mode string) {
 		}
 		heir := ids[(cycle+2)%len(ids)]
 		p.write(&core.Op{Kind: core.OpAdoptAgent, Token: heir, To: to, AdoptAuthorised: true, V7Semantics: true})
+		previous := to
 		to = heir
 		if cycle%100 == 0 && len(ids) > 3 {
 			p.write(&core.Op{Kind: core.OpMergeAgents, To: ids[(cycle+1)%len(ids)], MergeInto: heir})
 			// Replace a retired spelling in future traffic by its actual survivor.
 			ids[(cycle+1)%len(ids)] = heir
+		} else {
+			// The worker returns after its one-time recovery. Leaving all old
+			// workers dormant for years of fixture time eventually archives
+			// their tokens, so the setup stops testing repeated live recovery.
+			p.write(&core.Op{Kind: core.OpWake, Token: previous})
 		}
 	}
 	if mode == "rich" {
