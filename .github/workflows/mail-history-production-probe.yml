@@ -19,6 +19,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - {records: 0, case: simple}
           - {records: 100000, case: simple}
           - {records: 1000000, case: simple}
           - {records: 2000000, case: simple}
@@ -41,6 +42,14 @@ jobs:
       - name: Baseline replay without the derived observer
         env:
           DIBS_HISTORY_PROBE_ARM: baseline
+        run: mise exec -- go test -count=1 -timeout=20m -run '^TestMailHistoryProductionProbe$' -v ./internal/ledger
+      - name: First baseline repeat on the same runner
+        env:
+          DIBS_HISTORY_PROBE_ARM: baseline-repeat-1
+        run: mise exec -- go test -count=1 -timeout=20m -run '^TestMailHistoryProductionProbe$' -v ./internal/ledger
+      - name: Second baseline repeat on the same runner
+        env:
+          DIBS_HISTORY_PROBE_ARM: baseline-repeat-2
         run: mise exec -- go test -count=1 -timeout=20m -run '^TestMailHistoryProductionProbe$' -v ./internal/ledger
       - name: Production replay with its single-fold observer and full compact index
         id: production
