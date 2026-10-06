@@ -94,6 +94,19 @@ func TestLinuxSuccessfulNotifierReportsOSAcceptance(t *testing.T) {
 	}
 }
 
+func TestLinuxHighNotifyRequestsCriticalUrgency(t *testing.T) {
+	stubNotifySend(t, "0.8.2")
+	argv := filepath.Join(t.TempDir(), "argv")
+	t.Setenv("DIBS_TEST_NOTIFY_ARGV", argv)
+	if err := TimeSensitiveBannerWithReceipt("Dibs", "says", "alert", nil); err != nil {
+		t.Fatal(err)
+	}
+	out, err := os.ReadFile(argv)
+	if err != nil || !strings.Contains(string(out), "--urgency=critical") {
+		t.Fatalf("high notify did not request Linux critical urgency: %v %s", err, out)
+	}
+}
+
 // On Linux a question is one notify-send with a button per label, and the
 // answer comes back as the label pressed: the same contract Ask has on
 // macOS, so the approval path behind it needs no platform branch. Issue #63.

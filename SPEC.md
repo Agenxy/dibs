@@ -644,6 +644,11 @@ best effort, not a promised catch-up.
 ## 8. Mailbox
 
 Messages go agent → agent; identity = send serial; bodies private (§4, §5).
+`send.priority` accepts low, normal, high or urgent on `notify` and ordinary
+`request` only. It is stored in the historical `request_priority` JSON field
+on the message and visible to mailbox readers and the board. A notify remains
+non-expecting at every priority; priority changes presentation order within a
+wake epoch, not its response semantics or the recipient's explicit wake policy.
 
 | Type | Expects | Dispositions (recipient) |
 |---|---|---|
@@ -771,12 +776,14 @@ deadline on replay. Sends to the human retain their existing deadline behavior.
 Sending to a dormant agent succeeds and warns about expected wake latency;
 `notify` and `handoff` have no response deadline.
 
-**Closed-harness contact escalation**: if a question, request, or handoff is
+**Closed-harness contact escalation**: if a question, request, handoff, or
+high/urgent notify is
 still unread and Dibs has no usable wake/open route to its recipient, Dibs
 ledgers a `contact_escalated` record with recipient, oldest message serial,
 high-water serial, count, and window start. Unposted messages coalesce into one
 outstanding contact; a posted alert permits a new contact after ten minutes.
-FYI `notify` never escalates. The coordinator receives a metadata-only notice,
+Ordinary FYI `notify` never escalates; high/urgent notify does when unread and
+unreachable, without becoming a response obligation. The coordinator receives a metadata-only notice,
 and a human relay or local desktop gets a contact alert with a validated app
 link only when the recipient's app/thread provenance permits one. This asks a
 person to open the original harness; Dibs does not host or relocate the agent.
@@ -920,6 +927,8 @@ establishes idle immediately. Unknown lifecycle retains the existing bounded
 contact/boot grace, then permits one coalesced actionable or due-wait wake.
 Every message written by an agent or human to the recipient independently
 qualifies for delivery, including a plain notify that asks for no reply.
+Within one wake epoch, mail is presented by sender priority (urgent, high,
+normal, low), then arrival serial. Inbox and ledger order remain serial order.
 Dibs-generated progress, accepted reviews and queue updates do not independently cause
 socket delivery. Answers,
 denials, declines, flagged reviews and grant/adoption verdicts do. Approval of
@@ -1367,8 +1376,16 @@ because the Approve controls should persist. Disabled Time Sensitive has its own
 setting hint. Structured not-supported and unobservable Focus remain in the
 receipt, without repeating standing informational prose on each message. A requested
 timeSensitive level does not establish the entitlement or permission to bypass
-Focus. Requests/questions with controls request timeSensitive; notify is active;
-none requests critical interruption.
+Focus. Requests/questions with controls request timeSensitive; a high/urgent notify
+requests it too, even without controls. An ordinary notify remains active.
+The native helper must be available for a macOS high/urgent notify: the
+osascript fallback cannot request Time Sensitive and reports failure instead
+of claiming it did. On Linux high/urgent notify requests critical urgency;
+neither platform claims the alert was actually displayed. None requests macOS
+critical interruption.
+An unposted high/urgent notify remains eligible for a newly attached human
+relay. A retained posting receipt suppresses that replay; delivery receipts
+are derived state, so daemon restart may conservatively present it again.
 `dibs doctor` measures the same settings without posting, permission prompts or
 settings changes. The helper's existing `--status` mode accepts the additive
 `DIBS_NOTIFY_SETTINGS_V1=1` environment capability and returns versioned JSON;

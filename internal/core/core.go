@@ -652,9 +652,10 @@ func (l *Agent) CanHoldExclusive() bool {
 // Message is one mailbox item. Body/Response plaintext in memory; ciphertext
 // at rest.
 type Message struct {
-	WithdrawalReason   string    `json:"withdrawal_reason,omitempty"`
-	WithdrawnBy        string    `json:"withdrawn_by,omitempty"`
-	SupersededBy       uint64    `json:"superseded_by,omitempty"`
+	WithdrawalReason string `json:"withdrawal_reason,omitempty"`
+	WithdrawnBy      string `json:"withdrawn_by,omitempty"`
+	SupersededBy     uint64 `json:"superseded_by,omitempty"`
+	// Historical JSON tag is frozen; this sender priority now applies to notify too.
 	RequestPriority    string    `json:"request_priority,omitempty"`
 	QueuePriority      string    `json:"queue_priority,omitempty"`
 	QueueDebt          bool      `json:"queue_debt,omitempty"`

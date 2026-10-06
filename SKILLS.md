@@ -348,9 +348,9 @@ wake attempt. Before then the sender sees `deadline_pending` and
 `response_window_s`. Unretrieved mail has a separate seven-day ceiling;
 historical sends keep their recorded deadlines. A handoff has no response
 deadline. If Dibs has no route into an unread recipient's harness, a question,
-request, or handoff can produce one coalesced, metadata-only contact alert for
+request, handoff, or high/urgent notify can produce one coalesced, metadata-only contact alert for
 the coordinator and person. It never gives Dibs permission to start or move
-the recipient's session; FYI notifies do not trigger this path.
+the recipient's session; ordinary FYI notifies do not trigger this path.
 
 **Verify your delivery route.** There are two routes and only one of them can
 be confirmed: a command from the operator's config, which Dibs starts and
@@ -644,8 +644,12 @@ call. Start one yourself with `respond(msg_serial:N, disposition:"approve")`;
 finish with `respond(msg_serial:N, disposition:"done", body:...)`. Completing
 one never starts the next. Progress uses `disposition:"progress"`.
 
-Senders may set request `priority` to low, normal, high or urgent (default
-normal). Default ordering is priority, then response deadline, then arrival;
+Senders may set `priority` on a notify or ordinary request to low, normal,
+high or urgent (default normal). High/urgent notifies lead lower-priority mail
+in a recipient's wake digest, without creating an obligation to answer or
+overriding the operator's wake phase. To the human they request a Time Sensitive
+macOS alert (or critical urgency on Linux); OS acceptance does not prove a banner
+was visible. Request queue ordering is priority, then response deadline, then arrival;
 the deadline still means when a response is due, not when work must finish.
 `overdue` and `overdue_s` describe a passed deadline at these checkpoints;
 queued work alone never starts a turn or adds a hook prompt.

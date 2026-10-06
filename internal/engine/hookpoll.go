@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -629,7 +630,7 @@ func (e *Engine) mailLinesFor(agent string, now time.Time, quote bool, wanted ma
 
 func (e *Engine) mailLinesForBudget(agent string, now time.Time, wanted map[uint64]bool, budget *int) []string {
 	var out []string
-	for _, m := range e.state.Inbox(agent) {
+	for _, m := range e.wakeOrderedMail(agent) {
 		if wanted != nil && !wanted[m.Serial] {
 			continue
 		}
@@ -680,6 +681,20 @@ func (e *Engine) mailLinesForBudget(agent string, now time.Time, wanted map[uint
 		}
 	}
 	return out
+}
+
+// Inbox remains ledger/serial ordered. A wake is a separate, bounded
+// presentation: send priority decides which message gets the first attention
+// and the first share of its quote budget within this one epoch.
+func (e *Engine) wakeOrderedMail(agent string) []*core.Message {
+	mail := e.state.Inbox(agent)
+	sort.SliceStable(mail, func(i, j int) bool {
+		if x, y := mail[i].PriorityRank(), mail[j].PriorityRank(); x != y {
+			return x > y
+		}
+		return mail[i].Serial < mail[j].Serial
+	})
+	return mail
 }
 
 // mailQuoteBudget is how much message text one digest may carry, in runes,
@@ -1302,7 +1317,7 @@ func (e *Engine) freshForWake(agent string, now time.Time) bool {
 func (e *Engine) wakeKeys(agent string, now time.Time) []string {
 	var keys []string
 	live := map[string]bool{}
-	for _, m := range e.state.Inbox(agent) {
+	for _, m := range e.wakeOrderedMail(agent) {
 		if m.State != core.MsgStatePending && m.State != core.MsgStateDelivered {
 			continue
 		}

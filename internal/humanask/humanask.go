@@ -25,6 +25,7 @@ import (
 // Message is one message for the person.
 type Message struct {
 	Type            string // question, request, handoff, notify
+	Priority        string // sender priority, for a high/urgent notify's OS interruption level
 	From            string
 	FromName        string // current name; From stays the stable ID
 	Who             string // the daemon's line about the sender, never the sender's own words
@@ -101,6 +102,14 @@ func Ask(m Message) (Answer, error) {
 			return Answer{}, notify.BannerWithDeliveryReceipt(title, "hands work to you", OneLine(m.Body), m.DeliveryReceipt)
 		}
 		return Answer{}, notify.BannerWithReceipt(title, "hands work to you", OneLine(m.Body), m.Receipt)
+	case core.MsgNotify:
+		if m.Priority == "high" || m.Priority == "urgent" {
+			if m.DeliveryReceipt != nil {
+				return Answer{}, notify.TimeSensitiveBannerWithDeliveryReceipt(title, "says", OneLine(m.Body), m.DeliveryReceipt)
+			}
+			return Answer{}, notify.TimeSensitiveBannerWithReceipt(title, "says", OneLine(m.Body), m.Receipt)
+		}
+		fallthrough
 	default:
 		if m.DeliveryReceipt != nil {
 			return Answer{}, notify.BannerWithDeliveryReceipt(title, "says", OneLine(m.Body), m.DeliveryReceipt)

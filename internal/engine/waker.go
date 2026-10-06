@@ -629,8 +629,8 @@ func (e *Engine) clearWakeAttempts(agent string) {
 	delete(e.wakers.attempts, agent)
 }
 
-// oldestBlocking names the work a re-check is being run for: the type and
-// sender of the longest-waiting authored message allowed by the phase.
+// oldestBlocking names the first work a re-check is being run for: highest
+// priority, then longest-waiting authored message allowed by the phase.
 // Its historical name includes authored FYIs under the default all policy.
 //
 // "notice" when the reason is a blocking notice rather than mail, which is a
@@ -643,14 +643,13 @@ func (e *Engine) clearWakeAttempts(agent string) {
 // Callers run on the writer loop.
 func (e *Engine) oldestBlocking(agent string) (kind, from string) {
 	var oldest *core.Message
-	for _, m := range e.state.Inbox(agent) {
+	for _, m := range e.wakeOrderedMail(agent) {
 		if (m.State != core.MsgStatePending && m.State != core.MsgStateDelivered) ||
 			!e.socketActionableMessage(m) || e.notifyPresented(agent, m) {
 			continue
 		}
-		if oldest == nil || m.Serial < oldest.Serial {
-			oldest = m
-		}
+		oldest = m
+		break
 	}
 	if oldest == nil {
 		return "notice", ""

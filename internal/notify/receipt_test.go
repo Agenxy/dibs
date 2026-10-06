@@ -2,6 +2,7 @@ package notify
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -52,6 +53,12 @@ func TestReceiptChild(t *testing.T) {
 }
 
 func asReceiptHelper() {
+	if os.Getenv("DIBS_TEST_RECEIPT_PRIORITY") == "1" && os.Getenv("DIBS_NOTIFY_TIME_SENSITIVE") != "1" {
+		os.Exit(4)
+	}
+	if os.Getenv("DIBS_TEST_RECEIPT_PRIORITY") == "0" && os.Getenv("DIBS_NOTIFY_TIME_SENSITIVE") != "0" {
+		os.Exit(4)
+	}
 	if os.Getenv("DIBS_TEST_CLEANUP_DRIVER") == "1" {
 		if len(os.Args) == 2 && strings.HasPrefix(os.Args[1], "--remove-messages=") {
 			mode := os.Getenv("DIBS_TEST_CLEANUP_MODE")
@@ -109,18 +116,29 @@ func TestPublicNotificationReceiptUsesTheInstalledHelper(t *testing.T) {
 		t.Skip("macOS installed-helper route")
 	}
 	if os.Getenv("DIBS_TEST_RECEIPT_PUBLIC") != "" {
-		for _, api := range []string{"banner", "ask", "ignored"} {
+		for _, api := range []string{"banner", "priority", "ask", "ignored"} {
 			state := ""
 			outcome := ""
+			switch api {
+			case "priority":
+				t.Setenv("DIBS_TEST_RECEIPT_PRIORITY", "1")
+			case "banner":
+				t.Setenv("DIBS_TEST_RECEIPT_PRIORITY", "0")
+			default:
+				t.Setenv("DIBS_TEST_RECEIPT_PRIORITY", "")
+			}
 			if api == "ignored" {
 				outcome = "timeout"
 			}
 			t.Setenv("DIBS_TEST_RECEIPT_OUTCOME", outcome)
 			receipt := func(s string) { state = s }
 			var err error
-			if api == "banner" {
+			switch api {
+			case "banner":
 				err = BannerWithReceipt("fixture", "", "fixture", receipt)
-			} else {
+			case "priority":
+				err = TimeSensitiveBannerWithReceipt("fixture", "", "fixture", receipt)
+			default:
 				var choice string
 				choice, err = AskWithReceipt("fixture", "fixture", receipt, "Yes")
 				want := "Yes"
@@ -161,6 +179,15 @@ func TestPublicNotificationReceiptUsesTheInstalledHelper(t *testing.T) {
 	cmd.Env = append(os.Environ(), "DIBS_TEST_RECEIPT_PUBLIC=1", "DIBS_DIR="+t.TempDir())
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("notifier producer wiring: %v\n%s", err, out)
+	}
+}
+
+func TestTimeSensitiveBannerNeverClaimsFallbackIsTimeSensitive(t *testing.T) {
+	if runtime.GOOS != "darwin" || helper() != "" {
+		t.Skip("requires macOS without a bundled helper")
+	}
+	if err := TimeSensitiveBannerWithReceipt("Dibs", "says", "alert", nil); !errors.Is(err, ErrCannotNotify) {
+		t.Fatalf("high notify silently used an ordinary fallback: %v", err)
 	}
 }
 

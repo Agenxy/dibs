@@ -450,6 +450,11 @@ const Board = (() => {
         <div class="msg-head">
           <span class="serial">#${esc(m.serial ?? "")}</span>
           <span class="kind ${esc(t)}">${esc(t)}</span>
+          ${m.request_priority ? explained(
+            `pill ${m.request_priority === "high" || m.request_priority === "urgent" ? "attn" : ""}`,
+            `${m.request_priority} priority`,
+            "sender priority; a recipient's queued-request ordering may differ"
+          ) : ""}
           ${overdue ? explained("pill attn", "past its deadline", "the deadline on this message has passed and nobody has answered. Dibs is still waiting, but nothing is in flight") : ""}
           ${m.response_window_s && !settled ? (m.deadline
             ? explained("pill", "response due " + m.deadline, "the response window began when the recipient first read this message; it does not pause if they close")
