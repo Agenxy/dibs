@@ -5,21 +5,7 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Fixed
-
-- macOS daemon LaunchAgents use `ProcessType=Standard`, removing the CPU and I/O
-  restrictions of Background during competing host work. `dibs upgrade` also
-  migrates an existing board-matching Background unit when the binary already
-  matches, preserving other settings and retaining the original plist. An
-  operator's explicit alternative policy is retained. This is a scheduling
-  policy, not a guarantee of request latency on an overloaded host.
-  In a hosted macOS 26.6.2 test with six CPU workers on three logical CPUs,
-  Background produced 10 unknown outcomes in 15 sends (send p95 14.8 seconds);
-  two Standard arms completed 100 sends with no errors (send p95 11.7 and 14.8
-  milliseconds, maximum 23.8 milliseconds). The next Background service could
-  not start within the fixture's 20-second limit, leaving the ABBA comparison
-  incomplete. Competing-work throughput was 7–18% lower in the Standard arms;
-  unequal arm durations make that a rough observation, not a fixed cost.
+## [0.0.12] - 2026-10-05
 
 ### Added
 
@@ -34,10 +20,6 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   two controls through `settings`; the changes and provenance are ledgered.
   Delivery needs the operator's existing `codex queue` route and a known local
   ChatGPT-app thread. Observation across daemon downtime is best effort.
-
-## [0.0.12] - 2026-10-05
-
-### Added
 
 - **Unanswered questions can be withdrawn without inventing an answer.** The
   sender can retract pending, delivered or acknowledged questions with a reason;
@@ -75,6 +57,20 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   successful cross-repository or live release claim.
 
 ### Fixed
+
+- macOS daemon LaunchAgents use `ProcessType=Standard`, removing the CPU and I/O
+  restrictions of Background during competing host work. `dibs upgrade` also
+  migrates an existing board-matching Background unit when the binary already
+  matches, preserving other settings and retaining the original plist. An
+  operator's explicit alternative policy is retained. This is a scheduling
+  policy, not a guarantee of request latency on an overloaded host.
+  In a hosted macOS 26.6.2 test with six CPU workers on three logical CPUs,
+  Background produced 10 unknown outcomes in 15 sends (send p95 14.8 seconds);
+  two Standard arms completed 100 sends with no errors (send p95 11.7 and 14.8
+  milliseconds, maximum 23.8 milliseconds). The next Background service could
+  not start within the fixture's 20-second limit, leaving the ABBA comparison
+  incomplete. Competing-work throughput was 7–18% lower in the Standard arms;
+  unequal arm durations make that a rough observation, not a fixed cost.
 
 - **Background ChatGPT opens attempt to return focus to the previous app.**
   The native helper makes one bounded restoration attempt and yields to new
