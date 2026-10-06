@@ -62,9 +62,9 @@ func TestMailHistoryMemoryDesignProbe(t *testing.T) {
 				if ev.Type != "message.sent" {
 					continue
 				}
-				n, ok := ev.Data["msg_serial"].(uint64)
+				n := ev.Serial // message.sent uses its own serial, not a parent field.
 				m := st.Messages[n]
-				if !ok || m == nil || m.From != "lead" || m.To != "worker" || m.AdoptedFrom != "" {
+				if n != st.Serial || m == nil || m.From != "lead" || m.To != "worker" || m.AdoptedFrom != "" {
 					t.Fatal("setup: canonical sent header does not match the fixture")
 				}
 				headers = append(headers, historyProbeHeader{Serial: n, From: 1, To: 2})
