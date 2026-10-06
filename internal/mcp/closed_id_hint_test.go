@@ -37,7 +37,7 @@ func TestUpdateExplainsClosedImmutableIDAndAllowsReleasedLabel(t *testing.T) {
 		t.Fatalf("closed immutable ID was not refused: %v", refused)
 	}
 	hint, _ := refused["hint"].(string)
-	for _, required := range []string{"reserved-worker", "closed", "permanently reserved", "prune cannot free", "merge_agents", "admin", "choose another name"} {
+	for _, required := range []string{"reserved-worker", "closed", "permanently reserved", "prune cannot free", "merge_agents", "admin", "immutable ID remains reserved", "choose another name"} {
 		if !strings.Contains(hint, required) {
 			t.Errorf("update hint %q omits corrective information %q", hint, required)
 		}

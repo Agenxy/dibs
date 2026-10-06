@@ -191,8 +191,8 @@ func (s *State) nameIsAnotherAddress(op *Op, l *Agent) error {
 	if other.Status == StatusClosed {
 		return errf("E_NAME_TAKEN",
 			"choose another name: "+other.ID+" is a closed agent's permanently reserved immutable ID; "+
-				"prune cannot free it. An admin can use merge_agents to fold an accidental duplicate "+
-				"into the intended agent; without an admin, choose another name with update(name=…)",
+				"prune cannot free it. An admin can reconcile an accidental duplicate with merge_agents, "+
+				"but its immutable ID remains reserved; choose another name with update(name=…)",
 			"%q is the immutable ID of closed agent %s (currently named %q)",
 			op.Name, other.ID, other.Name)
 	}

@@ -8,8 +8,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - Renaming onto a closed agent's immutable ID now explains that the ID remains
-  reserved, pruning cannot free it, and an admin can merge an accidental duplicate
-  or the caller can choose another name. Address ownership is unchanged.
+  reserved and pruning cannot free it. An admin can reconcile an accidental
+  duplicate, while the caller must choose another name. Address ownership is unchanged.
 
 ## [0.0.13] - 2026-10-05
 
