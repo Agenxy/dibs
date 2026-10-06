@@ -1,25 +1,47 @@
 package mailhistory
 
-// References are uint64 in production: the design probe's uint32 references
-// must never wrap on a long-lived ledger. Fixed chunks charge allocation slack
-// without doubling a million-entry slice during growth.
+// Every reference retains uint64 range. Most chunks need only their low words;
+// a high-word plane is allocated on the first value above 32 bits in a chunk.
+// Fixed chunks charge allocation slack without doubling a growing vector.
 const vectorChunk = 4096
 
+type referenceChunk struct {
+	low  [vectorChunk]uint32
+	high *[vectorChunk]uint32
+}
+
 type vector struct {
-	chunks [][]uint64
+	chunks []*referenceChunk
 	n      int
 }
 
 func (v *vector) add(value uint64) {
 	if v.n%vectorChunk == 0 {
-		v.chunks = append(v.chunks, make([]uint64, vectorChunk))
+		v.chunks = append(v.chunks, &referenceChunk{})
 	}
-	v.chunks[v.n/vectorChunk][v.n%vectorChunk] = value
+	v.set(v.n, value)
 	v.n++
 }
 
-func (v *vector) get(n int) uint64        { return v.chunks[n/vectorChunk][n%vectorChunk] }
-func (v *vector) set(n int, value uint64) { v.chunks[n/vectorChunk][n%vectorChunk] = value }
+func (v *vector) get(n int) uint64 {
+	c, offset := v.chunks[n/vectorChunk], n%vectorChunk
+	value := uint64(c.low[offset])
+	if c.high != nil {
+		value |= uint64(c.high[offset]) << 32
+	}
+	return value
+}
+
+func (v *vector) set(n int, value uint64) {
+	c, offset := v.chunks[n/vectorChunk], n%vectorChunk
+	c.low[offset] = uint32(value & 0xffffffff) // #nosec G115 -- explicitly masked low word
+	if value>>32 != 0 && c.high == nil {
+		c.high = &[vectorChunk]uint32{}
+	}
+	if c.high != nil {
+		c.high[offset] = uint32(value >> 32) // #nosec G115 -- upper 32 bits of a uint64
+	}
+}
 
 type partyKey struct {
 	ID      string

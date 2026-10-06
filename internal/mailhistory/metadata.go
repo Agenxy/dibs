@@ -69,15 +69,25 @@ type Snapshot struct {
 }
 
 // Capture copies only canonical metadata before the state machine mutates it.
-func Capture(st *core.State) Snapshot {
-	s := Snapshot{Mail: make(map[uint64]Metadata, len(st.Messages)), Authors: make(map[string]Author, len(st.Agents))}
+func Capture(st *core.State, op *core.Op) Snapshot {
+	s := Snapshot{Mail: make(map[uint64]Metadata, len(st.Messages)), Authors: make(map[string]Author)}
 	for n, m := range st.Messages {
 		s.Mail[n] = stateMetadata(st, m)
+		s.captureAuthor(st.Agents[m.From])
+		s.captureAuthor(st.Agents[m.To])
 	}
-	for id, a := range st.Agents {
-		s.Authors[id] = authorOf(a)
+	a := st.Agents[op.AgentID]
+	if a == nil && op.Token != "" {
+		a = st.AgentByToken(op.Token)
 	}
+	s.captureAuthor(a)
 	return s
+}
+
+func (s Snapshot) captureAuthor(a *core.Agent) {
+	if a != nil {
+		s.Authors[a.ID] = authorOf(a)
+	}
 }
 
 func stateMetadata(st *core.State, m *core.Message) Metadata {

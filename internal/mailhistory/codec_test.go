@@ -95,3 +95,20 @@ func TestInheritedPrefixesStayFlatFrozenAndBounded(t *testing.T) {
 		t.Fatal("unbounded fanout admitted")
 	}
 }
+
+func TestReferencePlanesRetainFullWidthAndClearHighWords(t *testing.T) {
+	var v vector
+	for n := 0; n < vectorChunk+1; n++ {
+		v.add(uint64(n))
+	}
+	if v.chunks[0].high != nil || v.chunks[1].high != nil {
+		t.Fatal("small references allocated a high-word plane")
+	}
+	for _, value := range []uint64{1<<32 - 1, 1 << 32, 1<<63 + 7, ^uint64(0), 3} {
+		v.set(1, value)
+		v.set(vectorChunk, value)
+		if v.get(1) != value || v.get(vectorChunk) != value || v.get(0) != 0 || v.get(2) != 2 {
+			t.Fatalf("wide reference changed or corrupted a neighbour: %d", value)
+		}
+	}
+}

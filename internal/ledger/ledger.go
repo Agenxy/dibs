@@ -146,7 +146,7 @@ func (l *Ledger) Replay(st *core.State) (int, error) {
 			}
 			var mailBefore mailhistory.Snapshot
 			if l.mail != nil {
-				mailBefore = mailhistory.Capture(st)
+				mailBefore = mailhistory.Capture(st, rec.Op)
 			}
 			_, replayEvents, applyErr := st.Apply(rec.Op, rec.T)
 			if l.OnEvents != nil && len(replayEvents) > 0 {
