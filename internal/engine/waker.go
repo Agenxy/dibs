@@ -317,21 +317,13 @@ func (e *Engine) maybeWake(ev core.Event) {
 			"window closes", "agent", l.ID)
 		return
 	}
+	if e.deferContactForLiveTurn(l) {
+		e.deferWakeLocked(l.ID, contactActivityGrace)
+		return
+	}
 	cmd, ok := e.wakeFor(l, msgType, ev)
 	if !ok {
-		// A SNAPSHOT MISS IS NOT A VERDICT. The socket route decides from a
-		// cache the loop never refreshes, so a session started after the last
-		// scan was invisible to the one wake attempt its mail would ever get:
-		// the refusal was final and the thirty-second refresh revisits no mail.
-		// The retry below refreshes the cache before it decides. Found by the
-		// pre-release review, round seven.
-		if e.socketMayHaveAppeared(l) {
-			// No session listening. If it is a Claude app session whose
-			// process has ended, the app can start it again (inapp.go), and
-			// the retry below then finds its socket.
-			e.openClosedSession(l)
-			e.deferWakeLocked(l.ID, peerCacheTTL)
-		}
+		e.handleMissingWakeRoute(l)
 		return
 	}
 	agent, stamp := l.ID, e.wakeStamp(l.ID)
@@ -367,6 +359,20 @@ func (e *Engine) maybeWake(ev core.Event) {
 		// behaviour an agent waiting for mail actually needs.
 		e.releaseWake(agent, stamp)
 	}()
+}
+
+// A snapshot miss is not a verdict. A socket may have appeared after the
+// writer's cache was sampled; only a confirmed route miss asks for contact.
+func (e *Engine) handleMissingWakeRoute(l *core.Agent) {
+	if e.contactRouteMissingNow(l) {
+		e.escalateContact(l.ID)
+	}
+	if e.socketMayHaveAppeared(l) {
+		// If a Claude app session ended, opening its existing thread can make
+		// the socket route available at the next cache refresh.
+		e.openClosedSession(l)
+		e.deferWakeLocked(l.ID, peerCacheTTL)
+	}
 }
 
 // deferWake re-asks the wake question when this agent's cooldown expires.
@@ -512,6 +518,10 @@ func (e *Engine) retryWakeDecision(agent string) {
 	if stillRunning {
 		return
 	}
+	if e.deferContactForLiveTurn(l) {
+		e.deferWakeLocked(agent, contactActivityGrace)
+		return
+	}
 	// THE OUTSTANDING WORK, NOT A PLACEHOLDER.
 	//
 	// This passed a hard-coded MsgQuestion and a bare event, so every wake that
@@ -532,6 +542,12 @@ func (e *Engine) retryWakeDecision(agent string) {
 		Data: map[string]any{"msg_type": kind, "from": from},
 	})
 	if !ok {
+		// This retry follows a fresh peer-cache scan. For a terminal or a
+		// remote agent, a continuing route miss is evidence to ask for help.
+		// Claude Desktop's asynchronous app-open path reports its own failure.
+		if e.contactRouteMissingAfterRetry(l) {
+			e.escalateContact(agent)
+		}
 		// STILL NO SOCKET, STILL OWED. The first retry was armed for the
 		// cache's staleness and a second miss returned without another,
 		// while the question stayed pending: a socket that appeared later was

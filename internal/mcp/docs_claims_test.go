@@ -346,9 +346,9 @@ func TestMessageTypesDoNotPromiseAnInstantWake(t *testing.T) {
 	if !strings.Contains(desc, "NEXT ACTIVATION") {
 		t.Errorf("send does not say when a message actually arrives: %q", desc)
 	}
-	// And the consequence a sender needs in order to pick a deadline.
-	if !strings.Contains(desc, "deadline") {
-		t.Errorf("send does not warn that a short deadline expires against a working "+
-			"agent, which is what made a peer report the product broken: %q", desc)
+	// The sender must not mistake the response window for a send-time clock.
+	if !strings.Contains(desc, "deadline") || !strings.Contains(desc, "first read") ||
+		!strings.Contains(desc, "not send") {
+		t.Errorf("send does not explain the delivery-start deadline: %q", desc)
 	}
 }

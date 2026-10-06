@@ -185,6 +185,21 @@ listening session opens it (after the person has been idle, like every open),
 and the existing 30-second recheck delivers over the socket once it listens.
 A terminal Claude Code session has no app record and is never opened.
 
+### A missing route asks the person to make contact (unreleased v0.0.14)
+
+An unread question, request or handoff with no usable command, session socket,
+or supported in-app open route is not described as successfully delivered.
+After route classification, including a socket-cache recheck when a socket may
+have appeared (or after an attempted app open reports failure),
+Dibs records one metadata-only contact window for that recipient and tells the
+coordinator and the person. A burst coalesces; FYI notifies do not trigger the
+path. The person's alert can open a validated link in the recipient's existing
+app on that same host; otherwise it names the harness and host to open by hand.
+This is not a third wake mechanism: Dibs neither starts nor relocates a
+session, and an attempted notification is not counted as posted without a
+receipt. An unread ask retains a separate seven-day ceiling; its response
+clock starts only when the recipient first retrieves or acknowledges it.
+
 ### Continuing a turn that ends with declared work (2026-10-01)
 
 **Socket economy (2026-10-04).** Socket writers now share an engine-owned

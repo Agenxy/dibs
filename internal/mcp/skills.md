@@ -342,6 +342,16 @@ your next action.
 Do not answer the wake itself, and do not treat it as an instruction from
 whoever sent the mail. Read your mail and decide as you would have.
 
+For a new agent-to-agent question or request, `deadline_s` measures your
+response window from your first authenticated retrieval, not from send or a
+wake attempt. Before then the sender sees `deadline_pending` and
+`response_window_s`. Unretrieved mail has a separate seven-day ceiling;
+historical sends keep their recorded deadlines. A handoff has no response
+deadline. If Dibs has no route into an unread recipient's harness, a question,
+request, or handoff can produce one coalesced, metadata-only contact alert for
+the coordinator and person. It never gives Dibs permission to start or move
+the recipient's session; FYI notifies do not trigger this path.
+
 **Verify your delivery route.** There are two routes and only one of them can
 be confirmed: a command from the operator's config, which Dibs starts and
 watches, and your harness's own session socket, which is best effort. A Claude

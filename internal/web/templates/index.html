@@ -396,7 +396,7 @@ function drawPanes() {
   // selfId is null: on a god view no agent is "this one", and marking one would
   // be a lie. The shared component takes it as a parameter precisely so this
   // surface can decline to answer the question.
-  boardEl.innerHTML = Board.rosterHTML(b?.agents, {
+  boardEl.innerHTML = Board.contactAlertsHTML(b?.contact_alerts) + Board.rosterHTML(b?.agents, {
     selfId: null,
     // Same reason as the panel: this surface replaces the roster's innerHTML on
     // every board change, so a `details` a reader opened does not survive one.

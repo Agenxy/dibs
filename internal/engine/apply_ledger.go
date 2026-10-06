@@ -86,6 +86,7 @@ func (e *Engine) applyAndLedgerWithReceipt(
 		e.publish(evs)
 		published()
 		e.noteHumanCleanup(evs)
+		e.resolveContactsAfter(evs, now)
 	}
 	if op.Kind == core.OpPutBlob {
 		e.protectBlobRegistration(op.Blob)

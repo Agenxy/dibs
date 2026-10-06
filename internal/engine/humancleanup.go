@@ -107,6 +107,10 @@ func (e *Engine) cleanupLateHumanPost(serial uint64) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	_, err := e.query(ctx, func() core.Result {
+		if c := e.state.Contacts[serial]; c != nil && !c.ResolvedAt.IsZero() {
+			e.requestHumanCleanup([]uint64{serial})
+			return nil
+		}
 		m := e.state.Messages[serial]
 		if m != nil && m.To == e.humanIdentityLocked() && humanDecision(m) {
 			e.requestHumanCleanup([]uint64{serial})
@@ -125,6 +129,11 @@ func (e *Engine) humanCleanupAt(now time.Time) []uint64 {
 	for serial, m := range e.state.Messages {
 		if human != "" && m.To == human && humanDecision(m) &&
 			!m.RetainUntil.IsZero() && m.RetainUntil.After(now) {
+			serials = append(serials, serial)
+		}
+	}
+	for serial, c := range e.state.Contacts {
+		if !c.ResolvedAt.IsZero() && now.Sub(c.ResolvedAt) <= 7*24*time.Hour {
 			serials = append(serials, serial)
 		}
 	}

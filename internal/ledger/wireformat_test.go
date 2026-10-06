@@ -253,6 +253,9 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		"superseded_by": true,
 		// Additive delivery prefix and recorded review upgrade epoch; no retags.
 		"outcome_through_serial": true, "review_read_cutoff_serial": true,
+		// New delivery-start timing and daemon-authored contact receipts.
+		// Absent fields keep historical send-time expiry and no contact state.
+		"delivery_start": true, "contact_serial": true,
 	}
 
 	// Every tag the Op DECLARES, not merely the ones this fixture happens to
@@ -448,7 +451,7 @@ const (
 	// Inline reads add two tags; all historical tags stay frozen.
 	// Alias release adds one tag; every historical spelling stays frozen.
 	// App restart adds four observation tags and two setting tags; none renamed.
-	frozenOpFingerprint       = "sha256:e57817acc9be9f90"
+	frozenOpFingerprint       = "sha256:1ab266b6bae0468c"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`
@@ -459,7 +462,7 @@ const (
 	// Task queue: nine additive message tags, no renamed/removed historical tags.
 	// Withdrawal: three additive receipt fields; all old tags unchanged.
 	// Worker review reads add one scalar; sender watermark is unchanged.
-	frozenMessageFingerprint = "sha256:45ff11fcc88b6704"
+	frozenMessageFingerprint = "sha256:2d8be0331e92dd37"
 	// The identity inside op.agent. Set when the fingerprint was added; one
 	// new tag at a time from here, never a rename.
 	frozenAgentFingerprint = "sha256:c630d3cc9f27eb95"
@@ -592,6 +595,9 @@ func TestOpKindStringsAreFrozen(t *testing.T) {
 		"OpAppRestartObserved":   {core.OpAppRestartObserved, "app_restart_observed"},
 		"OpSetRestartSetting":    {core.OpSetRestartSetting, "set_restart_setting"},
 		"OpReadAppRestart":       {core.OpReadAppRestart, "read_app_restart"},
+		"OpContactEscalate":      {core.OpContactEscalate, "contact_escalated"},
+		"OpContactNotified":      {core.OpContactNotified, "contact_notified"},
+		"OpContactResolved":      {core.OpContactResolved, "contact_resolved"},
 		"OpAckBoard":             {core.OpAckBoard, "check_in"},
 		"OpUpdate":               {core.OpUpdate, "update"},
 		"OpSignOff":              {core.OpSignOff, "sign_off"},
@@ -697,6 +703,7 @@ func TestLedgerMessageFieldNamesAreFrozen(t *testing.T) {
 		"milestones": true, "progress": true, "deliverable": true, "tracked": true,
 		"serial": true, "from": true, "to": true, "type": true, "body": true,
 		"state": true, "consumed": true, "deadline": true, "response": true,
+		"response_window_s": true, "never_delivered_at": true, "contact_escalated_serial": true,
 		"delivered_serial": true, "sent_at": true, "delivered_at": true,
 		"responded_serial": true, "acked_serial": true, "terminal_at": true,
 		"expire_detail": true, "attachments": true,

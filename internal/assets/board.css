@@ -1325,3 +1325,14 @@ button, .act { padding-block: max(5px, calc((var(--ctl-h, 26px) - 1lh) / 2)); }
 @media (prefers-reduced-motion: reduce) {
   .cadence i { transition: none; }
 }
+
+.contact-alerts {
+  margin-block-end: var(--s5);
+  padding: var(--s4);
+  border: 1px solid var(--line-3);
+  border-radius: 8px;
+}
+.contact-alerts h2 { margin: 0 0 var(--s2); font-size: 1rem; }
+.contact-alerts h2 span { margin-inline-start: var(--s2); color: var(--fg-3); }
+.contact-alerts ul { margin: 0; padding-inline-start: 1.25rem; }
+.contact-alerts li + li { margin-block-start: var(--s2); }

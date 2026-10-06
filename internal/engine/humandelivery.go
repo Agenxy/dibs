@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/humanask"
@@ -44,10 +45,30 @@ type humanReceipt struct {
 }
 
 type humanDeliveries struct {
-	mu       sync.Mutex
-	notifier HumanNotifier
-	bySerial map[uint64]humanDelivery
-	cleanup  chan NotificationCleanup
+	mu            sync.Mutex
+	notifier      HumanNotifier
+	bySerial      map[uint64]humanDelivery
+	contactIssued map[uint64]bool // a contact alert actually left the settle timer
+	cleanup       chan NotificationCleanup
+}
+
+func (e *Engine) contactWasIssued(serial uint64) bool {
+	e.humanDelivery.mu.Lock()
+	defer e.humanDelivery.mu.Unlock()
+	return e.humanDelivery.contactIssued[serial]
+}
+
+func (e *Engine) setContactIssued(serial uint64, issued bool) {
+	e.humanDelivery.mu.Lock()
+	defer e.humanDelivery.mu.Unlock()
+	if e.humanDelivery.contactIssued == nil {
+		e.humanDelivery.contactIssued = map[uint64]bool{}
+	}
+	if issued {
+		e.humanDelivery.contactIssued[serial] = true
+	} else {
+		delete(e.humanDelivery.contactIssued, serial)
+	}
 }
 
 // SetHumanNotifier supplies a desktop implementation; relay dispatch is unchanged.
@@ -99,7 +120,7 @@ func (e *Engine) dispatchHuman(res core.Result) {
 	}
 	// Bounded by retained mail, and pruned on every dispatch.
 	for old := range e.humanDelivery.bySerial {
-		if e.state.Messages[old] == nil {
+		if e.state.Messages[old] == nil && e.state.Contacts[old] == nil {
 			delete(e.humanDelivery.bySerial, old)
 		}
 	}
@@ -123,6 +144,7 @@ func (e *Engine) dispatchHuman(res core.Result) {
 func (e *Engine) askHumanDesktop(n HumanNotice, ask func(humanask.Message) (humanask.Answer, error)) {
 	a, err := ask(humanask.Message{
 		Type: n.Type, From: n.From, FromName: n.FromName, Who: n.Who, Body: n.Body,
+		Contact: n.Contact,
 		Choices: n.Choices, Grant: n.Grant, Adopt: n.Adopt, AdoptName: n.AdoptName,
 		Serial: n.Serial, Node: n.Node,
 		Receipt: func(state string) {
@@ -130,6 +152,9 @@ func (e *Engine) askHumanDesktop(n HumanNotice, ask func(humanask.Message) (huma
 				e.setHumanPresentation(n.Serial, e.humanPresentation(), true)
 			}
 			e.recordDesktopDelivery(n.Serial, state, "")
+			if state == "posted" && n.Contact != nil {
+				e.noteContactPosted(n.Serial)
+			}
 			if state == "posted" {
 				e.cleanupLateHumanPost(n.Serial)
 			}
@@ -139,6 +164,9 @@ func (e *Engine) askHumanDesktop(n HumanNotice, ask func(humanask.Message) (huma
 				e.setHumanPresentation(n.Serial, e.humanPresentation(), true)
 			}
 			e.recordHumanReceipt(n.Serial, "desktop", data, "")
+			if data.State == "posted" && n.Contact != nil {
+				e.noteContactPosted(n.Serial)
+			}
 			if data.State == "posted" {
 				e.cleanupLateHumanPost(n.Serial)
 			}
@@ -271,6 +299,10 @@ func (e *Engine) ReportHumanReceipt(
 	}
 	var invalid error
 	_, err := e.query(ctx, func() core.Result {
+		if e.state.Contacts[serial] != nil {
+			invalid = e.recordContactReceipt(serial, source, data, failure)
+			return core.Result{"ok": true}
+		}
 		m := e.state.Messages[serial]
 		if m == nil || m.To != e.humanIdentityLocked() {
 			invalid = ErrNotTheHumans
@@ -292,6 +324,21 @@ func (e *Engine) ReportHumanReceipt(
 		go e.report(fmt.Errorf("human relay notification failed: %s", failure))
 	}
 	return invalid
+}
+
+// On the writer. A contact is not posted merely because a relay accepted it.
+func (e *Engine) recordContactReceipt(serial uint64, source string, data notify.ReceiptData, failure string) error {
+	if !e.recordHumanReceipt(serial, source, data, failure) {
+		return fmt.Errorf("notification receipt source limit reached (64)")
+	}
+	if data.State != "posted" {
+		return nil
+	}
+	e.contactPostedDecision(serial, time.Now())
+	if !e.state.Contacts[serial].ResolvedAt.IsZero() {
+		e.requestHumanCleanup([]uint64{serial})
+	}
+	return nil
 }
 
 func validateHumanReceipt(source, state, failure string) error {

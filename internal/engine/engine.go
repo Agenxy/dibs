@@ -45,7 +45,8 @@ type Engine struct {
 	prober               Prober
 	ring                 []core.Event
 	humanDelivery        humanDeliveries
-	relays               humanRelays // the person's own Macs, see humanrelay.go
+	contactAttempts      map[uint64]time.Time // derived retry throttle, writer-owned
+	relays               humanRelays          // the person's own Macs, see humanrelay.go
 	ringCap              int
 	buckets              map[string]*bucket
 	resumeAt             map[string]time.Time // per-agent resume rate limit (1/10s)
@@ -454,6 +455,7 @@ func (e *Engine) execWithReceipt(
 	// caller's to assert. Checked below, after the actor is known.
 	op.ClaimVerified = false
 	op.AdoptAuthorised = false
+	op.DeliveryStart = false // ingress owns the new-send semantic flag
 	op.QueueDebt = false
 	op.PermissionActor = ""
 	op.PermissionActorCreated = 0
@@ -686,6 +688,8 @@ func (e *Engine) execWithReceipt(
 	// the old id on rows registered before it, and the CHANGELOG said the
 	// migration worked.
 	system := op.Kind == core.OpSweep || op.Kind == core.OpMarkDelivered ||
+		op.Kind == core.OpContactEscalate || op.Kind == core.OpContactNotified ||
+		op.Kind == core.OpContactResolved ||
 		op.Kind == core.OpWake || op.Kind == core.OpAppRestartObserved ||
 		op.Kind == core.OpActivityCheckpoint || op.Kind == core.OpGrantRole ||
 		op.Kind == core.OpPrune || op.Kind == core.OpHostRenamed ||
@@ -1216,6 +1220,7 @@ func (e *Engine) sweep(now time.Time) {
 	}
 	_, _ = e.applyAndLedger(op, now)
 	e.dropNoticesWithoutMail()
+	e.retryContactDelivery(now)
 }
 
 func (e *Engine) publish(evs []core.Event) {
@@ -1248,6 +1253,16 @@ func (e *Engine) publish(evs []core.Event) {
 			}
 		}
 		e.noteEvent(ev) // record what an agent needs told; drained by hook_poll
+		if ev.Type == "contact.escalated" {
+			e.scheduleContactDelivery(ev.Serial, ev.TS)
+		}
+		if ev.Type == "contact.resolved" {
+			if serial, ok := ev.Data["contact_serial"].(uint64); ok {
+				if e.contactWasIssued(serial) {
+					e.requestHumanCleanup([]uint64{serial})
+				}
+			}
+		}
 		// And, for an agent that is not running at all, start the operator's
 		// way in. Every other path here waits for the agent to come to us.
 		e.maybeWake(ev)

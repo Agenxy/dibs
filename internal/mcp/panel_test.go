@@ -67,6 +67,50 @@ func TestPanelPayloadCarriesOnlyRenderedFields(t *testing.T) {
 	}
 }
 
+func TestPanelKeepsContactAlertsWithoutMessageBodies(t *testing.T) {
+	in := core.Result{"board": core.Result{
+		"agents": []core.Result{},
+		"contact_alerts": []core.Result{{
+			"serial": uint64(19), "recipient": "worker", "oldest_serial": uint64(12),
+			"high_water": uint64(14), "count": 3,
+		}},
+	}}
+	out := panelPayload(in)
+	board := asMap(out["board"])
+	if board == nil {
+		t.Fatal("panel lost board")
+	}
+	alerts := asMaps(board["contact_alerts"])
+	if len(alerts) != 1 || alerts[0]["recipient"] != "worker" {
+		t.Fatalf("panel dropped contact metadata: %v", board["contact_alerts"])
+	}
+	if _, ok := alerts[0]["body"]; ok {
+		t.Fatal("contact alert exposed a participant body")
+	}
+}
+
+func TestPanelShowsDeliveryStartWindowOnlyForNewMessages(t *testing.T) {
+	in := core.Result{"inbox": core.Result{"messages": []core.Result{
+		{"serial": 1, "state": core.MsgStatePending, "response_window_s": 600},
+		{
+			"serial": 2, "state": core.MsgStateDelivered, "response_window_s": 600,
+			"deadline": "2026-10-06T12:00:00Z",
+		},
+		{"serial": 3, "state": core.MsgStatePending, "deadline": "old-send-deadline"},
+	}}}
+	views := asMaps(panelPayload(in)["inbox"])
+	if len(views) != 3 {
+		t.Fatalf("mail lost in panel trim: %v", views)
+	}
+	if views[0]["response_window_s"] != float64(600) || views[0]["deadline"] != nil ||
+		views[1]["deadline"] != "2026-10-06T12:00:00Z" {
+		t.Fatalf("delivery-start clock not represented honestly: %v", views)
+	}
+	if _, ok := views[2]["deadline"]; ok {
+		t.Fatalf("legacy field added despite not being rendered: %v", views[2])
+	}
+}
+
 // The model-facing summary counts from the FULL result, not the trimmed one,
 // otherwise trimming would silently change what the model is told.
 func TestSummaryCountsSurviveTrimming(t *testing.T) {

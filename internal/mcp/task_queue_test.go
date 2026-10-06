@@ -330,6 +330,9 @@ func TestQueuedCheckpointReportsOverdueWithoutExpiringOrStartingWork(t *testing.
 	if !ok {
 		t.Fatalf("send setup: %v", mail)
 	}
+	if mail["deadline_pending"] != true || mail["response_window_s"] != float64(1) || mail["deadline"] != nil {
+		t.Fatalf("send did not state the delivery-start clock honestly: %v", mail)
+	}
 	res := toolCall(t, srv, "respond", map[string]any{"token": worker, "msg_serial": n, "disposition": "queue"})
 	if res["state"] != "queued" {
 		t.Fatalf("queue setup: %v", res)

@@ -95,6 +95,9 @@ const (
 	OpSetRestartSetting  = "set_restart_setting"
 	OpAppRestartObserved = "app_restart_observed"
 	OpReadAppRestart     = "read_app_restart"
+	OpContactEscalate    = "contact_escalated"
+	OpContactNotified    = "contact_notified"
+	OpContactResolved    = "contact_resolved"
 )
 
 // Result is the caller-facing op result.
@@ -121,6 +124,12 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		return s.applySweep(op, now)
 	case OpMarkDelivered:
 		return s.applyMarkDelivered(op, now)
+	case OpContactEscalate:
+		return s.applyContactEscalate(op, now)
+	case OpContactNotified:
+		return s.applyContactNotified(op, now)
+	case OpContactResolved:
+		return s.applyContactResolved(op, now)
 	case OpGrantRole:
 		// Admin-only: the engine admits this solely on the human's admin path,
 		// so no agent token is consulted and no agent can promote itself.
@@ -210,7 +219,7 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 	case OpActivityCheckpoint:
 		res, evs = Result{"ok": true}, []Event{} // state effect: LastCoordination below
 	case OpAckBoard:
-		res, evs = s.applyAckBoard(l, op)
+		res, evs = s.applyAckBoard(l, op, now)
 	case OpUpdate:
 		res, evs, err = s.applyUpdate(l, op)
 	case OpBindSession:
@@ -1045,7 +1054,7 @@ func (s *State) applyWake(l *Agent) (Result, []Event, error) {
 // applyAckBoard is the atomic checkpoint (SPEC §10): awareness ack + delivery
 // transitions of returned pending mail, one op, one serial; snapshot is the
 // post-state.
-func (s *State) applyAckBoard(l *Agent, op *Op) (Result, []Event) {
+func (s *State) applyAckBoard(l *Agent, op *Op, now time.Time) (Result, []Event) {
 	evs := []Event{{Type: "board.acked", Agent: l.ID}}
 	// check_in is how an agent ALREADY on the board gets the name its hooks
 	// use: it is the one call they all keep making. See bindHarnessSession.
@@ -1055,6 +1064,10 @@ func (s *State) applyAckBoard(l *Agent, op *Op) (Result, []Event) {
 		if m.State == MsgStatePending {
 			m.State = MsgStateDelivered
 			m.DeliveredAt = s.Serial + 1
+			if m.ResponseWindowSec > 0 {
+				m.DeliveredTime = now
+				startResponseClock(m, now)
+			}
 			evs = append(evs, Event{
 				Type: "message.delivered", Agent: l.ID, To: m.From,
 				Data: map[string]any{"msg_serial": m.Serial},
@@ -1454,6 +1467,7 @@ func (s *State) finishSend(
 ) (Result, []Event, error) {
 	expecting := op.MsgType == MsgQuestion || op.MsgType == MsgRequest
 	var deadline time.Time
+	var responseWindow time.Duration
 	if expecting {
 		maxD := s.Limits.MaxDeadline
 		if to.Kind == KindPersistent {
@@ -1479,7 +1493,11 @@ func (s *State) finishSend(
 				d = maxD
 			}
 		}
+		responseWindow = d
 		deadline = now.Add(d)
+		if op.DeliveryStart {
+			deadline = time.Time{}
+		}
 	}
 	serial := s.Serial + 1
 	m := &Message{
@@ -1487,6 +1505,14 @@ func (s *State) finishSend(
 		State: MsgStatePending, Deadline: deadline, Attachments: op.Attachments,
 		SentAt: now, Choices: op.Choices, Grant: op.Grant, Adopt: op.Adopt, Milestones: op.Milestones, Tracked: op.Track,
 		RequestPriority: op.RequestPriority,
+	}
+	if expecting && op.DeliveryStart {
+		m.ResponseWindowSec = int(responseWindow / time.Second)
+		ceiling := 7 * 24 * time.Hour
+		if responseWindow > ceiling {
+			ceiling = responseWindow
+		}
+		m.NeverDeliveredAt = now.Add(ceiling)
 	}
 	s.Messages[serial] = m
 	evs := []Event{{Type: "message.sent", Agent: l.ID, To: to.ID, Data: map[string]any{
@@ -1506,7 +1532,15 @@ func (s *State) finishSend(
 	}
 	res := Result{"ok": true, "msg_serial": serial}
 	if expecting {
-		res["deadline"] = deadline
+		if op.DeliveryStart {
+			res["response_window_s"] = m.ResponseWindowSec
+			res["deadline_pending"] = true
+			res["never_delivered_at"] = m.NeverDeliveredAt
+			res["deadline_note"] = "The response window begins on first recipient awareness " +
+				"and does not pause if the recipient later closes."
+		} else {
+			res["deadline"] = deadline
+		}
 	}
 	if n := s.sleepingNote(to); n != "" {
 		res["note"] = n
@@ -1619,6 +1653,11 @@ func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, 
 	}
 	if err := declareMilestones(m, op, st); err != nil {
 		return nil, nil, err
+	}
+	if m.ResponseWindowSec > 0 && m.Deadline.IsZero() {
+		m.DeliveredAt = s.Serial + 1
+		m.DeliveredTime = now
+		startResponseClock(m, now)
 	}
 	m.State = st
 	if op.QueueDebt {
@@ -1748,6 +1787,13 @@ func (s *State) applyAckMessage(l *Agent, op *Op, now time.Time) (Result, []Even
 				Data: map[string]any{"msg_serial": m.Serial},
 			}}, nil
 	}
+	// Ack can be the first authenticated awareness of a new question/request;
+	// callers need not retrieve the body through a separate inbox call first.
+	if m.State == MsgStatePending && m.ResponseWindowSec > 0 && m.Deadline.IsZero() {
+		m.DeliveredAt = s.Serial + 1
+		m.DeliveredTime = now
+		startResponseClock(m, now)
+	}
 	m.State = MsgStateAcked
 	m.AckedAt = s.Serial + 1
 	if !m.Expecting() { // acked is terminal + consumed for notify/handoff
@@ -1864,6 +1910,7 @@ func (s *State) applyMarkDelivered(op *Op, now time.Time) (Result, []Event, erro
 		// `now` is the ledgered timestamp on replay, so this reconstructs
 		// identically rather than stamping the moment of replay.
 		m.DeliveredTime = now
+		startResponseClock(m, now)
 		evs = append(evs, Event{
 			Type: "message.delivered", Agent: m.To, To: m.From,
 			Data: map[string]any{"msg_serial": m.Serial},
@@ -1874,6 +1921,14 @@ func (s *State) applyMarkDelivered(op *Op, now time.Time) (Result, []Event, erro
 	}
 	s.finish(&evs, now)
 	return Result{"changed": true}, evs, nil
+}
+
+// startResponseClock is only for the new send op shape. A historical message
+// has a zero response window and keeps its send-time deadline on replay.
+func startResponseClock(m *Message, now time.Time) {
+	if m.ResponseWindowSec > 0 && m.Deadline.IsZero() {
+		m.Deadline = now.Add(time.Duration(m.ResponseWindowSec) * time.Second)
+	}
 }
 
 // boardAtNextSerial is Board() stamped with the serial this op is about to take.
