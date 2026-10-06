@@ -24,7 +24,8 @@ import (
 
 // Separate hosted processes replay the identical encrypted fixture. The
 // baseline removes only this derived observer; production uses the default
-// reader, one fold, real index, all buffers and forced-GC retained heap.
+// reader, one boot fold followed by the private post-serving fold, real index,
+// all buffers and forced-GC retained heap. Warming peak includes the shadow.
 func TestMailHistoryProductionProbe(t *testing.T) {
 	arm := os.Getenv("DIBS_HISTORY_PROBE_ARM")
 	if arm == "" {
@@ -52,7 +53,10 @@ func TestMailHistoryProductionProbe(t *testing.T) {
 	if !baselineArm && arm != "production" {
 		t.Fatal("setup: unknown arm", arm)
 	}
-	path = copyHistoryProbeLedger(t, path, filepath.Join(dir, arm+".ledger.jsonl"))
+	// Arms run sequentially in separate processes; each replaces this private
+	// copy from the immutable source before timing. No environment value names
+	// a path passed into production Open.
+	path = copyHistoryProbeLedger(t, path, filepath.Join(dir, "paired.ledger.jsonl"))
 	l, err := Open(path, "history-probe", box)
 	if err != nil {
 		t.Fatal(err)
@@ -71,8 +75,8 @@ func TestMailHistoryProductionProbe(t *testing.T) {
 	var representation any
 	if l.mail != nil {
 		representation = l.mail.Measurement()
-		if m := l.mail.Measurement(); m.Records != uint64(count) || m.Failed || m.Started || m.Units != 0 || m.Blocks != 0 {
-			t.Fatal("setup: observer did not visit every committed record")
+		if m := l.mail.Measurement(); m.Records != uint64(count) || m.Failed || m.Started || m.Units != 0 || m.Blocks != 0 || m.CapturedUnits != 0 || m.QueuedBytes != 0 {
+			t.Fatal("setup: boot replay performed history work or lost its boundary")
 		}
 	}
 	liveMessages, liveAgents := len(st.Messages), len(st.Agents)
@@ -116,7 +120,8 @@ func TestMailHistoryProductionProbe(t *testing.T) {
 	receipt := map[string]any{
 		"arm": arm, "case": mode, "records": n, "heap_alloc_bytes": mem.HeapAlloc,
 		"heap_inuse_bytes": mem.HeapInuse, "replay_seconds": seconds, "capture_replay_seconds": replaySeconds,
-		"live_messages": liveMessages, "live_agents": liveAgents, "representation": representation,
+		"boot_replay_seconds": replaySeconds,
+		"live_messages":       liveMessages, "live_agents": liveAgents, "representation": representation,
 		"capture_heap_bytes": captureHeap, "warming_peak_heap_bytes": peak,
 		"warm_seconds": warmSeconds, "warming_coordination_p99_seconds": p99,
 	}

@@ -43,6 +43,7 @@ type rawChunk struct {
 	timeIDs     map[time.Time]uint32
 	previous    snapshotUnit
 	moves       []rawMove
+	anchors     []Anchor
 	head        Record
 	next        *rawChunk
 }
@@ -125,6 +126,6 @@ func (c *rawChunk) seal() {
 // hosted peak includes allocation slack, maps, backing strings and Go runtime.
 func (c *rawChunk) charge() uint64 {
 	n := uint64(blockUnits*16 + len(c.wide.chunks)*scalarChunk*8 + len(c.narrow.chunks)*scalarChunk*4 +
-		len(c.strings.chunks)*scalarChunk*16 + len(c.times.chunks)*scalarChunk*24 + cap(c.moves)*56)
+		len(c.strings.chunks)*scalarChunk*16 + len(c.times.chunks)*scalarChunk*24 + cap(c.moves)*56 + cap(c.anchors)*48)
 	return n + c.stringBytes + uint64(c.times.n)*64
 }

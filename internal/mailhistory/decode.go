@@ -81,22 +81,7 @@ func (d *decoder) unit() snapshotUnit {
 		if mask&(uint64(1)<<bit) == 0 {
 			continue
 		}
-		v := &fields[bit]
-		switch kind {
-		case wideField:
-			v.number = d.number()
-		case narrowField:
-			v.number = d.number()
-			if v.number > math.MaxUint32 {
-				d.err = errors.New("invalid history narrow field")
-			}
-		case signedField:
-			v.number = uint64(d.integer()) // #nosec G115 -- native signed bit pattern
-		case textField:
-			v.text = d.text()
-		case timeField:
-			v.at = d.timestamp()
-		}
+		d.field(kind, &fields[bit])
 	}
 	if fields[10].number >= 1<<6 {
 		d.err = errors.New("invalid history flags")
@@ -106,6 +91,24 @@ func (d *decoder) unit() snapshotUnit {
 		d.previous, d.known = u, true
 	}
 	return u
+}
+
+func (d *decoder) field(kind fieldKind, v *fieldValue) {
+	switch kind {
+	case wideField:
+		v.number = d.number()
+	case narrowField:
+		v.number = d.number()
+		if v.number > math.MaxUint32 {
+			d.err = errors.New("invalid history narrow field")
+		}
+	case signedField:
+		v.number = uint64(d.integer()) // #nosec G115 -- native signed bit pattern
+	case textField:
+		v.text = d.text()
+	case timeField:
+		v.at = d.timestamp()
+	}
 }
 
 func decodeRaw(raw []byte, count uint64) ([]snapshotUnit, error) {

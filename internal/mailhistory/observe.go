@@ -25,15 +25,30 @@ func (i *Index) Observe(rec Record, before Snapshot, st *core.State, op *core.Op
 		return
 	}
 	if i.records%4096 == 0 {
-		i.anchors = append(i.anchors, Anchor{rec.Serial, rec.Offset, rec.Prev})
+		i.ensureCapture()
+		i.active.anchors = append(i.active.anchors, Anchor{rec.Serial, rec.Offset, rec.Prev})
 	}
 	if i.records == 0 {
-		i.generation = hex.EncodeToString(rec.Hash[:])
+		i.generation = generationOf(rec)
 	}
 	i.records++
 	i.head = rec
 	i.ready = false
-	numbers := i.numbers[:0]
+	err := projectChanges(rec, before, st, op, events, &i.numbers, i.captureUnit, i.captureMove)
+	if err != nil || (i.active != nil && i.queueLimit > 0 && i.queued+i.active.charge() > i.queueLimit) {
+		i.failCapture()
+	}
+}
+
+func generationOf(rec Record) string { return hex.EncodeToString(rec.Hash[:]) }
+
+// Both folds project their canonical before/after values through this function.
+// The live writer captures a bounded queue; the private background fold encodes
+// directly. Neither path invents state transitions or keeps authored content.
+func projectChanges(rec Record, before Snapshot, st *core.State, op *core.Op, events []core.Event,
+	scratch *[]uint64, emit func(snapshotUnit) error, inherit func(partyKey, partyKey) error,
+) error {
+	numbers := (*scratch)[:0]
 	for serial, old := range before.Mail {
 		if m := st.Messages[serial]; m == nil || stateMetadata(st, m) != old {
 			numbers = append(numbers, serial)
@@ -45,7 +60,7 @@ func (i *Index) Observe(rec Record, before Snapshot, st *core.State, op *core.Op
 		}
 	}
 	slices.Sort(numbers)
-	i.numbers = numbers[:0]
+	*scratch = numbers[:0]
 	author := before.Authors[op.AgentID]
 	if author.ID == "" {
 		if a := st.Agents[op.AgentID]; a != nil {
@@ -55,16 +70,17 @@ func (i *Index) Observe(rec Record, before Snapshot, st *core.State, op *core.Op
 		}
 	}
 	for _, serial := range numbers {
-		i.observeMessage(rec, before, st, op, events, serial, author)
-		if i.failed {
-			return
+		if err := projectMessage(rec, before, st, op, events, serial, author, emit, inherit); err != nil {
+			return err
 		}
 	}
+	return nil
 }
 
-func (i *Index) observeMessage(
+func projectMessage(
 	rec Record, before Snapshot, st *core.State, op *core.Op, events []core.Event, serial uint64, author Author,
-) {
+	emit func(snapshotUnit) error, inherit func(partyKey, partyKey) error,
+) error {
 	old, existed := before.Mail[serial]
 	m := st.Messages[serial]
 	meta := old
@@ -73,19 +89,22 @@ func (i *Index) observeMessage(
 	}
 	from, to := before.key(meta.From, st), before.key(meta.To, st)
 	if existed {
-		i.inheritMovedParty(old.From, meta.From, before, st)
-		i.inheritMovedParty(old.To, meta.To, before, st)
+		if err := inheritParties(old, meta, before, st, inherit); err != nil {
+			return err
+		}
 	}
 	ordinal := uint32(0)
 	if existed && m == nil {
 		for _, ev := range events {
 			n, _ := ev.Data["msg_serial"].(uint64)
 			if n == serial && strings.HasPrefix(ev.Type, "message.") {
-				i.capture(snapshotUnit{
+				if err := emit(snapshotUnit{
 					Position: position{rec.Serial, serial, ordinal}, At: rec.At,
 					Kind: ev.Type, Metadata: old, Author: author,
 					FromCreated: from.Created, ToCreated: to.Created,
-				})
+				}); err != nil {
+					return err
+				}
 				ordinal++
 			}
 		}
@@ -94,21 +113,33 @@ func (i *Index) observeMessage(
 	if m == nil {
 		kind = "evicted"
 	}
-	content := m != nil && ((!existed && op.Kind == core.OpSendMessage) ||
-		(serial == op.MsgSerial && (op.Kind == core.OpRespond || op.Kind == core.OpWithdrawMessage)))
-	i.capture(snapshotUnit{
+	return emit(snapshotUnit{
 		Position: position{rec.Serial, serial, ordinal}, At: rec.At,
-		Kind: kind, Metadata: meta, Author: author, Content: content, AfterKnown: m != nil, Evicted: m == nil,
+		Kind: kind, Metadata: meta, Author: author, Content: hasContent(op, serial, existed, m != nil), AfterKnown: m != nil, Evicted: m == nil,
 		FromCreated: from.Created, ToCreated: to.Created,
 	})
 }
 
-func (i *Index) inheritMovedParty(old, current string, before Snapshot, st *core.State) {
-	if old == "" || old == current {
-		return
+func inheritParties(old, current Metadata, before Snapshot, st *core.State, inherit func(partyKey, partyKey) error) error {
+	for _, pair := range [][2]string{{old.From, current.From}, {old.To, current.To}} {
+		if pair[0] != "" && pair[0] != pair[1] {
+			if err := inherit(before.key(pair[0], st), before.key(pair[1], st)); err != nil {
+				return err
+			}
+		}
 	}
+	return nil
+}
+
+func hasContent(op *core.Op, serial uint64, existed, present bool) bool {
+	return present && ((!existed && op.Kind == core.OpSendMessage) ||
+		(serial == op.MsgSerial && (op.Kind == core.OpRespond || op.Kind == core.OpWithdrawMessage)))
+}
+
+func (i *Index) captureMove(from, to partyKey) error {
 	i.ensureCapture()
 	i.active.moves = append(i.active.moves, rawMove{
-		before: i.active.count, from: before.key(old, st), to: before.key(current, st),
+		before: i.active.count, from: from, to: to,
 	})
+	return nil
 }

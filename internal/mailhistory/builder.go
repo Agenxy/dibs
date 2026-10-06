@@ -26,9 +26,17 @@ func (i *Index) capture(u snapshotUnit) {
 	i.active.add(u)
 	i.active.head = i.head
 	i.captured++
-	if i.started && i.queued+i.active.charge() > i.queueLimit {
+	if i.queueLimit > 0 && i.queued+i.active.charge() > i.queueLimit {
 		i.failCapture() // never block the writer or silently lose a committed unit
 	}
+}
+
+func (i *Index) captureUnit(u snapshotUnit) error {
+	i.capture(u)
+	if i.failed {
+		return errors.New("history live queue capacity exceeded")
+	}
+	return nil
 }
 
 func (i *Index) sealCapture() {
@@ -37,6 +45,7 @@ func (i *Index) sealCapture() {
 	}
 	c := i.active
 	c.seal()
+	c.head = i.head // include records with no changed mail in the queued watermark
 	if i.last == nil {
 		i.first = c
 	} else {
@@ -79,7 +88,9 @@ func (i *Index) start(ctx context.Context) {
 	}
 	i.started = true
 	i.sealCapture()
-	i.queueLimit = i.queued + liveQueueBytes
+	if i.bootstrap == nil {
+		i.queueLimit = i.queued + liveQueueBytes // isolated projector fixtures, not boot replay
+	}
 	go i.build(ctx)
 }
 
@@ -106,6 +117,7 @@ func (i *Index) buildChunk(ctx context.Context, c *rawChunk) error {
 	// a whole chunk cannot delay a coordination op waiting on the writer.
 	i.viewMu.Lock()
 	defer i.viewMu.Unlock()
+	i.anchors = append(i.anchors, c.anchors...)
 	var previous snapshotUnit
 	move := 0
 	for n := uint32(0); n < c.count; n++ {
@@ -138,6 +150,14 @@ func (i *Index) buildChunk(ctx context.Context, c *rawChunk) error {
 
 func (i *Index) build(ctx context.Context) {
 	defer i.Invalidate() // context cancellation never leaves a complete-looking stale view
+	if i.bootstrap != nil {
+		if err := i.bootstrap(ctx, i); err != nil {
+			return
+		}
+		i.mu.Lock()
+		i.bootstrap = nil // the reader's private shadow and its closure are no longer retained
+		i.mu.Unlock()
+	}
 	for {
 		if ctx.Err() != nil {
 			return

@@ -4,12 +4,14 @@ This branch is unfinished and must not merge. Request 54264 completed with
 PR #390 at 2643b1d and PR #392 at 89b98f4. The accepted compact design (architect
 48525) now proceeds on that actual main, after v0.0.13 publication.
 
-The encrypted ledger remains the only persistent store. Production replay
-captures canonical metadata before its existing Apply and observes it after
-chain, decryption, fold and serial validation. Live commits capture before the
-existing engine Apply and observe only after successful Append, following the
-acceptance receipt. There is one fold, with one shared observer. Snapshot values
-contain no mail body, response, participant paths, attachment paths or token.
+The current architecture is the private post-serving canonical fold accepted
+in architect 56020/56033, described in MAIL-HISTORY-WARMING-DESIGN.md. Boot Replay
+does no per-record history work. A frozen S0 boundary starts reconstruction
+only after HTTP Accept, with independent State, ledgered timestamps and actual
+Limits. Live commits capture before the existing engine Apply and observe only
+after successful Append, following the acceptance receipt; their bounded queue
+drains after S0. Snapshot values contain no body, response, participant paths,
+attachment paths or token. This checkpoint is unmeasured and still unfinished.
 
 The representation uses bounded compressed canonical snapshots, latest-header
 references, both per-party reference vectors, sparse chain anchors and a bounded
@@ -26,7 +28,9 @@ vector allocation slack count. The bounded derived format encodes primitive
 values directly, preserving all metadata fields and timestamps, instead of
 allocating and formatting JSON on the canonical writer. Only current mail
 parties and the op's actor need their pre-fold identity captured. There is no
-change to the ledger format and no second Apply.
+change to the ledger format. The historical synchronous checkpoints below used
+no second Apply; the current design explicitly permits one private background
+fold while retaining exactly one on the boot path.
 
 The next resource revision reuses writer-owned transient capture and sorting
 workspace instead of allocating it on every op. Every immutable snapshot is
@@ -91,13 +95,15 @@ after the first mail unit; that distinction must accompany the number. The
 100k memory ceiling stays in force until a measured fixed ceiling and slope
 are explicitly reviewed; it has not been replaced with a fitted estimate.
 
-The background checkpoint replaces synchronous Observe encoding with native
+The rejected 9ac0a98 background checkpoint replaced synchronous Observe encoding with native
 35-field deltas in fixed segments, including request_priority (distinct from
 request queue priority) and party incarnation serials. EndReplay seals native
-capture only; the real HTTP Accept boundary starts the FIFO builder. Live
+capture only; the real HTTP Accept boundary started the FIFO builder. Live
 commits use the same queue, with an explicit failed derived view on saturation.
 Compression holds a view lock separate from writer capture. No performance
-claim applies until the new hosted matrix is measured. The revised probe
+claim follows from that checkpoint: unprofiled 1M capture alone added
+19.269548%, and 1M/2M peaks above steady exceeded their 64/128 MiB allowances
+at 132,039,576/266,681,648 bytes. The revised probe
 reports replay/capture alone, replay-to-serving, warming wall time, sampled
 peak, steady forced-GC heap and p99 of real engine check-ins during warming.
 Every arm uses its own byte-identical fixture copy before live probe appends.

@@ -32,10 +32,23 @@ type Ledger interface {
 }
 
 // MailHistorySource is an optional derived ledger view. Canonical before/after
-// observation occurs only after successful append; no second fold is allowed.
+// observation occurs only after successful append. The live writer never folds
+// twice; a private post-serving ledger reader rebuilds the boot prefix.
 type MailHistorySource interface {
 	MailHistory() *mailhistory.Index
 	ObserveMail(mailhistory.Snapshot, *core.State, *core.Op, []core.Event)
+}
+
+// The observer's workspace belongs to the writer; queries never retain it.
+type mailHistoryObserver struct {
+	mailSource  MailHistorySource
+	mailScratch mailhistory.Snapshot
+}
+
+func (e *Engine) initMailHistory(led Ledger) {
+	if source, ok := led.(MailHistorySource); ok && source.MailHistory() != nil {
+		e.mailSource = source
+	}
 }
 
 // Store holds attachment bytes outside the replay model (the blob store,

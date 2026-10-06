@@ -10,8 +10,9 @@ import (
 // MailHistory exposes the derived committed-record view through the engine port.
 func (l *Ledger) MailHistory() *mailhistory.Index { return l.mail }
 
-// ObserveMail is called only for successful committed records. Replay enters
-// this same observer after its one fold and chain/serial validation.
+// ObserveMail is called only for successful live committed records. Boot Replay
+// does no per-record history work; the private post-serving fold projects its
+// canonical effects directly through the shared metadata projector instead.
 func (l *Ledger) ObserveMail(before mailhistory.Snapshot, st *core.State, op *core.Op, events []core.Event) {
 	if l.mail != nil {
 		l.mail.Observe(l.lastMail, before, st, op, events)

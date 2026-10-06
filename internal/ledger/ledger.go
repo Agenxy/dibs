@@ -36,14 +36,13 @@ type Line struct {
 // Ledger is a single-writer append log. Not safe for concurrent use: the
 // engine's single goroutine is the only writer, by design.
 type Ledger struct {
-	f           *os.File
-	headHash    string
-	headSum     [32]byte
-	box         *Box
-	nodeID      string
-	mail        *mailhistory.Index
-	lastMail    mailhistory.Record
-	mailScratch mailhistory.Snapshot // the same transient workspace charged after replay
+	f        *os.File
+	headHash string
+	headSum  [32]byte
+	box      *Box
+	nodeID   string
+	mail     *mailhistory.Index
+	lastMail mailhistory.Record
 	// readOnly means this handle may not repair what it reads. See OpenReadOnly.
 	readOnly bool
 
@@ -147,10 +146,6 @@ func (l *Ledger) Replay(st *core.State) (int, error) {
 			if decErr := l.box.DecryptOp(rec.Op); decErr != nil {
 				return n, fmt.Errorf("decrypt serial %d: %w", rec.S, decErr)
 			}
-			var mailBefore mailhistory.Snapshot
-			if l.mail != nil {
-				mailBefore = mailhistory.Capture(st, rec.Op, &l.mailScratch)
-			}
 			_, replayEvents, applyErr := st.Apply(rec.Op, rec.T)
 			if l.OnEvents != nil && len(replayEvents) > 0 {
 				l.OnEvents(replayEvents)
@@ -187,10 +182,6 @@ func (l *Ledger) Replay(st *core.State) (int, error) {
 				st.Serial = rec.S
 			}
 			sum := sha256.Sum256(line)
-			if l.mail != nil {
-				l.recordMail(rec.S, rec.T, off, int64(len(raw)), prevSum, sum)
-				l.ObserveMail(mailBefore, st, rec.Op, replayEvents)
-			}
 			prev = hex.EncodeToString(sum[:])
 			prevSum = sum
 			off += int64(len(raw))
@@ -230,7 +221,7 @@ func (l *Ledger) Replay(st *core.State) (int, error) {
 		return n, err
 	}
 	if l.mail != nil {
-		l.mail.EndReplay()
+		l.configureHistory(st.NodeID, st.Limits, st.Serial, uint64(n), validOff)
 	}
 	return n, nil
 }
