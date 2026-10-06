@@ -9,7 +9,7 @@ permissions:
 jobs:
   scheduling:
     runs-on: macos-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -26,6 +26,8 @@ jobs:
         run: mise exec -- uv run tools/schedulingproof/controls.py
       - name: Real daemon binary
         run: mise exec -- go build -o bin/dibd ./cmd/dibd
+      - name: Native user-initiated QoS capability, distinct from Go threads
+        run: mise exec -- uv run tools/schedulingproof/qos_control.py
       - name: Rootless policy and real MCP CPU-load experiment
         run: mise exec -- uv run tools/schedulingproof/run.py --hosted --daemon bin/dibd --out scheduling-results/latency
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
