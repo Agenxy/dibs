@@ -29,7 +29,6 @@ func TestSocketEconomyBridgeHelper(t *testing.T) {
 	if os.Getenv("DIBS_TEST_SOCKET_ECONOMY_BRIDGE") != "1" {
 		return
 	}
-	serveEconomyDiagnostics(t)
 	if err := runBridge(nil); err != nil {
 		t.Fatal(err)
 	}
@@ -143,29 +142,21 @@ func newEconomyFixtureWith(t *testing.T, sid string, wrap func(http.Handler) htt
 		"DIBS_ADDR="+strings.TrimPrefix(f.srv.URL, "http://"), "DIBS_HOST_ID=economy-host",
 		"DIBS_HARNESS=Claude Code", "DIBS_NOTIFY=off", "DIBS_AGENT_NONCE=",
 		"CLAUDE_CODE_MESSAGING_SOCKET="+sock, "CLAUDE_CODE_MESSAGING_TOKEN=fixture-child-token")
-	f.diagnostics = newEconomyDiagnostics(dir)
-	f.diagnostics.attach(cmd)
+	cmd.Stderr = os.Stderr
 	in, err := cmd.StdinPipe()
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, childOut, err := os.Pipe()
+	out, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Wait may reap early exits independently, but cannot close a StdoutPipe
-	// before ReadBytes consumes its error/data. Own this pipe explicitly.
-	cmd.Stdout = childOut
 	if err = cmd.Start(); err != nil {
-		_ = out.Close()
-		_ = childOut.Close()
 		t.Fatal(err)
 	}
-	_ = childOut.Close()
-	f.diagnostics.started()
 	f.in, f.out = in, bufio.NewReader(out)
 	var stop sync.Once
-	t.Cleanup(func() { stop.Do(func() { _ = in.Close(); f.diagnostics.stop(); _ = out.Close() }) })
+	t.Cleanup(func() { stop.Do(func() { _ = in.Close(); _ = cmd.Process.Kill(); _ = cmd.Wait() }) })
 	f.worker = f.stdio(t, "register", map[string]any{"name": "worker", "session_id": f.sid})["token"].(string)
 	// Registration starts the stream asynchronously. Observe its actual route
 	// claim, rather than assuming the callback finished before the reply landed.
@@ -196,22 +187,15 @@ func (f *economyFixture) stdio(t *testing.T, name string, args map[string]any) m
 		},
 	}
 	if err := json.NewEncoder(f.in).Encode(req); err != nil {
-		t.Fatalf("setup: actual stdio tool %s write failed: %v\n%s", name, err, f.diagnostics.report(nil))
+		t.Fatal(err)
 	}
-	type readResult struct {
-		line []byte
-		err  error
-	}
-	reply := make(chan readResult, 1)
-	go func() { b, err := f.out.ReadBytes('\n'); reply <- readResult{b, err} }()
+	reply := make(chan []byte, 1)
+	go func() { b, _ := f.out.ReadBytes('\n'); reply <- b }()
 	select {
-	case result := <-reply:
-		if result.err != nil {
-			t.Fatalf("setup: actual stdio tool %s read failed: %s", name, f.diagnostics.report(result.err))
-		}
-		return economyToolResult(t, result.line)
+	case b := <-reply:
+		return economyToolResult(t, b)
 	case <-time.After(5 * time.Second):
-		t.Fatalf("setup: actual stdio tool %s did not reply within 5s: %s", name, f.diagnostics.report(nil))
+		t.Fatal("setup: actual stdio tool did not reply")
 		return nil
 	}
 }

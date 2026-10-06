@@ -1,0 +1,25 @@
+name: stdio diagnostic old-code control
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/stdio-diagnostics-old-proof.yml
+
+permissions:
+  contents: read
+
+jobs:
+  old-diagnostic-guard:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: 2026.7.7
+          experimental: true
+      - name: The unchanged real-door guard must reject pre-instrumentation stderr and timeout handling
+        run: mise exec -- go test -race -count=1 -timeout=2m -run '^TestSocketEconomyTimeoutReportsActualBridgeDiagnostics$' -v ./cmd/dibs
