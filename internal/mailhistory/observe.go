@@ -26,7 +26,7 @@ func (i *Index) Observe(rec Record, before Snapshot, st *core.State, op *core.Op
 	}
 	i.records++
 	i.head = rec
-	var numbers []uint64
+	numbers := i.numbers[:0]
 	for serial, old := range before.Mail {
 		if m := st.Messages[serial]; m == nil || stateMetadata(st, m) != old {
 			numbers = append(numbers, serial)
@@ -38,6 +38,7 @@ func (i *Index) Observe(rec Record, before Snapshot, st *core.State, op *core.Op
 		}
 	}
 	slices.Sort(numbers)
+	i.numbers = numbers[:0]
 	author := before.Authors[op.AgentID]
 	if author.ID == "" {
 		if a := st.Agents[op.AgentID]; a != nil {

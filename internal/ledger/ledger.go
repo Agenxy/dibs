@@ -36,12 +36,14 @@ type Line struct {
 // Ledger is a single-writer append log. Not safe for concurrent use: the
 // engine's single goroutine is the only writer, by design.
 type Ledger struct {
-	f        *os.File
-	headHash string
-	box      *Box
-	nodeID   string
-	mail     *mailhistory.Index
-	lastMail mailhistory.Record
+	f           *os.File
+	headHash    string
+	headSum     [32]byte
+	box         *Box
+	nodeID      string
+	mail        *mailhistory.Index
+	lastMail    mailhistory.Record
+	mailScratch mailhistory.Snapshot // the same transient workspace charged after replay
 	// readOnly means this handle may not repair what it reads. See OpenReadOnly.
 	readOnly bool
 
@@ -121,6 +123,7 @@ func (l *Ledger) Replay(st *core.State) (int, error) {
 	r := bufio.NewReaderSize(l.f, 1<<20)
 	var off, validOff int64
 	prev := genesis
+	var prevSum [32]byte
 	n := 0
 	for {
 		raw, err := r.ReadBytes('\n')
@@ -146,7 +149,7 @@ func (l *Ledger) Replay(st *core.State) (int, error) {
 			}
 			var mailBefore mailhistory.Snapshot
 			if l.mail != nil {
-				mailBefore = mailhistory.Capture(st, rec.Op)
+				mailBefore = mailhistory.Capture(st, rec.Op, &l.mailScratch)
 			}
 			_, replayEvents, applyErr := st.Apply(rec.Op, rec.T)
 			if l.OnEvents != nil && len(replayEvents) > 0 {
@@ -184,9 +187,12 @@ func (l *Ledger) Replay(st *core.State) (int, error) {
 				st.Serial = rec.S
 			}
 			sum := sha256.Sum256(line)
-			l.recordMail(rec.S, rec.T, off, int64(len(raw)), prev, sum)
-			l.ObserveMail(mailBefore, st, rec.Op, replayEvents)
+			if l.mail != nil {
+				l.recordMail(rec.S, rec.T, off, int64(len(raw)), prevSum, sum)
+				l.ObserveMail(mailBefore, st, rec.Op, replayEvents)
+			}
 			prev = hex.EncodeToString(sum[:])
+			prevSum = sum
 			off += int64(len(raw))
 			validOff = off
 			n++
@@ -219,6 +225,7 @@ func (l *Ledger) Replay(st *core.State) (int, error) {
 		}
 	}
 	l.headHash = prev
+	l.headSum = prevSum
 	if _, err := l.f.Seek(0, io.SeekEnd); err != nil {
 		return n, err
 	}
@@ -251,8 +258,11 @@ func (l *Ledger) Append(serial uint64, ts time.Time, op *core.Op) error {
 		return fmt.Errorf("ledger fsync: %w", err)
 	}
 	sum := sha256.Sum256(line)
-	l.recordMail(serial, ts, offset, int64(len(line)+1), l.headHash, sum)
+	if l.mail != nil {
+		l.recordMail(serial, ts, offset, int64(len(line)+1), l.headSum, sum)
+	}
 	l.headHash = hex.EncodeToString(sum[:])
+	l.headSum = sum
 	return nil
 }
 

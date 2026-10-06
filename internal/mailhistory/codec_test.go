@@ -36,8 +36,8 @@ func TestCompactSnapshotsRetainEveryFieldAndSplitOnActualBytes(t *testing.T) {
 			t.Fatalf("all-field round trip %d: %+v %v", n, got, err)
 		}
 	}
-	if len(c.blocks) != 2 {
-		t.Fatalf("unit bound did not split: %d blocks", len(c.blocks))
+	if len(c.blocks) != 1 {
+		t.Fatalf("all-field fixture should fit one bounded block: %d", len(c.blocks))
 	}
 	var sized codec
 	u.Author.Host = strings.Repeat("h", 70000)
@@ -62,6 +62,21 @@ func TestCompactSnapshotsRetainEveryFieldAndSplitOnActualBytes(t *testing.T) {
 	}
 	if _, err := decode([]byte("corrupt"), 7, 1); err == nil {
 		t.Fatal("corrupt block accepted")
+	}
+}
+
+func TestCompactBlocksSplitOnUnitLimit(t *testing.T) {
+	var c codec
+	for range blockUnits + 1 {
+		if err := c.add(snapshotUnit{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(c.blocks) != 1 || c.blocks[0].count != blockUnits || c.count != 1 {
+		t.Fatal("unit limit did not split a block that was below its byte limit")
+	}
+	if _, err := c.unit(blockUnits); err != nil {
+		t.Fatal("reference after the unit split:", err)
 	}
 }
 

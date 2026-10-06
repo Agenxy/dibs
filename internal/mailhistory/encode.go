@@ -68,7 +68,7 @@ func (e *encoder) timestamp(t time.Time) {
 
 func encodeUnit(buf []byte, u snapshotUnit) ([]byte, error) {
 	e := encoder{buf: buf[:0]}
-	m := u.Metadata
+	m := &u.Metadata
 	e.number(1) // derived format version
 	e.number(u.Position.Op)
 	e.number(u.Position.Msg)

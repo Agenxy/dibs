@@ -62,15 +62,22 @@ type Author struct {
 }
 
 // Snapshot is transient and contains no text. Capture before Apply; Observe
-// only after successful persistence (or a validated replay record).
+// only after successful persistence (or a validated replay record). The maps
+// are writer-owned scratch: no observer may retain them past the next Capture.
 type Snapshot struct {
 	Mail    map[uint64]Metadata
 	Authors map[string]Author
 }
 
 // Capture copies only canonical metadata before the state machine mutates it.
-func Capture(st *core.State, op *core.Op) Snapshot {
-	s := Snapshot{Mail: make(map[uint64]Metadata, len(st.Messages)), Authors: make(map[string]Author)}
+func Capture(st *core.State, op *core.Op, scratch *Snapshot) Snapshot {
+	if scratch.Mail == nil {
+		scratch.Mail = make(map[uint64]Metadata)
+		scratch.Authors = make(map[string]Author)
+	}
+	clear(scratch.Mail)
+	clear(scratch.Authors)
+	s := *scratch
 	for n, m := range st.Messages {
 		s.Mail[n] = stateMetadata(st, m)
 		s.captureAuthor(st.Agents[m.From])

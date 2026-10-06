@@ -28,6 +28,15 @@ allocating and formatting JSON on the canonical writer. Only current mail
 parties and the op's actor need their pre-fold identity captured. There is no
 change to the ledger format and no second Apply.
 
+The next resource revision reuses writer-owned transient capture and sorting
+workspace instead of allocating it on every op. Every immutable snapshot is
+encoded before reuse. Compression blocks admit up to 1024 units but still
+split on the same 128 KiB raw byte ceiling; both split conditions are tested.
+Native previous-hash bytes come from the actual chain so a record cannot use
+a stale anchor after a failed decode. The baseline skips all history record
+bookkeeping, not only Observe; earlier baseline arms included that small common
+cost, so their overhead figures are historical measurements of that arm.
+
 The first actual production representation (b952d51) failed its bounds. Paired
 hosted run 37531622245 measured these incremental retained-heap and replay
 wall-time results; these are failures, not an accepted representation:

@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	blockUnits = 128
+	blockUnits = 1024
 	blockBytes = 128 << 10
 )
 
