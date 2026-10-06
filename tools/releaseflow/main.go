@@ -27,7 +27,7 @@ const (
 	workflowPath = ".github/workflows/release.yml"
 	artifactName = "release-preflight"
 	phases       = "validate, preflight, commit-tag, authorize-receipt, authorize, finalize, " +
-		"delivery-rehearsal, full-publication-validate, full-publication, publish or cask"
+		"delivery-rehearsal, full-publication-validate, full-publication, publish, cask or cask-key-diagnose"
 )
 
 var (
@@ -69,7 +69,8 @@ func command(ctx context.Context, env []string, name string, args ...string) ([]
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Env = append(os.Environ(), env...)
 	verify := name == "cosign" && len(args) > 0 && args[0] == "verify-blob"
-	if name != "git" && name != "gh" && !verify {
+	keyCheck := name == "ssh-keygen" && len(args) > 0 && args[0] == "-y"
+	if name != "git" && name != "gh" && !verify && !keyCheck {
 		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 		if err := cmd.Run(); err != nil {
 			return nil, fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err)
@@ -119,6 +120,10 @@ func execute(ctx context.Context, c config, run runner) error {
 	if !versionPattern.MatchString(c.version) || !shaPattern.MatchString(c.sha) {
 		return errors.New("release requires a canonical MAJOR.MINOR.PATCH version and full lowercase SHA")
 	}
+	return executePhase(ctx, c, run)
+}
+
+func executePhase(ctx context.Context, c config, run runner) error {
 	switch c.phase {
 	case "preflight":
 		return preflight(ctx, c, run)
@@ -133,18 +138,27 @@ func execute(ctx context.Context, c config, run runner) error {
 	case "delivery-rehearsal":
 		return receiveRehearsal(ctx, c, run)
 	case "publish", "cask":
-		gate := c
-		gate.phase = "authorize"
-		if err := execute(ctx, gate, run); err != nil {
+		return executePublished(ctx, c, run)
+	case "cask-key-diagnose":
+		if err := mainContext(); err != nil {
 			return err
 		}
-		if c.phase == "cask" {
-			return publishCask(ctx, c, run)
-		}
-		return publish(ctx, c, run)
+		return diagnoseCaskKey(ctx, run)
 	default:
 		return errors.New("choose -phase " + phases)
 	}
+}
+
+func executePublished(ctx context.Context, c config, run runner) error {
+	gate := c
+	gate.phase = "authorize"
+	if err := execute(ctx, gate, run); err != nil {
+		return err
+	}
+	if c.phase == "cask" {
+		return publishCask(ctx, c, run)
+	}
+	return publish(ctx, c, run)
 }
 
 func validateCandidate(ctx context.Context, c config, run runner) error {

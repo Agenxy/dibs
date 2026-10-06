@@ -91,13 +91,8 @@ func existingCask(ctx context.Context, c config, checkout string, want []byte, r
 func pushCask(ctx context.Context, c config, stage, checkout string, want []byte, run runner) error {
 	branch := "cask-" + c.version
 	ref := "refs/heads/" + branch
-	key := os.Getenv("HOMEBREW_TAP_DEPLOY_KEY")
-	if strings.TrimSpace(key) == "" {
-		return errors.New("HOMEBREW_TAP_DEPLOY_KEY is required to push the cask review branch")
-	}
-	keyPath := filepath.Join(stage, "deploy-key")
-	// #nosec G703 -- credential path in the owned private temporary directory.
-	if err := os.WriteFile(keyPath, []byte(key), 0o600); err != nil {
+	keyPath, err := preparedCaskKey(ctx, stage, run)
+	if err != nil {
 		return err
 	}
 	if _, err := run(ctx, nil, "git", "-C", checkout, "switch", "-c", branch); err != nil {
@@ -122,6 +117,51 @@ func pushCask(ctx context.Context, c config, stage, checkout string, want []byte
 	quotedKey := "'" + strings.ReplaceAll(keyPath, "'", "'\"'\"'") + "'"
 	env := []string{"GIT_SSH_COMMAND=ssh -i " + quotedKey +
 		" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes"}
-	_, err := run(ctx, env, "git", "-C", checkout, "push", "git@github.com:Agenxy/homebrew-tap.git", "HEAD:"+ref)
+	_, err = run(ctx, env, "git", "-C", checkout, "push", "git@github.com:Agenxy/homebrew-tap.git", "HEAD:"+ref)
 	return err
+}
+
+func normalizedCaskKey(key string) string {
+	return strings.TrimRight(strings.ReplaceAll(key, "\r\n", "\n"), "\n") + "\n"
+}
+
+func preparedCaskKey(ctx context.Context, stage string, run runner) (string, error) {
+	key := os.Getenv("HOMEBREW_TAP_DEPLOY_KEY")
+	if strings.TrimSpace(key) == "" {
+		return "", errors.New("HOMEBREW_TAP_DEPLOY_KEY is required to push the cask review branch")
+	}
+	keyPath := filepath.Join(stage, "deploy-key")
+	// #nosec G703 -- credential path in the owned private temporary directory.
+	if err := os.WriteFile(keyPath, []byte(normalizedCaskKey(key)), 0o600); err != nil {
+		return "", err
+	}
+	if _, err := run(ctx, nil, "ssh-keygen", "-y", "-P", "", "-f", keyPath); err != nil {
+		return "", errors.New("HOMEBREW_TAP_DEPLOY_KEY is not a valid unencrypted SSH private key " +
+			"after newline normalization; check the tap-scoped secret")
+	}
+	return keyPath, nil
+}
+
+// Diagnose the existing secret on the trusted main workflow without logging
+// key material, the derived public key, or ssh-keygen's output. This makes
+// format correction measurable before a retry can write to the tap.
+func diagnoseCaskKey(ctx context.Context, run runner) error {
+	key := os.Getenv("HOMEBREW_TAP_DEPLOY_KEY")
+	if strings.TrimSpace(key) == "" {
+		return errors.New("HOMEBREW_TAP_DEPLOY_KEY is absent")
+	}
+	stage, err := os.MkdirTemp("", "dibs-cask-key-check-")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.RemoveAll(stage) }()
+	rawPath := filepath.Join(stage, "raw-key")
+	// #nosec G703 -- fixed filename in our newly created private temporary directory.
+	if err := os.WriteFile(rawPath, []byte(key), 0o600); err != nil {
+		return err
+	}
+	_, rawErr := run(ctx, nil, "ssh-keygen", "-y", "-P", "", "-f", rawPath)
+	_, normalizedErr := preparedCaskKey(ctx, stage, run)
+	fmt.Printf("tap deploy key format: raw_valid=%t normalized_valid=%t\n", rawErr == nil, normalizedErr == nil)
+	return normalizedErr
 }
