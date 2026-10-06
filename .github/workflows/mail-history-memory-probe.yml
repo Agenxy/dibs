@@ -1,0 +1,39 @@
+name: mail-history design memory probe
+
+on:
+  pull_request:
+    paths:
+      - internal/ledger/mail_history_memory_probe_test.go
+      - .github/workflows/mail-history-memory-probe.yml
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DIBS_HISTORY_PROBE_DIR: ${{ runner.temp }}/dibs-mailhistory-design
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: 2026.7.7
+          experimental: true
+      - name: Generate one identical encrypted million-record ledger
+        env:
+          DIBS_HISTORY_PROBE_ARM: generate
+        run: mise exec -- go test -count=1 -timeout=15m -run '^TestMailHistoryMemoryDesignProbe$' -v ./internal/ledger
+      - name: Coordination-only production replay and forced GC
+        env:
+          DIBS_HISTORY_PROBE_ARM: baseline
+        run: mise exec -- go test -count=1 -timeout=15m -run '^TestMailHistoryMemoryDesignProbe$' -v ./internal/ledger
+      - name: Sparse anchor and coalesced party range memory floor
+        env:
+          DIBS_HISTORY_PROBE_ARM: sparse
+        run: mise exec -- go test -count=1 -timeout=15m -run '^TestMailHistoryMemoryDesignProbe$' -v ./internal/ledger
+      - name: Packed authorization header memory floor with sparse anchors
+        env:
+          DIBS_HISTORY_PROBE_ARM: headers
+        run: mise exec -- go test -count=1 -timeout=15m -run '^TestMailHistoryMemoryDesignProbe$' -v ./internal/ledger
