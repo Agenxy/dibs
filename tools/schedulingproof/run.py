@@ -109,12 +109,16 @@ class Experiment:
             raise RuntimeError(f"RPC {method}: {payload['error']}")
         return payload["result"]
 
-    def call(self, url, secret, name, args):
+    def call(self, url, secret, name, args, measured=False):
         result = self.rpc(url, secret, "tools/call", {"name": name, "arguments": args})
         if result.get("isError"):
+            if measured:
+                return {"measurement_error": json.loads(result["content"][0]["text"])}
             raise RuntimeError(f"tool {name}: {result}")
         payload = json.loads(result["content"][0]["text"])
         if payload.get("error") or payload.get("ok") is False:
+            if measured:
+                return {"measurement_error": payload}
             raise RuntimeError(f"tool {name}: {payload}")
         return payload
 
@@ -206,18 +210,26 @@ class Experiment:
         cpu_before = self.daemon_cpu(pid)
         start = time.monotonic()
         for i in range(samples):
+            # Fixed maximum attempts plus a wall budget keeps a throttled
+            # baseline from preventing the other arm from being measured.
+            if time.monotonic()-start >= 120:
+                break
             pace = time.monotonic()
             serial = None
             for name in ["send", "respond"]:
+                if name == "respond" and serial is None:
+                    continue # Unknown initial send: preserve it, never guess a serial or retry.
                 args = ({"token": agents[0]["token"], "to": agents[1]["agent_id"], "type": "question",
                          "body": "isolated scheduling measurement", "op_id": uuid.uuid4().hex} if name == "send" else
                         {"token": agents[1]["token"], "msg_serial": serial, "disposition": "answer", "body": "measured"})
                 before = time.monotonic_ns()
-                result = self.call(url, secret, name, args)
+                result = self.call(url, secret, name, args, measured=True)
                 elapsed = (time.monotonic_ns() - before) / 1e6
-                if name == "send":
+                if name == "send" and "measurement_error" not in result:
                     serial = result["msg_serial"]
-                rows.append({"sample": i, "method": name, "rtt_ms": elapsed})
+                row = {"sample": i, "method": name, "rtt_ms": elapsed, "error": result.get("measurement_error")}
+                rows.append(row)
+                (folder / "samples.json").write_text(json.dumps(rows))
             time.sleep(max(0, 0.05 - (time.monotonic() - pace)))
         wall = time.monotonic() - start
         load_after = self.load_snapshot() if loaded else None
@@ -227,9 +239,12 @@ class Experiment:
         # Secrets and ledger keys are fixture credentials, never artifacts.
         for name in ["local.secret", "key"]:
             (board / name).unlink(missing_ok=True)
-        summary = {"tag": tag, "policy": policy, "loaded": loaded, "pairs": samples,
+        attempted = sum(r["method"] == "send" for r in rows)
+        assert attempted > 0 and (attempted == samples or wall >= 120), "measurement stopped without its count or time bound"
+        summary = {"tag": tag, "policy": policy, "loaded": loaded, "maximum_pairs": samples, "attempted_pairs": attempted,
+                   "wall_budget_s": 120, "wall_budget_reached": attempted < samples,
                    "wall_s": wall, "daemon_cpu_s": cpu_after-cpu_before,
-                   "errors": 0, "send": stats(rows, "send"), "respond": stats(rows, "respond")}
+                   "errors": sum(r["error"] is not None for r in rows), "send": stats(rows, "send"), "respond": stats(rows, "respond")}
         if loaded:
             assert load_after["work"] > load_before["work"], "load made no progress"
             summary["competitor_work_s"] = (load_after["work"] - load_before["work"]) / wall
@@ -251,6 +266,8 @@ class Experiment:
 
 def stats(rows, method):
     vals = sorted(r["rtt_ms"] for r in rows if r["method"] == method)
+    if not vals:
+        return {"n": 0}
     return {"n": len(vals), **{f"p{p}_ms": vals[min(len(vals)-1, math.ceil(p/100*len(vals))-1)] for p in [50, 95, 99]}, "max_ms": max(vals)}
 
 
@@ -282,7 +299,8 @@ def main():
         for pair, policies in enumerate([["Background", "Standard"], ["Standard", "Interactive"]]):
             for round_ in range(3):
                 for arm, p in enumerate([policies[0], policies[1], policies[1], policies[0]]):
-                    result["arms"].append(exp.arm(f"load-{pair}-{round_}-{arm}", p, 200, True))
+                    result["arms"].append(exp.arm(f"load-{pair}-{round_}-{arm}", p, 50, True))
+                    (out / "summary.json").write_text(json.dumps(result, indent=2))
         result["status"] = "measured; interpret paired samples, not a universal latency guarantee"
     except Exception as exc:
         result["error"] = str(exc)
