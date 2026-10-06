@@ -91,6 +91,17 @@ after the first mail unit; that distinction must accompany the number. The
 100k memory ceiling stays in force until a measured fixed ceiling and slope
 are explicitly reviewed; it has not been replaced with a fitted estimate.
 
+The background checkpoint replaces synchronous Observe encoding with native
+35-field deltas in fixed segments, including request_priority (distinct from
+request queue priority) and party incarnation serials. EndReplay seals native
+capture only; the real HTTP Accept boundary starts the FIFO builder. Live
+commits use the same queue, with an explicit failed derived view on saturation.
+Compression holds a view lock separate from writer capture. No performance
+claim applies until the new hosted matrix is measured. The revised probe
+reports replay/capture alone, replay-to-serving, warming wall time, sampled
+peak, steady forced-GC heap and p99 of real engine check-ins during warming.
+Every arm uses its own byte-identical fixture copy before live probe appends.
+
 Still required: bounded stateless query and cursor, current creation/adoption
 authority, chain-validated content seeks, no-consumption authObserve, real MCP
 2026 and legacy doors, every tool-count spelling, SPEC and CHANGELOG, restart

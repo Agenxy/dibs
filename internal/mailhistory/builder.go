@@ -1,0 +1,188 @@
+package mailhistory
+
+import (
+	"context"
+	"errors"
+	"net"
+	"sync"
+)
+
+const liveQueueBytes = 64 << 20
+
+func (i *Index) ensureCapture() {
+	if i.active != nil && i.active.count == blockUnits {
+		i.sealCapture()
+	}
+	if i.active == nil {
+		i.active = newRawChunk()
+	}
+}
+
+func (i *Index) capture(u snapshotUnit) {
+	if i.failed {
+		return
+	}
+	i.ensureCapture()
+	i.active.add(u)
+	i.active.head = i.head
+	i.captured++
+	if i.started && i.queued+i.active.charge() > i.queueLimit {
+		i.failCapture() // never block the writer or silently lose a committed unit
+	}
+}
+
+func (i *Index) sealCapture() {
+	if i.active == nil {
+		return
+	}
+	c := i.active
+	c.seal()
+	if i.last == nil {
+		i.first = c
+	} else {
+		i.last.next = c
+	}
+	i.last, i.active = c, nil
+	i.queued += c.charge()
+}
+
+func (i *Index) failCapture() {
+	i.failed, i.ready = true, false
+	i.first, i.last, i.active = nil, nil, nil
+	i.queued = 0
+}
+
+// ServingListener starts the builder when net/http enters its first Accept,
+// after binding and TLS validation. Creating an index or ending Replay never
+// launches it, and Accept never waits for history to finish warming.
+func (i *Index) ServingListener(ctx context.Context, listener net.Listener) net.Listener {
+	return &historyListener{Listener: listener, ctx: ctx, index: i}
+}
+
+type historyListener struct {
+	net.Listener
+	ctx   context.Context
+	index *Index
+	once  sync.Once
+}
+
+func (l *historyListener) Accept() (net.Conn, error) {
+	l.once.Do(func() { l.index.start(l.ctx) })
+	return l.Listener.Accept()
+}
+
+func (i *Index) start(ctx context.Context) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if i.started || i.failed {
+		return
+	}
+	i.started = true
+	i.sealCapture()
+	i.queueLimit = i.queued + liveQueueBytes
+	go i.build(ctx)
+}
+
+func (i *Index) nextCapture() *rawChunk {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if i.failed {
+		return nil
+	}
+	i.sealCapture()
+	c := i.first
+	if c != nil {
+		i.first = c.next
+		c.next = nil
+		if i.first == nil {
+			i.last = nil
+		}
+	}
+	return c
+}
+
+func (i *Index) buildChunk(ctx context.Context, c *rawChunk) error {
+	// The view lock is independent of capture. Even compression and decoding
+	// a whole chunk cannot delay a coordination op waiting on the writer.
+	i.viewMu.Lock()
+	defer i.viewMu.Unlock()
+	var previous snapshotUnit
+	move := 0
+	for n := uint32(0); n < c.count; n++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		for move < len(c.moves) && c.moves[move].before == n {
+			m := c.moves[move]
+			if !i.party(m.to).inherit(i.parties[m.from]) {
+				return errors.New("history inherited source bound exceeded")
+			}
+			move++
+		}
+		u := c.unit(n, previous)
+		previous = u
+		keys := [2]partyKey{{u.Metadata.From, u.FromCreated}, {u.Metadata.To, u.ToCreated}}
+		count := 2
+		if keys[0] == keys[1] {
+			count = 1
+		}
+		if err := i.add(u, keys[:count]); err != nil {
+			return err
+		}
+	}
+	if move != len(c.moves) {
+		return errors.New("history ownership transfer has no following unit")
+	}
+	return nil
+}
+
+func (i *Index) build(ctx context.Context) {
+	defer i.Invalidate() // context cancellation never leaves a complete-looking stale view
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		if c := i.nextCapture(); c != nil {
+			if err := i.buildChunk(ctx, c); err != nil {
+				i.mu.Lock()
+				i.failCapture()
+				i.mu.Unlock()
+				return
+			}
+			charge := c.charge()
+			i.mu.Lock()
+			if i.failed {
+				i.mu.Unlock()
+				return
+			}
+			i.queued -= charge
+			i.queueLimit = max(liveQueueBytes, i.queueLimit-charge)
+			i.built += uint64(c.count)
+			i.builtHead = c.head
+			i.mu.Unlock()
+			continue // release this raw chunk before draining its successor
+		}
+		i.viewMu.Lock()
+		err := i.codec.flush()
+		i.viewMu.Unlock()
+		if err != nil {
+			i.Invalidate()
+			return
+		}
+		i.mu.Lock()
+		if i.failed {
+			i.mu.Unlock()
+			return
+		}
+		if i.active == nil && i.first == nil && i.built == i.captured {
+			i.builtHead = i.head // include records that changed no mail
+			i.ready = i.ended
+		}
+		i.mu.Unlock()
+		select {
+		case <-ctx.Done():
+			return
+		case <-i.signal:
+		}
+	}
+}

@@ -1,6 +1,7 @@
 # Mail history warm-up: request 23228, architect 55438
 
-This is a proposed capture layout, not a completed implementation. PR #394
+Architect answer 55637 accepts this native field-delta capture layout, with
+allocation-free comparison and the measured bounds below. PR #394
 stays draft. The architecture decision in 55438 supersedes further attempts
 to fit synchronous encoding into the boot budget.
 
@@ -25,7 +26,7 @@ allocations (a source layout estimate, not a hosted allocation measurement).
 One million such snapshots would exceed the warm-up peak envelope. Capturing
 full snapshots and promising to compress them later cannot satisfy the bound.
 
-Proposed raw layout: independently owned chunks with fixed-width rows and
+Accepted raw layout: independently owned chunks with fixed-width rows and
 scalar columns, containing canonical field changes, not serialized snapshots.
 
 | Data | Native representation |
@@ -45,9 +46,11 @@ are freed after the builder consumes them. Only the active chunk keeps maps.
 All allocation slack, raw arrays, tables and retained compressor workspace
 count toward the hosted peak and steady-state measurements.
 
-The point needing clarification is whether these native field deltas satisfy
-55438's “raw fixed-width tuples” and “no snapshot encoding.” Treating full
-Go snapshots as that tuple does not fit the peak envelope.
+Answer 55637 explicitly accepts native columns, full first rows and no
+serialization/compression during replay. If capture still exceeds 15%,
+measure capture alone with the observer enabled and builder disabled and
+report it. The comparison must allocate zero per record. Treating full Go
+snapshots as the tuple does not fit the peak envelope.
 
 ## Serving and live ordering
 

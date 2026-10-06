@@ -32,6 +32,7 @@ type Metadata struct {
 	RetainUntil      time.Time `json:"retain_until,omitzero"`
 	Deadline         time.Time `json:"deadline,omitzero"`
 	QueuePriority    string    `json:"queue_priority,omitempty"`
+	RequestPriority  string    `json:"request_priority,omitempty"`
 	QueueRank        int       `json:"queue_rank,omitempty"`
 	QueueDebt        bool      `json:"queue_debt,omitempty"`
 	QueueOrderLocked bool      `json:"queue_order_locked,omitempty"`
@@ -49,6 +50,7 @@ func metadata(m *core.Message) Metadata {
 		SentAt: m.SentAt, DeliveredAt: m.DeliveredTime, TerminalAt: m.TerminalAt,
 		RetainUntil: m.RetainUntil, Deadline: m.Deadline,
 		QueuePriority: m.QueuePriority, QueueRank: m.QueueRank, QueueDebt: m.QueueDebt,
+		RequestPriority:  m.RequestPriority,
 		QueueOrderLocked: m.QueueOrderLocked, QueueChanged: m.QueueChangedSerial,
 		Milestones: len(m.Milestones), Progress: len(m.Progress),
 	}

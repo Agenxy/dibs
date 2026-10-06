@@ -21,14 +21,16 @@ type position struct {
 }
 
 type snapshotUnit struct {
-	Position   position  `json:"position"`
-	At         time.Time `json:"at"`
-	Kind       string    `json:"kind"`
-	Metadata   Metadata  `json:"metadata"`
-	Author     Author    `json:"author"`
-	Content    bool      `json:"has_content,omitempty"`
-	AfterKnown bool      `json:"after_known,omitempty"`
-	Evicted    bool      `json:"evicted,omitempty"`
+	Position    position  `json:"position"`
+	At          time.Time `json:"at"`
+	Kind        string    `json:"kind"`
+	Metadata    Metadata  `json:"metadata"`
+	Author      Author    `json:"author"`
+	Content     bool      `json:"has_content,omitempty"`
+	AfterKnown  bool      `json:"after_known,omitempty"`
+	Evicted     bool      `json:"evicted,omitempty"`
+	FromCreated uint64    `json:"from_created_serial,omitempty"`
+	ToCreated   uint64    `json:"to_created_serial,omitempty"`
 }
 
 type block struct {

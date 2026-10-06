@@ -1,6 +1,7 @@
 package mailhistory
 
 import (
+	"errors"
 	"sort"
 	"sync"
 	"time"
@@ -28,6 +29,7 @@ type Anchor struct {
 // All state is derived from a single canonical fold; losing it loses no mail.
 type Index struct {
 	mu         sync.RWMutex
+	viewMu     sync.RWMutex // builder/view only; compression never holds the capture lock
 	codec      codec
 	serials    vector
 	latest     vector
@@ -39,39 +41,60 @@ type Index struct {
 	generation string
 	ready      bool
 	failed     bool
+	ended      bool
+	started    bool
+	signal     chan struct{}
+	active     *rawChunk
+	first      *rawChunk
+	last       *rawChunk
+	queued     uint64
+	queueLimit uint64
+	captured   uint64
+	built      uint64
+	builtHead  Record
 }
 
 // New returns an empty derived index for a fresh ledger.
-func New() *Index { return &Index{parties: map[partyKey]*party{}, ready: true} }
+func New() *Index {
+	return &Index{parties: map[partyKey]*party{}, ready: true, ended: true, signal: make(chan struct{}, 1)}
+}
 
 // Invalidate refuses history queries when a committed-record anchor is unusable.
 // The derived view cannot turn a malformed anchor into a prior record's history.
 func (i *Index) Invalidate() {
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	i.failed = true
+	i.failCapture()
 }
 
 // BeginReplay discards a derived view and refuses queries until replay finishes.
 func (i *Index) BeginReplay() {
 	i.mu.Lock()
 	defer i.mu.Unlock()
+	if i.started {
+		i.failed = true // replay belongs before serving, never concurrently with a builder
+		return
+	}
 	i.codec, i.serials, i.latest = codec{}, vector{}, vector{}
 	i.parties = map[partyKey]*party{}
 	i.anchors = nil
 	i.numbers = nil
 	i.records, i.head, i.generation = 0, Record{}, ""
 	i.ready, i.failed = false, false
+	i.ended, i.started = false, false
+	i.active, i.first, i.last = nil, nil, nil
+	i.queued, i.captured, i.built = 0, 0, 0
+	i.builtHead = Record{}
 }
 
-// EndReplay seals the tail only after the reader validates the whole prefix.
+// EndReplay validates the captured prefix. It does NOT encode it or launch a
+// builder: startup must reach the real HTTP serving door first.
 func (i *Index) EndReplay() {
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	if err := i.codec.flush(); err != nil {
-		i.failed = true
-	}
-	i.ready = true
+	i.sealCapture()
+	i.ended = true
+	i.ready = i.records == 0 && !i.failed
 }
 
 func (s Snapshot) key(id string, st *core.State) partyKey {
@@ -93,11 +116,10 @@ func (i *Index) party(key partyKey) *party {
 	return p
 }
 
-func (i *Index) add(u snapshotUnit, keys []partyKey) {
+func (i *Index) add(u snapshotUnit, keys []partyKey) error {
 	ref := i.codec.units
 	if err := i.codec.add(u); err != nil {
-		i.failed = true
-		return
+		return err
 	}
 	n := sort.Search(i.serials.n, func(n int) bool { return i.serials.get(n) >= u.Position.Msg })
 	switch {
@@ -107,12 +129,12 @@ func (i *Index) add(u snapshotUnit, keys []partyKey) {
 	case i.serials.get(n) == u.Position.Msg:
 		i.latest.set(n, ref)
 	default:
-		i.failed = true // no silently misplaced latest authorization header
-		return
+		return errors.New("history conversation serials are out of order")
 	}
 	for _, key := range keys {
 		i.party(key).refs.add(ref)
 	}
+	return nil
 }
 
 // Measurement reports counts, not an estimated heap. Forced-GC paired runner
@@ -121,17 +143,25 @@ type Measurement struct {
 	Units, Records                             uint64
 	Blocks, Conversations, Parties, References int
 	Prefixes, CompressedBytes, RawTailCapacity int
-	Failed, Ready                              bool
+	CapturedUnits, BuiltSerial, QueuedBytes    uint64
+	Failed, Ready, Started                     bool
 }
 
 // Measurement reports representation counts without estimating retained heap.
 func (i *Index) Measurement() Measurement {
 	i.mu.RLock()
-	defer i.mu.RUnlock()
 	m := Measurement{
-		Units: i.codec.units, Records: i.records, Blocks: len(i.codec.blocks), Conversations: i.serials.n,
-		Parties: len(i.parties), RawTailCapacity: cap(i.codec.tail), Failed: i.failed, Ready: i.ready,
+		Records: i.records, CapturedUnits: i.captured, BuiltSerial: i.builtHead.Serial,
+		QueuedBytes: i.queued, Failed: i.failed, Ready: i.ready, Started: i.started,
 	}
+	if i.active != nil {
+		m.QueuedBytes += i.active.charge()
+	}
+	i.mu.RUnlock()
+	i.viewMu.RLock()
+	defer i.viewMu.RUnlock()
+	m.Units, m.Blocks, m.Conversations = i.codec.units, len(i.codec.blocks), i.serials.n
+	m.Parties, m.RawTailCapacity = len(i.parties), cap(i.codec.tail)
 	for _, p := range i.parties {
 		m.References += p.refs.n
 		m.Prefixes += len(p.inherited)
