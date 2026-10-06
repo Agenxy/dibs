@@ -12,8 +12,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   mail in one wake digest; an unreachable unread alert can raise a metadata-only
   contact alert without making notify a response obligation. To the human,
   those priorities request Time Sensitive interruption on macOS (critical
-  urgency on Linux). A later human relay picks up alerts without a retained
-  posting receipt; posting receipts still do not claim visibility.
+  urgency on Linux), but the current macOS build has no Time Sensitive
+  entitlement. Its receipt distinguishes requested from effective active
+  interruption and names that limit; without the bundled notifier, osascript
+  still posts an ordinary banner and reports the fallback. A later human relay
+  picks up alerts without a retained posting receipt; posting receipts still
+  do not claim visibility.
 - New agent questions and requests start their response window on first
   recipient awareness rather than at send, with a separate seven-day ceiling
   for mail never retrieved. Historical ledgered sends keep their deadlines.

@@ -73,18 +73,25 @@ func (h *humanAPI) delivery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Serial            uint64          `json:"serial"`
-		State             string          `json:"state"`
-		Error             string          `json:"error"`
-		Settings          json.RawMessage `json:"settings"`
-		InterruptionLevel json.RawMessage `json:"interruption_level"`
+		Serial                     uint64          `json:"serial"`
+		State                      string          `json:"state"`
+		Error                      string          `json:"error"`
+		Settings                   json.RawMessage `json:"settings"`
+		InterruptionLevel          json.RawMessage `json:"interruption_level"`
+		RequestedInterruptionLevel string          `json:"requested_interruption_level"`
+		EffectiveInterruptionLevel string          `json:"effective_interruption_level"`
+		InterruptionReason         string          `json:"interruption_reason"`
 	}
 	if !decodeBody(w, r, &req) {
 		return
 	}
-	var level string
-	_ = json.Unmarshal(req.InterruptionLevel, &level)
-	data := notify.ReceiptData{State: req.State, Settings: notify.DecodeSettings(req.Settings), InterruptionLevel: level}
+	var legacyLevel string
+	_ = json.Unmarshal(req.InterruptionLevel, &legacyLevel)
+	data := notify.ReceiptData{
+		State: req.State, Settings: notify.DecodeSettings(req.Settings),
+		InterruptionLevel: legacyLevel, RequestedInterruptionLevel: req.RequestedInterruptionLevel,
+		EffectiveInterruptionLevel: req.EffectiveInterruptionLevel, InterruptionReason: req.InterruptionReason,
+	}
 	if err := h.eng.ReportHumanReceipt(r.Context(), req.Serial, key, data, req.Error); err != nil {
 		humanRefuse(w, http.StatusBadRequest, err.Error(), "report posted, dismissed or failed for retained human mail")
 		return

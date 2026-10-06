@@ -128,8 +128,8 @@ func TimeSensitiveBannerWithReceipt(title, subtitle, body string, receipt Receip
 	return TimeSensitiveBannerWithDeliveryReceipt(title, subtitle, body, stateReceipt(receipt))
 }
 
-// TimeSensitiveBannerWithDeliveryReceipt never silently falls back to a
-// regular macOS banner: osascript cannot request Time Sensitive interruption.
+// TimeSensitiveBannerWithDeliveryReceipt keeps delivery available without the
+// native helper, while recording that osascript cannot request interruption.
 func TimeSensitiveBannerWithDeliveryReceipt(title, subtitle, body string, receipt DeliveryReceipt) error {
 	return bannerWithDeliveryReceipt(title, subtitle, body, true, receipt)
 }
@@ -156,10 +156,13 @@ func bannerWithDeliveryReceipt(title, subtitle, body string, timeSensitive bool,
 		_, err := outputWithDeliveryReceipt(cmd, receipt)
 		return err
 	}
-	if timeSensitive {
-		return ErrCannotNotify
-	}
 	_, err := run(banner, append([]string{title, subtitle}, body)...)
+	if err == nil && timeSensitive && receipt != nil {
+		receipt(ReceiptData{
+			State: "posted", RequestedInterruptionLevel: "timeSensitive",
+			InterruptionReason: "osascript cannot request Time Sensitive",
+		}.Normalized())
+	}
 	return err
 }
 

@@ -12,6 +12,12 @@ import (
 // what a real notify-send would receive, and what it prints back is what a
 // real one prints (the chosen action key on stdout, nothing when dismissed).
 func TestMain(m *testing.M) {
+	if os.Getenv("DIBS_TEST_AS_OSASCRIPT") != "" && filepath.Base(os.Args[0]) == "osascript" {
+		if len(os.Args) < 6 || os.Args[1] != "-e" || os.Args[2] != banner {
+			os.Exit(3)
+		}
+		os.Exit(0)
+	}
 	if os.Getenv("DIBS_TEST_RECEIPT_PUBLIC") != "" && filepath.Base(os.Args[0]) == "dibs-notify" {
 		asReceiptHelper()
 		os.Exit(0)

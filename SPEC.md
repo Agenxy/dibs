@@ -1365,7 +1365,9 @@ Old helpers/relays supply no invented receipt. Retrying `op_id` returns the
 original route (or unknown after restart) without another alert.
 Each source additionally reports `settings` (version1 native authorization,
 alert style, alerts, Notification Center, lock screen, Time Sensitive and Focus
-observations), the helper's requested `interruption_level`, `shown:
+observations), the helper's requested `interruption_level` (also
+`requested_interruption_level`), `effective_interruption_level`, and
+`interruption_reason`, `shown:
 "unconfirmed"`, and an actionable corrective `hint` when there is one.
 Old, unavailable or malformed helper
 metadata is `settings: null`, never evidence that presentation is quiet or fine.
@@ -1378,9 +1380,12 @@ receipt, without repeating standing informational prose on each message. A reque
 timeSensitive level does not establish the entitlement or permission to bypass
 Focus. Requests/questions with controls request timeSensitive; a high/urgent notify
 requests it too, even without controls. An ordinary notify remains active.
-The native helper must be available for a macOS high/urgent notify: the
-osascript fallback cannot request Time Sensitive and reports failure instead
-of claiming it did. On Linux high/urgent notify requests critical urgency;
+The current macOS build has no Time Sensitive entitlement: even when the
+native helper requests that level, measured `not-supported` settings produce
+`effective_interruption_level: active` and an explicit no-entitlement reason.
+When the native helper is absent, osascript posts an ordinary banner and the
+receipt records the active fallback rather than claiming Time Sensitive.
+On Linux high/urgent notify requests critical urgency;
 neither platform claims the alert was actually displayed. None requests macOS
 critical interruption.
 An unposted high/urgent notify remains eligible for a newly attached human
@@ -1392,7 +1397,7 @@ settings changes. The helper's existing `--status` mode accepts the additive
 old helpers ignore it and their word-only reply retains unknown settings.
 Doctor warns for actionable presentation settings. Unprovisioned Time Sensitive
 and unobservable Focus share one informational note, including
-`time-sensitive: not supported (this build is not provisioned for it)`; neither
+`time-sensitive: not supported (this build has no Time Sensitive entitlement)`; neither
 creates a standing warning by itself.
 Public Focus status is read only when access is already authorized and the
 observation is non-nil. Otherwise it is explicitly not observable; no prompt is

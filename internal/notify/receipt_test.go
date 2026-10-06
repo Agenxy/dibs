@@ -2,7 +2,6 @@ package notify
 
 import (
 	"context"
-	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -182,12 +181,40 @@ func TestPublicNotificationReceiptUsesTheInstalledHelper(t *testing.T) {
 	}
 }
 
-func TestTimeSensitiveBannerNeverClaimsFallbackIsTimeSensitive(t *testing.T) {
-	if runtime.GOOS != "darwin" || helper() != "" {
-		t.Skip("requires macOS without a bundled helper")
+func TestTimeSensitiveBannerFallsBackWithHonestReceipt(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("macOS osascript fallback")
 	}
-	if err := TimeSensitiveBannerWithReceipt("Dibs", "says", "alert", nil); !errors.Is(err, ErrCannotNotify) {
-		t.Fatalf("high notify silently used an ordinary fallback: %v", err)
+	if os.Getenv("DIBS_TEST_FALLBACK_DRIVER") == "1" {
+		t.Setenv("DIBS_NOTIFY", "")
+		var got ReceiptData
+		err := TimeSensitiveBannerWithDeliveryReceipt("Dibs", "says", "alert", func(data ReceiptData) { got = data })
+		if err != nil || got.State != "posted" || got.RequestedInterruptionLevel != "timeSensitive" ||
+			got.EffectiveInterruptionLevel != "active" || got.InterruptionReason != "osascript cannot request Time Sensitive" {
+			t.Fatalf("ordinary fallback did not disclose its limit: %+v, %v", got, err)
+		}
+		return
+	}
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bytes, err := os.ReadFile(self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	for _, name := range []string{"fallback-driver", "osascript"} {
+		if err := os.WriteFile(filepath.Join(dir, name), bytes, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, filepath.Join(dir, "fallback-driver"), "-test.run=^TestTimeSensitiveBannerFallsBackWithHonestReceipt$") // #nosec G204 -- private copy of this test binary
+	cmd.Env = append(os.Environ(), "DIBS_TEST_FALLBACK_DRIVER=1", "DIBS_TEST_AS_OSASCRIPT=1", "PATH="+dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("fallback producer wiring: %v\n%s", err, out)
 	}
 }
 

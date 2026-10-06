@@ -648,8 +648,11 @@ Senders may set `priority` on a notify or ordinary request to low, normal,
 high or urgent (default normal). High/urgent notifies lead lower-priority mail
 in a recipient's wake digest, without creating an obligation to answer or
 overriding the operator's wake phase. To the human they request a Time Sensitive
-macOS alert (or critical urgency on Linux); OS acceptance does not prove a banner
-was visible. Request queue ordering is priority, then response deadline, then arrival;
+macOS alert where the app is entitled (or critical urgency on Linux). The current
+macOS build has no Time Sensitive entitlement; its receipt reports an ordinary
+active alert and why, including when the bundled notifier is absent and osascript
+posts the fallback. OS acceptance does not prove a banner was visible.
+Request queue ordering is priority, then response deadline, then arrival;
 the deadline still means when a response is due, not when work must finish.
 `overdue` and `overdue_s` describe a passed deadline at these checkpoints;
 queued work alone never starts a turn or adds a hook prompt.

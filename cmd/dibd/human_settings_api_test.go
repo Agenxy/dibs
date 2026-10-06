@@ -75,10 +75,13 @@ func TestHumanSettingsThroughAuthenticatedRelayReceipt(t *testing.T) {
 			var delivery struct {
 				Posted   bool `json:"posted"`
 				Receipts map[string]struct {
-					Posted   bool            `json:"posted"`
-					Shown    string          `json:"shown"`
-					Settings json.RawMessage `json:"settings"`
-					Hint     string          `json:"hint"`
+					Posted    bool            `json:"posted"`
+					Shown     string          `json:"shown"`
+					Settings  json.RawMessage `json:"settings"`
+					Hint      string          `json:"hint"`
+					Requested string          `json:"requested_interruption_level"`
+					Effective string          `json:"effective_interruption_level"`
+					Reason    string          `json:"interruption_reason"`
 				} `json:"receipts"`
 			}
 			if err := json.Unmarshal(raw, &delivery); err != nil {
@@ -87,6 +90,10 @@ func TestHumanSettingsThroughAuthenticatedRelayReceipt(t *testing.T) {
 			receipt, ok := delivery.Receipts["relay-1"]
 			if !ok || !delivery.Posted || !receipt.Posted || receipt.Shown != "unconfirmed" {
 				t.Fatalf("OS acceptance was not retained separately from visibility: %s", raw)
+			}
+			if tc.name == "unprovisioned" && (receipt.Requested != "timeSensitive" ||
+				receipt.Effective != "active" || receipt.Reason != "Time Sensitive requested but not available to this build (no entitlement)") {
+				t.Fatalf("unentitled relay claimed Time Sensitive delivery: %s", raw)
 			}
 			if len(receipt.Settings) == 0 || (string(receipt.Settings) == "null") != tc.unknown {
 				t.Fatalf("settings evidence/unknown missing: %s", raw)
