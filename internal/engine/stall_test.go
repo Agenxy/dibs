@@ -315,9 +315,12 @@ func TestAWorkerSeenSinceItsLastStopIsNotWokenForItsWork(t *testing.T) {
 		t.Skip("no /usr/bin/touch on this platform")
 	}
 	b := newContinuationBoard(t)
-	b.e.SetWakeCommands(map[string]WakeCommand{"codex": {Argv: []string{"/usr/bin/touch", "{thread}"}, Cooldown: time.Millisecond}})
 	b.declare(t, "member admission runtime", "")
 	b.wake(t)
+	// Keep the fixture's initial unread-mail wake on its ordinary cooldown.
+	// A 1ms cooldown here retries that unacknowledged mail before wake(t) can
+	// establish the started turn this test needs to examine.
+	b.e.SetWakeCommands(map[string]WakeCommand{"codex": {Argv: []string{"/usr/bin/touch", "{thread}"}, Cooldown: time.Millisecond}})
 	for range maxContinuations {
 		b.stop(t, false)
 	}
@@ -336,7 +339,7 @@ func TestAWorkerSeenSinceItsLastStopIsNotWokenForItsWork(t *testing.T) {
 	var cwd string
 	if _, err := b.e.query(b.ctx, func() core.Result {
 		cwd = b.e.state.Agents["worker"].Agent.CWD
-		_ = os.Remove(filepath.Join(cwd, contThread)) // the setup's own wake made it
+		_ = os.Remove(filepath.Join(cwd, contThread)) // a later wake would recreate it
 		b.e.seen["worker"] = ended.Add(time.Minute)   // the call landed after the Stop
 		b.e.stallTick(ended.Add(continuationBackoff[0] + time.Minute))
 		return nil

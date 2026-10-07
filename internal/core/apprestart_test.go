@@ -54,6 +54,42 @@ func TestRestartSettingsAreCoordinatorScopedAndReplayable(t *testing.T) {
 	}
 }
 
+func TestRestartObservationAdmissionBoundsRosterAndSlotReferences(t *testing.T) {
+	lim := DefaultLimits()
+	valid := func() *Op {
+		return &Op{Kind: OpAppRestartObserved, RestartEpoch: "app:2", RestartNotices: []RestartNotice{{
+			AgentID: "worker", Slots: []RestartSlotRef{{ID: "s1"}},
+		}}}
+	}
+	tests := []struct {
+		name string
+		op   *Op
+		bad  bool
+	}{
+		{"valid roster", valid(), false},
+		{"missing epoch", &Op{Kind: OpAppRestartObserved}, true},
+		{"oversized epoch", &Op{Kind: OpAppRestartObserved, RestartEpoch: strings.Repeat("x", 301)}, true},
+		{"too many agents", &Op{Kind: OpAppRestartObserved, RestartEpoch: "app:2", RestartNotices: make([]RestartNotice, lim.MaxAgents+1)}, true},
+		{"missing agent id", &Op{Kind: OpAppRestartObserved, RestartEpoch: "app:2", RestartNotices: []RestartNotice{{}}}, true},
+		{"oversized agent id", &Op{Kind: OpAppRestartObserved, RestartEpoch: "app:2", RestartNotices: []RestartNotice{{AgentID: strings.Repeat("x", lim.MaxNameBytes+1)}}}, true},
+		{"too many slots", &Op{Kind: OpAppRestartObserved, RestartEpoch: "app:2", RestartNotices: []RestartNotice{{AgentID: "worker", Slots: make([]RestartSlotRef, lim.MaxSlotsPerAgent+1)}}}, true},
+		{"missing slot id", &Op{Kind: OpAppRestartObserved, RestartEpoch: "app:2", RestartNotices: []RestartNotice{{AgentID: "worker", Slots: []RestartSlotRef{{}}}}}, true},
+		{"oversized slot id", &Op{Kind: OpAppRestartObserved, RestartEpoch: "app:2", RestartNotices: []RestartNotice{{AgentID: "worker", Slots: []RestartSlotRef{{ID: strings.Repeat("x", lim.MaxNameBytes+1)}}}}}, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := Admit(tc.op, lim)
+			if tc.bad {
+				if err == nil || !strings.Contains(err.Error(), "E_BAD_RESTART") {
+					t.Fatalf("malformed restart observation admitted or misdiagnosed: %v", err)
+				}
+			} else if err != nil {
+				t.Fatalf("valid restart observation refused: %v", err)
+			}
+		})
+	}
+}
+
 func TestRestartNoticesArePrunedByLedgeredSweep(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
