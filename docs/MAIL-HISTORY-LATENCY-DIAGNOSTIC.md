@@ -1,11 +1,24 @@
 # Paired writer-latency cause measurement (disposable, never merge)
 
-ACTIVE conditional priority57036/57063/57092: the2M paused-reader I/O study,
-after the original sampler A/B completed without a p99 collapse. This uses
-the actual3ef/a709 sources and the retained identical context-pause fixture.
-The premature pause run37551894253 was cancelled before the sampler A/B;
-the new pause run comes only after its terminal receipts. No trace study,
-acceptance sampler fix or production tuning is performed.
+ACTIVE priority57180/57202: acceptance is the ORIGINAL unmodifieda709
+resource probe, three times on fresh runners at1M and2M (six independent
+jobs). All six must pass the writer bound and the original memory/boot gate.
+No failure reproduced across the controlled experiments, so stop the pause
+study and stop speculating about a cause. Pause run37552758193 and redundant
+sampler run37552519814 are terminal CANCELLED; their results are not evidence.
+The paused fixture and the prior sampler descriptions below are historical
+and inactive. No trace study, acceptance sampler fix or tuning is performed.
+
+The active coordinator checks exacta709 and a clean checkout, then adds only
+a separate no-warm control TEST. Every tracked source file, including the
+original resource and warming tests, must remain unchanged. The original
+generator, three heap/boot baselines and production probe run verbatim. A
+separate2048-op process with the original per-op sampler supplies no-warm
+p99; it reuses the paired ledger filename, preventing an extra large ledger
+footprint, and no control ops or delays enter the production warming process.
+The coordinator judges max(2*control p99,10ms) from checked receipts and
+returns failure if that bound OR the original production probe fails. Any
+failing fresh run is the reproduction to study next. Then the API.
 
 Sampler A/B completed atc287db9 /37552231234 with both jobs SUCCESS and all
 eight actual bounds PASS.1M original/bounded/bounded/original p99 were

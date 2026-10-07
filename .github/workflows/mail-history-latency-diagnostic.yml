@@ -1,4 +1,4 @@
-name: mail-history paused-reader I-O diagnostic
+name: mail-history original acceptance three fresh runners
 
 on:
   pull_request:
@@ -16,23 +16,21 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        records: [2000000]
+        records: [1000000, 2000000]
+        repeat: [1, 2, 3]
     env:
       DIBS_HISTORY_PROBE_RECORDS: ${{ matrix.records }}
       DIBS_HISTORY_PROBE_CASE: simple
+      DIBS_HISTORY_REPEAT: ${{ matrix.repeat }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: 3efb598c5fe194a397157d3cd8b7fcdf76a2d452
-          path: old
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
           ref: a709e2746f4522591a112aefa0cace11e14e5687
-          path: new
+          path: source
       - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
         with:
           version: 2026.7.7
           experimental: true
-      - name: Same runner and writer, reader running versus paused, ABBA on immutable sources
+      - name: Original unmodified probe and external same-runner writer-bound assertion
         run: mise exec -- go run ./tools/historylatency
