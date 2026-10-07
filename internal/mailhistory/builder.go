@@ -117,7 +117,9 @@ func (i *Index) buildChunk(ctx context.Context, c *rawChunk) error {
 	// a whole chunk cannot delay a coordination op waiting on the writer.
 	i.viewMu.Lock()
 	defer i.viewMu.Unlock()
-	i.anchors = append(i.anchors, c.anchors...)
+	for _, a := range c.anchors {
+		i.anchors.add(a)
+	}
 	var previous snapshotUnit
 	move := 0
 	for n := uint32(0); n < c.count; n++ {

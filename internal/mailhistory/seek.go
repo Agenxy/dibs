@@ -19,13 +19,13 @@ type SeekRange struct {
 func (i *Index) ContentRange(serial uint64, head Record) (SeekRange, error) {
 	i.viewMu.RLock()
 	defer i.viewMu.RUnlock()
-	n := sort.Search(len(i.anchors), func(n int) bool { return i.anchors[n].Serial > serial })
+	n := sort.Search(i.anchors.n, func(n int) bool { return i.anchors.get(n).Serial > serial })
 	if n == 0 || serial > head.Serial {
 		return SeekRange{}, ErrUnavailable
 	}
-	r := SeekRange{Start: i.anchors[n-1], End: head.End, Hash: head.Hash}
-	if n < len(i.anchors) && i.anchors[n].Offset <= head.End {
-		r.End, r.Hash = i.anchors[n].Offset, i.anchors[n].Prev
+	r := SeekRange{Start: i.anchors.get(n - 1), End: head.End, Hash: head.Hash}
+	if n < i.anchors.n && i.anchors.get(n).Offset <= head.End {
+		r.End, r.Hash = i.anchors.get(n).Offset, i.anchors.get(n).Prev
 	}
 	if r.End <= r.Start.Offset {
 		return SeekRange{}, ErrUnavailable

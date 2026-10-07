@@ -35,7 +35,7 @@ type Index struct {
 	serials             vector
 	latest              vector
 	parties             map[partyKey]*party
-	anchors             []Anchor
+	anchors             anchorVector
 	numbers             []uint64 // bounded writer scratch for sorted canonical changes
 	records             uint64
 	head                Record
@@ -88,7 +88,7 @@ func (i *Index) BeginReplay() {
 	}
 	i.codec, i.serials, i.latest = codec{}, vector{}, vector{}
 	i.parties = map[partyKey]*party{}
-	i.anchors = nil
+	i.anchors = anchorVector{}
 	i.numbers = nil
 	i.records, i.head, i.generation = 0, Record{}, ""
 	i.ready, i.failed = false, false
@@ -158,6 +158,7 @@ type Measurement struct {
 	Units, Records                             uint64
 	Blocks, Conversations, Parties, References int
 	Prefixes, CompressedBytes, RawTailCapacity int
+	Anchors, AnchorCapacity, ScratchCapacity   int
 	CapturedUnits, BuiltSerial, QueuedBytes    uint64
 	Failed, Ready, Started                     bool
 	BootSerial                                 uint64
@@ -180,6 +181,7 @@ func (i *Index) Measurement() Measurement {
 	defer i.viewMu.RUnlock()
 	m.Units, m.Blocks, m.Conversations = i.codec.units, len(i.codec.blocks), i.serials.n
 	m.Parties, m.RawTailCapacity = len(i.parties), cap(i.codec.tail)
+	m.Anchors, m.AnchorCapacity, m.ScratchCapacity = i.anchors.n, len(i.anchors.segments)*anchorSegment, cap(i.codec.scratch)
 	for _, p := range i.parties {
 		m.References += p.refs.n
 		m.Prefixes += len(p.inherited)

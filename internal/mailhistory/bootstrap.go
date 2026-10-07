@@ -52,7 +52,7 @@ func (p *ReplayProjector) Observe(ctx context.Context, ordinal uint64, rec Recor
 	i.viewMu.Lock()
 	defer i.viewMu.Unlock()
 	if ordinal%4096 == 0 || rec.End-p.anchorStart > anchorBytes {
-		i.anchors = append(i.anchors, Anchor{rec.Serial, rec.Offset, rec.Prev})
+		i.anchors.add(Anchor{rec.Serial, rec.Offset, rec.Prev})
 		p.anchorStart = rec.Offset
 	}
 	if ordinal == 0 {
