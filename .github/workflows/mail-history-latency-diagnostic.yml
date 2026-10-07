@@ -1,4 +1,4 @@
-name: mail-history shared disk contention diagnostic
+name: mail-history original acceptance three fresh runners
 
 on:
   pull_request:
@@ -16,19 +16,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - records: 1000000
-            load: paced
-          - records: 2000000
-            load: paced
-          - records: 1000000
-            load: back-to-back
+        records: [1000000, 2000000]
+        repeat: [1, 2, 3]
     env:
       DIBS_HISTORY_PROBE_RECORDS: ${{ matrix.records }}
       DIBS_HISTORY_PROBE_CASE: simple
-      DIBS_HISTORY_REPEAT: 1
-      DIBS_HISTORY_EXPERIMENT: shared-disk
-      DIBS_HISTORY_WRITER_LOAD: ${{ matrix.load }}
+      DIBS_HISTORY_REPEAT: ${{ matrix.repeat }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -39,22 +32,5 @@ jobs:
         with:
           version: 2026.7.7
           experimental: true
-      - name: Matched arms with one throttled disk for real ReadAt Write and Sync
-        run: mise exec -- go run ./tools/historylatency
-  wiring-old:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      DIBS_HISTORY_EXPERIMENT: wiring-old
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: a709e2746f4522591a112aefa0cace11e14e5687
-          path: source
-      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
-        with:
-          version: 2026.7.7
-          experimental: true
-      - name: Identical activity guard must fail after real successful and failed Append
+      - name: Original unchanged resource probe with external paired writer bound
         run: mise exec -- go run ./tools/historylatency

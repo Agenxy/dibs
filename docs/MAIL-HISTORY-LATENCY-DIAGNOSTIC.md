@@ -1,6 +1,34 @@
 # Paired writer-latency cause measurement (disposable, never merge)
 
-ACTIVE priority57442: candidate productione771d2f is tested with the SAME
+ACTIVE original acceptance: source e771d2f, three fresh jobs each at1M and2M.
+The unchanged original generator/resource/warming tests and separate2048-op
+no-warm control run verbatim. All tracked source bytes must remain unchanged;
+original memory/boot gates and max(2*control p99,10ms) writer bound must pass
+all six jobs. An earlier resource job's 2M p99 was38.342700ms without a paired
+control, so model GREEN and resource PASS do not settle real latency acceptance.
+
+Completed coordinator d47e11f/run37555685139: SUCCESS all four jobs. Same
+shared device costs and same writer bound; candidate e771, no source overlay:
+
+| Records/load | Control p99 ms | Warm p99 ms | Bound ms | Warm seconds | Warm ops | Max native read |
+|---|---:|---:|---:|---:|---:|---:|
+| 1M/paced | 20.424273 | 19.313226 | 40.848546 | 98.662786 | 5516 | 65536 |
+| 2M/paced | 16.145672 | 19.832499 | 32.291344 | 197.966950 | 11034 | 65536 |
+| 1M/back-to-back | 22.935824 | 30.909703 | 45.871648 | 93.422959 | 4996 | 65536 |
+
+All actual frozen-prefix/native-call/readiness/empty-queue checks pass. The
+back-to-back build finishes within the five-minute context. Warming gets
+longer under the model; bounded progress is measured, not assumed. Both
+candidate activity exits pass through real operation doors. Old wiring job
+112581254329 contains BOTH intended runtime failures after valid operation
+setup; its coordinator asserts those failures and returns success. Actual
+old test EXIT1 is not a compile/setup failure. Old model RED receipts below
+remain unchanged. Resource37555618460 is SUCCESS all7 original cases, with
+1M/2M simple retained26.089648/25.156264B perrecord, peakaboveSteady
+25,667,624/47,494,160B, warm9.862815/21.615067s and p992.409704/38.342700ms.
+Full candidate ALL337555618424 remains pending, not proven by model success.
+
+Historical priority57442: candidate productione771d2f was tested with the SAME
 shared disk costs and bound below, at1M/2M paced and1M back-to-back. Both
 Append exits are checked through real Open/Replay/Engine.Do and native
 Write/Sync. A private atomic observer interface allows identical guards to
