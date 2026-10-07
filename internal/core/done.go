@@ -21,9 +21,9 @@ func (s *State) applyDone(m *Message, op *Op, now time.Time) (Result, []Event, e
 		if state == "" {
 			state = "pending"
 		}
+		hint := questionResponseHint(m, "done closes a request you APPROVED, once the work is delivered: approve it first")
 		return nil, nil, errf("E_BAD_DISPOSITION",
-			"done closes a request you APPROVED, once the work is delivered: approve it first, "+
-				"or answer a question with answer",
+			hint,
 			"message %d is a %s and %s, not an approved request", m.Serial, m.Type, state)
 	}
 	if m.Grant != "" || m.Adopt != "" {

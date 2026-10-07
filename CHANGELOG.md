@@ -50,6 +50,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   count omitted agents with a `board` call when the roster exceeds eight names.
   A bounded roster no longer reads as the complete set of reachable agents.
 
+- Request approval now explicitly says "I'll do it" and names the owed delivery;
+  permission questions point to `send(type:question, choices:...)`. Question and
+  milestone refusals name the exact repair call, and a missing token points to
+  saved-nonce recovery rather than leaving an agent to create a sibling.
+
 - Release publication now retries one HTTP 5xx from the draft-to-public edit
   only after re-reading the still-draft release and verifying its assets and
   tag again. A 4xx, changed assets, or unknown state never triggers another

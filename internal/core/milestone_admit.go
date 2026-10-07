@@ -21,9 +21,15 @@ func (s *State) admitReportedMilestone(op *Op) error {
 			return nil
 		}
 	}
-	hint := fmt.Sprintf(
-		"reported milestone indices are %v; read_mail(%d) shows their proofs, then "+
-			"respond(accept, milestone:<reported index>)", reported, m.Serial)
+	hint := fmt.Sprintf("reported milestone indices are %v; read_mail(msg_serial:%d) shows their proofs",
+		reported, m.Serial)
+	if len(reported) > 0 {
+		hint += fmt.Sprintf("; review a reported step, e.g. respond(msg_serial:%d, disposition:\"accept\", milestone:%d)",
+			m.Serial, reported[0])
+	} else {
+		hint += fmt.Sprintf("; ask the recipient to report it with respond(msg_serial:%d, disposition:\"progress\", "+
+			"milestone:%d, body:..., deliverable:...), then accept that reported step", m.Serial, op.Milestone)
+	}
 	if len(reported) == 1 {
 		hint = fmt.Sprintf("did you mean milestone %d? ", reported[0]) + hint
 	}

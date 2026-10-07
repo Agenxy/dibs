@@ -2,10 +2,33 @@ package mcp
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 )
+
+type missingRequired struct {
+	message string
+	missing []string
+}
+
+func (e *missingRequired) Error() string { return e.message }
+
+// Recovery advice is derived from the validation decision, never guessed from
+// an error string. Transport-carried credentials still satisfy the same schema.
+func requiredHint(tool string, err error) string {
+	var missing *missingRequired
+	if errors.As(err, &missing) {
+		for _, name := range missing.missing {
+			if name == "token" {
+				return "register(nonce:<your saved nonce>) recovers your agent and mail; save the returned token, " +
+					"then retry " + tool + " with it. Keep your saved nonce: a new nonce creates a sibling. " + schemaHint(tool)
+			}
+		}
+	}
+	return schemaHint(tool)
+}
 
 // requiredParams is the `required` list every tool already declares in its own
 // inputSchema, indexed for enforcement. Derived from toolDefs rather than
@@ -144,7 +167,7 @@ func checkRequired(tool string, raw json.RawMessage, bearerToken, agentNonce str
 		msg += fmt.Sprintf(": you sent %s, which %s does not take%s",
 			quoteList(extra), tool, synonymHint(tool, extra))
 	}
-	return fmt.Errorf("%s", msg)
+	return &missingRequired{message: msg, missing: missing}
 }
 
 func unknownGiven(tool string, present map[string]bool) []string {

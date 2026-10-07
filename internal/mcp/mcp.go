@@ -1035,7 +1035,7 @@ func parseToolCall(params json.RawMessage, bearerToken, agentNonce string) (tool
 	if err := checkRequired(call.Name, call.Args, bearerToken, agentNonce); err != nil {
 		return call, a, &rpcError{
 			Code: -32602, Message: err.Error(),
-			Data: hint(schemaHint(call.Name)),
+			Data: hint(requiredHint(call.Name, err)),
 		}
 	}
 	return call, a, nil
