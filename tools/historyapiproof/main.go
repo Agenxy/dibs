@@ -17,10 +17,11 @@ import (
 )
 
 const (
-	candidate   = "6e9707a8e6ccefe439e2deb4009db0b77f56bfa0"
-	beforeAPI   = "e771d2f6603cbed768025a1107615c524669c02b"
-	beforeBytes = "c241fe34f3b50d0b67634c297741ee3fadadb237"
-	beforeCost  = "240e99d19789de3a186aab7befe52ce3173dbcea"
+	candidate    = "40aa514ab2d081a5a7b48acb964c57241160c366"
+	beforeAPI    = "e771d2f6603cbed768025a1107615c524669c02b"
+	beforeBytes  = "c241fe34f3b50d0b67634c297741ee3fadadb237"
+	beforeCost   = "240e99d19789de3a186aab7befe52ce3173dbcea"
+	beforeWriter = "b640e08d79e262e09a9f187cabf6d572e229a75a"
 )
 
 type (
@@ -49,6 +50,7 @@ func run() error {
 		"internal/mailhistory/query_native_test.go",
 		"internal/mailhistory/query_content_test.go",
 		"internal/mailhistory/query_budget_test.go",
+		"internal/mailhistory/query_writer_cost_test.go",
 		"internal/mcp/mail_history_test.go",
 		"internal/mcp/mail_history_budget_test.go",
 	})
@@ -72,6 +74,9 @@ func run() error {
 		return err
 	}
 	if err := oldProof(); err != nil {
+		return err
+	}
+	if err := oldWriterProof(); err != nil {
 		return err
 	}
 	if err := oldSeekProof(); err != nil {
@@ -98,7 +103,10 @@ func prepareSources() error {
 	if err := verify("old-cost", beforeCost); err != nil {
 		return err
 	}
-	for _, dir := range []string{"source", "old", "old-seek", "old-cost"} {
+	if err := verify("old-writer", beforeWriter); err != nil {
+		return err
+	}
+	for _, dir := range []string{"source", "old", "old-seek", "old-cost", "old-writer"} {
 		if _, err := command(dir, "mise", "trust"); err != nil {
 			return err
 		}
