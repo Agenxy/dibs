@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	candidate = "0c774998d08fe753146f9c7714a9b2254fef54e6"
+	candidate = "c241fe34f3b50d0b67634c297741ee3fadadb237"
 	beforeAPI = "e771d2f6603cbed768025a1107615c524669c02b"
 )
 
@@ -96,6 +96,7 @@ func verify(dir, sha string) error {
 }
 
 func command(dir, name string, args ...string) ([]byte, error) {
+	// #nosec G204 -- fixed proof-plan argv, never a shell or external input.
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
 	raw, err := cmd.CombinedOutput()
@@ -143,6 +144,7 @@ func testNames(dir string, files []string) ([]string, error) {
 	pattern := regexp.MustCompile(`(?m)^func (TestMailHistory(?:Native|RealMCP)\w+)\(`)
 	var out []string
 	for _, file := range files {
+		// #nosec G304 -- immutable hosted checkout and constant fixture manifest.
 		raw, err := os.ReadFile(filepath.Join(dir, file))
 		if err != nil {
 			return nil, err
@@ -164,10 +166,12 @@ func oldProof() error {
 		"internal/mcp/mail_history_test.go",
 	}
 	for _, file := range files {
+		// #nosec G304 -- immutable source checkout and constant fixture manifest.
 		raw, err := os.ReadFile(filepath.Join("source", file))
 		if err != nil {
 			return err
 		}
+		// #nosec G304 -- old checkout receives only identical constant fixture paths.
 		if err := os.WriteFile(filepath.Join("old", file), raw, 0o600); err != nil {
 			return err
 		}
@@ -207,6 +211,7 @@ func intended(got map[string]result, exit error, name, marker string) error {
 
 func mutate(m mutation) (failure error) {
 	path := filepath.Join("source", m.path)
+	// #nosec G304 -- mutation target from the fixed, checked source manifest.
 	original, err := os.ReadFile(path)
 	if err != nil {
 		return err
@@ -215,9 +220,11 @@ func mutate(m mutation) (failure error) {
 		return fmt.Errorf("mutation %s must match exactly once", m.name)
 	}
 	changed := strings.Replace(string(original), m.before, m.after, 1)
+	// #nosec G304 -- disposable source fixture, fixed mutation target.
 	if err := os.WriteFile(path, []byte(changed), 0o600); err != nil {
 		return err
 	}
+	// #nosec G304 -- restore the same verified source bytes, including failure exits.
 	defer func() { failure = errors.Join(failure, os.WriteFile(path, original, 0o600)) }()
 	for name, marker := range m.guards {
 		got, exit, err := test("source", "^"+name+"$")
