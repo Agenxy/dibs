@@ -58,7 +58,9 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	got, exit, err := test("source", "^(TestMailHistory(Native|RealMCP)|TestHistory(Bootstrap|Pending|ProductionBootstrap|Authenticated))")
+	selector := "^(TestMailHistory(Native|RealMCP)|TestHistory" +
+		"(Bootstrap|Pending|ProductionBootstrap|Authenticated))"
+	got, exit, err := test("source", selector)
 	if err != nil {
 		return err
 	}
@@ -371,7 +373,8 @@ func mutations() []mutation {
 			"cursor-generation", "internal/mailhistory/page.go",
 			"c.Generation != status.Generation || ", "",
 			map[string]string{
-				"TestMailHistoryNativeSameKeyDifferentGenerationRefusesCursor": "different ledger generation cursor disclosed a row",
+				"TestMailHistoryNativeSameKeyDifferentGenerationRefusesCursor": "different ledger generation " +
+					"cursor disclosed a row",
 			},
 		},
 		{
@@ -387,8 +390,9 @@ func mutations() []mutation {
 			"cursor-MAC", "internal/mailhistory/page.go",
 			"!hmac.Equal(tag, i.cursorMAC(fields, reader))", "!hmac.Equal(tag, tag)",
 			map[string]string{
-				"TestMailHistoryNativeCursorForgeryAndForeignReplayAreUniform":     "forged or foreign cursor confirmed a position",
-				"TestMailHistoryNativeInheritedReferenceForgeryRefusesLikeGarbage": "forged inherited reference confirmed another position",
+				"TestMailHistoryNativeCursorForgeryAndForeignReplayAreUniform": "forged or foreign cursor confirmed a position",
+				"TestMailHistoryNativeInheritedReferenceForgeryRefusesLikeGarbage": "forged inherited reference " +
+					"confirmed another position",
 			},
 		},
 		{
