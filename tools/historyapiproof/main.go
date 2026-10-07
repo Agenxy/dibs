@@ -160,7 +160,8 @@ func testMode(dir, selector string, race bool) (map[string]result, error, error)
 	if race {
 		args = append(args, "-race")
 	}
-	args = append(args, "-count=1", "-timeout=40s", "-json", "-run", selector, "./internal/mailhistory", "./internal/mcp", "./internal/ledger")
+	args = append(args, "-count=1", "-timeout=40s", "-json", "-run", selector,
+		"./internal/mailhistory", "./internal/mcp", "./internal/ledger")
 	// #nosec G204 -- fixed mise/go argv; selector names come from the immutable fixture.
 	cmd := exec.Command("mise", args...)
 	cmd.Dir = dir
