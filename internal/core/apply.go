@@ -1336,44 +1336,12 @@ func (s *State) UnanswerableSenders(mail []*Message) []Result {
 	return out
 }
 
-// nearestAgentsHint lists live agents, closest-looking first, so a misaddressed
-// message can be fixed in one step instead of a board round trip.
 // quoteOrNone renders a session id for a result, or says there was none.
 func quoteOrNone(s string) string {
 	if s == "" {
 		return "no primary session id"
 	}
 	return strconv.Quote(s)
-}
-
-func nearestAgentsHint(s *State, want string) string {
-	var near, live []string
-	w := strings.ToLower(want)
-	for id, l := range s.Agents {
-		if l.Status != StatusActive && !l.Sleeping() {
-			continue
-		}
-		switch {
-		case strings.Contains(strings.ToLower(id), w), strings.Contains(w, strings.ToLower(id)),
-			strings.Contains(strings.ToLower(l.Name), w):
-			near = append(near, id)
-		default:
-			live = append(live, id)
-		}
-	}
-	sort.Strings(near)
-	sort.Strings(live)
-	if len(near) > 0 {
-		return "no agent " + want + ": did you mean " + strings.Join(near, ", ") + "?"
-	}
-	if len(live) == 0 {
-		return "no agent " + want + ", and no other agent is live either"
-	}
-	if len(live) > 8 {
-		live = live[:8]
-	}
-	return "no agent " + want + ": live agents are: " + strings.Join(live, ", ") +
-		operatorFallback(s)
 }
 
 // operatorFallback names the human's own agent, because it is the one address
