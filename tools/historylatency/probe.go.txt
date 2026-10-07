@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -63,18 +64,60 @@ type latencySample struct {
 }
 
 type latencyPhase struct {
-	Name           string          `json:"name"`
-	Samples        int             `json:"samples"`
-	Seconds        float64         `json:"seconds"`
-	P99NS          int64           `json:"p99_ns"`
-	AppendP99NS    int64           `json:"append_p99_ns"`
-	ObserveP99NS   int64           `json:"observe_p99_ns"`
-	RemainderP99NS int64           `json:"remainder_p99_ns"`
-	Slowest        []latencySample `json:"slowest"`
-	MetricsBefore  map[string]any  `json:"metrics_before"`
-	MetricsAfter   map[string]any  `json:"metrics_after"`
-	GCPauseNS      uint64          `json:"gc_pause_ns"`
-	GCCycles       uint32          `json:"gc_cycles"`
+	calls          []latencySample
+	Name           string            `json:"name"`
+	Samples        int               `json:"samples"`
+	Seconds        float64           `json:"seconds"`
+	P99NS          int64             `json:"p99_ns"`
+	AppendP99NS    int64             `json:"append_p99_ns"`
+	ObserveP99NS   int64             `json:"observe_p99_ns"`
+	RemainderP99NS int64             `json:"remainder_p99_ns"`
+	Slowest        []latencySample   `json:"slowest"`
+	MetricsBefore  map[string]any    `json:"metrics_before"`
+	MetricsAfter   map[string]any    `json:"metrics_after"`
+	GCPauseNS      uint64            `json:"gc_pause_ns"`
+	GCCycles       uint32            `json:"gc_cycles"`
+	IOBefore       map[string]uint64 `json:"io_before"`
+	IOAfter        map[string]uint64 `json:"io_after"`
+	AppendOutliers int               `json:"append_over_10ms"`
+	TotalOutliers  int               `json:"total_over_10ms"`
+}
+
+// Only the builder receives this context, through the real serving listener.
+// The live Engine uses the unmodified parent. Pausing blocks an existing
+// between-record cancellation check; no production flags/setters are changed.
+type readerPause struct {
+	arrived chan struct{}
+	resume  chan struct{}
+	once    sync.Once
+}
+
+type pausableReader struct {
+	context.Context
+	pause atomic.Pointer[readerPause]
+}
+
+func (p *pausableReader) Err() error {
+	if gate := p.pause.Load(); gate != nil {
+		gate.once.Do(func() { close(gate.arrived) })
+		select {
+		case <-gate.resume:
+		case <-p.Context.Done():
+		}
+	}
+	return p.Context.Err()
+}
+
+func (p *pausableReader) hold(t *testing.T) func() {
+	t.Helper()
+	gate := &readerPause{arrived: make(chan struct{}), resume: make(chan struct{})}
+	p.pause.Store(gate)
+	select {
+	case <-gate.arrived:
+	case <-time.After(5 * time.Second):
+		t.Fatal("setup: actual reader did not reach its pause checkpoint")
+	}
+	return func() { p.pause.Store(nil); close(gate.resume) }
 }
 
 func TestMailHistoryLatencyDiagnostic(t *testing.T) {
@@ -127,7 +170,8 @@ func TestMailHistoryLatencyDiagnostic(t *testing.T) {
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
-	srv.Listener = base.mail.ServingListener(ctx, srv.Listener)
+	reader := &pausableReader{Context: ctx}
+	srv.Listener = base.mail.ServingListener(reader, srv.Listener)
 	srv.Start()
 	defer srv.Close()
 	res, err := srv.Client().Get(srv.URL)
@@ -135,19 +179,38 @@ func TestMailHistoryLatencyDiagnostic(t *testing.T) {
 		t.Fatal("setup: real HTTP Accept:", err)
 	}
 	_ = res.Body.Close()
+	var running, paused latencyPhase
+	if count == 2_000_000 {
+		running = measureLatencyPhase(t, ctx, eng, l, "reader-running-window", 2048)
+		if base.mail.Measurement().Ready {
+			t.Fatal("setup: reader already finished before pause comparison")
+		}
+		resume := reader.hold(t)
+		head := base.mail.Measurement().BuiltSerial
+		paused = measureLatencyPhase(t, ctx, eng, l, "reader-paused-window", 2048)
+		if base.mail.Measurement().BuiltSerial != head || base.mail.Measurement().Ready {
+			t.Fatal("setup: paused reader advanced")
+		}
+		resume()
+	}
 	warm := measureLatencyPhase(t, ctx, eng, l, "warming", 0)
 	if warm.Samples < 100 || !base.mail.Measurement().Ready {
 		t.Fatal("setup: fewer than 100 real warming ops or builder did not finish")
 	}
 	after := measureLatencyPhase(t, ctx, eng, l, "after-ready-control", 2048)
 	bound := max(2*before.P99NS, int64(10*time.Millisecond))
+	allWarm := append(slices.Clone(running.calls), warm.calls...)
+	warmingP99 := latencyP99(allWarm, func(s latencySample) int64 { return s.TotalNS })
 	receipt := map[string]any{
 		"label": label, "records": count, "go_version": runtime.Version(),
 		"gomaxprocs": runtime.GOMAXPROCS(0), "cpus": runtime.NumCPU(),
 		"before": before, "warm": warm, "after": after,
-		"prespecified_bound_ns": bound, "passes_latency_bound": warm.P99NS <= bound,
+		"prespecified_bound_ns": bound, "passes_latency_bound": warmingP99 <= bound,
+		"combined_warming_p99_ns": warmingP99, "combined_warming_samples": len(allWarm),
 		"representation": base.mail.Measurement(),
-		"observer":       "identical port adapter and runtime/metrics reads; no profile sampling",
+		"observer":       "identical port adapter, original per-iteration ReadMemStats and runtime/metrics; no profile sampling",
+		"running":        running, "paused": paused,
+		"original_memstats_sampler": true,
 	}
 	raw, err := json.Marshal(receipt)
 	if err != nil {
@@ -163,6 +226,7 @@ func TestMailHistoryLatencyDiagnostic(t *testing.T) {
 func measureLatencyPhase(t *testing.T, ctx context.Context, eng *engine.Engine, l *latencyLedger, name string, fixed int) latencyPhase {
 	t.Helper()
 	phase := latencyPhase{Name: name, MetricsBefore: latencyMetrics()}
+	phase.IOBefore = latencyIO(t)
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
 	start := time.Now()
@@ -171,7 +235,9 @@ func measureLatencyPhase(t *testing.T, ctx context.Context, eng *engine.Engine, 
 	var samples []latencySample
 	gc := []metrics.Sample{{Name: "/gc/cycles/total:gc-cycles"}, {Name: "/cpu/classes/gc/mark/assist:cpu-seconds"}}
 	for n := 0; fixed == 0 || n < fixed; n++ {
-		m := l.mail.Measurement() // same observer call in warm and both controls
+		var mem runtime.MemStats
+		runtime.ReadMemStats(&mem) // original sampler, applied identically to controls
+		m := l.mail.Measurement()  // same observer call in warm and both controls
 		if fixed == 0 {
 			if m.Failed {
 				t.Fatal("setup: builder failed", m)
@@ -197,6 +263,12 @@ func measureLatencyPhase(t *testing.T, ctx context.Context, eng *engine.Engine, 
 			t.Fatal("setup: real AckBoard did not append and observe exactly once:", err, result)
 		}
 		appendNS, observeNS := l.appendNS.Load(), l.observeNS.Load()
+		if appendNS > int64(10*time.Millisecond) {
+			phase.AppendOutliers++
+		}
+		if total > int64(10*time.Millisecond) {
+			phase.TotalOutliers++
+		}
 		samples = append(samples, latencySample{
 			Ordinal: n, TotalNS: total, AppendNS: appendNS, ObserveNS: observeNS,
 			RemainderNS: total - appendNS - observeNS,
@@ -212,7 +284,9 @@ func measureLatencyPhase(t *testing.T, ctx context.Context, eng *engine.Engine, 
 	runtime.ReadMemStats(&after)
 	phase.GCPauseNS, phase.GCCycles = after.PauseTotalNs-before.PauseTotalNs, after.NumGC-before.NumGC
 	phase.MetricsAfter = latencyMetrics()
+	phase.IOAfter = latencyIO(t)
 	phase.Samples = len(samples)
+	phase.calls = slices.Clone(samples)
 	phase.P99NS = latencyP99(samples, func(s latencySample) int64 { return s.TotalNS })
 	phase.AppendP99NS = latencyP99(samples, func(s latencySample) int64 { return s.AppendNS })
 	phase.ObserveP99NS = latencyP99(samples, func(s latencySample) int64 { return s.ObserveNS })
@@ -220,6 +294,30 @@ func measureLatencyPhase(t *testing.T, ctx context.Context, eng *engine.Engine, 
 	slices.SortFunc(samples, func(a, b latencySample) int { return int(b.TotalNS - a.TotalNS) })
 	phase.Slowest = samples[:min(12, len(samples))]
 	return phase
+}
+
+func latencyIO(t *testing.T) map[string]uint64 {
+	t.Helper()
+	raw, err := os.ReadFile("/proc/self/io")
+	if err != nil {
+		t.Fatal("setup: Linux process I/O counters:", err)
+	}
+	result := make(map[string]uint64)
+	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
+			t.Fatal("setup: malformed process I/O counter")
+		}
+		n, err := strconv.ParseUint(fields[1], 10, 64)
+		if err != nil {
+			t.Fatal("setup: process I/O counter:", err)
+		}
+		result[strings.TrimSuffix(fields[0], ":")] = n
+	}
+	if _, ok := result["read_bytes"]; !ok {
+		t.Fatal("setup: actual disk-read counter unavailable")
+	}
+	return result
 }
 
 func latencyP99(samples []latencySample, field func(latencySample) int64) int64 {

@@ -29,8 +29,17 @@ func run() error {
 	if n := os.Getenv("DIBS_HISTORY_PROBE_RECORDS"); n != "1000000" && n != "2000000" {
 		return fmt.Errorf("setup: records must be 1000000 or 2000000")
 	}
-	roots := []string{"old", "new"}
-	for n, root := range roots {
+	if err := prepareSources(); err != nil {
+		return err
+	}
+	if err := prepareFixture(); err != nil {
+		return err
+	}
+	return measureArms()
+}
+
+func prepareSources() error {
+	for n, root := range []string{"old", "new"} {
 		expected := []string{oldSource, newSource}[n]
 		if err := verify(root, expected); err != nil {
 			return err
@@ -40,11 +49,17 @@ func run() error {
 		if err := trust.Run(); err != nil {
 			return fmt.Errorf("setup: trust %s: %w", root, err)
 		}
-		if err := copyFile("tools/historylatency/probe.go.txt", filepath.Join(root, "internal/ledger/mail_history_latency_diagnostic_test.go")); err != nil {
+		destination := filepath.Join(root, "internal/ledger/mail_history_latency_diagnostic_test.go")
+		if err := copyFile("tools/historylatency/probe.go.txt", destination); err != nil {
 			return err
 		}
 	}
-	if err := command("old", "generate", "", "go", "test", "-count=1", "-timeout=20m", "-run", "^TestMailHistoryProductionProbe$", "-v", "./internal/ledger"); err != nil {
+	return nil
+}
+
+func prepareFixture() error {
+	if err := command("old", "generate", "", "go", "test", "-count=1", "-timeout=20m",
+		"-run", "^TestMailHistoryProductionProbe$", "-v", "./internal/ledger"); err != nil {
 		return fmt.Errorf("setup: generator: %w", err)
 	}
 	fixture := "internal/ledger/.history-production-probe"
@@ -57,7 +72,7 @@ func run() error {
 		}
 	}
 	var fixtureHashes [][32]byte
-	for _, root := range roots {
+	for _, root := range []string{"old", "new"} {
 		hash, err := printHash(filepath.Join(root, fixture, "ledger.jsonl"))
 		if err != nil {
 			return err
@@ -67,17 +82,22 @@ func run() error {
 	if fixtureHashes[0] != fixtureHashes[1] {
 		return fmt.Errorf("setup: encrypted fixture hashes disagree")
 	}
+	return nil
+}
+
+func measureArms() error {
 	// Prespecified ABBA order prevents always giving the newer source the warm
 	// runner. Each test process starts from a fresh copy of the same S0 bytes.
 	var failed bool
 	for n, root := range []string{"old", "new", "new", "old"} {
-		label := fmt.Sprintf("%s-%d", root, n+1)
-		if err := command(root, "", label, "go", "test", "-count=1", "-timeout=10m", "-run", "^TestMailHistoryLatencyDiagnostic$", "-v", "./internal/ledger"); err != nil {
+		label := fmt.Sprintf("memstats-%s-%d", root, n+1)
+		if err := command(root, "", label, "go", "test", "-count=1", "-timeout=10m",
+			"-run", "^TestMailHistoryLatencyDiagnostic$", "-v", "./internal/ledger"); err != nil {
 			fmt.Fprintln(os.Stderr, label, err)
 			failed = true
 		}
 	}
-	for _, root := range roots {
+	for _, root := range []string{"old", "new"} {
 		check := exec.Command("git", "diff", "--exit-code", "HEAD")
 		check.Dir, check.Stdout, check.Stderr = root, os.Stdout, os.Stderr
 		if err := check.Run(); err != nil {
@@ -101,8 +121,11 @@ func verify(root, expected string) error {
 		cmd := exec.Command("git", check.args...) // #nosec G204 -- constant diagnostic arguments
 		cmd.Dir = root
 		out, err := cmd.Output()
-		if err != nil || strings.TrimSpace(string(out)) != check.want {
-			return fmt.Errorf("setup: %s %v: %q error=%v", root, check.args, out, err)
+		if err != nil {
+			return fmt.Errorf("setup: %s %v: %w", root, check.args, err)
+		}
+		if strings.TrimSpace(string(out)) != check.want {
+			return fmt.Errorf("setup: %s %v: got %q want %q", root, check.args, out, check.want)
 		}
 	}
 	fmt.Printf("HISTORY_LATENCY_SOURCE root=%s sha=%s\n", root, expected)
@@ -110,7 +133,8 @@ func verify(root, expected string) error {
 }
 
 func command(root, arm, label string, args ...string) error {
-	cmd := exec.Command("mise", append([]string{"exec", "--"}, args...)...) // #nosec G204 -- fixed hosted diagnostic commands
+	// #nosec G204 -- fixed hosted diagnostic commands
+	cmd := exec.Command("mise", append([]string{"exec", "--"}, args...)...)
 	cmd.Dir = root
 	cmd.Env = append(os.Environ(), "DIBS_HISTORY_PROBE_ARM="+arm, "DIBS_HISTORY_LATENCY_LABEL="+label)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr

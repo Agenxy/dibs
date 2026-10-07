@@ -52,3 +52,42 @@ with copying only for oversized records. The per-record projector read lock
 and 256-record yield exist in both sources. The remaining production changes
 are bootstrap/build/drain extraction, comments and line formatting. None of
 those observations establishes which change caused the reported p99.
+
+## Initial receipts and next causal control
+
+Exact coordinator31b78e9250df5b36873f6c4e9b4590e9fd9c09bd, hosted run37551161012,
+completed successfully with all eight actual latency receipts below the
+prespecified10ms bound. At1M old/new/new/old warming p99 were
+0.661565/0.708908/1.036723/0.811360ms; before controls
+0.556439/0.635866/0.742471/0.822702ms. At2M warming p99 were
+2.465089/2.065275/1.986717/2.138071ms; controls
+1.767630/2.063743/2.269323/2.160853ms. Warm Observe p99 <=0.010ms,
+remainder <=0.159ms; GC pause histogram p99 upper <=0.164ms and
+scheduler upper <=0.132ms. Largest2M tails were in old-1:
+202.6255ms total /202.5149ms Append /0.003ms Observe /0.1075ms remainder.
+New1M had rare16–18ms Append tails, but not a16ms p99. Historical16/64ms
+p99 is not reproduced here, and its source cause remains unproven.
+Append contains Seek, encryption, JSON, Write, Sync, hashes and recordMail
+scalar assignment; it does not take the index mutex. These receipts do not
+by themselves isolate fsync from the rest of Append. Coordinator Mac CI
+failed six tool style checks; formatting/complexity/error wrapping are repaired
+without changing thresholds. That lint failure is not a production finding.
+
+Architect57036 asks whether reader I/O competes with writer flushes. The
+follow-up retains the original resource probe's per-iteration ReadMemStats
+call equally in every phase, closing that measurement gap. At2M, measure
+2048 actual ops with the reader running, then2048 while it is paused at its
+existing cancellation checkpoint. Only the context passed to the actual
+ServingListener is pausable; the Engine receives the normal parent. The
+pause handshake must succeed, BuiltSerial must remain fixed, and readiness
+must remain false while the live writer continues. Resume and finish warming.
+Combine ALL running and resumed warm samples for the bound; paused samples
+are a causal control, never substituted into warming p99.
+
+Linux /proc/self/io counters before and after every phase report logical
+reads and actual disk read_bytes, plus writes. Count all Append and total
+outliers >10ms in each phase. A zero disk-read delta with logical reads can
+show page-cache service on this runner; source ReadAt alone cannot prove
+physical disk I/O. Matched paused/running deltas distinguish a reader effect
+from unrelated disk tails. All receipts remain labelled diagnostic; no tuning
+or acceptance claim is made before measuring those controls.
