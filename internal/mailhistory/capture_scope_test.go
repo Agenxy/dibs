@@ -35,12 +35,15 @@ func TestEveryCoreOpHasExplicitHistoryCaptureScope(t *testing.T) {
 				return true
 			}
 			for n, name := range spec.Names {
-				if !strings.HasPrefix(name.Name, "Op") || n >= len(spec.Values) {
+				if !strings.HasPrefix(name.Name, "Op") {
 					continue
+				}
+				if n >= len(spec.Values) {
+					t.Fatalf("operation %s has no explicit literal", name.Name)
 				}
 				literal, ok := spec.Values[n].(*ast.BasicLit)
 				if !ok || literal.Kind != token.STRING {
-					continue
+					t.Fatalf("operation %s is not an explicit string literal", name.Name)
 				}
 				kind, err := strconv.Unquote(literal.Value)
 				if err != nil {

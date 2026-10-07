@@ -74,9 +74,7 @@ func (p *ReplayProjector) emit(u snapshotUnit) error {
 }
 
 func (p *ReplayProjector) inherit(from, to partyKey) error {
-	if !p.index.party(to).inherit(p.index.parties[from]) {
-		return errors.New("history inherited source bound exceeded")
-	}
+	p.index.party(to).inherit(p.index.parties[from])
 	return nil
 }
 
@@ -87,10 +85,10 @@ func (p *ReplayProjector) Progress(rec Record) {
 	p.index.mu.Unlock()
 }
 
-// Finish records the canonical S0 canary without retaining the shadow State.
-func (p *ReplayProjector) Finish(rec Record, stateHash [32]byte) {
+// Finish records the validated S0 boundary without retaining the shadow State.
+func (p *ReplayProjector) Finish(rec Record) {
 	p.index.mu.Lock()
 	p.index.builtHead = rec
-	p.index.bootSerial, p.index.bootHash = rec.Serial, stateHash
+	p.index.bootSerial = rec.Serial
 	p.index.mu.Unlock()
 }

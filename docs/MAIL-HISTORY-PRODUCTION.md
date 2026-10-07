@@ -17,7 +17,7 @@ The representation uses bounded compressed canonical snapshots, latest-header
 references, both per-party reference vectors, sparse chain anchors and a bounded
 raw live tail. Adoption/merge candidate prefixes point only to base vectors,
 deduplicate by identity and freeze their lengths. A maximum of 256 sources
-fails the derived view explicitly instead of dropping inherited candidates.
+permanently refuses only the affected incarnation instead of failing the board or silently dropping inherited candidates. This is reproducible on rebuild; retry cannot restore that party history.
 Latest shared core authorization will decide access; a prefix grants nothing.
 
 Every production reference retains uint64 range. Chunks store low words and
@@ -114,3 +114,31 @@ authority, chain-validated content seeks, no-consumption authObserve, real MCP
 and concurrency/privacy/read-marker guards, intended old-code RED, final full
 gate, source review and coordinated merge. No local compilation/tests/load or
 native delivery probes are authorized; all execution gates are hosted.
+
+## Source review 58712: in-progress fixes
+
+The six source findings are being addressed after the b640/6e checkpoint.
+Writer Capture now classifies every core op: mail-free operations capture no
+mail; individual/listed mail operations capture their references; check_in
+captures its actual inbox; send/respond/queue/withdraw capture the recipient
+mailbox; sweep/GC/adoption/merge/prune/sign-off remain full-scope. A failed view
+skips snapshots. The engine resolves names and roles before Capture, so this
+classifier receives the ledgered immutable recipient. Authors record the
+incarnation and machine at each event; later names and machine updates do not
+rewrite previous units.
+
+Corrected native writer controls at a9139d0 passed in hosted run 37569711283.
+All three also failed on b640 for their intended metadata-copy assertions.
+Earlier 40aa probe setup failures and the mismatched workflow pin remain
+invalid as product or old-control verdicts. Actual 10k live-mail paired writer
+cost, the remaining review guards, exact-head resource receipts and ALL3 are
+still outstanding.
+
+Architect 58817 explicitly revises the steady bound to 48*N bytes plus at most
+4 MiB fixed index working storage (codec/compressor/maps). Forced-GC heap counts
+every retained object. At one million records and above, the entire increment,
+including fixed storage, must fit 48 bytes per record. The five original
+100k large-body measurements varied by only 7,656 bytes and all failed the
+original strict 48-byte ceiling; those verdicts remain failed. Profiles pointed
+to retained compressor storage; recreating it for every block would add roughly
+1 MiB of allocation per block. Fresh revised-bound results are not yet available.

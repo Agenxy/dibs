@@ -2,6 +2,7 @@ package mailhistory
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"sort"
 	"sync"
@@ -40,6 +41,7 @@ type Index struct {
 	records             uint64
 	head                Record
 	generation          string
+	cursorKey           [32]byte
 	ready               bool
 	initialReady        bool // monotonic after S0; live writes only clear ready
 	failed              bool
@@ -56,18 +58,25 @@ type Index struct {
 	builtHead           Record
 	bootstrap           func(context.Context, *Index) error
 	bootSerial          uint64
-	bootHash            [32]byte
 	lastOwnershipChange uint64 // writer-derived authorization fence, never ledger state
 	anchorStart         int64  // live capture offset; independent from the bootstrap projector
 	anchorSeen          bool
 }
 
 // New returns an empty derived index for a fresh ledger.
-func New() *Index {
-	return &Index{
+func New(keys ...[32]byte) *Index {
+	i := &Index{
 		parties: map[partyKey]*party{}, ready: true, initialReady: true, ended: true,
 		signal: make(chan struct{}, 1), queueLimit: liveQueueBytes,
 	}
+	if len(keys) > 0 {
+		i.cursorKey = keys[0]
+	} else {
+		// Standalone derived views get a private key; ledger views supply their
+		// domain-separated stable board key. crypto/rand.Read cannot return an error.
+		_, _ = rand.Read(i.cursorKey[:])
+	}
+	return i
 }
 
 // Invalidate refuses history queries when a committed-record anchor is unusable.
@@ -98,7 +107,7 @@ func (i *Index) BeginReplay() {
 	i.active, i.first, i.last = nil, nil, nil
 	i.queued, i.captured, i.built = 0, 0, 0
 	i.builtHead = Record{}
-	i.bootstrap, i.bootSerial, i.bootHash = nil, 0, [32]byte{}
+	i.bootstrap, i.bootSerial = nil, 0
 }
 
 // EndReplay validates the captured prefix. It does NOT encode it or launch a
@@ -162,7 +171,6 @@ type Measurement struct {
 	CapturedUnits, BuiltSerial, QueuedBytes    uint64
 	Failed, Ready, Started                     bool
 	BootSerial                                 uint64
-	BootHash                                   [32]byte
 }
 
 // Measurement reports representation counts without estimating retained heap.
@@ -171,7 +179,7 @@ func (i *Index) Measurement() Measurement {
 	m := Measurement{
 		Records: i.records, CapturedUnits: i.captured, BuiltSerial: i.builtHead.Serial,
 		QueuedBytes: i.queued, Failed: i.failed, Ready: i.ready, Started: i.started,
-		BootSerial: i.bootSerial, BootHash: i.bootHash,
+		BootSerial: i.bootSerial,
 	}
 	if i.active != nil {
 		m.QueuedBytes += i.active.charge()

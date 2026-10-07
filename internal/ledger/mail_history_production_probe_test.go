@@ -143,7 +143,7 @@ func TestMailHistoryProductionProbe(t *testing.T) {
 			"floor_bytes=%d allowance_bytes=%.0f proportional_pass=%t accepted_pass=%t",
 			above, proportional, 8<<20, allowance, above <= proportional, above <= allowance)
 		// Architect58415 applies the previously stated56771 fixed working-set
-		// floor. Preserve the proportional verdict; retained48B/record stays.
+		// floor. Preserve the proportional verdict alongside the fixed-cost steady bound.
 		if count > 0 && above > allowance {
 			t.Error("warming peak exceeds steady heap plus max(64 MiB per million records, 8 MiB)")
 		}
@@ -169,7 +169,16 @@ func assertProductionHistoryBudget(t *testing.T, dir string, records int, heap u
 	perRecord := float64(increment) / float64(records)
 	overhead := seconds/baseline.Seconds - 1
 	t.Logf("HISTORY_PRODUCTION_BUDGET increment_bytes=%d bytes_per_record=%.6f replay_delta_seconds=%.9f replay_overhead_percent=%.3f", increment, perRecord, seconds-baseline.Seconds, 100*overhead)
-	if perRecord > 48 || float64(increment) > float64(records)*float64(64<<20)/1_000_000 {
+	// Architect58817: fixed codec working storage is included in forced-GC
+	// heap, with at most 4 MiB allowance. At one million records and above
+	// the entire measured increment, including that fixed cost, must fit 48B/N.
+	allowance := int64(4 << 20)
+	if records >= 1_000_000 {
+		allowance = 0
+	}
+	bound := int64(records)*48 + allowance
+	t.Logf("HISTORY_STEADY_BOUND original_48_pass=%t fixed_allowance_bytes=%d accepted_bound_bytes=%d accepted_pass=%t", perRecord <= 48, allowance, bound, increment <= bound)
+	if increment > bound {
 		t.Error("production representation exceeds accepted retained-memory ceiling")
 	}
 	if records >= 1_000_000 && overhead > 0.15 {

@@ -56,13 +56,21 @@ type prefix struct {
 }
 
 type party struct {
-	refs      vector
-	inherited []prefix
+	refs        vector
+	inherited   []prefix
+	unavailable bool
 }
 
 const maxSources = 256
 
 func (p *party) inherit(source *party) bool {
+	if p.unavailable {
+		return true
+	}
+	if source != nil && source.unavailable {
+		p.unavailable, p.inherited = true, nil
+		return true
+	}
 	if source == nil || p == source {
 		return true
 	}
@@ -88,7 +96,8 @@ func (p *party) include(ref prefix) bool {
 		}
 	}
 	if len(p.inherited) >= maxSources-1 {
-		return false // explicitly disable this derived view, never drop authority
+		p.unavailable, p.inherited = true, nil
+		return false // refuse this party only; the rest of the board stays usable
 	}
 	p.inherited = append(p.inherited, ref)
 	return true

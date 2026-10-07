@@ -2,6 +2,9 @@ package ledger
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -19,6 +22,7 @@ func TestHistoryBootstrapOwnsPrivateStateAndKeepsLiveCommitAfterS0(t *testing.T)
 	if err != nil {
 		t.Fatal("setup: canonical board hash", err)
 	}
+	observed := observePrivateBootHash(t, l, live.Limits)
 	// Change only the live objects before the engine starts. A retained State
 	// pointer OR a shallow State copy would leak both changes into the shadow.
 	live.Messages[3].Body = "private live mutation must not enter the reader"
@@ -49,7 +53,7 @@ func TestHistoryBootstrapOwnsPrivateStateAndKeepsLiveCommitAfterS0(t *testing.T)
 	}
 	_ = response.Body.Close()
 	m := awaitBootHistory(t, l.MailHistory())
-	if m.BootSerial != 3 || m.BootHash != expected || m.Conversations != 2 || m.QueuedBytes != 0 || m.BuiltSerial <= 3 {
+	if m.BootSerial != 3 || <-observed != expected || m.Conversations != 2 || m.QueuedBytes != 0 || m.BuiltSerial <= 3 {
 		t.Fatalf("private S0 fold or ordered live suffix disagrees: %+v expected hash=%x", m, expected)
 	}
 }
@@ -84,6 +88,7 @@ func TestHistoryBootstrapPreservesRecordBeyondReaderBuffer(t *testing.T) {
 	if err != nil {
 		t.Fatal("setup: board canary", err)
 	}
+	observed := observePrivateBootHash(t, l, live.Limits)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
@@ -96,7 +101,45 @@ func TestHistoryBootstrapPreservesRecordBeyondReaderBuffer(t *testing.T) {
 	}
 	_ = res.Body.Close()
 	m := awaitBootHistory(t, l.MailHistory())
-	if m.BootSerial != 3 || m.BootHash != expected || m.Conversations != 1 {
+	if m.BootSerial != 3 || <-observed != expected || m.Conversations != 1 {
 		t.Fatal("large committed record was truncated or folded differently", m)
 	}
+}
+
+// Test-only encoding enters through the actual native serving fold. No canary
+// hash or serialized private board is computed by the production run caller.
+func observePrivateBootHash(t *testing.T, l *Ledger, limits core.Limits) <-chan [32]byte {
+	t.Helper()
+	observed := make(chan [32]byte, 1)
+	end, err := l.f.Seek(0, io.SeekCurrent)
+	if err != nil {
+		t.Fatal("setup: validated boot bytes", err)
+	}
+	head := mailhistory.Record{Serial: 3, End: end, Hash: l.headSum}
+	source := &historyReplay{file: l.f, box: l.box, node: l.nodeID, limits: limits, head: head, records: 3, writer: &l.historyWriter}
+	l.mail.ConfigureBootstrap(source.head, source.records, func(ctx context.Context, index *mailhistory.Index) error {
+		shadow, last, err := source.fold(ctx, index)
+		if err != nil {
+			return err
+		}
+		hash, err := historyStateHash(shadow)
+		if err != nil {
+			return err
+		}
+		observed <- hash
+		index.ReplayProjector().Finish(last)
+		return nil
+	})
+	return observed
+}
+
+func historyStateHash(st *core.State) ([32]byte, error) {
+	// encoding/json orders map keys and follows core's existing credential
+	// redactions. The canary covers that canonical board encoding without a
+	// separately maintained projection of its fields.
+	raw, err := json.Marshal(st)
+	if err != nil {
+		return [32]byte{}, err
+	}
+	return sha256.Sum256(raw), nil
 }

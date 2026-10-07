@@ -1206,10 +1206,17 @@ returns chronological committed audit units for the caller's sender/recipient
 incarnation, including retained-out mail. It shares read_mail's pure creation
 and authorized adoption fence and has no role bypass. authObserve admits it
 without delivery, consumption, outcome/review reads or socket confirmation.
+Authors retain the identity incarnation and machine recorded at the event;
+later renames and relocations do not rewrite that attribution.
 Content is opt-in quoted conversation data; attachments are recorded references,
 never restored bytes. A stateless generation/version/upper/compound-position
 cursor pins the first prefix; its derived reference accelerator is validated
-against that position on each page. Later pages use cursor alone.
+against that position on each page. A 128-bit HMAC-SHA256 tag binds its fixed
+fields to the caller ID, creation serial and generation, verified before any
+reference lookup. Its key is HKDF-derived from the existing board key using
+`dibs mail-history cursor v1`; no new secret or persistent cursor state is
+created. Later pages use cursor alone. A page that examines no candidate while
+waiting for newer metadata retains its previous cursor.
 
 Bounds are 1–100 rows, 4096 own candidate units, 128 KiB encoded page and a
 250 ms work budget checked between units. Bounded content identifies recorded
@@ -1219,7 +1226,10 @@ the whole sparse interval through the next trusted anchor or drained head.
 Anchors cut ordinary intervals before either 4096 records or 512 KiB is exceeded,
 and the first post-S0 commit starts a new interval. The native reader still
 refuses intervals over 4096 records/16 MiB without moving the writer's file
-position; a single oversized legacy record can be explicitly unavailable.
+position; a single oversized legacy record can be explicitly unavailable while its
+metadata and later rows remain available. Integrity failures still refuse the
+whole page. More than 256 inherited history sources permanently refuses only
+that incarnation with an explicit hint; other parties keep their history.
 Invalid evidence fails history closed while coordination remains usable.
 
 E_HISTORY_WARMING applies only until the initial S0 fold completes. Afterwards

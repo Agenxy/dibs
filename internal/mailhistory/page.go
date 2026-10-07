@@ -3,7 +3,10 @@ package mailhistory
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"sort"
@@ -26,6 +29,10 @@ var (
 	ErrCursor = errors.New("invalid history cursor")
 	// ErrUnavailable refuses unavailable or invalid derived evidence.
 	ErrUnavailable = errors.New("history view is unavailable")
+	// ErrPartyUnavailable scopes a permanent inherited-source limit to one incarnation.
+	ErrPartyUnavailable = errors.New("party history inherited source limit exceeded")
+	// ErrContentBudget preserves metadata when native content exceeds a work bound.
+	ErrContentBudget = errors.New("history content work bound exceeded")
 )
 
 // A reference is an accelerator, not authority. Its canonical position is
@@ -68,6 +75,19 @@ func (i *Index) ReadPage(ctx context.Context, req PageRequest) (Page, error) {
 	if err != nil {
 		return Page{}, err
 	}
+	// Authenticate before any party-reference or decoded-unit lookup.
+	if req.Cursor != "" {
+		if _, err := i.readCursor(req.Cursor, req.Reader); err != nil {
+			return Page{}, ErrCursor
+		}
+	}
+	i.viewMu.RLock()
+	p := i.parties[partyKey{req.Reader.ID, req.Reader.CreatedSerial}]
+	failedParty := p != nil && p.unavailable
+	i.viewMu.RUnlock()
+	if failedParty {
+		return Page{}, ErrPartyUnavailable
+	}
 	reader := unitReader{index: i}
 	upper, lower, err := i.pageBounds(&reader, req, status)
 	if err != nil {
@@ -79,7 +99,7 @@ func (i *Index) ReadPage(ctx context.Context, req PageRequest) (Page, error) {
 func (i *Index) pageBounds(reader *unitReader, req PageRequest, status Status) (uint64, uint64, error) {
 	upper, lower := req.Upper, uint64(0)
 	if req.Cursor != "" {
-		c, err := readCursor(req.Cursor)
+		c, err := i.readCursor(req.Cursor, req.Reader)
 		if err != nil || c.Generation != status.Generation || c.Upper > req.Upper {
 			return 0, 0, ErrCursor
 		}
@@ -134,15 +154,18 @@ func (i *Index) walkPage(ctx context.Context, req PageRequest, status Status, re
 		}
 		if allowed {
 			page.Units = append(page.Units, u)
-			page.Cursors = append(page.Cursors, last.encode())
+			page.Cursors = append(page.Cursors, i.encodeCursor(last, req.Reader))
 		}
 		if len(page.Units) == req.Limit {
 			more = more || n+1 < len(refs)
 			break
 		}
 	}
-	if more && page.Examined > 0 {
-		page.Next = last.encode()
+	if more {
+		page.Next = req.Cursor
+		if page.Examined > 0 {
+			page.Next = i.encodeCursor(last, req.Reader)
+		}
 	}
 	return page, nil
 }
@@ -177,23 +200,39 @@ func (i *Index) partyReference(key partyKey, ref uint64) bool {
 	return false
 }
 
-func (c cursor) encode() string {
-	// This fixed struct contains only primitive strings and unsigned integers;
-	// encoding/json cannot fail for any of its values.
+func (i *Index) cursorMAC(raw []byte, reader core.Agent) []byte {
+	mac := hmac.New(sha256.New, i.cursorKey[:])
+	// Length framing fixes the boundary between the opaque party ID and fields.
+	var framing [16]byte
+	binary.BigEndian.PutUint64(framing[:8], uint64(len(reader.ID)))
+	binary.BigEndian.PutUint64(framing[8:], reader.CreatedSerial)
+	_, _ = mac.Write(framing[:])
+	_, _ = mac.Write([]byte(reader.ID))
+	_, _ = mac.Write(raw)
+	return mac.Sum(nil)[:16]
+}
+
+func (i *Index) encodeCursor(c cursor, reader core.Agent) string {
+	// This primitive fixed struct cannot fail encoding/json.
 	raw, _ := json.Marshal(c)
+	raw = append(raw, i.cursorMAC(raw, reader)...)
 	return base64.RawURLEncoding.EncodeToString(raw)
 }
 
-func readCursor(value string) (cursor, error) {
+func (i *Index) readCursor(value string, reader core.Agent) (cursor, error) {
 	var c cursor
 	if len(value) > 512 {
 		return c, ErrCursor
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(value)
-	if err != nil {
+	if err != nil || len(raw) < 16 {
 		return c, ErrCursor
 	}
-	if err := json.Unmarshal(raw, &c); err != nil || c.Version != 1 {
+	fields, tag := raw[:len(raw)-16], raw[len(raw)-16:]
+	if !hmac.Equal(tag, i.cursorMAC(fields, reader)) {
+		return c, ErrCursor
+	}
+	if err := json.Unmarshal(fields, &c); err != nil || c.Version != 1 {
 		return c, ErrCursor
 	}
 	return c, nil

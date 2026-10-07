@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Mail history authenticates reader-bound restart-stable cursors, preserves pending continuation, scopes inherited-source overflow to its party, and retains metadata when bounded content is unavailable. Production bootstrap no longer serializes its private board for a test-only canary.
+
 ### Added
 
 - `mail_history` audits an agent's eligible sent/received ledger mail after live

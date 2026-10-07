@@ -93,7 +93,12 @@ func Open(path, nodeID string, box *Box) (*Ledger, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open ledger: %w", err)
 	}
-	return &Ledger{f: f, headHash: genesis, box: box, nodeID: nodeID, mail: mailhistory.New()}, nil
+	key, err := box.historyCursorKey()
+	if err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return &Ledger{f: f, headHash: genesis, box: box, nodeID: nodeID, mail: mailhistory.New(key)}, nil
 }
 
 // OpenReadOnly opens an EXISTING ledger for inspection and nothing else.
@@ -116,7 +121,12 @@ func OpenReadOnly(path, nodeID string, box *Box) (*Ledger, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open ledger read-only: %w", err)
 	}
-	return &Ledger{f: f, headHash: genesis, box: box, nodeID: nodeID, readOnly: true, mail: mailhistory.New()}, nil
+	key, err := box.historyCursorKey()
+	if err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return &Ledger{f: f, headHash: genesis, box: box, nodeID: nodeID, readOnly: true, mail: mailhistory.New(key)}, nil
 }
 
 // Replay folds every ledger line into st, truncating a torn tail if the last

@@ -37,6 +37,17 @@ func (l *Ledger) configureHistory(node string, limits core.Limits, serial, recor
 }
 
 func (s *historyReplay) run(ctx context.Context, index *mailhistory.Index) error {
+	_, last, err := s.fold(ctx, index)
+	if err != nil {
+		return err
+	}
+	index.ReplayProjector().Finish(last)
+	return nil
+}
+
+// The fold returns its private objects only to its caller. Production discards
+// them; test callers compare full canonical encodings before releasing them.
+func (s *historyReplay) fold(ctx context.Context, index *mailhistory.Index) (*core.State, mailhistory.Record, error) {
 	// SectionReader uses ReadAt: the writer's append offset is never changed,
 	// and bytes appended after the frozen boot boundary cannot enter this fold.
 	input := &historyReader{source: s.file, writer: s.writer, ctx: ctx}
@@ -49,20 +60,20 @@ func (s *historyReplay) run(ctx context.Context, index *mailhistory.Index) error
 	var last mailhistory.Record
 	for n := uint64(0); n < s.records; n++ {
 		if err := ctx.Err(); err != nil {
-			return err
+			return nil, mailhistory.Record{}, err
 		}
 		if n%256 == 0 {
 			if err := s.writer.wait(ctx); err != nil {
-				return err
+				return nil, mailhistory.Record{}, err
 			}
 		}
 		raw, err := readHistoryLine(reader)
 		if err != nil {
-			return fmt.Errorf("history bootstrap at record %d: %w", n, err)
+			return nil, mailhistory.Record{}, fmt.Errorf("history bootstrap at record %d: %w", n, err)
 		}
 		record, err := s.foldRecord(raw, previous, shadow, &scratch, projector, ctx, n, offset)
 		if err != nil {
-			return err
+			return nil, mailhistory.Record{}, err
 		}
 		last, previous, offset = record, record.Hash, record.End
 		if (n+1)%256 == 0 {
@@ -73,16 +84,9 @@ func (s *historyReplay) run(ctx context.Context, index *mailhistory.Index) error
 		}
 	}
 	if offset != s.head.End || previous != s.head.Hash || shadow.Serial != s.head.Serial {
-		return errors.New("history bootstrap disagrees with the validated boot boundary")
+		return nil, mailhistory.Record{}, errors.New("history bootstrap disagrees with the validated boot boundary")
 	}
-	hash, err := historyStateHash(shadow)
-	if err != nil {
-		return err
-	}
-	projector.Finish(last, hash)
-	// Nothing returning from this function contains shadow or scratch. Live
-	// commits are now drained through the real writer observer, without a fold.
-	return nil
+	return shadow, last, nil
 }
 
 func (s *historyReplay) foldRecord(raw []byte, previous [32]byte, shadow *core.State,
@@ -121,17 +125,6 @@ func (s *historyReplay) foldRecord(raw []byte, previous [32]byte, shadow *core.S
 		return mailhistory.Record{}, err
 	}
 	return record, nil
-}
-
-func historyStateHash(st *core.State) ([32]byte, error) {
-	// encoding/json orders map keys and follows core's existing credential
-	// redactions. The canary covers that canonical board encoding without a
-	// separately maintained projection of its fields.
-	raw, err := json.Marshal(st)
-	if err != nil {
-		return [32]byte{}, err
-	}
-	return sha256.Sum256(raw), nil
 }
 
 // The next read may reuse the buffer: the fold, hash and projector finish

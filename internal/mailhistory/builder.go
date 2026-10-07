@@ -128,9 +128,7 @@ func (i *Index) buildChunk(ctx context.Context, c *rawChunk) error {
 		}
 		for move < len(c.moves) && c.moves[move].before == n {
 			m := c.moves[move]
-			if !i.party(m.to).inherit(i.parties[m.from]) {
-				return errors.New("history inherited source bound exceeded")
-			}
+			i.party(m.to).inherit(i.parties[m.from])
 			move++
 		}
 		u := c.unit(n, previous)

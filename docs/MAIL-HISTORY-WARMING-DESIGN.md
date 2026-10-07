@@ -63,11 +63,10 @@ current codec block are processed at a time, beside the bounded canonical
 shadow State and its transient metadata scratch. The reader yields every 256
 records. Actual warming wall time and writer p99 decide whether that suffices.
 
-The final serial, committed byte boundary and chain hash must match S0. A
-canonical State JSON hash (with core's existing credential redactions),
-computed in the background, is the regression
-canary: tests compare it with the actual live board at S0 using nondefault
-Limits and changed live objects. No shadow State or scratch escapes the reader;
+The final serial, committed byte boundary and chain hash must match S0. A test-only canonical State JSON hash (with core's existing credential
+redactions) is the regression canary: tests compare the actual private fold
+with the live board at S0 using nondefault Limits and changed live objects.
+Production neither serializes nor hashes that board. No shadow State or scratch escapes the reader;
 both are dropped at S0. Later records use only the live observer, without
 another Apply.
 
@@ -99,7 +98,10 @@ Agent objects and commits through the real engine before Accept, proving the
 reader uses independent state and the live suffix follows S0.
 
 Keep paired same-runner baseline controls at 1M/2M and the <=15% boot-to-serving
-bound. Forced-GC steady incremental heap stays <=48 B/record. Sampled warming
+bound. Architect58817 supersedes the small-fixture steady criterion: forced-GC
+steady incremental heap stays <=48*N bytes plus at most 4 MiB fixed working
+storage; at N>=1M, the entire increment must fit <=48 B/record. Earlier strict
+48 B/record failure receipts remain failed. Sampled warming
 peak, INCLUDING shadow State, stays <=steady plus 64 MiB per million records.
 Report warming wall time and real coordination-operation p99. A failed shadow
 heap bound is a measured failure to report, never permission to relax it.

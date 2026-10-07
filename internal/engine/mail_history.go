@@ -127,6 +127,10 @@ func historyFailure(err error, status mailhistory.Status, upper uint64) core.Res
 	code, hint := "E_HISTORY_UNAVAILABLE",
 		"retry mail_history shortly; if it persists, ask the coordinator to inspect the ledger-derived history view"
 	switch {
+	case errors.Is(err, mailhistory.ErrPartyUnavailable):
+		code = "E_HISTORY_UNAVAILABLE"
+		hint = "this incarnation exceeded the inherited history source bound; retry cannot restore its history; " +
+			"use read_mail for retained mail or ask the coordinator for ledger evidence"
 	case errors.Is(err, mailhistory.ErrWarming):
 		code, hint = "E_HISTORY_WARMING", "initial history build is still warming; retry mail_history shortly"
 	case errors.Is(err, mailhistory.ErrSettling):
@@ -167,10 +171,6 @@ func (e *Engine) historyRows(ctx context.Context, index *mailhistory.Index, page
 		}
 		row, err := e.historyRow(ctx, index, unit, includeBodies, deadline)
 		if err != nil {
-			if n > 0 && errors.Is(err, context.DeadlineExceeded) {
-				res["cursor"] = page.Cursors[n-1]
-				break
-			}
 			return nil, err
 		}
 
@@ -224,7 +224,13 @@ func (e *Engine) historyRow(ctx context.Context, index *mailhistory.Index, unit 
 		} else {
 			content, err := e.historyContent(ctx, index, unit, deadline)
 			if err != nil {
-				return nil, err
+				if ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
+				if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, mailhistory.ErrContentBudget) {
+					return nil, err
+				}
+				content = core.Result{"quoted_data": true, "unavailable": "native content work bound; metadata retained"}
 			}
 			row["content"] = content
 		}

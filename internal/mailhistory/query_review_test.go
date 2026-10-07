@@ -198,7 +198,29 @@ func TestMailHistoryNativeNamedSendCapturesDisplacedRecipientMail(t *testing.T) 
 		t.Fatal("setup: actual send observer did not run")
 	}
 	res := settledHistory(t, f, sender, false)
-	if len(res["units"].([]core.Result)) < 4 {
+	if len(historyUnits(t, res)) < 4 {
 		t.Fatal("named displacement lost canonical transition", res)
+	}
+}
+
+func TestMailHistoryNativeAuthorMachineIsEventTimeEvidence(t *testing.T) {
+	f := nativeHistory(t, t.TempDir())
+	sender := historyIdentity(t, f, "sender")
+	historyIdentity(t, f, "recipient")
+	historyOp(t, f, &core.Op{Kind: core.OpUpdate, Token: sender, Agent: &core.AgentInfo{HostID: "machine-before"}})
+	historyOp(t, f, &core.Op{Kind: core.OpSendMessage, Token: sender, To: "recipient", MsgType: core.MsgNotify, Body: "before identity update"})
+	historyOp(t, f, &core.Op{Kind: core.OpUpdate, Token: sender, Name: "sender-renamed", Agent: &core.AgentInfo{HostID: "machine-after"}})
+	historyOp(t, f, &core.Op{Kind: core.OpSendMessage, Token: sender, To: "recipient", MsgType: core.MsgNotify, Body: "after identity update"})
+	rows := historyUnits(t, settledHistory(t, f, sender, false))
+	if len(rows) != 2 {
+		t.Fatal("setup: authored unit count", rows)
+	}
+	first, ok := rows[0]["unit"].(mailhistory.Unit)
+	if !ok {
+		t.Fatal("setup: typed projected unit", rows[0])
+	}
+	second := rows[1]["unit"].(mailhistory.Unit)
+	if first.Author.Host != "machine-before" || second.Author.Host != "machine-after" || first.Author.ID != second.Author.ID {
+		t.Fatal("identity update rewrote event-time attribution", first.Author, second.Author)
 	}
 }

@@ -20,7 +20,10 @@ const historySeekBytes = 16 << 20
 // reads attachment bytes. The caller must authorize before and after this I/O.
 func (l *Ledger) ReadHistoryOp(ctx context.Context, serial uint64, seek mailhistory.SeekRange) (*core.Op, error) {
 	length := seek.End - seek.Start.Offset
-	if length <= 0 || length > historySeekBytes {
+	if length > historySeekBytes {
+		return nil, mailhistory.ErrContentBudget
+	}
+	if length <= 0 {
 		return nil, mailhistory.ErrUnavailable
 	}
 	r := bufio.NewReaderSize(io.NewSectionReader(l.f, seek.Start.Offset, length), 64<<10)
@@ -33,7 +36,7 @@ func (l *Ledger) ReadHistoryOp(ctx context.Context, serial uint64, seek mailhist
 			return nil, err
 		}
 		if n >= 4096 {
-			return nil, mailhistory.ErrUnavailable
+			return nil, mailhistory.ErrContentBudget
 		}
 		raw, err := readHistoryLine(r)
 		if err != nil {

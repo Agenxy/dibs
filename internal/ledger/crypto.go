@@ -227,3 +227,17 @@ func (b *Box) DecryptOp(op *core.Op) error {
 	}
 	return nil
 }
+
+// historyCursorKey uses the retained board key with a dedicated HKDF domain.
+// No credential or additional state is written to disk.
+func (b *Box) historyCursorKey() ([32]byte, error) {
+	if b == nil || len(b.guestRecoveryPRK) != 32 {
+		return [32]byte{}, fmt.Errorf("history cursors require the retained board key")
+	}
+	raw, err := hkdf.Expand(sha256.New, b.guestRecoveryPRK, "dibs mail-history cursor v1", 32)
+	if err != nil {
+		return [32]byte{}, err
+	}
+	defer clear(raw)
+	return [32]byte(raw), nil
+}
