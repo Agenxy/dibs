@@ -52,9 +52,11 @@ func checkRequestPriority(op *Op) error {
 	if op.RequestPriority == "" {
 		return nil
 	}
-	if op.Kind != OpSendMessage || op.MsgType != MsgRequest || op.Grant != "" || op.Adopt != "" ||
+	if op.Kind != OpSendMessage ||
+		(op.MsgType != MsgNotify && (op.MsgType != MsgRequest || op.Grant != "" || op.Adopt != "")) ||
 		priorityValue(op.RequestPriority) < 0 {
-		return errf("E_BAD_ARG", "priority is low|normal|high|urgent on an ordinary request", "invalid request priority")
+		return errf("E_BAD_ARG", "priority is low|normal|high|urgent on a notify or ordinary request",
+			"invalid message priority")
 	}
 	return nil
 }
@@ -86,6 +88,27 @@ func (m *Message) EffectivePriority() string {
 		p = "normal"
 	}
 	return p
+}
+
+// PriorityRank is the sender's priority unless a queued request has an
+// explicit recipient override. Wake order uses it without copying the scale.
+func (m *Message) PriorityRank() int { return priorityValue(m.EffectivePriority()) }
+
+// HighPriorityNotify is an alert, not an obligation to answer. Contact and
+// human delivery may escalate it without changing notify's nonblocking nature.
+func (m *Message) HighPriorityNotify() bool {
+	return m.Type == MsgNotify && m.PriorityRank() >= priorityValue("high")
+}
+
+// ContactEligible is still only about reachability, never an instruction to
+// answer or a deadline. A high-priority notify warrants finding its recipient.
+func (m *Message) ContactEligible() bool {
+	switch m.Type {
+	case MsgQuestion, MsgRequest, MsgHandoff:
+		return true
+	default:
+		return m.HighPriorityNotify()
+	}
 }
 
 // TaskQueue is derived from message ownership. Adoption/merge cannot leave a stale

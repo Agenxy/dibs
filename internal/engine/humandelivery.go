@@ -32,16 +32,19 @@ type humanDelivery struct {
 }
 
 type humanReceipt struct {
-	label             string           // per-message label; the enrolled device key stays internal
-	State             string           `json:"state"`
-	Error             string           `json:"error,omitempty"`
-	Posted            bool             `json:"posted,omitempty"`
-	Dismissed         bool             `json:"dismissed,omitempty"`
-	Cleanup           *notify.Cleanup  `json:"notification_cleanup,omitempty"`
-	Settings          *notify.Settings `json:"settings"`
-	InterruptionLevel string           `json:"interruption_level,omitempty"`
-	Shown             string           `json:"shown"`
-	Hint              string           `json:"hint,omitempty"`
+	label                      string           // per-message label; the enrolled device key stays internal
+	State                      string           `json:"state"`
+	Error                      string           `json:"error,omitempty"`
+	Posted                     bool             `json:"posted,omitempty"`
+	Dismissed                  bool             `json:"dismissed,omitempty"`
+	Cleanup                    *notify.Cleanup  `json:"notification_cleanup,omitempty"`
+	Settings                   *notify.Settings `json:"settings"`
+	InterruptionLevel          string           `json:"interruption_level,omitempty"`
+	RequestedInterruptionLevel string           `json:"requested_interruption_level,omitempty"`
+	EffectiveInterruptionLevel string           `json:"effective_interruption_level,omitempty"`
+	InterruptionReason         string           `json:"interruption_reason,omitempty"`
+	Shown                      string           `json:"shown"`
+	Hint                       string           `json:"hint,omitempty"`
 }
 
 type humanDeliveries struct {
@@ -143,7 +146,7 @@ func (e *Engine) dispatchHuman(res core.Result) {
 
 func (e *Engine) askHumanDesktop(n HumanNotice, ask func(humanask.Message) (humanask.Answer, error)) {
 	a, err := ask(humanask.Message{
-		Type: n.Type, From: n.From, FromName: n.FromName, Who: n.Who, Body: n.Body,
+		Type: n.Type, Priority: n.Priority, From: n.From, FromName: n.FromName, Who: n.Who, Body: n.Body,
 		Contact: n.Contact,
 		Choices: n.Choices, Grant: n.Grant, Adopt: n.Adopt, AdoptName: n.AdoptName,
 		Serial: n.Serial, Node: n.Node,
@@ -223,9 +226,12 @@ func (e *Engine) recordHumanReceipt(serial uint64, source string, data notify.Re
 	}
 	if data.InterruptionLevel == "active" || data.InterruptionLevel == "timeSensitive" {
 		r.InterruptionLevel = data.InterruptionLevel
+		r.RequestedInterruptionLevel = data.RequestedInterruptionLevel
+		r.EffectiveInterruptionLevel = data.EffectiveInterruptionLevel
+		r.InterruptionReason = data.InterruptionReason
 	}
 	r.Shown = "unconfirmed"
-	r.Hint = r.Settings.Hints(r.InterruptionLevel == "timeSensitive")
+	r.Hint = r.Settings.Hints(false) // action buttons are determined from the message at projection
 	r.Posted = r.Posted || state == "posted"
 	d.Posted = d.Posted || r.Posted
 	r.Dismissed = r.Dismissed || state == "dismissed"

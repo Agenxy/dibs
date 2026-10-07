@@ -104,7 +104,8 @@ try {
     ["n", "notify", "For your information."],
   ] as const) {
     mail[key] = textOf(await tool("send", { token: peer.token, to: me.agent_id,
-      type, body, op_id: "e2e-" + key, deadline_s: 600 }))
+      type, body, op_id: "e2e-" + key, deadline_s: 600,
+      ...(key === "n" ? { priority: "high" } : {}) }))
   }
 
   // A space the reading agent is a member of, so the panel can mark it as
@@ -798,6 +799,11 @@ try {
     await actionsFor(mail.r.msg_serial))
   check("a notify offers Acknowledge", (await actionsFor(mail.n.msg_serial)) === "Acknowledge",
     await actionsFor(mail.n.msg_serial))
+  const notifyCard = panel.locator(`.msg[data-serial="${mail.n.msg_serial}"]`)
+  const priorityBadges = await notifyCard.locator(".pill.attn").allTextContents()
+  check("priority notify is visible on the real MCP panel",
+    priorityBadges.some((badge) => badge.includes("high priority")),
+    priorityBadges.join(", "))
 
   // WHAT THE MESSAGES SAY, not only that they are there.
   //

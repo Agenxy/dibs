@@ -39,6 +39,17 @@ func TestRelayHandlerReportsPostingAndFailureWithoutAnswering(t *testing.T) {
 	}
 }
 
+func TestRelayPresenterRetainsPriority(t *testing.T) {
+	r := newRelay("http://127.0.0.1:1", relayState{Node: "priority"}, &fakeSigner{},
+		func(m humanask.Message) (humanask.Answer, error) {
+			if m.Type != "notify" || m.Priority != "urgent" {
+				t.Errorf("relay presenter lost alert priority: %+v", m)
+			}
+			return humanask.Answer{}, nil
+		})
+	r.handle(engine.HumanNotice{Serial: 7, Type: "notify", Priority: "urgent", From: "sender"})
+}
+
 // fakeSigner records what it was asked to sign and why, and needs no finger.
 type fakeSigner struct {
 	mu      sync.Mutex

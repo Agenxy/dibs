@@ -418,7 +418,7 @@ func (r *relay) handle(n engine.HumanNotice) {
 		n.Contact.OpenURL = ""
 	}
 	a, err := r.ask(humanask.Message{
-		Type: n.Type, From: n.From, FromName: n.FromName, Who: n.Who, Body: n.Body,
+		Type: n.Type, Priority: n.Priority, From: n.From, FromName: n.FromName, Who: n.Who, Body: n.Body,
 		Contact: n.Contact,
 		Choices: n.Choices, Grant: n.Grant, Adopt: n.Adopt, AdoptName: n.AdoptName,
 		Serial: n.Serial, Node: r.st.Node,
@@ -459,6 +459,9 @@ func (r *relay) deliveryReceipt(serial uint64, data notify.ReceiptData, failure 
 		map[string]any{
 			"serial": serial, "state": state, "error": failure,
 			"settings": data.Settings, "interruption_level": data.InterruptionLevel,
+			"requested_interruption_level": data.RequestedInterruptionLevel,
+			"effective_interruption_level": data.EffectiveInterruptionLevel,
+			"interruption_reason":          data.InterruptionReason,
 		}, nil)
 	if err != nil {
 		slog.Warn("notification receipt did not reach the board", "msg", serial, "state", state, "err", err)

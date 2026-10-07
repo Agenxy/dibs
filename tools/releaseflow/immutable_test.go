@@ -40,6 +40,7 @@ func TestPublishedReleaseRequiresImmutableReadback(t *testing.T) {
 			git(t, "push", "origin", "refs/tags/v0.0.11")
 			s := fixtureAssets(t, c, "dist")
 			s.Draft = true
+			c.publicationRun = "456"
 			edited, finalRead, publicReadback := false, false, false
 			run := func(ctx context.Context, env []string, name string, args ...string) ([]byte, error) {
 				if name == "git" {
@@ -90,8 +91,16 @@ func TestPublishedReleaseRequiresImmutableReadback(t *testing.T) {
 			if !edited || !finalRead || (err == nil) != good || publicReadback != (good || mode == "public-tamper") {
 				t.Fatalf("mode %s: err=%v edited=%v final-read=%v public-readback=%v", mode, err, edited, finalRead, publicReadback)
 			}
-			if !good && mode != "public-tamper" && !strings.Contains(err.Error(), "Enable release immutability") {
-				t.Fatalf("missing corrective repository-setting hint: %v", err)
+			if !good && mode != "public-tamper" {
+				settingHint := strings.Contains(err.Error(), "published release reports immutable:false")
+				wantSettingHint := mode == "mutable" || mode == "missing" || mode == "null"
+				if settingHint != wantSettingHint {
+					t.Fatalf("wrong repository-setting hint for %s: %v", mode, err)
+				}
+				if mode == "still-draft" && (!strings.Contains(err.Error(), "still a draft") ||
+					!strings.Contains(err.Error(), "full_publication_run=456")) {
+					t.Fatalf("missing still-draft recovery command: %v", err)
+				}
 			}
 		})
 	}

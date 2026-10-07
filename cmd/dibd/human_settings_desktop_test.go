@@ -31,7 +31,7 @@ func desktopSettingsHelper() int {
 		return 3
 	}
 	level := "active"
-	if len(os.Args) > 4 {
+	if len(os.Args) > 4 || os.Getenv("DIBS_NOTIFY_TIME_SENSITIVE") == "1" {
 		level = "timeSensitive"
 	}
 	if err := os.WriteFile(os.Getenv("DIBS_SETTINGS_HELPER_MARKER"), []byte("posted"), 0o600); err != nil {
@@ -67,11 +67,21 @@ func TestDesktopSettingsComeFromThePostingHelper(t *testing.T) {
 			t.Fatalf("sender setup: %v %v", reg, err)
 		}
 		token := reg["token"].(string)
-		for _, kind := range []string{core.MsgRequest, core.MsgNotify} {
-			t.Run(kind, func(t *testing.T) {
+		for _, tc := range []struct {
+			name, kind, priority string
+			interrupt            bool
+		}{
+			{"request", core.MsgRequest, "", true},
+			{"notify", core.MsgNotify, "", false},
+			{"high-notify", core.MsgNotify, "high", true},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
 				marker := filepath.Join(t.TempDir(), "helper-executed")
 				t.Setenv("DIBS_SETTINGS_HELPER_MARKER", marker)
-				sent, err := eng.Do(ctx, &core.Op{Kind: core.OpSendMessage, Token: token, To: human, MsgType: kind, Body: "desktop settings fixture"})
+				sent, err := eng.Do(ctx, &core.Op{
+					Kind: core.OpSendMessage, Token: token, To: human, MsgType: tc.kind,
+					RequestPriority: tc.priority, Body: "desktop settings fixture",
+				})
 				serial, ok := sent["msg_serial"].(uint64)
 				if err != nil || !ok || serial == 0 || sent["human_route"] != "desktop" {
 					t.Fatalf("default desktop dispatch setup: %v %v", sent, err)
@@ -88,11 +98,14 @@ func TestDesktopSettingsComeFromThePostingHelper(t *testing.T) {
 					}
 					var d struct {
 						Receipts map[string]struct {
-							Posted   bool           `json:"posted"`
-							Settings map[string]any `json:"settings"`
-							Level    string         `json:"interruption_level"`
-							Shown    string         `json:"shown"`
-							Hint     string         `json:"hint"`
+							Posted    bool           `json:"posted"`
+							Settings  map[string]any `json:"settings"`
+							Level     string         `json:"interruption_level"`
+							Requested string         `json:"requested_interruption_level"`
+							Effective string         `json:"effective_interruption_level"`
+							Reason    string         `json:"interruption_reason"`
+							Shown     string         `json:"shown"`
+							Hint      string         `json:"hint"`
 						} `json:"receipts"`
 					}
 					if err := json.Unmarshal(raw, &d); err != nil {
@@ -104,16 +117,20 @@ func TestDesktopSettingsComeFromThePostingHelper(t *testing.T) {
 							t.Fatalf("setup: actual private posting helper did not execute: %s %v", data, err)
 						}
 						wantLevel := "active"
-						if kind == core.MsgRequest {
+						if tc.interrupt {
 							wantLevel = "timeSensitive"
 						}
 						if r.Settings["alert_style"] != "banner" || r.Level != wantLevel || r.Shown != "unconfirmed" {
 							t.Fatalf("posting helper metadata never reached actual read_mail: %s", raw)
 						}
-						if kind == core.MsgRequest && !strings.Contains(r.Hint, "System Settings > Notifications > Dibs > Alerts") {
+						if r.Requested != wantLevel || r.Effective != "active" ||
+							(tc.interrupt && r.Reason != "Time Sensitive requested but not available to this build (no entitlement)") {
+							t.Fatalf("requested/effective interruption was not distinguished: %s", raw)
+						}
+						if tc.kind == core.MsgRequest && !strings.Contains(r.Hint, "System Settings > Notifications > Dibs > Alerts") {
 							t.Fatalf("approval banner has no persistent-alert hint: %s", raw)
 						}
-						if kind == core.MsgNotify && r.Hint != "" {
+						if tc.kind == core.MsgNotify && r.Hint != "" {
 							t.Fatalf("notify repeated a standing capability/Focus hint: %s", raw)
 						}
 						break

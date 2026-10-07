@@ -11,10 +11,21 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   read and fold chunks. Its background reads are capped at 64 KiB, with at most
   5 ms of backoff per chunk so ongoing coordination cannot starve an audit.
 
+- `send(type:"notify", priority:"high"|"urgent")` now succeeds and keeps
+  sender priority in mail and on the board. High/urgent mail leads lower-priority
+  mail in one wake digest; an unreachable unread alert can raise a metadata-only
+  contact alert without making notify a response obligation. To the human,
+  those priorities request Time Sensitive interruption on macOS (critical
+  urgency on Linux), but the current macOS build has no Time Sensitive
+  entitlement. Its receipt distinguishes requested from effective active
+  interruption and names that limit; without the bundled notifier, osascript
+  still posts an ordinary banner and reports the fallback. A later human relay
+  picks up alerts without a retained posting receipt; posting receipts still
+  do not claim visibility.
 - New agent questions and requests start their response window on first
   recipient awareness rather than at send, with a separate seven-day ceiling
   for mail never retrieved. Historical ledgered sends keep their deadlines.
-- When an unread question, request, or handoff has no usable wake route,
+- When an unread question, request, handoff, or high/urgent notify has no usable wake route,
   Dibs records a coalesced, metadata-only contact alert for the coordinator
   and person to reopen the recipient's existing harness. It does not start or
   relocate a session. A reported OS posting, not an attempted notification,
@@ -23,6 +34,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   downgrading below this release is not supported.
 
 ### Fixed
+
+- Release publication now retries one HTTP 5xx from the draft-to-public edit
+  only after re-reading the still-draft release and verifying its assets and
+  tag again. A 4xx, changed assets, or unknown state never triggers another
+  edit. If publication still fails, the error reports that the release remains
+  a draft and prints the exact publish-only recovery command; immutability
+  settings advice appears only for an observed non-immutable public release.
 
 - Renaming onto a closed agent's immutable ID now explains that the ID remains
   reserved and pruning cannot free it. An admin can reconcile an accidental

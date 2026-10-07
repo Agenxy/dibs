@@ -12,6 +12,12 @@ import (
 // what a real notify-send would receive, and what it prints back is what a
 // real one prints (the chosen action key on stdout, nothing when dismissed).
 func TestMain(m *testing.M) {
+	if os.Getenv("DIBS_TEST_AS_OSASCRIPT") != "" && filepath.Base(os.Args[0]) == "osascript" {
+		if len(os.Args) < 6 || os.Args[1] != "-e" || os.Args[2] != banner {
+			os.Exit(3)
+		}
+		os.Exit(0)
+	}
 	if os.Getenv("DIBS_TEST_RECEIPT_PUBLIC") != "" && filepath.Base(os.Args[0]) == "dibs-notify" {
 		asReceiptHelper()
 		os.Exit(0)
@@ -91,6 +97,19 @@ func TestLinuxSuccessfulNotifierReportsOSAcceptance(t *testing.T) {
 		if err != nil || state != "posted" {
 			t.Fatalf("%s receipt: %q %v", api, state, err)
 		}
+	}
+}
+
+func TestLinuxHighNotifyRequestsCriticalUrgency(t *testing.T) {
+	stubNotifySend(t, "0.8.2")
+	argv := filepath.Join(t.TempDir(), "argv")
+	t.Setenv("DIBS_TEST_NOTIFY_ARGV", argv)
+	if err := TimeSensitiveBannerWithReceipt("Dibs", "says", "alert", nil); err != nil {
+		t.Fatal(err)
+	}
+	out, err := os.ReadFile(argv)
+	if err != nil || !strings.Contains(string(out), "--urgency=critical") {
+		t.Fatalf("high notify did not request Linux critical urgency: %v %s", err, out)
 	}
 }
 

@@ -114,7 +114,7 @@ func (s *Settings) Information() string {
 	var info []string
 	switch s.TimeSensitiveSetting {
 	case "not-supported":
-		info = append(info, "time-sensitive: not supported (this build is not provisioned for it). "+
+		info = append(info, "time-sensitive: not supported (this build has no Time Sensitive entitlement). "+
 			"Requests cannot rely on time-sensitive delivery through Focus.")
 	case "unknown":
 		info = append(info, "Time Sensitive notification permission is unknown; "+

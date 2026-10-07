@@ -119,6 +119,25 @@ func receipt(_ state: String) {
 
 let args = Array(CommandLine.arguments.dropFirst())
 
+// One policy for action prompts and explicitly high-priority passive alerts.
+// The additive environment key is harmless to a dormant older helper; a new
+// caller can distinguish its absence in the posting receipt.
+func requestedInterruptionLevel(buttons: [String], environment: [String: String]) -> UNNotificationInterruptionLevel {
+    if !buttons.isEmpty || environment["DIBS_NOTIFY_TIME_SENSITIVE"] == "1" {
+        return .timeSensitive
+    }
+    return .active
+}
+
+#if DIBS_PRIORITY_FIXTURE
+if args == ["--priority-fixture"] {
+    let content = UNMutableNotificationContent()
+    content.interruptionLevel = requestedInterruptionLevel(buttons: [], environment: ProcessInfo.processInfo.environment)
+    print(content.interruptionLevel == .timeSensitive ? "timeSensitive" : "active")
+    exit(0)
+}
+#endif
+
 // Capability negotiation must precede every other status extension, including
 // one inherited from the caller's environment. It never touches notification
 // settings, asks permission, or creates an application window.
@@ -672,19 +691,18 @@ func postNotification(_ settings: [String: Any]?) {
     guard !beganPosting else { return }
     beganPosting = true
     receiptSettings = settings
-    receiptInterruptionLevel = buttons.isEmpty ? "active" : "timeSensitive"
+    let interruption = requestedInterruptionLevel(buttons: buttons, environment: ProcessInfo.processInfo.environment)
+    receiptInterruptionLevel = interruption == .timeSensitive ? "timeSensitive" : "active"
     let content = UNMutableNotificationContent()
     content.title = title
     if !subtitle.isEmpty { content.subtitle = subtitle }
     content.body = body
 
-    if !buttons.isEmpty {
+    if interruption == .timeSensitive {
         // Somebody is BLOCKED on this one, so it asks to break through Focus.
         //
-        // Buttons are the tell: Dibs only attaches them when an agent is waiting
-        // for a decision. An FYI keeps the default level and is correctly
-        // silenced by Focus; a question or a request is the case where silence
-        // costs somebody their deadline.
+        // Buttons mean a decision is waiting. A passive alert only reaches
+        // this branch when its sender explicitly chose high/urgent priority.
         //
         // Measured: a coordinator request posted successfully, macOS accepted
         // it, `personal-time` Focus swallowed the banner, and every layer
@@ -695,6 +713,8 @@ func postNotification(_ settings: [String: Any]?) {
         // reports the actual timeSensitiveSetting; an unprovisioned build stays
         // honestly not-supported. Nothing requests critical interruption.
         content.interruptionLevel = .timeSensitive
+    }
+    if !buttons.isEmpty {
         let actions = buttons.map {
             UNNotificationAction(identifier: $0, title: $0, options: [.foreground])
         }

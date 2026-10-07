@@ -20,9 +20,12 @@ type DeliveryReceipt func(ReceiptData)
 
 // ReceiptData separates OS acceptance, requested level and native settings.
 type ReceiptData struct {
-	State             string    `json:"state"`
-	Settings          *Settings `json:"settings"`
-	InterruptionLevel string    `json:"interruption_level,omitempty"`
+	State                      string    `json:"state"`
+	Settings                   *Settings `json:"settings"`
+	InterruptionLevel          string    `json:"interruption_level,omitempty"` // legacy alias for requested
+	RequestedInterruptionLevel string    `json:"requested_interruption_level,omitempty"`
+	EffectiveInterruptionLevel string    `json:"effective_interruption_level,omitempty"`
+	InterruptionReason         string    `json:"interruption_reason,omitempty"`
 }
 
 func stateReceipt(receipt Receipt) DeliveryReceipt {
@@ -35,7 +38,36 @@ func stateReceipt(receipt Receipt) DeliveryReceipt {
 // Normalized returns a bounded independent observation from a helper or relay.
 func (r ReceiptData) Normalized() ReceiptData {
 	r.Settings = r.Settings.Normalized()
-	r.InterruptionLevel = enum(r.InterruptionLevel, "active", "timeSensitive")
+	requested := r.RequestedInterruptionLevel
+	if requested == "" {
+		requested = r.InterruptionLevel
+	}
+	if requested != "" {
+		r.RequestedInterruptionLevel = enum(requested, "active", "timeSensitive")
+		r.InterruptionLevel = r.RequestedInterruptionLevel
+	}
+	switch r.RequestedInterruptionLevel {
+	case "timeSensitive":
+		switch {
+		case r.InterruptionReason == "osascript cannot request Time Sensitive":
+			r.EffectiveInterruptionLevel = "active"
+		case r.Settings == nil:
+			r.EffectiveInterruptionLevel, r.InterruptionReason = "unknown", "notification settings unavailable"
+		case r.Settings.TimeSensitiveSetting == "enabled":
+			r.EffectiveInterruptionLevel, r.InterruptionReason = "timeSensitive", ""
+		case r.Settings.TimeSensitiveSetting == "not-supported":
+			r.EffectiveInterruptionLevel = "active"
+			r.InterruptionReason = "Time Sensitive requested but not available to this build (no entitlement)"
+		case r.Settings.TimeSensitiveSetting == "disabled":
+			r.EffectiveInterruptionLevel, r.InterruptionReason = "active", "Time Sensitive notifications are disabled"
+		default:
+			r.EffectiveInterruptionLevel, r.InterruptionReason = "unknown", "Time Sensitive setting is unknown"
+		}
+	case "active":
+		r.EffectiveInterruptionLevel, r.InterruptionReason = "active", ""
+	default:
+		r.EffectiveInterruptionLevel, r.InterruptionReason = "", ""
+	}
 	return r
 }
 

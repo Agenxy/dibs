@@ -238,6 +238,10 @@ func linuxAsk(title, body string, buttons []string) (string, error) {
 
 // linuxBanner posts a passive notification: nothing to answer, nothing to wait for.
 func linuxBanner(title, subtitle, body string) error {
+	return linuxBannerWithUrgency(title, subtitle, body, false)
+}
+
+func linuxBannerWithUrgency(title, subtitle, body string, critical bool) error {
 	if silenced() {
 		return ErrUnsupported
 	}
@@ -252,5 +256,11 @@ func linuxBanner(title, subtitle, body string) error {
 		text = subtitle + "\n" + body
 	}
 	// #nosec G204 -- argv, no shell.
-	return exec.CommandContext(ctx, bin, "--app-name=Dibs", "--", title, text).Run()
+	args := []string{"--app-name=Dibs"}
+	if critical {
+		args = append(args, "--urgency=critical")
+	}
+	args = append(args, "--", title, text)
+	// #nosec G204 -- notify-send is a discovered executable; argv carries data, never a shell.
+	return exec.CommandContext(ctx, bin, args...).Run()
 }

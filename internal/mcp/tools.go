@@ -295,7 +295,7 @@ var toolDefs = func() []map[string]any {
 			"name": "send",
 			"description": "Message an agent or human. Human route and receipts appear in send/read_mail. " +
 				"Agent asks start deadline at first read; unread ceiling 7d. Unreachable unread " +
-				"question/request/handoff raises metadata-only human contact.",
+				"question/request/handoff or high-priority notify raises metadata-only human contact.",
 			"inputSchema": obj(map[string]any{
 				"token": tok, "to": str("agent id or name, \"human\" for the person, or \"coordinator\" for that role"),
 				"type": msgType,
@@ -303,7 +303,8 @@ var toolDefs = func() []map[string]any {
 					"days to persistent agents)"),
 				"priority": map[string]any{
 					"type": "string", "enum": []string{"low", "normal", "high", "urgent"},
-					"description": "ordinary request priority (default normal), independent of deadline",
+					"description": "notify or ordinary request priority (default normal); " +
+						"high/urgent notify alerts the human and takes wake precedence",
 				},
 				"op_id": str("client-generated id for safe retries (optional, recommended)"),
 				"adopt": str("on a request: ask to reclaim an ABANDONED agent of yours, " +

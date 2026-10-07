@@ -2,11 +2,64 @@ package engine
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
 )
+
+func TestPriorityNotifyPrecedesNormalMailInOneWake(t *testing.T) {
+	e, id := boardWithAgent(t)
+	sender := registerAgent(t, e, "sender")
+	for _, item := range []struct{ body, priority, kind string }{
+		{"normal-first", "", core.MsgQuestion},
+		{"high-second", "high", core.MsgNotify},
+		{"urgent-third", "urgent", core.MsgNotify},
+	} {
+		res, err := e.Do(context.Background(), &core.Op{
+			Kind: core.OpSendMessage, Token: sender, To: id,
+			MsgType: item.kind, Body: item.body, RequestPriority: item.priority,
+		})
+		if err != nil || res["msg_serial"] == nil {
+			t.Fatalf("send %s: %v %v", item.priority, res, err)
+		}
+	}
+	if kind, _ := e.oldestBlocking(id); kind != core.MsgNotify {
+		t.Fatalf("wake event chose older normal %s instead of priority notify", kind)
+	}
+	got, err := e.HookPoll(context.Background(), "sess-"+id, "Stop", "", false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	carrier, _ := got["hookSpecificOutput"].(map[string]any)
+	digest, _ := carrier["additionalContext"].(string)
+	u, h, n := strings.Index(digest, "urgent-third"), strings.Index(digest, "high-second"), strings.Index(digest, "normal-first")
+	if u < 0 || h < 0 || n < 0 || u >= h || h >= n {
+		t.Fatalf("wake did not prioritize urgent/high notify: %q", digest)
+	}
+}
+
+func TestPriorityNotifyDoesNotOverrideOperatorWakePhase(t *testing.T) {
+	e, id := boardWithAgent(t)
+	sender := registerAgent(t, e, "sender")
+	e.SetWakePolicy(WakeUrgent)
+	if _, err := e.Do(context.Background(), &core.Op{
+		Kind: core.OpSendMessage, Token: sender, To: id,
+		MsgType: core.MsgNotify, Body: "high alert", RequestPriority: "high",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	quiet, err := e.HookPoll(context.Background(), "sess-"+id, "Stop", "", false, false)
+	if err != nil || deliveredSomething(quiet) {
+		t.Fatalf("priority overrode explicit operator wake phase: %v %v", quiet, err)
+	}
+	e.SetWakePolicy(WakeAll)
+	fresh, err := e.HookPoll(context.Background(), "sess-"+id, "Stop", "", false, false)
+	if err != nil || fresh["decision"] != "block" {
+		t.Fatalf("suppressed priority alert was spent instead of retained: %v %v", fresh, err)
+	}
+}
 
 // Every authored message reaches the agent without a person having to type,
 // including a notify that asks for no reply. Generated updates are distinct.

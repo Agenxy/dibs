@@ -52,6 +52,12 @@ func TestReceiptChild(t *testing.T) {
 }
 
 func asReceiptHelper() {
+	if os.Getenv("DIBS_TEST_RECEIPT_PRIORITY") == "1" && os.Getenv("DIBS_NOTIFY_TIME_SENSITIVE") != "1" {
+		os.Exit(4)
+	}
+	if os.Getenv("DIBS_TEST_RECEIPT_PRIORITY") == "0" && os.Getenv("DIBS_NOTIFY_TIME_SENSITIVE") != "0" {
+		os.Exit(4)
+	}
 	if os.Getenv("DIBS_TEST_CLEANUP_DRIVER") == "1" {
 		if len(os.Args) == 2 && strings.HasPrefix(os.Args[1], "--remove-messages=") {
 			mode := os.Getenv("DIBS_TEST_CLEANUP_MODE")
@@ -109,18 +115,29 @@ func TestPublicNotificationReceiptUsesTheInstalledHelper(t *testing.T) {
 		t.Skip("macOS installed-helper route")
 	}
 	if os.Getenv("DIBS_TEST_RECEIPT_PUBLIC") != "" {
-		for _, api := range []string{"banner", "ask", "ignored"} {
+		for _, api := range []string{"banner", "priority", "ask", "ignored"} {
 			state := ""
 			outcome := ""
+			switch api {
+			case "priority":
+				t.Setenv("DIBS_TEST_RECEIPT_PRIORITY", "1")
+			case "banner":
+				t.Setenv("DIBS_TEST_RECEIPT_PRIORITY", "0")
+			default:
+				t.Setenv("DIBS_TEST_RECEIPT_PRIORITY", "")
+			}
 			if api == "ignored" {
 				outcome = "timeout"
 			}
 			t.Setenv("DIBS_TEST_RECEIPT_OUTCOME", outcome)
 			receipt := func(s string) { state = s }
 			var err error
-			if api == "banner" {
+			switch api {
+			case "banner":
 				err = BannerWithReceipt("fixture", "", "fixture", receipt)
-			} else {
+			case "priority":
+				err = TimeSensitiveBannerWithReceipt("fixture", "", "fixture", receipt)
+			default:
 				var choice string
 				choice, err = AskWithReceipt("fixture", "fixture", receipt, "Yes")
 				want := "Yes"
@@ -161,6 +178,43 @@ func TestPublicNotificationReceiptUsesTheInstalledHelper(t *testing.T) {
 	cmd.Env = append(os.Environ(), "DIBS_TEST_RECEIPT_PUBLIC=1", "DIBS_DIR="+t.TempDir())
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("notifier producer wiring: %v\n%s", err, out)
+	}
+}
+
+func TestTimeSensitiveBannerFallsBackWithHonestReceipt(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("macOS osascript fallback")
+	}
+	if os.Getenv("DIBS_TEST_FALLBACK_DRIVER") == "1" {
+		t.Setenv("DIBS_NOTIFY", "")
+		var got ReceiptData
+		err := TimeSensitiveBannerWithDeliveryReceipt("Dibs", "says", "alert", func(data ReceiptData) { got = data })
+		if err != nil || got.State != "posted" || got.RequestedInterruptionLevel != "timeSensitive" ||
+			got.EffectiveInterruptionLevel != "active" || got.InterruptionReason != "osascript cannot request Time Sensitive" {
+			t.Fatalf("ordinary fallback did not disclose its limit: %+v, %v", got, err)
+		}
+		return
+	}
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bytes, err := os.ReadFile(self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	for _, name := range []string{"fallback-driver", "osascript"} {
+		if err := os.WriteFile(filepath.Join(dir, name), bytes, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, filepath.Join(dir, "fallback-driver"), "-test.run=^TestTimeSensitiveBannerFallsBackWithHonestReceipt$") // #nosec G204 -- private copy of this test binary
+	cmd.Env = append(os.Environ(), "DIBS_TEST_FALLBACK_DRIVER=1", "DIBS_TEST_AS_OSASCRIPT=1", "PATH="+dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("fallback producer wiring: %v\n%s", err, out)
 	}
 }
 
