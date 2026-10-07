@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package testport keeps ephemeral addresses owned during test fixture setup.
 package testport
 

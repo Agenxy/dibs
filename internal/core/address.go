@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 package core
 
 // Addressing: turning what a caller WROTE into the row it names.

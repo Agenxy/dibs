@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package mailhistory projects committed canonical mail transitions. It is a
 // rebuildable in-memory view; the encrypted ledger remains the only store.
 package mailhistory

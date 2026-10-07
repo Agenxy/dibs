@@ -159,13 +159,14 @@ archives:
           group: root
           mode: 0644
           mtime: "{{ .CommitDate }}"
-      # NOTICE ships with LICENSE, not as an afterthought beside it. Apache 2.0
-      # section 4(d) requires redistributions of a work that has one to carry it,
-      # and after the relicensing ours holds the retained MIT attribution for the
-      # contributions made before it. Listing these files explicitly replaced
-      # GoReleaser's default set, and NOTICE arrived later than the list did, so
-      # every archive was shipping without it.
+      # Retained outside and third-party permissions ship with the new GPL
+      # licence, including the original Apache text and font/dependency notices.
       - src: NOTICE
+        info: *archive_file_info
+      - src: LICENSES/**/*
+        strip_parent: false
+        info: *archive_file_info
+      - src: COMMERCIAL-LICENSING.md
         info: *archive_file_info
       - src: README.md
         info: *archive_file_info
@@ -331,7 +332,7 @@ homebrew_casks:
     directory: Casks
     homepage: https://github.com/agenxy/dibs
     description: "Coordination and situational-awareness board for fleets of AI agents"
-    license: Apache-2.0
+    license: GPL-3.0-or-later
     # BOTH binaries. The default links only the project name, which generated a
     # cask installing `dibs` and not `dibd`: a CLI with no daemon, so
     # `brew install` produced something that cannot work at all. The archive

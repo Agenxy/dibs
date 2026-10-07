@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package mcp implements the MCP server surface (SPEC §12): primary contract
 // MCP 2026-07-28 (stateless: server/discover, per-request _meta validation),
 // with the SEP-sanctioned legacy 2025-11-25 path (initialize/ping) retained

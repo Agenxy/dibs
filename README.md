@@ -5,7 +5,7 @@
 [![CI](https://github.com/agenxy/dibs/actions/workflows/ci.yml/badge.svg)](https://github.com/agenxy/dibs/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/agenxy/dibs?sort=semver)](https://github.com/agenxy/dibs/releases/latest)
 [![Go Reference](https://pkg.go.dev/badge/github.com/agenxy/dibs.svg)](https://pkg.go.dev/github.com/agenxy/dibs)
-[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
+[![License: GPL 3.0 or later](https://img.shields.io/badge/license-GPL%203.0%20or%20later-blue)](LICENSE)
 
 **Keeps your agents in the loop about each other.**
 
@@ -1301,4 +1301,8 @@ work, not the person".
 
 ## License
 
-Apache 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+GPL-3.0-or-later from the next release. Releases up to and including v0.0.13
+remain Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE) for retained
+outside-contributor and third-party permissions. A separate
+[commercial licence](COMMERCIAL-LICENSING.md) is available from Agenxy for
+Agenxy-authored portions.

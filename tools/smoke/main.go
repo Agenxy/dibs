@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Command smoke runs the built binaries and reads what they say about
 // themselves.
 //

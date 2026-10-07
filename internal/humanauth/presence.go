@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package humanauth proves a HUMAN is at this machine, right now.
 //
 // Dibs' panel runs inside an agent's MCP host and acts with that agent's own

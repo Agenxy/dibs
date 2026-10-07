@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // dibs-icon: renders the product mark to PNG, at whatever size is asked for.
 //
 // The mark is defined once, in internal/assets/icon.svg, and drawn here rather

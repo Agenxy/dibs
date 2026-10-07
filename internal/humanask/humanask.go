@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package humanask puts one message to the PERSON and returns what they
 // said, on whatever machine it runs on.
 //

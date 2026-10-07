@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package assets holds the visual material shared by every Dibs surface: the
 // MCP Apps board panel and the web board, so the two render as one product
 // rather than drifting into two house styles.

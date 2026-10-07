@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+// This identifier applies only to Agenxy-authored portions.
+// Outside contributions retain their original licences; see NOTICE.
+
 // Command dibs is the human window into the board: inspect state, follow
 // the live event stream, verify ledger integrity.
 package main

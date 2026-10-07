@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 /**
  * Panel inspector: see what an MCP App actually renders, without a screenshot.
  *

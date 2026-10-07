@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package web serves the human window: a server-rendered board over SSE.
 // Package web serves the operator's god view of the board: every agent, every
 // claim, all mail, and the ledger tail.

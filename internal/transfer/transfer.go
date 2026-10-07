@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package transfer owns ephemeral byte-plane capabilities, never ledger state.
 package transfer
 

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright 2026 Agenxy
+
 """Dibs embedding sidecar: tier 2 of SPEC-CHANNELS.md §4.
 
 Answers one endpoint:

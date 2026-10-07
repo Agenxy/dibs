@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package build carries the version this binary was built from.
 //
 // One variable, because there were three. `internal/mcp` reported one to every

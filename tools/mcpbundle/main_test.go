@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 package main
 
 import (
@@ -30,6 +33,19 @@ func TestTheBundleCarriesARunnableServerPerPlatform(t *testing.T) {
 	}
 	// The macOS helpers, where GoReleaser's hooks leave them: beside dist.
 	helpers := filepath.Dir(dist)
+	licences := map[string]string{
+		"LICENSE": "GPL licence fixture", "NOTICE": "retained permissions fixture",
+		"COMMERCIAL-LICENSING.md": "commercial scope fixture", "LICENSES/Apache-2.0.txt": "Apache fixture",
+	}
+	for name, body := range licences {
+		path := filepath.Join(helpers, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	for _, rel := range []string{"dibs-presence", "Dibs.app/Contents/Info.plist", "Dibs.app/Contents/MacOS/dibs-notify", "Dibs.app/Contents/Resources/Dibs.icns"} {
 		if err := os.MkdirAll(filepath.Dir(filepath.Join(helpers, rel)), 0o755); err != nil {
 			t.Fatal(err)
@@ -71,6 +87,11 @@ func TestTheBundleCarriesARunnableServerPerPlatform(t *testing.T) {
 		body[f.Name] = string(b)
 	}
 	manifest := []byte(body["manifest.json"])
+	for name, want := range licences {
+		if body[name] != want || got[name].Perm() != 0o644 {
+			t.Errorf("bundle licence %s = %q mode %v; want unchanged bytes %q and 0644", name, body[name], got[name], want)
+		}
+	}
 	// The bytes under each path are THAT platform's build: the fixtures are
 	// distinguishable so that a Linux binary filed under the macOS path
 	// would be caught, which paths and modes alone do not do.
@@ -97,6 +118,7 @@ func TestTheBundleCarriesARunnableServerPerPlatform(t *testing.T) {
 	}
 	var m struct {
 		ManifestVersion string `json:"manifest_version"`
+		License         string `json:"license"`
 		Version         string `json:"version"`
 		Server          struct {
 			Type      string `json:"type"`
@@ -115,6 +137,9 @@ func TestTheBundleCarriesARunnableServerPerPlatform(t *testing.T) {
 	}
 	if m.ManifestVersion != "0.2" || m.Version != "0.0.8" || m.Server.Type != "binary" {
 		t.Errorf("manifest = %+v, want a 0.2 binary manifest at 0.0.8", m)
+	}
+	if m.License != "GPL-3.0-or-later" {
+		t.Errorf("bundle licence = %q; want GPL-3.0-or-later", m.License)
 	}
 	if !strings.Contains(m.Server.MCPConfig.Command, "${__dirname}/server/darwin-arm64/dibs") ||
 		len(m.Server.MCPConfig.Args) != 1 || m.Server.MCPConfig.Args[0] != "mcp-stdio" {

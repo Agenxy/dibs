@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 package mailhistory
 
 // Every reference retains uint64 range. Most chunks need only their low words;

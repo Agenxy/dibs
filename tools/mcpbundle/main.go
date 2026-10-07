@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // mcpbundle packs the released binaries into an MCP Bundle (.mcpb), so the
 // registry entry can carry a machine-readable install path (issue #44).
 //
@@ -191,6 +194,9 @@ func assemble(f *os.File, dist, helpers, version string) error {
 	if err := addFile(zw, "icon.png", 0o644, icon); err != nil {
 		return err
 	}
+	if err := addLicences(zw, helpers); err != nil {
+		return err
+	}
 	for _, p := range platforms {
 		for _, bin := range []string{"dibs", "dibd"} {
 			src, err := find(dist, strings.Replace(p.glob, "dibs_", bin+"_", 1), bin)
@@ -215,6 +221,26 @@ func assemble(f *os.File, dist, helpers, version string) error {
 		}
 	}
 	return zw.Close()
+}
+
+// Licensing documents travel with the binaries; a manifest field cannot carry
+// the retained outside-contributor and third-party permissions by itself.
+func addLicences(zw *zip.Writer, root string) error {
+	for _, name := range []string{"LICENSE", "NOTICE", "COMMERCIAL-LICENSING.md"} {
+		if err := addOne(zw, filepath.Join(root, name), name, 0o644); err != nil {
+			return err
+		}
+	}
+	return filepath.WalkDir(filepath.Join(root, "LICENSES"), func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		return addOne(zw, path, filepath.ToSlash(rel), 0o644)
+	})
 }
 
 // addHelpers copies the macOS helpers, and everything else under Dibs.app
@@ -303,7 +329,7 @@ func Manifest(version string) []byte {
 		"author":           map[string]any{"name": "Agenxy", "url": "https://agenxy.org"},
 		"homepage":         "https://agenxy.org/projects/dibs/",
 		"repository":       map[string]any{"type": "git", "url": "https://github.com/Agenxy/dibs"},
-		"license":          "Apache-2.0",
+		"license":          "GPL-3.0-or-later",
 		"keywords":         []string{"agents", "coordination", "fleet", "mcp"},
 		"icon":             "icon.png",
 		"server": map[string]any{

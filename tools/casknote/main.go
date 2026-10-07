@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // casknote writes the release job's "the cask still needs a person" summary.
 //
 // A Go program rather than a `run: |` block because this repository does not

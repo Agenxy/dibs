@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // fetchpinned downloads one file, checks it against a pinned SHA-256, and
 // extracts a single named entry from the tarball.
 //

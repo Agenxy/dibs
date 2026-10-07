@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package plugins hands an agent the Dibs plugin for its own harness, over MCP.
 //
 // Dibs works with no plugin at all: the daemon is the product and every tool

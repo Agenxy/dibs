@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package peerpolicy answers one question about the socket wake route: if the
 // daemon writes a notice to a Claude Code session's socket, will that session
 // let the model see it?

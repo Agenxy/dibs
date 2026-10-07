@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // registrypublish makes a retry succeed only when the registry's version is
 // equivalent to the manifest already bound to the published release. A 409,
 // auth error, or timeout is not by itself evidence of successful publication.

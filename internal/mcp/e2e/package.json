@@ -1,6 +1,7 @@
 {
   "name": "dibs-panel-e2e",
   "private": true,
+  "license": "GPL-3.0-or-later",
   "description": "Headless end-to-end test for the MCP Apps board panel.",
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "^2.0.3",

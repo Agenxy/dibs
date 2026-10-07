@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package peerwake delivers a wake over a harness's own cross-session socket.
 //
 // THE PROBLEM THIS SOLVES. Dibs' wake path resolved an agent by the session id

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // stampserver writes the released version into server.json.
 //
 // Replaces a `run: |` block of shell conditionals. This repository does not use

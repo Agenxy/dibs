@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Command reviewrelease runs the pre-release review: a model that is NOT the
 // one that wrote the change reads everything since the last tag.
 //

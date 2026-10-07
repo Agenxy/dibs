@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package core is the pure deterministic heart of Dibs: a state machine with
 // no I/O, no goroutines, and no wall clock. Every mutation flows through
 // Apply(op, now) → events. SPEC §2 invariant: an op is ledgered iff it changed

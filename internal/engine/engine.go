@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package engine runs the single-writer event loop: every mutation and read
 // from every transport executes sequentially in one goroutine over the pure
 // core. Request phases (SPEC §2): transport/auth → structural → rate →

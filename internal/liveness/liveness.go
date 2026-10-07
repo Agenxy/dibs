@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package liveness answers how an agent process is doing, from outside it.
 //
 // The coarse question (is the process alive?) is Poller, and the engine's

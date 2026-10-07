@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package boardconfig is dibs.toml: the one type, and the one loader.
 //
 // It exists because there were two. The daemon decoded the file into its own

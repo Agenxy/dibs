@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package invites owns policy-issued, revocable access configuration, not
 // coordination state. The ledger never receives an invitation credential.
 package invites

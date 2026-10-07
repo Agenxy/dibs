@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package remap is how Dibs gives a board a name a person can type.
 //
 // Remap (github.com/Agenxy/remap) is the Agenxy name plane: it maps any

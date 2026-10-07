@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Releases up to and including v0.0.13 remain Apache-2.0; GPL-3.0-or-later applies from the next release, with commercial licensing available from Agenxy for Agenxy-authored portions.
+
 ## [0.0.14] - 2026-10-06
 
 ### Added

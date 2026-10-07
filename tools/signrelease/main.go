@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Command signrelease gives the published macOS binaries an identity.
 //
 // The gap it closes was found by deploying a hub to a second Mac. The
