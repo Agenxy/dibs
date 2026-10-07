@@ -229,7 +229,8 @@ func oldSeekProof() error {
 	if err != nil {
 		return err
 	}
-	if err := intended(got, exit, name, "small authorized body remained unavailable in a large valid interval"); err != nil {
+	marker := "small authorized body remained unavailable in a large valid interval"
+	if err := intended(got, exit, name, marker); err != nil {
 		return err
 	}
 	fmt.Printf("HISTORY_API_OLD_SEEK source=%s test=%s intended_red=valid_interval_unavailable\n", beforeBytes, name)
