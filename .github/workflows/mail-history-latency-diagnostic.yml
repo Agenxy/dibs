@@ -16,12 +16,36 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        records: [1000000, 2000000]
+        include:
+          - records: 1000000
+            load: paced
+          - records: 2000000
+            load: paced
+          - records: 1000000
+            load: back-to-back
     env:
       DIBS_HISTORY_PROBE_RECORDS: ${{ matrix.records }}
       DIBS_HISTORY_PROBE_CASE: simple
       DIBS_HISTORY_REPEAT: 1
       DIBS_HISTORY_EXPERIMENT: shared-disk
+      DIBS_HISTORY_WRITER_LOAD: ${{ matrix.load }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: f1d8d3ce37b34635767d97d820c9f072e4da39e7
+          path: source
+      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+        with:
+          version: 2026.7.7
+          experimental: true
+      - name: Matched arms with one throttled disk for real ReadAt Write and Sync
+        run: mise exec -- go run ./tools/historylatency
+  wiring-old:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DIBS_HISTORY_EXPERIMENT: wiring-old
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -32,5 +56,5 @@ jobs:
         with:
           version: 2026.7.7
           experimental: true
-      - name: Matched arms with one throttled disk for real ReadAt Write and Sync
+      - name: Identical activity guard must fail after real successful and failed Append
         run: mise exec -- go run ./tools/historylatency

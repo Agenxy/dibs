@@ -1,6 +1,36 @@
 # Paired writer-latency cause measurement (disposable, never merge)
 
-ACTIVE priority57332 supersedes the unrun fixed-sleep proposal57287. One
+ACTIVE priority57442: candidate productionf1d8d3c is tested with the SAME
+shared disk costs and bound below, at1M/2M paced and1M back-to-back. Both
+Append exits are checked through real Open/Replay/Engine.Do and native
+Write/Sync. A private atomic observer interface allows identical guards to
+run against olda709 without referring to missing fields at compilation;
+old proof must fail both intended assertions AFTER actual operation setup.
+The native file port is now part of production; fixed-source tests need no
+file-field overlay. Old source gets only the prior two file seams widened.
+The builder must finish under the original five-minute context with back-to-
+back writer calls. Wall time, writer device queueing and largest native read
+are reported; actual reads over64KiB fail. No costs/bounds are retuned.
+
+Corrected coordinatorfc1416d/run37554335782 reproduced the synthetic contention
+at both sizes, with all frozen-prefix, real operation, ready and queue checks
+passing before the intended latency assertions failed:
+
+| Records | Control p99 ms | Warm p99 ms | Bound ms | Warm seconds | Writer device queue seconds |
+|---|---:|---:|---:|---:|---:|
+| 1M | 15.872921 | 66.158660 | 31.745842 | 19.807705 | 11.891144 |
+| 2M | 16.518606 | 68.178105 | 33.037212 | 42.112037 | 23.459277 |
+
+Both no-warm device queues were0. ReadAt239/480 operations charged exactly
+250,518,824/502,518,931 frozen-prefix bytes. This proves the model's contention
+RED, not the original ended runner's cause. The current candidate yields while
+Append is active, at most5ms before each64KiB read and256-record fold chunk.
+At20MiB/s a64KiB read occupies3.125ms plus0.5ms fixed cost, small against the
+~30ms bound; in-flight reads cannot be recalled. No local execution or tuning
+of the acceptance thresholds occurred. Fresh original six-run acceptance is
+still owed after actual model GREEN, not replaced by this diagnostic.
+
+Historical priority57332 superseded the unrun fixed-sleep proposal57287. One
 test-only disk service budget is shared by actual builder ReadAt, writer Write
 and writer Sync on each of two fresh hosted runners (1M/2M). It has no burst:
 FIFO reservations cost bytes/20MiB/s plus 0.5ms per read/write and 14ms per

@@ -35,6 +35,7 @@ type diskCounters struct {
 	bytes    atomic.Int64
 	waitNS   atomic.Int64
 	nativeNS atomic.Int64
+	maxBytes atomic.Int64
 }
 
 // One zero-burst FIFO service budget for all three operations: bytes/20MiB/s
@@ -66,6 +67,11 @@ func (d *sharedHistoryDisk) reserve(kind, bytes int) error {
 	stats := &d.stats[kind]
 	stats.ops.Add(1)
 	stats.bytes.Add(int64(bytes))
+	for previous := stats.maxBytes.Load(); int64(bytes) > previous; previous = stats.maxBytes.Load() {
+		if stats.maxBytes.CompareAndSwap(previous, int64(bytes)) {
+			break
+		}
+	}
 	stats.waitNS.Add(start.Sub(at).Nanoseconds())
 	timer := time.NewTimer(time.Until(end))
 	defer timer.Stop()
@@ -196,6 +202,8 @@ func TestHistorySharedDiskDiagnostic(t *testing.T) {
 		"control": control, "warm": warm, "bound_ns": bound,
 		"passes": warm.P99NS <= bound, "representation": m,
 		"read_ops": disk.stats[diskRead].ops.Load(), "read_bytes": disk.stats[diskRead].bytes.Load(),
+		"max_native_read_bytes": disk.stats[diskRead].maxBytes.Load(),
+		"load":                  os.Getenv("DIBS_HISTORY_WRITER_LOAD"),
 		"native_io_ns_read_write_sync": []int64{
 			disk.stats[diskRead].nativeNS.Load(), disk.stats[diskWrite].nativeNS.Load(), disk.stats[diskSync].nativeNS.Load(),
 		},
@@ -207,6 +215,9 @@ func TestHistorySharedDiskDiagnostic(t *testing.T) {
 	t.Logf("HISTORY_SHARED_DISK %s", raw)
 	if warm.P99NS > bound {
 		t.Fatal("warming writer exceeds prespecified same-runner bound with shared disk contention")
+	}
+	if disk.stats[diskRead].maxBytes.Load() > 64<<10 {
+		t.Fatal("actual native bootstrap read exceeded 64KiB")
 	}
 	runtime.KeepAlive(eng)
 }
@@ -238,10 +249,12 @@ func measureSharedDisk(t *testing.T, ctx context.Context, eng *engine.Engine, l 
 		if err != nil || res["error"] != nil || disk.stats[diskWrite].ops.Load() != writes+1 || disk.stats[diskSync].ops.Load() != syncs+1 {
 			t.Fatal("setup: actual timed op did not write and sync exactly once", err, res)
 		}
-		select {
-		case <-tick.C:
-		case <-ctx.Done():
-			t.Fatal("setup:", ctx.Err())
+		if os.Getenv("DIBS_HISTORY_WRITER_LOAD") != "back-to-back" {
+			select {
+			case <-tick.C:
+			case <-ctx.Done():
+				t.Fatal("setup:", ctx.Err())
+			}
 		}
 	}
 	if len(samples) == 0 {

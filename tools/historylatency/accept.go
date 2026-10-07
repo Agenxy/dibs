@@ -15,13 +15,18 @@ import (
 	"strings"
 )
 
-const acceptedSource = "a709e2746f4522591a112aefa0cace11e14e5687"
+const acceptedSource = "f1d8d3ce37b34635767d97d820c9f072e4da39e7"
+
+const oldSource = "a709e2746f4522591a112aefa0cace11e14e5687"
 
 //go:embed control.go.txt
 var controlTest []byte
 
 //go:embed shared_disk.go.txt
 var sharedDiskTest []byte
+
+//go:embed activity.go.txt
+var activityTest []byte
 
 func main() {
 	if err := runSelected(); err != nil {
@@ -31,10 +36,43 @@ func main() {
 }
 
 func runSelected() error {
+	if os.Getenv("DIBS_HISTORY_EXPERIMENT") == "wiring-old" {
+		return runOldWiring()
+	}
 	if os.Getenv("DIBS_HISTORY_EXPERIMENT") == "shared-disk" {
 		return runSharedDisk()
 	}
 	return runAcceptance()
+}
+
+func runOldWiring() (result error) {
+	if err := verifySource(); err != nil {
+		return err
+	}
+	trust := exec.Command("mise", "trust")
+	trust.Dir, trust.Stdout, trust.Stderr = "source", os.Stdout, os.Stderr
+	if err := trust.Run(); err != nil {
+		return err
+	}
+	if err := os.WriteFile("source/internal/ledger/history_activity_old_proof_test.go", activityTest, 0o600); err != nil {
+		return err
+	}
+	restore, err := diskFileSeams()
+	if err != nil {
+		return err
+	}
+	defer func() { result = errors.Join(result, restore(), unchangedSource()) }()
+	cmd := probeCommand("TestHistoryWriterActivityThroughRealAppend")
+	out, probeErr := cmd.CombinedOutput()
+	if _, err := os.Stdout.Write(out); err != nil {
+		return err
+	}
+	if probeErr == nil || !bytes.Contains(out, []byte("actual Append did not hold activity through Write/Sync")) ||
+		!bytes.Contains(out, []byte("actual failed Append did not hold and release activity")) {
+		return errors.New("old writer activity proof did not fail both intended runtime assertions")
+	}
+	fmt.Println("HISTORY_WRITER_WIRING_OLD_PROOF intended_red=true successful_and_failed_sync=true")
+	return nil
 }
 
 func runSharedDisk() (result error) {
@@ -57,6 +95,9 @@ func runSharedDisk() (result error) {
 		return err
 	}
 	defer func() { result = errors.Join(result, restore(), unchangedSource()) }()
+	if err := originalProbe("", "TestHistoryWriterActivityThroughRealAppend"); err != nil {
+		return err
+	}
 	if err := originalProbe("generate", "TestMailHistoryProductionProbe"); err != nil {
 		return err
 	}
@@ -90,6 +131,13 @@ func diskFileSeams() (func() error, error) {
 }
 
 func widenDiskField(raw []byte, bootstrap bool) ([]byte, error) {
+	already := "f        ledgerFile"
+	if bootstrap {
+		already = "file    io.ReaderAt"
+	}
+	if bytes.Count(raw, []byte(already)) == 1 {
+		return raw, nil // fixed production already exposes the native file ports
+	}
 	old := "f        *os.File"
 	replacement := "f interface { io.ReadWriteSeeker; io.ReaderAt; " +
 		"Sync() error; Close() error; Truncate(int64) error }"
@@ -153,13 +201,17 @@ func runAcceptance() error {
 }
 
 func verifySource() error {
+	expected := acceptedSource
+	if os.Getenv("DIBS_HISTORY_EXPERIMENT") == "wiring-old" {
+		expected = oldSource
+	}
 	cmd := exec.Command("git", "rev-parse", "HEAD")
 	cmd.Dir = "source"
 	out, err := cmd.Output()
 	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(string(out)) != acceptedSource {
+	if strings.TrimSpace(string(out)) != expected {
 		return fmt.Errorf("setup: wrong source %q", out)
 	}
 	cmd = exec.Command("git", "status", "--porcelain")
@@ -171,18 +223,23 @@ func verifySource() error {
 	if len(out) != 0 {
 		return fmt.Errorf("setup: dirty source %q", out)
 	}
-	fmt.Printf("HISTORY_ORIGINAL_ACCEPTANCE_SOURCE %s repeat=%s\n", acceptedSource, os.Getenv("DIBS_HISTORY_REPEAT"))
+	fmt.Printf("HISTORY_ORIGINAL_ACCEPTANCE_SOURCE %s repeat=%s\n", expected, os.Getenv("DIBS_HISTORY_REPEAT"))
 	return nil
 }
 
 func originalProbe(arm, test string) error {
+	cmd := probeCommand(test)
+	cmd.Env = append(os.Environ(), "DIBS_HISTORY_PROBE_ARM="+arm)
+	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	return cmd.Run()
+}
+
+func probeCommand(test string) *exec.Cmd {
 	// #nosec G204 -- fixed trusted CI diagnostic commands and test names
 	cmd := exec.Command("mise", "exec", "--", "go", "test", "-count=1", "-timeout=20m",
 		"-run", "^"+test+"$", "-v", "./internal/ledger")
 	cmd.Dir = "source"
-	cmd.Env = append(os.Environ(), "DIBS_HISTORY_PROBE_ARM="+arm)
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	return cmd.Run()
+	return cmd
 }
 
 func unchangedSource() error {
