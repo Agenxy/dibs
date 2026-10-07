@@ -147,8 +147,8 @@ func (s *State) applyProgress(m *Message, op *Op, now time.Time) (Result, []Even
 			state = "pending"
 		}
 		return nil, nil, errf("E_BAD_DISPOSITION",
-			"progress reports on an approved request, or a completed request with an unresolved "+
-				"review flag: approve first, and close delivered work with done",
+			questionResponseHint(m, "progress reports on an approved request, or a completed request with an unresolved "+
+				"review flag: approve first, and close delivered work with done"),
 			"message %d is a %s and %s", m.Serial, m.Type, state)
 	}
 	if op.Milestone > len(m.Milestones) {

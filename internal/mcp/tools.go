@@ -399,8 +399,9 @@ var toolDefs = func() []map[string]any {
 			}, "token"),
 		},
 		{
-			"name":        "respond",
-			"description": "Answer/review/report work; withdraw only your unanswered question or unfinished request.",
+			"name": "respond",
+			"description": "approve means 'I'll do it': you owe delivery. For permission, send type:question with choices. " +
+				"Answer/review/report work; withdraw only your unanswered question or unfinished request.",
 			"inputSchema": obj(map[string]any{
 				"token": tok, "msg_serial": num("serial of the message"),
 				"disposition": map[string]any{

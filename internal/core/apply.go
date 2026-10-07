@@ -1593,26 +1593,26 @@ func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, 
 	switch op.Disposition {
 	case "answer":
 		if m.Type != MsgQuestion {
-			return nil, nil, errf("E_BAD_DISPOSITION", dispositionHint(m.Type), "cannot answer a %s", m.Type)
+			return nil, nil, errf("E_BAD_DISPOSITION", dispositionHint(m.Type, m.Serial), "cannot answer a %s", m.Type)
 		}
 		st = MsgStateAnswered
 	case "approve", "deny":
 		if m.Type != MsgRequest {
 			return nil, nil, errf(
-				"E_BAD_DISPOSITION", dispositionHint(m.Type), "cannot %s a %s", op.Disposition, m.Type,
+				"E_BAD_DISPOSITION", dispositionHint(m.Type, m.Serial), "cannot %s a %s", op.Disposition, m.Type,
 			)
 		}
 		st = map[string]string{"approve": MsgStateApproved, "deny": MsgStateDenied}[op.Disposition]
 	case "decline":
 		if !m.Expecting() {
 			return nil, nil, errf(
-				"E_BAD_DISPOSITION", dispositionHint(m.Type), "cannot decline a %s", m.Type,
+				"E_BAD_DISPOSITION", dispositionHint(m.Type, m.Serial), "cannot decline a %s", m.Type,
 			)
 		}
 		st = MsgStateDeclined
 	default:
 		return nil, nil, errf(
-			"E_BAD_DISPOSITION", dispositionHint(m.Type), "unknown disposition %q", op.Disposition,
+			"E_BAD_DISPOSITION", dispositionHint(m.Type, m.Serial), "unknown disposition %q", op.Disposition,
 		)
 	}
 	granted, adopted, err := s.decideRequestEffects(m, op, st)
@@ -1645,6 +1645,11 @@ func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, 
 	m.TerminalAt = now
 	m.RespondedAt = s.Serial + 1
 	res := Result{"ok": true, "state": st}
+	if st == MsgStateApproved && m.Owed(now) {
+		res["obligation"] = "approve means I'll do it: you now owe this work. When delivered, " +
+			"respond(msg_serial:" + strconv.FormatUint(m.Serial, 10) + ", disposition:\"done\", body:..., deliverable:...). " +
+			"For permission rather than work, send type:question with choices."
+	}
 	// Say when the answer has nowhere to go.
 	//
 	// An agent that asked a question can close its agent while the answer is
