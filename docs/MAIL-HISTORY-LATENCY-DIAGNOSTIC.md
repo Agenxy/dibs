@@ -1,8 +1,20 @@
 # Paired writer-latency cause measurement (disposable, never merge)
 
-ACTIVE priority57047/57063: the original sampler A/B below. The paused-reader
-fixture is retained but NOT invoked. Its prematurely dispatched run37551894253
-was cancelled after the priority message arrived. No trace study was built.
+ACTIVE conditional priority57036/57063/57092: the2M paused-reader I/O study,
+after the original sampler A/B completed without a p99 collapse. This uses
+the actual3ef/a709 sources and the retained identical context-pause fixture.
+The premature pause run37551894253 was cancelled before the sampler A/B;
+the new pause run comes only after its terminal receipts. No trace study,
+acceptance sampler fix or production tuning is performed.
+
+Sampler A/B completed atc287db9 /37552231234 with both jobs SUCCESS and all
+eight actual bounds PASS.1M original/bounded/bounded/original p99 were
+1.219292/1.043874/1.230295/1.129534ms, controls1.163210/1.241579ms;
+2M1.395218/1.282817/1.509349/1.679163ms, controls1.325296/1.368229ms.
+All bounds were10ms.1M heap-snapshot counts4239/82/83/4227 and2M
+7937/152/152/7975 show the intended frequency change occurred. There is
+no material p99 collapse at either size, so the STW hypothesis is unconfirmed.
+The following sampler description is historical, not the active experiment.
 
 Both active source checkouts are now exacta709e274. Root`old` means the original
 per-iteration ReadMemStats sampler; root`new` means100ms sampling, not a newer
