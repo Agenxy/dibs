@@ -50,6 +50,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   on a shared question or request, now receive a coordination hint instead of
   a duplicate-work warning. Unrelated shared objectives still warn.
 
+- A requester is told once per recipient declaration version when work stalls,
+  including across daemon restarts and retention of the notice. The notice and
+  its request watermark commit together. The notice, tool and skills also show
+  how the requester can withdraw an approved request before it is done.
+
 - Missing-recipient hints suggest close spelling matches first and explicitly
   count omitted agents with a `board` call when the roster exceeds eight names.
   A bounded roster no longer reads as the complete set of reachable agents.

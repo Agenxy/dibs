@@ -983,6 +983,14 @@ actionable cohort, while a changed cause or real turn rearms it. All lifecycle,
 reservation and presentation records are derived; losing them can repeat a
 notice but cannot lose coordination state.
 
+Requester stall notices are durable exceptions to those derived clocks. An
+atomic `stall_notified` operation creates the notice and records the recipient's
+declaration serial on its approved request. The same version is never reported
+again after replay or notice retention; a changed declaration rearms reporting.
+Historical requests omit this field and retain their old zero behavior. A
+withdrawn or completed request no longer qualifies. Only the daemon's reserved
+reporting identity can submit this operation, validated at ingress.
+
 **App reconnect recovery.** Local stdio bridges attach their own PID and process
 start stamp as additive per-request metadata, including modern discovery and
 legacy startup. On macOS the daemon independently observes the owning ChatGPT app's PID

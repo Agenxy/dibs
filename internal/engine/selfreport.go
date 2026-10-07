@@ -207,7 +207,7 @@ func faultBody(f Fault) string {
 // send mail.
 const dibsName = "dibs"
 
-func dibsNonce() string { return "system:dibs" }
+func dibsNonce() string { return core.DibsNonce }
 
 // dibsAgent returns the identity Dibs sends as, creating it on first use.
 //

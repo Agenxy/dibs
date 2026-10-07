@@ -139,7 +139,7 @@ func inheritParties(
 }
 
 func hasContent(op *core.Op, serial uint64, existed, present bool) bool {
-	return present && ((!existed && op.Kind == core.OpSendMessage) ||
+	return present && ((!existed && core.SendsMessage(op.Kind)) ||
 		(serial == op.MsgSerial && (op.Kind == core.OpRespond || op.Kind == core.OpWithdrawMessage)))
 }
 

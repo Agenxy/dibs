@@ -476,6 +476,8 @@ receiving native peer turns, another watcher adds no delivery guarantee.
   Other finished verdicts stay final; an expired request cannot be approved.
 - As sender, retract your unfinished request or unanswered question with
   `respond(msg_serial, disposition: "withdraw", body: reason, superseded_by: replacement)`.
+  An ordinary request can be withdrawn any time before `done`, including after
+  approval: this clears the recipient's owed work and notifies them once.
   Reason and replacement are optional; the replacement must be another ordinary
   question or request you sent. Withdrawal clears queued/owed work without claiming delivery
   or stopping an agent. The recipient reads the withdrawal and `ack(msg_serial)`

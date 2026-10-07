@@ -151,7 +151,7 @@ func (b *Box) EncryptOp(op *core.Op) error {
 	// them sealed. Found by an agent reading the ledger of a candidate build
 	// rather than reading the code.
 	switch op.Kind {
-	case core.OpSendMessage, core.OpRespond, core.OpSpaceAnnounce, core.OpSpacePost:
+	case core.OpSendMessage, core.OpStallNotified, core.OpRespond, core.OpSpaceAnnounce, core.OpSpacePost:
 		if op.Body, err = b.seal(op.Body); err != nil {
 			return err
 		}
