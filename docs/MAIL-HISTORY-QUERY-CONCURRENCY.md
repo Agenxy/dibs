@@ -82,3 +82,14 @@ regression must pass in both live capture and rebuilt bootstrap and fail on
 c241fe3; a 100k-record 32 KiB-send resource case keeps the original 48 B/record
 retained ceiling and 64 MiB/million warming peak ceiling unchanged. Runtime
 proof and the updated resource matrix remain owed.
+
+The100k large-body job at3e80/run37565305007 failed the checker as written:
+47.6972B/record retained passed, but13,413,656B peak less5,335,312B steady
+was8,078,344B above steady, beyond its proportional6,710,886B allowance.
+Architect58415 directed applying the fixed8MiB working-set floor he attributes
+to56771: the accepted warm allowance is max(64MiB per million records,8MiB).
+The earlier56771 message is no longer accessible via read_mail;58415 is the
+current explicit authority and rationale. The original run remains failed.
+The checker now emits both the proportional verdict and accepted max/floor
+verdict; the48B/record retained limit stays unchanged. The new exact-head
+resource gate must still run; exceeding the floor at larger N remains a finding.

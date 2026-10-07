@@ -136,8 +136,16 @@ func TestMailHistoryProductionProbe(t *testing.T) {
 	if arm == "production" {
 		assertProductionHistoryBudget(t, dir, count, mem.HeapAlloc, seconds)
 		baseline := readProductionProbeArm(t, dir, "baseline")
-		if count > 0 && float64(peak)-float64(mem.HeapAlloc) > float64(count)*float64(64<<20)/1_000_000 {
-			t.Error("warming peak exceeds steady heap plus 64 MiB per million records")
+		proportional := float64(count) * float64(64<<20) / 1_000_000
+		allowance := max(proportional, float64(8<<20))
+		above := float64(peak) - float64(mem.HeapAlloc)
+		t.Logf("HISTORY_WARM_PEAK_BOUND above_steady_bytes=%.0f proportional_bytes=%.0f "+
+			"floor_bytes=%d allowance_bytes=%.0f proportional_pass=%t accepted_pass=%t",
+			above, proportional, 8<<20, allowance, above <= proportional, above <= allowance)
+		// Architect58415 applies the previously stated56771 fixed working-set
+		// floor. Preserve the proportional verdict; retained48B/record stays.
+		if count > 0 && above > allowance {
+			t.Error("warming peak exceeds steady heap plus max(64 MiB per million records, 8 MiB)")
 		}
 		t.Logf("HISTORY_WARMING_CAPTURE capture_increment_bytes=%d peak_increment_bytes=%d warm_seconds=%.9f coordination_p99_seconds=%.9f", int64(captureHeap)-int64(baseline.Heap), int64(peak)-int64(baseline.Heap), warmSeconds, p99)
 	}
