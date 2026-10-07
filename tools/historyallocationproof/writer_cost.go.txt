@@ -1,0 +1,190 @@
+package ledger
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"slices"
+	"strconv"
+	"testing"
+	"time"
+
+	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/engine"
+	"github.com/agenxy/dibs/internal/mailhistory"
+)
+
+type scopeCostObserver struct {
+	*Ledger
+	kind         string
+	copied, live int
+}
+
+func (w *scopeCostObserver) ObserveMail(before mailhistory.Snapshot, st *core.State, op *core.Op, events []core.Event) {
+	if op.Kind == w.kind {
+		w.copied, w.live = len(before.Mail), len(st.Messages)
+	}
+	w.Ledger.ObserveMail(before, st, op, events)
+}
+
+func TestHistoryWriterScopeCost(t *testing.T) {
+	arm := os.Getenv("DIBS_HISTORY_SCOPE_ARM")
+	if arm == "" {
+		t.Skip("hosted-only 10k live-mail writer cost")
+	}
+	dir := ".history-scope-cost"
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal("setup:", err)
+	}
+	box, err := LoadOrCreateKey(filepath.Join(dir, "key"))
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	source := filepath.Join(dir, "ledger.jsonl")
+	if arm == "generate" {
+		generateScopeCost(t, source, box)
+		return
+	}
+	kind := map[string]string{"check-in": core.OpAckBoard, "send": core.OpSendMessage, "none": core.OpSetSlot}[arm]
+	if kind == "" {
+		t.Fatal("setup: unknown scope arm")
+	}
+	path := copyHistoryProbeLedger(t, source, filepath.Join(dir, "paired.ledger.jsonl"))
+	l, err := Open(path, "scope-cost", box)
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	defer func() {
+		if err := l.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
+	state := core.NewState("scope-cost", core.DefaultLimits())
+	if _, err := l.Replay(state); err != nil {
+		t.Fatal("setup: replay:", err)
+	}
+	if len(state.Messages) != 10000 {
+		t.Fatal("setup: expected 10k live messages:", len(state.Messages))
+	}
+	observer := &scopeCostObserver{Ledger: l, kind: kind}
+	eng := engine.New(state, observer, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	joined := make(chan struct{})
+	go func() { eng.Run(ctx); close(joined) }()
+	defer func() { cancel(); <-joined }()
+	if _, _, err := eng.SubscribeInfo(ctx, ""); err != nil {
+		t.Fatal("setup: serving writer:", err)
+	}
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	srv.Listener = l.MailHistory().ServingListener(ctx, srv.Listener)
+	srv.Start()
+	defer srv.Close()
+	response, err := srv.Client().Get(srv.URL)
+	if err != nil {
+		t.Fatal("setup: actual Accept:", err)
+	}
+	_ = response.Body.Close()
+	deadline := time.NewTimer(5 * time.Minute)
+	defer deadline.Stop()
+	tick := time.NewTicker(time.Millisecond)
+	defer tick.Stop()
+	for !l.MailHistory().Measurement().Ready {
+		if l.MailHistory().Status().Failed {
+			t.Fatal("setup: private build failed")
+		}
+		select {
+		case <-tick.C:
+		case <-deadline.C:
+			t.Fatal("setup: initial S0 never ready")
+		}
+	}
+	samples := 512
+	if arm == "send" {
+		samples = 128
+	}
+	latencies := make([]float64, 0, samples)
+	var copiedMin, copiedMax int
+	for n := 0; n < samples; n++ {
+		if err := eng.SetRateTokens(ctx, "actor", 30); err != nil {
+			t.Fatal("setup: refill:", err)
+		}
+		op := &core.Op{Kind: kind, Token: "actor-token"}
+		if arm == "none" {
+			op.SlotID, op.Text = "s1", "actual mail-free declaration "+strconv.Itoa(n)
+		}
+		if arm == "send" {
+			op.To, op.MsgType, op.Body = "target", core.MsgNotify, "actual measured send"
+		}
+		at := time.Now()
+		result, err := eng.Do(ctx, op)
+		latencies = append(latencies, time.Since(at).Seconds())
+		if err != nil || result["error"] != nil {
+			t.Fatal("setup: actual writer:", err, result)
+		}
+		if n == 0 {
+			copiedMin, copiedMax = observer.copied, observer.copied
+		}
+		copiedMin, copiedMax = min(copiedMin, observer.copied), max(copiedMax, observer.copied)
+	}
+	slices.Sort(latencies)
+	receipt := map[string]any{
+		"arm": arm, "samples": samples, "p99_seconds": latencies[(samples-1)*99/100],
+		"initial_live_messages": 10000, "final_live_messages": observer.live, "copied_min": copiedMin, "copied_max": copiedMax,
+	}
+	raw, err := json.Marshal(receipt)
+	if err != nil {
+		t.Fatal("setup: receipt:", err)
+	}
+	t.Logf("HISTORY_WRITER_SCOPE_COST %s", raw)
+}
+
+func generateScopeCost(t *testing.T, path string, box *Box) {
+	t.Helper()
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal("setup: seed:", err)
+	}
+	defer func() {
+		if err := file.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
+	buffered := bufio.NewWriter(file)
+	fixture := productionFixture{
+		t: t, box: box, writer: buffered, state: core.NewState("scope-cost", core.DefaultLimits()),
+		now: time.Now().UTC(), limit: 100000,
+	}
+	ids := []string{"actor", "sender", "target"}
+	for n := 0; n < 50; n++ {
+		ids = append(ids, "worker-"+strconv.Itoa(n))
+	}
+	for _, id := range ids {
+		fixture.write(&core.Op{Kind: core.OpRegister, Name: id, Nonce: id + "-nonce", NewToken: id + "-token", PID: 1, AgentKind: core.KindPersistent})
+		fixture.write(&core.Op{Kind: core.OpAckBoard, Token: id + "-token"})
+	}
+	for n := 0; n < 10000; n++ {
+		to := "actor"
+		if n >= 20 {
+			to = "worker-" + strconv.Itoa((n-20)%50)
+		}
+		op := &core.Op{Kind: core.OpSendMessage, Token: "sender-token", To: to, MsgType: core.MsgNotify, Body: "real 10k live-mail fixture"}
+		if err := fixture.state.Admit(op); err != nil {
+			t.Fatal("setup: send admit:", err)
+		}
+		fixture.write(op)
+	}
+	if len(fixture.state.Messages) != 10000 || len(fixture.state.Inbox("actor")) != 20 {
+		t.Fatal("setup: seeded board counts")
+	}
+	if err := buffered.Flush(); err != nil {
+		t.Fatal("setup: flush:", err)
+	}
+	if err := file.Sync(); err != nil {
+		t.Fatal("setup: sync:", err)
+	}
+}

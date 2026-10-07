@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	candidate    = "a9139d057d893106bfa4d147f0798ebb3dbd6b86"
+	candidate    = "3f5b6168aaf0aa613fab5a5c361c35bf0b71ae18"
 	beforeAPI    = "e771d2f6603cbed768025a1107615c524669c02b"
 	beforeBytes  = "c241fe34f3b50d0b67634c297741ee3fadadb237"
 	beforeCost   = "240e99d19789de3a186aab7befe52ce3173dbcea"
@@ -51,13 +51,14 @@ func run() error {
 		"internal/mailhistory/query_content_test.go",
 		"internal/mailhistory/query_budget_test.go",
 		"internal/mailhistory/query_writer_cost_test.go",
+		"internal/mailhistory/query_review_test.go",
 		"internal/mcp/mail_history_test.go",
 		"internal/mcp/mail_history_budget_test.go",
 	})
 	if err != nil {
 		return err
 	}
-	got, exit, err := test("source", "^TestMailHistory(Native|RealMCP)")
+	got, exit, err := test("source", "^(TestMailHistory(Native|RealMCP)|TestHistory(Bootstrap|Pending|ProductionBootstrap))")
 	if err != nil {
 		return err
 	}
@@ -74,6 +75,9 @@ func run() error {
 		return err
 	}
 	if err := oldProof(); err != nil {
+		return err
+	}
+	if err := reviewProof(); err != nil {
 		return err
 	}
 	if err := oldWriterProof(); err != nil {
@@ -156,7 +160,7 @@ func testMode(dir, selector string, race bool) (map[string]result, error, error)
 	if race {
 		args = append(args, "-race")
 	}
-	args = append(args, "-count=1", "-timeout=40s", "-json", "-run", selector, "./internal/mailhistory", "./internal/mcp")
+	args = append(args, "-count=1", "-timeout=40s", "-json", "-run", selector, "./internal/mailhistory", "./internal/mcp", "./internal/ledger")
 	// #nosec G204 -- fixed mise/go argv; selector names come from the immutable fixture.
 	cmd := exec.Command("mise", args...)
 	cmd.Dir = dir

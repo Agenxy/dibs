@@ -57,3 +57,23 @@ jobs:
           include-hidden-files: true
           path: allocation-parser/internal/ledger/.history-production-probe/allocation-heap-*
           if-no-files-found: error
+
+  writer-cost:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: b640e08d79e262e09a9f187cabf6d572e229a75a
+          path: scope-before
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: 3f5b6168aaf0aa613fab5a5c361c35bf0b71ae18
+          path: scope-after
+      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+        with:
+          version: 2026.7.7
+          experimental: true
+      - name: Same-host 10k live-mail native writer measurements
+        run: mise exec -- go run ./tools/historyallocationproof writer-cost

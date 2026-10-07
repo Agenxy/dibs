@@ -31,6 +31,9 @@ func main() {
 }
 
 func run() error {
+	if len(os.Args) == 2 && os.Args[1] == "writer-cost" {
+		return measureWriterCost()
+	}
 	if len(os.Args) == 2 && os.Args[1] == "noise" {
 		return measureNoise()
 	}
