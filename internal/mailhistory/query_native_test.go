@@ -3,6 +3,7 @@ package mailhistory_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -112,7 +113,10 @@ func historyOnce(t *testing.T, f nativeHistoryFixture, token string, bodies bool
 	}
 	res, err := api.ReadMailHistory(f.ctx, token, 0, 100, bodies, "")
 	if err != nil {
-		t.Fatal("history query:", err)
+		var ce *core.Error
+		if !errors.As(err, &ce) || !strings.HasPrefix(ce.Code, "E_HISTORY_") || res["error"] == nil {
+			t.Fatal("history query:", err)
+		}
 	}
 	return res
 }
@@ -163,7 +167,8 @@ func TestMailHistoryNativeGCRetainsQuotedEvidenceAndPartyPrivacy(t *testing.T) {
 	historyOp(t, f, &core.Op{Kind: core.OpAckMessage, Token: recipient, MsgSerial: parent})
 	historyOp(t, f, &core.Op{Kind: core.OpSweep, PurgeMail: true})
 	live, err := f.eng.GetMessage(f.ctx, sender, parent)
-	if err != nil || live["error"] == nil {
+	var absent *core.Error
+	if !errors.As(err, &absent) || absent.Code != "E_NO_MESSAGE" {
 		t.Fatal("setup: GC did not remove live mail:", err, live)
 	}
 	before := historyJSON(t, settledHistory(t, f, sender, true))
@@ -213,7 +218,8 @@ func TestMailHistoryNativeOwnershipFenceBeforeRemovedLiveHeader(t *testing.T) {
 	historyOp(t, f, &core.Op{Kind: core.OpAckMessage, Token: heir, MsgSerial: parent})
 	historyOp(t, f, &core.Op{Kind: core.OpSweep, PurgeMail: true})
 	live, err := f.eng.GetMessage(f.ctx, sender, parent)
-	if err != nil || live["error"] == nil {
+	var absent *core.Error
+	if !errors.As(err, &absent) || absent.Code != "E_NO_MESSAGE" {
 		t.Fatal("setup: actual GC left live header:", err, live)
 	}
 	for _, bodies := range []bool{false, true} {

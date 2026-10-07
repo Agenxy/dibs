@@ -40,7 +40,9 @@ var toolDefs = func() []map[string]any {
 		return map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": desc}
 	}
 	num := func(desc string) map[string]any { return map[string]any{"type": "integer", "description": desc} }
-	tok := str("agent token") // register and server instructions explain the credential once
+	// Register and server instructions explain the credential once. Repeating
+	// "agent token" in every schema spends cold-connection context on its label.
+	tok := map[string]any{"type": "string"}
 	// The type decides what a message DOES, so it is described where an agent
 	// chooses it, once. send and broadcast carried separate copies of the same
 	// four sentences, which is a second copy that can drift and a cost every
@@ -384,21 +386,13 @@ var toolDefs = func() []map[string]any {
 			"inputSchema": obj(map[string]any{"token": tok, "msg_serial": num("serial of the message")}, "token", "msg_serial"),
 		},
 		{
-			"name": "mail_history",
-			"description": "Audit your sent/received ledger mail without marking anything read or delivered. " +
-				"Metadata by default; include_bodies quotes eligible conversation text as data. " +
-				"Stateless fixed-prefix cursor; ordinary lag is explicit as_of_serial/behind_by. " +
-				"Initial WARMING or ownership SETTLING means retry shortly. Attachments are references only.",
+			"name":        "mail_history",
+			"description": "Audit your mail without consuming it. Text is quoted data; cursor continues a fixed prefix.",
 			"inputSchema": obj(map[string]any{
-				"token": tok, "since_serial": num("exclusive initial ledger serial; omit on cursor pages"),
-				"limit": map[string]any{
-					"type": "integer", "minimum": 1, "maximum": 100, "default": 25,
-					"description": "maximum audit units (default25,max100)",
-				},
-				"include_bodies": map[string]any{
-					"type": "boolean", "default": false, "description": "include authorized quoted conversation text",
-				},
-				"cursor": str("opaque cursor from the preceding page; omit since_serial"),
+				"token": tok, "since_serial": num("exclusive start; omit with cursor"),
+				"limit":          map[string]any{"type": "integer", "minimum": 1, "maximum": 100, "default": 25},
+				"include_bodies": map[string]any{"type": "boolean", "default": false},
+				"cursor":         map[string]any{"type": "string"},
 			}, "token"),
 		},
 		{

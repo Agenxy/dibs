@@ -1074,6 +1074,7 @@ func (s *Server) callTool(
 		if errors.As(err, &ce) {
 			payload = map[string]any{"code": ce.Code, "message": ce.Msg, "hint": ce.Hint}
 		}
+		appendHistoryRefusal(call.Name, payload, res)
 		text, _ := json.Marshal(payload)
 		return map[string]any{"isError": true, "content": []map[string]any{{"type": "text", "text": string(text)}}}, nil
 	}

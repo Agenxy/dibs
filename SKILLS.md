@@ -706,7 +706,7 @@ infrastructure advice every session is an agent people turn off.
 
 **What changes if your operator does enable it:** nothing you call. You gain a
 protocol with no `initialize` handshake, so a reconnect costs nothing, and list
-results carry `ttlMs`/`cacheScope` so your client can stop re-fetching 52 tool
+results carry `ttlMs`/`cacheScope` so your client can stop re-fetching 53 tool
 descriptions on every cold start. Your own tool calls are unchanged.
 
 ## Reading the room before you act

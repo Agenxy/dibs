@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -78,7 +79,8 @@ func TestMailHistoryNativeOwnershipChangeAfterContentReadRefusesWholePage(t *tes
 	select {
 	case r := <-completed:
 		ce, ok := r.res["error"].(*core.Error)
-		if r.err != nil || !ok || ce.Code != "E_HISTORY_SETTLING" {
+		var returned *core.Error
+		if !errors.As(r.err, &returned) || !ok || ce.Code != "E_HISTORY_SETTLING" || returned.Code != ce.Code {
 			t.Fatal("ownership move during actual I/O must refuse whole page:", r)
 		}
 		if r.res["units"] != nil || strings.Contains(historyJSON(t, r.res), "PRIVATE-READ-BEFORE-MOVE") {
@@ -191,7 +193,12 @@ func TestMailHistoryNativeTokenRevokedAfterContentReadRefusesWholePage(t *testin
 	go func() {
 		res, err := api.ReadMailHistory(f.ctx, recipient, 0, 100, true, "")
 		if err != nil {
-			res = core.Result{"unexpected_transport_error": err.Error()}
+			var ce *core.Error
+			if errors.As(err, &ce) {
+				res = core.Result{"error": ce}
+			} else {
+				res = core.Result{"unexpected_transport_error": err.Error()}
+			}
 		}
 		completed <- res
 	}()

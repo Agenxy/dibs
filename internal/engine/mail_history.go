@@ -50,7 +50,7 @@ func (e *Engine) ReadMailHistory(ctx context.Context, token string, since uint64
 		Reader: reader, Upper: upper, Since: since, OwnershipChange: fence, Limit: limit, Cursor: cursor, Deadline: deadline,
 	})
 	if err != nil {
-		return historyFailure(err, index.Status(), upper), nil
+		return historyRefusal(err, index.Status(), upper)
 	}
 	checked, err := e.historyReauthorize(ctx, token, reader, index, page, upper, fence)
 	if err != nil || checked["error"] != nil {
@@ -58,7 +58,7 @@ func (e *Engine) ReadMailHistory(ctx context.Context, token string, since uint64
 	}
 	result, err := e.historyRows(ctx, index, page, includeBodies, deadline)
 	if err != nil {
-		return historyFailure(err, index.Status(), upper), nil
+		return historyRefusal(err, index.Status(), upper)
 	}
 	checked, err = e.historyReauthorize(ctx, token, reader, index, page, upper, fence)
 	if err != nil || checked["error"] != nil {
@@ -74,7 +74,7 @@ func historyArgumentsValid(limit int, since uint64, cursor string) bool {
 func (e *Engine) historyReauthorize(ctx context.Context, token string, reader core.Agent,
 	index *mailhistory.Index, page mailhistory.Page, upper, fence uint64,
 ) (core.Result, error) {
-	return e.query(ctx, func() core.Result {
+	res, err := e.query(ctx, func() core.Result {
 		a := e.state.AgentByToken(token)
 		if a == nil || a.ID != reader.ID || a.CreatedSerial != reader.CreatedSerial {
 			return core.Result{"error": core.ErrBadToken}
@@ -95,10 +95,25 @@ func (e *Engine) historyReauthorize(ctx context.Context, token string, reader co
 		}
 		return core.Result{}
 	})
+	var ce *core.Error
+	if errors.As(err, &ce) {
+		if ce.Code == "E_HISTORY_SETTLING" {
+			return historyRefusal(mailhistory.ErrSettling, index.Status(), upper)
+		}
+		if ce.Code == "E_HISTORY_UNAVAILABLE" {
+			return historyRefusal(mailhistory.ErrUnavailable, index.Status(), upper)
+		}
+	}
+	return res, err
 }
 
 func historyError(code, msg, hint string) core.Result {
 	return core.Result{"error": &core.Error{Code: code, Msg: msg, Hint: hint}}
+}
+
+func historyRefusal(err error, status mailhistory.Status, upper uint64) (core.Result, error) {
+	res := historyFailure(err, status, upper)
+	return res, res["error"].(*core.Error)
 }
 
 func historyFailure(err error, status mailhistory.Status, upper uint64) core.Result {

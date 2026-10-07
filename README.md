@@ -1174,7 +1174,7 @@ routes or hub paths. Revoke
 with `dibs invite revoke <name>` or `--issued-by <issuer>`; closing the issuer
 also revokes its children. [Deployment and scope](docs/NETWORK.md#9-agents-in-the-cloud).
 
-**If you are the operator:** there is no urgency. Dibs serves both paths, all 52
+**If you are the operator:** there is no urgency. Dibs serves both paths, all 53
 tools behave identically on either, and deprecated features are guaranteed for at
 least twelve months from the 2026-07-28 publication.
 
