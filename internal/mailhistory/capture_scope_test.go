@@ -139,3 +139,42 @@ func TestCaptureScopesCoverActualCanonicalChanges(t *testing.T) {
 		assertScopeCoverage(t, st, &core.Op{Kind: core.OpSignOff, Token: "a-token"}, 41)
 	})
 }
+
+func TestMailboxScopesCoverActualQueuedSiblingChanges(t *testing.T) {
+	for _, kind := range []string{core.OpRespond, core.OpQueueUpdate, core.OpWithdrawMessage} {
+		t.Run(kind, func(t *testing.T) {
+			st := scopeState(t)
+			requests := make([]uint64, 0, 3)
+			for n := 0; n < 3; n++ {
+				res := scopeApply(t, st, &core.Op{Kind: core.OpSendMessage, Token: "sender-token", To: "a", MsgType: core.MsgRequest, Body: "sibling queue", QueueDebt: true})
+				serial := res["msg_serial"].(uint64)
+				requests = append(requests, serial)
+				scopeApply(t, st, &core.Op{Kind: core.OpRespond, Token: "a-token", MsgSerial: serial, Disposition: "queue", QueueDebt: true})
+			}
+			op := &core.Op{Kind: kind, Token: "a-token", MsgSerial: requests[0], QueueDebt: true}
+			switch kind {
+			case core.OpRespond:
+				op.Disposition = "approve"
+			case core.OpQueueUpdate:
+				op.QueueTail = true
+			case core.OpWithdrawMessage:
+				op.Token = "sender-token"
+			}
+			assertScopeCoverage(t, st, op, 23)
+		})
+	}
+}
+
+func TestAdoptionApprovalCapturesOutsideCoordinatorMailbox(t *testing.T) {
+	st := scopeState(t)
+	scopeApply(t, st, &core.Op{Kind: core.OpGrantRole, To: "b", Mode: core.RoleCoordinator})
+	scopeApply(t, st, &core.Op{Kind: core.OpSweep, DeadAgents: []string{"a"}})
+	res := scopeApply(t, st, &core.Op{Kind: core.OpSendMessage, Token: "sender-token", To: "b", MsgType: core.MsgRequest, Body: "old mailbox belongs to me", Adopt: "a"})
+	op := &core.Op{Kind: core.OpRespond, Token: "b-token", MsgSerial: res["msg_serial"].(uint64), Disposition: "approve", AdoptAuthorised: true}
+	assertScopeCoverage(t, st, op, len(st.Messages))
+	for _, m := range st.Messages {
+		if m.To == "a" {
+			t.Fatal("setup: actual approval did not adopt the source mailbox")
+		}
+	}
+}

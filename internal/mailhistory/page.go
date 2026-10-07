@@ -161,13 +161,18 @@ func (i *Index) walkPage(ctx context.Context, req PageRequest, status Status, re
 			break
 		}
 	}
-	if more {
-		page.Next = req.Cursor
-		if page.Examined > 0 {
-			page.Next = i.encodeCursor(last, req.Reader)
-		}
-	}
+	page.Next = i.pageContinuation(more, req, last, page.Examined)
 	return page, nil
+}
+
+func (i *Index) pageContinuation(more bool, req PageRequest, last cursor, examined int) string {
+	if !more {
+		return ""
+	}
+	if examined == 0 {
+		return req.Cursor
+	}
+	return i.encodeCursor(last, req.Reader)
 }
 
 func (i *Index) authorizedUnit(reader *unitReader, u snapshotUnit, agent *core.Agent) (bool, error) {

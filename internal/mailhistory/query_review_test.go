@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -26,7 +27,7 @@ func historyUnits(t *testing.T, res core.Result) []core.Result {
 	return rows
 }
 
-func reviewLedger(t *testing.T, dir string, limits core.Limits) (*ledger.Ledger, *core.State, *historyBudgetWriter) {
+func reviewLedger(t *testing.T, dir string, limits core.Limits) (*ledger.Ledger, *historyBudgetWriter) {
 	t.Helper()
 	box, err := ledger.LoadOrCreateKey(filepath.Join(dir, "key"))
 	if err != nil {
@@ -42,14 +43,14 @@ func reviewLedger(t *testing.T, dir string, limits core.Limits) (*ledger.Ledger,
 		w.apply(&core.Op{Kind: core.OpRegister, Name: id, NewToken: id + "-token", Nonce: id + "-nonce", PID: 1, AgentKind: core.KindPersistent})
 		w.apply(&core.Op{Kind: core.OpAckBoard, Token: id + "-token"})
 	}
-	return l, st, w
+	return l, w
 }
 
 func TestMailHistoryNativeAdoptionSourceLimitIsPartyLocalAfterRestart(t *testing.T) {
 	dir := t.TempDir()
 	limits := core.DefaultLimits()
 	limits.MaxAgents, limits.MaxPersistentAgents, limits.MaxMailboxDepth = 512, 512, 512
-	l, _, w := reviewLedger(t, dir, limits)
+	l, w := reviewLedger(t, dir, limits)
 	w.apply(&core.Op{Kind: core.OpGrantRole, To: "admin", Mode: core.RoleAdmin})
 	for n := 0; n < 300; n++ {
 		id := "source-" + strconv.Itoa(n)
@@ -191,7 +192,7 @@ func TestMailHistoryNativeOversizedContentKeepsMetadataAndLaterRows(t *testing.T
 	dir := t.TempDir()
 	limits := core.DefaultLimits()
 	limits.MaxBodyBytes = 18 << 20
-	l, _, w := reviewLedger(t, dir, limits)
+	l, w := reviewLedger(t, dir, limits)
 	w.apply(&core.Op{Kind: core.OpSendMessage, Token: "sender-token", To: "recipient", MsgType: core.MsgNotify, Body: strings.Repeat("x", 17<<20)})
 	w.apply(&core.Op{Kind: core.OpSendMessage, Token: "sender-token", To: "recipient", MsgType: core.MsgNotify, Body: "LATER-SMALL-CONTENT"})
 	if err := l.Close(); err != nil {
@@ -251,4 +252,42 @@ func TestMailHistoryNativeAuthorMachineIsEventTimeEvidence(t *testing.T) {
 	if first.Author.Host != "machine-before" || second.Author.Host != "machine-after" || first.Author.ID != second.Author.ID {
 		t.Fatal("identity update rewrote event-time attribution", first.Author, second.Author)
 	}
+}
+
+func TestMailHistoryNativeSameKeyDifferentGenerationRefusesCursor(t *testing.T) {
+	firstDir, secondDir := t.TempDir(), t.TempDir()
+	first := nativeHistory(t, firstDir)
+	sender := historyIdentity(t, first, "sender")
+	historyIdentity(t, first, "recipient")
+	for n := 0; n < 3; n++ {
+		historyOp(t, first, &core.Op{Kind: core.OpSendMessage, Token: sender, To: "recipient", MsgType: core.MsgNotify, Body: "first generation"})
+	}
+	settledHistory(t, first, sender, false)
+	page, err := any(first.eng).(historyAPI).ReadMailHistory(first.ctx, sender, 0, 1, false, "")
+	if err != nil {
+		t.Fatal("setup: issued generation cursor:", err)
+	}
+	cursor, ok := page["cursor"].(string)
+	if !ok || cursor == "" {
+		t.Fatal("setup: generation cursor:", page)
+	}
+	key, err := os.ReadFile(filepath.Join(firstDir, "key"))
+	if err != nil {
+		t.Fatal("setup: existing board key:", err)
+	}
+	if err := os.WriteFile(filepath.Join(secondDir, "key"), key, 0o600); err != nil {
+		t.Fatal("setup: second native board key:", err)
+	}
+	clear(key)
+	second := nativeHistory(t, secondDir)
+	secondSender := historyIdentity(t, second, "sender")
+	historyIdentity(t, second, "recipient")
+	for n := 0; n < 3; n++ {
+		historyOp(t, second, &core.Op{Kind: core.OpSendMessage, Token: secondSender, To: "recipient", MsgType: core.MsgNotify, Body: "different generation"})
+	}
+	settledHistory(t, second, secondSender, false)
+	if first.led.MailHistory().Status().Generation == second.led.MailHistory().Status().Generation {
+		t.Fatal("setup: distinct native ledgers have same generation")
+	}
+	assertInvalidReviewCursor(t, second, secondSender, cursor, "different ledger generation cursor disclosed a row")
 }
