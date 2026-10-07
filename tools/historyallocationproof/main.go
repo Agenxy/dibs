@@ -20,7 +20,7 @@ var stages = []stage{
 	{"before", "allocation-before", "359ba2fe4df6d1c9d4a8ed555c55e1040a05cc0f"},
 	{"segments", "allocation-segments", "689f3b4d447c4695e53878d58a04857047f0dbfd"},
 	{"idle-buffers", "allocation-idle", "0f3508ea6fedc171a928df45a72b50efd24f6be4"},
-	{"parser", "allocation-parser", "b640e08d79e262e09a9f187cabf6d572e229a75a"},
+	{"parser", "allocation-parser", "6e9707a8e6ccefe439e2deb4009db0b77f56bfa0"},
 }
 
 func main() {
@@ -92,13 +92,13 @@ func probe(s stage, arm string) ([]byte, error) {
 }
 
 func copyFixture(s stage) error {
-	dir := filepath.Join(s.dir, ".history-production-probe")
+	dir := filepath.Join(s.dir, "internal", "ledger", ".history-production-probe")
 	// #nosec G703 -- directory from the constant stage manifest.
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 	for _, file := range []string{"key", "ledger.jsonl"} {
-		source := filepath.Join(stages[0].dir, ".history-production-probe", file)
+		source := filepath.Join(stages[0].dir, "internal", "ledger", ".history-production-probe", file)
 		if err := copyFile(source, filepath.Join(dir, file)); err != nil {
 			return err
 		}
