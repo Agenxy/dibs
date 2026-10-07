@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -37,6 +38,12 @@ type Ledger interface {
 type MailHistorySource interface {
 	MailHistory() *mailhistory.Index
 	ObserveMail(mailhistory.Snapshot, *core.State, *core.Op, []core.Event)
+}
+
+// HistoryContentSource reads authorized native ledger evidence outside the
+// writer. No attachment store is part of this port.
+type HistoryContentSource interface {
+	ReadHistoryOp(context.Context, uint64, mailhistory.SeekRange) (*core.Op, error)
 }
 
 // The observer's workspace belongs to the writer; queries never retain it.

@@ -1092,14 +1092,7 @@ const MaxChoices = 4
 // of an op older than the field) reads as the predecessor's. ONE rule, called
 // by every reader of the mark.
 func (s *State) adoptedFor(m *Message, agent string) bool {
-	if m.AdoptedFrom == "" {
-		return false
-	}
-	l := s.Agents[agent]
-	if l == nil || l.CreatedSerial == 0 {
-		return true
-	}
-	return m.AdoptedAt >= l.CreatedSerial
+	return adoptedForReader(m, s.Agents[agent])
 }
 
 // AdoptedFor is adoptedFor for the engine, which reads mailboxes on the loop.

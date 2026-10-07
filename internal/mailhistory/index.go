@@ -29,39 +29,41 @@ type Anchor struct {
 // Index stores no bodies, token, response, participant path or author text.
 // All state is derived from a single canonical fold; losing it loses no mail.
 type Index struct {
-	mu         sync.RWMutex
-	viewMu     sync.RWMutex // builder/view only; compression never holds the capture lock
-	codec      codec
-	serials    vector
-	latest     vector
-	parties    map[partyKey]*party
-	anchors    []Anchor
-	numbers    []uint64 // bounded writer scratch for sorted canonical changes
-	records    uint64
-	head       Record
-	generation string
-	ready      bool
-	failed     bool
-	ended      bool
-	started    bool
-	signal     chan struct{}
-	active     *rawChunk
-	first      *rawChunk
-	last       *rawChunk
-	queued     uint64
-	queueLimit uint64
-	captured   uint64
-	built      uint64
-	builtHead  Record
-	bootstrap  func(context.Context, *Index) error
-	bootSerial uint64
-	bootHash   [32]byte
+	mu                  sync.RWMutex
+	viewMu              sync.RWMutex // builder/view only; compression never holds the capture lock
+	codec               codec
+	serials             vector
+	latest              vector
+	parties             map[partyKey]*party
+	anchors             []Anchor
+	numbers             []uint64 // bounded writer scratch for sorted canonical changes
+	records             uint64
+	head                Record
+	generation          string
+	ready               bool
+	initialReady        bool // monotonic after S0; live writes only clear ready
+	failed              bool
+	ended               bool
+	started             bool
+	signal              chan struct{}
+	active              *rawChunk
+	first               *rawChunk
+	last                *rawChunk
+	queued              uint64
+	queueLimit          uint64
+	captured            uint64
+	built               uint64
+	builtHead           Record
+	bootstrap           func(context.Context, *Index) error
+	bootSerial          uint64
+	bootHash            [32]byte
+	lastOwnershipChange uint64 // writer-derived authorization fence, never ledger state
 }
 
 // New returns an empty derived index for a fresh ledger.
 func New() *Index {
 	return &Index{
-		parties: map[partyKey]*party{}, ready: true, ended: true,
+		parties: map[partyKey]*party{}, ready: true, initialReady: true, ended: true,
 		signal: make(chan struct{}, 1), queueLimit: liveQueueBytes,
 	}
 }
@@ -88,6 +90,7 @@ func (i *Index) BeginReplay() {
 	i.numbers = nil
 	i.records, i.head, i.generation = 0, Record{}, ""
 	i.ready, i.failed = false, false
+	i.initialReady, i.lastOwnershipChange = false, 0
 	i.ended, i.started = false, false
 	i.active, i.first, i.last = nil, nil, nil
 	i.queued, i.captured, i.built = 0, 0, 0
@@ -103,6 +106,7 @@ func (i *Index) EndReplay() {
 	i.sealCapture()
 	i.ended = true
 	i.ready = i.records == 0 && !i.failed
+	i.initialReady = i.ready
 }
 
 func (s Snapshot) key(id string, st *core.State) partyKey {

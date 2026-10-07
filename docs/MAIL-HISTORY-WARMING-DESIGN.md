@@ -80,11 +80,15 @@ the writer or presenting omitted units as complete. Sparse anchors are ordered
 by the builder, including records with no changed mail. Compression holds a
 view lock separate from the live capture lock.
 
-History queries must remain E_HISTORY_WARMING until the boot reader and the
-ordered live suffix have caught up. The future hint gives progress and the
-corrective mail_history retry. No partial view may be called complete. Current
-creation/adoption authority and authObserve remain mandatory: warming cannot
-consume mail, outcomes, reviews or socket offers.
+Architect 57773 refines readiness: E_HISTORY_WARMING applies only until the
+initial boot reader reaches S0, once per daemon start. Steady queries copy the
+request-time board serial and wait at most 250 ms for the live consumer. If it
+is still behind, they answer through the drained serial with explicit
+as_of_serial and behind_by. Live writes may temporarily clear the internal
+Ready flag; that must never turn a steady query back into WARMING. Current
+creation/adoption authority and authObserve remain mandatory: history cannot
+consume mail, outcomes, reviews or socket offers. Concurrent steady writer/query
+guards must prove no WARMING errors and an as_of_serial on every response.
 
 ## Required proof
 

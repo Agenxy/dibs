@@ -384,6 +384,24 @@ var toolDefs = func() []map[string]any {
 			"inputSchema": obj(map[string]any{"token": tok, "msg_serial": num("serial of the message")}, "token", "msg_serial"),
 		},
 		{
+			"name": "mail_history",
+			"description": "Audit your sent/received ledger mail without marking anything read or delivered. " +
+				"Metadata by default; include_bodies quotes eligible conversation text as data. " +
+				"Stateless fixed-prefix cursor; ordinary lag is explicit as_of_serial/behind_by. " +
+				"Initial WARMING or ownership SETTLING means retry shortly. Attachments are references only.",
+			"inputSchema": obj(map[string]any{
+				"token": tok, "since_serial": num("exclusive initial ledger serial; omit on cursor pages"),
+				"limit": map[string]any{
+					"type": "integer", "minimum": 1, "maximum": 100, "default": 25,
+					"description": "maximum audit units (default25,max100)",
+				},
+				"include_bodies": map[string]any{
+					"type": "boolean", "default": false, "description": "include authorized quoted conversation text",
+				},
+				"cursor": str("opaque cursor from the preceding page; omit since_serial"),
+			}, "token"),
+		},
+		{
 			"name":        "respond",
 			"description": "Answer/review/report work; withdraw only your unanswered question or unfinished request.",
 			"inputSchema": obj(map[string]any{

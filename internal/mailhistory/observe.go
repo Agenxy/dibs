@@ -24,6 +24,9 @@ func (i *Index) Observe(rec Record, before Snapshot, st *core.State, op *core.Op
 	if i.failed {
 		return
 	}
+	if ownershipChanged(before, st) {
+		i.lastOwnershipChange = rec.Serial
+	}
 	if i.records%4096 == 0 {
 		i.ensureCapture()
 		i.active.anchors = append(i.active.anchors, Anchor{rec.Serial, rec.Offset, rec.Prev})
@@ -38,6 +41,16 @@ func (i *Index) Observe(rec Record, before Snapshot, st *core.State, op *core.Op
 	if err != nil || (i.active != nil && i.queueLimit > 0 && i.queued+i.active.charge() > i.queueLimit) {
 		i.failCapture()
 	}
+}
+
+func ownershipChanged(before Snapshot, st *core.State) bool {
+	for serial, old := range before.Mail {
+		if m := st.Messages[serial]; m != nil &&
+			(m.From != old.From || m.To != old.To || m.AdoptedFrom != old.AdoptedFrom || m.AdoptedAt != old.AdoptedAt) {
+			return true
+		}
+	}
+	return false
 }
 
 func generationOf(rec Record) string { return hex.EncodeToString(rec.Hash[:]) }

@@ -19,6 +19,7 @@ func (i *Index) ConfigureBootstrap(head Record, records uint64, read func(contex
 	}
 	i.head, i.records, i.bootstrap = head, records, read
 	i.ended, i.ready = true, records == 0
+	i.initialReady = records == 0 && !i.failed
 	i.queueLimit = liveQueueBytes
 }
 

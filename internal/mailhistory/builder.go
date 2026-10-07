@@ -167,6 +167,9 @@ func (i *Index) buildBootstrap(ctx context.Context) error {
 	}
 	i.mu.Lock()
 	i.bootstrap = nil // the reader's private shadow and its closure are no longer retained
+	if read != nil && !i.failed {
+		i.initialReady = true // the validated boot fold reached S0, once
+	}
 	i.mu.Unlock()
 	return nil
 }
@@ -211,6 +214,7 @@ func (i *Index) drain(ctx context.Context) {
 		if i.active == nil && i.first == nil && i.built == i.captured {
 			i.builtHead = i.head // include records that changed no mail
 			i.ready = i.ended
+			i.initialReady = i.initialReady || i.ready
 		}
 		i.mu.Unlock()
 		select {

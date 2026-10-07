@@ -1,0 +1,75 @@
+# Mail-history query concurrency checkpoint
+
+Request 23228. API contract accepted at bef678c/29830, steady-state refinement
+57773. Architect 57905 accepted these phases with the scalar fence below
+instead of the proposed ownership overlay. The first API source is wired;
+runtime verification and the remaining discriminating guards are still owed.
+Foundation e771 passed ALL3, all seven
+resource cases and all six revised latency cases at 95823d3/run37558075241.
+Original 56794 failures remain failed. The revised latency criterion is
+explicitly looser during warming, per owner 57658.
+
+## Query phases
+
+1. On the engine writer, authenticate/rate-limit with authObserve. Copy the
+   caller's immutable identity and CreatedSerial plus the request-time board
+   serial. Never keep a pointer into live core state.
+2. Outside the writer, wait within the one 250 ms request budget for the
+   derived consumer. WARMING describes only an unfinished initial S0 fold.
+   Once S0 has finished, use the drained prefix even if new live deltas remain.
+   Always return as_of_serial and behind_by relative to that copied board serial.
+3. Under a short view lock, copy at most 4096 candidate references from the
+   caller's own incarnation and frozen inherited prefixes. Copy immutable
+   compressed block descriptors and the bounded raw tail; decode outside all
+   writer/capture locks. The latest ownership header can be in another block.
+   Decode one bounded block at a time, not a cache proportional to candidates.
+4. On the writer, reauthenticate the current token/incarnation and check that
+   the ownership fence has not advanced since admission. Current live Message
+   headers override historical headers. Apply core.MessageAccess
+   to metadata and content alike; no coordinator/admin bypass.
+5. Outside the writer, seek/decrypt eligible content only, with chain-validated
+   anchors and bounded input. Never read attachments or fileref paths. Before
+   returning, reauthorize token/incarnation and ownership again on the writer.
+   Serialize at most 100 rows/128 KiB with a stateless fixed-prefix cursor.
+
+The current helper uses the conversation lookup serial explicitly, preserving
+GetMessage's existing behavior even for legacy/test Messages with an empty
+embedded Serial. It shares adoptedForReader with State.AdoptedFor; the rule
+does not depend on a second copy of adoption semantics.
+
+## Authority when the consumer is behind
+
+The latest compressed header alone is insufficient: an adoption may commit,
+then GC may remove the live Message, before the consumer reaches that delta.
+Authorizing with the older compressed recipient would reveal the moved mail.
+Waiting for the request serial does not solve a move during content I/O.
+
+Use one derived writer scalar, lastOwnershipChangeSerial, per 57905. After a
+successful append and before publish, compare canonical before/after ownership
+headers; update the scalar if any message's From, To, AdoptedFrom or AdoptedAt
+changes. This covers adoption, merge and future ownership-moving operations
+without a hand-maintained op-kind list. Birth and ordinary receipt/read/GC
+changes do not move the fence. No op/tag/core-state or second store is added.
+
+At admission, copy that fence. Wait within the same 250 ms budget for the
+consumer to reach it. If it remains behind, refuse with E_HISTORY_SETTLING,
+a corrective retry hint and the lag, instead of trusting stale authority.
+At final reauthorization, any advance of the fence since admission discards
+the result and returns the same error. This deliberately refuses around a
+rare ownership move, even one in another conversation. Ordinary writes still
+answer through the drained prefix with as_of_serial and behind_by; they never
+flap into WARMING. The boot fold already reconstructs pre-S0 ownership, so
+the derived fence starts at zero and observes committed live changes only.
+
+The overlay proposal is rejected, and its separate heap gate is withdrawn
+because no per-conversation ownership structure will be added. Existing full
+resource and latency gates remain mandatory for the finished implementation.
+
+Required discrimination: hold the consumer through a real fixture boundary;
+adopt a pending message, evict it by a real accepted operation, and query as
+the old recipient while the index still has the old header. The old recipient
+must receive neither metadata nor content. Also move ownership during the
+real content read, proving the final reauthorization rather than a setter.
+Concurrent busy writer/query cases must remain out of WARMING and include
+as_of_serial even when reporting behind_by. Every new behavioral guard must
+fail through the same production door on old source.

@@ -7,6 +7,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `mail_history` audits an agent's eligible sent/received ledger mail after live
+  retention, with metadata by default and opt-in quoted conversation text.
+  Bounded stateless pages preserve a fixed prefix without marking mail or
+  outcomes read; ordinary history lag is explicit, and an ownership move
+  briefly refuses stale authority. Attachment references never restore bytes.
+
 - The derived mail-history builder yields to an active ledger writer in bounded
   read and fold chunks. Its background reads are capped at 64 KiB, with at most
   5 ms of backoff per chunk so ongoing coordination cannot starve an audit.
