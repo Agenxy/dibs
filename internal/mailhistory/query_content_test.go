@@ -284,3 +284,40 @@ func TestMailHistoryNativeReusedNameDoesNotInheritPredecessorEvidence(t *testing
 		t.Fatal("new occupant inherited predecessor history:", raw)
 	}
 }
+
+func TestMailHistoryNativeObservationDoesNotWakeOrAdvanceDurableState(t *testing.T) {
+	dir := t.TempDir()
+	f := nativeHistory(t, dir)
+	sender := historyIdentity(t, f, "sender")
+	recipient := historyIdentity(t, f, "recipient")
+	parent := historyOp(t, f, &core.Op{Kind: core.OpSendMessage, Token: sender, To: "recipient", MsgType: core.MsgNotify, Body: "PRIVATE-OBSERVATION"})["msg_serial"].(uint64)
+	historyOp(t, f, &core.Op{Kind: core.OpSweep, DeadAgents: []string{"recipient"}})
+	_, before, err := f.eng.SubscribeInfo(f.ctx, "")
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	raw := historyJSON(t, settledHistory(t, f, recipient, true))
+	if !strings.Contains(raw, "PRIVATE-OBSERVATION") {
+		t.Fatal("observation did not read dormant party's evidence:", raw)
+	}
+	f.stop()
+	box, err := ledger.LoadOrCreateKey(filepath.Join(dir, "key"))
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	led, err := ledger.OpenReadOnly(filepath.Join(dir, "ledger.jsonl"), "history-native", box)
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	defer func() { _ = led.Close() }()
+	limits := core.DefaultLimits()
+	limits.ConsumedRetention = 0
+	st := core.NewState("history-native", limits)
+	if _, err := led.Replay(st); err != nil {
+		t.Fatal("setup:", err)
+	}
+	actor := st.Agents[f.ids[recipient]]
+	if st.Serial != before || actor == nil || actor.Status != core.StatusDormant || st.Messages[parent] == nil || st.Messages[parent].DeliveredAt != 0 {
+		t.Fatalf("history observation woke a sleeping row or advanced durable/read state: before=%d after=%d actor=%+v message=%+v", before, st.Serial, actor, st.Messages[parent])
+	}
+}
