@@ -28,6 +28,9 @@ var sharedDiskTest []byte
 //go:embed activity.go.txt
 var activityTest []byte
 
+//go:embed restated.go.txt
+var restatedTest []byte
+
 func main() {
 	if err := runSelected(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -36,6 +39,9 @@ func main() {
 }
 
 func runSelected() error {
+	if os.Getenv("DIBS_HISTORY_EXPERIMENT") == "restated-acceptance" {
+		return runRestated()
+	}
 	if os.Getenv("DIBS_HISTORY_EXPERIMENT") == "wiring-old" {
 		return runOldWiring()
 	}
@@ -43,6 +49,29 @@ func runSelected() error {
 		return runSharedDisk()
 	}
 	return runAcceptance()
+}
+
+func runRestated() (result error) {
+	if err := verifySource(); err != nil {
+		return err
+	}
+	trust := exec.Command("mise", "trust")
+	trust.Dir, trust.Stdout, trust.Stderr = "source", os.Stdout, os.Stderr
+	if err := trust.Run(); err != nil {
+		return err
+	}
+	if err := os.WriteFile("source/internal/ledger/history_restated_acceptance_test.go", restatedTest, 0o600); err != nil {
+		return err
+	}
+	defer func() { result = errors.Join(result, unchangedSource()) }()
+	// Keep the original generator, boot/heap gates and warming sampler verbatim.
+	// The explicit new product criterion lives in a separate real-door fixture.
+	for _, arm := range []string{"generate", "baseline", "baseline-repeat-1", "baseline-repeat-2", "production"} {
+		if err := originalProbe(arm, "TestMailHistoryProductionProbe"); err != nil {
+			return err
+		}
+	}
+	return originalProbe("", "TestHistoryRestatedAcceptance")
 }
 
 func runOldWiring() (result error) {

@@ -1,0 +1,228 @@
+package ledger
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
+	"runtime/metrics"
+	"slices"
+	"strconv"
+	"testing"
+	"time"
+
+	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/engine"
+)
+
+type acceptanceRuntime struct {
+	Assist  float64  `json:"gc_assist_cpu_seconds"`
+	Buckets []string `json:"scheduler_buckets_seconds"`
+	Counts  []uint64 `json:"scheduler_counts"`
+}
+
+func acceptanceRuntimeSnapshot(t *testing.T) acceptanceRuntime {
+	t.Helper()
+	values := []metrics.Sample{
+		{Name: "/cpu/classes/gc/mark/assist:cpu-seconds"},
+		{Name: "/sched/latencies:seconds"},
+	}
+	metrics.Read(values)
+	if values[0].Value.Kind() != metrics.KindFloat64 || values[1].Value.Kind() != metrics.KindFloat64Histogram {
+		t.Fatal("setup: required runtime metrics unavailable")
+	}
+	histogram := values[1].Value.Float64Histogram()
+	r := acceptanceRuntime{Assist: values[0].Value.Float64(), Counts: slices.Clone(histogram.Counts)}
+	for _, bound := range histogram.Buckets {
+		// Histogram endpoints include infinity, which JSON numbers cannot encode.
+		r.Buckets = append(r.Buckets, strconv.FormatFloat(bound, 'g', -1, 64))
+	}
+	return r
+}
+
+func acceptanceRuntimeDelta(t *testing.T, begin, end acceptanceRuntime) acceptanceRuntime {
+	t.Helper()
+	if !slices.Equal(begin.Buckets, end.Buckets) || len(begin.Counts) != len(end.Counts) || end.Assist < begin.Assist {
+		t.Fatal("setup: runtime counter shape changed or counters went backwards")
+	}
+	delta := acceptanceRuntime{Assist: end.Assist - begin.Assist, Buckets: end.Buckets, Counts: make([]uint64, len(end.Counts))}
+	for i, value := range end.Counts {
+		if value < begin.Counts[i] {
+			t.Fatal("setup: scheduler counter went backwards")
+		}
+		delta.Counts[i] = value - begin.Counts[i]
+	}
+	return delta
+}
+
+type acceptancePhase struct {
+	Name    string            `json:"name"`
+	Samples int               `json:"samples"`
+	Seconds float64           `json:"seconds"`
+	P99     float64           `json:"p99_seconds"`
+	Runtime acceptanceRuntime `json:"runtime_delta"`
+}
+
+func TestHistoryRestatedAcceptance(t *testing.T) {
+	if os.Getenv("DIBS_HISTORY_EXPERIMENT") != "restated-acceptance" {
+		t.Skip("hosted explicit requirement revision 57658")
+	}
+	count, err := strconv.Atoi(os.Getenv("DIBS_HISTORY_PROBE_RECORDS"))
+	if err != nil || (count != 1_000_000 && count != 2_000_000) {
+		t.Fatal("setup: invalid fixture count", err)
+	}
+	dir := ".history-production-probe"
+	box, err := LoadOrCreateKey(filepath.Join(dir, "key"))
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	path := copyHistoryProbeLedger(t, filepath.Join(dir, "ledger.jsonl"), filepath.Join(dir, "paired.ledger.jsonl"))
+	l, err := Open(path, "history-probe", box)
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	defer func() { _ = l.Close() }()
+	st := core.NewState("history-probe", core.DefaultLimits())
+	n, err := l.Replay(st)
+	if err != nil || n != count || st.Serial != uint64(count) {
+		t.Fatal("setup: actual Replay", n, st.Serial, err)
+	}
+	if actor := st.Agents["party-00"]; actor == nil || actor.Token != "party-00" {
+		t.Fatal("setup: replay did not preserve fixture actor")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
+	defer cancel()
+	eng := engine.New(st, l, nil)
+	joined := make(chan struct{})
+	go func() { eng.Run(ctx); close(joined) }()
+	defer func() { cancel(); <-joined }()
+	if _, _, err := eng.SubscribeInfo(ctx, ""); err != nil {
+		t.Fatal("setup: actual writer startup", err)
+	}
+	runtime.GC()
+	control := acceptanceMeasure(t, ctx, eng, l, "control", time.Now(), acceptanceRuntimeSnapshot(t))
+	if m := l.mail.Measurement(); m.Started || m.Ready || m.Failed {
+		t.Fatal("setup: control started history", m)
+	}
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	srv.Listener = l.mail.ServingListener(ctx, srv.Listener)
+	begin := acceptanceRuntimeSnapshot(t)
+	started := time.Now()
+	srv.Start()
+	defer srv.Close()
+	res, err := srv.Client().Get(srv.URL)
+	if err != nil {
+		t.Fatal("setup: real first Accept", err)
+	}
+	_ = res.Body.Close()
+	warm := acceptanceMeasure(t, ctx, eng, l, "warming", started, begin)
+	if !l.mail.Measurement().Ready || l.mail.Measurement().Failed {
+		t.Fatal("setup: builder did not complete")
+	}
+	// No forced GC between warming and steady state: production does not do it.
+	steady := acceptanceMeasure(t, ctx, eng, l, "post-ready-30s", time.Now(), acceptanceRuntimeSnapshot(t))
+	warmBound, steadyBound := max(3*control.P99, .025), max(2*control.P99, .010)
+	raw, err := json.Marshal(map[string]any{
+		"records": count, "repeat": os.Getenv("DIBS_HISTORY_REPEAT"), "requirement_owner_message": 57658,
+		"control": control, "warming": warm, "steady": steady,
+		"warm_bound_seconds": warmBound, "steady_bound_seconds": steadyBound,
+		"warm_pass": warm.P99 <= warmBound, "steady_pass": steady.P99 <= steadyBound,
+		"original_56794_warm_pass": warm.P99 <= max(2*control.P99, .010),
+		"metrics_scope":            "process-wide phase deltas; correlation, not writer-cause attribution",
+		"representation":           l.mail.Measurement(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("HISTORY_RESTATED_ACCEPTANCE %s", raw)
+	if warm.P99 > warmBound {
+		t.Error("warming writer p99 exceeds explicit revised 57658 bound")
+	}
+	if steady.P99 > steadyBound {
+		t.Error("post-ready writer p99 exceeds 30-second steady-state bound")
+	}
+	runtime.KeepAlive(eng)
+}
+
+func acceptanceMeasure(t *testing.T, ctx context.Context, eng *engine.Engine, l *Ledger,
+	name string, started time.Time, begin acceptanceRuntime,
+) acceptancePhase {
+	t.Helper()
+	tick := time.NewTicker(2 * time.Millisecond)
+	defer tick.Stop()
+	var calls []float64
+	var mem runtime.MemStats
+	for {
+		runtime.ReadMemStats(&mem) // same original observer, before timed Do
+		m := l.mail.Measurement()
+		if m.Failed {
+			t.Fatal("setup: history failed", m)
+		}
+		elapsed := time.Since(started)
+		switch name {
+		case "control":
+			if m.Started || m.Ready {
+				t.Fatal("setup: no-warm control began history")
+			}
+			if len(calls) == 2048 {
+				return finishAcceptancePhase(t, name, started, begin, calls)
+			}
+		case "warming":
+			if m.Ready {
+				if len(calls) < 100 {
+					t.Fatal("setup: too few actual warming operations")
+				}
+				return finishAcceptancePhase(t, name, started, begin, calls)
+			}
+			if elapsed >= 5*time.Minute {
+				t.Fatal("warming did not complete within existing five-minute bound")
+			}
+		case "post-ready-30s":
+			if !m.Ready {
+				t.Fatal("setup: ready index regressed")
+			}
+			if elapsed >= 30*time.Second {
+				if len(calls) < 1000 {
+					t.Fatal("setup: insufficient post-ready operations")
+				}
+				return finishAcceptancePhase(t, name, started, begin, calls)
+			}
+		default:
+			t.Fatal("setup: unknown phase")
+		}
+		if err := eng.SetRateTokens(ctx, "party-00", 30); err != nil {
+			t.Fatal("setup:", err)
+		}
+		at := time.Now()
+		res, err := eng.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: "party-00"})
+		calls = append(calls, time.Since(at).Seconds())
+		if err != nil || res["error"] != nil {
+			t.Fatal("setup: actual coordination op", err, res)
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("setup:", ctx.Err())
+		case <-tick.C:
+		}
+	}
+}
+
+func finishAcceptancePhase(t *testing.T, name string, started time.Time,
+	begin acceptanceRuntime, calls []float64,
+) acceptancePhase {
+	t.Helper()
+	end := acceptanceRuntimeSnapshot(t)
+	slices.Sort(calls)
+	if len(calls) == 0 {
+		t.Fatal("setup: empty phase")
+	}
+	return acceptancePhase{
+		Name: name, Samples: len(calls), Seconds: time.Since(started).Seconds(),
+		P99: calls[(len(calls)-1)*99/100], Runtime: acceptanceRuntimeDelta(t, begin, end),
+	}
+}

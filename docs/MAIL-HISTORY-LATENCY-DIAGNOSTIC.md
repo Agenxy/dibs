@@ -1,6 +1,32 @@
 # Paired writer-latency cause measurement (disposable, never merge)
 
-ACTIVE original acceptance: source e771d2f, three fresh jobs each at1M and2M.
+ACTIVE requirement revision57658: sourcee771, six NEW fresh jobs under the
+explicitly looser warm-up bound max(3*control p99,25ms), plus a NEW 30-second
+post-ready bound max(2*control p99,10ms), actual completion and phase GC-assist/
+scheduler histograms. The original checker is retained unchanged. This is a
+new product requirement owned by the architect, not a retrospective pass or
+an established cause. See MAIL-HISTORY-LATENCY-REQUIREMENTS.md for the rationale,
+authority, measurement doors and limits of process-wide correlations. Original
+resource/generator/warming tests remain verbatim; new criterion/metrics live
+in a separate actual Open/Replay/Engine/first-Accept/control/warm/30s fixture.
+
+Completed original candidate acceptance5c76/37556196383: FAILURE1/6. All
+six resource tests EXIT0; the external56794 latency assertion fails1Mrepeat3:
+
+| Records/repeat | Control p99 ms | Warm p99 ms | Original bound ms | Result |
+|---|---:|---:|---:|---|
+| 1M/1 | 1.726964 | 1.709186 | 10 | PASS |
+| 1M/2 | 6.719631 | 12.950692 | 13.439262 | PASS |
+| 1M/3 | 2.800758 | 15.158769 | 10 | FAIL |
+| 2M/1 | 0.590664 | 0.758087 | 10 | PASS |
+| 2M/2 | 0.628237 | 0.663593 | 10 | PASS |
+| 2M/3 | 0.423749 | 0.447444 | 10 | PASS |
+
+Failedjob112582877089 collected no phase/stage evidence. Its GC/scheduling/
+I/O cause is unknown, and this table remains under the original criterion.
+Original memory/boot PASS and synthetic GREEN did not satisfy that criterion.
+
+Historical original acceptance: source e771d2f, three fresh jobs each at1M and2M.
 The unchanged original generator/resource/warming tests and separate2048-op
 no-warm control run verbatim. All tracked source bytes must remain unchanged;
 original memory/boot gates and max(2*control p99,10ms) writer bound must pass

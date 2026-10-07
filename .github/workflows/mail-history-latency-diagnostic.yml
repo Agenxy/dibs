@@ -1,4 +1,4 @@
-name: mail-history original acceptance three fresh runners
+name: mail-history explicit startup and steady acceptance
 
 on:
   pull_request:
@@ -22,6 +22,7 @@ jobs:
       DIBS_HISTORY_PROBE_RECORDS: ${{ matrix.records }}
       DIBS_HISTORY_PROBE_CASE: simple
       DIBS_HISTORY_REPEAT: ${{ matrix.repeat }}
+      DIBS_HISTORY_EXPERIMENT: restated-acceptance
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -32,5 +33,5 @@ jobs:
         with:
           version: 2026.7.7
           experimental: true
-      - name: Original unchanged resource probe with external paired writer bound
+      - name: Original resource gates then explicit startup and 30-second steady bounds
         run: mise exec -- go run ./tools/historylatency
