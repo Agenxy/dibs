@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	candidate   = "77199e661395da932e2d5c77b07e3df3c182db02"
+	candidate   = "359ba2fe4df6d1c9d4a8ed555c55e1040a05cc0f"
 	beforeAPI   = "e771d2f6603cbed768025a1107615c524669c02b"
 	beforeBytes = "c241fe34f3b50d0b67634c297741ee3fadadb237"
 	beforeCost  = "240e99d19789de3a186aab7befe52ce3173dbcea"
@@ -42,22 +42,8 @@ func main() {
 }
 
 func run() error {
-	if err := verify("source", candidate); err != nil {
+	if err := prepareSources(); err != nil {
 		return err
-	}
-	if err := verify("old", beforeAPI); err != nil {
-		return err
-	}
-	if err := verify("old-seek", beforeBytes); err != nil {
-		return err
-	}
-	if err := verify("old-cost", beforeCost); err != nil {
-		return err
-	}
-	for _, dir := range []string{"source", "old", "old-seek", "old-cost"} {
-		if _, err := command(dir, "mise", "trust"); err != nil {
-			return err
-		}
 	}
 	expected, err := testNames("source", []string{
 		"internal/mailhistory/query_native_test.go",
@@ -82,12 +68,9 @@ func run() error {
 		}
 	}
 	fmt.Printf("HISTORY_API_BASELINE source=%s tests=%d green=true\n", candidate, len(expected))
-	name := "TestMailHistoryNativeSmallBodySurvivesLargeValidSeekInterval"
-	normal, normalExit, normalErr := testMode("old-cost", "^"+name+"$", false)
-	if normalErr != nil || normalExit != nil || normal[name].action != "pass" {
-		return errors.Join(normalErr, normalExit, errors.New("original non-race span cost arm did not pass"))
+	if err := normalSpanCost(); err != nil {
+		return err
 	}
-	fmt.Printf("HISTORY_NATIVE_COST source=%s race=false test=%s pass=true\n", beforeCost, name)
 	if err := oldProof(); err != nil {
 		return err
 	}
@@ -100,6 +83,37 @@ func run() error {
 		}
 	}
 	return verify("source", candidate)
+}
+
+func prepareSources() error {
+	if err := verify("source", candidate); err != nil {
+		return err
+	}
+	if err := verify("old", beforeAPI); err != nil {
+		return err
+	}
+	if err := verify("old-seek", beforeBytes); err != nil {
+		return err
+	}
+	if err := verify("old-cost", beforeCost); err != nil {
+		return err
+	}
+	for _, dir := range []string{"source", "old", "old-seek", "old-cost"} {
+		if _, err := command(dir, "mise", "trust"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func normalSpanCost() error {
+	name := "TestMailHistoryNativeSmallBodySurvivesLargeValidSeekInterval"
+	normal, normalExit, normalErr := testMode("old-cost", "^"+name+"$", false)
+	if normalErr != nil || normalExit != nil || normal[name].action != "pass" {
+		return errors.Join(normalErr, normalExit, errors.New("original non-race span cost arm did not pass"))
+	}
+	fmt.Printf("HISTORY_NATIVE_COST source=%s race=false test=%s pass=true\n", beforeCost, name)
+	return nil
 }
 
 func verify(dir, sha string) error {
