@@ -56,10 +56,9 @@ type Evidence struct {
 	// collision: two agents can be on different tickets and still edit the same
 	// file, which is the most expensive collision there is.
 	Contradictory []string `json:"contradictory,omitempty"`
-	// Complementary records that the two agents named different ROLES on the same
-	// work: implement against review. A shared identifier is then the process
-	// working, not a duplication, and telling the reviewer to stand down would be
-	// exactly wrong.
+	// Complementary records different roles or structural coordination on shared
+	// request/question refs. The shared identifier then describes the process
+	// working rather than duplicate implementation.
 	Complementary bool `json:"complementary,omitempty"`
 	// Labels: shared refs that name an intention. Reported because they are
 	// genuine context, and never acted on: two agents can want main green while
@@ -295,7 +294,7 @@ func EvidenceBetween(
 		}
 	}
 	ev.Contended = sharedStrings(a.Holds, b.Holds)
-	if Complementary(a.Activity, b.Activity) {
+	if Complementary(a.Activity, b.Activity) || sharedWaitingRefs(a, b) {
 		ev.Complementary = true
 	}
 	for _, r := range a.Refs {

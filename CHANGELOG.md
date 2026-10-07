@@ -46,6 +46,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Agents referring to the same request as its requester and doer, or waiting
+  on a shared question or request, now receive a coordination hint instead of
+  a duplicate-work warning. Unrelated shared objectives still warn.
+
 - Missing-recipient hints suggest close spelling matches first and explicitly
   count omitted agents with a `board` call when the roster exceeds eight names.
   A bounded roster no longer reads as the complete set of reachable agents.

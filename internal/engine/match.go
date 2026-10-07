@@ -608,7 +608,7 @@ const (
 func declarationOf(op *core.Op) core.Slot {
 	return core.Slot{
 		Text: op.Text, Dirs: op.Dirs, Refs: op.Refs,
-		Activity: op.Activity, Holds: op.Holds,
+		Activity: op.Activity, Holds: op.Holds, Waiting: op.Waiting,
 		// The coordinate systems this declaration was scored in, so the match
 		// compares it to a peer's slot inside one they share. Issue #39.
 		Index: op.Index, Footprints: op.Footprints,

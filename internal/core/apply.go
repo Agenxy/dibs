@@ -1193,12 +1193,12 @@ func (s *State) applySetSlot(l *Agent, op *Op) (Result, []Event, error) {
 	// slot is always set (we never block someone from declaring work) but
 	// BOTH sides learn immediately that two agents intend the same scope, which
 	// is the earliest honest moment to catch duplicated effort.
-	overlaps := s.overlapsFor(op.Refs, op.Dirs, l.ID)
+	overlaps := s.overlapsForSlot(Slot{Refs: op.Refs, Dirs: op.Dirs, Waiting: op.Waiting}, l.ID)
 	complementary := 0
 	for i := range overlaps {
 		o := &overlaps[i]
-		o.Complementary = Complementary(op.Activity, o.Activity)
-		if o.Signal == SignalSameObjective && o.Complementary {
+		o.Complementary = o.Complementary || Complementary(op.Activity, o.Activity)
+		if (o.Signal == SignalSameObjective || o.Signal == SignalCoordination) && o.Complementary {
 			complementary++
 		}
 	}
@@ -1260,8 +1260,9 @@ func (s *State) applySetSlot(l *Agent, op *Op) (Result, []Event, error) {
 			"about to duplicate its work. Read its slot, then message it (question/handoff) to " +
 			"split or stand down. This is the measured failure; do not just proceed."
 	case complementary > 0:
-		res["note"] = "the same work item, with complementary roles: review and implementation " +
-			"coordinate here rather than duplicate each other. Read the peer's slot and exchange the artifact and verdict."
+		res["note"] = "shared coordination or complementary roles on the same work item: " +
+			"coordinate here rather than duplicate each other. Read the peer's slot and " +
+			"exchange status, the artifact or verdict."
 	case len(overlaps) > 0:
 		res["note"] = "other agents are active on these paths. Concurrent edits are normal: this is " +
 			"awareness, not a conflict. Coordinate only if your changes are semantically incompatible."
