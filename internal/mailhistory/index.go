@@ -181,7 +181,8 @@ func (i *Index) Measurement() Measurement {
 	defer i.viewMu.RUnlock()
 	m.Units, m.Blocks, m.Conversations = i.codec.units, len(i.codec.blocks), i.serials.n
 	m.Parties, m.RawTailCapacity = len(i.parties), cap(i.codec.tail)
-	m.Anchors, m.AnchorCapacity, m.ScratchCapacity = i.anchors.n, len(i.anchors.segments)*anchorSegment, cap(i.codec.scratch)
+	m.Anchors, m.AnchorCapacity = i.anchors.n, len(i.anchors.segments)*anchorSegment
+	m.ScratchCapacity = cap(i.codec.scratch)
 	for _, p := range i.parties {
 		m.References += p.refs.n
 		m.Prefixes += len(p.inherited)
