@@ -15,7 +15,7 @@ import (
 	"strings"
 )
 
-const acceptedSource = "f1d8d3ce37b34635767d97d820c9f072e4da39e7"
+const acceptedSource = "e771d2f6603cbed768025a1107615c524669c02b"
 
 const oldSource = "a709e2746f4522591a112aefa0cace11e14e5687"
 

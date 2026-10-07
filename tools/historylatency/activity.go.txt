@@ -81,13 +81,21 @@ func checkHistoryWriterDoor(t *testing.T, failedSync bool) {
 	joined := make(chan struct{})
 	go func() { eng.Run(ctx); close(joined) }()
 	defer func() { cancel(); <-joined }()
+	if _, _, err := eng.SubscribeInfo(ctx, ""); err != nil {
+		t.Fatal("setup: startup barrier", err)
+	}
+	writes, syncs := f.writes.Load(), f.syncs.Load()
 	result, err := eng.Do(ctx, &core.Op{
 		Kind: core.OpRegister, Name: "activity", NewToken: "activity", PID: 1,
 		Nonce: "history-activity-real-append", AgentKind: core.KindPersistent,
 		V7Semantics: true, Agent: &core.AgentInfo{HostID: "fixture-host"},
 	})
-	if err != nil || result["error"] != nil || f.writes.Load() != 1 || f.syncs.Load() != 1 {
+	if err != nil || result["error"] != nil || f.writes.Load() != writes+1 || f.syncs.Load() != syncs+1 {
 		t.Fatal("setup: real writer registration did not Write and Sync once", err, result)
+	}
+	token, ok := result["token"].(string)
+	if !ok || token == "" {
+		t.Fatal("setup: registration did not return its minted token")
 	}
 	if !failedSync {
 		if !f.writeBusy.Load() || !f.syncBusy.Load() || historyBusyThroughDoor(l) {
@@ -99,7 +107,7 @@ func checkHistoryWriterDoor(t *testing.T, failedSync bool) {
 	// the same ledger API's error exit with a real folded op and failed Sync.
 	cancel()
 	<-joined
-	op := &core.Op{Kind: core.OpAckBoard, Token: "activity"}
+	op := &core.Op{Kind: core.OpAckBoard, Token: token}
 	at := time.Now()
 	if res, _, err := st.Apply(op, at); err != nil || res["error"] != nil {
 		t.Fatal("setup: actual fold before failed append", err, res)

@@ -1,6 +1,6 @@
 # Paired writer-latency cause measurement (disposable, never merge)
 
-ACTIVE priority57442: candidate productionf1d8d3c is tested with the SAME
+ACTIVE priority57442: candidate productione771d2f is tested with the SAME
 shared disk costs and bound below, at1M/2M paced and1M back-to-back. Both
 Append exits are checked through real Open/Replay/Engine.Do and native
 Write/Sync. A private atomic observer interface allows identical guards to
@@ -8,6 +8,15 @@ run against olda709 without referring to missing fields at compilation;
 old proof must fail both intended assertions AFTER actual operation setup.
 The native file port is now part of production; fixed-source tests need no
 file-field overlay. Old source gets only the prior two file seams widened.
+Source57542 accepted the non-test fix atf1d8d3c. Candidatee771 keeps that fix
+unchanged, corrects the fixture's startup counter fence and returned token,
+and composes actual main96bf644 (#397/#401), resolving only CHANGELOG by
+retaining both entries. PriorPR394 had a main conflict and no checks started.
+Coordinatorb815/run37555401237 failed fixture setup before any model run:
+engine startup also appends, so counts must be fenced after SubscribeInfo,
+and the real register handler mints its own token. Those failures are no
+latency or old-wiring evidence; they are preserved and corrected in both
+candidate and identical old guard. No cost, threshold or model change.
 The builder must finish under the original five-minute context with back-to-
 back writer calls. Wall time, writer device queueing and largest native read
 are reported; actual reads over64KiB fail. No costs/bounds are retuned.
