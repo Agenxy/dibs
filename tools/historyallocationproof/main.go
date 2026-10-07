@@ -31,6 +31,9 @@ func main() {
 }
 
 func run() error {
+	if len(os.Args) == 2 && os.Args[1] == "noise" {
+		return measureNoise()
+	}
 	for _, s := range stages {
 		if err := prepare(s); err != nil {
 			return err

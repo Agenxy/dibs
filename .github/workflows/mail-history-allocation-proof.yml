@@ -34,3 +34,25 @@ jobs:
           experimental: true
       - name: Same-runner resource receipts for each allocation stage
         run: mise exec -- go run ./tools/historyallocationproof
+  noise:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: 6e9707a8e6ccefe439e2deb4009db0b77f56bfa0
+          path: allocation-parser
+      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+        with:
+          version: 2026.7.7
+          experimental: true
+      - name: Five paired native repeats, unchanged heap ceiling
+        run: mise exec -- go run ./tools/historyallocationproof noise
+      - name: Retain heap allocation evidence
+        if: always()
+        uses: actions/upload-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.6.2
+        with:
+          name: history-large-body-heap-noise
+          path: allocation-parser/internal/ledger/.history-production-probe/allocation-heap-*
+          if-no-files-found: error
