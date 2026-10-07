@@ -1,9 +1,9 @@
-// historylatency runs the unchanged production resource probe on fresh hosted
-// runners. Its only overlay is a separate no-warm control test; production and
-// the original resource/warming tests remain byte-identical to the pinned SHA.
+// historylatency runs hosted latency experiments against an immutable source.
+// Production and its original resource tests remain byte-identical to that SHA.
 package main
 
 import (
+	"bytes"
 	_ "embed"
 	"encoding/json"
 	"errors"
@@ -20,11 +20,104 @@ const acceptedSource = "a709e2746f4522591a112aefa0cace11e14e5687"
 //go:embed control.go.txt
 var controlTest []byte
 
+//go:embed shared_disk.go.txt
+var sharedDiskTest []byte
+
 func main() {
-	if err := runAcceptance(); err != nil {
+	if err := runSelected(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+func runSelected() error {
+	if os.Getenv("DIBS_HISTORY_EXPERIMENT") == "shared-disk" {
+		return runSharedDisk()
+	}
+	return runAcceptance()
+}
+
+func runSharedDisk() (result error) {
+	if err := verifySource(); err != nil {
+		return err
+	}
+	trust := exec.Command("mise", "trust")
+	trust.Dir, trust.Stdout, trust.Stderr = "source", os.Stdout, os.Stderr
+	if err := trust.Run(); err != nil {
+		return err
+	}
+	if err := os.WriteFile("source/internal/ledger/history_shared_disk_test.go", sharedDiskTest, 0o600); err != nil {
+		return err
+	}
+	// Only widen two concrete file fields for the test double. The real Open,
+	// Replay, Append/Sync, serving trigger and builder remain on their usual path.
+	// Restore and verify tracked source even when the probe returns RED.
+	restore, err := diskFileSeams()
+	if err != nil {
+		return err
+	}
+	defer func() { result = errors.Join(result, restore(), unchangedSource()) }()
+	if err := originalProbe("generate", "TestMailHistoryProductionProbe"); err != nil {
+		return err
+	}
+	return originalProbe("", "TestHistorySharedDiskDiagnostic")
+}
+
+func diskFileSeams() (func() error, error) {
+	paths := []string{"source/internal/ledger/ledger.go", "source/internal/ledger/mail_history_bootstrap.go"}
+	originals := make([][]byte, len(paths))
+	widened := make([][]byte, len(paths))
+	for i, path := range paths {
+		// #nosec G304 -- the two fixed source paths immediately above
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		originals[i] = raw
+		widened[i], err = widenDiskField(raw, i == 1)
+		if err != nil {
+			return nil, err
+		}
+	}
+	restore := func() error { return restoreDiskFields(paths, originals, widened) }
+	for i, path := range paths {
+		// #nosec G304 -- the two fixed source paths immediately above
+		if err := os.WriteFile(path, widened[i], 0o600); err != nil {
+			return nil, errors.Join(err, restore())
+		}
+	}
+	return restore, nil
+}
+
+func widenDiskField(raw []byte, bootstrap bool) ([]byte, error) {
+	old := "f        *os.File"
+	replacement := "f interface { io.ReadWriteSeeker; io.ReaderAt; " +
+		"Sync() error; Close() error; Truncate(int64) error }"
+	if bootstrap {
+		old, replacement = "file    *os.File", "file    io.ReaderAt"
+		if bytes.Count(raw, []byte("\n\t\"os\"")) != 1 {
+			return nil, errors.New("setup: unexpected bootstrap os import")
+		}
+		raw = bytes.Replace(raw, []byte("\n\t\"os\""), nil, 1)
+	}
+	if bytes.Count(raw, []byte(old)) != 1 {
+		return nil, errors.New("setup: unexpected concrete file seam")
+	}
+	return bytes.Replace(raw, []byte(old), []byte(replacement), 1), nil
+}
+
+func restoreDiskFields(paths []string, originals, widened [][]byte) error {
+	var errs []error
+	for i, path := range paths {
+		// #nosec G304 -- only the fixed source paths in diskFileSeams reach here
+		raw, err := os.ReadFile(path)
+		if err != nil || !bytes.Equal(raw, widened[i]) {
+			errs = append(errs, errors.New("setup: widened source changed during diagnostic"), err)
+		}
+		// #nosec G304 -- only the fixed source paths in diskFileSeams reach here
+		errs = append(errs, os.WriteFile(path, originals[i], 0o600))
+	}
+	return errors.Join(errs...)
 }
 
 func runAcceptance() error {

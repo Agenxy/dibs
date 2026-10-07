@@ -1,15 +1,54 @@
 # Paired writer-latency cause measurement (disposable, never merge)
 
-ACTIVE priority57180/57202: acceptance is the ORIGINAL unmodifieda709
-resource probe, three times on fresh runners at1M and2M (six independent
-jobs). All six must pass the writer bound and the original memory/boot gate.
-No failure reproduced across the controlled experiments, so stop the pause
-study and stop speculating about a cause. Pause run37552758193 and redundant
-sampler run37552519814 are terminal CANCELLED; their results are not evidence.
-The paused fixture and the prior sampler descriptions below are historical
-and inactive. No trace study, acceptance sampler fix or tuning is performed.
+ACTIVE priority57332 supersedes the unrun fixed-sleep proposal57287. One
+test-only disk service budget is shared by actual builder ReadAt, writer Write
+and writer Sync on each of two fresh hosted runners (1M/2M). It has no burst:
+FIFO reservations cost bytes/20MiB/s plus 0.5ms per read/write and 14ms per
+flush. No-warm should land near 15ms. Identical disk costs in both arms; no
+artificial workload, writer failure or index lock is introduced. A test-only
+file wrapper reserves capacity then calls the actual native operation.
 
-The active coordinator checks exacta709 and a clean checkout, then adds only
+The coordinator widens ONLY the ledger file and bootstrap ReaderAt fields
+in a disposable hosted overlay. The wrapper is installed before real Replay,
+so configureHistory captures that same file and first serving Accept starts
+the actual builder; no manual bootstrap wiring or warming flag. Byte-exact
+overlay checks, restoration and final clean tracked diff verify the seam.
+Per-op counters assert each timed Do entered native Write and Sync once;
+zero reads before serving and exact frozen-prefix read bytes prove the reader
+uses the shared disk. Same process/fixture, original per-op heap sampler
+before timed Do, 512 no-warm ops, then all warming ops until actual readiness
+with at least 100 samples. Bound remains max(2*control p99,10ms); violations
+fail the test. No production commit, original resource test change or tuning.
+This is a synthetic shared device; its RED would prove the contention model,
+not retrospectively prove the ended failing runner's cause. A passing result
+will be reported as such. The simple fixed-sleep fixture was never run.
+
+Original acceptance coordinator4e635b9, run37553064830: COMPLETED FAILURE.
+Five of six jobs pass; 1M repeat2 fails the external writer bound while ALL
+six original memory/startup tests pass. The source remains exact a709e274.
+
+| Records/repeat | Job | No-warm p99 ms | Warm p99 ms | Bound ms | Result |
+|---|---|---:|---:|---:|---|
+| 1M/1 | 112572852903 | 0.978552 | 1.188486 | 10 | PASS |
+| 1M/2 | 112572853012 | 15.647965 | 37.429876 | 31.295930 | FAIL |
+| 1M/3 | 112572852725 | 1.163811 | 1.325699 | 10 | PASS |
+| 2M/1 | 112572852905 | 1.883051 | 2.180935 | 10 | PASS |
+| 2M/2 | 112572852871 | 4.224905 | 6.104809 | 10 | PASS |
+| 2M/3 | 112572853131 | 0.506928 | 0.638083 | 10 | PASS |
+
+The failing runner was already slow in its no-warm arm; warming multiplies
+that p99 by 2.39. Its 2,122 warming ops span 6.940s; incremental heap is
+25.813376B/record and peak above steady is 24,681,392B, within original caps.
+No stage or I/O evidence was collected on that exact runner, so reader-I/O
+competition remains a hypothesis, not a measured cause. The runner has ended.
+Prior passing diagnostics cannot replace measurements of this failure.
+
+The original acceptance description below is historical. The paused/sampler
+fixtures also remain historical and inactive. Pause run37552758193 and
+redundant sampler37552519814 are terminal CANCELLED, not evidence. No trace
+study, acceptance sampler change, production tuning or local execution.
+
+The original acceptance coordinator checked exacta709 and a clean checkout, then added only
 a separate no-warm control TEST. Every tracked source file, including the
 original resource and warming tests, must remain unchanged. The original
 generator, three heap/boot baselines and production probe run verbatim. A

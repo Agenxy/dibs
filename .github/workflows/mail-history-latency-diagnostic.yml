@@ -1,4 +1,4 @@
-name: mail-history original acceptance three fresh runners
+name: mail-history shared disk contention diagnostic
 
 on:
   pull_request:
@@ -17,11 +17,11 @@ jobs:
       fail-fast: false
       matrix:
         records: [1000000, 2000000]
-        repeat: [1, 2, 3]
     env:
       DIBS_HISTORY_PROBE_RECORDS: ${{ matrix.records }}
       DIBS_HISTORY_PROBE_CASE: simple
-      DIBS_HISTORY_REPEAT: ${{ matrix.repeat }}
+      DIBS_HISTORY_REPEAT: 1
+      DIBS_HISTORY_EXPERIMENT: shared-disk
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -32,5 +32,5 @@ jobs:
         with:
           version: 2026.7.7
           experimental: true
-      - name: Original unmodified probe and external same-runner writer-bound assertion
+      - name: Matched arms with one throttled disk for real ReadAt Write and Sync
         run: mise exec -- go run ./tools/historylatency
