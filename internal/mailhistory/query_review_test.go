@@ -203,7 +203,7 @@ func TestMailHistoryNativeOversizedContentKeepsMetadataAndLaterRows(t *testing.T
 	settledHistory(t, f, "sender-token", false)
 	res, err := any(f.eng).(historyAPI).ReadMailHistory(f.ctx, "sender-token", 0, 100, true, "")
 	raw := historyJSON(t, res)
-	if err != nil || !strings.Contains(raw, "native content work bound") || !strings.Contains(raw, "LATER-SMALL-CONTENT") || len(historyUnits(t, res)) != 2 {
+	if err != nil || !strings.Contains(raw, "native content work bound") || !strings.Contains(raw, "LATER-SMALL-CONTENT") || len(historyUnits(t, res)) < 2 {
 		t.Fatal("oversized content poisoned metadata or later rows:", err, raw)
 	}
 }

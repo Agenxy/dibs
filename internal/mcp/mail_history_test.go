@@ -253,20 +253,22 @@ func TestMailHistoryRealMCPForeignAndForgedCursorsRefuseWithoutRows(t *testing.T
 	}
 	for _, token := range []string{stranger, recipient} {
 		res := toolCall(t, srv, "mail_history", map[string]any{"token": token, "cursor": cursor, "limit": 1})
-		if token == stranger && (res["__is_error"] != true || res["code"] != "E_HISTORY_CURSOR" || res["units"] != nil) {
+		if res["__is_error"] != true || res["code"] != "E_HISTORY_CURSOR" || res["units"] != nil {
 			t.Fatal("foreign-party cursor disclosed a row:", res)
-		}
-		if token == recipient && res["__is_error"] == true {
-			t.Fatal("same-conversation recipient cursor should authorize independently", res)
 		}
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(cursor)
 	if err != nil {
 		t.Fatal("setup:", err)
 	}
+	var original map[string]any
+	if err := json.Unmarshal(raw[:len(raw)-16], &original); err != nil {
+		t.Fatal("setup: authenticated cursor fields", err)
+	}
+	fields, tag := raw[:len(raw)-16], raw[len(raw)-16:]
 	for _, field := range []string{"v", "g", "u", "r", "p"} {
 		var c map[string]any
-		if err := json.Unmarshal(raw, &c); err != nil {
+		if err := json.Unmarshal(fields, &c); err != nil {
 			t.Fatal("setup:", err)
 		}
 		switch field {
@@ -285,7 +287,7 @@ func TestMailHistoryRealMCPForeignAndForgedCursorsRefuseWithoutRows(t *testing.T
 		if err != nil {
 			t.Fatal("setup:", err)
 		}
-		res := toolCall(t, srv, "mail_history", map[string]any{"token": sender, "cursor": base64.RawURLEncoding.EncodeToString(encoded)})
+		res := toolCall(t, srv, "mail_history", map[string]any{"token": sender, "cursor": base64.RawURLEncoding.EncodeToString(append(encoded, tag...))})
 		if res["__is_error"] != true || res["code"] != "E_HISTORY_CURSOR" || res["hint"] == nil || res["units"] != nil {
 			t.Fatal("forged cursor accepted or leaked rows:", field, res)
 		}

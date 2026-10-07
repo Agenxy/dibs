@@ -135,7 +135,7 @@ func TestMailHistoryRealMCPCandidateBudgetAfterAdoption(t *testing.T) {
 	var boundary struct {
 		Reference uint64 `json:"r"`
 	}
-	if err != nil || json.Unmarshal(raw, &boundary) != nil || boundary.Reference >= 4096 {
+	if err != nil || len(raw) < 16 || json.Unmarshal(raw[:len(raw)-16], &boundary) != nil || boundary.Reference >= 4096 {
 		t.Fatal("public candidate scan exceeded SPEC bound:", cursor)
 	}
 }
