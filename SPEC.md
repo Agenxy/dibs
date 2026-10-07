@@ -1228,8 +1228,9 @@ and the first post-S0 commit starts a new interval. The native reader still
 refuses intervals over 4096 records/16 MiB without moving the writer's file
 position; a single oversized legacy record can be explicitly unavailable while its
 metadata and later rows remain available. Integrity failures still refuse the
-whole page. More than 256 inherited history sources permanently refuses only
-that incarnation with an explicit hint; other parties keep their history.
+whole page. More than 255 inherited history sources (256 including its own)
+permanently refuses only that incarnation with an explicit hint; other parties
+keep their history.
 Invalid evidence fails history closed while coordination remains usable.
 
 E_HISTORY_WARMING applies only until the initial S0 fold completes. Afterwards

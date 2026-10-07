@@ -188,6 +188,7 @@ func (e *Engine) historyRows(ctx context.Context, index *mailhistory.Index, page
 }
 
 // Keep the serialization bound independent of the page/time traversal.
+// Re-marshalling the growing page is quadratic, bounded by 100 rows and 128 KiB.
 func appendHistoryRow(res core.Result, rows []core.Result, row core.Result) ([]core.Result, bool, error) {
 	rows = append(rows, row)
 	res["units"] = rows
