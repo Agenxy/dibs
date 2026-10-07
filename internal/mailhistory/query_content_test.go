@@ -331,9 +331,24 @@ func TestMailHistoryNativeObservationDoesNotWakeOrAdvanceDurableState(t *testing
 	}
 }
 
+// Log the actual native port outcome before the engine sanitizes it. This
+// changes neither the interval, the context deadline nor the reader's result.
+type observedHistorySeek struct {
+	*ledger.Ledger
+	t *testing.T
+}
+
+func (s *observedHistorySeek) ReadHistoryOp(ctx context.Context, serial uint64, seek mailhistory.SeekRange) (*core.Op, error) {
+	started := time.Now()
+	op, err := s.Ledger.ReadHistoryOp(ctx, serial, seek)
+	s.t.Logf("HISTORY_NATIVE_SEEK serial=%d bytes=%d elapsed=%s error=%v", serial, seek.End-seek.Start.Offset, time.Since(started), err)
+	return op, err
+}
+
 func TestMailHistoryNativeSmallBodySurvivesLargeValidSeekInterval(t *testing.T) {
 	dir := t.TempDir()
-	f := nativeHistory(t, dir)
+	wrap := func(led *ledger.Ledger) engine.Ledger { return &observedHistorySeek{Ledger: led, t: t} }
+	f := nativeHistory(t, dir, wrap)
 	sender := historyIdentity(t, f, "sender")
 	recipient := historyIdentity(t, f, "recipient")
 	first := historyOp(t, f, &core.Op{Kind: core.OpSendMessage, Token: sender, To: "recipient", MsgType: core.MsgNotify, Body: "SMALL-FIRST-QUOTED"})["msg_serial"].(uint64)
@@ -365,7 +380,7 @@ func TestMailHistoryNativeSmallBodySurvivesLargeValidSeekInterval(t *testing.T) 
 	}
 	readSmall(f) // byte-bounded live capture
 	f.stop()
-	restarted := nativeHistory(t, dir)
+	restarted := nativeHistory(t, dir, wrap)
 	restarted.ids[sender] = f.ids[sender]
 	readSmall(restarted) // canonical bootstrap independently rebuilds the anchors
 }
