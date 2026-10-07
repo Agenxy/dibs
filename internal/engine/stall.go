@@ -249,16 +249,26 @@ func (e *Engine) wakeForWork(l *core.Agent, kind string) {
 
 // reportWorkStall tells whoever assigned the work, once per declaration version.
 func (e *Engine) reportWorkStall(l *core.Agent, rec workRecord, now time.Time) {
-	assigner := e.assignerOf(l.ID)
+	request := e.assignerRequest(l.ID)
 	body := stallBody(l, e.workSlotsOf(l, now), rec, now)
+	if request != nil {
+		if request.StallNotifiedDeclaration == rec.version {
+			return // the request, unlike this process's clock, remembers the notice
+		}
+		body += fmt.Sprintf(" If someone else finished request %d, withdraw it with "+
+			"respond(msg_serial:%d, disposition:\"withdraw\", body:<reason>).", request.Serial, request.Serial)
+		go e.sendRequestStallNotice(l.ID, request.Serial, rec.version, body)
+		return
+	}
+	assigner := ""
 	slog.Warn("an agent has stalled on work it declared", "agent", l.ID, "tell", assigner)
 	go e.sendStallNotice(l.ID, assigner, body)
 }
 
-// assignerOf is who gave this agent its work: the sender of the newest request
-// it approved. "" when there is none, and the notice goes to a coordinator or
+// assignerRequest is who gave this agent its work: the newest request
+// it approved. nil when there is none, and the notice goes to a coordinator or
 // the human instead.
-func (e *Engine) assignerOf(agent string) string {
+func (e *Engine) assignerRequest(agent string) *core.Message {
 	var best *core.Message
 	for _, m := range e.state.Messages {
 		if m.To != agent || m.Type != core.MsgRequest || m.State != core.MsgStateApproved || m.From == agent {
@@ -269,12 +279,12 @@ func (e *Engine) assignerOf(agent string) string {
 		}
 	}
 	if best == nil {
-		return ""
+		return nil
 	}
 	if from := e.state.Agents[best.From]; from == nil || from.Retired() {
-		return ""
+		return nil
 	}
-	return best.From
+	return best
 }
 
 func (e *Engine) sendStallNotice(agent, to, body string) {

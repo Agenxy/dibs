@@ -203,6 +203,8 @@ type Op struct {
 	MsgSerial     uint64 `json:"msg_serial,omitempty"`
 	// ContactSerial names a daemon-authored contact window, not participant mail.
 	ContactSerial uint64 `json:"contact_serial,omitempty"`
+	// The work version the daemon's stall notice describes. Frozen on disk.
+	DeclarationSerial uint64 `json:"declaration_serial,omitempty"`
 	// Zero keeps historical read_mail's read-all semantics. A bounded inline
 	// delivery records only the fully quoted prefix, never a later pointer.
 	OutcomeThroughSerial   uint64       `json:"outcome_through_serial,omitempty"`

@@ -95,6 +95,8 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 	}
 	// The op payload: the union of every tag that reached disk above.
 	wantOp := map[string]bool{
+		// Atomic daemon stall notice and its request watermark, additive only.
+		"declaration_serial": true,
 		// App-restart observation and coordinator settings are new op kinds,
 		// not reinterpretations of older fields. These names are frozen once
 		// the first restart/setting is written to the ledger.
@@ -451,7 +453,8 @@ const (
 	// Inline reads add two tags; all historical tags stay frozen.
 	// Alias release adds one tag; every historical spelling stays frozen.
 	// App restart adds four observation tags and two setting tags; none renamed.
-	frozenOpFingerprint       = "sha256:1ab266b6bae0468c"
+	// Stall notices add one declaration-version tag; every old spelling remains.
+	frozenOpFingerprint       = "sha256:d33a95197ec80125"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`
@@ -462,7 +465,8 @@ const (
 	// Task queue: nine additive message tags, no renamed/removed historical tags.
 	// Withdrawal: three additive receipt fields; all old tags unchanged.
 	// Worker review reads add one scalar; sender watermark is unchanged.
-	frozenMessageFingerprint = "sha256:2d8be0331e92dd37"
+	// Stall notices add one durable declaration-version scalar, absent historically.
+	frozenMessageFingerprint = "sha256:c616324010ca4260"
 	// The identity inside op.agent. Set when the fingerprint was added; one
 	// new tag at a time from here, never a rename.
 	frozenAgentFingerprint = "sha256:c630d3cc9f27eb95"
@@ -598,6 +602,7 @@ func TestOpKindStringsAreFrozen(t *testing.T) {
 		"OpContactEscalate":      {core.OpContactEscalate, "contact_escalated"},
 		"OpContactNotified":      {core.OpContactNotified, "contact_notified"},
 		"OpContactResolved":      {core.OpContactResolved, "contact_resolved"},
+		"OpStallNotified":        {core.OpStallNotified, "stall_notified"},
 		"OpAckBoard":             {core.OpAckBoard, "check_in"},
 		"OpUpdate":               {core.OpUpdate, "update"},
 		"OpSignOff":              {core.OpSignOff, "sign_off"},
@@ -686,6 +691,8 @@ func TestOpKindStringsAreFrozen(t *testing.T) {
 // the two op kinds above.
 func TestLedgerMessageFieldNamesAreFrozen(t *testing.T) {
 	frozen := map[string]bool{
+		// Additive durable stall-notice suppression; historical zero is unchanged.
+		"stall_notified_declaration_serial": true,
 		// Additive withdrawal receipt; existing response/progress remain intact.
 		"withdrawal_reason": true, "withdrawn_by": true, "superseded_by": true,
 		// Additive task queue state: no historical field renamed.

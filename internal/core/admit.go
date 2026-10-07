@@ -28,6 +28,9 @@ func (s *State) Admit(op *Op) error {
 	if err := s.admitContact(op); err != nil {
 		return err
 	}
+	if err := s.admitStallNotice(op); err != nil {
+		return err
+	}
 	if err := s.admitRegistrationName(op); err != nil {
 		return err
 	}

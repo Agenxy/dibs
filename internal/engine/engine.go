@@ -1088,7 +1088,7 @@ func (e *Engine) execWithReceipt(
 	if res != nil && len(addressed) > 0 {
 		res["addressed"] = e.addressedNote(op, addressed)
 	}
-	if op.Kind == core.OpSendMessage && res != nil {
+	if core.SendsMessage(op.Kind) && res != nil {
 		res["to_name"] = e.agentName(op.To)
 		if actor != nil {
 			res["from_name"] = e.agentName(actor.ID)
@@ -1110,7 +1110,7 @@ func (e *Engine) execWithReceipt(
 	// addressed to the human waits until they next open the board. On a fleet
 	// that runs for days that means "eventually, or not", while the sender's
 	// deadline runs down.
-	if op.Kind == core.OpSendMessage && res != nil {
+	if core.SendsMessage(op.Kind) && res != nil {
 		if human := e.humanIdentityLocked(); human != "" && op.To == human {
 			e.dispatchHuman(res)
 		}
