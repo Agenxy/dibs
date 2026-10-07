@@ -59,7 +59,7 @@ func (r *historyReader) ReadAt(p []byte, offset int64) (int, error) {
 		}
 		// An in-flight read cannot be recalled. At the acceptance model's
 		// 20MiB/s, 64KiB occupies 3.125ms (+0.5ms fixed cost), well below
-		// the ~30ms writer bound. The 1MiB parser buffer remains unchanged.
+		// the ~30ms writer bound. The parser uses the same bounded buffer.
 		end := min(n+historyReadBytes, len(p))
 		chunk := p[n:end]
 		got, err := r.source.ReadAt(chunk, offset+int64(n))

@@ -40,7 +40,7 @@ func (s *historyReplay) run(ctx context.Context, index *mailhistory.Index) error
 	// SectionReader uses ReadAt: the writer's append offset is never changed,
 	// and bytes appended after the frozen boot boundary cannot enter this fold.
 	input := &historyReader{source: s.file, writer: s.writer, ctx: ctx}
-	reader := bufio.NewReaderSize(io.NewSectionReader(input, 0, s.head.End), 1<<20)
+	reader := bufio.NewReaderSize(io.NewSectionReader(input, 0, s.head.End), historyReadBytes)
 	shadow := core.NewState(s.node, s.limits)
 	projector := index.ReplayProjector()
 	var scratch mailhistory.Snapshot
