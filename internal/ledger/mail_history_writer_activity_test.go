@@ -50,6 +50,12 @@ func historyBusyThroughDoor(l *Ledger) bool {
 }
 
 func TestHistoryWriterActivityThroughRealAppend(t *testing.T) {
+	t.Run("successful-append", func(t *testing.T) { checkHistoryWriterDoor(t, false) })
+	t.Run("failed-sync", func(t *testing.T) { checkHistoryWriterDoor(t, true) })
+}
+
+func checkHistoryWriterDoor(t *testing.T, failedSync bool) {
+	t.Helper()
 	dir := t.TempDir()
 	box, err := LoadOrCreateKey(filepath.Join(dir, "key"))
 	if err != nil {
@@ -83,8 +89,11 @@ func TestHistoryWriterActivityThroughRealAppend(t *testing.T) {
 	if err != nil || result["error"] != nil || f.writes.Load() != 1 || f.syncs.Load() != 1 {
 		t.Fatal("setup: real writer registration did not Write and Sync once", err, result)
 	}
-	if !f.writeBusy.Load() || !f.syncBusy.Load() || historyBusyThroughDoor(l) {
-		t.Fatal("actual Append did not hold activity through Write/Sync and release before reply")
+	if !failedSync {
+		if !f.writeBusy.Load() || !f.syncBusy.Load() || historyBusyThroughDoor(l) {
+			t.Fatal("actual Append did not hold activity through Write/Sync and release before reply")
+		}
+		return
 	}
 	// Join the actual writer before taking ownership of its State. Then drive
 	// the same ledger API's error exit with a real folded op and failed Sync.
