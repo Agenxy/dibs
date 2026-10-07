@@ -276,8 +276,7 @@ func (e *Engine) escalateContact(agent string) {
 		return
 	}
 	for _, m := range e.state.Inbox(agent) {
-		if m.State != core.MsgStatePending || m.ContactEscalatedAt != 0 ||
-			(m.Type != core.MsgQuestion && m.Type != core.MsgRequest && m.Type != core.MsgHandoff) {
+		if m.State != core.MsgStatePending || m.ContactEscalatedAt != 0 || !m.ContactEligible() {
 			continue
 		}
 		op := &core.Op{Kind: core.OpContactEscalate, MsgSerial: m.Serial}

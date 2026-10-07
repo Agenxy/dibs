@@ -53,10 +53,9 @@ func (s *State) admitContact(op *Op) error {
 	switch op.Kind {
 	case OpContactEscalate:
 		m := s.Messages[op.MsgSerial]
-		if m == nil || m.Terminal() || m.State != MsgStatePending ||
-			(m.Type != MsgQuestion && m.Type != MsgRequest && m.Type != MsgHandoff) {
+		if m == nil || m.Terminal() || m.State != MsgStatePending || !m.ContactEligible() {
 			return errf("E_BAD_CONTACT",
-				"escalate only unread, open questions, requests or handoffs",
+				"escalate only unread, open questions, requests, handoffs or high-priority notifies",
 				"message %d is not eligible", op.MsgSerial)
 		}
 		if l := s.Agents[m.To]; l == nil || l.Retired() {

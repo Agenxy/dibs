@@ -119,8 +119,24 @@ func BannerWithReceipt(title, subtitle, body string, receipt Receipt) error {
 // BannerWithDeliveryReceipt keeps native settings on the same invocation as
 // its posting receipt; a separate startup probe is not a message observation.
 func BannerWithDeliveryReceipt(title, subtitle, body string, receipt DeliveryReceipt) error {
+	return bannerWithDeliveryReceipt(title, subtitle, body, false, receipt)
+}
+
+// TimeSensitiveBannerWithReceipt requests an interrupting alert for an
+// explicitly high-priority human notify, with posting evidence when available.
+func TimeSensitiveBannerWithReceipt(title, subtitle, body string, receipt Receipt) error {
+	return TimeSensitiveBannerWithDeliveryReceipt(title, subtitle, body, stateReceipt(receipt))
+}
+
+// TimeSensitiveBannerWithDeliveryReceipt keeps delivery available without the
+// native helper, while recording that osascript cannot request interruption.
+func TimeSensitiveBannerWithDeliveryReceipt(title, subtitle, body string, receipt DeliveryReceipt) error {
+	return bannerWithDeliveryReceipt(title, subtitle, body, true, receipt)
+}
+
+func bannerWithDeliveryReceipt(title, subtitle, body string, timeSensitive bool, receipt DeliveryReceipt) error {
 	if goos == "linux" {
-		err := linuxBanner(title, subtitle, body)
+		err := linuxBannerWithUrgency(title, subtitle, body, timeSensitive)
 		if err == nil && receipt != nil {
 			receipt(ReceiptData{State: "posted"})
 		}
@@ -131,10 +147,22 @@ func BannerWithDeliveryReceipt(title, subtitle, body string, receipt DeliveryRec
 		defer cancel()
 		// #nosec G204 -- h is resolved beside this binary; the rest is data the
 		// helper reads as argv.
-		_, err := outputWithDeliveryReceipt(exec.CommandContext(ctx, h, title, subtitle, body), receipt)
+		cmd := exec.CommandContext(ctx, h, title, subtitle, body)
+		level := "0"
+		if timeSensitive {
+			level = "1"
+		}
+		cmd.Env = append(os.Environ(), "DIBS_NOTIFY_TIME_SENSITIVE="+level)
+		_, err := outputWithDeliveryReceipt(cmd, receipt)
 		return err
 	}
 	_, err := run(banner, append([]string{title, subtitle}, body)...)
+	if err == nil && timeSensitive && receipt != nil {
+		receipt(ReceiptData{
+			State: "posted", RequestedInterruptionLevel: "timeSensitive",
+			InterruptionReason: "osascript cannot request Time Sensitive",
+		}.Normalized())
+	}
 	return err
 }
 

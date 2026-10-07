@@ -69,7 +69,7 @@ func TestDoctorMeasuresNativeNotificationSettings(t *testing.T) {
 			{"banner", "banner", "enabled", "System Settings > Notifications > Dibs > Alerts", true},
 			{"silent", "none", "enabled", "System Settings > Notifications > Dibs > Alerts", true},
 			{"disabled-sensitive", "alert", "disabled", "Time Sensitive", true},
-			{"unprovisioned", "alert", "not-supported", "this build is not provisioned", false},
+			{"unprovisioned", "alert", "not-supported", "this build has no Time Sensitive entitlement", false},
 			{"old-helper", "old", "enabled", "settings are unknown", false},
 			{"malformed-helper", "malformed", "enabled", "settings are unknown", true},
 		} {

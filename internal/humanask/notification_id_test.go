@@ -18,7 +18,11 @@ func TestMain(m *testing.M) {
 			_, _ = os.Stdout.WriteString("timeSensitive=1\n")
 			os.Exit(0)
 		}
-		if os.Getenv("DIBS_NOTIFY_ID") != "dibs.msg.board-A.7" {
+		if os.Getenv("DIBS_TEST_EXPECT_PRIORITY") == "1" {
+			if os.Getenv("DIBS_NOTIFY_TIME_SENSITIVE") != "1" {
+				os.Exit(3)
+			}
+		} else if os.Getenv("DIBS_NOTIFY_ID") != "dibs.msg.board-A.7" {
 			os.Exit(3)
 		}
 		path := os.Getenv("DIBS_NOTIFY_RECEIPT")
@@ -45,6 +49,14 @@ func TestHumanQuestionPostsItsBoardScopedMessageID(t *testing.T) {
 		})
 		if err != nil || answer.Disposition != "answer" || answer.Body != "Yes" || !posted {
 			t.Fatalf("actual human presenter: %+v posted=%v error=%v", answer, posted, err)
+		}
+		t.Setenv("DIBS_TEST_EXPECT_PRIORITY", "1")
+		_, err = Ask(Message{
+			Type: core.MsgNotify, Priority: "high", From: "sender", Body: "alert",
+			Receipt: func(string) {},
+		})
+		if err != nil {
+			t.Fatalf("high notify was not Time Sensitive: %v", err)
 		}
 		return
 	}

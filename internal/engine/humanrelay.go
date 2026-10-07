@@ -27,6 +27,7 @@ import (
 type HumanNotice struct {
 	Serial    uint64               `json:"serial"`
 	Type      string               `json:"type"`
+	Priority  string               `json:"priority,omitempty"`
 	From      string               `json:"from"`
 	FromName  string               `json:"from_name,omitempty"`
 	Who       string               `json:"who,omitempty"`
@@ -102,8 +103,8 @@ func (e *Engine) enqueueHumanNotice(n HumanNotice) int {
 	return took
 }
 
-// PendingForHuman is the person's open questions and requests, for a relay
-// that has just attached: what arrived while nothing was there to show it.
+// PendingForHuman is the person's open questions and requests plus unposted
+// high-priority alerts, for a relay that has just attached.
 func (e *Engine) PendingForHuman(ctx context.Context) ([]HumanNotice, error) {
 	var out []HumanNotice
 	plans := map[uint64]contactLinkPlan{}
@@ -113,7 +114,8 @@ func (e *Engine) PendingForHuman(ctx context.Context) ([]HumanNotice, error) {
 			if m.To != human || m.Terminal() {
 				continue
 			}
-			if m.Type != core.MsgQuestion && m.Type != core.MsgRequest {
+			if m.Type != core.MsgQuestion && m.Type != core.MsgRequest &&
+				(!m.HighPriorityNotify() || e.deliveryForHuman(m).Posted) {
 				continue
 			}
 			out = append(out, e.noticeOf(m))
@@ -141,7 +143,8 @@ func (e *Engine) PendingForHuman(ctx context.Context) ([]HumanNotice, error) {
 func (e *Engine) noticeOf(m *core.Message) HumanNotice {
 	n := HumanNotice{
 		Serial: m.Serial, Type: m.Type, From: m.From, FromName: e.agentName(m.From), Body: m.Body,
-		Choices: m.Choices, Grant: m.Grant, Adopt: m.Adopt,
+		Priority: m.RequestPriority,
+		Choices:  m.Choices, Grant: m.Grant, Adopt: m.Adopt,
 		Node: e.state.NodeID,
 	}
 	if a := e.state.Agents[m.From]; a != nil {
