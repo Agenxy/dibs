@@ -107,6 +107,7 @@ func command(dir, name string, args ...string) ([]byte, error) {
 }
 
 func test(dir, selector string) (map[string]result, error, error) {
+	// #nosec G204 -- fixed mise/go argv; selector names come from the immutable fixture.
 	cmd := exec.Command("mise", "exec", "--", "go", "test", "-race", "-count=1", "-timeout=40s", "-json", "-run", selector,
 		"./internal/mailhistory", "./internal/mcp")
 	cmd.Dir = dir
@@ -171,7 +172,7 @@ func oldProof() error {
 		if err != nil {
 			return err
 		}
-		// #nosec G304 -- old checkout receives only identical constant fixture paths.
+		// #nosec G703 -- old checkout receives only identical constant fixture paths.
 		if err := os.WriteFile(filepath.Join("old", file), raw, 0o600); err != nil {
 			return err
 		}
@@ -203,8 +204,8 @@ func intended(got map[string]result, exit error, name, marker string) error {
 	r := got[name]
 	if exit == nil || r.action != "fail" || !strings.Contains(r.output, marker) ||
 		strings.Contains(r.output, "setup:") || strings.Contains(r.output, "panic:") {
-		return fmt.Errorf("%s did not reach intended runtime RED %q: exit=%v action=%q output=%s",
-			name, marker, exit, r.action, r.output)
+		return errors.Join(exit, fmt.Errorf("%s did not reach intended runtime RED %q: action=%q output=%s",
+			name, marker, r.action, r.output))
 	}
 	return nil
 }
@@ -220,12 +221,15 @@ func mutate(m mutation) (failure error) {
 		return fmt.Errorf("mutation %s must match exactly once", m.name)
 	}
 	changed := strings.Replace(string(original), m.before, m.after, 1)
-	// #nosec G304 -- disposable source fixture, fixed mutation target.
+	// #nosec G703 -- disposable source fixture, fixed mutation target.
 	if err := os.WriteFile(path, []byte(changed), 0o600); err != nil {
 		return err
 	}
-	// #nosec G304 -- restore the same verified source bytes, including failure exits.
-	defer func() { failure = errors.Join(failure, os.WriteFile(path, original, 0o600)) }()
+	// Restore the same verified source bytes, including failure exits.
+	defer func() {
+		// #nosec G703 -- same fixed mutation target, restore-only cleanup.
+		failure = errors.Join(failure, os.WriteFile(path, original, 0o600))
+	}()
 	for name, marker := range m.guards {
 		got, exit, err := test("source", "^"+name+"$")
 		if err != nil {
@@ -248,8 +252,10 @@ func mutations() []mutation {
 				"\t\treturn checked, err\n" +
 				"\t}\n", "",
 			map[string]string{
-				"TestMailHistoryNativeOwnershipChangeAfterContentReadRefusesWholePage": "ownership move during actual I/O must refuse whole page",
-				"TestMailHistoryNativeTokenRevokedAfterContentReadRefusesWholePage":    "final token check disclosed a page",
+				"TestMailHistoryNativeOwnershipChangeAfterContentReadRefusesWholePage": "ownership move durin" +
+					"g actual I/O must refuse whole page",
+				// #nosec G101 -- a test name and failure assertion, not a credential.
+				"TestMailHistoryNativeTokenRevokedAfterContentReadRefusesWholePage": "final token check disclosed a page",
 			},
 		},
 		{
@@ -263,7 +269,8 @@ func mutations() []mutation {
 			"suffix-authentication", "internal/ledger/mail_history_content.go",
 			"consumed != length || previous != seek.Hash || found == nil", "consumed != length || found == nil",
 			map[string]string{
-				"TestMailHistoryNativeContentAuthenticatesTheSuffixAfterRequestedRecord": "unauthenticated native suffix disclosed content",
+				"TestMailHistoryNativeContentAuthenticatesTheSuffixAfterRequestedRecord": "unauthenticated nati" +
+					"ve suffix disclosed content",
 			},
 		},
 		{
@@ -291,7 +298,8 @@ func mutations() []mutation {
 			"observation-semantics", "internal/engine/mail_history.go",
 			"e.authObserve(token, time.Now())", "e.authRead(token, time.Now())",
 			map[string]string{
-				"TestMailHistoryNativeObservationDoesNotWakeOrAdvanceDurableState": "history observation woke a sleeping row or advanced durable/read state",
+				"TestMailHistoryNativeObservationDoesNotWakeOrAdvanceDurableState": "history observation " +
+					"woke a sleeping row or advanced durable/read state",
 			},
 		},
 	}
