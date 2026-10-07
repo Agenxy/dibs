@@ -20,7 +20,7 @@ func reviewProof() error {
 		}
 	}
 	cases := map[string]string{
-		"TestMailHistoryNativeAdoptionSourceLimitIsPartyLocalAfterRestart": "history refusal:",
+		"TestMailHistoryNativeAdoptionSourceLimitIsPartyLocalAfterRestart": "unrelated party lost history after adoption source overflow",
 		"TestMailHistoryNativeCursorForgeryAndForeignReplayAreUniform":     "forged or foreign cursor confirmed a position",
 		"TestMailHistoryNativeInheritedReferenceForgeryRefusesLikeGarbage": "forged inherited reference confirmed another position",
 		"TestMailHistoryNativeOversizedContentKeepsMetadataAndLaterRows":   "oversized content poisoned metadata or later rows",

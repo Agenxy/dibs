@@ -12,7 +12,7 @@ import (
 
 var writerStages = []stage{
 	{"full-capture", "scope-before", "b640e08d79e262e09a9f187cabf6d572e229a75a"},
-	{"classified-capture", "scope-after", "3f5b6168aaf0aa613fab5a5c361c35bf0b71ae18"},
+	{"classified-capture", "scope-after", "52818a7cb66f06ccc7996fab59e3de710f39701a"},
 }
 
 func measureWriterCost() error {

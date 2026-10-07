@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	candidate    = "3f5b6168aaf0aa613fab5a5c361c35bf0b71ae18"
+	candidate    = "52818a7cb66f06ccc7996fab59e3de710f39701a"
 	beforeAPI    = "e771d2f6603cbed768025a1107615c524669c02b"
 	beforeBytes  = "c241fe34f3b50d0b67634c297741ee3fadadb237"
 	beforeCost   = "240e99d19789de3a186aab7befe52ce3173dbcea"
