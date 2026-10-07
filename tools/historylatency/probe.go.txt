@@ -1,0 +1,266 @@
+package ledger
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
+	"runtime/metrics"
+	"slices"
+	"strconv"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/engine"
+	"github.com/agenxy/dibs/internal/mailhistory"
+)
+
+// This identical diagnostic overlays immutable 3ef and a709 without changing
+// either source. The adapter times actual ports, never a substituted fsync,
+// manually set warming flag, or hand-populated index.
+type latencyLedger struct {
+	*Ledger
+	appendNS  atomic.Int64
+	observeNS atomic.Int64
+	appends   atomic.Uint64
+	observes  atomic.Uint64
+}
+
+func (l *latencyLedger) Append(serial uint64, at time.Time, op *core.Op) error {
+	start := time.Now()
+	err := l.Ledger.Append(serial, at, op)
+	if strings.HasPrefix(op.OpID, "latency:") {
+		l.appendNS.Store(time.Since(start).Nanoseconds())
+		l.appends.Add(1)
+	}
+	return err
+}
+
+func (l *latencyLedger) ObserveMail(before mailhistory.Snapshot, st *core.State, op *core.Op, events []core.Event) {
+	start := time.Now()
+	l.Ledger.ObserveMail(before, st, op, events)
+	if strings.HasPrefix(op.OpID, "latency:") {
+		l.observeNS.Store(time.Since(start).Nanoseconds())
+		l.observes.Add(1)
+	}
+}
+
+type latencySample struct {
+	Ordinal       int     `json:"ordinal"`
+	TotalNS       int64   `json:"total_ns"`
+	AppendNS      int64   `json:"append_ns"`
+	ObserveNS     int64   `json:"observe_ns"`
+	RemainderNS   int64   `json:"remainder_ns"`
+	GCCycles      uint64  `json:"gc_cycles_during_call"`
+	AssistSeconds float64 `json:"gc_assist_cpu_seconds_during_call"`
+}
+
+type latencyPhase struct {
+	Name           string          `json:"name"`
+	Samples        int             `json:"samples"`
+	Seconds        float64         `json:"seconds"`
+	P99NS          int64           `json:"p99_ns"`
+	AppendP99NS    int64           `json:"append_p99_ns"`
+	ObserveP99NS   int64           `json:"observe_p99_ns"`
+	RemainderP99NS int64           `json:"remainder_p99_ns"`
+	Slowest        []latencySample `json:"slowest"`
+	MetricsBefore  map[string]any  `json:"metrics_before"`
+	MetricsAfter   map[string]any  `json:"metrics_after"`
+	GCPauseNS      uint64          `json:"gc_pause_ns"`
+	GCCycles       uint32          `json:"gc_cycles"`
+}
+
+func TestMailHistoryLatencyDiagnostic(t *testing.T) {
+	label := os.Getenv("DIBS_HISTORY_LATENCY_LABEL")
+	if label == "" {
+		t.Skip("hosted-only paired writer latency cause measurement")
+	}
+	count, err := strconv.Atoi(os.Getenv("DIBS_HISTORY_PROBE_RECORDS"))
+	if err != nil || (count != 1_000_000 && count != 2_000_000) {
+		t.Fatal("setup: invalid fixture count", err)
+	}
+	dir := ".history-production-probe"
+	box, err := LoadOrCreateKey(filepath.Join(dir, "key"))
+	if err != nil {
+		t.Fatal("setup: fixture key:", err)
+	}
+	path := copyHistoryProbeLedger(t, filepath.Join(dir, "ledger.jsonl"), filepath.Join(dir, "latency.ledger.jsonl"))
+	base, err := Open(path, "history-probe", box)
+	if err != nil {
+		t.Fatal("setup: Open:", err)
+	}
+	defer func() { _ = base.Close() }()
+	st := core.NewState("history-probe", core.DefaultLimits())
+	n, err := base.Replay(st)
+	if err != nil || n != count || st.Serial != uint64(count) {
+		t.Fatalf("setup: Replay n=%d serial=%d err=%v", n, st.Serial, err)
+	}
+	m := base.mail.Measurement()
+	if m.Started || m.Ready || m.Failed || m.CapturedUnits != 0 || m.QueuedBytes != 0 || m.Records != uint64(count) {
+		t.Fatal("setup: real boot boundary disagrees", m)
+	}
+	if actor := st.Agents["party-00"]; actor == nil || actor.Token != "party-00" {
+		t.Fatal("setup: actor or token unavailable after actual replay")
+	}
+	l := &latencyLedger{Ledger: base}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	eng := engine.New(st, l, nil)
+	joined := make(chan struct{})
+	go func() { eng.Run(ctx); close(joined) }()
+	defer func() { cancel(); <-joined }()
+	if _, _, err := eng.SubscribeInfo(ctx, ""); err != nil {
+		t.Fatal("setup: writer startup:", err)
+	}
+	runtime.GC() // identical pre-serving starting point, never inside a measured phase
+	before := measureLatencyPhase(t, ctx, eng, l, "before-serving-no-warm", 2048)
+	if m = base.mail.Measurement(); m.Started || m.Ready || m.Failed {
+		t.Fatal("setup: warming began during prespecified control", m)
+	}
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	srv.Listener = base.mail.ServingListener(ctx, srv.Listener)
+	srv.Start()
+	defer srv.Close()
+	res, err := srv.Client().Get(srv.URL)
+	if err != nil {
+		t.Fatal("setup: real HTTP Accept:", err)
+	}
+	_ = res.Body.Close()
+	warm := measureLatencyPhase(t, ctx, eng, l, "warming", 0)
+	if warm.Samples < 100 || !base.mail.Measurement().Ready {
+		t.Fatal("setup: fewer than 100 real warming ops or builder did not finish")
+	}
+	after := measureLatencyPhase(t, ctx, eng, l, "after-ready-control", 2048)
+	bound := max(2*before.P99NS, int64(10*time.Millisecond))
+	receipt := map[string]any{
+		"label": label, "records": count, "go_version": runtime.Version(),
+		"gomaxprocs": runtime.GOMAXPROCS(0), "cpus": runtime.NumCPU(),
+		"before": before, "warm": warm, "after": after,
+		"prespecified_bound_ns": bound, "passes_latency_bound": warm.P99NS <= bound,
+		"representation": base.mail.Measurement(),
+		"observer":       "identical port adapter and runtime/metrics reads; no profile sampling",
+	}
+	raw, err := json.Marshal(receipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("HISTORY_LATENCY_DIAGNOSTIC %s", raw)
+	// This is a causal diagnostic, not a replacement acceptance gate. A measured
+	// latency failure remains in the receipt without discarding other arms.
+	runtime.KeepAlive(st)
+	runtime.KeepAlive(eng)
+}
+
+func measureLatencyPhase(t *testing.T, ctx context.Context, eng *engine.Engine, l *latencyLedger, name string, fixed int) latencyPhase {
+	t.Helper()
+	phase := latencyPhase{Name: name, MetricsBefore: latencyMetrics()}
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	start := time.Now()
+	tick := time.NewTicker(2 * time.Millisecond)
+	defer tick.Stop()
+	var samples []latencySample
+	gc := []metrics.Sample{{Name: "/gc/cycles/total:gc-cycles"}, {Name: "/cpu/classes/gc/mark/assist:cpu-seconds"}}
+	for n := 0; fixed == 0 || n < fixed; n++ {
+		m := l.mail.Measurement() // same observer call in warm and both controls
+		if fixed == 0 {
+			if m.Failed {
+				t.Fatal("setup: builder failed", m)
+			}
+			if m.Ready {
+				break
+			}
+		}
+		if err := eng.SetRateTokens(ctx, "party-00", 30); err != nil {
+			t.Fatal("setup: rate refill:", err)
+		}
+		metrics.Read(gc)
+		if gc[0].Value.Kind() != metrics.KindUint64 || gc[1].Value.Kind() != metrics.KindFloat64 {
+			t.Fatal("setup: required GC metrics unavailable")
+		}
+		cycles, assist := gc[0].Value.Uint64(), gc[1].Value.Float64()
+		appends, observes := l.appends.Load(), l.observes.Load()
+		at := time.Now()
+		result, err := eng.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: "party-00", OpID: fmt.Sprintf("latency:%s:%d", name, n)})
+		total := time.Since(at).Nanoseconds()
+		metrics.Read(gc)
+		if err != nil || result["error"] != nil || l.appends.Load() != appends+1 || l.observes.Load() != observes+1 {
+			t.Fatal("setup: real AckBoard did not append and observe exactly once:", err, result)
+		}
+		appendNS, observeNS := l.appendNS.Load(), l.observeNS.Load()
+		samples = append(samples, latencySample{
+			Ordinal: n, TotalNS: total, AppendNS: appendNS, ObserveNS: observeNS,
+			RemainderNS: total - appendNS - observeNS,
+			GCCycles:    gc[0].Value.Uint64() - cycles, AssistSeconds: gc[1].Value.Float64() - assist,
+		})
+		select {
+		case <-ctx.Done():
+			t.Fatal("setup: writer or warming timeout:", ctx.Err())
+		case <-tick.C:
+		}
+	}
+	phase.Seconds = time.Since(start).Seconds()
+	runtime.ReadMemStats(&after)
+	phase.GCPauseNS, phase.GCCycles = after.PauseTotalNs-before.PauseTotalNs, after.NumGC-before.NumGC
+	phase.MetricsAfter = latencyMetrics()
+	phase.Samples = len(samples)
+	phase.P99NS = latencyP99(samples, func(s latencySample) int64 { return s.TotalNS })
+	phase.AppendP99NS = latencyP99(samples, func(s latencySample) int64 { return s.AppendNS })
+	phase.ObserveP99NS = latencyP99(samples, func(s latencySample) int64 { return s.ObserveNS })
+	phase.RemainderP99NS = latencyP99(samples, func(s latencySample) int64 { return s.RemainderNS })
+	slices.SortFunc(samples, func(a, b latencySample) int { return int(b.TotalNS - a.TotalNS) })
+	phase.Slowest = samples[:min(12, len(samples))]
+	return phase
+}
+
+func latencyP99(samples []latencySample, field func(latencySample) int64) int64 {
+	if len(samples) == 0 {
+		return 0
+	}
+	values := make([]int64, len(samples))
+	for n, s := range samples {
+		values[n] = field(s)
+	}
+	slices.Sort(values)
+	return values[(len(values)-1)*99/100]
+}
+
+func latencyMetrics() map[string]any {
+	names := []string{
+		"/gc/heap/live:bytes", "/gc/heap/goal:bytes", "/gc/heap/allocs:bytes",
+		"/gc/cycles/total:gc-cycles", "/gc/pauses:seconds", "/sched/latencies:seconds",
+		"/cpu/classes/gc/mark/assist:cpu-seconds", "/cpu/classes/gc/mark/dedicated:cpu-seconds",
+		"/cpu/classes/gc/pause:cpu-seconds", "/cpu/classes/total:cpu-seconds",
+	}
+	samples := make([]metrics.Sample, len(names))
+	for n, name := range names {
+		samples[n].Name = name
+	}
+	metrics.Read(samples)
+	result := make(map[string]any)
+	for _, sample := range samples {
+		switch sample.Value.Kind() {
+		case metrics.KindUint64:
+			result[sample.Name] = sample.Value.Uint64()
+		case metrics.KindFloat64:
+			result[sample.Name] = sample.Value.Float64()
+		case metrics.KindFloat64Histogram:
+			h := sample.Value.Float64Histogram()
+			// JSON cannot encode the histogram's infinite end buckets. The finite
+			// bounds and all counts retain enough to compare scheduling/GC tails.
+			result[sample.Name] = map[string]any{"finite_bounds": h.Buckets[1 : len(h.Buckets)-1], "counts": h.Counts}
+		default:
+			result[sample.Name] = "unavailable"
+		}
+	}
+	return result
+}
