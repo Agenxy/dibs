@@ -50,6 +50,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   count omitted agents with a `board` call when the roster exceeds eight names.
   A bounded roster no longer reads as the complete set of reachable agents.
 
+- Registration now returns the same compact roster as `check_in` by default.
+  Request `detail:true` for full peer identity and declaration fields; identity,
+  mail and claims still survive registration and nonce recovery.
+
 - Release publication now retries one HTTP 5xx from the draft-to-public edit
   only after re-reading the still-draft release and verifying its assets and
   tag again. A 4xx, changed assets, or unknown state never triggers another

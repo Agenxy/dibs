@@ -58,7 +58,8 @@ var toolDefs = func() []map[string]any {
 		{
 			"name": "register",
 			"description": "Register an agent: who you are, publicly. Returns your token and the " +
-				"board. PASS A NONCE: a random id >=128-bit that you keep. It is the only credential " +
+				"compact board (detail:true for every field). PASS A NONCE: a random id >=128-bit that you keep. " +
+				"It is the only credential " +
 				"that survives your harness restarting: the same nonce returns you to your " +
 				"agent, mail and claims without creating a sibling. Omit name to keep it, or rename the " +
 				"same identity. `resumed:true` = active retry, same token; `reattached:true` = " +
@@ -66,6 +67,8 @@ var toolDefs = func() []map[string]any {
 				"works only within a session. kind 'persistent' is for standing roles that " +
 				"sleep and return via resume.",
 			"inputSchema": obj(map[string]any{
+				"detail": map[string]any{"type": "boolean", "description": "every board field " +
+					"(default: one row per agent, like check_in)"},
 				"name": str("required for a new identity; optional with your existing nonce. " +
 					"Your current name is your human-facing address; choose one peers can recognize. " +
 					"Work goes in declare, and update(name) changes this address later"),
