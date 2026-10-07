@@ -24,7 +24,7 @@ type capturedHistoryWriter struct {
 func (w *capturedHistoryWriter) ObserveMail(before mailhistory.Snapshot, st *core.State,
 	op *core.Op, events []core.Event,
 ) {
-	if w.armed.Load() && (op.Kind == core.OpActivityCheckpoint || op.Kind == core.OpSweep || (op.Kind == core.OpAckBoard && op.AgentID == "sender")) {
+	if w.armed.Load() && (op.Kind == core.OpSetSlot || op.Kind == core.OpSignOff || (op.Kind == core.OpAckBoard && op.AgentID == "sender")) {
 		w.checkpoint <- len(before.Mail)
 	}
 	w.Ledger.ObserveMail(before, st, op, events)
@@ -51,7 +51,7 @@ func TestMailHistoryNativeNonMailWriterDoesNotCopyLiveMailbox(t *testing.T) {
 		t.Fatal("setup: expected 200 live messages:", inbox)
 	}
 	writer.armed.Store(true)
-	historyOp(t, f, &core.Op{Kind: core.OpActivityCheckpoint, Token: sender})
+	historyOp(t, f, &core.Op{Kind: core.OpSetSlot, Token: sender, Text: "actual mail-free writer"})
 	select {
 	case copied := <-writer.checkpoint:
 		if copied != 0 {
@@ -129,8 +129,9 @@ func TestMailHistoryNativeFailedBuilderStopsWriterSnapshots(t *testing.T) {
 			t.Fatal("setup: corrupt private native fold did not fail")
 		}
 	}
+	f.ids["sender-token"] = "sender"
 	writer.armed.Store(true)
-	historyOp(t, f, &core.Op{Kind: core.OpSweep})
+	historyOp(t, f, &core.Op{Kind: core.OpSignOff, Token: "sender-token"})
 	select {
 	case copied := <-writer.checkpoint:
 		if copied != 0 {
