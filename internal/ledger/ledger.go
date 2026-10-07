@@ -33,10 +33,21 @@ type Line struct {
 	Op   *core.Op  `json:"op"`
 }
 
+// ledgerFile keeps the native file operations explicit. Open supplies os.File;
+// behavioral fixtures can hold a real Sync without replacing Append or wiring
+// the history reader by hand.
+type ledgerFile interface {
+	io.ReadWriteSeeker
+	io.ReaderAt
+	Sync() error
+	Close() error
+	Truncate(int64) error
+}
+
 // Ledger is a single-writer append log. Not safe for concurrent use: the
 // engine's single goroutine is the only writer, by design.
 type Ledger struct {
-	f        *os.File
+	f        ledgerFile
 	headHash string
 	headSum  [32]byte
 	box      *Box
@@ -45,6 +56,9 @@ type Ledger struct {
 	lastMail mailhistory.Record
 	// readOnly means this handle may not repair what it reads. See OpenReadOnly.
 	readOnly bool
+
+	// Derived writer activity: background history yields; the writer never waits.
+	historyWriter historyWriterActivity
 
 	// OnEvents, if set, receives every event regenerated during Replay.
 	OnEvents func([]core.Event)
@@ -229,6 +243,8 @@ func (l *Ledger) Replay(st *core.State) (int, error) {
 // Append writes one op as the record for serial s, fsyncing before return.
 // Must be called after the op was applied (serial already assigned).
 func (l *Ledger) Append(serial uint64, ts time.Time, op *core.Op) error {
+	l.historyWriter.busy.Store(true)
+	defer l.historyWriter.busy.Store(false)
 	offset, err := l.f.Seek(0, io.SeekCurrent)
 	if err != nil {
 		return err

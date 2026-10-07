@@ -7,6 +7,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The derived mail-history builder yields to an active ledger writer in bounded
+  read and fold chunks. Its background reads are capped at 64 KiB, with at most
+  5 ms of backoff per chunk so ongoing coordination cannot starve an audit.
+
 - New agent questions and requests start their response window on first
   recipient awareness rather than at send, with a separate seven-day ceiling
   for mail never retrieved. Historical ledgered sends keep their deadlines.

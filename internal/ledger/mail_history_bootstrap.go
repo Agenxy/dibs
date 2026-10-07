@@ -9,28 +9,29 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"runtime"
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/mailhistory"
 )
 
-// Only immutable inputs cross the serving boundary. There is deliberately no
-// live State here: the background fold constructs its own canonical objects.
+// Frozen boot inputs and a derived scheduling hint cross the serving boundary.
+// There is no live State here: the background fold constructs its own objects.
 type historyReplay struct {
-	file    *os.File
+	file    io.ReaderAt
 	box     *Box
 	node    string
 	limits  core.Limits
 	head    mailhistory.Record
 	records uint64
+	writer  *historyWriterActivity
 }
 
 func (l *Ledger) configureHistory(node string, limits core.Limits, serial, records uint64, end int64) {
 	source := &historyReplay{
 		file: l.f, box: l.box, node: node, limits: limits, records: records,
-		head: mailhistory.Record{Serial: serial, End: end, Hash: l.headSum},
+		head:   mailhistory.Record{Serial: serial, End: end, Hash: l.headSum},
+		writer: &l.historyWriter,
 	}
 	l.mail.ConfigureBootstrap(source.head, records, source.run)
 }
@@ -38,7 +39,8 @@ func (l *Ledger) configureHistory(node string, limits core.Limits, serial, recor
 func (s *historyReplay) run(ctx context.Context, index *mailhistory.Index) error {
 	// SectionReader uses ReadAt: the writer's append offset is never changed,
 	// and bytes appended after the frozen boot boundary cannot enter this fold.
-	reader := bufio.NewReaderSize(io.NewSectionReader(s.file, 0, s.head.End), 1<<20)
+	input := &historyReader{source: s.file, writer: s.writer, ctx: ctx}
+	reader := bufio.NewReaderSize(io.NewSectionReader(input, 0, s.head.End), 1<<20)
 	shadow := core.NewState(s.node, s.limits)
 	projector := index.ReplayProjector()
 	var scratch mailhistory.Snapshot
@@ -48,6 +50,11 @@ func (s *historyReplay) run(ctx context.Context, index *mailhistory.Index) error
 	for n := uint64(0); n < s.records; n++ {
 		if err := ctx.Err(); err != nil {
 			return err
+		}
+		if n%256 == 0 {
+			if err := s.writer.wait(ctx); err != nil {
+				return err
+			}
 		}
 		raw, err := readHistoryLine(reader)
 		if err != nil {
