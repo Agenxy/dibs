@@ -449,52 +449,60 @@ probe. Old rows are historical measurements, not claims about today's binaries:
 | Gemini CLI | 0.54.0-nightly.20260722 | `initialize` **2025-06-18** | `roots` | initialize, tools/list, resources/list (2026-09-12, over `httpUrl`) |
 | Hermes installed MCP adapter, no model/provider session | **0.20.2**, SDK **1.28.1** | `initialize` **2025-11-25** | `elicitation {form,url}` | initialize, notifications/initialized, tools/list (52 tools), **2026-10-03**, isolated HTTP daemon |
 
-**Release survey refreshed 2026-10-04, with source and runtime separated.**
-All available harness checkouts and ext-apps were fetched, and their
+**Release survey refreshed 2026-10-07 (UTC), with source and runtime separated.**
+The five open harness checkouts and ext-apps were fetched successfully, and
 `origin/HEAD` read rather than their local branch. Installed versions were
 observed separately: PATH Codex **0.0.0**, app CLI **0.160.0**, Claude Code
 **2.1.233**, Claude Desktop **2.19675.0**, opencode literal **local**, Pi
 **0.84.2**, Gemini **0.54.0-nightly.20260722.gf743ab579**, Hermes
-**0.20.2 (2026.8.16)**. Older wire rows keep their measurement dates; a
-version check is not a new handshake measurement. Claude Desktop wire behavior
-was not re-measured, because restarting it with a temporary shadowing Dibs
-entry would interrupt live Code sessions.
+**0.20.2 (2026.8.16)**. All are unchanged from the 2026-10-04 version survey.
+Only Claude Desktop bundle metadata was read; the apps were not opened or
+restarted and no configuration was changed. No new wire, hook execution,
+model/provider session or host rendering probe was run. The table above keeps
+its original measured versions and dates; version checks do not refresh those.
 
-- Codex source `7f892275e` retains `CoreHookMcpExecutor`, the two-part stdio
-  opt-in and the separate host-owned apps flag. The 2026-10-03 app CLI 0.159.2
-  isolated MCP-tool hooks fired SessionStart and Stop with the invocation-only reviewed-
-  hook trust control. The same untrusted fixture made zero polls. Both tiny
-  sessions exited 0; daemon hook-health rose from zero to two stranger polls
-  only in the control. This proves execution, not registered-mail delivery,
-  and changes no persisted trust or live board configuration. The currently
-  installed app CLI 0.160.0 was version-checked only; its wire and hooks were
-  not re-measured, and the older table row does not claim them.
-- opencode source `907b3bc5` still has no `2026-07-28` match in `packages`
-  and pins SDK 1.29.0. Its installed launcher runs local `2cba7e22`, not that
-  fetched head; no new wire/session measurement was made.
-- Pi source `b2b5c42f` has a built-in MCP extension and its own
-  `@earendil-works/pi-mcp` client in `packages/mcp`. The client enters
-  `initialize` and declares latest protocol 2025-11-25. The previous survey's
-  grep for the upstream SDK name missed this implementation, so its
-  no-native-client conclusion was wrong. Installed Pi remains 0.84.2; no
-  installed MCP session or wire behavior was measured.
-- **Gemini source `fb972b2` now has command/runtime hook types**, replacing
-  the previous survey's http/prompt claim. `hookEventHandler.ts:379` populates
-  session/transcript input, `hookRunner.ts:353` exports `GEMINI_SESSION_ID`,
-  and `client.ts:192` dispatches BeforeAgent; its output type accepts added
-  context. These are source readings, not behavior observed in the installed
-  July bundle, which still lacks BeforeAgent/session hook fields. Dibs's
-  plugin remains command/SessionStart-only and does not depend on the removed
-  types.
-- **Hermes source `7653424356` pins SDK 2.0.0, but the installed environment
-  contains 1.28.1.** Loading the actual installed adapter resolves both latest
-  and handshake to 2025-11-25, and its real transport sent the legacy exchange
-  in the new table row. No model/provider agent session was run. Source now
-  reads the SDK's separate handshake constant when available; the old inference
-  from the SDK's newest revision to a session's wire revision is not valid.
-- ext-apps `82221c0`, package **2.0.3**, is unchanged. Source has split 2.0.0
-  SDK peers and a published-1.x interop test; no installed host rendering was
-  re-measured.
+- **Codex source inspected 2026-10-07 (UTC), `5a3140176`:**
+  `CoreHookMcpExecutor` and its session wiring remain. The off-by-default
+  `mcp_2026_07_28` flag and the per-server stdio marker remain required;
+  `codex_apps_mcp_2026_07_28` still governs only the host-owned apps server.
+  Hook discovery admits enabled managed/trusted handlers or invocation-only
+  trust bypass. The 2026-10-03 app CLI 0.159.2 isolated MCP-tool hook control
+  fired SessionStart and Stop; its untrusted fixture made zero polls. That
+  historical result proves hook execution, not registered-mail delivery.
+  Installed app CLI 0.160.0 was version-checked only.
+- **opencode source inspected 2026-10-07 (UTC), `ecc4916b`:**
+  no `2026-07-28` match in `packages`; SDK remains 1.29.0 and the MCP path
+  connects through its SDK client. The installed launcher still runs local
+  `2cba7e22`, not the fetched head, and reports `local`. No new wire/session
+  measurement was made.
+- **Pi source inspected 2026-10-07 (UTC), `eb326d26`:**
+  the built-in MCP extension uses its own `@earendil-works/pi-mcp` client,
+  package 1.0.4 in `packages/mcp`. Its client enters `initialize` with latest
+  protocol 2025-11-25. A grep for the upstream SDK name alone misses this
+  implementation. Installed Pi remains 0.84.2; no installed MCP session or
+  wire behavior was measured.
+- **Gemini source inspected 2026-10-07 (UTC), `ef59c532`:**
+  hook types remain command/runtime. `hookEventHandler.ts` populates
+  session/transcript input, `hookRunner.ts` exports `GEMINI_SESSION_ID`,
+  and `client.ts` dispatches BeforeAgent and consumes additional context.
+  These are source readings. The installed July bundle was version-checked
+  only; its missing hook/session fields were found in the earlier survey,
+  not re-probed here. Dibs's plugin remains command/SessionStart-only.
+- **Hermes source inspected 2026-10-07 (UTC), `82732650a1`:**
+  its MCP extras still pin SDK 2.0.0. The adapter loads the SDK's separate
+  `LATEST_HANDSHAKE_VERSION` when available and otherwise falls back to
+  `LATEST_PROTOCOL_VERSION`. The actual installed interpreter's package
+  metadata still reports MCP SDK 1.28.1. The adapter's legacy wire exchange
+  in the table remains the 2026-10-03 measurement, without a model/provider
+  session. No new adapter transport was run.
+- **ext-apps source inspected 2026-10-07 (UTC), `82221c0`:**
+  package **2.0.3**, unchanged. Split client/core/server 2.0.0 peers and the
+  published-1.7.5 interop fixture remain in source; no tests or installed host
+  rendering were run.
+
+No inspected predicate changed the previously documented Dibs compatibility
+requirements. This read-only survey does not establish fresh installed
+handshakes or wake delivery.
 
 **None of these measured startup exchanges automatically sent
 `subscriptions/listen`, `resources/subscribe`, or `resources/read`.**
