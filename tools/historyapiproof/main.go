@@ -17,9 +17,10 @@ import (
 )
 
 const (
-	candidate   = "240e99d19789de3a186aab7befe52ce3173dbcea"
+	candidate   = "77199e661395da932e2d5c77b07e3df3c182db02"
 	beforeAPI   = "e771d2f6603cbed768025a1107615c524669c02b"
 	beforeBytes = "c241fe34f3b50d0b67634c297741ee3fadadb237"
+	beforeCost  = "240e99d19789de3a186aab7befe52ce3173dbcea"
 )
 
 type (
@@ -50,7 +51,10 @@ func run() error {
 	if err := verify("old-seek", beforeBytes); err != nil {
 		return err
 	}
-	for _, dir := range []string{"source", "old", "old-seek"} {
+	if err := verify("old-cost", beforeCost); err != nil {
+		return err
+	}
+	for _, dir := range []string{"source", "old", "old-seek", "old-cost"} {
 		if _, err := command(dir, "mise", "trust"); err != nil {
 			return err
 		}
@@ -78,6 +82,12 @@ func run() error {
 		}
 	}
 	fmt.Printf("HISTORY_API_BASELINE source=%s tests=%d green=true\n", candidate, len(expected))
+	name := "TestMailHistoryNativeSmallBodySurvivesLargeValidSeekInterval"
+	normal, normalExit, normalErr := testMode("old-cost", "^"+name+"$", false)
+	if normalErr != nil || normalExit != nil || normal[name].action != "pass" {
+		return errors.Join(normalErr, normalExit, errors.New("original non-race span cost arm did not pass"))
+	}
+	fmt.Printf("HISTORY_NATIVE_COST source=%s race=false test=%s pass=true\n", beforeCost, name)
 	if err := oldProof(); err != nil {
 		return err
 	}
@@ -116,9 +126,17 @@ func command(dir, name string, args ...string) ([]byte, error) {
 }
 
 func test(dir, selector string) (map[string]result, error, error) {
+	return testMode(dir, selector, true)
+}
+
+func testMode(dir, selector string, race bool) (map[string]result, error, error) {
+	args := []string{"exec", "--", "go", "test"}
+	if race {
+		args = append(args, "-race")
+	}
+	args = append(args, "-count=1", "-timeout=40s", "-json", "-run", selector, "./internal/mailhistory", "./internal/mcp")
 	// #nosec G204 -- fixed mise/go argv; selector names come from the immutable fixture.
-	cmd := exec.Command("mise", "exec", "--", "go", "test", "-race", "-count=1", "-timeout=40s", "-json", "-run", selector,
-		"./internal/mailhistory", "./internal/mcp")
+	cmd := exec.Command("mise", args...)
 	cmd.Dir = dir
 	raw, exit := cmd.CombinedOutput()
 	// JSON records prove named runtime assertions were reached. Merely seeing
