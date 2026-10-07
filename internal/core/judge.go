@@ -19,7 +19,7 @@ package core
 // called declare permanently invisible: including the ordinary case of an
 // agent opening an agent for work it is about to start.
 func (s *State) evidenceAgainstMembers(
-	ch *Space, mine Slot, myCWD, repo string, discount map[string]float64, lens RepoLens,
+	ch *Space, self string, mine Slot, myCWD, repo string, discount map[string]float64, lens RepoLens,
 ) (Evidence, Relation, bool) {
 	best, bestRel := Evidence{SameRepo: true}, RelationNone
 	compared := false
@@ -46,6 +46,8 @@ func (s *State) evidenceAgainstMembers(
 			// dissimilarity either: it was never measured.
 			compared = compared || len(theirs.Predicted) > 0
 			ev := EvidenceBetween(mine, theirs, myCWD, theirCWD, repo, discount, lens)
+			ev.Complementary = ev.Complementary || s.coordinationRefs(self, agent,
+				sharedStrings(mine.Refs, theirs.Refs), mine.Waiting, theirs.Waiting)
 			rel := ev.Classify()
 			// Strongest relation wins; among equals, the closest declaration.
 			// Ranking on relation alone left the reported evidence arbitrary among

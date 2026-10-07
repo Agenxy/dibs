@@ -309,9 +309,10 @@ func (s *State) overlapping(me *Agent, path, repoPath, excludeAgent string) []*C
 // OBJECTIVE is the actual waste: a measured collision burned ~3,900 diff lines
 // across three PRs chasing one goal, in files that only incidentally overlapped.
 const (
-	SignalSameObjective = "same-objective" // strong: probable duplicated effort
-	SignalSamePaths     = "same-paths"     // weak: concurrent work, usually fine
-	SignalClaim         = "claim"          // someone asked to be left alone here
+	SignalSameObjective = "same-objective"      // strong: probable duplicated effort
+	SignalCoordination  = "shared-coordination" // a request relationship or shared waiting
+	SignalSamePaths     = "same-paths"          // weak: concurrent work, usually fine
+	SignalClaim         = "claim"               // someone asked to be left alone here
 )
 
 // SlotOverlap is another agent's activity that relates to what you just declared.
@@ -427,6 +428,11 @@ func differentProjects(a, b *Agent) bool {
 // refs like "pr:1186", "gate:typos", "issue:1140") are the primary key; paths
 // are a weak secondary hint; claims are surfaced because someone asked.
 func (s *State) overlapsFor(refs, dirs []string, excludeAgent string) []SlotOverlap {
+	return s.overlapsForSlot(Slot{Refs: refs, Dirs: dirs}, excludeAgent)
+}
+
+func (s *State) overlapsForSlot(mine Slot, excludeAgent string) []SlotOverlap {
+	refs, dirs := mine.Refs, mine.Dirs
 	me := s.Agents[excludeAgent]
 	var out []SlotOverlap
 	seen := map[string]bool{}
@@ -447,7 +453,7 @@ func (s *State) overlapsFor(refs, dirs []string, excludeAgent string) []SlotOver
 		if l.ID == excludeAgent || l.Status == StatusClosed || l.Status == StatusArchived {
 			continue
 		}
-		for _, o := range slotOverlaps(me, l, want, dirs) {
+		for _, o := range s.slotOverlaps(me, l, want, mine) {
 			add(o)
 		}
 	}
@@ -467,18 +473,23 @@ func (s *State) overlapsFor(refs, dirs []string, excludeAgent string) []SlotOver
 // slotOverlaps is one other agent's contribution: at most one overlap per slot,
 // strongest first. Lifted out of overlapsFor so that the ref gate, the path
 // fallback and the collector are each legible on their own.
-func slotOverlaps(me, them *Agent, want map[string]bool, dirs []string) []SlotOverlap {
+func (s *State) slotOverlaps(me, them *Agent, want map[string]bool, mine Slot) []SlotOverlap {
 	scoped := !differentProjects(me, them)
 	var out []SlotOverlap
 	for _, sl := range them.Slots {
 		if shared := sharedRefs(want, sl.Refs); len(shared) > 0 && scoped {
+			coordinated := me != nil && s.coordinationRefs(me.ID, them.ID, shared, mine.Waiting, sl.Waiting)
+			signal := SignalSameObjective
+			if coordinated {
+				signal = SignalCoordination
+			}
 			out = append(out, SlotOverlap{
-				Agent: them.ID, Signal: SignalSameObjective, Kind: "slot",
+				Agent: them.ID, Signal: signal, Kind: "slot", Complementary: coordinated,
 				Text: sl.Text, Refs: shared, Activity: sl.Activity,
 			})
 			continue // strong signal already reported for this slot
 		}
-		if p := firstOverlappingPath(me, them, dirs, sl.Dirs); p != "" {
+		if p := firstOverlappingPath(me, them, mine.Dirs, sl.Dirs); p != "" {
 			out = append(out, SlotOverlap{
 				Agent: them.ID, Signal: SignalSamePaths, Kind: "slot",
 				Text: sl.Text, Refs: sl.Refs, Path: p, Activity: sl.Activity,

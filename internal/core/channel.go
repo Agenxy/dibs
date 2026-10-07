@@ -1327,7 +1327,7 @@ func (s *State) MatchAgentsEvidence(
 			continue
 		}
 		score, shared := jaccard(pred, fp, discount)
-		ev, rel, compared := s.evidenceAgainstMembers(ch, mine, myCWD, repo, discount,
+		ev, rel, compared := s.evidenceAgainstMembers(ch, agent, mine, myCWD, repo, discount,
 			identityFirst{me: s.Agents[agent], fallback: lens})
 		ev.PeerSupplied = unionProvenance(ev, compared, ch)
 		score = judgedScore(score, ev, compared)
