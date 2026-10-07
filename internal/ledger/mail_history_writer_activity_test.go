@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -41,21 +40,13 @@ func (f *historyActivityFile) Sync() error {
 	return f.File.Sync()
 }
 
-// Reflection lets these identical behavioral guards run on the old source
-// with only its file seam widened. A missing flag reads false: the old proof
+// A private observer interface lets identical behavioral guards run on the old
+// source with only its file seam widened. A missing observer reads false: the old proof
 // fails AFTER a successful real operation, not at compilation. The test never
 // sets the flag or calls a private begin/end helper; real Append must do it.
 func historyBusyThroughDoor(l *Ledger) bool {
-	writer := reflect.ValueOf(l).Elem().FieldByName("historyWriter")
-	if !writer.IsValid() {
-		return false
-	}
-	busy := writer.FieldByName("busy")
-	if !busy.IsValid() {
-		return false
-	}
-	value := busy.FieldByName("v") // sync/atomic.Bool's pinned Go representation
-	return value.IsValid() && value.Kind() == reflect.Uint32 && value.Uint() != 0
+	observer, ok := any(l).(interface{ historyWriterIsBusy() bool })
+	return ok && observer.historyWriterIsBusy()
 }
 
 func TestHistoryWriterActivityThroughRealAppend(t *testing.T) {

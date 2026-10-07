@@ -19,6 +19,10 @@ type historyWriterActivity struct {
 	busy atomic.Bool
 }
 
+// The private atomic observer lets a production-door fixture inspect activity
+// inside native Write/Sync without reading atomic storage through reflection.
+func (l *Ledger) historyWriterIsBusy() bool { return l.historyWriter.busy.Load() }
+
 func (w *historyWriterActivity) wait(ctx context.Context) error {
 	if w == nil || !w.busy.Load() {
 		return ctx.Err()
