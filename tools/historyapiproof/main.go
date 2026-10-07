@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	candidate   = "3e80ed7d4422f33e25004638ae8c4f0976989063"
+	candidate   = "240e99d19789de3a186aab7befe52ce3173dbcea"
 	beforeAPI   = "e771d2f6603cbed768025a1107615c524669c02b"
 	beforeBytes = "c241fe34f3b50d0b67634c297741ee3fadadb237"
 )
@@ -58,7 +58,9 @@ func run() error {
 	expected, err := testNames("source", []string{
 		"internal/mailhistory/query_native_test.go",
 		"internal/mailhistory/query_content_test.go",
+		"internal/mailhistory/query_budget_test.go",
 		"internal/mcp/mail_history_test.go",
+		"internal/mcp/mail_history_budget_test.go",
 	})
 	if err != nil {
 		return err
@@ -282,6 +284,14 @@ func mutate(m mutation) (failure error) {
 
 func mutations() []mutation {
 	return []mutation{
+		{
+			"candidate-budget", "internal/mailhistory/page.go",
+			"const CandidateLimit = 4096", "const CandidateLimit = 8192",
+			map[string]string{
+				"TestMailHistoryNativeCandidateScanIsBoundedAfterAdoption": "candidate scan exceeded SPEC bound or lost continuation",
+				"TestMailHistoryRealMCPCandidateBudgetAfterAdoption":       "public candidate scan exhausted or leaked the moved prefix",
+			},
+		},
 		{
 			"final-reauthorization", "internal/engine/mail_history.go",
 			"\tchecked, err = e.historyReauthorize(ctx, token, reader, index, page, upper, fence)\n" +
