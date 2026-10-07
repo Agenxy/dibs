@@ -27,9 +27,10 @@ func (i *Index) Observe(rec Record, before Snapshot, st *core.State, op *core.Op
 	if ownershipChanged(before, st) {
 		i.lastOwnershipChange = rec.Serial
 	}
-	if i.records%4096 == 0 {
+	if !i.anchorSeen || i.records%4096 == 0 || rec.End-i.anchorStart > anchorBytes {
 		i.ensureCapture()
 		i.active.anchors = append(i.active.anchors, Anchor{rec.Serial, rec.Offset, rec.Prev})
+		i.anchorStart, i.anchorSeen = rec.Offset, true
 	}
 	if i.records == 0 {
 		i.generation = generationOf(rec)

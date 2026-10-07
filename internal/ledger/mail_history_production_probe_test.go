@@ -222,7 +222,7 @@ func (p *productionFixture) write(op *core.Op) core.Result {
 
 func generateProductionHistory(t *testing.T, path string, box *Box, count int, mode string) {
 	t.Helper()
-	if mode != "simple" && mode != "many" && mode != "rich" && mode != "adopt-merge" {
+	if mode != "simple" && mode != "many" && mode != "rich" && mode != "adopt-merge" && mode != "large-body" {
 		t.Fatal("setup: unknown workload", mode)
 	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
@@ -235,7 +235,7 @@ func generateProductionHistory(t *testing.T, path string, box *Box, count int, m
 		state: core.NewState("history-probe", core.DefaultLimits()), now: t0, limit: uint64(count),
 	}
 	parties := 2
-	if mode != "simple" {
+	if mode != "simple" && mode != "large-body" {
 		parties = 50
 	}
 	ids := make([]string, parties)
@@ -270,6 +270,9 @@ func (p *productionFixture) cycle(ids []string, cycle int, mode string) {
 	send := &core.Op{
 		Kind: core.OpSendMessage, Token: from, To: to, MsgType: core.MsgNotify,
 		Body: "quoted content stays solely in the existing encrypted ledger",
+	}
+	if mode == "large-body" {
+		send.Body = strings.Repeat("b", 32<<10)
 	}
 	if mode == "rich" {
 		send.MsgType, send.DeadlineSec = core.MsgRequest, 600

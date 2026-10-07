@@ -26,6 +26,7 @@ jobs:
           - {records: 1000000, case: many}
           - {records: 1000000, case: rich}
           - {records: 1000000, case: adopt-merge}
+          - {records: 100000, case: large-body}
     env:
       DIBS_HISTORY_PROBE_RECORDS: ${{ matrix.records }}
       DIBS_HISTORY_PROBE_CASE: ${{ matrix.case }}

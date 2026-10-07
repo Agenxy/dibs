@@ -2,6 +2,10 @@ package mailhistory
 
 import "sort"
 
+// Bound ordinary sparse content intervals by native bytes as well as records.
+// A single oversized legacy record can still be refused by the content port.
+const anchorBytes = 4 << 20
+
 // SeekRange binds the entire sparse interval to the validated next anchor or
 // drained head. Checking only links before the target would not authenticate
 // the target's own bytes against committed evidence.

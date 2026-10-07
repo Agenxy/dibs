@@ -330,3 +330,42 @@ func TestMailHistoryNativeObservationDoesNotWakeOrAdvanceDurableState(t *testing
 		t.Fatalf("history observation woke a sleeping row or advanced durable/read state: before=%d after=%d actor=%+v message=%+v", before, st.Serial, actor, st.Messages[parent])
 	}
 }
+
+func TestMailHistoryNativeSmallBodySurvivesLargeValidSeekInterval(t *testing.T) {
+	dir := t.TempDir()
+	f := nativeHistory(t, dir)
+	sender := historyIdentity(t, f, "sender")
+	recipient := historyIdentity(t, f, "recipient")
+	first := historyOp(t, f, &core.Op{Kind: core.OpSendMessage, Token: sender, To: "recipient", MsgType: core.MsgNotify, Body: "SMALL-FIRST-QUOTED"})["msg_serial"].(uint64)
+	historyOp(t, f, &core.Op{Kind: core.OpAckMessage, Token: recipient, MsgSerial: first})
+	for n := 0; n < 400; n++ {
+		parent := historyOp(t, f, &core.Op{Kind: core.OpSendMessage, Token: sender, To: "recipient", MsgType: core.MsgNotify, Body: strings.Repeat("b", 32<<10)})["msg_serial"].(uint64)
+		historyOp(t, f, &core.Op{Kind: core.OpAckMessage, Token: recipient, MsgSerial: parent})
+		if n%32 == 31 {
+			historyOp(t, f, &core.Op{Kind: core.OpSweep, PurgeMail: true})
+		}
+	}
+	info, err := os.Stat(filepath.Join(dir, "ledger.jsonl"))
+	if err != nil || info.Size() <= 16<<20 {
+		t.Fatal("setup: native interval is not wider than the content bound:", info, err)
+	}
+	readSmall := func(f nativeHistoryFixture) {
+		t.Helper()
+		api, ok := any(f.eng).(historyAPI)
+		if !ok {
+			t.Fatal("history public query missing after real setup")
+		}
+		// Settle metadata through the same API before asking for native content;
+		// the guard discriminates span sizing, not initial bootstrap readiness.
+		settledHistory(t, f, sender, false)
+		res, err := api.ReadMailHistory(f.ctx, sender, 0, 1, true, "")
+		if err != nil || res["error"] != nil || !strings.Contains(historyJSON(t, res), "SMALL-FIRST-QUOTED") {
+			t.Fatal("small authorized body remained unavailable in a large valid interval:", err, res)
+		}
+	}
+	readSmall(f) // byte-bounded live capture
+	f.stop()
+	restarted := nativeHistory(t, dir)
+	restarted.ids[sender] = f.ids[sender]
+	readSmall(restarted) // canonical bootstrap independently rebuilds the anchors
+}

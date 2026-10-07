@@ -58,6 +58,8 @@ type Index struct {
 	bootSerial          uint64
 	bootHash            [32]byte
 	lastOwnershipChange uint64 // writer-derived authorization fence, never ledger state
+	anchorStart         int64  // live capture offset; independent from the bootstrap projector
+	anchorSeen          bool
 }
 
 // New returns an empty derived index for a fresh ledger.
@@ -91,6 +93,7 @@ func (i *Index) BeginReplay() {
 	i.records, i.head, i.generation = 0, Record{}, ""
 	i.ready, i.failed = false, false
 	i.initialReady, i.lastOwnershipChange = false, 0
+	i.anchorStart, i.anchorSeen = 0, false
 	i.ended, i.started = false, false
 	i.active, i.first, i.last = nil, nil, nil
 	i.queued, i.captured, i.built = 0, 0, 0

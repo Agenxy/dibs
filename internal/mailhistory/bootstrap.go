@@ -26,8 +26,9 @@ func (i *Index) ConfigureBootstrap(head Record, records uint64, read func(contex
 // ReplayProjector belongs exclusively to the background reader. Its scratch
 // has no canonical State pointer, and the writer never accesses this object.
 type ReplayProjector struct {
-	index   *Index
-	numbers []uint64
+	index       *Index
+	numbers     []uint64
+	anchorStart int64
 }
 
 // ReplayProjector returns independent background scratch, never writer scratch.
@@ -50,8 +51,9 @@ func (p *ReplayProjector) Observe(ctx context.Context, ordinal uint64, rec Recor
 	}
 	i.viewMu.Lock()
 	defer i.viewMu.Unlock()
-	if ordinal%4096 == 0 {
+	if ordinal%4096 == 0 || rec.End-p.anchorStart > anchorBytes {
 		i.anchors = append(i.anchors, Anchor{rec.Serial, rec.Offset, rec.Prev})
+		p.anchorStart = rec.Offset
 	}
 	if ordinal == 0 {
 		// Observe on the live writer cannot set this on a nonempty boot ledger.

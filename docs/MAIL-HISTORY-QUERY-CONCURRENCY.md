@@ -73,3 +73,12 @@ real content read, proving the final reauthorization rather than a setter.
 Concurrent busy writer/query cases must remain out of WARMING and include
 as_of_serial even when reporting behind_by. Every new behavioral guard must
 fail through the same production door on old source.
+
+Byte-based sparse anchors (architect 58315) also bound valid large-body intervals:
+the first post-S0 commit anchors, then either 4096 records or 4 MiB of native
+offset emits the next anchor. Bootstrap owns independent offset scratch. A single
+oversized legacy record remains explicitly unavailable. The native small-body
+regression must pass in both live capture and rebuilt bootstrap and fail on
+c241fe3; a 100k-record 32 KiB-send resource case keeps the original 48 B/record
+retained ceiling and 64 MiB/million warming peak ceiling unchanged. Runtime
+proof and the updated resource matrix remain owed.
