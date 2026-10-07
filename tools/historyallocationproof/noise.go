@@ -99,8 +99,10 @@ func retainNoiseProfile(s stage, repeat int) error {
 	if err := copyFile(source, destination); err != nil {
 		return err
 	}
-	relative := filepath.Join("internal", "ledger", ".history-production-probe", fmt.Sprintf("allocation-heap-%d.pprof", repeat))
-	raw, err := command(s.dir, "mise", "exec", "--", "go", "tool", "pprof", "-top", "-inuse_space", "-nodefraction=0", relative)
+	name := fmt.Sprintf("allocation-heap-%d.pprof", repeat)
+	relative := filepath.Join("internal", "ledger", ".history-production-probe", name)
+	raw, err := command(s.dir, "mise", "exec", "--", "go", "tool", "pprof",
+		"-top", "-inuse_space", "-nodefraction=0", relative)
 	if err != nil {
 		return err
 	}
