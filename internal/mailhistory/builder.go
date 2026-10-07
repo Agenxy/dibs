@@ -203,6 +203,11 @@ func (i *Index) drain(ctx context.Context) {
 		}
 		i.viewMu.Lock()
 		err := i.codec.flush()
+		if err == nil {
+			// A drained flush has sealed every unit in immutable blocks. Keep
+			// the compressor, but release the empty raw tail and encode scratch.
+			i.codec.tail, i.codec.scratch = nil, nil
+		}
 		i.viewMu.Unlock()
 		if err != nil {
 			i.Invalidate()
