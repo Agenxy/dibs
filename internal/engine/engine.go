@@ -1096,12 +1096,11 @@ func (e *Engine) execWithReceipt(
 	}
 	// Every authenticated write carries word of anything waiting.
 	//
-	// Not on check_in, which has just returned the inbox itself, and not on
-	// register, which returns the board: repeating it there is noise on the two
-	// calls that already answered the question. Everywhere else this is the
-	// only push that reaches an agent whose harness has no hooks, and the one
-	// that still works when the hooks are there and cannot resolve it.
-	if actor != nil && res != nil && op.Kind != core.OpAckBoard {
+	// check_in already returns the inbox, and register the board. A signed-off
+	// actor has no usable credential left to follow a mail-reading hint.
+	// Everywhere else this reaches an agent whose harness has no hooks, or
+	// whose installed hooks cannot resolve it.
+	if actor != nil && !actor.Gone() && res != nil && op.Kind != core.OpAckBoard {
 		if w := e.waiting(actor.ID, now); w != "" {
 			res["waiting"] = w
 		}

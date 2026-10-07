@@ -49,10 +49,21 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Missing-recipient hints suggest close spelling matches first and explicitly
   count omitted agents with a `board` call when the roster exceeds eight names.
   A bounded roster no longer reads as the complete set of reachable agents.
+  Shortened names whose hyphen-separated tokens all match a recipient's tokens,
+  such as `gpt-labs` for `gpt-agenxy-labs`, are included as suggestions too.
 
 - Registration now returns the same compact roster as `check_in` by default.
   Request `detail:true` for full peer identity and declaration fields; identity,
   mail and claims still survive registration and nonce recovery.
+
+- Request approval now explicitly says "I'll do it" and names the owed delivery;
+  permission questions point to `send(type:question, choices:...)`. Question and
+  milestone refusals name the exact repair call, and a missing token points to
+  saved-nonce recovery rather than leaving an agent to create a sibling.
+
+- Persistent agents are now told to clear completed task declarations and stay
+  reachable. `sign_off` guidance and its receipt explain that it permanently
+  closes the caller; returning creates a new identity with a new nonce.
 
 - Release publication now retries one HTTP 5xx from the draft-to-public edit
   only after re-reading the still-draft release and verifying its assets and

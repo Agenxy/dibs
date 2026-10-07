@@ -197,7 +197,8 @@ func (s *State) applyQueue(l *Agent, m *Message, op *Op, now time.Time) (Result,
 			"message already %s", m.State)
 	}
 	if m.Type != MsgRequest || m.Grant != "" || m.Adopt != "" || m.From == m.To {
-		return nil, nil, errf("E_BAD_DISPOSITION", "queue accepts ordinary requests; approve grants or adoption",
+		return nil, nil, errf("E_BAD_DISPOSITION",
+			questionResponseHint(m, "queue accepts ordinary requests; approve grants or adoption"),
 			"not queueable work")
 	}
 	if s.AcceptedDebtCount(l.ID) >= s.Limits.MaxMailboxDepth {
