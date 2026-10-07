@@ -224,7 +224,27 @@ func TestMailHistoryNativeOwnershipFenceBeforeRemovedLiveHeader(t *testing.T) {
 	}
 	for _, bodies := range []bool{false, true} {
 		at := time.Now()
-		res := historyOnce(t, f, old, bodies)
+		api, ok := any(f.eng).(historyAPI)
+		if !ok {
+			t.Fatal("history public query missing after real setup")
+		}
+		completed := make(chan core.Result, 1)
+		go func() {
+			res, err := api.ReadMailHistory(f.ctx, old, 0, 100, bodies, "")
+			if err != nil && res == nil {
+				res = core.Result{"unexpected_error": err.Error()}
+			}
+			completed <- res
+		}()
+		var res core.Result
+		timeout := time.NewTimer(500 * time.Millisecond)
+		select {
+		case res = <-completed:
+			timeout.Stop()
+		case <-timeout.C:
+			unlock() // a broken query cannot strand its fixture behind the lock
+			t.Fatal("held consumer blocked query past budget")
+		}
 		elapsed := time.Since(at)
 		ce, ok := res["error"].(*core.Error)
 		if !ok || ce.Code != "E_HISTORY_SETTLING" {

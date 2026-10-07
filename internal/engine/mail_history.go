@@ -75,25 +75,7 @@ func (e *Engine) historyReauthorize(ctx context.Context, token string, reader co
 	index *mailhistory.Index, page mailhistory.Page, upper, fence uint64,
 ) (core.Result, error) {
 	res, err := e.query(ctx, func() core.Result {
-		a := e.state.AgentByToken(token)
-		if a == nil || a.ID != reader.ID || a.CreatedSerial != reader.CreatedSerial {
-			return core.Result{"error": core.ErrBadToken}
-		}
-		status := index.Status()
-		if status.Failed {
-			return historyFailure(mailhistory.ErrUnavailable, status, upper)
-		}
-		if status.OwnershipChange != fence {
-			return historyFailure(mailhistory.ErrSettling, status, upper)
-		}
-		for _, unit := range page.Units {
-			if m := e.state.Messages[unit.Position.Msg]; m != nil {
-				if allowed, _ := core.MessageAccess(unit.Position.Msg, m, a); !allowed {
-					return historyFailure(mailhistory.ErrSettling, status, upper)
-				}
-			}
-		}
-		return core.Result{}
+		return e.historyAuthorityLocked(token, reader, index, page, upper, fence)
 	})
 	var ce *core.Error
 	if errors.As(err, &ce) {
@@ -105,6 +87,31 @@ func (e *Engine) historyReauthorize(ctx context.Context, token string, reader co
 		}
 	}
 	return res, err
+}
+
+// This decision runs only on the writer, returning no live state pointer.
+func (e *Engine) historyAuthorityLocked(token string, reader core.Agent, index *mailhistory.Index,
+	page mailhistory.Page, upper, fence uint64,
+) core.Result {
+	a := e.state.AgentByToken(token)
+	if a == nil || a.ID != reader.ID || a.CreatedSerial != reader.CreatedSerial {
+		return core.Result{"error": core.ErrBadToken}
+	}
+	status := index.Status()
+	if status.Failed {
+		return historyFailure(mailhistory.ErrUnavailable, status, upper)
+	}
+	if status.OwnershipChange != fence {
+		return historyFailure(mailhistory.ErrSettling, status, upper)
+	}
+	for _, unit := range page.Units {
+		if m := e.state.Messages[unit.Position.Msg]; m != nil {
+			if allowed, _ := core.MessageAccess(unit.Position.Msg, m, a); !allowed {
+				return historyFailure(mailhistory.ErrSettling, status, upper)
+			}
+		}
+	}
+	return core.Result{}
 }
 
 func historyError(code, msg, hint string) core.Result {
