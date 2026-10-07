@@ -193,8 +193,18 @@ func TestMailHistoryRealMCPWireBoundAndArguments(t *testing.T) {
 	}
 	encoded, _ := json.Marshal(map[string]any{"token": sender, "limit": 0})
 	wrapped := rpc(t, srv, "2025-11-25", "tools/call", map[string]any{"name": "mail_history", "arguments": string(encoded)})
-	if wrapped["result"].(map[string]any)["isError"] != true {
-		t.Fatalf("string-wrapped arguments silently treated explicit zero as omitted: %v", wrapped)
+	if result, ok := wrapped["result"].(map[string]any); ok {
+		if result["isError"] != true {
+			t.Fatal("string-wrapped explicit zero was accepted:", wrapped)
+		}
+	} else {
+		// MCP's HTTP parameter validator may reject the string before the tool
+		// decoder. That must be an explicit protocol error with a correction.
+		refusal, ok := wrapped["error"].(map[string]any)
+		data, dataOK := refusal["data"].(map[string]any)
+		if !ok || refusal["code"] != float64(-32602) || !dataOK || data["hint"] == nil {
+			t.Fatal("string-wrapped arguments lost their protocol refusal:", wrapped)
+		}
 	}
 }
 

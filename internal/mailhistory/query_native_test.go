@@ -32,6 +32,13 @@ type nativeHistoryFixture struct {
 
 func nativeHistory(t *testing.T, dir string, wrap ...func(*ledger.Ledger) engine.Ledger) nativeHistoryFixture {
 	t.Helper()
+	limits := core.DefaultLimits()
+	limits.ConsumedRetention = 0
+	return nativeHistoryWithLimits(t, dir, limits, wrap...)
+}
+
+func nativeHistoryWithLimits(t *testing.T, dir string, limits core.Limits, wrap ...func(*ledger.Ledger) engine.Ledger) nativeHistoryFixture {
+	t.Helper()
 	box, err := ledger.LoadOrCreateKey(filepath.Join(dir, "key"))
 	if err != nil {
 		t.Fatal("setup:", err)
@@ -40,8 +47,6 @@ func nativeHistory(t *testing.T, dir string, wrap ...func(*ledger.Ledger) engine
 	if err != nil {
 		t.Fatal("setup:", err)
 	}
-	limits := core.DefaultLimits()
-	limits.ConsumedRetention = 0
 	st := core.NewState("history-native", limits)
 	if _, err := led.Replay(st); err != nil {
 		t.Fatal("setup:", err)

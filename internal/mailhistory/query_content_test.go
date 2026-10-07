@@ -267,12 +267,21 @@ func TestMailHistoryNativeContentAuthenticatesTheSuffixAfterRequestedRecord(t *t
 }
 
 func TestMailHistoryNativeReusedNameDoesNotInheritPredecessorEvidence(t *testing.T) {
-	f := nativeHistory(t, t.TempDir())
+	limits := core.DefaultLimits()
+	limits.ConsumedRetention = 0
+	limits.DormancyMax = 0
+	limits.ArchiveRetention = 0
+	f := nativeHistoryWithLimits(t, t.TempDir(), limits)
 	sender := historyIdentity(t, f, "sender")
 	previous := historyIdentity(t, f, "recipient")
 	historyOp(t, f, &core.Op{Kind: core.OpSendMessage, Token: sender, To: "recipient", MsgType: core.MsgNotify, Body: "PRIVATE-PREDECESSOR"})
 	settledHistory(t, f, previous, false)
-	historyOp(t, f, &core.Op{Kind: core.OpPrune, To: "recipient"})
+	// Real dormancy, archive and agent GC, preserving historical mail through
+	// the sweep's explicit purge_mail=false. A closed row reserves its id and
+	// cannot test reuse; a genuinely removed row can.
+	historyOp(t, f, &core.Op{Kind: core.OpSweep, DeadAgents: []string{"recipient"}})
+	historyOp(t, f, &core.Op{Kind: core.OpSweep})
+	historyOp(t, f, &core.Op{Kind: core.OpSweep})
 	res := historyOp(t, f, &core.Op{Kind: core.OpRegister, Name: "recipient", Nonce: "different-incarnation-nonce", PID: 1, AgentKind: core.KindPersistent})
 	current, ok := res["token"].(string)
 	if !ok || current == "" || current == previous || res["agent_id"] != f.ids[previous] {
