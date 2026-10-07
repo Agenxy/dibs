@@ -72,10 +72,14 @@ func installNoiseMeasurement(s stage) error {
  runtime.ReadMemStats(&mem)
  if arm == "production" {
   profile, profileErr := os.Create(filepath.Join(dir, "allocation-heap.pprof"))
-  if profileErr != nil { t.Fatal("setup: heap profile:", profileErr) }
+  if profileErr != nil {
+   t.Fatal("setup: heap profile:", profileErr)
+  }
   profileErr = pprof.WriteHeapProfile(profile)
   closeErr := profile.Close()
-  if profileErr != nil || closeErr != nil { t.Fatal("setup: heap profile:", profileErr, closeErr) }
+  if profileErr != nil || closeErr != nil {
+   t.Fatal("setup: heap profile:", profileErr, closeErr)
+  }
  }
  receipt := map[string]any{`)
 	changed := bytes.Replace(original, old, replacement, 1)
