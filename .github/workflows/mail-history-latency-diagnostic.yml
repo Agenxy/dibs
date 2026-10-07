@@ -1,4 +1,4 @@
-name: mail-history paired writer latency diagnostic
+name: mail-history original sampler A-B diagnostic
 
 on:
   pull_request:
@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: 3efb598c5fe194a397157d3cd8b7fcdf76a2d452
+          ref: a709e2746f4522591a112aefa0cace11e14e5687
           path: old
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -34,5 +34,5 @@ jobs:
         with:
           version: 2026.7.7
           experimental: true
-      - name: Same-runner ABBA comparison with identical fixture and no-warm controls
+      - name: Same a709 source, original per-iteration sampler versus 100ms in ABBA order
         run: mise exec -- go run ./tools/historylatency

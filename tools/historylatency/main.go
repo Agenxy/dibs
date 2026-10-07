@@ -13,10 +13,7 @@ import (
 	"strings"
 )
 
-const (
-	oldSource = "3efb598c5fe194a397157d3cd8b7fcdf76a2d452"
-	newSource = "a709e2746f4522591a112aefa0cace11e14e5687"
-)
+const samplerSource = "a709e2746f4522591a112aefa0cace11e14e5687"
 
 func main() {
 	if err := run(); err != nil {
@@ -39,9 +36,8 @@ func run() error {
 }
 
 func prepareSources() error {
-	for n, root := range []string{"old", "new"} {
-		expected := []string{oldSource, newSource}[n]
-		if err := verify(root, expected); err != nil {
+	for _, root := range []string{"old", "new"} {
+		if err := verify(root, samplerSource); err != nil {
 			return err
 		}
 		trust := exec.Command("mise", "trust")
@@ -49,8 +45,11 @@ func prepareSources() error {
 		if err := trust.Run(); err != nil {
 			return fmt.Errorf("setup: trust %s: %w", root, err)
 		}
-		destination := filepath.Join(root, "internal/ledger/mail_history_latency_diagnostic_test.go")
-		if err := copyFile("tools/historylatency/probe.go.txt", destination); err != nil {
+		destination := filepath.Join(root, "internal/ledger/mail_history_warming_probe_test.go")
+		if err := os.Remove(destination); err != nil {
+			return err
+		}
+		if err := copyFile("tools/historylatency/sampler.go.txt", destination); err != nil {
 			return err
 		}
 	}
@@ -86,26 +85,49 @@ func prepareFixture() error {
 }
 
 func measureArms() error {
+	if err := prepareControls(); err != nil {
+		return err
+	}
 	// Prespecified ABBA order prevents always giving the newer source the warm
 	// runner. Each test process starts from a fresh copy of the same S0 bytes.
 	var failed bool
 	for n, root := range []string{"old", "new", "new", "old"} {
-		label := fmt.Sprintf("memstats-%s-%d", root, n+1)
-		if err := command(root, "", label, "go", "test", "-count=1", "-timeout=10m",
-			"-run", "^TestMailHistoryLatencyDiagnostic$", "-v", "./internal/ledger"); err != nil {
+		label := fmt.Sprintf("sampler-%s-%d", root, n+1)
+		if err := command(root, "production", label, "go", "test", "-count=1", "-timeout=10m",
+			"-run", "^TestMailHistoryProductionProbe$", "-v", "./internal/ledger"); err != nil {
 			fmt.Fprintln(os.Stderr, label, err)
 			failed = true
 		}
 	}
 	for _, root := range []string{"old", "new"} {
-		check := exec.Command("git", "diff", "--exit-code", "HEAD")
-		check.Dir, check.Stdout, check.Stderr = root, os.Stdout, os.Stderr
-		if err := check.Run(); err != nil {
-			return fmt.Errorf("setup: production source changed in %s: %w", root, err)
+		check := exec.Command("git", "diff", "--name-only", "HEAD")
+		check.Dir = root
+		out, err := check.Output()
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(string(out)) != "internal/ledger/mail_history_warming_probe_test.go" {
+			return fmt.Errorf("setup: unexpected source change in %s: %q", root, out)
 		}
 	}
 	if failed {
 		return fmt.Errorf("one or more latency arms failed; retain all receipts")
+	}
+	return nil
+}
+
+func prepareControls() error {
+	for _, root := range []string{"old", "new"} {
+		for _, arm := range []string{"baseline", "baseline-repeat-1", "baseline-repeat-2"} {
+			if err := command(root, arm, "", "go", "test", "-count=1", "-timeout=10m",
+				"-run", "^TestMailHistoryProductionProbe$", "-v", "./internal/ledger"); err != nil {
+				return err
+			}
+		}
+		if err := command(root, "", "no-warm-"+root, "go", "test", "-count=1", "-timeout=10m",
+			"-run", "^TestHistorySamplerNoWarm$", "-v", "./internal/ledger"); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -137,6 +159,11 @@ func command(root, arm, label string, args ...string) error {
 	cmd := exec.Command("mise", append([]string{"exec", "--"}, args...)...)
 	cmd.Dir = root
 	cmd.Env = append(os.Environ(), "DIBS_HISTORY_PROBE_ARM="+arm, "DIBS_HISTORY_LATENCY_LABEL="+label)
+	period := "0"
+	if root == "new" {
+		period = "100"
+	}
+	cmd.Env = append(cmd.Env, "DIBS_HISTORY_HEAP_SAMPLE_PERIOD_MS="+period)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	return cmd.Run()
 }

@@ -1,5 +1,28 @@
 # Paired writer-latency cause measurement (disposable, never merge)
 
+ACTIVE priority57047/57063: the original sampler A/B below. The paused-reader
+fixture is retained but NOT invoked. Its prematurely dispatched run37551894253
+was cancelled after the priority message arrived. No trace study was built.
+
+Both active source checkouts are now exacta709e274. Root`old` means the original
+per-iteration ReadMemStats sampler; root`new` means100ms sampling, not a newer
+production source. Only the existing warming TEST helper is overlaid with the
+same bytes in both roots. Production code and the top-level resource probe
+remain unchanged. The environment period is the difference between arms.
+The same runner/fixture runs original/bounded/bounded/original. The ordinary
+heap/boot baseline and its two repeats still run; a separate2048-op real
+writer control with no first Accept supplies each arm's prespecified bound.
+No control ops or four-second delay enter the production warming process.
+The production probe starts the real builder at its usual first Accept and
+retains its original2ms pacing, Measurement, rate refill and timed Do calls.
+Receipts count heap samples, writer samples, peak and p99, and fail explicitly
+on the unchanged memory/boot bounds or new writer bound.100ms peaks are sampled
+peaks, not a proof that no shorter peak occurred. The causal experiment must
+demonstrate a p99 collapse before a probe fix or cause claim; ReadMemStats
+happens BEFORE timed Do in the original sampler, so direct overlapping stops
+cannot simply be assumed. If p99 does not collapse, return to the accepted
+reader-I/O pause fixture. One experiment at a time.
+
 Request23228, architect56794. Production remains immutable at a709e274.
 API work is parked until the latency cause is established. No tuning is in
 this diagnostic. All execution is hosted; no local load or compiler runs.
