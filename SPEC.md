@@ -1216,7 +1216,7 @@ Bounds are 1–100 rows, 4096 own candidate units, 128 KiB encoded page and a
 byte lengths and truncation; a budget-unavailable field is explicitly labeled.
 Compression/decryption/seek work stays outside the writer. Native seeks verify
 the whole sparse interval through the next trusted anchor or drained head.
-Anchors cut ordinary intervals before either 4096 records or 4 MiB is exceeded,
+Anchors cut ordinary intervals before either 4096 records or 512 KiB is exceeded,
 and the first post-S0 commit starts a new interval. The native reader still
 refuses intervals over 4096 records/16 MiB without moving the writer's file
 position; a single oversized legacy record can be explicitly unavailable.

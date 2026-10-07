@@ -19,7 +19,7 @@ import (
 // Native replay, writer and first HTTP Accept are the production entry points.
 // No Ready/activity setter or test-built index enters this fixture. The guard
 // uses only pre-feature exported APIs, so old source reaches the MCP verdict.
-func historyServer(t *testing.T, dir string) (*httptest.Server, func()) {
+func historyServer(t *testing.T, dir string, inspect ...func(*engine.Engine, *ledger.Ledger)) (*httptest.Server, func()) {
 	t.Helper()
 	box, err := ledger.LoadOrCreateKey(filepath.Join(dir, "key"))
 	if err != nil {
@@ -43,6 +43,9 @@ func historyServer(t *testing.T, dir string) (*httptest.Server, func()) {
 	srv := httptest.NewUnstartedServer(New(eng))
 	srv.Listener = led.MailHistory().ServingListener(ctx, srv.Listener)
 	srv.Start()
+	for _, observe := range inspect {
+		observe(eng, led)
+	}
 	var once sync.Once
 	stop := func() {
 		once.Do(func() {

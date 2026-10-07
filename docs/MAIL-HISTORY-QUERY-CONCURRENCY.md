@@ -93,3 +93,11 @@ current explicit authority and rationale. The original run remains failed.
 The checker now emits both the proportional verdict and accepted max/floor
 verdict; the48B/record retained limit stays unchanged. The new exact-head
 resource gate must still run; exceeding the floor at larger N remains a finding.
+
+Actual native port receipt at240e99/run37565955823 authenticated a4,165,856B
+span under-race for250.735644ms, then returned context deadline exceeded.
+The anchor was cut and found; this was budget exhaustion, not bad evidence.
+Architect58458 approved a tighter512KiB target while retaining the250ms
+query budget and16MiB/4096-record hard reader limit. Denser anchors must be
+charged by all8 resources. Non-race span timing remains unmeasured and owed;
+-race's extra cost is not a general constant-tuning yardstick.

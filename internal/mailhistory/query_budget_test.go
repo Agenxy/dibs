@@ -1,6 +1,7 @@
 package mailhistory_test
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -89,6 +90,11 @@ func historyBudgetLedger(t *testing.T, dir, node string) core.Agent {
 	if old == nil || old.Status != core.StatusDormant {
 		t.Fatal("setup: missing old incarnation", old)
 	}
+	for _, m := range st.Messages {
+		if allowed, _ := core.MessageAccess(m.Serial, m, old); allowed || m.To != "heir" {
+			t.Fatal("setup: old party still authorized after adoption", old.ID, m.From, m.To)
+		}
+	}
 	return core.Agent{ID: old.ID, CreatedSerial: old.CreatedSerial}
 }
 
@@ -97,6 +103,11 @@ func TestMailHistoryNativeCandidateScanIsBoundedAfterAdoption(t *testing.T) {
 	reader := historyBudgetLedger(t, dir, "history-native")
 	f := nativeHistory(t, dir)
 	f.ids["budget-token-old"] = reader.ID
+	denied, err := f.eng.GetMessage(f.ctx, "budget-token-old", 10)
+	var ce *core.Error
+	if !errors.As(err, &ce) || ce.Code != "E_NOT_YOUR_MESSAGE" {
+		t.Fatal("setup: real read_mail allowed old party", err, denied)
+	}
 	settledHistory(t, f, "budget-token-old", false)
 	index := f.led.MailHistory()
 	status := index.Status()
@@ -109,7 +120,7 @@ func TestMailHistoryNativeCandidateScanIsBoundedAfterAdoption(t *testing.T) {
 		t.Fatal("numeric consumer query failed:", err)
 	}
 	if page.Examined != 4096 || len(page.Units) != 0 || page.Next == "" {
-		t.Fatal("candidate scan exceeded SPEC bound or lost continuation:", page.Examined, len(page.Units), page.Next)
+		t.Fatal("candidate scan exceeded SPEC bound or lost continuation:", page.Examined, page.Units, page.Next)
 	}
 	req.Cursor, req.Deadline = page.Next, time.Now().Add(5*time.Second)
 	tail, err := index.ReadPage(f.ctx, req)

@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"path/filepath"
@@ -8,7 +9,9 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/ledger"
+	"github.com/agenxy/dibs/internal/mailhistory"
 )
 
 // Identical native fixture recipe in query_budget_test.go and
@@ -90,13 +93,38 @@ func historyBudgetLedger(t *testing.T, dir, node string) core.Agent {
 	if old == nil || old.Status != core.StatusDormant {
 		t.Fatal("setup: missing old incarnation", old)
 	}
+	for _, m := range st.Messages {
+		if allowed, _ := core.MessageAccess(m.Serial, m, old); allowed || m.To != "heir" {
+			t.Fatal("setup: old party still authorized after adoption", old.ID, m.From, m.To)
+		}
+	}
 	return core.Agent{ID: old.ID, CreatedSerial: old.CreatedSerial}
 }
 
 func TestMailHistoryRealMCPCandidateBudgetAfterAdoption(t *testing.T) {
 	dir := t.TempDir()
 	historyBudgetLedger(t, dir, "history-mcp")
-	srv, _ := historyServer(t, dir)
+	var index *mailhistory.Index
+	var eng *engine.Engine
+	srv, _ := historyServer(t, dir, func(e *engine.Engine, l *ledger.Ledger) { eng = e; index = l.MailHistory() })
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	for !index.Status().InitialReady {
+		select {
+		case <-deadline.C:
+			t.Fatal("setup: native boot did not finish")
+		case <-tick.C:
+		}
+	}
+	if err := eng.SetRateTokens(context.Background(), "old", 30); err != nil {
+		t.Fatal("setup:", err)
+	}
+	denied := toolCall(t, srv, "read_mail", map[string]any{"token": "budget-token-old", "msg_serial": 10})
+	if denied["__is_error"] != true || denied["code"] != "E_NOT_YOUR_MESSAGE" {
+		t.Fatal("setup: real read_mail allowed old party", denied)
+	}
 	payload := historyCall(t, srv, "2026-07-28", map[string]any{"token": "budget-token-old", "limit": 100})
 	rows, ok := payload["units"].([]any)
 	cursor, hasCursor := payload["cursor"].(string)
