@@ -46,6 +46,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Missing-recipient hints suggest close spelling matches first and explicitly
+  count omitted agents with a `board` call when the roster exceeds eight names.
+  A bounded roster no longer reads as the complete set of reachable agents.
+
 - Release publication now retries one HTTP 5xx from the draft-to-public edit
   only after re-reading the still-draft release and verifying its assets and
   tag again. A 4xx, changed assets, or unknown state never triggers another
