@@ -126,6 +126,20 @@ func TestHistoryRestatedAcceptance(t *testing.T) {
 	}
 	// No forced GC between warming and steady state: production does not do it.
 	steady := acceptanceMeasure(t, ctx, eng, l, "post-ready-30s", time.Now(), acceptanceRuntimeSnapshot(t))
+	// Every live committed record temporarily clears Ready until the derived
+	// consumer catches up. Stop producing and prove it drains again; readiness
+	// need not remain continuously true while those real writes are happening.
+	drainUntil := time.Now().Add(5 * time.Second)
+	for !l.mail.Measurement().Ready {
+		if l.mail.Measurement().Failed || time.Now().After(drainUntil) {
+			t.Fatal("setup: post-ready writes did not drain", l.mail.Measurement())
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("setup:", ctx.Err())
+		case <-time.After(time.Millisecond):
+		}
+	}
 	warmBound, steadyBound := max(3*control.P99, .025), max(2*control.P99, .010)
 	raw, err := json.Marshal(map[string]any{
 		"records": count, "repeat": os.Getenv("DIBS_HISTORY_REPEAT"), "requirement_owner_message": 57658,
@@ -183,8 +197,8 @@ func acceptanceMeasure(t *testing.T, ctx context.Context, eng *engine.Engine, l 
 				t.Fatal("warming did not complete within existing five-minute bound")
 			}
 		case "post-ready-30s":
-			if !m.Ready {
-				t.Fatal("setup: ready index regressed")
+			if !m.Started || m.BuiltSerial < m.BootSerial {
+				t.Fatal("setup: completed boot prefix regressed", m)
 			}
 			if elapsed >= 30*time.Second {
 				if len(calls) < 1000 {

@@ -28,7 +28,12 @@ verbatim in each job. A separate production-door fixture replays a byte-identica
 ledger, starts the real Engine, measures 2048 no-warm operations, starts history
 through first HTTP Accept, measures every warming operation until readiness,
 and measures real coordination operations for 30 seconds afterwards. It uses
-the original per-operation heap sampler, rate refill, timed Do and 2ms pacing.
+the first completed readiness transition as the steady-state boundary. Each
+subsequent committed write temporarily clears Ready while its live delta is
+consumed, so that flag is not asserted continuously during the workload. The
+boot prefix must remain built, failures are refused, and after writes stop the
+derived consumer must reach Ready again within five seconds. The original
+per-operation heap sampler, rate refill, timed Do and 2ms pacing remain intact.
 The timed operation is the accepted AckBoard writer-path proxy, not a measured
 end-to-end MCP check_in round trip. HTTP supplies the real serving boundary.
 No artificial disk cost, activity setter, paused reader or production-source
