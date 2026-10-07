@@ -109,3 +109,20 @@ failed setup because it replayed with ConsumedRetention=0 while its generator
 used the original default limits. That deleted approvals in the recorded dead
 sweep before adoption. The fixture is corrected to the same original limits;
 this setup failure remains invalid as a product or old-control verdict.
+
+Hosted1dc/run37566582265 passed16 real-door baseline tests at359ba2f,
+six pre-API absence guards, the c241 large-interval guard and10 intended
+runtime failures across8 removed safeguards. The original240 4MiB target
+without-race authenticated4,165,850B in108.548746/53.301322ms (live/rebuild).
+These were measured on the same hosted proof runner, not a claimed universal
+ratio to the earlier-race refusal.
+
+Architect58511 accepted three separate allocation stages: fixed128-anchor
+segments (689f3b4), empty codec tail/scratch release after a drained flush
+(0f3508e), and a64KiB private parser aligned with the native read bound
+(c0f47f1). Metadata remains immutable after flush and no canonical fields or
+permission rules change. An isolated hosted sequence must measure each stage
+on identical encrypted input; final8 resources and revised writer latency
+must pass afresh.359 resources passed8/8 but byte-identical production771
+failed49.38408B/record and8,439,504B above steady, so a single near-bound green
+is not evidence of comfortable margin.
