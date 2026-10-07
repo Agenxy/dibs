@@ -17,12 +17,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: c241fe34f3b50d0b67634c297741ee3fadadb237
+          ref: 3e80ed7d4422f33e25004638ae8c4f0976989063
           path: source
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: e771d2f6603cbed768025a1107615c524669c02b
           path: old
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: c241fe34f3b50d0b67634c297741ee3fadadb237
+          path: old-seek
       - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
         with:
           version: 2026.7.7

@@ -17,8 +17,9 @@ import (
 )
 
 const (
-	candidate = "c241fe34f3b50d0b67634c297741ee3fadadb237"
-	beforeAPI = "e771d2f6603cbed768025a1107615c524669c02b"
+	candidate   = "3e80ed7d4422f33e25004638ae8c4f0976989063"
+	beforeAPI   = "e771d2f6603cbed768025a1107615c524669c02b"
+	beforeBytes = "c241fe34f3b50d0b67634c297741ee3fadadb237"
 )
 
 type (
@@ -46,7 +47,10 @@ func run() error {
 	if err := verify("old", beforeAPI); err != nil {
 		return err
 	}
-	for _, dir := range []string{"source", "old"} {
+	if err := verify("old-seek", beforeBytes); err != nil {
+		return err
+	}
+	for _, dir := range []string{"source", "old", "old-seek"} {
 		if _, err := command(dir, "mise", "trust"); err != nil {
 			return err
 		}
@@ -73,6 +77,9 @@ func run() error {
 	}
 	fmt.Printf("HISTORY_API_BASELINE source=%s tests=%d green=true\n", candidate, len(expected))
 	if err := oldProof(); err != nil {
+		return err
+	}
+	if err := oldSeekProof(); err != nil {
 		return err
 	}
 	for _, m := range mutations() {
@@ -122,15 +129,16 @@ func test(dir, selector string) (map[string]result, error, error) {
 		if err := json.Unmarshal(scanner.Bytes(), &ev); err != nil {
 			continue
 		}
-		if ev.Test == "" || strings.Contains(ev.Test, "/") {
+		if ev.Test == "" {
 			continue
 		}
-		r := got[ev.Test]
+		name, _, _ := strings.Cut(ev.Test, "/")
+		r := got[name]
 		r.output += ev.Output
-		if ev.Action == "pass" || ev.Action == "fail" {
+		if ev.Test == name && (ev.Action == "pass" || ev.Action == "fail") {
 			r.action = ev.Action
 		}
-		got[ev.Test] = r
+		got[name] = r
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, exit, err
@@ -197,6 +205,34 @@ func oldProof() error {
 	}
 	// This is API absence proof, not the conditional race discriminator. Those
 	// separately remove the exact runtime safeguard from the green feature.
+	return nil
+}
+
+func oldSeekProof() error {
+	for _, file := range []string{
+		"internal/mailhistory/query_export_test.go",
+		"internal/mailhistory/query_native_test.go",
+		"internal/mailhistory/query_content_test.go",
+	} {
+		// #nosec G304 -- immutable source checkout and constant fixture manifest.
+		raw, err := os.ReadFile(filepath.Join("source", file))
+		if err != nil {
+			return err
+		}
+		// #nosec G703 -- old checkout receives only identical constant fixture paths.
+		if err := os.WriteFile(filepath.Join("old-seek", file), raw, 0o600); err != nil {
+			return err
+		}
+	}
+	name := "TestMailHistoryNativeSmallBodySurvivesLargeValidSeekInterval"
+	got, exit, err := test("old-seek", "^"+name+"$")
+	if err != nil {
+		return err
+	}
+	if err := intended(got, exit, name, "small authorized body remained unavailable in a large valid interval"); err != nil {
+		return err
+	}
+	fmt.Printf("HISTORY_API_OLD_SEEK source=%s test=%s intended_red=valid_interval_unavailable\n", beforeBytes, name)
 	return nil
 }
 
