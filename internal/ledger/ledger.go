@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/mailhistory"
 )
 
 // Line is one ledger record. Prev chains to the SHA-256 hex of the previous
@@ -37,8 +38,11 @@ type Line struct {
 type Ledger struct {
 	f        *os.File
 	headHash string
+	headSum  [32]byte
 	box      *Box
 	nodeID   string
+	mail     *mailhistory.Index
+	lastMail mailhistory.Record
 	// readOnly means this handle may not repair what it reads. See OpenReadOnly.
 	readOnly bool
 
@@ -75,7 +79,7 @@ func Open(path, nodeID string, box *Box) (*Ledger, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open ledger: %w", err)
 	}
-	return &Ledger{f: f, headHash: genesis, box: box, nodeID: nodeID}, nil
+	return &Ledger{f: f, headHash: genesis, box: box, nodeID: nodeID, mail: mailhistory.New()}, nil
 }
 
 // OpenReadOnly opens an EXISTING ledger for inspection and nothing else.
@@ -98,7 +102,7 @@ func OpenReadOnly(path, nodeID string, box *Box) (*Ledger, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open ledger read-only: %w", err)
 	}
-	return &Ledger{f: f, headHash: genesis, box: box, nodeID: nodeID, readOnly: true}, nil
+	return &Ledger{f: f, headHash: genesis, box: box, nodeID: nodeID, readOnly: true, mail: mailhistory.New()}, nil
 }
 
 // Replay folds every ledger line into st, truncating a torn tail if the last
@@ -112,9 +116,13 @@ func (l *Ledger) Replay(st *core.State) (int, error) {
 	if _, err := l.f.Seek(0, io.SeekStart); err != nil {
 		return 0, err
 	}
+	if l.mail != nil {
+		l.mail.BeginReplay()
+	}
 	r := bufio.NewReaderSize(l.f, 1<<20)
 	var off, validOff int64
 	prev := genesis
+	var prevSum [32]byte
 	n := 0
 	for {
 		raw, err := r.ReadBytes('\n')
@@ -175,6 +183,7 @@ func (l *Ledger) Replay(st *core.State) (int, error) {
 			}
 			sum := sha256.Sum256(line)
 			prev = hex.EncodeToString(sum[:])
+			prevSum = sum
 			off += int64(len(raw))
 			validOff = off
 			n++
@@ -207,8 +216,12 @@ func (l *Ledger) Replay(st *core.State) (int, error) {
 		}
 	}
 	l.headHash = prev
+	l.headSum = prevSum
 	if _, err := l.f.Seek(0, io.SeekEnd); err != nil {
 		return n, err
+	}
+	if l.mail != nil {
+		l.configureHistory(st.NodeID, st.Limits, st.Serial, uint64(n), validOff)
 	}
 	return n, nil
 }
@@ -216,6 +229,10 @@ func (l *Ledger) Replay(st *core.State) (int, error) {
 // Append writes one op as the record for serial s, fsyncing before return.
 // Must be called after the op was applied (serial already assigned).
 func (l *Ledger) Append(serial uint64, ts time.Time, op *core.Op) error {
+	offset, err := l.f.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return err
+	}
 	enc := *op // shallow copy; encryption replaces sensitive fields
 	if err := l.box.EncryptOp(&enc); err != nil {
 		return err
@@ -232,7 +249,11 @@ func (l *Ledger) Append(serial uint64, ts time.Time, op *core.Op) error {
 		return fmt.Errorf("ledger fsync: %w", err)
 	}
 	sum := sha256.Sum256(line)
+	if l.mail != nil {
+		l.recordMail(serial, ts, offset, int64(len(line)+1), l.headSum, sum)
+	}
 	l.headHash = hex.EncodeToString(sum[:])
+	l.headSum = sum
 	return nil
 }
 

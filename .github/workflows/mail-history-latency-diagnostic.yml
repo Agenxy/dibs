@@ -1,0 +1,37 @@
+name: mail-history explicit startup and steady acceptance
+
+on:
+  pull_request:
+    paths:
+      - tools/historylatency/**
+      - .github/workflows/mail-history-latency-diagnostic.yml
+
+permissions:
+  contents: read
+
+jobs:
+  paired:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        records: [1000000, 2000000]
+        repeat: [1, 2, 3]
+    env:
+      DIBS_HISTORY_PROBE_RECORDS: ${{ matrix.records }}
+      DIBS_HISTORY_PROBE_CASE: simple
+      DIBS_HISTORY_REPEAT: ${{ matrix.repeat }}
+      DIBS_HISTORY_EXPERIMENT: restated-acceptance
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: e771d2f6603cbed768025a1107615c524669c02b
+          path: source
+      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+        with:
+          version: 2026.7.7
+          experimental: true
+      - name: Original resource gates then explicit startup and 30-second steady bounds
+        run: mise exec -- go run ./tools/historylatency

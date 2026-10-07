@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/mailhistory"
 )
 
 // Ports: the engine depends on these interfaces, never on concrete
@@ -28,6 +29,26 @@ import (
 // adapter must not silently drop or reorder.
 type Ledger interface {
 	Append(serial uint64, ts time.Time, op *core.Op) error
+}
+
+// MailHistorySource is an optional derived ledger view. Canonical before/after
+// observation occurs only after successful append. The live writer never folds
+// twice; a private post-serving ledger reader rebuilds the boot prefix.
+type MailHistorySource interface {
+	MailHistory() *mailhistory.Index
+	ObserveMail(mailhistory.Snapshot, *core.State, *core.Op, []core.Event)
+}
+
+// The observer's workspace belongs to the writer; queries never retain it.
+type mailHistoryObserver struct {
+	mailSource  MailHistorySource
+	mailScratch mailhistory.Snapshot
+}
+
+func (e *Engine) initMailHistory(led Ledger) {
+	if source, ok := led.(MailHistorySource); ok && source.MailHistory() != nil {
+		e.mailSource = source
+	}
 }
 
 // Store holds attachment bytes outside the replay model (the blob store,

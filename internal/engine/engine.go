@@ -36,7 +36,8 @@ type Engine struct {
 	unsubs chan chan core.Event
 	state  *core.State
 	led    Ledger
-	blobs  Store
+	mailHistoryObserver
+	blobs Store
 	// Derived protection against snapshots older than a blob registration.
 	blobReconciles       int
 	blobReconcileHeld    map[string]bool
@@ -306,6 +307,7 @@ func New(st *core.State, led Ledger, prober Prober, history ...[]core.Event) *En
 		reminded:   map[string]time.Time{},
 		humanRoles: map[string]bool{},
 	}
+	e.initMailHistory(led)
 	// HERE, not in the daemon, so nobody has to remember.
 	//
 	// Blocking notices are engine-ephemeral and were created only by live event
