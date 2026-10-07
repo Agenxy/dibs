@@ -257,6 +257,20 @@ func boardSummary(sc map[string]any, declaredUI bool) string {
 	return msg
 }
 
+// Orientation calls share one compact roster unless every field was asked for.
+// Registration must not charge for peers' whole declaration histories.
+func orientationBoard(res core.Result, name string, detail bool) core.Result {
+	if detail {
+		return res
+	}
+	switch name {
+	case "check_in", "register":
+		return slimBoard(res)
+	default:
+		return res
+	}
+}
+
 // slimBoard is the board an agent is charged for on check_in: one row per
 // agent with what orientation needs and nothing else.
 //

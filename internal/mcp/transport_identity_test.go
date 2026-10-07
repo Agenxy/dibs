@@ -54,7 +54,14 @@ func TestAnAgentReattachesWithoutTheBridgeRemembering(t *testing.T) {
 	rows := 0
 	for _, a := range agents {
 		m, _ := a.(map[string]any)
-		if n, _ := m["name"].(string); n == "transport-agent" {
+		n, _ := m["name"].(string)
+		if n == "" {
+			// The shared compact roster omits a name equal to its id.
+			// Still count every peer bearing this name, including siblings
+			// whose different ids make their explicit name necessary.
+			n, _ = m["id"].(string)
+		}
+		if n == "transport-agent" {
 			rows++
 		}
 	}

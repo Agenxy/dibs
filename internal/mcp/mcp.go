@@ -1114,11 +1114,7 @@ func (s *Server) callTool(
 		wantsUI := clientWantsUI(params) || sessionUI
 		return showBoardResult(s.panelState(ctx, res, a.View, a.Token), a.Detail, wantsUI), nil
 	}
-	// check_in's board is one row per agent unless the model asked for every
-	// field: see slimBoard.
-	if call.Name == "check_in" && !a.Detail {
-		res = slimBoard(res)
-	}
+	res = orientationBoard(res, call.Name, a.Detail)
 	s.presentNames(ctx, res)
 	text, merr := json.Marshal(res)
 	if merr != nil {
