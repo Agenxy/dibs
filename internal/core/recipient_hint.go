@@ -56,7 +56,8 @@ func recipientOmissions(total int) string {
 	return "; " + strconv.Itoa(total-8) + " more, call board"
 }
 
-// Retain the substring advice, and recognize bounded spelling mistakes too.
+// Retain substring advice, recognize shortened hyphen-token names, and bounded
+// spelling mistakes. A token must match in full: labs is not a match for lab.
 // The single-row edit distance is deterministic and linear in memory. Names
 // cannot turn this into an unbounded fuzzy scan: three edits is the ceiling.
 func recipientDistance(want, name string) int {
@@ -64,6 +65,9 @@ func recipientDistance(want, name string) int {
 		return 4
 	}
 	if strings.Contains(want, name) || strings.Contains(name, want) {
+		return 0
+	}
+	if recipientTokenSubset(want, name) {
 		return 0
 	}
 	a, b := []rune(want), []rune(name)
@@ -88,4 +92,17 @@ func recipientDistance(want, name string) int {
 		}
 	}
 	return row[len(b)]
+}
+
+func recipientTokenSubset(want, name string) bool {
+	have := map[string]bool{}
+	for _, token := range strings.Split(name, "-") {
+		have[token] = true
+	}
+	for _, token := range strings.Split(want, "-") {
+		if token == "" || !have[token] {
+			return false
+		}
+	}
+	return true
 }

@@ -49,6 +49,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Missing-recipient hints suggest close spelling matches first and explicitly
   count omitted agents with a `board` call when the roster exceeds eight names.
   A bounded roster no longer reads as the complete set of reachable agents.
+  Shortened names whose hyphen-separated tokens all match a recipient's tokens,
+  such as `gpt-labs` for `gpt-agenxy-labs`, are included as suggestions too.
 
 - Release publication now retries one HTTP 5xx from the draft-to-public edit
   only after re-reading the still-draft release and verifying its assets and
