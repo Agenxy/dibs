@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	candidate    = "52818a7cb66f06ccc7996fab59e3de710f39701a"
+	candidate    = "8a9b36599df08785eb574b1bc64d95fbb723fc67"
 	beforeAPI    = "e771d2f6603cbed768025a1107615c524669c02b"
 	beforeBytes  = "c241fe34f3b50d0b67634c297741ee3fadadb237"
 	beforeCost   = "240e99d19789de3a186aab7befe52ce3173dbcea"
@@ -58,7 +58,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	got, exit, err := test("source", "^(TestMailHistory(Native|RealMCP)|TestHistory(Bootstrap|Pending|ProductionBootstrap))")
+	got, exit, err := test("source", "^(TestMailHistory(Native|RealMCP)|TestHistory(Bootstrap|Pending|ProductionBootstrap|Authenticated))")
 	if err != nil {
 		return err
 	}
@@ -370,7 +370,7 @@ func mutations() []mutation {
 			"cursor-generation", "internal/mailhistory/page.go",
 			"c.Generation != status.Generation || ", "",
 			map[string]string{
-				"TestMailHistoryRealMCPForeignAndForgedCursorsRefuseWithoutRows": "forged cursor accepted or leaked rows",
+				"TestMailHistoryNativeSameKeyDifferentGenerationRefusesCursor": "different ledger generation cursor disclosed a row",
 			},
 		},
 		{
@@ -379,7 +379,15 @@ func mutations() []mutation {
 				"\t\t\treturn 0, 0, ErrCursor\n" +
 				"\t\t}\n", "",
 			map[string]string{
-				"TestMailHistoryRealMCPForeignAndForgedCursorsRefuseWithoutRows": "foreign-party cursor disclosed a row",
+				"TestHistoryAuthenticatedCursorRejectsReferenceOutsideParty": "authenticated cursor bypassed party membership",
+			},
+		},
+		{
+			"cursor-MAC", "internal/mailhistory/page.go",
+			"!hmac.Equal(tag, i.cursorMAC(fields, reader))", "!hmac.Equal(tag, tag)",
+			map[string]string{
+				"TestMailHistoryNativeCursorForgeryAndForeignReplayAreUniform":     "forged or foreign cursor confirmed a position",
+				"TestMailHistoryNativeInheritedReferenceForgeryRefusesLikeGarbage": "forged inherited reference confirmed another position",
 			},
 		},
 		{

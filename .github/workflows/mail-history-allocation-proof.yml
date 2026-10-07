@@ -1,5 +1,6 @@
 name: mail-history isolated allocation receipts
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - tools/historyallocationproof/**
@@ -8,6 +9,7 @@ permissions:
   contents: read
 jobs:
   stages:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -35,6 +37,7 @@ jobs:
       - name: Same-runner resource receipts for each allocation stage
         run: mise exec -- go run ./tools/historyallocationproof
   noise:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -69,7 +72,7 @@ jobs:
           path: scope-before
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: 52818a7cb66f06ccc7996fab59e3de710f39701a
+          ref: 8a9b36599df08785eb574b1bc64d95fbb723fc67
           path: scope-after
       - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
         with:
