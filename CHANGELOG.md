@@ -5,7 +5,7 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-- Mail history authenticates reader-bound restart-stable cursors, preserves pending continuation, scopes inherited-source overflow to its party, and retains metadata when bounded content is unavailable. Production bootstrap no longer serializes its private board for a test-only canary.
+## [0.0.14] - 2026-10-06
 
 ### Added
 
@@ -18,10 +18,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   valid sends have large bodies, including after the view is rebuilt.
   Live writer snapshots copy only the operation's affected mail; mail-free
   coordination skips message copying, and an invalidated view stops capture.
-
-- The derived mail-history builder yields to an active ledger writer in bounded
-  read and fold chunks. Its background reads are capped at 64 KiB, with at most
-  5 ms of backoff per chunk so ongoing coordination cannot starve an audit.
+  The derived history builder yields to an active ledger writer in bounded
+  read and fold chunks, capping background reads at 64 KiB and backoff at
+  5 ms per chunk so ongoing coordination cannot starve an audit.
 
 - `send(type:"notify", priority:"high"|"urgent")` now succeeds and keeps
   sender priority in mail and on the board. High/urgent mail leads lower-priority
