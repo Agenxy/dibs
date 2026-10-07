@@ -101,7 +101,9 @@ func historyBudgetLedger(t *testing.T, dir, node string) core.Agent {
 func TestMailHistoryNativeCandidateScanIsBoundedAfterAdoption(t *testing.T) {
 	dir := t.TempDir()
 	reader := historyBudgetLedger(t, dir, "history-native")
-	f := nativeHistory(t, dir)
+	// Replay must use the generator's original limits. ConsumedRetention=0
+	// would evict approvals during the recorded dead sweep before adoption.
+	f := nativeHistoryWithLimits(t, dir, core.DefaultLimits())
 	f.ids["budget-token-old"] = reader.ID
 	denied, err := f.eng.GetMessage(f.ctx, "budget-token-old", 10)
 	var ce *core.Error

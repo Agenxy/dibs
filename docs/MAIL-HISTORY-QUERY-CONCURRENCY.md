@@ -101,3 +101,11 @@ Architect58458 approved a tighter512KiB target while retaining the250ms
 query budget and16MiB/4096-record hard reader limit. Denser anchors must be
 charged by all8 resources. Non-race span timing remains unmeasured and owed;
 -race's extra cost is not a general constant-tuning yardstick.
+
+At771/run37566315360 the live and rebuilt512KiB-target content spans were
+489,519B, authenticated under-race in24.948415/25.015509ms without error.
+The MCP candidate budget guard passed; the native candidate fixture still
+failed setup because it replayed with ConsumedRetention=0 while its generator
+used the original default limits. That deleted approvals in the recorded dead
+sweep before adoption. The fixture is corrected to the same original limits;
+this setup failure remains invalid as a product or old-control verdict.
