@@ -288,8 +288,10 @@ func mutations() []mutation {
 			"candidate-budget", "internal/mailhistory/page.go",
 			"const CandidateLimit = 4096", "const CandidateLimit = 8192",
 			map[string]string{
-				"TestMailHistoryNativeCandidateScanIsBoundedAfterAdoption": "candidate scan exceeded SPEC bound or lost continuation",
-				"TestMailHistoryRealMCPCandidateBudgetAfterAdoption":       "public candidate scan exhausted or leaked the moved prefix",
+				"TestMailHistoryNativeCandidateScanIsBoundedAfterAdoption": "candidate scan exceeded SPEC bound " +
+					"or lost continuation",
+				"TestMailHistoryRealMCPCandidateBudgetAfterAdoption": "public candidate scan exhausted " +
+					"or leaked the moved prefix",
 			},
 		},
 		{
