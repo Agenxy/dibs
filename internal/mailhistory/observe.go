@@ -62,17 +62,7 @@ func generationOf(rec Record) string { return hex.EncodeToString(rec.Hash[:]) }
 func projectChanges(rec Record, before Snapshot, st *core.State, op *core.Op, events []core.Event,
 	scratch *[]uint64, emit func(snapshotUnit) error, inherit func(partyKey, partyKey) error,
 ) error {
-	numbers := (*scratch)[:0]
-	for serial, old := range before.Mail {
-		if m := st.Messages[serial]; m == nil || stateMetadata(st, m) != old {
-			numbers = append(numbers, serial)
-		}
-	}
-	for serial := range st.Messages {
-		if _, existed := before.Mail[serial]; !existed {
-			numbers = append(numbers, serial)
-		}
-	}
+	numbers := changedMessages(before, st, (*scratch)[:0])
 	slices.Sort(numbers)
 	*scratch = numbers[:0]
 	author := before.Authors[op.AgentID]
@@ -159,4 +149,26 @@ func (i *Index) captureMove(from, to partyKey) error {
 		before: i.active.count, from: from, to: to,
 	})
 	return nil
+}
+
+// Enumerate the after-set only for operations capable of a birth. Mail-free
+// and single-message operations never walk every message a second time.
+func changedMessages(before Snapshot, st *core.State, numbers []uint64) []uint64 {
+	for serial, old := range before.Mail {
+		if m := st.Messages[serial]; m == nil || stateMetadata(st, m) != old {
+			numbers = append(numbers, serial)
+		}
+	}
+	if before.all || !before.prepared {
+		for serial := range st.Messages {
+			if _, existed := before.Mail[serial]; !existed {
+				numbers = append(numbers, serial)
+			}
+		}
+	} else if before.newMessage != 0 && st.Messages[before.newMessage] != nil {
+		if _, existed := before.Mail[before.newMessage]; !existed {
+			numbers = append(numbers, before.newMessage)
+		}
+	}
+	return numbers
 }

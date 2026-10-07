@@ -67,30 +67,43 @@ type Author struct {
 // only after successful persistence (or a validated replay record). The maps
 // are writer-owned scratch: no observer may retain them past the next Capture.
 type Snapshot struct {
-	Mail    map[uint64]Metadata
-	Authors map[string]Author
+	Mail       map[uint64]Metadata
+	Authors    map[string]Author
+	all        bool
+	newMessage uint64
+	prepared   bool
 }
 
 // Capture copies only canonical metadata before the state machine mutates it.
 func Capture(st *core.State, op *core.Op, scratch *Snapshot) Snapshot {
-	if scratch.Mail == nil {
-		scratch.Mail = make(map[uint64]Metadata)
-		scratch.Authors = make(map[string]Author)
+	scope, _ := scopeOf(op.Kind)
+	if op.Kind == core.OpRespond && op.Disposition == "approve" {
+		if m := st.Messages[op.MsgSerial]; m != nil && m.Adopt != "" {
+			scope = scopeFull
+		}
 	}
-	clear(scratch.Mail)
-	clear(scratch.Authors)
-	s := *scratch
-	for n, m := range st.Messages {
-		s.Mail[n] = stateMetadata(st, m)
-		s.captureAuthor(st.Agents[m.From])
-		s.captureAuthor(st.Agents[m.To])
+	scratch.prepare(scope)
+	actor := st.Agents[op.AgentID]
+	if actor == nil && op.Token != "" {
+		actor = st.AgentByToken(op.Token)
 	}
-	a := st.Agents[op.AgentID]
-	if a == nil && op.Token != "" {
-		a = st.AgentByToken(op.Token)
+	switch scope {
+	case scopeFull:
+		for _, m := range st.Messages {
+			scratch.captureMessage(st, m)
+		}
+	case scopeMailbox:
+		scratch.captureMailbox(st, op, actor)
+	case scopeListed:
+		for _, serial := range op.MsgSerials {
+			scratch.captureMessage(st, st.Messages[serial])
+		}
+	case scopePoint:
+		scratch.captureMessage(st, st.Messages[op.MsgSerial])
+	case scopeNone:
 	}
-	s.captureAuthor(a)
-	return s
+	scratch.captureAuthor(actor)
+	return *scratch
 }
 
 func (s Snapshot) captureAuthor(a *core.Agent) {

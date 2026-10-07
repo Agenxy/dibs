@@ -14,6 +14,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   briefly refuses stale authority. Attachment references never restore bytes.
   Byte-bounded seek anchors keep small quoted bodies readable when surrounding
   valid sends have large bodies, including after the view is rebuilt.
+  Live writer snapshots copy only the operation's affected mail; mail-free
+  coordination skips message copying, and an invalidated view stops capture.
 
 - The derived mail-history builder yields to an active ledger writer in bounded
   read and fold chunks. Its background reads are capped at 64 KiB, with at most

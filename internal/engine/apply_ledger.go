@@ -20,7 +20,7 @@ func (e *Engine) applyAndLedgerWithReceipt(
 	e.stampReviewRetention(op, now)
 	before := e.state.Serial
 	var mailBefore mailhistory.Snapshot
-	if e.mailSource != nil {
+	if e.mailSource != nil && !e.mailSource.MailHistory().Status().Failed {
 		mailBefore = mailhistory.Capture(e.state, op, &e.mailScratch)
 	}
 	applied := beginSendStage(op, "apply")
