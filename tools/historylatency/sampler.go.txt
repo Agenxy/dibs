@@ -1,0 +1,214 @@
+package ledger
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"os"
+	"path/filepath"
+	"runtime"
+	"slices"
+	"strconv"
+	"testing"
+	"time"
+
+	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/engine"
+)
+
+// Each arm may append real coordination ops after replay, so it MUST get its
+// own byte-identical copy. Setup I/O is outside both arms' replay timing.
+func copyHistoryProbeLedger(t *testing.T, source, destination string) string {
+	t.Helper()
+	in, err := os.Open(source) // #nosec G304 -- hosted fixture only
+	if err != nil {
+		t.Fatal("setup: paired source:", err)
+	}
+	defer func() { _ = in.Close() }()
+	out, err := os.OpenFile(destination, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600) // #nosec G304 -- hosted fixture only
+	if err != nil {
+		t.Fatal("setup: paired copy:", err)
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		t.Fatal("setup: identical paired ledger copy:", err)
+	}
+	if err := out.Close(); err != nil {
+		t.Fatal("setup:", err)
+	}
+	return destination
+}
+
+// Actual engine ops run while the serving-triggered builder warms the view.
+// No timing is inferred from codec benchmarks, no writer flag is set by hand.
+func measureProductionWarm(t *testing.T, ctx context.Context, eng *engine.Engine, l *Ledger, peak uint64) (float64, uint64, float64) {
+	t.Helper()
+	var actor, token string
+	// Fixture party-00 always survives every workload, including merges.
+	if l.mail.Measurement().Records >= 100 {
+		actor, token = "party-00", "party-00"
+	}
+	started := time.Now()
+	deadline := time.NewTimer(5 * time.Minute)
+	defer deadline.Stop()
+	tick := time.NewTicker(2 * time.Millisecond)
+	defer tick.Stop()
+	var latencies []float64
+	var mem runtime.MemStats
+	period := historySamplerPeriod(t)
+	var sampledAt time.Time
+	var heapSamples int
+	for {
+		if period == 0 || sampledAt.IsZero() || time.Since(sampledAt) >= period {
+			runtime.ReadMemStats(&mem)
+			peak = max(peak, mem.HeapAlloc)
+			sampledAt = time.Now()
+			heapSamples++
+		}
+		m := l.mail.Measurement()
+		if m.Failed {
+			t.Fatal("setup: background builder failed")
+		}
+		if m.Ready {
+			break
+		}
+		if token != "" {
+			// The rate limiter is unrelated to builder latency. Refill through
+			// its real writer query before timing an unchanged coordination op.
+			if err := eng.SetRateTokens(ctx, actor, 30); err != nil {
+				t.Fatal("setup:", err)
+			}
+			at := time.Now()
+			res, err := eng.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: token})
+			latencies = append(latencies, time.Since(at).Seconds())
+			if err != nil || res["error"] != nil {
+				t.Fatal("setup: real warming coordination op failed:", err, res)
+			}
+		}
+		select {
+		case <-deadline.C:
+			t.Fatal("warm builder did not finish; writer starvation has not been ruled out")
+		case <-tick.C:
+		}
+	}
+	slices.Sort(latencies)
+	var p99 float64
+	if len(latencies) > 0 {
+		p99 = latencies[(len(latencies)-1)*99/100]
+	} else if l.mail.Measurement().Records >= 1_000_000 {
+		t.Fatal("probe did not measure a coordination op during warm-up")
+	}
+	t.Logf("HISTORY_WARMING_COORDINATION samples=%d p99_seconds=%.9f", len(latencies), p99)
+	raw, err := os.ReadFile(".history-production-probe/no-warm.json")
+	var control samplerControl
+	if err != nil || json.Unmarshal(raw, &control) != nil || control.Samples != 2048 || control.P99 <= 0 {
+		t.Fatal("setup: checked same-runner no-warm receipt unavailable:", err)
+	}
+	bound := max(2*control.P99, .010)
+	receipt, err := json.Marshal(map[string]any{
+		"label": os.Getenv("DIBS_HISTORY_LATENCY_LABEL"), "period_ms": period.Milliseconds(),
+		"samples": len(latencies), "heap_samples": heapSamples, "p99_seconds": p99,
+		"control_p99_seconds": control.P99, "bound_seconds": bound, "passes": p99 <= bound,
+		"sampled_peak_bytes": peak, "warm_seconds": time.Since(started).Seconds(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("HISTORY_SAMPLER_AB %s", receipt)
+	if p99 > bound {
+		t.Error("warming writer p99 exceeds max(2x same-runner no-warm p99, 10ms)")
+	}
+	return time.Since(started).Seconds(), peak, p99
+}
+
+type samplerControl struct {
+	Samples int     `json:"samples"`
+	P99     float64 `json:"p99_seconds"`
+}
+
+func historySamplerPeriod(t *testing.T) time.Duration {
+	t.Helper()
+	period, err := strconv.Atoi(os.Getenv("DIBS_HISTORY_HEAP_SAMPLE_PERIOD_MS"))
+	if err != nil || (period != 0 && period != 100) {
+		t.Fatal("setup: sampler must be original0 or bounded100ms")
+	}
+	return time.Duration(period) * time.Millisecond
+}
+
+// This separate control process does not delay the production arm's actual
+// first Accept or add live captures before warming to buy a better p99.
+func TestHistorySamplerNoWarm(t *testing.T) {
+	if os.Getenv("DIBS_HISTORY_LATENCY_LABEL") == "" {
+		t.Skip("hosted sampler causal control")
+	}
+	count, err := strconv.Atoi(os.Getenv("DIBS_HISTORY_PROBE_RECORDS"))
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	dir := ".history-production-probe"
+	box, err := LoadOrCreateKey(filepath.Join(dir, "key"))
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	path := copyHistoryProbeLedger(t, filepath.Join(dir, "ledger.jsonl"), filepath.Join(dir, "control.ledger.jsonl"))
+	l, err := Open(path, "history-probe", box)
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	defer func() { _ = l.Close() }()
+	st := core.NewState("history-probe", core.DefaultLimits())
+	n, err := l.Replay(st)
+	if err != nil || n != count || st.Serial != uint64(count) {
+		t.Fatal("setup: actual Replay:", n, st.Serial, err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	eng := engine.New(st, l, nil)
+	joined := make(chan struct{})
+	go func() { eng.Run(ctx); close(joined) }()
+	defer func() { cancel(); <-joined }()
+	if _, _, err := eng.SubscribeInfo(ctx, ""); err != nil {
+		t.Fatal("setup:", err)
+	}
+	runtime.GC()
+	period := historySamplerPeriod(t)
+	var sampledAt time.Time
+	tick := time.NewTicker(2 * time.Millisecond)
+	defer tick.Stop()
+	var samples []float64
+	var mem runtime.MemStats
+	for range 2048 {
+		if period == 0 || sampledAt.IsZero() || time.Since(sampledAt) >= period {
+			runtime.ReadMemStats(&mem)
+			sampledAt = time.Now()
+		}
+		m := l.mail.Measurement()
+		if m.Started || m.Ready || m.Failed {
+			t.Fatal("setup: no-warm control warmed or failed", m)
+		}
+		if err := eng.SetRateTokens(ctx, "party-00", 30); err != nil {
+			t.Fatal("setup:", err)
+		}
+		at := time.Now()
+		res, err := eng.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: "party-00"})
+		samples = append(samples, time.Since(at).Seconds())
+		if err != nil || res["error"] != nil {
+			t.Fatal("setup: real no-warm Ack:", err, res)
+		}
+		select {
+		case <-tick.C:
+		case <-ctx.Done():
+			t.Fatal("setup:", ctx.Err())
+		}
+	}
+	slices.Sort(samples)
+	control := samplerControl{Samples: len(samples), P99: samples[(len(samples)-1)*99/100]}
+	raw, err := json.Marshal(control)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(dir, "no-warm.json"), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("HISTORY_SAMPLER_NO_WARM label=%s period_ms=%d %s", os.Getenv("DIBS_HISTORY_LATENCY_LABEL"), period.Milliseconds(), raw)
+}

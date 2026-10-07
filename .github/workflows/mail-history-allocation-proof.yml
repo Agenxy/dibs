@@ -1,39 +1,36 @@
-name: mail-history API runtime controls
-
+name: mail-history isolated allocation receipts
 on:
   pull_request:
     paths:
-      - tools/historyapiproof/**
-      - .github/workflows/mail-history-api-proof.yml
-
+      - tools/historyallocationproof/**
+      - .github/workflows/mail-history-allocation-proof.yml
 permissions:
   contents: read
-
 jobs:
-  controls:
+  stages:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: 359ba2fe4df6d1c9d4a8ed555c55e1040a05cc0f
+          path: allocation-before
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: 689f3b4d447c4695e53878d58a04857047f0dbfd
+          path: allocation-segments
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: 0f3508ea6fedc171a928df45a72b50efd24f6be4
+          path: allocation-idle
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
           ref: b640e08d79e262e09a9f187cabf6d572e229a75a
-          path: source
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: e771d2f6603cbed768025a1107615c524669c02b
-          path: old
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: c241fe34f3b50d0b67634c297741ee3fadadb237
-          path: old-seek
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: 240e99d19789de3a186aab7befe52ce3173dbcea
-          path: old-cost
+          path: allocation-parser
       - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
         with:
           version: 2026.7.7
           experimental: true
-      - name: Candidate baseline, old API absence, and discriminating runtime mutation controls
-        run: mise exec -- go run ./tools/historyapiproof
+      - name: Same-runner resource receipts for each allocation stage
+        run: mise exec -- go run ./tools/historyallocationproof

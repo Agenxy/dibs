@@ -1,0 +1,269 @@
+package ledger
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
+	"slices"
+	"strconv"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/engine"
+)
+
+// The widened file interfaces exist only in the hosted overlay. Open still opens a real
+// os.File; Replay, Append, Sync and the bootstrap's ReadAt use their actual
+// production paths. The wrapped file is installed BEFORE actual Replay, so
+// configureHistory captures the same disk as the writer without manual wiring.
+const (
+	diskRead = iota
+	diskWrite
+	diskSync
+	diskBytesPerSecond = 20 << 20
+)
+
+type diskCounters struct {
+	ops      atomic.Uint64
+	bytes    atomic.Int64
+	waitNS   atomic.Int64
+	nativeNS atomic.Int64
+	maxBytes atomic.Int64
+}
+
+// One zero-burst FIFO service budget for all three operations: bytes/20MiB/s
+// plus 0.5ms per read/write and 14ms per flush. Reservations, not mutex hold
+// time, serialize the modeled device. No arm-specific cost, priority, injected
+// lock in the index, extra workload or artificial writer failure is introduced.
+type sharedHistoryDisk struct {
+	ctx   context.Context
+	mu    sync.Mutex
+	next  time.Time
+	stats [3]diskCounters
+}
+
+func (d *sharedHistoryDisk) reserve(kind, bytes int) error {
+	fixed := 500 * time.Microsecond
+	if kind == diskSync {
+		fixed = 14 * time.Millisecond
+	}
+	service := fixed + time.Duration(int64(bytes)*int64(time.Second)/diskBytesPerSecond)
+	at := time.Now()
+	d.mu.Lock()
+	start := d.next
+	if at.After(start) {
+		start = at
+	}
+	d.next = start.Add(service)
+	end := d.next
+	d.mu.Unlock()
+	stats := &d.stats[kind]
+	stats.ops.Add(1)
+	stats.bytes.Add(int64(bytes))
+	for previous := stats.maxBytes.Load(); int64(bytes) > previous; previous = stats.maxBytes.Load() {
+		if stats.maxBytes.CompareAndSwap(previous, int64(bytes)) {
+			break
+		}
+	}
+	stats.waitNS.Add(start.Sub(at).Nanoseconds())
+	timer := time.NewTimer(time.Until(end))
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-d.ctx.Done():
+		return d.ctx.Err()
+	}
+}
+
+type sharedDiskFile struct {
+	*os.File
+	disk *sharedHistoryDisk
+}
+
+func (f *sharedDiskFile) ReadAt(p []byte, off int64) (int, error) {
+	if err := f.disk.reserve(diskRead, len(p)); err != nil {
+		return 0, err
+	}
+	at := time.Now()
+	n, err := f.File.ReadAt(p, off)
+	f.disk.stats[diskRead].nativeNS.Add(time.Since(at).Nanoseconds())
+	return n, err
+}
+
+func (f *sharedDiskFile) Write(p []byte) (int, error) {
+	if err := f.disk.reserve(diskWrite, len(p)); err != nil {
+		return 0, err
+	}
+	at := time.Now()
+	n, err := f.File.Write(p)
+	f.disk.stats[diskWrite].nativeNS.Add(time.Since(at).Nanoseconds())
+	return n, err
+}
+
+func (f *sharedDiskFile) Sync() error {
+	if err := f.disk.reserve(diskSync, 0); err != nil {
+		return err
+	}
+	at := time.Now()
+	err := f.File.Sync()
+	f.disk.stats[diskSync].nativeNS.Add(time.Since(at).Nanoseconds())
+	return err
+}
+
+type sharedDiskPhase struct {
+	Samples       int     `json:"samples"`
+	Seconds       float64 `json:"seconds"`
+	P99NS         int64   `json:"p99_ns"`
+	WriterQueueNS int64   `json:"writer_device_queue_ns"`
+}
+
+func TestHistorySharedDiskDiagnostic(t *testing.T) {
+	if os.Getenv("DIBS_HISTORY_EXPERIMENT") != "shared-disk" {
+		t.Skip("hosted shared disk contention diagnostic")
+	}
+	count, err := strconv.Atoi(os.Getenv("DIBS_HISTORY_PROBE_RECORDS"))
+	if err != nil || (count != 1_000_000 && count != 2_000_000) {
+		t.Fatal("setup: invalid count", err)
+	}
+	dir := ".history-production-probe"
+	box, err := LoadOrCreateKey(filepath.Join(dir, "key"))
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	path := copyHistoryProbeLedger(t, filepath.Join(dir, "ledger.jsonl"), filepath.Join(dir, "shared.ledger.jsonl"))
+	l, err := Open(path, "history-probe", box)
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	defer func() { _ = l.Close() }()
+	file, ok := l.f.(*os.File)
+	if !ok {
+		t.Fatal("setup: Open did not open a native file")
+	}
+	info, err := file.Stat()
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	disk := &sharedHistoryDisk{ctx: ctx}
+	l.f = &sharedDiskFile{File: file, disk: disk}
+	st := core.NewState("history-probe", core.DefaultLimits())
+	n, err := l.Replay(st)
+	if err != nil || n != count || st.Serial != uint64(count) {
+		t.Fatal("setup: actual Replay", n, st.Serial, err)
+	}
+	if actor := st.Agents["party-00"]; actor == nil || actor.Token != "party-00" {
+		t.Fatal("setup: actor missing")
+	}
+	eng := engine.New(st, l, nil)
+	joined := make(chan struct{})
+	go func() { eng.Run(ctx); close(joined) }()
+	defer func() { cancel(); <-joined }()
+	if _, _, err := eng.SubscribeInfo(ctx, ""); err != nil {
+		t.Fatal("setup:", err)
+	}
+	runtime.GC()
+	control := measureSharedDisk(t, ctx, eng, l, disk, 512)
+	if m := l.mail.Measurement(); m.Started || m.Ready || m.Failed || disk.stats[diskRead].ops.Load() != 0 {
+		t.Fatal("setup: no-warm arm performed builder reads", m)
+	}
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	srv.Listener = l.mail.ServingListener(ctx, srv.Listener)
+	srv.Start()
+	defer srv.Close()
+	res, err := srv.Client().Get(srv.URL)
+	if err != nil {
+		t.Fatal("setup: real first Accept:", err)
+	}
+	_ = res.Body.Close()
+	warm := measureSharedDisk(t, ctx, eng, l, disk, 0)
+	if warm.Samples < 100 || disk.stats[diskRead].ops.Load() == 0 || disk.stats[diskRead].bytes.Load() != info.Size() {
+		t.Fatal("setup: insufficient warming ops or actual frozen-prefix reads", warm, disk.stats[diskRead].bytes.Load(), info.Size())
+	}
+	m := l.mail.Measurement()
+	if !m.Ready || m.Failed || m.BuiltSerial != uint64(n)+disk.stats[diskSync].ops.Load() || m.QueuedBytes != 0 {
+		t.Fatal("setup: actual builder did not catch up", m)
+	}
+	bound := max(2*control.P99NS, int64(10*time.Millisecond))
+	raw, err := json.Marshal(map[string]any{
+		"records": n, "bytes_per_second": diskBytesPerSecond,
+		"read_write_fixed_ns": 500_000, "sync_fixed_ns": 14_000_000,
+		"control": control, "warm": warm, "bound_ns": bound,
+		"passes": warm.P99NS <= bound, "representation": m,
+		"read_ops": disk.stats[diskRead].ops.Load(), "read_bytes": disk.stats[diskRead].bytes.Load(),
+		"max_native_read_bytes": disk.stats[diskRead].maxBytes.Load(),
+		"load":                  os.Getenv("DIBS_HISTORY_WRITER_LOAD"),
+		"native_io_ns_read_write_sync": []int64{
+			disk.stats[diskRead].nativeNS.Load(), disk.stats[diskWrite].nativeNS.Load(), disk.stats[diskSync].nativeNS.Load(),
+		},
+		"model": "one zero-burst FIFO byte/time service budget, unchanged native ReadAt Write Sync",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("HISTORY_SHARED_DISK %s", raw)
+	if warm.P99NS > bound {
+		t.Fatal("warming writer exceeds prespecified same-runner bound with shared disk contention")
+	}
+	if disk.stats[diskRead].maxBytes.Load() > 64<<10 {
+		t.Fatal("actual native bootstrap read exceeded 64KiB")
+	}
+	runtime.KeepAlive(eng)
+}
+
+func measureSharedDisk(t *testing.T, ctx context.Context, eng *engine.Engine, l *Ledger, disk *sharedHistoryDisk, fixed int) sharedDiskPhase {
+	t.Helper()
+	start := time.Now()
+	tick := time.NewTicker(2 * time.Millisecond)
+	defer tick.Stop()
+	var samples []int64
+	var mem runtime.MemStats
+	queueBefore := disk.stats[diskWrite].waitNS.Load() + disk.stats[diskSync].waitNS.Load()
+	for n := 0; fixed == 0 || n < fixed; n++ {
+		runtime.ReadMemStats(&mem) // original sampler, outside timed Do in both arms
+		m := l.mail.Measurement()
+		if m.Failed {
+			t.Fatal("setup: builder failed", m)
+		}
+		if fixed == 0 && m.Ready {
+			break
+		}
+		if err := eng.SetRateTokens(ctx, "party-00", 30); err != nil {
+			t.Fatal("setup:", err)
+		}
+		writes, syncs := disk.stats[diskWrite].ops.Load(), disk.stats[diskSync].ops.Load()
+		at := time.Now()
+		res, err := eng.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: "party-00"})
+		samples = append(samples, time.Since(at).Nanoseconds())
+		if err != nil || res["error"] != nil || disk.stats[diskWrite].ops.Load() != writes+1 || disk.stats[diskSync].ops.Load() != syncs+1 {
+			t.Fatal("setup: actual timed op did not write and sync exactly once", err, res)
+		}
+		if os.Getenv("DIBS_HISTORY_WRITER_LOAD") != "back-to-back" {
+			select {
+			case <-tick.C:
+			case <-ctx.Done():
+				t.Fatal("setup:", ctx.Err())
+			}
+		}
+	}
+	if len(samples) == 0 {
+		t.Fatal("setup: no samples")
+	}
+	slices.Sort(samples)
+	return sharedDiskPhase{
+		Samples: len(samples), Seconds: time.Since(start).Seconds(),
+		P99NS:         samples[(len(samples)-1)*99/100],
+		WriterQueueNS: disk.stats[diskWrite].waitNS.Load() + disk.stats[diskSync].waitNS.Load() - queueBefore,
+	}
+}
