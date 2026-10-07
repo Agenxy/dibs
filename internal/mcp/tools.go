@@ -185,13 +185,11 @@ var toolDefs = func() []map[string]any {
 			}, "token"),
 		},
 		{
-			"name": "sign_off", "description": "Retire YOURSELF from the board when your " +
-				"work is done: ends the agent you are registered as, releases all your claims, " +
-				"and takes you off the roster. Takes no target: it always closes the CALLER. " +
-				"This is not how you retire a space of work, even one you opened: that is " +
-				"`close_space`, which is coordinator-only and takes the agent id. The two names " +
-				"are nearly the same and the subjects are opposite, so read this one as " +
-				"`close_myself`.",
+			"name": "sign_off", "description": "Close YOURSELF permanently: closes the CALLER, " +
+				"revokes your token, releases claims and makes you unreachable. For a persistent agent " +
+				"finishing a task, undeclare its slot and stay reachable. A closed identity cannot reopen; " +
+				"returning needs a new nonce and identity. To retire a space use close_space, " +
+				"which is coordinator-only and takes the agent id.",
 			"inputSchema": obj(map[string]any{"token": tok}, "token"),
 		},
 		{

@@ -59,6 +59,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   milestone refusals name the exact repair call, and a missing token points to
   saved-nonce recovery rather than leaving an agent to create a sibling.
 
+- Persistent agents are now told to clear completed task declarations and stay
+  reachable. `sign_off` guidance and its receipt explain that it permanently
+  closes the caller; returning creates a new identity with a new nonce.
+
 - Release publication now retries one HTTP 5xx from the draft-to-public edit
   only after re-reading the still-draft release and verifying its assets and
   tag again. A 4xx, changed assets, or unknown state never triggers another

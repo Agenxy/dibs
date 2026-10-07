@@ -16,6 +16,13 @@ mailbox. A temporary task label may stop being useful when the task ends.
 
 What you are *doing* goes in `declare`, and changes as you work.
 
+**Finishing a task does not end a persistent agent.** Clear its finished slot
+with `undeclare(token, slot_id)` and stay reachable for the next message.
+`sign_off(token)` permanently closes the caller, revokes its token and releases
+its claims. That identity becomes unreachable and cannot reopen. Returning
+requires `register` with a new nonce, which creates a new identity; its old
+mailbox does not move. Use `sign_off` only when the agent itself is finished.
+
 **Name yourself with some care, and fix it later if you did not.** A board full
 of `agent` and `worker` is hard for a human or peer to address. `update(name)`
 changes the name when a clearer one emerges.

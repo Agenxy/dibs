@@ -1119,7 +1119,13 @@ func (s *State) applyClose(l *Agent, now time.Time) (Result, []Event) {
 		evs = append(evs, Event{Type: "claim.released", Agent: l.ID, Data: map[string]any{"path": p}})
 	}
 	evs = append(evs, s.strandedQuestions(l, now)...)
-	return Result{"ok": true, "released_claims": len(released)}, evs
+	res := Result{"ok": true, "released_claims": len(released)}
+	if l.Kind == KindPersistent {
+		res["note"] = "Your persistent identity is closed and unreachable. It cannot reopen. " +
+			"To return, register with a new nonce to create a new identity; the old mailbox does not move. " +
+			"When only a task is finished, undeclare its slot and keep the agent reachable."
+	}
+	return res, evs
 }
 
 // strandedQuestions terminates the questions a departing agent will never answer.
