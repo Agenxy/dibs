@@ -5,7 +5,23 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Mail history authenticates reader-bound restart-stable cursors, preserves pending continuation, scopes inherited-source overflow to its party, and retains metadata when bounded content is unavailable. Production bootstrap no longer serializes its private board for a test-only canary.
+
 ### Added
+
+- `mail_history` audits an agent's eligible sent/received ledger mail after live
+  retention, with metadata by default and opt-in quoted conversation text.
+  Bounded stateless pages preserve a fixed prefix without marking mail or
+  outcomes read; ordinary history lag is explicit, and an ownership move
+  briefly refuses stale authority. Attachment references never restore bytes.
+  Byte-bounded seek anchors keep small quoted bodies readable when surrounding
+  valid sends have large bodies, including after the view is rebuilt.
+  Live writer snapshots copy only the operation's affected mail; mail-free
+  coordination skips message copying, and an invalidated view stops capture.
+
+- The derived mail-history builder yields to an active ledger writer in bounded
+  read and fold chunks. Its background reads are capped at 64 KiB, with at most
+  5 ms of backoff per chunk so ongoing coordination cannot starve an audit.
 
 - `send(type:"notify", priority:"high"|"urgent")` now succeeds and keeps
   sender priority in mail and on the board. High/urgent mail leads lower-priority

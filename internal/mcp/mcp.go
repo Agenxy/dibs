@@ -876,6 +876,8 @@ type toolArgs struct {
 	Mode           string            `json:"mode"`
 	Note           string            `json:"note"`
 	Since          uint64            `json:"since_serial"`
+	HistoryCursor  string            `json:"cursor"`
+	IncludeBodies  bool              `json:"include_bodies"`
 	TimeoutSec     int               `json:"timeout_s"`
 	Attachments    []core.Attachment `json:"attachments"`
 	Data           string            `json:"data"` // put_blob: base64 content
@@ -1072,6 +1074,7 @@ func (s *Server) callTool(
 		if errors.As(err, &ce) {
 			payload = map[string]any{"code": ce.Code, "message": ce.Msg, "hint": ce.Hint}
 		}
+		appendHistoryRefusal(call.Name, payload, res)
 		text, _ := json.Marshal(payload)
 		return map[string]any{"isError": true, "content": []map[string]any{{"type": "text", "text": string(text)}}}, nil
 	}
@@ -1363,6 +1366,8 @@ func (s *Server) run(
 		return s.eng.Inbox(ctx, a.Token)
 	case "read_mail":
 		return s.eng.GetMessage(ctx, a.Token, a.MsgSerial)
+	case "mail_history":
+		return s.readHistory(ctx, params, a)
 	case "read_space":
 		return s.spaceRead(ctx, a.Token, a.SpaceID, a.Limit)
 	case "claim":
@@ -1701,12 +1706,16 @@ func argumentPresent(params json.RawMessage, name string) bool {
 		return false
 	}
 	var outer struct {
-		Arguments map[string]json.RawMessage `json:"arguments"`
+		Arguments json.RawMessage `json:"arguments"`
 	}
 	if json.Unmarshal(params, &outer) != nil {
 		return false
 	}
-	_, ok := outer.Arguments[name]
+	var arguments map[string]json.RawMessage
+	if json.Unmarshal(unstring(outer.Arguments), &arguments) != nil {
+		return false
+	}
+	_, ok := arguments[name]
 	return ok
 }
 

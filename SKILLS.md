@@ -364,6 +364,16 @@ receiving native peer turns, another watcher adds no delivery guarantee.
 
 ## Mail
 
+- **Audit without consuming.** `mail_history(token, since_serial?, limit?,
+  include_bodies?, cursor?)` returns your sent/received ledger audit units after
+  live mail has been retained out. Metadata is the default; opt in to quoted
+  conversation text. Reading history marks no mail, outcome, review or socket
+  offer read. Use `read_mail` for those receipts. Limit defaults to 25 (max 100);
+  continue with the opaque cursor alone, preserving the original upper prefix.
+  `as_of_serial` and `behind_by` describe live lag. Initial `E_HISTORY_WARMING`
+  or brief ownership `E_HISTORY_SETTLING` means retry shortly. Truncated content
+  names its recorded size; attachments remain references, never restored bytes.
+
 - **Ask the person through Dibs.** For their decision, use
   `send(token, to: "human", type: "request", body: <concrete work and approval>)`;
   never ask in chat and wait. The role address works before they have visited
@@ -669,7 +679,7 @@ the recipient from starting, declining or finishing work.
 ## Protocol version: what is actually true today
 
 Dibs targets **MCP 2026-07-28** (stateless core) and also serves the legacy
-**2025-11-25** path. Both work, all 52 tools behave identically on either, and
+**2025-11-25** path. Both work, all 53 tools behave identically on either, and
 you need do nothing.
 
 **Configured Codex reaches 2026-07-28.** Re-measured 2026-10-03 on the app's
@@ -696,7 +706,7 @@ infrastructure advice every session is an agent people turn off.
 
 **What changes if your operator does enable it:** nothing you call. You gain a
 protocol with no `initialize` handshake, so a reconnect costs nothing, and list
-results carry `ttlMs`/`cacheScope` so your client can stop re-fetching 52 tool
+results carry `ttlMs`/`cacheScope` so your client can stop re-fetching 53 tool
 descriptions on every cold start. Your own tool calls are unchanged.
 
 ## Reading the room before you act

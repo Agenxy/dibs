@@ -1197,9 +1197,49 @@ an unfinished request and maps its tracked task to `cancelled`, with a factual
 result and optional replacement reference. Task listeners publish this terminal
 snapshot and stop following it. Neither operation stops an agent process.
 
-**Tools (52).** All take `token` except `register`, `resume`,
+**Tools (53).** All take `token` except `register`, `resume`,
 `hook_poll` and `guard_path` (the last two are lifecycle-hook surfaces and have
 no token to give: see SECURITY.md).
+
+`mail_history(token, since_serial=0, limit=25, include_bodies=false, cursor?)`
+returns chronological committed audit units for the caller's sender/recipient
+incarnation, including retained-out mail. It shares read_mail's pure creation
+and authorized adoption fence and has no role bypass. authObserve admits it
+without delivery, consumption, outcome/review reads or socket confirmation.
+Authors retain the identity incarnation and machine recorded at the event;
+later renames and relocations do not rewrite that attribution.
+Content is opt-in quoted conversation data; attachments are recorded references,
+never restored bytes. A stateless generation/version/upper/compound-position
+cursor pins the first prefix; its derived reference accelerator is validated
+against that position on each page. A 128-bit HMAC-SHA256 tag binds its fixed
+fields to the caller ID, creation serial and generation, verified before any
+reference lookup. Its key is HKDF-derived from the existing board key using
+`dibs mail-history cursor v1`; no new secret or persistent cursor state is
+created. Later pages use cursor alone. A page that examines no candidate while
+waiting for newer metadata retains its previous cursor.
+
+Bounds are 1–100 rows, 4096 own candidate units, 128 KiB encoded page and a
+250 ms work budget checked between units. Bounded content identifies recorded
+byte lengths and truncation; a budget-unavailable field is explicitly labeled.
+Compression/decryption/seek work stays outside the writer. Native seeks verify
+the whole sparse interval through the next trusted anchor or drained head.
+Anchors cut ordinary intervals before either 4096 records or 512 KiB is exceeded,
+and the first post-S0 commit starts a new interval. The native reader still
+refuses intervals over 4096 records/16 MiB without moving the writer's file
+position; a single oversized legacy record can be explicitly unavailable while its
+metadata and later rows remain available. Integrity failures still refuse the
+whole page. More than 255 inherited history sources (256 including its own)
+permanently refuses only that incarnation with an explicit hint; other parties
+keep their history.
+Invalid evidence fails history closed while coordination remains usable.
+
+E_HISTORY_WARMING applies only until the initial S0 fold completes. Afterwards
+ordinary writes return the drained prefix with as_of_serial and behind_by.
+A committed ownership change raises one derived scalar fence before publish;
+if the consumer cannot reach it within the same budget, E_HISTORY_SETTLING
+refuses stale permission with a retry hint and lag. Any ownership-fence advance
+during content I/O discards the result at final token/incarnation reauthorization.
+The derived view adds no core state, ledger fields or second persistent store.
 
 The table below is the v1.0 core, and is kept because §12 is the frozen contract
 those tools were reviewed against. It is NOT the full surface: v1.1 added blobs
@@ -1505,7 +1545,7 @@ binaries (`dibd` and `dibs`) both CGO_ENABLED=0 and byte-reproducible.
 ledgered wake transitions; ephemeral + persistent agents; resume; awareness gate
 per activation; mailbox (full state machine, read_mail, op_id dedup,
 dormant-recipient semantics); claims (§9 matrix); bounded liveness with bounded
-restart grace; limits incl. state GC; MCP 2026-07-28 dual-version surface (52 tools);
+restart grace; limits incl. state GC; MCP 2026-07-28 dual-version surface (53 tools);
 local access secret + Origin validation; CLI (board/messages/log/verify/mcp-config);
 SSE web board; static binaries (`dibd` + `dibs`, no cgo, no runtime deps).
 

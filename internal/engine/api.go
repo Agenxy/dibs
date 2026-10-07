@@ -626,9 +626,8 @@ func (e *Engine) GetMessage(ctx context.Context, token string, serial uint64) (c
 		// segfaulted the daemon. The test for the exemption read only messages
 		// that existed and never ran this branch; the space e2e reads a missing
 		// serial and found it in one run.
-		adopted := ok && m.To == l.ID && e.state.AdoptedFor(m, l.ID)
-		inherited := ok && l.CreatedSerial > 0 && serial < l.CreatedSerial && !adopted
-		if !ok || inherited || (m.From != l.ID && m.To != l.ID) {
+		allowed, inherited := core.MessageAccess(serial, m, l)
+		if !allowed {
 			return core.Result{"error": e.unreadableMail(serial, m, ok && !inherited, l.TruncatedBefore)}
 		}
 		if m.To == l.ID && m.State == core.MsgStatePending {

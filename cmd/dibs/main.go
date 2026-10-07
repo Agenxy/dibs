@@ -380,7 +380,7 @@ var mcpTools = []string{
 	"await_events", "broadcast", "check_in", "claim", "claim_coordinator",
 	"close_space", "declare", "events_since", "evict", "force_release",
 	"get_blob", "heartbeat", "human_unlock", "inbox", "join_space",
-	"leave_space", "lock_space", "merge_agents", "merge_spaces", "open_space",
+	"leave_space", "lock_space", "mail_history", "merge_agents", "merge_spaces", "open_space",
 	"post", "prune",
 	"put_blob", "queue_lock", "queue_update", "read_mail", "read_space", "register", "release", "relocate", "respond",
 	"resume", "retitle_space", "send", "settings", "sign_off", "spawned_agents",
