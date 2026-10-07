@@ -31,6 +31,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Release publication now retries one HTTP 5xx from the draft-to-public edit
+  only after re-reading the still-draft release and verifying its assets and
+  tag again. A 4xx, changed assets, or unknown state never triggers another
+  edit. If publication still fails, the error reports that the release remains
+  a draft and prints the exact publish-only recovery command; immutability
+  settings advice appears only for an observed non-immutable public release.
+
 - Renaming onto a closed agent's immutable ID now explains that the ID remains
   reserved and pruning cannot free it. An admin can reconcile an accidental
   duplicate, while the caller must choose another name. Address ownership is unchanged.

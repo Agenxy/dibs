@@ -16,10 +16,13 @@ import (
 	"github.com/agenxy/dibs/internal/selfupdate"
 )
 
-var checksumPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+var (
+	checksumPattern           = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	publishServerErrorPattern = regexp.MustCompile(`\bHTTP\s+5[0-9]{2}\b`)
+)
 
-const immutableReleaseHint = "hint: the operator must enable repository Settings > General > Releases > " +
-	"Enable release immutability for Agenxy/dibs; verify the public release reports immutable:true"
+const immutableReleaseHint = "hint: published release reports immutable:false; " +
+	"check repository Settings > General > Releases for Agenxy/dibs"
 
 const (
 	releasePageSize = 100
@@ -219,9 +222,43 @@ func publishDraft(ctx context.Context, c config, run runner) error {
 	if err = remoteTag(ctx, c, true, run); err != nil {
 		return err
 	}
+	return publishEdit(ctx, c, run)
+}
+
+func publishEdit(ctx context.Context, c config, run runner) error {
+	d := targetOf(c)
+	_, err := run(ctx, nil, "gh", "release", "edit", d.tag, "--repo", d.repository, "--draft=false")
+	if err != nil && publishServerErrorPattern.MatchString(err.Error()) {
+		return retryPublishEdit(ctx, c, run, err)
+	}
+	return confirmPublishEdit(ctx, c, run, err)
+}
+
+func retryPublishEdit(ctx context.Context, c config, run runner, cause error) error {
+	// A 5xx does not say whether GitHub applied the edit. Before the ONE
+	// retry, prove it is still a draft with our exact verified bytes and tag.
+	s, exists, err := status(ctx, c, run)
+	if err != nil {
+		return errors.Join(cause, fmt.Errorf("publish status is unknown; no edit retry: %w", err))
+	}
+	if !exists {
+		return errors.Join(cause, errors.New("release is absent after publish edit; no edit retry"))
+	}
+	if !s.Draft {
+		if err = verifyPublicStage(ctx, c, s, run); err != nil {
+			return errors.Join(cause, err)
+		}
+		return nil
+	}
+	if err = checkReadback(ctx, c, s, run); err != nil {
+		return errors.Join(cause, fmt.Errorf("still-draft assets changed; no edit retry: %w", err))
+	}
+	if err = remoteTag(ctx, c, true, run); err != nil {
+		return errors.Join(cause, fmt.Errorf("still-draft tag changed; no edit retry: %w", err))
+	}
 	d := targetOf(c)
 	_, err = run(ctx, nil, "gh", "release", "edit", d.tag, "--repo", d.repository, "--draft=false")
-	return confirmPublished(ctx, c, run, err)
+	return confirmPublishEdit(ctx, c, run, err)
 }
 
 func uploadDraft(ctx context.Context, c config, run runner) error {
@@ -235,7 +272,10 @@ func uploadDraft(ctx context.Context, c config, run runner) error {
 }
 
 func requireImmutablePublic(s releaseStatus) error {
-	if s.Draft || !s.Immutable {
+	if s.Draft {
+		return errors.New("release is still a draft")
+	}
+	if !s.Immutable {
 		return fmt.Errorf("release is not immutable and public; %s", immutableReleaseHint)
 	}
 	return nil
@@ -244,15 +284,43 @@ func requireImmutablePublic(s releaseStatus) error {
 func confirmPublished(ctx context.Context, c config, run runner, cause error) error {
 	s, exists, err := status(ctx, c, run)
 	if err != nil {
-		return errors.Join(cause, fmt.Errorf("cannot confirm immutable public release: %w; %s", err, immutableReleaseHint))
+		return errors.Join(cause, fmt.Errorf("cannot confirm public release: %w", err))
 	}
 	if !exists {
-		return errors.Join(cause, fmt.Errorf("public release is absent; %s", immutableReleaseHint))
+		return errors.Join(cause, errors.New("public release is absent"))
 	}
 	if err = verifyPublicStage(ctx, c, s, run); err != nil {
 		return errors.Join(cause, err)
 	}
 	return nil
+}
+
+func confirmPublishEdit(ctx context.Context, c config, run runner, cause error) error {
+	s, exists, err := status(ctx, c, run)
+	if err != nil {
+		return errors.Join(cause, fmt.Errorf("publish status is unknown: %w", err))
+	}
+	if !exists {
+		return errors.Join(cause, errors.New("release is absent after publish edit"))
+	}
+	if s.Draft {
+		outcome := "publish edit reported success"
+		if cause != nil {
+			outcome = "publish edit failed: " + cause.Error()
+		}
+		return fmt.Errorf("release v%s is still a draft; %s; retry with %s", c.version,
+			outcome, publishOnlyRecoveryCommand(c))
+	}
+	if err = verifyPublicStage(ctx, c, s, run); err != nil {
+		return errors.Join(cause, err)
+	}
+	return nil
+}
+
+func publishOnlyRecoveryCommand(c config) string {
+	return fmt.Sprintf("gh workflow run release.yml --repo %s --ref v%s -f mode=publish-only "+
+		"-f version=%s -f sha=%s -f preflight_run=%s -f full_publication_run=%s",
+		repository, c.version, c.version, c.sha, c.runID, c.publicationRun)
 }
 
 func verifyPublicStage(ctx context.Context, c config, s releaseStatus, run runner) error {
