@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -41,7 +42,7 @@ func reviewProof() error {
 	for name, marker := range cases {
 		got, exit, err := test("source", "^"+name+"$")
 		if err != nil || exit != nil || got[name].action != "pass" {
-			return fmt.Errorf("review candidate guard failed %s: %v %v", name, err, exit)
+			return errors.Join(err, exit, fmt.Errorf("review candidate guard failed %s", name))
 		}
 		got, exit, err = test("old-writer", "^"+name+"$")
 		if err != nil {
