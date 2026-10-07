@@ -206,21 +206,29 @@ func (i *Index) drain(ctx context.Context) {
 			i.Invalidate()
 			return
 		}
-		i.mu.Lock()
-		if i.failed {
-			i.mu.Unlock()
+		if !i.finishDrain() {
 			return
 		}
-		if i.active == nil && i.first == nil && i.built == i.captured {
-			i.builtHead = i.head // include records that changed no mail
-			i.ready = i.ended
-			i.initialReady = i.initialReady || i.ready
-		}
-		i.mu.Unlock()
 		select {
 		case <-ctx.Done():
 			return
 		case <-i.signal:
 		}
 	}
+}
+
+// Publishing an idle watermark is a scalar-only decision. It never takes
+// viewMu, and queries can inspect its coherent status during compression.
+func (i *Index) finishDrain() bool {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if i.failed {
+		return false
+	}
+	if i.active == nil && i.first == nil && i.built == i.captured {
+		i.builtHead = i.head
+		i.ready = i.ended
+		i.initialReady = i.initialReady || i.ready
+	}
+	return true
 }

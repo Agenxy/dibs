@@ -1366,13 +1366,7 @@ func (s *Server) run(
 	case "read_mail":
 		return s.eng.GetMessage(ctx, a.Token, a.MsgSerial)
 	case "mail_history":
-		if argumentPresent(params, "limit") && a.Limit == 0 {
-			return nil, &core.Error{
-				Code: "E_HISTORY_ARGS", Msg: "limit must be between 1 and 100",
-				Hint: "call mail_history with limit 1–100, or omit limit for the default",
-			}
-		}
-		return s.eng.ReadMailHistory(ctx, a.Token, a.Since, a.Limit, a.IncludeBodies, a.HistoryCursor)
+		return s.readHistory(ctx, params, a)
 	case "read_space":
 		return s.spaceRead(ctx, a.Token, a.SpaceID, a.Limit)
 	case "claim":

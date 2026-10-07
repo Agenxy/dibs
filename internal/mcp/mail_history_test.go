@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http/httptest"
 	"path/filepath"
@@ -221,5 +222,59 @@ func TestMailHistoryRealMCPFixedPrefixAcrossReplay(t *testing.T) {
 	}
 	if strings.Contains(string(b), "after fixed prefix") {
 		t.Fatal("cursor admitted an append after its fixed upper serial")
+	}
+}
+
+func TestMailHistoryRealMCPForeignAndForgedCursorsRefuseWithoutRows(t *testing.T) {
+	srv, _ := historyServer(t, t.TempDir())
+	_, sender := aliasRegister(t, srv, "history-sender", "history-sender-secret")
+	_, recipient := aliasRegister(t, srv, "history-recipient", "history-recipient-secret")
+	_, stranger := aliasRegister(t, srv, "history-stranger", "history-stranger-secret")
+	for n := 0; n < 2; n++ {
+		aliasCall(t, srv, "send", map[string]any{"token": sender, "to": "history-recipient", "type": "notify", "body": "PRIVATE-CURSOR"})
+	}
+	first := historyCall(t, srv, "2026-07-28", map[string]any{"token": sender, "limit": 1})
+	cursor, ok := first["cursor"].(string)
+	if !ok || cursor == "" {
+		t.Fatal("setup: valid real cursor missing", first)
+	}
+	for _, token := range []string{stranger, recipient} {
+		res := toolCall(t, srv, "mail_history", map[string]any{"token": token, "cursor": cursor, "limit": 1})
+		if token == stranger && (res["__is_error"] != true || res["code"] != "E_HISTORY_CURSOR" || res["units"] != nil) {
+			t.Fatal("foreign-party cursor disclosed a row:", res)
+		}
+		if token == recipient && res["__is_error"] == true {
+			t.Fatal("same-conversation recipient cursor should authorize independently", res)
+		}
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(cursor)
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	for _, field := range []string{"v", "g", "u", "r", "p"} {
+		var c map[string]any
+		if err := json.Unmarshal(raw, &c); err != nil {
+			t.Fatal("setup:", err)
+		}
+		switch field {
+		case "v":
+			c[field] = 2
+		case "g":
+			c[field] = "another-ledger-generation"
+		case "u":
+			c[field] = float64(1 << 40)
+		case "r":
+			c[field] = float64(1 << 40)
+		case "p":
+			c[field] = map[string]any{"op": float64(1 << 40), "msg": 1, "ord": 0}
+		}
+		encoded, err := json.Marshal(c)
+		if err != nil {
+			t.Fatal("setup:", err)
+		}
+		res := toolCall(t, srv, "mail_history", map[string]any{"token": sender, "cursor": base64.RawURLEncoding.EncodeToString(encoded)})
+		if res["__is_error"] != true || res["code"] != "E_HISTORY_CURSOR" || res["hint"] == nil || res["units"] != nil {
+			t.Fatal("forged cursor accepted or leaked rows:", field, res)
+		}
 	}
 }

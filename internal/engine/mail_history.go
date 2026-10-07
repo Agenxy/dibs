@@ -31,7 +31,7 @@ func (e *Engine) ReadMailHistory(ctx context.Context, token string, since uint64
 		if limit == 0 {
 			limit = 25
 		}
-		if limit < 1 || limit > 100 || (cursor != "" && since != 0) {
+		if !historyArgumentsValid(limit, since, cursor) {
 			return historyError("E_HISTORY_ARGS", "invalid history page arguments",
 				"call mail_history with limit 1–100; use cursor alone on later pages")
 		}
@@ -65,6 +65,10 @@ func (e *Engine) ReadMailHistory(ctx context.Context, token string, since uint64
 		return checked, err
 	}
 	return result, nil
+}
+
+func historyArgumentsValid(limit int, since uint64, cursor string) bool {
+	return limit >= 1 && limit <= 100 && (cursor == "" || since == 0)
 }
 
 func (e *Engine) historyReauthorize(ctx context.Context, token string, reader core.Agent,

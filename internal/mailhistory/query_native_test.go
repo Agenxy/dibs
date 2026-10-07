@@ -29,7 +29,7 @@ type nativeHistoryFixture struct {
 	ids  map[string]string
 }
 
-func nativeHistory(t *testing.T, dir string) nativeHistoryFixture {
+func nativeHistory(t *testing.T, dir string, wrap ...func(*ledger.Ledger) engine.Ledger) nativeHistoryFixture {
 	t.Helper()
 	box, err := ledger.LoadOrCreateKey(filepath.Join(dir, "key"))
 	if err != nil {
@@ -45,7 +45,11 @@ func nativeHistory(t *testing.T, dir string) nativeHistoryFixture {
 	if _, err := led.Replay(st); err != nil {
 		t.Fatal("setup:", err)
 	}
-	eng := engine.New(st, led, nil)
+	var source engine.Ledger = led
+	if len(wrap) > 0 {
+		source = wrap[0](led)
+	}
+	eng := engine.New(st, source, nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	joined := make(chan struct{})
 	go func() { eng.Run(ctx); close(joined) }()
