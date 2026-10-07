@@ -23,6 +23,10 @@ This is a synthetic shared device; its RED would prove the contention model,
 not retrospectively prove the ended failing runner's cause. A passing result
 will be reported as such. The simple fixed-sleep fixture was never run.
 
+Coordinator35016b9/run37554203426 stopped before generating a fixture: the
+test mixed signed op counts with an unsigned serial. Both jobs BUILD FAILED;
+this is no latency evidence. The counters are corrected to unsigned counts.
+
 Original acceptance coordinator4e635b9, run37553064830: COMPLETED FAILURE.
 Five of six jobs pass; 1M repeat2 fails the external writer bound while ALL
 six original memory/startup tests pass. The source remains exact a709e274.

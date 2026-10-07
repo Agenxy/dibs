@@ -31,7 +31,7 @@ const (
 )
 
 type diskCounters struct {
-	ops      atomic.Int64
+	ops      atomic.Uint64
 	bytes    atomic.Int64
 	waitNS   atomic.Int64
 	nativeNS atomic.Int64
