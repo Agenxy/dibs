@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package paths resolves the Dibs data directory in one place, so the
 // daemon and CLI can never disagree about which instance they mean.
 package paths

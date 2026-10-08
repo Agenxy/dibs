@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 package core
 
 // MessageAccess is the read_mail and history creation/adoption fence. Serial

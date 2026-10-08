@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package guesttrust states the address scope shared by guest issuance and the
 // endpoint-scoped guest client. It carries no credential or global trust store.
 package guesttrust

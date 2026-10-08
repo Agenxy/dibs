@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 /**
  * The host side of the panel test, running in a real browser.
  *

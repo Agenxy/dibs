@@ -1,4 +1,7 @@
 #!/usr/bin/env -S uv run --script
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright 2026 Agenxy
+
 # /// script
 # requires-python = ">=3.11"
 # dependencies = ["mcp==2.0.0", "httpx2"]

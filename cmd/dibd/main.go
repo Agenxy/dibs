@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Command dibd is the Dibs daemon: one process owning the board state,
 // the ledger, the MCP endpoint, and the web UI. Loopback by default; TLS is
 // automatic on any reachable address.

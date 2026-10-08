@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 package core
 
 // Flags are advisory review state, not reopened work debt. A report or accept

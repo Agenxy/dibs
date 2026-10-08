@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Command installstamp checks the built images before a source install can
 // replace any installed binaries. No daemon, ledger or signing state is read.
 package main

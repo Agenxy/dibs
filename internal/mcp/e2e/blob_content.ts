@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 /** Actual tools/call content, checked against both pinned normative schemas.
  * Included in test:panel so the release gate cannot forget this wire contract.
  * Standalone: bun blob_content.ts <MCP URL> <local.secret path>

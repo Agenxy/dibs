@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package ui is the terminal's half of the design system.
 //
 // The board and the panel already share one component library so the two

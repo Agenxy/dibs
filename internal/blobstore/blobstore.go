@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package blobstore is the content-addressed side store for attachment bytes
 // (SPEC-ATTACHMENTS A3). It lives beside the ledger but outside the replay
 // model: the ledger records which blobs *should* exist (the core registry), and

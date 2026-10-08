@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // embedprobe checks that an OpenAI-compatible embeddings endpoint answers,
 // and says how to get one when it does not.
 //

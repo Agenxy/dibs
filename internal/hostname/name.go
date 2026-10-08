@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package hostname reads a display label for this computer. This is not an
 // identity or evidence for a host comparison: callers keep their host IDs and
 // any legacy kernel-name comparisons separately.

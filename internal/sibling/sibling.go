@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package sibling finds the other Agenxy programs Dibs depends on.
 //
 // Dibs asks Supgang who a computer is and Remap what a board is called, by

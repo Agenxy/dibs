@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Command archivecheck opens a built release archive and asserts that every
 // path the runtime resolves is inside it, at exactly that path.
 //

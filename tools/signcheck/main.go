@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Command signcheck refuses an install that would silently revoke a macOS
 // privacy grant.
 //

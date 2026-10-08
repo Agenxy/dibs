@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package appfirewall answers one question on macOS: if this process listens on
 // an address other machines can route to, will their connections actually reach
 // it?

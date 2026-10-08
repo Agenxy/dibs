@@ -4,6 +4,11 @@
   "title": "Dibs",
   "description": "Tells an AI agent when another is already doing its work. Board, typed mail, directory claims.",
   "version": "0.0.14",
+  "_meta": {
+    "io.modelcontextprotocol.registry/publisher-provided": {
+      "license": "GPL-3.0-or-later"
+    }
+  },
   "websiteUrl": "https://agenxy.org/projects/dibs/",
   "repository": {
     "url": "https://github.com/Agenxy/dibs",

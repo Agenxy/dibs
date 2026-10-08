@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Command sigstore-root-check refuses to publish with stale embedded trust.
 // It authenticates the current production Sigstore root through normal TUF;
 // it does not overwrite the source, rotate trust, install anything or publish.

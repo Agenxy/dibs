@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Waiting for a daemon, honestly.
 //
 // Every suite here used to start `dibd` and then poll for `local.secret` to

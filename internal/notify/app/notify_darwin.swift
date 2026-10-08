@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // dibs-notify: the process that speaks to the PERSON.
 //
 // It lives inside an application bundle, and that is the whole reason it

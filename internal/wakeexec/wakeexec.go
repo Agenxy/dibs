@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package wakeexec runs an operator's wake command: the substitutions a
 // [wake.exec] entry may take, the process itself, its bounds, and the fallback
 // rule. Shared by the daemon, which runs wakes for agents on its own machine,

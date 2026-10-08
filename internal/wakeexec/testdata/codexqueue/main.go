@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // A subprocess fixture for the native queue protocol and the real command route.
 package main
 

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Command signstable fails an install that would revoke the operator's
 // Files-and-Folders permission.
 //

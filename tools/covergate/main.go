@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // covergate fails the build when total statement coverage falls below a floor.
 //
 // SPEC §17 asks for ≥85% on core+ledger and nothing enforced it: `task cover`

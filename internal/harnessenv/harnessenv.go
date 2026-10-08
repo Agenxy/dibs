@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package harnessenv says which app an agent actually runs in, from the
 // process tree rather than from anything the agent says, and how to reach a
 // thread inside that app.

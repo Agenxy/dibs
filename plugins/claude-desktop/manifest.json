@@ -1,6 +1,7 @@
 {
   "manifest_version": "0.3",
   "name": "io.github.Agenxy/dibs",
+  "license": "GPL-3.0-or-later",
   "display_name": "Dibs",
   "version": "0.0.14",
   "description": "Coordination board for the agents on this machine: shared spaces, typed mailboxes, and advisory claims.",

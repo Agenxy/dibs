@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package selfupdate answers two questions about this install: is there a
 // newer release, and can this machine fetch it.
 //

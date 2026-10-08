@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package notify reaches the HUMAN, on the machine, without their agent having
 // to tell them.
 //

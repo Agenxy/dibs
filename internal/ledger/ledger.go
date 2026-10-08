@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package ledger implements the append-only, hash-chained JSONL event log.
 // The ledger IS the persistence, the audit history, and the serial authority:
 // line position = serial, line order = total order. Each line carries the

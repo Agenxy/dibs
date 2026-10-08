@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 package mcp
 
 // MCP Apps (SEP-1865, extension spec 2026-01-26): an interactive board the

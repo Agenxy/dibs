@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package release is the single declaration of what carries the release
 // version, and the only thing that writes it.
 //

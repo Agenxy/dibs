@@ -5,6 +5,22 @@ think a decision here is a mistake, open an issue and say so plainly: the
 reasoning behind most of them is written down (see `SPEC-*.md` and the comments
 at the top of each file), so there is something specific to argue with.
 
+## Contribution licensing
+
+Dibs uses GPL-3.0-or-later, with a separate commercial licence available from
+Agenxy for Agenxy-authored portions. Before an outside contribution is merged,
+its contributor must sign a contributor licence agreement (CLA) or a copyright
+assignment with Agenxy that preserves the right to distribute that contribution
+under both GPL-3.0-or-later and commercial terms. Agenxy will provide the
+agreement for review; opening a pull request does not assign copyright or imply
+that an agreement has been signed. Maintainers must verify the signed agreement
+before merging.
+
+Existing outside contributions retain their original permissions in [NOTICE](NOTICE).
+This requirement does not retroactively assign their copyright or change their
+licences. See [COMMERCIAL-LICENSING.md](COMMERCIAL-LICENSING.md) for the scope of
+commercial licensing.
+
 ## Getting a change to build
 
 **First, once per clone.** The toolchain, Go, the linter, Task itself, Bun,
@@ -167,6 +183,8 @@ Do not open a public issue for a vulnerability. `SECURITY.md` has the process.
 Dibs follows the Agenxy
 [charter](https://github.com/agenxy/.github/blob/main/CHARTER.md) and
 [engineering standards](https://github.com/agenxy/.github/blob/main/ENGINEERING.md):
-Apache 2.0, latest stable of every tool, warnings fatal, nothing logged about how
+latest stable of every tool, warnings fatal, nothing logged about how
 you use the software, and native code rather than shell. Two of those are checked
 by `internal/hygiene` and will fail the build rather than a review.
+The project's GPL-3.0-or-later and commercial licensing policy above overrides
+the organisation's default Apache-2.0 licence.

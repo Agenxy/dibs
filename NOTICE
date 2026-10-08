@@ -1,10 +1,73 @@
 Dibs
 Copyright 2026 Agenxy
 
-This product is licensed under the Apache License, Version 2.0.
+Agenxy-authored portions are licensed under GPL-3.0-or-later from the next
+release. The full GPL-3.0 text is in LICENSE. Agenxy offers a separate commercial
+licence for rights it can grant; see COMMERCIAL-LICENSING.md.
 
-Portions of this software were contributed under the MIT License before the
-project was relicensed, and that permission is retained here:
+Releases up to and including v0.0.13 remain Apache-2.0. This change does not
+withdraw historical permissions or relicense outside-contributor or third-party
+material. The retained Apache-2.0 text is in LICENSES/Apache-2.0.txt.
+
+Outside contributions
+=====================
+
+Shaurya Kesarwani contributed CLI completions, the generated manual and JSON
+output under Apache-2.0, in commits:
+67b41898062e7ff0cfcc6d8822721af72440a428
+31565518eebe27e2e472c9a00004f3883c44b97d
+f574f7fd0135715d80d7b900932fdaff3aad5abe
+
+Mayank Bhaskar contributed idle repository index eviction under Apache-2.0,
+in commit d5e8b0e17e69c7590b8c5e000bd6b81f5b277696.
+
+Floze contributed script-visible doctor failures under MIT, in commit
+44fe37e43c8e3e16efde55c2170deb9a659f07a2. That contribution predates the move
+from MIT to Apache-2.0; its original MIT permission is retained below.
+
+The following original line ranges are an attribution map at the immutable
+pre-licensing baseline d28f50adb3f151e5e348ba5bcbd5d6e88bf5c38e. Git log and blame with
+whitespace, movement and copy detection established this map, including code
+renamed or copied to other files. Later Agenxy edits do not erase the original
+contribution or its permission; the original commit references above also cover
+portions whose blame was superseded. SPDX headers on mixed files apply only to
+Agenxy-authored portions. Do not interpret them as relicensing the lines below.
+
+Contributor | Original permission | File | Baseline lines
+Shaurya Kesarwani | Apache-2.0 | .gitignore | 38
+Shaurya Kesarwani | Apache-2.0 | .goreleaser.yml | 10-17, 62, 209, 211, 360-361
+Shaurya Kesarwani | Apache-2.0 | README.md | 321-328, 332-333
+Floze | MIT | cmd/dibd/humanapi_test.go | 14-15
+Shaurya Kesarwani | Apache-2.0 | cmd/dibd/man.go | 27-28
+Mayank Bhaskar | Apache-2.0 | cmd/dibd/scorer.go | 723, 725-742, 746-747, 750-751, 800-803, 805-806, 814-817, 824-825, 859-860, 895-897, 926-940, 949-952, 956-957, 959-960, 962-966, 971-975, 986-989, 991-993, 1007, 1020
+Shaurya Kesarwani | Apache-2.0 | cmd/dibd/scorer_advisory_boot_test.go | 9
+Floze | MIT | cmd/dibs/await_test.go | 6-7
+Shaurya Kesarwani | Apache-2.0 | cmd/dibs/completion.go | 1-51, 53-69, 71-72, 74-93, 95, 97-102, 104-109, 112, 114-127, 129-130, 132-137, 139, 141, 143-151
+Shaurya Kesarwani | Apache-2.0 | cmd/dibs/completion_test.go | 1-20, 22-26, 28-29, 31, 33, 35-57, 62-85
+Floze | MIT | cmd/dibs/doctor.go | 277-289, 291-299
+Shaurya Kesarwani | Apache-2.0 | cmd/dibs/doctor.go | 6, 46-72, 74-129, 136, 170-171, 207, 213, 236, 257-262, 265, 267-268, 270, 272, 276, 1020-1022, 1035
+Floze | MIT | cmd/dibs/doctor_aliases_test.go | 4-5, 37-38
+Shaurya Kesarwani | Apache-2.0 | cmd/dibs/doctor_aliases_test.go | 29
+Floze | MIT | cmd/dibs/doctor_test.go | 7-8, 15-19, 21-30, 32-33, 35-48, 51-78
+Shaurya Kesarwani | Apache-2.0 | cmd/dibs/doctor_test.go | 139-140, 167, 200, 223
+Floze | MIT | cmd/dibs/files_test.go | 11-12
+Shaurya Kesarwani | Apache-2.0 | cmd/dibs/joinconfig_test.go | 581-582, 680-681, 758-759
+Shaurya Kesarwani | Apache-2.0 | cmd/dibs/json.go | 1-17, 19-31, 33-36
+Floze | MIT | cmd/dibs/json_test.go | 8-9, 124, 291-292
+Shaurya Kesarwani | Apache-2.0 | cmd/dibs/json_test.go | 1-7, 16-52, 54-58, 60, 62-67, 70-75, 79-86, 88, 90-92, 94-95, 97-103, 108, 111-114, 117-120, 123, 126-127, 130-134, 136-141, 143-147, 149-153, 156-158, 160-175, 177-180, 183-258, 263-286, 289-290, 293-315
+Floze | MIT | cmd/dibs/main.go | 299-302
+Shaurya Kesarwani | Apache-2.0 | cmd/dibs/main.go | 50, 63, 104, 106-107, 185, 191, 230-233, 979-984, 987-989, 993-994, 996-998, 1000, 1022, 1049-1053, 1056-1058, 1066-1070, 1082, 1087-1089, 1097-1099, 1101, 1104-1107, 1110-1112, 1225-1229, 1250, 1269-1272, 1274-1284, 1286, 1288-1290, 1313, 1336, 1344, 1349, 1352, 1378, 1389-1394, 1396, 1440, 1452, 1458, 1462, 1498, 1506, 1511, 1539-1560, 1562-1567, 1570-1571, 1574-1583, 1587-1597, 1852-1857, 1863-1867
+Shaurya Kesarwani | Apache-2.0 | cmd/dibs/man.go | 1-16, 18-20, 22-63, 65-79, 82-116, 118-120, 122, 124-126, 128-196, 198-203, 210-223, 225-279
+Shaurya Kesarwani | Apache-2.0 | cmd/dibs/man_test.go | 1-20, 22-25, 30-41, 43, 45-66, 68-95
+Floze | MIT | cmd/dibs/review_round67_test.go | 7-8
+Floze | MIT | cmd/dibs/upgradetarget_test.go | 5-6
+Mayank Bhaskar | Apache-2.0 | internal/engine/active_agents.go | 9-13, 15, 17-20, 23-24, 43-50, 52-53, 55
+Mayank Bhaskar | Apache-2.0 | internal/engine/index_lifecycle.go | 1-13, 34-36, 38, 40, 42-52, 54-56, 58-68, 70
+Mayank Bhaskar | Apache-2.0 | internal/engine/index_lifecycle_test.go | 9-17, 20-91, 93-102, 116, 118
+Floze | MIT | internal/selfupdate/selfupdate_test.go | 10-11
+
+Retained MIT permission
+=======================
 
     MIT License
 
@@ -27,3 +90,52 @@ project was relicensed, and that permission is retained here:
     LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE.
+
+Third-party material
+====================
+
+Geist and Geist Mono fonts, internal/assets/fonts/*.woff2:
+Copyright 2024 The Geist Project Authors (https://github.com/vercel/geist-font).
+SIL Open Font License 1.1, retained in internal/assets/fonts/OFL.txt and
+LICENSES/OFL-1.1.txt. These fonts are not relicensed.
+
+MCP specification schema excerpts, internal/mcp/e2e/schemas/*.json:
+MIT, retained in internal/mcp/e2e/schemas/LICENSE and LICENSES/MCP-MIT.txt.
+The schema comments identify the original source commit and hashes. These
+excerpts are not relicensed.
+
+The Go toolchain/runtime and dependency modules retain their original licences.
+The distribution copies below are unmodified upstream licence/notice files,
+not an assertion that Agenxy owns those dependencies. Module versions and
+checksums remain pinned in go.mod/go.sum; release SBOMs identify shipped modules.
+
+Component | Version | Retained licence/notice files
+Go | go1.26.6 | LICENSES/Go-BSD-3-Clause.txt
+github.com/BurntSushi/toml | v1.6.0 | LICENSES/third-party/github.com_BurntSushi_toml/COPYING
+github.com/aymanbagabas/go-osc52/v2 | v2.0.1 | LICENSES/third-party/github.com_aymanbagabas_go-osc52_v2/LICENSE
+github.com/aymanbagabas/go-udiff | v0.2.0 | LICENSES/third-party/github.com_aymanbagabas_go-udiff/LICENSE-BSD, LICENSES/third-party/github.com_aymanbagabas_go-udiff/LICENSE-MIT
+github.com/charmbracelet/colorprofile | v0.2.3-0.20250311203215-f60798e515dc | LICENSES/third-party/github.com_charmbracelet_colorprofile/LICENSE
+github.com/charmbracelet/lipgloss | v1.1.0 | LICENSES/third-party/github.com_charmbracelet_lipgloss/LICENSE
+github.com/charmbracelet/x/ansi | v0.8.0 | LICENSES/third-party/github.com_charmbracelet_x_ansi/LICENSE
+github.com/charmbracelet/x/cellbuf | v0.0.13-0.20250311204145-2c3ea96c31dd | LICENSES/third-party/github.com_charmbracelet_x_cellbuf/LICENSE
+github.com/charmbracelet/x/exp/golden | v0.0.0-20240806155701-69247e0abc2a | LICENSES/third-party/github.com_charmbracelet_x_exp_golden/LICENSE
+github.com/charmbracelet/x/term | v0.2.1 | LICENSES/third-party/github.com_charmbracelet_x_term/LICENSE
+github.com/google/go-cmp | v0.6.0 | LICENSES/third-party/github.com_google_go-cmp/LICENSE
+github.com/lucasb-eyer/go-colorful | v1.2.0 | LICENSES/third-party/github.com_lucasb-eyer_go-colorful/LICENSE
+github.com/mattn/go-isatty | v0.0.20 | LICENSES/third-party/github.com_mattn_go-isatty/LICENSE
+github.com/mattn/go-runewidth | v0.0.16 | LICENSES/third-party/github.com_mattn_go-runewidth/LICENSE
+github.com/minio/sio | v0.5.1 | LICENSES/third-party/github.com_minio_sio/LICENSE
+github.com/muesli/termenv | v0.16.0 | LICENSES/third-party/github.com_muesli_termenv/LICENSE
+github.com/rivo/uniseg | v0.4.7 | LICENSES/third-party/github.com_rivo_uniseg/LICENSE.txt
+github.com/xo/terminfo | v0.0.0-20220910002029-abceb7e1c41e | LICENSES/third-party/github.com_xo_terminfo/LICENSE
+github.com/yuin/goldmark | v1.4.13 | LICENSES/third-party/github.com_yuin_goldmark/LICENSE
+golang.org/x/crypto | v0.57.0 | LICENSES/third-party/golang.org_x_crypto/LICENSE
+golang.org/x/exp | v0.0.0-20220909182711-5c715a9e8561 | LICENSES/third-party/golang.org_x_exp/LICENSE
+golang.org/x/mod | v0.41.0 | LICENSES/third-party/golang.org_x_mod/LICENSE
+golang.org/x/net | v0.59.0 | LICENSES/third-party/golang.org_x_net/LICENSE
+golang.org/x/sync | v0.23.0 | LICENSES/third-party/golang.org_x_sync/LICENSE
+golang.org/x/sys | v0.48.0 | LICENSES/third-party/golang.org_x_sys/LICENSE
+golang.org/x/telemetry | v0.0.0-20260908163034-4bcc4b2ee518 | LICENSES/third-party/golang.org_x_telemetry/LICENSE
+golang.org/x/term | v0.46.0 | LICENSES/third-party/golang.org_x_term/LICENSE
+golang.org/x/text | v0.42.0 | LICENSES/third-party/golang.org_x_text/LICENSE
+golang.org/x/tools | v0.50.0 | LICENSES/third-party/golang.org_x_tools/LICENSE

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // A built child is not a Go test process. It must inherit the test's
 // forbid-open environment and receive an error from the production opener.
 package main

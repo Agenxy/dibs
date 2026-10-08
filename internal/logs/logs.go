@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package logs keeps a bounded, in-memory tail of recent log records so the
 // daemon can answer "what just happened?" without writing an unbounded file.
 //

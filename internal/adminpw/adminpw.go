@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package adminpw hashes and verifies the human admin password that gates the
 // Dibs god-view (decrypted mail, web board). The password is never stored,
 // only a salted PBKDF2 hash, so an agent that reads ~/.dibs/admin.hash cannot

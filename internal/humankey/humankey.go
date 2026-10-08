@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package humankey is how a board that runs somewhere else knows a person is
 // present: a signature from a key that signs only after Touch ID, checked
 // here with the standard library, so the check is the same on a Linux board

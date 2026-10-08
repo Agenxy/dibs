@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 package mcp
 
 // Tool definitions (tools/list). Schemas kept deliberately small: every

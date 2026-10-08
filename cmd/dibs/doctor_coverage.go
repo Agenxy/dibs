@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 package main
 
 // wakeCovered is the covered half of wakeCoverage: a command here for the

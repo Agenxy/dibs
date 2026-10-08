@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Command signid prints the code-signing identity `task install` should use.
 //
 // It exists because the fix for macOS revoking a privacy grant on every install

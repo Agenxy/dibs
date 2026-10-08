@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 /**
  * End-to-end test for `[wake.exec]`: reaching an agent that is NOT running.
  *

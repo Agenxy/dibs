@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package transport holds the ONE rule for what a Dibs daemon serves.
 //
 // It exists because there were two. The daemon decided from its configuration

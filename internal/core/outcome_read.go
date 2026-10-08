@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 package core
 
 // applyOutcomeRead marks a verdict as read by the agent that asked for it.

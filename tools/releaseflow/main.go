@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // releaseflow is the typed release boundary. Inputs arrive through environment,
 // never through interpolated shell. Preflight has no remote write operation;
 // commit-tag is a different job behind its success.

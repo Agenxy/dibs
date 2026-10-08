@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package overlap answers one question: are two agents doing the same work?
 //
 // Directory claims answer a narrower one: are two agents naming the same path

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Package hygiene holds repository-wide checks that belong to no other package.
 //
 // These enforce two standards that were previously enforced by remembering

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Command appbundle builds Dibs.app: the process that speaks to the person.
 //
 // A notification has an identity. Whoever posts it lends it their name and
@@ -62,7 +65,7 @@ const plist = `<?xml version="1.0" encoding="UTF-8"?>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>%s</string>
   <key>CFBundleVersion</key><string>%s</string>
-  <key>NSHumanReadableCopyright</key><string>Agenxy. Apache-2.0.</string>
+  <key>NSHumanReadableCopyright</key><string>Agenxy. GPL-3.0-or-later.</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSUIElement</key><true/>
   <!-- Correct metadata, and NOT a Focus bypass. An app cannot declare itself

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
 // Command version stamps a release across the changelog and every manifest.
 //
 // The step it replaces was: edit the changelog heading, edit four JSON files,
