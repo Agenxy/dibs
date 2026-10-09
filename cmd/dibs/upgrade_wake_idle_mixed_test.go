@@ -24,16 +24,25 @@ func TestUpgradeRetiresIdleDelayAndCooldownWithOriginalSourceLines(t *testing.T)
 	p := idleCutoverPlan(t, dir, func(string) error {
 		stops++
 		got, err := os.ReadFile(path)
-		if err != nil || string(got) != after {
-			return fmt.Errorf("mixed migration not complete before stop: %q %v", got, err)
+		if err != nil {
+			return fmt.Errorf("read mixed migration before stop: %w", err)
+		}
+		if string(got) != after {
+			return fmt.Errorf("mixed migration not complete before stop: %q", got)
 		}
 		backups, err := filepath.Glob(filepath.Join(dir, "dibs.toml.before-cooldown-*"))
-		if err != nil || len(backups) != 1 {
-			return fmt.Errorf("backup missing before stop: %v %v", backups, err)
+		if err != nil {
+			return fmt.Errorf("find mixed backup before stop: %w", err)
+		}
+		if len(backups) != 1 {
+			return fmt.Errorf("backup missing before stop: %v", backups)
 		}
 		got, err = os.ReadFile(backups[0])
-		if err != nil || string(got) != before {
-			return fmt.Errorf("mixed backup not exact: %q %v", got, err)
+		if err != nil {
+			return fmt.Errorf("read mixed backup: %w", err)
+		}
+		if string(got) != before {
+			return fmt.Errorf("mixed backup not exact: %q", got)
 		}
 		return nil
 	})
