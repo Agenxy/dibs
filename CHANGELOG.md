@@ -22,6 +22,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Releases up to and including v0.0.13 remain Apache-2.0; GPL-3.0-or-later applies from the next release, with commercial licensing available from Agenxy for Agenxy-authored portions.
 
+### Fixed
+
+- A bridge that handed a vanished session socket back to the daemon could still
+  write to it later, producing duplicate notices. Surrender now disarms that
+  bridge's retry before a recovered socket can be reached.
+
 ## [0.0.14] - 2026-10-06
 
 ### Added
