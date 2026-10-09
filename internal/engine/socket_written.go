@@ -91,11 +91,7 @@ func (e *Engine) pruneSocketWritten() {
 			live["announcement:"+id+"\x00"+strconv.FormatUint(a.Serial, 10)] = true
 		}
 	}
-	for key := range e.commandWritten {
-		if !live[key] {
-			delete(e.commandWritten, key)
-		}
-	}
+	e.pruneCommandWritten(live)
 	for key := range e.socketWritten {
 		if !live[key] {
 			delete(e.socketWritten, key)

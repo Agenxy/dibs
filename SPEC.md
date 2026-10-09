@@ -947,7 +947,9 @@ socket write and command execution alone do not count as read receipts.
 Successful command delivery records only the original item keys
 captured before execution: an exit recheck skips those items and can offer new
 arrivals. The writer keeps these derived receipts bounded by retained coordination;
-losing them can repeat a delivery and cannot lose unread mail.
+losing them can repeat a delivery and cannot lose unread mail. An observed app
+incarnation change re-offers its outstanding items once; an earlier command
+completion cannot spend the replacement app's recovery.
 A non-blocking Stop neither marks those items delivered nor reads their outcome
 prefixes. Held information is delivered through SessionStart, `check_in` or
 `inbox`, or included in the next actionable Stop/socket digest under the shared

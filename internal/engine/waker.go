@@ -1057,7 +1057,7 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 	return wakePlan{
 		argv: f.Apply(cmd.argv), fallback: f.Apply(cmd.fallback),
 		agent: l.ID, session: wakeSessionOf(l), kind: kind,
-		createdSerial: l.CreatedSerial, queueEpoch: e.wakers.queueEpoch,
+		createdSerial: l.CreatedSerial, queueEpoch: e.wakers.queueEpoch, commandEpoch: e.commandEpoch[l.ID],
 		cwd: cwdOf(l), cooldown: cooldown, thread: f.Thread,
 		surface: surfaceOf(l), harness: wakeHarness(l), // which app to open: see inapp.go
 	}, true
@@ -1102,6 +1102,7 @@ type wakePlan struct {
 	// surface and harness decide which app, if any, the thread is opened in
 	// after the message is queued (inapp.go).
 	surface, harness string
+	commandEpoch     string   // receiving incarnation captured before execution
 	commandKeys      []string // exact original items refreshed before command execution
 	agent            string   // whose outstanding state is rechecked before delivery
 	trackOffer       bool     // production delivery shares presentation with lifecycle hooks

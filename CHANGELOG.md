@@ -26,7 +26,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Offer new mail during busy turns and recent-contact grace, without successful
   delivery cooldowns. A fixed 200 ms arrival batch carries a burst together;
   per-item socket write and successful command receipts prevent repeating mail, notices or
-  announcements while allowing later items. A stalled writer retains the pending
+  announcements while allowing later items. App incarnation changes re-offer
+  outstanding items once, fencing late old-command receipts. A stalled writer retains the pending
   batch until recovery; daemon shutdown cancels it. In-flight reservations, one writer,
   bounded failed-delivery retries and held-peer Stop fallback remain. Existing
   `[wake.exec.*].cooldown` keys no longer pace wakes: daemon startup warns with

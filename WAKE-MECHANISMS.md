@@ -218,7 +218,9 @@ the exact original item keys captured before
 execution, so an exit recheck cannot repeat the same question and new mail remains
 eligible. Those receipts consume neither raw mail nor Stop presentation. These
 derived item receipts
-are bounded by retained coordination and reset on daemon restart.
+are bounded by retained coordination and reset on daemon restart. An observed
+app incarnation change invalidates that receiving app's command receipts,
+re-offering outstanding items once while fencing late old-command completions.
 Dibs-generated progress, queue updates, ordinary approvals and accepted reviews
 wait for SessionStart, an authenticated pull or the next actionable digest.
 Answers, denials, declines, grant/adoption verdicts and flagged reviews qualify;
