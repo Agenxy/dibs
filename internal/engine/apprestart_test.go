@@ -217,14 +217,16 @@ func TestRestartSelectionExcludesStaleBootGraceRemoteAndInvalidThread(t *testing
 		e.wakers.queued = map[string]time.Time{l.ID: now}
 		e.wakers.mu.Unlock()
 		queued := e.snapshotAppRestart(now)
-		coalesced := len(queued) == 1 && len(queued[0].plan.argv) == 0
+		// An inferred queue receipt cannot suppress owner discovery. The cold
+		// runner still coalesces queue admission if no app owner exists.
+		nativeRoute := len(queued) == 1 && len(queued[0].plan.argv) == 6
 		return core.Result{
 			"stale": stale, "boot": boot, "recent": recent,
-			"remote": remote, "invalid": invalid, "coalesced": coalesced,
+			"remote": remote, "invalid": invalid, "native_route": nativeRoute,
 		}
 	})
 	if err != nil || res["stale"] != 0 || res["boot"] != 0 ||
-		res["recent"] != 1 || res["remote"] != 0 || res["invalid"] != 0 || res["coalesced"] != true {
+		res["recent"] != 1 || res["remote"] != 0 || res["invalid"] != 0 || res["native_route"] != true {
 		t.Fatalf("selection boundary: %v, %v", res, err)
 	}
 }

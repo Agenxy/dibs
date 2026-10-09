@@ -22,6 +22,9 @@ func TestNativeAppRestartUsesOwnedThreadWithoutQueueOrOpen(t *testing.T) {
 	t.Cleanup(func() { appRestartEpoch.Store(previous) })
 	now := time.Now()
 	res, err := e.query(ctx, func() core.Result {
+		e.wakers.mu.Lock()
+		e.wakers.queued = map[string]time.Time{"worker": now}
+		e.wakers.mu.Unlock()
 		if _, _, baselineErr := e.observeAppRestart("", "app:old", now, nil); baselineErr != nil {
 			return core.Result{"error": baselineErr}
 		}
