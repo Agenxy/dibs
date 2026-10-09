@@ -4,7 +4,6 @@
 package engine
 
 import (
-	"context"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -19,7 +18,7 @@ type wakeBurst struct {
 }
 
 func (e *Engine) coalesceEventWake(ev core.Event) {
-	if e.state == nil || e.ops == nil {
+	if e.state == nil || e.ops == nil || e.wakeContext == nil {
 		return // a decision-only fixture has no writer loop to run a batch
 	}
 	l := e.state.Agents[ev.To]
@@ -36,9 +35,10 @@ func (e *Engine) coalesceEventWake(ev core.Event) {
 	batch := &wakeBurst{event: ev}
 	agent := l.ID
 	e.wakeBursts[agent] = batch
+	ctx := e.wakeContext
 	batch.timer = time.AfterFunc(wakeBurstWindow, func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+		// A live but stalled writer still owes this batch. Only shutdown cancels
+		// admission; an elapsed enqueue deadline would strand the batch forever.
 		_, _ = e.query(ctx, func() core.Result {
 			if e.wakeBursts[agent] == batch {
 				delete(e.wakeBursts, agent)
@@ -47,4 +47,13 @@ func (e *Engine) coalesceEventWake(ev core.Event) {
 			return nil
 		})
 	})
+}
+
+// On the writer, after serving stops. Waiting callbacks use Run's context and
+// are canceled by its cleanup, including when a writer fails closed.
+func (e *Engine) stopWakeBursts() {
+	for _, burst := range e.wakeBursts {
+		burst.timer.Stop()
+	}
+	clear(e.wakeBursts)
 }

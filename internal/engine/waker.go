@@ -1133,11 +1133,8 @@ type wakePlan struct {
 	sessions []string
 }
 
-// defaultPeerCooldown bounds socket wakes the way [wake.exec] entries bound
-// process wakes. Shorter, because nothing is spawned: the cost of one is a
-// connection and two lines, not an agent turn, so the rate limit is here to
-// stop a burst becoming a stream of interruptions rather than to stop a fork
-// bomb.
+// defaultPeerCooldown is the fallback window for a failed socket's one retry
+// and its route diagnostics. Fresh mail and successful writes have no cooldown.
 const defaultPeerCooldown = 20 * time.Second
 
 // cwdOf is where this agent says it works, copied on the loop.

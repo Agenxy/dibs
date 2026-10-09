@@ -13,7 +13,7 @@ import (
 
 // A failed native write gets the same one retry as an ordinary wake. The
 // readiness tick must not create an unlimited retry path alongside it. Only
-// a changed actionable cohort or real turn evidence rearms this derived cap.
+// a changed actionable cohort rearms this derived cap.
 type socketFailure struct {
 	version uint64
 	count   int

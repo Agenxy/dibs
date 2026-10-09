@@ -88,6 +88,7 @@ type Engine struct {
 	socketFailures     map[string]socketFailure
 	socketWritten      map[string]bool // per original item; not a receiver acceptance receipt
 	wakeBursts         map[string]*wakeBurst
+	wakeContext        context.Context
 	noticePresented    map[string]time.Time
 	nextSocketOffer    uint64
 	// reachedByHook: agents at least one lifecycle hook has resolved to, so a
@@ -324,6 +325,7 @@ func New(st *core.State, led Ledger, prober Prober, history ...[]core.Event) *En
 func (e *Engine) Run(ctx context.Context) {
 	reconcileContext, eCancel := context.WithCancel(ctx)
 	e.blobReconcileContext = reconcileContext
+	e.wakeContext = reconcileContext
 	e.startHumanCleanup(reconcileContext)
 	defer func() {
 		eCancel() // also unblock completion receipts on a fail-stop writer panic
@@ -351,11 +353,7 @@ func (e *Engine) Run(ctx context.Context) {
 	defer tick.Stop()
 	reconcileTick := time.NewTicker(30 * time.Second)
 	defer reconcileTick.Stop()
-	defer func() {
-		for _, burst := range e.wakeBursts {
-			burst.timer.Stop()
-		}
-	}()
+	defer e.stopWakeBursts()
 	for {
 		select {
 		case <-ctx.Done():
