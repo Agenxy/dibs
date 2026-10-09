@@ -23,9 +23,6 @@ func TestPromptAppWakeReachesADormantThreadWhileThePersonIsActive(t *testing.T) 
 			t.Setenv("DIBS_DIR", t.TempDir())
 			app := &fakeApp{holds: loaded}
 			app.install(t)
-			shower.Away = func() (bool, bool) { return false, true }
-			shower.Idle = func() (time.Duration, bool) { return 0, true }
-			shower.MinIdle = 10 * time.Minute
 			release := make(chan struct{})
 			t.Cleanup(func() { close(release) })
 			shower.Wait = func(time.Duration) { <-release }
@@ -64,7 +61,6 @@ func TestRapidSuccessfulCommandWakesOpenAThreadOnlyOnce(t *testing.T) {
 	t.Setenv("DIBS_DIR", t.TempDir())
 	app := &fakeApp{}
 	app.install(t)
-	shower.Away = func() (bool, bool) { return true, true }
 	e := New(core.NewState("test", core.DefaultLimits()), &memLedger{}, deadProber{})
 	e.SetWakeCommands(map[string]WakeCommand{"codex": {Argv: []string{"/usr/bin/true", "queue", "{thread}"}}})
 	worker := &core.Agent{

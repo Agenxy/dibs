@@ -113,7 +113,7 @@ func (e *Engine) forgetWakeFailures(agent string) {
 func (e *Engine) wakeStatusOf(agent string) string {
 	if l := e.state.Agents[agent]; l != nil && e.remoteHostOf(l) == "" &&
 		!invitedAgent(l) && harnessenv.PendingAppOpen(threadIDOf(l)) {
-		return "queued; the thread opens when you are away or when you open it"
+		return "queued; waiting briefly for the background app open/restore lock"
 	}
 	if invitedAgent(e.state.Agents[agent]) {
 		return "pull-only (invited cloud agent)"

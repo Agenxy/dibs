@@ -314,16 +314,3 @@ func TestConfigLoadDoesNotJudgeTheHostname(t *testing.T) {
 			"wins: %v", err)
 	}
 }
-
-// open_app_after_idle is a duration or nothing; a typo must not read as set.
-func TestOpenAppAfterIdleIsADuration(t *testing.T) {
-	for v, ok := range map[string]bool{"": true, "2m": true, "0s": true, "90s": true, "soon": false, "-1m": false} {
-		_, err := WakeConfig{OpenAppAfterIdle: v}.OpenAfterIdle()
-		if (err == nil) != ok {
-			t.Errorf("open_app_after_idle = %q: err %v", v, err)
-		}
-	}
-	if d, _ := (WakeConfig{}).OpenAfterIdle(); d != 10*time.Minute {
-		t.Errorf("default = %v, want 10m", d)
-	}
-}

@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -17,8 +16,8 @@ import (
 )
 
 // A queued notice is not evidence that a turn started. Drive the actual app
-// deferral door and then read the real decorated board while it waits.
-func TestBoardNamesAThreadWaitingForAwayOpening(t *testing.T) {
+// recovery door and then read the real decorated board after the open.
+func TestBoardDoesNotClaimAnAwayWaitAfterImmediateClaudeRecovery(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	dir := filepath.Join(home, "Library", "Application Support", "Claude", "claude-code-sessions", "fixture", "sessions")
@@ -30,16 +29,11 @@ func TestBoardNamesAThreadWaitingForAwayOpening(t *testing.T) {
 	}
 	original := shower
 	t.Cleanup(func() { shower = original })
-	var held atomic.Bool
-	release := make(chan struct{})
-	finished := make(chan struct{})
+	opens, waits := 0, 0
 	shower = &harnessenv.Shower{
-		Holds:   func(string) bool { return held.Load() },
-		Open:    func([]string) error { t.Error("opened while present"); return nil },
-		Idle:    func() (time.Duration, bool) { return time.Second, true },
-		MinIdle: 10 * time.Minute,
-		Poll:    time.Millisecond,
-		Wait:    func(time.Duration) { <-release; held.Store(true); close(finished) },
+		Holds: func(string) bool { return false },
+		Open:  func([]string) error { opens++; return nil },
+		Wait:  func(time.Duration) { waits++; t.Error("Claude recovery was deferred") },
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -65,13 +59,10 @@ func TestBoardNamesAThreadWaitingForAwayOpening(t *testing.T) {
 			status, _ = row["wake"].(string)
 		}
 	}
-	close(release)
-	select {
-	case <-finished:
-	case <-time.After(time.Second):
-		t.Fatal("deferred waiter did not finish")
+	if opens != 1 || waits != 0 {
+		t.Fatalf("recovery did not open immediately: opens=%d waits=%d", opens, waits)
 	}
-	if !strings.Contains(status, "queued") || !strings.Contains(status, "away") {
-		t.Fatalf("board hid deferred delivery: wake=%q", status)
+	if strings.Contains(status, "away") {
+		t.Fatalf("board invented an away wait: wake=%q", status)
 	}
 }

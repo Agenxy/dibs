@@ -5,7 +5,6 @@ package engine
 
 import (
 	"log/slog"
-	"time"
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/harnessenv"
@@ -50,10 +49,6 @@ func (e *Engine) showInApp(plan wakePlan, agent string) {
 	})
 }
 
-// SetOpenAppAfterIdle controls Claude closed-session recovery only. ChatGPT
-// queued mail opens promptly through its separately bounded background path.
-func (e *Engine) SetOpenAppAfterIdle(d time.Duration) { shower.MinIdle = d }
-
 // logShow says what happened to one open, for whoever reads the log later.
 func logShow(opened, deferred bool, err error, args ...any) {
 	switch {
@@ -61,8 +56,8 @@ func logShow(opened, deferred bool, err error, args ...any) {
 		slog.Warn("could not open the agent's thread in its app; the message waits there "+
 			"until the thread is opened", append(args, "err", err)...)
 	case deferred:
-		slog.Info("the agent's thread is not loaded in its app; opening it once the person "+
-			"is away; the notice stays queued until then or until they open it", args...)
+		slog.Info("the agent's thread is not loaded in its app; waiting briefly for the background "+
+			"open/restore lock; the notice stays queued until the thread opens", args...)
 	case opened:
 		slog.Info("opened the agent's thread in the app it runs in; queued input remains unconfirmed", args...)
 	}
@@ -78,8 +73,7 @@ func surfaceOf(l *core.Agent) string {
 // openClosedSession opens a Claude app session whose process has ended, so a
 // wake has a running session to reach (harnessenv/claude.go). Only for an
 // agent in the Claude app: a terminal Claude Code session has no app to open
-// in, and the mapping finds no record for it. The open waits for the person
-// to be idle, like every open, and runs off the writer loop because it reads
+// in, and the mapping finds no record for it. The open runs immediately, off the writer loop because it reads
 // the app's records.
 func (e *Engine) openClosedSession(l *core.Agent) {
 	if surfaceOf(l) != harnessenv.ClaudeDesktop {
