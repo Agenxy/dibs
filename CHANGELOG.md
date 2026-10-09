@@ -25,8 +25,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Offer new mail during busy turns and recent-contact grace, without successful
   delivery cooldowns. A fixed 200 ms arrival batch carries a burst together;
-  per-item socket write receipts prevent repeating its mail, notices or
-  announcements while allowing later items. In-flight reservations, one writer,
+  per-item socket write and successful command receipts prevent repeating mail, notices or
+  announcements while allowing later items. A stalled writer retains the pending
+  batch until recovery; daemon shutdown cancels it. In-flight reservations, one writer,
   bounded failed-delivery retries and held-peer Stop fallback remain. Existing
   `[wake.exec.*].cooldown` keys no longer pace wakes: daemon startup warns with
   the file and line, and `dibs doctor` fails the check. `dibs upgrade` backs up

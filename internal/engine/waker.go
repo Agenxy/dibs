@@ -999,7 +999,7 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 		// The bridge there substitutes these into ITS operator's command,
 		// exactly as f.apply would here: whole argv elements, never parts.
 		return wakePlan{
-			host: host, cwd: cwdOf(l), cooldown: cooldown, thread: f.Thread,
+			host: host, cwd: cwdOf(l), cooldown: cooldown, thread: f.Thread, createdSerial: l.CreatedSerial,
 			agent: l.ID, session: wakeSessionOf(l), kind: kind,
 			request: WakeRequest{
 				Host: host, Agent: l.ID, Harness: wakeHarness(l), Thread: f.Thread,
@@ -1102,13 +1102,14 @@ type wakePlan struct {
 	// surface and harness decide which app, if any, the thread is opened in
 	// after the message is queued (inapp.go).
 	surface, harness string
-	agent            string // whose outstanding state is rechecked before delivery
-	trackOffer       bool   // production delivery shares presentation with lifecycle hooks
-	socketWritten    *bool  // actual kernel write, distinct from an empty settled plan
-	socketVersion    uint64 // actionable cohort captured before a native attempt
-	notice           string // socket digest; refreshed before production delivery
-	session, kind    string // binding and reason to recheck before a socket write
-	cwd              string // where the agent says it works, for the mismatch warning
+	commandKeys      []string // exact original items refreshed before command execution
+	agent            string   // whose outstanding state is rechecked before delivery
+	trackOffer       bool     // production delivery shares presentation with lifecycle hooks
+	socketWritten    *bool    // actual kernel write, distinct from an empty settled plan
+	socketVersion    uint64   // actionable cohort captured before a native attempt
+	notice           string   // socket digest; refreshed before production delivery
+	session, kind    string   // binding and reason to recheck before a socket write
+	cwd              string   // where the agent says it works, for the mismatch warning
 	// cooldown is the rate limit THIS route carries.
 	//
 	// Carried rather than re-read, because re-reading it looked up the

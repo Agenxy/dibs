@@ -5,6 +5,8 @@ package engine
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -33,30 +35,11 @@ import (
 // The board's whole promise is reaching an agent that is not running. A timer
 // that silently withdraws it is the promise expiring, not the agent.
 func TestAnAgentArchivedByRetentionIsStillWoken(t *testing.T) {
-	// A real delivery must still never inspect or open the operator's app.
+	// Replace the app before starting any delivery, and restore it only after
+	// the command and writer are joined. No real operator thread is inspected.
 	(&fakeApp{holds: true}).install(t)
-	// A LOOP-BACKED ENGINE, because this test really starts a process.
-	//
-	// maybeWake spawns a goroutine that runs the operator's command and then
-	// logs the result, and its deferred wakeExited goes through query(), which
-	// sends on e.ops. On a bare &Engine{} that channel is nil, so the goroutine
-	// parks there forever and the test returns with it still alive. It then logs
-	// into whatever global slog handler the NEXT test has installed, and
-	// hooklogging_test.go installs a bytes.Buffer of its own: a data race
-	// between two tests that never run at the same time.
-	//
-	// Every local run passed and CI went red, which is how a race behaves and
-	// is the second time this file's neighbours have recorded that sentence. A
-	// running loop serves the query, so wakeExited completes, wakers.running
-	// clears, and awaitWakeDone below has something real to wait on.
-	// EVERY SEED BEFORE THE LOOP STARTS. boot() reads the whole of state on the
-	// way up, so assigning st.Agents after `go e.Run` is the test racing its own
-	// engine. Caught here by -race on the first attempt at this fix, which is
-	// the argument for making the fix under -race rather than after it.
 	st := core.NewState("t", core.DefaultLimits())
 	l := bridgeAgent("swept", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
-	// What the sweep leaves behind: archived, token gone, and the StaleReason
-	// that says it went dark rather than finishing.
 	l.Status = core.StatusArchived
 	l.ArchivedAt = time.Now().Add(-time.Hour)
 	l.StaleReason = "idle_no_activity"
@@ -68,44 +51,50 @@ func TestAnAgentArchivedByRetentionIsStillWoken(t *testing.T) {
 	}, time.Now()); err != nil {
 		t.Fatalf("register sender setup: %v", err)
 	}
-	if _, _, err := st.Apply(&core.Op{
-		Kind: core.OpSendMessage, Token: "asker-token", To: "swept",
-		MsgType: core.MsgQuestion, Body: "retention wake fixture",
-	}, time.Now()); err != nil {
-		t.Fatalf("pending question setup: %v", err)
-	}
-
 	e := New(st, &memLedger{}, deadProber{})
 	stopWakeTimersOnCleanup(t, e)
-	e.SetWakeCommands(map[string]WakeCommand{
-		"codex": {Argv: []string{"echo", "{thread}"}, Cooldown: time.Minute},
-	})
+	out := filepath.Join(t.TempDir(), "deliveries")
+	e.SetWakeCommands(map[string]WakeCommand{"codex": {
+		Argv: []string{os.Args[0], "-test.run=^TestSuccessfulWakeCommandHelper$", "--", out},
+	}})
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go e.Run(ctx)
-
-	// Enter on the writer like the event path. Observe scheduling before the
-	// fast command can finish through a subsequent writer query. A fabricated
-	// event with no actual mail is correctly discarded by digest refresh.
-	if _, err := e.query(ctx, func() core.Result {
-		e.maybeWake(core.Event{
-			Type: "message.sent", To: "swept",
-			Data: map[string]any{"msg_type": core.MsgQuestion},
-		})
-		e.wakers.mu.Lock()
-		started := e.wakers.running["swept"]
-		e.wakers.mu.Unlock()
-		if !started {
-			t.Error("no wake scheduled for an archived agent holding an actual question")
-		}
-		return nil
+	joined := make(chan struct{})
+	go func() { e.Run(ctx); close(joined) }()
+	t.Cleanup(func() {
+		waitWakeDone(t, e, "swept")
+		cancel()
+		<-joined
+	})
+	// Actual publication after boot: preloading the mail also starts a boot
+	// wake, so a second fabricated maybeWake races that delivery's settlement.
+	// The old assertion read last, an attempt-generation stamp that is cleared
+	// during a recheck; its absence never proved the command discarded mail.
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpSendMessage, Token: "asker-token", To: "swept",
+		MsgType: core.MsgQuestion, Body: "retention wake fixture",
 	}); err != nil {
-		t.Fatal(err)
+		t.Fatalf("pending question setup: %v", err)
 	}
-	waitWakeDone(t, e, "swept")
-	if !e.wakeSpent("swept") {
-		t.Fatal("the real question's wake was discarded rather than delivered")
+	deadline := time.Now().Add(4 * time.Second)
+	for time.Now().Before(deadline) {
+		r, err := e.query(ctx, func() core.Result {
+			e.wakers.mu.Lock()
+			defer e.wakers.mu.Unlock()
+			return core.Result{"running": e.wakers.running["swept"]}
+		})
+		if err != nil {
+			t.Fatal("observing delivery settlement:", err)
+		}
+		b, err := os.ReadFile(out)
+		if err == nil && string(b) == "x" && r["running"] == false {
+			return // actual child receipt, and its exit/logging already settled
+		}
+		if err != nil && !os.IsNotExist(err) {
+			t.Fatal("reading delivery receipt:", err)
+		}
+		<-time.After(5 * time.Millisecond)
 	}
+	t.Fatal("the archived agent's real question did not reach the wake command")
 }
 
 // awaitWakeDone waits for the goroutine maybeWake started to finish.

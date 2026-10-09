@@ -150,7 +150,7 @@ func (e *Engine) runWakeAndReport(cmd wakePlan, agent string) bool {
 	if cmd.agent != "" {
 		stamp := e.wakeStamp(agent)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		fresh, err := e.refreshWakePlan(ctx, cmd)
+		fresh, keys, err := e.refreshWakePlan(ctx, cmd)
 		cancel()
 		if err != nil {
 			e.reportWakeFailure(agent)
@@ -164,6 +164,7 @@ func (e *Engine) runWakeAndReport(cmd wakePlan, agent string) bool {
 			e.forgetWakeFailures(agent)
 			return true
 		}
+		cmd.commandKeys = keys
 		if cmd.host == "" && len(cmd.argv) == 0 {
 			cmd.notice = fresh // never copy private mail into command argv
 		}
@@ -175,6 +176,8 @@ func (e *Engine) runWakeAndReport(cmd wakePlan, agent string) bool {
 		}
 		if native {
 			e.recordSocketOutcome(cmd, true)
+		} else {
+			e.recordCommandWritten(cmd)
 		}
 		e.noteDibsStartedTurn(agent, time.Now())
 		if queues(cmd) {
@@ -193,12 +196,17 @@ func (e *Engine) runWakeAndReport(cmd wakePlan, agent string) bool {
 	return false
 }
 
-func (e *Engine) refreshWakePlan(ctx context.Context, cmd wakePlan) (string, error) {
+func (e *Engine) refreshWakePlan(ctx context.Context, cmd wakePlan) (string, []string, error) {
 	res, err := e.query(ctx, func() core.Result {
 		l := e.state.Agents[cmd.agent]
 		text := ""
+		var keys []string
 		if l != nil && !l.Retired() && l.SessionIsCurrent(cmd.session) {
-			text = e.freshPlanText(l, cmd, time.Now())
+			now := time.Now()
+			text = e.freshPlanText(l, cmd, now)
+			if text != "" && (cmd.host != "" || len(cmd.argv) > 0) {
+				keys = e.freshCommandKeys(l.ID, now)
+			}
 		}
 		if text == "" {
 			e.wakers.mu.Lock()
@@ -209,13 +217,14 @@ func (e *Engine) refreshWakePlan(ctx context.Context, cmd wakePlan) (string, err
 			delete(e.wakers.failedCauses, cmd.agent)
 			e.wakers.mu.Unlock()
 		}
-		return core.Result{"digest": text}
+		return core.Result{"digest": text, "command_keys": keys}
 	})
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	text, _ := res["digest"].(string)
-	return text, nil
+	keys, _ := res["command_keys"].([]string)
+	return text, keys, nil
 }
 
 func (e *Engine) freshPlanText(l *core.Agent, cmd wakePlan, now time.Time) string {
@@ -225,7 +234,9 @@ func (e *Engine) freshPlanText(l *core.Agent, cmd wakePlan, now time.Time) strin
 			return e.socketDigest(l, now)
 		}
 	default:
-		return e.currentWakeDigest(l)
+		if len(e.freshCommandKeys(l.ID, now)) > 0 {
+			return e.currentWakeDigest(l)
+		}
 	}
 	return ""
 }

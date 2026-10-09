@@ -944,6 +944,10 @@ Leaving an already-presented notify unacknowledged does not rearm it across
 later idle epochs, command reconsideration or app reconnect. A confirmed
 socket presentation and ledgered mailbox delivery count; an unconfirmed
 socket write and command execution alone do not count as read receipts.
+Successful command delivery records only the original item keys
+captured before execution: an exit recheck skips those items and can offer new
+arrivals. The writer keeps these derived receipts bounded by retained coordination;
+losing them can repeat a delivery and cannot lose unread mail.
 A non-blocking Stop neither marks those items delivered nor reads their outcome
 prefixes. Held information is delivered through SessionStart, `check_in` or
 `inbox`, or included in the next actionable Stop/socket digest under the shared

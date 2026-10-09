@@ -213,7 +213,11 @@ A successful write deduplicates its original items, never the session's turn.
 Each later mail, notice or announcement can produce a fresh offer. One
 in-flight reservation and one writer per session remain. Transport deduplication
 is separate from model presentation: held peer messages retain their Stop
-fallback, and no socket write proves acceptance. These derived item receipts
+fallback, and no socket write proves acceptance. Successful commands also record
+the exact original item keys captured before
+execution, so an exit recheck cannot repeat the same question and new mail remains
+eligible. Those receipts consume neither raw mail nor Stop presentation. These
+derived item receipts
 are bounded by retained coordination and reset on daemon restart.
 Dibs-generated progress, queue updates, ordinary approvals and accepted reviews
 wait for SessionStart, an authenticated pull or the next actionable digest.
