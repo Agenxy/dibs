@@ -110,7 +110,7 @@ not an assertion that Agenxy owns those dependencies. Module versions and
 checksums remain pinned in go.mod/go.sum; release SBOMs identify shipped modules.
 
 Component | Version | Retained licence/notice files
-Go | go1.26.6 | LICENSES/Go-BSD-3-Clause.txt
+Go | go1.26.9 | LICENSES/Go-BSD-3-Clause.txt
 github.com/BurntSushi/toml | v1.6.0 | LICENSES/third-party/github.com_BurntSushi_toml/COPYING
 github.com/aymanbagabas/go-osc52/v2 | v2.0.1 | LICENSES/third-party/github.com_aymanbagabas_go-osc52_v2/LICENSE
 github.com/aymanbagabas/go-udiff | v0.2.0 | LICENSES/third-party/github.com_aymanbagabas_go-udiff/LICENSE-BSD, LICENSES/third-party/github.com_aymanbagabas_go-udiff/LICENSE-MIT

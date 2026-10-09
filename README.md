@@ -236,9 +236,10 @@ task install                 # build + install to ~/.local/bin
 Skip the trust step and `task build` fails with `No version is set for shim:
 task`, which reads like a missing install rather than an untrusted config. If you
 would rather not use mise at all, `go build ./cmd/...` needs nothing but Go
-1.26.6. On an earlier patch release, `GOTOOLCHAIN=local go build ./cmd/...`
-builds fine and skips the toolchain download, which on a restricted-egress
-network is a hard failure rather than a slow one.
+1.26.9, including its standard-library security fixes. On a restricted-egress
+network, `GOTOOLCHAIN=local go build ./cmd/...` skips the toolchain download;
+use an installed patched toolchain because earlier patches may compile while
+retaining the security findings.
 
 #### Without mise or task
 
