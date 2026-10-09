@@ -936,13 +936,6 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 			"agent", l.ID)
 		return wakePlan{}, false
 	}
-	if last, seen := e.wakers.last[l.ID]; seen && now.Sub(last) < cooldown {
-		// A cooldown refusal schedules nothing. A later event reconsiders
-		// delivery; only an actual failed delivery can arm one retry.
-		slog.Debug("no wake: inside the cooldown",
-			"agent", l.ID)
-		return wakePlan{}, false
-	}
 	e.wakers.last[l.ID] = now
 	if e.wakers.running == nil {
 		e.wakers.running = map[string]bool{}
@@ -1303,7 +1296,7 @@ func (e *Engine) PullOnlyNoteFor(ctx context.Context, agentID string) string {
 // message. Observation neither confirms a socket outcome nor consumes mail.
 func (e *Engine) SendDeliveryNoteFor(ctx context.Context, agentID string, msgSerial uint64) string {
 	res, err := e.query(ctx, func() core.Result {
-		return core.Result{"note": e.sendDeliveryNote(e.state.Agents[agentID], e.state.Messages[msgSerial], time.Now())}
+		return core.Result{"note": e.sendDeliveryNote(e.state.Agents[agentID], e.state.Messages[msgSerial])}
 	})
 	if err != nil {
 		return ""

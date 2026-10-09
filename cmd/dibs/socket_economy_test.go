@@ -368,23 +368,14 @@ func TestSocketEconomyUsesLifecycleAndPreservesHookDelivery(t *testing.T) {
 			marker := "socket-economy-" + mode
 			f.tool(t, "send", map[string]any{"token": f.sender, "to": "worker", "type": kind, "body": marker})
 			text := f.waitOffer(t)
-			if !busy {
-				if !strings.Contains(text, marker) {
-					t.Fatalf("idle actionable offer lost mail: %q", text)
-				}
-				wire := collect(f.lines, 2, time.Second)
-				if len(wire) != 2 || !strings.Contains(strings.Join(wire, "\n"), marker) {
-					t.Fatalf("idle actionable mail produced no actual socket frame: %v", wire)
-				}
-				f.waitWritten(t)
-			} else {
-				if text != "" {
-					t.Errorf("%s mail offered a socket wake: %q", mode, text)
-				}
-				if wire := collect(f.lines, 1, 100*time.Millisecond); len(wire) != 0 {
-					t.Errorf("%s mail wrote to the actual session socket: %v", mode, wire)
-				}
+			if !strings.Contains(text, marker) {
+				t.Fatalf("actionable offer lost mail: %q", text)
 			}
+			wire := collect(f.lines, 2, time.Second)
+			if len(wire) != 2 || !strings.Contains(strings.Join(wire, "\n"), marker) {
+				t.Fatalf("actionable mail produced no actual socket frame: %v", wire)
+			}
+			f.waitWritten(t)
 			got := f.tool(t, "hook_poll", map[string]any{"session_id": f.sid, "event": "Stop", "strict_output": true})
 			if got["decision"] != "block" || !strings.Contains(fmt.Sprint(got), marker) {
 				t.Fatalf("authored mail lost its blocking Stop fallback: %v", got)
@@ -476,10 +467,13 @@ func TestSocketEconomyVerdictsUseCurrentWaitingAndCanonicalKind(t *testing.T) {
 			sent := f.tool(t, "send", args)
 			serial := sent["msg_serial"]
 			if review {
-				// The setup request is deliberately mid-turn, so it must not
-				// spend the socket before the review under test exists.
+				// Drain the setup request from the real writer before testing the review.
 				f.hook(t, "UserPromptSubmit")
 				f.waitOffer(t)
+				if len(collect(f.lines, 2, time.Second)) != 2 {
+					t.Fatal("setup request had no socket frame")
+				}
+				f.waitWritten(t)
 			}
 			worker := approver
 			if review {
@@ -551,46 +545,35 @@ func TestSocketEconomyVerdictsUseCurrentWaitingAndCanonicalKind(t *testing.T) {
 	}
 }
 
-func TestSocketEconomyUnknownBusyAndCoalescingBeyondCooldown(t *testing.T) {
-	for _, mode := range []string{"unknown", "busy", "coalesced"} {
+func TestSocketEconomyFreshMailBeyondOldCooldown(t *testing.T) {
+	for _, mode := range []string{"unknown", "busy", "idle"} {
 		t.Run(mode, func(t *testing.T) {
 			t.Parallel()
 			f := newEconomyFixture(t)
-			f.eng.SetWakeCommands(map[string]engine.WakeCommand{"claude code": {Argv: []string{"/usr/bin/false"}, Cooldown: 20 * time.Second}})
 			if mode != "unknown" {
 				f.idle(t)
 			}
 			if mode == "busy" {
 				f.hook(t, "UserPromptSubmit")
 			}
-			f.tool(t, "send", map[string]any{"token": f.sender, "to": "worker", "type": "question", "body": "long-window-first"})
-			initial := f.waitOffer(t)
-			if mode == "coalesced" {
-				if initial == "" || len(collect(f.lines, 2, time.Second)) != 2 {
-					t.Fatal("setup: first idle wake missing")
+			for _, body := range []string{"long-window-first", "long-window-second"} {
+				if body == "long-window-second" {
+					if wire := collect(f.lines, 1, 21*time.Second); len(wire) != 0 {
+						t.Fatalf("silence repeated mail: %v", wire)
+					}
 				}
-				f.waitWritten(t)
-			} else if initial != "" {
-				t.Fatalf("%s ignored bounded grace or explicit busy: %q", mode, initial)
-			}
-			// Silence never schedules a wake, regardless of the old grace/cooldown.
-			if wire := collect(f.lines, 1, 21*time.Second); len(wire) != 0 {
-				t.Fatalf("%s scheduled a wake: %v", mode, wire)
-			}
-
-			f.tool(t, "send", map[string]any{"token": f.sender, "to": "worker", "type": "question", "body": "long-window-second"})
-			if mode == "unknown" {
+				f.tool(t, "send", map[string]any{"token": f.sender, "to": "worker", "type": "question", "body": body})
 				text := f.waitOffer(t)
-				if !strings.Contains(text, "long-window-first") || !strings.Contains(text, "long-window-second") || len(collect(f.lines, 2, time.Second)) != 2 {
-					t.Fatalf("new mail event did not reach unknown session: %q", text)
+				if !strings.Contains(text, body) || (body == "long-window-second" && strings.Contains(text, "long-window-first")) {
+					t.Fatalf("fresh item omitted or old item repeated: %q", text)
+				}
+				if wire := collect(f.lines, 2, time.Second); len(wire) != 2 {
+					t.Fatalf("fresh item had no write: %v", wire)
 				}
 				f.waitWritten(t)
-			} else if text, _ := f.offerRead(t, nil); text != "" {
-				t.Fatalf("%s rearmed without a turn event: %q", mode, text)
 			}
-
 			if got := f.hook(t, "Stop"); !strings.Contains(got, "long-window-first") || !strings.Contains(got, "long-window-second") {
-				t.Fatalf("coalescing lost pending mail at Stop: %s", got)
+				t.Fatalf("held-message fallback lost unread mail: %s", got)
 			}
 		})
 	}
@@ -617,14 +600,8 @@ func TestSocketEconomyBatchesOwnedMailboxesAndRearmerUsesReceipt(t *testing.T) {
 	f.idle(t)
 	f.hook(t, "UserPromptSubmit")
 	f.tool(t, "send", map[string]any{"token": f.sender, "to": "worker", "type": "notify", "body": "owned-fyi"})
-	if got := f.waitOffer(t); got != "" {
-		t.Fatalf("authored notify interrupted the shared busy session: %q", got)
-	}
+
 	f.tool(t, "send", map[string]any{"token": f.sender, "to": "worker-alt", "type": "question", "body": "owned-question"})
-	if got := f.waitOffer(t); got != "" {
-		t.Fatalf("question interrupted the shared busy session: %q", got)
-	}
-	f.idle(t)
 	got := f.waitOffer(t)
 	if !strings.Contains(got, "owned-fyi") || !strings.Contains(got, "owned-question") {
 		t.Fatalf("atomic owned batch lost a mailbox: %q", got)
@@ -653,10 +630,7 @@ func TestSocketEconomyBatchesOwnedMailboxesAndRearmerUsesReceipt(t *testing.T) {
 	// New mail rearms after the shared turn. Authentication of every token
 	// still excludes foreign-session text from the new atomic reservation.
 	f.tool(t, "send", map[string]any{"token": f.sender, "to": "worker-alt", "type": "question", "body": "retry-question"})
-	if text, _ := f.offerRead(t, map[string]any{mcp.SocketTokensMetaKey: []string{f.worker, alt}}); text != "" {
-		t.Fatalf("new mail interrupted the shared busy turn: %q", text)
-	}
-	f.idle(t)
+
 	text, id := f.offerRead(t, map[string]any{mcp.SocketTokensMetaKey: []string{f.worker, alt, foreign, otherHost}})
 	if id == "" || !strings.Contains(text, "retry-question") || strings.Contains(text, "foreign-private") || strings.Contains(text, "other-host-private") {
 		t.Fatalf("batch binding/authentication failed: %q", text)

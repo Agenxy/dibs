@@ -205,30 +205,29 @@ clock starts only when the recipient first retrieves or acknowledges it.
 
 ### Continuing a turn that ends with declared work (2026-10-01)
 
-**Socket economy (2026-10-04).** Socket writers now share an engine-owned
-lifecycle and cause decision. Every agent- or human-written message, including
-plain notify, qualifies. Busy sessions receive authored mail at their blocking
-Stop hook, with no socket frame. Dibs-generated progress, queue updates,
-ordinary approvals and accepted reviews wait for SessionStart, an authenticated pull or the
-next actionable digest. Stop and SubagentStop use the same actionable cause as
-the socket; a non-blocking Stop consumes nothing. UserPromptSubmit stays silent. An
-idle session gets one coalesced write for authored mail or actionable verdicts until
-actual turn evidence. Unknown lifecycle retains a bounded grace; expiry alone sends nothing. A later
-mail or lifecycle event may produce one recovery write, logged as unknown. Answers, denials,
-declines, grant/adoption verdicts and flagged reviews qualify; ordinary work
-approvals use the hook path. DONE qualifies for a sender currently declaring a
-wait. A successful kernel write remains best effort, with hook fallback until
-turn evidence. Declared waits schedule no writes. A failed delivery alone gets
-one bounded retry tied to its original outstanding causes. See
-`docs/SOCKET-WAKE-DESIGN.md` for the measured baseline, additive batch protocol
-and dormant older-bridge limitation.
+**Socket delivery (2026-10-09; supersedes the 2026-10-04 economy rule).**
+Every agent- or human-written message, including plain notify, qualifies
+without a busy/idle or recent-contact refusal. A fixed 200 ms window from the
+first arrival coalesces a burst; it does not postpone a continuing stream.
+A successful write deduplicates its original items, never the session's turn.
+Each later mail, notice or announcement can produce a fresh offer. One
+in-flight reservation and one writer per session remain. Transport deduplication
+is separate from model presentation: held peer messages retain their Stop
+fallback, and no socket write proves acceptance. These derived item receipts
+are bounded by retained coordination and reset on daemon restart.
+Dibs-generated progress, queue updates, ordinary approvals and accepted reviews
+wait for SessionStart, an authenticated pull or the next actionable digest.
+Answers, denials, declines, grant/adoption verdicts and flagged reviews qualify;
+DONE qualifies when the sender currently declares a wait. Explicit operator
+phase opt-outs remain. UserPromptSubmit stays silent. A failed delivery alone
+gets one bounded retry tied to its original outstanding cause.
 
-The send result uses the same message decision: an idle notify reports a
-best-effort wake attempt; a busy recipient reports delivery deferred to Stop.
-An authored FYI is not a generated progress unit. The person's correction on
-2026-10-04 restored FYI delivery after the economy rule had incorrectly
-suppressed it; the saving comes from quiet generated updates and coalescing,
-not disabling authored mail.
+The send result names the attempted route regardless of lifecycle. No
+successful-delivery cooldown remains. The retired `[wake.exec.*].cooldown` key
+is refused, including empty and zero values, with a remove-the-line hint;
+`dibs doctor` names that setting. Existing dormant bridges use their installed
+arrival batching until they upgrade between stdio calls; current bridge and
+daemon offer receipts deduplicate items without inventing receiver acceptance.
 
 Wake-on-mail worked and the Codex workers still stalled. Measured in
 codex-k7-0's own transcript: mail woke it through the ChatGPT app, the turn's
@@ -254,7 +253,7 @@ unchanged age from committed slot events and labels old, unobserved open work
 The Stop continuation above and mail/app restart/reconnect events remain.
 A wake timer may retry one failed delivery once, fenced to its original
 presentation identifiers, including the bridge's authenticated failed-offer ID.
-New bridge mail is written immediately; an old daemon must echo support for the
+New bridge mail closes its fixed 200 ms arrival batch; an old daemon must echo support for the
 failed-offer fence before a new bridge retries. Otherwise it surrenders the
 route without writing. Dormant pre-upgrade bridges run their old code until the
 next served request; installing the daemon does not replace them.
@@ -881,9 +880,9 @@ acting where nobody is looking, in a thread its human will later open and read,
 is a different product from a board that coordinates the agents somebody is
 running.
 
-**Current event rule.** Daemon routes share the cooldown and still-running
-flag. A refusal schedules nothing; only an actual failed delivery may retry once.
-The bridge writes new mail immediately, without a successful-delivery cooldown. No command and no socket is still no wake. No process is ever spawned for
+**Current event rule.** Arrival batches close after 200 ms; successful delivery
+does not hold later mail. A command still executing coalesces arrivals and
+reconsiders at exit. Only an actual failed delivery may retry once. No command and no socket is still no wake. No process is ever spawned for
 a thread that cannot be resumed.
 
 **AND WHAT CHANGED: THE NOTICE IS NO LONGER ONE FIXED SENTENCE ON BOTH.** It

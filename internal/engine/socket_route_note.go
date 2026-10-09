@@ -4,15 +4,13 @@
 package engine
 
 import (
-	"time"
-
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/harnessenv"
 )
 
 // A socket's existence says where a wake could go, not whether this mail
 // buys one. Classify the actual recorded message by the writer's shared rule.
-func (e *Engine) sendDeliveryNote(l *core.Agent, m *core.Message, now time.Time) string {
+func (e *Engine) sendDeliveryNote(l *core.Agent, m *core.Message) string {
 	if l == nil {
 		return ""
 	}
@@ -33,17 +31,13 @@ func (e *Engine) sendDeliveryNote(l *core.Agent, m *core.Message, now time.Time)
 	if !socket {
 		return e.PullOnlyNote(l)
 	}
-	if e.socketLifecycle(l, now) == "busy" {
-		return "delivered to " + l.ID + "'s mailbox; it is mid-turn; " +
-			"delivery is deferred until its Stop hook at the end of the turn."
-	}
 	why := "its session socket is the selected delivery route"
 	if self {
 		why = "its in-session bridge owns the socket route"
 	}
-	if epoch := e.socketEpochs[socketSessionKey(l)]; epoch.written {
+	if e.socketWritten["mail:"+noticeKey(l.ID, m.Serial)] {
 		return "delivered to " + l.ID + "'s mailbox; " + why + "; a best-effort notice was already written " +
-			"in this idle epoch, so no additional socket frame was sent. This mail remains " +
+			"for this message, so no additional socket frame was sent. This mail remains " +
 			"available at Stop or its next activation; the earlier write confirms no receiver acceptance."
 	}
 	return bestEffortSocketNote(l, wakeHarness(l), string(l.Status), why)

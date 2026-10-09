@@ -63,7 +63,24 @@ func TestAFailedWakeIsToldToTheAgentWaitingOnIt(t *testing.T) {
 		t.Fatal("setup: send:", err)
 	}
 	serial, _ := sent["msg_serial"].(uint64)
-	awaitWakeDone(t, e, "worker")
+	// The real arrival batch precedes execution. Observe the actual failed
+	// command outcome rather than sampling its very short running interval.
+	deadline := time.After(3 * time.Second)
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		e.wakers.mu.Lock()
+		failed := e.wakers.fails["worker"] > 0 && !e.wakers.running["worker"]
+		e.wakers.mu.Unlock()
+		if failed {
+			break
+		}
+		select {
+		case <-ticker.C:
+		case <-deadline:
+			t.Fatal("actual wake command never reported failure")
+		}
+	}
 
 	_, _ = e.query(ctx, func() core.Result {
 		var told string

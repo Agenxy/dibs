@@ -15,13 +15,21 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Mail, restart/reconnect and bounded Stop continuation remain; scheduled wake
   retries are limited to one failed delivery with the same outstanding cause.
   Mail arriving during a wake command is reconsidered at its exit without a
-  cooldown timer. Bridge mail events write immediately; failed socket retries
+  cooldown timer. Bridge mail events deliver on arrival; failed socket retries
   require an authenticated original offer. A gone socket surrenders immediately
   without a bridge retry, explicitly releases its authenticated stream claims
   and hands the original owed mail to the daemon. Replayed subscription serials
   retain their original attempt budget across reconnects. Recent model contact
   no longer refuses a new mail event. Twice-failed human contact posts show their
   reason on the board and in `dibs doctor`.
+
+- Offer new mail during busy turns and recent-contact grace, without successful
+  delivery cooldowns. A fixed 200 ms arrival batch carries a burst together;
+  per-item socket write receipts prevent repeating its mail, notices or
+  announcements while allowing later items. In-flight reservations, one writer,
+  bounded failed-delivery retries and held-peer Stop fallback remain. Refuse any
+  `[wake.exec.*].cooldown` setting with a remove-the-line hint, also shown by
+  `dibs doctor`, rather than silently ignoring the retired key.
 
 - Releases up to and including v0.0.13 remain Apache-2.0; GPL-3.0-or-later applies from the next release, with commercial licensing available from Agenxy for Agenxy-authored portions.
 

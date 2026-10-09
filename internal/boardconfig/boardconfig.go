@@ -403,9 +403,8 @@ type WakeExec struct {
 	// Fallback is tried only when Argv exits non-zero. Same rules, same
 	// substitutions, same confirmation by exit status. Optional.
 	Fallback []string `toml:"fallback"`
-	// Cooldown is the shortest gap between two wakes of the same agent. Zero
-	// takes the default; a fleet that wakes on every message is a fork bomb
-	// with better manners.
+	// Cooldown is retained only to diagnose a retired setting. Load refuses
+	// its presence, even zero: the receiving harness owns busy-turn delivery.
 	Cooldown time.Duration `toml:"cooldown"`
 }
 
@@ -484,6 +483,9 @@ func Load(dir string) (Config, error) {
 		return c, nil
 	}
 	if err != nil {
+		return c, err
+	}
+	if err := refuseWakeCooldown(b); err != nil {
 		return c, err
 	}
 	md, err := toml.Decode(string(b), &c)
@@ -1036,12 +1038,8 @@ func (c Config) validateSupervise() error {
 }
 
 func (c Config) validateWake() error {
-	// A setting that reads as applied and is not is this file's oldest bug, and
-	// [wake.exec] arrived with a fresh one: cooldown accepted any duration, and
-	// the waker maps everything <= 0 to the 90s default. So `cooldown = "-1s"`
-	// passed `dibd -check`, startup reported the harness configured, and the
-	// operator's explicit value did nothing at all. Zero is documented as "use
-	// the default" and stays legal; a negative one is a mistake and is refused.
+	// Load diagnoses the retired key by presence; nonzero typed values from
+	// other callers must not silently survive validation either.
 	for harness, x := range c.Wake.Exec {
 		if err := validateWakeEntry(harness, x, c.Wake.Exec); err != nil {
 			return err
@@ -1110,11 +1108,8 @@ func validateWakeEntry(harness string, x WakeExec, all map[string]WakeExec) erro
 				"behave differently between restarts", harness, other)
 		}
 	}
-	if x.Cooldown < 0 {
-		return fmt.Errorf("[wake.exec.%s] cooldown = %q: a wake cooldown cannot "+
-			"be negative. Omit it, or set 0, to take the default; anything "+
-			"below zero was silently becoming that default while reading as "+
-			"a setting you had chosen", harness, x.Cooldown)
+	if x.Cooldown != 0 {
+		return removedWakeCooldown(harness)
 	}
 	// An empty argv is the whole entry doing nothing. It loaded, startup
 	// took the "there is a wake command" branch, skipped the entry for want

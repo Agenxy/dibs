@@ -1,5 +1,12 @@
 # Socket economy: request 26745
 
+> Superseded delivery policy (2026-10-09): busy/grace and turn-wide successful
+> write suppression are removed. New items use a fixed 200 ms arrival batch and
+> per-item write deduplication. In-flight reservation, authentication, one
+> writer, original failure budgets and held-peer Stop fallback remain. See SPEC
+> for the current contract; the measurements below explain the retired design.
+
+
 **Timer policy superseded (2026-10-09, request 71176).** The measurements and
 design history below retain their original due-wait and backoff terminology.
 The current implementation sends no declaration rechecks, timed stall wakes,

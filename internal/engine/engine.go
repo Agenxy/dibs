@@ -78,22 +78,16 @@ type Engine struct {
 	// turnEnded: when a finishing lifecycle hook (Stop, SessionEnd,
 	// SubagentStop) last said this agent's TURN is over.
 	//
-	// Separate from `seen` because they answer different questions and only one
-	// of them decays. `seen` is "when did we last hear from it", which the lease
-	// sweep needs; this is "has it stopped since then", which the waker needs.
-	// Reading recency alone, a turn that ended two seconds after its last call
-	// looked like a running agent for the whole cooldown, so blocking mail
-	// arriving in that window got no wake at all and was never retried: the
-	// exact loss the wake path exists to prevent, inside its own guard.
-	//
-	// Ephemeral and rebuildable, same tier as `seen`: losing it on restart costs
-	// at most one unnecessary wake.
+	// Separate from lease contact and retained as lifecycle evidence.
+	// It does not veto delivery of fresh mail.
 	turnEnded          map[string]time.Time
 	socketOffers       map[string]socketOffer
 	socketFailedOffers map[string]socketOffer
 	socketTurns        map[string]socketTurn
 	socketEpochs       map[string]socketEpoch
 	socketFailures     map[string]socketFailure
+	socketWritten      map[string]bool // per original item; not a receiver acceptance receipt
+	wakeBursts         map[string]*wakeBurst
 	noticePresented    map[string]time.Time
 	nextSocketOffer    uint64
 	// reachedByHook: agents at least one lifecycle hook has resolved to, so a
@@ -357,6 +351,11 @@ func (e *Engine) Run(ctx context.Context) {
 	defer tick.Stop()
 	reconcileTick := time.NewTicker(30 * time.Second)
 	defer reconcileTick.Stop()
+	defer func() {
+		for _, burst := range e.wakeBursts {
+			burst.timer.Stop()
+		}
+	}()
 	for {
 		select {
 		case <-ctx.Done():
@@ -1267,7 +1266,7 @@ func (e *Engine) publish(evs []core.Event) {
 		}
 		// And, for an agent that is not running at all, start the operator's
 		// way in. Every other path here waits for the agent to come to us.
-		e.maybeWake(ev)
+		e.coalesceEventWake(ev)
 		e.wakeAnnouncementEvent(ev)
 	}
 	e.ring = append(e.ring, evs...)

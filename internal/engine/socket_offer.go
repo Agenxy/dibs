@@ -41,8 +41,9 @@ func (e *Engine) beginSocketOffers(agents []*core.Agent, session string) core.Re
 	key := socketSessionKey(l)
 	if old, ok := e.socketEpochs[key]; ok {
 		// A writer disappearing before settlement cannot wedge the route.
-		// Written epochs have no timer: a held peer is not a reason to repeat.
-		if old.written || now.Sub(old.at) < 15*time.Second {
+		// This is only an in-flight reservation, never a successful-write
+		// cooldown. Fresh items can be offered after settlement.
+		if !old.written && now.Sub(old.at) < 15*time.Second {
 			return core.Result{"digest": ""}
 		}
 		delete(e.socketEpochs, key)
@@ -102,6 +103,7 @@ func (e *Engine) settleSocketParticipant(who, key string, offer socketOffer) {
 	}
 	offer.written = true
 	e.socketOffers[who] = offer
+	e.noteSocketWritten(offer)
 	if e.seen[who].After(offer.at) {
 		e.confirmSocketOffer(row, e.seen[who])
 	}

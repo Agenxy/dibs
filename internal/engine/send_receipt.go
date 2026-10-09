@@ -179,7 +179,7 @@ func (e *Engine) sendAdvisories(op *core.Op, res core.Result, now time.Time) {
 			res["queue_wake"] = view
 		}
 		serial, _ := res["msg_serial"].(uint64)
-		if note := e.sendDeliveryNote(e.state.Agents[op.To], e.state.Messages[serial], now); note != "" {
+		if note := e.sendDeliveryNote(e.state.Agents[op.To], e.state.Messages[serial]); note != "" {
 			res["note"] = note
 		}
 	}

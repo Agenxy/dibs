@@ -97,7 +97,6 @@ done so.
 [wake.exec.codex]
 argv     = ["/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex",
             "queue", "--thread", "{thread}", "--message", "{message}"]
-cooldown = "90s"
 ```
 
 `codex queue --thread <uuid> --message "<text>"` hands the message to the
@@ -266,13 +265,12 @@ handoff, or a **verdict**, which is the answer to something this agent asked and
 then stopped for. A notice does not justify starting a process on the operator's
 machine.
 
-The other half of the test is whether the agent is *reachable already*, and it
-is not `active`. `active` means the idle lease has not lapsed, which is
-forty-five minutes by default, so an agent whose turn ended seconds ago is still
-`active` and is still not running: treating that as "no wake needed" discards
-the one attempt the message gets. What is asked instead is whether the agent has
-called Dibs within the wake cooldown, which is real evidence of a live process
-rather than an unexpired lease.
+The receiving harness decides how to handle mail during a busy turn. Neither
+lease status, recent contact nor a successful-delivery cooldown suppresses a new
+item. Arrival bursts are batched for 200 ms; an executing delivery command
+reconsiders new arrivals when it exits. Only actual failures get a bounded retry.
+The former `[wake.exec.*].cooldown` key is refused, including empty or zero
+values: remove that line. `dibs doctor` names it in its corrective hint.
 
 ### `extend_turn_for`: which news may extend a turn already running
 

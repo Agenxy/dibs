@@ -24,8 +24,8 @@ import (
 	"github.com/agenxy/dibs/internal/mcp"
 )
 
-// Drive the real listen -> session socket path. Authenticated activity makes
-// the session busy, so the next mail waits for an event, never a cooldown timer.
+// Drive the real listen -> arrival batch -> session socket path. Acknowledging
+// after observation but before the write must make its fresh digest empty.
 func TestBusySelfWakeNeverSchedulesAcknowledgedMail(t *testing.T) {
 	sock := sockPath(t)
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", sock)
@@ -104,7 +104,7 @@ func TestBusySelfWakeNeverSchedulesAcknowledgedMail(t *testing.T) {
 	}
 	ack(first)
 	second := send("stale-digest-marker")
-	for deadline := time.Now().Add(300 * time.Millisecond); iw.sinceOf("tok-worker") < second; {
+	for deadline := time.Now().Add(150 * time.Millisecond); !watcherAttempted(iw, second); {
 		if time.Now().After(deadline) {
 			t.Fatal("setup: second notification was never observed")
 		}
@@ -114,6 +114,17 @@ func TestBusySelfWakeNeverSchedulesAcknowledgedMail(t *testing.T) {
 	if got := collect(lines, 2, time.Second); len(got) != 0 {
 		t.Fatalf("a scheduled wake sent a digest for acknowledged mail: %v", got)
 	}
+}
+
+func watcherAttempted(iw *inboxWatcher, serial uint64) bool {
+	iw.mu.Lock()
+	defer iw.mu.Unlock()
+	for _, stream := range iw.streams {
+		if stream.attempted >= serial {
+			return true
+		}
+	}
+	return false
 }
 
 func TestRestoredMixedCapabilitiesRefreshEveryMailbox(t *testing.T) {
