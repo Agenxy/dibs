@@ -1000,7 +1000,8 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 		// exactly as f.apply would here: whole argv elements, never parts.
 		return wakePlan{
 			host: host, cwd: cwdOf(l), cooldown: cooldown, thread: f.Thread, createdSerial: l.CreatedSerial,
-			agent: l.ID, session: wakeSessionOf(l), kind: kind,
+			commandEpoch: e.commandEpoch[l.ID],
+			agent:        l.ID, session: wakeSessionOf(l), kind: kind,
 			request: WakeRequest{
 				Host: host, Agent: l.ID, Harness: wakeHarness(l), Thread: f.Thread,
 				CWD: cwdOf(l), From: f.From, MsgType: f.MsgType, Notice: f.Message,
