@@ -266,41 +266,10 @@ func (e *Engine) maybeWake(ev core.Event) {
 		slog.Debug("no wake: this agent has signed off", "agent", l.ID)
 		return
 	}
-	// RECENTLY IN TOUCH, not merely "active".
-	//
-	// Status was the first test here and it was wrong. `active` means the idle
-	// lease has not lapsed, which is 45 minutes by default; Stop and SessionEnd
-	// only finish the separate supervision child, so an agent whose turn ended
-	// seconds ago is still `active` and is not running. Skipping on that
-	// discarded the one wake attempt this message will ever get, because
-	// maybeWake fires once when the event is published and the dormant sweep
-	// never retries the mail. A message arriving just after a turn ended waited
-	// for a human. Found by the pre-release review, which also pointed out my
-	// test could not see it: nil engine state returned before this branch.
-	// BEFORE THE RECENCY SHORT-CIRCUIT, because the wake IS what is in touch.
-	//
-	// The exit re-check was added so mail arriving after a running command has
-	// read its inbox is not stranded for the rest of a two-hour turn. Reading
-	// that inbox is a call to Dibs, so it updates e.seen and makes the agent
-	// recently in touch, and the return below therefore fired before anything
-	// recorded the arrival: the re-check never armed, on precisely the ordering
-	// it exists for. The fix was correct and unreachable.
-	//
-	// Marked here, where a wake is known to be running for this agent, and only
-	// for blocking news. Recently in touch with NO wake running is a different
-	// agent altogether: one that is genuinely working and will see this at its
-	// own turn boundary, which is why the short-circuit stays.
+	// Contact proves a past call, not a running turn. A session without a
+	// Stop hook may already be idle; only a running delivery command can
+	// coalesce this event and reconsider the original mail at its exit.
 	if e.noteArrivalDuringWake(l.ID) {
-		slog.Debug("mail arrived during a running wake; re-checking at its exit",
-			"agent", l.ID)
-		return
-	}
-	// Having called Dibs inside the cooldown is real evidence of a live agent,
-	// and it is the same window that bounds the wake itself.
-	//
-	// Activity is a refusal, not a timer; new mail or reconnect reconsiders it.
-	if e.recentlyInTouch(l) {
-		slog.Debug("no wake: called Dibs recently", "agent", l.ID)
 		return
 	}
 	if e.deferContactForLiveTurn(l) {
@@ -416,9 +385,6 @@ func (e *Engine) retryWakeDecision(agent string) {
 	// fire while a command is still running, and claiming a finished turn there
 	// would be false. See noteWakeEnded.
 	//
-	if e.recentlyInTouch(l) {
-		return
-	}
 	if !e.hasRetryMail(agent) {
 		e.clearWakeAttempts(agent) // nothing owed: the next mail starts its own count
 		return

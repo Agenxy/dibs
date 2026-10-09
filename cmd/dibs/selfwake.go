@@ -90,6 +90,7 @@ type selfWaker struct {
 	// session whose socket recovers gets its claim back when its harness next
 	// spawns a bridge.
 	surrendered bool
+	surrenderFn func() // release the live daemon claims at the failure event
 	// deliverFn replaces the write, for the one branch no platform reaches the
 	// same way twice.
 	//
@@ -268,14 +269,25 @@ func (w *selfWaker) surrender() {
 		return
 	}
 	w.mu.Lock()
-	defer w.mu.Unlock()
+	if w.surrendered {
+		w.mu.Unlock()
+		return
+	}
 	w.surrendered = true
+	if w.timer != nil {
+		w.timer.Stop()
+	}
+	w.pending, w.retry = false, false
+	fn := w.surrenderFn
+	w.mu.Unlock()
+	if fn != nil {
+		fn()
+	}
 }
 
 // canReach reports whether this bridge still claims it can wake its own
 // session. Read by listenBody, which declares the claim, and by the watcher,
-// which drops its stream when the answer changes so the next listen states the
-// truth.
+// which closes its streams at surrender and never reclaims the route.
 func (w *selfWaker) canReach() bool {
 	if w == nil {
 		return false

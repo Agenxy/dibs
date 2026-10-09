@@ -229,6 +229,11 @@ func (s wakeDigestSource) readOffer(extra map[string]any) (string, string, error
 	if wanted != "" && reply.Result.Meta[mcp.SocketRetryMetaKey] != wanted {
 		return "", "", fmt.Errorf("the daemon did not acknowledge the failed-offer fence; refusing a socket retry")
 	}
+	claim, _ := extra[mcp.SelfWakeReleaseMetaKey].(string)
+	if claim != "" && reply.Result.Meta[mcp.SelfWakeReleaseMetaKey] != claim {
+		return "", "", fmt.Errorf("the daemon did not acknowledge self-wake release; " +
+			"upgrade it for immediate original-mail handoff")
+	}
 	id, _ := reply.Result.Meta[mcp.SocketOfferIDMetaKey].(string)
 	return reply.Result.Contents[0].Text, id, nil
 }

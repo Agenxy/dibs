@@ -16,8 +16,8 @@ import (
 	"time"
 )
 
-// A wake that failed keeps its notification: the cursor does not pass it, so
-// a reconnect replays it.
+// An ambiguous failed wake keeps its delivery cursor. Reconnect replays the
+// serial without spending another first attempt; a gone socket hands off instead.
 func TestAFailedWakeKeepsItsNotification(t *testing.T) {
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", "/nonexistent/but/present.sock")
 	t.Setenv("CLAUDE_CODE_MESSAGING_TOKEN", "child-token")
@@ -38,6 +38,19 @@ func TestAFailedWakeKeepsItsNotification(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	w := inboxWatcher{reconnect: 50 * time.Millisecond}
+	waker := w.sharedWaker()
+	if waker == nil {
+		t.Fatal("setup: no own-session writer")
+	}
+	waker.deliverFn = func(string) error { return syscall.ETIMEDOUT }
+	t.Cleanup(func() {
+		waker.mu.Lock()
+		if waker.timer != nil {
+			waker.timer.Stop()
+		}
+		waker.mu.Unlock()
+		recordWakePending(false, "")
+	})
 	w.start(ctx, srv.Client(), srv.URL, "local-secret", "agent-token")
 	<-bodies
 	select {

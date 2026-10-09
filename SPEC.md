@@ -1128,6 +1128,16 @@ falls back to captured text. Coalesced mailboxes share one socket writer and
 one fresh notice. Older daemons and dormant pre-upgrade bridges retain the
 previous behavior until the bridge upgrades between stdio requests; the new
 key does not change the one-writer declaration or add another wake route.
+A capable bridge additionally names its subscription with
+`com.dibs/self_wake_claim`. On surrender it cancels its streams and sends
+`com.dibs/self_wake_release` naming that claim on the authenticated hidden
+digest read. The daemon binds release to the current token and session, echoes
+the claim, and reconsiders original owed mail immediately. Repeated release
+and old stream cleanup cannot clear a newer claim or mint a fresh attempt.
+An old daemon ignores the additive key: the bridge warns and closes the stream,
+without claiming an immediate original-mail handoff. Replayed stream serials
+retain their attempted state across reconnect and cannot rearm a failure timer.
+
 Pending and delivered mail still requires `ack` or `respond`; `read_mail` alone
 does not silence it. Announcement retries use the existing hook cadence: an
 unacknowledged announcement not yet due does not justify a placeholder wake.

@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -100,11 +101,13 @@ type inboxStream struct {
 	// captured when it opened. The daemon withholds the inbox from a stream
 	// whose agent has moved elsewhere, so a stream outliving its session is
 	// an open connection that can never wake anybody. See startFor.
-	session string
-	cancel  context.CancelFunc
-	since   uint64 // the serial of the last notification seen: a reconnect resumes from it
-	refresh bool   // daemon advertised non-consuming refresh; carried on upgrade
-	source  wakeDigestSource
+	session   string
+	cancel    context.CancelFunc
+	claim     string // identifies this bridge route across reconnects
+	attempted uint64 // original event already spent its first attempt
+	since     uint64 // the serial of the last notification seen: a reconnect resumes from it
+	refresh   bool   // daemon advertised non-consuming refresh; carried on upgrade
+	source    wakeDigestSource
 }
 
 // sharedWaker is the one route to this session's socket, made on first
@@ -118,6 +121,7 @@ func (iw *inboxWatcher) sharedWaker() *selfWaker {
 			iw.waker.refreshFn = iw.freshNotice
 			iw.waker.offerFn = iw.offerNotice
 			iw.waker.retryOfferFn = iw.retryNotice
+			iw.waker.surrenderFn = iw.releaseClaims
 		}
 		if iw.waker != nil && iw.cooldown > 0 {
 			iw.waker.cooldown = iw.cooldown
@@ -196,14 +200,11 @@ func (iw *inboxWatcher) listenBody(st *inboxStream) []byte {
 	// Re-stated on every reconnect, like the session and the cursor: the claim
 	// lasts exactly as long as the stream, so a bridge that dies hands the
 	// socket route back with nothing to clean up.
-	// canReach, not merely "a socket existed at spawn". A bridge that claimed
-	// the route and then failed to deliver twice hands it back (selfWaker
-	// .surrender), and this is where that becomes visible to the daemon: the
-	// reconnect states the truth and the daemon resumes writing. A claim held
-	// on a socket that no longer accepts means NOBODY writes, which is worse
-	// than the duplicate the claim exists to prevent.
+	// A surrendered bridge releases its named claims at the failure event and
+	// closes every subscription; it never reclaims the route on reconnect.
 	if iw.sharedWaker().canReach() {
 		meta[mcp.SelfWakeMetaKey] = true
+		meta[mcp.SelfWakeClaimMetaKey] = st.claim
 	}
 	iw.mu.Lock()
 	if st.since > 0 {
@@ -302,11 +303,14 @@ func (iw *inboxWatcher) startFor(
 	}
 	sub, cancel := context.WithCancel(ctx)
 	st := &inboxStream{
-		key: key, token: token, session: session, cancel: cancel, since: since,
+		key: key, token: token, session: session, cancel: cancel, since: since, claim: rand.Text(),
 		source: wakeDigestSource{key: key, token: token, session: session, client: client, url: url, secret: secret},
 	}
 	if prev != nil {
 		st.refresh = prev.refresh
+		if prev.session == session {
+			st.attempted = prev.attempted
+		}
 	}
 	iw.streams[key] = st
 	recordWakeStream(key, token, since) // for the in-place upgrade's handoff
@@ -321,7 +325,7 @@ func (iw *inboxWatcher) run(
 		pause = reconnectAfter
 	}
 	for {
-		if ctx.Err() != nil {
+		if ctx.Err() != nil || !waker.canReach() {
 			return
 		}
 		iw.stream(ctx, client, url, secret, st, waker)
@@ -414,11 +418,8 @@ func (iw *inboxWatcher) onFrame(st *inboxStream, msg streamFrame, waker *selfWak
 		iw.noteSerial(st, msg.Params.Meta)
 		return true
 	}
-	// THE CLAIM AND THE STREAM MUST AGREE. If this bridge has handed the socket
-	// back since the stream opened, the daemon is still standing down for it,
-	// because the claim lives as long as the subscription. Dropping the stream
-	// is how it is released: run reconnects, and listenBody then declares
-	// nothing.
+	// Surrender already released the named claim. Close any other stream
+	// racing with that event instead of letting it write through this bridge.
 	if !waker.canReach() {
 		slog.Debug("dropping the inbox stream so the daemon learns this bridge " +
 			"no longer delivers its own wakes")
@@ -452,9 +453,12 @@ func (iw *inboxWatcher) onFrame(st *inboxStream, msg streamFrame, waker *selfWak
 	// notification of a wake that failed: the reconnect excluded the event and
 	// nothing retried, so a socket that came back found an agent asleep on
 	// stored mail. Found by the pre-release review, round eighteen.
+	if !iw.firstAttempt(st, msg.Params.Meta) {
+		return true
+	}
 	if err := waker.wake(line); err != nil {
 		slog.Debug("could not put a notice into this session; keeping its cursor", "err", err)
-		return true
+		return waker.canReach()
 	}
 	iw.noteSerial(st, msg.Params.Meta)
 	return true

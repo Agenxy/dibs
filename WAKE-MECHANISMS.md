@@ -938,7 +938,13 @@ WORDING. It was about the card.
 **One writer, and the choice of which one is forced rather than aesthetic.** The
 bridge declares on its `subscriptions/listen` that it can reach its own session
 (`com.dibs/self_wake`), and for as long as that stream is open the daemon does
-not write to that agent's socket at all. Two facts decide the direction. The
+not write to that agent's socket at all. A newer bridge names the claim with
+`com.dibs/self_wake_claim`; surrender cancels the streams and explicitly
+releases that claim via the hidden authenticated digest resource. The daemon
+echoes `com.dibs/self_wake_release` and reconsiders the original mail at that
+event. Old daemons ignore the key: stream closure remains the fallback, and
+the bridge warns that immediate handoff is unsupported. Old dormant bridges
+retain their stream-lifetime claim until upgraded. Two facts decide the direction. The
 bridge KNOWS whether it has a socket, where the daemon is reading a file and
 inferring; and a self-sent message is accepted where a stranger's is held by the
 `crossSessionInbound` default described above, so the bridge is also the route

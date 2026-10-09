@@ -82,6 +82,7 @@ func (b *continuationBoard) wake(t *testing.T) {
 	if err != nil {
 		t.Fatal("wake sender setup:", err)
 	}
+	sentAt := time.Now()
 	mail, err := b.e.Do(b.ctx, &core.Op{
 		Kind: core.OpSendMessage, Token: sender["token"].(string),
 		To: "worker", MsgType: core.MsgHandoff, Body: "wake fixture",
@@ -89,31 +90,29 @@ func (b *continuationBoard) wake(t *testing.T) {
 	if err != nil {
 		t.Fatal("wake mail setup:", err)
 	}
-	var l *core.Agent
-	if _, err := b.e.query(b.ctx, func() core.Result { l = b.e.state.Agents["worker"]; return nil }); err != nil {
-		t.Fatal(err)
-	}
-	// A send in the test may already have started a real wake through the
-	// event path, and wakeFor rightly refuses a second while it runs. On a
-	// slow machine it was still running here, which failed this setup on CI
-	// and nowhere else. Wait for it, as the product would.
-	var plan wakePlan
-	ok := false
-	for range 300 {
-		if plan, ok = b.e.wakeFor(l, core.MsgQuestion, questionFor("worker")); ok {
+	// The send is the production wake door. Observe its actual successful
+	// command exit; manually planning another wake would spend a second
+	// attempt and collide with the original event's successful cooldown.
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	deadline := time.After(3 * time.Second)
+	for {
+		r, err := b.e.query(b.ctx, func() core.Result {
+			b.e.wakers.mu.Lock()
+			defer b.e.wakers.mu.Unlock()
+			return core.Result{"done": b.e.wakers.dibsTurn["worker"].After(sentAt) && !b.e.wakers.running["worker"]}
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r["done"] == true {
 			break
 		}
-		<-time.After(10 * time.Millisecond)
-	}
-	if !ok || len(plan.argv) == 0 {
-		t.Fatalf("setup: no wake planned, so nothing below tests a turn Dibs started\nactual wake log:\n%s", wakeLog.String())
-	}
-	// As every production wake does: run it, then record that it exited, or
-	// the board believes it is still running and refuses the next one.
-	ok = b.e.runWakeAndReport(plan, "worker")
-	b.e.wakeExited("worker", plan.thread)
-	if !ok {
-		t.Fatal("setup: the stand-in wake command failed")
+		select {
+		case <-ticker.C:
+		case <-deadline:
+			t.Fatalf("setup: original send never delivered a Dibs-started turn\nactual wake log:\n%s", wakeLog.String())
+		}
 	}
 	if _, err := b.e.Do(b.ctx, &core.Op{Kind: core.OpAckMessage, Token: b.token, MsgSerial: mail["msg_serial"].(uint64)}); err != nil {
 		t.Fatal("wake mail acknowledgement:", err)

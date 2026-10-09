@@ -9,14 +9,16 @@ import "context"
 // The notification advertises this read to bridges capable of refreshing a
 // deferred notice. Old dormant bridges ignore the additive key.
 const (
-	WakeDigestURI        = "dibs://wake-digest"
-	DigestRefreshMetaKey = "com.dibs/digest_refresh"
-	SocketOfferMetaKey   = "com.dibs/socket_offer"
-	SocketRetryMetaKey   = "com.dibs/socket_retry_offer"
-	SocketOfferIDMetaKey = "com.dibs/socket_offer_id"
-	SocketWrittenMetaKey = "com.dibs/socket_written"
-	SocketBatchMetaKey   = "com.dibs/socket_batch"
-	SocketTokensMetaKey  = "com.dibs/socket_tokens" //nolint:gosec // metadata key name, not a credential
+	SelfWakeClaimMetaKey   = "com.dibs/self_wake_claim"
+	SelfWakeReleaseMetaKey = "com.dibs/self_wake_release"
+	WakeDigestURI          = "dibs://wake-digest"
+	DigestRefreshMetaKey   = "com.dibs/digest_refresh"
+	SocketOfferMetaKey     = "com.dibs/socket_offer"
+	SocketRetryMetaKey     = "com.dibs/socket_retry_offer"
+	SocketOfferIDMetaKey   = "com.dibs/socket_offer_id"
+	SocketWrittenMetaKey   = "com.dibs/socket_written"
+	SocketBatchMetaKey     = "com.dibs/socket_batch"
+	SocketTokensMetaKey    = "com.dibs/socket_tokens" //nolint:gosec // metadata key name, not a credential
 )
 
 func (s *Server) readWakeDigest(ctx context.Context, meta map[string]any) (any, *rpcError) {
@@ -27,6 +29,9 @@ func (s *Server) readWakeDigest(ctx context.Context, meta map[string]any) (any, 
 			Code: -32602, Message: "wake digest requires an agent token and session",
 			Data: hint("pass _meta['com.dibs/token'] and _meta['com.dibs/session'] from the bridge's subscription"),
 		}
+	}
+	if claim, _ := meta[SelfWakeReleaseMetaKey].(string); claim != "" {
+		return s.releaseSelfWake(ctx, token, session, claim)
 	}
 	var text, offer string
 	var err error
@@ -66,4 +71,14 @@ func (s *Server) readWakeDigest(ctx context.Context, meta map[string]any) (any, 
 		out["_meta"] = outMeta
 	}
 	return cacheable(out, 0, scopePrivate), nil
+}
+
+func (s *Server) releaseSelfWake(ctx context.Context, token, session, claim string) (any, *rpcError) {
+	if err := s.eng.ReleaseSelfWakerFor(ctx, token, session, claim); err != nil {
+		return nil, rpcErrFrom(err)
+	}
+	return cacheable(map[string]any{
+		"contents": []map[string]any{{"uri": WakeDigestURI, "mimeType": "text/plain", "text": ""}},
+		"_meta":    map[string]any{SelfWakeReleaseMetaKey: claim},
+	}, 0, scopePrivate), nil
 }

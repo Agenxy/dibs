@@ -259,6 +259,7 @@ func (e *Engine) signalSocketReady(l *core.Agent) {
 }
 
 func (e *Engine) pruneSocketState() {
+	e.pruneClosedSelfWakers()
 	live := map[string]bool{}
 	for _, id := range sortedAgentIDs(e.state) {
 		l := e.state.Agents[id]

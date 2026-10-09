@@ -17,7 +17,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Mail arriving during a wake command is reconsidered at its exit without a
   cooldown timer. Bridge mail events write immediately; failed socket retries
   require an authenticated original offer. A gone socket surrenders immediately
-  without a bridge retry. Twice-failed human contact posts show their
+  without a bridge retry, explicitly releases its authenticated stream claims
+  and hands the original owed mail to the daemon. Replayed subscription serials
+  retain their original attempt budget across reconnects. Recent model contact
+  no longer refuses a new mail event. Twice-failed human contact posts show their
   reason on the board and in `dibs doctor`.
 
 - Releases up to and including v0.0.13 remain Apache-2.0; GPL-3.0-or-later applies from the next release, with commercial licensing available from Agenxy for Agenxy-authored portions.

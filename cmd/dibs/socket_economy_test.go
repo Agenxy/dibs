@@ -75,7 +75,12 @@ func newEconomyFixtureOn(t *testing.T, sid string) *economyFixture {
 
 func newEconomyFixtureWith(t *testing.T, sid string, wrap func(http.Handler) http.Handler) *economyFixture {
 	t.Helper()
-	sock, dir := sockPath(t), t.TempDir()
+	return newEconomyFixtureAt(t, sid, sockPath(t), wrap)
+}
+
+func newEconomyFixtureAt(t *testing.T, sid, sock string, wrap func(http.Handler) http.Handler) *economyFixture {
+	t.Helper()
+	dir := t.TempDir()
 	f := &economyFixture{sid: sid, socket: sock}
 	f.lines = listenLines(t, sock)
 	box, err := ledger.LoadOrCreateKey(filepath.Join(dir, "key"))
