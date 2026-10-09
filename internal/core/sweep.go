@@ -683,7 +683,7 @@ func (s *State) Board() map[string]any {
 	var contacts []*ContactEscalation
 	for _, serial := range sortedKeys(s.Contacts) {
 		c := s.Contacts[serial]
-		if c.NotifiedAt.IsZero() && c.ResolvedAt.IsZero() {
+		if c.ResolvedAt.IsZero() {
 			contacts = append(contacts, c)
 		}
 	}

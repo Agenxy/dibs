@@ -61,11 +61,23 @@ func noticeKey(agent string, serial uint64) string {
 }
 
 func (e *Engine) presentUpdates(agent string, budget *int, wanted map[string]bool) ([]string, map[uint64]uint64) {
+	return e.presentUpdatesWithContacts(agent, budget, wanted, nil)
+}
+
+func (e *Engine) presentUpdatesWithContacts(
+	agent string, budget *int, wanted map[string]bool, contacts map[uint64]bool,
+) ([]string, map[uint64]uint64) {
 	lines, through := e.presentOutcomes(agent, budget, wanted)
-	return append(lines, e.presentGenericUpdates(agent, budget, wanted)...), through
+	return append(lines, e.presentGenericUpdatesWithContacts(agent, budget, wanted, contacts)...), through
 }
 
 func (e *Engine) presentGenericUpdates(agent string, budget *int, wanted map[string]bool) []string {
+	return e.presentGenericUpdatesWithContacts(agent, budget, wanted, nil)
+}
+
+func (e *Engine) presentGenericUpdatesWithContacts(
+	agent string, budget *int, wanted map[string]bool, contacts map[uint64]bool,
+) []string {
 	var lines []string
 	for _, n := range e.takeNotices(agent) {
 		if wanted != nil && !wanted[noticeKey(agent, n.Serial)] {
@@ -80,6 +92,9 @@ func (e *Engine) presentGenericUpdates(agent string, budget *int, wanted map[str
 			}
 		}
 		lines = append(lines, e.presentOtherNotice(agent, n, budget))
+		if contacts != nil && n.Kind == "contact.escalated" {
+			contacts[n.Serial] = true
+		}
 	}
 	return lines
 }
@@ -116,8 +131,13 @@ func (e *Engine) pullUpdates(l *core.Agent, now time.Time) ([]string, error) {
 	for _, m := range e.state.Inbox(l.ID) {
 		_, _ = e.quoteText(m.Serial, m.Body, &budget)
 	}
-	lines, through := e.presentUpdates(l.ID, &budget, nil)
-	return lines, e.consumeOutcomes(l.ID, through, now)
+	contacts := map[uint64]bool{}
+	lines, through := e.presentUpdatesWithContacts(l.ID, &budget, nil, contacts)
+	if err := e.consumeOutcomes(l.ID, through, now); err != nil {
+		return nil, err
+	}
+	e.consumeContactNotices(l.ID, contacts)
+	return lines, nil
 }
 
 // Authoritative envelopes, not event-ring bodies or a stale cached pointer.

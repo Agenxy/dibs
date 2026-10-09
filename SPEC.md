@@ -790,7 +790,11 @@ person to open the original harness; Dibs does not host or relocate the agent.
 Queuing an alert is not posting it: only a reported OS posting is ledgered as
 `contact_notified`. Unposted contacts are retried. Recipient retrieval or
 terminal handling resolves the contact. `contact_alerts` on the board contains
-metadata, never participant bodies.
+every unresolved contact, including posted alerts with `notified_at` showing
+when the person was notified: posting does not prove the agent read its mail.
+It contains metadata, never participant bodies. The coordinator's metadata-only
+notice is consumed when shown by its authenticated `check_in` or `inbox`; hooks
+do not consume it. This read does not resolve the contact or consume source mail.
 
 **Mappings** (v2 gateway / v1.x Tasks): A2A. `pending/delivered → submitted/working`,
 `answered/approved → completed`, `denied/declined → rejected`, `expired_* → failed
