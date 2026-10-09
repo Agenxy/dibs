@@ -27,6 +27,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Posting a contact alert as the first human notification after daemon startup
+  no longer crashes while recording its presentation and posting receipt.
+
 - A bridge that handed a vanished session socket back to the daemon could still
   write to it later, producing duplicate notices. Surrender now disarms that
   bridge's retry before a recovered socket can be reached.

@@ -22,6 +22,9 @@ func (e *Engine) humanPresentation() notify.Presentation {
 func (e *Engine) setHumanPresentation(serial uint64, p notify.Presentation, posting bool) humanDelivery {
 	e.humanDelivery.mu.Lock()
 	defer e.humanDelivery.mu.Unlock()
+	if e.humanDelivery.bySerial == nil {
+		e.humanDelivery.bySerial = map[uint64]humanDelivery{}
+	}
 	d := e.humanDelivery.bySerial[serial]
 	// A later send-response snapshot must not replace posting-time evidence.
 	if posting || !d.Posted {
