@@ -40,6 +40,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A coordinator's contact alert is consumed after an authenticated mailbox read,
+  so it no longer repeats at inbox or Stop. Posted alerts remain on the board
+  with their posting time until the recipient reads or handles the source mail.
+
 - Posting a contact alert as the first human notification after daemon startup
   no longer crashes while recording its presentation and posting receipt.
 

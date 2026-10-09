@@ -475,7 +475,8 @@ func (e *Engine) Inbox(ctx context.Context, token string) (core.Result, error) {
 		if gone := e.state.UnanswerableSenders(mail); len(gone) > 0 {
 			res["unanswerable_senders"] = gone
 		}
-		// Generic situational notices remain visible until check_in. Outcomes
+		// Generic situational notices remain visible until check_in, except a
+		// rendered contact alert, which this authenticated read consumes. Outcomes
 		// and recipient reviews are different: only their fully quoted prefix
 		// is durably read here; an omitted or partial body remains unread.
 		pending, readErr := e.pullUpdates(l, now)

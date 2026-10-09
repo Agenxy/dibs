@@ -3,10 +3,14 @@
 
 package main
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/agenxy/dibs/internal/core"
+)
 
 type contactAlertDiagnostic struct {
-	Recipient       string `json:"recipient"`
+	core.ContactEscalation
 	DeliveryFailure string `json:"delivery_failure"`
 	RetryExhausted  bool   `json:"retry_exhausted"`
 }

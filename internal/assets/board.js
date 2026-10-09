@@ -362,7 +362,8 @@ const Board = (() => {
       <h2 id="contact-alerts-title">Needs human contact <span>${alerts.length}</span></h2>
       <ul>${alerts.map((c) => `<li>Cannot reach ${esc(c.recipient)} for unread mail
         (first #${esc(c.oldest_serial)}, ${esc(c.count)} coalesced).
-        ${c.retry_exhausted ? `Human notification failed twice: ${esc(c.delivery_failure)}. No further automatic retry.` : "Human notification not yet confirmed."}</li>`).join("")}</ul>
+        ${c.notified_at ? `Human notification posted at ${esc(c.notified_at)}; recipient mail is still unread.` :
+          c.retry_exhausted ? `Human notification failed twice: ${esc(c.delivery_failure)}. No further automatic retry.` : "Human notification not yet confirmed."}</li>`).join("")}</ul>
     </section>`
   }
 
