@@ -2,7 +2,7 @@ module github.com/agenxy/dibs
 
 go 1.26.0
 
-toolchain go1.26.6
+toolchain go1.26.9
 
 // v0.0.0 was published, cached by the Go module proxy, and then the tag was
 // moved to a later commit. The proxy and sum.golang.org are append-only, so the
