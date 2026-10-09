@@ -47,7 +47,6 @@ addr = "100.72.14.3:4777"    # a tailnet address: agents on four machines, one b
 | `extend_turn_for` | `all` | Which news may extend an agent's turn: `all`, `urgent`, `none`. |
 | `notices_wake` | `true` | Whether situational awareness alone may extend a turn. |
 | `sockets` | `true` | Whether the session-socket routes run at all: the daemon's peer-socket wake and the bridge's self-wake. |
-| `open_app_after_idle` | retired | Has no effect. Closed Claude recovery opens immediately. Startup warns with file and line; doctor fails the check. Upgrade backs up the exact file and removes the obsolete line before stopping the daemon. |
 | `resume_after_app_restart` | `0s` (off) | Recent Dibs-activity window for reopening local ChatGPT-app Codex threads after an observed app process restart. Needs an existing `codex queue` wake entry. |
 | `restart_open_interval` | `2s` | Minimum gap between the restart sweep's thread opens. |
 | `remind_stale_after` | retired | Did nothing since liveness became the daemon's own job. Still parsed so old configs load; delete it. |
