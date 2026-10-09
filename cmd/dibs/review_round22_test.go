@@ -74,9 +74,11 @@ func TestAFailedDeliverysRetryIsOwedInTheHandoff(t *testing.T) {
 	t.Cleanup(func() { recordWakePending(false, "") })
 	sock := sockPath(t)
 	w := &selfWaker{socket: sock, token: "tok", cooldown: time.Hour}
+	w.deliverFn = func(string) error { return syscall.ETIMEDOUT }
 	if err := w.wake(testWakeNotice); err == nil {
-		t.Fatal("setup: a wake with nobody listening reported success")
+		t.Fatal("setup: an ambiguous failed write reported success")
 	}
+	t.Cleanup(func() { w.mu.Lock(); w.timer.Stop(); w.mu.Unlock() })
 	if !wakeIsPending() {
 		t.Fatal("a failed delivery armed a retry and the handoff says nothing is owed: an " +
 			"upgrade before the retry fires loses the notice with the timer")

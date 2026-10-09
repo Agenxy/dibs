@@ -4,6 +4,7 @@
 package main
 
 import (
+	"syscall"
 	"testing"
 	"time"
 )
@@ -55,16 +56,26 @@ func TestNewMailIsDeliveredBeforeItsSubscriptionGoes(t *testing.T) {
 	}
 }
 
-// And a retry armed by a delivery that FAILED lands too, for the same reason.
+// And a retry armed by an ambiguous FAILED write lands too, for the same reason.
 func TestARetriedNoticeIsDeliveredAfterItsSubscriptionGoes(t *testing.T) {
-	sock := sockPath(t) // nothing listening yet, so the first delivery fails
+	sock := sockPath(t)
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", sock)
 	t.Setenv("CLAUDE_CODE_MESSAGING_TOKEN", "child-token")
 	t.Cleanup(func() { recordWakePending(false, "") })
 
 	w := &selfWaker{socket: sock, token: "child-token", cooldown: 300 * time.Millisecond}
+	// Keep the callback fixed while the timer is running; replace only the
+	// first ambiguous kernel failure, then use the real socket writer.
+	first := true
+	w.deliverFn = func(notice string) error {
+		if first {
+			first = false
+			return syscall.ETIMEDOUT
+		}
+		return w.deliver(notice)
+	}
 	if err := w.wake(testWakeNotice); err == nil {
-		t.Fatal("setup: delivering to a socket nobody is listening on reported success")
+		t.Fatal("setup: an ambiguous failed write reported success")
 	}
 	if !wakeIsPending() {
 		t.Fatal("setup: the failed delivery armed no retry, so this proves nothing")

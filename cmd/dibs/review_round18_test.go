@@ -10,6 +10,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -51,15 +53,22 @@ func TestAFailedWakeKeepsItsNotification(t *testing.T) {
 	}
 }
 
-// A wake that failed is retried on its own once the cooldown passes, so a
-// socket that comes back gets the notice without another arrival.
+// An ambiguous failed write retries once without another arrival. A gone
+// socket instead surrenders immediately, covered by the recovered-socket guard.
 func TestAFailedWakeIsRetriedWhenTheSocketReturns(t *testing.T) {
 	sock := sockPath(t)
-	w := &selfWaker{socket: sock, token: "tok", cooldown: 200 * time.Millisecond}
-	if err := w.wake(testWakeNotice); err == nil {
-		t.Fatal("setup: a wake with nobody listening reported success")
-	}
 	lines := listenLines(t, sock)
+	w := &selfWaker{socket: sock, token: "tok", cooldown: 200 * time.Millisecond}
+	var attempts atomic.Int32
+	w.deliverFn = func(notice string) error {
+		if attempts.Add(1) == 1 {
+			return syscall.ETIMEDOUT
+		}
+		return w.deliver(notice)
+	}
+	if err := w.wake(testWakeNotice); err == nil {
+		t.Fatal("setup: an ambiguous failed write reported success")
+	}
 	if got := collect(lines, 2, 2*time.Second); len(got) != 2 {
 		t.Fatalf("after the socket came back %d line(s) arrived without another wake, want 2: "+
 			"the agent stays asleep on stored mail until something else arrives", len(got))

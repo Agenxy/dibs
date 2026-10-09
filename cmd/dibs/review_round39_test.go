@@ -4,6 +4,7 @@
 package main
 
 import (
+	"syscall"
 	"testing"
 	"time"
 )
@@ -17,14 +18,16 @@ func TestASuccessfulDeliveryDisarmsThePendingRetry(t *testing.T) {
 	t.Cleanup(func() { recordWakePending(false, "") })
 	sock := sockPath(t)
 	w := &selfWaker{socket: sock, token: "tok", cooldown: 300 * time.Millisecond}
+	w.deliverFn = func(string) error { return syscall.ETIMEDOUT }
 	if err := w.wake(testWakeNotice); err == nil {
-		t.Fatal("setup: a wake with nobody listening reported success")
+		t.Fatal("setup: an ambiguous failed write reported success")
 	}
 	if !wakeIsPending() {
 		t.Fatal("setup: the failed delivery armed no retry")
 	}
 	// The socket comes back before the retry fires, and mail arrives.
 	lines := listenLines(t, sock)
+	w.deliverFn = nil
 	if err := w.wake(testWakeNotice); err != nil {
 		t.Fatal("setup: the delivery with a listener failed:", err)
 	}
