@@ -185,7 +185,7 @@ func TestAnAgentIsNotWokenTwiceInsideItsCooldown(t *testing.T) {
 	}
 }
 
-// Only mail somebody is blocked on, and only for an agent that is asleep.
+// Wake only for eligible mail and a real route; recent contact cannot veto it.
 func TestTheBoardDoesNotStartAnythingItDoesNotNeedTo(t *testing.T) {
 	e := &Engine{}
 	e.SetWakeCommands(map[string]WakeCommand{"codex": {Argv: []string{"codex", "queue"}, Cooldown: time.Minute}})
@@ -197,7 +197,7 @@ func TestTheBoardDoesNotStartAnythingItDoesNotNeedTo(t *testing.T) {
 	// The assertion then confirmed that an untouched map was empty, which it
 	// would have been with the recency check deleted outright: a vacuous guard
 	// standing exactly where the real one is claimed to be.
-	t.Run("an agent that has just called in is already reachable", func(t *testing.T) {
+	t.Run("a recent call does not consume a new mail event", func(t *testing.T) {
 		en := &Engine{}
 		st := core.NewState("t", core.DefaultLimits())
 		en.state = st
@@ -214,10 +214,8 @@ func TestTheBoardDoesNotStartAnythingItDoesNotNeedTo(t *testing.T) {
 			Type: "message.sent", To: "live",
 			Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
 		})
-		if en.wakeSpent("live") {
-			t.Error("an agent that called the board a moment ago was woken: it will " +
-				"see this on its own next call, and starting a second activation " +
-				"for it is paying twice and interleaving two processes in one thread")
+		if !en.wakeSpent("live") {
+			t.Error("recent contact discarded the new mail event; the harness owns busy-turn delivery")
 		}
 		// And a stopped one in the same engine IS woken, so this cannot pass by
 		// waking nobody at all, which is how it passed before.
@@ -396,7 +394,7 @@ func TestALeaseThatHasNotLapsedIsNotProofTheAgentIsRunning(t *testing.T) {
 			"because its lease had not lapsed: the message waits for a human")
 	}
 
-	// And one that really is talking to us is left alone.
+	// A recent call also leaves the next mail eligible for the harness.
 	e2 := &Engine{}
 	st2 := core.NewState("t", core.DefaultLimits())
 	e2.state = st2
@@ -410,8 +408,8 @@ func TestALeaseThatHasNotLapsedIsNotProofTheAgentIsRunning(t *testing.T) {
 		Type: "message.sent", To: "live",
 		Data: map[string]any{"msg_type": core.MsgQuestion},
 	})
-	if e2.wakeSpent("live") {
-		t.Error("started a process for an agent that called Dibs a moment ago")
+	if !e2.wakeSpent("live") {
+		t.Error("recent contact was treated as proof this new mail is already delivered")
 	}
 }
 
@@ -463,18 +461,9 @@ func TestTheWakeResumesTheAgentsCurrentThreadAndNotAnOldOne(t *testing.T) {
 // An agent that just made an authenticated call is running, whatever the
 // durable timestamp says.
 //
-// Two clocks track the same fact and only one is current. Every authenticated
-// read stamps e.seen at once; LastCoordination is a durable checkpoint written
-// at most once per AgentTTL/2, so a perfectly healthy agent's durable
-// timestamp is routinely minutes old. recentlyInTouch consulted only that one,
-// so a running agent read as asleep and Dibs started a second `codex exec
-// resume` in the thread it was already working in: two activations of one agent
-// interleaving into one transcript. That is the duplicate-process failure the
-// check exists to prevent, manufactured by the check.
-//
-// The existing lease test sets LastCoordination directly and never populates
-// e.seen, so it exercises the fallback and not the production path.
-func TestAnAgentThatJustCalledInIsNotWokenOnTopOfItself(t *testing.T) {
+// Ephemeral and durable contact clocks are observations, not vetoes on new
+// mail. The harness decides how to handle a message in an existing turn.
+func TestAnAgentThatJustCalledInStillReceivesNewMail(t *testing.T) {
 	e := &Engine{}
 	st := core.NewState("t", core.DefaultLimits())
 	e.state = st
@@ -494,11 +483,8 @@ func TestAnAgentThatJustCalledInIsNotWokenOnTopOfItself(t *testing.T) {
 		Type: "message.sent", To: "working",
 		Data: map[string]any{"msg_type": core.MsgRequest, "from": "asker"},
 	})
-	if e.wakeSpent("working") {
-		t.Error("started a wake for an agent that called in two seconds ago. " +
-			"LastCoordination is a coalesced checkpoint and is stale on every " +
-			"healthy agent; e.seen is the authoritative one. Resuming a thread " +
-			"that is mid-turn gives one agent two activations")
+	if !e.wakeSpent("working") {
+		t.Error("a recent ephemeral contact stamp stranded new mail")
 	}
 
 	// And the fallback still works: an agent with no e.seen entry, last heard
@@ -544,19 +530,8 @@ func TestAWakeCommandIsNotKilledMidTurn(t *testing.T) {
 	}
 }
 
-// A turn that ENDED must not go on looking like a running agent.
-//
-// The waker treats recent contact as evidence the agent is live, which it has
-// to: an idle lease says nothing, since it lapses in 45 minutes. But recency
-// alone is wrong in the ordinary case, and the ordinary case is a turn that
-// ends seconds after its last call. For the remainder of the cooldown that
-// agent read as running, so the next blocking message got no wake, and
-// maybeWake fires once per event and never retries: the message waited for a
-// human. A longer configured cooldown makes the hole bigger, not safer.
-//
-// This is the production sequence and nothing else: call in, Stop, then mail.
-// The two existing tests use a 30-minute-old stopped agent and a two-second-old
-// live one, and neither drives a stop after recent contact.
+// Stops and starts retain their lifecycle meaning. Neither past contact nor
+// current lifecycle can discard a new command-route mail event.
 func TestATurnThatEndedIsNotMistakenForARunningAgent(t *testing.T) {
 	e := &Engine{}
 	st := core.NewState("t", core.DefaultLimits())
@@ -588,16 +563,7 @@ func TestATurnThatEndedIsNotMistakenForARunningAgent(t *testing.T) {
 			"retries it")
 	}
 
-	// A NEW TURN RETRACTS THE STOP, before the model has called anything.
-	//
-	// The first version of this fix recorded only the stop, so one true
-	// statement became a permanent one: SessionStart resolved to the agent, the
-	// stale verdict still won, and blocking mail arriving before the model's
-	// first authenticated call resumed a thread that was already running. That
-	// is the duplicate activation the recency guard exists to prevent,
-	// reintroduced by the fix for its opposite. The case below models an
-	// authenticated call after the stop, which is a LATER point in the same
-	// sequence and cannot see this.
+	// Starting hooks retract Stop, while the new mail remains deliverable.
 	for _, start := range []string{"SessionStart", "UserPromptSubmit"} {
 		t.Run("a new turn began with "+start, func(t *testing.T) {
 			en := &Engine{}
@@ -617,17 +583,16 @@ func TestATurnThatEndedIsNotMistakenForARunningAgent(t *testing.T) {
 				Type: "message.sent", To: "restarted",
 				Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
 			})
-			if en.wakeSpent("restarted") {
-				t.Errorf("%s did not retract the earlier Stop, so the board resumed a "+
-					"thread that is running right now. The model has not called Dibs "+
-					"in this turn yet, and it does not have to: the harness already "+
-					"said the session started", start)
+			if _, ended := en.turnEnded["restarted"]; ended {
+				t.Errorf("%s did not retract Stop", start)
+			}
+			if !en.wakeSpent("restarted") {
+				t.Errorf("%s refused a new mail event", start)
 			}
 		})
 	}
 
-	// And contact AFTER the stop means it is running again, so it is left alone:
-	// otherwise this passes by waking an agent that can never be quiet.
+	// Contact after Stop is fresh evidence, but not delivery of subsequent mail.
 	e2 := &Engine{}
 	st2 := core.NewState("t", core.DefaultLimits())
 	e2.state = st2
@@ -643,10 +608,8 @@ func TestATurnThatEndedIsNotMistakenForARunningAgent(t *testing.T) {
 		Type: "message.sent", To: "resumed",
 		Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
 	})
-	if e2.wakeSpent("resumed") {
-		t.Error("woke an agent that called in after its last stop: a finished turn " +
-			"is not a permanent verdict, and starting a second activation on top " +
-			"of a live one is what the recency check exists to prevent")
+	if !e2.wakeSpent("resumed") {
+		t.Error("a call after Stop prevented new mail from reaching the harness")
 	}
 }
 
