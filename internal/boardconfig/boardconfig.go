@@ -59,6 +59,8 @@ type Config struct {
 	Identity IdentityConfig `toml:"identity"` // who an unidentified session is taken to be
 	// Relocate is where an agent can be MOVED on purpose: see RelocateExec.
 	Relocate map[string]RelocateExec `toml:"relocate"`
+	// RetiredWakeCooldowns records obsolete keys for startup and doctor diagnostics.
+	RetiredWakeCooldowns []RetiredWakeCooldown `toml:"-"`
 }
 
 // InvitesConfig is the operator's once-only issuance policy. Human proofs
@@ -403,9 +405,9 @@ type WakeExec struct {
 	// Fallback is tried only when Argv exits non-zero. Same rules, same
 	// substitutions, same confirmation by exit status. Optional.
 	Fallback []string `toml:"fallback"`
-	// Cooldown is retained only to diagnose a retired setting. Load refuses
-	// its presence, even zero: the receiving harness owns busy-turn delivery.
-	Cooldown time.Duration `toml:"cooldown"`
+	// Cooldown is refused in new typed configurations. Existing TOML keys are
+	// ignored and reported through RetiredWakeCooldowns, so upgrades still boot.
+	Cooldown time.Duration `toml:"-"`
 }
 
 // RolesConfig is the [roles] table.
@@ -485,9 +487,11 @@ func Load(dir string) (Config, error) {
 	if err != nil {
 		return c, err
 	}
-	if err := refuseWakeCooldown(b); err != nil {
+	retired, err := FindWakeCooldowns(b)
+	if err != nil {
 		return c, err
 	}
+	c.RetiredWakeCooldowns = retired
 	md, err := toml.Decode(string(b), &c)
 	if err != nil {
 		return c, err
@@ -502,6 +506,9 @@ func Load(dir string) (Config, error) {
 	if un := md.Undecoded(); len(un) > 0 {
 		keys := make([]string, 0, len(un))
 		for _, k := range un {
+			if isWakeCooldown(k) {
+				continue
+			}
 			keys = append(keys, k.String())
 		}
 		// TYPED, because two readers of this file need opposite answers.
@@ -509,7 +516,9 @@ func Load(dir string) (Config, error) {
 		// told nothing took effect. A client that only needs the address out
 		// of the file must not, because a key this build does not know may be
 		// one a newer daemon does; see UnknownSettingsError.
-		return c, &UnknownSettingsError{Keys: keys}
+		if len(keys) > 0 {
+			return c, &UnknownSettingsError{Keys: keys}
+		}
 	}
 
 	// WHICH KEYS WERE ACTUALLY WRITTEN, carried into validation.

@@ -176,7 +176,7 @@ Where will agents connect from?
 
 	name := askBoardName(addr)
 	body := []byte(defaultConfig(addr, name))
-	if err := os.WriteFile(cfgPath, body, 0o600); err != nil { //nolint:gosec // G703: see above
+	if err := boardconfig.WriteNew(dir, body); err != nil {
 		return err
 	}
 
@@ -322,7 +322,7 @@ func configureWithDefaults(dir string) error {
 			"edit it, or delete it and run this again", cfgPath)
 	}
 	body := defaultConfig("127.0.0.1:4777", "")
-	if err := os.WriteFile(cfgPath, []byte(body), 0o600); err != nil { //nolint:gosec // G703: see above
+	if err := boardconfig.WriteNew(dir, []byte(body)); err != nil {
 		return err
 	}
 	fmt.Printf("Wrote %s:\n\n%s\n", cfgPath, body)

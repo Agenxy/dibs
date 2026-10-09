@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agenxy/dibs/internal/boardconfig"
 	"github.com/agenxy/dibs/internal/core"
 )
 
@@ -174,6 +175,11 @@ func (e *Engine) Configure(ctx context.Context, token, key, value string) (core.
 	who, _ := res["agent"].(string)
 	if !change {
 		return e.query(ctx, func() core.Result { return core.Result{"settings": e.listSettings()} })
+	}
+	if err := boardconfig.RefuseWakeCooldownSetting(key); err != nil {
+		return nil, &core.Error{
+			Code: "E_NO_SETTING", Msg: key + " was removed and has no effect", Hint: err.Error(),
+		}
 	}
 	if restartSettingKey(key) {
 		op := &core.Op{Kind: core.OpSetRestartSetting, Token: token, SettingKey: key, SettingValue: value}

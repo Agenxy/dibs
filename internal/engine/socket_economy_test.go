@@ -6,6 +6,7 @@ package engine
 import (
 	"context"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -284,8 +285,19 @@ func TestSocketEconomyDaemonFailureKeepsOneRetryAndNoFalseTurn(t *testing.T) {
 	f := newDaemonEconomyFixture(t)
 	f.hook(t, "UserPromptSubmit", false)
 	f.e.SetWakeCommands(map[string]WakeCommand{"claude code": {Argv: []string{"/usr/bin/false"}, Cooldown: 200 * time.Millisecond}})
+	// Keep the stale pathname discoverable after closing the receiver. Otherwise
+	// cache refresh can switch the retry to the command route, so the offer count
+	// describes two different transports depending on when the scan runs.
+	unix, ok := f.sock.(*net.UnixListener)
+	if !ok {
+		t.Fatal("setup: fixture is not a Unix socket")
+	}
+	unix.SetUnlinkOnClose(false)
 	if err := f.sock.Close(); err != nil {
 		t.Fatal("setup: close receiver:", err)
+	}
+	if info, err := os.Stat(f.sock.Addr().String()); err != nil || info.Mode()&os.ModeSocket == 0 {
+		t.Fatalf("setup: lost stale socket pathname: %v", err)
 	}
 	f.do(t, &core.Op{Kind: core.OpSendMessage, Token: f.sender, To: "worker", MsgType: core.MsgQuestion, Body: "failed-daemon-mail"})
 	f.hook(t, "Stop", true) // event attempts actual delivery into the missing socket
@@ -312,9 +324,27 @@ func TestSocketEconomyDaemonFailureKeepsOneRetryAndNoFalseTurn(t *testing.T) {
 	}
 
 	<-time.After(100 * time.Millisecond)
-	r, err := f.e.query(f.ctx, func() core.Result { return core.Result{"offers": f.e.nextSocketOffer} })
-	if err != nil || r["offers"] != uint64(1) {
-		t.Fatalf("failure path unexpectedly wrote another native offer: %v %v", r, err)
+	r, err := f.e.query(f.ctx, func() core.Result {
+		return core.Result{
+			"offers":   f.e.nextSocketOffer,
+			"failures": f.e.socketFailures[socketSessionKey(f.e.state.Agents["worker"])].count,
+		}
+	})
+	if err != nil || r["offers"] != uint64(2) || r["failures"] != 2 {
+		t.Fatalf("original failed write must get exactly one failed retry: %v %v", r, err)
+	}
+	// Lifecycle labels cannot reset this original item's two-attempt cap.
+	f.hook(t, "UserPromptSubmit", false)
+	f.hook(t, "Stop", true)
+	<-time.After(1100 * time.Millisecond)
+	r, err = f.e.query(f.ctx, func() core.Result {
+		f.e.wakers.mu.Lock()
+		pending := f.e.wakers.deferred["worker"] != nil
+		f.e.wakers.mu.Unlock()
+		return core.Result{"offers": f.e.nextSocketOffer, "pending": pending}
+	})
+	if err != nil || r["offers"] != uint64(2) || r["pending"] != false {
+		t.Fatalf("busy/Stop labels rearmed an exhausted original failure budget: %v %v", r, err)
 	}
 	f.e.wakers.mu.Lock()
 	_, started := f.e.wakers.dibsTurn["worker"]

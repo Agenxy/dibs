@@ -27,9 +27,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   delivery cooldowns. A fixed 200 ms arrival batch carries a burst together;
   per-item socket write receipts prevent repeating its mail, notices or
   announcements while allowing later items. In-flight reservations, one writer,
-  bounded failed-delivery retries and held-peer Stop fallback remain. Refuse any
-  `[wake.exec.*].cooldown` setting with a remove-the-line hint, also shown by
-  `dibs doctor`, rather than silently ignoring the retired key.
+  bounded failed-delivery retries and held-peer Stop fallback remain. Existing
+  `[wake.exec.*].cooldown` keys no longer pace wakes: daemon startup warns with
+  the file and line, and `dibs doctor` fails the check. `dibs upgrade` backs up
+  the configuration, prints the removed lines and backup path, and deletes the
+  obsolete lines before stopping the old daemon; rewrite failures leave it up.
+  New controlled settings refuse the key, and remote bridges stop advertising it.
 
 - Releases up to and including v0.0.13 remain Apache-2.0; GPL-3.0-or-later applies from the next release, with commercial licensing available from Agenxy for Agenxy-authored portions.
 

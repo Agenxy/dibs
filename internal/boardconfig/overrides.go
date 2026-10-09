@@ -83,6 +83,9 @@ func LoadOverrides(dir string) (Overrides, error) {
 // configuration down with it, which is a worse failure than losing one
 // setting.
 func SaveOverride(dir, key, value, by string) error {
+	if err := RefuseWakeCooldownSetting(key); err != nil {
+		return err
+	}
 	o, err := LoadOverrides(dir)
 	if err != nil {
 		// A file that cannot be read is replaced rather than appended to: the

@@ -509,6 +509,7 @@ func checkWakeRoutes(dir string, b *boardView, hosts hubHosts, ok reportFn, warn
 			"fix "+filepath.Join(dir, "dibs.toml")+" and run this again: "+err.Error())
 		return
 	}
+	reportRemovedWakeCooldowns(dir, cfg, warn)
 	// Bridges attached for other machines are routes to their agents whatever
 	// this hub's own table says, and are reported before the branches below
 	// return on the state of that table: a hub serving only remote agents has

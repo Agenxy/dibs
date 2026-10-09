@@ -223,9 +223,12 @@ phase opt-outs remain. UserPromptSubmit stays silent. A failed delivery alone
 gets one bounded retry tied to its original outstanding cause.
 
 The send result names the attempted route regardless of lifecycle. No
-successful-delivery cooldown remains. The retired `[wake.exec.*].cooldown` key
-is refused, including empty and zero values, with a remove-the-line hint;
-`dibs doctor` names that setting. Existing dormant bridges use their installed
+successful-delivery cooldown remains. An existing `[wake.exec.*].cooldown` key
+does nothing and logs a startup WARN with its path and line; `dibs doctor` fails
+the check. Upgrade backs up the file and removes that line before stopping the
+daemon, refusing the upgrade if it cannot preserve the other settings. New
+controlled settings refuse the retired key. Remote bridges no longer advertise
+it to the hub. Existing dormant bridges use their installed
 arrival batching until they upgrade between stdio calls; current bridge and
 daemon offer receipts deduplicate items without inventing receiver acceptance.
 

@@ -52,7 +52,7 @@ addr = "100.72.14.3:4777"    # a tailnet address: agents on four machines, one b
 | `restart_open_interval` | `2s` | Minimum gap between the restart sweep's thread opens. |
 | `remind_stale_after` | retired | Did nothing since liveness became the daemon's own job. Still parsed so old configs load; delete it. |
 | `exec.<harness>.argv` | *(none)* | The command that reaches that harness when an agent is **not running**. |
-| `exec.<harness>.cooldown` | `90s` | The shortest gap between two wakes of the same agent. |
+| `exec.<harness>.cooldown` | retired | Has no effect. Startup warns with the file and line; doctor fails the check. Upgrade backs up the file and deletes the obsolete line before stopping the old daemon. |
 
 ### `[wake.exec]`: reaching an agent that is not running
 
@@ -269,8 +269,15 @@ The receiving harness decides how to handle mail during a busy turn. Neither
 lease status, recent contact nor a successful-delivery cooldown suppresses a new
 item. Arrival bursts are batched for 200 ms; an executing delivery command
 reconsiders new arrivals when it exits. Only actual failures get a bounded retry.
-The former `[wake.exec.*].cooldown` key is refused, including empty or zero
-values: remove that line. `dibs doctor` names it in its corrective hint.
+The former `[wake.exec.*].cooldown` key has no effect. Existing files still load;
+each daemon start logs a WARN naming the path and line, and `dibs doctor` fails
+the check. `dibs upgrade` creates an exact backup, prints what it removes and
+the backup path, and removes the line before stopping the old daemon. A failed
+rewrite leaves that daemon running. Other settings and comments are preserved;
+if a retired key shares an inline-table line with live settings, upgrade refuses
+that rewrite and asks you to delete only the key. New settings written through
+Dibs refuse the retired key with a remove-the-line hint. Remote bridges no longer
+advertise a cooldown to the hub.
 
 ### `extend_turn_for`: which news may extend a turn already running
 

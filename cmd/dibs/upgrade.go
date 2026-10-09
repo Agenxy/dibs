@@ -260,6 +260,9 @@ func upgrade(o upgradeOpts) error {
 	if err := p.preflight(); err != nil {
 		return err
 	}
+	if err := p.removeWakeCooldowns(); err != nil {
+		return err
+	}
 	// NOTHING TO DO IS NOTHING DONE. The help said a bare run on an
 	// up-to-date install correctly does nothing, and the command then
 	// stopped a serving daemon and restarted it onto the build it was
@@ -548,6 +551,9 @@ func (p *plan) preflight() error {
 // cutover is the only phase that stops anything, and it is responsible for the
 // daemon being up again however it ends.
 func (p *plan) cutover() error {
+	if err := p.removeWakeCooldowns(); err != nil {
+		return err
+	}
 	stopped := false
 	// EITHER SIGNAL IS ENOUGH TO MEAN "SOMETHING IS RUNNING".
 	//

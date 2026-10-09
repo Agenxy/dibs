@@ -994,6 +994,13 @@ new event, never to poll an agent into another turn. Only a failed delivery
 may arm one retry for its original presentation identifiers; acknowledged or
 superseded causes cannot be replaced by unrelated mail on that retry.
 
+`[wake.exec.*].cooldown` is retired. Existing TOML files load with no pacing
+effect; every daemon start logs a WARN naming each obsolete key's path and
+line, and doctor fails the check. Upgrade makes an exact backup and removes
+the obsolete lines before stopping the old daemon; a failed safe rewrite
+leaves it serving. Controlled new configuration refuses the key. Host bridges
+no longer advertise its value to the hub.
+
 **App reconnect recovery.** Local stdio bridges attach their own PID and process
 start stamp as additive per-request metadata, including modern discovery and
 legacy startup. On macOS the daemon independently observes the owning ChatGPT app's PID

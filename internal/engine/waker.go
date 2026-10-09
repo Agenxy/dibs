@@ -36,11 +36,8 @@ import (
 // becomes a wrapper for tools it does not own. That is a real cost, and it is
 // smaller than the one it was avoiding: a board nobody can be reached on.
 
-// wakeCooldown is the shortest gap between two wakes of one agent.
-//
-// A fleet that starts a process on every message is a fork bomb with better
-// manners. The default is deliberately long: a wake exists to end a silence,
-// not to shave seconds off a reply.
+// wakeCooldown is the bounded failure retry delay and diagnostic recency
+// window. It never refuses a new item after successful delivery.
 const wakeCooldown = 90 * time.Second
 
 // wakeCommand is one harness's way in, already validated.
