@@ -126,7 +126,7 @@ func seedStaleQueue(t *testing.T, binary, text string) {
 
 func TestNativeQueueRecognizesDatedPendingItemsThroughCommandDoor(t *testing.T) {
 	binary := staleQueueFixture(t)
-	for _, kind := range []string{"coordination", "notify", "question", "request", "handoff", "continuation", "recheck", "answered", "approved", "done", "adopted"} {
+	for _, kind := range []string{"coordination", "notify", "question", "request", "handoff", "answered", "approved", "done", "adopted"} {
 		t.Run(kind, func(t *testing.T) {
 			home := staleQueueHome(t)
 			text := fmt.Sprintf("Dibs: %s notice issued at 2026-01-01T00:00:00Z. It may already be handled.", kind)

@@ -62,9 +62,6 @@ type wakers struct {
 	// what each was last continued for. See continuation.go.
 	dibsTurn  map[string]time.Time
 	continued map[string]continuation
-	// work: each agent's progress on its declarations, for the continuation
-	// wakes and the stalled state. See stall.go.
-	work map[string]workRecord
 	// queued: when a command wake last succeeded for each agent. See
 	// queuedwake.go.
 	queued        map[string]time.Time
@@ -72,13 +69,14 @@ type wakers struct {
 	queueObserved map[string]queueWakeRecord
 	queueEpoch    uint64
 	last          map[string]time.Time
-	// deferred: a re-check armed for when an agent's cooldown expires, because
-	// maybeWake fires once per event and nothing else retries.
-	deferred map[string]*time.Timer
+	// Only actual failed delivery may arm one cause-fenced retry.
+	failedCauses map[string]failedDelivery // presentation keys from a failed attempt only
+	deferred     map[string]*time.Timer
+	retryVersion uint64
 	// attempts counts executions per agent for the mail currently owed, so
 	// a failure is retried once whichever path ran the first attempt. The
 	// retry path treated every execution as the already-retried one, and a
-	// first attempt that arrived there deferred (recency, boot) failed with no
+	// first attempt at a reconnect event failed with no
 	// timer left. Cleared on success and when nothing is owed. Found by the
 	// pre-release review, round twenty-three.
 	attempts map[string]int
@@ -171,6 +169,9 @@ type WakeCommand struct {
 // the same question deliverToModel answers for a running session and now has
 // the same answer.
 func (e *Engine) wakesFor(ev core.Event, l *core.Agent) bool {
+	if ev.Type == "announcement.pending" {
+		return e.WakePolicy() != WakeNone && len(e.state.Unacked(l.ID)) > 0
+	}
 	if ev.Type == "message.sent" || ev.Type == "message.adopted" {
 		kind, _ := ev.Data["msg_type"].(string)
 		return e.socketActionableMessage(&core.Message{Type: kind})
@@ -230,7 +231,10 @@ func (e *Engine) maybeWake(ev core.Event) {
 		return
 	}
 	if e.socketOwnsDelivery(l) {
-		return // readiness is rebuilt on the tick; do not spend a suppressed wake
+		if own, _ := e.SelfWaking(l.ID); !own {
+			e.wakeSocketReady(l)
+		}
+		return
 	}
 	// A RETIRED IDENTITY IS NOT WOKEN.
 	//
@@ -294,34 +298,12 @@ func (e *Engine) maybeWake(ev core.Event) {
 	// Having called Dibs inside the cooldown is real evidence of a live agent,
 	// and it is the same window that bounds the wake itself.
 	//
-	// BUT COME BACK, rather than spending the only attempt this message gets.
-	//
-	// A bare return here was the whole delivery for a message that arrived
-	// inside the window. The justification was that the agent "is genuinely
-	// working and will see this at its own turn boundary", and that is true only
-	// where a turn boundary REACHES Dibs. An agent whose harness sends no
-	// lifecycle hooks has none: nothing marks its turn ended, so recency simply
-	// decays into silence and the message is never delivered by anything.
-	//
-	// Measured on this board. A question was sent to an active codex agent 40
-	// seconds after its last call, well inside the 90-second window. No wake was
-	// attempted, none was ever attempted afterwards, and the daemon's log shows
-	// that harness has never delivered a lifecycle hook at all: it runs under
-	// the desktop app, which does not read the CLI's hooks file. Every Codex
-	// desktop agent on that board is in the same position.
-	//
-	// So the window becomes a deferral instead of a verdict. If the agent really
-	// is working it will call again, the re-check will find it recently in touch
-	// and defer once more; when it stops, the wake fires. hasBlockingMail bounds
-	// the loop: it ends the moment the mail is read, answered or expires.
+	// Activity is a refusal, not a timer; new mail or reconnect reconsiders it.
 	if e.recentlyInTouch(l) {
-		e.deferWakeLocked(l.ID, e.recencyWindow(l))
-		slog.Debug("no wake yet: called Dibs recently, so re-checking when that "+
-			"window closes", "agent", l.ID)
+		slog.Debug("no wake: called Dibs recently", "agent", l.ID)
 		return
 	}
 	if e.deferContactForLiveTurn(l) {
-		e.deferWakeLocked(l.ID, contactActivityGrace)
 		return
 	}
 	cmd, ok := e.wakeFor(l, msgType, ev)
@@ -329,13 +311,14 @@ func (e *Engine) maybeWake(ev core.Event) {
 		e.handleMissingWakeRoute(l)
 		return
 	}
+	cause := e.failedDeliveryKeys(l.ID)
 	agent, stamp := l.ID, e.wakeStamp(l.ID)
 	// THE PLAN'S COOLDOWN, not another lookup. See wakePlan.cooldown.
 	cool := cmd.cooldown
 	thread := cmd.thread
 	go func() {
 		defer e.wakeExited(agent, thread)
-		e.noteWakeAttempt(agent)
+		n := e.noteWakeAttempt(agent)
 		if e.runWakeAndReport(cmd, agent) {
 			return
 		}
@@ -343,7 +326,7 @@ func (e *Engine) maybeWake(ev core.Event) {
 		// owed. One re-check, armed here where failure is actually known:
 		// retryWakeDecision does not arm another on ITS failure, so a command
 		// that is simply wrong costs two attempts rather than looping.
-		defer e.deferWakeLocked(agent, cool)
+		defer e.armFirstFailedWake(n, agent, cause, cool)
 		// A FAILED WAKE MUST NOT SPEND THE ATTEMPT.
 		//
 		// The cooldown is taken before the process starts, which is right: two
@@ -374,80 +357,20 @@ func (e *Engine) handleMissingWakeRoute(l *core.Agent) {
 		// If a Claude app session ended, opening its existing thread can make
 		// the socket route available at the next cache refresh.
 		e.openClosedSession(l)
-		e.deferWakeLocked(l.ID, peerCacheTTL)
 	}
 }
 
-// deferWake re-asks the wake question when this agent's cooldown expires.
-//
-// Callers hold wakers.mu.
-//
-// The timer is stored so a second suppressed event replaces it rather than
-// adding one: three questions inside the window are one re-check, which is the
-// same coalescing the cooldown was for. Stopping the old timer first is what
-// makes that true; leaving it running would be the fork bomb with extra steps.
-func (e *Engine) deferWake(agent string, in time.Duration) {
-	if e.wakers.deferred == nil {
-		e.wakers.deferred = map[string]*time.Timer{}
-	}
-	if t := e.wakers.deferred[agent]; t != nil {
-		t.Stop()
-	}
-	// A small margin, so the timer does not land a microsecond early and find
-	// the cooldown still nominally unexpired.
-	e.wakers.deferred[agent] = time.AfterFunc(in+50*time.Millisecond, func() {
-		// Off the loop, before the decision: the socket route reads the cache
-		// without refreshing it, and a retry that decided from the same stale
-		// snapshot would refuse for the same wrong reason.
-		_ = e.peerSessions()
-		e.retryWake(agent)
-	})
-}
-
-// retryWake re-decides, on the writer loop, whether this agent still needs one.
-//
-// From scratch rather than from a remembered event: by now the agent may have
-// come back on its own and read everything, another wake may be running, or the
-// message may have been answered. The only thing worth carrying across the
-// timer is the agent's name.
-func (e *Engine) retryWake(agent string) {
-	_, _ = e.query(context.Background(), func() core.Result {
-		e.retryWakeDecision(agent)
-		return core.Result{"ok": true}
-	})
-}
-
-// deferWakeLocked is deferWake for callers that do not already hold the lock.
-// peerRecheckEvery is how often outstanding blocking mail is reconsidered for
-// an agent whose harness speaks the socket while no socket for it is found:
-// the cache's own refresh cadence.
-const peerRecheckEvery = 30 * time.Second
-
-// bootRetryDelay is how long after boot the outstanding-mail retries run:
-// long enough for the loop to be serving, since a retry is posted to it.
-var bootRetryDelay = time.Second
-
-// rearmDeferredWakes arms one retry for every agent holding blocking mail at
-// boot, and reports how many. A deferred wake is a timer, and a restart lost
-// it: a question sent inside the recipient's recency window, then a restart
-// before the timer fired, left mail in the ledger that nothing would ever
-// wake anybody for, since boot rebuilt notices and primed the socket cache and
-// the sweeps retry no delivery. The retry makes the decision a fresh arrival
-// would, cooldowns and recency included. Found by the pre-release review,
-// round eight.
+// A daemon start is a reconnect event, never a delayed polling schedule.
 func (e *Engine) rearmDeferredWakes() int {
 	if e.state == nil {
 		return 0
 	}
 	n := 0
 	for id, l := range e.state.Agents {
-		// Retired, not Gone: see maybeWake. An agent swept to archived while
-		// nobody was looking is the likeliest one to be sitting on stranded
-		// mail, and Gone() skipped exactly those.
 		if l.Retired() || !e.hasBlockingMail(id) {
 			continue
 		}
-		e.deferWakeLocked(id, bootRetryDelay)
+		e.retryWakeDecision(id)
 		n++
 	}
 	return n
@@ -458,12 +381,6 @@ func (e *Engine) rearmDeferredWakes() int {
 // an agent with a session id, and no session for it in the snapshot.
 func (e *Engine) socketMayHaveAppeared(l *core.Agent) bool {
 	return harnessSpeaksSocket(l) && len(sessionsOf(l)) > 0 && !e.mightReachOverSocket(l)
-}
-
-func (e *Engine) deferWakeLocked(agent string, in time.Duration) {
-	e.wakers.mu.Lock()
-	defer e.wakers.mu.Unlock()
-	e.deferWake(agent, in)
 }
 
 // retryWakeDecision is the decision, split from the loop plumbing.
@@ -486,6 +403,7 @@ func (e *Engine) retryWakeDecision(agent string) {
 		t.Stop()
 	}
 	delete(e.wakers.deferred, agent)
+	delete(e.wakers.failedCauses, agent)
 	e.wakers.mu.Unlock()
 	if e.state == nil {
 		return
@@ -498,15 +416,7 @@ func (e *Engine) retryWakeDecision(agent string) {
 	// fire while a command is still running, and claiming a finished turn there
 	// would be false. See noteWakeEnded.
 	//
-	// RE-ARMED, for the same reason maybeWake now defers rather than returning.
-	// Returning here made the deferral a single extra look: an agent that called
-	// Dibs once more in the meantime consumed the retry and the message was
-	// stranded exactly as before, one window later. Only while somebody is still
-	// blocked, which is what ends the loop.
 	if e.recentlyInTouch(l) {
-		if e.hasRetryMail(agent) {
-			e.deferWakeLocked(agent, e.recencyWindow(l))
-		}
 		return
 	}
 	if !e.hasRetryMail(agent) {
@@ -522,7 +432,6 @@ func (e *Engine) retryWakeDecision(agent string) {
 		return
 	}
 	if e.deferContactForLiveTurn(l) {
-		e.deferWakeLocked(agent, contactActivityGrace)
 		return
 	}
 	// THE OUTSTANDING WORK, NOT A PLACEHOLDER.
@@ -551,18 +460,9 @@ func (e *Engine) retryWakeDecision(agent string) {
 		if e.contactRouteMissingAfterRetry(l) {
 			e.escalateContact(agent)
 		}
-		// STILL NO SOCKET, STILL OWED. The first retry was armed for the
-		// cache's staleness and a second miss returned without another,
-		// while the question stayed pending: a socket that appeared later was
-		// refreshed into the cache and the mail was never reconsidered. Keep
-		// deciding at the refresh cadence for as long as blocking mail is
-		// outstanding; nothing arms when there is none. Found by the
-		// pre-release review, round sixteen.
-		if e.socketMayHaveAppeared(l) {
-			e.deferWakeLocked(agent, peerRecheckEvery)
-		}
 		return
 	}
+	cause := e.failedDeliveryKeys(agent)
 	stamp := e.wakeStamp(agent)
 	cool := cmd.cooldown
 	thread := cmd.thread
@@ -577,7 +477,7 @@ func (e *Engine) retryWakeDecision(agent string) {
 		if n < 2 {
 			// The first execution for this mail, arrived here deferred; it
 			// gets the one retry every first attempt is promised.
-			e.deferWakeLocked(agent, cool)
+			e.armFailedWake(agent, cause, cool)
 		}
 	}()
 }
@@ -762,6 +662,13 @@ func (e *Engine) wakeExitedDecision(agent, thread string) {
 	// The message was stored, reported delivered, and waited for a human.
 	e.noteWakeEnded(agent, thread)
 	if owed {
+		// The command's exit is an event, not elapsed-time evidence. New
+		// arrivals must be reconsidered now rather than scheduling a timer
+		// for the successful command's remaining cooldown. A stale thread's
+		// exit must not release its replacement activation's exclusion.
+		if l := e.state.Agents[agent]; l != nil && l.SessionIsCurrent(thread) {
+			e.releaseWake(agent, e.wakeStamp(agent))
+		}
 		e.retryWakeDecision(agent)
 	}
 }
@@ -794,8 +701,8 @@ func (e *Engine) wakeStamp(agent string) time.Time {
 	return e.wakers.last[agent]
 }
 
-// releaseWake forgets a cooldown whose wake never happened, so the next
-// blocking message may try again.
+// releaseWake forgets a failed attempt's cooldown, or the completed command's
+// cooldown when new mail arrived during it. The next delivery is event-driven.
 //
 // ONLY ITS OWN. A wake command may run for up to two hours, which is longer
 // than any cooldown, so a later wake can start and take a new cooldown while an
@@ -1064,21 +971,9 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 		return wakePlan{}, false
 	}
 	if last, seen := e.wakers.last[l.ID]; seen && now.Sub(last) < cooldown {
-		// SUPPRESSED, NOT DISCARDED.
-		//
-		// maybeWake fires once per event and nothing retries, so a message
-		// arriving after a wake has EXITED but inside its cooldown was lost
-		// outright: the recipient is asleep again, somebody is blocked on it,
-		// and the next attempt waits for an unrelated event that may never
-		// come. Ninety seconds is a rate limit on starting processes; it was
-		// behaving as a rate limit on delivering mail, which is the failure
-		// this whole path exists to remove.
-		//
-		// A timer for the remainder, re-deciding from scratch when it fires.
-		// One per agent, replaced rather than stacked, so a burst inside the
-		// window is still one wake at the end of it.
-		e.deferWake(l.ID, cooldown-now.Sub(last))
-		slog.Debug("no wake yet: inside the cooldown, re-checking when it expires",
+		// A cooldown refusal schedules nothing. A later event reconsiders
+		// delivery; only an actual failed delivery can arm one retry.
+		slog.Debug("no wake: inside the cooldown",
 			"agent", l.ID)
 		return wakePlan{}, false
 	}
@@ -1627,14 +1522,8 @@ func wakeHarness(l *core.Agent) string {
 	return strings.ToLower(l.Agent.Harness)
 }
 
-// recencyWindow is how long to wait before asking again whether this agent has
-// stopped.
-//
-// The same window recentlyInTouch measures against, so a re-check lands when
-// that judgement could actually have changed rather than at some unrelated
-// interval. Falls back to the default peer cooldown for an agent whose harness
-// has no configured command, which is the case recentlyInTouch already answers
-// false for; carried anyway so this never returns zero and spins.
+// recencyWindow is the current route's activity window. Expiry alone never
+// schedules a wake: a mail or lifecycle event must reconsider delivery.
 func (e *Engine) recencyWindow(l *core.Agent) time.Duration {
 	if d, ok := e.wakeCooldownFor(l); ok && d > 0 {
 		return d
@@ -1662,11 +1551,6 @@ func (e *Engine) recencyWindow(l *core.Agent) time.Duration {
 func (e *Engine) socketNotice(l *core.Agent, from, kind string) string {
 	if l == nil {
 		return wakeexec.Compose(kind)
-	}
-	// The agent's own declared work, quoted: this channel can keep it, unlike
-	// argv. See stall.go.
-	if kind == wakeexec.KindContinuation || kind == wakeexec.KindRecheck {
-		return e.workNotice(l, kind)
 	}
 	if digest := e.currentWakeDigest(l); digest != "" {
 		return digest

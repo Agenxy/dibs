@@ -75,19 +75,19 @@ type inboxWatcher struct {
 	// one's subscription, so only the last registered mailbox kept its
 	// self-wake. Found by the pre-release review, round fifty-four.
 	streams          map[string]*inboxStream
-	refreshSupported bool // once advertised, never fall back to captured text
-	offerSupported   bool // additive; old dormant bridges cannot assert receipt support
-	batchSupported   bool // atomic reservation of this session's owned mailboxes
+	refreshSupported bool              // once advertised, never fall back to captured text
+	offerSupported   bool              // additive; old dormant bridges cannot assert receipt support
+	failedOffers     map[string]string // one failed offer per source, consumed by retry
+	batchSupported   bool              // atomic reservation of this session's owned mailboxes
 	// reconnect is the pause between a stream ending and the next attempt;
 	// zero means reconnectAfter. A field, set before start, so a test can
 	// shorten it without writing a global under a running goroutine.
 	reconnect time.Duration
 	// waker is the ONE route to this session's socket, shared by every
-	// stream: the cooldown is a promise about the session, not about a
-	// mailbox, and a waker per stream gave two mailboxes two interruptions
-	// microseconds apart. Found by the pre-release review, round fifty-eight.
+	// stream. New mail delivers immediately; only an actual failed write
+	// can arm the shared writer's bounded retry.
 	waker *selfWaker
-	// cooldown overrides the shared waker's cooldown when set before the
+	// cooldown overrides the shared waker's failure retry delay before the
 	// first start; a test knob, like reconnect.
 	cooldown time.Duration
 }
@@ -117,6 +117,7 @@ func (iw *inboxWatcher) sharedWaker() *selfWaker {
 		if iw.waker != nil {
 			iw.waker.refreshFn = iw.freshNotice
 			iw.waker.offerFn = iw.offerNotice
+			iw.waker.retryOfferFn = iw.retryNotice
 		}
 		if iw.waker != nil && iw.cooldown > 0 {
 			iw.waker.cooldown = iw.cooldown
@@ -473,7 +474,7 @@ func (iw *inboxWatcher) onFrame(st *inboxStream, msg streamFrame, waker *selfWak
 func worthAWake(meta map[string]any) bool {
 	if offers, _ := meta[mcp.SocketOfferMetaKey].(bool); offers {
 		// The engine's write-time decision includes answers, flagged reviews
-		// and due work. Reclassifying those from event metadata here would
+		// and announcements. Reclassifying those from event metadata here would
 		// silently undo it. Empty offers cost no socket or model turn.
 		return true
 	}

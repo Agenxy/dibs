@@ -1023,18 +1023,8 @@ func TestAWakeSleeperDoesNothing(t *testing.T) {
 	}
 }
 
-// Mail arriving after a wake exits, inside its cooldown, is not lost.
-//
-// maybeWake fires once per event and nothing retries. A wake that ran and
-// exited leaves the agent asleep again; a question arriving ten seconds later
-// was refused by the ninety-second cooldown and then forgotten, so the sender
-// waited for an unrelated future event to happen to arrive. Ninety seconds is a
-// rate limit on starting processes, and it was behaving as a rate limit on
-// delivering mail, which is the failure this whole path exists to remove.
-//
-// The existing cooldown test ages the timestamp by hand before finishing the
-// previous wake, so it never occupies this window.
-func TestMailInsideTheCooldownIsRetriedNotDropped(t *testing.T) {
+// A cooldown refusal never schedules a wake without a failed delivery.
+func TestMailInsideTheCooldownNeverArmsAWakeTimer(t *testing.T) {
 	e, st := wakeEngine(t, WakeCommand{
 		Argv: []string{"echo", "{thread}"}, Cooldown: 300 * time.Millisecond,
 	})
@@ -1053,16 +1043,12 @@ func TestMailInsideTheCooldownIsRetriedNotDropped(t *testing.T) {
 		Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
 	})
 
-	// It was refused for now, which is correct: what matters is that a
-	// re-check was ARMED rather than the event thrown away.
+	// The refusal must not turn into scheduled work.
 	e.wakers.mu.Lock()
 	armed := e.wakers.deferred["sleeper"] != nil
 	e.wakers.mu.Unlock()
-	if !armed {
-		t.Fatal("a message refused by the cooldown armed no re-check. maybeWake " +
-			"fires once per event, so that wake is now lost: the recipient stays " +
-			"asleep until some unrelated event happens to arrive, while the sender " +
-			"waits on a deadline")
+	if armed {
+		t.Fatal("route refusal armed a timer without a failed delivery")
 	}
 }
 
@@ -1306,7 +1292,7 @@ func TestAFailedWakeAndMailDuringItDoNotLeaveAnOrphanTimer(t *testing.T) {
 	st.Agents["busy"] = l
 
 	// The failed command's cooldown re-check.
-	e.deferWakeLocked("busy", time.Hour)
+	e.armFailedWake("busy", []string{"mail:busy\x001"}, time.Hour)
 	e.wakers.mu.Lock()
 	armed := e.wakers.deferred["busy"]
 	e.wakers.mu.Unlock()

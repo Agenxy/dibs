@@ -150,18 +150,19 @@ you and your turn ends while you still hold a declaration, your Stop is answered
 with that declaration quoted back and the turn continues: that is how a worker
 woken for one question gets back to the job it said it was doing. So keep the
 declaration true. Finished? `undeclare`. Blocked? Declare it again with
-`waiting` (on whom or what: an agent id, `"ci"`) and `recheck_after` (`"20m"`)
-when nothing will tell you it is over; a waiting declaration is never
-continued. Changing the declaration (new text, a `pr:` ref when you open one)
-is what tells Dibs you made progress.
+`waiting` (on whom or what: an agent id, `"ci"`). A waiting declaration is
+never continued. Changing the declaration (new text, a `pr:` ref when you open
+one) tells Dibs you made progress.
 
-If you stop anyway, Dibs wakes you again 10, 30 and 60 minutes after each turn
-ends, saying your declared work is still open. A declared wait with
-`recheck_after` gets a wake when the recheck is due, up to three times. When
-those run out with nothing changed, your row says `stalled` and whoever
-assigned you the work is told. Every row carries `work`: `idle`, `working`,
-`waiting` or `stalled`, and `declared` once you have
-not been seen for 30 minutes: the board says what it knows, not what you claimed.
+Dibs does not schedule rechecks or later stall wakes. `recheck_after` was removed;
+any call that still includes it is refused with a corrective hint. Arrange your
+own timer when needed and declare waiting without it. Mail, app restart/reconnect
+and the bounded Stop continuation still wake through their event paths.
+Every row carries `work`: `idle`, `working`, `waiting`, `declared` or `stalled`.
+`stalled` is a read-time label for an open declaration and activity unchanged
+for at least 30 minutes; it sends no wake or notice to an assigner. Each known
+slot timestamp has `updated_at` and wall-time `unchanged_for_s`; age is rebuilt
+from committed events after restart. Missing history means unknown age.
 The API's `seen_source` distinguishes authenticated contact, harness hooks and
 ledger activity from `boot_grace`; a restart grace timestamp is not a sighting.
 
@@ -491,8 +492,8 @@ receiving native peer turns, another watcher adds no delivery guarantee.
   done, body)` closes it and tells the requester. Until then it is on your row
   under `owes` and Dibs treats it like a declaration that says you are working.
   If finishing it is blocked on someone else, park it: declare with `waiting`
-  and `request:<serial>` in `refs`, and it is left alone until the recheck or a
-  reply. Never report done to stop being continued. Acknowledge
+  and `request:<serial>` in `refs`, and it is left alone until a reply or
+  another event. Never report done to stop being continued. Acknowledge
   FYIs with `ack`, which also consumes terminal mail.
 - **A request can be a task the sender follows.** Asking for work that takes a
   while, name the steps: `send(type: "request", milestones: ["sources

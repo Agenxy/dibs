@@ -64,16 +64,7 @@ import (
 // The socket route has no such constraint, because its payload is JSON on a
 // 0600 endpoint rather than argv, so it names the sender itself.
 func Compose(msgType string) string {
-	// Two wakes that are not mail: the agent's own declared work, still open
-	// after its turn ended (engine/stall.go), and a wait it declared whose
-	// recheck time has come. Fixed sentences, like the rest: the declaration
-	// itself is quoted where the channel can keep it, never in argv.
-	switch msgType {
-	case KindContinuation:
-		return "Dibs: work you declared is still open and no turn is running. check_in shows it."
-	case KindRecheck:
-		return "Dibs: a wait you declared is due for a recheck. check_in shows it."
-	case KindAppRestart:
+	if msgType == KindAppRestart {
 		return "Dibs: the ChatGPT app restarted. Your pre-restart declarations are on the board."
 	}
 	if msgType != "" {
@@ -84,9 +75,7 @@ func Compose(msgType string) string {
 
 // The wake kinds that are not mail.
 const (
-	KindContinuation = "continuation"
-	KindRecheck      = "recheck"
-	KindAppRestart   = "app-restarted"
+	KindAppRestart = "app-restarted"
 )
 
 // Fields are the only substitutions a wake command gets.

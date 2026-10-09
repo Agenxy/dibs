@@ -182,17 +182,20 @@ Code's session id. Measured on the installed app: a closed session's process
 was up two seconds after the link opened, and its SessionStart hook reached
 Dibs and resolved to its agent. So a wake for a Claude app agent with no
 listening session opens it (after the person has been idle, like every open),
-and the existing 30-second recheck delivers over the socket once it listens.
+and the next session-start/reconnect event can deliver once it listens.
+There is no 30-second readiness timer.
 A terminal Claude Code session has no app record and is never opened.
 
 ### A missing route asks the person to make contact (unreleased v0.0.14)
 
 An unread question, request or handoff with no usable command, session socket,
 or supported in-app open route is not described as successfully delivered.
-After route classification, including a socket-cache recheck when a socket may
-have appeared (or after an attempted app open reports failure),
+After route classification at a mail or reconnect event (or after an attempted
+app open reports failure),
 Dibs records one metadata-only contact window for that recipient and tells the
-coordinator and the person. A burst coalesces; FYI notifies do not trigger the
+coordinator and the person. A failed human post gets one retry; a second failure
+is shown with its reason on the board and in `dibs doctor`. An absent receipt
+never schedules a repeat. A burst coalesces; FYI notifies do not trigger the
 path. The person's alert can open a validated link in the recipient's existing
 app on that same host; otherwise it names the harness and host to open by hand.
 This is not a third wake mechanism: Dibs neither starts nor relocates a
@@ -209,13 +212,14 @@ Stop hook, with no socket frame. Dibs-generated progress, queue updates,
 ordinary approvals and accepted reviews wait for SessionStart, an authenticated pull or the
 next actionable digest. Stop and SubagentStop use the same actionable cause as
 the socket; a non-blocking Stop consumes nothing. UserPromptSubmit stays silent. An
-idle session gets one coalesced write for authored mail, actionable verdicts or due waits until
-actual turn evidence. Unknown lifecycle gets the existing bounded grace and
-then one recovery write, explicitly logged as unknown. Answers, denials,
+idle session gets one coalesced write for authored mail or actionable verdicts until
+actual turn evidence. Unknown lifecycle retains a bounded grace; expiry alone sends nothing. A later
+mail or lifecycle event may produce one recovery write, logged as unknown. Answers, denials,
 declines, grant/adoption verdicts and flagged reviews qualify; ordinary work
 approvals use the hook path. DONE qualifies for a sender currently declaring a
 wait. A successful kernel write remains best effort, with hook fallback until
-turn evidence. Due waits keep independent clocks and retry limits. See
+turn evidence. Declared waits schedule no writes. A failed delivery alone gets
+one bounded retry tied to its original outstanding causes. See
 `docs/SOCKET-WAKE-DESIGN.md` for the measured baseline, additive batch protocol
 and dormant older-bridge limitation.
 
@@ -242,16 +246,21 @@ turn resets that. Never after a person's prompt (Claude Code reports those;
 the Codex plugin binds no UserPromptSubmit, so there the guard is the wake
 alone), and never on a turn Codex reports a Stop hook already continued.
 
-**When continuing in the turn is not enough** (stall.go). An agent that
-stops twice in quick succession and then sits is woken again through its
-normal route, 10, 30 and 60 minutes after each turn end, with a fixed sentence
-on argv and its declarations quoted on the socket. A declared wait with
-`recheck_after` is woken when the recheck falls due, three times. When those
-run out with the declaration unchanged the row's `work` reads `stalled` and
-the agent that assigned the work (the sender of the newest request it
-approved; otherwise a coordinator, then the human) is told once. `work` is
-derived from declarations and what the daemon has seen, never from process
-liveness: a Codex agent in the ChatGPT app has no process between calls.
+**No timer-driven wakes** (operator decision, 2026-10-08). The 10/30/60-minute
+stall nudges, declared rechecks and their assigner notices are removed. A stale
+`recheck_after` argument is refused rather than ignored. The board derives wall
+unchanged age from committed slot events and labels old, unobserved open work
+`stalled` on read only. Waiting remains waiting. Neither label starts a turn.
+The Stop continuation above and mail/app restart/reconnect events remain.
+A wake timer may retry one failed delivery once, fenced to its original
+presentation identifiers, including the bridge's authenticated failed-offer ID.
+New bridge mail is written immediately; an old daemon must echo support for the
+failed-offer fence before a new bridge retries. Otherwise it surrenders the
+route without writing. Dormant pre-upgrade bridges run their old code until the
+next served request; installing the daemon does not replace them.
+Successful delivery, silence, cooldown and a missing
+socket do not create schedules. Boot and host/app reconnect reconsider pending
+mail once as events, without a recurring timer.
 
 **And every Codex Stop delivery before this failed to parse.** Codex's output
 schema is per event with `deny_unknown_fields`, and its Stop takes `decision`
@@ -588,10 +597,9 @@ What genuinely deserved the name was **nagging**, and that is a different fix:
 - **Each actionable message wakes its recipient once.** An agent that read something and
   chose not to act has exercised exactly the judgement the digest grants it, and
   re-waking it every turn would be taking that back.
-- **Work somebody is BLOCKED on comes back**, on the same retry an
-  unacknowledged announcement uses. A question nobody has answered is not a
-  decision, it is a peer waiting, and the point of a deadline is that somebody
-  notices before it expires.
+- **Outstanding work is read at an event**, including mail and reconnect.
+  Elapsed declaration or announcement age does not start another turn. An actual
+  failed delivery may retry once, while its original cause remains outstanding.
 - **`stop_hook_active` is honoured**, so a wake never continues a turn a wake
   already continued. That is a loop guard, not a preference, and no setting
   switches it off.
@@ -873,9 +881,9 @@ acting where nobody is looking, in a thread its human will later open and read,
 is a different product from a board that coordinates the agents somebody is
 running.
 
-**What is unchanged.** One gate for both routes: the cooldown, the
-still-running flag and the deferral are shared, because each was paid for by a
-bug. No command and no socket is still no wake. No process is ever spawned for
+**Current event rule.** Daemon routes share the cooldown and still-running
+flag. A refusal schedules nothing; only an actual failed delivery may retry once.
+The bridge writes new mail immediately, without a successful-delivery cooldown. No command and no socket is still no wake. No process is ever spawned for
 a thread that cannot be resumed.
 
 **AND WHAT CHANGED: THE NOTICE IS NO LONGER ONE FIXED SENTENCE ON BOTH.** It

@@ -41,11 +41,8 @@ func TestASuccessfulDeliveryDisarmsThePendingRetry(t *testing.T) {
 	}
 }
 
-// A notice deferred to the cooldown stands for an arrival the session has
-// not been told about: one that came in while an earlier notice was on the
-// wire. The disarm that a successful delivery performs is for a RETRY of a
-// delivery that failed, and must leave the deferred notice to fire.
-func TestASuccessfulDeliveryDoesNotDisarmADeferredNotice(t *testing.T) {
+// A second successful arrival is delivered immediately and arms no timer.
+func TestASuccessfulDeliveryDoesNotDeferTheNextNotice(t *testing.T) {
 	t.Cleanup(func() { recordWakePending(false, "") })
 	sock := sockPath(t)
 	lines := listenLines(t, sock)
@@ -56,20 +53,17 @@ func TestASuccessfulDeliveryDoesNotDisarmADeferredNotice(t *testing.T) {
 	if got := collect(lines, 2, 2*time.Second); len(got) != 2 {
 		t.Fatalf("setup: %d line(s) from the first notice, want 2", len(got))
 	}
-	// A second arrival inside the cooldown: deferred, not dropped.
+	// The failure-retry delay is not a successful-delivery cooldown.
 	if err := w.wake(testWakeNotice); err != nil {
 		t.Fatal("setup:", err)
 	}
-	if !wakeIsPending() {
-		t.Fatal("setup: the second arrival armed no deferred notice")
+	if got := collect(lines, 2, 200*time.Millisecond); len(got) != 2 {
+		t.Fatalf("second arrival was delayed: %d line(s)", len(got))
 	}
-	// The first delivery's completion, as it would settle after the write.
-	w.delivered()
-	if !wakeIsPending() {
-		t.Fatal("a successful delivery disarmed the notice deferred for a NEWER arrival: " +
-			"the session is never told about that mail")
+	if wakeIsPending() {
+		t.Fatal("successful arrivals armed a timer")
 	}
-	if got := collect(lines, 2, 3*w.cooldown); len(got) != 2 {
-		t.Fatalf("the deferred notice never fired after the cooldown: %d line(s)", len(got))
+	if got := collect(lines, 1, 2*w.cooldown); len(got) != 0 {
+		t.Fatalf("timer repeated successful mail: %d line(s)", len(got))
 	}
 }

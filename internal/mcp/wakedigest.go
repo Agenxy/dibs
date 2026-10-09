@@ -12,6 +12,7 @@ const (
 	WakeDigestURI        = "dibs://wake-digest"
 	DigestRefreshMetaKey = "com.dibs/digest_refresh"
 	SocketOfferMetaKey   = "com.dibs/socket_offer"
+	SocketRetryMetaKey   = "com.dibs/socket_retry_offer"
 	SocketOfferIDMetaKey = "com.dibs/socket_offer_id"
 	SocketWrittenMetaKey = "com.dibs/socket_written"
 	SocketBatchMetaKey   = "com.dibs/socket_batch"
@@ -40,7 +41,8 @@ func (s *Server) readWakeDigest(ctx context.Context, meta map[string]any) (any, 
 				}
 			}
 		}
-		res, callErr := s.eng.SocketOffersFor(ctx, tokens, session, id, written)
+		retry, _ := meta[SocketRetryMetaKey].(string)
+		res, callErr := s.eng.SocketOffersRetryFor(ctx, tokens, session, id, written, retry)
 		err = callErr
 		text, _ = res["digest"].(string)
 		offer, _ = res["offer"].(string)
@@ -53,8 +55,15 @@ func (s *Server) readWakeDigest(ctx context.Context, meta map[string]any) (any, 
 	out := map[string]any{"contents": []map[string]any{
 		{"uri": WakeDigestURI, "mimeType": "text/plain", "text": text},
 	}}
+	outMeta := map[string]any{}
 	if offer != "" {
-		out["_meta"] = map[string]any{SocketOfferIDMetaKey: offer}
+		outMeta[SocketOfferIDMetaKey] = offer
+	}
+	if retry, _ := meta[SocketRetryMetaKey].(string); retry != "" {
+		outMeta[SocketRetryMetaKey] = retry
+	}
+	if len(outMeta) > 0 {
+		out["_meta"] = outMeta
 	}
 	return cacheable(out, 0, scopePrivate), nil
 }

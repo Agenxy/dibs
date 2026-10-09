@@ -36,8 +36,8 @@ func (iw *inboxWatcher) markRefresh(key string) {
 	liveWake.mu.Unlock()
 }
 
-// Read all mailboxes sharing this session's ONE writer. A coalesced timer is
-// not the first event's text: it covers the current state of every mailbox.
+// Read all mailboxes sharing this session's ONE writer before an event write
+// or a failed-delivery retry; captured event text is not current mailbox state.
 // Compatibility is explicit: only a daemon advertising refresh is queried.
 func (iw *inboxWatcher) freshNotice(captured string) (string, error) {
 	iw.mu.Lock()
@@ -75,6 +75,14 @@ func (s wakeDigestSource) read() (string, error) {
 // offerNotice keeps receipts LOCAL TO THIS WRITE. Several mailboxes share one
 // socket writer; a failed refresh of any releases the other attempts too.
 func (iw *inboxWatcher) offerNotice(captured string) (string, func(bool), error) {
+	return iw.offerNoticeFor(captured, false)
+}
+
+func (iw *inboxWatcher) retryNotice(captured string) (string, func(bool), error) {
+	return iw.offerNoticeFor(captured, true)
+}
+
+func (iw *inboxWatcher) offerNoticeFor(captured string, retry bool) (string, func(bool), error) {
 	iw.mu.Lock()
 	offers := iw.offerSupported
 	batch := iw.batchSupported
@@ -84,13 +92,20 @@ func (iw *inboxWatcher) offerNotice(captured string) (string, func(bool), error)
 	}
 	iw.mu.Unlock()
 	if !offers {
+		if retry {
+			return "", nil, fmt.Errorf("the daemon cannot fence a failed socket offer; surrendering without retry")
+		}
 		text, err := iw.freshNotice(captured)
 		return text, nil, err
 	}
 	sort.Slice(sources, func(i, j int) bool { return sources[i].key < sources[j].key })
 	if batch && len(sources) > 0 {
-		return batchSocketOffer(sources)
+		return iw.batchSocketOffer(sources, retry)
 	}
+	return iw.offerSources(sources, retry)
+}
+
+func (iw *inboxWatcher) offerSources(sources []wakeDigestSource, retry bool) (string, func(bool), error) {
 	type receipt struct {
 		source wakeDigestSource
 		id     string
@@ -98,6 +113,7 @@ func (iw *inboxWatcher) offerNotice(captured string) (string, func(bool), error)
 	var receipts []receipt
 	finish := func(written bool) {
 		for _, r := range receipts {
+			iw.rememberFailedOffer(r.source.key, r.id, written)
 			_, _, err := r.source.readOffer(map[string]any{
 				mcp.SocketOfferMetaKey:   true,
 				mcp.SocketOfferIDMetaKey: r.id, mcp.SocketWrittenMetaKey: written,
@@ -109,7 +125,15 @@ func (iw *inboxWatcher) offerNotice(captured string) (string, func(bool), error)
 	}
 	var texts []string
 	for _, source := range sources {
-		text, id, err := source.readOffer(map[string]any{mcp.SocketOfferMetaKey: true})
+		meta := map[string]any{mcp.SocketOfferMetaKey: true}
+		if retry {
+			id := iw.takeFailedOffer(source.key)
+			if id == "" {
+				continue
+			}
+			meta[mcp.SocketRetryMetaKey] = id
+		}
+		text, id, err := source.readOffer(meta)
 		if err != nil {
 			return "", finish, err
 		}
@@ -123,7 +147,7 @@ func (iw *inboxWatcher) offerNotice(captured string) (string, func(bool), error)
 	return strings.Join(texts, "\n"), finish, nil
 }
 
-func batchSocketOffer(sources []wakeDigestSource) (string, func(bool), error) {
+func (iw *inboxWatcher) batchSocketOffer(sources []wakeDigestSource, retry bool) (string, func(bool), error) {
 	var tokens []string
 	for _, source := range sources {
 		if source.session == sources[0].session {
@@ -131,11 +155,20 @@ func batchSocketOffer(sources []wakeDigestSource) (string, func(bool), error) {
 		}
 	}
 	meta := map[string]any{mcp.SocketOfferMetaKey: true, mcp.SocketTokensMetaKey: tokens}
+	if retry {
+		id := iw.takeFailedOffer(sources[0].key)
+		if id == "" {
+			return "", nil, nil
+		}
+		meta[mcp.SocketRetryMetaKey] = id
+	}
 	text, id, err := sources[0].readOffer(meta)
 	finish := func(written bool) {
 		if id == "" {
 			return
 		}
+		iw.rememberFailedOffer(sources[0].key, id, written)
+		delete(meta, mcp.SocketRetryMetaKey)
 		meta[mcp.SocketOfferIDMetaKey], meta[mcp.SocketWrittenMetaKey] = id, written
 		if _, _, err := sources[0].readOffer(meta); err != nil {
 			slog.Debug("could not settle this session's socket offer; hook fallback remains", "err", err)
@@ -192,6 +225,10 @@ func (s wakeDigestSource) readOffer(extra map[string]any) (string, string, error
 	if reply.Result == nil || len(reply.Result.Contents) != 1 {
 		return "", "", fmt.Errorf("wake digest read: missing digest content")
 	}
+	wanted, _ := extra[mcp.SocketRetryMetaKey].(string)
+	if wanted != "" && reply.Result.Meta[mcp.SocketRetryMetaKey] != wanted {
+		return "", "", fmt.Errorf("the daemon did not acknowledge the failed-offer fence; refusing a socket retry")
+	}
 	id, _ := reply.Result.Meta[mcp.SocketOfferIDMetaKey].(string)
 	return reply.Result.Contents[0].Text, id, nil
 }
@@ -216,4 +253,25 @@ func (s wakeDigestSource) request(ctx context.Context, body []byte) (*http.Respo
 			client = daemonClient(5 * time.Second)
 		}
 	}
+}
+
+func (iw *inboxWatcher) rememberFailedOffer(key, id string, written bool) {
+	iw.mu.Lock()
+	defer iw.mu.Unlock()
+	if written {
+		delete(iw.failedOffers, key)
+		return
+	}
+	if iw.failedOffers == nil {
+		iw.failedOffers = map[string]string{}
+	}
+	iw.failedOffers[key] = id
+}
+
+func (iw *inboxWatcher) takeFailedOffer(key string) string {
+	iw.mu.Lock()
+	defer iw.mu.Unlock()
+	id := iw.failedOffers[key]
+	delete(iw.failedOffers, key)
+	return id
 }

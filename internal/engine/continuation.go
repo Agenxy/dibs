@@ -42,7 +42,7 @@ import (
 // the count resets on progress the daemon can see for itself: the declaration
 // changing (a new ref such as a PR, new text), or a turn after the last
 // continuation that ran progressTurn or longer. An agent that stops twice
-// without either is left alone, and a later phase reports it as stalled.
+// without either is left alone, the board only displays its unchanged age.
 
 const (
 	maxContinuations = 2
@@ -164,8 +164,8 @@ func continuationReason(open []core.Slot, n int) string {
 	// whose schema does not list it.
 	b.WriteString("\nIf that work is not finished, this turn is yours to continue it. " +
 		"If it is finished, undeclare it. If it is blocked, call declare with the same " +
-		"slot_id and the `waiting` argument set (on whom or what, e.g. \"ci\"), plus " +
-		"`recheck_after` (e.g. \"20m\") if nothing will tell you; writing \"waiting\" in " +
+		"slot_id and the `waiting` argument set (on whom or what, e.g. \"ci\"); " +
+		"writing \"waiting\" in " +
 		"the text marks nothing. ")
 	for _, s := range open {
 		if serial, ok := strings.CutPrefix(s.ID, "request "); ok {
@@ -219,8 +219,8 @@ func (e *Engine) continuationReply(l *core.Agent, event string, stopActive bool)
 		return nil
 	}
 	// A continued Stop is not a turn that ended: the turn goes on. Recorded
-	// as ended, the later wakes in stall.go would count from a stop that did
-	// not happen. On the writer loop, which owns turnEnded.
+	// as ended would falsely describe the lifecycle. On the writer loop,
+	// which owns turnEnded.
 	delete(e.turnEnded, l.ID)
 	e.noteSocketBusy(l, time.Now())
 	return core.Result{"decision": "block", "reason": reason}

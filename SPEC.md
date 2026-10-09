@@ -951,8 +951,7 @@ socket write and command execution alone do not count as read receipts.
 A non-blocking Stop neither marks those items delivered nor reads their outcome
 prefixes. Held information is delivered through SessionStart, `check_in` or
 `inbox`, or included in the next actionable Stop/socket digest under the shared
-quote budget. UserPromptSubmit remains silent. Due declared waits and bounded
-declared-work continuation remain independent Stop causes.
+quote budget. UserPromptSubmit remains silent. Bounded declared-work continuation remains an independent Stop cause.
 
 A send result's live route note uses the same authored-message decision as
 socket and Stop delivery. Idle authored notify receives a best-effort wake
@@ -973,23 +972,27 @@ other host/session rows are excluded. Old dormant bridges can deliver one
 pre-upgrade scheduled notice and may quote only one mailbox under the new
 shared reservation; full hook/pull fallback remains available.
 
-Due declared waits use per-slot clocks and quote only the slots due now. A
-derived `socket.ready` hint on the existing subscription has no ledger serial
-or ring cursor. Busy suppression spends no retry; hook delivery advances the
-cadence without spending a native-write retry. Native due rechecks retain the
-three-write bound and stalled-row/assigner reporting; open-work backoff remains
-10/30/60 minutes. Daemon socket failures retain one retry for the current
-actionable cohort, while a changed cause or real turn rearms it. All lifecycle,
-reservation and presentation records are derived; losing them can repeat a
-notice but cannot lose coordination state.
+`recheck_after` is removed from the declare schema. Any presence, including
+empty or null, is refused with: "recheck_after was removed: Dibs no longer runs
+timers; set your own (a shell sleep works) and declare waiting without it."
+Typed ingress refuses nonzero `recheck_sec` in Admit. Historical fields and
+`stall_notified` operations keep their frozen tags and unchanged fold behavior.
+Old timed declarations replay but cannot schedule wakes or assigner notices.
 
-Requester stall notices are durable exceptions to those derived clocks. An
-atomic `stall_notified` operation creates the notice and records the recipient's
-declaration serial on its approved request. The same version is never reported
-again after replay or notice retention; a changed declaration rearms reporting.
-Historical requests omit this field and retain their old zero behavior. A
-withdrawn or completed request no longer qualifies. Only the daemon's reserved
-reporting identity can submit this operation, validated at ingress.
+The board rebuilds a bounded derived declaration timestamp index from full
+replayed `slot.set` events before ring trimming, then updates it from committed
+events. Known timestamps expose per-slot `updated_at` and `unchanged_for_s`
+(wall time, clamped at zero). Missing event history means unknown age.
+`stalled` is a read-time label when open work and activity are at least 30 minutes
+old; waiting remains waiting. Reads neither append nor send notices.
+Mail, app-restart/reconnect events and Stop continuation remain. Mail arriving
+while a command is running is reconsidered immediately at that command's exit,
+without a successful-command cooldown timer; a stale thread's exit cannot
+release its replacement activation's exclusion. A derived
+`socket.ready` hint has no ledger serial or ring cursor and is emitted for a
+new event, never to poll an agent into another turn. Only a failed delivery
+may arm one retry for its original presentation identifiers; acknowledged or
+superseded causes cannot be replaced by unrelated mail on that retry.
 
 **App reconnect recovery.** Local stdio bridges attach their own PID and process
 start stamp as additive per-request metadata, including modern discovery and
@@ -1113,9 +1116,14 @@ remain complete in `inbox` and the agent's own authoritative `check_in`.
 
 A self-wake inbox notification advertises this read with the additive
 `com.dibs/digest_refresh: true` metadata key. A capable bridge refreshes before
-each socket attempt, including deferred, retry and upgrade-handoff deliveries;
+each socket attempt, including failed-delivery retries and upgrade-handoff deliveries;
 the daemon refreshes socket, command and delegated plans too. Empty means no notice is written,
-no cooldown is spent, and an obsolete retry is cleared. A failed read never
+no cooldown is spent, and an obsolete retry is cleared. New bridge mail events
+write immediately. A failed socket offer may be retried once with the additive
+`com.dibs/socket_retry_offer` metadata: the daemon authenticates the same
+session and at least one original outstanding presentation identifier, then
+consumes that retry ID. The response echoes the ID; a new bridge refuses to
+write if an old daemon ignores it. A failed read never
 falls back to captured text. Coalesced mailboxes share one socket writer and
 one fresh notice. Older daemons and dormant pre-upgrade bridges retain the
 previous behavior until the bridge upgrades between stdio requests; the new
@@ -1340,7 +1348,7 @@ counting a document; this line said 17 for two minor versions.
 | `sign_off()` | lifecycle |
 | `heartbeat()` | renew lease while idle (implicit on every call) |
 | `invite(action?, name?, ttl_s?, issued_by?, export?)` | private local issuers mint scoped cloud credentials and configuration; own-prefix children by default, four live/7d; list/revoke own invitations, no invited grandchildren. Only `export: true` on mint returns the private stable recovery nonce; ordinary/false mints omit it, and export on list/revoke is refused. This avoids unnecessary recovery-credential disclosure in ordinary agent transcripts. Direct-IP mode returns guest CA PEM/pin and explicitly no verified native-client configuration yet. Public listener and issuer-generation boundaries: docs/NETWORK.md §9 |
-| `declare(slot_id?, text, dirs?, refs?, activity?, holds?, waiting?, recheck_after?)` / `undeclare(slot_id)` | declare/end work units. A declaration without `waiting` says the agent is working: a turn a Dibs wake started that ends while one is open is continued at Stop (at most twice per version of it, never after a person's prompt) |
+| `declare(slot_id?, text, dirs?, refs?, activity?, holds?, waiting?)` / `undeclare(slot_id)` | declare/end work units. A declaration without `waiting` says the agent is working: a turn a Dibs wake started that ends while one is open is continued at Stop (at most twice per version of it, never after a person's prompt) |
 | `send(to, type, body, deadline_s?, op_id?)` | → `msg_serial`; `op_id` = durable dedup (§4) |
 | `respond(msg_serial, disposition, body?)` | answer/approve/deny/decline; `done` on a request you approved, once the work is delivered. An approved request not yet done is an obligation (the row's `owes`, for a day after approval) and counts as declared work |
 | `ack(msg_serial)` | explicit read receipt |

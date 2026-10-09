@@ -10,25 +10,9 @@ import (
 	"github.com/agenxy/dibs/internal/core"
 )
 
-// Mail arriving while an agent is "recently in touch" is not thrown away.
-//
-// maybeWake short-circuits when the recipient called Dibs inside the wake
-// cooldown, on the reasoning that it "is genuinely working and will see this at
-// its own turn boundary". That is true only where a turn boundary REACHES Dibs.
-// An agent whose harness sends no lifecycle hooks has none: nothing ever marks
-// its turn ended, recency decays into silence, and because maybeWake fires once
-// per event with nothing retrying, the message's only delivery attempt is spent
-// on the assumption.
-//
-// Measured on a live board. A question went to an active codex agent 40 seconds
-// after its last call, inside the 90-second window. No wake was attempted then
-// or ever, and the daemon's log showed that harness had never delivered a single
-// lifecycle hook: it runs under the desktop app, which does not read the CLI's
-// hooks file. Every Codex desktop agent on that board was in the same position.
-//
-// So the window has to defer rather than decide. This asserts the timer is
-// armed, which is the whole difference between "delivered late" and "never".
-func TestRecentContactDefersTheWakeRatherThanDroppingIt(t *testing.T) {
+// Recent activity is a refusal, never a schedule. Only a failed delivery may
+// arm a bounded retry; another mail or reconnect event reconsiders the route.
+func TestRecentContactNeverArmsAWakeTimer(t *testing.T) {
 	st := core.NewState("test", core.DefaultLimits())
 	e := New(st, &memLedger{}, deadProber{})
 	e.SetWakeCommands(map[string]WakeCommand{
@@ -56,22 +40,14 @@ func TestRecentContactDefersTheWakeRatherThanDroppingIt(t *testing.T) {
 	e.wakers.mu.Lock()
 	timer := e.wakers.deferred["busy"]
 	e.wakers.mu.Unlock()
-	if timer == nil {
-		t.Error("no re-check was armed. maybeWake fires once per event and nothing " +
-			"else retries, so this message's only delivery attempt was spent on the " +
-			"assumption that a turn boundary will carry it. For a harness that " +
-			"sends no lifecycle hooks there is no turn boundary, and the mail is " +
-			"never delivered by anything")
+	if timer != nil {
+		timer.Stop()
+		t.Error("recent contact armed a timer without a failed delivery")
 	}
 }
 
-// And the re-check re-arms while somebody is still blocked.
-//
-// Deferring once only moves the failure one window later: an agent that called
-// Dibs again in the meantime consumes the retry and the message is stranded
-// exactly as before. The loop ends when the mail does, not when the agent
-// happens to be idle at the right instant.
-func TestTheRecheckReArmsWhileTheAgentStaysBusy(t *testing.T) {
+// Reconsideration during activity also refuses without polling.
+func TestBusyReconsiderationNeverArmsAWakeTimer(t *testing.T) {
 	st := core.NewState("test", core.DefaultLimits())
 	e := New(st, &memLedger{}, deadProber{})
 	e.SetWakeCommands(map[string]WakeCommand{
@@ -110,10 +86,8 @@ func TestTheRecheckReArmsWhileTheAgentStaysBusy(t *testing.T) {
 	e.wakers.mu.Lock()
 	timer := e.wakers.deferred["busy"]
 	e.wakers.mu.Unlock()
-	if timer == nil {
-		t.Error("the re-check gave up while a question was still unanswered. One " +
-			"deferral only moves the loss one window later: the agent called Dibs " +
-			"again, consumed the retry, and the message is stranded exactly as it " +
-			"was before")
+	if timer != nil {
+		timer.Stop()
+		t.Error("busy reconsideration armed a timer without a failed delivery")
 	}
 }

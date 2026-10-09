@@ -31,7 +31,7 @@ import (
 // worth pinning is that an inbox notification becomes exactly one authenticated
 // line on the session socket.
 // testWakeNotice is any notice at all, for the tests about the waker's
-// MECHANICS: the cooldown, the deferral, the retry and the upgrade handoff.
+// MECHANICS: immediate mail, bounded failure retries and upgrade handoff.
 //
 // A test constant rather than the product's own string, because the product no
 // longer has one. What the in-session route says is whatever the daemon put on

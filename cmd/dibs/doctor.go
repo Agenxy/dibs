@@ -256,6 +256,7 @@ func (d *diagnosis) run(verbose bool) error {
 	checkServiceBinary(ok, warn)
 	if b, err := boardSnapshot(); err == nil {
 		checkCoordinatorIsReachable(b, ok, warn)
+		checkContactDeliveryFailures(b, warn)
 		checkConfiguredNameAliases(b, ok, warn)
 	}
 

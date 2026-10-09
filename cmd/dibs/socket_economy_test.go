@@ -546,59 +546,12 @@ func TestSocketEconomyVerdictsUseCurrentWaitingAndCanonicalKind(t *testing.T) {
 	}
 }
 
-func TestSocketEconomyDueWaitsShareOneWriterAndRetainBusyFallback(t *testing.T) {
-	for _, busy := range []bool{false, true} {
-		t.Run(map[bool]string{false: "idle", true: "busy"}[busy], func(t *testing.T) {
-			f := newEconomyFixture(t)
-			f.tool(t, "check_in", map[string]any{"token": f.worker})
-			for _, item := range []struct{ text, after string }{{"due-one", "1s"}, {"due-two", "1s"}, {"later-wait", "1h"}} {
-				f.tool(t, "declare", map[string]any{"token": f.worker, "text": item.text, "waiting": "ci", "recheck_after": item.after})
-			}
-			f.idle(t)
-			if busy {
-				f.hook(t, "UserPromptSubmit")
-			}
-			before, err := f.eng.Board(context.Background())
-			if err != nil {
-				t.Fatal(err)
-			}
-			if busy {
-				if wire := collect(f.lines, 1, 2500*time.Millisecond); len(wire) != 0 {
-					t.Fatalf("a due wait interrupted a busy turn: %v", wire)
-				}
-				got := f.hook(t, "Stop")
-				if !strings.Contains(got, "due-one") || !strings.Contains(got, "due-two") || strings.Contains(got, "later-wait") {
-					t.Fatalf("Stop did not carry exactly the due slots: %s", got)
-				}
-				f.idle(t)
-			}
-			text := f.waitOffer(t)
-			if !strings.Contains(text, "due-one") || !strings.Contains(text, "due-two") || strings.Contains(text, "later-wait") {
-				t.Fatalf("one offer did not carry exactly the due slots: %q", text)
-			}
-			if len(collect(f.lines, 2, time.Second)) != 2 {
-				t.Fatal("due waits had no actual socket delivery")
-			}
-			f.waitWritten(t)
-			if extra := collect(f.lines, 1, 1200*time.Millisecond); len(extra) != 0 {
-				t.Fatalf("due slots produced duplicate socket writes: %v", extra)
-			}
-			after, err := f.eng.Board(context.Background())
-			if err != nil {
-				t.Fatal(err)
-			}
-			if before["serial"] != after["serial"] {
-				t.Fatal("derived readiness changed the ledger serial")
-			}
-		})
-	}
-}
-
 func TestSocketEconomyUnknownBusyAndCoalescingBeyondCooldown(t *testing.T) {
 	for _, mode := range []string{"unknown", "busy", "coalesced"} {
 		t.Run(mode, func(t *testing.T) {
 			t.Parallel()
 			f := newEconomyFixture(t)
+			f.eng.SetWakeCommands(map[string]engine.WakeCommand{"claude code": {Argv: []string{"/usr/bin/false"}, Cooldown: 20 * time.Second}})
 			if mode != "unknown" {
 				f.idle(t)
 			}
@@ -615,20 +568,22 @@ func TestSocketEconomyUnknownBusyAndCoalescingBeyondCooldown(t *testing.T) {
 			} else if initial != "" {
 				t.Fatalf("%s ignored bounded grace or explicit busy: %q", mode, initial)
 			}
+			// Silence never schedules a wake, regardless of the old grace/cooldown.
+			if wire := collect(f.lines, 1, 21*time.Second); len(wire) != 0 {
+				t.Fatalf("%s scheduled a wake: %v", mode, wire)
+			}
+
+			f.tool(t, "send", map[string]any{"token": f.sender, "to": "worker", "type": "question", "body": "long-window-second"})
 			if mode == "unknown" {
-				if len(collect(f.lines, 2, 25*time.Second)) != 2 {
-					t.Fatal("unknown state stranded actionable mail beyond its existing grace")
+				text := f.waitOffer(t)
+				if !strings.Contains(text, "long-window-first") || !strings.Contains(text, "long-window-second") || len(collect(f.lines, 2, time.Second)) != 2 {
+					t.Fatalf("new mail event did not reach unknown session: %q", text)
 				}
 				f.waitWritten(t)
-			} else {
-				if wire := collect(f.lines, 1, 21*time.Second); len(wire) != 0 {
-					t.Fatalf("%s duplicated or aged into idle: %v", mode, wire)
-				}
+			} else if text, _ := f.offerRead(t, nil); text != "" {
+				t.Fatalf("%s rearmed without a turn event: %q", mode, text)
 			}
-			f.tool(t, "send", map[string]any{"token": f.sender, "to": "worker", "type": "question", "body": "long-window-second"})
-			if text, _ := f.offerRead(t, nil); text != "" {
-				t.Fatalf("%s rearmed from time or a new message serial: %q", mode, text)
-			}
+
 			if got := f.hook(t, "Stop"); !strings.Contains(got, "long-window-first") || !strings.Contains(got, "long-window-second") {
 				t.Fatalf("coalescing lost pending mail at Stop: %s", got)
 			}
@@ -676,6 +631,11 @@ func TestSocketEconomyBatchesOwnedMailboxesAndRearmerUsesReceipt(t *testing.T) {
 	if text, _ := f.offerRead(t, map[string]any{"com.dibs/token": alt}); text != "" {
 		t.Fatalf("second mailbox bypassed the session epoch: %q", text)
 	}
+	// The real bridge has proved the shared write and its receipt above. The
+	// remaining checks enter the authenticated resource directly; stop this
+	// fixture's child before making that second consumer. A Stop now delivers
+	// immediately, so a live bridge could reserve the offer before this read.
+	f.diagnostics.stop()
 	// A different fresh session/host cannot be aggregated by a matching id.
 	foreign := f.tool(t, "register", map[string]any{"name": "foreign", "session_id": "foreign-session"})["token"].(string)
 	f.tool(t, "send", map[string]any{"token": f.sender, "to": "foreign", "type": "question", "body": "foreign-private"})
@@ -731,68 +691,5 @@ func TestSocketEconomyFailedBridgeWriteRearmsWithoutConsuming(t *testing.T) {
 	f.offerRead(t, map[string]any{mcp.SocketOfferIDMetaKey: retry, mcp.SocketWrittenMetaKey: false})
 	if text := f.hook(t, "Stop"); !strings.Contains(text, "failed-write-mail") {
 		t.Fatalf("failed native write lost its real hook fallback: %q", text)
-	}
-}
-
-func TestSocketEconomyDueRetriesRemainBoundedAndReportTheAssigner(t *testing.T) {
-	f := newEconomyFixture(t)
-	f.tool(t, "check_in", map[string]any{"token": f.worker})
-	sent := f.tool(t, "send", map[string]any{"token": f.sender, "to": "worker", "type": "request", "body": "due-budget-work"})
-	serial := sent["msg_serial"]
-	f.tool(t, "respond", map[string]any{"token": f.worker, "msg_serial": serial, "disposition": "approve"})
-	f.tool(t, "declare", map[string]any{
-		"token": f.worker, "text": "due-budget-wait", "waiting": "ci",
-		"recheck_after": "1s", "refs": []string{fmt.Sprintf("request:%.0f", serial)},
-	})
-	f.idle(t)
-	for attempt := range 3 {
-		lines := collect(f.lines, 2, 20*time.Second)
-		if len(lines) != 2 || !strings.Contains(lines[1], "due-budget-wait") || !strings.Contains(lines[1], "due-budget-work") {
-			t.Fatalf("due retry %d did not quote the real parked request and declaration: %q", attempt+1, lines)
-		}
-		f.waitWritten(t)
-		f.hook(t, "UserPromptSubmit")
-		f.idle(t)
-	}
-	deadline := time.Now().Add(17 * time.Second)
-	for {
-		board, err := f.eng.Board(context.Background())
-		if err != nil {
-			t.Fatal(err)
-		}
-		stalled := false
-		for _, row := range board["agents"].([]map[string]any) {
-			if row["id"] == "worker" && row["work"] == "stalled" {
-				stalled = true
-			}
-		}
-		if stalled {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("bounded native rechecks never set the real stalled row")
-		}
-		<-time.After(50 * time.Millisecond)
-	}
-	if text, _ := f.offerRead(t, nil); text != "" {
-		t.Fatalf("exhausted inherited/declared wait offered a fourth wake: %q", text)
-	}
-	deadline = time.Now().Add(3 * time.Second)
-	for {
-		r := f.tool(t, "inbox", map[string]any{"token": f.sender})
-		b, err := json.Marshal(r)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if strings.Contains(string(b), "worker has stalled") {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("bounded native rechecks never told the actual request assigner")
-		}
-		<-time.After(50 * time.Millisecond)
-	}
-	if lines := collect(f.lines, 1, 1100*time.Millisecond); len(lines) != 0 {
-		t.Fatalf("stalled wait still wrote to the native socket: %q", lines)
 	}
 }

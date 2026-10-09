@@ -183,9 +183,10 @@ type Op struct {
 	// Activity is the ROLE this agent has on the work (implement, review, test).
 	// Holds are exclusive host resources it needs (port:8080, lock:.git/index).
 	Activity string `json:"activity,omitempty"`
-	// Waiting and RecheckSec mark a declaration as blocked rather than in
-	// progress: on whom or what, and when to look again. See Slot.Waiting.
-	Waiting    string   `json:"waiting,omitempty"`
+	// Waiting marks a declaration as blocked rather than in
+	// progress: on whom or what. See Slot.Waiting.
+	Waiting string `json:"waiting,omitempty"`
+	// Retired timer input: Admit refuses it; Apply still folds historical ops.
 	RecheckSec int      `json:"recheck_sec,omitempty"`
 	Holds      []string `json:"holds,omitempty"`
 

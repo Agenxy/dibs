@@ -12,31 +12,31 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
 
-// A notice deferred to the cooldown when the image is replaced is delivered
-// by the next image: the timer died with the old process and the cursor had
-// already passed the event.
-func TestADeferredNoticeSurvivesAnInPlaceUpgrade(t *testing.T) {
+// A failed write's pending notice survives replacement of the bridge image.
+func TestAFailedNoticeSurvivesAnInPlaceUpgrade(t *testing.T) {
 	sock := sockPath(t)
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", sock)
 	t.Setenv("CLAUDE_CODE_MESSAGING_TOKEN", "child-token")
 	t.Cleanup(func() { recordWakePending(false, "") })
 	lines := listenLines(t, sock)
-	// The old image: one notice delivered, a second arrival deferred to a
-	// cooldown that will never fire in this process.
+	// The old image: one delivered notice, then an ambiguous failed write.
 	old := &selfWaker{socket: sock, token: "child-token", cooldown: time.Hour}
-	if err := old.wake(testWakeNotice); err != nil {
-		t.Fatal("setup:", err)
-	}
 	if err := old.wake(testWakeNotice); err != nil {
 		t.Fatal("setup:", err)
 	}
 	if got := collect(lines, 2, 2*time.Second); len(got) != 2 {
 		t.Fatalf("setup: %d line(s) from the first notice, want 2", len(got))
 	}
+	old.deliverFn = func(string) error { return syscall.ETIMEDOUT }
+	if err := old.wake(testWakeNotice); err == nil {
+		t.Fatal("setup: the ambiguous failed write reported success")
+	}
+	t.Cleanup(func() { old.mu.Lock(); old.timer.Stop(); old.mu.Unlock() })
 	if !handoffState().WakePending {
 		t.Fatal("the handoff does not say a notice is owed")
 	}

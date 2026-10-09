@@ -35,7 +35,7 @@
  *
  * Run: DIBD=$PWD/bin/dibd bun internal/mcp/e2e/wake_e2e.ts
  */
-import { mkdtempSync, rmSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, rmSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { basename, dirname, join } from "node:path"
 import { daemonReady } from "./ready.ts"
@@ -409,6 +409,7 @@ async function mailDuringALongTurnIsNotLost() {
   const rec = join(d, "recorder.ts")
   const lg = join(d, "wakes.jsonl")
   const tokenFile = join(d, "sleeper.token")
+  const endedFile = join(d, "ended")
   const port = String(Number(PORT) + 2)
   const a = `127.0.0.1:${port}`
 
@@ -431,11 +432,12 @@ const checkIn = () => fetch("http://${a}/mcp", {
 await checkIn()
 await Bun.sleep(3000)
 await checkIn()
+await Bun.write("${endedFile}", "ended")
 `)
   await Bun.write(join(d, "dibs.toml"), `
 [wake.exec.codex]
 argv = ["${process.execPath}", "${rec}", "${lg}", "${tokenFile}", "${join(d, "local.secret")}"]
-cooldown = "6s"
+cooldown = "60s"
 `)
   const dae = Bun.spawn({
     cmd: [dibd, "-dir", d, "-addr", a],
@@ -495,8 +497,16 @@ cooldown = "6s"
       return
     }
 
-    // Let it exit, plus the cooldown, plus room for the re-check.
-    await settle(9000)
+    // Observe the real command completing, then require event-driven delivery
+    // well inside the 60s cooldown. Expiry must not be what makes this pass.
+    for (let until = Date.now() + 8000; !existsSync(endedFile);) {
+      if (Date.now() > until) {
+        check(name, false, "setup: the first command never finished its final check_in")
+        return
+      }
+      await Bun.sleep(20)
+    }
+    await settle(1000)
     check(name, count() > 1,
       "the question that arrived during the turn woke nobody after it ended. " +
       "The agent read its inbox before that message existed, so it never saw it, " +

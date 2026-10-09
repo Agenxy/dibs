@@ -83,15 +83,15 @@ func TestWakePhaseCommandThroughMCP(t *testing.T) {
 				sender := call("register", map[string]any{"name": "sender"})
 				call("check_in", map[string]any{"token": sender["token"]})
 				call("check_in", map[string]any{"token": worker["token"]})
+				call("hook_poll", map[string]any{"session_id": session, "event": "Stop", "stop_hook_active": true})
 				if kind == "ordinary-approval" {
 					n := call("send", map[string]any{"token": worker["token"], "to": "sender", "type": "request", "body": "work"})["msg_serial"]
 					call("respond", map[string]any{"token": sender["token"], "msg_serial": n, "disposition": "approve"})
 				} else {
 					call("send", map[string]any{"token": sender["token"], "to": "worker", "type": kind, "body": "private body must stay off argv"})
 				}
-				// Recent authenticated contact must defer rather than discard an
-				// enabled notify. Its actual command runs after the configured
-				// one-second window, entering the real retry path too.
+				// An observed Stop makes the authored mail event eligible immediately.
+				// Recent contact does not arm a delayed retry.
 				wakes := phase != "none" && kind != "ordinary-approval" && (phase == "all" || kind == "question")
 				until := time.Now().Add(1600 * time.Millisecond)
 				if wakes {
@@ -147,9 +147,10 @@ func TestWakePhaseCommandThroughMCP(t *testing.T) {
 						}
 						<-tick.C
 					}
-					// A genuinely new question still wakes after contact deferral;
+					// A genuinely new question still wakes after the real Stop event;
 					// oldestBlocking must not label it with the already-read FYI.
 					call("check_in", map[string]any{"token": worker["token"]})
+					call("hook_poll", map[string]any{"session_id": session, "event": "Stop", "stop_hook_active": true})
 					call("send", map[string]any{"token": sender["token"], "to": "worker", "type": "question", "body": "new work"})
 					until = time.Now().Add(5 * time.Second)
 					for {

@@ -374,9 +374,9 @@ func Admit(op *Op, lim Limits) error {
 	return nil
 }
 
-// MaxRecheck bounds a declared wait's recheck: a week, the longest a
-// persistent agent's mail may wait.
-const MaxRecheck = 7 * 24 * 60 * 60
+// RemovedRecheckHint is shared by typed ingress and the MCP presence check.
+const RemovedRecheckHint = "recheck_after was removed: Dibs no longer runs timers; " +
+	"set your own (a shell sleep works) and declare waiting without it."
 
 // checkWaiting bounds a declaration's wait. Admit, for the reason at the top
 // of this file.
@@ -384,13 +384,8 @@ func checkWaiting(op *Op, lim Limits) error {
 	if len(op.Waiting) > lim.MaxNameBytes {
 		return errTooLarge("waiting", lim.MaxNameBytes)
 	}
-	if op.RecheckSec < 0 || op.RecheckSec > MaxRecheck {
-		return errf("E_BAD_ARG", "recheck_after is a duration up to a week, such as \"20m\"",
-			"recheck of %d seconds is out of range", op.RecheckSec)
-	}
-	if op.RecheckSec > 0 && op.Waiting == "" {
-		return errf("E_BAD_ARG", "say what you are waiting on as well: waiting: \"ci\", recheck_after: \"20m\"",
-			"recheck_after needs waiting")
+	if op.RecheckSec != 0 {
+		return errf("E_BAD_ARG", RemovedRecheckHint, "recheck_after was removed")
 	}
 	return nil
 }

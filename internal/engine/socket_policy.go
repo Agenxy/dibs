@@ -6,11 +6,9 @@ package engine
 import (
 	"log/slog"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
-	"github.com/agenxy/dibs/internal/wakeexec"
 )
 
 // Lifecycle and delivery epochs are observations, not coordination state.
@@ -192,7 +190,7 @@ func (e *Engine) socketOwnsDelivery(l *core.Agent) bool {
 		return true
 	}
 	now := time.Now()
-	return e.mightReachOverSocket(l) && (e.socketDigest(l, now) == "" || !e.socketDaemonReady(l, now))
+	return e.mightReachOverSocket(l) && (!e.socketCanPresent(l, now) || !e.socketDaemonReady(l, now))
 }
 
 func (e *Engine) socketHasCause(l *core.Agent, now time.Time) bool {
@@ -203,7 +201,7 @@ func (e *Engine) socketHasCause(l *core.Agent, now time.Time) bool {
 			continue
 		}
 		mail := e.WakePolicy() != WakeNone && e.actionableSocketMail(other, now, true)
-		if mail || e.socketWorkDigest(other, now) != "" {
+		if mail {
 			return true
 		}
 	}
@@ -230,12 +228,6 @@ func (e *Engine) socketDigest(l *core.Agent, now time.Time) string {
 		return ""
 	}
 	text := e.currentWakeDigest(l)
-	if work := e.socketWorkDigest(l, now); work != "" {
-		if text != "" {
-			text += "\n"
-		}
-		text += work
-	}
 	return text
 }
 
@@ -253,7 +245,7 @@ func (e *Engine) socketCanPresent(l *core.Agent, now time.Time) bool {
 
 // SocketReadyEvent is a derived readiness hint on the existing subscription,
 // with no ledger position. It is never appended to the ring or replayed. A
-// missed hint is rebuilt by this tick from current mail and declarations.
+// reconnect reads current outstanding mail if the hint was missed.
 const SocketReadyEvent = "socket.ready"
 
 func (e *Engine) signalSocketReady(l *core.Agent) {
@@ -261,12 +253,12 @@ func (e *Engine) signalSocketReady(l *core.Agent) {
 	for ch := range e.streams {
 		select {
 		case ch <- ev:
-		default: // derived hint; the next tick reconstructs it, no cursor lost
+		default: // reconnect reads outstanding mail; this is not a ledger cursor
 		}
 	}
 }
 
-func (e *Engine) socketReadyTick(now time.Time) {
+func (e *Engine) pruneSocketState() {
 	live := map[string]bool{}
 	for _, id := range sortedAgentIDs(e.state) {
 		l := e.state.Agents[id]
@@ -274,15 +266,7 @@ func (e *Engine) socketReadyTick(now time.Time) {
 			continue
 		}
 		live[socketSessionKey(l)] = true
-		e.observeSocketWaits(l, now)
-		if e.socketDigest(l, now) == "" {
-			continue
-		}
-		if own, _ := e.SelfWaking(id); own {
-			e.signalSocketReady(l)
-		} else if e.mightReachOverSocket(l) {
-			e.wakeSocketReady(l)
-		}
+
 	}
 	for key := range e.socketTurns {
 		if !live[key] {
@@ -299,33 +283,57 @@ func (e *Engine) socketReadyTick(now time.Time) {
 			delete(e.socketFailures, key)
 		}
 	}
-	for key := range e.socketWaits {
-		id, _, _ := strings.Cut(key, "\x00")
-		if e.state.Agents[id].Retired() {
-			delete(e.socketWaits, key)
-		}
-	}
 }
 
 func (e *Engine) wakeSocketReady(l *core.Agent) {
-	if !e.socketDaemonReady(l, time.Now()) {
+	now := time.Now()
+	if !e.socketCanPresent(l, now) || !e.socketDaemonReady(l, now) {
 		return
 	}
-	kind := "notice"
-	if e.socketWorkDigest(l, time.Now()) != "" {
-		kind = wakeexec.KindRecheck
-	}
-	plan, ok := e.wakeFor(l, kind, core.Event{Type: SocketReadyEvent, To: l.ID})
+	plan, ok := e.wakeFor(l, "notice", core.Event{Type: SocketReadyEvent, To: l.ID})
 	if !ok {
 		return
 	}
+	cause := e.failedDeliveryKeys(l.ID)
+	agent, stamp := l.ID, e.wakeStamp(l.ID)
 	go func() {
-		defer e.wakeExited(l.ID, plan.thread)
-		e.runWakeAndReport(plan, plan.agent)
+		defer e.wakeExited(agent, plan.thread)
+		n := e.noteWakeAttempt(agent)
+		if !e.runWakeAndReport(plan, agent) {
+			e.releaseWake(agent, stamp)
+			if n < 2 {
+				e.armFailedWake(agent, cause, plan.cooldown)
+			}
+		}
 	}()
 }
 
 func (e *Engine) logSocketOffer(l *core.Agent, now time.Time, id string) {
 	slog.Info("socket wake offered", "agent", l.ID, "session_id", l.CurrentSession,
 		"lifecycle", e.socketLifecycle(l, now), "offer", id)
+}
+
+func (e *Engine) wakeAnnouncementEvent(ev core.Event) {
+	if ev.Type != "agent.announce" {
+		return
+	}
+	for _, id := range sortedAgentIDs(e.state) {
+		l := e.state.Agents[id]
+		if !l.Retired() && len(e.state.Unacked(id)) > 0 {
+			e.maybeWake(core.Event{Type: "announcement.pending", To: id})
+		}
+	}
+}
+
+// A finishing hook is a lifecycle event. If it delivered no model digest,
+// the existing socket writer may offer outstanding mail, once in this epoch.
+func (e *Engine) socketIdleEvent(l *core.Agent, event string) {
+	if !isStopEvent(event) || !e.socketCanPresent(l, time.Now()) {
+		return
+	}
+	if own, _ := e.SelfWaking(l.ID); own {
+		e.signalSocketReady(l)
+	} else if e.mightReachOverSocket(l) {
+		e.wakeSocketReady(l)
+	}
 }

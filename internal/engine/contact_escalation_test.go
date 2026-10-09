@@ -76,7 +76,7 @@ func TestNoRouteEscalatesThroughPublishedSendAndKeepsBodyPrivate(t *testing.T) {
 	}
 }
 
-func TestRecentActiveAgentWithoutWakeRouteGetsARecheckBeforeHumanContact(t *testing.T) {
+func TestRecentActiveAgentWithoutWakeRouteNeverArmsATimer(t *testing.T) {
 	e, serial := contactEngine(t, &core.Agent{
 		Status: core.StatusActive,
 		Agent:  &core.AgentInfo{Harness: "terminal harness"},
@@ -99,12 +99,12 @@ func TestRecentActiveAgentWithoutWakeRouteGetsARecheckBeforeHumanContact(t *test
 		deferred.Stop()
 	}
 	e.wakers.mu.Unlock()
-	if deferred == nil {
-		t.Fatal("active grace did not arm a recheck")
+	if deferred != nil {
+		t.Fatal("active grace armed a timer without failed delivery")
 	}
 }
 
-func TestStaleSocketMissDefersBeforeEscalatingOnRefresh(t *testing.T) {
+func TestStaleSocketMissRequiresAnEventBeforeReconsideration(t *testing.T) {
 	e, serial := contactEngine(t, &core.Agent{
 		Status:    core.StatusDormant,
 		SessionID: "ab2bdbe2-3bc9-4f7b-8a1f-a638093a6256",
@@ -130,8 +130,8 @@ func TestStaleSocketMissDefersBeforeEscalatingOnRefresh(t *testing.T) {
 		deferred.Stop()
 	}
 	e.wakers.mu.Unlock()
-	if deferred == nil {
-		t.Fatal("stale cache did not arm its refresh")
+	if deferred != nil {
+		t.Fatal("stale cache armed a polling timer")
 	}
 	e.retryWakeDecision("closed")
 	if len(e.state.Contacts) != 1 {

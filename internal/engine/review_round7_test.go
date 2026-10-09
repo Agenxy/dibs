@@ -12,9 +12,8 @@ import (
 	"github.com/agenxy/dibs/internal/peerwake"
 )
 
-// R7-1: a wake refused because the socket cache had not seen the session yet
-// is retried after the cache can refresh, instead of being the final word.
-func TestAWakeRefusedOnAStaleSocketCacheIsRetried(t *testing.T) {
+// A cache miss has not attempted a delivery, so it cannot schedule a retry.
+func TestAStaleSocketCacheDoesNotArmAPollingWake(t *testing.T) {
 	const sid = "ab2bdbe2-3bc9-4f7b-8a1f-a638093a6256"
 	e := New(core.NewState("test", core.DefaultLimits()), &memLedger{}, deadProber{})
 	e.state.Agents["cc"] = &core.Agent{
@@ -39,9 +38,8 @@ func TestAWakeRefusedOnAStaleSocketCacheIsRetried(t *testing.T) {
 		e.wakers.deferred["cc"].Stop()
 	}
 	e.wakers.mu.Unlock()
-	if !armed {
-		t.Fatal("a question to a session the cache had not seen was refused with no retry: " +
-			"the one wake attempt this mail gets was spent on a stale snapshot")
+	if armed {
+		t.Fatal("route refusal armed a timer without a failed delivery")
 	}
 }
 

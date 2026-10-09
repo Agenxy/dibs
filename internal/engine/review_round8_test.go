@@ -42,15 +42,12 @@ func TestBlockingMailOutstandingAtBootIsDecidedAgain(t *testing.T) {
 		e.wakers.deferred["cc"].Stop()
 	}
 	e.wakers.mu.Unlock()
-	if !armed {
-		t.Fatal("a pending question at boot armed no retry: the recipient stays asleep until " +
-			"something else arrives, and the question can expire unread")
+	if armed {
+		t.Fatal("boot event created a timer without a failed delivery")
 	}
 
-	// And Run wires it in: the retry is armed before the loop's first tick.
-	old := bootRetryDelay
-	bootRetryDelay = time.Minute
-	t.Cleanup(func() { bootRetryDelay = old })
+	// Run wires the reconnect decision before the first request.
+
 	e = mk()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -62,8 +59,8 @@ func TestBlockingMailOutstandingAtBootIsDecidedAgain(t *testing.T) {
 	e.wakers.mu.Lock()
 	armed = e.wakers.deferred["cc"] != nil
 	e.wakers.mu.Unlock()
-	if !armed {
-		t.Fatal("Run did not rearm the outstanding question's wake at boot")
+	if armed {
+		t.Fatal("Run created an outstanding-mail polling timer")
 	}
 }
 
@@ -94,9 +91,8 @@ func TestReturningToAnEarlierThreadWakesThatThread(t *testing.T) {
 	}
 }
 
-// R16-3: a second socket miss with blocking mail still outstanding keeps the
-// retry armed; the first version gave up after one.
-func TestASecondSocketMissKeepsOutstandingMailArmed(t *testing.T) {
+// A second socket miss is still not a failed delivery and cannot poll.
+func TestASecondSocketMissDoesNotCreateAPollingTimer(t *testing.T) {
 	const sid = "ab2bdbe2-3bc9-4f7b-8a1f-a638093a6256"
 	st := core.NewState("test", core.DefaultLimits())
 	st.Agents["cc"] = &core.Agent{
@@ -119,9 +115,7 @@ func TestASecondSocketMissKeepsOutstandingMailArmed(t *testing.T) {
 		e.wakers.deferred["cc"].Stop()
 	}
 	e.wakers.mu.Unlock()
-	if !armed {
-		t.Fatal("a retry that found no socket armed no further retry while a question was " +
-			"pending: a socket that appears later is refreshed into the cache and the mail " +
-			"is never reconsidered")
+	if armed {
+		t.Fatal("missing socket created an unbounded polling timer")
 	}
 }

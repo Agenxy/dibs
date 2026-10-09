@@ -33,11 +33,12 @@ type Engine struct {
 	transferNext uint64
 	inviteClosed map[string]uint64 // derived from ledgered closes, rebuilt before ring trimming
 	// Must stay unbuffered: accepted registration holds belong to the writer.
-	ops    chan request
-	subs   chan subReq
-	unsubs chan chan core.Event
-	state  *core.State
-	led    Ledger
+	ops              chan request
+	subs             chan subReq
+	unsubs           chan chan core.Event
+	declarationTimes map[string]map[string]declarationTime // bounded derived display timestamps
+	state            *core.State
+	led              Ledger
 	mailHistoryObserver
 	blobs Store
 	// Derived protection against snapshots older than a blob registration.
@@ -48,8 +49,8 @@ type Engine struct {
 	prober               Prober
 	ring                 []core.Event
 	humanDelivery        humanDeliveries
-	contactAttempts      map[uint64]time.Time // derived retry throttle, writer-owned
-	relays               humanRelays          // the person's own Macs, see humanrelay.go
+	contactAttempts      map[uint64]contactAttempt // derived delivery observations, writer-owned
+	relays               humanRelays               // the person's own Macs, see humanrelay.go
 	ringCap              int
 	buckets              map[string]*bucket
 	resumeAt             map[string]time.Time // per-agent resume rate limit (1/10s)
@@ -87,16 +88,14 @@ type Engine struct {
 	//
 	// Ephemeral and rebuildable, same tier as `seen`: losing it on restart costs
 	// at most one unnecessary wake.
-	turnEnded       map[string]time.Time
-	socketOffers    map[string]socketOffer
-	socketTurns     map[string]socketTurn
-	socketEpochs    map[string]socketEpoch
-	socketWaits     map[string]socketWait
-	socketBackoff   map[string]socketBackoff
-	socketFailures  map[string]socketFailure
-	noticePresented map[string]time.Time
-	nextSocketOffer uint64
-	lastStallTick   time.Time // paces stallTick; see stall.go
+	turnEnded          map[string]time.Time
+	socketOffers       map[string]socketOffer
+	socketFailedOffers map[string]socketOffer
+	socketTurns        map[string]socketTurn
+	socketEpochs       map[string]socketEpoch
+	socketFailures     map[string]socketFailure
+	noticePresented    map[string]time.Time
+	nextSocketOffer    uint64
 	// reachedByHook: agents at least one lifecycle hook has resolved to, so a
 	// later miss in their directory is somebody else's session rather than
 	// theirs. Telemetry for hookhealth.go, same tier as `seen`.
@@ -322,6 +321,7 @@ func New(st *core.State, led Ledger, prober Prober, history ...[]core.Event) *En
 	e.rebuildQueueNotices()
 	e.rebuildSituationalNotices()
 	e.rebuildInvitationHistory(history)
+	e.rebuildDeclarationTimes(ring)
 	e.nameAliases = core.NewAgentNameAliases(st, ring)
 	return e
 }
@@ -339,8 +339,7 @@ func (e *Engine) Run(ctx context.Context) {
 	go e.watchAppRestarts(ctx)
 	e.requestHumanCleanup(e.humanCleanupAt(time.Now()))
 	e.reconcileBlobs() // startup reconcile: drop crash orphans (A4.1)
-	// SYNCHRONOUS, and before the loop serves anything.
-	//
+	// Prime the cache before serving.
 	// The wake gate reads a cache and refuses when it is cold, because finding
 	// the sockets a harness publishes costs a directory read and a bounded `ps`
 	// per candidate, which must never happen on the writer loop. Priming in a
@@ -349,11 +348,10 @@ func (e *Engine) Run(ctx context.Context) {
 	// the first socket wake of a daemon's life, lost outright. Found by the
 	// pre-release review.
 	//
-	// Affordable because every probe behind it is bounded, so this is a startup
-	// pause measured in milliseconds rather than an unbounded wait on `ps`.
+	// Every startup probe is bounded.
 	e.primePeerSessions()
 	if n := e.rearmDeferredWakes(); n > 0 {
-		slog.Info("wake: blocking mail outstanding at boot; deciding again shortly", "agents", n)
+		slog.Info("wake: reconsidered blocking mail at the daemon reconnect event", "agents", n)
 	}
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
@@ -371,11 +369,10 @@ func (e *Engine) Run(ctx context.Context) {
 		case now := <-tick.C:
 			e.sweep(now)
 			e.expireWaiters(now)
-			e.stallTick(now)
-			e.socketReadyTick(now)
+			e.pruneSocketState()
 		case s := <-e.subs:
 			e.streams[s.ch] = s.lost
-			// Catch-up replay, deliberately best-effort: the `default` drops
+			// Catch-up replay: the `default` drops
 			// events once the subscriber's buffer is full rather than blocking.
 			//
 			// Blocking here would stall the SINGLE WRITER on a slow reader,
@@ -1223,7 +1220,6 @@ func (e *Engine) sweep(now time.Time) {
 	}
 	_, _ = e.applyAndLedger(op, now)
 	e.dropNoticesWithoutMail()
-	e.retryContactDelivery(now)
 }
 
 func (e *Engine) publish(evs []core.Event) {
@@ -1232,6 +1228,7 @@ func (e *Engine) publish(evs []core.Event) {
 		return
 	}
 	for _, ev := range evs {
+		e.observeDeclarationTime(ev)
 		// An agent that has gone must take its cached footprint with it, HERE, at
 		// the moment it goes.
 		//
@@ -1246,6 +1243,7 @@ func (e *Engine) publish(evs []core.Event) {
 			if id, _ := ev.Data["agent_id"].(string); id != "" {
 				e.forgetFootprint(id)
 				e.forgetPresentation(id)
+				delete(e.declarationTimes, id)
 			}
 		case "agent.merged":
 			// A merge deletes the SOURCE agent, whose id is `from`: not
@@ -1253,11 +1251,12 @@ func (e *Engine) publish(evs []core.Event) {
 			if id, _ := ev.Data["from"].(string); id != "" {
 				e.forgetFootprint(id)
 				e.forgetPresentation(id)
+				delete(e.declarationTimes, id)
 			}
 		}
 		e.noteEvent(ev) // record what an agent needs told; drained by hook_poll
 		if ev.Type == "contact.escalated" {
-			e.scheduleContactDelivery(ev.Serial, ev.TS)
+			e.scheduleContactDelivery(ev.Serial)
 		}
 		if ev.Type == "contact.resolved" {
 			if serial, ok := ev.Data["contact_serial"].(uint64); ok {
@@ -1269,6 +1268,7 @@ func (e *Engine) publish(evs []core.Event) {
 		// And, for an agent that is not running at all, start the operator's
 		// way in. Every other path here waits for the agent to come to us.
 		e.maybeWake(ev)
+		e.wakeAnnouncementEvent(ev)
 	}
 	e.ring = append(e.ring, evs...)
 	if len(e.ring) > e.ringCap {
