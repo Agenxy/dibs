@@ -65,7 +65,9 @@ func TryNative(surface string, f Fields, argv []string, fresh func() (string, er
 		if codexipc.BeforeInput(err) || errors.Is(err, codexipc.ErrRefused) {
 			slog.Warn("native app wake not sent; bounded retry remains available", "agent", f.Agent,
 				"err", err, "hint", "inspect the native app connection, protocol or refusal; no queue fallback will run")
-			return NativeOutcome{Disposition: "not_sent", Detail: "native app input not accepted; bounded retry, no queue fallback"}, true
+			return NativeOutcome{
+				Disposition: "not_sent", Detail: "native app input not accepted; bounded retry, no queue fallback",
+			}, true
 		}
 		slog.Error("native app wake not confirmed; no retry or queue fallback", "agent", f.Agent,
 			"err", err, "hint", "inspect the app IPC protocol and retry only after resolving the unknown outcome")
