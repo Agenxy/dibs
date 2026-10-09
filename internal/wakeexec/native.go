@@ -36,16 +36,20 @@ func ComposeNative(f Fields) string {
 	if f.MsgType == KindAppRestart {
 		return Compose(f.MsgType)
 	}
-	if f.From != "" && f.MsgType != "" {
+	if !nativeNoticeKind(f.MsgType) {
+		return Compose("")
+	}
+	if nativeSenderSlug(f.From) {
 		return "Dibs: new " + f.MsgType + " from " + f.From + "."
 	}
-	return Compose(f.MsgType)
+	return "Dibs: new " + f.MsgType + "."
 }
 
 // TryNative runs BEFORE any queue probe, lock, retained receipt or app opener.
 // handled=false means the unchanged cold route should run; only absent socket
 // or the router's exact no-client-found permits that. Everything else fails
-// loudly without a second input on any route.
+// loudly. Proven before-input failures and matched refusals can use the
+// existing bounded retry; a possibly submitted input never can.
 func TryNative(surface string, f Fields, argv []string, fresh func() (string, error)) (NativeOutcome, bool) {
 	if !NativeEligible(surface, f, argv) {
 		return NativeOutcome{}, false
@@ -58,6 +62,11 @@ func TryNative(surface string, f Fields, argv []string, fresh func() (string, er
 		return NativeOutcome{Disposition: "unloaded"}, false
 	}
 	if err != nil {
+		if codexipc.BeforeInput(err) || errors.Is(err, codexipc.ErrRefused) {
+			slog.Warn("native app wake not sent; bounded retry remains available", "agent", f.Agent,
+				"err", err, "hint", "inspect the native app connection, protocol or refusal; no queue fallback will run")
+			return NativeOutcome{Disposition: "not_sent", Detail: "native app input not accepted; bounded retry, no queue fallback"}, true
+		}
 		slog.Error("native app wake not confirmed; no retry or queue fallback", "agent", f.Agent,
 			"err", err, "hint", "inspect the app IPC protocol and retry only after resolving the unknown outcome")
 		return NativeOutcome{

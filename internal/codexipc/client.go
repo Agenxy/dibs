@@ -36,8 +36,9 @@ const (
 )
 
 type client struct {
-	conn net.Conn
-	id   string
+	conn         net.Conn
+	id           string
+	inputWritten bool
 }
 
 type frame struct {
@@ -57,15 +58,21 @@ type frame struct {
 }
 
 // Deliver resolves the socket afresh each time. A missing app socket is a cold
-// target; malformed frames, timeouts and disconnects are UNKNOWN, never a
-// reason to enqueue a second copy of a possibly accepted input.
+// target. Before-input failures are retryable; errors after an input write
+// are UNKNOWN unless the selected owner explicitly refused it.
 func Deliver(ctx context.Context, thread, text string) (Receipt, error) {
 	return DeliverFresh(ctx, thread, func() (string, error) { return text, nil })
 }
 
 // DeliverFresh rechecks the board immediately before the one input write.
 // Empty text means the identity closed or the original work was consumed.
-func DeliverFresh(ctx context.Context, thread string, notice func() (string, error)) (Receipt, error) {
+func DeliverFresh(ctx context.Context, thread string, notice func() (string, error)) (receipt Receipt, err error) {
+	var c *client
+	defer func() {
+		if err != nil && !errors.Is(err, ErrNoOwner) {
+			err = &deliveryError{err: err, submitted: c != nil && c.inputWritten}
+		}
+	}()
 	home := os.Getenv("CODEX_HOME")
 	if home == "" {
 		userHome, err := os.UserHomeDir()
@@ -94,7 +101,7 @@ func DeliverFresh(ctx context.Context, thread string, notice func() (string, err
 	if err = conn.SetDeadline(deadline); err != nil {
 		return Receipt{}, err
 	}
-	c := client{conn: conn, id: "initializing-client"}
+	c = &client{conn: conn, id: "initializing-client"}
 	r, err := c.call("initialize", 0, "", map[string]string{"clientType": "dibs"})
 	if err != nil {
 		return Receipt{}, err
@@ -120,7 +127,11 @@ func (c *client) write(f frame) error {
 	header := make([]byte, 4)
 	// #nosec G115 -- len(b) is checked against the 8 MiB frame bound above.
 	binary.LittleEndian.PutUint32(header, uint32(len(b)))
-	_, err = io.Copy(c.conn, bytes.NewReader(append(header, b...)))
+	n, err := io.Copy(c.conn, bytes.NewReader(append(header, b...)))
+	if n > 0 && f.Type == "request" &&
+		(f.Method == "thread-follower-start-turn" || f.Method == "thread-follower-steer-turn") {
+		c.inputWritten = true
+	}
 	return err
 }
 

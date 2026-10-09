@@ -10,8 +10,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Bypass Dibs arrival batching and queue/in-flight holds on this route, and recheck
   the original owed work before input. Native success invokes no queue command or
   app opener. Private notices name the event and sender, without mail bodies;
-  command arguments remain name-free. Unconfirmed native outcomes fail explicitly
-  without fallback or an automatic failure retry. Cold threads retain the existing
+  command arguments remain name-free. Native sender names use a strict bounded
+  slug and event types a fixed vocabulary. Before-input failures and matched
+  refusals retain bounded retry; missing or changed replies after an input write
+  prohibit retry. Writer freshness survives a stalled writer. Cold threads retain the existing
   queue/open route, with queue admission clearly distinguished from app acceptance.
   Remote bridges opt in additively and recheck through an authenticated, host-scoped
   wake fence. App-restart recovery uses the same owned-thread route.

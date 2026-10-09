@@ -1042,8 +1042,11 @@ The factual private notice names event type and sender, never a message body;
 command argv stays name-free. Recheck the original owed items and recipient
 incarnation/session immediately before writing. Already handled work is settled
 without an input. A matching app reply confirms input acceptance, never mailbox
-consumption. A changed protocol, disconnect or unknown reply fails explicitly,
-without a queue fallback or automatic failure retry. Native input is not MCP;
+consumption. A before-input failure or matched owner refusal fails explicitly
+without queue fallback and retains the existing bounded failure retry. A missing
+or garbled reply after any input-frame bytes were written is unknown and cannot
+arm that retry. Native sender names match `^[a-z0-9][a-z0-9-]{0,62}$` or are
+omitted; event types come only from the fixed Dibs vocabulary. Native input is not MCP;
 Dibs still serves the agent's mail through MCP, including stateless 2026 calls.
 
 The same path applies to local app-restart recovery. Owner probes run together,
@@ -1077,7 +1080,7 @@ bounded prompt background policy. No queue item is deleted and no coordination s
 
 Board rows (including compact `check_in`) and agent `send` receipts expose
 `queue_wake` for a configured local ChatGPT queue route. `native_delivery`
-adds started, steered, settled, unknown or queued_unloaded; native input uses
+adds started, steered, settled, not_sent, unknown or queued_unloaded; native input uses
 `admission: not_queued` and `pending: not_applicable`. These are the last
 adapter outcome, not a receipt for a later send. Native success confirms app
 input only. Cold accepted/retained queue outcomes confirm queue admission only. This derived view holds

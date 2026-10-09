@@ -9,9 +9,12 @@ It does not open a window after native acceptance.
 Only an absent socket or an explicit owner-discovery `no-client-found` selects
 the existing cold queue/open route. That route can navigate the app. A socket
 write, queue admission and matching native app acceptance are distinct receipts;
-none proves that the agent consumed mail. Malformed protocol, changed method
-versions, refusal and missing replies fail explicitly with no queue fallback or
-automatic retry. Unknown original inputs are reserved within one receiving app
+none proves that the agent consumed mail. Before-input failures (connection,
+initialization, discovery, snapshot or writer freshness) and matched owner
+refusals fail explicitly with no queue fallback and retain the existing bounded
+retry. Only a missing or garbled reply after input-frame bytes were written
+is unknown and prohibits an automatic retry. Even a partial input write is
+conservatively submitted. Unknown original inputs are reserved within one receiving app
 incarnation. New mail qualifies immediately; an observed new app incarnation
 clears those reservations and re-offers outstanding work once. Losing derived
 evidence on a daemon restart permits a bounded recovery offer.
@@ -78,7 +81,9 @@ The source anchors in the measured archive are byte offsets, not line numbers:
 
 ## Mail and remote boundaries
 
-The payload is an event and sender fact, such as `Dibs: new request from
+The sender is included only when it matches `^[a-z0-9][a-z0-9-]{0,62}$`;
+other names are omitted entirely (`Dibs: new question.`). The event type is
+restricted to Dibs' fixed vocabulary. The payload is an event and sender fact, such as `Dibs: new request from
 reviewer.` It contains no body and no imperative. Names travel only over private
 IPC, never command arguments. Immediately before input, the writer rechecks
 original outstanding items and the recipient incarnation/session. Handled work

@@ -4,7 +4,6 @@
 package engine
 
 import (
-	"context"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -61,7 +60,7 @@ func (e *Engine) tryNativeWake(plan wakePlan, agent string) (bool, bool) {
 			text, err := fresh()
 			if err != nil {
 				if plan.nativeOutcome != nil {
-					*plan.nativeOutcome = wakeexec.NativeOutcome{NoRetry: true, Disposition: "unknown"}
+					*plan.nativeOutcome = wakeexec.NativeOutcome{Disposition: "not_sent"}
 				}
 				return false, true
 			}
@@ -81,9 +80,7 @@ func (e *Engine) tryNativeWake(plan wakePlan, agent string) (bool, bool) {
 }
 
 func (e *Engine) nativePlanNotice(plan wakePlan, agent string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	res, err := e.query(ctx, func() core.Result {
+	res, err := e.query(e.wakeContext, func() core.Result {
 		if !e.originalNativeWakeOwed(plan, agent) {
 			return core.Result{"notice": ""}
 		}

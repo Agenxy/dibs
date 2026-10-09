@@ -36,7 +36,7 @@ func (c *client) call(method string, version int, owner string, params any) (fra
 			}
 			// Never include app error bodies (which may contain private input)
 			// in the daemon's public logs or send note.
-			return frame{}, fmt.Errorf("native %s refused; no retry", method)
+			return frame{}, fmt.Errorf("native %s: %w", method, ErrRefused)
 		}
 		if r.ResultType != "success" || len(r.Result) == 0 || string(r.Result) == "null" {
 			return frame{}, errors.New("native reply result shape changed")
