@@ -74,6 +74,9 @@ func (e *Engine) queueWakeView(agent *core.Agent, now time.Time) core.Result {
 		return v
 	}
 	o := r.observation
+	if o.Delivery != "" {
+		v["native_delivery"] = o.Delivery
+	}
 	v["admission"], v["pending"] = o.Admission, o.Pending
 	v["observed_at"], v["observation_age_seconds"] = o.At, elapsedSeconds(o.At, now)
 	if !o.IssuedAt.IsZero() {
@@ -97,6 +100,22 @@ func elapsedSeconds(at, now time.Time) int64 { return max(0, int64(now.Sub(at)/t
 func queueWakeNote(v core.Result) string {
 	if v == nil {
 		return ""
+	}
+	if delivery, ok := v["native_delivery"].(string); ok {
+		switch delivery {
+		case "queued_unloaded":
+			if v["admission"] == "accepted" || v["admission"] == "retained" {
+				return "Thread not loaded in the app; queued until opened. " +
+					"Queue admission does not confirm a started turn or read mail."
+			}
+			return "Thread not loaded in the app; queue admission not confirmed."
+		case "started", "steered":
+			return "Last native app notice: " + delivery + "; app acceptance does not confirm read mail."
+		case "settled":
+			return "Last native app notice was cancelled because its mail was already handled or its identity closed."
+		default:
+			return "Last native app input not confirmed; no automatic retry or queue fallback."
+		}
 	}
 	text := "App queue admission: " + fmt.Sprint(v["admission"]) +
 		"; last pending observation: " + fmt.Sprint(v["pending"]) + "."

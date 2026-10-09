@@ -170,7 +170,7 @@ func (e *Engine) runWakeAndReport(cmd wakePlan, agent string) bool {
 		}
 	}
 	if e.runWake(cmd, agent) {
-		if native && !written {
+		if cmd.deliverySettled(native, written) {
 			e.releaseWake(agent, e.wakeStamp(agent))
 			return true // reservation lost or suppressed; no turn was started
 		}
@@ -180,7 +180,7 @@ func (e *Engine) runWakeAndReport(cmd wakePlan, agent string) bool {
 			e.recordCommandWritten(cmd)
 		}
 		e.noteDibsStartedTurn(agent, time.Now())
-		if queues(cmd) {
+		if cmd.queuedDelivery() {
 			// At the START: a sign of the agent while the command ran is a
 			// delivery, and stamping the end would hide it.
 			e.noteQueuedWake(agent, started)
@@ -191,6 +191,10 @@ func (e *Engine) runWakeAndReport(cmd wakePlan, agent string) bool {
 	}
 	if native {
 		e.recordSocketOutcome(cmd, false)
+	}
+	if !cmd.retryAllowed() {
+		e.recordNativeUnknown(cmd)
+		return false
 	}
 	e.reportWakeFailure(agent)
 	return false

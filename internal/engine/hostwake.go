@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/harnessenv"
+	"github.com/agenxy/dibs/internal/wakeexec"
 )
 
 // Waking an agent on ANOTHER machine.
@@ -62,10 +64,12 @@ type WakeRequest struct {
 // WakeResult is the bridge's report on one request: the exit status the hub
 // would have seen had the command run here.
 type WakeResult struct {
-	ID     uint64 `json:"id"`
-	Host   string `json:"host"`
-	OK     bool   `json:"ok"`
-	Detail string `json:"detail,omitempty"`
+	NativeDelivery string `json:"native_delivery,omitempty"`
+	NoRetry        bool   `json:"no_retry,omitempty"`
+	ID             uint64 `json:"id"`
+	Host           string `json:"host"`
+	OK             bool   `json:"ok"`
+	Detail         string `json:"detail,omitempty"`
 }
 
 // HostBridgeInfo describes one attached bridge, for doctor.
@@ -78,6 +82,7 @@ type HostBridgeInfo struct {
 }
 
 type hostBridge struct {
+	nativeApp bool // additive delivery support, never inferred for a dormant old bridge
 	harnesses map[string]bool
 	// cooldowns is what the bridge's own [wake.exec] table says per harness,
 	// zero for the default: the hub spends the joined machine's cooldown for
@@ -108,8 +113,10 @@ type hostWakes struct {
 // only that host's bridge may report it, and only that host's detaching
 // fails it.
 type pendingWake struct {
-	host string
-	ch   chan WakeResult
+	native bool
+	plan   wakePlan
+	host   string
+	ch     chan WakeResult
 }
 
 // wakeRequestBuffer bounds what a bridge that has stopped reading can hold
@@ -142,10 +149,11 @@ func (e *Engine) AttachHostBridgeWith(
 	return e.AttachHostBridgeCapabilities(host, harnesses, cooldowns, 0)
 }
 
-// AttachHostBridgeCapabilities records the bridge's additive opening-policy version.
-// It is diagnostic only: the hub never changes delivery or opens a remote app.
+// AttachHostBridgeCapabilities records additive opening and native-input support.
+// An old bridge omits nativeApp and retains its existing queue admission policy.
 func (e *Engine) AttachHostBridgeCapabilities(
 	host string, harnesses []string, cooldowns map[string]time.Duration, awayOpen int,
+	nativeApp ...bool,
 ) (<-chan WakeRequest, func(), error) {
 	host = strings.TrimSpace(host)
 	if host == "" {
@@ -172,6 +180,7 @@ func (e *Engine) AttachHostBridgeCapabilities(
 		harnesses: map[string]bool{}, cooldowns: map[string]time.Duration{},
 		since: time.Now(), ch: make(chan WakeRequest, wakeRequestBuffer), awayOpen: awayOpen,
 	}
+	b.nativeApp = len(nativeApp) == 1 && nativeApp[0]
 	for _, h := range harnesses {
 		if h = strings.ToLower(strings.TrimSpace(h)); h != "" {
 			b.harnesses[h] = true
@@ -230,7 +239,7 @@ func (hw *hostWakes) failPendingLocked(host, detail string) {
 			continue // another host's wake, still running there
 		}
 		select {
-		case p.ch <- WakeResult{ID: id, Host: host, OK: false, Detail: detail}:
+		case p.ch <- lostHostWakeResult(id, host, detail, p.native):
 		default:
 		}
 	}
@@ -400,7 +409,8 @@ func (e *Engine) requestRemoteWakeWithin(plan wakePlan, agent string, within tim
 	if hw.pending == nil {
 		hw.pending = map[uint64]pendingWake{}
 	}
-	hw.pending[req.ID] = pendingWake{host: plan.host, ch: result}
+	native := b.nativeApp && req.Surface == harnessenv.ChatGPTApp
+	hw.pending[req.ID] = pendingWake{host: plan.host, ch: result, plan: plan, native: native}
 	// SENT UNDER THE LOCK. The send is non-blocking, so holding hw.mu costs
 	// nothing, and it is what keeps this send and AttachHostBridge's
 	// close(old.ch) from racing: they used to be separated by an Unlock,
@@ -424,12 +434,21 @@ func (e *Engine) requestRemoteWakeWithin(plan wakePlan, agent string, within tim
 			"agent", agent, "host", plan.host)
 		return false
 	}
+	if native && plan.nativeOutcome != nil {
+		*plan.nativeOutcome = wakeexec.NativeOutcome{NoRetry: true, Disposition: "unknown"}
+	}
 	slog.Info("wake handed to the agent's host", "agent", agent, "host", plan.host,
 		"harness", req.Harness, "request", req.ID)
 	timer := time.NewTimer(within)
 	defer timer.Stop()
 	select {
 	case res := <-result:
+		if plan.nativeOutcome != nil {
+			plan.nativeOutcome.NoRetry = res.NoRetry
+			plan.nativeOutcome.Disposition = res.NativeDelivery
+			plan.nativeOutcome.OK = res.NativeDelivery == "started" || res.NativeDelivery == "steered"
+			plan.nativeOutcome.Settled = res.NativeDelivery == "settled"
+		}
 		if res.OK {
 			slog.Info("the agent's host reports the wake ran", "agent", agent, "host", plan.host, "request", req.ID)
 			return true

@@ -233,6 +233,10 @@ func (e *Engine) observeAppRestart(
 	if _, err := e.applyAndLedger(op, now); err != nil {
 		return nil, interval, err
 	}
+	for i := range plans {
+		e.resetCommandIncarnation(plans[i].agent, "restart:"+epoch)
+		plans[i].commandEpoch = e.commandEpoch[plans[i].agent]
+	}
 	return plans, interval, nil
 }
 
@@ -258,21 +262,35 @@ func (e *Engine) appRestartPlan(l *core.Agent, thread string) (wakePlan, bool) {
 	if !wakeexec.NativeQueueTemplate(cmd.argv) {
 		return wakePlan{}, false
 	}
-	if e.wakeStillQueuedLocked(l, time.Now()) {
-		return wakePlan{thread: thread}, true // existing queued notice will trigger the read
-	}
 	f := wakeexec.Fields{
 		Thread: thread, Agent: l.ID, MsgType: wakeexec.KindAppRestart,
 		Message: wakeexec.Compose(wakeexec.KindAppRestart),
 	}
 	return wakePlan{
 		argv: f.Apply(cmd.argv), thread: thread, agent: l.ID, cwd: cwdOf(l),
+		fields: f, nativeOutcome: new(wakeexec.NativeOutcome), createdSerial: l.CreatedSerial, session: wakeSessionOf(l),
 		surface: surfaceOf(l), harness: wakeHarness(l),
 	}, true
 }
 
 func (e *Engine) deliverAppRestart(ctx context.Context, epoch string, plans []wakePlan, interval time.Duration) {
+	// Start owner discovery for every candidate together, so a cold candidate
+	// cannot delay an already owned thread's native input. Cold opens retain
+	// their existing ordering and pacing after these independent attempts.
+	native := make([]chan bool, len(plans))
 	for i, plan := range plans {
+		native[i] = make(chan bool, 1)
+		go func() { _, handled := e.tryNativeRestart(ctx, epoch, plan); native[i] <- handled }()
+	}
+	for i, plan := range plans {
+		select {
+		case handled := <-native[i]:
+			if handled {
+				continue
+			}
+		case <-ctx.Done():
+			return
+		}
 		// Transitional queue/open pacing; removed with direct app delivery (71154).
 		if i > 0 {
 			timer := time.NewTimer(interval)
@@ -294,6 +312,11 @@ func (e *Engine) deliverAppRestart(ctx context.Context, epoch string, plans []wa
 }
 
 func (e *Engine) sendRestartQueue(ctx context.Context, epoch string, plan wakePlan) bool {
+	if plan.nativeOutcome == nil || plan.nativeOutcome.Disposition != "unloaded" {
+		if ok, handled := e.tryNativeRestart(ctx, epoch, plan); handled {
+			return ok
+		}
+	}
 	out := restartQueue(plan.argv, plan.agent, plan.cwd)
 	if out.Retryable {
 		// The lock was never acquired, so no command ran. One retry is safe;

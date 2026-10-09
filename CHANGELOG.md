@@ -5,6 +5,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Deliver new notices directly into owned ChatGPT agent threads through the
+  running app's private IPC: start idle threads or steer active turns immediately.
+  Bypass Dibs arrival batching and queue/in-flight holds on this route, and recheck
+  the original owed work before input. Native success invokes no queue command or
+  app opener. Private notices name the event and sender, without mail bodies;
+  command arguments remain name-free. Unconfirmed native outcomes fail explicitly
+  without fallback or an automatic failure retry. Cold threads retain the existing
+  queue/open route, with queue admission clearly distinguished from app acceptance.
+  Remote bridges opt in additively and recheck through an authenticated, host-scoped
+  wake fence. App-restart recovery uses the same owned-thread route.
+
 - Pin Go 1.26.9 across builds and releases to fix the reachable standard-library
   vulnerabilities reported by the full gate. Update the direct-build guidance
   and bundled Go notice to the same patch.

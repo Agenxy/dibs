@@ -16,7 +16,7 @@ import (
 func (e *Engine) freshCommandKeys(agent string, now time.Time) []string {
 	var keys []string
 	for _, key := range e.deliveryKeysAt(agent, now) {
-		if !e.commandWritten[key] {
+		if !e.commandWritten[key] && !e.nativeUnknown[key] {
 			keys = append(keys, key)
 		}
 	}
@@ -60,6 +60,12 @@ func (e *Engine) resetCommandIncarnation(agent, epoch string) {
 			delete(e.commandWritten, key)
 		}
 	}
+	for key := range e.nativeUnknown {
+		_, item, _ := strings.Cut(key, ":")
+		if strings.HasPrefix(item, agent+"\x00") {
+			delete(e.nativeUnknown, key)
+		}
+	}
 }
 
 func (e *Engine) pruneCommandWritten(live map[string]bool) {
@@ -71,6 +77,11 @@ func (e *Engine) pruneCommandWritten(live map[string]bool) {
 	for key := range e.commandWritten {
 		if !live[key] {
 			delete(e.commandWritten, key)
+		}
+	}
+	for key := range e.nativeUnknown {
+		if !live[key] {
+			delete(e.nativeUnknown, key)
 		}
 	}
 }

@@ -1031,7 +1031,37 @@ mail, and `none` suppresses mail wakes. Generated updates never qualify solely
 because the phase is `all`. Suppressed mail remains available to natural
 activations and authenticated pulls.
 
-**Native queue admission.** A pending Dibs notice of any canonical mail-event
+**Owned ChatGPT app input.** For an app-owned agent on the canonical local
+`codex queue --thread {thread} --message {message}` route, first contact the
+existing app's private IPC socket. Owner discovery and an owner-targeted state
+snapshot select one native input: start an idle thread, steer a running turn.
+No queue command, queue observer, retained queue receipt or app opener runs on
+this path. Every admitted arrival is offered immediately, bypassing the 200 ms
+batch and inferred queue/in-flight holds. The app owns turn admission.
+The factual private notice names event type and sender, never a message body;
+command argv stays name-free. Recheck the original owed items and recipient
+incarnation/session immediately before writing. Already handled work is settled
+without an input. A matching app reply confirms input acceptance, never mailbox
+consumption. A changed protocol, disconnect or unknown reply fails explicitly,
+without a queue fallback or automatic failure retry. Native input is not MCP;
+Dibs still serves the agent's mail through MCP, including stateless 2026 calls.
+
+The same path applies to local app-restart recovery. Owner probes run together,
+so a cold candidate does not delay another candidate's owned-thread input.
+Remote bridges advertise `com.dibs/native_app_delivery: true` on their wake
+subscription; only that additive declaration removes the old hub in-flight
+hold. The bridge uses `/api/wake-owed` with the existing board credential just
+before input; only its pending request and stated host qualify. Old bridges
+keep their existing route. This read neither marks mail delivered nor confirms
+socket outcomes. See SECURITY.md and docs/NATIVE-APP-DELIVERY.md for boundaries.
+
+Only an absent app socket or the router's explicit `no-client-found` permits
+the existing cold queue and open route below. Its receipt says **thread not
+loaded in the app; queued until opened**, and never claims native delivery.
+There is no externally exposed cold-load interface measured here. Opening a
+cold chat can still navigate the app; the owned-thread path makes no open call.
+
+**Cold native queue admission.** A pending Dibs notice of any canonical mail-event
 kind coalesces later notices. The native runner serializes observation, enqueue
 and retained receipt with a private per-thread OS file lock shared by daemon
 and bridge processes using that board directory. Queue fallbacks use the same
@@ -1046,7 +1076,11 @@ notice wins over those inferred causes. ChatGPT opening follows the separately
 bounded prompt background policy. No queue item is deleted and no coordination state is changed.
 
 Board rows (including compact `check_in`) and agent `send` receipts expose
-`queue_wake` for a configured local ChatGPT queue route. This derived view holds
+`queue_wake` for a configured local ChatGPT queue route. `native_delivery`
+adds started, steered, settled, unknown or queued_unloaded; native input uses
+`admission: not_queued` and `pending: not_applicable`. These are the last
+adapter outcome, not a receipt for a later send. Native success confirms app
+input only. Cold accepted/retained queue outcomes confirm queue admission only. This derived view holds
 the last adapter observation, never a fresh read: `admission` is accepted,
 retained, failed, not_attempted or unconfirmed; `pending` is pending or unknown.
 `observed_at` and `observation_age_seconds` date that observation. When known,
@@ -1055,8 +1089,8 @@ from this command's local admission. An unavailable probe may expose
 `retained_receipt_at` and `receipt_age_seconds`, dating only the retained fallback
 receipt, with notice age unknown; legacy notice age also stays unknown.
 `thread_state` is unknown because the supported queue list interface does not
-report the app's running turn. Queue admission, turn start and mail consumption
-are distinct; this view confirms neither of the latter. No thread or item ID is
+report the app's running turn. Queue admission, native input and mail consumption
+are distinct; a queue observation confirms neither of the latter. No thread or item ID is
 published, no private harness database is read, and reads add no probes. Session
 rebinding or loss of this rebuildable cache returns the view to unknown.
 

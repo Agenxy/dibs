@@ -30,6 +30,7 @@ func registerWakeAPI(mux *http.ServeMux, eng *engine.Engine, secret string) {
 		scheme, token, found := strings.Cut(r.Header.Get("Authorization"), " ")
 		return found && strings.EqualFold(scheme, "Bearer") && subtle.ConstantTimeCompare([]byte(token), []byte(secret)) == 1
 	}
+	registerNativeWakeFence(mux, eng, authed)
 	mux.HandleFunc("POST /api/wake-result", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")

@@ -25,6 +25,10 @@ func (e *Engine) coalesceEventWake(ev core.Event) {
 	if l == nil || !e.wakesFor(ev, l) {
 		return
 	}
+	if e.nativeAppRoute(l) {
+		e.maybeWake(ev)
+		return // the owning app admits each input; no Dibs arrival batch
+	}
 	if e.wakeBursts == nil {
 		e.wakeBursts = map[string]*wakeBurst{}
 	}

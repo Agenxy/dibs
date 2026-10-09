@@ -303,6 +303,7 @@ func (b *wakeBridge) listenBody() []byte {
 				mcp.HostMetaKey:          b.host,
 				mcp.WakeHarnessesMetaKey: b.harnesses(),
 				mcp.AwayOpenMetaKey:      2,
+				mcp.NativeAppMetaKey:     true,
 			},
 		},
 	})
@@ -417,7 +418,7 @@ func (b *wakeBridge) dispatch(ctx context.Context, wr engine.WakeRequest) {
 			slog.Warn("a wake request arrived twice; the second is ignored", "request", wr.ID)
 			return
 		}
-		if b.engaged(wr.ID, wr.Agent) {
+		if !b.nativeRoute(wr) && b.engaged(wr.ID, wr.Agent) {
 			<-b.slots
 			b.finish(wr.ID, "")
 			slog.Warn("wake refused: a command for this agent is still running here",
@@ -460,7 +461,9 @@ func (b *wakeBridge) refuse(res engine.WakeResult) {
 // serve runs one wake the hub decided on and reports how it went.
 func (b *wakeBridge) serve(ctx context.Context, wr engine.WakeRequest) {
 	res := engine.WakeResult{ID: wr.ID, Host: b.host}
-	res.OK, res.Detail = b.execute(wr)
+	var outcome wakeexec.NativeOutcome
+	res.OK, res.Detail, outcome = b.executeOutcome(wr)
+	res.NativeDelivery, res.NoRetry = outcome.Disposition, outcome.NoRetry
 	// The agent is free BEFORE the hub hears the outcome: a retry the hub
 	// sends on reading the report must not find the agent still engaged.
 	b.finish(wr.ID, wr.Agent)
@@ -472,7 +475,7 @@ func (b *wakeBridge) serve(ctx context.Context, wr engine.WakeRequest) {
 	if err := b.report(ctx, res); err != nil {
 		slog.Warn("the hub did not take the report", "request", wr.ID, "err", err)
 	}
-	if res.OK {
+	if res.OK && !outcome.OK {
 		b.showQueuedThread(wr)
 	}
 }
@@ -480,15 +483,20 @@ func (b *wakeBridge) serve(ctx context.Context, wr engine.WakeRequest) {
 // execute is the decision of what to run for one request, and the running
 // of it. Returns whether the wake ran, with the reason when it did not.
 func (b *wakeBridge) execute(wr engine.WakeRequest) (bool, string) {
+	ok, detail, _ := b.executeOutcome(wr)
+	return ok, detail
+}
+
+func (b *wakeBridge) executeOutcome(wr engine.WakeRequest) (bool, string, wakeexec.NativeOutcome) {
 	if wr.Host != b.host {
-		return false, "the request names host " + wr.Host + " and this bridge is " + b.host
+		return false, "the request names host " + wr.Host + " and this bridge is " + b.host, wakeexec.NativeOutcome{}
 	}
 	x, ok := b.routes[strings.ToLower(wr.Harness)]
 	if !ok {
-		return false, "this machine has no [wake.exec] entry for harness " + wr.Harness
+		return false, "this machine has no [wake.exec] entry for harness " + wr.Harness, wakeexec.NativeOutcome{}
 	}
 	if wr.Thread == "" {
-		return false, "no harness thread to resume"
+		return false, "no harness thread to resume", wakeexec.NativeOutcome{}
 	}
 	// COMPOSED HERE, NOT BY THE HUB, which is the same guarantee the fixed
 	// sentence used to give and does not need a fixed sentence to give it.
@@ -502,14 +510,28 @@ func (b *wakeBridge) execute(wr engine.WakeRequest) (bool, string) {
 			"request", wr.ID, "sent", wr.Notice)
 	}
 	f := wakeexec.Fields{Thread: wr.Thread, Agent: wr.Agent, From: wr.From, MsgType: wr.MsgType, Message: notice}
+	outcome, handled := wakeexec.TryNative(wr.Surface, f, f.Apply(x.Argv),
+		func() (string, error) { return b.nativeNotice(wr, f) })
+	if handled {
+		return outcome.OK, outcome.Detail, outcome
+	}
 	var fallback []string
 	if len(x.Fallback) > 0 {
 		fallback = f.Apply(x.Fallback)
 	}
 	if b.run(f.Apply(x.Argv), fallback, wr.Agent, wr.CWD, wakeexec.Timeout, wakeexec.Grace) {
-		return true, ""
+		if outcome.Disposition == "unloaded" {
+			return true, "thread not loaded in the app; queued until opened", outcome
+		}
+		return true, "", outcome
 	}
-	return false, "the wake command exited non-zero (the fallback too, when one is configured)"
+	return false, "the wake command exited non-zero (the fallback too, when one is configured)", outcome
+}
+
+func (b *wakeBridge) nativeRoute(wr engine.WakeRequest) bool {
+	x := b.routes[strings.ToLower(wr.Harness)]
+	f := wakeexec.Fields{Thread: wr.Thread, Message: wakeexec.Compose(wr.MsgType)}
+	return wakeexec.NativeEligible(wr.Surface, f, f.Apply(x.Argv))
 }
 
 // App visibility is independent of the command outcome already reported to the hub.

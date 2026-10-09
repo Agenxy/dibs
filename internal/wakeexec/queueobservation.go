@@ -11,6 +11,7 @@ import "time"
 // ReceiptAt dates only a retained fallback receipt, never the pending notice.
 // Legacy pending notices have unknown age. At dates the observation, not now.
 type QueueObservation struct {
+	Delivery  string // native started/steered/settled/unknown; never queue acceptance
 	Admission string
 	Pending   string
 	At        time.Time
