@@ -5,6 +5,7 @@ package main
 
 import (
 	"log/slog"
+	"strings"
 	"time"
 )
 
@@ -42,7 +43,18 @@ func (iw *inboxWatcher) flushWakeBatch(waker *selfWaker) {
 	if len(batch) == 0 || !waker.canReach() {
 		return
 	}
-	if err := waker.wake(batch[len(batch)-1].line); err != nil {
+	// Current servers refresh the authenticated owned cohort inside wake.
+	// Legacy digest-only servers cannot: retain each distinct supplied digest
+	// instead of advancing both cursors after writing only the last mailbox.
+	seen := map[string]bool{}
+	var lines []string
+	for _, arrival := range batch {
+		if !seen[arrival.line] {
+			seen[arrival.line] = true
+			lines = append(lines, arrival.line)
+		}
+	}
+	if err := waker.wake(strings.Join(lines, "\n")); err != nil {
 		slog.Debug("could not put a batched notice into this session; keeping its cursor", "err", err)
 		return
 	}

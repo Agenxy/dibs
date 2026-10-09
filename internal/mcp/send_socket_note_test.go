@@ -119,23 +119,6 @@ func TestSendSocketNoteReportsDecisionThroughMCP(t *testing.T) {
 			marker := "send-note-" + mode
 			sent := call("send", map[string]any{"token": sendToken, "to": "worker", "type": kind, "body": marker})
 			note, _ := sent["note"].(string)
-			if busy {
-				if !strings.Contains(note, "mid-turn") || !strings.Contains(note, "deferred until its Stop hook") ||
-					strings.Contains(note, "being handed") {
-					t.Errorf("busy send claimed an immediate wake: %v", sent)
-				}
-				noSendNoteFrame(t, wire)
-				got := call("hook_poll", map[string]any{"session_id": session, "event": "Stop", "strict_output": true})
-				if got["decision"] != "block" || !mentions(got, marker) {
-					t.Fatalf("busy authored mail did not arrive at Stop: %v", got)
-				}
-				again := call("hook_poll", map[string]any{"session_id": session, "event": "Stop", "strict_output": true})
-				if again["decision"] == "block" || again["reason"] != nil {
-					t.Fatalf("authored mail blocked Stop twice: %v", again)
-				}
-				noSendNoteFrame(t, wire)
-				return
-			}
 			if !strings.Contains(note, "best-effort notice") ||
 				(!strings.Contains(note, "being handed") && !strings.Contains(note, "already written")) {
 				t.Errorf("idle authored mail lost the wake-attempt wording: %v", sent)
@@ -166,21 +149,47 @@ func TestSendSocketNoteReportsDecisionThroughMCP(t *testing.T) {
 					t.Fatal("the actual socket writer did not report its completed write")
 				}
 			}
-			// Later authored mail in the same idle epoch joins the hook digest;
-			// it must not create another native frame without turn evidence.
+			// A later original item gets its own frame, even without turn evidence.
 			second := marker + "-second"
 			coalesced := call("send", map[string]any{"token": sendToken, "to": "worker", "type": kind, "body": second})
-			if !strings.Contains(fmt.Sprint(coalesced["note"]), "no additional socket frame") {
-				t.Fatalf("coalesced send claimed another wake: %v", coalesced)
+			if !strings.Contains(fmt.Sprint(coalesced["note"]), "being handed") {
+				t.Fatalf("new original item was refused: %v", coalesced)
 			}
-			noSendNoteFrame(t, wire)
+			select {
+			case frame := <-wire:
+				content := sendNoteFrameContent(t, frame)
+				if !strings.Contains(content, second) || strings.Contains(content, `"`+marker+`"`) {
+					t.Fatalf("fresh frame lost the new item or repeated the old one: %q", frame)
+				}
+			case <-time.After(3 * time.Second):
+				t.Fatal("fresh original item produced no second socket frame")
+			}
 			got := call("hook_poll", map[string]any{"session_id": session, "event": "Stop", "strict_output": true})
 			if got["decision"] != "block" || !mentions(got, marker) || !mentions(got, second) {
 				t.Fatalf("coalesced authored mail lost its Stop fallback: %v", got)
 			}
 			noSendNoteFrame(t, wire)
+			again := call("hook_poll", map[string]any{"session_id": session, "event": "Stop", "strict_output": true})
+			if again["decision"] == "block" || again["reason"] != nil {
+				t.Fatalf("authored mail blocked Stop twice: %v", again)
+			}
 		})
 	}
+}
+
+func sendNoteFrameContent(t *testing.T, frame string) string {
+	t.Helper()
+	var out []string
+	for _, line := range strings.Split(strings.TrimSpace(frame), "\n") {
+		var decoded struct{ Message struct{ Content string } }
+		if err := json.Unmarshal([]byte(line), &decoded); err != nil {
+			t.Fatal("setup: invalid actual socket JSON:", err)
+		}
+		if decoded.Message.Content != "" {
+			out = append(out, decoded.Message.Content)
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 func TestGeneratedProgressKeepsSocketAndStopQuietThroughMCP(t *testing.T) {

@@ -19,6 +19,9 @@ type wakeBurst struct {
 }
 
 func (e *Engine) coalesceEventWake(ev core.Event) {
+	if e.state == nil || e.ops == nil {
+		return // a decision-only fixture has no writer loop to run a batch
+	}
 	l := e.state.Agents[ev.To]
 	if l == nil || !e.wakesFor(ev, l) {
 		return

@@ -111,11 +111,16 @@ func exerciseNativeQueueRestart(t *testing.T, contact bool, hookAlias string) {
 		do(&core.Op{Kind: core.OpSendMessage, Token: asker["token"].(string), To: "worker", MsgType: core.MsgQuestion, Body: "queue test", OpID: id})
 		deadline := time.After(3 * time.Second)
 		for {
-			e.wakers.mu.Lock()
-			busy := e.wakers.running["worker"]
-			e.wakers.mu.Unlock()
-			_, err := os.Stat(filepath.Join(home, "pending.json"))
-			if !busy && err == nil {
+			r, err := e.query(ctx, func() core.Result {
+				e.wakers.mu.Lock()
+				defer e.wakers.mu.Unlock()
+				return core.Result{"batched": e.wakeBursts["worker"] != nil, "busy": e.wakers.running["worker"]}
+			})
+			if err != nil {
+				t.Fatal("setup: inspect actual pending arrival:", err)
+			}
+			_, err = os.Stat(filepath.Join(home, "pending.json"))
+			if r["busy"] == false && r["batched"] == false && err == nil {
 				return
 			}
 			select {
