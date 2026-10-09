@@ -18,8 +18,7 @@ import (
 // Until the agent reports it done (respond disposition "done"), it is an open
 // obligation and counts exactly like a declaration that says the agent is
 // working: a turn Dibs started that ends with one open is continued
-// (continuation.go), an agent that keeps stopping is woken again and then
-// reported stalled (stall.go), and the row lists what it owes. Part E of the
+// (continuation.go), and the row lists what it owes. Part E of the
 // design agreed with k7-dev (Dibs #1129): a worker that approved #1123 and
 // stopped looked exactly like one that had finished it.
 //
@@ -65,7 +64,7 @@ func (e *Engine) workSlotsOf(l *core.Agent, now time.Time) []core.Slot {
 			UpdatedSerial: m.Serial,
 		}
 		if park, ok := parkedBy(slots, m.Serial); ok {
-			owed.Waiting, owed.RecheckSec = park.Waiting, park.RecheckSec
+			owed.Waiting = park.Waiting
 			owed.UpdatedSerial = max(owed.UpdatedSerial, park.UpdatedSerial)
 		}
 		slots = append(slots, owed)
@@ -81,8 +80,8 @@ func (e *Engine) workSlotsOf(l *core.Agent, now time.Time) []core.Slot {
 // and its only way out was a "done" that would have been false. Reported by
 // k7-dev for request #2540. A declaration with `waiting` set and
 // `request:<serial>` (or `msg:<serial>`) in its refs now parks that request:
-// it inherits the wait and the recheck, and is left alone until either is
-// due. Linked explicitly, by the agent, because a wait on one thing is not a
+// it inherits the wait until an event arrives. Linked explicitly, by the
+// agent, because a wait on one thing is not a
 // wait on everything it owes.
 func parkedBy(slots []core.Slot, serial uint64) (core.Slot, bool) {
 	want := map[string]bool{

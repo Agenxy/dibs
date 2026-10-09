@@ -10,37 +10,22 @@ import (
 	"github.com/agenxy/dibs/internal/core"
 )
 
-// A turn that starts after a long idle must suppress the duplicate wake. The
-// starting hook deleted the earlier stop but recorded no liveness, so if the
-// last authenticated contact predated the cooldown, recentlyInTouch still read
-// the agent as idle and a question arriving before the model's first Dibs call
-// launched a wake against the thread that had just started. A start is contact.
-func TestAStartingHookAfterALongIdleSuppressesTheWake(t *testing.T) {
-	e := &Engine{}
-	st := core.NewState("t", core.DefaultLimits())
-	e.state = st
-	e.seen = map[string]time.Time{}
-	e.SetWakeCommands(map[string]WakeCommand{
-		"codex": {Argv: []string{"echo", "{thread}"}, Cooldown: 90 * time.Second},
-	})
-	a := bridgeAgent("idle", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
-	st.Agents = map[string]*core.Agent{"idle": a}
-
-	// Its last contact is well OUTSIDE the cooldown: a genuinely idle thread.
-	e.seen["idle"] = time.Now().Add(-10 * time.Minute)
-	// The harness says a turn ended, then a new one started.
-	e.noteTurnState(a, "", "Stop")
-	e.noteTurnState(a, "", "SessionStart")
-	// A question arrives before the model makes its first Dibs call this turn.
-	e.maybeWake(core.Event{
-		Type: "message.sent", To: "idle",
-		Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
-	})
-	if e.wakeSpent("idle") {
-		t.Error("a question right after SessionStart launched a wake against a thread that " +
-			"just started: deleting the stop was not enough, and the last call predated the " +
-			"cooldown, so the running thread read as idle")
+// A starting hook records current liveness. It cannot veto a new mail event:
+// the receiving harness decides how to deliver mail into an existing turn.
+func TestAStartingHookRecordsContactWithoutRefusingNewMail(t *testing.T) {
+	b := newContinuationBoard(t)
+	if _, err := b.e.HookPoll(b.ctx, contThread, "SessionStart", "", false, true); err != nil {
+		t.Fatal(err)
 	}
+	if _, err := b.e.query(b.ctx, func() core.Result {
+		if !b.e.recentlyInTouch(b.e.state.Agents["worker"]) {
+			t.Error("starting hook did not record contact")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	b.wake(t) // actual fresh mail, actual command success, no timer or later hook
 }
 
 // A late Stop from a thread the agent has LEFT must not overwrite the liveness
@@ -66,26 +51,23 @@ func TestALateStopFromAnOldThreadDoesNotMarkTheCurrentOneFinished(t *testing.T) 
 
 	// B checked in just now: it is running.
 	e.seen["mover"] = time.Now()
+	before := e.socketLifecycle(a, time.Now())
 	// A late Stop from the OLD thread A arrives.
 	e.noteTurnState(a, threadA, "Stop")
-	// Blocking mail for the agent must not now launch a second activation on B.
-	e.maybeWake(core.Event{
-		Type: "message.sent", To: "mover",
-		Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
-	})
-	if e.wakeSpent("mover") {
-		t.Error("a Stop from the thread the agent LEFT marked the current thread finished, " +
-			"and the next question launched a second activation on a thread that is running")
+	if ended, ok := e.turnEnded["mover"]; ok {
+		t.Fatal("late Stop ended the current thread", ended)
+	}
+	if e.socketLifecycle(a, time.Now()) != before {
+		t.Fatal("late Stop changed current lifecycle")
 	}
 
 	// A Stop from the CURRENT thread still ends the turn, so the fix does not
 	// blind the guard to real stops.
 	e.noteTurnState(a, threadB, "Stop")
-	e.maybeWake(core.Event{
-		Type: "message.sent", To: "mover",
-		Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker2"},
-	})
-	if !e.wakeSpent("mover") {
-		t.Error("a Stop from the CURRENT thread did not end the turn: blocking mail got no wake")
+	if _, ok := e.turnEnded["mover"]; !ok {
+		t.Fatal("current Stop did not end the turn")
+	}
+	if e.socketLifecycle(a, time.Now()) != "idle" {
+		t.Fatal("current Stop did not record idle")
 	}
 }

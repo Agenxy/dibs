@@ -273,6 +273,7 @@ func (e *Engine) appRestartPlan(l *core.Agent, thread string) (wakePlan, bool) {
 
 func (e *Engine) deliverAppRestart(ctx context.Context, epoch string, plans []wakePlan, interval time.Duration) {
 	for i, plan := range plans {
+		// Transitional queue/open pacing; removed with direct app delivery (71154).
 		if i > 0 {
 			timer := time.NewTimer(interval)
 			select {

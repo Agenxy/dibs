@@ -78,9 +78,8 @@ func TestSocketsOffSwitchesThePeerSocketRouteOff(t *testing.T) {
 	}
 }
 
-// R27-1, from the dispatcher's side: an adoption's event for a recovered
-// question is one the wake dispatcher acts on.
-func TestAnAdoptedQuestionReachesTheWakeDispatcher(t *testing.T) {
+// Adoption is a mail event, but a missing route must not create a timer.
+func TestAdoptionRouteMissDoesNotArmAPollingWake(t *testing.T) {
 	const sid = "ab2bdbe2-3bc9-4f7b-8a1f-a638093a6256"
 	e := New(core.NewState("test", core.DefaultLimits()), &memLedger{}, deadProber{})
 	e.state.Agents["heir"] = &core.Agent{
@@ -102,8 +101,7 @@ func TestAnAdoptedQuestionReachesTheWakeDispatcher(t *testing.T) {
 		e.wakers.deferred["heir"].Stop()
 	}
 	e.wakers.mu.Unlock()
-	if !armed {
-		t.Fatal("the adoption's event for a recovered question did nothing at the wake dispatcher: " +
-			"the heir is never told its recovered mail is waiting")
+	if armed {
+		t.Fatal("route refusal armed a timer without a failed delivery")
 	}
 }

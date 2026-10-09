@@ -1079,13 +1079,14 @@ type (
 		Departed  int           `json:"departed_unacked"`
 	}
 	boardView struct {
-		ConfiguredNames []configuredNameAddress `json:"configured_name_addresses,omitempty"`
-		Serial          uint64                  `json:"serial"`
-		Node            string                  `json:"node"`
-		HostID          string                  `json:"host_id"`
-		Agents          []boardAgent            `json:"agents"`
-		Claims          []boardClaim            `json:"claims"`
-		Spaces          []boardChannel          `json:"spaces"`
+		ContactAlerts   []contactAlertDiagnostic `json:"contact_alerts"`
+		ConfiguredNames []configuredNameAddress  `json:"configured_name_addresses,omitempty"`
+		Serial          uint64                   `json:"serial"`
+		Node            string                   `json:"node"`
+		HostID          string                   `json:"host_id"`
+		Agents          []boardAgent             `json:"agents"`
+		Claims          []boardClaim             `json:"claims"`
+		Spaces          []boardChannel           `json:"spaces"`
 	}
 )
 

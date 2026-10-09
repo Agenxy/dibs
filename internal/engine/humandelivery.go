@@ -190,6 +190,11 @@ func (e *Engine) askHumanDesktop(n HumanNotice, ask func(humanask.Message) (huma
 
 func (e *Engine) recordDesktopDelivery(serial uint64, state, failure string) {
 	e.recordHumanReceipt(serial, "desktop", notify.ReceiptData{State: state}, failure)
+	if state == "failed" {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_, _ = e.query(ctx, func() core.Result { e.contactDeliveryFailed(serial, failure); return nil })
+	}
 }
 
 func (e *Engine) recordHumanReceipt(serial uint64, source string, data notify.ReceiptData, failure string) bool {
@@ -341,6 +346,9 @@ func (e *Engine) recordContactReceipt(serial uint64, source string, data notify.
 		return fmt.Errorf("notification receipt source limit reached (64)")
 	}
 	if data.State != "posted" {
+		if data.State == "failed" {
+			e.contactDeliveryFailed(serial, failure)
+		}
 		return nil
 	}
 	e.contactPostedDecision(serial, time.Now())

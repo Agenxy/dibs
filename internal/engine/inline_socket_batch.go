@@ -31,11 +31,10 @@ func (e *Engine) socketBatchPresentation(
 			continue
 		}
 		announced, announcementKeys := e.dueAnnouncements(a.ID, now)
-		_, work := e.dueSocketWaits(a, now)
 		offer := socketOffer{
 			canConfirm: e.socketLifecycle(a, now) == "idle",
 			mail:       e.wakeKeys(a.ID, now), announcements: announcementKeys,
-			notices: e.dueNoticeKeys(a.ID, now), work: work, backoff: e.socketBackoff[a.ID],
+			notices: e.dueNoticeKeys(a.ID, now),
 		}
 		for _, key := range offer.notices {
 			wanted[key] = true
@@ -55,9 +54,6 @@ func (e *Engine) socketBatchPresentation(
 		text := ""
 		if len(member.mail)+len(member.announced)+len(notices) > 0 {
 			text = strings.TrimRight(hookDigest(e.agentName(a.ID), member.mail, member.announced, notices), "\n")
-		}
-		if work := e.socketWorkDigest(a, now); work != "" {
-			text = strings.TrimSpace(text + "\n" + work)
 		}
 		// Every authenticated participant owns the shared reservation, even
 		// the requester whose own mailbox currently has no presentation. Its

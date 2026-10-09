@@ -66,12 +66,9 @@ func TestAnEmptyOrTruncatedReplyIsStillAnswered(t *testing.T) {
 	}
 }
 
-// The in-place upgrade delivered the notice the old image owed through a
-// waker of its own, beside the one the restored streams write through, so a
-// notification arriving during the restore put two interruptions into the
-// session at once. The owed notice goes through the watcher's waker and
-// shares its cooldown.
-func TestARestoredPendingWakeSharesTheSessionCooldown(t *testing.T) {
+// Upgrade recovery and newly arriving mail share the writer, and both deliver
+// immediately. Neither successful write leaves a timer behind.
+func TestARestoredPendingWakeAndNewMailDeliverImmediately(t *testing.T) {
 	sock := sockPath(t)
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", sock)
 	t.Setenv("CLAUDE_CODE_MESSAGING_TOKEN", "child-token")
@@ -109,14 +106,11 @@ func TestARestoredPendingWakeSharesTheSessionCooldown(t *testing.T) {
 	var streams sync.WaitGroup
 	out := &syncWriter{w: bufio.NewWriter(io.Discard)}
 	restoreCarried(ctx, srv.Client(), srv.URL, "secret", out, &streams, &iw, true, shipTiming{})
-	// One notice at once: the owed one and the arriving one share a cooldown.
-	if got := collect(lines, 4, 400*time.Millisecond); len(got) != 2 {
-		t.Fatalf("the restore put %d line(s) into the session at once, want 2: the owed notice and "+
-			"the arriving one went through two wakers", len(got))
+	if got := collect(lines, 4, 400*time.Millisecond); len(got) != 4 {
+		t.Fatalf("upgrade recovery delayed or lost a notice: %d line(s)", len(got))
 	}
-	// And the second is not dropped: it follows when the cooldown ends.
-	if got := collect(lines, 2, 3*time.Second); len(got) != 2 {
-		t.Fatalf("after the cooldown %d line(s) arrived, want 2", len(got))
+	if got := collect(lines, 1, 2*iw.cooldown); len(got) != 0 {
+		t.Fatalf("successful recovery repeated on a timer: %d line(s)", len(got))
 	}
 }
 

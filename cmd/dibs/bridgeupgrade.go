@@ -79,8 +79,9 @@ type bridgeState struct {
 	// and mail that arrived in the gap woke nobody. Found by the pre-release
 	// review, round fourteen.
 	WakeSince uint64 `json:"wake_since,omitempty"`
-	// WakePending says a notice was owed and deferred to the cooldown when
-	// the image was replaced. The timer dies with the old process and the
+	// WakePending carries a failed delivery awaiting its one retry, or a
+	// legacy successful-delivery deferral from an older image. Historically,
+	// a replacement lost that timer. The timer dies with the old process and the
 	// cursor had already passed the event, so the next image put nothing
 	// into the session and the reconnect replayed nothing: outstanding mail
 	// unnoticed for as long as nothing else arrived. The next image delivers
@@ -216,7 +217,8 @@ func (a selfIdentity) differs(b selfIdentity) bool {
 }
 
 // deliverOwedNotice puts into the session the notice the old image owed
-// and died before its cooldown timer fired; the cursor has passed the
+// before replacement. This includes an older image's cooldown deferral;
+// successful writes no longer arm timers. The cursor may have passed the
 // event. THROUGH THE WATCHER'S WAKER: a waker of its own here stood beside
 // the one the restored streams write through, and a notification arriving
 // during the restore put two interruptions into the session at once. Found

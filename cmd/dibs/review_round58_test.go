@@ -13,12 +13,8 @@ import (
 	"time"
 )
 
-// The cooldown is a promise about the session's socket, not about a
-// mailbox: each stream had a waker of its own, so two mailboxes receiving
-// questions produced two immediate interruptions microseconds apart. Every
-// stream writes through the one waker, and a second arrival inside the
-// cooldown is deferred to its end.
-func TestTwoMailboxesShareOneSessionCooldown(t *testing.T) {
+// Both mailboxes use the same socket writer, without a successful-write timer.
+func TestTwoMailboxesDeliverImmediatelyThroughOneSessionWriter(t *testing.T) {
 	sock := sockPath(t)
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", sock)
 	t.Setenv("CLAUDE_CODE_MESSAGING_TOKEN", "child-token")
@@ -53,14 +49,11 @@ func TestTwoMailboxesShareOneSessionCooldown(t *testing.T) {
 	iw := inboxWatcher{cooldown: 700 * time.Millisecond}
 	iw.startFor(ctx, srv.Client(), srv.URL, "secret", "first", "tok-first", 0)
 	iw.startFor(ctx, srv.Client(), srv.URL, "secret", "second", "tok-second", 0)
-	// One notice at once: two lines, the auth line and the notice.
 	got := collect(lines, 4, 400*time.Millisecond)
-	if len(got) != 2 {
-		t.Fatalf("two mailboxes with a question each put %d line(s) into the session at once, want 2: "+
-			"two interruptions inside one cooldown", len(got))
+	if len(got) != 4 {
+		t.Fatalf("two mailboxes did not deliver both notices immediately: %d line(s)", len(got))
 	}
-	// The second is not dropped: it follows when the cooldown ends.
-	if got := collect(lines, 2, 3*time.Second); len(got) != 2 {
-		t.Fatalf("the second mailbox's notice never followed the cooldown: %d line(s)", len(got))
+	if got := collect(lines, 1, 2*iw.cooldown); len(got) != 0 {
+		t.Fatalf("successful notices repeated on a timer: %d line(s)", len(got))
 	}
 }

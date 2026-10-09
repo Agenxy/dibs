@@ -4,31 +4,18 @@
 package engine
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
 )
 
-// Mail arriving while an agent is "recently in touch" is not thrown away.
-//
-// maybeWake short-circuits when the recipient called Dibs inside the wake
-// cooldown, on the reasoning that it "is genuinely working and will see this at
-// its own turn boundary". That is true only where a turn boundary REACHES Dibs.
-// An agent whose harness sends no lifecycle hooks has none: nothing ever marks
-// its turn ended, recency decays into silence, and because maybeWake fires once
-// per event with nothing retrying, the message's only delivery attempt is spent
-// on the assumption.
-//
-// Measured on a live board. A question went to an active codex agent 40 seconds
-// after its last call, inside the 90-second window. No wake was attempted then
-// or ever, and the daemon's log showed that harness had never delivered a single
-// lifecycle hook: it runs under the desktop app, which does not read the CLI's
-// hooks file. Every Codex desktop agent on that board was in the same position.
-//
-// So the window has to defer rather than decide. This asserts the timer is
-// armed, which is the whole difference between "delivered late" and "never".
-func TestRecentContactDefersTheWakeRatherThanDroppingIt(t *testing.T) {
+// Recent activity cannot schedule a wake. Delivery is event-driven; only an
+// actual failed delivery may arm its one bounded retry.
+func TestRecentContactNeverArmsAWakeTimer(t *testing.T) {
 	st := core.NewState("test", core.DefaultLimits())
 	e := New(st, &memLedger{}, deadProber{})
 	e.SetWakeCommands(map[string]WakeCommand{
@@ -56,22 +43,14 @@ func TestRecentContactDefersTheWakeRatherThanDroppingIt(t *testing.T) {
 	e.wakers.mu.Lock()
 	timer := e.wakers.deferred["busy"]
 	e.wakers.mu.Unlock()
-	if timer == nil {
-		t.Error("no re-check was armed. maybeWake fires once per event and nothing " +
-			"else retries, so this message's only delivery attempt was spent on the " +
-			"assumption that a turn boundary will carry it. For a harness that " +
-			"sends no lifecycle hooks there is no turn boundary, and the mail is " +
-			"never delivered by anything")
+	if timer != nil {
+		timer.Stop()
+		t.Error("recent contact armed a timer without a failed delivery")
 	}
 }
 
-// And the re-check re-arms while somebody is still blocked.
-//
-// Deferring once only moves the failure one window later: an agent that called
-// Dibs again in the meantime consumes the retry and the message is stranded
-// exactly as before. The loop ends when the mail does, not when the agent
-// happens to be idle at the right instant.
-func TestTheRecheckReArmsWhileTheAgentStaysBusy(t *testing.T) {
+// Reconsideration during activity also delivers without polling.
+func TestBusyReconsiderationNeverArmsAWakeTimer(t *testing.T) {
 	st := core.NewState("test", core.DefaultLimits())
 	e := New(st, &memLedger{}, deadProber{})
 	e.SetWakeCommands(map[string]WakeCommand{
@@ -110,10 +89,75 @@ func TestTheRecheckReArmsWhileTheAgentStaysBusy(t *testing.T) {
 	e.wakers.mu.Lock()
 	timer := e.wakers.deferred["busy"]
 	e.wakers.mu.Unlock()
-	if timer == nil {
-		t.Error("the re-check gave up while a question was still unanswered. One " +
-			"deferral only moves the loss one window later: the agent called Dibs " +
-			"again, consumed the retry, and the message is stranded exactly as it " +
-			"was before")
+	if timer != nil {
+		timer.Stop()
+		t.Error("busy reconsideration armed a timer without a failed delivery")
+	}
+}
+
+// Drive register, check_in and send through the writer. No Stop hook, later
+// message or reconnect is allowed to rescue the original question.
+func TestQuestionThirtySecondsAfterCheckInDeliversWithoutAnotherEvent(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	out := filepath.Join(t.TempDir(), "delivery")
+	e.SetWakeCommands(map[string]WakeCommand{
+		"codex": {Argv: []string{os.Args[0], "-test.run=^TestRecentContactCommandHelper$", "--", out}, Cooldown: 90 * time.Second},
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	joined := make(chan struct{})
+	go func() { e.Run(ctx); close(joined) }()
+	t.Cleanup(func() { cancel(); <-joined })
+	register := func(name string, agent *core.AgentInfo, session string) string {
+		r, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: name, Nonce: "recent-" + name, AgentKind: core.KindPersistent, Agent: agent, SessionID: session})
+		if err != nil {
+			t.Fatal("setup register:", err)
+		}
+		tok, _ := r["token"].(string)
+		if tok == "" {
+			t.Fatal("setup: missing credential", r)
+		}
+		return tok
+	}
+	recipient := register("worker", &core.AgentInfo{Harness: "Codex"}, "01a0696b-8446-7821-a992-9dc7f6a43a25")
+	sender := register("asker", nil, "")
+	if _, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: recipient}); err != nil {
+		t.Fatal("setup check_in:", err)
+	}
+	<-time.After(30 * time.Second)
+	if _, err := e.query(ctx, func() core.Result {
+		if !e.recentlyInTouch(st.Agents["worker"]) {
+			t.Error("setup: actual check_in did not establish recent contact")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Do(ctx, &core.Op{Kind: core.OpSendMessage, Token: sender, To: "worker", MsgType: core.MsgQuestion, Body: "original question"}); err != nil {
+		t.Fatal("setup send:", err)
+	}
+	deadline := time.After(3 * time.Second)
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if b, err := os.ReadFile(out); err == nil && string(b) == "delivered" {
+			return
+		}
+		select {
+		case <-ticker.C:
+		case <-deadline:
+			t.Fatal("question arriving 30s after check_in was stranded without another event")
+		}
+	}
+}
+
+func TestRecentContactCommandHelper(t *testing.T) {
+	for i, arg := range os.Args {
+		if arg == "--" && i+1 < len(os.Args) {
+			if err := os.WriteFile(os.Args[i+1], []byte("delivered"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			return
+		}
 	}
 }

@@ -38,7 +38,7 @@ func queueNoticeAt(argv []string, at time.Time) []string {
 func legacyWakeKind(text string) (string, bool) {
 	kinds := []string{
 		"", core.MsgNotify, core.MsgQuestion, core.MsgRequest, core.MsgHandoff,
-		"notice", KindContinuation, KindRecheck, KindAppRestart,
+		"notice", KindAppRestart,
 	}
 	for _, kind := range kinds {
 		if text == Compose(kind) {

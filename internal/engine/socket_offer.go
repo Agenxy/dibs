@@ -25,8 +25,6 @@ type socketOffer struct {
 	canConfirm          bool
 	mail, announcements []string
 	notices             []string
-	work                []socketWorkKey
-	backoff             socketBackoff
 	outcomes            map[uint64]uint64 // only the fully quoted prefix in this offer
 }
 
@@ -80,11 +78,7 @@ func (e *Engine) settleSocketOffer(agent, session, id string, written bool) {
 		if l != nil && e.socketEpochs[socketSessionKey(l)].id == id {
 			delete(e.socketEpochs, socketSessionKey(l))
 		}
-		for who, other := range e.socketOffers {
-			if other.id == id {
-				delete(e.socketOffers, who)
-			}
-		}
+		e.releaseSocketOffer(id, written)
 		return
 	}
 	key := socketSessionKey(l)
@@ -108,7 +102,6 @@ func (e *Engine) settleSocketParticipant(who, key string, offer socketOffer) {
 	}
 	offer.written = true
 	e.socketOffers[who] = offer
-	e.markSocketWork(row, offer.work, offer.backoff, time.Now(), true)
 	if e.seen[who].After(offer.at) {
 		e.confirmSocketOffer(row, e.seen[who])
 	}
@@ -219,6 +212,7 @@ func (e *Engine) markNoticePresentation(keys []string, now time.Time) {
 
 func (e *Engine) forgetPresentation(agent string) {
 	delete(e.socketOffers, agent)
+	delete(e.socketFailedOffers, agent)
 	for key := range e.noticePresented {
 		if strings.HasPrefix(key, agent+"\x00") {
 			delete(e.noticePresented, key)
@@ -252,6 +246,14 @@ func (e *Engine) SocketOfferFor(ctx context.Context, token, session, id string, 
 func (e *Engine) SocketOffersFor(
 	ctx context.Context, tokens []string, session, id string, written bool,
 ) (core.Result, error) {
+	return e.SocketOffersRetryFor(ctx, tokens, session, id, written, "")
+}
+
+// SocketOffersRetryFor only reoffers a failed cohort while one of its original
+// presentation identifiers remains outstanding for an authenticated participant.
+func (e *Engine) SocketOffersRetryFor(
+	ctx context.Context, tokens []string, session, id string, written bool, retry string,
+) (core.Result, error) {
 	res, err := e.query(ctx, func() core.Result {
 		agents := e.socketAuthorizedParticipants(tokens, session)
 		if len(agents) == 0 {
@@ -264,6 +266,9 @@ func (e *Engine) SocketOffersFor(
 			for _, l := range agents {
 				e.settleSocketOffer(l.ID, session, id, written)
 			}
+			return core.Result{"digest": ""}
+		}
+		if retry != "" && !e.failedOfferOutstanding(agents, session, retry) {
 			return core.Result{"digest": ""}
 		}
 		return e.beginSocketOffers(agents, session)

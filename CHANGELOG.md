@@ -8,7 +8,28 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Pin Go 1.26.9 across builds and releases to fix the reachable standard-library
   vulnerabilities reported by the full gate. Update the direct-build guidance
   and bundled Go notice to the same patch.
+- Remove timer-driven declared rechecks, 10/30/60-minute stall wakes and their
+  assigner notices. Any `recheck_after` argument is refused with a corrective
+  hint; old `recheck_sec` ledger records still replay unchanged. The board shows
+  wall-time declaration age and derives `stalled` on read without waking anyone.
+  Mail, restart/reconnect and bounded Stop continuation remain; scheduled wake
+  retries are limited to one failed delivery with the same outstanding cause.
+  Mail arriving during a wake command is reconsidered at its exit without a
+  cooldown timer. Bridge mail events write immediately; failed socket retries
+  require an authenticated original offer. A gone socket surrenders immediately
+  without a bridge retry, explicitly releases its authenticated stream claims
+  and hands the original owed mail to the daemon. Replayed subscription serials
+  retain their original attempt budget across reconnects. Recent model contact
+  no longer refuses a new mail event. Twice-failed human contact posts show their
+  reason on the board and in `dibs doctor`.
+
 - Releases up to and including v0.0.13 remain Apache-2.0; GPL-3.0-or-later applies from the next release, with commercial licensing available from Agenxy for Agenxy-authored portions.
+
+### Fixed
+
+- A bridge that handed a vanished session socket back to the daemon could still
+  write to it later, producing duplicate notices. Surrender now disarms that
+  bridge's retry before a recovered socket can be reached.
 
 ## [0.0.14] - 2026-10-06
 

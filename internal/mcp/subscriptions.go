@@ -373,7 +373,8 @@ func (s *Server) selfWakeRoute(
 		return nil, func() {}
 	}
 	session, _ := p.Meta[SessionMetaKey].(string)
-	release := s.eng.AttachSelfWaker(agentID, session)
+	claim, _ := p.Meta[SelfWakeClaimMetaKey].(string)
+	release := s.eng.AttachSelfWakerClaim(agentID, session, claim)
 	return func(ev core.Event) string {
 		from, _ := ev.Data["from"].(string)
 		kind, _ := ev.Data["msg_type"].(string)

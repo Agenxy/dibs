@@ -4,8 +4,12 @@
 package engine
 
 import (
+	"context"
 	"strings"
 	"sync"
+	"time"
+
+	"github.com/agenxy/dibs/internal/core"
 )
 
 // Who is going to wake themselves, so this daemon does not do it too.
@@ -45,12 +49,21 @@ type selfWakers struct {
 	// sessions is the harness session each agent's self-waking bridge named,
 	// for the refusal log. Not used to decide: see SelfWaking.
 	sessions map[string]string
+	claims   map[string]*selfWakeClaim
+	closed   map[string]selfWakeClaim // at most the last closed named route per agent
 }
 
 // AttachSelfWaker records that an agent's own bridge will put wake notices
 // into the session it is running in, and returns the release for when that
 // subscription ends. A blank agent registers nothing.
 func (e *Engine) AttachSelfWaker(agentID, session string) func() {
+	return e.AttachSelfWakerClaim(agentID, session, "")
+}
+
+// AttachSelfWakerClaim adds a named route; legacy bridges retain their
+// stream-lifetime claim.
+// A release of an old stream never clears a newer bridge route.
+func (e *Engine) AttachSelfWakerClaim(agentID, session, claim string) func() {
 	agentID = strings.TrimSpace(agentID)
 	if agentID == "" {
 		return func() {}
@@ -65,20 +78,24 @@ func (e *Engine) AttachSelfWaker(agentID, session string) func() {
 	if session != "" {
 		sw.sessions[agentID] = session
 	}
+	var named *selfWakeClaim
+	key := agentID + "\x00" + claim
+	if claim != "" {
+		if sw.claims == nil {
+			sw.claims = map[string]*selfWakeClaim{}
+			sw.closed = map[string]selfWakeClaim{}
+		}
+		named = sw.claims[key]
+		if named == nil {
+			named = &selfWakeClaim{session: session, id: claim}
+			sw.claims[key] = named
+		}
+		named.count++
+		delete(sw.closed, agentID)
+	}
 	sw.mu.Unlock()
 	var once sync.Once
-	return func() {
-		once.Do(func() {
-			sw.mu.Lock()
-			defer sw.mu.Unlock()
-			if sw.live[agentID] <= 1 {
-				delete(sw.live, agentID)
-				delete(sw.sessions, agentID)
-				return
-			}
-			sw.live[agentID]--
-		})
-	}
+	return func() { once.Do(func() { sw.detach(agentID, key, named) }) }
 }
 
 // SelfWaking reports whether this agent has a live bridge that will deliver
@@ -96,4 +113,120 @@ func (e *Engine) SelfWaking(agentID string) (bool, string) {
 	sw.mu.Lock()
 	defer sw.mu.Unlock()
 	return sw.live[agentID] > 0, sw.sessions[agentID]
+}
+
+type selfWakeClaim struct {
+	session, id string
+	count       int
+	released    bool
+}
+
+func (sw *selfWakers) releaseNamed(agent, session, id string) bool {
+	sw.mu.Lock()
+	defer sw.mu.Unlock()
+	key := agent + "\x00" + id
+	named := sw.claims[key]
+	if named == nil {
+		old, ok := sw.closed[agent]
+		if !ok || old.id != id || old.session != session || old.released {
+			return false
+		}
+		old.released = true
+		sw.closed[agent] = old
+		return true
+	}
+	if named.session != session {
+		return false
+	}
+	delete(sw.claims, key)
+	named.released = true
+	sw.closed[agent] = *named
+	sw.live[agent] -= named.count
+	if sw.live[agent] <= 0 {
+		delete(sw.live, agent)
+		delete(sw.sessions, agent)
+	}
+	return true
+}
+
+// ReleaseSelfWakerFor surrenders only the caller's current-session claim. This is
+// background observation: it neither marks mail delivered nor confirms an offer.
+// Probe off the writer, then reconsider the original owed mail at this event.
+func (e *Engine) ReleaseSelfWakerFor(ctx context.Context, token, session, claim string) error {
+	res, err := e.query(ctx, func() core.Result {
+		l := e.state.AgentByToken(token)
+		if l == nil {
+			return core.Result{"error": core.ErrBadToken}
+		}
+		if !l.SessionIsCurrent(session) || claim == "" {
+			return nil
+		}
+		if !e.selfWakers.releaseNamed(l.ID, session, claim) {
+			return nil
+		}
+		return core.Result{"agent": l.ID}
+	})
+	if err != nil {
+		return err
+	}
+	if refused, ok := res["error"].(error); ok {
+		return refused
+	}
+	agent, _ := res["agent"].(string)
+	if agent == "" {
+		return nil
+	}
+	e.peers.mu.Lock()
+	e.peers.at = time.Time{}
+	e.peers.mu.Unlock()
+	e.primePeerSessions()
+	_, err = e.query(ctx, func() core.Result {
+		l := e.state.AgentByToken(token)
+		if l == nil || l.ID != agent || !l.SessionIsCurrent(session) {
+			return nil
+		}
+		if own, _ := e.SelfWaking(agent); own {
+			return nil
+		}
+		e.wakers.mu.Lock()
+		delete(e.wakers.last, agent)
+		e.wakers.mu.Unlock()
+		if !e.noteArrivalDuringWake(agent) {
+			e.retryWakeDecision(agent)
+		}
+		return nil
+	})
+	return err
+}
+
+func (sw *selfWakers) detach(agent, key string, named *selfWakeClaim) {
+	sw.mu.Lock()
+	defer sw.mu.Unlock()
+	if named != nil {
+		if sw.claims[key] != named {
+			return
+		} // explicit surrender cannot clear a newer route
+		named.count--
+		if named.count == 0 {
+			delete(sw.claims, key)
+			sw.closed[agent] = *named
+		}
+	}
+	if sw.live[agent] <= 1 {
+		delete(sw.live, agent)
+		delete(sw.sessions, agent)
+		return
+	}
+	sw.live[agent]--
+}
+
+func (e *Engine) pruneClosedSelfWakers() {
+	sw := &e.selfWakers
+	sw.mu.Lock()
+	defer sw.mu.Unlock()
+	for agent := range sw.closed {
+		if l := e.state.Agents[agent]; l == nil || l.Retired() {
+			delete(sw.closed, agent)
+		}
+	}
 }

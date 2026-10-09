@@ -282,10 +282,8 @@ type Slot struct {
 	// "ci"), as opposed to in progress. The difference decides whether an
 	// agent that stops holding it has stalled: a turn that ends on work in
 	// progress left that work undone, and one that ends while waiting did
-	// what it could. RecheckSec is when to look again, for a wait that no
-	// message will end (CI finishing); zero means the thing waited on will
-	// say so itself. Empty for every declaration made before this existed,
-	// which reads as in progress: the meaning a declaration always had.
+	// what it could. RecheckSec is retained only for old ledger replay;
+	// the daemon never schedules wakes from it.
 	Waiting       string `json:"waiting,omitempty"`
 	RecheckSec    int    `json:"recheck_sec,omitempty"`
 	UpdatedSerial uint64 `json:"updated_serial"`

@@ -49,6 +49,15 @@ func TestAppReconnectRecoversMailBeforeAModelCall(t *testing.T) {
 	}
 }
 
+// Regression guard for timer removal: production startup discovery, native
+// app ancestry and real stdio bridges must still poke stranded mail on reconnect.
+func TestTimerRemovalKeepsAppReconnectPoke(t *testing.T) {
+	if testing.Short() {
+		t.Skip("subprocess reconnect contract")
+	}
+	appReconnectContract(t, true, false, false)
+}
+
 type reconnectBridge struct {
 	cmd *exec.Cmd
 	in  io.WriteCloser

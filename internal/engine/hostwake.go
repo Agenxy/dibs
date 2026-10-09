@@ -19,7 +19,7 @@ import (
 //
 // The hub decides THAT an agent should be woken; the agent's own machine
 // decides HOW (docs/NETWORK.md §5, WAKE-MECHANISMS.md §5a). Every decision in
-// waker.go, the cooldown, the deferral, the recency window, the attempt count
+// waker.go, the cooldown, the failure-only retry, the recency window, the attempt count
 // and the exit re-check, was paid for by a defect, and none of it depends on
 // where the command runs. So the split is at execution alone: a remote agent
 // gets a wakePlan with no argv and a host, runWake hands that plan to the
@@ -216,7 +216,7 @@ func (e *Engine) rearmHostWakes(host string) {
 			if l.Retired() || e.remoteHostOf(l) != host || !e.hasBlockingMail(id) {
 				continue
 			}
-			e.deferWakeLocked(id, bootRetryDelay)
+			e.retryWakeDecision(id)
 		}
 		return core.Result{}
 	})

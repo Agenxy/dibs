@@ -10,12 +10,14 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 )
 
-// A wake that failed keeps its notification: the cursor does not pass it, so
-// a reconnect replays it.
+// An ambiguous failed wake keeps its delivery cursor. Reconnect replays the
+// serial without spending another first attempt; a gone socket hands off instead.
 func TestAFailedWakeKeepsItsNotification(t *testing.T) {
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", "/nonexistent/but/present.sock")
 	t.Setenv("CLAUDE_CODE_MESSAGING_TOKEN", "child-token")
@@ -36,6 +38,19 @@ func TestAFailedWakeKeepsItsNotification(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	w := inboxWatcher{reconnect: 50 * time.Millisecond}
+	waker := w.sharedWaker()
+	if waker == nil {
+		t.Fatal("setup: no own-session writer")
+	}
+	waker.deliverFn = func(string) error { return syscall.ETIMEDOUT }
+	t.Cleanup(func() {
+		waker.mu.Lock()
+		if waker.timer != nil {
+			waker.timer.Stop()
+		}
+		waker.mu.Unlock()
+		recordWakePending(false, "")
+	})
 	w.start(ctx, srv.Client(), srv.URL, "local-secret", "agent-token")
 	<-bodies
 	select {
@@ -51,15 +66,22 @@ func TestAFailedWakeKeepsItsNotification(t *testing.T) {
 	}
 }
 
-// A wake that failed is retried on its own once the cooldown passes, so a
-// socket that comes back gets the notice without another arrival.
+// An ambiguous failed write retries once without another arrival. A gone
+// socket instead surrenders immediately, covered by the recovered-socket guard.
 func TestAFailedWakeIsRetriedWhenTheSocketReturns(t *testing.T) {
 	sock := sockPath(t)
-	w := &selfWaker{socket: sock, token: "tok", cooldown: 200 * time.Millisecond}
-	if err := w.wake(testWakeNotice); err == nil {
-		t.Fatal("setup: a wake with nobody listening reported success")
-	}
 	lines := listenLines(t, sock)
+	w := &selfWaker{socket: sock, token: "tok", cooldown: 200 * time.Millisecond}
+	var attempts atomic.Int32
+	w.deliverFn = func(notice string) error {
+		if attempts.Add(1) == 1 {
+			return syscall.ETIMEDOUT
+		}
+		return w.deliver(notice)
+	}
+	if err := w.wake(testWakeNotice); err == nil {
+		t.Fatal("setup: an ambiguous failed write reported success")
+	}
 	if got := collect(lines, 2, 2*time.Second); len(got) != 2 {
 		t.Fatalf("after the socket came back %d line(s) arrived without another wake, want 2: "+
 			"the agent stays asleep on stored mail until something else arrives", len(got))

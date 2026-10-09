@@ -6,7 +6,6 @@ package engine
 import (
 	"context"
 	"log/slog"
-	"sort"
 	"strings"
 	"time"
 
@@ -16,14 +15,14 @@ import (
 )
 
 const (
-	contactRetryInterval = 5 * time.Minute
+	contactRetryInterval = 2 * time.Second
 	contactSettleDelay   = 2 * time.Second
 	contactActivityGrace = 2 * time.Minute
 )
 
 // An active agent that just spoke may read mail on its own turn even when it
 // has no external wake route. A finished hook overrides that recency. The
-// caller defers and rechecks; freshness alone never silently spends the mail.
+// caller refuses without scheduling; a later event may reconsider the route.
 func (e *Engine) contactLooksLive(l *core.Agent) bool {
 	if l == nil || l.Status != core.StatusActive {
 		return false
@@ -102,18 +101,28 @@ func enrichContactURL(n *HumanNotice, plan contactLinkPlan) {
 
 // scheduleContactDelivery runs on the writer. Attempts are derived and may be
 // retried after a restart; only a posted receipt changes the replayable state.
-func (e *Engine) scheduleContactDelivery(serial uint64, now time.Time) {
+func (e *Engine) scheduleContactDelivery(serial uint64) {
 	c := e.state.Contacts[serial]
 	if c == nil || !c.NotifiedAt.IsZero() || !c.ResolvedAt.IsZero() {
 		return
 	}
-	if at := e.contactAttempts[serial]; !at.IsZero() && now.Sub(at) < contactRetryInterval {
+	if e.contactAttempts[serial].count != 0 {
 		return
 	}
+	e.startContactDelivery(serial)
+}
+
+func (e *Engine) startContactDelivery(serial uint64) {
 	if e.contactAttempts == nil {
-		e.contactAttempts = map[uint64]time.Time{}
+		e.contactAttempts = map[uint64]contactAttempt{}
 	}
-	e.contactAttempts[serial] = now
+	rec := e.contactAttempts[serial]
+	if rec.count >= 2 {
+		return
+	}
+	rec.count++
+	rec.armed = false
+	e.contactAttempts[serial] = rec
 	go func() {
 		// A recipient that reads or answers immediately needs no human to open
 		// it. Snapshot after the settle window so a burst's final count reaches
@@ -166,25 +175,11 @@ func (e *Engine) deliverContactNotice(n HumanNotice) {
 	available, ask := e.localHumanNotifier()
 	if !available() {
 		e.setContactIssued(n.Serial, false)
+		e.recordDesktopDelivery(n.Serial, "failed", "no human notification route is available")
 		slog.Warn("contact alert remains outstanding: no human notification route", "contact", n.Serial)
 		return
 	}
 	e.askHumanDesktop(n, ask)
-}
-
-func (e *Engine) retryContactDelivery(now time.Time) {
-	ids := make([]uint64, 0, len(e.state.Contacts))
-	for id := range e.state.Contacts {
-		ids = append(ids, id)
-	}
-	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
-	for _, id := range ids {
-		if c := e.state.Contacts[id]; c != nil && c.NotifiedAt.IsZero() && c.ResolvedAt.IsZero() {
-			e.scheduleContactDelivery(id, now)
-		} else {
-			delete(e.contactAttempts, id)
-		}
-	}
 }
 
 // A recipient's actual read/answer supersedes the need for a person to open

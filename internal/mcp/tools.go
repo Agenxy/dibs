@@ -279,8 +279,7 @@ var toolDefs = func() []map[string]any {
 					"description": "files/directories you will WRITE; overrides inferred paths. Parent/child paths overlap. " +
 						"Omit for read-only work",
 				},
-				"waiting":       str("whom or what this work is blocked on (an agent id, \"ci\")"),
-				"recheck_after": str("with waiting, when to look again if nothing will tell you, e.g. \"20m\""),
+				"waiting": str("whom or what this work is blocked on (an agent id, \"ci\")"),
 				"activity": map[string]any{
 					"type": "string",
 					"description": "role on this work: implement, review, test, investigate, document, release; " +

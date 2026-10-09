@@ -96,9 +96,16 @@ const Board = (() => {
   // and from what it has seen, apart from status, which is about a process.
   // Only the two a person acts on get a tag: a stall needs somebody, and a wait
   // explains a quiet row.
+  function unchangedHTML(s) {
+    const seconds = s.unchanged_for_s
+    if (!Number.isFinite(seconds)) return ""
+    const minutes = Math.floor(seconds / 60)
+    const label = minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`
+    return `<span class="path">unchanged for ${esc(label)}</span>`
+  }
   function workHTML(l) {
     if (l.work === "stalled") {
-      return explained("pill blocked", "stalled", "it declared work, stopped, and did not move on through three wakes: whoever assigned the work has been told")
+      return explained("pill blocked", "stalled", "its open declaration and last observed activity have been unchanged for at least 30 minutes; this label sends no wake")
     }
     if (l.work === "waiting") {
       return explained("pill quiet", "waiting", "its declared work is blocked on someone or something else, by its own account")
@@ -258,9 +265,9 @@ const Board = (() => {
       .map((s) => `
       <div class="task">
         <p>${esc(s.text)}</p>
-        ${pathsHTML(s)}
+        ${pathsHTML(s)}${unchangedHTML(s)}
       </div>`).join("")
-    const detail = (declared ? pathsHTML(declared) : "") + rest +
+    const detail = (declared ? pathsHTML(declared) + unchangedHTML(declared) : "") + rest +
       (declared && l.description ? `<p class="about">${esc(l.description)}</p>` : "") +
       identHTML(l.agent)
 
@@ -355,7 +362,7 @@ const Board = (() => {
       <h2 id="contact-alerts-title">Needs human contact <span>${alerts.length}</span></h2>
       <ul>${alerts.map((c) => `<li>Cannot reach ${esc(c.recipient)} for unread mail
         (first #${esc(c.oldest_serial)}, ${esc(c.count)} coalesced).
-        Human notification not yet confirmed.</li>`).join("")}</ul>
+        ${c.retry_exhausted ? `Human notification failed twice: ${esc(c.delivery_failure)}. No further automatic retry.` : "Human notification not yet confirmed."}</li>`).join("")}</ul>
     </section>`
   }
 

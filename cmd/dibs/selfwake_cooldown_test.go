@@ -65,30 +65,33 @@ func collect(lines <-chan string, n int, within time.Duration) []string {
 	return got
 }
 
-// A second arrival inside the cooldown is coalesced, not dropped: one notice
-// follows when the cooldown ends. Returning success and forgetting it left an
-// agent that had already read its inbox unaware of the second message.
-func TestAnArrivalInTheCooldownIsDeliveredWhenItEnds(t *testing.T) {
+// Two mail events two seconds apart must reach the session immediately,
+// despite the historical 15-second cooldown, and leave no reminder timer.
+func TestTwoMailEventsTwoSecondsApartDeliverWithoutATimer(t *testing.T) {
 	sock := sockPath(t)
 	lines := listenLines(t, sock)
-	w := &selfWaker{socket: sock, token: "tok", cooldown: 300 * time.Millisecond}
-	started := time.Now()
-	if err := w.wake(testWakeNotice); err != nil {
-		t.Fatal("setup: the first notice failed:", err)
+	w := &selfWaker{socket: sock, token: "tok", cooldown: 15 * time.Second}
+	if err := w.wake("first-mail"); err != nil {
+		t.Fatal("setup:", err)
 	}
-	if err := w.wake(testWakeNotice); err != nil {
-		t.Fatal("the second wake, inside the cooldown, errored instead of coalescing:", err)
+	if got := collect(lines, 2, time.Second); len(got) != 2 {
+		t.Fatalf("setup: first delivery %v", got)
 	}
-	got := collect(lines, 4, 3*time.Second)
-	if len(got) != 4 {
-		t.Fatalf("the session socket received %d line(s), want 4 (auth+notice, twice): the "+
-			"second arrival was dropped by the cooldown and nothing followed it", len(got))
+	<-time.After(2 * time.Second)
+	if err := w.wake("second-mail"); err != nil {
+		t.Fatal(err)
 	}
-	if since := time.Since(started); since < 250*time.Millisecond {
-		t.Errorf("the deferred notice arrived %v after the first: it did not wait out the cooldown", since)
+	if got := collect(lines, 2, time.Second); len(got) != 2 {
+		t.Fatalf("second mail was delayed: %v", got)
 	}
-	if extra := collect(lines, 1, 500*time.Millisecond); len(extra) != 0 {
-		t.Errorf("a third notice arrived for two arrivals: the deferred one did not coalesce")
+	w.mu.Lock()
+	pending, timer := w.pending, w.timer
+	w.mu.Unlock()
+	if pending || timer != nil {
+		t.Fatal("successful events left a wake timer")
+	}
+	if extra := collect(lines, 1, 200*time.Millisecond); len(extra) != 0 {
+		t.Fatal("extra delivery", extra)
 	}
 }
 

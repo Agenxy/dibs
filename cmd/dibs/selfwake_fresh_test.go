@@ -24,9 +24,9 @@ import (
 	"github.com/agenxy/dibs/internal/mcp"
 )
 
-// Drive the real listen -> bridge timer -> session socket path, and acknowledge
-// the real message while its composed digest is waiting in the cooldown.
-func TestDeferredSelfWakeDropsAcknowledgedMail(t *testing.T) {
+// Drive the real listen -> session socket path. Authenticated activity makes
+// the session busy, so the next mail waits for an event, never a cooldown timer.
+func TestBusySelfWakeNeverSchedulesAcknowledgedMail(t *testing.T) {
 	sock := sockPath(t)
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", sock)
 	t.Setenv("CLAUDE_CODE_MESSAGING_TOKEN", "child-token")
@@ -106,13 +106,13 @@ func TestDeferredSelfWakeDropsAcknowledgedMail(t *testing.T) {
 	second := send("stale-digest-marker")
 	for deadline := time.Now().Add(300 * time.Millisecond); iw.sinceOf("tok-worker") < second; {
 		if time.Now().After(deadline) {
-			t.Fatal("setup: second notification was never deferred")
+			t.Fatal("setup: second notification was never observed")
 		}
 		time.Sleep(time.Millisecond)
 	}
 	ack(second)
 	if got := collect(lines, 2, time.Second); len(got) != 0 {
-		t.Fatalf("the cooldown sent a digest for acknowledged mail: %v", got)
+		t.Fatalf("a scheduled wake sent a digest for acknowledged mail: %v", got)
 	}
 }
 

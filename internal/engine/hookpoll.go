@@ -344,8 +344,7 @@ func (e *Engine) HookPollFrom(
 		// told "awaiting_director" had no way to learn the wait had ended.
 		notices := e.pendingNotices(l.ID)
 		modelNotices, noticeKeys, outcomeThrough := e.dueNoticeLinesBudget(l.ID, time.Now(), &quoteBudget)
-		work := e.socketWorkDigest(l, time.Now())
-		if len(mail) == 0 && len(announced) == 0 && len(notices) == 0 && work == "" {
+		if len(mail) == 0 && len(announced) == 0 && len(notices) == 0 {
 			// No news. A turn Dibs started may still be ending with declared
 			// work open, and this is where that case arrives: the stall this
 			// was built for had no mail at all. See continuation.go.
@@ -424,7 +423,7 @@ func (e *Engine) HookPollFrom(
 		wake := e.wakeKeys(l.ID, now)
 		fresh, blocked := hookWakeTerms(len(wake), len(announced), noticesCount,
 			waiting, e.somebodyIsWaiting(l.ID))
-		fresh, blocked = e.hookDeliveryCauses(l, event, now, work, fresh, blocked)
+		fresh, blocked = e.hookDeliveryCauses(l, event, now, fresh, blocked)
 		if e.deliverToModel(event, fresh, blocked, stopActive) {
 			// Marked on DELIVERY, and that is a deliberate trade rather than an
 			// oversight, so it is written down here and in SECURITY.md.
@@ -448,7 +447,7 @@ func (e *Engine) HookPollFrom(
 			// the marking only on events that cannot deliver, which is what the
 			// probe for it used, so the probe passed while a spoofed Stop still
 			// worked.
-			digest := e.deliveringHookDigest(l, agentMail, announced, modelNotices, now)
+			digest := hookDigest(e.agentName(l.ID), agentMail, announced, modelNotices)
 			return e.deliverHookDigest(out, event, strict, l, digest,
 				wake, announceKeys, noticeKeys, outcomeThrough, now)
 		} else if cont := e.continuationReply(l, event, stopActive); cont != nil {
@@ -464,19 +463,10 @@ func (e *Engine) HookPollFrom(
 			out["queued"] = "informational only: held for this agent's next activation " +
 				"rather than extending a finished turn"
 			out["agent"] = l.ID
+			e.socketIdleEvent(l, event)
 		}
 		return e.hookOutput(out, strict, event)
 	})
-}
-
-func (e *Engine) deliveringHookDigest(l *core.Agent, mail, announced, notices []string, now time.Time) string {
-	digest := hookDigest(e.agentName(l.ID), mail, announced, notices)
-	if work := e.socketWorkDigest(l, now); work != "" {
-		digest += "\n" + work
-		_, keys := e.dueSocketWaits(l, now)
-		e.markSocketWork(l, keys, e.socketBackoff[l.ID], now, false)
-	}
-	return digest
 }
 
 func (e *Engine) noteDeliveringHook(l *core.Agent, event string, now time.Time) {
@@ -1150,13 +1140,13 @@ func (e *Engine) deliverToModel(event string, fresh, blocked, stopActive bool) b
 // socket's typed cause, rather than any unread digest line. Informational
 // units remain unconsumed until delivery actually reaches model context.
 func (e *Engine) hookDeliveryCauses(
-	l *core.Agent, event string, now time.Time, work string, fresh, blocked bool,
+	l *core.Agent, event string, now time.Time, fresh, blocked bool,
 ) (bool, bool) {
 	if isStopEvent(event) {
-		actionable := e.actionableSocketMail(l, now, true) || work != ""
+		actionable := e.actionableSocketMail(l, now, true)
 		return actionable, actionable
 	}
-	return fresh || work != "", blocked || work != ""
+	return fresh, blocked
 }
 
 // WakePhase is which news may extend a turn.

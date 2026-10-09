@@ -11,7 +11,6 @@ import (
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/harnessenv"
-	"github.com/agenxy/dibs/internal/wakeexec"
 )
 
 // Telling the agent that is waiting that the board could not wake the one it
@@ -207,6 +206,7 @@ func (e *Engine) refreshWakePlan(ctx context.Context, cmd wakePlan) (string, err
 				timer.Stop()
 			}
 			delete(e.wakers.deferred, cmd.agent)
+			delete(e.wakers.failedCauses, cmd.agent)
 			e.wakers.mu.Unlock()
 		}
 		return core.Result{"digest": text}
@@ -223,10 +223,6 @@ func (e *Engine) freshPlanText(l *core.Agent, cmd wakePlan, now time.Time) strin
 	case cmd.host == "" && len(cmd.argv) == 0:
 		if e.socketDaemonReady(l, now) {
 			return e.socketDigest(l, now)
-		}
-	case cmd.kind == wakeexec.KindContinuation || cmd.kind == wakeexec.KindRecheck:
-		if len(e.workSlotsOf(l, now)) > 0 {
-			return e.workNotice(l, cmd.kind)
 		}
 	default:
 		return e.currentWakeDigest(l)

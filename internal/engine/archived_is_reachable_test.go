@@ -170,9 +170,8 @@ func waitWakeDone(t *testing.T, e *Engine, agent string) {
 
 // The other half, which must not move. sign_off is final and says so.
 func TestAnAgentThatSignedOffIsStillNotWoken(t *testing.T) {
-	e := &Engine{}
 	st := core.NewState("t", core.DefaultLimits())
-	e.state = st
+	e := New(st, &memLedger{}, nil)
 	e.SetWakeCommands(map[string]WakeCommand{
 		"codex": {Argv: []string{"echo", "{thread}"}, Cooldown: time.Minute},
 	})
@@ -200,9 +199,8 @@ func TestAnAgentThatSignedOffIsStillNotWoken(t *testing.T) {
 // and a thread id there is no route at all. The sender saw a bare ok and a
 // deadline it had no way to know was hopeless.
 func TestTheSenderIsWarnedAboutAnArchivedAgentNothingCanWake(t *testing.T) {
-	e := &Engine{}
 	st := core.NewState("t", core.DefaultLimits())
-	e.state = st
+	e := New(st, &memLedger{}, nil)
 	// No wake commands configured at all: nothing on this board can start it.
 	l := bridgeAgent("swept", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
 	l.Status = core.StatusArchived
@@ -232,9 +230,8 @@ func TestTheSenderIsWarnedAboutAnArchivedAgentNothingCanWake(t *testing.T) {
 // to be sitting on stranded mail (the ones swept while nobody was looking)
 // were the ones it skipped.
 func TestBootRearmsTheWakeForArchivedAgentsHoldingMail(t *testing.T) {
-	e := &Engine{}
 	st := core.NewState("t", core.DefaultLimits())
-	e.state = st
+	e := New(st, &memLedger{}, nil)
 	l := bridgeAgent("swept", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
 	l.Status = core.StatusArchived
 	l.ArchivedAt = time.Now().Add(-time.Hour)

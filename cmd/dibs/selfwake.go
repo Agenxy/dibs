@@ -46,9 +46,10 @@ type selfWaker struct {
 	token    string
 	cooldown time.Duration
 	last     time.Time // when a notice was last DELIVERED; an attempt spends nothing
-	pending  bool      // a deferred notice is armed for when the cooldown ends
+	pending  bool      // one failed delivery is awaiting its retry
 	timer    *time.Timer
-	retry    bool // the armed timer is a retry of a delivery that FAILED
+	retry    bool   // the armed timer is a retry of a delivery that FAILED
+	version  uint64 // new events fence a previous failure callback
 	// surrendered says this bridge has given the session socket back to the
 	// daemon, because it claimed the route and then could not deliver on it.
 	//
@@ -89,6 +90,7 @@ type selfWaker struct {
 	// session whose socket recovers gets its claim back when its harness next
 	// spawns a bridge.
 	surrendered bool
+	surrenderFn func() // release the live daemon claims at the failure event
 	// deliverFn replaces the write, for the one branch no platform reaches the
 	// same way twice.
 	//
@@ -106,20 +108,25 @@ type selfWaker struct {
 	// kernel picks. Nil in production, where deliver is the only writer.
 	deliverFn func(notice string) error
 	// refreshFn asks the daemon for current unread state before EVERY write,
-	// including timers, retries and upgrade handoffs. Nil in transport tests.
+	// including failed-delivery retries and upgrade handoffs. Nil in transport tests.
 	refreshFn func(notice string) (string, error)
 	// Additive daemon capability: refresh plus an attempt receipt. The
 	// receipt reports a write, not acceptance; later turn activity confirms it.
-	offerFn func(notice string) (string, func(bool), error)
+	offerFn      func(notice string) (string, func(bool), error)
+	retryOfferFn func(notice string) (string, func(bool), error)
 }
 
 var errWakeEmpty = errors.New("the fresh wake digest is empty")
 
 // send performs this waker's write: the session socket, or a test's stand-in.
 func (w *selfWaker) send(notice string) error {
+	return w.sendUsing(notice, w.offerFn)
+}
+
+func (w *selfWaker) sendUsing(notice string, offer func(string) (string, func(bool), error)) error {
 	written := false
-	if w.offerFn != nil {
-		fresh, finish, err := w.offerFn(notice)
+	if offer != nil {
+		fresh, finish, err := offer(notice)
 		if finish != nil {
 			defer func() { finish(written) }()
 		}
@@ -150,12 +157,8 @@ func (w *selfWaker) send(notice string) error {
 	return err
 }
 
-// selfWakeCooldown is the shortest gap between two notices in one session.
-//
-// Cheaper than the exec route, which is why this is seconds rather than the
-// ninety a spawned process needs: nothing starts, and a line in a queue that
-// already has one costs the reader nothing. It is not zero, because a burst of
-// mail should still read as one interruption.
+// selfWakeCooldown is the delay before the one failed-delivery retry.
+// Successful delivery never delays a later mail event.
 const selfWakeCooldown = 15 * time.Second
 
 // newSelfWaker reads the two variables the harness hands its children. Both
@@ -170,153 +173,70 @@ func newSelfWaker() *selfWaker {
 	return &selfWaker{socket: sock, token: tok, cooldown: selfWakeCooldown}
 }
 
-// wake puts one notice into this session's own queue.
-//
-// Returns an error only for a failure worth reporting. Like every other wake
-// route, a nil error means settled: written, deferred, or no longer owed after
-// a fresh read. The protocol answers nothing; acceptance is the receiver's.
-// arm holds one notice back to the end of the cooldown. Caller holds w.mu and
-// has checked that nothing is armed already.
-//
-// Split out because wake carries three separate concerns already, and the
-// deferral is the one with a lifetime of its own: it outlives the call that
-// armed it, which is exactly how it came to outlive the subscription too.
-func (w *selfWaker) arm(wait time.Duration, notice string) {
-	w.pending = true
-	recordWakePending(true, notice) // for the in-place upgrade's handoff
-	w.timer = time.AfterFunc(wait, func() {
-		w.mu.Lock()
-		w.pending = false
-		w.mu.Unlock()
-		recordWakePending(false, "")
-		if err := w.wake(notice); err != nil {
-			slog.Debug("could not put the deferred notice into this session", "err", err)
-		}
-	})
-}
-
-// wake puts one notice into this session's own queue.
-//
-// Freshness is checked by the DAEMON, not by a local subscription pointer.
-// The old local authorization guard could not see token rotation, movement or
-// sign-off and dropped owed notices across four review rounds. Removing it was
-// right. Keeping a captured digest afterwards was not: mail acknowledged during
-// the cooldown was still called unread when the timer delivered it (#7810).
-// A non-consuming authenticated read now checks state and session binding at
-// delivery. Empty settles the notice; failure retries without stale fallback.
+// Each mail event writes immediately. A failed write may retry once; a later
+// event supersedes that retry, and a success or empty fresh read settles it.
 func (w *selfWaker) wake(notice string) error {
 	if w == nil {
 		return errors.New("no session socket: this harness publishes none")
 	}
 	w.mu.Lock()
-	now := time.Now()
-	if wait := w.cooldown - now.Sub(w.last); wait > 0 {
-		// Coalesced, deliberately (see selfWakeCooldown), and NOT DROPPED. A
-		// second arrival inside the cooldown used to return success and be
-		// forgotten: an agent that had read its inbox after the first notice
-		// and finished never heard of the second message until something
-		// else arrived for it. One deferred notice is armed for the moment
-		// the cooldown ends, and every further arrival folds into that one.
-		// Found by the pre-release review, round six.
-		if !w.pending {
-			w.arm(wait, notice)
-		}
-		w.mu.Unlock()
-		return nil
-	}
-	prev := w.last
-	w.last = now // claimed, and given back below if nothing was delivered
-	w.mu.Unlock()
-
-	if err := w.send(notice); err != nil {
-		if errors.Is(err, errWakeEmpty) {
-			w.mu.Lock()
-			if w.last.Equal(now) {
-				w.last = prev
-			}
-			w.mu.Unlock()
-			w.delivered() // clear only a retry, not a later arrival's deferral
-			return nil
-		}
-		// GONE MEANS GONE. No count, no wait: this session's socket is not
-		// there, the daemon has stood down on this bridge's word, and until
-		// the route goes back nothing announces this agent's mail at all.
-		if socketGone(err) {
-			w.surrender()
-			slog.Warn("giving the session socket back to the daemon: it is not there "+
-				"any more and this bridge told the daemon it would deliver this "+
-				"agent's wake notices, so nothing would announce them", "err", err)
-		}
-		// AND TRY AGAIN. The socket was absent or busy; the notice is owed
-		// and nothing else will send it until the next arrival. One retry is
-		// armed at the cooldown, and folds into any deferred notice already
-		// armed. Found by the pre-release review, round eighteen.
-		w.mu.Lock()
-		if !w.pending {
-			w.pending = true
-			// THE HANDOFF FOLLOWS THE TIMER. The deferred callback clears the
-			// pending mark before it tries, and a delivery that failed there
-			// armed this retry without setting it again: an in-place upgrade
-			// in that window carried "nothing owed" and the notice was gone
-			// with the timer. Found by the pre-release review, round
-			// twenty-five.
-			recordWakePending(true, notice)
-			w.retry = true
-			w.timer = time.AfterFunc(w.cooldown, func() {
-				w.mu.Lock()
-				w.pending, w.retry = false, false
-				w.mu.Unlock()
-				recordWakePending(false, "")
-				if rerr := w.wake(notice); rerr != nil {
-					// AMBIGUOUS TWICE IS EVIDENCE. An error naming the socket
-					// as gone surrendered on the first attempt; reaching here
-					// means the failures were the kind that might have been
-					// momentary, and two of those fifteen seconds apart are
-					// not momentary any more.
-					w.surrender()
-					slog.Warn("giving the session socket back to the daemon: two "+
-						"attempts fifteen seconds apart failed, so the daemon must "+
-						"resume writing or nothing announces this agent's mail",
-						"err", rerr)
-				}
-			})
-		}
-		w.mu.Unlock()
-		// A FAILED ATTEMPT SPENDS NOTHING. The socket was absent or busy and
-		// no notice went anywhere, so the next arrival must try again rather
-		// than sit out a cooldown that coalesced nothing.
-		w.mu.Lock()
-		if w.last.Equal(now) {
-			w.last = prev
-		}
-		w.mu.Unlock()
-		return err
-	}
-	w.delivered()
-	return nil
-}
-
-// delivered settles what a successful delivery covers.
-//
-// A RETRY, AND ONLY A RETRY. A retry armed by a failure stayed armed past a
-// delivery that succeeded in the meantime, and put a second notice into the
-// session with no mail behind it; this delivery IS that notice, so the retry
-// is disarmed. Found by the pre-release review, round thirty-nine. The first
-// cut disarmed a DEFERRED notice too, and that one is different: it stands
-// for an arrival that came in while this delivery was on the wire, which
-// the session has not been told about, and cancelling it lost that mail's
-// notice. Found by the pre-release review, round forty-three.
-func (w *selfWaker) delivered() {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if !w.pending || !w.retry {
-		return
-	}
+	w.version++
+	version := w.version
 	if w.timer != nil {
 		w.timer.Stop()
 	}
 	w.pending, w.retry = false, false
+	w.mu.Unlock()
 	recordWakePending(false, "")
+	err := w.send(notice)
+	if errors.Is(err, errWakeEmpty) {
+		return nil
+	}
+	if err == nil {
+		w.mu.Lock()
+		w.last = time.Now()
+		w.mu.Unlock()
+		return nil
+	}
+	if socketGone(err) {
+		w.surrender()
+		return err // the daemon owns any recovered route; do not arm a bridge retry
+	}
+	w.mu.Lock()
+	if w.version == version {
+		w.pending, w.retry = true, true
+		recordWakePending(true, notice)
+		w.timer = time.AfterFunc(w.cooldown, func() { w.retryFailed(notice, version) })
+	}
+	w.mu.Unlock()
+	return err
+}
+
+func (w *selfWaker) retryFailed(notice string, version uint64) {
+	w.mu.Lock()
+	if w.version != version || !w.pending || !w.retry {
+		w.mu.Unlock()
+		return
+	}
+	w.pending, w.retry = false, false
+	w.mu.Unlock()
+	recordWakePending(false, "")
+	offer := w.retryOfferFn
+	if offer == nil {
+		offer = w.offerFn
+	}
+	err := w.sendUsing(notice, offer) // authenticated original-cause fence
+	if errors.Is(err, errWakeEmpty) {
+		return
+	}
+	if err != nil {
+		w.surrender()
+		slog.Warn("giving the session socket back to the daemon: the failed delivery's one retry failed", "err", err)
+		return
+	}
+	w.mu.Lock()
+	w.last = time.Now()
+	w.mu.Unlock()
 }
 
 // deliver writes the auth line and one notice to the session socket.
@@ -349,14 +269,25 @@ func (w *selfWaker) surrender() {
 		return
 	}
 	w.mu.Lock()
-	defer w.mu.Unlock()
+	if w.surrendered {
+		w.mu.Unlock()
+		return
+	}
 	w.surrendered = true
+	if w.timer != nil {
+		w.timer.Stop()
+	}
+	w.pending, w.retry = false, false
+	fn := w.surrenderFn
+	w.mu.Unlock()
+	if fn != nil {
+		fn()
+	}
 }
 
 // canReach reports whether this bridge still claims it can wake its own
 // session. Read by listenBody, which declares the claim, and by the watcher,
-// which drops its stream when the answer changes so the next listen states the
-// truth.
+// which closes its streams at surrender and never reclaims the route.
 func (w *selfWaker) canReach() bool {
 	if w == nil {
 		return false

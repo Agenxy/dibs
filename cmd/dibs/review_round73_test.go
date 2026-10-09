@@ -4,24 +4,14 @@
 package main
 
 import (
+	"syscall"
 	"testing"
 	"time"
 )
 
-// A DEFERRED NOTICE IS ALWAYS DELIVERED.
-//
-// Rounds seventy-two through seventy-six tried to re-authorise a held-back
-// notice locally, dropping it when the subscription that armed it looked
-// retired. Every round found another way validity changes that the local check
-// could not see, and two of the repairs dropped notices that were owed, which
-// loses the message: both calls return success, both cursors advance, and
-// nothing announces the mail afterwards.
-//
-// The guarantee is the simple one now, and this pins it: whatever happens to
-// the subscription during the cooldown, the notice lands. The daemon decided
-// who to wake when it sent the notification; delivering that decision a few
-// seconds later is not a fresh claim to re-check.
-func TestADeferredNoticeIsDeliveredWhateverBecomesOfItsSubscription(t *testing.T) {
+// A successful second arrival is written before subscription retirement;
+// retirement must not leave a scheduled delivery of already announced mail.
+func TestNewMailIsDeliveredBeforeItsSubscriptionGoes(t *testing.T) {
 	sock := sockPath(t)
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", sock)
 	t.Setenv("CLAUDE_CODE_MESSAGING_TOKEN", "child-token")
@@ -39,42 +29,53 @@ func TestADeferredNoticeIsDeliveredWhateverBecomesOfItsSubscription(t *testing.T
 	iw.streams = map[string]*inboxStream{"busy": st}
 	iw.mu.Unlock()
 
-	// One notice lands and spends the cooldown.
+	// First notice lands.
 	if err := w.wake(testWakeNotice); err != nil {
 		t.Fatal("setup:", err)
 	}
 	if got := collect(lines, 2, 2*time.Second); len(got) != 2 {
 		t.Fatalf("setup: %d line(s) from the first notice, want 2", len(got))
 	}
-	// A second arrives inside the cooldown and is held back.
+	// A second arrival is immediate, even inside the failure-retry delay.
 	if err := w.wake(testWakeNotice); err != nil {
 		t.Fatal(err)
 	}
-	if !wakeIsPending() {
-		t.Fatal("setup: nothing was deferred, so this proves nothing")
+	if got := collect(lines, 2, 200*time.Millisecond); len(got) != 2 {
+		t.Fatalf("second arrival delayed: %d line(s)", len(got))
 	}
-	// The subscription is retired entirely before it fires.
+	if wakeIsPending() {
+		t.Fatal("successful mail armed a timer")
+	}
+	// Retire the subscription after both actual writes.
 	iw.mu.Lock()
 	iw.streams = map[string]*inboxStream{}
 	iw.mu.Unlock()
 
-	if got := collect(lines, 2, 3*time.Second); len(got) != 2 {
-		t.Errorf("the deferred notice was dropped (%d line(s) arrived). Its cursor has already "+
-			"advanced on the success the fold returned, so the mail it was announcing is now "+
-			"announced by nothing at all", len(got))
+	if got := collect(lines, 1, 2*iw.cooldown); len(got) != 0 {
+		t.Fatalf("subscription retirement left a repeated notice: %d line(s)", len(got))
 	}
 }
 
-// And a retry armed by a delivery that FAILED lands too, for the same reason.
+// And a retry armed by an ambiguous FAILED write lands too, for the same reason.
 func TestARetriedNoticeIsDeliveredAfterItsSubscriptionGoes(t *testing.T) {
-	sock := sockPath(t) // nothing listening yet, so the first delivery fails
+	sock := sockPath(t)
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", sock)
 	t.Setenv("CLAUDE_CODE_MESSAGING_TOKEN", "child-token")
 	t.Cleanup(func() { recordWakePending(false, "") })
 
 	w := &selfWaker{socket: sock, token: "child-token", cooldown: 300 * time.Millisecond}
+	// Keep the callback fixed while the timer is running; replace only the
+	// first ambiguous kernel failure, then use the real socket writer.
+	first := true
+	w.deliverFn = func(notice string) error {
+		if first {
+			first = false
+			return syscall.ETIMEDOUT
+		}
+		return w.deliver(notice)
+	}
 	if err := w.wake(testWakeNotice); err == nil {
-		t.Fatal("setup: delivering to a socket nobody is listening on reported success")
+		t.Fatal("setup: an ambiguous failed write reported success")
 	}
 	if !wakeIsPending() {
 		t.Fatal("setup: the failed delivery armed no retry, so this proves nothing")

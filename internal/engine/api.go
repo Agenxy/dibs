@@ -821,6 +821,7 @@ func (e *Engine) Board(ctx context.Context) (core.Result, error) {
 
 func (e *Engine) decoratedBoard() core.Result {
 	b := e.state.Board()
+	e.decorateContactAlerts(core.Result(b))
 	if names := e.configuredNameView(); len(names) > 0 {
 		b["configured_name_addresses"] = names
 	}
@@ -854,6 +855,7 @@ func (e *Engine) decoratedBoard() core.Result {
 		// What the agent is DOING, from what it declared and what the board has
 		// seen, beside status, which is about its process. See workStateOf.
 		lm["work"] = e.workStateOf(l)
+		e.decorateDeclarationAges(lm, l, time.Now())
 		// Requests it approved and has not reported done: obligations.go.
 		if owes := e.owedSerials(l.ID, time.Now()); len(owes) > 0 {
 			lm["owes"] = owes

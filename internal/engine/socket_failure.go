@@ -36,11 +36,7 @@ func (e *Engine) socketCauseVersion(l *core.Agent, now time.Time) uint64 {
 			continue
 		}
 		version = max(version, e.socketMailVersion(row, now))
-		_, work := e.dueSocketWaits(row, now)
-		for _, due := range work {
-			version = max(version, due.version)
-		}
-		version = max(version, e.socketBackoff[row.ID].version)
+
 	}
 	return version
 }

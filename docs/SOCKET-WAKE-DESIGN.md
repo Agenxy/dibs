@@ -1,5 +1,13 @@
 # Socket economy: request 26745
 
+**Timer policy superseded (2026-10-09, request 71176).** The measurements and
+design history below retain their original due-wait and backoff terminology.
+The current implementation sends no declaration rechecks, timed stall wakes,
+or assigner stall notices. The bridge delivers new mail immediately; only an
+actual failed delivery may retry once for its original outstanding cause.
+Read-time declaration age replaces the old timer-derived stalled label. See
+`SPEC.md` and `WAKE-MECHANISMS.md` for the current event and retry contract.
+
 Measured 2026-10-03 PDT from three exact Claude session transcripts and
 `dibd.log`. Each of 998 daemon socket handoffs matches one distinct native
 peer receipt within 0.782 seconds. Read-only reproducer and aggregate JSON:
