@@ -74,10 +74,10 @@ func TestTheBridgeInventsNoNoticeOfItsOwn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The one call that reaches the session socket on this path takes `line`,
+	// The batch entry that reaches the session socket on this path takes `line`,
 	// and `line` comes from selfWakeLine, which returns what the daemon sent
 	// or "". A literal argument here is a sentence this process composed.
-	if !strings.Contains(string(src), "waker.wake(line)") {
+	if !strings.Contains(string(src), "iw.queueWake(st, msg.Params.Meta, line, waker)") {
 		t.Error("the in-session wake no longer sends the line selfWakeLine returned. " +
 			"If this call was changed, check what it sends now: a string literal or a " +
 			"fmt.Sprintf here is a notice this bridge made up, which is the duplicate " +

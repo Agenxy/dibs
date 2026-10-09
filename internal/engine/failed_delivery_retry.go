@@ -18,7 +18,10 @@ type failedDelivery struct {
 // Snapshot identifiers only, on the writer, before an actual delivery attempt.
 // A later unrelated message cannot turn an acknowledged failure into a retry.
 func (e *Engine) failedDeliveryKeys(agent string) []string {
-	now := time.Now()
+	return e.deliveryKeysAt(agent, time.Now())
+}
+
+func (e *Engine) deliveryKeysAt(agent string, now time.Time) []string {
 	var keys []string
 	for _, key := range e.wakeKeys(agent, now) {
 		keys = append(keys, "mail:"+key)

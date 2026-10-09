@@ -22,6 +22,7 @@ import (
 func checkJoinedWakeRoutes(dir string, b *boardView, hosts hubHosts, ok reportFn, warn fixFn) {
 	var j joinedWake
 	if cfg, err := boardconfig.Load(dir); err == nil {
+		reportRemovedWakeCooldowns(dir, cfg, warn)
 		for h := range cfg.Wake.Exec {
 			j.configured = append(j.configured, strings.ToLower(h))
 		}

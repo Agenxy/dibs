@@ -85,9 +85,12 @@ type inboxWatcher struct {
 	// shorten it without writing a global under a running goroutine.
 	reconnect time.Duration
 	// waker is the ONE route to this session's socket, shared by every
-	// stream. New mail delivers immediately; only an actual failed write
-	// can arm the shared writer's bounded retry.
-	waker *selfWaker
+	// stream. New mail shares a fixed 200 ms arrival batch; only an actual
+	// failed write can arm the shared writer's bounded retry.
+	waker    *selfWaker
+	burst    *time.Timer
+	arrivals []bridgeWakeArrival
+	sending  bool // serialize batch callbacks into the one shared writer
 	// cooldown overrides the shared waker's failure retry delay before the
 	// first start; a test knob, like reconnect.
 	cooldown time.Duration
@@ -456,12 +459,8 @@ func (iw *inboxWatcher) onFrame(st *inboxStream, msg streamFrame, waker *selfWak
 	if !iw.firstAttempt(st, msg.Params.Meta) {
 		return true
 	}
-	if err := waker.wake(line); err != nil {
-		slog.Debug("could not put a notice into this session; keeping its cursor", "err", err)
-		return waker.canReach()
-	}
-	iw.noteSerial(st, msg.Params.Meta)
-	return true
+	iw.queueWake(st, msg.Params.Meta, line, waker)
+	return waker.canReach()
 }
 
 // watchOnRegister returns the reply hook that starts the local wake watcher.

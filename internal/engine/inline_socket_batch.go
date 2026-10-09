@@ -4,6 +4,7 @@
 package engine
 
 import (
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,20 +31,21 @@ func (e *Engine) socketBatchPresentation(
 		if !e.socketCanPresent(a, now) {
 			continue
 		}
-		announced, announcementKeys := e.dueAnnouncements(a.ID, now)
+		announced, announcementKeys := e.socketAnnouncements(a.ID, now)
 		offer := socketOffer{
 			canConfirm: e.socketLifecycle(a, now) == "idle",
-			mail:       e.wakeKeys(a.ID, now), announcements: announcementKeys,
-			notices: e.dueNoticeKeys(a.ID, now),
+			mail:       e.unwrittenSocketKeys("mail:", e.wakeKeys(a.ID, now)), announcements: announcementKeys,
+			notices: e.unwrittenSocketKeys("notice:", e.dueNoticeKeys(a.ID, now)),
 		}
 		for _, key := range offer.notices {
 			wanted[key] = true
 		}
 		members = append(members, socketBatchMember{
-			agent: a, mail: e.freshMailQuotedBudget(a.ID, now, &budget), announced: announced, offer: offer,
+			agent: a, mail: e.socketMailLines(a.ID, now, offer.mail, &budget), announced: announced, offer: offer,
 		})
 		groups = append(groups, e.outcomeGroups(a.ID)...)
 	}
+	selectSocketNoticeKeys(groups, wanted)
 	updates, prefixes := e.presentGroupedOutcomes(groups, &budget, wanted)
 	var texts []string
 	presented := map[string]socketOffer{}
@@ -60,6 +62,7 @@ func (e *Engine) socketBatchPresentation(
 		// write receipt must settle/release the batch; only quoted prefixes
 		// are readable through the separately recorded outcome map.
 		member.offer.outcomes = prefixes[a.ID]
+		member.offer.notices = selectedSocketNoticeKeys(member.offer.notices, wanted)
 		presented[a.ID] = member.offer
 		if text == "" {
 			continue
@@ -67,4 +70,56 @@ func (e *Engine) socketBatchPresentation(
 		texts = append(texts, text)
 	}
 	return texts, presented
+}
+
+func (e *Engine) socketMailLines(agent string, now time.Time, keys []string, budget *int) []string {
+	wanted := map[uint64]bool{}
+	for _, key := range keys {
+		_, raw, _ := strings.Cut(key, "\x00")
+		serial, _ := strconv.ParseUint(raw, 10, 64)
+		wanted[serial] = true
+	}
+	return e.mailLinesForBudget(agent, now, wanted, budget)
+}
+
+func (e *Engine) socketAnnouncements(agent string, now time.Time) ([]string, []string) {
+	lines, keys := e.dueAnnouncements(agent, now)
+	var out, selected []string
+	for i, key := range keys {
+		if !e.socketWritten["announcement:"+key] {
+			out, selected = append(out, lines[i]), append(selected, key)
+		}
+	}
+	return out, selected
+}
+
+// The formatter's bounded selection is also the write-receipt selection.
+// Keep skipped older units in the groups so an unconfirmed earlier write
+// cannot be promoted to durable read evidence by a newer partial quote.
+func selectSocketNoticeKeys(groups []outcomeGroup, wanted map[string]bool) {
+	sortOutcomeGroups(groups)
+	count := 0
+	for _, group := range groups {
+		for _, unit := range group.units {
+			key := noticeKey(group.agent, unit.serial)
+			if !wanted[key] {
+				continue
+			}
+			if count >= maxInlineOutcomes {
+				delete(wanted, key)
+			} else {
+				count++
+			}
+		}
+	}
+}
+
+func selectedSocketNoticeKeys(keys []string, wanted map[string]bool) []string {
+	var out []string
+	for _, key := range keys {
+		if wanted[key] {
+			out = append(out, key)
+		}
+	}
+	return out
 }

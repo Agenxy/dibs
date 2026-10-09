@@ -36,11 +36,8 @@ import (
 // becomes a wrapper for tools it does not own. That is a real cost, and it is
 // smaller than the one it was avoiding: a board nobody can be reached on.
 
-// wakeCooldown is the shortest gap between two wakes of one agent.
-//
-// A fleet that starts a process on every message is a fork bomb with better
-// manners. The default is deliberately long: a wake exists to end a silence,
-// not to shave seconds off a reply.
+// wakeCooldown is the bounded failure retry delay and diagnostic recency
+// window. It never refuses a new item after successful delivery.
 const wakeCooldown = 90 * time.Second
 
 // wakeCommand is one harness's way in, already validated.
@@ -936,13 +933,6 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 			"agent", l.ID)
 		return wakePlan{}, false
 	}
-	if last, seen := e.wakers.last[l.ID]; seen && now.Sub(last) < cooldown {
-		// A cooldown refusal schedules nothing. A later event reconsiders
-		// delivery; only an actual failed delivery can arm one retry.
-		slog.Debug("no wake: inside the cooldown",
-			"agent", l.ID)
-		return wakePlan{}, false
-	}
 	e.wakers.last[l.ID] = now
 	if e.wakers.running == nil {
 		e.wakers.running = map[string]bool{}
@@ -1009,8 +999,9 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 		// The bridge there substitutes these into ITS operator's command,
 		// exactly as f.apply would here: whole argv elements, never parts.
 		return wakePlan{
-			host: host, cwd: cwdOf(l), cooldown: cooldown, thread: f.Thread,
-			agent: l.ID, session: wakeSessionOf(l), kind: kind,
+			host: host, cwd: cwdOf(l), cooldown: cooldown, thread: f.Thread, createdSerial: l.CreatedSerial,
+			commandEpoch: e.commandEpoch[l.ID],
+			agent:        l.ID, session: wakeSessionOf(l), kind: kind,
 			request: WakeRequest{
 				Host: host, Agent: l.ID, Harness: wakeHarness(l), Thread: f.Thread,
 				CWD: cwdOf(l), From: f.From, MsgType: f.MsgType, Notice: f.Message,
@@ -1067,7 +1058,7 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 	return wakePlan{
 		argv: f.Apply(cmd.argv), fallback: f.Apply(cmd.fallback),
 		agent: l.ID, session: wakeSessionOf(l), kind: kind,
-		createdSerial: l.CreatedSerial, queueEpoch: e.wakers.queueEpoch,
+		createdSerial: l.CreatedSerial, queueEpoch: e.wakers.queueEpoch, commandEpoch: e.commandEpoch[l.ID],
 		cwd: cwdOf(l), cooldown: cooldown, thread: f.Thread,
 		surface: surfaceOf(l), harness: wakeHarness(l), // which app to open: see inapp.go
 	}, true
@@ -1112,13 +1103,15 @@ type wakePlan struct {
 	// surface and harness decide which app, if any, the thread is opened in
 	// after the message is queued (inapp.go).
 	surface, harness string
-	agent            string // whose outstanding state is rechecked before delivery
-	trackOffer       bool   // production delivery shares presentation with lifecycle hooks
-	socketWritten    *bool  // actual kernel write, distinct from an empty settled plan
-	socketVersion    uint64 // actionable cohort captured before a native attempt
-	notice           string // socket digest; refreshed before production delivery
-	session, kind    string // binding and reason to recheck before a socket write
-	cwd              string // where the agent says it works, for the mismatch warning
+	commandEpoch     string   // receiving incarnation captured before execution
+	commandKeys      []string // exact original items refreshed before command execution
+	agent            string   // whose outstanding state is rechecked before delivery
+	trackOffer       bool     // production delivery shares presentation with lifecycle hooks
+	socketWritten    *bool    // actual kernel write, distinct from an empty settled plan
+	socketVersion    uint64   // actionable cohort captured before a native attempt
+	notice           string   // socket digest; refreshed before production delivery
+	session, kind    string   // binding and reason to recheck before a socket write
+	cwd              string   // where the agent says it works, for the mismatch warning
 	// cooldown is the rate limit THIS route carries.
 	//
 	// Carried rather than re-read, because re-reading it looked up the
@@ -1143,11 +1136,8 @@ type wakePlan struct {
 	sessions []string
 }
 
-// defaultPeerCooldown bounds socket wakes the way [wake.exec] entries bound
-// process wakes. Shorter, because nothing is spawned: the cost of one is a
-// connection and two lines, not an agent turn, so the rate limit is here to
-// stop a burst becoming a stream of interruptions rather than to stop a fork
-// bomb.
+// defaultPeerCooldown is the fallback window for a failed socket's one retry
+// and its route diagnostics. Fresh mail and successful writes have no cooldown.
 const defaultPeerCooldown = 20 * time.Second
 
 // cwdOf is where this agent says it works, copied on the loop.
@@ -1303,7 +1293,7 @@ func (e *Engine) PullOnlyNoteFor(ctx context.Context, agentID string) string {
 // message. Observation neither confirms a socket outcome nor consumes mail.
 func (e *Engine) SendDeliveryNoteFor(ctx context.Context, agentID string, msgSerial uint64) string {
 	res, err := e.query(ctx, func() core.Result {
-		return core.Result{"note": e.sendDeliveryNote(e.state.Agents[agentID], e.state.Messages[msgSerial], time.Now())}
+		return core.Result{"note": e.sendDeliveryNote(e.state.Agents[agentID], e.state.Messages[msgSerial])}
 	})
 	if err != nil {
 		return ""

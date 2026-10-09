@@ -59,6 +59,8 @@ type Config struct {
 	Identity IdentityConfig `toml:"identity"` // who an unidentified session is taken to be
 	// Relocate is where an agent can be MOVED on purpose: see RelocateExec.
 	Relocate map[string]RelocateExec `toml:"relocate"`
+	// RetiredWakeCooldowns records obsolete keys for startup and doctor diagnostics.
+	RetiredWakeCooldowns []RetiredWakeCooldown `toml:"-"`
 }
 
 // InvitesConfig is the operator's once-only issuance policy. Human proofs
@@ -403,10 +405,9 @@ type WakeExec struct {
 	// Fallback is tried only when Argv exits non-zero. Same rules, same
 	// substitutions, same confirmation by exit status. Optional.
 	Fallback []string `toml:"fallback"`
-	// Cooldown is the shortest gap between two wakes of the same agent. Zero
-	// takes the default; a fleet that wakes on every message is a fork bomb
-	// with better manners.
-	Cooldown time.Duration `toml:"cooldown"`
+	// Cooldown is refused in new typed configurations. Existing TOML keys are
+	// ignored and reported through RetiredWakeCooldowns, so upgrades still boot.
+	Cooldown time.Duration `toml:"-"`
 }
 
 // RolesConfig is the [roles] table.
@@ -486,6 +487,11 @@ func Load(dir string) (Config, error) {
 	if err != nil {
 		return c, err
 	}
+	retired, err := FindWakeCooldowns(b)
+	if err != nil {
+		return c, err
+	}
+	c.RetiredWakeCooldowns = retired
 	md, err := toml.Decode(string(b), &c)
 	if err != nil {
 		return c, err
@@ -500,6 +506,9 @@ func Load(dir string) (Config, error) {
 	if un := md.Undecoded(); len(un) > 0 {
 		keys := make([]string, 0, len(un))
 		for _, k := range un {
+			if isWakeCooldown(k) {
+				continue
+			}
 			keys = append(keys, k.String())
 		}
 		// TYPED, because two readers of this file need opposite answers.
@@ -507,7 +516,9 @@ func Load(dir string) (Config, error) {
 		// told nothing took effect. A client that only needs the address out
 		// of the file must not, because a key this build does not know may be
 		// one a newer daemon does; see UnknownSettingsError.
-		return c, &UnknownSettingsError{Keys: keys}
+		if len(keys) > 0 {
+			return c, &UnknownSettingsError{Keys: keys}
+		}
 	}
 
 	// WHICH KEYS WERE ACTUALLY WRITTEN, carried into validation.
@@ -1036,12 +1047,8 @@ func (c Config) validateSupervise() error {
 }
 
 func (c Config) validateWake() error {
-	// A setting that reads as applied and is not is this file's oldest bug, and
-	// [wake.exec] arrived with a fresh one: cooldown accepted any duration, and
-	// the waker maps everything <= 0 to the 90s default. So `cooldown = "-1s"`
-	// passed `dibd -check`, startup reported the harness configured, and the
-	// operator's explicit value did nothing at all. Zero is documented as "use
-	// the default" and stays legal; a negative one is a mistake and is refused.
+	// Load diagnoses the retired key by presence; nonzero typed values from
+	// other callers must not silently survive validation either.
 	for harness, x := range c.Wake.Exec {
 		if err := validateWakeEntry(harness, x, c.Wake.Exec); err != nil {
 			return err
@@ -1110,11 +1117,8 @@ func validateWakeEntry(harness string, x WakeExec, all map[string]WakeExec) erro
 				"behave differently between restarts", harness, other)
 		}
 	}
-	if x.Cooldown < 0 {
-		return fmt.Errorf("[wake.exec.%s] cooldown = %q: a wake cooldown cannot "+
-			"be negative. Omit it, or set 0, to take the default; anything "+
-			"below zero was silently becoming that default while reading as "+
-			"a setting you had chosen", harness, x.Cooldown)
+	if x.Cooldown != 0 {
+		return removedWakeCooldown(harness)
 	}
 	// An empty argv is the whole entry doing nothing. It loaded, startup
 	// took the "there is a wake command" branch, skipped the entry for want

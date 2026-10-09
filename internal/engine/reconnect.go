@@ -94,6 +94,7 @@ func (e *Engine) appReconnectTargets(host string, app harnessenv.AppIncarnation,
 			e.reconnectMail = map[string]uint64{}
 		}
 		e.reconnectMail[id] = agent.CreatedSerial
+		e.resetCommandIncarnation(id, key)
 		e.wakers.mu.Lock()
 		delete(e.wakers.queued, id)
 		delete(e.wakers.queuedPrompt, id)

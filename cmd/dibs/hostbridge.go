@@ -113,6 +113,9 @@ func localWakeRoutes(dir string) (map[string]boardconfig.WakeExec, error) {
 	if err != nil {
 		return nil, err
 	}
+	for _, retired := range cfg.RetiredWakeCooldowns {
+		slog.Warn(retired.Warning(filepath.Join(dir, "dibs.toml")))
+	}
 	// THE SAME FILTER AS THE DAEMON'S. A wake command that would run an agent
 	// rather than deliver to one is dropped here too, so a joined machine cannot
 	// host an agent the hub would refuse to. See boardconfig.DeliveringWakeRoutes.
@@ -289,19 +292,6 @@ func (b *wakeBridge) harnesses() []string {
 	return out
 }
 
-// cooldowns is what this machine's [wake.exec] table says per harness, for
-// the hub to spend instead of its own default: a `cooldown = "30m"` here
-// used to be ninety seconds there. Round nine of the pre-release review.
-func (b *wakeBridge) cooldowns() map[string]string {
-	out := map[string]string{}
-	for h, x := range b.routes {
-		if x.Cooldown > 0 {
-			out[h] = x.Cooldown.String()
-		}
-	}
-	return out
-}
-
 // listenBody is the one request this bridge makes of the MCP endpoint: a
 // listen on dibs://wake stating the host and the harnesses.
 func (b *wakeBridge) listenBody() []byte {
@@ -312,7 +302,6 @@ func (b *wakeBridge) listenBody() []byte {
 			"_meta": map[string]any{
 				mcp.HostMetaKey:          b.host,
 				mcp.WakeHarnessesMetaKey: b.harnesses(),
-				mcp.WakeCooldownsMetaKey: b.cooldowns(),
 				mcp.AwayOpenMetaKey:      2,
 			},
 		},

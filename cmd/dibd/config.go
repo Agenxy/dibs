@@ -690,7 +690,7 @@ func wakeCommandsFrom(exec map[string]boardconfig.WakeExec) map[string]engine.Wa
 		if len(x.Argv) == 0 {
 			continue
 		}
-		cmds[harness] = engine.WakeCommand{Argv: x.Argv, Fallback: x.Fallback, Cooldown: x.Cooldown}
+		cmds[harness] = engine.WakeCommand{Argv: x.Argv, Fallback: x.Fallback}
 	}
 	return cmds
 }

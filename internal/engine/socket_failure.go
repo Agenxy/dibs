@@ -13,7 +13,7 @@ import (
 
 // A failed native write gets the same one retry as an ordinary wake. The
 // readiness tick must not create an unlimited retry path alongside it. Only
-// a changed actionable cohort or real turn evidence rearms this derived cap.
+// a changed actionable cohort rearms this derived cap.
 type socketFailure struct {
 	version uint64
 	count   int
@@ -48,15 +48,22 @@ func (e *Engine) socketMailVersion(l *core.Agent, now time.Time) uint64 {
 		wanted[key] = true
 	}
 	for _, m := range e.state.Inbox(l.ID) {
-		if wanted[l.ID+"\x00"+strconv.FormatUint(m.Serial, 10)] && e.socketActionableMessage(m) {
+		key := l.ID + "\x00" + strconv.FormatUint(m.Serial, 10)
+		if !e.socketWritten["mail:"+key] && wanted[key] && e.socketActionableMessage(m) {
 			version = max(version, m.Serial)
 		}
 	}
 	for _, n := range e.takeNotices(l.ID) {
-		at, shown := e.noticePresented[l.ID+"\x00"+strconv.FormatUint(n.Serial, 10)]
-		if !n.Delivered && (!shown || now.Sub(at) >= AnnounceRetry) &&
+		key := noticeKey(l.ID, n.Serial)
+		at, shown := e.noticePresented[key]
+		if !e.socketWritten["notice:"+key] && !n.Delivered && (!shown || now.Sub(at) >= AnnounceRetry) &&
 			socketActionableNotice(n, l, e.state.Messages[n.Msg]) {
 			version = max(version, n.Serial)
+		}
+	}
+	for _, a := range e.state.Unacked(l.ID) {
+		if !e.socketWritten["announcement:"+noticeKey(l.ID, a.Serial)] {
+			version = max(version, a.Serial)
 		}
 	}
 	return version
@@ -77,8 +84,8 @@ func (e *Engine) recordSocketOutcome(plan wakePlan, written bool) {
 		}
 		now := time.Now()
 		version := e.socketCauseVersion(l, now)
-		if version != plan.socketVersion || e.socketLifecycle(l, now) == "busy" {
-			return nil // a new turn or new cause did not take part in this failure
+		if version != plan.socketVersion {
+			return nil // a newer original cause did not take part in this failure
 		}
 		rec := e.socketFailures[key]
 		if rec.version != version {

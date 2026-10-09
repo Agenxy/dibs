@@ -6,6 +6,8 @@ package engine
 import (
 	"context"
 	"net"
+	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -116,46 +118,71 @@ func (f *daemonEconomyFixture) ageBusy(t *testing.T, age time.Duration) {
 	}
 }
 
-func TestSocketEconomyAuthenticatedBusyWithoutStopRecovers(t *testing.T) {
+func TestSocketEconomyAuthenticatedBusyWithoutStopStillDelivers(t *testing.T) {
 	f := newDaemonEconomyFixture(t)
-	// A real token-authenticated call, with no subsequent Stop, is the failure
-	// door: an external CLI call or lost hook must not suppress mail forever.
 	f.do(t, &core.Op{Kind: core.OpAckBoard, Token: f.token})
-	f.do(t, &core.Op{Kind: core.OpSendMessage, Token: f.sender, To: "worker", MsgType: core.MsgRequest, Body: "missing-stop-first"})
-	f.ageBusy(t, 30*time.Minute-time.Second)
-	if !f.e.wakeStamp("worker").IsZero() {
-		t.Fatal("busy evidence scheduled a native writer before its ceiling")
+	for _, body := range []string{"missing-stop-first", "missing-stop-second"} {
+		f.do(t, &core.Op{Kind: core.OpSendMessage, Token: f.sender, To: "worker", MsgType: core.MsgQuestion, Body: body})
+		text := f.receive(t, time.Second)
+		if !strings.Contains(text, body) || (body == "missing-stop-second" && strings.Contains(text, "missing-stop-first")) {
+			t.Fatalf("busy delivery lost new mail or repeated an old item: %q", text)
+		}
 	}
 	select {
 	case text := <-f.wire:
-		t.Fatalf("busy evidence wrote before its ceiling: %q", text)
-	default:
-	}
-	f.ageBusy(t, 30*time.Minute)
-	select {
-	case text := <-f.wire:
-		t.Fatalf("silence created a scheduled wake: %q", text)
+		t.Fatalf("no new item bought another write: %q", text)
 	case <-time.After(1100 * time.Millisecond):
 	}
-	// A new authored event after silence may still wake the existing session.
-	// The recovery is unknown, not an invented idle observation, and a second
-	// actionable message cannot spend another socket wake in the same epoch.
-	f.do(t, &core.Op{Kind: core.OpSendMessage, Token: f.sender, To: "worker", MsgType: core.MsgQuestion, Body: "missing-stop-second"})
-	if text := f.receive(t, time.Second); !strings.Contains(text, "missing-stop-first") || !strings.Contains(text, "missing-stop-second") {
-		t.Fatalf("event wake lost the outstanding cohort: %q", text)
+}
+
+func TestSocketBurstCarriesAllNewItemsAndNeverRepeats(t *testing.T) {
+	f := newDaemonEconomyFixture(t)
+	for _, body := range []string{"burst-first", "burst-second"} {
+		f.do(t, &core.Op{Kind: core.OpSendMessage, Token: f.sender, To: "worker", MsgType: core.MsgQuestion, Body: body})
 	}
-	r, err := f.e.query(f.ctx, func() core.Result {
-		l := f.e.state.Agents["worker"]
-		f.e.pruneSocketState()
-		return core.Result{"lifecycle": f.e.socketLifecycle(l, time.Now()), "offers": f.e.nextSocketOffer}
-	})
-	if err != nil || r["lifecycle"] != "unknown" || r["offers"] != uint64(1) {
-		t.Fatalf("recovery was not one coalesced unknown wake: %v %v", r, err)
+	if text := f.receive(t, time.Second); !strings.Contains(text, "burst-first") || !strings.Contains(text, "burst-second") {
+		t.Fatalf("burst did not carry every original item: %q", text)
 	}
 	select {
 	case text := <-f.wire:
-		t.Fatalf("silent busy recovery wrote a second frame: %q", text)
-	default:
+		t.Fatalf("burst wrote twice: %q", text)
+	case <-time.After(1100 * time.Millisecond):
+	}
+	f.do(t, &core.Op{Kind: core.OpSendMessage, Token: f.sender, To: "worker", MsgType: core.MsgQuestion, Body: "separate-third"})
+	if text := f.receive(t, time.Second); !strings.Contains(text, "separate-third") || strings.Contains(text, "burst-first") || strings.Contains(text, "burst-second") {
+		t.Fatalf("later mail missing or prior cohort repeated: %q", text)
+	}
+}
+
+func TestSocketFreshAnnouncementAndOutcomeAreNotTurnSuppressed(t *testing.T) {
+	for _, kind := range []string{"announcement", "outcome"} {
+		t.Run(kind, func(t *testing.T) {
+			f := newDaemonEconomyFixture(t)
+			if kind == "announcement" {
+				f.do(t, &core.Op{Kind: core.OpAckBoard, Token: f.sender})
+				f.do(t, &core.Op{Kind: core.OpAckBoard, Token: f.token})
+				f.do(t, &core.Op{Kind: core.OpSpaceOpen, Token: f.sender, Space: "fresh-proof", Text: "proof"})
+				f.do(t, &core.Op{Kind: core.OpSpaceJoin, Token: f.token, Space: "fresh-proof"})
+			}
+			for i := range 2 {
+				var serial uint64
+				if kind == "announcement" {
+					serial = f.do(t, &core.Op{Kind: core.OpSpaceAnnounce, Token: f.sender, Space: "fresh-proof", Body: "fresh announcement"})["serial"].(uint64)
+				} else {
+					serial = f.do(t, &core.Op{Kind: core.OpSendMessage, Token: f.token, To: "sender", MsgType: core.MsgQuestion, Body: "question"})["msg_serial"].(uint64)
+					f.do(t, &core.Op{Kind: core.OpRespond, Token: f.sender, MsgSerial: serial, Disposition: "answer", Body: "answer"})
+				}
+				text := f.receive(t, time.Second)
+				if !strings.Contains(text, strconv.FormatUint(serial, 10)) {
+					t.Fatalf("fresh %s %d not offered: %q", kind, i, text)
+				}
+			}
+			select {
+			case text := <-f.wire:
+				t.Fatalf("no new %s item bought another write: %q", kind, text)
+			case <-time.After(1100 * time.Millisecond):
+			}
+		})
 	}
 }
 
@@ -197,19 +224,8 @@ func TestSocketEconomyDaemonFallbackUsesLifecycleAndMail(t *testing.T) {
 				kind = core.MsgNotify
 			}
 			r := f.do(t, &core.Op{Kind: core.OpSendMessage, Token: f.sender, To: "worker", MsgType: kind, Body: marker})
-			if !busy {
-				if text := f.receive(t, time.Second); !strings.Contains(text, marker) {
-					t.Fatalf("daemon lost idle actionable mail: %q", text)
-				}
-			} else {
-				if !f.e.wakeStamp("worker").IsZero() {
-					t.Fatal("suppressed wake spent the cooldown or scheduled a native writer")
-				}
-				select {
-				case text := <-f.wire:
-					t.Fatalf("suppressed native route wrote: %q", text)
-				case <-time.After(1100 * time.Millisecond):
-				}
+			if text := f.receive(t, time.Second); !strings.Contains(text, marker) {
+				t.Fatalf("daemon lost actionable mail during %s: %q", mode, text)
 			}
 			got := f.hook(t, "Stop", false)
 			if got["decision"] != "block" || !strings.Contains(fmtResult(got), marker) {
@@ -269,10 +285,21 @@ func TestSocketEconomyDaemonFailureKeepsOneRetryAndNoFalseTurn(t *testing.T) {
 	f := newDaemonEconomyFixture(t)
 	f.hook(t, "UserPromptSubmit", false)
 	f.e.SetWakeCommands(map[string]WakeCommand{"claude code": {Argv: []string{"/usr/bin/false"}, Cooldown: 200 * time.Millisecond}})
-	f.do(t, &core.Op{Kind: core.OpSendMessage, Token: f.sender, To: "worker", MsgType: core.MsgQuestion, Body: "failed-daemon-mail"})
+	// Keep the stale pathname discoverable after closing the receiver. Otherwise
+	// cache refresh can switch the retry to the command route, so the offer count
+	// describes two different transports depending on when the scan runs.
+	unix, ok := f.sock.(*net.UnixListener)
+	if !ok {
+		t.Fatal("setup: fixture is not a Unix socket")
+	}
+	unix.SetUnlinkOnClose(false)
 	if err := f.sock.Close(); err != nil {
 		t.Fatal("setup: close receiver:", err)
 	}
+	if info, err := os.Stat(f.sock.Addr().String()); err != nil || info.Mode()&os.ModeSocket == 0 {
+		t.Fatalf("setup: lost stale socket pathname: %v", err)
+	}
+	f.do(t, &core.Op{Kind: core.OpSendMessage, Token: f.sender, To: "worker", MsgType: core.MsgQuestion, Body: "failed-daemon-mail"})
 	f.hook(t, "Stop", true) // event attempts actual delivery into the missing socket
 	deadline := time.Now().Add(defaultPeerCooldown + 3*time.Second)
 	armed := false
@@ -297,9 +324,27 @@ func TestSocketEconomyDaemonFailureKeepsOneRetryAndNoFalseTurn(t *testing.T) {
 	}
 
 	<-time.After(100 * time.Millisecond)
-	r, err := f.e.query(f.ctx, func() core.Result { return core.Result{"offers": f.e.nextSocketOffer} })
-	if err != nil || r["offers"] != uint64(1) {
-		t.Fatalf("failure path unexpectedly wrote another native offer: %v %v", r, err)
+	r, err := f.e.query(f.ctx, func() core.Result {
+		return core.Result{
+			"offers":   f.e.nextSocketOffer,
+			"failures": f.e.socketFailures[socketSessionKey(f.e.state.Agents["worker"])].count,
+		}
+	})
+	if err != nil || r["offers"] != uint64(2) || r["failures"] != 2 {
+		t.Fatalf("original failed write must get exactly one failed retry: %v %v", r, err)
+	}
+	// Lifecycle labels cannot reset this original item's two-attempt cap.
+	f.hook(t, "UserPromptSubmit", false)
+	f.hook(t, "Stop", true)
+	<-time.After(1100 * time.Millisecond)
+	r, err = f.e.query(f.ctx, func() core.Result {
+		f.e.wakers.mu.Lock()
+		pending := f.e.wakers.deferred["worker"] != nil
+		f.e.wakers.mu.Unlock()
+		return core.Result{"offers": f.e.nextSocketOffer, "pending": pending}
+	})
+	if err != nil || r["offers"] != uint64(2) || r["pending"] != false {
+		t.Fatalf("busy/Stop labels rearmed an exhausted original failure budget: %v %v", r, err)
 	}
 	f.e.wakers.mu.Lock()
 	_, started := f.e.wakers.dibsTurn["worker"]

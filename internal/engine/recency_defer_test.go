@@ -107,7 +107,9 @@ func TestQuestionThirtySecondsAfterCheckInDeliversWithoutAnotherEvent(t *testing
 	ctx, cancel := context.WithCancel(context.Background())
 	joined := make(chan struct{})
 	go func() { e.Run(ctx); close(joined) }()
-	t.Cleanup(func() { cancel(); <-joined })
+	// The child writes its receipt before it exits. Join the wake while its
+	// writer is still available, before another test restores the app fixture.
+	t.Cleanup(func() { waitWakeDone(t, e, "worker"); cancel(); <-joined })
 	register := func(name string, agent *core.AgentInfo, session string) string {
 		r, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: name, Nonce: "recent-" + name, AgentKind: core.KindPersistent, Agent: agent, SessionID: session})
 		if err != nil {

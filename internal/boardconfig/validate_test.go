@@ -151,15 +151,9 @@ func TestLoadRefusesSettingsThatWouldNotTakeEffect(t *testing.T) {
 			"a blob store too small for one maximum-sized blob",
 			"[limits]\nblob_store_bytes = 1024\n",
 		},
-		// [wake.exec] arrived with this list's own subject in it: cooldown took
-		// any duration and the waker maps everything <= 0 to the 90s default,
-		// so a negative one passed `dibd -check`, startup reported the harness
-		// configured, and the operator's explicit value did nothing. Zero is
-		// documented as "take the default" and stays legal.
-		{
-			"a negative wake cooldown, which silently becomes the default",
-			"[wake.exec.codex]\nargv = [\"codex\"]\ncooldown = \"-1s\"\n",
-		},
+		// The old negative-cooldown refusal moved to wake_cooldown_test.go:
+		// every retired value now loads without effect, with a startup WARN
+		// and a controlled-writer refusal. Empty live commands still fail here.
 		{
 			"a wake command whose executable is the empty string",
 			"[wake.exec.codex]\nargv = [\"\", \"exec\"]\n",

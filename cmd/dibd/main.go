@@ -160,6 +160,9 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("reading %s/dibs.toml: %w", *dir, err)
 	}
+	for _, retired := range cfg.RetiredWakeCooldowns {
+		slog.Warn(retired.Warning(filepath.Join(*dir, "dibs.toml")))
+	}
 	// Before the host slot, the listener, and anything else with a side effect.
 	// The whole value of this mode is that it can run against a board a
 	// different daemon is currently serving.
@@ -353,9 +356,6 @@ func run() error {
 	// is no tool, op or admin route that can set this, because it is arbitrary
 	// code on this machine and only the person at it may name it.
 	if len(cfg.Wake.Exec) > 0 {
-		// Each harness keeps its OWN cooldown. Collapsing the table to its
-		// largest value, which this did, let one cautious entry throttle every
-		// other harness while both settings still read as configured.
 		cmds := wakeCommandsFrom(cfg.Wake.Exec)
 		eng.SetWakeCommands(cmds)
 		slog.Info("the board can deliver to an agent through its harness",

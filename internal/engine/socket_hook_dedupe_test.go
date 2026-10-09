@@ -82,14 +82,11 @@ func TestSocketAndStopSharePresentationOnlyAfterTurnEvidence(t *testing.T) {
 			if !e.runWakeAndReport(plan, "worker") {
 				t.Fatal("socket delivery failed")
 			}
-			if order == "Stop then socket" || order == "mid-turn held socket then Stop" {
+			if order == "Stop then socket" {
 				select {
 				case got := <-wire:
-					t.Fatalf("a presented message or busy turn produced a socket write for #%d: %s", serial, got)
+					t.Fatalf("an already presented message produced a socket write for #%d: %s", serial, got)
 				case <-time.After(150 * time.Millisecond):
-				}
-				if order == "mid-turn held socket then Stop" && stop()["reason"] == nil {
-					t.Fatal("mid-turn socket suppression lost the Stop fallback")
 				}
 			} else {
 				select {

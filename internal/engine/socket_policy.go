@@ -51,10 +51,8 @@ func (e *Engine) noteSocketBusy(l *core.Agent, now time.Time) {
 	}
 	key := socketSessionKey(l)
 	e.socketTurns[key] = socketTurn{state: "busy", at: now}
-	// A new turn rearms the session for its next idle epoch. Outstanding
-	// offers still keep their held-peer hook fallback until confirmed.
-	delete(e.socketEpochs, key)
-	delete(e.socketFailures, key)
+	// Lifecycle is evidence for acceptance, never permission for another
+	// writer or a new retry budget. Keep the in-flight reservation intact.
 }
 
 func (e *Engine) noteSocketIdle(l *core.Agent, now time.Time) {
@@ -68,8 +66,8 @@ func (e *Engine) noteSocketIdle(l *core.Agent, now time.Time) {
 // be lost. Silence cannot prove idle, but must not suppress wakes forever.
 const socketBusyCeiling = 30 * time.Minute
 
-// Fresh busy observations suppress sockets; stale ones become unknown. Only
-// unobserved lifecycle has the route contact/boot grace before recovery.
+// Lifecycle is diagnostic and helps distinguish receipt evidence. It never
+// suppresses delivery of new items; stale busy evidence becomes unknown.
 func (e *Engine) socketLifecycle(l *core.Agent, now time.Time) string {
 	if turn := e.socketTurns[socketSessionKey(l)]; turn.state != "" {
 		if turn.state == "busy" && now.Sub(turn.at) >= socketBusyCeiling {
@@ -200,7 +198,7 @@ func (e *Engine) socketHasCause(l *core.Agent, now time.Time) bool {
 		if other.Retired() || socketSessionKey(other) != key {
 			continue
 		}
-		mail := e.WakePolicy() != WakeNone && e.actionableSocketMail(other, now, true)
+		mail := e.WakePolicy() != WakeNone && e.hasUnwrittenSocketCause(other, now)
 		if mail {
 			return true
 		}
@@ -220,9 +218,9 @@ func (e *Engine) socketParticipants(l *core.Agent) []*core.Agent {
 	return rows
 }
 
-// Both writers enter here immediately before a write. Hooks intentionally use
-// the full formatter directly. A successful write is coalesced until a real
-// turn begins, even when a held peer generated no turn at all.
+// Legacy non-offer bridges use this non-consuming formatter. Current writers
+// reserve and deduplicate exact items through beginSocketOffers. Hooks retain
+// the full formatter so a held peer does not spend its Stop fallback.
 func (e *Engine) socketDigest(l *core.Agent, now time.Time) string {
 	if !e.socketCanPresent(l, now) {
 		return ""
@@ -232,15 +230,7 @@ func (e *Engine) socketDigest(l *core.Agent, now time.Time) string {
 }
 
 func (e *Engine) socketCanPresent(l *core.Agent, now time.Time) bool {
-	state := e.socketLifecycle(l, now)
-	if state == "busy" || state == "grace" || !e.socketHasCause(l, now) {
-		return false
-	}
-	key := socketSessionKey(l)
-	if epoch, ok := e.socketEpochs[key]; ok && epoch.written {
-		return false
-	}
-	return true
+	return e.socketHasCause(l, now)
 }
 
 // SocketReadyEvent is a derived readiness hint on the existing subscription,
@@ -260,6 +250,7 @@ func (e *Engine) signalSocketReady(l *core.Agent) {
 
 func (e *Engine) pruneSocketState() {
 	e.pruneClosedSelfWakers()
+	e.pruneSocketWritten()
 	live := map[string]bool{}
 	for _, id := range sortedAgentIDs(e.state) {
 		l := e.state.Agents[id]
@@ -321,7 +312,7 @@ func (e *Engine) wakeAnnouncementEvent(ev core.Event) {
 	for _, id := range sortedAgentIDs(e.state) {
 		l := e.state.Agents[id]
 		if !l.Retired() && len(e.state.Unacked(id)) > 0 {
-			e.maybeWake(core.Event{Type: "announcement.pending", To: id})
+			e.coalesceEventWake(core.Event{Type: "announcement.pending", To: id})
 		}
 	}
 }

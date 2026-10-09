@@ -917,14 +917,10 @@ It neither marks mail delivered nor drains agent updates or announcements;
 unlike `inbox` and `hook_poll`, it spends no delivery or agent call budget.
 Credential and session checks share the digest's single writer-loop snapshot.
 
-Socket digests require an actionable cause and idle or recovered unknown lifecycle.
-Starting and tool hooks and every authenticated model/tool call establish or
-refresh busy; observer subscriptions do not. A token can also be used by a CLI,
-subagent or plugin outside the session's turn, and a finishing hook can be lost.
-After 30 minutes without a busy observation, busy becomes unknown, never idle,
-so missing Stop evidence cannot permanently disable waking. A finishing hook
-establishes idle immediately. Unknown lifecycle retains the existing bounded
-contact/boot grace, then permits one coalesced actionable or due-wait wake.
+Socket digests require an actionable cause; busy, idle, unknown and recent
+contact do not decide delivery. Lifecycle remains observation for interpreting
+turn evidence, never permission to offer a new item. Fresh arrival events are
+batched for a fixed 200 ms from the first arrival, without sliding the window.
 Every message written by an agent or human to the recipient independently
 qualifies for delivery, including a plain notify that asks for no reply.
 Within one wake epoch, mail is presented by sender priority (urgent, high,
@@ -948,23 +944,33 @@ Leaving an already-presented notify unacknowledged does not rearm it across
 later idle epochs, command reconsideration or app reconnect. A confirmed
 socket presentation and ledgered mailbox delivery count; an unconfirmed
 socket write and command execution alone do not count as read receipts.
+Successful command delivery records only the original item keys
+captured before execution: an exit recheck skips those items and can offer new
+arrivals. The writer keeps these derived receipts bounded by retained coordination;
+losing them can repeat a delivery and cannot lose unread mail. An observed app
+incarnation change re-offers its outstanding items once; an earlier command
+completion cannot spend the replacement app's recovery.
 A non-blocking Stop neither marks those items delivered nor reads their outcome
 prefixes. Held information is delivered through SessionStart, `check_in` or
 `inbox`, or included in the next actionable Stop/socket digest under the shared
 quote budget. UserPromptSubmit remains silent. Bounded declared-work continuation remains an independent Stop cause.
 
 A send result's live route note uses the same authored-message decision as
-socket and Stop delivery. Idle authored notify receives a best-effort wake
-attempt; authored mail to a busy session reports delivery deferred until its
-Stop hook. That Stop blocks and delivers the mail without a socket frame.
-Socket availability and kernel writes cannot confirm receiver acceptance.
-Later mail in an already-written idle epoch reports coalescing without claiming
-that another frame was sent; it remains available to the next delivery.
+socket and Stop delivery. Authored mail receives a best-effort wake attempt
+regardless of lifecycle. Socket availability and kernel writes cannot confirm
+receiver acceptance.
 
-The additive socket-offer handshake reserves one derived wake epoch per host
-identity and current session. A successful kernel write holds that epoch until
-actual turn evidence; it proves no receiver acceptance. Failed writes release
-the reservation. Starting hooks confirm presentation of every owned mailbox
+The additive socket-offer handshake reserves one in-flight write per host
+identity and current session. A successful kernel write deduplicates only the
+original mail, notice and announcement items in that offer. Later items are
+eligible immediately, with only the 200 ms arrival batch. The derived receipt
+view is bounded by retained coordination items and is lost on daemon restart;
+mail is never lost, and a restart can repeat a best-effort notice. Failed writes
+release the reservation, retain their original cause fence and get at most one
+retry. Neither lifecycle activity nor another item resets that original item's
+socket write receipt. An unconfirmed write retains the full held-peer Stop
+fallback, separately from transport deduplication.
+Starting hooks confirm presentation of every owned mailbox
 quoted in the accepted batch, without consuming raw mail. A bridge may supply
 additional mailbox tokens in `com.dibs/socket_tokens` only when the daemon
 advertises `com.dibs/socket_batch`; every token is authenticated separately and
@@ -993,6 +999,13 @@ release its replacement activation's exclusion. A derived
 new event, never to poll an agent into another turn. Only a failed delivery
 may arm one retry for its original presentation identifiers; acknowledged or
 superseded causes cannot be replaced by unrelated mail on that retry.
+
+`[wake.exec.*].cooldown` is retired. Existing TOML files load with no pacing
+effect; every daemon start logs a WARN naming each obsolete key's path and
+line, and doctor fails the check. Upgrade makes an exact backup and removes
+the obsolete lines before stopping the old daemon; a failed safe rewrite
+leaves it serving. Controlled new configuration refuses the key. Host bridges
+no longer advertise its value to the hub.
 
 **App reconnect recovery.** Local stdio bridges attach their own PID and process
 start stamp as additive per-request metadata, including modern discovery and
