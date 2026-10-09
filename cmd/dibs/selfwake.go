@@ -199,6 +199,7 @@ func (w *selfWaker) wake(notice string) error {
 	}
 	if socketGone(err) {
 		w.surrender()
+		return err // the daemon owns any recovered route; do not arm a bridge retry
 	}
 	w.mu.Lock()
 	if w.version == version {
