@@ -400,9 +400,11 @@ cooldown = "60s"
 // So: a recorder that CHECKS IN, like a real woken agent, and then keeps
 // running. Mail arrives while it is alive. It exits. Nothing else happens.
 await mailDuringALongTurnIsNotLost()
+await mailDuringALongTurnIsNotLost(1500)
 
-async function mailDuringALongTurnIsNotLost() {
-  const name = "mail during a long turn reaches the agent after it ends"
+async function mailDuringALongTurnIsNotLost(postMarkerDelay = 0) {
+  const name = "mail during a long turn reaches the agent after it ends" +
+    (postMarkerDelay ? " (slow process exit)" : "")
   const d = mkdtempSync(join(tmpdir(), "dibs-wake-slow-"))
   const proj = join(d, "project")
   mkdirSync(proj)
@@ -423,16 +425,25 @@ const sec = (await Bun.file(Bun.argv[4]).text()).trim()
 // second one, just before exiting, is what makes the agent "recently in touch"
 // at the moment the command ends: without it the recency simply lapses while
 // the process sleeps, and the exit's turn-end record is never load-bearing.
-const checkIn = () => fetch("http://${a}/mcp", {
-  method: "POST",
-  headers: { "content-type": "application/json", "X-Dibs-Local": sec },
-  body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call",
-    params: { name: "check_in", arguments: { token: tok } } }),
-})
+const checkIn = async () => {
+  const response = await fetch("http://${a}/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", "X-Dibs-Local": sec },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call",
+      params: { name: "check_in", arguments: { token: tok } } }),
+  })
+  const reply = await response.json()
+  const result = JSON.parse(reply.result?.content?.[0]?.text ?? "null")
+  if (!response.ok || reply.error || !result?.ok || result.error) {
+    throw new Error("setup: recorder check_in did not succeed: " + JSON.stringify(reply))
+  }
+}
 await checkIn()
 await Bun.sleep(3000)
 await checkIn()
 await Bun.write("${endedFile}", "ended")
+// A live handle can outlast this marker; keep that ordering permanent.
+await Bun.sleep(${postMarkerDelay})
 `)
   await Bun.write(join(d, "dibs.toml"), `
 [wake.exec.codex]
@@ -486,6 +497,12 @@ cooldown = "60s"
         "so there is no running turn for the second to arrive during")
       return
     }
+    const firstFile = readdirSync(d).find(f => f.startsWith(basename(lg) + "."))!
+    const firstPID = Number(firstFile.slice((basename(lg) + ".").length).split(".")[0])
+    if (!Number.isInteger(firstPID) || firstPID <= 0) {
+      check(name, false, "setup: the first recorder did not identify its process")
+      return
+    }
 
     // The command is alive and has checked in. This is the moment that has
     // never been exercised: the agent looks busy, and it is about to stop.
@@ -497,11 +514,25 @@ cooldown = "60s"
       return
     }
 
-    // Observe the real command completing, then require event-driven delivery
-    // well inside the 60s cooldown. Expiry must not be what makes this pass.
+    // The marker precedes process exit. Observe the PID too: an undrained
+    // response or other live handle can keep Bun running after the marker,
+    // and coalescing correctly prevents a second command during that time.
+    // The delivery bound starts only when the original process is gone.
     for (let until = Date.now() + 8000; !existsSync(endedFile);) {
       if (Date.now() > until) {
         check(name, false, "setup: the first command never finished its final check_in")
+        return
+      }
+      await Bun.sleep(20)
+    }
+    for (let until = Date.now() + 8000;;) {
+      try { process.kill(firstPID, 0) }
+      catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "ESRCH") break
+        throw err
+      }
+      if (Date.now() > until) {
+        check(name, false, "setup: the first recorder is still alive after its ended marker")
         return
       }
       await Bun.sleep(20)
