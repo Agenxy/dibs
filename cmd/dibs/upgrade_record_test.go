@@ -214,6 +214,12 @@ func TestCLIUpgradeRecordProcess(t *testing.T) {
 	if os.Getenv("DIBS_TEST_UPGRADE_RECORD") != "1" {
 		return
 	}
+	if bin := os.Getenv("DIBS_TEST_PLUGIN_EXECUTABLE"); bin != "" {
+		codexPluginExecutable = func() string { return bin }
+		if err := os.Setenv("CODEX_HOME", os.Getenv("DIBS_TEST_PLUGIN_HOME")); err != nil {
+			t.Fatal(err)
+		}
+	}
 	build.Version = "0.0.8" // fixture: force the actual --fetch path, not Current
 	if os.Getenv("DIBS_TEST_UPGRADE_CURRENT") == "1" {
 		build.Version = "0.0.9"

@@ -105,7 +105,11 @@ const upgradeHelp = `dibs upgrade: move the running daemon onto the dibd you hav
 
   Bare, it does NOT fetch anything: install the new build first (brew upgrade,
   or task install from a checkout) and this puts the fleet onto it. Run bare on
-  an up-to-date install and it correctly does nothing.
+  an up-to-date install and it leaves the daemon alone. It also refreshes an
+  already installed, enabled Codex Dibs plugin to this build's version root.
+  Plugin failures warn and fail doctor, but do not block the daemon upgrade:
+  rerun dibs codex-plugin install. New chats/genuine app refreshes can load the
+  current definition; running chats retain their tool list until then.
 
   --check            ask what the current release is and print where this build
                      stands. Changes nothing, reaches github.com, and is the
@@ -255,6 +259,7 @@ func upgrade(o upgradeOpts) error {
 		return err
 	}
 	if o.dryRun {
+		refreshUpgradeCodexPlugin(os.Stdout, true)
 		return p.report()
 	}
 	if err := p.preflight(); err != nil {
@@ -263,6 +268,7 @@ func upgrade(o upgradeOpts) error {
 	if err := p.removeWakeCooldowns(); err != nil {
 		return err
 	}
+	refreshUpgradeCodexPlugin(os.Stderr, false)
 	// NOTHING TO DO IS NOTHING DONE. The help said a bare run on an
 	// up-to-date install correctly does nothing, and the command then
 	// stopped a serving daemon and restarted it onto the build it was

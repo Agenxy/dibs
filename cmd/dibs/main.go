@@ -99,6 +99,9 @@ is not a mystery):
                            something to rewrite
 
 setup:
+  dibs codex-plugin install  install this build's versioned Codex plugin;
+                           new chats can load current tools, while running
+                           chats keep their list until a genuine app refresh
   dibs configure          first-run wizard: picks secure defaults for you
   dibs configure --service write a launchd/systemd unit so the daemon survives a
                            closed terminal; prints the load command rather than
@@ -206,6 +209,8 @@ func main() {
 		err = doctor(os.Args[2:])
 	case "codex-hooks":
 		err = codexHooksCmd(os.Args[2:])
+	case "codex-plugin":
+		err = codexPluginCmd(os.Args[2:])
 	case "calibrate":
 		err = calibrate(os.Args[2:])
 	case "invite":
@@ -355,7 +360,7 @@ func parseFlagsUsage(fs *flag.FlagSet, args []string, synopsis string) error {
 var commands = []string{
 	"put", "get",
 	"await", "probe", "watch", "monitor", "board", "log", "verify", "doctor",
-	"codex-hooks", "calibrate", "version", "help", "man", "completion", "configure", "messages",
+	"codex-hooks", "codex-plugin", "calibrate", "version", "help", "man", "completion", "configure", "messages",
 	"web", "admin", "invite",
 	"mcp-config", "mcp-stdio", "host-bridge", "human-relay", "hook-spawn", "hook-poll", "hook-session",
 	"identity",
