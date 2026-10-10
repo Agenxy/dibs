@@ -1092,8 +1092,14 @@ Board rows (including compact `check_in`) and agent `send` receipts expose
 adds accepted, settled, not_sent, unknown, queued_unloaded or queued_native_failed;
 historical started/steered observations remain readable. Native input uses
 `admission: not_queued` and `pending: not_applicable`. These are the last
-adapter outcome, not a receipt for a later send. Native success confirms app
-input only. Cold accepted/retained queue outcomes confirm queue admission only. This derived view holds
+adapter outcome, not a receipt for a later send. Before background delivery, an
+eligible fresh send with no prior native outcome instead reports
+`native_delivery: in_progress`, without an observation timestamp, and directs
+the sender to the board for the outcome. This send-only advisory does not wait
+or assert queue or app acceptance; suppressed or already-offered mail does not
+acquire a pending attempt. When a prior native outcome exists, it remains
+explicitly a prior observation. Native success confirms app input only.
+Cold accepted/retained queue outcomes confirm queue admission only. This derived view holds
 the last adapter observation, never a fresh read: `admission` is accepted,
 retained, failed, not_attempted or unconfirmed; `pending` is pending or unknown.
 `observed_at` and `observation_age_seconds` date that observation. When known,

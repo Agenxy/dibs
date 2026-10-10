@@ -5,6 +5,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Send replies describe pending direct app delivery when that route is eligible
+  and no native result has been observed yet. Prior native outcomes remain
+  labelled as prior observations; send does not wait for delivery. Upgrade
+  backups use `dibs.toml.before-wake-settings-*` for all retired wake settings.
+
 - Reading a coordinator contact notice now survives daemon restarts and
   credential rotation. Only the recipient's authenticated rendered prefix is
   recorded; unresolved alerts stay on the board, source mail stays unread,

@@ -175,11 +175,15 @@ func (e *Engine) sendAdvisories(op *core.Op, res core.Result, now time.Time) {
 	if route == "desktop" || route == "relay" {
 		delete(res, "note")
 	} else {
-		if view := e.queueWakeView(e.state.Agents[op.To], now); view != nil {
+		serial, _ := res["msg_serial"].(uint64)
+		agent, message := e.state.Agents[op.To], e.state.Messages[serial]
+		view := e.sendQueueWakeView(agent, message, now)
+		if view != nil {
 			res["queue_wake"] = view
 		}
-		serial, _ := res["msg_serial"].(uint64)
-		if note := e.sendDeliveryNote(e.state.Agents[op.To], e.state.Messages[serial]); note != "" {
+		if view["native_delivery"] == "in_progress" {
+			res["note"] = "Stored in the mailbox for " + agent.ID + ". " + queueWakeNote(view)
+		} else if note := e.sendDeliveryNote(agent, message); note != "" {
 			res["note"] = note
 		}
 	}
