@@ -1,0 +1,120 @@
+{
+  "Agents": {
+    "lead": {
+      "Status": "active",
+      "acked_serial": 0,
+      "activation": 1,
+      "created_serial": 1,
+      "id": "lead",
+      "kind": "ephemeral",
+      "last_coordination_at": "2023-11-14T14:13:28-08:00",
+      "name": "lead",
+      "role": "coordinator"
+    },
+    "sender": {
+      "Status": "active",
+      "acked_serial": 0,
+      "activation": 0,
+      "created_serial": 2,
+      "id": "sender",
+      "kind": "ephemeral",
+      "last_coordination_at": "2023-11-14T14:13:24-08:00",
+      "name": "sender"
+    },
+    "worker": {
+      "Status": "active",
+      "acked_serial": 0,
+      "activation": 0,
+      "created_serial": 3,
+      "id": "worker",
+      "kind": "ephemeral",
+      "last_coordination_at": "2023-11-14T14:13:22-08:00",
+      "name": "worker"
+    }
+  },
+  "Announcements": {},
+  "Blobs": {},
+  "Claims": null,
+  "Contacts": {
+    "6": {
+      "count": 1,
+      "high_water": 5,
+      "oldest_serial": 5,
+      "recipient": "worker",
+      "serial": 6,
+      "window_start": "2023-11-14T14:13:25-08:00"
+    }
+  },
+  "Dedup": {
+    "lead\u0000reactivate": {
+      "activation": 1,
+      "agent": "lead",
+      "at": "2023-11-14T14:13:28-08:00",
+      "digest": "",
+      "id": "reactivate",
+      "serial": 0
+    }
+  },
+  "Limits": {
+    "agent_ttl": 300000000000,
+    "announcement_retention": 128,
+    "archive_retention": 604800000000000,
+    "blob_grace_window": 600000000000,
+    "blob_store_bytes": 1073741824,
+    "blob_ttl": 604800000000000,
+    "claim_lease": 900000000000,
+    "claim_max_life": 86400000000000,
+    "consumed_retention": 900000000000,
+    "dedup_per_agent": 256,
+    "dedup_window": 86400000000000,
+    "default_deadline": 600000000000,
+    "dormancy_max": 2592000000000000,
+    "idle_ttl": 2700000000000,
+    "max_agents": 64,
+    "max_attachments": 8,
+    "max_blob_size": 67108864,
+    "max_body_bytes": 32768,
+    "max_claims_global": 256,
+    "max_claims_per_agent": 32,
+    "max_deadline": 7200000000000,
+    "max_deadline_persistent": 604800000000000,
+    "max_desc_bytes": 1024,
+    "max_dirs": 16,
+    "max_fileref_hash": 128,
+    "max_id_bytes": 128,
+    "max_mailbox_depth": 256,
+    "max_name_bytes": 128,
+    "max_note_bytes": 512,
+    "max_path_bytes": 1024,
+    "max_persistent_agents": 64,
+    "max_slots_per_agent": 32,
+    "per_agent_blob_bytes": 268435456,
+    "post_retention": 128,
+    "stale_grace": 1800000000000,
+    "terminal_retention": 128
+  },
+  "Messages": {
+    "5": {
+      "body": "unread",
+      "consumed": false,
+      "contact_escalated_serial": 6,
+      "deadline": "2023-11-14T14:23:24-08:00",
+      "from": "sender",
+      "sent_at": "2023-11-14T14:13:24-08:00",
+      "serial": 5,
+      "state": "pending",
+      "to": "worker",
+      "type": "request"
+    }
+  },
+  "NodeID": "contact-compat",
+  "Nonces": {
+    "lead-nonce": "lead"
+  },
+  "RestartEpoch": "",
+  "RestartNotices": {},
+  "RestartSettings": {},
+  "ReviewReadCutoff": 0,
+  "Serial": 9,
+  "Spaces": {}
+}

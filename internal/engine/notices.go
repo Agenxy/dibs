@@ -314,7 +314,13 @@ func (e *Engine) rebuildSituationalNotices() {
 			// pre-release review found this still asking Gone(), five
 			// rounds after the verdict rebuild stopped.
 			l := e.state.Agents[agent]
-			return !l.Retired() && serial > l.AckedSerial && serial > l.CreatedSerial
+			if l.Retired() {
+				return false // includes a pruned recipient absent from the state
+			}
+			if ev.Type == "contact.escalated" && serial <= l.ContactNoticeReadAt {
+				return false
+			}
+			return serial > l.AckedSerial && serial > l.CreatedSerial
 		})
 	}
 }

@@ -31,6 +31,9 @@ func (s *State) Admit(op *Op) error {
 	if err := s.admitContact(op); err != nil {
 		return err
 	}
+	if err := s.admitContactNoticeRead(op); err != nil {
+		return err
+	}
 	if err := s.admitStallNotice(op); err != nil {
 		return err
 	}

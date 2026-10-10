@@ -136,7 +136,9 @@ func (e *Engine) pullUpdates(l *core.Agent, now time.Time) ([]string, error) {
 	if err := e.consumeOutcomes(l.ID, through, now); err != nil {
 		return nil, err
 	}
-	e.consumeContactNotices(l.ID, contacts)
+	if err := e.consumeContactNotices(l.ID, contacts, now); err != nil {
+		return nil, err
+	}
 	return lines, nil
 }
 
