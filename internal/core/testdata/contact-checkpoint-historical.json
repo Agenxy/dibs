@@ -7,7 +7,7 @@
       "created_serial": 1,
       "id": "lead",
       "kind": "ephemeral",
-      "last_coordination_at": "2023-11-14T14:13:28-08:00",
+      "last_coordination_at": "2023-11-14T22:13:28Z",
       "name": "lead",
       "role": "coordinator"
     },
@@ -18,7 +18,7 @@
       "created_serial": 2,
       "id": "sender",
       "kind": "ephemeral",
-      "last_coordination_at": "2023-11-14T14:13:24-08:00",
+      "last_coordination_at": "2023-11-14T22:13:24Z",
       "name": "sender"
     },
     "worker": {
@@ -28,7 +28,7 @@
       "created_serial": 3,
       "id": "worker",
       "kind": "ephemeral",
-      "last_coordination_at": "2023-11-14T14:13:22-08:00",
+      "last_coordination_at": "2023-11-14T22:13:22Z",
       "name": "worker"
     }
   },
@@ -42,14 +42,14 @@
       "oldest_serial": 5,
       "recipient": "worker",
       "serial": 6,
-      "window_start": "2023-11-14T14:13:25-08:00"
+      "window_start": "2023-11-14T22:13:25Z"
     }
   },
   "Dedup": {
     "lead\u0000reactivate": {
       "activation": 1,
       "agent": "lead",
-      "at": "2023-11-14T14:13:28-08:00",
+      "at": "2023-11-14T22:13:28Z",
       "digest": "",
       "id": "reactivate",
       "serial": 0
@@ -98,9 +98,9 @@
       "body": "unread",
       "consumed": false,
       "contact_escalated_serial": 6,
-      "deadline": "2023-11-14T14:23:24-08:00",
+      "deadline": "2023-11-14T22:23:24Z",
       "from": "sender",
-      "sent_at": "2023-11-14T14:13:24-08:00",
+      "sent_at": "2023-11-14T22:13:24Z",
       "serial": 5,
       "state": "pending",
       "to": "worker",

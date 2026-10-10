@@ -39,7 +39,9 @@ func foldContactCheckpointHistory(t *testing.T, added bool) map[string]any {
 			t.Fatal(err)
 		}
 		before := st.Serial
-		if _, _, err := st.Apply(&op, time.Unix(1700000000+int64(i), 0)); err != nil {
+		// Pin the ledger clock's location as well as its instant: time.Unix
+		// otherwise uses the machine's Local zone when state is JSON-encoded.
+		if _, _, err := st.Apply(&op, time.Unix(1700000000+int64(i), 0).UTC()); err != nil {
 			t.Fatalf("fold op %d %s: %v", i, op.Kind, err)
 		}
 		if st.Serial != before+1 {
