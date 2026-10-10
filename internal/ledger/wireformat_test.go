@@ -258,6 +258,8 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		"superseded_by": true,
 		// Additive delivery prefix and recorded review upgrade epoch; no retags.
 		"outcome_through_serial": true, "review_read_cutoff_serial": true,
+		// Additive contact read on an existing activity_checkpoint carrier.
+		"contact_notice_through_serial": true,
 		// New delivery-start timing and daemon-authored contact receipts.
 		// Absent fields keep historical send-time expiry and no contact state.
 		"delivery_start": true, "contact_serial": true,
@@ -457,7 +459,8 @@ const (
 	// Alias release adds one tag; every historical spelling stays frozen.
 	// App restart adds four observation tags and two setting tags; none renamed.
 	// Stall notices add one declaration-version tag; every old spelling remains.
-	frozenOpFingerprint       = "sha256:d33a95197ec80125"
+	// Contact notice reads add one checkpoint-prefix tag; no old tag changed.
+	frozenOpFingerprint       = "sha256:aa7d996bd7bc6805"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`

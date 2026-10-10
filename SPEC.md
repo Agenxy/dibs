@@ -795,6 +795,12 @@ when the person was notified: posting does not prove the agent read its mail.
 It contains metadata, never participant bodies. The coordinator's metadata-only
 notice is consumed when shown by its authenticated `check_in` or `inbox`; hooks
 do not consume it. This read does not resolve the contact or consume source mail.
+The rendered contact prefix is recorded per identity incarnation on an additive
+`contact_notice_through_serial` field of `activity_checkpoint`. Its read evidence
+survives daemon restart and credential rotation; reading without new contact news
+writes no such checkpoint. Historical checkpoints without this field retain their
+original activity effect. An older daemon ignores the added field and replays the
+same truthful activity checkpoint, but cannot retain the new read guarantee.
 
 **Mappings** (v2 gateway / v1.x Tasks): A2A. `pending/delivered → submitted/working`,
 `answered/approved → completed`, `denied/declined → rejected`, `expired_* → failed

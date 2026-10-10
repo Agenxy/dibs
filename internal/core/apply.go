@@ -221,7 +221,7 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 	case OpRelocate:
 		res, evs, err = s.applyRelocate(l, op, now)
 	case OpActivityCheckpoint:
-		res, evs = Result{"ok": true}, []Event{} // state effect: LastCoordination below
+		res, evs = s.applyContactCheckpoint(l, op) // LastCoordination below
 	case OpAckBoard:
 		res, evs = s.applyAckBoard(l, op, now)
 	case OpUpdate:

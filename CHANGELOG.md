@@ -5,6 +5,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Reading a coordinator contact notice now survives daemon restarts and
+  credential rotation. Only the recipient's authenticated rendered prefix is
+  recorded; unresolved alerts stay on the board, source mail stays unread,
+  and the person's independent notification receipt is unchanged. Repeated
+  reads with no new contact notice write no contact checkpoint.
+
 - Removed `[wake] open_app_after_idle`: closed Claude sessions recover
   immediately, without checking presence or HID idle. Existing files still boot
   with a path/line warning; doctor fails the check; upgrade backs up the exact

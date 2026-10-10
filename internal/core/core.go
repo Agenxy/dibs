@@ -506,6 +506,9 @@ type Agent struct {
 	// AckedSerial is the awareness-gate watermark; 0 = gate not passed in the
 	// current activation (cleared by every dormant/stale transition and wake).
 	AckedSerial uint64 `json:"acked_serial"`
+	// ContactNoticeReadAt survives credential rotation, unlike the awareness
+	// gate. It belongs to this incarnation and consumes no source mail or alert.
+	ContactNoticeReadAt uint64 `json:"contact_notice_read_serial,omitempty"`
 	// Activation is the generation counter, incremented by each resume.
 	Activation uint64 `json:"activation"`
 	// LastCoordination is the latest durable coordination checkpoint: a
