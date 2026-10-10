@@ -56,6 +56,7 @@ func doctor(args []string) error {
 		return err
 	}
 	d := &diagnosis{json: *asJSON}
+	d.checkCodexPluginVersion()
 	err := d.run(*verbose)
 	if *asJSON {
 		// One document however far the run got: the early returns inside run

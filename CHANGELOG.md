@@ -25,6 +25,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   pending mail delivered; seeing an FYI in the panel does not consume it for
   the agent. Model mail receipts stay untouched.
 
+- `dibs codex-plugin install` installs the embedded Codex integration under a
+  version root that names this build and tool fingerprint, using Codex's own
+  installer and preserving `dibs@dibs` and the configured marketplace source.
+  Upgrade refreshes an already installed, enabled integration; a failed plugin
+  refresh warns and fails doctor without blocking the daemon upgrade. Dry runs
+  change nothing; unverified installs restore prior plugin files. New chats
+  and genuine app refreshes can load the current definition. Running chats keep
+  their existing tool list until they end or the app refreshes it.
+
 - Send replies describe pending direct app delivery when that route is eligible
   and no native result has been observed yet. Prior native outcomes remain
   labelled as prior observations; send does not wait for delivery. Upgrade
