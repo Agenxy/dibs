@@ -5,6 +5,7 @@ package engine
 
 import (
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -95,6 +96,23 @@ func (e *Engine) queueWakeEligible(agent *core.Agent) bool {
 		surfaceOf(agent) == harnessenv.ChatGPTApp && threadIDOf(agent) != ""
 }
 
+// Send precedes background delivery. A native-capable route with no native
+// receipt yet is an attempt, not a queue observation. Keep a prior native
+// outcome (including cold fallback) explicitly historical, but do not let an
+// older queue observation describe the route this send is about to attempt.
+func (e *Engine) sendQueueWakeView(agent *core.Agent, message *core.Message, now time.Time) core.Result {
+	v := e.queueWakeView(agent, now)
+	if v == nil || v["native_delivery"] != nil || message == nil || message.To != agent.ID ||
+		e.sendWakeCauseNote(agent, message) != "" || !e.nativeAppRoute(agent) ||
+		!slices.Contains(e.freshCommandKeys(agent.ID, now), "mail:"+noticeKey(agent.ID, message.Serial)) {
+		return v
+	}
+	return core.Result{
+		"native_delivery": "in_progress", "admission": "unconfirmed", "pending": "unknown",
+		"thread_state": "unknown", "age_source": "unknown",
+	}
+}
+
 func elapsedSeconds(at, now time.Time) int64 { return max(0, int64(now.Sub(at)/time.Second)) }
 
 func queueWakeNote(v core.Result) string {
@@ -103,6 +121,9 @@ func queueWakeNote(v core.Result) string {
 	}
 	if delivery, ok := v["native_delivery"].(string); ok {
 		switch delivery {
+		case "in_progress":
+			return "Direct delivery in progress; check the board for the outcome. " +
+				"App acceptance and read mail are not yet confirmed."
 		case "queued_native_failed":
 			return "Native input was not sent; cold queue admission: " + fmt.Sprint(v["admission"]) +
 				". Queue admission does not confirm a started turn or read mail."

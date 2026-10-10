@@ -43,7 +43,7 @@ func removeUpgradeWakeCooldowns(dir string) error {
 	if !info.Mode().IsRegular() || info.Mode().Perm()&0o222 == 0 {
 		return fmt.Errorf("%s is not a writable regular file; remove the obsolete wake setting lines yourself", path)
 	}
-	backup, err := os.CreateTemp(dir, "dibs.toml.before-cooldown-*")
+	backup, err := os.CreateTemp(dir, "dibs.toml.before-wake-settings-*")
 	if err != nil {
 		return err
 	}
@@ -83,7 +83,7 @@ func writeSyncedCooldownFile(f *os.File, b []byte) error {
 }
 
 func prepareCooldownReplacement(dir string, b []byte, mode os.FileMode) (path string, err error) {
-	f, err := os.CreateTemp(dir, ".dibs.toml.no-cooldown-*")
+	f, err := os.CreateTemp(dir, ".dibs.toml.retired-wake-settings-*")
 	if err != nil {
 		return "", err
 	}

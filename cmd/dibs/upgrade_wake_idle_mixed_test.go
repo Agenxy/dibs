@@ -30,7 +30,7 @@ func TestUpgradeRetiresIdleDelayAndCooldownWithOriginalSourceLines(t *testing.T)
 		if string(got) != after {
 			return fmt.Errorf("mixed migration not complete before stop: %q", got)
 		}
-		backups, err := filepath.Glob(filepath.Join(dir, "dibs.toml.before-cooldown-*"))
+		backups, err := filepath.Glob(filepath.Join(dir, "dibs.toml.before-wake-settings-*"))
 		if err != nil {
 			return fmt.Errorf("find mixed backup before stop: %w", err)
 		}

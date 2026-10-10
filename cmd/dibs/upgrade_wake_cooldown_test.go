@@ -43,7 +43,7 @@ func TestUpgradeBacksUpAndRemovesCooldownBeforeStopping(t *testing.T) {
 		if string(got) != upgradeCooldownAfter {
 			return fmt.Errorf("config not migrated before stop: %q", got)
 		}
-		backups, err := filepath.Glob(filepath.Join(dir, "dibs.toml.before-cooldown-*"))
+		backups, err := filepath.Glob(filepath.Join(dir, "dibs.toml.before-wake-settings-*"))
 		if err != nil {
 			return fmt.Errorf("find backup: %w", err)
 		}
@@ -66,7 +66,7 @@ func TestUpgradeBacksUpAndRemovesCooldownBeforeStopping(t *testing.T) {
 	if stops != 1 {
 		t.Fatalf("cutover stopped %d times", stops)
 	}
-	backups, err := filepath.Glob(filepath.Join(dir, "dibs.toml.before-cooldown-*"))
+	backups, err := filepath.Glob(filepath.Join(dir, "dibs.toml.before-wake-settings-*"))
 	if err != nil || len(backups) != 1 {
 		t.Fatalf("backup: %v %v", backups, err)
 	}
@@ -81,7 +81,7 @@ func TestUpgradeBacksUpAndRemovesCooldownBeforeStopping(t *testing.T) {
 	if err := p.cutover(); err != nil {
 		t.Fatal("idempotent second cutover:", err)
 	}
-	again, err := filepath.Glob(filepath.Join(dir, "dibs.toml.before-cooldown-*"))
+	again, err := filepath.Glob(filepath.Join(dir, "dibs.toml.before-wake-settings-*"))
 	if err != nil || len(again) != 1 {
 		t.Fatalf("repeat migration created another backup: %v %v", again, err)
 	}
