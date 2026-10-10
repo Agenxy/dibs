@@ -8,14 +8,39 @@ a process at all, and it costs an identity per session.
 
 ## Install
 
-**The plugin, which is the whole integration in three commands** (Codex
-0.155 or later; the checkout is a marketplace, the way it is for Claude Code):
+**The plugin, installed from the Dibs binary** (Codex
+with the `codex plugin` command):
 
 ```
-codex plugin marketplace add /path/to/the/dibs/checkout
-codex plugin add dibs@dibs
+dibs codex-plugin install
 dibs codex-hooks --trust
 ```
+
+The installer materializes this binary's embedded plugin under
+`$CODEX_HOME/dibs-marketplace/<build-and-tools-version>` (by default
+`~/.codex/dibs-marketplace/`) and uses `codex plugin add dibs@dibs`. Per-command
+local-source overrides preserve your configured marketplace source and plugin
+identity. Codex owns the active cache root; Dibs verifies the returned identity,
+version and installed files before recording a successful installation. A
+failed or incomplete install restores the prior plugin files. `--dry-run`
+prints the plan without writing files or invoking the installer; `--codex PATH`
+selects a particular Codex executable.
+
+`dibs upgrade` refreshes an already installed, enabled `dibs@dibs`, including
+when the daemon already serves the new build. It leaves an absent or disabled
+integration alone. If refresh fails, the daemon upgrade continues with a loud
+warning, and `dibs doctor` reports a problem naming `dibs codex-plugin install`.
+The bridge retains its in-place re-exec; exiting it is not a measured refresh
+trigger in Codex.
+
+**The tool-list boundary is a new chat or a genuine app-owned refresh.** A
+changed active version root invalidates Codex's parsed-plugin cache at its next
+lookup and gives the MCP connection a changed plugin root. Installing files
+does not refresh an already running chat: its existing tool list remains until
+the chat ends or the app actually refreshes it. Server refusals with corrective
+hints remain the backstop for stale calls. `notifications/tools/list_changed`
+is still emitted, but no externally reachable loaded-chat reload has been
+measured. The separately prepared upstream reload draft remains unposted.
 
 That gives a Codex session the MCP server (over stdio, on MCP 2026-07-28), the
 skill, and the three lifecycle hooks that deliver mail. The third command is

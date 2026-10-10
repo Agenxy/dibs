@@ -592,6 +592,13 @@ waits the window out (REQUIREMENTS.md R12). `dibs upgrade -n` says what it would
 do and changes nothing; with `--fetch` it stops after installing, so you can
 look at what landed before a fleet moves onto it.
 
+For an already installed, enabled `dibs@dibs`, upgrade also installs this build's
+versioned Codex plugin through Codex's own installer. Plugin refresh failures
+warn and fail `dibs doctor`, while the daemon upgrade continues; rerun
+`dibs codex-plugin install` to repair it. New chats and genuine app refreshes can
+load current tools. Already running chats keep their existing tool list until
+they end or the app refreshes it. See [the plugin instructions](plugins/codex/README.md).
+
 ### Configuration
 
 Dibs runs correctly with no configuration file at all, and most fleets never
