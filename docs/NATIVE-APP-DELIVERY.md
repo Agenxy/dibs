@@ -122,6 +122,36 @@ source boundary, not proof that no such interface can exist elsewhere.
 `navigate-to-route` (main offsets 3386410/3381630; bootstrap 2209448).
 `open -g` does not prevent the app from selecting a chat or revealing its window.
 
+### After an app restart
+
+A restarted app has loaded no agent thread, and its socket refuses
+connections for some seconds while it comes back (about five, measured
+2026-10-10 on 26.1002.52244). Before this, both of those took the cold route,
+so every agent's next mail navigated the person's window, at moments nobody
+chose, once per agent. Now:
+
+- A refused dial while the app's process is up is a restart, not a fault. The
+  mail is held: no queue, no open. A refused dial with the process gone is a
+  stale socket, and the cold route launches the app as before.
+- On each new app incarnation (two stable process samples), Dibs waits for the
+  socket to accept, then loads every local ChatGPT-app agent thread in one
+  pass under the desktop-wide open/restore lock: owner discovery first, an
+  open only for a thread not held, a bounded wait for it to load, and then
+  `codex://threads/new`, which returns the primary window to `/`, the route a
+  launch starts on (read from the app's deep link handler: no path, origin or
+  project means no workspace lookup and no dialog). A pass that opened nothing
+  moves nothing.
+- Only then are restart notices and held mail delivered, natively, into loaded
+  threads. Until the pass ends, a wake that finds its thread unloaded is held
+  too, so the one bounded retry cannot open a thread the pass is about to load.
+
+What this cannot do is restore a chat the person opened during those first
+seconds. The app exposes no focused-thread query over IPC, persists no route,
+and honours its automation broadcasts only from its own `desktop` client,
+which Dibs does not impersonate. The pass therefore runs as early as the
+socket allows and returns to the launch view, which is where the window
+stands unless the person has already moved it.
+
 **Draft for upstream review; not posted:** Please expose a versioned local IPC
 operation that loads an existing local agent conversation into the desktop
 app's owning runtime without selecting its chat, revealing its window or

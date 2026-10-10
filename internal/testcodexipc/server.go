@@ -27,14 +27,56 @@ const Thread = "7c3f0a11-2b44-4d90-9e57-1f2a3b4c5d6e"
 type Server struct {
 	Mode           string // idle, active, no-owner, changed, disconnect, refused, wrong-owner
 	BeforeSnapshot func()
-	mu             sync.Mutex
-	inputs         []map[string]any
-	follows        int
-	errors         []error
+	// Owns, when set, answers owner discovery per thread: false is the
+	// router's no-client-found, as for a thread the app has not loaded.
+	Owns    func(thread string) bool
+	socket  string
+	t       *testing.T
+	mu      sync.Mutex
+	inputs  []map[string]any
+	follows int
+	errors  []error
 }
 
 // Start publishes an isolated private socket and removes it at test cleanup.
 func Start(t *testing.T, mode string, before func()) *Server {
+	t.Helper()
+	s := &Server{Mode: mode, BeforeSnapshot: before}
+	s.socket = privateHome(t)
+	s.listen(t)
+	return s
+}
+
+// StartRestarting publishes the socket file with nothing accepting on it,
+// which is what a restarting app leaves: every dial is refused. Return brings
+// the app back at the same path, as a relaunched app recreates its socket.
+func StartRestarting(t *testing.T, mode string) *Server {
+	t.Helper()
+	s := &Server{Mode: mode}
+	s.socket = privateHome(t)
+	l, err := net.Listen("unix", s.socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.(*net.UnixListener).SetUnlinkOnClose(false)
+	if err = os.Chmod(s.socket, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_ = l.Close()
+	s.t = t
+	return s
+}
+
+// Return starts accepting at the socket StartRestarting left refusing.
+func (s *Server) Return() {
+	s.t.Helper()
+	if err := os.Remove(s.socket); err != nil {
+		s.t.Fatal(err)
+	}
+	s.listen(s.t)
+}
+
+func privateHome(t *testing.T) string {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("measured desktop protocol uses a Unix socket")
@@ -43,20 +85,25 @@ func Start(t *testing.T, mode string, before func()) *Server {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = os.RemoveAll(home) })
 	t.Setenv("CODEX_HOME", home)
 	t.Setenv("DIBS_TEST_NATIVE_IPC", "1")
 	dir := filepath.Join(home, "ipc")
 	if err = os.Mkdir(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	l, err := net.Listen("unix", filepath.Join(dir, "ipc.sock"))
+	return filepath.Join(dir, "ipc.sock")
+}
+
+func (s *Server) listen(t *testing.T) {
+	t.Helper()
+	l, err := net.Listen("unix", s.socket)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = os.Chmod(filepath.Join(dir, "ipc.sock"), 0o600); err != nil {
+	if err = os.Chmod(s.socket, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	s := &Server{Mode: mode, BeforeSnapshot: before}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -71,14 +118,12 @@ func Start(t *testing.T, mode string, before func()) *Server {
 	t.Cleanup(func() {
 		_ = l.Close()
 		<-done
-		_ = os.RemoveAll(home)
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		for _, err := range s.errors {
 			t.Errorf("app fixture failed: %v", err)
 		}
 	})
-	return s
 }
 
 // Inputs returns submitted native messages.
@@ -152,6 +197,9 @@ func (s *Server) answer(f map[string]any) map[string]any {
 		r["result"] = map[string]string{"clientId": "dibs-client"}
 	case "thread-owner-discovery":
 		s.ownerResult(r)
+		if thread, _ := p["conversationId"].(string); s.Owns != nil && !s.Owns(thread) {
+			r["resultType"], r["error"], r["result"] = "error", "no-client-found", map[string]any{}
+		}
 	case "thread-stream-following-changed":
 		s.mu.Lock()
 		s.follows++

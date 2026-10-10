@@ -182,9 +182,14 @@ type Engine struct {
 	restartIntervalDefault  time.Duration
 	restartResumeFromFile   bool
 	restartIntervalFromFile bool
-	nameAliases             *core.AgentNameAliases
-	configuredNames         map[string]configuredNameAddress // derived role-address diagnostics
-	reconnectMail           map[string]uint64                // row incarnation awaiting one reconnect reconsideration
+	// appSettled is the ChatGPT app incarnation whose agent threads Dibs has
+	// loaded (afterAppReturn), or the one it found at startup. While the
+	// running app differs, its threads are about to be loaded, and a wake
+	// that finds its thread unloaded waits for that rather than opening it.
+	appSettled      atomic.Value
+	nameAliases     *core.AgentNameAliases
+	configuredNames map[string]configuredNameAddress // derived role-address diagnostics
+	reconnectMail   map[string]uint64                // row incarnation awaiting one reconnect reconsideration
 	// hostAliases are ids this computer used to answer to: see
 	// SetHostAliases. Written before the engine serves, read on the
 	// request path.

@@ -71,27 +71,15 @@ func (e *Engine) watchAppRestarts(ctx context.Context) {
 			return
 		case <-tick.C:
 		}
-		enabled, err := e.appRestartEnabled(ctx)
-		if err != nil {
-			return
-		}
-		if !enabled {
-			watch = appEpochWatch{}
-			continue // off means no process probe and no wake
-		}
+		// Always observed, whatever the restart-notice setting: loading the
+		// agents' threads after a restart (afterAppReturn) is what stops their
+		// mail from moving the person's window, and it needs the transition.
+		// With notices off, observeAppRestart writes nothing and plans nothing.
 		epoch, known := currentAppRestartEpoch()
 		if err := watch.observe(ctx, e, epoch, known); err != nil {
 			slog.Warn("app-restart observation was not recorded", "err", err)
 		}
 	}
-}
-
-func (e *Engine) appRestartEnabled(ctx context.Context) (bool, error) {
-	res, err := e.query(ctx, func() core.Result {
-		window, _ := e.appRestartSettings()
-		return core.Result{"enabled": window > 0}
-	})
-	return res["enabled"] == true, err
 }
 
 func (w *appEpochWatch) observe(ctx context.Context, e *Engine, epoch string, known bool) error {
@@ -120,12 +108,15 @@ func (w *appEpochWatch) observe(ctx context.Context, e *Engine, epoch string, kn
 		if applyErr != nil {
 			return core.Result{"error": applyErr}
 		}
-		if len(plans) > 0 {
-			go e.deliverAppRestart(ctx, epoch, plans, interval)
+		if w.previous != "" && w.previous != epoch {
+			go e.afterAppReturn(ctx, epoch, plans, interval)
 		}
 		return core.Result{"ok": true}
 	})
 	if err == nil {
+		if w.previous == "" {
+			e.appSettled.Store(epoch) // the app Dibs found running: its threads are as the person left them
+		}
 		w.previous, w.before = epoch, nil
 	}
 	return err
