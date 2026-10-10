@@ -530,6 +530,15 @@ where the harness publishes one, is tried best-effort. Both carry "you have mail
 and nothing else: the board wakes an agent and does not steer one. See
 `WAKE-MECHANISMS.md` §5 and §5b.
 
+**Loading agent threads after a ChatGPT app restart** is not optional and
+does not read `resume_after_app_restart`. A refused native dial while the app's
+process runs holds the mail (no queue, no open). On each new app incarnation
+the daemon waits for the app's socket, loads every local ChatGPT-app agent
+thread it does not already hold in one pass under the desktop-wide open lock,
+returns the window to `codex://threads/new` (the launch view) when it opened
+anything, and then delivers restart notices and held mail natively. See
+`docs/NATIVE-APP-DELIVERY.md`.
+
 **Optional ChatGPT app-restart recovery.** `[wake]
 resume_after_app_restart = "1h"` enables a local, macOS-only sweep of known
 ChatGPT-app Codex threads with Dibs activity in that window; absent means

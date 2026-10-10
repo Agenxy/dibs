@@ -18,6 +18,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 )
 
@@ -65,6 +66,13 @@ func Deliver(ctx context.Context, thread, text string) (Receipt, error) {
 	return DeliverFresh(ctx, thread, func() (string, error) { return text, nil })
 }
 
+// ErrAppNotListening means the app's socket file exists and nothing accepts
+// on it: the app is starting, stopping or restarting. No input was written.
+// Measured 2026-10-10 on 26.1002.52244: a ChatGPT restart refused native
+// dials for several seconds, and the cold route that followed opened two
+// agents' threads in the person's window while the app came back.
+var ErrAppNotListening = errors.New("the app's IPC socket refuses connections; the app is starting or stopping")
+
 // DeliverFresh rechecks the board immediately before the one input write.
 // Empty text means the identity closed or the original work was consumed.
 func DeliverFresh(ctx context.Context, thread string, notice func() (string, error)) (receipt Receipt, err error) {
@@ -74,47 +82,89 @@ func DeliverFresh(ctx context.Context, thread string, notice func() (string, err
 			err = &deliveryError{err: err, submitted: c != nil && c.inputWritten}
 		}
 	}()
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	c, closeConn, err := connect(ctx)
+	if err != nil {
+		return Receipt{}, err
+	}
+	defer closeConn()
+	return c.deliver(thread, notice)
+}
+
+// ErrNoSocket is Owned's word for an app with no IPC socket at all, which is
+// not evidence about any thread. Delivery calls the same case ErrNoOwner and
+// takes the cold route.
+var ErrNoSocket = errors.New("the app has no IPC socket")
+
+// Owned reports whether the running app has thread loaded, through the same
+// owner discovery delivery uses and with no input. ErrNoSocket,
+// ErrAppNotListening and other connection errors are returned as they are:
+// none of them is evidence that the thread is unloaded.
+func Owned(ctx context.Context, thread string) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	c, closeConn, err := connect(ctx)
+	if err != nil {
+		if errors.Is(err, ErrNoOwner) {
+			return false, ErrNoSocket
+		}
+		return false, err
+	}
+	defer closeConn()
+	_, err = c.owner(thread)
+	if errors.Is(err, ErrNoOwner) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+// connect resolves the socket afresh and initializes a client on it.
+func connect(ctx context.Context) (*client, func(), error) {
 	home := os.Getenv("CODEX_HOME")
 	if home == "" {
 		userHome, err := os.UserHomeDir()
 		if err != nil {
-			return Receipt{}, err
+			return nil, nil, err
 		}
 		home = filepath.Join(userHome, ".codex")
 	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 	endpoint := filepath.Join(home, "ipc", "ipc.sock")
 	if err := privateEndpoint(endpoint); err != nil {
-		return Receipt{}, err
+		return nil, nil, err
 	}
 	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", endpoint)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return Receipt{}, ErrNoOwner
+			return nil, nil, ErrNoOwner
 		}
-		return Receipt{}, fmt.Errorf("native app connection: %w", err)
+		if errors.Is(err, syscall.ECONNREFUSED) {
+			return nil, nil, fmt.Errorf("native app connection: %w: %w", ErrAppNotListening, err)
+		}
+		return nil, nil, fmt.Errorf("native app connection: %w", err)
 	}
-	defer func() { _ = conn.Close() }()
 	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
-	defer stop()
+	closeConn := func() { stop(); _ = conn.Close() }
 	deadline, _ := ctx.Deadline()
 	if err = conn.SetDeadline(deadline); err != nil {
-		return Receipt{}, err
+		closeConn()
+		return nil, nil, err
 	}
-	c = &client{conn: conn, id: "initializing-client"}
+	c := &client{conn: conn, id: "initializing-client"}
 	r, err := c.call("initialize", 0, "", map[string]string{"clientType": "dibs"})
 	if err != nil {
-		return Receipt{}, err
+		closeConn()
+		return nil, nil, err
 	}
 	var init struct {
 		ClientID string `json:"clientId"`
 	}
 	if json.Unmarshal(r.Result, &init) != nil || init.ClientID == "" {
-		return Receipt{}, errors.New("native initialize response changed")
+		closeConn()
+		return nil, nil, errors.New("native initialize response changed")
 	}
 	c.id = init.ClientID
-	return c.deliver(thread, notice)
+	return c, closeConn, nil
 }
 
 func (c *client) write(f frame) error {
