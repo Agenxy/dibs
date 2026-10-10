@@ -31,7 +31,7 @@ func TestBridgeAdvertisesPromptOpeningThroughTheActualListen(t *testing.T) {
 			if meta["com.dibs/native_app_delivery"] != true {
 				t.Fatalf("production bridge omitted native app capability: %v", meta)
 			}
-			if meta["com.dibs/away_open"] != float64(2) {
+			if meta["com.dibs/away_open"] != float64(3) {
 				t.Fatalf("production bridge did not advertise prompt bounded opening: %v", meta)
 			}
 			if legacy {
@@ -67,7 +67,7 @@ func TestBridgeAdvertisesPromptOpeningThroughTheActualListen(t *testing.T) {
 			if len(bridges) != 1 || bridges[0].Host != b.host || len(bridges[0].Harnesses) != 1 {
 				t.Fatalf("bridge route lost: %+v", bridges)
 			}
-			want := 2
+			want := 3
 			if legacy {
 				want = 0
 			}

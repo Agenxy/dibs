@@ -32,10 +32,7 @@ func TestBridgePromptAppWakeIsImmediateAndBoundedAcrossProducers(t *testing.T) {
 				opens++
 				return nil
 			},
-			Away:    func() (bool, bool) { return false, true },
-			Idle:    func() (time.Duration, bool) { return 0, true },
-			MinIdle: 10 * time.Minute,
-			Wait:    func(time.Duration) { <-release },
+			Wait: func(time.Duration) { <-release },
 		}
 		b.serve(context.Background(), engine.WakeRequest{
 			ID: i, Host: b.host, Agent: "worker", Harness: "codex", Thread: "bridge-prompt-fixture",

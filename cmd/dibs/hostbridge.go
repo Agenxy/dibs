@@ -94,13 +94,6 @@ func hostBridge(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	b := newWakeBridge(boardOrigin(), secret, host, routes)
-	// Claude closed-session recovery keeps this host's idle setting. ChatGPT
-	// opens promptly through the bounded per-thread background opener.
-	if cfg, cerr := boardconfig.Load(paths.DataDir()); cerr == nil {
-		if idle, ierr := cfg.Wake.OpenAfterIdle(); ierr == nil {
-			b.show.MinIdle = idle
-		}
-	}
 	slog.Info("host bridge attaching", "board", b.origin, "host", host, "harnesses", b.harnesses())
 	return b.follow(ctx)
 }
@@ -113,7 +106,7 @@ func localWakeRoutes(dir string) (map[string]boardconfig.WakeExec, error) {
 	if err != nil {
 		return nil, err
 	}
-	for _, retired := range cfg.RetiredWakeCooldowns {
+	for _, retired := range cfg.RetiredWakeSettings {
 		slog.Warn(retired.Warning(filepath.Join(dir, "dibs.toml")))
 	}
 	// THE SAME FILTER AS THE DAEMON'S. A wake command that would run an agent
@@ -302,7 +295,7 @@ func (b *wakeBridge) listenBody() []byte {
 			"_meta": map[string]any{
 				mcp.HostMetaKey:          b.host,
 				mcp.WakeHarnessesMetaKey: b.harnesses(),
-				mcp.AwayOpenMetaKey:      2,
+				mcp.AwayOpenMetaKey:      3,
 				mcp.NativeAppMetaKey:     true,
 			},
 		},
@@ -559,7 +552,7 @@ func (b *wakeBridge) showQueuedThread(wr engine.WakeRequest) {
 			slog.Warn("could not open the agent's thread in its app; the message waits there",
 				"request", wr.ID, "err", err)
 		case deferred:
-			slog.Info("opening the agent's thread in its app once the person here is idle", "request", wr.ID)
+			slog.Info("waiting briefly for the background app open/restore lock", "request", wr.ID)
 		case opened:
 			slog.Info("opened the agent's thread in the app it runs in", "request", wr.ID)
 		}

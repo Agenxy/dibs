@@ -176,7 +176,7 @@ func (e *Engine) Configure(ctx context.Context, token, key, value string) (core.
 	if !change {
 		return e.query(ctx, func() core.Result { return core.Result{"settings": e.listSettings()} })
 	}
-	if err := boardconfig.RefuseWakeCooldownSetting(key); err != nil {
+	if err := boardconfig.RefuseRetiredWakeSetting(key); err != nil {
 		return nil, &core.Error{
 			Code: "E_NO_SETTING", Msg: key + " was removed and has no effect", Hint: err.Error(),
 		}

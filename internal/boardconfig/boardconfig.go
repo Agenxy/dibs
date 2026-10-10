@@ -61,6 +61,8 @@ type Config struct {
 	Relocate map[string]RelocateExec `toml:"relocate"`
 	// RetiredWakeCooldowns records obsolete keys for startup and doctor diagnostics.
 	RetiredWakeCooldowns []RetiredWakeCooldown `toml:"-"`
+	// RetiredWakeSettings includes every removed wake key, for boot and doctor.
+	RetiredWakeSettings []RetiredWakeSetting `toml:"-"`
 }
 
 // InvitesConfig is the operator's once-only issuance policy. Human proofs
@@ -230,9 +232,6 @@ type WakeConfig struct {
 	// so absent reads as true. Found by the pre-release review, round
 	// twenty-seven.
 	Sockets *bool `toml:"sockets"`
-	// OpenAppAfterIdle is Claude closed-session recovery's away interval.
-	// ChatGPT queued wakes open promptly with their own per-thread bound.
-	OpenAppAfterIdle string `toml:"open_app_after_idle"`
 	// ResumeAfterAppRestart is the eligible Dibs-activity window for a ChatGPT
 	// app process replacement. Zero (the default) disables the sweep.
 	ResumeAfterAppRestart string `toml:"resume_after_app_restart"`
@@ -492,6 +491,10 @@ func Load(dir string) (Config, error) {
 		return c, err
 	}
 	c.RetiredWakeCooldowns = retired
+	c.RetiredWakeSettings, err = FindRetiredWakeSettings(b)
+	if err != nil {
+		return c, err
+	}
 	md, err := toml.Decode(string(b), &c)
 	if err != nil {
 		return c, err
@@ -506,7 +509,7 @@ func Load(dir string) (Config, error) {
 	if un := md.Undecoded(); len(un) > 0 {
 		keys := make([]string, 0, len(un))
 		for _, k := range un {
-			if isWakeCooldown(k) {
+			if isWakeCooldown(k) || isWakeIdle(k) {
 				continue
 			}
 			keys = append(keys, k.String())
@@ -1054,9 +1057,6 @@ func (c Config) validateWake() error {
 			return err
 		}
 	}
-	if _, err := c.Wake.OpenAfterIdle(); err != nil {
-		return err
-	}
 	if _, _, err := c.Wake.AppRestart(); err != nil {
 		return err
 	}
@@ -1271,20 +1271,6 @@ func hostnameLabel(label string) bool {
 		}
 	}
 	return true
-}
-
-// OpenAfterIdle is Claude recovery's retained idle setting, shared by the
-// daemon and host bridge. ChatGPT opening does not read this threshold.
-func (w WakeConfig) OpenAfterIdle() (time.Duration, error) {
-	if strings.TrimSpace(w.OpenAppAfterIdle) == "" {
-		return harnessenv.DefaultOpenAfterIdle, nil
-	}
-	d, err := time.ParseDuration(w.OpenAppAfterIdle)
-	if err != nil || d < 0 {
-		return 0, fmt.Errorf("[wake] open_app_after_idle = %q: give a duration such as "+
-			"\"10m\", or \"0s\" for immediate Claude recovery", w.OpenAppAfterIdle)
-	}
-	return d, nil
 }
 
 // AppRestart returns the disabled-by-default activity window and paced-open

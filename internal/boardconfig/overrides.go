@@ -83,7 +83,7 @@ func LoadOverrides(dir string) (Overrides, error) {
 // configuration down with it, which is a worse failure than losing one
 // setting.
 func SaveOverride(dir, key, value, by string) error {
-	if err := RefuseWakeCooldownSetting(key); err != nil {
+	if err := RefuseRetiredWakeSetting(key); err != nil {
 		return err
 	}
 	o, err := LoadOverrides(dir)

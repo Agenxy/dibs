@@ -10,7 +10,7 @@ import (
 )
 
 func reportRemovedWakeCooldowns(dir string, cfg boardconfig.Config, warn fixFn) {
-	for _, key := range cfg.RetiredWakeCooldowns {
+	for _, key := range cfg.RetiredWakeSettings {
 		warn(key.Warning(filepath.Join(dir, "dibs.toml")),
 			"Run dibs upgrade to back up the file and remove the obsolete line, or delete the line yourself.")
 	}

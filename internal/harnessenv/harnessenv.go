@@ -271,14 +271,8 @@ type Shower struct {
 	// Ownership is the production tri-state probe. Holds is the test seam and
 	// takes precedence when supplied; false there is positive unloaded evidence.
 	Ownership func(thread string) ThreadOwnership
-	// Claude recovery only: Away observes lock/display sleep. Idle and MinIdle permit an AFK open;
-	// both observations fail closed in production. Open also rechecks these
-	// facts natively and restores the prior app. Wait/Poll drive deferral.
-	Away    func() (bool, bool)
-	Idle    func() (time.Duration, bool)
-	MinIdle time.Duration
-	Wait    func(time.Duration)
-	Poll    time.Duration
+	// Wait is only for the bounded ChatGPT open/restore pair lock.
+	Wait func(time.Duration)
 }
 
 // appOpenFixture replaces only the native contact, keeping RealShower's
@@ -301,32 +295,27 @@ var RealShower = Shower{
 		if appOpenFixture == nil && os.Getenv("DIBS_TEST_FORBID_APP_OPEN") == "1" {
 			return errors.New("real app opener forbidden by DIBS_TEST_FORBID_APP_OPEN")
 		}
-		if len(argv) != 3 || argv[0] != "/usr/bin/open" {
-			return errors.New("unsupported native app open")
-		}
-		if argv[1] == "-g" && strings.HasPrefix(argv[2], "codex://threads/") &&
-			isThreadID(strings.TrimPrefix(argv[2], "codex://threads/")) {
+		if len(argv) == 3 && argv[0] == "/usr/bin/open" && argv[1] == "-g" &&
+			strings.HasPrefix(argv[2], "codex://threads/") && isThreadID(strings.TrimPrefix(argv[2], "codex://threads/")) {
 			if appOpenFixture != nil {
 				return appOpenFixture("chatgpt-background", argv[2], 0)
 			}
 			return notify.OpenChatGPTBackground(argv[2])
 		}
-		seconds, err := strconv.ParseFloat(argv[2], 64)
-		if err != nil {
-			return err
+		if len(argv) != 2 || argv[0] != "/usr/bin/open" ||
+			!strings.HasPrefix(argv[1], "claude://code/continue?session=") ||
+			!localSessionID.MatchString(strings.TrimPrefix(argv[1], "claude://code/continue?session=")) {
+			return errors.New("unsupported native app open")
 		}
 		if appOpenFixture != nil {
-			return appOpenFixture("claude-away", argv[1], time.Duration(seconds*float64(time.Second)))
+			return appOpenFixture("claude-background", argv[1], 0)
 		}
-		return notify.OpenWhenAway(argv[1], time.Duration(seconds*float64(time.Second)))
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		// #nosec G204 G702 -- fixed OS opener and generated Claude session URL, separate argv elements.
+		return exec.CommandContext(ctx, "/usr/bin/open", "-g", argv[1]).Run()
 	},
-	Away: func() (bool, bool) {
-		desk, err := notify.DesktopState()
-		return desk.Away(), err == nil
-	},
-	Idle:    UserIdle,
-	MinIdle: DefaultOpenAfterIdle,
-	Wait:    func(d time.Duration) { <-time.After(d) },
+	Wait: func(d time.Duration) { <-time.After(d) },
 }
 
 // Show opens the thread in its app when the app is not already holding it.
@@ -339,9 +328,6 @@ func (s Shower) Show(argv []string, thread string) (opened bool, err error) {
 	}
 	if len(argv) == 0 || s.holds(thread) {
 		return false, nil
-	}
-	if s.Away != nil {
-		argv = append(append([]string(nil), argv...), strconv.FormatFloat(s.MinIdle.Seconds(), 'f', -1, 64))
 	}
 	if err := s.Open(argv); err != nil {
 		return false, err

@@ -47,7 +47,6 @@ addr = "100.72.14.3:4777"    # a tailnet address: agents on four machines, one b
 | `extend_turn_for` | `all` | Which news may extend an agent's turn: `all`, `urgent`, `none`. |
 | `notices_wake` | `true` | Whether situational awareness alone may extend a turn. |
 | `sockets` | `true` | Whether the session-socket routes run at all: the daemon's peer-socket wake and the bridge's self-wake. |
-| `open_app_after_idle` | `10m` | Claude closed-session recovery only: AFK interval, with lock or display sleep qualifying sooner. ChatGPT queued wakes open promptly with a per-thread bound, independently of presence. |
 | `resume_after_app_restart` | `0s` (off) | Recent Dibs-activity window for reopening local ChatGPT-app Codex threads after an observed app process restart. Needs an existing `codex queue` wake entry. |
 | `restart_open_interval` | `2s` | Minimum gap between the restart sweep's thread opens. |
 | `remind_stale_after` | retired | Did nothing since liveness became the daemon's own job. Still parsed so old configs load; delete it. |
@@ -111,7 +110,7 @@ an agent whose bridge found the ChatGPT app above it in the process tree; a
 Codex in a terminal is never opened in the app. On another machine, `dibs
 host-bridge` does the same on that machine.
 
-A loaded thread receives queue-only delivery. An unloaded ChatGPT thread opens
+An owned ChatGPT thread receives native app input: start when idle, steer when active. An unloaded ChatGPT thread opens
 promptly even while you are active. `-g` requests background opening; measured
 on the current app, it can still briefly activate ChatGPT before focus returns.
 A per-thread memo prevents repeated opens for ten minutes, including when the
@@ -119,8 +118,13 @@ ownership probe is unavailable. A new app incarnation or an observed loaded
 then unloaded thread can re-arm sooner, subject to a twenty-second rate limit.
 Messages themselves do not reset the memo. No decision window is opened.
 
-`open_app_after_idle` now applies only to Claude closed-session recovery. Its
-signed helper still checks lock, sleeping displays or measurable HID idle.
+`open_app_after_idle` is removed. Closed Claude sessions recover immediately
+through a background open, while a running session needs no open. Dibs does
+not delay delivery for presence, display sleep, lock state or HID idle.
+Delete the old setting, or run `dibs upgrade`: it backs up the exact original
+file, reports the removed source with its original line, and migrates before
+any daemon stop. Unsafe rewrites or backup failures leave the daemon running.
+Dibs-controlled configuration writers refuse this key with a corrective hint.
 
 App-restart recovery is separate and off by default. Set
 `resume_after_app_restart = "1h"` to select local ChatGPT-app threads whose
@@ -135,16 +139,6 @@ No declaration text is copied into the restart ledger op. A daemon restart loses
 in-memory observation baseline, so a replacement during daemon downtime may
 not be detected. A queued notice or successful open does not prove the model
 acted.
-
-```toml
-[wake]
-open_app_after_idle = "10m"  # Claude recovery only; ChatGPT wakes do not wait
-```
-
-The message is queued meanwhile, and only the first wake per thread per app
-run needs an open at all: a loaded thread stays loaded and is delivered to
-silently. A wait that outlasts a day is dropped; the message is still in the
-app for whenever the thread is next opened.
 
 **Why not `codex exec resume`, which this page recommended until 2026-09-30.**
 It does not deliver to anybody: it starts a headless Codex and runs the thread

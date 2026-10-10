@@ -245,7 +245,9 @@ const WakeCooldownsMetaKey = "com.dibs/wake_cooldowns"
 
 // AwayOpenMetaKey is retained on the wire. Version 1 is away-only opening;
 // version 2 opens ChatGPT promptly with -g and a shared per-thread memo while
-// retaining away-only Claude recovery. Older readers ignore unknown versions.
+// retaining away-only Claude recovery. Version 3 also opens closed Claude
+// sessions immediately, with no presence/idle gate. Older readers ignore
+// unknown versions.
 // Absence describes an older bridge, whose opening behavior is left alone.
 const AwayOpenMetaKey = "com.dibs/away_open"
 
@@ -864,7 +866,7 @@ func (s *Server) missedFor(ctx context.Context, cursor uint64) (evs []core.Event
 
 // awayOpenIn accepts only the version whose meaning this daemon knows.
 func awayOpenIn(meta map[string]any) int {
-	if version, ok := meta[AwayOpenMetaKey].(float64); ok && (version == 1 || version == 2) {
+	if version, ok := meta[AwayOpenMetaKey].(float64); ok && (version == 1 || version == 2 || version == 3) {
 		return int(version)
 	}
 	return 0

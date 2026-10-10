@@ -71,7 +71,6 @@ func TestUnknownProbeCannotRepeatAppSwitching304(t *testing.T) {
 		opens.Add(1)
 		return nil
 	}
-	s.Away = func() (bool, bool) { return true, true }
 	s.Wait = func(time.Duration) { t.Error("ChatGPT open waited for presence") }
 	var wg sync.WaitGroup
 	for range 20 {
@@ -100,7 +99,6 @@ func TestUnknownAppOpenExpiresWithoutResettingForEachMessage(t *testing.T) {
 	s := RealShower
 	opens := 0
 	s.Open = func([]string) error { opens++; return nil }
-	s.Away = func() (bool, bool) { return true, true }
 	s.Wait = func(time.Duration) { t.Fatal("unexpected presence wait") }
 	wake := func() {
 		s.ShowWhenIdle(ChatGPTOpenArgv("expiry-fixture"), "expiry-fixture", func(_, def bool, err error) {
@@ -249,7 +247,6 @@ func TestAppIncarnationRearmsAnOpenWithoutAProbeResult(t *testing.T) {
 	s := RealShower
 	opens := 0
 	s.Open = func([]string) error { opens++; return nil }
-	s.Away = func() (bool, bool) { return true, true }
 	const thread = "incarnation-open-fixture"
 	wake := func() {
 		s.ShowWhenIdle(ChatGPTOpenArgv(thread), thread, func(_, deferred bool, err error) {

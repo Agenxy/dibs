@@ -427,8 +427,11 @@ The old switching path was queue success -> `showInApp` / bridge
 had no memo; #304/7428955 repaired an ownership probe that missed loaded
 runtimes behind helpers, but another unknown/false result could still open on
 every queued wake. The shared production opener now bounds that branch itself.
-Claude closed-session recovery retains its separate away policy and signed
-native helper.
+Claude closed-session recovery opens immediately in the background. The
+`open_app_after_idle` setting and presence/idle gate are retired: delivery
+is never delayed until the person leaves. A running session needs no open.
+Background opening can still activate an app; this promises prompt recovery,
+not focus preservation.
 
 This policy governs agent wakes. Human questions and requests post native
 notifications without opening a decision window, including while Focus is on.

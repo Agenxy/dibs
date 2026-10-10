@@ -222,8 +222,6 @@ func TestAWakeOpensAnUnloadedAppThreadWhileThePersonIsActive(t *testing.T) {
 	app.install(t)
 	gate := make(chan struct{})
 	t.Cleanup(func() { close(gate) })
-	shower.Idle = func() (time.Duration, bool) { return time.Second, true }
-	shower.MinIdle = 2 * time.Minute
 	shower.Wait = func(time.Duration) { <-gate }
 	e := New(core.NewState("test", core.DefaultLimits()), &memLedger{}, deadProber{})
 	e.SetWakeCommands(map[string]WakeCommand{"codex": {Argv: []string{"/usr/bin/true", "{thread}"}}})

@@ -71,7 +71,6 @@ func TestARunningClaudeSessionIsNotOpenedAgain(t *testing.T) {
 	// ClaudeSessionRunning, not ChatGPT-only Ownership or the presence gate.
 	s := RealShower
 	s.Open = func([]string) error { t.Error("running Claude session was re-opened"); return nil }
-	s.Away = func() (bool, bool) { t.Error("running Claude session reached away gate"); return true, true }
 	s.ShowWhenIdle(ClaudeOpenArgv("local_live-fixture"), cli, func(opened, deferred bool, err error) {
 		if opened || deferred || err != nil {
 			t.Errorf("running Claude session entered open path: %v %v %v", opened, deferred, err)

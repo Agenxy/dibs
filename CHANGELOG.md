@@ -5,6 +5,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Removed `[wake] open_app_after_idle`: closed Claude sessions recover
+  immediately, without checking presence or HID idle. Existing files still boot
+  with a path/line warning; doctor fails the check; upgrade backs up the exact
+  original and removes the retired source before stopping. Unsafe migration
+  stops nothing. All controlled configuration writers refuse the retired key
+  with a corrective hint. Updated host bridges advertise policy version 3;
+  doctor names bridges that need a restart.
+
 - Deliver new notices directly into owned ChatGPT agent threads through the
   running app's private IPC: start idle threads or steer active turns immediately.
   Bypass Dibs arrival batching and queue/in-flight holds on this route, and recheck

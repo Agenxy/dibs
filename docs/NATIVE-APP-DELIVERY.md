@@ -134,5 +134,25 @@ input. A daemon must never start its own app-server as a substitute.
 Claude Desktop's measured `ccd_session_mgmt.send_message` is an in-process,
 session-scoped native tool. The read-only trace of Claude **2.26454.2** found no
 external daemon-callable listener. That unresolved boundary does not justify
-impersonating a session or inventing a transport. Closed-session recovery's
-separate idle policy is tracked for the immediately following change.
+impersonating a session or inventing a transport. Closed-session recovery now
+opens the generated background link immediately. That fallback can navigate or
+activate the app and supplies no native message receipt; running sessions need
+no open. Retiring the presence/idle delay does not resolve the external
+messaging boundary.
+
+**Claude draft for upstream review; not posted:** Please expose an app-owned,
+authenticated local interface through which external coordination software can
+deliver an explicitly untrusted factual notice to an existing Claude Desktop
+Code-tab session, closed or running, without starting another harness,
+impersonating a Code-tab session, selecting a chat or revealing a window. The
+app should retain admission, authorization, ownership and running-turn
+decisions, matching the native capability already available through the
+in-process `ccd_session_mgmt.send_message` tool.
+
+Return a matched receipt distinguishing accepted input, app-owned queueing,
+refusal and an unknown outcome. A message ID alone does not prove a turn
+started: a turn-start receipt should include a turn identifier or corresponding
+start event. Unknown post-submission outcomes must remain explicit so callers
+can avoid blind duplicate submissions. Stale or archived targets should receive
+an explicit refusal rather than silently selecting another session. The
+existing immediate background-link fallback does not supply these guarantees.

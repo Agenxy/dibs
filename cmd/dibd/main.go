@@ -160,7 +160,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("reading %s/dibs.toml: %w", *dir, err)
 	}
-	for _, retired := range cfg.RetiredWakeCooldowns {
+	for _, retired := range cfg.RetiredWakeSettings {
 		slog.Warn(retired.Warning(filepath.Join(*dir, "dibs.toml")))
 	}
 	// Before the host slot, the listener, and anything else with a side effect.
@@ -291,9 +291,6 @@ func run() error {
 			cfg.Wake.ResumeAfterAppRestart != "", cfg.Wake.RestartOpenInterval != "")
 	}
 	// Validate() already refused a malformed value, so this cannot fail here.
-	if idle, ierr := cfg.Wake.OpenAfterIdle(); ierr == nil {
-		eng.SetOpenAppAfterIdle(idle)
-	}
 	// On unless the operator opted out: see WakeConfig.NoticesWake. A pointer so
 	// "unset" and "explicitly false" are distinguishable, which is the whole
 	// reason a bool setting with a true default needs one.

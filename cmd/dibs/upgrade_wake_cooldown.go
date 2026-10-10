@@ -15,7 +15,7 @@ import (
 
 func (p *plan) removeWakeCooldowns() error {
 	if err := removeUpgradeWakeCooldowns(p.dir); err != nil {
-		return fmt.Errorf("obsolete wake cooldown migration failed, so nothing has been stopped: %w", err)
+		return fmt.Errorf("obsolete wake setting migration failed, so nothing has been stopped: %w", err)
 	}
 	return nil
 }
@@ -32,7 +32,7 @@ func removeUpgradeWakeCooldowns(dir string) error {
 	if err != nil {
 		return err
 	}
-	after, removed, err := boardconfig.RemoveWakeCooldowns(before)
+	after, removed, err := boardconfig.RemoveRetiredWakeSettings(before)
 	if err != nil || len(removed) == 0 {
 		return err
 	}
@@ -41,7 +41,7 @@ func removeUpgradeWakeCooldowns(dir string) error {
 		return err
 	}
 	if !info.Mode().IsRegular() || info.Mode().Perm()&0o222 == 0 {
-		return fmt.Errorf("%s is not a writable regular file; remove the obsolete cooldown lines yourself", path)
+		return fmt.Errorf("%s is not a writable regular file; remove the obsolete wake setting lines yourself", path)
 	}
 	backup, err := os.CreateTemp(dir, "dibs.toml.before-cooldown-*")
 	if err != nil {
@@ -65,7 +65,7 @@ func removeUpgradeWakeCooldowns(dir string) error {
 		return err
 	}
 	for _, key := range removed {
-		say("removed [%s] cooldown from %s:%d: %s", "wake.exec."+key.Harness,
+		say("removed [%s] %s from %s:%d: %s", key.Key[:len(key.Key)-1].String(), key.Key[len(key.Key)-1],
 			path, key.Line, strings.TrimSuffix(key.Text, "\n"))
 	}
 	return nil
