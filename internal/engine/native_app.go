@@ -11,6 +11,10 @@ import (
 	"github.com/agenxy/dibs/internal/wakeexec"
 )
 
+func nativeDeliveryAccepted(disposition string) bool {
+	return disposition == "accepted" || disposition == "started" || disposition == "steered"
+}
+
 func (p wakePlan) retryAllowed() bool { return p.nativeOutcome == nil || !p.nativeOutcome.NoRetry }
 
 func (p wakePlan) deliverySettled(socket, written bool) bool {
@@ -56,7 +60,7 @@ func (e *Engine) tryNativeWake(plan wakePlan, agent string) (bool, bool) {
 		*plan.nativeOutcome = out
 	}
 	if !handled {
-		if out.Disposition == "unloaded" {
+		if out.Disposition == "unloaded" || out.Disposition == "native_failed" {
 			text, err := fresh()
 			if err != nil {
 				if plan.nativeOutcome != nil {

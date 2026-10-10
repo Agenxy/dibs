@@ -312,9 +312,16 @@ func (e *Engine) deliverAppRestart(ctx context.Context, epoch string, plans []wa
 }
 
 func (e *Engine) sendRestartQueue(ctx context.Context, epoch string, plan wakePlan) bool {
-	if plan.nativeOutcome == nil || plan.nativeOutcome.Disposition != "unloaded" {
+	if plan.nativeOutcome == nil || (plan.nativeOutcome.Disposition != "unloaded" &&
+		plan.nativeOutcome.Disposition != "native_failed") {
 		if ok, handled := e.tryNativeRestart(ctx, epoch, plan); handled {
 			return ok
+		}
+	}
+	if plan.nativeOutcome != nil {
+		text, err := e.nativeRestartNotice(ctx, epoch, plan)
+		if err != nil || text == "" {
+			return false // no stale recipient or restart input on the cold route either
 		}
 	}
 	out := restartQueue(plan.argv, plan.agent, plan.cwd)

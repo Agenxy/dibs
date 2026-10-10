@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -28,6 +29,7 @@ type Server struct {
 	BeforeSnapshot func()
 	mu             sync.Mutex
 	inputs         []map[string]any
+	follows        int
 	errors         []error
 }
 
@@ -86,6 +88,13 @@ func (s *Server) Inputs() []map[string]any {
 	return append([]map[string]any(nil), s.inputs...)
 }
 
+// Follows counts stream-follow requests, which fetch full thread history.
+func (s *Server) Follows() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.follows
+}
+
 func (s *Server) serve(c net.Conn) {
 	defer func() { _ = c.Close() }()
 	_ = c.SetDeadline(time.Now().Add(25 * time.Second))
@@ -101,6 +110,20 @@ func (s *Server) serve(c net.Conn) {
 		response := s.answer(f)
 		if response == nil {
 			continue
+		}
+		if strings.HasPrefix(s.Mode, "large-") && f["method"] == "thread-owner-discovery" {
+			snapshot := s.answer(map[string]any{
+				"method": "thread-stream-following-changed",
+				"params": map[string]any{"following": true, "conversationId": Thread},
+			})
+			// Injection is unsolicited and must not count as a real follow.
+			s.mu.Lock()
+			s.follows--
+			s.mu.Unlock()
+			if err = write(c, snapshot); err != nil {
+				s.recordError(err)
+				return
+			}
 		}
 		if s.Mode == "disconnect" && f["method"] == "thread-follower-start-turn" {
 			return
@@ -128,37 +151,15 @@ func (s *Server) answer(f map[string]any) map[string]any {
 	case "initialize":
 		r["result"] = map[string]string{"clientId": "dibs-client"}
 	case "thread-owner-discovery":
-		if s.Mode == "no-owner" {
-			r["resultType"], r["error"] = "error", "no-client-found"
-		} else {
-			r["result"] = map[string]bool{"supportsUntrustedAppInput": s.Mode != "unsupported"}
-		}
+		s.ownerResult(r)
 	case "thread-stream-following-changed":
+		s.mu.Lock()
+		s.follows++
+		s.mu.Unlock()
 		if p["following"] != true {
 			return nil
 		}
-		if s.BeforeSnapshot != nil {
-			s.BeforeSnapshot()
-		}
-		status := "idle"
-		if s.Mode == "active" {
-			status = "active"
-		}
-		version := 11
-		if s.Mode == "changed" {
-			version = 12
-		}
-		return map[string]any{
-			"type": "broadcast", "sourceClientId": "owner", "version": version,
-			"method": "thread-stream-state-changed", "params": map[string]any{
-				"hostId": "local", "conversationId": p["conversationId"], "change": map[string]any{
-					"type": "snapshot", "conversationState": map[string]any{
-						"id": p["conversationId"], "threadRuntimeStatus": map[string]string{"type": status},
-						"turns": []any{map[string]string{"turnId": "prior-turn"}},
-					},
-				},
-			},
-		}
+		return s.snapshot(p["conversationId"])
 	case "thread-follower-start-turn", "thread-follower-steer-turn":
 		s.mu.Lock()
 		s.inputs = append(s.inputs, f)
@@ -170,8 +171,12 @@ func (s *Server) answer(f map[string]any) map[string]any {
 			r["handledByClientId"] = "somebody-else"
 		}
 		if f["method"] == "thread-follower-start-turn" {
+			turn := "new-turn"
+			if s.Mode == "active" || s.Mode == "large-active" {
+				turn = "prior-turn"
+			}
 			r["result"] = map[string]any{"result": map[string]any{
-				"turn": map[string]string{"id": "new-turn", "status": "inProgress"},
+				"turn": map[string]string{"id": turn, "status": "inProgress"},
 			}}
 		} else {
 			r["result"] = map[string]any{"result": map[string]string{"turnId": "prior-turn"}}
@@ -180,6 +185,47 @@ func (s *Server) answer(f map[string]any) map[string]any {
 		return nil
 	}
 	return r
+}
+
+func (s *Server) ownerResult(r map[string]any) {
+	if s.BeforeSnapshot != nil {
+		s.BeforeSnapshot() // historical fixture seam: before the input freshness fence
+	}
+	if s.Mode == "no-owner" {
+		r["resultType"], r["error"] = "error", "no-client-found"
+		return
+	}
+	r["result"] = map[string]bool{"supportsUntrustedAppInput": s.Mode != "unsupported"}
+	if s.Mode == "changed" {
+		r["result"] = map[string]string{"changed": "owner metadata"}
+	}
+}
+
+func (s *Server) snapshot(conversation any) map[string]any {
+	status := "idle"
+	if s.Mode == "active" || s.Mode == "large-active" {
+		status = "active"
+	}
+	version := 11
+	if s.Mode == "changed" {
+		version = 12
+	}
+	turns := []any{map[string]string{"turnId": "prior-turn"}}
+	if strings.HasPrefix(s.Mode, "large-") {
+		turns = []any{map[string]any{"turnId": "older-turn", "items": []any{
+			map[string]string{"type": "agentMessage", "text": strings.Repeat("history ", 1_310_720)},
+		}}, map[string]string{"turnId": "prior-turn"}}
+	}
+	return map[string]any{
+		"type": "broadcast", "sourceClientId": "owner", "version": version,
+		"method": "thread-stream-state-changed", "params": map[string]any{
+			"hostId": "local", "conversationId": conversation, "change": map[string]any{
+				"type": "snapshot", "conversationState": map[string]any{
+					"id": conversation, "threadRuntimeStatus": map[string]string{"type": status}, "turns": turns,
+				},
+			},
+		},
+	}
 }
 
 func read(r io.Reader) (map[string]any, error) {
@@ -205,11 +251,11 @@ func write(w io.Writer, f map[string]any) error {
 	if err != nil {
 		return err
 	}
-	if len(b) > 1<<20 {
+	if len(b) > 16<<20 {
 		return errors.New("fixture write exceeds bound")
 	}
 	header := make([]byte, 4)
-	// #nosec G115 -- len(b) is checked against the 1 MiB fixture bound above.
+	// #nosec G115 -- len(b) is checked against the 16 MiB fixture bound above.
 	binary.LittleEndian.PutUint32(header, uint32(len(b)))
 	_, err = w.Write(append(header, b...))
 	return err

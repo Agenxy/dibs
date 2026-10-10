@@ -46,10 +46,9 @@ func ComposeNative(f Fields) string {
 }
 
 // TryNative runs BEFORE any queue probe, lock, retained receipt or app opener.
-// handled=false means the unchanged cold route should run; only absent socket
-// or the router's exact no-client-found permits that. Everything else fails
-// loudly. Proven before-input failures and matched refusals can use the
-// existing bounded retry; a possibly submitted input never can.
+// handled=false means the cold route should run. No-owner and proven
+// before-input failures permit that; a possibly submitted input never can.
+// Matched refusals remain explicit rather than overriding app admission.
 func TryNative(surface string, f Fields, argv []string, fresh func() (string, error)) (NativeOutcome, bool) {
 	if !NativeEligible(surface, f, argv) {
 		return NativeOutcome{}, false
@@ -62,7 +61,14 @@ func TryNative(surface string, f Fields, argv []string, fresh func() (string, er
 		return NativeOutcome{Disposition: "unloaded"}, false
 	}
 	if err != nil {
-		if codexipc.BeforeInput(err) || errors.Is(err, codexipc.ErrRefused) {
+		if codexipc.BeforeInput(err) {
+			slog.Warn("native app wake failed before input; using cold queue route", "agent", f.Agent,
+				"err", err, "hint", "inspect the native app connection or protocol; cold delivery may open the chat")
+			return NativeOutcome{
+				Disposition: "native_failed", Detail: "native input not sent; using cold queue route",
+			}, false
+		}
+		if errors.Is(err, codexipc.ErrRefused) {
 			slog.Warn("native app wake not sent; bounded retry remains available", "agent", f.Agent,
 				"err", err, "hint", "inspect the native app connection, protocol or refusal; no queue fallback will run")
 			return NativeOutcome{

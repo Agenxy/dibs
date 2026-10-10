@@ -401,7 +401,8 @@ window is introduced for agent mail.
 **2026-10-09 correction:** owned ChatGPT threads now receive native app input
 (start when idle, steer when running), before any queue/open path. This replaces
 the queue-only premise below for current producers; older producers retain it.
-The existing app's owner-targeted IPC snapshot supplies state, without starting
+The existing app's owner-targeted follower input lets the harness choose start
+or steer without fetching its growing history. It does so without starting
 an app-server. Unknown protocol outcomes fail explicitly. Cold threads retain
 the existing queue/open path. See `docs/NATIVE-APP-DELIVERY.md` for the measured
 version, live proof and the source-only boundaries.

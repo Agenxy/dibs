@@ -2,17 +2,20 @@
 
 Dibs first offers each notice to the existing desktop app when the recipient
 agent was registered from ChatGPT and uses the canonical local Codex queue
-route. It starts an idle owned thread or steers its active turn. The app decides
+route. One follower-start-turn request lets the app start or steer. The app decides
 turn admission. Dibs starts no app-server, router, harness or other agent process.
 It does not open a window after native acceptance.
 
-Only an absent socket or an explicit owner-discovery `no-client-found` selects
-the existing cold queue/open route. That route can navigate the app. A socket
+An absent socket, explicit owner-discovery `no-client-found`, or a proven
+failure before input selects the existing cold queue/open route, after checking
+the original owed work again. That route can navigate the app. A socket
 write, queue admission and matching native app acceptance are distinct receipts;
 none proves that the agent consumed mail. Before-input failures (connection,
-initialization, discovery, snapshot or writer freshness) and matched owner
-refusals fail explicitly with no queue fallback and retain the existing bounded
-retry. Only a missing or garbled reply after input-frame bytes were written
+initialization or discovery) never strand an owed notice solely because the
+native adapter failed. If board freshness itself cannot be established, no
+stale input is sent and the existing bounded failure retry remains. A matched
+owner refusal after input remains explicit, with no queue fallback. Only a
+missing or garbled reply after input-frame bytes were written
 is unknown and prohibits an automatic retry. Even a partial input write is
 conservatively submitted. Unknown original inputs are reserved within one receiving app
 incarnation. New mail qualifies immediately; an observed new app incarnation
@@ -36,12 +39,26 @@ were distinct. Raw framed requests/replies and the corresponding rollout lines
 were retained as local investigation receipts. No person's thread was used.
 This establishes one owned-thread start, not a fleet or focus guarantee.
 
-The owner-targeted snapshot selection and steer envelope are source-validated
-and exercised with independent framed Unix-socket fixtures. They have **not**
-been measured against a live busy thread. The app may include full conversation
-history in a snapshot; real snapshot size/shape remains unmeasured. Dibs bounds
-a frame at 8 MiB and fails explicitly above it; the app's own bound is 256 MiB.
-No additional live input or UI navigation is part of these tests.
+A separately approved read-only own-thread probe measured a **10,490,345-byte**
+snapshot, arriving in **312 ms**, on 2026-10-10 UTC. That exceeded the former
+8 MiB adapter cap and reproduced the live installation failure. Dibs now never
+follows a thread or fetches its history. The installed app's start wrapper
+delegates to `turn/start`; the harness chooses start-or-steer atomically.
+
+One approved live start request into this agent's active thread returned its
+existing in-progress turn ID `01a12321-d42a-74e0-88c1-cabcdb0d82ee`. The rollout
+recorded the exact approved notice and no new task start after the baseline.
+This proves one active-turn admission, not a fleet or focus guarantee. The
+adapter reports **accepted** with the matched turn ID, never guesses whether
+that input started or steered a turn.
+
+The receive safety bound matches the installed protocol's 256 MiB limit.
+Unsolicited frames larger than the 1 MiB metadata/receipt buffer are drained
+without retaining their bodies, preserving the next frame boundary. Discarded
+bytes never establish acceptance; if a matched receipt is absent or oversized,
+the outcome stays unconfirmed. A 50 MiB streaming fixture allocated less than
+2 MiB including its producer; the observed allocation was about 35 KiB. No app
+navigation is part of these probes or guards.
 
 A separately approved cold discovery produced the exact router refusal
 `no-client-found`, with zero input requests. An earlier 7-second timeout was
@@ -60,17 +77,14 @@ launcher participates.
 |---|---:|---|
 | `initialize` | 0 | Obtain the app router's client ID |
 | `thread-owner-discovery` | 1 | Find an existing owner for `hostId: local` and the agent's conversation ID |
-| `thread-stream-following-changed` | 1 | Temporarily follow that owner for its current snapshot; unfollow on exit |
-| `thread-stream-state-changed` | 11 | Owner broadcast with snapshot and `threadRuntimeStatus` idle/active |
-| `thread-follower-start-turn` | 2 | One text input with `inheritThreadSettings: true` |
-| `thread-follower-steer-turn` | 1 | One text input and required restore-message envelope; the app derives expected turn |
+| `thread-follower-start-turn` | 2 | One text input with `inheritThreadSettings: true`; app chooses start-or-steer |
 
 Requests have fresh IDs and replies must match request ID, method and target
 owner. Dibs advertises no owned threads and answers discovery with `canHandle:
 false`. It requires `supportsUntrustedAppInput: true` from the owner. Start
-success requires the nested turn ID and in-progress status; steer success
-requires the nested turn ID. A start racing an active turn may be admitted as a
-steer by the app. Returned IDs are private verification data, never board state.
+acceptance requires the nested turn ID and in-progress status. The same receipt
+represents starting or steering, so Dibs reports accepted. Returned IDs are
+private verification data, never board state.
 
 The source anchors in the measured archive are byte offsets, not line numbers:
 `src-BPM2XJL0.js` around 14174 (versions);

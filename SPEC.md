@@ -1033,8 +1033,8 @@ activations and authenticated pulls.
 
 **Owned ChatGPT app input.** For an app-owned agent on the canonical local
 `codex queue --thread {thread} --message {message}` route, first contact the
-existing app's private IPC socket. Owner discovery and an owner-targeted state
-snapshot select one native input: start an idle thread, steer a running turn.
+existing app's private IPC socket. Owner discovery selects one follower-start-turn
+input; the harness decides start-or-steer without a history snapshot.
 No queue command, queue observer, retained queue receipt or app opener runs on
 this path. Every admitted arrival is offered immediately, bypassing the 200 ms
 batch and inferred queue/in-flight holds. The app owns turn admission.
@@ -1042,8 +1042,10 @@ The factual private notice names event type and sender, never a message body;
 command argv stays name-free. Recheck the original owed items and recipient
 incarnation/session immediately before writing. Already handled work is settled
 without an input. A matching app reply confirms input acceptance, never mailbox
-consumption. A before-input failure or matched owner refusal fails explicitly
-without queue fallback and retains the existing bounded failure retry. A missing
+consumption. Proven before-input failures use the existing cold queue/open route
+after rechecking the original owed items. A board-freshness failure cannot send
+stale input and retains bounded retry. A matched owner refusal after input fails
+explicitly without queue fallback. A missing
 or garbled reply after any input-frame bytes were written is unknown and cannot
 arm that retry. Native sender names match `^[a-z0-9][a-z0-9-]{0,62}$` or are
 omitted; event types come only from the fixed Dibs vocabulary. Native input is not MCP;
@@ -1058,9 +1060,10 @@ before input; only its pending request and stated host qualify. Old bridges
 keep their existing route. This read neither marks mail delivered nor confirms
 socket outcomes. See SECURITY.md and docs/NATIVE-APP-DELIVERY.md for boundaries.
 
-Only an absent app socket or the router's explicit `no-client-found` permits
-the existing cold queue and open route below. Its receipt says **thread not
-loaded in the app; queued until opened**, and never claims native delivery.
+An absent app socket, the router's explicit `no-client-found`, or a proven
+before-input adapter failure permits the existing cold queue and open route
+below. Its receipt distinguishes an unloaded thread from a failed native
+adapter, reports queue admission and never claims native delivery.
 There is no externally exposed cold-load interface measured here. Opening a
 cold chat can still navigate the app; the owned-thread path makes no open call.
 
@@ -1080,7 +1083,8 @@ bounded prompt background policy. No queue item is deleted and no coordination s
 
 Board rows (including compact `check_in`) and agent `send` receipts expose
 `queue_wake` for a configured local ChatGPT queue route. `native_delivery`
-adds started, steered, settled, not_sent, unknown or queued_unloaded; native input uses
+adds accepted, settled, not_sent, unknown, queued_unloaded or queued_native_failed;
+historical started/steered observations remain readable. Native input uses
 `admission: not_queued` and `pending: not_applicable`. These are the last
 adapter outcome, not a receipt for a later send. Native success confirms app
 input only. Cold accepted/retained queue outcomes confirm queue admission only. This derived view holds

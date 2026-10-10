@@ -80,10 +80,6 @@ func (c *client) deliver(thread string, notice func() (string, error)) (Receipt,
 	if !*capabilities.SupportsUntrustedAppInput {
 		return Receipt{}, errors.New("native owner does not accept untrusted app input")
 	}
-	running, prior, err := c.snapshot(thread, owner)
-	if err != nil {
-		return Receipt{}, err
-	}
 	text, err := notice()
 	if err != nil {
 		return Receipt{}, err
@@ -92,32 +88,27 @@ func (c *client) deliver(thread string, notice func() (string, error)) (Receipt,
 		return Receipt{Disposition: "settled"}, nil
 	}
 	input := []map[string]any{{"type": "text", "text": text, "text_elements": []any{}}}
-	method, version := "thread-follower-start-turn", 2
-	params := map[string]any{"conversationId": thread}
-	if running {
-		method, version = "thread-follower-steer-turn", 1
-		params["input"], params["clientUserMessageId"] = input, requestID()
-		params["restoreMessage"] = map[string]any{"id": requestID(), "context": map[string]any{}}
-	} else {
-		params["turnStart"] = map[string]any{
+	params := map[string]any{
+		"conversationId": thread,
+		"turnStart": map[string]any{
 			"request": map[string]any{"threadId": thread, "input": input},
 			"context": map[string]bool{"inheritThreadSettings": true},
-		}
+		},
 	}
-	// Exactly one submission. A state race, explicit refusal or unknown reply
-	// fails this attempt; neither another native message nor a queue follows it.
-	r, err = c.call(method, version, owner, params)
+	// The app owns start-or-steer. Never fetch the thread's growing history
+	// merely to predict a decision the harness already makes atomically.
+	// Exactly one submission; no retry follows a possibly submitted input.
+	r, err = c.call("thread-follower-start-turn", 2, owner, params)
 	if err != nil {
 		return Receipt{}, err
 	}
-	return deliveryReceipt(r.Result, running, prior)
+	return deliveryReceipt(r.Result)
 }
 
-func deliveryReceipt(raw json.RawMessage, running bool, prior string) (Receipt, error) {
+func deliveryReceipt(raw json.RawMessage) (Receipt, error) {
 	var value struct {
 		Result struct {
-			TurnID string `json:"turnId"`
-			Turn   struct {
+			Turn struct {
 				ID     string `json:"id"`
 				Status string `json:"status"`
 			} `json:"turn"`
@@ -126,18 +117,11 @@ func deliveryReceipt(raw json.RawMessage, running bool, prior string) (Receipt, 
 	if json.Unmarshal(raw, &value) != nil {
 		return Receipt{}, errors.New("native delivery response changed")
 	}
-	if running {
-		if value.Result.TurnID == "" {
-			return Receipt{}, errors.New("native steer receipt lacks turn id")
-		}
-		return Receipt{"steered", value.Result.TurnID}, nil
-	}
 	turn := value.Result.Turn
 	if turn.ID == "" || turn.Status != "inProgress" {
 		return Receipt{}, errors.New("native start receipt lacks active turn")
 	}
-	if turn.ID == prior {
-		return Receipt{"steered", turn.ID}, nil
-	} // start-or-steer raced with a running turn
-	return Receipt{"started", turn.ID}, nil
+	// The same receipt represents a newly started or an already active turn.
+	// Without a separate observation, acceptance cannot distinguish them.
+	return Receipt{"accepted", turn.ID}, nil
 }
