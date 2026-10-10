@@ -199,6 +199,9 @@ func (s *Server) showBoard(ctx context.Context, token, view string) (core.Result
 	}
 	box, err := s.eng.ObserveInbox(ctx, token)
 	if err != nil {
+		// An authenticated observer read can fail at the writer or its rate
+		// gate. Do not pass off omitted mail as an empty successful board;
+		// the private refresh must retain its old view and surface the refusal.
 		return nil, err
 	}
 	out["inbox"] = box

@@ -15,8 +15,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Older versions can still open these ledgers; on rollback they forget the new
   page receipt, leave omitted mail untouched and retain ordinary FYI consumption.
   Late metadata-only wake receipts do not rewrite an FYI already presented.
-  Human board reads and private panel refreshes leave model mail receipts
-  untouched; seeing an FYI in the panel does not consume it for the agent.
+  Human board reads and private panel refreshes no longer mark an agent's
+  pending mail delivered; seeing an FYI in the panel does not consume it for
+  the agent. Model mail receipts stay untouched.
 
 - Send replies describe pending direct app delivery when that route is eligible
   and no native result has been observed yet. Prior native outcomes remain
