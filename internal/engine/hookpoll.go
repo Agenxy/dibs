@@ -333,9 +333,11 @@ func (e *Engine) HookPollFrom(
 		}
 		// Before the no-news return below, which is where most prompts end.
 		e.notePromptFrom(l.ID, event)
+		if event == "UserPromptSubmit" {
+			return e.passiveHookOutput(l, event, strict)
+		}
 		mail := e.pendingMail(l.ID, time.Now())
-		// The agent's own copy carries the mail; `mail` above stays the quiet
-		// version for the human notice and every other surface.
+		// The agent's own copy carries the mail; `mail` above is metadata only.
 		quoteBudget := mailQuoteBudget
 		agentMail := e.freshMailQuotedBudget(l.ID, time.Now(), &quoteBudget)
 		announced, announceKeys := e.dueAnnouncements(l.ID, time.Now())
@@ -345,63 +347,12 @@ func (e *Engine) HookPollFrom(
 		notices := e.pendingNotices(l.ID)
 		modelNotices, noticeKeys, outcomeThrough := e.dueNoticeLinesBudget(l.ID, time.Now(), &quoteBudget)
 		if len(mail) == 0 && len(announced) == 0 && len(notices) == 0 {
-			// No news. A turn Dibs started may still be ending with declared
-			// work open, and this is where that case arrives: the stall this
-			// was built for had no mail at all. See continuation.go.
-			if cont := e.continuationReply(l, event, stopActive); cont != nil {
-				return e.hookOutput(cont, strict, event)
-			}
-			// No news, so nothing to inject, but the agent is still named.
-			//
-			// hook_poll is the only token-less path from a harness session to a
-			// agent, and PreToolUse needs that resolution to stamp a spawned
-			// subagent with its parent (`dibs hook-spawn`). Returning a bare
-			// `{}` made "this session has no agent" and "this agent has no mail"
-			// indistinguishable, so the stamp silently never applied: the hook
-			// worked perfectly on every negative case and did nothing on the
-			// only positive one.
-			//
-			// This is not a disclosure: hook_poll already returns the agent id
-			// whenever there IS news, to the same unauthenticated caller. What
-			// stays absent is the DIGEST, which is the thing a harness injects
-			// into a model's context, so the silence that matters is unchanged.
-			//
-			return e.hookOutput(core.Result{"agent": l.ID}, strict, event)
+			return e.quietHookOutput(l, event, stopActive, strict)
 		}
 		if event == "" {
 			event = "Stop"
 		}
 		out := core.Result{}
-		// The other half of the same fact, addressed to the other party, and
-		// sent whatever is decided about the model.
-		//
-		// A human cannot see the board unless their host renders the MCP Apps
-		// panel, so everything Dibs does for them otherwise happens silently.
-		// `systemMessage` is the one channel a harness gives a hook that goes to
-		// the PERSON rather than the model: Claude Code shows it as "Stop says:
-		// …" and surfaces it as an SDKInformationalMessage under
-		// --output-format stream-json.
-		//
-		// Deliberately one line and deliberately not the digest. The model gets
-		// the actionable version; this is the ambient one, and a human who
-		// wanted detail has `dibs board`. Counts and senders only, never
-		// content: the same rule the digest follows.
-		// Not when the person is TYPING.
-		//
-		// systemMessage is ambient awareness for an operator who cannot see the
-		// board, and on Stop that is what it is: a line at the end of a turn
-		// saying what is outstanding. On UserPromptSubmit it fires the instant
-		// they press return, telling them about their AGENT's mail, which is not
-		// theirs to read and not theirs to act on. Reported as: "this just
-		// appeared when I prompted you."
-		//
-		// It is also the last place the human was still being used as the
-		// transport. The agent already learns about this from the `waiting` line
-		// on its very next tool result, which arrives mid-turn and needs nobody
-		// to type anything.
-		if event != "UserPromptSubmit" {
-			out["systemMessage"] = humanNotice(l.ID, mail, announced, notices)
-		}
 		// Natural activations can carry fresh information under the operator's
 		// situational-notice setting. Stop applies the shared typed actionable
 		// cause below: information alone cannot buy another model turn.
@@ -447,7 +398,7 @@ func (e *Engine) HookPollFrom(
 			// the marking only on events that cannot deliver, which is what the
 			// probe for it used, so the probe passed while a spoofed Stop still
 			// worked.
-			digest := hookDigest(e.agentName(l.ID), agentMail, announced, modelNotices)
+			digest := e.mailDigest(l.ID, agentMail, announced, modelNotices)
 			return e.deliverHookDigest(out, event, strict, l, digest,
 				wake, announceKeys, noticeKeys, outcomeThrough, now)
 		} else if cont := e.continuationReply(l, event, stopActive); cont != nil {
@@ -464,6 +415,9 @@ func (e *Engine) HookPollFrom(
 				"rather than extending a finished turn"
 			out["agent"] = l.ID
 			e.socketIdleEvent(l, event)
+		}
+		if event == "SessionStart" {
+			return e.passiveHookOutput(l, event, strict)
 		}
 		return e.hookOutput(out, strict, event)
 	})
@@ -730,7 +684,7 @@ func (e *Engine) quoteFor(m *core.Message, budget *int) string {
 //
 // THE BUDGET THIS STOPPED SPENDING. It recorded the send here, and HookPoll
 // calls it long before deliverToModel decides whether this event may carry
-// anything. UserPromptSubmit never delivers; Stop with stop_hook_active never
+// anything. UserPromptSubmit never spends freshness; Stop with stop_hook_active never
 // delivers; WakeNone never delivers. Each of those still burned a retry, and
 // five spaced-out non-delivering polls exhaust the budget, after which the
 // sweep marks the announcement unacked and it drops out of the open-announcement
@@ -776,16 +730,24 @@ func (e *Engine) dueAnnouncements(agent string, now time.Time) (out []string, ke
 // an orchestrator wearing a service's hat; the question was only where to say
 // it once rather than where to say it always.
 func hookDigest(agent string, mail, announced, notices []string) string {
+	return hookDigestCounts(agent, mail, announced, notices, len(notices))
+}
+
+func (e *Engine) mailDigest(agent string, mail, announced, notices []string) string {
+	return hookDigestCounts(e.agentName(agent), mail, announced, notices, e.outstandingUpdateCount(agent))
+}
+
+func hookDigestCounts(agent string, mail, announced, notices []string, updates int) string {
 	var b strings.Builder
 	b.WriteString("Dibs: ")
 	if len(notices) > 0 {
-		fmt.Fprintf(&b, "%d agent update(s) ", len(notices))
+		fmt.Fprintf(&b, "%d outstanding update units ", updates)
 	}
 	if len(notices) > 0 && (len(mail) > 0 || len(announced) > 0) {
 		b.WriteString("and ")
 	}
 	if len(mail) > 0 {
-		fmt.Fprintf(&b, "%d unread message(s) ", len(mail))
+		fmt.Fprintf(&b, "%d mail item(s) ", len(mail))
 	}
 	if len(mail) > 0 && len(announced) > 0 {
 		b.WriteString("and ")
@@ -849,12 +811,22 @@ func (e *Engine) waiting(agent string, now time.Time) string {
 	// hook path's retry budget on a line the agent may not be reading for
 	// announcements at all, and the two would then take turns going silent.
 	unacked := e.state.Unacked(agent)
-	announced, notices := len(unacked), len(e.pendingNotices(agent))
-	if mail == 0 && announced == 0 && notices == 0 {
+	announced, notices := len(unacked), e.outstandingUpdateCount(agent)
+	if mail == 0 && announced == 0 && notices == 0 && e.mailCounts(agent)["owed_requests"].(int) == 0 {
 		return ""
 	}
-	line := waitingCounts(mail, announced, notices) +
-		": " + waitingReadHint(mail, announced, e.takeNotices(agent))
+	line := e.mailboxCountsText(agent)
+	if extra := waitingCounts(0, announced, notices); extra != "" {
+		if line != "" {
+			line += ", "
+		}
+		line += extra
+	}
+	hintMail := mail
+	if e.mailCounts(agent)["owed_requests"].(int) > 0 {
+		hintMail++
+	}
+	line += ": " + waitingReadHint(hintMail, announced, e.takeNotices(agent))
 	if age := waitedFor(e.oldestWaiting(oldestMail, agent, unacked), now); age != "" {
 		line += " The oldest has been waiting " + age + "."
 	}
@@ -1002,29 +974,6 @@ func waitedFor(oldest, now time.Time) string {
 // that freshly-arrived mail does not spend the signal.
 const WaitingAgeFloor = 5 * time.Minute
 
-// humanNotice is the one-line version, for the person rather than the model.
-//
-// Kept apart from hookDigest because the two audiences want opposite things.
-// The digest is instructions-adjacent: serials, tool names, the corrective
-// call, because a model has to act on it. A human wants to know whether to look
-// up from what they are doing, so this says how much and from whom, and stops.
-func humanNotice(agent string, mail, announced, notices []string) string {
-	var parts []string
-	if n := len(mail); n > 0 {
-		parts = append(parts, fmt.Sprintf("%d unread", n))
-	}
-	if n := len(announced); n > 0 {
-		parts = append(parts, fmt.Sprintf("%d announcement(s) to acknowledge", n))
-	}
-	if n := len(notices); n > 0 {
-		parts = append(parts, fmt.Sprintf("%d update(s)", n))
-	}
-	if len(parts) == 0 {
-		return ""
-	}
-	return "Dibs · " + strings.Join(parts, ", ") + " for " + agent + " · dibs board to look"
-}
-
 // addDelivery writes the digest into the shape a harness reads, and asks for
 // the continuation that makes it readable.
 //
@@ -1085,28 +1034,12 @@ func isStopEvent(event string) bool {
 // activation or ride an actionable digest.
 //
 // SessionStart carries fresh information at a natural activation.
-// UserPromptSubmit stays silent so the human's prompt is never a mail trigger.
+// UserPromptSubmit is handled above with a passive pointer: it never spends
+// wake freshness or starts a turn. This dispatcher handles fresh delivery.
 func (e *Engine) deliverToModel(event string, fresh, blocked, stopActive bool) bool {
 	switch event {
 	case "UserPromptSubmit":
-		// The digest does NOT ride on the human's message.
-		//
-		// This event fires when a PERSON types. Its additionalContext is attached
-		// to their prompt, so delivering mail here makes the human the trigger:
-		// an agent learns that a peer is waiting when, and only when, its
-		// operator happens to say something. That is the failure Dibs exists to
-		// remove, restated as a feature, and the operator said so: "it's putting
-		// it on my plate to take an action for them to notice, agents should be
-		// notified directly."
-		//
-		// It was worse than a missed wake. There is no freshness throttle on
-		// this path, so the SAME unread message was attached to every prompt
-		// they sent until somebody read it.
-		//
-		// Stop is the real push and keeps its continuations; SessionStart tells a
-		// new session what is already waiting; the `waiting` line on every
-		// authenticated result reaches an agent that neither can. None of those
-		// need a person to type.
+		// Passive backlog recovery is separate from wake delivery.
 		return false
 	case "Stop", "SubagentStop":
 		// Never twice in a row, and FRESHNESS is what guarantees that.
@@ -1162,8 +1095,8 @@ const (
 	// own standing. For an operator who would rather an FYI never cost a turn.
 	WakeUrgent WakePhase = "urgent"
 	// WakeNone never extends a turn. For an operator who wants Dibs to be
-	// strictly pull-shaped, with the systemMessage and the `waiting` line as
-	// the only signals.
+	// strictly pull-shaped, with passive natural-boundary pointers and the
+	// authenticated `waiting` line as the only signals.
 	WakeNone WakePhase = "none"
 )
 
@@ -1297,9 +1230,8 @@ func (e *Engine) freshForWake(agent string, now time.Time) bool {
 //
 // THE BUG THE SPLIT FIXES. This was one function, and HookPoll called it to
 // compute `fresh` BEFORE deliverToModel decided whether this event may deliver
-// at all. UserPromptSubmit never delivers, by design: its additionalContext
-// rides on the human's own prompt, so mail there would make the person the
-// trigger. But the freshness was already spent by the time that was decided, so
+// at all. UserPromptSubmit now carries a passive recovery pointer but still
+// must not spend a wake. Freshness was already spent before that decision, so
 // the Stop that followed found nothing fresh and the agent was never woken.
 // Typing consumed the wake that typing is specifically not allowed to carry.
 //

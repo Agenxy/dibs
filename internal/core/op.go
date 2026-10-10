@@ -21,6 +21,14 @@ import "time"
 type Op struct {
 	Kind string `json:"kind"`
 
+	// Nil is the historical full-mailbox checkpoint. A present selection, even
+	// an empty one, records exactly which page was returned and may transition
+	// pending mail to delivered. Replay never reruns presentation ranking.
+	MailboxSerials *[]uint64 `json:"mailbox_serials,omitempty"`
+	MailboxPage    bool      `json:"-"`
+	MailboxCursor  string    `json:"-"`
+	MailboxLimit   int       `json:"-"`
+
 	// App-restart inputs are observed outside the pure fold. One op records the
 	// process epoch and the exact eligible roster and declarations at that time.
 	RestartEpoch      string          `json:"restart_epoch,omitempty"`

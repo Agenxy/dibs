@@ -203,6 +203,32 @@ That last pair is the point. Those are the two categories of fact you cannot
 reconstruct for yourself. If you lost context, call `check_in` first and read
 what it tells you before doing anything else.
 
+Mail is a compact page, at most eight envelopes and a 4 KiB summary budget
+(before the two mailbox aliases). Accepted requests still owed and unanswered
+requests/questions come first, then new mail, then already-seen FYIs. Follow
+`next_cursor` with `inbox(cursor:...)`; omit it to start a new traversal. The
+cursor fixes the upper serial, so new arrivals appear in the next traversal.
+`read_mail(msg_serial)` returns the full envelope, attachments and history;
+compact pages retain each item's delivery/read receipts. Only returned pending
+items are marked delivered. `owed_work`, `owes` and `task_queue` describe the
+shown page, with omitted counts. Announcement summaries are bounded too; use
+`read_space` for their full text before acknowledging them.
+
+Counts distinguish `new`, FYIs seen but unacknowledged, seen messages awaiting
+action and requests still owed. Presented FYIs are not described as unread.
+`ack(seen_fyis:true)` explicitly acknowledges all your already-presented FYIs
+in one call; it leaves new unseen mail and owed work intact. Use either that
+batch or `msg_serial`, never both. This is an explicit act, not an automatic
+side effect of reading.
+
+At UserPromptSubmit and SessionStart, a bounded model-facing pointer recovers
+outstanding backlog even after its one-shot wake was spent. It starts no turn
+and advances no outcome/review read prefix. Fresh SessionStart, Stop and socket
+delivery retain their existing receipt rules. Agent mail is never handed to
+the person through a hook `systemMessage`; notifications addressed to the human
+keep their separate notification route. Update counts count outstanding units,
+not rendered lines or collapsed summaries.
+
 Outcome updates quote actual responder notes and deliverables, with one
 mail-first budget: 1,600 Unicode characters total, 700 per body, and at most
 16 outcome units. Unquoted units of one request share one counted `read_mail`
@@ -659,8 +685,8 @@ remain the fallback when your harness cannot make byte-plane HTTP requests.
 For an ordinary request, `respond(msg_serial:N, disposition:"queue")` accepts
 work for later. It stays owed across restarts until done or declined, but does
 not say you are working and does not trigger a Stop continuation or stall.
-`check_in` lists `task_queue` and `owed_work`, including the literal completion
-call. Start one yourself with `respond(msg_serial:N, disposition:"approve")`;
+`check_in` lists the current page's `task_queue` and `owed_work`, including
+the literal completion call; follow `next_cursor` for more. Start one yourself with `respond(msg_serial:N, disposition:"approve")`;
 finish with `respond(msg_serial:N, disposition:"done", body:...)`. Completing
 one never starts the next. Progress uses `disposition:"progress"`.
 

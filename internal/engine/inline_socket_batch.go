@@ -55,7 +55,7 @@ func (e *Engine) socketBatchPresentation(
 		notices = append(notices, e.presentGenericUpdates(a.ID, &budget, wanted)...)
 		text := ""
 		if len(member.mail)+len(member.announced)+len(notices) > 0 {
-			text = strings.TrimRight(hookDigest(e.agentName(a.ID), member.mail, member.announced, notices), "\n")
+			text = strings.TrimRight(e.mailDigest(a.ID, member.mail, member.announced, notices), "\n")
 		}
 		// Every authenticated participant owns the shared reservation, even
 		// the requester whose own mailbox currently has no presentation. Its

@@ -1572,7 +1572,7 @@ func (e *Engine) wakePresentation(l *core.Agent, fresh bool) (string, map[uint64
 	if len(mail) == 0 && len(announced) == 0 && len(notices) == 0 {
 		return "", nil, nil
 	}
-	return strings.TrimRight(hookDigest(e.agentName(l.ID), mail, announced, notices), "\n"), through, noticeKeys
+	return strings.TrimRight(e.mailDigest(l.ID, mail, announced, notices), "\n"), through, noticeKeys
 }
 
 // commandSideReason is why the command route is not the one being used,

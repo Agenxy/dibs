@@ -225,7 +225,10 @@ Dibs-generated progress, queue updates, ordinary approvals and accepted reviews
 wait for SessionStart, an authenticated pull or the next actionable digest.
 Answers, denials, declines, grant/adoption verdicts and flagged reviews qualify;
 DONE qualifies when the sender currently declares a wait. Explicit operator
-phase opt-outs remain. UserPromptSubmit stays silent. A failed delivery alone
+phase opt-outs remain. UserPromptSubmit and SessionStart recover outstanding
+backlog with bounded passive pointers without spending a wake or starting a turn.
+No hook hands agent mail to the human through systemMessage. Fresh SessionStart
+and actionable Stop/socket delivery keep their receipts. A failed delivery alone
 gets one bounded retry tied to its original outstanding cause.
 
 The send result names the attempted route regardless of lifecycle. No

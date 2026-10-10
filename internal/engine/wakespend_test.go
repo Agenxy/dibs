@@ -4,6 +4,8 @@
 package engine
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -50,13 +52,13 @@ func TestTypingDoesNotSpendTheWakeThatStopNeeds(t *testing.T) {
 		t.Fatalf("send: %v", err)
 	}
 
-	// The person types. Nothing may be delivered here.
+	// A natural prompt receives a passive pointer without spending fresh delivery.
 	typed, err := e.HookPoll(ctx, "worker-session", "UserPromptSubmit", "", false, false)
 	if err != nil {
 		t.Fatalf("UserPromptSubmit: %v", err)
 	}
-	if typed["hookSpecificOutput"] != nil {
-		t.Fatalf("mail was delivered on the human's own prompt: %v", typed)
+	if typed["decision"] == "block" || strings.Contains(fmt.Sprint(typed), "what happened?") {
+		t.Fatalf("passive prompt recovery spent full mail delivery: %v", typed)
 	}
 
 	// The turn ends. THIS is the event the wake exists for.

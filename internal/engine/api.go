@@ -149,7 +149,7 @@ func (e *Engine) SubscribeInfo(ctx context.Context, token string) (agentID strin
 // InboxFor returns the caller's decrypted mailbox for a resources/read of
 // dibs://inbox (marks pending delivered, same as the inbox tool).
 func (e *Engine) InboxFor(ctx context.Context, token string) (core.Result, error) {
-	return e.Inbox(ctx, token)
+	return e.InboxPage(ctx, token, "", 0)
 }
 
 // EventsSince returns buffered events after serial. Metadata only: never

@@ -23,7 +23,7 @@ func scopeOf(kind string) (mailScope, bool) {
 		core.OpMergeAgents, core.OpAdoptAgent, core.OpSignOff,
 		core.OpInitializeReviewRead:
 		return scopeFull, true
-	case core.OpAckBoard, core.OpSendMessage, core.OpStallNotified, core.OpRespond,
+	case core.OpAckBoard, core.OpAckMailboxPage, core.OpSendMessage, core.OpStallNotified, core.OpRespond,
 		core.OpQueueUpdate, core.OpWithdrawMessage:
 		return scopeMailbox, true
 	case core.OpAckMessage, core.OpOutcomeRead, core.OpContactEscalate:
@@ -81,7 +81,7 @@ func (s Snapshot) captureMessage(st *core.State, m *core.Message) {
 }
 
 func (s *Snapshot) captureMailbox(st *core.State, op *core.Op, actor *core.Agent) {
-	if op.Kind == core.OpAckBoard {
+	if op.Kind == core.OpAckBoard || op.Kind == core.OpAckMailboxPage {
 		if actor != nil {
 			for _, m := range st.Inbox(actor.ID) {
 				s.captureMessage(st, m)

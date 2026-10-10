@@ -708,8 +708,25 @@ recipient's `respond` (responding proves receipt). GC eligibility requires
 `Terminal(m) ∧ m.consumed`, or retention-cap eviction (watermark-recorded, §below).
 
 **Reading:**
-- `inbox()`: the recipient's non-terminal messages **plus unconsumed terminal
-  messages** (bodies decrypted); marks pending → delivered.
+- `inbox(cursor?,limit?)` and the mailbox in `check_in(cursor?,limit?)` return
+  compact envelopes: non-terminal plus unconsumed terminal mail, and accepted
+  requests still owed. At most eight items (default eight) and a 4 KiB summary
+  budget, aliased as `inbox` and `messages`; owed/open requests and questions
+  lead new mail, then already-presented FYIs. Only returned pending items become
+  delivered. Full bodies, attachments and histories stay in `read_mail`.
+  Per-item delivery, ack, response and outcome/review read receipts remain.
+  `more_messages` and `next_cursor` name the remainder. The cursor binds the
+  recipient incarnation and upper serial; a fresh traversal includes arrivals
+  above that cut. Owed/queue projections describe the current page with omitted
+  counts; announcement summaries are bounded and name `read_space` for full text.
+  A compact atomic checkpoint records `check_in_page` with `mailbox_serials`,
+  including an explicit empty list. Historical `check_in` operations retain
+  their read-all fold. Older daemons refuse the new op kind on replay rather
+  than silently dropping the selection; downgrade after it is unsupported.
+- `ack(seen_fyis:true)` explicitly acknowledges the recipient's already-presented
+  FYIs through ordinary ack operations and receipts. Unseen pending mail,
+  requests, questions and outcome/review units are excluded. Mutually exclusive
+  with `msg_serial`; repeat with no eligible FYIs writes nothing.
 - **`read_mail(msg_serial)`**: full message including body and response, authorized
   for **sender or recipient**. This is how a question's sender reads the answer
   (terminal events carry serials, never bodies). Recipient reads mark delivery.
@@ -963,7 +980,14 @@ completion cannot spend the replacement app's recovery.
 A non-blocking Stop neither marks those items delivered nor reads their outcome
 prefixes. Held information is delivered through SessionStart, `check_in` or
 `inbox`, or included in the next actionable Stop/socket digest under the shared
-quote budget. UserPromptSubmit remains silent. Bounded declared-work continuation remains an independent Stop cause.
+quote budget. UserPromptSubmit and SessionStart additionally recover outstanding
+backlog with a bounded passive model-facing pointer, independent of wake
+freshness. This starts no turn, spends no presentation receipt and advances no
+outcome/review read prefix. Agent mail produces no hook `systemMessage` for the
+person. Counts distinguish new mail, presented FYIs still unacknowledged, seen
+messages awaiting action and requests still owed; update counts count actual
+outstanding units, not rendered lines. Bounded declared-work continuation
+remains an independent Stop cause.
 
 A send result's live route note uses the same authored-message decision as
 socket and Stop delivery. Authored mail receives a best-effort wake attempt
@@ -1444,8 +1468,9 @@ content: the body stays behind the authenticated mailbox. Absent when there is
 nothing, and absent on `check_in`, which has just returned the inbox itself.
 Past the age floor, the oldest timestamp comes from those same outstanding
 items. A cached verdict already read through `inbox` cannot age fresh mail or
-an update. Approved/queued work appears separately in `owed_work`; acknowledged
-notifications and consumed terminal mail do not count as unread.
+an update. Approved/queued work is counted as owed and also occupies the compact
+mailbox page. Presented FYIs are counted as seen but unacknowledged, never new
+or unread. Acknowledged notifications and completed consumed mail do not count.
 Envelope outcomes/reviews name their bounded, deduplicated parent
 `read_mail(serial)` calls to read and clear the updates. Mail, announcements and
 generic updates name `inbox`. A shortened inbox update does not clear its

@@ -28,6 +28,7 @@ const (
 	OpWake               = "wake"
 	OpActivityCheckpoint = "activity_checkpoint"
 	OpAckBoard           = "check_in"
+	OpAckMailboxPage     = "check_in_page"
 	OpUpdate             = "update"
 	OpBindSession        = "bind_session"
 	OpSignOff            = "sign_off"
@@ -222,7 +223,7 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		res, evs, err = s.applyRelocate(l, op, now)
 	case OpActivityCheckpoint:
 		res, evs = s.applyContactCheckpoint(l, op) // LastCoordination below
-	case OpAckBoard:
+	case OpAckBoard, OpAckMailboxPage:
 		res, evs = s.applyAckBoard(l, op, now)
 	case OpUpdate:
 		res, evs, err = s.applyUpdate(l, op)
@@ -1066,7 +1067,16 @@ func (s *State) applyAckBoard(l *Agent, op *Op, now time.Time) (Result, []Event)
 	// use: it is the one call they all keep making. See bindHarnessSession.
 	s.dropTakenSession(op, l)
 	bound := l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed, op.V7Semantics)
+	selected := map[uint64]bool{}
+	if op.MailboxSerials != nil {
+		for _, serial := range *op.MailboxSerials {
+			selected[serial] = true
+		}
+	}
 	for _, m := range s.Inbox(l.ID) {
+		if op.MailboxSerials != nil && !selected[m.Serial] {
+			continue
+		}
 		if m.State == MsgStatePending {
 			m.State = MsgStateDelivered
 			m.DeliveredAt = s.Serial + 1

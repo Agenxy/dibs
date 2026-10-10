@@ -6,6 +6,7 @@ package engine
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -152,7 +153,7 @@ func TestSocketEconomyStrictHookKeepsDisabledWakeMailForNextActivation(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if again["hookSpecificOutput"] != nil || again["reason"] != nil || again["decision"] != nil {
+	if strings.Contains(fmt.Sprint(again["hookSpecificOutput"]), marker) || again["reason"] != nil || again["decision"] != nil {
 		t.Fatalf("the held question was presented twice: %v", again)
 	}
 	if text := log.String(); strings.Contains(text, "dropped from a strict hook response") {

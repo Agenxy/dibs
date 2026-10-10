@@ -98,6 +98,9 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 	}
 	// The op payload: the union of every tag that reached disk above.
 	wantOp := map[string]bool{
+		// Nil keeps historical read-all checkpoints; an explicit empty list
+		// records a compact checkpoint that returned no pending envelopes.
+		"mailbox_serials": true,
 		// Atomic daemon stall notice and its request watermark, additive only.
 		"declaration_serial": true,
 		// App-restart observation and coordinator settings are new op kinds,
@@ -460,7 +463,8 @@ const (
 	// App restart adds four observation tags and two setting tags; none renamed.
 	// Stall notices add one declaration-version tag; every old spelling remains.
 	// Contact notice reads add one checkpoint-prefix tag; no old tag changed.
-	frozenOpFingerprint       = "sha256:aa7d996bd7bc6805"
+	// Compact mailbox checkpoints add the selected serial list, without renaming.
+	frozenOpFingerprint       = "sha256:8a85c9c66eefa82a"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`
@@ -610,6 +614,7 @@ func TestOpKindStringsAreFrozen(t *testing.T) {
 		"OpContactResolved":      {core.OpContactResolved, "contact_resolved"},
 		"OpStallNotified":        {core.OpStallNotified, "stall_notified"},
 		"OpAckBoard":             {core.OpAckBoard, "check_in"},
+		"OpAckMailboxPage":       {core.OpAckMailboxPage, "check_in_page"},
 		"OpUpdate":               {core.OpUpdate, "update"},
 		"OpSignOff":              {core.OpSignOff, "sign_off"},
 		"OpHeartbeat":            {core.OpHeartbeat, "heartbeat"},

@@ -155,6 +155,10 @@ func (e *Engine) notifyPresented(agent string, m *core.Message) bool {
 	if m.Type != core.MsgNotify {
 		return false
 	}
+	return e.messagePresented(agent, m)
+}
+
+func (e *Engine) messagePresented(agent string, m *core.Message) bool {
 	_, shown := e.wokeFor[agent+"\x00"+strconv.FormatUint(m.Serial, 10)]
 	// A later adoption must not inherit the prior recipient's presentation.
 	deliveredHere := m.State == core.MsgStateDelivered && m.DeliveredAt >= m.AdoptedAt
