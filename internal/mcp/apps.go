@@ -197,9 +197,11 @@ func (s *Server) showBoard(ctx context.Context, token, view string) (core.Result
 	if view == "mail" || view == "board" || view == "activity" {
 		out["view"] = view
 	}
-	if box, err := s.eng.InboxFor(ctx, token); err == nil {
-		out["inbox"] = box
+	box, err := s.eng.ObserveInbox(ctx, token)
+	if err != nil {
+		return nil, err
 	}
+	out["inbox"] = box
 	return out, nil
 }
 

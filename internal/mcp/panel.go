@@ -47,7 +47,13 @@ func panelPayload(raw core.Result) core.Result {
 	if b := asMap(in["board"]); b != nil {
 		out["board"] = trimBoard(b)
 	}
-	if msgs := extractMessages(in["inbox"]); msgs != nil {
+	if box, present := in["inbox"]; present {
+		msgs := extractMessages(box)
+		if msgs == nil {
+			// Absence means no mailbox update; an explicit empty read must
+			// clear the old cards after a successful human action.
+			msgs = []map[string]any{}
+		}
 		out["inbox"] = msgs
 	}
 	// await_events returns BECAUSE something changed; the panel shows what.

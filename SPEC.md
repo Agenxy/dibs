@@ -725,9 +725,11 @@ recipient's `respond` (responding proves receipt). GC eligibility requires
   ordinary contact activity, forget the new page receipt and leave omitted
   mail untouched; rollback still boots.
 - **FYI presentation:** notify mail is consumed without an agent acknowledgement
-  when its full body is returned in a bounded result (conservative 16 KiB cap),
+  when its full body is returned to the recipient model in a bounded result (conservative 16 KiB cap),
   or quoted completely in a confirmed digest. Counts, shortened lines and
-  oversized full reads are not full presentation. The first announcement is
+  oversized full reads are not full presentation. Human board reads and private
+  panel refreshes use the observer read and record no model delivery, activity,
+  FYI consumption or outcome read. The first announcement is
   ledgered on `activity_checkpoint` with additive `notify_announced`. At a later
   natural boundary at most one further passive reminder is emitted, then that
   FYI is consumed. Ordinary `ack` operations with an additive

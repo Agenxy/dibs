@@ -956,6 +956,14 @@ try {
 
   await panel.locator(`.act[data-serial="${mail.r.msg_serial}"]`, { hasText: "Approve" }).click()
   await Bun.sleep(700)
+  // Read as the SENDER: probing as the recipient would itself consume the FYI
+  // and make this a false proof of what the human-only refresh did.
+  const unseenFYI = textOf(await tool("read_mail", {
+    token: peer.token, msg_serial: mail.n.msg_serial,
+  })).message
+  check("human action refresh leaves unseen FYI for the recipient model",
+    unseenFYI.consumed === false && unseenFYI.state === "pending",
+    JSON.stringify({ consumed: unseenFYI.consumed, state: unseenFYI.state }))
   await panel.locator(`.act[data-serial="${mail.n.msg_serial}"]`, { hasText: "Acknowledge" }).click()
   await Bun.sleep(700)
 
@@ -1037,7 +1045,7 @@ try {
   check("the refused action remains available to correct and retry",
     (await panel.locator('.act[data-serial="999999"][data-act="approve"]').count()) === 1)
 
-  // A mutation may succeed and the follow-up inbox refresh may fail. The action
+  // A mutation may succeed and the follow-up observer refresh may fail. The action
   // is still sent; calling that a send failure invites a duplicate.
   const refreshMail = textOf(await tool("send", {
     token: peer.token, to: me.agent_id, type: "request",
@@ -1048,12 +1056,14 @@ try {
   let blockedRefreshes = 0
   await page.route("**/rpc", async (route) => {
     const request = route.request().postDataJSON() as any
-    if (request?.method === "tools/call" && request?.params?.name === "inbox") {
+    if (request?.method === "tools/call" && request?.params?.name === "board"
+        && request?.params?.arguments?.detail === true
+        && request?.params?.arguments?.view === "mail") {
       blockedRefreshes++
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ error: "injected inbox refresh failure" }),
+        body: JSON.stringify({ error: "injected observer refresh failure" }),
       })
       return
     }
