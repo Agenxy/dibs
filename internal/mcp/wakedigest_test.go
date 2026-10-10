@@ -23,7 +23,7 @@ func TestWakeDigestReadIsPrivateNonConsumingAndSessionBound(t *testing.T) {
 	toolCall(t, srv, "respond", map[string]any{"token": sender["token"], "msg_serial": q["msg_serial"], "disposition": "answer", "body": "fresh-update-marker"})
 	toolCall(t, srv, "hook_poll", map[string]any{"session_id": session, "event": "Stop", "stop_hook_active": true})
 	before, err := eng.WakeDigestFor(context.Background(), token, "", "")
-	if err != nil || !strings.Contains(before, "agent update") || !strings.Contains(before, "fresh-mail-marker") {
+	if err != nil || !strings.Contains(before, "fresh-update-marker") || !strings.Contains(before, "fresh-mail-marker") {
 		t.Fatalf("setup: missing actual notice and pending mail: %q (%v)", before, err)
 	}
 	board, err := eng.Board(context.Background())
