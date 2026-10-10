@@ -14,7 +14,7 @@ import (
 // Either note replaces the fold's misleading "when it next wakes" diagnosis.
 func (e *Engine) appQueueNote(agent *core.Agent) string {
 	if view := e.queueWakeView(agent, time.Now()); view != nil {
-		return "delivered to " + agent.ID + ". " + queueWakeNote(view)
+		return "Stored in the mailbox for " + agent.ID + ". " + queueWakeNote(view)
 	}
 	return ""
 }

@@ -249,6 +249,10 @@ const WakeCooldownsMetaKey = "com.dibs/wake_cooldowns"
 // Absence describes an older bridge, whose opening behavior is left alone.
 const AwayOpenMetaKey = "com.dibs/away_open"
 
+// NativeAppMetaKey explicitly opts a bridge into immediate native app input.
+// Omission leaves a dormant older bridge's queue behaviour unchanged.
+const NativeAppMetaKey = "com.dibs/native_app_delivery"
+
 // serveWakeSubscription holds one stream open for one host's bridge and
 // pushes each wake request the hub decides on for that host as a
 // resources/updated notification whose _meta is the request. The bridge runs
@@ -261,7 +265,9 @@ const AwayOpenMetaKey = "com.dibs/away_open"
 func (s *Server) serveWakeSubscription(w http.ResponseWriter, r *http.Request, req *rpcRequest, p subscriptionParams) {
 	host, _ := p.Meta[HostMetaKey].(string)
 	harnesses := wakeHarnessesIn(p.Meta)
-	reqs, release, err := s.eng.AttachHostBridgeCapabilities(host, harnesses, wakeCooldownsIn(p.Meta), awayOpenIn(p.Meta))
+	native, _ := p.Meta[NativeAppMetaKey].(bool)
+	reqs, release, err := s.eng.AttachHostBridgeCapabilities(
+		host, harnesses, wakeCooldownsIn(p.Meta), awayOpenIn(p.Meta), native)
 	if err != nil {
 		writeRPC(w, http.StatusBadRequest, req.ID, nil, &rpcError{
 			Code: -32602, Message: WakeURI + " subscription requires the bridge's host in _meta['" + HostMetaKey + "']",

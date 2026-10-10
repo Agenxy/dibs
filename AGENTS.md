@@ -43,7 +43,15 @@ change it when reality disagrees, and record why).
    is RELOCATION, a separate act behind its own permission (the human, coordinators and
    admins, or an agent the human granted it), ledgered with who did it; the operator's
    `[relocate]` commands are the only ones Dibs runs that host an agent, and no wake reads
-   that table. There are two routes and no others:
+   that table. The canonical ChatGPT queue route first attempts native input
+   through the existing app's private IPC: owner discovery, then one start or
+   steer according to its snapshot, without queue execution or opening a window.
+   The factual notice carries the event and sender, never mail bodies or an
+   imperative. A matching app reply confirms input acceptance only. A missing
+   socket or explicit no-owner refusal retains the existing cold queue/open
+   route; protocol uncertainty fails loudly without automatic retry or fallback.
+   See `docs/NATIVE-APP-DELIVERY.md` for the measured contract and proof boundaries.
+   The remaining delivery routes are:
    `[wake.exec]`, argv from the operator's config, which must DELIVER into a running
    harness (for Codex, `codex queue` into the ChatGPT app, which Dibs then opens on that
    thread when the app is not holding it, and only for an agent whose bridge found the

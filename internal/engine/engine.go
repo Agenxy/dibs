@@ -88,6 +88,7 @@ type Engine struct {
 	socketFailures     map[string]socketFailure
 	commandEpoch       map[string]string // receiving app incarnation, writer-owned
 	commandWritten     map[string]bool   // per original command item, derived and writer-owned
+	nativeUnknown      map[string]bool   // unknown input in this receiving incarnation; not an acceptance receipt
 	socketWritten      map[string]bool   // per original item; not a receiver acceptance receipt
 	wakeBursts         map[string]*wakeBurst
 	wakeContext        context.Context

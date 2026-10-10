@@ -16,15 +16,18 @@ Dibs reports, and it never decides what an agent should do next. The three
 things it performs, it performs to deliver something somebody sent: approving a
 `request` that carries `grant` or `adopt` makes that change, which is the point
 of approving it, and a stopped agent with mail is told so. It is told in one of
-two ways: by
-`[wake.exec]` running a command from your own config, which is the one Dibs can
-confirm happened, or over the session socket its own harness publishes, which
-needs no configuration and is best effort. The command route carries only the
+three ways: owned ChatGPT agent threads accept a native app notice (start when
+idle, steer when running), before the canonical configured queue route runs;
+`[wake.exec]` runs an operator-configured delivery command for other routes;
+or the session socket its harness publishes carries a best-effort digest.
+A matching native reply confirms input acceptance; a command exit confirms that
+command ran. Neither confirms mail consumption. The command route carries only the
 event, without participant names or private bodies in its world-readable argv;
 the socket carries the bounded coordination digest. Neither carries an
-imperative. Loaded app threads are not reopened; unloaded app threads open only
-while the person is known away (ten minutes without input by default), never on
-an unknown presence measurement. That second route is the receiver's
+imperative. Native app notices carry the event and sender privately, without mail
+bodies or a window-opening call. Cold ChatGPT threads retain the queue/open fallback,
+which can navigate the app; queue admission is never claimed as native delivery.
+Claude closed-session recovery retains its separate idle policy. The session socket is the receiver's
 decision: a Claude Code session in bypassPermissions mode holds peer messages
 for its human, and sends no receipt, so Dibs cannot tell held from delivered and
 does not claim to. The hold is a default that side can lift with one setting,

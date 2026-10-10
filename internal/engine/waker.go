@@ -266,7 +266,7 @@ func (e *Engine) maybeWake(ev core.Event) {
 	// Contact proves a past call, not a running turn. A session without a
 	// Stop hook may already be idle; only a running delivery command can
 	// coalesce this event and reconsider the original mail at its exit.
-	if e.noteArrivalDuringWake(l.ID) {
+	if !e.nativeAppRoute(l) && e.noteArrivalDuringWake(l.ID) {
 		return
 	}
 	if e.deferContactForLiveTurn(l) {
@@ -292,7 +292,7 @@ func (e *Engine) maybeWake(ev core.Event) {
 		// owed. One re-check, armed here where failure is actually known:
 		// retryWakeDecision does not arm another on ITS failure, so a command
 		// that is simply wrong costs two attempts rather than looping.
-		defer e.armFirstFailedWake(n, agent, cause, cool)
+		defer e.armFailedWakePlan(cmd, n, agent, cause, cool)
 		// A FAILED WAKE MUST NOT SPEND THE ATTEMPT.
 		//
 		// The cooldown is taken before the process starts, which is right: two
@@ -391,7 +391,7 @@ func (e *Engine) retryWakeDecision(agent string) {
 	e.wakers.mu.Lock()
 	stillRunning := e.wakers.running[agent]
 	e.wakers.mu.Unlock()
-	if stillRunning {
+	if stillRunning && !e.nativeAppRoute(l) {
 		return
 	}
 	if e.deferContactForLiveTurn(l) {
@@ -437,7 +437,7 @@ func (e *Engine) retryWakeDecision(agent string) {
 			return
 		}
 		e.releaseWake(agent, stamp)
-		if n < 2 {
+		if n < 2 && cmd.retryAllowed() {
 			// The first execution for this mail, arrived here deferred; it
 			// gets the one retry every first attempt is promised.
 			e.armFailedWake(agent, cause, cool)
@@ -901,13 +901,13 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 	}
 	thread := threadIDOf(l)
 	now := time.Now()
-	if e.holdForQueuedWakeLocked(l, configured, now) {
+	if !e.nativeAppRouteLocked(l) && e.holdForQueuedWakeLocked(l, configured, now) {
 		return wakePlan{}, false
 	}
 	if e.wakers.last == nil {
 		e.wakers.last = map[string]time.Time{}
 	}
-	if e.wakers.running[l.ID] {
+	if e.wakers.running[l.ID] && !e.nativeAppRouteLocked(l) {
 		// STILL GOING is a stronger reason than recently started, and it
 		// outlives the cooldown: the command IS the activation, so a second one
 		// is a second agent in the same thread.
@@ -1000,8 +1000,9 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 		// exactly as f.apply would here: whole argv elements, never parts.
 		return wakePlan{
 			host: host, cwd: cwdOf(l), cooldown: cooldown, thread: f.Thread, createdSerial: l.CreatedSerial,
-			commandEpoch: e.commandEpoch[l.ID],
-			agent:        l.ID, session: wakeSessionOf(l), kind: kind,
+			nativeOutcome: new(wakeexec.NativeOutcome),
+			commandEpoch:  e.commandEpoch[l.ID],
+			agent:         l.ID, session: wakeSessionOf(l), kind: kind,
 			request: WakeRequest{
 				Host: host, Agent: l.ID, Harness: wakeHarness(l), Thread: f.Thread,
 				CWD: cwdOf(l), From: f.From, MsgType: f.MsgType, Notice: f.Message,
@@ -1057,6 +1058,7 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 	cmd := e.commandFor(l)
 	return wakePlan{
 		argv: f.Apply(cmd.argv), fallback: f.Apply(cmd.fallback),
+		fields: f, nativeOutcome: new(wakeexec.NativeOutcome),
 		agent: l.ID, session: wakeSessionOf(l), kind: kind,
 		createdSerial: l.CreatedSerial, queueEpoch: e.wakers.queueEpoch, commandEpoch: e.commandEpoch[l.ID],
 		cwd: cwdOf(l), cooldown: cooldown, thread: f.Thread,
@@ -1085,7 +1087,9 @@ func wakeSessionOf(l *core.Agent) string {
 // rules were each paid for by a bug, and a second delivery path that skipped
 // them would re-buy every one.
 type wakePlan struct {
-	argv []string // the operator's command
+	fields        wakeexec.Fields         // private native notice facts, never a message body
+	nativeOutcome *wakeexec.NativeOutcome // shared with attempt's retry decision
+	argv          []string                // the operator's command
 	// host is the OTHER machine this wake runs on, or "": a plan for a remote
 	// agent carries no argv, because the hub never learns one; request is
 	// what its bridge is handed instead. See hostwake.go.
@@ -1237,8 +1241,14 @@ func (e *Engine) runWake(plan wakePlan, agent string) bool {
 		return e.requestRemoteWake(plan, agent)
 	}
 	if len(plan.argv) > 0 {
+		if result, handled := e.tryNativeWake(plan, agent); handled {
+			return result
+		}
 		ok := wakeexec.RunCommandsObserved(plan.argv, plan.fallback, agent, plan.cwd,
 			wakeexec.Timeout, wakeexec.Grace, func(observation wakeexec.QueueObservation) {
+				if plan.nativeOutcome != nil && plan.nativeOutcome.Disposition == "unloaded" {
+					observation.Delivery = "queued_unloaded"
+				}
 				e.noteQueueObservation(plan, agent, observation)
 			})
 		e.noteCommandOutcome(agent, plan.argv, ok)
@@ -1342,6 +1352,10 @@ func (e *Engine) remotePullOnlyNote(l *core.Agent) (note string, remote bool) {
 				"bridge can start " + named + ", but " + l.ID + " has never supplied a harness " +
 				"thread id for it to resume: nothing can wake it, so this is pull-only and " +
 				"arrives when that agent next calls inbox or check_in", true
+		}
+		if surfaceOf(l) == harnessenv.ChatGPTApp {
+			return "Stored in the mailbox for " + l.ID + ". Its host bridge will attempt app input; " +
+				"an attached bridge alone does not confirm that the app accepted this notice or read the mail.", true
 		}
 		return "", true // its bridge runs the wake; core's wording is true as it stands
 	}

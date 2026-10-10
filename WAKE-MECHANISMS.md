@@ -398,10 +398,19 @@ that pair, plus any already-started bounded probe/helper call; if it cannot
 proceed, it reports the queued wake without claiming an open. No decision
 window is introduced for agent mail.
 
-Loaded threads receive queue-only delivery and are never opened. The bounded
+**2026-10-09 correction:** owned ChatGPT threads now receive native app input
+(start when idle, steer when running), before any queue/open path. This replaces
+the queue-only premise below for current producers; older producers retain it.
+The existing app's owner-targeted IPC snapshot supplies state, without starting
+an app-server. Unknown protocol outcomes fail explicitly. Cold threads retain
+the existing queue/open path. See `docs/NATIVE-APP-DELIVERY.md` for the measured
+version, live proof and the source-only boundaries.
+
+The preceding opening policy describes the cold fallback. Historically,
+loaded threads received queue-only delivery and were never opened. The bounded
 ownership probe selects the app's actual bundled Codex runtimes before lsof,
 not its many helpers. Probe failure is UNKNOWN, not evidence of an unloaded
-thread. The native app tool's status view is unavailable to dibd; starting a
+thread. At that measurement the native app tool's status view was unavailable to dibd; starting a
 separate app-server would inspect the wrong runtime and is not a substitute.
 A private per-thread memo/OS lock shared by the daemon and host bridge records
 an attempt before opening. Rapid wakes, even with a permanently failing probe,
