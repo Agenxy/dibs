@@ -185,12 +185,13 @@ against a local process replaying the cookie, which writes its own headers and
 declares whatever origin it likes. Both controls are present now; only the page
 key stops the second one.
 
-**The wake path is unauthenticated.** `hook_poll` and `guard_path` take a
-session id and a working directory with no agent token, because a harness
-lifecycle hook does not have one: that is the whole reason they exist. A caller
-can therefore name any session. So these endpoints say *what* is waiting (how
-many, from whom, of what kind) and never *what it says*. Reading content
-requires a token.
+**The hook path does not require an agent token.** `hook_poll` and `guard_path`
+take a session id and a working directory because a harness lifecycle hook does
+not have an agent token. The board's local-secret gate still applies, but a
+caller holding that secret can name another session. `guard_path` returns
+coordination metadata; `hook_poll` can return bounded, labelled, quoted mail
+bodies as data. A session id is therefore a local capability to receive that
+session's hook digest, not proof that the caller owns the session.
 
 A caller can also LIE about a session's lifecycle on this path: a `Stop` for a
 peer still working, or a `SessionStart` for one that has stopped, and session
@@ -199,8 +200,10 @@ busy state, recent contact and the retired cooldown cannot defer a fresh mail
 event. Per-original-item write deduplication and the in-flight reservation do
 not reset on a busy label. A forged lifecycle call may still cause an otherwise
 eligible outstanding item to be considered, and lifecycle-derived contact can
-affect liveness diagnostics; it proves neither receiver acceptance nor mail
-consumption. Nothing on this path reads a mailbox or grants a role. A credential
+affect liveness diagnostics. A lifecycle label alone proves neither receiver
+acceptance nor mail consumption; a fitting hook digest that presents a complete
+FYI body does consume that FYI. Requests and questions remain owed until
+answered, and this path grants no role. A credential
 per agent that the hub can distinguish remains the boundary described in
 `docs/NETWORK.md` §6 (#74); removing cooldown deferral does not authenticate
 these lifecycle claims.
@@ -236,15 +239,19 @@ and sixty-five.
 
 **The wake path is a nudge, and it is deliberately free to call.** Because
 `hook_poll` is token-less, a caller naming somebody else's session receives that
-agent's wake summary, and nothing on that path can tell the two callers apart.
+agent's bounded hook digest, and nothing on that path can tell the two callers
+apart. The same-user local-secret boundary is an accepted trade, not recipient
+authentication.
 
-**A session id is therefore a capability on that path, and the one thing it can
-spend is a wake.** This document used to say that nothing on the path consumed
-or advanced anything, and that reading was repeatable so there was nothing for a
-peer to spend. That was wrong. A wake is recorded as delivered when the digest
-is handed out, so a caller naming somebody else's session and claiming `Stop`
-receives that agent's digest AND spends its one wake; the victim's own `Stop`
-then delivers nothing, and for an FYI there is no retry.
+**A session id can spend presentation and consume FYIs on that path.** A caller
+holding the local secret and naming somebody else's session can receive its
+digest and spend a wake. Presenting a complete FYI body in a fitting digest
+consumes it; an announced FYI whose body has not been presented can receive at
+most one further passive reminder at a later natural boundary, which consumes
+it too. Counts, truncated text and oversized-result file pointers do not count
+as full-body presentation. An unconfirmed socket write does not consume a FYI.
+Hook presentation also records the existing outcome read receipts for the
+complete prefix shown. These effects must not be described as side-effect-free.
 
 The alternative was tried and is worse. Moving the mark to the agent's own
 authenticated `check_in` makes a peer unable to spend anything, and makes an
@@ -253,25 +260,27 @@ every turn for the rest of its life. Not being interrupted by each other is what
 this product is for, and that rule has a test of its own.
 
 So: **treat a session id as a secret**, at the same level as an agent token.
-Anyone who has one can already read that agent's wake summary; they can also
-cost it one delivery. Everything else on the path is still repeatable and
-side-effect-free.
+Anyone who also holds the board secret can read that session's hook digest and
+consume its FYIs without its agent token. Consumed FYIs disappear from the
+ordinary inbox and unread counts. The recipient can recover a recently consumed
+FYI with authenticated `read_mail(msg_serial)` while normal consumed-mail
+retention keeps it; once retention prunes it, that recovery is unavailable.
 
 Two earlier designs got this wrong, and both are worth stating because the second
 looked like a fix. Notices were first *deleted* on read, so a peer could destroy
 them outright. They were then *throttled* on read, which only slowed it down: a
 peer polling faster than the window won every eligibility point and starved the
 victim indefinitely. Any timer is shared state mutated by an unidentifiable
-caller. Only removing the mutation closes it.
+caller. Removing that mutation closed the earlier notice suppression path;
+the FYI consumption capability above is a separate, explicitly accepted trade.
 
 Announcement reminders still carry a retry timer on this path, so their *nudge*
-can be delayed by a peer. What no peer can touch is the fact itself: every
-obligation has a **pull path** on the agent's own token-authenticated call.
-`check_in` returns outstanding agent updates and `inbox` returns unread mail and
-unacknowledged announcements, neither consulting wake-path state. An agent that
-coordinates loses no information to a suppressor: at worst it loses the prompt
-to go and look. Nothing on the token-less path reveals message or announcement
-bodies.
+can be delayed by a peer. Requests and questions retain their **pull path** on
+the agent's token-authenticated calls and remain owed until answered; a hook
+cannot answer them. This is not a guarantee that all information remains in the
+inbox: token-less hook digests reveal quoted bodies, record presentation, and
+can consume FYIs as described above. Recent consumed FYIs have the bounded
+`read_mail` recovery path, not indefinite inbox retention.
 
 ## What is protected on disk
 

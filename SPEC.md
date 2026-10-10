@@ -1208,14 +1208,18 @@ it does not fabricate reports for unreported intermediate steps. This admission
 rule does not change historical replay, numbered-progress counts, the original
 DONE verdict, or its deliverable.
 
-The session id is a same-machine capability for a token-less nudge. A local
-peer holding the board secret and knowing that id can call `hook_poll`, or
-forge a starting-hook event, to spend presentation for an `AnnounceRetry`
-interval, or suppress later hook presentations of informational notices already
-carried by Stop; authenticated pulls still retain them. Repeating a forged
-event can keep blocking reminders delayed. This accepted trade
-does not consume or hide information: the pending mail and agent updates
-remain complete in `inbox` and the agent's own authoritative `check_in`.
+The session id is a same-machine capability for a hook without an agent token.
+A local peer holding the board secret and knowing that id can receive the
+session's bounded quoted digest, spend presentation and record its complete
+outcome prefix as read. A fitting full-body FYI presentation consumes the FYI;
+an announced, unpresented FYI is consumed after at most one further passive
+reminder at a later natural boundary. Unconfirmed socket writes do not consume
+FYIs. This is an accepted same-user trade, not recipient authentication:
+consumed FYIs leave the inbox and unread counts, and authenticated `read_mail`
+recovers them only while normal consumed-mail retention keeps them. Requests
+and questions remain owed until answered. Forged events can also delay timed
+announcement nudges; they do not answer work or grant a role. See `SECURITY.md`
+for the capability and retention boundary.
 
 A self-wake inbox notification advertises this read with the additive
 `com.dibs/digest_refresh: true` metadata key. A capable bridge refreshes before

@@ -349,6 +349,14 @@ func appReconnectContract(t *testing.T, lost, clockBack, legacy bool) {
 	}
 	ledgerAfter, er := os.ReadFile(filepath.Join(dir, "ledger.jsonl"))
 	if er != nil || !bytes.Equal(ledgerBefore, ledgerAfter) {
+		if bytes.HasPrefix(ledgerAfter, ledgerBefore) {
+			for _, raw := range bytes.Split(ledgerAfter[len(ledgerBefore):], []byte("\n")) {
+				var rec ledger.Line
+				if json.Unmarshal(raw, &rec) == nil && rec.Op != nil {
+					t.Logf("appended serial=%d kind=%s msg=%d announced=%v", rec.S, rec.Op.Kind, rec.Op.MsgSerial, rec.Op.NotifyAnnounced)
+				}
+			}
+		}
 		t.Fatalf("reconnect changed coordination state or identity: %v", er)
 	}
 	// The sender-facing receipt must describe the actual accepted queue route,

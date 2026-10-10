@@ -14,6 +14,7 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   new mail from announced FYIs and count actual update units.
   Older versions can still open these ledgers; on rollback they forget the new
   page receipt, leave omitted mail untouched and retain ordinary FYI consumption.
+  Late metadata-only wake receipts do not rewrite an FYI already presented.
 
 - Send replies describe pending direct app delivery when that route is eligible
   and no native result has been observed yet. Prior native outcomes remain

@@ -44,7 +44,10 @@ func (e *Engine) recordCommandWritten(cmd wakePlan) {
 			who, raw, _ := strings.Cut(item, "\x00")
 			serial, _ := strconv.ParseUint(raw, 10, 64)
 			m := e.state.Messages[serial]
-			if kind == "mail" && who == l.ID && m != nil && m.Type == core.MsgNotify {
+			// The command may finish after a hook or authenticated read has
+			// already presented this FYI. Its delayed metadata receipt adds
+			// nothing then; do not rewrite coordination state on reconnect.
+			if kind == "mail" && who == l.ID && m != nil && m.Type == core.MsgNotify && !e.notifyPresented(l.ID, m) {
 				if err := e.announceFYI(l, serial, time.Now()); err != nil {
 					return core.Result{"error": err}
 				}
