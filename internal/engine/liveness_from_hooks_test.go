@@ -148,11 +148,11 @@ func TestTheDigestDoesNotAskALiveAgentToAnnounceItself(t *testing.T) {
 	if err != nil {
 		t.Fatal("hook_poll:", err)
 	}
-	whole := res["systemMessage"]
+	whole, _ := res["reason"].(string)
 	if hs, ok := res["hookSpecificOutput"].(map[string]any); ok {
-		whole = whole.(string) + " " + hs["additionalContext"].(string)
+		whole += " " + hs["additionalContext"].(string)
 	}
-	text, _ := whole.(string)
+	text := whole
 	if text == "" {
 		t.Fatal("setup: the digest was empty, so it cannot show the absence of anything")
 	}

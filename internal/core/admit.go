@@ -46,6 +46,9 @@ func (s *State) Admit(op *Op) error {
 	if err := s.admitOutcomeRead(op); err != nil {
 		return err
 	}
+	if err := s.admitMailboxPage(op); err != nil {
+		return err
+	}
 	if op.Kind != OpUpdate || op.Name == "" {
 		return nil
 	}

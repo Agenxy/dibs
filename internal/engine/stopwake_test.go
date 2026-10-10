@@ -66,7 +66,7 @@ func TestAWakeOnStopCarriesTheFieldThatContinuesTheTurn(t *testing.T) {
 		t.Fatalf("no hookSpecificOutput at all; got %v", got)
 	}
 	ctxText, _ := hso["additionalContext"].(string)
-	if !strings.Contains(ctxText, "unread") {
+	if !strings.Contains(ctxText, "a peer needs an answer") {
 		t.Fatalf("the digest does not mention the unread mail: %q", ctxText)
 	}
 	// And the field without which the turn simply ends.
@@ -76,7 +76,7 @@ func TestAWakeOnStopCarriesTheFieldThatContinuesTheTurn(t *testing.T) {
 			`agent never reads a word of it`, got["decision"])
 	}
 	reason, _ := got["reason"].(string)
-	if !strings.Contains(reason, "unread") {
+	if !strings.Contains(reason, "a peer needs an answer") {
 		t.Errorf("reason = %q: it is what Claude is shown when the stop is blocked, "+
 			"so it has to carry the news", reason)
 	}
@@ -129,7 +129,7 @@ func TestAStrictStopContinuesTheTurnTheWayCodexAccepts(t *testing.T) {
 	if got["decision"] != "block" {
 		t.Errorf(`decision = %v, want "block": it is the only way Codex continues a turn`, got["decision"])
 	}
-	if reason, _ := got["reason"].(string); !strings.Contains(reason, "unread") {
+	if reason, _ := got["reason"].(string); !strings.Contains(reason, "something to answer") {
 		t.Errorf("reason = %q: it becomes the model's next prompt, so it has to carry the news", reason)
 	}
 }

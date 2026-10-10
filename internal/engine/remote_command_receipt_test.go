@@ -133,7 +133,7 @@ func TestRemoteCommandDeduplicatesAfterObservedLocalAppIncarnation(t *testing.T)
 	// Codex admission has its own queue hold. The real receiving prompt hook
 	// releases it; only the original-item receipt may suppress this later offer.
 	result, err := e.HookPollFrom(ctx, thread, "UserPromptSubmit", "", "remote-host", false, false)
-	if err != nil || result["agent"] != "worker" || deliveredSomething(result) {
+	if err != nil || result["agent"] != "worker" || result["decision"] == "block" {
 		t.Fatalf("setup remote receiving hook did not resolve: %v %v", result, err)
 	}
 	publish()

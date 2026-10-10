@@ -98,6 +98,10 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 	}
 	// The op payload: the union of every tag that reached disk above.
 	wantOp := map[string]bool{
+		// Additive page selection on activity_checkpoint; historical check_in
+		// keeps read-all semantics. Existing tag spellings remain frozen.
+		"mailbox_serials":  true,
+		"notify_announced": true, "notify_consumption": true,
 		// Atomic daemon stall notice and its request watermark, additive only.
 		"declaration_serial": true,
 		// App-restart observation and coordinator settings are new op kinds,
@@ -460,7 +464,9 @@ const (
 	// App restart adds four observation tags and two setting tags; none renamed.
 	// Stall notices add one declaration-version tag; every old spelling remains.
 	// Contact notice reads add one checkpoint-prefix tag; no old tag changed.
-	frozenOpFingerprint       = "sha256:aa7d996bd7bc6805"
+	// Compact mailbox checkpoints add the selected serial list, without renaming.
+	// FYI receipts add announcement ids and a consumption reason on old carriers.
+	frozenOpFingerprint       = "sha256:43b9fdab79f01b5d"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`
@@ -472,7 +478,8 @@ const (
 	// Withdrawal: three additive receipt fields; all old tags unchanged.
 	// Worker review reads add one scalar; sender watermark is unchanged.
 	// Stall notices add one durable declaration-version scalar, absent historically.
-	frozenMessageFingerprint = "sha256:c616324010ca4260"
+	// FYI receipts add an announcement serial and consumption reason only.
+	frozenMessageFingerprint = "sha256:273a74e77adb2f40"
 	// The identity inside op.agent. Set when the fingerprint was added; one
 	// new tag at a time from here, never a rename.
 	frozenAgentFingerprint = "sha256:c630d3cc9f27eb95"
@@ -719,6 +726,7 @@ func TestLedgerMessageFieldNamesAreFrozen(t *testing.T) {
 		"response_window_s": true, "never_delivered_at": true, "contact_escalated_serial": true,
 		"delivered_serial": true, "sent_at": true, "delivered_at": true,
 		"responded_serial": true, "acked_serial": true, "terminal_at": true,
+		"notify_announced_serial": true, "notify_consumption": true,
 		"expire_detail": true, "attachments": true,
 		// The serial at which the SENDER read the verdict (#76). The notice
 		// rebuild after a restart reads it; renamed, every read outcome on the

@@ -5,6 +5,20 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Keep agent mail with its agent: remove hook human notices and recover backlog
+  with bounded passive pointers at natural prompts/session starts. Inbox/check-in
+  return compact pages with owed work first, per-item receipts and continuation
+  cursors; only returned pending mail is delivered. Full FYI presentation clears
+  it automatically; an announcement gets at most one further passive reminder,
+  then clears. Requests and questions still need answers. Counts distinguish
+  new mail from announced FYIs and count actual update units.
+  Older versions can still open these ledgers; on rollback they forget the new
+  page receipt, leave omitted mail untouched and retain ordinary FYI consumption.
+  Late metadata-only wake receipts do not rewrite an FYI already presented.
+  Human board reads and private panel refreshes no longer mark an agent's
+  pending mail delivered; seeing an FYI in the panel does not consume it for
+  the agent. Model mail receipts stay untouched.
+
 - Send replies describe pending direct app delivery when that route is eligible
   and no native result has been observed yet. Prior native outcomes remain
   labelled as prior observations; send does not wait for delivery. Upgrade

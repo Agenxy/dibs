@@ -1211,6 +1211,9 @@ func (s *Server) run(
 	ctx context.Context, name string, a *toolArgs,
 	params json.RawMessage, sessionClient *clientInfoJSON,
 ) (core.Result, error) {
+	if err := validateMailboxLimit(name, params, a); err != nil {
+		return nil, err
+	}
 	op := &core.Op{Token: a.Token}
 	// The harness's own name for this thread, if it volunteered one.
 	//
@@ -1276,6 +1279,7 @@ func (s *Server) run(
 		op.Agent = resumeIdentity(ctx, params)
 	case "check_in":
 		op.Kind = core.OpAckBoard
+		op.MailboxPage, op.MailboxCursor, op.MailboxLimit = true, a.HistoryCursor, a.Limit
 	case "update":
 		op.Kind, op.Name, op.Description = core.OpUpdate, a.Name, a.Description
 		op.Agent = selfReported(a)
@@ -1360,9 +1364,9 @@ func (s *Server) run(
 	case "queue_lock":
 		return s.eng.SetQueueOrderLock(ctx, a.Token, a.AgentRef, a.MsgSerial, a.Locked)
 	case "ack":
-		op.Kind, op.MsgSerial = core.OpAckMessage, a.MsgSerial
+		return s.ackMail(ctx, a, op)
 	case "inbox":
-		return s.eng.Inbox(ctx, a.Token)
+		return s.eng.InboxPage(ctx, a.Token, a.HistoryCursor, a.Limit)
 	case "read_mail":
 		return s.eng.GetMessage(ctx, a.Token, a.MsgSerial)
 	case "mail_history":

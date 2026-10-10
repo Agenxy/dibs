@@ -90,7 +90,6 @@ func TestNoWakeSurfaceLeaksAMessageBody(t *testing.T) {
 			"and must spend three calls finding out what")
 	}
 	surfaces := map[string]string{
-		"the human notice (hook systemMessage)":       humanNotice("receiver", mail, nil, nil),
 		"the waiting line (every tool result)":        e.waiting("receiver", time.Now()),
 		"pendingMail (what every quiet surface uses)": strings.Join(mail, "\n"),
 	}

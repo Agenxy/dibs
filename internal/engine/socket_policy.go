@@ -148,13 +148,17 @@ func (e *Engine) socketActionableMessage(m *core.Message) bool {
 	return wakeCauseAllowed(e.WakePolicy(), true, core.Blocking("message.sent", m.Type))
 }
 
-// Raw FYIs stay in the mailbox until ack. A ledgered mailbox presentation or
-// a confirmed hook/socket digest is enough to spend their one wake; neither
-// an unconfirmed socket write nor command execution is a read receipt.
+// A complete bounded FYI presentation consumes it. An announcement spends its
+// initial wake and permits one later passive reminder; unconfirmed socket
+// writes carry no presentation evidence.
 func (e *Engine) notifyPresented(agent string, m *core.Message) bool {
 	if m.Type != core.MsgNotify {
 		return false
 	}
+	return m.Consumed || m.NotifyAnnouncedAt >= max(m.AdoptedAt, 1) || e.messagePresented(agent, m)
+}
+
+func (e *Engine) messagePresented(agent string, m *core.Message) bool {
 	_, shown := e.wokeFor[agent+"\x00"+strconv.FormatUint(m.Serial, 10)]
 	// A later adoption must not inherit the prior recipient's presentation.
 	deliveredHere := m.State == core.MsgStateDelivered && m.DeliveredAt >= m.AdoptedAt

@@ -25,6 +25,18 @@ func (s *State) admitContactNoticeRead(op *Op) error {
 // Replay folds the recorded read. Historical zero-field checkpoints keep their
 // original effect. An explicit duplicate read changes no state or serial.
 func (s *State) applyContactCheckpoint(l *Agent, op *Op) (Result, []Event) {
+	if op.NotifyAnnounced != nil {
+		changed := false
+		for _, id := range op.NotifyAnnounced {
+			if m := s.Messages[id]; m != nil && m.NotifyAnnouncedAt < max(m.AdoptedAt, 1) {
+				m.NotifyAnnouncedAt = s.Serial + 1
+				changed = true
+			}
+		}
+		if !changed {
+			return Result{"ok": true, "changed": false}, nil
+		}
+	}
 	if op.ContactNoticeThroughSerial != 0 {
 		if op.ContactNoticeThroughSerial <= l.ContactNoticeReadAt {
 			return Result{"ok": true, "changed": false}, nil

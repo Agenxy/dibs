@@ -221,7 +221,11 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 	case OpRelocate:
 		res, evs, err = s.applyRelocate(l, op, now)
 	case OpActivityCheckpoint:
-		res, evs = s.applyContactCheckpoint(l, op) // LastCoordination below
+		if op.MailboxSerials != nil {
+			res, evs = s.applyAckBoard(l, op, now)
+		} else {
+			res, evs = s.applyContactCheckpoint(l, op) // LastCoordination below
+		}
 	case OpAckBoard:
 		res, evs = s.applyAckBoard(l, op, now)
 	case OpUpdate:
@@ -1066,7 +1070,16 @@ func (s *State) applyAckBoard(l *Agent, op *Op, now time.Time) (Result, []Event)
 	// use: it is the one call they all keep making. See bindHarnessSession.
 	s.dropTakenSession(op, l)
 	bound := l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed, op.V7Semantics)
+	selected := map[uint64]bool{}
+	if op.MailboxSerials != nil {
+		for _, serial := range *op.MailboxSerials {
+			selected[serial] = true
+		}
+	}
 	for _, m := range s.Inbox(l.ID) {
+		if op.MailboxSerials != nil && !selected[m.Serial] {
+			continue
+		}
 		if m.State == MsgStatePending {
 			m.State = MsgStateDelivered
 			m.DeliveredAt = s.Serial + 1
@@ -1782,6 +1795,9 @@ func (s *State) applyAckMessage(l *Agent, op *Op, now time.Time) (Result, []Even
 	}
 	m.State = MsgStateAcked
 	m.AckedAt = s.Serial + 1
+	if op.NotifyConsumption != "" {
+		m.NotifyConsumption = op.NotifyConsumption
+	}
 	if !m.Expecting() { // acked is terminal + consumed for notify/handoff
 		m.Consumed = true
 		m.TerminalAt = now

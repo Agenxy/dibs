@@ -106,7 +106,7 @@ func TestWaitingAgeIgnoresAnOutcomeReadThroughMCP(t *testing.T) {
 				if updates, ok := read["agent_updates"].([]any); ok && len(updates) != 0 {
 					t.Fatalf("setup: old verdict remained unread: %v", read)
 				}
-				want := "1 unread message(s)"
+				want := "1 new"
 				if fresh == "mail" {
 					call("send", map[string]any{"token": "worker-token", "to": "lead", "type": "question", "body": "fresh mail marker"})
 				} else {
@@ -140,9 +140,9 @@ func TestWaitingAgeIgnoresAnOutcomeReadThroughMCP(t *testing.T) {
 }
 
 // The reported unread-count incident no longer reproduced on the live board.
-// These controls measure the candidates separately instead of assuming owed
-// work or acknowledged notifications were the cause. They must pass on the old
-// source too; the age and full-read hint guards are expected to fail there.
+// Acknowledged notifications disappear. Accepted work remains owed and now
+// occupies the actionable-first mailbox page; its count must state that
+// obligation rather than describe the consumed approval as new mail.
 func TestWaitingCountMatchesTheMCPInboxAfterDisposition(t *testing.T) {
 	for _, version := range []string{"2026-07-28", "2025-11-25"} {
 		for _, disposition := range []string{"ack", "approve", "queue"} {
@@ -170,13 +170,22 @@ func TestWaitingCountMatchesTheMCPInboxAfterDisposition(t *testing.T) {
 					t.Fatalf("setup: disposition did not consume the message: %v", read)
 				}
 				written := call("update", map[string]any{"token": worker, "description": "count control"})
-				if waiting, _ := written["waiting"].(string); waiting != "" {
-					t.Errorf("handled mail was reported pending: %q", waiting)
+				waiting, _ := written["waiting"].(string)
+				if disposition == "ack" && waiting != "" {
+					t.Errorf("acknowledged mail was reported pending: %q", waiting)
+				}
+				if disposition != "ack" && (!strings.Contains(waiting, "1 owed requests") || strings.Contains(waiting, "1 new")) {
+					t.Errorf("accepted obligation was missing or mislabelled: %q", waiting)
 				}
 				inbox := call("inbox", map[string]any{"token": worker})
 				for _, key := range []string{"inbox", "messages"} {
-					if mail, ok := inbox[key].([]any); ok && len(mail) != 0 {
-						t.Errorf("handled mail remains in %s: %v", key, inbox)
+					mail, _ := inbox[key].([]any)
+					want := 1
+					if disposition == "ack" {
+						want = 0
+					}
+					if len(mail) != want {
+						t.Errorf("%s does not match remaining obligations: %v", key, inbox)
 					}
 				}
 				owed, _ := inbox["owed_work"].([]any)
@@ -217,7 +226,7 @@ func TestWaitingHintClearsTrimmedProgressThroughMCP(t *testing.T) {
 				}
 				var incoming any
 				if mixedMail {
-					incoming = call("send", map[string]any{"token": worker, "to": "lead", "type": "notify", "body": "private incoming marker"})["msg_serial"]
+					incoming = call("send", map[string]any{"token": worker, "to": "lead", "type": "handoff", "body": "private incoming marker"})["msg_serial"]
 				}
 				for _, read := range []string{"inbox", "check_in"} {
 					visible := call(read, map[string]any{"token": lead})
@@ -265,7 +274,7 @@ func TestWaitingHintClearsTrimmedProgressThroughMCP(t *testing.T) {
 					}
 				}
 				if mixedMail {
-					if !strings.Contains(waiting, "1 unread message(s)") {
+					if !strings.Contains(waiting, "1 seen messages awaiting action") {
 						t.Errorf("reading updates consumed unrelated ordinary mail: %v", written)
 					}
 					call("ack", map[string]any{"token": lead, "msg_serial": incoming})
@@ -300,7 +309,7 @@ func TestWaitingHintClearsTrimmedReviewThroughMCP(t *testing.T) {
 			}
 			written := call("update", map[string]any{"token": worker, "description": "read the whole review"})
 			waiting, _ := written["waiting"].(string)
-			if !strings.Contains(waiting, fmt.Sprintf("read_mail(%.0f)", parent)) || !strings.Contains(waiting, "read and clear") || strings.Contains(waiting, "inbox") {
+			if !strings.Contains(waiting, fmt.Sprintf("read_mail(%.0f)", parent)) || !strings.Contains(waiting, "read and clear") {
 				t.Errorf("review reminder did not name the full parent read: %q", waiting)
 			}
 			read := call("read_mail", map[string]any{"token": worker, "msg_serial": parent})
@@ -309,8 +318,8 @@ func TestWaitingHintClearsTrimmedReviewThroughMCP(t *testing.T) {
 				t.Fatalf("setup: full review was not returned: %v", read)
 			}
 			written = call("update", map[string]any{"token": worker, "description": "review read"})
-			if waiting, _ := written["waiting"].(string); waiting != "" {
-				t.Errorf("following the review's read hint did not clear it: %q", waiting)
+			if waiting, _ := written["waiting"].(string); strings.Contains(waiting, "update(s)") || !strings.Contains(waiting, "1 owed requests") {
+				t.Errorf("full review read did not clear the review while retaining owed work: %q", waiting)
 			}
 		})
 	}

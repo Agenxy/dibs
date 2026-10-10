@@ -702,6 +702,8 @@ type Message struct {
 	ContactEscalatedAt uint64    `json:"contact_escalated_serial,omitempty"`
 	Response           string    `json:"response,omitempty"`
 	DeliveredAt        uint64    `json:"delivered_serial,omitempty"`
+	NotifyAnnouncedAt  uint64    `json:"notify_announced_serial,omitempty"`
+	NotifyConsumption  string    `json:"notify_consumption,omitempty"`
 	// SentAt and DeliveredTime are wall-clock, and they exist so an agent can
 	// tell what happened to it.
 	//

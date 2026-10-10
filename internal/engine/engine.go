@@ -451,7 +451,9 @@ func (e *Engine) execWithReceipt(
 	if op.Kind == core.OpRespond && op.Disposition == "withdraw" {
 		op.Kind = core.OpWithdrawMessage
 	}
-	op.AgentID = "" // replay-only actor field; never trusted from ingress
+	op.AgentID = ""         // replay-only actor field; never trusted from ingress
+	op.MailboxSerials = nil // the writer selects returned mail, never the caller
+	op.NotifyAnnounced, op.NotifyConsumption = nil, ""
 	// Same rule: the claim VERDICT is the engine's to record, never the
 	// caller's to assert. Checked below, after the actor is known.
 	op.ClaimVerified = false
@@ -917,6 +919,10 @@ func (e *Engine) execWithReceipt(
 			}, nil
 		}
 	}
+	page, pageErr := e.prepareMailboxPage(op, actor, now)
+	if pageErr != nil {
+		return nil, pageErr
+	}
 	admitted()
 	res, err := e.applyAndLedgerWithReceipt(op, now, receipt, attempt)
 	if err != nil {
@@ -1036,53 +1042,13 @@ func (e *Engine) execWithReceipt(
 	// best-effort, the obligation is read back through the agent's own
 	// authenticated call. Notices had no such path, so suppressing the nudge
 	// suppressed the fact.
-	if op.Kind == core.OpAckBoard && actor != nil {
-		res["task_queue"] = e.taskQueueView(actor.ID)
-		res["owes"] = e.owedSerials(actor.ID, now)
-		res["owed_work"] = e.owedWorkView(actor.ID, now)
-		// Always present, empty when there is nothing.
-		//
-		// Omitting the key when nothing had happened meant an agent could not tell
-		// "nothing was done to you while you were away" from "this is not working"
-		// or "I am asking on the wrong agent". On the tool documented as the
-		// recovery checkpoint, reached by an agent that has just lost its context,
-		// that ambiguity is the opposite of the reassurance it exists to give,
-		// and it was reported as a defect by the first agent to use it that way.
-		pending, readErr := e.pullUpdates(actor, now)
-		if readErr != nil {
-			return nil, readErr
-		}
-		if restart, err := e.readAppRestart(actor.Token, now); err != nil {
+	if (op.Kind == core.OpAckBoard || op.MailboxSerials != nil) && actor != nil {
+		if err := e.completeMailboxCheckpoint(res, actor, page, now); err != nil {
 			return nil, err
-		} else if restart != "" {
-			pending = append(pending, restart)
 		}
-		if pending == nil {
-			pending = []string{}
-		}
-		res["agent_updates"] = pending
-		res["serial"] = e.state.Serial
 		e.AckNotices(actor.ID)
-		// Whether overlap detection is working AT ALL, on the one call
-		// documented as the atomic checkpoint.
-		//
-		// It rode on `declare` alone, and only for the agent that happened to
-		// call it, attributed to whichever cwd the daemon last failed to read.
-		// Reported by k7-a from a live board: matching was off fleet-wide, the
-		// hint named ANOTHER agent's directory, and it read as somebody else's
-		// misconfiguration. An agent that registers, checks in and works
-		// without declaring never learned at all.
-		//
-		// This is the one state where silence must not be read as safety.
-		// dibs://skills already says a low score proves nothing; with matching
-		// off there is no score, the board renders normally, same-path overlap
-		// still works, and nothing looks different. So it belongs here, phrased
-		// as a property of the board rather than of the caller.
-		if st := e.MatchStatus(); st.Phase != MatchReady {
-			res["matching"] = st.Phase
-			res["matching_hint"] = matchingHint(st)
-		}
 	}
+
 	// WHICH ID THE WRITTEN NAME REACHED. See addressedNote.
 	if res != nil && len(addressed) > 0 {
 		res["addressed"] = e.addressedNote(op, addressed)
@@ -1099,7 +1065,7 @@ func (e *Engine) execWithReceipt(
 	// actor has no usable credential left to follow a mail-reading hint.
 	// Everywhere else this reaches an agent whose harness has no hooks, or
 	// whose installed hooks cannot resolve it.
-	if actor != nil && !actor.Gone() && res != nil && op.Kind != core.OpAckBoard {
+	if actor != nil && !actor.Gone() && res != nil && op.Kind != core.OpAckBoard && op.MailboxSerials == nil {
 		if w := e.waiting(actor.ID, now); w != "" {
 			res["waiting"] = w
 		}

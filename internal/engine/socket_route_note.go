@@ -46,7 +46,7 @@ func (e *Engine) sendDeliveryNote(l *core.Agent, m *core.Message) string {
 func (e *Engine) sendWakeCauseNote(l *core.Agent, m *core.Message) string {
 	if e.notifyPresented(l.ID, m) {
 		return "delivered to " + l.ID + "'s mailbox; this notify was already presented, so " +
-			"no new wake was sent. It remains readable until acknowledged."
+			"no new wake was sent. read_mail retains recently consumed FYIs under the normal retention bounds."
 	}
 	if !e.socketActionableMessage(m) {
 		return "delivered to " + l.ID + "'s mailbox; the operator's wake policy suppresses this wake: " +

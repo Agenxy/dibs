@@ -1417,12 +1417,14 @@ async function act(serial, disposition) {
 
   try {
     const refreshed = await call(
-      "tools/call", { name: "inbox", arguments: { token: state.token } })
+      "tools/call", { name: "board", arguments: { token: state.token, detail: true, view: "mail" } })
     const refreshRefusal = toolFailure(refreshed)
     if (refreshRefusal) throw new Error(refreshRefusal)
     // Same merge as the private fetch above: the redacted carrier is the
     // fallback, not the preference.
     //
+    // A private human refresh uses the same observer read as fetchBoard:
+    // it must not consume FYIs the recipient model has never been shown.
     // The mailbox is read out of whichever shape arrived. inbox's own result
     // carries it as top-level `messages`, null when empty, beside a null
     // `inbox`; a panel payload carries `inbox` as an array. This read only the

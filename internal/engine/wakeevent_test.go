@@ -192,14 +192,15 @@ func TestNothingIsSaidToTheHumanWhenTheyType(t *testing.T) {
 			"pressed return: %v", msg)
 	}
 
-	// Stop is where ambient awareness belongs: the turn is over, and a line
-	// saying what is outstanding is the whole reason this channel exists.
+	// Stop keeps fresh model delivery and does not hand agent mail to the person.
 	ended, err := e.HookPoll(ctx, "sid-w", "Stop", "", false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := ended["systemMessage"]; !ok {
-		t.Error("nothing was said at the end of the turn either, so an operator who " +
-			"cannot see the board now hears nothing at all")
+	if _, ok := ended["systemMessage"]; ok {
+		t.Error("agent mail was handed to the human at Stop")
+	}
+	if ended["decision"] != "block" || ended["hookSpecificOutput"] == nil {
+		t.Error("passive recovery spent the subsequent fresh Stop delivery")
 	}
 }

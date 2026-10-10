@@ -85,8 +85,8 @@ func TestStopDeliversEveryAuthoredMessage(t *testing.T) {
 			if got["decision"] != "block" || got["hookSpecificOutput"] == nil {
 				t.Errorf("actionable %s did not continue the turn: %v", kind, got)
 			}
-			if got["systemMessage"] == nil {
-				t.Error("the human was not told")
+			if got["systemMessage"] != nil {
+				t.Error("agent mail was handed to the human")
 			}
 		})
 	}
@@ -121,10 +121,10 @@ func TestAWakeDoesNotNagAboutSomethingAlreadyDelivered(t *testing.T) {
 	if second["hookSpecificOutput"] != nil {
 		t.Error("the same question woke the agent twice inside the reminder cadence")
 	}
-	// The human keeps being told, because "unread" is still true and it costs
-	// the agent nothing.
-	if second["systemMessage"] == nil {
-		t.Error("the human stopped being told as soon as the agent did")
+	// Spent mail is recovered at a natural model boundary, never by asking
+	// the human to transport it.
+	if second["systemMessage"] != nil {
+		t.Error("spent mail was handed to the human")
 	}
 }
 
@@ -189,8 +189,8 @@ func TestAWakeNeverContinuesATurnAWakeAlreadyContinued(t *testing.T) {
 	if again["hookSpecificOutput"] != nil {
 		t.Error("a turn already continued by a wake was continued again")
 	}
-	if again["systemMessage"] == nil {
-		t.Error("the human stopped being told as soon as the model did")
+	if again["systemMessage"] != nil {
+		t.Error("suppressed model delivery was handed to the human")
 	}
 }
 
@@ -215,8 +215,8 @@ func TestTheOperatorCanNarrowOrSilenceTheWake(t *testing.T) {
 	if quiet["hookSpecificOutput"] != nil {
 		t.Error("`none` extended a turn")
 	}
-	if quiet["systemMessage"] == nil {
-		t.Error("`none` stopped telling the human, which is not what it means")
+	if quiet["systemMessage"] != nil {
+		t.Error("`none` handed agent mail to the human")
 	}
 	// The default delivers authored FYIs. The operator can still silence
 	// later blocking mail without consuming its presentation.

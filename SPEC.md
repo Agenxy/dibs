@@ -708,8 +708,34 @@ recipient's `respond` (responding proves receipt). GC eligibility requires
 `Terminal(m) ∧ m.consumed`, or retention-cap eviction (watermark-recorded, §below).
 
 **Reading:**
-- `inbox()`: the recipient's non-terminal messages **plus unconsumed terminal
-  messages** (bodies decrypted); marks pending → delivered.
+- `inbox(cursor?,limit?)` and the mailbox in `check_in(cursor?,limit?)` return
+  compact envelopes: non-terminal plus unconsumed terminal mail, and accepted
+  requests still owed. At most eight items (default eight) and a 4 KiB summary
+  budget, aliased as `inbox` and `messages`; owed/open requests and questions
+  lead new mail, then already-presented FYIs. Only returned pending items become
+  delivered. Full bodies, attachments and histories stay in `read_mail`.
+  Per-item delivery, ack, response and outcome/review read receipts remain.
+  `more_messages` and `next_cursor` name the remainder. The cursor binds the
+  recipient incarnation and upper serial; a fresh traversal includes arrivals
+  above that cut. Owed/queue projections describe the current page with omitted
+  counts; announcement summaries are bounded and name `read_space` for full text.
+  A compact atomic checkpoint uses the existing `activity_checkpoint` carrier
+  with additive `mailbox_serials`, including an explicit empty list. Historical
+  `check_in` operations retain their read-all fold. Older folds record only
+  ordinary contact activity, forget the new page receipt and leave omitted
+  mail untouched; rollback still boots.
+- **FYI presentation:** notify mail is consumed without an agent acknowledgement
+  when its full body is returned to the recipient model in a bounded result (conservative 16 KiB cap),
+  or quoted completely in a confirmed digest. Counts, shortened lines and
+  oversized full reads are not full presentation. Human board reads and private
+  panel refreshes use the observer read and record no model delivery, activity,
+  FYI consumption or outcome read. The first announcement is
+  ledgered on `activity_checkpoint` with additive `notify_announced`. At a later
+  natural boundary at most one further passive reminder is emitted, then that
+  FYI is consumed. Ordinary `ack` operations with an additive
+  `notify_consumption` reason (`presented` or `reminded`) record consumption;
+  old folds preserve their existing consumed-notify retention. Requests and
+  questions retain their response obligations. `ack(msg_serial)` stays valid.
 - **`read_mail(msg_serial)`**: full message including body and response, authorized
   for **sender or recipient**. This is how a question's sender reads the answer
   (terminal events carry serials, never bodies). Recipient reads mark delivery.
@@ -963,7 +989,16 @@ completion cannot spend the replacement app's recovery.
 A non-blocking Stop neither marks those items delivered nor reads their outcome
 prefixes. Held information is delivered through SessionStart, `check_in` or
 `inbox`, or included in the next actionable Stop/socket digest under the shared
-quote budget. UserPromptSubmit remains silent. Bounded declared-work continuation remains an independent Stop cause.
+quote budget. UserPromptSubmit and SessionStart additionally recover outstanding
+backlog with a bounded passive model-facing pointer, independent of wake
+freshness. This starts no turn and advances no outcome/review read prefix. Full
+bounded FYI bodies are consumed; an announced FYI receives at most one further
+passive reminder before consumption. Counts, truncated lines and oversized
+results replaced by file pointers are not full presentation. Agent mail produces
+no hook `systemMessage` for the person. Counts distinguish new mail, announced FYIs, seen
+messages awaiting action and requests still owed; update counts count actual
+outstanding units, not rendered lines. Bounded declared-work continuation
+remains an independent Stop cause.
 
 A send result's live route note uses the same authored-message decision as
 socket and Stop delivery. Authored mail receives a best-effort wake attempt
@@ -1175,14 +1210,18 @@ it does not fabricate reports for unreported intermediate steps. This admission
 rule does not change historical replay, numbered-progress counts, the original
 DONE verdict, or its deliverable.
 
-The session id is a same-machine capability for a token-less nudge. A local
-peer holding the board secret and knowing that id can call `hook_poll`, or
-forge a starting-hook event, to spend presentation for an `AnnounceRetry`
-interval, or suppress later hook presentations of informational notices already
-carried by Stop; authenticated pulls still retain them. Repeating a forged
-event can keep blocking reminders delayed. This accepted trade
-does not consume or hide information: the pending mail and agent updates
-remain complete in `inbox` and the agent's own authoritative `check_in`.
+The session id is a same-machine capability for a hook without an agent token.
+A local peer holding the board secret and knowing that id can receive the
+session's bounded quoted digest, spend presentation and record its complete
+outcome prefix as read. A fitting full-body FYI presentation consumes the FYI;
+an announced, unpresented FYI is consumed after at most one further passive
+reminder at a later natural boundary. Unconfirmed socket writes do not consume
+FYIs. This is an accepted same-user trade, not recipient authentication:
+consumed FYIs leave the inbox and unread counts, and authenticated `read_mail`
+recovers them only while normal consumed-mail retention keeps them. Requests
+and questions remain owed until answered. Forged events can also delay timed
+announcement nudges; they do not answer work or grant a role. See `SECURITY.md`
+for the capability and retention boundary.
 
 A self-wake inbox notification advertises this read with the additive
 `com.dibs/digest_refresh: true` metadata key. A capable bridge refreshes before
@@ -1444,8 +1483,10 @@ content: the body stays behind the authenticated mailbox. Absent when there is
 nothing, and absent on `check_in`, which has just returned the inbox itself.
 Past the age floor, the oldest timestamp comes from those same outstanding
 items. A cached verdict already read through `inbox` cannot age fresh mail or
-an update. Approved/queued work appears separately in `owed_work`; acknowledged
-notifications and consumed terminal mail do not count as unread.
+an update. Approved/queued work is counted as owed and also occupies the compact
+mailbox page. Announced FYIs awaiting presentation are counted separately from
+new mail. Fully presented FYIs and FYIs whose one further passive reminder was
+shown are consumed and do not count; requests and questions remain owed.
 Envelope outcomes/reviews name their bounded, deduplicated parent
 `read_mail(serial)` calls to read and clear the updates. Mail, announcements and
 generic updates name `inbox`. A shortened inbox update does not clear its

@@ -563,7 +563,7 @@ check("an agent registers under the session id its hooks will quote",
 const quiet = await call("hook_poll", { session_id: CC_SESSION, event: "Stop", cwd: project })
 const quietText = JSON.stringify(quiet ?? {})
 check("a hook for an agent with no mail announces none",
-  !/unread message/.test(quietText),
+  !/(?:unread message|mail item)\(s\)/.test(quietText),
   `got ${quietText.slice(0, 200)}`)
 
 await call("send", { token: asker.token, to: "cc-agent", type: "question",
@@ -573,7 +573,8 @@ await settle()
 const mine = JSON.stringify(await call("hook_poll",
   { session_id: CC_SESSION, event: "Stop", cwd: project }) ?? {})
 check("the hook names the agent that owns the mailbox",
-  /cc-agent/.test(mine) && /unread message/.test(mine),
+  /cc-agent/.test(mine) && /1 (?:unread message|mail item)\(s\)/.test(mine)
+    && mine.includes("does delivery reach the right mailbox?"),
   `the digest for ${CC_SESSION} does not announce cc-agent's mail: ${mine.slice(0, 300)}`)
 check("and it names who the message is from",
   /asker/.test(mine),
@@ -660,7 +661,8 @@ await settle()
 const own = JSON.stringify(await call("hook_poll",
   { session_id: OWN, event: "Stop", cwd: project }) ?? {})
 check("and a hook quoting that id reaches it",
-  /own-session/.test(own) && /unread message/.test(own),
+  /own-session/.test(own) && /1 (?:unread message|mail item)\(s\)/.test(own)
+    && own.includes("does the caller's own id resolve?"),
   `a hook for ${OWN} did not reach own-session: ${own.slice(0, 300)}`)
 
 // ── A WAKE OVER THE HARNESS SOCKET, WITH NO COMMAND CONFIGURED ───────────

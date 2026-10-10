@@ -4,6 +4,7 @@
 package engine
 
 import (
+	"strconv"
 	"strings"
 	"time"
 
@@ -12,7 +13,8 @@ import (
 
 // Command acceptance is per original item, never a successful-delivery timer.
 // Capture before execution; mail that arrives while it runs stays unoffered.
-// This derived receipt consumes neither mailbox state nor Stop presentation.
+// Metadata-only acceptance records an FYI announcement, never full-body
+// consumption or an outcome read. The command receipt itself stays derived.
 func (e *Engine) freshCommandKeys(agent string, now time.Time) []string {
 	var keys []string
 	for _, key := range e.deliveryKeysAt(agent, now) {
@@ -38,6 +40,18 @@ func (e *Engine) recordCommandWritten(cmd wakePlan) {
 		}
 		for _, key := range cmd.commandKeys {
 			e.commandWritten[key] = true
+			kind, item, _ := strings.Cut(key, ":")
+			who, raw, _ := strings.Cut(item, "\x00")
+			serial, _ := strconv.ParseUint(raw, 10, 64)
+			m := e.state.Messages[serial]
+			// The command may finish after a hook or authenticated read has
+			// already presented this FYI. Its delayed metadata receipt adds
+			// nothing then; do not rewrite coordination state on reconnect.
+			if kind == "mail" && who == l.ID && m != nil && m.Type == core.MsgNotify && !e.notifyPresented(l.ID, m) {
+				if err := e.announceFYI(l, serial, time.Now()); err != nil {
+					return core.Result{"error": err}
+				}
+			}
 		}
 		return nil
 	})

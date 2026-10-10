@@ -143,12 +143,15 @@ var toolDefs = func() []map[string]any {
 				"for every field), your inbox, your cursor serial, `announcements` you owe an " +
 				"ack on, and `agent_updates`, whatever happened TO you in a space since you " +
 				"last checked. The authoritative path for all of it; the wake hook only " +
-				"nudges. Also the recovery after E_CURSOR_TOO_OLD.",
+				"nudges. Mail uses compact pages, owed requests/questions first; follow next_cursor " +
+				"and read_mail for full envelopes. Also the recovery after E_CURSOR_TOO_OLD.",
 			"inputSchema": obj(map[string]any{
 				"token": tok,
 				"detail": map[string]any{
 					"type": "boolean", "description": "every board field (default: one row per agent)",
 				},
+				"cursor": str("mailbox next_cursor; omit for the first compact page"),
+				"limit":  num("mail items, 1–8; default 8. read_mail has full envelopes"),
 			}, "token"),
 		},
 		{
@@ -445,17 +448,24 @@ var toolDefs = func() []map[string]any {
 		{
 			"name": "ack", "description": "Dismiss a progress/review event without reviewing work. For mail, close a FYI " +
 				"or consume finished mail (sender notified). read_mail(request serial) clears its notices.",
-			"inputSchema": obj(map[string]any{"token": tok, "msg_serial": num("serial of the message")}, "token", "msg_serial"),
+			"inputSchema": obj(map[string]any{
+				"token": tok, "msg_serial": num("serial of the message"),
+			}, "token", "msg_serial"),
 		},
 		{
 			"name": "inbox", "description": "Read your mailbox: unhandled messages plus " +
-				"finished ones you have not acknowledged. Marks pending messages delivered. " +
+				"finished ones you have not acknowledged and accepted work still owed. Compact pages " +
+				"put owed requests/questions first, then new mail, then seen FYIs. Follow next_cursor; " +
+				"read_mail has full envelopes. Marks only returned pending messages delivered. " +
 				"Also returns `announcements` you owe an ack on and `agent_updates`, whatever " +
 				"happened TO you in a space; reading either here consumes nothing, so this is " +
 				"how you find what you owe after losing context. A fileref (`path`) carries the " +
 				"sender's unverified claims. `truncated_before_serial`: mail below it may have " +
 				"been evicted under retention bounds.",
-			"inputSchema": obj(map[string]any{"token": tok}, "token"),
+			"inputSchema": obj(map[string]any{
+				"token": tok, "cursor": str("next_cursor from the previous page; omit to start"),
+				"limit": num("mail items, 1–8; default 8; compact summaries, read_mail has full envelopes"),
+			}, "token"),
 		},
 		{
 			"name": "claim",

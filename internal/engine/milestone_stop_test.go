@@ -5,6 +5,7 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -36,7 +37,7 @@ func TestStopHoldsProgressForNaturalDeliveryWithoutRequiringReview(t *testing.T)
 				t.Fatal(err)
 			}
 			do(&core.Op{Kind: core.OpRespond, Token: worker, MsgSerial: parent, Disposition: "progress", Milestone: 1, Body: "ready"})
-			if got, err := e.HookPoll(ctx, "lead-stop-session", "UserPromptSubmit", "", false, false); err != nil || deliveredSomething(got) {
+			if got, err := e.HookPoll(ctx, "lead-stop-session", "UserPromptSubmit", "", false, false); err != nil || got["decision"] == "block" || strings.Contains(fmt.Sprint(got), "ready") {
 				t.Fatalf("non-delivering prompt event spent progress: %v %v", got, err)
 			}
 			stop := func() core.Result {

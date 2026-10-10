@@ -19,10 +19,14 @@ func TestPriorityNotifyRoundTripsThroughMCP(t *testing.T) {
 	if !ok {
 		t.Fatalf("priority notify was not stored: %v", sent)
 	}
-	for name, got := range map[string]map[string]any{
-		"read_mail": toolCall(t, srv, "read_mail", map[string]any{"token": recipient, "msg_serial": serial}),
-		"inbox":     toolCall(t, srv, "inbox", map[string]any{"token": recipient}),
-	} {
+	// Inbox presents and consumes the complete FYI; read_mail must still
+	// preserve priority on the recently consumed retained envelope.
+	for _, name := range []string{"inbox", "read_mail"} {
+		args := map[string]any{"token": recipient}
+		if name == "read_mail" {
+			args["msg_serial"] = serial
+		}
+		got := toolCall(t, srv, name, args)
 		var message map[string]any
 		if name == "read_mail" {
 			message, _ = got["message"].(map[string]any)
