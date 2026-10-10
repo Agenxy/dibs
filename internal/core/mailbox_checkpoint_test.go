@@ -29,7 +29,7 @@ func TestMailboxCheckpointWirePreservesEmptyAndSelectedDelivery(t *testing.T) {
 				apply(&Op{Kind: OpSendMessage, Token: "sender", To: "reader", MsgType: MsgNotify, Body: "retained"})
 			}
 			var op Op
-			wire := fmt.Sprintf(`{"kind":"check_in_page","agent_id":"reader","mailbox_serials":%s}`, selection)
+			wire := fmt.Sprintf(`{"kind":"activity_checkpoint","agent_id":"reader","mailbox_serials":%s}`, selection)
 			if err := json.Unmarshal([]byte(wire), &op); err != nil {
 				t.Fatal(err)
 			}
@@ -58,5 +58,42 @@ func TestMailboxCheckpointWirePreservesEmptyAndSelectedDelivery(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// This exact serialized-op test also runs against the pre-change source. The
+// old fold may forget the selected page's new awareness receipt, but must boot,
+// advance every recorded serial, leave omitted mail untouched and preserve the
+// ordinary consumed-notify retention transition.
+func TestMailboxCarrierRollbackFoldRemainsHarmless(t *testing.T) {
+	st := NewState("rollback", DefaultLimits())
+	apply := func(raw string) {
+		t.Helper()
+		var op Op
+		if err := json.Unmarshal([]byte(raw), &op); err != nil {
+			t.Fatal(err)
+		}
+		before := st.Serial
+		if _, _, err := st.Apply(&op, t0); err != nil || st.Serial != before+1 {
+			t.Fatalf("serialized rollback fold refused or lost a serial: %s (%v)", raw, err)
+		}
+	}
+	for _, raw := range []string{
+		`{"kind":"register","name":"sender","token":"sender"}`,
+		`{"kind":"register","name":"reader","token":"reader"}`,
+		`{"kind":"send","agent_id":"sender","to":"reader","msg_type":"notify","body":"recent complete FYI"}`,
+		`{"kind":"send","agent_id":"sender","to":"reader","msg_type":"notify","body":"omitted FYI"}`,
+		`{"kind":"activity_checkpoint","agent_id":"reader","mailbox_serials":[3]}`,
+		`{"kind":"activity_checkpoint","agent_id":"reader","mailbox_serials":[]}`,
+		`{"kind":"activity_checkpoint","agent_id":"reader","notify_announced":[4]}`,
+		`{"kind":"ack","agent_id":"reader","msg_serial":3,"notify_consumption":"presented"}`,
+	} {
+		apply(raw)
+	}
+	if m := st.Messages[4]; m.State != MsgStatePending || m.DeliveredAt != 0 || m.Consumed {
+		t.Fatalf("rollback carrier spent omitted mail: %+v", m)
+	}
+	if m := st.Messages[3]; !m.Consumed || m.State != MsgStateAcked || m.AckedAt != 8 || !m.TerminalAt.Equal(t0) || m.Body != "recent complete FYI" {
+		t.Fatalf("rollback lost ordinary consumption/retention semantics: %+v", m)
 	}
 }

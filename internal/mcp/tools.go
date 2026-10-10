@@ -450,11 +450,7 @@ var toolDefs = func() []map[string]any {
 				"or consume finished mail (sender notified). read_mail(request serial) clears its notices.",
 			"inputSchema": obj(map[string]any{
 				"token": tok, "msg_serial": num("serial of the message"),
-				"seen_fyis": map[string]any{
-					"type": "boolean", "description": "explicitly acknowledge already-presented FYIs; " +
-						"leaves new mail and owed work intact; choose this OR msg_serial",
-				},
-			}, "token"),
+			}, "token", "msg_serial"),
 		},
 		{
 			"name": "inbox", "description": "Read your mailbox: unhandled messages plus " +

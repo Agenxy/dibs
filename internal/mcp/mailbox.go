@@ -18,14 +18,8 @@ func validateMailboxLimit(name string, params json.RawMessage, a *toolArgs) erro
 }
 
 func (s *Server) ackMail(ctx context.Context, a *toolArgs, op *core.Op) (core.Result, error) {
-	if a.MsgSerial == 0 && !a.SeenFYIs {
-		return nil, &core.Error{Code: "E_BAD_ARG", Msg: "ack needs a selection", Hint: "pass msg_serial or seen_fyis:true"}
-	}
-	if a.SeenFYIs {
-		if a.MsgSerial != 0 {
-			return nil, &core.Error{Code: "E_BAD_ARG", Msg: "ack modes conflict", Hint: "choose msg_serial or seen_fyis:true"}
-		}
-		return s.eng.AckSeenFYIs(ctx, a.Token)
+	if a.MsgSerial == 0 {
+		return nil, &core.Error{Code: "E_BAD_ARG", Msg: "ack needs a selection", Hint: "pass msg_serial from inbox"}
 	}
 	op.Kind, op.MsgSerial = core.OpAckMessage, a.MsgSerial
 	return s.eng.Do(ctx, op)

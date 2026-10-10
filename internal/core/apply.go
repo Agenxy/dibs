@@ -28,7 +28,6 @@ const (
 	OpWake               = "wake"
 	OpActivityCheckpoint = "activity_checkpoint"
 	OpAckBoard           = "check_in"
-	OpAckMailboxPage     = "check_in_page"
 	OpUpdate             = "update"
 	OpBindSession        = "bind_session"
 	OpSignOff            = "sign_off"
@@ -222,8 +221,12 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 	case OpRelocate:
 		res, evs, err = s.applyRelocate(l, op, now)
 	case OpActivityCheckpoint:
-		res, evs = s.applyContactCheckpoint(l, op) // LastCoordination below
-	case OpAckBoard, OpAckMailboxPage:
+		if op.MailboxSerials != nil {
+			res, evs = s.applyAckBoard(l, op, now)
+		} else {
+			res, evs = s.applyContactCheckpoint(l, op) // LastCoordination below
+		}
+	case OpAckBoard:
 		res, evs = s.applyAckBoard(l, op, now)
 	case OpUpdate:
 		res, evs, err = s.applyUpdate(l, op)
@@ -1792,6 +1795,9 @@ func (s *State) applyAckMessage(l *Agent, op *Op, now time.Time) (Result, []Even
 	}
 	m.State = MsgStateAcked
 	m.AckedAt = s.Serial + 1
+	if op.NotifyConsumption != "" {
+		m.NotifyConsumption = op.NotifyConsumption
+	}
 	if !m.Expecting() { // acked is terminal + consumed for notify/handoff
 		m.Consumed = true
 		m.TerminalAt = now

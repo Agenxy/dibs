@@ -21,13 +21,17 @@ import "time"
 type Op struct {
 	Kind string `json:"kind"`
 
-	// Nil is the historical full-mailbox checkpoint. A present selection, even
-	// an empty one, records exactly which page was returned and may transition
-	// pending mail to delivered. Replay never reruns presentation ranking.
+	// Historical check_in ops retain read-all semantics. An activity_checkpoint
+	// with a present selection, even an empty one, records the returned page;
+	// older folds retain ordinary contact only. Replay never reruns ranking.
 	MailboxSerials *[]uint64 `json:"mailbox_serials,omitempty"`
 	MailboxPage    bool      `json:"-"`
 	MailboxCursor  string    `json:"-"`
 	MailboxLimit   int       `json:"-"`
+	// Additive receipts on existing carriers. Older folds still consume an ack
+	// and treat an announcement checkpoint as ordinary authenticated activity.
+	NotifyConsumption string   `json:"notify_consumption,omitempty"`
+	NotifyAnnounced   []uint64 `json:"notify_announced,omitempty"`
 
 	// App-restart inputs are observed outside the pure fold. One op records the
 	// process epoch and the exact eligible roster and declarations at that time.

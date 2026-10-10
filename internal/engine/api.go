@@ -658,7 +658,14 @@ func (e *Engine) GetMessage(ctx context.Context, token string, serial uint64) (c
 		// there is no outcome to have read. Issue #76.
 		e.clearNoticesFor(l.ID, serial)
 		e.noteOutcomeRead(l, m, token, now)
-		return e.messageReadResult(m)
+		res := e.messageReadResult(m)
+		if m.To == l.ID && m.Type == core.MsgNotify && resultFitsFYIPresentation(res) {
+			if err := e.consumeFYI(l, serial, "presented", now); err != nil {
+				return core.Result{"error": err}
+			}
+			res = e.messageReadResult(m)
+		}
+		return res
 	})
 }
 

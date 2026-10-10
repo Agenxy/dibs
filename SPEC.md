@@ -719,14 +719,21 @@ recipient's `respond` (responding proves receipt). GC eligibility requires
   recipient incarnation and upper serial; a fresh traversal includes arrivals
   above that cut. Owed/queue projections describe the current page with omitted
   counts; announcement summaries are bounded and name `read_space` for full text.
-  A compact atomic checkpoint records `check_in_page` with `mailbox_serials`,
-  including an explicit empty list. Historical `check_in` operations retain
-  their read-all fold. Older daemons refuse the new op kind on replay rather
-  than silently dropping the selection; downgrade after it is unsupported.
-- `ack(seen_fyis:true)` explicitly acknowledges the recipient's already-presented
-  FYIs through ordinary ack operations and receipts. Unseen pending mail,
-  requests, questions and outcome/review units are excluded. Mutually exclusive
-  with `msg_serial`; repeat with no eligible FYIs writes nothing.
+  A compact atomic checkpoint uses the existing `activity_checkpoint` carrier
+  with additive `mailbox_serials`, including an explicit empty list. Historical
+  `check_in` operations retain their read-all fold. Older folds record only
+  ordinary contact activity, forget the new page receipt and leave omitted
+  mail untouched; rollback still boots.
+- **FYI presentation:** notify mail is consumed without an agent acknowledgement
+  when its full body is returned in a bounded result (conservative 16 KiB cap),
+  or quoted completely in a confirmed digest. Counts, shortened lines and
+  oversized full reads are not full presentation. The first announcement is
+  ledgered on `activity_checkpoint` with additive `notify_announced`. At a later
+  natural boundary at most one further passive reminder is emitted, then that
+  FYI is consumed. Ordinary `ack` operations with an additive
+  `notify_consumption` reason (`presented` or `reminded`) record consumption;
+  old folds preserve their existing consumed-notify retention. Requests and
+  questions retain their response obligations. `ack(msg_serial)` stays valid.
 - **`read_mail(msg_serial)`**: full message including body and response, authorized
   for **sender or recipient**. This is how a question's sender reads the answer
   (terminal events carry serials, never bodies). Recipient reads mark delivery.
@@ -982,9 +989,11 @@ prefixes. Held information is delivered through SessionStart, `check_in` or
 `inbox`, or included in the next actionable Stop/socket digest under the shared
 quote budget. UserPromptSubmit and SessionStart additionally recover outstanding
 backlog with a bounded passive model-facing pointer, independent of wake
-freshness. This starts no turn, spends no presentation receipt and advances no
-outcome/review read prefix. Agent mail produces no hook `systemMessage` for the
-person. Counts distinguish new mail, presented FYIs still unacknowledged, seen
+freshness. This starts no turn and advances no outcome/review read prefix. Full
+bounded FYI bodies are consumed; an announced FYI receives at most one further
+passive reminder before consumption. Counts, truncated lines and oversized
+results replaced by file pointers are not full presentation. Agent mail produces
+no hook `systemMessage` for the person. Counts distinguish new mail, announced FYIs, seen
 messages awaiting action and requests still owed; update counts count actual
 outstanding units, not rendered lines. Bounded declared-work continuation
 remains an independent Stop cause.
@@ -1469,8 +1478,9 @@ nothing, and absent on `check_in`, which has just returned the inbox itself.
 Past the age floor, the oldest timestamp comes from those same outstanding
 items. A cached verdict already read through `inbox` cannot age fresh mail or
 an update. Approved/queued work is counted as owed and also occupies the compact
-mailbox page. Presented FYIs are counted as seen but unacknowledged, never new
-or unread. Acknowledged notifications and completed consumed mail do not count.
+mailbox page. Announced FYIs awaiting presentation are counted separately from
+new mail. Fully presented FYIs and FYIs whose one further passive reminder was
+shown are consumed and do not count; requests and questions remain owed.
 Envelope outcomes/reviews name their bounded, deduplicated parent
 `read_mail(serial)` calls to read and clear the updates. Mail, announcements and
 generic updates name `inbox`. A shortened inbox update does not clear its

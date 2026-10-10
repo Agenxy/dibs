@@ -26,6 +26,7 @@ type socketOffer struct {
 	mail, announcements []string
 	notices             []string
 	outcomes            map[uint64]uint64 // only the fully quoted prefix in this offer
+	fyis                []fyiPresentation
 }
 
 func (e *Engine) beginSocketOffer(l *core.Agent, session string) core.Result {
@@ -61,12 +62,18 @@ func (e *Engine) beginSocketOffers(agents []*core.Agent, session string) core.Re
 		e.socketEpochs = map[string]socketEpoch{}
 	}
 	e.socketEpochs[key] = socketEpoch{id: id, at: now}
+	res := core.Result{"digest": strings.Join(texts, "\n"), "offer": id}
 	for agent, offer := range presented {
+		if !resultFitsFYIPresentation(res) {
+			// A harness may replace an oversized digest with a file pointer.
+			// New-turn evidence cannot make that full body presentation.
+			offer.fyis = nil
+		}
 		offer.id, offer.session, offer.at = id, session, now
 		e.socketOffers[agent] = offer
 	}
 	e.logSocketOffer(l, now, id)
-	return core.Result{"digest": strings.Join(texts, "\n"), "offer": id}
+	return res
 }
 
 func (e *Engine) settleSocketOffer(agent, session, id string, written bool) {
@@ -122,6 +129,9 @@ func (e *Engine) confirmSocketOffer(l *core.Agent, now time.Time) {
 		e.markWoken(o.mail, o.at)
 		e.markAnnounced(o.announcements, o.at)
 		e.markNoticePresentation(o.notices, o.at)
+		if err := e.recordFYIPresentation(row, o.fyis, false, now); err != nil {
+			panic(err)
+		}
 		if err := e.consumeOutcomes(who, o.outcomes, now); err != nil {
 			panic(err)
 		}

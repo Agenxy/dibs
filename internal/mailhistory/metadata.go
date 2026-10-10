@@ -80,6 +80,9 @@ type Snapshot struct {
 // Capture copies only canonical metadata before the state machine mutates it.
 func Capture(st *core.State, op *core.Op, scratch *Snapshot) Snapshot {
 	scope, _ := scopeOf(op.Kind)
+	if op.MailboxSerials != nil {
+		scope = scopeMailbox
+	}
 	if op.Kind == core.OpRespond && op.Disposition == "approve" {
 		if m := st.Messages[op.MsgSerial]; m != nil && m.Adopt != "" {
 			scope = scopeFull

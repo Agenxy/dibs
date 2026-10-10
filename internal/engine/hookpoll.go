@@ -339,7 +339,7 @@ func (e *Engine) HookPollFrom(
 		mail := e.pendingMail(l.ID, time.Now())
 		// The agent's own copy carries the mail; `mail` above is metadata only.
 		quoteBudget := mailQuoteBudget
-		agentMail := e.freshMailQuotedBudget(l.ID, time.Now(), &quoteBudget)
+		agentMail, fyis := e.freshMailPresentation(l.ID, time.Now(), &quoteBudget)
 		announced, announceKeys := e.dueAnnouncements(l.ID, time.Now())
 		// Things done TO this agent that it cannot have inferred: admitted by a
 		// director, promoted from a queue, evicted. Silent until now: an agent
@@ -399,6 +399,9 @@ func (e *Engine) HookPollFrom(
 			// probe for it used, so the probe passed while a spoofed Stop still
 			// worked.
 			digest := e.mailDigest(l.ID, agentMail, announced, modelNotices)
+			if err := e.recordHookFYIs(l, event, digest, fyis, now); err != nil {
+				return core.Result{"error": err}
+			}
 			return e.deliverHookDigest(out, event, strict, l, digest,
 				wake, announceKeys, noticeKeys, outcomeThrough, now)
 		} else if cont := e.continuationReply(l, event, stopActive); cont != nil {
@@ -557,6 +560,11 @@ func (e *Engine) freshMailQuoted(agent string, now time.Time) []string {
 }
 
 func (e *Engine) freshMailQuotedBudget(agent string, now time.Time, budget *int) []string {
+	lines, _ := e.freshMailPresentation(agent, now, budget)
+	return lines
+}
+
+func (e *Engine) freshMailPresentation(agent string, now time.Time, budget *int) ([]string, []fyiPresentation) {
 	keys := e.wakeKeys(agent, now)
 	wanted := make(map[uint64]bool, len(keys))
 	for _, key := range keys {
@@ -564,7 +572,7 @@ func (e *Engine) freshMailQuotedBudget(agent string, now time.Time, budget *int)
 		n, _ := strconv.ParseUint(serial, 10, 64)
 		wanted[n] = true
 	}
-	return e.mailLinesForBudget(agent, now, wanted, budget)
+	return e.mailPresentationForBudget(agent, now, wanted, budget)
 }
 
 func (e *Engine) mailLinesFor(agent string, now time.Time, quote bool, wanted map[uint64]bool) []string {
@@ -576,58 +584,55 @@ func (e *Engine) mailLinesFor(agent string, now time.Time, quote bool, wanted ma
 }
 
 func (e *Engine) mailLinesForBudget(agent string, now time.Time, wanted map[uint64]bool, budget *int) []string {
+	lines, _ := e.mailPresentationForBudget(agent, now, wanted, budget)
+	return lines
+}
+
+func (e *Engine) mailPresentationForBudget(
+	agent string, now time.Time, wanted map[uint64]bool, budget *int,
+) ([]string, []fyiPresentation) {
 	var out []string
+	var shown []fyiPresentation
 	for _, m := range e.wakeOrderedMail(agent) {
+		if len(out) == core.MaxMailboxPage {
+			break
+		}
 		if wanted != nil && !wanted[m.Serial] {
 			continue
 		}
-		if m.State == core.MsgStatePending || m.State == core.MsgStateDelivered {
-			// AND THE CALL THAT CLEARS IT, which is not read_mail.
-			//
-			// Reading fetches the body and consumes nothing, so an agent that
-			// reads its mail and moves on is told about the same messages at
-			// every turn boundary for the rest of the session. It habituates,
-			// and then it stops looking at a line that is sometimes about
-			// something urgent. Measured on the author of this function, who
-			// read two notices and went on being told about them for hours.
-			//
-			// The announcement line three functions down already learned this
-			// and says so in its own comment: "an announcement the model reads
-			// but does not acknowledge keeps coming back, which reads as a
-			// broken loop unless the way out is stated in the same breath."
-			// Mail is the same loop and was not given the same sentence.
-			//
-			// WHICH call depends on the type, so it is not one string: a
-			// question or a request is cleared by answering, and saying `ack`
-			// there would teach an agent to silence somebody who is waiting.
-			clears := fmt.Sprintf("ack(%d) closes it", m.Serial)
-			if m.Expecting() {
-				clears = fmt.Sprintf("respond(%d) closes it; the sender is waiting", m.Serial)
-			}
-			// AND HOW LONG IT HAS SAT. Same reasoning as the `waiting` line,
-			// which carries the age for the same reason: the paragraph above
-			// diagnosed habituation correctly and then left the line saying
-			// identical words at one minute and at six hours, so there was
-			// nothing in it for the eye to catch on. An age is a fact the
-			// agent can triage on and it is different text every time.
-			waited := ""
-			if age := waitedFor(m.SentAt, now); age != "" {
-				waited = ", waiting " + age
-			}
-			// THE MAIL ITSELF, not a pointer to it, unless the operator said
-			// otherwise. `budget` is shared across the whole digest rather
-			// than per message, because ten messages each trimmed to a
-			// generous length is not a generous digest, it is a wall.
-			if body := e.quoteFor(m, budget); body != "" {
-				out = append(out, fmt.Sprintf("#%d %s from %q%s: %s %s",
-					m.Serial, m.Type, e.agentName(m.From), waited, body, clears))
-				continue
-			}
-			out = append(out, fmt.Sprintf("#%d %s from %q%s: read it with read_mail(%d), %s",
-				m.Serial, m.Type, e.agentName(m.From), waited, m.Serial, clears))
+		if m.State != core.MsgStatePending && m.State != core.MsgStateDelivered {
+			continue
+		}
+		line, complete := e.mailPresentationLine(m, now, budget)
+		out = append(out, line)
+		if m.Type == core.MsgNotify {
+			shown = append(shown, fyiPresentation{serial: m.Serial, full: complete})
 		}
 	}
-	return out
+	return out, shown
+}
+
+// Questions and requests remain owed after presentation. A complete bounded
+// FYI presentation consumes it; shortened FYIs retain a read_mail pointer.
+func (e *Engine) mailPresentationLine(m *core.Message, now time.Time, budget *int) (string, bool) {
+	clears := fmt.Sprintf("ack(%d) closes it", m.Serial)
+	if m.Expecting() {
+		clears = fmt.Sprintf("respond(%d) closes it; the sender is waiting", m.Serial)
+	} else if m.Type == core.MsgNotify {
+		clears = ""
+	}
+	waited := ""
+	if age := waitedFor(m.SentAt, now); age != "" {
+		waited = ", waiting " + age
+	}
+	// The quote budget is shared across the complete digest, not per message.
+	body, complete := e.quoteText(m.Serial, m.Body, budget)
+	if body != "" {
+		return fmt.Sprintf("#%d %s from %q%s: %s %s",
+			m.Serial, m.Type, e.agentName(m.From), waited, body, clears), complete
+	}
+	return fmt.Sprintf("#%d %s from %q%s: read it with read_mail(%d), %s",
+		m.Serial, m.Type, e.agentName(m.From), waited, m.Serial, clears), false
 }
 
 // Inbox remains ledger/serial ordered. A wake is a separate, bounded
@@ -654,25 +659,6 @@ const mailQuoteBudget = 1600
 // mailQuoteEach caps any single message, so one long one cannot eat the whole
 // digest and leave nine others pointing at themselves.
 const mailQuoteEach = 700
-
-// quoteFor returns the quoted body for one message and spends the budget, or
-// "" when the operator turned quoting off or nothing is left to spend.
-//
-// Runes rather than bytes, because trimRunes already counts that way and one
-// unit of budget should mean the same thing to a reader whatever alphabet the
-// message is in.
-func (e *Engine) quoteFor(m *core.Message, budget *int) string {
-	if m == nil {
-		return ""
-	}
-	// NEWLINES OUT FIRST, and before the trim rather than after. The digest is
-	// one paragraph per message inside a hook field: a body with its own line
-	// breaks reflows the whole thing and, in a strict harness, can look like
-	// the end of the field. Collapsing after trimming would also make the
-	// budget describe whitespace the reader never sees.
-	quote, _ := e.quoteText(m.Serial, m.Body, budget)
-	return quote
-}
 
 // dueAnnouncements lists unacknowledged announcements that are due for another
 // showing, WITHOUT recording that they were shown. markAnnounced does that.

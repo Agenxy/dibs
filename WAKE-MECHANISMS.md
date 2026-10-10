@@ -637,7 +637,7 @@ that empties takes its entries with it.
 [wake]
 extend_turn_for = "all"      # default route policy; Stop and sockets require actionable news
 # extend_turn_for = "urgent" # only work somebody is blocked on
-# extend_turn_for = "none"   # never extend a turn; systemMessage and `waiting` only
+# extend_turn_for = "none"   # never extend a turn; passive natural-activation recovery only
 ```
 
 `all` is the default route policy. Stop and socket admission always require
@@ -651,9 +651,11 @@ command delivery alike; blocking mail still qualifies. `none` stays muted.
 The route note applies that same phase and describes suppressed mail as
 waiting for a natural activation, never as a wake already handed over.
 
-The human is told either way. `systemMessage` goes to the person on every poll
-with news, whatever was decided about the model, because "your agent has mail"
-is exactly what an operator wants to know and it interrupts nobody.
+A complete FYI body shown inside a bounded fitting result consumes that FYI,
+without an acknowledgement call. Counts and shortened pointers do not count
+as full presentation. An announced FYI gets at most one further passive reminder
+at a natural activation, then is consumed. Requests and questions remain owed.
+Backlog recovery does not add a human-facing `systemMessage` on each hook poll.
 
 ## 2. Is 2026 support hidden behind a flag? Yes, behind TWO
 

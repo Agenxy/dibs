@@ -879,7 +879,6 @@ type toolArgs struct {
 	Note           string            `json:"note"`
 	Since          uint64            `json:"since_serial"`
 	HistoryCursor  string            `json:"cursor"`
-	SeenFYIs       bool              `json:"seen_fyis"`
 	IncludeBodies  bool              `json:"include_bodies"`
 	TimeoutSec     int               `json:"timeout_s"`
 	Attachments    []core.Attachment `json:"attachments"`

@@ -88,7 +88,7 @@ func TestBoundedMailboxPrioritizesOwedWorkAndPagesEveryFYI(t *testing.T) {
 	for _, version := range []string{"2026-07-28", "2025-11-25"} {
 		for _, method := range []string{"inbox", "check_in"} {
 			t.Run(version+"/"+method, func(t *testing.T) {
-				srv, owed, _ := boundedMailServer(t)
+				srv, owed, eng := boundedMailServer(t)
 				first := waitingCall(t, srv, version, method, map[string]any{"token": "reader-token"})
 				mail, ok := first["inbox"].([]any)
 				if !ok || len(mail) < 2 {
@@ -101,7 +101,7 @@ func TestBoundedMailboxPrioritizesOwedWorkAndPagesEveryFYI(t *testing.T) {
 				}
 				seen := map[float64]bool{}
 				page := first
-				for step := 0; step < 40; step++ {
+				for step := 0; step < 160; step++ {
 					raw, err := json.Marshal(page)
 					if err != nil {
 						t.Fatal(err)
@@ -110,7 +110,7 @@ func TestBoundedMailboxPrioritizesOwedWorkAndPagesEveryFYI(t *testing.T) {
 						t.Fatalf("inbox exceeds16KiB: %d", len(raw))
 					}
 					items := page["inbox"].([]any)
-					if len(items) > 16 {
+					if len(items) > 8 {
 						t.Fatalf("unbounded page length: %d", len(items))
 					}
 					for _, v := range items {
@@ -124,6 +124,9 @@ func TestBoundedMailboxPrioritizesOwedWorkAndPagesEveryFYI(t *testing.T) {
 					if cursor == "" {
 						break
 					}
+					if err := eng.SetRateTokens(context.Background(), "reader", 60); err != nil {
+						t.Fatal(err)
+					}
 					page = waitingCall(t, srv, version, "inbox", map[string]any{"token": "reader-token", "cursor": cursor})
 				}
 				if len(seen) != 142 {
@@ -134,33 +137,97 @@ func TestBoundedMailboxPrioritizesOwedWorkAndPagesEveryFYI(t *testing.T) {
 	}
 }
 
-func TestBulkSeenFYIAckPreservesOwedWorkAndNewMail(t *testing.T) {
+func TestFYIFullPresentationClearsWithoutAckAndKeepsOwedWork(t *testing.T) {
 	for _, version := range []string{"2026-07-28", "2025-11-25"} {
 		t.Run(version, func(t *testing.T) {
-			srv, owed, _ := boundedMailServer(t)
-			fresh := waitingCall(t, srv, version, "send", map[string]any{"token": "sender-token", "to": "reader", "type": "notify", "body": "not yet presented"})
-			result := waitingCall(t, srv, version, "ack", map[string]any{"token": "reader-token", "seen_fyis": true})
-			if result["acked_count"] != float64(140) {
-				t.Fatalf("bulk ack count: %v", result)
-			}
-			again := waitingCall(t, srv, version, "ack", map[string]any{"token": "reader-token", "seen_fyis": true})
-			if again["acked_count"] != float64(0) {
-				t.Fatalf("bulk ack retry consumed new mail: %v", again)
-			}
+			srv, owed, eng := boundedMailServer(t)
 			page := waitingCall(t, srv, version, "inbox", map[string]any{"token": "reader-token"})
-			items := page["inbox"].([]any)
-			if len(items) != 3 {
-				t.Fatalf("bulk ack lost or kept wrong mail: %v", page)
+			presented := 0
+			for step := 0; step < 160; step++ {
+				for _, v := range page["inbox"].([]any) {
+					item := v.(map[string]any)
+					if item["type"] != "notify" {
+						continue
+					}
+					id := uint64(item["serial"].(float64))
+					m := mailboxReceipt(t, eng, id)
+					if item["body"] != m.Body || item["body_truncated"] == true || !m.Consumed || m.AckedAt == 0 {
+						t.Fatalf("complete bounded FYI presentation was not consumed: %v %+v", item, m)
+					}
+					presented++
+				}
+				cursor, _ := page["next_cursor"].(string)
+				if cursor == "" {
+					break
+				}
+				if err := eng.SetRateTokens(context.Background(), "reader", 60); err != nil {
+					t.Fatal(err)
+				}
+				page = waitingCall(t, srv, version, "inbox", map[string]any{"token": "reader-token", "cursor": cursor})
 			}
-			for i, id := range owed {
-				if items[i].(map[string]any)["serial"] != float64(id) {
-					t.Fatal("owed request was altered")
+			if presented != 140 {
+				t.Fatalf("presented %d FYIs, want140", presented)
+			}
+			for _, id := range owed {
+				m := mailboxReceipt(t, eng, id)
+				if !m.Owed(time.Now()) {
+					t.Fatal("presentation consumed owed request")
 				}
 			}
-			if items[2].(map[string]any)["serial"] != fresh["msg_serial"] {
-				t.Fatal("new FYI lost")
+			for _, event := range []string{"UserPromptSubmit", "Stop", "SessionStart", "UserPromptSubmit"} {
+				got := waitingCall(t, srv, version, "hook_poll", map[string]any{"session_id": "reader-session", "event": event})
+				if strings.Contains(fmt.Sprint(got), "FYI") || got["decision"] == "block" {
+					t.Fatalf("presented FYIs reminded or bought a turn: %v", got)
+				}
+			}
+			// Read the newest FYI: the existing 128-terminal retention cap may
+			// evict the oldest twelve after this 140-item traversal.
+			full := waitingCall(t, srv, version, "read_mail", map[string]any{"token": "reader-token", "msg_serial": 144})
+			if !strings.Contains(fmt.Sprint(full), "substantial retained message") {
+				t.Fatal("consumed FYI lost recent read_mail retention")
 			}
 		})
+	}
+}
+
+func TestAnnouncedFYIHasOneFurtherReminderThenStops(t *testing.T) {
+	for _, version := range []string{"2026-07-28", "2025-11-25"} {
+		for _, route := range []string{"Stop", "oversized read_mail"} {
+			t.Run(version+"/"+route, func(t *testing.T) {
+				srv, _ := newServer(t)
+				reader := toolCall(t, srv, "register", map[string]any{"name": "reader", "session_id": "reader-session"})
+				sender := toolCall(t, srv, "register", map[string]any{"name": "sender"})
+				r := waitingCall(t, srv, version, "send", map[string]any{"token": sender["token"], "to": "reader", "type": "notify", "body": strings.Repeat("oversized FYI ", 2000)})
+				id := uint64(r["msg_serial"].(float64))
+				eng := srv.Config.Handler.(*Server).eng
+				var first map[string]any
+				if route == "Stop" {
+					first = waitingCall(t, srv, version, "hook_poll", map[string]any{"session_id": "reader-session", "event": "Stop"})
+					if !strings.Contains(fmt.Sprint(first), "trimmed; read_mail") {
+						t.Fatalf("setup: hook did not shorten the FYI: %v", first)
+					}
+				} else {
+					first = waitingCall(t, srv, version, "read_mail", map[string]any{"token": reader["token"], "msg_serial": id})
+					if !strings.Contains(fmt.Sprint(first), strings.Repeat("oversized FYI ", 2000)) {
+						t.Fatal("setup: oversized read lost body")
+					}
+				}
+				if mailboxReceipt(t, eng, id).Consumed {
+					t.Fatalf("shortened hook or oversized read falsely consumed FYI: %s", route)
+				}
+				reminder := waitingCall(t, srv, version, "hook_poll", map[string]any{"session_id": "reader-session", "event": "UserPromptSubmit"})
+				if !strings.Contains(fmt.Sprint(reminder), fmt.Sprintf("#%d", id)) || reminder["decision"] == "block" || !mailboxReceipt(t, eng, id).Consumed {
+					t.Fatalf("one passive reminder not recorded/consumed: %v", reminder)
+				}
+				for _, event := range []string{"UserPromptSubmit", "Stop", "SessionStart"} {
+					got := waitingCall(t, srv, version, "hook_poll", map[string]any{"session_id": "reader-session", "event": event})
+					if strings.Contains(fmt.Sprint(got), fmt.Sprintf("#%d", id)) || got["decision"] == "block" {
+						t.Fatalf("FYI repeated after its reminder: %v", got)
+					}
+				}
+				waitingCall(t, srv, version, "ack", map[string]any{"token": reader["token"], "msg_serial": id})
+			})
+		}
 	}
 }
 
@@ -184,7 +251,7 @@ func TestNaturalHookRecoversBacklogWithoutHumanNoticeOrRepeatedStop(t *testing.T
 					t.Fatalf("%s missed passive recovery: %v", event, got)
 				}
 				digest, _ := h["additionalContext"].(string)
-				if !strings.Contains(digest, "140 FYIs seen but unacknowledged") || strings.Contains(digest, "140 unread") {
+				if !strings.Contains(digest, "announced FYIs awaiting presentation") || strings.Contains(digest, "140 unread") {
 					t.Fatalf("dishonest passive counts: %q", digest)
 				}
 				if len(digest) > 8192 {

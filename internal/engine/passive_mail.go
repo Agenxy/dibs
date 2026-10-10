@@ -29,7 +29,7 @@ func (e *Engine) mailboxCountsText(agent string) string {
 	var parts []string
 	for _, x := range []struct{ key, label string }{
 		{"new", "new"},
-		{"seen_unacknowledged_fyis", "FYIs seen but unacknowledged"},
+		{"announced_fyis", "announced FYIs awaiting presentation"},
 		{"seen_awaiting_action", "seen messages awaiting action"},
 		{"owed_requests", "owed requests"},
 	} {
@@ -66,20 +66,39 @@ func (e *Engine) passiveMailboxDigest(l *core.Agent, now time.Time) string {
 		fmt.Fprintf(&b, "; %d unacknowledged announcements", announcements)
 	}
 	b.WriteString(".\n")
-	for _, m := range p.mail {
-		fmt.Fprintf(&b, "  #%d %s from %q, %s: read_mail(%d) has the full envelope.\n",
-			m.Serial, m.Type, e.agentName(m.From), m.State, m.Serial)
-	}
+	shown := e.passiveMailLines(&b, p.mail)
 	if p.more > 0 {
 		fmt.Fprintf(&b, "  %d more mailbox items; inbox returns compact pages and next_cursor.\n", p.more)
 	}
 	if updates > 0 || announcements > 0 {
 		b.WriteString("  " + waitingReadHint(0, announcements, e.takeNotices(l.ID)) + "\n")
 	}
-	if e.mailCounts(l.ID)["seen_unacknowledged_fyis"].(int) > 0 {
-		b.WriteString("  ack(seen_fyis:true) explicitly clears delivered FYIs; it leaves new mail and owed work intact.\n")
+	// Reserve both hook carriers, including JSON escaping, even though a
+	// passive activation normally needs only additionalContext.
+	preview := core.Result{}
+	addDelivery(preview, "Stop", b.String())
+	if resultFitsFYIPresentation(preview) {
+		if err := e.recordFYIPresentation(l, shown, true, now); err != nil {
+			panic(err)
+		}
 	}
 	return strings.TrimSpace(b.String())
+}
+
+func (e *Engine) passiveMailLines(b *strings.Builder, mail []*core.Message) []fyiPresentation {
+	var shown []fyiPresentation
+	for _, m := range mail {
+		item := e.compactMail(m)
+		full := m.Type == core.MsgNotify && item["body_truncated"] != true
+		shown = append(shown, fyiPresentation{serial: m.Serial, full: full})
+		if full {
+			fmt.Fprintf(b, "  #%d notify from %q: %q.\n", m.Serial, e.agentName(m.From), item["body"])
+			continue
+		}
+		fmt.Fprintf(b, "  #%d %s from %q, %s: read_mail(%d) has the full envelope.\n",
+			m.Serial, m.Type, e.agentName(m.From), m.State, m.Serial)
+	}
+	return shown
 }
 
 func (e *Engine) passiveHookOutput(l *core.Agent, event string, strict bool) core.Result {

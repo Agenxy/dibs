@@ -56,7 +56,9 @@ func TestRenamedAddressIsPresentedAcrossBothMCPVersions(t *testing.T) {
 			}
 			for _, target := range []string{"current-name", id, "former-name"} {
 				sent := call("send", map[string]any{
-					"token": senderTok, "to": target, "type": "notify", "body": "one mailbox",
+					// A handoff stays actionable across both reads. Complete FYIs
+					// are consumed by the first bounded recipient presentation.
+					"token": senderTok, "to": target, "type": "handoff", "body": "one mailbox",
 				})
 				note, _ := sent["addressed"].(string)
 				if sent["to_name"] != "current-name" ||

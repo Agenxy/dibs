@@ -47,7 +47,9 @@ func mailboxRank(m *core.Message, cut uint64, now time.Time) int {
 	if m.Owed(now) || m.Expecting() && !m.Terminal() {
 		return 0
 	}
-	if m.State == core.MsgStatePending || m.DeliveredAt > cut {
+	newPending := m.State == core.MsgStatePending &&
+		(m.Type != core.MsgNotify || m.NotifyAnnouncedAt < max(m.AdoptedAt, 1) || m.NotifyAnnouncedAt > cut)
+	if newPending || m.DeliveredAt > cut {
 		return 1
 	}
 	if m.Type != core.MsgNotify {
@@ -130,6 +132,16 @@ func (e *Engine) compactMail(m *core.Message) core.Result {
 	if out["body"] != m.Body {
 		out["body_truncated"] = true
 	}
+	if m.Type == core.MsgNotify {
+		short := out["body"]
+		out["body"] = m.Body
+		raw, err := json.Marshal(out)
+		if err == nil && len(raw) <= mailPageBytes-1024 {
+			delete(out, "body_truncated")
+		} else {
+			out["body"] = short
+		}
+	}
 	for k, v := range map[string]uint64{
 		"delivered_serial": m.DeliveredAt, "acked_serial": m.AckedAt, "responded_serial": m.RespondedAt,
 		"outcome_read_serial": m.OutcomeReadAt, "review_read_serial": m.ReviewReadAt,
@@ -156,12 +168,7 @@ func (e *Engine) compactMail(m *core.Message) core.Result {
 }
 
 func (e *Engine) putMailboxPage(res core.Result, l *core.Agent, p mailPage) {
-	mail := []core.Result{}
-	for _, m := range p.mail {
-		mail = append(mail, e.compactMail(m))
-	}
-	res["inbox"], res["messages"] = mail, mail
-	res["mail_counts"] = e.mailCounts(l.ID)
+	e.refreshMailboxReceipts(res, l, p)
 	res["more_messages"] = p.more
 	e.compactMailboxExtras(res, p)
 	if p.next != "" {
@@ -169,6 +176,17 @@ func (e *Engine) putMailboxPage(res core.Result, l *core.Agent, p mailPage) {
 		res["mail_hint"] = fmt.Sprintf("%d more; call inbox(cursor:%q) for the next page; "+
 			"read_mail(serial) has full bodies", p.more, p.next)
 	}
+}
+
+// Refresh post-presentation receipts without filtering auxiliary projections
+// a second time: doing that erases their already-computed omitted counts.
+func (e *Engine) refreshMailboxReceipts(res core.Result, l *core.Agent, p mailPage) {
+	mail := []core.Result{}
+	for _, m := range p.mail {
+		mail = append(mail, e.compactMail(m))
+	}
+	res["inbox"], res["messages"] = mail, mail
+	res["mail_counts"] = e.mailCounts(l.ID)
 }
 
 // InboxPage is the agent-facing bounded read. Only the selected pending
@@ -184,16 +202,8 @@ func (e *Engine) InboxPage(ctx context.Context, token, cursor string, limit int)
 		if err != nil {
 			return core.Result{"error": err}
 		}
-		var serials []uint64
-		for _, m := range p.mail {
-			if m.State == core.MsgStatePending {
-				serials = append(serials, m.Serial)
-			}
-		}
-		if len(serials) > 0 {
-			if _, err = e.applyAndLedger(&core.Op{Kind: core.OpMarkDelivered, MsgSerials: serials}, now); err != nil {
-				return core.Result{"error": err}
-			}
+		if err := e.deliverMailboxPage(p, now); err != nil {
+			return core.Result{"error": err}
 		}
 		res := core.Result{
 			"serial": e.state.Serial, "truncated_before_serial": l.TruncatedBefore,
@@ -204,49 +214,38 @@ func (e *Engine) InboxPage(ctx context.Context, token, cursor string, limit int)
 		if gone := e.state.UnanswerableSenders(p.mail); len(gone) > 0 {
 			res["unanswerable_senders"] = gone
 		}
-		updates, err := e.mailboxUpdates(l, now)
-		if err != nil {
-			return core.Result{"error": err}
-		}
-		if len(updates) > 0 {
-			res["agent_updates"] = updates
-		}
-		res["serial"] = e.state.Serial
-		return res
+		return e.completeInboxPage(res, l, p, now)
 	})
 }
 
-// AckSeenFYIs acknowledges an explicit batch, never as a side effect of reading.
-// Reuse the ordinary ack op and its receipts. The selection is made once on
-// the writer, so a newly arriving unseen FYI cannot enter this batch.
-func (e *Engine) AckSeenFYIs(ctx context.Context, token string) (core.Result, error) {
-	return e.query(ctx, func() core.Result {
-		now := time.Now()
-		l, refused := e.authRead(token, now)
-		if refused != nil {
-			return refused
+func (e *Engine) deliverMailboxPage(p mailPage, now time.Time) error {
+	var serials []uint64
+	for _, m := range p.mail {
+		if m.State == core.MsgStatePending {
+			serials = append(serials, m.Serial)
 		}
-		var ids []uint64
-		for _, m := range e.state.Inbox(l.ID) {
-			if m.Type == core.MsgNotify && e.notifyPresented(l.ID, m) && !m.Consumed {
-				ids = append(ids, m.Serial)
-			}
-		}
-		for _, id := range ids {
-			op := &core.Op{Kind: core.OpAckMessage, Token: token, MsgSerial: id, V7Semantics: true}
-			if err := e.state.Admit(op); err != nil {
-				return core.Result{"error": err}
-			}
-			if _, err := e.applyAndLedger(op, now); err != nil {
-				return core.Result{"error": err}
-			}
-		}
-		res := core.Result{"ok": true, "acked_count": len(ids), "serial": e.state.Serial}
-		if waiting := e.waiting(l.ID, now); waiting != "" {
-			res["waiting"] = waiting
-		}
-		return res
-	})
+	}
+	if len(serials) == 0 {
+		return nil
+	}
+	_, err := e.applyAndLedger(&core.Op{Kind: core.OpMarkDelivered, MsgSerials: serials}, now)
+	return err
+}
+
+func (e *Engine) completeInboxPage(res core.Result, l *core.Agent, p mailPage, now time.Time) core.Result {
+	updates, err := e.mailboxUpdates(l, now)
+	if err != nil {
+		return core.Result{"error": err}
+	}
+	if len(updates) > 0 {
+		res["agent_updates"] = updates
+	}
+	if err := e.presentMailboxFYIs(res, l, p, now); err != nil {
+		return core.Result{"error": err}
+	}
+	e.refreshMailboxReceipts(res, l, p)
+	res["serial"] = e.state.Serial
+	return res
 }
 
 func (e *Engine) mailCounts(agent string) core.Result {
@@ -270,7 +269,7 @@ func (e *Engine) mailCounts(agent string) core.Result {
 		}
 	}
 	return core.Result{
-		"new": fresh, "seen_unacknowledged_fyis": seen, "owed_requests": owed, "seen_awaiting_action": other,
+		"new": fresh, "announced_fyis": seen, "owed_requests": owed, "seen_awaiting_action": other,
 	}
 }
 

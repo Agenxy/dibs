@@ -296,8 +296,8 @@ func TestPresentedNotifyNeverRearmsAcrossIdleEpochsThroughMCP(t *testing.T) {
 			}
 			noSendNoteFrame(t, wire)
 			m := readStopLedger(t, dir).Messages[uint64(n.(float64))]
-			if m == nil || m.Consumed || (m.State != core.MsgStatePending && m.State != core.MsgStateDelivered) {
-				t.Fatalf("one-shot wake guard lost or acknowledged raw FYI mail: %+v", m)
+			if m == nil || !m.Consumed || m.State != core.MsgStateAcked || m.Body != marker {
+				t.Fatalf("full presentation did not consume and retain the FYI: %+v", m)
 			}
 		})
 	}

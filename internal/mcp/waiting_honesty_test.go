@@ -226,7 +226,7 @@ func TestWaitingHintClearsTrimmedProgressThroughMCP(t *testing.T) {
 				}
 				var incoming any
 				if mixedMail {
-					incoming = call("send", map[string]any{"token": worker, "to": "lead", "type": "notify", "body": "private incoming marker"})["msg_serial"]
+					incoming = call("send", map[string]any{"token": worker, "to": "lead", "type": "handoff", "body": "private incoming marker"})["msg_serial"]
 				}
 				for _, read := range []string{"inbox", "check_in"} {
 					visible := call(read, map[string]any{"token": lead})
@@ -274,7 +274,7 @@ func TestWaitingHintClearsTrimmedProgressThroughMCP(t *testing.T) {
 					}
 				}
 				if mixedMail {
-					if !strings.Contains(waiting, "1 FYIs seen but unacknowledged") {
+					if !strings.Contains(waiting, "1 seen messages awaiting action") {
 						t.Errorf("reading updates consumed unrelated ordinary mail: %v", written)
 					}
 					call("ack", map[string]any{"token": lead, "msg_serial": incoming})

@@ -28,13 +28,45 @@ func mailboxReceipt(t *testing.T, eng *engine.Engine, id uint64) core.Message {
 	return core.Message{}
 }
 
+func TestCompleteFYIReadAndHookNeedNoAck(t *testing.T) {
+	for _, version := range []string{"2026-07-28", "2025-11-25"} {
+		for _, route := range []string{"read_mail", "Stop"} {
+			t.Run(version+"/"+route, func(t *testing.T) {
+				srv, _ := newServer(t)
+				eng := srv.Config.Handler.(*Server).eng
+				reader := toolCall(t, srv, "register", map[string]any{"name": "reader", "session_id": "reader-session"})
+				sender := toolCall(t, srv, "register", map[string]any{"name": "sender"})
+				sent := waitingCall(t, srv, version, "send", map[string]any{"token": sender["token"], "to": "reader", "type": "notify", "body": "complete-fyi-tail"})
+				id := uint64(sent["msg_serial"].(float64))
+				waitingCall(t, srv, version, "read_mail", map[string]any{"token": sender["token"], "msg_serial": id})
+				if mailboxReceipt(t, eng, id).Consumed {
+					t.Fatal("sender reading consumed recipient mail")
+				}
+				var out map[string]any
+				if route == "Stop" {
+					out = waitingCall(t, srv, version, "hook_poll", map[string]any{"session_id": "reader-session", "event": "Stop"})
+				} else {
+					out = waitingCall(t, srv, version, "read_mail", map[string]any{"token": reader["token"], "msg_serial": id})
+				}
+				if !strings.Contains(fmt.Sprint(out), "complete-fyi-tail") || !mailboxReceipt(t, eng, id).Consumed {
+					t.Fatalf("full %s presentation did not consume FYI: %v", route, out)
+				}
+				again := waitingCall(t, srv, version, "hook_poll", map[string]any{"session_id": "reader-session", "event": "UserPromptSubmit"})
+				if strings.Contains(fmt.Sprint(again), "complete-fyi-tail") || again["decision"] == "block" {
+					t.Fatal("complete FYI repeated")
+				}
+			})
+		}
+	}
+}
+
 func TestCompactMailboxDeliversOnlyItsPageAndRetainsFullBodies(t *testing.T) {
 	for _, version := range []string{"2026-07-28", "2025-11-25"} {
 		for _, method := range []string{"inbox", "check_in"} {
 			t.Run(version+"/"+method, func(t *testing.T) {
 				srv, _, eng := boundedMailServer(t)
 				ids := []uint64{}
-				body := strings.Repeat("retained content ", 90) + "FULL-ENVELOPE-TAIL"
+				body := strings.Repeat("retained content ", 450) + "FULL-ENVELOPE-TAIL"
 				for range 10 {
 					r := waitingCall(t, srv, version, "send", map[string]any{"token": "sender-token", "to": "reader", "type": "notify", "body": body})
 					ids = append(ids, uint64(r["msg_serial"].(float64)))
@@ -91,18 +123,31 @@ func TestPassiveMailboxCountsUnitsAndNeverReadsAnOutcomePrefix(t *testing.T) {
 			for range 2 {
 				got := waitingCall(t, srv, version, "hook_poll", map[string]any{"session_id": "reader-session", "event": "UserPromptSubmit"})
 				text := fmt.Sprint(got["hookSpecificOutput"])
-				if !strings.Contains(text, "18 outstanding update units") || !strings.Contains(text, "140 FYIs seen but unacknowledged") {
+				if !strings.Contains(text, "18 outstanding update units") || !strings.Contains(text, "announced FYIs awaiting presentation") {
 					t.Fatalf("rendered lines substituted for outstanding units: %v", got)
 				}
 				if mailboxReceipt(t, eng, id).OutcomeReadAt != before {
 					t.Fatal("passive pointer advanced an unread outcome prefix")
 				}
 			}
-			waitingCall(t, srv, version, "ack", map[string]any{"token": "reader-token", "seen_fyis": true})
 			got := waitingCall(t, srv, version, "hook_poll", map[string]any{"session_id": "reader-session", "event": "UserPromptSubmit"})
-			if strings.Contains(fmt.Sprint(got), "FYIs seen") || !strings.Contains(fmt.Sprint(got), "18 outstanding update units") {
-				t.Fatal("bulk FYI ack changed unrelated outcome state or left stale counts")
+			if !strings.Contains(fmt.Sprint(got), "18 outstanding update units") || mailboxReceipt(t, eng, id).OutcomeReadAt != before {
+				t.Fatal("FYI presentation changed unrelated outcome state")
 			}
 		})
+	}
+}
+
+func TestBoundedMailboxRetainsOmittedProjectionCounts(t *testing.T) {
+	for _, version := range []string{"2026-07-28", "2025-11-25"} {
+		for _, method := range []string{"inbox", "check_in"} {
+			t.Run(version+"/"+method, func(t *testing.T) {
+				srv, _, _ := boundedMailServer(t)
+				page := waitingCall(t, srv, version, method, map[string]any{"token": "reader-token", "limit": 1})
+				if len(page["owed_work"].([]any)) != 1 || page["more_owed_work"] != float64(1) {
+					t.Fatalf("omitted owed projection lost its count: %v", page)
+				}
+			})
+		}
 	}
 }

@@ -6,14 +6,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 - Keep agent mail with its agent: remove hook human notices and recover backlog
-  with bounded passive pointers at natural prompts/session starts. Counts now
-  distinguish new mail from seen FYIs still unacknowledged, and count actual
-  update units. Inbox/check-in return compact pages with owed work first,
-  per-item receipts and continuation cursors; only returned pending mail is
-  delivered. Full envelopes remain available through read_mail. Explicit
-  `ack(seen_fyis:true)` clears already-presented FYIs without consuming new mail
-  or owed work. Historical checkpoints replay unchanged; the new page checkpoint
-  is a distinct ledger operation, so older daemons refuse a downgrade loudly.
+  with bounded passive pointers at natural prompts/session starts. Inbox/check-in
+  return compact pages with owed work first, per-item receipts and continuation
+  cursors; only returned pending mail is delivered. Full FYI presentation clears
+  it automatically; an announcement gets at most one further passive reminder,
+  then clears. Requests and questions still need answers. Counts distinguish
+  new mail from announced FYIs and count actual update units.
+  Older versions can still open these ledgers; on rollback they forget the new
+  page receipt, leave omitted mail untouched and retain ordinary FYI consumption.
 
 - Send replies describe pending direct app delivery when that route is eligible
   and no native result has been observed yet. Prior native outcomes remain

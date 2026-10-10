@@ -22,9 +22,9 @@ func (e *Engine) prepareMailboxPage(op *core.Op, actor *core.Agent, now time.Tim
 		ids = append(ids, m.Serial)
 	}
 	op.MailboxSerials = &ids
-	// An older daemon must refuse this ledger instead of dropping the page
-	// selection and replaying a read-all checkpoint.
-	op.Kind = core.OpAckMailboxPage
+	// Older folds record only an ordinary contact checkpoint. They do not
+	// stamp omitted mail delivered or refuse a safe rollback.
+	op.Kind = core.OpActivityCheckpoint
 	return &p, e.state.Admit(op)
 }
 
@@ -57,6 +57,13 @@ func (e *Engine) completeMailboxCheckpoint(
 	// Recovery must say whether overlap detection is operating at all.
 	if st := e.MatchStatus(); st.Phase != MatchReady {
 		res["matching"], res["matching_hint"] = st.Phase, matchingHint(st)
+	}
+	if page != nil {
+		if err := e.presentMailboxFYIs(res, actor, *page, now); err != nil {
+			return err
+		}
+		e.refreshMailboxReceipts(res, actor, *page)
+		res["serial"] = e.state.Serial
 	}
 	return nil
 }

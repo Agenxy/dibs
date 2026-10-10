@@ -227,6 +227,15 @@ func TestSocketEconomyDaemonFallbackUsesLifecycleAndMail(t *testing.T) {
 			if text := f.receive(t, time.Second); !strings.Contains(text, marker) {
 				t.Fatalf("daemon lost actionable mail during %s: %q", mode, text)
 			}
+			_, err := f.e.query(f.ctx, func() core.Result {
+				if f.e.state.Messages[r["msg_serial"].(uint64)].Consumed {
+					t.Error("unconfirmed socket write consumed raw mail")
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
 			got := f.hook(t, "Stop", false)
 			if got["decision"] != "block" || !strings.Contains(fmtResult(got), marker) {
 				t.Fatalf("authored mail lost its blocking Stop fallback: %v", got)
@@ -236,9 +245,9 @@ func TestSocketEconomyDaemonFallbackUsesLifecycleAndMail(t *testing.T) {
 				t.Fatalf("Stop delivery wrote an extra native frame: %q", text)
 			case <-time.After(1100 * time.Millisecond):
 			}
-			_, err := f.e.query(f.ctx, func() core.Result {
-				if f.e.state.Messages[r["msg_serial"].(uint64)].Consumed {
-					t.Error("native/hook presentation consumed raw mail")
+			_, err = f.e.query(f.ctx, func() core.Result {
+				if f.e.state.Messages[r["msg_serial"].(uint64)].Consumed != (kind == core.MsgNotify) {
+					t.Error("full hook presentation must consume FYIs and keep questions owed")
 				}
 				return nil
 			})

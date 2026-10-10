@@ -40,8 +40,10 @@ func (e *Engine) socketBatchPresentation(
 		for _, key := range offer.notices {
 			wanted[key] = true
 		}
+		mail, fyis := e.socketMailPresentation(a.ID, now, offer.mail, &budget)
+		offer.fyis = fyis
 		members = append(members, socketBatchMember{
-			agent: a, mail: e.socketMailLines(a.ID, now, offer.mail, &budget), announced: announced, offer: offer,
+			agent: a, mail: mail, announced: announced, offer: offer,
 		})
 		groups = append(groups, e.outcomeGroups(a.ID)...)
 	}
@@ -73,13 +75,20 @@ func (e *Engine) socketBatchPresentation(
 }
 
 func (e *Engine) socketMailLines(agent string, now time.Time, keys []string, budget *int) []string {
+	lines, _ := e.socketMailPresentation(agent, now, keys, budget)
+	return lines
+}
+
+func (e *Engine) socketMailPresentation(
+	agent string, now time.Time, keys []string, budget *int,
+) ([]string, []fyiPresentation) {
 	wanted := map[uint64]bool{}
 	for _, key := range keys {
 		_, raw, _ := strings.Cut(key, "\x00")
 		serial, _ := strconv.ParseUint(raw, 10, 64)
 		wanted[serial] = true
 	}
-	return e.mailLinesForBudget(agent, now, wanted, budget)
+	return e.mailPresentationForBudget(agent, now, wanted, budget)
 }
 
 func (e *Engine) socketAnnouncements(agent string, now time.Time) ([]string, []string) {

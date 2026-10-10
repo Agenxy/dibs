@@ -214,12 +214,13 @@ items are marked delivered. `owed_work`, `owes` and `task_queue` describe the
 shown page, with omitted counts. Announcement summaries are bounded too; use
 `read_space` for their full text before acknowledging them.
 
-Counts distinguish `new`, FYIs seen but unacknowledged, seen messages awaiting
-action and requests still owed. Presented FYIs are not described as unread.
-`ack(seen_fyis:true)` explicitly acknowledges all your already-presented FYIs
-in one call; it leaves new unseen mail and owed work intact. Use either that
-batch or `msg_serial`, never both. This is an explicit act, not an automatic
-side effect of reading.
+Counts distinguish new mail, announced FYIs awaiting presentation, seen messages
+awaiting action and requests still owed. A FYI clears automatically when its
+complete body fits in the returned page, full read or quoted digest. A shortened
+line or oversized result is only an announcement: at most one later passive
+reminder is delivered, then it clears. No acknowledgement is needed for FYIs;
+`ack(msg_serial)` remains available. Requests/questions still require a response.
+Recently consumed FYIs remain recoverable with `read_mail` under normal retention.
 
 At UserPromptSubmit and SessionStart, a bounded model-facing pointer recovers
 outstanding backlog even after its one-shot wake was spent. It starts no turn

@@ -453,6 +453,7 @@ func (e *Engine) execWithReceipt(
 	}
 	op.AgentID = ""         // replay-only actor field; never trusted from ingress
 	op.MailboxSerials = nil // the writer selects returned mail, never the caller
+	op.NotifyAnnounced, op.NotifyConsumption = nil, ""
 	// Same rule: the claim VERDICT is the engine's to record, never the
 	// caller's to assert. Checked below, after the actor is known.
 	op.ClaimVerified = false
@@ -1041,7 +1042,7 @@ func (e *Engine) execWithReceipt(
 	// best-effort, the obligation is read back through the agent's own
 	// authenticated call. Notices had no such path, so suppressing the nudge
 	// suppressed the fact.
-	if (op.Kind == core.OpAckBoard || op.Kind == core.OpAckMailboxPage) && actor != nil {
+	if (op.Kind == core.OpAckBoard || op.MailboxSerials != nil) && actor != nil {
 		if err := e.completeMailboxCheckpoint(res, actor, page, now); err != nil {
 			return nil, err
 		}
@@ -1064,7 +1065,7 @@ func (e *Engine) execWithReceipt(
 	// actor has no usable credential left to follow a mail-reading hint.
 	// Everywhere else this reaches an agent whose harness has no hooks, or
 	// whose installed hooks cannot resolve it.
-	if actor != nil && !actor.Gone() && res != nil && op.Kind != core.OpAckBoard && op.Kind != core.OpAckMailboxPage {
+	if actor != nil && !actor.Gone() && res != nil && op.Kind != core.OpAckBoard && op.MailboxSerials == nil {
 		if w := e.waiting(actor.ID, now); w != "" {
 			res["waiting"] = w
 		}
@@ -1583,7 +1584,7 @@ func (e *Engine) hostOfOp(op *core.Op) string {
 // callerRow is the row an op speaks for, by token or by nonce, or nil.
 func (e *Engine) callerRow(op *core.Op) *core.Agent {
 	switch op.Kind {
-	case core.OpAckBoard, core.OpAckMailboxPage, core.OpUpdate:
+	case core.OpAckBoard, core.OpUpdate:
 		return e.state.AgentByToken(op.Token)
 	case core.OpRegister:
 		if op.Nonce != "" {
