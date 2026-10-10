@@ -515,6 +515,15 @@ func (b *wakeBridge) executeOutcome(wr engine.WakeRequest) (bool, string, wakeex
 	if handled {
 		return outcome.OK, outcome.Detail, outcome
 	}
+	if outcome.Disposition == "native_failed" || outcome.Disposition == "unloaded" {
+		text, err := b.nativeNotice(wr, f)
+		if err != nil {
+			return false, "original wake freshness not confirmed; no cold input", wakeexec.NativeOutcome{Disposition: "not_sent"}
+		}
+		if text == "" {
+			return true, "original wake already handled", wakeexec.NativeOutcome{OK: true, Settled: true, Disposition: "settled"}
+		}
+	}
 	var fallback []string
 	if len(x.Fallback) > 0 {
 		fallback = f.Apply(x.Fallback)
@@ -522,6 +531,10 @@ func (b *wakeBridge) executeOutcome(wr engine.WakeRequest) (bool, string, wakeex
 	if b.run(f.Apply(x.Argv), fallback, wr.Agent, wr.CWD, wakeexec.Timeout, wakeexec.Grace) {
 		if outcome.Disposition == "unloaded" {
 			return true, "thread not loaded in the app; queued until opened", outcome
+		}
+		if outcome.Disposition == "native_failed" {
+			outcome.Disposition = "queued_native_failed"
+			return true, "native input not sent; cold queue admitted, not native delivery", outcome
 		}
 		return true, "", outcome
 	}

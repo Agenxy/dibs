@@ -446,7 +446,7 @@ func (e *Engine) requestRemoteWakeWithin(plan wakePlan, agent string, within tim
 		if plan.nativeOutcome != nil {
 			plan.nativeOutcome.NoRetry = res.NoRetry
 			plan.nativeOutcome.Disposition = res.NativeDelivery
-			plan.nativeOutcome.OK = res.NativeDelivery == "started" || res.NativeDelivery == "steered"
+			plan.nativeOutcome.OK = nativeDeliveryAccepted(res.NativeDelivery)
 			plan.nativeOutcome.Settled = res.NativeDelivery == "settled"
 		}
 		if res.OK {

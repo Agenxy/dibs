@@ -103,13 +103,16 @@ func queueWakeNote(v core.Result) string {
 	}
 	if delivery, ok := v["native_delivery"].(string); ok {
 		switch delivery {
+		case "queued_native_failed":
+			return "Native input was not sent; cold queue admission: " + fmt.Sprint(v["admission"]) +
+				". Queue admission does not confirm a started turn or read mail."
 		case "queued_unloaded":
 			if v["admission"] == "accepted" || v["admission"] == "retained" {
 				return "Thread not loaded in the app; queued until opened. " +
 					"Queue admission does not confirm a started turn or read mail."
 			}
 			return "Thread not loaded in the app; queue admission not confirmed."
-		case "started", "steered":
+		case "accepted", "started", "steered":
 			return "Last native app notice: " + delivery + "; app acceptance does not confirm read mail."
 		case "settled":
 			return "Last native app notice was cancelled because its mail was already handled or its identity closed."

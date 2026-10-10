@@ -11,8 +11,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the original owed work before input. Native success invokes no queue command or
   app opener. Private notices name the event and sender, without mail bodies;
   command arguments remain name-free. Native sender names use a strict bounded
-  slug and event types a fixed vocabulary. Before-input failures and matched
-  refusals retain bounded retry; missing or changed replies after an input write
+  slug and event types a fixed vocabulary. Before-input adapter failures fall
+  back to cold queue/open after checking the original owed work again; matched
+  refusals remain explicit. Missing or changed replies after an input write
   prohibit retry. Writer freshness survives a stalled writer. Cold threads retain the existing
   queue/open route, with queue admission clearly distinguished from app acceptance.
   Remote bridges opt in additively and recheck through an authenticated, host-scoped
@@ -52,6 +53,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Releases up to and including v0.0.13 remain Apache-2.0; GPL-3.0-or-later applies from the next release, with commercial licensing available from Agenxy for Agenxy-authored portions.
 
 ### Fixed
+
+- Native ChatGPT delivery no longer fetches a full history snapshot to predict
+  idle versus running: one follower input lets the app choose start-or-steer,
+  with an honest accepted receipt. Unsolicited large frames are streamed away
+  with bounded memory. The previous 8 MiB cap rejected a measured 10 MiB live
+  snapshot, and before-input failures could leave the recipient unwoken.
 
 - A coordinator's contact alert is consumed after an authenticated mailbox read,
   so it no longer repeats at inbox or Stop. Posted alerts remain on the board

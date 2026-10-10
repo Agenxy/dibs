@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-// ErrNoOwner is the only protocol refusal permitting the existing cold route.
+// ErrNoOwner means the router cannot find an already loaded target.
 var ErrNoOwner = errors.New("thread not loaded in the app; queued until opened")
 
 // Receipt confirms app acceptance, not that the agent read its Dibs mailbox.
@@ -32,7 +32,8 @@ type Receipt struct {
 
 const (
 	timeout  = 20 * time.Second // router owner discovery itself waits 10s
-	maxFrame = 8 << 20          // bounded snapshot; larger ones fail explicitly
+	maxFrame = 256 << 20        // installed app's uint32-LE protocol limit
+	maxReply = 1 << 20          // matched metadata/turn receipts are small
 )
 
 type client struct {
@@ -125,7 +126,7 @@ func (c *client) write(f frame) error {
 		return errors.New("native frame exceeds bound")
 	}
 	header := make([]byte, 4)
-	// #nosec G115 -- len(b) is checked against the 8 MiB frame bound above.
+	// #nosec G115 -- len(b) is checked against the 256 MiB protocol bound above.
 	binary.LittleEndian.PutUint32(header, uint32(len(b)))
 	n, err := io.Copy(c.conn, bytes.NewReader(append(header, b...)))
 	if n > 0 && f.Type == "request" &&
@@ -142,7 +143,16 @@ func (c *client) read() (frame, error) {
 	}
 	n := binary.LittleEndian.Uint32(size[:])
 	if n == 0 || n > maxFrame {
-		return frame{}, errors.New("native frame length changed or exceeds bound")
+		return frame{}, fmt.Errorf("native frame length %d outside installed protocol limit %d", n, maxFrame)
+	}
+	if n > maxReply {
+		// We never follow thread streams. An unsolicited full-history frame
+		// carries no delivery receipt Dibs can use. Drain it without retaining
+		// its bytes, preserving the next frame's boundary and the socket deadline.
+		// A missing matched receipt still remains unknown; discarded data never
+		// implies success or authorizes another input.
+		_, err := io.CopyN(io.Discard, c.conn, int64(n))
+		return frame{}, err
 	}
 	b := make([]byte, n)
 	if _, err := io.ReadFull(c.conn, b); err != nil {

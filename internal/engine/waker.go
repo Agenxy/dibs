@@ -1248,6 +1248,8 @@ func (e *Engine) runWake(plan wakePlan, agent string) bool {
 			wakeexec.Timeout, wakeexec.Grace, func(observation wakeexec.QueueObservation) {
 				if plan.nativeOutcome != nil && plan.nativeOutcome.Disposition == "unloaded" {
 					observation.Delivery = "queued_unloaded"
+				} else if plan.nativeOutcome != nil && plan.nativeOutcome.Disposition == "native_failed" {
+					observation.Delivery = "queued_native_failed"
 				}
 				e.noteQueueObservation(plan, agent, observation)
 			})

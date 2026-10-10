@@ -4,7 +4,6 @@
 package wakeexec
 
 import (
-	"errors"
 	"strings"
 	"testing"
 
@@ -29,16 +28,13 @@ func TestNativeNoticeRejectsNonSlugSenderAndForeignType(t *testing.T) {
 	}
 }
 
-func TestNativeBeforeInputFailuresRemainRetryable(t *testing.T) {
-	for _, mode := range []string{"changed", "unsupported", "fresh-error", "refused"} {
+func TestNativeMatchedRefusalRemainsRetryableWithoutQueue(t *testing.T) {
+	for _, mode := range []string{"refused"} {
 		t.Run(mode, func(t *testing.T) {
 			s := testcodexipc.Start(t, mode, nil)
 			f := Fields{Thread: testcodexipc.Thread, Agent: "worker", MsgType: "notify", Message: Compose("notify")}
 			argv := []string{"codex", "queue", "--thread", f.Thread, "--message", f.Message}
 			fresh := func() (string, error) {
-				if mode == "fresh-error" {
-					return "", errors.New("writer unavailable")
-				}
 				return ComposeNative(f), nil
 			}
 			out, handled := TryNative(harnessenv.ChatGPTApp, f, argv, fresh)
