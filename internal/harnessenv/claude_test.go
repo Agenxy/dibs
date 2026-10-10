@@ -46,6 +46,68 @@ func TestAClaudeSessionIsOpenedByTheAppsOwnID(t *testing.T) {
 	}
 }
 
+// The app gives a session a NEW Claude Code session id each time it is
+// resumed and keeps the earlier ones in priorCliSessionIds; its own id
+// (local_...) stays the same. Dibs knows an agent by the Claude Code session
+// it last saw, so matching cliSessionId alone loses every agent whose session
+// was resumed once: k7-dev, 2026-10-10, had its mail escalated to the person
+// as unreachable while the app held "K7 Dev" with that id in its prior list.
+// Shape copied from the installed app's record for that session.
+func TestAResumedClaudeSessionIsFoundByAPriorCLISessionID(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := filepath.Join(home, "Library", "Application Support", "Claude", "claude-code-sessions", "acct", "org")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const (
+		local = "local_fd69ccb7-6d52-481c-bbd9-ebede76dbdda"
+		known = "9ba6f463-1ae8-4a40-884d-c4b5fed55179" // what Dibs recorded
+		now   = "07b5f68d-c28c-4d3f-9615-6d6bff9d92c6" // after the app resumed it
+	)
+	body := `{"sessionId":"` + local + `","cliSessionId":"` + now + `","isArchived":false,` +
+		`"priorCliSessionIds":["0f0e0d0c-1111-4222-8333-444455556666","` + known + `"]}`
+	if err := os.WriteFile(filepath.Join(dir, local+".json"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// An archived record that also lists the id must never win.
+	archived := `{"sessionId":"local_aaaaaaaa-0000-4000-8000-000000000000","cliSessionId":"22222222-2222-4333-8444-555566667777",` +
+		`"isArchived":true,"priorCliSessionIds":["` + known + `"]}`
+	if err := os.WriteFile(filepath.Join(dir, "local_aaaaaaaa-0000-4000-8000-000000000000.json"), []byte(archived), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{known, now} {
+		if got := ClaudeLocalSession(id); got != local {
+			t.Errorf("ClaudeLocalSession(%s) = %q, want %q", id, got, local)
+		}
+	}
+}
+
+// When one record names the id as CURRENT and another only as prior (the app
+// forked a session), the current owner wins: that is the session the agent is
+// actually running in.
+func TestACurrentCLISessionBeatsAPriorMention(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := filepath.Join(home, "Library", "Application Support", "Claude", "claude-code-sessions", "acct", "org")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const cli = "6336088d-1111-4222-8333-444455556666"
+	write := func(local, body string) {
+		if err := os.WriteFile(filepath.Join(dir, local+".json"), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("local_bbbbbbbb-0000-4000-8000-000000000000",
+		`{"sessionId":"local_bbbbbbbb-0000-4000-8000-000000000000","cliSessionId":"33333333-2222-4333-8444-555566667777","priorCliSessionIds":["`+cli+`"]}`)
+	write("local_cccccccc-0000-4000-8000-000000000000",
+		`{"sessionId":"local_cccccccc-0000-4000-8000-000000000000","cliSessionId":"`+cli+`"}`)
+	if got := ClaudeLocalSession(cli); got != "local_cccccccc-0000-4000-8000-000000000000" {
+		t.Errorf("ClaudeLocalSession = %q, want the record that runs it now", got)
+	}
+}
+
 // A session whose process is running needs no open: the socket reaches it.
 func TestARunningClaudeSessionIsNotOpenedAgain(t *testing.T) {
 	home := t.TempDir()

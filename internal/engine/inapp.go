@@ -80,14 +80,26 @@ func (e *Engine) openClosedSession(l *core.Agent) {
 		return
 	}
 	session, agent, created := threadIDOf(l), l.ID, l.CreatedSerial
-	if session == "" {
+	known := knownHarnessSessions(l)
+	if len(known) == 0 {
+		slog.Warn("cannot reopen this agent's Claude app session: Dibs holds no Claude Code session id for it",
+			"agent", agent, "hint", "it is reached again when its session next calls Dibs")
 		return
 	}
+	if session == "" {
+		session = known[len(known)-1]
+	}
 	go func() {
-		argv := harnessenv.OpenArgv(harnessenv.ClaudeDesktop, session)
+		// Every id Dibs has seen for this agent, matched against the app's whole
+		// lineage for each session (ClaudeAppSession), so a resume that gave the
+		// session a new Claude Code id cannot hide it.
+		argv := harnessenv.ClaudeOpenArgv(harnessenv.ClaudeAppSession("", known...))
 		if argv == nil {
+			slog.Warn("cannot reopen this agent's Claude app session: the app has no unarchived session "+
+				"whose history contains its ids", "agent", agent, "known", known,
+				"hint", "the person is asked instead; open the agent's session in the Claude app")
 			e.contactAfterAppFailure(agent, created)
-			return // the app has no record of this session
+			return
 		}
 		shower.ShowWhenIdle(argv, session, func(opened, deferred bool, err error) {
 			logShow(opened, deferred, err, "agent", agent)
@@ -96,4 +108,20 @@ func (e *Engine) openClosedSession(l *core.Agent) {
 			}
 		})
 	}()
+}
+
+// knownHarnessSessions is every thread-shaped session id Dibs has recorded for
+// an agent, oldest first: the bound one, its aliases, then the current one.
+// Lineage matching wants all of them, unlike the socket route, which must
+// reach only the current activation (sessionsOf).
+func knownHarnessSessions(l *core.Agent) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, s := range append(append([]string{l.SessionID}, l.SessionAliases...), l.CurrentSession) {
+		if looksLikeThreadID(s) && !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	return out
 }

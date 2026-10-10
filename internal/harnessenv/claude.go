@@ -46,29 +46,93 @@ func claudeSupportDir() string {
 // ClaudeLocalSession is the Claude app's id for a Claude Code session, or ""
 // when the app has no record of it (a terminal session, say) or it is archived.
 func ClaudeLocalSession(cliSession string) string {
+	return ClaudeAppSession("", cliSession)
+}
+
+// IsClaudeAppSession reports whether s has the shape of the app's own session
+// id (local_...), the only shape its continue link accepts.
+func IsClaudeAppSession(s string) bool { return localSessionID.MatchString(s) }
+
+// ClaudeAppSession finds the app session that a Claude Code session belongs
+// to, by LINEAGE rather than by its current id.
+//
+// The app's id for a session (local_...) is stable; the Claude Code session id
+// inside it is not. Each resume starts a new one and the app moves the old one
+// into priorCliSessionIds. Dibs knows an agent by the Claude Code session it
+// last saw, so matching only the current id lost every agent whose session had
+// been resumed even once: k7-dev on 2026-10-10 was escalated to the person as
+// unreachable while the app still held its session, "K7 Dev", with that id in
+// its prior list. A record matches when ANY id in its lineage is known.
+//
+// hint is the app session the agent's own bridge reported (AgentInfo
+// AppSession). It is a claim, so it is honoured only when that record's
+// lineage contains a known id: an agent cannot point Dibs at somebody else's
+// session. Otherwise a record running a known id now beats one that only
+// lists it as prior, and among those the most recently active wins.
+func ClaudeAppSession(hint string, known ...string) string {
 	dir := claudeSupportDir()
-	if dir == "" || !isThreadID(cliSession) {
+	want := map[string]bool{}
+	for _, k := range known {
+		if isThreadID(k) {
+			want[k] = true
+		}
+	}
+	if dir == "" || len(want) == 0 {
 		return ""
 	}
 	files, _ := filepath.Glob(filepath.Join(dir, "*", "*", "local_*.json"))
+	best, bestRank, bestActivity := "", 0, int64(-1)
 	for _, f := range files {
-		raw, err := os.ReadFile(f) //nolint:gosec // the app's own records, under the user's home
-		if err != nil {
+		rec, ok := readClaudeRecord(f)
+		if !ok {
 			continue
 		}
-		var rec struct {
-			SessionID    string `json:"sessionId"`
-			CLISessionID string `json:"cliSessionId"`
-			IsArchived   bool   `json:"isArchived"`
-		}
-		if json.Unmarshal(raw, &rec) != nil || rec.CLISessionID != cliSession || rec.IsArchived {
+		rank := rec.lineageRank(want)
+		if rank == 0 {
 			continue
 		}
-		if localSessionID.MatchString(rec.SessionID) {
-			return rec.SessionID
+		if hint != "" && rec.SessionID == hint {
+			return rec.SessionID // the bridge's claim, confirmed by the app's own lineage
+		}
+		if rank > bestRank || (rank == bestRank && rec.LastActivityAt > bestActivity) {
+			best, bestRank, bestActivity = rec.SessionID, rank, rec.LastActivityAt
 		}
 	}
-	return ""
+	return best
+}
+
+// claudeRecord is the part of the app's session record the mapping reads.
+type claudeRecord struct {
+	SessionID          string   `json:"sessionId"`
+	CLISessionID       string   `json:"cliSessionId"`
+	PriorCLISessionIDs []string `json:"priorCliSessionIds"`
+	IsArchived         bool     `json:"isArchived"`
+	LastActivityAt     int64    `json:"lastActivityAt"`
+}
+
+// readClaudeRecord reads one record, refusing an archived one and an id the
+// app's link would not accept.
+func readClaudeRecord(f string) (claudeRecord, bool) {
+	var rec claudeRecord
+	raw, err := os.ReadFile(f) //nolint:gosec // the app's own records, under the user's home
+	if err != nil || json.Unmarshal(raw, &rec) != nil || rec.IsArchived || !localSessionID.MatchString(rec.SessionID) {
+		return rec, false
+	}
+	return rec, true
+}
+
+// lineageRank is 2 when the record runs a known id now, 1 when it lists one
+// as prior, and 0 when its lineage holds none of them.
+func (r claudeRecord) lineageRank(want map[string]bool) int {
+	if want[r.CLISessionID] {
+		return 2
+	}
+	for _, p := range r.PriorCLISessionIDs {
+		if want[p] {
+			return 1
+		}
+	}
+	return 0
 }
 
 // ClaudeOpenArgv opens a session in the Claude app by its app id.

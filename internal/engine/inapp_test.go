@@ -301,3 +301,74 @@ func TestMailForAClosedClaudeAppSessionOpensItInTheApp(t *testing.T) {
 		t.Fatal("mail for a closed Claude app session did not open it in the app")
 	}
 }
+
+// The k7-dev failure of 2026-10-10, through the production door. The agent is
+// known by the Claude Code session it registered with; the app has since
+// resumed that session, which gave it a new Claude Code id and moved the old
+// one into priorCliSessionIds. Mail must still reopen the app session, and no
+// contact alert may go to the person for an agent Dibs could have reached.
+func TestMailReopensAClaudeAppSessionThatWasResumedSinceRegistration(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	const (
+		registered = "9ba6f463-1ae8-4a40-884d-c4b5fed55179"
+		current    = "07b5f68d-c28c-4d3f-9615-6d6bff9d92c6"
+		local      = "local_fd69ccb7-6d52-481c-bbd9-ebede76dbdda"
+	)
+	dir := filepath.Join(home, "Library", "Application Support", "Claude", "claude-code-sessions", "a", "o")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, local+".json"), []byte(`{"sessionId":"`+local+
+		`","cliSessionId":"`+current+`","priorCliSessionIds":["`+registered+`"],"isArchived":false}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	app := &fakeApp{}
+	app.install(t)
+	opened := make(chan []string, 1)
+	shower.Open = func(argv []string) error { opened <- argv; return nil }
+
+	e := New(core.NewState("test", core.DefaultLimits()), &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stopWakeTimersOnCleanup(t, e)
+	go e.Run(ctx)
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpRegister, Name: "k7-dev", Nonce: "n-k7dev-0123456789abcdef", SessionID: registered,
+		AgentKind: core.KindPersistent,
+		Agent:     &core.AgentInfo{Harness: "Claude Code", CWD: t.TempDir(), Surface: harnessenv.ClaudeDesktop},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Do(ctx, &core.Op{Kind: core.OpSweep, DeadAgents: []string{"k7-dev"}}); err != nil {
+		t.Fatal(err)
+	}
+	sender, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "asker", Nonce: "n-asker-0123456789abcdef"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: sender["token"].(string)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpSendMessage, Token: sender["token"].(string), To: "k7-dev",
+		MsgType: core.MsgQuestion, Body: "are you there?", OpID: "q1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case argv := <-opened:
+		if len(argv) != 2 || argv[1] != "claude://code/continue?session="+local {
+			t.Errorf("opened %q, want the app session that holds the registered id in its history", argv)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("mail for a resumed Claude app session did not reopen it; the agent stays asleep")
+	}
+	res, err := e.query(ctx, func() core.Result { return core.Result{"n": len(e.state.Contacts)} })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := res["n"].(int); n != 0 {
+		t.Errorf("%d contact alert(s) went to the person for an agent Dibs reopened", n)
+	}
+}

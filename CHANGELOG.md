@@ -5,6 +5,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Mail for a Claude app agent whose session has closed reopens that session
+  even after the app has resumed it. The app gives a session a new Claude Code
+  id on every resume and keeps the old ones in its record; Dibs now matches an
+  agent's known ids against that whole history instead of the current id only,
+  so it no longer reports a reachable agent to the person as unreachable. A
+  reopen that cannot find the session now says why in the log.
 - Keep agent mail with its agent: remove hook human notices and recover backlog
   with bounded passive pointers at natural prompts/session starts. Inbox/check-in
   return compact pages with owed work first, per-item receipts and continuation
