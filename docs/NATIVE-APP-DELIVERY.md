@@ -93,6 +93,14 @@ The source anchors in the measured archive are byte offsets, not line numbers:
 273908/274900 (following/snapshot), and 759820/1080260 (start/steer wrappers);
 `main-B6ZOwXa3.js` around 697808/720824 (snapshot serialization).
 
+Errors the app's router writes itself (it could not route the request)
+carry no `method` and no `handledByClientId`, read from 26.1007.30912's
+router: `no-client-found` (on owner discovery, the thread is not loaded; on a
+targeted input, no client received it), `request-version-mismatch` (refused),
+and `request-timeout`, `client-disconnected`, `server-closed` (outcome
+unknown). A client's own reply must still match the request's method and
+owner.
+
 ## Mail and remote boundaries
 
 The sender is included only when it matches `^[a-z0-9][a-z0-9-]{0,62}$`;

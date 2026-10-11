@@ -5,6 +5,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- An agent whose ChatGPT thread was not loaded had its mail queued and its
+  thread opened in the person's window even when the app was fine: the app's
+  IPC router writes its own error replies ("no-client-found", timeouts)
+  without a method, and Dibs read that as a changed protocol. Router errors
+  are now classified by their code: an unloaded thread is reported as such, a
+  router timeout after input stays unknown and is never retried, and the
+  post-restart load of agent threads, which never started because of the same
+  misreading, now runs.
+
 - Restarting the ChatGPT app no longer moves its window once per agent. Mail
   that arrives while the app is coming back (its socket refusing, its process
   up) is held rather than queued and opened. When the new app accepts
