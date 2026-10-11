@@ -4,11 +4,13 @@
 package engine
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"strings"
 	"testing"
 
+	"github.com/agenxy/dibs/internal/codexipc"
 	"github.com/agenxy/dibs/internal/harnessenv"
 )
 
@@ -29,6 +31,10 @@ func TestMain(m *testing.M) {
 	}
 	harnessenv.RealShower = guard
 	shower = &guard
+	// No app: its IPC socket is absent, and the post-restart load does not
+	// wait for one. Tests that exercise the load replace both.
+	appThreadOwned = func(context.Context, string) (bool, error) { return false, codexipc.ErrNoSocket }
+	appReturnReady = 0
 	code := m.Run()
 	_ = os.RemoveAll(dir)
 	os.Exit(code)

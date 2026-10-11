@@ -5,6 +5,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Restarting the ChatGPT app no longer moves its window once per agent. Mail
+  that arrives while the app is coming back (its socket refusing, its process
+  up) is held rather than queued and opened. When the new app accepts
+  connections, Dibs loads every local agent thread in one pass and returns the
+  window to the app's launch view, then delivers restart notices and held mail
+  natively. A pass that finds every thread loaded opens nothing. This runs
+  whatever `resume_after_app_restart` says; that setting still governs only the
+  restart notices. A refused socket with the app's process gone still takes
+  the cold route, which launches the app.
+
 - Mail for a Claude app agent whose session has closed reopens that session
   even after the app has resumed it. The app gives a session a new Claude Code
   id on every resume and keeps the old ones in its record; Dibs now matches an

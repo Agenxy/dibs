@@ -64,21 +64,29 @@ func (c *client) next() (frame, error) {
 	return f, err
 }
 
-func (c *client) deliver(thread string, notice func() (string, error)) (Receipt, error) {
+// owner is the client holding thread, from the router's own discovery.
+func (c *client) owner(thread string) (string, error) {
 	r, err := c.call("thread-owner-discovery", 1, "", map[string]string{"hostId": "local", "conversationId": thread})
 	if err != nil {
-		return Receipt{}, err
+		return "", err
 	}
 	var capabilities struct {
 		SupportsUntrustedAppInput *bool `json:"supportsUntrustedAppInput"`
 	}
 	if r.HandledByClientID == "" || json.Unmarshal(r.Result, &capabilities) != nil ||
 		capabilities.SupportsUntrustedAppInput == nil {
-		return Receipt{}, errors.New("native owner response changed")
+		return "", errors.New("native owner response changed")
 	}
-	owner := r.HandledByClientID
 	if !*capabilities.SupportsUntrustedAppInput {
-		return Receipt{}, errors.New("native owner does not accept untrusted app input")
+		return "", errors.New("native owner does not accept untrusted app input")
+	}
+	return r.HandledByClientID, nil
+}
+
+func (c *client) deliver(thread string, notice func() (string, error)) (Receipt, error) {
+	owner, err := c.owner(thread)
+	if err != nil {
+		return Receipt{}, err
 	}
 	text, err := notice()
 	if err != nil {
@@ -98,7 +106,7 @@ func (c *client) deliver(thread string, notice func() (string, error)) (Receipt,
 	// The app owns start-or-steer. Never fetch the thread's growing history
 	// merely to predict a decision the harness already makes atomically.
 	// Exactly one submission; no retry follows a possibly submitted input.
-	r, err = c.call("thread-follower-start-turn", 2, owner, params)
+	r, err := c.call("thread-follower-start-turn", 2, owner, params)
 	if err != nil {
 		return Receipt{}, err
 	}

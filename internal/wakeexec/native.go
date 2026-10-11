@@ -19,6 +19,11 @@ type NativeOutcome struct {
 	OK, Settled, NoRetry bool
 	Disposition          string
 	Detail               string
+	// AppNotListening marks a native_failed outcome whose socket exists and
+	// refused the connection: an app starting, stopping or restarting. A
+	// caller that can see the app's process decides which; one that cannot
+	// (the host bridge) takes the cold route as for any native_failed.
+	AppNotListening bool
 }
 
 // NativeEligible restricts replacement to the agent's own derived app and
@@ -61,6 +66,14 @@ func TryNative(surface string, f Fields, argv []string, fresh func() (string, er
 		return NativeOutcome{Disposition: "unloaded"}, false
 	}
 	if err != nil {
+		if errors.Is(err, codexipc.ErrAppNotListening) {
+			// Not a fault: an app starting, stopping or restarting. The caller
+			// decides between waiting for it and the cold route, and logs which.
+			return NativeOutcome{
+				Disposition: "native_failed", Detail: "the app is not accepting connections; native input not sent",
+				AppNotListening: true,
+			}, false
+		}
 		if codexipc.BeforeInput(err) {
 			slog.Warn("native app wake failed before input; using cold queue route", "agent", f.Agent,
 				"err", err, "hint", "inspect the native app connection or protocol; cold delivery may open the chat")
