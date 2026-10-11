@@ -67,9 +67,12 @@ func TestASecondWakeIsNotQueuedBehindOneNotYetDelivered(t *testing.T) {
 		Argv: []string{codex, "queue", "{thread}"}, Cooldown: time.Millisecond,
 	}})
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	stopWakeTimersOnCleanup(t, e)
 	go e.Run(ctx)
+	// Its last wake may still be in showInApp when the test returns; the next
+	// test replacing `shower` then raced it under -race (PR #428's CI,
+	// 2026-10-11). Wait for the wake while the loop can still record its exit.
+	t.Cleanup(func() { waitWakeDone(t, e, "worker"); cancel() })
 	worker, err := e.Do(ctx, &core.Op{
 		Kind: core.OpRegister, Name: "worker", Nonce: "n-worker-0123456789abcdef",
 		AgentKind: core.KindPersistent, SessionID: contThread,
