@@ -218,6 +218,7 @@ type Engine struct {
 	// from `wake` above, which is only the policy for extending a turn.
 	wakers wakers
 	peers  peerCache
+	lin    lineageSnapshot // the Claude app's session id histories, refreshed off the writer
 
 	// matchStatus is why matching did or did not do anything, so a declaration
 	// never comes back silently ambiguous. See matchstatus.go.

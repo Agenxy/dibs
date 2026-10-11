@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/paths"
 	"github.com/agenxy/dibs/internal/peerwake"
 )
@@ -48,6 +49,12 @@ const peerCacheTTL = 5 * time.Second
 // the engine tests need is a session that exists on disk without a process
 // behind it, which no real pid can provide.
 var peerAlive = peerwake.Alive
+
+type lineageSnapshot struct {
+	mu      sync.Mutex
+	m       map[string][]string
+	loading bool
+}
 
 type peerCache struct {
 	mu   sync.Mutex
@@ -88,6 +95,11 @@ func (e *Engine) peerSessions() map[string]peerwake.Session {
 		// nothing is an answer.
 		return e.storePeers(map[string]peerwake.Session{})
 	}
+	return e.storePeers(discoverPeers(home, e.lineages()))
+}
+
+// storePeers swaps a freshly discovered set in, holding the lock only for that.
+func discoverPeers(home string, lineages map[string][]string) map[string]peerwake.Session {
 	found, err := peerwake.Discover(home, peerAlive)
 	if err != nil {
 		slog.Debug("peer wake: could not read the harness session directory", "err", err)
@@ -96,10 +108,74 @@ func (e *Engine) peerSessions() map[string]peerwake.Session {
 	for _, s := range found {
 		next[s.SessionID] = s
 	}
-	return e.storePeers(next)
+	indexByLineage(next, found, lineages)
+	return next
 }
 
-// storePeers swaps a freshly discovered set in, holding the lock only for that.
+// refreshPeersNow rebuilds the cache with the app's lineage read now, for a
+// caller off the writer that has just learned the app runs a session under
+// an id the cache may not have linked yet.
+func (e *Engine) refreshPeersNow() map[string]peerwake.Session {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return e.storePeers(map[string]peerwake.Session{})
+	}
+	lineages := claudeLineages()
+	e.lin.mu.Lock()
+	e.lin.m = lineages
+	e.lin.mu.Unlock()
+	return e.storePeers(discoverPeers(home, lineages))
+}
+
+// lineages returns the last lineage read and starts the next one in the
+// background. The first read parses every app record (about 0.2 s on the
+// machine measured, far more under -race) and the cache is primed before the
+// writer serves, so it must never wait on one.
+func (e *Engine) lineages() map[string][]string {
+	e.lin.mu.Lock()
+	defer e.lin.mu.Unlock()
+	if !e.lin.loading {
+		e.lin.loading = true
+		go func() {
+			next := claudeLineages()
+			e.lin.mu.Lock()
+			e.lin.m, e.lin.loading = next, false
+			e.lin.mu.Unlock()
+		}()
+	}
+	return e.lin.m
+}
+
+// claudeLineages is the Claude app's own record of each session's earlier
+// ids. Tests replace it; it reads only the app's files.
+var claudeLineages = harnessenv.ClaudeLineages
+
+// indexByLineage also files each live session under the earlier ids its app
+// session has run as. The app gives a session a new Claude Code id on every
+// resume, and Dibs knows an agent by the id it last saw: agenxy-supply on
+// 2026-10-11 was bound to 7d767ad4 while its session ran as 007f1c48 and then
+// da98da97, so every wake found no socket under the bound id, reopened an
+// app session that was already open, and woke nothing for eight hours.
+//
+// A live session's own id always wins, and an earlier id two live sessions
+// both claim is filed under neither: a guess between them could wake the
+// wrong one. The working-directory check in wakeOverSocket still applies.
+func indexByLineage(next map[string]peerwake.Session, found []peerwake.Session, lineages map[string][]string) {
+	claims := map[string][]peerwake.Session{}
+	for _, s := range found {
+		for _, prior := range lineages[s.SessionID] {
+			if _, direct := next[prior]; !direct {
+				claims[prior] = append(claims[prior], s)
+			}
+		}
+	}
+	for prior, sessions := range claims {
+		if len(sessions) == 1 {
+			next[prior] = sessions[0]
+		}
+	}
+}
+
 func (e *Engine) storePeers(next map[string]peerwake.Session) map[string]peerwake.Session {
 	e.peers.mu.Lock()
 	defer e.peers.mu.Unlock()

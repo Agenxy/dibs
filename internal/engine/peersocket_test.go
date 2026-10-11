@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/peerwake"
 	"github.com/agenxy/dibs/internal/wakeexec"
 )
@@ -795,5 +796,69 @@ func TestAListeningSessionIsPreferredOverASpawn(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "spawned")); err == nil {
 		t.Error("the command ran as well, so the agent got a second body in a " +
 			"thread its application already holds")
+	}
+}
+
+// agenxy-supply, 2026-10-11: bound to the Claude Code id it registered under,
+// while the app had resumed its session under a new one. Every wake found no
+// socket under the bound id, reopened an app session that was already open,
+// and woke nothing for eight hours. The app's own record links the two, so
+// the live session is reached through it.
+func TestASocketWakeReachesAClaudeSessionTheAppResumedUnderANewID(t *testing.T) {
+	sock, liveID := listeningSession(t)
+	const bound = "9ba6f463-1ae8-4a40-884d-c4b5fed55179"
+	prev := claudeLineages
+	claudeLineages = func() map[string][]string { return map[string][]string{liveID: {bound}} }
+	t.Cleanup(func() { claudeLineages = prev })
+	st := core.NewState("t", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	now := t0Engine()
+	for _, n := range []string{"sender", "supply"} {
+		if _, _, err := st.Apply(&core.Op{Kind: core.OpRegister, Name: n, NewToken: "tok-" + n}, now); err != nil {
+			t.Fatal("setup:", err)
+		}
+	}
+	st.Agents["supply"].SessionID = bound
+	st.Agents["supply"].Agent = &core.AgentInfo{Harness: "Claude Code", Surface: harnessenv.ClaudeDesktop}
+	if _, _, err := st.Apply(&core.Op{Kind: core.OpAckBoard, Token: "tok-supply"}, now); err != nil {
+		t.Fatal("setup:", err)
+	}
+	if _, _, err := st.Apply(&core.Op{
+		Kind: core.OpSendMessage, Token: "tok-sender", To: "supply", MsgType: core.MsgNotify,
+		Body: "disk capacity request",
+	}, now); err != nil {
+		t.Fatal("setup:", err)
+	}
+	e.refreshPeersNow() // what the reopen path does on learning the app runs the session
+	plan, ok := e.wakeFor(st.Agents["supply"], core.MsgNotify, core.Event{
+		Type: "message.sent", To: "supply", Agent: "sender",
+		Data: map[string]any{"msg_type": core.MsgNotify, "from": "sender"},
+	})
+	if !ok || len(plan.argv) != 0 {
+		t.Fatalf("no socket route to the session the app is running for this agent (ok=%v argv=%q)", ok, plan.argv)
+	}
+	got := make(chan string, 1)
+	go func() { got <- readAll(t, sock) }()
+	if !e.runWake(plan, "supply") {
+		t.Fatal("the wake reported nothing delivered")
+	}
+	if wire := <-got; !strings.Contains(wire, "sender") {
+		t.Fatalf("the live session did not receive the notice: %q", wire)
+	}
+}
+
+// Two live sessions both listing the same earlier id is a fork: neither is
+// chosen, because a guess could wake the wrong one.
+func TestAnEarlierIDTwoLiveSessionsClaimReachesNeither(t *testing.T) {
+	a := peerwake.Session{SessionID: "11111111-2222-4333-8444-555566667777"}
+	b := peerwake.Session{SessionID: "22222222-2222-4333-8444-555566667777"}
+	next := map[string]peerwake.Session{a.SessionID: a, b.SessionID: b}
+	const old = "99999999-2222-4333-8444-555566667777"
+	indexByLineage(next, []peerwake.Session{a, b}, map[string][]string{a.SessionID: {old}, b.SessionID: {old, a.SessionID}})
+	if _, ok := next[old]; ok {
+		t.Error("an id two live sessions claim was filed under one of them")
+	}
+	if next[a.SessionID].SessionID != a.SessionID {
+		t.Error("a live session's own id was overridden by another's history")
 	}
 }

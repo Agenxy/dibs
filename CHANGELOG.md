@@ -5,6 +5,19 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- A Claude app agent whose session the app had resumed under a new Claude
+  Code id was unreachable until it next called Dibs: no socket was found under
+  the id it registered with, so every wake "reopened" a session that was already
+  open and delivered nothing (agenxy-supply, eight hours on 2026-10-11, two
+  high-priority notices included). Live sessions are now also found through
+  the app's own record of each session's earlier ids. An id two live sessions
+  both claim reaches neither. After a real reopen, delivery runs again once
+  the new process is up, because the reopened session's hooks cannot start a
+  turn on their own.
+- `dibs watch` no longer fires on mail the watching agent sent.
+  `await_events` returns the caller's events as well as events addressed to
+  it, and now names the caller (`agent`) so a watcher can tell the two apart.
+
 - An agent whose ChatGPT thread was not loaded had its mail queued and its
   thread opened in the person's window even when the app was fine: the app's
   IPC router writes its own error replies ("no-client-found", timeouts)
