@@ -83,3 +83,17 @@ func TestNativeRechecksAfterAppSnapshot(t *testing.T) {
 		t.Fatalf("stale input: %+v %v %d", r, err, len(s.Inputs()))
 	}
 }
+
+// The router answers for a forwarded input it timed out on, with no method
+// and no handling client. The input may have reached the owner, so the
+// outcome is unknown: never a refusal, which would permit a second input.
+func TestARouterTimeoutAfterInputIsUnknownNotRefused(t *testing.T) {
+	s := testcodexipc.Start(t, "router-timeout", nil)
+	_, err := Deliver(context.Background(), testcodexipc.Thread, "Dibs: new notify.")
+	if err == nil || errors.Is(err, ErrRefused) || errors.Is(err, ErrNoOwner) || BeforeInput(err) {
+		t.Fatalf("router timeout after input read as %v; want unknown, submitted", err)
+	}
+	if len(s.Inputs()) != 1 {
+		t.Fatalf("inputs %d, want exactly one", len(s.Inputs()))
+	}
+}

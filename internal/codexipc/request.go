@@ -27,23 +27,54 @@ func (c *client) call(method string, version int, owner string, params any) (fra
 		if r.Type != "response" || r.RequestID != id {
 			continue
 		}
-		if r.Method != method || (owner != "" && r.HandledByClientID != owner) {
-			return frame{}, errors.New("native reply method or owner changed")
-		}
-		if r.ResultType == "error" {
-			if method == "thread-owner-discovery" && r.Error == "no-client-found" {
-				return frame{}, ErrNoOwner
-			}
-			// Never include app error bodies (which may contain private input)
-			// in the daemon's public logs or send note.
-			return frame{}, fmt.Errorf("native %s: %w", method, ErrRefused)
-		}
-		if r.ResultType != "success" || len(r.Result) == 0 || string(r.Result) == "null" {
-			return frame{}, errors.New("native reply result shape changed")
-		}
-		return r, nil
+		return matchedReply(method, owner, r)
 	}
 	return frame{}, errors.New("native reply traffic exceeded bound")
+}
+
+// matchedReply checks the reply to the request this client sent.
+func matchedReply(method, owner string, r frame) (frame, error) {
+	if r.ResultType == "error" && r.Method == "" && r.HandledByClientID == "" {
+		return frame{}, routerError(method, r.Error)
+	}
+	if r.Method != method || (owner != "" && r.HandledByClientID != owner) {
+		return frame{}, errors.New("native reply method or owner changed")
+	}
+	if r.ResultType == "error" {
+		if method == "thread-owner-discovery" && r.Error == "no-client-found" {
+			return frame{}, ErrNoOwner
+		}
+		// Never include app error bodies (which may contain private input)
+		// in the daemon's public logs or send note.
+		return frame{}, fmt.Errorf("native %s: %w", method, ErrRefused)
+	}
+	if r.ResultType != "success" || len(r.Result) == 0 || string(r.Result) == "null" {
+		return frame{}, errors.New("native reply result shape changed")
+	}
+	return r, nil
+}
+
+// routerError classifies an error the app's IPC router wrote itself. Those
+// replies carry no method and no handling client: the router answers for a
+// request it could not route, so they cannot match the method check that a
+// client's own reply must pass. Read from ChatGPT 26.1007.30912's router.
+// Reading them as a changed protocol sent every wake to an unloaded thread
+// down the cold route, which opened it in the person's window (agenxy-dev-2,
+// 2026-10-11 03:43), and stopped the post-restart load from ever starting.
+func routerError(method, code string) error {
+	switch code {
+	case "no-client-found":
+		if method == "thread-owner-discovery" {
+			return ErrNoOwner
+		}
+		// The router found no client to forward to: no client received it.
+		return fmt.Errorf("native %s: %w", method, ErrRefused)
+	case "request-version-mismatch":
+		return fmt.Errorf("native %s: %w", method, ErrRefused)
+	}
+	// request-timeout, client-disconnected, server-closed: the request may
+	// have reached a client. Unknown, never a refusal that permits a retry.
+	return fmt.Errorf("native %s: the app's router reported %q; outcome unknown", method, code)
 }
 
 func (c *client) next() (frame, error) {

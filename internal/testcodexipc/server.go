@@ -25,7 +25,7 @@ const Thread = "7c3f0a11-2b44-4d90-9e57-1f2a3b4c5d6e"
 
 // Server records requests from the real production protocol client.
 type Server struct {
-	Mode           string // idle, active, no-owner, changed, disconnect, refused, wrong-owner
+	Mode           string // idle, active, no-owner, changed, disconnect, refused, wrong-owner, router-timeout
 	BeforeSnapshot func()
 	// Owns, when set, answers owner discovery per thread: false is the
 	// router's no-client-found, as for a thread the app has not loaded.
@@ -196,9 +196,12 @@ func (s *Server) answer(f map[string]any) map[string]any {
 	case "initialize":
 		r["result"] = map[string]string{"clientId": "dibs-client"}
 	case "thread-owner-discovery":
+		if s.Mode == "no-owner" {
+			return routerError(f, "no-client-found")
+		}
 		s.ownerResult(r)
 		if thread, _ := p["conversationId"].(string); s.Owns != nil && !s.Owns(thread) {
-			r["resultType"], r["error"], r["result"] = "error", "no-client-found", map[string]any{}
+			return routerError(f, "no-client-found")
 		}
 	case "thread-stream-following-changed":
 		s.mu.Lock()
@@ -209,40 +212,52 @@ func (s *Server) answer(f map[string]any) map[string]any {
 		}
 		return s.snapshot(p["conversationId"])
 	case "thread-follower-start-turn", "thread-follower-steer-turn":
-		s.mu.Lock()
-		s.inputs = append(s.inputs, f)
-		s.mu.Unlock()
-		if s.Mode == "refused" {
-			r["resultType"], r["error"] = "error", "refused"
-		}
-		if s.Mode == "wrong-owner" {
-			r["handledByClientId"] = "somebody-else"
-		}
-		if f["method"] == "thread-follower-start-turn" {
-			turn := "new-turn"
-			if s.Mode == "active" || s.Mode == "large-active" {
-				turn = "prior-turn"
-			}
-			r["result"] = map[string]any{"result": map[string]any{
-				"turn": map[string]string{"id": turn, "status": "inProgress"},
-			}}
-		} else {
-			r["result"] = map[string]any{"result": map[string]string{"turnId": "prior-turn"}}
-		}
+		return s.inputReply(f, r)
 	default:
 		return nil
 	}
 	return r
 }
 
+// inputReply records a submitted input and answers it as the owner would.
+func (s *Server) inputReply(f, r map[string]any) map[string]any {
+	s.mu.Lock()
+	s.inputs = append(s.inputs, f)
+	s.mu.Unlock()
+	if s.Mode == "router-timeout" {
+		return routerError(f, "request-timeout")
+	}
+	if s.Mode == "refused" {
+		r["resultType"], r["error"] = "error", "refused"
+	}
+	if s.Mode == "wrong-owner" {
+		r["handledByClientId"] = "somebody-else"
+	}
+	if f["method"] == "thread-follower-start-turn" {
+		turn := "new-turn"
+		if s.Mode == "active" || s.Mode == "large-active" {
+			turn = "prior-turn"
+		}
+		r["result"] = map[string]any{"result": map[string]any{
+			"turn": map[string]string{"id": turn, "status": "inProgress"},
+		}}
+	} else {
+		r["result"] = map[string]any{"result": map[string]string{"turnId": "prior-turn"}}
+	}
+	return r
+}
+
+// routerError is the shape the app's router writes for a request it could
+// not route: no method and no handling client (ChatGPT 26.1007.30912).
+func routerError(f map[string]any, code string) map[string]any {
+	return map[string]any{"type": "response", "requestId": f["requestId"], "resultType": "error", "error": code}
+}
+
 func (s *Server) ownerResult(r map[string]any) {
 	if s.BeforeSnapshot != nil {
 		s.BeforeSnapshot() // historical fixture seam: before the input freshness fence
 	}
-	if s.Mode == "no-owner" {
-		r["resultType"], r["error"] = "error", "no-client-found"
-		return
-	}
+
 	r["result"] = map[string]bool{"supportsUntrustedAppInput": s.Mode != "unsupported"}
 	if s.Mode == "changed" {
 		r["result"] = map[string]string{"changed": "owner metadata"}
