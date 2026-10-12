@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sync"
+	"time"
 
 	"github.com/agenxy/dibs/internal/liveness"
 )
@@ -70,6 +72,13 @@ func IsClaudeAppSession(s string) bool { return localSessionID.MatchString(s) }
 // session. Otherwise a record running a known id now beats one that only
 // lists it as prior, and among those the most recently active wins.
 func ClaudeAppSession(hint string, known ...string) string {
+	local, _ := ClaudeAppSessionNow(hint, known...)
+	return local
+}
+
+// ClaudeAppSessionNow is ClaudeAppSession plus the Claude Code id that app
+// session runs as NOW, which is the id its live process and socket carry.
+func ClaudeAppSessionNow(hint string, known ...string) (local, current string) {
 	dir := claudeSupportDir()
 	want := map[string]bool{}
 	for _, k := range known {
@@ -78,10 +87,10 @@ func ClaudeAppSession(hint string, known ...string) string {
 		}
 	}
 	if dir == "" || len(want) == 0 {
-		return ""
+		return "", ""
 	}
 	files, _ := filepath.Glob(filepath.Join(dir, "*", "*", "local_*.json"))
-	best, bestRank, bestActivity := "", 0, int64(-1)
+	best, bestCLI, bestRank, bestActivity := "", "", 0, int64(-1)
 	for _, f := range files {
 		rec, ok := readClaudeRecord(f)
 		if !ok {
@@ -92,13 +101,13 @@ func ClaudeAppSession(hint string, known ...string) string {
 			continue
 		}
 		if hint != "" && rec.SessionID == hint {
-			return rec.SessionID // the bridge's claim, confirmed by the app's own lineage
+			return rec.SessionID, rec.CLISessionID // the bridge's claim, confirmed by the app's own lineage
 		}
 		if rank > bestRank || (rank == bestRank && rec.LastActivityAt > bestActivity) {
-			best, bestRank, bestActivity = rec.SessionID, rank, rec.LastActivityAt
+			best, bestCLI, bestRank, bestActivity = rec.SessionID, rec.CLISessionID, rank, rec.LastActivityAt
 		}
 	}
-	return best
+	return best, bestCLI
 }
 
 // claudeRecord is the part of the app's session record the mapping reads.
@@ -134,6 +143,74 @@ func (r claudeRecord) lineageRank(want map[string]bool) int {
 	}
 	return 0
 }
+
+// ClaudeLineages maps each unarchived app session's CURRENT Claude Code
+// session id to the earlier ids the app has recorded for it. A resume gives
+// a session a new id, and Dibs may know the agent only by an earlier one.
+//
+// The records also hold the app's own session data (30 MB across 66 files on
+// the machine this was measured on, 184 ms to parse), and the peer cache asks
+// every few seconds, so a record is parsed again only when its size or
+// modification time changed.
+func ClaudeLineages() map[string][]string {
+	dir := claudeSupportDir()
+	if dir == "" {
+		return nil
+	}
+	files, _ := filepath.Glob(filepath.Join(dir, "*", "*", "local_*.json"))
+	lineageCache.Lock()
+	defer lineageCache.Unlock()
+	seen := make(map[string]bool, len(files))
+	out := map[string][]string{}
+	for _, f := range files {
+		info, err := os.Stat(f)
+		if err != nil {
+			continue
+		}
+		seen[f] = true
+		c, ok := lineageCache.files[f]
+		if !ok || c.size != info.Size() || !c.mod.Equal(info.ModTime()) {
+			c = readLineage(f, info)
+			lineageCache.files[f] = c
+		}
+		if c.current != "" && len(c.prior) > 0 {
+			out[c.current] = append(out[c.current], c.prior...)
+		}
+	}
+	for f := range lineageCache.files {
+		if !seen[f] {
+			delete(lineageCache.files, f)
+		}
+	}
+	return out
+}
+
+func readLineage(f string, info os.FileInfo) cachedLineage {
+	c := cachedLineage{size: info.Size(), mod: info.ModTime()}
+	rec, ok := readClaudeRecord(f)
+	if !ok || !isThreadID(rec.CLISessionID) {
+		return c
+	}
+	c.current = rec.CLISessionID
+	for _, p := range rec.PriorCLISessionIDs {
+		if isThreadID(p) {
+			c.prior = append(c.prior, p)
+		}
+	}
+	return c
+}
+
+type cachedLineage struct {
+	size    int64
+	mod     time.Time
+	current string
+	prior   []string
+}
+
+var lineageCache = struct {
+	sync.Mutex
+	files map[string]cachedLineage
+}{files: map[string]cachedLineage{}}
 
 // ClaudeOpenArgv opens a session in the Claude app by its app id.
 func ClaudeOpenArgv(local string) []string {

@@ -131,8 +131,13 @@ func watch(args []string) error {
 			if ev["type"] != "message.sent" {
 				continue
 			}
-			// The server already filters await_events to events addressed to
-			// this agent, so every message.sent here is for us.
+			// The server returns events addressed to this agent AND events this
+			// agent did, so a watcher saw its own sends and fired on every one
+			// (agenxy-supply, 2026-10-11, serial 89473). Mail to it, or a
+			// broadcast it did not send, fires; nothing else does.
+			if !mailForWatcher(ev, res) {
+				continue
+			}
 			data, _ := ev["data"].(map[string]any)
 			mt, _ := data["msg_type"].(string)
 			if len(typeFilter) > 0 && !typeFilter[mt] {
@@ -147,6 +152,19 @@ func watch(args []string) error {
 			cursor = uint64(s)
 		}
 	}
+}
+
+// mailForWatcher reports whether a message.sent event is mail the watcher
+// received. A daemon too old to name the caller in await_events is judged by
+// the sender alone being unknown: such an event fires as it always did.
+func mailForWatcher(ev, res map[string]any) bool {
+	self, _ := res["agent"].(string)
+	if self == "" {
+		return true
+	}
+	to, _ := ev["to"].(string)
+	from, _ := ev["agent"].(string)
+	return to == self || (to == "" && from != self)
 }
 
 // runExec runs the command with the event on stdin and DIBS_* env vars set.

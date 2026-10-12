@@ -398,6 +398,9 @@ func (e *Engine) AwaitEvents(
 		timeout = 60 * time.Second
 	}
 	ch := make(chan []core.Event, 1)
+	// self names the caller in the result, so a watcher can tell mail TO it
+	// from mail it sent: both are visible to it (visibleTo). Additive.
+	var self string
 	res, err := e.query(ctx, func() core.Result {
 		now := time.Now()
 		agent := ""
@@ -407,13 +410,14 @@ func (e *Engine) AwaitEvents(
 				return errRes
 			}
 			agent = l.ID
+			self = l.ID
 		}
 		serial = clampCursor(serial, e.ringFloor())
 		if floor := e.ringFloor(); serial+1 < floor {
 			return core.Result{"error": errCursorTooOld(floor)}
 		}
 		if evs := e.eventsSince(serial, agent, all); len(evs) > 0 {
-			return core.Result{"events": evs, "serial": e.state.Serial}
+			return core.Result{"events": evs, "serial": e.state.Serial, "agent": agent}
 		}
 		e.watch = append(e.watch, waiter{
 			since: serial, agent: agent, all: all, ch: ch, expires: now.Add(timeout),
@@ -428,7 +432,7 @@ func (e *Engine) AwaitEvents(
 	}
 	select {
 	case evs := <-ch:
-		return core.Result{"events": evs, "serial": maxSerial(evs, serial)}, nil
+		return core.Result{"events": evs, "serial": maxSerial(evs, serial), "agent": self}, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
