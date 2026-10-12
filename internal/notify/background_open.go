@@ -32,6 +32,15 @@ type backgroundOpenReceipt struct {
 	FrontmostPID     int    `json:"frontmost_pid"`
 }
 
+// helperBudget bounds one background open: launching the helper twice
+// (status, then open and restore) or /usr/bin/open once. It was 3 s, and on
+// 2026-10-12, with the machine at load 160 to 400, the helper was killed
+// before it finished ("signal: killed") 22 times since 2026-10-03, so
+// gpt-agenxy-labs's thread was never loaded and its mail waited. It runs off
+// the writer, under the desktop open lock, so a longer bound delays only the
+// next background open.
+const helperBudget = 20 * time.Second
+
 // backgroundOpenFixture replaces the process contact, not the public wrapper
 // or its capability and receipt decisions. It is never set by production.
 var (
@@ -64,8 +73,8 @@ func legacyBackgroundOpen(url, reason string) error {
 	}
 	backgroundFallbackNotice.Unlock()
 	// A capability timeout must not pass an already-cancelled context into the
-	// old opener. It gets its own previous two-second command deadline.
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	// old opener. It gets its own deadline, the same helperBudget.
+	ctx, cancel := context.WithTimeout(context.Background(), helperBudget)
 	defer cancel()
 	argv := []string{"/usr/bin/open", "-g", url}
 	if backgroundLegacyFixture != nil {
@@ -110,7 +119,7 @@ func OpenChatGPTBackground(url string) error {
 	if binary == "" {
 		return legacyBackgroundOpen(url, "matching native helper is unavailable")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), helperBudget)
 	defer cancel()
 	raw, err := backgroundOpenOutput(ctx, binary, []string{"--status"}, []string{backgroundOpenCapability + "=1"})
 	if err != nil {
