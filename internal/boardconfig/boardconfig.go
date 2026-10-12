@@ -57,6 +57,7 @@ type Config struct {
 	Wake     WakeConfig     `toml:"wake"`     // which news may extend an agent's turn
 	Hooks    HooksConfig    `toml:"hooks"`    // what a lifecycle-hook delivery carries
 	Identity IdentityConfig `toml:"identity"` // who an unidentified session is taken to be
+	Ledger   LedgerConfig   `toml:"ledger"`   // how much ledger history is kept
 	// Relocate is where an agent can be MOVED on purpose: see RelocateExec.
 	Relocate map[string]RelocateExec `toml:"relocate"`
 	// RetiredWakeCooldowns records obsolete keys for startup and doctor diagnostics.
@@ -603,11 +604,50 @@ func (c Config) Validate() error {
 	for _, check := range []func() error{
 		c.validateAddr, c.ValidateName, c.validateTLS, c.validateLimits, c.validateMatch,
 		c.validateSupervise, c.validateWake, c.validateRoles, c.validateIdentity,
-		c.validateRelocate, c.validateInvites,
+		c.validateRelocate, c.validateInvites, c.validateLedger,
 	} {
 		if err := check(); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// LedgerConfig is how much ledger history a start keeps.
+type LedgerConfig struct {
+	// History is a duration ("24h", the default) or "all". Lines older than
+	// it are folded into the snapshot at start and removed from the ledger;
+	// read_mail_history reaches back this far. The person chose 24 hours on
+	// 2026-10-12, after a full replay kept the board down for eleven minutes.
+	History string `toml:"history"`
+}
+
+// DefaultLedgerHistory is how much history is kept with no [ledger] history.
+const DefaultLedgerHistory = 24 * time.Hour
+
+// LedgerHistory is the window to keep; zero means keep everything.
+func (c Config) LedgerHistory() time.Duration {
+	h := strings.TrimSpace(c.Ledger.History)
+	if h == "" {
+		return DefaultLedgerHistory
+	}
+	if h == "all" {
+		return 0
+	}
+	d, _ := time.ParseDuration(h) // validated
+	return d
+}
+
+func (c Config) validateLedger() error {
+	h := strings.TrimSpace(c.Ledger.History)
+	if h == "" || h == "all" {
+		return nil
+	}
+	d, err := time.ParseDuration(h)
+	if err != nil || d < time.Hour {
+		return fmt.Errorf("[ledger] history = %q: give a duration of at least 1h (for example \"24h\" "+
+			"or \"168h\"), or \"all\" to keep every line. History older than it is folded into "+
+			"the snapshot and deleted at the next start", c.Ledger.History)
 	}
 	return nil
 }

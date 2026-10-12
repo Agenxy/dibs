@@ -50,6 +50,7 @@ type ledgerFile interface {
 // Ledger is a single-writer append log. Not safe for concurrent use: the
 // engine's single goroutine is the only writer, by design.
 type Ledger struct {
+	path     string
 	f        ledgerFile
 	headHash string
 	headSum  [32]byte
@@ -59,6 +60,13 @@ type Ledger struct {
 	lastMail mailhistory.Record
 	// readOnly means this handle may not repair what it reads. See OpenReadOnly.
 	readOnly bool
+	// anchor is the snapshot this ledger continues from, if any.
+	anchor   SnapshotHeader
+	anchored bool
+	// keep is how much ledger history Replay keeps; older lines are folded
+	// into the snapshot. Zero keeps everything (KeepHistory).
+	keep  time.Duration
+	clock func() time.Time
 
 	// Derived writer activity: background history yields; the writer never waits.
 	historyWriter historyWriterActivity
@@ -101,7 +109,7 @@ func Open(path, nodeID string, box *Box) (*Ledger, error) {
 		_ = f.Close()
 		return nil, err
 	}
-	return &Ledger{f: f, headHash: genesis, box: box, nodeID: nodeID, mail: mailhistory.New(key)}, nil
+	return &Ledger{path: path, f: f, headHash: genesis, box: box, nodeID: nodeID, mail: mailhistory.New(key)}, nil
 }
 
 // OpenReadOnly opens an EXISTING ledger for inspection and nothing else.
@@ -129,7 +137,9 @@ func OpenReadOnly(path, nodeID string, box *Box) (*Ledger, error) {
 		_ = f.Close()
 		return nil, err
 	}
-	return &Ledger{f: f, headHash: genesis, box: box, nodeID: nodeID, readOnly: true, mail: mailhistory.New(key)}, nil
+	return &Ledger{
+		path: path, f: f, headHash: genesis, box: box, nodeID: nodeID, readOnly: true, mail: mailhistory.New(key),
+	}, nil
 }
 
 // Replay folds every ledger line into st, truncating a torn tail if the last
@@ -146,11 +156,31 @@ func (l *Ledger) Replay(st *core.State) (int, error) {
 	if l.mail != nil {
 		l.mail.BeginReplay()
 	}
+	anchor, anchored, err := l.loadSnapshot(st)
+	if err != nil {
+		return 0, err
+	}
 	r := bufio.NewReaderSize(l.f, 1<<20)
-	var off, validOff int64
+	var off, validOff, prefixEnd int64
 	prev := genesis
 	var prevSum [32]byte
-	n := 0
+	if anchored {
+		prev, prevSum = anchor.Head, anchorSum(anchor.Head)
+	}
+	skipping := false // a full ledger beside a newer snapshot: an interrupted compaction
+	n, fileLines := 0, uint64(0)
+	var lastT time.Time
+	cutoff, compacting := l.compactionCutoff()
+	captured := false
+	capture := func(at int64) error {
+		h := SnapshotHeader{Serial: st.Serial, Head: prev, Node: st.NodeID, Created: l.now()}
+		if err := writeSnapshot(snapshotPath(l.path), h, st, l.box); err != nil {
+			return fmt.Errorf("snapshot at serial %d: %w", st.Serial, err)
+		}
+		anchor, anchored, captured = h, true, true
+		prefixEnd, fileLines = at, 0
+		return nil
+	}
 	for {
 		raw, err := r.ReadBytes('\n')
 		if len(raw) > 0 && err == nil {
@@ -159,8 +189,34 @@ func (l *Ledger) Replay(st *core.State) (int, error) {
 			if jsonErr := json.Unmarshal(line, &rec); jsonErr != nil {
 				return n, fmt.Errorf("ledger corrupt at offset %d (serial ~%d): %w", off, st.Serial+1, jsonErr)
 			}
+			if anchored && off == 0 && rec.Prev == genesis && anchor.Head != genesis {
+				skipping, prev = true, genesis
+			}
+			if skipping {
+				if rec.Prev != prev {
+					return n, fmt.Errorf("hash chain broken at serial %d before the snapshot", rec.S)
+				}
+				sum := sha256.Sum256(line)
+				prev, prevSum = hex.EncodeToString(sum[:]), sum
+				off += int64(len(raw))
+				if rec.S == anchor.Serial {
+					if prev != anchor.Head {
+						return n, fmt.Errorf("ledger line %d does not hash to the snapshot's anchor", rec.S)
+					}
+					skipping, prefixEnd, validOff = false, off, off
+				}
+				continue
+			}
 			if rec.Prev != prev {
 				return n, fmt.Errorf("hash chain broken at serial %d: prev %.12q != head %.12q", rec.S, rec.Prev, prev)
+			}
+			// The first line inside the kept window, with older lines before it:
+			// the state now is the board as of the line before, so it becomes
+			// the snapshot and everything older can go.
+			if compacting && !captured && off > prefixEnd && !rec.T.Before(cutoff) {
+				if err := capture(off); err != nil {
+					return n, err
+				}
 			}
 			// A line can be valid JSON and still carry no op: a truncation that
 			// lands on a brace, a hand-edit, a file from something else. Without
@@ -213,7 +269,9 @@ func (l *Ledger) Replay(st *core.State) (int, error) {
 			prevSum = sum
 			off += int64(len(raw))
 			validOff = off
+			lastT = rec.T
 			n++
+			fileLines++
 			continue
 		}
 		if errors.Is(err, io.EOF) {
@@ -242,15 +300,64 @@ func (l *Ledger) Replay(st *core.State) (int, error) {
 			return n, err
 		}
 	}
+	if skipping {
+		return n, fmt.Errorf("the ledger ends at serial %d, before its snapshot's serial %d", st.Serial, anchor.Serial)
+	}
+	if compacting && !captured && validOff > prefixEnd && lastT.Before(cutoff) {
+		if err := capture(validOff); err != nil { // every line is older than the window
+			return n, err
+		}
+	}
 	l.headHash = prev
 	l.headSum = prevSum
+	l.anchor, l.anchored = anchor, anchored
+	if prefixEnd > 0 && !l.readOnly {
+		// Finish the compaction that was interrupted after its snapshot was
+		// written: drop the prefix the snapshot already holds.
+		if err := l.dropPrefix(prefixEnd); err != nil {
+			return n, err
+		}
+		validOff -= prefixEnd
+	}
 	if _, err := l.f.Seek(0, io.SeekEnd); err != nil {
 		return n, err
 	}
 	if l.mail != nil {
-		l.configureHistory(st.NodeID, st.Limits, st.Serial, uint64(n), validOff)
+		if prefixEnd > 0 && l.readOnly {
+			l.mail.Invalidate() // the file still holds a prefix the history fold would misread
+		} else {
+			l.configureHistory(st.NodeID, st.Limits, st.Serial, fileLines, validOff)
+		}
 	}
 	return n, nil
+}
+
+// loadSnapshot replaces st with the snapshot beside the ledger, if there is
+// one, keeping the caller's node and limits: they are this daemon's config.
+func (l *Ledger) loadSnapshot(st *core.State) (SnapshotHeader, bool, error) {
+	if l.path == "" {
+		return SnapshotHeader{}, false, nil
+	}
+	h, snap, ok, err := readSnapshot(snapshotPath(l.path), l.box)
+	if err != nil || !ok {
+		return h, ok, err
+	}
+	if snap.NodeID != st.NodeID {
+		return h, false, fmt.Errorf("snapshot belongs to node %q, this ledger to %q", snap.NodeID, st.NodeID)
+	}
+	limits := st.Limits
+	*st = *snap
+	st.Limits = limits
+	return h, true, nil
+}
+
+func anchorSum(head string) [32]byte {
+	var sum [32]byte
+	b, err := hex.DecodeString(head)
+	if err == nil && len(b) == len(sum) {
+		copy(sum[:], b)
+	}
+	return sum
 }
 
 // Append writes one op as the record for serial s, fsyncing before return.
@@ -302,6 +409,12 @@ func Verify(path string) (int, string, error) {
 		return 0, "", err
 	}
 	defer func() { _ = f.Close() }()
+	// A compacted ledger starts at its snapshot's anchor, which the snapshot's
+	// plaintext header states: no key is needed for that either.
+	anchor, anchored, err := readSnapshotHeader(snapshotPath(path))
+	if err != nil {
+		return 0, "", err
+	}
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 1<<20), 1<<24)
 	prev := genesis
@@ -315,12 +428,18 @@ func Verify(path string) (int, string, error) {
 		if err := json.Unmarshal(line, &rec); err != nil {
 			return n, prev, fmt.Errorf("line %d: bad JSON: %w", n+1, err)
 		}
+		if n == 0 && anchored && rec.Prev == anchor.Head {
+			prev = anchor.Head
+		}
 		if rec.Prev != prev {
 			return n, prev, fmt.Errorf("chain broken at serial %d", rec.S)
 		}
 		sum := sha256.Sum256(line)
 		prev = hex.EncodeToString(sum[:])
 		n++
+	}
+	if n == 0 && anchored {
+		prev = anchor.Head // every line is folded into the snapshot
 	}
 	return n, prev, sc.Err()
 }

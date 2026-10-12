@@ -28,6 +28,10 @@ type historyReplay struct {
 	head    mailhistory.Record
 	records uint64
 	writer  *historyWriterActivity
+	// The fold starts where the ledger file does: from the snapshot, and
+	// chained to its anchor, when there is one.
+	start  func() (*core.State, error)
+	anchor string
 }
 
 func (l *Ledger) configureHistory(node string, limits core.Limits, serial, records uint64, end int64) {
@@ -35,6 +39,21 @@ func (l *Ledger) configureHistory(node string, limits core.Limits, serial, recor
 		file: l.f, box: l.box, node: node, limits: limits, records: records,
 		head:   mailhistory.Record{Serial: serial, End: end, Hash: l.headSum},
 		writer: &l.historyWriter,
+	}
+	if l.anchored {
+		path, box := snapshotPath(l.path), l.box
+		source.anchor = l.anchor.Head
+		source.start = func() (*core.State, error) {
+			_, st, ok, err := readSnapshot(path, box)
+			if err == nil && !ok {
+				err = errors.New("the snapshot this ledger continues from is gone")
+			}
+			if err != nil {
+				return nil, err
+			}
+			st.Limits = limits
+			return st, nil
+		}
 	}
 	l.mail.ConfigureBootstrap(source.head, records, source.run)
 }
@@ -56,10 +75,16 @@ func (s *historyReplay) fold(ctx context.Context, index *mailhistory.Index) (*co
 	input := &historyReader{source: s.file, writer: s.writer, ctx: ctx}
 	reader := bufio.NewReaderSize(io.NewSectionReader(input, 0, s.head.End), historyReadBytes)
 	shadow := core.NewState(s.node, s.limits)
+	if s.start != nil {
+		var err error
+		if shadow, err = s.start(); err != nil {
+			return nil, mailhistory.Record{}, err
+		}
+	}
 	projector := index.ReplayProjector()
 	var scratch mailhistory.Snapshot
 	var offset int64
-	var previous [32]byte
+	previous := anchorSum(s.anchor)
 	var last mailhistory.Record
 	for n := uint64(0); n < s.records; n++ {
 		if err := ctx.Err(); err != nil {
@@ -74,7 +99,7 @@ func (s *historyReplay) fold(ctx context.Context, index *mailhistory.Index) (*co
 		if err != nil {
 			return nil, mailhistory.Record{}, fmt.Errorf("history bootstrap at record %d: %w", n, err)
 		}
-		record, err := s.foldRecord(raw, previous, shadow, &scratch, projector, ctx, n, offset)
+		record, err := s.foldRecord(raw, previous, s.anchor, shadow, &scratch, projector, ctx, n, offset)
 		if err != nil {
 			return nil, mailhistory.Record{}, err
 		}
@@ -92,7 +117,7 @@ func (s *historyReplay) fold(ctx context.Context, index *mailhistory.Index) (*co
 	return shadow, last, nil
 }
 
-func (s *historyReplay) foldRecord(raw []byte, previous [32]byte, shadow *core.State,
+func (s *historyReplay) foldRecord(raw []byte, previous [32]byte, anchor string, shadow *core.State,
 	scratch *mailhistory.Snapshot, projector *mailhistory.ReplayProjector,
 	ctx context.Context, ordinal uint64, offset int64,
 ) (mailhistory.Record, error) {
@@ -101,7 +126,7 @@ func (s *historyReplay) foldRecord(raw []byte, previous [32]byte, shadow *core.S
 	if err := json.Unmarshal(line, &rec); err != nil {
 		return mailhistory.Record{}, err
 	}
-	prev := ""
+	prev := anchor
 	if ordinal > 0 {
 		prev = hex.EncodeToString(previous[:])
 	}

@@ -13,6 +13,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/agenxy/dibs/internal/ledger"
 )
 
 // chainResult is what an integrity check found.
@@ -54,6 +56,15 @@ func verifyChain(path string) (chainResult, error) {
 	var res chainResult
 	prev := ""
 	prevSerial := uint64(0)
+	// A compacted ledger starts where its snapshot ends: the first record's
+	// prev is the snapshot's anchor, which its plaintext header states.
+	anchor, anchored, err := ledger.SnapshotAnchor(path)
+	if err != nil {
+		return res, err
+	}
+	if anchored {
+		res.Head = anchor.Head
+	}
 	for {
 		raw, rerr := r.ReadString('\n')
 		if rerr != nil && !errors.Is(rerr, io.EOF) {
@@ -74,6 +85,9 @@ func verifyChain(path string) (chainResult, error) {
 		}
 		if err := json.Unmarshal(line, &rec); err != nil {
 			return res, fmt.Errorf("line %d: bad JSON: %w", res.Lines+1, err)
+		}
+		if res.Lines == 0 && anchored && rec.Prev == anchor.Head {
+			prev, prevSerial = anchor.Head, anchor.Serial
 		}
 		if rec.Prev != prev {
 			// Name BOTH records. The mismatch is between this record's `prev`
