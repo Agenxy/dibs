@@ -63,7 +63,7 @@ jobs:
       # so the toolchain is pinned here the same way ci.yml and release.yml pin
       # it. The runner image ships a Go, and which one it ships is not ours to
       # depend on.
-      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           # PINNED, like ci.yml and release.yml. The action commit was pinned
           # and the mise VERSION was not, so this step downloaded whatever
