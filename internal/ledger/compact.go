@@ -60,19 +60,21 @@ func (l *Ledger) dropPrefix(cut int64) error {
 	if err := os.Chmod(tmp.Name(), 0o600); err != nil {
 		return err
 	}
-	if err := os.Rename(tmp.Name(), l.path); err != nil {
+	// Closed before the rename: Windows refuses to replace an open file.
+	// Reopened whatever happens, so the ledger is never left without a handle.
+	if err := l.f.Close(); err != nil {
 		return err
 	}
-	if err := syncDir(dir); err != nil {
-		return err
-	}
+	renameErr := os.Rename(tmp.Name(), l.path)
 	f, err := os.OpenFile(l.path, os.O_RDWR, 0o600)
 	if err != nil {
-		return fmt.Errorf("reopen compacted ledger: %w", err)
+		return fmt.Errorf("reopen ledger after compaction: %w", err)
 	}
-	old := l.f
 	l.f = f
-	return old.Close()
+	if renameErr != nil {
+		return fmt.Errorf("compact ledger: %w", renameErr)
+	}
+	return syncDir(dir)
 }
 
 // Anchor is the snapshot the ledger continues from after Replay, if any.

@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -157,6 +158,9 @@ func readSnapshot(path string, box *Box) (SnapshotHeader, *core.State, bool, err
 }
 
 func syncDir(dir string) error {
+	if runtime.GOOS == "windows" {
+		return nil // a directory cannot be opened for sync there; rename is already durable
+	}
 	// #nosec G304 -- the ledger's own directory.
 	d, err := os.Open(dir)
 	if err != nil {
