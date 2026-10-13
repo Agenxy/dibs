@@ -5,6 +5,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Opening an agent's ChatGPT thread in the background allowed its helper 3
+  seconds. Under heavy machine load the helper was killed before it finished,
+  so the thread never loaded and the agent's mail waited in the app's queue.
+  It now has 20 seconds; it runs off the writer, so only the next background
+  open waits.
+
+- Approving a request with the same milestones its sender already named is
+  agreement and is accepted; it was refused as a second declaration. A
+  different list is still refused, and the error now quotes the existing steps
+  and says to omit `milestones`.
 - A Claude app agent whose session the app had resumed under a new Claude
   Code id was unreachable until it next called Dibs: no socket was found under
   the id it registered with, so every wake "reopened" a session that was already

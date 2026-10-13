@@ -310,7 +310,7 @@ var RealShower = Shower{
 		if appOpenFixture != nil {
 			return appOpenFixture("claude-background", argv[1], 0)
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second) // see notify.helperBudget
 		defer cancel()
 		// #nosec G204 G702 -- fixed OS opener and generated Claude session URL, separate argv elements.
 		return exec.CommandContext(ctx, "/usr/bin/open", "-g", argv[1]).Run()

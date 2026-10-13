@@ -271,9 +271,10 @@ func declareMilestones(m *Message, op *Op, st string) error {
 		return nil
 	}
 	if len(m.Milestones) > 0 {
-		return errf("E_BAD_ARG", "its sender already named the steps: report against those, "+
-			"and send the sender a message if they should change",
-			"message %d already has milestones", m.Serial)
+		return errf("E_BAD_ARG", "omit milestones: its sender already named the steps ("+
+			strings.Join(m.Milestones, "; ")+"), and you report against those. Send the "+
+			"sender a message if they should change",
+			"message %d already has different milestones", m.Serial)
 	}
 	m.Milestones = op.Milestones
 	return nil

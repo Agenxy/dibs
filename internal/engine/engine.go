@@ -538,6 +538,7 @@ func (e *Engine) execWithReceipt(
 		return nil, err
 	}
 
+	e.dropRestatedMilestones(op)
 	// Ingress-only validation. Deliberately NOT inside Apply: Apply is also the
 	// fold that replays the ledger, so a rule added there binds history
 	// retroactively and a daemon can refuse to replay ops it wrote itself.
