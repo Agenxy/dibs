@@ -5,6 +5,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- A question that expires without ever having been shown to its recipient
+  now says so. It used to read as "recipient alive but did not answer" or
+  "recipient is dormant; it will see this on wake", which blamed a recipient
+  that had been calling inbox throughout. Each status keeps its own diagnosis
+  with "never shown" added. The prompt-time mailbox digest lists only mail
+  still waiting for the agent; read expired questions repeated at every
+  prompt with no way to clear them.
+
 - An inbox page could leave new mail undelivered indefinitely: owed requests
   ranked above it, a page holds at most eight items, and an agent with eight
   open requests never saw page two (k7-dev's notifies waited eight days).
