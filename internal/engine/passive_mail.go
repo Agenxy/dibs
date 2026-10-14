@@ -88,7 +88,7 @@ func (e *Engine) passiveMailboxDigest(l *core.Agent, now time.Time) string {
 func (e *Engine) passiveMailLines(b *strings.Builder, mail []*core.Message) []fyiPresentation {
 	var shown []fyiPresentation
 	for _, m := range mail {
-		item := e.compactMail(m)
+		item := e.compactMail(m, time.Now())
 		full := m.Type == core.MsgNotify && item["body_truncated"] != true
 		shown = append(shown, fyiPresentation{serial: m.Serial, full: full})
 		if full {

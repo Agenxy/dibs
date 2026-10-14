@@ -5,6 +5,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- An inbox page could leave new mail undelivered indefinitely: owed requests
+  ranked above it, a page holds at most eight items, and an agent with eight
+  open requests never saw page two (k7-dev's notifies waited eight days).
+  Mail waiting for the agent's attention, new mail and owed work alike, is
+  now one rank, oldest first. Mail delivered more than an hour after it was
+  sent carries a `late` note saying how long it waited.
 - A daemon started with `-allow-parallel` (or `DIBS_ALLOW_PARALLEL`) is a
   declared second board and no longer blocks another board from starting.
   A K7 test board on its own directory and port stopped the production board
@@ -71,7 +77,7 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reopen that cannot find the session now says why in the log.
 - Keep agent mail with its agent: remove hook human notices and recover backlog
   with bounded passive pointers at natural prompts/session starts. Inbox/check-in
-  return compact pages with owed work first, per-item receipts and continuation
+  return compact pages with waiting mail oldest first, per-item receipts and continuation
   cursors; only returned pending mail is delivered. Full FYI presentation clears
   it automatically; an announcement gets at most one further passive reminder,
   then clears. Requests and questions still need answers. Counts distinguish

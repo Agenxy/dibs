@@ -89,7 +89,7 @@ func (e *Engine) presentMailboxFYIs(res core.Result, l *core.Agent, p mailPage, 
 	}
 	var shown []fyiPresentation
 	for _, m := range p.mail {
-		item := e.compactMail(m)
+		item := e.compactMail(m, now)
 		shown = append(shown, fyiPresentation{serial: m.Serial, full: item["body_truncated"] != true})
 	}
 	return e.recordFYIPresentation(l, shown, false, now)
