@@ -654,6 +654,7 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 		}
 	}
 	t.Logf("accepted ops: %v", accepted)
+	assertCompactionPreservesState(t, path, st, t0, now)
 
 	// Membership, exclusivity and QUEUE ORDER must all survive byte-identically:
 	// queue order decides who gets admitted next, so a reordering on replay is a

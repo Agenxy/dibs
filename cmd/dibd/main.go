@@ -234,6 +234,10 @@ func run() error {
 	if old := oldVocabularyFailure(*dir); old != nil {
 		return old
 	}
+	// History older than [ledger] history is folded into the snapshot during
+	// this replay and dropped from the file, so the next start replays only
+	// what is kept.
+	led.KeepHistory(cfg.LedgerHistory())
 	n, err := led.Replay(st)
 	if err != nil {
 		// A record the fold refuses is the one failure this daemon cannot shrug
@@ -268,6 +272,10 @@ func run() error {
 		"ledger replayed", "ops", n, "serial", st.Serial, "took", time.Since(start).Round(time.Millisecond), "head",
 		head,
 	)
+	if snap, ok := led.Anchor(); ok {
+		slog.Info("ledger continues from a snapshot; older history is folded into it",
+			"snapshot_serial", snap.Serial, "kept", cfg.LedgerHistory())
+	}
 
 	bs, err := blobstore.New(*dir, box)
 	if err != nil {

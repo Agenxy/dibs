@@ -190,18 +190,33 @@ filesystem writes (§9). It is a **coordination generation**, not a fencing toke
   of `(state, recorded now)`: terminal messages beyond per-agent retention (§11),
   archived agents (and their nonces and dedup records) past retention. Pruned data
   remains in ledger history; replay re-prunes identically.
-- **Rotation. NOT IMPLEMENTED. Planned for v1.1.** The design is: at 64 MB / 1M
-  lines, snapshot via temp-file write → fsync → atomic rename → directory fsync;
-  new segment's first `prev` = anchored head hash.
+- **Snapshots and compaction.** `[ledger] history` (default `24h`, or `all`)
+  is how much ledger history a start keeps. During the boot replay, at the
+  first line inside that window, the state as of the line before is sealed into
+  `snapshot.dibs` beside the ledger (plaintext JSON header naming the serial and
+  the hash of its line; then gob-encoded `core.State` under the ledger key).
+  After the replay the older lines are removed: temp file, fsync, rename,
+  directory fsync. Later starts load the snapshot and replay only the kept
+  lines, whose first `prev` is the snapshot's anchor. Compaction happens only
+  at start, before anything is served: a running daemon's mail-history index
+  holds byte offsets into the file.
 
-  Stated this loudly because the `(v1.1)` tag it used to carry was easy to read as
-  a shipped bound: a reviewer drove a scratch ledger to 68 MB, found one file and
-  no segment, and reported the rotation as broken rather than absent. **Today the
-  ledger is a single append-only file with no size limit**, so disk use and the
-  daemon's startup replay both grow with the lifetime of the board. Nothing
-  corrupts and `dibs verify` stays correct; it simply gets slower and larger
-  forever. A long-lived board wanting a fresh start archives the directory and
-  starts a new one.
+  Guarantees: `state == fold(snapshot, kept lines)` equals the full fold
+  (`assertCompactionPreservesState`, at several cutoffs of a ledger covering
+  every op kind, and on a 105k-op real board). A snapshot is written only if it
+  decodes back to the state it was written from, and nothing in `core.State`
+  is a type the snapshot cannot carry (`TestEveryStateFieldCanBeCarriedByTheSnapshot`).
+  A crash between the snapshot's rename and the ledger's leaves the full
+  ledger beside the newer snapshot; replay checks the old prefix's chain
+  against the anchor and finishes the trim. `dibs verify` anchors at the
+  snapshot without the key. `read_mail_history` reaches back as far as the
+  kept lines. An older dibd refuses a compacted ledger (its chain does not
+  start at the empty hash) rather than serving a partial board.
+
+  Why: the ledger is the record and state is its fold, but every start re-ran
+  every op the board ever applied, to rebuild a board whose sweeps had already
+  pruned most of them. On 2026-10-12 that was 104,257 ops: 7m49s under machine
+  load, with the board refusing connections throughout.
 
 Ledgered op kinds: `register, resume, wake, activity_checkpoint,
 check_in, update, sign_off, heartbeat` (recovery only), `declare,

@@ -5,6 +5,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Dibs no longer replays its whole history at every start. A start folds
+  ledger lines older than `[ledger] history` (default `24h`, or `all`) into a
+  snapshot beside the ledger and removes them; later starts load the snapshot
+  and replay only the kept day. On a real board this took a start from 105,151
+  ops to 13,987 (2 s instead of 7m49s under load) and the ledger from 69 MB to
+  7.6 MB. `read_mail_history` now reaches back only as far as the kept history.
+  An older dibd refuses a compacted ledger rather than opening a partial board,
+  so rolling back past this release needs the board directory from before it.
+
 - Opening an agent's ChatGPT thread in the background allowed its helper 3
   seconds. Under heavy machine load the helper was killed before it finished,
   so the thread never loaded and the agent's mail waited in the app's queue.

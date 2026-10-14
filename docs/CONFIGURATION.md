@@ -542,6 +542,28 @@ Quoting is bounded by a budget shared across the whole digest rather than
 applied per message: ten messages each trimmed to a generous length is not a
 generous digest. What does not fit keeps its `read_mail` pointer.
 
+## `[ledger]`: how much history a start keeps
+
+```toml
+[ledger]
+history = "24h"   # the default; a duration of at least 1h, or "all"
+```
+
+The ledger is every operation the board has applied, and the board is
+rebuilt from it at every start. With `history = "24h"`, a start folds every
+line older than a day into `snapshot.dibs` and removes those lines, so the
+next start replays one day of operations instead of the board's whole life.
+On the board this was measured on, that took a start from 105,151 ops to
+13,987 and the ledger from 69 MB to 7.6 MB (plus a 1.7 MB snapshot).
+
+What you give up: `read_mail_history` reaches back only as far as the kept
+lines, and the removed lines are gone. `"all"` keeps every line and never
+compacts. Compaction runs at start only, so a daemon that runs for a week
+keeps a week until it next restarts.
+
+An older `dibd` cannot read a compacted ledger and refuses to start rather
+than open a partial board.
+
 ## `[limits]`: coordination timings
 
 | Key | Default | What it decides |
