@@ -763,6 +763,10 @@ recipient's `respond` (responding proves receipt). GC eligibility requires
 - **`read_mail(msg_serial)`**: full message including body and response, authorized
   for **sender or recipient**. This is how a question's sender reads the answer
   (terminal events carry serials, never bodies). Recipient reads mark delivery.
+  It reads live retained envelopes. `E_NO_MESSAGE` can mean an incorrect serial
+  or an envelope no longer retained; a truncation watermark identifies an older
+  range, not proof that a particular serial held mail. `inbox` lists current
+  mail; `mail_history` can inspect available retained ledger history.
 - **Inline outcomes:** `check_in`, `inbox`, delivering lifecycle hooks and
   socket digests share a mail-first body budget of 1,600 Unicode characters,
   700 per body, and at most 16 outcome units. Unquoted selected units within a
