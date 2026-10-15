@@ -5,6 +5,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- `task image:k7` builds dibd as an OCI image layout for running a board
+  inside a K7 kassette (`tools/ociimage`). The build is reproducible: the
+  same commit gives the same digest on any machine, because K7 imports an
+  image only by digest. Linux arm64, one layer, data directory at `/data`,
+  board on port 4777 with its own TLS.
+
 - Privacy: a Dibs process started inside a Claude Code session could deliver
   another agent's mail into that session. It could also leave the intended
   recipient unwoken by falsely claiming the socket route. The bridge now
