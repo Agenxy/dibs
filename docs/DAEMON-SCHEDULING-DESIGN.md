@@ -96,6 +96,18 @@ QoS is a thread/work-item API, not a documented general LaunchAgent plist key.
 Setting it on one Go thread would not establish it on the writer's goroutine or
 future runtime threads. A native runtime adapter would exceed this fix's scope.
 
+## Interactive, 2026-10-15
+
+The condition above was met. Under machine load (average 24 to 37, other
+workloads building), the production board under `Standard` took 8.5 s to
+replay 6,699 ledger lines when launchd started it, twice in a row. The same
+binary on a copy of the same data, started from a shell, took 0.54 s at the
+same load. With `ProcessType=Interactive` the LaunchAgent's next start
+replayed in 0.51 s and served in about 2 s, against 14 to 17 s. The template
+is now `Interactive`, and upgrade migrates a `Background` unit to it. An
+existing `Standard` unit is still left alone, because it may be an operator's
+explicit choice; such a unit can set `Interactive` by hand.
+
 ## Existing installations
 
 Detect the top-level Background value on the current, board-matching macOS unit

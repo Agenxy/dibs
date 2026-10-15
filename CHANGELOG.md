@@ -5,6 +5,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- The macOS LaunchAgent for `dibd` asks for `ProcessType=Interactive`
+  (was `Standard`). Under machine load, launchd's scheduling of a
+  `Standard` job made a start take 8.5 s instead of 0.5 s, and every agent
+  waits on the board. `dibs upgrade` migrates a `Background` unit to it; an
+  existing `Standard` unit is left alone as a possible operator choice.
+
 - A question that expires without ever having been shown to its recipient
   now says so. It used to read as "recipient alive but did not answer" or
   "recipient is dormant; it will see this on wake", which blamed a recipient
