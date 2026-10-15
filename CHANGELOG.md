@@ -5,6 +5,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- `mail_history` works again on a board whose ledger continues from a
+  snapshot. The history view refused to build when a conversation begun
+  before the snapshot was touched after a newer one, which is the normal
+  case, so every caller got `E_HISTORY_UNAVAILABLE` from the first
+  compaction on. A failed build is now logged at WARN.
+
+- A restart no longer shortens the kept ledger history. Every start folded
+  one more kept line into the snapshot, even when nothing in the file was
+  older than the `[ledger] history` window.
+
 - The macOS LaunchAgent for `dibd` asks for `ProcessType=Interactive`
   (was `Standard`). Under machine load, launchd's scheduling of a
   `Standard` job made a start take 8.5 s instead of 0.5 s, and every agent

@@ -26,6 +26,17 @@ func (v *vector) add(value uint64) {
 	v.n++
 }
 
+// insert places value at n, moving everything from n one place later. Linear,
+// and only reached by a conversation older than the one before it, which
+// happens once per such conversation after a snapshot (see Index.add).
+func (v *vector) insert(n int, value uint64) {
+	v.add(0)
+	for k := v.n - 1; k > n; k-- {
+		v.set(k, v.get(k-1))
+	}
+	v.set(n, value)
+}
+
 func (v *vector) get(n int) uint64 {
 	c, offset := v.chunks[n/vectorChunk], n%vectorChunk
 	value := uint64(c.low[offset])

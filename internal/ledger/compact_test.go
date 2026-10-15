@@ -82,6 +82,7 @@ func assertCompactionPreservesState(t *testing.T, path string, want *core.State,
 
 		// Every later start: snapshot plus the kept lines.
 		led, again := replay(time.Hour)
+		serveHistory(t, led) // the mail-history view builds from the snapshot too
 		_ = led.Close()
 		if !sameState(reflect.ValueOf(want).Elem(), reflect.ValueOf(again).Elem()) {
 			t.Fatalf("cutoff %.2f: replaying from the snapshot built a different board", frac)

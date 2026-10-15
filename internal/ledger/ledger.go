@@ -171,7 +171,7 @@ func (l *Ledger) Replay(st *core.State) (int, error) {
 	n, fileLines := 0, uint64(0)
 	var lastT time.Time
 	cutoff, compacting := l.compactionCutoff()
-	captured := false
+	captured, sawOlder := false, false
 	capture := func(at int64) error {
 		h := SnapshotHeader{Serial: st.Serial, Head: prev, Node: st.NodeID, Created: l.now()}
 		if err := writeSnapshot(snapshotPath(l.path), h, st, l.box); err != nil {
@@ -213,11 +213,17 @@ func (l *Ledger) Replay(st *core.State) (int, error) {
 			// The first line inside the kept window, with older lines before it:
 			// the state now is the board as of the line before, so it becomes
 			// the snapshot and everything older can go.
-			if compacting && !captured && off > prefixEnd && !rec.T.Before(cutoff) {
+			//
+			// "Older lines before it" means lines OLDER THAN THE WINDOW, not
+			// merely earlier in the file: a file that already starts inside
+			// the window has nothing to fold, and reading any earlier line as
+			// older folded one more kept line into the snapshot on every start.
+			if compacting && !captured && sawOlder && !rec.T.Before(cutoff) {
 				if err := capture(off); err != nil {
 					return n, err
 				}
 			}
+			sawOlder = sawOlder || (compacting && rec.T.Before(cutoff))
 			// A line can be valid JSON and still carry no op: a truncation that
 			// lands on a brace, a hand-edit, a file from something else. Without
 			// this the nil reaches DecryptOp and the daemon panics with a stack
