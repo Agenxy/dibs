@@ -42,6 +42,11 @@ func nativeHistory(t *testing.T, dir string, wrap ...func(*ledger.Ledger) engine
 
 func nativeHistoryWithLimits(t *testing.T, dir string, limits core.Limits, wrap ...func(*ledger.Ledger) engine.Ledger) nativeHistoryFixture {
 	t.Helper()
+	return nativeHistoryWithLifetime(t, dir, limits, 10*time.Second, wrap...)
+}
+
+func nativeHistoryWithLifetime(t *testing.T, dir string, limits core.Limits, lifetime time.Duration, wrap ...func(*ledger.Ledger) engine.Ledger) nativeHistoryFixture {
+	t.Helper()
 	box, err := ledger.LoadOrCreateKey(filepath.Join(dir, "key"))
 	if err != nil {
 		t.Fatal("setup:", err)
@@ -59,7 +64,7 @@ func nativeHistoryWithLimits(t *testing.T, dir string, limits core.Limits, wrap 
 		source = wrap[0](led)
 	}
 	eng := engine.New(st, source, nil)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), lifetime)
 	joined := make(chan struct{})
 	go func() { eng.Run(ctx); close(joined) }()
 	if _, _, err := eng.SubscribeInfo(ctx, ""); err != nil {
@@ -131,7 +136,12 @@ func historyOnce(t *testing.T, f nativeHistoryFixture, token string, bodies bool
 
 func settledHistory(t *testing.T, f nativeHistoryFixture, token string, bodies bool) core.Result {
 	t.Helper()
-	deadline := time.NewTimer(5 * time.Second)
+	return settledHistoryWithin(t, f, token, bodies, 5*time.Second)
+}
+
+func settledHistoryWithin(t *testing.T, f nativeHistoryFixture, token string, bodies bool, budget time.Duration) core.Result {
+	t.Helper()
+	deadline := time.NewTimer(budget)
 	defer deadline.Stop()
 	tick := time.NewTicker(20 * time.Millisecond)
 	defer tick.Stop()
