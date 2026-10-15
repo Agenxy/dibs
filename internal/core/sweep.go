@@ -17,6 +17,15 @@ import (
 // op (SPEC §2, §7); everything else is a pure function of (state, now), so
 // replay reproduces every decision. A sweep that changes nothing returns nil
 // events and is not ledgered.
+// neverShownAliveDetail is the expiry reason for a question an active
+// recipient was never shown. "Did not answer" told the sender the recipient
+// had chosen not to: k7-dev was calling inbox throughout while two of
+// gpt-k7-3's questions expired unseen (2026-10-05), because a page never
+// reached them. Every other status keeps its own diagnosis, prefixed with
+// the fact that the question was never shown.
+const neverShownAliveDetail = "recipient alive and its claims still stand, but it was never shown this " +
+	"before its deadline: not a refusal or a silence; send it again if you still need the answer"
+
 func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 	var evs []Event
 	// Probed, not assumed.
@@ -205,6 +214,13 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 				"this is loss of coordination, not proof its work stopped: verify before touching its directories"
 		}
 		m.TerminalAt = now
+		if m.DeliveredAt == 0 && !neverDelivered {
+			if m.State == MsgStateExpiredSilent {
+				m.ExpireDetail = neverShownAliveDetail // "did not answer" is false of mail it never saw
+			} else {
+				m.ExpireDetail = "never shown to the recipient before its deadline; " + m.ExpireDetail
+			}
+		}
 		evs = append(evs, Event{
 			Type: "message." + m.State, Agent: m.To, To: m.From,
 			Data: map[string]any{"msg_serial": m.Serial, "detail": m.ExpireDetail, "never_delivered": neverDelivered},

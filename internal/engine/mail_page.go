@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -43,19 +44,49 @@ func badMailPage() error {
 	}
 }
 
+// mailboxRank orders a page. Everything that wants the agent's attention,
+// mail it has not been shown and work it owes, is one rank, oldest first,
+// so nothing waiting can be pushed back for ever. Owed work used to rank
+// above new mail, a page holds at most eight items, and an agent with eight
+// open requests never saw new mail on page one: k7-dev's notifies from
+// 2026-10-06 sat undelivered for eight days behind requests it already knew
+// about. Oldest first keeps owed work at the front without starving the rest.
 func mailboxRank(m *core.Message, cut uint64, now time.Time) int {
-	if m.Owed(now) || m.Expecting() && !m.Terminal() {
-		return 0
-	}
 	newPending := m.State == core.MsgStatePending &&
 		(m.Type != core.MsgNotify || m.NotifyAnnouncedAt < max(m.AdoptedAt, 1) || m.NotifyAnnouncedAt > cut)
-	if newPending || m.DeliveredAt > cut {
+	switch {
+	case newPending || m.DeliveredAt > cut || m.Owed(now) || m.Expecting() && !m.Terminal():
+		return 0
+	case m.Type != core.MsgNotify:
 		return 1
 	}
-	if m.Type != core.MsgNotify {
-		return 2
+	return 2
+}
+
+// lateAfter is how long mail may wait before a page says it is late.
+const lateAfter = time.Hour
+
+// lateNote says, on mail being shown for the first time long after it was
+// sent, how long it waited: stale content read as fresh costs a triage pass.
+func lateNote(m *core.Message, now time.Time) string {
+	shown := now
+	if !m.DeliveredTime.IsZero() {
+		shown = m.DeliveredTime
 	}
-	return 3
+	if m.SentAt.IsZero() || shown.Sub(m.SentAt) < lateAfter {
+		return ""
+	}
+	return "delivered " + roughAge(shown.Sub(m.SentAt)) + " after it was sent; it may be out of date"
+}
+
+func roughAge(d time.Duration) string {
+	switch {
+	case d >= 48*time.Hour:
+		return strconv.Itoa(int(d/(24*time.Hour))) + " days"
+	case d >= 2*time.Hour:
+		return strconv.Itoa(int(d/time.Hour)) + " hours"
+	}
+	return strconv.Itoa(int(d/time.Minute)) + " minutes"
 }
 
 func (e *Engine) mailboxPage(l *core.Agent, cursor string, limit int, now time.Time) (mailPage, error) {
@@ -77,7 +108,7 @@ func (e *Engine) mailboxPage(l *core.Agent, cursor string, limit int, now time.T
 		if m.Serial > c.Cut || rank < c.Rank || rank == c.Rank && m.Serial <= c.Serial {
 			continue
 		}
-		size, err := e.compactMailSize(m, len(p.mail) == 0)
+		size, err := e.compactMailSize(m, len(p.mail) == 0, now)
 		if err != nil {
 			return mailPage{}, err
 		}
@@ -91,8 +122,8 @@ func (e *Engine) mailboxPage(l *core.Agent, cursor string, limit int, now time.T
 	return encodeMailPage(p, c, now)
 }
 
-func (e *Engine) compactMailSize(m *core.Message, first bool) (int, error) {
-	raw, err := json.Marshal(e.compactMail(m))
+func (e *Engine) compactMailSize(m *core.Message, first bool, now time.Time) (int, error) {
+	raw, err := json.Marshal(e.compactMail(m, now))
 	if err != nil {
 		return 0, err
 	}
@@ -122,7 +153,7 @@ func encodeMailPage(p mailPage, c mailCursor, now time.Time) (mailPage, error) {
 // Keep the per-item receipts. Full bodies, attachments and progress history
 // belong to read_mail; repeating them under both mailbox aliases broke Claude's
 // result limit while the daemon nevertheless stamped delivery.
-func (e *Engine) compactMail(m *core.Message) core.Result {
+func (e *Engine) compactMail(m *core.Message, now time.Time) core.Result {
 	out := core.Result{
 		"serial": m.Serial, "from": m.From, "from_name": e.agentName(m.From),
 		"to": m.To, "to_name": e.agentName(m.To), "type": m.Type, "state": m.State, "consumed": m.Consumed,
@@ -161,6 +192,9 @@ func (e *Engine) compactMail(m *core.Message) core.Result {
 	if m.ResponseWindowSec != 0 {
 		out["response_window_s"] = m.ResponseWindowSec
 	}
+	if note := lateNote(m, now); note != "" {
+		out["late"] = note
+	}
 	if m.RequestPriority != "" {
 		out["request_priority"] = m.RequestPriority
 	}
@@ -183,7 +217,7 @@ func (e *Engine) putMailboxPage(res core.Result, l *core.Agent, p mailPage) {
 func (e *Engine) refreshMailboxReceipts(res core.Result, l *core.Agent, p mailPage) {
 	mail := []core.Result{}
 	for _, m := range p.mail {
-		mail = append(mail, e.compactMail(m))
+		mail = append(mail, e.compactMail(m, time.Now()))
 	}
 	res["inbox"], res["messages"] = mail, mail
 	res["mail_counts"] = e.mailCounts(l.ID)

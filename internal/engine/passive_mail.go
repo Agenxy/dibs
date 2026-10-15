@@ -48,6 +48,17 @@ func (e *Engine) passiveMailboxDigest(l *core.Agent, now time.Time) string {
 	if err != nil {
 		return ""
 	}
+	// Only mail that still wants the agent: a page fills its tail with
+	// finished mail, and an expired question the agent had already read was
+	// listed at every prompt with nothing it could do to clear it (k7-dev,
+	// 2026-10-14).
+	waiting := p.mail[:0:0]
+	for _, m := range p.mail {
+		if !m.Terminal() {
+			waiting = append(waiting, m)
+		}
+	}
+	p.mail = waiting
 	updates := e.outstandingUpdateCount(l.ID)
 	announcements := len(e.state.Unacked(l.ID))
 	if len(p.mail) == 0 && updates == 0 && announcements == 0 {
@@ -88,7 +99,7 @@ func (e *Engine) passiveMailboxDigest(l *core.Agent, now time.Time) string {
 func (e *Engine) passiveMailLines(b *strings.Builder, mail []*core.Message) []fyiPresentation {
 	var shown []fyiPresentation
 	for _, m := range mail {
-		item := e.compactMail(m)
+		item := e.compactMail(m, time.Now())
 		full := m.Type == core.MsgNotify && item["body_truncated"] != true
 		shown = append(shown, fyiPresentation{serial: m.Serial, full: full})
 		if full {
