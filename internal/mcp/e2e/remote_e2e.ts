@@ -71,6 +71,9 @@ mkdirSync(hubDir); mkdirSync(clientDir)
 const fixtureCodexHome = join(root, "codex")
 mkdirSync(fixtureCodexHome)
 const fixtureHarnessEnv = { ...process.env, CODEX_HOME: fixtureCodexHome, DIBS_TEST_FORBID_APP_OPEN: "1" }
+for (const key of Object.keys(fixtureHarnessEnv)) {
+  if (key.startsWith("CLAUDE_CODE_MESSAGING_")) delete fixtureHarnessEnv[key]
+}
 for (const key of ["CODEX_THREAD_ID", "CLAUDE_CODE_SESSION_ID", "DIBS_SESSION_ID", "DIBS_TOKEN"]) {
   delete fixtureHarnessEnv[key]
 }
@@ -191,10 +194,10 @@ class Bridge {
   proc: ReturnType<typeof Bun.spawn>
   pending = new Map<number, (m: any) => void>()
   next = 0
-  constructor(dir: string, cwd: string, addr?: string, hostId?: string) {
+  constructor(dir: string, cwd: string, addr?: string, hostId?: string, extraEnv: Record<string, string> = {}) {
     this.proc = Bun.spawn({
       cmd: [dibsBin, "mcp-stdio"], cwd,
-      env: { ...fixtureHarnessEnv, DIBS_DIR: dir, ...(addr ? { DIBS_ADDR: addr } : {}), ...(hostId ? { DIBS_HOST_ID: hostId } : {}) },
+      env: { ...fixtureHarnessEnv, ...extraEnv, DIBS_DIR: dir, ...(addr ? { DIBS_ADDR: addr } : {}), ...(hostId ? { DIBS_HOST_ID: hostId } : {}) },
       stdin: "pipe", stdout: "pipe", stderr: "ignore",
     })
     bridges.push(this.proc)
@@ -330,7 +333,14 @@ const THREAD = crypto.randomUUID()
 // call, and a directory of its own, where the wake will run.
 const sleeperRepo = join(clientDir, "sleeper")
 mkdirSync(sleeperRepo)
-const sleeperBridge = new Bridge(clientDir, sleeperRepo, URL, CLIENT_HOST)
+// A nested harness can inherit a DIFFERENT Claude session's credentials.
+// Deliberately supply synthetic foreign credentials after scrubbing the real
+// runner's: the actual bridge must decline self-wake and leave the joined host
+// route intact. Before the identity binding this makes the delivery below fail.
+const sleeperBridge = new Bridge(clientDir, sleeperRepo, URL, CLIENT_HOST, {
+  CLAUDE_CODE_MESSAGING_SOCKET: join(root, "foreign-session.sock"),
+  CLAUDE_CODE_MESSAGING_TOKEN: "fixture-foreign-credential",
+})
 await sleeperBridge.init("Codex")
 const sleeper = await sleeperBridge.call("register", {
   name: "remote-sleeper", description: "asleep on the joining machine", pid: 0, session_id: THREAD,

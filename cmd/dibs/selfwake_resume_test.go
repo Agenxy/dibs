@@ -11,7 +11,10 @@ import (
 
 // R4-5: a resume's rotated token reaches the watcher, as a register's does.
 func TestAResumeReplyStartsTheWatcherWithItsToken(t *testing.T) {
-	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", "/nonexistent/but/present.sock")
+	sock := sockPath(t)
+	_ = listenLines(t, sock)
+	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", sock)
+	fixtureSelfWakeIdentity(t, sock)
 	t.Setenv("CLAUDE_CODE_MESSAGING_TOKEN", "child-token")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -38,7 +41,10 @@ func TestAResumeReplyStartsTheWatcherWithItsToken(t *testing.T) {
 // A re-registration's serial does not move an established cursor past
 // notifications the watcher has not seen.
 func TestAReRegistrationDoesNotAdvanceAnEstablishedCursor(t *testing.T) {
-	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", "/nonexistent/but/present.sock")
+	sock := sockPath(t)
+	_ = listenLines(t, sock)
+	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", sock)
+	fixtureSelfWakeIdentity(t, sock)
 	t.Setenv("CLAUDE_CODE_MESSAGING_TOKEN", "child-token")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

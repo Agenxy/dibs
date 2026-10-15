@@ -19,7 +19,10 @@ import (
 // An ambiguous failed wake keeps its delivery cursor. Reconnect replays the
 // serial without spending another first attempt; a gone socket hands off instead.
 func TestAFailedWakeKeepsItsNotification(t *testing.T) {
-	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", "/nonexistent/but/present.sock")
+	sock := sockPath(t)
+	_ = listenLines(t, sock)
+	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", sock)
+	fixtureSelfWakeIdentity(t, sock)
 	t.Setenv("CLAUDE_CODE_MESSAGING_TOKEN", "child-token")
 	bodies := make(chan map[string]any, 4)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

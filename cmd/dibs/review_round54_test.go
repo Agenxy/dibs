@@ -20,7 +20,10 @@ import (
 // subscription, so only the last registered mailbox kept its self-wake. One
 // stream per agent; a rotated token replaces only its own agent's stream.
 func TestEveryAgentRegisteredThroughOneBridgeKeepsItsSelfWake(t *testing.T) {
-	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", "/nonexistent/but/present.sock")
+	sock := sockPath(t)
+	_ = listenLines(t, sock)
+	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", sock)
+	fixtureSelfWakeIdentity(t, sock)
 	t.Setenv("CLAUDE_CODE_MESSAGING_TOKEN", "child-token")
 	resetWakeStreams() // the handoff record is process-wide, and other tests leave a token in it
 	t.Cleanup(resetWakeStreams)

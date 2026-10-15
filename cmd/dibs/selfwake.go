@@ -9,6 +9,8 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"path/filepath"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -41,6 +43,7 @@ import (
 // It carries the daemon's authenticated digest, never an instruction invented
 // here. It cannot read the session or decide what the agent does next.
 type selfWaker struct {
+	session  string // the actual parent sidecar binds this socket to exactly one session
 	mu       sync.Mutex
 	socket   string
 	token    string
@@ -124,6 +127,11 @@ func (w *selfWaker) send(notice string) error {
 }
 
 func (w *selfWaker) sendUsing(notice string, offer func(string) (string, func(bool), error)) error {
+	// A queued batch, failed-write retry or upgrade must not deliver after
+	// this bridge starts serving a different session.
+	if w.session != "" && w.session != streamSession() {
+		return errWakeEmpty
+	}
 	written := false
 	if offer != nil {
 		fresh, finish, err := offer(notice)
@@ -147,6 +155,11 @@ func (w *selfWaker) sendUsing(notice string, offer func(string) (string, func(bo
 			return errWakeEmpty
 		}
 	}
+	// Refresh may wait on HTTP while another incoming MCP call changes the
+	// served thread. Re-read identity at the write boundary as well.
+	if w.session != "" && w.session != streamSession() {
+		return errWakeEmpty
+	}
 	if w.deliverFn != nil {
 		err := w.deliverFn(notice)
 		written = err == nil
@@ -161,16 +174,64 @@ func (w *selfWaker) sendUsing(notice string, offer func(string) (string, func(bo
 // Successful delivery never delays a later mail event.
 const selfWakeCooldown = 15 * time.Second
 
-// newSelfWaker reads the two variables the harness hands its children. Both
-// absent is the ordinary case for every harness that publishes no socket, and
-// is not an error: the caller simply has no local route.
+// newSelfWaker requires the harness's actual-parent sidecar to bind its
+// inherited socket to a session. Environment alone is inherited by unrelated
+// nested harnesses too, and once made the hub stand down for their mail.
 func newSelfWaker() *selfWaker {
 	sock := os.Getenv("CLAUDE_CODE_MESSAGING_SOCKET")
 	tok := os.Getenv("CLAUDE_CODE_MESSAGING_TOKEN")
 	if sock == "" || tok == "" {
 		return nil
 	}
-	return &selfWaker{socket: sock, token: tok, cooldown: selfWakeCooldown}
+	session := selfWakeSession(sock)
+	if session == "" {
+		return nil
+	}
+	return &selfWaker{socket: sock, token: tok, session: session, cooldown: selfWakeCooldown}
+}
+
+// selfWakeSession observes only our actual parent's sidecar. CLAUDE_PID and
+// CLAUDE_CODE_SESSION_ID can name an ancestor's session and are not proof.
+// Measured 2026-10-15: all 18 installed Claude MCP bridges had this direct-parent
+// sidecar, including sessionId and messagingSocketPath. No initialize is needed.
+func selfWakeSession(socket string) string {
+	home, err := os.UserHomeDir()
+	if err != nil || os.Getppid() <= 1 {
+		return ""
+	}
+	sidecar := filepath.Join(home, ".claude", "sessions", strconv.Itoa(os.Getppid())+".json")
+	raw, err := os.ReadFile(sidecar) //nolint:gosec // own user's sidecar; parent PID is numeric
+	if err != nil {
+		return ""
+	}
+	var side struct {
+		SessionID string `json:"sessionId"`
+		Socket    string `json:"messagingSocketPath"`
+	}
+	if json.Unmarshal(raw, &side) != nil || side.SessionID == "" || side.Socket == "" {
+		return ""
+	}
+	actual, err := canonicalSelfWakeSocket(socket)
+	if err != nil {
+		return ""
+	}
+	expected, err := canonicalSelfWakeSocket(side.Socket)
+	if err != nil || actual != expected {
+		return ""
+	}
+	return side.SessionID
+}
+
+func canonicalSelfWakeSocket(socket string) (string, error) {
+	absolute, err := filepath.Abs(socket)
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(absolute)
+}
+
+func (w *selfWaker) serves(session string) bool {
+	return w.canReach() && session != "" && w.session == session
 }
 
 // Each mail event writes immediately. A failed write may retry once; a later

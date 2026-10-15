@@ -228,7 +228,10 @@ func (e *Engine) maybeWake(ev core.Event) {
 		return
 	}
 	if e.socketOwnsDelivery(l) {
-		if own, _ := e.SelfWaking(l.ID); !own {
+		if own, session := e.SelfWaking(l.ID); own {
+			slog.Debug("delivery left to the agent's own bridge: self-wake declared",
+				"agent", l.ID, "session_id", session, "bridge_pid", "unavailable")
+		} else {
 			e.wakeSocketReady(l)
 		}
 		return

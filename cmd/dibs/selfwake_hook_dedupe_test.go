@@ -22,6 +22,7 @@ import (
 func TestSelfWakeAndStopSharePresentationAfterActualTurnActivity(t *testing.T) {
 	sock := sockPath(t)
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", sock)
+	fixtureSelfWakeIdentity(t, sock)
 	t.Setenv("CLAUDE_CODE_MESSAGING_TOKEN", "child-token")
 	resetWakeStreams()
 	t.Cleanup(resetWakeStreams)

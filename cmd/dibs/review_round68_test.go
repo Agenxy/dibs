@@ -14,14 +14,13 @@ import (
 	"time"
 )
 
-// A same-nonce register can move a live agent to another thread WITHOUT
-// rotating its token. The watcher kept the existing subscription on a token
-// match, so the stream went on naming the thread the agent had left, the
-// daemon withheld its inbox from a stream whose agent is elsewhere, and the
-// connection stayed open waking nobody.
-func TestAStreamIsReplacedWhenItsSessionMovesEvenWithTheSameToken(t *testing.T) {
+// A same-nonce register can move an agent without rotating its token. The old
+// socket must release its stream rather than claim delivery for the new session.
+func TestASessionMoveReleasesTheOldSocketEvenWithTheSameToken(t *testing.T) {
 	sock := sockPath(t)
+	_ = listenLines(t, sock)
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", sock)
+	fixtureSelfWakeIdentity(t, sock)
 	t.Setenv("CLAUDE_CODE_MESSAGING_TOKEN", "child-token")
 	resetWakeStreams()
 	t.Cleanup(resetWakeStreams)
@@ -56,6 +55,7 @@ func TestAStreamIsReplacedWhenItsSessionMovesEvenWithTheSameToken(t *testing.T) 
 	threadB := "019ffe52-0eaf-7f60-81cc-6ab1298d76ed"
 
 	noteThread(threadA)
+	fixtureSelfWakeIdentity(t, sock)
 	iw.startFor(ctx, srv.Client(), srv.URL, "secret", "busy", "same-token", 0)
 	if got := awaitString(t, seen, 2*time.Second); got != threadA {
 		t.Fatalf("setup: the first stream serves %q, want thread A", got)
@@ -64,14 +64,11 @@ func TestAStreamIsReplacedWhenItsSessionMovesEvenWithTheSameToken(t *testing.T) 
 	// The agent moves to thread B, keeping its token.
 	noteThread(threadB)
 	iw.startFor(ctx, srv.Client(), srv.URL, "secret", "busy", "same-token", 0)
-	got := awaitString(t, seen, 2*time.Second)
-	if got == "" {
-		t.Fatal("the agent moved to another thread and the watcher opened no new stream: the " +
-			"old one names the thread it left, so the daemon withholds its inbox and this " +
-			"bridge can never be woken again")
+	if got := awaitString(t, seen, 250*time.Millisecond); got != "" {
+		t.Fatalf("old session's socket claimed a stream for different session %q", got)
 	}
-	if got != threadB {
-		t.Fatalf("the replacement stream serves %q, want thread B", got)
+	if len(iw.tokens()) != 0 {
+		t.Fatal("the old session stream survived the move")
 	}
 }
 

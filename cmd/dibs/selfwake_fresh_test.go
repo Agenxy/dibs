@@ -29,6 +29,7 @@ import (
 func TestBusySelfWakeNeverSchedulesAcknowledgedMail(t *testing.T) {
 	sock := sockPath(t)
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", sock)
+	fixtureSelfWakeIdentity(t, sock)
 	t.Setenv("CLAUDE_CODE_MESSAGING_TOKEN", "child-token")
 	resetWakeStreams()
 	t.Cleanup(resetWakeStreams)
@@ -37,6 +38,7 @@ func TestBusySelfWakeNeverSchedulesAcknowledgedMail(t *testing.T) {
 	const fixtureSession = "81f97290-0001-4000-8000-111111111111"
 	previousThread := threadServed()
 	noteThread(fixtureSession)
+	fixtureSelfWakeIdentity(t, sock)
 	t.Cleanup(func() { noteThread(previousThread) })
 	st := core.NewState("fresh", core.DefaultLimits())
 	for _, id := range []string{"sender", "worker"} {
@@ -130,6 +132,7 @@ func watcherAttempted(iw *inboxWatcher, serial uint64) bool {
 func TestRestoredMixedCapabilitiesRefreshEveryMailbox(t *testing.T) {
 	sock := sockPath(t)
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", sock)
+	fixtureSelfWakeIdentity(t, sock)
 	t.Setenv("CLAUDE_CODE_MESSAGING_TOKEN", "child-token")
 	resetWakeStreams()
 	t.Cleanup(resetWakeStreams)
@@ -183,6 +186,7 @@ func TestRestoredMixedCapabilitiesRefreshEveryMailbox(t *testing.T) {
 func TestRestoredSelfWakeRefreshesBeforeDeliveringCapturedText(t *testing.T) {
 	sock := sockPath(t)
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", sock)
+	fixtureSelfWakeIdentity(t, sock)
 	t.Setenv("CLAUDE_CODE_MESSAGING_TOKEN", "child-token")
 	resetWakeStreams()
 	t.Cleanup(resetWakeStreams)

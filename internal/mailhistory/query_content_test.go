@@ -351,7 +351,14 @@ func (s *observedHistorySeek) ReadHistoryOp(ctx context.Context, serial uint64, 
 func TestMailHistoryNativeSmallBodySurvivesLargeValidSeekInterval(t *testing.T) {
 	dir := t.TempDir()
 	wrap := func(led *ledger.Ledger) engine.Ledger { return &observedHistorySeek{Ledger: led, t: t} }
-	f := nativeHistory(t, dir, wrap)
+	limits := core.DefaultLimits()
+	limits.ConsumedRetention = 0
+	// Building and replaying this >16 MiB fixture are setup, outside the
+	// fresh content-read deadline below. Other native fixtures keep their limits.
+	start := func() nativeHistoryFixture {
+		return nativeHistoryWithLifetime(t, dir, limits, time.Minute, wrap)
+	}
+	f := start()
 	sender := historyIdentity(t, f, "sender")
 	recipient := historyIdentity(t, f, "recipient")
 	first := historyOp(t, f, &core.Op{Kind: core.OpSendMessage, Token: sender, To: "recipient", MsgType: core.MsgNotify, Body: "SMALL-FIRST-QUOTED"})["msg_serial"].(uint64)
@@ -367,7 +374,7 @@ func TestMailHistoryNativeSmallBodySurvivesLargeValidSeekInterval(t *testing.T) 
 	if err != nil || info.Size() <= 16<<20 {
 		t.Fatal("setup: native interval is not wider than the content bound:", info, err)
 	}
-	readSmall := func(f nativeHistoryFixture) {
+	readSmall := func(t *testing.T, f nativeHistoryFixture) {
 		t.Helper()
 		api, ok := any(f.eng).(historyAPI)
 		if !ok {
@@ -375,15 +382,21 @@ func TestMailHistoryNativeSmallBodySurvivesLargeValidSeekInterval(t *testing.T) 
 		}
 		// Settle metadata through the same API before asking for native content;
 		// the guard discriminates span sizing, not initial bootstrap readiness.
-		settledHistory(t, f, sender, false)
-		res, err := api.ReadMailHistory(f.ctx, sender, 0, 1, true, "")
+		settledHistoryWithin(t, f, sender, false, 30*time.Second)
+		ctx, cancel := context.WithTimeout(f.ctx, 10*time.Second)
+		defer cancel()
+		started := time.Now()
+		res, err := api.ReadMailHistory(ctx, sender, 0, 1, true, "")
+		if elapsed := time.Since(started); elapsed >= 10*time.Second {
+			t.Fatal("native content read exceeded its independent deadline:", elapsed)
+		}
 		if err != nil || res["error"] != nil || !strings.Contains(historyJSON(t, res), "SMALL-FIRST-QUOTED") {
 			t.Fatal("small authorized body remained unavailable in a large valid interval:", err, res)
 		}
 	}
-	readSmall(f) // byte-bounded live capture
+	t.Run("live", func(t *testing.T) { readSmall(t, f) })
 	f.stop()
-	restarted := nativeHistory(t, dir, wrap)
+	restarted := start()
 	restarted.ids[sender] = f.ids[sender]
-	readSmall(restarted) // canonical bootstrap independently rebuilds the anchors
+	t.Run("restart", func(t *testing.T) { readSmall(t, restarted) })
 }
