@@ -155,6 +155,11 @@ func (w *selfWaker) sendUsing(notice string, offer func(string) (string, func(bo
 			return errWakeEmpty
 		}
 	}
+	// Refresh may wait on HTTP while another incoming MCP call changes the
+	// served thread. Re-read identity at the write boundary as well.
+	if w.session != "" && w.session != streamSession() {
+		return errWakeEmpty
+	}
 	if w.deliverFn != nil {
 		err := w.deliverFn(notice)
 		written = err == nil
