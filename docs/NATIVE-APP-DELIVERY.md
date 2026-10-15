@@ -149,9 +149,14 @@ chose, once per agent. Now:
   launch starts on (read from the app's deep link handler: no path, origin or
   project means no workspace lookup and no dialog). A pass that opened nothing
   moves nothing.
-- Only then are restart notices and held mail delivered, natively, into loaded
-  threads. Until the pass ends, a wake that finds its thread unloaded is held
-  too, so the one bounded retry cannot open a thread the pass is about to load.
+- Ownership is measured again at the end of the pass: a navigation may finish
+  asynchronously while later targets load. An incomplete measurement warns
+  with the threads still unowned or whose ownership could not be measured,
+  without another open or a longer per-thread wait. Settled means the pass
+  ended, including after a failure; it never means every thread loaded. Later
+  mail for an unloaded thread can then take the ordinary queue/open route.
+  A late pass cannot settle a different app incarnation. Restart notices and
+  held mail can reach owned threads natively.
 
 What this cannot do is restore a chat the person opened during those first
 seconds. The app exposes no focused-thread query over IPC, persists no route,

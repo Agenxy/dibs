@@ -5,6 +5,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- After a ChatGPT app restart, the load report now measures ownership again
+  at the end of the pass. Threads that finish loading asynchronously count
+  correctly; an incomplete load warns with the unowned or unconfirmed threads.
+  The pass still ends so later mail can use its ordinary delivery route.
+  This does not repeat opens or increase the per-thread ownership wait.
+
 - A Claude app reopen that produces no session process now records the same
   metadata-only contact escalation as a refused open, so unreachable mail can
   ask for human help. A successful open link alone is not delivery. A late
