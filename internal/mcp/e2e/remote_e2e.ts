@@ -66,10 +66,11 @@ mkdirSync(hubDir); mkdirSync(clientDir)
 
 // The fake joined harness must not consult this test runner's live sessions
 // or real app-origin transcripts. Keep its Codex configuration within the
-// fixture, and drop thread credentials inherited from whichever harness ran CI.
+// fixture, drop inherited thread credentials, and refuse a real app open even
+// if a routing regression incorrectly chooses one over the fixture recorder.
 const fixtureCodexHome = join(root, "codex")
 mkdirSync(fixtureCodexHome)
-const fixtureHarnessEnv = { ...process.env, CODEX_HOME: fixtureCodexHome }
+const fixtureHarnessEnv = { ...process.env, CODEX_HOME: fixtureCodexHome, DIBS_TEST_FORBID_APP_OPEN: "1" }
 for (const key of ["CODEX_THREAD_ID", "CLAUDE_CODE_SESSION_ID", "DIBS_SESSION_ID", "DIBS_TOKEN"]) {
   delete fixtureHarnessEnv[key]
 }
@@ -89,7 +90,9 @@ writeFileSync(join(hubDir, "dibs.toml"), `addr = "${ADDR}"\n`)
 const noGit = (process.env.PATH ?? "").split(":").filter((d) => !existsSync(join(d, "git"))).join(":")
 const daemon = Bun.spawn({ cmd: [dibd, "-dir", hubDir], env: { ...fixtureHarnessEnv, PATH: noGit, DIBS_LOG_DEBUG: "1" }, stdout: "ignore", stderr: "pipe" })
 let hubLog = ""
-void (async () => {
+let bridgeLog = ""
+const logReaders: Promise<void>[] = []
+logReaders.push((async () => {
   const reader = daemon.stderr.getReader()
   const dec = new TextDecoder()
   for (;;) {
@@ -97,7 +100,7 @@ void (async () => {
     if (done) return
     hubLog += dec.decode(value, { stream: true })
   }
-})()
+})())
 const bridges: ReturnType<typeof Bun.spawn>[] = []
 
 // Stop every child and WAIT for it before the directories go: a signal sent is
@@ -115,10 +118,14 @@ async function cleanup() {
   cleaned = true
   for (const b of bridges) await stop(b)
   await stop(daemon)
+  await Promise.all(logReaders)
   try { rmSync(root, { recursive: true, force: true }) } catch {}
 }
 async function finish(code: number): Promise<never> {
   await cleanup()
+  if (code !== 0) {
+    console.log(`\n--- hub DEBUG log ---\n${hubLog}\n--- host bridge log ---\n${bridgeLog}`)
+  }
   process.exit(code)
 }
 for (const sig of ["SIGINT", "SIGTERM"] as const) process.on(sig, () => { void finish(130) })
@@ -334,7 +341,20 @@ check("a wakeable agent registers on the joining machine", !!sleeper.token, JSON
 // ago is recently in touch, for a remote agent as for a local one since the
 // ninth review round, and a wake against a running turn is the duplicate the
 // path refuses. The Stop hook is what says the turn is over.
-await sleeperBridge.call("hook_poll", { session_id: THREAD, event: "Stop", cwd: sleeperRepo })
+// A successful RPC can still resolve to nobody and return an empty result.
+// Measure the real hook's resolution rather than assuming the call did it.
+async function hookHealth(): Promise<any> {
+  const r = await fetch(`${URL}/api/hook-health`, { headers: { "X-Dibs-Local": secret }, tls: { rejectUnauthorized: false } } as any)
+  if (!r.ok) throw new Error(`hook health: HTTP ${r.status}`)
+  return r.json()
+}
+const beforeStop = await hookHealth()
+const stopped = await sleeperBridge.call("hook_poll", { session_id: THREAD, event: "Stop", cwd: sleeperRepo })
+const afterStop = await hookHealth()
+const stopResolved = !stopped.error && afterStop.poll_resolved === beforeStop.poll_resolved + 1
+check("the joining session's Stop hook resolves before testing its wake", stopResolved,
+  JSON.stringify({ stopped, beforeStop, afterStop }))
+if (!stopResolved) await finish(1)
 
 const hostBridge = Bun.spawn({
   cmd: [dibsBin, "host-bridge"], cwd: clientDir,
@@ -342,12 +362,11 @@ const hostBridge = Bun.spawn({
   stdout: "ignore", stderr: "pipe",
 })
 bridges.push(hostBridge)
-let bridgeLog = ""
-;(async () => {
+logReaders.push((async () => {
   const dec = new TextDecoder()
   const reader = hostBridge.stderr.getReader()
   for (;;) { const { value, done } = await reader.read(); if (done) break; bridgeLog += dec.decode(value, { stream: true }) }
-})()
+})())
 // The hub lists what is attached; the bridge is attached when it appears.
 async function attachedHosts(): Promise<any[]> {
   try {
@@ -362,7 +381,12 @@ check("`dibs host-bridge` attaches for the joining machine, stating the harness 
 
 // A question the sleeper is blocked on: the hub decides to wake it, and the
 // only route is the bridge on its machine.
-await hub.call("send", { token: hubReg.token, to: "remote-sleeper", type: "question", body: "still there?", deadline_s: 600 })
+// A refused send emits no wake event. Without this setup assertion the suite
+// diagnoses an empty recorder as lost delivery even when no mail was accepted.
+const sent = await hub.call("send", { token: hubReg.token, to: "remote-sleeper", type: "question", body: "still there?", deadline_s: 600 })
+const sendAccepted = !sent.error && Number.isSafeInteger(sent.msg_serial) && sent.msg_serial > 0
+check("the hub accepts the wake question before testing its delivery", sendAccepted, JSON.stringify(sent))
+if (!sendAccepted) await finish(1)
 function wakes(): string[][] {
   return readdirSync(clientDir).filter((f) => f.startsWith("wakes.jsonl.")).sort()
     .map((f) => JSON.parse(readFileSync(join(clientDir, f), "utf8").trim()))
