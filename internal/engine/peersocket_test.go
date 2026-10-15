@@ -862,3 +862,19 @@ func TestAnEarlierIDTwoLiveSessionsClaimReachesNeither(t *testing.T) {
 		t.Error("a live session's own id was overridden by another's history")
 	}
 }
+
+// The background lineage refresh read the claudeLineages SEAM from its own
+// goroutine, after lineages() had returned, so a test that restored the seam
+// raced a read it could not see: -race reported it from a test two cases
+// later, in a gate that otherwise passed. The source is chosen on the
+// caller's goroutine now, and the refresh only calls what it was handed.
+// Under -race this fails on the old code.
+func TestTheLineageRefreshChoosesItsSourceBeforeGoingBackground(t *testing.T) {
+	release := make(chan struct{})
+	prev := claudeLineages
+	claudeLineages = func() map[string][]string { <-release; return nil }
+	e := New(core.NewState("t", core.DefaultLimits()), &memLedger{}, deadProber{})
+	_ = e.lineages()
+	claudeLineages = prev // what every test's cleanup does, while the refresh is still out
+	close(release)
+}

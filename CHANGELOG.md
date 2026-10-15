@@ -5,6 +5,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Every Dibs tool now declares its MCP annotations, so a Codex thread that
+  is sandboxed with approval policy "never" can still reach the board. A
+  client reads a tool without hints as destructive and open-world, and Codex
+  refused `register` in exactly that case ("MCP tool call requires approval,
+  but approval policy is never"): after a ChatGPT app restart on 2026-10-15,
+  three agents whose threads came back sandboxed were cut off from Dibs.
+  Coordination and read tools are now closed-world and non-destructive or
+  read-only. Tools that override another agent's state (evict,
+  force_release, prune, merge_agents, merge_spaces, close_space, relocate,
+  adopt_agent) stay destructive, so a client still asks before them.
+
 - `mail_history` works again on a board whose ledger continues from a
   snapshot. The history view refused to build when a conversation begun
   before the snapshot was touched after a newer one, which is the normal

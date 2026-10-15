@@ -130,7 +130,16 @@ func TestToolListingStaysAffordable(t *testing.T) {
 		// was still 46 x perTool after a 47th tool landed, and the average
 		// here was 783, under the standard: wider, not wordier. The new
 		// descriptions were trimmed twice before this.
-		budget = 37600 // 47 tools x perTool, ~9.4k tokens
+		//
+		// Raised to 51 x perTool for TOOL ANNOTATIONS (annotations.go), and
+		// not for a tool. Every tool now states its MCP hints, because a
+		// client reads a missing hint as "destructive, open-world", and Codex
+		// refused register to a sandboxed thread on 2026-10-15, cutting a seat
+		// off the board. The hints were cut to only what differs from MCP's
+		// defaults before this, and the average is 762, under the standard.
+		// Trimming register, declare or send to pay for them would trade a
+		// lesson for a hint.
+		budget = 40800 // 51 x perTool, ~10.2k tokens
 	)
 	if len(b) > budget {
 		t.Errorf("tools/list is %d chars (~%d tokens), over the %d budget. Every agent pays "+
