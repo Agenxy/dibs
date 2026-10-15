@@ -6,7 +6,6 @@ package mailhistory
 import (
 	"context"
 	"crypto/rand"
-	"errors"
 	"sort"
 	"sync"
 	"time"
@@ -156,7 +155,14 @@ func (i *Index) add(u snapshotUnit, keys []partyKey) error {
 	case i.serials.get(n) == u.Position.Msg:
 		i.latest.set(n, ref)
 	default:
-		return errors.New("history conversation serials are out of order")
+		// A conversation older than the newest one seen so far. From genesis
+		// this cannot happen, since a conversation first appears on the line
+		// that creates it. From a snapshot it does: the first kept line that
+		// touches a conversation begun before the snapshot can follow a newer
+		// conversation's first line. Refusing it here left the production
+		// board without mail_history from its first compaction on.
+		i.serials.insert(n, u.Position.Msg)
+		i.latest.insert(n, ref)
 	}
 	for _, key := range keys {
 		i.party(key).refs.add(ref)

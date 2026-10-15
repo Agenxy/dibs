@@ -6,6 +6,7 @@ package mailhistory
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net"
 	"sync"
 )
@@ -154,6 +155,13 @@ func (i *Index) buildChunk(ctx context.Context, c *rawChunk) error {
 func (i *Index) build(ctx context.Context) {
 	defer i.Invalidate() // context cancellation never leaves a complete-looking stale view
 	if err := i.buildBootstrap(ctx); err != nil {
+		// Said once, at WARN: mail_history refuses every caller until the next
+		// start, and the only other sign is E_HISTORY_UNAVAILABLE at as_of 0.
+		// It sat that way on the production board for a day with no line here.
+		if ctx.Err() == nil {
+			slog.Warn("mail history view could not be built; mail_history is unavailable until dibd restarts",
+				"err", err)
+		}
 		return
 	}
 	i.drain(ctx)

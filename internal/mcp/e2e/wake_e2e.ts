@@ -537,7 +537,16 @@ cooldown = "60s"
       }
       await Bun.sleep(20)
     }
-    await settle(1000)
+    // A WINDOW, not a sleep, and wider than the old 1s for a measured reason:
+    // the time counted here includes starting the second recorder, a fresh
+    // `bun` that has to write its file. Measured 2026-10-15 with the machine
+    // at load average 275: the second wake arrived every time, 576ms to
+    // 1596ms after the first process was gone, and a 1s sleep failed one run
+    // in three. Waiting longer cannot make this pass falsely, because nothing
+    // else in this fixture can start a command: Dibs runs no timers, so
+    // without the exit re-check the question waits for an event that never
+    // comes, and the window just runs out.
+    for (let until = Date.now() + 5000; count() <= 1 && Date.now() < until;) await Bun.sleep(50)
     check(name, count() > 1,
       "the question that arrived during the turn woke nobody after it ended. " +
       "The agent read its inbox before that message existed, so it never saw it, " +
