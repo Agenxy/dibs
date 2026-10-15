@@ -68,6 +68,7 @@ __pycache__/
 /stampserver
 /installstamp
 /mcpbundle
+/ociimage
 /version
 /reviewrelease
 /sigstore-root-check
