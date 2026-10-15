@@ -32,6 +32,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   force_release, prune, merge_agents, merge_spaces, close_space, relocate,
   adopt_agent) stay destructive, so a client still asks before them.
 
+- Missing `read_mail` envelopes now explain the retention limit and point to
+  `inbox` and available `mail_history`. An absent envelope, including a serial
+  below a truncation watermark, no longer claims that a particular message
+  definitely existed and was evicted.
+
 - `mail_history` works again on a board whose ledger continues from a
   snapshot. The history view refused to build when a conversation begun
   before the snapshot was touched after a newer one, which is the normal

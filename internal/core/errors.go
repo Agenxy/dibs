@@ -233,12 +233,15 @@ func ErrCursorTooOld(floor uint64) *Error {
 		"cursor precedes the event ring floor (%d)", floor)
 }
 
-// ErrNoMessage explains absence honestly: pruned mail is detectable via the
-// recipient's truncation watermark (SPEC §8).
+// ErrNoMessage cannot infer why an envelope is absent. A watermark describes
+// an older range, not proof that every serial in it once held mail (SPEC §8).
 func ErrNoMessage(serial, truncatedBefore uint64) *Error {
-	hint := "check the serial; use inbox() to list your mail"
+	recovery := "read_mail() returns retained envelopes only; use inbox() for current mail " +
+		"or mail_history() for available retained history"
+	hint := "the serial may be incorrect or its envelope may be outside retention; " + recovery
 	if serial < truncatedBefore {
-		hint = "this serial precedes your truncated_before_serial watermark: the message was evicted under retention bounds"
+		hint = "this serial precedes your truncated_before_serial watermark; " +
+			"older envelopes may have been evicted under retention bounds; " + recovery
 	}
 	return errf("E_NO_MESSAGE", hint, "no accessible message %d", serial)
 }
