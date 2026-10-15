@@ -6,7 +6,6 @@ package engine
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -18,7 +17,6 @@ import (
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/harnessenv"
-	"github.com/agenxy/dibs/internal/logs"
 )
 
 type reopenContactFixture struct {
@@ -100,6 +98,8 @@ func (f reopenContactFixture) do(t *testing.T, op *core.Op) core.Result {
 
 func TestReopenedClaudeSessionWithNoProcessCreatesDurableContact(t *testing.T) {
 	f := newReopenContactFixture(t)
+	events, unsubscribe := f.e.Subscribe(0)
+	defer unsubscribe()
 	const private = "PRIVATE-REOPEN-CONTACT-MAIL"
 	sent := f.do(t, &core.Op{
 		Kind: core.OpSendMessage, Token: f.sender, To: "lead", MsgType: core.MsgRequest, Body: private,
@@ -116,7 +116,8 @@ func TestReopenedClaudeSessionWithNoProcessCreatesDurableContact(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("setup: actual send did not reach the app opener")
 	}
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.NewTimer(2 * time.Second)
+	defer deadline.Stop()
 	for {
 		snapshot, err := f.e.query(f.ctx, func() core.Result {
 			m := f.e.state.Messages[serial]
@@ -158,20 +159,37 @@ func TestReopenedClaudeSessionWithNoProcessCreatesDurableContact(t *testing.T) {
 			}
 			return
 		}
-		if time.Now().After(deadline) {
+		select {
+		case _, ok := <-events:
+			if !ok {
+				t.Fatal("setup: engine event stream closed before contact")
+			}
+		case <-deadline.C:
 			t.Fatalf("successful app open with no process never recorded contact escalation: %v", snapshot)
 		}
-		time.Sleep(10 * time.Millisecond)
 	}
+}
+
+type reopenFailureLog struct{ failed chan struct{} }
+
+func (w reopenFailureLog) Write(data []byte) (int, error) {
+	if strings.Contains(string(data), "reopened this agent's Claude app session but no process for it appeared") &&
+		strings.Contains(string(data), "agent=lead") {
+		select {
+		case w.failed <- struct{}{}:
+		default:
+		}
+	}
+	return len(data), nil
 }
 
 // A late app-open result must refer to the incarnation that requested it.
 // Both attempts start with real sends; only the old attempt is allowed to fail.
 func TestLateReopenFailureCannotEscalateAReplacementRecipient(t *testing.T) {
-	ring := logs.NewRing(128)
+	failed := make(chan struct{}, 1)
 	previous := slog.Default()
-	handler := slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelDebug})
-	slog.SetDefault(slog.New(logs.NewHandler(handler, ring)))
+	handler := slog.NewTextHandler(reopenFailureLog{failed}, &slog.HandlerOptions{Level: slog.LevelDebug})
+	slog.SetDefault(slog.New(handler))
 	t.Cleanup(func() { slog.SetDefault(previous) })
 	f := newReopenContactFixture(t)
 	oldRelease, newRelease := make(chan struct{}), make(chan struct{})
@@ -247,27 +265,28 @@ func TestLateReopenFailureCannotEscalateAReplacementRecipient(t *testing.T) {
 	if err != nil || replacementState["created"].(uint64) <= f.created || replacementState["contacts"] != 0 {
 		t.Fatalf("setup: replacement was not a fresh, unalerted incarnation: %v / %v", replacementState, err)
 	}
+	events, unsubscribe := f.e.Subscribe(0)
+	defer unsubscribe()
 	releaseOld.Do(func() { close(oldRelease) })
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		failed := false
-		for _, record := range ring.Tail(0) {
-			if record.Msg == "reopened this agent's Claude app session but no process for it appeared" &&
-				record.Attrs["agent"] == "lead" {
-				failed = true
-			}
-		}
-		if failed {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("setup: old reopen failure never reached its timeout")
-		}
-		time.Sleep(10 * time.Millisecond)
+	select {
+	case <-failed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("setup: old reopen failure never reached its timeout")
 	}
 	// The replacement's opener stays blocked throughout this observation; any
 	// contact for its fresh mail can only have come from the old callback.
-	for deadline := time.Now().Add(time.Second); time.Now().Before(deadline); {
+	deadline := time.NewTimer(time.Second)
+	defer deadline.Stop()
+	for {
+		finished := false
+		select {
+		case _, ok := <-events:
+			if !ok {
+				t.Fatal("setup: engine event stream closed during replacement observation")
+			}
+		case <-deadline.C:
+			finished = true
+		}
 		state, err := f.e.query(f.ctx, func() core.Result {
 			m := f.e.state.Messages[serial]
 			return core.Result{"contact": m.ContactEscalatedAt, "contacts": len(f.e.state.Contacts), "state": m.State}
@@ -275,6 +294,8 @@ func TestLateReopenFailureCannotEscalateAReplacementRecipient(t *testing.T) {
 		if err != nil || state["contact"] != uint64(0) || state["contacts"] != 0 || state["state"] != core.MsgStatePending {
 			t.Fatalf("old reopen failure touched replacement mail: %v / %v", state, err)
 		}
-		time.Sleep(10 * time.Millisecond)
+		if finished {
+			return
+		}
 	}
 }
