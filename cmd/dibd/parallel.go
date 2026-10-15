@@ -95,7 +95,9 @@ func claimHostSlot(addr, scheme, dir string, allowed bool) (func(), error) {
 	// 2. This machine. Reading the registry and claiming a slot happen under one
 	//    host-wide lock, so two daemons starting together cannot both conclude
 	//    they are alone, which a check-then-register pair allowed.
-	unregister, err := paths.Claim(paths.Daemon{PID: os.Getpid(), Addr: addr, Dir: dir, Scheme: scheme}, allowed)
+	unregister, err := paths.Claim(paths.Daemon{
+		PID: os.Getpid(), Addr: addr, Dir: dir, Scheme: scheme, Parallel: allowed,
+	}, allowed)
 	if err != nil {
 		closeLock()
 		// The policy is a plain bool, so nothing of ours runs while the registry

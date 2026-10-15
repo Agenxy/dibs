@@ -5,6 +5,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- A daemon started with `-allow-parallel` (or `DIBS_ALLOW_PARALLEL`) is a
+  declared second board and no longer blocks another board from starting.
+  A K7 test board on its own directory and port stopped the production board
+  from restarting at all, and the recovery weakened production's own guard.
+  Two undeclared boards on one machine are still refused: that silent split
+  is what the guard is for.
+
 - Dibs no longer replays its whole history at every start. A start folds
   ledger lines older than `[ledger] history` (default `24h`, or `all`) into a
   snapshot beside the ledger and removes them; later starts load the snapshot

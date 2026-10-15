@@ -64,6 +64,14 @@ type Daemon struct {
 	// the replacement re-inferred: an https loopback board came back
 	// plaintext. Found by the pre-release review, round thirty-nine.
 	Scheme string `json:"scheme,omitempty"`
+	// Parallel marks a daemon started with -allow-parallel: a deliberate second
+	// board (a test board, an untrusted-agent board). It accepted the risk of
+	// running beside another board, so it never blocks one from starting.
+	// Without this, a K7 test board on its own directory and port stopped the
+	// production board from restarting at all (2026-10-14), and recovering
+	// meant weakening production's own guard. An entry from an older daemon
+	// has no field and counts as undeclared, which keeps the guard.
+	Parallel bool `json:"parallel,omitempty"`
 	// Unknown marks an entry whose lock is held but whose contents could not be
 	// decoded. Somebody is running something; we just cannot say what. It is a
 	// field rather than an omission because omitting it was fail-open: a
@@ -277,7 +285,7 @@ func Claim(d Daemon, allowParallel bool) (release func(), err error) {
 		// the same daemon, and two different directories can share a relative
 		// spelling from different working directories. An undecodable entry is a
 		// stranger by definition.
-		if o.IsStranger(ourDir) {
+		if o.IsStranger(ourDir) && !o.Parallel {
 			others = append(others, o)
 		}
 	}
