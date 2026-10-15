@@ -17,7 +17,10 @@ import (
 // watcher with it, or the upgraded bridge answers every call and never wakes
 // its session again.
 func TestAnUpgradedBridgeKeepsItsSelfWake(t *testing.T) {
-	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", "/nonexistent/but/present.sock")
+	sock := sockPath(t)
+	_ = listenLines(t, sock)
+	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", sock)
+	fixtureSelfWakeIdentity(t, sock)
 	t.Setenv("CLAUDE_CODE_MESSAGING_TOKEN", "child-token")
 	t.Cleanup(func() { resetWakeStreams() })
 	// The watcher records the token it subscribes with, and the handoff

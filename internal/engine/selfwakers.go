@@ -102,9 +102,10 @@ func (e *Engine) AttachSelfWakerClaim(agentID, session, claim string) func() {
 // its own wake notices, and the session that bridge named.
 //
 // Keyed on the AGENT, not on the session, and that is deliberate. The claim is
-// authenticated by the agent's token, and a bridge only ever writes to the
-// session it is itself running in, so a self-waking bridge for this agent is
-// by construction the session this agent is reachable in. Requiring the two
+// authenticated by the agent's token. Current bridges prove their socket's
+// session from the actual parent's sidecar and bind each stream to it; older
+// bridges declared from inherited credentials alone, so their claim remains
+// weaker until that bridge serves a call and upgrades. Requiring the two
 // session ids to match would hand the socket route back whenever a harness
 // published no session id on its listen, which is the case this exists to
 // cover.

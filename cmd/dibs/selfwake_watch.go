@@ -205,7 +205,7 @@ func (iw *inboxWatcher) listenBody(st *inboxStream) []byte {
 	// socket route back with nothing to clean up.
 	// A surrendered bridge releases its named claims at the failure event and
 	// closes every subscription; it never reclaims the route on reconnect.
-	if iw.sharedWaker().canReach() {
+	if iw.sharedWaker().serves(st.session) {
 		meta[mcp.SelfWakeMetaKey] = true
 		meta[mcp.SelfWakeClaimMetaKey] = st.claim
 	}
@@ -273,8 +273,15 @@ func (iw *inboxWatcher) startFor(
 		return
 	}
 	waker := iw.sharedWaker()
-	if waker == nil {
-		return // this harness publishes no session socket: nothing local to do
+	session := streamSession()
+	if !waker.serves(session) {
+		iw.mu.Lock()
+		if prev := iw.streams[key]; prev != nil {
+			prev.cancel()
+			delete(iw.streams, key)
+		}
+		iw.mu.Unlock()
+		return // no proof that this socket belongs to the session we serve
 	}
 	iw.mu.Lock()
 	defer iw.mu.Unlock()
@@ -289,7 +296,6 @@ func (iw *inboxWatcher) startFor(
 	// open forever waking nobody. The bridge's own answer to "which session do
 	// I serve" is the thing that changed, so it is the thing to compare.
 	// Found by the pre-release review, round sixty-eight.
-	session := streamSession()
 	prev := iw.streams[key]
 	if prev != nil && prev.token == token && prev.session == session {
 		return
@@ -423,7 +429,7 @@ func (iw *inboxWatcher) onFrame(st *inboxStream, msg streamFrame, waker *selfWak
 	}
 	// Surrender already released the named claim. Close any other stream
 	// racing with that event instead of letting it write through this bridge.
-	if !waker.canReach() {
+	if !waker.serves(st.session) {
 		slog.Debug("dropping the inbox stream so the daemon learns this bridge " +
 			"no longer delivers its own wakes")
 		return false

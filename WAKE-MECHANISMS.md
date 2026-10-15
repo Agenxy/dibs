@@ -961,6 +961,21 @@ about the first one four times. Three releases retired one placeholder and
 introduced another, because each round read the complaint as being about the
 WORDING. It was about the card.
 
+The socket's presence in the environment is not proof that it belongs to
+this bridge's session: a nested harness inherits those credentials too.
+Measured 2026-10-15, the remote suite failed 7/7 from Claude Code and passed
+with the same binaries when only the messaging credentials were removed.
+A bridge now reads only its actual parent's `~/.claude/sessions/<pid>.json`,
+requires `sessionId` and `messagingSocketPath`, resolves both socket spellings
+canonically and requires equality. Its self-waker is bound to that session;
+each subscription and write, including a retry or an upgrade's pending notice,
+must still serve that exact session. Neither `CLAUDE_PID`, an inherited session
+variable nor a client name alone proves this. Missing evidence leaves delivery
+to the daemon's other routes. The hub's Debug handoff names the agent and
+claimed session; the bridge PID is explicitly unavailable in this metadata.
+Older dormant bridges keep their older, weaker claim until they serve a call
+and upgrade; installing a new daemon alone does not refresh them.
+
 **One writer, and the choice of which one is forced rather than aesthetic.** The
 bridge declares on its `subscriptions/listen` that it can reach its own session
 (`com.dibs/self_wake`), and for as long as that stream is open the daemon does

@@ -14,6 +14,7 @@ import (
 func TestNewMailIsDeliveredBeforeItsSubscriptionGoes(t *testing.T) {
 	sock := sockPath(t)
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", sock)
+	fixtureSelfWakeIdentity(t, sock)
 	t.Setenv("CLAUDE_CODE_MESSAGING_TOKEN", "child-token")
 	t.Cleanup(func() { recordWakePending(false, "") })
 	lines := listenLines(t, sock)
@@ -60,6 +61,7 @@ func TestNewMailIsDeliveredBeforeItsSubscriptionGoes(t *testing.T) {
 func TestARetriedNoticeIsDeliveredAfterItsSubscriptionGoes(t *testing.T) {
 	sock := sockPath(t)
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", sock)
+	fixtureSelfWakeIdentity(t, sock)
 	t.Setenv("CLAUDE_CODE_MESSAGING_TOKEN", "child-token")
 	t.Cleanup(func() { recordWakePending(false, "") })
 

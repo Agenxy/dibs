@@ -5,6 +5,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Privacy: a Dibs process started inside a Claude Code session could deliver
+  another agent's mail into that session. It could also leave the intended
+  recipient unwoken by falsely claiming the socket route. The bridge now
+  requires its actual parent's sidecar to bind the inherited socket to the
+  session it serves; the hub logs when it leaves delivery to that bridge.
+  A controlled test reproduced the wrong-session disclosure. A scoped scan of
+  the reported real session found no observed disclosure, which does not prove
+  no socket write happened. The remote test isolates real credentials and
+  exercises synthetic foreign ones, so the whole gate works from Claude Code.
+
 - Every Dibs tool now declares its MCP annotations, so a Codex thread that
   is sandboxed with approval policy "never" can still reach the board. A
   client reads a tool without hints as destructive and open-world, and Codex

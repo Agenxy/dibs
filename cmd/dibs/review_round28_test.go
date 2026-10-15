@@ -22,6 +22,7 @@ import (
 func TestSocketsOffHoldsAcrossAnInPlaceUpgrade(t *testing.T) {
 	sock := sockPath(t)
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", sock)
+	fixtureSelfWakeIdentity(t, sock)
 	t.Setenv("CLAUDE_CODE_MESSAGING_TOKEN", "child-token")
 	t.Cleanup(func() { recordWakePending(false, "") })
 	lines := listenLines(t, sock)

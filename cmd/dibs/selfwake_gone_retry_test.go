@@ -4,6 +4,7 @@
 package main
 
 import (
+	"net"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -14,9 +15,17 @@ import (
 func TestGoneSocketNeverRetriesAfterSurrender(t *testing.T) {
 	sock := sockPath(t)
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", sock)
+	fixtureSelfWakeIdentity(t, sock)
 	t.Setenv("CLAUDE_CODE_MESSAGING_TOKEN", "child-token")
 	t.Cleanup(func() { recordWakePending(false, "") })
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
 	w := newSelfWaker()
+	if err := ln.Close(); err != nil {
+		t.Fatal(err)
+	}
 	if w == nil {
 		t.Fatal("setup: no own-session writer")
 	}
@@ -26,7 +35,7 @@ func TestGoneSocketNeverRetriesAfterSurrender(t *testing.T) {
 		offers.Add(1)
 		return "original mail", nil, nil
 	}
-	err := w.wake("original mail")
+	err = w.wake("original mail")
 	if !socketGone(err) || w.canReach() {
 		t.Fatalf("setup: absent socket did not surrender: %v", err)
 	}

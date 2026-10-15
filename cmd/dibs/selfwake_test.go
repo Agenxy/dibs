@@ -80,6 +80,7 @@ func TestTheBridgeWakesItsOwnSession(t *testing.T) {
 	}()
 
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", sock)
+	fixtureSelfWakeIdentity(t, sock)
 	t.Setenv("CLAUDE_CODE_MESSAGING_TOKEN", "child-token-abc")
 
 	// A stand-in for the daemon: acknowledge, then push one inbox update.

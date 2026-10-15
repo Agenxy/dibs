@@ -21,7 +21,10 @@ import (
 // credential, quietly and forever: mail stayed fetchable and the wake this
 // exists for silently stopped. Found by the pre-release review, round three.
 func TestARotatedTokenReplacesTheWakeSubscription(t *testing.T) {
-	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", "/nonexistent/but/present.sock")
+	sock := sockPath(t)
+	_ = listenLines(t, sock)
+	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", sock)
+	fixtureSelfWakeIdentity(t, sock)
 	t.Setenv("CLAUDE_CODE_MESSAGING_TOKEN", "child-token")
 	seen := make(chan string, 8)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

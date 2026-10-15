@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -78,7 +79,13 @@ func newEconomyFixtureWith(t *testing.T, sid string, wrap func(http.Handler) htt
 	return newEconomyFixtureAt(t, sid, sockPath(t), wrap)
 }
 
-func newEconomyFixtureAt(t *testing.T, sid, sock string, wrap func(http.Handler) http.Handler) *economyFixture {
+type economyIdentity struct {
+	session string
+	socket  string
+	missing bool
+}
+
+func newEconomyFixtureAt(t *testing.T, sid, sock string, wrap func(http.Handler) http.Handler, identity ...economyIdentity) *economyFixture {
 	t.Helper()
 	dir := t.TempDir()
 	f := &economyFixture{sid: sid, socket: sock}
@@ -144,10 +151,27 @@ func newEconomyFixtureAt(t *testing.T, sid, sock string, wrap func(http.Handler)
 	if err := os.WriteFile(filepath.Join(dir, "local.secret"), bytes.Repeat([]byte("a"), 64), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	owner := economyIdentity{session: sid, socket: sock}
+	if len(identity) > 0 {
+		owner = identity[0]
+	}
+	if !owner.missing {
+		sideDir := filepath.Join(dir, ".claude", "sessions")
+		if err := os.MkdirAll(sideDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		side, err := json.Marshal(map[string]any{"pid": os.Getpid(), "sessionId": owner.session, "messagingSocketPath": owner.socket})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(sideDir, strconv.Itoa(os.Getpid())+".json"), side, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	cmd := exec.Command(os.Args[0], "-test.run=^TestSocketEconomyBridgeHelper$")
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
-		"DIBS_TEST_SOCKET_ECONOMY_BRIDGE=1", "DIBS_DIR="+dir,
+		"DIBS_TEST_SOCKET_ECONOMY_BRIDGE=1", "DIBS_DIR="+dir, "HOME="+dir, "USERPROFILE="+dir,
 		"DIBS_ADDR="+strings.TrimPrefix(f.srv.URL, "http://"), "DIBS_HOST_ID=economy-host",
 		"DIBS_HARNESS=Claude Code", "DIBS_NOTIFY=off", "DIBS_AGENT_NONCE=",
 		"CLAUDE_CODE_MESSAGING_SOCKET="+sock, "CLAUDE_CODE_MESSAGING_TOKEN=fixture-child-token")
@@ -181,7 +205,7 @@ func newEconomyFixtureAt(t *testing.T, sid, sock string, wrap func(http.Handler)
 	defer ticker.Stop()
 	deadline := time.After(3 * time.Second)
 	for {
-		if live, _ := f.eng.SelfWaking("worker"); live {
+		if live, _ := f.eng.SelfWaking("worker"); live || len(identity) > 0 {
 			break
 		}
 		select {
