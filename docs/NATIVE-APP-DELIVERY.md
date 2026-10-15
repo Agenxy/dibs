@@ -178,6 +178,17 @@ activate the app and supplies no native message receipt; running sessions need
 no open. Retiring the presence/idle delay does not resolve the external
 messaging boundary.
 
+The process budget is another observed boundary. A read of Claude
+**2.26454.2** (`app.asar` SHA-256
+`e9628d73410e4771ae5e9ac509ea20e61e8eb312f18a8fc10c222f9b094f9787`)
+found a soft CLI-process cap of `max(6, floor(total RAM / 3 GiB))`; a warm
+spawn at that cap yields rather than starting a process. This is a finding
+about that exact source image. Separately, runtime logs on **2026-10-14**
+recorded two warm reopen attempts for one Code tab yielding at the cap, and
+Dibs subsequently recorded that no process appeared during its 30-second
+settle window. Later explicit input did start the process. A successful open
+link therefore establishes neither process admission nor notice delivery.
+
 **Claude draft for upstream review; not posted:** Please expose an app-owned,
 authenticated local interface through which external coordination software can
 deliver an explicitly untrusted factual notice to an existing Claude Desktop
@@ -188,7 +199,9 @@ decisions, matching the native capability already available through the
 in-process `ccd_session_mgmt.send_message` tool.
 
 Return a matched receipt distinguishing accepted input, app-owned queueing,
-refusal and an unknown outcome. A message ID alone does not prove a turn
+refusal and an unknown outcome. If the app's process budget prevents a closed
+tab from resuming, report explicit queueing or refusal; acknowledging an open
+link is not admission. A message ID alone does not prove a turn
 started: a turn-start receipt should include a turn identifier or corresponding
 start event. Unknown post-submission outcomes must remain explicit so callers
 can avoid blind duplicate submissions. Stale or archived targets should receive
