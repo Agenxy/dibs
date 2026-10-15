@@ -125,7 +125,7 @@ func (e *Engine) openClosedSession(l *core.Agent) {
 				return
 			}
 			if opened {
-				e.deliverAfterReopen(agent, local, known)
+				e.deliverAfterReopen(agent, created, local, known)
 			}
 		})
 	}()
@@ -145,13 +145,20 @@ func (e *Engine) deliverToRunningSession(agent string, known []string) {
 	})
 }
 
-// deliverAfterReopen waits for the session the open started, then runs the
-// agent's delivery again, once. The open only starts a process: its
+// deliverAfterReopen waits for the process requested by the open, then runs
+// the agent's delivery again, once. A successful open is not admission: its
 // SessionStart hook can hand over mail for the next turn but cannot start one,
-// so without this the reopened session sat idle with its mail.
-func (e *Engine) deliverAfterReopen(agent, local string, known []string) {
+// so without this the reopened session sat idle with its mail. No process at
+// the deadline is a contact failure for the incarnation that requested it.
+func (e *Engine) deliverAfterReopen(agent string, created uint64, local string, known []string) {
+	if e.wakeContext.Err() != nil {
+		return
+	}
 	deadline := time.Now().Add(reopenSettle)
 	for time.Now().Before(deadline) {
+		if e.wakeContext.Err() != nil {
+			return
+		}
 		if l, cli := harnessenv.ClaudeAppSessionNow(local, known...); l == local && claudeRunning(cli) {
 			e.deliverToRunningSession(agent, known)
 			return
@@ -162,8 +169,13 @@ func (e *Engine) deliverAfterReopen(agent, local string, known []string) {
 		case <-time.After(500 * time.Millisecond):
 		}
 	}
+	if e.wakeContext.Err() != nil {
+		return
+	}
 	slog.Warn("reopened this agent's Claude app session but no process for it appeared",
-		"agent", agent, "app_session", local, "hint", "its mail waits for its next Dibs call")
+		"agent", agent, "app_session", local,
+		"hint", "the person is asked instead; open the agent's session in the Claude app")
+	e.contactAfterAppFailure(agent, created)
 }
 
 // Replaced by tests: the process check and how long a reopen may take.

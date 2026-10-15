@@ -5,6 +5,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- A Claude app reopen that produces no session process now records the same
+  metadata-only contact escalation as a refused open, so unreachable mail can
+  ask for human help. A successful open link alone is not delivery. A late
+  failure remains bound to the recipient incarnation that requested the open.
+
 - `task image:k7` builds dibd as an OCI image layout for running a board
   inside a K7 kassette (`tools/ociimage`). The build is reproducible: the
   same commit gives the same digest on any machine, because K7 imports an
