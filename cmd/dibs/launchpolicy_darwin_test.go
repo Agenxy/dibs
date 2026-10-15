@@ -45,7 +45,7 @@ func policyUpgradeFixture(t *testing.T, extra string) (*plan, string, []byte) {
 	return p, unit, body
 }
 
-func TestLaunchPolicyGeneratedStandard(t *testing.T) {
+func TestLaunchPolicyGeneratedInteractive(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	if err := writeLaunchAgent("/bin/dibd", home); err != nil {
@@ -55,7 +55,7 @@ func TestLaunchPolicyGeneratedStandard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(body, []byte("<key>ProcessType</key><string>Standard</string>")) {
+	if !bytes.Contains(body, []byte("<key>ProcessType</key><string>Interactive</string>")) {
 		t.Fatal("generated daemon retains Background throttle")
 	}
 }
@@ -77,7 +77,7 @@ func TestLaunchPolicyUpgradeRetainsCustomBytes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := bytes.Replace(before, []byte("<key>ProcessType</key><string>"+policy+"</string>\n</dict>"), []byte("<key>ProcessType</key><string>Standard</string>\n</dict>"), 1)
+			want := bytes.Replace(before, []byte("<key>ProcessType</key><string>"+policy+"</string>\n</dict>"), []byte("<key>ProcessType</key><string>Interactive</string>\n</dict>"), 1)
 			if bytes.Equal(want, before) {
 				t.Fatal("setup: expected replacement did not match")
 			}

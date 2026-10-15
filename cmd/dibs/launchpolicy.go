@@ -14,7 +14,10 @@ import (
 	"strings"
 )
 
-// standardLaunchPolicy changes only the top-level Background string. Parsing
+// standardLaunchPolicy changes only the top-level Background string, to the
+// template's Interactive (see docs/DAEMON-SCHEDULING-DESIGN.md: Standard let
+// a start under machine load take 8.5 s where Interactive took 0.5 s,
+// 2026-10-15). Parsing
 // XML, rather than searching for a spelling, keeps nested operator settings
 // and comments out of the decision. The original bytes remain the authority
 // for every field that this migration does not own.
@@ -34,7 +37,7 @@ func standardLaunchPolicy(body []byte) ([]byte, error) {
 		return nil, nil // An explicit operator policy is left alone.
 	}
 	out := append([]byte(nil), body[:policy.start]...)
-	out = append(out, "Standard"...)
+	out = append(out, daemonProcessType...)
 	out = append(out, body[policy.end:]...)
 	return out, nil
 }
@@ -130,7 +133,7 @@ func readPolicyElement(d *xml.Decoder, start xml.StartElement, depth int) (*poli
 func (p *plan) policyFailure(err error) error {
 	return fmt.Errorf("cannot update scheduling in %s, so nothing has been stopped: %w; "+
 		"inspect the unit, convert a binary plist with `plutil -convert xml1`, or set its "+
-		"top-level ProcessType to Standard, then run `dibs upgrade` again", p.unit, err)
+		"top-level ProcessType to Interactive, then run `dibs upgrade` again", p.unit, err)
 }
 
 func (p *plan) checkPolicyUnit() error {
@@ -213,6 +216,10 @@ func (p *plan) migratePolicy() error {
 	if err := os.Rename(f.Name(), p.unit); err != nil { // #nosec G703
 		return err
 	}
-	say("  changed %s ProcessType from Background to Standard; other settings retained", p.unit)
+	say("  changed %s ProcessType from Background to Interactive; other settings retained", p.unit)
 	return nil
 }
+
+// daemonProcessType is the launchd scheduling class the daemon's LaunchAgent
+// asks for. Every agent waits on the board, so a starved board stalls them all.
+const daemonProcessType = "Interactive"

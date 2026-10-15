@@ -471,7 +471,7 @@ func (p *plan) report() error {
 	}
 	step("dry run: nothing below was done")
 	if len(p.policyAfter) != 0 {
-		say("  would change %s ProcessType from Background to Standard, preserving other settings", ui.Path(p.unit))
+		say("  would change %s ProcessType from Background to Interactive, preserving other settings", ui.Path(p.unit))
 	}
 	if p.unitWrong {
 		say("  would rewrite %s, which pins %s", ui.Path(p.unit), ui.Path(p.pinned))
