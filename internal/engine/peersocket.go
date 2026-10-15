@@ -136,8 +136,12 @@ func (e *Engine) lineages() map[string][]string {
 	defer e.lin.mu.Unlock()
 	if !e.lin.loading {
 		e.lin.loading = true
+		// The source is chosen HERE, on the caller's goroutine: the refresh
+		// outlives this call, and reading the package seam from inside it
+		// raced every test that restores the seam when it finishes.
+		read := claudeLineages
 		go func() {
-			next := claudeLineages()
+			next := read()
 			e.lin.mu.Lock()
 			e.lin.m, e.lin.loading = next, false
 			e.lin.mu.Unlock()
