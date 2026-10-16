@@ -552,7 +552,12 @@ the daemon waits for the app's socket, loads every local ChatGPT-app agent
 thread it does not already hold in one pass under the desktop-wide open lock,
 returns the window to `codex://threads/new` (the launch view) when it opened
 anything, and then delivers restart notices and held mail natively. See
-`docs/NATIVE-APP-DELIVERY.md`.
+`docs/NATIVE-APP-DELIVERY.md`. Ownership is measured again at the end of the
+pass. An incomplete load warns with unowned and unconfirmed thread identifiers.
+Settled means that the pass ended, including on failure, so later mail for an
+unloaded thread can take the ordinary route; it is not a completeness claim.
+A late pass cannot settle a different app incarnation. Reconciliation does not
+repeat opens or increase the per-thread ownership wait.
 
 **Optional ChatGPT app-restart recovery.** `[wake]
 resume_after_app_restart = "1h"` enables a local, macOS-only sweep of known

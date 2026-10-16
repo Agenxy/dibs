@@ -34,17 +34,27 @@ func (e *Engine) afterAppReturn(ctx context.Context, epoch string, plans []wakeP
 		owned := func(thread string) (bool, error) { return appThreadOwned(ctx, thread) }
 		loaded, opened, err := shower.LoadChatGPTThreads(threads, owned, 5*time.Second)
 		if err != nil {
+			var missing *harnessenv.ChatGPTThreadOwnershipError
+			var unowned, unknown []string
+			if errors.As(err, &missing) {
+				unowned, unknown = missing.Unowned, missing.Unknown
+			}
 			slog.Warn("could not load every agent thread after the ChatGPT app restarted", "err", err,
 				"loaded", loaded, "opened", opened, "threads", len(threads),
+				"unowned_threads", unowned, "unknown_threads", unknown,
 				"hint", "an agent whose thread is not loaded is opened by its next mail instead")
 		} else {
 			slog.Info("loaded the agents' threads after the ChatGPT app restarted",
 				"loaded", loaded, "opened", opened, "threads", len(threads))
 		}
 	}
-	// Settled before any delivery: from here an unloaded thread is one the
-	// load could not reach, and its mail takes the ordinary route.
-	e.appSettled.Store(epoch)
+	// Settled means the pass ENDED, not that every target became owned.
+	// Otherwise one missing thread holds unloaded agents' future mail forever:
+	// there is no timer to release the hold. They now take the ordinary route.
+	// A late pass cannot settle a different app incarnation.
+	if current, known := currentAppRestartEpoch(); known && current == epoch {
+		e.appSettled.Store(epoch)
+	}
 	if len(plans) > 0 {
 		e.deliverAppRestart(ctx, epoch, plans, interval)
 	}

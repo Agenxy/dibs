@@ -5,6 +5,7 @@ package harnessenv
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -18,6 +19,18 @@ import (
 // navigates the primary window to "/", which is also the route the window
 // starts on after a launch.
 const chatGPTHomeURL = "codex://threads/new"
+
+// ChatGPTThreadOwnershipError records the final discovery results that did
+// not confirm ownership. Unknown is distinct from the app saying no owner.
+type ChatGPTThreadOwnershipError struct {
+	Unowned, Unknown []string
+	Total            int
+}
+
+func (e *ChatGPTThreadOwnershipError) Error() string {
+	return fmt.Sprintf("end-of-pass ownership confirmed for %d of %d threads",
+		e.Total-len(e.Unowned)-len(e.Unknown), e.Total)
+}
 
 // LoadChatGPTThreads loads every thread into a ChatGPT app that has just come
 // back, in one pass, and leaves the window where a launch leaves it.
@@ -34,7 +47,9 @@ const chatGPTHomeURL = "codex://threads/new"
 // per-mail open interleaves with it. owned is the app's own owner discovery:
 // a thread already loaded is not opened, and an opened one is waited on, up
 // to settle, before the next. opened counts the opens made; loaded counts the
-// threads the app reported holding afterwards.
+// threads owner discovery confirms at the END of the pass. A navigation can
+// finish asynchronously after its individual wait, while a later one runs.
+// An incomplete final measurement returns an error, never a complete load.
 func (s Shower) LoadChatGPTThreads(
 	threads []string, owned func(string) (bool, error), settle time.Duration,
 ) (loaded, opened int, err error) {
@@ -48,22 +63,26 @@ func (s Shower) LoadChatGPTThreads(
 	}
 	defer func() { _ = pair.Close() }()
 	defer paths.Unlock(pair)
+	defer func() {
+		// Reconcile even on an open failure: earlier navigations may have
+		// completed meanwhile. Do not reopen anything or extend its wait.
+		var measurementErr error
+		loaded, measurementErr = measureChatGPTThreads(threads, owned)
+		err = errors.Join(err, measurementErr)
+	}()
 	for _, thread := range threads {
 		argv := chatGPTWakeArgv(thread)
 		if argv == nil {
 			continue
 		}
 		if held, err := owned(thread); err == nil && held {
-			loaded++
 			continue
 		}
 		if err := s.Open(argv); err != nil {
 			return loaded, opened, err
 		}
 		opened++
-		if s.waitOwned(thread, owned, settle) {
-			loaded++
-		}
+		s.waitOwned(thread, owned, settle)
 	}
 	if opened > 0 {
 		if err := s.Open([]string{"/usr/bin/open", "-g", chatGPTHomeURL}); err != nil {
@@ -71,6 +90,32 @@ func (s Shower) LoadChatGPTThreads(
 		}
 	}
 	return loaded, opened, nil
+}
+
+func measureChatGPTThreads(threads []string, owned func(string) (bool, error)) (loaded int, err error) {
+	missing := &ChatGPTThreadOwnershipError{}
+	for _, thread := range threads {
+		if chatGPTWakeArgv(thread) == nil {
+			continue
+		}
+		missing.Total++
+		held, probeErr := owned(thread)
+		switch {
+		case probeErr != nil:
+			missing.Unknown = append(missing.Unknown, thread)
+			if err == nil {
+				err = fmt.Errorf("end-of-pass owner discovery: %w", probeErr)
+			}
+		case held:
+			loaded++
+		default:
+			missing.Unowned = append(missing.Unowned, thread)
+		}
+	}
+	if loaded != missing.Total {
+		err = errors.Join(err, missing)
+	}
+	return loaded, err
 }
 
 func (s Shower) waitBackgroundPair(dir string) (*os.File, error) {
