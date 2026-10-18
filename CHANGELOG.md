@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.0.14] - 2026-10-18
+
 - After a ChatGPT app restart, the load report now measures ownership again
   at the end of the pass. Threads that finish loading asynchronously count
   correctly; an incomplete load warns with the unowned or unconfirmed threads.
@@ -231,27 +233,6 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Releases up to and including v0.0.13 remain Apache-2.0; GPL-3.0-or-later applies from the next release, with commercial licensing available from Agenxy for Agenxy-authored portions.
 
-### Fixed
-
-- Native ChatGPT delivery no longer fetches a full history snapshot to predict
-  idle versus running: one follower input lets the app choose start-or-steer,
-  with an honest accepted receipt. Unsolicited large frames are streamed away
-  with bounded memory. The previous 8 MiB cap rejected a measured 10 MiB live
-  snapshot, and before-input failures could leave the recipient unwoken.
-
-- A coordinator's contact alert is consumed after an authenticated mailbox read,
-  so it no longer repeats at inbox or Stop. Posted alerts remain on the board
-  with their posting time until the recipient reads or handles the source mail.
-
-- Posting a contact alert as the first human notification after daemon startup
-  no longer crashes while recording its presentation and posting receipt.
-
-- A bridge that handed a vanished session socket back to the daemon could still
-  write to it later, producing duplicate notices. Surrender now disarms that
-  bridge's retry before a recovered socket can be reached.
-
-## [0.0.14] - 2026-10-06
-
 ### Added
 
 - `mail_history` audits an agent's eligible sent/received ledger mail after live
@@ -290,6 +271,23 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   downgrading below this release is not supported.
 
 ### Fixed
+
+- Native ChatGPT delivery no longer fetches a full history snapshot to predict
+  idle versus running: one follower input lets the app choose start-or-steer,
+  with an honest accepted receipt. Unsolicited large frames are streamed away
+  with bounded memory. The previous 8 MiB cap rejected a measured 10 MiB live
+  snapshot, and before-input failures could leave the recipient unwoken.
+
+- A coordinator's contact alert is consumed after an authenticated mailbox read,
+  so it no longer repeats at inbox or Stop. Posted alerts remain on the board
+  with their posting time until the recipient reads or handles the source mail.
+
+- Posting a contact alert as the first human notification after daemon startup
+  no longer crashes while recording its presentation and posting receipt.
+
+- A bridge that handed a vanished session socket back to the daemon could still
+  write to it later, producing duplicate notices. Surrender now disarms that
+  bridge's retry before a recovered socket can be reached.
 
 - Agents referring to the same request as its requester and doer, or waiting
   on a shared question or request, now receive a coordination hint instead of
