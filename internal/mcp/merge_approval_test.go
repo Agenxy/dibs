@@ -36,6 +36,19 @@ func TestSupportedMergeHumanApprovalPerformsExactlyOneTransition(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+
+			// The one-call done convenience applies to work, never a typed effect.
+			// Neither done nor progress may consume this pending human approval.
+			for _, disposition := range []string{"done", "progress"} {
+				refused := f.raw("respond", map[string]any{"token": token, "msg_serial": r["msg_serial"], "disposition": disposition, "body": "not an approval"})
+				if refused["code"] != "E_BAD_DISPOSITION" {
+					t.Fatalf("typed merge accepted %s without approval: %v", disposition, refused)
+				}
+			}
+			unchanged, err := f.e.Board(context.Background())
+			if err != nil || unchanged["serial"] != before["serial"] {
+				t.Fatal("refused work verdict changed the merge approval")
+			}
 			f.call("respond", map[string]any{"token": token, "msg_serial": r["msg_serial"], "disposition": "approve"})
 			after, err := f.e.Board(context.Background())
 			if err != nil {
