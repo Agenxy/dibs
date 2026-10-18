@@ -362,6 +362,14 @@ tasks:
     cmds:
       - bun install --frozen-lockfile
 
+  release:drift:
+    desc: "How long main has held unreleased commits; fails past seven days"
+    # Scheduled daily in .github/workflows/release-drift.yml, never in `ci`:
+    # time passing is not a defect in any one pull request. tools/releasedrift
+    # says why it exists.
+    cmds:
+      - go run ./tools/releasedrift
+
   release:check:
     desc: "Validate .goreleaser.yml against the pinned GoReleaser"
     # NOTHING VALIDATED THIS FILE. A cask key that GoReleaser rejects outright

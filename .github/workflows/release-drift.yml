@@ -1,0 +1,28 @@
+name: release drift
+
+# Fails, and so notifies the owner, when main has held an unreleased commit
+# for more than seven days. tools/releasedrift says why: v0.0.14 waited twelve
+# days on an approval nobody asked for. Scheduled, not gated: time passing is
+# not a defect in any one pull request.
+on:
+  schedule:
+    - cron: "17 15 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+        with:
+          version: 2026.7.7
+          experimental: true
+      - name: unreleased commits on main stay inside the window
+        run: go run ./tools/releasedrift -ref HEAD
