@@ -573,6 +573,14 @@ about what is shipping, which is this repository's most expensive recurring bug 
 drift guards for `skills.md`, the plugin copies, the tool count, the vocabulary). Topic
 branches live hours, not weeks. What is going into the next version is `## [Unreleased]`.
 
+**And main ships.** v0.0.14 was stamped on 2026-10-06 and then held for an
+approval nobody asked for, twelve days and 49 commits while the operator's own
+board ran top of tree, until the operator asked what we were waiting for. A hold
+with no clock is indefinite, so there is one now: `release-drift.yml` runs
+`tools/releasedrift` daily and fails once main's oldest unreleased commit has
+waited more than seven days (`task release:drift` locally). When a release needs
+the owner's approval, ask for it the day the candidate is ready.
+
 **We do not pay to be listed** (PHILOSOPHY.md rule 8). Several MCP directories now gate
 submission behind a fee, and the answer is no every time, however good the traffic
 numbers look. Free listings, PRs to community lists, and registries that index from the

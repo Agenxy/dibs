@@ -69,6 +69,7 @@ __pycache__/
 /installstamp
 /mcpbundle
 /ociimage
+/releasedrift
 /version
 /reviewrelease
 /sigstore-root-check
