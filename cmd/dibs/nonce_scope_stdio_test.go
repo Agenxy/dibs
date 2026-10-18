@@ -114,6 +114,8 @@ func TestConcurrentBridgeProcessesClaimALegacyCredentialOnce(t *testing.T) {
 }
 
 func TestRemoteTunnelCannotInjectThisMachinesCachedCredential(t *testing.T) {
+	wasThread := threadServed()
+	t.Cleanup(func() { noteThread(wasThread) })
 	t.Setenv("DIBS_DIR", t.TempDir())
 	wasRemote := remoteSession
 	t.Cleanup(func() { remoteSession = wasRemote })
