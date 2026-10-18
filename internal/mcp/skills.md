@@ -518,7 +518,10 @@ receiving native peer turns, another watcher adds no delivery guarantee.
   request means you owe the work**: when it is delivered, `respond(msg_serial,
   done, body)` closes it and tells the requester. Until then it is on your row
   under `owes` and Dibs treats it like a declaration that says you are working.
-  If finishing it is blocked on someone else, park it: declare with `waiting`
+  Work you finish before saying you'll do it needs one call: `done` on a
+  request still waiting for its verdict approves and closes it together (a
+  queued request, a grant and an adoption still take `approve`). A handoff or
+  notify sent to you closes with `ack`, never `respond`. If finishing it is blocked on someone else, park it: declare with `waiting`
   and `request:<serial>` in `refs`, and it is left alone until a reply or
   another event. Never report done to stop being continued. Acknowledge
   FYIs with `ack`, which also consumes terminal mail.
@@ -528,7 +531,8 @@ receiving native peer turns, another watcher adds no delivery guarantee.
   none, name them as you take it on with `respond(approve, milestones: [...])`.
   Doing it, report each step as you reach it with `respond(msg_serial,
   progress, milestone: 2, body: "one line", deliverable: "<what to check>")`,
-  and close with `respond(done, deliverable: "<path or URL>")`. The sender
+  and close with `respond(done, deliverable: "<path or URL>")`, adding
+  `milestone: <last step>` if the close is that step. The sender
   hears each step without being woken for it, can open what you pointed at,
   and reviews with `respond(msg_serial: <request serial>, disposition:
   "accept"|"flag", milestone: <step>, body: "what to change, for a flag")`.

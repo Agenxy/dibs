@@ -5,6 +5,7 @@ package core
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -153,7 +154,7 @@ func TestTheRequesterReviewsAStepWithoutCancellingTheTask(t *testing.T) {
 	if _, _, err := s.Apply(&Op{Kind: OpRespond, Token: "tl", MsgSerial: serial, Disposition: "flag", Milestone: 1}, t0); codeOf(err) != "E_BAD_ARG" {
 		t.Errorf("a flag with no reason gave %v", err)
 	}
-	if _, _, err := s.Apply(&Op{Kind: OpRespond, Token: "tw", MsgSerial: serial, Disposition: "accept", Milestone: 1}, t0); codeOf(err) != "E_NO_MESSAGE" {
+	if _, _, err := s.Apply(&Op{Kind: OpRespond, Token: "tw", MsgSerial: serial, Disposition: "accept", Milestone: 1}, t0); codeOf(err) != "E_BAD_DISPOSITION" {
 		t.Errorf("the WORKER accepted its own step: %v", err)
 	}
 	if _, _, err := s.Apply(&Op{Kind: OpRespond, Token: "tl", MsgSerial: serial, Disposition: "accept", Milestone: 1}, t0); err != nil {
@@ -207,5 +208,39 @@ func TestATrackedRequestIsKeptForItsTask(t *testing.T) {
 	}
 	if keep(false) {
 		t.Error("an untracked request was kept: tracking is opt-in")
+	}
+}
+
+// A handoff's recipient "accepting" it is ordinary English. It was answered
+// with E_NO_MESSAGE, which reads as the mail having vanished (claude-k7-dev-3,
+// 148565): the refusal now names the call that closes it.
+func TestAcceptOnMailSentToYouNamesTheCallThatClosesIt(t *testing.T) {
+	s := NewState("n1", DefaultLimits())
+	reg(t, s, "lead", "tl", t0)
+	reg(t, s, "worker", "tw", t0)
+	mustApply(t, s, &Op{Kind: OpAckBoard, Token: "tl"}, t0)
+	serial := mustApply(t, s, &Op{Kind: OpSendMessage, Token: "tl", To: "worker", MsgType: MsgHandoff, Body: "yours", OpID: "h"}, t0)["msg_serial"].(uint64)
+	_, _, err := s.Apply(&Op{Kind: OpRespond, Token: "tw", MsgSerial: serial, Disposition: "accept"}, t0)
+	var e *Error
+	if !errors.As(err, &e) || e.Code != "E_BAD_DISPOSITION" || !strings.Contains(e.Hint, "ack(msg_serial:") {
+		t.Errorf("accept on a handoff gave %v, want the ack hint", err)
+	}
+}
+
+// Restating the sender's own milestones while approving changes nothing, so it
+// is not a conflict (agenxy-identity, 93825). Different steps still are.
+func TestApprovingWithTheSendersOwnMilestonesIsNotAConflict(t *testing.T) {
+	s := NewState("n1", DefaultLimits())
+	reg(t, s, "lead", "tl", t0)
+	reg(t, s, "worker", "tw", t0)
+	mustApply(t, s, &Op{Kind: OpAckBoard, Token: "tl"}, t0)
+	steps := []string{"a", "b"}
+	one := mustApply(t, s, &Op{Kind: OpSendMessage, Token: "tl", To: "worker", MsgType: MsgRequest, Body: "x", OpID: "1", Milestones: steps}, t0)["msg_serial"].(uint64)
+	two := mustApply(t, s, &Op{Kind: OpSendMessage, Token: "tl", To: "worker", MsgType: MsgRequest, Body: "y", OpID: "2", Milestones: steps}, t0)["msg_serial"].(uint64)
+	if _, _, err := s.Apply(&Op{Kind: OpRespond, Token: "tw", MsgSerial: one, Disposition: "approve", Milestones: []string{"a", "b"}}, t0); err != nil {
+		t.Errorf("approve restating the same steps: %v", err)
+	}
+	if _, _, err := s.Apply(&Op{Kind: OpRespond, Token: "tw", MsgSerial: two, Disposition: "approve", Milestones: []string{"c"}}, t0); codeOf(err) != "E_BAD_ARG" {
+		t.Errorf("approve rewriting the sender's steps gave %v", err)
 	}
 }

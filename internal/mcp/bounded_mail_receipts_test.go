@@ -73,15 +73,16 @@ func TestCompactMailboxDeliversOnlyItsPageAndRetainsFullBodies(t *testing.T) {
 				}
 				page := waitingCall(t, srv, version, method, map[string]any{"token": "reader-token", "limit": 3})
 				items := page["inbox"].([]any)
-				if len(items) != 3 || uint64(items[2].(map[string]any)["serial"].(float64)) != ids[0] {
-					t.Fatalf("actionable-first page: %v", page)
+				// Unseen mail leads, ahead of the fixture's two owed requests.
+				if len(items) != 3 || uint64(items[0].(map[string]any)["serial"].(float64)) != ids[0] {
+					t.Fatalf("unseen-first page: %v", page)
 				}
 				if strings.Contains(fmt.Sprint(items), "FULL-ENVELOPE-TAIL") {
 					t.Fatal("full body escaped compact page")
 				}
 				for i, id := range ids {
 					m := mailboxReceipt(t, eng, id)
-					if i == 0 {
+					if i < len(items) {
 						if m.State != core.MsgStateDelivered || m.DeliveredAt == 0 {
 							t.Fatal("returned envelope lacks its delivery receipt")
 						}
@@ -101,7 +102,7 @@ func TestCompactMailboxDeliversOnlyItsPageAndRetainsFullBodies(t *testing.T) {
 					t.Fatal("omitted page has no continuation")
 				}
 				next := waitingCall(t, srv, version, "inbox", map[string]any{"token": "reader-token", "cursor": cursor, "limit": 3})
-				if next["inbox"].([]any)[0].(map[string]any)["serial"] != float64(ids[1]) {
+				if next["inbox"].([]any)[0].(map[string]any)["serial"] != float64(ids[len(items)]) {
 					t.Fatal("delivery receipt changed traversal priority")
 				}
 			})

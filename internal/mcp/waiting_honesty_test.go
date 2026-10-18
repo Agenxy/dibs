@@ -174,8 +174,10 @@ func TestWaitingCountMatchesTheMCPInboxAfterDisposition(t *testing.T) {
 				if disposition == "ack" && waiting != "" {
 					t.Errorf("acknowledged mail was reported pending: %q", waiting)
 				}
-				if disposition != "ack" && (!strings.Contains(waiting, "1 owed requests") || strings.Contains(waiting, "1 new")) {
-					t.Errorf("accepted obligation was missing or mislabelled: %q", waiting)
+				// Owed work is the agent's own commitment, not news: it is in
+				// owed_work below and not repeated on every write.
+				if disposition != "ack" && waiting != "" {
+					t.Errorf("an accepted obligation was reported as waiting news: %q", waiting)
 				}
 				inbox := call("inbox", map[string]any{"token": worker})
 				for _, key := range []string{"inbox", "messages"} {
@@ -318,8 +320,11 @@ func TestWaitingHintClearsTrimmedReviewThroughMCP(t *testing.T) {
 				t.Fatalf("setup: full review was not returned: %v", read)
 			}
 			written = call("update", map[string]any{"token": worker, "description": "review read"})
-			if waiting, _ := written["waiting"].(string); strings.Contains(waiting, "update(s)") || !strings.Contains(waiting, "1 owed requests") {
-				t.Errorf("full review read did not clear the review while retaining owed work: %q", waiting)
+			if waiting, _ := written["waiting"].(string); waiting != "" {
+				t.Errorf("full review read did not clear the review: %q", waiting)
+			}
+			if owed, _ := call("inbox", map[string]any{"token": worker})["owed_work"].([]any); len(owed) != 1 {
+				t.Errorf("reading the review dropped the owed work it belongs to: %v", owed)
 			}
 		})
 	}

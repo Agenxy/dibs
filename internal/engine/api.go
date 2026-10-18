@@ -23,6 +23,9 @@ type request struct {
 	finish  func()
 	receipt chan core.Result
 	attempt *SendAttempt
+	// prepaid: the op is one leg of a fan-out whose caller already paid the
+	// rate limit once for the whole of it (Broadcast).
+	prepaid bool
 }
 
 type reply struct {
@@ -32,7 +35,10 @@ type reply struct {
 
 // Do submits one mutating op to the loop and waits.
 func (e *Engine) Do(ctx context.Context, op *core.Op) (core.Result, error) {
-	req := request{op: op, reply: make(chan reply, 1), receipt: sendReceiptFrom(ctx), attempt: sendAttemptFrom(ctx)}
+	req := request{
+		op: op, reply: make(chan reply, 1), receipt: sendReceiptFrom(ctx), attempt: sendAttemptFrom(ctx),
+		prepaid: fanoutPrepaid(ctx),
+	}
 	if op != nil && op.Kind == core.OpPutBlob {
 		e.holdRegistration(&req, op.Blob)
 	}
@@ -1136,4 +1142,17 @@ func holdersOfPath(st *core.State, p string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+type fanoutKey struct{}
+
+// withPrepaidFanout marks every op submitted under ctx as already paid for.
+// Unexported, so only the engine's own fan-outs can set it.
+func withPrepaidFanout(ctx context.Context) context.Context {
+	return context.WithValue(ctx, fanoutKey{}, true)
+}
+
+func fanoutPrepaid(ctx context.Context) bool {
+	paid, _ := ctx.Value(fanoutKey{}).(bool)
+	return paid
 }
