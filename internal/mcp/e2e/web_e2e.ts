@@ -1190,6 +1190,44 @@ try {
     check("an exclusive space shows who is waiting", /waiting:/i.test(text), text.slice(0, 240))
     }
   {
+    // A delayed native tab update can run AFTER a newer tab rendered plainly.
+    // Reproduced with real Chromium at 8x CPU: Mail stayed selected while an
+    // older Activity callback hid its composer. Hold exactly that ordering at
+    // the browser API, then enter through the real tab controls and Send.
+    const ordered = await browser.newContext()
+    await ordered.addCookies([{ name, value, domain: "127.0.0.1", path: "/" }])
+    await ordered.addInitScript((k: string) => {
+      localStorage.setItem("dibs_board_key", k)
+      const w = window as unknown as { __finishTab?: () => void }
+      document.startViewTransition = (update: () => void) => {
+        let finish!: () => void
+        const finished = new Promise<void>((resolve) => { finish = resolve })
+        w.__finishTab = () => { update(); finish() }
+        return { finished, skipTransition: finish } as ViewTransition
+      }
+    }, pageKey)
+    const late = await ordered.newPage()
+    await late.goto(`http://${ADDR}/`, { waitUntil: "load" })
+    await late.locator(".entry").first().waitFor({ timeout: 10000 })
+    await late.locator("#tab-activity").click()
+    if (!(await late.evaluate(() => typeof (window as any).__finishTab === "function"))) {
+      throw new Error("setup: tab did not enter the deferred transition API")
+    }
+    await late.locator("#tab-mail").click()
+    await late.locator("#msg-to").fill("builder")
+    await late.locator("#msg-body").fill("a draft in the newer tab")
+    await late.evaluate(() => (window as any).__finishTab())
+    check("a delayed older tab transition cannot hide the selected Mail composer",
+      await late.locator("#tab-mail").getAttribute("aria-selected") === "true"
+        && await late.locator(".compose.new-msg .act.send").isVisible())
+    check("the newer tab keeps its draft after the older callback",
+      await late.locator("#msg-body").inputValue() === "a draft in the newer tab")
+    await late.route("**/api/act/send", (route) => route.abort("failed"))
+    await late.locator(".compose.new-msg .act.send").click()
+    await late.waitForFunction(() => document.querySelector("#flash")?.textContent?.includes("nothing was sent"))
+    await ordered.close()
+  }
+  {
     // A VIEW TRANSITION THAT HANGS MUST NOT TAKE THE BOARD WITH IT. Issue #84.
     //
     // While one is live the browser paints a ::view-transition overlay above

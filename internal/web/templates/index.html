@@ -553,6 +553,9 @@ function tab(which, { focus = false } = {}) {
   // a different fact from one moving right. Same runner, same tokens and same
   // reduced-motion guard as the panel. Board.transition.
   Board.transition(to >= from ? "tab-forward" : "tab-back", () => {
+    // A newer switch renders plainly while this native callback is pending.
+    // Its selection wins: an older animation must not hide the current pane.
+    if (NAV[to].getAttribute("aria-selected") !== "true") return
     for (const btn of NAV)
       document.getElementById("pane-" + btn.dataset.view)
         .classList.toggle("hide", btn.dataset.view !== which)
