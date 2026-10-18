@@ -1325,8 +1325,8 @@ func (s *State) MatchAgentsEvidence(
 		if len(fp) == 0 {
 			fp = overlay[id]
 		}
-		sharedRefs := s.sharedRefsWith(ch, mineRefs)
-		if unmatchable(fp, sharedRefs) {
+		sharedRefs, unknownRefs := s.sharedRefsWith(ch, mineRefs, agent)
+		if unmatchable(fp, append(append([]string{}, sharedRefs...), unknownRefs...)) {
 			continue
 		}
 		score, shared := jaccard(pred, fp, discount)

@@ -48,7 +48,12 @@ func (s *State) evidenceAgainstMembers(
 			// A slot the scorer had no opinion about cannot testify to
 			// dissimilarity either: it was never measured.
 			compared = compared || len(theirs.Predicted) > 0
-			ev := EvidenceBetween(mine, theirs, myCWD, theirCWD, repo, discount, lens)
+			scopedMine, scopedTheirs, unknownRefs := scopeSlotRefs(s.Agents[self], l, mine, theirs)
+			ev := EvidenceBetween(scopedMine, scopedTheirs, myCWD, theirCWD, repo, discount, lens)
+			ev.UnconfirmedRefs = unknownRefs
+			if sameProject(s.Agents[self], l) {
+				ev.SameRepo, ev.RepoKnown = true, true
+			}
 			ev.Complementary = ev.Complementary || s.coordinationRefs(self, agent,
 				sharedStrings(mine.Refs, theirs.Refs), mine.Waiting, theirs.Waiting)
 			rel := ev.Classify()

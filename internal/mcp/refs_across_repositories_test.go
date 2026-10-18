@@ -37,10 +37,11 @@ func TestRefScopingAcrossRealRepositories(t *testing.T) {
 	g.commit(upstream, "second.txt")
 
 	for _, tc := range []struct {
-		what      string
-		build     func() (a, b string)
-		wantAlarm bool
-		why       string
+		what           string
+		build          func() (a, b string)
+		wantAlarm      bool
+		wantSuggestion bool
+		why            string
 	}{
 		{
 			what: "two agents in one checkout",
@@ -132,8 +133,9 @@ func TestRefScopingAcrossRealRepositories(t *testing.T) {
 				g.run(b, "remote", "remove", "origin")
 				return a, b
 			},
-			wantAlarm: true,
-			why:       "a shallow clone has no root to compare, and not knowing must not read as different",
+			wantAlarm:      false,
+			wantSuggestion: true,
+			why:            "188961: a shallow clone without comparable identity gets a quiet unconfirmed suggestion",
 		},
 		{
 			what: "a history rewritten locally with git replace",
@@ -155,6 +157,10 @@ func TestRefScopingAcrossRealRepositories(t *testing.T) {
 			blob, err := json.Marshal(res)
 			if err != nil {
 				t.Fatal(err)
+			}
+			suggestion := strings.Contains(string(blob), `"signal":"repository-unconfirmed"`)
+			if suggestion != tc.wantSuggestion {
+				t.Errorf("quiet suggestion=%v, want %v: %s", suggestion, tc.wantSuggestion, blob)
 			}
 			got := strings.Contains(string(blob), `"signal":"same-objective"`)
 			if got != tc.wantAlarm {

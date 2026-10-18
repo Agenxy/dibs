@@ -23,10 +23,11 @@ func TestRefsOnlyCollideInsideOneRepository(t *testing.T) {
 	const ref = "issue:42"
 
 	for _, tc := range []struct {
-		what      string
-		a, b      *AgentInfo
-		wantAlarm bool
-		why       string
+		what           string
+		a, b           *AgentInfo
+		wantAlarm      bool
+		wantSuggestion bool
+		why            string
 	}{
 		{
 			what:      "two projects with different remotes and different histories",
@@ -64,18 +65,20 @@ func TestRefsOnlyCollideInsideOneRepository(t *testing.T) {
 			why:       "clones of one upstream share its issue numbers",
 		},
 		{
-			what:      "an agent that said nothing about where it is",
-			a:         &AgentInfo{CWD: "/w/api", RepoDir: "/w/api/.git", RepoRemote: "github.com/acme/api"},
-			b:         nil,
-			wantAlarm: true,
-			why:       "absence of evidence is not evidence of separation; a missed collision costs more",
+			what:           "an agent that said nothing about where it is",
+			a:              &AgentInfo{CWD: "/w/api", RepoDir: "/w/api/.git", RepoRemote: "github.com/acme/api"},
+			b:              nil,
+			wantAlarm:      false,
+			wantSuggestion: true,
+			why:            "188961: unknown is a quiet suggestion, never a duplicate-work warning",
 		},
 		{
-			what:      "one identified, one outside any checkout",
-			a:         &AgentInfo{CWD: "/w/api", RepoDir: "/w/api/.git", RepoRemote: "github.com/acme/api"},
-			b:         &AgentInfo{CWD: "/tmp/scratch"},
-			wantAlarm: true,
-			why:       "an unidentifiable directory could be anywhere, including inside the same project",
+			what:           "one identified, one outside any checkout",
+			a:              &AgentInfo{CWD: "/w/api", RepoDir: "/w/api/.git", RepoRemote: "github.com/acme/api"},
+			b:              &AgentInfo{CWD: "/tmp/scratch"},
+			wantAlarm:      false,
+			wantSuggestion: true,
+			why:            "188961: unconfirmed identity remains visible without claiming duplication",
 		},
 		{
 			// The case an adversarial review found, and the expensive direction:
@@ -125,18 +128,20 @@ func TestRefsOnlyCollideInsideOneRepository(t *testing.T) {
 			why:       "the configured upstream is the same, which outranks a history that legitimately diverged",
 		},
 		{
-			what:      "a shallow clone whose sibling renamed its remote",
-			a:         &AgentInfo{CWD: "/w/a", RepoDir: "/w/a/.git", RepoRemote: "github.com/agenxy/homebrew-agents"},
-			b:         &AgentInfo{CWD: "/w/b", RepoDir: "/w/b/.git", RepoRemote: "github.com/agenxy/homebrew-tap"},
-			wantAlarm: true,
-			why:       "no roots to compare and remotes that cannot be reconciled locally: unknown, so warn",
+			what:           "a shallow clone whose sibling renamed its remote",
+			a:              &AgentInfo{CWD: "/w/a", RepoDir: "/w/a/.git", RepoRemote: "github.com/agenxy/homebrew-agents"},
+			b:              &AgentInfo{CWD: "/w/b", RepoDir: "/w/b/.git", RepoRemote: "github.com/agenxy/homebrew-tap"},
+			wantAlarm:      false,
+			wantSuggestion: true,
+			why:            "188961: no roots or comparable remote means suggest, not warn",
 		},
 		{
-			what:      "an unborn repository with no commits yet",
-			a:         &AgentInfo{CWD: "/w/api", RepoDir: "/w/api/.git", RepoRoots: "aaa111"},
-			b:         &AgentInfo{CWD: "/w/fresh", RepoDir: "/w/fresh/.git"},
-			wantAlarm: true,
-			why:       "no history is not evidence of different history, and a miss costs more than a warning",
+			what:           "an unborn repository with no commits yet",
+			a:              &AgentInfo{CWD: "/w/api", RepoDir: "/w/api/.git", RepoRoots: "aaa111"},
+			b:              &AgentInfo{CWD: "/w/fresh", RepoDir: "/w/fresh/.git"},
+			wantAlarm:      false,
+			wantSuggestion: true,
+			why:            "188961: unborn history is unknown; preserve a suggestion without a strong warning",
 		},
 		{
 			// Changed deliberately. Remote used to outrank history, and that lost
@@ -176,11 +181,15 @@ func TestRefsOnlyCollideInsideOneRepository(t *testing.T) {
 			s.Agents["theirs"].Slots = map[string]Slot{"now": {Text: "fixing the thing", Refs: []string{ref}}}
 
 			got := s.overlapsFor([]string{ref}, nil, "mine")
-			var strong bool
+			var strong, suggestion bool
 			for _, o := range got {
+				suggestion = suggestion || o.Signal == SignalUnconfirmedRef
 				if o.Strong() {
 					strong = true
 				}
+			}
+			if suggestion != tc.wantSuggestion {
+				t.Errorf("unconfirmed suggestion=%v, want %v: %v", suggestion, tc.wantSuggestion, got)
 			}
 			if strong != tc.wantAlarm {
 				verb := "did not report"

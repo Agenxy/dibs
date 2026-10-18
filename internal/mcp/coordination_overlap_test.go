@@ -6,6 +6,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"testing"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -155,11 +156,27 @@ func assertCoordinationOverlap(t *testing.T, r map[string]any) {
 }
 
 func TestUnrelatedSharedWorkStillWarnsThroughDeclareMCP(t *testing.T) {
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git unavailable")
+	}
+	g := &gitFixtures{t: t, git: git, root: t.TempDir()}
+	repo := g.repo("same-ticket", "https://github.com/fixture/same-ticket.git")
 	for _, version := range []string{"2026-07-28", "2025-11-25"} {
 		t.Run(version, func(t *testing.T) {
 			srv, _, _ := aliasReplayServer(t, t.TempDir())
-			_, a := aliasRegister(t, srv, "one", "duplicate-one")
-			_, b := aliasRegister(t, srv, "two", "duplicate-two")
+			register := func(name string) string {
+				r := toolCallOn(t, srv, version, "register", map[string]any{"name": name, "nonce": "duplicate-" + name, "cwd": repo})
+				token, _ := r["token"].(string)
+				if token == "" {
+					t.Fatalf("setup register: %v", r)
+				}
+				if c := toolCallOn(t, srv, version, "check_in", map[string]any{"token": token}); c["ok"] != true {
+					t.Fatalf("setup check_in: %v", c)
+				}
+				return token
+			}
+			a, b := register("one"), register("two")
 			for _, token := range []string{a, b} {
 				r := toolCallOn(t, srv, version, "declare", map[string]any{
 					"token": token, "text": "implement same ticket", "activity": "implement", "refs": []string{"issue:42"},

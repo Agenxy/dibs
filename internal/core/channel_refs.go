@@ -14,37 +14,37 @@ import "sort"
 // bug that prompted this split was the ref never getting to speak: a space
 // with no scorer footprint was discarded before its refs were ever read.
 
-// channelRefs is every objective id declared by the members of an agent.
-func (s *State) channelRefs(ch *Space) map[string]bool {
-	out := map[string]bool{}
-	for agent := range ch.Members {
-		l := s.Agents[agent]
-		if l == nil {
+// sharedRefsWith compares each member's refs in that member's repository.
+// A space can have members from several projects; a union loses provenance.
+func (s *State) sharedRefsWith(ch *Space, mine map[string]bool, self string) ([]string, []string) {
+	confirmed, unknown := map[string]bool{}, map[string]bool{}
+	for id := range ch.Members {
+		member := s.Agents[id]
+		if member == nil {
 			continue
 		}
-		for _, slot := range l.Slots {
-			for _, r := range s.validatedRefs(agent, slot.Refs) {
-				out[r] = true
+		for _, slot := range member.Slots {
+			shared := sharedRefs(mine, s.validatedRefs(id, slot.Refs))
+			yes, maybe := scopeSharedRefs(s.Agents[self], member, shared)
+			for _, ref := range yes {
+				confirmed[ref] = true
+			}
+			for _, ref := range maybe {
+				unknown[ref] = true
 			}
 		}
 	}
-	return out
-}
-
-// sharedRefsWith returns the objective ids both this agent and the declaring
-// agent named, sorted. Nil when the agent declared none.
-func (s *State) sharedRefsWith(ch *Space, mine map[string]bool) []string {
-	if len(mine) == 0 {
-		return nil
+	var yes, maybe []string
+	for ref := range confirmed {
+		yes = append(yes, ref)
+		delete(unknown, ref)
 	}
-	var out []string
-	for r := range s.channelRefs(ch) {
-		if mine[r] {
-			out = append(out, r)
-		}
+	for ref := range unknown {
+		maybe = append(maybe, ref)
 	}
-	sort.Strings(out)
-	return out
+	sort.Strings(yes)
+	sort.Strings(maybe)
+	return yes, maybe
 }
 
 // unmatchable reports whether a space offers nothing to compare against.

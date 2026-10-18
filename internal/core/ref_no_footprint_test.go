@@ -27,6 +27,7 @@ func TestASharedRefMatchesAChannelWithNoFootprint(t *testing.T) {
 	reg := func(name string) string {
 		_, _, err := s.Apply(&Op{
 			Kind: OpRegister, Name: name, NewToken: "tok-" + name, SessionID: name,
+			Agent: &AgentInfo{CWD: "/repo", RepoDir: "/repo/.git", HostID: "n1"},
 		}, now)
 		if err != nil {
 			t.Fatalf("register %s: %v", name, err)

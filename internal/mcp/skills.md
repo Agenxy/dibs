@@ -127,6 +127,10 @@ them mentioned.
   Dibs may do: `pr:1186`, `issue:1140`, `incident:db-down` **name something** and
   can put you in a space automatically; `goal:green-main`, `gate:typos` are context
   only, because two agents can share a goal while dividing the work between them.
+  Bare `pr:N` and `issue:N` match only within a confirmed repository identity.
+  Different repositories produce no ref signal; unknown identity produces a quiet
+  “same ref, repository unconfirmed” suggestion, never a duplicate-work warning.
+  Board `request:`, `question:` and validated `key:` refs remain global.
   Give a real id when one exists. **If none exists, leave it out**: an absent
   field and an empty array mean the same thing, and an invented id is worse than
   either. Most ad hoc work has no id, and that is normal.

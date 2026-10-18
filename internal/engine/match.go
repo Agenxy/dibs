@@ -905,6 +905,9 @@ func withheldReason(m core.AgentMatch, foreign bool, cwd, repo string) string {
 // needing port:8080 for unrelated work score 0.0 on prose and were discarded one
 // line after their contention had been correctly computed. Found end-to-end.
 func tooWeakToMention(m core.AgentMatch, notify float64) bool {
+	if len(m.Evidence.UnconfirmedRefs) > 0 {
+		return false
+	}
 	switch m.Relation {
 	case core.RelationSameItem, core.RelationSameSurface, core.RelationContended:
 		return false // rests on something the agents declared, not on a score
