@@ -24,8 +24,10 @@ func TestABroadcastReachesAFleetLargerThanTheBurst(t *testing.T) {
 	defer cancel()
 	go e.Run(ctx)
 
-	lead, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "fleet-lead", Nonce: "n-lead",
-		AgentKind: core.KindPersistent})
+	lead, err := e.Do(ctx, &core.Op{
+		Kind: core.OpRegister, Name: "fleet-lead", Nonce: "n-lead",
+		AgentKind: core.KindPersistent,
+	})
 	if err != nil {
 		t.Fatalf("setup: register: %v", err)
 	}
@@ -38,8 +40,10 @@ func TestABroadcastReachesAFleetLargerThanTheBurst(t *testing.T) {
 	}
 	const fleet = 2 * rateBurst
 	for i := range fleet {
-		if _, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: fmt.Sprintf("worker-%d", i),
-			Nonce: fmt.Sprintf("n-%d", i), AgentKind: core.KindPersistent}); err != nil {
+		if _, err := e.Do(ctx, &core.Op{
+			Kind: core.OpRegister, Name: fmt.Sprintf("worker-%d", i),
+			Nonce: fmt.Sprintf("n-%d", i), AgentKind: core.KindPersistent,
+		}); err != nil {
 			t.Fatalf("setup: register worker %d: %v", i, err)
 		}
 	}
@@ -52,8 +56,10 @@ func TestABroadcastReachesAFleetLargerThanTheBurst(t *testing.T) {
 		t.Errorf("broadcast delivered %v of %d, undelivered %v", res["delivered"], fleet, res["undelivered"])
 	}
 	// The broadcast cost one token, so the coordinator can still talk.
-	if _, err := e.Do(ctx, &core.Op{Kind: core.OpSendMessage, Token: token, To: "worker-0",
-		MsgType: core.MsgNotify, Body: "after"}); err != nil {
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpSendMessage, Token: token, To: "worker-0",
+		MsgType: core.MsgNotify, Body: "after",
+	}); err != nil {
 		t.Errorf("a send right after the broadcast: %v", err)
 	}
 }

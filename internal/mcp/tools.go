@@ -403,7 +403,8 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "respond",
-			"description": "approve means 'I'll do it': you owe delivery; done delivers, approving first if needed. For permission, send type:question with choices. " +
+			"description": "approve means 'I'll do it': you owe delivery; done delivers, approving first if needed. " +
+				"For permission, send type:question with choices. " +
 				"Answer/review/report work; withdraw only your unanswered question or unfinished request, " +
 				"including after approval and before done. Withdrawal clears owed work and notifies the recipient once.",
 			"inputSchema": obj(map[string]any{

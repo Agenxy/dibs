@@ -72,11 +72,15 @@ func TestDoneDeliversAnUnapprovedRequestInOneCall(t *testing.T) {
 	reg(t, s, "lead", "tl", t0)
 	reg(t, s, "worker", "tw", t0)
 	mustApply(t, s, &Op{Kind: OpAckBoard, Token: "tl"}, t0)
-	serial := mustApply(t, s, &Op{Kind: OpSendMessage, Token: "tl", To: "worker", MsgType: MsgRequest,
-		Body: "x", OpID: "a", Milestones: []string{"build", "ship"}}, t0)["msg_serial"].(uint64)
+	serial := mustApply(t, s, &Op{
+		Kind: OpSendMessage, Token: "tl", To: "worker", MsgType: MsgRequest,
+		Body: "x", OpID: "a", Milestones: []string{"build", "ship"},
+	}, t0)["msg_serial"].(uint64)
 	before := s.Serial
-	_, evs, err := s.Apply(&Op{Kind: OpRespond, Token: "tw", MsgSerial: serial, Disposition: "done",
-		Body: "shipped", Milestone: 2, Deliverable: "pr:1"}, t0)
+	_, evs, err := s.Apply(&Op{
+		Kind: OpRespond, Token: "tw", MsgSerial: serial, Disposition: "done",
+		Body: "shipped", Milestone: 2, Deliverable: "pr:1",
+	}, t0)
 	if err != nil {
 		t.Fatalf("done on a request waiting for its verdict: %v", err)
 	}

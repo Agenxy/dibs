@@ -219,19 +219,9 @@ func (m *Message) Reached() int {
 // #7456): a requester checks partial results along the way and can redirect
 // without starting over.
 func (s *State) applyReview(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
-	m, ok := s.Messages[op.MsgSerial]
-	if ok && m.To == l.ID && m.From != l.ID {
-		// Mail TO you, reviewed with the requester's verbs. A handoff's
-		// recipient "accepting" it is natural English and was answered with
-		// E_NO_MESSAGE, which reads as the mail having vanished.
-		return nil, nil, errf("E_BAD_DISPOSITION", dispositionHint(m.Type, m.Serial),
-			"%s reviews a request you sent; message %d is a %s sent to you", op.Disposition, m.Serial, m.Type)
-	}
-	if !ok || m.From != l.ID || m.Type != MsgRequest {
-		return nil, nil, errf("E_NO_MESSAGE",
-			"accept and flag review the steps of a request YOU sent: read_mail on it shows its "+
-				"milestones and what was reported",
-			"no request %d sent by you", op.MsgSerial)
+	m, err := s.reviewTarget(l, op)
+	if err != nil {
+		return nil, nil, err
 	}
 	if m.State != MsgStateApproved && m.State != MsgStateDone {
 		return nil, nil, errf("E_BAD_DISPOSITION",
@@ -270,6 +260,25 @@ func (s *State) applyReview(l *Agent, op *Op, now time.Time) (Result, []Event, e
 	evs := []Event{{Type: "message.review", Agent: l.ID, To: m.To, Data: data}}
 	s.finish(&evs, now)
 	return Result{"ok": true, "review": review}, evs, nil
+}
+
+// reviewTarget finds the request a review is about: one the reviewer SENT.
+func (s *State) reviewTarget(l *Agent, op *Op) (*Message, error) {
+	m, ok := s.Messages[op.MsgSerial]
+	if ok && m.To == l.ID && m.From != l.ID {
+		// Mail TO you, reviewed with the requester's verbs. A handoff's
+		// recipient "accepting" it is natural English and was answered with
+		// E_NO_MESSAGE, which reads as the mail having vanished.
+		return nil, errf("E_BAD_DISPOSITION", dispositionHint(m.Type, m.Serial),
+			"%s reviews a request you sent; message %d is a %s sent to you", op.Disposition, m.Serial, m.Type)
+	}
+	if !ok || m.From != l.ID || m.Type != MsgRequest {
+		return nil, errf("E_NO_MESSAGE",
+			"accept and flag review the steps of a request YOU sent: read_mail on it shows its "+
+				"milestones and what was reported",
+			"no request %d sent by you", op.MsgSerial)
+	}
+	return m, nil
 }
 
 // declareMilestones lets the recipient name the steps as it approves, when
