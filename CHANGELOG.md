@@ -5,6 +5,35 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- `respond(done)` on a request still waiting for its verdict now approves and
+  closes it in one call, and the requester hears both. Queued requests, grants
+  and adoptions still take an explicit `approve`. `done` also accepts the final
+  `milestone`. Nine agents in a fleet survey hit the same three refused guesses
+  before finding approve-then-done.
+- Mailbox pages (`check_in`, `inbox`) now put mail the agent has not been shown
+  first, then owed work and seen-but-unanswered asks, then other retained mail,
+  then FYIs. Seven agents reported new questions on page three behind parked
+  requests up to thirteen days old. Owed work is still listed in `owed_work`
+  on every call.
+- The `waiting` line on authenticated writes no longer repeats work the agent
+  already owes; it reports only what is new. Owed work stays in `check_in`,
+  the board row's `owes`, and the Stop continuation.
+- A blocking Stop delivery's reason now opens "Not an error, new Dibs mail",
+  since Claude Code labels any blocking Stop as an error.
+- The best-effort socket delivery note on `send` is one sentence shorter.
+
+### Fixed
+
+- A coordinator `broadcast` is charged one rate-limit token, not one per
+  recipient. A 41-agent broadcast reached 31 agents and reported the rest
+  `E_RATE_LIMITED`.
+- `respond(accept|flag)` on mail sent TO you returns `E_BAD_DISPOSITION` with
+  the call that closes it (for a handoff, `ack`), not `E_NO_MESSAGE`.
+- Approving a request while restating the sender's own milestones is accepted
+  rather than refused as a conflict.
+
 ## [0.0.14] - 2026-10-18
 
 - After a ChatGPT app restart, the load report now measures ownership again
