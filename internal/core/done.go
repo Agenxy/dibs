@@ -18,13 +18,28 @@ import "time"
 // State rules, so in the fold and not at ingress: they read the message.
 // "done" was refused as an unknown disposition by every earlier build, so no
 // ledger holds one and nothing here is retroactive.
+//
+// done on a request nobody approved yet approves it in the same op. Nine agents
+// in one fleet survey (2026-10-18) reported the same three refused guesses
+// before finding approve-then-done: "answer", then "done", then "approve". The
+// approval carries no information the delivery does not, so requiring it as a
+// separate call was a round trip with nothing in it. Both events are emitted,
+// so the requester sees what happened in the order it happened. Narrowed to a
+// plain request still waiting for its first verdict: a queued one has a queue
+// position to give up, and a grant or adoption is performed by approving it, so
+// both keep their explicit approve. Every earlier build refused done on an
+// unapproved request, so no ledger holds one and replay is unchanged.
+//
+// A milestone given with done is reported as reached as the request closes,
+// which is what an agent finishing the last step means by it.
 func (s *State) applyDone(m *Message, op *Op, now time.Time) (Result, []Event, error) {
-	if m.Type != MsgRequest || m.State != MsgStateApproved {
+	impliedApproval := m.approvableByDone()
+	if m.Type != MsgRequest || (m.State != MsgStateApproved && !impliedApproval) {
 		state := m.State
 		if state == "" {
 			state = "pending"
 		}
-		hint := questionResponseHint(m, "done closes a request you APPROVED, once the work is delivered: approve it first")
+		hint := questionResponseHint(m, "done closes a request once the work is delivered; a queued request needs approve first, and a grant or adoption is performed by approving it")
 		return nil, nil, errf("E_BAD_DISPOSITION",
 			hint,
 			"message %d is a %s and %s, not an approved request", m.Serial, m.Type, state)
@@ -36,6 +51,28 @@ func (s *State) applyDone(m *Message, op *Op, now time.Time) (Result, []Event, e
 	}
 	if len(op.Body) > s.Limits.MaxBodyBytes {
 		return nil, nil, errTooLarge("response body", s.Limits.MaxBodyBytes)
+	}
+	if op.Milestone > len(m.Milestones) {
+		hint := "this request named no milestones: close it with done and no milestone"
+		if len(m.Milestones) > 0 {
+			hint = "its milestones are numbered 1 to " + itoa(len(m.Milestones)) + "; read_mail lists them"
+		}
+		return nil, nil, errf("E_BAD_ARG", hint, "message %d has no milestone %d", m.Serial, op.Milestone)
+	}
+	if op.Milestone > 0 && len(m.Progress) >= maxProgressReports {
+		return nil, nil, errf("E_QUOTA", "close it with done and no milestone: this request holds "+
+			"all the progress reports it can", "message %d has %d reports", m.Serial, len(m.Progress))
+	}
+	var evs []Event
+	if impliedApproval {
+		m.Consumed = true // responding proves receipt (SPEC §8)
+		evs = append(evs, Event{Type: "message." + MsgStateApproved, Agent: m.To, To: m.From,
+			Data: map[string]any{"msg_serial": m.Serial, "with": MsgStateDone}})
+	}
+	if op.Milestone > 0 {
+		m.Progress = append(m.Progress, Progress{
+			Milestone: op.Milestone, Artifact: op.Deliverable, By: m.To, Serial: s.Serial + 1, At: now,
+		})
 	}
 	m.State = MsgStateDone
 	m.Deliverable = op.Deliverable
@@ -51,9 +88,17 @@ func (s *State) applyDone(m *Message, op *Op, now time.Time) (Result, []Event, e
 	if m.Deliverable != "" {
 		data["deliverable"] = m.Deliverable
 	}
-	evs := []Event{{Type: "message." + MsgStateDone, Agent: m.To, To: m.From, Data: data}}
+	if op.Milestone > 0 {
+		data["milestone"], data["label"] = op.Milestone, m.Milestones[op.Milestone-1]
+	}
+	evs = append(evs, Event{Type: "message." + MsgStateDone, Agent: m.To, To: m.From, Data: data})
 	s.finish(&evs, now)
 	return Result{"ok": true, "state": MsgStateDone}, evs, nil
+}
+
+// approvableByDone: a plain request still waiting for its first verdict.
+func (m *Message) approvableByDone() bool {
+	return m.Type == MsgRequest && m.Grant == "" && m.Adopt == "" && !m.Terminal()
 }
 
 // ObligationWindow is how long after approval a request counts as owed work.

@@ -68,10 +68,11 @@ func bestEffortSocketNote(l *core.Agent, named, state, why string) string {
 	if harnessenv.NeedsNoWakeCommand(named) {
 		lead = why + ", and one is open for it, so a best-effort notice is being handed to it now."
 	}
-	return "delivered to " + l.ID + ", which is " + state + ". " + lead + " Nothing can confirm " +
-		"it arrived: a session in bypassPermissions mode holds peer messages for its human " +
-		"unless its settings accept them. If it is held, this arrives when that agent next " +
-		"calls inbox or check_in."
+	// The receipt caveat stays, the explanation of WHY moved to dibs://skills:
+	// three sentences on every send were read once and skimmed for ever after
+	// (claude-k7-ui-dev and brooklyn-desk, fleet survey 2026-10-18).
+	return "delivered to " + l.ID + ", which is " + state + ". " + lead + " Nothing can confirm it arrived: " +
+		"if its session holds peer messages, it arrives at that agent's next inbox or check_in."
 }
 
 func sleepingPullOnlyNote(l *core.Agent, named string, configured, socket bool) string {

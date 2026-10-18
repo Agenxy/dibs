@@ -44,23 +44,37 @@ func badMailPage() error {
 	}
 }
 
-// mailboxRank orders a page. Everything that wants the agent's attention,
-// mail it has not been shown and work it owes, is one rank, oldest first,
-// so nothing waiting can be pushed back for ever. Owed work used to rank
-// above new mail, a page holds at most eight items, and an agent with eight
-// open requests never saw new mail on page one: k7-dev's notifies from
-// 2026-10-06 sat undelivered for eight days behind requests it already knew
-// about. Oldest first keeps owed work at the front without starving the rest.
+// mailboxRank orders a page: mail the agent has not been shown, then work it
+// owes and asks it has seen but not answered, then other retained mail, then
+// FYIs. Oldest first within a rank, so nothing in a rank is pushed back for
+// ever.
+//
+// Two failures bound this. Owed work once ranked above new mail with eight
+// items to a page, so an agent with eight open requests never saw new mail on
+// page one: k7-dev's notifies from 2026-10-06 sat undelivered for eight days.
+// Merging the two into one rank, oldest first, fixed that only while owed
+// lists were short: in the 2026-10-18 fleet survey seven agents reported a new
+// question on page three behind ten to thirty-five parked, approved requests,
+// some thirteen days old, with three inbox calls per wake to find it. Work an
+// agent owes is never lost by ranking it second: every check_in and inbox
+// carries the owed_work index with each item's completion call, and the page
+// itself reaches it next. What an agent has not yet been shown has no other
+// place to be seen.
+//
+// "Not yet shown" is fixed at the traversal's cutoff: reading page one marks
+// its mail delivered, and an item must not change rank mid-traversal.
 func mailboxRank(m *core.Message, cut uint64, now time.Time) int {
 	newPending := m.State == core.MsgStatePending &&
 		(m.Type != core.MsgNotify || m.NotifyAnnouncedAt < max(m.AdoptedAt, 1) || m.NotifyAnnouncedAt > cut)
 	switch {
-	case newPending || m.DeliveredAt > cut || m.Owed(now) || m.Expecting() && !m.Terminal():
+	case newPending || m.DeliveredAt > cut:
 		return 0
-	case m.Type != core.MsgNotify:
+	case m.Owed(now) || m.Expecting() && !m.Terminal():
 		return 1
+	case m.Type != core.MsgNotify:
+		return 2
 	}
-	return 2
+	return 3
 }
 
 // lateAfter is how long mail may wait before a page says it is late.

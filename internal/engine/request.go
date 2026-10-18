@@ -48,7 +48,7 @@ func (e *Engine) serveRequest(req request) {
 		}
 		return
 	}
-	res, err := e.execWithReceipt(req.op, time.Now(), req.receipt, req.attempt)
+	res, err := e.execWithReceipt(req.op, time.Now(), req.receipt, req.attempt, req.prepaid)
 	if err == nil {
 		advisories := req.attempt.StartStage("advisories")
 		e.sendAdvisories(req.op, res, time.Now())

@@ -143,7 +143,7 @@ var toolDefs = func() []map[string]any {
 				"for every field), your inbox, your cursor serial, `announcements` you owe an " +
 				"ack on, and `agent_updates`, whatever happened TO you in a space since you " +
 				"last checked. The authoritative path for all of it; the wake hook only " +
-				"nudges. Mail uses compact pages, owed requests/questions first; follow next_cursor " +
+				"nudges. Mail uses compact pages, unseen mail first, then owed work; follow next_cursor " +
 				"and read_mail for full envelopes. Also the recovery after E_CURSOR_TOO_OLD.",
 			"inputSchema": obj(map[string]any{
 				"token": tok,
@@ -403,7 +403,7 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "respond",
-			"description": "approve means 'I'll do it': you owe delivery. For permission, send type:question with choices. " +
+			"description": "approve means 'I'll do it': you owe delivery; done delivers, approving first if needed. For permission, send type:question with choices. " +
 				"Answer/review/report work; withdraw only your unanswered question or unfinished request, " +
 				"including after approval and before done. Withdrawal clears owed work and notifies the recipient once.",
 			"inputSchema": obj(map[string]any{
@@ -455,7 +455,7 @@ var toolDefs = func() []map[string]any {
 		{
 			"name": "inbox", "description": "Read your mailbox: unhandled messages plus " +
 				"finished ones you have not acknowledged and accepted work still owed. Compact pages " +
-				"put owed requests/questions first, then new mail, then seen FYIs. Follow next_cursor; " +
+				"put unseen mail first, then owed requests/questions, then seen FYIs. Follow next_cursor; " +
 				"read_mail has full envelopes. Marks only returned pending messages delivered. " +
 				"Also returns `announcements` you owe an ack on and `agent_updates`, whatever " +
 				"happened TO you in a space; reading either here consumes nothing, so this is " +

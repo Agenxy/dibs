@@ -4,6 +4,7 @@
 package core
 
 import (
+	"slices"
 	"strings"
 	"time"
 )
@@ -120,8 +121,8 @@ func checkTaskRefs(op *Op) error {
 	case op.Milestone < 0:
 		return errf("E_BAD_ARG", "milestones are numbered from 1; 0 or none is a note with no step",
 			"milestone %d", op.Milestone)
-	case op.Milestone != 0 && (!isRespond || !reviewsOrReports(op.Disposition)):
-		return errf("E_BAD_ARG", "milestone is the step a respond(progress), (accept) or (flag) is about",
+	case op.Milestone != 0 && (!isRespond || (!reviewsOrReports(op.Disposition) && op.Disposition != "done")):
+		return errf("E_BAD_ARG", "milestone is the step a respond(progress), (done), (accept) or (flag) is about",
 			"milestone given with %s", op.Disposition)
 	case op.Deliverable != "" && (!isRespond || (op.Disposition != "done" && op.Disposition != "progress")):
 		return errf("E_BAD_ARG", `deliverable says where work landed: give it with respond(done), `+
@@ -219,6 +220,13 @@ func (m *Message) Reached() int {
 // without starting over.
 func (s *State) applyReview(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
 	m, ok := s.Messages[op.MsgSerial]
+	if ok && m.To == l.ID && m.From != l.ID {
+		// Mail TO you, reviewed with the requester's verbs. A handoff's
+		// recipient "accepting" it is natural English and was answered with
+		// E_NO_MESSAGE, which reads as the mail having vanished.
+		return nil, nil, errf("E_BAD_DISPOSITION", dispositionHint(m.Type, m.Serial),
+			"%s reviews a request you sent; message %d is a %s sent to you", op.Disposition, m.Serial, m.Type)
+	}
 	if !ok || m.From != l.ID || m.Type != MsgRequest {
 		return nil, nil, errf("E_NO_MESSAGE",
 			"accept and flag review the steps of a request YOU sent: read_mail on it shows its "+
@@ -269,6 +277,9 @@ func (s *State) applyReview(l *Agent, op *Op, now time.Time) (Result, []Event, e
 func declareMilestones(m *Message, op *Op, st string) error {
 	if len(op.Milestones) == 0 || (st != MsgStateApproved && st != MsgStateQueued) {
 		return nil
+	}
+	if len(m.Milestones) > 0 && slices.Equal(m.Milestones, op.Milestones) {
+		return nil // restating the sender's own steps changes nothing
 	}
 	if len(m.Milestones) > 0 {
 		return errf("E_BAD_ARG", "omit milestones: its sender already named the steps ("+

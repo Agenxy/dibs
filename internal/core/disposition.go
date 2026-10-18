@@ -28,8 +28,9 @@ func dispositionHint(t string, serial uint64) string {
 		return fmt.Sprintf("respond(msg_serial:%d, disposition:\"answer\", body:...); "+
 			"use disposition:\"decline\" if you will not answer it", serial)
 	case MsgRequest:
-		return fmt.Sprintf("respond(msg_serial:%d, disposition:\"approve\") means I'll do it; "+
-			"use deny or decline if you will not take it, then disposition:\"done\" once delivered", serial)
+		return fmt.Sprintf("respond(msg_serial:%d, disposition:\"done\", body:...) delivers it in one "+
+			"call (approving it if you have not); approve first only to say I'll do it before you "+
+			"have; deny or decline if you will not take it", serial)
 	case MsgNotify, MsgHandoff:
 		return fmt.Sprintf("a %s expects no response: ack(msg_serial:%d) instead of respond", t, serial)
 	}

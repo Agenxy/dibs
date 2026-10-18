@@ -59,10 +59,15 @@ func (e *Engine) Broadcast(ctx context.Context, token, msgType, body string) (co
 	}
 	ids, _ := snap["ids"].([]string)
 
+	// The snapshot above charged the coordinator's rate limit once, for the
+	// broadcast. Charging each leg as well made a fleet larger than the burst
+	// (30) unreachable by its own coordinator: on 2026-10-18 a 41-agent
+	// broadcast reached 31 and reported the rest E_RATE_LIMITED.
+	fanout := withPrepaidFanout(ctx)
 	delivered := []uint64{}
 	failed := map[string]string{}
 	for _, id := range ids {
-		res, err := e.Do(ctx, &core.Op{
+		res, err := e.Do(fanout, &core.Op{
 			Kind: core.OpSendMessage, Token: token, To: id, MsgType: msgType, Body: body,
 		})
 		if err != nil {

@@ -264,3 +264,36 @@ func TestNaturalHookRecoversBacklogWithoutHumanNoticeOrRepeatedStop(t *testing.T
 		})
 	}
 }
+
+// New mail leads the page, ahead of work the agent already owes.
+//
+// Seven agents in the 2026-10-18 fleet survey found a new question on page
+// three behind parked, approved requests up to thirteen days old, and paid
+// three inbox calls per wake to reach it. Owed work loses nothing by coming
+// second: it is listed in owed_work on every call and is next on the page.
+func TestNewMailLeadsThePageAheadOfOwedWork(t *testing.T) {
+	srv, owed, eng := boundedMailServer(t)
+	sent := waitingCall(t, srv, "2026-07-28", "send", map[string]any{
+		"token": "sender-token", "to": "reader", "type": "question", "body": "a new question",
+	})
+	fresh, ok := sent["msg_serial"].(float64)
+	if !ok {
+		t.Fatalf("setup: send returned no serial: %v", sent)
+	}
+	if err := eng.SetRateTokens(context.Background(), "reader", 60); err != nil {
+		t.Fatal(err)
+	}
+	page := waitingCall(t, srv, "2026-07-28", "check_in", map[string]any{"token": "reader-token"})
+	mail, _ := page["inbox"].([]any)
+	if len(mail) < 3 {
+		t.Fatalf("setup: page holds %d items, want the question and both owed requests: %v", len(mail), page)
+	}
+	if mail[0].(map[string]any)["serial"] != fresh {
+		t.Errorf("first item is %v, want the new question %v ahead of owed work", mail[0].(map[string]any)["serial"], fresh)
+	}
+	for i, id := range owed {
+		if mail[i+1].(map[string]any)["serial"] != float64(id) {
+			t.Errorf("owed request %d is not right behind the new mail: %v", id, mail[:3])
+		}
+	}
+}

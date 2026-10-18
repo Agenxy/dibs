@@ -798,21 +798,25 @@ func (e *Engine) waiting(agent string, now time.Time) string {
 	// announcements at all, and the two would then take turns going silent.
 	unacked := e.state.Unacked(agent)
 	announced, notices := len(unacked), e.outstandingUpdateCount(agent)
-	if mail == 0 && announced == 0 && notices == 0 && e.mailCounts(agent)["owed_requests"].(int) == 0 {
+	// Work the agent OWES is not news, so it is not in this line. It rode on
+	// every authenticated write, and in the 2026-10-18 fleet survey five
+	// agents named the same "35 owed requests ... oldest waiting 13 days" as
+	// the noise that buried their real mail: parked, approved lanes they could
+	// not close yet and had not forgotten. It is still everywhere it belongs:
+	// check_in and inbox list owed_work with each completion call, the board
+	// row carries owes, and an owed request counts as declared work, so a turn
+	// Dibs started is still continued over it at Stop.
+	if mail == 0 && announced == 0 && notices == 0 {
 		return ""
 	}
-	line := e.mailboxCountsText(agent)
+	line := e.mailboxNewsText(agent)
 	if extra := waitingCounts(0, announced, notices); extra != "" {
 		if line != "" {
 			line += ", "
 		}
 		line += extra
 	}
-	hintMail := mail
-	if e.mailCounts(agent)["owed_requests"].(int) > 0 {
-		hintMail++
-	}
-	line += ": " + waitingReadHint(hintMail, announced, e.takeNotices(agent))
+	line += ": " + waitingReadHint(mail, announced, e.takeNotices(agent))
 	if age := waitedFor(e.oldestWaiting(oldestMail, agent, unacked), now); age != "" {
 		line += " The oldest has been waiting " + age + "."
 	}
@@ -990,11 +994,20 @@ func addDelivery(out core.Result, event, digest string) {
 	// works: hookOutput is the one place that knows what a caller's schema
 	// accepts. For a Codex Stop these two are the ONLY carrier, because its
 	// Stop schema has no hookSpecificOutput (see codexHookKeys).
+	//
+	// Claude Code prints a blocking Stop as "Stop hook blocking error from
+	// command", which three agents in the 2026-10-18 fleet survey read as a
+	// failure. The label is the harness's and cannot be changed from here; the
+	// reason is ours, so it says first what this is.
 	if isStopEvent(event) {
 		out["decision"] = "block"
-		out["reason"] = digest
+		out["reason"] = stopReasonLead + digest
 	}
 }
+
+// stopReasonLead opens a blocking Stop's reason, which the harness labels an
+// error. Mail is not one.
+const stopReasonLead = "Not an error, new Dibs mail. "
 
 // isStopEvent reports the two events that END a turn, and so are the only
 // ones where continuing has to be asked for explicitly.

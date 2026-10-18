@@ -444,11 +444,11 @@ func (e *Engine) boot(now time.Time) {
 
 // exec runs the request phases for a mutating op.
 func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
-	return e.execWithReceipt(op, now, nil, nil)
+	return e.execWithReceipt(op, now, nil, nil, false)
 }
 
 func (e *Engine) execWithReceipt(
-	op *core.Op, now time.Time, receipt chan core.Result, attempt *SendAttempt,
+	op *core.Op, now time.Time, receipt chan core.Result, attempt *SendAttempt, prepaid bool,
 ) (core.Result, error) {
 	admitted := beginSendStage(op, "admit")
 	defer admitted()
@@ -769,7 +769,7 @@ func (e *Engine) execWithReceipt(
 			if actor == nil {
 				return nil, core.ErrBadToken // never wakes, never ledgers
 			}
-			if !e.allow(actor.ID, now) {
+			if !prepaid && !e.allow(actor.ID, now) {
 				return nil, core.ErrRateLimited // admitted nothing; no wake
 			}
 			if res, err := e.prepareAliasUpdate(op, actor); err != nil || res != nil {

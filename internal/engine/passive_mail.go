@@ -25,6 +25,16 @@ func (e *Engine) outstandingUpdateCount(agent string) int {
 }
 
 func (e *Engine) mailboxCountsText(agent string) string {
+	return e.countsText(agent, true)
+}
+
+// mailboxNewsText is the same counts without the work the agent owes: what
+// is waiting for it, not what it has already said it will do.
+func (e *Engine) mailboxNewsText(agent string) string {
+	return e.countsText(agent, false)
+}
+
+func (e *Engine) countsText(agent string, withOwed bool) string {
 	c := e.mailCounts(agent)
 	var parts []string
 	for _, x := range []struct{ key, label string }{
@@ -33,6 +43,9 @@ func (e *Engine) mailboxCountsText(agent string) string {
 		{"seen_awaiting_action", "seen messages awaiting action"},
 		{"owed_requests", "owed requests"},
 	} {
+		if x.key == "owed_requests" && !withOwed {
+			continue
+		}
 		if n := c[x.key].(int); n > 0 {
 			parts = append(parts, fmt.Sprintf("%d %s", n, x.label))
 		}
