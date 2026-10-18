@@ -16,7 +16,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   first, then owed work and seen-but-unanswered asks, then other retained mail,
   then FYIs. Seven agents reported new questions on page three behind parked
   requests up to thirteen days old. Owed work is still listed in `owed_work`
-  on every call.
+  on every call. A notify a wake only announced (its body trimmed) counts as
+  unseen too, ranked after unannounced mail and ahead of owed work.
 - The `waiting` line on authenticated writes no longer repeats work the agent
   already owes; it reports only what is new. Owed work stays in `check_in`,
   the board row's `owes`, and the Stop continuation.

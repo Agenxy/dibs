@@ -61,20 +61,35 @@ func badMailPage() error {
 // itself reaches it next. What an agent has not yet been shown has no other
 // place to be seen.
 //
+// An FYI a wake only ANNOUNCED (a pointer, not its content) is still unseen,
+// so it ranks ahead of owed work too, behind mail nobody has pointed at yet:
+// codex-k7-0 followed two cursors past eleven owed requests to reach a
+// broadcast its wake had announced (2026-10-18, 189240). It stays below fresh
+// mail because announced FYIs can pile up by the hundred and must not bury a
+// new question.
+//
 // "Not yet shown" is fixed at the traversal's cutoff: reading page one marks
 // its mail delivered, and an item must not change rank mid-traversal.
+// maxMailRank is mailboxRank's last rank, which a cursor may carry. A literal
+// in the cursor parser silently refused every cursor past page one the day a
+// rank was added.
+const maxMailRank = 4
+
 func mailboxRank(m *core.Message, cut uint64, now time.Time) int {
-	newPending := m.State == core.MsgStatePending &&
-		(m.Type != core.MsgNotify || m.NotifyAnnouncedAt < max(m.AdoptedAt, 1) || m.NotifyAnnouncedAt > cut)
+	unseen := m.State == core.MsgStatePending || m.DeliveredAt > cut
+	announcedOnly := m.Type == core.MsgNotify &&
+		m.NotifyAnnouncedAt >= max(m.AdoptedAt, 1) && m.NotifyAnnouncedAt <= cut
 	switch {
-	case newPending || m.DeliveredAt > cut:
+	case unseen && !announcedOnly:
 		return 0
-	case m.Owed(now) || m.Expecting() && !m.Terminal():
+	case unseen:
 		return 1
-	case m.Type != core.MsgNotify:
+	case m.Owed(now) || m.Expecting() && !m.Terminal():
 		return 2
+	case m.Type != core.MsgNotify:
+		return 3
 	}
-	return 3
+	return maxMailRank
 }
 
 // lateAfter is how long mail may wait before a page says it is late.
