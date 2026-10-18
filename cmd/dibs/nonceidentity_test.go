@@ -59,10 +59,10 @@ func TestAPinnedIdentityBeatsWhateverTheBridgeRemembered(t *testing.T) {
 	project := map[string]any{"name": "worker", "cwd": t.TempDir()}
 
 	// A previous session left a remembered nonce.
-	rememberNonce(projectKey(project), "worker", "remembered-and-wrong")
+	rememberNonce(projectKey(project), nonceCacheName("worker", "fixture-session"), "remembered-and-wrong")
 
 	args := map[string]any{"name": "worker", "cwd": project["cwd"]}
-	enrichNonce(args, "pinned-by-the-operator")
+	enrichFixtureNonce(t, args, "pinned-by-the-operator")
 
 	if got, had := args["nonce"]; had {
 		t.Errorf("the bridge injected %q into the arguments while the operator had "+
@@ -71,7 +71,7 @@ func TestAPinnedIdentityBeatsWhateverTheBridgeRemembered(t *testing.T) {
 	}
 	// And the pinned one is remembered, so a later run without the variable
 	// still reaches the identity the operator chose.
-	if got := rememberedNonce(projectKey(project), "worker"); got != "pinned-by-the-operator" {
+	if got := rememberedNonce(projectKey(project), nonceCacheName("worker", "fixture-session")); got != "pinned-by-the-operator" {
 		t.Errorf("remembered %q, want the pinned identity: a run without the variable "+
 			"would go back to the old row", got)
 	}

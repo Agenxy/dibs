@@ -35,6 +35,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Approving a request while restating the sender's own milestones is accepted
   rather than refused as a conflict.
 
+- Two harness threads choosing the same role in one checkout no longer borrow
+  a shared cached credential and invalidate each other's tokens. The bridge
+  scopes automatic recovery to its harness thread/session, or its own measured
+  process incarnation when no session is available. Unknown process evidence
+  supplies no credential. On upgrade, the first session claims the old cache
+  entry once; later threads get separate credentials. A separate session file
+  protects that claim from old writers. Migration failures refuse before
+  registration, with a corrective hint. Explicit and pinned credentials retain
+  precedence.
+
 ## [0.0.14] - 2026-10-18
 
 - After a ChatGPT app restart, the load report now measures ownership again

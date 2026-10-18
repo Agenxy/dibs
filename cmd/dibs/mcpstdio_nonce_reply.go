@@ -14,16 +14,19 @@ func rememberRegistrationNonce(line, reply []byte) {
 	var call struct {
 		Params struct {
 			Arguments map[string]any `json:"arguments"`
+			Meta      map[string]any `json:"_meta"`
 		} `json:"params"`
 	}
 	if json.Unmarshal(line, &call) != nil {
 		return
 	}
 	args := call.Params.Arguments
+	scope := registrationNonceScope(map[string]any{"_meta": call.Params.Meta})
 	name, _ := args["name"].(string)
-	if name == "" {
+	if name == "" || scope == "" {
 		return
 	}
+	name = nonceCacheName(name, scope)
 	nonce, _ := args["nonce"].(string)
 	if group, ok := args["recovery_nonces"].([]any); ok {
 		var result struct {

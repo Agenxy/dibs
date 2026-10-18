@@ -26,6 +26,7 @@ import (
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/ledger"
 	"github.com/agenxy/dibs/internal/mcp"
+	"github.com/agenxy/dibs/internal/paths"
 )
 
 func TestIdentityRecoveryBridgeProcess(t *testing.T) {
@@ -49,7 +50,10 @@ type recoveryStdio struct {
 	drop      atomic.Bool
 	refuse    atomic.Bool
 	registers atomic.Int64
+	thread    string
 }
+
+const recoveryFixtureThread = "01a10520-0000-7000-8000-000000000010"
 
 func newRecoveryStdio(t *testing.T) *recoveryStdio {
 	return newRecoveryStdioWithPin(t, "")
@@ -70,7 +74,7 @@ func newRecoveryStdioWithPin(t *testing.T, pin string) *recoveryStdio {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { eng.Run(ctx); close(done) }()
-	f := &recoveryStdio{dir: dir, eng: eng}
+	f := &recoveryStdio{dir: dir, eng: eng, thread: recoveryFixtureThread}
 	server := mcp.New(eng)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, err := io.ReadAll(r.Body)
@@ -137,6 +141,9 @@ func newRecoveryStdioWithPin(t *testing.T, pin string) *recoveryStdio {
 	f.call = func(name string, args map[string]any) map[string]any {
 		t.Helper()
 		request := map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": name, "arguments": args}}
+		if f.thread != "" {
+			request["params"].(map[string]any)["_meta"] = map[string]any{"threadId": f.thread}
+		}
 		if err := json.NewEncoder(in).Encode(request); err != nil {
 			t.Fatal(err)
 		}
@@ -151,6 +158,30 @@ func newRecoveryStdioWithPin(t *testing.T, pin string) *recoveryStdio {
 		}
 	}
 	return f
+}
+
+// One real stdio bridge can relay calls from different harness threads. The
+// harness supplies the thread metadata; the model supplies only a role name.
+// Neither an index setter nor a caller-chosen nonce enters this regression.
+func TestRecoveryCacheDoesNotGiveTwoThreadsTheSameCredential(t *testing.T) {
+	f := newRecoveryStdio(t)
+	project := t.TempDir()
+	const firstThread = "01a10520-0000-7000-8000-000000000001"
+	const secondThread = "01a10520-0000-7000-8000-000000000002"
+	f.thread = firstThread
+	a := recoveryStdioOK(t, f.call("register", map[string]any{"name": "worker", "cwd": project}))
+	recoveryStdioOK(t, f.call("check_in", map[string]any{"token": a["token"]}))
+	f.thread = secondThread
+	b := recoveryStdioOK(t, f.call("register", map[string]any{"name": "worker", "cwd": project}))
+	if a["agent_id"] == b["agent_id"] || a["token"] == b["token"] {
+		t.Fatal("two harness threads received one role credential; the second silently revokes the first")
+	}
+	f.thread = firstThread
+	recoveryStdioOK(t, f.call("check_in", map[string]any{"token": a["token"]}))
+	again := recoveryStdioOK(t, f.call("register", map[string]any{"name": "worker", "cwd": project}))
+	if again["agent_id"] != a["agent_id"] {
+		t.Fatal("the original harness thread did not recover its own identity")
+	}
 }
 
 func recoveryStdioResult(t *testing.T, b []byte) map[string]any {
@@ -214,11 +245,16 @@ func (f *recoveryStdio) direct(t *testing.T, name string, args map[string]any) m
 
 func writeLegacyRecoveryCache(t *testing.T, dir string, entries map[string]string) {
 	t.Helper()
+	writeNamedRecoveryCache(t, dir, nonceStore, entries)
+}
+
+func writeNamedRecoveryCache(t *testing.T, dir, name string, entries map[string]string) {
+	t.Helper()
 	b, err := json.Marshal(entries)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "harness-nonces.json"), b, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, name), b, 0o600); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -259,7 +295,7 @@ func TestIdentityRecoveryRealStdioNativeCase(t *testing.T) {
 	}
 }
 
-func TestIdentityRecoveryRealStdioLegacyConflict(t *testing.T) {
+func TestIdentityRecoveryRealStdioSessionAliasConflict(t *testing.T) {
 	for _, mode := range []string{"two-valid", "one-valid", "none-valid", "over-limit", "response-loss", "old-daemon-refusal", "one-alias", "same-credential", "explicit", "transport-pin"} {
 		t.Run(mode, func(t *testing.T) {
 			pin := ""
@@ -304,7 +340,19 @@ func TestIdentityRecoveryRealStdioLegacyConflict(t *testing.T) {
 					entries[link+"\x00worker"] = fmt.Sprintf("secret-%d", i)
 				}
 			}
-			writeLegacyRecoveryCache(t, f.dir, entries)
+			// These are aliases retained by THIS harness thread. The old
+			// project/name-only namespace has no such ownership evidence and
+			// is tested separately below: it must not be injected.
+			bound := map[string]string{}
+			for key, nonce := range entries {
+				dir, name, ok := strings.Cut(key, "\x00")
+				if !ok {
+					t.Fatal("setup: invalid retained cache key")
+				}
+				bound[dir+"\x00"+nonceCacheName(name, "codex-thread:"+f.thread)] = nonce
+			}
+			entries = bound
+			writeNamedRecoveryCache(t, f.dir, scopedNonceStore, entries)
 			before, err := f.eng.Board(context.Background())
 			if err != nil {
 				t.Fatal(err)
@@ -341,7 +389,7 @@ func TestIdentityRecoveryRealStdioLegacyConflict(t *testing.T) {
 				if after["serial"] != before["serial"] {
 					t.Fatal("old-daemon refusal changed state")
 				}
-				b, err := os.ReadFile(filepath.Join(f.dir, "harness-nonces.json"))
+				b, err := os.ReadFile(filepath.Join(f.dir, scopedNonceStore))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -358,7 +406,7 @@ func TestIdentityRecoveryRealStdioLegacyConflict(t *testing.T) {
 				if got["rpc_error"] == nil {
 					t.Fatal("setup: accepted response was not lost")
 				}
-				b, err := os.ReadFile(filepath.Join(f.dir, "harness-nonces.json"))
+				b, err := os.ReadFile(filepath.Join(f.dir, scopedNonceStore))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -396,13 +444,13 @@ func TestIdentityRecoveryRealStdioLegacyConflict(t *testing.T) {
 					t.Fatal("failed recovery created state")
 				}
 			}
-			b, err := os.ReadFile(filepath.Join(f.dir, "harness-nonces.json"))
+			b, err := os.ReadFile(filepath.Join(f.dir, scopedNonceStore))
 			if err != nil {
 				t.Fatal(err)
 			}
 			var retained map[string]string
 			if err := json.Unmarshal(b, &retained); err != nil {
-				t.Fatal("old bridge cannot read migrated format")
+				t.Fatal("session cache JSON is unreadable")
 			}
 			for key, value := range entries {
 				if retained[key] != value {
@@ -410,6 +458,117 @@ func TestIdentityRecoveryRealStdioLegacyConflict(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestLegacyNonceIsClaimedByOnlyTheFirstThread(t *testing.T) {
+	for _, explicit := range []bool{false, true} {
+		t.Run(fmt.Sprintf("explicit-%t", explicit), func(t *testing.T) { legacyClaimSequence(t, explicit) })
+	}
+}
+
+func legacyClaimSequence(t *testing.T, explicit bool) {
+	t.Helper()
+	f := newRecoveryStdio(t)
+	project := t.TempDir()
+	old := recoveryStdioOK(t, f.direct(t, "register", map[string]any{
+		"name": "worker", "nonce": "legacy-source-secret", "cwd": project,
+	}))
+	key := project + "\x00worker"
+	legacy := map[string]string{key: "legacy-source-secret", canonicalNonceKey(project, "worker"): "legacy-source-secret"}
+	writeLegacyRecoveryCache(t, f.dir, legacy)
+	args := map[string]any{"name": "worker", "cwd": project}
+	if explicit {
+		args["nonce"] = "legacy-source-secret"
+	}
+	got := recoveryStdioOK(t, f.call("register", args))
+	if got["agent_id"] != old["agent_id"] {
+		t.Fatal("upgrade forked the first session instead of migrating its existing credential")
+	}
+	f.thread = "01a10520-0000-7000-8000-000000000020"
+	other := recoveryStdioOK(t, f.call("register", map[string]any{"name": "worker", "cwd": project}))
+	if other["agent_id"] == old["agent_id"] {
+		t.Fatal("the second thread borrowed the already claimed legacy credential")
+	}
+	f.thread = recoveryFixtureThread
+	recoveryStdioOK(t, f.call("check_in", map[string]any{"token": got["token"]}))
+	f.thread = "01a10520-0000-7000-8000-000000000020"
+	recoveryStdioOK(t, f.call("check_in", map[string]any{"token": other["token"]}))
+	stored := loadRecoveryCache(t, f.dir)
+	for key := range legacy {
+		if stored[key] != "" {
+			t.Fatal("migration left an unscoped copy available to another thread")
+		}
+	}
+	// A pre-upgrade writer may leave the old format again. The durable owner
+	// marker must prevent a later new session from claiming it a second time.
+	t.Setenv("DIBS_DIR", f.dir)
+	writeLegacyRecoveryCache(t, f.dir, legacy) // stale whole-file write by an old bridge
+	f.thread = "01a10520-0000-7000-8000-000000000030"
+	late := recoveryStdioOK(t, f.call("register", map[string]any{"name": "worker", "cwd": project}))
+	if late["agent_id"] == old["agent_id"] {
+		t.Fatal("a late legacy-format write let a second session claim the same seat")
+	}
+}
+
+func loadRecoveryCache(t *testing.T, dir string) map[string]string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(dir, nonceStore))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored map[string]string
+	if err := json.Unmarshal(raw, &stored); err != nil {
+		t.Fatal(err)
+	}
+	return stored
+}
+
+func TestBusyLegacyMigrationRefusesBeforeForwardingRegistration(t *testing.T) {
+	f := newRecoveryStdio(t)
+	t.Setenv("DIBS_DIR", f.dir)
+	project := t.TempDir()
+	old := recoveryStdioOK(t, f.direct(t, "register", map[string]any{
+		"name": "worker", "nonce": "legacy-source-secret", "cwd": project,
+	}))
+	writeLegacyRecoveryCache(t, f.dir, map[string]string{project + "\x00worker": "legacy-source-secret"})
+	lock, err := os.OpenFile(noncePath()+".scope.lock", os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal("setup: kernel lock file", err)
+	}
+	defer func() { _ = lock.Close() }()
+	err = paths.LockExclusive(lock, false)
+	if err != nil {
+		t.Fatal("setup: real kernel lock", err)
+	}
+	guard := func() { paths.Unlock(lock) }
+	held := true
+	defer func() {
+		if held {
+			guard()
+		}
+	}()
+	before, err := f.eng.Board(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := f.call("register", map[string]any{"name": "worker", "cwd": project})
+	if !strings.Contains(fmt.Sprint(r["rpc_error"]), "E_NONCE_CACHE") {
+		t.Fatal("busy migration was hidden, minted a fresh identity or reached the daemon")
+	}
+	after, err := f.eng.Board(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before["serial"] != after["serial"] {
+		t.Fatal("refused migration forwarded a registration")
+	}
+	recoveryStdioOK(t, f.direct(t, "check_in", map[string]any{"token": old["token"]}))
+	guard()
+	held = false
+	resumed := recoveryStdioOK(t, f.call("register", map[string]any{"name": "worker", "cwd": project}))
+	if resumed["agent_id"] != old["agent_id"] {
+		t.Fatal("same-session retry did not resume the original seat")
 	}
 }
 
@@ -451,5 +610,38 @@ func TestConcurrentRecoveryCacheWritesRetainEveryCredential(t *testing.T) {
 		if !found {
 			t.Fatal("concurrent writers lost a held credential")
 		}
+	}
+}
+
+// A malformed cache is evidence of lost state, never permission to mint over it.
+func TestCorruptCredentialCacheRefusesBeforeRegistration(t *testing.T) {
+	for _, filename := range []string{nonceStore, scopedNonceStore} {
+		t.Run(filename, func(t *testing.T) {
+			f := newRecoveryStdio(t)
+			path := filepath.Join(f.dir, filename)
+			raw := []byte("{interrupted-cache")
+			if err := os.WriteFile(path, raw, 0o600); err != nil {
+				t.Fatal("setup: damaged cache", err)
+			}
+			before, err := f.eng.Board(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			r := f.call("register", map[string]any{"name": "worker", "cwd": t.TempDir()})
+			if !strings.Contains(fmt.Sprint(r["rpc_error"]), "E_NONCE_CACHE") {
+				t.Fatal("corrupt cache did not refuse registration")
+			}
+			after, err := f.eng.Board(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if before["serial"] != after["serial"] {
+				t.Fatal("corrupt cache forwarded registration")
+			}
+			got, err := os.ReadFile(path)
+			if err != nil || string(got) != string(raw) {
+				t.Fatal("corrupt cache was overwritten")
+			}
+		})
 	}
 }
