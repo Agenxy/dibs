@@ -87,8 +87,11 @@ func TestAThreadSaysWhichAppItWasBornIn(t *testing.T) {
 }
 
 func TestAUUIDv7NamesTheDayItWasMade(t *testing.T) {
+	// Read in UTC: this instant is 30 September in UTC and 1 October in
+	// Paris, so a local-time comparison failed the gate on a laptop that
+	// travelled (2026-10-18).
 	at, ok := uuidv7Time("01a0f45e-cbf8-7ef0-acb8-79c25cb4343d")
-	if !ok || at.Year() != 2026 || at.Month() != time.September {
+	if at = at.UTC(); !ok || at.Year() != 2026 || at.Month() != time.September {
 		t.Errorf("decoded %v %v", at, ok)
 	}
 	if _, ok := uuidv7Time("0199a0b1-c2d3-4e5f-8a9b-0c1d2e3f4a5b"); ok {
