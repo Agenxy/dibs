@@ -212,16 +212,17 @@ var toolDefs = func() []map[string]any {
 			}, "token", "nonce"),
 		},
 		{
-			"name": "merge_agents", "description": "As ADMIN, fold a forked row back " +
-				"into the seat it should have been: its mail, claims and space " +
-				"membership move to the survivor, and its nonce follows so the fork " +
-				"cannot reopen. For the sibling a lost nonce leaves behind, not for " +
-				"tidying: a LIVE agent is refused, because two running processes are " +
-				"two agents whatever they are called.",
+			"name": "merge_agents", "description": "Preview with dry_run:true, then commit with its fence. " +
+				"Coordinator: matching name/host/harness/surface/kind, unbound non-live undeclared fork, " +
+				"newer third-party survivor. " +
+				"Human/admin may override those matches, never a live source or claim conflict. " +
+				"Refusal offers a human request whose Approve executes.",
 			"inputSchema": obj(map[string]any{
-				"token": tok,
-				"agent": str("the forked agent to absorb. It must not be active"),
-				"into":  str("the seat that survives, keeping its name and role"),
+				"token":   tok,
+				"agent":   str("the forked agent to absorb. It must not be active"),
+				"into":    str("the seat that survives, keeping its name and role"),
+				"dry_run": map[string]any{"type": "boolean", "description": "true: read-only metadata preview"},
+				"fence":   str("content fence from the preview, required to commit"),
 			}, "token", "agent", "into"),
 		},
 		{
@@ -317,6 +318,9 @@ var toolDefs = func() []map[string]any {
 				"op_id": str("client-generated id for safe retries (optional, recommended)"),
 				"adopt": str("on a request: ask to reclaim an ABANDONED agent of yours, " +
 					"by id. Their Approve moves its mail onto you"),
+				"merge": obj(map[string]any{
+					"from": str("exact fork id"), "into": str("survivor id"), "fence": str("preview content fence"),
+				}, "from", "into", "fence"),
 				"grant": map[string]any{
 					"type": "string", "enum": []string{"coordinator", "member"},
 					"description": "ask the HUMAN for a role, on a request. Their Approve IS " +

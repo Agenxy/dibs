@@ -518,7 +518,7 @@ func (s *State) gc(now time.Time, purgeMail, clampWatermark, keepOwed bool) ([]E
 			case m.From == id:
 				m.From = RetiredSender(id)
 				retired++
-			case m.Adopt == id && !m.Terminal():
+			case (m.Adopt == id || (m.Merge != nil && (m.Merge.From == id || m.Merge.Into == id))) && !m.Terminal():
 				// A REQUEST TO ADOPT THIS MAILBOX DIES WITH IT. Approval
 				// resolves the adopt name against the roster of the day, so a
 				// request left standing past the purge, approved after a
@@ -530,6 +530,10 @@ func (s *State) gc(now time.Time, purgeMail, clampWatermark, keepOwed bool) ([]E
 				m.State = MsgStateExpiredDead
 				m.ExpireDetail = "the agent this request asked to adopt, " + id + ", was purged: " +
 					"its mailbox is gone, and approving now would take whoever holds that name next"
+				if m.Merge != nil {
+					m.ExpireDetail = "the identity this merge request names, " + id + ", was purged: " +
+						"its mailbox is gone, and approving now would take whoever holds that name next"
+				}
 				m.TerminalAt = now
 				evs = append(evs, Event{
 					Type: "message." + m.State, Agent: m.To, To: m.From,
@@ -641,6 +645,10 @@ func (s *State) Board() map[string]any {
 			"status": l.Status, "activation": l.Activation, "slots": slots,
 			"last_coordination_at": l.LastCoordination,
 		}
+		lm["sessions"] = map[string]any{
+			"host_id": agentHostID(l), "primary": l.SessionID, "aliases": l.SessionAliases,
+			"current": l.CurrentSession, "guessed": l.GuessedSessions,
+		}
 		// Role and parent, only when they are not the default. A `role: "member"`
 		// on every agent and a `parent: ""` on almost all of them is payload the
 		// reader and the model both pay for and neither uses.
@@ -696,6 +704,13 @@ func (s *State) Board() map[string]any {
 	slices.SortFunc(claims, func(a, b *Claim) int { return strings.Compare(a.Path, b.Path) })
 	spaces := s.channelBoard()
 	out := map[string]any{"serial": s.Serial, "node": s.NodeID, "agents": agents, "claims": claims}
+	if merged := s.mergedBoard(); len(merged) > 0 {
+		out["merged_agents"] = merged
+	}
+	s.decorateMergeCandidates(agents)
+	if sources := s.mergeSourcesBoard(); len(sources) > 0 {
+		out["merge_sources"] = sources
+	}
 	var contacts []*ContactEscalation
 	for _, serial := range sortedKeys(s.Contacts) {
 		c := s.Contacts[serial]

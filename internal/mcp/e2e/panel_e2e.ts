@@ -412,6 +412,10 @@ try {
       ;(d as HTMLDetailsElement).open = true
       return !!d.querySelector(".said .path")
     }))
+  const sessionDetail = await disclosure.first().locator(".session-identity").innerText()
+  check("panel detail shows its recorded session beside a host",
+    sessionDetail.includes("e2e-1") && sessionDetail.includes("Host"), sessionDetail)
+  check("the agent panel offers no human merge control", await panel.locator(".merge-preview").count() === 0)
   check("summary agrees with the board",
     ((await panel.locator(".metric .figure").first().textContent()) ?? "").includes("2"))
   const capsText = (await panel.locator("#ctx-caps").textContent()) ?? ""

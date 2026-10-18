@@ -147,8 +147,9 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		// Renaming THIS later would replay every merge as a merge into the
 		// empty string, which applyMerge reads as an agent that no longer
 		// exists and skips, so the fold would quietly undo repairs.
-		"merge_into": true,
-		"path":       true, "mode": true, "note": true,
+		"merge_into":  true,
+		"merge_actor": true, "merge": true,
+		"path": true, "mode": true, "note": true,
 		"space": true, "exclusive": true, "predicted": true,
 		// The coordinate systems a declaration was scored in (#39): the
 		// fingerprint of the history behind `predicted`, and the same
@@ -466,7 +467,8 @@ const (
 	// Contact notice reads add one checkpoint-prefix tag; no old tag changed.
 	// Compact mailbox checkpoints add the selected serial list, without renaming.
 	// FYI receipts add announcement ids and a consumption reason on old carriers.
-	frozenOpFingerprint       = "sha256:43b9fdab79f01b5d"
+	// Merge adds actor and typed effect tags; no historical tag renamed.
+	frozenOpFingerprint       = "sha256:da7ee6e214215571"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`
@@ -479,7 +481,8 @@ const (
 	// Worker review reads add one scalar; sender watermark is unchanged.
 	// Stall notices add one durable declaration-version scalar, absent historically.
 	// FYI receipts add an announcement serial and consumption reason only.
-	frozenMessageFingerprint = "sha256:273a74e77adb2f40"
+	// Merge adds typed effect and sender-ownership tags; no historical tag renamed.
+	frozenMessageFingerprint = "sha256:4a8e41dc18ba1dd2"
 	// The identity inside op.agent. Set when the fingerprint was added; one
 	// new tag at a time from here, never a rename.
 	frozenAgentFingerprint = "sha256:c630d3cc9f27eb95"
@@ -718,7 +721,8 @@ func TestLedgerMessageFieldNamesAreFrozen(t *testing.T) {
 		"adopted_from": true,
 		// The serial of the adoption, so only the incarnation of a reused name
 		// that was actually given the mail can read it through the mark.
-		"adopted_serial": true,
+		"adopted_serial":     true,
+		"merged_sent_serial": true,
 		// A task's steps, what was reported against them, and where it landed.
 		"milestones": true, "progress": true, "deliverable": true, "tracked": true,
 		"serial": true, "from": true, "to": true, "type": true, "body": true,
@@ -734,7 +738,7 @@ func TestLedgerMessageFieldNamesAreFrozen(t *testing.T) {
 		"outcome_read_serial": true,
 		"review_read_serial":  true, // independent worker awareness
 		// 0.0.6.
-		"choices": true, "grant": true, "adopt": true,
+		"choices": true, "grant": true, "adopt": true, "merge": true,
 	}
 	var declared []string
 	mt := reflect.TypeOf(core.Message{})
@@ -814,4 +818,48 @@ func declaredTagsOf(t reflect.Type) []string {
 		}
 	}
 	return out
+}
+
+// Nested tags are ledger fields too. Freezing only Op.merge_actor would let a
+// sweep erase the actor's identity or its process evidence silently on replay.
+func TestMergeDecisionFieldsAreFrozen(t *testing.T) {
+	cases := []struct {
+		name string
+		typ  reflect.Type
+		want map[string]bool
+		hash string
+	}{
+		{
+			"effect", reflect.TypeOf(core.MergeRequest{}),
+			map[string]bool{"from": true, "into": true, "fence": true},
+			"sha256:6b77fc610761dae9",
+		},
+		{
+			"actor", reflect.TypeOf(core.MergeActor{}),
+			map[string]bool{"id": true, "created_serial": true, "authority": true, "evidence": true},
+			"sha256:3a4c0404ba1a3b79",
+		},
+		{"evidence", reflect.TypeOf(core.MergeEvidence{}), map[string]bool{
+			"known": true, "live": true, "source": true, "created_serial": true, "host": true, "pid": true, "proc_start": true,
+		}, "sha256:8bb087ae0a34eac1"},
+		{"credential tombstone", reflect.TypeOf(core.MergedNonce{}), map[string]bool{
+			"from": true, "into": true, "by": true, "serial": true,
+		}, "sha256:db8511c7880064bc"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := declaredTagsOf(tc.typ)
+			if len(got) != len(tc.want) {
+				t.Fatalf("merge decision fields changed: %v", got)
+			}
+			for _, field := range got {
+				if !tc.want[field] {
+					t.Errorf("unfrozen merge field %q", field)
+				}
+			}
+			if got := fingerprint(tc.want); got != tc.hash {
+				t.Fatalf("merge decision fingerprint changed: %s", got)
+			}
+		})
+	}
 }

@@ -329,6 +329,11 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 	}
 	// Every ledgered actor op refreshes the durable coordination checkpoint.
 	l.LastCoordination = now
+	if op.Kind == OpSendMessage && op.Merge != nil {
+		if m := s.Messages[s.Serial+1]; m != nil && m.Merge != nil {
+			m.Merge.Fence = s.MergeFence(m.Merge.From, m.Merge.Into, m.Serial)
+		}
+	}
 	// ONE op, ONE serial.
 	//
 	// Several handlers allocate their own serial because they need it in the
@@ -1508,6 +1513,10 @@ func (s *State) finishSend(
 		}
 		m.NeverDeliveredAt = now.Add(ceiling)
 	}
+	if op.Merge != nil {
+		effect := *op.Merge
+		m.Merge = &effect
+	}
 	s.Messages[serial] = m
 	evs := []Event{{Type: "message.sent", Agent: l.ID, To: to.ID, Data: map[string]any{
 		"msg_type": op.MsgType, "from": l.ID, "attachments": len(op.Attachments),
@@ -1743,6 +1752,13 @@ func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, 
 			Type: "agent.role_changed", Agent: granted.ID,
 			Data: map[string]any{"role": m.Grant, "via": "approved_request"},
 		})
+	}
+	if st == MsgStateApproved && m.Merge != nil {
+		merged, events := s.mergeSupported(m.Merge.From, m.Merge.Into, op.MergeActor, now)
+		res["merged"] = merged
+		evs[0].To = m.From // a requester that was the source now belongs to the survivor
+		evs[0].Data["merged_from"], evs[0].Data["merged_into"] = m.Merge.From, m.Merge.Into
+		evs = append(evs, events...)
 	}
 	if adopted != nil {
 		into := s.Agents[m.From]

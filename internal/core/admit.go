@@ -28,6 +28,14 @@ func (s *State) Admit(op *Op) error {
 	if err := Admit(op, s.Limits); err != nil {
 		return err
 	}
+	if err := s.admitMergeActor(op); err != nil {
+		return err
+	}
+	if op.Kind == OpRegister || op.Kind == OpResume {
+		if err := s.MergedNonceError(op.Nonce); err != nil {
+			return err
+		}
+	}
 	if err := s.admitContact(op); err != nil {
 		return err
 	}
@@ -97,6 +105,9 @@ func (s *State) admitContact(op *Op) error {
 // hazard: lower MaxBodyBytes and an existing ledger stops replaying. They
 // predate this and are left rather than moved blind, but new rules go here.)
 func Admit(op *Op, lim Limits) error {
+	if err := admitMergeRequest(op, lim); err != nil {
+		return err
+	}
 	if err := admitRestart(op, lim); err != nil {
 		return err
 	}

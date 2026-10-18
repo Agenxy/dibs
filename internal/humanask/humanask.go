@@ -36,6 +36,7 @@ type Message struct {
 	Contact         *Contact // daemon-authored reachability notice, never participant body
 	Choices         []string
 	Grant           string
+	Merge           *core.MergeRequest
 	Adopt           string
 	AdoptName       string // current name; Adopt stays the stable ID
 	Serial          uint64 // stable message identity on Node
@@ -182,7 +183,10 @@ func askContact(m Message) (Answer, error) {
 // mailbox on the same yes. core.Admit refuses that combination now, and this
 // does not rely on it: if a second effect ever reaches here, the person reads
 // it rather than approving it blind.
-func RequestTitle(from, grant, adopt string) string {
+func RequestTitle(from, grant, adopt string, merge ...*core.MergeRequest) string {
+	if len(merge) > 0 && merge[0] != nil {
+		return "Dibs · merge " + OneLine(merge[0].From) + " into " + OneLine(merge[0].Into) + "?"
+	}
 	switch {
 	case grant != "" && adopt != "":
 		return "Dibs · make " + from + " " + grant + " AND give it " + adopt + "'s mail?"
@@ -198,7 +202,7 @@ func RequestTitle(from, grant, adopt string) string {
 }
 
 func approve(m Message) (Answer, error) {
-	choice, err := m.askNotification(RequestTitle(m.displayFrom(), m.Grant, m.displayAdopt()),
+	choice, err := m.askNotification(RequestTitle(m.displayFrom(), m.Grant, m.displayAdopt(), m.Merge),
 		Said(m.Who, m.Body), "Deny", "Later", "Approve")
 	if errors.Is(err, notify.ErrCannotNotify) {
 		return Answer{}, err

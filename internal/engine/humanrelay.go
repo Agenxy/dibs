@@ -38,6 +38,7 @@ type HumanNotice struct {
 	Choices   []string             `json:"choices,omitempty"`
 	Grant     string               `json:"grant,omitempty"`
 	Adopt     string               `json:"adopt,omitempty"`
+	Merge     *core.MergeRequest   `json:"merge,omitempty"`
 	AdoptName string               `json:"adopt_name,omitempty"`
 	Node      string               `json:"node,omitempty"`
 	Cleanup   *NotificationCleanup `json:"notification_cleanup,omitempty"`
@@ -46,7 +47,7 @@ type HumanNotice struct {
 
 // Privileged is whether approving this grants something: a role, a
 // permission, or another agent's mail. Approving one needs a fresh signature.
-func (n HumanNotice) Privileged() bool { return n.Grant != "" || n.Adopt != "" }
+func (n HumanNotice) Privileged() bool { return n.Grant != "" || n.Adopt != "" || n.Merge != nil }
 
 // relayQueue bounds what one relay may fall behind by. A relay that cannot
 // keep up loses notices, never the mail: everything is still on the board.
@@ -152,6 +153,13 @@ func (e *Engine) noticeOf(m *core.Message) HumanNotice {
 	}
 	if a := e.state.Agents[m.From]; a != nil {
 		n.Who = whoIs(a)
+	}
+	if m.Merge != nil {
+		effect := *m.Merge
+		n.Merge = &effect
+		n.Body = fmt.Sprintf("Approve merges %s into %s, moving its mailbox, claims, memberships and nonce mappings. "+
+			"The source closes; the survivor keeps its identity and role; the fork's credential will open %s.\n\n%s",
+			m.Merge.From, m.Merge.Into, m.Merge.Into, m.Body)
 	}
 	if m.Adopt != "" {
 		n.AdoptName = e.agentName(m.Adopt)

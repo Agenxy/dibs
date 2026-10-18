@@ -177,8 +177,7 @@ func (s *State) readdressMail(from, into *Agent, v7 bool) int {
 		}
 		// s.Serial+1 is the serial finish will give this op: the fold's own
 		// clock, so replay records the same one.
-		m.AdoptedFrom, m.AdoptedAt = from.ID, s.Serial+1
-		m.To = into.ID
+		s.moveOwnedMailRecord(m, from.ID, into.ID)
 		moved++
 	}
 	return moved
@@ -192,10 +191,17 @@ func (s *State) readdressMail(from, into *Agent, v7 bool) int {
 // told that agent anything was waiting. Found by the pre-release review, round
 // twenty-seven.
 func (s *State) adoptedMailEvents(into, from *Agent) []Event {
+	return s.movedMailEvents(into, from, false)
+}
+
+// New merges also announce inherited accepted debt and unread FYIs. Historical
+// adoption folds retain their original selection through the false option.
+func (s *State) movedMailEvents(into, from *Agent, debtAndFYI bool) []Event {
 	var evs []Event
 	for _, serial := range sortedKeys(s.Messages) {
 		m := s.Messages[serial]
-		if m.To != into.ID || m.AdoptedFrom != from.ID || m.Terminal() {
+		if m.To != into.ID || m.AdoptedFrom != from.ID ||
+			(m.Terminal() && (!debtAndFYI || !m.DurableDebt())) {
 			continue
 		}
 		// MOVED BY THIS OP. The filter matched the source and the heir and
@@ -209,6 +215,10 @@ func (s *State) adoptedMailEvents(into, from *Agent) []Event {
 		}
 		switch m.Type {
 		case MsgQuestion, MsgRequest, MsgHandoff:
+		case MsgNotify:
+			if !debtAndFYI || m.Consumed {
+				continue
+			}
 		default:
 			continue
 		}

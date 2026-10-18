@@ -469,6 +469,61 @@ warn, and a peer's complementary slot does not hide its separate duplicate slot.
 This is advisory presentation derived from the recorded activities, not a new
 permission, admission rule or ledger field.
 
+**Supported duplicate repair.** `merge_agents(token, agent, into, dry_run:true)`
+returns a metadata-only plan and a stateless content `fence`; the real call
+supplies that fence with the same ordered IDs. Counts distinguish message
+kind/state, owed work (a subset), outgoing rewrites, claims, space relationships
+and nonce mappings. Identity differences and the number of source declarations
+are shown. Source declarations remain on its retired record, rather than
+silently replacing the survivor's work. Bodies and credentials are absent.
+
+A coordinator may commit only a matching known name, host, harness, surface and
+kind, with a non-active, unbound source that has no declarations or live process,
+and a strictly more recently coordinating survivor. The existing `OtherHands`
+custody rule also applies: a sessionless or own-session survivor requires the
+human. This is recorded provenance, not proof against an invented session ID.
+A member cannot execute a merge. The authenticated human or admin may override
+those matching/session/recency/declaration conditions; nobody may merge an active
+or live source, unknown process evidence, or conflicting claims. Absolute claim
+paths are compared with their recorded hosts. Process evidence is sampled on the
+writer and recorded with the actor; replay never probes.
+
+The fence hashes the ordered rows, owned incoming mail, rewritten outgoing
+relationships, claims, space relationships and nonce mappings, in canonical
+order. Unrelated traffic does not invalidate it; unchanged inputs survive a
+daemon restart. An identical change and revert is acceptable. A missing or
+changed fence refuses before any effect and requires a fresh preview.
+
+An execution refusal offers a concrete `send(to:"human", type:"request",
+merge:{from,into,fence}, body:...)`. The effect is mutually exclusive with
+`grant`, `adopt` and work milestones, and only the human can approve it.
+Approval performs the repair and records the response in ONE transition;
+a stale approval leaves the request open. The request stores its fence after
+its own send changes the pair, excluding only its own control envelope.
+`op_id` retries remain digest-bound, including after the repair. Notification
+and board text name the actual typed direction/effect, not just sender prose.
+OS notification acceptance still does not prove human visibility.
+
+New merges move only mail owned by the source incarnation. Incoming inheritance
+and sender inheritance have separate recorded serials, so both sides of an old
+conversation remain usable and a later reused ID gains neither. The survivor's
+role, identity and session/process binding stay its own. A coordinator merge
+retires source-only nonces in durable tombstones: register/resume refuse them
+with `E_SEAT_MERGED`, naming survivor and actor. These negative credentials
+outlive source-row retention. Canonical recovery first selects any valid
+survivor mapping; a tombstone cannot refuse that mapping. Only human/admin
+merges transfer source nonces, and the preview/approval states that the fork's
+credential will open the named survivor. The source token is revoked. Pending effects and merged-mail ownership prevent
+public-session-only recovery. Claims and current space relationships move;
+outstanding arrivals emit wake events. Source audit records destination, actor,
+authority, process evidence and time; historical unknown actors stay unknown.
+Old ops without the additive merge decision keep their historical fold.
+
+The human board uses the same preview/commit entry point under its existing
+cookie, page key and CSRF checks. The MCP panel remains its own agent. Session
+detail shows host-paired recorded bindings and the current app thread, including
+provenance for guesses; the compact roster does not expand those details.
+
 **Addressing: current `name` is the human-facing address; `agent_id` is the
 stable key and remains an address too.** Everything the
 ledger records about an agent names it by `agent_id`: mail `to`/`from`, claim

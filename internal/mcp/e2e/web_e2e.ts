@@ -1325,6 +1325,74 @@ try {
   }
 
   check("the live stream connected", await page.locator(".status-mark.live").count() > 0)
+  // A real human repair, through the rendered control and the cookie/key
+  // route. Source/survivor names deliberately differ: this is the human's
+  // override, not coordinator authority disguised as a board button.
+  {
+    await page.locator('.views button[data-view="board"]').click()
+    const fork = await tool("register", { name: "merge-fork", nonce: "merge-fork-nonce" })
+    const mergeMail = await tool("send", { token: b.token, to: fork.agent_id, type: "notify", body: "private merge fixture" })
+    check("merge setup created actual mail", typeof mergeMail.msg_serial === "number", JSON.stringify(mergeMail))
+    const closed = await tool("sign_off", { token: fork.token })
+    check("merge setup closed source", closed.ok === true, JSON.stringify(closed))
+    const survivor = await tool("register", { name: "merge-survivor", nonce: "merge-survivor-nonce" })
+    await tool("check_in", { token: survivor.token })
+    const liveFork = await tool("register", { name:"merge-live-process", nonce:"merge-live-nonce", pid:process.pid })
+    check("live-source setup registered", typeof liveFork.token === "string")
+    const liveClosed = await tool("sign_off", { token:liveFork.token })
+    check("live-source setup closed the row", liveClosed.ok === true)
+    const liveRefused = await fetch(`http://${ADDR}/api/act/merge`, {
+      method:"POST", headers:{...keyed, origin:`http://${ADDR}`, "content-type":"application/json"},
+      body:JSON.stringify({agent:liveFork.agent_id, into:survivor.agent_id, dry_run:true}),
+    })
+    const liveError = await liveRefused.text()
+    check("human cannot merge a closed row whose actual process is live",
+      liveRefused.status === 409 && /live process/.test(liveError), liveError)
+    const replay = await fetch(`http://${ADDR}/api/act/merge`, {
+      method: "POST", headers: { ...forged, "content-type": "application/json" },
+      body: JSON.stringify({ agent: fork.agent_id, into: survivor.agent_id, dry_run: true }),
+    })
+    check("a stolen cookie cannot preview or commit a merge", replay.status === 401, String(replay.status))
+    const row = page.locator(`.merge-sources [data-agent="${fork.agent_id}"] .merge-row`)
+    await row.locator("select").selectOption(survivor.agent_id)
+    await row.locator(".merge-preview").click()
+    await page.locator("dialog[open]").waitFor()
+    const preview = await page.locator("dialog[open]").innerText()
+    check("human preview states direction and counts without private content",
+      preview.includes(fork.agent_id) && preview.includes(survivor.agent_id) &&
+      /1 pending notify/.test(preview) && !preview.includes("private merge fixture"), preview)
+    check("human preview explicitly authorizes the source credential",
+      preview.includes(`the fork's credential will open ${survivor.agent_id}`), preview)
+
+    // A genuine input change while the dialog is open invalidates its fence.
+    const changed = await tool("send", { token: b.token, to: survivor.agent_id, type: "notify", body: "arrived during preview" })
+    check("stale setup changed a participating mailbox", typeof changed.msg_serial === "number")
+    const staleResponse = page.waitForResponse((r) => r.url().endsWith("/api/act/merge") && r.status() === 409)
+    await page.locator("dialog .confirm-merge").click()
+    await staleResponse
+    check("stale confirmation leaves dialog open", await page.locator("dialog[open]").count() === 1)
+    const untouched = await publicBoard()
+    check("stale confirmation made no merge", !(untouched.merged_agents || []).some((r: any) => r.id === fork.agent_id))
+    // Only this case's known 409 is excluded from the browser error sweep.
+    for (let i = pageErrors.length - 1; i >= 0; i--) {
+      if (/status of 409/.test(pageErrors[i])) pageErrors.splice(i, 1)
+    }
+    await page.locator("dialog .cancel-merge").click()
+    await row.locator("select").selectOption(survivor.agent_id)
+    await row.locator(".merge-preview").click()
+    await page.locator("dialog[open]").waitFor()
+    await page.locator("dialog .confirm-merge").click()
+    await page.locator("dialog").waitFor({ state: "detached" })
+    await expectEvent(b.token, "agent.merged", (e) => e.agent === survivor.agent_id)
+    const merged = (await publicBoard()).merged_agents.find((r: any) => r.id === fork.agent_id)
+    check("human merge records actual actor, destination and time",
+      merged?.into === survivor.agent_id && merged?.by?.authority === "human" && !!merged?.by?.id && !!merged?.at,
+      JSON.stringify(merged))
+    const inherited = await tool("read_mail", { token: survivor.token, msg_serial: mergeMail.msg_serial })
+    check("survivor actually reads older inherited mail", inherited.message?.body === "private merge fixture", JSON.stringify(inherited))
+    await page.getByText(`merged into ${survivor.agent_id}`, { exact: false }).first().waitFor()
+  }
+
   check("no uncaught errors in the page", realErrors().length === 0, realErrors().slice(0, 2).join(" | "))
   // And the injection really did happen: otherwise the exclusion above is
   // hiding nothing and the transport test proved nothing.

@@ -2,7 +2,8 @@
 
 Design checkpoint for request 138494 and its session-identity addition 142249.
 Base: `1a5ea8212691bac3ae4827fb3d87e242e7064fa1` (PR #449).
-Status: proposed; no implementation or production merge is claimed.
+Status: accepted with architect ruling 143110; implementation and proof in progress.
+No production merge is claimed.
 
 ## The Supgang cause
 
@@ -56,7 +57,12 @@ stable refusal reasons. It requires:
 - Strictly later durable `LastCoordination` on the survivor. Equality refuses;
   the ID suffix is never used to pick a direction.
 
-Coordinator execution is allowed only on this decision. Member execution is
+Coordinator execution also retains the existing `OtherHands` custody guard
+(architect confirmation on question 143507). A sessionless or own-session
+survivor cannot be distinguished from a puppet whose token the coordinator
+holds, so those pairs route to the typed human request. There is no new identity
+proof: the raw invented-session limit remains as documented in SECURITY.md.
+Coordinator execution is allowed only on these decisions. Member execution is
 refused. Admin retains its existing authority. Human execution uses the board's
 existing authenticated human identity, never a caller-supplied `human` string.
 Preview metadata does not grant access to either mailbox's content.
@@ -71,14 +77,13 @@ error, add that distinction at the probe edge rather than treating every false
 boolean as absence. A process can change after a measurement; this does not
 claim OS-level exclusion against a concurrently starting process.
 
-**Review decision needed:** interpret “the human may merge any pair” as allowing
+**Accepted human scope (143110):** interpret “the human may merge any pair” as allowing
 the human to override the coordinator identity, session, recency and declaration
 rules, with every difference shown in the preview. Preserve refusal for an
 active source and conflicting claims for all callers in the first version.
 The current fold refuses an active source, and dropping conflicting claims would
-lose ownership evidence. If live-source override is intended too, it needs an
-explicit new recorded semantic decision and preview of token revocation; it
-must not silently relax the historical guard. No such override is implemented.
+lose ownership evidence. The architect confirmed this boundary: any NON-LIVE pair, with conflicting
+claims refused. No live-source override is authorized.
 
 ## Preview, fence and execution
 
@@ -86,49 +91,35 @@ must not silently relax the historical guard. No such override is implemented.
 source and survivor IDs/incarnations, eligibility reasons, incoming messages by
 kind/state, durable owed requests separately (a subset, not an added count),
 outgoing address rewrites, claims, memberships, and the number of nonce mappings
-that follow. No bodies, credentials, attachments or space posts are returned.
+affected, with the authenticated actor's credential policy stated. No bodies, credentials, attachments or space posts are returned.
 Preview accounts for mailbox watermarks and inherited readable mail explicitly.
 
-The response includes `fence_serial` plus an opaque `preview_id`. Commit supplies
-both, with the same ordered IDs and authenticated actor. New real calls without
-a preview receive a corrective dry-run hint; admin authority remains available.
-Wrong caller, swapped pair, lost cache, expiry or stale inputs require a new
-preview. The fence is not a credential.
+The response includes an informational `fence_serial` and a stateless `fence`
+digest. Commit supplies the digest with the same ordered IDs and a currently
+authorized actor. Missing/stale content requires a new preview. Authority,
+source liveness and claim safety are checked again at commit. The fence grants
+no authority and contains no credential.
 
-A global serial equality check would reject unrelated fleet traffic. A hash of
-the current rows alone would accept change-and-revert. Proposed implementation:
-at most 16 short-lived preview leases, one per actor and ordered pair, expiring
-after ten minutes. They are an engine-only derived cache. Each stores its
-creation serial, incarnations and current fingerprint; no mailbox copy is kept.
-Replacing or evicting a lease makes its old ID unusable. Restart loses previews
-and requires a new dry run, without losing coordination state.
+The digest covers the two row incarnations and decision inputs, incoming owned
+mail, outgoing address relationships, owned claims, membership records and nonce
+mappings. Map and record order are canonical. It excludes unrelated fleet
+traffic. Outgoing-only delivery state does not change an address rewrite.
+Nothing maintains a lease table, TTL or per-append invalidation cache. A daemon
+restart preserves a preview when these inputs are unchanged. If the inputs
+change and return exactly to the same content, acceptance is correct: the
+preview again describes the actual effect. This supersedes the initial lease
+proposal and its change-and-revert rejection, per ruling 143110.
 
-While leases exist, the common successful-append path recomputes their pure
-merge-input projections after every committed op, before publishing events.
-Any change permanently invalidates the affected lease. Thus two separate ops
-that change and restore a row still invalidate it. Failed or non-mutating ops
-do not. Unrelated rows, messages and space posts do not enter a pair's
-projection. An invalid lease stays invalid; it is never refreshed by comparison
-with a subsequently matching state.
-
-The projection covers both complete replayable row records, incoming mailbox
-records and ownership watermarks, outgoing message IDs/address relationships,
-owned claims, relevant membership records and nonce mappings. Private inputs
-are hashed internally and never returned. Outgoing message content and delivery
-state do not change an address rewrite and are not preview inputs. Current
-process evidence is checked afresh at commit. Ephemeral owner/app observations
-are neither serialized into core implicitly nor mistaken for durable contact.
-
-This deliberately avoids maintaining a new dirty-row table in every mutation
-handler or inferring mutations from event names. It costs projection work while
-a preview is pending. Measure with a full retained board and all 16 leases;
-report memory and writer latency before accepting this implementation. If that
-cost is excessive, revise this design before substituting a partial op switch.
+Restart can itself cause a legitimate input change: the real replay fixture
+first escalated an unread, unreachable question to a contact record on startup,
+changing its recorded `contact_escalated_serial`. Its old digest was correctly
+refused. The unchanged-input restart test first delivers that question, then
+previews and restarts, so the premise is asserted rather than assumed.
 
 ## Human request whose approval performs the merge
 
 Introduce a typed `merge` effect on a request: exact source/survivor IDs and
-incarnations, plus the preview binding. It is mutually exclusive with grant and
+incarnations, plus the content fence. It is mutually exclusive with grant and
 adopt effects and can be addressed only to the authenticated human. A refused
 coordinator call offers this concrete `send` shape; it sends nothing itself.
 An ordinary participant may ask for a human decision without gaining execution
@@ -148,9 +139,9 @@ delivering the outgoing request does not alter its address-rewrite inputs.
 There is no general exemption for unrelated mutations.
 
 The OS notification and board card name the direction and actual effect from
-typed fields, not sender prose. Human Approve verifies the lease and current
+typed fields, not sender prose. Human Approve verifies the digest and current
 rows before any message state changes. One pure transition both records approval
-and performs the move, with one serial and one ledger append. An expired/stale
+and performs the move, with one serial and one ledger append. A stale
 approval changes neither mail nor response state, and offers a fresh preview.
 No successful approval means “now run a terminal command.” Notification posting
 still proves OS acceptance only, not that the person saw it.
@@ -173,12 +164,12 @@ historical actor absence is shown as unknown.
 Ingress supplies all authorization fields; clients cannot assert them. Existing
 ops without new fields replay with their original behavior. New admission rules
 stay at ingress; new fold behavior is selected only by an explicit new recorded
-semantic field when needed. Replay never probes, reauthenticates a human, checks
+semantic field when needed. Replay never probes, reauthenticates a human, depends on
 a preview cache or recomputes a past actor's role.
 
 Adopt remains one-time recovery of currently recoverable incoming mail. Merge
 closes a duplicate permanently, rewrites the relevant outgoing addresses, moves
-claims/memberships and redirects its nonce mappings. Share the ownership-aware
+claims/memberships and applies the recorded authority's nonce policy. Share the ownership-aware
 mail selection/move primitives with explicit options, preserving historical
 adoption and merge folds. The current merge's raw address rewrite does not mark
 older mail as inherited, so tests must prove the survivor can actually read
@@ -187,7 +178,18 @@ excluded mail. Plans and execution use the same selection function.
 
 The survivor's own role, identity, process and session bindings remain its own;
 merging is neither adoption of the source's authority nor session relocation.
-The source token is revoked, its nonce mappings follow the survivor, and moved
+The source token is revoked. Per rulings 144430/144440, coordinator merges
+tombstone source-only nonce mappings permanently; register/resume refuse them
+with `E_SEAT_MERGED` naming survivor and actor. Human/admin merges may redirect
+them, with an explicit warning in the preview and typed approval. The recorded
+`MergeActor.Authority` selects this policy in the fold; no historical op enters
+it. `State.MergedNonces` carries negative credentials through snapshots and
+source retention, initialized lazily for older snapshots. Like the original
+nonce index, it is encrypted private state. It intentionally has no eviction:
+evicting a retired credential would permit it to mint a replacement fork.
+Canonical grouped recovery chooses a valid survivor credential before consulting
+tombstones; presenting only a source credential supplies no survivor authority.
+Moved
 outstanding obligations emit actual arrival events so a dormant survivor wakes.
 The adopt hint offers merge only when the shared coordinator rule passes.
 
@@ -203,7 +205,7 @@ The default compact roster stays compact.
 Flag same-name rows as possible forks using host/harness/surface evidence,
 without calling every same-name participant a duplicate. Present suggested
 direction and refusal reasons from the shared decision; browsing the board
-does not authorize a move or create a preview lease for every row.
+does not authorize a move or change state for every row.
 
 ## Acceptance evidence to produce after design approval
 
@@ -215,7 +217,7 @@ does not authorize a move or create a preview lease for every row.
 - Bound-session, live-process and observation-error refusals; a binding changed
   during a probe; role revoked between preview and commit; forged actor fields.
 - Stale fence on each row, incoming mail/owed debt/claim/membership/nonce change,
-  change-and-revert, concurrent commits, swapped pair, wrong actor and restart.
+  identical-content change-and-revert acceptance, concurrent commits, swapped pair, wrong actor and restart.
   Unrelated fleet traffic and ordinary outgoing delivery must still allow it.
 - Human request delivery and notification effect, approve-to-move in one op,
   stale approval with no partial response, effect dedup and mutually exclusive
@@ -230,6 +232,24 @@ does not authorize a move or create a preview lease for every row.
   `task ci` and fresh exact-head macOS/Linux/Windows validation. No production
   merge/install from the implementation agent; architect runs the Supgang pair.
 
-Review checkpoints: confirm the human override boundary above, approve or revise
-the bounded observation-based fence, and confirm the additive typed request
-effect and post-request lease baseline. Implementation follows their acceptance.
+Accepted checkpoint: human scope and stateless content fence per 143110. The
+typed request effect and post-request baseline remain part of the accepted
+design. Source, local validation and production acceptance are separate stages.
+
+## Implementation ownership notes
+
+The current implementation records negative process evidence and its source
+incarnation, host, PID and process start alongside the actor. It preserves the
+historical admin-only Go wrapper when no preview options are supplied. The new
+fold is selected by the additive actor field, leaving historical merges alone.
+Incoming inheritance keeps its existing adoption serial; outgoing inheritance
+has a separate additive `merged_sent_serial`. Reusing the incoming marker would
+destroy the recipient's ownership when both parties inherited a conversation.
+The derived history codec and live ownership header carry both marks.
+
+Current space membership, subscription, exclusive owner, pending queue entry and
+explicit decline references follow the survivor. Existing survivor membership
+wins when both are present. Historical authored posts and announcements retain
+their original authorship. The preview fence covers these current relationships.
+Source declarations stay on its retired record, explicitly disclosed in the
+human preview, and never overwrite the survivor's declarations.

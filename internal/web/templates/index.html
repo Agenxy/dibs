@@ -398,6 +398,7 @@ function drawPanes() {
   // surface can decline to answer the question.
   boardEl.innerHTML = Board.contactAlertsHTML(b?.contact_alerts) + Board.rosterHTML(b?.agents, {
     selfId: null,
+    mergeActions: mergeActionsHTML,
     // Same reason as the panel: this surface replaces the roster's innerHTML on
     // every board change, so a `details` a reader opened does not survive one.
     expanded: state.expanded,
@@ -457,6 +458,9 @@ function drawPanes() {
   const tl = document.getElementById("tally-agents")
   tl.textContent = chans.length
   tl.classList.toggle("zero", chans.length === 0)
+
+  if ((b?.merge_sources || []).length) boardEl.insertAdjacentHTML("beforeend", `<section class="merge-sources"><h2>Closed participants</h2>${b.merge_sources.map((row) => `<article class="entry" data-agent="${Board.esc(row.id)}"><p>${Board.esc(row.name)} (${Board.esc(row.id)})</p>${mergeActionsHTML(row)}</article>`).join("")}</section>`)
+  if ((b?.merged_agents || []).length) boardEl.insertAdjacentHTML("beforeend", `<section class="merge-history"><h2>Merged participants</h2>${b.merged_agents.map((row) => `<p>${Board.esc(row.id)} merged into ${Board.esc(row.into)} by ${Board.esc(row.by?.id || "unknown")} at ${Board.esc(row.at || "unknown")}</p>`).join("")}</section>`)
 
   const mailEl = document.getElementById("pane-mail")
   // No actionsHTML: the operator watches. Answering as somebody else's agent is
@@ -637,6 +641,35 @@ function announceChange(now) {
   if (said.length) live.textContent = said.join("; ")
 }
 
+// The human chooses a direction, reads the server's plan, then confirms that
+// same content fence. The dialog is outside the SSE-redrawn panes.
+function mergeActionsHTML(row) {
+  if (row.status === "active") return ""
+  const choices = (state.board?.agents || []).filter((other) => other.id !== row.id)
+  if (!choices.length) return ""
+  return `<div class="compose merge-row" data-agent="${Board.esc(row.id)}"><label>Merge into <select aria-label="merge survivor">${choices.map((other) => `<option value="${Board.esc(other.id)}">${Board.esc(other.name || other.id)} (${Board.esc(other.id)})</option>`).join("")}</select></label><button class="act merge-preview">Preview merge</button></div>`
+}
+
+function mergeIdentitySummary(row) {
+  return [row?.name, row?.host_id, row?.harness?.harness, row?.harness?.surface, row?.kind, row?.role, row?.status].filter(Boolean).join(" · ")
+}
+
+async function previewMerge(agent, into, control) {
+  const plan = await act("merge", { agent, into, dry_run: true }, control)
+  if (!plan) return
+  const dialog = document.createElement("dialog")
+  const counts = Object.entries(plan.messages || {}).flatMap(([kind, states]) => Object.entries(states).map(([state, n]) => `${n} ${state} ${kind}`)).join(", ") || "No incoming messages"
+  dialog.innerHTML = `<h2>Merge ${Board.esc(agent)} into ${Board.esc(into)}</h2><p>The source closes. The survivor keeps its identity, role and session.</p><p>${plan.source?.declarations || 0} source declarations stay on the retired source; they are not transferred.</p><p>${Board.esc(mergeIdentitySummary(plan.source))} → ${Board.esc(mergeIdentitySummary(plan.survivor))}</p><p>${Board.esc(counts)}; ${plan.owed_requests || 0} owed requests (included above); ${plan.outgoing_rewrites || 0} outgoing address changes; ${(plan.claims || []).length} claims; ${(plan.spaces || []).length} memberships.</p><p>${Board.esc(plan.credential_effect)}</p><button class="confirm-merge">Confirm merge</button> <button class="cancel-merge">Cancel</button>`
+  dialog.querySelector(".cancel-merge").addEventListener("click", () => dialog.close())
+  dialog.querySelector(".confirm-merge").addEventListener("click", async (event) => {
+    if (await act("merge", { agent, into, fence: plan.fence }, event.currentTarget)) {
+      dialog.close(); flash("merged " + agent + " into " + into)
+    }
+  })
+  dialog.addEventListener("close", () => dialog.remove())
+  document.body.append(dialog); dialog.showModal()
+}
+
 // ── the human acts ───────────────────────────────────────────
 // One delegated listener rather than per-element handlers: the panes are
 // re-rendered wholesale on every board update, so bound handlers would be
@@ -652,7 +685,8 @@ document.addEventListener("click", async (ev) => {
   // Any action mints the identity server-side, so re-ask afterwards: the page
   // needs to know who it became in order to mark its own memberships.
   const wasAnon = !me
-  if (btn.classList.contains("join"))     { if (await act("join", { agent }, btn)) flash("joined " + agent) }
+  if (btn.classList.contains("merge-preview")) { await previewMerge(agent, box?.querySelector("select")?.value, btn) }
+  else if (btn.classList.contains("join"))     { if (await act("join", { agent }, btn)) flash("joined " + agent) }
   else if (btn.classList.contains("leave")) { if (await act("leave", { agent }, btn)) flash("left " + agent) }
   else if (btn.classList.contains("post") || btn.classList.contains("announce")) {
     const body = input?.value.trim()

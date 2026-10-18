@@ -833,6 +833,10 @@ func (s *Server) adoptSession(ctx context.Context, token string, params json.Raw
 }
 
 type toolArgs struct {
+	Merge  *core.MergeRequest `json:"merge"`
+	DryRun bool               `json:"dry_run"`
+	Fence  string             `json:"fence"`
+
 	FileSize       *int64            `json:"size"`
 	SHA256         string            `json:"sha256"`
 	InviteAction   string            `json:"action"`
@@ -1344,6 +1348,7 @@ func (s *Server) run(
 		op.Kind, op.To, op.MsgType, op.Body = core.OpSendMessage, a.To, a.Type, a.Body
 		op.DeadlineSec, op.OpID, op.Attachments = a.DeadlineSec, a.OpID, a.Attachments
 		op.Choices, op.Grant, op.Adopt = a.Choices, a.Grant, a.Adopt
+		op.Merge = a.Merge
 		op.Milestones, op.Track = a.Milestones, a.Track
 		op.RequestPriority = a.Priority
 	case "put_blob":
@@ -1457,7 +1462,7 @@ func (s *Server) run(
 	case "merge_spaces":
 		op.Kind, op.Space, op.To, op.Note = core.OpSpaceMerge, a.SpaceID, a.To, a.Note
 	case "merge_agents":
-		return s.eng.MergeAgents(ctx, a.Token, a.AgentRef, a.Into)
+		return s.eng.MergeAgents(ctx, a.Token, a.AgentRef, a.Into, engine.MergeOptions{DryRun: a.DryRun, Fence: a.Fence})
 	case "settings":
 		return s.eng.Configure(ctx, a.Token, a.Setting, a.Value)
 	case "human_unlock":

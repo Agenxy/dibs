@@ -151,7 +151,7 @@ func (e *Engine) askHumanDesktop(n HumanNotice, ask func(humanask.Message) (huma
 	a, err := ask(humanask.Message{
 		Type: n.Type, Priority: n.Priority, From: n.From, FromName: n.FromName, Who: n.Who, Body: n.Body,
 		Contact: n.Contact,
-		Choices: n.Choices, Grant: n.Grant, Adopt: n.Adopt, AdoptName: n.AdoptName,
+		Choices: n.Choices, Grant: n.Grant, Adopt: n.Adopt, AdoptName: n.AdoptName, Merge: n.Merge,
 		Serial: n.Serial, Node: n.Node,
 		Receipt: func(state string) {
 			if state == "posted" {

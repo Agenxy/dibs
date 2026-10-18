@@ -22,6 +22,7 @@ type Metadata struct {
 	Consumed         bool      `json:"consumed"`
 	AdoptedFrom      string    `json:"adopted_from,omitempty"`
 	AdoptedAt        uint64    `json:"adopted_serial,omitempty"`
+	MergedSentAt     uint64    `json:"merged_sent_serial,omitempty"`
 	Delivered        uint64    `json:"delivered_serial,omitempty"`
 	Responded        uint64    `json:"responded_serial,omitempty"`
 	Acked            uint64    `json:"acked_serial,omitempty"`
@@ -47,7 +48,7 @@ type Metadata struct {
 func metadata(m *core.Message) Metadata {
 	return Metadata{
 		From: m.From, To: m.To, Type: m.Type, State: m.State, Consumed: m.Consumed,
-		AdoptedFrom: m.AdoptedFrom, AdoptedAt: m.AdoptedAt, Delivered: m.DeliveredAt,
+		AdoptedFrom: m.AdoptedFrom, AdoptedAt: m.AdoptedAt, MergedSentAt: m.MergedSentAt, Delivered: m.DeliveredAt,
 		Responded: m.RespondedAt, Acked: m.AckedAt,
 		OutcomeRead: m.OutcomeReadAt, ReviewRead: m.ReviewReadAt, Superseded: m.SupersededBy,
 		SentAt: m.SentAt, DeliveredAt: m.DeliveredTime, TerminalAt: m.TerminalAt,
@@ -83,10 +84,8 @@ func Capture(st *core.State, op *core.Op, scratch *Snapshot) Snapshot {
 	if op.MailboxSerials != nil {
 		scope = scopeMailbox
 	}
-	if op.Kind == core.OpRespond && op.Disposition == "approve" {
-		if m := st.Messages[op.MsgSerial]; m != nil && m.Adopt != "" {
-			scope = scopeFull
-		}
+	if capturesOwnershipEffect(st, op) {
+		scope = scopeFull
 	}
 	scratch.prepare(scope)
 	actor := st.Agents[op.AgentID]
@@ -130,4 +129,12 @@ func authorOf(a *core.Agent) Author {
 		host = a.Agent.HostID
 	}
 	return Author{ID: a.ID, Created: a.CreatedSerial, Host: host}
+}
+
+func capturesOwnershipEffect(st *core.State, op *core.Op) bool {
+	if op.Kind != core.OpRespond || op.Disposition != "approve" {
+		return false
+	}
+	m := st.Messages[op.MsgSerial]
+	return m != nil && (m.Adopt != "" || m.Merge != nil)
 }

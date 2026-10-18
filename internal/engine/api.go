@@ -294,7 +294,7 @@ func resyncEvents(st *core.State, l *core.Agent, cursor uint64) []core.Event {
 		}
 	}
 	for _, m := range st.Messages {
-		inherited := l.CreatedSerial > 0 && m.Serial < l.CreatedSerial
+		inherited := l.CreatedSerial > 0 && m.Serial < l.CreatedSerial && !core.MergedSenderOwns(m, l)
 		if m.From != l.ID || inherited || m.RespondedAt <= cursor {
 			continue
 		}
@@ -872,6 +872,7 @@ func (e *Engine) decoratedBoard() core.Result {
 			continue
 		}
 		e.decorateAgentNames(lm, id)
+		e.decorateSessionDetail(lm, l)
 		// THE SAME ANSWER THE SWEEP AND THE REMINDER USE. This row read two of
 		// the three clocks, so a board could show a fresh last_seen beside a
 		// dormant status and a reminder saying nobody had been in touch for
@@ -915,7 +916,7 @@ func (e *Engine) decoratedBoard() core.Result {
 			lm["proc_alive"] = e.prober.Alive(l.PID) || e.sessionMovedProcess(l)
 		}
 		// WHETHER A COMMAND COULD RESUME THIS AGENT, without saying what to
-		// resume. The id itself stays off the board; this is the one bit a
+		// resume. The explicit session detail carries its current id; this bit is what a
 		// health check needs, and it needs it because harness alone is not
 		// enough: `wakeRoute` refuses the exec path when the agent holds no
 		// UUID-shaped thread, so an agent whose harness HAS a [wake.exec] entry
@@ -1168,4 +1169,13 @@ func withPrepaidFanout(ctx context.Context) context.Context {
 func fanoutPrepaid(ctx context.Context) bool {
 	paid, _ := ctx.Value(fanoutKey{}).(bool)
 	return paid
+}
+
+func (e *Engine) decorateSessionDetail(row map[string]any, a *core.Agent) {
+	if a.Agent == nil || a.Agent.Surface != "chatgpt-app" {
+		return
+	}
+	if sessions, ok := row["sessions"].(map[string]any); ok {
+		sessions["app_thread"] = threadIDOf(a)
+	}
 }

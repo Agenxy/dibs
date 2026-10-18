@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/engine"
 )
 
 // The human's write surface.
@@ -39,6 +40,9 @@ type act struct {
 	Serial      uint64 `json:"serial"`      // message being answered/acked
 	Disposition string `json:"disposition"` // answer | approve | deny | decline
 	DeadlineS   int    `json:"deadline_s"`
+	Into        string `json:"into"`
+	Fence       string `json:"fence"`
+	DryRun      bool   `json:"dry_run"`
 }
 
 // registerActions mounts the human's write routes.
@@ -78,6 +82,16 @@ func (s *Server) apiAct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if r.PathValue("what") == "merge" {
+		res, mergeErr := s.eng.MergeAgents(r.Context(), token, a.Agent, a.Into,
+			engine.MergeOptions{DryRun: a.DryRun, Fence: a.Fence})
+		if mergeErr != nil {
+			writeActJSON(w, http.StatusConflict, map[string]any{"error": mergeErr.Error()})
+			return
+		}
+		writeActJSON(w, http.StatusOK, res)
+		return
+	}
 	op, ok := a.op(r.PathValue("what"), token)
 	if !ok {
 		http.Error(w, "unknown action", http.StatusNotFound)

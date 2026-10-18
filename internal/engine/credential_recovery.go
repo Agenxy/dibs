@@ -42,16 +42,27 @@ func (e *Engine) prepareCredentialRecovery(op *core.Op) (*credentialRecovery, er
 		}
 	}
 	if winner == nil {
-		return nil, &core.Error{
-			Code: "E_RECOVERY_UNPROVEN", Msg: "no retained credential matches an eligible identity of this name and host",
-			Hint: "keep every stored credential; register with your own explicit nonce or ask the coordinator " +
-				"to recover the original mailbox. Do not retry with a freshly minted nonce",
-		}
+		return nil, e.missingRecoveryCredential(op.RecoveryNonces)
 	}
 	op.Nonce = op.RecoveryNonces[plan.index]
 	op.RecoveryNonces = nil // no candidate group reaches the ledger or fold
 	sort.Strings(plan.ids)
 	return plan, nil
+}
+
+func (e *Engine) missingRecoveryCredential(nonces []string) error {
+	// A valid canonical survivor wins over every retired spelling. Only a
+	// group with no recoverable identity gets the source refusal.
+	for _, nonce := range nonces {
+		if err := e.state.MergedNonceError(nonce); err != nil {
+			return err
+		}
+	}
+	return &core.Error{
+		Code: "E_RECOVERY_UNPROVEN", Msg: "no retained credential matches an eligible identity of this name and host",
+		Hint: "keep every stored credential; register with your own explicit nonce or ask the coordinator " +
+			"to recover the original mailbox. Do not retry with a freshly minted nonce",
+	}
 }
 
 func (e *Engine) finishCredentialRecovery(plan *credentialRecovery, op *core.Op, res core.Result) {

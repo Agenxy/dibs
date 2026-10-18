@@ -5,7 +5,7 @@ package mailhistory
 
 import "time"
 
-const fieldCount = 35
+const fieldCount = 36
 
 const fullFields uint64 = 1<<fieldCount - 1
 
@@ -27,7 +27,7 @@ var fieldKinds = [fieldCount]fieldKind{
 	wideField, wideField, wideField, wideField,
 	timeField, timeField, timeField, timeField, timeField,
 	textField, signedField, signedField, signedField, textField, textField,
-	textField, wideField, wideField,
+	textField, wideField, wideField, wideField,
 }
 
 type fieldValue struct {
@@ -74,6 +74,7 @@ func canonicalFields(u *snapshotUnit) [fieldCount]fieldValue {
 		{text: m.RequestPriority},
 		{number: u.FromCreated},
 		{number: u.ToCreated},
+		{number: m.MergedSentAt},
 	}
 }
 
@@ -93,7 +94,7 @@ func restoreFields(f [fieldCount]fieldValue) snapshotUnit {
 			QueueRank:       int(f[27].number), // #nosec G115 -- restores native signed bit pattern
 			Milestones:      int(f[28].number), // #nosec G115 -- restores native signed bit pattern
 			Progress:        int(f[29].number), // #nosec G115 -- restores native signed bit pattern
-			RequestPriority: f[32].text,
+			RequestPriority: f[32].text, MergedSentAt: f[35].number,
 		},
 		Author:  Author{ID: f[30].text, Created: f[20].number, Host: f[31].text},
 		Content: flags&8 != 0, AfterKnown: flags&16 != 0, Evicted: flags&32 != 0,
@@ -123,6 +124,7 @@ func changedFields(u, previous *snapshotUnit) uint64 {
 		m.QueuePriority != p.QueuePriority, m.QueueRank != p.QueueRank, m.Milestones != p.Milestones,
 		m.Progress != p.Progress, u.Author.ID != previous.Author.ID, u.Author.Host != previous.Author.Host,
 		m.RequestPriority != p.RequestPriority, u.FromCreated != previous.FromCreated, u.ToCreated != previous.ToCreated,
+		m.MergedSentAt != p.MergedSentAt,
 	} {
 		if changed {
 			mask |= 1 << bit
