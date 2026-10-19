@@ -40,6 +40,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Reading unread updates on mail you sent now leads with those updates instead
+  of repeating the original task and milestone history. `read_mail` accepts
+  `include_body:true` for the full envelope. Completion responses preserve and
+  label any earlier approval text stored with them. Read receipts are unchanged.
+
 - `respond` (approve, queue, done, decline) now returns only the next owed
   item (the next queued item's start call, else the first owed item) with
   `more_owed_work`, instead of echoing every owed entry. `owes` still names

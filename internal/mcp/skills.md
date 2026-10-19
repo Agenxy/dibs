@@ -212,7 +212,12 @@ Mail is a compact page, at most eight envelopes and a 4 KiB summary budget
 requests/questions come first, then new mail, then already-seen FYIs. Follow
 `next_cursor` with `inbox(cursor:...)`; omit it to start a new traversal. The
 cursor fixes the upper serial, so new arrivals appear in the next traversal.
-`read_mail(msg_serial)` returns the full envelope, attachments and history;
+`read_mail(msg_serial)` leads with unread updates when you read mail you sent:
+`updates` contains their exact text and artifacts, and `message` identifies the
+conversation without repeating its original body or milestone history. A DONE
+response retains any earlier approval text stored with it and is labelled so.
+Use `include_body:true` for the full envelope, attachments and history. Incoming
+mail, self-addressed mail and reads with no unread updates stay full;
 compact pages retain each item's delivery/read receipts. Only returned pending
 items are marked delivered. `owed_work`, `owes` and `task_queue` describe the
 shown page, with omitted counts. Announcement summaries are bounded too; use
@@ -547,7 +552,7 @@ receiving native peer turns, another watcher adds no delivery guarantee.
   Review is optional: `read_mail(msg_serial: <request serial>)` clears its
   notices; `ack(msg_serial: <event serial>)` dismisses only that progress/review
   event. Seeing or acknowledging progress does not accept it, and a separate
-  notify is not a review. `read_mail` lists each step's latest review in
+  notify is not a review. `read_mail(include_body:true)` lists each step's latest review in
   `milestone_reviews`: unreviewed, accepted or flagged, with who and when.
   A new worker report makes that step unreviewed again. Informational updates
   alone do not extend a finished turn. They remain unread until SessionStart,

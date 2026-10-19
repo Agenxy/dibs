@@ -155,7 +155,8 @@ func TestFullCoordinationFlow(t *testing.T) {
 	})
 	got := toolCall(t, srv, "read_mail", map[string]any{"token": ta, "msg_serial": serial})
 	msg := got["message"].(map[string]any)
-	if msg["response"] != "yes, ship it" || msg["state"] != "answered" {
+	updates, ok := got["updates"].([]any)
+	if !ok || len(updates) != 1 || updates[0].(map[string]any)["body"] != "yes, ship it" || msg["state"] != "answered" {
 		t.Fatalf("sender must read the answer: %v", msg)
 	}
 

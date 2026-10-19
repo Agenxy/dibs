@@ -835,9 +835,18 @@ recipient's `respond` (responding proves receipt). GC eligibility requires
   `notify_consumption` reason (`presented` or `reminded`) record consumption;
   old folds preserve their existing consumed-notify retention. Requests and
   questions retain their response obligations. `ack(msg_serial)` stays valid.
-- **`read_mail(msg_serial)`**: full message including body and response, authorized
-  for **sender or recipient**. This is how a question's sender reads the answer
-  (terminal events carry serials, never bodies). Recipient reads mark delivery.
+- **`read_mail(msg_serial,include_body?)`**: authorized for **sender or recipient**.
+  By default a sender reading unread outcomes on its own non-self-addressed mail
+  gets a compact `message` header and ordered `updates`, with the exact unread
+  progress/verdict text and artifacts. The original body and milestone history
+  are omitted, with `body_omitted` and a hint for `include_body:true` to recover
+  the full envelope. A DONE verdict preserves the stored response, including
+  any earlier approval text, and labels that fact; no delimiter in participant
+  text is interpreted. `include_body:true`, incoming or self-addressed mail,
+  and reads with no unread outcomes return the full message and history.
+  Both views retain exactly the same durable read effects. This is how a
+  question's sender reads the answer (terminal events carry serials, never
+  bodies). Recipient reads mark delivery.
   It reads live retained envelopes. `E_NO_MESSAGE` can mean an incorrect serial
   or an envelope no longer retained; a truncation watermark identifies an older
   range, not proof that a particular serial held mail. `inbox` lists current
@@ -1305,7 +1314,8 @@ event serial, dismissing only that event for its intended current-incarnation
 recipient. This derived acknowledgment does not review or consume the parent,
 advance the coordination serial, or write a new ledger op. Strangers and reused
 identities cannot resolve the parent through an event. `respond` on one's own
-event returns a hint naming the parent and review call. `read_mail` derives
+event returns a hint naming the parent and review call. A full `read_mail`
+(`include_body:true` when reading one's own unread outcomes) derives
 `milestone_reviews` (unreviewed/accepted/flagged, by and at) from ordered entries;
 a newer worker report supersedes an earlier review of that milestone.
 Accepting a numbered step requires its worker report. A DONE request itself
@@ -1576,7 +1586,7 @@ counting a document; this line said 17 for two minor versions.
 | `respond(msg_serial, disposition, body?)` | answer/approve/deny/decline; `done` on a request once the work is delivered, approving it in the same op if it still awaits its verdict (not a queued, grant or adoption request), optionally reporting a final `milestone`. An approved request not yet done is an obligation (the row's `owes`, for a day after approval) and counts as declared work |
 | `ack(msg_serial)` | explicit read receipt |
 | `inbox()` | non-terminal + unconsumed terminal mail, decrypted; marks delivery; returns `truncated_before_serial` (§8) |
-| `read_mail(msg_serial)` | full message + response; sender or recipient (§8) |
+| `read_mail(msg_serial,include_body?)` | own unread updates first; `include_body:true` for full envelope; sender or recipient (§8) |
 | `claim(path, mode, note?)` / `release(path)` | §9 |
 | `events_since(since_serial)` / `await_events(since_serial, timeout_s?)` | §10 |
 

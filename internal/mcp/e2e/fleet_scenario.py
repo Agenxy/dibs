@@ -432,7 +432,7 @@ def human_directs(d: Daemon, human: Human, seed_tok: str, me: str) -> None:
             ok("human answered the agent from the board")
         else:
             no("human respond", f"HTTP {st}")
-        got = d.tool("read_mail", {"token": seed_tok, "msg_serial": serial}) \
+        got = d.tool("read_mail", {"token": seed_tok, "msg_serial": serial, "include_body": True}) \
                .get("message", {}).get("response", "")
         if "announce it in auth-work" in got:
             ok("the agent can READ the human's answer")

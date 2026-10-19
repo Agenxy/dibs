@@ -56,7 +56,8 @@ func TestDoneFinalMilestoneAcceptanceThroughMCP(t *testing.T) {
 			}
 			const artifact = "artifact:final-delivery"
 			call("respond", map[string]any{"token": tokens["worker"], "msg_serial": parent, "disposition": "done", "body": "final artifact delivered", "deliverable": artifact})
-			before := call("read_mail", map[string]any{"token": tokens["lead"], "msg_serial": parent})
+			// Inspect the complete original verdict and milestone history.
+			before := call("read_mail", map[string]any{"token": tokens["lead"], "msg_serial": parent, "include_body": true})
 			message := before["message"].(map[string]any)
 			if message["state"] != "done" || message["deliverable"] != artifact {
 				t.Fatalf("setup did not complete exact request: %v", message)
