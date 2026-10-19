@@ -312,10 +312,11 @@ func (s *State) overlapping(me *Agent, path, repoPath, excludeAgent string) []*C
 // OBJECTIVE is the actual waste: a measured collision burned ~3,900 diff lines
 // across three PRs chasing one goal, in files that only incidentally overlapped.
 const (
-	SignalSameObjective = "same-objective"      // strong: probable duplicated effort
-	SignalCoordination  = "shared-coordination" // a request relationship or shared waiting
-	SignalSamePaths     = "same-paths"          // weak: concurrent work, usually fine
-	SignalClaim         = "claim"               // someone asked to be left alone here
+	SignalUnconfirmedRef = "repository-unconfirmed" // quiet: same number, repository unknown
+	SignalSameObjective  = "same-objective"         // strong: probable duplicated effort
+	SignalCoordination   = "shared-coordination"    // a request relationship or shared waiting
+	SignalSamePaths      = "same-paths"             // weak: concurrent work, usually fine
+	SignalClaim          = "claim"                  // someone asked to be left alone here
 )
 
 // SlotOverlap is another agent's activity that relates to what you just declared.
@@ -473,14 +474,19 @@ func (s *State) overlapsForSlot(mine Slot, excludeAgent string) []SlotOverlap {
 	return out
 }
 
-// slotOverlaps is one other agent's contribution: at most one overlap per slot,
-// strongest first. Lifted out of overlapsFor so that the ref gate, the path
-// fallback and the collector are each legible on their own.
+// slotOverlaps reports each peer slot: confirmed objectives, quiet unconfirmed
+// refs, and independent path awareness. Each carries its own evidence.
 func (s *State) slotOverlaps(me, them *Agent, want map[string]bool, mine Slot) []SlotOverlap {
-	scoped := !differentProjects(me, them)
 	var out []SlotOverlap
 	for _, sl := range them.Slots {
-		if shared := sharedRefs(want, sl.Refs); len(shared) > 0 && scoped {
+		shared, unknown := scopeSharedRefs(me, them, sharedRefs(want, sl.Refs))
+		if len(unknown) > 0 {
+			out = append(out, SlotOverlap{
+				Agent: them.ID, Signal: SignalUnconfirmedRef, Kind: "slot",
+				Text: sl.Text, Refs: unknown, Activity: sl.Activity,
+			})
+		}
+		if len(shared) > 0 {
 			coordinated := me != nil && s.coordinationRefs(me.ID, them.ID, shared, mine.Waiting, sl.Waiting)
 			signal := SignalSameObjective
 			if coordinated {

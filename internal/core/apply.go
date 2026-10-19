@@ -1239,8 +1239,11 @@ func (s *State) applySetSlot(l *Agent, op *Op) (Result, []Event, error) {
 	// Tell the incumbents too: an overlap only one side can see is how the
 	// measured collision survived for days.
 	notified := map[string]bool{}
-	strong := 0
+	strong, unconfirmed := 0, 0
 	for _, o := range overlaps {
+		if o.Signal == SignalUnconfirmedRef {
+			unconfirmed++
+		}
 		if o.Strong() {
 			strong++
 		}
@@ -1272,9 +1275,16 @@ func (s *State) applySetSlot(l *Agent, op *Op) (Result, []Event, error) {
 		res["note"] = "shared coordination or complementary roles on the same work item: " +
 			"coordinate here rather than duplicate each other. Read the peer's slot and " +
 			"exchange status, the artifact or verdict."
+	case unconfirmed > 0:
+		res["note"] = unconfirmedRepositoryHint
 	case len(overlaps) > 0:
 		res["note"] = "other agents are active on these paths. Concurrent edits are normal: this is " +
 			"awareness, not a conflict. Coordinate only if your changes are semantically incompatible."
+	}
+	if unconfirmed > 0 && strong == 0 {
+		if note, _ := res["note"].(string); note != "" && note != unconfirmedRepositoryHint {
+			res["note"] = note + "; " + unconfirmedRepositoryHint
+		}
 	}
 	return res, evs, nil
 }

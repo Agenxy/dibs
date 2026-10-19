@@ -1741,3 +1741,15 @@ SSE web board; static binaries (`dibd` + `dibs`, no cgo, no runtime deps).
 listener); Ed25519 signatures; hub mode.
 
 Anything not listed is out of scope for v1; additions require a spec revision first.
+
+
+### Repository provenance of bare tracker refs
+
+A bare `pr:N` or `issue:N` identifies work only within one repository. Every
+matching path compares the two recorded, host-aware repository identities:
+confirmed same repository yields shared objective identity; confirmed different
+repositories yield no ref signal; unknown provenance yields a quiet unconfirmed
+suggestion, never a duplicate-work warning or automatic membership on that ref
+alone. Spaces preserve each member’s provenance rather than comparing an
+unscoped union. Board `request:`, `question:` and authenticated `key:` refs remain
+global. Independent path and resource evidence keeps its ordinary meaning.

@@ -48,6 +48,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   protects that claim from old writers. Migration failures refuse before
   registration, with a corrective hint. Explicit and pinned credentials retain
   precedence.
+- Bare PR and issue numbers are compared in each member’s repository, including
+  the separate space matcher. Confirmed repository identity preserves the shared
+  work warning; different repositories share no signal; unknown identity gets
+  a quiet unconfirmed suggestion. Board mail and coordination keys stay global.
 
 ## [0.0.14] - 2026-10-18
 

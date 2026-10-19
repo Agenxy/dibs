@@ -53,6 +53,8 @@ import (
 type Evidence struct {
 	// Identity: shared refs that name something. See identifyingRef.
 	Identity []string `json:"identity,omitempty"`
+	// UnconfirmedRefs share a number, but have no confirmed repository identity.
+	UnconfirmedRefs []string `json:"unconfirmed_refs,omitempty"`
 	// Contradictory holds identifying refs the two sides gave that DISAGREE,
 	// issue:100 against issue:200. Evidence that they are working on different
 	// things, and it demotes a duplicate-work claim without silencing a surface
@@ -167,6 +169,9 @@ func (e Evidence) Classify() Relation {
 	// unrelated trees share are the ones every project has, so every other kind
 	// of evidence is manufactured rather than observed.
 	if !e.SameRepo {
+		if len(e.UnconfirmedRefs) > 0 {
+			return RelationPossible
+		}
 		return RelationNone
 	}
 	// A shared identifier means one piece of work, but not necessarily one JOB.
@@ -205,7 +210,8 @@ func (e Evidence) Classify() Relation {
 	}
 	// An identifier whose repository provenance is unknown still surfaces: pr:42
 	// may well be the same pr:42, and the agent can tell at a glance.
-	if len(e.Identity) > 0 || e.Semantic > 0 || len(e.SurfaceInferred) > 0 || len(e.Labels) > 0 {
+	if len(e.UnconfirmedRefs) > 0 || len(e.Identity) > 0 || e.Semantic > 0 ||
+		len(e.SurfaceInferred) > 0 || len(e.Labels) > 0 {
 		return RelationPossible
 	}
 	return RelationNone
@@ -214,6 +220,10 @@ func (e Evidence) Classify() Relation {
 // Strongest names the single most important thing the two agents have in common,
 // for a one-line explanation. Agents act on the first sentence.
 func (e Evidence) Strongest() string {
+	if len(e.UnconfirmedRefs) > 0 && e.Classify() == RelationPossible {
+		return unconfirmedRepositoryHint + " (" +
+			strings.Join(e.UnconfirmedRefs, ", ") + ")"
+	}
 	return e.qualifyUnknownRepo(e.strongest())
 }
 
