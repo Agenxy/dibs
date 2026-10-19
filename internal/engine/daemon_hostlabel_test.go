@@ -39,6 +39,9 @@ func TestTheRealFaultReporterUsesTheDaemonsDisplayLabel(t *testing.T) {
 	if _, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "unknown-peer", Agent: &core.AgentInfo{Host: "unproved-host", Harness: "dibs", Surface: "daemon"}}); err != nil {
 		t.Fatal("setup: unrelated unknown-host peer:", err)
 	}
+	// Resolve the expected snapshot outside the writer. A cold board read is
+	// allowed to show the marked fallback while its async lookup is pending.
+	want := hostdisplay.Name()
 	board, err := e.Board(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -48,8 +51,8 @@ func TestTheRealFaultReporterUsesTheDaemonsDisplayLabel(t *testing.T) {
 		switch row["id"] {
 		case reporter:
 			found++
-			if row["host"] != hostdisplay.Name() {
-				t.Errorf("real reporter display=%v want %s", row["host"], hostdisplay.Name())
+			if row["host"] != want {
+				t.Errorf("real reporter display=%v want %s", row["host"], want)
 			}
 			info := row["agent"].(*core.AgentInfo)
 			if info.Host != "legacy-reporter-host" || info.HostID != "" {
