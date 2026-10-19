@@ -85,7 +85,7 @@ func (s *State) reattachBySessionID(op *Op, now time.Time) (Result, []Event) {
 	serial := s.finish(&evs, now)
 	return Result{
 		"agent_id": l.ID, "token": l.Token, "serial": serial,
-		"reattached": true, "via": "session_id", "board": s.Board(),
+		"reattached": true, "via": "session_id",
 		"session_id": l.SessionID,
 	}, evs
 }

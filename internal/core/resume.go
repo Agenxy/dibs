@@ -198,12 +198,12 @@ func (s *State) resumeLiveAgent(l *Agent, op *Op, now time.Time) (Result, []Even
 		serial := s.finish(&evs, now)
 		return Result{
 			"agent_id": l.ID, "token": l.Token, "serial": serial,
-			"resumed": true, "board": s.Board(),
+			"resumed": true,
 		}, evs
 	}
 	return Result{
 		"agent_id": l.ID, "token": l.Token, "serial": s.Serial,
-		"resumed": true, "board": s.Board(),
+		"resumed": true,
 	}, nil
 }
 
@@ -321,7 +321,7 @@ func (s *State) applyResume(op *Op, now time.Time) (Result, []Event, error) {
 		case l.Token == rec.Token:
 			return Result{
 				"agent_id": id, "token": rec.Token, "activation": l.Activation,
-				"serial": s.Serial, "board": s.Board(), "resumed": true,
+				"serial": s.Serial, "resumed": true,
 			}, nil, nil
 		}
 	}
@@ -391,7 +391,7 @@ func (s *State) applyResume(op *Op, now time.Time) (Result, []Event, error) {
 	serial := s.finish(&evs, now)
 	return Result{
 		"agent_id": id, "token": op.NewToken, "activation": l.Activation,
-		"serial": serial, "board": s.Board(),
-		"gate": "call check_in before declare or claim",
+		"serial": serial,
+		"gate":   "call check_in before declare or claim",
 	}, evs, nil
 }

@@ -7,6 +7,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Registration, resume and check-in reply boards are projected only for live
+  callers, avoiding whole-fleet reply construction during both ledger and mail
+  history replay. Check-in now shows the caller's coordination time after its
+  checkpoint, matching the reply's cursor.
 - `respond(done)` on a request still waiting for its verdict now approves and
   closes it in one call, and the requester hears both. Queued requests, grants
   and adoptions still take an explicit `approve`. `done` also accepts the final

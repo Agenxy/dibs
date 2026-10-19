@@ -953,7 +953,8 @@ Read-only work needs no claim.
   awareness acknowledgement **and** the delivery transitions of any returned
   pending mail are effects of this same `check_in` op, at its single serial; the
   returned snapshot is the **post-state** (returned messages already show
-  `delivered`, and the returned serial is the op's own). Resume polling from *that*
+  `delivered`, the caller's coordination time reflects this checkpoint, and the
+  returned serial is the op's own). Resume polling from *that*
   serial. Catch-up is **state-convergent within retention
   bounds** (§8): board and inbox are state, events are how you watch, and where
   retention has pruned history, the loss is explicit and bounded, never silent.
