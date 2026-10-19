@@ -221,7 +221,7 @@ func (e Evidence) Classify() Relation {
 // for a one-line explanation. Agents act on the first sentence.
 func (e Evidence) Strongest() string {
 	if len(e.UnconfirmedRefs) > 0 && e.Classify() == RelationPossible {
-		return "same ref, repository unconfirmed: check before assuming overlap (" +
+		return unconfirmedRepositoryHint + " (" +
 			strings.Join(e.UnconfirmedRefs, ", ") + ")"
 	}
 	return e.qualifyUnknownRepo(e.strongest())

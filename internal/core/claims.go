@@ -474,13 +474,18 @@ func (s *State) overlapsForSlot(mine Slot, excludeAgent string) []SlotOverlap {
 	return out
 }
 
-// slotOverlaps is one other agent's contribution: at most one overlap per slot,
-// strongest first. Lifted out of overlapsFor so that the ref gate, the path
-// fallback and the collector are each legible on their own.
+// slotOverlaps reports each peer slot: confirmed objectives, quiet unconfirmed
+// refs, and independent path awareness. Each carries its own evidence.
 func (s *State) slotOverlaps(me, them *Agent, want map[string]bool, mine Slot) []SlotOverlap {
 	var out []SlotOverlap
 	for _, sl := range them.Slots {
 		shared, unknown := scopeSharedRefs(me, them, sharedRefs(want, sl.Refs))
+		if len(unknown) > 0 {
+			out = append(out, SlotOverlap{
+				Agent: them.ID, Signal: SignalUnconfirmedRef, Kind: "slot",
+				Text: sl.Text, Refs: unknown, Activity: sl.Activity,
+			})
+		}
 		if len(shared) > 0 {
 			coordinated := me != nil && s.coordinationRefs(me.ID, them.ID, shared, mine.Waiting, sl.Waiting)
 			signal := SignalSameObjective
@@ -492,12 +497,6 @@ func (s *State) slotOverlaps(me, them *Agent, want map[string]bool, mine Slot) [
 				Text: sl.Text, Refs: shared, Activity: sl.Activity,
 			})
 			continue // strong signal already reported for this slot
-		}
-		if len(unknown) > 0 {
-			out = append(out, SlotOverlap{
-				Agent: them.ID, Signal: SignalUnconfirmedRef, Kind: "slot",
-				Text: sl.Text, Refs: unknown, Activity: sl.Activity,
-			})
 		}
 		if p := firstOverlappingPath(me, them, mine.Dirs, sl.Dirs); p != "" {
 			out = append(out, SlotOverlap{

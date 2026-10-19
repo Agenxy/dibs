@@ -5,6 +5,8 @@ package core
 
 import "strings"
 
+const unconfirmedRepositoryHint = "same ref, repository unconfirmed: check before assuming overlap"
+
 // A bare tracker number has three verdicts. Unknown must remain visible without
 // acquiring the authority of a confirmed shared objective (187303, 188961).
 func scopeSharedRefs(a, b *Agent, refs []string) (confirmed, unconfirmed []string) {
