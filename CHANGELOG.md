@@ -54,6 +54,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   every turn. The recipient's full `read_mail` now consumes the withdrawal
   durably, and the notice names the call. A hook's quote of the reason, which
   may be trimmed, still does not.
+- Rapid tab switches no longer let a delayed older view-transition callback
+  hide the selected pane. Mail stays visible and its Send button remains usable
+  when an earlier Activity animation completes after switching back to Mail.
 
 - A coordinator `broadcast` is charged one rate-limit token, not one per
   recipient. A 41-agent broadcast reached 31 agents and reported the rest
