@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/agenxy/dibs/internal/core"
+	hostdisplay "github.com/agenxy/dibs/internal/hostname"
 )
 
 func TestBoardUsesMacFriendlyNameRatherThanNetworkKernelName(t *testing.T) {
@@ -41,6 +42,19 @@ func TestBoardUsesMacFriendlyNameRatherThanNetworkKernelName(t *testing.T) {
 		t.Fatal(err)
 	}
 	rows := board["agents"].([]map[string]any)
+	if len(rows) != 1 || (rows[0]["host"] != kernel && rows[0]["host"] != want) {
+		t.Fatalf("cold board snapshot: %v, want the kernel fallback or friendly name", rows)
+	}
+	// Cold projections do not wait for scutil. Join the background lookup
+	// outside the engine loop, then check the next real projection.
+	if got := hostdisplay.Name(); got != want {
+		t.Fatalf("native lookup setup: got %q, want %q", got, want)
+	}
+	board, err = e.Board(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows = board["agents"].([]map[string]any)
 	if len(rows) != 1 || rows[0]["host"] != want {
 		t.Fatalf("friendly board host: %v, want %q (kernel %q)", rows, want, kernel)
 	}

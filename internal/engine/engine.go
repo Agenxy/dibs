@@ -333,9 +333,6 @@ func New(st *core.State, led Ledger, prober Prober, history ...[]core.Event) *En
 
 // Run drives the loop until ctx is done. Call in exactly one goroutine.
 func (e *Engine) Run(ctx context.Context) {
-	// Warm the display cache before serving. Projections only take a snapshot;
-	// a failed cold lookup is retried asynchronously by the next projection.
-	hostdisplay.Name()
 	reconcileContext, eCancel := context.WithCancel(ctx)
 	e.blobReconcileContext = reconcileContext
 	e.wakeContext = reconcileContext
