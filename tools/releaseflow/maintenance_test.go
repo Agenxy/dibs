@@ -177,8 +177,23 @@ func automaticMaintenanceStarted(t *testing.T, path string) bool {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Only COMPLETE lines. The positive control's detached maintenance child
+	// inherits GIT_TRACE2_EVENT and goes on appending to this file after the
+	// production command has returned, so a read can catch its last event
+	// half-written. That fragment is a live writer, not a broken setup: hosted
+	// Linux failed here on 2026-10-19 with "unexpected end of JSON input". A
+	// malformed COMPLETE line still fails.
+	text := string(data)
+	if end := strings.LastIndexByte(text, '\n'); end >= 0 {
+		text = text[:end]
+	} else {
+		text = ""
+	}
 	var exited, started bool
-	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+	for _, line := range strings.Split(text, "\n") {
+		if line == "" {
+			continue
+		}
 		var event struct {
 			Event string   `json:"event"`
 			Argv  []string `json:"argv"`
@@ -281,4 +296,16 @@ func (p fixtureMaintenanceProbe) finish(t *testing.T) {
 		}
 		return true
 	}, "real Git to release locks and reap every gated hook's parent before TempDir cleanup")
+}
+
+// The race measured on hosted Linux: complete events from the returned
+// command, then the detached child's next event caught half-written.
+func TestTraceReaderIgnoresALiveWritersPartialLastLine(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "trace.jsonl")
+	complete := `{"event":"child_start","argv":["git","maintenance","run","--auto"]}` + "\n" +
+		`{"event":"exit","argv":["git","commit"]}` + "\n"
+	write(t, path, complete+`{"event":"child_exit","argv":["git","mainte`)
+	if !automaticMaintenanceStarted(t, path) {
+		t.Error("the complete child_start event was lost along with the partial line")
+	}
 }
