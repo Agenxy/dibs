@@ -535,7 +535,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 				serial := s.finish(&evs, now)
 				return Result{
 					"agent_id": l.ID, "token": l.Token, "serial": serial,
-					"reattached": true, "via": "nonce", "board": s.Board(),
+					"reattached": true, "via": "nonce",
 					"session_id": l.SessionID,
 				}, evs, nil
 			}
@@ -705,7 +705,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 	serial := s.finish(&evs, now)
 	l.CreatedSerial = serial
 	res := Result{
-		"agent_id": id, "token": op.NewToken, "serial": serial, "board": s.Board(),
+		"agent_id": id, "token": op.NewToken, "serial": serial,
 		"gate": "call check_in to acknowledge the board before declare or claim",
 	}
 	// A MINTED NONCE IS HANDED BACK, or it protects nothing.
@@ -1103,18 +1103,8 @@ func (s *State) applyAckBoard(l *Agent, op *Op, now time.Time) (Result, []Event)
 		// this call named it `inbox`, each using the other's name, so an agent
 		// reading the obvious key from either one got an empty list. See
 		// Engine.Inbox.
-		// The board is stamped with the serial this op WILL have, not the one
-		// before it.
-		//
-		// Apply is the fold: the result is built while s.Serial still holds the
-		// pre-op value, and the common finish path advances it afterwards. So
-		// every cursor field here says s.Serial+1 while the embedded board said
-		// s.Serial: an atomic checkpoint that disagreed with itself by one, and
-		// SPEC.md promises a COHERENT post-state snapshot. A client treating
-		// board.serial as the cut, which is the obvious reading, would re-fetch
-		// one event it already held or reason from a board a serial behind its
-		// own cursor.
-		"board": s.boardAtNextSerial(), "inbox": inbox, "messages": inbox,
+		// The live writer projects the board from the completed state.
+		"inbox": inbox, "messages": inbox,
 		"truncated_before_serial": l.TruncatedBefore,
 		"announcements":           s.UnackedFor(l.ID),
 		// Empty unless this call bound one: a binding nothing reports is a
@@ -1931,16 +1921,4 @@ func startResponseClock(m *Message, now time.Time) {
 	if m.ResponseWindowSec > 0 && m.Deadline.IsZero() {
 		m.Deadline = now.Add(time.Duration(m.ResponseWindowSec) * time.Second)
 	}
-}
-
-// boardAtNextSerial is Board() stamped with the serial this op is about to take.
-//
-// Separate from Board() because every OTHER caller is reading committed state,
-// where s.Serial is already correct. Only a result built mid-fold has to
-// anticipate, and doing it here rather than inside Board() keeps the anticipation
-// visible at the one call site that needs it.
-func (s *State) boardAtNextSerial() map[string]any {
-	b := s.Board()
-	b["serial"] = s.Serial + 1
-	return b
 }

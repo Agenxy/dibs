@@ -75,6 +75,9 @@ func (e *Engine) applyAndLedgerWithReceipt(
 			op.Kind, before, e.state.Serial,
 		))
 	}
+	// Post-Apply serial and caller coordination time describe this checkpoint,
+	// rather than the state just before it. Replay never projects a reply.
+	e.projectReplyBoard(op, res)
 	if e.state.Serial != before {
 		appended := beginSendStage(op, "ledger append")
 		fsyncStage := attempt.StartStage("fsync")

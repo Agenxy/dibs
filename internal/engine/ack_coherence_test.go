@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright 2026 Agenxy
 
-package core
+package engine
 
 import (
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/core"
 )
 
 // check_in's checkpoint must agree with itself.
@@ -18,17 +20,18 @@ import (
 // reason from a board one event behind the cursor it was handed in the same
 // object.
 func TestAckBoardsCheckpointAgreesWithItself(t *testing.T) {
-	s := NewState("n1", DefaultLimits())
+	s := core.NewState("n1", core.DefaultLimits())
+	e := New(s, &memLedger{}, deadProber{})
 	now := time.Now()
-	res, _, err := s.Apply(&Op{
-		Kind: OpRegister, Name: "worker", NewToken: "w1", SessionID: "s1",
+	res, err := e.applyAndLedger(&core.Op{
+		Kind: core.OpRegister, Name: "worker", NewToken: "w1", SessionID: "s1",
 	}, now)
 	if err != nil {
 		t.Fatalf("setup: %v", err)
 	}
 	tok, _ := res["token"].(string)
 
-	ack, _, err := s.Apply(&Op{Kind: OpAckBoard, Token: tok}, now)
+	ack, err := e.applyAndLedger(&core.Op{Kind: core.OpAckBoard, Token: tok}, now.Add(time.Second))
 	if err != nil {
 		t.Fatalf("check_in: %v", err)
 	}

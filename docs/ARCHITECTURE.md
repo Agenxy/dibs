@@ -72,6 +72,13 @@ telling you the logic belongs in `engine`.
 6. `ledger` appends it and fsyncs.
 7. The reply, plus any notices, go back out.
 
+`Apply` returns decisions and events, without constructing a whole-board reply.
+The live writer projects that view from the completed state for registration,
+resume and checkpoints. Ordinary ledger replay and the background mail-history
+fold still call the same `Apply`; neither requests a reply board. Projecting one
+inside each historical register/checkpoint made fleet-sized allocation multiply
+by the replay length, even though both callers discarded the result.
+
 ### The rule that catches people: validation goes in `Admit`, never `Apply`
 
 `Apply` is the fold. Replay calls it on every op that was ever accepted,
