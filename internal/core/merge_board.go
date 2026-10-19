@@ -14,14 +14,25 @@ func agentHostID(a *Agent) string {
 // This uses the same pure coordinator rule; process absence is still checked
 // freshly by the engine before execution, not inferred from a dormant label.
 func (s *State) decorateMergeCandidates(rows []map[string]any) {
+	// A board can contain hundreds of unrelated roles. Register also returns a
+	// board during replay, so comparing every row with every other row makes
+	// boot history cubic in fleet size. Preserve row order within each name;
+	// host and harness mismatches still belong in the output with their refusal.
+	byName := make(map[string][]*Agent)
+	for _, row := range rows {
+		id, _ := row["id"].(string)
+		a := s.Agents[id]
+		if a.Name != "" {
+			byName[a.Name] = append(byName[a.Name], a)
+		}
+	}
 	for _, row := range rows {
 		id, _ := row["id"].(string)
 		a := s.Agents[id]
 		var candidates []Result
-		for _, other := range rows {
-			to, _ := other["id"].(string)
-			b := s.Agents[to]
-			if id == to || a.Name == "" || a.Name != b.Name {
+		for _, b := range byName[a.Name] {
+			to := b.ID
+			if id == to {
 				continue
 			}
 			err := s.MergeEligibility(id, to, MergeEvidence{Known: a.PID == 0})
