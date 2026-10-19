@@ -14,9 +14,9 @@ func agentHostID(a *Agent) string {
 // This uses the same pure coordinator rule; process absence is still checked
 // freshly by the engine before execution, not inferred from a dormant label.
 func (s *State) decorateMergeCandidates(rows []map[string]any) {
-	// A board can contain hundreds of unrelated roles. Register also returns a
-	// board during replay, so comparing every row with every other row makes
-	// boot history cubic in fleet size. Preserve row order within each name;
+	// A board can contain hundreds of unrelated roles. Grouping prevents each
+	// live projection from comparing every row with every unrelated row. Replay
+	// no longer builds reply boards. Preserve row order within each name;
 	// host and harness mismatches still belong in the output with their refusal.
 	byName := make(map[string][]*Agent)
 	for _, row := range rows {
