@@ -1120,6 +1120,8 @@ fetching a checkout does not rebuild its tool. A source finding says where a
 project is going, not what an installed session does. Rows keep older wire
 dates where no new wire measurement was made.
 
+Re-checked **2026-10-19 (UTC)** before v0.0.15: Codex (`89461ea68`), opencode (`ba06ff9e0`) and Hermes (`5fc490e2b3`) heads moved, pi-mono, Gemini and ext-apps did not. Every predicate below and every installed version is unchanged, so the rows keep their 2026-10-18 readings.
+
 | harness | protocol evidence | source and installed-build evidence |
 |---|---|---|
 | Claude Desktop | 2025-11-25, measured **2026-09-15** on 1.52386.6 | Its chat and local-agent clients sent `initialize`, not `server/discover`. **Installed bundle version observed 2026-10-18 (UTC): 2.26454.2; wire behavior not re-measured.** Only bundle metadata was read; no app was opened or restarted. Re-measurement needs an app restart and a temporary app-level Dibs entry that shadows the Code plugin, so it remains deferred. No lifecycle hooks in the chat surface. See [plugins/claude-desktop](plugins/claude-desktop/) |

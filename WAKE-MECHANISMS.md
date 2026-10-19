@@ -483,6 +483,7 @@ probe. Old rows are historical measurements, not claims about today's binaries:
 | Hermes installed MCP adapter, no model/provider session | **0.20.2**, SDK **1.28.1** | `initialize` **2025-11-25** | `elicitation {form,url}` | initialize, notifications/initialized, tools/list (52 tools), **2026-10-03**, isolated HTTP daemon |
 
 **Release survey refreshed 2026-10-18 (UTC), with source and runtime separated.**
+Re-checked **2026-10-19 (UTC)** before v0.0.15: Codex (`89461ea68`), opencode (`ba06ff9e0`) and Hermes (`5fc490e2b3`) heads moved, pi-mono, Gemini and ext-apps did not. Every predicate below and every installed version is unchanged, so the rows keep their 2026-10-18 readings.
 The six harness checkouts (including ext-tasks) and ext-apps were fetched, and
 `origin/HEAD` read rather than their local branch. Installed versions were
 observed separately: PATH Codex **0.0.0**, ChatGPT app CLI
