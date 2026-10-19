@@ -184,7 +184,32 @@ func (e *Engine) addQueueCheckpoint(res core.Result, actor *core.Agent, op *core
 	switch op.Disposition {
 	case "queue", "approve", "done", "decline":
 		res["task_queue"] = e.taskQueueView(actor.ID)
-		res["owed_work"] = e.owedWorkView(actor.ID, now)
 		res["owes"] = e.owedSerials(actor.ID, now)
+		next, more := nextOwedWork(e.owedWorkView(actor.ID, now))
+		res["owed_work"] = next
+		if more > 0 {
+			res["more_owed_work"] = more
+			res["owed_work_hint"] = "check_in or inbox lists every owed item with its call"
+		}
 	}
+}
+
+// nextOwedWork keeps the one entry a respond result is for: the next queued
+// item's literal start call, else the first owed item. Every respond used to
+// echo the whole list (28 and 34 entries in the 2026-10-18 fleet survey, from
+// k7-dev and gpt-agenxy-dev-1), which buried the acknowledgement it came with.
+// The full list is still on check_in and inbox, and owes still names every
+// serial.
+func nextOwedWork(owed []core.Result) ([]core.Result, int) {
+	if len(owed) <= 1 {
+		return owed, 0
+	}
+	head := owed[0]
+	for _, r := range owed {
+		if _, queued := r["start"]; queued {
+			head = r
+			break
+		}
+	}
+	return []core.Result{head}, len(owed) - 1
 }

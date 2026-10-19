@@ -356,3 +356,44 @@ func TestQueuedCheckpointReportsOverdueWithoutExpiringOrStartingWork(t *testing.
 		t.Fatalf("deadline expired or started accepted work: %v", read)
 	}
 }
+
+// A respond result carries the next owed item, not the whole list.
+//
+// k7-dev and gpt-agenxy-dev-1 (fleet survey, 2026-10-18) had every
+// respond(done) echo 28 and 34 owed entries back, burying the acknowledgement.
+// The next queued item's start call stays, owes still names every serial, and
+// check_in still lists them all.
+func TestRespondReturnsTheNextOwedItemAndACountNotTheWholeList(t *testing.T) {
+	srv, _ := newServer(t)
+	lead := toolCall(t, srv, "register", map[string]any{"name": "lead"})["token"]
+	worker := toolCall(t, srv, "register", map[string]any{"name": "worker"})["token"]
+	send := func(body string) any {
+		r := toolCall(t, srv, "send", map[string]any{"token": lead, "to": "worker", "type": "request", "body": body})
+		return r["msg_serial"]
+	}
+	var approved []any
+	for i := range 4 {
+		n := send(fmt.Sprint("parked ", i))
+		toolCall(t, srv, "respond", map[string]any{"token": worker, "msg_serial": n, "disposition": "approve"})
+		approved = append(approved, n)
+	}
+	queued := send("later")
+	toolCall(t, srv, "respond", map[string]any{"token": worker, "msg_serial": queued, "disposition": "queue"})
+	r := toolCall(t, srv, "respond", map[string]any{"token": worker, "msg_serial": approved[0], "disposition": "done"})
+	if r["state"] != "done" {
+		t.Fatalf("setup: done: %v", r)
+	}
+	owed, _ := r["owed_work"].([]any)
+	if len(owed) != 1 || owed[0].(map[string]any)["msg_serial"] != queued {
+		t.Errorf("want only the queued item's start call, got %v", owed)
+	}
+	if r["more_owed_work"] != float64(3) {
+		t.Errorf("more_owed_work = %v, want 3 (the other parked approvals)", r["more_owed_work"])
+	}
+	if owes, _ := r["owes"].([]any); len(owes) != 4 {
+		t.Errorf("owes must still name every owed serial: %v", r["owes"])
+	}
+	if all, _ := toolCall(t, srv, "check_in", map[string]any{"token": worker})["owed_work"].([]any); len(all) != 4 {
+		t.Errorf("check_in must still list every owed item: %v", all)
+	}
+}
