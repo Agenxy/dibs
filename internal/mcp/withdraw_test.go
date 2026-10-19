@@ -57,7 +57,8 @@ func TestSenderWithdrawalThroughMCPAndEncryptedRestart(t *testing.T) {
 			}
 			mail := toolCall(t, srv, "read_mail", map[string]any{"token": worker, "msg_serial": n})
 			m := mail["message"].(map[string]any)
-			if m["state"] != "withdrawn" || m["withdrawal_reason"] != "reassigned" || m["consumed"] != false {
+			// A full read consumes the withdrawal (read once, never nagged).
+			if m["state"] != "withdrawn" || m["withdrawal_reason"] != "reassigned" || m["consumed"] != true {
 				t.Fatalf("receipt: %v", mail)
 			}
 			tracked := rpc(t, srv, "2026-07-28", "tasks/get", taskCapabilities(map[string]any{"taskId": id}))["result"].(map[string]any)
@@ -68,20 +69,16 @@ func TestSenderWithdrawalThroughMCPAndEncryptedRestart(t *testing.T) {
 			if late["__is_error"] != true {
 				t.Fatalf("late done: %v", late)
 			}
-			ack := toolCall(t, srv, "ack", map[string]any{"token": worker, "msg_serial": n})
-			if ack["ok"] != true {
-				t.Fatalf("ack: %v", ack)
-			}
 			stop()
 			srv, _, _ = restartableQueueServer(t, dir)
 			mail = toolCall(t, srv, "read_mail", map[string]any{"token": worker, "msg_serial": n})
 			if mail["message"].(map[string]any)["consumed"] != true {
-				t.Fatalf("ack lost: %v", mail)
+				t.Fatalf("the full read's consumption was lost across a restart: %v", mail)
 			}
 			checkpoint = toolCall(t, srv, "check_in", map[string]any{"token": worker})
 			updates, _ = json.Marshal(checkpoint["agent_updates"])
 			if strings.Contains(string(updates), "withdrew request") {
-				t.Fatalf("acknowledged receipt repeated: %s", updates)
+				t.Fatalf("a withdrawal read in full repeated after a restart: %s", updates)
 			}
 		})
 	}

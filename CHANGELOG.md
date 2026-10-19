@@ -31,6 +31,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A withdrawal notice cleared only on `ack`, though it said "read_mail has the
+  reason". `read_mail` cleared it in memory, and every daemon restart rebuilt
+  it from the ledger, so a recipient that had read it was blocked at Stop on
+  every turn. The recipient's full `read_mail` now consumes the withdrawal
+  durably, and the notice names the call. A hook's quote of the reason, which
+  may be trimmed, still does not.
+
 - A coordinator `broadcast` is charged one rate-limit token, not one per
   recipient. A 41-agent broadcast reached 31 agents and reported the rest
   `E_RATE_LIMITED`.

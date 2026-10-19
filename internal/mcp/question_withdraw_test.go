@@ -99,10 +99,14 @@ func TestQuestionWithdrawalThroughMCPAndEncryptedRestart(t *testing.T) {
 					if !strings.Contains(string(updates), "withdrew question") || strings.Contains(string(updates), "answered your question") {
 						t.Fatalf("restart receipt: %s", updates)
 					}
+					// Reading the withdrawal in full is reading it once: it is
+					// consumed durably, so the restart below cannot rebuild it.
+					// k7-dev, 2026-10-19: before this only ack cleared it, and
+					// every restart handed back withdrawals already read.
 					mail := questionWithdrawalOK(t, srv, version, "read_mail", map[string]any{"token": worker, "msg_serial": n})
 					m := mail["message"].(map[string]any)
-					if m["state"] != "withdrawn" || m["withdrawal_reason"] != "answered elsewhere" || m["consumed"] != false {
-						t.Fatalf("durable receipt: %v", mail)
+					if m["state"] != "withdrawn" || m["withdrawal_reason"] != "answered elsewhere" || m["consumed"] != true {
+						t.Fatalf("a full read did not consume the withdrawal: %v", mail)
 					}
 					late := questionWithdrawalCall(t, srv, version, "respond", map[string]any{
 						"token": worker, "msg_serial": n, "disposition": "answer", "body": "late",
@@ -110,16 +114,12 @@ func TestQuestionWithdrawalThroughMCPAndEncryptedRestart(t *testing.T) {
 					if late["__is_error"] != true || late["code"] != "E_MSG_FINAL" {
 						t.Fatalf("withdrawn question answered: %v", late)
 					}
-					ack := questionWithdrawalOK(t, srv, version, "ack", map[string]any{"token": worker, "msg_serial": n})
-					if ack["ok"] != true {
-						t.Fatalf("ack: %v", ack)
-					}
 					stop()
 					srv, _, _ = questionWithdrawalServer(t, dir, version)
 					checkpoint = questionWithdrawalOK(t, srv, version, "check_in", map[string]any{"token": worker})
 					updates, _ = json.Marshal(checkpoint["agent_updates"])
 					if strings.Contains(string(updates), "withdrew question") {
-						t.Fatalf("acknowledged withdrawal repeated: %s", updates)
+						t.Fatalf("a withdrawal read in full came back after a restart: %s", updates)
 					}
 				})
 			}

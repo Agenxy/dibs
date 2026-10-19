@@ -126,7 +126,7 @@ func TestProgressAckSurvivesEncryptedRestart(t *testing.T) {
 }
 
 func TestWithdrawalDoesNotResurrectReportsOrConsumeItsReceipt(t *testing.T) {
-	srv, _, _ := newServerWithEngine(t)
+	srv, eng, _ := newServerWithEngine(t)
 	call := func(name string, args map[string]any) map[string]any {
 		t.Helper()
 		r := toolCall(t, srv, name, args)
@@ -154,11 +154,15 @@ func TestWithdrawalDoesNotResurrectReportsOrConsumeItsReceipt(t *testing.T) {
 	if got := fmt.Sprint(call("check_in", map[string]any{"token": worker})["agent_updates"]); !strings.Contains(got, "actual withdrawal reason") {
 		t.Error("worker did not receive the actual withdrawal reason")
 	}
-	m := call("read_mail", map[string]any{"token": worker, "msg_serial": n})["message"].(map[string]any)
-	if m["consumed"] == true {
+	// The quote above may be trimmed, so it never consumes the receipt.
+	if mailboxReceipt(t, eng, uint64(n.(float64))).Consumed {
 		t.Error("quoted withdrawal reason consumed its explicit receipt")
 	}
-	call("ack", map[string]any{"token": worker, "msg_serial": n})
+	// Reading it in full does: read once, never nagged.
+	m := call("read_mail", map[string]any{"token": worker, "msg_serial": n})["message"].(map[string]any)
+	if m["consumed"] != true {
+		t.Error("a full read of the withdrawal did not consume it")
+	}
 }
 
 func TestDisabledBodyQuotesDoNotReadTheOutcome(t *testing.T) {
