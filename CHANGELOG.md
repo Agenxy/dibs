@@ -19,6 +19,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- `respond` (approve, queue, done, decline) now returns only the next owed
+  item (the next queued item's start call, else the first owed item) with
+  `more_owed_work`, instead of echoing every owed entry. `owes` still names
+  every serial, and `check_in` and `inbox` still list them all.
+
 - Registration, resume and check-in reply boards are projected only for live
   callers, avoiding whole-fleet reply construction during both ledger and mail
   history replay. Check-in now shows the caller's coordination time after its
