@@ -5,13 +5,14 @@ package engine
 
 import (
 	"github.com/agenxy/dibs/internal/core"
-	hostdisplay "github.com/agenxy/dibs/internal/hostname"
 )
 
 // Display only. Raw per-agent labels and the host IDs used for coordination
 // remain untouched. Remote labels come from the newest coordinated member,
 // not a timestamp of the label itself; the fold does not record that timestamp.
-func (e *Engine) labelBoardHosts(b core.Result) {
+// localName is one already-read snapshot for the whole projection. Never run a
+// lookup here: neither the number of rows nor scutil failures may stall the writer.
+func (e *Engine) labelBoardHosts(b core.Result, localName string) {
 	latest := map[string]*core.Agent{}
 	// The board minted these rows, so their host is the board's own. The
 	// person's physical location is unknown (especially on a hub). Use the
@@ -36,14 +37,14 @@ func (e *Engine) labelBoardHosts(b core.Result) {
 	for _, row := range rows {
 		id := row["id"].(string)
 		if id == human || id == reporter {
-			row["host"] = hostdisplay.Name()
+			row["host"] = localName
 			continue
 		}
 		a := e.state.Agents[id]
 		if a == nil || a.Agent == nil {
 			continue
 		}
-		label := e.boardHostLabel(a.Agent, latest)
+		label := e.boardHostLabel(a.Agent, latest, localName)
 		if label != "" {
 			row["host"] = label
 		}
@@ -60,13 +61,13 @@ func newerHostLabel(a, old *core.Agent) bool {
 	return a.CreatedSerial > old.CreatedSerial || (a.CreatedSerial == old.CreatedSerial && a.ID < old.ID)
 }
 
-func (e *Engine) boardHostLabel(info *core.AgentInfo, latest map[string]*core.Agent) string {
+func (e *Engine) boardHostLabel(info *core.AgentInfo, latest map[string]*core.Agent, localName string) string {
 	id := e.canonicalHost(info.HostID)
 	if id == "" {
 		return info.Host
 	}
 	if id == e.HostID() || id == e.state.NodeID || e.hostAliases[id] {
-		return hostdisplay.Name()
+		return localName
 	}
 	if newest := latest[id]; newest != nil {
 		return newest.Agent.Host

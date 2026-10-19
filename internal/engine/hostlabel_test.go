@@ -4,12 +4,37 @@
 package engine
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
 	hostdisplay "github.com/agenxy/dibs/internal/hostname"
 )
+
+func TestManyRowHostProjectionUsesOnlyTheSuppliedSnapshot(t *testing.T) {
+	st := core.NewState("local-node", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	for i := range 40 {
+		id := fmt.Sprintf("local-%d", i)
+		st.Agents[id] = &core.Agent{ID: id, Agent: &core.AgentInfo{HostID: "local-node", Host: "network-kernel"}}
+	}
+	board := st.Board()
+	e.labelBoardHosts(board, "snapshot-label")
+	rows := board["agents"].([]map[string]any)
+	if len(rows) != 40 {
+		t.Fatalf("setup: board has %d rows", len(rows))
+	}
+	for _, row := range rows {
+		if row["host"] != "snapshot-label" {
+			t.Fatalf("projection looked up a name instead of using its snapshot: %v", row["host"])
+		}
+		info := row["agent"].(*core.AgentInfo)
+		if info.Host != "network-kernel" || info.HostID != "local-node" {
+			t.Fatalf("projection changed coordination identity: %+v", info)
+		}
+	}
+}
 
 func TestMachineLabelsAreDerivedFromTheNewestVisibleMember(t *testing.T) {
 	st := core.NewState("ledger", core.DefaultLimits())
@@ -23,7 +48,7 @@ func TestMachineLabelsAreDerivedFromTheNewestVisibleMember(t *testing.T) {
 	check := func(want string) {
 		t.Helper()
 		board := st.Board()
-		e.labelBoardHosts(board)
+		e.labelBoardHosts(board, hostdisplay.Name())
 		for _, row := range board["agents"].([]map[string]any) {
 			if row["id"] == "local" {
 				if row["host"] != hostdisplay.Name() {

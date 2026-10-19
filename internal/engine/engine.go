@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	hostdisplay "github.com/agenxy/dibs/internal/hostname"
 	"github.com/agenxy/dibs/internal/overlap"
 )
 
@@ -332,6 +333,9 @@ func New(st *core.State, led Ledger, prober Prober, history ...[]core.Event) *En
 
 // Run drives the loop until ctx is done. Call in exactly one goroutine.
 func (e *Engine) Run(ctx context.Context) {
+	// Warm the display cache before serving. Projections only take a snapshot;
+	// a failed cold lookup is retried asynchronously by the next projection.
+	hostdisplay.Name()
 	reconcileContext, eCancel := context.WithCancel(ctx)
 	e.blobReconcileContext = reconcileContext
 	e.wakeContext = reconcileContext
@@ -1093,7 +1097,7 @@ func (e *Engine) execWithReceipt(
 		}
 	}
 	if board, ok := res["board"].(map[string]any); ok {
-		e.labelBoardHosts(board)
+		e.labelBoardHosts(board, hostdisplay.Current().Name)
 		e.decorateBoardQueueWakes(board, now)
 	}
 	return res, nil

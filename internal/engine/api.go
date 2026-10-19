@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	hostdisplay "github.com/agenxy/dibs/internal/hostname"
 )
 
 // request and reply carry submissions across the single-writer boundary.
@@ -856,7 +857,7 @@ func (e *Engine) decoratedBoard() core.Result {
 	if names := e.configuredNameView(); len(names) > 0 {
 		b["configured_name_addresses"] = names
 	}
-	e.labelBoardHosts(b)
+	e.labelBoardHosts(b, hostdisplay.Current().Name)
 	e.decorateBoardQueueWakes(b, time.Now())
 	// The identity this daemon stamps its own machine's agents with, beside
 	// the ledger's node: doctor compares it with what Supgang says the

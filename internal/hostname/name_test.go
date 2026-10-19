@@ -68,6 +68,48 @@ func TestInitialFailureFallsBackAndLaterRecovers(t *testing.T) {
 	}
 }
 
+func TestColdFallbackIsNotCached(t *testing.T) {
+	for _, idle := range []time.Duration{0, 30 * time.Second} {
+		t.Run(idle.String(), func(t *testing.T) {
+			now := time.Unix(100, 0)
+			calls, fallbacks := 0, 0
+			r := resolver{now: func() time.Time { return now }, lookup: func(ctx context.Context) (string, error) {
+				calls++
+				if calls == 1 {
+					// A busy boot can exhaust the real shared lookup budget.
+					<-ctx.Done()
+					return "", ctx.Err()
+				}
+				return "friendly", nil
+			}, fallback: func() (string, error) { fallbacks++; return "network-kernel", nil }}
+			if got := r.name(); got != "network-kernel" || calls != 1 || fallbacks != 1 {
+				t.Fatalf("setup: first timeout got %q, calls=%d fallbacks=%d", got, calls, fallbacks)
+			}
+			// An expired cache also used to return the fallback once more,
+			// starting its asynchronous refresh only after showing it again.
+			now = now.Add(idle)
+			if got := r.name(); got != "friendly" {
+				t.Fatalf("cold fallback survived the next successful lookup: %q", got)
+			}
+			if got := r.name(); got != "friendly" || calls != 2 || fallbacks != 1 {
+				t.Fatalf("successful friendly label was not cached: %q calls=%d fallbacks=%d", got, calls, fallbacks)
+			}
+		})
+	}
+}
+
+func TestUnavailableNameDoesNotUseAnErroredFallback(t *testing.T) {
+	unavailable := errors.New("unavailable")
+	r := resolver{now: time.Now, lookup: func(context.Context) (string, error) { return "", unavailable }, fallback: func() (string, error) { return "invalid", unavailable }}
+	if got := r.name(); got != "" {
+		t.Fatalf("used a fallback returned with an error: %q", got)
+	}
+	if label := r.current(); label.Name != "" || !label.Fallback {
+		t.Fatalf("failed snapshot=%+v", label)
+	}
+	waitForRefresh(t, &r)
+}
+
 func refreshForTest(t *testing.T, r *resolver, clock *atomic.Int64) {
 	t.Helper()
 	clock.Add(int64(cacheTTL))
