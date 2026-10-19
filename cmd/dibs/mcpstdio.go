@@ -202,6 +202,10 @@ func runBridge(_ []string) error {
 		// The bridge supplies its own process evidence before a model call;
 		// registration also gains facts from the harness it was spawned into.
 		line = enrichRegister(enrichBridgeProcess(line))
+		if isNonceCacheRefusal(line) {
+			out.line(line)
+			continue // no HTTP request and no registration has happened
+		}
 		req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(line))
 		if err != nil {
 			return err

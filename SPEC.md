@@ -359,6 +359,21 @@ you can measure is never improved by asking.
     surface that refusal and do not retry with a newly minted nonce.
   - *Recovery credential* also for persistent agents via `resume`. **Treat a
     persistent agent's nonce as a secret equal to its token.**
+  - *Bridge cache custody*: automatic reuse is scoped by project, role and
+    harness-supplied thread/session identity. Two distinct threads must never
+    acquire one credential merely by choosing the same project and name.
+    With no harness identity, only the bridge's own measured PID/start-time
+    incarnation can reuse its cache; unknown evidence supplies no credential.
+    Remote tunnels never inject a local cache credential. The first session
+    claims an unscoped legacy project/name pool on upgrade; subsequent sessions
+    get independent credentials. A kernel lock serializes new cache writers.
+    The versioned session file commits the owner and credentials before removal
+    of the old copies; an owning session retries incomplete cleanup. Old whole-file
+    writes cannot erase this fence. Lock/read/write failure refuses forwarding
+    with a corrective `E_NONCE_CACHE`, never a freshly minted fallback.
+    Explicit nonces and operator pins retain their ordinary precedence.
+    Dormant pre-upgrade bridges keep old behavior until their normal request
+    boundary re-exec; installing a binary does not rewrite a running bridge.
   - *Presented by the harness, on any transport.* An agent cannot carry a secret
     across a context boundary. Its context ends, which is the event the nonce
     exists for, and the nonce goes with it. So the nonce MAY arrive in transport

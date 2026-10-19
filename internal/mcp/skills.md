@@ -459,14 +459,18 @@ receiving native peer turns, another watcher adds no delivery guarantee.
   work beyond the verdict: approving that request accepts an obligation, and
   the recipient still owes `done` after delivering it.
 - **On a stdio bridge, your nonce is kept for you.** The bridge remembers it per
-  project and per name, so registering with the same name in the same checkout
-  reattaches you to the same agent with its mail, even after your context ended.
-  You can still supply your own; yours wins and is remembered too. This is the
-  fix for the thing that produces `-2` and `-3` rows: a nonce lives in the
-  context that the nonce exists to outlive, so it never survived.
-  Local directory aliases are matched by filesystem identity; legacy cache
-  credentials remain readable by older bridges. Conflicting cached secrets are
-  checked by the daemon through bounded `recovery_nonces`, recovering the oldest
+  project, name and harness thread/session, so returning within that session
+  recovers your mail after your model context ends. Two threads choosing the
+  same role are separate agents. Without a harness id, reuse requires the same
+  measured bridge process incarnation; unknown evidence supplies no nonce and
+  lets registration mint one. Explicit nonces and operator pins still win.
+  Local directory aliases are matched by filesystem identity. On upgrade, the
+  first session atomically claims the old project/name entry;
+  later sessions get independent credentials. Session state and the first-owner
+  fence live in a separate versioned file, so old writers cannot erase them.
+  A failed migration returns `E_NONCE_CACHE` before registration is forwarded;
+  keep the same session and credentials while correcting the cache problem.
+  Conflicting session-bound secrets are checked by the daemon through bounded `recovery_nonces`, recovering the oldest
   matching name/host identity. A refusal never causes a fresh-nonce retry. An
   explicit nonce or operator pin still takes precedence.
 - **If your name was taken, ask for your old mailbox back.** Registering under a

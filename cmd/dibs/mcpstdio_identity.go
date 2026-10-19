@@ -271,7 +271,9 @@ func enrichRegister(line []byte) []byte {
 	// that manages its own credential once does not have to manage it twice.
 	nonceBefore, _ := args["nonce"].(string)
 	hadRecovery := args["recovery_nonces"] != nil
-	enrichNonce(args, pinnedNonce())
+	if err := enrichNonce(args, pinnedNonce(), registrationNonceScope(params)); err != nil {
+		return nonceCacheRefusal(line, err)
+	}
 	nonceAfter, _ := args["nonce"].(string)
 	_, hasRecovery := args["recovery_nonces"]
 	if nonceBefore != nonceAfter || (!hadRecovery && hasRecovery) {

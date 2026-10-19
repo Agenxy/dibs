@@ -37,10 +37,15 @@ import (
 //
 // So the bridge keeps it. The bridge is a separate process, spawned once per
 // session and outliving no context: it is the only participant in this exchange
-// with a memory that spans sessions and a filesystem to use. Keyed by project
-// root, because "the same agent" in practice means "the same role in the same
-// checkout", and that is the key a returning session can compute before the
-// model has done anything at all.
+// with a memory that spans activations and a filesystem to use. A role and
+// checkout alone are NOT an identity: two live threads picked the same role,
+// the bridge handed both the cached nonce, and their registers kept revoking
+// each other's tokens (187303, ledger 179998/180001 and 141903/142025).
+//
+// The cache now also names the harness's own thread/session, or this bridge's
+// measured process incarnation when no harness id exists. The first session
+// claims the old project/name cache once, into a separate versioned file; later
+// sessions get independent credentials. Unknown evidence supplies no nonce.
 //
 // The agent's own word still wins. A nonce it supplies is used and stored; this
 // only fills a blank, exactly like every other field the bridge supplies.
@@ -77,7 +82,7 @@ func recordNonce(project, name, nonce string, chosen bool) {
 	if project == "" || name == "" || nonce == "" {
 		return
 	}
-	path := noncePath()
+	path := nonceStorePath(name)
 	if path == "" {
 		return
 	}
@@ -94,12 +99,28 @@ func recordNonce(project, name, nonce string, chosen bool) {
 	//
 	// A lock file for the read-modify-write, and a temp-and-rename for the write
 	// itself: rename is atomic, so a reader sees either the old file or the new
-	// one and never a half-written one. Best effort throughout, deliberately: a
-	// registration must never fail because a credential cache was busy.
-	unlock := lockNonces(path)
-	defer unlock()
+	// one and never a half-written one. This post-reply bookkeeping is best effort;
+	// the automatic credential transaction refuses before forwarding on failure.
+	guard, err := lockScopedNonceStore(noncePath())
+	if err != nil {
+		return // explicit credentials still work when their cache cannot be written
+	}
+	defer guard()
+	if path == noncePath() {
+		unlock := lockNonces(path)
+		defer unlock()
+	}
 
-	all := loadNonces()
+	all, err := readNonceStore(path)
+	if err != nil {
+		return // never replace a damaged store with an empty one
+	}
+	if recordNonceIn(all, project, name, nonce, chosen) {
+		_ = writeNonces(path, all)
+	}
+}
+
+func recordNonceIn(all map[string]string, project, name, nonce string, chosen bool) bool {
 	key := nonceKey(project, name)
 	canonical := canonicalNonceKey(project, name)
 	// Old bridges keep reading their exact legacy spelling. Never replace a
@@ -108,7 +129,7 @@ func recordNonce(project, name, nonce string, chosen bool) {
 	saved := canonical + "\x00" + fmtNonceDigest(nonce)
 	choice := canonical + "\x00choice"
 	if all[canonical] == nonce && all[saved] == nonce && all[key] != "" && (!chosen || all[choice] == nonce) {
-		return
+		return false
 	}
 	if all[key] == "" {
 		all[key] = nonce
@@ -117,38 +138,41 @@ func recordNonce(project, name, nonce string, chosen bool) {
 	if chosen {
 		all[choice] = nonce // explicit/pinned intent survives removal of the pin
 	}
-	writeNonces(path, all)
+	return true
 }
 
-func writeNonces(path string, all map[string]string) {
+func writeNonces(path string, all map[string]string) error {
 	b, err := json.MarshalIndent(all, "", "  ")
 	if err != nil {
-		return
+		return err
 	}
 	// 0600: this is a credential. The directory is the daemon's own, already
 	// holding the local secret and the ledger key.
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".nonces-*")
 	if err != nil {
-		return
+		return err
 	}
 	name2 := tmp.Name()
 	defer func() { _ = os.Remove(name2) }() // no-op once the rename succeeds
 	if err := tmp.Chmod(0o600); err != nil {
 		_ = tmp.Close()
-		return
+		return err
 	}
 	if _, err := tmp.Write(b); err != nil {
 		_ = tmp.Close()
-		return
+		return err
 	}
 	if err := tmp.Sync(); err != nil {
 		_ = tmp.Close()
-		return
+		return err
 	}
 	if err := tmp.Close(); err != nil {
-		return
+		return err
 	}
-	_ = os.Rename(name2, path)
+	if err := os.Rename(name2, path); err != nil {
+		return err
+	}
+	return syncNonceDirectory(path)
 }
 
 // lockNonces serialises the read-modify-write above across bridge processes.
@@ -214,10 +238,14 @@ func fmtNonceDigest(nonce string) string {
 // A 17th distinct credential is returned to the admission gate as an error,
 // rather than truncating the group to 16 and silently choosing a subset.
 func nonceCandidates(project, name string) []string {
+	all, _ := readNonceStore(nonceStorePath(name))
+	return nonceCandidatesIn(all, project, name)
+}
+
+func nonceCandidatesIn(all map[string]string, project, name string) []string {
 	if project == "" || name == "" {
 		return nil
 	}
-	all := loadNonces()
 	canonical := canonicalNonceKey(project, name)
 	if chosen := all[canonical+"\x00choice"]; chosen != "" {
 		return []string{chosen}
@@ -350,11 +378,12 @@ func repoRootOf(dir string) string {
 // AGENTS.md: test the decision, not the wrapper. The wrapper is one map
 // assignment; the decision is which of three sources the credential comes from,
 // and it is the one with the product failure in it.
-func enrichNonce(args map[string]any, pinned string) {
+func enrichNonce(args map[string]any, pinned, scope string) error {
 	name, _ := args["name"].(string)
-	if name == "" {
-		return
+	if name == "" || scope == "" {
+		return nil
 	}
+	role := name
 	project := projectKey(args)
 	// An operator who pinned DIBS_AGENT_NONCE has said which identity this is,
 	// and nothing here may argue with it.
@@ -372,30 +401,30 @@ func enrichNonce(args map[string]any, pinned string) {
 	// Remembered, so a later run WITHOUT the variable still reattaches to the
 	// identity the operator chose, and then left alone: the header carries it.
 	if pinned != "" {
-		rememberChosenNonce(project, name, pinned)
-		return
+		_, err := scopedNoncePlan(project, role, scope, pinned)
+		return err
 	}
 	if supplied, _ := args["nonce"].(string); supplied != "" {
-		rememberChosenNonce(project, name, supplied)
-		return
+		_, err := scopedNoncePlan(project, role, scope, supplied)
+		return err
 	}
 	if supplied := args["recovery_nonces"]; supplied != nil {
-		return // explicit candidate group is validated by the daemon
+		return nil // explicit candidate group is validated by the daemon
 	}
-	candidates := nonceCandidates(project, name)
+	candidates, err := scopedNoncePlan(project, role, scope, "")
+	if err != nil {
+		return err
+	}
 	if len(candidates) > 1 {
 		args["recovery_nonces"] = candidates
-		return // proof is required; never mint or probe a candidate here
+		return nil // proof is required; never probe a candidate here
 	}
 	nonce := ""
 	if len(candidates) == 1 {
 		nonce = candidates[0]
 	}
-	if nonce == "" {
-		nonce = mintNonce()
-		rememberNonce(project, name, nonce)
-	}
 	if nonce != "" {
 		args["nonce"] = nonce
 	}
+	return nil
 }
