@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.0.15] - 2026-10-19
+
 - Duplicate identities now have a supported merge preview and human board
   control. Coordinators can repair a matching, unbound, non-live fork into its
   newer third-party survivor; other eligible repairs go through a typed human
