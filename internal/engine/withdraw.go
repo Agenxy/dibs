@@ -15,7 +15,8 @@ func withdrawalNotice(ev core.Event) string {
 	if ev.Data["message_type"] == core.MsgQuestion {
 		kind = core.MsgQuestion
 	}
-	text := fmt.Sprintf("%s withdrew %s %v; read_mail has the reason", ev.Agent, kind, ev.Data["msg_serial"])
+	n := ev.Data["msg_serial"]
+	text := fmt.Sprintf("%s withdrew %s %v; read_mail(%v) has the reason and clears this", ev.Agent, kind, n, n)
 	if n, _ := ev.Data["superseded_by"].(uint64); n != 0 {
 		text += fmt.Sprintf(" (superseded by %s %d)", kind, n)
 	}

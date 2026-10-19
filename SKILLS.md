@@ -516,8 +516,8 @@ receiving native peer turns, another watcher adds no delivery guarantee.
   approval: this clears the recipient's owed work and notifies them once.
   Reason and replacement are optional; the replacement must be another ordinary
   question or request you sent. Withdrawal clears queued/owed work without claiming delivery
-  or stopping an agent. The recipient reads the withdrawal and `ack(msg_serial)`
-  acknowledges it. An already-performed grant/adoption approval cannot be undone.
+  or stopping an agent. The recipient's `read_mail(msg_serial)` shows the reason
+  and clears the withdrawal for good; `ack(msg_serial)` clears it unread. An already-performed grant/adoption approval cannot be undone.
   Answered or expired questions stay final. Human notifications receive a
   best-effort removal request; this does not prove the banner was unseen or gone.
   Unidentified older notifications cannot be removed this way. `tasks/cancel` only acknowledges

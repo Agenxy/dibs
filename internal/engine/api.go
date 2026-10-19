@@ -675,6 +675,19 @@ func (e *Engine) GetMessage(ctx context.Context, token string, serial uint64) (c
 			}
 			res = e.messageReadResult(m)
 		}
+		// A withdrawal is an FYI to its recipient: read in full here, it is
+		// read once (the operator's standing rule) and durably consumed.
+		// Hook QUOTES of the reason still never consume, since they may trim
+		// it. Until 2026-10-19 only ack did, while the notice said "read_mail
+		// has the reason": k7-dev read both of its withdrawals, every daemon
+		// restart rebuilt them from the ledger, and its Stop hook blocked every
+		// turn on them.
+		if m.To == l.ID && m.State == core.MsgStateWithdrawn && !m.Consumed && e.withdrawalReceiptBelongs(m) {
+			if _, err := e.applyAndLedger(&core.Op{Kind: core.OpAckMessage, Token: token, MsgSerial: serial}, now); err != nil {
+				return core.Result{"error": err}
+			}
+			res = e.messageReadResult(m)
+		}
 		return res
 	})
 }
