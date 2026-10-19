@@ -208,10 +208,12 @@ type Op struct {
 	// row being absorbed into it. A new tag, never a reused one: renaming a
 	// json tag is a silent data-loss bug here and reusing one for a second
 	// meaning is the same bug with the rename already done.
-	MergeInto   string `json:"merge_into,omitempty"`
-	MsgType     string `json:"msg_type,omitempty"`
-	Body        string `json:"body,omitempty"` // encrypted at rest
-	DeadlineSec int    `json:"deadline_sec,omitempty"`
+	MergeInto   string        `json:"merge_into,omitempty"`
+	MergeActor  *MergeActor   `json:"merge_actor,omitempty"`
+	Merge       *MergeRequest `json:"merge,omitempty"`
+	MsgType     string        `json:"msg_type,omitempty"`
+	Body        string        `json:"body,omitempty"` // encrypted at rest
+	DeadlineSec int           `json:"deadline_sec,omitempty"`
 	// DeliveryStart is stamped by new-build ingress for agent questions and
 	// requests. Historical send ops omit it and keep their send-time deadline.
 	DeliveryStart bool   `json:"delivery_start,omitempty"`

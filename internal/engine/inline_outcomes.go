@@ -160,7 +160,8 @@ func (e *Engine) sentOutcomes(agent string) []*core.Message {
 			continue
 		}
 		if m.From == agent && m.Expecting() && m.HasUnreadOutcome() &&
-			(l.CreatedSerial == 0 || m.Serial >= l.CreatedSerial) && len(e.outcomeUnits(m)) > 0 {
+			(l.CreatedSerial == 0 || m.Serial >= l.CreatedSerial || core.MergedSenderOwns(m, l)) &&
+			len(e.outcomeUnits(m)) > 0 {
 			out = append(out, m)
 		}
 	}
@@ -266,6 +267,9 @@ func (e *Engine) outcomeHeader(m *core.Message) string {
 	}
 	if m.State == core.MsgStateApproved && m.Adopt != "" {
 		text += fmt.Sprintf(": %q's mail is now delivered to you; call inbox", m.Adopt)
+	}
+	if m.State == core.MsgStateApproved && m.Merge != nil {
+		text += fmt.Sprintf(": %q was merged into %q; the repair is complete", m.Merge.From, m.Merge.Into)
 	}
 	return text
 }

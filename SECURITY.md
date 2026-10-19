@@ -237,6 +237,31 @@ adopted mail. A row holding adopted mail is recovered by its nonce too. Found
 by the pre-release review, rounds nine, sixty-one, sixty-two, sixty-three,
 and sixty-five.
 
+**Duplicate merge uses the same custody boundary as adoption.** A coordinator's
+matching/newer pair test is insufficient by itself: the coordinator can mint a
+sessionless or own-session survivor and retain its token. Merge therefore reuses
+`OtherHands` and refuses those targets, offering a typed human request instead.
+The coordinator-role row above still describes the raw invented-session limit;
+this does not claim a new ancestry proof. Preview exposes metadata, never mail
+content or credentials, and does not mark socket outcomes read. A coordinator's
+source-only nonces are tombstoned rather than redirected, so choosing a source
+credential cannot grant access to the survivor. Register and resume refuse them
+with `E_SEAT_MERGED`, even after source retention. Recovery groups choose a
+valid canonical survivor credential before considering any tombstone. Only an
+authenticated human/admin decision transfers source credentials; its preview
+or approval explicitly warns that the fork's credential will open the survivor.
+
+The human's authenticated board decision or approval of the exact typed merge
+request performs the move. A content digest binds both incarnations and movable
+inputs, but grants no authority; execution repeats the authority and live-source
+checks on the writer. A stale approval leaves both the mailbox and response
+unchanged. New merge ops record the actual actor, authority and measured binding;
+old ops retain historical semantics. Pending merge pairs require nonce-based
+recovery, and the survivor retains that protection after inherited mail expires.
+Separate incoming and outgoing ownership serials grant only the recipient/sender
+incarnation that received them; a later reused ID does not inherit those grants.
+The existing cookie/page-key/CSRF gates cover the human merge route as well.
+
 **The wake path is a nudge, and it is deliberately free to call.** Because
 `hook_poll` is token-less, a caller naming somebody else's session receives that
 agent's bounded hook digest, and nothing on that path can tell the two callers

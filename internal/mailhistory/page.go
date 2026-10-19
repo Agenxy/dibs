@@ -186,6 +186,7 @@ func (i *Index) authorizedUnit(reader *unitReader, u snapshotUnit, agent *core.A
 	m := core.Message{
 		From: latest.Metadata.From, To: latest.Metadata.To,
 		AdoptedFrom: latest.Metadata.AdoptedFrom, AdoptedAt: latest.Metadata.AdoptedAt,
+		MergedSentAt: latest.Metadata.MergedSentAt,
 	}
 	allowed, _ := core.MessageAccess(u.Position.Msg, &m, agent)
 	return allowed, nil

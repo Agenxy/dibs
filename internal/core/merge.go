@@ -33,6 +33,11 @@ import (
 // Apply over ops accepted by older code, and the daemon would refuse its own
 // ledger.
 func (s *State) applyMerge(op *Op, now time.Time) (Result, []Event, error) {
+	if op.MergeActor != nil {
+		res, evs := s.mergeSupported(op.To, op.MergeInto, op.MergeActor, now)
+		res["serial"] = s.finish(&evs, now)
+		return res, evs, nil
+	}
 	if err := s.checkMerge(op); err != nil {
 		return nil, nil, err
 	}

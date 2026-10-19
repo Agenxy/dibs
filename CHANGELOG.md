@@ -5,6 +5,18 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Duplicate identities now have a supported merge preview and human board
+  control. Coordinators can repair a matching, unbound, non-live fork into its
+  newer third-party survivor; other eligible repairs go through a typed human
+  request whose Approve performs the move. Stale previews and approvals refuse
+  without changes. Incoming and outgoing conversations remain readable by the
+  survivor, and claims and space relationships move. Coordinator merges retire
+  source-only credentials with `E_SEAT_MERGED`; human/admin merges explicitly
+  authorize transferring them. Canonical survivor recovery remains available, and
+  the source closes with an actor/time audit. Roles and session bindings stay
+  with the survivor. Active/live sources and conflicting claims are refused.
+  Session detail also shows host-paired bindings and the current app thread.
+
 ### Changed
 
 - Registration, resume and check-in reply boards are projected only for live

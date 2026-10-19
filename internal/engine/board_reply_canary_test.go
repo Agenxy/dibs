@@ -39,24 +39,26 @@ func TestLiveBoardReplyProjectionPreservesBytesAndFold(t *testing.T) {
 		{"ordinary-send", core.Op{Kind: core.OpSendMessage, Token: "alpha-token-4", To: "beta", MsgType: core.MsgQuestion, Body: "canary evidence"}},
 		{"session-reattach", core.Op{Kind: core.OpRegister, Name: "beta", NewToken: "beta-return", SessionID: "beta-s", V7Semantics: true}},
 	}
-	// Recorded from the live writer on unmodified main 066a64c. These guard
-	// result bytes and canonical state/events independently of the new projector.
+	// Fold hashes recorded on unmodified main 066a64c remain unchanged. Reply
+	// hashes include the supported-merge sessions and possible_forks additions;
+	// a full payload comparison with main 22ec1f1 found only those new fields.
+	// Everything else, including the checkpoint assertion, remains byte-exact.
 	want := map[string][2]string{
-		"session-reattach":  {"1b98b40025151dcea3465cb40fd25ab23e35266a16c927e1180f3f815600465b", "95beb7f6b6176a11a1fc2afffd23e08e8349e13272742f2ad98e174432e750cd"},
-		"fresh":             {"4fb158f89507f5fc75cb525474a8132722990b632057782daf7fb8bbaaf533c5", "fb004d16856ab620f28405fbd5f73df8d73ff19da14a2e5266afda5d7f0485ad"},
-		"register-retry":    {"95036c23a0bd3acbf242dad95fdc98c5666f644cb0d0172557b53f98301e88c7", "fb004d16856ab620f28405fbd5f73df8d73ff19da14a2e5266afda5d7f0485ad"},
-		"ack":               {"ca0c4ba2d24d197f170f39dc41af37d052a9a3ace1c004a7b019588dcb258b76", "b67600c226c7d76efd869de5a580031f14515bf7422ce04ea2555f97004f27f8"},
-		"checkpoint-mail":   {"812c1044076a102e45f0ef3da97bc3da8f9f6ced34b01895a4886f21d56544ee", "04a0043ca5704e188a3b145f2437ca0bb85ede84da06f968b74052e0ddcd43c8"},
+		"session-reattach":  {"ea41d707ecef9a4fcae139000613a15f42fa6ac7832cb6cdbc4cbb63c5defe22", "95beb7f6b6176a11a1fc2afffd23e08e8349e13272742f2ad98e174432e750cd"},
+		"fresh":             {"0b72ef21291e6be89d67d82711c888c32aaaafbae585bac795763d3acc0a93ab", "fb004d16856ab620f28405fbd5f73df8d73ff19da14a2e5266afda5d7f0485ad"},
+		"register-retry":    {"8ef4e04a095df31c3d69a8282aaaa4ea7b31c020dc989ae3778e354ef4dcabd3", "fb004d16856ab620f28405fbd5f73df8d73ff19da14a2e5266afda5d7f0485ad"},
+		"ack":               {"275dfa23f310a2b7451000ab934550492f2bff519bbd37e06f10bae731556eba", "b67600c226c7d76efd869de5a580031f14515bf7422ce04ea2555f97004f27f8"},
+		"checkpoint-mail":   {"88cfa6f5f30db627d34bb0b18b2bb4d8ad2361fd60ecb9ed61eebfc6048b594a", "04a0043ca5704e188a3b145f2437ca0bb85ede84da06f968b74052e0ddcd43c8"},
 		"checkpoint-legacy": {"4062edaf750fb8074e7e83e0c9028c94e32468a8b6f1614774328ef045150f93", "87d8b3e8a771f336f43a2485a843782483e4be7e213e7646768f5c7e70692ca8"},
 		"dormant":           {"1bff1ce9494f80e149182ba3b174ede892b39b886812687bf4b5b98a801532db", "4aad0f00cb2a3377cbc054803bb01b62232764eb47aa86c50f84412e980157e0"},
-		"register-recovery": {"550ccaaaa10cbbb63256e762afa1dc7daa7f82b422c19137a73ebc8c14f9fb22", "e9a3a3cdbcf57be0145c04619b618aaa9df92f81e88d6b00cd7ac5b5cb7f0b60"},
-		"resume":            {"43cbb1f03d8234dcbe2dcd887307a9207dee3a3d2299d4f343e480b236cc941b", "8e610dab0622279d532fafc069402d003f98841a247d4c4a7e793db92a94d0d4"},
-		"resume-retry":      {"46baeb1c8ca71cc43b24ece1c70a26c889a1bea98f7bde0d2550b9b68a871cb4", "8e610dab0622279d532fafc069402d003f98841a247d4c4a7e793db92a94d0d4"},
-		"resume-next":       {"77bcc83c42250a05eb6ede992a193db381b9a20f89644a614ec6cf8704b7e2ac", "0787366c37374d8f1c733d49df67f9a45953967641b4ee62f6805540e2f607f9"},
+		"register-recovery": {"f1e9a76b2f194e3e9ed10c2be686623859612abbbd9db54bbc35ebaba2499bfe", "e9a3a3cdbcf57be0145c04619b618aaa9df92f81e88d6b00cd7ac5b5cb7f0b60"},
+		"resume":            {"c928f16d203376d605288112e8d89f160f7f14f069d4c0003218ab4d8533908b", "8e610dab0622279d532fafc069402d003f98841a247d4c4a7e793db92a94d0d4"},
+		"resume-retry":      {"3e57fa1ad9f26333f976eb0fd30661ce514f31fb489dd89443139c1de1b14733", "8e610dab0622279d532fafc069402d003f98841a247d4c4a7e793db92a94d0d4"},
+		"resume-next":       {"cafdb24c70d1fb416111434e3284406b90fe76efc65d43b98772b365f035c7f9", "0787366c37374d8f1c733d49df67f9a45953967641b4ee62f6805540e2f607f9"},
 		"superseded":        {"8af232467d3e1981cfb33b9963dd21ea485b69d944ef0002bf886fd604ce82d8", "0787366c37374d8f1c733d49df67f9a45953967641b4ee62f6805540e2f607f9"},
-		"session-retry":     {"c2764c196794fe18f0b293b7cda0bda8b333e3dbd85ad18d95f2a98438ad783f", "b7a5caa8eb798eaa746e23f2acbab6efb7128a55a8da7d2934aed7c865ceaa05"},
-		"second-agent":      {"b7ecd707ce94abde76055d70dc00adcb4e002dfe23c920c7932ad45b7d5b14c0", "2a9a5a748e02a32e367ed2619beaa2bbe08f3f089dfc815903aee9e57a1c5b41"},
-		"second-ack":        {"3129334d3b096bea98644c40ac3c7e3f9d9643ed5eb14f0a5917f5c6f6bc4b74", "2328d958944e28e7b894a902cb14eba9be52ca61c8ac82e5288e91d1ce3a78b0"},
+		"session-retry":     {"5d26e9742d928f6c04821f3532320aae3d8bf0a426a566f2c1e8f4e84e5285f1", "b7a5caa8eb798eaa746e23f2acbab6efb7128a55a8da7d2934aed7c865ceaa05"},
+		"second-agent":      {"78b4eeb352e4efdd1f25c9af99e75080477ccce12615fc8b4caac9e56bf11f5b", "2a9a5a748e02a32e367ed2619beaa2bbe08f3f089dfc815903aee9e57a1c5b41"},
+		"second-ack":        {"bc4d6db61d63cd99be37e565d992651e1ab47b3e1c8544522ecce0cc1af97b94", "2328d958944e28e7b894a902cb14eba9be52ca61c8ac82e5288e91d1ce3a78b0"},
 		"ordinary-send":     {"2d95506714a5eaaa814988990761c303349737f0e142a1eefa422c8a8a38deab", "aa1f2f12c015020005c9fa62989fd7ca5f67f39357523e8ded7c68dc490fffe1"},
 	}
 	for n, entry := range steps {
@@ -77,8 +79,8 @@ func TestLiveBoardReplyProjectionPreservesBytesAndFold(t *testing.T) {
 					if !ok || !stamp.Equal(at) {
 						t.Fatalf("%s shows the caller before its checkpoint", entry.name)
 					}
-					// The sole allowed reply change: post-Apply truth replaces the
-					// old pre-checkpoint caller timestamp. No peer field is ignored.
+					// Only this timestamp is normalized: post-Apply truth replaces
+					// the old caller timestamp. No peer field is ignored.
 					row["last_coordination_at"] = time.Time{}
 				}
 			}

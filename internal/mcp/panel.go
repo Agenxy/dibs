@@ -88,7 +88,7 @@ var (
 		// The name a human chose, when the id could not carry it. Without it a
 		// fleet named in a non-Latin script reads `agent`, `agent-2`, `agent-3`.
 		"display_name",
-		"queued",
+		"queued", "possible_forks",
 	}
 	slotFields = []string{"id", "text", "refs", "dirs"}
 )
@@ -112,15 +112,15 @@ var (
 	// `attachments` is here because the panel dropped it: a message carrying a
 	// blob rendered identically to one carrying nothing, so "review the attached
 	// evidence" showed no attachment at all. The shared renderer displays them.
-	// grant and adopt are here because approving a request PERFORMS them, and a
+	// grant, adopt and merge are here because approving a request PERFORMS them, and a
 	// card that shows only the body shows only what the sender chose to say
-	// about it. Redaction blanks body and response by name; these two are the
+	// about it. Redaction blanks body and response by name; these fields are the
 	// typed effect and are exactly what the reader needs.
 	// milestones, progress and deliverable are a request as a task: drawn by
 	// the shared renderer's taskHTML.
 	msgFields = []string{
 		"serial", "type", "from", "to", "body", "response", "state", "attachments", "grant", "adopt",
-		"milestones", "progress", "deliverable",
+		"milestones", "progress", "deliverable", "merge",
 		"response_window_s",
 		"request_priority", "queue_priority", "queue_rank", "queue_by", "queue_order_locked", "queue_lock_by",
 	}
@@ -141,6 +141,9 @@ func trimBoard(b map[string]any) core.Result {
 	var agents []map[string]any
 	for _, raw := range asMaps(b["agents"]) {
 		l := pick(raw, agentFields)
+		if sessions := asMap(raw["sessions"]); sessions != nil {
+			l["sessions"] = pick(sessions, []string{"host_id", "primary", "aliases", "current", "guessed", "app_thread"})
+		}
 		var slots []map[string]any
 		for _, s := range asMaps(raw["slots"]) {
 			slots = append(slots, pick(s, slotFields))

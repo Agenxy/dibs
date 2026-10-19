@@ -541,7 +541,10 @@ type Agent struct {
 	// finds the closed fork is told where its mail went rather than that it
 	// vanished. A merge is a repair, and a repair that leaves no trace is
 	// indistinguishable from data loss.
-	MergedInto string `json:"merged_into,omitempty"`
+	MergedInto string      `json:"merged_into,omitempty"`
+	MergedBy   *MergeActor `json:"merged_by,omitempty"`
+	MergedAt   time.Time   `json:"merged_at,omitzero"`
+	MergedMail bool        `json:"merged_mail,omitempty"`
 
 	Token string `json:"-"`
 	Nonce string `json:"-"`
@@ -693,8 +696,11 @@ type Message struct {
 	// younger than the adoption and must not inherit through it. Compared
 	// against the reader's CreatedSerial. Found by the pre-release review,
 	// round four.
-	AdoptedAt uint64    `json:"adopted_serial,omitempty"`
-	Deadline  time.Time `json:"deadline,omitzero"`
+	AdoptedAt uint64 `json:"adopted_serial,omitempty"`
+	// MergedSentAt grants the survivor sender ownership at this merge serial.
+	// Separate from AdoptedAt: a conversation can have BOTH parties inherited.
+	MergedSentAt uint64    `json:"merged_sent_serial,omitempty"`
+	Deadline     time.Time `json:"deadline,omitzero"`
 	// Only new delivery-start sends set these. Historical messages keep both
 	// zero, so replay preserves the deadline written at send time.
 	ResponseWindowSec  int       `json:"response_window_s,omitempty"`
@@ -744,7 +750,8 @@ type Message struct {
 	Grant string `json:"grant,omitempty"`
 	// Adopt is the abandoned agent this request asks to reclaim, for the same
 	// reason and with the same consequence on approval.
-	Adopt string `json:"adopt,omitempty"`
+	Adopt string        `json:"adopt,omitempty"`
+	Merge *MergeRequest `json:"merge,omitempty"`
 	// Milestones, Progress and Deliverable make an approved request a task the
 	// sender can follow: the steps it named, what has been reported against
 	// them, and where the work landed. See progress.go.
@@ -880,9 +887,11 @@ type State struct {
 	Messages          map[uint64]*Message           // keyed by send serial
 	Contacts          map[uint64]*ContactEscalation // keyed by first escalation serial
 	Claims            []*Claim
-	Nonces            map[string]string    // nonce → agent_id
-	Dedup             map[string]*DedupRec // key: agent_id + "\x00" + id
-	Blobs             map[string]*Blob     // id → registry entry (bytes live in blobstore)
+	Nonces            map[string]string // nonce → agent_id
+	// Retired credentials never become fresh registrations after row retention.
+	MergedNonces map[string]MergedNonce `json:"merged_nonces,omitempty"`
+	Dedup        map[string]*DedupRec   // key: agent_id + "\x00" + id
+	Blobs        map[string]*Blob       // id → registry entry (bytes live in blobstore)
 
 	// Spaces of work, and the announcements awaiting acknowledgement in them
 	// (SPEC-CHANNELS.md). Keyed by space id and by announce serial.
@@ -901,6 +910,7 @@ func NewState(nodeID string, lim Limits) *State {
 		Messages:        map[uint64]*Message{},
 		Contacts:        map[uint64]*ContactEscalation{},
 		Nonces:          map[string]string{},
+		MergedNonces:    map[string]MergedNonce{},
 		Dedup:           map[string]*DedupRec{},
 		Blobs:           map[string]*Blob{},
 

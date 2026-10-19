@@ -56,7 +56,7 @@ func (s *State) admitOutcomePrefix(op *Op) error {
 	if l == nil || m == nil {
 		return nil // preserve authentication/missing-envelope diagnostics
 	}
-	if l.CreatedSerial > 0 && m.Serial < l.CreatedSerial && (m.To != l.ID || !s.AdoptedFor(m, l.ID)) {
+	if allowed, _ := MessageAccess(m.Serial, m, l); !allowed {
 		return errf("E_NO_MESSAGE", "read only your own retained mail; inbox lists it", "no readable outcome")
 	}
 	latest := m.LatestOutcomeSerial()

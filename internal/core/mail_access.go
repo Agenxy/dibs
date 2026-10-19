@@ -13,7 +13,7 @@ func MessageAccess(serial uint64, m *Message, reader *Agent) (allowed, inherited
 		return false, false
 	}
 	adopted := m.To == reader.ID && adoptedForReader(m, reader)
-	inherited = reader.CreatedSerial > 0 && serial < reader.CreatedSerial && !adopted
+	inherited = reader.CreatedSerial > 0 && serial < reader.CreatedSerial && !adopted && !MergedSenderOwns(m, reader)
 	return !inherited && (m.From == reader.ID || m.To == reader.ID), inherited
 }
 
@@ -22,4 +22,11 @@ func adoptedForReader(m *Message, reader *Agent) bool {
 		return false
 	}
 	return reader == nil || reader.CreatedSerial == 0 || m.AdoptedAt >= reader.CreatedSerial
+}
+
+// MergedSenderOwns grants only the incarnation that received the sender side.
+// A later occupant of the same public id is younger than this recorded grant.
+func MergedSenderOwns(m *Message, reader *Agent) bool {
+	return m != nil && reader != nil && m.From == reader.ID && m.MergedSentAt > 0 &&
+		(reader.CreatedSerial == 0 || m.MergedSentAt >= reader.CreatedSerial)
 }

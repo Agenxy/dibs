@@ -50,7 +50,8 @@ func (i *Index) Observe(rec Record, before Snapshot, st *core.State, op *core.Op
 func ownershipChanged(before Snapshot, st *core.State) bool {
 	for serial, old := range before.Mail {
 		if m := st.Messages[serial]; m != nil &&
-			(m.From != old.From || m.To != old.To || m.AdoptedFrom != old.AdoptedFrom || m.AdoptedAt != old.AdoptedAt) {
+			(m.From != old.From || m.To != old.To || m.AdoptedFrom != old.AdoptedFrom ||
+				m.AdoptedAt != old.AdoptedAt || m.MergedSentAt != old.MergedSentAt) {
 			return true
 		}
 	}

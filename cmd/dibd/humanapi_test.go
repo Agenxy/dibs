@@ -336,3 +336,51 @@ func TestTheBoardsSecretIsNotAPerson(t *testing.T) {
 		t.Errorf("a stranger's signature opened a session: %d", code)
 	}
 }
+
+func TestApprovingAMergeNeedsAFreshSignature(t *testing.T) {
+	h := newRelayHarness(t)
+	h.enroll()
+	ctx := context.Background()
+	source, err := h.eng.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "fork", Nonce: "fork-secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.eng.Do(ctx, &core.Op{Kind: core.OpSignOff, Token: source["token"].(string)}); err != nil {
+		t.Fatal(err)
+	}
+	into, err := h.eng.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "survivor", Nonce: "survivor-secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := h.eng.MergeAgents(ctx, into["token"].(string), source["agent_id"].(string), into["agent_id"].(string),
+		engine.MergeOptions{DryRun: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	serial := h.agentSends("requester", core.Op{MsgType: core.MsgRequest, Body: "repair", Merge: &core.MergeRequest{
+		From: source["agent_id"].(string), Into: into["agent_id"].(string), Fence: plan["fence"].(string),
+	}})
+	auth := map[string]string{"Authorization": "Bearer " + h.session()}
+	code, _ := h.post("/api/human/answer", auth, map[string]any{"serial": serial, "disposition": "approve"})
+	if code != http.StatusUnauthorized {
+		t.Fatalf("session-only merge approval answered %d", code)
+	}
+	if stateOf(t, h.eng, serial) != "open" {
+		t.Fatal("unsigned merge was applied")
+	}
+	nonce, node := h.challenge()
+	code, out := h.post("/api/human/answer", auth, map[string]any{
+		"serial": serial, "disposition": "approve", "nonce": nonce,
+		"signature": h.sign(humankey.AnswerMessage(node, serial, "approve", nonce)),
+	})
+	if code != http.StatusOK {
+		t.Fatalf("signed merge approval refused: %d %v", code, out)
+	}
+	b, err := h.eng.Board(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b["merged_agents"].([]core.Result)) != 1 {
+		t.Fatal("signed decision did not perform merge")
+	}
+}

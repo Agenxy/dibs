@@ -25,6 +25,9 @@ import (
 // Lengths first, every field included. Found by a pre-release review.
 func sendDigest(op *Op) string {
 	parts := []string{op.To, op.MsgType, op.Body, itoa(op.DeadlineSec), op.Grant, op.Adopt}
+	if op.Merge != nil {
+		parts = append(parts, "merge", op.Merge.From, op.Merge.Into, op.Merge.Fence)
+	}
 	parts = append(parts, itoa(len(op.Choices)))
 	parts = append(parts, op.Choices...)
 	parts = append(parts, itoa(len(op.Milestones)))
@@ -70,4 +73,14 @@ func digestOf(parts ...string) string {
 		h.Write([]byte(p))
 	}
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// HasIdentifiedSend lets effect ingress defer a retry to the fold's existing
+// digest-bound dedup decision. It grants no effect: a conflicting payload is
+// still refused by applySend, after normalizing attachment handles there.
+func (s *State) HasIdentifiedSend(agent, opID string) bool {
+	if opID == "" {
+		return false
+	}
+	return s.Dedup[dedupKey(agent, opID)] != nil
 }

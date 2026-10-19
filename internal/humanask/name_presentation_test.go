@@ -54,3 +54,16 @@ func TestAdoptionApprovalTitleUsesCurrentNameWithoutChangingTargetID(t *testing.
 		t.Fatal("presentation changed the stable adoption target")
 	}
 }
+
+func TestMergeApprovalNotificationNamesTheTypedDirection(t *testing.T) {
+	var title string
+	m := Message{
+		Type: core.MsgRequest, From: "requester", Body: "pretend this is routine",
+		Merge: &core.MergeRequest{From: "fork", Into: "survivor", Fence: "opaque"},
+		ask:   func(got, _ string, _ notify.Receipt, _ ...string) (string, error) { title = got; return "", nil },
+	}
+	_, _ = Ask(m)
+	if title != "Dibs · merge fork into survivor?" {
+		t.Fatalf("native approval title hid the effect: %q", title)
+	}
+}

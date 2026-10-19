@@ -286,7 +286,13 @@ func (e *Engine) prepareHumanRecipient(op *core.Op, now time.Time) error {
 	}
 	// Only the person may grant a role; addressing the alias cannot bypass
 	// that existing authorization rule.
-	if op.Grant != "" && (human == "" || op.To != human) {
+	if (op.Grant != "" || op.Merge != nil) && (human == "" || op.To != human) {
+		if op.Merge != nil {
+			return &core.Error{
+				Code: "E_MERGE_NEEDS_HUMAN", Msg: "merge approval must be addressed to the human",
+				Hint: "send(to:\"human\", type:\"request\", merge:{from,into,fence}, body:...); their Approve performs it",
+			}
+		}
 		return core.ErrGrantNeedsHuman
 	}
 	return nil

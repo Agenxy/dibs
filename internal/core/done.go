@@ -79,11 +79,11 @@ func (s *State) refuseDone(m *Message, op *Op, impliedApproval bool) error {
 			state = "pending"
 		}
 		hint := questionResponseHint(m, "done closes a request once the work is delivered; a queued "+
-			"request needs approve first, and a grant or adoption is performed by approving it")
+			"request needs approve first, and a grant, adoption or merge is performed by approving it")
 		return errf("E_BAD_DISPOSITION", hint,
 			"message %d is a %s and %s, not an approved request", m.Serial, m.Type, state)
 	}
-	if m.Grant != "" || m.Adopt != "" {
+	if m.Grant != "" || m.Adopt != "" || m.Merge != nil {
 		return errf("E_BAD_DISPOSITION",
 			"approving it already performed it: there is no work left to report",
 			"message %d carried its own effect", m.Serial)
@@ -107,7 +107,7 @@ func (s *State) refuseDone(m *Message, op *Op, impliedApproval bool) error {
 
 // approvableByDone: a plain request still waiting for its first verdict.
 func (m *Message) approvableByDone() bool {
-	return m.Type == MsgRequest && m.Grant == "" && m.Adopt == "" && !m.Terminal()
+	return m.Type == MsgRequest && m.Grant == "" && m.Adopt == "" && m.Merge == nil && !m.Terminal()
 }
 
 // ObligationWindow is how long after approval a request counts as owed work.
@@ -123,7 +123,7 @@ func (m *Message) Owed(now time.Time) bool {
 	if m.DurableDebt() {
 		return true
 	}
-	return m.Type == MsgRequest && m.State == MsgStateApproved && m.Grant == "" && m.Adopt == "" &&
+	return m.Type == MsgRequest && m.State == MsgStateApproved && m.Grant == "" && m.Adopt == "" && m.Merge == nil &&
 		m.From != m.To && now.Sub(m.TerminalAt) <= ObligationWindow
 }
 
@@ -131,5 +131,5 @@ func (m *Message) Owed(now time.Time) bool {
 // to historical approvals. It is work to recover even when its verdict is consumed.
 func (m *Message) DurableDebt() bool {
 	return m.QueueDebt && m.Type == MsgRequest && (m.State == MsgStateQueued || m.State == MsgStateApproved) &&
-		m.Grant == "" && m.Adopt == "" && m.From != m.To
+		m.Grant == "" && m.Adopt == "" && m.Merge == nil && m.From != m.To
 }

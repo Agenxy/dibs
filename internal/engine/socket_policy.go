@@ -178,10 +178,10 @@ func socketActionableNotice(n notice, l *core.Agent, request *core.Message) bool
 	if n.Kind == "message.queued" || n.Kind == "message.queue_changed" {
 		return false
 	}
-	// Ordinary approval accepts work; grant/adoption approval performs an
+	// Ordinary approval accepts work; grant/adoption/merge approval performs an
 	// effect the requester awaits. Read the typed request, never the prose.
 	if n.Kind == "message.approved" && (request == nil || request.Type != core.MsgRequest ||
-		(request.Grant == "" && request.Adopt == "")) {
+		(request.Grant == "" && request.Adopt == "" && request.Merge == nil)) {
 		return false
 	}
 	return n.Blocking && (n.Kind != "message.done" || waitingDeclaration(l))

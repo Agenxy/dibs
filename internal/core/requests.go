@@ -34,6 +34,9 @@ package core
 // agent's mailbox is recovered by its nonce, which v0.0.7 mints for every
 // registration. Found by the pre-release review, round sixty-five.
 func (s *State) HoldsAdoptedMail(agentID string) bool {
+	if a := s.Agents[agentID]; a != nil && a.MergedMail {
+		return true
+	}
 	for _, m := range s.Messages {
 		if m.To == agentID && m.AdoptedFrom != "" {
 			return true
@@ -56,10 +59,16 @@ func (s *State) HoldsAdoptedMail(agentID string) bool {
 // it read only the grant field.
 func (s *State) HasPendingEffectRequest(agentID string) bool {
 	for _, m := range s.Messages {
-		if m.From != agentID || m.Terminal() {
+		if m.Terminal() {
 			continue
 		}
-		if m.Grant != "" || m.Adopt != "" {
+		if m.Merge != nil && (m.Merge.From == agentID || m.Merge.Into == agentID) {
+			return true
+		}
+		if m.From != agentID {
+			continue
+		}
+		if m.Grant != "" || m.Adopt != "" || m.Merge != nil {
 			return true
 		}
 	}

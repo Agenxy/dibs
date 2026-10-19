@@ -12,6 +12,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/humanask"
 	"github.com/agenxy/dibs/internal/humankey"
@@ -150,5 +151,34 @@ func TestTheRelayWillNotSignForAnotherBoard(t *testing.T) {
 	}
 	if len(board.answers) != 0 {
 		t.Errorf("an answer went to the impostor: %v", board.answers)
+	}
+}
+
+func TestTheRelaySignsMergeApprovalWithItsActualDirection(t *testing.T) {
+	board := &fakeBoard{node: "node-a"}
+	srv := board.serve()
+	defer srv.Close()
+	key := &fakeSigner{}
+	var shown humanask.Message
+	ask := func(m humanask.Message) (humanask.Answer, error) {
+		shown = m
+		return humanask.Answer{Disposition: "approve"}, nil
+	}
+	r := newRelay(srv.URL, relayState{Key: "k1", Node: "node-a"}, key, ask)
+	r.handle(engine.HumanNotice{
+		Serial: 17, Type: "request", From: "requester",
+		Merge: &core.MergeRequest{From: "fork", Into: "survivor", Fence: "opaque"},
+	})
+	if shown.Merge == nil || shown.Merge.From != "fork" || shown.Merge.Into != "survivor" {
+		t.Fatal("relay dropped the typed effect before presenting it")
+	}
+	if len(key.signed) != 1 || key.signed[0] != string(humankey.AnswerMessage("node-a", 17, "approve", "n1")) {
+		t.Fatal("merge approval lacked a fresh bound signature")
+	}
+	if !strings.Contains(key.reasons[0], "merge fork into survivor") {
+		t.Fatal("signature prompt omitted actual effect")
+	}
+	if len(board.answers) != 1 || board.answers[0]["signature"] != "sig" {
+		t.Fatal("signed answer did not reach board")
 	}
 }

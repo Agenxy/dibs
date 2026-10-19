@@ -116,7 +116,8 @@ func (e *Engine) taskQueueView(agent string) []core.Result {
 func (e *Engine) prepareQueueDebt(op *core.Op) error {
 	if op.Kind == core.OpRespond && (op.Disposition == "queue" || op.Disposition == "approve") {
 		m := e.state.Messages[op.MsgSerial]
-		op.QueueDebt = m != nil && m.Type == core.MsgRequest && m.Grant == "" && m.Adopt == "" && m.From != m.To
+		op.QueueDebt = m != nil && m.Type == core.MsgRequest && m.Grant == "" && m.Adopt == "" &&
+			m.Merge == nil && m.From != m.To
 		if op.QueueDebt && !m.QueueDebt && e.state.AcceptedDebtCount(m.To) >= e.state.Limits.MaxMailboxDepth {
 			return &core.Error{
 				Code: "E_MAILBOX_FULL", Msg: "accepted work capacity reached",

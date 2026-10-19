@@ -139,7 +139,10 @@ func TestToolListingStaysAffordable(t *testing.T) {
 		// defaults before this, and the average is 762, under the standard.
 		// Trimming register, declare or send to pay for them would trade a
 		// lesson for a hint.
-		budget = 40800 // 51 x perTool, ~10.2k tokens
+		// Raised to 53 x perTool for merge_agents' dry_run/fence parameters
+		// and the typed human-request merge effect, composed with the one-call
+		// done help. The measured average is 770: wider, not wordier (189540).
+		budget = 42400 // 53 x perTool, ~10.6k tokens
 	)
 	if len(b) > budget {
 		t.Errorf("tools/list is %d chars (~%d tokens), over the %d budget. Every agent pays "+

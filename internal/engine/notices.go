@@ -531,6 +531,9 @@ func answeredNotice(ev core.Event) string {
 			return s + fmt.Sprintf(": %q's mail is now delivered to you. Call inbox: "+
 				"it is there now and was not before", from)
 		}
+		if from, _ := ev.Data["merged_from"].(string); from != "" {
+			return s + fmt.Sprintf(": %q was merged into %q; the repair is complete", from, ev.Data["merged_into"])
+		}
 		return s + ". Read it with read_mail to see what they said"
 	case "message.done":
 		if d, _ := ev.Data["deliverable"].(string); d != "" {
@@ -656,6 +659,9 @@ func (e *Engine) rebuildBlockingNotices() {
 		}
 		if m.Adopt != "" && m.State == core.MsgStateApproved {
 			ev.Data["adopted"] = m.Adopt
+		}
+		if m.Merge != nil && m.State == core.MsgStateApproved {
+			ev.Data["merged_from"], ev.Data["merged_into"] = m.Merge.From, m.Merge.Into
 		}
 		if m.State == core.MsgStateQueued {
 			ev.Data["queue_position"] = e.state.QueuePosition(m)

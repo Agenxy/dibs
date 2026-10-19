@@ -464,6 +464,7 @@ func (e *Engine) execWithReceipt(
 	// caller's to assert. Checked below, after the actor is known.
 	op.ClaimVerified = false
 	op.AdoptAuthorised = false
+	op.MergeActor = nil      // authentication decision is never caller input
 	op.DeliveryStart = false // ingress owns the new-send semantic flag
 	op.QueueDebt = false
 	op.PermissionActor = ""
@@ -906,6 +907,9 @@ func (e *Engine) execWithReceipt(
 	if err := e.refuseAmbiguousRelease(op); err != nil {
 		return nil, err
 	}
+	if err := e.prepareMergeEffect(op, actor); err != nil {
+		return nil, err
+	}
 	if err := e.prepareQueueDebt(op); err != nil {
 		return nil, err
 	}
@@ -939,6 +943,7 @@ func (e *Engine) execWithReceipt(
 		return nil, err
 	}
 	e.finishCredentialRecovery(recovery, op, res)
+	e.addAdoptionMergeHint(res, actor, op)
 	if op.Kind == core.OpUpdate && actor != nil {
 		res["name_aliases"] = e.nameAliases.Names(e.state, actor.ID)
 	}

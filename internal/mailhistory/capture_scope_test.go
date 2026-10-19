@@ -181,3 +181,22 @@ func TestAdoptionApprovalCapturesOutsideCoordinatorMailbox(t *testing.T) {
 		}
 	}
 }
+
+func TestMergeApprovalCapturesOutsideHumanMailbox(t *testing.T) {
+	st := scopeState(t)
+	scopeApply(t, st, &core.Op{Kind: core.OpSweep, StaleAgents: []string{"a"}})
+	res := scopeApply(t, st, &core.Op{
+		Kind: core.OpSendMessage, Token: "sender-token", To: "b",
+		MsgType: core.MsgRequest, Body: "repair", Merge: &core.MergeRequest{From: "a", Into: "sender"},
+	})
+	op := &core.Op{
+		Kind: core.OpRespond, Token: "b-token", MsgSerial: res["msg_serial"].(uint64),
+		Disposition: "approve", MergeActor: &core.MergeActor{ID: "b", Authority: "human"},
+	}
+	assertScopeCoverage(t, st, op, len(st.Messages))
+	for _, m := range st.Messages {
+		if m.To == "a" {
+			t.Fatal("actual effect left source mail behind")
+		}
+	}
+}

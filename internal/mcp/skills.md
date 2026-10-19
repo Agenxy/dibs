@@ -597,6 +597,26 @@ It needs the human at the machine (`human_unlock`), a coordinator or an admin.
 Taking another agent's mail is otherwise exactly the thing Dibs must never
 allow, so there is no agent-to-agent version of this and there will not be one.
 
+For a permanent duplicate repair, preview
+`merge_agents(agent:"<fork>", into:"<survivor>", dry_run:true)`, inspect the
+metadata counts and direction, then repeat with its `fence`. A coordinator can
+merge only a matching, unbound, non-live, undeclared fork into a newer survivor
+whose recorded session is a third party. The survivor keeps its own identity,
+role and session. Coordinator merges retire source-only credentials with
+`E_SEAT_MERGED`; use the survivor's own nonce. A human/admin merge may transfer
+the fork's credential, with that effect stated in the preview or approval.
+Incoming and outgoing mail, claims and space relationships move. The source
+closes. Adoption remains a one-time incoming-mail recovery and leaves its source.
+
+If coordinator execution is refused, the preview's `human_request` is a complete
+`send` shape: add your token and send it. Its typed `merge:{from,into,fence}`
+means the person's Approve performs the repair; no terminal step follows.
+A stale decision changes nothing: obtain a new preview. The human may override
+identity matches, bound sessions, declarations and recency, but must first stop
+an active/live source and resolve conflicting claims. A bare false process
+probe is not proof of absence. Source declarations remain on the retired row,
+as the preview states. No merge moves a role or relocates a session.
+
 ### When the board is waking the wrong agent
 
 `update(release_session: true)` gives up **every** session bound to you: the

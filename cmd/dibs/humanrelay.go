@@ -423,7 +423,7 @@ func (r *relay) handle(n engine.HumanNotice) {
 	a, err := r.ask(humanask.Message{
 		Type: n.Type, Priority: n.Priority, From: n.From, FromName: n.FromName, Who: n.Who, Body: n.Body,
 		Contact: n.Contact,
-		Choices: n.Choices, Grant: n.Grant, Adopt: n.Adopt, AdoptName: n.AdoptName,
+		Choices: n.Choices, Grant: n.Grant, Adopt: n.Adopt, AdoptName: n.AdoptName, Merge: n.Merge,
 		Serial: n.Serial, Node: r.st.Node,
 		Receipt: func(state string) {
 			r.delivery(n.Serial, state, "")
@@ -495,7 +495,7 @@ func (r *relay) answer(n engine.HumanNotice, a humanask.Answer) error {
 		if n.AdoptName != "" && n.AdoptName != n.Adopt {
 			adopt = humanask.OneLine(n.AdoptName) + " (formerly " + n.Adopt + ")"
 		}
-		reason := "Approve: " + strings.TrimPrefix(humanask.RequestTitle(from, n.Grant, adopt), "Dibs · ")
+		reason := "Approve: " + strings.TrimPrefix(humanask.RequestTitle(from, n.Grant, adopt, n.Merge), "Dibs · ")
 		nonce, sig, err := r.challenge(func(node, nonce string) []byte {
 			return humankey.AnswerMessage(node, n.Serial, a.Disposition, nonce)
 		}, reason)

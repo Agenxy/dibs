@@ -42,7 +42,7 @@ func SenderOwnsRequest(m *Message, l *Agent) bool {
 
 func senderOwnsMessage(m *Message, l *Agent) bool {
 	return m != nil && l != nil && m.From == l.ID &&
-		(l.CreatedSerial == 0 || m.Serial >= l.CreatedSerial)
+		(l.CreatedSerial == 0 || m.Serial >= l.CreatedSerial || MergedSenderOwns(m, l))
 }
 
 func senderOwnsWithdrawable(m *Message, l *Agent) bool {
@@ -64,7 +64,7 @@ func (s *State) applyWithdraw(l *Agent, op *Op, now time.Time) (Result, []Event,
 	if op.SupersededBy != 0 {
 		replacement := s.Messages[op.SupersededBy]
 		if !senderOwnsWithdrawable(replacement, l) ||
-			replacement.Grant != "" || replacement.Adopt != "" {
+			replacement.Grant != "" || replacement.Adopt != "" || replacement.Merge != nil {
 			return nil, nil, errf("E_NO_MESSAGE", "superseded_by names another ordinary question or request YOU sent",
 				"replacement is not your ordinary question or request")
 		}
@@ -110,7 +110,7 @@ func withdrawalEligibility(m *Message) error {
 			return nil
 		}
 	case MsgStateApproved:
-		if m.Type == MsgRequest && m.Grant == "" && m.Adopt == "" {
+		if m.Type == MsgRequest && m.Grant == "" && m.Adopt == "" && m.Merge == nil {
 			return nil
 		}
 		return errf("E_MSG_FINAL", "approval already performed this effect; withdrawal cannot undo it",

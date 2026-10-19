@@ -237,7 +237,7 @@ const Board = (() => {
   // The head sits OUTSIDE the summary deliberately. It carries explainer marks
   // that are themselves buttons, and inside a summary every one of those
   // presses would also toggle the row.
-  function laneHTML(l, { selfId = null, events = null, expanded = null } = {}) {
+  function laneHTML(l, { selfId = null, events = null, expanded = null, mergeActions = null } = {}) {
     const st = l.status || "dormant"
     const self = selfId != null && l.id === selfId
     const pathsHTML = (s) =>
@@ -269,7 +269,7 @@ const Board = (() => {
       </div>`).join("")
     const detail = (declared ? pathsHTML(declared) + unchangedHTML(declared) : "") + rest +
       (declared && l.description ? `<p class="about">${esc(l.description)}</p>` : "") +
-      identHTML(l.agent)
+      identHTML(l.agent) + sessionHTML(l)
 
     // Nothing further to open is not a disclosure. An agent that has declared
     // one line and carries nothing else would otherwise offer a control that
@@ -285,6 +285,7 @@ const Board = (() => {
           ${self ? '<span class="tag self">This agent</span>' : ""}
           ${l.kind === "persistent" ? '<span class="tag">Standing</span>' : ""}
           ${agentBadges(l)}
+          ${(l.possible_forks || []).length ? explained("tag", "possible duplicate", "same-name participants; review identity and direction before merging") : ""}
           ${workHTML(l)}
           ${queueWakeHTML(l)}
           ${l.queued ? `<span class="tag">${esc(l.queued)} queued</span>` : ""}
@@ -293,7 +294,7 @@ const Board = (() => {
           <time class="age" datetime="${esc(l.last_coordination_at || "")}">${esc(ago(l.last_coordination_at))}</time>
         </div>`
 
-    const body = !lede ? "" : !more
+    const body = !lede && more ? `<details class="says"${open}><summary>Session identity</summary><div class="said">${detail}</div></details>` : !lede ? "" : !more
       ? `<p class="lede">${esc(lede)}</p>`
       : `<details class="says"${open}>
           <summary><span class="lede">${esc(lede)}</span></summary>
@@ -304,7 +305,15 @@ const Board = (() => {
       <article class="entry ${esc(st)}${self ? " self" : ""}" data-agent="${esc(l.id)}" data-recency="${recency(l.last_coordination_at)}">
         ${head}
         ${body}
+        ${mergeActions ? mergeActions(l) : ""}
       </article>`
+  }
+
+  function sessionHTML(l) {
+    const s = l.sessions
+    if (!s || !(s.primary || s.current || s.app_thread || (s.aliases || []).length)) return ""
+    const ids = [...new Set([s.primary, ...(s.aliases || []), s.current].filter(Boolean))]
+    return `<dl class="session-identity"><dt>Host</dt><dd>${esc(s.host_id || "unknown")}</dd>${s.app_thread ? `<dt>App thread</dt><dd><code>${esc(s.app_thread)}</code></dd>` : ""}${ids.map((id) => `<dt>${id === s.current ? "Current session / thread" : "Bound session"}${(s.guessed || []).includes(id) ? " (inferred)" : ""}</dt><dd><code>${esc(id)}</code></dd>`).join("")}</dl>`
   }
 
   // Grouped by COORDINATION STATE. At fifteen agents an ungrouped list buries
@@ -317,7 +326,7 @@ const Board = (() => {
   // meant to be between activations, was labelled "Idle" as though something
   // were wrong. Dibs knows an agent has spoken. It does not know what it is
   // doing, and this board must not say otherwise (SPEC §7).
-  function rosterHTML(agents, { selfId = null, empty = "", events = null, expanded = null } = {}) {
+  function rosterHTML(agents, { selfId = null, empty = "", events = null, expanded = null, mergeActions = null } = {}) {
     if (!agents || !agents.length) return empty
     // Ordered by WHAT NEEDS A PERSON, not by status name.
     //
@@ -349,7 +358,7 @@ const Board = (() => {
         <h2 class="band ${cls}" id="band-${cls}">
           <span>${esc(label)}</span><span class="n">${ls.length}</span><span class="hr"></span>
         </h2>
-        ${ls.map((l) => laneHTML(l, { selfId, events, expanded })).join("")}
+        ${ls.map((l) => laneHTML(l, { selfId, events, expanded, mergeActions })).join("")}
       </section>`).join("")
   }
 
@@ -428,6 +437,9 @@ const Board = (() => {
     if (m.grant) {
       bits.push(`approving makes <strong>${esc(m.from_name || m.from)}</strong> ` +
         `<strong>${esc(m.grant)}</strong>`)
+    }
+    if (m.merge) {
+      bits.push(`approving merges <strong>${esc(m.merge.from)}</strong> into <strong>${esc(m.merge.into)}</strong>, closing the source and moving its mailbox, claims and memberships; the fork’s credential will open <strong>${esc(m.merge.into)}</strong>`)
     }
     if (m.adopt) {
       const source = m.adopt_name && m.adopt_name !== m.adopt
