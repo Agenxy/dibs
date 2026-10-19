@@ -297,3 +297,43 @@ func TestNewMailLeadsThePageAheadOfOwedWork(t *testing.T) {
 		}
 	}
 }
+
+// An FYI a wake only ANNOUNCED is still unseen, so it leads owed work too.
+//
+// codex-k7-0, 2026-10-18: with eleven owed requests, a broadcast its wake had
+// announced (a pointer, its body trimmed) sat on page three. The first
+// unseen-first rule kept announced FYIs with the seen ones.
+func TestAnAnnouncedButUnshownFYILeadsOwedWork(t *testing.T) {
+	const version = "2026-07-28"
+	srv, _ := newServer(t)
+	eng := srv.Config.Handler.(*Server).eng
+	reader := toolCall(t, srv, "register", map[string]any{"name": "reader", "session_id": "reader-session"})
+	sender := toolCall(t, srv, "register", map[string]any{"name": "sender"})
+	for i := range 9 {
+		r := waitingCall(t, srv, version, "send", map[string]any{
+			"token": sender["token"], "to": "reader", "type": "request", "body": fmt.Sprint("work ", i),
+		})
+		waitingCall(t, srv, version, "respond", map[string]any{
+			"token": reader["token"], "msg_serial": r["msg_serial"], "disposition": "approve",
+		})
+		if err := eng.SetRateTokens(context.Background(), "reader", 60); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r := waitingCall(t, srv, version, "send", map[string]any{
+		"token": sender["token"], "to": "reader", "type": "notify", "body": strings.Repeat("broadcast ", 2000),
+	})
+	id := uint64(r["msg_serial"].(float64))
+	stop := waitingCall(t, srv, version, "hook_poll", map[string]any{"session_id": "reader-session", "event": "Stop"})
+	if !strings.Contains(fmt.Sprint(stop), "trimmed; read_mail") {
+		t.Fatalf("setup: the hook did not announce a trimmed FYI: %v", stop)
+	}
+	if m := mailboxReceipt(t, eng, id); m.NotifyAnnouncedAt == 0 || m.State != core.MsgStatePending {
+		t.Fatalf("setup: want an announced, still-pending FYI, got announced %d state %q", m.NotifyAnnouncedAt, m.State)
+	}
+	page := waitingCall(t, srv, version, "check_in", map[string]any{"token": reader["token"], "limit": 3})
+	mail, _ := page["inbox"].([]any)
+	if len(mail) == 0 || mail[0].(map[string]any)["serial"] != float64(id) {
+		t.Errorf("the announced FYI is not first ahead of owed work: %v", page["inbox"])
+	}
+}

@@ -25,7 +25,7 @@ func (e *Engine) parseMailCursor(l *core.Agent, cursor string) (mailCursor, erro
 		return c, badMailPage()
 	}
 	if c.Agent != l.ID || c.Created != l.CreatedSerial || c.Cut > e.state.Serial ||
-		c.Rank < 0 || c.Rank > 3 || c.Serial == 0 || c.Serial > c.Cut {
+		c.Rank < 0 || c.Rank > maxMailRank || c.Serial == 0 || c.Serial > c.Cut {
 		return c, badMailPage()
 	}
 	return c, nil
