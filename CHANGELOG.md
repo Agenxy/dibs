@@ -48,6 +48,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A failed first macOS display-name lookup no longer caches the network's
+  kernel hostname as a friendly name. Board projections read one immediate
+  snapshot and retry failures in the background; successful lookups replace
+  the fallback, including after an idle gap. Subprocess lookups stay off the
+  writer loop and keep their shared 100 ms limit.
+
 - A withdrawal notice cleared only on `ack`, though it said "read_mail has the
   reason". `read_mail` cleared it in memory, and every daemon restart rebuilt
   it from the ledger, so a recipient that had read it was blocked at Stop on

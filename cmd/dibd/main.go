@@ -36,6 +36,7 @@ import (
 	"github.com/agenxy/dibs/internal/build"
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/engine"
+	"github.com/agenxy/dibs/internal/hostname"
 	"github.com/agenxy/dibs/internal/invites"
 	"github.com/agenxy/dibs/internal/ledger"
 	"github.com/agenxy/dibs/internal/liveness"
@@ -282,6 +283,9 @@ func run() error {
 		return err
 	}
 	led.OnEvents = nil // replay is done; live events flow through the engine
+	// Start the display lookup without delaying engine startup. Until it lands,
+	// projections serve a marked fallback and retry failed reads asynchronously.
+	hostname.Current()
 	eng := engine.New(st, led, liveness.New(), history)
 	eng.SetHintFile(filepath.Join(*dir, "reattach-hints.json"))
 	eng.SetAdvisoryFile(filepath.Join(*dir, "scorer-advisories.json"))

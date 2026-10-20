@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	hostdisplay "github.com/agenxy/dibs/internal/hostname"
 	"github.com/agenxy/dibs/internal/overlap"
 )
 
@@ -1093,7 +1094,7 @@ func (e *Engine) execWithReceipt(
 		}
 	}
 	if board, ok := res["board"].(map[string]any); ok {
-		e.labelBoardHosts(board)
+		e.labelBoardHosts(board, hostdisplay.Current().Name)
 		e.decorateBoardQueueWakes(board, now)
 	}
 	return res, nil
