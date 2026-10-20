@@ -851,6 +851,18 @@ recipient's `respond` (responding proves receipt). GC eligibility requires
   or an envelope no longer retained; a truncation watermark identifies an older
   range, not proof that a particular serial held mail. `inbox` lists current
   mail; `mail_history` can inspect available retained ledger history.
+- **Body-free parent acknowledgement:** `ack(msg_serial)` on one's own sent
+  question/request with an outcome records the entire outstanding sender prefix,
+  including progress and queue changes, using the existing explicit `outcome_read`
+  operation. On a terminal received request it instead records only the recipient's
+  review prefix. Both preserve the envelope, consumption bit, work status,
+  milestones and the other party's prefix; no review is accepted and no work
+  is completed. Repetition appends nothing. Self-addressed outcomes include their
+  own reviews; pending self-addressed and ordinary incoming acknowledgements
+  retain their existing semantics. A pending sent ask has no outcome to clear.
+  Creation/adoption/merge fences are the same as for `read_mail`. Historical
+  `ack_message` folds are unchanged. Event serials retain their prefix-specific
+  acknowledgement behavior.
 - **Inline outcomes:** `check_in`, `inbox`, delivering lifecycle hooks and
   socket digests share a mail-first body budget of 1,600 Unicode characters,
   700 per body, and at most 16 outcome units. Unquoted selected units within a
@@ -867,9 +879,11 @@ recipient's `respond` (responding proves receipt). GC eligibility requires
   any historical op. Downgrading past this new op kind is not supported.
   Genuinely unread legacy verdicts and queue changes retain their existing
   durable read rules and still deliver after an upgrade.
-- **Reading never consumes: acknowledgement consumes.** A crash between fsync and
+- **Envelope consumption is separate from outcome/review reads.** The parent
+  acknowledgements above consume no envelope. Complete FYI presentation and
+  withdrawal reads have their explicit consumption rules. A crash between fsync and
   reply must not lose mail the caller never received, so no read (`inbox`,
-  `read_mail`, `check_in`) ever commits consumption. Consumption happens only via
+  `read_mail`, `check_in`) outside those presentation rules commits consumption. Consumption happens via
   the recipient's explicit ledgered `ack` or `respond` (see the consumed
   flag above): post-receipt by definition: the client sends it only after it has
   the body. Until consumed, the message keeps appearing in `inbox`/checkpoints

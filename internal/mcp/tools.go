@@ -455,8 +455,10 @@ var toolDefs = func() []map[string]any {
 			}, "token", "agent", "locked"),
 		},
 		{
-			"name": "ack", "description": "Dismiss a progress/review event without reviewing work. For mail, close a FYI " +
-				"or consume finished mail (sender notified). read_mail(request serial) clears its notices.",
+			"name": "ack", "description": "Read outstanding updates without returning bodies: on your sent ask, " +
+				"clear outcomes/progress/queue changes; on a received request, clear its reviews. " +
+				"Does not accept work, finish it or consume the request. Event serials dismiss their progress/review prefix. " +
+				"For other mail, close a FYI or consume finished mail (sender notified).",
 			"inputSchema": obj(map[string]any{
 				"token": tok, "msg_serial": num("serial of the message"),
 			}, "token", "msg_serial"),
