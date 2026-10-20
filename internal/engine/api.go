@@ -654,10 +654,7 @@ func (e *Engine) ReadMail(ctx context.Context, token string, serial uint64, incl
 		}
 		// Capture the exact unread prefix before noteOutcomeRead advances it.
 		// This is a reply projection, never a different kind of durable read.
-		var updates []core.Result
-		if !includeBody && m.From == l.ID && m.To != l.ID && m.Terminal() {
-			updates = e.unreadMailUpdates(m)
-		}
+		updates := e.mailReadUpdates(m, l, includeBody)
 		if m.To == l.ID && m.State == core.MsgStatePending {
 			_, _ = e.applyAndLedger(&core.Op{Kind: core.OpMarkDelivered, MsgSerials: []uint64{serial}}, now)
 		}
@@ -702,12 +699,7 @@ func (e *Engine) ReadMail(ctx context.Context, token string, serial uint64, incl
 			}
 			res = e.messageReadResult(m)
 		}
-		if len(updates) > 0 {
-			res["message"] = e.outcomeReadHeader(m, now)
-			res["updates"] = updates
-			delete(res, "milestone_reviews")
-		}
-		return res
+		return e.projectMailRead(m, res, updates, now)
 	})
 }
 

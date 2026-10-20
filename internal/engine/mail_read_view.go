@@ -10,6 +10,22 @@ import (
 	"github.com/agenxy/dibs/internal/core"
 )
 
+func (e *Engine) mailReadUpdates(m *core.Message, reader *core.Agent, includeBody bool) []core.Result {
+	if includeBody || m.From != reader.ID || m.To == reader.ID || !m.Terminal() {
+		return nil
+	}
+	return e.unreadMailUpdates(m)
+}
+
+func (e *Engine) projectMailRead(m *core.Message, res core.Result, updates []core.Result, now time.Time) core.Result {
+	if len(updates) > 0 {
+		res["message"] = e.outcomeReadHeader(m, now)
+		res["updates"] = updates
+		delete(res, "milestone_reviews")
+	}
+	return res
+}
+
 func (e *Engine) unreadMailUpdates(m *core.Message) []core.Result {
 	selected := e.outcomeUnits(m)
 	if len(selected) == 0 {

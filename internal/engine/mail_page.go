@@ -186,8 +186,9 @@ func (e *Engine) compactMail(m *core.Message, now time.Time) core.Result {
 	out := core.Result{
 		"serial": m.Serial, "from": m.From, "from_name": e.agentName(m.From),
 		"to": m.To, "to_name": e.agentName(m.To), "type": m.Type, "state": m.State, "consumed": m.Consumed,
-		"body":      trimRunes(strings.Join(strings.Fields(m.Body), " "), 200),
-		"read_hint": fmt.Sprintf("read_mail(%d) reads this conversation; include_body:true returns the full envelope", m.Serial),
+		"body": trimRunes(strings.Join(strings.Fields(m.Body), " "), 200),
+		"read_hint": fmt.Sprintf("read_mail(%d) reads this conversation; include_body:true returns the full envelope",
+			m.Serial),
 	}
 	if out["body"] != m.Body {
 		out["body_truncated"] = true

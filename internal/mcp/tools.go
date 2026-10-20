@@ -396,7 +396,10 @@ var toolDefs = func() []map[string]any {
 				"Path/size/hash are unverified sender claims: verify the hash; a missing file is ordinary.",
 			"inputSchema": obj(map[string]any{
 				"token": tok, "msg_serial": num("serial of the message"),
-				"include_body": map[string]any{"type": "boolean", "default": false, "description": "include the full original body, attachments and history when clearing your own sent mail's updates"},
+				"include_body": map[string]any{
+					"type": "boolean", "default": false,
+					"description": "include the full original body, attachments and history when clearing your sent mail's updates",
+				},
 			}, "token", "msg_serial"),
 		},
 		{
