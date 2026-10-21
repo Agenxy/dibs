@@ -37,6 +37,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   redraw cannot leave it measuring a retired row's empty computed style. A real
   host-redraw guard preserves the existing colour assertions and deadlines.
 
+- The stdio bridge reads its own process start time directly from the kernel on
+  macOS and Linux. Its first registration no longer waits for a forked process
+  inventory before forwarding the request; verification of other processes keeps
+  the existing inventory path.
+
 - A coordinator `broadcast` no longer reaches the person's seat or the
   daemon's own reporting row. Both are rows on the board but not agents, and a
   broadcast survey question reached the person as a desktop dialog asking them
