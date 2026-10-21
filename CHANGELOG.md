@@ -18,6 +18,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   0.51.0; e2e suite @modelcontextprotocol/sdk 1.32.1 and playwright 1.64.1;
   CI actions jdx/mise-action 5.2.0, upload-artifact 7.0.2, download-artifact
   8.0.2.
+- `respond(accept)` with no milestone on a request already reported done
+  accepts the delivery as a whole, instead of demanding a step number.
+- FYIs a wake already announced no longer count in the `waiting` line on
+  every write ("N announced FYIs awaiting presentation"), and the prompt hook
+  no longer repeats owed requests. `check_in` and `inbox` still count both.
+- `respond` results cap `owes` and `task_queue` at 8 entries, with
+  `owes_count` and `more_task_queue` for the rest.
+- The clearing hint names `ack(N)` (no bodies) beside `read_mail(N)`.
 
 ### Fixed
 

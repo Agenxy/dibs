@@ -837,7 +837,7 @@ func waitingReadHint(mail, announced int, notices []notice) string {
 			continue
 		}
 		if !seen[n.Msg] {
-			parents = append(parents, fmt.Sprintf("read_mail(%d)", n.Msg))
+			parents = append(parents, "#"+strconv.FormatUint(n.Msg, 10))
 			seen[n.Msg] = true
 		}
 	}
@@ -846,7 +846,11 @@ func waitingReadHint(mail, announced int, notices []notice) string {
 		reads = append(reads, "call inbox for mail, announcements and other updates")
 	}
 	if len(parents) > 0 {
-		reads = append(reads, strings.Join(parents, ", ")+" to read and clear their updates")
+		// The cheap call first: ack reads the update units durably without
+		// returning the envelope, which read_mail repeats in full (one
+		// agent paid about 10k tokens per clear; 2026-10-21 survey).
+		reads = append(reads, "updates on "+strings.Join(parents, ", ")+
+			": ack(N) to clear without bodies; read_mail(N) to read and clear")
 	}
 	return strings.Join(reads, "; ") + "."
 }
@@ -858,6 +862,14 @@ func (e *Engine) unreadAndOldest(agent string) (int, time.Time) {
 	var oldest time.Time
 	for _, m := range e.state.Inbox(agent) {
 		if m.State != core.MsgStatePending && m.State != core.MsgStateDelivered {
+			continue
+		}
+		// An FYI a wake already ANNOUNCED has had its reminder (FYIs are read
+		// once, never nagged). Counting it here appended "43 announced FYIs
+		// awaiting presentation" to every send, declare and respond reply
+		// (agenxy-dev-0, gpt-agenxy-dev-1, 2026-10-21 survey). check_in and
+		// inbox still list them, first among seen mail.
+		if m.Type == core.MsgNotify && m.NotifyAnnouncedAt >= max(m.AdoptedAt, 1) {
 			continue
 		}
 		n++

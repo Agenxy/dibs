@@ -337,3 +337,31 @@ func TestAnAnnouncedButUnshownFYILeadsOwedWork(t *testing.T) {
 		t.Errorf("the announced FYI is not first ahead of owed work: %v", page["inbox"])
 	}
 }
+
+// An FYI a wake already announced is not repeated on every write: "43
+// announced FYIs awaiting presentation" rode on each send, declare and respond
+// reply (agenxy-dev-0, gpt-agenxy-dev-1, 2026-10-21 survey). check_in still
+// counts and lists it.
+func TestAnAnnouncedFYIIsNotRepeatedOnEveryWrite(t *testing.T) {
+	const version = "2026-07-28"
+	srv, _ := newServer(t)
+	eng := srv.Config.Handler.(*Server).eng
+	reader := toolCall(t, srv, "register", map[string]any{"name": "reader", "session_id": "reader-session"})
+	sender := toolCall(t, srv, "register", map[string]any{"name": "sender"})
+	r := waitingCall(t, srv, version, "send", map[string]any{
+		"token": sender["token"], "to": "reader", "type": "notify", "body": strings.Repeat("broadcast ", 2000),
+	})
+	id := uint64(r["msg_serial"].(float64))
+	waitingCall(t, srv, version, "hook_poll", map[string]any{"session_id": "reader-session", "event": "Stop"})
+	if m := mailboxReceipt(t, eng, id); m.NotifyAnnouncedAt == 0 || m.State != core.MsgStatePending {
+		t.Fatalf("setup: want an announced, still-pending FYI, got announced %d state %q", m.NotifyAnnouncedAt, m.State)
+	}
+	written := waitingCall(t, srv, version, "update", map[string]any{"token": reader["token"], "description": "routine"})
+	if w, _ := written["waiting"].(string); strings.Contains(w, "announced") || strings.Contains(w, "unread") {
+		t.Errorf("a routine write repeated the announced FYI: %q", w)
+	}
+	page := waitingCall(t, srv, version, "check_in", map[string]any{"token": reader["token"]})
+	if counts, _ := page["mail_counts"].(map[string]any); counts["announced_fyis"] != float64(1) {
+		t.Errorf("check_in must still count it: %v", page["mail_counts"])
+	}
+}

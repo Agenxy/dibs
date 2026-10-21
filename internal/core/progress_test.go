@@ -244,3 +244,24 @@ func TestApprovingWithTheSendersOwnMilestonesIsNotAConflict(t *testing.T) {
 		t.Errorf("approve rewriting the sender's steps gave %v", err)
 	}
 }
+
+// On a DONE request, accept with no milestone accepts the delivery as a whole.
+// Four agents in the 2026-10-21 survey were refused and had to guess a number.
+func TestAcceptingAFinishedRequestNeedsNoMilestone(t *testing.T) {
+	s := NewState("n1", DefaultLimits())
+	reg(t, s, "lead", "tl", t0)
+	reg(t, s, "worker", "tw", t0)
+	mustApply(t, s, &Op{Kind: OpAckBoard, Token: "tl"}, t0)
+	serial := mustApply(t, s, &Op{
+		Kind: OpSendMessage, Token: "tl", To: "worker", MsgType: MsgRequest,
+		Body: "x", OpID: "a", Milestones: []string{"one", "two"},
+	}, t0)["msg_serial"].(uint64)
+	mustApply(t, s, &Op{Kind: OpRespond, Token: "tw", MsgSerial: serial, Disposition: "approve"}, t0)
+	if _, _, err := s.Apply(&Op{Kind: OpRespond, Token: "tl", MsgSerial: serial, Disposition: "accept"}, t0); codeOf(err) != "E_BAD_ARG" {
+		t.Errorf("accept with no milestone on unfinished work gave %v; it still names a step", err)
+	}
+	mustApply(t, s, &Op{Kind: OpRespond, Token: "tw", MsgSerial: serial, Disposition: "done", Body: "shipped"}, t0)
+	if _, _, err := s.Apply(&Op{Kind: OpRespond, Token: "tl", MsgSerial: serial, Disposition: "accept"}, t0); err != nil {
+		t.Errorf("accepting the finished delivery: %v", err)
+	}
+}
