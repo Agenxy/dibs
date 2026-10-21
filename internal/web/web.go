@@ -142,14 +142,18 @@ func (s *Server) help(w http.ResponseWriter, _ *http.Request) {
 // boardJSON is the payload both the bootstrap and the stream carry: the same
 // shape the MCP Apps panel receives, so one set of components renders both.
 func (s *Server) boardJSON(r *http.Request) ([]byte, error) {
-	b, _, err := s.boardJSONAt(r)
+	b, _, err := s.boardJSONView(r, false)
 	return b, err
 }
 
 // boardJSONAt also reports the serial the snapshot represents, so an SSE frame
 // can advertise an id a client can actually resume from.
 func (s *Server) boardJSONAt(r *http.Request) ([]byte, uint64, error) {
-	board, err := s.operatorBoard(r.Context())
+	return s.boardJSONView(r, true)
+}
+
+func (s *Server) boardJSONView(r *http.Request, measure bool) ([]byte, uint64, error) {
+	board, err := s.operatorBoard(r.Context(), measure)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -196,7 +200,7 @@ func (s *Server) boardJSONAt(r *http.Request) ([]byte, uint64, error) {
 // the mailbox in the response. The page fetches mail from /api/messages, which
 // requires the page key, immediately after this paints.
 func (s *Server) indexData(r *http.Request) (map[string]any, error) {
-	board, err := s.operatorBoard(r.Context())
+	board, err := s.operatorBoard(r.Context(), true)
 	if err != nil {
 		return nil, err
 	}
@@ -227,12 +231,16 @@ func (s *Server) indexData(r *http.Request) (map[string]any, error) {
 
 // Probe outside the writer and show one persistent diagnosis on every board
 // view. No timer or setting mutation is introduced; normal reads re-measure it.
-func (s *Server) operatorBoard(ctx context.Context) (core.Result, error) {
+func (s *Server) operatorBoard(ctx context.Context, measure bool) (core.Result, error) {
 	board, err := s.eng.Board(ctx)
 	if err != nil {
 		return nil, err
 	}
-	board["notification_advice"] = notify.CurrentApprovalAdvice()
+	advice := notify.RecordedApprovalAdvice()
+	if measure {
+		advice = notify.CurrentApprovalAdvice()
+	}
+	board["notification_advice"] = advice
 	return board, nil
 }
 
@@ -378,7 +386,7 @@ func (s *Server) sse(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) apiBoard(w http.ResponseWriter, r *http.Request) {
-	res, err := s.operatorBoard(r.Context())
+	res, err := s.operatorBoard(r.Context(), true)
 	writeJSON(w, res, err)
 }
 

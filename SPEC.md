@@ -1683,8 +1683,10 @@ state-only dismissal receipt; different sources keep their own observations.
 Banners on a request recommend System Settings > Notifications > Dibs > Alerts,
 because the Approve controls should persist. The human board shows a persistent
 notice: "Dibs approval requests appear as banners and vanish. Set System
-Settings > Notifications > Dibs > Alert style: Alerts." Normal board reads measure settings
-outside the engine writer. Unknown observations retain an existing warning;
+Settings > Notifications > Dibs > Alert style: Alerts." First paint, board API
+reads and the existing 30-second SSE refresh measure settings outside the engine
+writer; event-driven frames use cached advice without another helper invocation.
+Unknown observations retain an existing warning;
 observed Alerts clears it. Doctor reports the same advice. A desktop approval
 send includes that advice when the posting process's latest native observation
 reports banners: startup/status probes and local posting receipts supply that

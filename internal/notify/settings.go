@@ -129,6 +129,15 @@ func CurrentApprovalAdvice() string {
 		return ""
 	}
 	ReachWithSettings()
+	return RecordedApprovalAdvice()
+}
+
+// RecordedApprovalAdvice reads the persistent diagnosis without a status probe.
+// Event-driven board updates use this; existing refresh snapshots re-measure.
+func RecordedApprovalAdvice() string {
+	if goos != "darwin" {
+		return ""
+	}
 	lastNativeSettings.RLock()
 	defer lastNativeSettings.RUnlock()
 	return lastNativeSettings.advice

@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"html"
@@ -177,6 +178,54 @@ func runBannerAdviceSurfaces(t *testing.T) {
 			if strings.Contains(tag, "hidden") == want || strings.Contains(text, advice) != want {
 				t.Errorf("persistent board warning visible=%t; tag=%q text=%q", want, tag, text)
 			}
+			if style == "banner" {
+				assertBannerEventUsesCachedAdvice(t, freshBoard, marker, func() {
+					f.direct(t, "send", map[string]any{"token": token, "to": "sender", "type": "notify", "body": "frame fixture"})
+				})
+			}
 		})
+	}
+}
+
+func assertBannerEventUsesCachedAdvice(t *testing.T, board *httptest.Server, marker string, send func()) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, board.URL+"/events", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := board.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	r := bufio.NewReader(resp.Body)
+	frame := func() string {
+		t.Helper()
+		var b strings.Builder
+		for {
+			line, err := r.ReadString('\n')
+			if err != nil {
+				t.Fatal(err)
+			}
+			b.WriteString(line)
+			if line == "\n" {
+				return b.String()
+			}
+		}
+	}
+	if !strings.Contains(frame(), "notification_advice") {
+		t.Fatal("initial SSE snapshot omitted advice")
+	}
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
+	}
+	send()
+	if !strings.Contains(frame(), "Dibs approval requests appear as banners and vanish.") {
+		t.Fatal("event-driven frame omitted recorded banner advice")
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatal("an ordinary mail frame launched another native settings probe")
 	}
 }
