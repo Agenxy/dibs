@@ -49,6 +49,20 @@ function check(name: string, cond: boolean, detail = "") {
   else { failures++; console.log(`  \x1b[31m✗\x1b[0m ${name}${detail ? ". " + detail : ""}`) }
 }
 
+function livePipSnapshot() {
+  // Playwright's locator resolves a handle before a separate evaluate call.
+  // The panel may redraw in between. Query and measure the current node in
+  // this one browser turn; do not measure the handle that got us here.
+  const el = document.querySelector(".entry.active .pip")
+  if (!el) throw new Error("no active pip in the current panel")
+  const row = el.closest(".entry")
+  const style = getComputedStyle(el)
+  return {
+    connected: el.isConnected, row: row?.className,
+    color: style.backgroundColor, live: style.getPropertyValue("--live"),
+  }
+}
+
 const dir = mkdtempSync(join(tmpdir(), "agents-e2e-"))
 const dibd = process.env.DIBD ?? `${process.env.HOME}/.local/bin/dibd`
 const daemon = Bun.spawn({
@@ -753,14 +767,7 @@ try {
 
   // Real CSS: the live pip must actually be the live colour, not merely classed.
   const pipState = await panel.locator(".entry.active .pip").first()
-    .evaluate((el) => {
-      const row = el.closest(".entry")
-      const style = getComputedStyle(el)
-      return {
-        connected: el.isConnected, row: row?.className,
-        color: style.backgroundColor, live: style.getPropertyValue("--live"),
-      }
-    })
+    .evaluate(livePipSnapshot)
   const pipColour = pipState.color
   // WHY an agent stopped counting as live has to survive the panel's field
   // allowlist (trimBoard). It is dropped silently if it does not: a field
@@ -790,6 +797,37 @@ try {
   check("an active agent's pip is rendered in the live colour",
     pipColour !== "rgba(0, 0, 0, 0)" && pipColour !== "",
     JSON.stringify(pipState))
+
+  // A push may replace the row between Playwright selecting its handle and
+  // running the measurement in a second browser call. Drive that exact gap
+  // through the real host, then use the SAME reader as the ordinary check.
+  {
+    const selected = await panel.locator(".entry.active .pip").first().elementHandle()
+    if (!selected) throw new Error("redraw control: no active pip to select")
+    const before = await selected.evaluate((el) => ({
+      connected: el.isConnected, color: getComputedStyle(el).backgroundColor,
+      agent: el.closest(".entry")?.getAttribute("data-agent"),
+    }))
+    if (!before.connected || !before.color || !before.agent)
+      throw new Error("redraw control: setup did not select an attached colored pip: " + JSON.stringify(before))
+    const without = structuredClone(boardResult)
+    without._meta["com.dibs/panel"].board.agents =
+      without._meta["com.dibs/panel"].board.agents.filter((agent: any) => agent.id !== before.agent)
+    await page.evaluate((r) => (window as any).__deliver(r), without)
+    await panel.locator(`.entry[data-agent="${before.agent}"]`).waitFor({ state: "detached", timeout: 8000 })
+    await panel.locator(".entry.active .pip").first().waitFor({ timeout: 8000 })
+    check("a real panel redraw retires the selected pip",
+      !(await selected.evaluate((el) => el.isConnected)))
+    const current = await selected.evaluate(livePipSnapshot)
+    check("the pip reader measures a current node after a redraw", current.connected,
+      JSON.stringify(current))
+    check("and still measures its live colour",
+      current.color !== "rgba(0, 0, 0, 0)" && current.color !== "",
+      JSON.stringify(current))
+    await selected.dispose()
+    await page.evaluate((r) => (window as any).__deliver(r), boardResult)
+    await panel.locator(`.entry[data-agent="${before.agent}"]`).first().waitFor({ timeout: 8000 })
+  }
 
   // ── mail ─────────────────────────────────────────────────────────────────
   await panel.locator('.views button[data-view="mail"]').click()

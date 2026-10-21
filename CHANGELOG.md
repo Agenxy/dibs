@@ -33,6 +33,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The panel e2e measures the current live pip in one browser call, so a board
+  redraw cannot leave it measuring a retired row's empty computed style. A real
+  host-redraw guard preserves the existing colour assertions and deadlines.
+
 - A coordinator `broadcast` no longer reaches the person's seat or the
   daemon's own reporting row. Both are rows on the board but not agents, and a
   broadcast survey question reached the person as a desktop dialog asking them
