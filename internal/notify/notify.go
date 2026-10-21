@@ -612,6 +612,9 @@ func Reach() (ok bool, why string) {
 // ReachWithSettings uses the same single permission-free status probe as
 // Reach, exposing its observation so doctor can classify actual settings.
 func ReachWithSettings() (ok bool, why string, settings *Settings) {
+	if goos == "darwin" {
+		defer func() { rememberNativeSettings(settings) }()
+	}
 	// MEASURED, not read from the cache: Reach runs off the writer loop (at
 	// startup, from doctor) and is what warms the cache Available reads, so
 	// it waits for the probe where Available must not.

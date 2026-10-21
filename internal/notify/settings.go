@@ -6,6 +6,7 @@ package notify
 import (
 	"encoding/json"
 	"strings"
+	"sync"
 )
 
 // Settings is a versioned observation from the notifier on the posting machine.
@@ -84,8 +85,8 @@ func (s *Settings) Hints(action bool) string {
 	if s.AlertStyle == "none" || s.AlertSetting == "disabled" {
 		hints = append(hints, "Dibs has no visible alert style. Choose System Settings > Notifications > Dibs > Alerts.")
 	} else if action && s.AlertStyle == "banner" {
-		hints = append(hints, "Dibs uses banners, which vanish after a few seconds. For requests with Approve buttons, "+
-			"choose System Settings > Notifications > Dibs > Alerts.")
+		advice, _ := s.ApprovalAdvice()
+		hints = append(hints, advice)
 	}
 	if s.NotificationCenterSetting == "disabled" {
 		hints = append(hints, "Enable Notification Center in System Settings > Notifications > Dibs "+
@@ -105,6 +106,69 @@ func (s *Settings) Hints(action bool) string {
 			"Check Dibs in System Settings > Focus; posting does not confirm visibility.")
 	}
 	return strings.Join(hints, " ")
+}
+
+// ApprovalAdvice is a setting diagnosis, never a receipt that a person saw an
+// approval request. Unknown evidence must not erase a previously shown notice.
+func (s *Settings) ApprovalAdvice() (text string, observed bool) {
+	s = s.Normalized()
+	if s == nil || s.AlertStyle == "unknown" {
+		return "", false
+	}
+	if s.AlertStyle == "banner" {
+		return "Dibs approval requests appear as banners and vanish. " +
+			"Set System Settings > Notifications > Dibs > Alert style: Alerts.", true
+	}
+	return "", s.AlertStyle == "alert"
+}
+
+// CurrentApprovalAdvice uses the existing permission-free status probe. Call
+// outside the engine writer: the native helper may take time to answer.
+func CurrentApprovalAdvice() string {
+	if goos != "darwin" {
+		return ""
+	}
+	ReachWithSettings()
+	lastNativeSettings.RLock()
+	defer lastNativeSettings.RUnlock()
+	return lastNativeSettings.advice
+}
+
+var lastNativeSettings struct {
+	sync.RWMutex
+	value  *Settings
+	advice string
+}
+
+func rememberNativeSettings(s *Settings) {
+	lastNativeSettings.Lock()
+	lastNativeSettings.value = s.Normalized()
+	if advice, observed := s.ApprovalAdvice(); observed {
+		lastNativeSettings.advice = advice
+	}
+	lastNativeSettings.Unlock()
+}
+
+func nativeReceiptSettings(raw []byte) *Settings {
+	settings := DecodeSettings(raw)
+	if settings != nil {
+		rememberNativeSettings(settings)
+	}
+	return settings
+}
+
+// LatestApprovalAdvice is immediate. Native startup/status probes and this
+// process's own posting receipts supply the observation; a send never probes
+// the notifier or waits for the person. Remote receipts never enter this cache.
+func LatestApprovalAdvice() string {
+	if goos != "darwin" || silenced() {
+		return ""
+	}
+	lastNativeSettings.RLock()
+	settings := lastNativeSettings.value
+	lastNativeSettings.RUnlock()
+	text, _ := settings.ApprovalAdvice()
+	return text
 }
 
 // Information explains standing limitations once in doctor, without a warning.

@@ -45,7 +45,7 @@ func (e *Engine) Do(ctx context.Context, op *core.Op) (core.Result, error) {
 	}
 	res, err := e.send(ctx, req)
 	if err == nil && res != nil && res["human_route"] == "desktop" {
-		e.humanSendPresentation(res)
+		e.humanSendPresentation(res, op.MsgType == core.MsgRequest || op.MsgType == core.MsgQuestion)
 	}
 	return res, err
 }

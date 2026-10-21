@@ -1681,8 +1681,17 @@ metadata is `settings: null`, never evidence that presentation is quiet or fine.
 The settings come from the actual posting invocation and survive its later
 state-only dismissal receipt; different sources keep their own observations.
 Banners on a request recommend System Settings > Notifications > Dibs > Alerts,
-because the Approve controls should persist. Disabled Time Sensitive has its own
-setting hint. Structured not-supported and unobservable Focus remain in the
+because the Approve controls should persist. The human board shows a persistent
+notice: "Dibs approval requests appear as banners and vanish. Set System
+Settings > Notifications > Dibs > Alert style: Alerts." Normal board reads measure settings
+outside the engine writer. Unknown observations retain an existing warning;
+observed Alerts clears it. Doctor reports the same advice. A desktop approval
+send includes that advice when the posting process's latest native observation
+reports banners: startup/status probes and local posting receipts supply that
+derived observation, without a new status probe or wait on the send path.
+Remote receipts do not replace local settings. No settings are changed and no
+reposting timer is introduced. Disabled Time Sensitive has its own setting hint.
+Structured not-supported and unobservable Focus remain in the
 receipt, without repeating standing informational prose on each message. A requested
 timeSensitive level does not establish the entitlement or permission to bypass
 Focus. Requests/questions with controls request timeSensitive; a high/urgent notify

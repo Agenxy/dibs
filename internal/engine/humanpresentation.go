@@ -44,7 +44,7 @@ func (e *Engine) setHumanPresentation(serial uint64, p notify.Presentation, post
 	return d
 }
 
-func (e *Engine) humanSendPresentation(res core.Result) {
+func (e *Engine) humanSendPresentation(res core.Result, approval bool) {
 	serial, ok := res["msg_serial"].(uint64)
 	if !ok {
 		return
@@ -59,5 +59,11 @@ func (e *Engine) humanSendPresentation(res core.Result) {
 	}
 	if d.Reason != "" {
 		res["notify_hint"] = d.Reason + " The request stays pending; check read_mail for posting receipts."
+	}
+	if approval && d.Route == "desktop" {
+		if advice := notify.LatestApprovalAdvice(); advice != "" {
+			res["notification_advice"] = advice
+			res["notify_hint"] = advice + " " + res["notify_hint"].(string)
+		}
 	}
 }
