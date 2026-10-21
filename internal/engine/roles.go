@@ -45,8 +45,18 @@ func (e *Engine) Broadcast(ctx context.Context, token, msgType, body string) (co
 		if !l.IsCoordinator() {
 			return core.Result{"error": core.ErrNotCoordinator}
 		}
+		// Agents only. The person's seat and the daemon's own reporting row
+		// are rows on the board but not agents in the fleet: a broadcast is
+		// fleet direction, and on 2026-10-21 a survey question reached the
+		// person as a desktop dialog asking them to answer it. (Earlier
+		// broadcasts missed them only because the per-recipient rate limit
+		// happened to drop their copy.) To ask the person, send to "human".
+		human, reporter := e.humanRowLocked(), e.dibsRowLocked()
 		ids := []string{}
 		for _, to := range e.state.LiveAgentsExcept(l.ID) {
+			if to.ID == human || to.ID == reporter {
+				continue
+			}
 			ids = append(ids, to.ID)
 		}
 		return core.Result{"ids": ids}

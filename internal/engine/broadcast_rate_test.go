@@ -63,3 +63,57 @@ func TestABroadcastReachesAFleetLargerThanTheBurst(t *testing.T) {
 		t.Errorf("a send right after the broadcast: %v", err)
 	}
 }
+
+// A broadcast is fleet direction; the person and the daemon's own reporting
+// row are rows on the board, not agents. On 2026-10-21 a survey question
+// reached the person as a desktop dialog asking them to answer it.
+func TestABroadcastReachesAgentsButNeverThePersonOrTheReporter(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	lead, err := e.Do(ctx, &core.Op{
+		Kind: core.OpRegister, Name: "fleet-lead", Nonce: "n-lead",
+		AgentKind: core.KindPersistent,
+	})
+	if err != nil {
+		t.Fatalf("setup: register: %v", err)
+	}
+	token, _ := lead["token"].(string)
+	if _, err := e.GrantRole(ctx, "fleet-lead", core.RoleCoordinator); err != nil {
+		t.Fatalf("setup: grant: %v", err)
+	}
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpRegister, Name: "worker", Nonce: "n-worker",
+		AgentKind: core.KindPersistent,
+	}); err != nil {
+		t.Fatalf("setup: register worker: %v", err)
+	}
+	// The person's and the reporter's rows through the paths that create them
+	// in production, not a register (which refuses both identities).
+	human, _, err := e.HumanAgent(ctx)
+	if err != nil || human == "" {
+		t.Fatalf("setup: the person's row: %q, %v", human, err)
+	}
+	reporter, _, err := e.dibsAgent(ctx)
+	if err != nil || reporter == "" {
+		t.Fatalf("setup: the reporter's row: %q, %v", reporter, err)
+	}
+
+	res, err := e.Broadcast(ctx, token, core.MsgQuestion, "survey")
+	if err != nil {
+		t.Fatalf("broadcast: %v", err)
+	}
+	if res["delivered"] != 1 {
+		t.Errorf("delivered to %v, want exactly the one agent", res["delivered"])
+	}
+	for _, id := range []string{human, reporter} {
+		for _, m := range e.state.Inbox(id) {
+			if m.From == "fleet-lead" {
+				t.Errorf("the broadcast reached %s, which is not an agent", id)
+			}
+		}
+	}
+}

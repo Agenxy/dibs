@@ -5,6 +5,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- A coordinator `broadcast` no longer reaches the person's seat or the
+  daemon's own reporting row. Both are rows on the board but not agents, and a
+  broadcast survey question reached the person as a desktop dialog asking them
+  to answer it. To ask the person, send to `human`.
+
 - Duplicate identities now have a supported merge preview and human board
   control. Coordinators can repair a matching, unbound, non-live fork into its
   newer third-party survivor; other eligible repairs go through a typed human
