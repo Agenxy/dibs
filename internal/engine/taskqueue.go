@@ -183,8 +183,18 @@ func (e *Engine) addQueueCheckpoint(res core.Result, actor *core.Agent, op *core
 	}
 	switch op.Disposition {
 	case "queue", "approve", "done", "decline":
-		res["task_queue"] = e.taskQueueView(actor.ID)
-		res["owes"] = e.owedSerials(actor.ID, now)
+		queue := e.taskQueueView(actor.ID)
+		if len(queue) > respondListCap {
+			res["more_task_queue"] = len(queue) - respondListCap
+			queue = queue[:respondListCap]
+		}
+		res["task_queue"] = queue
+		owes := e.owedSerials(actor.ID, now)
+		if len(owes) > respondListCap {
+			res["owes_count"] = len(owes)
+			owes = owes[:respondListCap]
+		}
+		res["owes"] = owes
 		next, more := nextOwedWork(e.owedWorkView(actor.ID, now))
 		res["owed_work"] = next
 		if more > 0 {
@@ -193,6 +203,12 @@ func (e *Engine) addQueueCheckpoint(res core.Result, actor *core.Agent, op *core
 		}
 	}
 }
+
+// respondListCap bounds the queue and owes lists a respond result carries:
+// gpt-agenxy-dev-1's approve replies listed 47 owed serials and the whole
+// overdue queue on every call (2026-10-21 survey). The head is the reminder;
+// check_in and inbox carry the rest.
+const respondListCap = 8
 
 // nextOwedWork keeps the one entry a respond result is for: the next queued
 // item's literal start call, else the first owed item. Every respond used to

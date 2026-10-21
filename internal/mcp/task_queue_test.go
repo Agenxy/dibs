@@ -397,3 +397,23 @@ func TestRespondReturnsTheNextOwedItemAndACountNotTheWholeList(t *testing.T) {
 		t.Errorf("check_in must still list every owed item: %v", all)
 	}
 }
+
+// A respond result carries the head of the owes list and a count, not 47
+// serials (gpt-agenxy-dev-1, 2026-10-21 survey).
+func TestRespondCapsTheOwesListAndCountsTheRest(t *testing.T) {
+	srv, _ := newServer(t)
+	lead := toolCall(t, srv, "register", map[string]any{"name": "lead"})["token"]
+	worker := toolCall(t, srv, "register", map[string]any{"name": "worker"})["token"]
+	var last any
+	for i := range 12 {
+		r := toolCall(t, srv, "send", map[string]any{"token": lead, "to": "worker", "type": "request", "body": fmt.Sprint("job ", i)})
+		last = r["msg_serial"]
+		toolCall(t, srv, "respond", map[string]any{"token": worker, "msg_serial": last, "disposition": "approve"})
+	}
+	n := toolCall(t, srv, "send", map[string]any{"token": lead, "to": "worker", "type": "request", "body": "one more"})["msg_serial"]
+	r := toolCall(t, srv, "respond", map[string]any{"token": worker, "msg_serial": n, "disposition": "approve"})
+	owes, _ := r["owes"].([]any)
+	if len(owes) != 8 || r["owes_count"] != float64(13) {
+		t.Errorf("owes %d entries, owes_count %v; want the first 8 and a count of 13", len(owes), r["owes_count"])
+	}
+}

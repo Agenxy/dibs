@@ -5,6 +5,7 @@ package engine
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -28,13 +29,28 @@ func (e *Engine) mailboxCountsText(agent string) string {
 	return e.countsText(agent, true)
 }
 
-// mailboxNewsText is the same counts without the work the agent owes: what
-// is waiting for it, not what it has already said it will do.
+// mailboxNewsText is the same counts without the work the agent owes or the
+// FYIs it has already been reminded of: what is new to it, not what it has
+// already said it will do or already been told about.
 func (e *Engine) mailboxNewsText(agent string) string {
 	return e.countsText(agent, false)
 }
 
-func (e *Engine) countsText(agent string, withOwed bool) string {
+// passiveCountsText is for the passive hook digest, which lists the backlog
+// itself: it keeps already-announced FYIs (it is presenting them) and drops
+// only owed work.
+func (e *Engine) passiveCountsText(agent string) string {
+	return e.countsTextSkipping(agent, "owed_requests")
+}
+
+func (e *Engine) countsText(agent string, full bool) string {
+	if full {
+		return e.countsTextSkipping(agent)
+	}
+	return e.countsTextSkipping(agent, "owed_requests", "announced_fyis")
+}
+
+func (e *Engine) countsTextSkipping(agent string, skip ...string) string {
 	c := e.mailCounts(agent)
 	var parts []string
 	for _, x := range []struct{ key, label string }{
@@ -43,7 +59,7 @@ func (e *Engine) countsText(agent string, withOwed bool) string {
 		{"seen_awaiting_action", "seen messages awaiting action"},
 		{"owed_requests", "owed requests"},
 	} {
-		if x.key == "owed_requests" && !withOwed {
+		if slices.Contains(skip, x.key) {
 			continue
 		}
 		if n := c[x.key].(int); n > 0 {
@@ -78,7 +94,9 @@ func (e *Engine) passiveMailboxDigest(l *core.Agent, now time.Time) string {
 		return ""
 	}
 	var b strings.Builder
-	counts := e.mailboxCountsText(l.ID)
+	// Owed work is not repeated on every prompt (claude-agenxy-dev, 2026-10-21:
+	// "3 owed requests" on every hook for work it could not close).
+	counts := e.passiveCountsText(l.ID)
 	if counts == "" {
 		counts = "outstanding coordination state"
 	}

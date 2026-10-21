@@ -242,8 +242,13 @@ func TestWaitingHintClearsTrimmedProgressThroughMCP(t *testing.T) {
 				if !strings.Contains(waiting, "update(s) to you") {
 					t.Fatalf("setup: shortened updates were already cleared: %v", written)
 				}
+				// Each parent once, by serial, with the cheap clear (ack) named
+				// beside the full read: the hint lists "#N" once per parent.
+				if !strings.Contains(waiting, "ack(N) to clear without bodies") {
+					t.Errorf("waiting did not name the cheap clear: %q", waiting)
+				}
 				for _, parent := range parents {
-					read := fmt.Sprintf("read_mail(%.0f)", parent)
+					read := fmt.Sprintf("#%.0f", parent)
 					if strings.Count(waiting, read) != 1 {
 						t.Errorf("waiting must name each parent read once, including updates on the same parent: %q; want %s", waiting, read)
 					}
@@ -311,7 +316,7 @@ func TestWaitingHintClearsTrimmedReviewThroughMCP(t *testing.T) {
 			}
 			written := call("update", map[string]any{"token": worker, "description": "read the whole review"})
 			waiting, _ := written["waiting"].(string)
-			if !strings.Contains(waiting, fmt.Sprintf("read_mail(%.0f)", parent)) || !strings.Contains(waiting, "read and clear") {
+			if !strings.Contains(waiting, fmt.Sprintf("#%.0f", parent)) || !strings.Contains(waiting, "read_mail(N) to read and clear") {
 				t.Errorf("review reminder did not name the full parent read: %q", waiting)
 			}
 			read := call("read_mail", map[string]any{"token": worker, "msg_serial": parent})

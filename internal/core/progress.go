@@ -239,8 +239,13 @@ func (s *State) applyReview(l *Agent, op *Op, now time.Time) (Result, []Event, e
 			return nil, nil, errf("E_BAD_ARG", "say what is wrong, or what to do instead: that is "+
 				"the whole of a flag", "a flag with no body")
 		}
-	} else if op.Milestone == 0 && !m.unresolvedReviewFlags()[0] {
-		return nil, nil, errf("E_BAD_ARG", "accept names the milestone you checked", "accept with no milestone")
+	} else if op.Milestone == 0 && !m.unresolvedReviewFlags()[0] && m.State != MsgStateDone {
+		// On a DONE request, milestone 0 accepts the delivery as a whole: the
+		// requester checked the result, not a step. Four agents in the
+		// 2026-10-21 survey were refused here and guessed a number (k7-dev
+		// 221080, claude-agenxy-labs-0 237608, gpt-agenxy-labs 237602).
+		return nil, nil, errf("E_BAD_ARG", "accept names the milestone you checked; once the request "+
+			"is done, accept with no milestone accepts the delivery as a whole", "accept with no milestone")
 	}
 	if len(op.Body) > s.Limits.MaxBodyBytes {
 		return nil, nil, errTooLarge("review note", s.Limits.MaxBodyBytes)
