@@ -130,7 +130,8 @@ func outputWithDeliveryReceipt(cmd *exec.Cmd, receipt DeliveryReceipt) ([]byte, 
 				last = string(b)
 				var level string
 				_ = json.Unmarshal(r.InterruptionLevel, &level)
-				receipt(ReceiptData{State: r.State, Settings: DecodeSettings(r.Settings), InterruptionLevel: level}.Normalized())
+				settings := nativeReceiptSettings(r.Settings)
+				receipt(ReceiptData{State: r.State, Settings: settings, InterruptionLevel: level}.Normalized())
 			}
 		}
 		for {

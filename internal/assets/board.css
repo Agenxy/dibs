@@ -952,6 +952,11 @@ body {
   font-family: var(--mono); font-size: var(--t-fine); color: var(--live);
 }
 .flash.bad { color: var(--warn); }
+.board .notification-advice {
+  margin: var(--s3) var(--s5); padding: var(--s3);
+  border: 1px solid var(--warn); border-radius: 4px;
+  color: var(--warn); font-size: var(--t-fine);
+}
 
 /* An announcement that exhausted its retries and was never acknowledged. The
    only state on the board that nothing will resolve on its own, so it is the

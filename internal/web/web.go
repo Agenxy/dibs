@@ -6,8 +6,8 @@
 // claim, all mail, and the ledger tail.
 //
 // Go owns all STATE: the ledger and the engine are the only source of truth,
-// and this server holds none of its own. It no longer owns the templates: the
-// board is rendered by the shared components in internal/assets, the same ones
+// and this server holds only rebuildable presentation diagnostics. Shared
+// components in internal/assets render the board, the same ones
 // the MCP Apps panel uses, because the panel physically cannot be
 // server-rendered (it lives in a sandboxed iframe whose CSP forbids any network
 // call) and two renderers for one board is how the surfaces drifted apart.
@@ -31,6 +31,7 @@ import (
 	"github.com/agenxy/dibs/internal/build"
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/engine"
+	"github.com/agenxy/dibs/internal/notify"
 )
 
 //go:embed templates
@@ -141,14 +142,18 @@ func (s *Server) help(w http.ResponseWriter, _ *http.Request) {
 // boardJSON is the payload both the bootstrap and the stream carry: the same
 // shape the MCP Apps panel receives, so one set of components renders both.
 func (s *Server) boardJSON(r *http.Request) ([]byte, error) {
-	b, _, err := s.boardJSONAt(r)
+	b, _, err := s.boardJSONView(r, false)
 	return b, err
 }
 
 // boardJSONAt also reports the serial the snapshot represents, so an SSE frame
 // can advertise an id a client can actually resume from.
 func (s *Server) boardJSONAt(r *http.Request) ([]byte, uint64, error) {
-	board, err := s.eng.Board(r.Context())
+	return s.boardJSONView(r, true)
+}
+
+func (s *Server) boardJSONView(r *http.Request, measure bool) ([]byte, uint64, error) {
+	board, err := s.operatorBoard(r.Context(), measure)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -195,7 +200,7 @@ func (s *Server) boardJSONAt(r *http.Request) ([]byte, uint64, error) {
 // the mailbox in the response. The page fetches mail from /api/messages, which
 // requires the page key, immediately after this paints.
 func (s *Server) indexData(r *http.Request) (map[string]any, error) {
-	board, err := s.eng.Board(r.Context())
+	board, err := s.operatorBoard(r.Context(), true)
 	if err != nil {
 		return nil, err
 	}
@@ -217,10 +222,27 @@ func (s *Server) indexData(r *http.Request) (map[string]any, error) {
 		return nil, err
 	}
 	return map[string]any{
-		"BoardJSON":  boardJSON,
-		"EventsJSON": evJSON,
-		"Version":    build.Version,
+		"BoardJSON":          boardJSON,
+		"EventsJSON":         evJSON,
+		"Version":            build.Version,
+		"NotificationAdvice": board["notification_advice"],
 	}, nil
+}
+
+// Probe outside the writer and show one persistent diagnosis on every board
+// view. Normal reads refresh observations older than one minute; no timer or
+// setting mutation is introduced.
+func (s *Server) operatorBoard(ctx context.Context, measure bool) (core.Result, error) {
+	board, err := s.eng.Board(ctx)
+	if err != nil {
+		return nil, err
+	}
+	advice := notify.RecordedApprovalAdvice()
+	if measure {
+		advice = notify.CurrentApprovalAdvice()
+	}
+	board["notification_advice"] = advice
+	return board, nil
 }
 
 func (s *Server) index(w http.ResponseWriter, r *http.Request) {
@@ -365,7 +387,7 @@ func (s *Server) sse(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) apiBoard(w http.ResponseWriter, r *http.Request) {
-	res, err := s.eng.Board(r.Context())
+	res, err := s.operatorBoard(r.Context(), true)
 	writeJSON(w, res, err)
 }
 

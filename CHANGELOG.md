@@ -80,6 +80,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The human board keeps visible guidance when Dibs approval notifications use
+  disappearing banners. It names the Alerts setting, clears after that style is
+  observed, and retains the warning across unknown observations. Board requests
+  share native settings observations for one minute, refreshing only on demand.
+  Doctor and human-request send results explain the same setting. Dibs changes no settings
+  and introduces no reposting timer.
+
 - A failed first macOS display-name lookup no longer caches the network's
   kernel hostname as a friendly name. Board projections read one immediate
   snapshot and retry failures in the background; successful lookups replace
