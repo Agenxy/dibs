@@ -5,6 +5,20 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+
+- Built with Go 1.26.10 for GO-2026-6809 (CVE-2026-111943): crypto/x509 now
+  distrusts known-compromised intermediate certificates. Dibs is affected
+  through the pinned-board-certificate check in `cmd/dibs` (`chainsToPinned`
+  calls `x509.Certificate.Verify`).
+
+### Changed
+
+- Dependency updates: golang.org/x/crypto 0.58.0, x/sys 0.49.0, x/tools
+  0.51.0; e2e suite @modelcontextprotocol/sdk 1.32.1 and playwright 1.64.1;
+  CI actions jdx/mise-action 5.2.0, upload-artifact 7.0.2, download-artifact
+  8.0.2.
+
 ### Fixed
 
 - A coordinator `broadcast` no longer reaches the person's seat or the
