@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/testexec"
 )
 
 func TestNativeQueueFallbackUsesTheSameAdmissionDoor(t *testing.T) {
@@ -20,6 +22,7 @@ func TestNativeQueueFallbackUsesTheSameAdmissionDoor(t *testing.T) {
 	if b, err := exec.Command("go", "build", "-o", binary, "./testdata/codexqueue").CombinedOutput(); err != nil {
 		t.Fatalf("setup: fixture build %v: %s", err, b)
 	}
+	testexec.PrepareExecutable(t, exec.Command(binary, "--version"))
 	primary := []string{binary, "primary"}
 	fallback := []string{binary, "queue", "--thread", "fallback-thread", "--message", Compose("question")}
 	for range 2 {
@@ -38,4 +41,12 @@ func TestNativeQueueFallbackUsesTheSameAdmissionDoor(t *testing.T) {
 	if len(rows) != 1 {
 		t.Fatalf("two fallback calls queued %d entries, want 1", len(rows))
 	}
+}
+
+// The actual command route keeps its one-second budget. Only the fixture's
+// first exec is slow, so deleting preparation must fail the existing real-door
+// assertions rather than passing because this machine happens to be warm.
+func TestNativeQueuePreparesColdExecutableBeforeDeadline(t *testing.T) {
+	t.Setenv("DIBS_TEST_QUEUE_COLD_EXEC", filepath.Join(t.TempDir(), "cold-first-exec"))
+	TestNativeQueueFallbackUsesTheSameAdmissionDoor(t)
 }

@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/testexec"
 )
 
 func TestNativeQueueIndependentWritersCoalesce(t *testing.T) {
@@ -31,6 +33,7 @@ func TestNativeQueueIndependentWritersCoalesce(t *testing.T) {
 	if b, err := exec.Command("go", "build", "-o", binary, "./testdata/codexqueue").CombinedOutput(); err != nil {
 		t.Fatalf("setup: fixture build %v: %s", err, b)
 	}
+	testexec.PrepareExecutable(t, exec.Command(binary, "--version"))
 	t.Setenv("DIBS_QUEUE_FIXTURE", binary)
 	start := func(tag string) (*exec.Cmd, *bytes.Buffer) {
 		t.Helper()

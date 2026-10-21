@@ -25,6 +25,7 @@ import (
 	"github.com/agenxy/dibs/internal/ledger"
 	"github.com/agenxy/dibs/internal/mcp"
 	"github.com/agenxy/dibs/internal/notify"
+	"github.com/agenxy/dibs/internal/testexec"
 )
 
 // ChatGPT.app's executable-path process inventory is a macOS capability.
@@ -136,6 +137,7 @@ func appReconnectContract(t *testing.T, lost, clockBack, legacy bool) {
 	if out, err := exec.Command("go", "build", "-o", queueBinary, "../../internal/wakeexec/testdata/codexqueue").CombinedOutput(); err != nil {
 		t.Fatalf("queue setup: %v %s", err, out)
 	}
+	testexec.PrepareExecutable(t, exec.Command(queueBinary, "--version"))
 	limits := core.DefaultLimits()
 	state := core.NewState("reconnect-host", limits)
 	box, err := ledger.LoadOrCreateKey(filepath.Join(dir, "key"))
@@ -167,6 +169,7 @@ func appReconnectContract(t *testing.T, lost, clockBack, legacy bool) {
 	if err = os.WriteFile(appBinary, self, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	testexec.PrepareExecutable(t, exec.Command(appBinary, "--dibs-test-prepare"))
 	startApp := func() (func(int), func()) {
 		cmd := exec.Command(appBinary, "-test.run=^TestReconnectAppFixtureHelper$")
 		cmd.Env = append(os.Environ(), "DIBS_TEST_RECONNECT_APP=1", "DIBS_TEST_BRIDGE_BINARY="+os.Args[0], "DIBS_ADDR="+srv.URL+"/mcp")

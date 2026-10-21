@@ -17,6 +17,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/testexec"
 )
 
 // This is deliberately a subprocess: reaching the production opener in a
@@ -43,6 +45,7 @@ func TestBuiltChildInheritsAppOpenRefusal(t *testing.T) {
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build child opener probe: %v %s", err, out)
 	}
+	testexec.PrepareExecutable(t, exec.Command(bin, "--dibs-test-prepare"))
 	child := exec.Command(bin)
 	child.Env = append(os.Environ(), "DIBS_TEST_FORBID_APP_OPEN=1")
 	out, err := child.CombinedOutput()

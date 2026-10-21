@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/agenxy/dibs/internal/supgang"
+	"github.com/agenxy/dibs/internal/testexec"
 )
 
 // Two bridges starting together on a fresh directory get ONE host id.
@@ -173,7 +174,8 @@ func TestBridgesTakingDifferentBranchesStillAgreeOnOneIdentity(t *testing.T) {
 	// A compiled stand-in rather than a script: this repository ships no
 	// shell, not even into a temporary directory.
 	src := filepath.Join(t.TempDir(), "supgang.go")
-	prog := "package main\n\nimport (\n\t\"fmt\"\n\t\"time\"\n)\n\nfunc main() {\n" +
+	prog := "package main\n\nimport (\n\t\"fmt\"\n\t\"os\"\n\t\"time\"\n)\n\nfunc main() {\n" +
+		"\tif len(os.Args) == 2 && os.Args[1] == \"--dibs-test-prepare\" { return }\n" +
 		"\ttime.Sleep(150 * time.Millisecond)\n" +
 		"\tfmt.Printf(`{\"schema\":\"supgang.status/v4\",\"status\":\"ok\",\"name\":\"MacSolis\"," +
 		"\"node_id\":\"" + fleet + "\"}`)\n}\n"
@@ -184,6 +186,7 @@ func TestBridgesTakingDifferentBranchesStillAgreeOnOneIdentity(t *testing.T) {
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Skipf("cannot build the stand-in Supgang here: %v\n%s", err, out)
 	}
+	testexec.PrepareExecutable(t, exec.Command(supgang.Command, "--dibs-test-prepare"))
 
 	// One bridge asks Supgang; the other, with no Supgang of its own,
 	// mints. They run at the same time against one directory.
@@ -231,7 +234,8 @@ func TestASupgangAnswerIsPublishedWhereAMintedOneWouldBe(t *testing.T) {
 	supgang.Command = filepath.Join(dir, "supgang")
 	t.Cleanup(func() { supgang.Command = old })
 	src := filepath.Join(t.TempDir(), "supgang.go")
-	prog := "package main\n\nimport \"fmt\"\n\nfunc main() {\n" +
+	prog := "package main\n\nimport (\"fmt\";\"os\")\n\nfunc main() {\n" +
+		"\tif len(os.Args) == 2 && os.Args[1] == \"--dibs-test-prepare\" { return }\n" +
 		"\tfmt.Print(`{\"schema\":\"supgang.status/v4\",\"status\":\"ok\"," +
 		"\"name\":\"MacSolis\",\"node_id\":\"" + fleet + "\"}`)\n}\n"
 	if err := os.WriteFile(src, []byte(prog), 0o600); err != nil {
@@ -241,6 +245,7 @@ func TestASupgangAnswerIsPublishedWhereAMintedOneWouldBe(t *testing.T) {
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Skipf("cannot build the stand-in Supgang here: %v\n%s", err, out)
 	}
+	testexec.PrepareExecutable(t, exec.Command(supgang.Command, "--dibs-test-prepare"))
 
 	if got := resolveHostID(dir); got != fleet {
 		t.Fatalf("a clean start answered %q, want the fleet identity", got)

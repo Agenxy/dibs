@@ -10,10 +10,13 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/agenxy/dibs/internal/testexec"
 )
 
 const (
@@ -121,6 +124,7 @@ func useRecordCosign(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(bin, name), b, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	testexec.PrepareExecutable(t, exec.Command(filepath.Join(bin, name), "--dibs-test-prepare"))
 	t.Setenv("PATH", bin)
 	t.Setenv("DIBS_TEST_COSIGN_RECORD", "1")
 	t.Setenv("TUF_ROOT", "/untrusted-cache")

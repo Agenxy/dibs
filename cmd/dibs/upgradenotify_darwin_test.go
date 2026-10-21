@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/testexec"
 )
 
 // Enter through the actual CLI and its fetch/current dispatch, with a private
@@ -38,6 +40,7 @@ func TestUpgradeFetchReportsInstalledNotificationPermission(t *testing.T) {
 					if err := os.WriteFile(path, data, 0o700); err != nil {
 						t.Fatal(err)
 					}
+					testexec.PrepareExecutable(t, exec.Command(path, "--dibs-test-prepare"))
 				}
 				if err := os.WriteFile(filepath.Join(bin, "dibd"), []byte("old fixture daemon"), 0o700); err != nil {
 					t.Fatal(err)
@@ -46,6 +49,7 @@ func TestUpgradeFetchReportsInstalledNotificationPermission(t *testing.T) {
 					if err := os.WriteFile(filepath.Join(bin, "dibd"), data, 0o700); err != nil {
 						t.Fatal(err)
 					}
+					testexec.PrepareExecutable(t, exec.Command(filepath.Join(bin, "dibd"), "--dibs-test-prepare"))
 				}
 				// The registrar sees only a private fixture identity, never the
 				// installed Dibs identity on the developer's machine.

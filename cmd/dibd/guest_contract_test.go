@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/selfupdate"
+	"github.com/agenxy/dibs/internal/testexec"
 )
 
 // This is a compiled-floor fixture, not a production config escape hatch.
@@ -175,6 +176,7 @@ func TestGuestContractVersionComesFromShippedBridge(t *testing.T) {
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("build actual versioned bridge: %v %s", err, out)
 		}
+		testexec.PrepareExecutable(t, exec.Command(bin, "--version"))
 		for _, line := range []string{
 			`{"jsonrpc":"2.0","id":29,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"forged-caller","version":"99.0.0"}}}}`,
 			`{"jsonrpc":"2.0","id":29,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}`,

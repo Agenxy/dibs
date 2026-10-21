@@ -18,6 +18,7 @@ import (
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/harnessenv"
+	"github.com/agenxy/dibs/internal/testexec"
 )
 
 // Real MCP send -> writer planner -> native command/probe -> board and send
@@ -28,6 +29,7 @@ func TestQueueWakeObservationsThroughMCPAndActualCommand(t *testing.T) {
 	if b, err := exec.Command("go", "build", "-o", binary, "../wakeexec/testdata/codexqueue").CombinedOutput(); err != nil {
 		t.Fatalf("setup: fixture build: %v: %s", err, b)
 	}
+	testexec.PrepareExecutable(t, exec.Command(binary, "--version"))
 	for _, mode := range []string{"admitted", "pending-aged", "probe-unknown", "legacy-age", "fallback", "rebound"} {
 		t.Run(mode, func(t *testing.T) { queueWakeObservationCase(t, binary, mode) })
 	}

@@ -20,6 +20,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/testexec"
 )
 
 // The SHIPPED command, guestTLS and publicGate, not a transport constructed by
@@ -31,6 +33,7 @@ func TestGuestBridgeRealCommand(t *testing.T) {
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build fixture command: %v %s", err, out)
 	}
+	testexec.PrepareExecutable(t, exec.Command(bin, "--version"))
 	ip := netip.MustParseAddr("::1")
 	caDir := t.TempDir()
 	config, caPEM, pin, err := guestTLS(caDir, ip)
@@ -179,6 +182,7 @@ func TestGuestBridgeMailboxRecovery(t *testing.T) {
 	if out, err := exec.Command("go", "build", "-o", bin, "../dibs").CombinedOutput(); err != nil {
 		t.Fatalf("build actual bridge: %v %s", err, out)
 	}
+	testexec.PrepareExecutable(t, exec.Command(bin, "--version"))
 	config, pem, pin, err := guestTLS(t.TempDir(), netip.MustParseAddr("::1"))
 	if err != nil {
 		t.Fatal(err)
@@ -288,6 +292,7 @@ func TestGuestBridgeInvalidRecipeBeforeHTTP(t *testing.T) {
 	if out, err := exec.Command("go", "build", "-o", bin, "../dibs").CombinedOutput(); err != nil {
 		t.Fatalf("build actual bridge: %v %s", err, out)
 	}
+	testexec.PrepareExecutable(t, exec.Command(bin, "--version"))
 	config, pem, pin, err := guestTLS(t.TempDir(), netip.MustParseAddr("::1"))
 	if err != nil {
 		t.Fatal(err)

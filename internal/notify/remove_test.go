@@ -11,6 +11,8 @@ import (
 	"runtime"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/testexec"
 )
 
 func TestMessageIDsAreScopedAndValidated(t *testing.T) {
@@ -84,6 +86,7 @@ func TestPublicMessageNotificationAndCleanupUseInstalledHelper(t *testing.T) {
 		if err := os.WriteFile(path, bytes, 0o700); err != nil {
 			t.Fatal(err)
 		}
+		testexec.PrepareExecutable(t, exec.Command(path, "--dibs-test-prepare"))
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()

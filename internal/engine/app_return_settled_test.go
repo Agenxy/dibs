@@ -15,6 +15,7 @@ import (
 	"github.com/agenxy/dibs/internal/codexipc"
 	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/testcodexipc"
+	"github.com/agenxy/dibs/internal/testexec"
 )
 
 // Settled is the end of the pass, including a failed/partial pass. If it
@@ -31,6 +32,7 @@ func TestPartialRestartPassAllowsLaterUnownedMailToOpen(t *testing.T) {
 	if b, err := exec.Command("go", "build", "-o", binary, "../wakeexec/testdata/codexqueue").CombinedOutput(); err != nil {
 		t.Fatalf("build fixture %v: %s", err, b)
 	}
+	testexec.PrepareExecutable(t, exec.Command(binary, "--version"))
 	var epoch atomic.Value
 	epoch.Store("app:A")
 	var samples atomic.Int32

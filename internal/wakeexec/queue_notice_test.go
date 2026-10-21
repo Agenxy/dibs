@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/testexec"
 )
 
 type staleQueueRow struct {
@@ -25,6 +27,7 @@ func staleQueueFixture(t *testing.T) string {
 	if b, err := exec.Command("go", "build", "-o", binary, "./testdata/codexqueue").CombinedOutput(); err != nil {
 		t.Fatalf("setup: fixture build: %v: %s", err, b)
 	}
+	testexec.PrepareExecutable(t, exec.Command(binary, "--version"))
 	return binary
 }
 
@@ -225,6 +228,7 @@ func TestNativeQueueHistoricalAndUnrecognizedItemsKeepDeliverySafe(t *testing.T)
 		if err = os.WriteFile(plain, image, 0o700); err != nil {
 			t.Fatal("setup: copy ordinary operator command:", err)
 		}
+		testexec.PrepareExecutable(t, exec.Command(plain, "--version"))
 		text := Compose("question")
 		if !RunCommands([]string{plain, "queue", "--thread", "stale-thread", "--message", text}, nil, "worker", "", time.Second, time.Second) {
 			t.Fatal("setup: ordinary command failed")

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/testexec"
 )
 
 func TestUpgradePluginFailureIsDiagnosedAndDoesNotBlock(t *testing.T) {
@@ -20,6 +22,7 @@ func TestUpgradePluginFailureIsDiagnosedAndDoesNotBlock(t *testing.T) {
 	if out, err := exec.Command("go", "build", "-o", bin, "./testdata/codexplugin").CombinedOutput(); err != nil {
 		t.Fatalf("build fixture: %v %s", err, out)
 	}
+	testexec.PrepareExecutable(t, exec.Command(bin, "--version"))
 	oldDiscovery := codexPluginExecutable
 	t.Cleanup(func() { codexPluginExecutable = oldDiscovery })
 	codexPluginExecutable = func() string { return bin }
@@ -122,10 +125,12 @@ func TestActualCurrentDaemonUpgradeAttemptsPluginAndContinuesOnFailure(t *testin
 	if err := os.WriteFile(filepath.Join(binDir, "dibd"+suffix), b, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	testexec.PrepareExecutable(t, exec.Command(filepath.Join(binDir, "dibd"+suffix), "--dibs-test-prepare"))
 	codex := filepath.Join(binDir, "codex-fixture"+suffix)
 	if out, err := exec.Command("go", "build", "-o", codex, "./testdata/codexplugin").CombinedOutput(); err != nil {
 		t.Fatalf("build fixture: %v %s", err, out)
 	}
+	testexec.PrepareExecutable(t, exec.Command(codex, "--version"))
 	home := filepath.Join(root, "codex-home")
 	oldRoot := filepath.Join(home, "plugins", "cache", "dibs", "dibs", "0.0.9")
 	if err := os.MkdirAll(oldRoot, 0o700); err != nil {

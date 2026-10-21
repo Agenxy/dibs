@@ -17,6 +17,7 @@ import (
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/testcodexipc"
+	"github.com/agenxy/dibs/internal/testexec"
 )
 
 func TestNativePreInputFailureQueuesOriginalMailThroughSend(t *testing.T) {
@@ -24,6 +25,7 @@ func TestNativePreInputFailureQueuesOriginalMailThroughSend(t *testing.T) {
 	if b, err := exec.Command("go", "build", "-o", binary, "../wakeexec/testdata/codexqueue").CombinedOutput(); err != nil {
 		t.Fatalf("build fixture %v: %s", err, b)
 	}
+	testexec.PrepareExecutable(t, exec.Command(binary, "--version"))
 	for _, handled := range []bool{false, true} {
 		t.Run(map[bool]string{false: "owed", true: "already-read"}[handled], func(t *testing.T) {
 			t.Setenv("DIBS_DIR", t.TempDir())

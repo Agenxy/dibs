@@ -15,6 +15,9 @@ import (
 )
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--version" {
+		return
+	}
 	if len(os.Args) != 9 || os.Args[1] != "-c" || os.Args[2] != `marketplaces.dibs.source_type="local"` ||
 		os.Args[3] != "-c" || os.Args[5] != "plugin" || os.Args[6] != "add" || os.Args[7] != "dibs@dibs" || os.Args[8] != "--json" {
 		os.Exit(3)

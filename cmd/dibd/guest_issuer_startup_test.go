@@ -18,6 +18,7 @@ import (
 
 	"github.com/agenxy/dibs/internal/adminpw"
 	"github.com/agenxy/dibs/internal/invites"
+	"github.com/agenxy/dibs/internal/testexec"
 	"github.com/agenxy/dibs/internal/testport"
 )
 
@@ -29,6 +30,7 @@ func TestGuestIssuerRecoveryThroughActualDaemonStartup(t *testing.T) {
 	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
 		t.Fatalf("build daemon: %v %s", err, out)
 	}
+	testexec.PrepareExecutable(t, exec.Command(bin, "-h"))
 	dir := t.TempDir()
 	hash, err := adminpw.Hash("fixture-operator")
 	if err != nil {

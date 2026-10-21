@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/testexec"
 )
 
 func TestReceiptChild(t *testing.T) {
@@ -174,6 +176,7 @@ func TestPublicNotificationReceiptUsesTheInstalledHelper(t *testing.T) {
 		if err := os.WriteFile(path, bytes, 0o700); err != nil {
 			t.Fatal(err)
 		}
+		testexec.PrepareExecutable(t, exec.Command(path, "--dibs-test-prepare"))
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -211,6 +214,7 @@ func TestTimeSensitiveBannerFallsBackWithHonestReceipt(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, name), bytes, 0o700); err != nil {
 			t.Fatal(err)
 		}
+		testexec.PrepareExecutable(t, exec.Command(filepath.Join(dir, name), "--dibs-test-prepare"))
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

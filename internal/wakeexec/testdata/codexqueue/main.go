@@ -16,6 +16,24 @@ import (
 )
 
 func main() {
+	// Model a slow first execution without relying on this host's policy cache.
+	// The opt-in marker lives only in the calling test's private directory.
+	if marker := os.Getenv("DIBS_TEST_QUEUE_COLD_EXEC"); marker != "" {
+		f, err := os.OpenFile(marker, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err == nil {
+			if err := f.Close(); err != nil {
+				panic(err)
+			}
+			time.Sleep(1200 * time.Millisecond)
+		} else if !os.IsExist(err) {
+			panic(err)
+		}
+	}
+	// Only this private fixture accepts this preparation mode. It cannot
+	// discover, enqueue or open a real app, and writes no queue artifacts.
+	if len(os.Args) == 2 && os.Args[1] == "--version" {
+		return
+	}
 	path := filepath.Join(os.Getenv("CODEX_HOME"), "pending.json")
 	if len(os.Args) == 2 && os.Args[1] == "primary" {
 		fmt.Println("thread already has an active writer")
