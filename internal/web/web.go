@@ -230,7 +230,8 @@ func (s *Server) indexData(r *http.Request) (map[string]any, error) {
 }
 
 // Probe outside the writer and show one persistent diagnosis on every board
-// view. No timer or setting mutation is introduced; normal reads re-measure it.
+// view. Normal reads refresh observations older than one minute; no timer or
+// setting mutation is introduced.
 func (s *Server) operatorBoard(ctx context.Context, measure bool) (core.Result, error) {
 	board, err := s.eng.Board(ctx)
 	if err != nil {

@@ -65,7 +65,7 @@ func TestBannerAdviceThroughNativeStatusAndActualSurfaces(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, driver, "-test.run=^TestBannerAdviceThroughNativeStatusAndActualSurfaces$") // #nosec G204 -- private copy of this test binary
 	cmd.Env = append(os.Environ(), "DIBS_BANNER_ADVICE_DRIVER=1", "DIBS_NOTIFY=")
@@ -117,6 +117,7 @@ func runBannerAdviceSurfaces(t *testing.T) {
 	board := httptest.NewServer(mux)
 	t.Cleanup(board.Close)
 	const advice = "Dibs approval requests appear as banners and vanish. Set System Settings > Notifications > Dibs > Alert style: Alerts."
+	assertBannerBoardProbeCache(t, board, marker, advice)
 	for _, style := range []string{"banner", "unknown", "none", "alert"} {
 		t.Run(style, func(t *testing.T) {
 			settings, err := json.Marshal(map[string]any{
@@ -218,7 +219,7 @@ func assertBannerEventUsesCachedAdvice(t *testing.T, board *httptest.Server, mar
 	if !strings.Contains(frame(), "notification_advice") {
 		t.Fatal("initial SSE snapshot omitted advice")
 	}
-	if err := os.Remove(marker); err != nil {
+	if err := os.Remove(marker); err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
 	send()
@@ -227,5 +228,64 @@ func assertBannerEventUsesCachedAdvice(t *testing.T, board *httptest.Server, mar
 	}
 	if _, err := os.Stat(marker); !os.IsNotExist(err) {
 		t.Fatal("an ordinary mail frame launched another native settings probe")
+	}
+}
+
+// Exercise the production API with the real clock and installed-helper door.
+// A simulated cache flag would miss a handler which bypasses the cache. The
+// minute is deliberate: the response, not a timer, must trigger the next probe.
+func assertBannerBoardProbeCache(t *testing.T, board *httptest.Server, marker, advice string) {
+	t.Helper()
+	settings := func(style string) {
+		t.Helper()
+		raw, err := json.Marshal(map[string]any{
+			"version": 1, "authorization_status": "authorized", "alert_style": style,
+			"alert_setting": "enabled", "notification_center_setting": "enabled",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("DIBS_SETTINGS_GUARD_VALUE", string(raw))
+	}
+	read := func(want string) {
+		t.Helper()
+		resp, err := board.Client().Get(board.URL + "/api/board")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		var view map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&view); err != nil || resp.StatusCode != http.StatusOK {
+			t.Fatalf("actual board API: status=%d decode=%v", resp.StatusCode, err)
+		}
+		if got := view["notification_advice"]; got != want {
+			t.Fatalf("actual board API advice=%q, want %q", got, want)
+		}
+	}
+	settings("banner")
+	read(advice)
+	if data, err := os.ReadFile(marker); err != nil || string(data) != "status" {
+		t.Fatalf("first API request did not launch actual native helper: %s %v", data, err)
+	}
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
+	}
+	read(advice)
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatal("two board API requests inside one minute launched another helper")
+	}
+	// The first probe completed before this timestamp. Waiting from here also
+	// works under -race and never depends on the helper's startup duration.
+	<-time.After(time.Minute + 50*time.Millisecond)
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatal("native helper ran without a request after cache expiry")
+	}
+	settings("alert")
+	read("")
+	if data, err := os.ReadFile(marker); err != nil || string(data) != "status" {
+		t.Fatalf("API request after cache expiry did not measure Alerts: %s %v", data, err)
+	}
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Settings is a versioned observation from the notifier on the posting machine.
@@ -122,18 +123,28 @@ func (s *Settings) ApprovalAdvice() (text string, observed bool) {
 	return "", s.AlertStyle == "alert"
 }
 
-// CurrentApprovalAdvice uses the existing permission-free status probe. Call
-// outside the engine writer: the native helper may take time to answer.
+// CurrentApprovalAdvice reuses native observations for one minute. The first
+// request after expiry runs the permission-free status probe; nothing runs on a
+// timer. Call outside the engine writer: a cold probe may take time to answer.
 func CurrentApprovalAdvice() string {
 	if goos != "darwin" {
 		return ""
 	}
-	ReachWithSettings()
+	// Serialize cold requests without holding the observation lock: sends and
+	// event-driven frames must still read the last evidence immediately.
+	approvalAdviceProbe.Lock()
+	defer approvalAdviceProbe.Unlock()
+	lastNativeSettings.RLock()
+	measuredAt := lastNativeSettings.measuredAt
+	lastNativeSettings.RUnlock()
+	if measuredAt.IsZero() || time.Since(measuredAt) >= time.Minute {
+		ReachWithSettings()
+	}
 	return RecordedApprovalAdvice()
 }
 
 // RecordedApprovalAdvice reads the persistent diagnosis without a status probe.
-// Event-driven board updates use this; existing refresh snapshots re-measure.
+// Event-driven board updates use this; refresh requests check the cache age.
 func RecordedApprovalAdvice() string {
 	if goos != "darwin" {
 		return ""
@@ -143,15 +154,19 @@ func RecordedApprovalAdvice() string {
 	return lastNativeSettings.advice
 }
 
+var approvalAdviceProbe sync.Mutex
+
 var lastNativeSettings struct {
 	sync.RWMutex
-	value  *Settings
-	advice string
+	value      *Settings
+	advice     string
+	measuredAt time.Time
 }
 
 func rememberNativeSettings(s *Settings) {
 	lastNativeSettings.Lock()
 	lastNativeSettings.value = s.Normalized()
+	lastNativeSettings.measuredAt = time.Now()
 	if advice, observed := s.ApprovalAdvice(); observed {
 		lastNativeSettings.advice = advice
 	}
