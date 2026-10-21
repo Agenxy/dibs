@@ -58,14 +58,11 @@ func (e *Engine) unreadMailUpdates(m *core.Message) []core.Result {
 			update["position"] = e.state.QueuePosition(m)
 			update["priority"] = m.EffectivePriority()
 		default:
-			update["body"] = m.Response
+			update["label"] = "response"
 			if m.State == core.MsgStateDone {
 				// The ledger stores approval and completion together. Keep that
 				// exact response rather than guess a boundary in participant text.
 				update["label"] = "response (includes any earlier approval text)"
-			}
-			if m.Deliverable != "" {
-				update["deliverable"] = m.Deliverable
 			}
 		}
 		updates = append(updates, update)
@@ -74,7 +71,43 @@ func (e *Engine) unreadMailUpdates(m *core.Message) []core.Result {
 }
 
 func (e *Engine) outcomeReadHeader(m *core.Message, now time.Time) core.Result {
-	header := e.compactMail(e.queueMessageView(m), now)
+	view := e.queueMessageView(m)
+	header := e.compactMail(view, now)
+	// Compact the original request, never its current outcome. Agents have
+	// always collected answers and delivered work through these message keys.
+	for key, value := range map[string]string{
+		"response": view.Response, "deliverable": view.Deliverable,
+		"expire_detail": view.ExpireDetail, "withdrawal_reason": view.WithdrawalReason,
+		"withdrawn_by": view.WithdrawnBy, "queue_priority": view.QueuePriority,
+		"queue_by": view.QueueBy, "queue_lock_by": view.QueueLockBy,
+	} {
+		if value != "" {
+			header[key] = value
+		}
+	}
+	for key, value := range map[string]uint64{
+		"superseded_by": view.SupersededBy, "queue_changed_serial": view.QueueChangedSerial,
+	} {
+		if value != 0 {
+			header[key] = value
+		}
+	}
+	for key, value := range map[string]time.Time{
+		"terminal_at": view.TerminalAt, "queue_changed_at": view.QueueChangedAt,
+	} {
+		if !value.IsZero() {
+			header[key] = value
+		}
+	}
+	if view.QueueRank != 0 {
+		header["queue_rank"] = view.QueueRank
+	}
+	if view.QueueDebt {
+		header["queue_debt"] = true
+	}
+	if view.QueueOrderLocked {
+		header["queue_order_locked"] = true
+	}
 	delete(header, "body")
 	delete(header, "body_truncated")
 	header["body_omitted"] = true

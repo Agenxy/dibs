@@ -42,8 +42,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Reading unread updates on mail you sent now leads with those updates instead
   of repeating the original task and milestone history. `read_mail` accepts
-  `include_body:true` for the full envelope. Completion responses preserve and
-  label any earlier approval text stored with them. Read receipts are unchanged.
+  `include_body:true` for the full envelope. The existing `message.response`,
+  deliverable and verdict fields stay available; verdict updates do not duplicate
+  their response. Completion responses preserve and label any earlier approval
+  text stored with them. Read receipts are unchanged.
 - `ack` on a sent ask now durably clears its outcome, progress and queue updates
   without returning bodies. On a received request it clears reviewer updates.
   These acknowledgements preserve the request, its work status and the other

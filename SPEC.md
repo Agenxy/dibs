@@ -837,8 +837,10 @@ recipient's `respond` (responding proves receipt). GC eligibility requires
   questions retain their response obligations. `ack(msg_serial)` stays valid.
 - **`read_mail(msg_serial,include_body?)`**: authorized for **sender or recipient**.
   By default a sender reading unread outcomes on its own non-self-addressed mail
-  gets a compact `message` header and ordered `updates`, with the exact unread
-  progress/verdict text and artifacts. The original body and milestone history
+  gets a compact `message` header and ordered `updates`. The documented
+  `message.response`, `deliverable`, state and verdict receipts remain intact;
+  progress text/artifacts stay in `updates`, and verdict units label the response
+  without duplicating it. The original body and milestone history
   are omitted, with `body_omitted` and a hint for `include_body:true` to recover
   the full envelope. A DONE verdict preserves the stored response, including
   any earlier approval text, and labels that fact; no delimiter in participant

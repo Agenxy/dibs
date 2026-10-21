@@ -69,13 +69,23 @@ func TestOwnReadMailShowsOnlyUnreadUpdates(t *testing.T) {
 				if message["body_omitted"] != true || !strings.Contains(fmt.Sprint(message["read_hint"]), "include_body") {
 					t.Fatalf("compact reply has no full-envelope recovery: %v", got)
 				}
+				if message["response"] != before.Response {
+					t.Fatalf("compact read lost the current response: %v", message)
+				}
 				units, ok := got["updates"].([]any)
 				wantBody := fresh
 				if verdict == "done" {
 					wantBody = before.Response
 				}
-				if !ok || len(units) != 1 || units[0].(map[string]any)["body"] != wantBody {
-					t.Fatalf("fresh update or exact formatting lost: %v", got)
+				if !ok || len(units) != 1 {
+					t.Fatalf("fresh update lost: %v", got)
+				}
+				if verdict == "progress" {
+					if units[0].(map[string]any)["body"] != fresh {
+						t.Fatalf("progress exact formatting lost: %v", got)
+					}
+				} else if message["response"] != wantBody {
+					t.Fatalf("verdict exact formatting lost from documented response field: %v", got)
 				}
 				if verdict == "done" && units[0].(map[string]any)["label"] != "response (includes any earlier approval text)" {
 					t.Fatal("stored completion response did not explain its approval prefix")
@@ -83,7 +93,7 @@ func TestOwnReadMailShowsOnlyUnreadUpdates(t *testing.T) {
 				if panel := fmt.Sprint(panelMeta(got)); strings.Contains(panel, "fresh report") || strings.Contains(panel, "old approval") {
 					t.Fatal("a private update body escaped into the panel copy")
 				}
-				if strings.Contains(fmt.Sprint(got), "old progress") || (verdict != "done" && strings.Contains(fmt.Sprint(got), "old approval")) || got["milestone_reviews"] != nil {
+				if strings.Contains(fmt.Sprint(got), "old progress") || got["milestone_reviews"] != nil {
 					t.Fatal("already-read history or original milestones repeated")
 				}
 				after := mailboxReceipt(t, eng, uint64(n))

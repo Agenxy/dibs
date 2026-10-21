@@ -213,8 +213,10 @@ requests/questions come first, then new mail, then already-seen FYIs. Follow
 `next_cursor` with `inbox(cursor:...)`; omit it to start a new traversal. The
 cursor fixes the upper serial, so new arrivals appear in the next traversal.
 `read_mail(msg_serial)` leads with unread updates when you read mail you sent:
-`updates` contains their exact text and artifacts, and `message` identifies the
-conversation without repeating its original body or milestone history. A DONE
+`message.response` and `message.deliverable` retain the current answer or work,
+with state and verdict receipts. `updates` carries exact unread progress text
+and artifacts, and labels verdicts without repeating their response. The
+original body and milestone history are omitted. A DONE
 response retains any earlier approval text stored with it and is labelled so.
 Use `include_body:true` for the full envelope, attachments and history. Incoming
 mail, self-addressed mail and reads with no unread updates stay full;
