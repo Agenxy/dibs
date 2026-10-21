@@ -20,12 +20,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agenxy/dibs/internal/testexec"
 	"github.com/agenxy/dibs/internal/testport"
 )
 
 // This recording executable proves process/issuer wiring, NOT cryptography.
 // The real historical signed bundle has a separate network-denied probe.
 func TestMain(m *testing.M) {
+	// Private copied images can be assessed without entering a notifier or tool.
+	if len(os.Args) == 2 && os.Args[1] == "--dibs-test-prepare" {
+		os.Exit(0)
+	}
 	// This suite builds and runs real dibs/dibd children. They are not Go
 	// test binaries, so testing.Testing() cannot guard their app opener.
 	if err := os.Setenv("DIBS_TEST_FORBID_APP_OPEN", "1"); err != nil {
@@ -36,6 +41,17 @@ func TestMain(m *testing.M) {
 	}
 	if os.Getenv("DIBS_TEST_GUEST_ADMISSION_COSIGN") == "1" && len(os.Args) > 1 {
 		if os.Args[1] == "version" {
+			if marker := os.Getenv("DIBS_TEST_GUEST_COLD_EXEC"); marker != "" {
+				f, err := os.OpenFile(marker, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+				if err == nil {
+					if err := f.Close(); err != nil {
+						os.Exit(16)
+					}
+					time.Sleep(2200 * time.Millisecond)
+				} else if !os.IsExist(err) {
+					os.Exit(17)
+				}
+			}
 			os.Exit(0)
 		}
 		if os.Args[1] == "verify-blob" {
@@ -122,6 +138,7 @@ func testGuestReleaseMetadataThroughShippedDaemon(t *testing.T, version string, 
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("daemon build setup: %v %s", err, out)
 	}
+	testexec.PrepareExecutable(t, exec.Command(daemon, "-h"))
 	self, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -154,6 +171,9 @@ func testGuestReleaseMetadataThroughShippedDaemon(t *testing.T, version string, 
 	// The race-built verifier stand-in must not add Go's one-second exit
 	// grace period to each subprocess. Race detection itself remains enabled.
 	cmd.Env = append(os.Environ(), "GORACE=atexit_sleep_ms=0", "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "DIBS_NOTIFY=off", "DIBS_TEST_GUEST_ADMISSION_COSIGN=1", "DIBS_TEST_GUEST_ADMISSION_RECEIPT="+receipt)
+	verifier := exec.Command(filepath.Join(bin, "cosign"), "version")
+	verifier.Env = cmd.Env
+	testexec.PrepareExecutable(t, verifier)
 	cmd.Stdout, cmd.Stderr = logFile, logFile
 	reserved.Release(t)
 	if err = cmd.Start(); err != nil {
@@ -297,4 +317,12 @@ func testGuestReleaseMetadataThroughShippedDaemon(t *testing.T, version string, 
 	}
 	call("invite", map[string]any{"token": token, "action": "list"})
 	call("invite", map[string]any{"token": token, "action": "revoke", "name": "issuer-cloud-3"})
+}
+
+func TestGuestReleasePreparesColdVerifierBeforeDaemonDeadline(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix shipped-daemon fixture")
+	}
+	t.Setenv("DIBS_TEST_GUEST_COLD_EXEC", filepath.Join(t.TempDir(), "cold-first-exec"))
+	testGuestReleaseMetadataThroughShippedDaemon(t, "0.0.9", true)
 }

@@ -13,6 +13,9 @@ import (
 )
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--dibs-test-prepare" {
+		return
+	}
 	if os.Getenv("DIBS_TEST_FORBID_APP_OPEN") != "1" {
 		fmt.Fprintln(os.Stderr, "refusing to probe the opener without its test guard")
 		os.Exit(2)

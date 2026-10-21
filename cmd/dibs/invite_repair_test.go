@@ -18,6 +18,7 @@ import (
 
 	"github.com/agenxy/dibs/internal/build"
 	"github.com/agenxy/dibs/internal/selfupdate"
+	"github.com/agenxy/dibs/internal/testexec"
 )
 
 func TestInviteExplicitRepairPublishesOnlyFreshSignatureVerifiedEvidence(t *testing.T) {
@@ -40,6 +41,7 @@ func TestInviteExplicitRepairPublishesOnlyFreshSignatureVerifiedEvidence(t *test
 				if err := os.WriteFile(name, data, 0o700); err != nil {
 					t.Fatal(err)
 				}
+				testexec.PrepareExecutable(t, exec.Command(name, "--dibs-test-prepare"))
 			}
 			record := []byte("{")
 			if mode == "unknown-root" || mode == "bad-signature" {

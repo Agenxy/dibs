@@ -19,6 +19,7 @@ import (
 
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/humanask"
+	"github.com/agenxy/dibs/internal/testexec"
 )
 
 // The private copied test binary is the helper, requiring no interpreter or
@@ -132,6 +133,7 @@ func TestDoctorMeasuresNativeNotificationSettings(t *testing.T) {
 	if err := os.WriteFile(driver, bytes, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	testexec.PrepareExecutable(t, exec.Command(driver, "--dibs-test-prepare"))
 	helper := filepath.Join(dir, "Dibs.app", "Contents", "MacOS", "dibs-notify")
 	if err := os.MkdirAll(filepath.Dir(helper), 0o700); err != nil {
 		t.Fatal(err)
@@ -139,6 +141,7 @@ func TestDoctorMeasuresNativeNotificationSettings(t *testing.T) {
 	if err := os.WriteFile(helper, bytes, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	testexec.PrepareExecutable(t, exec.Command(helper, "--dibs-test-prepare"))
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, driver, "-test.run=^TestDoctorMeasuresNativeNotificationSettings$") // #nosec G204 -- private copy of this test binary
@@ -212,6 +215,7 @@ func TestRelayCarriesThePostingHelpersActualSettings(t *testing.T) {
 	if err := os.WriteFile(driver, bytes, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	testexec.PrepareExecutable(t, exec.Command(driver, "--dibs-test-prepare"))
 	helper := filepath.Join(dir, "Dibs.app/Contents/MacOS/dibs-notify")
 	if err := os.MkdirAll(filepath.Dir(helper), 0o700); err != nil {
 		t.Fatal(err)
@@ -219,6 +223,7 @@ func TestRelayCarriesThePostingHelpersActualSettings(t *testing.T) {
 	if err := os.WriteFile(helper, bytes, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	testexec.PrepareExecutable(t, exec.Command(helper, "--dibs-test-prepare"))
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, driver, "-test.run=^TestRelayCarriesThePostingHelpersActualSettings$") // #nosec G204 -- private copy of this test binary, fixture helper

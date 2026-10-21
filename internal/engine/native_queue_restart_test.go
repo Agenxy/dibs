@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/testexec"
 )
 
 type queueReplayRecord struct {
@@ -52,6 +53,7 @@ func exerciseNativeQueueRestart(t *testing.T, contact bool, hookAlias string) {
 	if b, err := exec.Command("go", "build", "-o", binary, "../wakeexec/testdata/codexqueue").CombinedOutput(); err != nil {
 		t.Fatalf("build fixture %v: %s", err, b)
 	}
+	testexec.PrepareExecutable(t, exec.Command(binary, "--version"))
 	ledger := &queueReplayLedger{}
 	newEngine := func(state *core.State) (*Engine, context.Context, func()) {
 		e := New(state, ledger, deadProber{})

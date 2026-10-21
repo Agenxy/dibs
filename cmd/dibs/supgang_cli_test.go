@@ -31,6 +31,10 @@ import (
 // one did on 2026-09-13, so the join-by-peer path is exercised against real
 // envelopes.
 func TestMain(m *testing.M) {
+	// Private copied images can be assessed without entering a notifier or tool.
+	if len(os.Args) == 2 && os.Args[1] == "--dibs-test-prepare" {
+		os.Exit(0)
+	}
 	if err := os.Setenv("DIBS_TEST_FORBID_APP_OPEN", "1"); err != nil {
 		panic(err)
 	}

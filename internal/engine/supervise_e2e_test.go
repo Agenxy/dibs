@@ -14,6 +14,7 @@ import (
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/liveness"
+	"github.com/agenxy/dibs/internal/testexec"
 )
 
 // The whole chain, against a real process: spawn a stalled agent, sweep the
@@ -45,7 +46,7 @@ func TestAStalledAgentReachesTheSpaceThatSpawnedIt(t *testing.T) {
 	// has an elapsed time, so the wait-for-age loop below passed while discovery
 	// had quietly stopped matching it. A stand-in that dies at birth tests
 	// nothing and looks like a broken sweep.
-	prog := "package main\n\nimport \"time\"\n\nfunc main() {\n\tfor {\n\t\ttime.Sleep(time.Hour)\n\t}\n}\n"
+	prog := "package main\n\nimport (\"os\";\"time\")\n\nfunc main() {\n\tif len(os.Args) == 2 && os.Args[1] == \"--dibs-test-prepare\" { return }\n\tfor {\n\t\ttime.Sleep(time.Hour)\n\t}\n}\n"
 	if err := os.WriteFile(src, []byte(prog), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -54,6 +55,8 @@ func TestAStalledAgentReachesTheSpaceThatSpawnedIt(t *testing.T) {
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Skipf("could not build the stand-in agent: %v\n%s", err, out)
 	}
+
+	testexec.PrepareExecutable(t, exec.Command(fake, "--dibs-test-prepare"))
 
 	// Spawned the way the PreToolUse stamp spawns one: the parent's agent in the
 	// environment, inherited by the process and everything below it.

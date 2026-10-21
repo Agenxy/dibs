@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/testexec"
 )
 
 // A bridge must not be able to outlive the harness that spawned it.
@@ -148,6 +150,7 @@ func buildBridge(t *testing.T) string {
 	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
 		t.Fatalf("building the bridge: %v: %s", err, out)
 	}
+	testexec.PrepareExecutable(t, exec.Command(bin, "--version"))
 	return bin
 }
 

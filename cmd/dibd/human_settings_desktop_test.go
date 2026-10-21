@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/testexec"
 )
 
 // TestMain dispatches the private copied helper before test flag parsing.
@@ -160,6 +161,7 @@ func TestDesktopSettingsComeFromThePostingHelper(t *testing.T) {
 	if err := os.WriteFile(driver, bytes, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	testexec.PrepareExecutable(t, exec.Command(driver, "--dibs-test-prepare"))
 	helper := filepath.Join(dir, "Dibs.app/Contents/MacOS/dibs-notify")
 	if err := os.MkdirAll(filepath.Dir(helper), 0o700); err != nil {
 		t.Fatal(err)
@@ -167,6 +169,7 @@ func TestDesktopSettingsComeFromThePostingHelper(t *testing.T) {
 	if err := os.WriteFile(helper, bytes, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	testexec.PrepareExecutable(t, exec.Command(helper, "--dibs-test-prepare"))
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, driver, "-test.run=^TestDesktopSettingsComeFromThePostingHelper$") // #nosec G204 -- private copied test binary and fixture helper

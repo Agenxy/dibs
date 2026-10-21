@@ -24,6 +24,7 @@ import (
 	"github.com/agenxy/dibs/internal/build"
 	"github.com/agenxy/dibs/internal/paths"
 	"github.com/agenxy/dibs/internal/selfupdate"
+	"github.com/agenxy/dibs/internal/testexec"
 )
 
 // Exercise the real upgrade dispatch/acquire/extract/place/retain/cleanup path
@@ -50,6 +51,7 @@ func TestUpgradeRetainsOnlySignatureVerifiedEvidenceThroughActualCLI(t *testing.
 				if err := os.WriteFile(name, data, 0o700); err != nil {
 					t.Fatal(err)
 				}
+				testexec.PrepareExecutable(t, exec.Command(name, "--dibs-test-prepare"))
 			}
 			if err := os.WriteFile(filepath.Join(bin, "dibd"), []byte("old fixture daemon"), 0o700); err != nil {
 				t.Fatal(err)

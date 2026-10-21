@@ -15,6 +15,10 @@ import (
 // what a real notify-send would receive, and what it prints back is what a
 // real one prints (the chosen action key on stdout, nothing when dismissed).
 func TestMain(m *testing.M) {
+	// Private copied images can be assessed without entering a notifier or tool.
+	if len(os.Args) == 2 && os.Args[1] == "--dibs-test-prepare" {
+		os.Exit(0)
+	}
 	if os.Getenv("DIBS_TEST_AS_OSASCRIPT") != "" && filepath.Base(os.Args[0]) == "osascript" {
 		if len(os.Args) < 6 || os.Args[1] != "-e" || os.Args[2] != banner {
 			os.Exit(3)

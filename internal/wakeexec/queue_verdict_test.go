@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/testexec"
 )
 
 func TestNativeQueueVerdictCoalescesThroughCommandDoor(t *testing.T) {
@@ -19,6 +20,7 @@ func TestNativeQueueVerdictCoalescesThroughCommandDoor(t *testing.T) {
 	if b, err := exec.Command("go", "build", "-o", binary, "./testdata/codexqueue").CombinedOutput(); err != nil {
 		t.Fatalf("setup: fixture build %v: %s", err, b)
 	}
+	testexec.PrepareExecutable(t, exec.Command(binary, "--version"))
 	for _, kind := range []string{
 		"", core.MsgNotify, core.MsgRequest, core.MsgHandoff, "notice",
 		core.MsgQuestion, core.MsgStateAnswered, core.MsgStateApproved, core.MsgStateDenied,

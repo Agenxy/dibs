@@ -31,6 +31,7 @@ import (
 	"github.com/agenxy/dibs/internal/ledger"
 	"github.com/agenxy/dibs/internal/mcp"
 	"github.com/agenxy/dibs/internal/selfupdate"
+	"github.com/agenxy/dibs/internal/testexec"
 )
 
 // The actual CLI dispatches --out through real MCP issuance. This is private
@@ -47,6 +48,7 @@ func TestGuestInviteExportThroughActualCLI(t *testing.T) {
 	if out, err := exec.Command("go", "build", "-o", bin, "../dibs").CombinedOutput(); err != nil {
 		t.Fatalf("build CLI: %v %s", err, out)
 	}
+	testexec.PrepareExecutable(t, exec.Command(bin, "--version"))
 	dir := t.TempDir()
 	box, err := ledger.LoadOrCreateKey(filepath.Join(dir, "key"))
 	if err != nil {
@@ -219,6 +221,7 @@ func TestGuestInviteExportThroughActualCLI(t *testing.T) {
 	if err = os.WriteFile(filepath.Join(cosignDir, "cosign"), probe, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	testexec.PrepareExecutable(t, exec.Command(filepath.Join(cosignDir, "cosign"), "--dibs-test-prepare"))
 	t.Setenv("PATH", cosignDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("DIBS_TEST_GUEST_ADMISSION_COSIGN", "1")
 	// Remove only the race stand-in's subprocess exit delay, not race checks.

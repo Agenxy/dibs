@@ -8,16 +8,23 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/agenxy/dibs/internal/testexec"
 )
 
 // The helper runs through the actual executable lookup/initialize/cache-read
 // door, rather than calling the comparison directly. It is NOT a cryptographic
 // proof: the real cosign/network-denied release-bundle measurement is separate.
 func TestMain(m *testing.M) {
+	// Private copied images can be assessed without entering a notifier or tool.
+	if len(os.Args) == 2 && os.Args[1] == "--dibs-test-prepare" {
+		os.Exit(0)
+	}
 	if os.Getenv("DIBS_TEST_COSIGN_RECORD") != "" {
 		os.Exit(recordCosignHelper())
 	}
@@ -103,6 +110,7 @@ func TestReleaseRootGateUsesFreshAuthenticatedProductionTUF(t *testing.T) {
 	if err = os.WriteFile(filepath.Join(bin, name), data, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	testexec.PrepareExecutable(t, exec.Command(filepath.Join(bin, name), "--dibs-test-prepare"))
 	t.Setenv("PATH", bin)
 	// A developer's custom cache/mirror/root must not define release trust.
 	t.Setenv("TUF_ROOT", "/untrusted-inherited-cache")

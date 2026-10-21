@@ -17,6 +17,7 @@ import (
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/testcodexipc"
+	"github.com/agenxy/dibs/internal/testexec"
 )
 
 // The person restarts ChatGPT. Before this, mail arriving while the app came
@@ -67,6 +68,7 @@ func TestAChatGPTRestartLoadsEveryAgentThreadOnceAndMailNeverOpensOne(t *testing
 	if b, err := exec.Command("go", "build", "-o", binary, "../wakeexec/testdata/codexqueue").CombinedOutput(); err != nil {
 		t.Fatalf("build fixture %v: %s", err, b)
 	}
+	testexec.PrepareExecutable(t, exec.Command(binary, "--version"))
 	e, ctx, _, sender := nativeAppEngine(t)
 	e.SetWakeCommands(map[string]WakeCommand{"codex": {Argv: []string{
 		binary, "queue", "--thread", "{thread}", "--message", "{message}",
@@ -153,6 +155,7 @@ func TestMailWaitsForTheLoadWhenTheAppIsBackButItsThreadsAreNot(t *testing.T) {
 	if b, err := exec.Command("go", "build", "-o", binary, "../wakeexec/testdata/codexqueue").CombinedOutput(); err != nil {
 		t.Fatalf("build fixture %v: %s", err, b)
 	}
+	testexec.PrepareExecutable(t, exec.Command(binary, "--version"))
 	e, ctx, _, sender := nativeAppEngine(t)
 	e.SetWakeCommands(map[string]WakeCommand{"codex": {Argv: []string{
 		binary, "queue", "--thread", "{thread}", "--message", "{message}",

@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/agenxy/dibs/internal/testexec"
 )
 
 // Main is the release candidate. Enter through the shipped help command so
@@ -17,6 +19,7 @@ func TestGuestBridgeHelpNamesIncompleteFeature(t *testing.T) {
 	if out, err := exec.Command("go", "build", "-o", bin, "../dibs").CombinedOutput(); err != nil {
 		t.Fatalf("build fixture command: %v %s", err, out)
 	}
+	testexec.PrepareExecutable(t, exec.Command(bin, "--version"))
 	for _, args := range [][]string{
 		{"mcp-stdio", "--help"},
 		{"mcp-stdio", "--guest", "--help"},

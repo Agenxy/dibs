@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/testexec"
 )
 
 func TestNativeQueueRouteCoalescesAndRearmsAcrossProcesses(t *testing.T) {
@@ -21,6 +23,7 @@ func TestNativeQueueRouteCoalescesAndRearmsAcrossProcesses(t *testing.T) {
 	if b, err := exec.Command("go", "build", "-o", binary, "./testdata/codexqueue").CombinedOutput(); err != nil {
 		t.Fatalf("fixture build: %v: %s", err, b)
 	}
+	testexec.PrepareExecutable(t, exec.Command(binary, "--version"))
 	argv := []string{binary, "queue", "--thread", "fixture-thread", "--message", Compose("question")}
 	count := func() int {
 		t.Helper()
@@ -92,6 +95,7 @@ func TestQueueFallbackSurvivesRestart(t *testing.T) {
 	if b, err := exec.Command("go", "build", "-o", binary, "./testdata/codexqueue").CombinedOutput(); err != nil {
 		t.Fatalf("fixture build %v: %s", err, b)
 	}
+	testexec.PrepareExecutable(t, exec.Command(binary, "--version"))
 	t.Setenv("DIBS_QUEUE_FIXTURE", binary)
 	argv := []string{binary, "queue", "--thread", "fixture-thread", "--message", Compose("question")}
 	if !RunCommands(argv, nil, "worker", "", time.Second, time.Second) {
@@ -143,6 +147,7 @@ func TestQueueProbeTimeoutAndChangedShapeAreUnknown(t *testing.T) {
 	if b, err := exec.Command("go", "build", "-o", binary, "./testdata/codexqueue").CombinedOutput(); err != nil {
 		t.Fatalf("fixture build %v: %s", err, b)
 	}
+	testexec.PrepareExecutable(t, exec.Command(binary, "--version"))
 	start := time.Now()
 	pending, known := observeQueue(binary, "fixture-thread")
 	if pending || known {

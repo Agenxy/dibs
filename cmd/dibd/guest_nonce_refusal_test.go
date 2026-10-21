@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/agenxy/dibs/internal/paths"
+	"github.com/agenxy/dibs/internal/testexec"
 )
 
 // Enter through the actual command and its pinned TLS transport, not a nonce
@@ -29,6 +30,7 @@ func TestGuestNonceStoreRefusalKeepsActualBridgeAlive(t *testing.T) {
 	if out, err := exec.Command("go", "build", "-o", bin, "../dibs").CombinedOutput(); err != nil {
 		t.Fatalf("build actual guest bridge: %v %s", err, out)
 	}
+	testexec.PrepareExecutable(t, exec.Command(bin, "--version"))
 	config, pem, pin, err := guestTLS(t.TempDir(), netip.MustParseAddr("::1"))
 	if err != nil {
 		t.Fatal(err)

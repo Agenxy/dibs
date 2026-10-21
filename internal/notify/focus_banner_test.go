@@ -11,6 +11,8 @@ import (
 	"runtime"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/testexec"
 )
 
 // The public API resolves a real helper beside a copied driver. The helper
@@ -44,6 +46,7 @@ func TestFocusQuestionUsesBannerThroughInstalledHelper(t *testing.T) {
 		if err := os.WriteFile(p, b, 0o700); err != nil {
 			t.Fatal(err)
 		}
+		testexec.PrepareExecutable(t, exec.Command(p, "--dibs-test-prepare"))
 	}
 	db := filepath.Join(dir, "Library", "DoNotDisturb", "DB")
 	if err := os.MkdirAll(db, 0o700); err != nil {

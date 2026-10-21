@@ -11,6 +11,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/agenxy/dibs/internal/testexec"
 )
 
 // This guard enters through the shipped command, not a setter or source search.
@@ -29,6 +31,7 @@ func TestCodexPluginCommand(t *testing.T) {
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("build fixture: %v %s", err, out)
 		}
+		testexec.PrepareExecutable(t, exec.Command(build.output, "--version"))
 	}
 	for _, mode := range []string{"dry", "ok", "fail", "late-fail", "partial", "wrong-receipt"} {
 		t.Run(mode, func(t *testing.T) {

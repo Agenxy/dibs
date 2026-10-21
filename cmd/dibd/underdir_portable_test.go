@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/agenxy/dibs/internal/testexec"
 )
 
 // A portable path is contained with the portable separator.
@@ -61,6 +63,7 @@ func TestAShippedIndexIsNotCalibratedAgainstThisDisk(t *testing.T) {
 	// does not ship shell, not even into a temporary directory.
 	src := filepath.Join(t.TempDir(), "git.go")
 	prog := "package main\n\nimport \"os\"\n\nfunc main() {\n" +
+		"\tif len(os.Args) == 2 && os.Args[1] == \"--dibs-test-prepare\" { return }\n" +
 		"\tf, _ := os.OpenFile(`" + marker + "`, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)\n" +
 		"\tif f != nil {\n\t\t_, _ = f.WriteString(\"x\")\n\t\t_ = f.Close()\n\t}\n" +
 		"\tos.Exit(1)\n}\n"
@@ -71,6 +74,7 @@ func TestAShippedIndexIsNotCalibratedAgainstThisDisk(t *testing.T) {
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Skipf("cannot build the stand-in git here: %v\n%s", err, out)
 	}
+	testexec.PrepareExecutable(t, exec.Command(filepath.Join(bin, "git"), "--dibs-test-prepare"))
 	t.Setenv("PATH", bin)
 
 	root := t.TempDir()
