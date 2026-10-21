@@ -6,6 +6,7 @@ package harnessenv
 import (
 	"context"
 	"errors"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -26,6 +27,15 @@ type processIdentity struct {
 
 // ProcessStart supplies the bridge's own incarnation on stateless requests.
 func ProcessStart(pid int) string {
+	if pid == os.Getpid() {
+		if started, supported := nativeSelfStart(); supported {
+			if started.IsZero() {
+				return ""
+			}
+			// processInventory normalizes ps's padded day with strings.Fields.
+			return started.UTC().Format("Mon Jan 2 15:04:05 2006")
+		}
+	}
 	processes, _ := processInventory()
 	return processes[pid].start
 }
