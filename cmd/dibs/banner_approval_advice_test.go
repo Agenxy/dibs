@@ -25,6 +25,7 @@ import (
 	"github.com/agenxy/dibs/internal/ledger"
 	"github.com/agenxy/dibs/internal/mcp"
 	"github.com/agenxy/dibs/internal/notify"
+	"github.com/agenxy/dibs/internal/testexec"
 	"github.com/agenxy/dibs/internal/web"
 )
 
@@ -64,6 +65,7 @@ func TestBannerAdviceThroughNativeStatusAndActualSurfaces(t *testing.T) {
 		if err := os.WriteFile(path, data, 0o700); err != nil {
 			t.Fatal(err)
 		}
+		testexec.PrepareExecutable(t, exec.Command(path, "--dibs-test-prepare"))
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
 	defer cancel()
