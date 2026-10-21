@@ -4,12 +4,15 @@
 package mcp
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/agenxy/dibs/internal/core"
 )
 
 func TestParentAckReadsSentUpdatesWithoutBodies(t *testing.T) {
@@ -85,9 +88,7 @@ func TestParentAckReadsSentUpdatesWithoutBodies(t *testing.T) {
 				stop()
 				_, eng, stop = aliasReplayServer(t, dir)
 				defer stop()
-				if restored := mailboxReceipt(t, eng, uint64(n)); !reflect.DeepEqual(after, restored) {
-					t.Fatal("sender ack was not durable through encrypted replay")
-				}
+				assertParentAckReplay(t, after, mailboxReceipt(t, eng, uint64(n)))
 			})
 		}
 	}
@@ -137,10 +138,25 @@ func TestParentAckReadsRecipientReviewsOnly(t *testing.T) {
 			stop()
 			_, eng, stop = aliasReplayServer(t, dir)
 			defer stop()
-			if restored := mailboxReceipt(t, eng, uint64(n)); !reflect.DeepEqual(after, restored) {
-				t.Fatal("review ack was not durable through encrypted replay")
-			}
+			assertParentAckReplay(t, after, mailboxReceipt(t, eng, uint64(n)))
 		})
+	}
+}
+
+func assertParentAckReplay(t *testing.T, before, after core.Message) {
+	t.Helper()
+	// Compare every persisted field, rather than time.Time's private location
+	// pointer: live Local and decoded UTC represent the same instant on Linux.
+	a, err := json.Marshal(before)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := json.Marshal(after)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(a) != string(b) {
+		t.Fatal("parent ack changed persisted message fields through encrypted replay")
 	}
 }
 
