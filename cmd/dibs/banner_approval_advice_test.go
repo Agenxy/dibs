@@ -116,7 +116,7 @@ func runBannerAdviceSurfaces(t *testing.T) {
 	w.Register(mux)
 	board := httptest.NewServer(mux)
 	t.Cleanup(board.Close)
-	const advice = "Dibs approval requests appear as banners and vanish. Set System Settings > Notifications > Dibs > Alert style: Alerts."
+	const advice = "Dibs approval requests appear as banners and vanish. Set System Settings > Notifications > Dibs > Alerts."
 	assertBannerBoardProbeCache(t, board, marker, advice)
 	for _, style := range []string{"banner", "unknown", "none", "alert"} {
 		t.Run(style, func(t *testing.T) {

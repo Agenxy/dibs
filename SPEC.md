@@ -1683,7 +1683,7 @@ state-only dismissal receipt; different sources keep their own observations.
 Banners on a request recommend System Settings > Notifications > Dibs > Alerts,
 because the Approve controls should persist. The human board shows a persistent
 notice: "Dibs approval requests appear as banners and vanish. Set System
-Settings > Notifications > Dibs > Alert style: Alerts." First paint, board API
+Settings > Notifications > Dibs > Alerts." First paint, board API
 reads and the existing 30-second SSE refresh reuse observations for one minute,
 then measure again on the next request outside the engine writer. Concurrent cold
 reads share the probe; no timer is added. Event-driven frames use cached advice

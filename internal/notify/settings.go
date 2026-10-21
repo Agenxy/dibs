@@ -118,7 +118,7 @@ func (s *Settings) ApprovalAdvice() (text string, observed bool) {
 	}
 	if s.AlertStyle == "banner" {
 		return "Dibs approval requests appear as banners and vanish. " +
-			"Set System Settings > Notifications > Dibs > Alert style: Alerts.", true
+			"Set System Settings > Notifications > Dibs > Alerts.", true
 	}
 	return "", s.AlertStyle == "alert"
 }
