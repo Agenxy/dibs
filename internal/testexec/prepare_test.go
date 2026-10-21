@@ -7,7 +7,6 @@ import (
 	"context"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -22,7 +21,7 @@ func TestPrepareExecutableFixture(t *testing.T) {
 	case "fail":
 		os.Exit(7)
 	case "hang":
-		time.Sleep(time.Hour)
+		<-time.After(time.Hour)
 	case "orphan":
 		child := exec.Command(os.Args[0], "-test.run=^TestPrepareExecutableFixture$")
 		child.Env = append(os.Environ(), "DIBS_TEST_PREPARE_MODE=orphan-child")
@@ -31,13 +30,7 @@ func TestPrepareExecutableFixture(t *testing.T) {
 			t.Fatal(err)
 		}
 	case "orphan-child":
-		deadline := time.Now().Add(20 * time.Second)
-		for time.Now().Before(deadline) {
-			if _, err := os.Stat(os.Getenv("DIBS_TEST_PREPARE_RELEASE")); err == nil {
-				return
-			}
-			time.Sleep(10 * time.Millisecond)
-		}
+		<-time.After(3 * time.Second)
 	}
 }
 
@@ -70,12 +63,10 @@ func TestPrepareExecutableRefusesFailedOrStuckSetup(t *testing.T) {
 	}
 	for _, mode := range []string{"fail", "hang", "orphan"} {
 		t.Run(mode, func(t *testing.T) {
-			release := filepath.Join(t.TempDir(), "release")
-			defer func() { _ = os.WriteFile(release, nil, 0o600) }()
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
 			command := exec.CommandContext(ctx, self, "-test.run=^TestPrepareExecutableRefusesFailedOrStuckSetup$")
-			command.Env = append(os.Environ(), "DIBS_TEST_PREPARE_DRIVER="+mode, "DIBS_TEST_PREPARE_RELEASE="+release, "GORACE=atexit_sleep_ms=0")
+			command.Env = append(os.Environ(), "DIBS_TEST_PREPARE_DRIVER="+mode, "GORACE=atexit_sleep_ms=0")
 			out, err := command.CombinedOutput()
 			if err == nil || ctx.Err() != nil || !strings.Contains(string(out), "executable fixture setup:") || !strings.Contains(string(out), "bound 10s") {
 				t.Fatalf("%s setup was not refused by the bounded helper: err=%v context=%v output=%s", mode, err, ctx.Err(), out)

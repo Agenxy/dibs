@@ -21,12 +21,14 @@ func PrepareExecutable(t testing.TB, command *exec.Cmd) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	probe := exec.CommandContext(ctx, command.Path, command.Args[1:]...) // #nosec G204 -- private fixture and explicit argv supplied by the test
+	// #nosec G204 -- private fixture and explicit argv supplied by the test
+	probe := exec.CommandContext(ctx, command.Path, command.Args[1:]...)
 	probe.Dir, probe.Env = command.Dir, command.Env
 	probe.WaitDelay = time.Second
 	started := time.Now()
 	out, err := probe.CombinedOutput()
 	if err != nil {
-		t.Fatalf("executable fixture setup: %s %v after %s (bound 10s + 1s drain): %v; output: %s", command.Path, command.Args[1:], time.Since(started), err, out)
+		t.Fatalf("executable fixture setup: %s %v after %s (bound 10s + 1s drain): %v; output: %s",
+			command.Path, command.Args[1:], time.Since(started), err, out)
 	}
 }
