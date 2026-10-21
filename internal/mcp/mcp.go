@@ -884,6 +884,7 @@ type toolArgs struct {
 	Since          uint64            `json:"since_serial"`
 	HistoryCursor  string            `json:"cursor"`
 	IncludeBodies  bool              `json:"include_bodies"`
+	IncludeBody    bool              `json:"include_body"`
 	TimeoutSec     int               `json:"timeout_s"`
 	Attachments    []core.Attachment `json:"attachments"`
 	Data           string            `json:"data"` // put_blob: base64 content
@@ -1373,7 +1374,7 @@ func (s *Server) run(
 	case "inbox":
 		return s.eng.InboxPage(ctx, a.Token, a.HistoryCursor, a.Limit)
 	case "read_mail":
-		return s.eng.GetMessage(ctx, a.Token, a.MsgSerial)
+		return s.eng.ReadMail(ctx, a.Token, a.MsgSerial, a.IncludeBody)
 	case "mail_history":
 		return s.readHistory(ctx, params, a)
 	case "read_space":

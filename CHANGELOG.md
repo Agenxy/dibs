@@ -40,6 +40,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Reading unread updates on mail you sent now leads with those updates instead
+  of repeating the original task and milestone history. `read_mail` accepts
+  `include_body:true` for the full envelope. The existing `message.response`,
+  deliverable and verdict fields stay available; verdict updates do not duplicate
+  their response. Completion responses preserve and label any earlier approval
+  text stored with them. Read receipts are unchanged.
+- `ack` on a sent ask now durably clears its outcome, progress and queue updates
+  without returning bodies. On a received request it clears reviewer updates.
+  These acknowledgements preserve the request, its work status and the other
+  party's read prefix; they neither accept work nor report it complete.
+
 - `respond` (approve, queue, done, decline) now returns only the next owed
   item (the next queued item's start call, else the first owed item) with
   `more_owed_work`, instead of echoing every owed entry. `owes` still names

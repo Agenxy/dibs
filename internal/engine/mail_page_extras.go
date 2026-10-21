@@ -35,7 +35,7 @@ func (e *Engine) compactMailboxExtras(res core.Result, p mailPage) {
 	}
 	compactMailboxAnnouncements(res)
 	res["projection_hint"] = "owed_work, owes and task_queue describe this mailbox page; " +
-		"follow next_cursor for more; read_mail has full envelopes"
+		"follow next_cursor for more; read_mail(include_body:true) has full envelopes"
 }
 
 func mailboxProjection(rows []core.Result, selected map[uint64]bool) []core.Result {

@@ -26,7 +26,9 @@ func TestMilestoneEventAcknowledgmentAndReviewThroughMCP(t *testing.T) {
 	}
 	parent := call("send", map[string]any{"token": tokens["lead"], "to": "worker", "type": "request", "body": "build proof", "milestones": []string{"proof"}})["msg_serial"]
 	call("respond", map[string]any{"token": tokens["worker"], "msg_serial": parent, "disposition": "approve"})
-	initial := call("read_mail", map[string]any{"token": tokens["lead"], "msg_serial": parent})
+	// This test inspects the complete milestone history, explicitly requested
+	// even when the sender has an unread approval or worker report.
+	initial := call("read_mail", map[string]any{"token": tokens["lead"], "msg_serial": parent, "include_body": true})
 	initialReview := initial["milestone_reviews"].([]any)[0].(map[string]any)
 	if initialReview["status"] != "unreviewed" || initialReview["at"] != nil {
 		t.Fatalf("unreported milestone has an invented timestamp: %v", initialReview)
@@ -86,7 +88,7 @@ func TestMilestoneEventAcknowledgmentAndReviewThroughMCP(t *testing.T) {
 		t.Fatalf("flag missing: %v", read)
 	}
 	call("respond", map[string]any{"token": tokens["worker"], "msg_serial": parent, "disposition": "progress", "milestone": 1, "body": "revised proof"})
-	read = call("read_mail", map[string]any{"token": tokens["lead"], "msg_serial": parent})
+	read = call("read_mail", map[string]any{"token": tokens["lead"], "msg_serial": parent, "include_body": true})
 	if read["milestone_reviews"].([]any)[0].(map[string]any)["status"] != "unreviewed" {
 		t.Fatalf("new report inherited old acceptance: %v", read)
 	}

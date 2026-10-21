@@ -261,8 +261,8 @@ func TestWaitingHintClearsTrimmedProgressThroughMCP(t *testing.T) {
 				// must not consume the other; the final full read clears both.
 				for i, parent := range parents {
 					read := call("read_mail", map[string]any{"token": lead, "msg_serial": parent})
-					progress := read["message"].(map[string]any)["progress"].([]any)
-					if len(progress) != 2 || progress[1].(map[string]any)["note"] != long {
+					progress, ok := read["updates"].([]any)
+					if !ok || len(progress) != 2 || progress[0].(map[string]any)["body"] != long || progress[1].(map[string]any)["body"] != long {
 						t.Fatalf("full parent read did not actually return the complete update: %v", read)
 					}
 					written = call("update", map[string]any{"token": lead, "description": "full update read"})

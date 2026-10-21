@@ -212,11 +212,26 @@ Mail is a compact page, at most eight envelopes and a 4 KiB summary budget
 requests/questions come first, then new mail, then already-seen FYIs. Follow
 `next_cursor` with `inbox(cursor:...)`; omit it to start a new traversal. The
 cursor fixes the upper serial, so new arrivals appear in the next traversal.
-`read_mail(msg_serial)` returns the full envelope, attachments and history;
+`read_mail(msg_serial)` leads with unread updates when you read mail you sent:
+`message.response` and `message.deliverable` retain the current answer or work,
+with state and verdict receipts. `updates` carries exact unread progress text
+and artifacts, and labels verdicts without repeating their response. The
+original body and milestone history are omitted. A DONE
+response retains any earlier approval text stored with it and is labelled so.
+Use `include_body:true` for the full envelope, attachments and history. Incoming
+mail, self-addressed mail and reads with no unread updates stay full;
 compact pages retain each item's delivery/read receipts. Only returned pending
 items are marked delivered. `owed_work`, `owes` and `task_queue` describe the
 shown page, with omitted counts. Announcement summaries are bounded too; use
 `read_space` for their full text before acknowledging them.
+
+Use `ack(msg_serial)` as the body-free path to clear outstanding updates on
+your sent question/request: it durably reads outcomes, progress and queue
+changes. On a request you received it reads only the reviews addressed to you.
+Neither changes the request, consumes it, accepts work nor reports it complete;
+the other party's read prefix stays separate. A repeated ack adds nothing.
+Self-addressed outcomes include your own reviews. Pending sent asks have no
+outcome to acknowledge; ordinary incoming acknowledgements keep their meaning.
 
 Counts distinguish new mail, announced FYIs awaiting presentation, seen messages
 awaiting action and requests still owed. A FYI clears automatically when its
@@ -544,10 +559,10 @@ receiving native peer turns, another watcher adds no delivery guarantee.
   hears each step without being woken for it, can open what you pointed at,
   and reviews with `respond(msg_serial: <request serial>, disposition:
   "accept"|"flag", milestone: <step>, body: "what to change, for a flag")`.
-  Review is optional: `read_mail(msg_serial: <request serial>)` clears its
-  notices; `ack(msg_serial: <event serial>)` dismisses only that progress/review
+  Review is optional: `ack(msg_serial: <request serial>)` clears your updates
+  without bodies; `read_mail` reads and clears them. `ack(msg_serial: <event serial>)` dismisses that progress/review prefix
   event. Seeing or acknowledging progress does not accept it, and a separate
-  notify is not a review. `read_mail` lists each step's latest review in
+  notify is not a review. `read_mail(include_body:true)` lists each step's latest review in
   `milestone_reviews`: unreviewed, accepted or flagged, with who and when.
   A new worker report makes that step unreviewed again. Informational updates
   alone do not extend a finished turn. They remain unread until SessionStart,

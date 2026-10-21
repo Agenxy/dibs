@@ -590,6 +590,13 @@ func (e *Engine) unreadableMail(serial uint64, m *core.Message, theirs bool, tru
 
 // GetMessage returns one full message for its sender or recipient (SPEC §8).
 func (e *Engine) GetMessage(ctx context.Context, token string, serial uint64) (core.Result, error) {
+	return e.ReadMail(ctx, token, serial, true)
+}
+
+// ReadMail has the same durable read effects as GetMessage. Unless includeBody
+// is set, a sender clearing unread outcomes receives those units without its
+// original envelope. Incoming mail and reads with no unread outcomes stay full.
+func (e *Engine) ReadMail(ctx context.Context, token string, serial uint64, includeBody bool) (core.Result, error) {
 	return e.query(ctx, func() core.Result {
 		now := time.Now()
 		l, errRes := e.authRead(token, now)
@@ -645,6 +652,9 @@ func (e *Engine) GetMessage(ctx context.Context, token string, serial uint64) (c
 		if !allowed {
 			return core.Result{"error": e.unreadableMail(serial, m, ok && !inherited, l.TruncatedBefore)}
 		}
+		// Capture the exact unread prefix before noteOutcomeRead advances it.
+		// This is a reply projection, never a different kind of durable read.
+		updates := e.mailReadUpdates(m, l, includeBody)
 		if m.To == l.ID && m.State == core.MsgStatePending {
 			_, _ = e.applyAndLedger(&core.Op{Kind: core.OpMarkDelivered, MsgSerials: []uint64{serial}}, now)
 		}
@@ -689,7 +699,7 @@ func (e *Engine) GetMessage(ctx context.Context, token string, serial uint64) (c
 			}
 			res = e.messageReadResult(m)
 		}
-		return res
+		return e.projectMailRead(m, res, updates, now)
 	})
 }
 

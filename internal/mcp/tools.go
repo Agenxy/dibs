@@ -144,14 +144,14 @@ var toolDefs = func() []map[string]any {
 				"ack on, and `agent_updates`, whatever happened TO you in a space since you " +
 				"last checked. The authoritative path for all of it; the wake hook only " +
 				"nudges. Mail uses compact pages, unseen mail first, then owed work; follow next_cursor " +
-				"and read_mail for full envelopes. Also the recovery after E_CURSOR_TOO_OLD.",
+				"and read_mail(include_body:true) for full envelopes. Also the recovery after E_CURSOR_TOO_OLD.",
 			"inputSchema": obj(map[string]any{
 				"token": tok,
 				"detail": map[string]any{
 					"type": "boolean", "description": "every board field (default: one row per agent)",
 				},
 				"cursor": str("mailbox next_cursor; omit for the first compact page"),
-				"limit":  num("mail items, 1–8; default 8. read_mail has full envelopes"),
+				"limit":  num("mail items, 1–8; default 8. read_mail(include_body:true) has full envelopes"),
 			}, "token"),
 		},
 		{
@@ -390,10 +390,17 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "read_mail",
-			"description": "Read mail, response and milestone reviews. human_delivery.posted means OS acceptance, " +
+			"description": "Read mail, response and milestone reviews. Your own sent mail leads with unread updates; " +
+				"include_body:true returns the full original envelope and history. human_delivery.posted means OS acceptance, " +
 				"not visibility; receipts may be unknown. Blob handles guarantee content (get_blob). " +
 				"Path/size/hash are unverified sender claims: verify the hash; a missing file is ordinary.",
-			"inputSchema": obj(map[string]any{"token": tok, "msg_serial": num("serial of the message")}, "token", "msg_serial"),
+			"inputSchema": obj(map[string]any{
+				"token": tok, "msg_serial": num("serial of the message"),
+				"include_body": map[string]any{
+					"type": "boolean", "default": false,
+					"description": "include the full original body, attachments and history when clearing your sent mail's updates",
+				},
+			}, "token", "msg_serial"),
 		},
 		{
 			"name":        "mail_history",
@@ -451,8 +458,10 @@ var toolDefs = func() []map[string]any {
 			}, "token", "agent", "locked"),
 		},
 		{
-			"name": "ack", "description": "Dismiss a progress/review event without reviewing work. For mail, close a FYI " +
-				"or consume finished mail (sender notified). read_mail(request serial) clears its notices.",
+			"name": "ack", "description": "Read outstanding updates without returning bodies: on your sent ask, " +
+				"clear outcomes/progress/queue changes; on a received request, clear its reviews. " +
+				"Does not accept work, finish it or consume the request. Event serials dismiss their progress/review prefix. " +
+				"For other mail, close a FYI or consume finished mail (sender notified).",
 			"inputSchema": obj(map[string]any{
 				"token": tok, "msg_serial": num("serial of the message"),
 			}, "token", "msg_serial"),
@@ -461,7 +470,7 @@ var toolDefs = func() []map[string]any {
 			"name": "inbox", "description": "Read your mailbox: unhandled messages plus " +
 				"finished ones you have not acknowledged and accepted work still owed. Compact pages " +
 				"put unseen mail first, then owed requests/questions, then seen FYIs. Follow next_cursor; " +
-				"read_mail has full envelopes. Marks only returned pending messages delivered. " +
+				"read_mail(include_body:true) has full envelopes. Marks only returned pending messages delivered. " +
 				"Also returns `announcements` you owe an ack on and `agent_updates`, whatever " +
 				"happened TO you in a space; reading either here consumes nothing, so this is " +
 				"how you find what you owe after losing context. A fileref (`path`) carries the " +
@@ -469,7 +478,7 @@ var toolDefs = func() []map[string]any {
 				"been evicted under retention bounds.",
 			"inputSchema": obj(map[string]any{
 				"token": tok, "cursor": str("next_cursor from the previous page; omit to start"),
-				"limit": num("mail items, 1–8; default 8; compact summaries, read_mail has full envelopes"),
+				"limit": num("mail items, 1–8; default 8; compact summaries, read_mail(include_body:true) has full envelopes"),
 			}, "token"),
 		},
 		{
