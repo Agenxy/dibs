@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -338,11 +339,13 @@ func TestMailHistoryNativeObservationDoesNotWakeOrAdvanceDurableState(t *testing
 // changes neither the interval, the context deadline nor the reader's result.
 type observedHistorySeek struct {
 	*ledger.Ledger
-	t *testing.T
+	t     *testing.T
+	seeks *atomic.Int32
 }
 
 func (s *observedHistorySeek) ReadHistoryOp(ctx context.Context, serial uint64, seek mailhistory.SeekRange) (*core.Op, error) {
 	started := time.Now()
+	s.seeks.Add(1)
 	op, err := s.Ledger.ReadHistoryOp(ctx, serial, seek)
 	s.t.Logf("HISTORY_NATIVE_SEEK serial=%d bytes=%d elapsed=%s error=%v", serial, seek.End-seek.Start.Offset, time.Since(started), err)
 	return op, err
@@ -350,7 +353,8 @@ func (s *observedHistorySeek) ReadHistoryOp(ctx context.Context, serial uint64, 
 
 func TestMailHistoryNativeSmallBodySurvivesLargeValidSeekInterval(t *testing.T) {
 	dir := t.TempDir()
-	wrap := func(led *ledger.Ledger) engine.Ledger { return &observedHistorySeek{Ledger: led, t: t} }
+	var seeks atomic.Int32
+	wrap := func(led *ledger.Ledger) engine.Ledger { return &observedHistorySeek{Ledger: led, t: t, seeks: &seeks} }
 	limits := core.DefaultLimits()
 	limits.ConsumedRetention = 0
 	// Building and replaying this >16 MiB fixture are setup, outside the
@@ -383,15 +387,37 @@ func TestMailHistoryNativeSmallBodySurvivesLargeValidSeekInterval(t *testing.T) 
 		// Settle metadata through the same API before asking for native content;
 		// the guard discriminates span sizing, not initial bootstrap readiness.
 		settledHistoryWithin(t, f, sender, false, 30*time.Second)
-		ctx, cancel := context.WithTimeout(f.ctx, 10*time.Second)
-		defer cancel()
-		started := time.Now()
-		res, err := api.ReadMailHistory(ctx, sender, 0, 1, true, "")
-		if elapsed := time.Since(started); elapsed >= 10*time.Second {
-			t.Fatal("native content read exceeded its independent deadline:", elapsed)
-		}
-		if err != nil || res["error"] != nil || !strings.Contains(historyJSON(t, res), "SMALL-FIRST-QUOTED") {
-			t.Fatal("small authorized body remained unavailable in a large valid interval:", err, res)
+		// A page has a 250ms wall-clock work budget, and on a loaded hosted
+		// runner one ~480 KiB native seek has taken 190ms after the page's
+		// own traversal (run 39552163246), so the budget's honest answer is
+		// "native content work bound". What this guards is span SIZING: an
+		// interval sized past the content bound is refused before any seek,
+		// on every attempt, so a retry cannot rescue that bug. It can only
+		// rescue a slow machine, and each retry must have actually seeked.
+		for attempt := 1; ; attempt++ {
+			before := seeks.Load()
+			ctx, cancel := context.WithTimeout(f.ctx, 10*time.Second)
+			started := time.Now()
+			res, err := api.ReadMailHistory(ctx, sender, 0, 1, true, "")
+			elapsed := time.Since(started)
+			cancel()
+			if elapsed >= 10*time.Second {
+				t.Fatal("native content read exceeded its independent deadline:", elapsed)
+			}
+			raw := ""
+			if err == nil && res["error"] == nil {
+				raw = historyJSON(t, res)
+			}
+			if strings.Contains(raw, "SMALL-FIRST-QUOTED") {
+				return
+			}
+			// Traversal alone can spend the budget before content is tried;
+			// a mis-sized interval never produces that answer.
+			slow := strings.Contains(raw, "native content work bound") && seeks.Load() > before ||
+				strings.Contains(raw, "work budget exhausted")
+			if !slow || attempt == 3 {
+				t.Fatal("small authorized body remained unavailable in a large valid interval:", err, res)
+			}
 		}
 	}
 	t.Run("live", func(t *testing.T) { readSmall(t, f) })

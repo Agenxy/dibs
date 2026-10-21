@@ -18,6 +18,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   before timed checks. Fresh executable assessment no longer consumes the
   daemon or wake-command deadline; those deadlines are unchanged.
 
+- Two gate races fixed in tests, with no product change. The app-restart
+  proof now waits for the shared app contact's final record before its data
+  directory is removed. The native mail-history seek check retries when a
+  loaded machine spends the 250ms page budget. A mis-sized interval is still
+  refused on every attempt, so the check still catches it. The default
+  history settle bound is 30s.
+
 - Dependency updates: golang.org/x/crypto 0.58.0, x/sys 0.49.0, x/tools
   0.51.0; e2e suite @modelcontextprotocol/sdk 1.32.1 and playwright 1.64.1;
   CI actions jdx/mise-action 5.2.0, upload-artifact 7.0.2, download-artifact

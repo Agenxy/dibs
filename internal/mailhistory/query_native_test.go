@@ -136,7 +136,9 @@ func historyOnce(t *testing.T, f nativeHistoryFixture, token string, bodies bool
 
 func settledHistory(t *testing.T, f nativeHistoryFixture, token string, bodies bool) core.Result {
 	t.Helper()
-	return settledHistoryWithin(t, f, token, bodies, 5*time.Second)
+	// Settling polls, so a wider bound costs a healthy build nothing; 5s
+	// once failed on a loaded hosted runner (run 39536805387).
+	return settledHistoryWithin(t, f, token, bodies, 30*time.Second)
 }
 
 func settledHistoryWithin(t *testing.T, f nativeHistoryFixture, token string, bodies bool, budget time.Duration) core.Result {

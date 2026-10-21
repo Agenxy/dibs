@@ -5,6 +5,10 @@ package engine
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -12,6 +16,7 @@ import (
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/harnessenv"
+	"github.com/agenxy/dibs/internal/paths"
 	"github.com/agenxy/dibs/internal/wakeexec"
 )
 
@@ -111,6 +116,12 @@ func TestAppRestartEpochQueuesRecentThreadAndReportsThroughCheckIn(t *testing.T)
 		case <-time.After(2 * time.Second):
 			t.Fatal("queued restart bypassed the shared app contact")
 		}
+		// Holds answers BEFORE the shared contact records the loaded thread,
+		// on a delivery goroutine Engine.Run does not wait for. Wait for that
+		// record, or the test returns while it is being written and the
+		// DIBS_DIR cleanup fails with "directory not empty" (hosted run
+		// 39552163246).
+		waitAppOpenRecorded(t, thread)
 	}
 	checkIn, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: token})
 	if err != nil {
@@ -125,5 +136,27 @@ func TestAppRestartEpochQueuesRecentThreadAndReportsThroughCheckIn(t *testing.T)
 	}
 	if strings.Contains(item, declaration) || strings.Contains(item, "hand") {
 		t.Fatalf("queue argv leaked a declaration or agent name: %q", item)
+	}
+}
+
+// waitAppOpenRecorded waits for the shared app contact's memo to say the
+// thread is loaded: the last write that contact makes for a held thread.
+func waitAppOpenRecorded(t *testing.T, thread string) {
+	t.Helper()
+	key := sha256.Sum256([]byte(thread))
+	path := filepath.Join(paths.DataDir(), "app-opens", hex.EncodeToString(key[:])+".json")
+	deadline := time.Now().Add(5 * time.Second)
+	tick := time.NewTicker(20 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		// #nosec G304 -- test-owned DIBS_DIR plus a hashed fixture thread.
+		raw, err := os.ReadFile(path)
+		if err == nil && strings.Contains(string(raw), `"loaded":true`) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the shared app contact never recorded the loaded thread: %q %v", raw, err)
+		}
+		<-tick.C
 	}
 }
