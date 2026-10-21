@@ -5,23 +5,27 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"net"
 	"os"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/peerwake"
 )
 
 type daemonEconomyFixture struct {
-	e          *Engine
-	ctx        context.Context
-	sock       net.Listener
-	sid, token string
-	sender     string
-	wire       <-chan string
+	e            *Engine
+	ctx          context.Context
+	sock         net.Listener
+	sid, token   string
+	sender       string
+	wire         <-chan string
+	receiverDone <-chan struct{}
 }
 
 func newDaemonEconomyFixture(t *testing.T) *daemonEconomyFixture {
@@ -56,15 +60,27 @@ func newDaemonEconomyFixture(t *testing.T) *daemonEconomyFixture {
 	f.hook(t, "Stop", true)
 	wire := make(chan string, 8)
 	f.wire = wire
+	receiverDone := make(chan struct{})
+	f.receiverDone = receiverDone
 	go func() {
+		defer close(receiverDone)
 		for {
 			text := readAll(t, sock)
 			if text == "" {
 				return
 			}
-			wire <- text
+			select {
+			case wire <- text:
+			case <-ctx.Done():
+				return
+			}
 		}
 	}()
+	t.Cleanup(func() {
+		_ = sock.Close()
+		cancel()
+		<-receiverDone
+	})
 	return f
 }
 
@@ -294,20 +310,7 @@ func TestSocketEconomyDaemonFailureKeepsOneRetryAndNoFalseTurn(t *testing.T) {
 	f := newDaemonEconomyFixture(t)
 	f.hook(t, "UserPromptSubmit", false)
 	f.e.SetWakeCommands(map[string]WakeCommand{"claude code": {Argv: []string{"/usr/bin/false"}, Cooldown: 200 * time.Millisecond}})
-	// Keep the stale pathname discoverable after closing the receiver. Otherwise
-	// cache refresh can switch the retry to the command route, so the offer count
-	// describes two different transports depending on when the scan runs.
-	unix, ok := f.sock.(*net.UnixListener)
-	if !ok {
-		t.Fatal("setup: fixture is not a Unix socket")
-	}
-	unix.SetUnlinkOnClose(false)
-	if err := f.sock.Close(); err != nil {
-		t.Fatal("setup: close receiver:", err)
-	}
-	if info, err := os.Stat(f.sock.Addr().String()); err != nil || info.Mode()&os.ModeSocket == 0 {
-		t.Fatalf("setup: lost stale socket pathname: %v", err)
-	}
+	f.closeReceiver(t)
 	f.do(t, &core.Op{Kind: core.OpSendMessage, Token: f.sender, To: "worker", MsgType: core.MsgQuestion, Body: "failed-daemon-mail"})
 	f.hook(t, "Stop", true) // event attempts actual delivery into the missing socket
 	deadline := time.Now().Add(defaultPeerCooldown + 3*time.Second)
@@ -363,5 +366,58 @@ func TestSocketEconomyDaemonFailureKeepsOneRetryAndNoFalseTurn(t *testing.T) {
 	}
 	if text := fmtResult(f.hook(t, "Stop", false)); !strings.Contains(text, "failed-daemon-mail") {
 		t.Fatalf("lost hook fallback: %s", text)
+	}
+}
+
+// Retain the pathname so discovery continues to select the actual failed
+// socket route. Close and an exited Accept goroutine do not prove refusal:
+// another descriptor (including a concurrently forked child's pre-exec copy)
+// can keep the endpoint alive. Establish the failure by observing ECONNREFUSED.
+func (f *daemonEconomyFixture) closeReceiver(t *testing.T) {
+	t.Helper()
+	unix, ok := f.sock.(*net.UnixListener)
+	if !ok {
+		t.Fatal("setup: fixture is not a Unix socket")
+	}
+	unix.SetUnlinkOnClose(false)
+	if err := f.sock.Close(); err != nil {
+		t.Fatal("setup: close receiver:", err)
+	}
+	<-f.receiverDone
+	if info, err := os.Stat(f.sock.Addr().String()); err != nil || info.Mode()&os.ModeSocket == 0 {
+		t.Fatalf("setup: lost stale socket pathname: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(f.ctx, 2*time.Second)
+	defer cancel()
+	for {
+		conn, err := (&net.Dialer{}).DialContext(ctx, "unix", f.sock.Addr().String())
+		if errors.Is(err, syscall.ECONNREFUSED) {
+			return
+		}
+		if err != nil {
+			t.Fatalf("setup: receiver never established connection refusal: %v", err)
+		}
+		_ = conn.Close()
+		select {
+		case <-ctx.Done():
+			t.Fatal("setup: receiver remained reachable after close")
+		case <-time.After(time.Millisecond):
+		}
+	}
+}
+
+func TestSocketEconomyClosedReceiverRefusesAndRemainsDiscoverable(t *testing.T) {
+	f := newDaemonEconomyFixture(t)
+	f.hook(t, "UserPromptSubmit", false)
+	f.closeReceiver(t)
+	sessions := f.e.refreshPeersNow()
+	session, ok := sessions[f.sid]
+	if !ok || session.Socket != f.sock.Addr().String() {
+		t.Fatal("closed receiver disappeared from production discovery")
+	}
+	ctx, cancel := context.WithTimeout(f.ctx, time.Second)
+	defer cancel()
+	if err := peerwake.Deliver(ctx, session, "refusal fixture"); !errors.Is(err, syscall.ECONNREFUSED) {
+		t.Fatalf("closed receiver accepted production delivery or failed differently: %v", err)
 	}
 }
