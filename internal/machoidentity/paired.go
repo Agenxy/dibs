@@ -31,6 +31,11 @@ func PairedApp(executable string) (string, error) {
 	if Bundled(self) {
 		return filepath.Dir(filepath.Dir(filepath.Dir(self))), nil
 	}
+	// Only the distributed root daemon is an app entry point. Intentionally
+	// differently named development builds can coexist with a release app.
+	if filepath.Base(self) != "dibd" {
+		return "", nil
+	}
 	candidates := []string{filepath.Join(filepath.Dir(self), "Dibs.app")}
 	if strings.Contains(self, string(filepath.Separator)+"Caskroom"+string(filepath.Separator)) {
 		userApp := filepath.Join(os.Getenv("HOME"), "Applications", "Dibs.app")

@@ -18,7 +18,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Source/release channel changes can also require a fresh grant.
   The updated root daemon also enters the app when an existing legacy service
   starts it, so be at the Mac for that first install to answer a possible new
-  folder prompt. Files & Folders, Firewall and Notifications pane naming remain
+  folder prompt. Pairing is limited to the distributed name `dibd`; deliberately
+  named development builds such as `dibd-dev` remain standalone beside the app.
+  Files & Folders, Firewall and Notifications pane naming remain
   OPEN; only the Dibs name and icon in Login Items were measured in fixtures.
 
 - The macOS daemon records bounded Desktop/Documents/Downloads read evidence

@@ -60,8 +60,9 @@ const isolatedBins: string[] = []
  * Unavailable, on every machine, in CI as much as here: without weakening what
  * is being asked. The question is whether an environment variable can assert
  * that a human is present, and that is independent of whether a sensor exists.
- * The dev image must be isolated too: it intentionally differs from the release
- * image in bin/Dibs.app, which the daemon's paired-image guard must refuse.
+ * Both images use this same no-helper layout. The development image differs
+ * from the release app and is copied under the ordinary daemon name here, so
+ * leaving a paired release app beside it would correctly refuse startup.
  */
 function isolate(bin: string): string {
   const dir = mkdtempSync(join(tmpdir(), "agents-nohelper-"))

@@ -27,8 +27,10 @@ The archive retains a regular root `dibd` for existing installers and manual
 entry points. It replaces itself with the paired app daemon in the same PID,
 preserving argv and environment. The bundled location prevents an exec loop.
 A present incomplete or stale app is refused with the compared paths and
-Mach-O section fingerprints; a development image with no paired app remains
-standalone. Homebrew's moved app is considered only for a Caskroom entry point.
+Mach-O section fingerprints. Pairing applies to the distributed root name
+`dibd`; deliberately differently named builds such as `dibd-dev` run standalone
+even beside a release app. A root with no paired app also remains standalone.
+Homebrew's moved app is considered only for a Caskroom entry point.
 The archive guard compares the same sections and reconstructs the full app to
 verify its deep/strict seal. Detached verification of a bundle main executable
 is invalid because its signature also seals its Info.plist.

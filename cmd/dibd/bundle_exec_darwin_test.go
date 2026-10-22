@@ -169,4 +169,16 @@ func TestProductionDaemonMainEntersItsPairedApp(t *testing.T) {
 	if out, err := run(); err == nil || !strings.Contains(string(out), "refusing mismatched paired daemon") {
 		t.Fatalf("actual daemon main did not refuse stale paired code: %v %s", err, out)
 	}
+	// A deliberately differently named development build is not the archive's
+	// root entry point. It must remain usable beside the production app without
+	// changing the refusal above for the real root name.
+	development := filepath.Join(dir, "dibd-dev")
+	if err := os.WriteFile(development, image, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if out, err := exec.CommandContext(ctx, development, "-man").CombinedOutput(); err != nil || !strings.Contains(string(out), ".Dt DIBD 8") {
+		t.Fatalf("differently named development image did not stay standalone: %v %s", err, out)
+	}
 }
