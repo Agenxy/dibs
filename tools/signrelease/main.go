@@ -71,9 +71,14 @@ const (
 	identityEnv = "DIBS_CODESIGN_IDENTITY"
 )
 
+// Source installs deliberately keep the operator's local signing identity.
+// Production import and archive verification always retain the release pin.
+var sourceIdentity bool
+
 func main() {
 	imp := flag.Bool("import", false, "make a keychain from "+p12Env+" and print what to export")
 	sign := flag.String("sign", "", "sign this binary or app bundle")
+	flag.BoolVar(&sourceIdentity, "source-identity", false, "source install: allow the operator's local signing identity")
 	flag.Parse()
 
 	var err error
@@ -256,7 +261,7 @@ func signOne(path string) error {
 	if identity == "" {
 		identity = "-"
 	}
-	if identity != "-" {
+	if identity != "-" && !sourceIdentity {
 		if err := releasecodesign.CheckCertificate(identity); err != nil {
 			return err
 		}

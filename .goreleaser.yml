@@ -54,7 +54,7 @@ before:
     # Mac doing the building, and forcing the release's answer there broke
     # building from source on an Intel Mac, which is the documented escape
     # hatch now that the release does not cover it.
-    - go run ./tools/appbundle -o Dibs.app -version {{ .Version }} -target arm64-apple-macos12
+    - go run ./tools/appbundle -o Dibs.app -presence dibs-presence -version {{ .Version }} -target arm64-apple-macos12
     # AGAIN, and not instead: appbundle signs so that a bundle is always valid,
     # and signs without an identifier. This is the pass that gives it the one
     # macOS records a notification grant against.
@@ -92,6 +92,7 @@ builds:
     hooks:
       post:
         - go run ./tools/signrelease -sign {{ .Path }}
+        - go run ./tools/appbundle -embed-daemon {{ .Path }} -presence dibs-presence -o Dibs.app
   - id: dibs
     main: ./cmd/dibs
     binary: dibs

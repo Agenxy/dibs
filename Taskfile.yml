@@ -17,10 +17,14 @@ tasks:
     #
     # macOS only. Elsewhere the daemon simply has no route to a desktop.
     platforms: [darwin]
+    deps: [build:daemon, presence]
     desc: Build Dibs.app, the notifier bundle with the product icon
     sources:
       - internal/notify/app/*.swift
       - tools/appbundle/main.go
+      - tools/appbundle/service.go
+      - bin/dibd
+      - bin/dibs-presence
     generates:
       - bin/Dibs.app/Contents/MacOS/dibs-notify
     vars:
@@ -40,7 +44,7 @@ tasks:
       SIGNER:
         sh: go run ./tools/signid
     cmds:
-      - DIBS_CODESIGN_IDENTITY='{{.SIGNER}}' go run ./tools/appbundle -o bin/Dibs.app -version {{.VERSION | default "0.0.0"}}
+      - DIBS_CODESIGN_IDENTITY='{{.SIGNER}}' go run ./tools/appbundle -o bin/Dibs.app -daemon bin/dibd -presence bin/dibs-presence -version {{.VERSION | default "0.0.0"}}
 
   presence:
     desc: >-
@@ -60,10 +64,16 @@ tasks:
   build:
     desc: Build both binaries
     cmds:
-      - go build -o bin/dibd ./cmd/dibd
+      - task: build:daemon
       - go build -o bin/dibs ./cmd/dibs
       - task: presence
       - task: app
+
+  build:daemon:
+    internal: true
+    run: once
+    cmds:
+      - go build -o bin/dibd ./cmd/dibd
 
   install:
     desc: Install both binaries to ~/.local/bin (replaces, never overwrites)
@@ -145,9 +155,9 @@ tasks:
       # identity. They did not: this named the identifiers and the release
       # named none, so a source install was better behaved than the official
       # one and the identifiers lived in two places.
-      - DIBS_CODESIGN_IDENTITY='{{.SIGNER}}' go run ./tools/signrelease -sign {{.DEST}}/dibd
-      - DIBS_CODESIGN_IDENTITY='{{.SIGNER}}' go run ./tools/signrelease -sign {{.DEST}}/dibs
-      - DIBS_CODESIGN_IDENTITY='{{.SIGNER}}' go run ./tools/signrelease -sign {{.DEST}}/dibs-presence
+      - DIBS_CODESIGN_IDENTITY='{{.SIGNER}}' go run ./tools/signrelease -source-identity -sign {{.DEST}}/dibd
+      - DIBS_CODESIGN_IDENTITY='{{.SIGNER}}' go run ./tools/signrelease -source-identity -sign {{.DEST}}/dibs
+      - DIBS_CODESIGN_IDENTITY='{{.SIGNER}}' go run ./tools/signrelease -source-identity -sign {{.DEST}}/dibs-presence
       # One message, chosen by template. `status:` is a TASK-level field, not a
       # per-command one, so a pair of commands guarded by it printed BOTH: the
       # install claimed in consecutive lines that the grant would and would not

@@ -97,7 +97,12 @@ func helper() string {
 	if resolved, rerr := filepath.EvalSymlinks(self); rerr == nil {
 		self = resolved
 	}
-	path := filepath.Join(filepath.Dir(self), helperName)
+	dir := filepath.Dir(self)
+	path := filepath.Join(dir, helperName)
+	if filepath.Base(dir) == "MacOS" && filepath.Base(filepath.Dir(dir)) == "Contents" &&
+		filepath.Base(filepath.Dir(filepath.Dir(dir))) == "Dibs.app" {
+		path = filepath.Join(dir, filepath.Base(helperName))
+	}
 	if st, err := os.Stat(path); err != nil || st.IsDir() || st.Mode()&0o111 == 0 {
 		return ""
 	}
