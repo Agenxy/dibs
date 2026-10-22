@@ -178,7 +178,7 @@ func RunCommandsObserved(
 		if observe != nil {
 			observe(result.observation)
 		}
-		if result.contended {
+		if result.contended || result.observation.ThreadState == "gone" {
 			return false
 		}
 		ok, out = result.ok, result.out
@@ -362,8 +362,11 @@ func runForOut(argv []string, agent, dir string, timeout, grace time.Duration) (
 					"is withheld here because a wake runs a whole agent turn, and that "+
 					"is somebody's decrypted mail")
 		}
-		slog.Warn("wake command failed; the next message somebody is blocked on "+
-			"will try again", fields...)
+		message := "wake command failed; the next message somebody is blocked on will try again"
+		if missingQueueThread(argv, out) {
+			message = "wake command cannot reach its app thread: no rollout found"
+		}
+		slog.Warn(message, fields...)
 		return false, out
 	}
 	slog.Info("wake command accepted the notice", "agent", agent, "cmd", argv[0])

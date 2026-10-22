@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/agenxy/dibs/internal/paths"
@@ -104,11 +105,21 @@ func runQueuedCommand(argv []string, thread, agent, dir string, timeout, grace t
 		observation.IssuedAt, observation.AgeSource = queuedAt, "local_admission"
 	} else {
 		observation.Admission = "failed"
+		// -32603 alone also covers temporary thread-store failures. Only the
+		// measured missing-rollout complaint naming THIS target is permanent.
+		if missingQueueThread(argv, out) {
+			observation.ThreadState = "gone"
+		}
 	}
 	// Acceptance is not a post-admission list observation. Do not manufacture
 	// pending=true from exit zero, even when the pre-admission list was empty.
 	observation.At = time.Now().UTC()
 	return queueCommandOutcome{ok: ok, out: out, observation: observation}
+}
+
+func missingQueueThread(argv []string, out []byte) bool {
+	thread, ok := queueTarget(argv)
+	return ok && strings.Contains(string(out), "no rollout found for thread id "+thread+" (code -32603)")
 }
 
 // The OS releases this lock on process exit. Never unlink it: replacing a

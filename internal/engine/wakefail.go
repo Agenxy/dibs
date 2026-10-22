@@ -60,6 +60,7 @@ func (e *Engine) reportWakeFailure(agent string) {
 func (e *Engine) reportWakeFailureDecision(agent string, now time.Time) {
 	e.wakers.mu.Lock()
 	gaveUp := e.spawnGivenUp(agent)
+	gone := e.queueThreadGoneLocked(e.state.Agents[agent])
 	fails := e.wakers.fails[agent]
 	e.wakers.mu.Unlock()
 	for _, m := range e.state.Inbox(agent) {
@@ -75,6 +76,11 @@ func (e *Engine) reportWakeFailureDecision(agent string, now time.Time) {
 				"its wake failed %d times in a row. Your %s #%d waits in its inbox until it is "+
 				"next active, or until whoever runs this board fixes how it is woken",
 				agent, fails, m.Type, m.Serial)
+		}
+		if gone {
+			want, text = toldStopped, fmt.Sprintf("the board cannot wake %q: its app thread is gone. "+
+				"No automatic retry will run for this binding. Your %s #%d remains in its inbox; "+
+				"bind the agent from an existing app thread to restore delivery", agent, m.Type, m.Serial)
 		}
 		key := agent + "\x00" + strconv.FormatUint(m.Serial, 10)
 		e.wakers.mu.Lock()
@@ -111,6 +117,12 @@ func (e *Engine) forgetWakeFailures(agent string) {
 // nothing is wrong. The row is where the person running the board looks, and
 // until this it showed a worker as active while every wake for it was failing.
 func (e *Engine) wakeStatusOf(agent string) string {
+	e.wakers.mu.Lock()
+	gone := e.queueThreadGoneLocked(e.state.Agents[agent])
+	e.wakers.mu.Unlock()
+	if gone {
+		return "gone: app thread has no rollout; bind this agent from an existing app thread"
+	}
 	if l := e.state.Agents[agent]; l != nil && e.remoteHostOf(l) == "" &&
 		!invitedAgent(l) && harnessenv.PendingAppOpen(threadIDOf(l)) {
 		return "queued; waiting briefly for the background app open/restore lock"
@@ -193,7 +205,7 @@ func (e *Engine) runWakeAndReport(cmd wakePlan, agent string) bool {
 		e.recordSocketOutcome(cmd, false)
 	}
 	if !cmd.retryAllowed() {
-		e.recordNativeUnknown(cmd)
+		e.recordNonRetryableWake(cmd)
 		return false
 	}
 	e.reportWakeFailure(agent)

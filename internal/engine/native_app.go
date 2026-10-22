@@ -16,7 +16,13 @@ func nativeDeliveryAccepted(disposition string) bool {
 	return disposition == "accepted" || disposition == "started" || disposition == "steered"
 }
 
-func (p wakePlan) retryAllowed() bool { return p.nativeOutcome == nil || !p.nativeOutcome.NoRetry }
+func (p wakePlan) retryAllowed() bool {
+	return !p.queueThreadGone() && (p.nativeOutcome == nil || !p.nativeOutcome.NoRetry)
+}
+
+func (p wakePlan) queueThreadGone() bool {
+	return p.queueOutcome != nil && p.queueOutcome.ThreadState == "gone"
+}
 
 func (p wakePlan) deliverySettled(socket, written bool) bool {
 	return (socket && !written) || (p.nativeOutcome != nil && p.nativeOutcome.Settled)

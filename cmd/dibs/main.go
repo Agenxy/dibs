@@ -1042,7 +1042,10 @@ type (
 		// coverage check has to know, because a harness with a configured
 		// command still cannot resume an agent that has no thread to name.
 		Resumable bool `json:"resumable,omitempty"`
-		Agent     *struct {
+		QueueWake *struct {
+			ThreadState string `json:"thread_state"`
+		} `json:"queue_wake,omitempty"`
+		Agent *struct {
 			Harness string `json:"harness,omitempty"`
 			CWD     string `json:"cwd,omitempty"`
 			// HostID is WHICH COMPUTER, as the fleet's address plane names
