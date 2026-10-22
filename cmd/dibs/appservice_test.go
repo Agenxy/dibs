@@ -106,8 +106,7 @@ func newAppServiceTestFixture(t *testing.T) *appServiceTestFixture {
 	f.app = filepath.Join(filepath.Dir(f.root), "Dibs.app")
 	f.state = filepath.Join(f.home, "state")
 	f.trace = filepath.Join(f.home, "trace")
-	macos := filepath.Join(f.app, "Contents", "MacOS")
-	if err := os.MkdirAll(macos, 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(f.root), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(f.dir, 0o700); err != nil {
@@ -117,19 +116,15 @@ func newAppServiceTestFixture(t *testing.T) *appServiceTestFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, at := range []string{f.root, filepath.Join(macos, "dibd"), filepath.Join(macos, "dibs-notify")} {
-		if err := os.WriteFile(at, image, 0o700); err != nil {
-			t.Fatal(err)
-		}
-	}
-	plist := `<?xml version="1.0"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>org.agenxy.dibs.service-test</string><key>CFBundleExecutable</key><string>dibs-notify</string><key>CFBundlePackageType</key><string>APPL</string></dict></plist>`
-	if err := os.WriteFile(filepath.Join(f.app, "Contents", "Info.plist"), []byte(plist), 0o600); err != nil {
+	if err := os.WriteFile(f.root, image, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	for _, at := range []string{filepath.Join(macos, "dibd"), f.app} {
-		if out, err := exec.Command("/usr/bin/codesign", "--force", "--sign", "-", "--timestamp=none", at).CombinedOutput(); err != nil {
-			t.Fatalf("fixture signing: %v %s", err, out)
-		}
+	template, err := serviceFixtureApp(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.CopyFS(f.app, os.DirFS(template)); err != nil {
+		t.Fatal(err)
 	}
 	for name, body := range map[string]string{f.state: "not-registered", filepath.Join(f.dir, "local.secret"): strings.Repeat("a", 64), filepath.Join(f.dir, "node_id"): "app-service-fixture"} {
 		if err := os.WriteFile(name, []byte(body), 0o600); err != nil {
@@ -214,6 +209,29 @@ func (f *appServiceTestFixture) liveManual(t *testing.T) <-chan struct{} {
 		t.Fatal("setup did not publish live registry:", live)
 	}
 	return done
+}
+
+func TestSignedAppServiceFixturesDoNotShareWritableCode(t *testing.T) {
+	first, second := newAppServiceTestFixture(t), newAppServiceTestFixture(t)
+	firstCode := filepath.Join(first.app, "Contents", "MacOS", "dibd")
+	// Truncate in place so a hard-linked copy would corrupt both fixtures.
+	if err := os.WriteFile(firstCode, []byte("stale fixture"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pairedServiceApp(first.root); err == nil {
+		t.Fatal("corrupted fixture was not refused")
+	}
+	want, err := filepath.EvalSymlinks(second.app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if app, err := pairedServiceApp(second.root); err != nil || app != want {
+		t.Fatalf("one fixture changed its peer's code: %s %v", app, err)
+	}
+	plan := &appServicePlan{app: second.app}
+	if err := plan.preflight(); err != nil {
+		t.Fatalf("pristine copied fixture lost its signed seal: %v", err)
+	}
 }
 
 func TestConfigureMovesALiveManualBoardAndRecoversItsMode(t *testing.T) {

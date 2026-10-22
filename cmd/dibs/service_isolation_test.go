@@ -25,6 +25,9 @@ var (
 	serviceFixtureOnce   sync.Once
 	serviceFixtureBytes  []byte
 	serviceFixtureErr    error
+	serviceAppOnce       sync.Once
+	serviceAppTemplate   string
+	serviceAppErr        error
 )
 
 func isolateCLIServiceHome(root string) {
@@ -139,6 +142,46 @@ func serviceFixtureImage(t *testing.T) ([]byte, error) {
 		serviceFixtureBytes, serviceFixtureErr = os.ReadFile(image)
 	})
 	return serviceFixtureBytes, serviceFixtureErr
+}
+
+// Signing is setup, not the behavior exercised by each lifecycle case. Build
+// one pristine signed app, then copy its files into each private fixture. Never
+// hard-link writable test images: a stale-code case must not change its peers.
+func serviceFixtureApp(t *testing.T) (string, error) {
+	t.Helper()
+	serviceAppOnce.Do(func() {
+		image, err := serviceFixtureImage(t)
+		if err != nil {
+			serviceAppErr = err
+			return
+		}
+		serviceAppTemplate = filepath.Join(serviceFixtureRoot, "signed-template", "Dibs.app")
+		macos := filepath.Join(serviceAppTemplate, "Contents", "MacOS")
+		if err := os.MkdirAll(macos, 0o700); err != nil {
+			serviceAppErr = err
+			return
+		}
+		for _, name := range []string{"dibd", "dibs-notify"} {
+			if err := os.WriteFile(filepath.Join(macos, name), image, 0o700); err != nil {
+				serviceAppErr = err
+				return
+			}
+		}
+		plist := `<?xml version="1.0"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>org.agenxy.dibs.service-test</string><key>CFBundleExecutable</key><string>dibs-notify</string><key>CFBundlePackageType</key><string>APPL</string></dict></plist>`
+		if err := os.WriteFile(filepath.Join(serviceAppTemplate, "Contents", "Info.plist"), []byte(plist), 0o600); err != nil {
+			serviceAppErr = err
+			return
+		}
+		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+		defer cancel()
+		for _, at := range []string{filepath.Join(macos, "dibd"), serviceAppTemplate} {
+			if out, err := exec.CommandContext(ctx, "/usr/bin/codesign", "--force", "--sign", "-", "--timestamp=none", at).CombinedOutput(); err != nil {
+				serviceAppErr = fmt.Errorf("sign external service fixture: %w: %s", err, out)
+				return
+			}
+		}
+	})
+	return serviceAppTemplate, serviceAppErr
 }
 
 func TestAppServiceExecutorRefusesUnfakedHelpers(t *testing.T) {
