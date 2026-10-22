@@ -7,6 +7,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The stdio bridge looks up its own start stamp in the background from the
+  moment it starts, and a request waits at most 500ms for it. It was looked up
+  inline on the first request, and on a loaded macOS machine that kernel call
+  twice outlasted the five-second bound, so an agent's first `register` got
+  no reply (#482). The stamp only adds evidence, so a request without it is
+  served normally, and a later request carries it.
+
+### Fixed
+
 - A coordinator's unreachable-agent notice stops being outstanding when the
   recipient reads its mail or the contact alert is cleared. It no longer blocks
   Stop after resolution or returns after a daemon restart; unresolved alerts

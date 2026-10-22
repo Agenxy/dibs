@@ -106,6 +106,7 @@ func runBridge(_ []string) error {
 	streamClient := daemonClient(0)
 	out := &syncWriter{w: bufio.NewWriter(os.Stdout)}
 	defer out.flush()
+	primeBridgeStart() // off the first request; see bridgeStartBudget
 	var streams sync.WaitGroup
 	// Streams outlive individual requests, and must not outlive the SESSION.
 	//
