@@ -256,7 +256,7 @@ dependencies resolve from the proxy, and every build step is a `go build` or a
 go build -o bin/dibd ./cmd/dibd
 go build -o bin/dibs ./cmd/dibs
 swiftc -O -o bin/dibs-presence internal/humanauth/presence_darwin.swift   # macOS
-go run ./tools/appbundle -o bin/Dibs.app -version 0.0.0                   # macOS
+go run ./tools/appbundle -o bin/Dibs.app -daemon bin/dibd -presence bin/dibs-presence -version 0.0.0 # macOS
 ```
 
 Four artifacts get installed, not two: `dibd`, `dibs`, and on macOS
@@ -295,7 +295,7 @@ Two more install rules are not obvious from the commands:
 - **Set the identifiers when signing.** The Go toolchain leaves them as `a.out`:
 
   ```sh
-  codesign --force -i org.agenxy.dibs     -s - ~/.local/bin/dibd
+  codesign --force -i org.agenxy.dibs.daemon -s - ~/.local/bin/dibd
   codesign --force -i org.agenxy.dibs.cli -s - ~/.local/bin/dibs
   ```
 
@@ -304,10 +304,11 @@ Two more install rules are not obvious from the commands:
   signature. `go run ./tools/signcheck` says how to make a stable identity once
   and stop that.
 
-Then:
+On macOS, `task install` and Homebrew register the app's background service.
+For the manual installation above, run `dibs configure --service` instead.
+On Linux, start `dibd &` for a first look, or use the systemd unit below. Then:
 
 ```sh
-dibd &                  # daemon on 127.0.0.1:4777, data in ~/.dibs
 dibs mcp-config          # print the MCP host config (add to e.g. .mcp.json)
 dibs admin set-password  # only where Touch ID is unavailable: see below
 dibs web                 # print the live board URL
