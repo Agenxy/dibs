@@ -13,8 +13,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/agenxy/dibs/internal/testport"
 )
 
 // Channel mode turns on only where Claude Code registers the channel: an
@@ -112,8 +110,7 @@ func TestChannelBridgeStaysOnTheHandshakeThatRegistersAChannel(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte(strings.Repeat("a", 64)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	addr := testport.Reserve(t, "tcp", "127.0.0.1:0").ReleaseForOutage(t)
-	srv := lateStartupServer(t, dir, addr)
+	srv, addr := startupDaemon(t, dir)
 	t.Cleanup(func() { _ = srv.Close() })
 	cmd := exec.Command(os.Args[0], "-test.run=^TestChannelBridgeHelper$") // own test binary
 	cmd.Env = append(os.Environ(), "DIBS_TEST_CHANNEL_BRIDGE=1", "DIBS_DIR="+dir, "DIBS_ADDR=http://"+addr)

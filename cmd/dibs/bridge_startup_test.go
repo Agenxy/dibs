@@ -169,6 +169,17 @@ func lateBridgeStartup(t *testing.T, method string) {
 
 func lateStartupServer(t *testing.T, dir, addr string) *http.Server {
 	t.Helper()
+	eng := startupEngine(t, dir)
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return serveStartupDaemon(eng, ln)
+}
+
+// startupEngine runs a real engine over a ledger in dir until the test ends.
+func startupEngine(t *testing.T, dir string) *engine.Engine {
+	t.Helper()
 	box, err := ledger.LoadOrCreateKey(filepath.Join(dir, "key"))
 	if err != nil {
 		t.Fatal(err)
@@ -181,13 +192,27 @@ func lateStartupServer(t *testing.T, dir, addr string) *http.Server {
 	ctx, cancel := context.WithCancel(context.Background())
 	go eng.Run(ctx)
 	t.Cleanup(func() { cancel(); _ = led.Close() })
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		t.Fatal(err)
-	}
+	return eng
+}
+
+// serveStartupDaemon serves the real MCP implementation on a listener the
+// caller already holds.
+func serveStartupDaemon(eng *engine.Engine, ln net.Listener) *http.Server {
 	srv := &http.Server{Handler: mcp.New(eng), ReadHeaderTimeout: time.Second}
 	go func() { _ = srv.Serve(ln) }()
 	return srv
+}
+
+// startupDaemon is lateStartupServer for a daemon that is up from the start:
+// it binds its own listener, so no address is ever released.
+func startupDaemon(t *testing.T, dir string) (*http.Server, string) {
+	t.Helper()
+	eng := startupEngine(t, dir)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return serveStartupDaemon(eng, ln), ln.Addr().String()
 }
 
 func assertStartupReply(t *testing.T, replies <-chan []byte, id int) map[string]any {
