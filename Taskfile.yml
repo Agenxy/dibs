@@ -114,8 +114,8 @@ tasks:
       - task: install:service
         vars: { DEST: '{{.DEST}}' }
       - echo "installed to {{.DEST}}"
-      - echo "a running dibd keeps the old code until you restart it:"
-      - echo "  dibs upgrade"
+      - echo "check the running daemon and measured access with dibs doctor"
+      - echo "if a separately managed daemon still runs the previous build, run dibs upgrade"
 
   install:sign:
     # Sign with a STABLE identity when one is configured, because macOS keys a
