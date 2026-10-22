@@ -115,7 +115,7 @@ tasks:
         vars: { DEST: '{{.DEST}}' }
       - echo "installed to {{.DEST}}"
       - echo "check the running daemon and measured access with dibs doctor"
-      - echo "if a separately managed daemon still runs the previous build, run dibs upgrade"
+      - echo "separately managed daemons still on the previous build can use dibs upgrade"
 
   install:sign:
     # Sign with a STABLE identity when one is configured, because macOS keys a

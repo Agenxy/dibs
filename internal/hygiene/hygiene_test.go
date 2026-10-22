@@ -904,7 +904,10 @@ func TestThePresenceHelperIsTheOneThatGetsBuilt(t *testing.T) {
 		}
 	}
 	for _, line := range strings.Split(string(relRaw), "\n") {
-		if strings.Contains(line, "tools/appbundle") && !strings.Contains(line, "-target ") {
+		// Embedding the final Go image does not compile Swift; the initial
+		// app build must still state its release target explicitly.
+		if strings.Contains(line, "tools/appbundle") && !strings.Contains(line, "-embed-daemon ") &&
+			!strings.Contains(line, "-target ") {
 			t.Error("the release builds Dibs.app without -target, so the notifier is " +
 				"whatever architecture the runner happened to be. It shipped arm64-only " +
 				"into the Intel archive exactly that way, and the failure is silent: " +

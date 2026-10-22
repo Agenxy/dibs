@@ -54,11 +54,14 @@ func TestTaskInstallKeepsTheComputedStampBeforeReplacingAnything(t *testing.T) {
 	installCommand(t, ctx, root, nil, "git", "clone", "--quiet", "--no-local", ".", clone)
 	installCommand(t, ctx, clone, nil, "git", "checkout", "--quiet", "--detach", head)
 	// The runner is pinned by this clone's config, exactly as for a source
-	// install. Never change HOME, the live install prefix or the live board.
+	// install. HOME and service execution are isolated too: source setup now
+	// explicitly registers its app service, which a stamp test must never do.
 	installCommand(t, ctx, clone, nil, "mise", "trust")
 	installCommand(t, ctx, clone, nil, "mise", "install")
-	env := isolatedInstallEnv(scratch, "")
+	serviceFlags := isolatedServiceInstall(t, clone, scratch, dest)
+	env := isolatedInstallEnv(scratch, serviceFlags)
 	installCommand(t, ctx, clone, env, "task", "install", "DEST="+dest)
+	assertPrivateServiceInstall(t, scratch)
 	previous := map[string][32]byte{}
 	for _, name := range []string{"dibs", "dibd"} {
 		path := filepath.Join(dest, name)
@@ -91,7 +94,7 @@ func TestTaskInstallKeepsTheComputedStampBeforeReplacingAnything(t *testing.T) {
 	}
 	cmd := exec.CommandContext(ctx, "task", "install", "DEST="+dest)
 	cmd.Dir, cmd.Env = clone, isolatedInstallEnv(scratch,
-		"-ldflags=-X=github.com/agenxy/dibs/internal/build.Version=devel+"+head)
+		serviceFlags+" -ldflags=-X=github.com/agenxy/dibs/internal/build.Version=devel+"+head)
 	out, err := cmd.CombinedOutput()
 	if err == nil || !strings.Contains(string(out), "installstamp:") || !strings.Contains(string(out), "computed") {
 		t.Fatalf("conflicting override must fail at the real install guard, got %v:\n%s", err, out)
@@ -119,10 +122,11 @@ func isolatedInstallEnv(scratch, flags string) []string {
 	var env []string
 	for _, entry := range os.Environ() {
 		key, _, _ := strings.Cut(entry, "=")
-		if !strings.HasPrefix(key, "DIBS_") && key != "GOFLAGS" {
+		if !strings.HasPrefix(key, "DIBS_") && key != "GOFLAGS" && key != "HOME" {
 			env = append(env, entry)
 		}
 	}
 	return append(env, "GOFLAGS="+flags, "DIBS_NOTIFY=off", "DIBS_ADDR=http://127.0.0.1:1",
-		"DIBS_DIR="+filepath.Join(scratch, "board"))
+		"DIBS_DIR="+filepath.Join(scratch, "board"), "HOME="+filepath.Join(scratch, "home"),
+		"DIBS_CODESIGN_IDENTITY=-", "DIBS_ADHOC_OK=1")
 }

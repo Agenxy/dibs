@@ -55,6 +55,23 @@ func appServiceFixture() int {
 		return 14
 	}
 	selected, found, pinErr := paths.PinnedService()
+	if mode == "register" && status == "enabled" && os.Getenv("DIBS_TEST_APP_SERVICE_MATERIALIZE") == "1" {
+		if !found || pinErr != nil {
+			return 22
+		}
+		info, err := os.Stat(selected.Dir)
+		if err != nil || !info.IsDir() {
+			return 23
+		}
+		for name, body := range map[string]string{
+			"local.secret": strings.Repeat("a", 64), "node_id": "app-service-fixture",
+			"dibs.toml": "addr = '" + os.Getenv("DIBS_TEST_APP_SERVICE_ADDR") + "'\n",
+		} {
+			if err := os.WriteFile(filepath.Join(selected.Dir, name), []byte(body), 0o600); err != nil {
+				return 24
+			}
+		}
+	}
 	err = json.NewEncoder(f).Encode(map[string]any{"mode": mode, "status": status, "pin_found": found, "pin_error": fmt.Sprint(pinErr), "dir": selected.Dir, "path": selected.ServicePath, "source": selected.ServicePathSource})
 	_ = f.Close()
 	if err != nil {
@@ -96,7 +113,7 @@ func newAppServiceTestFixture(t *testing.T) *appServiceTestFixture {
 	if err := os.MkdirAll(f.dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	image, err := os.ReadFile(os.Args[0])
+	image, err := serviceFixtureImage(t)
 	if err != nil {
 		t.Fatal(err)
 	}

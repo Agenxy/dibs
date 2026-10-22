@@ -62,7 +62,7 @@ func appServiceCall(app, mode string) (appServiceStatus, error) {
 	// #nosec G204,G702 -- validated installed app and allowlisted service mode, no shell
 	cmd := exec.CommandContext(ctx, filepath.Join(app, "Contents", "MacOS", "dibs-notify"), "--service-"+mode)
 	cmd.WaitDelay = time.Second
-	out, err := cmd.CombinedOutput()
+	out, err := executeAppServiceCommand(cmd)
 	if err != nil {
 		return appServiceStatus{}, fmt.Errorf("dibs app service %s: %w: %s", mode, err, out)
 	}

@@ -26,10 +26,10 @@ import (
 // side coordination simply stops answering. A coordination service that a
 // laptop lid can end is not a service.
 //
-// It WRITES the unit and prints the command to load it, rather than loading it
-// itself. Registering a background job that starts at login is a change to the
-// machine, not to Dibs, and the operator should be the one who makes it: the
-// same reason nothing here ever drives a harness.
+// On macOS this explicit command registers the installed app's background
+// service, preserving an existing board through upgrade's replay preflight.
+// On Linux it writes the unit and prints the command to load it. Merely
+// observing a missing service, including from doctor, never invokes this path.
 func writeServiceUnit() error {
 	daemon, err := daemonPath()
 	if err != nil {

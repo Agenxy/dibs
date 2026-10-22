@@ -172,7 +172,9 @@ func TestEverySubcommandIsInTheUsageText(t *testing.T) {
 	}
 }
 
-// dispatchedVerbs reads the CLI's own dispatch, and only that.
+// dispatchedVerbs reads the CLI's own dispatch, and only that. main enters
+// cliMain through the typed service-config recovery boundary; the behavioral
+// help guard still executes main for every verb.
 //
 // It used to be a bare `^\tcase "([a-z-]+)"` over the whole file, which worked
 // by accident: every other switch at that indentation held ledger op kinds, and
@@ -189,7 +191,7 @@ func dispatchedVerbs(t *testing.T) []string {
 	var verbs []string
 	for _, decl := range src.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || fn.Name.Name != "main" {
+		if !ok || fn.Name.Name != "cliMain" {
 			continue
 		}
 		for _, stmt := range fn.Body.List {
