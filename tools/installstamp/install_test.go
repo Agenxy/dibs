@@ -31,7 +31,12 @@ func TestTaskInstallKeepsTheComputedStampBeforeReplacingAnything(t *testing.T) {
 	t.Cleanup(cancel)
 	root := filepath.Join("..", "..")
 	head := strings.TrimSpace(installCommand(t, ctx, root, nil, "git", "rev-parse", "HEAD"))
-	scratch := t.TempDir()
+	// The installed executable is resolved by the kernel. Keep every fixture
+	// identity in that same spelling (/private/var rather than /var on macOS).
+	scratch, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	clone, dest := filepath.Join(scratch, "repo"), filepath.Join(scratch, "installed")
 	if runtime.GOOS == "darwin" {
 		// Normal install registers its notifier bundle. Unregister only this
@@ -54,11 +59,17 @@ func TestTaskInstallKeepsTheComputedStampBeforeReplacingAnything(t *testing.T) {
 	installCommand(t, ctx, root, nil, "git", "clone", "--quiet", "--no-local", ".", clone)
 	installCommand(t, ctx, clone, nil, "git", "checkout", "--quiet", "--detach", head)
 	// The runner is pinned by this clone's config, exactly as for a source
-	// install. Never change HOME, the live install prefix or the live board.
+	// install. HOME and service execution are isolated too: source setup now
+	// explicitly registers its app service, which a stamp test must never do.
 	installCommand(t, ctx, clone, nil, "mise", "trust")
 	installCommand(t, ctx, clone, nil, "mise", "install")
-	env := isolatedInstallEnv(scratch, "")
-	installCommand(t, ctx, clone, env, "task", "install", "DEST="+dest)
+	serviceFlags := isolatedServiceInstall(t, clone, scratch, dest)
+	env := isolatedInstallEnv(scratch, serviceFlags)
+	cmd := privateInstallTask(ctx, clone, env, dest)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("private task install: %v\n%s", err, out)
+	}
+	assertPrivateServiceInstall(t, scratch)
 	previous := map[string][32]byte{}
 	for _, name := range []string{"dibs", "dibd"} {
 		path := filepath.Join(dest, name)
@@ -89,9 +100,8 @@ func TestTaskInstallKeepsTheComputedStampBeforeReplacingAnything(t *testing.T) {
 		}
 		previous[name] = sha256.Sum256(b)
 	}
-	cmd := exec.CommandContext(ctx, "task", "install", "DEST="+dest)
-	cmd.Dir, cmd.Env = clone, isolatedInstallEnv(scratch,
-		"-ldflags=-X=github.com/agenxy/dibs/internal/build.Version=devel+"+head)
+	cmd = privateInstallTask(ctx, clone, isolatedInstallEnv(scratch,
+		serviceFlags+" -ldflags=-X=github.com/agenxy/dibs/internal/build.Version=devel+"+head), dest)
 	out, err := cmd.CombinedOutput()
 	if err == nil || !strings.Contains(string(out), "installstamp:") || !strings.Contains(string(out), "computed") {
 		t.Fatalf("conflicting override must fail at the real install guard, got %v:\n%s", err, out)
@@ -119,10 +129,11 @@ func isolatedInstallEnv(scratch, flags string) []string {
 	var env []string
 	for _, entry := range os.Environ() {
 		key, _, _ := strings.Cut(entry, "=")
-		if !strings.HasPrefix(key, "DIBS_") && key != "GOFLAGS" {
+		if !strings.HasPrefix(key, "DIBS_") && key != "GOFLAGS" && key != "HOME" {
 			env = append(env, entry)
 		}
 	}
 	return append(env, "GOFLAGS="+flags, "DIBS_NOTIFY=off", "DIBS_ADDR=http://127.0.0.1:1",
-		"DIBS_DIR="+filepath.Join(scratch, "board"))
+		"DIBS_DIR="+filepath.Join(scratch, "board"), "HOME="+filepath.Join(scratch, "home"),
+		"DIBS_CODESIGN_IDENTITY=-", "DIBS_ADHOC_OK=1")
 }

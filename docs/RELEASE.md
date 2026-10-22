@@ -1,5 +1,32 @@
 # Gate before tag, then resumable publication
 
+## macOS signing identity and deliberate rotation
+
+The release certificate root is pinned in
+`internal/releasecodesign/identity.go` to SHA-1 requirement fingerprint
+`27113117309b43e4748ed37d7002d1122a7af9ae` (Dibs Release Codesign). This
+fingerprint is the code-signing requirement's identity, not a content hash.
+Changing it can invalidate users' existing macOS privacy and firewall grants.
+The signer rejects a different certificate; archive verification checks the
+actual designated requirement and validates the extracted executable's signature.
+Production preflight and publication require this pin, including refusal of
+ad-hoc images. Explicit offline/delivery rehearsals may use ad-hoc signatures;
+they provide no acceptance evidence for production identity or grant retention.
+
+Do not rotate the signing secret as routine credential maintenance. A deliberate
+rotation requires the owner's approval, a reviewed change to the pin, and a
+changelog/migration notice identifying which grants people must review again.
+Before dispatch, measure both old-to-new identity and fresh installation with
+the final signed app layout. Preserve the old certificate and receipts for
+verification of existing releases. Update the signing secret only in that
+approved migration window; never widen the check to accept arbitrary roots or
+copy the observed new fingerprint into the pin merely to get a green release.
+Source installs use their own local signing identity. Switching between a
+source install and a Homebrew install is a new identity to macOS and needs one
+fresh grant; retaining the release pin does not merge the two channels.
+
+## Release flow
+
 A release starts with `workflow_dispatch` of `release.yml` on protected `main`,
 with a canonical version and full candidate SHA. The candidate must be main's
 current tip and its committed release surfaces must already name that version.

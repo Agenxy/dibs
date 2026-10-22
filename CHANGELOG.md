@@ -7,6 +7,37 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The macOS daemon now lives inside Dibs.app's background service, with the
+  notifier and presence helper beside it. Install and upgrade preserve the
+  existing board directory and PATH, prove replay before service migration,
+  and recover the old service if registration fails. Doctor explains background
+  approval. Orphan checks use the loaded launchctl job only; unavailable
+  background-item history is an explicit visibility limit, never a password prompt.
+  The first move into the app may need a fresh folder grant; explicit
+  installation requests reads once and reports measured access separately.
+  Source/release channel changes can also require a fresh grant.
+  The updated root daemon also enters the app when an existing legacy service
+  starts it, so be at the Mac for that first install to answer a possible new
+  folder prompt. Pairing is limited to the distributed name `dibd`; deliberately
+  named development builds such as `dibd-dev` remain standalone beside the app.
+  Files & Folders, Firewall and Notifications pane naming remain
+  OPEN; only the Dibs name and icon in Login Items were measured in fixtures.
+
+- The macOS daemon records bounded Desktop/Documents/Downloads read evidence
+  for its local agents. The board and doctor distinguish completed, refused and
+  pending reads, and explain where to grant access; requesting a read never
+  reports a grant. An explicit doctor request attempts ungranted roots once.
+  Native-spelling timeouts under those roots now produce a bounded diagnosis.
+
+- A private macOS service directory pin is shared by daemon, CLI and running
+  bridges. A malformed pin refuses instead of creating an empty default board.
+  A bridge changing boards binds the destination, trusted certificates and
+  credential together, including subscription and reconnect paths.
+
+- Production macOS release checks pin the signing certificate and designated
+  requirements, refusing a silent identity change that would invalidate users'
+  existing privacy grants. Offline ad-hoc rehearsal builds remain explicit.
+
 - A finished request (`done`) wakes an idle Claude Code requester whether or
   not it declared itself waiting. It woke only a requester whose declaration
   said `waiting`, so a high-priority request's DONE sat unread for an hour
@@ -19,7 +50,6 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   no reply (#482). The stamp only adds evidence, so a request without it is
   served normally, and a later request carries it.
 
-### Fixed
 
 - A coordinator's unreachable-agent notice stops being outstanding when the
   recipient reads its mail or the contact alert is cleared. It no longer blocks

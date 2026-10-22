@@ -26,10 +26,10 @@ import (
 // side coordination simply stops answering. A coordination service that a
 // laptop lid can end is not a service.
 //
-// It WRITES the unit and prints the command to load it, rather than loading it
-// itself. Registering a background job that starts at login is a change to the
-// machine, not to Dibs, and the operator should be the one who makes it: the
-// same reason nothing here ever drives a harness.
+// On macOS this explicit command registers the installed app's background
+// service, preserving an existing board through upgrade's replay preflight.
+// On Linux it writes the unit and prints the command to load it. Merely
+// observing a missing service, including from doctor, never invokes this path.
 func writeServiceUnit() error {
 	daemon, err := daemonPath()
 	if err != nil {
@@ -42,6 +42,13 @@ func writeServiceUnit() error {
 	dir, err := filepath.Abs(paths.DataDir())
 	if err != nil {
 		return fmt.Errorf("resolving the data directory to an absolute path: %w", err)
+	}
+	if runtime.GOOS == "darwin" {
+		if handled, err := configureAppService(daemon, dir); handled {
+			return err
+		}
+		return fmt.Errorf("the installed Dibs.app is missing; install the complete distribution " +
+			"before dibs configure --service (the legacy service was left unchanged)")
 	}
 	// Both unit formats are text with their own metacharacters, and a path is
 	// data. Reject what cannot be represented rather than mangling it: a data
@@ -496,6 +503,9 @@ func unitPinning(dir string) string {
 		}
 		_ = body // read above only to skip a unit that cannot be opened
 	}
+	if unit, _ := installedAppService(); unit != "" && unitNames(unit, dir) {
+		return unit
+	}
 	return ""
 }
 
@@ -540,7 +550,7 @@ func unitDaemon() (unit, daemon string) {
 			return path, d
 		}
 	}
-	return "", ""
+	return installedAppService()
 }
 
 // refuseIfUnitConflicts answers "would writing a unit be refused?" without

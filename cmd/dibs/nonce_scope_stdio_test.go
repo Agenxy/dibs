@@ -67,7 +67,7 @@ func runNonceScopeProcess(t *testing.T, dir, thread string) processNonceProbe {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestNonceScopeProcessHelper$")
 	cmd.Env = []string{
-		"PATH=" + os.Getenv("PATH"), "HOME=" + dir, "USERPROFILE=" + dir, "SYSTEMROOT=" + os.Getenv("SYSTEMROOT"),
+		"PATH=" + os.Getenv("PATH"), "HOME=" + dir, "USERPROFILE=" + dir, "TMPDIR=" + os.TempDir(), "TEMP=" + os.TempDir(), "SYSTEMROOT=" + os.Getenv("SYSTEMROOT"),
 		"DIBS_DIR=" + dir, "DIBS_HOST_ID=nonce-scope-fixture", "DIBS_NOTIFY=off", "DIBS_TEST_NONCE_SCOPE=1",
 		"DIBS_TEST_NONCE_THREAD=" + thread,
 	}

@@ -24,12 +24,14 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/folderaccess"
 	hostdisplay "github.com/agenxy/dibs/internal/hostname"
 	"github.com/agenxy/dibs/internal/overlap"
 )
 
 // Engine owns all state. Public methods are safe for concurrent use.
 type Engine struct {
+	folderAccess *folderaccess.Monitor
 	transfers    map[uint64]transferReservation // ephemeral staging reservations, writer-owned
 	transferNext uint64
 	inviteClosed map[string]uint64 // derived from ledgered closes, rebuilt before ring trimming
@@ -1031,6 +1033,15 @@ func (e *Engine) execWithReceipt(
 		e.seen[lid] = now
 		if l := e.state.Agents[lid]; l != nil {
 			e.confirmSocketOffer(l, now)
+			e.noteAgentFolders(l.Agent)
+			if board, ok := res["board"].(map[string]any); ok {
+				e.decorateFolderAccess(board)
+			}
+		}
+	}
+	if op.Kind == core.OpUpdate && actor != nil {
+		if updated := e.state.Agents[actor.ID]; updated != nil {
+			e.noteAgentFolders(updated.Agent)
 		}
 	}
 	if op.Kind == core.OpResume {

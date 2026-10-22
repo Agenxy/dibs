@@ -42,6 +42,40 @@ import AppKit
 import Foundation
 import UserNotifications
 import Intents
+import ServiceManagement
+
+// These modes belong to the app that owns the background item. They do not
+// initialize notification delivery or create a permission/decision window.
+let serviceModes = ["--service-status", "--service-register", "--service-unregister"]
+if CommandLine.arguments.count == 2, serviceModes.contains(CommandLine.arguments[1]) {
+    if #available(macOS 13.0, *) {
+        let service = SMAppService.agent(plistName: "org.agenxy.dibs.daemon.plist")
+        do {
+            switch CommandLine.arguments[1] {
+            case "--service-register": if service.status != .enabled { try service.register() }
+            case "--service-unregister": if service.status != .notRegistered { try service.unregister() }
+            default: break
+            }
+            let state: String
+            switch service.status {
+            case .notRegistered: state = "not-registered"
+            case .enabled: state = "enabled"
+            case .requiresApproval: state = "requires-approval"
+            case .notFound: state = "not-found"
+            @unknown default: state = "unknown"
+            }
+            let result: [String: Any] = ["status": state, "approval_required": service.status == .requiresApproval]
+            let data = try JSONSerialization.data(withJSONObject: result, options: [.sortedKeys])
+            print(String(decoding: data, as: UTF8.self))
+            exit(0)
+        } catch {
+            FileHandle.standardError.write(Data("Dibs app service: \(error)\n".utf8))
+            exit(2)
+        }
+    }
+    FileHandle.standardError.write(Data("Dibs app service requires macOS 13 or newer\n".utf8))
+    exit(2)
+}
 
 func notificationSetting(_ value: UNNotificationSetting) -> String {
     switch value {

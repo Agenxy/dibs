@@ -28,17 +28,19 @@ import (
 // and the same file the admin UI will drive. One source of truth, three doors.
 const serviceHelp = `dibs configure --service: keep the daemon running
 
-  Writes an init-system unit for the data directory in DIBS_DIR (default
-  ~/.dibs), so the daemon survives a closed terminal and comes back with
-  your session:
+  Keeps the board running after the terminal closes and at the next login.
 
-    macOS   ~/Library/LaunchAgents/org.agenxy.dibs.plist
-    Linux   $XDG_CONFIG_HOME/systemd/user/dibs.service
+  macOS: registers the installed Dibs.app's background service. The existing
+  board directory and service PATH are pinned privately; legacy settings that
+  cannot migrate are refused before stopping anything. macOS may require
+  approval under System Settings → General → Login Items & Extensions → Dibs.
+  Requests Desktop/Documents/Downloads reads once; requested is not granted.
 
-  It writes the file and prints the command to load it. Registering a job that
-  starts at login is a change to your machine, so you make it, not Dibs.
+  --remove: unregister that macOS service before uninstalling Dibs. Keeps the
+  board and its directory pin. It refuses to remove another board's service.
 
-  Refuses to overwrite an existing unit: edit it in place, or delete it first.
+  Linux: writes $XDG_CONFIG_HOME/systemd/user/dibs.service and prints the load
+  command. Refuses to overwrite an existing unit you may have tuned.
 `
 
 // serviceCommand handles `dibs configure --service`.
@@ -52,10 +54,13 @@ func serviceCommand(rest []string) error {
 	// note on stop(): honouring help on sight made an unknown flag pass or fail
 	// depending on where the user put it.
 	help := false
+	remove := false
 	for _, a := range rest {
 		switch a {
 		case "-h", "--help", "help":
 			help = true
+		case "--remove":
+			remove = true
 		default:
 			return fmt.Errorf("`dibs configure --service` takes no further arguments, "+
 				"and %q is not one. It writes a unit for the data directory in DIBS_DIR "+
@@ -65,6 +70,9 @@ func serviceCommand(rest []string) error {
 	if help {
 		fmt.Print(serviceHelp)
 		return nil
+	}
+	if remove {
+		return removeAppService()
 	}
 	return writeServiceUnit()
 }

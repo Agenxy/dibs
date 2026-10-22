@@ -38,14 +38,15 @@ function check(name: string, ok: boolean, detail = "") {
 const DEV_ADDR = "127.0.0.1:47811"
 const REL_ADDR = "127.0.0.1:47812"
 
-const devBin = process.env.LANESD_DEV ?? `${process.cwd()}/bin/dibd-dev`
+const devSource = process.env.LANESD_DEV ?? `${process.cwd()}/bin/dibd-dev`
 const relBin = process.env.DIBD ?? `${process.cwd()}/bin/dibd`
 
 type Node = { dir: string; addr: string; proc: ReturnType<typeof Bun.spawn>; secret: string }
 const nodes: Node[] = []
+const isolatedBins: string[] = []
 
 /**
- * Copy a daemon somewhere with no presence helper beside it.
+ * Copy a daemon somewhere with no presence helper or paired app beside it.
  *
  * The helper is resolved from the daemon's own directory, so a release daemon
  * run out of bin/ finds the real one and raises a Touch ID sheet, which is
@@ -59,9 +60,13 @@ const nodes: Node[] = []
  * Unavailable, on every machine, in CI as much as here: without weakening what
  * is being asked. The question is whether an environment variable can assert
  * that a human is present, and that is independent of whether a sensor exists.
+ * Both images use this same no-helper layout. The development image differs
+ * from the release app and is copied under the ordinary daemon name here, so
+ * leaving a paired release app beside it would correctly refuse startup.
  */
 function isolate(bin: string): string {
   const dir = mkdtempSync(join(tmpdir(), "agents-nohelper-"))
+  isolatedBins.push(dir)
   const dest = join(dir, "dibd")
   copyFileSync(bin, dest)
   return dest
@@ -107,6 +112,9 @@ function cleanup() {
   for (const n of nodes) {
     try { n.proc.kill() } catch {}
     try { rmSync(n.dir, { recursive: true, force: true }) } catch {}
+  }
+  for (const dir of isolatedBins) {
+    try { rmSync(dir, { recursive: true, force: true }) } catch {}
   }
 }
 process.on("exit", cleanup)
@@ -181,6 +189,7 @@ async function waitUp(n: Node) {
 }
 
 try {
+  const devBin = isolate(devSource)
   const dev = start(devBin, DEV_ADDR, "verified")
   const rel = start(isolate(relBin), REL_ADDR, "verified")
   await waitUp(dev)

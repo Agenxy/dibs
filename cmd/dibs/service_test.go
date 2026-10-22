@@ -13,6 +13,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/agenxy/dibs/internal/paths"
 )
 
 // A unit file records an absolute path and then outlives the shell that wrote
@@ -169,8 +171,23 @@ func TestSystemdUnitCannotBeInjectedThroughAPath(t *testing.T) {
 // DIBS_DIR produced a service that starts against whatever it resolves to
 // under launchd: a different board, silently.
 func TestServiceUnitsRecordAnAbsoluteDataDirectory(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		f := newAppServiceTestFixture(t)
+		t.Chdir(f.home)
+		t.Setenv("DIBS_DIR", "board")
+		if err := writeServiceUnit(); err != nil {
+			t.Fatal(err)
+		}
+		selected, found, err := paths.PinnedService()
+		if err != nil || !found || selected.Dir != f.dir {
+			t.Fatalf("service pin is not the absolute existing board: %+v %t %v", selected, found, err)
+		}
+		return
+	}
+
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	t.Setenv("DIBS_DIR", "relative-data")
 	t.Chdir(home)
 	if err := os.MkdirAll(filepath.Join(home, "relative-data"), 0o750); err != nil {
@@ -183,11 +200,16 @@ func TestServiceUnitsRecordAnAbsoluteDataDirectory(t *testing.T) {
 		}
 		t.Fatal(err)
 	}
-	body, err := os.ReadFile(filepath.Join(home, "Library", "LaunchAgents", "org.agenxy.dibs.plist"))
+	unit := filepath.Join(home, "Library", "LaunchAgents", "org.agenxy.dibs.plist")
+	if runtime.GOOS == "linux" {
+		unit = filepath.Join(home, ".config", "systemd", "user", "dibs.service")
+	}
+	body, err := os.ReadFile(unit)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(body, []byte(">relative-data<")) {
+	if bytes.Contains(body, []byte(">relative-data<")) ||
+		!bytes.Contains(body, []byte(filepath.Join(home, "relative-data"))) {
 		t.Errorf("the unit records a relative data directory:\n%s", body)
 	}
 }
@@ -496,9 +518,28 @@ func TestSameBinarySeesThroughASymlink(t *testing.T) {
 //
 // Reported by an operator bringing up a second machine, with the diagnosis.
 func TestWritingAServiceUnitCreatesTheDataDirectory(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		f := newAppServiceTestFixture(t)
+		dir := filepath.Join(f.home, "fresh-install")
+		t.Setenv("DIBS_DIR", dir)
+		t.Setenv("DIBS_TEST_APP_SERVICE_MATERIALIZE", "1")
+		if _, err := os.Stat(dir); !os.IsNotExist(err) {
+			t.Fatal("setup already created service directory", err)
+		}
+		if err := writeServiceUnit(); err != nil {
+			t.Fatal(err)
+		}
+		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+			t.Fatal("service started before creating its directory", err)
+		}
+		return
+	}
+
 	dir := filepath.Join(t.TempDir(), "fresh-install")
 	t.Setenv("DIBS_DIR", dir)
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 
 	// A dibd for daemonPath to find, because the machine running the tests may
 	// not have one installed.

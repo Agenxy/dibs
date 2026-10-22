@@ -86,6 +86,9 @@ func main() {
 }
 
 func run() error {
+	if daemon := flagValue("-embed-daemon", ""); daemon != "" {
+		return embedReleaseDaemon(flagValue("-o", "Dibs.app"), daemon, flagValue("-presence", "dibs-presence"))
+	}
 	if runtime.GOOS != "darwin" {
 		return fmt.Errorf("the app bundle is macOS only; nothing to build on %s", runtime.GOOS)
 	}
@@ -150,8 +153,15 @@ func run() error {
 	if err := copyFile(icns, filepath.Join(res, "Dibs.icns")); err != nil {
 		return err
 	}
+	return finishBundle(out, version)
+}
+
+func finishBundle(out, version string) error {
 	body := fmt.Sprintf(plist, version, version)
 	if err := os.WriteFile(filepath.Join(out, "Contents", "Info.plist"), []byte(body), 0o600); err != nil {
+		return err
+	}
+	if err := writeAppService(out, flagValue("-daemon", ""), flagValue("-presence", "")); err != nil {
 		return err
 	}
 	// Signed with whatever identity the caller selected, falling back to ad-hoc
@@ -165,8 +175,8 @@ func run() error {
 	// rebuild is a different app to macOS, and the grant is asked for again.
 	// #nosec G204 -- identity() is DIBS_CODESIGN_IDENTITY or "-", and `out` is
 	// this tool's own -o flag. A build tool run by the maintainer.
-	if o, err := exec.Command("codesign", "--force", "--sign", identity(), out).CombinedOutput(); err != nil {
-		return fmt.Errorf("codesign: %w: %s", err, o)
+	if err := signApp(out); err != nil {
+		return err
 	}
 	fmt.Println("built", out)
 	return nil

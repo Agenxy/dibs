@@ -78,7 +78,9 @@ linters:
         text: "function (run|dispatch|ServeHTTP)"
         linters: [cyclop]
       - path: cmd/dibs/main\.go
-        text: "function main"
+        # Same flat command dispatch, moved inside typed configuration-error
+        # recovery so os.Exit does not bypass a defer in the same function.
+        text: "function cliMain"
         linters: [cyclop]
       # run() is the daemon's start-up sequence: a straight line of load, bind,
       # serve, each step guarded. The 0.0.3 ledger-vocabulary check added one

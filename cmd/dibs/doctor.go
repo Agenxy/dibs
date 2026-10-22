@@ -52,10 +52,12 @@ func doctor(args []string) error {
 	verbose := fs.Bool("verbose", false, "also say what was checked and found healthy")
 	fs.BoolVar(verbose, "v", false, "shorthand for --verbose")
 	asJSON := fs.Bool("json", false, jsonHelp)
+	requestFolders := fs.Bool("request-folder-access", false, "ask the local daemon to attempt ungranted "+
+		"protected-folder reads once; requested is not granted")
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
-	d := &diagnosis{json: *asJSON}
+	d := &diagnosis{json: *asJSON, requestFolders: *requestFolders || (!*asJSON && interactive())}
 	d.checkCodexPluginVersion()
 	err := d.run(*verbose)
 	if *asJSON {
@@ -64,7 +66,7 @@ func doctor(args []string) error {
 		// a monitoring script's threshold is its own business, and the checks
 		// keep the order the prose prints them in.
 		if perr := printJSON(doctorReport{
-			DataDir:  paths.DataDir(),
+			DataDir:  d.dataDir,
 			Checks:   d.checks,
 			Problems: d.probs,
 			Warnings: d.warns,
@@ -99,9 +101,11 @@ type doctorCheck struct {
 // document cannot carry a different diagnosis from the prose: formatting
 // twice is how they drift.
 type diagnosis struct {
-	json         bool
-	checks       []doctorCheck
-	probs, warns int
+	dataDir        string
+	requestFolders bool
+	json           bool
+	checks         []doctorCheck
+	probs, warns   int
 }
 
 func (d *diagnosis) ok(what string) {
@@ -133,7 +137,16 @@ func (d *diagnosis) prose(line string) {
 }
 
 func (d *diagnosis) run(verbose bool) error {
-	dir, inherited := paths.Resolve()
+	selected, err := paths.SelectDir(false)
+	if err != nil {
+		d.bad("cannot select the service's board directory", err.Error())
+		return err
+	}
+	dir, inherited := selected.Dir, selected.Inherited
+	d.dataDir = dir
+	d.note("data directory source: " + selected.Source)
+	d.serviceDirectoryNote(selected)
+	checkOrphanedAppService(d.note, d.warn)
 
 	// Through the shared vocabulary rather than raw escape codes. The inline
 	// version wrote colour unconditionally, so `dibs doctor > report.txt`,
@@ -237,6 +250,7 @@ func (d *diagnosis) run(verbose bool) error {
 	}
 
 	checkHarnessConfigs(sec, addr(), ok, warn, bad)
+	checkFolderAccess(dir, boardOrNil(), d.requestFolders, ok, d.note, warn)
 	checkDesktopShadowsPlugin(bad)
 	checkCodexHookTrust(ok, warn)
 	checkPanelBuild(client, sec, ok, warn, d.prose)
@@ -1340,42 +1354,6 @@ func checkCoordinatorIsReachable(b *boardView, ok reportFn, warn fixFn) {
 			live+"`, or declare it in [roles] in dibs.toml so it survives a reset. Its mail "+
 			"is recovered separately, with adopt_agent")
 	_ = ok
-}
-
-func checkServiceBinary(ok reportFn, warn fixFn) {
-	unit, pinned := unitDaemon()
-	if unit == "" || pinned == "" {
-		return // no service installed: `configure --service` is optional
-	}
-	want, err := daemonPath()
-	if err != nil {
-		return // already reported by the checks above
-	}
-	if sameBinary(pinned, want) {
-		ok("the service starts the dibd you have installed")
-		return
-	}
-	detail := "it pins " + pinned + ", but the dibd you have installed is " + want
-	if _, err := os.Stat(pinned); err != nil {
-		detail = "it pins " + pinned + ", which does not exist; the dibd you have installed is " + want
-	}
-	warn("the service would start a different daemon than the one installed",
-		detail+". Every fix since that build is not running when the service starts it. "+
-			"`dibs upgrade` rewrites the unit and restarts onto the installed daemon, "+
-			"after checking that it can rebuild this board")
-}
-
-// sameBinary compares two paths by inode where it can, so a symlink or a
-// ./bin/../bin spelling is not reported as a mismatch.
-func sameBinary(a, b string) bool {
-	sa, erra := os.Stat(a)
-	sb, errb := os.Stat(b)
-	if erra == nil && errb == nil {
-		return os.SameFile(sa, sb)
-	}
-	ea, _ := filepath.EvalSymlinks(a)
-	eb, _ := filepath.EvalSymlinks(b)
-	return ea != "" && ea == eb
 }
 
 // scanShippedHooks reads the hook payloads this checkout (or install) ships and

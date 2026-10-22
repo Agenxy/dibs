@@ -149,6 +149,7 @@ type plan struct {
 	running daemonState
 	before  fleet
 	serving bool
+	app     *appServicePlan
 
 	// THE THREE EFFECTS CUTOVER HAS ON A LIVE FLEET, behind fields so a test
 	// can drive them.
@@ -254,7 +255,11 @@ func say(format string, a ...any) { fmt.Printf(format+"\n", a...) }
 func step(s string)               { fmt.Println(ui.Bold("→ ") + s) }
 
 func upgrade(o upgradeOpts) error {
-	p, err := planUpgrade(o)
+	return upgradeApp(o, nil)
+}
+
+func upgradeApp(o upgradeOpts, app *appServicePlan) error {
+	p, err := planUpgradeForApp(o, app)
 	if err != nil {
 		return err
 	}
@@ -264,6 +269,12 @@ func upgrade(o upgradeOpts) error {
 	}
 	if err := p.preflight(); err != nil {
 		return err
+	}
+	if p.app != nil && p.app.legacy != "" {
+		say("Moving the daemon into Dibs.app keeps the existing board directory. " +
+			"macOS may need one fresh Desktop/Documents/Downloads grant: System " +
+			"Settings → Privacy & Security → Files & Folders → Dibs. Changing " +
+			"source/release signing channel can also require a fresh grant.")
 	}
 	if err := p.removeWakeCooldowns(); err != nil {
 		return err
@@ -352,12 +363,32 @@ func checkedVersion(out []byte) string {
 // planUpgrade resolves what is out of line, and proves the replacement can
 // rebuild the board. Nothing here changes anything.
 func planUpgrade(o upgradeOpts) (*plan, error) {
+	return planUpgradeForApp(o, nil)
+}
+
+func planUpgradeForApp(o upgradeOpts, app *appServicePlan) (*plan, error) {
 	p := &plan{opts: o, retryPause: 10 * time.Second}
-	p.dir, p.inherited = paths.Resolve()
+	selected, selectErr := paths.SelectDir(false)
+	if selectErr != nil {
+		return nil, selectErr
+	}
+	p.dir, p.inherited = selected.Dir, selected.Inherited
 
 	var err error
 	if p.installed, err = daemonPath(); err != nil {
 		return nil, fmt.Errorf("cannot find an installed dibd: %w", err)
+	}
+	p.app = app
+	if p.app == nil {
+		if p.app, err = prepareAppUpgrade(p.installed, p.dir); err != nil {
+			return nil, err
+		}
+	}
+	if p.app != nil {
+		p.dir = p.app.dir
+		if filepath.Clean(p.dir) != filepath.Clean(selected.Dir) {
+			p.inherited = ""
+		}
 	}
 	say("%s %s", ui.Dim("data dir "), ui.Path(p.dir))
 	say("%s %s", ui.Dim("installed"), ui.Path(p.installed))
@@ -450,6 +481,12 @@ func (p *plan) proveReplacement() error {
 // the scratch directory they were upgrading. Caught on the first end-to-end
 // run, which did exactly that to the production unit on this machine.
 func (p *plan) findDrift() {
+	if p.app != nil {
+		p.unit, p.pinned = filepath.Join(p.app.app, appServiceRelative), filepath.Join(p.app.app, "Contents", "MacOS", "dibd")
+		p.unitWrong = p.app.legacy != "" || p.app.needsRegistration || p.app.repairPin
+		p.moveDir = p.inherited != "" && p.opts.adoptDir
+		return
+	}
 	if u := unitPinning(p.dir); u != "" {
 		if unit, pinned := unitDaemon(); unit == u {
 			p.unit, p.pinned = unit, pinned
@@ -495,6 +532,9 @@ func (p *plan) report() error {
 // read at load time, and a directory cannot be moved out from under the process
 // holding its lock.
 func (p *plan) preflight() error {
+	if p.app != nil {
+		return p.preflightAppService()
+	}
 	if p.policyErr != nil {
 		return p.policyFailure(p.policyErr)
 	}
@@ -557,6 +597,9 @@ func (p *plan) preflight() error {
 // cutover is the only phase that stops anything, and it is responsible for the
 // daemon being up again however it ends.
 func (p *plan) cutover() error {
+	if p.app != nil {
+		return p.cutoverAppService()
+	}
 	if err := p.removeWakeCooldowns(); err != nil {
 		return err
 	}
@@ -783,6 +826,9 @@ func unitUnfitToRestart(unit, dir, installed string) string {
 // cannot be read or names none. "" means "cannot tell", and the caller then
 // leaves the unit in place rather than force a direct start over a doubt.
 func unitBinary(unit string) string {
+	if app := appForServiceUnit(unit); app != "" {
+		return filepath.Join(app, "Contents", "MacOS", "dibd")
+	}
 	// #nosec G304,G703 -- unit is a service-unit path this project built from
 	// the process's own HOME (or XDG_CONFIG_HOME) plus a fixed filename, or one
 	// the operator passed for their own machine; read and matched, never
@@ -927,6 +973,16 @@ var errNoServiceManager = errors.New("no service manager knows this unit")
 // state. Reloading is idempotent and costs a moment, so paying it every time is
 // cheaper than being right only about the cause we happened to know about.
 func restartUnit(unit string) error {
+	if app := appForServiceUnit(unit); app != "" {
+		status, err := appServiceCall(app, "unregister")
+		if err != nil {
+			return err
+		}
+		if status.Status != "not-registered" {
+			return fmt.Errorf("app service is still %s; refusing duplicate registration", status.Status)
+		}
+		return (&appServicePlan{app: app}).start()
+	}
 	if err := reloadUnit(unit); err != nil {
 		return err
 	}
@@ -1168,7 +1224,7 @@ func unitIsWritable(unit string) error {
 	if unit == "" {
 		return nil
 	}
-	// #nosec G304 -- resolved from this machine's own unit paths
+	// #nosec G304,G703 -- resolved from this machine's own unit paths
 	f, err := os.OpenFile(unit, os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return fmt.Errorf("%s: %w", unit, err)
@@ -1290,6 +1346,10 @@ func bare(a string) string {
 // So the file is split into candidate values, unescaped, and compared as whole
 // paths.
 func unitNames(unit, dir string) bool {
+	if appForServiceUnit(unit) != "" {
+		selected, found, err := paths.PinnedService()
+		return err != nil || (found && filepath.Clean(selected.Dir) == filepath.Clean(dir))
+	}
 	// #nosec G304,G703 -- `unit` is a service-unit path this project builds from
 	// the process's own HOME (or XDG_CONFIG_HOME) plus a fixed filename, or one
 	// the operator passed for their own machine. It is read and compared, never

@@ -26,6 +26,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/agenxy/dibs/internal/build"
+	"github.com/agenxy/dibs/internal/folderaccess"
 	"github.com/agenxy/dibs/internal/humanauth"
 	"github.com/agenxy/dibs/internal/paths"
 	"github.com/agenxy/dibs/internal/ui"
@@ -178,6 +179,13 @@ func styledUsage() string {
 }
 
 func main() {
+	if err := paths.CatchServiceConfig(cliMain); err != nil {
+		fmt.Fprintln(os.Stderr, "dibs:", err)
+		os.Exit(1)
+	}
+}
+
+func cliMain() {
 	if len(os.Args) < 2 {
 		fmt.Println(styledUsage())
 		return
@@ -478,7 +486,16 @@ func getAt(from, path string, v any) error {
 }
 
 func localSecret() (string, error) {
-	b, err := os.ReadFile(filepath.Join(paths.DataDir(), "local.secret"))
+	selected, err := paths.SelectDir(false)
+	if err != nil {
+		return "", err
+	}
+	return localSecretIn(selected.Dir)
+}
+
+func localSecretIn(dir string) (string, error) {
+	// #nosec G304 -- directory selected from this CLI's local configuration.
+	b, err := os.ReadFile(filepath.Join(dir, "local.secret"))
 	if err != nil {
 		return "", err
 	}
@@ -1087,14 +1104,16 @@ type (
 		Departed  int           `json:"departed_unacked"`
 	}
 	boardView struct {
-		ContactAlerts   []contactAlertDiagnostic `json:"contact_alerts"`
-		ConfiguredNames []configuredNameAddress  `json:"configured_name_addresses,omitempty"`
-		Serial          uint64                   `json:"serial"`
-		Node            string                   `json:"node"`
-		HostID          string                   `json:"host_id"`
-		Agents          []boardAgent             `json:"agents"`
-		Claims          []boardClaim             `json:"claims"`
-		Spaces          []boardChannel           `json:"spaces"`
+		FolderAccess       []folderaccess.Observation `json:"folder_access,omitempty"`
+		FolderAccessAdvice string                     `json:"folder_access_advice,omitempty"`
+		ContactAlerts      []contactAlertDiagnostic   `json:"contact_alerts"`
+		ConfiguredNames    []configuredNameAddress    `json:"configured_name_addresses,omitempty"`
+		Serial             uint64                     `json:"serial"`
+		Node               string                     `json:"node"`
+		HostID             string                     `json:"host_id"`
+		Agents             []boardAgent               `json:"agents"`
+		Claims             []boardClaim               `json:"claims"`
+		Spaces             []boardChannel             `json:"spaces"`
 	}
 )
 

@@ -17,10 +17,14 @@ tasks:
     #
     # macOS only. Elsewhere the daemon simply has no route to a desktop.
     platforms: [darwin]
+    deps: [build:daemon, presence]
     desc: Build Dibs.app, the notifier bundle with the product icon
     sources:
       - internal/notify/app/*.swift
       - tools/appbundle/main.go
+      - tools/appbundle/service.go
+      - bin/dibd
+      - bin/dibs-presence
     generates:
       - bin/Dibs.app/Contents/MacOS/dibs-notify
     vars:
@@ -40,7 +44,7 @@ tasks:
       SIGNER:
         sh: go run ./tools/signid
     cmds:
-      - DIBS_CODESIGN_IDENTITY='{{.SIGNER}}' go run ./tools/appbundle -o bin/Dibs.app -version {{.VERSION | default "0.0.0"}}
+      - DIBS_CODESIGN_IDENTITY='{{.SIGNER}}' go run ./tools/appbundle -o bin/Dibs.app -daemon bin/dibd -presence bin/dibs-presence -version {{.VERSION | default "0.0.0"}}
 
   presence:
     desc: >-
@@ -60,10 +64,16 @@ tasks:
   build:
     desc: Build both binaries
     cmds:
-      - go build -o bin/dibd ./cmd/dibd
+      - task: build:daemon
       - go build -o bin/dibs ./cmd/dibs
       - task: presence
       - task: app
+
+  build:daemon:
+    internal: true
+    run: once
+    cmds:
+      - go build -o bin/dibd ./cmd/dibd
 
   install:
     desc: Install both binaries to ~/.local/bin (replaces, never overwrites)
@@ -101,9 +111,11 @@ tasks:
       - task: install:sign
         vars: { DEST: '{{.DEST}}' }
       - '{{.DEST}}/dibs version'
+      - task: install:service
+        vars: { DEST: '{{.DEST}}' }
       - echo "installed to {{.DEST}}"
-      - echo "a running dibd keeps the old code until you restart it:"
-      - echo "  dibs upgrade"
+      - echo "check the running daemon and measured access with dibs doctor"
+      - echo "separately managed daemons still on the previous build can use dibs upgrade"
 
   install:sign:
     # Sign with a STABLE identity when one is configured, because macOS keys a
@@ -145,9 +157,9 @@ tasks:
       # identity. They did not: this named the identifiers and the release
       # named none, so a source install was better behaved than the official
       # one and the identifiers lived in two places.
-      - DIBS_CODESIGN_IDENTITY='{{.SIGNER}}' go run ./tools/signrelease -sign {{.DEST}}/dibd
-      - DIBS_CODESIGN_IDENTITY='{{.SIGNER}}' go run ./tools/signrelease -sign {{.DEST}}/dibs
-      - DIBS_CODESIGN_IDENTITY='{{.SIGNER}}' go run ./tools/signrelease -sign {{.DEST}}/dibs-presence
+      - DIBS_CODESIGN_IDENTITY='{{.SIGNER}}' go run ./tools/signrelease -source-identity -sign {{.DEST}}/dibd
+      - DIBS_CODESIGN_IDENTITY='{{.SIGNER}}' go run ./tools/signrelease -source-identity -sign {{.DEST}}/dibs
+      - DIBS_CODESIGN_IDENTITY='{{.SIGNER}}' go run ./tools/signrelease -source-identity -sign {{.DEST}}/dibs-presence
       # One message, chosen by template. `status:` is a TASK-level field, not a
       # per-command one, so a pair of commands guarded by it printed BOTH: the
       # install claimed in consecutive lines that the grant would and would not
@@ -165,9 +177,18 @@ tasks:
           Certificate Assistant -> Create a Certificate, name it 'Dibs Local
           Codesign', type Code Signing, self-signed. Every install after that finds
           it by name, with no variable to set."{{else}}"signed as '{{.SIGNER}}', so
-          the macOS privacy grant survives this and every later install."{{end}}
+          grants can survive updates that keep this identity. Moving from the
+          standalone daemon to Dibs.app, or changing signing channel, can need
+          a fresh grant; check dibs doctor."{{end}}
         platforms: [darwin]
         silent: true
+
+  install:service:
+    desc: Register the installed macOS app service and request protected-folder reads once
+    platforms: [darwin]
+    internal: true
+    cmds:
+      - '{{.DEST}}/dibs configure --service'
 
   install:app:
     # Beside the daemon, for the same reason the presence helper is: notify

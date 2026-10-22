@@ -165,7 +165,11 @@ func buildSignedStage(ctx context.Context, c config, run runner) error {
 	if _, err := run(ctx, env, "goreleaser", "release", "--clean", "--skip=sign,publish,announce"); err != nil {
 		return err
 	}
-	if _, err := run(ctx, nil, "go", "run", "./tools/archivecheck"); err != nil {
+	archiveArgs := []string{"run", "./tools/archivecheck"}
+	if !targetOf(c).rehearsal {
+		archiveArgs = append(archiveArgs, "-release-identity")
+	}
+	if _, err := run(ctx, nil, "go", archiveArgs...); err != nil {
 		return err
 	}
 	if _, err := run(ctx, nil, "go", "run", "./tools/mcpbundle", "-version", c.version); err != nil {

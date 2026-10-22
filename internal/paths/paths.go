@@ -43,13 +43,20 @@ func DataDir() string {
 // any, so the daemon and `dibs doctor` can say which one they opened.
 //
 // The order is deliberate: an explicit DIBS_DIR always wins, then the current
-// name, then an inherited one. Preferring `~/.dibs` when it exists means an
+// macOS service pin, then the current name, then an inherited one. A malformed
+// pin panics with ServiceConfigError in this legacy string-only API; callers
+// that can return an error use SelectDir. Preferring `~/.dibs` when it exists means an
 // install that has already moved never silently falls back to the old
 // directory and forks its history in two.
 func Resolve() (dir, inheritedFrom string) {
-	if d := os.Getenv("DIBS_DIR"); d != "" {
-		return d, ""
+	selected, err := SelectDir(false)
+	if err != nil {
+		panic(err) // string-only legacy API: a refusal is safer than another board
 	}
+	return selected.Dir, selected.Inherited
+}
+
+func defaultDirectory() (dir, inheritedFrom string) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ".dibs", ""

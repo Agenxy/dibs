@@ -92,9 +92,12 @@ func runBridge(_ []string) error {
 	if err != nil {
 		return fmt.Errorf("no local secret yet: start dibd once first: %w", err)
 	}
-	origin := boardOrigin()
-	url := origin + "/mcp"
-	client := daemonClient(75 * time.Second)
+	route, err := newBridgeRoute()
+	if err != nil {
+		return err
+	}
+	url := route.origin + "/mcp"
+	client := bridgeDaemonClient(route, 75*time.Second)
 	// No timeout: this one is meant to stay open. A deadline here is a stream
 	// that dies on the hour with nothing to say about why.
 	//
@@ -103,7 +106,7 @@ func runBridge(_ []string) error {
 	// alone, so against a remote daemon with a self-signed certificate the
 	// ordinary calls succeeded and the push stream silently did not: the agent
 	// would poll forever and nothing would say why.
-	streamClient := daemonClient(0)
+	streamClient := bridgeDaemonClient(route, 0)
 	out := &syncWriter{w: bufio.NewWriter(os.Stdout)}
 	defer out.flush()
 	primeBridgeStart() // off the first request; see bridgeStartBudget
@@ -685,18 +688,16 @@ func doWithRestartGrace(client *http.Client, req *http.Request, body []byte) (*h
 		}
 		time.Sleep(150 * time.Millisecond)
 		// A request body is read once, so it has to be rebuilt for the retry.
-		where := boardNow(req.URL)
+		where, currentClient, discoveryErr := rediscoverBoard(client, req.URL)
+		if discoveryErr != nil {
+			return nil, discoveryErr
+		}
 		next, buildErr := http.NewRequestWithContext(req.Context(), http.MethodPost, where, bytes.NewReader(body))
 		if buildErr != nil {
 			return nil, err
 		}
 		next.Header = req.Header.Clone()
-		if where != req.URL.String() {
-			// A different board needs a different client: the trust store is
-			// read when one is built, so a certificate accepted since this
-			// process started is one the old client cannot validate.
-			client = daemonClient(client.Timeout)
-		}
+		client = currentClient
 		req = next
 	}
 }
@@ -717,15 +718,7 @@ func doWithRestartGrace(client *http.Client, req *http.Request, body []byte) (*h
 // refreshLocalSecret in trust.go: between them, the bridge remembers nothing
 // about this machine that this machine can change.
 func boardNow(previous *url.URL) string {
-	origin := boardOrigin()
-	if previous == nil {
-		return origin
-	}
-	path := previous.EscapedPath()
-	if previous.RawQuery != "" {
-		path += "?" + previous.RawQuery
-	}
-	return origin + path
+	return originWithPath(boardOrigin(), previous)
 }
 
 // followStream keeps a subscriptions/listen stream open across a daemon
@@ -782,10 +775,11 @@ func followStream(ctx context.Context, client *http.Client, endpoint, secret str
 			// while the stream works, and a stale address has exactly one
 			// symptom, which is the attempt that did not arrive.
 			if at, perr := url.Parse(endpoint); perr == nil {
-				if moved := boardNow(at); moved != endpoint {
-					endpoint = moved
-					client = daemonClient(client.Timeout)
+				moved, currentClient, discoveryErr := rediscoverBoard(client, at)
+				if discoveryErr != nil {
+					return
 				}
+				endpoint, client = moved, currentClient
 			}
 		default:
 			return

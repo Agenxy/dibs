@@ -44,6 +44,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/agenxy/dibs/internal/releasecodesign"
 )
 
 // The identifiers each shipped artifact presents to macOS. They are stable
@@ -69,9 +71,14 @@ const (
 	identityEnv = "DIBS_CODESIGN_IDENTITY"
 )
 
+// Source installs deliberately keep the operator's local signing identity.
+// Production import and archive verification always retain the release pin.
+var sourceIdentity bool
+
 func main() {
 	imp := flag.Bool("import", false, "make a keychain from "+p12Env+" and print what to export")
 	sign := flag.String("sign", "", "sign this binary or app bundle")
+	flag.BoolVar(&sourceIdentity, "source-identity", false, "source install: allow the operator's local signing identity")
 	flag.Parse()
 
 	var err error
@@ -219,6 +226,9 @@ func certificateIn(keychain string) (string, error) {
 	case 0:
 		return "", errors.New("the imported keychain holds no certificate")
 	case 1:
+		if err := releasecodesign.CheckCertificate(hashes[0]); err != nil {
+			return "", err
+		}
 		return hashes[0], nil
 	default:
 		return "", fmt.Errorf("the imported keychain holds %d certificates; a release has "+
@@ -250,6 +260,11 @@ func signOne(path string) error {
 	identity := strings.TrimSpace(os.Getenv(identityEnv))
 	if identity == "" {
 		identity = "-"
+	}
+	if identity != "-" && !sourceIdentity {
+		if err := releasecodesign.CheckCertificate(identity); err != nil {
+			return err
+		}
 	}
 	args := []string{"--force", "--identifier", id, "--sign", identity}
 	if keychain := strings.TrimSpace(os.Getenv(keychainEnv)); keychain != "" {

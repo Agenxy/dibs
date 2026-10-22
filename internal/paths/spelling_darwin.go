@@ -72,6 +72,7 @@ func nativeSpelling(p string) string {
 	case <-probe.done:
 		return probe.result
 	case <-timer.C:
+		reportSpellingTimeout(p)
 		return p
 	}
 }

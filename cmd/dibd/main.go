@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -51,6 +52,17 @@ import (
 )
 
 func main() {
+	if err := enterAppDaemon(); err != nil {
+		fmt.Fprintln(os.Stderr, "dibd:", err)
+		os.Exit(1)
+	}
+	if err := paths.CatchServiceConfig(daemonMain); err != nil {
+		fmt.Fprintln(os.Stderr, "dibd:", err)
+		os.Exit(1)
+	}
+}
+
+func daemonMain() {
 	if err := run(); err != nil {
 		// Multi-line failures go to stderr as themselves.
 		//
@@ -80,6 +92,7 @@ type daemonOpts struct {
 	allowParallel *bool
 	addr          *string
 	check         *bool
+	appService    *bool
 	publicHost    *string
 	publicIP      *string
 	ackGuest      *bool
@@ -105,6 +118,8 @@ func registerDaemonFlags(fs *flag.FlagSet) (*daemonOpts, *scorerFlags) {
 		check: fs.Bool("check", false,
 			"replay the board at -dir and exit, without serving: answers whether THIS build "+
 				"could take over from the daemon now running. `dibs upgrade` runs it first"),
+		appService: fs.Bool("app-service", false,
+			"macOS bundled service: require its private directory pin; never create a default board when it is missing"),
 	}
 	fs.Bool("man", false, "write this daemon's manual page (mdoc) to stdout and exit")
 	o.publicHost = fs.String("public-host", "",
@@ -129,9 +144,40 @@ func run() error {
 	if wantsMan() {
 		return manCmd(manArgs())
 	}
+	if _, err := paths.SelectDir(false); err != nil {
+		return err
+	}
 	opts, scorer := registerDaemonFlags(flag.CommandLine)
 	dir, allowParallel, addr, check := opts.dir, opts.allowParallel, opts.addr, opts.check
 	flag.Parse()
+	if *opts.appService {
+		if runtime.GOOS != "darwin" {
+			return errors.New("-app-service is the macOS bundled service mode")
+		}
+		selected, err := paths.SelectDir(true)
+		if err != nil {
+			return err
+		}
+		explicitDir := false
+		flag.Visit(func(f *flag.Flag) {
+			if f.Name == "dir" {
+				explicitDir = true
+			}
+		})
+		if explicitDir {
+			return errors.New("-app-service reads its directory pin; use DIBS_DIR and dibs configure " +
+				"--service to repair the pin instead of -dir")
+		}
+		*dir = selected.Dir
+		if pinned, found, err := paths.PinnedService(); err == nil &&
+			found && filepath.Clean(pinned.Dir) == filepath.Clean(selected.Dir) {
+			selected = pinned
+		}
+		servicePath, _ := selected.EffectiveServicePath()
+		if err := os.Setenv("PATH", servicePath); err != nil {
+			return fmt.Errorf("app service PATH: %w", err)
+		}
+	}
 	publicCfg, err := resolvePublic(opts)
 	if err != nil {
 		return err
@@ -139,6 +185,11 @@ func run() error {
 
 	if err := os.MkdirAll(*dir, 0o700); err != nil {
 		return err
+	}
+	if *opts.appService && !*check {
+		if err := appServiceLogs(*dir); err != nil {
+			return fmt.Errorf("app service log: %w", err)
+		}
 	}
 
 	// Bounded in-memory log tail: the daemon can answer "what just happened?"
@@ -292,6 +343,8 @@ func run() error {
 	// SETTLED BEFORE SERVING. Nothing changes this identity afterwards; see
 	// keepAskingSupgang.
 	identified, adopted := identifyHost(eng, *dir)
+	folders := newFolderAccess()
+	eng.SetFolderAccess(folders)
 	eng.SetBlobs(bs)
 	wake, err := wakePolicy(cfg.Wake)
 	if err != nil {
@@ -456,6 +509,7 @@ func run() error {
 	registerMatchStatusAPI(mux, eng)
 	registerIndexAPI(mux, eng, scorer)
 	registerWakeAPI(mux, eng, secret)
+	registerFolderAccessAPI(mux, folders)
 	registerAdminAPI(mux, eng)
 	registerInvitationAPI(mux, inviteService)
 	registerTransferStatus(mux, publicCfg.URL)
