@@ -186,6 +186,11 @@ func run() error {
 	if err := os.MkdirAll(*dir, 0o700); err != nil {
 		return err
 	}
+	if *opts.appService && !*check {
+		if err := appServiceLogs(*dir); err != nil {
+			return fmt.Errorf("app service log: %w", err)
+		}
+	}
 
 	// Bounded in-memory log tail: the daemon can answer "what just happened?"
 	// without an unbounded file, and the board can show it. Sensitive attrs are

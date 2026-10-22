@@ -4,8 +4,6 @@
 package main
 
 import (
-	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -25,32 +23,14 @@ func enterAppDaemon() error {
 	if err != nil {
 		return err
 	}
-	if filepath.Base(filepath.Dir(self)) == "MacOS" &&
-		filepath.Base(filepath.Dir(filepath.Dir(self))) == "Contents" {
+	if machoidentity.Bundled(self) {
 		return nil
 	}
-	paired := filepath.Join(filepath.Dir(self), "Dibs.app", "Contents", "MacOS", "dibd")
-	info, err := os.Lstat(paired)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	} // standalone development image
-	if err != nil {
-		return fmt.Errorf("paired app daemon: %w", err)
+	app, err := machoidentity.PairedApp(self)
+	if err != nil || app == "" {
+		return err
 	}
-	if !info.Mode().IsRegular() {
-		return fmt.Errorf("paired app daemon %s must be a regular file; rebuild or reinstall the complete Dibs distribution", paired)
-	}
-	rootID, err := machoidentity.File(self)
-	if err != nil {
-		return fmt.Errorf("compare root daemon %s sections: %w", self, err)
-	}
-	appID, err := machoidentity.File(paired)
-	if err != nil {
-		return fmt.Errorf("compare paired daemon %s sections: %w; rebuild or reinstall the complete Dibs distribution", paired, err)
-	}
-	if rootID != appID {
-		return fmt.Errorf("refusing mismatched paired daemon: root %s = %s; bundle %s = %s; compared Mach-O section names, layout and bytes, excluding signature and load commands. Rebuild or reinstall the complete Dibs distribution", self, rootID, paired, appID)
-	}
+	paired := filepath.Join(app, "Contents", "MacOS", "dibd")
 	// Preserve argv (including argv[0]) and environment byte for byte.
 	return syscall.Exec(paired, os.Args, os.Environ())
 }

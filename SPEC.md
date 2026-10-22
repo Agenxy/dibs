@@ -90,6 +90,16 @@ State is partitioned into three tiers, and the tier boundary is normative:
    replay does not reconstruct them. (A "quiet sweep" therefore changes no state: it
    only refreshes annotations.)
 
+   macOS views also carry derived `folder_access` observations and
+   `folder_access_advice`. A bounded real directory read reports `granted`,
+   `denied`, `pending`, or `unknown`, with its observation time. Startup and
+   registration select only protected roots used by local agents; foreign-host
+   paths cannot request local reads. At most one read per root may remain
+   blocked. `POST /api/folder-access/request`, behind the coordination gate,
+   explicitly attempts the three fixed roots that are not granted; it accepts
+   no paths and returns whether a read was requested, never an OS grant.
+   There is no retry timer. These observations are not ledgered or replayed.
+
 **Ledgered wake transitions:** an agent's `status` is replayable state, so *nothing
 unledgered may change it*: including reads. When an authenticated call (read or
 write) arrives for a `dormant` or `stale` agent, the engine first commits a

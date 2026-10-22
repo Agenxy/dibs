@@ -1362,6 +1362,7 @@ func checkCoordinatorIsReachable(b *boardView, ok reportFn, warn fixFn) {
 }
 
 func checkServiceBinary(ok reportFn, warn fixFn) {
+	checkAppService(ok, warn)
 	unit, pinned := unitDaemon()
 	if unit == "" || pinned == "" {
 		return // no service installed: `configure --service` is optional
@@ -1370,7 +1371,8 @@ func checkServiceBinary(ok reportFn, warn fixFn) {
 	if err != nil {
 		return // already reported by the checks above
 	}
-	if sameBinary(pinned, want) {
+	app, _ := pairedServiceApp(want)
+	if sameBinary(pinned, want) || (app != "" && sameBinary(pinned, filepath.Join(app, "Contents", "MacOS", "dibd"))) {
 		ok("the service starts the dibd you have installed")
 		return
 	}

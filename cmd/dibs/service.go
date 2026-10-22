@@ -43,6 +43,12 @@ func writeServiceUnit() error {
 	if err != nil {
 		return fmt.Errorf("resolving the data directory to an absolute path: %w", err)
 	}
+	if runtime.GOOS == "darwin" {
+		if handled, err := configureAppService(daemon, dir); handled {
+			return err
+		}
+		return fmt.Errorf("the installed Dibs.app is missing; install the complete distribution before dibs configure --service (the legacy service was left unchanged)")
+	}
 	// Both unit formats are text with their own metacharacters, and a path is
 	// data. Reject what cannot be represented rather than mangling it: a data
 	// directory is an identity, and a service that starts on a REPLACED path
@@ -496,6 +502,9 @@ func unitPinning(dir string) string {
 		}
 		_ = body // read above only to skip a unit that cannot be opened
 	}
+	if unit, _ := installedAppService(); unit != "" && unitNames(unit, dir) {
+		return unit
+	}
 	return ""
 }
 
@@ -540,7 +549,7 @@ func unitDaemon() (unit, daemon string) {
 			return path, d
 		}
 	}
-	return "", ""
+	return installedAppService()
 }
 
 // refuseIfUnitConflicts answers "would writing a unit be refused?" without

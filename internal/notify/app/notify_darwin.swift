@@ -52,8 +52,8 @@ if CommandLine.arguments.count == 2, serviceModes.contains(CommandLine.arguments
         let service = SMAppService.agent(plistName: "org.agenxy.dibs.daemon.plist")
         do {
             switch CommandLine.arguments[1] {
-            case "--service-register": try service.register()
-            case "--service-unregister": try service.unregister()
+            case "--service-register": if service.status != .enabled { try service.register() }
+            case "--service-unregister": if service.status != .notRegistered { try service.unregister() }
             default: break
             }
             let state: String
