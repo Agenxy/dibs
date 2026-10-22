@@ -453,68 +453,62 @@ func TestCurrentAppServiceConfigureDriver(t *testing.T) {
 	}
 }
 
-func TestDoctorFindsOnlyThisUsersEnabledOrphanedDibsRegistration(t *testing.T) {
-	for _, tc := range []struct {
-		name                                 string
-		enabled, otherUser, present, foreign bool
-		want                                 bool
-	}{
-		{"orphan", true, false, false, false, true},
-		{"history", false, false, false, false, false},
-		{"other-user", true, true, false, false, false},
-		{"present", true, false, true, false, false},
-		{"different-app-named-Dibs", true, false, false, true, false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
+func TestDoctorOnlyUsesPromptFreeAppServiceObservation(t *testing.T) {
+	for _, scenario := range []string{"missing", "present", "unloaded", "unknown", "foreign"} {
+		t.Run(scenario, func(t *testing.T) {
 			f := newAppServiceTestFixture(t)
-			uid := os.Getuid()
-			if tc.otherUser {
-				uid++
-			}
-			app := filepath.Join(f.home, "removed", "Dibs.app")
-			if tc.present {
-				app = f.app
-			}
-			id := "org.agenxy.dibs"
-			if tc.foreign {
-				id = "com.example.other"
-			}
-			disposition := "disabled"
-			if tc.enabled {
-				disposition = "enabled"
-			}
-			body := fmt.Sprintf("Records for UID %d : fixture\n UUID: parent\n Name: Dibs\n Identifier: 2.%s\n Bundle Identifier: %s\n URL: %s\n\n UUID: agent\n Identifier: 8.%s.daemon\n Parent Identifier: 2.%s\n Disposition: [%s, allowed, notified]\n", uid, id, id, app, id, id, disposition)
-			before := readAppBackgroundItems
-			launch := runAppLaunchctl
-			t.Cleanup(func() { readAppBackgroundItems = before; runAppLaunchctl = launch })
-			readAppBackgroundItems = func() ([]byte, error) { return []byte(body), nil }
-			runAppLaunchctl = func(args ...string) ([]byte, error) {
-				if len(args) != 2 || args[0] != "print" {
-					t.Fatal("doctor mutated supervisor:", args)
+			reader, command := readAppServiceJob, appServiceDiagnostic
+			t.Cleanup(func() { readAppServiceJob = reader; appServiceDiagnostic = command })
+			readAppServiceJob = readLoadedAppService
+			calls := 0
+			appServiceDiagnostic = func(cmd *exec.Cmd) ([]byte, error) {
+				calls++
+				target := fmt.Sprintf("gui/%d/%s", os.Getuid(), appServiceLabel)
+				if cmd.Path != "/bin/launchctl" || len(cmd.Args) != 3 || cmd.Args[1] != "print" || cmd.Args[2] != target {
+					t.Fatalf("doctor attempted a prompt-capable or mutating diagnostic: %s %v", cmd.Path, cmd.Args)
 				}
-				return []byte("Could not find service"), errors.New("not found")
+				switch scenario {
+				case "unloaded":
+					return []byte("Could not find service"), errors.New("not found")
+				case "unknown":
+					return nil, errors.New("diagnostic unavailable")
+				}
+				app := filepath.Join(f.home, "removed", "Dibs.app")
+				if scenario == "present" {
+					app = f.app
+				}
+				if scenario == "foreign" {
+					target = fmt.Sprintf("gui/%d/%s", os.Getuid()+1, appServiceLabel)
+				}
+				return fmt.Appendf(nil, "%s = {\n\tprogram = %s\n}\n", target, filepath.Join(app, "Contents", "MacOS", "dibd")), nil
 			}
 			t.Setenv("DIBS_NO_UPDATE_CHECK", "1")
-			t.Setenv("CODEX_HOME", filepath.Join(f.home, ".codex"))
 			out, _ := captureStdout(t, func() error { return doctor([]string{"--json"}) })
 			var report doctorReport
 			if err := json.Unmarshal([]byte(out), &report); err != nil {
 				t.Fatal(err, out)
 			}
-			found := false
+			if calls != 1 {
+				t.Fatalf("doctor diagnostic calls=%d, want one prompt-free observation", calls)
+			}
+			orphan, visibility := false, false
 			for _, check := range report.Checks {
-				if strings.Contains(check.What, "orphaned background-item registration") {
-					found = true
-					if !strings.Contains(check.Fix, "configure --service --remove") || !strings.Contains(check.Fix, "brew uninstall --cask dibs") || !strings.Contains(check.Fix, backgroundSettings) {
-						t.Fatal("orphan cleanup missing:", check)
+				if strings.Contains(check.What, "orphaned loaded background service") {
+					orphan = true
+					if !strings.Contains(check.Fix, "configure --service --remove") || !strings.Contains(check.Fix, "brew uninstall --cask dibs") || !strings.Contains(check.Fix, backgroundSettings) || strings.Contains(check.What, "inert") {
+						t.Fatal("orphan cleanup or evidence boundary missing:", check)
 					}
 				}
+				visibility = visibility || strings.Contains(check.What+check.Fix, backgroundSettings)
 			}
-			if found != tc.want {
-				t.Fatalf("orphan diagnosis=%t want=%t: %s", found, tc.want, out)
+			if orphan != (scenario == "missing") {
+				t.Fatalf("orphan diagnosis=%t scenario=%s: %s", orphan, scenario, out)
+			}
+			if scenario != "present" && !visibility {
+				t.Fatal("missing observation limit and Settings hint:", out)
 			}
 			if f.requests.Load() != 0 {
-				t.Fatal("orphan diagnosis requested permission")
+				t.Fatal("diagnosis requested permission")
 			}
 		})
 	}

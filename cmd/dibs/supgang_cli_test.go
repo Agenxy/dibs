@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -31,6 +32,11 @@ import (
 // one did on 2026-09-13, so the join-by-peer path is exercised against real
 // envelopes.
 func TestMain(m *testing.M) {
+	// A diagnostic test must never query the developer's real service registry.
+	readAppServiceJob = func() ([]byte, error) { return nil, errAppServiceNotLoaded }
+	appServiceDiagnostic = func(*exec.Cmd) ([]byte, error) {
+		panic("unfaked external app-service diagnostic in CLI test")
+	}
 	// Private copied images can be assessed without entering a notifier or tool.
 	if len(os.Args) == 2 && os.Args[1] == "--dibs-test-prepare" {
 		os.Exit(0)

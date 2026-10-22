@@ -11,7 +11,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   notifier and presence helper beside it. Install and upgrade preserve the
   existing board directory and PATH, prove replay before service migration,
   and recover the old service if registration fails. Doctor explains background
-  approval. The first move into the app may need a fresh folder grant; explicit
+  approval. Orphan checks use the loaded launchctl job only; unavailable
+  background-item history is an explicit visibility limit, never a password prompt.
+  The first move into the app may need a fresh folder grant; explicit
   installation requests reads once and reports measured access separately.
   Source/release channel changes can also require a fresh grant.
 

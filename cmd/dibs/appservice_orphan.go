@@ -8,12 +8,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -26,121 +24,93 @@ const orphanServiceRepair = "Restore Dibs using the same install channel, then r
 	"Restoring Dibs briefly starts the service before removal. " +
 	"Switch off the leftover item meanwhile in " + backgroundSettings
 
-// A diagnostic only: never reset the machine-wide background-item database.
-var readAppBackgroundItems = func() ([]byte, error) {
+// Only inspect this user's loaded job. Background-item history has no
+// prompt-free query here; absence from launchctl is not proof of no record.
+var errAppServiceNotLoaded = errors.New("dibs app service is not loaded")
+
+var readAppServiceJob = readLoadedAppService
+
+var appServiceDiagnostic = executeAppServiceDiagnostic
+
+func readLoadedAppService() ([]byte, error) {
+	target := fmt.Sprintf("gui/%d/%s", os.Getuid(), appServiceLabel)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "/usr/bin/sfltool", "dumpbtm")
+	// #nosec G204 -- fixed print command and target derived only from this process's UID and canonical label.
+	cmd := exec.CommandContext(ctx, "/bin/launchctl", "print", target)
 	cmd.WaitDelay = time.Second
-	var out backgroundItemOutput
-	cmd.Stdout, cmd.Stderr = &out, io.Discard
-	if err := cmd.Run(); err != nil {
-		return nil, err
+	body, err := appServiceDiagnostic(cmd)
+	if err != nil && (strings.Contains(string(body), "Could not find service") ||
+		strings.Contains(string(body), "Could not find specified service")) {
+		return nil, errAppServiceNotLoaded
 	}
-	return out.Bytes(), nil
+	return body, err
 }
 
-type backgroundItemOutput struct{ bytes.Buffer }
+func executeAppServiceDiagnostic(cmd *exec.Cmd) ([]byte, error) {
+	var out appServiceDiagnosticOutput
+	cmd.Stdout, cmd.Stderr = &out, &out
+	err := cmd.Run()
+	return out.Bytes(), err
+}
 
-func (b *backgroundItemOutput) Write(p []byte) (int, error) {
+type appServiceDiagnosticOutput struct{ bytes.Buffer }
+
+func (b *appServiceDiagnosticOutput) Write(p []byte) (int, error) {
 	if b.Len()+len(p) > 1<<20 {
-		return 0, errors.New("background-item diagnostic exceeds 1 MiB")
+		return 0, errors.New("app-service diagnostic exceeds 1 MiB")
 	}
 	return b.Buffer.Write(p)
 }
 
-// The measured macOS 27 dump is per UID and contains typed identifiers. Names
-// alone cannot distinguish Dibs from an unrelated app or our historical probes.
-func appBackgroundRecords(body []byte, uid int) []map[string]string {
-	var result []map[string]string
-	var record map[string]string
-	mine := false
-	flush := func() {
-		if mine && record != nil {
-			result = append(result, record)
-		}
-		record = nil
+func loadedAppProgram(body []byte) (string, error) {
+	target := fmt.Sprintf("gui/%d/%s = {", os.Getuid(), appServiceLabel)
+	if !strings.HasPrefix(strings.TrimSpace(string(body)), target) {
+		return "", errors.New("loaded service diagnostic did not identify this user's Dibs job")
 	}
 	for _, line := range strings.Split(string(body), "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "Records for UID ") {
-			flush()
-			mine = strings.HasPrefix(line, "Records for UID "+strconv.Itoa(uid)+" :")
+		value, found := strings.CutPrefix(strings.TrimSpace(line), "program = ")
+		if !found {
 			continue
 		}
-		if strings.HasPrefix(line, "UUID:") {
-			flush()
-			record = map[string]string{}
+		program := strings.TrimSpace(value)
+		app := filepath.Dir(filepath.Dir(filepath.Dir(program)))
+		if !filepath.IsAbs(program) || filepath.Base(app) != "Dibs.app" ||
+			program != filepath.Join(app, "Contents", "MacOS", "dibd") {
+			return "", errors.New("loaded Dibs service has an unexpected program; inspect it in " + backgroundSettings)
 		}
-		if record != nil {
-			if key, value, found := strings.Cut(line, ":"); found {
-				record[strings.TrimSpace(key)] = strings.TrimSpace(value)
-			}
-		}
+		return program, nil
 	}
-	flush()
-	return result
+	return "", errors.New("loaded Dibs service did not expose its program")
 }
 
-func orphanedAppProgram(body []byte, uid int) (string, error) {
-	records := appBackgroundRecords(body, uid)
-	agent := false
-	for _, r := range records {
-		if r["Identifier"] == "8."+appServiceLabel &&
-			r["Parent Identifier"] == "2.org.agenxy.dibs" && strings.Contains(r["Disposition"], "[enabled,") {
-			agent = true
-		}
-	}
-	if !agent {
-		return "", nil
-	}
-	var missing string
-	for _, r := range records {
-		if r["Identifier"] != "2.org.agenxy.dibs" || r["Bundle Identifier"] != "org.agenxy.dibs" {
-			continue
-		}
-		app := r["URL"]
-		if !filepath.IsAbs(app) || filepath.Base(app) != "Dibs.app" {
-			continue
-		}
-		program := filepath.Join(app, "Contents", "MacOS", "dibd")
-		_, err := os.Stat(program) // #nosec G703 -- read-only fixed program below the OS-recorded Dibs app
-		if err == nil {
-			return "", nil
-		} // another current canonical record is usable
-		if !errors.Is(err, os.ErrNotExist) {
-			return "", err
-		}
-		missing = program
-	}
-	return missing, nil
-}
-
-func checkOrphanedAppService(warn fixFn) {
+func checkOrphanedAppService(note func(string), warn fixFn) {
 	if runtime.GOOS != "darwin" {
 		return
 	}
-	body, err := readAppBackgroundItems()
+	body, err := readAppServiceJob()
+	if errors.Is(err, errAppServiceNotLoaded) {
+		note("Dibs app service is not loaded. Unloaded background-item history cannot be inspected " +
+			"without authorization; check " + backgroundSettings + " for a leftover row.")
+		return
+	}
 	if err != nil {
-		warn("cannot inspect Dibs background-item records", err.Error())
+		warn("cannot inspect the loaded Dibs app service", err.Error()+"; check "+backgroundSettings)
 		return
 	}
-	program, err := orphanedAppProgram(body, os.Getuid())
+	program, err := loadedAppProgram(body)
 	if err != nil {
-		warn("cannot inspect the registered Dibs program", err.Error())
+		warn("cannot identify the loaded Dibs program", err.Error()+"; check "+backgroundSettings)
 		return
 	}
-	if program == "" {
+	if _, err := os.Stat(program); err == nil { // #nosec G703 -- fixed app program from own loaded launchctl job.
+		return
+	} else if !errors.Is(err, os.ErrNotExist) {
+		warn("cannot inspect the loaded Dibs program", err.Error()+"; check "+backgroundSettings)
 		return
 	}
-	// Deleted executable bytes can remain mapped by an already-running daemon.
-	// Do not call a missing path proof that such a process has already exited.
-	what := "Dibs has an orphaned background-item registration; its missing program cannot start"
-	target := fmt.Sprintf("gui/%d/%s", os.Getuid(), appServiceLabel)
-	out, probeErr := runAppLaunchctl("print", target)
-	if probeErr != nil && (strings.Contains(string(out), "Could not find service") ||
-		strings.Contains(string(out), "Could not find specified service")) {
-		what = "Dibs has an inert orphaned background-item registration; its program is missing and no job is loaded"
-	}
-	warn(what, program+". "+orphanServiceRepair)
+	// A missing executable may still be mapped by this loaded job. Never call
+	// it inert, and do not claim visibility into unloaded Settings records.
+	warn("Dibs has an orphaned loaded background service; its missing program cannot start",
+		program+". An existing process may still be running. "+orphanServiceRepair)
 }

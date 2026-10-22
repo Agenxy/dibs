@@ -146,7 +146,7 @@ func (d *diagnosis) run(verbose bool) error {
 	d.dataDir = dir
 	d.note("data directory source: " + selected.Source)
 	d.serviceDirectoryNote(selected)
-	checkOrphanedAppService(d.warn)
+	checkOrphanedAppService(d.note, d.warn)
 
 	// Through the shared vocabulary rather than raw escape codes. The inline
 	// version wrote colour unconditionally, so `dibs doctor > report.txt`,

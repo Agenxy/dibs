@@ -70,11 +70,14 @@ unregister hook would stop the old service before replay preflight. The cask the
 app was already removed, restore it through the same install channel, run the
 removal command, then uninstall again. Restoration briefly enables the service
 and can request folder reads. The leftover background row can be switched off
-in Settings meanwhile. Doctor reads bounded per-UID background-item records,
-ignores disabled history, and checks for the missing canonical app program; it
-calls a record inert only when no job is loaded. It never resets background
-items or changes consent. A provably current registration is a no-op on repeat
-postflight, without another folder-read request.
+in Settings meanwhile. Doctor inspects only its own loaded launchctl job and checks for a missing
+canonical app program. It cannot inspect unloaded background-item history
+without authorization and says so, naming Settings instead. It never queries
+the privileged background-item database, resets background items or changes consent. A provably current registration is a no-op on repeat
+postflight, without another folder-read request. The first background-history
+diagnostic caused an administrator dialog on a real doctor call and was removed.
+Tests isolate the reader at startup and inspect the actual command constructed
+by doctor before execution; no test reaches the developer's service registry.
 
 A running bridge re-reads the directory pin per attempt. Its destination, trust
 roots and credential come from one selected directory; refreshing only the
