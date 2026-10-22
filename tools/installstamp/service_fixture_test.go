@@ -4,7 +4,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -38,6 +40,22 @@ func isolatedServiceInstall(t *testing.T, clone, scratch, dest string) string {
 	if runtime.GOOS != "darwin" {
 		return ""
 	}
+	// Prove the fixture's process fence before any install can invoke a helper.
+	for _, deny := range []bool{false, true} {
+		policy := "(version 1)(allow default)"
+		if deny {
+			policy += `(deny process-exec (literal "/usr/bin/true"))`
+		}
+		allowed := exec.Command("/usr/bin/sandbox-exec", "-p", policy, "/bin/echo", "fixture")
+		if err := allowed.Run(); err != nil {
+			t.Fatalf("service fence rejected its allowed control: %v", err)
+		}
+		cmd := exec.Command("/usr/bin/sandbox-exec", "-p", policy, "/usr/bin/true")
+		err := cmd.Run()
+		if (err != nil) != deny {
+			t.Fatalf("service execution fence control deny=%t: %v", deny, err)
+		}
+	}
 	trace := filepath.Join(scratch, "service-trace")
 	reads := filepath.Join(scratch, "read-trace")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -67,6 +85,10 @@ func isolatedServiceInstall(t *testing.T, clone, scratch, dest string) string {
 	}))
 	t.Cleanup(server.Close)
 	original := filepath.Join(clone, "cmd", "dibs", "appservice_command.go")
+	canonical, err := filepath.EvalSymlinks(original)
+	if err != nil {
+		t.Fatal(err)
+	}
 	source, err := os.ReadFile(original)
 	if err != nil || !strings.Contains(string(source), "var executeAppServiceCommand") {
 		t.Fatal("clone lacks the isolated service execution boundary", err)
@@ -76,7 +98,7 @@ func isolatedServiceInstall(t *testing.T, clone, scratch, dest string) string {
 	if err := os.WriteFile(replacement, []byte(fixture), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	overlay, err := json.Marshal(map[string]any{"Replace": map[string]string{original: replacement}})
+	overlay, err := json.Marshal(map[string]any{"Replace": map[string]string{original: replacement, canonical: replacement}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,3 +154,20 @@ var executeAppServiceCommand = func(cmd *exec.Cmd) ([]byte,error) {
  }
 }
 `
+
+func privateInstallTask(ctx context.Context, clone string, env []string, dest string) *exec.Cmd {
+	args := []string{"install", "DEST=" + dest}
+	cmd := exec.CommandContext(ctx, "task", args...)
+	if runtime.GOOS == "darwin" {
+		parent, err := filepath.EvalSymlinks(filepath.Dir(dest))
+		if err != nil {
+			panic(err)
+		}
+		app := filepath.Join(dest, "Dibs.app")
+		canonical := filepath.Join(parent, filepath.Base(dest), "Dibs.app")
+		policy := fmt.Sprintf("(version 1)(allow default)(deny process-exec (subpath %s) (subpath %s))", strconv.Quote(app), strconv.Quote(canonical))
+		cmd = exec.CommandContext(ctx, "/usr/bin/sandbox-exec", append([]string{"-p", policy, "task"}, args...)...)
+	}
+	cmd.Dir, cmd.Env = clone, env
+	return cmd
+}

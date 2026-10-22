@@ -60,7 +60,10 @@ func TestTaskInstallKeepsTheComputedStampBeforeReplacingAnything(t *testing.T) {
 	installCommand(t, ctx, clone, nil, "mise", "install")
 	serviceFlags := isolatedServiceInstall(t, clone, scratch, dest)
 	env := isolatedInstallEnv(scratch, serviceFlags)
-	installCommand(t, ctx, clone, env, "task", "install", "DEST="+dest)
+	cmd := privateInstallTask(ctx, clone, env, dest)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("private task install: %v\n%s", err, out)
+	}
 	assertPrivateServiceInstall(t, scratch)
 	previous := map[string][32]byte{}
 	for _, name := range []string{"dibs", "dibd"} {
@@ -92,9 +95,8 @@ func TestTaskInstallKeepsTheComputedStampBeforeReplacingAnything(t *testing.T) {
 		}
 		previous[name] = sha256.Sum256(b)
 	}
-	cmd := exec.CommandContext(ctx, "task", "install", "DEST="+dest)
-	cmd.Dir, cmd.Env = clone, isolatedInstallEnv(scratch,
-		serviceFlags+" -ldflags=-X=github.com/agenxy/dibs/internal/build.Version=devel+"+head)
+	cmd = privateInstallTask(ctx, clone, isolatedInstallEnv(scratch,
+		serviceFlags+" -ldflags=-X=github.com/agenxy/dibs/internal/build.Version=devel+"+head), dest)
 	out, err := cmd.CombinedOutput()
 	if err == nil || !strings.Contains(string(out), "installstamp:") || !strings.Contains(string(out), "computed") {
 		t.Fatalf("conflicting override must fail at the real install guard, got %v:\n%s", err, out)

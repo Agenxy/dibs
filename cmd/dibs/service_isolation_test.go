@@ -140,3 +140,13 @@ func serviceFixtureImage(t *testing.T) ([]byte, error) {
 	})
 	return serviceFixtureBytes, serviceFixtureErr
 }
+
+func TestAppServiceExecutorRefusesUnfakedHelpers(t *testing.T) {
+	t.Setenv("DIBS_TEST_APP_SERVICE_HELPER", "")
+	defer func() {
+		if recover() == nil {
+			t.Fatal("an unfaked app service command reached external execution")
+		}
+	}()
+	_, _ = executeAppServiceCommand(exec.Command("/nonexistent/unfaked-app-service"))
+}
