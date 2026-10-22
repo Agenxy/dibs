@@ -110,9 +110,7 @@ func runBridge(_ []string) error {
 	out := &syncWriter{w: bufio.NewWriter(os.Stdout)}
 	defer out.flush()
 	primeBridgeStart() // off the first request; see bridgeStartBudget
-	if claudeChannel {
-		channelOut = out // see channel.go
-	}
+	bindChannelOut(out)
 	var streams sync.WaitGroup
 	// Streams outlive individual requests, and must not outlive the SESSION.
 	//
