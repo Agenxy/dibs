@@ -57,7 +57,7 @@ func (e *Engine) socketMailVersion(l *core.Agent, now time.Time) uint64 {
 		key := noticeKey(l.ID, n.Serial)
 		at, shown := e.noticePresented[key]
 		if !e.socketWritten["notice:"+key] && !n.Delivered && (!shown || now.Sub(at) >= AnnounceRetry) &&
-			socketActionableNotice(n, l, e.state.Messages[n.Msg]) {
+			socketActionableNotice(n, e.state.Messages[n.Msg]) {
 			version = max(version, n.Serial)
 		}
 	}

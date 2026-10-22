@@ -176,7 +176,7 @@ func (e *Engine) wakesFor(ev core.Event, l *core.Agent) bool {
 	_, _, blocking := situationalNotice(ev)
 	msg, _ := ev.Data["msg_serial"].(uint64)
 	n := notice{Kind: ev.Type, Blocking: blocking}
-	return wakeCauseAllowed(e.WakePolicy(), false, socketActionableNotice(n, l, e.state.Messages[msg]))
+	return wakeCauseAllowed(e.WakePolicy(), false, socketActionableNotice(n, e.state.Messages[msg]))
 }
 
 func (e *Engine) maybeWake(ev core.Event) {
