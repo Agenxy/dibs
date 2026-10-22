@@ -72,6 +72,7 @@ func run() error {
 	// The two binaries are the archive's whole reason to exist, and an archive
 	// that lost one is not something this should discover by inference.
 	want = append(want, "dibd", "dibs")
+	want = append(want, bundledDaemon, "Dibs.app/Contents/MacOS/dibs-presence")
 	sort.Strings(want)
 
 	// EVERY darwin archive, however many that is.
@@ -142,6 +143,11 @@ func carries(path string, want []string) error {
 	if err := coherentArchiveIdentity(filepath.Base(path), have); err != nil {
 		return err
 	}
+	if slices.Contains(want, bundledDaemon) {
+		if err := verifyAppService(filepath.Base(path), have); err != nil {
+			return err
+		}
+	}
 	return carriesExecutables(path, want, have)
 }
 
@@ -198,10 +204,12 @@ func carriesExecutables(path string, want []string, have map[string]entry) error
 // disagree with that tool: a guard that reads its answer from the thing it is
 // checking cannot catch the thing going wrong.
 var signingIdentifiers = map[string]string{
-	"dibd":                                "org.agenxy.dibs.daemon",
-	"dibs":                                "org.agenxy.dibs.cli",
-	"dibs-presence":                       "org.agenxy.dibs.presence",
-	"Dibs.app/Contents/MacOS/dibs-notify": "org.agenxy.dibs",
+	"dibd":                                  "org.agenxy.dibs.daemon",
+	"dibs":                                  "org.agenxy.dibs.cli",
+	"dibs-presence":                         "org.agenxy.dibs.presence",
+	"Dibs.app/Contents/MacOS/dibs-notify":   "org.agenxy.dibs",
+	"Dibs.app/Contents/MacOS/dibd":          "org.agenxy.dibs.daemon",
+	"Dibs.app/Contents/MacOS/dibs-presence": "org.agenxy.dibs.presence",
 }
 
 // identified proves a shipped executable introduces itself to macOS under its
@@ -269,8 +277,12 @@ func signedIdentifier(archive, name string, body []byte) (string, error) {
 	}
 	// Validate the actual bytes as well as the identity they claim to carry.
 	// #nosec G204 -- no shell; at is the private extracted artifact above.
-	if out, err := exec.Command("codesign", "--verify", "--strict", at).CombinedOutput(); err != nil {
-		return "", fmt.Errorf("%s: %s invalid code signature: %w: %s", archive, name, err, out)
+	// A bundle main executable seals Info.plist and is invalid detached from
+	// its bundle. verifyAppService verifies its complete reconstructed seal.
+	if !strings.HasPrefix(name, "Dibs.app/") {
+		if out, err := exec.Command("codesign", "--verify", "--strict", at).CombinedOutput(); err != nil {
+			return "", fmt.Errorf("%s: %s invalid code signature: %w: %s", archive, name, err, out)
+		}
 	}
 	return got, nil
 }
@@ -410,6 +422,9 @@ func entries(path string) (map[string]entry, error) {
 		}
 		if h.Typeflag == tar.TypeDir {
 			continue
+		}
+		if !filepath.IsLocal(h.Name) || (h.Typeflag != tar.TypeReg && h.Typeflag != tar.TypeRegA) {
+			return nil, fmt.Errorf("archive member %q is not a local regular file", h.Name)
 		}
 		// The header only, for anything too big to be a helper: this reads a
 		// release archive, and holding all of it would be pointless.

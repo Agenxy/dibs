@@ -52,6 +52,10 @@ import (
 )
 
 func main() {
+	if err := enterAppDaemon(); err != nil {
+		fmt.Fprintln(os.Stderr, "dibd:", err)
+		os.Exit(1)
+	}
 	defer func() {
 		if failure := recover(); failure != nil {
 			if err, ok := failure.(*paths.ServiceConfigError); ok {
