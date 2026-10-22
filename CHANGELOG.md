@@ -14,6 +14,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   given, which was already its failure answer. A probe that never returns
   holds one goroutine per path instead of one per request.
 
+- `send`'s note gives the age of the last native app notice when it is not
+  fresh: "Last native app notice: accepted, 5h12m ago, before this message".
+  A five-hour-old acceptance about an earlier message read as this send's
+  outcome, while this send's own wake had failed.
+
 ## [0.0.15] - 2026-10-22
 
 ### Security
