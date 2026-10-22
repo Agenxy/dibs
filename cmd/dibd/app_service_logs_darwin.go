@@ -12,6 +12,7 @@ import (
 // The embedded manifest cannot interpolate a user's board path. Preserve the
 // legacy unit's log destination from inside the final, pinned service image.
 func appServiceLogs(dir string) error {
+	// #nosec G304 -- the selected local service board, not a participant path.
 	f, err := os.OpenFile(filepath.Join(dir, "dibd.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err

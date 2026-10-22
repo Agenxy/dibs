@@ -38,6 +38,22 @@ func TestMain(m *testing.M) {
 	if err := os.Setenv("DIBS_TEST_FORBID_APP_OPEN", "1"); err != nil {
 		panic(err)
 	}
+	if os.Getenv("DIBS_TEST_APP_SERVICE_HELPER") == "1" && filepath.Base(os.Args[0]) == "dibs-notify" {
+		os.Exit(appServiceFixture())
+	}
+	if os.Getenv("DIBS_TEST_APP_SERVICE_HELPER") == "1" && filepath.Base(os.Args[0]) == "dibd" {
+		if len(os.Args) == 2 && os.Args[1] == "--app-service-registry" {
+			os.Exit(appServiceRegistryFixture())
+		}
+		if len(os.Args) != 6 || os.Args[1] != "-check" || os.Args[2] != "-dir" ||
+			os.Args[3] != os.Getenv("DIBS_DIR") || os.Args[4] != "-addr" ||
+			strings.TrimPrefix(os.Args[5], "http://") != os.Getenv("DIBS_TEST_APP_SERVICE_ADDR") {
+			_, _ = os.Stderr.WriteString("fixture preflight received unexpected argv: " + strings.Join(os.Args, " "))
+			os.Exit(19)
+		}
+		_, _ = os.Stdout.WriteString("ok: 0.0.16 replays 0 record(s) to serial 7\n")
+		os.Exit(0)
+	}
 	if os.Getenv("DIBS_SETTINGS_HELPER_MODE") != "" && filepath.Base(os.Args[0]) == "dibs-notify" {
 		os.Exit(notificationSettingsHelper())
 	}

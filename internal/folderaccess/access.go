@@ -15,8 +15,10 @@ import (
 	"time"
 )
 
+// Settings is the human-owned macOS protected-folder consent surface.
 const Settings = "System Settings → Privacy & Security → Files & Folders → Dibs"
 
+// Observation is read evidence; requesting a read never implies a grant.
 type Observation struct {
 	Folder     string    `json:"folder"`
 	State      string    `json:"state"`
@@ -33,6 +35,7 @@ type root struct {
 	logged      bool
 }
 
+// Monitor bounds directory probes independently of the replayable state.
 type Monitor struct {
 	mu     sync.Mutex
 	roots  []*root
@@ -167,6 +170,7 @@ func logObservation(o Observation) {
 	slog.Info("Dibs protected-folder access", "folder", o.Folder, "state", o.State, "reason", o.Reason, "fix", Settings)
 }
 
+// Snapshot returns the last derived evidence without waiting for a reader.
 func (m *Monitor) Snapshot() []Observation {
 	if m == nil {
 		return nil
@@ -182,10 +186,13 @@ func (m *Monitor) Snapshot() []Observation {
 	return out
 }
 
+// Advice explains ungranted observations without changing OS consent.
 func Advice(observations []Observation) string {
 	for _, o := range observations {
 		if o.State != "granted" {
-			return "Dibs has not confirmed access to a folder its local agents use. Check " + Settings + ". A requested read does not confirm a grant; changing source/release signing channel can require access again."
+			return "Dibs has not confirmed access to a folder its local agents use. " +
+				"Check " + Settings + ". A requested read does " +
+				"not confirm a grant; changing source/release signing channel can require access again."
 		}
 	}
 	return ""

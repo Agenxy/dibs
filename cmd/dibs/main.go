@@ -179,15 +179,13 @@ func styledUsage() string {
 }
 
 func main() {
-	defer func() {
-		if failure := recover(); failure != nil {
-			if err, ok := failure.(*paths.ServiceConfigError); ok {
-				fmt.Fprintln(os.Stderr, "dibs:", err)
-				os.Exit(1)
-			}
-			panic(failure)
-		}
-	}()
+	if err := paths.CatchServiceConfig(cliMain); err != nil {
+		fmt.Fprintln(os.Stderr, "dibs:", err)
+		os.Exit(1)
+	}
+}
+
+func cliMain() {
 	if len(os.Args) < 2 {
 		fmt.Println(styledUsage())
 		return
@@ -496,6 +494,7 @@ func localSecret() (string, error) {
 }
 
 func localSecretIn(dir string) (string, error) {
+	// #nosec G304 -- directory selected from this CLI's local configuration.
 	b, err := os.ReadFile(filepath.Join(dir, "local.secret"))
 	if err != nil {
 		return "", err

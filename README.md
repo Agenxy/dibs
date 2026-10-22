@@ -341,13 +341,28 @@ dibs completion fish > ~/.config/fish/completions/agents.fish     # fish
 reboot and the fleet loses its board. For anything beyond a first look, run it
 under your init system.
 
-**macOS (launchd)**: writes a user agent that starts at login and restarts on
-crash:
+**macOS (Dibs.app background service)**: registers the installed app's service
+to start at login and restart on a crash:
 
 ```sh
-dibs configure --service     # writes ~/Library/LaunchAgents/org.agenxy.dibs.plist
-launchctl load -w ~/Library/LaunchAgents/org.agenxy.dibs.plist
+dibs configure --service
 ```
+
+macOS may require approval in **System Settings → General → Login Items &
+Extensions → Allow in the Background → Dibs**. The command preserves the
+existing board directory and service PATH. Unsupported legacy settings are
+refused before the old service is stopped. Moving the daemon into Dibs.app can
+need one fresh Desktop/Documents/Downloads grant; the command requests reads
+once, and `dibs doctor` reports the measured result. Requested is not granted.
+Changing between source and release signing identities can also need a fresh grant.
+
+Before removing the installed app, run `dibs configure --service --remove` to
+unregister its background service. This keeps the board and its directory pin.
+If you already removed the Homebrew app, restore it with
+`brew install --cask agenxy/tap/dibs`, run the removal command, then
+`brew uninstall --cask dibs`. Restoration briefly starts the service. A leftover
+background row can be switched off in the same Settings pane; doctor detects
+an enabled registration whose app program is missing.
 
 **Linux (systemd user unit)**:
 

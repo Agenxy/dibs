@@ -32,5 +32,6 @@ func enterAppDaemon() error {
 	}
 	paired := filepath.Join(app, "Contents", "MacOS", "dibd")
 	// Preserve argv (including argv[0]) and environment byte for byte.
+	// #nosec G204,G702 -- own paired app image, checked against this executable's sections.
 	return syscall.Exec(paired, os.Args, os.Environ())
 }

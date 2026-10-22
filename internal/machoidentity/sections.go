@@ -59,7 +59,7 @@ func Sections(r io.ReaderAt) (string, error) {
 
 // File compares without reading two whole daemon images into memory.
 func File(path string) (string, error) {
-	f, err := os.Open(path) // #nosec G304 -- caller selects its own executable or build artifact
+	f, err := os.Open(path) // #nosec G304,G703 -- own executable or build artifact, never participant input
 	if err != nil {
 		return "", err
 	}

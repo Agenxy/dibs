@@ -51,7 +51,8 @@ var runtimeHelpers = []string{"internal/humanauth", "internal/notify"}
 var requireReleaseIdentity bool
 
 func main() {
-	flag.BoolVar(&requireReleaseIdentity, "release-identity", false, "require the pinned release certificate, refusing ad-hoc offline images")
+	flag.BoolVar(&requireReleaseIdentity, "release-identity", false, "require the pinned release certificate, "+
+		"refusing ad-hoc offline images")
 	flag.Parse()
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "archivecheck:", err)
@@ -423,7 +424,7 @@ func entries(path string) (map[string]entry, error) {
 		if h.Typeflag == tar.TypeDir {
 			continue
 		}
-		if !filepath.IsLocal(h.Name) || (h.Typeflag != tar.TypeReg && h.Typeflag != tar.TypeRegA) {
+		if !filepath.IsLocal(h.Name) || h.Typeflag != tar.TypeReg {
 			return nil, fmt.Errorf("archive member %q is not a local regular file", h.Name)
 		}
 		// The header only, for anything too big to be a helper: this reads a

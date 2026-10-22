@@ -52,6 +52,7 @@ func checkAppService(ok reportFn, warn fixFn) {
 	case "requires-approval":
 		warn("Dibs background service requires approval", serviceApprovalError().Error())
 	default:
-		warn("Dibs background service is "+status.Status, "run dibs configure --service to enable the installed app's service")
+		warn("Dibs background service is "+status.Status, "run dibs configure --service to enable the installed "+
+			"app's service")
 	}
 }

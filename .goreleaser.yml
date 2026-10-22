@@ -383,13 +383,36 @@ homebrew_casks:
                          # "developer cannot be verified" dialog that the
                          # documentation says is impossible.
                          must_succeed: false
+          system_command "/usr/bin/xattr",
+                         args: ["-dr", "com.apple.quarantine", "#{appdir}/Dibs.app"],
+                         must_succeed: false
+          system_command "#{staged_path}/dibs",
+                         args: ["configure", "--service"],
+                         must_succeed: true
     caveats: |
       Start the daemon and point your agents at it:
 
-        dibd &                  # 127.0.0.1:4777, data in ~/.dibs
+        dibs configure --service # Dibs.app background service (existing board retained)
         dibs mcp-config          # MCP config to add to your harness
         dibs web                 # the board; Touch ID unlocks it on this Mac
         dibs doctor              # what is quietly broken, and how to fix it
+
+      macOS may require Dibs background-item approval under System Settings >
+      General > Login Items & Extensions. Desktop/Documents/Downloads reads
+      are requested once: requested is not granted. Check System Settings >
+      Privacy & Security > Files & Folders > Dibs. A first move to the app-owned
+      service or a change between source and release signing can need a fresh grant.
+
+      Before brew uninstall, run: dibs configure --service --remove
+      If already uninstalled, restore/remove/uninstall in this order:
+        brew install --cask agenxy/tap/dibs
+        dibs configure --service --remove
+        brew uninstall --cask dibs
+      Restoring Dibs briefly starts the service before removal. A registration
+      with a missing program cannot start it; doctor checks whether a job is
+      still loaded before calling the leftover record inert. You can switch off
+      the leftover row meanwhile in System Settings > General > Login Items &
+      Extensions > Allow in the Background > Dibs.
 
       Signed for provenance with cosign, but not notarised by Apple, so this
       cask TRIES to clear the quarantine flag on install. It is not treated as

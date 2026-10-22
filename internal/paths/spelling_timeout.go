@@ -28,7 +28,8 @@ func reportSpellingTimeout(path string) {
 			// Logging must not extend the canonicalisation bound. At most one
 			// log per protected root can remain waiting on an output writer.
 			go slog.Warn("native path spelling timed out under a protected folder", "folder", folder,
-				"hint", "Dibs kept the supplied spelling. Check System Settings → Privacy & Security → Files & Folders → Dibs; OS consent may be pending")
+				"hint", "Dibs kept the supplied spelling. Check System Settings → Privacy "+
+					"& Security → Files & Folders → Dibs; OS consent may be pending")
 		}
 		return
 	}

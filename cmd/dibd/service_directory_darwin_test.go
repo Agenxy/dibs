@@ -35,6 +35,7 @@ func TestMalformedServicePinRefusesBeforeDaemonCreatesABoard(t *testing.T) {
 }
 
 func TestServiceDirectoryStartupProcess(t *testing.T) {
+	t.Helper()
 	if os.Getenv("DIBS_TEST_SERVICE_DIRECTORY_PROCESS") != "1" {
 		return
 	}

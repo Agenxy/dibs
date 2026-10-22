@@ -52,7 +52,8 @@ func doctor(args []string) error {
 	verbose := fs.Bool("verbose", false, "also say what was checked and found healthy")
 	fs.BoolVar(verbose, "v", false, "shorthand for --verbose")
 	asJSON := fs.Bool("json", false, jsonHelp)
-	requestFolders := fs.Bool("request-folder-access", false, "ask the local daemon to attempt ungranted protected-folder reads once; requested is not granted")
+	requestFolders := fs.Bool("request-folder-access", false, "ask the local daemon to attempt ungranted "+
+		"protected-folder reads once; requested is not granted")
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
@@ -144,14 +145,8 @@ func (d *diagnosis) run(verbose bool) error {
 	dir, inherited := selected.Dir, selected.Inherited
 	d.dataDir = dir
 	d.note("data directory source: " + selected.Source)
-	if runtime.GOOS == "darwin" {
-		serviceSelection := selected
-		if pinned, found, err := paths.PinnedService(); err == nil && found && filepath.Clean(pinned.Dir) == filepath.Clean(dir) {
-			serviceSelection = pinned
-		}
-		servicePath, source := serviceSelection.EffectiveServicePath()
-		d.note("service PATH (" + source + "): " + servicePath)
-	}
+	d.serviceDirectoryNote(selected)
+	checkOrphanedAppService(d.warn)
 
 	// Through the shared vocabulary rather than raw escape codes. The inline
 	// version wrote colour unconditionally, so `dibs doctor > report.txt`,
@@ -1359,44 +1354,6 @@ func checkCoordinatorIsReachable(b *boardView, ok reportFn, warn fixFn) {
 			live+"`, or declare it in [roles] in dibs.toml so it survives a reset. Its mail "+
 			"is recovered separately, with adopt_agent")
 	_ = ok
-}
-
-func checkServiceBinary(ok reportFn, warn fixFn) {
-	checkAppService(ok, warn)
-	unit, pinned := unitDaemon()
-	if unit == "" || pinned == "" {
-		return // no service installed: `configure --service` is optional
-	}
-	want, err := daemonPath()
-	if err != nil {
-		return // already reported by the checks above
-	}
-	app, _ := pairedServiceApp(want)
-	if sameBinary(pinned, want) || (app != "" && sameBinary(pinned, filepath.Join(app, "Contents", "MacOS", "dibd"))) {
-		ok("the service starts the dibd you have installed")
-		return
-	}
-	detail := "it pins " + pinned + ", but the dibd you have installed is " + want
-	if _, err := os.Stat(pinned); err != nil {
-		detail = "it pins " + pinned + ", which does not exist; the dibd you have installed is " + want
-	}
-	warn("the service would start a different daemon than the one installed",
-		detail+". Every fix since that build is not running when the service starts it. "+
-			"`dibs upgrade` rewrites the unit and restarts onto the installed daemon, "+
-			"after checking that it can rebuild this board")
-}
-
-// sameBinary compares two paths by inode where it can, so a symlink or a
-// ./bin/../bin spelling is not reported as a mismatch.
-func sameBinary(a, b string) bool {
-	sa, erra := os.Stat(a)
-	sb, errb := os.Stat(b)
-	if erra == nil && errb == nil {
-		return os.SameFile(sa, sb)
-	}
-	ea, _ := filepath.EvalSymlinks(a)
-	eb, _ := filepath.EvalSymlinks(b)
-	return ea != "" && ea == eb
 }
 
 // scanShippedHooks reads the hook payloads this checkout (or install) ships and

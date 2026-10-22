@@ -111,6 +111,8 @@ tasks:
       - task: install:sign
         vars: { DEST: '{{.DEST}}' }
       - '{{.DEST}}/dibs version'
+      - task: install:service
+        vars: { DEST: '{{.DEST}}' }
       - echo "installed to {{.DEST}}"
       - echo "a running dibd keeps the old code until you restart it:"
       - echo "  dibs upgrade"
@@ -175,9 +177,18 @@ tasks:
           Certificate Assistant -> Create a Certificate, name it 'Dibs Local
           Codesign', type Code Signing, self-signed. Every install after that finds
           it by name, with no variable to set."{{else}}"signed as '{{.SIGNER}}', so
-          the macOS privacy grant survives this and every later install."{{end}}
+          grants can survive updates that keep this identity. Moving from the
+          standalone daemon to Dibs.app, or changing signing channel, can need
+          a fresh grant; check dibs doctor."{{end}}
         platforms: [darwin]
         silent: true
+
+  install:service:
+    desc: Register the installed macOS app service and request protected-folder reads once
+    platforms: [darwin]
+    internal: true
+    cmds:
+      - '{{.DEST}}/dibs configure --service'
 
   install:app:
     # Beside the daemon, for the same reason the presence helper is: notify

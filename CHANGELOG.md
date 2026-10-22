@@ -7,6 +7,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The macOS daemon now lives inside Dibs.app's background service, with the
+  notifier and presence helper beside it. Install and upgrade preserve the
+  existing board directory and PATH, prove replay before service migration,
+  and recover the old service if registration fails. Doctor explains background
+  approval. The first move into the app may need a fresh folder grant; explicit
+  installation requests reads once and reports measured access separately.
+  Source/release channel changes can also require a fresh grant.
+
 - The macOS daemon records bounded Desktop/Documents/Downloads read evidence
   for its local agents. The board and doctor distinguish completed, refused and
   pending reads, and explain where to grant access; requesting a read never

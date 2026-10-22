@@ -56,15 +56,13 @@ func main() {
 		fmt.Fprintln(os.Stderr, "dibd:", err)
 		os.Exit(1)
 	}
-	defer func() {
-		if failure := recover(); failure != nil {
-			if err, ok := failure.(*paths.ServiceConfigError); ok {
-				fmt.Fprintln(os.Stderr, "dibd:", err)
-				os.Exit(1)
-			}
-			panic(failure)
-		}
-	}()
+	if err := paths.CatchServiceConfig(daemonMain); err != nil {
+		fmt.Fprintln(os.Stderr, "dibd:", err)
+		os.Exit(1)
+	}
+}
+
+func daemonMain() {
 	if err := run(); err != nil {
 		// Multi-line failures go to stderr as themselves.
 		//
@@ -167,10 +165,12 @@ func run() error {
 			}
 		})
 		if explicitDir {
-			return errors.New("-app-service reads its directory pin; use DIBS_DIR and dibs configure --service to repair the pin instead of -dir")
+			return errors.New("-app-service reads its directory pin; use DIBS_DIR and dibs configure " +
+				"--service to repair the pin instead of -dir")
 		}
 		*dir = selected.Dir
-		if pinned, found, err := paths.PinnedService(); err == nil && found && filepath.Clean(pinned.Dir) == filepath.Clean(selected.Dir) {
+		if pinned, found, err := paths.PinnedService(); err == nil &&
+			found && filepath.Clean(pinned.Dir) == filepath.Clean(selected.Dir) {
 			selected = pinned
 		}
 		servicePath, _ := selected.EffectiveServicePath()

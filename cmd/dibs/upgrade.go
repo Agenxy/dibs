@@ -255,7 +255,11 @@ func say(format string, a ...any) { fmt.Printf(format+"\n", a...) }
 func step(s string)               { fmt.Println(ui.Bold("→ ") + s) }
 
 func upgrade(o upgradeOpts) error {
-	p, err := planUpgrade(o)
+	return upgradeApp(o, nil)
+}
+
+func upgradeApp(o upgradeOpts, app *appServicePlan) error {
+	p, err := planUpgradeForApp(o, app)
 	if err != nil {
 		return err
 	}
@@ -265,6 +269,12 @@ func upgrade(o upgradeOpts) error {
 	}
 	if err := p.preflight(); err != nil {
 		return err
+	}
+	if p.app != nil && p.app.legacy != "" {
+		say("Moving the daemon into Dibs.app keeps the existing board directory. " +
+			"macOS may need one fresh Desktop/Documents/Downloads grant: System " +
+			"Settings → Privacy & Security → Files & Folders → Dibs. Changing " +
+			"source/release signing channel can also require a fresh grant.")
 	}
 	if err := p.removeWakeCooldowns(); err != nil {
 		return err
@@ -353,6 +363,10 @@ func checkedVersion(out []byte) string {
 // planUpgrade resolves what is out of line, and proves the replacement can
 // rebuild the board. Nothing here changes anything.
 func planUpgrade(o upgradeOpts) (*plan, error) {
+	return planUpgradeForApp(o, nil)
+}
+
+func planUpgradeForApp(o upgradeOpts, app *appServicePlan) (*plan, error) {
 	p := &plan{opts: o, retryPause: 10 * time.Second}
 	selected, selectErr := paths.SelectDir(false)
 	if selectErr != nil {
@@ -364,11 +378,17 @@ func planUpgrade(o upgradeOpts) (*plan, error) {
 	if p.installed, err = daemonPath(); err != nil {
 		return nil, fmt.Errorf("cannot find an installed dibd: %w", err)
 	}
-	if p.app, err = prepareAppUpgrade(p.installed, p.dir); err != nil {
-		return nil, err
+	p.app = app
+	if p.app == nil {
+		if p.app, err = prepareAppUpgrade(p.installed, p.dir); err != nil {
+			return nil, err
+		}
 	}
 	if p.app != nil {
 		p.dir = p.app.dir
+		if filepath.Clean(p.dir) != filepath.Clean(selected.Dir) {
+			p.inherited = ""
+		}
 	}
 	say("%s %s", ui.Dim("data dir "), ui.Path(p.dir))
 	say("%s %s", ui.Dim("installed"), ui.Path(p.installed))
@@ -463,7 +483,7 @@ func (p *plan) proveReplacement() error {
 func (p *plan) findDrift() {
 	if p.app != nil {
 		p.unit, p.pinned = filepath.Join(p.app.app, appServiceRelative), filepath.Join(p.app.app, "Contents", "MacOS", "dibd")
-		p.unitWrong = p.app.legacy != "" || p.app.needsRegistration
+		p.unitWrong = p.app.legacy != "" || p.app.needsRegistration || p.app.repairPin
 		p.moveDir = p.inherited != "" && p.opts.adoptDir
 		return
 	}
@@ -513,10 +533,7 @@ func (p *plan) report() error {
 // holding its lock.
 func (p *plan) preflight() error {
 	if p.app != nil {
-		if p.moveDir {
-			return errors.New("the app service preserves its existing directory; migrate the service with dibs upgrade before requesting a directory rename")
-		}
-		return p.app.preflight()
+		return p.preflightAppService()
 	}
 	if p.policyErr != nil {
 		return p.policyFailure(p.policyErr)
@@ -1207,7 +1224,7 @@ func unitIsWritable(unit string) error {
 	if unit == "" {
 		return nil
 	}
-	// #nosec G304 -- resolved from this machine's own unit paths
+	// #nosec G304,G703 -- resolved from this machine's own unit paths
 	f, err := os.OpenFile(unit, os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return fmt.Errorf("%s: %w", unit, err)

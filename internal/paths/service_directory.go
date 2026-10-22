@@ -15,12 +15,14 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
+// DirectorySelection records where one board and its service settings came from.
 type DirectorySelection struct {
 	Dir, Inherited, Source         string
 	ServicePath, ServicePathSource string
 	ServicePathSet                 bool
 }
 
+// DefaultServicePath is the bundled service's fallback, never the CLI's PATH.
 const DefaultServicePath = "/usr/bin:/bin:/usr/sbin:/sbin"
 
 type serviceDirectoryConfig struct {
@@ -48,7 +50,8 @@ type ServiceConfigError struct {
 }
 
 func (e *ServiceConfigError) Error() string {
-	return fmt.Sprintf("cannot select the Dibs board from %s: %v; set DIBS_DIR to the existing board directory, then run dibs configure --service to repair its pin", e.Path, e.Err)
+	return fmt.Sprintf("cannot select the Dibs board from %s: %v; set DIBS_DIR to the "+
+		"existing board directory, then run dibs configure --service to repair its pin", e.Path, e.Err)
 }
 
 func (e *ServiceConfigError) Unwrap() error { return e.Err }
@@ -68,7 +71,8 @@ func ServiceConfigPath() (string, error) {
 func PinnedService() (DirectorySelection, bool, error) {
 	file, err := ServiceConfigPath()
 	if err != nil {
-		return DirectorySelection{}, false, &ServiceConfigError{Path: "~/Library/Application Support/org.agenxy.dibs/service.toml", Err: err}
+		return DirectorySelection{}, false, &ServiceConfigError{Path: "~/Library/Application " +
+			"Support/org.agenxy.dibs/service.toml", Err: err}
 	}
 	selected, found, err := serviceDirectory(file)
 	if err != nil {
@@ -93,7 +97,9 @@ func SelectDir(requirePin bool) (DirectorySelection, error) {
 			return selected, nil
 		}
 		if requirePin {
-			return DirectorySelection{}, &ServiceConfigError{Path: selected.Source, Err: errors.New("required service pin is missing")}
+			return DirectorySelection{}, &ServiceConfigError{
+				Path: selected.Source, Err: errors.New("required service pin is missing"),
+			}
 		}
 	}
 	dir, inherited := defaultDirectory()
@@ -132,7 +138,8 @@ func serviceDirectory(file string) (DirectorySelection, bool, error) {
 		return DirectorySelection{}, false, err
 	}
 	if cfg.Version != 1 || !filepath.IsAbs(cfg.Dir) || len(meta.Undecoded()) != 0 {
-		return DirectorySelection{}, false, errors.New("service pin requires version=1, an absolute data_dir and no unknown fields")
+		return DirectorySelection{}, false, errors.New("service pin requires version=1, an absolute data_dir " +
+			"and no unknown fields")
 	}
 	if err := cfg.validatePath(); err != nil {
 		return DirectorySelection{}, false, err
@@ -149,7 +156,8 @@ func (c serviceDirectoryConfig) validatePath() error {
 		return nil
 	}
 	if c.Path == nil || (c.PathSource != "migrated" && c.PathSource != "configured") || strings.ContainsRune(*c.Path, 0) {
-		return errors.New("service_path must have source migrated or configured and contain no NUL; remove both path fields to use the default")
+		return errors.New("service_path must have source migrated or configured and contain " +
+			"no NUL; remove both path fields to use the default")
 	}
 	return nil
 }

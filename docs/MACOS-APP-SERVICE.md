@@ -23,6 +23,16 @@ The former user LaunchAgent must be unloaded before registering the new one.
 Its exact `-dir` is retained, and its file is removed only through the migration
 path. Failure must never create a second daemon or start a new empty board.
 
+The archive retains a regular root `dibd` for existing installers and manual
+entry points. It replaces itself with the paired app daemon in the same PID,
+preserving argv and environment. The bundled location prevents an exec loop.
+A present incomplete or stale app is refused with the compared paths and
+Mach-O section fingerprints; a development image with no paired app remains
+standalone. Homebrew's moved app is considered only for a Caskroom entry point.
+The archive guard compares the same sections and reconstructs the full app to
+verify its deep/strict seal. Detached verification of a bundle main executable
+is invalid because its signature also seals its Info.plist.
+
 ## Directory selection
 
 Use one private service configuration at
@@ -41,6 +51,30 @@ and bridge lookups never change their environment. With no path field the
 service uses `/usr/bin:/bin:/usr/sbin:/sbin`. Doctor names the value and source.
 Unsupported legacy flags or environment keys must be named and refused before
 the old service is stopped, with a corrective step.
+
+`dibs configure --service` explicitly authorizes registration. On an existing
+service it uses upgrade's replay preflight and fleet confirmation. The private
+pin is written before registration; the old plist remains until the new board
+answers. Failed registration is unregistered before restoring the old pin and
+supervisor. Uncertain removal refuses a second supervisor. A private `.migrated`
+receipt retains the old plist bytes. Unsupported custom stdout/stderr paths,
+restart policies, flags and environment variables are refused, never dropped.
+Directory renaming is refused during app migration; the existing directory is
+retained. No installed service is created merely by upgrading a manual daemon.
+
+Source installation and cask postflight invoke the explicit service command.
+`dibs configure --service --remove` unregisters the service and retains board
+data and the directory pin. The current Homebrew flight-block adapter discards
+upgrade/reinstall context before invoking an uninstall hook, so an unconditional
+unregister hook would stop the old service before replay preflight. The cask therefore prints an explicit pre-uninstall removal command. If the
+app was already removed, restore it through the same install channel, run the
+removal command, then uninstall again. Restoration briefly enables the service
+and can request folder reads. The leftover background row can be switched off
+in Settings meanwhile. Doctor reads bounded per-UID background-item records,
+ignores disabled history, and checks for the missing canonical app program; it
+calls a record inert only when no job is loaded. It never resets background
+items or changes consent. A provably current registration is a no-op on repeat
+postflight, without another folder-read request.
 
 A running bridge re-reads the directory pin per attempt. Its destination, trust
 roots and credential come from one selected directory; refreshing only the
@@ -81,6 +115,13 @@ probe only roots containing local agents' directories. Explicit install primes
 all three roots; human-present doctor/upgrade can request a fresh attempt where
 access is not granted. Never add a periodic retry or claim a dialog appeared or
 permission was granted merely because an attempt was requested.
+
+Installation waits only for bounded board readiness, verifies the serving node
+belongs to this machine, and posts one fixed-root request to the board selected
+by the service's directory/configuration. A foreign `DIBS_ADDR` in the invoking
+shell cannot redirect that acquisition or its credential. JSON doctor is read
+only unless `--request-folder-access` is explicit. There is no permission-result
+poll or automatic retry of a pending read.
 
 The daemon publishes the observed per-root state and corrective System Settings
 path. Source/release signing identities remain separate; switching channel can

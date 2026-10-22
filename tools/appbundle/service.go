@@ -46,6 +46,7 @@ func writeAppService(out, daemon, presence string) error {
 			return err
 		}
 		to := filepath.Join(out, "Contents", "MacOS", artifact.name)
+		// #nosec G306,G703 -- fixed nested build output must retain its execute bit.
 		if err := os.WriteFile(to, body, 0o750); err != nil {
 			return err
 		}
@@ -84,7 +85,8 @@ func embedReleaseDaemon(out, daemon, presence string) error {
 
 func signApp(out string) error {
 	// #nosec G204 -- build-tool identity and output path, never participant input
-	if body, err := exec.Command("codesign", "--force", "--sign", identity(), "--timestamp=none", out).CombinedOutput(); err != nil {
+	cmd := exec.Command("codesign", "--force", "--sign", identity(), "--timestamp=none", out)
+	if body, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("codesign: %w: %s", err, body)
 	}
 	return nil

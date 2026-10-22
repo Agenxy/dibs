@@ -4,7 +4,6 @@
 package notify
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,7 +12,7 @@ import (
 
 func init() {
 	if os.Getenv("DIBS_TEST_BUNDLED_DAEMON_HELPER") == "1" {
-		fmt.Print(helper())
+		_, _ = os.Stdout.WriteString(helper())
 		os.Exit(0)
 	}
 }

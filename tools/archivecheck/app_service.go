@@ -16,8 +16,10 @@ import (
 	"github.com/agenxy/dibs/internal/machoidentity"
 )
 
-const bundledDaemon = "Dibs.app/Contents/MacOS/dibd"
-const serviceManifest = "Dibs.app/Contents/Library/LaunchAgents/org.agenxy.dibs.daemon.plist"
+const (
+	bundledDaemon   = "Dibs.app/Contents/MacOS/dibd"
+	serviceManifest = "Dibs.app/Contents/Library/LaunchAgents/org.agenxy.dibs.daemon.plist"
+)
 
 func verifyAppService(archive string, have map[string]entry) error {
 	manifest, ok := have[serviceManifest]
@@ -47,6 +49,13 @@ func verifyAppService(archive string, have map[string]entry) error {
 	if len(fields) != 7 {
 		return fmt.Errorf("%s: unexpected app service manifest fields; review the service contract", archive)
 	}
+	if err := compareAppDaemon(archive, have); err != nil {
+		return err
+	}
+	return verifyAppSeal(archive, have)
+}
+
+func compareAppDaemon(archive string, have map[string]entry) error {
 	root, err := machoidentity.Sections(bytes.NewReader(have["dibd"].body))
 	if err != nil {
 		return fmt.Errorf("%s: root daemon sections: %w", archive, err)
@@ -56,8 +65,13 @@ func verifyAppService(archive string, have map[string]entry) error {
 		return fmt.Errorf("%s: bundled daemon sections: %w", archive, err)
 	}
 	if root != paired {
-		return fmt.Errorf("%s: mismatched daemon sections: root %s; bundle %s; rebuild the complete distribution", archive, root, paired)
+		return fmt.Errorf("%s: mismatched daemon sections: root %s; bundle %s; rebuild the "+
+			"complete distribution", archive, root, paired)
 	}
+	return nil
+}
+
+func verifyAppSeal(archive string, have map[string]entry) error {
 	// Verify the actual enclosing seal, not a detached main executable whose
 	// signature correctly requires its adjacent Info.plist and resources.
 	dir, err := os.MkdirTemp("", "archivecheck-app-")
@@ -76,12 +90,13 @@ func verifyAppService(archive string, have map[string]entry) error {
 		if err := os.MkdirAll(filepath.Dir(at), 0o700); err != nil {
 			return err
 		}
-		if err := os.WriteFile(at, item.body, os.FileMode(item.mode)&0o777); err != nil {
+		if err := os.WriteFile(at, item.body, os.FileMode(item.mode&0o777)); err != nil {
 			return err
 		}
 	}
 	// #nosec G204 -- private reconstructed bundle, no participant input or shell
-	if out, err := exec.Command("codesign", "--verify", "--deep", "--strict", filepath.Join(dir, "Dibs.app")).CombinedOutput(); err != nil {
+	cmd := exec.Command("codesign", "--verify", "--deep", "--strict", filepath.Join(dir, "Dibs.app"))
+	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("%s: invalid full Dibs.app seal: %w: %s", archive, err, out)
 	}
 	return nil

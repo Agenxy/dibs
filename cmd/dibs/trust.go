@@ -99,8 +99,10 @@ func ownCAFile() string { return filepath.Join(paths.DataDir(), "tls-ca.pem") }
 func trustedPool() *x509.CertPool { return trustedPoolIn(paths.DataDir()) }
 
 func trustedPoolIn(dir string) *x509.CertPool {
-	pinned, pinErr := os.ReadFile(filepath.Join(dir, "trusted-certs.pem")) // #nosec G304 -- the daemon's own data directory
-	own, ownErr := os.ReadFile(filepath.Join(dir, "tls-ca.pem"))           // #nosec G304 -- the daemon's own data directory
+	// #nosec G304 -- the daemon's own data directory
+	pinned, pinErr := os.ReadFile(filepath.Join(dir, "trusted-certs.pem"))
+	// #nosec G304 -- the daemon's own data directory
+	own, ownErr := os.ReadFile(filepath.Join(dir, "tls-ca.pem"))
 	if pinErr != nil && ownErr != nil {
 		return nil
 	}
@@ -120,9 +122,19 @@ func trustedPoolIn(dir string) *x509.CertPool {
 
 // daemonClient is the http.Client every command should use to reach dibd.
 func daemonClient(timeout time.Duration) *http.Client {
+	return daemonClientIn("", timeout)
+}
+
+func daemonClientIn(dir string, timeout time.Duration) *http.Client {
 	c := &http.Client{Timeout: timeout}
 	rt := http.DefaultTransport
-	if pool := trustedPool(); pool != nil {
+	var pool *x509.CertPool
+	if dir == "" {
+		pool = trustedPool()
+	} else {
+		pool = trustedPoolIn(dir)
+	}
+	if pool != nil {
 		rt = &http.Transport{TLSClientConfig: &tls.Config{
 			RootCAs:    pool,
 			MinVersion: tls.VersionTLS12,
@@ -143,7 +155,7 @@ func daemonClient(timeout time.Duration) *http.Client {
 	// bridge from a hook from any other Go program on the network, and
 	// the first question about a request ("which build is this?") had no
 	// answer in the log at all.
-	c.Transport = transport.Stamp(&guardedTransport{next: rt})
+	c.Transport = transport.Stamp(&guardedTransport{next: rt, dir: dir})
 	return c
 }
 

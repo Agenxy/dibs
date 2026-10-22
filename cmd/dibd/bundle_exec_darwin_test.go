@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,6 +23,7 @@ type pairedProcessEvidence struct {
 }
 
 func TestPairedDaemonExecProcess(t *testing.T) {
+	t.Helper()
 	if os.Getenv("DIBS_TEST_PAIRED_EXEC") != "1" {
 		return
 	}
@@ -71,7 +73,8 @@ func TestPairedDaemonExecPreservesProcessAndRefusesStaleCode(t *testing.T) {
 		cmd.Env = append(os.Environ(), "DIBS_TEST_PAIRED_EXEC=1", "DIBS_PAIRED_ENV=literal space=$value")
 		out, err := cmd.Output()
 		if err != nil {
-			if e, ok := err.(*exec.ExitError); ok {
+			var e *exec.ExitError
+			if errors.As(err, &e) {
 				out = append(out, e.Stderr...)
 			}
 			return pairedProcessEvidence{}, 0, out, err
@@ -112,8 +115,58 @@ func TestPairedDaemonExecPreservesProcessAndRefusesStaleCode(t *testing.T) {
 	if err := os.Remove(paired); err != nil {
 		t.Fatal(err)
 	}
+	if _, _, out, err := run(); err == nil || !strings.Contains(string(out), "rebuild or reinstall the complete Dibs distribution") {
+		t.Fatalf("incomplete paired app was accepted: %v %s", err, out)
+	}
+	if err := os.RemoveAll(filepath.Join(dir, "Dibs.app")); err != nil {
+		t.Fatal(err)
+	}
 	got, pid, out, err = run()
 	if err != nil || got.PID != pid {
 		t.Fatalf("standalone control: %v %s", err, out)
+	}
+}
+
+// The copied-image test above measures exec itself. This one enters main in
+// a production-built daemon, so removing the call from main cannot leave the
+// entire contract green. It only prints a manual: no board or service starts.
+func TestProductionDaemonMainEntersItsPairedApp(t *testing.T) {
+	dir := t.TempDir()
+	root := filepath.Join(dir, "dibd")
+	build := exec.Command("go", "build", "-o", root, ".")
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build actual daemon: %v %s", err, out)
+	}
+	paired := filepath.Join(dir, "Dibs.app", "Contents", "MacOS", "dibd")
+	if err := os.MkdirAll(filepath.Dir(paired), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	image, err := os.ReadFile(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paired, image, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	run := func() ([]byte, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return exec.CommandContext(ctx, root, "-man").CombinedOutput()
+	}
+	if out, err := run(); err != nil || !strings.Contains(string(out), ".Dt DIBD 8") {
+		t.Fatalf("positive actual-main control: %v %s", err, out)
+	}
+	other, err := os.ReadFile("/usr/bin/true")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(paired); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paired, other, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := run(); err == nil || !strings.Contains(string(out), "refusing mismatched paired daemon") {
+		t.Fatalf("actual daemon main did not refuse stale paired code: %v %s", err, out)
 	}
 }

@@ -43,6 +43,8 @@ func standardLaunchPolicy(body []byte) ([]byte, error) {
 }
 
 func readPolicyPlist(body []byte) (*policyElement, error) {
+	// #nosec G709 -- bounded local plist; encoding/xml resolves no external entities;
+	// readPolicyElement rejects namespaces and limits nesting to 64.
 	d := xml.NewDecoder(bytes.NewReader(body))
 	var root *policyElement
 	for {

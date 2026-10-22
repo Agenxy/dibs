@@ -47,7 +47,8 @@ func writeServiceUnit() error {
 		if handled, err := configureAppService(daemon, dir); handled {
 			return err
 		}
-		return fmt.Errorf("the installed Dibs.app is missing; install the complete distribution before dibs configure --service (the legacy service was left unchanged)")
+		return fmt.Errorf("the installed Dibs.app is missing; install the complete distribution " +
+			"before dibs configure --service (the legacy service was left unchanged)")
 	}
 	// Both unit formats are text with their own metacharacters, and a path is
 	// data. Reject what cannot be represented rather than mangling it: a data

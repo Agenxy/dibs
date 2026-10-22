@@ -153,6 +153,10 @@ func run() error {
 	if err := copyFile(icns, filepath.Join(res, "Dibs.icns")); err != nil {
 		return err
 	}
+	return finishBundle(out, version)
+}
+
+func finishBundle(out, version string) error {
 	body := fmt.Sprintf(plist, version, version)
 	if err := os.WriteFile(filepath.Join(out, "Contents", "Info.plist"), []byte(body), 0o600); err != nil {
 		return err
