@@ -87,6 +87,13 @@ type economyIdentity struct {
 
 func newEconomyFixtureAt(t *testing.T, sid, sock string, wrap func(http.Handler) http.Handler, identity ...economyIdentity) *economyFixture {
 	t.Helper()
+	return newEconomyFixtureAtExecutable(t, sid, sock, wrap, os.Args[0], identity...)
+}
+
+func newEconomyFixtureAtExecutable(
+	t *testing.T, sid, sock string, wrap func(http.Handler) http.Handler, executable string, identity ...economyIdentity,
+) *economyFixture {
+	t.Helper()
 	dir := t.TempDir()
 	f := &economyFixture{sid: sid, socket: sock}
 	f.lines = listenLines(t, sock)
@@ -168,7 +175,7 @@ func newEconomyFixtureAt(t *testing.T, sid, sock string, wrap func(http.Handler)
 			t.Fatal(err)
 		}
 	}
-	cmd := exec.Command(os.Args[0], "-test.run=^TestSocketEconomyBridgeHelper$")
+	cmd := exec.Command(executable, "-test.run=^TestSocketEconomyBridgeHelper$")
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
 		"DIBS_TEST_SOCKET_ECONOMY_BRIDGE=1", "DIBS_DIR="+dir, "HOME="+dir, "USERPROFILE="+dir,
