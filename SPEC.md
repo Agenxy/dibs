@@ -1271,8 +1271,14 @@ retained, failed, not_attempted or unconfirmed; `pending` is pending or unknown.
 from this command's local admission. An unavailable probe may expose
 `retained_receipt_at` and `receipt_age_seconds`, dating only the retained fallback
 receipt, with notice age unknown; legacy notice age also stays unknown.
-`thread_state` is unknown because the supported queue list interface does not
-report the app's running turn. Queue admission, native input and mail consumption
+`thread_state` is normally unknown because the supported queue list interface does not
+report the app's running turn. A queue command reporting `no rollout found for thread id`
+for its exact target instead sets it to `gone`: automatic retry and later-message
+queue attempts stop for that agent/thread binding, and unread eligible mail uses
+the existing contact-alert path. Board and doctor report the missing route. The
+negative evidence is derived and fenced to the agent incarnation, thread and
+configured wake-command epoch; a replacement binding or configuration may try again.
+Other command failures retain their retry policy. Queue admission, native input and mail consumption
 are distinct; a queue observation confirms neither of the latter. No thread or item ID is
 published, no private harness database is read, and reads add no probes. Session
 rebinding or loss of this rebuildable cache returns the view to unknown.

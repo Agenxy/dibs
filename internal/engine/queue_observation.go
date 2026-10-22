@@ -54,7 +54,7 @@ func (e *Engine) noteQueueObservation(plan wakePlan, agent string, observation w
 
 // No I/O at board or send time. This is the last adapter observation, with its
 // age, never a fresh queue claim. The headless list interface supplies no state
-// of the app's running turn, so thread_state stays unknown. Thread/item IDs
+// of the app's running turn; only an explicit missing rollout marks it gone. Thread/item IDs
 // remain private, and another machine's route cannot inherit a local receipt.
 func (e *Engine) queueWakeView(agent *core.Agent, now time.Time) core.Result {
 	if !e.queueWakeEligible(agent) {
@@ -75,6 +75,9 @@ func (e *Engine) queueWakeView(agent *core.Agent, now time.Time) core.Result {
 		return v
 	}
 	o := r.observation
+	if o.ThreadState != "" {
+		v["thread_state"] = o.ThreadState
+	}
 	if o.Delivery != "" {
 		v["native_delivery"] = o.Delivery
 	}
@@ -132,6 +135,10 @@ func nativeAcceptedNote(delivery string, v core.Result) string {
 func queueWakeNote(v core.Result) string {
 	if v == nil {
 		return ""
+	}
+	if v["thread_state"] == "gone" {
+		return "The app thread is gone (no rollout found). No automatic retry will run for this binding. " +
+			"Mail remains in the mailbox; bind this agent from an existing app thread."
 	}
 	if delivery, ok := v["native_delivery"].(string); ok {
 		switch delivery {

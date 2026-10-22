@@ -121,6 +121,9 @@ const Board = (() => {
   function queueWakeHTML(l) {
     const q = l.queue_wake
     if (!q) return ""
+    if (q.thread_state === "gone") {
+      return explained("tag", "app thread gone", "No rollout found for this thread. No automatic retry; bind this agent from an existing app thread. Mail remains in its mailbox.")
+    }
     const age = q.issued_at ? ago(q.issued_at) : "age unknown"
     const state = q.pending === "pending" ? "last seen pending" :
       q.admission === "accepted" ? "admitted" : "pending unknown"

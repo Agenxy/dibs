@@ -1610,6 +1610,9 @@ func reportWakeCoverage(
 				"command would have to run over there, so configure [wake.exec] in " +
 				"THAT machine's dibs.toml and run `dibs host-bridge` there"
 		}
+		if repair := goneQueueRepair(b); repair != "" {
+			fix = repair
+		}
 	}
 	warn(fmt.Sprintf("%d of %d persistent agent(s) have no wake route: %s",
 		uncovered, total, strings.Join(names, ", ")), fix)
@@ -1731,7 +1734,8 @@ func wakeCoverage(
 		// because it needs none, and counting it as uncovered told the operator
 		// to write `[wake.exec."claude code"]`, whose only possible content
 		// starts a Claude Code session of Dibs' own. See noWakeCommandNeeded.
-		if noWakeCommandNeeded(h) || wakeCovered(a, h, b.HostID, hosts, have, bridged) {
+		gone := goneQueueWake(a)
+		if !gone && (noWakeCommandNeeded(h) || wakeCovered(a, h, b.HostID, hosts, have, bridged)) {
 			covered++
 			continue
 		}
@@ -1744,6 +1748,8 @@ func wakeCoverage(
 		switch {
 		case h == "":
 			h = "(no harness recorded)"
+		case gone:
+			h += " (app thread gone)"
 		case have[h] && !a.Resumable:
 			h += " (no resumable thread)"
 		case have[h] && hostLabel(a) != "":

@@ -67,6 +67,22 @@ func main() {
 		if thread == "" || message == "" {
 			os.Exit(2)
 		}
+		if failed := os.Getenv("DIBS_TEST_QUEUE_ERROR_THREAD"); failed != "" {
+			f, err := os.OpenFile(filepath.Join(os.Getenv("CODEX_HOME"), "queue-attempts"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+			if err != nil {
+				panic(err)
+			}
+			if _, err := fmt.Fprintln(f, thread); err != nil {
+				panic(err)
+			}
+			if err := f.Close(); err != nil {
+				panic(err)
+			}
+			if failed == thread {
+				fmt.Fprintln(os.Stderr, os.Getenv("DIBS_TEST_QUEUE_ERROR"))
+				os.Exit(1)
+			}
+		}
 		if tag := os.Getenv("DIBS_QUEUE_RACE_HELPER"); tag != "" && thread == "race-thread" {
 			if err := os.WriteFile(filepath.Join(os.Getenv("CODEX_HOME"), "command-ready-"+tag), nil, 0o600); err != nil {
 				panic(err)

@@ -821,6 +821,9 @@ func (e *Engine) wakeRoute(l *core.Agent) (cool time.Duration, byCommand, ok boo
 	if byCommand && e.mightReachOverSocket(l) {
 		return defaultPeerCooldown, false, true
 	}
+	if byCommand && e.queueThreadGoneLocked(l) {
+		return 0, false, false
+	}
 	// A COMMAND THAT HAS NEVER WORKED IS NOT A ROUTE.
 	if byCommand && e.spawnGivenUp(l.ID) {
 		if !e.mightReachOverSocket(l) {
@@ -1061,7 +1064,7 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 	cmd := e.commandFor(l)
 	return wakePlan{
 		argv: f.Apply(cmd.argv), fallback: f.Apply(cmd.fallback),
-		fields: f, nativeOutcome: new(wakeexec.NativeOutcome),
+		fields: f, nativeOutcome: new(wakeexec.NativeOutcome), queueOutcome: new(wakeexec.QueueObservation),
 		agent: l.ID, session: wakeSessionOf(l), kind: kind,
 		createdSerial: l.CreatedSerial, queueEpoch: e.wakers.queueEpoch, commandEpoch: e.commandEpoch[l.ID],
 		cwd: cwdOf(l), cooldown: cooldown, thread: f.Thread,
@@ -1090,9 +1093,10 @@ func wakeSessionOf(l *core.Agent) string {
 // rules were each paid for by a bug, and a second delivery path that skipped
 // them would re-buy every one.
 type wakePlan struct {
-	fields        wakeexec.Fields         // private native notice facts, never a message body
-	nativeOutcome *wakeexec.NativeOutcome // shared with attempt's retry decision
-	argv          []string                // the operator's command
+	fields        wakeexec.Fields            // private native notice facts, never a message body
+	nativeOutcome *wakeexec.NativeOutcome    // shared with attempt's retry decision
+	queueOutcome  *wakeexec.QueueObservation // shared with the command attempt's retry decision
+	argv          []string                   // the operator's command
 	// host is the OTHER machine this wake runs on, or "": a plan for a remote
 	// agent carries no argv, because the hub never learns one; request is
 	// what its bridge is handed instead. See hostwake.go.
@@ -1249,6 +1253,9 @@ func (e *Engine) runWake(plan wakePlan, agent string) bool {
 		}
 		ok := wakeexec.RunCommandsObserved(plan.argv, plan.fallback, agent, plan.cwd,
 			wakeexec.Timeout, wakeexec.Grace, func(observation wakeexec.QueueObservation) {
+				if plan.queueOutcome != nil {
+					*plan.queueOutcome = observation
+				}
 				if plan.nativeOutcome != nil && plan.nativeOutcome.Disposition == "unloaded" {
 					observation.Delivery = "queued_unloaded"
 				} else if plan.nativeOutcome != nil && plan.nativeOutcome.Disposition == "native_failed" {
@@ -1256,7 +1263,9 @@ func (e *Engine) runWake(plan wakePlan, agent string) bool {
 				}
 				e.noteQueueObservation(plan, agent, observation)
 			})
-		e.noteCommandOutcome(agent, plan.argv, ok)
+		if !plan.queueThreadGone() {
+			e.noteCommandOutcome(agent, plan.argv, ok)
+		}
 		if ok {
 			e.showInApp(plan, agent) // queued; now make sure its app will deliver it
 		}
