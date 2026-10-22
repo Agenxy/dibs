@@ -115,6 +115,20 @@ func (e *Engine) sendQueueWakeView(agent *core.Agent, message *core.Message, now
 
 func elapsedSeconds(at, now time.Time) int64 { return max(0, int64(now.Sub(at)/time.Second)) }
 
+// nativeAcceptedNote says how old the observation is when it is not fresh:
+// it can be hours old and about an earlier message. "Last native app notice:
+// accepted" from a five-hour-old observation read as this send's outcome,
+// while this send's own wake had failed (agenxy-design, 2026-10-22).
+func nativeAcceptedNote(delivery string, v core.Result) string {
+	if age, ok := v["observation_age_seconds"].(int64); ok {
+		if ago := waitedFor(time.Unix(0, 0), time.Unix(age, 0)); ago != "" {
+			return "Last native app notice: " + delivery + ", " + ago +
+				" ago, before this message; app acceptance does not confirm read mail."
+		}
+	}
+	return "Last native app notice: " + delivery + "; app acceptance does not confirm read mail."
+}
+
 func queueWakeNote(v core.Result) string {
 	if v == nil {
 		return ""
@@ -134,7 +148,7 @@ func queueWakeNote(v core.Result) string {
 			}
 			return "Thread not loaded in the app; queue admission not confirmed."
 		case "accepted", "started", "steered":
-			return "Last native app notice: " + delivery + "; app acceptance does not confirm read mail."
+			return nativeAcceptedNote(delivery, v)
 		case "settled":
 			return "Last native app notice was cancelled because its mail was already handled or its identity closed."
 		default:

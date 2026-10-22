@@ -5,6 +5,20 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- A path's native-spelling probe on macOS no longer blocks a request on the
+  filesystem. The daemon's open(2) of `~/Desktop` paths stopped returning, so
+  every `declare` and hook poll from an agent working there hung, while other
+  calls stayed fast. The probe now gives up after 250ms and keeps the name
+  given, which was already its failure answer. A probe that never returns
+  holds one goroutine per path instead of one per request.
+
+- `send`'s note gives the age of the last native app notice when it is not
+  fresh: "Last native app notice: accepted, 5h12m ago, before this message".
+  A five-hour-old acceptance about an earlier message read as this send's
+  outcome, while this send's own wake had failed.
+
 ## [0.0.15] - 2026-10-22
 
 ### Security
