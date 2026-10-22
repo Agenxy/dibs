@@ -1319,9 +1319,3 @@ remain Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE) for retained
 outside-contributor and third-party permissions. A separate
 [commercial licence](COMMERCIAL-LICENSING.md) is available from Agenxy for
 Agenxy-authored portions.
-
----
-
-[agenxy.org/projects/dibs](https://agenxy.org/projects/dibs/) · [Bluesky @agenxy.org](https://bsky.app/profile/agenxy.org) · [github.com/agenxy](https://github.com/agenxy)
-
-Other Agenxy projects: [Remap](https://agenxy.org/projects/remap/) · [Supgang](https://agenxy.org/projects/supgang/) · [Quarters](https://agenxy.org/projects/quarters/)
