@@ -187,6 +187,7 @@ func TestServiceUnitsRecordAnAbsoluteDataDirectory(t *testing.T) {
 
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	t.Setenv("DIBS_DIR", "relative-data")
 	t.Chdir(home)
 	if err := os.MkdirAll(filepath.Join(home, "relative-data"), 0o750); err != nil {
@@ -199,11 +200,16 @@ func TestServiceUnitsRecordAnAbsoluteDataDirectory(t *testing.T) {
 		}
 		t.Fatal(err)
 	}
-	body, err := os.ReadFile(filepath.Join(home, "Library", "LaunchAgents", "org.agenxy.dibs.plist"))
+	unit := filepath.Join(home, "Library", "LaunchAgents", "org.agenxy.dibs.plist")
+	if runtime.GOOS == "linux" {
+		unit = filepath.Join(home, ".config", "systemd", "user", "dibs.service")
+	}
+	body, err := os.ReadFile(unit)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(body, []byte(">relative-data<")) {
+	if bytes.Contains(body, []byte(">relative-data<")) ||
+		!bytes.Contains(body, []byte(filepath.Join(home, "relative-data"))) {
 		t.Errorf("the unit records a relative data directory:\n%s", body)
 	}
 }
@@ -531,7 +537,9 @@ func TestWritingAServiceUnitCreatesTheDataDirectory(t *testing.T) {
 
 	dir := filepath.Join(t.TempDir(), "fresh-install")
 	t.Setenv("DIBS_DIR", dir)
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 
 	// A dibd for daemonPath to find, because the machine running the tests may
 	// not have one installed.
