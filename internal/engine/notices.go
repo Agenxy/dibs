@@ -5,6 +5,7 @@ package engine
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -356,6 +357,8 @@ func (e *Engine) pushNoticeKind(who, text string, serial, msg uint64, blocking b
 	// Bounded: an agent that never polls must not accumulate forever. The
 	// newest matter most: being told you were admitted an hour ago and then
 	// evicted is worse than being told only the eviction.
+	// Obsolete contact warnings must not occupy protected blocking slots.
+	e.notices[who] = slices.DeleteFunc(e.notices[who], e.contactNoticeObsolete)
 	e.notices[who] = append(e.notices[who],
 		notice{Serial: serial, Msg: msg, Text: text, Blocking: blocking, At: at, Kind: kind})
 	if n := len(e.notices[who]); n > maxNotices {
@@ -397,10 +400,8 @@ func (e *Engine) takeNotices(agent string) []notice {
 		// Sent-request updates come from the retained envelope and its read
 		// watermark, not this bounded/ephemeral pointer cache.
 		if e.state != nil {
-			if m := e.state.Messages[n.Msg]; m != nil && m.From == agent && m.Expecting() {
-				continue
-			}
-			if m := e.state.Messages[n.Msg]; m != nil && m.To == agent && noticeIsReview(m, n.Serial) {
+			m := e.state.Messages[n.Msg]
+			if e.contactNoticeObsolete(n) || cachedNoticeHasEnvelope(m, agent, n.Serial) {
 				continue
 			}
 		}
@@ -424,6 +425,10 @@ func (e *Engine) takeNotices(agent string) []notice {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Serial < out[j].Serial })
 	return out
+}
+
+func cachedNoticeHasEnvelope(m *core.Message, agent string, serial uint64) bool {
+	return m != nil && ((m.From == agent && m.Expecting()) || (m.To == agent && noticeIsReview(m, serial)))
 }
 
 // pendingNotices returns every notice an agent has outstanding, regardless of

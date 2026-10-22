@@ -10,6 +10,17 @@ import (
 	"github.com/agenxy/dibs/internal/core"
 )
 
+// The escalation's first event serial is its contact serial. Resolution makes
+// that reachability warning obsolete, independently of whether the coordinator
+// read it. This is derived from replayed state, not a fabricated read receipt.
+func (e *Engine) contactNoticeObsolete(n notice) bool {
+	if n.Kind != "contact.escalated" || e.state == nil {
+		return false
+	}
+	c := e.state.Contacts[n.Serial]
+	return c == nil || !c.ResolvedAt.IsZero()
+}
+
 // Only authenticated pulls call this, after their updates were rendered.
 // Reading reachability news consumes that notice, not the source mail or the
 // contact's independent human delivery. Other generic notices keep their rules.

@@ -949,6 +949,9 @@ when the person was notified: posting does not prove the agent read its mail.
 It contains metadata, never participant bodies. The coordinator's metadata-only
 notice is consumed when shown by its authenticated `check_in` or `inbox`; hooks
 do not consume it. This read does not resolve the contact or consume source mail.
+Once the contact is resolved or removed, its coordinator reachability notice is
+no longer outstanding and cannot block Stop, including after ledger replay.
+This obsolescence does not mark the notice read or erase the contact history.
 The rendered contact prefix is recorded per identity incarnation on an additive
 `contact_notice_through_serial` field of `activity_checkpoint`. Its read evidence
 survives daemon restart and credential rotation; reading without new contact news
