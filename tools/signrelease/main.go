@@ -44,6 +44,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/agenxy/dibs/internal/releasecodesign"
 )
 
 // The identifiers each shipped artifact presents to macOS. They are stable
@@ -219,6 +221,9 @@ func certificateIn(keychain string) (string, error) {
 	case 0:
 		return "", errors.New("the imported keychain holds no certificate")
 	case 1:
+		if err := releasecodesign.CheckCertificate(hashes[0]); err != nil {
+			return "", err
+		}
 		return hashes[0], nil
 	default:
 		return "", fmt.Errorf("the imported keychain holds %d certificates; a release has "+
@@ -250,6 +255,11 @@ func signOne(path string) error {
 	identity := strings.TrimSpace(os.Getenv(identityEnv))
 	if identity == "" {
 		identity = "-"
+	}
+	if identity != "-" {
+		if err := releasecodesign.CheckCertificate(identity); err != nil {
+			return err
+		}
 	}
 	args := []string{"--force", "--identifier", id, "--sign", identity}
 	if keychain := strings.TrimSpace(os.Getenv(keychainEnv)); keychain != "" {

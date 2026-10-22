@@ -26,6 +26,7 @@ import (
 	"compress/gzip"
 	"debug/macho"
 	"encoding/binary"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -35,6 +36,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	"github.com/agenxy/dibs/internal/releasecodesign"
 )
 
 // helperConst finds `helperName = "..."` in a package's Go source. Both
@@ -45,7 +48,11 @@ var helperConst = regexp.MustCompile(`helperName\s*=\s*"([^"]+)"`)
 // packages that resolve a file beside the executable.
 var runtimeHelpers = []string{"internal/humanauth", "internal/notify"}
 
+var requireReleaseIdentity bool
+
 func main() {
+	flag.BoolVar(&requireReleaseIdentity, "release-identity", false, "require the pinned release certificate, refusing ad-hoc offline images")
+	flag.Parse()
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "archivecheck:", err)
 		os.Exit(1)
@@ -241,7 +248,7 @@ func signedIdentifier(archive, name string, body []byte) (string, error) {
 		return "", werr
 	}
 	// #nosec G204 -- no shell; `at` is this function's own temp file.
-	out, err := exec.Command("codesign", "-dv", "--verbose=2", at).CombinedOutput()
+	out, err := exec.Command("codesign", "-d", "-r-", "--verbose=2", at).CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("%s: %s carries no code signature at all (%v). macOS records a "+
 			"firewall allowance against the signature, so an unsigned binary is a new "+
@@ -256,6 +263,14 @@ func signedIdentifier(archive, name string, body []byte) (string, error) {
 	}
 	if got == "" {
 		return "", fmt.Errorf("%s: %s reports no signed identifier; refuse packaging", archive, name)
+	}
+	if err := releasecodesign.Check(string(out), got, !requireReleaseIdentity); err != nil {
+		return "", fmt.Errorf("%s: %s: %w", archive, name, err)
+	}
+	// Validate the actual bytes as well as the identity they claim to carry.
+	// #nosec G204 -- no shell; at is the private extracted artifact above.
+	if out, err := exec.Command("codesign", "--verify", "--strict", at).CombinedOutput(); err != nil {
+		return "", fmt.Errorf("%s: %s invalid code signature: %w: %s", archive, name, err, out)
 	}
 	return got, nil
 }

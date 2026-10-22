@@ -7,6 +7,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Production macOS release checks pin the signing certificate and designated
+  requirements, refusing a silent identity change that would invalidate users'
+  existing privacy grants. Offline ad-hoc rehearsal builds remain explicit.
+
 - A coordinator's unreachable-agent notice stops being outstanding when the
   recipient reads its mail or the contact alert is cleared. It no longer blocks
   Stop after resolution or returns after a daemon restart; unresolved alerts

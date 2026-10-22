@@ -149,7 +149,7 @@ func TestSuccessfulPreflightStillWritesNoRemoteTagUntilSeparateCommitJob(t *test
 	if got := git(t, "ls-remote", "--tags", "origin"); got != "" {
 		t.Fatalf("preflight pushed: %q", got)
 	}
-	want := []string{"mise exec -- task ci", "go run ./tools/sigstore-root-check", "goreleaser release --snapshot --clean --skip=sign,publish,announce,validate", "go run ./tools/archivecheck", "go run ./tools/mcpbundle -version 0.0.11"}
+	want := []string{"mise exec -- task ci", "go run ./tools/sigstore-root-check", "goreleaser release --snapshot --clean --skip=sign,publish,announce,validate", "go run ./tools/archivecheck -release-identity", "go run ./tools/mcpbundle -version 0.0.11"}
 	if strings.Join(calls, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("missing gate/build/signing proof: %v", calls)
 	}
