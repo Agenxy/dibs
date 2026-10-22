@@ -31,7 +31,12 @@ func TestTaskInstallKeepsTheComputedStampBeforeReplacingAnything(t *testing.T) {
 	t.Cleanup(cancel)
 	root := filepath.Join("..", "..")
 	head := strings.TrimSpace(installCommand(t, ctx, root, nil, "git", "rev-parse", "HEAD"))
-	scratch := t.TempDir()
+	// The installed executable is resolved by the kernel. Keep every fixture
+	// identity in that same spelling (/private/var rather than /var on macOS).
+	scratch, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	clone, dest := filepath.Join(scratch, "repo"), filepath.Join(scratch, "installed")
 	if runtime.GOOS == "darwin" {
 		// Normal install registers its notifier bundle. Unregister only this
