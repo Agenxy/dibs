@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/wakeexec"
@@ -829,16 +830,25 @@ func (e *Engine) waiting(agent string, now time.Time) string {
 // notice view, deduplicated and ordered by their first outstanding event.
 func waitingReadHint(mail, announced int, notices []notice) string {
 	inbox := mail > 0 || announced > 0
-	seen := map[uint64]bool{}
+	at := map[uint64]int{}
 	var parents []string
 	for _, n := range notices {
 		if !n.ReadParent || n.Msg == 0 {
 			inbox = true
 			continue
 		}
-		if !seen[n.Msg] {
+		i, seen := at[n.Msg]
+		if !seen {
+			i = len(parents)
+			at[n.Msg] = i
 			parents = append(parents, "#"+strconv.FormatUint(n.Msg, 10))
-			seen[n.Msg] = true
+		}
+		// A verdict is the answer its sender stopped for, so the pointer
+		// says which: "updates on #265039" alone read as bookkeeping and a
+		// finished deliverable went unnoticed for seventy minutes
+		// (agenxy-design, 2026-10-22).
+		if word := verdictWord[n.Kind]; word != "" {
+			parents[i] = "#" + strconv.FormatUint(n.Msg, 10) + " (" + word + ")"
 		}
 	}
 	var reads []string
@@ -853,6 +863,53 @@ func waitingReadHint(mail, announced int, notices []notice) string {
 			": ack(N) to clear without bodies; read_mail(N) to read and clear")
 	}
 	return strings.Join(reads, "; ") + "."
+}
+
+// verdictWord names each answer to a sender's own message, in the case the
+// Stop hook uses for it.
+var verdictWord = map[string]string{
+	"message.done": "DONE", "message.answered": "answered", "message.approved": "APPROVED",
+	"message.denied": "DENIED", "message.declined": "declined", "message.queued": "queued",
+}
+
+// verdictLines are the answers among an agent's outstanding updates, worded
+// as the Stop hook words them, with a finished request's deliverable: the
+// line the agent needs in order to act, where a count would read as noise.
+// Bounded, because this rides on every prompt.
+func (e *Engine) verdictLines(notices []notice) []string {
+	const most = 4
+	var lines []string
+	for _, n := range notices {
+		if verdictWord[n.Kind] == "" || n.Text == "" {
+			continue
+		}
+		line := n.Text
+		if n.ReadParent && n.Kind == "message.done" {
+			if m := e.state.Messages[n.Msg]; m != nil && m.Deliverable != "" {
+				line += ": delivered at " + boundedDeliverable(m.Deliverable)
+			}
+		}
+		if len(lines) == most {
+			lines = append(lines, "more answers are listed by read_mail on each request")
+			break
+		}
+		lines = append(lines, line)
+	}
+	return lines
+}
+
+// boundedDeliverable is the worker's own words, one line and at most 200
+// bytes of valid UTF-8.
+func boundedDeliverable(value string) string {
+	value = strings.Join(strings.Fields(value), " ")
+	n := min(len(value), 200)
+	for n > 0 && !utf8.ValidString(value[:n]) {
+		n--
+	}
+	if n < len(value) {
+		return value[:n] + "..."
+	}
+	return value
 }
 
 // unreadAndOldest counts what is unread and when the earliest of it was sent,

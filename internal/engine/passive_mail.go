@@ -113,7 +113,7 @@ func (e *Engine) passiveMailboxDigest(l *core.Agent, now time.Time) string {
 		fmt.Fprintf(&b, "  %d more mailbox items; inbox returns compact pages and next_cursor.\n", p.more)
 	}
 	if updates > 0 || announcements > 0 {
-		b.WriteString("  " + waitingReadHint(0, announcements, e.takeNotices(l.ID)) + "\n")
+		e.passiveUpdateLines(&b, l.ID, announcements)
 	}
 	// Reserve both hook carriers, including JSON escaping, even though a
 	// passive activation normally needs only additionalContext.
@@ -125,6 +125,16 @@ func (e *Engine) passiveMailboxDigest(l *core.Agent, now time.Time) string {
 		}
 	}
 	return strings.TrimSpace(b.String())
+}
+
+// passiveUpdateLines names any answer to the agent's own requests as the Stop
+// hook does, then the read hint for every outstanding update.
+func (e *Engine) passiveUpdateLines(b *strings.Builder, agent string, announcements int) {
+	notices := e.takeNotices(agent)
+	for _, line := range e.verdictLines(notices) {
+		b.WriteString("  AGENT: " + line + "\n")
+	}
+	b.WriteString("  " + waitingReadHint(0, announcements, notices) + "\n")
 }
 
 func (e *Engine) passiveMailLines(b *strings.Builder, mail []*core.Message) []fyiPresentation {

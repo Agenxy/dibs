@@ -14,6 +14,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The per-prompt hook names an answer to your own request instead of counting
+  it. A finished request reads "maker reports your request DONE (msg N):
+  delivered at <path>", as the Stop hook already says. The per-write line
+  marks the request "#N (DONE)", and likewise for answered, approved, denied,
+  declined and queued. Before this, a deliverable sat behind "1 outstanding
+  update units" for seventy minutes.
+
 - Private command fixtures perform one bounded, harmless preparation launch
   before timed checks. Fresh executable assessment no longer consumes the
   daemon or wake-command deadline; those deadlines are unchanged.
