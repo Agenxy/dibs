@@ -77,6 +77,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   unread requests. The board and doctor explain the missing route. Other queue
   failures retain their retry policy, and a replacement binding can deliver.
 
+- The panel e2e's redraw control retries its own setup until it holds an
+  attached, coloured pip. A push can detach the row between selecting it and
+  reading it, which failed one hosted gate in setup. The control still
+  measures one held element across one deliberate redraw.
+
 - A path's native-spelling probe on macOS no longer blocks a request on the
   filesystem. The daemon's open(2) of `~/Desktop` paths stopped returning, so
   every `declare` and hook poll from an agent working there hung, while other
