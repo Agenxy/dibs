@@ -1120,6 +1120,8 @@ fetching a checkout does not rebuild its tool. A source finding says where a
 project is going, not what an installed session does. Rows keep older wire
 dates where no new wire measurement was made.
 
+Re-checked **2026-10-22 (UTC)** before v0.0.15: Codex (`342ed69a1`), opencode (`248bfbe11`), pi-mono (`58c0b02c`), Gemini (`09d81bf`) and Hermes (`4e58c721c8`) heads moved; ext-apps did not. Every predicate below is unchanged: opencode's 2026-07-28 client and Hermes' `mcp==2.3.0` pin were already recorded on 2026-10-18. The installed ChatGPT app is 26.1013.40934 with app CLI **0.163.0-alpha.10.2** (version observed only, not re-measured); the other installed versions are unchanged, so the rows keep their 2026-10-18 readings.
+
 | harness | protocol evidence | source and installed-build evidence |
 |---|---|---|
 | Claude Desktop | 2025-11-25, measured **2026-09-15** on 1.52386.6 | Its chat and local-agent clients sent `initialize`, not `server/discover`. **Installed bundle version observed 2026-10-18 (UTC): 2.26454.2; wire behavior not re-measured.** Only bundle metadata was read; no app was opened or restarted. Re-measurement needs an app restart and a temporary app-level Dibs entry that shadows the Code plugin, so it remains deferred. No lifecycle hooks in the chat surface. See [plugins/claude-desktop](plugins/claude-desktop/) |

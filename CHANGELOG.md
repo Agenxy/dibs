@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.0.15] - 2026-10-22
+
 ### Security
 
 - Built with Go 1.26.10 for GO-2026-6809 (CVE-2026-111943): crypto/x509 now
@@ -20,18 +22,6 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   marks the request "#N (DONE)", and likewise for answered, approved, denied,
   declined and queued. Before this, a deliverable sat behind "1 outstanding
   update units" for seventy minutes.
-
-- Private command fixtures perform one bounded, harmless preparation launch
-  before timed checks. Fresh executable assessment no longer consumes the
-  daemon or wake-command deadline; those deadlines are unchanged.
-
-- Two gate races fixed in tests, with no product change. The app-restart
-  proof now waits for the shared app contact's final record before its data
-  directory is removed. The native mail-history seek check retries when a
-  loaded machine spends the 250ms page budget. A mis-sized interval is still
-  refused on every attempt, so the check still catches it. The default
-  history settle bound is 30s.
-
 - Dependency updates: golang.org/x/crypto 0.58.0, x/sys 0.49.0, x/tools
   0.51.0; e2e suite @modelcontextprotocol/sdk 1.32.1 and playwright 1.64.1;
   CI actions jdx/mise-action 5.2.0, upload-artifact 7.0.2, download-artifact
@@ -44,37 +34,6 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `respond` results cap `owes` and `task_queue` at 8 entries, with
   `owes_count` and `more_task_queue` for the rest.
 - The clearing hint names `ack(N)` (no bodies) beside `read_mail(N)`.
-
-### Fixed
-
-- The panel e2e measures the current live pip in one browser call, so a board
-  redraw cannot leave it measuring a retired row's empty computed style. A real
-  host-redraw guard preserves the existing colour assertions and deadlines.
-
-- The stdio bridge reads its own process start time directly from the kernel on
-  macOS and Linux. Its first registration no longer waits for a forked process
-  inventory before forwarding the request; verification of other processes keeps
-  the existing inventory path.
-
-- A coordinator `broadcast` no longer reaches the person's seat or the
-  daemon's own reporting row. Both are rows on the board but not agents, and a
-  broadcast survey question reached the person as a desktop dialog asking them
-  to answer it. To ask the person, send to `human`.
-
-- Duplicate identities now have a supported merge preview and human board
-  control. Coordinators can repair a matching, unbound, non-live fork into its
-  newer third-party survivor; other eligible repairs go through a typed human
-  request whose Approve performs the move. Stale previews and approvals refuse
-  without changes. Incoming and outgoing conversations remain readable by the
-  survivor, and claims and space relationships move. Coordinator merges retire
-  source-only credentials with `E_SEAT_MERGED`; human/admin merges explicitly
-  authorize transferring them. Canonical survivor recovery remains available, and
-  the source closes with an actor/time audit. Roles and session bindings stay
-  with the survivor. Active/live sources and conflicting claims are refused.
-  Session detail also shows host-paired bindings and the current app thread.
-
-### Changed
-
 - Reading unread updates on mail you sent now leads with those updates instead
   of repeating the original task and milestone history. `read_mail` accepts
   `include_body:true` for the full envelope. The existing `message.response`,
@@ -85,12 +44,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without returning bodies. On a received request it clears reviewer updates.
   These acknowledgements preserve the request, its work status and the other
   party's read prefix; they neither accept work nor report it complete.
-
 - `respond` (approve, queue, done, decline) now returns only the next owed
   item (the next queued item's start call, else the first owed item) with
   `more_owed_work`, instead of echoing every owed entry. `owes` still names
   every serial, and `check_in` and `inbox` still list them all.
-
 - Registration, resume and check-in reply boards are projected only for live
   callers, avoiding whole-fleet reply construction during both ledger and mail
   history replay. Check-in now shows the caller's coordination time after its
@@ -112,22 +69,51 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A blocking Stop delivery's reason now opens "Not an error, new Dibs mail",
   since Claude Code labels any blocking Stop as an error.
 - The best-effort socket delivery note on `send` is one sentence shorter.
+- Private command fixtures perform one bounded, harmless preparation launch
+  before timed checks. Fresh executable assessment no longer consumes the
+  daemon or wake-command deadline; those deadlines are unchanged.
+- Two gate races fixed in tests, with no product change. The app-restart
+  proof now waits for the shared app contact's final record before its data
+  directory is removed. The native mail-history seek check retries when a
+  loaded machine spends the 250ms page budget. A mis-sized interval is still
+  refused on every attempt, so the check still catches it. The default
+  history settle bound is 30s.
 
 ### Fixed
 
+- The panel e2e measures the current live pip in one browser call, so a board
+  redraw cannot leave it measuring a retired row's empty computed style. A real
+  host-redraw guard preserves the existing colour assertions and deadlines.
+- The stdio bridge reads its own process start time directly from the kernel on
+  macOS and Linux. Its first registration no longer waits for a forked process
+  inventory before forwarding the request; verification of other processes keeps
+  the existing inventory path.
+- A coordinator `broadcast` no longer reaches the person's seat or the
+  daemon's own reporting row. Both are rows on the board but not agents, and a
+  broadcast survey question reached the person as a desktop dialog asking them
+  to answer it. To ask the person, send to `human`.
+- Duplicate identities now have a supported merge preview and human board
+  control. Coordinators can repair a matching, unbound, non-live fork into its
+  newer third-party survivor; other eligible repairs go through a typed human
+  request whose Approve performs the move. Stale previews and approvals refuse
+  without changes. Incoming and outgoing conversations remain readable by the
+  survivor, and claims and space relationships move. Coordinator merges retire
+  source-only credentials with `E_SEAT_MERGED`; human/admin merges explicitly
+  authorize transferring them. Canonical survivor recovery remains available, and
+  the source closes with an actor/time audit. Roles and session bindings stay
+  with the survivor. Active/live sources and conflicting claims are refused.
+  Session detail also shows host-paired bindings and the current app thread.
 - The human board keeps visible guidance when Dibs approval notifications use
   disappearing banners. It names the Alerts setting, clears after that style is
   observed, and retains the warning across unknown observations. Board requests
   share native settings observations for one minute, refreshing only on demand.
   Doctor and human-request send results explain the same setting. Dibs changes no settings
   and introduces no reposting timer.
-
 - A failed first macOS display-name lookup no longer caches the network's
   kernel hostname as a friendly name. Board projections read one immediate
   snapshot and retry failures in the background; successful lookups replace
   the fallback, including after an idle gap. Subprocess lookups stay off the
   writer loop and keep their shared 100 ms limit.
-
 - A withdrawal notice cleared only on `ack`, though it said "read_mail has the
   reason". `read_mail` cleared it in memory, and every daemon restart rebuilt
   it from the ledger, so a recipient that had read it was blocked at Stop on
@@ -137,7 +123,6 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Rapid tab switches no longer let a delayed older view-transition callback
   hide the selected pane. Mail stays visible and its Send button remains usable
   when an earlier Activity animation completes after switching back to Mail.
-
 - A coordinator `broadcast` is charged one rate-limit token, not one per
   recipient. A 41-agent broadcast reached 31 agents and reported the rest
   `E_RATE_LIMITED`.
@@ -145,7 +130,6 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the call that closes it (for a handoff, `ack`), not `E_NO_MESSAGE`.
 - Approving a request while restating the sender's own milestones is accepted
   rather than refused as a conflict.
-
 - Two harness threads choosing the same role in one checkout no longer borrow
   a shared cached credential and invalidate each other's tokens. The bridge
   scopes automatic recovery to its harness thread/session, or its own measured
