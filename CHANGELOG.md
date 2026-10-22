@@ -19,6 +19,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   A five-hour-old acceptance about an earlier message read as this send's
   outcome, while this send's own wake had failed.
 
+- A `codex queue` wake no longer runs in the agent's project directory. It
+  addresses a thread by id and needs none, and running there made every queue
+  wake depend on the daemon reaching that directory. When macOS stopped the
+  daemon reaching `~/Desktop`, every queue wake to an agent working there
+  exited 1. Operator-configured wake commands still run in the agent's
+  directory.
+
 ## [0.0.15] - 2026-10-22
 
 ### Security

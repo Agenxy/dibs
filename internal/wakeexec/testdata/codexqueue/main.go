@@ -46,6 +46,15 @@ func main() {
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "queue" {
+		if record := os.Getenv("DIBS_TEST_QUEUE_RECORD_CWD"); record != "" {
+			cwd, err := os.Getwd()
+			if err != nil {
+				panic(err)
+			}
+			if err := os.WriteFile(record, []byte(cwd), 0o600); err != nil {
+				panic(err)
+			}
+		}
 		var thread, message string
 		for i := 2; i+1 < len(os.Args); i++ {
 			if os.Args[i] == "--thread" {

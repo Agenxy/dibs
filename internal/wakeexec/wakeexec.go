@@ -245,6 +245,20 @@ func openThreadFailure(out []byte) bool {
 // checked only that wakeTimeout was at least two hours, which stays true while
 // Wait blocks past it.
 func runForOut(argv []string, agent, dir string, timeout, grace time.Duration) (bool, []byte) {
+	// EXCEPT THE QUEUE ROUTE, which needs no project directory.
+	//
+	// The reason below is `codex exec resume`, which refuses outside a trusted
+	// directory and which HostsAnAgent now refuses everywhere. `codex queue`
+	// addresses a thread by id: run from / or from a home directory it goes
+	// straight to the thread store (measured 2026-10-22, app CLI
+	// 0.163.0-alpha.10.2). Running it in the agent's directory made every
+	// queue wake depend on the daemon's access to that directory, and on
+	// 2026-10-22 macOS stopped the launchd daemon reaching ~/Desktop, so every
+	// queue wake to an agent working there exited 1.
+	queueRoute := false
+	if _, queued := queueTarget(argv); queued {
+		dir, queueRoute = "", true
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	// #nosec G204 G702 -- argv comes from the operator's own config file and nowhere
@@ -325,7 +339,7 @@ func runForOut(argv []string, agent, dir string, timeout, grace time.Duration) (
 		// What actually differed was the working directory, now fixed above, so
 		// the honest note names the directory the command really ran in and
 		// leaves the diagnosis to whoever reads it.
-		fields = append(fields, "ran_in", runDir(dir))
+		fields = append(fields, "ran_in", runDirFor(dir, queueRoute))
 		// NO THEORY ABOUT WHY. Three have been wrong here.
 		//
 		// This line has carried a guess at the cause since it was written, and
@@ -399,6 +413,13 @@ func (t *tailBuffer) Bytes() []byte {
 // Says "the daemon's own" rather than printing it, because the useful fact is
 // that it was NOT the agent's: an operator reading "/" has to know what it was
 // supposed to be before that means anything.
+func runDirFor(dir string, queueRoute bool) string {
+	if queueRoute {
+		return "the daemon's own working directory (a queue wake needs no project directory)"
+	}
+	return runDir(dir)
+}
+
 func runDir(dir string) string {
 	if dir == "" {
 		return "the daemon's own working directory (the agent recorded none)"
