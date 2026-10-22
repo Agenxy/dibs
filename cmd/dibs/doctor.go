@@ -52,10 +52,11 @@ func doctor(args []string) error {
 	verbose := fs.Bool("verbose", false, "also say what was checked and found healthy")
 	fs.BoolVar(verbose, "v", false, "shorthand for --verbose")
 	asJSON := fs.Bool("json", false, jsonHelp)
+	requestFolders := fs.Bool("request-folder-access", false, "ask the local daemon to attempt ungranted protected-folder reads once; requested is not granted")
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
-	d := &diagnosis{json: *asJSON}
+	d := &diagnosis{json: *asJSON, requestFolders: *requestFolders || (!*asJSON && interactive())}
 	d.checkCodexPluginVersion()
 	err := d.run(*verbose)
 	if *asJSON {
@@ -99,10 +100,11 @@ type doctorCheck struct {
 // document cannot carry a different diagnosis from the prose: formatting
 // twice is how they drift.
 type diagnosis struct {
-	dataDir      string
-	json         bool
-	checks       []doctorCheck
-	probs, warns int
+	dataDir        string
+	requestFolders bool
+	json           bool
+	checks         []doctorCheck
+	probs, warns   int
 }
 
 func (d *diagnosis) ok(what string) {
@@ -142,6 +144,14 @@ func (d *diagnosis) run(verbose bool) error {
 	dir, inherited := selected.Dir, selected.Inherited
 	d.dataDir = dir
 	d.note("data directory source: " + selected.Source)
+	if runtime.GOOS == "darwin" {
+		serviceSelection := selected
+		if pinned, found, err := paths.PinnedService(); err == nil && found && filepath.Clean(pinned.Dir) == filepath.Clean(dir) {
+			serviceSelection = pinned
+		}
+		servicePath, source := serviceSelection.EffectiveServicePath()
+		d.note("service PATH (" + source + "): " + servicePath)
+	}
 
 	// Through the shared vocabulary rather than raw escape codes. The inline
 	// version wrote colour unconditionally, so `dibs doctor > report.txt`,
@@ -245,6 +255,7 @@ func (d *diagnosis) run(verbose bool) error {
 	}
 
 	checkHarnessConfigs(sec, addr(), ok, warn, bad)
+	checkFolderAccess(dir, boardOrNil(), d.requestFolders, ok, d.note, warn)
 	checkDesktopShadowsPlugin(bad)
 	checkCodexHookTrust(ok, warn)
 	checkPanelBuild(client, sec, ok, warn, d.prose)

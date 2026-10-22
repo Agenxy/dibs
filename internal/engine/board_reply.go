@@ -25,5 +25,7 @@ func (e *Engine) projectReplyBoard(op *core.Op, res core.Result) {
 	default:
 		return
 	}
-	res["board"] = e.state.Board()
+	b := e.state.Board()
+	e.decorateFolderAccess(b)
+	res["board"] = b
 }

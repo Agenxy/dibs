@@ -34,6 +34,19 @@ reads the configuration per request. A malformed configuration refuses loudly;
 a service start requiring a pin also refuses a missing pin. Neither falls back
 to an empty board. Doctor reports the source that selected the directory.
 
+The same private file may carry `service_path` and `service_path_source`
+(`migrated` or `configured`). Migration retains the legacy unit's PATH verbatim,
+including an explicitly empty value. Only `dibd -app-service` applies it; CLI
+and bridge lookups never change their environment. With no path field the
+service uses `/usr/bin:/bin:/usr/sbin:/sbin`. Doctor names the value and source.
+Unsupported legacy flags or environment keys must be named and refused before
+the old service is stopped, with a corrective step.
+
+A running bridge re-reads the directory pin per attempt. Its destination, trust
+roots and credential come from one selected directory; refreshing only the
+credential can disclose the new board's secret to the old endpoint. Address
+discovery remains cached until a directory change or a refused dial.
+
 ## Measurements on macOS 27.0, build 26A428, Darwin 27.0.0
 
 Three isolated apps with unique IDs were built: secondary daemon, nested daemon

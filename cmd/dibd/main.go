@@ -166,6 +166,13 @@ func run() error {
 			return errors.New("-app-service reads its directory pin; use DIBS_DIR and dibs configure --service to repair the pin instead of -dir")
 		}
 		*dir = selected.Dir
+		if pinned, found, err := paths.PinnedService(); err == nil && found && filepath.Clean(pinned.Dir) == filepath.Clean(selected.Dir) {
+			selected = pinned
+		}
+		servicePath, _ := selected.EffectiveServicePath()
+		if err := os.Setenv("PATH", servicePath); err != nil {
+			return fmt.Errorf("app service PATH: %w", err)
+		}
 	}
 	publicCfg, err := resolvePublic(opts)
 	if err != nil {
@@ -327,6 +334,8 @@ func run() error {
 	// SETTLED BEFORE SERVING. Nothing changes this identity afterwards; see
 	// keepAskingSupgang.
 	identified, adopted := identifyHost(eng, *dir)
+	folders := newFolderAccess()
+	eng.SetFolderAccess(folders)
 	eng.SetBlobs(bs)
 	wake, err := wakePolicy(cfg.Wake)
 	if err != nil {
@@ -491,6 +500,7 @@ func run() error {
 	registerMatchStatusAPI(mux, eng)
 	registerIndexAPI(mux, eng, scorer)
 	registerWakeAPI(mux, eng, secret)
+	registerFolderAccessAPI(mux, folders)
 	registerAdminAPI(mux, eng)
 	registerInvitationAPI(mux, inviteService)
 	registerTransferStatus(mux, publicCfg.URL)

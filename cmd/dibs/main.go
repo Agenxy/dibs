@@ -26,6 +26,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/agenxy/dibs/internal/build"
+	"github.com/agenxy/dibs/internal/folderaccess"
 	"github.com/agenxy/dibs/internal/humanauth"
 	"github.com/agenxy/dibs/internal/paths"
 	"github.com/agenxy/dibs/internal/ui"
@@ -1104,14 +1105,16 @@ type (
 		Departed  int           `json:"departed_unacked"`
 	}
 	boardView struct {
-		ContactAlerts   []contactAlertDiagnostic `json:"contact_alerts"`
-		ConfiguredNames []configuredNameAddress  `json:"configured_name_addresses,omitempty"`
-		Serial          uint64                   `json:"serial"`
-		Node            string                   `json:"node"`
-		HostID          string                   `json:"host_id"`
-		Agents          []boardAgent             `json:"agents"`
-		Claims          []boardClaim             `json:"claims"`
-		Spaces          []boardChannel           `json:"spaces"`
+		FolderAccess       []folderaccess.Observation `json:"folder_access,omitempty"`
+		FolderAccessAdvice string                     `json:"folder_access_advice,omitempty"`
+		ContactAlerts      []contactAlertDiagnostic   `json:"contact_alerts"`
+		ConfiguredNames    []configuredNameAddress    `json:"configured_name_addresses,omitempty"`
+		Serial             uint64                     `json:"serial"`
+		Node               string                     `json:"node"`
+		HostID             string                     `json:"host_id"`
+		Agents             []boardAgent               `json:"agents"`
+		Claims             []boardClaim               `json:"claims"`
+		Spaces             []boardChannel             `json:"spaces"`
 	}
 )
 

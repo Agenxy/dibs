@@ -7,6 +7,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The macOS daemon records bounded Desktop/Documents/Downloads read evidence
+  for its local agents. The board and doctor distinguish completed, refused and
+  pending reads, and explain where to grant access; requesting a read never
+  reports a grant. An explicit doctor request attempts ungranted roots once.
+  Native-spelling timeouts under those roots now produce a bounded diagnosis.
+
+- A private macOS service directory pin is shared by daemon, CLI and running
+  bridges. A malformed pin refuses instead of creating an empty default board.
+  A bridge changing boards binds the destination, trusted certificates and
+  credential together, including subscription and reconnect paths.
+
 - Production macOS release checks pin the signing certificate and designated
   requirements, refusing a silent identity change that would invalidate users'
   existing privacy grants. Offline ad-hoc rehearsal builds remain explicit.

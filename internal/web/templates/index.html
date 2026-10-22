@@ -83,6 +83,7 @@
 
   <div class="summary" id="summary"></div>
   <aside id="notification-advice" class="notification-advice" role="status" {{if not .NotificationAdvice}}hidden{{end}}>{{.NotificationAdvice}}</aside>
+  <aside id="folder-access-advice" class="notification-advice" role="status" {{if not .FolderAccessAdvice}}hidden{{end}}>{{.FolderAccessAdvice}}</aside>
   <div class="flash" id="flash" role="status" aria-live="polite"></div>
   <!-- The board changes UNDER the reader: an agent goes quiet, mail arrives, a
        agent forms, and a screen reader was told none of it. Announcing the whole
@@ -393,6 +394,10 @@ function drawPanes() {
   const adviceText = b?.notification_advice || ""
   if (advice.textContent !== adviceText) advice.textContent = adviceText
   advice.hidden = !adviceText
+  const folderAdvice = document.getElementById("folder-access-advice")
+  const folderText = b?.folder_access_advice || ""
+  if (folderAdvice.textContent !== folderText) folderAdvice.textContent = folderText
+  folderAdvice.hidden = !folderText
   const where = b ? `node ${b.node} · ledger ${b.serial ?? "unknown"}` : "connecting"
   document.getElementById("ctx-node").textContent = where
   document.getElementById("foot-node").textContent = where

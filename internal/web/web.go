@@ -226,6 +226,7 @@ func (s *Server) indexData(r *http.Request) (map[string]any, error) {
 		"EventsJSON":         evJSON,
 		"Version":            build.Version,
 		"NotificationAdvice": board["notification_advice"],
+		"FolderAccessAdvice": board["folder_access_advice"],
 	}, nil
 }
 

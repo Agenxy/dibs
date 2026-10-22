@@ -15,6 +15,12 @@ import (
 // WriteServiceDirectory pins an explicitly selected absolute directory. The
 // caller owns service migration/registration; this only replaces private config.
 func WriteServiceDirectory(dir string) error {
+	return WriteServiceSettings(dir, nil, "")
+}
+
+// WriteServiceSettings preserves an optional operator PATH verbatim, including
+// an explicitly empty value. Only the bundled daemon applies this environment.
+func WriteServiceSettings(dir string, servicePath *string, source string) error {
 	if !filepath.IsAbs(dir) {
 		return errors.New("service directory must be absolute; preserve the existing board directory")
 	}
@@ -22,11 +28,12 @@ func WriteServiceDirectory(dir string) error {
 	if err != nil {
 		return err
 	}
+	cfg := serviceDirectoryConfig{Version: 1, Dir: dir, Path: servicePath, PathSource: source}
+	if err := cfg.validatePath(); err != nil {
+		return err
+	}
 	var body bytes.Buffer
-	if err := toml.NewEncoder(&body).Encode(struct {
-		Version int    `toml:"version"`
-		Dir     string `toml:"data_dir"`
-	}{1, dir}); err != nil {
+	if err := toml.NewEncoder(&body).Encode(cfg); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
