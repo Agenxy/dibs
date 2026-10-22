@@ -5,6 +5,18 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Claude Code channels. A session started with
+  `claude --dangerously-load-development-channels plugin:dibs@dibs` receives
+  mail notices as `notifications/claude/channel` events, Claude Code's
+  documented push into a running session, which starts a turn when idle.
+  Sessions that cannot register a channel keep the session-socket route,
+  including every Claude Desktop Code-tab session, which Claude Code runs in
+  SDK mode. The bridge decides from its parent's launch arguments, because an
+  event on an unregistered channel is dropped silently. `DIBS_CLAUDE_CHANNEL=off`
+  turns it off.
+
 ### Fixed
 
 - The macOS daemon now lives inside Dibs.app's background service, with the

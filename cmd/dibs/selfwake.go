@@ -108,7 +108,8 @@ type selfWaker struct {
 	//
 	// A seam rather than a per-platform fixture table, because the branch is
 	// about what the code does with an error and not about which error a
-	// kernel picks. Nil in production, where deliver is the only writer.
+	// kernel picks. Nil in production unless the session registered Dibs as a
+	// Claude Code channel, where channelDeliver is the writer (channel.go).
 	deliverFn func(notice string) error
 	// refreshFn asks the daemon for current unread state before EVERY write,
 	// including failed-delivery retries and upgrade handoffs. Nil in transport tests.
@@ -187,7 +188,13 @@ func newSelfWaker() *selfWaker {
 	if session == "" {
 		return nil
 	}
-	return &selfWaker{socket: sock, token: tok, session: session, cooldown: selfWakeCooldown}
+	w := &selfWaker{socket: sock, token: tok, session: session, cooldown: selfWakeCooldown}
+	if claudeChannel {
+		// The same claim, refresh, receipt and surrender; only the write
+		// changes, to the documented channel. See channel.go.
+		w.deliverFn = channelDeliver
+	}
+	return w
 }
 
 // selfWakeSession observes only our actual parent's sidecar. CLAUDE_PID and

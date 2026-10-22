@@ -406,7 +406,9 @@ request, handoff, or high/urgent notify can produce one coalesced, metadata-only
 the coordinator and person. It never gives Dibs permission to start or move
 the recipient's session; ordinary FYI notifies do not trigger this path.
 
-**Verify your delivery route.** There are two routes and only one of them can
+**Verify your delivery route.** A Claude Code session started with Dibs as a
+channel receives mail notices as `<channel>` events, which start a turn when
+you are idle. Otherwise there are two routes and only one of them can
 be confirmed: a command from the operator's config, which Dibs starts and
 watches, and your harness's own session socket, which is best effort. A Claude
 Code session running in bypassPermissions mode HOLDS peer messages for its

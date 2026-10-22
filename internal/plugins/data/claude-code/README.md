@@ -39,6 +39,26 @@ every session.
 
 ## How the wake works (and its honest limits)
 
+### Channels (preferred where they register)
+
+When a session opts Dibs in as a [Claude Code channel](https://code.claude.com/docs/en/channels-reference),
+the bridge delivers mail notices as `notifications/claude/channel` events. That is
+Claude Code's documented route for pushing into a running session, and an idle
+session starts a turn on it. While channels are a research preview and Dibs is not on
+Anthropic's channel allowlist, a terminal session opts in like this:
+
+```
+claude --dangerously-load-development-channels plugin:dibs@dibs
+```
+
+Claude Code shows a warning at start; choose "I am using this for local development".
+It ignores that flag in non-interactive and SDK sessions, which includes every Claude
+Desktop Code-tab session, so those keep the session-socket route described below. The
+bridge decides from the session's own launch arguments, never by guessing, because
+Claude Code silently drops events on a channel it did not register.
+`DIBS_CLAUDE_CHANNEL=off` in the bridge's environment turns channel mode off.
+
+
 A model has no inbound space: only its harness can put something into the running
 context. Claude Code's hooks support `type: "mcp_tool"`, which is exactly that hook: the
 hook calls a tool on the MCP connection the model *already holds*, and whatever the tool
