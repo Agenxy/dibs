@@ -482,6 +482,8 @@ probe. Old rows are historical measurements, not claims about today's binaries:
 | Gemini CLI | 0.54.0-nightly.20260722 | `initialize` **2025-06-18** | `roots` | initialize, tools/list, resources/list (2026-09-12, over `httpUrl`) |
 | Hermes installed MCP adapter, no model/provider session | **0.20.2**, SDK **1.28.1** | `initialize` **2025-11-25** | `elicitation {form,url}` | initialize, notifications/initialized, tools/list (52 tools), **2026-10-03**, isolated HTTP daemon |
 
+Re-checked **2026-10-22 (UTC)** before v0.0.15: Codex (`342ed69a1`), opencode (`248bfbe11`), pi-mono (`58c0b02c`), Gemini (`09d81bf`) and Hermes (`4e58c721c8`) heads moved; ext-apps did not. Every predicate below is unchanged: opencode's 2026-07-28 client and Hermes' `mcp==2.3.0` pin were already recorded on 2026-10-18. The installed ChatGPT app is 26.1013.40934 with app CLI **0.163.0-alpha.10.2** (version observed only, not re-measured); the other installed versions are unchanged, so the rows keep their 2026-10-18 readings.
+
 **Release survey refreshed 2026-10-18 (UTC), with source and runtime separated.**
 The six harness checkouts (including ext-tasks) and ext-apps were fetched, and
 `origin/HEAD` read rather than their local branch. Installed versions were
