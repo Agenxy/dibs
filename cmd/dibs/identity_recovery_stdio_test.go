@@ -119,7 +119,7 @@ func newRecoveryStdioWithPin(t *testing.T, pin string) *recoveryStdio {
 	childCtx, stop := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(childCtx, os.Args[0], "-test.run=^TestIdentityRecoveryBridgeProcess$")
 	cmd.Dir = dir
-	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + dir, "USERPROFILE=" + dir, "SYSTEMROOT=" + os.Getenv("SYSTEMROOT"), "DIBS_TEST_IDENTITY_RECOVERY_BRIDGE=1", "DIBS_DIR=" + dir, "DIBS_ADDR=" + strings.TrimPrefix(srv.URL, "http://"), "DIBS_HOST_ID=recovery-host", "DIBS_NOTIFY=off"}
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + dir, "USERPROFILE=" + dir, "TMPDIR=" + os.TempDir(), "TEMP=" + os.TempDir(), "SYSTEMROOT=" + os.Getenv("SYSTEMROOT"), "DIBS_TEST_IDENTITY_RECOVERY_BRIDGE=1", "DIBS_DIR=" + dir, "DIBS_ADDR=" + strings.TrimPrefix(srv.URL, "http://"), "DIBS_HOST_ID=recovery-host", "DIBS_NOTIFY=off"}
 	if pin != "" {
 		cmd.Env = append(cmd.Env, "DIBS_AGENT_NONCE="+pin)
 	}
@@ -584,7 +584,7 @@ func TestConcurrentRecoveryCacheWritesRetainEveryCredential(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
 			cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestIdentityRecoveryBridgeProcess$")
-			cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + dir, "USERPROFILE=" + dir, "SYSTEMROOT=" + os.Getenv("SYSTEMROOT"), "DIBS_DIR=" + dir, "DIBS_TEST_CACHE_PROJECT=" + project, "DIBS_TEST_CACHE_WRITE_NONCE=" + fmt.Sprintf("held-secret-%d", i)}
+			cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + dir, "USERPROFILE=" + dir, "TMPDIR=" + os.TempDir(), "TEMP=" + os.TempDir(), "SYSTEMROOT=" + os.Getenv("SYSTEMROOT"), "DIBS_DIR=" + dir, "DIBS_TEST_CACHE_PROJECT=" + project, "DIBS_TEST_CACHE_WRITE_NONCE=" + fmt.Sprintf("held-secret-%d", i)}
 			if err := cmd.Run(); err != nil {
 				t.Error("setup: credential writer failed:", err)
 			}
