@@ -29,6 +29,10 @@ import (
 // https url and instructions to trust a certificate for daemons that serve
 // neither, because the file outlives the configuration that made it.
 func resolveTransport(dir string) (scheme, certPath string, err error) {
+	return resolveTransportAt(dir, rawAddrIn(dir))
+}
+
+func resolveTransportAt(dir, raw string) (scheme, certPath string, err error) {
 	cfg, err := readBoardConfig(dir)
 	// A setting this bridge does not know is not a reason to guess the
 	// transport: configReadable accepts that error so an older bridge can use
@@ -48,8 +52,8 @@ func resolveTransport(dir string) (scheme, certPath string, err error) {
 	// ensure reports where the daemon WOULD have put a self-signed certificate,
 	// without making one: this is a description of that daemon, not a second
 	// program deciding things for it.
-	choice, err := xport.Resolve(cfg.TLSCert, cfg.TLSKey, hostPort(rawAddr()),
-		statedScheme(rawAddr()), cfg.InsecurePlaintext,
+	choice, err := xport.Resolve(cfg.TLSCert, cfg.TLSKey, hostPort(raw),
+		statedScheme(raw), cfg.InsecurePlaintext,
 		func() (string, string, error) {
 			return filepath.Join(dir, "tls-cert.pem"), filepath.Join(dir, "tls-key.pem"), nil
 		})
@@ -70,7 +74,7 @@ func resolveTransport(dir string) (scheme, certPath string, err error) {
 	}
 	// An explicit scheme in DIBS_ADDR is the operator stating it outright, and
 	// outranks everything above.
-	if given, _, found := strings.Cut(rawAddr(), "://"); found {
+	if given, _, found := strings.Cut(raw, "://"); found {
 		scheme = strings.ToLower(given)
 		if scheme != "https" {
 			certPath = ""

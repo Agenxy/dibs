@@ -64,7 +64,7 @@ func doctor(args []string) error {
 		// a monitoring script's threshold is its own business, and the checks
 		// keep the order the prose prints them in.
 		if perr := printJSON(doctorReport{
-			DataDir:  paths.DataDir(),
+			DataDir:  d.dataDir,
 			Checks:   d.checks,
 			Problems: d.probs,
 			Warnings: d.warns,
@@ -99,6 +99,7 @@ type doctorCheck struct {
 // document cannot carry a different diagnosis from the prose: formatting
 // twice is how they drift.
 type diagnosis struct {
+	dataDir      string
 	json         bool
 	checks       []doctorCheck
 	probs, warns int
@@ -133,7 +134,14 @@ func (d *diagnosis) prose(line string) {
 }
 
 func (d *diagnosis) run(verbose bool) error {
-	dir, inherited := paths.Resolve()
+	selected, err := paths.SelectDir(false)
+	if err != nil {
+		d.bad("cannot select the service's board directory", err.Error())
+		return err
+	}
+	dir, inherited := selected.Dir, selected.Inherited
+	d.dataDir = dir
+	d.note("data directory source: " + selected.Source)
 
 	// Through the shared vocabulary rather than raw escape codes. The inline
 	// version wrote colour unconditionally, so `dibs doctor > report.txt`,

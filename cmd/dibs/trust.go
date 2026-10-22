@@ -96,9 +96,11 @@ func ownCAFile() string { return filepath.Join(paths.DataDir(), "tls-ca.pem") }
 // call failed with "the daemon was reached and the answer was not" until the
 // operator pinned their own daemon by hand, which the join recipe never
 // mentions because it is not a join. Found by the two-host e2e suite.
-func trustedPool() *x509.CertPool {
-	pinned, pinErr := os.ReadFile(trustFile()) // #nosec G304 -- the daemon's own data directory
-	own, ownErr := os.ReadFile(ownCAFile())    // #nosec G304 -- the daemon's own data directory
+func trustedPool() *x509.CertPool { return trustedPoolIn(paths.DataDir()) }
+
+func trustedPoolIn(dir string) *x509.CertPool {
+	pinned, pinErr := os.ReadFile(filepath.Join(dir, "trusted-certs.pem")) // #nosec G304 -- the daemon's own data directory
+	own, ownErr := os.ReadFile(filepath.Join(dir, "tls-ca.pem"))           // #nosec G304 -- the daemon's own data directory
 	if pinErr != nil && ownErr != nil {
 		return nil
 	}
@@ -150,13 +152,22 @@ func daemonClient(timeout time.Duration) *http.Client {
 //
 // A RoundTripper rather than a helper, so it cannot be skipped by building the
 // request differently: whatever assembles the URL, this is what dials it.
-type guardedTransport struct{ next http.RoundTripper }
+type guardedTransport struct {
+	next http.RoundTripper
+	dir  string // nonempty binds a bridge attempt to one directory snapshot
+}
 
 func (g *guardedTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	// A dibs.toml the daemon will not start on means the board this was meant
 	// for is not running, so the endpoint reached now is something else.
-	if err := checkConfigReadable(); err != nil {
-		return nil, err
+	var configErr error
+	if g.dir != "" {
+		configErr = configReadable(g.dir)
+	} else {
+		configErr = checkConfigReadable()
+	}
+	if configErr != nil {
+		return nil, configErr
 	}
 	// AND THE AUTHORITY MUST BE THE HOST IT LOOKS LIKE. Everything before an
 	// `@` is userinfo: `DIBS_ADDR=http://trusted.example@evil.example:4777`
@@ -169,7 +180,18 @@ func (g *guardedTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 			"so the request would go to %q instead. Name the host on its own",
 			r.URL.Host, r.URL.User.Username(), r.URL.Hostname())
 	}
-	refreshLocalSecret(r)
+	if g.dir != "" && r.Header.Get("X-Dibs-Local") != "" {
+		secret, err := localSecretIn(g.dir)
+		if err != nil {
+			return nil, err
+		}
+		if secret == "" {
+			return nil, errors.New("selected board has no local secret; start dibd once first")
+		}
+		r.Header.Set("X-Dibs-Local", secret)
+	} else {
+		refreshLocalSecret(r)
+	}
 	return g.next.RoundTrip(r)
 }
 

@@ -353,7 +353,11 @@ func checkedVersion(out []byte) string {
 // rebuild the board. Nothing here changes anything.
 func planUpgrade(o upgradeOpts) (*plan, error) {
 	p := &plan{opts: o, retryPause: 10 * time.Second}
-	p.dir, p.inherited = paths.Resolve()
+	selected, selectErr := paths.SelectDir(false)
+	if selectErr != nil {
+		return nil, selectErr
+	}
+	p.dir, p.inherited = selected.Dir, selected.Inherited
 
 	var err error
 	if p.installed, err = daemonPath(); err != nil {

@@ -117,16 +117,20 @@ func originFor(hostPort string) string {
 	return schemeTLS + hostPort
 }
 
-func origin() string {
-	if a := rawAddr(); a != "" {
-		if scheme, _, found := strings.Cut(a, "://"); found {
+func origin() string { return originIn(paths.DataDir()) }
+
+func originIn(dir string) string {
+	raw := rawAddrIn(dir)
+	a := hostPort(raw)
+	if raw != "" {
+		if scheme, _, found := strings.Cut(raw, "://"); found {
 			// LOWERCASED. checkAddr accepts a scheme case-insensitively, and
 			// this preserved the operator's spelling, so `HTTPS://host:4777`
 			// passed validation and then failed inside Go's HTTP transport as
 			// an unsupported scheme: a valid address rejected at the last
 			// possible moment, by a layer that cannot explain itself. Found by
 			// the pre-release review.
-			return strings.ToLower(scheme) + "://" + addr()
+			return strings.ToLower(scheme) + "://" + a
 		}
 	}
 	// ASK THE SHARED RESOLVER, which is what the daemon serves by.
@@ -144,20 +148,20 @@ func origin() string {
 	// transport by itself; the pre-release review pointed out the agreement
 	// test calls the shared resolver directly and so could not see that this
 	// function never did.
-	scheme, _, err := resolveTransport(paths.DataDir())
+	scheme, _, err := resolveTransportAt(dir, raw)
 	var unknown *boardconfig.UnknownSettingsError
 	if scheme != "" && (err == nil || errors.As(err, &unknown)) {
-		return scheme + "://" + addr()
+		return scheme + "://" + a
 	}
 	// Absent config: back to the inference, which is right for the default
 	// board and is the only answer available. A BROKEN one is a different thing
 	// and is refused by checkConfigReadable, which the shared transport asks
 	// before any request leaves: not here, because this returns a string and a
 	// caller that cannot be told is a caller that guesses.
-	if xport.IsLoopback(addr()) {
-		return schemePlain + addr()
+	if xport.IsLoopback(a) {
+		return schemePlain + a
 	}
-	return schemeTLS + addr()
+	return schemeTLS + a
 }
 
 // checkConfigReadable refuses to continue when this data directory's config is
@@ -175,7 +179,11 @@ func origin() string {
 // data race. A check that depends on another function's side effects is not a
 // check; it is a coincidence.
 func checkConfigReadable() error {
-	return configReadable(paths.DataDir())
+	selected, err := paths.SelectDir(false)
+	if err != nil {
+		return err
+	}
+	return configReadable(selected.Dir)
 }
 
 // configReadable is the decision, on a directory, so a test can hand it one.
@@ -221,9 +229,11 @@ const boardPeerEnv = "DIBS_BOARD_PEER"
 // scheme are Dibs's own and stay: Supgang's candidates carry Supgang's port.
 // A resolution that fails keeps the configured address, and says so, because
 // a stale address that might still work beats no address.
-func boardOrigin() string {
+func boardOrigin() string { return boardOriginIn(paths.DataDir()) }
+
+func boardOriginIn(dir string) string {
 	peer := strings.TrimSpace(os.Getenv(boardPeerEnv))
-	base := origin()
+	base := originIn(dir)
 	if peer == "" {
 		return base
 	}

@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -51,6 +52,15 @@ import (
 )
 
 func main() {
+	defer func() {
+		if failure := recover(); failure != nil {
+			if err, ok := failure.(*paths.ServiceConfigError); ok {
+				fmt.Fprintln(os.Stderr, "dibd:", err)
+				os.Exit(1)
+			}
+			panic(failure)
+		}
+	}()
 	if err := run(); err != nil {
 		// Multi-line failures go to stderr as themselves.
 		//
@@ -80,6 +90,7 @@ type daemonOpts struct {
 	allowParallel *bool
 	addr          *string
 	check         *bool
+	appService    *bool
 	publicHost    *string
 	publicIP      *string
 	ackGuest      *bool
@@ -105,6 +116,8 @@ func registerDaemonFlags(fs *flag.FlagSet) (*daemonOpts, *scorerFlags) {
 		check: fs.Bool("check", false,
 			"replay the board at -dir and exit, without serving: answers whether THIS build "+
 				"could take over from the daemon now running. `dibs upgrade` runs it first"),
+		appService: fs.Bool("app-service", false,
+			"macOS bundled service: require its private directory pin; never create a default board when it is missing"),
 	}
 	fs.Bool("man", false, "write this daemon's manual page (mdoc) to stdout and exit")
 	o.publicHost = fs.String("public-host", "",
@@ -129,9 +142,31 @@ func run() error {
 	if wantsMan() {
 		return manCmd(manArgs())
 	}
+	if _, err := paths.SelectDir(false); err != nil {
+		return err
+	}
 	opts, scorer := registerDaemonFlags(flag.CommandLine)
 	dir, allowParallel, addr, check := opts.dir, opts.allowParallel, opts.addr, opts.check
 	flag.Parse()
+	if *opts.appService {
+		if runtime.GOOS != "darwin" {
+			return errors.New("-app-service is the macOS bundled service mode")
+		}
+		selected, err := paths.SelectDir(true)
+		if err != nil {
+			return err
+		}
+		explicitDir := false
+		flag.Visit(func(f *flag.Flag) {
+			if f.Name == "dir" {
+				explicitDir = true
+			}
+		})
+		if explicitDir {
+			return errors.New("-app-service reads its directory pin; use DIBS_DIR and dibs configure --service to repair the pin instead of -dir")
+		}
+		*dir = selected.Dir
+	}
 	publicCfg, err := resolvePublic(opts)
 	if err != nil {
 		return err

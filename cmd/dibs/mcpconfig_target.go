@@ -80,7 +80,9 @@ func boardGiven(fs *flag.FlagSet) bool {
 // and wrong for anything handed to another process: `http://<non-loopback>` is
 // how a deliberately plaintext daemon off loopback is reached, and a bridge
 // given bare host:port infers HTTPS and cannot connect.
-func rawAddr() string {
+func rawAddr() string { return rawAddrIn(paths.DataDir()) }
+
+func rawAddrIn(dir string) string {
 	if a := os.Getenv("DIBS_ADDR"); a != "" {
 		return a
 	}
@@ -92,7 +94,7 @@ func rawAddr() string {
 	// or internet was handed a confident config for the wrong address and the
 	// wrong transport, by the command the wizard had just sent them to. Found by
 	// the pre-release review.
-	if a := configuredAddr(paths.DataDir()); a != "" {
+	if a := configuredAddr(dir); a != "" {
 		return a
 	}
 	// The default, spelled out rather than delegated to addr(). addr() consults

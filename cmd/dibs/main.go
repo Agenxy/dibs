@@ -178,6 +178,15 @@ func styledUsage() string {
 }
 
 func main() {
+	defer func() {
+		if failure := recover(); failure != nil {
+			if err, ok := failure.(*paths.ServiceConfigError); ok {
+				fmt.Fprintln(os.Stderr, "dibs:", err)
+				os.Exit(1)
+			}
+			panic(failure)
+		}
+	}()
 	if len(os.Args) < 2 {
 		fmt.Println(styledUsage())
 		return
@@ -478,7 +487,15 @@ func getAt(from, path string, v any) error {
 }
 
 func localSecret() (string, error) {
-	b, err := os.ReadFile(filepath.Join(paths.DataDir(), "local.secret"))
+	selected, err := paths.SelectDir(false)
+	if err != nil {
+		return "", err
+	}
+	return localSecretIn(selected.Dir)
+}
+
+func localSecretIn(dir string) (string, error) {
+	b, err := os.ReadFile(filepath.Join(dir, "local.secret"))
 	if err != nil {
 		return "", err
 	}
