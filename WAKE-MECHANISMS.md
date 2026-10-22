@@ -223,8 +223,9 @@ app incarnation change invalidates that receiving app's command receipts,
 re-offering outstanding items once while fencing late old-command completions.
 Dibs-generated progress, queue updates, ordinary approvals and accepted reviews
 wait for SessionStart, an authenticated pull or the next actionable digest.
-Answers, denials, declines, grant/adoption verdicts and flagged reviews qualify;
-DONE qualifies when the sender currently declares a wait. Explicit operator
+Answers, denials, declines, grant/adoption verdicts, flagged reviews and DONE
+qualify. DONE used to qualify only when the sender declared a wait, and an
+undeclared requester's DONE then sat unread for an hour (2026-10-22). Explicit operator
 phase opt-outs remain. UserPromptSubmit and SessionStart recover outstanding
 backlog with bounded passive pointers without spending a wake or starting a turn.
 No hook hands agent mail to the human through systemMessage. Fresh SessionStart

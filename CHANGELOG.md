@@ -7,6 +7,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A finished request (`done`) wakes an idle Claude Code requester whether or
+  not it declared itself waiting. It woke only a requester whose declaration
+  said `waiting`, so a high-priority request's DONE sat unread for an hour
+  while a decline in the same session woke it at once.
+
 - The stdio bridge looks up its own start stamp in the background from the
   moment it starts, and a request waits at most 500ms for it. It was looked up
   inline on the first request, and on a loaded macOS machine that kernel call

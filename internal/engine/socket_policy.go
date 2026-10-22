@@ -81,15 +81,6 @@ func (e *Engine) socketLifecycle(l *core.Agent, now time.Time) string {
 	return "unknown"
 }
 
-func waitingDeclaration(l *core.Agent) bool {
-	for _, s := range l.Slots {
-		if s.Waiting != "" {
-			return true
-		}
-	}
-	return false
-}
-
 // The canonical event classifier and typed notices are the policy inputs.
 // No rendered-text matching and no state table that can confuse an earlier
 // approval with a later DONE or a flagged review of already completed work.
@@ -135,7 +126,7 @@ func (e *Engine) socketActionableNotices(l *core.Agent, now time.Time, fresh boo
 		if at, shown := e.noticePresented[key]; fresh && (n.Delivered || (shown && now.Sub(at) < AnnounceRetry)) {
 			continue
 		}
-		if wakeCauseAllowed(e.WakePolicy(), false, socketActionableNotice(n, l, e.state.Messages[n.Msg])) {
+		if wakeCauseAllowed(e.WakePolicy(), false, socketActionableNotice(n, e.state.Messages[n.Msg])) {
 			return true
 		}
 	}
@@ -172,7 +163,7 @@ func wakeCauseAllowed(phase WakePhase, authored, blocking bool) bool {
 	return phase != WakeNone && (blocking || (authored && phase == WakeAll))
 }
 
-func socketActionableNotice(n notice, l *core.Agent, request *core.Message) bool {
+func socketActionableNotice(n notice, request *core.Message) bool {
 	// Queue acceptance and position changes report scheduling, not a new
 	// decision the sender must act on. Keep them for the next real delivery.
 	if n.Kind == "message.queued" || n.Kind == "message.queue_changed" {
@@ -184,7 +175,14 @@ func socketActionableNotice(n notice, l *core.Agent, request *core.Message) bool
 		(request.Grant == "" && request.Adopt == "" && request.Merge == nil)) {
 		return false
 	}
-	return n.Blocking && (n.Kind != "message.done" || waitingDeclaration(l))
+	// DONE WAKES THE REQUESTER, declared waiting or not. It woke only an
+	// asker whose declaration said `waiting`, to spare one that had moved on,
+	// and that traded a real wake for less noise: agenxy-design (2026-10-22)
+	// sent a high-priority request, ended its turn without declaring, and the
+	// DONE three minutes later sat unread for an hour while the person
+	// waited. A decline in the same session woke it, which is what made the
+	// gap visible. The finished work is the answer the request was for.
+	return n.Blocking
 }
 
 func (e *Engine) socketOwnsDelivery(l *core.Agent) bool {

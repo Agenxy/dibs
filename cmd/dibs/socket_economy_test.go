@@ -552,7 +552,11 @@ func TestSocketEconomyVerdictsUseCurrentWaitingAndCanonicalKind(t *testing.T) {
 				respond("done", false)
 			}
 			text := f.waitOffer(t)
-			wakes := mode == "grant-approved" || mode == "answered" || mode == "flag" || mode == "flag-after-done" || mode == "done-waiting"
+			// DONE wakes the requester whether or not it declared itself
+			// waiting (agenxy-design, 2026-10-22: an undeclared requester's
+			// high-priority DONE sat unread for an hour).
+			wakes := mode == "grant-approved" || mode == "answered" || mode == "flag" || mode == "flag-after-done" ||
+				mode == "done-waiting" || mode == "done-unblocked"
 			if wakes {
 				if text == "" || len(collect(f.lines, 2, time.Second)) != 2 {
 					t.Fatalf("idle %s produced no real socket wake: %q", mode, text)

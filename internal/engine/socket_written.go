@@ -27,7 +27,7 @@ func (e *Engine) hasUnwrittenSocketCause(l *core.Agent, now time.Time) bool {
 	}
 	for _, n := range e.takeNotices(l.ID) {
 		if !e.socketWritten["notice:"+noticeKey(l.ID, n.Serial)] && !n.Delivered &&
-			socketActionableNotice(n, l, e.state.Messages[n.Msg]) {
+			socketActionableNotice(n, e.state.Messages[n.Msg]) {
 			return true
 		}
 	}

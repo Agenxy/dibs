@@ -60,9 +60,13 @@ func TestStopEconomyThroughMCP(t *testing.T) {
 				marker := "typed-stop-" + item
 				actionable := true
 				switch item {
-				case "progress", "ordinary-approval", "accepted-review", "queue", "done-without-wait":
+				case "progress", "ordinary-approval", "accepted-review", "queue":
 					actionable = false
 				}
+				// done-without-wait is actionable: DONE is the answer the
+				// request was for, declared waiting or not (agenxy-design,
+				// 2026-10-22: an undeclared requester's DONE sat unread for an
+				// hour while a decline woke the same session).
 				switch item {
 				case "notify", "question", "request", "handoff":
 					call("send", map[string]any{"token": worker, "to": "lead", "type": item, "body": marker})
