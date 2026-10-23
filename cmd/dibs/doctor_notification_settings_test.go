@@ -138,10 +138,7 @@ func TestDoctorMeasuresNativeNotificationSettings(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(helper), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(helper, bytes, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	testexec.PrepareExecutable(t, exec.Command(helper, "--dibs-test-prepare"))
+	writeNativeFixtureHelper(t, helper)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, driver, "-test.run=^TestDoctorMeasuresNativeNotificationSettings$") // #nosec G204 -- private copy of this test binary
@@ -220,10 +217,7 @@ func TestRelayCarriesThePostingHelpersActualSettings(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(helper), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(helper, bytes, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	testexec.PrepareExecutable(t, exec.Command(helper, "--dibs-test-prepare"))
+	writeNativeFixtureHelper(t, helper)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, driver, "-test.run=^TestRelayCarriesThePostingHelpersActualSettings$") // #nosec G204 -- private copy of this test binary, fixture helper

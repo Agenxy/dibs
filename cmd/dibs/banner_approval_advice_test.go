@@ -62,6 +62,10 @@ func TestBannerAdviceThroughNativeStatusAndActualSurfaces(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, path := range []string{driver, helper} {
+		if path == helper {
+			writeNativeFixtureHelper(t, path)
+			continue
+		}
 		if err := os.WriteFile(path, data, 0o700); err != nil {
 			t.Fatal(err)
 		}

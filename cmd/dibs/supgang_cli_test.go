@@ -148,7 +148,9 @@ func fakeSupgang(args []string) int {
 func useFakeSupgang(t *testing.T) {
 	t.Helper()
 	old := supgang.Command
-	supgang.Command = os.Args[0]
+	helper := filepath.Join(t.TempDir(), "supgang-fixture")
+	writeNativeFixtureHelper(t, helper)
+	supgang.Command = helper
 	t.Setenv("DIBS_TEST_AS_SUPGANG", "1")
 	t.Cleanup(func() { supgang.Command = old })
 }
