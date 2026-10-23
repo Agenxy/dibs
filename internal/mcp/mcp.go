@@ -833,6 +833,8 @@ func (s *Server) adoptSession(ctx context.Context, token string, params json.Raw
 }
 
 type toolArgs struct {
+	NotifyThroughSerial uint64 `json:"notify_through_serial"`
+
 	Merge  *core.MergeRequest `json:"merge"`
 	DryRun bool               `json:"dry_run"`
 	Fence  string             `json:"fence"`

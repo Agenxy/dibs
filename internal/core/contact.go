@@ -14,6 +14,7 @@ const ContactWindow = 10 * time.Minute
 // asked for help reaching it. NotifiedAt means an OS posting receipt arrived;
 // merely queuing or attempting a notification is not that proof.
 type ContactEscalation struct {
+	MailboxFull  bool      `json:"mailbox_full,omitempty"`
 	Serial       uint64    `json:"serial"`
 	Recipient    string    `json:"recipient"`
 	OldestSerial uint64    `json:"oldest_serial"`
@@ -39,16 +40,15 @@ func (s *State) applyContactEscalate(op *Op, now time.Time) (Result, []Event, er
 	if m == nil {
 		return nil, nil, errf("E_NO_MESSAGE", "inspect pending mail before escalating", "message %d is gone", op.MsgSerial)
 	}
-	if m.ContactEscalatedAt != 0 {
-		return Result{"ok": true, "deduplicated": true, "contact_serial": m.ContactEscalatedAt}, nil, nil
+	if id := s.existingContactFor(m, op.ContactMailboxFull); id != 0 {
+		return Result{"ok": true, "deduplicated": true, "contact_serial": id}, nil, nil
 	}
 	c := s.latestContact(m.To)
 	// An unposted contact remains one outstanding plea for help. A quiet
 	// desktop or absent relay must not produce a new alert every ten minutes.
-	if c == nil || !c.ResolvedAt.IsZero() || (!c.NotifiedAt.IsZero() &&
-		(now.Before(c.WindowStart) || !now.Before(c.WindowStart.Add(ContactWindow)))) {
+	if needsNewContact(c, op.ContactMailboxFull, now) {
 		c = &ContactEscalation{
-			Serial: s.Serial + 1, Recipient: m.To, OldestSerial: m.Serial,
+			MailboxFull: op.ContactMailboxFull, Serial: s.Serial + 1, Recipient: m.To, OldestSerial: m.Serial,
 			HighWater: m.Serial, Count: 1, WindowStart: now,
 		}
 		if s.Contacts == nil {
@@ -66,6 +66,9 @@ func (s *State) applyContactEscalate(op *Op, now time.Time) (Result, []Event, er
 		ev := []Event{{Type: "contact.escalated", Agent: m.To, To: coordinator, Data: map[string]any{
 			"contact_serial": c.Serial, "msg_serial": m.Serial,
 		}}}
+		if op.ContactMailboxFull {
+			ev[0].Data["mailbox_full"] = true
+		}
 		s.finish(&ev, now)
 		m.ContactEscalatedAt = c.Serial
 		return Result{"ok": true, "contact_serial": c.Serial, "coalesced": false}, ev, nil
@@ -117,4 +120,23 @@ func (s *State) applyContactResolved(op *Op, now time.Time) (Result, []Event, er
 	}}
 	s.finish(&ev, now)
 	return Result{"ok": true, "contact_serial": c.Serial}, ev, nil
+}
+
+func (s *State) existingContactFor(m *Message, mailboxFull bool) uint64 {
+	if m.ContactEscalatedAt == 0 {
+		return 0
+	}
+	if !mailboxFull {
+		return m.ContactEscalatedAt
+	}
+	c := s.Contacts[m.ContactEscalatedAt]
+	if c != nil && c.MailboxFull && c.ResolvedAt.IsZero() {
+		return c.Serial
+	}
+	return 0
+}
+
+func needsNewContact(c *ContactEscalation, mailboxFull bool, now time.Time) bool {
+	return c == nil || c.MailboxFull != mailboxFull || !c.ResolvedAt.IsZero() || (!c.NotifiedAt.IsZero() &&
+		(now.Before(c.WindowStart) || !now.Before(c.WindowStart.Add(ContactWindow))))
 }

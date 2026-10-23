@@ -7,6 +7,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Announced FYIs no longer block handoffs or asks at mailbox capacity. Every
+  send type can replace an eligible FYI; asks remain protected. Retained FYIs
+  have their own bound. A full mailbox of asks raises a metadata-only human
+  contact alert, with corrective calls for the sender. Check-in, the board and
+  doctor warn at 80% capacity. `ack(notify_through_serial:N)` clears an announced
+  FYI backlog in one call without touching asks or unannounced mail. Missing
+  envelope acknowledgements now offer the same retention recovery as reads.
+  Historical ledger folds retain their original semantics.
+
 - The macOS daemon now lives inside Dibs.app's background service, with the
   notifier and presence helper beside it. Install and upgrade preserve the
   existing board directory and PATH, prove replay before service migration,

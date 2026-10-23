@@ -21,6 +21,14 @@ import "time"
 type Op struct {
 	Kind string `json:"kind"`
 
+	// Writer-owned send semantics. Absent on old ops, so their capacity and
+	// displacement folds remain unchanged.
+	MailboxCapacity bool `json:"mailbox_capacity,omitempty"`
+	// Recipient-selected prefix for a single bulk FYI acknowledgement.
+	NotifyThroughSerial uint64 `json:"notify_through_serial,omitempty"`
+	// A refused send records a contact failure against an existing blocking ask.
+	ContactMailboxFull bool `json:"contact_mailbox_full,omitempty"`
+
 	// Historical check_in ops retain read-all semantics. An activity_checkpoint
 	// with a present selection, even an empty one, records the returned page;
 	// older folds retain ordinary contact only. Replay never reruns ranking.

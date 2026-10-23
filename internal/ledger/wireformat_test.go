@@ -100,7 +100,9 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 	wantOp := map[string]bool{
 		// Additive page selection on activity_checkpoint; historical check_in
 		// keeps read-all semantics. Existing tag spellings remain frozen.
-		"mailbox_serials":  true,
+		"mailbox_serials": true,
+		// Three additive decisions: new send capacity, bulk FYI prefix, contact reason.
+		"mailbox_capacity": true, "notify_through_serial": true, "contact_mailbox_full": true,
 		"notify_announced": true, "notify_consumption": true,
 		// Atomic daemon stall notice and its request watermark, additive only.
 		"declaration_serial": true,
@@ -468,7 +470,8 @@ const (
 	// Compact mailbox checkpoints add the selected serial list, without renaming.
 	// FYI receipts add announcement ids and a consumption reason on old carriers.
 	// Merge adds actor and typed effect tags; no historical tag renamed.
-	frozenOpFingerprint       = "sha256:da7ee6e214215571"
+	// Mailbox repair adds three tags; no historical spelling changed.
+	frozenOpFingerprint       = "sha256:ed73fb201a3955d9"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`

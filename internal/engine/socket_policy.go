@@ -146,7 +146,7 @@ func (e *Engine) notifyPresented(agent string, m *core.Message) bool {
 	if m.Type != core.MsgNotify {
 		return false
 	}
-	return m.Consumed || m.NotifyAnnouncedAt >= max(m.AdoptedAt, 1) || e.messagePresented(agent, m)
+	return m.FYIPresented() || e.messagePresented(agent, m)
 }
 
 func (e *Engine) messagePresented(agent string, m *core.Message) bool {

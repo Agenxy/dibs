@@ -56,7 +56,8 @@ var (
 	}
 	ErrMailboxFull = &Error{
 		Code: "E_MAILBOX_FULL", Msg: "recipient mailbox is at capacity",
-		Hint: "retry later; the recipient has unprocessed messages",
+		Hint: "call send(to:coordinator, type:notify, body:...) or send(to:human, type:notify, body:...) " +
+			"to report the contact failure; the recipient must call inbox() and respond(done|decline) on outstanding asks",
 	}
 	ErrAgentLimit = &Error{
 		Code: "E_AGENT_LIMIT", Msg: "maximum number of agents reached",

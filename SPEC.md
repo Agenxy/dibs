@@ -779,7 +779,7 @@ wake epoch, not its response semantics or the recipient's explicit wake policy.
 | `pending/delivered/acked` | `answered` / `approved` / `denied` / `declined` | `respond` (per type table) | `message.<state>` |
 | `pending/delivered/acked` | `expired_unanswered` \| `expired_recipient_dormant` \| `expired_recipient_dead` | deadline sweep (§7 cascade) | `message.<state>` |
 | `expired_unanswered` (question only) | `answered` | late `respond(answer)` by its recipient; expiry detail cleared and sender's verdict-read marker reset | `message.answered` |
-| `pending/delivered` (notify only) | `displaced` | evicted by a newer notify at mailbox capacity | `message.displaced` (same serial as the displacing send, atomic) |
+| `pending/delivered` (notify only) | `displaced` | evicted by a new send at mailbox capacity or a new notify at the retained-FYI bound | `message.displaced` (same serial as the displacing send, atomic) |
 | `pending/delivered/acked/queued/approved` (request) | `withdrawn`, unconsumed recipient receipt | sender `respond(withdraw)`; already-performed approvals refused | `message.withdrawn` |
 | `pending/delivered/acked` (question) | `withdrawn`, unconsumed recipient receipt | sender `respond(withdraw)`; no answer fabricated | `message.withdrawn` |
 
@@ -805,7 +805,7 @@ For **expecting types** (question/request), `acked` is non-terminal: the message
 still awaits a response. For **non-expecting types** (notify/handoff), `ack`
 is the natural end of life: `acked` is terminal *and counts as consumed* (the ack is
 the consumption, §below). `pending` and `delivered` are non-terminal for all types.
-Capacity counts non-terminal messages; displacement targets notifies in
+Capacity counts non-terminal messages except announced FYIs, plus accepted queue debt; displacement targets notifies in
 `pending`/`delivered`; `displaced` is a mailbox-eviction outcome, distinct from any
 response outcome.
 
@@ -922,9 +922,47 @@ recipient's `respond` (responding proves receipt). GC eligibility requires
   "seen on wake" is guaranteed; beyond them, loss is explicit and detectable.
 - Every read returns the current `serial` as the caller's cursor.
 
-**Backpressure**: mailbox cap counts non-terminal messages. At capacity a notify may
-displace the oldest notify; if nothing is displaceable, sends fail `E_MAILBOX_FULL`.
-Nothing expecting an answer is ever displaced.
+**Backpressure**: the mailbox cap counts non-terminal mail except announced
+FYIs, plus accepted queued/approved request debt. Recorded recipient delivery also counts as presentation, including retained
+legacy delivery receipts; adopted mail cannot inherit its prior recipient's receipt.
+Announced FYIs remain readable
+and displaceable but reserve no admission slot. At capacity **any send type** may
+displace the oldest pending/delivered notify that counts toward capacity; removing
+an already-exempt FYI cannot free an admission slot. Nothing expecting an answer,
+or an unacknowledged handoff, is ever displaced. Retained non-terminal FYIs have
+a separate bound equal to `MaxMailboxDepth`: a new notify replaces the oldest
+retained FYI when that bound is reached, even below admission capacity. This
+bounds resident mail without making announced FYIs block asks.
+
+The writer records `mailbox_capacity:true` on new sends. Unmarked historical ops
+retain their original count and notify-only displacement fold on replay. New
+capacity validation lives in Admit. A refusal because asks still fill the box
+raises the existing metadata-only human contact alert for the recipient, using
+an existing blocking ask as its source, never the refused body. Repeated refusals
+against the same blocker share that alert; no send retry queue or timer is added.
+The sender's hint names `send(to:coordinator,...)` and `send(to:human,...)`.
+The alert resolves when capacity becomes available, rather than on merely
+presenting its source ask.
+
+At `ceil(0.8 * MaxMailboxDepth)` (205 of the default 256), `check_in`, the board
+row (including the compact agent roster) and doctor show `mailbox_capacity`
+metadata and corrective calls. The remaining fifth is headroom for handoffs;
+announced FYIs are reported separately, and the warning has no scheduling effect.
+
+`ack(notify_through_serial:N)` is a single rate-limited call and a single ledgered
+op that consumes every caller-owned announced FYI through N. It accepts either
+this prefix or `msg_serial`, never both; future prefixes are refused. Unannounced
+FYIs, other recipients' mail, requests, questions and handoffs are untouched.
+Full presentation already consumes an FYI. Bulk acknowledgement is the explicit
+body-free way to dismiss a known announcement backlog; it returns `consumed_count`.
+A repeated prefix with nothing left changes no serial. The recorded prefix folds
+without reapplying current admission validation.
+
+A compact page can fully present an already-terminal FYI. If its original
+terminal timestamp is already outside consumed retention, the next sweep may
+remove it immediately after that presentation. `read_mail` and `ack` on an absent
+serial name `inbox()` for current mail and `mail_history()` for available retained
+history; absence alone does not prove an envelope existed or why it disappeared.
 
 **Deadlines**: for new agent-to-agent questions and requests, `deadline_s` is
 the response window (10 min default, 2 h max, or 7 d to persistent agents).
@@ -1408,7 +1446,7 @@ unacknowledged announcement not yet due does not justify a placeholder wake.
 | live agents / persistent agents | 64 / 64 (the persistent ceiling follows `max_agents` when only that is set lower) | `E_AGENT_LIMIT` |
 | slots per agent | 32 | `E_SLOT_LIMIT` |
 | claims per agent / global | 32 / 256 | `E_CLAIM_LIMIT` |
-| mailbox depth (non-terminal) | 256 | §8 backpressure |
+| mailbox admission depth (pending mail except announced FYIs, plus accepted debt) | 256 | §8 backpressure; separate retained-FYI bound 256 |
 | terminal messages retained | 128 per agent, then GC'd (ledger keeps history) | pruned oldest-first |
 | archived agents retained in state | 7 days, then GC'd (with nonces + dedup records); addressable and wakeable throughout | pruned |
 | message/slot body | 32 KiB | `E_TOO_LARGE` |

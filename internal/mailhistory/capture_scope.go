@@ -81,7 +81,7 @@ func (s Snapshot) captureMessage(st *core.State, m *core.Message) {
 }
 
 func (s *Snapshot) captureMailbox(st *core.State, op *core.Op, actor *core.Agent) {
-	if op.Kind == core.OpAckBoard || op.MailboxSerials != nil {
+	if op.Kind == core.OpAckBoard || op.MailboxSerials != nil || op.NotifyThroughSerial != 0 {
 		if actor != nil {
 			for _, m := range st.Inbox(actor.ID) {
 				s.captureMessage(st, m)

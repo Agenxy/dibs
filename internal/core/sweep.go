@@ -645,6 +645,9 @@ func (s *State) Board() map[string]any {
 			"status": l.Status, "activation": l.Activation, "slots": slots,
 			"last_coordination_at": l.LastCoordination,
 		}
+		if c := s.MailboxCapacity(l.ID); c.NearCapacity {
+			lm["mailbox_capacity"] = c
+		}
 		lm["sessions"] = map[string]any{
 			"host_id": agentHostID(l), "primary": l.SessionID, "aliases": l.SessionAliases,
 			"current": l.CurrentSession, "guessed": l.GuessedSessions,
