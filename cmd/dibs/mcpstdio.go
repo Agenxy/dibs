@@ -110,6 +110,7 @@ func runBridge(_ []string) error {
 	out := &syncWriter{w: bufio.NewWriter(os.Stdout)}
 	defer out.flush()
 	primeBridgeStart() // off the first request; see bridgeStartBudget
+	bindChannelOut(out)
 	var streams sync.WaitGroup
 	// Streams outlive individual requests, and must not outlive the SESSION.
 	//
@@ -206,9 +207,8 @@ func runBridge(_ []string) error {
 		// The bridge supplies its own process evidence before a model call;
 		// registration also gains facts from the harness it was spawned into.
 		line = enrichRegister(enrichBridgeProcess(line))
-		if isNonceCacheRefusal(line) {
-			out.line(line)
-			continue // no HTTP request and no registration has happened
+		if answeredLocally(line, out) {
+			continue
 		}
 		req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(line))
 		if err != nil {
@@ -235,6 +235,21 @@ func runBridge(_ []string) error {
 
 		forward(client, req, line, out, onRegistered)
 	}
+}
+
+// answeredLocally writes the reply to a request the bridge answers itself,
+// with no HTTP request: a refused nonce-cache registration, and in channel
+// mode the 2026 probe (see channel.go: the 2025 handshake is load-bearing).
+func answeredLocally(line []byte, out *syncWriter) bool {
+	switch {
+	case isNonceCacheRefusal(line):
+		out.line(line) // no registration has happened
+	case claudeChannel && methodOf(line) == "server/discover":
+		out.line(discoverDeclined(line))
+	default:
+		return false
+	}
+	return true
 }
 
 // forward sends one request and writes whatever the daemon answers.
@@ -284,7 +299,11 @@ func forward(client *http.Client, req *http.Request, line []byte, out *syncWrite
 	}
 	if len(body) > 0 {
 		rememberRegistrationNonce(line, body)
-		out.line(body) // empty means a notification / 202: no response line
+		if claudeChannel {
+			out.line(withChannelCapability(line, body))
+		} else {
+			out.line(body) // empty means a notification / 202: no response line
+		}
 		if saw != nil {
 			saw(line, body)
 		}

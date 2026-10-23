@@ -802,12 +802,22 @@ try {
   // running the measurement in a second browser call. Drive that exact gap
   // through the real host, then use the SAME reader as the ordinary check.
   {
-    const selected = await panel.locator(".entry.active .pip").first().elementHandle()
-    if (!selected) throw new Error("redraw control: no active pip to select")
-    const before = await selected.evaluate((el) => ({
-      connected: el.isConnected, color: getComputedStyle(el).backgroundColor,
-      agent: el.closest(".entry")?.getAttribute("data-agent"),
-    }))
+    // SETUP ONLY retries: the same push can detach the row between selecting
+    // its handle and reading it (hosted gate, PR 479). The control below
+    // still measures one held element across one deliberate redraw.
+    let selected: any = null
+    let before: { connected: boolean; color: string; agent: string | null | undefined } =
+      { connected: false, color: "", agent: null }
+    for (let attempt = 0; attempt < 50; attempt++) {
+      selected = await panel.locator(".entry.active .pip").first().elementHandle()
+      if (!selected) throw new Error("redraw control: no active pip to select")
+      before = await selected.evaluate((el: Element) => ({
+        connected: el.isConnected, color: getComputedStyle(el).backgroundColor,
+        agent: el.closest(".entry")?.getAttribute("data-agent"),
+      }))
+      if (before.connected && before.color && before.agent) break
+      await page.waitForTimeout(100)
+    }
     if (!before.connected || !before.color || !before.agent)
       throw new Error("redraw control: setup did not select an attached colored pip: " + JSON.stringify(before))
     const without = structuredClone(boardResult)

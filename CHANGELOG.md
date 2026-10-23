@@ -5,6 +5,18 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Claude Code channels. A session started with
+  `claude --dangerously-load-development-channels plugin:dibs@dibs` receives
+  mail notices as `notifications/claude/channel` events, Claude Code's
+  documented push into a running session, which starts a turn when idle.
+  Sessions that cannot register a channel keep the session-socket route,
+  including every Claude Desktop Code-tab session, which Claude Code runs in
+  SDK mode. The bridge decides from its parent's launch arguments, because an
+  event on an unregistered channel is dropped silently. `DIBS_CLAUDE_CHANNEL=off`
+  turns it off.
+
 ### Fixed
 
 - Announced FYIs no longer block handoffs or asks at mailbox capacity. Every
@@ -69,6 +81,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   gone, stops retrying the binding and raises the existing contact alert for
   unread requests. The board and doctor explain the missing route. Other queue
   failures retain their retry policy, and a replacement binding can deliver.
+
+- The panel e2e's redraw control retries its own setup until it holds an
+  attached, coloured pip. A push can detach the row between selecting it and
+  reading it, which failed one hosted gate in setup. The control still
+  measures one held element across one deliberate redraw.
 
 - A path's native-spelling probe on macOS no longer blocks a request on the
   filesystem. The daemon's open(2) of `~/Desktop` paths stopped returning, so
