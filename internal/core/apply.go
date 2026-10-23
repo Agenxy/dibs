@@ -1444,6 +1444,14 @@ func (s *State) applySend(l *Agent, op *Op, now time.Time) (Result, []Event, err
 		}
 	}
 	var displaced *Message
+	if op.MailboxCapacity {
+		displaced, _ = s.capacityDisplacement(op)
+		if displaced != nil {
+			displaced.State = MsgStateDisplaced
+			displaced.TerminalAt = now
+		}
+		return s.finishSend(l, to, op, now, digest, displaced)
+	}
 	depth := nonTerminalCount(s, to.ID)
 	if op.QueueDebt {
 		depth += s.AcceptedDebtCount(to.ID)
@@ -1786,10 +1794,12 @@ func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, 
 // notify/handoff); on already-terminal mail it is the consumption transition
 // (SPEC §8).
 func (s *State) applyAckMessage(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
+	if op.NotifyThroughSerial != 0 {
+		return s.applyBulkFYI(l, op, now)
+	}
 	m, ok := s.Messages[op.MsgSerial]
 	if !ok || m.To != l.ID {
-		return nil, nil, errf("E_NO_MESSAGE", "use inbox() for mail serials; progress/review notices "+
-			"name their parent request and the event to acknowledge", "no message %d addressed to you", op.MsgSerial)
+		return nil, nil, ErrNoMessage(op.MsgSerial, l.TruncatedBefore)
 	}
 	if m.Terminal() {
 		if m.Consumed {

@@ -50,6 +50,8 @@ type Message struct {
 // after the daemon proved that the recipient belongs to the named local app;
 // the button validates its exact link grammar again at the point of use.
 type Contact struct {
+	MailboxFull bool `json:"mailbox_full,omitempty"`
+
 	Recipient string `json:"recipient"`
 	Sender    string `json:"sender"`
 	Kind      string `json:"kind"`
@@ -152,6 +154,9 @@ func askContact(m Message) (Answer, error) {
 	title := "Dibs · " + OneLine(c.Sender) + " needs " + OneLine(c.Recipient)
 	line := "Unread " + OneLine(c.Kind) + " #" + strconv.FormatUint(c.Message, 10) +
 		"; " + OneLine(c.OpenHint)
+	if c.MailboxFull {
+		line = "Mailbox capacity reached; blocking ask #" + strconv.FormatUint(c.Message, 10) + "; " + OneLine(c.OpenHint)
+	}
 	if c.Count > 1 {
 		line += "; " + strconv.Itoa(c.Count) + " messages coalesced"
 	}

@@ -26,6 +26,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/agenxy/dibs/internal/build"
+	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/folderaccess"
 	"github.com/agenxy/dibs/internal/humanauth"
 	"github.com/agenxy/dibs/internal/paths"
@@ -1017,6 +1018,8 @@ type (
 		Waiting string   `json:"waiting,omitempty"`
 	}
 	boardAgent struct {
+		MailboxCapacity *core.MailboxCapacity `json:"mailbox_capacity,omitempty"`
+
 		ID          string    `json:"id"`
 		Name        string    `json:"name,omitempty"`
 		NameAliases []string  `json:"name_aliases,omitempty"`

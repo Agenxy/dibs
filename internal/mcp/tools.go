@@ -461,10 +461,12 @@ var toolDefs = func() []map[string]any {
 			"name": "ack", "description": "Read outstanding updates without returning bodies: on your sent ask, " +
 				"clear outcomes/progress/queue changes; on a received request, clear its reviews. " +
 				"Does not accept work, finish it or consume the request. Event serials dismiss their progress/review prefix. " +
-				"For other mail, close a FYI or consume finished mail (sender notified).",
+				"For other mail, close a FYI or consume finished mail (sender notified). " +
+				"Or pass notify_through_serial:N alone to consume all your announced FYIs through N in one call; never asks.",
 			"inputSchema": obj(map[string]any{
 				"token": tok, "msg_serial": num("serial of the message"),
-			}, "token", "msg_serial"),
+				"notify_through_serial": num("consume only your announced FYIs through this serial; omit msg_serial"),
+			}, "token"),
 		},
 		{
 			"name": "inbox", "description": "Read your mailbox: unhandled messages plus " +

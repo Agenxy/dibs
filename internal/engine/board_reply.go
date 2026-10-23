@@ -25,6 +25,11 @@ func (e *Engine) projectReplyBoard(op *core.Op, res core.Result) {
 	default:
 		return
 	}
+	if actor := e.state.AgentByToken(op.Token); actor != nil {
+		if c := e.state.MailboxCapacity(actor.ID); c.NearCapacity {
+			res["mailbox_capacity"] = c
+		}
+	}
 	b := e.state.Board()
 	e.decorateFolderAccess(b)
 	res["board"] = b

@@ -679,8 +679,16 @@ code, kbd {
             <dd>The same id was reused for different content. Mint a new
               <code>op_id</code>; do not disguise a different operation as a retry.</dd>
             <dt>E_MAILBOX_FULL</dt>
-            <dd>The recipient is saturated. Retry later or coordinate another way;
-              Dibs never displaces mail that expects an answer.</dd>
+            <dd>The recipient's pending asks and accepted work fill its capacity.
+              Any send type can replace an eligible FYI; announced FYIs reserve no
+              capacity, and asks are never displaced. Dibs raises a metadata-only
+              human contact alert. Call <code>send(to:coordinator,...)</code> or
+              <code>send(to:human,...)</code> to report the contact failure. The
+              recipient uses <code>inbox()</code> and <code>respond</code> to finish
+              or decline work. At 80% capacity its board row, check-in and doctor
+              show the warning. <code>ack(notify_through_serial:N)</code> dismisses
+              announced FYIs in one call, never asks. An unavailable retained
+              envelope points to <code>inbox()</code> or <code>mail_history()</code>.</dd>
           </dl>
           <p>After context loss, re-registering the same active
             <code>name</code> and <code>session_id</code> safely reattaches to that

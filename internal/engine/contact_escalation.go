@@ -76,10 +76,13 @@ func (e *Engine) contactNotice(c *core.ContactEscalation) (HumanNotice, contactL
 	if plan.local {
 		plan.host, plan.knownHost = e.HostID(), true
 	}
+	if c.MailboxFull {
+		kind = "mailbox full"
+	}
 	n := HumanNotice{
 		Serial: c.Serial, Type: "contact", Node: e.state.NodeID,
 		Contact: &humanask.Contact{
-			Recipient: name, Sender: sender, Kind: kind,
+			Recipient: name, Sender: sender, Kind: kind, MailboxFull: c.MailboxFull,
 			Message: c.OldestSerial, Count: c.Count,
 			OpenHint: "open " + name + " in " + harness + " on " + host,
 		},
@@ -200,6 +203,11 @@ func (e *Engine) resolveContactsAfter(evs []core.Event, now time.Time) {
 		seen[id] = true
 		e.resolveContactIfClear(id, now)
 	}
+	for id, c := range e.state.Contacts {
+		if c.MailboxFull && c.ResolvedAt.IsZero() {
+			e.resolveContactIfClear(id, now)
+		}
+	}
 }
 
 func (e *Engine) resolveContactIfClear(id uint64, now time.Time) {
@@ -207,9 +215,15 @@ func (e *Engine) resolveContactIfClear(id uint64, now time.Time) {
 	if c == nil || !c.ResolvedAt.IsZero() {
 		return
 	}
-	for _, item := range e.state.Messages {
-		if item.ContactEscalatedAt == id && item.State == core.MsgStatePending {
+	if c.MailboxFull {
+		if e.state.MailboxCapacity(c.Recipient).Depth >= e.state.Limits.MaxMailboxDepth {
 			return
+		}
+	} else {
+		for _, item := range e.state.Messages {
+			if item.ContactEscalatedAt == id && item.State == core.MsgStatePending {
+				return
+			}
 		}
 	}
 	op := &core.Op{Kind: core.OpContactResolved, ContactSerial: id}

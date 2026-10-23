@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/paths"
+	"github.com/agenxy/dibs/internal/testexec"
 )
 
 var (
@@ -142,6 +143,21 @@ func serviceFixtureImage(t *testing.T) ([]byte, error) {
 		serviceFixtureBytes, serviceFixtureErr = os.ReadFile(image)
 	})
 	return serviceFixtureBytes, serviceFixtureErr
+}
+
+// Only for an external native/CLI double. Drivers which execute Dibs code keep
+// the current race-instrumented test image. Reusing the existing native image
+// avoids one race-runtime exit delay per fake OS helper invocation.
+func writeNativeFixtureHelper(t *testing.T, path string) {
+	t.Helper()
+	image, err := serviceFixtureImage(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, image, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	testexec.PrepareExecutable(t, exec.Command(path, "--dibs-test-prepare")) // #nosec G204 -- private external double
 }
 
 // Signing is setup, not the behavior exercised by each lifecycle case. Build

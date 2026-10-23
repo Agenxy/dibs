@@ -54,6 +54,12 @@ func (s *State) Admit(op *Op) error {
 	if err := s.admitOutcomeRead(op); err != nil {
 		return err
 	}
+	if err := s.admitMailboxCapacity(op); err != nil {
+		return err
+	}
+	if err := s.admitBulkFYI(op); err != nil {
+		return err
+	}
 	if err := s.admitMailboxPage(op); err != nil {
 		return err
 	}
@@ -73,6 +79,14 @@ func (s *State) admitContact(op *Op) error {
 	switch op.Kind {
 	case OpContactEscalate:
 		m := s.Messages[op.MsgSerial]
+		if op.ContactMailboxFull {
+			if m == nil || m.Type == MsgNotify || m.Terminal() && !m.DurableDebt() ||
+				!s.capacityMail(m, m.To) || s.MailboxCapacity(m.To).Depth < s.Limits.MaxMailboxDepth {
+				return errf("E_BAD_CONTACT", "record mailbox contact only for a full recipient and its blocking ask",
+					"invalid full-mailbox contact")
+			}
+			return nil
+		}
 		if m == nil || m.Terminal() || m.State != MsgStatePending || !m.ContactEligible() {
 			return errf("E_BAD_CONTACT",
 				"escalate only unread, open questions, requests, handoffs or high-priority notifies",

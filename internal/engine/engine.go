@@ -470,6 +470,7 @@ func (e *Engine) execWithReceipt(
 	op.MergeActor = nil      // authentication decision is never caller input
 	op.DeliveryStart = false // ingress owns the new-send semantic flag
 	op.QueueDebt = false
+	op.MailboxCapacity, op.ContactMailboxFull = false, false
 	op.PermissionActor = ""
 	op.PermissionActorCreated = 0
 	if (op.Kind == core.OpGrantPermission || op.Kind == core.OpRevokePermission) && op.Mode == core.PermQueueOrderLock {
@@ -935,6 +936,9 @@ func (e *Engine) execWithReceipt(
 					"read again at the next start",
 			}, nil
 		}
+	}
+	if err := e.prepareMailboxCapacity(op, now); err != nil {
+		return nil, err
 	}
 	page, pageErr := e.prepareMailboxPage(op, actor, now)
 	if pageErr != nil {

@@ -225,6 +225,20 @@ items are marked delivered. `owed_work`, `owes` and `task_queue` describe the
 shown page, with omitted counts. Announcement summaries are bounded too; use
 `read_space` for their full text before acknowledging them.
 
+Announced FYIs do not fill your admission capacity. To dismiss every announced
+FYI through a known checkpoint in one call, use `ack(notify_through_serial:N)`
+without `msg_serial`. This never consumes asks, unannounced FYIs or another
+recipient's mail, and it costs one rate-limit call. Full presentation consumes
+FYIs automatically. A terminal FYI already outside retention can disappear at the
+next sweep after presentation; if a later per-item read is unavailable, call
+`inbox()` for current mail or `mail_history()` for available retained history.
+
+Near 80% capacity, `check_in`, your board row and doctor report pending mail plus
+accepted work debt. Finish or decline asks with `respond`; announced FYIs are
+listed separately. If `send` still returns `E_MAILBOX_FULL`, contact the
+coordinator or human using `send` as its hint says. Dibs raises a metadata-only
+human contact alert; retrying blindly cannot finish the recipient's work.
+
 Use `ack(msg_serial)` as the body-free path to clear outstanding updates on
 your sent question/request: it durably reads outcomes, progress and queue
 changes. On a request you received it reads only the reviews addressed to you.

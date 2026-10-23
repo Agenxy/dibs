@@ -372,9 +372,9 @@ const Board = (() => {
     if (!Array.isArray(alerts) || !alerts.length) return ""
     return `<section class="contact-alerts" aria-labelledby="contact-alerts-title">
       <h2 id="contact-alerts-title">Needs human contact <span>${alerts.length}</span></h2>
-      <ul>${alerts.map((c) => `<li>Cannot reach ${esc(c.recipient)} for unread mail
+      <ul>${alerts.map((c) => `<li>${c.mailbox_full ? `Mailbox capacity reached for ${esc(c.recipient)}` : `Cannot reach ${esc(c.recipient)} for unread mail`}
         (first #${esc(c.oldest_serial)}, ${esc(c.count)} coalesced).
-        ${c.notified_at ? `Human notification posted at ${esc(c.notified_at)}; recipient mail is still unread.` :
+        ${c.notified_at ? `Human notification posted at ${esc(c.notified_at)}; ${c.mailbox_full ? "mailbox is still full." : "recipient mail is still unread."}` :
           c.retry_exhausted ? `Human notification failed twice: ${esc(c.delivery_failure)}. No further automatic retry.` : "Human notification not yet confirmed."}</li>`).join("")}</ul>
     </section>`
   }
@@ -702,6 +702,10 @@ const Board = (() => {
     }
     if (l.role && l.role !== "member") {
       out += explained("badge role", l.role, "granted by a human; can administer agents")
+    }
+    if (l.mailbox_capacity?.near_capacity) {
+      const c = l.mailbox_capacity
+      out += explained("badge", `mailbox ${c.depth}/${c.limit}`, c.hint)
     }
     if (l.parent) {
       out += explained("badge sub", `↳ ${l.parent}`, `subagent of ${l.parent}: inherits its agents`)
