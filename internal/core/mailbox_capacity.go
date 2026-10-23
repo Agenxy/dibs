@@ -18,18 +18,51 @@ type MailboxCapacity struct {
 
 // MailboxCapacity counts current admission debt and separately retained FYIs.
 func (s *State) MailboxCapacity(agent string) MailboxCapacity {
-	c := MailboxCapacity{Limit: s.Limits.MaxMailboxDepth, AcceptedDebt: s.AcceptedDebtCount(agent)}
-	c.Depth = c.AcceptedDebt
+	var c MailboxCapacity
 	for _, m := range s.Messages {
-		if !s.capacityMail(m, agent) || m.Terminal() {
-			continue
-		}
-		if m.FYIPresented() {
-			c.AnnouncedFYIs++
-		} else {
-			c.Depth++
+		if m.To == agent {
+			s.countMailboxCapacity(&c, m)
 		}
 	}
+	return s.finishMailboxCapacity(c)
+}
+
+// Board is a fleet view: aggregate once, rather than rescan all mail per row.
+func (s *State) mailboxCapacityWarnings() map[string]MailboxCapacity {
+	counts := make(map[string]MailboxCapacity)
+	for _, m := range s.Messages {
+		c := counts[m.To]
+		s.countMailboxCapacity(&c, m)
+		counts[m.To] = c
+	}
+	for id, c := range counts {
+		c = s.finishMailboxCapacity(c)
+		if c.NearCapacity {
+			counts[id] = c
+		} else {
+			delete(counts, id)
+		}
+	}
+	return counts
+}
+
+func (s *State) countMailboxCapacity(c *MailboxCapacity, m *Message) {
+	if m.acceptedQueueDebt() {
+		c.AcceptedDebt++
+		c.Depth++
+	}
+	if !s.capacityMail(m, m.To) || m.Terminal() {
+		return
+	}
+	if m.FYIPresented() {
+		c.AnnouncedFYIs++
+	} else {
+		c.Depth++
+	}
+}
+
+func (s *State) finishMailboxCapacity(c MailboxCapacity) MailboxCapacity {
+	c.Limit = s.Limits.MaxMailboxDepth
 	// ceil(80%): one fifth of the admission budget remains for new handoffs.
 	c.NearCapacity = c.Limit > 0 && c.Depth >= c.Limit-c.Limit/5
 	if c.NearCapacity {

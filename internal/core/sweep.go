@@ -610,6 +610,7 @@ func (s *State) gc(now time.Time, purgeMail, clampWatermark, keepOwed bool) ([]E
 
 // Board is the public snapshot (presentation fields are added by the engine).
 func (s *State) Board() map[string]any {
+	capacityWarnings := s.mailboxCapacityWarnings()
 	agents := make([]map[string]any, 0, len(s.Agents))
 	for _, l := range s.Agents {
 		if l.Status == StatusArchived || l.Status == StatusClosed {
@@ -645,7 +646,7 @@ func (s *State) Board() map[string]any {
 			"status": l.Status, "activation": l.Activation, "slots": slots,
 			"last_coordination_at": l.LastCoordination,
 		}
-		if c := s.MailboxCapacity(l.ID); c.NearCapacity {
+		if c, ok := capacityWarnings[l.ID]; ok {
 			lm["mailbox_capacity"] = c
 		}
 		lm["sessions"] = map[string]any{

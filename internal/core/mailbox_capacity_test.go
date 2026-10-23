@@ -5,8 +5,63 @@ package core
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 )
+
+func TestBoardCapacityCountsStayWithTheirRecipient(t *testing.T) {
+	lim := DefaultLimits()
+	lim.MaxMailboxDepth = 5
+	s := NewState("test", lim)
+	for _, id := range []string{"sender", "reader", "other"} {
+		reg(t, s, id, "token-"+id, t0)
+	}
+	for range 4 {
+		id := mustApply(t, s, &Op{
+			Kind: OpSendMessage, Token: "token-sender", To: "reader", MsgType: MsgRequest, Body: "work",
+		}, t0)["msg_serial"].(uint64)
+		mustApply(t, s, &Op{Kind: OpRespond, Token: "token-reader", MsgSerial: id, Disposition: "queue", QueueDebt: true}, t0)
+		id = mustApply(t, s, &Op{
+			Kind: OpSendMessage, Token: "token-sender", To: "other", MsgType: MsgNotify, Body: "FYI",
+		}, t0)["msg_serial"].(uint64)
+		mustApply(t, s, &Op{Kind: OpActivityCheckpoint, Token: "token-other", NotifyAnnounced: []uint64{id}}, t0)
+	}
+	rows := s.Board()["agents"].([]map[string]any)
+	for _, row := range rows {
+		if row["id"] == "reader" {
+			c, ok := row["mailbox_capacity"].(MailboxCapacity)
+			if !ok || c.Depth != 4 || c.AcceptedDebt != 4 || c.AnnouncedFYIs != 0 {
+				t.Fatalf("reader projection lost queued debt: %v", row)
+			}
+		} else if row["mailbox_capacity"] != nil {
+			t.Fatalf("another recipient inherited reader capacity: %v", row)
+		}
+	}
+}
+
+// Keep the measured fleet workload available without imposing machine-specific
+// timing thresholds on correctness tests. Setup is metadata only, outside timing.
+func BenchmarkMailboxCapacityBoard(b *testing.B) {
+	for _, n := range []int{100, 200, 400} {
+		b.Run(fmt.Sprint(n), func(b *testing.B) {
+			s := NewState("bench", DefaultLimits())
+			var serial uint64
+			for i := range n {
+				name := fmt.Sprintf("worker-%d", i)
+				s.Agents[name] = &Agent{ID: name, Name: name, Status: StatusActive}
+				for range 128 {
+					serial++
+					s.Messages[serial] = &Message{Serial: serial, To: name, Type: MsgRequest, State: MsgStatePending}
+				}
+			}
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				s.Board()
+			}
+		})
+	}
+}
 
 func TestUnmarkedHistoricalSendsKeepOriginalCapacityFold(t *testing.T) {
 	lim := DefaultLimits()

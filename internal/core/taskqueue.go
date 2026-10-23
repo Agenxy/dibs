@@ -184,7 +184,7 @@ func (s *State) QueuePosition(m *Message) int {
 func (s *State) AcceptedDebtCount(agent string) int {
 	n := 0
 	for _, m := range s.Messages {
-		if m.To == agent && m.QueueDebt && (m.State == MsgStateApproved || m.State == MsgStateQueued) {
+		if m.To == agent && m.acceptedQueueDebt() {
 			n++
 		}
 	}
@@ -391,4 +391,8 @@ func (s *State) applyQueuePermission(op *Op, now time.Time) (Result, []Event, er
 	}}}
 	s.finish(&evs, now)
 	return Result{"ok": true, "changed": true, "held": grant}, evs, nil
+}
+
+func (m *Message) acceptedQueueDebt() bool {
+	return m.QueueDebt && (m.State == MsgStateApproved || m.State == MsgStateQueued)
 }
