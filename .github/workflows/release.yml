@@ -66,7 +66,7 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+      - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
         with:
           version: 2026.7.7
           experimental: true
@@ -107,7 +107,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
-      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+      - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
         with:
           version: 2026.7.7
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
@@ -133,7 +133,7 @@ jobs:
           ref: main
           fetch-depth: 0
           persist-credentials: false
-      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+      - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
         with:
           version: 2026.7.7
           experimental: true
@@ -185,7 +185,7 @@ jobs:
           ref: main
           fetch-depth: 0
           persist-credentials: false
-      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+      - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
         with:
           version: 2026.7.7
       - name: authenticate receipt before tag checkout
@@ -219,7 +219,7 @@ jobs:
           ref: main
           fetch-depth: 0
           persist-credentials: false
-      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+      - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
         with:
           version: 2026.7.7
       - name: measure secret key format without printing key material
@@ -238,7 +238,7 @@ jobs:
         with:
           ref: main
           persist-credentials: false
-      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+      - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
         with:
           version: 2026.7.7
       - name: authenticate delivered rehearsal receipt; only this run record is written
