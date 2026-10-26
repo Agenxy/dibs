@@ -6,11 +6,15 @@
 package testport
 
 import (
+	"fmt"
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/agenxy/dibs/internal/paths"
 )
 
 func TestOutagePortIsNotAvailableToAutomaticSiblingBinds(t *testing.T) {
@@ -34,6 +38,47 @@ func TestOutagePortIsNotAvailableToAutomaticSiblingBinds(t *testing.T) {
 	if err := listener.Close(); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// A port in the band can be answered by a listener that is not part of the
+// claim protocol: on macOS a wildcard listener does not stop the loopback
+// bind that claiming performs, so only the dial sees it. Outage must move on
+// to another port, not fail the test that asked for one. Measured on a hosted
+// macOS gate, which failed an unrelated docs PR this way.
+func TestOutageSkipsAPortAnsweredOutsideTheClaim(t *testing.T) {
+	root := filepath.Join(os.TempDir(), "dibs-test-outage-ports")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// The first port no claim holds right now is the one Outage would take.
+	var busy net.Listener
+	for port := outageFirst; port <= outageLast && busy == nil; port++ {
+		claim, _, err := claimOutagePort(root, port)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if claim == nil {
+			continue
+		}
+		paths.Unlock(claim)
+		_ = claim.Close()
+		listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+		if err != nil {
+			continue
+		}
+		busy = listener
+	}
+	if busy == nil {
+		t.Fatal("no free port in the outage band to occupy")
+	}
+	defer func() { _ = busy.Close() }()
+	address := Outage(t)
+	_, got, _ := net.SplitHostPort(address)
+	_, occupied, _ := net.SplitHostPort(busy.Addr().String())
+	if got == occupied {
+		t.Fatalf("Outage returned %s, which a listener answers", address)
+	}
+	RequireOutageAddress(t, address)
 }
 
 func TestOutageClaimOtherProcess(t *testing.T) {

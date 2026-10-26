@@ -48,14 +48,21 @@ func Outage(t testing.TB) string {
 		if claim == nil {
 			continue
 		}
-		t.Cleanup(func() { paths.Unlock(claim); _ = claim.Close() })
 		conn, err := net.DialTimeout("tcp4", address, time.Second)
 		if conn != nil {
 			_ = conn.Close()
 		}
 		if !errors.Is(err, syscall.ECONNREFUSED) {
-			t.Fatalf("claimed outage address did not refuse connections: %v", err)
+			// Something outside the claim protocol answers here. On macOS a
+			// wildcard listener (":port", any process, IPv4 or dual-stack)
+			// does not stop the loopback bind above, so only the dial sees
+			// it. That port cannot simulate an outage: skip it, as a held
+			// claim is skipped, rather than fail the caller's test.
+			paths.Unlock(claim)
+			_ = claim.Close()
+			continue
 		}
+		t.Cleanup(func() { paths.Unlock(claim); _ = claim.Close() })
 		return address
 	}
 	t.Fatal("no unoccupied cross-process claim in the test outage band")
