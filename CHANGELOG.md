@@ -7,6 +7,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- macOS first service installation no longer mistakes `SMAppService.notFound`
+  for a broken app. Configure and upgrade validate the sealed embedded service
+  plist before requesting registration. Doctor distinguishes missing payload
+  from missing registration. Removal skips a never-registered service only
+  after confirming the payload and absence of its loaded job; uncertain
+  rollback still refuses a second daemon.
+
 - Announced FYIs no longer block handoffs or asks at mailbox capacity. Every
   send type can replace an eligible FYI; asks remain protected. Retained FYIs
   have their own bound. A full mailbox of asks raises a metadata-only human

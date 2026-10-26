@@ -586,6 +586,11 @@ func TestLegacyAppMigrationPreservesPathAndRecoversRefusal(t *testing.T) {
 	for _, outcome := range []string{"enabled", "requires-approval", "fail"} {
 		t.Run(outcome, func(t *testing.T) {
 			f := newAppServiceTestFixture(t)
+			// A service that has never registered reports notFound, not
+			// notRegistered. Exercise migration and rollback from that state.
+			if err := os.WriteFile(f.state, []byte("not-found"), 0o600); err != nil {
+				t.Fatal(err)
+			}
 			legacy := f.legacy(t, "")
 			t.Setenv("DIBS_TEST_APP_SERVICE_RESULT", outcome)
 			a, err := prepareAppService(f.root, f.dir)

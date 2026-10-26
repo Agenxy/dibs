@@ -351,15 +351,15 @@ func (p *appServicePlan) preflight() error {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("invalid installed Dibs.app; nothing has been stopped: %w: %s", err, out)
 	}
+	if err := validateAppServicePayload(p.app); err != nil {
+		return err
+	}
 	status, err := appServiceCall(p.app, "status")
 	if err != nil {
 		return err
 	}
 	if status.ApprovalRequired || status.Status == "requires-approval" {
 		return serviceApprovalError()
-	}
-	if status.Status == "not-found" {
-		return errors.New("dibs app has no usable embedded service; reinstall the complete distribution")
 	}
 	p.needsRegistration = status.Status != "enabled"
 	if status.Status == "enabled" && !p.hasPin && p.legacy == "" {

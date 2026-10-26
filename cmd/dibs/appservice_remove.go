@@ -26,6 +26,9 @@ func removeAppService() error {
 	if err != nil {
 		return err
 	}
+	if err := validateAppServicePayload(app); err != nil {
+		return err
+	}
 	legacy := filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents", "org.agenxy.dibs.plist")
 	old, err := readLegacyAppService(legacy)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -37,12 +40,8 @@ func removeAppService() error {
 	if err := stopDaemon(dir); err != nil {
 		return err
 	}
-	status, err := appServiceCall(app, "unregister")
-	if err != nil {
+	if err := unregisterAppService(app); err != nil {
 		return err
-	}
-	if status.Status != "not-registered" {
-		return fmt.Errorf("dibs service is still %s; do not remove the app before unregistering it", status.Status)
 	}
 	if old != nil {
 		if err := unloadLegacyAppService(); err != nil {
