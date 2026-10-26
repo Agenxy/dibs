@@ -123,6 +123,34 @@ trust boundary, not cryptographic host attestation (see SECURITY.md).
 
 ## Cold loading and upstream request draft
 
+### Failed or still-unconfirmed local queue loading
+
+Queue admission and a successful OS open callback remain separate from a
+started turn or authenticated mail consumption. On 2026-10-26 the production
+log recorded `agenxy-dev-0` queue acceptance at 14:20:02.163Z, an app-open
+callback at 14:20:02.343Z and native acceptance at 14:20:31.039Z. Supply later
+withdrew its claim that a manual open was required: its request to the person
+was around 14:27Z and it held no manual-open receipt. Earlier native acceptances
+also prevent classifying the whole 24–26 October interval as unloaded. None of
+these receipts alone establishes when mail was consumed.
+
+The separate reproducible defect was an OS open failure after queue acceptance:
+it was logged, but the configured queue route prevented ordinary human contact.
+The local engine now escalates captured unread asks on that failure. A later
+mail event that observes an existing Dibs item still pending beyond the same
+ten-minute window already used for app-open recovery retries that load path
+and escalates continued unconfirmed delivery. It never enqueues a duplicate
+for the retained item. This is an event-driven observation, not a scheduled
+poll or a promise to recover an otherwise quiet seat at ten minutes.
+
+The sender receives the exact original thread link and the human gets the
+existing metadata-only contact alert. Late callbacks are fenced by identity,
+session, configuration, queue observation and app incarnation; handled mail
+cannot be resurrected. The sender's separate warning rebuilds from contact
+state and retains its authenticated read prefix. Remote host-bridge open
+callbacks are a separate transport boundary; this local repair does not claim
+a new remote app-open receipt.
+
 The installed source exposes follower handlers for threads already owned. No
 external load-without-navigation interface was found in this trace; that is a
 source boundary, not proof that no such interface can exist elsewhere.

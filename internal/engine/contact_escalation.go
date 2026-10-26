@@ -311,6 +311,14 @@ func (e *Engine) contactAfterAppFailure(agent string, created uint64) {
 		l := e.state.Agents[agent]
 		if l != nil && l.CreatedSerial == created {
 			e.escalateContact(agent)
+			for _, m := range e.state.Inbox(agent) {
+				if m.State == core.MsgStatePending && m.ContactEligible() {
+					now := time.Now()
+					if e.notifyAppOpenSender(l, m, "the app could not make this session reachable", now) {
+						e.wakeAppContactSender(m, now)
+					}
+				}
+			}
 		}
 		return nil
 	})

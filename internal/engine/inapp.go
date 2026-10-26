@@ -45,8 +45,16 @@ func (e *Engine) showInApp(plan wakePlan, agent string) {
 		return
 	}
 	argv := harnessenv.OpenArgv(harnessenv.AppFor(plan.surface, plan.harness, plan.thread), plan.thread)
+	stranded := plan.strandedQueue()
+	if stranded {
+		slog.Info("earlier app wake is still undispatched; retrying the original thread's app-open path",
+			"agent", agent, "hint", "queue retention is not delivery; unresolved mail will raise a contact alert")
+	}
 	shower.ShowWhenIdle(argv, plan.thread, func(opened, deferred bool, err error) {
 		logShow(opened, deferred, err, "agent", agent)
+		if !deferred && (err != nil || stranded) {
+			e.contactAfterQueuedOpen(plan, agent, err != nil)
+		}
 	})
 }
 

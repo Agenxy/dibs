@@ -23,8 +23,11 @@ import (
 // an observed loaded -> unloaded transition re-arms sooner, but the per-thread
 // rate limit still applies. This is derived local delivery state, not the ledger.
 const (
-	appOpenExpiry = 10 * time.Minute
-	appOpenRate   = 20 * time.Second
+	// AppOpenRetryAfter bounds an unconfirmed open attempt. A later mail
+	// event may reopen the original thread; no background timer polls it.
+	AppOpenRetryAfter = 10 * time.Minute
+	appOpenExpiry     = AppOpenRetryAfter
+	appOpenRate       = 20 * time.Second
 )
 
 // ErrAppOpenPairBusy leaves the attempt memo unchanged. ShowWhenIdle defers

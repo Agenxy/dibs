@@ -85,7 +85,7 @@ func runQueuedCommand(argv []string, thread, agent, dir string, timeout, grace t
 		retainQueueReceipt(thread, r, agent)
 	}
 	if (known && pending) || (!known && fallbackPending(thread, time.Now())) {
-		slog.Debug("a Dibs wake is already pending in the app queue", "agent", agent,
+		slog.Info("existing Dibs wake retained in the app queue; enqueue suppressed, delivery unconfirmed", "agent", agent,
 			"observation_known", known)
 		observation.Admission = "retained"
 		if known {

@@ -26,6 +26,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   after confirming the payload and absence of its loaded job; uncertain
   rollback still refuses a second daemon.
 
+- A local ChatGPT app-open failure no longer leaves asks silently queued
+  behind a configured wake route. Dibs raises its existing human contact alert
+  and tells the original sender which thread to open. Later mail that finds an
+  old Dibs item still pending retries the existing app load path and escalates
+  continued uncertainty without duplicating the queued item or adding a timer.
+  Queue retention is visible at INFO. Sender warnings survive daemon restart;
+  Claude reopen failures now notify their senders too. Closed-harness send
+  results describe storage and uncertainty instead of promising delivery.
+
 - Announced FYIs no longer block handoffs or asks at mailbox capacity. Every
   send type can replace an eligible FYI; asks remain protected. Retained FYIs
   have their own bound. A full mailbox of asks raises a metadata-only human
