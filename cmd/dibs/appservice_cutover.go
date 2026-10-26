@@ -105,8 +105,12 @@ func unregisterAppService(app string) error {
 		// notFound is ambiguous. A missing plist can hide a still-loaded
 		// job, so only the complete payload plus positive job absence makes
 		// skipping unregister safe. Never turn an unavailable probe into it.
-		if _, err := readAppServiceJob(); !errors.Is(err, errAppServiceNotLoaded) {
-			return fmt.Errorf("app service status is not-found but no absent loaded job is confirmed (%v); a second supervisor was not started", err)
+		if _, err := readAppServiceJob(); err == nil {
+			return errors.New("app service status is not-found but its job is loaded; " +
+				"a second supervisor was not started")
+		} else if !errors.Is(err, errAppServiceNotLoaded) {
+			return fmt.Errorf("cannot confirm absence of the not-found app service's loaded job; "+
+				"a second supervisor was not started: %w", err)
 		}
 		return nil
 	}

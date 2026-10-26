@@ -17,17 +17,19 @@ import (
 func validateAppServicePayload(app string) error {
 	service, err := appServiceDictionary(filepath.Join(app, appServiceRelative))
 	if err != nil {
-		return fmt.Errorf("Dibs.app embedded service plist is missing or invalid; reinstall the complete distribution; nothing has been stopped: %w", err)
+		return fmt.Errorf("dibs app embedded service plist is missing or invalid; reinstall the complete distribution; "+
+			"nothing has been stopped: %w", err)
 	}
 	info, err := appServiceDictionary(filepath.Join(app, "Contents", "Info.plist"))
 	if err != nil {
-		return fmt.Errorf("Dibs.app bundle metadata is invalid; nothing has been stopped: %w", err)
+		return fmt.Errorf("dibs app bundle metadata is invalid; nothing has been stopped: %w", err)
 	}
 	id, _ := info["CFBundleIdentifier"].(string)
 	if id == "" || service["Label"] != appServiceLabel || service["BundleProgram"] != "Contents/MacOS/dibd" ||
 		!reflect.DeepEqual(service["ProgramArguments"], []any{"Contents/MacOS/dibd", "-app-service"}) ||
 		!reflect.DeepEqual(service["AssociatedBundleIdentifiers"], []any{id}) {
-		return errors.New("Dibs.app embedded service plist has an invalid label, program, arguments or parent bundle; reinstall the complete distribution; nothing has been stopped")
+		return errors.New("dibs app embedded service plist has an invalid label, program, arguments or parent bundle; " +
+			"reinstall the complete distribution; nothing has been stopped")
 	}
 	return nil
 }
