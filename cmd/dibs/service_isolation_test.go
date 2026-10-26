@@ -188,6 +188,15 @@ func serviceFixtureApp(t *testing.T) (string, error) {
 			serviceAppErr = err
 			return
 		}
+		service := filepath.Join(serviceAppTemplate, appServiceRelative)
+		if err := os.MkdirAll(filepath.Dir(service), 0o700); err != nil {
+			serviceAppErr = err
+			return
+		}
+		if err := os.WriteFile(service, []byte(fixtureAppServicePlist), 0o600); err != nil {
+			serviceAppErr = err
+			return
+		}
 		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 		defer cancel()
 		for _, at := range []string{filepath.Join(macos, "dibd"), serviceAppTemplate} {

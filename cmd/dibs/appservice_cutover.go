@@ -94,6 +94,26 @@ func (tx *appCutover) removePreviousSupervisor() error {
 }
 
 func unregisterAppService(app string) error {
+	before, err := appServiceCall(app, "status")
+	if err != nil {
+		return fmt.Errorf("cannot inspect app service before removal; a second supervisor was not started: %w", err)
+	}
+	if before.Status == "not-found" {
+		if err := validateAppServicePayload(app); err != nil {
+			return err
+		}
+		// notFound is ambiguous. A missing plist can hide a still-loaded
+		// job, so only the complete payload plus positive job absence makes
+		// skipping unregister safe. Never turn an unavailable probe into it.
+		if _, err := readAppServiceJob(); err == nil {
+			return errors.New("app service status is not-found but its job is loaded; " +
+				"a second supervisor was not started")
+		} else if !errors.Is(err, errAppServiceNotLoaded) {
+			return fmt.Errorf("cannot confirm absence of the not-found app service's loaded job; "+
+				"a second supervisor was not started: %w", err)
+		}
+		return nil
+	}
 	status, err := appServiceCall(app, "unregister")
 	if err != nil {
 		return fmt.Errorf("cannot confirm app service removal; a second supervisor was not started: %w", err)

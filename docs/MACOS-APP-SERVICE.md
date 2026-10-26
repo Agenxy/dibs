@@ -110,6 +110,44 @@ historical row reading Last ran in background today. It identifies the unique
 secondary fixture, not a running service. No Settings entry was toggled/deleted;
 the operator may tidy that history. Existing production dibd rows were untouched.
 
+### First registration, measured 2026-10-26
+
+Two new, uniquely identified ad-hoc signed fixture apps used the same secondary
+executable layout and `SMAppService.agent(plistName:)`. Their worker was a
+no-op executable, never `dibd`; no production board, pin or service was touched.
+Both complete apps passed deep/strict signature verification before observation.
+
+| Observation | Actual result on macOS 27.0, build 26A428 |
+| --- | --- |
+| Intact app, before its first registration | `notFound` |
+| `register()`, followed by a new process reading status | `enabled`, then `enabled` |
+| `unregister()`, followed by a new process reading status | `notRegistered`, then `notRegistered` |
+| Embedded plist removed, app re-signed and deep/strict verification passed | `notFound` |
+| `unregister()` before the first registration (second unique fixture) | Refused: `SMAppServiceErrorDomain` code 1, Operation not permitted; subsequent registration still succeeded |
+
+`notFound` therefore cannot distinguish a complete, never-registered app from a
+missing service payload. Signature verification alone cannot distinguish them
+either: an app signed without a service plist still has a valid seal. Configure
+and upgrade now validate the embedded plist independently (regular bounded XML
+dictionary, correct label, bundled program and arguments, and enclosing bundle
+association), then treat `notFound` as needing registration. An invalid or missing
+payload still refuses before stopping the old service. Doctor distinguishes
+incomplete payload from a registration that has not happened.
+
+Removal and cutover must also avoid calling `unregister()` blindly on that
+initial state. Skipping it requires both a valid embedded payload and positive
+absence of this user's canonical job from `launchctl print`; a loaded job or
+unavailable observation refuses. Failed-registration rollback retains the same
+no-second-supervisor rule: uncertain removal never restores another supervisor.
+
+The fixture IDs ended in `a32365dd3cfd4f29ac3ad02a31f7801f` and
+`f2803430ee564bb6afef1f23cb1f63e1`, under `org.agenxy.dibs.probe341410`.
+Both were unregistered, their exact jobs were verified absent (`launchctl`
+exit 113), and their temporary app directories were removed. LaunchServices
+unregister returned -10814 (not scanned); no LaunchServices registration was
+performed by the probe. Background-item history was not read, reset or claimed
+removed. This measures the API lifecycle, not production cutover or pane consent.
+
 ## Access observations and acquisition
 
 A real bounded directory read is the access measurement and may itself request
