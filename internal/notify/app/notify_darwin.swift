@@ -156,6 +156,15 @@ func receipt(_ state: String) {
 
 let args = Array(CommandLine.arguments.dropFirst())
 
+#if DIBS_ASK_FIXTURE
+// Compile-time transport double: the actual ask input, posting callback and
+// expiry run, but no permission request, native notification or window opens.
+let askFixture = ProcessInfo.processInfo.environment["DIBS_ASK_FIXTURE"] == "timeout"
+if args == ["--ask-fixture-capability"] { print("ask-fixture-v1"); exit(0) }
+#else
+let askFixture = false
+#endif
+
 // One policy for action prompts and explicitly high-priority passive alerts.
 // The additive environment key is harmless to a dormant older helper; a new
 // caller can distinguish its absence in the posting receipt.
@@ -659,6 +668,85 @@ guard args.count >= 3 else {
 let title = args[0], subtitle = args[1], body = args[2]
 let buttons = Array(args.dropFirst(3))
 
+struct AskReadingDetail: Decodable {
+    let sender: String
+    let body: String
+}
+
+// Only the additive ask protocol reads stdin. Status, passive notifications
+// and old callers keep their old argument and lifetime contracts.
+func readAskDetail(_ environment: [String: String]) -> AskReadingDetail? {
+    guard environment["DIBS_NOTIFY_DETAIL"] == "stdin" else { return nil }
+    var bytes = Data()
+    do {
+        while let part = try FileHandle.standardInput.read(upToCount: 8193 - bytes.count), !part.isEmpty {
+            bytes.append(part)
+            guard bytes.count <= 8192 else { throw CocoaError(.fileReadTooLarge) }
+        }
+        return try JSONDecoder().decode(AskReadingDetail.self, from: bytes)
+    } catch {
+        FileHandle.standardError.write(Data("Dibs ask detail was invalid or exceeded 8 KiB\n".utf8))
+        exit(2)
+    }
+}
+
+func askLifetime(_ environment: [String: String], now: Date) -> TimeInterval? {
+    guard environment["DIBS_NOTIFY_DETAIL"] == "stdin" else { return 120 }
+    guard let raw = environment["DIBS_NOTIFY_UNTIL"], let until = Double(raw), until.isFinite else { return nil }
+    return max(0, min(24 * 60 * 60, until - now.timeIntervalSince1970))
+}
+
+final class AskReadingClose: NSObject, NSWindowDelegate {
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        NSApp.abortModal()
+        return true
+    }
+}
+
+// Called only by the banner's default action: the person asked to read it.
+// The daemon's effect title and sender stay outside the sender-written text.
+func readAskOnScreen(_ heading: String, detail: AskReadingDetail, buttons: [String]) -> String {
+    let app = NSApplication.shared
+    app.activate(ignoringOtherApps: true)
+    let alert = NSAlert()
+    alert.messageText = heading
+    alert.informativeText = detail.sender
+    alert.alertStyle = .informational
+
+    let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 520, height: 320))
+    scroll.hasVerticalScroller = true
+    scroll.borderType = .bezelBorder
+    let text = NSTextView(frame: scroll.contentView.bounds)
+    text.isEditable = false
+    text.isSelectable = true
+    text.font = .systemFont(ofSize: NSFont.systemFontSize)
+    text.textContainerInset = NSSize(width: 8, height: 8)
+    text.isVerticallyResizable = true
+    text.isHorizontallyResizable = false
+    text.autoresizingMask = [.width]
+    text.textContainer?.widthTracksTextView = true
+    text.textContainer?.containerSize = NSSize(width: scroll.contentSize.width, height: .greatestFiniteMagnitude)
+    text.string = detail.body
+    scroll.documentView = text
+    alert.accessoryView = scroll
+    for button in buttons { alert.addButton(withTitle: button) }
+    alert.buttons.first?.keyEquivalent = ""
+    alert.buttons.last?.keyEquivalent = "\r"
+    let closing = AskReadingClose()
+    alert.window.styleMask.insert(.closable)
+    alert.window.delegate = closing
+    let response = withExtendedLifetime(closing) { alert.runModal() }
+    alert.window.orderOut(nil)
+    let index = response.rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
+    guard index >= 0, index < buttons.count else { return "" }
+    return buttons[index]
+}
+
+let askEnvironment = ProcessInfo.processInfo.environment
+let readingDetail = buttons.isEmpty ? nil : readAskDetail(askEnvironment)
+guard let lifetime = askLifetime(askEnvironment, now: Date()) else { exit(2) }
+if !buttons.isEmpty && lifetime <= 0 { exit(1) }
+
 // An NSApplication with a live run loop, not a semaphore.
 //
 // This is the bug that got shipped for ten minutes: the first version posted
@@ -675,6 +763,19 @@ let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
 
 let centre = UNUserNotificationCenter.current()
+var askCaller: DispatchSourceProcess?
+if readingDetail != nil {
+    // stdout is the only answer carrier. A helper whose caller died cannot
+    // answer, so do not leave a 24-hour orphan holding a dead button route.
+    let parent = getppid()
+    guard parent > 1 else { exit(1) }
+    let source = DispatchSource.makeProcessSource(identifier: parent, eventMask: .exit,
+                                                  queue: .global(qos: .utility))
+    source.setEventHandler { exit(1) }
+    source.resume()
+    askCaller = source
+    if getppid() != parent { exit(1) } // parent left during source registration
+}
 var status: Int32 = 2
 var chosen = ""
 
@@ -689,6 +790,7 @@ func finish(_ code: Int32) -> Never {
 // running app is delivered silently to Notification Centre.
 final class Handler: NSObject, UNUserNotificationCenterDelegate {
     let finish: (String) -> Void
+    var reading = false
     init(finish: @escaping (String) -> Void) { self.finish = finish }
 
     func userNotificationCenter(_ c: UNUserNotificationCenter,
@@ -700,18 +802,41 @@ final class Handler: NSObject, UNUserNotificationCenterDelegate {
     func userNotificationCenter(_ c: UNUserNotificationCenter,
                                 didReceive r: UNNotificationResponse,
                                 withCompletionHandler h: @escaping () -> Void) {
+        receive(identifier: r.notification.request.identifier, action: r.actionIdentifier, completion: h)
+    }
+
+    func receive(identifier: String, action: String, completion h: @escaping () -> Void) {
+        // Several asks share one bundle. Never present one request's detail
+        // or return an answer for a different notification's native action.
+        if readingDetail != nil, let expected = askEnvironment["DIBS_NOTIFY_ID"], expected != identifier {
+            h()
+            return
+        }
         // The identifier is the button's own title, so the caller reads back
         // exactly what it offered rather than an index it has to map.
-        if r.actionIdentifier == UNNotificationDefaultActionIdentifier {
+        if action == UNNotificationDefaultActionIdentifier {
+            if let detail = readingDetail {
+                h() // acknowledge the native press before entering a modal loop
+                DispatchQueue.main.async {
+                    guard !self.reading else { return }
+                    self.reading = true
+                    let choice = readAskOnScreen(title, detail: detail, buttons: buttons)
+                    if choice.isEmpty { receipt("dismissed") }
+                    self.finish(choice)
+                }
+                return
+            }
+            h()
             receipt("dismissed")
             finish("")            // clicked the banner itself: not an answer
-        } else if r.actionIdentifier == UNNotificationDismissActionIdentifier {
+        } else if action == UNNotificationDismissActionIdentifier {
+            h()
             receipt("dismissed")
             finish("")
         } else {
-            finish(r.actionIdentifier)
+            h()
+            finish(action)
         }
-        h()
     }
 }
 
@@ -757,34 +882,56 @@ func postNotification(_ settings: [String: Any]?) {
         }
         let category = UNNotificationCategory(identifier: "dibs.ask", actions: actions,
                                               intentIdentifiers: [], options: [.customDismissAction])
-        centre.setNotificationCategories([category])
+        if !askFixture { centre.setNotificationCategories([category]) }
         content.categoryIdentifier = "dibs.ask"
     }
 
     let keyed = ProcessInfo.processInfo.environment["DIBS_NOTIFY_ID"]
     if let keyed, !validMessageID(keyed) { finish(2) }
-    centre.add(UNNotificationRequest(identifier: keyed ?? UUID().uuidString,
-                                     content: content, trigger: nil)) { err in
+    let posted: (Error?) -> Void = { err in
         if err != nil { finish(2) }
         receipt("posted")
 
         // Nothing to wait for when there is nothing to answer.
         if buttons.isEmpty { finish(0) }
     }
+    if askFixture { posted(nil); return }
+    centre.add(UNNotificationRequest(identifier: keyed ?? UUID().uuidString,
+                                     content: content, trigger: nil), withCompletionHandler: posted)
 }
 
-centre.requestAuthorization(options: [.alert, .sound]) { granted, _ in
-    guard granted else { finish(2) }
-    centre.getNotificationSettings { s in
-        let settings = notificationSettings(s)
-        DispatchQueue.main.async { postNotification(settings) }
+if askFixture {
+    postNotification(nil)
+    #if DIBS_ASK_FIXTURE
+    if let action = askEnvironment["DIBS_ASK_FIXTURE_ACTION"] {
+        DispatchQueue.main.async {
+            handler.receive(identifier: askEnvironment["DIBS_ASK_FIXTURE_ID"] ?? "", action: action, completion: {})
+        }
     }
-    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { postNotification(nil) }
+    #endif
+} else {
+    centre.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+        guard granted else { finish(2) }
+        centre.getNotificationSettings { s in
+            let settings = notificationSettings(s)
+            DispatchQueue.main.async { postNotification(settings) }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { postNotification(nil) }
+    }
 }
 
-// Bounded. A banner nobody answers must not hold a process open on an
-// unattended machine, and the caller treats a timeout as "no answer".
-DispatchQueue.main.asyncAfter(deadline: .now() + (buttons.isEmpty ? 10 : 120)) {
-    finish(1)
+// New asks remain answerable until their recorded deadline (at most 24 h).
+// The caller cancels a live helper on board/relay cleanup. This is the helper's
+// own bound, not a daemon timer. Old callers retain their two-minute contract.
+let expireAsk = {
+    if !askFixture, readingDetail != nil, let id = askEnvironment["DIBS_NOTIFY_ID"], validMessageID(id) {
+        centre.removeDeliveredNotifications(withIdentifiers: [id])
+    }
+    exit(1) // no answer; independent of a reading window's nested modal loop
+}
+if readingDetail != nil {
+    DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + lifetime, execute: expireAsk)
+} else {
+    DispatchQueue.main.asyncAfter(deadline: .now() + (buttons.isEmpty ? 10 : lifetime)) { finish(1) }
 }
 app.run()

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/engine"
@@ -52,6 +53,18 @@ func TestRelayPresenterRetainsPriority(t *testing.T) {
 			return humanask.Answer{}, nil
 		})
 	r.handle(engine.HumanNotice{Serial: 7, Type: "notify", Priority: "urgent", From: "sender"})
+}
+
+func TestRelayPresenterRetainsRecordedDeadline(t *testing.T) {
+	deadline := time.Now().Add(time.Hour)
+	r := newRelay("http://127.0.0.1:1", relayState{Node: "deadline"}, &fakeSigner{},
+		func(m humanask.Message) (humanask.Answer, error) {
+			if !m.Deadline.Equal(deadline) {
+				t.Errorf("relay lost request deadline: %v", m.Deadline)
+			}
+			return humanask.Answer{}, nil
+		})
+	r.handle(engine.HumanNotice{Serial: 7, Type: "request", From: "sender", Deadline: deadline})
 }
 
 // fakeSigner records what it was asked to sign and why, and needs no finger.

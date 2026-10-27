@@ -54,6 +54,7 @@ func RemoveMessages(node string, serials []uint64) Cleanup {
 	if goos != "darwin" || silenced() {
 		return fail("unsupported", ErrUnsupported)
 	}
+	cancelNativeAsks(ids)
 	h := helper()
 	if h == "" {
 		return fail("unsupported", ErrUnsupported)

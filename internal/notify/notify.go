@@ -187,7 +187,7 @@ func AskWithReceipt(title, body string, receipt Receipt, buttons ...string) (str
 
 // AskWithDeliveryReceipt retains the posting helper's native settings evidence.
 func AskWithDeliveryReceipt(title, body string, receipt DeliveryReceipt, buttons ...string) (string, error) {
-	return askWithDeliveryID("", title, body, receipt, buttons...)
+	return askWithDeliveryID("", title, body, nil, receipt, buttons...)
 }
 
 // AskMessage keys a human question/request to its board and ledger serial.
@@ -207,14 +207,16 @@ func AskMessageWithDeliveryReceipt(
 	if err != nil {
 		return "", err
 	}
-	return askWithDeliveryID(id, title, body, receipt, buttons...)
+	return askWithDeliveryID(id, title, body, nil, receipt, buttons...)
 }
 
 func askWithID(id, title, body string, receipt Receipt, buttons ...string) (string, error) {
-	return askWithDeliveryID(id, title, body, stateReceipt(receipt), buttons...)
+	return askWithDeliveryID(id, title, body, nil, stateReceipt(receipt), buttons...)
 }
 
-func askWithDeliveryID(id, title, body string, receipt DeliveryReceipt, buttons ...string) (string, error) {
+func askWithDeliveryID(
+	id, title, body string, detail *AskDetail, receipt DeliveryReceipt, buttons ...string,
+) (string, error) {
 	if len(buttons) == 0 || len(buttons) > 3 {
 		return "", errors.New("an alert takes one to three buttons; use Pick for more")
 	}
@@ -230,7 +232,7 @@ func askWithDeliveryID(id, title, body string, receipt DeliveryReceipt, buttons 
 	// The bundle puts the buttons on the banner. Without it, post a passive
 	// notice and leave the question answerable on the board.
 	if h := helper(); h != "" {
-		ctx, cancel := context.WithTimeout(context.Background(), timeout+30*time.Second)
+		ctx, cancel := askContext(detail)
 		defer cancel()
 		// Posting never activates a window, including while Focus is on.
 		args := append([]string{title, "", body}, buttons...)
@@ -239,36 +241,13 @@ func askWithDeliveryID(id, title, body string, receipt DeliveryReceipt, buttons 
 		if id != "" {
 			cmd.Env = append(os.Environ(), "DIBS_NOTIFY_ID="+id)
 		}
-		out, err := outputWithDeliveryReceipt(cmd, receipt)
-		if err != nil {
-			// Exit 2 means the machine WILL NOT notify: no authorisation, no
-			// bundle. That is not a person deferring, and collapsing the two is
-			// how a question nobody could see was reported as a question nobody
-			// answered, while the asking agent waited out its deadline. The
-			// helper documents the distinction; this end was throwing it away.
-			// Found by an independent review before release.
-			if notAuthorised(err) {
-				return "", ErrCannotNotify
-			}
-			// EXIT 1 IS THE DISMISSAL. Everything else is the machine failing.
-			//
-			// This returned ("", nil) for every remaining error, and the helper
-			// documents exactly three codes: 0 chose, 1 dismissed, 2 cannot
-			// notify. A command that could not start, a crash, a signal, our own
-			// context deadline, or any code the helper does not define came back
-			// as "the person declined", so the asking agent waited out its
-			// deadline against a banner that was never posted and no layer
-			// reported a fault. The distinction was already written down one
-			// file away, in the helper's own header. Found by a pre-release
-			// review, in the branch added to fix the same class for exit 2.
-			var ee *exec.ExitError
-			if errors.As(err, &ee) && ee.ExitCode() == 1 {
-				return "", nil // a person, dismissing
-			}
-			return "", fmt.Errorf("%w: the notifier did not run to a documented "+
-				"outcome: %v", ErrNoAnswer, err)
+		if detail != nil {
+			configureAskDetail(cmd, *detail)
+			untrack := trackNativeAsk(id, cancel)
+			defer untrack()
 		}
-		return strings.TrimSpace(string(out)), nil
+		out, err := outputWithDeliveryReceipt(cmd, receipt)
+		return nativeAskAnswer(out, err, detail != nil && errors.Is(ctx.Err(), context.Canceled))
 	}
 	return "", BannerWithDeliveryReceipt(title, "answer on the Dibs board", body, receipt)
 }
@@ -748,3 +727,38 @@ func notAuthorised(err error) bool {
 // notify at all. This one means we tried, and cannot tell whether a person
 // declined or never saw it.
 var ErrNoAnswer = errors.New("no answer")
+
+func nativeAskAnswer(out []byte, err error, cancelled bool) (string, error) {
+	if err != nil {
+		if cancelled {
+			return "", nil // answered/withdrawn elsewhere; never a new verdict
+		}
+		// Exit 2 means the machine WILL NOT notify: no authorisation, no
+		// bundle. That is not a person deferring, and collapsing the two is
+		// how a question nobody could see was reported as a question nobody
+		// answered, while the asking agent waited out its deadline. The
+		// helper documents the distinction; this end was throwing it away.
+		// Found by an independent review before release.
+		if notAuthorised(err) {
+			return "", ErrCannotNotify
+		}
+		// EXIT 1 IS THE DISMISSAL. Everything else is the machine failing.
+		//
+		// This returned ("", nil) for every remaining error, and the helper
+		// documents exactly three codes: 0 chose, 1 dismissed, 2 cannot
+		// notify. A command that could not start, a crash, a signal, our own
+		// context deadline, or any code the helper does not define came back
+		// as "the person declined", so the asking agent waited out its
+		// deadline against a banner that was never posted and no layer
+		// reported a fault. The distinction was already written down one
+		// file away, in the helper's own header. Found by a pre-release
+		// review, in the branch added to fix the same class for exit 2.
+		var ee *exec.ExitError
+		if errors.As(err, &ee) && ee.ExitCode() == 1 {
+			return "", nil // a person, dismissing
+		}
+		return "", fmt.Errorf("%w: the notifier did not run to a documented "+
+			"outcome: %v", ErrNoAnswer, err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}

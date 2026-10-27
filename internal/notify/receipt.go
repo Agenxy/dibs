@@ -113,39 +113,48 @@ func outputWithDeliveryReceipt(cmd *exec.Cmd, receipt DeliveryReceipt) ([]byte, 
 	}
 	cmd.Env = append(cmd.Env, "DIBS_NOTIFY_RECEIPT="+name)
 	stop, done := make(chan struct{}), make(chan struct{})
-	go func() {
-		defer close(done)
-		tick := time.NewTicker(100 * time.Millisecond)
-		defer tick.Stop()
-		last := ""
-		read := func() {
-			b, readErr := root.ReadFile("receipt") // confined to the private directory
-			var r struct {
-				State             string          `json:"state"`
-				Settings          json.RawMessage `json:"settings"`
-				InterruptionLevel json.RawMessage `json:"interruption_level"`
-			}
-			if readErr == nil && json.Unmarshal(b, &r) == nil &&
-				(r.State == "posted" || r.State == "dismissed") && string(b) != last {
-				last = string(b)
-				var level string
-				_ = json.Unmarshal(r.InterruptionLevel, &level)
-				settings := nativeReceiptSettings(r.Settings)
-				receipt(ReceiptData{State: r.State, Settings: settings, InterruptionLevel: level}.Normalized())
-			}
-		}
-		for {
-			select {
-			case <-tick.C:
-				read()
-			case <-stop:
-				read()
-				return
-			}
-		}
-	}()
+	go watchDeliveryReceipt(root, receipt, stop, done)
 	out, err := cmd.Output()
 	close(stop)
 	<-done
 	return out, err
+}
+
+func watchDeliveryReceipt(root *os.Root, receipt DeliveryReceipt, stop <-chan struct{}, done chan<- struct{}) {
+	defer close(done)
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+	last := ""
+	read := func() string {
+		b, readErr := root.ReadFile("receipt") // confined to the private directory
+		var r struct {
+			State             string          `json:"state"`
+			Settings          json.RawMessage `json:"settings"`
+			InterruptionLevel json.RawMessage `json:"interruption_level"`
+		}
+		if readErr != nil || json.Unmarshal(b, &r) != nil || (r.State != "posted" && r.State != "dismissed") {
+			return ""
+		}
+		if string(b) != last {
+			last = string(b)
+			var level string
+			_ = json.Unmarshal(r.InterruptionLevel, &level)
+			settings := nativeReceiptSettings(r.Settings)
+			receipt(ReceiptData{State: r.State, Settings: settings, InterruptionLevel: level}.Normalized())
+		}
+		return r.State
+	}
+	for {
+		select {
+		case <-tick.C:
+			if read() == "posted" {
+				// Long-lived asks are idle after posting. Dismissal/answer ends
+				// the helper, and the final read below still captures that state.
+				tick.Stop()
+			}
+		case <-stop:
+			read()
+			return
+		}
+	}
 }

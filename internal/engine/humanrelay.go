@@ -43,6 +43,7 @@ type HumanNotice struct {
 	Node      string               `json:"node,omitempty"`
 	Cleanup   *NotificationCleanup `json:"notification_cleanup,omitempty"`
 	Contact   *humanask.Contact    `json:"contact,omitempty"`
+	Deadline  time.Time            `json:"deadline,omitzero"`
 }
 
 // Privileged is whether approving this grants something: a role, a
@@ -148,6 +149,7 @@ func (e *Engine) noticeOf(m *core.Message) HumanNotice {
 	n := HumanNotice{
 		Serial: m.Serial, Type: m.Type, From: m.From, FromName: e.agentName(m.From), Body: m.Body,
 		Priority: m.RequestPriority,
+		Deadline: m.Deadline,
 		Choices:  m.Choices, Grant: m.Grant, Adopt: m.Adopt,
 		Node: e.state.NodeID,
 	}

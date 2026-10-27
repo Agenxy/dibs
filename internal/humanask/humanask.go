@@ -19,6 +19,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/harnessenv"
@@ -38,9 +39,10 @@ type Message struct {
 	Grant           string
 	Merge           *core.MergeRequest
 	Adopt           string
-	AdoptName       string // current name; Adopt stays the stable ID
-	Serial          uint64 // stable message identity on Node
-	Node            string // board identity; serials are not global
+	AdoptName       string    // current name; Adopt stays the stable ID
+	Serial          uint64    // stable message identity on Node
+	Node            string    // board identity; serials are not global
+	Deadline        time.Time // recorded request deadline, not the banner lifetime
 	Receipt         notify.Receipt
 	DeliveryReceipt notify.DeliveryReceipt
 	ask             func(string, string, notify.Receipt, ...string) (string, error) // test presenter
@@ -368,6 +370,9 @@ func Said(who, body string) string {
 }
 
 func (m Message) askNotification(title, body string, buttons ...string) (string, error) {
+	if m.ask == nil && (m.Type == core.MsgRequest || m.Type == core.MsgQuestion) {
+		return m.askDetailedNotification(title, body, buttons...)
+	}
 	if m.ask == nil && m.DeliveryReceipt != nil {
 		var pressed string
 		var err error
@@ -393,6 +398,23 @@ func (m Message) askNotification(title, body string, buttons ...string) (string,
 	pressed, err := ask(title, body, m.Receipt, buttons...)
 	if pressed == DeferButton && m.Receipt != nil {
 		m.Receipt("dismissed")
+	}
+	return pressed, err
+}
+
+func (m Message) askDetailedNotification(title, body string, buttons ...string) (string, error) {
+	delivery := m.DeliveryReceipt
+	if delivery == nil && m.Receipt != nil {
+		delivery = func(data notify.ReceiptData) { m.Receipt(data.State) }
+	}
+	sender := m.Who
+	if sender == "" {
+		sender = m.displayFrom()
+	}
+	pressed, err := notify.AskMessageDetail(m.Node, m.Serial, title, body,
+		notify.AskDetail{Sender: sender, Body: m.Body, Deadline: m.Deadline}, delivery, buttons...)
+	if pressed == DeferButton && delivery != nil {
+		delivery(notify.ReceiptData{State: "dismissed"})
 	}
 	return pressed, err
 }
