@@ -143,8 +143,18 @@ func TestConfigureAppServiceReportsSuccessOnlyAfterReceiptCommit(t *testing.T) {
 	f := newAppServiceTestFixture(t)
 	stopped := f.liveManual(t)
 	legacy := f.legacy(t, "")
-	if err := os.WriteFile(legacy+".migrated", []byte("different prior receipt"), 0o600); err != nil {
-		t.Fatal(err)
+	// Create the conflict after preflight, at the real registration boundary,
+	// so this exercises commit failure rather than preflight's refusal.
+	executor := executeAppServiceCommand
+	t.Cleanup(func() { executeAppServiceCommand = executor })
+	executeAppServiceCommand = func(cmd *exec.Cmd) ([]byte, error) {
+		out, err := cmd.CombinedOutput()
+		if err == nil && cmd.Args[1] == "--service-register" {
+			if err := os.WriteFile(legacy+".migrated", []byte("different prior receipt"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return out, err
 	}
 	previous := runAppLaunchctl
 	t.Cleanup(func() { runAppLaunchctl = previous })
