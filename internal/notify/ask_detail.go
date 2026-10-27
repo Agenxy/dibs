@@ -15,11 +15,12 @@ import (
 	"unicode/utf8"
 )
 
-// AskDetail is private reading-window data, never a command argument. Deadline
-// is the request's recorded bound; zero falls back to the native 24-hour cap.
+// AskDetail is reading-window data, never a command argument. The native
+// helper persists a bounded copy in macOS notification userInfo. Deadline is
+// the request's recorded bound; zero falls back to the native 24-hour cap.
 type AskDetail struct {
-	Sender, Body string
-	Deadline     time.Time
+	Sender, Body, Kind string
+	Deadline           time.Time
 }
 
 // AskMessageDetail preserves the ordinary banner and action protocol, adding
@@ -59,9 +60,11 @@ func encodeAskDetail(detail AskDetail) []byte {
 	payload := struct {
 		Sender string `json:"sender"`
 		Body   string `json:"body"`
+		Kind   string `json:"kind,omitempty"`
 	}{
 		utf8Prefix(strings.ToValidUTF8(detail.Sender, "�"), 1024),
 		strings.ToValidUTF8(detail.Body, "�"),
+		utf8Prefix(strings.ToValidUTF8(detail.Kind, "�"), 64),
 	}
 	encoded, _ := json.Marshal(payload) // only strings; cannot fail
 	if len(encoded) <= askDetailLimit {

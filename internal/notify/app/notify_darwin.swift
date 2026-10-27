@@ -156,11 +156,14 @@ func receipt(_ state: String) {
 
 let args = Array(CommandLine.arguments.dropFirst())
 
-#if DIBS_ASK_FIXTURE
+#if DIBS_ASK_FIXTURE || DIBS_READING_FIXTURE
 // Compile-time transport double: the actual ask input, posting callback and
 // expiry run, but no permission request, native notification or window opens.
-let askFixture = ProcessInfo.processInfo.environment["DIBS_ASK_FIXTURE"] == "timeout"
+let askFixture = ProcessInfo.processInfo.environment["DIBS_ASK_FIXTURE"] == "timeout" || ProcessInfo.processInfo.environment["DIBS_READING_FIXTURE"] == "1"
 if args == ["--ask-fixture-capability"] { print("ask-fixture-v1"); exit(0) }
+#if DIBS_READING_FIXTURE
+if args == ["--reading-fixture-capability"] { print("reading-fixture-v1"); exit(0) }
+#endif
 #else
 let askFixture = false
 #endif
@@ -661,20 +664,62 @@ if args.first == "--prompt" || args.first == "--pick" {
     exit(askOnScreen(rest[0], rest[1], choices: Array(rest.dropFirst(2))))
 }
 
-guard args.count >= 3 else {
+guard args.isEmpty || args.count >= 3 else {
     FileHandle.standardError.write("usage: dibs-notify <title> <subtitle> <body> [button…]\n".data(using: .utf8)!)
     exit(2)
 }
-let title = args[0], subtitle = args[1], body = args[2]
+// LaunchServices opens the bundle executable without the posting arguments.
+// Do not post or request authorization on that launch: install the delegate
+// before app.run finishes launching and wait for its notification response.
+let coldLaunch = args.isEmpty
+let title = coldLaunch ? "Dibs" : args[0]
+let subtitle = coldLaunch ? "" : args[1]
+let body = coldLaunch ? "" : args[2]
 let buttons = Array(args.dropFirst(3))
 
-struct AskReadingDetail: Decodable {
+struct AskReadingDetail: Codable {
     let sender: String
     let body: String
+    let kind: String?
 }
 
-// Only the additive ask protocol reads stdin. Status, passive notifications
-// and old callers keep their old argument and lifetime contracts.
+// Persist only the text already shown to this human, never executable links,
+// credentials or an answer capability. macOS stores this in its notification
+// database; it has no stronger privacy claim than the banner itself.
+struct StoredReadingDetail: Codable {
+    var title: String
+    var sender: String
+    var body: String
+    let kind: String
+}
+let readingKey = "org.agenxy.dibs.reading.v1"
+
+func storedReading(_ heading: String, detail: AskReadingDetail) -> Data {
+    var value = StoredReadingDetail(title: heading, sender: detail.sender, body: detail.body,
+                                    kind: String((detail.kind ?? "ask").prefix(32)))
+    let rest = "\n\nRest on the Dibs board."
+    var text = value.body
+    while true {
+        let data = try! JSONEncoder().encode(value) // strings only
+        if data.count <= 8192 { return data }
+        if !text.isEmpty {
+            text = String(text.dropLast(max(1, text.count / 8)))
+            value.body = text + rest
+        } else if value.title.count > 64 {
+            value.title = String(value.title.prefix(value.title.count / 2))
+        } else {
+            value.sender = String(value.sender.prefix(value.sender.count / 2))
+        }
+    }
+}
+
+func persistedReading(_ content: UNNotificationContent) -> StoredReadingDetail? {
+    guard let bytes = content.userInfo[readingKey] as? Data, bytes.count <= 8192 else { return nil }
+    return try? JSONDecoder().decode(StoredReadingDetail.self, from: bytes)
+}
+
+// Only the additive detail protocol reads stdin. Diagnostics and old callers
+// keep their old argument and lifetime contracts.
 func readAskDetail(_ environment: [String: String]) -> AskReadingDetail? {
     guard environment["DIBS_NOTIFY_DETAIL"] == "stdin" else { return nil }
     var bytes = Data()
@@ -705,9 +750,7 @@ final class AskReadingClose: NSObject, NSWindowDelegate {
 
 // Called only by the banner's default action: the person asked to read it.
 // The daemon's effect title and sender stay outside the sender-written text.
-func readAskOnScreen(_ heading: String, detail: AskReadingDetail, buttons: [String]) -> String {
-    let app = NSApplication.shared
-    app.activate(ignoringOtherApps: true)
+func readingAlert(_ heading: String, detail: AskReadingDetail, buttons: [String]) -> NSAlert {
     let alert = NSAlert()
     alert.messageText = heading
     alert.informativeText = detail.sender
@@ -732,6 +775,23 @@ func readAskOnScreen(_ heading: String, detail: AskReadingDetail, buttons: [Stri
     for button in buttons { alert.addButton(withTitle: button) }
     alert.buttons.first?.keyEquivalent = ""
     alert.buttons.last?.keyEquivalent = "\r"
+    return alert
+}
+
+func readAskOnScreen(_ heading: String, detail: AskReadingDetail, buttons: [String], storedBytes: Int = 0) -> String {
+    let alert = readingAlert(heading, detail: detail, buttons: buttons)
+    #if DIBS_READING_FIXTURE
+    if askFixture, let path = ProcessInfo.processInfo.environment["DIBS_READING_WINDOW"],
+       let scroll = alert.accessoryView as? NSScrollView, let text = scroll.documentView as? NSTextView {
+        let view: [String: Any] = ["Title": alert.messageText, "Sender": alert.informativeText,
+                                 "Body": text.string, "Buttons": alert.buttons.map { $0.title },
+                                 "StoredBytes": storedBytes]
+        try! JSONSerialization.data(withJSONObject: view).write(to: URL(fileURLWithPath: path))
+        let selected = ProcessInfo.processInfo.environment["DIBS_READING_CHOICE"] ?? ""
+        return alert.buttons.contains(where: { $0.title == selected }) ? selected : ""
+    }
+    #endif
+    NSApplication.shared.activate(ignoringOtherApps: true)
     let closing = AskReadingClose()
     alert.window.styleMask.insert(.closable)
     alert.window.delegate = closing
@@ -743,8 +803,10 @@ func readAskOnScreen(_ heading: String, detail: AskReadingDetail, buttons: [Stri
 }
 
 let askEnvironment = ProcessInfo.processInfo.environment
-let readingDetail = buttons.isEmpty ? nil : readAskDetail(askEnvironment)
-guard let lifetime = askLifetime(askEnvironment, now: Date()) else { exit(2) }
+let readingDetail = coldLaunch ? nil : readAskDetail(askEnvironment)
+let notificationID = askEnvironment["DIBS_NOTIFY_ID"] ?? UUID().uuidString
+guard let requestLifetime = askLifetime(coldLaunch ? [:] : askEnvironment, now: Date()) else { exit(2) }
+let lifetime = readingDetail?.kind == "contact" ? min(120, requestLifetime) : requestLifetime
 if !buttons.isEmpty && lifetime <= 0 { exit(1) }
 
 // An NSApplication with a live run loop, not a semaphore.
@@ -764,7 +826,7 @@ app.setActivationPolicy(.accessory)
 
 let centre = UNUserNotificationCenter.current()
 var askCaller: DispatchSourceProcess?
-if readingDetail != nil {
+if readingDetail != nil && !buttons.isEmpty {
     // stdout is the only answer carrier. A helper whose caller died cannot
     // answer, so do not leave a 24-hour orphan holding a dead button route.
     let parent = getppid()
@@ -802,47 +864,69 @@ final class Handler: NSObject, UNUserNotificationCenterDelegate {
     func userNotificationCenter(_ c: UNUserNotificationCenter,
                                 didReceive r: UNNotificationResponse,
                                 withCompletionHandler h: @escaping () -> Void) {
-        receive(identifier: r.notification.request.identifier, action: r.actionIdentifier, completion: h)
+        receive(identifier: r.notification.request.identifier, action: r.actionIdentifier,
+                content: r.notification.request.content, completion: h)
     }
 
-    func receive(identifier: String, action: String, completion h: @escaping () -> Void) {
-        // Several asks share one bundle. Never present one request's detail
-        // or return an answer for a different notification's native action.
-        if readingDetail != nil, let expected = askEnvironment["DIBS_NOTIFY_ID"], expected != identifier {
+    func receive(identifier: String, action: String, content: UNNotificationContent? = nil,
+                 completion h: @escaping () -> Void) {
+        let own = !coldLaunch && identifier == notificationID
+        guard own || content != nil else { h(); return }
+        if action == UNNotificationDismissActionIdentifier {
             h()
+            if own { receipt("dismissed"); finish("") }
+            else if coldLaunch { self.finish("") }
             return
         }
-        // The identifier is the button's own title, so the caller reads back
-        // exactly what it offered rather than an index it has to map.
-        if action == UNNotificationDefaultActionIdentifier {
-            if let detail = readingDetail {
-                h() // acknowledge the native press before entering a modal loop
-                DispatchQueue.main.async {
-                    guard !self.reading else { return }
-                    self.reading = true
-                    let choice = readAskOnScreen(title, detail: detail, buttons: buttons)
-                    if choice.isEmpty { receipt("dismissed") }
-                    self.finish(choice)
-                }
-                return
-            }
+        // Only the original invocation owns stdout and its live answer route.
+        // A different helper may receive an old notification from this bundle.
+        // Read its persisted content, but never answer somebody else's ask.
+        if own && action != UNNotificationDefaultActionIdentifier {
             h()
-            receipt("dismissed")
-            finish("")            // clicked the banner itself: not an answer
-        } else if action == UNNotificationDismissActionIdentifier {
-            h()
-            receipt("dismissed")
-            finish("")
+            if buttons.contains(action) { finish(action) }
+            return
+        }
+        h() // acknowledge before entering the nested modal run loop
+        let saved = content.flatMap { persistedReading($0) }
+        let detail: AskReadingDetail
+        let heading: String
+        let choices: [String]
+        if own, let live = readingDetail {
+            detail = live
+            heading = title
+            choices = buttons.isEmpty ? ["Close"] : buttons
         } else {
-            h()
-            finish(action)
+            heading = saved?.title ?? content?.title ?? "Dibs"
+            let kind = saved?.kind ?? "ask"
+            var text = saved?.body ?? content?.body ?? "Read this notification on the Dibs board."
+            if kind == "request" || kind == "question" || kind == "ask" {
+                text += "\n\nThis request is no longer answerable here. Check its current state on the Dibs board."
+            } else if kind == "contact" {
+                text += "\n\nThis notification's original Open action is no longer available here. Continue on the Dibs board."
+            }
+            detail = AskReadingDetail(sender: saved?.sender ?? content?.subtitle ?? "Dibs", body: text, kind: kind)
+            choices = ["Close"]
+        }
+        DispatchQueue.main.async {
+            guard !self.reading else { return }
+            self.reading = true
+            let choice = readAskOnScreen(heading, detail: detail, buttons: choices,
+                                         storedBytes: (content?.userInfo[readingKey] as? Data)?.count ?? 0)
+            self.reading = false
+            if own {
+                if choice.isEmpty || buttons.isEmpty { receipt("dismissed"); self.finish("") }
+                else { self.finish(choice) }
+            } else if coldLaunch { self.finish("") }
+            #if DIBS_READING_FIXTURE
+            if askFixture { exit(0) }
+            #endif
         }
     }
 }
 
 let handler = Handler { choice in
     chosen = choice
-    finish(choice.isEmpty ? 1 : 0)
+    finish(choice.isEmpty ? (askFixture ? 0 : 1) : 0)
 }
 centre.delegate = handler
 
@@ -859,6 +943,7 @@ func postNotification(_ settings: [String: Any]?) {
     content.title = title
     if !subtitle.isEmpty { content.subtitle = subtitle }
     content.body = body
+    if let detail = readingDetail { content.userInfo[readingKey] = storedReading(title, detail: detail) }
 
     if interruption == .timeSensitive {
         // Somebody is BLOCKED on this one, so it asks to break through Focus.
@@ -895,12 +980,55 @@ func postNotification(_ settings: [String: Any]?) {
         // Nothing to wait for when there is nothing to answer.
         if buttons.isEmpty { finish(0) }
     }
+    #if DIBS_READING_FIXTURE
+    if askFixture, let path = askEnvironment["DIBS_READING_POSTED"] {
+        let saved: [String: Any] = ["title": content.title, "subtitle": content.subtitle,
+                                  "body": content.body, "userInfo": content.userInfo]
+        try! PropertyListSerialization.data(fromPropertyList: saved, format: .binary, options: 0)
+            .write(to: URL(fileURLWithPath: path))
+        if let action = askEnvironment["DIBS_READING_ACTION"] {
+            guard let installed = centre.delegate as? Handler else { exit(2) }
+            installed.receive(identifier: askEnvironment["DIBS_READING_RESPONSE_ID"] ?? notificationID,
+                            action: action, content: content, completion: {})
+        } else { finish(0) }
+        return
+    }
+    #endif
     if askFixture { posted(nil); return }
-    centre.add(UNNotificationRequest(identifier: keyed ?? UUID().uuidString,
+    centre.add(UNNotificationRequest(identifier: notificationID,
                                      content: content, trigger: nil), withCompletionHandler: posted)
 }
 
-if askFixture {
+// Apple's notification response contract launches the bundle then calls the
+// delegate. Assigning it above, before app.run(), meets its before-launch rule:
+// https://developer.apple.com/documentation/usernotifications/unusernotificationcenter/delegate
+// https://developer.apple.com/documentation/usernotifications/handling-notifications-and-notification-related-actions
+if coldLaunch {
+    #if DIBS_READING_FIXTURE
+    if askFixture, let path = askEnvironment["DIBS_READING_POSTED"] {
+        let bytes = try! Data(contentsOf: URL(fileURLWithPath: path))
+        let saved = try! PropertyListSerialization.propertyList(from: bytes, format: nil) as! [String: Any]
+        let content = UNMutableNotificationContent()
+        content.title = saved["title"] as! String
+        content.subtitle = saved["subtitle"] as! String
+        content.body = saved["body"] as! String
+        content.userInfo = saved["userInfo"] as! [AnyHashable: Any]
+        switch askEnvironment["DIBS_READING_CORRUPT"] {
+        case "oversize":
+            let oversized = StoredReadingDetail(title: "Daemon effect", sender: "Daemon sender",
+                                                body: String(repeating: "x", count: 8193) + "PRIVATE END", kind: "request")
+            content.userInfo[readingKey] = try! JSONEncoder().encode(oversized)
+        case "invalid": content.userInfo[readingKey] = Data("not json".utf8)
+        case "missing": content.userInfo = [:]
+        default: break
+        }
+        guard let installed = centre.delegate as? Handler else { exit(2) }
+        installed.receive(identifier: "dibs.msg.reading.7",
+                        action: askEnvironment["DIBS_READING_ACTION"] ?? UNNotificationDefaultActionIdentifier,
+                        content: content, completion: {})
+    }
+    #endif
+} else if askFixture {
     postNotification(nil)
     #if DIBS_ASK_FIXTURE
     if let action = askEnvironment["DIBS_ASK_FIXTURE_ACTION"] {
@@ -929,9 +1057,11 @@ let expireAsk = {
     }
     exit(1) // no answer; independent of a reading window's nested modal loop
 }
-if readingDetail != nil {
+if readingDetail != nil && !buttons.isEmpty {
     DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + lifetime, execute: expireAsk)
 } else {
-    DispatchQueue.main.asyncAfter(deadline: .now() + (buttons.isEmpty ? 10 : lifetime)) { finish(1) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + (buttons.isEmpty ? 10 : lifetime)) {
+        if !handler.reading { finish(1) }
+    }
 }
 app.run()

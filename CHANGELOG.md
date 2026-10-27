@@ -26,6 +26,21 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reads a running service's executable from the kernel, so the orphaned-service
   check works on real installs, and says plainly when a stopped service's
   program cannot be resolved without authorization.
+
+- Every macOS Dibs notification now opens a reading window on a body click,
+  including handoffs, ordinary and urgent messages, and contact notices. The
+  title, sender and full scrollable text survive the posting helper exiting:
+  bounded reading data is retained in the notification's `userInfo`, and a
+  fresh app launch handles the click without posting another notification.
+  Live asks keep their banner buttons; passive windows offer Close. An old
+  ask or contact without its original helper is read-only and directs the
+  person to the board, so a stale button cannot fabricate an answer. The
+  persisted payload has the same 8 KiB bound and privacy boundary as the
+  notification; no full detail travels in command arguments. Persistent Alerts
+  versus temporary Banners remains the person's macOS notification setting.
+  Automated fixtures cover the content and response paths; actual macOS
+  cold-launch and reading-window acceptance remain post-install checks.
+
 - `dibs doctor` no longer reports a folder as "cannot be read by the daemon"
   when it is simply not a git checkout, or no longer exists. On a production
   board it listed `~/Desktop`, folders that hold checkouts, `/` and a deleted

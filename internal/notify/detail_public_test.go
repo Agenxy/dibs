@@ -56,7 +56,7 @@ func TestHumanAskDetailUsesStdinAndWithdrawsLiveHelper(t *testing.T) {
 		return
 	}
 	t.Setenv("DIBS_NOTIFY", "")
-	for _, mode := range []string{"detail", "question", "bounded", "withdraw"} {
+	for _, mode := range []string{"detail", "question", "bounded", "withdraw", "handoff", "notify", "urgent", "contact", "contact-passive"} {
 		t.Run(mode, func(t *testing.T) {
 			t.Setenv("DIBS_TEST_DETAIL_MODE", mode)
 			body := strings.Repeat("excerpt ", 30) + "PRIVATE DETAIL AFTER EXCERPT\nSecond paragraph."
@@ -68,6 +68,22 @@ func TestHumanAskDetailUsesStdinAndWithdrawsLiveHelper(t *testing.T) {
 			wantDisposition := "approve"
 			if mode == "question" {
 				m.Type, m.Choices, wantDisposition = "question", []string{"Approve", "Decline"}, "answer"
+			}
+			wantBody, wantSender := body, m.Who
+			switch mode {
+			case "handoff", "notify", "urgent":
+				m.Type, wantDisposition = mode, ""
+				if mode == "urgent" {
+					m.Type, m.Priority = "notify", "urgent"
+				}
+			case "contact", "contact-passive":
+				m.Type, wantDisposition = "contact", ""
+				m.Contact = &humanask.Contact{Sender: "system sender", Recipient: "recipient", Kind: "request", Message: 8, OpenHint: body}
+				if mode == "contact" {
+					m.Contact.OpenURL = "codex://threads/019ffe52-0eaf-7f60-81cc-6ab1298d76ec"
+				}
+				wantSender = m.Contact.Sender
+				wantBody = "Unread request #8; " + body
 			}
 			// This input is also understood by the old source (which ignores the
 			// added field), so the same test has a runtime old-code proof.
@@ -88,7 +104,7 @@ func TestHumanAskDetailUsesStdinAndWithdrawsLiveHelper(t *testing.T) {
 			go func() {
 				a, err := humanask.Ask(m)
 				if err == nil && mode != "withdraw" && a.Disposition != wantDisposition {
-					err = errors.New("missing approval")
+					err = errors.New("unexpected human disposition: " + a.Disposition)
 				}
 				finished <- err
 			}()
@@ -134,14 +150,19 @@ func TestHumanAskDetailUsesStdinAndWithdrawsLiveHelper(t *testing.T) {
 			if len(capture.Stdin) > 8192 || !utf8.ValidString(capture.Stdin) {
 				t.Fatalf("detail is not bounded UTF-8: %d bytes", len(capture.Stdin))
 			}
-			var detail struct{ Sender, Body string }
+			var detail struct{ Sender, Body, Kind string }
 			if err := json.Unmarshal([]byte(capture.Stdin), &detail); err != nil {
 				t.Fatalf("full text absent from stdin: %q %v", capture.Stdin, err)
 			}
-			if detail.Sender != m.Who {
+			if mode == "handoff" || mode == "notify" || mode == "urgent" || strings.HasPrefix(mode, "contact") {
+				if detail.Kind != m.Type {
+					t.Fatalf("notification kind missing: %q want %q", detail.Kind, m.Type)
+				}
+			}
+			if detail.Sender != wantSender {
 				t.Fatalf("sender line lost: %q", detail.Sender)
 			}
-			if mode != "bounded" && detail.Body != body {
+			if mode != "bounded" && detail.Body != wantBody {
 				t.Fatalf("detail truncated before its limit: %q", detail.Body)
 			}
 			if mode == "bounded" && !strings.Contains(detail.Body, "Rest on the Dibs board") {

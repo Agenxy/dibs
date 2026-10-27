@@ -142,7 +142,30 @@ func TimeSensitiveBannerWithDeliveryReceipt(title, subtitle, body string, receip
 	return bannerWithDeliveryReceipt(title, subtitle, body, true, receipt)
 }
 
+// BannerMessageDetail adds bounded private reading data to passive messages.
+// The native content retains it for a later click after this invocation exits.
+func BannerMessageDetail(
+	node string, serial uint64, title, subtitle, body string, detail AskDetail,
+	timeSensitive bool, receipt DeliveryReceipt,
+) error {
+	id := ""
+	if node != "" {
+		var err error
+		id, err = MessageID(node, serial)
+		if err != nil {
+			return err
+		}
+	}
+	return bannerWithDetail(id, title, subtitle, body, &detail, timeSensitive, receipt)
+}
+
 func bannerWithDeliveryReceipt(title, subtitle, body string, timeSensitive bool, receipt DeliveryReceipt) error {
+	return bannerWithDetail("", title, subtitle, body, nil, timeSensitive, receipt)
+}
+
+func bannerWithDetail(
+	id, title, subtitle, body string, detail *AskDetail, timeSensitive bool, receipt DeliveryReceipt,
+) error {
 	if goos == "linux" {
 		err := linuxBannerWithUrgency(title, subtitle, body, timeSensitive)
 		if err == nil && receipt != nil {
@@ -161,6 +184,12 @@ func bannerWithDeliveryReceipt(title, subtitle, body string, timeSensitive bool,
 			level = "1"
 		}
 		cmd.Env = append(os.Environ(), "DIBS_NOTIFY_TIME_SENSITIVE="+level)
+		if id != "" {
+			cmd.Env = append(cmd.Env, "DIBS_NOTIFY_ID="+id)
+		}
+		if detail != nil {
+			configureAskDetail(cmd, *detail)
+		}
 		_, err := outputWithDeliveryReceipt(cmd, receipt)
 		return err
 	}
