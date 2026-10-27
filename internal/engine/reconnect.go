@@ -16,7 +16,8 @@ import (
 
 const maxAppReconnects = 128
 
-const reconnectObservationRemedy = "The next local MCP event retries these observations together. Read outstanding mail on the board if recovery is urgent; no model request from the idle bridge is required."
+const reconnectObservationRemedy = "The next local MCP event retries these observations together. " +
+	"Read outstanding mail on the board if recovery is urgent; no model request from the idle bridge is required."
 
 // SetReconnectPending publishes a derived diagnostic, not coordination state.
 // Its count clears on successful observation and is lost safely on restart.
@@ -25,7 +26,8 @@ func (e *Engine) SetReconnectPending(n int) { e.reconnectPending.Store(int64(n))
 func (e *Engine) decorateReconnectPending(b core.Result) {
 	if n := e.reconnectPending.Load(); n > 0 {
 		b["reconnect_pending"] = int(n)
-		b["reconnect_advice"] = fmt.Sprintf("App reconnect recovery is pending for %d bridge observations. %s", n, reconnectObservationRemedy)
+		b["reconnect_advice"] = fmt.Sprintf(
+			"App reconnect recovery is pending for %d bridge observations. %s", n, reconnectObservationRemedy)
 	}
 }
 

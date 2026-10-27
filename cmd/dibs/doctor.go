@@ -272,9 +272,7 @@ func (d *diagnosis) run(verbose bool) error {
 	if b, err := boardSnapshot(); err == nil {
 		checkCoordinatorIsReachable(b, ok, warn)
 		checkContactDeliveryFailures(b, warn)
-		if b.ReconnectPending > 0 {
-			warn(fmt.Sprintf("app reconnect recovery has %d pending bridge observations", b.ReconnectPending), b.ReconnectAdvice)
-		}
+		checkReconnectPending(b, warn)
 		checkMailboxCapacity(b, warn)
 		checkConfiguredNameAliases(b, ok, warn)
 	}

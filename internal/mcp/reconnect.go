@@ -51,18 +51,7 @@ func (b *observedBridges) begin(pid int, started string) (map[string]harnessenv.
 	givenUp := false
 	key := fmt.Sprintf("%d@%s", pid, started)
 	if pid > 1 && started != "" && !b.seen[key] && b.entries[key] == nil {
-		if len(b.entries) >= maxObservedBridges {
-			var oldest string
-			for k, entry := range b.entries {
-				if !entry.inFlight && (oldest == "" || entry.order < b.entries[oldest].order) {
-					oldest = k
-				}
-			}
-			if oldest != "" {
-				delete(b.entries, oldest)
-			}
-			givenUp = true // either evicted pending work or cannot retain this caller
-		}
+		givenUp = b.makeRoomLocked()
 		if len(b.entries) < maxObservedBridges {
 			b.next++
 			b.entries[key] = &bridgeObservation{process: harnessenv.BridgeIncarnation{PID: pid, Start: started}, order: b.next}
@@ -76,6 +65,24 @@ func (b *observedBridges) begin(pid int, started string) (map[string]harnessenv.
 		}
 	}
 	return batch, givenUp
+}
+
+// Called under mu. Never evict a reservation still doing I/O; when all 512
+// entries are in flight, the newly arriving observation is the one given up.
+func (b *observedBridges) makeRoomLocked() bool {
+	if len(b.entries) < maxObservedBridges {
+		return false
+	}
+	var oldest string
+	for key, entry := range b.entries {
+		if !entry.inFlight && (oldest == "" || entry.order < b.entries[oldest].order) {
+			oldest = key
+		}
+	}
+	if oldest != "" {
+		delete(b.entries, oldest)
+	}
+	return true
 }
 
 func (b *observedBridges) finish(key string, observed, present bool) bool {
@@ -127,27 +134,7 @@ func (s *Server) observeBridge(ctx context.Context, params json.RawMessage) {
 		case <-ctx.Done():
 		}
 	}()
-	keys := make([]string, 0, len(batch))
-	for key := range batch {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	processes := make([]harnessenv.BridgeIncarnation, 0, len(keys))
-	for _, key := range keys {
-		processes = append(processes, batch[key])
-	}
-	results, err := s.probeBridges(ctx, processes)
-	for i, key := range keys {
-		observed, present := err == nil, false
-		if observed {
-			result := results[i]
-			present = result.Present
-			if result.App.PID > 1 {
-				observed = s.eng.AppReconnected(ctx, local, result.App) == nil
-			}
-		}
-		givenUp = s.bridges.finish(key, observed, present) || givenUp
-	}
+	givenUp = s.observeBridgeBatch(ctx, local, batch) || givenUp
 	s.bridges.mu.Lock()
 	pending := 0
 	for _, entry := range s.bridges.entries {
@@ -161,14 +148,46 @@ func (s *Server) observeBridge(ctx context.Context, params json.RawMessage) {
 		s.bridges.faultMu.Lock()
 		s.eng.ReportFault(ctx, engine.Fault{
 			Kind: "app-reconnect-given-up", Bug: true, Where: "internal/mcp/reconnect.go",
-			What:   "Dibs gave up a pending app reconnect observation: its bridge incarnation disappeared or the 512-entry bound was reached. Mail remains on the board; automatic reconnect recovery was not confirmed.",
-			Remedy: "Read the outstanding mail on the board. A later local bridge request supplies fresh process evidence; run `dibs doctor` to inspect observations still pending.",
+			What: "Dibs gave up a pending app reconnect observation: its bridge incarnation disappeared " +
+				"or the 512-entry bound was reached. Mail remains on the board; automatic reconnect recovery was not confirmed.",
+			Remedy: "Read the outstanding mail on the board. A later local bridge request supplies fresh process evidence; " +
+				"run `dibs doctor` to inspect observations still pending.",
 		})
 		s.bridges.faultMu.Unlock()
 	}
 }
 
-func (s *Server) probeBridges(ctx context.Context, processes []harnessenv.BridgeIncarnation) ([]harnessenv.BridgeObservation, error) {
+func (s *Server) observeBridgeBatch(
+	ctx context.Context, local string, batch map[string]harnessenv.BridgeIncarnation,
+) bool {
+	keys := make([]string, 0, len(batch))
+	for key := range batch {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	processes := make([]harnessenv.BridgeIncarnation, 0, len(keys))
+	for _, key := range keys {
+		processes = append(processes, batch[key])
+	}
+	results, err := s.probeBridges(ctx, processes)
+	givenUp := false
+	for i, key := range keys {
+		observed, present := err == nil, false
+		if observed {
+			result := results[i]
+			present = result.Present
+			if result.App.PID > 1 {
+				observed = s.eng.AppReconnected(ctx, local, result.App) == nil
+			}
+		}
+		givenUp = s.bridges.finish(key, observed, present) || givenUp
+	}
+	return givenUp
+}
+
+func (s *Server) probeBridges(
+	ctx context.Context, processes []harnessenv.BridgeIncarnation,
+) ([]harnessenv.BridgeObservation, error) {
 	if s.bridges.batchProbe != nil {
 		return s.bridges.batchProbe(ctx, processes)
 	}

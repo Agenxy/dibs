@@ -26,6 +26,8 @@ type BridgeIncarnation struct {
 	Start string
 }
 
+// BridgeObservation distinguishes a departed incarnation from a live bridge
+// outside the app, so only genuinely abandoned pending recovery reports a fault.
 type BridgeObservation struct {
 	Present bool // the PID and start stamp both still match
 	App     AppIncarnation
