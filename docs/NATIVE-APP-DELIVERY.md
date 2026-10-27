@@ -134,6 +134,24 @@ was around 14:27Z and it held no manual-open receipt. Earlier native acceptances
 also prevent classifying the whole 24–26 October interval as unloaded. None of
 these receipts alone establishes when mail was consumed.
 
+A second report on 2026-10-27 (Supply request 344810) illustrates why the
+observation must stay time-bounded. The local log recorded a queue command
+acceptance for `agenxy-dev-0` at 03:37:17.077Z and another at 04:02:58.787Z.
+The app's own thread history subsequently showed a turn starting at 04:03:05Z
+from the latter Dibs notice, with an actual `read_mail(344808)` call completed.
+For `agenxy-labs-2`, native acceptances were recorded at 04:02:51.320Z and
+04:03:36.321Z; the original app thread showed a turn starting at 04:03:36Z and
+an authenticated check-in. Both were already running when inspected, before
+any manual recovery open was issued. This confirms current recovery in the
+original visible threads; it neither proves an uninterrupted earlier stall nor
+attributes recovery to a human open. In this report the Dev 0 queue observation
+also had unknown pending/thread state, so the retained-known-pending guard
+below does not claim to classify that earlier attempt.
+
+Every wake must run its turn in the original app thread the person can inspect.
+A headless successor or resume process does not satisfy that requirement; an
+app-owned session-messaging route can, when it starts the visible session's turn.
+
 The separate reproducible defect was an OS open failure after queue acceptance:
 it was logged, but the configured queue route prevented ordinary human contact.
 The local engine now escalates captured unread asks on that failure. A later

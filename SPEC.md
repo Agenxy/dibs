@@ -1008,7 +1008,9 @@ separate warning. Claude app-reopen failures use this same sender notice in
 addition to their existing human contact path. Closed-harness send results say
 mail was stored and identify the original session; they promise no started turn
 or future delivery. External Remote Control admission remains a harness
-capability; Dibs does not start a successor process to manufacture it.
+capability; Dibs does not start a successor process to manufacture it. A wake
+qualifies only when its turn runs in the original visible app thread or session;
+headless resume elsewhere is not delivery.
 
 Queuing an alert is not posting it: only a reported OS posting is ledgered as
 `contact_notified`. Unposted contacts are retried. Recipient retrieval or
