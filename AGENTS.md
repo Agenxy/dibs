@@ -39,7 +39,14 @@ change it when reality disagrees, and record why).
    agent, run a thread, or resume a session in a process of its own. It did, through the
    recommended `codex exec resume` and `claude --resume -p`, and the operator found their
    ChatGPT threads running in a process Dibs had started; `boardconfig.HostsAnAgent` now
-   refuses those wherever a wake command is read. Moving an agent to another environment
+   refuses those wherever a wake command is read. The reason is the operator's, and it
+   settles cases this paragraph does not name: "i want the actual thread i can see
+   running even if you can wake it up headlessly in the background, i want to be able
+   to see and read the agent's threads, that's why dibs works that way" (2026-10-26,
+   rejecting a headless `--resume` design for sessions the app had not loaded). So a
+   wake counts only when the turn runs in the thread the operator can watch: the
+   Claude desktop session, or the ChatGPT/Codex app thread. A route that reaches the
+   agent sooner by running it anywhere else is a failed wake, not a faster one. Moving an agent to another environment
    is RELOCATION, a separate act behind its own permission (the human, coordinators and
    admins, or an agent the human granted it), ledgered with who did it; the operator's
    `[relocate]` commands are the only ones Dibs runs that host an agent, and no wake reads
