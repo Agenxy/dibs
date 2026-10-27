@@ -489,11 +489,32 @@ func TestCurrentAppServiceConfigureDriver(t *testing.T) {
 }
 
 func TestDoctorOnlyUsesPromptFreeAppServiceObservation(t *testing.T) {
-	for _, scenario := range []string{"missing", "present", "unloaded", "unknown", "foreign"} {
+	// The smapp-* scenarios are what launchctl prints for the job SMAppService
+	// actually loads: a program identifier relative to the registering app and
+	// no absolute program line. The other scenarios kept an invented absolute
+	// line, so this check passed here and failed on every real install.
+	scenarios := []string{
+		"missing", "present", "unloaded", "unknown", "foreign",
+		"smapp-present", "smapp-missing", "smapp-stopped",
+	}
+	for _, scenario := range scenarios {
 		t.Run(scenario, func(t *testing.T) {
 			f := newAppServiceTestFixture(t)
-			reader, command := readAppServiceJob, appServiceDiagnostic
-			t.Cleanup(func() { readAppServiceJob = reader; appServiceDiagnostic = command })
+			reader, command, executable := readAppServiceJob, appServiceDiagnostic, loadedProcessExecutable
+			t.Cleanup(func() {
+				readAppServiceJob = reader
+				appServiceDiagnostic = command
+				loadedProcessExecutable = executable
+			})
+			loadedProcessExecutable = func(pid int) (string, error) {
+				if pid != 8806 {
+					t.Fatalf("resolved pid %d, want the job's own 8806", pid)
+				}
+				if scenario == "smapp-missing" {
+					return filepath.Join(f.home, "removed", "Dibs.app", "Contents", "MacOS", "dibd"), nil
+				}
+				return filepath.Join(f.app, "Contents", "MacOS", "dibd"), nil
+			}
 			readAppServiceJob = readLoadedAppService
 			calls := 0
 			appServiceDiagnostic = func(cmd *exec.Cmd) ([]byte, error) {
@@ -515,6 +536,17 @@ func TestDoctorOnlyUsesPromptFreeAppServiceObservation(t *testing.T) {
 				if scenario == "foreign" {
 					target = fmt.Sprintf("gui/%d/%s", os.Getuid()+1, appServiceLabel)
 				}
+				if strings.HasPrefix(scenario, "smapp-") {
+					running := "\tstate = running\n\tpid = 8806\n"
+					if scenario == "smapp-stopped" {
+						running = "\tstate = not running\n"
+					}
+					return fmt.Appendf(nil, "%s = {\n\tactive count = 1\n\ttype = Submitted\n"+
+						"\tmanaged_by = com.apple.xpc.ServiceManagement\n%s\n"+
+						"\tprogram identifier = Contents/MacOS/dibd (mode: 2)\n"+
+						"\tparent bundle identifier = org.agenxy.dibs\n"+
+						"\tsemaphores = {\n\t\tpid = 1\n\t}\n}\n", target, running), nil
+				}
 				return fmt.Appendf(nil, "%s = {\n\tprogram = %s\n}\n", target, filepath.Join(app, "Contents", "MacOS", "dibd")), nil
 			}
 			t.Setenv("DIBS_NO_UPDATE_CHECK", "1")
@@ -528,6 +560,10 @@ func TestDoctorOnlyUsesPromptFreeAppServiceObservation(t *testing.T) {
 			}
 			orphan, visibility := false, false
 			for _, check := range report.Checks {
+				if strings.Contains(check.What, "cannot identify the loaded Dibs program") &&
+					strings.HasPrefix(scenario, "smapp-") {
+					t.Fatal("a real SMAppService job was reported unidentifiable:", check)
+				}
 				if strings.Contains(check.What, "orphaned loaded background service") {
 					orphan = true
 					if !strings.Contains(check.Fix, "configure --service --remove") || !strings.Contains(check.Fix, "brew uninstall --cask dibs") || !strings.Contains(check.Fix, backgroundSettings) || strings.Contains(check.What, "inert") {
@@ -536,10 +572,10 @@ func TestDoctorOnlyUsesPromptFreeAppServiceObservation(t *testing.T) {
 				}
 				visibility = visibility || strings.Contains(check.What+check.Fix, backgroundSettings)
 			}
-			if orphan != (scenario == "missing") {
+			if orphan != (scenario == "missing" || scenario == "smapp-missing") {
 				t.Fatalf("orphan diagnosis=%t scenario=%s: %s", orphan, scenario, out)
 			}
-			if scenario != "present" && !visibility {
+			if scenario != "present" && scenario != "smapp-present" && !visibility {
 				t.Fatal("missing observation limit and Settings hint:", out)
 			}
 			if f.requests.Load() != 0 {

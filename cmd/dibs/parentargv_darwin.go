@@ -8,6 +8,7 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"os"
 
 	"golang.org/x/sys/unix"
@@ -51,4 +52,23 @@ func parseProcargs2(raw []byte) []string {
 		rest = rest[end+1:]
 	}
 	return argv
+}
+
+// processExecutable reads another process's executable path from the same
+// kernel record, without a subprocess or a permission prompt. It is the path
+// the process was started from, which stays true after the file is removed.
+func processExecutable(pid int) (string, error) {
+	raw, err := unix.SysctlRaw("kern.procargs2", pid)
+	if err != nil {
+		return "", err
+	}
+	if len(raw) < 4 {
+		return "", errors.New("process arguments are truncated")
+	}
+	rest := raw[4:]
+	end := bytes.IndexByte(rest, 0)
+	if end <= 0 {
+		return "", errors.New("process arguments carry no executable path")
+	}
+	return string(rest[:end]), nil
 }

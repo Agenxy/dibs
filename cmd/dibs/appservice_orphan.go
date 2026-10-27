@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -31,6 +32,8 @@ var errAppServiceNotLoaded = errors.New("dibs app service is not loaded")
 var readAppServiceJob = readLoadedAppService
 
 var appServiceDiagnostic = executeAppServiceDiagnostic
+
+var loadedProcessExecutable = processExecutable
 
 func readLoadedAppService() ([]byte, error) {
 	target := fmt.Sprintf("gui/%d/%s", os.Getuid(), appServiceLabel)
@@ -63,25 +66,64 @@ func (b *appServiceDiagnosticOutput) Write(p []byte) (int, error) {
 	return b.Buffer.Write(p)
 }
 
+// errAppServiceNotRunning is a loaded SMAppService job with no process: its
+// program is resolved by macOS from the app that registered it, and no
+// prompt-free reading here can name that app.
+var errAppServiceNotRunning = errors.New("dibs app service is loaded but not running")
+
+// loadedAppProgram names the executable the loaded job runs.
+//
+// Two shapes, because launchd prints two. A plain LaunchAgent has an
+// absolute `program = …` line. The job SMAppService loads, which is the one
+// every current install has, prints only `program identifier =
+// Contents/MacOS/dibd`, relative to the app that registered it, and no
+// absolute path anywhere. This read only the first shape, its test fixture
+// invented that line, and doctor told every real install it "cannot
+// identify the loaded Dibs program" beside a passing check that the service
+// starts the installed dibd. A running job's pid names its executable
+// through the kernel, which is the path it was really started from.
 func loadedAppProgram(body []byte) (string, error) {
 	target := fmt.Sprintf("gui/%d/%s = {", os.Getuid(), appServiceLabel)
 	if !strings.HasPrefix(strings.TrimSpace(string(body)), target) {
 		return "", errors.New("loaded service diagnostic did not identify this user's Dibs job")
 	}
+	relative, pid := "", 0
 	for _, line := range strings.Split(string(body), "\n") {
-		value, found := strings.CutPrefix(strings.TrimSpace(line), "program = ")
-		if !found {
-			continue
+		trimmed := strings.TrimSpace(line)
+		if value, found := strings.CutPrefix(trimmed, "program = "); found {
+			return checkedAppProgram(strings.TrimSpace(value))
 		}
-		program := strings.TrimSpace(value)
-		app := filepath.Dir(filepath.Dir(filepath.Dir(program)))
-		if !filepath.IsAbs(program) || filepath.Base(app) != "Dibs.app" ||
-			program != filepath.Join(app, "Contents", "MacOS", "dibd") {
-			return "", errors.New("loaded Dibs service has an unexpected program; inspect it in " + backgroundSettings)
+		if value, found := strings.CutPrefix(trimmed, "program identifier = "); found {
+			relative, _, _ = strings.Cut(value, " (")
 		}
-		return program, nil
+		// The job's own pid is one tab in; nested dictionaries repeat the key deeper.
+		if value, found := strings.CutPrefix(line, "\tpid = "); found && pid == 0 {
+			pid, _ = strconv.Atoi(strings.TrimSpace(value))
+		}
 	}
-	return "", errors.New("loaded Dibs service did not expose its program")
+	if relative == "" {
+		return "", errors.New("loaded Dibs service did not expose its program")
+	}
+	if relative != filepath.Join("Contents", "MacOS", "dibd") {
+		return "", errors.New("loaded Dibs service has an unexpected program; inspect it in " + backgroundSettings)
+	}
+	if pid <= 0 {
+		return "", errAppServiceNotRunning
+	}
+	program, err := loadedProcessExecutable(pid)
+	if err != nil {
+		return "", fmt.Errorf("could not read the running service's program: %w", err)
+	}
+	return checkedAppProgram(program)
+}
+
+func checkedAppProgram(program string) (string, error) {
+	app := filepath.Dir(filepath.Dir(filepath.Dir(program)))
+	if !filepath.IsAbs(program) || filepath.Base(app) != "Dibs.app" ||
+		program != filepath.Join(app, "Contents", "MacOS", "dibd") {
+		return "", errors.New("loaded Dibs service has an unexpected program; inspect it in " + backgroundSettings)
+	}
+	return program, nil
 }
 
 func checkOrphanedAppService(note func(string), warn fixFn) {
@@ -99,6 +141,11 @@ func checkOrphanedAppService(note func(string), warn fixFn) {
 		return
 	}
 	program, err := loadedAppProgram(body)
+	if errors.Is(err, errAppServiceNotRunning) {
+		note("Dibs app service is loaded but not running. macOS resolves its program from the app " +
+			"that registered it, which cannot be read here without authorization; check " + backgroundSettings + ".")
+		return
+	}
 	if err != nil {
 		warn("cannot identify the loaded Dibs program", err.Error()+"; check "+backgroundSettings)
 		return
