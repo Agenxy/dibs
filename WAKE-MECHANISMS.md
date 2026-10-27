@@ -780,6 +780,36 @@ counts an agent whose directory is not on this machine as having no route here,
 rather than as covered, because a wake that starts in the wrong place and fails
 is not coverage. See `docs/NETWORK.md` §5.
 
+## 5c. Claude Code channels (SHIPPED, preferred where they register)
+
+Decided 2026-10-22 by the operator: channels first, the session socket (§5b)
+where a channel cannot register. A channel is Claude Code's documented way for
+an MCP server to push an event into the session that spawned it
+(`notifications/claude/channel`), so the bridge, already that MCP server,
+writes the same daemon digest there instead of to the socket. The one-writer
+claim, digest refresh, receipts and surrender are unchanged; only the write
+differs (`cmd/dibs/channel.go`).
+
+Measured limits, Claude Code 2.1.233 and Claude Desktop's bundled 2.1.293:
+
+- A channel registers only if the session opted the server in at launch.
+  Dibs is not on Anthropic's allowlist, so the opt-in is
+  `--dangerously-load-development-channels plugin:dibs@dibs`, which Claude
+  Code ignores in `-p` and SDK sessions. Claude Desktop's Code tab launches
+  every session in SDK mode (`--input-format stream-json`), so there the
+  socket route remains the delivery.
+- Events on an unregistered channel are dropped with no error. The bridge
+  therefore turns channel mode on only from its parent's launch arguments
+  (read from the kernel, no subprocess), never by inference.
+- The v2 MCP runtime does not register a channel server that negotiated
+  2026-07-28. In channel mode the bridge declines `server/discover` as a
+  pre-2026 server does. This is a load-bearing 2025 assumption, kept until
+  Claude Code registers 2026 channel servers.
+
+`DIBS_CLAUDE_CHANNEL=off` is the rollback. Dibs reaching the channel allowlist
+would make `--channels plugin:dibs@claude-plugins-official` work in SDK
+sessions too; the bridge already accepts that opt-in.
+
 ## 5b. The harness's own session socket (SHIPPED)
 
 Claude Code publishes, per session, a unix socket and an authentication key,
