@@ -7,6 +7,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"strconv"
 )
@@ -23,4 +24,9 @@ func parentArgv() []string {
 		argv[i] = string(p)
 	}
 	return argv
+}
+
+// processExecutable is only needed for the macOS app service.
+func processExecutable(int) (string, error) {
+	return "", errors.New("process executable is not read on this platform")
 }

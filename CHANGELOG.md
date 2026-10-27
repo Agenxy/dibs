@@ -19,6 +19,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `dibs doctor` no longer warns "cannot identify the loaded Dibs program" on
+  every macOS install. The job SMAppService loads names its program relative
+  to the app that registered it and prints no absolute path, which is the only
+  shape the check read; its test used an invented absolute line. Doctor now
+  reads a running service's executable from the kernel, so the orphaned-service
+  check works on real installs, and says plainly when a stopped service's
+  program cannot be resolved without authorization.
 - `dibs doctor` no longer reports a folder as "cannot be read by the daemon"
   when it is simply not a git checkout, or no longer exists. On a production
   board it listed `~/Desktop`, folders that hold checkouts, `/` and a deleted
