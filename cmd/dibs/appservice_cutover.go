@@ -24,6 +24,7 @@ type appCutover struct {
 	hadPin                                     bool
 	stopped, changedPin, touchedApp, legacyOut bool
 	recovery                                   string
+	nativeRefresh, manualServing, retainFailed bool
 }
 
 func (p *plan) cutoverAppService() (failure error) {
@@ -54,9 +55,8 @@ func (p *plan) cutoverAppService() (failure error) {
 	defer func() {
 		if failure != nil {
 			recoveryErr := tx.rollback(failure)
-			var startup *boardStartFailure
-			if recoveryErr == nil && tx.recovery != "" && errors.As(failure, &startup) {
-				failure = fmt.Errorf("the replacement did not start serving: %w\n\n%s", startup.cause, tx.recovery)
+			if recoveryErr == nil && tx.recovery != "" {
+				failure = fmt.Errorf("the replacement did not start serving: %w\n\n%s", startupCause(failure), tx.recovery)
 			}
 			failure = errors.Join(failure, recoveryErr)
 		}
@@ -84,8 +84,14 @@ func (tx *appCutover) run() error {
 		return err
 	}
 	if err := p.doConfirm(p.dir); err != nil {
-		return err
+		if !errors.Is(err, errAppServiceLaunchRefused) || p.app.legacy != "" {
+			return err
+		}
+		if err := tx.refreshNativeService(err); err != nil {
+			return err
+		}
 	}
+	tx.nativeRefresh = false
 	if err := retainLegacyAppReceipt(p.app); err != nil {
 		return err
 	}
@@ -137,6 +143,9 @@ func unregisterAppService(app string) error {
 }
 
 func (tx *appCutover) rollback(cause error) error {
+	if tx.nativeRefresh {
+		return tx.recoverAfterNativeRefresh()
+	}
 	// Remove the replacement BEFORE restoring the old supervisor. Uncertainty
 	// refuses a second supervisor, even if that leaves a visible recovery error.
 	if tx.touchedApp {
@@ -158,10 +167,8 @@ func (tx *appCutover) rollback(cause error) error {
 	if !tx.stopped && !tx.legacyOut {
 		return nil
 	}
-	// An immediate second registration reproduced the same native refusal.
-	// The old 90-second timeout accidentally let macOS refresh its constraint
-	// before recovery. Fast diagnosis must not turn that delay into a dead
-	// board: after removing the failed job, recover directly, unsupervised.
+	// If manual setup failed before the bounded native refresh could begin,
+	// keep the ordinary rollback's positively removed job and verified fallback.
 	unsupervised := errors.Is(cause, errAppServiceLaunchRefused) && tx.p.app.legacy == ""
 	if err := tx.restorePreviousSupervisor(unsupervised); err != nil {
 		return fmt.Errorf("service recovery did not complete: %w; run dibs doctor", err)
@@ -169,8 +176,7 @@ func (tx *appCutover) rollback(cause error) error {
 	switch {
 	case unsupervised:
 		tx.recovery = "the board is serving unsupervised; macOS refused the service launch " +
-			"(OS_REASON_CODESIGNING); run `dibs configure --service` again in a minute " +
-			"to return it to the background service. " +
+			"(OS_REASON_CODESIGNING); run `dibs doctor`, then retry `dibs configure --service`. " +
 			"The upgrade still failed. This is the NEW build; the previous binary was not restored."
 	case tx.p.app.legacy == "" && !tx.p.app.previousManual:
 		tx.recovery = "the NEW build is serving again; the upgrade still failed. " +

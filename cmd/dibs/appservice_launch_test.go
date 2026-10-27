@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/agenxy/dibs/internal/paths"
 )
@@ -31,6 +32,13 @@ func TestConfigureAppServiceLaunchOutcome(t *testing.T) {
 			}
 			stopped := f.liveManual(t)
 			reader, executor, manual := readAppServiceJob, executeAppServiceCommand, startManualAppRecovery
+			wait := waitForAppServiceRefresh
+			t.Cleanup(func() { waitForAppServiceRefresh = wait })
+			waitForAppServiceRefresh = func(delay time.Duration) {
+				if delay != 20*time.Second {
+					t.Fatal("changed native residence", delay)
+				}
+			}
 			t.Cleanup(func() { readAppServiceJob, executeAppServiceCommand, startManualAppRecovery = reader, executor, manual })
 			registrations, observations, manualStarts := 0, 0, 0
 			var readsBeforeManual int64
@@ -41,10 +49,10 @@ func TestConfigureAppServiceLaunchOutcome(t *testing.T) {
 					t.Fatal("manual fallback changed the installed build, directory, address or mode")
 				}
 				state, err := os.ReadFile(f.state)
-				if err != nil || string(state) != "not-registered" {
-					t.Fatal("manual fallback preceded positive app-service removal")
+				if err != nil || string(state) != "enabled" {
+					t.Fatal("manual fallback lost the positively failed registration")
 				}
-				if f.unavailable.Load() != 3 {
+				if manualStarts == 1 && f.unavailable.Load() != 3 {
 					t.Error("fresh refusal waited for board polls before fallback")
 				}
 				f.unavailable.Store(0)
@@ -57,7 +65,7 @@ func TestConfigureAppServiceLaunchOutcome(t *testing.T) {
 					// A brief unavailable board bounds the old-code control too:
 					// it eventually recovers externally, but that must not hide
 					// the freshly observed terminal refusal of this attempt.
-					if registrations == 1 && scenario != "successful" {
+					if (registrations == 1 && scenario != "successful") || scenario == "recovery-also-refused" {
 						f.unavailable.Store(3)
 					} else {
 						f.unavailable.Store(0)
@@ -115,19 +123,23 @@ func TestConfigureAppServiceLaunchOutcome(t *testing.T) {
 				t.Fatalf("setup did not enter upgrade registration: %v %s", err, trace)
 			}
 			refused := strings.HasSuffix(scenario, "refused")
-			if refused {
+			if scenario == "recovery-also-refused" {
 				if result == nil || !strings.Contains(result.Error(), "OS_REASON_CODESIGNING") || !strings.Contains(result.Error(), "dibs configure --service") {
 					t.Errorf("fresh native refusal was hidden: %v\n%s", result, out)
 				}
 				if result != nil && (strings.Contains(result.Error(), "Start the daemon") || strings.Contains(result.Error(), "in the foreground") ||
-					!strings.Contains(result.Error(), "serving unsupervised") || !strings.Contains(result.Error(), "again in a minute")) {
+					!strings.Contains(result.Error(), "serving unsupervised") || strings.Contains(result.Error(), "again in a minute")) {
 					t.Errorf("final failure hint contradicts verified recovery: %v", result)
 				}
-				if observations < 2 || registrations != 1 || manualStarts != 1 || f.requests.Load() != 0 || f.boardRequests.Load() <= readsBeforeManual {
+				if observations < 2 || registrations != 2 || manualStarts != 2 || f.requests.Load() != 0 || f.boardRequests.Load() <= readsBeforeManual {
 					t.Errorf("refusal/manual recovery path: observations=%d registrations=%d manual=%d permission=%d boardReads=%d before=%d", observations, registrations, manualStarts, f.requests.Load(), f.boardRequests.Load(), readsBeforeManual)
 				}
-				if strings.Contains(out, "upgraded:") || !strings.Contains(out, "serving unsupervised") || !strings.Contains(out, "NEW build") || !strings.Contains(out, "still failed") || !strings.Contains(out, "again in a minute") {
+				if strings.Contains(out, "upgraded:") || !strings.Contains(out, "serving unsupervised") || !strings.Contains(out, "NEW build") || !strings.Contains(out, "still failed") || strings.Contains(out, "again in a minute") {
 					t.Errorf("failed upgrade falsely reported success or hid recovery: %s", out)
+				}
+			} else if refused {
+				if result != nil || registrations != 2 || manualStarts != 1 || strings.Count(out, "upgraded:") != 1 || f.requests.Load() != 1 || !strings.Contains(out, "waiting 20 s") {
+					t.Errorf("fresh refusal did not recover through one held retry: %v registers=%d manual=%d\n%s", result, registrations, manualStarts, out)
 				}
 			} else if result != nil || registrations != 1 || manualStarts != 0 || strings.Count(out, "upgraded:") != 1 || f.requests.Load() != 1 {
 				t.Errorf("non-current/unknown outcome must keep board proof: %v registrations=%d permission=%d\n%s", result, registrations, f.requests.Load(), out)

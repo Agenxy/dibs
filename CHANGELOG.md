@@ -34,10 +34,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   normal board verification. A failed upgrade no longer prints `upgraded` when
   recovery brings the board back: recovery says explicitly that the operation
   still failed and whether it restarted the new build. After a fresh native
-  code-signing refusal, recovery removes the failed service and verifies the
-  board running unsupervised, with an explicit reminder to configure the service
-  again in a minute. It does not immediately repeat the same refused launch.
-  Automatic recovery of macOS's stale launch constraint remains open.
+  code-signing refusal, the installer keeps the failed job loaded while a
+  verified manual daemon serves the same board. After an empirically measured
+  20-second hold it retries registration once, stopping the manual PID first.
+  A second refusal restores verified unsupervised serving and retains the failed
+  job; the final error preserves the actual causes and current recovery state.
+  No daemon timer, signing relaxation or promise to recover "in a minute" is added.
 
 - `dibs doctor` no longer warns "cannot identify the loaded Dibs program" on
   every macOS install. The job SMAppService loads names its program relative
