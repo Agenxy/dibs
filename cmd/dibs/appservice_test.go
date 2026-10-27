@@ -94,6 +94,7 @@ type appServiceTestFixture struct {
 	home, dir, root, app, state, trace string
 	requests                           atomic.Int64
 	unavailable                        atomic.Int64
+	boardRequests                      atomic.Int64
 }
 
 func newAppServiceTestFixture(t *testing.T) *appServiceTestFixture {
@@ -145,6 +146,7 @@ func newAppServiceTestFixture(t *testing.T) *appServiceTestFixture {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/api/board":
+			f.boardRequests.Add(1)
 			if f.unavailable.Load() > 0 && f.unavailable.Add(-1) >= 0 {
 				http.Error(w, "fixture board rebuilding", http.StatusServiceUnavailable)
 				return

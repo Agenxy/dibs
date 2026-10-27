@@ -20,8 +20,9 @@ import (
 func TestConfigureAppServiceLaunchOutcome(t *testing.T) {
 	for _, scenario := range []string{
 		"new-job-refused", "new-uuid-refused", "new-run-refused",
+		"recovery-also-refused",
 		"stale-refusal", "running-with-old-refusal", "unknown-probe",
-		"foreign-job", "nested-reason", "missing-reason", "successful",
+		"foreign-job", "nested-reason", "missing-reason", "other-exit-reason", "successful",
 	} {
 		t.Run(scenario, func(t *testing.T) {
 			f := newAppServiceTestFixture(t)
@@ -29,16 +30,30 @@ func TestConfigureAppServiceLaunchOutcome(t *testing.T) {
 				t.Fatal(err)
 			}
 			stopped := f.liveManual(t)
-			reader, executor := readAppServiceJob, executeAppServiceCommand
-			t.Cleanup(func() { readAppServiceJob, executeAppServiceCommand = reader, executor })
-			registrations, observations := 0, 0
+			reader, executor, manual := readAppServiceJob, executeAppServiceCommand, startManualAppRecovery
+			t.Cleanup(func() { readAppServiceJob, executeAppServiceCommand, startManualAppRecovery = reader, executor, manual })
+			registrations, observations, manualStarts := 0, 0, 0
+			var readsBeforeManual int64
+			startManualAppRecovery = func(installed, dir, unit string, was daemonState) error {
+				manualStarts++
+				readsBeforeManual = f.boardRequests.Load()
+				if installed != f.root || dir != f.dir || unit != "" || hostPort(was.addr) != os.Getenv("DIBS_TEST_APP_SERVICE_ADDR") {
+					t.Fatal("manual fallback changed the installed build, directory, address or mode")
+				}
+				state, err := os.ReadFile(f.state)
+				if err != nil || string(state) != "not-registered" {
+					t.Fatal("manual fallback preceded positive app-service removal")
+				}
+				if f.unavailable.Load() != 3 {
+					t.Error("fresh refusal waited for board polls before fallback")
+				}
+				f.unavailable.Store(0)
+				return nil
+			}
 			executeAppServiceCommand = func(cmd *exec.Cmd) ([]byte, error) {
 				out, err := cmd.CombinedOutput()
 				if err == nil && cmd.Args[1] == "--service-register" {
 					registrations++
-					if registrations == 2 && strings.HasSuffix(scenario, "refused") && f.unavailable.Load() != 3 {
-						t.Error("fresh refusal waited for board polls before recovery")
-					}
 					// A brief unavailable board bounds the old-code control too:
 					// it eventually recovers externally, but that must not hide
 					// the freshly observed terminal refusal of this attempt.
@@ -56,22 +71,32 @@ func TestConfigureAppServiceLaunchOutcome(t *testing.T) {
 					return nil, errors.New("fixture probe unavailable")
 				}
 				if registrations == 0 {
-					if scenario == "new-job-refused" || scenario == "successful" || scenario == "foreign-job" || scenario == "nested-reason" || scenario == "missing-reason" {
+					if scenario == "new-job-refused" || scenario == "successful" || scenario == "foreign-job" || scenario == "nested-reason" || scenario == "missing-reason" || scenario == "other-exit-reason" {
 						return nil, errAppServiceNotLoaded
 					}
 					return launchOutcomeFixture("old", 1, "spawn failed", "OS_REASON_CODESIGNING", ""), nil
 				}
 				if registrations > 1 || scenario == "running-with-old-refusal" || scenario == "successful" {
+					if scenario == "recovery-also-refused" {
+						return launchOutcomeFixture(fmt.Sprint(registrations), 1, "spawn failed", "OS_REASON_CODESIGNING", ""), nil
+					}
 					return launchOutcomeFixture("old", 2, "running", "OS_REASON_CODESIGNING", "\tpid = 123\n"), nil
 				}
 				uuid, runs := "old", 1
 				if scenario == "new-uuid-refused" {
 					uuid = "new"
 				}
+				if scenario == "recovery-also-refused" {
+					uuid = fmt.Sprint(registrations)
+				}
 				if scenario == "new-run-refused" {
 					runs = 2
 				}
-				body := launchOutcomeFixture(uuid, runs, "spawn failed", "OS_REASON_CODESIGNING", "")
+				reason := "OS_REASON_CODESIGNING"
+				if scenario == "other-exit-reason" {
+					reason = "OS_REASON_EXEC"
+				}
+				body := launchOutcomeFixture(uuid, runs, "spawn failed", reason, "")
 				switch scenario {
 				case "foreign-job":
 					body = []byte(strings.Replace(string(body), appServiceLabel, "other.service", 1))
@@ -94,13 +119,13 @@ func TestConfigureAppServiceLaunchOutcome(t *testing.T) {
 				if result == nil || !strings.Contains(result.Error(), "OS_REASON_CODESIGNING") || !strings.Contains(result.Error(), "dibs configure --service") {
 					t.Errorf("fresh native refusal was hidden: %v\n%s", result, out)
 				}
-				if observations < 2 || registrations != 2 || f.requests.Load() != 0 {
-					t.Errorf("refusal/recovery path: observations=%d registrations=%d permission=%d", observations, registrations, f.requests.Load())
+				if observations < 2 || registrations != 1 || manualStarts != 1 || f.requests.Load() != 0 || f.boardRequests.Load() <= readsBeforeManual {
+					t.Errorf("refusal/manual recovery path: observations=%d registrations=%d manual=%d permission=%d boardReads=%d before=%d", observations, registrations, manualStarts, f.requests.Load(), f.boardRequests.Load(), readsBeforeManual)
 				}
-				if strings.Contains(out, "upgraded:") || !strings.Contains(out, "recovered:") || !strings.Contains(out, "NEW build") || !strings.Contains(out, "still failed") {
+				if strings.Contains(out, "upgraded:") || !strings.Contains(out, "serving unsupervised") || !strings.Contains(out, "NEW build") || !strings.Contains(out, "still failed") || !strings.Contains(out, "again in a minute") {
 					t.Errorf("failed upgrade falsely reported success or hid recovery: %s", out)
 				}
-			} else if result != nil || registrations != 1 || strings.Count(out, "upgraded:") != 1 || f.requests.Load() != 1 {
+			} else if result != nil || registrations != 1 || manualStarts != 0 || strings.Count(out, "upgraded:") != 1 || f.requests.Load() != 1 {
 				t.Errorf("non-current/unknown outcome must keep board proof: %v registrations=%d permission=%d\n%s", result, registrations, f.requests.Load(), out)
 			}
 		})

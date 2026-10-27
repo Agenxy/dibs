@@ -11,6 +11,10 @@ import (
 	"strings"
 )
 
+var errAppServiceLaunchRefused = errors.New("macOS refused the Dibs service launch (OS_REASON_CODESIGNING); " +
+	"enabled registration did not launch the daemon. Run dibs doctor to inspect the installed app, " +
+	"then retry dibs configure --service. The launch constraint was not changed")
+
 // Native registration says enabled even when launchd immediately refuses the
 // executable. Capture the pre-registration job so its old last-exit reason
 // cannot be mistaken for the outcome of the attempt we are waiting for.
@@ -27,9 +31,7 @@ func (p *plan) startAppService() error {
 		if !fresh {
 			return nil
 		}
-		return errors.New("macOS refused the Dibs service launch (OS_REASON_CODESIGNING); " +
-			"enabled registration did not launch the daemon. Run dibs doctor to inspect the installed app, " +
-			"then retry dibs configure --service. The launch constraint was not changed")
+		return errAppServiceLaunchRefused
 	}
 	return p.app.start()
 }
