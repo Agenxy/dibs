@@ -71,6 +71,10 @@ type Op struct {
 	// recorded so replay reaches the same answer without re-deciding it. Blanked
 	// on ingress like AgentID, so an agent cannot assert it.
 	AdoptAuthorised bool `json:"adopt_authorised,omitempty"`
+	// New adoption effects only. Absence preserves historical request and contact
+	// folds. The writer clears caller-supplied receipts before choosing one.
+	AdoptionRecovery    bool   `json:"adoption_recovery,omitempty"`
+	PriorAdoptionSerial uint64 `json:"prior_adoption_serial,omitempty"`
 
 	// HumanMint marks the ONE registration that may create or reattach the
 	// operator's own agent. An ingress decision like the two above, and the

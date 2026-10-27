@@ -468,6 +468,11 @@ func (e *Engine) execWithReceipt(
 	// caller's to assert. Checked below, after the actor is known.
 	op.ClaimVerified = false
 	op.AdoptAuthorised = false
+	op.AdoptionRecovery = op.Kind == core.OpAdoptAgent
+	if m := e.state.Messages[op.MsgSerial]; op.Kind == core.OpRespond && m != nil && m.Adopt != "" {
+		op.AdoptionRecovery = true
+	}
+	op.PriorAdoptionSerial = 0
 	op.MergeActor = nil      // authentication decision is never caller input
 	op.DeliveryStart = false // ingress owns the new-send semantic flag
 	op.QueueDebt = false
@@ -858,10 +863,10 @@ func (e *Engine) execWithReceipt(
 		}
 		// An adoption that would move nothing is refused, rather than ledgered.
 		//
-		// The fold records no adoption relationship: moving the messages IS the
-		// whole effect. So adopting an empty mailbox changed no replayable state
-		// and still advanced the serial and answered ok:true with "read them
-		// with inbox", which is advice about mail that does not exist. That
+		// A direct empty adoption performs no recovery. Successful transfers
+		// now record evidence on matching open requests, never a standing
+		// redirect; an empty call must not manufacture such evidence. It used to
+		// advance the serial and answer "read them with inbox" about no mail. That
 		// breaks the rule this engine is built on in the direction nobody
 		// notices: an op ledgered though it changed nothing.
 		//
@@ -894,21 +899,8 @@ func (e *Engine) execWithReceipt(
 		if err := e.refuseApprovingOwnAdoption(actor, op); err != nil {
 			return nil, err
 		}
-		// The same emptiness check as the direct route above.
-		//
-		// It was only on the direct one, so APPROVING an adoption request
-		// against an empty mailbox still ledgered an op that moved nothing and
-		// answered adopted:<source> with messages:0, and generated a notice
-		// telling the requester their rescued mail was waiting in an inbox that
-		// had received none. Two routes to one effect and the check on one of
-		// them, which is how the first fix looked complete. Found by a
-		// pre-release review.
-		if op.AdoptAuthorised {
-			if from := e.adoptionSourceOf(op); from != "" {
-				if err := e.refuseEmptyAdoption(from); err != nil {
-					return nil, err
-				}
-			}
+		if err := e.prepareAdoptionApproval(op); err != nil {
+			return nil, err
 		}
 	}
 

@@ -697,6 +697,9 @@ type Message struct {
 	// against the reader's CreatedSerial. Found by the pre-release review,
 	// round four.
 	AdoptedAt uint64 `json:"adopted_serial,omitempty"`
+	// A successful adoption after this request was sent, onto its requester.
+	// Stored on the request, not on moved mail that may be consumed and swept.
+	PriorAdoptionSerial uint64 `json:"prior_adoption_serial,omitempty"`
 	// MergedSentAt grants the survivor sender ownership at this merge serial.
 	// Separate from AdoptedAt: a conversation can have BOTH parties inherited.
 	MergedSentAt uint64    `json:"merged_sent_serial,omitempty"`

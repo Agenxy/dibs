@@ -83,7 +83,7 @@ func (s *State) refuseDone(m *Message, op *Op, impliedApproval bool) error {
 		return errf("E_BAD_DISPOSITION", hint,
 			"message %d is a %s and %s, not an approved request", m.Serial, m.Type, state)
 	}
-	if m.Grant != "" || m.Adopt != "" || m.Merge != nil {
+	if m.Grant != "" || m.Adopt != "" && (!op.AdoptionRecovery || m.PriorAdoptionSerial == 0) || m.Merge != nil {
 		return errf("E_BAD_DISPOSITION",
 			"approving it already performed it: there is no work left to report",
 			"message %d carried its own effect", m.Serial)

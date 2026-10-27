@@ -78,6 +78,9 @@ func (s *State) applyAdoptAgent(op *Op, l *Agent, now time.Time) (Result, []Even
 		},
 	}}
 	evs = append(evs, s.adoptedMailEvents(into, from)...)
+	if op.AdoptionRecovery {
+		evs = append(evs, s.completeAdoption(from, into, now)...)
+	}
 	serial := s.finish(&evs, now)
 	return Result{
 		"ok": true, "from": from.ID, "into": into.ID, "messages": moved,
