@@ -19,6 +19,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- macOS service upgrades report a freshly observed code-signing launch refusal
+  promptly instead of waiting the full board timeout behind an enabled
+  registration receipt. Old exit reasons and unavailable diagnostics keep the
+  normal board verification. A failed upgrade no longer prints `upgraded` when
+  recovery brings the board back: recovery says explicitly that the operation
+  still failed and whether it restarted the new build. After a fresh native
+  code-signing refusal, recovery removes the failed service and verifies the
+  board running unsupervised, with an explicit reminder to configure the service
+  again in a minute. It does not immediately repeat the same refused launch.
+  Automatic recovery of macOS's stale launch constraint remains open.
+
 - `dibs doctor` no longer warns "cannot identify the loaded Dibs program" on
   every macOS install. The job SMAppService loads names its program relative
   to the app that registered it and prints no absolute path, which is the only

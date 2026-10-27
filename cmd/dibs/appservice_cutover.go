@@ -46,7 +46,7 @@ func (p *plan) cutoverAppService() (failure error) {
 	tx := &appCutover{p: p, pin: pin, before: before, hadPin: err == nil}
 	defer func() {
 		if failure != nil {
-			failure = errors.Join(failure, tx.rollback())
+			failure = errors.Join(failure, tx.rollback(failure))
 		}
 	}()
 	return tx.run()
@@ -68,7 +68,7 @@ func (tx *appCutover) run() error {
 	}
 	tx.changedPin = true
 	tx.touchedApp = true
-	if err := p.app.start(); err != nil {
+	if err := p.startAppService(); err != nil {
 		return err
 	}
 	if err := p.doConfirm(p.dir); err != nil {
@@ -124,7 +124,7 @@ func unregisterAppService(app string) error {
 	return nil
 }
 
-func (tx *appCutover) rollback() error {
+func (tx *appCutover) rollback(cause error) error {
 	// Remove the replacement BEFORE restoring the old supervisor. Uncertainty
 	// refuses a second supervisor, even if that leaves a visible recovery error.
 	if tx.touchedApp {
@@ -146,25 +146,42 @@ func (tx *appCutover) rollback() error {
 	if !tx.stopped && !tx.legacyOut {
 		return nil
 	}
-	if err := tx.restorePreviousSupervisor(); err != nil {
+	// An immediate second registration reproduced the same native refusal.
+	// The old 90-second timeout accidentally let macOS refresh its constraint
+	// before recovery. Fast diagnosis must not turn that delay into a dead
+	// board: after removing the failed job, recover directly, unsupervised.
+	unsupervised := errors.Is(cause, errAppServiceLaunchRefused) && tx.p.app.legacy == ""
+	if err := tx.restorePreviousSupervisor(unsupervised); err != nil {
 		return fmt.Errorf("service recovery did not complete: %w; run dibs doctor", err)
+	}
+	switch {
+	case unsupervised:
+		fmt.Fprintln(os.Stderr, "recovered: the board is serving unsupervised; macOS refused the service launch "+
+			"(OS_REASON_CODESIGNING); run `dibs configure --service` again in a minute to return it to the background service. "+
+			"The upgrade still failed. This is the NEW build; the previous binary was not restored.")
+	case tx.p.app.legacy == "" && !tx.p.app.previousManual:
+		fmt.Fprintln(os.Stderr, "recovered: the NEW build is serving again; the upgrade still failed. "+
+			"The previous binary was not restored. Run dibs doctor before relying on it.")
+	default:
+		fmt.Fprintln(os.Stderr, "recovered: the previous service mode is serving again; the upgrade still failed.")
 	}
 	return nil
 }
 
-func (tx *appCutover) restorePreviousSupervisor() error {
+func (tx *appCutover) restorePreviousSupervisor(unsupervised bool) error {
+	tx.p.launchFailure = nil
 	var err error
 	switch {
 	case tx.p.app.legacy != "":
 		err = restoreLegacyAppService(tx.p.app.legacy, tx.legacyOut)
-	case tx.p.app.previousManual:
+	case unsupervised || tx.p.app.previousManual:
 		if tx.p.start != nil {
 			err = tx.p.start(tx.p.installed, tx.p.dir, "", tx.p.running)
 		} else {
 			err = startManualAppRecovery(tx.p.installed, tx.p.dir, "", tx.p.running)
 		}
 	default:
-		err = tx.p.app.start()
+		err = tx.p.startAppService()
 	}
 	if err != nil {
 		return err

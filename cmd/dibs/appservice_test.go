@@ -93,6 +93,8 @@ func appServiceFixture() int {
 type appServiceTestFixture struct {
 	home, dir, root, app, state, trace string
 	requests                           atomic.Int64
+	unavailable                        atomic.Int64
+	boardRequests                      atomic.Int64
 }
 
 func newAppServiceTestFixture(t *testing.T) *appServiceTestFixture {
@@ -144,6 +146,11 @@ func newAppServiceTestFixture(t *testing.T) *appServiceTestFixture {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/api/board":
+			f.boardRequests.Add(1)
+			if f.unavailable.Load() > 0 && f.unavailable.Add(-1) >= 0 {
+				http.Error(w, "fixture board rebuilding", http.StatusServiceUnavailable)
+				return
+			}
 			_, _ = w.Write([]byte(`{"node":"app-service-fixture","agents":[],"serial":7}`))
 		case "/mcp":
 			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"serverInfo":{"version":"0.0.16"}}}`))
@@ -172,6 +179,9 @@ func appServiceRegistryFixture() int {
 		return 20
 	}
 	defer release()
+	if os.Getenv("DIBS_TEST_APP_SERVICE_DAEMON") == "1" {
+		return serveAppServiceFixture()
+	}
 	_, _ = os.Stdout.WriteString("ready\n")
 	_, err = io.Copy(io.Discard, os.Stdin)
 	if err != nil {

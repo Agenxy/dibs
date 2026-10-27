@@ -150,6 +150,10 @@ type plan struct {
 	before  fleet
 	serving bool
 	app     *appServicePlan
+	after   fleet
+	// Set only around a native app-service registration. Observation is local
+	// to this short-lived installer, never a daemon watcher or launch receipt.
+	launchFailure func() error
 
 	// THE THREE EFFECTS CUTOVER HAS ON A LIVE FLEET, behind fields so a test
 	// can drive them.
@@ -302,6 +306,7 @@ func upgradeApp(o upgradeOpts, app *appServicePlan) error {
 	if err := p.cutover(); err != nil {
 		return err
 	}
+	p.reportUpgraded()
 	reportUpgradeNotifications()
 	return nil
 }
@@ -760,7 +765,7 @@ func (p *plan) reconcile() (newDir string, err error) {
 // the requirement (R12). So: subtract.
 func (p *plan) verify(newDir string) error {
 	step("waiting for the board")
-	after, err := waitForBoard(p.running.addr, 90*time.Second)
+	after, err := waitForBoard(p.running.addr, 90*time.Second, p.launchFailure)
 	if err != nil {
 		return fmt.Errorf("the daemon did not start serving: %w\n\n"+
 			"  The ledger is untouched and the board is still in it. Start the daemon\n"+
@@ -782,13 +787,19 @@ func (p *plan) verify(newDir string) error {
 	// lines under a note explaining that a lease MAY have lapsed and an agent
 	// returns by re-registering: the same paragraph both warned of it and
 	// denied it. Found by a pre-release review.
-	say("%s serial %d, %d agent(s)", ui.Bold("upgraded:"), after.Serial, after.Agents)
+	p.after = after
+	return nil
+}
+
+// Verification is also used by failure recovery. Only the caller that has
+// committed the entire cutover may report a successful upgrade.
+func (p *plan) reportUpgraded() {
+	say("%s serial %d, %d agent(s)", ui.Bold("upgraded:"), p.after.Serial, p.after.Agents)
 	if p.inherited != "" && !p.opts.adoptDir {
 		say("%s %s is named by an older version. Nothing is wrong; `dibs upgrade "+
 			"--adopt-dir` moves it and repoints the service in one step",
 			ui.Dim("note"), ui.Path(p.inherited))
 	}
-	return nil
 }
 
 // adoptedName is the current spelling of an inherited data directory, beside it.
@@ -1088,10 +1099,15 @@ func fleetSnapshotAt(addr string) (fleet, error) {
 // act on rather than a hang, and it waits on the BOARD rather than on /livez:
 // liveness answers before replay finishes, and an upgrade that reported success
 // while the board was still rebuilding would be reporting the wrong thing.
-func waitForBoard(addr string, limit time.Duration) (fleet, error) {
+func waitForBoard(addr string, limit time.Duration, launchFailure func() error) (fleet, error) {
 	deadline := time.Now().Add(limit)
 	var last error
 	for {
+		if launchFailure != nil {
+			if err := launchFailure(); err != nil {
+				return fleet{}, err
+			}
+		}
 		f, err := fleetSnapshotAt(addr)
 		if err == nil {
 			return f, nil
