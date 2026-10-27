@@ -605,6 +605,26 @@ receiving native peer turns, another watcher adds no delivery guarantee.
   your registration result rather than in the header of every delivery,
   because it is true of all of them and so says nothing about any one.
 
+### Daily traffic counts
+
+For your own UTC daily counts, call
+`all_mail(census:true, traffic:true)`; `agent` may name only your own ID/current
+name unless you are a coordinator. Your view is limited to your current
+incarnation; coordinators see `created_serial` on each retained row. Coordinators may select any agent or omit
+`agent` for all retained rows. This counts accepted sends by type and incoming
+request/question/handoff mail, without content. Ordinary mailbox census is
+unchanged and still coordinator-only.
+
+`GET /api/traffic`, with the coordination credential, supplies daily whole-board
+totals without agent IDs. Poll when needed; there is no Dibs timer. The window
+is 35 UTC dates, starts at `first_serial` / `started_at` (no historical backfill,
+first day may be partial), and survives mail prune and snapshot/ledger compaction.
+`through` is the latest counted send time. Each date retains at most 512 agent
+rows; `overflow_sent` / `overflow_asks_received` are included in board totals.
+When `rows_complete:false`, an absent agent row is unknown rather than zero.
+Recognized `op_id` retries do not count twice; adoption and merge keep original
+send attribution. Polling counts does not confirm receipt or mark an agent busy.
+
 ### If nobody can log back into an agent
 
 Registering with **neither a nonce nor a session id** makes an agent that can

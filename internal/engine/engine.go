@@ -473,7 +473,8 @@ func (e *Engine) execWithReceipt(
 		op.AdoptionRecovery = true
 	}
 	op.PriorAdoptionSerial = 0
-	op.MergeActor = nil      // authentication decision is never caller input
+	op.MergeActor = nil // authentication decision is never caller input
+	op.MailTrafficV1 = op.Kind == core.OpSendMessage
 	op.DeliveryStart = false // ingress owns the new-send semantic flag
 	op.QueueDebt = false
 	op.MailboxCapacity, op.ContactMailboxFull = false, false

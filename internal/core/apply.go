@@ -355,6 +355,9 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 	if len(evs) == 0 || evs[0].Serial == 0 {
 		s.finish(&evs, now)
 	}
+	if op.Kind == OpSendMessage && op.MailTrafficV1 {
+		s.recordTrafficV1(l.ID, op.To, op.MsgType, now)
+	}
 	return res, evs, nil
 }
 

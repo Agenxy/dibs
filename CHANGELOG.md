@@ -7,6 +7,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Metadata-only daily mail traffic counts survive message prune and encrypted
+  snapshot/ledger compaction. `all_mail(census:true, traffic:true)` supplies
+  per-agent sends and incoming asks to coordinators, or an agent's own row to
+  that agent. `/api/traffic` supplies aggregate-only totals with the coordination
+  credential. The 35 UTC-date window has a 512-agent daily cap and explicit
+  overflow counts; totals remain exact. Coverage starts with new sends, without
+  historical backfill. Polling adds no timer and does not confirm delivery.
+
 - Claude Code channels. A session started with
   `claude --dangerously-load-development-channels plugin:dibs@dibs` receives
   mail notices as `notifications/claude/channel` events, Claude Code's

@@ -877,6 +877,7 @@ type LegacyAckSnapshot struct {
 
 // State is the entire replayable truth. Only Apply mutates it.
 type State struct {
+	Traffic         *TrafficHistory `json:"traffic,omitempty"`
 	NodeID          string
 	Serial          uint64
 	RestartEpoch    string
