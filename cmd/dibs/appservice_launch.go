@@ -43,6 +43,10 @@ type appServiceLaunch struct {
 	state, reason string
 }
 
+func (s appServiceLaunch) owns(pid int) bool {
+	return pid > 0 && s.known && !s.absent && s.state == "running" && s.pid == uint64(pid)
+}
+
 func observeAppServiceLaunch() appServiceLaunch {
 	body, err := readAppServiceJob()
 	if errors.Is(err, errAppServiceNotLoaded) {

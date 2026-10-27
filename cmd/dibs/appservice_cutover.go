@@ -23,6 +23,8 @@ type appCutover struct {
 	before                                     []byte
 	hadPin                                     bool
 	stopped, changedPin, touchedApp, legacyOut bool
+	recovery                                   string
+	nativeRefresh, manualServing, retainFailed bool
 }
 
 func (p *plan) cutoverAppService() (failure error) {
@@ -31,6 +33,12 @@ func (p *plan) cutoverAppService() (failure error) {
 	}
 	if err := p.appStartupMatches(); err != nil {
 		return err
+	}
+	// Enabled registration does not make the serving process its job. Keep
+	// manual recovery when a positive native observation identifies a different
+	// owner (including the failed-registration plus manual-fallback state).
+	if job := observeAppServiceLaunch(); p.running.pid > 0 && job.known && !job.owns(p.running.pid) {
+		p.app.previousManual = true
 	}
 	if err := checkServicePinWritable(); err != nil {
 		return err
@@ -46,7 +54,12 @@ func (p *plan) cutoverAppService() (failure error) {
 	tx := &appCutover{p: p, pin: pin, before: before, hadPin: err == nil}
 	defer func() {
 		if failure != nil {
-			failure = errors.Join(failure, tx.rollback(failure))
+			recoveryErr := tx.rollback(failure)
+			if recoveryErr == nil && tx.recovery != "" {
+				noteStartupRecovered(failure)
+				failure = fmt.Errorf("%w\n\n%s", failure, tx.recovery)
+			}
+			failure = errors.Join(failure, recoveryErr)
 		}
 	}()
 	return tx.run()
@@ -72,8 +85,14 @@ func (tx *appCutover) run() error {
 		return err
 	}
 	if err := p.doConfirm(p.dir); err != nil {
-		return err
+		if !errors.Is(err, errAppServiceLaunchRefused) || p.app.legacy != "" {
+			return err
+		}
+		if err := tx.refreshNativeService(err); err != nil {
+			return err
+		}
 	}
+	tx.nativeRefresh = false
 	if err := retainLegacyAppReceipt(p.app); err != nil {
 		return err
 	}
@@ -125,6 +144,13 @@ func unregisterAppService(app string) error {
 }
 
 func (tx *appCutover) rollback(cause error) error {
+	if tx.nativeRefresh {
+		return tx.recoverAfterNativeRefresh()
+	}
+	return tx.restoreCutover(cause)
+}
+
+func (tx *appCutover) restoreCutover(cause error) error {
 	// Remove the replacement BEFORE restoring the old supervisor. Uncertainty
 	// refuses a second supervisor, even if that leaves a visible recovery error.
 	if tx.touchedApp {
@@ -146,25 +172,24 @@ func (tx *appCutover) rollback(cause error) error {
 	if !tx.stopped && !tx.legacyOut {
 		return nil
 	}
-	// An immediate second registration reproduced the same native refusal.
-	// The old 90-second timeout accidentally let macOS refresh its constraint
-	// before recovery. Fast diagnosis must not turn that delay into a dead
-	// board: after removing the failed job, recover directly, unsupervised.
+	// If manual setup failed before the bounded native refresh could begin,
+	// keep the ordinary rollback's positively removed job and verified fallback.
 	unsupervised := errors.Is(cause, errAppServiceLaunchRefused) && tx.p.app.legacy == ""
 	if err := tx.restorePreviousSupervisor(unsupervised); err != nil {
 		return fmt.Errorf("service recovery did not complete: %w; run dibs doctor", err)
 	}
 	switch {
 	case unsupervised:
-		fmt.Fprintln(os.Stderr, "recovered: the board is serving unsupervised; macOS refused the service launch "+
-			"(OS_REASON_CODESIGNING); run `dibs configure --service` again in a minute to return it to the background service. "+
-			"The upgrade still failed. This is the NEW build; the previous binary was not restored.")
+		tx.recovery = "the board is serving unsupervised; macOS refused the service launch " +
+			"(OS_REASON_CODESIGNING); run `dibs doctor`, then retry `dibs configure --service`. " +
+			"The upgrade still failed. This is the NEW build; the previous binary was not restored."
 	case tx.p.app.legacy == "" && !tx.p.app.previousManual:
-		fmt.Fprintln(os.Stderr, "recovered: the NEW build is serving again; the upgrade still failed. "+
-			"The previous binary was not restored. Run dibs doctor before relying on it.")
+		tx.recovery = "the NEW build is serving again; the upgrade still failed. " +
+			"The previous binary was not restored. Run dibs doctor before relying on it."
 	default:
-		fmt.Fprintln(os.Stderr, "recovered: the previous service mode is serving again; the upgrade still failed.")
+		tx.recovery = "the previous service mode is serving again; the upgrade still failed."
 	}
+	fmt.Fprintln(os.Stderr, "recovered: "+tx.recovery)
 	return nil
 }
 

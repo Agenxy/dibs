@@ -91,10 +91,10 @@ func appServiceFixture() int {
 }
 
 type appServiceTestFixture struct {
-	home, dir, root, app, state, trace string
-	requests                           atomic.Int64
-	unavailable                        atomic.Int64
-	boardRequests                      atomic.Int64
+	home, dir, root, app, state, trace, addr string
+	requests                                 atomic.Int64
+	unavailable                              atomic.Int64
+	boardRequests                            atomic.Int64
 }
 
 func newAppServiceTestFixture(t *testing.T) *appServiceTestFixture {
@@ -165,7 +165,8 @@ func newAppServiceTestFixture(t *testing.T) *appServiceTestFixture {
 		}
 	}))
 	t.Cleanup(srv.Close)
-	t.Setenv("DIBS_TEST_APP_SERVICE_ADDR", srv.Listener.Addr().String())
+	f.addr = srv.Listener.Addr().String()
+	t.Setenv("DIBS_TEST_APP_SERVICE_ADDR", f.addr)
 	if err := os.WriteFile(filepath.Join(f.dir, "dibs.toml"), []byte("addr = '"+srv.Listener.Addr().String()+"'\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -493,6 +494,9 @@ func TestCurrentAppServiceConfigureDriver(t *testing.T) {
 		t.Fatal("registry setup:", err)
 	}
 	defer release()
+	readAppServiceJob = func() ([]byte, error) {
+		return launchOutcomeFixture("current", 1, "running", "", fmt.Sprintf("\tpid = %d\n", os.Getpid())), nil
+	}
 	if err := serviceCommand(nil); err != nil {
 		t.Fatal(err)
 	}

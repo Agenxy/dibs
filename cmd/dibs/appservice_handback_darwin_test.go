@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"os"
 	"os/exec"
@@ -104,6 +105,7 @@ func TestConfigureRefusedServiceHandbackDriver(t *testing.T) {
 	if os.Getenv("DIBS_TEST_APP_SERVICE_HANDBACK_DRIVER") != "1" {
 		return
 	}
+	waitForAppServiceRefresh = func(time.Duration) {}
 	readAppServiceJob = func() ([]byte, error) {
 		trace, err := os.ReadFile(os.Getenv("DIBS_TEST_APP_SERVICE_TRACE"))
 		if err != nil && !os.IsNotExist(err) {
@@ -112,7 +114,8 @@ func TestConfigureRefusedServiceHandbackDriver(t *testing.T) {
 		if !strings.Contains(string(trace), `"mode":"register"`) {
 			return nil, errAppServiceNotLoaded
 		}
-		return launchOutcomeFixture("fixture", 1, "spawn failed", "OS_REASON_CODESIGNING", ""), nil
+		runs := strings.Count(string(trace), `"mode":"register"`)
+		return launchOutcomeFixture(fmt.Sprint(runs), runs, "spawn failed", "OS_REASON_CODESIGNING", ""), nil
 	}
 	// No manual-start seam: this invokes the production detached start.
 	if err := serviceCommand(nil); err == nil || !strings.Contains(err.Error(), "OS_REASON_CODESIGNING") {

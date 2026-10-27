@@ -325,9 +325,12 @@ func runningOrigin(p *plan) string {
 // nothingToDo reports whether the cutover would change nothing: the daemon
 // serves the build the installed binary reported for itself, and the
 // service unit and data directory need no repair.
+// An enabled app registration also needs its loaded job to own the serving
+// PID: a manual fallback on the same build is still missing supervision.
 func (p *plan) nothingToDo(info buildInfo) bool {
 	return p.serving && !p.unitWrong && !p.moveDir && len(p.policyAfter) == 0 &&
-		p.policyErr == nil && alreadyOn(info, p.checked)
+		p.policyErr == nil && alreadyOn(info, p.checked) &&
+		(p.app == nil || observeAppServiceLaunch().owns(p.running.pid))
 }
 
 // alreadyOn reports whether the serving daemon is on the build the installed
@@ -767,9 +770,7 @@ func (p *plan) verify(newDir string) error {
 	step("waiting for the board")
 	after, err := waitForBoard(p.running.addr, 90*time.Second, p.launchFailure)
 	if err != nil {
-		return fmt.Errorf("the daemon did not start serving: %w\n\n"+
-			"  The ledger is untouched and the board is still in it. Start the daemon\n"+
-			"  in the foreground to see why: %s -dir %s", err, p.installed, newDir)
+		return &boardStartFailure{cause: err, installed: p.installed, dir: newDir}
 	}
 	if p.serving && after.Serial < p.before.Serial {
 		return fmt.Errorf("the board came back at serial %d, behind the %d it was "+
@@ -790,6 +791,25 @@ func (p *plan) verify(newDir string) error {
 	p.after = after
 	return nil
 }
+
+// Keep the failed observation separate from its corrective hint: successful
+// recovery changes what the operator should do, without erasing the failure.
+type boardStartFailure struct {
+	cause          error
+	installed, dir string
+	recovered      bool
+}
+
+func (e *boardStartFailure) Error() string {
+	if e.recovered {
+		return fmt.Sprintf("the daemon did not start serving: %v", e.cause)
+	}
+	return fmt.Sprintf("the daemon did not start serving: %v\n\n"+
+		"  The ledger is untouched and the board is still in it. Start the daemon\n"+
+		"  in the foreground to see why: %s -dir %s", e.cause, e.installed, e.dir)
+}
+
+func (e *boardStartFailure) Unwrap() error { return e.cause }
 
 // Verification is also used by failure recovery. Only the caller that has
 // committed the entire cutover may report a successful upgrade.
@@ -1136,6 +1156,7 @@ func tooOldForCheck(out []byte) bool {
 // daemonState is how the daemon was running before this command stopped it, so
 // it can be started the same way.
 type daemonState struct {
+	pid      int
 	addr     string
 	parallel bool
 	// unknown means the registry could not be READ, which is not the same as
@@ -1178,7 +1199,7 @@ func runningDaemon(dir string) daemonState {
 	if mine.Scheme != "" && addr != "" {
 		addr = mine.Scheme + "://" + addr
 	}
-	return daemonState{addr: addr, parallel: others > 0}
+	return daemonState{pid: mine.PID, addr: addr, parallel: others > 0}
 }
 
 // systemdTokens splits a unit the way systemd does, and reverses what

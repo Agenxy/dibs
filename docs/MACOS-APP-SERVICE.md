@@ -2,7 +2,8 @@
 
 This is the implementation design for the 2026-10-22 operator request. Source,
 fixture measurements, installed migration, and pane acceptance are distinct.
-No production migration or permission change has been performed for this work.
+The app-service layout is installed in production. Native scratch measurements
+below do not establish production acceptance of a later recovery change.
 
 ## Selected layout
 
@@ -57,8 +58,9 @@ the old service is stopped, with a corrective step.
 `dibs configure --service` explicitly authorizes registration. On an existing
 service it uses upgrade's replay preflight and fleet confirmation. The private
 pin is written before registration; the old plist remains until the new board
-answers. Failed registration is unregistered before restoring the old pin and
-supervisor. Uncertain removal refuses a second supervisor. A private `.migrated`
+answers. Failed registration is normally unregistered before restoring the old
+pin and supervisor; the positively observed code-signing refusal has the bounded
+recovery described below. Uncertain removal refuses a second supervisor. A private `.migrated`
 receipt retains the old plist bytes. Unsupported custom stdout/stderr paths,
 restart policies, flags and environment variables are refused, never dropped.
 Directory renaming is refused during app migration; the existing directory is
@@ -80,6 +82,10 @@ postflight, without another folder-read request. The first background-history
 diagnostic caused an administrator dialog on a real doctor call and was removed.
 Tests isolate the reader at startup and inspect the actual command constructed
 by doctor before execution; no test reaches the developer's service registry.
+
+An enabled service is current only when the board's live registry PID is also
+the running native job's PID. A manual daemon serving the same build beside an
+enabled but failing job is not a supervised-service no-op.
 
 A running bridge re-reads the directory pin per attempt. Its destination, trust
 roots and credential come from one selected directory; refreshing only the
@@ -147,6 +153,53 @@ exit 113), and their temporary app directories were removed. LaunchServices
 unregister returned -10814 (not scanned); no LaunchServices registration was
 performed by the probe. Background-item history was not read, reset or claimed
 removed. This measures the API lifecycle, not production cutover or pane consent.
+
+### Updated executable launch refusal, measured 2026-10-27
+
+On macOS 27.0 (26A428), replacing the secondary executable under the same
+local signer can make registration return enabled while launchd refuses the
+first launch with `OS_REASON_CODESIGNING` (Launch Constraint Violation).
+Waiting for the board previously hid that refusal for 90 seconds. Removing the
+failed registration immediately and merely waiting before another configure did
+not repair the observed production failure: failed-job residence matters.
+
+Scratch experiments used distinct bundle/service IDs, the existing local
+signer, a v1 worker that first had to launch, and a replaced v2 worker whose
+actual process receipt was required. Each case attempted only one registration
+after its measured hold; every exact job was confirmed absent after cleanup.
+
+| Failed registration kept loaded before the single retry | v2 launched |
+| --- | --- |
+| 3 seconds | 0/3 |
+| 6 seconds | 0/3 |
+| 9 seconds | 0/3 |
+| 12 seconds | 3/3 |
+| 15 seconds | 10/10 |
+| 20 seconds | 10/10 |
+
+Ten further fresh refusals were observed for 30 seconds without retry: the BTM
+UUID and `needs LWCR update` field did not change. Run counts advanced at about
+10-second intervals, without a worker receipt. Those observations supply no
+visible refresh signal in that window. The 20-second hold is an empirical bound,
+not an OS guarantee or a promise that a later retry succeeds on every machine.
+The scratch measurements do not establish production cutover acceptance.
+
+After a positively fresh code-signing refusal during an existing app-service
+cutover, configure leaves the failed job loaded and starts the installed daemon
+detached, using the same board directory and address. It verifies the board
+before announcing the 20-second hold. The existing exclusive directory lock is
+acquired before daemon registry publication and excludes a second ledger writer
+if launchd tries again while manual recovery serves.
+
+Only the short-lived installer waits; there is no daemon timer. At the end it
+re-reads native and registry ownership. A native job already owning the verified
+board needs no retry. Otherwise it stops the manual PID, unregisters/registers
+exactly once, and verifies the board again. Another positively fresh refusal
+leaves that failed registration loaded and restores verified manual serving;
+the operation returns failure with the current unsupervised state and doctor/
+configure remedy. Other uncertain registration failures still require confirmed
+removal before manual restoration. No elapsed-minute promise is printed, and no
+launch constraint, signing requirement or OS permission is relaxed.
 
 ## Access observations and acquisition
 
