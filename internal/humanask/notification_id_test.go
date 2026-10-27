@@ -4,7 +4,9 @@
 package humanask
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -26,18 +28,33 @@ func TestMain(m *testing.M) {
 			_, _ = os.Stdout.WriteString("timeSensitive=1\n")
 			os.Exit(0)
 		}
-		if os.Getenv("DIBS_TEST_EXPECT_PRIORITY") == "1" {
-			if os.Getenv("DIBS_NOTIFY_TIME_SENSITIVE") != "1" {
+		if len(os.Args) != 2 || os.Args[1] != "--broker" {
+			os.Exit(3)
+		}
+		output := json.NewEncoder(os.Stdout)
+		_ = output.Encode(map[string]any{"v": 1, "event": "ready"})
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			var frame struct {
+				V             int `json:"v"`
+				Type, ID      string
+				TimeSensitive bool
+				Detail        struct{ Kind string }
+			}
+			if json.Unmarshal(scanner.Bytes(), &frame) != nil || frame.V != 1 || frame.Type != "post" {
 				os.Exit(3)
 			}
-		} else if os.Getenv("DIBS_NOTIFY_ID") != "dibs.msg.board-A.7" {
-			os.Exit(3)
+			if frame.Detail.Kind == core.MsgQuestion && frame.ID != "dibs.msg.board-A.7" {
+				os.Exit(3)
+			}
+			if frame.Detail.Kind == core.MsgNotify && !frame.TimeSensitive {
+				os.Exit(3)
+			}
+			_ = output.Encode(map[string]any{"v": 1, "id": frame.ID, "event": "posted", "receipt": map[string]string{"state": "posted"}})
+			if frame.Detail.Kind == core.MsgQuestion {
+				_ = output.Encode(map[string]any{"v": 1, "id": frame.ID, "event": "action", "action": "Yes"})
+			}
 		}
-		path := os.Getenv("DIBS_NOTIFY_RECEIPT")
-		if path == "" || os.WriteFile(path, []byte(`{"state":"posted"}`), 0o600) != nil {
-			os.Exit(3)
-		}
-		_, _ = os.Stdout.WriteString("Yes\n")
 		os.Exit(0)
 	}
 	os.Exit(m.Run())

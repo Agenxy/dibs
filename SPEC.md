@@ -1751,18 +1751,57 @@ and state are `unknown` until new evidence arrives; actual answers replay.
 Old helpers/relays supply no invented receipt. Retrying `op_id` returns the
 original route (or unknown after restart) without another alert.
 
-Current macOS asks open a reading window only when the person clicks the
-banner body. It retains the daemon's effect title and sender line outside the
-scrollable request body, with the same action buttons. Closing it supplies no
-answer. The banner keeps its one-line excerpt; full reading detail is JSON on
-private stdin, bounded to 8 KiB with an explicit remainder-on-the-board line,
-never full text in argv. The recorded deadline travels through local and relay
-presenters to the helper, which remains answerable until that deadline (at most
-24 hours). Answer/withdrawal cleanup cancels matching live invocations; caller
-exit also ends the helper because its answer carrier has gone. Expiry has no
-dismissal receipt. No daemon polling or expiry timer is added. Legacy notifier
-callers and Linux keep their existing contract. Native UI reading, scrolling,
-closing and late-button acceptance are verified by the person after install.
+Current macOS notifications open a reading window when the person clicks the
+banner body: requests, questions, handoffs, ordinary/urgent notifications and
+system contact notices. The daemon's effect title and sender stay outside the
+scrollable text. A live ask or contact offers the same buttons as its banner;
+a passive message offers Close. Closing supplies no answer. The banner keeps
+its one-line excerpt. Full reading detail is JSON on private stdin, bounded to
+8 KiB with an explicit remainder-on-the-board line, never full text in argv.
+The helper persists a versioned, independently 8 KiB-bounded reading payload
+(title, sender, body, kind) in notification `userInfo`. macOS stores this with
+the notification: it carries only information already visible to this human
+and has no stronger privacy guarantee than the banner. No executable URL,
+credential or answer capability is persisted.
+
+A fresh no-argument bundle launch installs its notification delegate before
+AppKit finishes launching, then handles the response's persisted content. It
+does not post another banner or request authorization. A stale ask or contact,
+or one delivered to another helper in the same bundle, is read-only with
+explicit board guidance; it cannot use the original helper's stdout answer
+carrier. Missing or invalid stored detail falls back to the banner text and
+board guidance. macOS Alerts versus Banners is the person's OS setting, which
+Dibs diagnoses but does not change.
+
+One native notifier broker per Mac/user owns the live request table. The
+notifying Dibs parent (daemon or authenticated human relay) creates anonymous
+stdin/stdout pipes; the helper exposes no process-openable action endpoint.
+Parent commands are bounded v1 JSON lines, post and cancel only, at most 32 KiB;
+detail remains independently 8 KiB. Helper events are at most 16 KiB and name
+the board-scoped ID. Only native notification/window callbacks produce an
+action, validated against that ID's current offered buttons by both helper and
+parent. A per-user lifetime flock on `~/.dibs/notifier.lock`, independent of
+board data-directory overrides, refuses a second notifying parent before
+posting. The lock contains no PID or commands; doctor observes its holder
+through the OS. Old argv callers take the same lock. The supported arrangement
+is one notifying parent per Mac/user: attached relays replace that Mac's local
+daemon desktop route. This does not promise general mediation between arbitrary
+bundle instances. A cold reading instance never claims an ask is expired:
+it says it cannot confirm the live answer route and points to the board.
+
+The recorded request/question deadline travels through local and relay
+presenters to the broker, which keeps each ask answerable until that deadline
+(at most 24 hours); contacts retain their two-minute action lifetime. Each
+reading window is nonmodal, so another ask's callbacks, expiry and withdrawal
+continue to work. Cleanup closes the matching window/table entry; helper EOF
+or parent exit ends the broker. Broker death returns an explicit error for
+pending asks, never a verdict or invented dismissal; the next new notification
+starts a replacement, without replaying posts or answers. Expiry has no
+dismissal receipt. No daemon polling or request-expiry timer is added. Linux
+keeps its existing delivery contract. Native UI reading, scrolling, closing,
+late buttons and actual OS cold-launch acceptance are verified by the person
+after install; compiled fixtures establish persisted content, callback dispatch,
+window composition and concurrent ownership.
 
 Each source additionally reports `settings` (version1 native authorization,
 alert style, alerts, Notification Center, lock screen, Time Sensitive and Focus

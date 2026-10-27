@@ -4,6 +4,7 @@
 package main
 
 import (
+	"fmt"
 	"runtime"
 	"strings"
 
@@ -17,6 +18,10 @@ func (d *diagnosis) note(what string) {
 }
 
 func checkNotificationRoute(ok, note reportFn, warn fixFn) {
+	if status, err := notify.NotificationBrokerStatus(); err == nil && status.Held {
+		note(fmt.Sprintf("Dibs notification broker owns this Mac's notification route (PID %v); "+
+			"a second notifying parent refuses to post", status.PIDs))
+	}
 	// Posting capability is a check; the person's Focus is an informational
 	// state. Neither can establish whether a banner was actually seen.
 	if reaches, why, settings := notify.ReachWithSettings(); reaches {

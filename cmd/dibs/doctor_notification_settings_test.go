@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -25,6 +26,10 @@ import (
 // The private copied test binary is the helper, requiring no interpreter or
 // PATH dependency on the hosted Mac. The marker proves the real subprocess ran.
 func notificationSettingsHelper() int {
+	if len(os.Args) == 2 && os.Args[1] == "--broker-status" {
+		_, _ = os.Stdout.WriteString(`{"held":false,"pids":[]}`)
+		return 0
+	}
 	if os.Getenv("DIBS_SETTINGS_HELPER_MODE") == "doctor" {
 		if len(os.Args) != 2 || os.Args[1] != "--status" {
 			return 3 // A new positional flag could post on an old helper.
@@ -43,18 +48,33 @@ func notificationSettingsHelper() int {
 		}
 		return 0
 	}
-	if len(os.Args) != 7 || os.Getenv("DIBS_NOTIFY_ID") != "dibs.msg.fixture-node.7" {
+	if len(os.Args) != 2 || os.Args[1] != "--broker" {
 		return 3
 	}
-	if err := os.WriteFile(os.Getenv("DIBS_SETTINGS_HELPER_MARKER"), []byte("posted"), 0o600); err != nil {
-		return 4
+	output := json.NewEncoder(os.Stdout)
+	_ = output.Encode(map[string]any{"v": 1, "event": "ready"})
+	scanner := bufio.NewScanner(os.Stdin)
+	for scanner.Scan() {
+		var frame struct {
+			V        int `json:"v"`
+			Type, ID string
+			Buttons  []string
+		}
+		if json.Unmarshal(scanner.Bytes(), &frame) != nil || frame.V != 1 || frame.Type != "post" || frame.ID != "dibs.msg.fixture-node.7" || len(frame.Buttons) != 3 {
+			return 3
+		}
+		if err := os.WriteFile(os.Getenv("DIBS_SETTINGS_HELPER_MARKER"), []byte("posted"), 0o600); err != nil {
+			return 4
+		}
+		const receipt = `{"state":"posted","settings":{"version":1,"authorization_status":"authorized","alert_style":"banner","alert_setting":"enabled","notification_center_setting":"enabled","lock_screen_setting":"enabled","time_sensitive_setting":"not-supported","focus":{"authorization":"not-determined","observable":false}},"interruption_level":"timeSensitive"}`
+		var value map[string]any
+		if json.Unmarshal([]byte(receipt), &value) != nil {
+			return 5
+		}
+		_ = output.Encode(map[string]any{"v": 1, "id": frame.ID, "event": "posted", "receipt": value})
+		time.Sleep(300 * time.Millisecond)
+		_ = output.Encode(map[string]any{"v": 1, "id": frame.ID, "event": "action", "action": "Later"})
 	}
-	const receipt = `{"state":"posted","settings":{"version":1,"authorization_status":"authorized","alert_style":"banner","alert_setting":"enabled","notification_center_setting":"enabled","lock_screen_setting":"enabled","time_sensitive_setting":"not-supported","focus":{"authorization":"not-determined","observable":false}},"interruption_level":"timeSensitive"}`
-	if err := os.WriteFile(os.Getenv("DIBS_NOTIFY_RECEIPT"), []byte(receipt), 0o600); err != nil {
-		return 5
-	}
-	time.Sleep(300 * time.Millisecond)
-	_, _ = os.Stdout.WriteString("Later\n")
 	return 0
 }
 

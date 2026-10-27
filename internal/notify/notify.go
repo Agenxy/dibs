@@ -142,7 +142,30 @@ func TimeSensitiveBannerWithDeliveryReceipt(title, subtitle, body string, receip
 	return bannerWithDeliveryReceipt(title, subtitle, body, true, receipt)
 }
 
+// BannerMessageDetail adds bounded private reading data to passive messages.
+// The native content retains it for a later click after this invocation exits.
+func BannerMessageDetail(
+	node string, serial uint64, title, subtitle, body string, detail AskDetail,
+	timeSensitive bool, receipt DeliveryReceipt,
+) error {
+	id := ""
+	if node != "" {
+		var err error
+		id, err = MessageID(node, serial)
+		if err != nil {
+			return err
+		}
+	}
+	return bannerWithDetail(id, title, subtitle, body, &detail, timeSensitive, receipt)
+}
+
 func bannerWithDeliveryReceipt(title, subtitle, body string, timeSensitive bool, receipt DeliveryReceipt) error {
+	return bannerWithDetail("", title, subtitle, body, nil, timeSensitive, receipt)
+}
+
+func bannerWithDetail(
+	id, title, subtitle, body string, detail *AskDetail, timeSensitive bool, receipt DeliveryReceipt,
+) error {
 	if goos == "linux" {
 		err := linuxBannerWithUrgency(title, subtitle, body, timeSensitive)
 		if err == nil && receipt != nil {
@@ -153,15 +176,7 @@ func bannerWithDeliveryReceipt(title, subtitle, body string, timeSensitive bool,
 	if h := helper(); h != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		// #nosec G204 -- h is resolved beside this binary; the rest is data the
-		// helper reads as argv.
-		cmd := exec.CommandContext(ctx, h, title, subtitle, body)
-		level := "0"
-		if timeSensitive {
-			level = "1"
-		}
-		cmd.Env = append(os.Environ(), "DIBS_NOTIFY_TIME_SENSITIVE="+level)
-		_, err := outputWithDeliveryReceipt(cmd, receipt)
+		_, err := brokerNotification(ctx, h, makeBrokerPost(id, title, subtitle, body, detail, nil, timeSensitive), receipt)
 		return err
 	}
 	_, err := run(banner, append([]string{title, subtitle}, body)...)
@@ -234,20 +249,9 @@ func askWithDeliveryID(
 	if h := helper(); h != "" {
 		ctx, cancel := askContext(detail)
 		defer cancel()
-		// Posting never activates a window, including while Focus is on.
-		args := append([]string{title, "", body}, buttons...)
-		// #nosec G204 -- h is resolved beside this binary; the rest is argv data.
-		cmd := exec.CommandContext(ctx, h, args...) // #nosec G204 -- bundled helper; argv is data
-		if id != "" {
-			cmd.Env = append(os.Environ(), "DIBS_NOTIFY_ID="+id)
-		}
-		if detail != nil {
-			configureAskDetail(cmd, *detail)
-			untrack := trackNativeAsk(id, cancel)
-			defer untrack()
-		}
-		out, err := outputWithDeliveryReceipt(cmd, receipt)
-		return nativeAskAnswer(out, err, detail != nil && errors.Is(ctx.Err(), context.Canceled))
+		untrack := trackNativeAsk(id, cancel)
+		defer untrack()
+		return brokerNotification(ctx, h, makeBrokerPost(id, title, "", body, detail, buttons, true), receipt)
 	}
 	return "", BannerWithDeliveryReceipt(title, "answer on the Dibs board", body, receipt)
 }
@@ -727,38 +731,3 @@ func notAuthorised(err error) bool {
 // notify at all. This one means we tried, and cannot tell whether a person
 // declined or never saw it.
 var ErrNoAnswer = errors.New("no answer")
-
-func nativeAskAnswer(out []byte, err error, cancelled bool) (string, error) {
-	if err != nil {
-		if cancelled {
-			return "", nil // answered/withdrawn elsewhere; never a new verdict
-		}
-		// Exit 2 means the machine WILL NOT notify: no authorisation, no
-		// bundle. That is not a person deferring, and collapsing the two is
-		// how a question nobody could see was reported as a question nobody
-		// answered, while the asking agent waited out its deadline. The
-		// helper documents the distinction; this end was throwing it away.
-		// Found by an independent review before release.
-		if notAuthorised(err) {
-			return "", ErrCannotNotify
-		}
-		// EXIT 1 IS THE DISMISSAL. Everything else is the machine failing.
-		//
-		// This returned ("", nil) for every remaining error, and the helper
-		// documents exactly three codes: 0 chose, 1 dismissed, 2 cannot
-		// notify. A command that could not start, a crash, a signal, our own
-		// context deadline, or any code the helper does not define came back
-		// as "the person declined", so the asking agent waited out its
-		// deadline against a banner that was never posted and no layer
-		// reported a fault. The distinction was already written down one
-		// file away, in the helper's own header. Found by a pre-release
-		// review, in the branch added to fix the same class for exit 2.
-		var ee *exec.ExitError
-		if errors.As(err, &ee) && ee.ExitCode() == 1 {
-			return "", nil // a person, dismissing
-		}
-		return "", fmt.Errorf("%w: the notifier did not run to a documented "+
-			"outcome: %v", ErrNoAnswer, err)
-	}
-	return strings.TrimSpace(string(out)), nil
-}

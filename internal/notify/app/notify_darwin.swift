@@ -43,6 +43,7 @@ import Foundation
 import UserNotifications
 import Intents
 import ServiceManagement
+import Darwin
 
 // These modes belong to the app that owns the background item. They do not
 // initialize notification delivery or create a permission/decision window.
@@ -155,12 +156,24 @@ func receipt(_ state: String) {
 }
 
 let args = Array(CommandLine.arguments.dropFirst())
+#if DIBS_BROKER_FIXTURE
+if args == ["--broker-fixture-capability"] { print("broker-fixture-v1"); exit(0) }
+#endif
+let brokerLaunch = args == ["--broker"]
+if args == ["--broker-status"] {
+    let value = brokerLockStatus()
+    print(String(decoding: try! JSONSerialization.data(withJSONObject: value), as: UTF8.self))
+    exit(0)
+}
 
-#if DIBS_ASK_FIXTURE
+#if DIBS_ASK_FIXTURE || DIBS_READING_FIXTURE
 // Compile-time transport double: the actual ask input, posting callback and
 // expiry run, but no permission request, native notification or window opens.
-let askFixture = ProcessInfo.processInfo.environment["DIBS_ASK_FIXTURE"] == "timeout"
+let askFixture = ProcessInfo.processInfo.environment["DIBS_ASK_FIXTURE"] == "timeout" || ProcessInfo.processInfo.environment["DIBS_READING_FIXTURE"] == "1"
 if args == ["--ask-fixture-capability"] { print("ask-fixture-v1"); exit(0) }
+#if DIBS_READING_FIXTURE
+if args == ["--reading-fixture-capability"] { print("reading-fixture-v1"); exit(0) }
+#endif
 #else
 let askFixture = false
 #endif
@@ -661,20 +674,62 @@ if args.first == "--prompt" || args.first == "--pick" {
     exit(askOnScreen(rest[0], rest[1], choices: Array(rest.dropFirst(2))))
 }
 
-guard args.count >= 3 else {
+guard args.isEmpty || brokerLaunch || args.count >= 3 else {
     FileHandle.standardError.write("usage: dibs-notify <title> <subtitle> <body> [button…]\n".data(using: .utf8)!)
     exit(2)
 }
-let title = args[0], subtitle = args[1], body = args[2]
+// LaunchServices opens the bundle executable without the posting arguments.
+// Do not post or request authorization on that launch: install the delegate
+// before app.run finishes launching and wait for its notification response.
+let coldLaunch = args.isEmpty
+let title = coldLaunch || brokerLaunch ? "Dibs" : args[0]
+let subtitle = coldLaunch || brokerLaunch ? "" : args[1]
+let body = coldLaunch || brokerLaunch ? "" : args[2]
 let buttons = Array(args.dropFirst(3))
 
-struct AskReadingDetail: Decodable {
+struct AskReadingDetail: Codable {
     let sender: String
     let body: String
+    let kind: String?
 }
 
-// Only the additive ask protocol reads stdin. Status, passive notifications
-// and old callers keep their old argument and lifetime contracts.
+// Persist only the text already shown to this human, never executable links,
+// credentials or an answer capability. macOS stores this in its notification
+// database; it has no stronger privacy claim than the banner itself.
+struct StoredReadingDetail: Codable {
+    var title: String
+    var sender: String
+    var body: String
+    let kind: String
+}
+let readingKey = "org.agenxy.dibs.reading.v1"
+
+func storedReading(_ heading: String, detail: AskReadingDetail) -> Data {
+    var value = StoredReadingDetail(title: heading, sender: detail.sender, body: detail.body,
+                                    kind: String((detail.kind ?? "ask").prefix(32)))
+    let rest = "\n\nRest on the Dibs board."
+    var text = value.body
+    while true {
+        let data = try! JSONEncoder().encode(value) // strings only
+        if data.count <= 8192 { return data }
+        if !text.isEmpty {
+            text = String(text.dropLast(max(1, text.count / 8)))
+            value.body = text + rest
+        } else if value.title.count > 64 {
+            value.title = String(value.title.prefix(value.title.count / 2))
+        } else {
+            value.sender = String(value.sender.prefix(value.sender.count / 2))
+        }
+    }
+}
+
+func persistedReading(_ content: UNNotificationContent) -> StoredReadingDetail? {
+    guard let bytes = content.userInfo[readingKey] as? Data, bytes.count <= 8192 else { return nil }
+    return try? JSONDecoder().decode(StoredReadingDetail.self, from: bytes)
+}
+
+// Only the additive detail protocol reads stdin. Diagnostics and old callers
+// keep their old argument and lifetime contracts.
 func readAskDetail(_ environment: [String: String]) -> AskReadingDetail? {
     guard environment["DIBS_NOTIFY_DETAIL"] == "stdin" else { return nil }
     var bytes = Data()
@@ -705,9 +760,7 @@ final class AskReadingClose: NSObject, NSWindowDelegate {
 
 // Called only by the banner's default action: the person asked to read it.
 // The daemon's effect title and sender stay outside the sender-written text.
-func readAskOnScreen(_ heading: String, detail: AskReadingDetail, buttons: [String]) -> String {
-    let app = NSApplication.shared
-    app.activate(ignoringOtherApps: true)
+func readingAlert(_ heading: String, detail: AskReadingDetail, buttons: [String]) -> NSAlert {
     let alert = NSAlert()
     alert.messageText = heading
     alert.informativeText = detail.sender
@@ -732,6 +785,23 @@ func readAskOnScreen(_ heading: String, detail: AskReadingDetail, buttons: [Stri
     for button in buttons { alert.addButton(withTitle: button) }
     alert.buttons.first?.keyEquivalent = ""
     alert.buttons.last?.keyEquivalent = "\r"
+    return alert
+}
+
+func readAskOnScreen(_ heading: String, detail: AskReadingDetail, buttons: [String], storedBytes: Int = 0) -> String {
+    let alert = readingAlert(heading, detail: detail, buttons: buttons)
+    #if DIBS_READING_FIXTURE
+    if askFixture, let path = ProcessInfo.processInfo.environment["DIBS_READING_WINDOW"],
+       let scroll = alert.accessoryView as? NSScrollView, let text = scroll.documentView as? NSTextView {
+        let view: [String: Any] = ["Title": alert.messageText, "Sender": alert.informativeText,
+                                 "Body": text.string, "Buttons": alert.buttons.map { $0.title },
+                                 "StoredBytes": storedBytes]
+        try! JSONSerialization.data(withJSONObject: view).write(to: URL(fileURLWithPath: path))
+        let selected = ProcessInfo.processInfo.environment["DIBS_READING_CHOICE"] ?? ""
+        return alert.buttons.contains(where: { $0.title == selected }) ? selected : ""
+    }
+    #endif
+    NSApplication.shared.activate(ignoringOtherApps: true)
     let closing = AskReadingClose()
     alert.window.styleMask.insert(.closable)
     alert.window.delegate = closing
@@ -742,9 +812,335 @@ func readAskOnScreen(_ heading: String, detail: AskReadingDetail, buttons: [Stri
     return buttons[index]
 }
 
+// One broker owns every live ask on this Mac. Its anonymous pipes belong to
+// the notifying Dibs parent; no process-openable action channel exists.
+final class BrokerReadingWindow: NSObject, NSWindowDelegate {
+    let alert: NSAlert
+    let picked: (String) -> Void
+    init(title: String, detail: AskReadingDetail, buttons: [String], picked: @escaping (String) -> Void) {
+        alert = readingAlert(title, detail: detail, buttons: buttons)
+        self.picked = picked
+        super.init()
+        alert.window.styleMask.insert(.closable)
+        alert.window.isReleasedWhenClosed = false
+        alert.window.delegate = self
+        for button in alert.buttons { button.target = self; button.action = #selector(choose(_:)) }
+        alert.layout()
+    }
+    @objc func choose(_ sender: NSButton) { picked(sender.title) }
+    func windowShouldClose(_ sender: NSWindow) -> Bool { picked(""); return false }
+    func show() { NSApp.activate(ignoringOtherApps: true); alert.window.makeKeyAndOrderFront(nil) }
+    func close() { alert.window.delegate = nil; alert.window.close() }
+}
+
+final class BrokerEntry {
+    let id: String
+    let title: String
+    let subtitle: String
+    let excerpt: String
+    let detail: AskReadingDetail
+    let buttons: [String]
+    let until: Date
+    let timeSensitive: Bool
+    var timer: DispatchSourceTimer?
+    var beganPosting = false
+    init(id: String, title: String, subtitle: String, excerpt: String, detail: AskReadingDetail,
+         buttons: [String], until: Date, timeSensitive: Bool) {
+        self.id = id; self.title = title; self.subtitle = subtitle; self.excerpt = excerpt
+        self.detail = detail; self.buttons = buttons; self.until = until; self.timeSensitive = timeSensitive
+    }
+}
+
+func brokerLockPath() -> String? {
+    #if DIBS_BROKER_FIXTURE
+    if let directory = ProcessInfo.processInfo.environment["DIBS_BROKER_FIXTURE_DIR"] {
+        return directory + "/notifier.lock"
+    }
+    #endif
+    // Deliberately independent of DIBS_DIR: a scratch board is still on the
+    // same Mac and may not compete for this user's native notification route.
+    guard let record = getpwuid(getuid()), let home = record.pointee.pw_dir else { return nil }
+    return String(cString: home) + "/.dibs/notifier.lock"
+}
+
+func acquireBrokerLock() -> Int32? {
+    guard let path = brokerLockPath() else { return nil }
+    do {
+        try FileManager.default.createDirectory(atPath: (path as NSString).deletingLastPathComponent,
+                                               withIntermediateDirectories: true,
+                                               attributes: [.posixPermissions: 0o700])
+    } catch { return nil }
+    let fd = open(path, O_CREAT | O_RDWR | O_NOFOLLOW | O_CLOEXEC, 0o600)
+    guard fd >= 0 else { return nil }
+    var info = stat()
+    guard fstat(fd, &info) == 0, info.st_uid == getuid(), info.st_mode & 0o077 == 0,
+          flock(fd, LOCK_EX | LOCK_NB) == 0 else { close(fd); return nil }
+    return fd // lifetime lock only; its contents are never read or written
+}
+
+// Read-only diagnostic: an existing lock is probed then immediately closed.
+// lsof inspects its holder; the file never becomes a PID or command mailbox.
+func brokerLockStatus() -> [String: Any] {
+    guard let path = brokerLockPath() else { return ["error": "cannot resolve this user's notifier lock"] }
+    let fd = open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
+    if fd < 0 {
+        if errno == ENOENT { return ["held": false, "pids": [Int]()] }
+        return ["error": "cannot inspect Dibs notifier lock"]
+    }
+    let result = flock(fd, LOCK_EX | LOCK_NB)
+    let failure = errno
+    close(fd)
+    if result == 0 { return ["held": false, "pids": [Int]()] }
+    guard failure == EWOULDBLOCK else { return ["error": "cannot inspect Dibs notifier lock"] }
+    let process = Process()
+    let output = Pipe()
+    process.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
+    process.arguments = ["-F", "p", "--", path]
+    process.standardOutput = output
+    process.standardError = FileHandle.nullDevice
+    do {
+        try process.run()
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        let pids = String(decoding: data, as: UTF8.self).split(separator: "\n").compactMap { line -> Int? in
+            guard line.first == "p" else { return nil }
+            return Int(line.dropFirst())
+        }
+        return ["held": true, "pids": pids]
+    } catch { return ["held": true, "pids": [Int](), "error": "holder PID unavailable"] }
+}
+
+final class NativeNotificationBroker: NSObject, UNUserNotificationCenterDelegate {
+    let centre: UNUserNotificationCenter
+    var entries = [String: BrokerEntry]()
+    var windows = [String: BrokerReadingWindow]()
+    let lockFD: Int32
+    var caller: DispatchSourceProcess?
+    init?(centre: UNUserNotificationCenter) {
+        guard let fd = acquireBrokerLock() else { return nil }
+        self.centre = centre; lockFD = fd
+        super.init()
+    }
+    func emit(_ event: String, id: String = "", action: String? = nil,
+              receipt: [String: Any]? = nil, error: String? = nil, view: [String: Any]? = nil) {
+        var value: [String: Any] = ["v": 1, "event": event, "id": id]
+        if let action { value["action"] = action }
+        if let receipt { value["receipt"] = receipt }
+        if let view { value["view"] = view }
+        if let error { value["error"] = error }
+        guard let data = try? JSONSerialization.data(withJSONObject: value), data.count < 16384 else { exit(2) }
+        FileHandle.standardOutput.write(data + Data([10]))
+    }
+    func start() {
+        let parent = getppid()
+        guard parent > 1 else { exit(1) }
+        let source = DispatchSource.makeProcessSource(identifier: parent, eventMask: .exit,
+                                                      queue: .global(qos: .utility))
+        source.setEventHandler { exit(1) }; source.resume(); caller = source
+        if getppid() != parent { exit(1) }
+        emit("ready")
+        DispatchQueue.global(qos: .utility).async {
+            var buffer = Data()
+            while true {
+                let part = FileHandle.standardInput.availableData
+                if part.isEmpty { exit(0) } // parent left; never leave an answer owner orphaned
+                for byte in part {
+                    if byte == 10 {
+                        let line = buffer; buffer.removeAll(keepingCapacity: true)
+                        DispatchQueue.main.sync { self.command(line) }
+                    } else {
+                        buffer.append(byte)
+                        if buffer.count > 32768 { exit(2) }
+                    }
+                }
+            }
+        }
+    }
+    func command(_ line: Data) {
+        guard let value = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any],
+              value["v"] as? Int == 1, let type = value["type"] as? String,
+              let id = value["id"] as? String, validMessageID(id) else {
+            emit("protocol_error", error: "invalid v1 notification command"); return
+        }
+        if type == "cancel" { remove(id, removeBanner: true); return }
+        #if DIBS_BROKER_FIXTURE
+        if type == "fixture_response", let action = value["action"] as? String {
+            response(id: id, action: action, content: nil); return
+        }
+        if type == "fixture_window", let action = value["action"] as? String {
+            if let window = windows[id], let button = window.alert.buttons.first(where: { $0.title == action }) {
+                button.performClick(nil)
+            } else { emit("refused", id: id) }
+            return
+        }
+        #endif
+        guard type == "post" else { emit("protocol_error", id: id, error: "only post and cancel are accepted"); return }
+        guard entries[id] == nil, let title = value["title"] as? String,
+              let excerpt = value["excerpt"] as? String,
+              let rawDetail = value["detail"],
+              let data = try? JSONSerialization.data(withJSONObject: rawDetail, options: [.withoutEscapingSlashes]),
+              data.count <= 8192, let detail = try? JSONDecoder().decode(AskReadingDetail.self, from: data),
+              let until = value["until"] as? Double, until.isFinite else {
+            emit("failed", id: id, error: "invalid or duplicate notification detail; read the Dibs board"); return
+        }
+        guard value["buttons"] == nil || value["buttons"] is [String] else {
+            emit("failed", id: id, error: "invalid notification button list"); return
+        }
+        let buttons = value["buttons"] as? [String] ?? []
+        guard buttons.count <= 3, Set(buttons).count == buttons.count,
+              buttons.allSatisfy({ !$0.isEmpty && $0.utf8.count <= 1024 }) else {
+            emit("failed", id: id, error: "notification takes at most three distinct bounded buttons"); return
+        }
+        let cap: TimeInterval = detail.kind == "contact" ? 120 : 24 * 60 * 60
+        let entry = BrokerEntry(id: id, title: title, subtitle: value["subtitle"] as? String ?? "",
+                                excerpt: excerpt, detail: detail, buttons: buttons,
+                                until: min(Date(timeIntervalSince1970: until), Date().addingTimeInterval(cap)),
+                                timeSensitive: value["timeSensitive"] as? Bool == true || !buttons.isEmpty)
+        if !buttons.isEmpty && entry.until <= Date() { emit("expired", id: id); return }
+        entries[id] = entry
+        if !buttons.isEmpty {
+            let timer = DispatchSource.makeTimerSource(queue: .main)
+            timer.schedule(deadline: .now() + max(0, entry.until.timeIntervalSinceNow))
+            timer.setEventHandler { [weak self, weak entry] in
+                guard let self, let entry, self.entries[id] === entry else { return }
+                self.remove(id, removeBanner: true); self.emit("expired", id: id)
+            }
+            entry.timer = timer; timer.resume()
+        }
+        #if DIBS_BROKER_FIXTURE
+        post(entry, settings: nil); return
+        #endif
+        centre.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+            DispatchQueue.main.async {
+                guard self.entries[id] === entry else { return }
+                guard granted else {
+                    self.remove(id, removeBanner: false)
+                    self.emit("failed", id: id, error: "native notifications refused; run dibs doctor"); return
+                }
+                self.centre.getNotificationSettings { settings in
+                    let observation = notificationSettings(settings)
+                    DispatchQueue.main.async { self.post(entry, settings: observation) }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.post(entry, settings: nil) }
+            }
+        }
+    }
+    func post(_ entry: BrokerEntry, settings: [String: Any]?) {
+        guard entries[entry.id] === entry, !entry.beganPosting else { return }
+        entry.beganPosting = true
+        let content = UNMutableNotificationContent()
+        content.title = entry.title; content.subtitle = entry.subtitle; content.body = entry.excerpt
+        content.userInfo[readingKey] = storedReading(entry.title, detail: entry.detail)
+        #if DIBS_BROKER_FIXTURE
+        if let directory = ProcessInfo.processInfo.environment["DIBS_BROKER_POSTED_DIR"] {
+            let saved: [String: Any] = ["title": content.title, "subtitle": content.subtitle,
+                                      "body": content.body, "userInfo": content.userInfo]
+            try! PropertyListSerialization.data(fromPropertyList: saved, format: .binary, options: 0)
+                .write(to: URL(fileURLWithPath: directory + "/" + entry.id + ".plist"))
+        }
+        #endif
+        if entry.timeSensitive { content.interruptionLevel = .timeSensitive }
+        #if DIBS_BROKER_FIXTURE
+        add(entry, content: content, category: nil, settings: settings); return
+        #endif
+        let categories = entries.values.filter { !$0.buttons.isEmpty }.map { live in
+            UNNotificationCategory(identifier: "dibs.ask." + live.id,
+                actions: live.buttons.map { UNNotificationAction(identifier: $0, title: $0, options: [.foreground]) },
+                intentIdentifiers: [], options: [.customDismissAction])
+        }
+        // One owner sets the complete live set on the main queue. An async
+        // read/union/write per post would let concurrent A and B erase each
+        // other's category even with distinct category identifiers.
+        centre.setNotificationCategories(Set(categories))
+        add(entry, content: content, category: entry.buttons.isEmpty ? nil : "dibs.ask." + entry.id, settings: settings)
+    }
+    func add(_ entry: BrokerEntry, content: UNMutableNotificationContent, category: String?, settings: [String: Any]?) {
+        if let category { content.categoryIdentifier = category }
+        let completed: (Error?) -> Void = { error in
+            DispatchQueue.main.async {
+                guard self.entries[entry.id] === entry else { return }
+                if let error {
+                    self.remove(entry.id, removeBanner: false)
+                    self.emit("failed", id: entry.id, error: "native posting failed: \(error)"); return
+                }
+                let level = entry.timeSensitive ? "timeSensitive" : "active"
+                self.emit("posted", id: entry.id, receipt: ["state": "posted", "settings": settings as Any? ?? NSNull(),
+                          "interruption_level": level, "requested_interruption_level": level])
+                if entry.buttons.isEmpty { self.entries.removeValue(forKey: entry.id) }
+            }
+        }
+        #if DIBS_BROKER_FIXTURE
+        completed(nil); return
+        #endif
+        centre.add(UNNotificationRequest(identifier: entry.id, content: content, trigger: nil), withCompletionHandler: completed)
+    }
+    func remove(_ id: String, removeBanner: Bool) {
+        entries.removeValue(forKey: id)?.timer?.cancel()
+        windows.removeValue(forKey: id)?.close()
+        #if !DIBS_BROKER_FIXTURE
+        if removeBanner { centre.removeDeliveredNotifications(withIdentifiers: [id]) }
+        #endif
+    }
+    func userNotificationCenter(_ centre: UNUserNotificationCenter, willPresent notification: UNNotification,
+                                withCompletionHandler done: @escaping (UNNotificationPresentationOptions) -> Void) {
+        done([.banner, .sound])
+    }
+    func userNotificationCenter(_ centre: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+                                withCompletionHandler done: @escaping () -> Void) {
+        done()
+        DispatchQueue.main.async {
+            self.response(id: response.notification.request.identifier, action: response.actionIdentifier,
+                          content: response.notification.request.content)
+        }
+    }
+    func response(id: String, action: String, content: UNNotificationContent?) {
+        if let entry = entries[id] {
+            if !entry.buttons.isEmpty && entry.until <= Date() {
+                remove(id, removeBanner: true); emit("expired", id: id); return
+            }
+            if action == UNNotificationDefaultActionIdentifier {
+                show(id: id, title: entry.title, detail: entry.detail, buttons: entry.buttons.isEmpty ? ["Close"] : entry.buttons)
+            } else if action == UNNotificationDismissActionIdentifier {
+                remove(id, removeBanner: false); emit("dismissed", id: id)
+            } else if entry.buttons.contains(action) {
+                remove(id, removeBanner: true); emit("action", id: id, action: action)
+            } else { emit("refused", id: id) }
+            return
+        }
+        guard let content, action != UNNotificationDismissActionIdentifier else { return }
+        let saved = persistedReading(content)
+        var text = saved?.body ?? content.body
+        if saved?.kind != "notify" && saved?.kind != "handoff" {
+            text += "\n\nThis window cannot confirm the live answer route; continue on the Dibs board."
+        }
+        show(id: id, title: saved?.title ?? content.title,
+             detail: AskReadingDetail(sender: saved?.sender ?? content.subtitle, body: text, kind: saved?.kind), buttons: ["Close"])
+    }
+    func show(id: String, title: String, detail: AskReadingDetail, buttons: [String]) {
+        if let window = windows[id] { window.show(); return }
+        let window = BrokerReadingWindow(title: title, detail: detail, buttons: buttons) { [weak self] choice in
+            guard let self else { return }
+            self.windows.removeValue(forKey: id)?.close()
+            guard let entry = self.entries[id] else { return }
+            if choice.isEmpty || entry.buttons.isEmpty { self.remove(id, removeBanner: false); self.emit("dismissed", id: id) }
+            else if entry.buttons.contains(choice) { self.remove(id, removeBanner: true); self.emit("action", id: id, action: choice) }
+        }
+        windows[id] = window
+        #if DIBS_BROKER_FIXTURE
+        let scroll = window.alert.accessoryView as! NSScrollView
+        let text = scroll.documentView as! NSTextView
+        emit("reading", id: id, view: ["title": window.alert.messageText, "sender": window.alert.informativeText,
+             "body": text.string, "buttons": window.alert.buttons.map { $0.title }]); return
+        #endif
+        window.show()
+    }
+}
+
 let askEnvironment = ProcessInfo.processInfo.environment
-let readingDetail = buttons.isEmpty ? nil : readAskDetail(askEnvironment)
-guard let lifetime = askLifetime(askEnvironment, now: Date()) else { exit(2) }
+let readingDetail = coldLaunch || brokerLaunch ? nil : readAskDetail(askEnvironment)
+let notificationID = askEnvironment["DIBS_NOTIFY_ID"] ?? UUID().uuidString
+guard let requestLifetime = askLifetime(coldLaunch || brokerLaunch ? [:] : askEnvironment, now: Date()) else { exit(2) }
+let lifetime = readingDetail?.kind == "contact" ? min(120, requestLifetime) : requestLifetime
 if !buttons.isEmpty && lifetime <= 0 { exit(1) }
 
 // An NSApplication with a live run loop, not a semaphore.
@@ -762,9 +1158,19 @@ if !buttons.isEmpty && lifetime <= 0 { exit(1) }
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
 
+// Mixed-version callers may still use argv. They take the same lifetime
+// lock, so they fail loudly beside a live broker instead of stealing presses.
+var legacyNotifierLock: Int32?
+if !coldLaunch && !brokerLaunch && !askFixture {
+    guard let fd = acquireBrokerLock() else {
+        FileHandle.standardError.write(Data("Another Dibs notifier owns this Mac's notifications; run dibs doctor.\n".utf8))
+        exit(2)
+    }
+    legacyNotifierLock = fd
+}
 let centre = UNUserNotificationCenter.current()
 var askCaller: DispatchSourceProcess?
-if readingDetail != nil {
+if readingDetail != nil && !buttons.isEmpty {
     // stdout is the only answer carrier. A helper whose caller died cannot
     // answer, so do not leave a 24-hour orphan holding a dead button route.
     let parent = getppid()
@@ -802,47 +1208,69 @@ final class Handler: NSObject, UNUserNotificationCenterDelegate {
     func userNotificationCenter(_ c: UNUserNotificationCenter,
                                 didReceive r: UNNotificationResponse,
                                 withCompletionHandler h: @escaping () -> Void) {
-        receive(identifier: r.notification.request.identifier, action: r.actionIdentifier, completion: h)
+        receive(identifier: r.notification.request.identifier, action: r.actionIdentifier,
+                content: r.notification.request.content, completion: h)
     }
 
-    func receive(identifier: String, action: String, completion h: @escaping () -> Void) {
-        // Several asks share one bundle. Never present one request's detail
-        // or return an answer for a different notification's native action.
-        if readingDetail != nil, let expected = askEnvironment["DIBS_NOTIFY_ID"], expected != identifier {
+    func receive(identifier: String, action: String, content: UNNotificationContent? = nil,
+                 completion h: @escaping () -> Void) {
+        let own = !coldLaunch && identifier == notificationID
+        guard own || content != nil else { h(); return }
+        if action == UNNotificationDismissActionIdentifier {
             h()
+            if own { receipt("dismissed"); finish("") }
+            else if coldLaunch { self.finish("") }
             return
         }
-        // The identifier is the button's own title, so the caller reads back
-        // exactly what it offered rather than an index it has to map.
-        if action == UNNotificationDefaultActionIdentifier {
-            if let detail = readingDetail {
-                h() // acknowledge the native press before entering a modal loop
-                DispatchQueue.main.async {
-                    guard !self.reading else { return }
-                    self.reading = true
-                    let choice = readAskOnScreen(title, detail: detail, buttons: buttons)
-                    if choice.isEmpty { receipt("dismissed") }
-                    self.finish(choice)
-                }
-                return
-            }
+        // Only the original invocation owns stdout and its live answer route.
+        // A different helper may receive an old notification from this bundle.
+        // Read its persisted content, but never answer somebody else's ask.
+        if own && action != UNNotificationDefaultActionIdentifier {
             h()
-            receipt("dismissed")
-            finish("")            // clicked the banner itself: not an answer
-        } else if action == UNNotificationDismissActionIdentifier {
-            h()
-            receipt("dismissed")
-            finish("")
+            if buttons.contains(action) { finish(action) }
+            return
+        }
+        h() // acknowledge before entering the nested modal run loop
+        let saved = content.flatMap { persistedReading($0) }
+        let detail: AskReadingDetail
+        let heading: String
+        let choices: [String]
+        if own, let live = readingDetail {
+            detail = live
+            heading = title
+            choices = buttons.isEmpty ? ["Close"] : buttons
         } else {
-            h()
-            finish(action)
+            heading = saved?.title ?? content?.title ?? "Dibs"
+            let kind = saved?.kind ?? "ask"
+            var text = saved?.body ?? content?.body ?? "Read this notification on the Dibs board."
+            if kind == "request" || kind == "question" || kind == "ask" {
+                text += "\n\nThis window cannot confirm the live answer route; continue on the Dibs board."
+            } else if kind == "contact" {
+                text += "\n\nThis window cannot confirm the live Open route; continue on the Dibs board."
+            }
+            detail = AskReadingDetail(sender: saved?.sender ?? content?.subtitle ?? "Dibs", body: text, kind: kind)
+            choices = ["Close"]
+        }
+        DispatchQueue.main.async {
+            guard !self.reading else { return }
+            self.reading = true
+            let choice = readAskOnScreen(heading, detail: detail, buttons: choices,
+                                         storedBytes: (content?.userInfo[readingKey] as? Data)?.count ?? 0)
+            self.reading = false
+            if own {
+                if choice.isEmpty || buttons.isEmpty { receipt("dismissed"); self.finish("") }
+                else { self.finish(choice) }
+            } else if coldLaunch { self.finish("") }
+            #if DIBS_READING_FIXTURE
+            if askFixture { exit(0) }
+            #endif
         }
     }
 }
 
 let handler = Handler { choice in
     chosen = choice
-    finish(choice.isEmpty ? 1 : 0)
+    finish(choice.isEmpty ? (askFixture ? 0 : 1) : 0)
 }
 centre.delegate = handler
 
@@ -859,6 +1287,7 @@ func postNotification(_ settings: [String: Any]?) {
     content.title = title
     if !subtitle.isEmpty { content.subtitle = subtitle }
     content.body = body
+    if let detail = readingDetail { content.userInfo[readingKey] = storedReading(title, detail: detail) }
 
     if interruption == .timeSensitive {
         // Somebody is BLOCKED on this one, so it asks to break through Focus.
@@ -895,12 +1324,67 @@ func postNotification(_ settings: [String: Any]?) {
         // Nothing to wait for when there is nothing to answer.
         if buttons.isEmpty { finish(0) }
     }
+    #if DIBS_READING_FIXTURE
+    if askFixture, let path = askEnvironment["DIBS_READING_POSTED"] {
+        let saved: [String: Any] = ["title": content.title, "subtitle": content.subtitle,
+                                  "body": content.body, "userInfo": content.userInfo]
+        try! PropertyListSerialization.data(fromPropertyList: saved, format: .binary, options: 0)
+            .write(to: URL(fileURLWithPath: path))
+        if let action = askEnvironment["DIBS_READING_ACTION"] {
+            guard let installed = centre.delegate as? Handler else { exit(2) }
+            installed.receive(identifier: askEnvironment["DIBS_READING_RESPONSE_ID"] ?? notificationID,
+                            action: action, content: content, completion: {})
+        } else { finish(0) }
+        return
+    }
+    #endif
     if askFixture { posted(nil); return }
-    centre.add(UNNotificationRequest(identifier: keyed ?? UUID().uuidString,
+    centre.add(UNNotificationRequest(identifier: notificationID,
                                      content: content, trigger: nil), withCompletionHandler: posted)
 }
 
-if askFixture {
+// Apple's notification response contract launches the bundle then calls the
+// delegate. Assigning it above, before app.run(), meets its before-launch rule:
+// https://developer.apple.com/documentation/usernotifications/unusernotificationcenter/delegate
+// https://developer.apple.com/documentation/usernotifications/handling-notifications-and-notification-related-actions
+if brokerLaunch {
+    guard let broker = NativeNotificationBroker(centre: centre) else {
+        let failure: [String: Any] = ["v": 1, "event": "failed", "id": "",
+            "error": "Another Dibs notifier owns this Mac's notifications, or its lock cannot be acquired; read the board and run dibs doctor."]
+        FileHandle.standardOutput.write(try! JSONSerialization.data(withJSONObject: failure) + Data([10]))
+        exit(2)
+    }
+    centre.delegate = broker
+    broker.start()
+    withExtendedLifetime(broker) { app.run() }
+    exit(0)
+}
+if coldLaunch {
+    #if DIBS_READING_FIXTURE
+    if askFixture, let path = askEnvironment["DIBS_READING_POSTED"] {
+        let bytes = try! Data(contentsOf: URL(fileURLWithPath: path))
+        let saved = try! PropertyListSerialization.propertyList(from: bytes, format: nil) as! [String: Any]
+        let content = UNMutableNotificationContent()
+        content.title = saved["title"] as! String
+        content.subtitle = saved["subtitle"] as! String
+        content.body = saved["body"] as! String
+        content.userInfo = saved["userInfo"] as! [AnyHashable: Any]
+        switch askEnvironment["DIBS_READING_CORRUPT"] {
+        case "oversize":
+            let oversized = StoredReadingDetail(title: "Daemon effect", sender: "Daemon sender",
+                                                body: String(repeating: "x", count: 8193) + "PRIVATE END", kind: "request")
+            content.userInfo[readingKey] = try! JSONEncoder().encode(oversized)
+        case "invalid": content.userInfo[readingKey] = Data("not json".utf8)
+        case "missing": content.userInfo = [:]
+        default: break
+        }
+        guard let installed = centre.delegate as? Handler else { exit(2) }
+        installed.receive(identifier: "dibs.msg.reading.7",
+                        action: askEnvironment["DIBS_READING_ACTION"] ?? UNNotificationDefaultActionIdentifier,
+                        content: content, completion: {})
+    }
+    #endif
+} else if askFixture {
     postNotification(nil)
     #if DIBS_ASK_FIXTURE
     if let action = askEnvironment["DIBS_ASK_FIXTURE_ACTION"] {
@@ -929,9 +1413,11 @@ let expireAsk = {
     }
     exit(1) // no answer; independent of a reading window's nested modal loop
 }
-if readingDetail != nil {
+if readingDetail != nil && !buttons.isEmpty {
     DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + lifetime, execute: expireAsk)
 } else {
-    DispatchQueue.main.asyncAfter(deadline: .now() + (buttons.isEmpty ? 10 : lifetime)) { finish(1) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + (buttons.isEmpty ? 10 : lifetime)) {
+        if !handler.reading { finish(1) }
+    }
 }
 app.run()

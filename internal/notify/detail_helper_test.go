@@ -14,7 +14,7 @@ import (
 
 func asDetailHelper() {
 	if len(os.Args) == 2 && strings.HasPrefix(os.Args[1], "--remove-messages=") {
-		if os.Args[1] != "--remove-messages=dibs.msg.detail-fixture.7" {
+		if os.Args[1] != "--remove-messages=dibs.msg.detail-fixture.10" {
 			os.Exit(3)
 		}
 		_, _ = os.Stdout.WriteString(`{"cleanup":"requested"}`)
@@ -29,7 +29,7 @@ func asDetailHelper() {
 		Stdin, Mode, Until, ID string
 	}{os.Args[1:], string(body), os.Getenv("DIBS_NOTIFY_DETAIL"), os.Getenv("DIBS_NOTIFY_UNTIL"), os.Getenv("DIBS_NOTIFY_ID")}
 	b, _ := json.Marshal(capture)
-	if os.WriteFile(os.Getenv("DIBS_TEST_DETAIL_CAPTURE"), b, 0o600) != nil {
+	if writeDetailCapture(capture.ID, b) != nil {
 		os.Exit(3)
 	}
 	if path := os.Getenv("DIBS_NOTIFY_RECEIPT"); path != "" {

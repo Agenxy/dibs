@@ -4,10 +4,10 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,23 +31,45 @@ func desktopSettingsHelper() int {
 		}
 		return 0
 	}
-	if len(os.Args) < 4 {
+	if len(os.Args) != 2 || os.Args[1] != "--broker" {
 		return 3
 	}
-	level := "active"
-	if len(os.Args) > 4 || os.Getenv("DIBS_NOTIFY_TIME_SENSITIVE") == "1" {
-		level = "timeSensitive"
-	}
-	if err := os.WriteFile(os.Getenv("DIBS_SETTINGS_HELPER_MARKER"), []byte("posted"), 0o600); err != nil {
-		return 4
-	}
-	data := fmt.Sprintf(`{"state":"posted","settings":%s,"interruption_level":%q}`, settings, level)
-	if err := os.WriteFile(os.Getenv("DIBS_NOTIFY_RECEIPT"), []byte(data), 0o600); err != nil {
-		return 5
-	}
-	time.Sleep(300 * time.Millisecond)
-	if level == "timeSensitive" {
-		_, _ = os.Stdout.WriteString("Later\n")
+	output := json.NewEncoder(os.Stdout)
+	_ = output.Encode(map[string]any{"v": 1, "event": "ready"})
+	scanner := bufio.NewScanner(os.Stdin)
+	for scanner.Scan() {
+		var frame struct {
+			V             int `json:"v"`
+			Type, ID      string
+			TimeSensitive bool
+			Buttons       []string
+		}
+		if json.Unmarshal(scanner.Bytes(), &frame) != nil || frame.V != 1 || !strings.HasPrefix(frame.ID, "dibs.msg.") {
+			return 3
+		}
+		if frame.Type == "cancel" {
+			continue
+		}
+		if frame.Type != "post" {
+			return 3
+		}
+		level := "active"
+		if frame.TimeSensitive || len(frame.Buttons) > 0 {
+			level = "timeSensitive"
+		}
+		if err := os.WriteFile(os.Getenv("DIBS_SETTINGS_HELPER_MARKER"), []byte("posted"), 0o600); err != nil {
+			return 4
+		}
+		var observation map[string]any
+		if json.Unmarshal([]byte(settings), &observation) != nil {
+			return 5
+		}
+		receipt := map[string]any{"state": "posted", "settings": observation, "interruption_level": level}
+		_ = output.Encode(map[string]any{"v": 1, "id": frame.ID, "event": "posted", "receipt": receipt})
+		time.Sleep(300 * time.Millisecond)
+		if len(frame.Buttons) > 0 {
+			_ = output.Encode(map[string]any{"v": 1, "id": frame.ID, "event": "action", "action": "Later"})
+		}
 	}
 	return 0
 }
@@ -71,6 +93,8 @@ func TestDesktopSettingsComeFromThePostingHelper(t *testing.T) {
 			t.Fatalf("sender setup: %v %v", reg, err)
 		}
 		token := reg["token"].(string)
+		marker := filepath.Join(t.TempDir(), "helper-executed")
+		t.Setenv("DIBS_SETTINGS_HELPER_MARKER", marker)
 		for _, tc := range []struct {
 			name, kind, priority string
 			interrupt            bool
@@ -80,8 +104,9 @@ func TestDesktopSettingsComeFromThePostingHelper(t *testing.T) {
 			{"high-notify", core.MsgNotify, "high", true},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
-				marker := filepath.Join(t.TempDir(), "helper-executed")
-				t.Setenv("DIBS_SETTINGS_HELPER_MARKER", marker)
+				if err := os.Remove(marker); err != nil && !os.IsNotExist(err) {
+					t.Fatal(err)
+				}
 				sent, err := eng.Do(ctx, &core.Op{
 					Kind: core.OpSendMessage, Token: token, To: human, MsgType: tc.kind,
 					RequestPriority: tc.priority, Body: "desktop settings fixture",

@@ -26,6 +26,32 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reads a running service's executable from the kernel, so the orphaned-service
   check works on real installs, and says plainly when a stopped service's
   program cannot be resolved without authorization.
+
+- Fixed lost button presses with concurrent macOS asks introduced by the
+  earlier long-lived per-ask helpers. One notifier broker now owns all live
+  asks, with bounded JSON lines over anonymous pipes held by its Dibs parent.
+  Native responses are matched to the pending ID and offered buttons; there
+  is no public action endpoint. Its per-user lifetime lock refuses a second
+  notifying parent before posting, and doctor names the holding process.
+  Death fails pending asks without inventing a verdict; the next new message
+  starts a replacement, without replaying old posts or answers. Per-request
+  deadlines and withdrawal close nonmodal reading windows independently.
+  Mixed-version argv callers take the same lock and refuse while it is owned.
+
+- Every macOS Dibs notification now opens a reading window on a body click,
+  including handoffs, ordinary and urgent messages, and contact notices. The
+  title, sender and full scrollable text survive the posting helper exiting:
+  bounded reading data is retained in the notification's `userInfo`, and a
+  fresh app launch handles the click without posting another notification.
+  Live asks keep their banner buttons; passive windows offer Close. An old
+  ask or contact without its original helper is read-only and directs the
+  person to the board, so a stale button cannot fabricate an answer. The
+  persisted payload has the same 8 KiB bound and privacy boundary as the
+  notification; no full detail travels in command arguments. Persistent Alerts
+  versus temporary Banners remains the person's macOS notification setting.
+  Automated fixtures cover the content and response paths; actual macOS
+  cold-launch and reading-window acceptance remain post-install checks.
+
 - `dibs doctor` no longer reports a folder as "cannot be read by the daemon"
   when it is simply not a git checkout, or no longer exists. On a production
   board it listed `~/Desktop`, folders that hold checkouts, `/` and a deleted

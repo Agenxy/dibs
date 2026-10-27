@@ -106,23 +106,9 @@ func Ask(m Message) (Answer, error) {
 		// the asking agent waits out its deadline while they decide whether to.
 		return answer(m)
 	case core.MsgHandoff:
-		if m.DeliveryReceipt != nil {
-			return Answer{}, notify.BannerWithDeliveryReceipt(title, "hands work to you", OneLine(m.Body), m.DeliveryReceipt)
-		}
-		return Answer{}, notify.BannerWithReceipt(title, "hands work to you", OneLine(m.Body), m.Receipt)
-	case core.MsgNotify:
-		if m.Priority == "high" || m.Priority == "urgent" {
-			if m.DeliveryReceipt != nil {
-				return Answer{}, notify.TimeSensitiveBannerWithDeliveryReceipt(title, "says", OneLine(m.Body), m.DeliveryReceipt)
-			}
-			return Answer{}, notify.TimeSensitiveBannerWithReceipt(title, "says", OneLine(m.Body), m.Receipt)
-		}
-		fallthrough
+		return Answer{}, m.bannerNotification(title, "hands work to you", OneLine(m.Body))
 	default:
-		if m.DeliveryReceipt != nil {
-			return Answer{}, notify.BannerWithDeliveryReceipt(title, "says", OneLine(m.Body), m.DeliveryReceipt)
-		}
-		return Answer{}, notify.BannerWithReceipt(title, "says", OneLine(m.Body), m.Receipt)
+		return Answer{}, m.bannerNotification(title, "says", OneLine(m.Body))
 	}
 }
 
@@ -162,12 +148,17 @@ func askContact(m Message) (Answer, error) {
 	if c.Count > 1 {
 		line += "; " + strconv.Itoa(c.Count) + " messages coalesced"
 	}
+	reading := "Unread " + c.Kind + " #" + strconv.FormatUint(c.Message, 10) + "; " + c.OpenHint
+	if c.MailboxFull {
+		reading = "Mailbox capacity reached; blocking ask #" + strconv.FormatUint(c.Message, 10) + "; " + c.OpenHint
+	}
+	if c.Count > 1 {
+		reading += "; " + strconv.Itoa(c.Count) + " messages coalesced"
+	}
+	m.Body, m.Who = reading, c.Sender
 	argv := contactOpenArgv(c.OpenURL)
 	if argv == nil {
-		if m.DeliveryReceipt != nil {
-			return Answer{}, notify.BannerWithDeliveryReceipt(title, "cannot reach this agent", line, m.DeliveryReceipt)
-		}
-		return Answer{}, notify.BannerWithReceipt(title, "cannot reach this agent", line, m.Receipt)
+		return Answer{}, m.bannerNotification(title, "cannot reach this agent", line)
 	}
 	pressed, err := m.askNotification(title, line, "Later", "Open")
 	if err != nil || pressed != "Open" {
@@ -370,7 +361,7 @@ func Said(who, body string) string {
 }
 
 func (m Message) askNotification(title, body string, buttons ...string) (string, error) {
-	if m.ask == nil && (m.Type == core.MsgRequest || m.Type == core.MsgQuestion) {
+	if m.ask == nil && (m.Type == core.MsgRequest || m.Type == core.MsgQuestion || m.Type == "contact") {
 		return m.askDetailedNotification(title, body, buttons...)
 	}
 	if m.ask == nil && m.DeliveryReceipt != nil {
@@ -412,9 +403,23 @@ func (m Message) askDetailedNotification(title, body string, buttons ...string) 
 		sender = m.displayFrom()
 	}
 	pressed, err := notify.AskMessageDetail(m.Node, m.Serial, title, body,
-		notify.AskDetail{Sender: sender, Body: m.Body, Deadline: m.Deadline}, delivery, buttons...)
+		notify.AskDetail{Sender: sender, Body: m.Body, Kind: m.Type, Deadline: m.Deadline}, delivery, buttons...)
 	if pressed == DeferButton && delivery != nil {
 		delivery(notify.ReceiptData{State: "dismissed"})
 	}
 	return pressed, err
+}
+
+func (m Message) bannerNotification(title, subtitle, excerpt string) error {
+	delivery := m.DeliveryReceipt
+	if delivery == nil && m.Receipt != nil {
+		delivery = func(data notify.ReceiptData) { m.Receipt(data.State) }
+	}
+	sender := m.Who
+	if sender == "" {
+		sender = m.displayFrom()
+	}
+	urgent := m.Type == core.MsgNotify && (m.Priority == "high" || m.Priority == "urgent")
+	return notify.BannerMessageDetail(m.Node, m.Serial, title, subtitle, excerpt,
+		notify.AskDetail{Sender: sender, Body: m.Body, Kind: m.Type, Deadline: m.Deadline}, urgent, delivery)
 }
