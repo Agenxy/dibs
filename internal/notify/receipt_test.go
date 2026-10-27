@@ -57,6 +57,10 @@ func TestReceiptChild(t *testing.T) {
 }
 
 func asReceiptHelper() {
+	if len(os.Args) == 2 && os.Args[1] == "--broker" {
+		asBrokerHelper()
+		return
+	}
 	if os.Getenv("DIBS_TEST_DETAIL_DRIVER") == "1" {
 		asDetailHelper()
 		return
@@ -143,12 +147,12 @@ func TestPublicNotificationReceiptUsesTheInstalledHelper(t *testing.T) {
 			var err error
 			switch api {
 			case "banner":
-				err = BannerWithReceipt("fixture", "", "fixture", receipt)
+				err = BannerWithReceipt(api, "", "fixture", receipt)
 			case "priority":
-				err = TimeSensitiveBannerWithReceipt("fixture", "", "fixture", receipt)
+				err = TimeSensitiveBannerWithReceipt(api, "", "fixture", receipt)
 			default:
 				var choice string
-				choice, err = AskWithReceipt("fixture", "fixture", receipt, "Yes")
+				choice, err = AskWithReceipt(api, "fixture", receipt, "Yes")
 				want := "Yes"
 				if api == "ignored" {
 					want = ""

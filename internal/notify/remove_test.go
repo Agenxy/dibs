@@ -59,6 +59,20 @@ func TestPublicMessageNotificationAndCleanupUseInstalledHelper(t *testing.T) {
 		if err != nil || choice != "Yes" || state != "posted" {
 			t.Fatalf("keyed posting: %q %q %v", choice, state, err)
 		}
+		t.Setenv("DIBS_TEST_CLEANUP_MODE", "crash") // a transient helper must NOT run while the owner lives
+		if result := RemoveMessages("board-A", []uint64{7, 8}); result.State != "requested" {
+			t.Fatalf("live broker cleanup: %+v", result)
+		}
+		// Once that owner exits, the legacy batch-removal contract remains
+		// observable. A live broker must not spawn this transient helper.
+		nativeBrokerProcess.Lock()
+		owner := nativeBrokerProcess.broker
+		nativeBrokerProcess.Unlock()
+		if owner == nil {
+			t.Fatal("public ask never started its owner")
+		}
+		_ = owner.input.Close()
+		<-owner.done
 		for _, mode := range []string{"new", "old", "crash"} {
 			t.Setenv("DIBS_TEST_CLEANUP_MODE", mode)
 			result := RemoveMessages("board-A", []uint64{7, 8})

@@ -6,9 +6,6 @@ package notify
 import (
 	"context"
 	"encoding/json"
-	"os"
-	"os/exec"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -96,17 +93,6 @@ func askContext(detail *AskDetail) (context.Context, context.CancelFunc) {
 	// The native helper owns the request deadline. There is no new daemon
 	// timer or polling loop; cleanup cancels a live invocation directly.
 	return context.WithCancel(context.Background())
-}
-
-func configureAskDetail(cmd *exec.Cmd, detail AskDetail) {
-	if cmd.Env == nil {
-		cmd.Env = os.Environ()
-	}
-	until := askUntil(detail.Deadline, time.Now())
-	seconds := float64(until.Unix()) + float64(until.Nanosecond())/float64(time.Second)
-	cmd.Env = append(cmd.Env, "DIBS_NOTIFY_DETAIL=stdin",
-		"DIBS_NOTIFY_UNTIL="+strconv.FormatFloat(seconds, 'f', -1, 64))
-	cmd.Stdin = strings.NewReader(string(encodeAskDetail(detail)))
 }
 
 // Derived per-process invocations, keyed by the same board-scoped ID as the

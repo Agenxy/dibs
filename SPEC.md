@@ -1773,15 +1773,35 @@ carrier. Missing or invalid stored detail falls back to the banner text and
 board guidance. macOS Alerts versus Banners is the person's OS setting, which
 Dibs diagnoses but does not change.
 
+One native notifier broker per Mac/user owns the live request table. The
+notifying Dibs parent (daemon or authenticated human relay) creates anonymous
+stdin/stdout pipes; the helper exposes no process-openable action endpoint.
+Parent commands are bounded v1 JSON lines, post and cancel only, at most 32 KiB;
+detail remains independently 8 KiB. Helper events are at most 16 KiB and name
+the board-scoped ID. Only native notification/window callbacks produce an
+action, validated against that ID's current offered buttons by both helper and
+parent. A per-user lifetime flock on `~/.dibs/notifier.lock`, independent of
+board data-directory overrides, refuses a second notifying parent before
+posting. The lock contains no PID or commands; doctor observes its holder
+through the OS. Old argv callers take the same lock. The supported arrangement
+is one notifying parent per Mac/user: attached relays replace that Mac's local
+daemon desktop route. This does not promise general mediation between arbitrary
+bundle instances. A cold reading instance never claims an ask is expired:
+it says it cannot confirm the live answer route and points to the board.
+
 The recorded request/question deadline travels through local and relay
-presenters to the helper, which remains answerable until that deadline (at most
-24 hours); contacts retain their two-minute action lifetime. Answer/withdrawal
-cleanup cancels matching live asks; caller exit ends a helper whose answer
-carrier has gone. Expiry has no dismissal receipt. No daemon polling or expiry
-timer is added. Legacy notifier callers and Linux keep their existing delivery
-contract. Native UI reading, scrolling, closing, late buttons and actual OS
-cold-launch acceptance are verified by the person after install; compiled
-fixtures establish persisted content, callback dispatch and window composition.
+presenters to the broker, which keeps each ask answerable until that deadline
+(at most 24 hours); contacts retain their two-minute action lifetime. Each
+reading window is nonmodal, so another ask's callbacks, expiry and withdrawal
+continue to work. Cleanup closes the matching window/table entry; helper EOF
+or parent exit ends the broker. Broker death returns an explicit error for
+pending asks, never a verdict or invented dismissal; the next new notification
+starts a replacement, without replaying posts or answers. Expiry has no
+dismissal receipt. No daemon polling or request-expiry timer is added. Linux
+keeps its existing delivery contract. Native UI reading, scrolling, closing,
+late buttons and actual OS cold-launch acceptance are verified by the person
+after install; compiled fixtures establish persisted content, callback dispatch,
+window composition and concurrent ownership.
 
 Each source additionally reports `settings` (version1 native authorization,
 alert style, alerts, Notification Center, lock screen, Time Sensitive and Focus

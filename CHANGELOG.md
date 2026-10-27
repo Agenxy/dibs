@@ -27,6 +27,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   check works on real installs, and says plainly when a stopped service's
   program cannot be resolved without authorization.
 
+- Fixed lost button presses with concurrent macOS asks introduced by the
+  earlier long-lived per-ask helpers. One notifier broker now owns all live
+  asks, with bounded JSON lines over anonymous pipes held by its Dibs parent.
+  Native responses are matched to the pending ID and offered buttons; there
+  is no public action endpoint. Its per-user lifetime lock refuses a second
+  notifying parent before posting, and doctor names the holding process.
+  Death fails pending asks without inventing a verdict; the next new message
+  starts a replacement, without replaying old posts or answers. Per-request
+  deadlines and withdrawal close nonmodal reading windows independently.
+  Mixed-version argv callers take the same lock and refuse while it is owned.
+
 - Every macOS Dibs notification now opens a reading window on a body click,
   including handoffs, ordinary and urgent messages, and contact notices. The
   title, sender and full scrollable text survive the posting helper exiting:

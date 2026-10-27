@@ -60,6 +60,9 @@ func TestHumanAskDetailUsesStdinAndWithdrawsLiveHelper(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			t.Setenv("DIBS_TEST_DETAIL_MODE", mode)
 			body := strings.Repeat("excerpt ", 30) + "PRIVATE DETAIL AFTER EXCERPT\nSecond paragraph."
+			if mode == "withdraw" {
+				body += " WITHDRAW_FIXTURE"
+			}
 			if mode == "bounded" {
 				body = strings.Repeat("長い本文", 4000)
 			}
@@ -140,7 +143,7 @@ func TestHumanAskDetailUsesStdinAndWithdrawsLiveHelper(t *testing.T) {
 			if err := json.Unmarshal(raw, &capture); err != nil {
 				t.Fatal(err)
 			}
-			if capture.Mode != "stdin" || capture.ID != "dibs.msg.detail-fixture.7" {
+			if capture.Mode != "broker-jsonl" || capture.ID != "dibs.msg.detail-fixture.7" {
 				t.Fatalf("detail did not cross the actual helper boundary: %+v", capture)
 			}
 			until, err := strconv.ParseInt(capture.Until, 10, 64)

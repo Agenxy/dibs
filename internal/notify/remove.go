@@ -55,6 +55,12 @@ func RemoveMessages(node string, serials []uint64) Cleanup {
 		return fail("unsupported", ErrUnsupported)
 	}
 	cancelNativeAsks(ids)
+	if owned, err := cleanupThroughBroker(ids); owned {
+		if err != nil {
+			return fail("failed", err)
+		}
+		return Cleanup{State: "requested", BestEffort: true}
+	}
 	h := helper()
 	if h == "" {
 		return fail("unsupported", ErrUnsupported)
