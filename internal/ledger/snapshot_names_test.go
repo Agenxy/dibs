@@ -42,7 +42,10 @@ func TestSnapshotGoFieldNamesAreFrozen(t *testing.T) {
 	if len(names) < 50 {
 		t.Fatalf("setup: walked only %d fields from core.State; the walk is broken, not the guard", len(names))
 	}
-	const want = "sha256:8470c11c2a752407"
+	// Traffic adds State.Traffic and 16 names in its four reachable types.
+	// Removing those additions restores the preceding 8470c11c2a752407 hash;
+	// no previously persisted Go field was renamed or removed.
+	const want = "sha256:a1d51d01f9dc23d0"
 	if got := fingerprint(names); got != want {
 		sorted := make([]string, 0, len(names))
 		for n := range names {
