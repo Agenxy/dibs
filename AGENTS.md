@@ -157,10 +157,17 @@ Things that have cost real time here, none of which are visible in the diff:
   retired op *kind* stops the fold, loudly. A retired *field* stops nothing: the
   op applies with that field zero and replay reports success. `lane_kind` →
   `agent_kind` shipped in every release to v0.0.4 and silently demoted every
-  persistent agent to ephemeral on upgrade. Rename the Go identifier freely; the
-  tag is frozen, and `TestLedgerFieldNamesAreFrozen` fingerprints the list
-  because the same sweep that renames tags will happily rewrite the list that
-  guards them, which is exactly how this got through.
+  persistent agent to ephemeral on upgrade. The tag is frozen, and
+  `TestLedgerFieldNamesAreFrozen` fingerprints the list because the same sweep
+  that renames tags will happily rewrite the list that guards them, which is
+  exactly how this got through. **The Go identifier is frozen too, for anything
+  reachable from `core.State`.** The snapshot is gob, and gob matches fields by
+  Go NAME and ignores the tag: a renamed state field decodes as zero from every
+  older snapshot, with no error, and the snapshot is most of the board once the
+  ledger is compacted. This file said "rename the Go identifier freely" until a
+  mutation of a new state field's json tag survived because gob never read it.
+  `TestSnapshotGoFieldNamesAreFrozen` fingerprints those names. An op-only
+  field may still be renamed in Go.
 - **A path is evidence on ONE computer**, and this is the rule this
   repository has learned six separate times. /workspace/repo on two
   machines is two unrelated directories, so every lookup, comparison and

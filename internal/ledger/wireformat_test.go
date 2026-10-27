@@ -43,7 +43,9 @@ import (
 // rewrites the words will not rewrite the hash. Updating the wire format now
 // takes two deliberate edits, and that is the entire point of it.
 //
-// A Go identifier may be renamed freely; the tag it carries may not.
+// An Op field's Go identifier may be renamed; the tag it carries may not. A
+// field reachable from core.State is different: the snapshot is gob, keyed by
+// Go name, and TestSnapshotGoFieldNamesAreFrozen guards those names.
 // New transient ingress fields tagged json:"-" never reach disk and need no frozen entry.
 func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 	led, path := newLedger(t)
