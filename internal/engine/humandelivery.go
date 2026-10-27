@@ -153,6 +153,7 @@ func (e *Engine) askHumanDesktop(n HumanNotice, ask func(humanask.Message) (huma
 		Contact: n.Contact,
 		Choices: n.Choices, Grant: n.Grant, Adopt: n.Adopt, AdoptName: n.AdoptName, Merge: n.Merge,
 		Serial: n.Serial, Node: n.Node,
+		Deadline: n.Deadline,
 		Receipt: func(state string) {
 			if state == "posted" {
 				e.setHumanPresentation(n.Serial, e.humanPresentation(), true)

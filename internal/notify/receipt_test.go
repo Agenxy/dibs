@@ -57,6 +57,10 @@ func TestReceiptChild(t *testing.T) {
 }
 
 func asReceiptHelper() {
+	if os.Getenv("DIBS_TEST_DETAIL_DRIVER") == "1" {
+		asDetailHelper()
+		return
+	}
 	if os.Getenv("DIBS_TEST_RECEIPT_PRIORITY") == "1" && os.Getenv("DIBS_NOTIFY_TIME_SENSITIVE") != "1" {
 		os.Exit(4)
 	}

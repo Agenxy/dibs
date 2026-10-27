@@ -36,6 +36,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   contact alerts in the transfer op; unread inherited mail can raise contact for
   its new recipient. Historical adoption ops retain their original fold.
 
+- Clicking a macOS approval or question banner opens a reading window with the
+  effect title, sender, full request text and the same action buttons. Closing
+  it leaves the request unanswered. Detail travels over private stdin, bounded
+  to 8 KiB with an explicit reminder to read the rest on the board, rather than
+  command arguments.
+  New asks remain answerable until their request deadline, capped at 24 hours;
+  answering or withdrawing elsewhere closes the matching helper and window.
+  Older notifier callers and Linux retain their existing behavior. Native UI
+  acceptance (reading, scrolling and a late press) remains for the person after
+  installation; source and automated tests establish the delivery contract.
+
 - macOS first service installation no longer mistakes `SMAppService.notFound`
   for a broken app. Configure and upgrade validate the sealed embedded service
   plist before requesting registration. Doctor distinguishes missing payload

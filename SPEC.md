@@ -1750,6 +1750,20 @@ authenticated session. No receipt state is ledgered: after restart the route
 and state are `unknown` until new evidence arrives; actual answers replay.
 Old helpers/relays supply no invented receipt. Retrying `op_id` returns the
 original route (or unknown after restart) without another alert.
+
+Current macOS asks open a reading window only when the person clicks the
+banner body. It retains the daemon's effect title and sender line outside the
+scrollable request body, with the same action buttons. Closing it supplies no
+answer. The banner keeps its one-line excerpt; full reading detail is JSON on
+private stdin, bounded to 8 KiB with an explicit remainder-on-the-board line,
+never full text in argv. The recorded deadline travels through local and relay
+presenters to the helper, which remains answerable until that deadline (at most
+24 hours). Answer/withdrawal cleanup cancels matching live invocations; caller
+exit also ends the helper because its answer carrier has gone. Expiry has no
+dismissal receipt. No daemon polling or expiry timer is added. Legacy notifier
+callers and Linux keep their existing contract. Native UI reading, scrolling,
+closing and late-button acceptance are verified by the person after install.
+
 Each source additionally reports `settings` (version1 native authorization,
 alert style, alerts, Notification Center, lock screen, Time Sensitive and Focus
 observations), the helper's requested `interruption_level` (also
