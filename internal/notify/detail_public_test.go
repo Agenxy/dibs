@@ -46,17 +46,21 @@ func TestHumanAskDetailUsesStdinAndWithdrawsLiveHelper(t *testing.T) {
 			}
 			testexec.PrepareExecutable(t, exec.Command(path, "--dibs-test-prepare"))
 		}
+		captureDir := filepath.Join(dir, "captures")
+		if err := os.Mkdir(captureDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		cmd := exec.CommandContext(ctx, driver, "-test.run=^TestHumanAskDetailUsesStdinAndWithdrawsLiveHelper$")
-		cmd.Env = append(os.Environ(), "DIBS_TEST_DETAIL_DRIVER=1", "DIBS_TEST_RECEIPT_PUBLIC=1", "DIBS_DIR="+dir, "DIBS_TEST_DETAIL_CAPTURE="+filepath.Join(dir, "capture.json"))
+		cmd.Env = append(os.Environ(), "DIBS_TEST_DETAIL_DRIVER=1", "DIBS_TEST_RECEIPT_PUBLIC=1", "DIBS_DIR="+dir, "DIBS_TEST_DETAIL_CAPTURE_DIR="+captureDir)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("public detail/withdrawal path: %v\n%s", err, out)
 		}
 		return
 	}
 	t.Setenv("DIBS_NOTIFY", "")
-	for _, mode := range []string{"detail", "question", "bounded", "withdraw", "handoff", "notify", "urgent", "contact", "contact-passive"} {
+	for i, mode := range []string{"detail", "question", "bounded", "withdraw", "handoff", "notify", "urgent", "contact", "contact-passive"} {
 		t.Run(mode, func(t *testing.T) {
 			t.Setenv("DIBS_TEST_DETAIL_MODE", mode)
 			body := strings.Repeat("excerpt ", 30) + "PRIVATE DETAIL AFTER EXCERPT\nSecond paragraph."
@@ -67,7 +71,10 @@ func TestHumanAskDetailUsesStdinAndWithdrawsLiveHelper(t *testing.T) {
 				body = strings.Repeat("長い本文", 4000)
 			}
 			deadline := time.Now().UTC().Add(2 * time.Hour).Truncate(time.Second)
-			m := humanask.Message{Type: "request", From: "fixture-sender", Who: "Daemon-composed sender line", Body: body, Node: "detail-fixture", Serial: 7}
+			// One persistent helper serves every mode. Distinct message IDs keep
+			// both captured bytes and late withdrawal frames scoped to this mode.
+			m := humanask.Message{Type: "request", From: "fixture-sender", Who: "Daemon-composed sender line", Body: body, Node: "detail-fixture", Serial: uint64(7 + i)}
+			wantID := "dibs.msg.detail-fixture." + strconv.FormatUint(m.Serial, 10)
 			wantDisposition := "approve"
 			if mode == "question" {
 				m.Type, m.Choices, wantDisposition = "question", []string{"Approve", "Decline"}, "answer"
@@ -119,7 +126,7 @@ func TestHumanAskDetailUsesStdinAndWithdrawsLiveHelper(t *testing.T) {
 				case <-time.After(3 * time.Second):
 					t.Fatal("helper never posted")
 				}
-				cleanup := notify.RemoveMessages("detail-fixture", []uint64{7})
+				cleanup := notify.RemoveMessages(m.Node, []uint64{m.Serial})
 				if cleanup.State != "requested" {
 					t.Fatalf("cleanup: %+v", cleanup)
 				}
@@ -132,7 +139,7 @@ func TestHumanAskDetailUsesStdinAndWithdrawsLiveHelper(t *testing.T) {
 			case <-time.After(3 * time.Second):
 				t.Fatal("withdrawal left a helper and reading window alive")
 			}
-			raw, err := os.ReadFile(os.Getenv("DIBS_TEST_DETAIL_CAPTURE"))
+			raw, err := os.ReadFile(filepath.Join(os.Getenv("DIBS_TEST_DETAIL_CAPTURE_DIR"), wantID+".json"))
 			if err != nil {
 				t.Fatal("setup: helper not reached:", err)
 			}
@@ -143,7 +150,7 @@ func TestHumanAskDetailUsesStdinAndWithdrawsLiveHelper(t *testing.T) {
 			if err := json.Unmarshal(raw, &capture); err != nil {
 				t.Fatal(err)
 			}
-			if capture.Mode != "broker-jsonl" || capture.ID != "dibs.msg.detail-fixture.7" {
+			if capture.Mode != "broker-jsonl" || capture.ID != wantID {
 				t.Fatalf("detail did not cross the actual helper boundary: %+v", capture)
 			}
 			until, err := strconv.ParseInt(capture.Until, 10, 64)

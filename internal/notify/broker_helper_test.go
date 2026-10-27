@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -46,7 +47,7 @@ func asBrokerHelper() {
 				Stdin, Mode, Until, ID string
 			}{os.Args[1:], string(frame.Detail), "broker-jsonl", strconv.FormatFloat(frame.Until, 'f', -1, 64), frame.ID}
 			data, _ := json.Marshal(capture)
-			if os.WriteFile(os.Getenv("DIBS_TEST_DETAIL_CAPTURE"), data, 0o600) != nil {
+			if writeDetailCapture(frame.ID, data) != nil {
 				os.Exit(3)
 			}
 		}
@@ -89,4 +90,24 @@ func asBrokerHelper() {
 		}
 		emit(brokerEvent{ID: frame.ID, Event: "action", Action: choice})
 	}
+}
+
+// The directory is inherited once at helper startup. Each frame owns a file,
+// and rename prevents readers from observing a truncate or a partial JSON write.
+func writeDetailCapture(id string, data []byte) error {
+	dir := os.Getenv("DIBS_TEST_DETAIL_CAPTURE_DIR")
+	file, err := os.CreateTemp(dir, ".capture-*")
+	if err != nil {
+		return err
+	}
+	name := file.Name()
+	defer func() { _ = os.Remove(name) }()
+	if _, err = file.Write(data); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if err = file.Close(); err != nil {
+		return err
+	}
+	return os.Rename(name, filepath.Join(dir, id+".json"))
 }
