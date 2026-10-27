@@ -48,6 +48,9 @@ func TestMain(m *testing.M) {
 		os.Exit(appServiceFixture())
 	}
 	if os.Getenv("DIBS_TEST_APP_SERVICE_HELPER") == "1" && filepath.Base(os.Args[0]) == "dibd" {
+		if os.Getenv("DIBS_TEST_APP_SERVICE_DAEMON") == "1" && len(os.Args) > 1 && os.Args[1] == "-dir" {
+			os.Exit(appServiceRegistryFixture())
+		}
 		if len(os.Args) == 2 && os.Args[1] == "--app-service-registry" {
 			os.Exit(appServiceRegistryFixture())
 		}

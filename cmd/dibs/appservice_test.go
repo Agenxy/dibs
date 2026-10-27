@@ -179,6 +179,9 @@ func appServiceRegistryFixture() int {
 		return 20
 	}
 	defer release()
+	if os.Getenv("DIBS_TEST_APP_SERVICE_DAEMON") == "1" {
+		return serveAppServiceFixture()
+	}
 	_, _ = os.Stdout.WriteString("ready\n")
 	_, err = io.Copy(io.Discard, os.Stdin)
 	if err != nil {
