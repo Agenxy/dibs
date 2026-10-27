@@ -124,11 +124,20 @@ func runBridge(_ []string) error {
 	// airtight: stdin reaching EOF, the harness process exiting, or a signal.
 	ctx, endSession := context.WithCancel(context.Background())
 	defer endSession()
+	stampMissing := make(chan struct{}, 1)
+	streams.Add(1)
+	go func() {
+		defer streams.Done()
+		deliverBridgeStart(ctx, client, url, secret, stampMissing)
+	}()
 	// Bounded, deliberately. `streams.Wait()` alone made the guarantee "this
 	// process exits IF its goroutines cooperate", and a bridge that fails to
 	// exit is one orphan per session holding a stream open against the daemon
 	// forever. The guarantee has to be that it exits.
-	defer waitBounded(&streams, 3*time.Second)
+	defer func() {
+		endSession()
+		waitBounded(&streams, 3*time.Second)
+	}()
 
 	// A harness that dies while a sibling still holds the pipe's write end
 	// leaves stdin open forever, so EOF cannot be the only signal. The kernel
@@ -206,7 +215,7 @@ func runBridge(_ []string) error {
 		}
 		// The bridge supplies its own process evidence before a model call;
 		// registration also gains facts from the harness it was spawned into.
-		line = enrichRegister(enrichBridgeProcess(line))
+		line = enrichRegister(enrichBridgeProcessWithCompletion(line, stampMissing))
 		if answeredLocally(line, out) {
 			continue
 		}

@@ -16,6 +16,19 @@ import (
 
 const maxAppReconnects = 128
 
+const reconnectObservationRemedy = "The next local MCP event retries these observations together. Read outstanding mail on the board if recovery is urgent; no model request from the idle bridge is required."
+
+// SetReconnectPending publishes a derived diagnostic, not coordination state.
+// Its count clears on successful observation and is lost safely on restart.
+func (e *Engine) SetReconnectPending(n int) { e.reconnectPending.Store(int64(n)) }
+
+func (e *Engine) decorateReconnectPending(b core.Result) {
+	if n := e.reconnectPending.Load(); n > 0 {
+		b["reconnect_pending"] = int(n)
+		b["reconnect_advice"] = fmt.Sprintf("App reconnect recovery is pending for %d bridge observations. %s", n, reconnectObservationRemedy)
+	}
+}
+
 type reconnectTarget struct {
 	agent   string
 	created uint64
@@ -32,10 +45,19 @@ func (e *Engine) AppReconnected(ctx context.Context, host string, app harnessenv
 	key := appReconnectKey(host, app)
 	defer func() {
 		if err != nil {
-			// A cancelled startup or failed receipt write is retryable. The
-			// same generation leaves already recovered queue items coalesced.
-			retryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+			// Failed receipts must clear their reservation even when the writer
+			// is busy for more than a second. Giving cleanup a separate short
+			// timeout silently turned the next retry into a coalesced success.
+			// Only engine shutdown may abandon this derived reservation.
+			retryCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 			defer cancel()
+			go func() {
+				select {
+				case <-e.Done():
+					cancel()
+				case <-retryCtx.Done():
+				}
+			}()
 			_, _ = e.query(retryCtx, func() core.Result {
 				delete(e.appReconnects, key)
 				return nil

@@ -37,6 +37,8 @@ type Engine struct {
 	inviteClosed map[string]uint64 // derived from ledgered closes, rebuilt before ring trimming
 	// Must stay unbuffered: accepted registration holds belong to the writer.
 	ops              chan request
+	done             chan struct{} // immutable after New; closes when Run exits
+	reconnectPending atomic.Int64  // derived observation diagnostic; never replayable state
 	subs             chan subReq
 	unsubs           chan chan core.Event
 	declarationTimes map[string]map[string]declarationTime // bounded derived display timestamps
@@ -301,6 +303,7 @@ func New(st *core.State, led Ledger, prober Prober, history ...[]core.Event) *En
 		ring = history[0]
 	}
 	e := &Engine{
+		done: make(chan struct{}),
 		ring: ring,
 		ops:  make(chan request), subs: make(chan subReq), unsubs: make(chan chan core.Event),
 		state: st, led: led, prober: prober,
@@ -336,6 +339,7 @@ func New(st *core.State, led Ledger, prober Prober, history ...[]core.Event) *En
 
 // Run drives the loop until ctx is done. Call in exactly one goroutine.
 func (e *Engine) Run(ctx context.Context) {
+	defer close(e.done)
 	reconcileContext, eCancel := context.WithCancel(ctx)
 	e.blobReconcileContext = reconcileContext
 	e.wakeContext = reconcileContext
@@ -408,6 +412,10 @@ func (e *Engine) Run(ctx context.Context) {
 		}
 	}
 }
+
+// Done bounds admitted off-loop observations by the writer's lifetime rather
+// than an individual HTTP request. It is available before Run starts.
+func (e *Engine) Done() <-chan struct{} { return e.done }
 
 // boot applies SPEC §7's evidence rule: grace to boot+TTL only for agents whose
 // durable coordination checkpoint is within one TTL; the rest transition now,

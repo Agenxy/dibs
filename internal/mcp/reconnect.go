@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/agenxy/dibs/internal/engine"
@@ -22,35 +23,71 @@ const (
 )
 
 type observedBridges struct {
-	mu       sync.Mutex
-	seen     map[string]bool
-	inFlight map[string]bool
+	mu      sync.Mutex
+	faultMu sync.Mutex // serialize ReportFault's delivery-time dedup, never held by the writer
+	seen    map[string]bool
+	entries map[string]*bridgeObservation
+	next    uint64
 	// probe is a fixture seam for a bounded process scan; nil uses the real probe.
-	probe func(int, string) (harnessenv.AppIncarnation, bool, error)
+	probe      func(int, string) (harnessenv.AppIncarnation, bool, error)
+	batchProbe func(context.Context, []harnessenv.BridgeIncarnation) ([]harnessenv.BridgeObservation, error)
 }
 
-// Reserve only the incarnation key. Whole-system probing and cohort receipt
-// I/O must never hold this mutex: other bridges' MCP calls are independent.
-func (b *observedBridges) begin(key string) bool {
+type bridgeObservation struct {
+	process          harnessenv.BridgeIncarnation
+	order            uint64
+	inFlight, failed bool
+}
+
+// Reserve the caller and all retryable entries as one inventory batch. An
+// unrelated concurrent first discovery remains independent; no process scan,
+// writer query or disk I/O holds this mutex. All remembered work is bounded.
+func (b *observedBridges) begin(pid int, started string) (map[string]harnessenv.BridgeIncarnation, bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.seen[key] || b.inFlight[key] || len(b.inFlight) >= maxObservedBridges {
+	if b.entries == nil {
+		b.entries = map[string]*bridgeObservation{}
+	}
+	givenUp := false
+	key := fmt.Sprintf("%d@%s", pid, started)
+	if pid > 1 && started != "" && !b.seen[key] && b.entries[key] == nil {
+		if len(b.entries) >= maxObservedBridges {
+			var oldest string
+			for k, entry := range b.entries {
+				if !entry.inFlight && (oldest == "" || entry.order < b.entries[oldest].order) {
+					oldest = k
+				}
+			}
+			if oldest != "" {
+				delete(b.entries, oldest)
+			}
+			givenUp = true // either evicted pending work or cannot retain this caller
+		}
+		if len(b.entries) < maxObservedBridges {
+			b.next++
+			b.entries[key] = &bridgeObservation{process: harnessenv.BridgeIncarnation{PID: pid, Start: started}, order: b.next}
+		}
+	}
+	batch := map[string]harnessenv.BridgeIncarnation{}
+	for k, entry := range b.entries {
+		if !entry.inFlight {
+			entry.inFlight = true
+			batch[k] = entry.process
+		}
+	}
+	return batch, givenUp
+}
+
+func (b *observedBridges) finish(key string, observed, present bool) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	entry := b.entries[key]
+	if !observed {
+		entry.inFlight, entry.failed = false, true
 		return false
 	}
-	if b.inFlight == nil {
-		b.inFlight = map[string]bool{}
-	}
-	b.inFlight[key] = true
-	return true
-}
-
-func (b *observedBridges) finish(key string, observed bool) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	delete(b.inFlight, key)
-	if !observed {
-		return // transient failures remain retryable on a later request
-	}
+	givenUp := entry.failed && !present
+	delete(b.entries, key)
 	if len(b.seen) >= maxObservedBridges {
 		// Re-probing is safe: the engine independently coalesces app cohorts.
 		b.seen = nil
@@ -59,6 +96,7 @@ func (b *observedBridges) finish(key string, observed bool) {
 		b.seen = map[string]bool{}
 	}
 	b.seen[key] = true
+	return givenUp
 }
 
 // The observation grants no identity, session binding, or access to mail.
@@ -73,29 +111,79 @@ func (s *Server) observeBridge(ctx context.Context, params json.RawMessage) {
 		return
 	}
 	pid, started := bridgeProcessMetadata(params)
-	if pid <= 1 || started == "" {
+	batch, givenUp := s.bridges.begin(pid, started)
+	if len(batch) == 0 && !givenUp {
 		return
 	}
-	key := fmt.Sprintf("%d@%s", pid, started)
-	if !s.bridges.begin(key) {
-		return
+	// Admission used this request's transport authority. Completion belongs to
+	// the daemon, so send's 500ms observation wait and HTTP disconnects cannot
+	// discard it. No initialize/session state is involved on either era.
+	ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	defer cancel()
+	go func() {
+		select {
+		case <-s.eng.Done():
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	keys := make([]string, 0, len(batch))
+	for key := range batch {
+		keys = append(keys, key)
 	}
-	observed := false
-	defer func() { s.bridges.finish(key, observed) }()
-	probe := s.bridges.probe
-	if probe == nil {
-		probe = harnessenv.AppForBridge
+	sort.Strings(keys)
+	processes := make([]harnessenv.BridgeIncarnation, 0, len(keys))
+	for _, key := range keys {
+		processes = append(processes, batch[key])
 	}
-	app, ok, err := probe(pid, started)
-	if err != nil {
-		return // unknown is retryable; do not cache a transient failed probe
+	results, err := s.probeBridges(ctx, processes)
+	for i, key := range keys {
+		observed, present := err == nil, false
+		if observed {
+			result := results[i]
+			present = result.Present
+			if result.App.PID > 1 {
+				observed = s.eng.AppReconnected(ctx, local, result.App) == nil
+			}
+		}
+		givenUp = s.bridges.finish(key, observed, present) || givenUp
 	}
-	if ok {
-		if err = s.eng.AppReconnected(ctx, local, app); err != nil {
-			return
+	s.bridges.mu.Lock()
+	pending := 0
+	for _, entry := range s.bridges.entries {
+		if entry.failed {
+			pending++
 		}
 	}
-	observed = true
+	s.eng.SetReconnectPending(pending)
+	s.bridges.mu.Unlock()
+	if givenUp && ctx.Err() == nil {
+		s.bridges.faultMu.Lock()
+		s.eng.ReportFault(ctx, engine.Fault{
+			Kind: "app-reconnect-given-up", Bug: true, Where: "internal/mcp/reconnect.go",
+			What:   "Dibs gave up a pending app reconnect observation: its bridge incarnation disappeared or the 512-entry bound was reached. Mail remains on the board; automatic reconnect recovery was not confirmed.",
+			Remedy: "Read the outstanding mail on the board. A later local bridge request supplies fresh process evidence; run `dibs doctor` to inspect observations still pending.",
+		})
+		s.bridges.faultMu.Unlock()
+	}
+}
+
+func (s *Server) probeBridges(ctx context.Context, processes []harnessenv.BridgeIncarnation) ([]harnessenv.BridgeObservation, error) {
+	if s.bridges.batchProbe != nil {
+		return s.bridges.batchProbe(ctx, processes)
+	}
+	if s.bridges.probe != nil { // single-process seam retained for existing discovery concurrency fixtures
+		results := make([]harnessenv.BridgeObservation, len(processes))
+		for i, p := range processes {
+			app, _, err := s.bridges.probe(p.PID, p.Start)
+			if err != nil {
+				return nil, err
+			}
+			results[i] = harnessenv.BridgeObservation{Present: true, App: app}
+		}
+		return results, nil
+	}
+	return harnessenv.AppForBridges(ctx, processes)
 }
 
 func bridgeProcessMetadata(params json.RawMessage) (int, string) {

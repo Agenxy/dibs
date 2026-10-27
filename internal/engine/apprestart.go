@@ -76,7 +76,7 @@ func (e *Engine) watchAppRestarts(ctx context.Context) {
 		// mail from moving the person's window, and it needs the transition.
 		// With notices off, observeAppRestart writes nothing and plans nothing.
 		epoch, known := currentAppRestartEpoch()
-		if err := watch.observe(ctx, e, epoch, known); err != nil {
+		if err := watch.observe(ctx, e, epoch, known); err != nil && ctx.Err() == nil {
 			slog.Warn("app-restart observation was not recorded", "err", err)
 		}
 	}

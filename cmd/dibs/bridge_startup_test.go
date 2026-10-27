@@ -24,6 +24,7 @@ import (
 	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/ledger"
 	"github.com/agenxy/dibs/internal/mcp"
+	"github.com/agenxy/dibs/internal/paths"
 	"github.com/agenxy/dibs/internal/testport"
 )
 
@@ -46,6 +47,21 @@ func TestBridgeStartupHelper(t *testing.T) {
 	}
 	if os.Getenv("DIBS_TEST_RECONNECT_OPEN_LOG") != "" {
 		installReconnectFakeAppOpen()
+	}
+	if gate := os.Getenv("DIBS_TEST_START_STAMP_GATE"); gate != "" {
+		lookupSelfStart = func() string {
+			f, err := os.OpenFile(gate, os.O_RDWR, 0o600)
+			if err != nil {
+				t.Error("stamp gate setup:", err)
+				return ""
+			}
+			defer func() { _ = f.Close() }()
+			if err := paths.LockExclusive(f, true); err != nil {
+				t.Error("stamp gate lock:", err)
+				return ""
+			}
+			return harnessenv.ProcessStart(os.Getpid())
+		}
 	}
 	if err := runBridge(nil); err != nil {
 		t.Fatal(err)
