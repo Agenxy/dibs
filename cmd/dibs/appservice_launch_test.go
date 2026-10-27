@@ -119,6 +119,10 @@ func TestConfigureAppServiceLaunchOutcome(t *testing.T) {
 				if result == nil || !strings.Contains(result.Error(), "OS_REASON_CODESIGNING") || !strings.Contains(result.Error(), "dibs configure --service") {
 					t.Errorf("fresh native refusal was hidden: %v\n%s", result, out)
 				}
+				if result != nil && (strings.Contains(result.Error(), "Start the daemon") || strings.Contains(result.Error(), "in the foreground") ||
+					!strings.Contains(result.Error(), "serving unsupervised") || !strings.Contains(result.Error(), "again in a minute")) {
+					t.Errorf("final failure hint contradicts verified recovery: %v", result)
+				}
 				if observations < 2 || registrations != 1 || manualStarts != 1 || f.requests.Load() != 0 || f.boardRequests.Load() <= readsBeforeManual {
 					t.Errorf("refusal/manual recovery path: observations=%d registrations=%d manual=%d permission=%d boardReads=%d before=%d", observations, registrations, manualStarts, f.requests.Load(), f.boardRequests.Load(), readsBeforeManual)
 				}

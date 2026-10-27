@@ -493,6 +493,9 @@ func TestCurrentAppServiceConfigureDriver(t *testing.T) {
 		t.Fatal("registry setup:", err)
 	}
 	defer release()
+	readAppServiceJob = func() ([]byte, error) {
+		return launchOutcomeFixture("current", 1, "running", "", fmt.Sprintf("\tpid = %d\n", os.Getpid())), nil
+	}
 	if err := serviceCommand(nil); err != nil {
 		t.Fatal(err)
 	}

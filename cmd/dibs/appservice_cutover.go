@@ -23,6 +23,7 @@ type appCutover struct {
 	before                                     []byte
 	hadPin                                     bool
 	stopped, changedPin, touchedApp, legacyOut bool
+	recovery                                   string
 }
 
 func (p *plan) cutoverAppService() (failure error) {
@@ -31,6 +32,12 @@ func (p *plan) cutoverAppService() (failure error) {
 	}
 	if err := p.appStartupMatches(); err != nil {
 		return err
+	}
+	// Enabled registration does not make the serving process its job. Keep
+	// manual recovery when a positive native observation identifies a different
+	// owner (including the failed-registration plus manual-fallback state).
+	if job := observeAppServiceLaunch(); p.running.pid > 0 && job.known && !job.owns(p.running.pid) {
+		p.app.previousManual = true
 	}
 	if err := checkServicePinWritable(); err != nil {
 		return err
@@ -46,7 +53,12 @@ func (p *plan) cutoverAppService() (failure error) {
 	tx := &appCutover{p: p, pin: pin, before: before, hadPin: err == nil}
 	defer func() {
 		if failure != nil {
-			failure = errors.Join(failure, tx.rollback(failure))
+			recoveryErr := tx.rollback(failure)
+			var startup *boardStartFailure
+			if recoveryErr == nil && tx.recovery != "" && errors.As(failure, &startup) {
+				failure = fmt.Errorf("the replacement did not start serving: %w\n\n%s", startup.cause, tx.recovery)
+			}
+			failure = errors.Join(failure, recoveryErr)
 		}
 	}()
 	return tx.run()
@@ -156,15 +168,17 @@ func (tx *appCutover) rollback(cause error) error {
 	}
 	switch {
 	case unsupervised:
-		fmt.Fprintln(os.Stderr, "recovered: the board is serving unsupervised; macOS refused the service launch "+
-			"(OS_REASON_CODESIGNING); run `dibs configure --service` again in a minute to return it to the background service. "+
-			"The upgrade still failed. This is the NEW build; the previous binary was not restored.")
+		tx.recovery = "the board is serving unsupervised; macOS refused the service launch " +
+			"(OS_REASON_CODESIGNING); run `dibs configure --service` again in a minute " +
+			"to return it to the background service. " +
+			"The upgrade still failed. This is the NEW build; the previous binary was not restored."
 	case tx.p.app.legacy == "" && !tx.p.app.previousManual:
-		fmt.Fprintln(os.Stderr, "recovered: the NEW build is serving again; the upgrade still failed. "+
-			"The previous binary was not restored. Run dibs doctor before relying on it.")
+		tx.recovery = "the NEW build is serving again; the upgrade still failed. " +
+			"The previous binary was not restored. Run dibs doctor before relying on it."
 	default:
-		fmt.Fprintln(os.Stderr, "recovered: the previous service mode is serving again; the upgrade still failed.")
+		tx.recovery = "the previous service mode is serving again; the upgrade still failed."
 	}
+	fmt.Fprintln(os.Stderr, "recovered: "+tx.recovery)
 	return nil
 }
 

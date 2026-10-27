@@ -19,6 +19,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- macOS service configuration no longer says "nothing to do" merely because
+  an unsupervised daemon serves the installed build beside an enabled but
+  failing registration. A no-op now requires the serving PID to be the running
+  service job; manual serving is migrated rather than mistaken for supervision.
+
+- A macOS upgrade that recovered the board no longer ends by telling the
+  operator to start a second daemon in the foreground. Its final failure keeps
+  the original launch error and reports the verified recovery state and remedy.
+
 - macOS service upgrades report a freshly observed code-signing launch refusal
   promptly instead of waiting the full board timeout behind an enabled
   registration receipt. Old exit reasons and unavailable diagnostics keep the
