@@ -19,6 +19,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `dibs doctor` no longer reports a folder as "cannot be read by the daemon"
+  when it is simply not a git checkout, or no longer exists. On a production
+  board it listed `~/Desktop`, folders that hold checkouts, `/` and a deleted
+  worktree that way, with a hint pointing at macOS folder access, though the
+  daemon could read every one. The daemon now confirms with its own bounded
+  read before calling a directory unreadable, and retracts an earlier verdict
+  once it reads the directory and finds no checkout there.
 - macOS first service installation no longer mistakes `SMAppService.notFound`
   for a broken app. Configure and upgrade validate the sealed embedded service
   plist before requesting registration. Doctor distinguishes missing payload
