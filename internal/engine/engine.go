@@ -899,26 +899,8 @@ func (e *Engine) execWithReceipt(
 		if err := e.refuseApprovingOwnAdoption(actor, op); err != nil {
 			return nil, err
 		}
-		// The same emptiness check as the direct route above, except a recorded
-		// transfer satisfying this exact request can be approved without a move.
-		//
-		// It was only on the direct one, so APPROVING an adoption request
-		// against an empty mailbox still ledgered an op that moved nothing and
-		// answered adopted:<source> with messages:0, and generated a notice
-		// telling the requester their rescued mail was waiting in an inbox that
-		// had received none. Two routes to one effect and the check on one of
-		// them, which is how the first fix looked complete. Found by a
-		// pre-release review.
-		if op.AdoptAuthorised {
-			if from := e.adoptionSourceOf(op); from != "" {
-				if err := e.refuseEmptyAdoption(from); err != nil {
-					if prior := e.state.CompletedAdoptionOf(e.state.Messages[op.MsgSerial]); prior != 0 {
-						op.PriorAdoptionSerial = prior
-					} else {
-						return nil, err
-					}
-				}
-			}
+		if err := e.prepareAdoptionApproval(op); err != nil {
+			return nil, err
 		}
 	}
 

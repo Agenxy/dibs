@@ -98,8 +98,10 @@ func (s *State) releaseAdoptedContacts(from, into *Agent) []Event {
 		// Asks already emit message.adopted. An escalated high-priority FYI
 		// needs that same ordinary arrival path; historical adoption omitted it.
 		if m.ContactEscalatedAt != 0 && m.Type == MsgNotify && m.State == MsgStatePending && m.ContactEligible() {
-			evs = append(evs, Event{Type: "message.adopted", Agent: from.ID, To: into.ID,
-				Data: map[string]any{"msg_serial": m.Serial, "msg_type": m.Type, "from": m.From}})
+			evs = append(evs, Event{
+				Type: "message.adopted", Agent: from.ID, To: into.ID,
+				Data: map[string]any{"msg_serial": m.Serial, "msg_type": m.Type, "from": m.From},
+			})
 		}
 		// A reachability receipt belongs to the source recipient, not its heir.
 		m.ContactEscalatedAt = 0
