@@ -26,6 +26,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   daemon could read every one. The daemon now confirms with its own bounded
   read before calling a directory unreadable, and retracts an earlier verdict
   once it reads the directory and finds no checkout there.
+
+- An adoption request can be approved truthfully after its mailbox was already
+  recovered directly into the requester. The approval records the earlier
+  adoption serial, moves nothing again, and permits `done` to close the request.
+  Empty mail alone is insufficient: the adoption must follow that request and
+  belong to the same source and requester incarnations. New arrivals still move
+  through the ordinary approval path. Adoption also resolves the source's stale
+  contact alerts in the transfer op; unread inherited mail can raise contact for
+  its new recipient. Historical adoption ops retain their original fold.
+
 - macOS first service installation no longer mistakes `SMAppService.notFound`
   for a broken app. Configure and upgrade validate the sealed embedded service
   plist before requesting registration. Doctor distinguishes missing payload

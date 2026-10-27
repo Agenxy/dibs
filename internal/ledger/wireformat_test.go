@@ -174,6 +174,8 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		"evidence": true, "auto": true,
 		"stale_agents": true, "alive_pids": true,
 		"no_process": true, "adopt_authorised": true, "choices": true, "grant": true, "adopt": true,
+		// Additive replay-gated adoption repair and exact earlier receipt.
+		"adoption_recovery": true, "prior_adoption_serial": true,
 		// Declared by core.Op and reachable on disk, though the fixture below
 		// does not exercise every one. They were entirely unfrozen until the
 		// type check underneath this list was added: seventeen tags, more than
@@ -471,7 +473,7 @@ const (
 	// FYI receipts add announcement ids and a consumption reason on old carriers.
 	// Merge adds actor and typed effect tags; no historical tag renamed.
 	// Mailbox repair adds three tags; no historical spelling changed.
-	frozenOpFingerprint       = "sha256:ed73fb201a3955d9"
+	frozenOpFingerprint       = "sha256:692df51f5309cebb"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`
@@ -485,7 +487,7 @@ const (
 	// Stall notices add one durable declaration-version scalar, absent historically.
 	// FYI receipts add an announcement serial and consumption reason only.
 	// Merge adds typed effect and sender-ownership tags; no historical tag renamed.
-	frozenMessageFingerprint = "sha256:4a8e41dc18ba1dd2"
+	frozenMessageFingerprint = "sha256:429c5dd40f0d7ecb"
 	// The identity inside op.agent. Set when the fingerprint was added; one
 	// new tag at a time from here, never a rename.
 	frozenAgentFingerprint = "sha256:c630d3cc9f27eb95"
@@ -724,8 +726,9 @@ func TestLedgerMessageFieldNamesAreFrozen(t *testing.T) {
 		"adopted_from": true,
 		// The serial of the adoption, so only the incarnation of a reused name
 		// that was actually given the mail can read it through the mark.
-		"adopted_serial":     true,
-		"merged_sent_serial": true,
+		"adopted_serial":        true,
+		"prior_adoption_serial": true,
+		"merged_sent_serial":    true,
 		// A task's steps, what was reported against them, and where it landed.
 		"milestones": true, "progress": true, "deliverable": true, "tracked": true,
 		"serial": true, "from": true, "to": true, "type": true, "body": true,

@@ -1769,23 +1769,7 @@ func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, 
 		evs = append(evs, events...)
 	}
 	if adopted != nil {
-		into := s.Agents[m.From]
-		// Through the same helper as the direct path, and for the reason the
-		// helper exists: this loop ignored the source's TruncatedBefore, so an
-		// APPROVED adoption disclosed the predecessor mail the source had
-		// already been told was not its own. Two implementations of one rule is
-		// how only one of them got fixed the last three times.
-		moved := s.readdressMail(adopted, into, op.V7Semantics)
-		res["adopted"], res["messages"] = adopted.ID, moved
-		evs[0].Data["adopted"] = adopted.ID
-		evs = append(evs, s.adoptedMailEvents(into, adopted)...)
-		res["adopt_note"] = adoptNote(moved)
-		evs = append(evs, Event{
-			Type: "agent.updated", Agent: into.ID,
-			Data: map[string]any{
-				"adopted_from": adopted.ID, "messages": moved, "via": "approved_request",
-			},
-		})
+		evs = s.applyRequestedAdoption(m, op, adopted, res, evs, now)
 	}
 	return res, evs, nil
 }

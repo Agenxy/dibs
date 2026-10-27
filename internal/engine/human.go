@@ -787,8 +787,8 @@ func (e *Engine) refuseEmptyAdoption(from string) error {
 	return &core.Error{
 		Code: "E_NOTHING_TO_ADOPT",
 		Msg:  "agent " + from + " has no mail to move",
-		Hint: "nothing was changed. Adoption moves messages and records nothing else, " +
-			"so there is no effect to be had here. If the row itself is the problem, " +
+		Hint: "nothing was changed. No recoverable mail remains, and an empty mailbox " +
+			"alone does not prove a recovery took place. If the row itself is the problem, " +
 			"prune removes it; if you expected mail, check the id on the board",
 	}
 }
