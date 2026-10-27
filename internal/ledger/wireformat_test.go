@@ -71,7 +71,7 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 	apply(t, st, led, &core.Op{Kind: core.OpAckBoard, Token: "tb"}, t0.Add(5*time.Second))
 	apply(t, st, led, &core.Op{
 		Kind: core.OpSendMessage, Token: "ta", To: "beta",
-		MsgType: core.MsgQuestion, Body: "?", OpID: "op-1", DeadlineSec: 60,
+		MsgType: core.MsgQuestion, Body: "?", OpID: "op-1", DeadlineSec: 60, MailTrafficV1: true,
 	}, t0.Add(6*time.Second))
 	apply(t, st, led, &core.Op{
 		Kind: core.OpSpaceOpen, Token: "ta", Space: "work",
@@ -177,7 +177,7 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		"stale_agents": true, "alive_pids": true,
 		"no_process": true, "adopt_authorised": true, "choices": true, "grant": true, "adopt": true,
 		// Additive replay-gated adoption repair and exact earlier receipt.
-		"adoption_recovery": true, "prior_adoption_serial": true,
+		"adoption_recovery": true, "prior_adoption_serial": true, "mail_traffic_v1": true,
 		// Declared by core.Op and reachable on disk, though the fixture below
 		// does not exercise every one. They were entirely unfrozen until the
 		// type check underneath this list was added: seventeen tags, more than
@@ -474,8 +474,8 @@ const (
 	// Compact mailbox checkpoints add the selected serial list, without renaming.
 	// FYI receipts add announcement ids and a consumption reason on old carriers.
 	// Merge adds actor and typed effect tags; no historical tag renamed.
-	// Mailbox repair adds three tags; no historical spelling changed.
-	frozenOpFingerprint       = "sha256:692df51f5309cebb"
+	// Daily traffic adds mail_traffic_v1; no historical spelling changed.
+	frozenOpFingerprint       = "sha256:8890b69641d51444"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`

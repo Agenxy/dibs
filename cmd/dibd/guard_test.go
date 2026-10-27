@@ -129,7 +129,7 @@ func TestActingAsTheHumanIsBehindTheAdminGate(t *testing.T) {
 
 	// The coordination surface stays open to agents holding the secret,
 	// gating it would break every agent on the board.
-	for _, p := range []string{"/mcp", "/api/board", "/healthz"} {
+	for _, p := range []string{"/mcp", "/api/board", "/api/traffic", "/healthz"} {
 		if godViewPath(p) {
 			t.Errorf("%s is coordination, not the god view; gating it locks out every agent", p)
 		}
@@ -202,6 +202,7 @@ func TestLivenessIsReachableWithoutTheSecret(t *testing.T) {
 		{path: "/x/../livez", want: http.StatusOK},
 		// The surfaces that DO reveal the board stay closed.
 		{path: "/api/board", want: http.StatusUnauthorized},
+		{path: "/api/traffic", want: http.StatusUnauthorized},
 		{path: "/mcp", want: http.StatusUnauthorized},
 		{path: "/api/logs", want: http.StatusUnauthorized},
 	} {

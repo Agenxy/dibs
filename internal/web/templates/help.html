@@ -544,6 +544,21 @@ code, kbd {
           </div>
         </section>
 
+        <section class="protocol-section" id="traffic">
+          <h2>Daily traffic counts</h2>
+          <p><code>all_mail(census:true, traffic:true)</code> returns your own daily
+            send counts and incoming requests, questions and handoffs. Coordinators
+            may select another agent or all retained rows. No message content is returned.</p>
+          <p><code>GET /api/traffic</code> uses the coordination credential and returns
+            whole-board UTC totals without agent IDs. Consumers poll when needed.
+            Counts survive mail prune and snapshot compaction for 35 UTC dates.
+            Coverage begins at the reported first serial; the first day may be partial.</p>
+          <p>Each day retains at most 512 agent rows. Explicit overflow counts remain
+            in board totals. If <code>rows_complete</code> is false, a missing agent
+            row is unknown, not zero. Retries do not double-count; moves keep the
+            original sender and recipient attribution.</p>
+        </section>
+
         <section class="protocol-section" id="example">
           <h2>Example agent session</h2>
           <p>This is the shape of a well-coordinated pass. Exact tool syntax varies

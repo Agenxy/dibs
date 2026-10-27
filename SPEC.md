@@ -1586,6 +1586,49 @@ refuses stale permission with a retry hint and lag. Any ownership-fence advance
 during content I/O discards the result at final token/incarnation reauthorization.
 The derived view adds no core state, ledger fields or second persistent store.
 
+### Mailbox census and daily traffic counts
+
+`all_mail(census:true)` remains coordinator-only mailbox occupancy metadata;
+without census, decrypted mail remains admin-only. Add `traffic:true` to read
+historical counts instead: coordinators may select any immutable agent ID or
+current mailbox name, including a retained retired ID; members may select only
+their own ID/current name (omitting `agent` selects self). Authorization precedes
+other-name resolution. This path uses observation authentication, so polling
+neither confirms socket delivery nor refreshes a model turn. No bodies, subjects,
+responses, attachment metadata or credentials appear in the traffic projection.
+
+`GET /api/traffic` requires the same coordination credential as `/api/board`
+and returns whole-board daily totals only, with no agent IDs. It is a sibling
+endpoint to keep the ordinary check-in/board payload small. Consumers poll; no
+new timer, background collector or persistent store is added.
+
+Only successful new `send` ops recorded with `mail_traffic_v1` count, once per
+accepted send (recognized `op_id` retries add nothing). Each UTC day records sends by sender
+and type, plus request/question/handoff arrivals by original recipient at send commit.
+These are mailbox acceptance counts, never presentation, reading or turn receipts. Adoption,
+merge, read and response do not rewrite attribution or count as sends. Broadcast
+counts each accepted recipient send. Old ops are not backfilled: `started_at` and
+`first_serial` identify the first counted op, so the first day may be partial;
+`through` is the latest counted send timestamp, not a collection heartbeat.
+
+The V1 fold retains 35 calendar UTC dates relative to its recorded high-water
+send date; reads filter expired dates on quiet boards without mutating state.
+Clock rollback cannot expand that retained window. Snapshots preserve the counts
+after message GC, agent prune and encrypted-ledger compaction. Each date admits
+at most 512 distinct (agent ID, creation serial) incarnations, sender before recipient, in ledger
+order. Existing rows stay exact; unadmitted contributions accumulate in explicit
+`overflow_sent` and `overflow_asks_received`. Board totals always include them.
+`rows_complete:false` means absent per-agent rows cannot be read as zero. Changing
+the 35/512 constants requires a new recorded semantic version, not reinterpretation
+of V1 ops. Member self reads are fenced to their current creation serial, so ID reuse never
+grants the previous holder’s counts; coordinator rows expose `created_serial`.
+The maximum is 17,920 rows with eight uint64 counters per row (1,146,880
+bytes of raw counters), plus one creation serial, bounded agent-ID keys, map and snapshot overhead.
+A full-window stress fixture with 128-byte IDs and maximal uint64 counters
+serializes to 4,230,401 bytes of Gob before encryption, or 7,924,306 bytes
+of JSON for comparison.
+The response sorts dates and agent IDs and returns detached copies.
+
 The table below is the v1.0 core, and is kept because §12 is the frozen contract
 those tools were reviewed against. It is NOT the full surface: v1.1 added blobs
 (`put_blob`, `get_blob`; now `upload`, `download` for the out-of-band byte plane

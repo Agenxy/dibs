@@ -816,11 +816,17 @@ var toolDefs = func() []map[string]any {
 			"description": "ADMIN reads every message, decrypted: the god view. A COORDINATOR may " +
 				"pass census:true for COUNTS per mailbox, never a body: how many, of which types, " +
 				"from whom, how old, how many still awaiting an answer; enough to place an " +
-				"abandoned mailbox or prune an empty row.",
+				"abandoned mailbox or prune an empty row. Add traffic:true for daily send/ask counts; " +
+				"members may read their own incarnation.",
 			"inputSchema": obj(map[string]any{
 				"token":  tok,
 				"census": map[string]any{"type": "boolean", "description": "counts only; coordinators may"},
-				"agent":  str("one mailbox, reported even if empty; default: all live"),
+				"traffic": map[string]any{
+					"type": "boolean",
+					"description": "with census: daily counts (35 UTC days); coordinator all agents, " +
+						"member own ID/name only",
+				},
+				"agent": str("one mailbox, reported even if empty; default: all live"),
 			}, "token"),
 		},
 		{

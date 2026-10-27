@@ -123,6 +123,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /help", s.help)
 	mux.HandleFunc("GET /events", s.sse)
 	mux.HandleFunc("GET /api/board", s.apiBoard)
+	mux.HandleFunc("GET /api/traffic", s.apiTraffic)
 	mux.HandleFunc("GET /api/messages", s.apiMessages)
 	// Why the Dibs tab is empty. Without this a board with matching switched
 	// off looks identical to one where nobody is colliding.
@@ -421,5 +422,10 @@ func (s *Server) apiMessages(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	writeJSON(w, res, err)
+}
+
+func (s *Server) apiTraffic(w http.ResponseWriter, r *http.Request) {
+	res, err := s.eng.TrafficTotals(r.Context())
 	writeJSON(w, res, err)
 }

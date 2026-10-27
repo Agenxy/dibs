@@ -21,6 +21,9 @@ import "time"
 type Op struct {
 	Kind string `json:"kind"`
 
+	// MailTrafficV1 opts new sends into bounded daily counts; old folds stay unchanged.
+	MailTrafficV1 bool `json:"mail_traffic_v1,omitempty"`
+
 	// Writer-owned send semantics. Absent on old ops, so their capacity and
 	// displacement folds remain unchanged.
 	MailboxCapacity bool `json:"mailbox_capacity,omitempty"`
