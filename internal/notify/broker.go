@@ -157,6 +157,8 @@ func (b *nativeBroker) deliver(event brokerEvent) error {
 	if ch == nil {
 		return nil
 	}
+	// Overflow means the helper is misbehaving. Kill the broker and fail
+	// every pending ask rather than silently drop an event for one ID.
 	select {
 	case ch <- event:
 		return nil
