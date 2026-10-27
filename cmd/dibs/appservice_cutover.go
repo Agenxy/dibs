@@ -68,7 +68,7 @@ func (tx *appCutover) run() error {
 	}
 	tx.changedPin = true
 	tx.touchedApp = true
-	if err := p.app.start(); err != nil {
+	if err := p.startAppService(); err != nil {
 		return err
 	}
 	if err := p.doConfirm(p.dir); err != nil {
@@ -149,10 +149,17 @@ func (tx *appCutover) rollback() error {
 	if err := tx.restorePreviousSupervisor(); err != nil {
 		return fmt.Errorf("service recovery did not complete: %w; run dibs doctor", err)
 	}
+	if tx.p.app.legacy == "" && !tx.p.app.previousManual {
+		fmt.Fprintln(os.Stderr, "recovered: the NEW build is serving again; the upgrade still failed. "+
+			"The previous binary was not restored. Run dibs doctor before relying on it.")
+	} else {
+		fmt.Fprintln(os.Stderr, "recovered: the previous service mode is serving again; the upgrade still failed.")
+	}
 	return nil
 }
 
 func (tx *appCutover) restorePreviousSupervisor() error {
+	tx.p.launchFailure = nil
 	var err error
 	switch {
 	case tx.p.app.legacy != "":
@@ -164,7 +171,7 @@ func (tx *appCutover) restorePreviousSupervisor() error {
 			err = startManualAppRecovery(tx.p.installed, tx.p.dir, "", tx.p.running)
 		}
 	default:
-		err = tx.p.app.start()
+		err = tx.p.startAppService()
 	}
 	if err != nil {
 		return err
