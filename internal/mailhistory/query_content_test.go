@@ -394,6 +394,12 @@ func TestMailHistoryNativeSmallBodySurvivesLargeValidSeekInterval(t *testing.T) 
 		// interval sized past the content bound is refused before any seek,
 		// on every attempt, so a retry cannot rescue that bug. It can only
 		// rescue a slow machine, and each retry must have actually seeked.
+		//
+		// Bounded by time, not by a count: three attempts all ran out of
+		// budget on a local gate sharing the machine with two other test
+		// packages, and the count measured the machine's load rather than
+		// the sizing. The discriminator above is what makes retrying safe.
+		patience := time.Now().Add(time.Minute)
 		for attempt := 1; ; attempt++ {
 			before := seeks.Load()
 			ctx, cancel := context.WithTimeout(f.ctx, 10*time.Second)
@@ -415,8 +421,8 @@ func TestMailHistoryNativeSmallBodySurvivesLargeValidSeekInterval(t *testing.T) 
 			// a mis-sized interval never produces that answer.
 			slow := strings.Contains(raw, "native content work bound") && seeks.Load() > before ||
 				strings.Contains(raw, "work budget exhausted")
-			if !slow || attempt == 3 {
-				t.Fatal("small authorized body remained unavailable in a large valid interval:", err, res)
+			if !slow || time.Now().After(patience) {
+				t.Fatal("small authorized body remained unavailable in a large valid interval after", attempt, "attempts:", err, res)
 			}
 		}
 	}
