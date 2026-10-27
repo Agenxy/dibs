@@ -113,6 +113,14 @@ func TestAdoptionResolvesSourceContactThroughMCP(t *testing.T) {
 				} else {
 					request := f.call("send", map[string]any{"token": f.heir, "to": "lead", "type": "request", "adopt": "lost", "body": "recover my mailbox"})["msg_serial"]
 					f.call("respond", map[string]any{"token": f.lead, "msg_serial": request, "disposition": "approve"})
+					read := f.call("read_mail", map[string]any{"token": f.lead, "msg_serial": request})
+					if read["message"].(map[string]any)["prior_adoption_serial"] != nil {
+						t.Fatalf("ordinary approval fabricated an earlier adoption receipt: %v", read)
+					}
+					done := toolCallOn(t, f.srv, version, "respond", map[string]any{"token": f.lead, "msg_serial": request, "disposition": "done"})
+					if done["code"] != "E_BAD_DISPOSITION" {
+						t.Fatalf("ordinary approved adoption unexpectedly allowed done: %v", done)
+					}
 				}
 				board, err := f.eng.Board(context.Background())
 				if err != nil {
