@@ -20,10 +20,15 @@ import (
 // installed helper. The helper rejects anything except the existing read-only
 // mode and records the call; no authorization request or posting is possible.
 func TestUpgradeFetchReportsInstalledNotificationPermission(t *testing.T) {
+	data, err := os.ReadFile(os.Args[0])
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, route := range []string{"fetch", "current-fetch", "current-bare"} {
 		current := route != "fetch"
 		for _, mode := range []string{"not-determined", "denied", "old", "malformed", "authorized"} {
 			t.Run(route+"/"+mode, func(t *testing.T) {
+				t.Parallel()
 				root := t.TempDir()
 				bin := filepath.Join(root, "bin")
 				app := filepath.Join(bin, "Dibs.app")
@@ -31,25 +36,20 @@ func TestUpgradeFetchReportsInstalledNotificationPermission(t *testing.T) {
 				if err := os.MkdirAll(macos, 0o700); err != nil {
 					t.Fatal(err)
 				}
-				data, err := os.ReadFile(os.Args[0])
-				if err != nil {
+				// Only the actual CLI driver executes Dibs code under test.
+				// Cosign, the notifier and the bare replay check are external doubles.
+				probe := filepath.Join(bin, "dibs-upgrade-probe")
+				if err := os.WriteFile(probe, data, 0o700); err != nil {
 					t.Fatal(err)
 				}
-				probe := filepath.Join(bin, "dibs-upgrade-probe")
-				for _, path := range []string{probe, filepath.Join(bin, "cosign"), filepath.Join(macos, "dibs-notify")} {
-					if err := os.WriteFile(path, data, 0o700); err != nil {
-						t.Fatal(err)
-					}
-					testexec.PrepareExecutable(t, exec.Command(path, "--dibs-test-prepare"))
-				}
+				testexec.PrepareExecutable(t, exec.Command(probe, "--dibs-test-prepare"))
+				writeNativeFixtureHelper(t, filepath.Join(bin, "cosign"))
+				writeNativeFixtureHelper(t, filepath.Join(macos, "dibs-notify"))
 				if err := os.WriteFile(filepath.Join(bin, "dibd"), []byte("old fixture daemon"), 0o700); err != nil {
 					t.Fatal(err)
 				}
 				if route == "current-bare" {
-					if err := os.WriteFile(filepath.Join(bin, "dibd"), data, 0o700); err != nil {
-						t.Fatal(err)
-					}
-					testexec.PrepareExecutable(t, exec.Command(filepath.Join(bin, "dibd"), "--dibs-test-prepare"))
+					writeNativeFixtureHelper(t, filepath.Join(bin, "dibd"))
 				}
 				// The registrar sees only a private fixture identity, never the
 				// installed Dibs identity on the developer's machine.
