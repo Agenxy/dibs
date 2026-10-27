@@ -388,6 +388,22 @@ func (e *Engine) NoteUnreadableTree(cwd, hint string) {
 	}
 }
 
+// NoteOrdinaryTree retracts an unreadable verdict for a directory the daemon
+// has since read and found not to be a checkout, or found gone. Exactly that
+// directory: reading it proves nothing about a checkout inside it, which is
+// indexed, or not, on its own.
+func (e *Engine) NoteOrdinaryTree(cwd string) {
+	e.matchStatus.mu.Lock()
+	defer e.matchStatus.mu.Unlock()
+	dir := filepath.Clean(cwd)
+	if !slices.ContainsFunc(e.matchStatus.st.Unreadable, func(t string) bool { return filepath.Clean(t) == dir }) {
+		return
+	}
+	// A new slice, never an edit of the one MatchStatus may have handed out.
+	e.matchStatus.st.Unreadable = slices.DeleteFunc(slices.Clone(e.matchStatus.st.Unreadable),
+		func(t string) bool { return filepath.Clean(t) == dir })
+}
+
 // MatchStatus reports it, filling in the hint so callers cannot forget to.
 func (e *Engine) MatchStatus() MatchStatus {
 	e.matchStatus.mu.RLock()

@@ -5,9 +5,13 @@ package testexec
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -76,4 +80,44 @@ func TestPrepareExecutableRefusesFailedOrStuckSetup(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A fixture still held open for writing by another process is refused by
+// Linux execve with ETXTBSY. In the gate that holder is a sibling test's fork,
+// for the instant before it execs; here it is this test, which lets go after a
+// moment. Preparation must wait it out rather than fail the caller's setup.
+func TestPrepareExecutableWaitsOutABusyExecutable(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("ETXTBSY is how Linux execve refuses a file open for writing")
+	}
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "fixture")
+	writer, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0o700)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = writer.Close() })
+	if _, err := writer.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	// The setup has to produce the refusal, or this passes for nothing.
+	if err := exec.Command(path, "-test.run=^$").Run(); !errors.Is(err, syscall.ETXTBSY) {
+		t.Fatalf("setup: launching a file open for writing returned %v, want ETXTBSY", err)
+	}
+	released := make(chan struct{})
+	time.AfterFunc(200*time.Millisecond, func() {
+		_ = writer.Close()
+		close(released)
+	})
+	command := exec.Command(path, "-test.run=^TestPrepareExecutableFixture$")
+	command.Env = append(os.Environ(), "GORACE=atexit_sleep_ms=0")
+	PrepareExecutable(t, command)
+	<-released
 }

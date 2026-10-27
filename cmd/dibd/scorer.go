@@ -10,6 +10,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
+	"io/fs"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -611,6 +613,10 @@ func (f *scorerFlags) indexKnownTrees(ctx context.Context, eng *engine.Engine) {
 	var builds []<-chan struct{}
 	for _, cwd := range eng.WorkingDirectories(ctx) {
 		root, err := repoRootOf(ctx, cwd)
+		if err != nil && notACheckout(cwd, err) {
+			eng.NoteOrdinaryTree(cwd)
+			continue
+		}
 		if err != nil {
 			// The same verdict a registration would have produced, so doctor
 			// and the bridge's shipment path see this tree the same way.
@@ -696,6 +702,11 @@ func (f *scorerFlags) indexDiscovered(ctx context.Context, eng *engine.Engine, c
 		// agents exhausted the ceiling so no other project could ever be
 		// indexed at all.
 		root, err := repoRootOf(ctx, cwd)
+		if err != nil && notACheckout(cwd, err) {
+			slog.Debug("work-overlap matching has nothing to index outside a git checkout", "cwd", cwd)
+			eng.NoteOrdinaryTree(cwd)
+			return
+		}
 		if err != nil {
 			slog.Info("work-overlap matching skipped a tree it cannot read",
 				"cwd", cwd, "err", err, "likely", tccHint(cwd, err))
@@ -1071,6 +1082,62 @@ func repoRootOf(ctx context.Context, cwd string) (string, error) {
 		return "", errors.New(msg)
 	}
 	return "", err
+}
+
+// notACheckout reports whether git's refusal for cwd is the ordinary answer,
+// that the directory is not a checkout or no longer exists, rather than a tree
+// the daemon cannot read.
+//
+// Production `dibs doctor` listed ~/Desktop, project folders that HOLD
+// checkouts, `/` and a deleted worktree as "cannot be read by the daemon",
+// with a hint about macOS folder access, and every one of them was readable.
+// Matching has nothing to index there, which is neither a fault nor worth a
+// warning, and the hint sent the operator after a grant they had given.
+//
+// git's words alone do not settle it: refused a protected folder, git cannot
+// see .git, walks upward and also says "not a git repository". So the daemon
+// confirms with its own bounded read, and only a read that completes clears
+// the directory.
+func notACheckout(cwd string, err error) bool {
+	if _, statErr := os.Stat(cwd); errors.Is(statErr, fs.ErrNotExist) {
+		return true
+	}
+	if err == nil || !strings.Contains(err.Error(), "not a git repository") {
+		return false
+	}
+	return readsWithin(cwd, readCheckDeadline)
+}
+
+// readCheckDeadline bounds notACheckout's read. git has already answered by
+// then, so a protected folder that would block has normally made git time out
+// instead; this is the backstop, not the common path.
+const readCheckDeadline = 5 * time.Second
+
+// readsWithin reads one entry of dir and reports whether that completed in
+// time. A read blocked on a consent prompt is left behind rather than
+// abandoned with its prompt, for the reason gitDeadline gives.
+func readsWithin(dir string, limit time.Duration) bool {
+	done := make(chan error, 1)
+	go func() {
+		// #nosec G304 -- an agent's registered working directory, listed and never read
+		f, err := os.Open(dir)
+		if err == nil {
+			_, err = f.ReadDir(1)
+			_ = f.Close()
+			if errors.Is(err, io.EOF) {
+				err = nil // an empty directory was read
+			}
+		}
+		done <- err
+	}()
+	timer := time.NewTimer(limit)
+	defer timer.Stop()
+	select {
+	case err := <-done:
+		return err == nil
+	case <-timer.C:
+		return false
+	}
 }
 
 // gitDeadline bounds any git the daemon runs against a tree it was told about.
