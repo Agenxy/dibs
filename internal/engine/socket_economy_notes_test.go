@@ -94,7 +94,7 @@ func TestSocketEconomyClosedHarnessNoteUsesProcessEvidence(t *testing.T) {
 			// The MCP send handler appends this same exported live-route
 			// projection after the successful send, outside the fold.
 			text := fmtResult(sent) + e.PullOnlyNoteFor(ctx, "worker")
-			if got := strings.Contains(text, "harness closed; delivered on its next start"); got != (mode == "dead") {
+			if got := strings.Contains(text, "harness closed"); got != (mode == "dead") {
 				t.Fatalf("closure report did not follow actual process evidence (%s): %s", mode, text)
 			}
 		})

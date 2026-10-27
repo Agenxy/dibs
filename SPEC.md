@@ -989,6 +989,29 @@ unreachable, without becoming a response obligation. The coordinator receives a 
 and a human relay or local desktop gets a contact alert with a validated app
 link only when the recipient's app/thread provenance permits one. This asks a
 person to open the original harness; Dibs does not host or relocate the agent.
+For a local ChatGPT-app queue route, an OS app-open failure also makes the
+captured unread asks contact-eligible even though the queue command succeeded.
+A later mail event that observes the same Dibs queue item still pending after
+the existing ten-minute app-open recovery window retries the ordinary app load
+path, without adding another queue item; if delivery is still unconfirmed,
+it records the same contact alert. No new observation timer is added. A stale
+callback after a read, session/configuration change, newer queue observation or
+app-incarnation change cannot escalate the old attempt. Queue suppression is
+logged at INFO, and an open callback remains unconfirmed delivery.
+
+An app-open contact also gives the original sender metadata-only contact news
+with the exact bound session (a ChatGPT link for local ChatGPT-app seats). It
+does not copy the participant body or the OS error. Sender warnings rebuild
+from unresolved contact state after restart and use the existing authenticated
+contact-read prefix. Reading the source envelope alone does not consume that
+separate warning. Claude app-reopen failures use this same sender notice in
+addition to their existing human contact path. Closed-harness send results say
+mail was stored and identify the original session; they promise no started turn
+or future delivery. External Remote Control admission remains a harness
+capability; Dibs does not start a successor process to manufacture it. A wake
+qualifies only when its turn runs in the original visible app thread or session;
+headless resume elsewhere is not delivery.
+
 Queuing an alert is not posting it: only a reported OS posting is ledgered as
 `contact_notified`. Unposted contacts are retried. Recipient retrieval or
 terminal handling resolves the contact. `contact_alerts` on the board contains

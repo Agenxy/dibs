@@ -327,6 +327,7 @@ func New(st *core.State, led Ledger, prober Prober, history ...[]core.Event) *En
 	e.rebuildBlockingNotices()
 	e.rebuildQueueNotices()
 	e.rebuildSituationalNotices()
+	e.rebuildAppContactSenders()
 	e.rebuildInvitationHistory(history)
 	e.rebuildDeclarationTimes(ring)
 	e.nameAliases = core.NewAgentNameAliases(st, ring)
