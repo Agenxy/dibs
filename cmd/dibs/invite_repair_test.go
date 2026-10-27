@@ -35,24 +35,25 @@ func TestInviteExplicitRepairPublishesOnlyFreshSignatureVerifiedEvidence(t *test
 	}
 	for _, mode := range []string{"invalid-json", "unknown-root", "bad-signature", "fetch-refuses", "signature-refuses"} {
 		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
 			bin, dir := t.TempDir(), t.TempDir()
 			probe := filepath.Join(bin, "dibs-repair-probe")
-			for _, name := range []string{probe, filepath.Join(bin, "cosign")} {
-				if err := os.WriteFile(name, data, 0o700); err != nil {
-					t.Fatal(err)
-				}
-				testexec.PrepareExecutable(t, exec.Command(name, "--dibs-test-prepare"))
+			if err := os.WriteFile(probe, data, 0o700); err != nil {
+				t.Fatal(err)
 			}
+			testexec.PrepareExecutable(t, exec.Command(probe, "--dibs-test-prepare"))
+			writeNativeFixtureHelper(t, filepath.Join(bin, "cosign"))
 			record := []byte("{")
 			if mode == "unknown-root" || mode == "bad-signature" {
 				r := map[string]any{"tag": "v0.0.9", "checksums": []byte("altered"), "bundle": []byte("old signature")}
 				if mode == "unknown-root" {
 					r["trusted_root"] = "not authority"
 				}
-				record, err = json.Marshal(r)
+				encoded, err := json.Marshal(r)
 				if err != nil {
 					t.Fatal(err)
 				}
+				record = encoded
 			}
 			cache := filepath.Join(dir, "guest-release.json")
 			if err := os.WriteFile(cache, record, 0o600); err != nil {

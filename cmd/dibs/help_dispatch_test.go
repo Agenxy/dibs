@@ -42,7 +42,12 @@ func TestEveryDispatchedVerbAnswersHelpWithoutAuthority(t *testing.T) {
 		requests.Add(1)
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}))
-	defer board.Close()
+	t.Cleanup(board.Close)
+	t.Cleanup(func() {
+		if got := requests.Load(); got != 0 {
+			t.Errorf("help cases contacted the board %d time(s)", got)
+		}
+	})
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -50,6 +55,9 @@ func TestEveryDispatchedVerbAnswersHelpWithoutAuthority(t *testing.T) {
 	for _, verb := range dispatchedVerbs(t) {
 		for _, help := range []string{"--help", "-h"} {
 			t.Run(verb+"/"+help, func(t *testing.T) {
+				// Each real CLI has a private environment and data directory.
+				// Keep race instrumentation; overlap only independent processes.
+				t.Parallel()
 				before := requests.Load()
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()

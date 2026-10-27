@@ -45,14 +45,14 @@ func TestUpgradeRetainsOnlySignatureVerifiedEvidenceThroughActualCLI(t *testing.
 	}
 	for _, mode := range []string{"signed", "unsigned", "cache-refuses"} {
 		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
 			bin, dir := t.TempDir(), t.TempDir()
 			probe := filepath.Join(bin, "dibs-upgrade-probe")
-			for _, name := range []string{probe, filepath.Join(bin, "cosign")} {
-				if err := os.WriteFile(name, data, 0o700); err != nil {
-					t.Fatal(err)
-				}
-				testexec.PrepareExecutable(t, exec.Command(name, "--dibs-test-prepare"))
+			if err := os.WriteFile(probe, data, 0o700); err != nil {
+				t.Fatal(err)
 			}
+			testexec.PrepareExecutable(t, exec.Command(probe, "--dibs-test-prepare"))
+			writeNativeFixtureHelper(t, filepath.Join(bin, "cosign"))
 			if err := os.WriteFile(filepath.Join(bin, "dibd"), []byte("old fixture daemon"), 0o700); err != nil {
 				t.Fatal(err)
 			}
