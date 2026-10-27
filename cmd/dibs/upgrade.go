@@ -797,9 +797,13 @@ func (p *plan) verify(newDir string) error {
 type boardStartFailure struct {
 	cause          error
 	installed, dir string
+	recovered      bool
 }
 
 func (e *boardStartFailure) Error() string {
+	if e.recovered {
+		return fmt.Sprintf("the daemon did not start serving: %v", e.cause)
+	}
 	return fmt.Sprintf("the daemon did not start serving: %v\n\n"+
 		"  The ledger is untouched and the board is still in it. Start the daemon\n"+
 		"  in the foreground to see why: %s -dir %s", e.cause, e.installed, e.dir)

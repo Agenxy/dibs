@@ -21,7 +21,6 @@ const appServiceRefreshResidence = 20 * time.Second
 var waitForAppServiceRefresh = time.Sleep
 
 func (tx *appCutover) refreshNativeService(first error) error {
-	first = startupCause(first)
 	// A positive, fresh CODESIGNING refusal is the only reason to retain a
 	// failed native job beside a manual daemon. The daemon's ledger lock still
 	// excludes a second writer if launchd attempts another launch meanwhile.
@@ -29,8 +28,8 @@ func (tx *appCutover) refreshNativeService(first error) error {
 		return errors.Join(first, fmt.Errorf("starting the board during native refresh: %w", err))
 	}
 	tx.nativeRefresh, tx.manualServing, tx.retainFailed = true, true, true
-	fmt.Fprintln(os.Stderr, "macOS refused the new build's first launch; the board is serving meanwhile; "+
-		"waiting 20 s before registering the service again")
+	fmt.Fprintf(os.Stderr, "macOS refused the new build's first launch; the board is serving meanwhile; "+
+		"waiting %.0f s before registering the service again\n", appServiceRefreshResidence.Seconds())
 	waitForAppServiceRefresh(appServiceRefreshResidence)
 	// Re-read the registry after the hold: the old plan's PID belonged to the
 	// daemon stopped before registration, not the board now serving this dir.
@@ -51,18 +50,25 @@ func (tx *appCutover) refreshNativeService(first error) error {
 	}
 	if err := tx.p.doConfirm(tx.p.dir); err != nil {
 		tx.retainFailed = errors.Is(err, errAppServiceLaunchRefused)
-		return errors.Join(first, startupCause(err))
+		return errors.Join(first, err)
 	}
 	return nil
 }
 
-// Remove only verify's generic foreground recipe, preserving every actual
-// cause when the transaction supplies its verified current recovery instead.
-func startupCause(err error) error {
-	if startup, ok := err.(*boardStartFailure); ok {
-		return startup.cause
+// Replace only verify's generic foreground recipe after verified recovery.
+// Keep the complete error tree, including siblings and wrapper context: a
+// second registration failure must not erase the first launch refusal.
+func noteStartupRecovered(err error) {
+	var startup *boardStartFailure
+	if errors.As(err, &startup) {
+		startup.recovered = true
 	}
-	return err
+	var joined interface{ Unwrap() []error }
+	if errors.As(err, &joined) {
+		for _, child := range joined.Unwrap() {
+			noteStartupRecovered(child)
+		}
+	}
 }
 
 func (tx *appCutover) recoverAfterNativeRefresh() error {

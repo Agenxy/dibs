@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/paths"
 )
 
 // Configure is the entry point. Only native calls, process startup and the
@@ -55,10 +57,10 @@ func TestConfigureAppServiceLoadedRefresh(t *testing.T) {
 				if delay != 20*time.Second || starts != 1 || registers != 1 || unregisters != 1 {
 					t.Errorf("loaded residence was not one 20 s hold: %s starts=%d registers=%d unregisters=%d", delay, starts, registers, unregisters)
 				}
-				if live := runningDaemon(f.dir); live.pid == 0 {
+				if appServiceFixturePID(t, f.dir) == 0 {
 					t.Fatal("no fallback owns the board during the hold")
 				}
-				if board, err := fleetSnapshotAt(os.Getenv("DIBS_TEST_APP_SERVICE_ADDR")); err != nil || board.Serial != 7 {
+				if board, err := fleetSnapshotAt(f.addr); err != nil || board.Serial != 7 {
 					t.Fatalf("board unavailable during loaded residence: %+v %v", board, err)
 				}
 				if scenario == "native-takes-over" {
@@ -86,11 +88,12 @@ func TestConfigureAppServiceLoadedRefresh(t *testing.T) {
 				out, err := cmd.CombinedOutput()
 				if err == nil && cmd.Args[1] == "--service-register" {
 					registers++
-					if registers == 1 || scenario == "retry-refused" {
+					switch {
+					case registers == 1 || scenario == "retry-refused":
 						f.unavailable.Store(3)
-					} else if scenario == "retry-register-error" {
+					case scenario == "retry-register-error":
 						return nil, errors.New("fixture second registration refused")
-					} else {
+					default:
 						nativeStopped = f.liveManual(t)
 						nativeOwns = true
 						f.unavailable.Store(0)
@@ -103,7 +106,7 @@ func TestConfigureAppServiceLoadedRefresh(t *testing.T) {
 					return nil, errAppServiceNotLoaded
 				}
 				if nativeOwns {
-					return launchOutcomeFixture("native", 1, "running", "", fmt.Sprintf("\tpid = %d\n", runningDaemon(f.dir).pid)), nil
+					return launchOutcomeFixture("native", 1, "running", "", fmt.Sprintf("\tpid = %d\n", appServiceFixturePID(t, f.dir))), nil
 				}
 				return launchOutcomeFixture(fmt.Sprint(registers), registers, "spawn failed", "OS_REASON_CODESIGNING", ""), nil
 			}
@@ -140,7 +143,7 @@ func TestConfigureAppServiceLoadedRefresh(t *testing.T) {
 				if scenario == "retry-register-error" && (result == nil || !strings.Contains(result.Error(), "fixture second registration refused") || !strings.Contains(result.Error(), "OS_REASON_CODESIGNING")) {
 					t.Errorf("recovery discarded a launch or registration failure: %v", result)
 				}
-				if board, err := fleetSnapshotAt(os.Getenv("DIBS_TEST_APP_SERVICE_ADDR")); err != nil || board.Serial != 7 || runningDaemon(f.dir).pid == 0 {
+				if board, err := fleetSnapshotAt(f.addr); err != nil || board.Serial != 7 || appServiceFixturePID(t, f.dir) == 0 {
 					t.Errorf("failed retry did not leave the board serving: %+v %v", board, err)
 				}
 				if scenario == "retry-refused" {
@@ -152,4 +155,19 @@ func TestConfigureAppServiceLoadedRefresh(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Read the public process registry, so the same guard also compiles against
+// the original code before daemonState gained a PID field.
+func appServiceFixturePID(t *testing.T, dir string) int {
+	t.Helper()
+	live, err := paths.LiveDaemons()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mine, _, err := selectDaemon(live, dir)
+	if err != nil || mine == nil {
+		return 0
+	}
+	return mine.PID
 }

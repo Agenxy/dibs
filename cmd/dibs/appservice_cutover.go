@@ -56,7 +56,8 @@ func (p *plan) cutoverAppService() (failure error) {
 		if failure != nil {
 			recoveryErr := tx.rollback(failure)
 			if recoveryErr == nil && tx.recovery != "" {
-				failure = fmt.Errorf("the replacement did not start serving: %w\n\n%s", startupCause(failure), tx.recovery)
+				noteStartupRecovered(failure)
+				failure = fmt.Errorf("%w\n\n%s", failure, tx.recovery)
 			}
 			failure = errors.Join(failure, recoveryErr)
 		}
@@ -146,6 +147,10 @@ func (tx *appCutover) rollback(cause error) error {
 	if tx.nativeRefresh {
 		return tx.recoverAfterNativeRefresh()
 	}
+	return tx.restoreCutover(cause)
+}
+
+func (tx *appCutover) restoreCutover(cause error) error {
 	// Remove the replacement BEFORE restoring the old supervisor. Uncertainty
 	// refuses a second supervisor, even if that leaves a visible recovery error.
 	if tx.touchedApp {

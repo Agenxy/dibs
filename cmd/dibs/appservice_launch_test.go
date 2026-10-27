@@ -123,7 +123,8 @@ func TestConfigureAppServiceLaunchOutcome(t *testing.T) {
 				t.Fatalf("setup did not enter upgrade registration: %v %s", err, trace)
 			}
 			refused := strings.HasSuffix(scenario, "refused")
-			if scenario == "recovery-also-refused" {
+			switch {
+			case scenario == "recovery-also-refused":
 				if result == nil || !strings.Contains(result.Error(), "OS_REASON_CODESIGNING") || !strings.Contains(result.Error(), "dibs configure --service") {
 					t.Errorf("fresh native refusal was hidden: %v\n%s", result, out)
 				}
@@ -137,12 +138,14 @@ func TestConfigureAppServiceLaunchOutcome(t *testing.T) {
 				if strings.Contains(out, "upgraded:") || !strings.Contains(out, "serving unsupervised") || !strings.Contains(out, "NEW build") || !strings.Contains(out, "still failed") || strings.Contains(out, "again in a minute") {
 					t.Errorf("failed upgrade falsely reported success or hid recovery: %s", out)
 				}
-			} else if refused {
+			case refused:
 				if result != nil || registrations != 2 || manualStarts != 1 || strings.Count(out, "upgraded:") != 1 || f.requests.Load() != 1 || !strings.Contains(out, "waiting 20 s") {
 					t.Errorf("fresh refusal did not recover through one held retry: %v registers=%d manual=%d\n%s", result, registrations, manualStarts, out)
 				}
-			} else if result != nil || registrations != 1 || manualStarts != 0 || strings.Count(out, "upgraded:") != 1 || f.requests.Load() != 1 {
-				t.Errorf("non-current/unknown outcome must keep board proof: %v registrations=%d permission=%d\n%s", result, registrations, f.requests.Load(), out)
+			default:
+				if result != nil || registrations != 1 || manualStarts != 0 || strings.Count(out, "upgraded:") != 1 || f.requests.Load() != 1 {
+					t.Errorf("non-current/unknown outcome must keep board proof: %v registrations=%d permission=%d\n%s", result, registrations, f.requests.Load(), out)
+				}
 			}
 		})
 	}
