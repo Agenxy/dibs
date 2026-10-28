@@ -122,3 +122,56 @@ func TestCompletedStartBudgetDoesNotGrowAfterTwoFailures(t *testing.T) {
 		t.Fatalf("two failed stamp lookups must stop completion: stamp=%q attempts=%d", got, calls)
 	}
 }
+
+// An already-ended session makes the launch itself forbidden. Join any probe
+// a mutant launches before reading its counter: an early context return must
+// not hide a goroutine that has not yet been scheduled.
+func TestCanceledBridgeCompletionsDoNotStartAProbe(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	t.Run("start", func(t *testing.T) {
+		previous := lookupSelfStart
+		bridgeStart.Lock()
+		previousAt := bridgeStart.at
+		bridgeStart.at, bridgeStart.pending = "", nil
+		bridgeStart.Unlock()
+		t.Cleanup(func() {
+			lookupSelfStart = previous
+			bridgeStart.Lock()
+			bridgeStart.at, bridgeStart.pending = previousAt, nil
+			bridgeStart.Unlock()
+		})
+		var calls atomic.Int32
+		lookupSelfStart = func() string { calls.Add(1); return "" }
+		_ = completedBridgeStart(ctx)
+		bridgeStart.Lock()
+		pending := bridgeStart.pending
+		bridgeStart.Unlock()
+		if pending != nil {
+			<-pending
+		}
+		if calls.Load() != 0 {
+			t.Fatalf("ended session launched %d stamp lookups", calls.Load())
+		}
+	})
+	t.Run("surface", func(t *testing.T) {
+		previous := detectedSurface
+		t.Cleanup(func() { detectedSurface = previous })
+		var calls atomic.Int32
+		detectedSurface = func(context.Context) (string, error) {
+			calls.Add(1)
+			return "", context.DeadlineExceeded
+		}
+		p := &surfaceProbe{ctx: ctx}
+		_, _ = p.completed(ctx)
+		p.mu.Lock()
+		pending := p.pending
+		p.mu.Unlock()
+		if pending != nil {
+			<-pending
+		}
+		if calls.Load() != 0 {
+			t.Fatalf("ended session launched %d surface lookups", calls.Load())
+		}
+	})
+}
