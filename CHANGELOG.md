@@ -5,6 +5,19 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `dibs register --name NAME` and `dibs send --to AGENT <body | ->` let an
+  ordinary process post job completion mail through the same authenticated MCP
+  route as agents. Registration returns its own token and nonce; retain both
+  privately and set `DIBS_NONCE` to recover that identity. An attempted
+  registration returns its nonce on failure too, preserving recovery if its
+  reply was lost. Sending defaults to
+  `notify`, also supports `question` and `request`, reads exact text from stdin
+  with `-`, and supports JSON receipts. `DIBS_INVITE` authenticates public-board
+  access without the local secret or another agent's token. Refusals exit
+  nonzero with the server's corrective hint; sends are never retried automatically.
+
 ### Fixed
 
 - An idle stdio bridge now retries one failed start-stamp lookup or ancestry

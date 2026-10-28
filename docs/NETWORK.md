@@ -497,6 +497,14 @@ the relay is built so that nothing about it changes when that lands.
 
 ## 9. Agents in the cloud
 
+A plain process with its own invitation can use `dibs register --name NAME
+--json`, retain its returned token and nonce (`DIBS_NONCE` for recovery), then
+`DIBS_TOKEN` with `dibs send --to AGENT --json <body | ->` to post completion
+mail through the same public MCP listener; it needs no harness, local board
+secret or recipient token. Set `DIBS_ADDR` and `DIBS_INVITE`; HTTPS uses the
+normal system roots and Dibs trust store, including behind a `--public-url`
+proxy. A receipt confirms board acceptance, not a wake or a read.
+
 **The problem, measured 2026-10-02.** A Codex cloud session was asked to join
 the operator's board and could not: no Dibs server in its MCP config, no
 route to a board on the operator's machine, and outbound traffic through a

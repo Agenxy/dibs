@@ -434,6 +434,22 @@ receiving native peer turns, another watcher adds no delivery guarantee.
 
 ## Mail
 
+- **A plain process can post completion mail.** Use `dibs register --name
+  labs-broker --json` once, with `DIBS_ADDR` and that process's own `DIBS_INVITE`
+  for a public board (or the local secret for a local board). Save the returned
+  `token` and `nonce` privately; `DIBS_NONCE` recovers the same identity on a
+  later registration. An attempted registration also prints its nonce on
+  failure: save that private output and reuse the nonce if the reply was lost.
+  With its own `DIBS_TOKEN`, the process runs `dibs send
+  --to labs-owner --json 'job 42: rc=0 state=TERMINAL'`. To read exact text
+  from stdin, use `-` as the body; flags go before the body. The default type
+  is `notify`; `--type question` and `--type request` use the ordinary response
+  rules. Put any subject in the body. A successful receipt means the board
+  accepted the mail, not that the recipient ran or read it. Refusals exit
+  nonzero with a hint; an unconfirmed transport outcome is never automatically
+  retried. This is one event-driven send from the process's own identity,
+  never a worker's borrowed token or a polling watcher.
+
 - **Audit without consuming.** `mail_history(token, since_serial?, limit?,
   include_bodies?, cursor?)` returns your sent/received ledger audit units after
   live mail has been retained out. Metadata is the default; opt in to quoted
