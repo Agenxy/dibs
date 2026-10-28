@@ -70,6 +70,14 @@ func TestAppReconnectRecoversWhenTheStartStampArrivesAfterDiscovery(t *testing.T
 	appReconnectContract(t, true, false, false, true)
 }
 
+func TestAppReconnectRecoversAfterAFailedStartStampWithoutAModelCall(t *testing.T) {
+	if testing.Short() {
+		t.Skip("subprocess bridge and queue contract")
+	}
+	t.Setenv("DIBS_TEST_START_STAMP_FAIL_ONCE", "1")
+	appReconnectContract(t, true, false, false, true)
+}
+
 type reconnectBridge struct {
 	cmd *exec.Cmd
 	in  io.WriteCloser
@@ -349,9 +357,19 @@ func appReconnectContract(t *testing.T, lost, clockBack, legacy, lateStamp bool)
 				break
 			}
 			if time.Now().After(deadline) {
+				if os.Getenv("DIBS_TEST_START_STAMP_FAIL_ONCE") == "1" {
+					if _, err := os.Stat(os.Getenv("DIBS_TEST_START_STAMP_GATE") + ".failed"); err != nil {
+						t.Fatalf("setup: actual stamp failure did not occur: %v", err)
+					}
+				}
 				t.Fatal("completed start stamp never repaired reconnect without a model request")
 			}
 			<-time.After(5 * time.Millisecond)
+		}
+		if os.Getenv("DIBS_TEST_START_STAMP_FAIL_ONCE") == "1" {
+			if _, err := os.Stat(os.Getenv("DIBS_TEST_START_STAMP_GATE") + ".failed"); err != nil {
+				t.Fatalf("setup: actual stamp failure did not occur: %v", err)
+			}
 		}
 	}
 	if _, er = os.Stat(workerReconnect); er != nil {

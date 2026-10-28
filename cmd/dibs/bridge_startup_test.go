@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -49,7 +50,11 @@ func TestBridgeStartupHelper(t *testing.T) {
 		installReconnectFakeAppOpen()
 	}
 	if gate := os.Getenv("DIBS_TEST_SURFACE_GATE"); gate != "" {
+		if os.Getenv("DIBS_TEST_SURFACE_FAIL_ONCE") == "1" {
+			go observeSurfaceCompletionWaiter(t, gate)
+		}
 		original := detectedSurface
+		failed := false
 		detectedSurface = func(ctx context.Context) (string, error) {
 			f, err := os.OpenFile(gate, os.O_RDWR, 0o600)
 			if err != nil {
@@ -65,10 +70,18 @@ func TestBridgeStartupHelper(t *testing.T) {
 				t.Error("surface gate lock:", err)
 				return "", err
 			}
+			if os.Getenv("DIBS_TEST_SURFACE_FAIL_ONCE") == "1" && !failed {
+				failed = true
+				if err := os.WriteFile(gate+".failed", []byte("failed"), 0o600); err != nil {
+					t.Error("surface failure marker:", err)
+				}
+				return "", context.DeadlineExceeded
+			}
 			return original(ctx)
 		}
 	}
 	if gate := os.Getenv("DIBS_TEST_START_STAMP_GATE"); gate != "" {
+		failed := false
 		lookupSelfStart = func() string {
 			f, err := os.OpenFile(gate, os.O_RDWR, 0o600)
 			if err != nil {
@@ -80,11 +93,41 @@ func TestBridgeStartupHelper(t *testing.T) {
 				t.Error("stamp gate lock:", err)
 				return ""
 			}
+			if os.Getenv("DIBS_TEST_START_STAMP_FAIL_ONCE") == "1" && !failed {
+				failed = true
+				if err := os.WriteFile(gate+".failed", []byte("failed"), 0o600); err != nil {
+					t.Error("stamp failure marker:", err)
+				}
+				return ""
+			}
 			return harnessenv.ProcessStart(os.Getpid())
 		}
 	}
 	if err := runBridge(nil); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Observe the real worker blocked on the held lookup before releasing it to
+// fail. A registration reply alone does not establish that: the worker might
+// not run until after failure and start a fresh probe, masking the regression.
+// This observer runs only in the private child; it changes no production state.
+func observeSurfaceCompletionWaiter(t *testing.T, gate string) {
+	t.Helper()
+	stack := make([]byte, 256<<10)
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		n := runtime.Stack(stack, true)
+		for _, goroutine := range bytes.Split(stack[:n], []byte("\n\n")) {
+			if bytes.Contains(goroutine, []byte("[select]:\n")) &&
+				bytes.Contains(goroutine, []byte("(*surfaceCompletion).advance")) {
+				if err := os.WriteFile(gate+".waiting", []byte("waiting"), 0o600); err != nil {
+					t.Error("surface waiter marker:", err)
+				}
+				return
+			}
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
 

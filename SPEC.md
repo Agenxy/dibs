@@ -1272,10 +1272,18 @@ An inventory failure gets one immediate bounded retry within the same admitted
 observation, sharing one inventory across the entire batch on each attempt.
 If both attempts fail, derived diagnostics show recovery pending until the next
 local Dibs call from any agent; shutdown cancels the retry and no timer is armed.
+If the bridge itself omitted its start stamp, its completion worker also retries
+one failed kernel lookup immediately. A second failure stays unavailable until
+a later real request; a hung lookup is shared, never multiplied, and adds no
+wait to the existing 500ms per-request budget. Shutdown prevents a new retry.
 
 **Late bridge surface evidence.** The bridge starts one bounded ancestry inventory
 with the session; a tool request waits at most 500ms for this evidence. Pending or
 failed discovery is unknown, never evidence that the bridge runs outside an app.
+For a pending registration batch, the completion worker retries one failed
+inventory immediately, keeping each attempt's one-second bound. Two failures
+retain the unknown evidence and pending rows until a later real request, with a
+diagnostic and no timer; shutdown cancels discovery and prevents another attempt.
 Successful register/resume replies may advertise
 `com.dibs/bridge_surface_evidence: true` in result `_meta`. A capable local bridge
 can then report late evidence through the private `dibs/bridge-surface` RPC,
