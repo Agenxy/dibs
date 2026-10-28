@@ -4,11 +4,9 @@
 package main
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -95,58 +93,10 @@ func filesCmd(verb string, args []string) error {
 	return nil
 }
 
+// fileCall shares the agent CLI's authenticated, stateless MCP transport.
 func fileCall(tool string, args map[string]any, out any) error {
 	args["token"] = os.Getenv("DIBS_TOKEN")
-	body, err := json.Marshal(map[string]any{
-		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-		"params": map[string]any{"name": tool, "arguments": args},
-	})
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequest(http.MethodPost, mcpEndpoint(), bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if invite := os.Getenv("DIBS_INVITE"); invite != "" {
-		req.Header.Set("Authorization", "Bearer "+invite)
-	} else {
-		secret, err := localSecret()
-		if err != nil {
-			return err
-		}
-		req.Header.Set("X-Dibs-Local", secret)
-	}
-	client := daemonClient(30 * time.Second)
-	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
-	resp, err := client.Do(req)
-	if err != nil {
-		return errors.New("MCP connection failed; check board address, certificate trust and credentials")
-	}
-	defer func() { _ = resp.Body.Close() }()
-	var envelope struct {
-		Error  *struct{ Message string } `json:"error"`
-		Result struct {
-			IsError bool
-			Content []struct{ Text string }
-		}
-	}
-	if err = json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&envelope); err != nil {
-		return errors.New("invalid MCP response; retry authorization")
-	}
-	if resp.StatusCode != 200 || envelope.Error != nil || len(envelope.Result.Content) != 1 {
-		return errors.New("file authorization refused; use the board's HTTP(S) MCP endpoint with current credentials")
-	}
-	text := []byte(envelope.Result.Content[0].Text)
-	if envelope.Result.IsError {
-		var domain core.Error
-		if err = json.Unmarshal(text, &domain); err != nil {
-			return err
-		}
-		return &domain
-	}
-	return json.Unmarshal(text, out)
+	return agentToolCall(tool, args, out)
 }
 
 func authorizeFile(tool string, args map[string]any) (fileDescriptor, error) {

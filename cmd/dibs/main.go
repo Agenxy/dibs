@@ -50,6 +50,11 @@ agent-safe (agent-scoped or public, fine to run from any agent):
                            (generic tail for humans/scripts. Dibs itself never
                            wires this into a harness; agents use await_events)
   dibs board              public board: agents, slots, claims (--json)
+  dibs register --name N  register a process's OWN agent; prints token and nonce
+                           (--json; retain both privately; DIBS_NONCE recovers it)
+  dibs send --to N <body|->  post mail as DIBS_TOKEN's agent; - reads stdin
+                           (--type notify|question|request, default notify;
+                           --json; DIBS_INVITE for a public board)
   dibs put <file>         store a file by resumable encrypted transfer (--mime,
                            --json; DIBS_TOKEN and optional DIBS_INVITE)
   dibs get <blob>         download and verify content (-o new-path, --json)
@@ -139,7 +144,8 @@ human/admin (interactive terminal; the god-view needs the admin password):
   dibs invite <name>      issue one cloud agent's credential and host config
                            (--ttl 30d; invite list; invite revoke <name>)
 
-env: DIBS_ADDR (default 127.0.0.1:4777), DIBS_DIR, DIBS_TOKEN, DIBS_INVITE (public file transfer credential),
+env: DIBS_ADDR (default 127.0.0.1:4777), DIBS_DIR, DIBS_TOKEN,
+     DIBS_INVITE (public MCP credential), DIBS_NONCE (registration recovery),
      DIBS_BOARD_PEER (a Supgang peer the bridge resolves),
      DIBS_ADMIN=1 (bypass the terminal check: for humans scripting)`
 
@@ -196,6 +202,8 @@ func cliMain() {
 	}
 	var err error
 	switch os.Args[1] {
+	case "register", "send":
+		err = processCmd(os.Args[1], os.Args[2:])
 	case "put", "get":
 		err = filesCmd(os.Args[1], os.Args[2:])
 	case "board":
@@ -367,6 +375,7 @@ func parseFlagsUsage(fs *flag.FlagSet, args []string, synopsis string) error {
 // beside the switch it mirrors; admin_test.go already reads those case labels
 // out of this file, so a verb added there and forgotten here is visible.
 var commands = []string{
+	"register", "send",
 	"put", "get",
 	"await", "probe", "watch", "monitor", "board", "log", "verify", "doctor",
 	"codex-hooks", "codex-plugin", "calibrate", "version", "help", "man", "completion", "configure", "messages",
@@ -401,8 +410,8 @@ var mcpTools = []string{
 	"get_blob", "heartbeat", "human_unlock", "inbox", "join_space",
 	"leave_space", "lock_space", "mail_history", "merge_agents", "merge_spaces", "open_space",
 	"post", "prune",
-	"put_blob", "queue_lock", "queue_update", "read_mail", "read_space", "register", "release", "relocate", "respond",
-	"resume", "retitle_space", "send", "settings", "sign_off", "spawned_agents",
+	"put_blob", "queue_lock", "queue_update", "read_mail", "read_space", "release", "relocate", "respond",
+	"resume", "retitle_space", "settings", "sign_off", "spawned_agents",
 	"undeclare", "unlock_space", "update", "vouch_child", "watch_space",
 }
 
