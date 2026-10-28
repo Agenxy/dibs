@@ -505,6 +505,43 @@ secret or recipient token. Set `DIBS_ADDR` and `DIBS_INVITE`; HTTPS uses the
 normal system roots and Dibs trust store, including behind a `--public-url`
 proxy. A receipt confirms board acceptance, not a wake or a read.
 
+### A service-managed board and an operator-carried forward
+
+Managed services read the optional `[public]` table in `dibs.toml`; extra
+service argv is not required. Its fields map to the existing public flags,
+with flags taking precedence, and use the same validator. Unknown keys and
+invalid public settings refuse boot. For an operator-managed secure forward:
+
+```toml
+# On the board's machine; the private board remains on loopback.
+addr = "127.0.0.1:4777"
+
+[public]
+forward = "http://127.0.0.1:4778"
+addr = "127.0.0.1:4778"
+```
+
+From the board's machine, the operator can carry that listener to the worker
+machine with `ssh -R 127.0.0.1:4778:127.0.0.1:4778 remote-host`. On that machine,
+the broker uses `DIBS_ADDR=127.0.0.1:4778` and its own `DIBS_INVITE`, then
+`dibs register --name NAME --json` and `dibs send` as described above. Its
+invitation name must match; retain the returned token and nonce privately.
+If the far-side port differs, `forward` names that actual far-side origin.
+
+This is explicitly plaintext **loopback** at each end, carried by the
+operator's forward, rather than a fictional public HTTPS edge. Neither a
+wildcard bind nor a non-loopback advertised origin is accepted. Access is
+still invitation-only and `POST /mcp` only. Forward mode refuses the HTTP byte
+plane and `upload/download` instead of issuing unreachable blob URLs; use
+bounded inline `put_blob/get_blob` for bytes. The HTTPS proxy, ACME and direct-IP
+modes retain their existing byte-transfer behavior. Do not combine modes.
+
+Dibs neither starts nor maintains the forward. Doctor reports the running
+board's listener mode, local bind and advertised origin; it leaves far-side
+reachability **unmeasured** and never probes that loopback as if it were the
+board machine. The operator must test the actual far side. No production
+forwarding or service configuration is changed by adding these settings.
+
 **The problem, measured 2026-10-02.** A Codex cloud session was asked to join
 the operator's board and could not: no Dibs server in its MCP config, no
 route to a board on the operator's machine, and outbound traffic through a

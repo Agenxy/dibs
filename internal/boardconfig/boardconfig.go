@@ -48,6 +48,7 @@ type Config struct {
 	Limits            LimitsConfig      `toml:"limits"`             // coordination timings
 	Supervise         liveness.Settings `toml:"supervise"`          // stalled-subagent detection
 	Invites           InvitesConfig     `toml:"invites"`            // autonomous child invitations
+	Public            PublicConfig      `toml:"public"`             // optional invitation-only listener
 
 	// set reports whether a key was written in the file, as opposed to holding
 	// its zero value because nobody mentioned it. Unexported, so it is not a
@@ -464,6 +465,13 @@ type RolesConfig struct {
 // a file the daemon refuses must not be one the command describing that daemon
 // accepts.
 func Load(dir string) (Config, error) {
+	return LoadWithPublicOverrides(dir, nil)
+}
+
+// LoadWithPublicOverrides lets explicit daemon flags override public file
+// settings before the same validation runs. Unknown keys still refuse first.
+// Other readers use Load: they have no command-line override to apply.
+func LoadWithPublicOverrides(dir string, override func(*PublicConfig)) (Config, error) {
 	var c Config
 	// #nosec G304 -- a path inside the daemon's own data directory, or one the
 	// operator pointed the CLI at. Same-user access only; refusing it would mean
@@ -482,7 +490,10 @@ func Load(dir string) (Config, error) {
 				"rather than run on defaults that are not what this board was configured "+
 				"with", path)
 		}
-		return c, nil
+		if override != nil {
+			override(&c.Public)
+		}
+		return c, c.validatePublic()
 	}
 	if err != nil {
 		return c, err
@@ -536,6 +547,9 @@ func Load(dir string) (Config, error) {
 	// pre-release review, which noted this list claimed to cover ignored
 	// settings and had no zero case at all.
 	c.set = md.IsDefined
+	if override != nil {
+		override(&c.Public)
+	}
 	return c, c.Validate()
 }
 
@@ -604,7 +618,7 @@ func (c Config) Validate() error {
 	for _, check := range []func() error{
 		c.validateAddr, c.ValidateName, c.validateTLS, c.validateLimits, c.validateMatch,
 		c.validateSupervise, c.validateWake, c.validateRoles, c.validateIdentity,
-		c.validateRelocate, c.validateInvites, c.validateLedger,
+		c.validateRelocate, c.validateInvites, c.validateLedger, c.validatePublic,
 	} {
 		if err := check(); err != nil {
 			return err

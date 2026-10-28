@@ -41,9 +41,26 @@ func checkPublicTLS(client *http.Client, secret string, ok func(string), warn fu
 	} // older daemon or unavailable local status
 	var status struct {
 		PublicOrigin string `json:"public_origin"`
+		Mode         string `json:"mode"`
+		Addr         string `json:"addr"`
 	}
-	if json.NewDecoder(resp.Body).Decode(&status) != nil || status.PublicOrigin == "" {
+	if json.NewDecoder(resp.Body).Decode(&status) != nil {
 		return
+	}
+	if status.Mode == "disabled" {
+		ok("public invitation listener is disabled")
+		return
+	}
+	if status.Mode == "loopback-forward" {
+		ok("loopback-forward invitation listener bound at " + status.Addr + "; far-side origin " +
+			status.PublicOrigin + "; operator forward reachability is unmeasured")
+		return // the advertised loopback is on the far side, not this machine
+	}
+	if status.PublicOrigin == "" {
+		return
+	}
+	if status.Mode != "" {
+		ok("public invitation listener " + status.Mode + " bound at " + status.Addr)
 	}
 	probePublicTLS(client, status.PublicOrigin, ok, warn)
 }

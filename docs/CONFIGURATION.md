@@ -40,6 +40,45 @@ addr = "100.72.14.3:4777"    # a tailnet address: agents on four machines, one b
 
 ---
 
+## `[public]`: the invitation-only listener
+
+Optional; disabled when no endpoint is selected. This is separate from the
+private fleet listener above, and is available to managed services whose argv
+is fixed. Unknown keys and invalid settings refuse startup, including `dibd
+--check`. Explicit flags override individual file fields before the same
+validator runs; an explicit false or empty flag also overrides the file.
+
+| Key | Corresponding flag | Meaning |
+|---|---|---|
+| `host` | `--public-host` | Public DNS hostname served by Dibs with ACME on port 443. |
+| `url` | `--public-url` | Advertised HTTPS origin behind the operator's TLS proxy; the plaintext backend binds loopback. |
+| `ip` | `--public-ip` | Assigned global IPv6 address for the constrained guest TLS listener. |
+| `addr` | `--public-addr` | Local bind address. Defaults: `:443` for ACME, `[ip]:4778` for direct IP, `127.0.0.1:4778` for a proxy or forward. |
+| `ack_unverified_guest_client` | `--ack-unverified-guest-client` | Explicit direct-IP client-trust acknowledgement; required only with `ip`. |
+| `acme_accept_terms` | `--acme-accept-terms` | Explicit acceptance of the ACME CA terms; required with `host`. |
+| `forward` | `--public-forward` | Far-side **HTTP literal loopback origin with a numeric port**, carried by an operator-managed secure forward. Both the advertised origin and local bind must be literal loopback addresses; hostnames, wildcards, credentials, paths, queries and fragments are refused. |
+
+Choose exactly one of `host`, `url`, `ip`, or `forward`; do not combine a
+forward with the other modes or their acknowledgements. Forward mode keeps
+invitation-only, `POST /mcp` access. It has no HTTP byte plane: `dibs put/get`
+and `upload/download` are refused there; bounded inline `put_blob/get_blob`
+remain available through MCP. Dibs does not start or validate the forward.
+
+```toml
+[public]
+forward = "http://127.0.0.1:4778"  # the address used at the far end
+addr = "127.0.0.1:4778"            # the bind on this board's machine
+```
+
+The far-side port may differ from the local bind. Advertise the address clients
+actually use, not a nominal HTTPS origin. `dibs doctor` reports the daemon's
+resolved listener mode, bind and origin. A configured forward is not proof
+that it is running or reachable from another machine. See [NETWORK.md
+section 9](NETWORK.md#9-agents-in-the-cloud) for the operator's forward and CLI
+workflow. No private board routes or board credentials are published.
+
+---
+
 ## `[wake]`: when an agent hears about mail
 
 | Key | Default | What it decides |

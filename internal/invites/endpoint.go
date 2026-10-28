@@ -53,10 +53,19 @@ func (s *Service) endpointInfo() EndpointInfo {
 	if s.Endpoint != nil {
 		return s.Endpoint.Snapshot()
 	}
-	return EndpointInfo{URL: s.URL}
+	return EndpointInfo{URL: s.URL, Mode: s.Mode}
 }
 
 func endpointRecipe(info EndpointInfo, name, key string) map[string]any {
+	if info.Mode == "loopback-forward" {
+		return map[string]any{
+			"mode": info.Mode, "endpoint": info.URL + "/mcp",
+			"instructions": "This HTTP loopback endpoint is carried by the operator's own secure forward. " +
+				"It is reachable only where that forward terminates; no public HTTPS or tunnel reachability is claimed. " +
+				"Use DIBS_ADDR=" + info.URL + " and this invitation as DIBS_INVITE with dibs register/send. " +
+				"MCP only: HTTP byte transfers are unavailable; use bounded inline put_blob/get_blob for bytes.",
+		}
+	}
 	if info.Mode != "direct-ip" {
 		return Recipe(name, key, info.URL)
 	}

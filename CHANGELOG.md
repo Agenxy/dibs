@@ -7,6 +7,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Managed daemons can configure their invitation-only listener through
+  `[public]` in `dibs.toml`, using the same validation as the command-line
+  flags. Explicit flags, including false and empty values, take precedence;
+  invalid public configuration refuses boot. An explicit `public-forward`
+  mode advertises the real HTTP loopback endpoint carried by an operator's
+  secure forward, retaining invitation-only MCP access and refusing HTTP
+  byte transfers. Doctor reports the listener's mode, bind and origin without
+  claiming that the far side is reachable. Existing HTTPS modes are unchanged.
+
 - `dibs register --name NAME` and `dibs send --to AGENT <body | ->` let an
   ordinary process post job completion mail through the same authenticated MCP
   route as agents. Registration returns its own token and nonce; retain both
