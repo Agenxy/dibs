@@ -29,7 +29,9 @@ func primeBridgeAncestry(ctx context.Context) {
 	if remoteSession {
 		return
 	}
+	bridgeAncestry.mu.Lock()
 	bridgeAncestry.ctx = ctx
+	bridgeAncestry.mu.Unlock()
 	bridgeAncestry.prime()
 }
 
