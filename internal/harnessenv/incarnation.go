@@ -19,6 +19,20 @@ type AppIncarnation struct {
 	Start string
 }
 
+// BridgeIncarnation is claimed local process evidence, verified against one
+// inventory. Neither this evidence nor its result selects an agent identity.
+type BridgeIncarnation struct {
+	PID   int
+	Start string
+}
+
+// BridgeObservation distinguishes a departed incarnation from a live bridge
+// outside the app, so only genuinely abandoned pending recovery reports a fault.
+type BridgeObservation struct {
+	Present bool // the PID and start stamp both still match
+	App     AppIncarnation
+}
+
 type processIdentity struct {
 	parent int
 	start  string
@@ -47,12 +61,38 @@ func AppForBridge(pid int, started string) (AppIncarnation, bool, error) {
 	if pid <= 1 || started == "" {
 		return AppIncarnation{}, false, nil
 	}
-	processes, err := processInventory()
+	observed, err := AppForBridges(context.Background(), []BridgeIncarnation{{pid, started}})
 	if err != nil {
 		return AppIncarnation{}, false, err
 	}
+	app := observed[0].App
+	return app, app.PID > 1, nil
+}
+
+// AppForBridges takes one bounded inventory for the entire retry batch, not
+// one subprocess per pending bridge. Cancellation belongs to the daemon.
+func AppForBridges(ctx context.Context, bridges []BridgeIncarnation) ([]BridgeObservation, error) {
+	if len(bridges) == 0 {
+		return nil, nil
+	}
+	processes, err := processInventoryContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]BridgeObservation, len(bridges))
+	for i, bridge := range bridges {
+		if bridge.PID <= 1 || bridge.Start == "" || processes[bridge.PID].start != bridge.Start {
+			continue
+		}
+		out[i].Present = true
+		out[i].App = appInInventory(processes, bridge.PID, bridge.Start)
+	}
+	return out, nil
+}
+
+func appInInventory(processes map[int]processIdentity, pid int, started string) AppIncarnation {
 	if processes[pid].start != started {
-		return AppIncarnation{}, false, nil
+		return AppIncarnation{}
 	}
 	for range 12 {
 		p, ok := processes[pid]
@@ -62,17 +102,24 @@ func AppForBridge(pid int, started string) (AppIncarnation, bool, error) {
 		pid = p.parent
 		parent := processes[pid]
 		if strings.HasSuffix(parent.path, "/ChatGPT.app/Contents/MacOS/ChatGPT") {
-			return AppIncarnation{PID: pid, Start: parent.start}, parent.start != "", nil
+			if parent.start != "" {
+				return AppIncarnation{PID: pid, Start: parent.start}
+			}
+			break
 		}
 		if Classify([]string{parent.path}) == ClaudeDesktop {
 			break // a nearer harness owns this bridge
 		}
 	}
-	return AppIncarnation{}, false, nil
+	return AppIncarnation{}
 }
 
 func processInventory() (map[int]processIdentity, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	return processInventoryContext(context.Background())
+}
+
+func processInventoryContext(ctx context.Context) (map[int]processIdentity, error) {
+	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
 	raw, err := appProbeOutput(ctx, "/bin/ps", "-axo", "pid=,ppid=,lstart=,comm=")
 	if err != nil {

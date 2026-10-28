@@ -4,7 +4,13 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
 	"os"
 	"sync"
 	"time"
@@ -30,7 +36,8 @@ var lookupSelfStart = func() string { return harnessenv.ProcessStart(os.Getpid()
 // sysctl name-to-MIB step) twice took past the five-second bound with the
 // request loop parked inside it, so the agent's first register got no
 // reply (#482). It now starts with the bridge, in the background, and a
-// request goes without it after this long; a later request carries it.
+// request goes without it after this long; its completion delivers the stamp
+// even when the model makes no later request.
 const bridgeStartBudget = 500 * time.Millisecond
 
 // primeBridgeStart starts the lookup if none is done or in flight, and
@@ -76,6 +83,10 @@ func bridgeStarted() string {
 // This additive observation identifies an app reconnect without guessing which
 // agent a new bridge serves. Per-request metadata also works without initialize.
 func enrichBridgeProcess(line []byte) []byte {
+	return enrichBridgeProcessWithCompletion(line, nil)
+}
+
+func enrichBridgeProcessWithCompletion(line []byte, omitted chan<- struct{}) []byte {
 	if remoteSession {
 		return line
 	}
@@ -88,6 +99,10 @@ func enrichBridgeProcess(line []byte) []byte {
 	}
 	started := bridgeStarted()
 	if started == "" {
+		select {
+		case omitted <- struct{}{}:
+		default:
+		}
 		return line
 	}
 	params, _ := msg["params"].(map[string]any)
@@ -111,4 +126,56 @@ func enrichBridgeProcess(line []byte) []byte {
 		return encoded
 	}
 	return line
+}
+
+// One session-owned listener, armed only by a request that omitted the stamp.
+// This metadata-only notification is additive: an older daemon ignores its
+// unknown method, while an older bridge still uses ordinary request metadata.
+// It names no agent or session and cannot bind either. The daemon verifies
+// the process incarnation and actual ancestry independently.
+func deliverBridgeStart(ctx context.Context, client *http.Client, url, secret string, omitted <-chan struct{}) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-omitted:
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-primeBridgeStart():
+		}
+		bridgeStart.Lock()
+		started := bridgeStart.at
+		bridgeStart.Unlock()
+		if started == "" {
+			continue // a later request can retry a failed kernel lookup
+		}
+		line := enrichBridgeProcess([]byte(`{"jsonrpc":"2.0","method":"notifications/dibs/bridge-started"}`))
+		if err := postBridgeStart(ctx, client, url, secret, line); err != nil && ctx.Err() == nil {
+			slog.Warn("bridge start completion was not delivered; a later request retries its metadata", "err", err)
+		}
+	}
+}
+
+func postBridgeStart(ctx context.Context, client *http.Client, url, secret string, line []byte) error {
+	ctx, cancel := context.WithTimeout(ctx, startupGrace)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(line))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("MCP-Protocol-Version", "2026-07-28")
+	req.Header.Set("X-Dibs-Local", secret) // refreshed by the normal guarded transport
+	resp, err := doWithRestartGrace(client, req, line)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	_, err = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	if err == nil && resp.StatusCode != http.StatusAccepted {
+		err = fmt.Errorf("completion notification returned HTTP %d", resp.StatusCode)
+	}
+	return err
 }

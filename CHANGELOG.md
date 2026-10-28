@@ -176,7 +176,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   inline on the first request, and on a loaded macOS machine that kernel call
   twice outlasted the five-second bound, so an agent's first `register` got
   no reply (#482). The stamp only adds evidence, so a request without it is
-  served normally, and a later request carries it.
+  served normally. When that lookup completes, the bridge delivers its stamp
+  through an additive metadata-only notification, even if the model makes no
+  later request. The daemon finishes admitted reconnect observations for its
+  own lifetime, independently of HTTP or send response deadlines. A failed
+  process scan or receipt stays pending and retries on the next local MCP
+  event, using one inventory for the whole bounded batch. The board and
+  `dibs doctor` show the pending count and remedy, clearing on recovery; only
+  eviction or a departed bridge produces deduplicated give-up mail. Normal
+  shutdown no longer warns about a canceled restart observation.
 
 - A coordinator's unreachable-agent notice stops being outstanding when the
   recipient reads its mail or the contact alert is cleared. It no longer blocks

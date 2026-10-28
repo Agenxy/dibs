@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -25,6 +26,7 @@ import (
 	"github.com/agenxy/dibs/internal/ledger"
 	"github.com/agenxy/dibs/internal/mcp"
 	"github.com/agenxy/dibs/internal/notify"
+	"github.com/agenxy/dibs/internal/paths"
 	"github.com/agenxy/dibs/internal/testexec"
 )
 
@@ -46,7 +48,7 @@ func TestAppReconnectRecoversMailBeforeAModelCall(t *testing.T) {
 		{"clock-moved-backward", true, true, false},
 		{"legacy-initialize", true, false, true},
 	} {
-		t.Run(tc.name, func(t *testing.T) { appReconnectContract(t, tc.lost, tc.clockBack, tc.legacy) })
+		t.Run(tc.name, func(t *testing.T) { appReconnectContract(t, tc.lost, tc.clockBack, tc.legacy, false) })
 	}
 }
 
@@ -56,7 +58,16 @@ func TestTimerRemovalKeepsAppReconnectPoke(t *testing.T) {
 	if testing.Short() {
 		t.Skip("subprocess reconnect contract")
 	}
-	appReconnectContract(t, true, false, false)
+	appReconnectContract(t, true, false, false, false)
+}
+
+// Hold the actual bridge's kernel-lookup boundary beyond its first discovery
+// reply. Releasing that lookup is an event; an idle model makes no later call.
+func TestAppReconnectRecoversWhenTheStartStampArrivesAfterDiscovery(t *testing.T) {
+	if testing.Short() {
+		t.Skip("subprocess bridge and queue contract")
+	}
+	appReconnectContract(t, true, false, false, true)
 }
 
 type reconnectBridge struct {
@@ -118,7 +129,7 @@ func TestReconnectAppFixtureHelper(t *testing.T) {
 	}
 }
 
-func appReconnectContract(t *testing.T, lost, clockBack, legacy bool) {
+func appReconnectContract(t *testing.T, lost, clockBack, legacy, lateStamp bool) {
 	t.Helper()
 	oldShower := harnessenv.RealShower
 	t.Cleanup(func() { harnessenv.RealShower = oldShower })
@@ -307,10 +318,42 @@ func appReconnectContract(t *testing.T, lost, clockBack, legacy bool) {
 	if _, er = os.Stat(fyiReconnect); !os.IsNotExist(er) {
 		t.Fatalf("setup: FYI already has a reconnect receipt: %v", er)
 	}
+	var releaseStamp func()
+	if lateStamp {
+		gate := filepath.Join(t.TempDir(), "start-stamp-gate")
+		f, err := os.OpenFile(gate, os.O_CREATE|os.O_RDWR, 0o600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := paths.LockExclusive(f, false); err != nil {
+			_ = f.Close()
+			t.Fatal(err)
+		}
+		var once sync.Once
+		releaseStamp = func() { once.Do(func() { _ = f.Close() }) }
+		t.Cleanup(releaseStamp)
+		t.Setenv("DIBS_TEST_START_STAMP_GATE", gate)
+	}
 	newStartup, _ := startApp()
 	newStartup(0) // no token, register, check_in, or model turn
 	workerKey := sha256.Sum256([]byte(thread))
 	workerReconnect := filepath.Join(dir, "queued-wakes", hex.EncodeToString(workerKey[:])+".json.reconnect")
+	if lateStamp {
+		if _, er = os.Stat(workerReconnect); !os.IsNotExist(er) {
+			t.Fatalf("setup: bridge recovered before the held start lookup completed: %v", er)
+		}
+		releaseStamp()
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			if _, er = os.Stat(workerReconnect); er == nil {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("completed start stamp never repaired reconnect without a model request")
+			}
+			<-time.After(5 * time.Millisecond)
+		}
+	}
 	if _, er = os.Stat(workerReconnect); er != nil {
 		t.Fatalf("setup: actual app startup did not reconsider the unread worker: %v", er)
 	}

@@ -864,6 +864,7 @@ func (e *Engine) Board(ctx context.Context) (core.Result, error) {
 func (e *Engine) decoratedBoard() core.Result {
 	b := e.state.Board()
 	e.decorateFolderAccess(b)
+	e.decorateReconnectPending(b)
 	e.decorateContactAlerts(core.Result(b))
 	if names := e.configuredNameView(); len(names) > 0 {
 		b["configured_name_addresses"] = names

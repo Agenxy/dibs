@@ -40,6 +40,40 @@ func TestBridgeIncarnationMustMatchTheObservedProcessTree(t *testing.T) {
 	}
 }
 
+func TestReconnectBatchTakesOneInventoryAndRejectsStaleAncestry(t *testing.T) {
+	original := appProbeOutput
+	t.Cleanup(func() { appProbeOutput = original })
+	const started = "Sun Oct 4 03:10:00 2026"
+	var rows strings.Builder
+	rows.WriteString("100 1 Sun Oct 4 03:09:57 2026 /Applications/ChatGPT.app/Contents/MacOS/ChatGPT\n")
+	bridges := make([]BridgeIncarnation, 128)
+	for i := range bridges {
+		bridges[i] = BridgeIncarnation{PID: 300 + i, Start: started}
+		fmt.Fprintf(&rows, "%d 100 %s /bin/dibs\n", bridges[i].PID, started)
+	}
+	bridges[0].Start = "a stale process"
+	probes := 0
+	appProbeOutput = func(ctx context.Context, binary string, args ...string) ([]byte, error) {
+		probes++
+		if _, ok := ctx.Deadline(); !ok || binary != "/bin/ps" {
+			t.Fatal("unbounded/non-production inventory")
+		}
+		return []byte(rows.String()), nil
+	}
+	observed, err := AppForBridges(t.Context(), bridges)
+	if err != nil || len(observed) != 128 || probes != 1 {
+		t.Fatalf("batch observations=%d scans=%d err=%v", len(observed), probes, err)
+	}
+	if observed[0].Present || observed[0].App.PID != 0 {
+		t.Fatalf("stale PID asserted live ancestry: %+v", observed[0])
+	}
+	for _, r := range observed[1:] {
+		if !r.Present || r.App.PID != 100 {
+			t.Fatalf("verified bridge lost its owning app: %+v", r)
+		}
+	}
+}
+
 func TestAppIncarnationProbeDeadlineIsEnforced(t *testing.T) {
 	original := appProbeOutput
 	t.Cleanup(func() { appProbeOutput = original })

@@ -1109,6 +1109,8 @@ type (
 	boardView struct {
 		FolderAccess       []folderaccess.Observation `json:"folder_access,omitempty"`
 		FolderAccessAdvice string                     `json:"folder_access_advice,omitempty"`
+		ReconnectPending   int                        `json:"reconnect_pending,omitempty"`
+		ReconnectAdvice    string                     `json:"reconnect_advice,omitempty"`
 		ContactAlerts      []contactAlertDiagnostic   `json:"contact_alerts"`
 		ConfiguredNames    []configuredNameAddress    `json:"configured_name_addresses,omitempty"`
 		Serial             uint64                     `json:"serial"`
