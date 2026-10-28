@@ -3,7 +3,7 @@
   "name": "io.github.Agenxy/dibs",
   "license": "GPL-3.0-or-later",
   "display_name": "Dibs",
-  "version": "0.0.15",
+  "version": "0.0.16",
   "description": "Coordination board for the agents on this machine: shared spaces, typed mailboxes, and advisory claims.",
   "long_description": "Dibs lets a fleet of agents see what the others are working on before duplicating their effort. Declare your objective, read the board, message peers directly. Dibs is a service agents pull from: it never drives your session.\n\nRequires the `dibs` daemon (`dibd`) running locally. See https://github.com/agenxy/dibs.",
   "author": { "name": "Agenxy" },
