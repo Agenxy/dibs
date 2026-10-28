@@ -182,22 +182,24 @@ func resolveForwardPublic(o PublicConfig) (PublicResolved, error) {
 	}
 	u, err := url.Parse(o.Forward)
 	if err != nil || u.Scheme != "http" || u.User != nil || u.Path != "" || u.RawQuery != "" ||
-		u.ForceQuery || u.Fragment != "" || !literalPublicLoopback(u.Host) {
+		u.ForceQuery || u.Fragment != "" || !xport.IsLoopback(u.Host) || !literalPublicAddress(u.Host) {
 		return PublicResolved{}, errors.New("public-forward must be an HTTP origin with a literal loopback address " +
 			"and numeric port, without credentials, path, query or fragment; e.g. http://127.0.0.1:4778")
 	}
 	c := PublicResolved{URL: u.String(), Addr: publicDefault(o.Addr, "127.0.0.1:4778"), Mode: "loopback-forward"}
-	if !literalPublicLoopback(c.Addr) {
+	if !xport.IsLoopback(c.Addr) || !literalPublicAddress(c.Addr) {
 		return PublicResolved{}, errors.New("public-forward's local public-addr must be a literal loopback address " +
 			"and numeric port; wildcards and hostnames are refused")
 	}
 	return c, nil
 }
 
-func literalPublicLoopback(address string) bool {
+// Scope is decided by transport.IsLoopback above. This checks only spelling
+// and the port: a literal IP without a zone, and an explicit numeric port.
+func literalPublicAddress(address string) bool {
 	host, port, err := net.SplitHostPort(address)
 	ip, ipErr := netip.ParseAddr(host)
 	number, portErr := strconv.Atoi(port)
-	return err == nil && ipErr == nil && ip.Zone() == "" && ip.IsLoopback() &&
+	return err == nil && ipErr == nil && ip.Zone() == "" &&
 		portErr == nil && number >= 1 && number <= 65535
 }

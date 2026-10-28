@@ -1004,6 +1004,7 @@ func TestEverySettingIsDocumentedAndEveryDocumentedSettingExists(t *testing.T) {
 	// which is what the floor below is for.
 	for _, rel := range []string{
 		"internal/boardconfig/boardconfig.go",
+		"internal/boardconfig/public.go",
 		"cmd/dibd/config.go",
 		"cmd/dibd/roles.go",
 		"internal/liveness/settings.go",

@@ -42,8 +42,8 @@ addr = "100.72.14.3:4777"    # a tailnet address: agents on four machines, one b
 
 ## `[public]`: the invitation-only listener
 
-Optional; disabled when no endpoint is selected. This is separate from the
-private fleet listener above, and is available to managed services whose argv
+The `public` table is optional and disabled when no endpoint is selected. It is
+separate from the private fleet listener above, and available to managed services whose argv
 is fixed. Unknown keys and invalid settings refuse startup, including `dibd
 --check`. Explicit flags override individual file fields before the same
 validator runs; an explicit false or empty flag also overrides the file.
