@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/mcp"
 	"github.com/agenxy/dibs/internal/paths"
 	"github.com/agenxy/dibs/internal/testexec"
@@ -136,9 +137,7 @@ func surfaceStartupContract(t *testing.T, held bool) {
 	}
 }
 
-func startupSurface(t *testing.T, eng interface {
-	Board(context.Context) (core.Result, error)
-}) string {
+func startupSurface(t *testing.T, eng *engine.Engine) string {
 	t.Helper()
 	board, err := eng.Board(context.Background())
 	if err != nil {
