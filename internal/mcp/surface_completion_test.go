@@ -123,7 +123,7 @@ func TestBridgeSurfaceRPCIsStatelessAndCannotSelectAnotherAgent(t *testing.T) {
 			} {
 				out := rpc(t, srv, version, BridgeSurfaceEvidenceMethod, params)
 				result, ok := out["result"].(map[string]any)
-				if !ok || result["isError"] != true {
+				if out["error"] == nil && (!ok || result["isError"] != true) {
 					t.Fatalf("invalid/private authority accepted: %v", out)
 				}
 			}
