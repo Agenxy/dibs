@@ -7,7 +7,7 @@ package core
 // Admission of new name rules stays separate from this historical fold.
 
 func (s *State) applyUpdate(l *Agent, op *Op) (Result, []Event, error) {
-	if op.BridgeSurfaceEvidence && !l.IdentityWouldChange(op.Agent) {
+	if unchangedBridgeSurface(l, op) {
 		return Result{"ok": true, "changed": false}, nil, nil
 	}
 	// The size bounds for this op are in Admit, not here. A bound in the fold is
@@ -103,6 +103,10 @@ func (s *State) applyUpdate(l *Agent, op *Op) (Result, []Event, error) {
 		res["released_names"] = append([]string(nil), op.ReleaseNames...)
 	}
 	return res, []Event{{Type: "agent.updated", Agent: l.ID, Data: data}}, nil
+}
+
+func unchangedBridgeSurface(l *Agent, op *Op) bool {
+	return op.BridgeSurfaceEvidence && !l.IdentityWouldChange(op.Agent)
 }
 
 // hasSessionBinding reports whether anything would actually be taken away by a

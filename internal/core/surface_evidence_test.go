@@ -12,8 +12,10 @@ import (
 
 func TestBridgeSurfaceEvidenceAdmissionIsNarrowAndReplayable(t *testing.T) {
 	valid := func() *Op {
-		return &Op{Kind: OpUpdate, Token: "worker-token", KeepDescription: true,
-			Agent: &AgentInfo{Surface: "chatgpt-app"}, BridgeSurfaceEvidence: true, BridgeSurfaceTrusted: true}
+		return &Op{
+			Kind: OpUpdate, Token: "worker-token", KeepDescription: true,
+			Agent: &AgentInfo{Surface: "chatgpt-app"}, BridgeSurfaceEvidence: true, BridgeSurfaceTrusted: true,
+		}
 	}
 	if err := Admit(valid(), DefaultLimits()); err != nil {
 		t.Fatalf("valid surface evidence refused: %v", err)
@@ -45,8 +47,10 @@ func TestBridgeSurfaceEvidenceAdmissionIsNarrowAndReplayable(t *testing.T) {
 		})
 	}
 	now := time.Unix(1700000000, 0).UTC()
-	reg := &Op{Kind: OpRegister, Name: "worker", Description: "keep", NewToken: "worker-token",
-		Agent: &AgentInfo{Harness: "Codex", Model: "keep-model", Provider: "keep-provider", CWD: "/keep"}}
+	reg := &Op{
+		Kind: OpRegister, Name: "worker", Description: "keep", NewToken: "worker-token",
+		Agent: &AgentInfo{Harness: "Codex", Model: "keep-model", Provider: "keep-provider", CWD: "/keep"},
+	}
 	s := NewState("test", DefaultLimits())
 	mustApply(t, s, reg, now)
 	regRaw, err := json.Marshal(reg) // the ledger freezes this before later identity merges

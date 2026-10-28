@@ -157,7 +157,7 @@ func (c *surfaceCompletion) flush(ctx context.Context, client *http.Client, url,
 			if err := postBridgeSurface(ctx, client, url, secret, entry.token, observed); err != nil {
 				c.board, c.unsupported = surfaceBoardFor(client, url), true
 				if ctx.Err() == nil {
-					slog.Warn("late bridge surface repair unsupported or unsuccessful; omitted until address re-resolution", "err", err)
+					slog.Warn("late bridge surface repair unsuccessful; omitted until address re-resolution", "err", err)
 				}
 				return
 			}
