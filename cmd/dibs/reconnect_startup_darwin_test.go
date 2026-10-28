@@ -61,6 +61,17 @@ func TestTimerRemovalKeepsAppReconnectPoke(t *testing.T) {
 	appReconnectContract(t, true, false, false, false)
 }
 
+// A naturally slow lookup takes the same completion path as the explicitly
+// held one below. Discovery must reply first, then recovery must arrive without
+// another model call, within the same five-second recovery deadline.
+func TestAppReconnectRecoversAfterASlowStartStamp(t *testing.T) {
+	if testing.Short() {
+		t.Skip("subprocess reconnect contract")
+	}
+	t.Setenv("DIBS_TEST_RECONNECT_DELAY_NEW_APP", "1")
+	appReconnectContract(t, true, false, false, false)
+}
+
 // Hold the actual bridge's kernel-lookup boundary beyond its first discovery
 // reply. Releasing that lookup is an event; an idle model makes no later call.
 func TestAppReconnectRecoversWhenTheStartStampArrivesAfterDiscovery(t *testing.T) {
@@ -319,8 +330,8 @@ func appReconnectContract(t *testing.T, lost, clockBack, legacy, lateStamp bool)
 		t.Fatal(er)
 	}
 	// Queue commands settle asynchronously; a short quiet interval cannot
-	// prove this row was excluded. Startup writes the real reconnect receipt
-	// synchronously for each selected target before returning the RPC reply.
+	// prove this row was excluded. Wait for the worker's real reconnect receipt
+	// below, so the recovery pass has selected its targets before checking FYIs.
 	fyiKey := sha256.Sum256([]byte(fyiSession))
 	fyiReconnect := filepath.Join(dir, "queued-wakes", hex.EncodeToString(fyiKey[:])+".json.reconnect")
 	if _, er = os.Stat(fyiReconnect); !os.IsNotExist(er) {
@@ -342,8 +353,16 @@ func appReconnectContract(t *testing.T, lost, clockBack, legacy, lateStamp bool)
 		t.Cleanup(releaseStamp)
 		t.Setenv("DIBS_TEST_START_STAMP_GATE", gate)
 	}
+	if os.Getenv("DIBS_TEST_RECONNECT_DELAY_NEW_APP") == "1" {
+		t.Setenv("DIBS_TEST_RECONNECT_SLOW_STAMP", filepath.Join(t.TempDir(), "slow-stamp-entered"))
+	}
 	newStartup, _ := startApp()
 	newStartup(0) // no token, register, check_in, or model turn
+	if marker := os.Getenv("DIBS_TEST_RECONNECT_SLOW_STAMP"); marker != "" {
+		if proof, err := os.ReadFile(marker); err != nil || string(proof) != "entered" {
+			t.Fatalf("setup: new app did not enter the controlled slow lookup: %q %v", proof, err)
+		}
+	}
 	workerKey := sha256.Sum256([]byte(thread))
 	workerReconnect := filepath.Join(dir, "queued-wakes", hex.EncodeToString(workerKey[:])+".json.reconnect")
 	if lateStamp {
@@ -351,29 +370,25 @@ func appReconnectContract(t *testing.T, lost, clockBack, legacy, lateStamp bool)
 			t.Fatalf("setup: bridge recovered before the held start lookup completed: %v", er)
 		}
 		releaseStamp()
-		deadline := time.Now().Add(5 * time.Second)
-		for {
-			if _, er = os.Stat(workerReconnect); er == nil {
-				break
-			}
-			if time.Now().After(deadline) {
-				if os.Getenv("DIBS_TEST_START_STAMP_FAIL_ONCE") == "1" {
-					if _, err := os.Stat(os.Getenv("DIBS_TEST_START_STAMP_GATE") + ".failed"); err != nil {
-						t.Fatalf("setup: actual stamp failure did not occur: %v", err)
-					}
-				}
-				t.Fatal("completed start stamp never repaired reconnect without a model request")
-			}
-			<-time.After(5 * time.Millisecond)
+	}
+	// Even an unforced kernel lookup can exceed bridgeStartBudget. Its
+	// completion is an event after discovery, not part of the RPC response.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, er = os.Stat(workerReconnect); er == nil {
+			break
 		}
+		if time.Now().After(deadline) {
+			t.Fatal("completed start stamp never repaired reconnect without a model request")
+		}
+		<-time.After(5 * time.Millisecond)
+	}
+	if lateStamp {
 		if os.Getenv("DIBS_TEST_START_STAMP_FAIL_ONCE") == "1" {
 			if _, err := os.Stat(os.Getenv("DIBS_TEST_START_STAMP_GATE") + ".failed"); err != nil {
 				t.Fatalf("setup: actual stamp failure did not occur: %v", err)
 			}
 		}
-	}
-	if _, er = os.Stat(workerReconnect); er != nil {
-		t.Fatalf("setup: actual app startup did not reconsider the unread worker: %v", er)
 	}
 	if _, er = os.Stat(fyiReconnect); !os.IsNotExist(er) {
 		t.Fatalf("presented unacked FYI was incorrectly selected for app reconnect: %v", er)

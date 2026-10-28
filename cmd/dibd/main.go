@@ -97,6 +97,7 @@ type daemonOpts struct {
 	publicIP      *string
 	ackGuest      *bool
 	publicURL     *string
+	publicForward *string
 	publicAddr    *string
 	acceptACME    *bool
 }
@@ -130,6 +131,8 @@ func registerDaemonFlags(fs *flag.FlagSet) (*daemonOpts, *scorerFlags) {
 		"explicitly acknowledge no native guest client is verified yet for the constrained guest CA; required with public-ip")
 	o.publicURL = fs.String("public-url", "",
 		"public HTTPS origin behind a TLS proxy; invitation-only listener stays on loopback")
+	o.publicForward = fs.String("public-forward", "",
+		"advertised HTTP loopback origin carried by an operator forward; MCP-only, no HTTP byte transfers")
 	o.publicAddr = fs.String("public-addr", "",
 		"second listener address (default :443 with public-host, 127.0.0.1:4778 with public-url, "+
 			"[public-ip]:4778 with public-ip)")
@@ -178,10 +181,6 @@ func run() error {
 			return fmt.Errorf("app service PATH: %w", err)
 		}
 	}
-	publicCfg, err := resolvePublic(opts)
-	if err != nil {
-		return err
-	}
 
 	if err := os.MkdirAll(*dir, 0o700); err != nil {
 		return err
@@ -208,10 +207,15 @@ func run() error {
 		slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}), logRing,
 	)))
 
-	cfg, err := loadConfig(*dir)
+	cfg, err := loadConfigWithPublicFlags(*dir, opts, flag.CommandLine)
 	if err != nil {
 		return fmt.Errorf("reading %s/dibs.toml: %w", *dir, err)
 	}
+	publicCfg, err := resolvePublic(opts)
+	if err != nil {
+		return err
+	}
+
 	for _, retired := range cfg.RetiredWakeSettings {
 		slog.Warn(retired.Warning(filepath.Join(*dir, "dibs.toml")))
 	}
@@ -494,7 +498,7 @@ func run() error {
 	mcpSrv.SetTransfers(files, "")
 	mcpSrv.SetTaskKey(secret) // task ids survive a restart; see mcp/tasks.go
 	inviteService := &invites.Service{
-		Engine: eng, Store: invites.Store{Dir: *dir}, Policy: cfg.Invites, URL: publicCfg.URL,
+		Engine: eng, Store: invites.Store{Dir: *dir}, Policy: cfg.Invites, URL: publicCfg.URL, Mode: publicCfg.Mode,
 		Endpoint:      publicCfg.Endpoint,
 		RecoveryNonce: box.GuestRecoveryNonce,
 	}
@@ -512,7 +516,7 @@ func run() error {
 	registerFolderAccessAPI(mux, folders)
 	registerAdminAPI(mux, eng)
 	registerInvitationAPI(mux, inviteService)
-	registerTransferStatus(mux, publicCfg.URL)
+	registerTransferStatus(mux, publicCfg)
 	if publicCfg.Endpoint != nil {
 		registerGuestStatus(mux, publicCfg.Endpoint)
 	}

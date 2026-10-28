@@ -13,112 +13,44 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
-	"net/url"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/agenxy/dibs/internal/boardconfig"
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/invites"
 	"github.com/agenxy/dibs/internal/mcp"
 	"github.com/agenxy/dibs/internal/transfer"
-	xport "github.com/agenxy/dibs/internal/transport"
 	"golang.org/x/crypto/acme/autocert"
 )
 
 type publicConfig struct {
-	URL, Addr, Host string
-	IP              netip.Addr
-	TLS             *tls.Config
-	Endpoint        *invites.PublicEndpoint
-	guestPoll       time.Duration // zero in production; bounded-clock listener fixtures shorten the timer
-}
-
-func dnsHostname(host string) bool {
-	if len(host) > 253 || host == "" {
-		return false
-	}
-	for _, label := range strings.Split(host, ".") {
-		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
-			return false
-		}
-		for _, c := range strings.ToLower(label) {
-			if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '-' {
-				return false
-			}
-		}
-	}
-	return true
+	URL, Addr, Host, Mode string
+	IP                    netip.Addr
+	TLS                   *tls.Config
+	Endpoint              *invites.PublicEndpoint
+	guestPoll             time.Duration // zero in production; bounded-clock listener fixtures shorten the timer
 }
 
 func resolvePublic(o *daemonOpts) (publicConfig, error) {
-	var c publicConfig
-	if *o.publicIP != "" {
-		if *o.publicHost != "" || *o.publicURL != "" || *o.acceptACME {
-			return c, errors.New("choose public-ip OR public-host OR public-url; ACME terms apply only to public-host")
-		}
-		if !*o.ackGuest {
-			return c, errors.New("no native guest client is verified for direct-IP CA trust yet; " +
-				"to opt in explicitly use --ack-unverified-guest-client with --public-ip")
-		}
-		return resolveIPPublic(o)
-	}
-	if *o.ackGuest {
-		return c, errors.New("ack-unverified-guest-client requires public-ip")
-	}
-	if *o.publicHost != "" && *o.publicURL != "" {
-		return c, errors.New("choose public-host OR public-url, not both")
-	}
-	if *o.publicHost == "" && *o.publicURL == "" {
-		if *o.publicAddr != "" || *o.acceptACME {
-			return c, errors.New("public-addr and acme-accept-terms require a public-host or public-url")
-		}
-		return c, nil
-	}
-	if host := strings.ToLower(*o.publicHost); host != "" {
-		return resolveACMEPublic(o, host)
-	}
-	return resolveProxyPublic(o)
-}
-
-// An operator names ONE address, never a wildcard or a discovered candidate.
-// Assignment is measured; stability and WAN reachability are not inferred.
-func resolveIPPublic(o *daemonOpts) (publicConfig, error) {
-	var c publicConfig
-	ip, err := netip.ParseAddr(*o.publicIP)
-	if err != nil || !globalGuestIPv6(ip) {
-		return c, errors.New("public-ip must be an unzoned global IPv6 address, " +
-			"not private, link-local, documentation or an IPv4 address")
-	}
-	c = publicConfig{IP: ip, Addr: firstNonEmpty(*o.publicAddr, net.JoinHostPort(ip.String(), "4778"))}
-	host, port, err := net.SplitHostPort(c.Addr)
-	bound, parseErr := netip.ParseAddr(host)
-	n, portErr := strconv.Atoi(port)
-	if err != nil || parseErr != nil || bound != ip || portErr != nil || n < 1 || n > 65535 {
-		return publicConfig{}, errors.New("public-addr must bind exactly public-ip " +
-			"and a numeric port from 1 through 65535; " +
-			"wildcard listeners are refused")
-	}
-	if err := assignedGuestIP(ip); err != nil {
+	resolved, err := boardconfig.ResolvePublic(publicOptions(o))
+	if err != nil {
 		return publicConfig{}, err
 	}
-	c.URL = "https://" + net.JoinHostPort(ip.String(), strconv.Itoa(n))
-	return c, nil
+	if resolved.IP.IsValid() {
+		if err := assignedGuestIP(resolved.IP); err != nil {
+			return publicConfig{}, err
+		}
+	}
+	return publicConfig{
+		URL: resolved.URL, Addr: resolved.Addr, Host: resolved.Host, IP: resolved.IP, Mode: resolved.Mode,
+	}, nil
 }
 
-func globalGuestIPv6(ip netip.Addr) bool {
-	// Public global unicast allocation, conservatively excluding reserved
-	// documentation and protocol-assignment blocks. IsGlobalUnicast alone also
-	// admits ULA and documentation addresses, which are not public endpoints.
-	return ip.Is6() && !ip.Is4In6() && ip.Zone() == "" &&
-		netip.MustParsePrefix("2000::/3").Contains(ip) &&
-		!netip.MustParsePrefix("2001::/23").Contains(ip) &&
-		!netip.MustParsePrefix("2001:db8::/32").Contains(ip) &&
-		!netip.MustParsePrefix("3fff::/20").Contains(ip)
-}
+func globalGuestIPv6(ip netip.Addr) bool { return boardconfig.IsPublicGuestIPv6(ip) }
 
 func assignedGuestIP(ip netip.Addr) error {
 	interfaces, err := net.Interfaces()
@@ -168,43 +100,6 @@ func preparePublic(c *publicConfig, dir string) error {
 		CAPEM: caPEM, CASPKIPin: pin, VerifiedClients: []string{},
 	})
 	return nil
-}
-
-func resolveACMEPublic(o *daemonOpts, host string) (publicConfig, error) {
-	var c publicConfig
-	if !dnsHostname(host) || net.ParseIP(host) != nil || !strings.Contains(host, ".") {
-		return c, errors.New("public-host must be a DNS hostname, not a URL, IP or wildcard")
-	}
-	if !*o.acceptACME {
-		return c, errors.New("public-host needs explicit --acme-accept-terms; " +
-			"alternatively use --public-url behind your own TLS proxy")
-	}
-	c = publicConfig{URL: "https://" + host, Addr: firstNonEmpty(*o.publicAddr, ":443"), Host: host}
-	_, port, err := net.SplitHostPort(c.Addr)
-	if err != nil || port != "443" {
-		return c, errors.New("public-host uses TLS-ALPN-01: public-addr must listen on port 443; " +
-			"use public-url for a TLS-terminating proxy")
-	}
-	return c, nil
-}
-
-func resolveProxyPublic(o *daemonOpts) (publicConfig, error) {
-	var c publicConfig
-	u, err := url.Parse(*o.publicURL)
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" ||
-		u.Fragment != "" || (u.Path != "" && u.Path != "/") {
-		return c, errors.New("public-url must be an HTTPS origin without credentials, query, fragment or path; " +
-			"e.g. https://board.example.com")
-	}
-	if !dnsHostname(u.Hostname()) && net.ParseIP(u.Hostname()) == nil {
-		return c, errors.New("public-url requires a DNS hostname or IP literal")
-	}
-	u.Host = strings.ToLower(u.Host)
-	c = publicConfig{URL: strings.TrimSuffix(u.String(), "/"), Addr: firstNonEmpty(*o.publicAddr, "127.0.0.1:4778")}
-	if !xport.IsLoopback(c.Addr) {
-		return c, errors.New("public-url's plaintext proxy listener must be loopback; set --public-addr 127.0.0.1:4778")
-	}
-	return c, nil
 }
 
 type publicGate struct {
@@ -269,7 +164,7 @@ func (g *publicGate) wrap(next http.Handler) http.Handler {
 			return
 		}
 		if o := r.Header.Get("Origin"); o != "" && o != g.origin {
-			publicError(w, http.StatusForbidden, "E_ORIGIN", "forbidden origin", "use the configured public HTTPS origin")
+			publicError(w, http.StatusForbidden, "E_ORIGIN", "forbidden origin", "use the configured public origin")
 			return
 		}
 		auth := strings.Fields(r.Header.Get("Authorization"))
@@ -332,10 +227,14 @@ func startPublic(ctx context.Context, c publicConfig, dir string, eng *engine.En
 	directTLS := c.TLS
 	s := mcp.New(eng)
 	s.SetTaskKey(secret)
-	s.SetTransfers(files, c.URL)
+	publicFiles := files
+	if c.Mode == "loopback-forward" {
+		publicFiles = nil
+	}
+	s.SetTransfers(publicFiles, c.URL)
 	g := &publicGate{
 		store: invites.Store{Dir: dir}, origin: c.URL, rates: map[string]*inviteBucket{},
-		transfers: files, proxy: c.Host == "" && !c.IP.IsValid(),
+		transfers: publicFiles, proxy: c.Host == "" && !c.IP.IsValid(),
 	}
 	g.service = &invites.Service{Store: g.store, Engine: eng}
 	srv := &http.Server{

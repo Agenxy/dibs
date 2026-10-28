@@ -46,6 +46,17 @@ func TestBridgeStartupHelper(t *testing.T) {
 	if os.Getenv("DIBS_TEST_STARTUP_BRIDGE") != "1" {
 		return
 	}
+	if marker := os.Getenv("DIBS_TEST_RECONNECT_SLOW_STAMP"); marker != "" {
+		original := lookupSelfStart
+		lookupSelfStart = func() string {
+			if err := os.WriteFile(marker, []byte("entered"), 0o600); err != nil {
+				t.Error("slow start-stamp setup:", err)
+				return ""
+			}
+			time.Sleep(1500 * time.Millisecond)
+			return original()
+		}
+	}
 	if os.Getenv("DIBS_TEST_RECONNECT_OPEN_LOG") != "" {
 		installReconnectFakeAppOpen()
 	}

@@ -204,6 +204,11 @@ func printInviteResult(out map[string]any, minted bool) error {
 		return errors.New("the daemon did not return an invitation recipe")
 	}
 	if config, ok := out["config"].(map[string]any); ok {
+		if config["mode"] == "loopback-forward" {
+			_, err := fmt.Fprintf(os.Stdout, "Invitation for %s. Save this PRIVATE material now.\n"+
+				"Invitation key: %s\nEndpoint: %s/mcp\n%s\n", name, key, strings.TrimSuffix(origin, "/"), config["instructions"])
+			return err
+		}
 		if _, guest := config["ca_pem"]; guest {
 			return printGuestInvite(os.Stdout, name, key, origin, config)
 		}

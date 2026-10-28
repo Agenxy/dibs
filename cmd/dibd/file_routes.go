@@ -12,11 +12,13 @@ import (
 	"github.com/agenxy/dibs/internal/transfer"
 )
 
-func registerTransferStatus(mux *http.ServeMux, publicOrigin string) {
+func registerTransferStatus(mux *http.ServeMux, c publicConfig) {
 	mux.HandleFunc("GET /api/transfer-status", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
-		_ = json.NewEncoder(w).Encode(map[string]string{"public_origin": publicOrigin})
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"public_origin": c.URL, "mode": c.Mode, "addr": c.Addr,
+		})
 	})
 }
 

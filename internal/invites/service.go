@@ -26,6 +26,7 @@ type Service struct {
 	Engine   *engine.Engine
 	Policy   boardconfig.InvitesConfig
 	URL      string
+	Mode     string
 	Endpoint *PublicEndpoint
 	// RecoveryNonce is a fixed-domain derivation owned by the existing at-rest
 	// Box, not a raw key or an invitation-store field. Only an explicit export
