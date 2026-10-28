@@ -182,16 +182,20 @@ func resolveForwardPublic(o PublicConfig) (PublicResolved, error) {
 	}
 	u, err := url.Parse(o.Forward)
 	if err != nil || u.Scheme != "http" || u.User != nil || u.Path != "" || u.RawQuery != "" ||
-		u.ForceQuery || u.Fragment != "" || !xport.IsLoopback(u.Host) || !literalPublicAddress(u.Host) {
+		u.ForceQuery || u.Fragment != "" || !publicForwardAddress(u.Host) {
 		return PublicResolved{}, errors.New("public-forward must be an HTTP origin with a literal loopback address " +
 			"and numeric port, without credentials, path, query or fragment; e.g. http://127.0.0.1:4778")
 	}
 	c := PublicResolved{URL: u.String(), Addr: publicDefault(o.Addr, "127.0.0.1:4778"), Mode: "loopback-forward"}
-	if !xport.IsLoopback(c.Addr) || !literalPublicAddress(c.Addr) {
+	if !publicForwardAddress(c.Addr) {
 		return PublicResolved{}, errors.New("public-forward's local public-addr must be a literal loopback address " +
 			"and numeric port; wildcards and hostnames are refused")
 	}
 	return c, nil
+}
+
+func publicForwardAddress(address string) bool {
+	return xport.IsLoopback(address) && literalPublicAddress(address)
 }
 
 // Scope is decided by transport.IsLoopback above. This checks only spelling
