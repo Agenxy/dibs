@@ -4,12 +4,14 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/mcp"
@@ -170,8 +172,10 @@ func enrichRegister(line []byte) []byte {
 			// WHICH APP, from this bridge's own ancestry, never from the model.
 			// See mcp.SurfaceMetaKey. Not for a relayed caller: its app is on
 			// the other end of the tunnel, not above this process.
-			if surf := bridgeSurface(); surf != "" && !remoteSession {
-				meta[mcp.SurfaceMetaKey] = surf
+			if !remoteSession {
+				if surf := bridgeSurface(); surf != "" {
+					meta[mcp.SurfaceMetaKey] = surf
+				}
 			}
 			if remoteSession {
 				// Stating "nowhere" rather than leaving it blank, because the
@@ -666,12 +670,11 @@ func spellFor(goos, p string) string {
 	return strings.ReplaceAll(p, "\\", "/")
 }
 
-// bridgeSurface is the app this bridge's harness runs in, worked out once: the
-// bridge is a child of that harness for its whole life, so the answer cannot
-// change under it, and walking the process table per call would be waste.
-var detectedSurface = sync.OnceValue(func() string {
-	return harnessenv.Detect(os.Getpid())
-})
+// The bridge's successful ancestry observation is cached for its lifetime.
+// Failed inventories remain unknown and may be retried by a later request.
+var detectedSurface = func(ctx context.Context) (string, error) {
+	return harnessenv.DetectContext(ctx, os.Getpid())
+}
 
 // bridgeSurface is what the bridge states as its app. A Codex that is NOT under
 // the app states that too, rather than nothing: a thread started in the app
@@ -680,7 +683,17 @@ var detectedSurface = sync.OnceValue(func() string {
 // changes nothing), which would have every wake open the app on a thread the
 // operator is driving somewhere else.
 func bridgeSurface() string {
-	if s := detectedSurface(); s != "" {
+	wait := time.NewTimer(bridgeSurfaceBudget)
+	defer wait.Stop()
+	select {
+	case <-bridgeAncestry.prime():
+	case <-wait.C:
+	}
+	s, known := bridgeAncestry.result()
+	if !known {
+		return "" // unavailable is not evidence of a terminal or an app
+	}
+	if s != "" {
 		return s
 	}
 	if clientIs("codex") {

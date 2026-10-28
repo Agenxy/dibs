@@ -215,7 +215,13 @@ func TestSupportedMergeTypedEffectCannotBeAddressedToAnAgent(t *testing.T) {
 
 func TestSupportedMergeSessionDetailTracksTheCurrentAppThread(t *testing.T) {
 	f := newSupportedMerge(t, "2026-07-28")
-	f.call("update", map[string]any{"token": f.into["token"], "surface": "chatgpt-app"})
+	// App routing requires bridge evidence; a model-only surface claim is
+	// intentionally ignored. The move under test has that observed provenance.
+	updated := recoveryCall(t, f.srv, f.version, "update", map[string]any{"token": f.into["token"]},
+		map[string]any{HostMetaKey: "fixture-host", SurfaceMetaKey: "chatgpt-app"})
+	if updated["ok"] != true {
+		t.Fatalf("observed app surface setup: %v", updated)
+	}
 	const old = "11111111-1111-4111-8111-111111111111"
 	const current = "22222222-2222-4222-8222-222222222222"
 	for _, sid := range []string{old, current} {

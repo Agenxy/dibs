@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
@@ -20,11 +21,12 @@ import (
 // driving somewhere else. Entered through the real sequence: initialize names
 // the client, then a tools/call goes through enrichRegister.
 func TestACodexOutsideTheAppSaysWhereItIs(t *testing.T) {
-	prev, prevDetect := lastClientInfo, detectedSurface
-	t.Cleanup(func() { lastClientInfo, detectedSurface = prev, prevDetect })
+	prev, prevDetect, prevProbe := lastClientInfo, detectedSurface, bridgeAncestry
+	t.Cleanup(func() { lastClientInfo, detectedSurface, bridgeAncestry = prev, prevDetect, prevProbe })
+	bridgeAncestry = &surfaceProbe{}
 	// The process tree is whatever ran the suite, which on a developer's
 	// machine is often an app: this one ran under Claude's and read as it.
-	detectedSurface = func() string { return "" }
+	detectedSurface = func(context.Context) (string, error) { return "", nil }
 	stamp := func(client string) any {
 		t.Helper()
 		enrichRegister([]byte(`{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"clientInfo":{"name":"` + client + `"}}}`))
@@ -53,9 +55,10 @@ func TestACodexOutsideTheAppSaysWhereItIs(t *testing.T) {
 
 // And the tree wins over the client name: a Codex under the app is the app.
 func TestTheProcessTreeNamesTheAppBeforeTheClientDoes(t *testing.T) {
-	prev, prevDetect := lastClientInfo, detectedSurface
-	t.Cleanup(func() { lastClientInfo, detectedSurface = prev, prevDetect })
-	detectedSurface = func() string { return harnessenv.ChatGPTApp }
+	prev, prevDetect, prevProbe := lastClientInfo, detectedSurface, bridgeAncestry
+	t.Cleanup(func() { lastClientInfo, detectedSurface, bridgeAncestry = prev, prevDetect, prevProbe })
+	bridgeAncestry = &surfaceProbe{}
+	detectedSurface = func(context.Context) (string, error) { return harnessenv.ChatGPTApp, nil }
 	lastClientInfo = map[string]any{"name": "codex-mcp-client"}
 	if got := bridgeSurface(); got != harnessenv.ChatGPTApp {
 		t.Errorf("a Codex under the ChatGPT app stated %q: its wakes would never open the app", got)
