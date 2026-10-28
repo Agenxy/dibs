@@ -16,7 +16,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   another attempt.
 
 - The optional late bridge-surface capability is advertised only on successful
-  local, non-invited `register` and `resume` replies for the daemon's own host.
+  local, non-invited `register` and `resume` replies for the daemon's own host
+  that return agent credentials. Failed calls and superseded resumes omit it.
   Other tools, remote and hostless sessions, and invitation clients no longer
   receive metadata promising a private RPC they cannot use.
 

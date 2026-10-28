@@ -1135,7 +1135,7 @@ func (s *Server) callTool(
 	if merr != nil {
 		return nil, &rpcError{Code: -32603, Message: merr.Error()}
 	}
-	return s.surfaceRegistrationResult(ctx, call.Name, params, string(text)), nil
+	return s.surfaceRegistrationResult(ctx, call.Name, params, res, string(text)), nil
 }
 
 // putBlob decodes the inline base64 (if any) and stores the blob.

@@ -1287,7 +1287,7 @@ retain the unknown evidence and pending rows until a later real request. The
 bridge logs exhausted attempts to stderr; no timer is armed. Shutdown cancels
 discovery and prevents another attempt.
 Only successful local, non-invited register/resume replies for the daemon's
-own host advertise
+own host that return agent credentials advertise
 `com.dibs/bridge_surface_evidence: true` in result `_meta`. A capable local bridge
 can then report late evidence through the private `dibs/bridge-surface` RPC,
 using only its actual registration reply's agent token and its own surface in
