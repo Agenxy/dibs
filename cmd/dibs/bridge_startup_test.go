@@ -48,6 +48,26 @@ func TestBridgeStartupHelper(t *testing.T) {
 	if os.Getenv("DIBS_TEST_RECONNECT_OPEN_LOG") != "" {
 		installReconnectFakeAppOpen()
 	}
+	if gate := os.Getenv("DIBS_TEST_SURFACE_GATE"); gate != "" {
+		original := detectedSurface
+		detectedSurface = func(ctx context.Context) (string, error) {
+			f, err := os.OpenFile(gate, os.O_RDWR, 0o600)
+			if err != nil {
+				t.Error("surface gate setup:", err)
+				return "", err
+			}
+			defer func() { _ = f.Close() }()
+			if err := os.WriteFile(gate+".entered", []byte("entered"), 0o600); err != nil {
+				t.Error("surface gate marker:", err)
+				return "", err
+			}
+			if err := paths.LockExclusive(f, true); err != nil {
+				t.Error("surface gate lock:", err)
+				return "", err
+			}
+			return original(ctx)
+		}
+	}
 	if gate := os.Getenv("DIBS_TEST_START_STAMP_GATE"); gate != "" {
 		lookupSelfStart = func() string {
 			f, err := os.OpenFile(gate, os.O_RDWR, 0o600)

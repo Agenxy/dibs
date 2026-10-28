@@ -27,6 +27,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The stdio bridge's first registration no longer waits inline for up to twelve
+  process queries. Surface discovery starts with the bridge, uses one bounded
+  process inventory, and lets a request omit the evidence after 500ms. A failed
+  or still pending probe remains unknown, rather than claiming the bridge runs
+  outside its app. Model-supplied ChatGPT surface claims on `update` are ignored,
+  matching registration; bridge-derived surface evidence takes precedence.
+
 - A failed app-reconnect process inventory gets one immediate bounded retry
   within the same daemon-owned observation, so a single inventory timeout does
   not strand an idle bridge's reconnect receipt. If both attempts fail, recovery

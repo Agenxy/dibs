@@ -124,6 +124,7 @@ func runBridge(_ []string) error {
 	// airtight: stdin reaching EOF, the harness process exiting, or a signal.
 	ctx, endSession := context.WithCancel(context.Background())
 	defer endSession()
+	primeBridgeAncestry(ctx)
 	stampMissing := make(chan struct{}, 1)
 	streams.Add(1)
 	go func() {

@@ -1290,7 +1290,7 @@ func (s *Server) run(
 		op.MailboxPage, op.MailboxCursor, op.MailboxLimit = true, a.HistoryCursor, a.Limit
 	case "update":
 		op.Kind, op.Name, op.Description = core.OpUpdate, a.Name, a.Description
-		op.Agent = selfReported(a)
+		op.Agent = selfReported(a, params)
 		op.ReleaseSession = a.ReleaseSession
 		op.ReleaseNames = a.ReleaseNames
 		// A CORRECTED cwd, which had no way in at all.

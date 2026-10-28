@@ -229,12 +229,12 @@ func agentInfo(ctx context.Context, params json.RawMessage, a *toolArgs, session
 // it; harness and version are the client's word rather than the model's, which
 // is the one part of the board that is not self-description; and the Git call
 // is affordable once per agent at registration, not on every revision.
-func selfReported(a *toolArgs) *core.AgentInfo {
+func selfReported(a *toolArgs, params json.RawMessage) *core.AgentInfo {
 	info := &core.AgentInfo{
 		Model:    a.Model,
 		Provider: a.Provider,
 		Effort:   a.Effort,
-		Surface:  a.Surface,
+		Surface:  resolveSurface(params, a.Surface),
 		Title:    a.Title,
 		Branch:   a.Branch,
 	}
