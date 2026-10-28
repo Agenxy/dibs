@@ -11,8 +11,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   inventory immediately in its completion worker. This repairs app reconnect
   and late surface evidence without another model call after a transient probe
   failure. Request wait limits are unchanged; two failures retain unknown,
-  pending evidence until a later real request, with a diagnostic and no timer.
-  Session shutdown prevents another attempt.
+  pending evidence until a later real request. The bridge logs exhausted
+  attempts to stderr; no retry timer is armed. Session shutdown prevents
+  another attempt.
+
+- The optional late bridge-surface capability is advertised only on successful
+  local, non-invited `register` and `resume` replies for the daemon's own host.
+  Other tools, remote and hostless sessions, and invitation clients no longer
+  receive metadata promising a private RPC they cannot use.
 
 ## [0.0.16] - 2026-10-27
 
