@@ -27,6 +27,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A failed app-reconnect process inventory gets one immediate bounded retry
+  within the same daemon-owned observation, so a single inventory timeout does
+  not strand an idle bridge's reconnect receipt. If both attempts fail, recovery
+  remains visibly pending until the next local Dibs call from any agent; no
+  retry timer is added, and the original bridge need not make another call.
+
 - macOS service configuration no longer says "nothing to do" merely because
   an unsupervised daemon serves the installed build beside an enabled but
   failing registration. A no-op now requires the serving PID to be the running

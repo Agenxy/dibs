@@ -1268,6 +1268,10 @@ Mail is rechecked before delivery; ordinary cooldown and loaded-thread refusal
 still apply. ChatGPT opening uses the prompt background policy below. Empty mailboxes and generated informational updates alone do
 not cause reconnect wakes. Lost derived caches permit one bounded recheck.
 Sender notes distinguish observed queue acceptance from an unconfirmed attempt.
+An inventory failure gets one immediate bounded retry within the same admitted
+observation, sharing one inventory across the entire batch on each attempt.
+If both attempts fail, derived diagnostics show recovery pending until the next
+local Dibs call from any agent; shutdown cancels the retry and no timer is armed.
 
 All three delivery routes share the configured phase: default `all` admits
 authored notify; explicit `urgent` suppresses FYIs while admitting blocking

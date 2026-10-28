@@ -16,7 +16,8 @@ import (
 
 const maxAppReconnects = 128
 
-const reconnectObservationRemedy = "The next local MCP event retries these observations together. " +
+const reconnectObservationRemedy = "After two failed inventories, recovery waits for the next local Dibs call " +
+	"from any agent, which retries these observations together. " +
 	"Read outstanding mail on the board if recovery is urgent; no model request from the idle bridge is required."
 
 // SetReconnectPending publishes a derived diagnostic, not coordination state.

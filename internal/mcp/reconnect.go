@@ -170,6 +170,18 @@ func (s *Server) observeBridgeBatch(
 		processes = append(processes, batch[key])
 	}
 	results, err := s.probeBridges(ctx, processes)
+	if err != nil && ctx.Err() == nil {
+		// One failure-derived retry, inside this same daemon-owned observation.
+		// Keep every reservation in flight so a concurrent request cannot take
+		// the batch over. A second failure remains visible until another local
+		// call; each attempt still uses one bounded shared process inventory.
+		s.bridges.mu.Lock()
+		for _, key := range keys {
+			s.bridges.entries[key].failed = true
+		}
+		s.bridges.mu.Unlock()
+		results, err = s.probeBridges(ctx, processes)
+	}
 	givenUp := false
 	for i, key := range keys {
 		observed, present := err == nil, false
