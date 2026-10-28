@@ -1130,13 +1130,15 @@ another. Run a second daemon for anything you do not trust.
 Dibs speaks **MCP 2026-07-28** (stateless core) and the legacy **2025-11-25**
 path, answering whichever the client offers. Tool behavior is the same on both.
 
-Survey refreshed **2026-10-18 (UTC)**. Source predicates were read from fetched
+Survey refreshed **2026-10-18 (UTC)**, re-checked 2026-10-27. Source predicates were read from fetched
 `origin/HEAD`, not local branches. Installed versions were checked separately;
 fetching a checkout does not rebuild its tool. A source finding says where a
 project is going, not what an installed session does. Rows keep older wire
 dates where no new wire measurement was made.
 
 Re-checked **2026-10-22 (UTC)** before v0.0.15: Codex (`342ed69a1`), opencode (`248bfbe11`), pi-mono (`58c0b02c`), Gemini (`09d81bf`) and Hermes (`4e58c721c8`) heads moved; ext-apps did not. Every predicate below is unchanged: opencode's 2026-07-28 client and Hermes' `mcp==2.3.0` pin were already recorded on 2026-10-18. The installed ChatGPT app is 26.1013.40934 with app CLI **0.163.0-alpha.10.2** (version observed only, not re-measured); the other installed versions are unchanged, so the rows keep their 2026-10-18 readings.
+
+Re-checked **2026-10-27 (UTC)** before v0.0.16: every head moved: Codex (`c8091aeee`), opencode (`45b53fe6f`), pi-mono (`85c2ee3e`), Gemini (`fa5c173`), Hermes (`bdaef8d90b`) and ext-apps (`07cda25`). Every predicate is unchanged: Codex keeps `CoreHookMcpExecutor`, `mcp_2026_07_28` is still `UnderDevelopment` and off, and `requires_mcp_tool_approval` still reads missing hints as destructive and open-world; Pi's `packages/mcp` latest is still 2025-11-25; Gemini hook types are still command/runtime; Hermes still pins `mcp==2.3.0`. ext-apps is now **2.0.4** (2026-10-27): example-server changes and a dependency security bump, nothing on the surface Dibs uses. Installed versions observed only, not re-measured: ChatGPT app CLI still **0.163.0-alpha.10.2** (ChatGPT 26.1013.40934), Claude Code **2.1.310**, Claude Desktop **3.6556.2**; opencode `local` is still the 2026-08-17 build, older than its 2026-07-28 client, and the others are unchanged. The rows keep their measured dates.
 
 | harness | protocol evidence | source and installed-build evidence |
 |---|---|---|

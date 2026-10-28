@@ -178,7 +178,6 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   no reply (#482). The stamp only adds evidence, so a request without it is
   served normally, and a later request carries it.
 
-
 - A coordinator's unreachable-agent notice stops being outstanding when the
   recipient reads its mail or the contact alert is cleared. It no longer blocks
   Stop after resolution or returns after a daemon restart; unresolved alerts
