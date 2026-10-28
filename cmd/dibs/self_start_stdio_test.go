@@ -80,7 +80,10 @@ func init() {
 	return child
 }
 
-func TestFirstBridgeRegisterDoesNotRunProcessInventory(t *testing.T) {
+// Ancestry now primes one asynchronous inventory of its own. The native self
+// start stamp must still avoid inventory: falling back there adds a SECOND
+// probe. The observer calls the real OS runner for both paths.
+func TestFirstBridgeRegisterOnlyInventoriesAncestry(t *testing.T) {
 	child := ownStartObservedBridge(t)
 	count := filepath.Join(t.TempDir(), "inventory-probes")
 	// Arm only the real bridge, after its harmless preparation has exited.
@@ -122,8 +125,8 @@ func TestFirstBridgeRegisterDoesNotRunProcessInventory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("setup: actual bridge did not arm its inventory observer: %v", err)
 	}
-	if string(data) != "armed\n" {
-		t.Fatalf("first real stdio register invoked process inventory: %q", data)
+	if string(data) != "armed\nprobe\n" {
+		t.Fatalf("first register must inventory ancestry once and obtain its own stamp natively: %q", data)
 	}
 	select {
 	case observed := <-forwarded:
