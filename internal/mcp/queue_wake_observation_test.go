@@ -5,7 +5,10 @@ package mcp
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -18,6 +21,7 @@ import (
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/harnessenv"
+	"github.com/agenxy/dibs/internal/paths"
 	"github.com/agenxy/dibs/internal/testexec"
 )
 
@@ -41,7 +45,8 @@ func queueWakeObservationCase(t *testing.T, binary, mode string) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("CODEX_HOME", home)
-	t.Setenv("DIBS_DIR", t.TempDir())
+	dir := t.TempDir()
+	t.Setenv("DIBS_DIR", dir)
 	// A loaded thread, including a busy one, must never be force-opened. The
 	// read-only queue interface says nothing about its busy/idle state.
 	previous := harnessenv.RealShower
@@ -89,7 +94,7 @@ func queueWakeObservationCase(t *testing.T, binary, mode string) {
 	// Confirm the real subprocess door ran before checking a new field. On old
 	// code the setup remains green, and only the missing visibility is RED.
 	awaitObservationQueueCommand(t, home)
-	awaitQueueAppContact(t, contacts)
+	awaitQueueAppContact(t, contacts, dir, thread)
 	wantAdmission, wantPending := "accepted", "unknown"
 	if mode == "pending-aged" || mode == "legacy-age" {
 		wantAdmission, wantPending = "retained", "pending"
@@ -98,7 +103,7 @@ func queueWakeObservationCase(t *testing.T, binary, mode string) {
 	if mode == "probe-unknown" {
 		t.Setenv("DIBS_QUEUE_PROBE_FAIL", "1")
 		send()
-		awaitQueueAppContact(t, contacts)
+		awaitQueueAppContact(t, contacts, dir, thread)
 		view = assertQueueWakeView(t, srv, token, "retained", "unknown")
 		if view["age_source"] != "unknown" || view["wake_age_seconds"] != nil || view["receipt_age_seconds"] == nil {
 			t.Fatalf("unavailable probe lost its receipt age or invented a notice age: %v", view)
@@ -116,7 +121,7 @@ func queueWakeObservationCase(t *testing.T, binary, mode string) {
 	// The actual send advisory path must carry the same derived facts. This
 	// assertion cannot be satisfied by wiring only an unused exported wrapper.
 	receipt := send()
-	awaitQueueAppContact(t, contacts)
+	awaitQueueAppContact(t, contacts, dir, thread)
 	received, ok := receipt["queue_wake"].(map[string]any)
 	if !ok || received["thread_state"] != "unknown" || received["observed_at"] == nil {
 		t.Fatalf("send receipt lost the adapter observation: %v", receipt)
@@ -235,11 +240,36 @@ func assertQueueWakeView(t *testing.T, srv *httptest.Server, token any, admissio
 	return found
 }
 
-func awaitQueueAppContact(t *testing.T, contacts <-chan struct{}) {
+func awaitQueueAppContact(t *testing.T, contacts <-chan struct{}, dir, thread string) {
 	t.Helper()
 	select {
 	case <-contacts:
 	case <-time.After(5 * time.Second):
 		t.Fatal("setup: real wake path never reached the stand-in app contact")
+	}
+	// Holds runs under the app-memo lock, before the loaded state is saved.
+	// Receiving its callback is not completion: let the real lock release
+	// establish that the writer is done before another send or TempDir cleanup.
+	key := sha256.Sum256([]byte(thread))
+	path := filepath.Join(dir, "app-opens", hex.EncodeToString(key[:])+".json.lock")
+	f, err := os.OpenFile(path, os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal("setup: app contact did not hold its real memo lock:", err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		err := paths.LockExclusive(f, true)
+		if err == nil {
+			paths.Unlock(f)
+		}
+		done <- errors.Join(err, f.Close())
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal("app memo writer did not finish cleanly:", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("app contact returned but its memo writer never released the lock")
 	}
 }
