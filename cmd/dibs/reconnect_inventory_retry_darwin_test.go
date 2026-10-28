@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agenxy/dibs/internal/build"
 	"github.com/agenxy/dibs/internal/testexec"
 )
 
@@ -48,9 +49,10 @@ func TestReconnectReceiptSurvivesOneInventoryTimeout(t *testing.T) {
 	binary := filepath.Join(dir, "observed-reconnect.test")
 	buildCtx, stopBuild := context.WithTimeout(t.Context(), 90*time.Second)
 	defer stopBuild()
-	build := exec.CommandContext(buildCtx, "go", "test", "-c", "-race", "-overlay="+overlay, "-o", binary, "./cmd/dibs")
-	build.Dir = root
-	if out, err := build.CombinedOutput(); err != nil {
+	compile := exec.CommandContext(buildCtx, "go", "test", "-c", "-race", "-overlay="+overlay,
+		"-ldflags=-X github.com/agenxy/dibs/internal/build.Version="+build.Version, "-o", binary, "./cmd/dibs")
+	compile.Dir = root
+	if out, err := compile.CombinedOutput(); err != nil {
 		t.Fatalf("setup: build observed bridge/daemon: %v\n%s", err, out)
 	}
 	testexec.PrepareExecutable(t, exec.Command(binary, "--dibs-test-prepare"))
