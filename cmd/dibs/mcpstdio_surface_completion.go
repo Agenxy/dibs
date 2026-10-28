@@ -129,14 +129,12 @@ func (c *surfaceCompletion) advance(ctx context.Context, client *http.Client, ur
 	if !havePending {
 		return
 	}
-	select {
-	case <-ctx.Done():
-		return
-	case <-c.probe.prime():
-	}
-	surface, known := c.probe.result()
+	surface, known := c.probe.completed(ctx)
 	if !known {
-		return // an actual later request may retry failed discovery
+		if ctx.Err() == nil {
+			slog.Warn("bridge ancestry unavailable after completion retry; surface remains unknown until a later request")
+		}
+		return
 	}
 	c.flush(ctx, client, url, secret, surface)
 }

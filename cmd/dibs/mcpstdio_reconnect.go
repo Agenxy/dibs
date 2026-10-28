@@ -140,22 +140,41 @@ func deliverBridgeStart(ctx context.Context, client *http.Client, url, secret st
 			return
 		case <-omitted:
 		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-primeBridgeStart():
-		}
-		bridgeStart.Lock()
-		started := bridgeStart.at
-		bridgeStart.Unlock()
+		started := completedBridgeStart(ctx)
 		if started == "" {
-			continue // a later request can retry a failed kernel lookup
+			if ctx.Err() == nil {
+				slog.Warn("bridge start stamp unavailable after completion retry; a later request may retry")
+			}
+			continue
 		}
 		line := enrichBridgeProcess([]byte(`{"jsonrpc":"2.0","method":"notifications/dibs/bridge-started"}`))
 		if err := postBridgeStart(ctx, client, url, secret, line); err != nil && ctx.Err() == nil {
 			slog.Warn("bridge start completion was not delivered; a later request retries its metadata", "err", err)
 		}
 	}
+}
+
+// A failure is an event too. Consume at most two results for this omitted
+// request, sharing any in-flight lookup. A second failure leaves the stamp
+// unknown until a later real request; there is no timer or retry loop.
+func completedBridgeStart(ctx context.Context) string {
+	for range 2 {
+		if ctx.Err() != nil {
+			return ""
+		}
+		select {
+		case <-ctx.Done():
+			return ""
+		case <-primeBridgeStart():
+		}
+		bridgeStart.Lock()
+		started := bridgeStart.at
+		bridgeStart.Unlock()
+		if started != "" {
+			return started
+		}
+	}
+	return ""
 }
 
 func postBridgeStart(ctx context.Context, client *http.Client, url, secret string, line []byte) error {

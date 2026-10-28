@@ -11,8 +11,9 @@ import (
 
 // The first register must not wait on a process-table walk. Discovery starts
 // with the bridge and a request omits this additive evidence after 500ms. A
-// failed inventory stays unknown and a later request can retry it; it never
-// becomes a claim that the bridge is outside the app.
+// failed inventory stays unknown. The completion worker retries once for its
+// pending rows; further failure awaits a later request, never a timer, and
+// never becomes a claim that the bridge is outside the app.
 const bridgeSurfaceBudget = 500 * time.Millisecond
 
 type surfaceProbe struct {
@@ -69,4 +70,23 @@ func (p *surfaceProbe) result() (string, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.surface, p.known
+}
+
+// Wait for evidence off the request path, retrying one failed observation for
+// this pending batch. Each inventory has its own existing one-second bound.
+func (p *surfaceProbe) completed(ctx context.Context) (string, bool) {
+	for range 2 {
+		if ctx.Err() != nil {
+			return "", false
+		}
+		select {
+		case <-ctx.Done():
+			return "", false
+		case <-p.prime():
+		}
+		if surface, known := p.result(); known {
+			return surface, true
+		}
+	}
+	return "", false
 }

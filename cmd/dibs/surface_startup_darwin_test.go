@@ -39,6 +39,13 @@ func TestLateAncestryRepairsSurfaceWithoutAnotherModelCall(t *testing.T) {
 	surfaceStartupContract(t, true, true)
 }
 
+// The first lookup completes with failure, rather than merely arriving late.
+// No second model call can rescue the completion worker.
+func TestFailedAncestryRepairsSurfaceWithoutAnotherModelCall(t *testing.T) {
+	t.Setenv("DIBS_TEST_SURFACE_FAIL_ONCE", "1")
+	surfaceStartupContract(t, true, true)
+}
+
 func surfaceStartupContract(t *testing.T, held, repair bool) {
 	t.Helper()
 	dir := t.TempDir()
@@ -137,6 +144,18 @@ func surfaceStartupContract(t *testing.T, held, repair bool) {
 	if got := startupSurface(t, eng); got != "" {
 		t.Fatalf("pending ancestry was misclassified as %q", got)
 	}
+	if os.Getenv("DIBS_TEST_SURFACE_FAIL_ONCE") == "1" {
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			if _, err := os.Stat(gate + ".waiting"); err == nil {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("setup: actual surface completion worker never waited on the held lookup")
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
 	if err := f.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -144,9 +163,19 @@ func surfaceStartupContract(t *testing.T, held, repair bool) {
 		deadline := time.Now().Add(5 * time.Second)
 		for startupSurface(t, eng) != harnessenv.ChatGPTApp {
 			if time.Now().After(deadline) {
+				if os.Getenv("DIBS_TEST_SURFACE_FAIL_ONCE") == "1" {
+					if _, err := os.Stat(gate + ".failed"); err != nil {
+						t.Fatalf("setup: actual ancestry failure did not occur: %v", err)
+					}
+				}
 				t.Fatal("late ancestry never corrected agent surface without another model request")
 			}
 			time.Sleep(5 * time.Millisecond)
+		}
+		if os.Getenv("DIBS_TEST_SURFACE_FAIL_ONCE") == "1" {
+			if _, err := os.Stat(gate + ".failed"); err != nil {
+				t.Fatalf("setup: actual ancestry failure did not occur: %v", err)
+			}
 		}
 	}
 }
