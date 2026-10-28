@@ -55,8 +55,8 @@ func TestReconnectRetryBatchIsBoundedAndGivesUpOnlyOnce(t *testing.T) {
 	for i := range maxObservedBridges + 2 {
 		before := scans
 		result(t, rpc(t, srv, "2026-07-28", "server/discover", reconnectParams(s, 1000+i)), "bounded discovery")
-		if scans != before+1 {
-			t.Fatalf("one local event must take one inventory, got %d", scans-before)
+		if scans != before+2 {
+			t.Fatalf("one failing event must take one shared inventory plus one bounded retry, got %d", scans-before)
 		}
 	}
 	if largest != maxObservedBridges {
@@ -133,7 +133,7 @@ func TestPendingReconnectReportsGiveUpWhenItsIncarnationIsGone(t *testing.T) {
 	var scans int
 	s.bridges.batchProbe = func(_ context.Context, bridges []harnessenv.BridgeIncarnation) ([]harnessenv.BridgeObservation, error) {
 		scans++
-		if scans == 1 {
+		if scans <= 2 {
 			return nil, os.ErrDeadlineExceeded
 		}
 		return make([]harnessenv.BridgeObservation, len(bridges)), nil // PID/start no longer match
@@ -245,15 +245,15 @@ func TestUnrelatedLocalEventRetriesPendingReconnect(t *testing.T) {
 	srv, _, s := newServerWithEngine(t)
 	var probes atomic.Int32
 	s.bridges.probe = func(int, string) (harnessenv.AppIncarnation, bool, error) {
-		if probes.Add(1) == 1 {
+		if probes.Add(1) <= 2 {
 			return harnessenv.AppIncarnation{}, false, os.ErrDeadlineExceeded
 		}
 		return harnessenv.AppIncarnation{}, false, nil
 	}
 	result(t, rpc(t, srv, "2026-07-28", "server/discover", reconnectParams(s, 104)), "setup discovery")
 	result(t, rpc(t, srv, "2026-07-28", "server/discover", map[string]any{}), "later local event")
-	if got := probes.Load(); got != 2 {
-		t.Fatalf("later local event lost a pending bridge observation: probes=%d, want2", got)
+	if got := probes.Load(); got != 3 {
+		t.Fatalf("later local event lost a pending bridge observation after two failed attempts: probes=%d, want3", got)
 	}
 }
 
@@ -264,7 +264,7 @@ func TestPendingReconnectDiagnosticAppearsAndClearsWithoutMail(t *testing.T) {
 	}
 	var probes atomic.Int32
 	s.bridges.probe = func(int, string) (harnessenv.AppIncarnation, bool, error) {
-		if probes.Add(1) == 1 {
+		if probes.Add(1) <= 2 {
 			return harnessenv.AppIncarnation{}, false, os.ErrDeadlineExceeded
 		}
 		return harnessenv.AppIncarnation{}, false, nil
