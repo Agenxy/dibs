@@ -7,10 +7,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/harnessenv"
 )
 
@@ -100,13 +103,17 @@ func TestBridgeSurfaceUpdateDoesNotPretendTheModelCalled(t *testing.T) {
 func TestBridgeSurfaceRPCIsStatelessAndCannotSelectAnotherAgent(t *testing.T) {
 	for _, version := range []string{"2026-07-28", "2025-11-25"} {
 		t.Run(version, func(t *testing.T) {
-			srv, eng, _ := newServerWithEngine(t)
+			srv, eng, server := newServerWithEngine(t)
 			x := toolCall(t, srv, "register", map[string]any{"name": "surface-x", "description": "x"})
 			y := toolCall(t, srv, "register", map[string]any{"name": "surface-y", "description": "y"})
 			if x["token"] == nil || y["token"] == nil {
 				t.Fatal("setup registration failed")
 			}
 			meta := map[string]any{SurfaceMetaKey: harnessenv.ChatGPTApp}
+			before, err := eng.Board(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
 			for _, params := range []map[string]any{
 				{"token": y["token"], "agent_id": "surface-x", "_meta": meta},
 				{"token": y["token"], "surface": harnessenv.ChatGPTApp},
@@ -120,6 +127,23 @@ func TestBridgeSurfaceRPCIsStatelessAndCannotSelectAnotherAgent(t *testing.T) {
 					t.Fatalf("invalid/private authority accepted: %v", out)
 				}
 			}
+			// The public listener supplies invitation authority through context,
+			// never participant metadata. Enter through the real RPC dispatcher.
+			invited := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				ctx := engine.WithInvitation(r.Context(), engine.Invitation{Name: "surface-invitation"})
+				server.ServeHTTP(w, r.WithContext(ctx))
+			}))
+			defer invited.Close()
+			invitedReply := rpc(t, invited, version, BridgeSurfaceEvidenceMethod,
+				map[string]any{"token": y["token"], "_meta": meta})
+			invitedResult, _ := invitedReply["result"].(map[string]any)
+			if invitedReply["error"] == nil && invitedResult["isError"] != true {
+				t.Fatalf("invitation changed local bridge routing: %v", invitedReply)
+			}
+			afterRefusals, err := eng.Board(t.Context())
+			if err != nil || afterRefusals["serial"] != before["serial"] {
+				t.Fatalf("refused surface evidence changed replayable state: %v %v", afterRefusals, err)
+			}
 			out := rpc(t, srv, version, BridgeSurfaceEvidenceMethod, map[string]any{"token": y["token"], "_meta": meta})
 			result, ok := out["result"].(map[string]any)
 			if !ok || result["isError"] == true {
@@ -129,14 +153,24 @@ func TestBridgeSurfaceRPCIsStatelessAndCannotSelectAnotherAgent(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			foundX, foundY := false, false
 			for _, row := range board["agents"].([]map[string]any) {
 				info := row["agent"].(*core.AgentInfo)
-				if row["id"] == "surface-x" && info.Surface != "" {
-					t.Fatal("another agent's token changed X's surface")
+				if row["id"] == x["agent_id"] {
+					foundX = true
+					if info.Surface != "" {
+						t.Fatal("another agent's token changed X's surface")
+					}
 				}
-				if row["id"] == "surface-y" && info.Surface != harnessenv.ChatGPTApp {
-					t.Fatal("token did not select only its own row")
+				if row["id"] == y["agent_id"] {
+					foundY = true
+					if info.Surface != harnessenv.ChatGPTApp {
+						t.Fatal("token did not select only its own row")
+					}
 				}
+			}
+			if !foundX || !foundY {
+				t.Fatalf("setup: authority check missed registered rows: X=%v Y=%v", foundX, foundY)
 			}
 			out = rpc(t, srv, version, "tools/call", map[string]any{
 				"name": BridgeSurfaceEvidenceMethod, "arguments": map[string]any{"token": y["token"]},
