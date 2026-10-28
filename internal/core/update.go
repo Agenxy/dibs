@@ -7,6 +7,9 @@ package core
 // Admission of new name rules stays separate from this historical fold.
 
 func (s *State) applyUpdate(l *Agent, op *Op) (Result, []Event, error) {
+	if op.BridgeSurfaceEvidence && !l.IdentityWouldChange(op.Agent) {
+		return Result{"ok": true, "changed": false}, nil, nil
+	}
 	// The size bounds for this op are in Admit, not here. A bound in the fold is
 	// retroactive, and this one was found by the test that asserts Apply folds
 	// whatever Admit rejects, once that test learned about update.

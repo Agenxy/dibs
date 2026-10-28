@@ -122,6 +122,9 @@ func (s *State) admitContact(op *Op) error {
 // hazard: lower MaxBodyBytes and an existing ledger stops replaying. They
 // predate this and are left rather than moved blind, but new rules go here.)
 func Admit(op *Op, lim Limits) error {
+	if err := admitBridgeSurface(op); err != nil {
+		return err
+	}
 	if err := admitMergeRequest(op, lim); err != nil {
 		return err
 	}

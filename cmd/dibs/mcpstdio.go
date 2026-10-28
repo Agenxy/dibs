@@ -188,6 +188,7 @@ func runBridge(_ []string) error {
 	// And, for a tree the daemon cannot read, the index it would have mined.
 	timing := defaultShipTiming()
 	onRegistered = shipIndexOnRegister(ctx, streamClient, url, secret, timing, onRegistered)
+	onRegistered = surfaceOnRegister(ctx, client, url, secret, &streams, onRegistered)
 	in := bufio.NewReaderSize(os.Stdin, 1<<20)
 	self, haveSelf := currentSelf()
 	// Anything a previous image was holding, re-established before the first

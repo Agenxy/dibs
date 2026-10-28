@@ -604,6 +604,8 @@ func (s *Server) dispatch(
 	sessionUI bool, sessionClient *clientInfoJSON,
 ) (any, *rpcError) {
 	switch req.Method {
+	case BridgeSurfaceEvidenceMethod:
+		return s.callBridgeSurfaceEvidence(ctx, req.Params), nil
 	case "server/discover": // 2026-07-28 primary discovery
 		return invitedDiscovery(ctx, cacheable(map[string]any{
 			"supportedVersions": supportedVersions,
@@ -1133,7 +1135,10 @@ func (s *Server) callTool(
 	if merr != nil {
 		return nil, &rpcError{Code: -32603, Message: merr.Error()}
 	}
-	return map[string]any{"content": []map[string]any{{"type": "text", "text": string(text)}}}, nil
+	return map[string]any{
+		"content": []map[string]any{{"type": "text", "text": string(text)}},
+		"_meta":   map[string]any{BridgeSurfaceEvidenceMetaKey: true},
+	}, nil
 }
 
 // putBlob decodes the inline base64 (if any) and stores the blob.

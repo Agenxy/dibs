@@ -696,7 +696,10 @@ func (s *State) Board() map[string]any {
 		// Only when known: an empty object on every agent is payload the reader
 		// and the model both pay for and neither uses.
 		if l.Agent != nil {
-			lm["agent"] = l.Agent
+			// The caller may serialize after the writer accepts another op.
+			// Identity fields are scalar; copy them before leaving that boundary.
+			identity := *l.Agent
+			lm["agent"] = &identity
 		}
 		agents = append(agents, lm)
 	}

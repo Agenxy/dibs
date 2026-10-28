@@ -100,6 +100,8 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 	}
 	// The op payload: the union of every tag that reached disk above.
 	wantOp := map[string]bool{
+		// Additive bridge evidence; every historical tag remains unchanged.
+		"bridge_surface_evidence": true,
 		// Additive page selection on activity_checkpoint; historical check_in
 		// keeps read-all semantics. Existing tag spellings remain frozen.
 		"mailbox_serials": true,
@@ -475,7 +477,8 @@ const (
 	// FYI receipts add announcement ids and a consumption reason on old carriers.
 	// Merge adds actor and typed effect tags; no historical tag renamed.
 	// Daily traffic adds mail_traffic_v1; no historical spelling changed.
-	frozenOpFingerprint       = "sha256:8890b69641d51444"
+	// Bridge evidence adds one flag; every historical spelling remains frozen.
+	frozenOpFingerprint       = "sha256:c1794fccafa02ae4"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`

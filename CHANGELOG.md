@@ -33,6 +33,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   or still pending probe remains unknown, rather than claiming the bridge runs
   outside its app. Model-supplied ChatGPT surface claims on `update` are ignored,
   matching registration; bridge-derived surface evidence takes precedence.
+  Updated daemons also accept a bridge's late surface through an optional
+  private RPC, repairing its own registered row without another model call or
+  changing mail, activity clocks, session bindings, or socket acceptance. Old
+  daemons reject that RPC; the bridge never falls back to an ordinary update.
 
 - A failed app-reconnect process inventory gets one immediate bounded retry
   within the same daemon-owned observation, so a single inventory timeout does

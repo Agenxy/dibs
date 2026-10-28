@@ -21,6 +21,7 @@ import (
 type bridgeRoute struct {
 	mu          sync.Mutex
 	dir, origin string
+	generation  uint64 // changes when address selection is explicitly refreshed
 }
 
 func newBridgeRoute() (*bridgeRoute, error) {
@@ -41,6 +42,7 @@ func (r *bridgeRoute) current(refresh bool) (string, string, error) {
 	defer r.mu.Unlock()
 	if selected.Dir != r.dir || refresh {
 		r.dir, r.origin = selected.Dir, boardOriginIn(selected.Dir)
+		r.generation++
 	}
 	return r.dir, r.origin, nil
 }

@@ -16,6 +16,7 @@ import (
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/engine"
+	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/mcp"
 	"github.com/agenxy/dibs/internal/paths"
 	"github.com/agenxy/dibs/internal/testexec"
@@ -25,16 +26,20 @@ import (
 // an engine setter. Registration must answer while it is held. Late evidence
 // repair is tested separately from the reply bound.
 func TestRegisterRepliesWhileAncestryIsHeld(t *testing.T) {
-	surfaceStartupContract(t, true)
+	surfaceStartupContract(t, true, false)
 }
 
 // Also used with an independently built old bridge to measure compatibility
 // across real stdio and HTTP, rather than assuming an unchanged schema works.
 func TestRegisterAcrossBridgeVersions(t *testing.T) {
-	surfaceStartupContract(t, false)
+	surfaceStartupContract(t, false, false)
 }
 
-func surfaceStartupContract(t *testing.T, held bool) {
+func TestLateAncestryRepairsSurfaceWithoutAnotherModelCall(t *testing.T) {
+	surfaceStartupContract(t, true, true)
+}
+
+func surfaceStartupContract(t *testing.T, held, repair bool) {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("DIBS_DIR", dir)
@@ -134,6 +139,15 @@ func surfaceStartupContract(t *testing.T, held bool) {
 	}
 	if err := f.Close(); err != nil {
 		t.Fatal(err)
+	}
+	if repair {
+		deadline := time.Now().Add(5 * time.Second)
+		for startupSurface(t, eng) != harnessenv.ChatGPTApp {
+			if time.Now().After(deadline) {
+				t.Fatal("late ancestry never corrected agent surface without another model request")
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
 	}
 }
 

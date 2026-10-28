@@ -803,6 +803,12 @@ func (e *Engine) execWithReceipt(
 			if err := e.prepareHumanRecipient(op, now); err != nil {
 				return nil, err
 			}
+			if op.BridgeSurfaceEvidence {
+				// Admit already restricted this to surface-only evidence, and
+				// prepareAliasUpdate preserved the description. Do not wake the
+				// row, invent model contact, confirm a socket offer, or read mail.
+				return e.applyAndLedger(op, now)
+			}
 			e.wakeIfSleeping(actor, now)
 		}
 	}

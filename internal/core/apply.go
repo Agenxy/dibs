@@ -327,8 +327,11 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 			m.RetainUntil = op.RetainUntil.UTC()
 		}
 	}
-	// Every ledgered actor op refreshes the durable coordination checkpoint.
-	l.LastCoordination = now
+	// Background bridge evidence is not a model call. Old ops have the flag
+	// unset and retain their durable coordination checkpoint semantics.
+	if !op.BridgeSurfaceEvidence {
+		l.LastCoordination = now
+	}
 	if op.Kind == OpSendMessage && op.Merge != nil {
 		if m := s.Messages[s.Serial+1]; m != nil && m.Merge != nil {
 			m.Merge.Fence = s.MergeFence(m.Merge.From, m.Merge.Into, m.Serial)
