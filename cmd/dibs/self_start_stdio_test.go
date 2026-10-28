@@ -121,13 +121,6 @@ func TestFirstBridgeRegisterOnlyInventoriesAncestry(t *testing.T) {
 		})
 	}
 	f := newEconomyFixtureAtExecutable(t, "71f97290-0001-4000-8000-111111111111", sockPath(t), wrap, child)
-	data, err := os.ReadFile(count)
-	if err != nil {
-		t.Fatalf("setup: actual bridge did not arm its inventory observer: %v", err)
-	}
-	if string(data) != "armed\nprobe\n" {
-		t.Fatalf("first register must inventory ancestry once and obtain its own stamp natively: %q", data)
-	}
 	select {
 	case observed := <-forwarded:
 		if observed.pid != f.diagnostics.cmd.Process.Pid || observed.start == "" {
@@ -139,5 +132,30 @@ func TestFirstBridgeRegisterOnlyInventoriesAncestry(t *testing.T) {
 		}
 	default:
 		t.Fatal("first actual register was not observed with process metadata")
+	}
+	// The ancestry inventory is asynchronous. Count only after EOF has ended
+	// the session and Wait has reaped the child, so a late probe cannot either
+	// hide a native-start fallback or make a correct bridge fail spuriously.
+	stdin, ok := f.in.(io.Closer)
+	if !ok {
+		t.Fatal("setup: actual bridge stdin cannot be closed")
+	}
+	if err := stdin.Close(); err != nil {
+		t.Fatal("setup: close actual bridge stdin:", err)
+	}
+	select {
+	case <-f.diagnostics.exited:
+		if f.diagnostics.exitErr != nil {
+			t.Fatalf("setup: actual bridge did not exit cleanly after EOF: %s", f.diagnostics.exitState())
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("setup: actual bridge did not exit after EOF: %s", f.diagnostics.report(nil))
+	}
+	data, err := os.ReadFile(count)
+	if err != nil {
+		t.Fatalf("setup: actual bridge did not arm its inventory observer: %v", err)
+	}
+	if string(data) != "armed\nprobe\n" {
+		t.Fatalf("first register must inventory ancestry once and obtain its own stamp natively: %q", data)
 	}
 }
