@@ -101,6 +101,12 @@ type Op struct {
 	// already on disk that cleared a description meant to clear it.
 	KeepDescription bool `json:"-"`
 
+	// BridgeSurfaceEvidence records asynchronous bridge routing evidence,
+	// not a model call. Its actor's coordination checkpoint must not advance.
+	// Old ops have this false and retain their historical fold unchanged.
+	BridgeSurfaceEvidence bool `json:"bridge_surface_evidence,omitempty"`
+	BridgeSurfaceTrusted  bool `json:"-"` // admitted only by the local bridge metadata path
+
 	// Actor resolution. Token authenticates (live path); Agent is set by Apply
 	// and used on replay (the engine blanks it on ingress: unforgeable).
 	Token   string `json:"-"`

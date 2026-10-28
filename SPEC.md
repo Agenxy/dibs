@@ -1273,6 +1273,22 @@ observation, sharing one inventory across the entire batch on each attempt.
 If both attempts fail, derived diagnostics show recovery pending until the next
 local Dibs call from any agent; shutdown cancels the retry and no timer is armed.
 
+**Late bridge surface evidence.** The bridge starts one bounded ancestry inventory
+with the session; a tool request waits at most 500ms for this evidence. Pending or
+failed discovery is unknown, never evidence that the bridge runs outside an app.
+Successful register/resume replies may advertise
+`com.dibs/bridge_surface_evidence: true` in result `_meta`. A capable local bridge
+can then report late evidence through the private `dibs/bridge-surface` RPC,
+using only its actual registration reply's agent token and its own surface in
+params `_meta`. This method is not a tool, takes no agent/session selector, and
+uses the ordinary local credential gate plus token authentication. It applies a
+surface-only update with an additive ledger flag, preserving identity, description,
+session, mail, coordination and derived contact/socket evidence. Repeating identical
+evidence changes no state. Historical updates without the flag retain their fold.
+An old daemon rejects the method, including after an address or image change;
+the bridge never falls back to an ordinary update. A negative result prevents
+another attempt until normal address re-resolution. There is no retry timer.
+
 All three delivery routes share the configured phase: default `all` admits
 authored notify; explicit `urgent` suppresses FYIs while admitting blocking
 mail, and `none` suppresses mail wakes. Generated updates never qualify solely
