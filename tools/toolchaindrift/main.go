@@ -76,7 +76,8 @@ func verdict(outdated map[string]outdatedTool, pinned []string, latestMise strin
 		}
 	}
 	if len(lines) == 0 {
-		return []string{"current: every mise.toml pin and the workflows' mise " + latestMise + " are upstream's latest"}, false
+		current := "current: every mise.toml pin and the workflows' mise " + latestMise + " are upstream's latest"
+		return []string{current}, false
 	}
 	return lines, true
 }

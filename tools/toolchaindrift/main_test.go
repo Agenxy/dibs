@@ -11,11 +11,12 @@ import (
 )
 
 func TestVerdictPassesOnlyWhenEverythingIsUpstreamLatest(t *testing.T) {
-	if lines, behind := verdict(nil, []string{"2026.10.23"}, "2026.10.23"); behind || !strings.HasPrefix(lines[0], "current:") {
+	lines, behind := verdict(nil, []string{"2026.10.23"}, "2026.10.23")
+	if behind || !strings.HasPrefix(lines[0], "current:") {
 		t.Fatalf("current toolchain reported as behind: %v", lines)
 	}
 	stale := map[string]outdatedTool{"go": {Current: "1.26.10", Latest: "1.27.3"}}
-	lines, behind := verdict(stale, []string{"2026.10.23"}, "2026.10.23")
+	lines, behind = verdict(stale, []string{"2026.10.23"}, "2026.10.23")
 	if !behind || !strings.Contains(lines[0], "go 1.26.10, upstream 1.27.3") {
 		t.Fatalf("a stale mise.toml pin passed: %v", lines)
 	}
