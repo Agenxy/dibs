@@ -11,25 +11,10 @@ import (
 	"github.com/agenxy/dibs/internal/core"
 )
 
-// A wake on Stop has to carry the field that actually continues the turn.
-//
-// This is the product's one promise: reaching an agent that has stopped, so it
-// can read its own mail without its operator noticing first. The delivery was
-// sent as `hookSpecificOutput.additionalContext` alone, on the strength of a
-// comment saying Claude Code's documentation described that as keeping the
-// conversation going. The documentation says the opposite, in a table:
-// `decision: "block"` "Prevents Claude from stopping; the conversation
-// continues", and additionalContext "does not by itself block the stop".
-//
-// So every wake this path decided to send landed nowhere, for every Claude
-// Code agent on every board. Measured on this machine: mail arrived at
-// 21:10:25 while the agent was idle, its Stop hook fired twice in the minutes
-// that followed, the daemon returned the digest both times, and the agent
-// found out an hour later because its operator told it.
-//
-// Nothing in the daemon could see it. The digest was computed, the freshness
-// was spent, the systemMessage reached the human, and the one key that makes a
-// harness act was missing: a wake that reports success while doing nothing.
+// A Stop wake carries decision:block and the digest in reason. This originally
+// guarded a missing continuation field; it must not pin the later duplicate
+// additionalContext carrier. Current contract, re-read 2026-10-29:
+// https://code.claude.com/docs/en/hooks#stop-decision-control
 func TestAWakeOnStopCarriesTheFieldThatContinuesTheTurn(t *testing.T) {
 	st := core.NewState("test", core.DefaultLimits())
 	e := New(st, &memLedger{}, deadProber{})
@@ -60,19 +45,12 @@ func TestAWakeOnStopCarriesTheFieldThatContinuesTheTurn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hook poll: %v", err)
 	}
-	// The digest itself: what the agent reads.
-	hso, _ := got["hookSpecificOutput"].(map[string]any)
-	if hso == nil {
-		t.Fatalf("no hookSpecificOutput at all; got %v", got)
+	if _, present := got["hookSpecificOutput"]; present {
+		t.Error("Stop repeats the reason digest through a second carrier")
 	}
-	ctxText, _ := hso["additionalContext"].(string)
-	if !strings.Contains(ctxText, "a peer needs an answer") {
-		t.Fatalf("the digest does not mention the unread mail: %q", ctxText)
-	}
-	// And the field without which the turn simply ends.
 	if got["decision"] != "block" {
-		t.Errorf(`decision = %v, want "block". additionalContext alone does not `+
-			`continue a turn: the mail is computed, the freshness is spent, and the `+
+		t.Errorf(`decision = %v, want "block". Without a continuation carrier `+
+			`the mail is computed, the freshness is spent, and the `+
 			`agent never reads a word of it`, got["decision"])
 	}
 	reason, _ := got["reason"].(string)

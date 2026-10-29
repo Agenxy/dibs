@@ -52,6 +52,7 @@ func TestGuardsEnterHomebrewLoaderAndStepRunner(t *testing.T) {
 		{"service-call", `run "/usr/bin/xattr"`, `run "{{staged_path}}/dibs"`, "unexpected or fatal"},
 		{"fatal-xattr", "must_succeed: false", "must_succeed: true", "unexpected or fatal"},
 		{"missing-daemon", `  binary "dibd"`, "", "expected one dibd"},
+		{"missing-helper", `    binary "dibs-presence"`, "", "macOS app or presence helper missing"},
 		{"wrong-linux-advice", "notify-send; libnotify", "Touch ID", "linux caveats omit"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

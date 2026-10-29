@@ -59,6 +59,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   A preserved unit with a missing executable prints its repair, and doctor
   reports it as a problem.
 
+- Claude Code Stop and SubagentStop hooks deliver each mail digest once, in
+  the blocking reason, instead of repeating it as additional context. Codex's
+  event-specific filtering and non-Stop hook context are unchanged.
+
 - Codex plugin receipts recognize canonical spellings of the same installed
   directory, including macOS `/var` and `/private/var`, while still refusing
   a different directory, plugin identity, version or payload.

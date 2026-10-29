@@ -5,6 +5,7 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -200,7 +201,7 @@ func TestNothingIsSaidToTheHumanWhenTheyType(t *testing.T) {
 	if _, ok := ended["systemMessage"]; ok {
 		t.Error("agent mail was handed to the human at Stop")
 	}
-	if ended["decision"] != "block" || ended["hookSpecificOutput"] == nil {
+	if ended["decision"] != "block" || !strings.Contains(fmt.Sprint(ended["reason"]), "anything") {
 		t.Error("passive recovery spent the subsequent fresh Stop delivery")
 	}
 }
