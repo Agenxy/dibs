@@ -83,8 +83,8 @@ func (e *Engine) notifyAppOpenSender(l *core.Agent, m *core.Message, reason stri
 		}
 	}
 	n, _ := e.contactNotice(c)
-	hint := n.Contact.OpenHint + "; original session " + threadIDOf(l)
-	if e.ownsHost(l) && surfaceOf(l) == harnessenv.ChatGPTApp {
+	hint := n.Contact.OpenHint
+	if e.ownsHost(l) && surfaceOf(l) == harnessenv.ChatGPTApp && threadIDOf(l) != "" {
 		hint = "open codex://threads/" + threadIDOf(l)
 	}
 	text := fmt.Sprintf("Message %d remains queued for %s; %s and no started turn or read mail is confirmed. "+
