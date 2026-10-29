@@ -27,6 +27,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   access without the local secret or another agent's token. Refusals exit
   nonzero with the server's corrective hint; sends are never retried automatically.
 
+### Changed
+
+- Release binaries are built with Go 1.27.3, and source builds now need it
+  (`go.mod` still declares `go 1.26.0`, so language semantics are unchanged).
+  The release toolchain moves to its current upstream releases: GoReleaser
+  2.19.0, cosign 3.1.4 and syft 1.55.0.
+
 ### Fixed
 
 - Codex plugin receipts recognize canonical spellings of the same installed
