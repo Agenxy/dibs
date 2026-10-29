@@ -31,10 +31,22 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Release binaries are built with Go 1.27.3, and source builds now need it
   (`go.mod` still declares `go 1.26.0`, so language semantics are unchanged).
-  The release toolchain moves to cosign 3.1.4 and syft 1.55.0. GoReleaser
-  moves with the cask migration that its current release requires.
+  The release toolchain moves to its current upstream releases: GoReleaser
+  2.19.0, cosign 3.1.4 and syft 1.55.0.
 
 ### Fixed
+
+- Homebrew 7 casks select the app and Touch ID helper only on macOS, use
+  declarative, non-fatal Mac quarantine steps, and print Linux service and
+  notification advice on Linux. Service registration is an explicit
+  `dibs configure --service` from the user's terminal, avoiding Homebrew's
+  temporary sandbox home. Existing services update with `brew upgrade dibs`
+  followed by `dibs upgrade`: recognized Linux units are repaired before
+  restart, while tuned units needing repair are preserved and explained.
+  Doctor reports incomplete package service setup even before the daemon's
+  first start; manual setups get a warning with configure-or-start advice.
+  The archive gate checks the generated cask through Homebrew's real loader
+  and records its steps without executing them.
 
 - Linux service configuration is repeatable across package reinstalls. Units
   use a stable package-manager binary link and defined executable search paths,

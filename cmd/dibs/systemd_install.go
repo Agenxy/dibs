@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 
@@ -159,8 +160,7 @@ func installSystemdUnit(daemon, dir string) error {
 		return fmt.Errorf("reading %s before configure: %w; check its permissions", target, err)
 	}
 	exists := err == nil
-	managed := generatedSystemdUnit(string(old)) && systemdDataDir(string(old)) == filepath.Clean(dir)
-	if exists && !replaceUnits && !managed && !legacyBrewSystemdUnit(target, string(old), dir, daemon) {
+	if exists && !replaceUnits && !refreshableSystemdUnit(target, string(old), dir, daemon) {
 		preserveSystemdUnit(target)
 		return nil
 	}
@@ -239,4 +239,52 @@ func writeGeneratedSystemdUnit(target, body string, old []byte, exists bool) err
 	}
 	// #nosec G703 -- same configured directory, atomic managed-unit replacement
 	return os.Rename(file.Name(), target)
+}
+
+// Upgrade uses the same receipt and frozen-template evidence as configure. It
+// never uses replaceUnits: an explicit cutover is not permission to discard a
+// local edit. Plan this while the old daemon is still serving.
+func (p *plan) prepareSystemdUpgrade() error {
+	if err := refuseIfLegacySystemdUnitExists(filepath.Dir(p.unit)); err != nil {
+		return fmt.Errorf("the service cannot be refreshed, so nothing has been stopped: %w", err)
+	}
+	old, err := os.ReadFile(p.unit) // #nosec G304 G703 -- fixed user unit selected for this board
+	if err != nil {
+		return fmt.Errorf("reading service before upgrade: %w", err)
+	}
+	if !refreshableSystemdUnit(p.unit, string(old), p.dir, p.installed) {
+		if p.unitWrong || p.moveDir {
+			return fmt.Errorf("preserved %s: it has local changes or names another board; nothing has been stopped. "+
+				"Edit ExecStart to the stable installed dibd path and selected board, then run `dibs upgrade`", p.unit)
+		}
+		return nil
+	}
+	stable, err := stableSystemdDaemon(p.installed)
+	if err != nil {
+		return err
+	}
+	dir := p.dir
+	if p.moveDir {
+		dir = adoptedName(p.inherited)
+	}
+	rest := systemdBody(stable, dir, strings.Join(systemdSearchDirs(stable), ":"))
+	unit := fmt.Sprintf("%s%x\n%s", systemdReceipt, sha256.Sum256([]byte(rest)), rest)
+	p.systemdBefore, p.systemdAfter = old, nil
+	if unit != string(old) {
+		p.systemdAfter = []byte(unit)
+		p.unitWrong = true
+	}
+	return nil
+}
+
+func refreshableSystemdUnit(target, body, dir, daemon string) bool {
+	return (generatedSystemdUnit(body) && systemdDataDir(body) == filepath.Clean(dir)) ||
+		legacyBrewSystemdUnit(target, body, dir, daemon)
+}
+
+func (p *plan) prepareSystemdUpgradeIfNeeded() error {
+	if runtime.GOOS != "linux" || p.unit == "" {
+		return nil
+	}
+	return p.prepareSystemdUpgrade()
 }

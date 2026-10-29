@@ -24,9 +24,8 @@ bun = "1.4.4"
 # them, and then died at the SBOM step with "No version is set for shim: syft".
 # A release chain that has never been run is a claim, not a guarantee, and the
 # README advertises reproducible builds + cosign + SBOM as facts.
-# Held at 2.17.1 only until the cask flight-step migration lands: 2.19 rejects
-# homebrew_casks.hooks.post.install, and that block is replaced, not renamed.
-goreleaser = "2.17.1"
+# Declarative cask steps support the current GoReleaser schema.
+goreleaser = "2.19.0"
 syft = "1.55.0"
 # Cosign 3, matching the --bundle signing config in .goreleaser.yml.
 #

@@ -170,11 +170,7 @@ func TestLinuxConfigureServiceMigratesOnlyExactLegacyTemplate(t *testing.T) {
 				}
 				// Frozen v0.0.16 bytes, including the brew shim PATH. Do not produce
 				// these with the current generator: that would test only itself.
-				legacy := "[Unit]\nDescription=Dibs: coordination board for AI agents\n" +
-					"Documentation=https://github.com/agenxy/dibs\nAfter=network.target\n\n" +
-					"[Service]\nType=simple\nEnvironment=\"PATH=" + oldPath + "\"\n" +
-					"ExecStart=\"" + legacyDaemon + "\" -dir \"" + f.dir + "\"\n" +
-					"Restart=on-failure\nRestartSec=2\n\n[Install]\nWantedBy=default.target\n"
+				legacy := frozenLegacySystemdFixture(legacyDaemon, f.dir, oldPath)
 				if tuned {
 					legacy += "\n[Service]\nNice=7\n"
 				}
@@ -350,4 +346,14 @@ func TestSystemdConfigureProcess(t *testing.T) {
 	os.Args = append([]string{"dibs"}, os.Args[separator+1:]...)
 	main()
 	os.Exit(0)
+}
+
+// Frozen published v0.0.16 bytes. Shared by the configure and upgrade fixtures;
+// do not replace this with the current systemdBody generator.
+func frozenLegacySystemdFixture(daemon, dir, searchPath string) string {
+	return "[Unit]\nDescription=Dibs: coordination board for AI agents\n" +
+		"Documentation=https://github.com/agenxy/dibs\nAfter=network.target\n\n" +
+		"[Service]\nType=simple\nEnvironment=\"PATH=" + searchPath + "\"\n" +
+		"ExecStart=\"" + daemon + "\" -dir \"" + dir + "\"\n" +
+		"Restart=on-failure\nRestartSec=2\n\n[Install]\nWantedBy=default.target\n"
 }

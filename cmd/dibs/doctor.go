@@ -184,6 +184,7 @@ func (d *diagnosis) run(verbose bool) error {
 	secret, err := os.ReadFile(secretPath) // #nosec G304 -- path derived from config, not input
 	switch {
 	case err != nil:
+		checkServiceBinary(ok, warn, bad, false)
 		bad("no local secret at "+secretPath,
 			"the daemon has never run here. Start it: `dibd`")
 		d.prose("\nnothing else can be checked until the daemon has started.")
@@ -200,6 +201,7 @@ func (d *diagnosis) run(verbose bool) error {
 	req.Header.Set("X-Dibs-Local", sec)
 	resp, err := client.Do(req)
 	if err != nil {
+		checkServiceBinary(ok, warn, bad, false)
 		bad("daemon unreachable at "+addr()+" ("+err.Error()+")",
 			"start it with `dibd`, or set DIBS_ADDR if it listens elsewhere")
 		// The LOCAL checks still run, and the ledger one most of all.
@@ -222,10 +224,10 @@ func (d *diagnosis) run(verbose bool) error {
 		checkIncomingFirewall(ok, bad)
 		checkServiceReturnsAfterAReboot(ok, warn)
 		reportUpdate(ok, warn)
-		checkServiceBinary(ok, warn, bad)
 		return earlyDoctorResult(d.probs, d.warns)
 	}
 	defer func() { _ = resp.Body.Close() }()
+	checkServiceBinary(ok, warn, bad, resp.StatusCode == http.StatusOK)
 	if resp.StatusCode != http.StatusOK {
 		problem, hint := daemonRefusal(resp)
 		bad(problem, hint)
@@ -268,7 +270,6 @@ func (d *diagnosis) run(verbose bool) error {
 	checkIncomingFirewall(ok, bad)
 	checkServiceReturnsAfterAReboot(ok, warn)
 	reportUpdate(ok, warn)
-	checkServiceBinary(ok, warn, bad)
 	if b, err := boardSnapshot(); err == nil {
 		checkCoordinatorIsReachable(b, ok, warn)
 		checkContactDeliveryFailures(b, warn)
