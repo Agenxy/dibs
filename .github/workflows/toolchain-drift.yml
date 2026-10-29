@@ -25,13 +25,7 @@ jobs:
         with:
           version: 2026.10.23
           experimental: true
-      - name: every mise.toml pin is the latest upstream release
-        run: mise outdated --bump --json | tee outdated.json && jq -e 'length == 0' outdated.json
-      - name: the mise version workflows install is the latest release
+      - name: every mise.toml pin and the workflows' mise are upstream's latest
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          latest=$(gh release view -R jdx/mise --json tagName -q .tagName)
-          pinned=$(grep -ho 'version: 20[0-9.]*' .github/workflows/*.yml | sort -u)
-          echo "latest $latest; pinned: $pinned"
-          test "$pinned" = "version: ${latest#v}"
+        run: go run ./tools/toolchaindrift

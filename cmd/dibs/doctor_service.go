@@ -25,11 +25,11 @@ func (d *diagnosis) serviceDirectoryNote(selected paths.DirectorySelection) {
 	}
 }
 
-func checkServiceBinary(ok reportFn, warn, bad fixFn) {
-	checkAppService(ok, warn, bad)
+func checkServiceBinary(ok reportFn, warn, bad fixFn, serving bool) {
+	checkAppService(ok, warn, bad, serving)
 	unit, pinned := unitDaemon()
 	if unit == "" || pinned == "" {
-		checkMissingService(bad)
+		reportMissingService("Dibs is installed but no service is registered", serving, warn, bad)
 		return
 	}
 	want, err := daemonPath()
@@ -86,12 +86,32 @@ func systemdDoctorFix(unit, want string) string {
 		"or delete " + unit + " and run `dibs configure --service`; dibs upgrade preserves it"
 }
 
-func checkMissingService(bad fixFn) {
-	if _, err := daemonPath(); err == nil && (runtime.GOOS == "darwin" || runtime.GOOS == "linux") {
-		fix := "run `dibs configure --service` from your terminal"
-		if runtime.GOOS == "linux" {
-			fix += "; then run `systemctl --user enable --now dibs`"
-		}
-		bad("Dibs is installed but no service is registered", fix)
+// Missing supervision is fatal to a package's promised setup only when its
+// daemon is down. A manual/tutorial daemon is still a supported way to run.
+func reportMissingService(what string, serving bool, warn, bad fixFn) {
+	installed, err := daemonPath()
+	if err != nil || (runtime.GOOS != "darwin" && runtime.GOOS != "linux") {
+		return
 	}
+	fix := "run `dibs configure --service` from your terminal"
+	if runtime.GOOS == "linux" {
+		fix += "; then run `systemctl --user enable --now dibs`"
+	}
+	report := warn
+	switch {
+	case serving:
+		fix += ". This daemon has no registered service to bring it back after logout or reboot"
+	case homebrewDaemon(installed):
+		report = bad
+	default:
+		fix += ", or start dibd from this terminal"
+	}
+	report(what, fix)
+}
+
+func homebrewDaemon(installed string) bool {
+	if resolved, err := filepath.EvalSymlinks(installed); err == nil {
+		installed = resolved
+	}
+	return caskroomPrefix(installed) != ""
 }
