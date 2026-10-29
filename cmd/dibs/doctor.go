@@ -222,7 +222,7 @@ func (d *diagnosis) run(verbose bool) error {
 		checkIncomingFirewall(ok, bad)
 		checkServiceReturnsAfterAReboot(ok, warn)
 		reportUpdate(ok, warn)
-		checkServiceBinary(ok, warn)
+		checkServiceBinary(ok, warn, bad)
 		return earlyDoctorResult(d.probs, d.warns)
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -268,7 +268,7 @@ func (d *diagnosis) run(verbose bool) error {
 	checkIncomingFirewall(ok, bad)
 	checkServiceReturnsAfterAReboot(ok, warn)
 	reportUpdate(ok, warn)
-	checkServiceBinary(ok, warn)
+	checkServiceBinary(ok, warn, bad)
 	if b, err := boardSnapshot(); err == nil {
 		checkCoordinatorIsReachable(b, ok, warn)
 		checkContactDeliveryFailures(b, warn)

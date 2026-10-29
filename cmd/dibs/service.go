@@ -59,6 +59,11 @@ func writeServiceUnit() error {
 			return err
 		}
 	}
+	if runtime.GOOS == "linux" {
+		// The Linux installer decides whether an existing unit is managed or
+		// tuned before creating any board directory.
+		return writeSystemdUnit(daemon, dir)
+	}
 
 	// The data directory is created HERE, before the unit that names it.
 	//
@@ -100,8 +105,6 @@ func writeServiceUnit() error {
 	switch runtime.GOOS {
 	case "darwin":
 		return writeLaunchAgent(daemon, dir)
-	case "linux":
-		return writeSystemdUnit(daemon, dir)
 	default:
 		return fmt.Errorf("no service unit for %s: run `%s` under whatever supervises "+
 			"long-lived processes on this system", runtime.GOOS, daemon)
@@ -375,32 +378,7 @@ func refuseIfLegacySystemdUnitExists(unitDir string) error {
 }
 
 func writeSystemdUnit(daemon, dir string) error {
-	unitDir := filepath.Join(configHome(), "systemd", "user")
-	if err := refuseIfLegacySystemdUnitExists(unitDir); err != nil {
-		return err
-	}
-	target := filepath.Join(unitDir, "dibs.service")
-	unit := `[Unit]
-Description=Dibs: coordination board for AI agents
-Documentation=https://github.com/agenxy/dibs
-After=network.target
-
-[Service]
-Type=simple
-` + systemdEnvironment(unitEnv(nil)) + `ExecStart=` + systemdArg(daemon) + ` -dir ` + systemdArg(dir) + `
-Restart=on-failure
-RestartSec=2
-
-[Install]
-WantedBy=default.target
-`
-	if err := writeUnit(target, unit); err != nil {
-		return err
-	}
-	fmt.Printf("wrote %s\n\nEnable and start it:\n  systemctl --user enable --now dibs\n\n"+
-		"Logs: journalctl --user -u dibs -f\n", target)
-	sayWhenTheUnitComesBack()
-	return nil
+	return installSystemdUnit(daemon, dir)
 }
 
 // sayWhenTheUnitComesBack is printed by the command that installs the unit,

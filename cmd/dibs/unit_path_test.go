@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// A unit carries the installing shell's PATH, so a wake command named the
+// Legacy launchd and bridge units carry the installing shell's PATH, so a wake command named the
 // way the documentation names it (`claude`, `codex`) resolves under the
 // supervisor as it does in the terminal.
 //
@@ -50,9 +50,16 @@ func TestUnitsCarryTheInstallingPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(unit), "Environment=PATH="+path) &&
-		!strings.Contains(string(unit), `Environment="PATH=`+path+`"`) {
-		t.Errorf("the daemon's systemd unit does not carry PATH:\n%s", unit)
+	// Linux package postflights run with brew's private shim PATH. Persisting
+	// that broke service execution after installation, so the Linux daemon has
+	// defined user/package-manager paths rather than inheriting this shell.
+	for _, want := range []string{filepath.Join(home, ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin"} {
+		if !strings.Contains(string(unit), want) {
+			t.Errorf("the daemon's systemd unit omits harness directory %q:\n%s", want, unit)
+		}
+	}
+	if strings.Contains(string(unit), "/Users/me/.local/bin") {
+		t.Errorf("systemd unit persisted the caller's PATH:\n%s", unit)
 	}
 
 	env := map[string]string{"DIBS_ADDR": "https://hub:4777", "DIBS_DIR": dir}
