@@ -62,6 +62,9 @@ func TestCodexPluginCommand(t *testing.T) {
 				if !strings.Contains(string(out), "build-0.0.14-tools-") || !strings.Contains(string(out), "running chats retain their tool list") && !strings.Contains(string(out), "Running chats retain their existing tool list") {
 					t.Fatalf("missing version/boundary: %s", out)
 				}
+				if mode == "ok" && !strings.Contains(string(out), "dibs codex-hooks --trust") {
+					t.Fatalf("verified install omitted the hook trust corrective: %s", out)
+				}
 			} else if err == nil {
 				t.Fatal("unverified installer failure reported success")
 			}

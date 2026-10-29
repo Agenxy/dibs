@@ -6,6 +6,7 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"io/fs"
 	"os"
@@ -15,6 +16,10 @@ import (
 )
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "app-server" {
+		serveHooks()
+		return
+	}
 	if len(os.Args) == 2 && os.Args[1] == "--version" {
 		return
 	}
@@ -97,4 +102,31 @@ func main() {
 	}); err != nil {
 		panic(err)
 	}
+}
+
+func serveHooks() {
+	scan := bufio.NewScanner(os.Stdin)
+	for scan.Scan() {
+		var req struct { ID *int `json:"id"`; Method string `json:"method"` }
+		if err := json.Unmarshal(scan.Bytes(), &req); err != nil { panic(err) }
+		if req.ID == nil { continue }
+		var result any = map[string]any{}
+		if req.Method == "hooks/list" {
+			home := os.Getenv("CODEX_HOME")
+			if err := os.WriteFile(filepath.Join(home, "hooks-listed"), []byte("listed"), 0o600); err != nil { panic(err) }
+			status := os.Getenv("DIBS_HOOK_FIXTURE_STATUS")
+			if status == "" { status = "modified" }
+			hooks := []map[string]any{}
+			if status != "missing" {
+				for _, event := range []string{"sessionStart", "stop", "subagentStop"} {
+					hooks = append(hooks, map[string]any{"key":"dibs@dibs:hooks.json:"+event+":0:0", "eventName":event,
+						"handlerType":"mcpTool", "server":"dibs", "tool":"hook_poll", "pluginId":"dibs@dibs",
+						"currentHash":"sha256:fixture", "trustStatus":status, "enabled":true})
+				}
+			}
+			result = map[string]any{"data": []map[string]any{{"hooks":hooks}}}
+		}
+		if err := json.NewEncoder(os.Stdout).Encode(map[string]any{"jsonrpc":"2.0", "id":*req.ID, "result":result}); err != nil { panic(err) }
+	}
+	if err := scan.Err(); err != nil { panic(err) }
 }
