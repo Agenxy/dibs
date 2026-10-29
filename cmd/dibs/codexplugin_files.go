@@ -153,7 +153,7 @@ func (p *codexPluginPlan) verifyInstallReceipt(b []byte) error {
 		return fmt.Errorf("codex installer returned no verifiable JSON receipt: %w", err)
 	}
 	wantRoot := filepath.Join(p.cacheBase(), p.version)
-	if result.PluginID != "dibs@dibs" || result.Version != p.version || filepath.Clean(result.InstalledPath) != wantRoot {
+	if result.PluginID != "dibs@dibs" || result.Version != p.version || !samePluginDirectory(result.InstalledPath, wantRoot) {
 		return errors.New("codex installer returned a different plugin identity, version or root")
 	}
 	if err := p.verifyFiles(wantRoot); err != nil {

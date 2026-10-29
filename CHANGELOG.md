@@ -29,6 +29,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Codex plugin receipts recognize canonical spellings of the same installed
+  directory, including macOS `/var` and `/private/var`, while still refusing
+  a different directory, plugin identity, version or payload.
+
 - Codex plugin installation and upgrade detect a persisted Dibs marketplace
   source pointing elsewhere before changing the plugin. Doctor names the same
   conflict even when the cached build still verifies. The source is preserved;
