@@ -50,7 +50,7 @@ ChatGPT app. Trusts nothing that is not a Dibs hook.
 
 // chatGPTCodex is where the desktop app keeps its own Codex, which is often
 // newer than the one on PATH and is the one its sessions run.
-const chatGPTCodex = "/Applications/ChatGPT.app/Contents/Resources/codex"
+const chatGPTCodex = "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex"
 
 func codexHooksCmd(args []string) error {
 	trust := false
@@ -133,8 +133,14 @@ func codexHooks(out io.Writer, trust bool) error {
 // codexBinary prefers the ChatGPT app's Codex when it exists: that is the one
 // the desktop app's sessions run, and the one on PATH is often an older shim.
 func codexBinary() string {
-	if st, err := os.Stat(chatGPTCodex); err == nil && !st.IsDir() {
-		return chatGPTCodex
+	for _, path := range []string{
+		chatGPTCodex,
+		"/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex",
+		"/Applications/ChatGPT.app/Contents/Resources/codex",
+	} {
+		if st, err := os.Stat(path); err == nil && st.Mode().IsRegular() && st.Mode().Perm()&0o111 != 0 {
+			return path
+		}
 	}
 	return sibling.Find("codex")
 }
@@ -157,7 +163,7 @@ func listHooks(out io.Writer, hooks []codexHook) {
 func sortHooks(hooks []codexHook) (pending, disabled []codexHook) {
 	for _, h := range hooks {
 		switch {
-		case h.TrustStatus != "trusted":
+		case !h.approved():
 			pending = append(pending, h)
 		case h.off():
 			disabled = append(disabled, h)
@@ -177,8 +183,7 @@ func reportTrusted(out io.Writer, hooks, disabled []codexHook) {
 				live++
 			}
 		}
-		_, _ = fmt.Fprintf(out, "all %d trusted and on: Codex runs them, and mail reaches its "+
-			"agents at their turn boundaries\n", live)
+		_, _ = fmt.Fprintf(out, "all %d approved and on: Codex reports the Dibs hooks enabled\n", live)
 		return
 	}
 	names := make([]string, 0, len(disabled))
@@ -219,8 +224,12 @@ type codexHook struct {
 // same rule the rest of this codebase applies to an absent fact.
 func (h codexHook) off() bool { return h.Enabled != nil && !*h.Enabled }
 
-// live reports a hook that will actually run: trusted, and not switched off.
-func (h codexHook) live() bool { return h.TrustStatus == "trusted" && !h.off() }
+// live reports Codex's approval and on/off switch, not an execution receipt.
+func (h codexHook) live() bool { return h.approved() && !h.off() }
+
+// Codex's discovery/execution gate accepts both reviewed and managed hooks.
+// Unknown statuses never count as approval. See upstream hooks discovery.rs.
+func (h codexHook) approved() bool { return h.TrustStatus == "trusted" || h.TrustStatus == "managed" }
 
 // isDibsHook is the one shape `--trust` will vouch for: an MCP tool hook
 // calling hook_poll on the dibs server. That is what the plugin ships and
@@ -249,7 +258,14 @@ type appServer struct {
 }
 
 func startAppServer(ctx context.Context, bin string) (*appServer, error) {
-	cmd := exec.CommandContext(ctx, bin, "app-server") // #nosec G204 -- the operator's own codex
+	return startAppServerForHome(ctx, bin, "")
+}
+
+func startAppServerForHome(ctx context.Context, bin, home string) (*appServer, error) {
+	cmd := exec.CommandContext(ctx, bin, "app-server") // #nosec G204 G702 -- selected Codex executable, explicit argv
+	if home != "" {
+		cmd.Env = append(os.Environ(), "CODEX_HOME="+home)
+	}
 	in, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err

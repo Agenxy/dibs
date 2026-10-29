@@ -46,7 +46,7 @@ func TestDoctorInstalledCodexHookTrustIsAProblemThroughCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, mode := range []string{"untrusted", "modified", "trusted", "disabled-plugin"} {
+	for _, mode := range []string{"untrusted", "modified", "trusted", "managed", "disabled-plugin"} {
 		t.Run(mode, func(t *testing.T) {
 			home := t.TempDir()
 			ch := filepath.Join(home, ".codex")
@@ -89,6 +89,15 @@ func TestDoctorInstalledCodexHookTrustIsAProblemThroughCommand(t *testing.T) {
 				}
 			}
 			want := mode == "untrusted" || mode == "modified"
+			problems := 0
+			for _, check := range report.Checks {
+				if check.Level == "problem" {
+					problems++
+				}
+			}
+			if report.Problems != problems || report.Healthy != (problems == 0) {
+				t.Error("doctor summary disagrees with its problem checks")
+			}
 			if found != want {
 				t.Errorf("hook refusal found=%v, want %v; checks=%+v", found, want, report.Checks)
 			}

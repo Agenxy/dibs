@@ -106,7 +106,7 @@ is not a mystery):
                            something to rewrite
 
 setup:
-  dibs codex-plugin install  install this build's versioned Codex plugin;
+  dibs codex-plugin install  install this binary's content-versioned Codex plugin;
                            new chats can load current tools, while running
                            chats keep their list until a genuine app refresh
   dibs configure          first-run wizard: picks secure defaults for you

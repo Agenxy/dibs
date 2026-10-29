@@ -128,11 +128,21 @@ func TestCodexPluginCommand(t *testing.T) {
 			}
 			b, err = os.ReadFile(filepath.Join(root, ".mcp.json"))
 			var servers struct {
-				Servers map[string]struct{ Command string } `json:"mcpServers"`
+				Servers map[string]struct {
+					Command string
+					Env     map[string]string
+				} `json:"mcpServers"`
 			}
-			if err != nil || json.Unmarshal(b, &servers) != nil || servers.Servers["dibs"].Command != dibs ||
-				!strings.Contains(string(b), "2026-07-28") {
+			if err != nil || json.Unmarshal(b, &servers) != nil ||
+				servers.Servers["dibs"].Env["CODEX_MCP_PROTOCOL_VERSION"] != "2026-07-28" {
 				t.Fatal("installed plugin does not launch this build with MCP 2026")
+			}
+			// Parent canonicalisation may turn /var into /private/var. Require
+			// this exact executable's file identity rather than its spelling.
+			got, gotErr := os.Stat(servers.Servers["dibs"].Command)
+			want, wantErr := os.Stat(dibs)
+			if gotErr != nil || wantErr != nil || !os.SameFile(got, want) {
+				t.Fatalf("plugin selected another executable: %q %v %v", servers.Servers["dibs"].Command, gotErr, wantErr)
 			}
 			if err := os.Remove(filepath.Join(home, "installer-called")); err != nil {
 				t.Fatal(err)

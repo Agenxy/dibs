@@ -97,7 +97,8 @@ func (p *codexPluginPlan) install(out io.Writer) (retErr error) {
 	if p.current() {
 		// #nosec G703 -- verified repair clears own failure marker
 		_ = os.Remove(filepath.Join(p.home, "dibs-marketplace", "refresh-failed"))
-		_, err := fmt.Fprintf(out, "Codex plugin already verified at %s; running chats retain their tool list.\n", p.version)
+		_, err := fmt.Fprintf(out, "Codex plugin already verified at %s; files unchanged. "+
+			"Running chats retain their tool list. Hook approval is separate (`dibs codex-hooks`).\n", p.version)
 		return err
 	}
 	parent := filepath.Dir(p.source)
@@ -139,7 +140,8 @@ func (p *codexPluginPlan) install(out io.Writer) (retErr error) {
 	}
 	_ = os.Remove(filepath.Join(parent, "refresh-failed")) // #nosec G703 -- own diagnostic marker
 	_, _ = fmt.Fprintf(out, "Codex plugin verified at %s. New chats/genuine app refreshes can load it; "+
-		"running chats retain their tool list. Check dibs codex-hooks for hook trust.\n", p.version)
+		"running chats retain their tool list. Hook approval is separate.\n", p.version)
+	p.reportHookApproval(out)
 	return nil
 }
 

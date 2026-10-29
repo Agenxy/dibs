@@ -22,15 +22,17 @@ import (
 const codexPluginHelp = `dibs codex-plugin install [--dry-run] [--codex PATH]
 
 Installs this binary's embedded Codex plugin through Codex's plugin installer.
-Its build and tool fingerprint select a new version root, preserving dibs@dibs
-and the configured marketplace source. No network fetch or app call is needed.
+Its contents and tool fingerprint select the version root, preserving dibs@dibs
+and the configured marketplace source. No network fetch or running app is needed.
 An explicit source for another root is preserved and refused: Codex would
 replace the installed plugin from that source on its next sync. The error
 prints how to remove that source if you choose this binary's plugin instead.
 
 New chats and genuine app refreshes can load the changed definition. Running
 chats keep their existing tool list until they end or the app refreshes it.
-Hook trust is separate: check dibs codex-hooks after installation.
+Unchanged contents keep their approved bytes and skip reinstallation. Genuine
+content changes require a person's review; the verified receipt prints the
+dibs codex-hooks --trust corrective when Codex reports untrusted/modified hooks.
 
   --dry-run     print the version and installer command; change nothing
   --codex PATH  use this Codex executable instead of the discovered one
@@ -43,13 +45,6 @@ const codexPluginRepair = "dibs codex-plugin install"
 var codexPluginExecutable = discoverCodexPluginExecutable
 
 func discoverCodexPluginExecutable() string {
-	// Measured installed app layout, 2026-10-10. The older hooks helper's
-	// resource path no longer exists in this app; retain it as a fallback.
-	path := "/Applications/ChatGPT.app/Contents/Resources/codex-cli/" +
-		"CodexCLI.app/Contents/MacOS/codex"
-	if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() && info.Mode().Perm()&0o111 != 0 {
-		return path
-	}
 	return codexBinary()
 }
 

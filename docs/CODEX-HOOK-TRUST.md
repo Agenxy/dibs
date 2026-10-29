@@ -41,6 +41,9 @@ tools fingerprint. Only generated manifest version and stamp fields are
 normalized away before computing the digest, avoiding self-reference. The
 emitted metadata contains the bundle digest and tools fingerprint, never the
 Dibs build/commit. Identical inputs produce identical files and version roots.
+That Dibs digest identifies the normalized payload inputs; it is not Codex's
+approval hash of the fully emitted bundle. Approval hashes are always read
+from Codex, never reconstructed or copied by Dibs.
 Tool, hook, skill, README, server-command or other payload changes remain real
 content changes. An existing stable executable entry is preferred only when
 file identity proves it names this binary; no launcher is created.
