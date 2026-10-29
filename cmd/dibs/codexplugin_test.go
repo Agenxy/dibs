@@ -36,7 +36,7 @@ func TestCodexPluginCommand(t *testing.T) {
 	for _, mode := range []string{"dry", "ok", "fail", "late-fail", "partial", "wrong-receipt"} {
 		t.Run(mode, func(t *testing.T) {
 			home := t.TempDir()
-			config := []byte("[plugins.\"dibs@dibs\"]\nenabled = true\n[marketplaces.dibs]\nsource_type = \"local\"\nsource = \"/original/checkout\"\n")
+			config := []byte("[plugins.\"dibs@dibs\"]\nenabled = true\n")
 			if err := os.WriteFile(filepath.Join(home, "config.toml"), config, 0o600); err != nil {
 				t.Fatal(err)
 			}
@@ -132,6 +132,13 @@ func TestCodexPluginCommand(t *testing.T) {
 				t.Fatal("installed plugin does not launch this build with MCP 2026")
 			}
 			if err := os.Remove(filepath.Join(home, "installer-called")); err != nil {
+				t.Fatal(err)
+			}
+			// A source explicitly pointing at this very generated build is
+			// compatible. The repair must not reject every persisted source.
+			source, _ := json.Marshal(filepath.Join(home, "dibs-marketplace", entries[0].Name()))
+			config = append(config, []byte("\n[marketplaces.dibs]\nsource_type = \"local\"\nsource = "+string(source)+"\n")...)
+			if err := os.WriteFile(filepath.Join(home, "config.toml"), config, 0o600); err != nil {
 				t.Fatal(err)
 			}
 			// A verified same-version repair must not rerun the installer, and

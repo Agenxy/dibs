@@ -27,6 +27,9 @@ const codexPluginHelp = `dibs codex-plugin install [--dry-run] [--codex PATH]
 Installs this binary's embedded Codex plugin through Codex's plugin installer.
 Its build and tool fingerprint select a new version root, preserving dibs@dibs
 and the configured marketplace source. No network fetch or app call is needed.
+An explicit source for another root is preserved and refused: Codex would
+replace the installed plugin from that source on its next sync. The error
+prints how to remove that source if you choose this binary's plugin instead.
 
 New chats and genuine app refreshes can load the changed definition. Running
 chats keep their existing tool list until they end or the app refreshes it.
@@ -107,12 +110,6 @@ func planCodexPlugin(bin string) (*codexPluginPlan, error) {
 	if err != nil {
 		return nil, err
 	}
-	if bin == "" {
-		bin = codexPluginExecutable()
-	}
-	if bin == "" {
-		return nil, fmt.Errorf("codex installer not found; install Codex then run %s", codexPluginRepair)
-	}
 	plugin, ok := plugins.For("codex")
 	if !ok {
 		return nil, errors.New("embedded Codex plugin unavailable")
@@ -154,10 +151,20 @@ func planCodexPlugin(bin string) (*codexPluginPlan, error) {
 	plugin.Files[".codex-plugin/plugin.json"] = string(b) + "\n"
 	stamp, _ := json.Marshal(map[string]string{"build": version, "tools_hash": mcp.ToolsFingerprint()})
 	plugin.Files[".dibs-tools.json"] = string(stamp) + "\n"
-	return &codexPluginPlan{
+	p := &codexPluginPlan{
 		home: home, bin: bin, version: v,
 		source: filepath.Join(home, "dibs-marketplace", v), files: plugin.Files,
-	}, nil
+	}
+	if err := p.checkMarketplaceSource(); err != nil {
+		return nil, err
+	}
+	if p.bin == "" {
+		p.bin = codexPluginExecutable()
+	}
+	if p.bin == "" {
+		return nil, fmt.Errorf("codex installer not found; install Codex then run %s", codexPluginRepair)
+	}
+	return p, nil
 }
 
 func pluginBuildSegment(v string) string {

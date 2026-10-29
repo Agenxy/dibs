@@ -611,7 +611,12 @@ look at what landed before a fleet moves onto it.
 For an already installed, enabled `dibs@dibs`, upgrade also installs this build's
 versioned Codex plugin through Codex's own installer. Plugin refresh failures
 warn and fail `dibs doctor`, while the daemon upgrade continues; rerun
-`dibs codex-plugin install` to repair it. New chats and genuine app refreshes can
+`dibs codex-plugin install` to repair it. If Codex has a saved Dibs marketplace
+source pointing elsewhere, installation, upgrade and doctor name that source
+and preserve it: Codex's next sync would replace the installed build again.
+To choose this binary's plugin instead, run `codex plugin marketplace remove dibs`,
+then `dibs codex-plugin install`. A home with no saved source needs no change.
+New chats and genuine app refreshes can
 load current tools. Already running chats keep their existing tool list until
 they end or the app refreshes it. See [the plugin instructions](plugins/codex/README.md).
 

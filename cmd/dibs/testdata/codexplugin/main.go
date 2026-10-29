@@ -82,8 +82,18 @@ func main() {
 	if mode == "wrong-receipt" {
 		receiptVersion = "wrong"
 	}
+	receiptRoot := root
+	if mode == "canonical-receipt" {
+		receiptRoot, err = filepath.EvalSymlinks(root)
+		if err != nil {
+			panic(err)
+		}
+	}
+	if mode == "other-root-receipt" {
+		receiptRoot = filepath.Dir(root) // exists, but is not this installed directory
+	}
 	if err := json.NewEncoder(os.Stdout).Encode(map[string]string{
-		"pluginId": "dibs@dibs", "version": receiptVersion, "installedPath": root,
+		"pluginId": "dibs@dibs", "version": receiptVersion, "installedPath": receiptRoot,
 	}); err != nil {
 		panic(err)
 	}

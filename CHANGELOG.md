@@ -33,6 +33,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the blocking reason, instead of repeating it as additional context. Codex's
   event-specific filtering and non-Stop hook context are unchanged.
 
+- Codex plugin receipts recognize canonical spellings of the same installed
+  directory, including macOS `/var` and `/private/var`, while still refusing
+  a different directory, plugin identity, version or payload.
+
+- Codex plugin installation and upgrade detect a persisted Dibs marketplace
+  source pointing elsewhere before changing the plugin. Doctor names the same
+  conflict even when the cached build still verifies. The source is preserved;
+  the printed repair removes it only if the person chooses to do so. Daemon
+  upgrades continue independently, and a home with no saved source is unchanged.
+
 - An idle stdio bridge now retries one failed start-stamp lookup or ancestry
   inventory immediately in its completion worker. This repairs app reconnect
   and late surface evidence without another model call after a transient probe
