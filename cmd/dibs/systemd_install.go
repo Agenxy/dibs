@@ -68,9 +68,11 @@ func caskroomPrefix(binary string) string {
 	return ""
 }
 
-// Match the published v0.0.16 template byte for byte. The original shim PATH
-// is part of that evidence, not a new default. Anything edited is preserved.
-func legacyBrewSystemdUnit(target, body, dir string) bool {
+// Match the v0.0.16 template. The cask wrote its shim PATH; a shell invocation
+// wrote that shell's PATH. Only that one field may differ, and only a moved or
+// missing executable permits that additional migration. Every other byte and
+// the selected board must match, so a tuned unit cannot pass this check.
+func legacyBrewSystemdUnit(target, body, dir, currentDaemon string) bool {
 	daemon := unitBinary(target)
 	prefix := caskroomPrefix(daemon)
 	if prefix == "" {
@@ -78,7 +80,25 @@ func legacyBrewSystemdUnit(target, body, dir string) bool {
 	}
 	oldPath := filepath.Join(prefix, "Homebrew", "Library", "Homebrew", "shims", "shared") +
 		":" + paths.DefaultServicePath
-	return body == systemdBody(daemon, dir, oldPath)
+	expected := systemdBody(daemon, dir, oldPath)
+	if body == expected {
+		return true
+	}
+	if sameBinary(daemon, currentDaemon) {
+		return false
+	}
+	for _, line := range strings.Split(body, "\n") {
+		value, found := strings.CutPrefix(line, "Environment=")
+		if !found {
+			continue
+		}
+		fields := systemdTokens(value)
+		if len(fields) == 1 && strings.HasPrefix(fields[0], "PATH=") {
+			oldEnvironment := systemdEnvironment(map[string]string{"PATH": oldPath})
+			return body == strings.Replace(expected, oldEnvironment, line+"\n", 1)
+		}
+	}
+	return false
 }
 
 func systemdSearchDirs(daemon string) []string {
@@ -118,10 +138,10 @@ func stableSystemdDaemon(daemon string) (string, error) {
 }
 
 func preserveSystemdUnit(target string) {
-	fmt.Printf("preserved %s: it has local changes or names another board; no file was changed\n", target)
+	fmt.Fprintf(os.Stderr, "preserved %s: it has local changes or names another board; no file was changed\n", target)
 	if pinned := unitBinary(target); pinned != "" {
 		if _, err := os.Stat(pinned); os.IsNotExist(err) {
-			fmt.Printf("WARNING: ExecStart names %s, which does not exist. Edit ExecStart to the installed "+
+			fmt.Fprintf(os.Stderr, "WARNING: ExecStart names %s, which does not exist. Edit ExecStart to the installed "+
 				"stable dibd path, or delete %s and run `dibs configure --service`\n", pinned, target)
 		}
 	}
@@ -140,7 +160,7 @@ func installSystemdUnit(daemon, dir string) error {
 	}
 	exists := err == nil
 	managed := generatedSystemdUnit(string(old)) && systemdDataDir(string(old)) == filepath.Clean(dir)
-	if exists && !replaceUnits && !managed && !legacyBrewSystemdUnit(target, string(old), dir) {
+	if exists && !replaceUnits && !managed && !legacyBrewSystemdUnit(target, string(old), dir, daemon) {
 		preserveSystemdUnit(target)
 		return nil
 	}

@@ -34,7 +34,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rather than a versioned Caskroom path or Homebrew's temporary shim PATH.
   Generated units carry a digest of their own contents; unchanged generated
   units can refresh, while hand edits and units naming another board are
-  preserved. The exact untouched v0.0.16 Homebrew unit migrates automatically.
+  preserved. Untouched v0.0.16 Homebrew units migrate automatically, including
+  shell-written units whose versioned executable moved and whose only varying
+  field is PATH. Preservation warnings use stderr so Homebrew displays them.
   A preserved unit with a missing executable prints its repair, and doctor
   reports it as a problem.
 

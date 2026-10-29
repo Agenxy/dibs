@@ -407,9 +407,9 @@ func configHome() string {
 // command that reads as idempotent.
 // replaceUnits lets `dibs upgrade` rewrite a unit that already exists.
 //
-// Off for `dibs configure --service`, where refusing is right: that command is
-// how a unit is first installed, and silently overwriting one an operator had
-// tuned would be the surprise. Upgrade is the opposite case. It is repointing a
+// Off for `dibs configure --service`: the Linux installer's receipt policy
+// decides which generated units it may refresh, and preserves hand edits.
+// These legacy writers refuse to overwrite. Upgrade is repointing a
 // unit whose pinned daemon or data directory has moved, so the existing file is
 // precisely what is wrong, and refusing there leaves a stopped daemon and a
 // service that starts against a path that is gone.

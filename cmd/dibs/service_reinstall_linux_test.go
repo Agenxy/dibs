@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -140,35 +141,81 @@ func TestLinuxGeneratedUnitDoesNotAuthorizeABoardMove(t *testing.T) {
 }
 
 func TestLinuxConfigureServiceMigratesOnlyExactLegacyTemplate(t *testing.T) {
-	for _, tuned := range []bool{false, true} {
-		t.Run(fmt.Sprint(tuned), func(t *testing.T) {
-			f := newSystemdInstallFixture(t)
-			legacyDaemon := filepath.Join(f.prefix, "Caskroom", "dibs", "0.0.16", "dibd")
-			// Frozen v0.0.16 bytes, including the brew shim PATH. Do not produce
-			// these with the current generator: that would test only itself.
-			legacy := "[Unit]\nDescription=Dibs: coordination board for AI agents\n" +
-				"Documentation=https://github.com/agenxy/dibs\nAfter=network.target\n\n" +
-				"[Service]\nType=simple\nEnvironment=\"PATH=" + f.brewPath + "\"\n" +
-				"ExecStart=\"" + legacyDaemon + "\" -dir \"" + f.dir + "\"\n" +
-				"Restart=on-failure\nRestartSec=2\n\n[Install]\nWantedBy=default.target\n"
-			if tuned {
-				legacy += "\n[Service]\nNice=7\n"
-			}
-			if err := os.MkdirAll(filepath.Dir(f.target), 0o750); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(f.target, []byte(legacy), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			f.configure(t)
-			got := f.unit(t)
-			if tuned && got != legacy {
-				t.Fatal("legacy tuning was overwritten")
-			}
-			if !tuned && (got == legacy || unitBinary(f.target) != f.stable) {
-				t.Fatalf("exact old template was not migrated to stable binary:\n%s", got)
-			}
-		})
+	for _, tc := range []struct {
+		name    string
+		shell   bool
+		missing bool
+		current bool
+	}{
+		{"postflight", false, false, false},
+		{"shell-old-present", true, false, false},
+		{"shell-old-missing", true, true, false},
+		{"shell-current", true, false, true},
+	} {
+		for _, tuned := range []bool{false, true} {
+			t.Run(tc.name+fmt.Sprint(tuned), func(t *testing.T) {
+				f := newSystemdInstallFixture(t)
+				legacyDaemon := filepath.Join(f.prefix, "Caskroom", "dibs", "0.0.16", "dibd")
+				if !tc.current {
+					f.stage(t, "0.0.17")
+				}
+				if tc.missing {
+					if err := os.Remove(legacyDaemon); err != nil {
+						t.Fatal(err)
+					}
+				}
+				oldPath := f.brewPath
+				if tc.shell {
+					oldPath = "/custom/bin:" + filepath.Join(f.prefix, "bin") + ":/usr/bin:/bin"
+				}
+				// Frozen v0.0.16 bytes, including the brew shim PATH. Do not produce
+				// these with the current generator: that would test only itself.
+				legacy := "[Unit]\nDescription=Dibs: coordination board for AI agents\n" +
+					"Documentation=https://github.com/agenxy/dibs\nAfter=network.target\n\n" +
+					"[Service]\nType=simple\nEnvironment=\"PATH=" + oldPath + "\"\n" +
+					"ExecStart=\"" + legacyDaemon + "\" -dir \"" + f.dir + "\"\n" +
+					"Restart=on-failure\nRestartSec=2\n\n[Install]\nWantedBy=default.target\n"
+				if tuned {
+					legacy += "\n[Service]\nNice=7\n"
+				}
+				if err := os.MkdirAll(filepath.Dir(f.target), 0o750); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(f.target, []byte(legacy), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				f.configure(t)
+				got := f.unit(t)
+				preserved := tuned || tc.current
+				if preserved && got != legacy {
+					t.Fatal("legacy tuning was overwritten")
+				}
+				if !preserved && (got == legacy || unitBinary(f.target) != f.stable) {
+					t.Fatalf("exact old template was not migrated to stable binary:\n%s", got)
+				}
+			})
+		}
+	}
+}
+
+func TestLinuxPreservationWarningUsesStderr(t *testing.T) {
+	f := newSystemdInstallFixture(t)
+	f.configure(t)
+	tuned := f.unit(t) + "\n[Service]\nNice=7\n"
+	if err := os.WriteFile(f.target, []byte(tuned), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	cmd := f.command(ctx, "configure", "--service")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	stdout, err := cmd.Output()
+	if err != nil || !strings.Contains(stderr.String(), "preserved "+f.target) {
+		t.Fatalf("warning not on the stream Homebrew displays: %v stdout=%s stderr=%s", err, stdout, stderr.String())
+	}
+	if got := f.unit(t); got != tuned {
+		t.Fatal("warning check changed tuning")
 	}
 }
 
