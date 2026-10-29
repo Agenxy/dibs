@@ -153,7 +153,7 @@ func TestReleaseAndRehearsalPinIdenticalToolchains(t *testing.T) {
 			t.Fatalf("guard missed setup drift: %s", mutation.from)
 		}
 	}
-	if releaseRehearsalParity(release, rehearsal, strings.ReplaceAll(mise, `goreleaser = "2.19.0"`, `goreleaser = "latest"`)) == nil {
+	if releaseRehearsalParity(release, rehearsal, strings.ReplaceAll(mise, `goreleaser = "2.17.1"`, `goreleaser = "latest"`)) == nil {
 		t.Fatal("unversioned GoReleaser accepted")
 	}
 }
