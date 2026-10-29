@@ -50,6 +50,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   under home use `~/` when the current directory is home, while paths inside
   a project retain their useful `./` spelling.
 
+- Release acceptance now checks published archive and exact-tag Go installs in
+  private homes, plus fresh Linux Homebrew installs and reinstalls, before an
+  announcement. It records failures and recovery rather than treating a green
+  publication job as proof that the public install steps work. Mac casks and
+  production services are excluded from this check.
+
 - Homebrew 7 casks select the app and Touch ID helper only on macOS, use
   declarative, non-fatal Mac quarantine steps, and print Linux service and
   notification advice on Linux. Service registration is an explicit
