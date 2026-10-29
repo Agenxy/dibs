@@ -43,7 +43,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   temporary sandbox home. Existing services update with `brew upgrade dibs`
   followed by `dibs upgrade`: recognized Linux units are repaired before
   restart, while tuned units needing repair are preserved and explained.
-  Doctor reports missing service setup even before the daemon's first start.
+  Doctor reports incomplete package service setup even before the daemon's
+  first start; manual setups get a warning with configure-or-start advice.
   The archive gate checks the generated cask through Homebrew's real loader
   and records its steps without executing them.
 

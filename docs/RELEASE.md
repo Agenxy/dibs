@@ -47,7 +47,8 @@ published template, retaining its file mode and moving ExecStart to the stable
 package-manager link. A tuned unit needing repair is refused before stopping
 the daemon, with an edit instruction. Doctor treats absent service setup and
 missing executables as problems and distinguishes automatic repair from local
-edits. A successful package upgrade alone is not evidence that the running
+edits. Manual installs and answering daemons without supervision get a warning.
+A successful package upgrade alone is not evidence that the running
 daemon was restarted.
 
 `task test:archive` renders the actual cask offline with GoReleaser and then
