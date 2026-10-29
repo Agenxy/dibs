@@ -72,8 +72,10 @@ func TestCLIDistinguishesForeignBoardFromChangedSecret(t *testing.T) {
 	for _, command := range []string{"version", "doctor"} {
 		t.Run(command+"/foreign", func(t *testing.T) {
 			out := run(t, secondAddr, command)
-			for _, want := range []string{"401", "a different board is answering at " + secondAddr,
-				"not the board in ~/.dibs", firstID[:8], secondID[:8], "DIBS_ADDR", "DIBS_DIR"} {
+			for _, want := range []string{
+				"401", "a different board is answering at " + secondAddr,
+				"not the board in ~/.dibs", firstID[:8], secondID[:8], "DIBS_ADDR", "DIBS_DIR",
+			} {
 				if !strings.Contains(out, want) {
 					t.Errorf("missing %q: %s", want, out)
 				}
@@ -100,8 +102,10 @@ func TestCLIDistinguishesForeignBoardFromChangedSecret(t *testing.T) {
 	for _, command := range []string{"version", "doctor"} {
 		t.Run(command+"/matching", func(t *testing.T) {
 			out := run(t, firstAddr, command)
-			for _, want := range []string{"401", "credential mismatch", "~/.dibs", firstAddr,
-				"restart this board's daemon", "dibs stop", "dibd"} {
+			for _, want := range []string{
+				"401", "credential mismatch", "~/.dibs", firstAddr,
+				"restart this board's daemon", "dibs stop", "dibd",
+			} {
 				if !strings.Contains(out, want) {
 					t.Errorf("missing %q: %s", want, out)
 				}
