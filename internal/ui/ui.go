@@ -156,8 +156,11 @@ func Path(p string) string {
 		return p
 	}
 	home, _ := os.UserHomeDir()
-	if cwd, err := os.Getwd(); err == nil && cwd != "/" && cwd != home {
+	if cwd, err := os.Getwd(); err == nil && cwd != "/" {
 		if rel := strings.TrimPrefix(p, cwd+string(os.PathSeparator)); rel != p {
+			if sameDirectory(cwd, home) {
+				return "~/" + rel
+			}
 			return "./" + rel
 		}
 	}
@@ -223,3 +226,13 @@ type Count struct {
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }
+
+// A symlinked home or /var versus /private/var is the same display location.
+func sameDirectory(a, b string) bool {
+	if a == b {
+		return true
+	}
+	first, errA := os.Stat(a)
+	second, errB := os.Stat(b)
+	return errA == nil && errB == nil && os.SameFile(first, second)
+}

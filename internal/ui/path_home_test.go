@@ -29,3 +29,19 @@ func TestPathUsesHomeAtHomeAndRelativeInsideAProject(t *testing.T) {
 		t.Fatalf("beside project: %q, want ~/other/.dibs", got)
 	}
 }
+
+func TestPathRecognizesASymlinkedHome(t *testing.T) {
+	home := t.TempDir()
+	alias := filepath.Join(t.TempDir(), "linked-home")
+	if err := os.Symlink(home, alias); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", alias)
+	t.Setenv("USERPROFILE", alias)
+	t.Chdir(home)
+	for _, path := range []string{filepath.Join(home, ".dibs"), filepath.Join(alias, ".dibs")} {
+		if got := Path(path); got != "~/.dibs" {
+			t.Errorf("same home under %q: got %q", path, got)
+		}
+	}
+}
