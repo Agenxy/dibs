@@ -59,7 +59,7 @@ func TestCodexPluginCommand(t *testing.T) {
 				if err != nil {
 					t.Fatalf("command failed: %v %s", err, out)
 				}
-				if !strings.Contains(string(out), "build-0.0.14-tools-") || !strings.Contains(string(out), "running chats retain their tool list") && !strings.Contains(string(out), "Running chats retain their existing tool list") {
+				if !strings.Contains(string(out), "content-tools-") || !strings.Contains(string(out), "running chats retain their tool list") && !strings.Contains(string(out), "Running chats retain their existing tool list") {
 					t.Fatalf("missing version/boundary: %s", out)
 				}
 				if mode == "ok" && !strings.Contains(string(out), "dibs codex-hooks --trust") {
@@ -123,8 +123,8 @@ func TestCodexPluginCommand(t *testing.T) {
 			root := filepath.Join(base, entries[0].Name())
 			var stamp map[string]string
 			b, err := os.ReadFile(filepath.Join(root, ".dibs-tools.json"))
-			if err != nil || json.Unmarshal(b, &stamp) != nil || stamp["build"] != "0.0.14" || stamp["tools_hash"] == "" {
-				t.Fatal("installed version lacks current tool/build stamp")
+			if err != nil || json.Unmarshal(b, &stamp) != nil || stamp["build"] != "" || stamp["tools_hash"] == "" || stamp["bundle_hash"] == "" {
+				t.Fatal("installed version lacks content/tool identity or still stamps the Dibs build")
 			}
 			b, err = os.ReadFile(filepath.Join(root, ".mcp.json"))
 			var servers struct {

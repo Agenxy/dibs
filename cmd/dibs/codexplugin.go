@@ -5,8 +5,6 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,7 +12,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -114,7 +111,7 @@ func planCodexPlugin(bin string) (*codexPluginPlan, error) {
 	if !ok {
 		return nil, errors.New("embedded Codex plugin unavailable")
 	}
-	exe, err := os.Executable()
+	exe, err := codexPluginCommand()
 	if err != nil {
 		return nil, err
 	}
@@ -130,27 +127,10 @@ func planCodexPlugin(bin string) (*codexPluginPlan, error) {
 		return nil, err
 	}
 	plugin.Files[".mcp.json"] = string(b) + "\n"
-	// Include payload bytes too: two dirty builds can have the same build label
-	// and tools but different hooks/skills. Neither may reuse the other's root.
-	raw, err := json.Marshal(plugin.Files)
+	v, err := stampCodexPlugin(plugin.Files, mcp.ToolsFingerprint())
 	if err != nil {
 		return nil, err
 	}
-	sum := sha256.Sum256(raw)
-	buildID := pluginBuildSegment(version)
-	v := "build-" + buildID + "-tools-" + mcp.ToolsFingerprint() + "-" + hex.EncodeToString(sum[:8])
-	var manifest map[string]any
-	if err := json.Unmarshal([]byte(plugin.Files[".codex-plugin/plugin.json"]), &manifest); err != nil {
-		return nil, err
-	}
-	manifest["version"] = v
-	b, err = json.MarshalIndent(manifest, "", "  ")
-	if err != nil {
-		return nil, err
-	}
-	plugin.Files[".codex-plugin/plugin.json"] = string(b) + "\n"
-	stamp, _ := json.Marshal(map[string]string{"build": version, "tools_hash": mcp.ToolsFingerprint()})
-	plugin.Files[".dibs-tools.json"] = string(stamp) + "\n"
 	p := &codexPluginPlan{
 		home: home, bin: bin, version: v,
 		source: filepath.Join(home, "dibs-marketplace", v), files: plugin.Files,
@@ -165,15 +145,6 @@ func planCodexPlugin(bin string) (*codexPluginPlan, error) {
 		return nil, fmt.Errorf("codex installer not found; install Codex then run %s", codexPluginRepair)
 	}
 	return p, nil
-}
-
-func pluginBuildSegment(v string) string {
-	return strings.Map(func(r rune) rune {
-		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune(".+-_", r) {
-			return r
-		}
-		return '-'
-	}, v)
 }
 
 func (p *codexPluginPlan) args() []string {

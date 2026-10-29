@@ -17,7 +17,7 @@ dibs codex-hooks --trust
 ```
 
 The installer materializes this binary's embedded plugin under
-`$CODEX_HOME/dibs-marketplace/<build-and-tools-version>` (by default
+`$CODEX_HOME/dibs-marketplace/<content-and-tools-version>` (by default
 `~/.codex/dibs-marketplace/`) and uses `codex plugin add dibs@dibs`. Per-command
 local-source overrides preserve your configured marketplace source and plugin
 identity. Codex owns the active cache root; Dibs verifies the returned identity,
@@ -30,6 +30,10 @@ selects a particular Codex executable.
 when the daemon already serves the new build. It leaves an absent or disabled
 integration alone. If refresh fails, the daemon upgrade continues with a loud
 warning, and `dibs doctor` reports a problem naming `dibs codex-plugin install`.
+Identical plugin files, tool schema and server command keep the same version
+and approved bytes across Dibs-only upgrades; that refresh is a no-op. The
+version and tool stamp contain no Dibs build or commit. An existing stable
+invocation link is kept only after file identity proves it names this binary.
 The bridge retains its in-place re-exec; exiting it is not a measured refresh
 trigger in Codex.
 
@@ -43,7 +47,7 @@ is still emitted, but no externally reachable loaded-chat reload has been
 measured. The separately prepared upstream reload draft remains unposted.
 
 That gives a Codex session the MCP server (over stdio, on MCP 2026-07-28), the
-skill, and the three lifecycle hooks that deliver mail. The third command is
+skill, and the three lifecycle hooks that deliver mail. The trust command is
 not optional, and it is the one this file did not know about for a month:
 **since Codex 0.153 a hook from anything but an OpenAI-hosted plugin is
 untrusted until a person reviews it, and an untrusted hook is dropped at
@@ -55,7 +59,20 @@ installed, two (SessionStart, Stop) after trust, and `dibs codex-hooks`
 records that trust through Codex's own app-server protocol, exactly as the
 TUI's trust button does: it asks Codex for each Dibs hook's key and hash and
 writes `hooks.state` with them, touching nothing that is not a Dibs hook.
-`dibs doctor` reports the untrusted state until then.
+`dibs doctor` reports untrusted or modified hooks as a problem while this plugin
+is enabled. A genuine plugin-content change needs a new review: install and
+upgrade print `dibs codex-hooks --trust` beside the verified-file receipt. A
+person runs that command or reviews the Dibs hooks in `/hooks`; Dibs never
+approves new contents automatically. Migration from the old build-stamped
+bundle changes its bytes once and needs that review too.
+
+Measured 2026-10-29 with bundled Codex `0.165.0-alpha.1.2`: changing only the
+old Dibs build stamp kept all hook keys and declaration hashes identical but
+changed the bundle hash and marked all three hooks modified. Current Codex
+approves the declaration **and bundle contents**, so a stable hook command or
+version-root spelling alone cannot preserve approval. Content-derived plugin
+bytes remove the needless build-only changes while retaining that security
+boundary. See [the trust contract and sources](https://github.com/Agenxy/dibs/blob/main/docs/CODEX-HOOK-TRUST.md).
 
 **By hand instead**, when a plugin is not wanted: the MCP server below in
 `~/.codex/config.toml`, this directory's `hooks.json` copied to
