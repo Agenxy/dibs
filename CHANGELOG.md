@@ -39,6 +39,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the printed repair removes it only if the person chooses to do so. Daemon
   upgrades continue independently, and a home with no saved source is unchanged.
 
+- `dibs version` and `dibs doctor` report HTTP refusals as answers, instead of
+  saying no daemon is listening or asserting that the data directory was
+  recreated. Local authentication refusals carry a board-specific fingerprint
+  so the CLI can distinguish another board from a matching board with a changed
+  credential. Unknown identities remain explicitly ambiguous. Foreign and
+  unknown boards receive address/directory checks rather than restart advice.
+  A matching board's credential mismatch names its restart corrective.
+  Public invitation listeners and non-loopback listeners expose no fingerprint.
+
 - An idle stdio bridge now retries one failed start-stamp lookup or ancestry
   inventory immediately in its completion worker. This repairs app reconnect
   and late surface evidence without another model call after a transient probe

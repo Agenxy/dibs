@@ -91,8 +91,11 @@ func strconvItoa(n int) string { return strconv.Itoa(n) }
 // which one this machine can do, rather than being asked for a finger it has no
 // way to read.
 type authGate struct {
-	secret        string
-	adminHashPath string
+	// Set at boot from the serving node, not from a request. Only local
+	// coordination refusals expose this diagnostic digest.
+	boardFingerprint string
+	secret           string
+	adminHashPath    string
 	// names are hostnames the operator gave this board (dibs.toml `name`,
 	// routed here by Remap): a browser that reached the board by one of them
 	// sends it as its origin, on Remap's gateway port rather than this
@@ -733,6 +736,10 @@ func (g *authGate) wrap(next http.Handler) http.Handler {
 			// one went around them. Found by the pre-release review, which also
 			// noted the stolen-cookie test calls godViewAuthorized directly and
 			// never drives a cookie-only request through this wrapper.
+			if ip := net.ParseIP(g.host); ip != nil && ip.IsLoopback() && g.boardFingerprint != "" {
+				w.Header().Set("X-Dibs-Board", g.boardFingerprint)
+				w.Header().Set("Cache-Control", "no-store")
+			}
 			g.unauthorized(w, r)
 			return
 		}
