@@ -120,7 +120,7 @@ passed" and concluding green is a mistake already made in this repository: one
 suite printed a failure line that did not match the pattern, and a red run was
 reported as green.
 
-Lint alone: `mise exec golangci-lint@2.12.2 -- golangci-lint run`
+Lint alone: `mise exec golangci-lint@2.15.0 -- golangci-lint run`
 
 Use **bun**, never npm, for any JS/TS work.
 

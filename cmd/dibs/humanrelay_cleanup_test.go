@@ -128,5 +128,7 @@ func testRelayCleanupStream(t *testing.T) {
 		t.Fatal("real relay stream never requested native cleanup")
 	}
 	cancel()
-	<-done
+	if err := <-done; err != nil {
+		t.Logf("process exited after cancel: %v", err)
+	}
 }

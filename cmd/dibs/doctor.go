@@ -226,9 +226,9 @@ func (d *diagnosis) run(verbose bool) error {
 		return earlyDoctorResult(d.probs, d.warns)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode == http.StatusUnauthorized {
-		bad("daemon rejected our own secret (401)",
-			"the data dir was recreated under a running daemon. Restart `dibd`")
+	if resp.StatusCode != http.StatusOK {
+		problem, hint := daemonRefusal(resp)
+		bad(problem, hint)
 		return earlyDoctorResult(d.probs, d.warns)
 	}
 	ok("daemon answering on " + addr())

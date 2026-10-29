@@ -5,6 +5,7 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -35,8 +36,7 @@ func TestPriorityNotifyPrecedesNormalMailInOneWake(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	carrier, _ := got["hookSpecificOutput"].(map[string]any)
-	digest, _ := carrier["additionalContext"].(string)
+	digest, _ := got["reason"].(string)
 	u, h, n := strings.Index(digest, "urgent-third"), strings.Index(digest, "high-second"), strings.Index(digest, "normal-first")
 	if u < 0 || h < 0 || n < 0 || u >= h || h >= n {
 		t.Fatalf("wake did not prioritize urgent/high notify: %q", digest)
@@ -82,7 +82,7 @@ func TestStopDeliversEveryAuthoredMessage(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got["decision"] != "block" || got["hookSpecificOutput"] == nil {
+			if got["decision"] != "block" || !strings.Contains(fmt.Sprint(got["reason"]), "something") {
 				t.Errorf("actionable %s did not continue the turn: %v", kind, got)
 			}
 			if got["systemMessage"] != nil {
@@ -111,14 +111,14 @@ func TestAWakeDoesNotNagAboutSomethingAlreadyDelivered(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first["hookSpecificOutput"] == nil {
+	if first["decision"] != "block" || !strings.Contains(fmt.Sprint(first["reason"]), "an unanswered question") {
 		t.Fatal("the arrival did not wake it: this test cannot see what it guards")
 	}
 	second, err := e.HookPoll(ctx, "sess-"+id, "Stop", "", false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if second["hookSpecificOutput"] != nil {
+	if deliveredSomething(second) {
 		t.Error("the same question woke the agent twice inside the reminder cadence")
 	}
 	// Spent mail is recovered at a natural model boundary, never by asking
@@ -186,7 +186,7 @@ func TestAWakeNeverContinuesATurnAWakeAlreadyContinued(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if again["hookSpecificOutput"] != nil {
+	if deliveredSomething(again) {
 		t.Error("a turn already continued by a wake was continued again")
 	}
 	if again["systemMessage"] != nil {
@@ -207,12 +207,12 @@ func TestTheOperatorCanNarrowOrSilenceTheWake(t *testing.T) {
 	}
 
 	e.SetWakePolicy(WakeUrgent)
-	if got, _ := e.HookPoll(ctx, "sess-"+id, "Stop", "", false, false); got["hookSpecificOutput"] != nil {
+	if got, _ := e.HookPoll(ctx, "sess-"+id, "Stop", "", false, false); deliveredSomething(got) {
 		t.Error("`urgent` extended a turn for an FYI")
 	}
 	e.SetWakePolicy(WakeNone)
 	quiet, _ := e.HookPoll(ctx, "sess-"+id, "Stop", "", false, false)
-	if quiet["hookSpecificOutput"] != nil {
+	if deliveredSomething(quiet) {
 		t.Error("`none` extended a turn")
 	}
 	if quiet["systemMessage"] != nil {

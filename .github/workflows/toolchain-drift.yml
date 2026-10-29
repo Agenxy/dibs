@@ -1,0 +1,31 @@
+name: toolchain drift
+
+# Fails, and so notifies the owner, when a pinned tool has a newer upstream
+# release. Dependabot keeps Go modules, Actions and bun packages current, but
+# nothing watched mise.toml: Go sat a minor release behind, and golangci-lint
+# 2.15 then found nine issues on a main that 2.12 called clean. Measurements
+# and gates taken on stale tools are measurements of the past. Scheduled, not
+# gated: an upstream release is not a defect in any one pull request.
+on:
+  schedule:
+    - cron: "41 15 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+        with:
+          version: 2026.10.23
+          experimental: true
+      - name: every mise.toml pin and the workflows' mise are upstream's latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: go run ./tools/toolchaindrift

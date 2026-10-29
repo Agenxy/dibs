@@ -27,6 +27,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   access without the local secret or another agent's token. Refusals exit
   nonzero with the server's corrective hint; sends are never retried automatically.
 
+### Changed
+
+- Release binaries are built with Go 1.27.3, and source builds now need it
+  (`go.mod` still declares `go 1.26.0`, so language semantics are unchanged).
+  The release toolchain moves to cosign 3.1.4 and syft 1.55.0. GoReleaser
+  moves with the cask migration that its current release requires.
+
 ### Fixed
 
 - Linux service configuration is repeatable across package reinstalls. Units
@@ -40,6 +47,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   A preserved unit with a missing executable prints its repair, and doctor
   reports it as a problem.
 
+- Claude Code Stop and SubagentStop hooks deliver each mail digest once, in
+  the blocking reason, instead of repeating it as additional context. Codex's
+  event-specific filtering and non-Stop hook context are unchanged.
+
 - Codex plugin receipts recognize canonical spellings of the same installed
   directory, including macOS `/var` and `/private/var`, while still refusing
   a different directory, plugin identity, version or payload.
@@ -49,6 +60,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   conflict even when the cached build still verifies. The source is preserved;
   the printed repair removes it only if the person chooses to do so. Daemon
   upgrades continue independently, and a home with no saved source is unchanged.
+
+- `dibs version` and `dibs doctor` report HTTP refusals as answers, instead of
+  saying no daemon is listening or asserting that the data directory was
+  recreated. Local authentication refusals carry a board-specific fingerprint
+  so the CLI can distinguish another board from a matching board with a changed
+  credential. Unknown identities remain explicitly ambiguous. Foreign and
+  unknown boards receive address/directory checks rather than restart advice.
+  A matching board's credential mismatch names its restart corrective.
+  Public invitation listeners and non-loopback listeners expose no fingerprint.
 
 - An idle stdio bridge now retries one failed start-stamp lookup or ancestry
   inventory immediately in its completion worker. This repairs app reconnect

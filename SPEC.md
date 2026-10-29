@@ -334,6 +334,16 @@ you can measure is never improved by asking.
 
 **Credentials:**
 
+Local coordination-tier HTTP 401 replies on a loopback listener carry
+`X-Dibs-Board`: the first 16 bytes of SHA-256 over
+`"dibs-board-identity\x00" + node_id`, encoded as lowercase hex. This diagnostic
+comparison value is not authentication and does not disclose the raw node id.
+It is absent on public/invitation listeners and non-loopback listeners; `/livez`
+remains content-free. The CLI compares it with its selected directory's node id
+to distinguish another board from a credential mismatch. A missing identity is
+unknown, including when speaking to an older daemon, not evidence of either
+cause.
+
 - **Agent token**: 256-bit CSPRNG hex, returned by `register`/`resume`.
   Write + mailbox-read capability for one agent. Passed as a **tool argument**
   (normative; MCP hosts cannot vary headers per call). Constant-time comparison.
