@@ -32,10 +32,9 @@ func printVersion() {
 
 	info, err := daemonBuild()
 	if err != nil {
-		// Not an error. No daemon is a perfectly ordinary state, and a version
-		// command that fails because nothing is listening would be worse than one
-		// that says less.
-		fmt.Println("dibd  not running (nothing listening on " + addr() + ")")
+		// Informational even when unavailable, but an HTTP refusal or malformed
+		// reply is not evidence that no daemon is running.
+		fmt.Printf("dibd  version unavailable: %v\n", err)
 		return
 	}
 
@@ -107,6 +106,9 @@ func daemonBuildAt(base string) (buildInfo, error) {
 		return buildInfo{}, err
 	}
 	defer func() { _ = res.Body.Close() }()
+	if res.StatusCode != http.StatusOK {
+		return buildInfo{}, daemonHTTPError(res)
+	}
 	var out struct {
 		Result struct {
 			ServerInfo buildInfo `json:"serverInfo"`

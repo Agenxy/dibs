@@ -526,6 +526,7 @@ func run() error {
 		return err
 	}
 	gate := newAuthGate(secret, filepath.Join(*dir, "admin.hash"), listenAddr)
+	gate.boardFingerprint = boardconfig.BoardFingerprint(eng.NodeID())
 	gate.SetNames(cfg.Name)
 	registerHumanAPI(mux, eng, gate, *dir)
 	srv := &http.Server{
