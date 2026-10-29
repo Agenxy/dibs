@@ -36,6 +36,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Linux service configuration is repeatable across package reinstalls. Units
+  use a stable package-manager binary link and defined executable search paths,
+  rather than a versioned Caskroom path or Homebrew's temporary shim PATH.
+  Generated units carry a digest of their own contents; unchanged generated
+  units can refresh, while hand edits and units naming another board are
+  preserved. Untouched v0.0.16 Homebrew units migrate automatically, including
+  shell-written units whose versioned executable moved and whose only varying
+  field is PATH. Preservation warnings use stderr so Homebrew displays them.
+  A preserved unit with a missing executable prints its repair, and doctor
+  reports it as a problem.
+
 - Claude Code Stop and SubagentStop hooks deliver each mail digest once, in
   the blocking reason, instead of repeating it as additional context. Codex's
   event-specific filtering and non-Stop hook context are unchanged.

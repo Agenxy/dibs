@@ -4,6 +4,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -24,7 +25,7 @@ func (d *diagnosis) serviceDirectoryNote(selected paths.DirectorySelection) {
 	}
 }
 
-func checkServiceBinary(ok reportFn, warn fixFn) {
+func checkServiceBinary(ok reportFn, warn, bad fixFn) {
 	checkAppService(ok, warn)
 	unit, pinned := unitDaemon()
 	if unit == "" || pinned == "" {
@@ -41,7 +42,15 @@ func checkServiceBinary(ok reportFn, warn fixFn) {
 	}
 	detail := "it pins " + pinned + ", but the dibd you have installed is " + want
 	if _, err := os.Stat(pinned); err != nil {
-		detail = "it pins " + pinned + ", which does not exist; the dibd you have installed is " + want
+		detail = fmt.Sprintf("cannot inspect %s: %v; the installed dibd is %s", pinned, err, want)
+		if os.IsNotExist(err) {
+			detail = "it pins " + pinned + ", which does not exist; the dibd you have installed is " + want
+		}
+		if runtime.GOOS == "linux" && os.IsNotExist(err) {
+			bad("the service executable does not exist", detail+". Edit ExecStart to the stable installed dibd path, "+
+				"or delete "+unit+" and run `dibs configure --service`")
+			return
+		}
 	}
 	warn("the service would start a different daemon than the one installed",
 		detail+". Every fix since that build is not running when the service starts it. "+
