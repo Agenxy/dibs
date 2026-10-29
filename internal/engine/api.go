@@ -871,6 +871,7 @@ func (e *Engine) decoratedBoard() core.Result {
 	}
 	e.labelBoardHosts(b, hostdisplay.Current().Name)
 	e.decorateBoardQueueWakes(b, time.Now())
+	e.decorateBoardSocketBindings(b)
 	// The identity this daemon stamps its own machine's agents with, beside
 	// the ledger's node: doctor compares it with what Supgang says the
 	// machine is now, and a daemon started before the machine joined a hive

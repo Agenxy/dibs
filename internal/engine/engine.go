@@ -1121,6 +1121,7 @@ func (e *Engine) execWithReceipt(
 	if board, ok := res["board"].(map[string]any); ok {
 		e.labelBoardHosts(board, hostdisplay.Current().Name)
 		e.decorateBoardQueueWakes(board, now)
+		e.decorateBoardSocketBindings(board)
 	}
 	return res, nil
 }

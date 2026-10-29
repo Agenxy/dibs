@@ -105,7 +105,11 @@ func discoverPeers(home string, lineages map[string][]string) map[string]peerwak
 		slog.Debug("peer wake: could not read the harness session directory", "err", err)
 	}
 	next := make(map[string]peerwake.Session, len(found))
-	for _, s := range found {
+	for i := range found {
+		// Filesystem edge only: cached diagnostics on the writer compare
+		// values and must not resolve paths or scan the machine.
+		found[i].CWD = paths.Canonical(found[i].CWD)
+		s := found[i]
 		next[s.SessionID] = s
 	}
 	indexByLineage(next, found, lineages)
@@ -206,18 +210,23 @@ func (e *Engine) peerSnapshot() map[string]peerwake.Session {
 
 // peerSessionIn is the pure lookup: no I/O, no lock, no refresh.
 func peerSessionIn(live map[string]peerwake.Session, ids []string) (peerwake.Session, bool) {
+	s, _, ok := peerSessionMatch(live, ids)
+	return s, ok
+}
+
+func peerSessionMatch(live map[string]peerwake.Session, ids []string) (peerwake.Session, string, bool) {
 	if len(live) == 0 {
-		return peerwake.Session{}, false
+		return peerwake.Session{}, "", false
 	}
 	for _, id := range ids {
 		if id == "" {
 			continue
 		}
 		if s, ok := live[id]; ok {
-			return s, true
+			return s, id, true
 		}
 	}
-	return peerwake.Session{}, false
+	return peerwake.Session{}, "", false
 }
 
 // peerSessionFor looks this agent up, refreshing the cache if it is stale.
@@ -314,7 +323,7 @@ func (e *Engine) wakeOverSocket(plan wakePlan, agent string) bool {
 			"agent", agent, "session_id", session)
 		return true
 	}
-	s, ok := e.peerSessionFor(plan.sessions)
+	s, matched, ok := peerSessionMatch(e.peerSessions(), plan.sessions)
 	if !ok {
 		// Not a failure of delivery: there is nobody listening under any name
 		// this agent answers to. Logged at debug because on a board of Codex
@@ -323,45 +332,17 @@ func (e *Engine) wakeOverSocket(plan wakePlan, agent string) bool {
 			"agent", agent, "sessions", len(plan.sessions))
 		return false
 	}
-	// A SESSION WORKING SOMEWHERE ELSE IS THE SHAPE OF A MIS-BOUND ID.
-	//
-	// The wake goes wherever the binding points, and a binding can be wrong: a
-	// swept row frees a live session's id and the next agent in that directory
-	// inherits it. Before this route existed that misdelivery was invisible,
-	// because the wake simply failed. Now it succeeds, into the wrong session,
-	// which is more effective and no more correct.
-	//
-	// REFUSED, not merely logged, and the first version of this got that wrong.
-	//
-	// Logging it and delivering anyway does three things at once: it interrupts
-	// a session that is not the recipient, it leaves the intended agent asleep,
-	// and it tells the retry machinery the wake succeeded so the attempt is
-	// spent. That is the "reports success while doing nothing" defect this
-	// release has spent four rounds removing, reintroduced by the route built to
-	// remove it. Found by the pre-release review.
-	//
-	// The argument for delivering was that the daemon cannot tell which of the
-	// two is wrong. True, and it does not need to: refusing costs a wake the
-	// retry path already treats as un-spent, while delivering costs somebody
-	// else's turn and the recipient's only attempt. The asymmetry decides it.
-	//
-	// Before the delivery, because the mismatch is a fact about which session we
-	// are ABOUT to wake.
-	// CANONICALISED ON BOTH SIDES, or this refuses wakes it should allow.
-	//
-	// The agent's cwd is canonicalised when it registers; the harness writes its
-	// sidecar cwd raw. On macOS that alone is enough to make /var and
-	// /private/var look like different directories, so a comparison of the two
-	// spellings refused a delivery that was perfectly correct. The wake e2e
-	// caught it within one run of this check becoming a refusal rather than a
-	// warning, which is the risk that made it a warning first.
-	if plan.cwd != "" && s.CWD != "" && paths.Canonical(plan.cwd) != paths.Canonical(s.CWD) {
-		slog.Warn("refusing to wake a session that reports a different working "+
-			"directory: this agent's session id appears to belong to another "+
-			"session, so waking it would interrupt the wrong agent and leave this "+
-			"one asleep",
-			"agent", agent, "session_id", s.SessionID,
-			"agent_cwd", plan.cwd, "session_cwd", s.CWD)
+	// A launch directory is weaker evidence than an explicit same-host
+	// session binding. Guesses still need matching directories, and competing
+	// stated holders are ambiguous even when their directories agree.
+	binding := plan.socketBindings[matched]
+	if binding.target != s.SessionID {
+		binding = socketBindingEvidence{kind: "unknown"}
+	}
+	different := socketDirectoriesDiffer(paths.Canonical(plan.cwd), s.CWD)
+	if reason := socketBindingRefusal(binding, different); reason != "" {
+		slog.Warn("refusing socket wake: "+reason, "agent", agent, "session_id", s.SessionID,
+			"agent_cwd", plan.cwd, "session_cwd", s.CWD, "hint", socketBindingHint)
 		return false
 	}
 
@@ -369,8 +350,12 @@ func (e *Engine) wakeOverSocket(plan wakePlan, agent string) bool {
 	defer cancel()
 	var offer string
 	if plan.trackOffer && plan.agent != "" {
-		r, err := e.socketOfferForPlan(ctx, plan)
+		r, err := e.socketOfferForPlan(ctx, plan, matched, s.SessionID, different)
 		if err != nil {
+			return false
+		}
+		if reason, _ := r["refused"].(string); reason != "" {
+			slog.Warn("refusing socket wake: "+reason, "agent", agent, "session_id", s.SessionID, "hint", socketBindingHint)
 			return false
 		}
 		plan.notice, _ = r["digest"].(string)
@@ -378,6 +363,10 @@ func (e *Engine) wakeOverSocket(plan wakePlan, agent string) bool {
 		if plan.notice == "" {
 			return true
 		}
+	}
+	if different {
+		slog.Info("stated binding outranks cwd difference", "agent", agent, "session_id", s.SessionID,
+			"agent_cwd", plan.cwd, "session_cwd", s.CWD)
 	}
 	written := false
 	if offer != "" {
@@ -421,11 +410,20 @@ func (e *Engine) wakeOverSocket(plan wakePlan, agent string) bool {
 	return true
 }
 
-func (e *Engine) socketOfferForPlan(ctx context.Context, plan wakePlan) (core.Result, error) {
+func (e *Engine) socketOfferForPlan(
+	ctx context.Context, plan wakePlan, matched, target string, different bool,
+) (core.Result, error) {
 	return e.query(ctx, func() core.Result {
 		l := e.state.Agents[plan.agent]
-		if l == nil || !l.SessionIsCurrent(plan.session) || !e.socketDaemonReady(l, time.Now()) {
+		if l == nil || l.CreatedSerial != plan.createdSerial || cwdOf(l) != plan.cwd || !l.HoldsSession(matched) ||
+			!l.SessionIsCurrent(plan.session) || !e.socketDaemonReady(l, time.Now()) {
 			return core.Result{"digest": ""}
+		}
+		// Recheck the current holders at the last writer checkpoint. A plan
+		// copied before a conflicting bind must not authorize a later write.
+		binding := e.socketBindingOf(l, matched, target, e.socketBindingOwners(e.peerSnapshot()))
+		if reason := socketBindingRefusal(binding, different); reason != "" {
+			return core.Result{"refused": reason}
 		}
 		rows := e.socketParticipants(l)
 		for _, row := range rows {
