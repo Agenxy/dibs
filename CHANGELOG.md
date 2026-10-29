@@ -36,10 +36,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- Unreachable-agent alerts name the known desktop app and a human host label.
-  When no thread or session is known, they say so and offer finding/restarting
-  the agent or reassigning its work, instead of implying a specific window or
-  printing an empty original-session instruction.
+- Contact alerts now show the known app and computer name. When no thread
+  or session is recorded, the alert says so and suggests finding/restarting
+  the agent or reassigning the work. Known app threads retain their Open link.
 
 - Codex plugin receipts recognize canonical spellings of the same installed
   directory, including macOS `/var` and `/private/var`, while still refusing
