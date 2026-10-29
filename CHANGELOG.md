@@ -36,6 +36,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Linux doctor no longer offers Touch ID merely because the release archive
+  includes the Mac presence helper. Password setup remains available. Paths
+  under home use `~/` when the current directory is home, while paths inside
+  a project retain their useful `./` spelling.
+
 - Homebrew 7 casks select the app and Touch ID helper only on macOS, use
   declarative, non-fatal Mac quarantine steps, and print Linux service and
   notification advice on Linux. Service registration is an explicit

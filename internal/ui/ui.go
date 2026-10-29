@@ -148,19 +148,20 @@ func SetOutput(w io.Writer) { r = lipgloss.NewRenderer(w) }
 // Coordination paths are long: a claim inside a temp checkout ran to 96
 // characters and pushed everything after it off the line, which is how a
 // column-aligned board stops being aligned. Shortening is done in the order a
-// reader would: relative to where they are standing, then relative to home,
+// reader would: relative to where they are standing (unless that IS home), then relative to home,
 // then by dropping the MIDDLE, never the end. The end is the part that says
 // which directory this actually is.
 func Path(p string) string {
 	if p == "" {
 		return p
 	}
-	if cwd, err := os.Getwd(); err == nil && cwd != "/" {
+	home, _ := os.UserHomeDir()
+	if cwd, err := os.Getwd(); err == nil && cwd != "/" && cwd != home {
 		if rel := strings.TrimPrefix(p, cwd+string(os.PathSeparator)); rel != p {
 			return "./" + rel
 		}
 	}
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
+	if home != "" {
 		if rel := strings.TrimPrefix(p, home+string(os.PathSeparator)); rel != p {
 			p = "~/" + rel
 		}
