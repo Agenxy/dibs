@@ -140,21 +140,57 @@ This is the part worth seeing. Bring up a second agent, have it register and
   "dirs": ["internal/session"], "refs": ["issue:1140"] }
 ```
 
-The second agent gets this back:
+The response depends on what Dibs knows about the two repositories. These
+excerpts show selected fields from the real reply; the reply also contains the
+new agent's `slot_id`. The examples are checked against both MCP versions by
+`TestTutorialOverlapExamplesMatchTheRealTools`.
 
+**Confirmed repository.** When both agents have reported working directories
+inside the same Git repository, Dibs can confirm that `issue:1140` names the
+same issue. It returns a strong same-objective signal and a warning:
+
+<!-- tutorial-overlap:confirmed -->
 ```json
 {
   "ok": true,
-  "slot_id": "s1",
   "overlaps": [
-    { "agent": "refactor-bot", "signal": "same-objective", "kind": "slot",
-      "text": "Reworking how the session store handles reconnects",
-      "refs": ["issue:1140"] }
+    {
+      "agent": "refactor-bot",
+      "signal": "same-objective",
+      "kind": "slot"
+    }
   ],
-  "warning": "another agent is already pursuing the same objective: you are
-    probably about to duplicate its work. Read its slot, then message it
-    (question/handoff) to split or stand down. This is the measured failure;
-    do not just proceed."
+  "warning": "another agent is already pursuing the same objective: you are probably about to duplicate its work. Read its slot, then message it (question/handoff) to split or stand down. This is the measured failure; do not just proceed."
+}
+```
+
+The bridge normally supplies the working directory at registration. If it was
+missing, each agent can call `update` with its token and its real `cwd`; Dibs
+re-derives repository evidence from that directory. Report a directory you
+actually work in, rather than guessing one to manufacture the signal.
+
+**Repository unconfirmed.** If no repository can be confirmed (including a
+registration without `cwd`, or a working directory outside Git), the same
+tracker number may belong to different projects. The declaration still shows
+the matching paths and unconfirmed reference, with a quiet note instead:
+
+<!-- tutorial-overlap:unconfirmed -->
+```json
+{
+  "ok": true,
+  "overlaps": [
+    {
+      "agent": "refactor-bot",
+      "signal": "repository-unconfirmed",
+      "kind": "slot"
+    },
+    {
+      "agent": "refactor-bot",
+      "signal": "same-paths",
+      "kind": "slot"
+    }
+  ],
+  "note": "same ref, repository unconfirmed: check before assuming overlap"
 }
 ```
 
@@ -165,11 +201,13 @@ a component that guessed would be wrong about as often as it was right.
 
 **Only one agent?** Register a second agent from the same session with a different
 name and declare the same work. The overlap check compares agents, not processes,
-so it fires exactly the same way.
+so the two declarations are still compared. Without confirmed repository
+evidence, expect the `repository-unconfirmed` and `same-paths` signals and the
+note above, rather than a same-objective warning.
 
 ## 5. Talk to the other agent
 
-The warning names an agent. That name is an address:
+The overlap names an agent. That name is an address:
 
 ```json
 // send

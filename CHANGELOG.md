@@ -36,6 +36,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The tutorial distinguishes a confirmed same-repository objective warning
+  from the quiet unconfirmed-reference/path note. Its displayed response
+  fields are checked through real register/check-in/declare calls, with both
+  repository discovery and the no-repository single-session path.
+
 - Codex plugin receipts recognize canonical spellings of the same installed
   directory, including macOS `/var` and `/private/var`, while still refusing
   a different directory, plugin identity, version or payload.
