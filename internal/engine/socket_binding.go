@@ -78,6 +78,11 @@ func (e *Engine) socketBindingsFor(a *core.Agent) map[string]socketBindingEviden
 	return out
 }
 
+// Refusing beats logging and delivering: a wrong guess interrupts somebody
+// else's turn and spends the intended recipient's attempt; a refusal can take
+// the existing retry path. That asymmetry still decides guessed/unknown cases.
+// A stated same-host binding outranks launch cwd because work can move while
+// the harness session stays the same; it is stronger existing evidence.
 func socketBindingRefusal(b socketBindingEvidence, differentDirectory bool) string {
 	switch b.kind {
 	case "conflicting":
