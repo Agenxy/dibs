@@ -174,17 +174,27 @@ reproducibility above holds for anyone holding the same certificate, and
 everyone else can reproduce the unsigned binaries and compare everything but
 the signature.
 
-### Homebrew (macOS)
+### Homebrew (macOS and Linux)
 
 ```sh
+brew update
 brew tap agenxy/tap
 brew trust agenxy/tap
-brew install dibs
+brew install --cask dibs
+dibs configure --service
 ```
 
-Homebrew 6 refuses to load casks from a tap you have not trusted, so the first
-line is not optional and the install fails with a trust error without it. It is
-a one-time thing per tap.
+Run the service setup once, from your own terminal. On Linux, then run
+`systemctl --user enable --now dibs`; desktop notifications need `notify-send`
+(`libnotify`, or `libnotify-bin` on Debian/Ubuntu). On macOS, approve the app's
+background service when requested. Homebrew's sandbox has a temporary home,
+so the cask installs files and leaves service setup to this explicit command.
+For an existing service, use `brew upgrade dibs`, then `dibs upgrade`; ordinary
+updates do not need another configure. Locally tuned units are preserved.
+
+Homebrew 7 is required for declarative install steps. `brew update` also brings
+older Homebrew versions forward before `brew trust`, which arrived in Homebrew 6.
+Tap trust is a one-time step: loading an untrusted tap fails before installation.
 
 `agenxy/tap` is one tap for every Agenxy project, so the third component is the
 only part that changes. `agenxy/lanes/lanes` still works: GitHub redirects the
@@ -199,7 +209,11 @@ which looks like a broken product rather than an unsigned one.
 It is not treated as fatal, because `xattr` exits non-zero in ordinary cases
 and failing the install over that would be worse than the warning it prevents.
 So if macOS still says the developer cannot be verified, it did not work, and
-`xattr -dr com.apple.quarantine "$(brew --prefix)/bin/dibd"` finishes the job.
+the following finishes the job (use your chosen app folder if it differs):
+
+```sh
+xattr -dr com.apple.quarantine "$(brew --prefix)/bin/dibd" "$(brew --prefix)/bin/dibs" "/Applications/Dibs.app"
+```
 Saying it always works would leave you meeting a dialog the documentation calls
 impossible.
 
@@ -304,8 +318,8 @@ Two more install rules are not obvious from the commands:
   signature. `go run ./tools/signcheck` says how to make a stable identity once
   and stop that.
 
-On macOS, `task install` and Homebrew register the app's background service.
-For the manual installation above, run `dibs configure --service` instead.
+On macOS, `task install` registers the app's background service. For Homebrew
+and manual installations, run `dibs configure --service` once from your terminal.
 On Linux, start `dibd &` for a first look, or use the systemd unit below. Then:
 
 ```sh

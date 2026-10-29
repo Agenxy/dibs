@@ -36,7 +36,7 @@ func installedAppService() (unit, daemon string) {
 	return filepath.Join(app, appServiceRelative), filepath.Join(app, "Contents", "MacOS", "dibd")
 }
 
-func checkAppService(ok reportFn, warn fixFn) {
+func checkAppService(ok reportFn, warn, bad fixFn) {
 	unit, _ := installedAppService()
 	if unit == "" {
 		return
@@ -56,7 +56,7 @@ func checkAppService(ok reportFn, warn fixFn) {
 	case "requires-approval":
 		warn("Dibs background service requires approval", serviceApprovalError().Error())
 	case "not-found", "not-registered":
-		warn("Dibs background service is not registered", "run dibs configure --service to register the verified "+
+		bad("Dibs background service is not registered", "run dibs configure --service to register the verified "+
 			"installed app; no enabled service is confirmed")
 	default:
 		warn("Dibs background service is "+status.Status, "run dibs configure --service to enable the installed "+

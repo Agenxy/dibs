@@ -26,10 +26,11 @@ func (d *diagnosis) serviceDirectoryNote(selected paths.DirectorySelection) {
 }
 
 func checkServiceBinary(ok reportFn, warn, bad fixFn) {
-	checkAppService(ok, warn)
+	checkAppService(ok, warn, bad)
 	unit, pinned := unitDaemon()
 	if unit == "" || pinned == "" {
-		return // no service installed: `configure --service` is optional
+		checkMissingService(bad)
+		return
 	}
 	want, err := daemonPath()
 	if err != nil {
@@ -47,10 +48,13 @@ func checkServiceBinary(ok reportFn, warn, bad fixFn) {
 			detail = "it pins " + pinned + ", which does not exist; the dibd you have installed is " + want
 		}
 		if runtime.GOOS == "linux" && os.IsNotExist(err) {
-			bad("the service executable does not exist", detail+". Edit ExecStart to the stable installed dibd path, "+
-				"or delete "+unit+" and run `dibs configure --service`")
+			bad("the service executable does not exist", detail+". "+systemdDoctorFix(unit, want))
 			return
 		}
+	}
+	if runtime.GOOS == "linux" {
+		warn("the service would start a different daemon than the one installed", detail+". "+systemdDoctorFix(unit, want))
+		return
 	}
 	warn("the service would start a different daemon than the one installed",
 		detail+". Every fix since that build is not running when the service starts it. "+
@@ -69,4 +73,25 @@ func sameBinary(a, b string) bool {
 	ea, _ := filepath.EvalSymlinks(a)
 	eb, _ := filepath.EvalSymlinks(b)
 	return ea != "" && ea == eb
+}
+
+func systemdDoctorFix(unit, want string) string {
+	selected, err := paths.SelectDir(false)
+	body, readErr := os.ReadFile(unit) // #nosec G304 G703 -- this user's configured service unit
+	if err == nil && readErr == nil && refreshableSystemdUnit(unit, string(body), selected.Dir, want) {
+		return "Run `dibs upgrade` to refresh this Dibs-written unit and restart after verifying " +
+			"the installed daemon can rebuild the board"
+	}
+	return "This unit has local changes or names another board. Edit ExecStart to the stable installed dibd path, " +
+		"or delete " + unit + " and run `dibs configure --service`; dibs upgrade preserves it"
+}
+
+func checkMissingService(bad fixFn) {
+	if _, err := daemonPath(); err == nil && (runtime.GOOS == "darwin" || runtime.GOOS == "linux") {
+		fix := "run `dibs configure --service` from your terminal"
+		if runtime.GOOS == "linux" {
+			fix += "; then run `systemctl --user enable --now dibs`"
+		}
+		bad("Dibs is installed but no service is registered", fix)
+	}
 }

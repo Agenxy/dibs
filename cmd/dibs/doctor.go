@@ -179,6 +179,8 @@ func (d *diagnosis) run(verbose bool) error {
 		warn("data directory is "+inherited+", named by an older version", fix)
 	}
 
+	checkServiceBinary(ok, warn, bad)
+
 	// ── the daemon ───────────────────────────────────────────────────────
 	secretPath := filepath.Join(dir, "local.secret")
 	secret, err := os.ReadFile(secretPath) // #nosec G304 -- path derived from config, not input
@@ -222,7 +224,6 @@ func (d *diagnosis) run(verbose bool) error {
 		checkIncomingFirewall(ok, bad)
 		checkServiceReturnsAfterAReboot(ok, warn)
 		reportUpdate(ok, warn)
-		checkServiceBinary(ok, warn, bad)
 		return earlyDoctorResult(d.probs, d.warns)
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -268,7 +269,6 @@ func (d *diagnosis) run(verbose bool) error {
 	checkIncomingFirewall(ok, bad)
 	checkServiceReturnsAfterAReboot(ok, warn)
 	reportUpdate(ok, warn)
-	checkServiceBinary(ok, warn, bad)
 	if b, err := boardSnapshot(); err == nil {
 		checkCoordinatorIsReachable(b, ok, warn)
 		checkContactDeliveryFailures(b, warn)

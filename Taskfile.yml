@@ -413,12 +413,15 @@ tasks:
     # the notifier not installed. The only check that could see it is one that
     # opens the tar.
     #
-    # Snapshot, so it needs no tag and no credentials; the cask and signing are
-    # skipped because they need the tap's deploy key and cosign, which a
-    # contributor's machine has neither of and which are not what this asks.
+    # Snapshot renders the real cask without credentials or publication.
+    # The empty variable satisfies only the template; --skip=publish prevents
+    # any tap operation. Homebrew records the cask steps without executing them.
+    env:
+      HOMEBREW_TAP_DEPLOY_KEY: ""
     cmds:
-      - goreleaser release --snapshot --clean --skip=sign,publish,announce,validate,homebrew
+      - goreleaser release --snapshot --clean --skip=sign,publish,announce,validate
       - go run ./tools/archivecheck
+      - go run ./tools/caskcheck
   test:wake:
     env:
       # No dialogs from a test run: these suites spawn real daemons,

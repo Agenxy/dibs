@@ -36,6 +36,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Homebrew 7 casks select the app and Touch ID helper only on macOS, use
+  declarative, non-fatal Mac quarantine steps, and print Linux service and
+  notification advice on Linux. Service registration is an explicit
+  `dibs configure --service` from the user's terminal, avoiding Homebrew's
+  temporary sandbox home. Existing services update with `brew upgrade dibs`
+  followed by `dibs upgrade`: recognized Linux units are repaired before
+  restart, while tuned units needing repair are preserved and explained.
+  Doctor reports missing service setup even before the daemon's first start.
+  The archive gate checks the generated cask through Homebrew's real loader
+  and records its steps without executing them.
+
 - Linux service configuration is repeatable across package reinstalls. Units
   use a stable package-manager binary link and defined executable search paths,
   rather than a versioned Caskroom path or Homebrew's temporary shim PATH.
