@@ -105,6 +105,26 @@ func TestCodexPluginChangedBuildUsesDifferentRoots(t *testing.T) {
 // Removing the refresh call in upgrade makes this guard fail, even though all
 // direct installer tests still pass.
 func TestActualCurrentDaemonUpgradeAttemptsPluginAndContinuesOnFailure(t *testing.T) {
+	cmd, home := currentDaemonUpgradePluginFixture(t)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("actual current-daemon upgrade was blocked by plugin failure: %v %s", err, out)
+	}
+	for _, want := range []string{"Continuing the daemon upgrade", codexPluginRepair, "nothing to do"} {
+		if !strings.Contains(string(out), want) {
+			t.Fatalf("actual upgrade missed %q: %s", want, out)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(home, "installer-called")); err != nil {
+		t.Fatal("actual upgrade never reached the plugin installer:", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, "dibs-marketplace", "refresh-failed")); err != nil {
+		t.Fatal("actual upgrade did not retain doctor failure diagnosis:", err)
+	}
+}
+
+func currentDaemonUpgradePluginFixture(t *testing.T) (*exec.Cmd, string) {
+	t.Helper()
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -143,24 +163,10 @@ func TestActualCurrentDaemonUpgradeAttemptsPluginAndContinuesOnFailure(t *testin
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
-	defer cancel()
+	t.Cleanup(cancel)
 	cmd := exec.CommandContext(ctx, exe, "-test.run=^TestCLIUpgradeRecordProcess$", "--", "upgrade")
 	cmd.Env = append(os.Environ(), "DIBS_TEST_UPGRADE_RECORD=1", "DIBS_TEST_UPGRADE_BARE=1",
 		"DIBS_TEST_PLUGIN_EXECUTABLE="+codex, "DIBS_TEST_PLUGIN_HOME="+home, "DIBS_PLUGIN_FIXTURE=late-fail",
 		"DIBS_DIR="+root, "DIBS_ADDR=127.0.0.1:49998", "HOME="+root, "PATH="+binDir+string(os.PathListSeparator)+os.Getenv("PATH"), "DIBS_NOTIFY=off")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("actual current-daemon upgrade was blocked by plugin failure: %v %s", err, out)
-	}
-	for _, want := range []string{"Continuing the daemon upgrade", codexPluginRepair, "nothing to do"} {
-		if !strings.Contains(string(out), want) {
-			t.Fatalf("actual upgrade missed %q: %s", want, out)
-		}
-	}
-	if _, err := os.Stat(filepath.Join(home, "installer-called")); err != nil {
-		t.Fatal("actual upgrade never reached the plugin installer:", err)
-	}
-	if _, err := os.Stat(filepath.Join(home, "dibs-marketplace", "refresh-failed")); err != nil {
-		t.Fatal("actual upgrade did not retain doctor failure diagnosis:", err)
-	}
+	return cmd, home
 }

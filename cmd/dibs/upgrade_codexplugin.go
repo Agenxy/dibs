@@ -46,6 +46,11 @@ func refreshUpgradeCodexPlugin(out io.Writer, dry bool) {
 }
 
 func warnCodexPluginRefresh(out io.Writer, home string, err error) {
+	if marketplaceConflict(err) {
+		_, _ = fmt.Fprintf(out, "WARNING: Codex plugin refresh refused: %v\n"+
+			"Continuing the daemon upgrade; running chats keep their old tool list.\n", err)
+		return // a source choice needs no failed-install marker or other write
+	}
 	_, _ = fmt.Fprintf(out, "WARNING: Codex plugin refresh failed: %v\nRun %s. "+
 		"Continuing the daemon upgrade; running chats keep their old tool list.\n", err, codexPluginRepair)
 	if home != "" {
@@ -62,14 +67,6 @@ func (d *diagnosis) checkCodexPluginVersion() {
 		d.bad("cannot locate Codex plugin state: "+err.Error(), codexPluginRepair)
 		return
 	}
-	marker := filepath.Join(home, "dibs-marketplace", "refresh-failed")
-	if _, err := os.Stat(marker); err == nil {
-		d.bad("the last Codex plugin refresh failed; daemon upgrades continue independently", codexPluginRepair)
-		return
-	} else if !os.IsNotExist(err) {
-		d.bad("cannot read Codex plugin refresh diagnosis: "+err.Error(), codexPluginRepair)
-		return
-	}
 	installed, err := installedCodexPlugin(home)
 	if err != nil {
 		d.bad("cannot inspect Codex plugin installation: "+err.Error(), codexPluginRepair)
@@ -78,9 +75,23 @@ func (d *diagnosis) checkCodexPluginVersion() {
 	if !installed {
 		return
 	}
+	// Inspect the source before any generic failure marker or current-cache
+	// verdict, so doctor and upgrade explain the same next-sync conflict.
+	p, err := planCodexPlugin("not-run-by-doctor")
+	if marketplaceConflict(err) {
+		d.bad(err.Error(), codexMarketplaceRepair)
+		return
+	}
+	marker := filepath.Join(home, "dibs-marketplace", "refresh-failed")
+	if _, err := os.Stat(marker); err == nil {
+		d.bad("the last Codex plugin refresh failed; daemon upgrades continue independently", codexPluginRepair)
+		return
+	} else if !os.IsNotExist(err) {
+		d.bad("cannot read Codex plugin refresh diagnosis: "+err.Error(), codexPluginRepair)
+		return
+	}
 	// Inspection needs no executable. Construct the same expected payload, but
 	// never invoke an installer or contact the app from doctor.
-	p, err := planCodexPlugin("not-run-by-doctor")
 	if err != nil || !p.current() {
 		d.bad("Codex's Dibs plugin does not have a verified current version root; "+
 			"running chats may still use an older tool list", codexPluginRepair)
