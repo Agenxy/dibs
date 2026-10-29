@@ -36,6 +36,15 @@ function check(name: string, cond: boolean, detail = "") {
   else { failures++; console.log(`  \x1b[31m✗\x1b[0m ${name}${detail ? ". " + detail : ""}`) }
 }
 
+// Stop carries its digest in the blocking reason; natural events keep context.
+// Use the same reader for positive and negative checks so silence is measured.
+function hookText(reply: any, event: string): string {
+  if (event === "Stop" || event === "SubagentStop") {
+    return reply?.decision === "block" ? String(reply?.reason ?? "") : ""
+  }
+  return String(reply?.hookSpecificOutput?.additionalContext ?? "")
+}
+
 const home = process.env.HOME
 const dibd = process.env.DIBD ?? `${home}/.local/bin/dibd`
 const dir_ = mkdtempSync(join(tmpdir(), "agents-space-e2e-"))
@@ -434,7 +443,7 @@ let annSerial = 0
   await call("announce", { token: speaker, space: "wake-test", body: "INTERFACE CHANGED: Token is now Secret" })
 
   const poll = await call("hook_poll", { session_id: "sess-listener", event: "Stop" })
-  const ctxText: string = poll?.hookSpecificOutput?.additionalContext ?? ""
+  const ctxText = hookText(poll, "Stop")
   // The wake path is authenticated by NOTHING: it takes a session id and a
   // cwd off the wire because a harness lifecycle hook has no agent token. So it
   // must wake the agent without disclosing anything private: any holder of the
@@ -470,18 +479,20 @@ let annSerial = 0
   // single turn is indistinguishable from a stuck loop, which destroys the
   // signal that makes an announcement worth reading at all.
   const second = await call("hook_poll", { session_id: "sess-listener", event: "Stop" })
-  const secondText: string = second?.hookSpecificOutput?.additionalContext ?? ""
+  const secondText = hookText(second, "Stop")
   check("an immediate re-poll does not repeat the announcement",
-    !secondText.includes("INTERFACE CHANGED"), secondText.slice(0, 160))
+    !secondText.includes("ack_announcement"), secondText.slice(0, 160))
 
+  // Check the announcement pointer, not its confidential body (which is never
+  // in a hook digest). An empty wrong carrier must not prove suppression.
   // Acking must stop the redelivery, or the agent sees it forever.
   const anns = ctxText.match(/#(\d+) in agent/)
   const serial = anns ? Number(anns[1]) : 0
   await call("ack_announcement", { token: listener.token, msg_serial: serial })
   const after = await call("hook_poll", { session_id: "sess-listener", event: "Stop" })
-  const afterText: string = after?.hookSpecificOutput?.additionalContext ?? ""
+  const afterText = hookText(after, "Stop")
   check("acknowledging stops the redelivery",
-    !afterText.includes("INTERFACE CHANGED"), afterText.slice(0, 200))
+    !afterText.includes("ack_announcement"), afterText.slice(0, 200))
 }
 
 // ── subagents inherit, and cost nothing (§8.2) ──────────────────────────
@@ -966,7 +977,7 @@ let annSerial = 0
       held?.decision !== "block" && !held?.reason && !held?.hookSpecificOutput?.additionalContext,
       JSON.stringify(held).slice(0, 200))
     const poll = await c5("hook_poll", { session_id: "wsid", event: "SessionStart" })
-    const txt: string = poll?.hookSpecificOutput?.additionalContext ?? ""
+    const txt = hookText(poll, "SessionStart")
     check("the admitted agent is told at its next natural activation",
       /admitted to agent "auth-work" by director/.test(txt), txt.slice(0, 200) || "(silent)")
     check("and told what it may now do", /you may start/.test(txt), txt.slice(0, 200))
@@ -976,8 +987,8 @@ let annSerial = 0
     // the token-authenticated raw queue remains complete and repeatable.
     const again = await c5("hook_poll", { session_id: "wsid", event: "SessionStart" })
     check("another natural activation does not repeat the update inside its reminder cadence",
-      !/admitted to agent "auth-work" by director/.test(again?.hookSpecificOutput?.additionalContext ?? ""),
-      String(again?.hookSpecificOutput?.additionalContext ?? "").slice(0, 120) || "(silent)")
+      !/admitted to agent "auth-work" by director/.test(hookText(again, "SessionStart")),
+      hookText(again, "SessionStart").slice(0, 120) || "(silent)")
 
     for (let read = 0; read < 2; read++) {
       const raw = await c5("inbox", { token: worker })
@@ -993,8 +1004,8 @@ let annSerial = 0
 
     const settled = await c5("hook_poll", { session_id: "wsid", event: "Stop" })
     check("and having acknowledged it, the agent stops being told",
-      !/admitted to agent/.test(settled?.hookSpecificOutput?.additionalContext ?? ""),
-      String(settled?.hookSpecificOutput?.additionalContext ?? "").slice(0, 120))
+      !/admitted to agent/.test(hookText(settled, "Stop")),
+      hookText(settled, "Stop").slice(0, 120))
 
     await c5("evict", { token: dir, space: "auth-work", to: "worker" })
     const evHeld = await c5("hook_poll", { session_id: "wsid", event: "Stop" })
@@ -1003,9 +1014,9 @@ let annSerial = 0
       JSON.stringify(evHeld).slice(0, 200))
     const ev = await c5("hook_poll", { session_id: "wsid", event: "SessionStart" })
     check("eviction reaches the next natural activation with what to do about it",
-      /removed from agent "auth-work"/.test(ev?.hookSpecificOutput?.additionalContext ?? "") &&
-      /stop work there/.test(ev?.hookSpecificOutput?.additionalContext ?? ""),
-      String(ev?.hookSpecificOutput?.additionalContext ?? "").slice(0, 200) || "(silent)")
+      /removed from agent "auth-work"/.test(hookText(ev, "SessionStart")) &&
+      /stop work there/.test(hookText(ev, "SessionStart")),
+      hookText(ev, "SessionStart").slice(0, 200) || "(silent)")
   } finally {
     proc.kill()
     try { rmSync(d3, { recursive: true, force: true }) } catch {}
