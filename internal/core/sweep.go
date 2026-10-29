@@ -73,7 +73,8 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 		// Only the live statuses advance here. Closed, archived and unreachable
 		// agents have nothing left to sweep: they are terminal, and adding empty
 		// cases for them would imply a transition that does not exist.
-		//exhaustive:ignore // terminal statuses are intentionally inert
+		// Terminal statuses are intentionally inert.
+		//exhaustive:ignore
 		switch l.Status {
 		case StatusActive:
 			dead := slices.Contains(op.DeadAgents, l.ID)

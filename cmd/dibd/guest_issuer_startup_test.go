@@ -97,7 +97,9 @@ func TestGuestIssuerRecoveryThroughActualDaemonStartup(t *testing.T) {
 			if !stopped {
 				stopped = true
 				cancel()
-				<-done
+				if err := <-done; err != nil {
+					t.Logf("process exited after cancel: %v", err)
+				}
 			}
 		}
 		t.Cleanup(stop)

@@ -95,7 +95,10 @@ func TestTheBridgeFollowsTheSecretWhenTheBoardIsRekeyed(t *testing.T) {
 	t.Cleanup(func() {
 		_ = inW.Close()
 		select {
-		case <-exited:
+		case err := <-exited:
+			if err != nil {
+				t.Logf("process exited: %v", err)
+			}
 		case <-time.After(5 * time.Second):
 			t.Error("the bridge did not exit when stdin closed")
 		}
@@ -258,7 +261,10 @@ func TestTheBridgeFollowsTheBoardWhenItComesBackSomewhereElse(t *testing.T) {
 	t.Cleanup(func() {
 		_ = inW.Close()
 		select {
-		case <-exited:
+		case err := <-exited:
+			if err != nil {
+				t.Logf("process exited: %v", err)
+			}
 		case <-time.After(5 * time.Second):
 			t.Error("the bridge did not exit when stdin closed")
 		}

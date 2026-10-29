@@ -117,7 +117,7 @@ func TestProofCheckUsesTheReadOnlyProductionDoorAndCannotTriggerFinalizer(t *tes
 		t.Fatal("proof completion was allowed to trigger finalizer")
 	}
 	for _, pin := range []string{
-		"cosign-release: v3.1.3", "version: 2026.7.7", "experimental: true",
+		"cosign-release: v3.1.4", "version: 2026.10.23", "experimental: true",
 		"checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
 	} {
 		if proofWorkflowParity(release, strings.ReplaceAll(proof, pin, pin+"-changed")) == nil {

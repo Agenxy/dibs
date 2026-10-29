@@ -18,7 +18,7 @@ func TestHookPollForwardsSessionStartAndStaysSilentElsewhere(t *testing.T) {
 	var asked []map[string]any
 	daemon := func(tool string, args map[string]any, out any) error {
 		asked = append(asked, args)
-		*(out.(*map[string]any)) = map[string]any{
+		*out.(*map[string]any) = map[string]any{
 			"agent": "quiet",
 			"hookSpecificOutput": map[string]any{
 				"hookEventName": "SessionStart", "additionalContext": "Dibs: 1 unread message(s)",

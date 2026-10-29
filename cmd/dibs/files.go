@@ -184,14 +184,15 @@ func getFile(blob, output string) (fileResult, error) {
 	if err != nil {
 		return fileResult{}, err
 	}
-	if _, err = os.Lstat(abs); !os.IsNotExist(err) {
+	// #nosec G703 -- the operator's own -o destination for their own download
+	if _, err = os.Lstat(abs); !os.IsNotExist(err) { // #nosec G703
 		return fileResult{}, errors.New("destination exists or cannot be checked; choose a new -o path")
 	}
-	f, err := os.CreateTemp(filepath.Dir(abs), ".dibs-download-*")
+	f, err := os.CreateTemp(filepath.Dir(abs), ".dibs-download-*") // #nosec G703 -- beside the operator's -o path
 	if err != nil {
 		return fileResult{}, err
 	}
-	defer func() { _ = f.Close(); _ = os.Remove(f.Name()) }()
+	defer func() { _ = f.Close(); _ = os.Remove(f.Name()) }() // #nosec G703 -- the temporary file created above
 	descriptor, err := authorizeFile("download", map[string]any{"blob": blob})
 	if err != nil {
 		return fileResult{}, err

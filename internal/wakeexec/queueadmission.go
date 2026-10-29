@@ -46,21 +46,33 @@ func RunRestartQueue(argv []string, agent, dir string) RestartQueueOutcome {
 	return RestartQueueOutcome{OK: out.ok, Retryable: out.contended}
 }
 
+// acquireQueueAdmission takes the board-wide admission lock. A busy writer is
+// contention, retried later; any other failure means the wake was not sent.
+func acquireQueueAdmission(
+	thread, agent string, timeout time.Duration, observation QueueObservation,
+) (release func(), refused queueCommandOutcome, locked bool) {
+	release, err := lockQueueAdmission(thread, timeout)
+	if err == nil {
+		return release, queueCommandOutcome{}, true
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		slog.Debug("app queue writer is busy; this wake will retry later", "agent", agent)
+		return nil, queueCommandOutcome{contended: true, observation: observation}, false
+	}
+	slog.Warn("could not coordinate admission to the app queue; the wake was not sent",
+		"agent", agent, "err", err, "hint", "retry after the other queue writer settles; "+
+			"restore write access to the board data directory if it cannot be locked")
+	return nil, queueCommandOutcome{observation: observation}, false
+}
+
 // runQueuedCommand serializes observe -> enqueue -> retain across the daemon
 // and every bridge on this board. A process-local mutex allowed both writers
 // to observe the same empty queue before either committed its item.
 func runQueuedCommand(argv []string, thread, agent, dir string, timeout, grace time.Duration) queueCommandOutcome {
 	observation := QueueObservation{Admission: "not_attempted", Pending: "unknown", At: time.Now().UTC()}
-	release, err := lockQueueAdmission(thread, timeout)
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			slog.Debug("app queue writer is busy; this wake will retry later", "agent", agent)
-			return queueCommandOutcome{contended: true, observation: observation}
-		}
-		slog.Warn("could not coordinate admission to the app queue; the wake was not sent",
-			"agent", agent, "err", err, "hint", "retry after the other queue writer settles; "+
-				"restore write access to the board data directory if it cannot be locked")
-		return queueCommandOutcome{observation: observation}
+	release, refused, locked := acquireQueueAdmission(thread, agent, timeout, observation)
+	if !locked {
+		return refused
 	}
 	defer release()
 	generation := reconnectGeneration(thread)

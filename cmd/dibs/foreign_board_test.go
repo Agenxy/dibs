@@ -198,7 +198,13 @@ func startDiagnosticBoard(t *testing.T, binary, home string) string {
 	}
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
-	t.Cleanup(func() { _ = cmd.Process.Kill(); <-done; _ = log.Close() })
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		if err := <-done; err != nil {
+			t.Logf("diagnostic board exited after kill: %v", err)
+		}
+		_ = log.Close()
+	})
 	client := &http.Client{Timeout: time.Second}
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
