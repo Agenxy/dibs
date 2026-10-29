@@ -91,6 +91,9 @@ func (p *codexPluginPlan) current() bool {
 }
 
 func (p *codexPluginPlan) install(out io.Writer) (retErr error) {
+	if err := p.checkMarketplaceSource(); err != nil {
+		return err // before current(), locks, materialization or cache mutation
+	}
 	if p.current() {
 		// #nosec G703 -- verified repair clears own failure marker
 		_ = os.Remove(filepath.Join(p.home, "dibs-marketplace", "refresh-failed"))
@@ -150,7 +153,8 @@ func (p *codexPluginPlan) verifyInstallReceipt(b []byte) error {
 		return fmt.Errorf("codex installer returned no verifiable JSON receipt: %w", err)
 	}
 	wantRoot := filepath.Join(p.cacheBase(), p.version)
-	if result.PluginID != "dibs@dibs" || result.Version != p.version || filepath.Clean(result.InstalledPath) != wantRoot {
+	if result.PluginID != "dibs@dibs" || result.Version != p.version ||
+		!samePluginDirectory(result.InstalledPath, wantRoot) {
 		return errors.New("codex installer returned a different plugin identity, version or root")
 	}
 	if err := p.verifyFiles(wantRoot); err != nil {
