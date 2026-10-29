@@ -58,6 +58,7 @@ __pycache__/
 /appbundle
 /archivecheck
 /casknote
+/caskcheck
 /covergate
 /fetchpinned
 /signcheck
@@ -70,6 +71,7 @@ __pycache__/
 /mcpbundle
 /ociimage
 /releasedrift
+/toolchaindrift
 /version
 /reviewrelease
 /sigstore-root-check

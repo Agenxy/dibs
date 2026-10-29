@@ -957,16 +957,22 @@ func TestThePresenceHelperIsTheOneThatGetsBuilt(t *testing.T) {
 			"and falls back to the admin password, while the docs describe Touch ID "+
 			"as the default", want)
 	}
-	for _, place := range []struct{ what, needle string }{
-		{"carried in the archive", "src: " + want},
-		{"linked by the Homebrew cask", "- " + want},
-	} {
-		if !strings.Contains(string(rel), place.needle) {
-			t.Errorf("the release is not %s (%q not found in .goreleaser.yml): an "+
-				"installed Dibs would find no helper beside its executable and fall "+
-				"back to the admin password, while the docs describe Touch ID as the "+
-				"default", place.what, place.needle)
-		}
+	if !strings.Contains(string(rel), "src: "+want) {
+		t.Errorf("the release archive does not carry %q", want)
+	}
+	// The helper is selected by the Mac-only custom block now. Match its
+	// actual binary directive, scoped to the cask, rather than the retired
+	// unconditional YAML list. The real Homebrew loader guard also removes
+	// this directive to prove a missing helper fails platform inspection.
+	at := bytes.Index(rel, []byte("homebrew_casks:"))
+	if at < 0 {
+		t.Fatal("the release has no Homebrew cask section")
+	}
+	if !regexp.MustCompile(`(?m)^\s*binary "` + regexp.QuoteMeta(want) + `"\s*$`).Match(rel[at:]) {
+		t.Errorf("the Homebrew cask does not link %q with its binary directive: an "+
+			"installed Dibs would find no helper beside its executable and fall "+
+			"back to the admin password, while the docs describe Touch ID as the "+
+			"default", want)
 	}
 }
 

@@ -877,7 +877,7 @@ func deliveredSomething(res core.Result) bool {
 	if res == nil {
 		return false
 	}
-	for _, k := range []string{"additionalContext", "hookSpecificOutput", "context", "text"} {
+	for _, k := range []string{"reason", "additionalContext", "hookSpecificOutput", "context", "text"} {
 		if v, ok := res[k]; ok && v != nil && v != "" {
 			return true
 		}
