@@ -40,7 +40,9 @@ const serviceHelp = `dibs configure --service: keep the daemon running
   board and its directory pin. It refuses to remove another board's service.
 
   Linux: writes $XDG_CONFIG_HOME/systemd/user/dibs.service and prints the load
-  command. Refuses to overwrite an existing unit you may have tuned.
+  command. Repeated configuration succeeds. Refreshes verified generated units;
+  preserves hand edits with a warning. Uses a stable package-manager binary link
+  and a defined search path, never Homebrew's temporary postflight PATH.
 `
 
 // serviceCommand handles `dibs configure --service`.

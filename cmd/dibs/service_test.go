@@ -618,12 +618,20 @@ func TestARefusedServiceInstallCreatesNothing(t *testing.T) {
 	}
 	t.Setenv("PATH", bin)
 
-	if err := writeServiceUnit(); err == nil {
+	err := writeServiceUnit()
+	if runtime.GOOS == "linux" {
+		if err != nil {
+			t.Fatal("preserving a tuned Linux unit should succeed:", err)
+		}
+	} else if err == nil {
 		t.Fatal("an existing unit was overwritten")
 	}
+	if body, err := os.ReadFile(unit); err != nil || string(body) != "existing, possibly tuned" {
+		t.Fatalf("existing unit was changed: %v %q", err, body)
+	}
 	if _, err := os.Stat(dir); err == nil {
-		t.Errorf("the install refused and still created %s: a refusal that changes "+
-			"the board on disk is not a refusal", dir)
+		t.Errorf("the install preserved the existing unit but still created %s: preserving "+
+			"the unit must not recreate its board", dir)
 	}
 }
 

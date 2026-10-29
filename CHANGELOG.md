@@ -36,6 +36,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Linux service configuration is repeatable across package reinstalls. Units
+  use a stable package-manager binary link and defined executable search paths,
+  rather than a versioned Caskroom path or Homebrew's temporary shim PATH.
+  Generated units carry a digest of their own contents; unchanged generated
+  units can refresh, while hand edits and units naming another board are
+  preserved. Untouched v0.0.16 Homebrew units migrate automatically, including
+  shell-written units whose versioned executable moved and whose only varying
+  field is PATH. Preservation warnings use stderr so Homebrew displays them.
+  A preserved unit with a missing executable prints its repair, and doctor
+  reports it as a problem.
+
 - Codex plugin receipts recognize canonical spellings of the same installed
   directory, including macOS `/var` and `/private/var`, while still refusing
   a different directory, plugin identity, version or payload.
