@@ -157,7 +157,10 @@ func serviceDirectoryBridgeMethod(t *testing.T, method string) func(int) map[str
 	t.Cleanup(func() {
 		_ = inW.Close()
 		select {
-		case <-exited:
+		case err := <-exited:
+			if err != nil {
+				t.Logf("process exited: %v", err)
+			}
 		case <-time.After(5 * time.Second):
 			t.Error("fixture bridge did not exit")
 		}

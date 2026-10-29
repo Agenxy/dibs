@@ -100,7 +100,9 @@ func TestProcessCLIThroughPublicDaemon(t *testing.T) {
 	go func() { done <- daemon.Wait() }()
 	t.Cleanup(func() {
 		cancel()
-		<-done
+		if err := <-done; err != nil {
+			t.Logf("process exited after cancel: %v", err)
+		}
 		if t.Failed() {
 			t.Log(logs.String())
 		}

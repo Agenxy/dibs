@@ -122,9 +122,9 @@ func TestReleaseAndRehearsalPinIdenticalToolchains(t *testing.T) {
 		t.Fatal(err)
 	}
 	mutations := []struct{ from, to string }{
-		{"cosign-release: v3.1.3", "cosign-release: v3.1.2"},
-		{"syft-version: v1.50.0", "syft-version: v1.49.0"},
-		{"version: 2026.7.7", "version: 2026.7.6"},
+		{"cosign-release: v3.1.4", "cosign-release: v3.1.3"},
+		{"syft-version: v1.55.0", "syft-version: v1.54.0"},
+		{"version: 2026.10.23", "version: 2026.10.22"},
 		{"experimental: true", "experimental: true\n          install_args: goreleaser@2.16.0"},
 	}
 	// Action pins are read from the rehearsal workflow rather than written
@@ -153,7 +153,7 @@ func TestReleaseAndRehearsalPinIdenticalToolchains(t *testing.T) {
 			t.Fatalf("guard missed setup drift: %s", mutation.from)
 		}
 	}
-	if releaseRehearsalParity(release, rehearsal, strings.ReplaceAll(mise, `goreleaser = "2.17.1"`, `goreleaser = "latest"`)) == nil {
+	if releaseRehearsalParity(release, rehearsal, strings.ReplaceAll(mise, `goreleaser = "2.19.0"`, `goreleaser = "latest"`)) == nil {
 		t.Fatal("unversioned GoReleaser accepted")
 	}
 }

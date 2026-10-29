@@ -66,9 +66,9 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
         with:
-          version: 2026.7.7
+          version: 2026.10.23
           experimental: true
       - name: validate exact protected-main candidate before secrets or build
         run: go run ./tools/releaseflow -phase validate
@@ -76,10 +76,10 @@ jobs:
         run: task e2e:deps
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
-          cosign-release: v3.1.3
+          cosign-release: v3.1.4
       - uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
-          syft-version: v1.50.0
+          syft-version: v1.55.0
       - name: macOS signing preflight
         if: '!inputs.rehearsal_fail && !inputs.delivery_rehearsal'
         env:
@@ -107,9 +107,9 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
-      - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
         with:
-          version: 2026.7.7
+          version: 2026.10.23
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: release-preflight-${{ github.run_attempt }}
@@ -133,9 +133,9 @@ jobs:
           ref: main
           fetch-depth: 0
           persist-credentials: false
-      - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
         with:
-          version: 2026.7.7
+          version: 2026.10.23
           experimental: true
       - name: authenticate receipt before tag checkout or signing
         run: go run ./tools/releaseflow -phase authorize-receipt
@@ -148,12 +148,12 @@ jobs:
         run: go run ./tools/releaseflow -phase authorize
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
-          cosign-release: v3.1.3
+          cosign-release: v3.1.4
       - name: embedded Sigstore root is current
         run: go run ./tools/sigstore-root-check
       - uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
-          syft-version: v1.50.0
+          syft-version: v1.55.0
       - name: macOS signing identity
         env:
           DIBS_SIGNING_P12: ${{ secrets.DIBS_SIGNING_P12 }}
@@ -185,9 +185,9 @@ jobs:
           ref: main
           fetch-depth: 0
           persist-credentials: false
-      - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
         with:
-          version: 2026.7.7
+          version: 2026.10.23
       - name: authenticate receipt before tag checkout
         run: go run ./tools/releaseflow -phase authorize-receipt
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -197,7 +197,7 @@ jobs:
           persist-credentials: false
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
-          cosign-release: v3.1.3
+          cosign-release: v3.1.4
       - name: push signed cask review branch or verify already done
         env:
           HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
@@ -219,9 +219,9 @@ jobs:
           ref: main
           fetch-depth: 0
           persist-credentials: false
-      - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
         with:
-          version: 2026.7.7
+          version: 2026.10.23
       - name: measure secret key format without printing key material
         env:
           HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
@@ -238,9 +238,9 @@ jobs:
         with:
           ref: main
           persist-credentials: false
-      - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
         with:
-          version: 2026.7.7
+          version: 2026.10.23
       - name: authenticate delivered rehearsal receipt; only this run record is written
         env:
           DIBS_PREFLIGHT_RUN: ${{ inputs.preflight_run }}

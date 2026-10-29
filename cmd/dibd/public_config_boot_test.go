@@ -81,7 +81,9 @@ func TestPublicFileBootAndProcessCLI(t *testing.T) {
 	t.Cleanup(func() {
 		cancel()
 		if !waited {
-			<-done
+			if err := <-done; err != nil {
+				t.Logf("process exited after cancel: %v", err)
+			}
 		}
 		if t.Failed() {
 			body, _ := os.ReadFile(logPath)

@@ -65,7 +65,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "signstable: install destination must be absolute, got %q\n", dest)
 		os.Exit(1)
 	}
-	if fi, err := os.Stat(dest); err != nil || !fi.IsDir() {
+	// #nosec G703 -- dest is validated absolute and cleaned just above.
+	if fi, err := os.Stat(dest); err != nil || !fi.IsDir() { // #nosec G703
 		return // nothing installed there yet; nothing to promise
 	}
 	if err := check(dest); err != nil {
@@ -102,7 +103,7 @@ func requirements(dest string) (reqs map[string]string, adhoc, ok bool) {
 		// #nosec G703 -- `dest` was validated absolute in main; `bin` is a
 		// constant from the list above.
 		path := filepath.Join(dest, bin)
-		if _, err := os.Stat(path); err != nil {
+		if _, err := os.Stat(path); err != nil { // #nosec G703 -- validated prefix, constant name
 			continue
 		}
 		// #nosec G204,G702 -- codesign is a literal; path is a validated absolute
@@ -136,7 +137,7 @@ func compare(dest string, now map[string]string, adhoc bool) error {
 	// #nosec G703 -- validated absolute prefix joined to a constant filename.
 	stamp := filepath.Join(dest, stampName)
 	prev := map[string]string{}
-	if b, err := os.ReadFile(stamp); err == nil { // #nosec G304 -- a path this tool wrote
+	if b, err := os.ReadFile(stamp); err == nil { // #nosec G304 G703 -- a path this tool wrote
 		_ = json.Unmarshal(b, &prev)
 	}
 	// Ad-hoc is exempt only on a machine that was never signed properly.

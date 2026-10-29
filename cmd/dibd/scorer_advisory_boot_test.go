@@ -343,7 +343,9 @@ func advisoryDaemonBoot(t *testing.T, dir string, repos []string, notify, join, 
 			}
 		case <-ctx.Done():
 			cancel()
-			<-exited
+			if err := <-exited; err != nil {
+				t.Logf("process exited after cancel: %v", err)
+			}
 			t.Error("real daemon did not stop")
 		}
 		<-drained
