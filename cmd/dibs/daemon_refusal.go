@@ -13,6 +13,7 @@ import (
 
 	"github.com/agenxy/dibs/internal/boardconfig"
 	"github.com/agenxy/dibs/internal/paths"
+	"github.com/agenxy/dibs/internal/ui"
 )
 
 // A 401 proves that something answered, not why it refused the credential.
@@ -34,12 +35,13 @@ func daemonRefusal(resp *http.Response) (problem, hint string) {
 	remote = strings.ToLower(remote)
 	switch {
 	case local != "" && remote != "" && local != remote:
-		return problem + ": different board (address " + remote + "; data directory " + local + ")",
+		return problem + ": a different board is answering at " + addr() + "; it is not the board in " +
+				ui.Path(dir) + " (address board " + remote[:8] + "; directory board " + local[:8] + ")",
 			"set DIBS_ADDR to this data directory's board address, or DIBS_DIR to the directory of the board at this address"
 	case local != "" && local == remote:
-		return problem + ": credential mismatch for board " + local,
-			"the board identity matches " + dir + ", but its running credential differs from local.secret; " +
-				"check which secret the running daemon loaded and whether this directory's secret changed"
+		return problem + ": credential mismatch for the board in " + ui.Path(dir),
+			"this directory's daemon was started with a different local.secret; restart this board's daemon: " +
+				"run `dibs stop`, then start `dibd` (or use `dibs upgrade` for a configured service)"
 	default:
 		return problem + ": cannot identify the board",
 			"this may be a different board or a credential mismatch; check DIBS_ADDR against the intended daemon's " +

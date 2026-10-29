@@ -38,7 +38,8 @@ func TestCLIDistinguishesForeignBoardFromChangedSecret(t *testing.T) {
 		prepare.Env = diagnosticFixtureEnv(t.TempDir(), "", "")
 		testexec.PrepareExecutable(t, prepare)
 	}
-	first, second := t.TempDir(), t.TempDir()
+	firstHome, secondHome := t.TempDir(), t.TempDir()
+	first, second := filepath.Join(firstHome, ".dibs"), filepath.Join(secondHome, ".dibs")
 	firstAddr := startDiagnosticBoard(t, daemon, first)
 	secondAddr := startDiagnosticBoard(t, daemon, second)
 	firstNode, secondNode := diagnosticNode(t, first), diagnosticNode(t, second)
@@ -55,7 +56,7 @@ func TestCLIDistinguishesForeignBoardFromChangedSecret(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 		defer cancel()
 		cmd := exec.CommandContext(ctx, cli, args...)
-		cmd.Dir, cmd.Env = first, diagnosticFixtureEnv(first, first, address)
+		cmd.Dir, cmd.Env = first, diagnosticFixtureEnv(firstHome, first, address)
 		out, err := cmd.CombinedOutput()
 		if ctx.Err() != nil {
 			t.Fatalf("CLI diagnostic timed out: %v %s", err, out)
@@ -71,9 +72,18 @@ func TestCLIDistinguishesForeignBoardFromChangedSecret(t *testing.T) {
 	for _, command := range []string{"version", "doctor"} {
 		t.Run(command+"/foreign", func(t *testing.T) {
 			out := run(t, secondAddr, command)
-			for _, want := range []string{"401", "different board", firstID, secondID, "DIBS_ADDR", "DIBS_DIR"} {
+			for _, want := range []string{"401", "a different board is answering at " + secondAddr,
+				"not the board in ~/.dibs", firstID[:8], secondID[:8], "DIBS_ADDR", "DIBS_DIR"} {
 				if !strings.Contains(out, want) {
 					t.Errorf("missing %q: %s", want, out)
+				}
+			}
+			for _, line := range strings.Split(out, "\n") {
+				if strings.Contains(line, "a different board is answering") {
+					lead, _, _ := strings.Cut(line, "(")
+					if strings.Contains(lead, firstID[:8]) || strings.Contains(lead, secondID[:8]) {
+						t.Errorf("foreign-board lead names fingerprints instead of address/directory: %s", out)
+					}
 				}
 			}
 			for _, falseAdvice := range []string{"nothing listening", "not running", "recreated", "restart", firstNode, secondNode} {
@@ -90,7 +100,8 @@ func TestCLIDistinguishesForeignBoardFromChangedSecret(t *testing.T) {
 	for _, command := range []string{"version", "doctor"} {
 		t.Run(command+"/matching", func(t *testing.T) {
 			out := run(t, firstAddr, command)
-			for _, want := range []string{"401", "credential mismatch", firstID} {
+			for _, want := range []string{"401", "credential mismatch", "~/.dibs", firstAddr,
+				"restart this board's daemon", "dibs stop", "dibd"} {
 				if !strings.Contains(out, want) {
 					t.Errorf("missing %q: %s", want, out)
 				}
@@ -164,6 +175,9 @@ func diagnosticNode(t *testing.T, dir string) string {
 
 func startDiagnosticBoard(t *testing.T, binary, home string) string {
 	t.Helper()
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	port := testport.Reserve(t, "tcp", "127.0.0.1:0")
 	logPath := filepath.Join(home, "daemon.log")
 	log, err := os.Create(logPath)

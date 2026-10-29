@@ -44,8 +44,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   recreated. Local authentication refusals carry a board-specific fingerprint
   so the CLI can distinguish another board from a matching board with a changed
   credential. Unknown identities remain explicitly ambiguous. Foreign and
-  unknown boards receive address/directory checks rather than restart advice;
-  public invitation listeners and non-loopback listeners expose no fingerprint.
+  unknown boards receive address/directory checks rather than restart advice.
+  A matching board's credential mismatch names its restart corrective.
+  Public invitation listeners and non-loopback listeners expose no fingerprint.
 
 - An idle stdio bridge now retries one failed start-stamp lookup or ancestry
   inventory immediately in its completion worker. This repairs app reconnect
