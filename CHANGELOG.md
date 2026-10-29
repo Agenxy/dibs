@@ -29,6 +29,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Claude Code Stop and SubagentStop hooks deliver each mail digest once, in
+  the blocking reason, instead of repeating it as additional context. Codex's
+  event-specific filtering and non-Stop hook context are unchanged.
+
 - An idle stdio bridge now retries one failed start-stamp lookup or ancestry
   inventory immediately in its completion worker. This repairs app reconnect
   and late surface evidence without another model call after a transient probe
