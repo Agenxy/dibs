@@ -88,5 +88,5 @@ func codexPluginCommand() (string, error) {
 			return filepath.Join(paths.Canonical(filepath.Dir(path)), filepath.Base(path)), nil
 		}
 	}
-	return exe, nil
+	return filepath.Join(paths.Canonical(filepath.Dir(exe)), filepath.Base(exe)), nil
 }

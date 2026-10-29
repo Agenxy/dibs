@@ -91,6 +91,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Doctor treats untrusted or modified enabled-plugin hooks as a problem and
   reads the selected Codex home through the same bundled CLI as installation.
   Approval status is reported separately from actual hook execution or delivery.
+  The first upgrade from a build-stamped plugin changes its bytes once and
+  needs one re-trust. Later upgrades with unchanged plugin contents do not.
 
 - Codex plugin receipts recognize canonical spellings of the same installed
   directory, including macOS `/var` and `/private/var`, while still refusing

@@ -53,8 +53,9 @@ the tools stamp. Bridge schema-change tracking retains its own tools fingerprint
 it does not depend on a plugin build stamp. An unchanged verified plugin is not
 reinstalled. Source-choice conflicts and failed-install rollback remain intact.
 
-Migration from an older build-stamped bundle changes the bytes once. That and
-later genuine content changes require a person's review through
+The FIRST upgrade from an older build-stamped bundle changes the bytes once
+and needs one re-trust. Later upgrades with unchanged plugin contents do not.
+That first migration and later genuine content changes require a person's review through
 `dibs codex-hooks --trust` or Codex `/hooks`. Verification of installed files is
 reported separately from hook approval and from actual delivery. An unverified
 approval probe is reported as unknown, never as trusted.
