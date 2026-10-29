@@ -969,7 +969,10 @@ func TestThePresenceHelperIsTheOneThatGetsBuilt(t *testing.T) {
 		t.Fatal("the release has no Homebrew cask section")
 	}
 	if !regexp.MustCompile(`(?m)^\s*binary "` + regexp.QuoteMeta(want) + `"\s*$`).Match(rel[at:]) {
-		t.Errorf("the Homebrew cask does not link %q with its binary directive", want)
+		t.Errorf("the Homebrew cask does not link %q with its binary directive: an "+
+			"installed Dibs would find no helper beside its executable and fall "+
+			"back to the admin password, while the docs describe Touch ID as the "+
+			"default", want)
 	}
 }
 
