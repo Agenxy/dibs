@@ -154,7 +154,9 @@ func TestDoctorExplainsFirstRegistrationWithoutChangingIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	var what, fix string
-	checkAppService(func(string) { t.Fatal("never-registered service reported enabled") }, func(w, f string) { what, fix = w, f })
+	checkAppService(func(string) { t.Fatal("never-registered service reported enabled") },
+		func(w, f string) { what, fix = w, f },
+		func(w, f string) { t.Fatalf("plain install must warn about optional setup, got problem: %s %s", w, f) }, false)
 	if what != "Dibs background service is not registered" || !strings.Contains(fix, "configure --service") {
 		t.Fatalf("doctor: %s %s", what, fix)
 	}

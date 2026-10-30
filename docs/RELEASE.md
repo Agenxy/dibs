@@ -25,6 +25,42 @@ Source installs use their own local signing identity. Switching between a
 source install and a Homebrew install is a new identity to macOS and needs one
 fresh grant; retaining the release pin does not merge the two channels.
 
+## Homebrew service setup and generated-cask proof
+
+Homebrew 7 is the minimum for the generated declarative `postflight_steps`.
+The cask installs files; the person runs `dibs configure --service` once from
+an ordinary terminal. Linux then needs `systemctl --user enable --now dibs`.
+On macOS, the app's background service may need the person's approval.
+
+This is deliberate: Homebrew's `cask/artifact/abstract_artifact.rb` launches
+sandboxed steps with a private temporary `HOME`, and
+`cask/artifact/install_steps.rb` does not restore the account home for commands.
+A command that registers a per-user service there can target the wrong home.
+We do not escape that sandbox or pass account-home access into a flight. Only
+Mac-only, non-fatal xattr preparation of the staged files and installed app
+remains. The caveats and README retain a manual fallback if that fails.
+
+An existing install updates with `brew upgrade dibs`, then `dibs upgrade`.
+Mac app registrations use the stable installed app path. Linux upgrade repairs
+only a same-board unit carrying a valid Dibs receipt or matching the frozen
+published template, retaining its file mode and moving ExecStart to the stable
+package-manager link. A tuned unit needing repair is refused before stopping
+the daemon, with an edit instruction. Doctor treats absent service setup and
+missing executables as problems and distinguishes automatic repair from local
+edits. Manual installs and answering daemons without supervision get a warning.
+A successful package upgrade alone is not evidence that the running
+daemon was restarted.
+
+`task test:archive` renders the actual cask offline with GoReleaser and then
+runs `tools/caskcheck`. Homebrew's own loader and step runner evaluate Mac ARM,
+Linux ARM and Linux Intel views; commands are recorded, never run. The guard
+requires platform-specific artifacts and caveats, zero deprecation warnings,
+no Dibs service commands, two bounded non-fatal Mac quarantine commands and no
+Linux flight commands. It does not install a cask, register a native service,
+or prove service launch/approval. Check those separately in the public-install
+acceptance; never install a Mac cask on a machine whose live service must remain
+untouched, even with a throwaway HOME.
+
 ## Release flow
 
 A release starts with `workflow_dispatch` of `release.yml` on protected `main`,

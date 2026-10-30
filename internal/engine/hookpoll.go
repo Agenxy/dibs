@@ -61,7 +61,7 @@ func (e *Engine) hookOutput(out core.Result, strict bool, event string) core.Res
 		case k == "decision" || k == "reason" || k == "hookSpecificOutput":
 			// A way of carrying the news that this event's schema does not
 			// have. Dropped without the line below: the same news travels in
-			// the key this event does accept (addDelivery sets both), so
+			// the key this event does accept (addDelivery selects it), so
 			// nothing is lost and saying so would be a false alarm.
 			delete(out, k)
 		case k == "agent" || k == "queued":
@@ -1041,36 +1041,20 @@ const WaitingAgeFloor = 5 * time.Minute
 // and the field without which it is told nothing.
 func addDelivery(out core.Result, event, digest string) {
 	digest = strings.TrimRight(digest, "\n")
-	out["hookSpecificOutput"] = map[string]any{
-		"hookEventName": event, "additionalContext": digest,
-	}
-	// THE FIELD THAT ACTUALLY CONTINUES THE TURN.
-	//
-	// This sent additionalContext alone, on the strength of a comment saying
-	// Claude Code's documentation described it as keeping the conversation
-	// going. The documentation says the opposite, in a table: `decision:
-	// "block"` "Prevents Claude from stopping; the conversation continues",
-	// `reason` is "Shown to Claude when decision: block", and
-	// additionalContext "does not by itself block the stop".
-	//
-	// So every wake this path decided to send landed nowhere. Measured on this
-	// machine: mail arrived at 21:10:25 while the agent was idle, its Stop
-	// hook fired twice in the following minutes, the daemon returned the
-	// digest both times, and the agent learned it had mail an hour later when
-	// its operator said so.
-	//
-	// Set freely and filtered at the edge, which is how every other key here
-	// works: hookOutput is the one place that knows what a caller's schema
-	// accepts. For a Codex Stop these two are the ONLY carrier, because its
-	// Stop schema has no hookSpecificOutput (see codexHookKeys).
-	//
-	// Claude Code prints a blocking Stop as "Stop hook blocking error from
-	// command", which three agents in the 2026-10-18 fleet survey read as a
-	// failure. The label is the harness's and cannot be changed from here; the
-	// reason is ours, so it says first what this is.
 	if isStopEvent(event) {
+		// Claude Code delivers reason to the model when decision is block,
+		// for both Stop and SubagentStop. additionalContext is a separate
+		// feedback carrier: sending the digest there too repeats the mail.
+		// Contract re-read 2026-10-29:
+		// https://code.claude.com/docs/en/hooks#stop-decision-control
+		// This is also Codex's Stop carrier; codexHookKeys still filters the
+		// output at the edge. Keep the explanatory lead for Claude's error label.
 		out["decision"] = "block"
 		out["reason"] = stopReasonLead + digest
+		return
+	}
+	out["hookSpecificOutput"] = map[string]any{
+		"hookEventName": event, "additionalContext": digest,
 	}
 }
 

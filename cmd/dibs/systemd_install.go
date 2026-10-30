@@ -1,0 +1,290 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright 2026 Agenxy
+
+package main
+
+import (
+	"crypto/sha256"
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
+	"slices"
+	"strings"
+
+	"github.com/agenxy/dibs/internal/paths"
+)
+
+const systemdReceipt = "# written by dibs configure --service; sha256 of the rest: "
+
+func systemdBody(daemon, dir, searchPath string) string {
+	return `[Unit]
+Description=Dibs: coordination board for AI agents
+Documentation=https://github.com/agenxy/dibs
+After=network.target
+
+[Service]
+Type=simple
+` + systemdEnvironment(map[string]string{"PATH": searchPath}) + `ExecStart=` +
+		systemdArg(daemon) + ` -dir ` + systemdArg(dir) + `
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target
+`
+}
+
+// A receipt describes the rest of this same file: it cannot be detached from
+// its unit. A hand edit invalidates the digest even if it keeps the comment.
+func generatedSystemdUnit(body string) bool {
+	header, rest, found := strings.Cut(body, "\n")
+	return found && header == fmt.Sprintf("%s%x", systemdReceipt, sha256.Sum256([]byte(rest)))
+}
+
+func systemdDataDir(body string) string {
+	for _, line := range strings.Split(body, "\n") {
+		command, found := strings.CutPrefix(strings.TrimSpace(line), "ExecStart=")
+		if !found {
+			continue
+		}
+		args := systemdTokens(command)
+		for i := 1; i+1 < len(args); i++ {
+			if args[i] == "-dir" {
+				return filepath.Clean(args[i+1])
+			}
+		}
+	}
+	return ""
+}
+
+func caskroomPrefix(binary string) string {
+	versionDir := filepath.Dir(binary)
+	packageDir := filepath.Dir(versionDir)
+	room := filepath.Dir(packageDir)
+	if filepath.IsAbs(binary) && filepath.Base(binary) == "dibd" &&
+		filepath.Base(packageDir) == "dibs" && filepath.Base(room) == "Caskroom" {
+		return filepath.Dir(room)
+	}
+	return ""
+}
+
+// Match the v0.0.16 template. The cask wrote its shim PATH; a shell invocation
+// wrote that shell's PATH. Only that one field may differ, and only a moved or
+// missing executable permits that additional migration. Every other byte and
+// the selected board must match, so a tuned unit cannot pass this check.
+func legacyBrewSystemdUnit(target, body, dir, currentDaemon string) bool {
+	daemon := unitBinary(target)
+	prefix := caskroomPrefix(daemon)
+	if prefix == "" {
+		return false
+	}
+	oldPath := filepath.Join(prefix, "Homebrew", "Library", "Homebrew", "shims", "shared") +
+		":" + paths.DefaultServicePath
+	expected := systemdBody(daemon, dir, oldPath)
+	if body == expected {
+		return true
+	}
+	if sameBinary(daemon, currentDaemon) {
+		return false
+	}
+	for _, line := range strings.Split(body, "\n") {
+		value, found := strings.CutPrefix(line, "Environment=")
+		if !found {
+			continue
+		}
+		fields := systemdTokens(value)
+		if len(fields) == 1 && strings.HasPrefix(fields[0], "PATH=") {
+			oldEnvironment := systemdEnvironment(map[string]string{"PATH": oldPath})
+			return body == strings.Replace(expected, oldEnvironment, line+"\n", 1)
+		}
+	}
+	return false
+}
+
+func systemdSearchDirs(daemon string) []string {
+	// Deliberately independent of the postflight's PATH. Homebrew's internal
+	// shims are temporary execution machinery, not a daemon search path.
+	dirs := []string{
+		filepath.Dir(daemon), filepath.Join(os.Getenv("HOME"), ".local", "bin"),
+		filepath.Join(os.Getenv("HOME"), ".linuxbrew", "bin"), "/home/linuxbrew/.linuxbrew/bin",
+		"/opt/homebrew/bin", "/usr/local/bin", "/usr/local/sbin",
+	}
+	dirs = append(dirs, strings.Split(paths.DefaultServicePath, ":")...)
+	var out []string
+	for _, dir := range dirs {
+		if filepath.IsAbs(dir) && !slices.Contains(out, dir) {
+			out = append(out, dir)
+		}
+	}
+	return out
+}
+
+func stableSystemdDaemon(daemon string) (string, error) {
+	if prefix := caskroomPrefix(daemon); prefix != "" {
+		stable := filepath.Join(prefix, "bin", "dibd")
+		if !sameBinary(stable, daemon) {
+			return "", fmt.Errorf("%s does not resolve to the installed dibd; repair the package-manager link "+
+				"with `brew reinstall dibs` before configuring its service", stable)
+		}
+		return stable, nil // keep the link's spelling, never its versioned target
+	}
+	for _, dir := range systemdSearchDirs(daemon) {
+		candidate := filepath.Join(dir, "dibd")
+		if candidate != daemon && sameBinary(candidate, daemon) {
+			return candidate, nil
+		}
+	}
+	return daemon, nil
+}
+
+func preserveSystemdUnit(target string) {
+	fmt.Fprintf(os.Stderr, "preserved %s: it has local changes or names another board; no file was changed\n", target)
+	if pinned := unitBinary(target); pinned != "" {
+		if _, err := os.Stat(pinned); os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "WARNING: ExecStart names %s, which does not exist. Edit ExecStart to the installed "+
+				"stable dibd path, or delete %s and run `dibs configure --service`\n", pinned, target)
+		}
+	}
+}
+
+func installSystemdUnit(daemon, dir string) error {
+	unitDir := filepath.Join(configHome(), "systemd", "user")
+	if err := refuseIfLegacySystemdUnitExists(unitDir); err != nil {
+		return err
+	}
+	target := filepath.Join(unitDir, "dibs.service")
+	// #nosec G304 G703 -- operator's own config directory and fixed unit name
+	old, err := os.ReadFile(target)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("reading %s before configure: %w; check its permissions", target, err)
+	}
+	exists := err == nil
+	if exists && !replaceUnits && !refreshableSystemdUnit(target, string(old), dir, daemon) {
+		preserveSystemdUnit(target)
+		return nil
+	}
+	stable, err := stableSystemdDaemon(daemon)
+	if err != nil {
+		return err
+	}
+	rest := systemdBody(stable, dir, strings.Join(systemdSearchDirs(stable), ":"))
+	unit := fmt.Sprintf("%s%x\n%s", systemdReceipt, sha256.Sum256([]byte(rest)), rest)
+	if string(old) == unit {
+		fmt.Printf("already current: %s\n", target)
+		return nil
+	}
+	// Preservation and legacy-unit refusals above create no board directory.
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	if replaceUnits {
+		// Explicit upgrade retains its existing backup/replacement contract.
+		err = writeUnit(target, unit)
+	} else {
+		err = writeGeneratedSystemdUnit(target, unit, old, exists)
+	}
+	if err != nil {
+		return err
+	}
+	fmt.Printf("wrote %s\n\nEnable and start it:\n  systemctl --user enable --now dibs\n\n"+
+		"Logs: journalctl --user -u dibs -f\n", target)
+	sayWhenTheUnitComesBack()
+	return nil
+}
+
+func writeGeneratedSystemdUnit(target, body string, old []byte, exists bool) error {
+	// #nosec G703 -- target is the fixed unit in this user's config directory
+	if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
+		return err
+	}
+	mode := os.FileMode(0o644)
+	if exists {
+		// Keep permissions chosen for the existing unit as well as its contents.
+		// #nosec G703 -- the configured unit whose bytes are checked before replacement
+		info, err := os.Stat(target)
+		if err != nil {
+			return err
+		}
+		mode = info.Mode().Perm()
+	}
+	// #nosec G703 -- temporary file beside the operator's configured unit
+	file, err := os.CreateTemp(filepath.Dir(target), ".dibs-service-*")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(file.Name()) }()
+	if err := file.Chmod(mode); err != nil {
+		_ = file.Close()
+		return err
+	}
+	_, writeErr := file.WriteString(body)
+	closeErr := file.Close()
+	if writeErr != nil {
+		return writeErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if !exists {
+		// Link installs a complete new file without overwriting a unit that
+		// appeared during configure. Both paths are in the same directory.
+		// #nosec G703 -- configured unit and its private temporary file
+		return os.Link(file.Name(), target)
+	}
+	// #nosec G304 G703 -- same configured unit, recheck immediately before replacement
+	current, err := os.ReadFile(target)
+	if err != nil || string(current) != string(old) {
+		return fmt.Errorf("%s changed during configure; preserved it, run configure again after editing", target)
+	}
+	// #nosec G703 -- same configured directory, atomic managed-unit replacement
+	return os.Rename(file.Name(), target)
+}
+
+// Upgrade uses the same receipt and frozen-template evidence as configure. It
+// never uses replaceUnits: an explicit cutover is not permission to discard a
+// local edit. Plan this while the old daemon is still serving.
+func (p *plan) prepareSystemdUpgrade() error {
+	if err := refuseIfLegacySystemdUnitExists(filepath.Dir(p.unit)); err != nil {
+		return fmt.Errorf("the service cannot be refreshed, so nothing has been stopped: %w", err)
+	}
+	old, err := os.ReadFile(p.unit) // #nosec G304 G703 -- fixed user unit selected for this board
+	if err != nil {
+		return fmt.Errorf("reading service before upgrade: %w", err)
+	}
+	if !refreshableSystemdUnit(p.unit, string(old), p.dir, p.installed) {
+		if p.unitWrong || p.moveDir {
+			return fmt.Errorf("preserved %s: it has local changes or names another board; nothing has been stopped. "+
+				"Edit ExecStart to the stable installed dibd path and selected board, then run `dibs upgrade`", p.unit)
+		}
+		return nil
+	}
+	stable, err := stableSystemdDaemon(p.installed)
+	if err != nil {
+		return err
+	}
+	dir := p.dir
+	if p.moveDir {
+		dir = adoptedName(p.inherited)
+	}
+	rest := systemdBody(stable, dir, strings.Join(systemdSearchDirs(stable), ":"))
+	unit := fmt.Sprintf("%s%x\n%s", systemdReceipt, sha256.Sum256([]byte(rest)), rest)
+	p.systemdBefore, p.systemdAfter = old, nil
+	if unit != string(old) {
+		p.systemdAfter = []byte(unit)
+		p.unitWrong = true
+	}
+	return nil
+}
+
+func refreshableSystemdUnit(target, body, dir, daemon string) bool {
+	return (generatedSystemdUnit(body) && systemdDataDir(body) == filepath.Clean(dir)) ||
+		legacyBrewSystemdUnit(target, body, dir, daemon)
+}
+
+func (p *plan) prepareSystemdUpgradeIfNeeded() error {
+	if runtime.GOOS != "linux" || p.unit == "" {
+		return nil
+	}
+	return p.prepareSystemdUpgrade()
+}

@@ -148,19 +148,23 @@ func SetOutput(w io.Writer) { r = lipgloss.NewRenderer(w) }
 // Coordination paths are long: a claim inside a temp checkout ran to 96
 // characters and pushed everything after it off the line, which is how a
 // column-aligned board stops being aligned. Shortening is done in the order a
-// reader would: relative to where they are standing, then relative to home,
+// reader would: relative to where they are standing (unless that IS home), then relative to home,
 // then by dropping the MIDDLE, never the end. The end is the part that says
 // which directory this actually is.
 func Path(p string) string {
 	if p == "" {
 		return p
 	}
+	home, _ := os.UserHomeDir()
 	if cwd, err := os.Getwd(); err == nil && cwd != "/" {
 		if rel := strings.TrimPrefix(p, cwd+string(os.PathSeparator)); rel != p {
+			if sameDirectory(cwd, home) {
+				return "~/" + rel
+			}
 			return "./" + rel
 		}
 	}
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
+	if home != "" {
 		if rel := strings.TrimPrefix(p, home+string(os.PathSeparator)); rel != p {
 			p = "~/" + rel
 		}
@@ -222,3 +226,13 @@ type Count struct {
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }
+
+// A symlinked home or /var versus /private/var is the same display location.
+func sameDirectory(a, b string) bool {
+	if a == b {
+		return true
+	}
+	first, errA := os.Stat(a)
+	second, errB := os.Stat(b)
+	return errA == nil && errB == nil && os.SameFile(first, second)
+}

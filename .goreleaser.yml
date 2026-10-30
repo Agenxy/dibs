@@ -304,9 +304,9 @@ homebrew_casks:
       # own settings without touching anybody's account, and cannot be used to
       # read or write anything else in the org.
       #
-      # The key exists only in CI, so a local `goreleaser release --snapshot`
-      # stops here with "map has no entry for key HOMEBREW_TAP_DEPLOY_KEY".
-      # That is the config working. Add --skip=homebrew locally.
+      # Offline snapshots render the cask with an empty deploy-key variable and
+      # --skip=publish. No key is needed to inspect the generated artifact;
+      # only the publication step may contact this repository.
       # A BRANCH, never main. The tap requires changes to go through a pull
       # request, and GoReleaser pushed straight at main, so v0.0.6 published
       # every artifact and then failed on its last step with GH013: the release
@@ -342,85 +342,70 @@ homebrew_casks:
     binaries:
       - dibs
       - dibd
-      # THREE, not two. humanauth looks for the helper beside the executable, so
-      # a cask that installs only the Go binaries leaves Touch ID unavailable on
-      # every brew install while the docs describe it as the default.
-      - dibs-presence
-    # FOUR. The notifier bundle is the component whose entire job is putting a
-    # notification in front of the person, and a cask without it installs a
-    # board that cannot ask them anything.
-    #
-    # Through custom_block, because GoReleaser's cask type has no `app` field:
-    # `app` is Homebrew's own DSL stanza and this is the supported way to emit
-    # one. The first version of this wrote `app:` directly, which `goreleaser
-    # check` rejects outright, so the tag workflow would have stopped before
-    # building anything. It was not caught by `task ci`, which did not validate
-    # this file at all; it does now.
+    # Platform selection belongs in the generated cask, not in the archive:
+    # the Mac helpers ship in all archives but must not be installed on Linux.
     custom_block: |
-      app "Dibs.app"
+      on_macos do
+        binary "dibs-presence"
+        app "Dibs.app"
+        caveats <<~EOS
+          First install: register the service from your own terminal:
+
+            dibs configure --service
+
+          This registers Dibs.app's background service for your existing board.
+          Approve it in System Settings > General > Login Items & Extensions.
+          Desktop/Documents/Downloads reads may need approval under Privacy &
+          Security > Files & Folders > Dibs. Touch ID unlocks the board on this Mac.
+
+          To update an existing service: brew upgrade dibs, then dibs upgrade.
+          Do not register it again after each upgrade.
+          Before brew uninstall: dibs configure --service --remove
+          If already uninstalled: brew install --cask agenxy/tap/dibs, then
+          dibs configure --service --remove, then brew uninstall --cask dibs.
+          Then remove any existing registration before uninstalling again.
+
+          Signed for provenance with cosign, but not notarised by Apple. The
+          cask tries to clear quarantine; failure is non-fatal. If macOS still
+          says the developer cannot be verified, finish from your terminal:
+
+            xattr -dr com.apple.quarantine "$(brew --prefix)/bin/dibd" "$(brew --prefix)/bin/dibs" "#{appdir}/Dibs.app"
+
+          dibs mcp-config prints your harness configuration; dibs web opens the
+          board; dibs doctor reports problems and their corrective commands.
+        EOS
+      end
+      on_linux do
+        caveats <<~EOS
+          First install: configure the user service from your own terminal:
+
+            dibs configure --service
+            systemctl --user enable --now dibs
+
+          The unit lives at ~/.config/systemd/user/dibs.service and retains your
+          existing board. For desktop notifications install notify-send (the
+          libnotify package; libnotify-bin on Debian/Ubuntu).
+
+          To update an existing service: brew upgrade dibs, then dibs upgrade.
+          Do not configure it again after each upgrade. Doctor reports an old
+          unit that needs repair; locally tuned units are preserved.
+
+          dibs mcp-config prints your harness configuration; dibs web opens the
+          board; dibs doctor reports problems and their corrective commands.
+        EOS
+      end
     # So `man dibs` answers on a brew install, which is where most people
     # first look for it.
     manpages:
       - dibs.1
       - dibd.8
+    # Homebrew 7 runs steps with a private HOME. Service setup belongs to the
+    # user's explicit configure command, never to a sandboxed cask flight.
+    # Only bounded preparation of downloaded Mac files remains here.
     hooks:
       post:
-        # Clear the quarantine attribute Homebrew puts on downloaded artifacts.
-        # These binaries are cosign-signed for provenance but NOT Apple-notarised,
-        # so without this macOS refuses to run them. "cannot be opened because
-        # the developer cannot be verified", AFTER a successful install, which
-        # reads as a broken product rather than an unsigned one.
-        install: |
-          system_command "/usr/bin/xattr",
-                         args:         ["-dr", "com.apple.quarantine", staged_path.to_s],
-                         # NOT fatal, and the caveats say so rather than
-                         # claiming this always works. xattr exits non-zero in
-                         # ordinary cases, including having no such attribute to
-                         # remove, so failing the install over it would be worse
-                         # than the warning it prevents. What was wrong was the
-                         # caveat asserting the flag IS cleared while this could
-                         # silently not clear it: an operator then meets a
-                         # "developer cannot be verified" dialog that the
-                         # documentation says is impossible.
-                         must_succeed: false
-          system_command "/usr/bin/xattr",
-                         args: ["-dr", "com.apple.quarantine", "#{appdir}/Dibs.app"],
-                         must_succeed: false
-          system_command "#{staged_path}/dibs",
-                         args: ["configure", "--service"],
-                         must_succeed: true
-    caveats: |
-      Start the daemon and point your agents at it:
-
-        dibs configure --service # Dibs.app background service (existing board retained)
-        dibs mcp-config          # MCP config to add to your harness
-        dibs web                 # the board; Touch ID unlocks it on this Mac
-        dibs doctor              # what is quietly broken, and how to fix it
-
-      macOS may require Dibs background-item approval under System Settings >
-      General > Login Items & Extensions. Desktop/Documents/Downloads reads
-      are requested once: requested is not granted. Check System Settings >
-      Privacy & Security > Files & Folders > Dibs. A first move to the app-owned
-      service or a change between source and release signing can need a fresh grant.
-
-      Before brew uninstall, run: dibs configure --service --remove
-      If already uninstalled, restore/remove/uninstall in this order:
-        brew install --cask agenxy/tap/dibs
-        dibs configure --service --remove
-        brew uninstall --cask dibs
-      Restoring Dibs briefly starts the service before removal. A registration
-      with a missing program cannot start it; doctor checks whether a job is
-      still loaded before calling the leftover record inert. You can switch off
-      the leftover row meanwhile in System Settings > General > Login Items &
-      Extensions > Allow in the Background > Dibs.
-
-      Signed for provenance with cosign, but not notarised by Apple, so this
-      cask TRIES to clear the quarantine flag on install. It is not treated as
-      fatal: `xattr` exits non-zero in ordinary cases, including when there is
-      no such attribute to remove, and failing the install over that would be
-      worse than the warning it prevents.
-
-      So if macOS still says the developer cannot be verified, it did not work
-      and you can finish it by hand:
-
-        xattr -dr com.apple.quarantine "$(brew --prefix)/bin/dibd" "$(brew --prefix)/bin/dibs"
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}"], must_succeed: false
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .AppDir }}/Dibs.app"], must_succeed: false
+          end
