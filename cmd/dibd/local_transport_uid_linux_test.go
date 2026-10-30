@@ -287,8 +287,13 @@ func qCheckForeignDirectoryStartup(t *testing.T, uid, gid uint32, bin string) {
 		!strings.Contains(string(out), dir) {
 		t.Fatalf("foreign-owned startup lost its literal ownership repair: %v %s", err, out)
 	}
-	clientOut, clientErr := qClient(t, bin, dir, port.Addr, "", "board", "--json")
-	if clientErr == nil || !strings.Contains(string(clientOut), "run without sudo") {
+	client := exec.CommandContext(ctx, bin, "board", "--json")
+	client.Env = append(nativeProbeEnv(t.TempDir(), "", ""),
+		"DIBS_DIR="+dir, "DIBS_ADDR="+port.Addr, "DIBS_TRANSPORT=local")
+	// CLI errors are stderr, including with --json. The normal qClient helper
+	// intentionally returns only parseable stdout and would hide this hint.
+	clientOut, clientErr := client.CombinedOutput()
+	if ctx.Err() != nil || clientErr == nil || !strings.Contains(string(clientOut), "run without sudo") {
 		t.Fatalf("root client lost its pre-dial sudo corrective: %v %s", clientErr, clientOut)
 	}
 	info, err := os.Stat(dir)
