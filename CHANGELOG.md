@@ -77,6 +77,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the blocking reason, instead of repeating it as additional context. Codex's
   event-specific filtering and non-Stop hook context are unchanged.
 
+- Socket wakes retain an explicitly stated same-host session binding when the
+  agent's work directory differs from the harness's launch directory. Guessed
+  bindings still fail the directory check, and conflicting stated holders are
+  refused even in the same directory. Check-in and doctor expose the refusal
+  and corrective calls; the operator log names the evidence used to allow a move.
+
 - Codex plugin receipts recognize canonical spellings of the same installed
   directory, including macOS `/var` and `/private/var`, while still refusing
   a different directory, plugin identity, version or payload.

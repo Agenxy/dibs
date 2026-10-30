@@ -36,6 +36,10 @@ func (e *Engine) completeMailboxCheckpoint(
 	res["task_queue"] = e.taskQueueView(actor.ID)
 	res["owes"] = e.owedSerials(actor.ID, now)
 	res["owed_work"] = e.owedWorkView(actor.ID, now)
+	live := e.peerSnapshot()
+	if view := e.socketBindingView(actor, live, e.socketBindingOwners(live)); view != nil {
+		res["socket_wake"] = view
+	}
 	if page != nil {
 		e.putMailboxPage(res, actor, *page)
 	}

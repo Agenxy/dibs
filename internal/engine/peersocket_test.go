@@ -522,9 +522,9 @@ func TestPrimingHappensBeforeTheLoopServes(t *testing.T) {
 // invisible because the wake simply failed; now it succeeds, into the wrong
 // session, which is more effective and no more correct.
 //
-// Logged rather than refused, deliberately. The daemon cannot tell which of the
-// two is wrong, and a heuristic refusal would ground legitimate wakes for
-// agents that genuinely moved. What this asserts is that it is not SILENT.
+// With no stated same-host binding to outweigh the directory evidence, the
+// mismatch is refused. A legitimate stated binding after a move is covered by
+// TestSocketBindingPrecedenceThroughPlanningAndDelivery.
 func TestAWakeIntoAnUnrelatedDirectoryIsReported(t *testing.T) {
 	sock, sessionID := listeningSession(t)
 	go func() {

@@ -1398,6 +1398,19 @@ are distinct; a queue observation confirms neither of the latter. No thread or i
 published, no private harness database is read, and reads add no probes. Session
 rebinding or loss of this rebuildable cache returns the view to unknown.
 
+For the local session-socket route, a stated binding on a known local host
+outranks a difference between the agent's work directory and the harness's launch
+directory. This uses existing binding provenance, not a new authentication claim.
+Guessed or unknown bindings are still refused when both known directories differ; another host's
+binding never authorizes a local write, and multiple local stated holders of the
+same destination refuse delivery even when their directories agree. A fresh
+writer checkpoint rechecks the binding before a production socket offer. The
+board and the affected agent's check-in expose `socket_wake` with `state: refused`,
+a reason and corrective hint when the cached live-session evidence would refuse
+that route. This derived diagnostic performs no discovery, is absent without
+cached session evidence, and clears when that evidence and the current binding
+agree. Doctor reports it. A claimed PID or parent chain grants no new authority.
+
 The canonical local queue route writes a factual notice such as
 `Dibs: question notice issued at 2026-10-05T09:50:00Z. It may already be handled.`
 The UTC date and time record the local admission attempt before executing the

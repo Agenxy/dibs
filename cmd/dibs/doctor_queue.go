@@ -3,6 +3,10 @@
 
 package main
 
+type boardQueueWake struct {
+	ThreadState string `json:"thread_state"`
+}
+
 func goneQueueWake(a boardAgent) bool {
 	return a.QueueWake != nil && a.QueueWake.ThreadState == "gone"
 }

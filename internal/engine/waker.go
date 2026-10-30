@@ -1044,6 +1044,7 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 		// operator, twice, looking at exactly that in their own transcript.
 		return wakePlan{
 			agent: l.ID, sessions: sessionsOf(l), notice: e.socketNotice(l, from, kind),
+			createdSerial: l.CreatedSerial, socketBindings: e.socketBindingsFor(l),
 			session: wakeSessionOf(l), kind: kind,
 			socketVersion: e.socketCauseVersion(l, now),
 			cwd:           cwdOf(l), cooldown: cooldown, thread: f.Thread,
@@ -1144,7 +1145,8 @@ type wakePlan struct {
 	// quiescent state. Found by the pre-release review with a race probe.
 	//
 	// So the plan carries values, not a pointer into the board.
-	sessions []string
+	sessions       []string
+	socketBindings map[string]socketBindingEvidence
 }
 
 // defaultPeerCooldown is the fallback window for a failed socket's one retry

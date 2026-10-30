@@ -505,6 +505,7 @@ func checkHarnessConfigs(sec, addr string, ok reportFn, warn, bad fixFn) {
 // running exactly that mode, and should be told that the only route they have
 // is the one that cannot be confirmed.
 func checkWakeRoutes(dir string, b *boardView, hosts hubHosts, ok reportFn, warn fixFn) {
+	checkSocketBindings(b, warn)
 	// THE HUB'S CONFIGURATION IS ON THE HUB. A joining machine runs this
 	// against a remote board with its own data directory, and this read that
 	// directory's dibs.toml as the board's wake configuration: "no wake
