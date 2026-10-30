@@ -24,6 +24,7 @@ func (r *runner) smoke(bin, home string, env []string) error {
 	if err := listener.Close(); err != nil {
 		return err
 	}
+	env = append(append([]string{}, env...), "DIBS_ADDR="+addr)
 	dir := filepath.Join(home, ".dibs")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
