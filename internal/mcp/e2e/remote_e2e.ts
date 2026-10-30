@@ -62,7 +62,7 @@ const URL = `https://${ADDR}`
 const root = mkdtempSync(join(tmpdir(), "dibs-remote-e2e-"))
 const hubDir = join(root, "hub")
 const clientDir = join(root, "client")
-mkdirSync(hubDir); mkdirSync(clientDir)
+mkdirSync(hubDir, { mode: 0o700 }); mkdirSync(clientDir, { mode: 0o700 })
 
 // The fake joined harness must not consult this test runner's live sessions
 // or real app-origin transcripts. Keep its Codex configuration within the
