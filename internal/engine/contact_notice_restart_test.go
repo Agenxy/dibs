@@ -34,6 +34,12 @@ func contactReplayDo(t *testing.T, e *Engine, ctx context.Context, op *core.Op) 
 }
 
 func replayContactEngine(t *testing.T, e *Engine, ctx context.Context, led *memLedger) (*Engine, context.Context) {
+	return replayContactEngineOnNode(t, e, ctx, led, "contact-restart")
+}
+
+func replayContactEngineOnNode(
+	t *testing.T, e *Engine, ctx context.Context, led *memLedger, node string,
+) (*Engine, context.Context) {
 	t.Helper()
 	var ops []*core.Op
 	if _, err := e.query(ctx, func() core.Result {
@@ -42,7 +48,7 @@ func replayContactEngine(t *testing.T, e *Engine, ctx context.Context, led *memL
 	}); err != nil {
 		t.Fatal("snapshot ledger:", err)
 	}
-	st := core.NewState("contact-restart", core.DefaultLimits())
+	st := core.NewState(node, core.DefaultLimits())
 	var history []core.Event
 	base := time.Now().Add(-time.Second)
 	for i, op := range ops {

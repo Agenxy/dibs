@@ -36,6 +36,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Contact alerts now show the known app and computer name. When no thread
+  or session is recorded, the alert says so and suggests finding/restarting
+  the agent or reassigning the work. Known app threads retain their Open link.
+
 - The tutorial distinguishes a confirmed same-repository objective warning
   from the quiet unconfirmed-reference/path note. Its displayed response
   fields are checked through real register/check-in/declare calls, with both

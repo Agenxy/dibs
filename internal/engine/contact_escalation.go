@@ -55,22 +55,12 @@ func (e *Engine) contactNotice(c *core.ContactEscalation) (HumanNotice, contactL
 	if sender == "" {
 		sender = "an agent"
 	}
-	host, harness := "this machine", "its original harness"
 	plan := contactLinkPlan{}
 	if l := e.state.Agents[c.Recipient]; l != nil {
 		plan.local = e.ownsHost(l)
 		plan.surface, plan.thread = surfaceOf(l), threadIDOf(l)
 		if l.Agent != nil {
 			plan.harness = l.Agent.Harness
-			if l.Agent.Harness != "" {
-				harness = l.Agent.Harness
-			}
-			if l.Agent.Host != "" {
-				host = l.Agent.Host
-			}
-			if l.Agent.HostID != "" {
-				host = l.Agent.HostID
-			}
 		}
 	}
 	if plan.local {
@@ -84,7 +74,7 @@ func (e *Engine) contactNotice(c *core.ContactEscalation) (HumanNotice, contactL
 		Contact: &humanask.Contact{
 			Recipient: name, Sender: sender, Kind: kind, MailboxFull: c.MailboxFull,
 			Message: c.OldestSerial, Count: c.Count,
-			OpenHint: "open " + name + " in " + harness + " on " + host,
+			OpenHint: e.contactOpenHint(name, e.state.Agents[c.Recipient]),
 		},
 	}
 	return n, plan
