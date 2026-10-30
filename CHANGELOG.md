@@ -83,6 +83,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   refused even in the same directory. Check-in and doctor expose the refusal
   and corrective calls; the operator log names the evidence used to allow a move.
 
+- Codex plugin identity now follows its actual contents and tools instead of
+  the Dibs build stamp. Unchanged plugins retain their approved bytes and skip
+  reinstallation across Dibs-only upgrades, including through a verified stable
+  package entry. Genuine plugin changes still require a person's review;
+  install and upgrade put `dibs codex-hooks --trust` beside the verified receipt.
+  Doctor treats untrusted or modified enabled-plugin hooks as a problem and
+  reads the selected Codex home through the same bundled CLI as installation.
+  Approval status is reported separately from actual hook execution or delivery.
+  The first upgrade from a build-stamped plugin changes its bytes once and
+  needs one re-trust. Later upgrades with unchanged plugin contents do not.
+
 - Codex plugin receipts recognize canonical spellings of the same installed
   directory, including macOS `/var` and `/private/var`, while still refusing
   a different directory, plugin identity, version or payload.

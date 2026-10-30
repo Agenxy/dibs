@@ -630,6 +630,11 @@ source pointing elsewhere, installation, upgrade and doctor name that source
 and preserve it: Codex's next sync would replace the installed build again.
 To choose this binary's plugin instead, run `codex plugin marketplace remove dibs`,
 then `dibs codex-plugin install`. A home with no saved source needs no change.
+The plugin version derives from its contents and tools, so an unchanged plugin
+keeps its approval across Dibs-only upgrades. Genuine content changes require a
+person to run `dibs codex-hooks --trust` or review `/hooks`; the verified receipt
+prints that corrective, and doctor treats untrusted enabled-plugin hooks as a
+problem. The older build-stamped bundle needs one review when migrating.
 New chats and genuine app refreshes can
 load current tools. Already running chats keep their existing tool list until
 they end or the app refreshes it. See [the plugin instructions](plugins/codex/README.md).

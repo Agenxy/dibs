@@ -6,9 +6,11 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -76,7 +78,9 @@ func TestUpgradePluginFailureIsDiagnosedAndDoesNotBlock(t *testing.T) {
 	}
 }
 
-func TestCodexPluginChangedBuildUsesDifferentRoots(t *testing.T) {
+// The plugin is content approval, not approval of a Dibs release label. A
+// build-only change must leave all approved bytes and the root unchanged.
+func TestCodexPluginBuildOnlyChangeKeepsIdenticalPayload(t *testing.T) {
 	t.Setenv("CODEX_HOME", t.TempDir())
 	first, err := planCodexPlugin("not-run")
 	if err != nil {
@@ -89,8 +93,15 @@ func TestCodexPluginChangedBuildUsesDifferentRoots(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.version == second.version || first.source == second.source {
-		t.Fatal("changed build reuses the same materialized version root")
+	if first.version != second.version || first.source != second.source || !reflect.DeepEqual(first.files, second.files) {
+		t.Error("a build-only change rewrites plugin content and voids approval")
+	}
+	var stamp map[string]string
+	if err := json.Unmarshal([]byte(second.files[".dibs-tools.json"]), &stamp); err != nil {
+		t.Fatal(err)
+	}
+	if stamp["build"] != "" {
+		t.Error("plugin payload still carries a Dibs build stamp")
 	}
 	// The real tools fingerprint is represented in both the installed manifest
 	// root and the self-describing payload stamp; it is not a receipt-only claim.

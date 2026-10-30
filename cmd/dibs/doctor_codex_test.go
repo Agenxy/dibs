@@ -49,7 +49,7 @@ func TestDoctorReportsCodexHooksAsCodexSeesThem(t *testing.T) {
 	ok := func(m string) { oks = append(oks, m) }
 	warn := func(w, _ string) { warns = append(warns, w) }
 
-	reportCodexHooks(nil, "the Dibs plugin", ok, warn)
+	reportCodexHooks(nil, "the Dibs plugin", ok, warn, warn)
 	if len(warns) != 1 || !strings.Contains(warns[0], "reports no Dibs hooks") {
 		t.Errorf("no hooks discovered must warn: %q %q", oks, warns)
 	}
@@ -58,7 +58,7 @@ func TestDoctorReportsCodexHooksAsCodexSeesThem(t *testing.T) {
 		{EventName: "sessionStart", TrustStatus: "trusted"},
 		{EventName: "stop", TrustStatus: "modified"},
 		{EventName: "subagentStop", TrustStatus: "untrusted"},
-	}, "the Dibs plugin", ok, warn)
+	}, "the Dibs plugin", ok, warn, warn)
 	if len(warns) != 1 || !strings.Contains(warns[0], "2 of 3") || !strings.Contains(warns[0], "stop (modified)") {
 		t.Errorf("a modified hook is a dropped hook and must be named: %q %q", oks, warns)
 	}
@@ -66,7 +66,7 @@ func TestDoctorReportsCodexHooksAsCodexSeesThem(t *testing.T) {
 	reportCodexHooks([]codexHook{
 		{EventName: "sessionStart", TrustStatus: "trusted"},
 		{EventName: "stop", TrustStatus: "trusted"},
-	}, "the Dibs plugin", ok, warn)
+	}, "the Dibs plugin", ok, warn, warn)
 	if len(oks) != 1 || len(warns) != 0 || !strings.Contains(oks[0], "all 2") {
 		t.Errorf("all trusted must be one ok line: %q %q", oks, warns)
 	}

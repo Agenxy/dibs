@@ -26,22 +26,22 @@ import (
 // which is the flag that proves the gate is trust and nothing else.
 //
 // Trust is recorded in config.toml as `[hooks.state."<key>"] trusted_hash`.
-// The hash is Codex's canonical fingerprint of the handler and the key is
-// the source path plus event and index, so this does not try to compute
-// either: it looks for the record and says how to make one when it is missing.
+// Modern plugin identity includes declaration and bundle-content hashes; its
+// key uses plugin id, relative source, event and indices. Loose/older hooks
+// retain path-based keys. Ask Codex rather than trying to recreate either.
 // The ChatGPT app writes it for a plugin it installs; the CLI does not.
-func checkCodexHookTrust(ok reportFn, warn fixFn) {
-	home, err := os.UserHomeDir()
+func checkCodexHookTrust(ok reportFn, warn, bad fixFn) {
+	home, err := codexPluginHome()
 	if err != nil {
 		return
 	}
-	config, err := os.ReadFile(filepath.Join(home, ".codex", "config.toml")) // #nosec G304 -- fixed well-known path
+	config, err := os.ReadFile(filepath.Join(home, "config.toml")) // #nosec G304 G703 -- selected Codex home, read only
 	if err != nil {
 		return // no Codex here
 	}
 	body := string(config)
 	plugin := codexPluginEnabled(body)
-	hooksFile := filepath.Join(home, ".codex", "hooks.json")
+	hooksFile := filepath.Join(home, "hooks.json")
 	loose := fileNames(hooksFile, "hook_poll")
 	if !plugin && !loose {
 		return // Codex without the Dibs hooks: nothing to trust, nothing to say
@@ -50,6 +50,10 @@ func checkCodexHookTrust(ok reportFn, warn fixFn) {
 	if !plugin {
 		where = hooksFile
 	}
+	problem := warn
+	if plugin {
+		problem = bad
+	}
 	// ASK CODEX, which is the only party that knows. The config scan below
 	// finds a trust table and cannot tell whether its hash still matches the
 	// hook (Codex reports that as "modified" and drops the hook again after a
@@ -57,15 +61,15 @@ func checkCodexHookTrust(ok reportFn, warn fixFn) {
 	// "mail is delivered". Found by the pre-release review. The scan stays
 	// as the fallback for a Codex whose app-server will not start.
 	if hooks, err := askCodexHooks(); err == nil {
-		reportCodexHooks(hooks, where, ok, warn)
+		reportCodexHooks(hooks, where, ok, warn, problem)
 		return
 	}
 	if codexHooksTrusted(body) {
-		ok("Codex has a trust record for the Dibs hooks (its app-server would not answer, " +
-			"so whether the record matches the current hooks is unverified; `dibs codex-hooks` asks it)")
+		problem("Codex has a Dibs hook trust record, but its app-server would not answer; current approval is unverified",
+			"run `dibs codex-hooks` with a current Codex installation to verify the actual hook and bundle hashes")
 		return
 	}
-	warn("Codex has the Dibs hooks ("+where+") and has not trusted them, so they never run",
+	problem("Codex has the Dibs hooks ("+where+") and has not trusted them, so they never run",
 		"Codex drops a hook it has not reviewed and says nothing, so Codex agents get no "+
 			"mail at their turn boundaries however well the plugin is installed. Start `codex` "+
 			"in a terminal, run `/hooks`, and trust the Dibs entries (SessionStart, Stop, "+
@@ -119,7 +123,7 @@ func fileNames(path, needle string) bool {
 // askCodexHooks lists the Dibs hooks through Codex's app-server, the same
 // way `dibs codex-hooks` does, bounded so doctor stays quick.
 func askCodexHooks() ([]codexHook, error) {
-	bin := codexBinary()
+	bin := codexPluginExecutable()
 	if bin == "" {
 		return nil, errors.New("no codex")
 	}
@@ -134,7 +138,7 @@ func askCodexHooks() ([]codexHook, error) {
 }
 
 // reportCodexHooks turns Codex's own view of the hooks into one doctor line.
-func reportCodexHooks(hooks []codexHook, where string, ok reportFn, warn fixFn) {
+func reportCodexHooks(hooks []codexHook, where string, ok reportFn, warn, problem fixFn) {
 	if len(hooks) == 0 {
 		warn("Codex reports no Dibs hooks, though "+where+" is installed",
 			"Codex did not discover the hooks: check `codex plugin list` shows dibs@dibs enabled, "+
@@ -149,7 +153,7 @@ func reportCodexHooks(hooks []codexHook, where string, ok reportFn, warn fixFn) 
 	var untrusted, off []string
 	for _, h := range hooks {
 		switch {
-		case h.TrustStatus != "trusted":
+		case !h.approved():
 			untrusted = append(untrusted, h.EventName+" ("+h.TrustStatus+")")
 		case h.off():
 			off = append(off, h.EventName)
@@ -164,11 +168,11 @@ func reportCodexHooks(hooks []codexHook, where string, ok reportFn, warn fixFn) 
 		return
 	}
 	if len(untrusted) == 0 {
-		ok(fmt.Sprintf("Codex has trusted all %d Dibs hooks (mail is delivered at its lifecycle boundaries)",
+		ok(fmt.Sprintf("Codex reports all %d Dibs hooks approved and enabled",
 			len(hooks)))
 		return
 	}
-	warn(fmt.Sprintf("Codex will not run %d of %d Dibs hooks: %s",
+	problem(fmt.Sprintf("Codex will not run %d of %d Dibs hooks: %s",
 		len(untrusted), len(hooks), strings.Join(untrusted, ", ")),
 		"an untrusted or modified hook is dropped at discovery without a word, so those "+
 			"deliveries never happen. Run `dibs codex-hooks --trust`, which records trust the way "+

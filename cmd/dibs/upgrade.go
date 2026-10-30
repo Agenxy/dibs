@@ -106,7 +106,7 @@ const upgradeHelp = `dibs upgrade: move the running daemon onto the dibd you hav
   Bare, it does NOT fetch anything: install the new build first (brew upgrade,
   or task install from a checkout) and this puts the fleet onto it. Run bare on
   an up-to-date install and it leaves the daemon alone. It also refreshes an
-  already installed, enabled Codex Dibs plugin to this build's version root.
+  already installed, enabled Codex Dibs plugin to the current content version.
   Plugin failures warn and fail doctor, but do not block the daemon upgrade:
   rerun dibs codex-plugin install. New chats/genuine app refreshes can load the
   current definition; running chats retain their tool list until then.

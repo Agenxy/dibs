@@ -60,6 +60,8 @@ func TestAHookThatIsSwitchedOffIsNotReportedAsDelivering(t *testing.T) {
 		off, live bool
 	}{
 		{"trusted and on", `{"key":"k1","trustStatus":"trusted","enabled":true}`, false, true},
+		{"managed and on", `{"key":"km","trustStatus":"managed","enabled":true}`, false, true},
+		{"unknown approval", `{"key":"ku","trustStatus":"unknown","enabled":true}`, false, false},
 		{"trusted and off", `{"key":"k2","trustStatus":"trusted","enabled":false}`, true, false},
 		{"untrusted and on", `{"key":"k3","trustStatus":"untrusted","enabled":true}`, false, false},
 		// An older Codex that reports no such field says nothing about
@@ -115,7 +117,7 @@ func TestTheReportAfterTrustingSaysWhenAHookIsStillOff(t *testing.T) {
 	// And with everything on, it says so plainly.
 	out.Reset()
 	reportTrusted(&out, hooks[:1], nil)
-	if !strings.Contains(out.String(), "mail reaches its agents") {
-		t.Fatalf("a fully live set was not reported as delivering: %q", out.String())
+	if !strings.Contains(out.String(), "all 1 approved and on") {
+		t.Fatalf("a fully approved set was not reported accurately: %q", out.String())
 	}
 }

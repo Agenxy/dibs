@@ -5,8 +5,6 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,7 +12,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -25,15 +22,17 @@ import (
 const codexPluginHelp = `dibs codex-plugin install [--dry-run] [--codex PATH]
 
 Installs this binary's embedded Codex plugin through Codex's plugin installer.
-Its build and tool fingerprint select a new version root, preserving dibs@dibs
-and the configured marketplace source. No network fetch or app call is needed.
+Its contents and tool fingerprint select the version root, preserving dibs@dibs
+and the configured marketplace source. No network fetch or running app is needed.
 An explicit source for another root is preserved and refused: Codex would
 replace the installed plugin from that source on its next sync. The error
 prints how to remove that source if you choose this binary's plugin instead.
 
 New chats and genuine app refreshes can load the changed definition. Running
 chats keep their existing tool list until they end or the app refreshes it.
-Hook trust is separate: check dibs codex-hooks after installation.
+Unchanged contents keep their approved bytes and skip reinstallation. Genuine
+content changes require a person's review; the verified receipt prints the
+dibs codex-hooks --trust corrective when Codex reports untrusted/modified hooks.
 
   --dry-run     print the version and installer command; change nothing
   --codex PATH  use this Codex executable instead of the discovered one
@@ -46,13 +45,6 @@ const codexPluginRepair = "dibs codex-plugin install"
 var codexPluginExecutable = discoverCodexPluginExecutable
 
 func discoverCodexPluginExecutable() string {
-	// Measured installed app layout, 2026-10-10. The older hooks helper's
-	// resource path no longer exists in this app; retain it as a fallback.
-	path := "/Applications/ChatGPT.app/Contents/Resources/codex-cli/" +
-		"CodexCLI.app/Contents/MacOS/codex"
-	if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() && info.Mode().Perm()&0o111 != 0 {
-		return path
-	}
 	return codexBinary()
 }
 
@@ -114,7 +106,7 @@ func planCodexPlugin(bin string) (*codexPluginPlan, error) {
 	if !ok {
 		return nil, errors.New("embedded Codex plugin unavailable")
 	}
-	exe, err := os.Executable()
+	exe, err := codexPluginCommand()
 	if err != nil {
 		return nil, err
 	}
@@ -130,27 +122,10 @@ func planCodexPlugin(bin string) (*codexPluginPlan, error) {
 		return nil, err
 	}
 	plugin.Files[".mcp.json"] = string(b) + "\n"
-	// Include payload bytes too: two dirty builds can have the same build label
-	// and tools but different hooks/skills. Neither may reuse the other's root.
-	raw, err := json.Marshal(plugin.Files)
+	v, err := stampCodexPlugin(plugin.Files, mcp.ToolsFingerprint())
 	if err != nil {
 		return nil, err
 	}
-	sum := sha256.Sum256(raw)
-	buildID := pluginBuildSegment(version)
-	v := "build-" + buildID + "-tools-" + mcp.ToolsFingerprint() + "-" + hex.EncodeToString(sum[:8])
-	var manifest map[string]any
-	if err := json.Unmarshal([]byte(plugin.Files[".codex-plugin/plugin.json"]), &manifest); err != nil {
-		return nil, err
-	}
-	manifest["version"] = v
-	b, err = json.MarshalIndent(manifest, "", "  ")
-	if err != nil {
-		return nil, err
-	}
-	plugin.Files[".codex-plugin/plugin.json"] = string(b) + "\n"
-	stamp, _ := json.Marshal(map[string]string{"build": version, "tools_hash": mcp.ToolsFingerprint()})
-	plugin.Files[".dibs-tools.json"] = string(stamp) + "\n"
 	p := &codexPluginPlan{
 		home: home, bin: bin, version: v,
 		source: filepath.Join(home, "dibs-marketplace", v), files: plugin.Files,
@@ -165,15 +140,6 @@ func planCodexPlugin(bin string) (*codexPluginPlan, error) {
 		return nil, fmt.Errorf("codex installer not found; install Codex then run %s", codexPluginRepair)
 	}
 	return p, nil
-}
-
-func pluginBuildSegment(v string) string {
-	return strings.Map(func(r rune) rune {
-		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune(".+-_", r) {
-			return r
-		}
-		return '-'
-	}, v)
 }
 
 func (p *codexPluginPlan) args() []string {

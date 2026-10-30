@@ -254,7 +254,7 @@ func (d *diagnosis) run(verbose bool) error {
 	checkHarnessConfigs(sec, addr(), ok, warn, bad)
 	checkFolderAccess(dir, boardOrNil(), d.requestFolders, ok, d.note, warn)
 	checkDesktopShadowsPlugin(bad)
-	checkCodexHookTrust(ok, warn)
+	checkCodexHookTrust(ok, warn, bad)
 	checkPanelBuild(client, sec, ok, warn, d.prose)
 	checkPublicTLS(client, sec, ok, warn)
 	checkMatching(client, sec, ok, warn)

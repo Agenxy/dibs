@@ -59,8 +59,11 @@ func TestCodexPluginCommand(t *testing.T) {
 				if err != nil {
 					t.Fatalf("command failed: %v %s", err, out)
 				}
-				if !strings.Contains(string(out), "build-0.0.14-tools-") || !strings.Contains(string(out), "running chats retain their tool list") && !strings.Contains(string(out), "Running chats retain their existing tool list") {
+				if !strings.Contains(string(out), "content-tools-") || !strings.Contains(string(out), "running chats retain their tool list") && !strings.Contains(string(out), "Running chats retain their existing tool list") {
 					t.Fatalf("missing version/boundary: %s", out)
+				}
+				if mode == "ok" && !strings.Contains(string(out), "dibs codex-hooks --trust") {
+					t.Fatalf("verified install omitted the hook trust corrective: %s", out)
 				}
 			} else if err == nil {
 				t.Fatal("unverified installer failure reported success")
@@ -120,16 +123,26 @@ func TestCodexPluginCommand(t *testing.T) {
 			root := filepath.Join(base, entries[0].Name())
 			var stamp map[string]string
 			b, err := os.ReadFile(filepath.Join(root, ".dibs-tools.json"))
-			if err != nil || json.Unmarshal(b, &stamp) != nil || stamp["build"] != "0.0.14" || stamp["tools_hash"] == "" {
-				t.Fatal("installed version lacks current tool/build stamp")
+			if err != nil || json.Unmarshal(b, &stamp) != nil || stamp["build"] != "" || stamp["tools_hash"] == "" || stamp["bundle_hash"] == "" {
+				t.Fatal("installed version lacks content/tool identity or still stamps the Dibs build")
 			}
 			b, err = os.ReadFile(filepath.Join(root, ".mcp.json"))
 			var servers struct {
-				Servers map[string]struct{ Command string } `json:"mcpServers"`
+				Servers map[string]struct {
+					Command string
+					Env     map[string]string
+				} `json:"mcpServers"`
 			}
-			if err != nil || json.Unmarshal(b, &servers) != nil || servers.Servers["dibs"].Command != dibs ||
-				!strings.Contains(string(b), "2026-07-28") {
+			if err != nil || json.Unmarshal(b, &servers) != nil ||
+				servers.Servers["dibs"].Env["CODEX_MCP_PROTOCOL_VERSION"] != "2026-07-28" {
 				t.Fatal("installed plugin does not launch this build with MCP 2026")
+			}
+			// Parent canonicalisation may turn /var into /private/var. Require
+			// this exact executable's file identity rather than its spelling.
+			got, gotErr := os.Stat(servers.Servers["dibs"].Command)
+			want, wantErr := os.Stat(dibs)
+			if gotErr != nil || wantErr != nil || !os.SameFile(got, want) {
+				t.Fatalf("plugin selected another executable: %q %v %v", servers.Servers["dibs"].Command, gotErr, wantErr)
 			}
 			if err := os.Remove(filepath.Join(home, "installer-called")); err != nil {
 				t.Fatal(err)
