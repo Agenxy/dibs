@@ -40,10 +40,15 @@ addr = "100.72.14.3:4777"    # a tailnet address: agents on four machines, one b
 client_transport = "local"  # this machine's clients use its private IPC socket
 ```
 
-On macOS/Linux the data directory must belong to the current OS user with mode
-`0700`, and credential files must be private regular files. Existing unsafe
-ownership, modes and final-path symlinks are refused with a repair hint rather
-than silently changed. A Unix socket pathname that exceeds the kernel limit
+On macOS/Linux the serving data directory belongs to the current OS user with
+mode `0700`, and credential files are private regular files. On serving startup,
+an owned, non-symlink directory such as `0755`, `0750` or `0711` can be tightened
+through its open handle if it has no group/other write access, unsafe ACL grant,
+or exposed key/secret. The daemon logs one warning with the path and old/new
+modes; doctor reports the timestamped change until the next clean check.
+Writable or foreign-owned directories, final-path symlinks and exposed credential
+files refuse with literal, shell-quoted repair or review commands. ACLs are never
+deleted automatically. A Unix socket pathname that exceeds the kernel limit
 requires a shorter private data-directory path. Windows local plaintext
 credentials are refused; choose verified HTTPS there.
 
@@ -52,6 +57,16 @@ users, except for trusted sticky directories such as root-owned `/tmp`. A
 `0700` final directory under a replaceable parent does not protect credential
 paths from another user renaming that directory during startup.
 
+On macOS, descriptor ACL inspection supplements mode bits, including inherited
+grants. Deny-only ACLs remain intact. A potentially unsafe allow entry whose
+principal cannot be established from the kernel metadata is refused for review;
+this includes owner grants on filesystems that report no owner UUID. The hint
+prints `ls -le` and leaves any `chmod -N` decision to the operator. Root-profile
+search grants and mutable config/CA files are checked too. Linux POSIX ACL named
+entries are capped by the mask represented by the group-mode bits; the native
+second-user CI guard checks both a zero mask and an exposed named-user grant.
+See the Linux [ACL/permission-bit correspondence](https://man7.org/linux/man-pages/man5/acl.5.html).
+
 For a joined remote profile, use `client_transport = "https"` (or
 `DIBS_TRANSPORT=https`) and an `https://` address. If using SSH, forward the
 hub's TLS listener, trust that hub's CA in this profile, and use
@@ -59,6 +74,53 @@ hub's TLS listener, trust that hub's CA in this profile, and use
 OS user can bind the local forwarded port while it is down. `dibs doctor`
 reports live client transports, with unobserved/dormant clients explicitly
 unqualified. See [SECURITY.md](../SECURITY.md) for the old-image cutover window.
+
+### Before the IPC cutover
+
+Run the staged candidate CLI on **each machine**, while its old daemon is still
+running, with the same `DIBS_DIR` or service pin:
+
+```text
+/path/to/staged/dibs doctor --ipc-preflight --json
+```
+
+This checks filesystem metadata and protected configuration without reading
+`local.secret` or private-key bytes, or contacting a daemon. It reports the actual mode/UID/GID and whether serving startup can
+tighten it or must refuse. It changes no directory permissions. The candidate
+daemon's replay `-check` is also read-only; the existing upgrade preflight runs
+that door before stopping the old daemon. An unsafe directory or exposed key
+therefore refuses the cutover with the corrective beside it. For a manually
+installed archive or cask, run the staged preflight before the explicit service
+restart. Then account for every expected bridge on IPC or verified HTTPS; this
+offline filesystem check does not qualify a dormant bridge.
+
+The assessment includes the ledger key, local secret, stored TLS and guest-CA
+keys, ACME cache files, and any external `tls_key` named by the configuration.
+Startup checks the configured key before tightening the directory. TLS key
+loading validates and reads the same no-follow descriptor on macOS/Linux.
+
+Data-directory creation audit (published tags `v0.0.0` through `v0.0.16` and the
+current source; all modes below are creation requests, not changes to an existing
+directory):
+
+| Path into a real installation | Creation and existing-directory behavior |
+|---|---|
+| `dibd` / historical `lanesd` startup | `MkdirAll(0700)` throughout the released history. An existing `0755`, `0775` or foreign-owned directory was left unchanged. |
+| Interactive and non-interactive `dibs configure` / historical `lanes configure` | The same `0700` request, preserving existing metadata. |
+| Linux systemd and historical native service setup | Board roots use `0700` when created; systemd/LaunchAgent **unit parents** use `0750` and are not the board root. Existing directories and tuned units retain their metadata. |
+| `Dibs.app` / SMAppService registration | `appservice.go` creates the selected board with `0700`. Its pin directory is separate. Neither creation call repairs existing modes or ownership. |
+| Native notification broker and delivery receipts | The broker can create the passwd home's `~/.dibs` with `0700`, independently of `DIBS_DIR`; delivery receipts create the selected root and private invocation children with `0700`. |
+| Trust/invitation and derived-view writers | Trust setup and invitation storage use `0700`. Blob-store parents, queued-wake receipts and app-return metadata can recursively create selected-profile parents with `0700`; existing metadata is preserved. Monitor/project token directories and the run registry are separate state, also requesting `0700`. |
+| Homebrew/source install and hub recipe | They enter configure/service/daemon paths above. A pre-created, copied, restored or manually provisioned hub directory may retain `0755`, group-write access or another owner. |
+| Joined host | The printed remote recipe does not create a daemon or board; the operator provisions its local credential/CA profile. That existing profile may have permissive modes or different ownership and needs the same local preflight. |
+| Invitation-only guest | No local daemon/board directory is created. Guest nonce and executable caches are separate. A guest that actually hosts `dibd` follows the corresponding daemon/image row. |
+| K7 kassette image and volume | Published image layers from `v0.0.14` through `v0.0.16` explicitly put root-owned `/data` at `0755` and declare it as a volume. New layers use `0700`. A runtime may seed or mount a pre-existing volume with its own metadata; a header test does not qualify that mount. Run the preflight **inside that guest's UID/mount namespace** before restart. |
+
+No constructor listed above changes an existing owner. A setgid parent or volume
+provisioner can also supply a different group. Group identity alone is harmless
+when group permissions are zero; foreign UID, group/other write, unsafe ACLs and
+exposed key files require operator review. Do not apply an in-guest numeric
+`chown` to an unrelated host path without establishing that mount's UID mapping.
 
 ---
 

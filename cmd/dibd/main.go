@@ -183,23 +183,42 @@ func run() error {
 		}
 	}
 
-	if err := os.MkdirAll(*dir, 0o700); err != nil {
-		return err
-	}
-	if localtransport.Supported() {
-		if err := localtransport.CheckDir(*dir, false); err != nil {
+	if !*check {
+		if err := os.MkdirAll(*dir, 0o700); err != nil {
 			return err
 		}
-		for _, name := range []string{"key", "local.secret"} {
-			if err := localtransport.PrivateFile(filepath.Join(*dir, name), true); err != nil {
-				return err
-			}
+	}
+	if localtransport.Supported() {
+		// Validate the directory and config authority before reading config.
+		// Upgrade's replay preflight never performs the subsequent tightening.
+		if _, err := localtransport.InspectDirectory(*dir); err != nil {
+			return err
 		}
+	}
+	cfg, err := loadConfigWithPublicFlags(*dir, opts, flag.CommandLine)
+	if err != nil {
+		return fmt.Errorf("reading %s/dibs.toml: %w", *dir, err)
+	}
+	if err := checkPrivateTLSKey(cfg.TLSKey); err != nil {
+		return err
+	}
+	var directoryTightening *localtransport.DirectoryTightening
+	if localtransport.Supported() && !*check {
+		prepared, err := localtransport.PrepareDirectory(*dir, time.Now())
+		if err != nil {
+			return err
+		}
+		directoryTightening = prepared
 	}
 	if *opts.appService && !*check {
 		if err := appServiceLogs(*dir); err != nil {
 			return fmt.Errorf("app service log: %w", err)
 		}
+	}
+	if directoryTightening != nil {
+		slog.Warn("tightened private data directory", "path", *dir,
+			"old_mode", directoryTightening.FromMode, "new_mode", "0700", "at", directoryTightening.At,
+			"notice_error", directoryTightening.NoticeError)
 	}
 
 	// Bounded in-memory log tail: the daemon can answer "what just happened?"
@@ -218,10 +237,6 @@ func run() error {
 		slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}), logRing,
 	)))
 
-	cfg, err := loadConfigWithPublicFlags(*dir, opts, flag.CommandLine)
-	if err != nil {
-		return fmt.Errorf("reading %s/dibs.toml: %w", *dir, err)
-	}
 	publicCfg, err := resolvePublic(opts)
 	if err != nil {
 		return err
@@ -584,7 +599,7 @@ func run() error {
 	// there is still nothing claiming to be up.
 	var tlsPair []tls.Certificate
 	if tr.certFile != "" {
-		cert, cerr := tls.LoadX509KeyPair(tr.certFile, tr.keyFile)
+		cert, cerr := loadPrivateTLSKeyPair(tr.certFile, tr.keyFile)
 		if cerr != nil {
 			_ = ln.Close()
 			return fmt.Errorf("the TLS certificate and key in %s cannot be used "+
@@ -1041,7 +1056,7 @@ func checkTransportUsable(dir, listenAddr, askedScheme string, cfg Config) error
 			"  Do NOT stop the daemon now running: this configuration is refused\n"+
 			"  at startup, so the replacement would not come up", dir, err)
 	default:
-		return nil // an explicit pair, or plaintext: nothing to generate
+		return checkPrivateTLSKey(cfg.TLSKey) // explicit pair, or plaintext: nothing to generate
 	}
 
 	caCert := filepath.Join(dir, "tls-ca.pem")
@@ -1121,7 +1136,7 @@ func checkReplay(dir string, cfg Config, flagAddr string) error {
 	// upgrade` reads this command's exit status as licence to stop a live
 	// daemon.
 	if cfg.TLSCert != "" {
-		pair, perr := tls.LoadX509KeyPair(cfg.TLSCert, cfg.TLSKey)
+		pair, perr := loadPrivateTLSKeyPair(cfg.TLSCert, cfg.TLSKey)
 		if perr != nil {
 			return fmt.Errorf("the TLS certificate and key in %s cannot be used "+
 				"together: %w", dir, perr)

@@ -36,7 +36,7 @@ func ensureGuestCA(dir string, ip netip.Addr) (*x509.Certificate, *ecdsa.Private
 		return nil, nil, errors.New("guest CA requires one unzoned IPv6 address; choose an assigned global public-ip")
 	}
 	certPath, keyPath := filepath.Join(dir, "guest-ca.pem"), filepath.Join(dir, "guest-ca-key.pem")
-	pair, loadErr := tls.LoadX509KeyPair(certPath, keyPath)
+	pair, loadErr := loadPrivateTLSKeyPair(certPath, keyPath)
 	if loadErr == nil {
 		ca, parseErr := x509.ParseCertificate(pair.Certificate[0])
 		key, ok := pair.PrivateKey.(*ecdsa.PrivateKey)

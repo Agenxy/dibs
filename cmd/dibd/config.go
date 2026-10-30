@@ -7,7 +7,6 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -219,6 +218,9 @@ func resolveTransport(dir, addr, scheme string, c Config) (transport, error) {
 	if err != nil {
 		return transport{}, err
 	}
+	if err := checkPrivateTLSKey(choice.KeyFile); err != nil {
+		return transport{}, err
+	}
 	return transport{certFile: choice.CertFile, keyFile: choice.KeyFile, why: choice.Why, selfIssued: self}, nil
 }
 
@@ -387,7 +389,7 @@ func validSigningIdentity(cert *x509.Certificate, perr error, keyOK bool, caCert
 // not depend on any address: a board that changes networks, renews, or gains an
 // interface keeps the same CA and every machine that trusted it stays working.
 func ensureCA(caCert, caKey string) (*x509.Certificate, *ecdsa.PrivateKey, error) {
-	pair, loadErr := tls.LoadX509KeyPair(caCert, caKey)
+	pair, loadErr := loadPrivateTLSKeyPair(caCert, caKey)
 	if loadErr == nil {
 		cert, perr := x509.ParseCertificate(pair.Certificate[0])
 		signer, ok := pair.PrivateKey.(*ecdsa.PrivateKey)
@@ -552,7 +554,7 @@ func usableLeaf(certFile, keyFile, addr string, ca *x509.Certificate) bool {
 	// regenerate kept saying there was nothing to regenerate. A daemon that
 	// cannot repair itself from its own data directory is worse than one that
 	// never wrote the file.
-	if _, err := tls.LoadX509KeyPair(certFile, keyFile); err != nil {
+	if _, err := loadPrivateTLSKeyPair(certFile, keyFile); err != nil {
 		return false
 	}
 	pemBytes, err := os.ReadFile(certFile) // #nosec G304 -- the daemon's own data directory

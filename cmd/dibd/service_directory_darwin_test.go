@@ -66,6 +66,9 @@ func TestAppServiceRequiresItsPinBeforeCreatingAnyDirectory(t *testing.T) {
 	// A valid pin must reach the real replay preflight at the selected board.
 	// An empty fixture has no ledger; reaching this diagnostic proves setup.
 	dir := filepath.Join(home, "selected-board")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	pin := filepath.Join(home, "Library", "Application Support", "org.agenxy.dibs", "service.toml")
 	if err := os.MkdirAll(filepath.Dir(pin), 0o700); err != nil {
 		t.Fatal(err)

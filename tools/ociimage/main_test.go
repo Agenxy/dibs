@@ -39,6 +39,26 @@ func TestTheSameBinaryGivesTheSameDigest(t *testing.T) {
 	}
 }
 
+func TestImageDataDirectoryStartsOwnerPrivate(t *testing.T) {
+	raw, err := layer([]byte("fixture binary"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := tar.NewReader(bytes.NewReader(raw))
+	for {
+		h, err := tr.Next()
+		if err != nil {
+			t.Fatalf("image has no data directory: %v", err)
+		}
+		if h.Name == "data/" {
+			if h.Typeflag != tar.TypeDir || h.Mode != 0o700 || h.Uid != 0 || h.Gid != 0 {
+				t.Fatalf("fresh image would fail private-profile admission: %+v", h)
+			}
+			return
+		}
+	}
+}
+
 // Every reference in the layout resolves to a blob with that digest, the
 // config names the uncompressed layer, and the layer holds dibd where the
 // entrypoint looks for it. A runtime checks all of this and refuses the image

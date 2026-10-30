@@ -18,6 +18,12 @@ and account for every expected client before shared-host rollout; an absent
 dormant client is unknown. The existing invitation-only labs-broker plaintext
 forward stays separate and warns that a squatted port can capture its invited
 agent bearer token; migrate that endpoint to verified HTTPS through SSH.
+Before cutover, run the staged candidate's `dibs doctor --ipc-preflight --json`
+on each host while the old daemon still runs. It checks mode/ownership/ACL
+metadata without credentials or network traffic. Safe owned directories may
+tighten to 0700 at serving startup, with a warning and a doctor notice. Writable,
+foreign-owned or credential-exposed profiles require the printed explicit
+repair/review; ACLs are never deleted automatically.
 
 ---
 

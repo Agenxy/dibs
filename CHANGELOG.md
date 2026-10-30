@@ -85,6 +85,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   labs-broker plaintext forward remains supported with a token-exposure and
   HTTPS migration warning; browser plaintext TCP is outside IPC protection.
 
+  Staged `doctor --ipc-preflight` reports directory modes, ownership and ACLs
+  before cutover without contacting the old daemon. Serving startup safely
+  tightens owned, non-writable-to-others directories with a warning and doctor
+  notice; unsafe directories, exposed keys and unknown ACL grants require
+  explicit review. Fresh K7 image `/data` starts private, while existing volumes
+  are preflighted in their own namespace. ACLs are never removed automatically.
+
 - Linux service configuration is repeatable across package reinstalls. Units
   use a stable package-manager binary link and defined executable search paths,
   rather than a versioned Caskroom path or Homebrew's temporary shim PATH.

@@ -154,6 +154,9 @@ func TestQDaemonChild(t *testing.T) {
 		return
 	}
 	os.Args = []string{"dibd", "-dir", os.Getenv("DIBS_DIR"), "-addr", os.Getenv("DIBS_ADDR"), "-allow-parallel"}
+	if os.Getenv("DIBS_Q_CHECK") == "1" {
+		os.Args = append(os.Args, "-check")
+	}
 	flag.CommandLine = cloudFlagSet()
 	if err := run(); err != nil {
 		t.Fatal(err)
@@ -161,6 +164,11 @@ func TestQDaemonChild(t *testing.T) {
 }
 
 func qStartBoard(t *testing.T, dir string) (string, func()) {
+	addr, stop, _ := qStartBoardCaptured(t, dir)
+	return addr, stop
+}
+
+func qStartBoardCaptured(t *testing.T, dir string) (string, func(), func() string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte(qFixtureSecret), 0o600); err != nil {
 		t.Fatal(err)
@@ -220,7 +228,7 @@ func qStartBoard(t *testing.T, dir string) (string, func()) {
 	if !ready {
 		t.Fatal("setup: actual daemon never became ready")
 	}
-	return port.Addr, stop
+	return port.Addr, stop, logs.String
 }
 
 func qRPCReply(t *testing.T, out []byte, id float64) map[string]any {

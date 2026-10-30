@@ -30,31 +30,74 @@ func owned(info os.FileInfo) bool {
 // CheckDir checks the final directory through a no-follow descriptor. Ancestor
 // spelling aliases are permitted; the connected peer is verified separately.
 func CheckDir(dir string, create bool) error {
+	f, info, err := openProfileDirectory(dir, create)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	if info.Mode().Perm() != 0o700 {
+		return directoryModeError(dir)
+	}
+	if err := checkDirectoryACL(f, true); err != nil {
+		return err
+	}
+	if err := checkAncestors(filepath.Clean(dir), info); err != nil {
+		return err
+	}
+	return checkAuthorityFiles(dir)
+}
+
+func openProfileDirectory(dir string, create bool) (*os.File, os.FileInfo, error) {
 	// File and socket paths use filepath.Join, which cleans the directory
 	// spelling first. Validate that same object: a symlink followed by /.. can
 	// otherwise make Open inspect a different directory from the credential IO.
 	dir = filepath.Clean(dir)
 	if create {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
-			return err
+			return nil, nil, err
 		}
 	}
 	fd, err := unix.Open(dir, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if err != nil {
-		return fmt.Errorf("open private data directory %s without following a symlink: %w; "+
-			"create a directory owned by this user with mode 0700", dir, err)
+		if errors.Is(err, unix.ELOOP) || errors.Is(err, unix.ENOTDIR) {
+			return nil, nil, fmt.Errorf("data directory %s is not a real no-follow directory: %w; "+
+				"run ls -ld %s and select its physical private directory; never chmod or chown through a symlink",
+				dir, err, literalPath(dir))
+		}
+		return nil, nil, fmt.Errorf("open private data directory %s without following a symlink: %w; "+
+			"select its real private directory, then %s", dir, err, directoryRepair(dir))
 	}
 	f := os.NewFile(uintptr(fd), dir)
-	defer func() { _ = f.Close() }()
 	info, err := f.Stat()
 	if err != nil {
-		return err
+		_ = f.Close()
+		return nil, nil, err
 	}
-	if !info.IsDir() || !owned(info) || info.Mode().Perm() != 0o700 {
-		return fmt.Errorf("data directory %s must be owned by this user with mode 0700; "+
-			"repair its ownership and permissions before starting dibd or sending credentials", dir)
+	if !info.IsDir() || !owned(info) {
+		_ = f.Close()
+		st := info.Sys().(*syscall.Stat_t)
+		return nil, nil, fmt.Errorf("data directory %s has mode %04o, uid %d, gid %d; %w",
+			dir, info.Mode().Perm(), st.Uid, st.Gid, directoryModeError(dir))
 	}
-	return checkAncestors(dir, info)
+	return f, info, nil
+}
+
+func directoryModeError(dir string) error {
+	return fmt.Errorf("data directory %s must be owned by this user with mode 0700; %s", dir, directoryRepair(dir))
+}
+
+func directoryRepair(dir string) string {
+	dir = filepath.Clean(dir)
+	return fmt.Sprintf("run chmod 700 %s; if its owner is not uid %d, first run sudo chown %d:%d %s",
+		literalPath(dir), os.Geteuid(), os.Geteuid(), os.Getegid(), literalPath(dir))
+}
+
+func literalPath(path string) string { return "'" + strings.ReplaceAll(path, "'", "'\\''") + "'" }
+
+func credentialRepair(path string) string {
+	return fmt.Sprintf("for a verified regular file run chmod 600 %s; if its owner is not uid %d, "+
+		"first run sudo chown %d:%d %s; never repair a symlink in place",
+		literalPath(path), os.Geteuid(), os.Geteuid(), os.Getegid(), literalPath(path))
 }
 
 // A private final directory is insufficient if another OS user can rename it
@@ -134,6 +177,9 @@ func (w *pathWalk) step() error {
 	}
 	if !info.IsDir() || (info.Mode().Perm()&0o022 != 0 && info.Mode()&os.ModeSticky == 0) {
 		return unsafeAncestor(next)
+	}
+	if err := checkAncestorACL(next, info); err != nil {
+		return err
 	}
 	w.current = next
 	return nil

@@ -95,6 +95,8 @@ jobs:
         run: mise exec -- go vet ./...
       - name: compile real other-user IPC guard
         run: mise exec -- go test -race -c -o "$RUNNER_TEMP/dibs-local-uid.test" ./cmd/dibd
+      - name: POSIX ACL proof prerequisite
+        run: sudo -n apt-get install --yes acl
       - name: kernel peer identity and port squatting by a second OS user
         working-directory: cmd/dibd
         run: mise exec -- sudo -n env "PATH=$PATH" DIBS_Q_CI=1 "$RUNNER_TEMP/dibs-local-uid.test" -test.run '^TestLocalIPCKernelRejectsOtherUID$' -test.timeout 3m -test.v

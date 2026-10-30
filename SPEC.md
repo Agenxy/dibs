@@ -332,6 +332,13 @@ you can measure is never improved by asking.
   HTTPS. Windows local plaintext credentials fail closed; no Unix permission
   guarantee is claimed there. See SECURITY.md for browser, invitation-forward
   and old-image limits. This transport gate is not an agent identity.
+  A staged `doctor --ipc-preflight` and the daemon's replay check inspect the
+  directory without changing its mode or contacting the old daemon. Serving
+  startup may tighten a verified owned directory with no group/other write
+  access to 0700 through its handle, after credential and ACL checks; a warning
+  and a derived timestamped doctor notice report it. Writable/foreign/symlinked
+  directories, exposed key files and unknown unsafe ACL grants refuse with
+  literal corrective/review commands. ACLs are never removed automatically.
 - **Same-user agents**: isolated from each other's agents/mailboxes by **agent tokens**, but only against *accidental* interference. A malicious same-UID process can read
   the key and the secret; that boundary requires OS isolation and is explicitly out
   of scope. Dibs' promise at this ring: honest agents cannot forge, snoop, or

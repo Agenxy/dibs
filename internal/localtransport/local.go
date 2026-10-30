@@ -151,9 +151,16 @@ func PrivateFile(path string, missing bool) error {
 	if err != nil {
 		return err
 	}
+	if err := privateFileInfo(path, info); err != nil {
+		return err
+	}
+	return checkCredentialACL(path, info)
+}
+
+func privateFileInfo(path string, info os.FileInfo) error {
 	if !info.Mode().IsRegular() || !owned(info) || info.Mode().Perm()&0o077 != 0 {
 		return fmt.Errorf("credential file %s must be a regular file owned by this user with mode 0600; "+
-			"repair its ownership/permissions without following a symlink", path)
+			"inspect its provenance before using it; %s", path, credentialRepair(path))
 	}
 	return nil
 }

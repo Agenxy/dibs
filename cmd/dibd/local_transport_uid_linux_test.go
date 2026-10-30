@@ -15,10 +15,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/localtransport"
+	"github.com/agenxy/dibs/internal/testport"
 )
 
 // This child runs as the real second account created by the explicit Linux CI
@@ -195,6 +199,100 @@ func TestLocalIPCKernelRejectsOtherUID(t *testing.T) {
 	}
 	if err := cmd.Wait(); err != nil {
 		t.Fatal(err)
+	}
+	qCheckPOSIXACLMask(t, uid, gid, image)
+	qCheckForeignDirectoryStartup(t, uid, gid)
+}
+
+func qCheckPOSIXACLMask(t *testing.T, uid, gid uint32, image string) {
+	t.Helper()
+	dir := qShortDir(t)
+	entry := "u:" + strconv.FormatUint(uint64(uid), 10) + ":rwx,m::---"
+	if out, err := exec.Command("setfacl", "-m", entry, dir).CombinedOutput(); err != nil {
+		t.Fatalf("setup: real named-user POSIX ACL: %v %s", err, out)
+	}
+	listing, err := exec.Command("getfacl", "-n", "-c", dir).Output()
+	if err != nil || !strings.Contains(string(listing), "mask::---") ||
+		!strings.Contains(string(listing), "user:"+strconv.FormatUint(uint64(uid), 10)+":rwx") {
+		t.Fatalf("setup: ACL is not the intended named grant with a zero mask: %v %s", err, listing)
+	}
+	if err := localtransport.CheckDir(dir, false); err != nil {
+		t.Fatalf("zero POSIX ACL mask was not private: %v", err)
+	}
+	qACLWriteAsOtherUser(t, uid, gid, image, dir, false)
+	// On Linux the group mode bits ARE the POSIX ACL mask. The same named
+	// rwx entry becomes effective when chmod exposes that mask.
+	if err := os.Chmod(dir, 0o770); err != nil {
+		t.Fatal(err)
+	}
+	qACLWriteAsOtherUser(t, uid, gid, image, dir, true)
+	if err := localtransport.CheckDir(dir, false); err == nil {
+		t.Fatal("effective named-user ACL write access passed private-profile admission")
+	}
+}
+
+func qACLWriteAsOtherUser(t *testing.T, uid, gid uint32, image, dir string, allow bool) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, image, "-test.run=^TestQOtherUIDACLWrite$")
+	cmd.Env = []string{
+		"DIBS_Q_ACL_CHILD=1", "DIBS_Q_ACL_DIR=" + dir,
+		"DIBS_Q_ACL_ALLOW=" + strconv.FormatBool(allow),
+	}
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Credential: &syscall.Credential{Uid: uid, Gid: gid, Groups: []uint32{gid}},
+	}
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("kernel ACL write control allow=%v: %v %s", allow, err, out)
+	}
+}
+
+func TestQOtherUIDACLWrite(t *testing.T) {
+	if os.Getenv("DIBS_Q_ACL_CHILD") != "1" {
+		return
+	}
+	path := filepath.Join(os.Getenv("DIBS_Q_ACL_DIR"), "acl-write-proof")
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err == nil {
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if os.Getenv("DIBS_Q_ACL_ALLOW") == "true" {
+		if err != nil {
+			t.Fatalf("effective named-user grant did not permit the real write: %v", err)
+		}
+	} else if !os.IsPermission(err) {
+		t.Fatalf("zero mask did not deny the real other-user write: %v", err)
+	}
+}
+
+func qCheckForeignDirectoryStartup(t *testing.T, uid, gid uint32) {
+	t.Helper()
+	dir := qShortDir(t)
+	// Linux release/test targets are 64-bit; these parsed uint32 IDs fit int.
+	if err := os.Chown(dir, int(uid), int(gid)); err != nil { // #nosec G115 -- bounded OS IDs on supported targets.
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestQDaemonChild$")
+	port := testport.Reserve(t, "tcp", "127.0.0.1:0")
+	cmd.Env = append(nativeProbeEnv(t.TempDir(), "", ""),
+		"DIBS_Q_DAEMON_CHILD=1", "DIBS_DIR="+dir, "DIBS_ADDR="+port.Addr)
+	port.Release(t)
+	out, err := cmd.CombinedOutput()
+	if ctx.Err() != nil || err == nil || !strings.Contains(string(out), "sudo chown ") ||
+		!strings.Contains(string(out), dir) {
+		t.Fatalf("foreign-owned startup lost its literal ownership repair: %v %s", err, out)
+	}
+	info, err := os.Stat(dir)
+	if err != nil || info.Sys().(*syscall.Stat_t).Uid != uid || info.Mode().Perm() != 0o700 {
+		t.Fatalf("refusal changed the foreign-owned directory: %v %v", info, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "local.secret")); !os.IsNotExist(err) {
+		t.Fatalf("foreign-owned refusal created a credential: %v", err)
 	}
 }
 

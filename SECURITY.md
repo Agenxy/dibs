@@ -40,6 +40,19 @@ does not certify a disconnected or dormant bridge. Installed acceptance means
 the owner has refreshed and accounted for every expected bridge before a
 shared Linux deployment; source tests and an installation alone do not prove it.
 
+Before replacing or restarting a daemon, run the staged candidate's
+`doctor --ipc-preflight --json` with that machine's selected directory. It reads
+metadata and protected configuration without local-secret/private-key bytes or
+network access and reports mode/ownership/ACL
+problems in advance. Serving startup can tighten a verified owned directory
+with no group/other write access to `0700` through its open handle, recording a
+warning and a timestamped derived doctor notice. It does not repair writable,
+foreign-owned, symlinked or credential-exposed state, and never deletes ACLs.
+macOS ACL grants, including inherited ones, are checked independently of mode
+bits; unknown grant identity refuses with an operator review hint. The
+[creation audit and rollout steps](docs/CONFIGURATION.md#before-the-ipc-cutover)
+cover historical installs and existing K7 volumes as well as fresh native roots.
+
 **If you run agents you do not trust, do not point them at the same daemon.**
 Run a second `dibd` with its own data directory (`-allow-parallel`); they share
 no coordination state: separate ledgers, separate mailboxes, separate boards.

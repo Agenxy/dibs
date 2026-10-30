@@ -10,6 +10,7 @@ import (
 	"errors"
 	"net"
 	"os"
+	"time"
 )
 
 func Supported() bool                                { return false }
@@ -19,3 +20,14 @@ func checkSocket(string) error                       { return errors.New(Unsuppo
 func verifyPeer(net.Conn) error                      { return errors.New(UnsupportedHint) }
 func Dial(context.Context, string) (net.Conn, error) { return nil, errors.New(UnsupportedHint) }
 func Listen(string) (net.Listener, error)            { return nil, errors.New(UnsupportedHint) }
+func credentialRepair(string) string                 { return UnsupportedHint }
+func InspectDirectory(string) (DirectoryStatus, error) {
+	return DirectoryStatus{}, errors.New(UnsupportedHint)
+}
+
+func PrepareDirectory(string, time.Time) (*DirectoryTightening, error) {
+	return nil, errors.New(UnsupportedHint)
+}
+
+func ConsumeTightening(string) (*DirectoryTightening, error) { return nil, errors.New(UnsupportedHint) }
+func checkCredentialACL(string, os.FileInfo) error           { return errors.New(UnsupportedHint) }
