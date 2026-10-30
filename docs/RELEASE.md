@@ -152,6 +152,18 @@ fails with a corrective instead of an implicit fetch. The tool does not start
 or update the runtime service. The checker also needs Go and cosign (the Linux
 fixture installs these public-path prerequisites), and `shasum`.
 
+When a local runtime is unavailable, the `published Linux install` workflow
+uses the same checker on an ephemeral GitHub-hosted Ubuntu runner with its real
+Homebrew installation. It runs `-mode linux-hosted -fresh-installs 1`; the receipt
+names the hosted run and explicitly distinguishes it from a Mac container.
+The current acceptance job pins published `v0.0.16`, runs Brew update before
+the public tap/install commands, then performs the same service setup,
+reinstall, archive verification, exact-tag Go install and MCP checks. It is a
+separate public-release report, not the candidate's required `gate`. Failures
+remain red and the receipt plus command logs are uploaded even on failure;
+fixture homes, credentials, archives and build caches are not uploaded. One
+runner is one fresh attempt, not the five-container failure-rate measurement.
+
 Keep the complete new output directories. `receipt.json` records actual command
 exit statuses and separate logs. The Linux parent counts only fresh Dibs install
 attempts, reports their failure fraction and EPIPE count, and requires recovery

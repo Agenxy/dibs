@@ -38,6 +38,32 @@ func TestExistingReceiptDirectoryIsNeverReused(t *testing.T) {
 	}
 }
 
+func TestHostedLinuxModeRequiresAnEphemeralRunnerAndOneAttempt(t *testing.T) {
+	t.Setenv("GITHUB_ACTIONS", "true")
+	t.Setenv("RUNNER_ENVIRONMENT", "github-hosted")
+	o := options{mode: "linux-hosted", tag: "v0.0.16", out: "new-receipt", runtime: "container", fresh: 1}
+	if err := validate(o, "linux"); err != nil {
+		t.Fatal("hosted setup refused:", err)
+	}
+	if err := validate(o, "darwin"); err == nil {
+		t.Fatal("hosted mode accepted a Mac")
+	}
+	o.fresh = 2
+	if err := validate(o, "linux"); err == nil {
+		t.Fatal("one runner was counted as multiple fresh installations")
+	}
+	o.fresh = 1
+	t.Setenv("RUNNER_ENVIRONMENT", "self-hosted")
+	if err := validate(o, "linux"); err == nil {
+		t.Fatal("hosted mode accepted a persistent runner")
+	}
+	t.Setenv("RUNNER_ENVIRONMENT", "github-hosted")
+	t.Setenv("GITHUB_ACTIONS", "")
+	if err := validate(o, "linux"); err == nil {
+		t.Fatal("hosted mode accepted an ordinary workstation")
+	}
+}
+
 func TestTagFenceRejectsDifferentOrAmbiguousCasks(t *testing.T) {
 	for _, body := range []string{
 		`{"casks":[]}`, `{"casks":[{"token":"dibs","version":"0.0.16"}]}`,

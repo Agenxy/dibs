@@ -52,6 +52,8 @@ type receipt struct {
 	ArchiveVerified bool     `json:"archive_signature_and_digest_verified"`
 	GoTag           string   `json:"go_install_tag"`
 	ServiceLaunch   string   `json:"service_launch"`
+	Environment     string   `json:"execution_environment,omitempty"`
+	HostedRun       string   `json:"hosted_run,omitempty"`
 }
 
 type runner struct {
@@ -65,7 +67,8 @@ func main() { os.Exit(runCLI()) }
 
 func runCLI() int {
 	var o options
-	flag.StringVar(&o.mode, "mode", "native", "native archive/Go paths, linux containers, or internal linux-child")
+	flag.StringVar(&o.mode, "mode", "native",
+		"native archive/Go paths, linux containers, linux-hosted, or internal linux-child")
 	flag.StringVar(&o.tag, "tag", "", "exact published tag, for example v0.0.17")
 	flag.StringVar(&o.out, "out", "", "new receipt directory; existing directories are refused")
 	flag.StringVar(&o.runtime, "runtime", "container", "container or docker; never starts the runtime service")
@@ -88,20 +91,36 @@ func validate(o options, goos string) error {
 	if o.out == "" {
 		return errors.New("-out must name a new receipt directory")
 	}
-	if o.mode != "native" && o.mode != "linux" && o.mode != "linux-child" {
-		return errors.New("unknown -mode")
-	}
-	if goos != "darwin" && goos != "linux" {
-		return errors.New("only macOS and Linux public paths are covered")
-	}
-	if o.mode == "linux-child" && (goos != "linux" || os.Getenv("DIBS_PUBLIC_INSTALL_CHILD") != "1") {
-		return errors.New("linux-child is only for the explicitly isolated Linux container")
+	if err := validateMode(o, goos); err != nil {
+		return err
 	}
 	if o.fresh < 1 || o.fresh > 20 {
 		return errors.New("-fresh-installs must be between 1 and 20")
 	}
 	if o.runtime != "container" && o.runtime != "docker" {
 		return errors.New("-runtime must be container or docker")
+	}
+	return nil
+}
+
+func validateMode(o options, goos string) error {
+	if goos != "darwin" && goos != "linux" {
+		return errors.New("only macOS and Linux public paths are covered")
+	}
+	switch o.mode {
+	case "native", "linux":
+		return nil
+	case "linux-child":
+		if goos != "linux" || os.Getenv("DIBS_PUBLIC_INSTALL_CHILD") != "1" {
+			return errors.New("linux-child is only for the explicitly isolated Linux container")
+		}
+	case "linux-hosted":
+		if goos != "linux" || os.Getenv("GITHUB_ACTIONS") != "true" ||
+			os.Getenv("RUNNER_ENVIRONMENT") != "github-hosted" || o.fresh != 1 {
+			return errors.New("linux-hosted requires one fresh attempt on an ephemeral GitHub-hosted Linux runner")
+		}
+	default:
+		return errors.New("unknown -mode")
 	}
 	return nil
 }
@@ -144,17 +163,33 @@ func execute(ctx context.Context, o options) (err error) {
 	if o.mode == "linux" {
 		return r.linuxContainers(o)
 	}
-	if o.mode == "linux-child" {
-		marker, markerErr := os.ReadFile("/probe/owned-fixture")
-		if markerErr != nil || string(marker) != o.tag+"\n" || root != "/receipts/run" {
-			return errors.New("linux child requires its tag-bound readonly fixture marker and isolated receipt mount")
-		}
-		r.env = isolatedEnv(os.Getenv("HOME"), root)
+	if err := r.prepareNativeMode(o); err != nil {
+		return err
+	}
+	return r.native(o.tag)
+}
+
+func (r *runner) prepareNativeMode(o options) error {
+	if o.mode == "linux-hosted" {
+		r.report.Environment = "GitHub-hosted Linux runner; not the Mac container runtime"
+		r.report.HostedRun = os.Getenv("GITHUB_SERVER_URL") + "/" + os.Getenv("GITHUB_REPOSITORY") +
+			"/actions/runs/" + os.Getenv("GITHUB_RUN_ID") + "/attempts/" + os.Getenv("GITHUB_RUN_ATTEMPT")
+		r.env = isolatedEnv(os.Getenv("HOME"), r.root)
 		if err := r.brew(o.tag); err != nil {
 			return err
 		}
 	}
-	return r.native(o.tag)
+	if o.mode == "linux-child" {
+		marker, markerErr := os.ReadFile("/probe/owned-fixture")
+		if markerErr != nil || string(marker) != o.tag+"\n" || r.root != "/receipts/run" {
+			return errors.New("linux child requires its tag-bound readonly fixture marker and isolated receipt mount")
+		}
+		r.env = isolatedEnv(os.Getenv("HOME"), r.root)
+		if err := r.brew(o.tag); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // No harness credentials, app session, board override or existing Go/Codex
