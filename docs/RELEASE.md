@@ -66,6 +66,18 @@ untouched, even with a throwaway HOME.
 A release starts with `workflow_dispatch` of `release.yml` on protected `main`,
 with a canonical version and full candidate SHA. The candidate must be main's
 current tip and its committed release surfaces must already name that version.
+Before preflight can run, the read-only candidate acceptance workflow builds
+that exact SHA on macOS with the production GoReleaser snapshot invocation.
+An ephemeral Linux runner verifies the SHA/version/digest manifest, installs
+the unchanged archives through the generated cask with only its URL authority
+adapted, repeats explicit service setup and reinstall, checks frozen v0.0.16
+headerless-unit migration through real binaries, and performs MCP round trips.
+It receives no release signing identity, tap key or write token. The unsigned
+candidate receipt proves installation, not published Sigstore provenance.
+Only the measured cask-scoped Homebrew EPIPE signature permits one fresh retry;
+the receipt retains the failure and retry. Other failures remain red. Published
+v0.0.16 confirmation is separate and retains its known service-setup failure.
+
 The preflight has read-only repository permissions. It creates an annotated tag
 **locally**, runs the entire `task ci`, checks the authenticated Sigstore root,
 and builds an offline GoReleaser snapshot with the actual release version.

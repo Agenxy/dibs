@@ -50,7 +50,35 @@ env:
   GITHUB_TOKEN: ${{ github.token }}
 
 jobs:
+  candidate-source:
+    if: inputs.mode == 'preflight' && github.ref == 'refs/heads/main'
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+        with:
+          version: 2026.10.23
+          experimental: true
+      - name: Validate protected source before candidate checkout or build
+        run: go run ./tools/releaseflow -phase validate
+
+  candidate-install:
+    needs: candidate-source
+    uses: ./.github/workflows/candidate-install.yml
+    permissions:
+      contents: read
+    with:
+      sha: ${{ inputs.sha }}
+      version: ${{ inputs.version }}
+
   preflight:
+    needs: candidate-install
     if: inputs.mode == 'preflight' && github.ref == 'refs/heads/main'
     runs-on: macos-latest
     permissions:

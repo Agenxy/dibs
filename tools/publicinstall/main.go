@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright 2026 Agenxy
 
-// publicinstall exercises published bytes, never a local candidate or a Mac
-// cask. Receipts distinguish commands, verified archives and actual MCP work.
+// publicinstall exercises published releases or exact unsigned candidate
+// artifacts. Receipts distinguish provenance, commands and actual MCP work;
+// native macOS cask installation is never a supported mode.
 package main
 
 import (
@@ -25,6 +26,7 @@ import (
 
 type options struct {
 	mode, tag, out, runtime, image string
+	sha, candidateDir              string
 	fresh                          int
 }
 
@@ -56,6 +58,8 @@ type receipt struct {
 	Environment     string    `json:"execution_environment,omitempty"`
 	HostedRun       string    `json:"hosted_run,omitempty"`
 	Findings        []finding `json:"findings,omitempty"`
+	CandidateSHA    string    `json:"candidate_sha,omitempty"`
+	CandidateProof  string    `json:"candidate_proof,omitempty"`
 }
 
 type finding struct {
@@ -65,10 +69,12 @@ type finding struct {
 }
 
 type runner struct {
-	ctx    context.Context
-	root   string
-	env    []string
-	report receipt
+	ctx          context.Context
+	root         string
+	cwd          string
+	testExecRoot string
+	env          []string
+	report       receipt
 }
 
 func main() { os.Exit(runCLI()) }
@@ -76,13 +82,18 @@ func main() { os.Exit(runCLI()) }
 func runCLI() int {
 	var o options
 	flag.StringVar(&o.mode, "mode", "native",
-		"native archive/Go paths, linux containers, linux-hosted, or internal linux-child")
-	flag.StringVar(&o.tag, "tag", "", "exact published tag, for example v0.0.17")
+		"native, linux, linux-hosted, candidate-build, candidate-linux, or internal linux-child")
+	flag.StringVar(&o.tag, "tag", "", "exact published tag or candidate version; candidate-build defaults to next patch")
 	flag.StringVar(&o.out, "out", "", "new receipt directory; existing directories are refused")
 	flag.StringVar(&o.runtime, "runtime", "container", "container or docker; never starts the runtime service")
 	flag.StringVar(&o.image, "image", "docker.io/homebrew/brew:latest", "Homebrew image; observed digest is recorded")
+	flag.StringVar(&o.sha, "sha", "", "full exact candidate SHA; required by candidate-build and candidate-linux")
+	flag.StringVar(&o.candidateDir, "candidate-dir", "", "downloaded candidate artifact directory for candidate-linux")
 	flag.IntVar(&o.fresh, "fresh-installs", 5, "fresh Linux containers, 1 through 20")
 	flag.Parse()
+	if o.mode == "candidate-build" && o.tag != "" && !strings.HasPrefix(o.tag, "v") {
+		o.tag = "v" + o.tag
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
 	defer cancel()
 	if err := execute(ctx, o); err != nil {
@@ -93,8 +104,10 @@ func runCLI() int {
 }
 
 func validate(o options, goos string) error {
-	if _, err := selfupdate.ReleaseForTag(o.tag); err != nil {
-		return err
+	if o.mode != "candidate-build" || o.tag != "" {
+		if _, err := selfupdate.ReleaseForTag(o.tag); err != nil {
+			return err
+		}
 	}
 	if o.out == "" {
 		return errors.New("-out must name a new receipt directory")
@@ -116,6 +129,8 @@ func validateMode(o options, goos string) error {
 		return errors.New("only macOS and Linux public paths are covered")
 	}
 	switch o.mode {
+	case "candidate-build", "candidate-linux":
+		return validateCandidateMode(o, goos)
 	case "native", "linux":
 		return nil
 	case "linux-child":
@@ -168,6 +183,12 @@ func execute(ctx context.Context, o options) (err error) {
 			err = errors.Join(err, writeErr)
 		}
 	}()
+	if o.mode == "candidate-build" {
+		return r.buildCandidate(o)
+	}
+	if o.mode == "candidate-linux" {
+		return r.installCandidate(o)
+	}
 	if o.mode == "linux" {
 		return r.linuxContainers(o)
 	}
@@ -219,13 +240,20 @@ func isolatedEnv(home, root string) []string {
 
 func (r *runner) command(name string, env []string, args ...string) (string, error) {
 	start := time.Now()
-	// #nosec G204 G702 -- argv only; explicit local tools or signature-verified fixture binaries
-	cmd := exec.CommandContext(r.ctx, args[0], args[1:]...)
-	cmd.Env = env
-	cmd.Dir = r.root
 	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	err := cmd.Run()
+	executable, err := r.resolveExecutable(env, args)
+	if err == nil {
+		// #nosec G204 G702 -- child-PATH resolution and test containment precede every exec; argv only
+		cmd := exec.CommandContext(r.ctx, executable, args[1:]...)
+		cmd.Env, cmd.Dir = env, r.root
+		if r.cwd != "" {
+			cmd.Dir = r.cwd
+		}
+		cmd.Stdout, cmd.Stderr = &stdout, &stderr
+		err = cmd.Run()
+	} else {
+		stderr.WriteString(err.Error())
+	}
 	log := fmt.Sprintf("%03d-%s.log", len(r.report.Steps)+1, name)
 	out := stdout.String() + stderr.String()
 	r.recordWarnings(name, stdout.String()+"\n"+stderr.String())
@@ -347,7 +375,9 @@ func (r *runner) brew(tag string) error {
 		return err
 	}
 	// This is intentionally outside Homebrew's temporary-HOME sandbox.
-	if _, err := r.command("linux-service-setup", r.env, "dibs", "configure", "--service"); err != nil {
+	out, err := r.command("linux-service-setup", r.env, "dibs", "configure", "--service")
+	if err != nil {
+		r.recordPublishedServiceRefusal(tag, out)
 		return err
 	}
 	if _, err := r.command("brew-reinstall", r.env, "brew", "reinstall", "--cask", "agenxy/tap/dibs"); err != nil {
@@ -367,6 +397,17 @@ func (r *runner) brew(tag string) error {
 		r.report.Recovered++
 	}
 	return nil
+}
+
+func (r *runner) recordPublishedServiceRefusal(tag, out string) {
+	if tag != "v0.0.16" || !strings.Contains(out, "already exists") || !strings.Contains(out, "refusing to overwrite") {
+		return
+	}
+	r.report.Findings = append(r.report.Findings, finding{
+		Step:    "linux-service-setup",
+		Warning: "published v0.0.16 cask configured the unit before its documented configure step, which now refuses",
+		FixedBy: "PR #519 removed Linux cask postflight; PR #517 added managed-unit receipts and frozen migration",
+	})
 }
 
 func (r *runner) brewFirstInstall(tag string) (bool, error) {

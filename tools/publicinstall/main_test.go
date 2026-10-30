@@ -162,13 +162,9 @@ func TestImageRunUsesObservedDigest(t *testing.T) {
 }
 
 func TestCommandUsesExitStatusRatherThanSuccessText(t *testing.T) {
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	r := &runner{ctx: context.Background(), root: t.TempDir()}
+	r, exe := commandTestFixture(t, "exit-fixture")
 	env := append(os.Environ(), "DIBS_PUBLIC_COMMAND_FIXTURE=1")
-	_, err = r.command("failure-control", env, exe, "-test.run=^TestPublicCommandExitFixture$")
+	_, err := r.command("failure-control", env, exe, "-test.run=^TestPublicCommandExitFixture$")
 	if err == nil || len(r.report.Steps) != 1 || r.report.Steps[0].Exit != 7 {
 		t.Fatalf("successful prose hid command failure: %v %+v", err, r.report.Steps)
 	}
@@ -183,11 +179,7 @@ func TestPublicCommandExitFixture(_ *testing.T) {
 }
 
 func TestCommandKeepsJSONOnStdoutAndWarningsInTheLog(t *testing.T) {
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	r := &runner{ctx: context.Background(), root: t.TempDir()}
+	r, exe := commandTestFixture(t, "json-fixture")
 	env := append(os.Environ(), "DIBS_PUBLIC_JSON_FIXTURE=1")
 	out, err := r.command("brew-tag", env, exe, "-test.run=^TestPublicCommandJSONFixture$")
 	if err != nil || caskVersion(out, "v0.0.16") != nil {
