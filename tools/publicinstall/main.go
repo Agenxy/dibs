@@ -6,6 +6,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -43,17 +44,24 @@ type receipt struct {
 	Error    string `json:"error,omitempty"`
 	Steps    []step `json:"steps"`
 	// These count only first install attempts, never setup/recovery commands.
-	Attempts        int      `json:"fresh_install_attempts"`
-	InstallFailed   int      `json:"fresh_install_failures"`
-	EPIPE           int      `json:"epipe_failures"`
-	Recovered       int      `json:"recovered_failed_installs"`
-	FailureRate     *float64 `json:"fresh_install_failure_rate"`
-	MCPRoundTrips   int      `json:"mcp_round_trips"`
-	ArchiveVerified bool     `json:"archive_signature_and_digest_verified"`
-	GoTag           string   `json:"go_install_tag"`
-	ServiceLaunch   string   `json:"service_launch"`
-	Environment     string   `json:"execution_environment,omitempty"`
-	HostedRun       string   `json:"hosted_run,omitempty"`
+	Attempts        int       `json:"fresh_install_attempts"`
+	InstallFailed   int       `json:"fresh_install_failures"`
+	EPIPE           int       `json:"epipe_failures"`
+	Recovered       int       `json:"recovered_failed_installs"`
+	FailureRate     *float64  `json:"fresh_install_failure_rate"`
+	MCPRoundTrips   int       `json:"mcp_round_trips"`
+	ArchiveVerified bool      `json:"archive_signature_and_digest_verified"`
+	GoTag           string    `json:"go_install_tag"`
+	ServiceLaunch   string    `json:"service_launch"`
+	Environment     string    `json:"execution_environment,omitempty"`
+	HostedRun       string    `json:"hosted_run,omitempty"`
+	Findings        []finding `json:"findings,omitempty"`
+}
+
+type finding struct {
+	Step    string `json:"step"`
+	Warning string `json:"warning"`
+	FixedBy string `json:"fixed_by,omitempty"`
 }
 
 type runner struct {
@@ -215,10 +223,15 @@ func (r *runner) command(name string, env []string, args ...string) (string, err
 	cmd := exec.CommandContext(r.ctx, args[0], args[1:]...)
 	cmd.Env = env
 	cmd.Dir = r.root
-	out, err := cmd.CombinedOutput()
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	err := cmd.Run()
 	log := fmt.Sprintf("%03d-%s.log", len(r.report.Steps)+1, name)
+	out := stdout.String() + stderr.String()
+	r.recordWarnings(name, stdout.String()+"\n"+stderr.String())
 	// #nosec G703 -- fixed step log under the new receipt directory
-	writeErr := os.WriteFile(filepath.Join(r.root, log), out, 0o600)
+	writeErr := os.WriteFile(filepath.Join(r.root, log),
+		[]byte("stdout:\n"+stdout.String()+"\nstderr:\n"+stderr.String()), 0o600)
 	code := 0
 	if err != nil {
 		code = -1
@@ -229,9 +242,23 @@ func (r *runner) command(name string, env []string, args ...string) (string, err
 	}
 	r.report.Steps = append(r.report.Steps, step{name, args, code, log, time.Since(start).Seconds()})
 	if err != nil {
-		return string(out), fmt.Errorf("%s exited %d (see %s): %w", name, code, log, err)
+		return out, fmt.Errorf("%s exited %d (see %s): %w", name, code, log, err)
 	}
-	return string(out), writeErr
+	return stdout.String(), writeErr
+}
+
+func (r *runner) recordWarnings(name, out string) {
+	for line := range strings.SplitSeq(out, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "Warning:") {
+			continue
+		}
+		f := finding{Step: name, Warning: line}
+		if strings.Contains(line, "Calling `postflight` is deprecated") {
+			f.FixedBy = "PR #519 on main; published v0.0.16 still has the legacy postflight"
+		}
+		r.report.Findings = append(r.report.Findings, f)
+	}
 }
 
 func (r *runner) native(tag string) error {

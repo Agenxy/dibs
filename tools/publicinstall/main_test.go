@@ -181,3 +181,34 @@ func TestPublicCommandExitFixture(_ *testing.T) {
 	fmt.Println("all checks passed")
 	os.Exit(7)
 }
+
+func TestCommandKeepsJSONOnStdoutAndWarningsInTheLog(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := &runner{ctx: context.Background(), root: t.TempDir()}
+	env := append(os.Environ(), "DIBS_PUBLIC_JSON_FIXTURE=1")
+	out, err := r.command("brew-tag", env, exe, "-test.run=^TestPublicCommandJSONFixture$")
+	if err != nil || caskVersion(out, "v0.0.16") != nil {
+		t.Fatalf("successful structured stdout was polluted by stderr: %v %q", err, out)
+	}
+	log, err := os.ReadFile(filepath.Join(r.root, r.report.Steps[0].Log))
+	if err != nil || !strings.Contains(string(log), "Warning: Calling `postflight`") ||
+		!strings.Contains(string(log), `"version":"0.0.16"`) {
+		t.Fatalf("command evidence lost stdout or stderr: %v %s", err, log)
+	}
+	if len(r.report.Findings) != 1 || r.report.Findings[0].Step != "brew-tag" ||
+		!strings.Contains(r.report.Findings[0].FixedBy, "#519") {
+		t.Fatalf("public warning was not recorded with its known source repair: %+v", r.report.Findings)
+	}
+}
+
+func TestPublicCommandJSONFixture(_ *testing.T) {
+	if os.Getenv("DIBS_PUBLIC_JSON_FIXTURE") != "1" {
+		return
+	}
+	fmt.Fprintln(os.Stderr, "Warning: Calling `postflight` is deprecated! Use `postflight_steps` instead.")
+	fmt.Print(`{"casks":[{"token":"dibs","version":"0.0.16"}]}`)
+	os.Exit(0)
+}

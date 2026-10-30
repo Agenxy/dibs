@@ -163,6 +163,10 @@ separate public-release report, not the candidate's required `gate`. Failures
 remain red and the receipt plus command logs are uploaded even on failure;
 fixture homes, credentials, archives and build caches are not uploaded. One
 runner is one fresh attempt, not the five-container failure-rate measurement.
+Structured output is decoded from stdout only; stderr remains separately
+labelled in each command log. Homebrew `Warning:` lines are also receipt
+findings. The published v0.0.16 legacy-postflight warning identifies its source
+repair in #519 on main, without implying that release already contains it.
 
 Keep the complete new output directories. `receipt.json` records actual command
 exit statuses and separate logs. The Linux parent counts only fresh Dibs install
