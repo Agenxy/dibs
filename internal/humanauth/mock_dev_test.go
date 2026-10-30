@@ -31,6 +31,9 @@ func TestTheMockProducesEachVerdict(t *testing.T) {
 			if err != nil {
 				t.Errorf("err = %v, want nil: a scripted verdict is not a failure", err)
 			}
+			if !Available() {
+				t.Error("a scripted presence verdict must remain available to the dev UI on every OS")
+			}
 			if !Mocked() {
 				t.Error("Mocked() is false while a mock verdict is in force: callers " +
 					"would present this as a real check")
