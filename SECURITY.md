@@ -6,13 +6,15 @@ This document exists because the honest answer is narrower than the feature list
 implies, and a coordination tool that overstates its isolation is worse than one
 that states its limits plainly.
 
-## The trust boundary is the machine, not the agent
+## The trust boundary is the OS user, not the agent
 
 Dibs has **one** coordination credential: `<dir>/local.secret`, mode `0600`.
 Every agent must hold it to call `/mcp` at all. That means:
 
-- **Protected:** other users on the box, anything on the network, and any
-  process that cannot read the secret file.
+- **Protected on upgraded local clients:** other OS users cannot impersonate
+  the local server to receive its secret: macOS/Linux clients use the private
+  profile's Unix socket and verify the connected peer's UID before sending
+  headers, bodies or file tickets. Remote coordination requires verified HTTPS.
 - **Not protected:** agents you have already configured for Dibs. They share
   one credential, so the daemon cannot cryptographically tell one from another.
 
@@ -20,6 +22,23 @@ An agent that holds the secret is inside the boundary. Dibs raises the cost of
 one agent interfering with another, and reports honestly when it cannot prevent
 it, but a malicious agent in your own fleet is not an attacker Dibs can lock
 out, because you gave it the key.
+
+| Ring or route | Protection and limit |
+|---|---|
+| Another OS user, upgraded macOS/Linux local client | The directory is owned by the current user with mode `0700`; the socket is owned by that user with mode `0600`. Filesystem checks and the connected peer's kernel UID authenticate the server before any HTTP bytes. The local secret remains required by the daemon, followed by agent tokens for mailbox operations. Missing, stale or unsafe IPC never falls back to TCP. |
+| Remote coordination client | Explicit verified HTTPS, with the board's CA/pin or a normal trusted certificate. An SSH forward must carry HTTPS all the way to the board; a plaintext loopback port is not server authentication. |
+| Same-UID process | Outside the isolation promise: it can read the local secret, tokens and ledger key, or serve a socket as that UID. IPC does not isolate one agent from a malicious peer under the same OS account. |
+| Browser visiting a squatted TCP board | IPC does not authenticate that browser's plaintext TCP server. The browser retains its existing session/page-key and human-unlock model. Do not interpret a TCP listener or a displayed login page as server identity. |
+| Old bridge image or raw-HTTP config | The repair is not retroactive. An idle bridge can serve a request using the old image before re-exec, and buffered input extends that window: a measured batch of 20 requests all used the old image after replacement and sent the freshly rotated secret. Background streams reconnect independently, so there is no finite time or one-request guarantee. No insecure TCP grace is added. Refresh bridges through their harness and compare every expected client with `dibs doctor` before shared-host rollout. An absent dormant bridge is unknown, not qualified. |
+| Windows | Unix ownership/mode semantics are not claimed. Upgraded local plaintext credential requests fail closed with a verified-HTTPS hint; native named-pipe IPC is not implemented or runtime-qualified. Windows remains a build/pure-package target. |
+| Existing invitation-only plaintext forward | The laptop-to-Solis labs-broker `[public] forward = "http://127.0.0.1:4778"` over `ssh -R` remains supported, with a startup/client/doctor migration warning. Another OS user squatting the forwarded port can receive the invited agent's bearer token. It never carries the local coordination secret and gains no IPC protection from this repair. Migrate the invitation endpoint to verified HTTPS and carry TLS through SSH, with the issuer's CA trusted on the client. |
+
+`dibs doctor` lists each currently connected client's actual transport. Bridge
+PID/start and user-agent labels are client reports, not additional identity
+proof. The inventory is derived from live connections, not the ledger, and
+does not certify a disconnected or dormant bridge. Installed acceptance means
+the owner has refreshed and accounted for every expected bridge before a
+shared Linux deployment; source tests and an installation alone do not prove it.
 
 **If you run agents you do not trust, do not point them at the same daemon.**
 Run a second `dibd` with its own data directory (`-allow-parallel`); they share

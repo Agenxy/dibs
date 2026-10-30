@@ -92,6 +92,7 @@ func appServiceFixture() int {
 
 type appServiceTestFixture struct {
 	home, dir, root, app, state, trace, addr string
+	server                                   *localTestServer
 	requests                                 atomic.Int64
 	unavailable                              atomic.Int64
 	boardRequests                            atomic.Int64
@@ -102,7 +103,7 @@ func newAppServiceTestFixture(t *testing.T) *appServiceTestFixture {
 	if runtime.GOOS != "darwin" {
 		t.Skip("native signed app fixture")
 	}
-	f := &appServiceTestFixture{home: t.TempDir()}
+	f := &appServiceTestFixture{home: cliIPCProfile(t)}
 	f.dir = filepath.Join(f.home, "board")
 	f.root = filepath.Join(f.home, "bin", "dibd")
 	f.app = filepath.Join(filepath.Dir(f.root), "Dibs.app")
@@ -142,7 +143,7 @@ func newAppServiceTestFixture(t *testing.T) *appServiceTestFixture {
 	t.Setenv("DIBS_TEST_APP_SERVICE_STATE", f.state)
 	t.Setenv("DIBS_TEST_APP_SERVICE_TRACE", f.trace)
 	t.Setenv("DIBS_TEST_APP_SERVICE_RESULT", "")
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := newLocalTestServer(t, f.dir, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/api/board":
@@ -165,6 +166,7 @@ func newAppServiceTestFixture(t *testing.T) *appServiceTestFixture {
 		}
 	}))
 	t.Cleanup(srv.Close)
+	f.server = srv
 	f.addr = srv.Listener.Addr().String()
 	t.Setenv("DIBS_TEST_APP_SERVICE_ADDR", f.addr)
 	if err := os.WriteFile(filepath.Join(f.dir, "dibs.toml"), []byte("addr = '"+srv.Listener.Addr().String()+"'\n"), 0o600); err != nil {

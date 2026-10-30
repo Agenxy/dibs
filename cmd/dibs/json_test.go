@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,7 +47,8 @@ func captureStdout(t *testing.T, fn func() error) (string, error) {
 // a tag that drifts from the wire decodes to a zero value here and fails
 // loudly.
 func TestBoardJSONCarriesWhatTheProseBoardShows(t *testing.T) {
-	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	dir := cliIPCProfile(t)
+	daemon := newLocalTestServer(t, dir, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/board" {
 			http.NotFound(w, r)
 			return
@@ -70,7 +70,7 @@ func TestBoardJSONCarriesWhatTheProseBoardShows(t *testing.T) {
 		}`)
 	}))
 	defer daemon.Close()
-	t.Setenv("DIBS_DIR", t.TempDir())
+	t.Setenv("DIBS_DIR", dir)
 	t.Setenv("DIBS_ADDR", strings.TrimPrefix(daemon.URL, "http://"))
 
 	out, err := captureStdout(t, func() error { return board([]string{"--json"}) })
@@ -126,11 +126,12 @@ func TestBoardJSONCarriesWhatTheProseBoardShows(t *testing.T) {
 // to be lists: null decodes fine in Go and trips over the first `for agent in
 // doc["agents"]` anywhere else.
 func TestBoardJSONPinsEmptyListsToEmptyLists(t *testing.T) {
-	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	dir := cliIPCProfile(t)
+	daemon := newLocalTestServer(t, dir, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = fmt.Fprint(w, `{"serial": 0, "node": "n1", "agents": []}`)
 	}))
 	defer daemon.Close()
-	t.Setenv("DIBS_DIR", t.TempDir())
+	t.Setenv("DIBS_DIR", dir)
 	t.Setenv("DIBS_ADDR", strings.TrimPrefix(daemon.URL, "http://"))
 
 	out, err := captureStdout(t, func() error { return board([]string{"--json"}) })

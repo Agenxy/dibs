@@ -228,6 +228,7 @@ func (d *diagnosis) run(verbose bool) error {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	checkServiceBinary(ok, warn, bad, resp.StatusCode == http.StatusOK)
+	checkClientTransports(client, resp.StatusCode == http.StatusOK, ok, warn, bad)
 	if resp.StatusCode != http.StatusOK {
 		problem, hint := daemonRefusal(resp)
 		bad(problem, hint)

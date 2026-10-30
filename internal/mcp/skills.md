@@ -6,6 +6,19 @@ success, and the defaults that are not what you would guess.
 
 Served over MCP as `dibs://skills`, so you can read it without the repository.
 
+**Local transport:** the CLI, stdio bridge and plugin helpers use the selected
+profile's owner-authenticated IPC socket on macOS/Linux. A missing or unsafe
+socket is a refusal, never permission to send the local secret to a TCP port.
+Use `dibs doctor` for the corrective hint and each currently connected client's
+transport. A joined remote profile needs `DIBS_TRANSPORT=https` (or
+`client_transport = "https"`) and verified HTTPS, including through SSH. Windows
+local plaintext credentials are refused. After an upgrade, old bridge images
+can persist across buffered calls or idle streams: refresh through the harness
+and account for every expected client before shared-host rollout; an absent
+dormant client is unknown. The existing invitation-only labs-broker plaintext
+forward stays separate and warns that a squatted port can capture its invited
+agent bearer token; migrate that endpoint to verified HTTPS through SSH.
+
 ---
 
 ## The one that costs the most

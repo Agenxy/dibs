@@ -40,6 +40,7 @@ import (
 // Written as <dir>/dibs.toml for people who want to get their hands dirty.
 type Config struct {
 	Addr              string            `toml:"addr"`               // listen address
+	ClientTransport   string            `toml:"client_transport"`   // local IPC or remote verified HTTPS
 	Name              string            `toml:"name"`               // a hostname Remap routes to this board
 	TLSCert           string            `toml:"tls_cert"`           // explicit cert (else auto)
 	TLSKey            string            `toml:"tls_key"`            //
@@ -616,7 +617,7 @@ func CheckCount(table, key string, raw int) error {
 // where those values live, and this does not claim otherwise.
 func (c Config) Validate() error {
 	for _, check := range []func() error{
-		c.validateAddr, c.ValidateName, c.validateTLS, c.validateLimits, c.validateMatch,
+		c.validateAddr, c.validateClientTransport, c.ValidateName, c.validateTLS, c.validateLimits, c.validateMatch,
 		c.validateSupervise, c.validateWake, c.validateRoles, c.validateIdentity,
 		c.validateRelocate, c.validateInvites, c.validateLedger, c.validatePublic,
 	} {

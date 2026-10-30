@@ -6,7 +6,6 @@ package main
 import (
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,7 +17,7 @@ import (
 func TestDoctorReportsTheDaemonsProtectedFolderEvidence(t *testing.T) {
 	for _, state := range []string{"pending", "denied", "granted"} {
 		t.Run(state, func(t *testing.T) {
-			dir := t.TempDir()
+			dir := cliIPCProfile(t)
 			t.Setenv("HOME", dir)
 			t.Setenv("CODEX_HOME", filepath.Join(dir, ".codex"))
 			t.Setenv("DIBS_DIR", dir)
@@ -30,7 +29,7 @@ func TestDoctorReportsTheDaemonsProtectedFolderEvidence(t *testing.T) {
 				}
 			}
 			var boardCalls int
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			srv := newLocalTestServer(t, dir, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				switch r.URL.Path {
 				case "/mcp":

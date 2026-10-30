@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/paths"
 	xport "github.com/agenxy/dibs/internal/transport"
 )
 
@@ -126,10 +127,13 @@ func validateFileURL(target string) error {
 }
 
 func byteClient() *http.Client {
+	if os.Getenv("DIBS_INVITE") != "" {
+		return invitationClient(2 * time.Minute)
+	}
 	rt := http.DefaultTransport.(*http.Transport).Clone()
-	rt.TLSClientConfig = &tls.Config{RootCAs: trustedPool(), MinVersion: tls.VersionTLS13}
+	rt.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS13}
 	return &http.Client{
-		Transport: rt, Timeout: 2 * time.Minute,
+		Transport: &guardedTransport{next: rt, dir: paths.DataDir()}, Timeout: 2 * time.Minute,
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
 	}
 }

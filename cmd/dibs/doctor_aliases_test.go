@@ -7,7 +7,6 @@ package main
 
 import (
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,12 +25,12 @@ func TestDoctorReportsConfiguredNameAliasesFromTheBoard(t *testing.T) {
 		{"ambiguous", `{"name":"prior-role","via":"alias","ambiguous":["worker-id","peer-id"]}`, "ambiguous former name", "immutable agent id"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			dir := t.TempDir()
+			dir := cliIPCProfile(t)
 			if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte("fixture-secret\n"), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			var boardReads atomic.Int64
-			daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			daemon := newLocalTestServer(t, dir, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				if r.URL.Path == "/api/board" {
 					boardReads.Add(1)

@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,10 +14,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/agenxy/dibs/internal/adminpw"
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/localtransport"
 	"github.com/agenxy/dibs/internal/paths"
 )
 
@@ -224,9 +227,17 @@ func setAgentRole(agent, role string) error {
 // same install. If nothing is listening we proceed: setting a password before
 // the first start is legitimate, and is how installs begin.
 func confirmDirIsTheAddressedDaemon() error {
+	if localtransport.Supported() {
+		if err := localtransport.CheckDir(paths.DataDir(), true); err != nil {
+			return err
+		}
+	}
 	secret, err := localSecret()
 	if err != nil {
-		return nil // no directory yet; nothing to disagree with
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		} // before the first start
+		return err // unsafe or unreadable credentials are not an offline board
 	}
 	req, err := http.NewRequest(http.MethodGet, origin()+"/healthz", nil)
 	if err != nil {
@@ -235,7 +246,10 @@ func confirmDirIsTheAddressedDaemon() error {
 	req.Header.Set("X-Dibs-Local", secret)
 	resp, err := daemonClient(2 * time.Second).Do(req)
 	if err != nil {
-		return nil // nothing listening; an offline set-password is fine
+		if errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ECONNREFUSED) {
+			return nil
+		}
+		return err // do not turn an unsafe endpoint into permission to mutate
 	}
 	defer func() { _ = resp.Body.Close() }()
 	// Anything that is not a refusal means the secret was accepted, so the

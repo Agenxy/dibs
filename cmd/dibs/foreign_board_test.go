@@ -6,6 +6,9 @@ package main
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -38,10 +41,17 @@ func TestCLIDistinguishesForeignBoardFromChangedSecret(t *testing.T) {
 		prepare.Env = diagnosticFixtureEnv(t.TempDir(), "", "")
 		testexec.PrepareExecutable(t, prepare)
 	}
-	firstHome, secondHome := t.TempDir(), t.TempDir()
+	firstHome, secondHome := cliIPCProfile(t), cliIPCProfile(t)
 	first, second := filepath.Join(firstHome, ".dibs"), filepath.Join(secondHome, ".dibs")
 	firstAddr := startDiagnosticBoard(t, daemon, first)
 	secondAddr := startDiagnosticBoard(t, daemon, second)
+	secondCA, err := os.ReadFile(filepath.Join(second, "tls-ca.pem"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(first, "trusted-certs.pem"), secondCA, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	firstNode, secondNode := diagnosticNode(t, first), diagnosticNode(t, second)
 	if firstNode == secondNode {
 		t.Fatal("setup: two boards have the same identity")
@@ -117,10 +127,11 @@ func TestCLIDistinguishesForeignBoardFromChangedSecret(t *testing.T) {
 	}
 	// An older daemon has no fingerprint. Do not turn absence into evidence of
 	// either cause, or tell someone to restart a board we cannot identify.
-	old := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	old := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 	}))
 	defer old.Close()
+	trustDiagnosticServer(t, first, old)
 	for _, command := range []string{"version", "doctor"} {
 		t.Run(command+"/unknown", func(t *testing.T) {
 			out := run(t, old.URL, command)
@@ -136,11 +147,12 @@ func TestCLIDistinguishesForeignBoardFromChangedSecret(t *testing.T) {
 	}
 	for _, status := range []int{http.StatusInternalServerError, http.StatusOK} {
 		t.Run(fmt.Sprintf("version/http-%d", status), func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(status)
 				_, _ = w.Write([]byte("not a discovery reply"))
 			}))
 			defer server.Close()
+			trustDiagnosticServer(t, first, server)
 			out := run(t, server.URL, "version")
 			if !strings.Contains(out, "version unavailable") || strings.Contains(out, "nothing listening") ||
 				strings.Contains(out, "not running") {
@@ -154,6 +166,9 @@ func TestCLIDistinguishesForeignBoardFromChangedSecret(t *testing.T) {
 }
 
 func diagnosticFixtureEnv(home, dir, address string) []string {
+	if address != "" && !strings.Contains(address, "://") {
+		address = "https://" + address
+	}
 	env := make([]string, 0, len(os.Environ()))
 	for _, entry := range os.Environ() {
 		key, _, _ := strings.Cut(entry, "=")
@@ -164,6 +179,7 @@ func diagnosticFixtureEnv(home, dir, address string) []string {
 		env = append(env, entry)
 	}
 	return append(env, "HOME="+home, "USERPROFILE="+home, "DIBS_DIR="+dir, "DIBS_ADDR="+address,
+		"DIBS_TRANSPORT=https",
 		"XDG_CONFIG_HOME="+filepath.Join(home, "config"), "XDG_DATA_HOME="+filepath.Join(home, "data"),
 		"CODEX_HOME="+filepath.Join(home, "codex"), "DIBS_ADMIN=1")
 }
@@ -189,7 +205,7 @@ func startDiagnosticBoard(t *testing.T, binary, home string) string {
 		t.Fatal(err)
 	}
 	port.Release(t)
-	cmd := exec.CommandContext(t.Context(), binary, "-allow-parallel", "-dir", home, "-addr", port.Addr)
+	cmd := exec.CommandContext(t.Context(), binary, "-allow-parallel", "-dir", home, "-addr", "https://"+port.Addr)
 	cmd.Dir, cmd.Env = home, diagnosticFixtureEnv(home, home, port.Addr)
 	cmd.Stdout, cmd.Stderr = log, log
 	if err := cmd.Start(); err != nil {
@@ -206,6 +222,7 @@ func startDiagnosticBoard(t *testing.T, binary, home string) string {
 		_ = log.Close()
 	})
 	client := &http.Client{Timeout: time.Second}
+	defer client.CloseIdleConnections()
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		select {
@@ -215,7 +232,19 @@ func startDiagnosticBoard(t *testing.T, binary, home string) string {
 			t.Fatalf("setup: daemon exited: %v %s", err, out)
 		default:
 		}
-		resp, err := client.Get("http://" + port.Addr + "/livez")
+		ca, err := os.ReadFile(filepath.Join(home, "tls-ca.pem"))
+		if err != nil {
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(ca) {
+			t.Fatal("setup: invalid diagnostic board CA")
+		}
+		client.Transport = &http.Transport{TLSClientConfig: &tls.Config{
+			MinVersion: tls.VersionTLS13, RootCAs: pool,
+		}}
+		resp, err := client.Get("https://" + port.Addr + "/livez")
 		if err == nil {
 			_ = resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
@@ -227,4 +256,19 @@ func startDiagnosticBoard(t *testing.T, binary, home string) string {
 	out, _ := os.ReadFile(logPath)
 	t.Fatalf("setup: daemon did not become ready: %s", out)
 	return ""
+}
+
+func trustDiagnosticServer(t *testing.T, dir string, server *httptest.Server) {
+	t.Helper()
+	cert := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw})
+	f, err := os.OpenFile(filepath.Join(dir, "trusted-certs.pem"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Write(cert); err != nil {
+		t.Error(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
 }

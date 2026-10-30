@@ -21,6 +21,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/agenxy/dibs/internal/localtransport"
 	"github.com/agenxy/dibs/internal/mcp"
 )
 
@@ -672,7 +673,8 @@ func startupRequest(body []byte) bool {
 
 // dialFailed reports a request that PROVABLY never reached the daemon.
 //
-// Connection refused, and nothing else. Refused means no listener accepted the
+// Connection refused, or a verified private profile with no IPC socket.
+// Either proves no listener accepted the
 // connection, so the request was never read and re-sending it cannot duplicate
 // an effect. That is the entire safety argument for retrying at all.
 //
@@ -700,7 +702,7 @@ func dialFailed(err error) bool {
 	if err == nil {
 		return false
 	}
-	return errors.Is(err, syscall.ECONNREFUSED)
+	return errors.Is(err, syscall.ECONNREFUSED) || localtransport.NotListening(err)
 }
 
 // doWithRestartGrace sends one request, waiting out a daemon that is restarting

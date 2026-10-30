@@ -158,7 +158,7 @@ func appReconnectContract(t *testing.T, lost, clockBack, legacy, lateStamp bool)
 	if _, err := notify.DesktopState(); err == nil {
 		t.Fatal("fixture must not resolve a native desktop helper")
 	}
-	home, dir := t.TempDir(), t.TempDir()
+	home, dir := t.TempDir(), cliIPCProfile(t)
 	t.Setenv("CODEX_HOME", home)
 	t.Setenv("DIBS_DIR", dir)
 	t.Setenv("DIBS_HOST_ID", "reconnect-host")
@@ -183,7 +183,7 @@ func appReconnectContract(t *testing.T, lost, clockBack, legacy, lateStamp bool)
 	ctx, cancel := context.WithCancel(context.Background())
 	joined := make(chan struct{})
 	go func() { eng.Run(ctx); close(joined) }()
-	srv := httptest.NewServer(mcp.New(eng))
+	srv := newLocalTestServer(t, dir, mcp.New(eng))
 	t.Cleanup(func() { srv.Close(); cancel(); <-joined; _ = led.Close() })
 	if err := os.WriteFile(filepath.Join(dir, "local.secret"), bytes.Repeat([]byte("a"), 64), 0o600); err != nil {
 		t.Fatal(err)
@@ -440,7 +440,7 @@ func appReconnectContract(t *testing.T, lost, clockBack, legacy, lateStamp bool)
 	}
 	// The sender-facing receipt must describe the actual accepted queue route,
 	// rather than inheriting the fold's "dormant, when it next wakes" note.
-	receipt := reconnectSendReceipt(t, srv, asker["token"].(string))
+	receipt := reconnectSendReceipt(t, srv.Server, asker["token"].(string))
 	view := receipt.QueueWake
 	if (view.Admission != "accepted" && view.Admission != "retained") || view.ObservedAt.IsZero() ||
 		view.ThreadState != "unknown" || strings.Contains(receipt.Note, "currently dormant") ||

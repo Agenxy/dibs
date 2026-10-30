@@ -31,7 +31,7 @@ import (
 )
 
 func TestFileCLIUsesRealMCPAndVerifiedBytes(t *testing.T) {
-	dir := t.TempDir()
+	dir := cliIPCProfile(t)
 	box, err := ledger.LoadOrCreateKey(filepath.Join(dir, "key"))
 	if err != nil {
 		t.Fatal(err)
@@ -57,7 +57,7 @@ func TestFileCLIUsesRealMCPAndVerifiedBytes(t *testing.T) {
 	files := transfer.New(ctx, e, store, dir)
 	api := mcp.New(e)
 	api.SetTransfers(files, "")
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newLocalTestServer(t, dir, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/files/") {
 			if r.Header.Get("Authorization") != "" || r.Header.Get("X-Dibs-Local") != "" {
 				t.Error("byte request carried board authority")
@@ -71,7 +71,7 @@ func TestFileCLIUsesRealMCPAndVerifiedBytes(t *testing.T) {
 		api.ServeHTTP(w, r)
 	}))
 	defer server.Close()
-	awaitEnv(t, strings.TrimPrefix(server.URL, "http://"))
+	awaitEnvIn(t, dir, strings.TrimPrefix(server.URL, "http://"))
 	t.Setenv("DIBS_TOKEN", registered["token"].(string))
 	t.Setenv("DIBS_INVITE", "")
 	plain := bytes.Repeat([]byte("CLI transfer artifact"), 12000)

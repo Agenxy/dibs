@@ -41,6 +41,7 @@ import (
 	"github.com/agenxy/dibs/internal/invites"
 	"github.com/agenxy/dibs/internal/ledger"
 	"github.com/agenxy/dibs/internal/liveness"
+	"github.com/agenxy/dibs/internal/localtransport"
 	"github.com/agenxy/dibs/internal/logs"
 	"github.com/agenxy/dibs/internal/mcp"
 	"github.com/agenxy/dibs/internal/notify"
@@ -184,6 +185,16 @@ func run() error {
 
 	if err := os.MkdirAll(*dir, 0o700); err != nil {
 		return err
+	}
+	if localtransport.Supported() {
+		if err := localtransport.CheckDir(*dir, false); err != nil {
+			return err
+		}
+		for _, name := range []string{"key", "local.secret"} {
+			if err := localtransport.PrivateFile(filepath.Join(*dir, name), true); err != nil {
+				return err
+			}
+		}
 	}
 	if *opts.appService && !*check {
 		if err := appServiceLogs(*dir); err != nil {
@@ -529,8 +540,12 @@ func run() error {
 	gate.boardFingerprint = boardconfig.BoardFingerprint(eng.NodeID())
 	gate.SetNames(cfg.Name)
 	registerHumanAPI(mux, eng, gate, *dir)
+	clients := &localtransport.Clients{}
+	registerClientTransports(mux, clients)
+	privateHandler := clients.Handler(fileRoutes(files, gate.wrap(mux)))
 	srv := &http.Server{
-		Addr: listenAddr, Handler: fileRoutes(files, gate.wrap(mux)),
+		Addr: listenAddr, Handler: privateHandler,
+		ConnContext: clients.ConnContext, ConnState: clients.ConnState,
 		ReadHeaderTimeout: 5 * time.Second,
 		// No global write timeout: long-polls and SSE hold connections open.
 	}
@@ -599,6 +614,18 @@ func run() error {
 		return err
 	}
 	defer closePublic()
+	if publicCfg.Mode == "loopback-forward" {
+		slog.Warn("invitation-only plaintext loopback forward remains exposed to another OS user squatting its forwarded port",
+			"hint", "the laptop-to-Solis labs-broker ssh -R route carries the invited agent bearer token; "+
+				"migrate to verified HTTPS end-to-end through SSH and trust the board CA. "+
+				"This route must never carry local coordination credentials")
+	}
+	localFailure, closeLocal, err := startLocalIPC(ctx, *dir, privateHandler, clients, stop)
+	if err != nil {
+		_ = ln.Close()
+		return err
+	}
+	defer closeLocal()
 	// Roles are the one part of the config that grants standing privilege, and
 	// a typo in an agent name means the grant silently applies to nobody. Saying
 	// what it did lets an operator see that from the log rather than by reading
@@ -628,6 +655,8 @@ func run() error {
 		return err
 	}
 	select {
+	case err := <-localFailure:
+		return err
 	case err := <-publicFailure:
 		return err
 	default:

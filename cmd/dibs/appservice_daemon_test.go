@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/agenxy/dibs/internal/localtransport"
 )
 
 // External daemon double, reached only in a private copied fixture process.
@@ -26,6 +28,15 @@ func serveAppServiceFixture() int {
 		_, _ = w.Write([]byte(`{"requested":true}`))
 	})
 	srv := &http.Server{Addr: os.Getenv("DIBS_TEST_APP_SERVICE_ADDR"), Handler: mux, ReadHeaderTimeout: time.Second}
+	ln, err := localtransport.Listen(os.Getenv("DIBS_DIR"))
+	if err != nil {
+		_, _ = os.Stderr.WriteString(err.Error())
+		return 26
+	}
+	defer func() { _ = ln.Close() }()
+	ipc := &http.Server{Handler: mux, ConnContext: localtransport.ConnContext, ReadHeaderTimeout: time.Second}
+	defer func() { _ = ipc.Close() }()
+	go func() { _ = ipc.Serve(ln) }()
 	if err := srv.ListenAndServe(); err != nil {
 		return 25
 	}

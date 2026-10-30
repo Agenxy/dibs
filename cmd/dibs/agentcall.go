@@ -44,6 +44,9 @@ func agentToolCall(tool string, args map[string]any, out any) error {
 		req.Header.Set("X-Dibs-Local", secret)
 	}
 	client := daemonClient(30 * time.Second)
+	if os.Getenv("DIBS_INVITE") != "" {
+		client = invitationClient(30 * time.Second)
+	}
 	defer client.CloseIdleConnections()
 	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
 	resp, err := client.Do(req)

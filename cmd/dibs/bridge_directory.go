@@ -4,12 +4,12 @@
 package main
 
 import (
-	"crypto/tls"
 	"net/http"
 	"net/url"
 	"sync"
 	"time"
 
+	"github.com/agenxy/dibs/internal/localtransport"
 	"github.com/agenxy/dibs/internal/paths"
 	"github.com/agenxy/dibs/internal/transport"
 )
@@ -52,11 +52,12 @@ type bridgeDirectoryTransport struct {
 	mu    sync.Mutex
 	dir   string
 	next  http.RoundTripper
-	idle  *http.Transport
+	idle  interface{ CloseIdleConnections() }
 }
 
 func bridgeDaemonClient(route *bridgeRoute, timeout time.Duration) *http.Client {
-	return &http.Client{Timeout: timeout, Transport: &bridgeDirectoryTransport{route: route}}
+	return &http.Client{Timeout: timeout, Transport: &bridgeDirectoryTransport{route: route},
+		CheckRedirect: localtransport.RefuseRedirect}
 }
 
 func (t *bridgeDirectoryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -81,12 +82,12 @@ func (t *bridgeDirectoryTransport) RoundTrip(req *http.Request) (*http.Response,
 		if base, ok := rt.(*http.Transport); ok {
 			rt = base.Clone()
 		}
-		if pool := trustedPoolIn(dir); pool != nil {
-			rt = &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}}
-		}
+		// The guarded transport verifies this selected directory before reading
+		// its trust and credential as one profile snapshot.
 		t.dir = dir
-		t.idle, _ = rt.(*http.Transport)
-		t.next = transport.Stamp(&guardedTransport{next: rt, dir: dir})
+		guard := &guardedTransport{next: rt, dir: dir}
+		t.idle = guard
+		t.next = transport.Stamp(guard)
 	}
 	roundTripper := t.next
 	t.mu.Unlock()

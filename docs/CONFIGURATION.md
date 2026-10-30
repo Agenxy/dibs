@@ -30,13 +30,35 @@ file → the default.**
 |---|---|---|
 | `name` | *(none)* | A hostname for this board, such as `dibs` or `board.lab`. [Remap](https://github.com/Agenxy/remap), the Agenxy name plane, routes it to the daemon (`remap set <name> http://127.0.0.1:4777/`; `dibs configure` offers to do this when Remap is installed), and the daemon accepts it as its own origin so the board works at `http://<name>/`. `dibs web` prints that link beside the address, and `dibs doctor` says when the name is set and Remap does not route it. |
 | `addr` | `127.0.0.1:4777` | What the daemon listens on. Set a LAN or tailnet address to serve agents on other machines; TLS is then arranged automatically and each machine must `dibs trust` the certificate once. Also `-addr`, `DIBS_ADDR`. |
+| `client_transport` | `local` for a local profile; an explicitly named HTTPS address selects `https` when unstated | Which server first-party clients authenticate: `local` uses `<data dir>/dibd.sock`; `https` requires verified HTTPS to a remote board. Also `DIBS_TRANSPORT`. `configure`, `mcp-config` and host-bridge units carry this choice. Socket failure never selects TCP. A legacy plaintext SSH-forward profile must migrate to an end-to-end HTTPS forward with the board's trusted CA. |
 | `tls_cert` | *(auto)* | An explicit certificate, when you would rather supply one than have Dibs manage its own. |
 | `tls_key` | *(auto)* | Its key. Both or neither. |
 | `insecure_plaintext` | `false` | Serve a non-loopback address without TLS. Only for a network you already trust end to end; the name is the warning. |
 
 ```toml
 addr = "100.72.14.3:4777"    # a tailnet address: agents on four machines, one board
+client_transport = "local"  # this machine's clients use its private IPC socket
 ```
+
+On macOS/Linux the data directory must belong to the current OS user with mode
+`0700`, and credential files must be private regular files. Existing unsafe
+ownership, modes and final-path symlinks are refused with a repair hint rather
+than silently changed. A Unix socket pathname that exceeds the kernel limit
+requires a shorter private data-directory path. Windows local plaintext
+credentials are refused; choose verified HTTPS there.
+
+Ancestors must also be owned by this user or root and not writable by other
+users, except for trusted sticky directories such as root-owned `/tmp`. A
+`0700` final directory under a replaceable parent does not protect credential
+paths from another user renaming that directory during startup.
+
+For a joined remote profile, use `client_transport = "https"` (or
+`DIBS_TRANSPORT=https`) and an `https://` address. If using SSH, forward the
+hub's TLS listener, trust that hub's CA in this profile, and use
+`https://127.0.0.1:<local-port>`. Forwarding plain HTTP is not enough: another
+OS user can bind the local forwarded port while it is down. `dibs doctor`
+reports live client transports, with unobserved/dormant clients explicitly
+unqualified. See [SECURITY.md](../SECURITY.md) for the old-image cutover window.
 
 ---
 
@@ -76,6 +98,16 @@ resolved listener mode, bind and origin. A configured forward is not proof
 that it is running or reachable from another machine. See [NETWORK.md
 section 9](NETWORK.md#9-agents-in-the-cloud) for the operator's forward and CLI
 workflow. No private board routes or board credentials are published.
+
+This existing invitation-only mode is a documented residual exposure, not a
+local IPC route. In particular, the laptop-to-Solis labs-broker `ssh -R` path
+can expose its invited agent bearer token to another OS user squatting the
+far-side loopback port. It remains supported in this release, and startup,
+client and doctor diagnostics give the migration warning. To remove that
+exposure, serve an HTTPS invitation endpoint (`host`, `url` behind a TLS proxy,
+or the qualified guest TLS mode), trust its issuer CA on the client and forward
+the TLS port unchanged through SSH. Do not merely rename an HTTP forward to
+`https://`: `[public].forward` remains the legacy HTTP-only mode.
 
 ---
 

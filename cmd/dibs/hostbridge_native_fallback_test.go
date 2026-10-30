@@ -6,7 +6,6 @@ package main
 import (
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -21,14 +20,14 @@ import (
 func TestHostBridgePreInputFailureUsesColdRouteWithFreshness(t *testing.T) {
 	for _, owed := range []bool{false, true} {
 		t.Run(map[bool]string{false: "handled", true: "owed"}[owed], func(t *testing.T) {
-			dir := t.TempDir()
+			dir := cliIPCProfile(t)
 			t.Setenv("DIBS_DIR", dir)
 			if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte("fixture"), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			s := testcodexipc.Start(t, "changed", nil)
 			checks := 0
-			hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			hub := newLocalTestServer(t, dir, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path != "/api/wake-owed" || r.Header.Get("X-Dibs-Local") != "fixture" {
 					t.Error("missing real authenticated freshness path")
 					w.WriteHeader(401)

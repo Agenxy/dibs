@@ -301,6 +301,7 @@ func defaultConfig(addr, name string) string {
 	b.WriteString("# Dibs configuration. Every field is optional;\n")
 	b.WriteString("# deleting this file returns Dibs to its defaults.\n\n")
 	fmt.Fprintf(&b, "addr = %q\n", addr)
+	b.WriteString("client_transport = \"local\" # first-party clients use this profile's owner-authenticated IPC socket\n")
 	if name != "" {
 		fmt.Fprintf(&b, "name = %q   # Remap routes http://%s/ to this board\n", name, name)
 	} else {

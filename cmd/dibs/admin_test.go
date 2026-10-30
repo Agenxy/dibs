@@ -8,7 +8,6 @@ import (
 	"go/parser"
 	"go/token"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -28,14 +27,14 @@ import (
 // The local secret is the install's identity, so the two can be compared
 // exactly rather than guessed at.
 func TestSetPasswordRefusesADirectoryTheAddressedDaemonDisowns(t *testing.T) {
-	dir := t.TempDir()
+	dir := cliIPCProfile(t)
 	if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte("this-dirs-secret\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	// A daemon belonging to some OTHER data directory: it does not recognise
 	// this one's secret, which is exactly how a second install presents itself.
-	stranger := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	stranger := newLocalTestServer(t, dir, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-Dibs-Local") != "the-other-dirs-secret" {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
@@ -63,11 +62,11 @@ func TestSetPasswordRefusesADirectoryTheAddressedDaemonDisowns(t *testing.T) {
 // The matching install must still go through, or the guard has replaced a
 // silent wrong write with a loud refusal to do anything at all.
 func TestSetPasswordAllowsTheDaemonThatOwnsTheDirectory(t *testing.T) {
-	dir := t.TempDir()
+	dir := cliIPCProfile(t)
 	if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte("matching-secret\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	own := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	own := newLocalTestServer(t, dir, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-Dibs-Local") != "matching-secret" {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
@@ -89,7 +88,7 @@ func TestSetPasswordAllowsTheDaemonThatOwnsTheDirectory(t *testing.T) {
 // Setting a password before the first start is legitimate, and a guard that
 // requires a running daemon would break the very first thing a new user does.
 func TestSetPasswordProceedsWhenNothingIsListening(t *testing.T) {
-	dir := t.TempDir()
+	dir := cliIPCProfile(t)
 	if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte("s\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}

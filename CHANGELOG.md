@@ -72,6 +72,19 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   The archive gate checks the generated cask through Homebrew's real loader
   and records its steps without executing them.
 
+- Local macOS/Linux CLI, bridge and plugin traffic authenticates the daemon
+  through its owner-private Unix socket before sending credentials or file
+  bytes. Unsafe or missing IPC refuses with a corrective hint; no plaintext
+  TCP fallback is added. Remote profiles require verified HTTPS, including
+  through SSH, and Windows local plaintext credentials fail closed. Doctor
+  lists currently connected client transports. Old bridge images remain
+  exposed until a safe unbuffered re-exec point or a harness refresh; this is
+  not bounded to one request (20 buffered old-image calls were measured), and
+  a dormant stream has no time bound. Shared-host rollout requires accounting
+  for every expected bridge on IPC or verified HTTPS. The invitation-only
+  labs-broker plaintext forward remains supported with a token-exposure and
+  HTTPS migration warning; browser plaintext TCP is outside IPC protection.
+
 - Linux service configuration is repeatable across package reinstalls. Units
   use a stable package-manager binary link and defined executable search paths,
   rather than a versioned Caskroom path or Homebrew's temporary shim PATH.

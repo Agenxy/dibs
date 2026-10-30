@@ -35,6 +35,12 @@ func UserAgent() string { return userAgent() }
 // carries, and changes nothing else.
 type stamping struct{ base http.RoundTripper }
 
+func (s stamping) CloseIdleConnections() {
+	if base, ok := s.base.(interface{ CloseIdleConnections() }); ok {
+		base.CloseIdleConnections()
+	}
+}
+
 func (s stamping) RoundTrip(req *http.Request) (*http.Response, error) {
 	base := s.base
 	if base == nil {

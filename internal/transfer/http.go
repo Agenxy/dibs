@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/localtransport"
 	xport "github.com/agenxy/dibs/internal/transport"
 )
 
@@ -152,6 +153,9 @@ func downloadMime(declared string) string {
 func transferTransport(r *http.Request, origin string, proxy bool) error {
 	if given := r.Header.Get("Origin"); given != "" && given != origin {
 		return refusal("E_ORIGIN", "forbidden transfer origin", "use the descriptor's configured origin")
+	}
+	if localtransport.IsLocal(r.Context()) {
+		return nil
 	}
 	loopback := xport.IsLoopback(r.RemoteAddr)
 	if r.TLS != nil && r.TLS.Version >= tls.VersionTLS13 {

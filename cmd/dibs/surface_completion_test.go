@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -71,7 +70,8 @@ func TestSurfaceCompletionFailsClosedAcrossAnAdvertisedDaemonDowngrade(t *testin
 	var downgraded atomic.Bool
 	var calls, ordinaryUpdates atomic.Int32
 	reply := surfaceRegistrationReply(t, "owned-worker", "owned-token", true)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	dir := cliIPCProfile(t)
+	srv := newLocalTestServer(t, dir, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var request struct {
 			Method string `json:"method"`
 			Params struct {
@@ -103,7 +103,6 @@ func TestSurfaceCompletionFailsClosedAcrossAnAdvertisedDaemonDowngrade(t *testin
 		_, _ = fmt.Fprint(w, `{"jsonrpc":"2.0","id":"dibs-surface-evidence","result":{"content":[{"type":"text","text":"{\"ok\":true}"}]}}`)
 	}))
 	defer srv.Close()
-	dir := t.TempDir()
 	t.Setenv("DIBS_DIR", dir)
 	t.Setenv("DIBS_ADDR", srv.URL)
 	if err := os.WriteFile(filepath.Join(dir, "local.secret"), bytes.Repeat([]byte("a"), 64), 0o600); err != nil {

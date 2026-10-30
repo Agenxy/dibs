@@ -202,14 +202,20 @@ func joinDirFor(remote string, peer *supgang.Peer) string {
 // it was given as one: the bridge then re-resolves the hub's address on every
 // start, and the printed recipe says where the address came from.
 func printJoinConfigFor(remote string, peer *supgang.Peer) error {
+	if !strings.EqualFold(statedScheme(remote), "https") {
+		return fmt.Errorf("remote coordination requires verified HTTPS; plaintext loopback may be another user's listener. " +
+			"Serve HTTPS on the hub, forward that TLS port with SSH, trust the hub CA, then run " +
+			"`dibs mcp-config --board https://127.0.0.1:<local-port>`")
+	}
 	dir := joinDirFor(remote, peer)
 	if dir == "" {
 		_, herr := homeDir()
 		return herr
 	}
 	env := map[string]string{
-		"DIBS_ADDR": remote,
-		"DIBS_DIR":  dir,
+		"DIBS_ADDR":        remote,
+		"DIBS_DIR":         dir,
+		clientTransportEnv: "https",
 	}
 	var pinned pinOutcome
 	if peer != nil {

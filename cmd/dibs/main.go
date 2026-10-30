@@ -495,23 +495,6 @@ func getAt(from, path string, v any) error {
 	return json.NewDecoder(resp.Body).Decode(v)
 }
 
-func localSecret() (string, error) {
-	selected, err := paths.SelectDir(false)
-	if err != nil {
-		return "", err
-	}
-	return localSecretIn(selected.Dir)
-}
-
-func localSecretIn(dir string) (string, error) {
-	// #nosec G304 -- directory selected from this CLI's local configuration.
-	b, err := os.ReadFile(filepath.Join(dir, "local.secret"))
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(b)), nil
-}
-
 // getGodView fetches a god-view endpoint (decrypted mail) using the local
 // secret plus the admin password header.
 func getGodView(path, adminPass string, v any) error {
@@ -670,7 +653,7 @@ func mcpConfig(args []string) error {
 	fmt.Println("# hands back a nonce on every transport; the bridge keeps it for the session,")
 	fmt.Println("# and a url client that drops it registers again as a sibling that cannot read")
 	fmt.Println("# its predecessor's mail, which on an unattended remote session costs most.")
-	fmt.Println(string(out))
+	printDirectHTTPConfig(scheme, out)
 	// The Bearer line shows a prefix so a reader can see it is the same secret
 	// as the header above. Unguarded, that slice panicked on any secret shorter
 	// than the preview: a hand-edited or truncated local.secret took down the
@@ -679,6 +662,7 @@ func mcpConfig(args []string) error {
 	if len(s) > 16 {
 		preview = s[:16] + "…"
 	}
+	directURL, directSecret, preview := directHTTPExample(scheme, url, s, preview)
 	// STDIO for Codex, not HTTP, and the difference is an identity rather than a
 	// preference.
 	//
@@ -729,7 +713,7 @@ args = ["mcp-stdio"]
 #   (the secret is also accepted as: Authorization: Bearer %s)
 #
 # Running agent sessions do not hot-load MCP config: start a new session after adding.
-`, self(), codexEnvLine(scheme), shellArg(joiner), url, s, preview)
+`, self(), codexEnvLine(scheme), shellArg(joiner), directURL, directSecret, preview)
 
 	if certPath != "" {
 		fmt.Printf(`
