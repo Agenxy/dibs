@@ -36,6 +36,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The tutorial distinguishes a confirmed same-repository objective warning
+  from the quiet unconfirmed-reference/path note. Its displayed response
+  fields are checked through real register/check-in/declare calls, with both
+  repository discovery and the no-repository single-session path.
+
 - Linux doctor no longer offers Touch ID merely because the release archive
   includes the Mac presence helper. Password setup remains available. Paths
   under home use `~/` when the current directory is home, while paths inside
