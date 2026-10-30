@@ -66,6 +66,13 @@ def note(msg: str) -> None:
     print(f"  {YELLOW}·{RESET} {msg}")
 
 
+def hook_text(reply: dict, event: str) -> str:
+    """The event's model-text carrier, for delivery and silence checks alike."""
+    if event in ("Stop", "SubagentStop"):
+        return (reply.get("reason", "") or "") if reply.get("decision") == "block" else ""
+    return reply.get("hookSpecificOutput", {}).get("additionalContext", "") or ""
+
+
 class Daemon:
     """One dibd, its data directory, and an authenticated client for it."""
 
@@ -165,10 +172,10 @@ class Daemon:
             self.tool("check_in", {"token": tok})
         return tok
 
-    def notice_for(self, session: str) -> str:
+    def notice_for(self, session: str, event: str = "Stop") -> str:
         """What the wake path would inject for a session, or ''."""
-        d = self.tool("hook_poll", {"session_id": session, "event": "Stop"})
-        return d.get("hookSpecificOutput", {}).get("additionalContext", "") or ""
+        d = self.tool("hook_poll", {"session_id": session, "event": event})
+        return hook_text(d, event)
 
     def stop(self) -> None:
         self.proc.terminate()

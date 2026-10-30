@@ -66,7 +66,7 @@ func TestTypingDoesNotSpendTheWakeThatStopNeeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
-	if stopped["hookSpecificOutput"] == nil {
+	if stopped["decision"] != "block" || !deliveredSomething(stopped) {
 		t.Fatalf("Stop delivered nothing, because typing had already spent the "+
 			"freshness: the agent has mail and was never told. Got %v", stopped)
 	}
@@ -121,7 +121,7 @@ func TestAPollThatDeliversNothingSpendsNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stopped["hookSpecificOutput"] == nil {
+	if stopped["decision"] != "block" || !deliveredSomething(stopped) {
 		t.Error("a poll by somebody else consumed the victim's wake: its mail is " +
 			"delivered to nobody and the board reports success to everyone")
 	}

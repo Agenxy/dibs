@@ -5,6 +5,7 @@ package engine
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -175,12 +176,10 @@ func TestMailReachesAnAgentRegisteredByABlindBridge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Nested, not top level: the digest the model sees is under
-	// hookSpecificOutput, and a probe reading the wrong key would pass this
-	// test against the very bug it was written for.
-	spec, _ := out["hookSpecificOutput"].(map[string]any)
-	ctxText, _ := spec["additionalContext"].(string)
-	if ctxText == "" {
+	// Stop delivers through reason, without a duplicate context carrier.
+	// Check the actual body as well as the continuation decision.
+	reason, _ := out["reason"].(string)
+	if out["decision"] != "block" || !strings.Contains(reason, "are you there?") {
 		t.Fatal("the harness's own Stop hook found nothing waiting. This is the " +
 			"reported failure: the agent is on the board under the bridge's name for " +
 			"its session, the hook asks under the harness's, and nothing reconciles " +

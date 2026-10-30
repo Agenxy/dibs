@@ -5,6 +5,7 @@ package engine
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -88,7 +89,7 @@ func TestAStaleThreadsHookDoesNotConsumeTheCurrentThreadsWake(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := got["hookSpecificOutput"]; ok {
+	if deliveredSomething(got) {
 		t.Fatal("a Stop from the thread the agent LEFT was handed the digest and spent the " +
 			"question's wake: the current thread will never hear of it")
 	}
@@ -98,11 +99,7 @@ func TestAStaleThreadsHookDoesNotConsumeTheCurrentThreadsWake(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, ok := got["hookSpecificOutput"].(map[string]any)
-	if !ok {
-		t.Fatalf("the current thread B was handed no digest for its pending question: %v", got)
-	}
-	if ctxText, _ := out["additionalContext"].(string); ctxText == "" {
+	if reason, _ := got["reason"].(string); got["decision"] != "block" || !strings.Contains(reason, "one-shot") {
 		t.Fatalf("the current thread B got an empty digest: %v", got)
 	}
 }

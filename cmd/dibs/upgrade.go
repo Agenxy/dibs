@@ -140,8 +140,10 @@ type plan struct {
 	unit, pinned       string
 	unitWrong, moveDir bool
 	// A policy-only migration preserves the operator's other plist bytes.
-	policyBefore, policyAfter []byte
-	policyErr                 error
+	policyBefore, policyAfter   []byte
+	policyErr                   error
+	systemdBefore, systemdAfter []byte
+	systemdErr                  error
 	// checked is the version the installed daemon reported for itself when
 	// the preflight asked it to rebuild the board: the replacement's own
 	// build, which is not this CLI's. See nothingToDo.
@@ -502,6 +504,7 @@ func (p *plan) findDrift() {
 	}
 	p.unitWrong = p.unit != "" && p.pinned != "" && !sameBinary(p.pinned, p.installed)
 	p.moveDir = p.inherited != "" && p.opts.adoptDir
+	p.systemdErr = p.prepareSystemdUpgradeIfNeeded()
 	if runtime.GOOS == "darwin" && p.unit != "" && !p.unitWrong && !p.moveDir {
 		p.policyBefore, p.policyErr = os.ReadFile(p.unit)
 		if p.policyErr == nil {
@@ -511,6 +514,9 @@ func (p *plan) findDrift() {
 }
 
 func (p *plan) report() error {
+	if p.systemdErr != nil {
+		return p.systemdErr
+	}
 	if p.policyErr != nil {
 		return p.policyFailure(p.policyErr)
 	}
@@ -540,6 +546,9 @@ func (p *plan) report() error {
 // read at load time, and a directory cannot be moved out from under the process
 // holding its lock.
 func (p *plan) preflight() error {
+	if p.systemdErr != nil {
+		return p.systemdErr
+	}
 	if p.app != nil {
 		return p.preflightAppService()
 	}
@@ -591,6 +600,10 @@ func (p *plan) preflight() error {
 			return fmt.Errorf("the service unit cannot be rewritten, so nothing has been "+
 				"stopped: %w", conflict)
 		}
+	}
+	// Re-read the unit before the stop, including plans built without findDrift.
+	if err := p.prepareSystemdUpgradeIfNeeded(); err != nil {
+		return err
 	}
 	if p.moveDir {
 		if _, err := os.Stat(adoptedName(p.inherited)); err == nil {
@@ -738,6 +751,16 @@ func (p *plan) reconcile() (newDir string, err error) {
 			if err := p.migratePolicy(); err != nil {
 				return newDir, err
 			}
+		}
+		return newDir, nil
+	}
+	if runtime.GOOS == "linux" {
+		if len(p.systemdAfter) == 0 {
+			return newDir, fmt.Errorf("no verified systemd repair was prepared for %s; preserved it, run dibs doctor", p.unit)
+		}
+		step("refreshing " + filepath.Base(p.unit))
+		if err := writeGeneratedSystemdUnit(p.unit, string(p.systemdAfter), p.systemdBefore, true); err != nil {
+			return newDir, fmt.Errorf("could not refresh %s: %w", p.unit, err)
 		}
 		return newDir, nil
 	}

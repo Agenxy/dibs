@@ -38,6 +38,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 )
@@ -222,6 +223,13 @@ func verdictFor(runErr, parentErr, deadlineErr error) (Verdict, error) {
 // substitution (dropping a link next to the daemon) no longer succeeds
 // silently, and Lstat cannot be satisfied by a path that resolves elsewhere.
 func findHelper() (string, error) {
+	// The archive carries this Mach-O helper on Linux too. Its existence and
+	// execute bit are not evidence that this host can run LocalAuthentication.
+	// Dev mocks are resolved by Check/Available before helper discovery.
+	if runtime.GOOS != "darwin" {
+		return "", ErrNoHelper
+	}
+
 	self, err := os.Executable()
 	if err != nil {
 		return "", ErrNoHelper

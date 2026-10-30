@@ -4,6 +4,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -112,11 +114,19 @@ func TestPreflightStillPassesAnOrdinaryUnitRewrite(t *testing.T) {
 	if err := os.MkdirAll(unitDir, 0o755); err != nil {
 		t.Fatal("setup:", err)
 	}
-	if err := os.WriteFile(current, []byte("ExecStart=/old/bin/dibd\n"), 0o644); err != nil {
+	body := "ExecStart=/old/bin/dibd\n"
+	if runtime.GOOS == "linux" {
+		// A writable custom file is no longer permission to overwrite it. The
+		// ordinary Linux path is a Dibs-written, same-board unit with its receipt.
+		rest := systemdBody("/old/bin/dibd", home, "/usr/bin:/bin")
+		body = fmt.Sprintf("%s%x\n%s", systemdReceipt, sha256.Sum256([]byte(rest)), rest)
+	}
+	if err := os.WriteFile(current, []byte(body), 0o644); err != nil {
 		t.Fatal("setup:", err)
 	}
 
 	p := &plan{
+		dir:       home,
 		unit:      current,
 		pinned:    "/old/bin/dibd",
 		installed: "/new/bin/dibd",

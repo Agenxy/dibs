@@ -58,6 +58,7 @@ __pycache__/
 /appbundle
 /archivecheck
 /casknote
+/caskcheck
 /covergate
 /fetchpinned
 /signcheck

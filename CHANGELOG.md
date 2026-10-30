@@ -40,6 +40,38 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   or session is recorded, the alert says so and suggests finding/restarting
   the agent or reassigning the work. Known app threads retain their Open link.
 
+- Linux doctor no longer offers Touch ID merely because the release archive
+  includes the Mac presence helper. Password setup remains available. Paths
+  under home use `~/` when the current directory is home, while paths inside
+  a project retain their useful `./` spelling.
+
+- Homebrew 7 casks select the app and Touch ID helper only on macOS, use
+  declarative, non-fatal Mac quarantine steps, and print Linux service and
+  notification advice on Linux. Service registration is an explicit
+  `dibs configure --service` from the user's terminal, avoiding Homebrew's
+  temporary sandbox home. Existing services update with `brew upgrade dibs`
+  followed by `dibs upgrade`: recognized Linux units are repaired before
+  restart, while tuned units needing repair are preserved and explained.
+  Doctor reports incomplete package service setup even before the daemon's
+  first start; manual setups get a warning with configure-or-start advice.
+  The archive gate checks the generated cask through Homebrew's real loader
+  and records its steps without executing them.
+
+- Linux service configuration is repeatable across package reinstalls. Units
+  use a stable package-manager binary link and defined executable search paths,
+  rather than a versioned Caskroom path or Homebrew's temporary shim PATH.
+  Generated units carry a digest of their own contents; unchanged generated
+  units can refresh, while hand edits and units naming another board are
+  preserved. Untouched v0.0.16 Homebrew units migrate automatically, including
+  shell-written units whose versioned executable moved and whose only varying
+  field is PATH. Preservation warnings use stderr so Homebrew displays them.
+  A preserved unit with a missing executable prints its repair, and doctor
+  reports it as a problem.
+
+- Claude Code Stop and SubagentStop hooks deliver each mail digest once, in
+  the blocking reason, instead of repeating it as additional context. Codex's
+  event-specific filtering and non-Stop hook context are unchanged.
+
 - Codex plugin receipts recognize canonical spellings of the same installed
   directory, including macOS `/var` and `/private/var`, while still refusing
   a different directory, plugin identity, version or payload.
