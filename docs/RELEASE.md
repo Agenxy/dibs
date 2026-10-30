@@ -66,6 +66,27 @@ untouched, even with a throwaway HOME.
 A release starts with `workflow_dispatch` of `release.yml` on protected `main`,
 with a canonical version and full candidate SHA. The candidate must be main's
 current tip and its committed release surfaces must already name that version.
+Before preflight can run, the read-only candidate acceptance workflow builds
+that exact SHA on macOS with the production GoReleaser snapshot invocation.
+An ephemeral Linux runner verifies the SHA/version/digest manifest, installs
+the unchanged archives through the generated cask with only its URL authority
+adapted, repeats explicit service setup and reinstall, checks frozen v0.0.16
+headerless-unit migration through real binaries, and enables the generated
+systemd user service. All four candidate MCP round trips go through that
+service via the installed `dibs mcp-stdio` bridge: one per protocol before reinstall, and one per protocol after
+reinstall/configure/reload/restart. The receipt binds the loaded unit, installed
+daemon image, selected data directory, process/start epochs, unchanged board
+identity and continuing serial, and retains systemctl status and journal output.
+A user-manager failure remains a failure; no direct-daemon fallback qualifies it.
+Readiness and node/serial observations use the installed `dibs board --json`.
+The archive/Go smoke paths use their installed CLI and bridge too, so the
+acceptance follows the transport that the candidate actually ships.
+It receives no release signing identity, tap key or write token. The unsigned
+candidate receipt proves installation, not published Sigstore provenance.
+Only the measured cask-scoped Homebrew EPIPE signature permits one fresh retry;
+the receipt retains the failure and retry. Other failures remain red. Published
+v0.0.16 confirmation is separate and retains its known service-setup failure.
+
 The preflight has read-only repository permissions. It creates an annotated tag
 **locally**, runs the entire `task ci`, checks the authenticated Sigstore root,
 and builds an offline GoReleaser snapshot with the actual release version.
@@ -120,7 +141,68 @@ The tap branch still requires a person to merge its PR. v0.0.12 was published
 without a cask branch; do not create one, because its notifier has an installed
 macOS identity defect. Homebrew users should receive the fixed next release.
 
-Receipts are retained for 90 days. An expired or missing receipt is not silently
+## Public install acceptance, after publishing and before announcing
+
+Publishing green does not prove the public install steps work. After publication
+and the actual tap-cask merge, run this required check from the repository root
+against the exact published tag, with two new receipt directories:
+
+```text
+mise exec -- go run ./tools/publicinstall -mode native -tag v<canonical-version> -out /tmp/dibs-public-macos-<canonical-version>
+mise exec -- go run ./tools/publicinstall -mode linux -runtime container -fresh-installs 5 -tag v<canonical-version> -out /tmp/dibs-public-linux-<canonical-version>
+```
+
+Run `native` on macOS for the Mac receipt. It verifies the published archive's
+Sigstore identity and checksum using the production verifier, runs `shasum`,
+then exercises archive and exact-tag `go install` binaries in separate private
+homes. Each starts a private daemon; two agents register, declare overlapping
+work, exchange mail and read the answer over both MCP versions. This measures
+coordination through installed binaries, not real model/harness delivery or
+native service launch/approval. It never installs a Mac cask or registers a Mac
+service, even when the selected HOME is disposable.
+
+The Linux mode uses a new Homebrew container for every first-install attempt,
+updates Brew, taps and trusts the public tap, checks that its cask names this
+exact tag, installs, configures the per-user unit, reinstalls and repeats setup.
+It also runs the archive/Go paths and MCP checks. The container is removed after
+each attempt. Image inspection and the exact resolved image digest are retained;
+no local replacement cask or candidate archive is substituted. `-runtime docker`
+is also supported. The runtime must already work. For Apple container, the CLI
+version and configured vminit image must be available; a missing init image
+fails with a corrective instead of an implicit fetch. The tool does not start
+or update the runtime service. The checker also needs Go and cosign (the Linux
+fixture installs these public-path prerequisites), and `shasum`.
+
+When a local runtime is unavailable, the `published Linux install` workflow
+uses the same checker on an ephemeral GitHub-hosted Ubuntu runner with its real
+Homebrew installation. It runs `-mode linux-hosted -fresh-installs 1`; the receipt
+names the hosted run and explicitly distinguishes it from a Mac container.
+The current acceptance job pins published `v0.0.16`, runs Brew update before
+the public tap/install commands, then performs the same service setup,
+reinstall, archive verification, exact-tag Go install and MCP checks. It is a
+separate public-release report, not the candidate's required `gate`. Failures
+remain red and the receipt plus command logs are uploaded even on failure;
+fixture homes, credentials, archives and build caches are not uploaded. One
+runner is one fresh attempt, not the five-container failure-rate measurement.
+Structured output is decoded from stdout only; stderr remains separately
+labelled in each command log. Homebrew `Warning:` lines are also receipt
+findings. The published v0.0.16 legacy-postflight warning identifies its source
+repair in #519 on main, without implying that release already contains it.
+
+Keep the complete new output directories. `receipt.json` records actual command
+exit statuses and separate logs. The Linux parent counts only fresh Dibs install
+attempts, reports their failure fraction and EPIPE count, and requires recovery
+for every failed attempt. A recognized Homebrew `Broken pipe` can pass only if
+the requested cask remains registered, `brew upgrade` succeeds, and the subsequent
+reinstall, unit setup and MCP work succeed. Other failures are failures. No
+automatic retry or mitigation environment variable hides the measured rate.
+Setup failures are outside that denominator and make the check fail. Run the
+check once per release decision; a failed result is evidence to investigate,
+not a reason to repeat until green. Neither source review nor this tool replaces
+the owner's separate service/harness acceptance. Do not announce with a missing
+Mac or Linux receipt.
+
+Release preflight receipts are retained for 90 days. An expired or missing receipt is not silently
 trusted: repeat a successful preflight on the same candidate (which must still
 be main's tip), or investigate explicitly. No fallback accepts an unsigned
 local receipt or a different candidate.

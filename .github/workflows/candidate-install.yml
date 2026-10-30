@@ -1,0 +1,79 @@
+name: candidate install acceptance
+
+on:
+  workflow_call:
+    inputs:
+      sha:
+        type: string
+        required: true
+      version:
+        description: Canonical release version; empty selects the next patch for PR acceptance only
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  artifacts:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    outputs:
+      tag: ${{ steps.build.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+        with:
+          version: 2026.10.23
+          experimental: true
+      - name: Exact source, local tag and production-shaped offline snapshot
+        id: build
+        env:
+          CANDIDATE_SHA: ${{ inputs.sha }}
+          CANDIDATE_VERSION: ${{ inputs.version }}
+        run: go run ./tools/publicinstall -mode candidate-build -sha "$CANDIDATE_SHA" -tag "$CANDIDATE_VERSION" -out "$RUNNER_TEMP/dibs-candidate"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: candidate-install-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/dibs-candidate/candidate.json
+            ${{ runner.temp }}/dibs-candidate/dibs.rb
+            ${{ runner.temp }}/dibs-candidate/checksums.txt
+            ${{ runner.temp }}/dibs-candidate/*.tar.gz
+          if-no-files-found: error
+
+  linux:
+    needs: artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.sha }}
+          persist-credentials: false
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+        with:
+          version: 2026.10.23
+          experimental: true
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: candidate-install-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/candidate-input
+      - name: Real candidate install, repeat, reinstall, migration and MCP
+        env:
+          CANDIDATE_SHA: ${{ inputs.sha }}
+          CANDIDATE_TAG: ${{ needs.artifacts.outputs.tag }}
+        run: env PATH="/home/linuxbrew/.linuxbrew/bin:$PATH" go run ./tools/publicinstall -mode candidate-linux -fresh-installs 1 -sha "$CANDIDATE_SHA" -tag "$CANDIDATE_TAG" -candidate-dir "$RUNNER_TEMP/candidate-input" -out "$RUNNER_TEMP/candidate-linux-receipt"
+      - name: Preserve receipts and command logs even on failure
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: candidate-linux-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/candidate-linux-receipt/receipt.json
+            ${{ runner.temp }}/candidate-linux-receipt/*.log
+          if-no-files-found: error

@@ -1,0 +1,13 @@
+name: candidate Linux install
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  candidate:
+    uses: ./.github/workflows/candidate-install.yml
+    with:
+      sha: ${{ github.event.pull_request.head.sha }}
