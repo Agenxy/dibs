@@ -46,20 +46,22 @@ type receipt struct {
 	Error    string `json:"error,omitempty"`
 	Steps    []step `json:"steps"`
 	// These count only first install attempts, never setup/recovery commands.
-	Attempts        int       `json:"fresh_install_attempts"`
-	InstallFailed   int       `json:"fresh_install_failures"`
-	EPIPE           int       `json:"epipe_failures"`
-	Recovered       int       `json:"recovered_failed_installs"`
-	FailureRate     *float64  `json:"fresh_install_failure_rate"`
-	MCPRoundTrips   int       `json:"mcp_round_trips"`
-	ArchiveVerified bool      `json:"archive_signature_and_digest_verified"`
-	GoTag           string    `json:"go_install_tag"`
-	ServiceLaunch   string    `json:"service_launch"`
-	Environment     string    `json:"execution_environment,omitempty"`
-	HostedRun       string    `json:"hosted_run,omitempty"`
-	Findings        []finding `json:"findings,omitempty"`
-	CandidateSHA    string    `json:"candidate_sha,omitempty"`
-	CandidateProof  string    `json:"candidate_proof,omitempty"`
+	Attempts             int              `json:"fresh_install_attempts"`
+	InstallFailed        int              `json:"fresh_install_failures"`
+	EPIPE                int              `json:"epipe_failures"`
+	Recovered            int              `json:"recovered_failed_installs"`
+	FailureRate          *float64         `json:"fresh_install_failure_rate"`
+	MCPRoundTrips        int              `json:"mcp_round_trips"`
+	ArchiveVerified      bool             `json:"archive_signature_and_digest_verified"`
+	GoTag                string           `json:"go_install_tag"`
+	ServiceLaunch        string           `json:"service_launch"`
+	Environment          string           `json:"execution_environment,omitempty"`
+	HostedRun            string           `json:"hosted_run,omitempty"`
+	Findings             []finding        `json:"findings,omitempty"`
+	CandidateSHA         string           `json:"candidate_sha,omitempty"`
+	CandidateProof       string           `json:"candidate_proof,omitempty"`
+	ServiceMCPRoundTrips int              `json:"service_mcp_round_trips"`
+	Service              *serviceEvidence `json:"service_evidence,omitempty"`
 }
 
 type finding struct {
@@ -162,7 +164,7 @@ func execute(ctx context.Context, o options) (err error) {
 	}
 	r := &runner{ctx: ctx, root: root, report: receipt{
 		Tag: o.tag, Mode: o.mode,
-		Platform: runtime.GOOS + "/" + runtime.GOARCH, ServiceLaunch: "not exercised; no native service registration",
+		Platform: runtime.GOOS + "/" + runtime.GOARCH, ServiceLaunch: "not exercised",
 	}}
 	defer func() {
 		if r.report.Attempts > 0 {

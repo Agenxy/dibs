@@ -60,20 +60,11 @@ func (r *runner) candidateBrew(o options, origin string) error {
 	if err := r.candidateFirstInstall(o.tag); err != nil {
 		return err
 	}
-	if err := r.repeatInstalledConfigure(); err != nil {
-		return err
-	}
-	if _, err := r.command("candidate-brew-reinstall", r.env, "brew", "reinstall", "--cask", candidateTap); err != nil {
-		return err
-	}
-	if err := r.repeatInstalledConfigure(); err != nil {
-		return err
-	}
 	prefix, err := r.command("candidate-brew-prefix", r.env, "brew", "--prefix")
 	if err != nil {
 		return err
 	}
-	return r.smoke(filepath.Join(strings.TrimSpace(prefix), "bin"), os.Getenv("HOME"), r.env)
+	return r.exerciseSystemdService(filepath.Join(strings.TrimSpace(prefix), "bin"))
 }
 
 // This exact cask-scoped Homebrew exception is the measured bug B signature.

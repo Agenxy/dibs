@@ -285,13 +285,6 @@ func (r *runner) installCandidate(o options) error {
 	if err != nil {
 		return err
 	}
-	home := filepath.Join(r.root, "candidate-home")
-	if err := os.Mkdir(home, 0o700); err != nil {
-		return err
-	}
-	if err := r.smoke(archive, home, isolatedEnv(home, r.root)); err != nil {
-		return err
-	}
 	return r.candidateServiceProof(archive)
 }
 

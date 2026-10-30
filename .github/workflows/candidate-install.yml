@@ -63,13 +63,11 @@ jobs:
         with:
           name: candidate-install-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/candidate-input
-      - name: Make the runner's Homebrew available
-        run: echo /home/linuxbrew/.linuxbrew/bin >> "$GITHUB_PATH"
       - name: Real candidate install, repeat, reinstall, migration and MCP
         env:
           CANDIDATE_SHA: ${{ inputs.sha }}
           CANDIDATE_TAG: ${{ needs.artifacts.outputs.tag }}
-        run: go run ./tools/publicinstall -mode candidate-linux -fresh-installs 1 -sha "$CANDIDATE_SHA" -tag "$CANDIDATE_TAG" -candidate-dir "$RUNNER_TEMP/candidate-input" -out "$RUNNER_TEMP/candidate-linux-receipt"
+        run: env PATH="/home/linuxbrew/.linuxbrew/bin:$PATH" go run ./tools/publicinstall -mode candidate-linux -fresh-installs 1 -sha "$CANDIDATE_SHA" -tag "$CANDIDATE_TAG" -candidate-dir "$RUNNER_TEMP/candidate-input" -out "$RUNNER_TEMP/candidate-linux-receipt"
       - name: Preserve receipts and command logs even on failure
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

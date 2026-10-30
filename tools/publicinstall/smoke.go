@@ -54,14 +54,21 @@ func (r *runner) smoke(bin, home string, env []string) error {
 	if err != nil {
 		return fmt.Errorf("private daemon readiness (see %s): %w", log.Name(), err)
 	}
+	return r.coordinateProtocols(client, addr, secret, home, 0, false)
+}
+
+func (r *runner) coordinateProtocols(client *http.Client, addr, secret, home string, base int, service bool) error {
 	for i, protocol := range []string{"2026-07-28", "2025-11-25"} {
 		call := func(name string, args map[string]any) (map[string]any, error) {
 			return callTool(r.ctx, client, addr, secret, protocol, name, args)
 		}
-		if err := coordination(call, home, i); err != nil {
+		if err := coordination(call, home, base+i); err != nil {
 			return fmt.Errorf("%s: %w", protocol, err)
 		}
 		r.report.MCPRoundTrips++
+		if service {
+			r.report.ServiceMCPRoundTrips++
+		}
 	}
 	return nil
 }

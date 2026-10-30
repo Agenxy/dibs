@@ -22,10 +22,8 @@ jobs:
         with:
           version: 2026.10.23
           experimental: true
-      - name: Make the runner's Homebrew available
-        run: echo /home/linuxbrew/.linuxbrew/bin >> "$GITHUB_PATH"
       - name: Published v0.0.16 README install and release check
-        run: mise exec -- go run ./tools/publicinstall -mode linux-hosted -fresh-installs 1 -tag v0.0.16 -out "$RUNNER_TEMP/dibs-public-linux-v0.0.16"
+        run: env PATH="/home/linuxbrew/.linuxbrew/bin:$PATH" mise exec -- go run ./tools/publicinstall -mode linux-hosted -fresh-installs 1 -tag v0.0.16 -out "$RUNNER_TEMP/dibs-public-linux-v0.0.16"
       - name: Preserve the real receipt, including failures
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
