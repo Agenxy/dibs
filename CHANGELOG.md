@@ -56,7 +56,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   publication job as proof that the public install steps work. Mac casks and
   production services are excluded from this check. Exact-candidate Linux
   acceptance starts the generated systemd user service on an ephemeral runner,
-  exchanges mail over both MCP versions before and after reinstall/restart,
+  exchanges mail through the installed stdio bridge over both MCP versions
+  before and after reinstall/restart,
   and records process and board continuity with status and journal evidence.
 
 - Homebrew 7 casks select the app and Touch ID helper only on macOS, use

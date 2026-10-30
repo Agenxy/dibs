@@ -5,20 +5,14 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
-	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
-	"time"
 )
 
 func (r *runner) smoke(bin, home string, env []string) error {
@@ -40,29 +34,24 @@ func (r *runner) smoke(bin, home string, env []string) error {
 		return err
 	}
 	defer func() { _ = log.Close() }()
-	// #nosec G204 G702 -- signature-verified archive, public go install, or checked public cask binary
-	cmd := exec.CommandContext(r.ctx, filepath.Join(bin, "dibd"), "-dir", dir, "-addr", addr)
-	cmd.Env, cmd.Dir, cmd.Stdout, cmd.Stderr = env, home, log, log
+	cmd, err := r.newCommand(r.ctx, env, filepath.Join(bin, "dibd"), "-dir", dir, "-addr", addr)
+	if err != nil {
+		return err
+	}
+	cmd.Dir, cmd.Stdout, cmd.Stderr = home, log, log
 	if err := cmd.Start(); err != nil {
 		return err
 	}
 	defer func() { _ = cmd.Process.Kill(); _ = cmd.Wait() }()
-	ready, cancel := context.WithTimeout(r.ctx, time.Minute)
-	defer cancel()
-	client := &http.Client{Timeout: 5 * time.Second}
-	secret, err := awaitDaemon(ready, client, addr, dir)
-	if err != nil {
+	if err := r.awaitInstalledBoard(bin, env); err != nil {
 		return fmt.Errorf("private daemon readiness (see %s): %w", log.Name(), err)
 	}
-	return r.coordinateProtocols(client, addr, secret, home, 0, false)
+	return r.coordinateInstalled(bin, home, env, 0, false)
 }
 
-func (r *runner) coordinateProtocols(client *http.Client, addr, secret, home string, base int, service bool) error {
+func (r *runner) coordinateInstalled(bin, home string, env []string, base int, service bool) error {
 	for i, protocol := range []string{"2026-07-28", "2025-11-25"} {
-		call := func(name string, args map[string]any) (map[string]any, error) {
-			return callTool(r.ctx, client, addr, secret, protocol, name, args)
-		}
-		if err := coordination(call, home, base+i); err != nil {
+		if err := r.installedBridge(bin, home, env, protocol, base+i); err != nil {
 			return fmt.Errorf("%s: %w", protocol, err)
 		}
 		r.report.MCPRoundTrips++
@@ -71,33 +60,6 @@ func (r *runner) coordinateProtocols(client *http.Client, addr, secret, home str
 		}
 	}
 	return nil
-}
-
-func awaitDaemon(ctx context.Context, client *http.Client, addr, dir string) (string, error) {
-	var secret []byte
-	for {
-		var err error
-		secret, err = os.ReadFile(filepath.Join(dir, "local.secret")) // #nosec G304 G703 -- fixture daemon's own credential
-		if err == nil {
-			req, requestErr := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+addr+"/api/board", nil)
-			if requestErr != nil {
-				return "", requestErr
-			}
-			req.Header.Set("X-Dibs-Local", strings.TrimSpace(string(secret)))
-			resp, requestErr := client.Do(req)
-			if requestErr == nil {
-				_ = resp.Body.Close()
-				if resp.StatusCode == http.StatusOK {
-					return strings.TrimSpace(string(secret)), nil
-				}
-			}
-		}
-		select {
-		case <-ctx.Done():
-			return "", ctx.Err()
-		case <-time.After(100 * time.Millisecond):
-		}
-	}
 }
 
 type toolCaller func(string, map[string]any) (map[string]any, error)
@@ -188,52 +150,4 @@ func registerWork(call toolCaller, home, name string) (string, map[string]any, e
 		return "", nil, errors.New("declaration returned no slot")
 	}
 	return token, d, nil
-}
-
-func callTool(
-	ctx context.Context, client *http.Client, addr, secret, protocol, name string, args map[string]any,
-) (map[string]any, error) {
-	body, err := json.Marshal(map[string]any{
-		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-		"params": map[string]any{"name": name, "arguments": args},
-	})
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+addr+"/mcp", bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("MCP-Protocol-Version", protocol)
-	req.Header.Set("X-Dibs-Local", secret)
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%s HTTP %d", name, resp.StatusCode)
-	}
-	var env struct {
-		Error  json.RawMessage
-		Result struct {
-			IsError bool
-			Content []struct{ Type, Text string }
-		}
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 2<<20)).Decode(&env); err != nil {
-		return nil, err
-	}
-	if (len(env.Error) > 0 && string(env.Error) != "null") || env.Result.IsError || len(env.Result.Content) == 0 {
-		return nil, fmt.Errorf("%s refused (private fixture details omitted)", name)
-	}
-	var result map[string]any
-	if err := json.Unmarshal([]byte(env.Result.Content[0].Text), &result); err != nil {
-		return nil, err
-	}
-	if result["code"] != nil {
-		return nil, fmt.Errorf("%s returned %v", name, result["code"])
-	}
-	return result, nil
 }

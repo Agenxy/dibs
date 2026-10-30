@@ -5,20 +5,15 @@ package main
 
 import (
 	"bytes"
-	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
-	"net/http"
 	"os"
 	"os/user"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
-	"time"
 )
 
 const serviceUnit = "dibs.service"
@@ -46,18 +41,17 @@ type serviceBoard struct {
 }
 
 type serviceRun struct {
-	home, dir, addr, bin, secret string
-	client                       *http.Client
-	before                       systemdState
-	board                        serviceBoard
-	evidence                     *serviceEvidence
+	home, dir, bin string
+	before         systemdState
+	board          serviceBoard
+	evidence       *serviceEvidence
 }
 
 func (r *runner) exerciseSystemdService(bin string) (result error) {
 	if runtime.GOOS != "linux" {
 		return errors.New("systemd acceptance requires the explicitly isolated hosted Linux job")
 	}
-	home, dir, addr, err := r.prepareSystemdFixture()
+	home, dir, _, err := r.prepareSystemdFixture()
 	if err != nil {
 		return err
 	}
@@ -68,8 +62,7 @@ func (r *runner) exerciseSystemdService(bin string) (result error) {
 		return err
 	}
 	defer func() { result = errors.Join(result, r.finishSystemdProof()) }()
-	run := &serviceRun{home: home, dir: dir, addr: addr, bin: bin, client: &http.Client{Timeout: 5 * time.Second}}
-	defer run.client.CloseIdleConnections()
+	run := &serviceRun{home: home, dir: dir, bin: bin}
 	if err := r.beginSystemdService(run); err != nil {
 		return err
 	}
@@ -85,16 +78,16 @@ func (r *runner) beginSystemdService(run *serviceRun) error {
 		return err
 	}
 	r.report.ServiceLaunch = "enable/start issued; readiness not yet qualified"
-	secret, before, err := r.awaitSystemd(run.client, run.addr, run.dir, run.bin)
+	before, err := r.awaitSystemd(run.dir, run.bin)
 	if err != nil {
 		return err
 	}
 	evidence := &serviceEvidence{DataDir: run.dir, Unit: before.Unit, InitialPID: before.PID, InitialStart: before.Start}
 	r.report.Service = evidence
-	if err := r.coordinateProtocols(run.client, run.addr, secret, run.home, 0, true); err != nil {
+	if err := r.coordinateInstalled(run.bin, run.home, r.env, 0, true); err != nil {
 		return err
 	}
-	board, err := r.serviceBoard(run.client, run.addr, secret)
+	board, err := r.installedBoard(r.ctx, run.bin, r.env)
 	if err != nil {
 		return err
 	}
@@ -102,7 +95,7 @@ func (r *runner) beginSystemdService(run *serviceRun) error {
 		return errors.New("first service MCP pair did not leave durable node/serial evidence")
 	}
 	evidence.Node, evidence.SerialBefore = board.Node, board.Serial
-	run.secret, run.before, run.board, run.evidence = secret, before, board, evidence
+	run.before, run.board, run.evidence = before, board, evidence
 	return nil
 }
 
@@ -125,20 +118,19 @@ func (r *runner) restartSystemdService(run *serviceRun) error {
 		"--user", "restart", serviceUnit); err != nil {
 		return err
 	}
-	run.client.CloseIdleConnections()
-	afterSecret, after, err := r.awaitSystemd(run.client, run.addr, run.dir, run.bin)
+	after, err := r.awaitSystemd(run.dir, run.bin)
 	if err != nil {
 		return err
 	}
-	if afterSecret != run.secret || (run.before.PID == after.PID && run.before.Start == after.Start) {
-		return errors.New("service restart changed the board credential or provided no fresh process/start evidence")
+	if run.before.PID == after.PID && run.before.Start == after.Start {
+		return errors.New("service restart provided no fresh process/start evidence")
 	}
 	run.evidence.RestartedPID, run.evidence.RestartedStart = after.PID, after.Start
 	return r.proveServiceContinuity(run)
 }
 
 func (r *runner) proveServiceContinuity(run *serviceRun) error {
-	afterBoard, err := r.serviceBoard(run.client, run.addr, run.secret)
+	afterBoard, err := r.installedBoard(r.ctx, run.bin, r.env)
 	if err != nil {
 		return err
 	}
@@ -146,10 +138,10 @@ func (r *runner) proveServiceContinuity(run *serviceRun) error {
 		return errors.New("reinstalled service lost the original board node or serial continuity")
 	}
 	run.evidence.SerialAfter = afterBoard.Serial
-	if err := r.coordinateProtocols(run.client, run.addr, run.secret, run.home, 2, true); err != nil {
+	if err := r.coordinateInstalled(run.bin, run.home, r.env, 2, true); err != nil {
 		return err
 	}
-	final, err := r.serviceBoard(run.client, run.addr, run.secret)
+	final, err := r.installedBoard(r.ctx, run.bin, r.env)
 	if err != nil {
 		return err
 	}
@@ -211,31 +203,28 @@ func (r *runner) prepareUserManager() error {
 	return err
 }
 
-func (r *runner) awaitSystemd(client *http.Client, addr, dir, bin string) (string, systemdState, error) {
-	ctx, cancel := context.WithTimeout(r.ctx, time.Minute)
-	defer cancel()
-	secret, err := awaitDaemon(ctx, client, addr, dir)
-	if err != nil {
-		return "", systemdState{}, err
+func (r *runner) awaitSystemd(dir, bin string) (systemdState, error) {
+	if err := r.awaitInstalledBoard(bin, r.env); err != nil {
+		return systemdState{}, err
 	}
 	if _, err := r.command("systemd-is-active", r.env, "/usr/bin/systemctl",
 		"--user", "is-active", serviceUnit); err != nil {
-		return "", systemdState{}, err
+		return systemdState{}, err
 	}
 	out, err := r.command("systemd-process-evidence", r.env, "/usr/bin/systemctl", "--user", "show", serviceUnit,
 		"--property=MainPID", "--property=ActiveState",
 		"--property=ExecMainStartTimestampMonotonic", "--property=FragmentPath")
 	if err != nil {
-		return "", systemdState{}, err
+		return systemdState{}, err
 	}
 	state, err := parseSystemdState(out)
 	if err != nil {
-		return "", state, err
+		return state, err
 	}
 	if err := checkServiceProcess(state, dir, bin); err != nil {
-		return "", state, err
+		return state, err
 	}
-	return secret, state, nil
+	return state, nil
 }
 
 func parseSystemdState(out string) (systemdState, error) {
@@ -292,25 +281,6 @@ func checkServiceProcess(state systemdState, dir, bin string) error {
 		return errors.New("systemd process is not running the current installed daemon image")
 	}
 	return nil
-}
-
-func (r *runner) serviceBoard(client *http.Client, addr, secret string) (serviceBoard, error) {
-	var board serviceBoard
-	req, err := http.NewRequestWithContext(r.ctx, http.MethodGet, "http://"+addr+"/api/board", nil)
-	if err != nil {
-		return board, err
-	}
-	req.Header.Set("X-Dibs-Local", secret)
-	resp, err := client.Do(req)
-	if err != nil {
-		return board, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		return board, fmt.Errorf("service board continuity query returned HTTP %d", resp.StatusCode)
-	}
-	err = json.NewDecoder(io.LimitReader(resp.Body, 2<<20)).Decode(&board)
-	return board, err
 }
 
 func (r *runner) finishSystemdProof() error {

@@ -73,11 +73,14 @@ the unchanged archives through the generated cask with only its URL authority
 adapted, repeats explicit service setup and reinstall, checks frozen v0.0.16
 headerless-unit migration through real binaries, and enables the generated
 systemd user service. All four candidate MCP round trips go through that
-service: one per protocol before reinstall, and one per protocol after
+service via the installed `dibs mcp-stdio` bridge: one per protocol before reinstall, and one per protocol after
 reinstall/configure/reload/restart. The receipt binds the loaded unit, installed
 daemon image, selected data directory, process/start epochs, unchanged board
 identity and continuing serial, and retains systemctl status and journal output.
 A user-manager failure remains a failure; no direct-daemon fallback qualifies it.
+Readiness and node/serial observations use the installed `dibs board --json`.
+The archive/Go smoke paths use their installed CLI and bridge too, so the
+acceptance follows the transport that the candidate actually ships.
 It receives no release signing identity, tap key or write token. The unsigned
 candidate receipt proves installation, not published Sigstore provenance.
 Only the measured cask-scoped Homebrew EPIPE signature permits one fresh retry;

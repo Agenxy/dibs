@@ -109,6 +109,9 @@ func TestCandidateManifestRefusesWrongIdentityPathsAndBytes(t *testing.T) {
 }
 
 func TestMain(m *testing.M) {
+	if os.Getenv("DIBS_TEST_INSTALLED_MODE") != "" && filepath.Base(os.Args[0]) == "dibs" {
+		os.Exit(installedCommandFixture())
+	}
 	if os.Getenv("DIBS_TEST_BREW_CASE") != "" && filepath.Base(os.Args[0]) == "brew" {
 		os.Exit(candidateBrewFixture())
 	}

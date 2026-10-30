@@ -241,27 +241,45 @@ func isolatedEnv(home, root string) []string {
 }
 
 func (r *runner) command(name string, env []string, args ...string) (string, error) {
+	return r.commandContext(r.ctx, name, env, args...)
+}
+
+func (r *runner) newCommand(ctx context.Context, env []string, args ...string) (*exec.Cmd, error) {
+	executable, err := r.resolveExecutable(env, args)
+	if err != nil {
+		return nil, err
+	}
+	// #nosec G204 G702 -- shared child-PATH resolution and test containment precede every exec; argv only
+	cmd := exec.CommandContext(ctx, executable, args[1:]...)
+	cmd.Env, cmd.Dir = env, r.root
+	if r.cwd != "" {
+		cmd.Dir = r.cwd
+	}
+	return cmd, nil
+}
+
+func (r *runner) commandContext(ctx context.Context, name string, env []string, args ...string) (string, error) {
 	start := time.Now()
 	var stdout, stderr bytes.Buffer
-	executable, err := r.resolveExecutable(env, args)
+	cmd, err := r.newCommand(ctx, env, args...)
 	if err == nil {
-		// #nosec G204 G702 -- child-PATH resolution and test containment precede every exec; argv only
-		cmd := exec.CommandContext(r.ctx, executable, args[1:]...)
-		cmd.Env, cmd.Dir = env, r.root
-		if r.cwd != "" {
-			cmd.Dir = r.cwd
-		}
 		cmd.Stdout, cmd.Stderr = &stdout, &stderr
 		err = cmd.Run()
 	} else {
 		stderr.WriteString(err.Error())
 	}
+	return r.recordCommand(name, start, args, stdout.String(), stderr.String(), err)
+}
+
+func (r *runner) recordCommand(
+	name string, start time.Time, args []string, stdout, stderr string, err error,
+) (string, error) {
 	log := fmt.Sprintf("%03d-%s.log", len(r.report.Steps)+1, name)
-	out := stdout.String() + stderr.String()
-	r.recordWarnings(name, stdout.String()+"\n"+stderr.String())
+	out := stdout + stderr
+	r.recordWarnings(name, stdout+"\n"+stderr)
 	// #nosec G703 -- fixed step log under the new receipt directory
 	writeErr := os.WriteFile(filepath.Join(r.root, log),
-		[]byte("stdout:\n"+stdout.String()+"\nstderr:\n"+stderr.String()), 0o600)
+		[]byte("stdout:\n"+stdout+"\nstderr:\n"+stderr), 0o600)
 	code := 0
 	if err != nil {
 		code = -1
@@ -274,7 +292,7 @@ func (r *runner) command(name string, env []string, args ...string) (string, err
 	if err != nil {
 		return out, fmt.Errorf("%s exited %d (see %s): %w", name, code, log, err)
 	}
-	return stdout.String(), writeErr
+	return stdout, writeErr
 }
 
 func (r *runner) recordWarnings(name, out string) {

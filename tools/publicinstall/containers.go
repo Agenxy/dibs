@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -126,7 +125,7 @@ func (r *runner) linuxAttempt(o options, image, probe string, i int) (receipt, e
 	}
 	_, runErr := r.command(fmt.Sprintf("linux-%02d", i+1), os.Environ(), args...)
 	if r.ctx.Err() != nil {
-		return receipt{}, errors.Join(runErr, cleanupFixture(o.runtime, name))
+		return receipt{}, errors.Join(runErr, r.cleanupFixture(o.runtime, name))
 	}
 	// #nosec G304 G703 -- exact child fixture's receipt
 	b, readErr := os.ReadFile(filepath.Join(root, "run", "receipt.json"))
@@ -146,7 +145,7 @@ func (r *runner) linuxAttempt(o options, image, probe string, i int) (receipt, e
 	return child, runErr
 }
 
-func cleanupFixture(runtime, name string) error {
+func (r *runner) cleanupFixture(runtime, name string) error {
 	// A killed client need not kill its container. Remove only this exact
 	// random fixture name; never prune or stop any runtime service.
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -155,8 +154,8 @@ func cleanupFixture(runtime, name string) error {
 	if runtime == "container" {
 		verb = []string{"delete", "--force", name}
 	}
-	// #nosec G204 G702 -- supported runtime and own random fixture name, argv only
-	return exec.CommandContext(ctx, runtime, verb...).Run()
+	_, err := r.commandContext(ctx, "runtime-fixture-cleanup", os.Environ(), append([]string{runtime}, verb...)...)
+	return err
 }
 
 func resolvedImage(image, inspection string) (string, error) {
