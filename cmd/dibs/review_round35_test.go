@@ -33,7 +33,8 @@ func TestTheTunnelRecipeNamesTheTransportTheDaemonServes(t *testing.T) {
 		t.Errorf("the tunnel paragraph does not hand the joiner the https:// address the block "+
 			"above it did; a bare address makes the bridge infer plaintext:\n%s", out)
 	}
-	// And the ordinary daemon is still described as what it is.
+	// A plaintext browser listener needs migration before it can carry remote
+	// coordination credentials, including through an SSH forward.
 	plain, err := joinerAddr("http")
 	if err != nil {
 		t.Fatal("setup:", err)
@@ -42,7 +43,8 @@ func TestTheTunnelRecipeNamesTheTransportTheDaemonServes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "plaintext on loopback") || !strings.Contains(out, "DIBS_ADDR as "+plain) {
-		t.Errorf("the plaintext loopback daemon lost its own description:\n%s", out)
+	if !strings.Contains(out, "plaintext TCP listener") || !strings.Contains(out, "verified HTTPS") ||
+		!strings.Contains(out, "HTTPS SSH forward") || strings.Contains(out, "DIBS_ADDR as "+plain) {
+		t.Errorf("plaintext listener was handed an unauthenticated remote recipe instead of migration:\n%s", out)
 	}
 }

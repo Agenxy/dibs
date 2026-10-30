@@ -36,7 +36,7 @@ func TestPersistentBridgeFollowsServiceDirectoryWithoutLeakingCredentials(t *tes
 
 func serviceDirectorySwitch(t *testing.T, secure bool, method string) {
 	t.Helper()
-	home := t.TempDir()
+	home := cliIPCProfile(t)
 	t.Setenv("HOME", home)
 	t.Setenv("DIBS_DIR", "")
 	t.Setenv("DIBS_ADDR", "")
@@ -78,6 +78,7 @@ func serviceDirectorySwitch(t *testing.T, secure bool, method string) {
 		}
 		cfg := fmt.Sprintf("addr = %q\n", srv.Listener.Addr().String())
 		if secure {
+			cfg += "client_transport = \"https\"\n"
 			chain, ca := issuedChain(t, false)
 			srv.TLS = &tls.Config{Certificates: []tls.Certificate{chain}, MinVersion: tls.VersionTLS12}
 			if err := os.WriteFile(filepath.Join(dir, "trusted-certs.pem"), pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ca.Raw}), 0o600); err != nil {
@@ -97,6 +98,7 @@ func serviceDirectorySwitch(t *testing.T, secure bool, method string) {
 			srv.StartTLS()
 		} else {
 			srv.Start()
+			startFixtureIPC(t, dir, srv.Config.Handler)
 		}
 		t.Cleanup(srv.Close)
 		if err := os.MkdirAll(dir, 0o700); err != nil {

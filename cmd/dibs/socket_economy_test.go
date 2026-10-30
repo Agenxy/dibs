@@ -94,7 +94,7 @@ func newEconomyFixtureAtExecutable(
 	t *testing.T, sid, sock string, wrap func(http.Handler) http.Handler, executable string, identity ...economyIdentity,
 ) *economyFixture {
 	t.Helper()
-	dir := t.TempDir()
+	dir := cliIPCProfile(t)
 	f := &economyFixture{sid: sid, socket: sock}
 	f.lines = listenLines(t, sock)
 	box, err := ledger.LoadOrCreateKey(filepath.Join(dir, "key"))
@@ -153,8 +153,9 @@ func newEconomyFixtureAtExecutable(
 	if wrap != nil {
 		handler = wrap(handler)
 	}
-	f.srv = httptest.NewServer(handler)
-	t.Cleanup(func() { f.srv.Close(); cancel(); <-joined; _ = led.Close() })
+	srv := newLocalTestServer(t, dir, handler)
+	f.srv = srv.Server
+	t.Cleanup(func() { srv.Close(); cancel(); <-joined; _ = led.Close() })
 	if err := os.WriteFile(filepath.Join(dir, "local.secret"), bytes.Repeat([]byte("a"), 64), 0o600); err != nil {
 		t.Fatal(err)
 	}

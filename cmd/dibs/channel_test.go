@@ -106,7 +106,7 @@ func TestChannelBridgeHelper(t *testing.T) {
 // register the channel, and initialize carries the channel capability while
 // keeping the daemon's own instructions and tools.
 func TestChannelBridgeStaysOnTheHandshakeThatRegistersAChannel(t *testing.T) {
-	dir := t.TempDir()
+	dir := cliIPCProfile(t)
 	if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte(strings.Repeat("a", 64)), 0o600); err != nil {
 		t.Fatal(err)
 	}

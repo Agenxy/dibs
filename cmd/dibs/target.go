@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/boardconfig"
+	"github.com/agenxy/dibs/internal/localtransport"
 	"github.com/agenxy/dibs/internal/paths"
 	"github.com/agenxy/dibs/internal/supgang"
 	xport "github.com/agenxy/dibs/internal/transport"
@@ -132,6 +133,11 @@ func originIn(dir string) string {
 			// the pre-release review.
 			return strings.ToLower(scheme) + "://" + a
 		}
+	}
+	// A remote profile states its authenticated client transport separately
+	// from addr, whose daemon/listener syntax remains bare host:port.
+	if kind, err := clientTransportIn(dir); err == nil && kind == localtransport.HTTPS {
+		return schemeTLS + a
 	}
 	// ASK THE SHARED RESOLVER, which is what the daemon serves by.
 	//

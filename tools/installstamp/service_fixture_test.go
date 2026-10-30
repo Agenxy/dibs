@@ -131,6 +131,11 @@ import (
  "os/exec"
  "path/filepath"
  "strings"
+ "net/http"
+ "net/http/httputil"
+ "net/url"
+ "time"
+ "github.com/agenxy/dibs/internal/localtransport"
  "github.com/agenxy/dibs/internal/paths"
 )
 var executeAppServiceCommand = func(cmd *exec.Cmd) ([]byte,error) {
@@ -149,6 +154,12 @@ var executeAppServiceCommand = func(cmd *exec.Cmd) ([]byte,error) {
   for name,body:=range map[string]string{"local.secret":strings.Repeat("a",64),"node_id":"install-stamp-fixture","dibs.toml":"addr = '"+__ADDR__+"'\n"} {
    if err:=os.WriteFile(filepath.Join(selected.Dir,name),[]byte(body),0o600);err!=nil {return nil,err}
   }
+  // The production client authenticates this actual private Unix listener.
+  // Only the fixture daemon's handler is forwarded to the parent's test server.
+  ln,err:=localtransport.Listen(selected.Dir);if err!=nil {return nil,err}
+  target,err:=url.Parse("http://"+__ADDR__);if err!=nil {return nil,err}
+  srv:=&http.Server{Handler:httputil.NewSingleHostReverseProxy(target),ConnContext:localtransport.ConnContext,ReadHeaderTimeout:time.Second}
+  go func(){_=srv.Serve(ln)}()
   return []byte("{\"status\":\"enabled\"}"),nil
  default:return nil,fmt.Errorf("unexpected service mode %s",cmd.Args[1])
  }

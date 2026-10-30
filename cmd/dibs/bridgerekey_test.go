@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -43,7 +44,7 @@ import (
 // Drives the REAL loop over real pipes, because the claim is about what the
 // process does across a rotation, not about what a helper returns.
 func TestTheBridgeFollowsTheSecretWhenTheBoardIsRekeyed(t *testing.T) {
-	dir := t.TempDir()
+	dir := cliIPCProfile(t)
 	secretPath := filepath.Join(dir, "local.secret")
 	first := strings.Repeat("a", 64)
 	second := strings.Repeat("b", 64)
@@ -75,6 +76,7 @@ func TestTheBridgeFollowsTheSecretWhenTheBoardIsRekeyed(t *testing.T) {
 		}),
 	}
 	go func() { _ = srv.Serve(ln) }()
+	startFixtureIPC(t, dir, srv.Handler)
 	t.Cleanup(func() { _ = srv.Close() })
 	t.Setenv("DIBS_ADDR", "http://"+ln.Addr().String())
 
@@ -183,7 +185,7 @@ func TestTheBridgeFollowsTheBoardWhenItComesBackSomewhereElse(t *testing.T) {
 	upgradeGrace = 4 * time.Second
 	t.Cleanup(func() { upgradeGrace = restore })
 
-	dir := t.TempDir()
+	dir := cliIPCProfile(t)
 	secret := strings.Repeat("c", 64)
 	if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte(secret), 0o600); err != nil {
 		t.Fatal(err)
@@ -196,24 +198,17 @@ func TestTheBridgeFollowsTheBoardWhenItComesBackSomewhereElse(t *testing.T) {
 	writeAddr := func(where string) {
 		t.Helper()
 		if err := os.WriteFile(filepath.Join(dir, "dibs.toml"),
-			[]byte("addr = \""+where+"\"\ninsecure_plaintext = true\n"), 0o600); err != nil {
+			[]byte("addr = \""+strings.TrimPrefix(where, "https://")+"\"\nclient_transport = \"https\"\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
 
 	serve := func() (*http.Server, string) {
 		t.Helper()
-		ln, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			t.Fatal(err)
-		}
-		srv := &http.Server{
-			ReadHeaderTimeout: 5 * time.Second,
-			Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"ok":true}}` + "\n"))
-			}),
-		}
+		srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"ok":true}}` + "\n"))
+		}))
 		// NO KEEP-ALIVES, AND THIS IS THE TEST'S WHOLE RELIABILITY.
 		//
 		// This failed on CI and passed 25 times in a row locally, which is the
@@ -236,9 +231,11 @@ func TestTheBridgeFollowsTheBoardWhenItComesBackSomewhereElse(t *testing.T) {
 		// is somewhere else. What happens to an in-flight pooled connection is
 		// a different question with a different answer (op_id), and a test that
 		// covers it should say so in its name.
-		srv.SetKeepAlivesEnabled(false)
-		go func() { _ = srv.Serve(ln) }()
-		return srv, ln.Addr().String()
+		srv.Config.SetKeepAlivesEnabled(false)
+		srv.StartTLS()
+		t.Cleanup(srv.Close)
+		trustDiagnosticServer(t, dir, srv)
+		return srv.Config, srv.URL
 	}
 
 	first, whereFirst := serve()

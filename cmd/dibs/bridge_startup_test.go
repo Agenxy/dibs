@@ -24,6 +24,7 @@ import (
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/ledger"
+	"github.com/agenxy/dibs/internal/localtransport"
 	"github.com/agenxy/dibs/internal/mcp"
 	"github.com/agenxy/dibs/internal/paths"
 	"github.com/agenxy/dibs/internal/testport"
@@ -200,7 +201,7 @@ func TestBridgeStartupWaitIsBoundedWhenTheDaemonAcceptsButNeverAnswers(t *testin
 
 func lateBridgeStartup(t *testing.T, method string) {
 	t.Helper()
-	dir := t.TempDir()
+	dir := cliIPCProfile(t)
 	if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte(strings.Repeat("a", 64)), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -257,14 +258,14 @@ func lateBridgeStartup(t *testing.T, method string) {
 	}
 }
 
-func lateStartupServer(t *testing.T, dir, addr string) *http.Server {
+func lateStartupServer(t *testing.T, dir, addr string) *startupTestServer {
 	t.Helper()
 	eng := startupEngine(t, dir)
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return serveStartupDaemon(eng, ln)
+	return serveStartupDaemon(t, dir, eng, ln)
 }
 
 // startupEngine runs a real engine over a ledger in dir until the test ends.
@@ -287,22 +288,44 @@ func startupEngine(t *testing.T, dir string) *engine.Engine {
 
 // serveStartupDaemon serves the real MCP implementation on a listener the
 // caller already holds.
-func serveStartupDaemon(eng *engine.Engine, ln net.Listener) *http.Server {
-	srv := &http.Server{Handler: mcp.New(eng), ReadHeaderTimeout: time.Second}
+type startupTestServer struct {
+	*http.Server
+	ipc *http.Server
+}
+
+func (s *startupTestServer) Close() error {
+	if s.ipc != nil {
+		_ = s.ipc.Close()
+	}
+	return s.Server.Close()
+}
+
+func serveStartupDaemon(t *testing.T, dir string, eng *engine.Engine, ln net.Listener) *startupTestServer {
+	t.Helper()
+	handler := mcp.New(eng)
+	srv := &startupTestServer{Server: &http.Server{Handler: handler, ReadHeaderTimeout: time.Second}}
 	go func() { _ = srv.Serve(ln) }()
+	ipc, err := localtransport.Listen(dir)
+	if err != nil {
+		_ = srv.Close()
+		t.Fatal(err)
+	}
+	srv.ipc = &http.Server{Handler: handler, ReadHeaderTimeout: time.Second, ConnContext: localtransport.ConnContext}
+	go func() { _ = srv.ipc.Serve(ipc) }()
+	t.Cleanup(func() { _ = ipc.Close(); _ = srv.Close() })
 	return srv
 }
 
 // startupDaemon is lateStartupServer for a daemon that is up from the start:
 // it binds its own listener, so no address is ever released.
-func startupDaemon(t *testing.T, dir string) (*http.Server, string) {
+func startupDaemon(t *testing.T, dir string) (*startupTestServer, string) {
 	t.Helper()
 	eng := startupEngine(t, dir)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	return serveStartupDaemon(eng, ln), ln.Addr().String()
+	return serveStartupDaemon(t, dir, eng, ln), ln.Addr().String()
 }
 
 func assertStartupReply(t *testing.T, replies <-chan []byte, id int) map[string]any {

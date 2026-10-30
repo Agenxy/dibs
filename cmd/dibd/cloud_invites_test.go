@@ -530,7 +530,7 @@ const cloudBindCollisionMarker = "DIBS_TEST_BIND_ERRNO=EADDRINUSE"
 
 func cloudDaemonRunAttempt(t *testing.T, forceCollision bool) bool {
 	t.Helper()
-	dir := t.TempDir()
+	dir := privateDaemonFixtureDir(t)
 	privatePort := testport.Reserve(t, "tcp", "127.0.0.1:0")
 	publicPort := testport.Reserve(t, "tcp", "127.0.0.1:0")
 	private, public := privatePort.Addr, publicPort.Addr

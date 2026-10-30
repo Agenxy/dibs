@@ -56,6 +56,15 @@ func hostBridgeUnit() error {
 			"and that is the address `dibs mcp-config --board` printed beside DIBS_DIR")
 	}
 	env := map[string]string{"DIBS_ADDR": addr, "DIBS_DIR": dir}
+	kind, err := clientTransportIn(dir)
+	if err != nil {
+		return err
+	}
+	if kind != "https" {
+		return fmt.Errorf("a remote host bridge requires DIBS_TRANSPORT=https and a verified https:// board, " +
+			"including through an SSH forward")
+	}
+	env[clientTransportEnv] = string(kind)
 	for _, k := range []string{boardPeerEnv, "DIBS_HOST_ID"} {
 		if v := strings.TrimSpace(os.Getenv(k)); v != "" {
 			env[k] = v

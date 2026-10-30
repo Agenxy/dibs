@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -20,6 +19,8 @@ import (
 )
 
 func TestRelayHandlerReportsPostingAndFailureWithoutAnswering(t *testing.T) {
+	dir := cliIPCProfile(t)
+	t.Setenv("DIBS_DIR", dir)
 	var receipts []map[string]any
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/human/delivery", func(w http.ResponseWriter, r *http.Request) {
@@ -30,7 +31,7 @@ func TestRelayHandlerReportsPostingAndFailureWithoutAnswering(t *testing.T) {
 		receipts = append(receipts, receipt)
 		_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 	})
-	srv := httptest.NewServer(mux)
+	srv := newLocalTestServer(t, dir, mux)
 	defer srv.Close()
 	r := newRelay(srv.URL, relayState{Key: "relay-fixture", Node: "board-fixture"}, &fakeSigner{},
 		func(m humanask.Message) (humanask.Answer, error) {
@@ -91,7 +92,10 @@ type fakeBoard struct {
 	answers []map[string]any
 }
 
-func (b *fakeBoard) serve() *httptest.Server {
+func (b *fakeBoard) serve(t *testing.T) *localTestServer {
+	t.Helper()
+	dir := cliIPCProfile(t)
+	t.Setenv("DIBS_DIR", dir)
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/human/challenge", func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]string{"nonce": "n1", "node": b.node})
@@ -104,7 +108,7 @@ func (b *fakeBoard) serve() *httptest.Server {
 		b.mu.Unlock()
 		_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 	})
-	return httptest.NewServer(mux)
+	return newLocalTestServer(t, dir, mux)
 }
 
 func answerWith(a humanask.Answer) func(humanask.Message) (humanask.Answer, error) {
@@ -115,7 +119,7 @@ func answerWith(a humanask.Answer) func(humanask.Message) (humanask.Answer, erro
 // reason naming the effect; an ordinary answer rides the session.
 func TestTheRelaySignsApprovalsThatGrantSomething(t *testing.T) {
 	board := &fakeBoard{node: "node-a"}
-	srv := board.serve()
+	srv := board.serve(t)
 	defer srv.Close()
 	key := &fakeSigner{}
 	st := relayState{Key: "k1", Node: "node-a"}
@@ -153,7 +157,7 @@ func TestTheRelaySignsApprovalsThatGrantSomething(t *testing.T) {
 // enrolled with, and the relay will not sign for it.
 func TestTheRelayWillNotSignForAnotherBoard(t *testing.T) {
 	board := &fakeBoard{node: "impostor"}
-	srv := board.serve()
+	srv := board.serve(t)
 	defer srv.Close()
 	key := &fakeSigner{}
 	r := newRelay(srv.URL, relayState{Key: "k1", Node: "node-a"}, key,
@@ -169,7 +173,7 @@ func TestTheRelayWillNotSignForAnotherBoard(t *testing.T) {
 
 func TestTheRelaySignsMergeApprovalWithItsActualDirection(t *testing.T) {
 	board := &fakeBoard{node: "node-a"}
-	srv := board.serve()
+	srv := board.serve(t)
 	defer srv.Close()
 	key := &fakeSigner{}
 	var shown humanask.Message

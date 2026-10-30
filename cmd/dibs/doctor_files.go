@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/invites"
+	"github.com/agenxy/dibs/internal/localtransport"
 )
 
 // Ask the live daemon, not saved flags or a guessed public hostname. The
@@ -54,6 +55,7 @@ func checkPublicTLS(client *http.Client, secret string, ok func(string), warn fu
 	if status.Mode == "loopback-forward" {
 		ok("loopback-forward invitation listener bound at " + status.Addr + "; far-side origin " +
 			status.PublicOrigin + "; operator forward reachability is unmeasured")
+		warn("invitation token can be captured at a squatted plaintext forward port", invitationForwardHint)
 		return // the advertised loopback is on the far side, not this machine
 	}
 	if status.PublicOrigin == "" {
@@ -62,7 +64,15 @@ func checkPublicTLS(client *http.Client, secret string, ok func(string), warn fu
 	if status.Mode != "" {
 		ok("public invitation listener " + status.Mode + " bound at " + status.Addr)
 	}
-	probePublicTLS(client, status.PublicOrigin, ok, warn)
+	// This measurement targets the public TLS endpoint and carries no local,
+	// invitation or admin credential. The private client must stay on IPC.
+	probeClient := &http.Client{
+		Timeout:       5 * time.Second,
+		Transport:     &http.Transport{TLSClientConfig: &tls.Config{RootCAs: trustedPool(), MinVersion: tls.VersionTLS13}},
+		CheckRedirect: localtransport.RefuseRedirect,
+	}
+	defer probeClient.CloseIdleConnections()
+	probePublicTLS(probeClient, status.PublicOrigin, ok, warn)
 }
 
 func checkGuestTLS(client *http.Client, secret string, ok func(string), warn func(string, string)) bool {

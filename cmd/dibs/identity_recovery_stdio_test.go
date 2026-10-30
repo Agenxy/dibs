@@ -61,7 +61,7 @@ func newRecoveryStdio(t *testing.T) *recoveryStdio {
 
 func newRecoveryStdioWithPin(t *testing.T, pin string) *recoveryStdio {
 	t.Helper()
-	dir := t.TempDir()
+	dir := cliIPCProfile(t)
 	box, err := ledger.LoadOrCreateKey(filepath.Join(dir, "key"))
 	if err != nil {
 		t.Fatal(err)
@@ -76,7 +76,7 @@ func newRecoveryStdioWithPin(t *testing.T, pin string) *recoveryStdio {
 	go func() { eng.Run(ctx); close(done) }()
 	f := &recoveryStdio{dir: dir, eng: eng, thread: recoveryFixtureThread}
 	server := mcp.New(eng)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := newLocalTestServer(t, dir, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, err := io.ReadAll(r.Body)
 		if err != nil {
 			t.Error(err)
@@ -102,7 +102,7 @@ func newRecoveryStdioWithPin(t *testing.T, pin string) *recoveryStdio {
 		}
 		server.ServeHTTP(w, r)
 	}))
-	f.srv = srv
+	f.srv = srv.Server
 	t.Cleanup(func() {
 		srv.Close()
 		cancel()

@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -22,14 +21,14 @@ import (
 func TestHostBridgeNativeDeliveryDoesNotQueue(t *testing.T) {
 	for _, mode := range []string{"idle", "active", "disconnect", "no-owner", "cancelled"} {
 		t.Run(mode, func(t *testing.T) {
-			dir := t.TempDir()
+			dir := cliIPCProfile(t)
 			t.Setenv("DIBS_DIR", dir)
 			if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte("fixture"), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			s := testcodexipc.Start(t, mode, nil)
 			reports := make(chan engine.WakeResult, 1)
-			hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			hub := newLocalTestServer(t, dir, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Header.Get("X-Dibs-Local") != "fixture" {
 					t.Error("missing board credential")
 					w.WriteHeader(401)

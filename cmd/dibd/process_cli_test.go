@@ -50,8 +50,8 @@ func TestProcessCLIThroughPublicDaemon(t *testing.T) {
 	if out, err := exec.Command("go", "build", "-o", bin, "../dibs").CombinedOutput(); err != nil {
 		t.Fatalf("build CLI: %v %s", err, out)
 	}
-	testexec.PrepareExecutable(t, exec.Command(bin, "--version"))
-	dir := t.TempDir()
+	testexec.PrepareExecutable(t, exec.Command(bin, "--help"))
+	dir := privateDaemonFixtureDir(t)
 	if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte("process-cli-local-secret"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestProcessCLIThroughPublicDaemon(t *testing.T) {
 			t.Fatal("actual daemon did not start its listeners")
 		}
 	}
-	guestDir := t.TempDir()
+	guestDir := privateDaemonFixtureDir(t)
 	cert := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: proxy.Certificate().Raw})
 	if err := os.WriteFile(filepath.Join(guestDir, "trusted-certs.pem"), cert, 0o600); err != nil {
 		t.Fatal(err)

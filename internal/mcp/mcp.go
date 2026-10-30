@@ -208,7 +208,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// id as a matter of evidence. Everything past this point is a tool call that
 	// knows nothing about HTTP and should not learn: the fact travels on the
 	// context, the way clientInfo travels from the handshake.
-	r = r.WithContext(withTransportHost(r.Context(), isLoopback(r.RemoteAddr), s.eng.HostID()))
+	r = stampLocalConnection(r, req.Params, s.eng.HostID())
 	r = r.WithContext(context.WithValue(r.Context(), requestEraKey{}, requestEra(r, req.Params)))
 	inviteCtx, inviteErr := prepareInvitedRequest(r.Context(), &req)
 	if inviteErr != nil {

@@ -17,9 +17,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/agenxy/dibs/internal/boardconfig"
+	"github.com/agenxy/dibs/internal/localtransport"
 	"github.com/agenxy/dibs/internal/paths"
 	"github.com/agenxy/dibs/internal/supgang"
 	"github.com/agenxy/dibs/internal/transport"
@@ -126,20 +128,10 @@ func daemonClient(timeout time.Duration) *http.Client {
 }
 
 func daemonClientIn(dir string, timeout time.Duration) *http.Client {
-	c := &http.Client{Timeout: timeout}
+	c := &http.Client{Timeout: timeout, CheckRedirect: localtransport.RefuseRedirect}
 	rt := http.DefaultTransport
-	var pool *x509.CertPool
-	if dir == "" {
-		pool = trustedPool()
-	} else {
-		pool = trustedPoolIn(dir)
-	}
-	if pool != nil {
-		rt = &http.Transport{TLSClientConfig: &tls.Config{
-			RootCAs:    pool,
-			MinVersion: tls.VersionTLS12,
-		}}
-	}
+	// Trust is read only after one request selects and verifies its private
+	// profile. A constructor's earlier selection can already be stale then.
 	// HERE, because here is the one place every credential-bearing request
 	// passes through.
 	//
@@ -165,21 +157,32 @@ func daemonClientIn(dir string, timeout time.Duration) *http.Client {
 // A RoundTripper rather than a helper, so it cannot be skipped by building the
 // request differently: whatever assembles the URL, this is what dials it.
 type guardedTransport struct {
-	next http.RoundTripper
-	dir  string // nonempty binds a bridge attempt to one directory snapshot
+	next       http.RoundTripper
+	dir        string // nonempty binds a bridge attempt to one directory snapshot
+	mu         sync.Mutex
+	secure     http.RoundTripper
+	secureDir  string
+	secureKind localtransport.Kind
 }
 
 func (g *guardedTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	// A dibs.toml the daemon will not start on means the board this was meant
 	// for is not running, so the endpoint reached now is something else.
-	var configErr error
-	if g.dir != "" {
-		configErr = configReadable(g.dir)
-	} else {
-		configErr = checkConfigReadable()
+	dir := g.dir
+	if dir == "" {
+		selected, err := paths.SelectDir(false)
+		if err != nil {
+			return nil, err
+		}
+		dir = selected.Dir
 	}
-	if configErr != nil {
-		return nil, configErr
+	if localtransport.Supported() {
+		if err := localtransport.CheckDir(dir, false); err != nil {
+			return nil, err
+		}
+	}
+	if err := configReadable(dir); err != nil {
+		return nil, err
 	}
 	// AND THE AUTHORITY MUST BE THE HOST IT LOOKS LIKE. Everything before an
 	// `@` is userinfo: `DIBS_ADDR=http://trusted.example@evil.example:4777`
@@ -192,19 +195,11 @@ func (g *guardedTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 			"so the request would go to %q instead. Name the host on its own",
 			r.URL.Host, r.URL.User.Username(), r.URL.Hostname())
 	}
-	if g.dir != "" && r.Header.Get("X-Dibs-Local") != "" {
-		secret, err := localSecretIn(g.dir)
-		if err != nil {
-			return nil, err
-		}
-		if secret == "" {
-			return nil, errors.New("selected board has no local secret; start dibd once first")
-		}
-		r.Header.Set("X-Dibs-Local", secret)
-	} else {
-		refreshLocalSecret(r)
+	clone := r.Clone(r.Context())
+	if err := refreshLocalSecret(clone, dir); err != nil {
+		return nil, err
 	}
-	return g.next.RoundTrip(r)
+	return g.secureRoundTrip(clone, dir)
 }
 
 // refreshLocalSecret replaces the credential on an outgoing request with the
@@ -233,16 +228,21 @@ func (g *guardedTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 // The per-call plugins get this by spawning a bridge per call; this one earns
 // it here.
 //
-// A read that fails leaves the request alone. The value the caller set is
-// then the best thing known, and a request that 401s says more than one this
-// layer refused to send.
-func refreshLocalSecret(r *http.Request) {
+// A failed read now refuses the exchange: stale credentials are not a safe
+// substitute for a profile whose private credential cannot be verified.
+func refreshLocalSecret(r *http.Request, dir string) error {
 	if r.Header.Get("X-Dibs-Local") == "" {
-		return // this caller is not authenticating, which is their decision
+		return nil // this caller is not authenticating, which is their decision
 	}
-	if now, err := localSecret(); err == nil && now != "" {
-		r.Header.Set("X-Dibs-Local", now)
+	now, err := localSecretIn(dir)
+	if err != nil {
+		return err
 	}
+	if now == "" {
+		return errors.New("selected board has no local secret; start dibd once first")
+	}
+	r.Header.Set("X-Dibs-Local", now)
+	return nil
 }
 
 // trustCmd implements `dibs trust <host:port> [--pin <hex>]`.

@@ -6,7 +6,6 @@ package main
 import (
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,6 +24,9 @@ func TestLinuxDoctorMissingServiceDependsOnInstallAndServing(t *testing.T) {
 			}
 			t.Run(name, func(t *testing.T) {
 				f := newSystemdInstallFixture(t)
+				// The production credential-bearing doctor uses native IPC. Keep
+				// the profile short enough for the kernel's Unix socket limit.
+				f.dir = cliIPCProfile(t)
 				if !packaged {
 					bin := filepath.Join(f.home, "go", "bin")
 					if err := os.MkdirAll(bin, 0o700); err != nil {
@@ -43,7 +45,7 @@ func TestLinuxDoctorMissingServiceDependsOnInstallAndServing(t *testing.T) {
 				}
 				cmd := f.command(t.Context(), "doctor", "--json")
 				if serving {
-					server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					server := newLocalTestServer(t, f.dir, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 						w.Header().Set("Content-Type", "application/json")
 						body := map[string]any{}
 						if r.URL.Path == "/mcp" {

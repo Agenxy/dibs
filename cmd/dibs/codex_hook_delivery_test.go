@@ -5,8 +5,11 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -37,6 +40,8 @@ func TestDoctorInstalledCodexHookTrustIsAProblemThroughCommand(t *testing.T) {
 			_, _ = io.WriteString(w, `{"jsonrpc":"2.0","id":1,"result":{"tools":[]}}`)
 		case "/api/board":
 			_, _ = io.WriteString(w, `{"node":"doctor-fixture","host_id":"doctor-fixture","agents":[],"claims":[]}`)
+		case "/api/client-transports":
+			_, _ = io.WriteString(w, `{"scope":"live_connections","clients":[{"id":17,"transport":"plaintext-tcp","mcp":true,"user_agent":"dibs/old (codex)","bridge_pid":4242,"bridge_started_at":"2026-10-29T00:00:00Z"}]}`)
 		default:
 			http.NotFound(w, r)
 		}
@@ -50,7 +55,7 @@ func TestDoctorInstalledCodexHookTrustIsAProblemThroughCommand(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			home := t.TempDir()
 			ch := filepath.Join(home, ".codex")
-			dir := filepath.Join(home, ".dibs")
+			dir := cliIPCProfile(t)
 			for _, path := range []string{ch, dir} {
 				if err := os.MkdirAll(path, 0o700); err != nil {
 					t.Fatal(err)
@@ -66,6 +71,7 @@ func TestDoctorInstalledCodexHookTrustIsAProblemThroughCommand(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte("fixture-secret"), 0o600); err != nil {
 				t.Fatal(err)
 			}
+			startFixtureIPC(t, dir, board.Config.Handler)
 			cmd := exec.CommandContext(t.Context(), exe, "-test.run=^TestDoctorCodexTrustCommandProcess$")
 			cmd.Env = append(os.Environ(), "DIBS_TEST_HOOK_DOCTOR=1", "DIBS_TEST_PLUGIN_EXECUTABLE="+codex,
 				"DIBS_TEST_PLUGIN_HOME="+ch,
@@ -101,6 +107,18 @@ func TestDoctorInstalledCodexHookTrustIsAProblemThroughCommand(t *testing.T) {
 			if found != want {
 				t.Errorf("hook refusal found=%v, want %v; checks=%+v", found, want, report.Checks)
 			}
+			transportWarn := false
+			for _, check := range report.Checks {
+				if !strings.Contains(check.What, "plaintext-tcp") {
+					continue
+				}
+				transportWarn = check.Level == "warning" && strings.Contains(check.What, "reported bridge pid 4242") &&
+					strings.Contains(check.What, "dibs/old (codex)") && strings.Contains(check.Fix, "restart") &&
+					strings.Contains(check.Fix, "harness")
+			}
+			if !transportWarn {
+				t.Errorf("real doctor command omitted the actionable plaintext bridge warning: %+v", report.Checks)
+			}
 			if mode != "disabled-plugin" {
 				if _, err := os.Stat(filepath.Join(ch, "hooks-listed")); err != nil {
 					t.Fatal("setup: command never asked the fixture for hook trust:", err)
@@ -120,19 +138,18 @@ func TestDoctorCodexTrustCommandProcess(t *testing.T) {
 	if err := os.Setenv("CODEX_HOME", os.Getenv("DIBS_TEST_PLUGIN_HOME")); err != nil {
 		t.Fatal(err)
 	}
-	http.DefaultTransport = hookDoctorNoExternalTransport{http.DefaultTransport}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		if address != os.Getenv("DIBS_ADDR") {
+			return nil, errors.New("fixture: no external reads")
+		}
+		return (&net.Dialer{}).DialContext(ctx, network, address)
+	}
+	http.DefaultTransport = transport
 	os.Args = []string{"dibs", "doctor", "--json"}
 	main()
 	os.Exit(0)
-}
-
-type hookDoctorNoExternalTransport struct{ base http.RoundTripper }
-
-func (x hookDoctorNoExternalTransport) RoundTrip(r *http.Request) (*http.Response, error) {
-	if r.URL.Host == os.Getenv("DIBS_ADDR") {
-		return x.base.RoundTrip(r)
-	}
-	return &http.Response{StatusCode: http.StatusNotFound, Body: io.NopCloser(strings.NewReader("fixture: no external reads")), Header: make(http.Header), Request: r}, nil
 }
 
 func TestActualCurrentDaemonUpgradeReportsHookTrust(t *testing.T) {

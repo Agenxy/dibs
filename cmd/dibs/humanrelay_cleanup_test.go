@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -79,7 +78,7 @@ func TestActualRelayStreamRemovesThroughItsNativeHelper(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, driver, "-test.run=^TestActualRelayStreamRemovesThroughItsNativeHelper$") // #nosec G204 -- private test fixture
-	cmd.Env = append(os.Environ(), "DIBS_TEST_RELAY_CLEANUP_DRIVER=1", "DIBS_DIR="+t.TempDir())
+	cmd.Env = append(os.Environ(), "DIBS_TEST_RELAY_CLEANUP_DRIVER=1", "DIBS_DIR="+cliIPCProfile(t))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("relay stream/native wiring: %v\n%s", err, out)
 	}
@@ -109,7 +108,7 @@ func testRelayCleanupStream(t *testing.T) {
 		receipts <- result
 		_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 	})
-	srv := httptest.NewServer(mux)
+	srv := newLocalTestServer(t, os.Getenv("DIBS_DIR"), mux)
 	defer srv.Close()
 	r := newRelay(srv.URL, relayState{Node: "board-A"}, &fakeSigner{}, func(humanask.Message) (humanask.Answer, error) {
 		t.Error("cleanup was shown as a human question")

@@ -5,7 +5,6 @@ package main
 
 import (
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -22,7 +21,9 @@ import (
 // replaced reads the same.
 func TestTheDaemonClientNamesItselfOnTheWire(t *testing.T) {
 	var got string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	dir := cliIPCProfile(t)
+	t.Setenv("DIBS_DIR", dir)
+	srv := newLocalTestServer(t, dir, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got = r.Header.Get("User-Agent")
 		w.WriteHeader(http.StatusOK)
 	}))

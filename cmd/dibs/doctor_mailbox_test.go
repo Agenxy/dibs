@@ -5,7 +5,6 @@ package main
 
 import (
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,12 +13,12 @@ import (
 )
 
 func TestDoctorReportsMailboxCapacityFromBoard(t *testing.T) {
-	dir := t.TempDir()
+	dir := cliIPCProfile(t)
 	if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte("fixture-secret\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	var reads atomic.Int32
-	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	daemon := newLocalTestServer(t, dir, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/api/board" {
 			reads.Add(1)

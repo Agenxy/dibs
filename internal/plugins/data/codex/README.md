@@ -130,9 +130,17 @@ long-lived unattended one, so a forked identity costs most exactly there.
 
 ```toml
 [mcp_servers.dibs]
-url = "http://127.0.0.1:4777/mcp"
+url = "https://<verified-board-host>:<tls-port>/mcp"
 http_headers = { "X-Dibs-Local" = "<contents of <data-dir>/local.secret>" }
 ```
+
+The HTTPS server's certificate must be verified by the client. Plaintext
+loopback HTTP configurations are unsafe and are no longer emitted: another OS
+user can bind that port while the daemon is stopped. Use the stdio bridge for
+local IPC, or explicitly configured HTTPS, including through an SSH forward.
+Windows local plaintext credentials fail closed. After upgrading, refresh old
+bridges through the harness and use `dibs doctor` to account for every expected
+connected client's transport; dormant/unobserved clients remain unqualified.
 
 The secret rotates when the data dir is recreated; a stale value gives a 401
 with no other symptom, so re-copy it if Codex suddenly sees zero tools.

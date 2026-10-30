@@ -29,6 +29,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- After upgrading, restart every harness and run `dibs doctor`; every expected
+  bridge must use local IPC or verified HTTPS before a shared-host rollout.
+  Serving startup can tighten an owned directory such as `0755` to `0700`,
+  logging the change and leaving a doctor notice. Writable or foreign-owned
+  directories, symlinks, exposed keys and unsafe ACLs refuse with repair/review
+  guidance. Run staged `dibs doctor --ipc-preflight --json` before restarting.
+  Windows local plaintext clients now refuse with HTTPS guidance. The existing
+  labs-broker plaintext forward still works but warns that another OS user can
+  capture its invitation token; migrate it to verified HTTPS through the forward.
+
 - Release binaries are built with Go 1.27.3, and source builds now need it
   (`go.mod` still declares `go 1.26.0`, so language semantics are unchanged).
   The release toolchain moves to its current upstream releases: GoReleaser
@@ -71,6 +81,26 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   first start; manual setups get a warning with configure-or-start advice.
   The archive gate checks the generated cask through Homebrew's real loader
   and records its steps without executing them.
+
+- Local macOS/Linux CLI, bridge and plugin traffic authenticates the daemon
+  through its owner-private Unix socket before sending credentials or file
+  bytes. Unsafe or missing IPC refuses with a corrective hint; no plaintext
+  TCP fallback is added. Remote profiles require verified HTTPS, including
+  through SSH, and Windows local plaintext credentials fail closed. Doctor
+  lists currently connected client transports. Old bridge images remain
+  exposed until a safe unbuffered re-exec point or a harness refresh; this is
+  not bounded to one request (20 buffered old-image calls were measured), and
+  a dormant stream has no time bound. Shared-host rollout requires accounting
+  for every expected bridge on IPC or verified HTTPS. The invitation-only
+  labs-broker plaintext forward remains supported with a token-exposure and
+  HTTPS migration warning; browser plaintext TCP is outside IPC protection.
+
+  Staged `doctor --ipc-preflight` reports directory modes, ownership and ACLs
+  before cutover without contacting the old daemon. Serving startup safely
+  tightens owned, non-writable-to-others directories with a warning and doctor
+  notice; unsafe directories, exposed keys and unknown ACL grants require
+  explicit review. Fresh K7 image `/data` starts private, while existing volumes
+  are preflighted in their own namespace. ACLs are never removed automatically.
 
 - Linux service configuration is repeatable across package reinstalls. Units
   use a stable package-manager binary link and defined executable search paths,

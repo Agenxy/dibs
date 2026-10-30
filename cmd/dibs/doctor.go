@@ -52,13 +52,20 @@ func doctor(args []string) error {
 	verbose := fs.Bool("verbose", false, "also say what was checked and found healthy")
 	fs.BoolVar(verbose, "v", false, "shorthand for --verbose")
 	asJSON := fs.Bool("json", false, jsonHelp)
+	ipcPreflight := fs.Bool("ipc-preflight", false,
+		"check local IPC directory ownership, modes and credential-file metadata without contacting a daemon")
 	requestFolders := fs.Bool("request-folder-access", false, "ask the local daemon to attempt ungranted "+
 		"protected-folder reads once; requested is not granted")
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
-	d := &diagnosis{json: *asJSON, requestFolders: *requestFolders || (!*asJSON && interactive())}
-	d.checkCodexPluginVersion()
+	d := &diagnosis{
+		json: *asJSON, ipcPreflight: *ipcPreflight,
+		requestFolders: *requestFolders || (!*asJSON && interactive()),
+	}
+	if !*ipcPreflight {
+		d.checkCodexPluginVersion()
+	}
 	err := d.run(*verbose)
 	if *asJSON {
 		// One document however far the run got: the early returns inside run
@@ -104,6 +111,7 @@ type diagnosis struct {
 	dataDir        string
 	requestFolders bool
 	json           bool
+	ipcPreflight   bool
 	checks         []doctorCheck
 	probs, warns   int
 }
@@ -146,6 +154,9 @@ func (d *diagnosis) run(verbose bool) error {
 	d.dataDir = dir
 	d.note("data directory source: " + selected.Source)
 	d.serviceDirectoryNote(selected)
+	if !d.checkIPCDirectory(dir) || d.ipcPreflight {
+		return earlyDoctorResult(d.probs, d.warns)
+	}
 	checkOrphanedAppService(d.note, d.warn)
 
 	// Through the shared vocabulary rather than raw escape codes. The inline
@@ -156,28 +167,7 @@ func (d *diagnosis) run(verbose bool) error {
 
 	d.prose(ui.Bold("dibs doctor") + ui.Dim(": data dir "+ui.Path(dir)) + "\n")
 
-	// Doctor exists to answer "why is it behaving like that", and reading a
-	// directory the current version would not have created is high on the list.
-	if inherited != "" {
-		// One command, not a recipe.
-		//
-		// This used to hand back `mv`, plus a second sentence about re-running
-		// `dibs configure --service` because a unit pins the old path as a
-		// literal argument. Both are right and the ORDER is load-bearing: the
-		// daemon has to be down for the move, and a unit rewritten before the
-		// move points at a directory that does not exist yet. An operator
-		// following two sentences in the wrong order ends up with a service that
-		// starts against a path that is gone, which is how this hint's own
-		// advice broke a machine.
-		fix := "nothing is wrong and nothing is required. To adopt the current name, " +
-			"`dibs upgrade --adopt-dir`, which stops the daemon, moves the directory, " +
-			"repoints the service and starts it again in that order"
-		if unit := unitPinning(inherited); unit != "" {
-			fix += " (" + unit + " pins the old path, so a bare `mv` would leave the " +
-				"service starting against a directory that is gone)"
-		}
-		warn("data directory is "+inherited+", named by an older version", fix)
-	}
+	d.checkInheritedDirectory(inherited)
 
 	// ── the daemon ───────────────────────────────────────────────────────
 	secretPath := filepath.Join(dir, "local.secret")
@@ -228,6 +218,7 @@ func (d *diagnosis) run(verbose bool) error {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	checkServiceBinary(ok, warn, bad, resp.StatusCode == http.StatusOK)
+	checkClientTransports(client, resp.StatusCode == http.StatusOK, ok, warn)
 	if resp.StatusCode != http.StatusOK {
 		problem, hint := daemonRefusal(resp)
 		bad(problem, hint)

@@ -6,7 +6,6 @@ package main
 import (
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,7 +16,7 @@ import (
 )
 
 func TestPersistentBridgeRefusesBrokenSelectionAndRecoversAfterRepair(t *testing.T) {
-	home := t.TempDir()
+	home := cliIPCProfile(t)
 	t.Setenv("HOME", home)
 	t.Setenv("DIBS_DIR", "")
 	t.Setenv("DIBS_ADDR", "")
@@ -26,7 +25,7 @@ func TestPersistentBridgeRefusesBrokenSelectionAndRecoversAfterRepair(t *testing
 		t.Fatal(err)
 	}
 	var calls atomic.Int64
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := newLocalTestServer(t, dir, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 		var request struct {
 			ID any `json:"id"`

@@ -27,7 +27,7 @@ func TestDaemonBootsWithRetiredCooldownAndWarnsOnEveryStart(t *testing.T) {
 		}
 		return
 	}
-	dir := t.TempDir()
+	dir := privateDaemonFixtureDir(t)
 	path := filepath.Join(dir, "dibs.toml")
 	if err := os.WriteFile(path, []byte("[wake.exec.codex]\nargv = [\"codex\", \"queue\"]\ncooldown = \"90s\"\n"), 0o600); err != nil {
 		t.Fatal(err)

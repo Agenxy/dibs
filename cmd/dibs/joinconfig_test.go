@@ -91,7 +91,7 @@ func TestJoinConfigNamesTheStepTheAddressCallsFor(t *testing.T) {
 		t.Error("a directly reachable board was told to open an ssh forward")
 	}
 
-	loop, err := captureStdout(t, func() error { return printJoinConfig("127.0.0.1:4777") })
+	loop, err := captureStdout(t, func() error { return printJoinConfig("https://127.0.0.1:4777") })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,8 +99,8 @@ func TestJoinConfigNamesTheStepTheAddressCallsFor(t *testing.T) {
 		t.Errorf("a loopback address is the near end of a forward and nothing said how "+
 			"to open it:\n%s", loop)
 	}
-	if strings.Contains(loop, "dibs trust") {
-		t.Error("a loopback board was told to record a certificate it does not serve")
+	if !strings.Contains(loop, "dibs trust") || !strings.Contains(loop, `"DIBS_TRANSPORT": "https"`) {
+		t.Error("an HTTPS forward lost its certificate trust or explicit transport")
 	}
 
 	// The hub's own data directory cannot be inferred from here: a hub serving
@@ -207,7 +207,7 @@ func TestAddressesInShellCommandsAreQuoted(t *testing.T) {
 	// free here, the far port is whatever the hub listens on. Printing them as
 	// the same number brings the tunnel up pointed at nothing, and ssh reports
 	// success.
-	loop, err := captureStdout(t, func() error { return printJoinConfig("127.0.0.1:5777") })
+	loop, err := captureStdout(t, func() error { return printJoinConfig("https://127.0.0.1:5777") })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,7 +248,7 @@ func TestConfigNamesANonDefaultDaemon(t *testing.T) {
 	// so it would have passed unchanged if the JSON and TOML blocks stopped
 	// using either of them: it proved the helpers work, which was never the
 	// thing at risk. Raised by the pre-release review.
-	dir := t.TempDir()
+	dir := cliIPCProfile(t)
 	if err := os.WriteFile(filepath.Join(dir, "local.secret"),
 		[]byte(strings.Repeat("a", 64)), 0o600); err != nil {
 		t.Fatal(err)
@@ -336,23 +336,21 @@ func TestConfigNamesANonDefaultDaemon(t *testing.T) {
 		t.Fatal("the address never appeared at all, so this proves nothing")
 	}
 
-	// And a plaintext board off loopback must not be told to record a
-	// certificate it does not serve.
+	// Plaintext remote coordination is now refused before any configuration
+	// is printed; an SSH tunnel does not authenticate the local listener.
 	joined, err := captureStdout(t, func() error {
 		return printJoinConfig("http://hub.example:4777")
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(joined, "dibs trust") {
-		t.Errorf("a board that names plaintext was told to trust a certificate:\n%s", joined)
+	if err == nil || !strings.Contains(err.Error(), "verified HTTPS") || joined != "" {
+		t.Errorf("plaintext remote board produced a usable recipe: %q %v", joined, err)
 	}
 
-	// And the default daemon keeps the config it had.
+	// The default daemon states its local IPC policy explicitly, without
+	// acquiring an unrelated address or profile override.
 	t.Setenv("DIBS_ADDR", "")
 	t.Setenv("DIBS_DIR", "")
-	if env := nonDefaultEnv("http"); len(env) > 0 {
-		t.Errorf("the default daemon grew configuration it does not need: %v", env)
+	if env := nonDefaultEnv("http"); len(env) != 1 || env[clientTransportEnv] != "local" {
+		t.Errorf("the default daemon lost its explicit local policy or grew unrelated overrides: %v", env)
 	}
 }
 
@@ -556,6 +554,13 @@ func TestTheOrdinaryRecipeReadsTheAddress(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		if !c.servesTLS {
+			if !strings.Contains(out, "verified HTTPS") || !strings.Contains(out, "HTTPS SSH forward") ||
+				strings.Contains(out, `"DIBS_ADDR": "http://`) {
+				t.Errorf("%s: plaintext remote recipe omitted authentication migration: %s", c.name, out)
+			}
+			continue
+		}
 		if got := strings.Contains(out, "ssh -N -L"); got != c.wantTunnel {
 			t.Errorf("%s (%s): forward printed = %v, want %v", c.name, c.addr, got, c.wantTunnel)
 		}
@@ -576,7 +581,7 @@ func TestTheOrdinaryRecipeReadsTheAddress(t *testing.T) {
 // internet got a confident answer about the wrong daemon from the command the
 // wizard had just sent them to. Found by the pre-release review.
 func TestTheConfigFollowsTheWizardsChoice(t *testing.T) {
-	dir := t.TempDir()
+	dir := cliIPCProfile(t)
 	if err := os.WriteFile(filepath.Join(dir, "dibs.toml"),
 		[]byte("addr = \"0.0.0.0:4777\"\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -615,7 +620,7 @@ func TestTheConfigFollowsTheWizardsChoice(t *testing.T) {
 // alone printed an http:// url under the heading "this daemon serves HTTPS",
 // with instructions to trust a certificate it is not presenting.
 func TestAStaleCertificateDoesNotClaimTLS(t *testing.T) {
-	dir := t.TempDir()
+	dir := cliIPCProfile(t)
 	for name, body := range map[string]string{
 		"local.secret": strings.Repeat("a", 64),
 		"tls-cert.pem": "-- not a real certificate --",
@@ -675,7 +680,7 @@ func TestTheRecipeNamesTheOtherMachinesAddress(t *testing.T) {
 // already been fixed and this had not: the wildcard fixture used elsewhere
 // misses it, because a wildcard bind is still reachable over loopback.
 func TestEveryBridgeBlockCarriesTheConfiguredAddress(t *testing.T) {
-	dir := t.TempDir()
+	dir := cliIPCProfile(t)
 	if err := os.WriteFile(filepath.Join(dir, "dibs.toml"),
 		[]byte("addr = \"192.168.50.10:4777\"\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -753,7 +758,7 @@ func TestABoardAddressThatCannotWorkIsRefused(t *testing.T) {
 // config the CLI gave them and wonders why nothing connects, with the actual
 // fault in a file neither of them mentioned.
 func TestAMalformedConfigIsNotSilentlyIgnored(t *testing.T) {
-	dir := t.TempDir()
+	dir := cliIPCProfile(t)
 	if err := os.WriteFile(filepath.Join(dir, "dibs.toml"),
 		[]byte("addr = \"unterminated\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -775,7 +780,7 @@ func TestAMalformedConfigIsNotSilentlyIgnored(t *testing.T) {
 	}
 
 	// No config file at all is a different thing and must still work.
-	clean := t.TempDir()
+	clean := cliIPCProfile(t)
 	if err := os.WriteFile(filepath.Join(clean, "local.secret"),
 		[]byte(strings.Repeat("a", 64)), 0o600); err != nil {
 		t.Fatal(err)
@@ -819,7 +824,7 @@ func TestABoardAddressCannotSteerTheCredentialDirectory(t *testing.T) {
 // printing an https url and instructions to record a certificate the daemon is
 // not presenting.
 func TestConfiguredPlaintextOutranksALeftBehindCertificate(t *testing.T) {
-	dir := t.TempDir()
+	dir := cliIPCProfile(t)
 	for name, body := range map[string]string{
 		"local.secret": strings.Repeat("a", 64),
 		"tls-cert.pem": "-- stale --",
@@ -836,9 +841,14 @@ func TestConfiguredPlaintextOutranksALeftBehindCertificate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(out, "serves HTTPS") || strings.Contains(out, "https://") {
+	if strings.Contains(out, "serves HTTPS") || strings.Contains(out, filepath.Join(dir, "tls-cert.pem")) ||
+		strings.Contains(out, `"url": "https://192.168.50.10:4777`) {
 		t.Errorf("a daemon configured for plaintext was described as serving HTTPS "+
 			"because a certificate file was left in its directory:\n%s", out)
+	}
+	if !strings.Contains(out, `DIBS_ADDR = "http://192.168.50.10:4777"`) ||
+		!strings.Contains(out, `DIBS_TRANSPORT = "local"`) {
+		t.Errorf("local IPC config lost the actual browser address or its transport: %s", out)
 	}
 }
 
@@ -848,7 +858,7 @@ func TestConfiguredPlaintextOutranksALeftBehindCertificate(t *testing.T) {
 // `adrr = "192.168.1.5:4777"` parses as valid TOML. The daemon refuses it; this
 // printed a confident configuration for 127.0.0.1:4777.
 func TestAConfigTheDaemonWouldRefuseIsRefusedHere(t *testing.T) {
-	dir := t.TempDir()
+	dir := cliIPCProfile(t)
 	for name, body := range map[string]string{
 		"local.secret": strings.Repeat("a", 64),
 		"dibs.toml":    "adrr = \"192.168.50.10:4777\"\n",
@@ -948,7 +958,7 @@ func TestTheCLIAgreesWithTheDaemonAboutTransport(t *testing.T) {
 // Checking only the table left `[match] typo_threshold = 0.9` fine here while
 // dibd exits 1 on it: the round-fifteen failure preserved for every table.
 func TestAnUnknownNestedKeyIsRefused(t *testing.T) {
-	dir := t.TempDir()
+	dir := cliIPCProfile(t)
 	if err := os.WriteFile(filepath.Join(dir, "local.secret"),
 		[]byte(strings.Repeat("a", 64)), 0o600); err != nil {
 		t.Fatal(err)
@@ -1152,7 +1162,7 @@ func realPair(t *testing.T) (certPath, keyPath string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dir := t.TempDir()
+	dir := cliIPCProfile(t)
 	certPath = filepath.Join(dir, "cert.pem")
 	keyPath = filepath.Join(dir, "key.pem")
 	if err := os.WriteFile(certPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o644); err != nil {
@@ -1207,8 +1217,15 @@ func TestAWildcardBindIsNotMistakenForLoopback(t *testing.T) {
 // does. A per-caller version of this test would only ever cover the callers
 // somebody thought of, which is the defect itself.
 func TestNoRequestCarriesCredentialsToAHiddenAuthority(t *testing.T) {
-	dir := t.TempDir()
+	dir := cliIPCProfile(t)
 	t.Setenv("DIBS_DIR", dir)
+	t.Setenv("DIBS_TRANSPORT", "local")
+	called := make(chan struct{}, 1)
+	srv := newLocalTestServer(t, dir, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		called <- struct{}{}
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Setenv("DIBS_ADDR", srv.URL)
 
 	req, err := http.NewRequest(http.MethodGet, "http://trusted.example@evil.example:4777/api/board", nil)
 	if err != nil {
@@ -1231,7 +1248,7 @@ func TestNoRequestCarriesCredentialsToAHiddenAuthority(t *testing.T) {
 
 	// And an ordinary address still goes through, so this cannot pass by
 	// refusing everything.
-	ok, err := http.NewRequest(http.MethodGet, "http://127.0.0.1:1/api/board", nil)
+	ok, err := http.NewRequest(http.MethodGet, srv.URL+"/api/board", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1239,8 +1256,13 @@ func TestNoRequestCarriesCredentialsToAHiddenAuthority(t *testing.T) {
 	if okResp != nil {
 		_ = okResp.Body.Close()
 	}
-	if err != nil && strings.Contains(err.Error(), "refusing to send") {
-		t.Errorf("an ordinary loopback address was refused as a hidden authority: %v", err)
+	if err != nil {
+		t.Fatalf("ordinary local IPC request was refused: %v", err)
+	}
+	select {
+	case <-called:
+	default:
+		t.Fatal("positive control never reached the authenticated local transport")
 	}
 }
 

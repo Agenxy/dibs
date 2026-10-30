@@ -21,15 +21,24 @@ import (
 )
 
 // awaitEnv points `dibs await` at addr with a local secret it can read.
-func awaitEnv(t *testing.T, addr string) {
+func awaitEnv(t *testing.T, addr string) string {
 	t.Helper()
-	dir := t.TempDir()
+	dir := cliIPCProfile(t)
+	awaitEnvIn(t, dir, addr)
+	return dir
+}
+
+func awaitEnvIn(t *testing.T, dir, addr string) {
+	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, "local.secret"),
 		[]byte(strings.Repeat("a", 64)), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("DIBS_DIR", dir)
-	t.Setenv("DIBS_ADDR", "http://"+addr)
+	if !strings.Contains(addr, "://") {
+		addr = "http://" + addr
+	}
+	t.Setenv("DIBS_ADDR", addr)
 	t.Setenv("DIBS_TOKEN", "agent-token")
 	restore := awaitReconnectFor
 	t.Cleanup(func() { awaitReconnectFor = restore })
@@ -70,7 +79,7 @@ func awaitReply(w http.ResponseWriter, payload map[string]any) {
 // reason the surrender path gives: the stake differs.
 func TestAwaitRidesThroughADaemonRestart(t *testing.T) {
 	var calls atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// The first two requests die mid-flight, the way a daemon going down
 		// for a restart drops them: the connection closes with no response.
 		if calls.Add(1) <= 2 {
@@ -89,7 +98,8 @@ func TestAwaitRidesThroughADaemonRestart(t *testing.T) {
 		})
 	}))
 	defer srv.Close()
-	awaitEnv(t, srv.Listener.Addr().String())
+	dir := awaitEnv(t, srv.URL)
+	trustDiagnosticServer(t, dir, srv)
 
 	err := await([]string{"-since", "5", "-timeout", "10s"})
 	if err != nil {
@@ -131,11 +141,12 @@ func TestAwaitSaysTheDaemonIsGoneWithItsOwnExitCode(t *testing.T) {
 
 // And a timeout is still exit 1, unchanged, so nothing that relies on it breaks.
 func TestAwaitTimeoutIsStillExitOne(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		awaitReply(w, map[string]any{"events": []any{}, "serial": 5})
 	}))
 	defer srv.Close()
-	awaitEnv(t, srv.Listener.Addr().String())
+	dir := awaitEnv(t, srv.URL)
+	trustDiagnosticServer(t, dir, srv)
 
 	err := await([]string{"-since", "5", "-timeout", "200ms"})
 	if err == nil {
@@ -158,7 +169,7 @@ func TestAwaitTimeoutIsStillExitOne(t *testing.T) {
 // gave up. Re-resolving only when a call got no answer costs nothing on the
 // happy path, which is the rule AGENTS.md gives any long lived process.
 func TestAwaitFollowsADaemonThatCameBackElsewhere(t *testing.T) {
-	moved := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	moved := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		awaitReply(w, map[string]any{
 			"events": []any{map[string]any{"type": "message.sent", "serial": 9}},
 			"serial": 9,
@@ -166,9 +177,9 @@ func TestAwaitFollowsADaemonThatCameBackElsewhere(t *testing.T) {
 	}))
 	defer moved.Close()
 	var wentAway atomic.Bool
-	gone := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	gone := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// The daemon goes down mid-call, and is next found somewhere else.
-		_ = os.Setenv("DIBS_ADDR", "http://"+moved.Listener.Addr().String())
+		_ = os.Setenv("DIBS_ADDR", moved.URL)
 		wentAway.Store(true)
 		if hj, ok := w.(http.Hijacker); ok {
 			c, _, _ := hj.Hijack()
@@ -176,7 +187,9 @@ func TestAwaitFollowsADaemonThatCameBackElsewhere(t *testing.T) {
 		}
 	}))
 	defer gone.Close()
-	awaitEnv(t, gone.Listener.Addr().String())
+	dir := awaitEnv(t, gone.URL)
+	trustDiagnosticServer(t, dir, gone)
+	trustDiagnosticServer(t, dir, moved)
 
 	if err := await([]string{"-since", "5", "-timeout", "10s"}); err != nil {
 		t.Fatalf("await did not follow the daemon to its new address: %v", err)

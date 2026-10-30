@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/localtransport"
 	"github.com/agenxy/dibs/internal/transfer"
 	xport "github.com/agenxy/dibs/internal/transport"
 )
@@ -29,11 +30,14 @@ func requestTransferOrigin(r *http.Request) string {
 	if r.TLS != nil {
 		scheme = "https"
 	}
+	if localtransport.IsLocal(r.Context()) && r.Header.Get("X-Dibs-IPC-Scheme") == "https" {
+		scheme = "https"
+	}
 	u, err := url.Parse(scheme + "://" + r.Host)
 	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Path != "" {
 		return ""
 	}
-	if r.TLS == nil {
+	if r.TLS == nil && !localtransport.IsLocal(r.Context()) {
 		if !xport.IsLoopback(r.RemoteAddr) || !xport.IsLoopback(u.Host) {
 			return "" // plaintext descriptors are a same-machine loopback extension only
 		}

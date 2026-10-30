@@ -30,13 +30,100 @@ file → the default.**
 |---|---|---|
 | `name` | *(none)* | A hostname for this board, such as `dibs` or `board.lab`. [Remap](https://github.com/Agenxy/remap), the Agenxy name plane, routes it to the daemon (`remap set <name> http://127.0.0.1:4777/`; `dibs configure` offers to do this when Remap is installed), and the daemon accepts it as its own origin so the board works at `http://<name>/`. `dibs web` prints that link beside the address, and `dibs doctor` says when the name is set and Remap does not route it. |
 | `addr` | `127.0.0.1:4777` | What the daemon listens on. Set a LAN or tailnet address to serve agents on other machines; TLS is then arranged automatically and each machine must `dibs trust` the certificate once. Also `-addr`, `DIBS_ADDR`. |
+| `client_transport` | `local` for a local profile; an explicitly named HTTPS address selects `https` when unstated | Which server first-party clients authenticate: `local` uses `<data dir>/dibd.sock`; `https` requires verified HTTPS to a remote board. Also `DIBS_TRANSPORT`. `configure`, `mcp-config` and host-bridge units carry this choice. Socket failure never selects TCP. A legacy plaintext SSH-forward profile must migrate to an end-to-end HTTPS forward with the board's trusted CA. |
 | `tls_cert` | *(auto)* | An explicit certificate, when you would rather supply one than have Dibs manage its own. |
 | `tls_key` | *(auto)* | Its key. Both or neither. |
 | `insecure_plaintext` | `false` | Serve a non-loopback address without TLS. Only for a network you already trust end to end; the name is the warning. |
 
 ```toml
 addr = "100.72.14.3:4777"    # a tailnet address: agents on four machines, one board
+client_transport = "local"  # this machine's clients use its private IPC socket
 ```
+
+On macOS/Linux the serving data directory belongs to the current OS user with
+mode `0700`, and credential files are private regular files. On serving startup,
+an owned, non-symlink directory such as `0755`, `0750` or `0711` can be tightened
+through its open handle if it has no group/other write access, unsafe ACL grant,
+or exposed key/secret. The daemon logs one warning with the path and old/new
+modes; doctor reports the timestamped change until the next clean check.
+Writable or foreign-owned directories, final-path symlinks and exposed credential
+files refuse with literal, shell-quoted repair or review commands. ACLs are never
+deleted automatically. A Unix socket pathname that exceeds the kernel limit
+requires a shorter private data-directory path. Windows local plaintext
+credentials are refused; choose verified HTTPS there.
+Local profiles require a nonempty absolute directory path. A root client
+addressing another user's profile is refused before dialling with a
+`run without sudo` corrective; use that board's OS account.
+
+Ancestors must also be owned by this user or root and not writable by other
+users, except for trusted sticky directories such as root-owned `/tmp`. A
+`0700` final directory under a replaceable parent does not protect credential
+paths from another user renaming that directory during startup.
+
+On macOS, descriptor ACL inspection supplements mode bits, including inherited
+grants. Deny-only ACLs remain intact. A potentially unsafe allow entry whose
+principal cannot be established from the kernel metadata is refused for review;
+this includes owner grants on filesystems that report no owner UUID. The hint
+prints `ls -le` and leaves any `chmod -N` decision to the operator. Root-profile
+search grants and mutable config/CA files are checked too. Linux POSIX ACL named
+entries are capped by the mask represented by the group-mode bits; the native
+second-user CI guard checks both a zero mask and an exposed named-user grant.
+See the Linux [ACL/permission-bit correspondence](https://man7.org/linux/man-pages/man5/acl.5.html).
+
+For a joined remote profile, use `client_transport = "https"` (or
+`DIBS_TRANSPORT=https`) and an `https://` address. If using SSH, forward the
+hub's TLS listener, trust that hub's CA in this profile, and use
+`https://127.0.0.1:<local-port>`. Forwarding plain HTTP is not enough: another
+OS user can bind the local forwarded port while it is down. `dibs doctor`
+reports live client transports, with unobserved/dormant clients explicitly
+unqualified. See [SECURITY.md](../SECURITY.md) for the old-image cutover window.
+
+### Before the IPC cutover
+
+Run the staged candidate CLI on **each machine**, while its old daemon is still
+running, with the same `DIBS_DIR` or service pin:
+
+```text
+/path/to/staged/dibs doctor --ipc-preflight --json
+```
+
+This checks filesystem metadata and protected configuration without reading
+`local.secret` or private-key bytes, or contacting a daemon. It reports the actual mode/UID/GID and whether serving startup can
+tighten it or must refuse. It changes no directory permissions. The candidate
+daemon's replay `-check` is also read-only; the existing upgrade preflight runs
+that door before stopping the old daemon. An unsafe directory or exposed key
+therefore refuses the cutover with the corrective beside it. For a manually
+installed archive or cask, run the staged preflight before the explicit service
+restart. Then account for every expected bridge on IPC or verified HTTPS; this
+offline filesystem check does not qualify a dormant bridge.
+
+The assessment includes the ledger key, local secret, stored TLS and guest-CA
+keys, ACME cache files, and any external `tls_key` named by the configuration.
+Startup checks the configured key before tightening the directory. TLS key
+loading validates and reads the same no-follow descriptor on macOS/Linux.
+
+Data-directory creation audit (published tags `v0.0.0` through `v0.0.16` and the
+current source; all modes below are creation requests, not changes to an existing
+directory):
+
+| Path into a real installation | Creation and existing-directory behavior |
+|---|---|
+| `dibd` / historical `lanesd` startup | `MkdirAll(0700)` throughout the released history. An existing `0755`, `0775` or foreign-owned directory was left unchanged. |
+| Interactive and non-interactive `dibs configure` / historical `lanes configure` | The same `0700` request, preserving existing metadata. |
+| Linux systemd and historical native service setup | Board roots use `0700` when created; systemd/LaunchAgent **unit parents** use `0750` and are not the board root. Existing directories and tuned units retain their metadata. |
+| `Dibs.app` / SMAppService registration | `appservice.go` creates the selected board with `0700`. Its pin directory is separate. Neither creation call repairs existing modes or ownership. |
+| Native notification broker and delivery receipts | The broker can create the passwd home's `~/.dibs` with `0700`, independently of `DIBS_DIR`; delivery receipts create the selected root and private invocation children with `0700`. |
+| Trust/invitation and derived-view writers | Trust setup and invitation storage use `0700`. Blob-store parents, queued-wake receipts and app-return metadata can recursively create selected-profile parents with `0700`; existing metadata is preserved. Monitor/project token directories and the run registry are separate state, also requesting `0700`. |
+| Homebrew/source install and hub recipe | They enter configure/service/daemon paths above. A pre-created, copied, restored or manually provisioned hub directory may retain `0755`, group-write access or another owner. |
+| Joined host | The printed remote recipe does not create a daemon or board; the operator provisions its local credential/CA profile. That existing profile may have permissive modes or different ownership and needs the same local preflight. |
+| Invitation-only guest | No local daemon/board directory is created. Guest nonce and executable caches are separate. A guest that actually hosts `dibd` follows the corresponding daemon/image row. |
+| K7 kassette image and volume | Published image layers from `v0.0.14` through `v0.0.16` explicitly put root-owned `/data` at `0755` and declare it as a volume. New layers use `0700`. A runtime may seed or mount a pre-existing volume with its own metadata; a header test does not qualify that mount. Run the preflight **inside that guest's UID/mount namespace** before restart. |
+
+No constructor listed above changes an existing owner. A setgid parent or volume
+provisioner can also supply a different group. Group identity alone is harmless
+when group permissions are zero; foreign UID, group/other write, unsafe ACLs and
+exposed key files require operator review. Do not apply an in-guest numeric
+`chown` to an unrelated host path without establishing that mount's UID mapping.
 
 ---
 
@@ -76,6 +163,16 @@ resolved listener mode, bind and origin. A configured forward is not proof
 that it is running or reachable from another machine. See [NETWORK.md
 section 9](NETWORK.md#9-agents-in-the-cloud) for the operator's forward and CLI
 workflow. No private board routes or board credentials are published.
+
+This existing invitation-only mode is a documented residual exposure, not a
+local IPC route. In particular, the laptop-to-Solis labs-broker `ssh -R` path
+can expose its invited agent bearer token to another OS user squatting the
+far-side loopback port. It remains supported in this release, and startup,
+client and doctor diagnostics give the migration warning. To remove that
+exposure, serve an HTTPS invitation endpoint (`host`, `url` behind a TLS proxy,
+or the qualified guest TLS mode), trust its issuer CA on the client and forward
+the TLS port unchanged through SSH. Do not merely rename an HTTP forward to
+`https://`: `[public].forward` remains the legacy HTTP-only mode.
 
 ---
 

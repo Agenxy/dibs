@@ -46,7 +46,7 @@ func TestScorerAdvisoryThroughDaemonBoot(t *testing.T) {
 		return
 	}
 	repos := []string{advisoryBootRepo(t), advisoryBootRepo(t), advisoryBootRepo(t)}
-	dir := t.TempDir()
+	dir := privateDaemonFixtureDir(t)
 	seedAdvisoryBoard(t, dir, repos[:2])
 	var previous int
 	for _, step := range []struct {
@@ -124,7 +124,7 @@ func TestScorerAdvisoryThroughDaemonBoot(t *testing.T) {
 	})
 	t.Run("different calibrated bars with unchanged flags are silent", func(t *testing.T) {
 		autoRepos := []string{advisoryBootRepo(t), advisoryBootRepo(t), advisoryBootRepo(t)}
-		autoDir := t.TempDir()
+		autoDir := privateDaemonFixtureDir(t)
 		for _, repo := range autoRepos {
 			advisoryCalibrationCommit(t, repo, "nectarine.go", "nectarine")
 			advisoryCalibrationCommit(t, repo, "quasar.go", "quasar")

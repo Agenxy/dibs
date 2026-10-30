@@ -181,15 +181,6 @@ func fakeUpgradeCosign(args []string) int {
 type upgradeRecordTransport struct{}
 
 func (upgradeRecordTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if os.Getenv("DIBS_TEST_UPGRADE_BARE") == "1" && req.URL.Host == "127.0.0.1:49998" {
-		body := `{"serial":42,"agents":[]}`
-		if req.Method == http.MethodPost && req.URL.Path == "/mcp" {
-			body = `{"jsonrpc":"2.0","result":{"serverInfo":{"name":"dibs","version":"0.0.9"}}}`
-		} else if req.Method != http.MethodGet || req.URL.Path != "/api/board" {
-			return nil, fmt.Errorf("unexpected bare upgrade fixture request: %s %s", req.Method, req.URL)
-		}
-		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body))}, nil
-	}
 	if req.Method != http.MethodGet || req.Header.Get("Authorization") != "" {
 		return nil, fmt.Errorf("unexpected credential-bearing fixture request")
 	}
@@ -233,8 +224,30 @@ func TestCLIUpgradeRecordProcess(t *testing.T) {
 			t.Fatal("bare fixture registry setup:", err)
 		}
 		releaseRegistry = release
+		dir := os.Getenv("DIBS_DIR")
+		if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte("upgrade-fixture"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		startFixtureIPC(t, dir, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if req.Header.Get("X-Dibs-Local") != "upgrade-fixture" {
+				t.Error("upgrade fixture lost its native credential")
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			body := `{"serial":42,"agents":[]}`
+			if req.Method == http.MethodPost && req.URL.Path == "/mcp" {
+				body = `{"jsonrpc":"2.0","result":{"serverInfo":{"name":"dibs","version":"0.0.9"}}}`
+			} else if req.Method != http.MethodGet || req.URL.Path != "/api/board" {
+				t.Errorf("unexpected bare upgrade fixture request: %s %s", req.Method, req.URL)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, body)
+		}))
+	} else {
+		http.DefaultTransport = upgradeRecordTransport{}
 	}
-	http.DefaultTransport = upgradeRecordTransport{}
 	for i, arg := range os.Args {
 		if arg == "--" {
 			os.Args = append([]string{"dibs"}, os.Args[i+1:]...)

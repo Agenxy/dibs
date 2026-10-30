@@ -29,7 +29,7 @@ func TestUpgradeFetchReportsInstalledNotificationPermission(t *testing.T) {
 		for _, mode := range []string{"not-determined", "denied", "old", "malformed", "authorized"} {
 			t.Run(route+"/"+mode, func(t *testing.T) {
 				t.Parallel()
-				root := t.TempDir()
+				root := cliIPCProfile(t)
 				bin := filepath.Join(root, "bin")
 				app := filepath.Join(bin, "Dibs.app")
 				macos := filepath.Join(app, "Contents", "MacOS")

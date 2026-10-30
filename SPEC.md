@@ -321,12 +321,24 @@ you can measure is never improved by asking.
 
 **Threat model (two rings, both stated):**
 
-- **Other OS users on the machine**: kept out by the **local access secret**,
-  `~/.dibs/local.secret` (0600, CSPRNG), required on every HTTP request
-  (`X-Dibs-Local` header; cookie for the web board). Same-user agents and the CLI
-  read it from disk; other users cannot. `dibs mcp-config` prints the host MCP
-  config including the header. This is a *transport gate* (proves same-user), not an
-  identity.
+- **Other OS users on the machine**: upgraded local macOS/Linux clients first
+  authenticate the server using `<dir>/dibd.sock`: a `0700` owner-private data
+  directory, a `0600` owner socket and the connected peer's kernel UID, all
+  checked before sending HTTP bytes. The **local access secret**,
+  `<dir>/local.secret` (0600, CSPRNG), remains required by the same auth gate.
+  It alone cannot authenticate a TCP server: another user can bind a loopback
+  port while the daemon is down. First-party clients never fall back from IPC
+  to plaintext TCP. Remote coordination uses explicitly selected verified
+  HTTPS. Windows local plaintext credentials fail closed; no Unix permission
+  guarantee is claimed there. See SECURITY.md for browser, invitation-forward
+  and old-image limits. This transport gate is not an agent identity.
+  A staged `doctor --ipc-preflight` and the daemon's replay check inspect the
+  directory without changing its mode or contacting the old daemon. Serving
+  startup may tighten a verified owned directory with no group/other write
+  access to 0700 through its handle, after credential and ACL checks; a warning
+  and a derived timestamped doctor notice report it. Writable/foreign/symlinked
+  directories, exposed key files and unknown unsafe ACL grants refuse with
+  literal corrective/review commands. ACLs are never removed automatically.
 - **Same-user agents**: isolated from each other's agents/mailboxes by **agent tokens**, but only against *accidental* interference. A malicious same-UID process can read
   the key and the secret; that boundary requires OS isolation and is explicitly out
   of scope. Dibs' promise at this ring: honest agents cannot forge, snoop, or
@@ -1995,7 +2007,12 @@ on ledger lines, `unreachable` in the status enum.
 
 ## 16. Transports
 
-Local (v1): MCP streamable HTTP over loopback TCP. QUIC rejected on loopback merits.
+Local: the same MCP streamable HTTP handlers over owner-authenticated Unix IPC
+on macOS/Linux, with the secret still required. The TCP listener remains for the
+browser and compatibility, but upgraded first-party local clients do not send
+credentials, bodies or file tickets to it. Remote first-party coordination is
+verified HTTPS. Explicit target kinds travel with the selected profile; legacy
+plaintext SSH-forward profiles refuse with an HTTPS migration hint.
 UI (v1): SSE down + POST up; WebSocket/WebTransport rejected for this traffic shape;
 SSE inherits HTTP/3 transparently if the stack beneath changes.
 
@@ -2024,8 +2041,10 @@ guarantee (notably exclusive claims) trivially true. Bind a reachable address wi
 **Dibs secures itself: no flags, no third-party dependency.** The transport is chosen
 for the operator, not by them:
 
-- **loopback** (default) → plaintext; nothing else can reach it, so certificates would be
-  ceremony.
+- **local first-party client** → owner-authenticated IPC, not the browser TCP
+  listener. A loopback TCP address alone does not authenticate its server.
+- **loopback browser listener** (default) → plaintext, retaining the existing
+  session/page-key model and its squatted-listener limitation in SECURITY.md.
 - **any reachable address** → **HTTPS**, with a certificate generated into the data dir on
   first run. Serving a remote address in cleartext is never the default.
 

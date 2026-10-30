@@ -31,7 +31,7 @@ func TestGuestIssuerRecoveryThroughActualDaemonStartup(t *testing.T) {
 		t.Fatalf("build daemon: %v %s", err, out)
 	}
 	testexec.PrepareExecutable(t, exec.Command(bin, "-h"))
-	dir := t.TempDir()
+	dir := privateDaemonFixtureDir(t)
 	hash, err := adminpw.Hash("fixture-operator")
 	if err != nil {
 		t.Fatal(err)

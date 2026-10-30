@@ -6,7 +6,6 @@ package main
 import (
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -15,7 +14,8 @@ import (
 func TestBoardCLIUsesEvidenceProvenance(t *testing.T) {
 	for _, source := range []string{"boot_grace", "authenticated_contact"} {
 		t.Run(source, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			dir := cliIPCProfile(t)
+			server := newLocalTestServer(t, dir, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path != "/api/board" {
 					http.NotFound(w, r)
 					return
@@ -29,7 +29,7 @@ func TestBoardCLIUsesEvidenceProvenance(t *testing.T) {
 				})
 			}))
 			defer server.Close()
-			t.Setenv("DIBS_DIR", t.TempDir())
+			t.Setenv("DIBS_DIR", dir)
 			t.Setenv("DIBS_ADDR", strings.TrimPrefix(server.URL, "http://"))
 			out, err := captureStdout(t, func() error { return board(nil) })
 			if err != nil {

@@ -7,7 +7,6 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -48,7 +47,7 @@ func TestFailedAncestryRepairsSurfaceWithoutAnotherModelCall(t *testing.T) {
 
 func surfaceStartupContract(t *testing.T, held, repair bool) {
 	t.Helper()
-	dir := t.TempDir()
+	dir := cliIPCProfile(t)
 	t.Setenv("DIBS_DIR", dir)
 	t.Setenv("DIBS_HOST_ID", "startup")
 	t.Setenv("DIBS_NOTIFY", "off")
@@ -79,7 +78,7 @@ func surfaceStartupContract(t *testing.T, held, repair bool) {
 	if err := paths.LockExclusive(f, false); err != nil {
 		t.Fatal(err)
 	}
-	srv := httptest.NewServer(mcp.New(eng))
+	srv := newLocalTestServer(t, dir, mcp.New(eng))
 	defer srv.Close()
 	cmd := exec.Command(app, "-test.run=^TestReconnectAppFixtureHelper$")
 	bridgeBinary := os.Args[0]

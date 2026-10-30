@@ -33,7 +33,12 @@ func TestTaskInstallKeepsTheComputedStampBeforeReplacingAnything(t *testing.T) {
 	head := strings.TrimSpace(installCommand(t, ctx, root, nil, "git", "rev-parse", "HEAD"))
 	// The installed executable is resolved by the kernel. Keep every fixture
 	// identity in that same spelling (/private/var rather than /var on macOS).
-	scratch, err := filepath.EvalSymlinks(t.TempDir())
+	private, err := os.MkdirTemp("", "dibs-stamp-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(private) })
+	scratch, err := filepath.EvalSymlinks(private)
 	if err != nil {
 		t.Fatal(err)
 	}

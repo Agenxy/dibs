@@ -60,7 +60,7 @@ func layer(binary []byte) ([]byte, error) {
 	for _, d := range []struct {
 		name string
 		mode int64
-	}{{"data/", 0o755}, {"tmp/", 0o1777}, {"usr/", 0o755}, {"usr/local/", 0o755}, {"usr/local/bin/", 0o755}} {
+	}{{"data/", 0o700}, {"tmp/", 0o1777}, {"usr/", 0o755}, {"usr/local/", 0o755}, {"usr/local/bin/", 0o755}} {
 		h := &tar.Header{Typeflag: tar.TypeDir, Name: d.name, Mode: d.mode, ModTime: epoch, Format: tar.FormatPAX}
 		if err := tw.WriteHeader(h); err != nil {
 			return nil, err

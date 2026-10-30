@@ -165,6 +165,9 @@ func readConfiguredAddr(dir string) (string, error) {
 // than the default one, and is empty when this IS the default one.
 func nonDefaultEnv(scheme string) map[string]string {
 	env := map[string]string{}
+	if kind, err := clientTransportIn(paths.DataDir()); err == nil {
+		env[clientTransportEnv] = string(kind)
+	}
 	// VERBATIM, not addr().
 	//
 	// addr() strips an explicit scheme, which is the one thing DIBS_ADDR carries

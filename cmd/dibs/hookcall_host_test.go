@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,7 +30,7 @@ import (
 // claim. The stdio bridge stamps the host on every call; so does this.
 // Round seventeen of the pre-release review.
 func TestAHookCallCarriesItsHost(t *testing.T) {
-	dir := t.TempDir()
+	dir := cliIPCProfile(t)
 	if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte("s3cret\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +40,7 @@ func TestAHookCallCarriesItsHost(t *testing.T) {
 	t.Cleanup(func() { hostIDOnce, hostIDValue = sync.Once{}, "" })
 
 	var got map[string]any
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := newLocalTestServer(t, dir, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(body, &got)
 		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{\"agent\":\"x\"}"}]}}`))
@@ -71,7 +70,7 @@ func TestAHookCallCarriesItsHost(t *testing.T) {
 // bridge had recorded as `/private/tmp/repo`, and reported success while
 // delivering nothing. Round twenty-two of the pre-release review.
 func TestAHookCallSpellsPathsAsTheBridgeDoes(t *testing.T) {
-	dir := t.TempDir()
+	dir := cliIPCProfile(t)
 	if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte("s3cret\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +91,7 @@ func TestAHookCallSpellsPathsAsTheBridgeDoes(t *testing.T) {
 	hostIDOnce, hostIDValue = sync.Once{}, ""
 	t.Cleanup(func() { hostIDOnce, hostIDValue = sync.Once{}, "" })
 	var got map[string]any
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := newLocalTestServer(t, dir, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(body, &got)
 		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{}"}]}}`))

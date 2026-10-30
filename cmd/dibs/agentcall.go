@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/localtransport"
 )
 
 // agentToolCall is the shared transport for process registration, mail and
@@ -44,10 +45,16 @@ func agentToolCall(tool string, args map[string]any, out any) error {
 		req.Header.Set("X-Dibs-Local", secret)
 	}
 	client := daemonClient(30 * time.Second)
+	if os.Getenv("DIBS_INVITE") != "" {
+		client = invitationClient(30 * time.Second)
+	}
 	defer client.CloseIdleConnections()
 	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
 	resp, err := client.Do(req)
 	if err != nil {
+		if hint, ok := localtransport.RefusalHint(err); ok {
+			return fmt.Errorf("MCP connection refused: %s; outcome unconfirmed", hint)
+		}
 		return errors.New("MCP connection failed; check address, certificate trust and credentials; outcome unconfirmed")
 	}
 	defer func() { _ = resp.Body.Close() }()

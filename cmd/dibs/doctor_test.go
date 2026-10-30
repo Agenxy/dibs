@@ -10,7 +10,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,7 +28,7 @@ func TestDoctorFailsWhenTheInstallCannotBeChecked(t *testing.T) {
 	})
 
 	t.Run("daemon unreachable", func(t *testing.T) {
-		dir := t.TempDir()
+		dir := cliIPCProfile(t)
 		if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte("secret\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -43,11 +42,11 @@ func TestDoctorFailsWhenTheInstallCannotBeChecked(t *testing.T) {
 	})
 
 	t.Run("daemon rejects the local secret", func(t *testing.T) {
-		dir := t.TempDir()
+		dir := cliIPCProfile(t)
 		if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte("stale-secret\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		daemon := newLocalTestServer(t, dir, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusUnauthorized)
 		}))
 		defer daemon.Close()
@@ -451,11 +450,11 @@ func TestDoctorStillChecksTheLedgerWhenTheDaemonIsDown(t *testing.T) {
 // that was never running. CONFIGURATION.md promises doctor reports what is
 // actually in effect. Found by the pre-release review.
 func TestDoctorUsesTheAddressConfigureWrote(t *testing.T) {
-	dir := t.TempDir()
+	dir := cliIPCProfile(t)
 	if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte("secret\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	daemon := newLocalTestServer(t, dir, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("content-type", "application/json")
 		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"tools":[]}}`))
 	}))

@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"encoding/pem"
 	"io"
 	"log"
 	"net"
@@ -48,7 +49,7 @@ func TestGuestInviteExportThroughActualCLI(t *testing.T) {
 	if out, err := exec.Command("go", "build", "-o", bin, "../dibs").CombinedOutput(); err != nil {
 		t.Fatalf("build CLI: %v %s", err, out)
 	}
-	testexec.PrepareExecutable(t, exec.Command(bin, "--version"))
+	testexec.PrepareExecutable(t, exec.Command(bin, "--help"))
 	dir := t.TempDir()
 	box, err := ledger.LoadOrCreateKey(filepath.Join(dir, "key"))
 	if err != nil {
@@ -85,7 +86,7 @@ func TestGuestInviteExportThroughActualCLI(t *testing.T) {
 	var endpointMu sync.RWMutex
 	var hits atomic.Int64
 	var swapName atomic.Bool
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		endpointMu.RLock()
 		defer endpointMu.RUnlock()
 		if r.Header.Get("X-Dibs-Local") != strings.Repeat("a", 64) {
@@ -141,6 +142,13 @@ func TestGuestInviteExportThroughActualCLI(t *testing.T) {
 	}))
 	defer server.Close()
 	cliDir := t.TempDir()
+	if err := os.Chmod(cliDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw})
+	if err := os.WriteFile(filepath.Join(cliDir, "trusted-certs.pem"), caPEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(cliDir, "local.secret"), []byte(strings.Repeat("a", 64)), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +158,7 @@ func TestGuestInviteExportThroughActualCLI(t *testing.T) {
 		defer stop()
 		cmd := exec.CommandContext(ctx, bin, append([]string{"invite"}, args...)...)
 		cmd.Env = append(nativeProbeEnv(cliDir, "", ""), "DIBS_DIR="+cliDir, "DIBS_ADDR="+server.URL,
-			"DIBS_TOKEN="+issuer["token"].(string))
+			"DIBS_TOKEN="+issuer["token"].(string), "DIBS_TRANSPORT=https")
 		return cmd.CombinedOutput()
 	}
 	private := t.TempDir()

@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -177,7 +176,8 @@ func TestRelayCarriesThePostingHelpersActualSettings(t *testing.T) {
 	}
 	if os.Getenv("DIBS_SETTINGS_RELAY_DRIVER") == "1" {
 		t.Setenv("DIBS_NOTIFY", "")
-		t.Setenv("DIBS_DIR", t.TempDir())
+		dir := cliIPCProfile(t)
+		t.Setenv("DIBS_DIR", dir)
 		t.Setenv("DIBS_SETTINGS_HELPER_MODE", "relay")
 		marker := filepath.Join(t.TempDir(), "helper-executed")
 		t.Setenv("DIBS_SETTINGS_HELPER_MARKER", marker)
@@ -197,7 +197,7 @@ func TestRelayCarriesThePostingHelpersActualSettings(t *testing.T) {
 			mu.Unlock()
 			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 		})
-		srv := httptest.NewServer(mux)
+		srv := newLocalTestServer(t, dir, mux)
 		defer srv.Close()
 		r := newRelay(srv.URL, relayState{Key: "fixture-key", Node: "fixture-node"}, &fakeSigner{}, humanask.Ask)
 		r.session = "fixture-session"

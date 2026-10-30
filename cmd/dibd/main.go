@@ -41,6 +41,7 @@ import (
 	"github.com/agenxy/dibs/internal/invites"
 	"github.com/agenxy/dibs/internal/ledger"
 	"github.com/agenxy/dibs/internal/liveness"
+	"github.com/agenxy/dibs/internal/localtransport"
 	"github.com/agenxy/dibs/internal/logs"
 	"github.com/agenxy/dibs/internal/mcp"
 	"github.com/agenxy/dibs/internal/notify"
@@ -182,13 +183,42 @@ func run() error {
 		}
 	}
 
-	if err := os.MkdirAll(*dir, 0o700); err != nil {
+	if !*check {
+		if err := os.MkdirAll(*dir, 0o700); err != nil {
+			return err
+		}
+	}
+	if localtransport.Supported() {
+		// Validate the directory and config authority before reading config.
+		// Upgrade's replay preflight never performs the subsequent tightening.
+		if _, err := localtransport.InspectDirectory(*dir); err != nil {
+			return err
+		}
+	}
+	cfg, err := loadConfigWithPublicFlags(*dir, opts, flag.CommandLine)
+	if err != nil {
+		return fmt.Errorf("reading %s/dibs.toml: %w", *dir, err)
+	}
+	if err := checkPrivateTLSKey(cfg.TLSKey); err != nil {
 		return err
+	}
+	var directoryTightening *localtransport.DirectoryTightening
+	if localtransport.Supported() && !*check {
+		prepared, err := localtransport.PrepareDirectory(*dir, time.Now())
+		if err != nil {
+			return err
+		}
+		directoryTightening = prepared
 	}
 	if *opts.appService && !*check {
 		if err := appServiceLogs(*dir); err != nil {
 			return fmt.Errorf("app service log: %w", err)
 		}
+	}
+	if directoryTightening != nil {
+		slog.Warn("tightened private data directory", "path", *dir,
+			"old_mode", directoryTightening.FromMode, "new_mode", "0700", "at", directoryTightening.At,
+			"notice_error", directoryTightening.NoticeError)
 	}
 
 	// Bounded in-memory log tail: the daemon can answer "what just happened?"
@@ -207,10 +237,6 @@ func run() error {
 		slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}), logRing,
 	)))
 
-	cfg, err := loadConfigWithPublicFlags(*dir, opts, flag.CommandLine)
-	if err != nil {
-		return fmt.Errorf("reading %s/dibs.toml: %w", *dir, err)
-	}
 	publicCfg, err := resolvePublic(opts)
 	if err != nil {
 		return err
@@ -529,8 +555,12 @@ func run() error {
 	gate.boardFingerprint = boardconfig.BoardFingerprint(eng.NodeID())
 	gate.SetNames(cfg.Name)
 	registerHumanAPI(mux, eng, gate, *dir)
+	clients := &localtransport.Clients{}
+	registerClientTransports(mux, clients)
+	privateHandler := clients.Handler(fileRoutes(files, gate.wrap(mux)))
 	srv := &http.Server{
-		Addr: listenAddr, Handler: fileRoutes(files, gate.wrap(mux)),
+		Addr: listenAddr, Handler: privateHandler,
+		ConnContext: clients.ConnContext, ConnState: clients.ConnState,
 		ReadHeaderTimeout: 5 * time.Second,
 		// No global write timeout: long-polls and SSE hold connections open.
 	}
@@ -569,7 +599,7 @@ func run() error {
 	// there is still nothing claiming to be up.
 	var tlsPair []tls.Certificate
 	if tr.certFile != "" {
-		cert, cerr := tls.LoadX509KeyPair(tr.certFile, tr.keyFile)
+		cert, cerr := loadPrivateTLSKeyPair(tr.certFile, tr.keyFile)
 		if cerr != nil {
 			_ = ln.Close()
 			return fmt.Errorf("the TLS certificate and key in %s cannot be used "+
@@ -599,6 +629,19 @@ func run() error {
 		return err
 	}
 	defer closePublic()
+	if publicCfg.Mode == "loopback-forward" {
+		slog.Warn("invitation-only plaintext loopback forward remains exposed to another OS user "+
+			"squatting its forwarded port",
+			"hint", "the laptop-to-Solis labs-broker ssh -R route carries the invited agent bearer token; "+
+				"migrate to verified HTTPS end-to-end through SSH and trust the board CA. "+
+				"This route must never carry local coordination credentials")
+	}
+	localFailure, closeLocal, err := startLocalIPC(ctx, *dir, privateHandler, clients, stop)
+	if err != nil {
+		_ = ln.Close()
+		return err
+	}
+	defer closeLocal()
 	// Roles are the one part of the config that grants standing privilege, and
 	// a typo in an agent name means the grant silently applies to nobody. Saying
 	// what it did lets an operator see that from the log rather than by reading
@@ -628,6 +671,8 @@ func run() error {
 		return err
 	}
 	select {
+	case err := <-localFailure:
+		return err
 	case err := <-publicFailure:
 		return err
 	default:
@@ -1011,7 +1056,7 @@ func checkTransportUsable(dir, listenAddr, askedScheme string, cfg Config) error
 			"  Do NOT stop the daemon now running: this configuration is refused\n"+
 			"  at startup, so the replacement would not come up", dir, err)
 	default:
-		return nil // an explicit pair, or plaintext: nothing to generate
+		return checkPrivateTLSKey(cfg.TLSKey) // explicit pair, or plaintext: nothing to generate
 	}
 
 	caCert := filepath.Join(dir, "tls-ca.pem")
@@ -1091,7 +1136,7 @@ func checkReplay(dir string, cfg Config, flagAddr string) error {
 	// upgrade` reads this command's exit status as licence to stop a live
 	// daemon.
 	if cfg.TLSCert != "" {
-		pair, perr := tls.LoadX509KeyPair(cfg.TLSCert, cfg.TLSKey)
+		pair, perr := loadPrivateTLSKeyPair(cfg.TLSCert, cfg.TLSKey)
 		if perr != nil {
 			return fmt.Errorf("the TLS certificate and key in %s cannot be used "+
 				"together: %w", dir, perr)

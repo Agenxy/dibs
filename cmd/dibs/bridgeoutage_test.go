@@ -38,7 +38,7 @@ func TestTheBridgeSurvivesADaemonThatGoesAwayAndComesBack(t *testing.T) {
 	upgradeGrace = 150 * time.Millisecond
 	t.Cleanup(func() { upgradeGrace = restore })
 
-	dir := t.TempDir()
+	dir := cliIPCProfile(t)
 	if err := os.WriteFile(filepath.Join(dir, "local.secret"),
 		[]byte(strings.Repeat("a", 64)), 0o600); err != nil {
 		t.Fatal(err)
@@ -167,6 +167,7 @@ func TestTheBridgeSurvivesADaemonThatGoesAwayAndComesBack(t *testing.T) {
 		}),
 	}
 	go func() { _ = srv.Serve(ln) }()
+	startFixtureIPC(t, dir, srv.Handler)
 	t.Cleanup(func() { _ = srv.Close() })
 
 	if _, err = fmt.Fprintln(inW,

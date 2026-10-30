@@ -20,6 +20,7 @@ import (
 
 func TestConfigureRefusedServiceOutlivesCLIAndMigratesBack(t *testing.T) {
 	f := newAppServiceTestFixture(t)
+	f.server.Close() // the owned daemon child below takes both listeners
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
