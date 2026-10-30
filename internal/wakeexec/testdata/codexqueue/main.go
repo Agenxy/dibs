@@ -46,6 +46,12 @@ func main() {
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "queue" {
+		if marker := os.Getenv("DIBS_TEST_QUEUE_COMMAND_DELAY"); marker != "" {
+			if err := os.WriteFile(marker, nil, 0o600); err != nil {
+				panic(err)
+			}
+			time.Sleep(1200 * time.Millisecond)
+		}
 		if record := os.Getenv("DIBS_TEST_QUEUE_RECORD_CWD"); record != "" {
 			cwd, err := os.Getwd()
 			if err != nil {
