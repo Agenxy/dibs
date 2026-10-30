@@ -12,7 +12,7 @@ import (
 	"github.com/agenxy/dibs/internal/localtransport"
 )
 
-func checkClientTransports(client *http.Client, reached bool, ok reportFn, warn, bad fixFn) {
+func checkClientTransports(client *http.Client, reached bool, ok reportFn, warn fixFn) {
 	if !reached {
 		return
 	}
@@ -43,24 +43,28 @@ func checkClientTransports(client *http.Client, reached bool, ok reportFn, warn,
 		return
 	}
 	for _, c := range snapshot.Clients {
-		reportClientTransport(c, ok, warn, bad)
+		reportClientTransport(c, ok, warn)
 	}
 	warn("transport inventory covers currently connected clients only",
 		"compare it with every expected bridge before shared-host rollout; "+
 			"an absent dormant bridge is unknown, not evidence of IPC")
 }
 
-func reportClientTransport(c localtransport.Client, ok reportFn, warn, bad fixFn) {
+func reportClientTransport(c localtransport.Client, ok reportFn, warn fixFn) {
 	name := fmt.Sprintf("connected client #%d", c.ID)
 	if c.BridgePID > 0 {
 		name += fmt.Sprintf(" (reported bridge pid %d, start %s)", c.BridgePID, c.BridgeStarted)
+	}
+	if c.UserAgent != "" {
+		name += fmt.Sprintf(" (user agent %q)", c.UserAgent)
 	}
 	message := name + " uses " + c.Transport
 	switch {
 	case c.Transport == "local-ipc" || c.Transport == "https":
 		ok(message)
 	case c.Transport == "plaintext-tcp" && (c.MCP || strings.HasPrefix(c.UserAgent, "dibs/")):
-		bad(message, "refresh this bridge through its harness, then recheck; old buffered calls and "+
+		warn(message, "restart this client's harness to refresh its bridge, then run dibs doctor again; "+
+			"old buffered calls and "+
 			"reconnecting streams can keep the old image alive. For a remote board use verified HTTPS. "+
 			"Do not roll out to a shared machine until every expected bridge is observed on IPC or verified HTTPS")
 	default:

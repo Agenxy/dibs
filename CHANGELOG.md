@@ -29,6 +29,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- After upgrading, restart every harness and run `dibs doctor`; every expected
+  bridge must use local IPC or verified HTTPS before a shared-host rollout.
+  Serving startup can tighten an owned directory such as `0755` to `0700`,
+  logging the change and leaving a doctor notice. Writable or foreign-owned
+  directories, symlinks, exposed keys and unsafe ACLs refuse with repair/review
+  guidance. Run staged `dibs doctor --ipc-preflight --json` before restarting.
+  Windows local plaintext clients now refuse with HTTPS guidance. The existing
+  labs-broker plaintext forward still works but warns that another OS user can
+  capture its invitation token; migrate it to verified HTTPS through the forward.
+
 - Release binaries are built with Go 1.27.3, and source builds now need it
   (`go.mod` still declares `go 1.26.0`, so language semantics are unchanged).
   The release toolchain moves to its current upstream releases: GoReleaser

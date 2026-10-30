@@ -48,6 +48,10 @@ func CheckDir(dir string, create bool) error {
 }
 
 func openProfileDirectory(dir string, create bool) (*os.File, os.FileInfo, error) {
+	if dir == "" || !filepath.IsAbs(dir) {
+		return nil, nil, errors.New("local IPC requires a nonempty absolute data-directory path; " +
+			"select this board's absolute DIBS_DIR or service pin, never the current working directory")
+	}
 	// File and socket paths use filepath.Join, which cleans the directory
 	// spelling first. Validate that same object: a symlink followed by /.. can
 	// otherwise make Open inspect a different directory from the credential IO.
@@ -76,6 +80,10 @@ func openProfileDirectory(dir string, create bool) (*os.File, os.FileInfo, error
 	if !info.IsDir() || !owned(info) {
 		_ = f.Close()
 		st := info.Sys().(*syscall.Stat_t)
+		if os.Geteuid() == 0 && st.Uid != 0 {
+			return nil, nil, fmt.Errorf("data directory %s belongs to uid %d, not root; run without sudo "+
+				"as that board's OS user; the daemon accepts only its own UID on local IPC", dir, st.Uid)
+		}
 		return nil, nil, fmt.Errorf("data directory %s has mode %04o, uid %d, gid %d; %w",
 			dir, info.Mode().Perm(), st.Uid, st.Gid, directoryModeError(dir))
 	}

@@ -201,7 +201,7 @@ func TestLocalIPCKernelRejectsOtherUID(t *testing.T) {
 		t.Fatal(err)
 	}
 	qCheckPOSIXACLMask(t, uid, gid, image)
-	qCheckForeignDirectoryStartup(t, uid, gid)
+	qCheckForeignDirectoryStartup(t, uid, gid, bin)
 }
 
 func qCheckPOSIXACLMask(t *testing.T, uid, gid uint32, image string) {
@@ -268,7 +268,7 @@ func TestQOtherUIDACLWrite(t *testing.T) {
 	}
 }
 
-func qCheckForeignDirectoryStartup(t *testing.T, uid, gid uint32) {
+func qCheckForeignDirectoryStartup(t *testing.T, uid, gid uint32, bin string) {
 	t.Helper()
 	dir := qShortDir(t)
 	// Linux release/test targets are 64-bit; these parsed uint32 IDs fit int.
@@ -283,9 +283,13 @@ func qCheckForeignDirectoryStartup(t *testing.T, uid, gid uint32) {
 		"DIBS_Q_DAEMON_CHILD=1", "DIBS_DIR="+dir, "DIBS_ADDR="+port.Addr)
 	port.Release(t)
 	out, err := cmd.CombinedOutput()
-	if ctx.Err() != nil || err == nil || !strings.Contains(string(out), "sudo chown ") ||
+	if ctx.Err() != nil || err == nil || !strings.Contains(string(out), "run without sudo") ||
 		!strings.Contains(string(out), dir) {
 		t.Fatalf("foreign-owned startup lost its literal ownership repair: %v %s", err, out)
+	}
+	clientOut, clientErr := qClient(t, bin, dir, port.Addr, "", "board", "--json")
+	if clientErr == nil || !strings.Contains(string(clientOut), "run without sudo") {
+		t.Fatalf("root client lost its pre-dial sudo corrective: %v %s", clientErr, clientOut)
 	}
 	info, err := os.Stat(dir)
 	if err != nil || info.Sys().(*syscall.Stat_t).Uid != uid || info.Mode().Perm() != 0o700 {

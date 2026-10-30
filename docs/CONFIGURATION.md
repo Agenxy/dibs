@@ -51,6 +51,9 @@ files refuse with literal, shell-quoted repair or review commands. ACLs are neve
 deleted automatically. A Unix socket pathname that exceeds the kernel limit
 requires a shorter private data-directory path. Windows local plaintext
 credentials are refused; choose verified HTTPS there.
+Local profiles require a nonempty absolute directory path. A root client
+addressing another user's profile is refused before dialling with a
+`run without sudo` corrective; use that board's OS account.
 
 Ancestors must also be owned by this user or root and not writable by other
 users, except for trusted sticky directories such as root-owned `/tmp`. A
