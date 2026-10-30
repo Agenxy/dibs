@@ -41,8 +41,16 @@ end
 	if restored := strings.ReplaceAll(string(got), `url "`+origin, `url "https://github.com`); restored != string(original) {
 		t.Fatalf("adapter changed checksums, archive paths, steps, binaries, caveats or homepage:\n%s", got)
 	}
+	// GoReleaser's real canonical-version snapshot uses this interpolation;
+	// ordinary snapshot versions leave the release tag literal instead.
+	interpolated := strings.ReplaceAll(string(original), "download/v0.0.17/", "download/v#{version}/")
+	got, err = adaptCandidateCask([]byte(interpolated), "v0.0.17", origin)
+	if err != nil || strings.ReplaceAll(string(got), `url "`+origin, `url "https://github.com`) != interpolated {
+		t.Fatalf("actual canonical cask URL form was rejected or rewritten beyond its authority: %v", err)
+	}
 	for _, changed := range []string{
 		strings.Replace(string(original), "v0.0.17/", "v0.0.16/", 1),
+		strings.Replace(string(original), `version "0.0.17"`, `version "0.0.16"`, 1),
 		strings.Replace(string(original), "url \"https://github.com/Agenxy", "url \"http://github.com/Agenxy", 1),
 		strings.Replace(string(original), "url \"https://github.com/Agenxy", "# url \"https://github.com/Agenxy", 1),
 	} {

@@ -231,11 +231,13 @@ func readCandidate(o options) (candidateManifest, error) {
 }
 
 func adaptCandidateCask(original []byte, tag, origin string) ([]byte, error) {
-	prefix := "https://github.com/Agenxy/dibs/releases/download/" + tag
-	urls := regexp.MustCompile(`(?m)^\s+url "` + regexp.QuoteMeta(prefix) + `/dibs_#\{version\}_`)
-	if len(urls.FindAll(original, -1)) != 3 ||
-		strings.Count(string(original), prefix) != 3 {
-		return nil, errors.New("generated cask does not have exactly the three expected release archive URLs")
+	versions := regexp.MustCompile(`(?m)^\s+version "([^"]+)"$`).FindAllSubmatch(original, -1)
+	if len(versions) != 1 || string(versions[0][1]) != strings.TrimPrefix(tag, "v") {
+		return nil, errors.New("generated cask version differs from the exact candidate version")
+	}
+	prefix, err := candidateURLPrefix(original, tag)
+	if err != nil {
+		return nil, err
 	}
 	destination := origin + strings.TrimPrefix(prefix, "https://github.com")
 	adapted := strings.ReplaceAll(string(original), `url "`+prefix, `url "`+destination)
@@ -243,6 +245,19 @@ func adaptCandidateCask(original []byte, tag, origin string) ([]byte, error) {
 		return nil, errors.New("candidate cask changed beyond its download origin")
 	}
 	return []byte(adapted), nil
+}
+
+func candidateURLPrefix(original []byte, tag string) (string, error) {
+	// GoReleaser uses #{version} for the tag when it equals the archive
+	// version. Snapshot suffixes instead require a literal release tag.
+	for _, value := range []string{tag, "v#{version}"} {
+		prefix := "https://github.com/Agenxy/dibs/releases/download/" + value
+		urls := regexp.MustCompile(`(?m)^\s+url "` + regexp.QuoteMeta(prefix) + `/dibs_#\{version\}_`)
+		if len(urls.FindAll(original, -1)) == 3 && strings.Count(string(original), prefix) == 3 {
+			return prefix, nil
+		}
+	}
+	return "", errors.New("generated cask does not have exactly the three expected release archive URLs")
 }
 
 func (r *runner) installCandidate(o options) error {
