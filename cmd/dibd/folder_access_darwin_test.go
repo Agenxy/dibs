@@ -116,7 +116,7 @@ type folderDaemon struct {
 
 func bootFolderAccessDaemon(t *testing.T, mode string) *folderDaemon {
 	t.Helper()
-	home, dir := t.TempDir(), t.TempDir()
+	home, dir := t.TempDir(), qShortDir(t)
 	hash, err := adminpw.Hash("folder-fixture-password")
 	if err != nil {
 		t.Fatal(err)

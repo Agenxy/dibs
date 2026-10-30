@@ -208,3 +208,66 @@ func TestPrivateDirectoryBelowWritableAncestorIsRefused(t *testing.T) {
 		t.Fatalf("a private directory in a replaceable parent was accepted: %v", err)
 	}
 }
+
+func TestAncestorAliasCannotHideAReplaceableLexicalParent(t *testing.T) {
+	trusted := privateDir(t)
+	dir := filepath.Join(trusted, "board")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	parent := privateDir(t)
+	alias := filepath.Join(parent, "alias")
+	if err := os.Symlink(trusted, alias); err != nil {
+		t.Fatal(err)
+	}
+	nested := filepath.Join(privateDir(t), "outer")
+	if err := os.Symlink(alias, nested); err != nil {
+		t.Fatal(err)
+	}
+	spellings := []string{filepath.Join(alias, "board"), filepath.Join(nested, "board")}
+	for _, spelling := range spellings {
+		if err := CheckDir(spelling, false); err != nil {
+			t.Fatalf("setup: a trusted ancestor alias was refused: %v", err)
+		}
+	}
+	if err := os.Chmod(parent, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chmod(parent, 0o700) }()
+	for _, spelling := range spellings {
+		if err := CheckDir(spelling, false); err == nil {
+			t.Fatal("resolved private ancestry concealed a replaceable alias parent")
+		}
+	}
+}
+
+func TestProfileValidationMatchesThePathUsedForCredentialFiles(t *testing.T) {
+	parent, target := privateDir(t), privateDir(t)
+	for _, path := range []string{filepath.Join(target, "sub"), filepath.Join(target, "board")} {
+		if err := os.Mkdir(path, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	unsafe := filepath.Join(parent, "board")
+	if err := os.Mkdir(unsafe, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(unsafe, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(target, "sub"), filepath.Join(parent, "alias")); err != nil {
+		t.Fatal(err)
+	}
+	raw := filepath.Join(parent, "alias") + "/../board"
+	a, err := os.Stat(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.Stat(filepath.Join(target, "board"))
+	if err != nil || !os.SameFile(a, b) || filepath.Join(raw, "local.secret") != filepath.Join(unsafe, "local.secret") {
+		t.Fatal("setup: raw directory and joined credential path do not demonstrate the different objects")
+	}
+	if err := CheckDir(raw, false); err == nil {
+		t.Fatal("validated the raw symlink/.. target while credential paths use a different unsafe profile")
+	}
+}

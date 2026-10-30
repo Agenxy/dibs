@@ -150,7 +150,7 @@ func testGuestReleaseMetadataThroughShippedDaemon(t *testing.T, version string, 
 	if err = os.WriteFile(filepath.Join(bin, "cosign"), b, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	dir := t.TempDir()
+	dir := privateDaemonFixtureDir(t)
 	record := map[string]any{"tag": "v0.0.9", "checksums": []byte(guestAdmissionChecksums()), "bundle": []byte("fixture only, not a signature")}
 	body, err := json.Marshal(record)
 	if err != nil {

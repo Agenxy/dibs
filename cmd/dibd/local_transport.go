@@ -35,8 +35,10 @@ func startLocalIPC(ctx context.Context, dir string, handler http.Handler,
 	if err != nil {
 		return nil, nil, err
 	}
-	srv := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second,
-		ConnContext: clients.ConnContext, ConnState: clients.ConnState}
+	srv := &http.Server{
+		Handler: handler, ReadHeaderTimeout: 5 * time.Second,
+		ConnContext: clients.ConnContext, ConnState: clients.ConnState,
+	}
 	go func() {
 		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			failed <- err

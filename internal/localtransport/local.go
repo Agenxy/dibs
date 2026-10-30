@@ -106,17 +106,17 @@ func (t *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	switch t.kind {
 	case HTTPS:
 		if req.URL.Scheme != "https" {
-			return nil, fmt.Errorf("remote coordination requires verified HTTPS: %s", MissingHint)
+			return nil, refuse(fmt.Errorf("remote coordination requires verified HTTPS: %s", MissingHint))
 		}
 		if t.next.TLSClientConfig != nil && t.next.TLSClientConfig.InsecureSkipVerify {
-			return nil, errors.New("remote coordination refuses unverified TLS; trust the board's CA or key pin")
+			return nil, refuse(errors.New("remote coordination refuses unverified TLS; trust the board's CA or key pin"))
 		}
 		return t.next.RoundTrip(req)
 	case Local:
 		// Validate even on a reused connection: mode/ownership changes are
 		// unsafe state, not permission to keep sending on an old pool entry.
 		if err := CheckDir(t.dir, false); err != nil {
-			return nil, err
+			return nil, refuse(err)
 		}
 		if err := checkSocket(Path(t.dir)); err != nil {
 			return nil, err
@@ -159,7 +159,23 @@ func PrivateFile(path string, missing bool) error {
 }
 
 func socketError(path string, err error) error {
-	return fmt.Errorf("local IPC at %s is unavailable or unsafe (%w): %s", path, err, MissingHint)
+	return refuse(fmt.Errorf("local IPC at %s is unavailable or unsafe (%w): %s", path, err, MissingHint))
+}
+
+type refusal struct{ error }
+
+func (e *refusal) Unwrap() error { return e.error }
+
+func refuse(err error) error { return &refusal{err} }
+
+// RefusalHint returns only a transport's pre-send corrective explanation,
+// excluding net/http's request URL wrapper and arbitrary network error text.
+func RefusalHint(err error) (string, bool) {
+	var r *refusal
+	if errors.As(err, &r) {
+		return r.Error(), true
+	}
+	return "", false
 }
 
 type notListening struct{ error }

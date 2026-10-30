@@ -201,11 +201,25 @@ func joinDirFor(remote string, peer *supgang.Peer) string {
 // printJoinConfigFor is printJoinConfig, naming the hub as a Supgang peer when
 // it was given as one: the bridge then re-resolves the hub's address on every
 // start, and the printed recipe says where the address came from.
-func printJoinConfigFor(remote string, peer *supgang.Peer) error {
+func authenticatedRemote(remote string) (string, error) {
+	// Preserve the established bare-LAN shorthand only when it resolves to
+	// verified HTTPS. A loopback shorthand remains ambiguous with a forward.
+	if statedScheme(remote) == "" && !xport.IsLoopback(hostPort(remote)) {
+		remote = "https://" + remote
+	}
 	if !strings.EqualFold(statedScheme(remote), "https") {
-		return fmt.Errorf("remote coordination requires verified HTTPS; plaintext loopback may be another user's listener. " +
+		return "", fmt.Errorf("remote coordination requires verified HTTPS; " +
+			"plaintext loopback may be another user's listener. " +
 			"Serve HTTPS on the hub, forward that TLS port with SSH, trust the hub CA, then run " +
 			"`dibs mcp-config --board https://127.0.0.1:<local-port>`")
+	}
+	return remote, nil
+}
+
+func printJoinConfigFor(remote string, peer *supgang.Peer) error {
+	remote, err := authenticatedRemote(remote)
+	if err != nil {
+		return err
 	}
 	dir := joinDirFor(remote, peer)
 	if dir == "" {

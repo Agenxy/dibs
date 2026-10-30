@@ -140,7 +140,7 @@ func currentDaemonUpgradePluginFixture(t *testing.T) (*exec.Cmd, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	root := t.TempDir()
+	root := cliIPCProfile(t)
 	binDir := filepath.Join(root, "bin")
 	suffix := ""
 	if runtime.GOOS == "windows" {

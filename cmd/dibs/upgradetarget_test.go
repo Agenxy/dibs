@@ -33,8 +33,10 @@ import (
 // Discovering an address and then not using it is worse than never discovering
 // it, because the report is confident either way.
 func TestUpgradeReadsTheBoardItIsUpgrading(t *testing.T) {
+	// Explicit remote HTTPS retains address-based discovery. Local mode instead
+	// addresses the selected profile's authenticated socket, never its TCP URL.
 	board := func(serial int, agents int) *httptest.Server {
-		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		return httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			rows := make([]string, agents)
 			for i := range rows {
 				rows[i] = `{"id":"a"}`
@@ -49,15 +51,18 @@ func TestUpgradeReadsTheBoardItIsUpgrading(t *testing.T) {
 	other := board(7, 0) // a different board, which the CLI happens to point at
 	defer other.Close()
 
-	dir := t.TempDir()
+	dir := cliIPCProfile(t)
+	trustDiagnosticServer(t, dir, target)
+	trustDiagnosticServer(t, dir, other)
 	if err := os.WriteFile(filepath.Join(dir, "local.secret"),
 		[]byte(strings.Repeat("a", 64)), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("DIBS_DIR", dir)
-	t.Setenv("DIBS_ADDR", strings.TrimPrefix(other.URL, "http://"))
+	t.Setenv("DIBS_ADDR", other.URL)
+	t.Setenv("DIBS_TRANSPORT", "https")
 
-	got, err := fleetSnapshotAt(strings.TrimPrefix(target.URL, "http://"))
+	got, err := fleetSnapshotAt(target.URL)
 	if err != nil {
 		t.Fatalf("reading the target board: %v", err)
 	}

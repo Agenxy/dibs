@@ -190,7 +190,9 @@ func qStartBoard(t *testing.T, dir string) (string, func()) {
 				}
 			case <-time.After(10 * time.Second):
 				_ = cmd.Process.Kill()
-				_ = <-done
+				if err := <-done; err != nil {
+					t.Logf("private daemon killed after shutdown timeout: %v", err)
+				}
 				t.Error("private daemon did not stop")
 			}
 		})

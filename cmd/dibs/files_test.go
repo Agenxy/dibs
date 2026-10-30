@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -120,7 +119,8 @@ func TestCLIDownloadResumesAndNeverPublishesBadHash(t *testing.T) {
 			sum := sha256.Sum256(plain)
 			blob := "sha256:" + hex.EncodeToString(sum[:])
 			var calls atomic.Int32
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			dir := cliIPCProfile(t)
+			server := newLocalTestServer(t, dir, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Method != http.MethodGet {
 					t.Error("unexpected method")
 				}
@@ -147,7 +147,7 @@ func TestCLIDownloadResumesAndNeverPublishesBadHash(t *testing.T) {
 				http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(body))
 			}))
 			defer server.Close()
-			awaitEnv(t, strings.TrimPrefix(server.URL, "http://"))
+			awaitEnvIn(t, dir, strings.TrimPrefix(server.URL, "http://"))
 			f, err := os.CreateTemp(t.TempDir(), "download-*")
 			if err != nil {
 				t.Fatal(err)

@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -33,13 +34,13 @@ func TestPublicFileBootAndProcessCLI(t *testing.T) {
 		if out, err := exec.Command("go", "build", "-o", bin, "../"+name).CombinedOutput(); err != nil {
 			t.Fatalf("build %s: %v %s", name, err, out)
 		}
-		probe := "--version"
+		probe := "--help"
 		if name == "dibd" {
 			probe = "-h"
 		}
 		testexec.PrepareExecutable(t, exec.Command(bin, probe))
 	}
-	dir := t.TempDir()
+	dir := privateDaemonFixtureDir(t)
 	private, public := testport.Reserve(t, "tcp", "127.0.0.1:0"), testport.Reserve(t, "tcp", "127.0.0.1:0")
 	var farSideProbes atomic.Int32
 	farSide := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -116,12 +117,24 @@ func TestPublicFileBootAndProcessCLI(t *testing.T) {
 		cmd := exec.CommandContext(ctx, filepath.Join(binDir, "dibs"), args...)
 		cmd.Env = append(nativeProbeEnv(t.TempDir(), "", ""), "DIBS_DIR="+dataDir,
 			"DIBS_ADDR="+address, "DIBS_INVITE="+invite, "DIBS_TOKEN="+token)
-		out, err := cmd.CombinedOutput()
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout, cmd.Stderr = &stdout, &stderr
+		err := cmd.Run()
+		if invite != "" && !strings.HasPrefix(address, "https://") &&
+			!strings.Contains(stderr.String(), "plaintext loopback SSH forward") {
+			t.Error("legacy invited forward omitted its credential-exposure warning")
+		}
 		var value map[string]any
-		_ = json.Unmarshal(out, &value)
-		return value, string(out), err
+		if err == nil && slices.Contains(args, "--json") {
+			if decodeErr := json.Unmarshal(stdout.Bytes(), &value); decodeErr != nil {
+				t.Fatalf("JSON stdout was contaminated: %v %s", decodeErr, stdout.String())
+			}
+		} else {
+			_ = json.Unmarshal(stdout.Bytes(), &value)
+		}
+		return value, stdout.String() + stderr.String(), err
 	}
-	guestDir := t.TempDir()
+	guestDir := privateDaemonFixtureDir(t)
 	sender, out, err := cli(guestDir, public.Addr, key, "", "register", "--name", "forward-broker", "--json")
 	if err != nil || sender["token"] == nil || sender["agent_id"] != "forward-broker" {
 		t.Fatalf("forward CLI register: %v %s", err, out)

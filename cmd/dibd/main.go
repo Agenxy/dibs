@@ -615,7 +615,8 @@ func run() error {
 	}
 	defer closePublic()
 	if publicCfg.Mode == "loopback-forward" {
-		slog.Warn("invitation-only plaintext loopback forward remains exposed to another OS user squatting its forwarded port",
+		slog.Warn("invitation-only plaintext loopback forward remains exposed to another OS user "+
+			"squatting its forwarded port",
 			"hint", "the laptop-to-Solis labs-broker ssh -R route carries the invited agent bearer token; "+
 				"migrate to verified HTTPS end-to-end through SSH and trust the board CA. "+
 				"This route must never carry local coordination credentials")

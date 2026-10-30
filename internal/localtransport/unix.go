@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -29,6 +30,10 @@ func owned(info os.FileInfo) bool {
 // CheckDir checks the final directory through a no-follow descriptor. Ancestor
 // spelling aliases are permitted; the connected peer is verified separately.
 func CheckDir(dir string, create bool) error {
+	// File and socket paths use filepath.Join, which cleans the directory
+	// spelling first. Validate that same object: a symlink followed by /.. can
+	// otherwise make Open inspect a different directory from the credential IO.
+	dir = filepath.Clean(dir)
 	if create {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return err
@@ -57,11 +62,7 @@ func CheckDir(dir string, create bool) error {
 // a trusted sticky directory such as /tmp) make the pathname stable against
 // the other-UID adversary while ordinary path I/O opens this profile's files.
 func checkAncestors(dir string, final os.FileInfo) error {
-	resolved, err := filepath.EvalSymlinks(dir)
-	if err != nil {
-		return err
-	}
-	resolved, err = filepath.Abs(resolved)
+	resolved, err := trustedPath(dir)
 	if err != nil {
 		return err
 	}
@@ -69,21 +70,83 @@ func checkAncestors(dir string, final os.FileInfo) error {
 	if err != nil || !os.SameFile(final, current) {
 		return errors.New("data directory changed during validation; inspect its parent and retry")
 	}
-	for parent := filepath.Dir(resolved); ; parent = filepath.Dir(parent) {
-		info, err := os.Lstat(parent)
+	return nil
+}
+
+// Follow each alias only after checking the directory containing it. Checking
+// just the final resolved ancestry would hide an attacker-controlled alias,
+// including a second alias inside the first one's target spelling.
+func trustedPath(path string) (string, error) {
+	if !filepath.IsAbs(path) {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "", err
+		}
+		path = cwd + string(filepath.Separator) + path
+	}
+	w := pathWalk{current: string(filepath.Separator), parts: strings.Split(path, string(filepath.Separator))}
+	for len(w.parts) != 0 {
+		if err := w.step(); err != nil {
+			return "", err
+		}
+	}
+	return w.current, nil
+}
+
+type pathWalk struct {
+	current string
+	parts   []string
+	links   int
+}
+
+func (w *pathWalk) step() error {
+	part := w.parts[0]
+	w.parts = w.parts[1:]
+	if part == "" || part == "." {
+		return nil
+	}
+	if part == ".." {
+		w.current = filepath.Dir(w.current)
+		return nil
+	}
+	next := filepath.Join(w.current, part)
+	info, err := os.Lstat(next)
+	if err != nil {
+		return err
+	}
+	if !trustedPathOwner(info) {
+		return unsafeAncestor(next)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		w.links++
+		if w.links > 255 {
+			return errors.New("too many data-directory aliases; choose a direct private profile path")
+		}
+		target, err := os.Readlink(next)
 		if err != nil {
 			return err
 		}
-		st, ok := info.Sys().(*syscall.Stat_t)
-		trustedOwner := ok && (st.Uid == 0 || uint64(st.Uid) == uint64(os.Geteuid())) // #nosec G115 -- euid is nonnegative.
-		if !info.IsDir() || !trustedOwner || (info.Mode().Perm()&0o022 != 0 && info.Mode()&os.ModeSticky == 0) {
-			return fmt.Errorf("data directory ancestor %s can be replaced by another OS user; "+
-				"move this profile beneath your own private home or a root-owned sticky temporary directory", parent)
+		if filepath.IsAbs(target) {
+			w.current = string(filepath.Separator)
 		}
-		if parent == filepath.Dir(parent) {
-			return nil
-		}
+		w.parts = append(strings.Split(target, string(filepath.Separator)), w.parts...)
+		return nil
 	}
+	if !info.IsDir() || (info.Mode().Perm()&0o022 != 0 && info.Mode()&os.ModeSticky == 0) {
+		return unsafeAncestor(next)
+	}
+	w.current = next
+	return nil
+}
+
+func trustedPathOwner(info os.FileInfo) bool {
+	st, ok := info.Sys().(*syscall.Stat_t)
+	return ok && (st.Uid == 0 || uint64(st.Uid) == uint64(os.Geteuid())) // #nosec G115 -- euid is nonnegative.
+}
+
+func unsafeAncestor(path string) error {
+	return fmt.Errorf("data directory ancestor %s can be replaced by another OS user; "+
+		"move this profile beneath your own private home or a root-owned sticky temporary directory", path)
 }
 
 func checkSocket(path string) error {

@@ -56,8 +56,10 @@ type bridgeDirectoryTransport struct {
 }
 
 func bridgeDaemonClient(route *bridgeRoute, timeout time.Duration) *http.Client {
-	return &http.Client{Timeout: timeout, Transport: &bridgeDirectoryTransport{route: route},
-		CheckRedirect: localtransport.RefuseRedirect}
+	return &http.Client{
+		Timeout: timeout, Transport: &bridgeDirectoryTransport{route: route},
+		CheckRedirect: localtransport.RefuseRedirect,
+	}
 }
 
 func (t *bridgeDirectoryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -94,16 +96,26 @@ func (t *bridgeDirectoryTransport) RoundTrip(req *http.Request) (*http.Response,
 	return roundTripper.RoundTrip(next)
 }
 
+func (t *bridgeDirectoryTransport) CloseIdleConnections() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.idle != nil {
+		t.idle.CloseIdleConnections()
+	}
+}
+
 func rediscoverBoard(client *http.Client, previous *url.URL) (string, *http.Client, error) {
 	if bridge, ok := client.Transport.(*bridgeDirectoryTransport); ok {
 		_, origin, err := bridge.route.current(true)
 		if err != nil {
 			return "", nil, err
 		}
+		client.CloseIdleConnections()
 		return originWithPath(origin, previous), bridgeDaemonClient(bridge.route, client.Timeout), nil
 	}
 	where := boardNow(previous)
 	if previous == nil || where != previous.String() {
+		client.CloseIdleConnections()
 		client = daemonClient(client.Timeout)
 	}
 	return where, client, nil

@@ -713,7 +713,7 @@ args = ["mcp-stdio"]
 #   (the secret is also accepted as: Authorization: Bearer %s)
 #
 # Running agent sessions do not hot-load MCP config: start a new session after adding.
-`, self(), codexEnvLine(scheme), shellArg(joiner), directURL, directSecret, preview)
+`, self(), codexEnvLine(scheme), shellArg(authenticatedJoiner(scheme, joiner)), directURL, directSecret, preview)
 
 	if certPath != "" {
 		fmt.Printf(`
@@ -773,6 +773,10 @@ func servedScheme(servesTLS bool) string {
 }
 
 func printRemoteRecipe(servesTLS bool, joiner string) {
+	if !servesTLS {
+		printRemoteTLSMigration()
+		return
+	}
 	fmt.Printf(`
 # ── Agents on ANOTHER machine ───────────────────────────────────────────────
 # The board is a fleet board: agents on other machines join THIS daemon and
@@ -789,7 +793,7 @@ func printRemoteRecipe(servesTLS bool, joiner string) {
 #      expands ~ here):
 #        {"mcpServers": {"dibs": {"command": "dibs", "args": ["mcp-stdio"],
 #          "env": {"DIBS_ADDR": %q,
-#                  "DIBS_DIR":  "/home/you/.dibs-<board>"}}}}
+#                  "DIBS_DIR":  "/home/you/.dibs-<board>", "DIBS_TRANSPORT": "https"}}}}
 #
 #      Or have that machine print it for you:
 #        dibs mcp-config --board %s

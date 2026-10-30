@@ -27,7 +27,7 @@ func TestDaemonBootsWithRetiredIdleDelayAndWarnsOnEveryStart(t *testing.T) {
 		}
 		return
 	}
-	dir := t.TempDir()
+	dir := privateDaemonFixtureDir(t)
 	path := filepath.Join(dir, "dibs.toml")
 	if err := os.WriteFile(path, []byte("[wake]\nopen_app_after_idle = \"0s\"\n"), 0o600); err != nil {
 		t.Fatal(err)

@@ -66,9 +66,11 @@ func checkPublicTLS(client *http.Client, secret string, ok func(string), warn fu
 	}
 	// This measurement targets the public TLS endpoint and carries no local,
 	// invitation or admin credential. The private client must stay on IPC.
-	probeClient := &http.Client{Timeout: 5 * time.Second,
+	probeClient := &http.Client{
+		Timeout:       5 * time.Second,
 		Transport:     &http.Transport{TLSClientConfig: &tls.Config{RootCAs: trustedPool(), MinVersion: tls.VersionTLS13}},
-		CheckRedirect: localtransport.RefuseRedirect}
+		CheckRedirect: localtransport.RefuseRedirect,
+	}
 	defer probeClient.CloseIdleConnections()
 	probePublicTLS(probeClient, status.PublicOrigin, ok, warn)
 }
