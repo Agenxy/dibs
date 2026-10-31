@@ -197,6 +197,7 @@ final class HumanPromptWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
         configureScroll(replyScroll, text: composer)
         overflowScroll.hasVerticalScroller = true; overflowScroll.autohidesScrollers = false
         overflowScroll.scrollerStyle = .legacy
+        overflowScroll.drawsBackground = false; overflowScroll.contentView.drawsBackground = false
         // Scrolled choices must remain inside this viewport, below the pinned
         // sender/context header, including layer-backed offscreen rendering.
         overflowScroll.wantsLayer = true; overflowScroll.layer?.masksToBounds = true
@@ -380,10 +381,12 @@ final class HumanPromptWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
         if overflow {
             overflowScroll.isHidden = false
             overflowScroll.frame = NSRect(x: inset, y: bottom, width: inner, height: available)
+            overflowScroll.tile()
+            let viewportWidth = overflowScroll.contentSize.width
             let docHeight = fullMessageHeight + contentExtra
-            document.frame = NSRect(x: 0, y: 0, width: inner - 16, height: docHeight)
+            document.frame = NSRect(x: 0, y: 0, width: viewportWidth, height: docHeight)
             for view in [messageScroll, replyScroll, choiceGroup] { if view.superview !== document { document.addSubview(view) } }
-            placeContent(parentWidth: inner - 16, top: docHeight, messageHeight: fullMessageHeight, rowHeights: rowHeights, replyHeight: replyHeight)
+            placeContent(parentWidth: viewportWidth, top: docHeight, messageHeight: fullMessageHeight, rowHeights: rowHeights, replyHeight: replyHeight)
             if !wasOverflow || fit { overflowScroll.contentView.scroll(to: NSPoint(x: 0, y: max(0, docHeight - available))) }
         } else {
             overflowScroll.isHidden = true
@@ -553,6 +556,7 @@ final class HumanPromptWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
          },
          "endBottomInset": message.visibleRect.maxY - messageEndRect().maxY,
          "moreBelow": !moreFade.isHidden, "firstChoiceVisible": radios.first.map { $0.visibleRect.height >= $0.bounds.height - 1 } ?? true,
+         "overflowLaneX": overflowScroll.frame.maxX - 2, "overflowLaneY": root.bounds.height - overflowScroll.frame.midY,
          "fontFamily": font(14).familyName ?? "unknown",
          "height": panel.contentView!.bounds.height, "bodyHeight": message.frame.height, "documentHeight": document.frame.height, "renderedLength": message.string.utf8.count, "defaultApproval": replyKind == "request" && panel.defaultButtonCell != nil]
     }

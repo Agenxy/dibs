@@ -192,6 +192,9 @@ func TestNativePromptFullTextChoicesTypingAndNoImplicitApproval(t *testing.T) {
 			if scale == 1.6 && snap["moreBelow"] != true {
 				t.Fatal("overflow has no visible more-below cue")
 			}
+			if scale == 1.6 {
+				assertPromptLaneMatchesPaper(t, path, snap)
+			}
 			if scale == 1.6 && snap["bodyHeight"].(float64) < 2000 {
 				t.Fatalf("full long message has no scrollable layout: bodyHeight=%v docHeight=%v renderedLength=%v", snap["bodyHeight"], snap["documentHeight"], snap["renderedLength"])
 			}
@@ -297,5 +300,28 @@ func assertPromptHeaderMarkVisible(t *testing.T, path string, width float64) {
 	}
 	if blue < 10 {
 		t.Fatal("scrolled content painted over the pinned sender header")
+	}
+}
+
+// Compare the shared scroll gutter with adjacent paper in the same native
+// render, so colour profiles and appearance do not require fixed RGB bytes.
+func assertPromptLaneMatchesPaper(t *testing.T, path string, view map[string]any) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	img, err := png.Decode(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	scale := float64(img.Bounds().Dx()) / view["width"].(float64)
+	x, y := int(view["overflowLaneX"].(float64)*scale), int(view["overflowLaneY"].(float64)*scale)
+	r, g, b, _ := img.At(x, y).RGBA()
+	pr, pg, pb, _ := img.At(int(5*scale), y).RGBA()
+	for _, delta := range []int64{int64(r) - int64(pr), int64(g) - int64(pg), int64(b) - int64(pb)} {
+		if delta > 3*257 || delta < -3*257 {
+			t.Fatalf("shared scroll gutter does not match paper: gutter=%v paper=%v", []uint32{r, g, b}, []uint32{pr, pg, pb})
+		}
 	}
 }

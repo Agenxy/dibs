@@ -55,6 +55,13 @@ observed overpaint in two bounded controls, so those controls are **not** claime
 as a demonstrated regression discriminator. The earlier before-code failures
 above are independently observed.
 
+The shared-scroll gutter check was observed failing before its background fix:
+the light lane measured `[65535 65535 65535]` while adjacent paper measured
+`[58853 58339 57311]`. After making both scroll and clip backgrounds transparent
+and sizing the document to the actual viewport, the same check passes in both
+appearances. This comparison uses neighbouring pixels in the same render,
+preserving colour-profile differences rather than hard-coding RGB bytes.
+
 Regenerate after images with:
 
 ```console
