@@ -46,6 +46,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Linux Homebrew installation guidance documents an optional command-scoped
+  workaround for the measured upstream credential-probe `Broken pipe` failure,
+  and upgrading a cask that Homebrew registered before reporting the error.
+
 - Disabled desktop notifications now stop native banners, questions, pickers
   and text prompts before starting the notifier. Failed native prompts keep
   the ask unanswered and direct the person to the board; malformed mixed

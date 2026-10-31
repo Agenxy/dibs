@@ -196,6 +196,30 @@ Homebrew 7 is required for declarative install steps. `brew update` also brings
 older Homebrew versions forward before `brew trust`, which arrived in Homebrew 6.
 Tap trust is a one-time step: loading an untrusted tap fails before installation.
 
+On Linux, one measured cause of `Broken pipe` during cask installation is an
+[upstream GitHub credential probe](https://github.com/Homebrew/brew/blob/9226bdf05510313eb45e6c5e78b304e5a1ddec4b/Library/Homebrew/utils/github/api.rb#L199)
+in Homebrew's analytics tap-privacy check. The error can occur after Homebrew
+has written the cask's files and registration. An optional workaround uses
+Homebrew's documented [`HOMEBREW_NO_GITHUB_API`](https://docs.brew.sh/Manpage#environment)
+setting, scoped to the affected command:
+
+```sh
+HOMEBREW_NO_GITHUB_API=1 brew install --cask agenxy/tap/dibs
+```
+
+If Homebrew registered the cask despite the error, recover with
+`brew upgrade --cask agenxy/tap/dibs` rather than another install. The same
+optional workaround applies to that upgrade:
+
+```sh
+HOMEBREW_NO_GITHUB_API=1 brew upgrade --cask agenxy/tap/dibs
+```
+
+Matched five-install groups on Ubuntu 22.04 arm64 with Homebrew 7.0.11 observed
+1/5 failures without this setting and 0/5 with it; both groups already set
+`HOMEBREW_NO_ANALYTICS=1`. This finite measurement supports a workaround for
+that cause, not an installation requirement or a guarantee against other failures.
+
 `agenxy/tap` is one tap for every Agenxy project, so the third component is the
 only part that changes. `agenxy/lanes/lanes` still works: GitHub redirects the
 old repository name, and the tap maps the old cask to this one, so an install
