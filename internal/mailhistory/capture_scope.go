@@ -37,7 +37,7 @@ func scopeOf(kind string) (mailScope, bool) {
 		core.OpHostRenamed, core.OpPutBlob, core.OpReadAppRestart,
 		core.OpRegister, core.OpRelease, core.OpRelocate,
 		core.OpRelocateByHuman, core.OpResume, core.OpRevokePermission,
-		core.OpSetRestartSetting, core.OpSetSlot, core.OpSpaceAck,
+		core.OpSetRestartSetting, core.OpSetDesktopApprovalSetting, core.OpSetSlot, core.OpSpaceAck,
 		core.OpSpaceAdmit, core.OpSpaceAnnounce, core.OpSpaceClose,
 		core.OpSpaceEvict, core.OpSpaceExclusive, core.OpSpaceForceRelease,
 		core.OpSpaceJoin, core.OpSpaceLeave, core.OpSpaceMerge,

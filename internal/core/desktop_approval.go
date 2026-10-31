@@ -16,6 +16,12 @@ type DesktopApprovalSetting struct {
 	At      time.Time `json:"at,omitzero"`
 }
 
+// IsZero keeps untouched policy out of legacy state/board encodings. A later
+// human disable still carries provenance and remains visible and durable.
+func (s DesktopApprovalSetting) IsZero() bool {
+	return !s.Enabled && s.By == "" && s.At.IsZero()
+}
+
 // HasApprovalEffect is the common classification of typed request effects.
 // Participant prose never makes an ordinary request privileged.
 func (m *Message) HasApprovalEffect() bool {

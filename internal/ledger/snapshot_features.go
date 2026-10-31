@@ -27,7 +27,7 @@ var snapshotFeatures = []snapshotFeature{
 			"core.DesktopApprovalSetting.By", "core.DesktopApprovalSetting.At",
 		},
 		present: func(st *core.State) bool {
-			return st.DesktopApproval.Enabled || st.DesktopApproval.By != "" || !st.DesktopApproval.At.IsZero()
+			return !st.DesktopApproval.IsZero()
 		},
 	},
 	{

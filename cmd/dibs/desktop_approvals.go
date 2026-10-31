@@ -13,7 +13,7 @@ import (
 	"github.com/agenxy/dibs/internal/core"
 )
 
-const desktopApprovalsHelp = `dibs desktop-approvals [on|off] [--json]
+const desktopApprovalsHelp = `usage: dibs desktop-approvals [on|off] [--json]
 
 Reads or changes the optional Touch ID confirmation for privileged desktop
 approvals. Default: off. Ordinary questions and requests are unaffected.
