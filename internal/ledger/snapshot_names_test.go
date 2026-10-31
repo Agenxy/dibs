@@ -47,7 +47,10 @@ func TestSnapshotGoFieldNamesAreFrozen(t *testing.T) {
 	// no previously persisted Go field was renamed or removed.
 	// Recovery adds address reservations, inherited history and typed consent.
 	// All previously persisted Go names remain unchanged.
-	const want = "sha256:bc63c80a4b1e0eee"
+	// Desktop approval adds State.DesktopApproval and its Enabled/By/At
+	// fields. Removing exactly these four names restores bc63c80a4b1e0eee;
+	// every pre-existing persisted Go name remains unchanged.
+	const want = "sha256:2de9989b836a0a0e"
 	if got := fingerprint(names); got != want {
 		sorted := make([]string, 0, len(names))
 		for n := range names {
