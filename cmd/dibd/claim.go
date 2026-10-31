@@ -149,8 +149,8 @@ func coordinatorAlreadyDecided(granted bool, roles RolesConfig) bool {
 	// the bare name as an answer therefore suppressed the launch claim on a
 	// board where no role would ever be granted, and the operator got neither
 	// the standing authority the config promised NOR the bootstrap path that
-	// exists for its absence. The README's own copyable example is exactly that
-	// file.
+	// exists for its absence. The copyable docs/CONFIGURATION.md example was
+	// exactly that file.
 	//
 	// So the name has to be one that can actually receive the role.
 	for _, names := range [][]string{roles.Coordinator, roles.Admin} {

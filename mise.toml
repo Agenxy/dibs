@@ -23,7 +23,7 @@ bun = "1.4.4"
 # neither was pinned, so `goreleaser release` built every platform, archived
 # them, and then died at the SBOM step with "No version is set for shim: syft".
 # A release chain that has never been run is a claim, not a guarantee, and the
-# README advertises reproducible builds + cosign + SBOM as facts.
+# docs/INSTALL.md advertises reproducible builds + cosign + SBOM as facts.
 # Declarative cask steps support the current GoReleaser schema.
 goreleaser = "2.19.0"
 syft = "1.55.0"

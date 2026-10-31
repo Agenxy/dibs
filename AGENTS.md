@@ -537,8 +537,8 @@ row, and the rule that a capability in source is not a behaviour:
   id, therefore the directory fallback) are about `plugins/gemini-cli` now and
   not about the harness. Re-read the predicate here rather than the row.
 
-Update the survey table in `README.md` (re-date its introduction) and the rows
-in `WAKE-MECHANISMS.md` with what was MEASURED, and put the date on each. A row
+Update the survey table in `docs/PROTOCOL.md` (re-date its introduction) and the
+rows in `WAKE-MECHANISMS.md` with what was MEASURED, and put the date on each. A row
 that was not re-measured keeps its old date, which is the honest state.
 
 **`task release VERSION=<the next version>` prepares a candidate, not a release.**
