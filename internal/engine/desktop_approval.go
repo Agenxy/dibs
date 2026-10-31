@@ -105,7 +105,9 @@ func (e *Engine) confirmDesktopApproval(ctx context.Context, plan *desktopApprov
 // On the writer, immediately before exec. A setting enabled in the meantime
 // cannot be bypassed by a plan made while it was off, and a proof for another
 // node, serial, recipient or typed effect is never transferable.
-func (e *Engine) recheckDesktopApprovalLocked(plan desktopApprovalPlan, node string, serial uint64, disposition string) error {
+func (e *Engine) recheckDesktopApprovalLocked(
+	plan desktopApprovalPlan, node string, serial uint64, disposition string,
+) error {
 	m := e.state.Messages[serial]
 	if m == nil {
 		return nativeHumanError("E_ALREADY_ANSWERED", "message is gone")
@@ -118,7 +120,8 @@ func (e *Engine) recheckDesktopApprovalLocked(plan desktopApprovalPlan, node str
 		return nativeHumanError("E_APPROVAL_CHANGED", "the approval effect changed during confirmation")
 	}
 	if e.state.DesktopApproval.Enabled && disposition == "approve" && m.HasApprovalEffect() && !plan.verified {
-		return nativeHumanError("E_HUMAN_PRESENCE", "confirmation was enabled before this approval committed; request remains pending")
+		return nativeHumanError("E_HUMAN_PRESENCE",
+			"confirmation was enabled before this approval committed; request remains pending")
 	}
 	return nil
 }

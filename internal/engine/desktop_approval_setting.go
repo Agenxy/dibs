@@ -22,5 +22,6 @@ func (e *Engine) DesktopApprovalSettings(ctx context.Context) (core.Result, erro
 
 func desktopApprovalSettingError() error {
 	return &core.Error{Code: "E_HUMAN_SETTING", Msg: "only the human may turn off privileged desktop approval confirmation",
-		Hint: "open dibs web and use Settings, or run dibs desktop-approvals off from your terminal with human authentication"}
+		Hint: "open dibs web and use Settings, or run dibs desktop-approvals off " +
+			"from your terminal with human authentication"}
 }

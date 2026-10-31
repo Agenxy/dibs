@@ -35,7 +35,8 @@ var snapshotFeatures = []snapshotFeature{
 			"core.RecoveredAddress.Source", "core.RecoveredAddress.SourceCreated", "core.RecoveredAddress.Into",
 			"core.RecoveredAddress.SurvivorCreated", "core.RecoveredAddress.By", "core.RecoveredAddress.Serial",
 			"core.InheritedDeclaration.Source", "core.InheritedDeclaration.SourceCreated", "core.InheritedDeclaration.Host",
-			"core.InheritedDeclaration.RecoveredSerial", "core.InheritedDeclaration.UpdatedAt", "core.InheritedDeclaration.Declaration",
+			"core.InheritedDeclaration.RecoveredSerial", "core.InheritedDeclaration.UpdatedAt",
+			"core.InheritedDeclaration.Declaration",
 			"core.RecoveryRequest.From", "core.RecoveryRequest.Into", "core.RecoveryRequest.SourceCreated",
 			"core.RecoveryRequest.SurvivorCreated", "core.RecoveryRequest.CoordinatorCreated", "core.RecoveryRequest.Fence",
 		},
@@ -81,7 +82,8 @@ func snapshotHeaderForState(h SnapshotHeader, st *core.State) SnapshotHeader {
 
 func validateSnapshotFeatures(h SnapshotHeader) error {
 	if h.Version != snapshotVersion && h.Version != featureSnapshotVersion {
-		return fmt.Errorf("snapshot version %d is not one this build reads (1 or 2); upgrade dibd before opening this board", h.Version)
+		return fmt.Errorf("snapshot version %d is not one this build reads (1 or 2); "+
+			"upgrade dibd before opening this board", h.Version)
 	}
 	if h.Version == snapshotVersion && len(h.Features) > 0 || h.Version == featureSnapshotVersion && len(h.Features) == 0 {
 		return fmt.Errorf("snapshot version and declared features disagree; use a build that understands this snapshot")

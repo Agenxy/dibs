@@ -35,8 +35,10 @@ func admitDesktopApprovalSetting(op *Op) error {
 
 func (s *State) applyDesktopApprovalSetting(l *Agent, op *Op, now time.Time) (Result, []Event) {
 	enabled := op.SettingValue == "true"
-	result := Result{"setting": DesktopApprovalSettingKey, "value": op.SettingValue, "saved": true,
-		"by": s.DesktopApproval.By, "at": s.DesktopApproval.At, "serial": s.Serial}
+	result := Result{
+		"setting": DesktopApprovalSettingKey, "value": op.SettingValue, "saved": true,
+		"by": s.DesktopApproval.By, "at": s.DesktopApproval.At, "serial": s.Serial,
+	}
 	if enabled == s.DesktopApproval.Enabled {
 		result["changed"] = false
 		result["by"] = s.DesktopApproval.By
