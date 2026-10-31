@@ -19,6 +19,13 @@ reveals the choices; editing reveals the reply field:
 
 ![Dark 160% after typing](dark-160-reply.png)
 
+Requests retain explicit decision buttons, with no default approval:
+
+| Text size | Light | Dark |
+|---|---|---|
+| 100% | ![Light request](request-light-100.png) | ![Dark request](request-dark-100.png) |
+| 160% | ![Light large request](request-light-160.png) | ![Dark large request](request-dark-160.png) |
+
 ## How these were measured
 
 The before images use the notifier source at `f16b91573657b842431332bfbeea61634ef4920b`

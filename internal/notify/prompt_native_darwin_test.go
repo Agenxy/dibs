@@ -5,6 +5,7 @@ package notify
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"image/png"
@@ -218,6 +219,16 @@ func TestNativePromptFullTextChoicesTypingAndNoImplicitApproval(t *testing.T) {
 	if view["defaultApproval"] != false {
 		t.Fatal("approval is default button")
 	}
+	for _, appearance := range []string{"light", "dark"} {
+		for _, scale := range []float64{1, 1.6} {
+			name := "request-" + appearance + map[float64]string{1: "-100", 1.6: "-160"}[scale] + ".png"
+			write(map[string]any{"type": "fixture_snapshot", "id": "dibs.msg.prompt.8", "path": filepath.Join(screens, name), "appearance": appearance, "scale": scale, "screenWidth": 1280, "screenHeight": 800})
+			request := read("snapshot")["view"].(map[string]any)
+			if request["defaultApproval"] != false || request["actionsFit"] != true {
+				t.Fatal("request decision controls do not fit or an approval became default")
+			}
+		}
+	}
 	write(map[string]any{"type": "fixture_edit", "id": "dibs.msg.prompt.8", "text": "I need more detail"})
 	read("editing")
 	write(map[string]any{"type": "fixture_return", "id": "dibs.msg.prompt.8"})
@@ -264,12 +275,11 @@ func TestNativePromptFullTextChoicesTypingAndNoImplicitApproval(t *testing.T) {
 // moved the shared viewport to the reply field; no desktop screenshot is used.
 func assertPromptHeaderMarkVisible(t *testing.T, path string, width float64) {
 	t.Helper()
-	f, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
-	img, err := png.Decode(f)
+	img, err := png.Decode(bytes.NewReader(data))
 	if err != nil {
 		t.Fatal(err)
 	}

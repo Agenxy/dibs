@@ -544,6 +544,7 @@ final class HumanPromptWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
          "replyVisibleHeight": replyScroll.visibleRect.height, "replyHeight": replyScroll.bounds.height,
          "replyText": composer.string,
          "choiceGroupRole": choiceGroup.accessibilityRole()?.rawValue ?? "", "headerRole": name.accessibilityRole()?.rawValue ?? "",
+         "actionsFit": actionButtons.allSatisfy { root.bounds.contains($0.frame) },
          "kindFits": root.bounds.contains(kind.frame) && kind.frame.width >= (kind.stringValue as NSString).size(withAttributes:[.font:kind.font!]).width,
          "choiceLabelsFit": radios.allSatisfy { radio in
              let required = (radio.title as NSString).boundingRect(with: NSSize(width:radio.bounds.width - 40 * scale,height:CGFloat.greatestFiniteMagnitude),
