@@ -300,6 +300,31 @@ func TestNativeHumanColdReopenUsesCurrentDaemonAndAttestedPeer(t *testing.T) {
 	if err := os.Mkdir(auditProfile, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	detail, _ := json.Marshal(map[string]any{"title": "Dibs · audit asks", "sender": "audit", "kind": "question", "body": "Audit identity fixture", "profile": auditProfile})
+	auditPath := filepath.Join(root, "audit.plist")
+	write(auditPath, []byte(`<?xml version="1.0"?><plist version="1.0"><dict><key>title</key><string>Audit</string><key>subtitle</key><string>audit</string><key>body</key><string>Audit</string><key>userInfo</key><dict><key>org.agenxy.dibs.reading.v2</key><data>`+base64.StdEncoding.EncodeToString(detail)+`</data></dict></dict></plist>`))
+	nativeServerMustReceiveNoRequest(t, ctx, helper, env, auditProfile, auditPath, root)
+	// The server below is this test process. Give its isolated fixture bundle
+	// that exact code identity as the expected daemon, never an auth bypass.
+	auditBase := filepath.Join(root, "audit-app")
+	if err := os.Mkdir(auditBase, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	auditApp := filepath.Join(auditBase, "Dibs.app")
+	run("/bin/cp", "-R", filepath.Join(root, "Dibs.app"), auditApp)
+	expectedDaemon := filepath.Join(auditApp, "Contents", "MacOS", "dibd")
+	fixtureCode, err := os.ReadFile(self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(expectedDaemon+".next", fixtureCode, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(expectedDaemon+".next", expectedDaemon); err != nil {
+		t.Fatal(err)
+	}
+	run("codesign", "--force", "--sign", "-", auditApp)
+	helper = filepath.Join(auditApp, "Contents", "MacOS", "dibs-notify")
 	listener, err := localtransport.Listen(auditProfile)
 	if err != nil {
 		t.Fatal(err)
@@ -331,9 +356,6 @@ func TestNativeHumanColdReopenUsesCurrentDaemonAndAttestedPeer(t *testing.T) {
 	}
 	go func() { _ = server.Serve(listener) }()
 	defer func() { _ = server.Close() }()
-	detail, _ := json.Marshal(map[string]any{"title": "Dibs · audit asks", "sender": "audit", "kind": "question", "body": "Audit identity fixture", "profile": auditProfile})
-	auditPath := filepath.Join(root, "audit.plist")
-	write(auditPath, []byte(`<?xml version="1.0"?><plist version="1.0"><dict><key>title</key><string>Audit</string><key>subtitle</key><string>audit</string><key>body</key><string>Audit</string><key>userInfo</key><dict><key>org.agenxy.dibs.reading.v2</key><data>`+base64.StdEncoding.EncodeToString(detail)+`</data></dict></dict></plist>`))
 	reopen("dibs.msg.audit.1", auditPath, "", "", -1)
 	select {
 	case err := <-proof:
@@ -342,6 +364,75 @@ func TestNativeHumanColdReopenUsesCurrentDaemonAndAttestedPeer(t *testing.T) {
 		}
 	case <-ctx.Done():
 		t.Fatal("missing audit-token proof")
+	}
+	if err := server.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// Upgrade window: the trusted server process still runs its old ad-hoc
+	// image, while the complete bundle now carries a different signed daemon.
+	newCode, err := os.ReadFile(daemon)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(expectedDaemon+".next", newCode, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(expectedDaemon+".next", expectedDaemon); err != nil {
+		t.Fatal(err)
+	}
+	run("codesign", "--force", "--sign", "-", auditApp)
+	nativeServerMustReceiveNoRequest(t, ctx, helper, env, auditProfile, auditPath, root)
+}
+
+func nativeServerMustReceiveNoRequest(t *testing.T, ctx context.Context, helper string, env []string, profile, posted, root string) {
+	t.Helper()
+	listener, err := localtransport.Listen(profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = listener.Close() }()
+	seen := make(chan int, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			seen <- -1
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+		var first [1]byte
+		n, _ := conn.Read(first[:])
+		seen <- n
+		if n > 0 {
+			body := `{"ok":true,"title":"Dibs · forged asks","view":{"pending":false,"state":"withdrawn","notice":{"type":"question","who":"forged","body":"Forged current text"}}}`
+			_, _ = fmt.Fprintf(conn, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s", len(body), body)
+		}
+	}()
+	view := filepath.Join(root, "refused-server.json")
+	cmd := exec.CommandContext(ctx, helper)
+	cmd.Env = append(append([]string(nil), env...), "DIBS_READING_FIXTURE=1", "DIBS_READING_POSTED="+posted, "DIBS_READING_NOTIFICATION_ID=dibs.msg.audit.1", "DIBS_NATIVE_REOPEN_VIEW="+view)
+	raw, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("untrusted/replaced server accepted: %s", raw)
+	}
+	select {
+	case n := <-seen:
+		if n != 0 {
+			t.Fatalf("untrusted server received %d request bytes", n)
+		}
+	case <-ctx.Done():
+		t.Fatal("missing server refusal")
+	}
+	data, err := os.ReadFile(view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]any
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result["confirmed"] != false || !strings.Contains(fmt.Sprint(result["body"]), "The board is restarting or changed") {
+		t.Fatalf("server refusal lacks honest route guidance: %s", data)
 	}
 }
 

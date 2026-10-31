@@ -1931,6 +1931,16 @@ and checks the installed notifier's designated code requirement; an ad-hoc
 installation requires its exact current CDHash. Unsigned/mismatched code and
 missing audit evidence are refused with a hint and logged. No credential is
 stored in notification data, argv, environment or files for this route. The
+notifier independently checks the connected server's kernel audit token against
+the bundled `dibd` code identity **before sending any request bytes**, including
+answers. A UID match alone cannot make a replacement socket authoritative.
+Both directions use the installed designated requirement for stable signatures
+and the exact current CDHash for ad-hoc builds. A replaced ad-hoc image can
+briefly refuse an older running daemon; no self-reported or peer-derived hash
+widens this trust. The window says the board is restarting or changed and to
+answer on the Dibs board, without sending the request. Correctly published
+macOS artifacts require the stable release identity (docs/RELEASE.md); unsigned
+or ad-hoc developer/offline builds do not gain that upgrade guarantee. The
 shipped helper exposes no process-openable submission command: only its native
 notification response opens a window, which fetches authoritative content before
 a deliberate window action may submit. This is a local native UI/code-identity

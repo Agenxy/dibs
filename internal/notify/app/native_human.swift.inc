@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright 2026 Agenxy
 
-enum NativeHumanFailure: Error { case unavailable }
+enum NativeHumanFailure: Error, Equatable { case unavailable, boardChanged }
 
 // Resolve a fresh board route on each opening. New notifications retain their
 // posting profile as non-secret routing data. Legacy notifications use the
@@ -51,6 +51,9 @@ func nativeHumanRPC(profile: String, method: String, payload: [String: Any]) thr
     guard fcntl(fd, F_SETFL, original) == 0 else { throw NativeHumanFailure.unavailable }
     var uid: uid_t = 0, gid: gid_t = 0
     guard getpeereid(fd, &uid, &gid) == 0, uid == geteuid() else { throw NativeHumanFailure.unavailable }
+    var audit = [UInt8](repeating: 0, count: 32), auditLength = socklen_t(32)
+    guard getsockopt(fd, SOL_LOCAL, LOCAL_PEERTOKEN, &audit, &auditLength) == 0, auditLength == 32,
+          nativeBoardPeerAttested(Data(audit)) else { throw NativeHumanFailure.boardChanged }
     var timeout = timeval(tv_sec: 15, tv_usec: 0), noSignal: Int32 = 1
     _ = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
     _ = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
@@ -105,7 +108,7 @@ func openNativeHumanMessage(id: String, profile: String?, title: String, detail:
     // explicit and cannot accidentally connect to the operator's real board.
     guard profile != nil || ProcessInfo.processInfo.environment["DIBS_NATIVE_PROFILE_DISCOVERY"] == "1" else { return false }
     #endif
-    if let existing = nativeHumanWindows[id] { existing.window?.show(); return true }
+    if let existing = nativeHumanWindows[id] { existing.refresh(); return true }
     let controller = NativeHumanController(id: id, profile: profile, title: title, detail: detail)
     nativeHumanWindows[id] = controller; controller.refresh()
     return true
@@ -151,7 +154,8 @@ final class NativeHumanController: @unchecked Sendable {
     func render(error: Bool = false) {
         window?.close()
         let label = state.replacingOccurrences(of: "_", with: " ")
-        let body = pending ? detail.body : "This message is \(label).\n\n" + detail.body
+        var body = pending ? detail.body : "This message is \(label).\n\n" + detail.body
+        if error { body = "The board is restarting or changed. Answer on the Dibs board.\n\n" + body }
         let reading = AskReadingDetail(sender: detail.sender, body: body, kind: detail.kind)
         let prompt = HumanPromptWindow(title: title, detail: reading, buttons: ["Close"],
                                        replyKind: pending ? detail.kind ?? "" : "", choices: choices) { [weak self] reply in self?.submit(reply) }
@@ -162,7 +166,7 @@ final class NativeHumanController: @unchecked Sendable {
             prompt.hint.stringValue = "Not sent · use the Dibs board"
             prompt.hint.setAccessibilityHelp(refusalHelp)
         }
-        if error { prompt.hint.stringValue = "Dibs unavailable · reopen or use the board" }
+        if error { prompt.hint.stringValue = "Use the Dibs board" }
         #if DIBS_BROKER_FIXTURE
         if brokerLaunch { nativeHumanFixtureEvent?("native_reading", id, prompt.viewInfo); return }
         #endif
@@ -193,8 +197,17 @@ final class NativeHumanController: @unchecked Sendable {
                     }
                 }
             } catch {
+                let changed = (error as? NativeHumanFailure) == .boardChanged
                 DispatchQueue.main.async {
                     self.window?.finished = false; self.window?.sent = false
+                    if changed {
+                        self.confirmed = false; self.refusedReply = reply
+                        self.render(error: true)
+                        #if DIBS_READING_FIXTURE
+                        nativeHumanFixtureFailed(self.id)
+                        #endif
+                        return
+                    }
                     self.window?.hint.stringValue = "Not confirmed · try again"
                     self.window?.updateEnabled()
                     #if DIBS_READING_FIXTURE

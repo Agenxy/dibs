@@ -49,6 +49,9 @@ import Darwin
 if CommandLine.arguments == [CommandLine.arguments[0], "--verify-notification-peer"] {
     exit(verifyNativeNotificationPeer())
 }
+if CommandLine.arguments == [CommandLine.arguments[0], "--verify-notification-board"] {
+    exit(verifyNativeNotificationPeer(board: true))
+}
 
 // These modes belong to the app that owns the background item. They do not
 // initialize notification delivery or create a permission/decision window.
