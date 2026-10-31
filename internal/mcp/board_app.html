@@ -545,7 +545,7 @@
      long-list optimization nor friendly to DOM-based assistive tooling. */
   .panel :is(.entry, .space, .msg):nth-child(n + 7) {
     content-visibility: auto;
-    contain-intrinsic-block-size: auto 7rem;
+    contain-intrinsic-block-size: auto 1.8125rem;
   }
   .panel .event:nth-child(n + 13) {
     content-visibility: auto;
@@ -2035,6 +2035,14 @@ function tab(which, { focus = false } = {}) {
 // One listener on the document, bound once, rather than rebound on every
 // redraw: the rows it watches are replaced constantly and a per-row handler
 // would have to be reattached each time, which is how one gets missed.
+// This listener belongs to this document only: it receives nothing while the
+// person's chat composer outside the iframe owns the keyboard.
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey ||
+      e.target.closest("input, textarea, select, [contenteditable]")) return
+  e.preventDefault()
+  document.getElementById("board-search").focus()
+})
 document.getElementById("board-search").addEventListener("input", (e) => {
   state.query = e.target.value
   draw()
