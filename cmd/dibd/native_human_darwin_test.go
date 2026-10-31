@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -250,6 +251,14 @@ func TestNativeHumanColdReopenUsesCurrentDaemonAndAttestedPeer(t *testing.T) {
 	if answered["state"] != "answered" || answered["reply"] != false || strings.Contains(fmt.Sprint(answered["hint"]), "send") {
 		t.Fatalf("answered reopen not read-only: %v", answered)
 	}
+	liveSerial, livePath := send("question")
+	liveID := strings.TrimSuffix(filepath.Base(livePath), ".plist")
+	nativeLiveBrokerReopen(t, ctx, helper, env, profile, root, liveID)
+	liveMail := call("read_mail", map[string]any{"token": token, "msg_serial": liveSerial, "include_body": true})
+	liveBytes, _ := json.Marshal(liveMail)
+	if !bytes.Contains(liveBytes, []byte("via live broker")) || !bytes.Contains(liveBytes, []byte("Third option")) {
+		t.Fatalf("live body action failed: %s", liveBytes)
+	}
 	// A general local-secret holder is not a native human peer. Header-selected
 	// PIDs, a declared bundle id and the correct agent/board secret cannot help.
 	for _, method := range []string{"message", "answer"} {
@@ -333,6 +342,88 @@ func TestNativeHumanColdReopenUsesCurrentDaemonAndAttestedPeer(t *testing.T) {
 		}
 	case <-ctx.Done():
 		t.Fatal("missing audit-token proof")
+	}
+}
+
+func nativeLiveBrokerReopen(t *testing.T, ctx context.Context, helper string, env []string, profile, root, id string) {
+	t.Helper()
+	lockDir := filepath.Join(root, "live-lock")
+	if err := os.Mkdir(lockDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.CommandContext(ctx, helper, "--broker")
+	cmd.Env = append(append([]string(nil), env...), "DIBS_BROKER_FIXTURE_DIR="+lockDir, "DIBS_BROKER_DISMISS_POSTED=0")
+	input, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = input.Close()
+		if err := cmd.Wait(); err != nil && !t.Failed() {
+			t.Errorf("live broker exit: %v", err)
+		}
+	}()
+	frames := make(chan map[string]any, 16)
+	go func() {
+		defer close(frames)
+		scanner := bufio.NewScanner(output)
+		scanner.Buffer(make([]byte, 4096), 1<<20)
+		for scanner.Scan() {
+			var f map[string]any
+			if json.Unmarshal(scanner.Bytes(), &f) == nil {
+				frames <- f
+			}
+		}
+	}()
+	read := func(event string) map[string]any {
+		t.Helper()
+		select {
+		case f := <-frames:
+			if f["event"] != event {
+				t.Fatalf("want live %s, got %v", event, f)
+			}
+			return f
+		case <-time.After(10 * time.Second):
+			t.Fatalf("missing live %s", event)
+		}
+		return nil
+	}
+	write := func(f map[string]any) {
+		t.Helper()
+		f["v"] = 1
+		f["id"] = id
+		if err := json.NewEncoder(input).Encode(f); err != nil {
+			t.Fatal(err)
+		}
+	}
+	read("ready")
+	write(map[string]any{"type": "post", "title": "Dibs · cached asks", "excerpt": "cached", "detail": map[string]string{"sender": "cached", "body": "Stale notification body", "kind": "question"}, "replyKind": "question", "choices": []string{"Stale choice"}, "buttons": []string{"Later", "Reply…"}, "until": float64(time.Now().Add(time.Minute).Unix()), "profile": profile})
+	read("posted")
+	write(map[string]any{"type": "fixture_response", "action": "com.apple.UNNotificationDefaultActionIdentifier"})
+	view := read("native_reading")["view"].(map[string]any)
+	if view["reply"] != true || strings.Contains(fmt.Sprint(view["body"]), "Stale") || len(view["choices"].([]any)) != 3 {
+		t.Fatalf("live body did not fetch current message: %v", view)
+	}
+	write(map[string]any{"type": "fixture_edit", "text": "via live broker"})
+	read("editing")
+	write(map[string]any{"type": "fixture_select", "index": 2})
+	read("selected")
+	write(map[string]any{"type": "fixture_window", "action": "Send"})
+	read("native_sent")
+	// Lose the broker's entry and open its actual persisted notification. This
+	// takes the broker delegate's other reopen branch, independently of Handler.
+	write(map[string]any{"type": "cancel"})
+	write(map[string]any{"type": "fixture_reopen"})
+	final := read("native_reading")["view"].(map[string]any)
+	if final["reply"] != false || !strings.Contains(fmt.Sprint(final["body"]), "answered") || strings.Contains(fmt.Sprint(final["hint"]), "send") {
+		t.Fatalf("cold broker remained actionable: %v", final)
 	}
 }
 

@@ -164,7 +164,7 @@ final class NativeHumanController: @unchecked Sendable {
         }
         if error { prompt.hint.stringValue = "Dibs unavailable · reopen or use the board" }
         #if DIBS_BROKER_FIXTURE
-        nativeHumanFixtureEvent?("native_reading", id, prompt.viewInfo)
+        if brokerLaunch { nativeHumanFixtureEvent?("native_reading", id, prompt.viewInfo); return }
         #endif
         #if DIBS_READING_FIXTURE
         if nativeHumanFixtureRender(self, prompt) { return }
