@@ -53,6 +53,15 @@ import (
 )
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--notification-profile" {
+		selected, err := paths.SelectDir(false)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+		_ = json.NewEncoder(os.Stdout).Encode(map[string]string{"dir": selected.Dir})
+		return
+	}
 	if err := enterAppDaemon(); err != nil {
 		fmt.Fprintln(os.Stderr, "dibd:", err)
 		os.Exit(1)
@@ -368,6 +377,7 @@ func run() error {
 	// projections serve a marked fallback and retry failed reads asynchronously.
 	hostname.Current()
 	eng := engine.New(st, led, liveness.New(), history)
+	eng.SetNativeNotificationProfile(*dir)
 	eng.SetHintFile(filepath.Join(*dir, "reattach-hints.json"))
 	eng.SetAdvisoryFile(filepath.Join(*dir, "scorer-advisories.json"))
 	// SETTLED BEFORE SERVING. Nothing changes this identity afterwards; see
@@ -555,6 +565,7 @@ func run() error {
 	gate.boardFingerprint = boardconfig.BoardFingerprint(eng.NodeID())
 	gate.SetNames(cfg.Name)
 	registerHumanAPI(mux, eng, gate, *dir)
+	registerNativeHumanAPI(mux, eng)
 	clients := &localtransport.Clients{}
 	registerClientTransports(mux, clients)
 	privateHandler := clients.Handler(fileRoutes(files, gate.wrap(mux)))

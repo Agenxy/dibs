@@ -1909,12 +1909,50 @@ credential or answer capability is persisted.
 
 A fresh no-argument bundle launch installs its notification delegate before
 AppKit finishes launching, then handles the response's persisted content. It
-does not post another banner or request authorization. A stale ask or contact,
-or one delivered to another helper in the same bundle, is read-only with
-explicit board guidance; it cannot use the original helper's stdout answer
-carrier. Missing or invalid stored detail falls back to the banner text and
-board guidance. macOS Alerts versus Banners is the person's OS setting, which
-Dibs diagnoses but does not change.
+does not post another banner or request authorization. A reopened local question
+or request, including one delivered to another helper, fetches the current full
+text, choices and state from the daemon. The optional persisted `profile` is
+plain routing metadata, never authority. Older notifications resolve the current
+service profile through the bundled daemon's read-only selector; a mismatched
+board node is refused, never redirected to another message with the same serial.
+Only pending/delivered, unexpired questions and requests offer reply controls.
+Answered, approved, withdrawn and expired mail names its state and is read-only,
+without a send hint. The original asking process and anonymous answer pipe need
+not exist. Contacts and unavailable or invalid legacy detail retain board
+guidance. macOS Alerts versus Banners is the person's OS setting, which Dibs
+diagnoses but does not change.
+
+The native reconnect routes (`POST /api/human/native/message` and `answer`) do
+not accept the general local secret, a PID, a claimed bundle id, a bearer token
+or HTTPS relay credentials. They require the daemon's same-UID Unix connection
+and its kernel-supplied macOS `LOCAL_PEERTOKEN`, including process incarnation.
+The bundled notifier uses Security's dynamic guest lookup from that audit token
+and checks the installed notifier's designated code requirement; an ad-hoc
+installation requires its exact current CDHash. Unsigned/mismatched code and
+missing audit evidence are refused with a hint and logged. No credential is
+stored in notification data, argv, environment or files for this route. The
+notifier independently checks the connected server's kernel audit token against
+the bundled `dibd` code identity **before sending any request bytes**, including
+answers. A UID match alone cannot make a replacement socket authoritative.
+Both directions use the installed designated requirement for stable signatures
+and the exact current CDHash for ad-hoc builds. A replaced ad-hoc image can
+briefly refuse an older running daemon; no self-reported or peer-derived hash
+widens this trust. The window says the board is restarting or changed and to
+answer on the Dibs board, without sending the request. Correctly published
+macOS artifacts require the stable release identity (docs/RELEASE.md); unsigned
+or ad-hoc developer/offline builds do not gain that upgrade guarantee. The
+shipped helper exposes no process-openable submission command: only its native
+notification response opens a window, which fetches authoritative content before
+a deliberate window action may submit. This is a local native UI/code-identity
+boundary, not a claim against same-user process injection or desktop control.
+No fresh presence sheet is added to either desktop path. The enrolled remote
+relay's existing privileged signature/presence rule is unchanged.
+
+The writer checks board, human addressee, current pending state and deadline
+again on the same writer trip that records the ordinary human response op.
+Only one final answer can win. Reply without deciding records a linked human
+note and leaves the request pending, with a random per-window submission id
+deduplicating a transport retry; that id is not authority.
 
 One native notifier broker per Mac/user owns the live request table. The
 notifying Dibs parent (daemon or authenticated human relay) creates anonymous
@@ -1929,8 +1967,9 @@ posting. The lock contains no PID or commands; doctor observes its holder
 through the OS. Old argv callers take the same lock. The supported arrangement
 is one notifying parent per Mac/user: attached relays replace that Mac's local
 daemon desktop route. This does not promise general mediation between arbitrary
-bundle instances. A cold reading instance never claims an ask is expired:
-it says it cannot confirm the live answer route and points to the board.
+bundle instances. A cold reading instance claims a final state only after the
+daemon confirms it; inability to reach the board is an unavailable route,
+never evidence that an ask expired or was answered.
 
 The recorded request/question deadline travels through local and relay
 presenters to the broker, which keeps each ask answerable until that deadline

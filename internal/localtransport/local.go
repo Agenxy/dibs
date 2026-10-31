@@ -52,7 +52,17 @@ const MissingHint = "start or upgrade dibd for this data directory; for a remote
 	"client_transport = \"https\" (or DIBS_TRANSPORT=https), an https:// address and the board's trusted CA, " +
 	"including through an HTTPS SSH forward; plaintext TCP fallback is refused"
 
-type localKey struct{}
+type (
+	localKey struct{}
+	auditKey struct{}
+)
+
+// PeerAuditToken is kernel connection evidence, never a request header. Empty
+// on transports/platforms that cannot attest a native notification peer.
+func PeerAuditToken(ctx context.Context) []byte {
+	token, _ := ctx.Value(auditKey{}).([]byte)
+	return append([]byte(nil), token...)
+}
 
 // IsLocal is kernel-derived connection evidence, never a request header.
 func IsLocal(ctx context.Context) bool {
@@ -70,7 +80,11 @@ func ConnContext(ctx context.Context, conn net.Conn) context.Context {
 		_ = conn.Close()
 		return ctx
 	}
-	return context.WithValue(ctx, localKey{}, true)
+	ctx = context.WithValue(ctx, localKey{}, true)
+	if token := peerAuditToken(conn); len(token) == 32 {
+		ctx = context.WithValue(ctx, auditKey{}, token)
+	}
+	return ctx
 }
 
 // RoundTripper returns a transport for one explicitly selected profile. The

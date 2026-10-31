@@ -25,6 +25,7 @@ import (
 const brokerFrameLimit = 1024 * 1024
 
 type brokerPost struct {
+	Profile       string          `json:"profile,omitempty"`
 	Version       int             `json:"v"`
 	Type          string          `json:"type"`
 	ID            string          `json:"id"`

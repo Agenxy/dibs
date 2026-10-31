@@ -55,6 +55,7 @@ type humanReceipt struct {
 type humanDeliveries struct {
 	mu            sync.Mutex
 	notifier      HumanNotifier
+	nativeProfile string // routing metadata, never an answer capability
 	bySerial      map[uint64]humanDelivery
 	contactIssued map[uint64]bool // a contact alert actually left the settle timer
 	cleanup       chan NotificationCleanup
@@ -84,6 +85,14 @@ func (e *Engine) SetHumanNotifier(n HumanNotifier) {
 	e.humanDelivery.mu.Lock()
 	defer e.humanDelivery.mu.Unlock()
 	e.humanDelivery.notifier = n
+}
+
+// SetNativeNotificationProfile names this daemon's selected board for reopens.
+// Configure before Run; it is routing metadata, not a credential or authority.
+func (e *Engine) SetNativeNotificationProfile(dir string) {
+	e.humanDelivery.mu.Lock()
+	e.humanDelivery.nativeProfile = dir
+	e.humanDelivery.mu.Unlock()
 }
 
 func (e *Engine) localHumanNotifier() (func() bool, func(humanask.Message) (humanask.Answer, error)) {
@@ -150,12 +159,16 @@ func (e *Engine) dispatchHuman(res core.Result) {
 }
 
 func (e *Engine) askHumanDesktop(n HumanNotice, ask func(humanask.Message) (humanask.Answer, error)) {
+	e.humanDelivery.mu.Lock()
+	profile := e.humanDelivery.nativeProfile
+	e.humanDelivery.mu.Unlock()
 	a, err := ask(humanask.Message{
 		Type: n.Type, Priority: n.Priority, From: n.From, FromName: n.FromName, Who: n.Who, Body: n.Body,
 		Contact: n.Contact,
 		Choices: n.Choices, Grant: n.Grant, Adopt: n.Adopt, AdoptName: n.AdoptName, Merge: n.Merge,
 		Serial: n.Serial, Node: n.Node,
-		Deadline: n.Deadline,
+		Deadline:            n.Deadline,
+		NotificationProfile: profile,
 		Receipt: func(state string) {
 			if state == "posted" {
 				e.setHumanPresentation(n.Serial, e.humanPresentation(), true)

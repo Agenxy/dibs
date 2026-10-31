@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	hostdisplay "github.com/agenxy/dibs/internal/hostname"
 	"github.com/agenxy/dibs/internal/humanask"
 )
 
@@ -155,7 +156,13 @@ func (e *Engine) noticeOf(m *core.Message) HumanNotice {
 		Node: e.state.NodeID,
 	}
 	if a := e.state.Agents[m.From]; a != nil {
-		n.Who = whoIs(a)
+		view := *a
+		if a.Agent != nil {
+			info := *a.Agent
+			info.Host = e.boardHostLabel(a.Agent, nil, hostdisplay.Current().Name)
+			view.Agent = &info
+		}
+		n.Who = whoIs(&view)
 	}
 	if m.Merge != nil {
 		effect := *m.Merge

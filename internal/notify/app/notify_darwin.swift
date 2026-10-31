@@ -45,6 +45,14 @@ import Intents
 import ServiceManagement
 import Darwin
 
+// No UI, notification authorization or client-selected executable participates.
+if CommandLine.arguments == [CommandLine.arguments[0], "--verify-notification-peer"] {
+    exit(verifyNativeNotificationPeer())
+}
+if CommandLine.arguments == [CommandLine.arguments[0], "--verify-notification-board"] {
+    exit(verifyNativeNotificationPeer(board: true))
+}
+
 // These modes belong to the app that owns the background item. They do not
 // initialize notification delivery or create a permission/decision window.
 let serviceModes = ["--service-status", "--service-register", "--service-unregister"]
@@ -673,14 +681,15 @@ struct AskReadingDetail: Codable {
     let kind: String?
 }
 
-// Persist only the text already shown to this human, never executable links,
-// credentials or an answer capability. macOS stores this in its notification
-// database; it has no stronger privacy claim than the banner itself.
+// Persist text already shown to this human and a plain local profile route,
+// never executable links, credentials or an answer capability. macOS stores
+// this in its notification database, with the banner's privacy boundary.
 struct StoredReadingDetail: Codable {
     var title: String
     var sender: String
     var body: String
     let kind: String
+    var profile: String? = nil
 }
 let readingKey = "org.agenxy.dibs.reading.v1"
 let fullReadingKey = "org.agenxy.dibs.reading.v2"
@@ -775,6 +784,7 @@ final class BrokerEntry {
     var beganPosting = false
     var replyKind = ""
     var choices = [String]()
+    var profile: String? = nil
     init(id: String, title: String, subtitle: String, excerpt: String, detail: AskReadingDetail,
          buttons: [String], until: Date, timeSensitive: Bool) {
         self.id = id; self.title = title; self.subtitle = subtitle; self.excerpt = excerpt
@@ -864,6 +874,12 @@ final class NativeNotificationBroker: NSObject, UNUserNotificationCenterDelegate
         FileHandle.standardOutput.write(data + Data([10]))
     }
     func start() {
+        #if DIBS_BROKER_FIXTURE
+        nativeHumanFixtureEvent = { [weak self] event, id, view in self?.emit(event, id: id, view: view) }
+        if let path = ProcessInfo.processInfo.environment["DIBS_BROKER_PID_FILE"] {
+            try! Data(String(getpid()).utf8).write(to: URL(fileURLWithPath: path))
+        }
+        #endif
         let parent = getppid()
         guard parent > 1 else { exit(1) }
         let source = DispatchSource.makeProcessSource(identifier: parent, eventMask: .exit,
@@ -896,18 +912,29 @@ final class NativeNotificationBroker: NSObject, UNUserNotificationCenterDelegate
         }
         if type == "cancel" { remove(id, removeBanner: true); return }
         #if DIBS_BROKER_FIXTURE
+        if type == "fixture_reopen", let dir = ProcessInfo.processInfo.environment["DIBS_BROKER_POSTED_DIR"],
+           let bytes = try? Data(contentsOf: URL(fileURLWithPath: dir).appendingPathComponent(id + ".plist")),
+           let saved = (try? PropertyListSerialization.propertyList(from: bytes, format: nil)) as? [String: Any] {
+            let content = UNMutableNotificationContent()
+            content.title = saved["title"] as? String ?? "Dibs"
+            content.subtitle = saved["subtitle"] as? String ?? ""
+            content.body = saved["body"] as? String ?? ""
+            content.userInfo = saved["userInfo"] as? [AnyHashable: Any] ?? [:]
+            response(id: id, action: UNNotificationDefaultActionIdentifier, content: content); return
+        }
+        let fixtureWindow = windows[id] ?? nativeHumanWindows[id]?.window
         if type == "fixture_response", let action = value["action"] as? String {
             response(id: id, action: action, content: nil); return
         }
-        if type == "fixture_edit", let window = windows[id], let text = value["text"] as? String {
+        if type == "fixture_edit", let window = fixtureWindow, let text = value["text"] as? String {
             window.composer.insertText(text, replacementRange: NSRange(location: 0, length: (window.composer.string as NSString).length))
             emit("editing", id: id, view: window.viewInfo); return
         }
-        if type == "fixture_select", let window = windows[id], let index = value["index"] as? Int,
+        if type == "fixture_select", let window = fixtureWindow, let index = value["index"] as? Int,
            window.radios.indices.contains(index) {
             window.radios[index].performClick(nil); emit("selected", id: id, view: window.viewInfo); return
         }
-        if type == "fixture_return", let window = windows[id] {
+        if type == "fixture_return", let window = fixtureWindow {
             if let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
                                            windowNumber: window.panel.windowNumber, context: nil, characters: "\r",
                                            charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36) {
@@ -916,14 +943,14 @@ final class NativeNotificationBroker: NSObject, UNUserNotificationCenterDelegate
             if windows[id] != nil { emit("unchanged", id: id, view: window.viewInfo) }
             return
         }
-        if type == "fixture_end", let window = windows[id] {
+        if type == "fixture_end", let window = fixtureWindow {
             window.revealMessageEnd(); emit("end", id: id, view: window.viewInfo); return
         }
-        if type == "fixture_tab_choices", let window = windows[id] {
+        if type == "fixture_tab_choices", let window = fixtureWindow {
             window.panel.makeFirstResponder(window.message); window.panel.selectNextKeyView(nil)
             emit("focused", id: id, view: window.viewInfo); return
         }
-        if type == "fixture_key", let window = windows[id], let code = value["keyCode"] as? Int {
+        if type == "fixture_key", let window = fixtureWindow, let code = value["keyCode"] as? Int {
             if value["focus"] as? String == "reply" { window.panel.makeFirstResponder(window.composer) }
             var modifiers: NSEvent.ModifierFlags = []
             for flag in value["modifiers"] as? [String] ?? [] { if flag == "shift" { modifiers.insert(.shift) }; if flag == "option" { modifiers.insert(.option) } }
@@ -936,7 +963,7 @@ final class NativeNotificationBroker: NSObject, UNUserNotificationCenterDelegate
             if windows[id] != nil { emit("keyed", id: id, view: window.viewInfo) }
             return
         }
-        if type == "fixture_snapshot", let window = windows[id], let path = value["path"] as? String {
+        if type == "fixture_snapshot", let window = fixtureWindow, let path = value["path"] as? String {
             if let scale = value["scale"] as? Double { window.fixtureScale = scale }
             if let width = value["screenWidth"] as? Double, let height = value["screenHeight"] as? Double { window.fixtureScreen = NSSize(width: width, height: height) }
             if let appearance = value["appearance"] as? String { window.panel.appearance = NSAppearance(named: appearance == "dark" ? .darkAqua : .aqua) }
@@ -957,7 +984,7 @@ final class NativeNotificationBroker: NSObject, UNUserNotificationCenterDelegate
             emit("snapshot", id: id, view: window.viewInfo); return
         }
         if type == "fixture_window", let action = value["action"] as? String {
-            if let window = windows[id], let button = window.actionButtons.first(where: { $0.title == action }) {
+            if let window = fixtureWindow, let button = window.actionButtons.first(where: { $0.title == action }) {
                 button.performClick(nil)
             } else { emit("refused", id: id) }
             return
@@ -997,6 +1024,7 @@ final class NativeNotificationBroker: NSObject, UNUserNotificationCenterDelegate
                                 until: min(Date(timeIntervalSince1970: until), Date().addingTimeInterval(cap)),
                                 timeSensitive: value["timeSensitive"] as? Bool == true || !buttons.isEmpty)
         entry.replyKind = replyKind; entry.choices = choices
+        if let profile = value["profile"] as? String, profile.hasPrefix("/"), profile.utf8.count <= 4096 { entry.profile = profile }
         if !buttons.isEmpty && entry.until <= Date() { emit("expired", id: id); return }
         entries[id] = entry
         if !buttons.isEmpty {
@@ -1033,7 +1061,8 @@ final class NativeNotificationBroker: NSObject, UNUserNotificationCenterDelegate
         content.title = entry.title; content.subtitle = entry.subtitle; content.body = entry.excerpt
         content.userInfo[readingKey] = storedReading(entry.title, detail: entry.detail)
         if !entry.replyKind.isEmpty {
-            let full = StoredReadingDetail(title: entry.title, sender: entry.detail.sender, body: entry.detail.body, kind: entry.detail.kind ?? "message")
+            var full = StoredReadingDetail(title: entry.title, sender: entry.detail.sender, body: entry.detail.body, kind: entry.detail.kind ?? "message")
+            full.profile = entry.profile
             guard let bytes = try? JSONEncoder().encode(full), bytes.count <= 1048576 else {
                 remove(entry.id, removeBanner: false); emit("failed", id: entry.id, error: "full notification text exceeds the private frame bound"); return
             }
@@ -1074,6 +1103,11 @@ final class NativeNotificationBroker: NSObject, UNUserNotificationCenterDelegate
                 let level = entry.timeSensitive ? "timeSensitive" : "active"
                 self.emit("posted", id: entry.id, receipt: ["state": "posted", "settings": settings as Any? ?? NSNull(),
                           "interruption_level": level, "requested_interruption_level": level])
+                #if DIBS_BROKER_FIXTURE
+                if ProcessInfo.processInfo.environment["DIBS_BROKER_DISMISS_POSTED"] == "1" && !entry.buttons.isEmpty {
+                    self.response(id: entry.id, action: UNNotificationDismissActionIdentifier, content: content)
+                }
+                #endif
                 if entry.buttons.isEmpty { self.entries.removeValue(forKey: entry.id) }
             }
         }
@@ -1103,6 +1137,8 @@ final class NativeNotificationBroker: NSObject, UNUserNotificationCenterDelegate
     }
     func response(id: String, action: String, content: UNNotificationContent?) {
         if let entry = entries[id] {
+            if (action == UNNotificationDefaultActionIdentifier || action == "Reply…"), entry.profile != nil,
+               openNativeHumanMessage(id: id, profile: entry.profile, title: entry.title, detail: entry.detail) { return }
             if !entry.buttons.isEmpty && entry.until <= Date() {
                 remove(id, removeBanner: true); emit("expired", id: id); return
             }
@@ -1117,6 +1153,8 @@ final class NativeNotificationBroker: NSObject, UNUserNotificationCenterDelegate
         }
         guard let content, action != UNNotificationDismissActionIdentifier else { return }
         let saved = persistedReading(content)
+        if openNativeHumanMessage(id: id, profile: saved?.profile, title: saved?.title ?? content.title,
+                                  detail: AskReadingDetail(sender: saved?.sender ?? content.subtitle, body: saved?.body ?? content.body, kind: saved?.kind)) { return }
         var text = saved?.body ?? content.body
         if saved?.kind != "notify" && saved?.kind != "handoff" {
             text += "\n\nThis window cannot confirm the live answer route; continue on the Dibs board."
@@ -1242,9 +1280,8 @@ final class Handler: NSObject, UNUserNotificationCenterDelegate {
             else if coldLaunch { self.finish("") }
             return
         }
-        // Only the original invocation owns stdout and its live answer route.
-        // A different helper may receive an old notification from this bundle.
-        // Read its persisted content, but never answer somebody else's ask.
+        // An original invocation still owns its stdout route. Reopened asks
+        // fetch authoritative state and answer through the attested daemon route.
         if own && action != UNNotificationDefaultActionIdentifier {
             h()
             if buttons.contains(action) { finish(action) }
@@ -1252,6 +1289,8 @@ final class Handler: NSObject, UNUserNotificationCenterDelegate {
         }
         h() // acknowledge before entering the nested modal run loop
         let saved = content.flatMap { persistedReading($0) }
+        if !own, openNativeHumanMessage(id: identifier, profile: saved?.profile, title: saved?.title ?? content?.title ?? "Dibs",
+                                       detail: AskReadingDetail(sender: saved?.sender ?? content?.subtitle ?? "Dibs", body: saved?.body ?? content?.body ?? "", kind: saved?.kind)) { return }
         let detail: AskReadingDetail
         let heading: String
         let choices: [String]
@@ -1389,6 +1428,10 @@ if coldLaunch {
         content.subtitle = saved["subtitle"] as! String
         content.body = saved["body"] as! String
         content.userInfo = saved["userInfo"] as! [AnyHashable: Any]
+        if askEnvironment["DIBS_READING_LEGACY_PROFILE"] == "1", let data = content.userInfo[fullReadingKey] as? Data,
+           var detail = try? JSONDecoder().decode(StoredReadingDetail.self, from: data) {
+            detail.profile = nil; content.userInfo[fullReadingKey] = try! JSONEncoder().encode(detail)
+        }
         switch askEnvironment["DIBS_READING_CORRUPT"] {
         case "oversize":
             let oversized = StoredReadingDetail(title: "Daemon effect", sender: "Daemon sender",
@@ -1399,7 +1442,7 @@ if coldLaunch {
         default: break
         }
         guard let installed = centre.delegate as? Handler else { exit(2) }
-        installed.receive(identifier: "dibs.msg.reading.7",
+        installed.receive(identifier: askEnvironment["DIBS_READING_NOTIFICATION_ID"] ?? "dibs.msg.reading.7",
                         action: askEnvironment["DIBS_READING_ACTION"] ?? UNNotificationDefaultActionIdentifier,
                         content: content, completion: {})
     }
@@ -1437,7 +1480,7 @@ if readingDetail != nil && !buttons.isEmpty {
     DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + lifetime, execute: expireAsk)
 } else {
     DispatchQueue.main.asyncAfter(deadline: .now() + (buttons.isEmpty ? 10 : lifetime)) {
-        if !handler.reading { finish(1) }
+        if !handler.reading && nativeHumanWindows.isEmpty { finish(1) }
     }
 }
 app.run()

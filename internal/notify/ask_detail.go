@@ -16,6 +16,7 @@ import (
 // helper persists a bounded copy in macOS notification userInfo. Deadline is
 // the request's recorded bound; zero falls back to the native 24-hour cap.
 type AskDetail struct {
+	Profile            string // local routing metadata, not a credential
 	Sender, Body, Kind string
 	Deadline           time.Time
 }

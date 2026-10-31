@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"image/png"
 	"os"
 	"os/exec"
@@ -300,6 +301,17 @@ func TestNativePromptFullTextChoicesTypingAndNoImplicitApproval(t *testing.T) {
 	read("reading")
 	write(map[string]any{"type": "fixture_key", "id": "dibs.msg.prompt.11", "keyCode": 53})
 	read("dismissed")
+	write(map[string]any{
+		"type": "post", "id": "dibs.msg.prompt.12", "title": "Dibs · test-agent asks", "excerpt": "Already answered",
+		"detail":  map[string]string{"sender": "test-agent · Claude Code in Dibs · at friendly-host", "body": "Already answered", "kind": "question"},
+		"buttons": []string{"Close"}, "until": float64(time.Now().Add(time.Minute).Unix()),
+	})
+	read("posted")
+	write(map[string]any{"type": "fixture_response", "id": "dibs.msg.prompt.12", "action": "com.apple.UNNotificationDefaultActionIdentifier"})
+	readonly := read("reading")["view"].(map[string]any)
+	if readonly["reply"] != false || strings.Contains(fmt.Sprint(readonly["hint"]), "send") || readonly["context"] != "Claude Code in Dibs · at friendly-host" {
+		t.Fatalf("read-only window promises send or repeats sender: %v", readonly)
+	}
 }
 
 // Geometry alone misses a scrolled document painting over the pinned header.

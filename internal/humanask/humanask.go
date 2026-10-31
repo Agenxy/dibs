@@ -29,24 +29,25 @@ import (
 
 // Message is one message for the person.
 type Message struct {
-	Type            string // question, request, handoff, notify
-	Priority        string // sender priority, for a high/urgent notify's OS interruption level
-	From            string
-	FromName        string // current name; From stays the stable ID
-	Who             string // the daemon's line about the sender, never the sender's own words
-	Body            string
-	Contact         *Contact // daemon-authored reachability notice, never participant body
-	Choices         []string
-	Grant           string
-	Merge           *core.MergeRequest
-	Adopt           string
-	AdoptName       string    // current name; Adopt stays the stable ID
-	Serial          uint64    // stable message identity on Node
-	Node            string    // board identity; serials are not global
-	Deadline        time.Time // recorded request deadline, not the banner lifetime
-	Receipt         notify.Receipt
-	DeliveryReceipt notify.DeliveryReceipt
-	ask             func(string, string, notify.Receipt, ...string) (string, error) // test presenter
+	NotificationProfile string // local board routing; never sent as answer authority
+	Type                string // question, request, handoff, notify
+	Priority            string // sender priority, for a high/urgent notify's OS interruption level
+	From                string
+	FromName            string // current name; From stays the stable ID
+	Who                 string // the daemon's line about the sender, never the sender's own words
+	Body                string
+	Contact             *Contact // daemon-authored reachability notice, never participant body
+	Choices             []string
+	Grant               string
+	Merge               *core.MergeRequest
+	Adopt               string
+	AdoptName           string    // current name; Adopt stays the stable ID
+	Serial              uint64    // stable message identity on Node
+	Node                string    // board identity; serials are not global
+	Deadline            time.Time // recorded request deadline, not the banner lifetime
+	Receipt             notify.Receipt
+	DeliveryReceipt     notify.DeliveryReceipt
+	ask                 func(string, string, notify.Receipt, ...string) (string, error) // test presenter
 }
 
 // Contact contains only a system-composed summary. OpenURL is permitted only
@@ -165,6 +166,7 @@ func (m Message) nativeReply() (Answer, error) {
 		receipt = func(r notify.ReceiptData) { m.Receipt(r.State) }
 	}
 	detail := notify.AskDetail{Sender: sender, Body: m.Body, Kind: m.Type, Deadline: m.Deadline}
+	detail.Profile = m.NotificationProfile
 	reply, err := notify.ReplyMessage(m.Node, m.Serial, title, detail, m.Choices, receipt)
 	if err != nil {
 		return Answer{}, err
