@@ -501,6 +501,40 @@ warn, and a peer's complementary slot does not hide its separate duplicate slot.
 This is advisory presentation derived from the recorded activities, not a new
 permission, admission rule or ledger field.
 
+**Lost-credential recovery.** `recover_agent(token, agent, dry_run:true)` previews
+counts and incarnation-bound effects into the authenticated caller only. Commit
+its fence to create a typed request to the current coordinator. A distinct
+coordinator (recorded `OtherHands` provenance, including for admins) must approve.
+Request and approval recheck canonical host/harness/surface/persistent kind,
+unprivileged dormant/stale unbound source, newer bound survivor, known process
+absence, claim conflicts, incarnations, address capacity and the content fence
+on one writer trip. Source credential or a human-reviewed merge remains the
+corrective when those conditions do not hold. No public metadata reattaches a
+mailbox; `register(recover_from)` only returns a pending recovery offer.
+
+Approval atomically moves owned incoming mail and outgoing ownership, claims and
+space relationships, closes the source and retires its source-only credentials
+with negative authority. Every old declaration, including earlier inherited
+history, retains source incarnation, slot version, original change time (unknown
+when unavailable), paths/host, refs and holds in a separate inherited collection.
+Inherited history never counts as live work, holds, parked debt or continuation.
+The survivor's current slots are untouched. Own check-in replies show at most
+eight history handles; ordinary `undeclare` retires them. A fresh declaration is
+required to claim live work. Capacity is max(256, MaxSlotsPerAgent), enough for
+eight default full sources or one configured larger source; overflow refuses
+without truncating or moving anything.
+
+Durable recovered-address records reserve the source ID and name beyond source
+retention. Only new mail ingress follows these records and ledgers the effective
+destination; cleanup and old ledger recipients retain their original meaning.
+The destination incarnation is checked, including through chained recoveries;
+a retired or reused survivor refuses with a corrective. No unprivileged
+registration or rename can reuse a recovered address. There are at most 4096
+reserved address entries; exceeding that budget refuses without an effect.
+The preview plainly names which mail starts routing to the survivor. General
+adoption and merge policies below are unchanged. A daemon without the new verb
+refuses the recovery call before any mutation.
+
 **Supported duplicate repair.** `merge_agents(token, agent, into, dry_run:true)`
 returns a metadata-only plan and a stateless content `fence`; the real call
 supplies that fence with the same ordered IDs. Counts distinguish message
@@ -1608,7 +1642,7 @@ an unfinished request and maps its tracked task to `cancelled`, with a factual
 result and optional replacement reference. Task listeners publish this terminal
 snapshot and stop following it. Neither operation stops an agent process.
 
-**Tools (53).** All take `token` except `register`, `resume`,
+**Tools (54).** All take `token` except `register`, `resume`,
 `hook_poll` and `guard_path` (the last two are lifecycle-hook surfaces and have
 no token to give: see SECURITY.md).
 
@@ -2074,7 +2108,7 @@ binaries (`dibd` and `dibs`) both CGO_ENABLED=0 and byte-reproducible.
 ledgered wake transitions; ephemeral + persistent agents; resume; awareness gate
 per activation; mailbox (full state machine, read_mail, op_id dedup,
 dormant-recipient semantics); claims (§9 matrix); bounded liveness with bounded
-restart grace; limits incl. state GC; MCP 2026-07-28 dual-version surface (53 tools);
+restart grace; limits incl. state GC; MCP 2026-07-28 dual-version surface (54 tools);
 local access secret + Origin validation; CLI (board/messages/log/verify/mcp-config);
 SSE web board; static binaries (`dibd` + `dibs`, no cgo, no runtime deps).
 

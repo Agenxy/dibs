@@ -683,6 +683,24 @@ It needs the human at the machine (`human_unlock`), a coordinator or an admin.
 Taking another agent's mail is otherwise exactly the thing Dibs must never
 allow, so there is no agent-to-agent version of this and there will not be one.
 
+For a lost credential with a newly bound recovering identity, call
+`recover_agent(agent:"<lost id>", dry_run:true)` with your own token. The preview
+states which new mail will start routing to you. Repeat with its `fence` to ask
+a distinct coordinator; their Approve performs recovery. Until then you cannot
+read the old mailbox. This narrowly requires matching known machine, harness,
+surface and persistent kind, an unprivileged dormant unbound source with no live
+or unknown process, and your newer bound identity. Public names are not authority.
+Old declarations move into inactive inherited history, separate from your live
+slots, holds and continuations. `check_in` shows eight inherited handles at a time;
+`undeclare(slot_id:<handle>)` retires one. Declare live work explicitly in a new
+slot. History is never truncated: the default cap is 256 (or a larger configured
+single-source slot allowance); retire your own earlier history before retrying a
+capacity refusal. Source-only nonces cannot open your survivor. Recovered source
+IDs and names remain reserved and route new mail at ingress even without the old
+row; adoption remains one-time. If registering a new recovering identity,
+`recover_from` returns this pending offer while preserving the actual returned
+nonce/token; it never reattaches you by public identity claims.
+
 For a permanent duplicate repair, preview
 `merge_agents(agent:"<fork>", into:"<survivor>", dry_run:true)`, inspect the
 metadata counts and direction, then repeat with its `fence`. A coordinator can
@@ -834,7 +852,7 @@ the recipient from starting, declining or finishing work.
 ## Protocol version: what is actually true today
 
 Dibs targets **MCP 2026-07-28** (stateless core) and also serves the legacy
-**2025-11-25** path. Both work, all 53 tools behave identically on either, and
+**2025-11-25** path. Both work, all 54 tools behave identically on either, and
 you need do nothing.
 
 **Configured Codex reaches 2026-07-28.** Re-measured 2026-10-03 on the app's
@@ -861,7 +879,7 @@ infrastructure advice every session is an agent people turn off.
 
 **What changes if your operator does enable it:** nothing you call. You gain a
 protocol with no `initialize` handshake, so a reconnect costs nothing, and list
-results carry `ttlMs`/`cacheScope` so your client can stop re-fetching 53 tool
+results carry `ttlMs`/`cacheScope` so your client can stop re-fetching 54 tool
 descriptions on every cold start. Your own tool calls are unchanged.
 
 ## Reading the room before you act

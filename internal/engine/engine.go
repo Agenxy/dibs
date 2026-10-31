@@ -481,6 +481,8 @@ func (e *Engine) execWithReceipt(
 	}
 	op.PriorAdoptionSerial = 0
 	op.MergeActor = nil // authentication decision is never caller input
+	op.RecoveryActor = nil
+	op.RecoveryDeclarationTimes = nil
 	op.MailTrafficV1 = op.Kind == core.OpSendMessage
 	op.DeliveryStart = false // ingress owns the new-send semantic flag
 	op.QueueDebt = false
@@ -919,6 +921,9 @@ func (e *Engine) execWithReceipt(
 	}
 
 	if err := e.refuseAmbiguousRelease(op); err != nil {
+		return nil, err
+	}
+	if err := e.prepareRecoveryEffect(op, actor); err != nil {
 		return nil, err
 	}
 	if err := e.prepareMergeEffect(op, actor); err != nil {

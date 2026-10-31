@@ -647,6 +647,9 @@ func (s *State) Board() map[string]any {
 			"status": l.Status, "activation": l.Activation, "slots": slots,
 			"last_coordination_at": l.LastCoordination,
 		}
+		if len(l.InheritedDeclarations) > 0 {
+			lm["inherited_declaration_count"] = len(l.InheritedDeclarations)
+		}
 		if c, ok := capacityWarnings[l.ID]; ok {
 			lm["mailbox_capacity"] = c
 		}

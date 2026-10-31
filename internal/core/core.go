@@ -402,6 +402,8 @@ type AgentInfo struct {
 // Agent is a participant on the board: an identity, a mailbox and a heartbeat.
 // (SPEC-CHANNELS.md §1 renames this to `agent`; the rename is a separate pass.)
 type Agent struct {
+	InheritedDeclarations map[string]InheritedDeclaration `json:"inherited_declarations,omitempty"`
+
 	ID          string    `json:"id"`
 	Kind        AgentKind `json:"kind"`
 	Name        string    `json:"name"`
@@ -659,6 +661,7 @@ func (l *Agent) CanHoldExclusive() bool {
 // Message is one mailbox item. Body/Response plaintext in memory; ciphertext
 // at rest.
 type Message struct {
+	Recovery *RecoveryRequest `json:"recovery,omitempty"`
 	// Zero in historical requests means no recorded stall notice. This survives
 	// the notice's retention because the approved request remains owed work.
 	StallNotifiedDeclaration uint64 `json:"stall_notified_declaration_serial,omitempty"`
@@ -877,6 +880,8 @@ type LegacyAckSnapshot struct {
 
 // State is the entire replayable truth. Only Apply mutates it.
 type State struct {
+	RecoveredAddresses map[string]RecoveredAddress `json:"recovered_addresses,omitempty"`
+
 	Traffic         *TrafficHistory `json:"traffic,omitempty"`
 	NodeID          string
 	Serial          uint64

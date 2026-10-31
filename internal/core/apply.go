@@ -332,6 +332,11 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 	if !op.BridgeSurfaceEvidence {
 		l.LastCoordination = now
 	}
+	if op.Kind == OpSendMessage && op.Recovery != nil {
+		if m := s.Messages[s.Serial+1]; m != nil && m.Recovery != nil {
+			m.Recovery.Fence = s.MergeFence(m.Recovery.From, m.Recovery.Into, m.Serial)
+		}
+	}
 	if op.Kind == OpSendMessage && op.Merge != nil {
 		if m := s.Messages[s.Serial+1]; m != nil && m.Merge != nil {
 			m.Merge.Fence = s.MergeFence(m.Merge.From, m.Merge.Into, m.Serial)
@@ -1301,6 +1306,11 @@ func (s *State) applySetSlot(l *Agent, op *Op) (Result, []Event, error) {
 }
 
 func (s *State) applyClearSlot(l *Agent, op *Op) (Result, []Event, error) {
+	if _, ok := l.InheritedDeclarations[op.SlotID]; ok {
+		delete(l.InheritedDeclarations, op.SlotID)
+		return Result{"ok": true, "retired_inherited": true},
+			[]Event{{Type: "slot.inherited_retired", Agent: l.ID, Data: map[string]any{"slot_id": op.SlotID}}}, nil
+	}
 	if _, ok := l.Slots[op.SlotID]; !ok {
 		return nil, nil, errf("E_NO_SLOT", "list your slots via the board", "no slot %q", op.SlotID)
 	}
@@ -1526,6 +1536,10 @@ func (s *State) finishSend(
 			ceiling = responseWindow
 		}
 		m.NeverDeliveredAt = now.Add(ceiling)
+	}
+	if op.Recovery != nil {
+		effect := *op.Recovery
+		m.Recovery = &effect
 	}
 	if op.Merge != nil {
 		effect := *op.Merge
@@ -1766,6 +1780,12 @@ func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, 
 			Type: "agent.role_changed", Agent: granted.ID,
 			Data: map[string]any{"role": m.Grant, "via": "approved_request"},
 		})
+	}
+	if st == MsgStateApproved && m.Recovery != nil {
+		recovered, events := s.applyRecovery(m.Recovery, op.RecoveryActor, op.RecoveryDeclarationTimes, now)
+		res["recovered"] = recovered
+		evs[0].Data["recovered_from"], evs[0].Data["recovered_into"] = m.Recovery.From, m.Recovery.Into
+		evs = append(evs, events...)
 	}
 	if st == MsgStateApproved && m.Merge != nil {
 		merged, events := s.mergeSupported(m.Merge.From, m.Merge.Into, op.MergeActor, now)

@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 )
 
 // COUNTS AND ALL THE FIELDS, because a flat list of strings is ambiguous.
@@ -25,6 +26,11 @@ import (
 // Lengths first, every field included. Found by a pre-release review.
 func sendDigest(op *Op) string {
 	parts := []string{op.To, op.MsgType, op.Body, itoa(op.DeadlineSec), op.Grant, op.Adopt}
+	if op.Recovery != nil {
+		r := op.Recovery
+		parts = append(parts, "recovery", r.From, r.Into, r.Fence,
+			fmt.Sprint(r.SourceCreated), fmt.Sprint(r.SurvivorCreated), fmt.Sprint(r.CoordinatorCreated))
+	}
 	if op.Merge != nil {
 		parts = append(parts, "merge", op.Merge.From, op.Merge.Into, op.Merge.Fence)
 	}

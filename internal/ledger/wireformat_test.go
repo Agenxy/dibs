@@ -155,6 +155,8 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		// exists and skips, so the fold would quietly undo repairs.
 		"merge_into":  true,
 		"merge_actor": true, "merge": true,
+		// Recovery is additive; all historical keys stay unchanged.
+		"recovery": true, "recovery_actor": true, "recovery_declaration_times": true,
 		"path": true, "mode": true, "note": true,
 		"space": true, "exclusive": true, "predicted": true,
 		// The coordinate systems a declaration was scored in (#39): the
@@ -478,7 +480,8 @@ const (
 	// Merge adds actor and typed effect tags; no historical tag renamed.
 	// Daily traffic adds mail_traffic_v1; no historical spelling changed.
 	// Bridge evidence adds one flag; every historical spelling remains frozen.
-	frozenOpFingerprint       = "sha256:c1794fccafa02ae4"
+	// Recovery adds three op tags and one Message tag; no historical key changed.
+	frozenOpFingerprint       = "sha256:46d065cdf1a356ea"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`
@@ -492,7 +495,7 @@ const (
 	// Stall notices add one durable declaration-version scalar, absent historically.
 	// FYI receipts add an announcement serial and consumption reason only.
 	// Merge adds typed effect and sender-ownership tags; no historical tag renamed.
-	frozenMessageFingerprint = "sha256:429c5dd40f0d7ecb"
+	frozenMessageFingerprint = "sha256:a1fb142844d477f8"
 	// The identity inside op.agent. Set when the fingerprint was added; one
 	// new tag at a time from here, never a rename.
 	frozenAgentFingerprint = "sha256:c630d3cc9f27eb95"
@@ -749,7 +752,7 @@ func TestLedgerMessageFieldNamesAreFrozen(t *testing.T) {
 		"outcome_read_serial": true,
 		"review_read_serial":  true, // independent worker awareness
 		// 0.0.6.
-		"choices": true, "grant": true, "adopt": true, "merge": true,
+		"choices": true, "grant": true, "adopt": true, "merge": true, "recovery": true,
 	}
 	var declared []string
 	mt := reflect.TypeOf(core.Message{})
@@ -856,6 +859,9 @@ func TestMergeDecisionFieldsAreFrozen(t *testing.T) {
 		{"credential tombstone", reflect.TypeOf(core.MergedNonce{}), map[string]bool{
 			"from": true, "into": true, "by": true, "serial": true,
 		}, "sha256:db8511c7880064bc"},
+		{"recovery effect", reflect.TypeOf(core.RecoveryRequest{}), map[string]bool{"from": true, "into": true, "source_created_serial": true, "survivor_created_serial": true, "coordinator_created_serial": true, "fence": true}, "sha256:ee4fe1d74c52ca59"},
+		{"recovered address", reflect.TypeOf(core.RecoveredAddress{}), map[string]bool{"source": true, "source_created_serial": true, "into": true, "survivor_created_serial": true, "by": true, "serial": true}, "sha256:47da394c6d3234ee"},
+		{"inherited declaration", reflect.TypeOf(core.InheritedDeclaration{}), map[string]bool{"source": true, "source_created_serial": true, "host": true, "recovered_serial": true, "updated_at": true, "declaration": true}, "sha256:3973358160c7aa37"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

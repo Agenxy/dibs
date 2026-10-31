@@ -89,7 +89,7 @@ func checkMilestones(op *Op) error {
 				`as you approve one with respond(approve, milestones)`,
 			"milestones on a %s %s", op.Kind, op.MsgType+op.Disposition)
 	}
-	if op.Grant != "" || op.Adopt != "" || op.Merge != nil {
+	if op.Grant != "" || op.Adopt != "" || (op.Merge != nil || op.Recovery != nil) {
 		return errf("E_BAD_ARG",
 			"a request that grants or adopts is performed by approving it, so it has no "+
 				"steps to report: send the milestones on a request for work",
@@ -195,7 +195,7 @@ func (s *State) applyProgress(m *Message, op *Op, now time.Time) (Result, []Even
 // Done work permits correction reports only while a review flag remains.
 // Approval requests that grant roles or move mailboxes never report progress.
 func (m *Message) canReportProgress() bool {
-	if m.Type != MsgRequest || m.Grant != "" || m.Adopt != "" || m.Merge != nil {
+	if m.Type != MsgRequest || m.Grant != "" || m.Adopt != "" || m.RetiresIdentity() {
 		return false
 	}
 	return m.State == MsgStateApproved || (m.State == MsgStateDone && m.HasUnresolvedReviewFlags())

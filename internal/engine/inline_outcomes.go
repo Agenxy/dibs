@@ -268,6 +268,10 @@ func (e *Engine) outcomeHeader(m *core.Message) string {
 	if m.State == core.MsgStateApproved && m.Adopt != "" {
 		text += fmt.Sprintf(": %q's mail is now delivered to you; call inbox", m.Adopt)
 	}
+	if m.State == core.MsgStateApproved && m.Recovery != nil {
+		text += fmt.Sprintf(": %q was recovered into %q; "+
+			"new mail routes there and old declarations are inactive inherited history", m.Recovery.From, m.Recovery.Into)
+	}
 	if m.State == core.MsgStateApproved && m.Merge != nil {
 		text += fmt.Sprintf(": %q was merged into %q; the repair is complete", m.Merge.From, m.Merge.Into)
 	}

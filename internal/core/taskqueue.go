@@ -56,7 +56,8 @@ func checkRequestPriority(op *Op) error {
 		return nil
 	}
 	if op.Kind != OpSendMessage ||
-		(op.MsgType != MsgNotify && (op.MsgType != MsgRequest || op.Grant != "" || op.Adopt != "" || op.Merge != nil)) ||
+		(op.MsgType != MsgNotify && (op.MsgType != MsgRequest || op.Grant != "" || op.Adopt != "" ||
+			op.Merge != nil || op.Recovery != nil)) ||
 		priorityValue(op.RequestPriority) < 0 {
 		return errf("E_BAD_ARG", "priority is low|normal|high|urgent on a notify or ordinary request",
 			"invalid message priority")
@@ -199,7 +200,7 @@ func (s *State) applyQueue(l *Agent, m *Message, op *Op, now time.Time) (Result,
 		return nil, nil, errf("E_MSG_FINAL", "queue an unanswered ordinary request; park started work with declare(waiting)",
 			"message already %s", m.State)
 	}
-	if m.Type != MsgRequest || m.Grant != "" || m.Adopt != "" || m.Merge != nil || m.From == m.To {
+	if m.Type != MsgRequest || m.Grant != "" || m.Adopt != "" || m.RetiresIdentity() || m.From == m.To {
 		return nil, nil, errf("E_BAD_DISPOSITION",
 			questionResponseHint(m, "queue accepts ordinary requests; approve grants or adoption"),
 			"not queueable work")

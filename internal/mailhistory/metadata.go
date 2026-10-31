@@ -136,5 +136,5 @@ func capturesOwnershipEffect(st *core.State, op *core.Op) bool {
 		return false
 	}
 	m := st.Messages[op.MsgSerial]
-	return m != nil && (m.Adopt != "" || m.Merge != nil)
+	return m != nil && (m.Adopt != "" || m.RetiresIdentity())
 }

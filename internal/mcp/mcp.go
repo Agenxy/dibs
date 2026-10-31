@@ -853,6 +853,7 @@ type toolArgs struct {
 	Description    string            `json:"description"`
 	PID            int               `json:"pid"`
 	Nonce          string            `json:"nonce"`
+	RecoverFrom    string            `json:"recover_from"`
 	RecoveryNonces []string          `json:"recovery_nonces"`
 	ResumeID       string            `json:"resume_id"`
 	Kind           string            `json:"kind"`
@@ -1276,6 +1277,7 @@ func (s *Server) run(
 		op.Kind, op.Name, op.Description, op.PID = core.OpRegister, a.Name, a.Description, a.PID
 		op.Nonce, op.AgentKind, op.SessionID = a.Nonce, core.AgentKind(a.Kind), a.SessionID
 		op.RecoveryNonces = a.RecoveryNonces
+		op.RecoverFrom = a.RecoverFrom
 		op.Parent, op.ParentNonce = a.Parent, a.ParentNonce
 		// Where this register CAME FROM, kept apart from the alias the engine
 		// vets: the vetting clears a session another agent holds, and that is
@@ -1467,6 +1469,8 @@ func (s *Server) run(
 		op.Kind, op.Space, op.To, op.Note = core.OpSpaceEvict, a.SpaceID, a.To, a.Note
 	case "merge_spaces":
 		op.Kind, op.Space, op.To, op.Note = core.OpSpaceMerge, a.SpaceID, a.To, a.Note
+	case "recover_agent":
+		return s.eng.RecoverAgent(ctx, a.Token, a.AgentRef, engine.MergeOptions{DryRun: a.DryRun, Fence: a.Fence})
 	case "merge_agents":
 		return s.eng.MergeAgents(ctx, a.Token, a.AgentRef, a.Into, engine.MergeOptions{DryRun: a.DryRun, Fence: a.Fence})
 	case "settings":
@@ -1524,6 +1528,13 @@ func (s *Server) decorate(
 	// noise.
 	if name == "resume" {
 		return attachPeerMailFrame(res)
+	}
+	if a.RecoverFrom != "" {
+		res["recovery_offer"] = core.Result{
+			"state": "pending", "tool": "recover_agent", "agent": a.RecoverFrom, "dry_run": true,
+			"hint": "Keep the token and nonce returned here. Preview recover_agent with this token, " +
+				"then request a distinct coordinator approval. Registration has not moved or exposed source mail.",
+		}
 	}
 	// A first registration is the one moment an agent has just told us what
 	// harness it is running, and the only moment the answer is news. Reattaching

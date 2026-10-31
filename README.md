@@ -791,7 +791,7 @@ See [the attachment contract](SPEC-ATTACHMENTS.md#a13-transfer-out-of-band-uploa
   `NO_COLOR` it collapses to exactly the plain text it would have been, so
   `dibs board | grep builder` works and a redirected `dibs doctor` is a file
   you can paste into an issue.
-- **MCP-native**: 53 tools, self-teaching through server instructions and
+- **MCP-native**: 54 tools, self-teaching through server instructions and
   corrective error hints, plus resources, a `board` prompt and an MCP Apps panel
   that opens when you ask for it. Dibs targets the
   **2026-07-28** stateless contract and also serves the legacy **2025-11-25**
@@ -1253,7 +1253,7 @@ routes or hub paths. Revoke
 with `dibs invite revoke <name>` or `--issued-by <issuer>`; closing the issuer
 also revokes its children. [Deployment and scope](docs/NETWORK.md#9-agents-in-the-cloud).
 
-**If you are the operator:** there is no urgency. Dibs serves both paths, all 53
+**If you are the operator:** there is no urgency. Dibs serves both paths, all 54
 tools behave identically on either, and deprecated features are guaranteed for at
 least twelve months from the 2026-07-28 publication.
 
@@ -1275,7 +1275,7 @@ Verified against a running daemon, not assumed:
   (`HANDSHAKE_PROTOCOL_VERSIONS` vs `MODERN_PROTOCOL_VERSIONS`).
 - **Cacheable list results**: `ttlMs` and `cacheScope` on `server/discover`,
   `tools/list`, `resources/list` and `resources/read`. Dibs has more to re-fetch
-  than most servers: 53 tools whose descriptions carry real corrective detail, re-fetched on every
+  than most servers: 54 tools whose descriptions carry real corrective detail, re-fetched on every
   cold path once there is no session to hold them. Static results are hinted for
   an hour and marked `public`; the board is hinted for two seconds; **an agent's
   mailbox is `private`**, because `public` would let a shared gateway serve one
