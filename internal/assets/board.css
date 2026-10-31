@@ -1442,3 +1442,31 @@ body { font-weight: var(--body-weight, 400); }
  .panel .sheet:has(> .board-search) { padding-bottom: var(--s1); }
  .sheet:has(> .board-search) > #self-row:not(:empty) { min-height: 4.625rem; }
 }
+
+/* The same compact row in every coordination section. Warning is a marker,
+   not a taller card. Secondary identity/activity evidence stays in disclosure. */
+.sheet .entry, .panel .sheet .entry {
+  display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: var(--s2); padding: 2px 0; margin-inline: 0;
+  border-left: 0; border-radius: 0;
+}
+.sheet .entry .entry-head { flex-wrap: nowrap; min-width: 0; }
+.sheet .entry .says { min-width: 0; margin: 0; }
+.sheet .entry .says > summary { padding-block: 0; }
+.sheet .entry .says[open], .sheet .entry > :not(.entry-head, .says, .lede) { grid-column: 1 / -1; }
+.agent-extra { display: flex; flex-wrap: wrap; gap: var(--s1); margin-bottom: var(--s2); }
+.sheet:has(> .board-search) .masthead { padding-block: var(--s1); }
+.sheet:has(> .board-search) .context, .sheet:has(> .board-search) .summary { padding-block: var(--s1); }
+.board-search { padding-block: var(--s1); }
+.sheet .band { padding-block: var(--s2) var(--s1); margin: 0; }
+.attention-mail { line-height: 1.25; margin-block: 2px; }
+.attention-open { padding-block: 2px; }
+
+.panel .sheet .band { padding-block: var(--s2) var(--s1); }
+.attention-open { line-height: 1.1; }
+
+.attention-head { display: flex; align-items: center; gap: var(--s2); }
+.attention-head .band { flex: 1; }
+.attention-mail { margin-block: 0; }
+.sheet .view { padding-top: 0; }
+.sheet .view .band, .panel .sheet .view .band { padding-block: var(--s1) 2px; }

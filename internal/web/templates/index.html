@@ -274,6 +274,14 @@ let state = { board: {{.BoardJSON}}, messages: [], announcements: [], mailError:
 
 // Capture phase: `toggle` does not bubble, so a container listener never hears
 // it. Bound once, because the rows are replaced constantly.
+// This listener belongs to this document only: it receives nothing while the
+// person's chat composer outside the iframe owns the keyboard.
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey ||
+      e.target.closest("input, textarea, select, [contenteditable]")) return
+  e.preventDefault()
+  document.getElementById("board-search").focus()
+})
 document.getElementById("board-search").addEventListener("input", (e) => {
   state.query = e.target.value
   draw()

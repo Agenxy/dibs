@@ -49,6 +49,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Show all, and Dormant starts collapsed. One search covers all four tabs,
   including former names, work and collapsed agents. Repeated local host
   badges are omitted using machine identity, retaining remote/unknown ones.
+  All sections use compact single-line agent rows, with full details on expand.
+  Search takes focus only on an explicit click or `/` inside the focused app;
+  incoming board delivery leaves the chat composer alone.
   Both views use the shared warm neutral identity and full licensed Atkinson
   faces, while keeping Dibs' blue/green signals and AA text contrast.
 

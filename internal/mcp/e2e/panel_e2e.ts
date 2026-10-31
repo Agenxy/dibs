@@ -238,6 +238,9 @@ try {
   // timeout, and a host that sizes to content then showed the human nothing.
   await panel.locator(".metric").first().waitFor({ timeout: 10000 })
   check("paints before any board data arrives", true)
+  const initialSearch = panel.getByRole("searchbox", { name: "Search Dibs" })
+  check("loading the app does not autofocus its search", await initialSearch.count() === 1 &&
+    await initialSearch.evaluate((el) => document.activeElement !== el && !el.hasAttribute("autofocus")))
 
   await page.waitForFunction("window.__probe.initialized === true", null, { timeout: 10000 })
     .then(() => check("the real AppBridge accepted our ui/initialize", true))

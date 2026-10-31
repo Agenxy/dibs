@@ -21,7 +21,7 @@ export async function checkCompactBoard(page: Page, base: any, self: string, che
   const originalSelf = payload.board.agents.find((a: any) => a.id === self)
   if (!originalSelf) throw new Error("compact setup: caller absent from actual board")
   const serials: number[] = []
-  for (const body of ["Compact unrelated question", "Compact selected question"]) {
+  for (const body of ["Compact unrelated question", "Compact selected question", "Compact urgent question 3", "Compact urgent question 4"]) {
     const result = await live.tool("send", { token: live.peerToken, to: self,
       type: "question", body, deadline_s: 600 })
     const sent = JSON.parse(result.content[0].text)
@@ -29,7 +29,8 @@ export async function checkCompactBoard(page: Page, base: any, self: string, che
     serials.push(sent.msg_serial)
   }
   const fresh = await live.tool("inbox", { token: live.token, limit: 8 })
-  payload.inbox = JSON.parse(fresh.content[0].text).messages
+  payload.inbox = JSON.parse(fresh.content[0].text).messages.filter((m: any) => serials.includes(m.serial))
+  if (payload.inbox.length !== 4) throw new Error("compact setup: not all four real urgent messages arrived")
   if (!payload.inbox?.some((m: any) => m.serial === serials[1] && m.body?.includes("Compact selected question"))) throw new Error("compact setup: new question absent")
   const now = Date.now()
   payload.board.agents = Array.from({ length: 60 }, (_, index) => ({
@@ -56,6 +57,8 @@ export async function checkCompactBoard(page: Page, base: any, self: string, che
   const capture = async (theme: string) => {
     await settled()
     await panel.locator("#main").evaluate((el) => { el.scrollTop = 0 })
+    // Capture the default reading state, not focus left by our search.fill.
+    await page.mouse.click(2, 2)
     const dir = process.env.DIBS_COMPACT_ARTIFACT_DIR
     if (!dir) return
     mkdirSync(dir, { recursive: true })
@@ -74,7 +77,22 @@ export async function checkCompactBoard(page: Page, base: any, self: string, che
   try {
     await page.setViewportSize({ width: 1040, height: 800 })
     await context(600, 800)
+    await page.evaluate(() => {
+      const editor = document.createElement("input")
+      editor.id = "compact-host-editor"
+      editor.setAttribute("aria-label", "Host message composer")
+      editor.style.cssText = "position:fixed;right:0;top:0;width:100px"
+      document.body.append(editor)
+    })
+    const hostEditor = page.getByRole("textbox", { name: "Host message composer" })
+    await hostEditor.focus()
+    await hostEditor.press("/")
     await page.evaluate((result) => (window as any).__deliver(result), fixture)
+    await panel.locator('.entry[data-agent="compact-59"]').waitFor({ state: "attached" })
+    await settled()
+    check("a real host composer keeps focus across app delivery", await hostEditor.evaluate((el) => document.activeElement === el) && await hostEditor.inputValue() === "/")
+    check("the app never autofocuses search on load or delivery", await panel.locator("#board-search").count() === 0 || !await panel.locator("#board-search").evaluate((el) => document.activeElement === el))
+    await page.evaluate(() => document.getElementById("compact-host-editor")?.remove())
     await panel.getByRole("tab", { name: "Board", exact: true }).click()
     await panel.locator('.entry[data-agent="compact-59"]').waitFor({ state: "attached" })
     await panel.locator('#pane-board').waitFor({ state: "visible" })
@@ -106,6 +124,14 @@ export async function checkCompactBoard(page: Page, base: any, self: string, che
       const attention = el.querySelector(".attention"), active = el.querySelector(".entry.active")
       return !!attention && !!active && !!(attention.compareDocumentPosition(active) & Node.DOCUMENT_POSITION_FOLLOWING)
     }))
+    const scan = await panel.locator("#main").evaluate((main) => {
+      const bounds = main.getBoundingClientRect()
+      const rows = [...main.querySelectorAll(".entry.active")].filter((row) => !row.closest("details:not([open])")).map((row) => row.getBoundingClientRect())
+      return { active: rows.filter((r) => r.height > 0 && r.top >= bounds.top && r.bottom <= bounds.bottom - 20).length,
+        heights: [...main.querySelectorAll(".entry:not(:has(.says[open]))")].filter((row) => !row.closest("details:not([open])") && row.getBoundingClientRect().height > 0).map((row) => row.getBoundingClientRect().height) }
+    })
+    check("four unanswered and two stale rows still leave three fully painted Active rows", scan.active >= 3, JSON.stringify(scan))
+    check("every coordination section uses the same one-line row", scan.heights.length > 0 && scan.heights.every((h) => h <= 32), JSON.stringify(scan.heights))
     const search = panel.getByRole("searchbox", { name: "Search Dibs" })
     const present = await search.count() === 1
     check("one named search field is available outside the scrolling list", present)
@@ -186,8 +212,9 @@ export async function checkCompactBoard(page: Page, base: any, self: string, che
     await context(600)
     const fallback = await panel.locator("#app").evaluate((el) => el.getBoundingClientRect().height)
     check("a host with no height gets a finite fallback", fallback >= 559 && fallback <= 561, `${fallback}px`)
-    await search.focus()
-    check("search is keyboard reachable", await search.evaluate((el) => document.activeElement === el))
+    await panel.locator("#pane-board").focus()
+    await panel.locator("#pane-board").press("/")
+    check("slash focuses search only inside the focused app", await search.evaluate((el) => document.activeElement === el))
     await search.fill("Compact selected question")
     await panel.locator("#tab-mail").click()
     await settled()
@@ -202,6 +229,7 @@ export async function checkCompactBoard(page: Page, base: any, self: string, che
     const selected = await read(serials[1]), unrelated = await read(serials[0])
     check("a filtered mail action changes only the selected real message", selected.state === "declined" && !["declined", "answered"].includes(unrelated.state), JSON.stringify([selected.state, unrelated.state]))
   } finally {
+    await page.evaluate(() => document.getElementById("compact-host-editor")?.remove())
     await page.setViewportSize(savedViewport)
     await page.locator("#panel").evaluate((el, style) => el.setAttribute("style", style), savedStyle ?? "")
     await page.evaluate((result) => {

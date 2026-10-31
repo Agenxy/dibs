@@ -270,7 +270,14 @@ const Board = (() => {
         <p>${esc(s.text)}</p>
         ${pathsHTML(s)}${unchangedHTML(s)}
       </div>`).join("")
-    const detail = (declared ? pathsHTML(declared) + unchangedHTML(declared) : "") + rest +
+    const extra = [
+      l.name && l.name !== l.id ? explained("tag", `formerly ${l.id}`, "stable id; this agent's current name is its address") : "",
+      l.kind === "persistent" ? '<span class="tag">Standing</span>' : "",
+      (l.possible_forks || []).length ? explained("tag", "possible duplicate", "same-name participants; review identity and direction before merging") : "",
+      workHTML(l), queueWakeHTML(l), l.queued ? `<span class="tag">${esc(l.queued)} queued</span>` : "", cadenceHTML(l.id, events),
+    ].join("")
+    const detail = (extra ? `<div class="agent-extra">${extra}</div>` : "") +
+      (declared ? pathsHTML(declared) + unchangedHTML(declared) : "") + rest +
       (declared && l.description ? `<p class="about">${esc(l.description)}</p>` : "") +
       identHTML(l.agent) + sessionHTML(l)
 
@@ -283,16 +290,9 @@ const Board = (() => {
         <div class="entry-head">
           <span class="pip"></span>
           <span class="name">${esc(l.name || l.display_name || l.id)}</span>
-          ${l.name && l.name !== l.id ? explained("tag", `formerly ${l.id}`, "stable id; this agent's current name is its address") : ""}
           ${self ? `<span class="tag self">${pinned ? "You" : "This agent"}</span>` : ""}${pinned ? `<span class="tag self-status">${esc(st)}</span>` : ""}
-          ${l.kind === "persistent" ? '<span class="tag">Standing</span>' : ""}
           ${agentBadges(l)}
-          ${(l.possible_forks || []).length ? explained("tag", "possible duplicate", "same-name participants; review identity and direction before merging") : ""}
-          ${workHTML(l)}
-          ${queueWakeHTML(l)}
-          ${l.queued ? `<span class="tag">${esc(l.queued)} queued</span>` : ""}
           ${staleReasonHTML(l)}
-          ${cadenceHTML(l.id, events)}
           <time class="age" datetime="${esc(l.last_coordination_at || "")}">${esc(ago(l.last_coordination_at))}</time>
         </div>`
 
@@ -372,9 +372,9 @@ const Board = (() => {
     const open = (messages || []).filter((m) =>
       ["question", "request"].includes(m.type) && !TERMINAL.has(m.state) && matchesMail(m, query))
     if (!open.length) return ""
-    return `<section class="attention" aria-label="Unanswered"><h2 class="band">Unanswered <span class="n">${open.length}</span></h2>
+    return `<section class="attention" aria-label="Unanswered"><header class="attention-head"><h2 class="band">Unanswered <span class="n">${open.length}</span></h2><button type="button" class="attention-open">Open Mail</button></header>
       ${open.map((m) => `<p class="attention-mail"><span class="tag">${esc(m.type)}</span> <span>${esc(m.from_name || m.from)} → ${esc(m.to_name || m.to)}</span> <span class="attention-body">${esc(m.body || `#${m.serial} · open Mail to read`)}</span></p>`).join("")}
-      <button type="button" class="attention-open">Open Mail</button></section>`
+      </section>`
   }
 
   // The contact record is a system summary, not the private mail that caused

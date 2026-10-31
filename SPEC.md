@@ -2070,12 +2070,17 @@ compact expandable row remain in the frame; the results list scrolls inside it.
 The viewing agent is not repeated in its section. Unanswered mail and
 out-of-touch agents precede healthy groups. Active initially shows eight
 remaining rows with an explicit expansion; Dormant begins collapsed. Groups
-are ordered by last coordination, most recent first.
+are ordered by last coordination, most recent first. Every section uses a
+single compact row, with secondary identity/activity evidence in disclosure.
+With four unanswered messages and two out-of-touch rows, the 600px-wide,
+560px-high app exposes at least three fully readable Active rows.
 
 A single search filters the current Board, Spaces, Mail and Activity views,
 including collapsed rows. Agent search includes current and former names,
 description, declared work and host. Search changes no counts, permissions or
-mail state. Only already-authorized fields are searchable; another mailbox's
+mail state. It never autofocuses on load or delivery; clicking it or pressing
+`/` inside the focused app selects it. Keys in the surrounding chat composer
+remain there. Only already-authorized fields are searchable; another mailbox's
 body is never added to a carrier for search. A local host badge is omitted only
 from machine-ID evidence (including known host aliases), never because two
 friendly labels happen to match. Unknown and remote labels remain visible.
