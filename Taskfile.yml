@@ -21,7 +21,8 @@ tasks:
     desc: Build Dibs.app, the notifier bundle with the product icon
     sources:
       - internal/notify/app/*.swift
-      - internal/notify/app/*.swift.inc
+      - internal/notify/app/*.inc
+      - internal/notify/app/source.go
       - internal/notify/app/fonts/*
       - tools/appbundle/main.go
       - tools/appbundle/service.go

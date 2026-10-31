@@ -82,3 +82,12 @@ DIBS_PROMPT_SCREENSHOTS=/tmp/dibs-prompt-review go test ./internal/notify -run '
 The diagnostic probe measures the installed notifier image. A running broker
 mapped from an older image is separately qualified by its pipe capability and
 posting receipt; an installed-image probe alone does not prove it refreshed.
+
+All native compilations now obtain the main file plus every `.inc` from
+`internal/notify/app.ReadSource`: the production app builder, notify fixtures
+and daemon settings fixture share that catalog. The latter was found by the
+full local gate still compiling the main file alone; its original permission-free
+settings test failed to compile, then passed after adopting the shared reader.
+A bounded mutation that kept only the known prompt include fails the synthetic
+future-include test, rather than silently omitting a new fragment. The actual
+production bundle entry and its font-loading/status check pass with this reader.

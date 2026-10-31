@@ -28,6 +28,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+
+	notifyapp "github.com/agenxy/dibs/internal/notify/app"
 )
 
 // iconSizes are the ten an .icns carries. The names are iconutil's convention
@@ -179,19 +181,13 @@ func copyPromptFonts(src, res string) error {
 // directory is an operator build flag, never participant-written input; work
 // is the private MkdirTemp directory owned by this invocation.
 func buildNotifier(out, work, src string) error {
-	// #nosec G304 -- fixed source name under the operator-selected build directory.
-	mainSource, err := os.ReadFile(filepath.Join(src, "notify_darwin.swift"))
-	if err != nil {
-		return err
-	}
-	// #nosec G304 -- fixed source name under the same operator-selected directory.
-	promptSource, err := os.ReadFile(filepath.Join(src, "prompt_window.swift.inc"))
+	source, err := notifyapp.ReadSource(src)
 	if err != nil {
 		return err
 	}
 	combined := filepath.Join(work, "notify.swift")
 	// #nosec G703 -- work is a private MkdirTemp output, not a message-derived path.
-	if err := os.WriteFile(combined, append(append(mainSource, '\n'), promptSource...), 0o600); err != nil {
+	if err := os.WriteFile(combined, source, 0o600); err != nil {
 		return err
 	}
 	return swiftc(out, combined)
