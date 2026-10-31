@@ -13,61 +13,31 @@
    ═══════════════════════════════════════════════════════════════ */
 
 :root {
-  /* ═══ COLOUR ═══════════════════════════════════════════════════
-     OKLCH, one hue family, derived rather than picked.
-
-     This was eighteen hand-tuned sRGB hexes declared THREE times,
-     :root, [data-theme=light], and the media query. It worked, and it
-     hid its own structure: every neutral sits at hue ~261, the signal
-     hues at 262/158/36, and in dark, accent and live land within 0.03
-     of the same lightness: a relationship achieved by eye that the
-     source could not show. In OKLCH the structure IS the source:
-     lightness carries contrast, chroma intensity, hue meaning, and the
-     three move independently, which hex does not allow.
-
-     Two consequences. Contrast is now a number a reader can check
-     rather than a hex somebody sampled. And the old values were
-     leaving chroma unspent: at IDENTICAL lightness, so identical
-     contrast: accent had room for twice its saturation and live for
-     65% more. These sit near three-quarters of the sRGB ceiling:
-     richer, still restrained, and on a P3 display rendered wider still
-     without our asking, because OKLCH describes the colour and not the
-     device.
-
-     light-dark() collapses the three copies into one. Declaring it
-     three times drifted once already: a mangled selector let a light
-     rule escape to global scope and put 2.98:1 on the loudest mark on
-     the board. One declaration cannot do that. */
+  /* Shared identity neutrals. Signal meanings remain Dibs blue, green and
+     amber; Agenxy's orange is not this board's accent. Both themes are
+     audited from these declarations against the same AA body floor. */
   color-scheme: light dark;
 
-  --h-neutral: 261;  /* every surface, every grey        */
   --h-accent:  262;  /* structure: this view, this agent  */
   --h-live:    158;  /* an agent is alive                */
   --h-warn:     36;  /* needs attention, or unreachable  */
 
-  --bg:       light-dark(oklch(97.6% .002 var(--h-neutral)), oklch(16.8% .004 var(--h-neutral)));
-  --bg-1:     light-dark(oklch(100%  0    var(--h-neutral)), oklch(19.5% .007 var(--h-neutral)));
-  /* The emphasis surface: a selected tab, a hovered control, a raised card.
-     It has to move AWAY from the page, and which way that is differs by
-     theme. Dark went up by 4.9 lightness; light went UP by 1.1, because the
-     page is already at 97.6 and there is nowhere above it to go, so the
-     selected tab was, in the light theme, unmarked. Visible only by opening
-     the board in light and noticing that nothing said which tab was current.
-     Light marks emphasis by going down, which is also what every other light
-     interface does: a selected chip is a tint, not a brighter white. */
-  --bg-2:     light-dark(oklch(93.8% .003 var(--h-neutral)), oklch(21.7% .008 var(--h-neutral)));
-  --bg-input: light-dark(oklch(100%  0    var(--h-neutral)), oklch(18.0% .006 var(--h-neutral)));
+  --bg: light-dark(#E6E3DF, #1C1C1A);
+  --bg-1: light-dark(#E0DCD6, #141412);
+  /* Selected/hovered controls move away from paper in both themes. */
+  --bg-2: light-dark(#D5D0C8, #2A2A27);
+  --bg-input: light-dark(#E0DCD6, #141412);
 
-  --fg:       light-dark(oklch(20.4% .007 var(--h-neutral)), oklch(93.3% .005 var(--h-neutral)));
-  --fg-2:     light-dark(oklch(46.5% .015 var(--h-neutral)), oklch(70.3% .014 var(--h-neutral)));
+  --fg: light-dark(#21272F, #DCDBD6);
+  --fg-2: light-dark(#40464D, #A7A6A2);
   /* fg-3 is the "you need not read this" colour, and it lands on
      --t-micro (9px) and --t-meta (10px) in sixteen rules. Both are body
      type, so it is held to 4.5:1 and not to the 3.0 large-text bar. */
-  --fg-3:     light-dark(oklch(53.6% .009 var(--h-neutral)), oklch(59.7% .008 var(--h-neutral)));
+  --fg-3: light-dark(#4B5056, #989793);
 
-  --accent:   light-dark(oklch(50.1% .150 var(--h-accent)), oklch(72.9% .105 var(--h-accent)));
-  --live:     light-dark(oklch(50.8% .130 var(--h-live)),   oklch(72.8% .135 var(--h-live)));
-  --warn:     light-dark(oklch(53.1% .165 var(--h-warn)),   oklch(68.5% .165 var(--h-warn)));
+  --accent:   light-dark(oklch(46.0% .150 var(--h-accent)), oklch(72.9% .105 var(--h-accent)));
+  --live:     light-dark(oklch(44.3% .130 var(--h-live)),   oklch(72.8% .135 var(--h-live)));
+  --warn:     light-dark(oklch(48.5% .165 var(--h-warn)),   oklch(68.5% .165 var(--h-warn)));
 
   /* Derived, not declared. These were rgba() literals that had to be
      re-derived by hand whenever a hue moved, and twice were not. */
@@ -85,8 +55,8 @@
   --sheen: light-dark(color-mix(in srgb, white 65%, transparent),
                       color-mix(in srgb, white 3%,  transparent));
 
-  --mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-  --sans: 'Geist', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --mono: 'Atkinson Hyperlegible Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --sans: 'Atkinson Hyperlegible Next', ui-sans-serif, system-ui, -apple-system, sans-serif;
 
   /* A four-based spine; every margin below is a multiple. */
   --s1: 4px;  --s2: 8px;  --s3: 12px; --s4: 16px;
@@ -110,8 +80,8 @@
   --t-meta:  0.625rem;   /* 10px: timestamps, counts, provenance    */
   --t-fine:  0.6875rem;  /* 11px: secondary labels                  */
   --t-sm:    0.75rem;    /* 12px: dense body, controls              */
-  --t-body:  0.8125rem;  /* 13px: the default reading size          */
-  --t-lg:    0.875rem;   /* 14px: emphasis, message bodies          */
+  --t-body:  0.875rem;  /* 14px: the default reading size          */
+  --t-lg:    1rem;       /* 16px: emphasis, message bodies          */
   --t-title: 1.0625rem;  /* 17px: the one heading                   */
 
   /* Tracking rides with size: small type needs air, large type
@@ -1341,3 +1311,134 @@ button, .act { padding-block: max(5px, calc((var(--ctl-h, 26px) - 1lh) / 2)); }
 .contact-alerts h2 span { margin-inline-start: var(--s2); color: var(--fg-3); }
 .contact-alerts ul { margin: 0; padding-inline-start: 1.25rem; }
 .contact-alerts li + li { margin-block-start: var(--s2); }
+
+/* The header and counts belong to the frame; only results scroll. The MCP
+   host supplies --board-height from containerDimensions. Standalone pages use
+   their viewport, with the same finite cap. Never use the iframe height as
+   an input to its own reported size. */
+.sheet:has(> .board-search) {
+  display: flex; flex-direction: column; box-sizing: border-box;
+  height: var(--board-height, min(70dvh, 35rem)); min-height: 0;
+  padding-bottom: var(--s2); overflow: hidden;
+}
+.sheet:has(> .board-search) > :not(main) { flex: none; }
+.sheet:has(> .board-search) > main {
+  min-height: 3rem; flex: 1 1 0; overflow: auto; scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+  /* Fade the cut edge; end padding preserves the last row and its controls. */
+  padding-bottom: 20px; scroll-padding-bottom: 24px;
+  mask-image: linear-gradient(to bottom, black calc(100% - 20px), transparent);
+}
+.board-search { display: block; padding: var(--s2) 0; }
+.board-search input { width: 100%; min-width: 0; font: inherit; color: var(--fg);
+  background: var(--bg-input); border: 1px solid var(--line-3);
+  border-radius: var(--r); padding: var(--s1) var(--s2); }
+.sheet:has(> .board-search) .foot {
+  margin-top: var(--s1); padding: var(--s2) 0 0;
+  flex-wrap: nowrap; white-space: nowrap; overflow: hidden;
+}
+.band-group { display: block; }
+.roster-group { margin: 0; }
+.roster-group > summary { cursor: pointer; color: var(--fg-2);
+  padding: var(--s2) 0; font: inherit; }
+.roster-group > summary .n { font-family: var(--mono); margin-left: var(--s2); }
+.roster-group .when-open, .roster-group[open] > summary .when-closed { display: none; }
+.roster-group[open] > summary .when-open { display: inline; }
+/* Stable one-line identity and work. Disclosure retains the full declaration,
+   identity, session and every further work slot for keyboard and touch users. */
+.sheet .entry { padding-block: var(--s2); }
+.sheet .entry-head { min-width: 0; gap: var(--s1); }
+.sheet .entry .name { font-family: var(--sans); font-weight: var(--name-weight, 640);
+  font-size: var(--t-lg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  flex: 0 1 auto; min-width: 0; }
+.sheet .entry-head .age { flex: none; margin-left: auto; white-space: nowrap; }
+.sheet .entry-head .tag, .sheet .entry-head .badge { flex: none; }
+.sheet .says, .sheet .entry > .lede { margin-left: 0; }
+.sheet .entry .lede { white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  display: block; line-height: 1.5; }
+.sheet .says[open] .lede { white-space: normal; overflow: visible; }
+@media (max-width: 680px) {
+ .sheet:has(> .board-search) .masthead { gap: var(--s2); padding-top: var(--s2); }
+ .sheet:has(> .board-search) .context { padding-block: var(--s2); }
+ .sheet:has(> .board-search) .summary { padding-block: var(--s2); }
+ .sheet .entry-head { flex-wrap: wrap; }
+ .sheet .entry .name { max-width: 100%; }
+}
+
+.panel .sheet .entry { padding: var(--s1) var(--s2); }
+.panel .sheet .entry .name { font-size: var(--t-lg); font-weight: var(--name-weight, 640); }
+@media (min-width: 520px) and (max-width: 680px) {
+ .panel .sheet .masthead > .views { width: auto; margin-left: auto; }
+}
+
+.attention-mail { display: flex; gap: var(--s1); margin: var(--s1) 0;
+  align-items: baseline; font-size: var(--t-sm); }
+.attention-mail > :not(.attention-body) { flex: none; }
+.attention-body { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attention-open { color: var(--accent); background: transparent;
+  border: 1px solid var(--line-3); border-radius: var(--r); font: inherit;
+  font-size: var(--t-sm); cursor: pointer; padding: var(--s1) var(--s2); }
+
+@media (max-width: 480px) {
+ .sheet:has(> .board-search) .summary { gap: var(--s1); }
+ .sheet:has(> .board-search) .metric + .metric::before { margin-right: var(--s1); }
+ .sheet:has(> .board-search) .metric { gap: var(--s1); }
+ .sheet:has(> .board-search) .metric .label { font-size: var(--t-fine); }
+}
+body { font-weight: var(--body-weight, 400); }
+:root[data-theme="dark"] { --body-weight: 412; --name-weight: 660; }
+:root[data-theme="light"] { --body-weight: 400; --name-weight: 640; }
+@media (prefers-color-scheme: dark) {
+ :root:not([data-theme]) { --body-weight: 412; --name-weight: 660; }
+}
+
+/* The one agent whose token opened the app stays in the fixed frame, never
+   duplicated in its section. Its work is one line (two on mobile) until explicitly expanded. */
+#self-row:empty { display: none; }
+#self-row { flex: none; min-width: 0; max-height: 34%; overflow: auto; }
+#self-row .entry.pinned { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--s2); padding: var(--s1) 0; border: 0; }
+#self-row .entry-head { flex-wrap: nowrap; overflow: hidden; }
+#self-row .entry-head > :not(.name, .self, .self-status, .age) { display: none; }
+#self-row .name { font-size: var(--t-lg); }
+#self-row .says { min-width: 0; margin: 0; }
+#self-row .says > summary { padding: 0; }
+#self-row .says[open] { grid-column: 1 / -1; }
+
+@media (max-width: 480px) {
+ .panel .sheet .masthead { flex-wrap: nowrap; gap: var(--s2); }
+ .panel .sheet .masthead > .views { width: auto; flex: 1 1 auto; min-width: 0; }
+ .panel .sheet .wordmark { font-size: var(--t-meta); letter-spacing: var(--track-wide); }
+}
+#self-row .entry-head .self { order: -2; }
+#self-row .entry-head .name { order: -1; }
+
+.sheet:has(> .board-search) > #self-row:not(:empty) { flex: 0 1 auto; min-height: 1.8125rem; }
+
+.panel .sheet:has(> .board-search) { margin-block: 0; }
+
+/* The exact product mark keeps its tile in either theme. Connection evidence
+   stays in the surrounding status label; it does not recolour the artwork. */
+.sheet .masthead .mark svg { width: 20px; height: 20px; flex: none; }
+.roster-group > summary > .band { display: inline-flex; width: calc(100% - 1.5em);
+  margin: 0; padding: 0; vertical-align: middle; }
+.panel .sheet .views { overflow-x: auto; scrollbar-width: thin;
+  display: flex; flex-wrap: nowrap; padding-right: 16px;
+  mask-image: linear-gradient(to right, black calc(100% - 12px), transparent);
+  scroll-padding-inline: 12px; }
+.panel .sheet .views button { flex: none; white-space: nowrap; overflow: visible; }
+@media (max-width: 480px) {
+ .sheet:has(> .board-search) .context, .sheet:has(> .board-search) .summary { padding-block: var(--s1); }
+ .sheet:has(> .board-search) .foot { flex-wrap: wrap; white-space: normal; overflow: visible; row-gap: 0; }
+ #self-row .entry.pinned { display: block; }
+ #self-row .entry-head { flex-wrap: wrap; overflow: visible; }
+ #self-row .name { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
+ #self-row .says > summary .lede { white-space: normal; display: -webkit-box;
+   -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+ #self-row .says[open] > summary .lede { -webkit-line-clamp: unset; }
+}
+
+@media (max-width: 480px) {
+ .panel .sheet:has(> .board-search) { padding-bottom: var(--s1); }
+ .sheet:has(> .board-search) > #self-row:not(:empty) { min-height: 4.625rem; }
+}

@@ -48,10 +48,7 @@
            reader heard "connecting connecting". help.html:369 renders the same
            component this way. -->
       <span class="status-mark" id="mark" aria-hidden="true">
-        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke-width="1.1">
-          <circle class="ring" cx="8" cy="8" r="6" stroke-dasharray="3 3.4" />
-          <circle class="core" cx="8" cy="8" r="1.6" stroke="none" fill="currentColor" opacity=".45" />
-        </svg>
+        {{productMark}}
       </span>
       <span class="sr-only" id="mark-state">connecting</span>
       <span class="wordmark">Dibs</span>
@@ -92,7 +89,8 @@
        only when it is material. See announceChange(). -->
   <p class="sr-only" id="live" role="status" aria-live="polite" aria-atomic="true"></p>
 
-  <main>
+  <label class="board-search"><span class="sr-only">Search Dibs</span><input id="board-search" type="search" placeholder="Search Dibs" aria-label="Search Dibs" autocomplete="off"></label>
+  <main id="main">
     <!-- help.html puts its h1 inside <main> as a sentence and leaves the
          masthead wordmark a span; this surface does the same. A page with no h1
          gives a screen-reader user nothing to jump to, and the four panes below
@@ -272,13 +270,39 @@ function flash(msg, bad) {
 let state = { board: {{.BoardJSON}}, messages: [], announcements: [], mailError: "", events: {{.EventsJSON}},
   // Which agents the reader opened. Held here because the roster is rebuilt
   // from scratch on every board change and a `details` does not survive that.
-  expanded: new Set() }
+  query: "", expandedGroups: new Set(), expanded: new Set() }
 
 // Capture phase: `toggle` does not bubble, so a container listener never hears
 // it. Bound once, because the rows are replaced constantly.
+document.getElementById("board-search").addEventListener("input", (e) => {
+  state.query = e.target.value
+  draw()
+})
+
+// Save a native disclosure's next state in the same input turn. Its toggle
+// event is queued and can arrive after an intervening live redraw removed it.
+document.addEventListener("click", (e) => {
+  const d = e.target.closest("summary")?.parentElement
+  if (!(d instanceof HTMLDetailsElement)) return
+  if (d.classList.contains("roster-group")) {
+    if (d.open) state.expandedGroups.delete(d.dataset.group)
+    else state.expandedGroups.add(d.dataset.group)
+  } else if (d.classList.contains("says")) {
+    const id = d.closest("[data-agent]")?.dataset.agent
+    if (!id) return
+    if (d.open) state.expanded.delete(id)
+    else state.expanded.add(id)
+  }
+})
 document.addEventListener("toggle", (e) => {
   const d = e.target
-  if (!(d instanceof HTMLDetailsElement) || !d.classList.contains("says")) return
+  if (!(d instanceof HTMLDetailsElement) || !d.isConnected) return
+  if (d.classList.contains("roster-group")) {
+    if (d.open) state.expandedGroups.add(d.dataset.group)
+    else state.expandedGroups.delete(d.dataset.group)
+    return
+  }
+  if (!d.classList.contains("says")) return
   const id = d.closest("[data-agent]")?.dataset.agent
   if (!id) return
   if (d.open) state.expanded.add(id)
@@ -407,16 +431,20 @@ function drawPanes() {
   document.getElementById("ctx-node").textContent = where
   document.getElementById("foot-node").textContent = where
 
+  document.getElementById("pane-board").onclick = (e) => {
+    if (e.target.closest(".attention-open")) document.getElementById("tab-mail").click()
+  }
   const boardEl = document.getElementById("pane-board")
   // selfId is null: on a god view no agent is "this one", and marking one would
   // be a lie. The shared component takes it as a parameter precisely so this
   // surface can decline to answer the question.
-  boardEl.innerHTML = Board.contactAlertsHTML(b?.contact_alerts) + Board.rosterHTML(b?.agents, {
+  boardEl.innerHTML = Board.attentionHTML(state.messages, state.query) + Board.contactAlertsHTML(b?.contact_alerts) + Board.rosterHTML(b?.agents, {
     selfId: null,
     mergeActions: mergeActionsHTML,
     // Same reason as the panel: this surface replaces the roster's innerHTML on
     // every board change, so a `details` a reader opened does not survive one.
     expanded: state.expanded,
+    query: state.query, expandedGroups: state.expandedGroups,
     // The cadence trace is drawn from the event feed the board already has,
     // no new endpoint, no new poll, and the same events the Activity pane shows.
     events: state.events,
@@ -445,8 +473,9 @@ function drawPanes() {
     said: c.said.map((a) => saidBody.has(a.serial) ? { ...a, body: saidBody.get(a.serial) } : a),
   }))
   const chEl = document.getElementById("pane-agents")
-  chEl.innerHTML = (chans.length
-    ? chans.map((c) => {
+  const shownChans = chans.filter((c) => Board.matchesSpace(c, state.query))
+  chEl.innerHTML = (shownChans.length
+    ? shownChans.map((c) => {
         const mine = (c.members || []).some((m) => m.agent === me)
         return Board.channelHTML(c, { selfId: me, agents: b?.agents }) + `
           <div class="compose" data-agent="${Board.esc(c.id)}">
@@ -461,7 +490,7 @@ function drawPanes() {
     // while this sentence promised the very thing that is switched off, so an
     // operator watched an empty board waiting for a match that could never
     // arrive. Keep the clause that is always true; say the rest only when it is.
-    : Board.emptyHTML("No agents", matchingHint
+    : state.query.trim() ? Board.noMatchesHTML() : Board.emptyHTML("No agents", matchingHint
         ? "Dibs appear when an agent opens one. " + matchingHint
         : "Dibs appear when an agent opens one, or when two agents are matched into the same work.")
     ) + `
@@ -474,8 +503,8 @@ function drawPanes() {
   tl.textContent = chans.length
   tl.classList.toggle("zero", chans.length === 0)
 
-  if ((b?.merge_sources || []).length) boardEl.insertAdjacentHTML("beforeend", `<section class="merge-sources"><h2>Closed participants</h2>${b.merge_sources.map((row) => `<article class="entry" data-agent="${Board.esc(row.id)}"><p>${Board.esc(row.name)} (${Board.esc(row.id)})</p>${mergeActionsHTML(row)}</article>`).join("")}</section>`)
-  if ((b?.merged_agents || []).length) boardEl.insertAdjacentHTML("beforeend", `<section class="merge-history"><h2>Merged participants</h2>${b.merged_agents.map((row) => `<p>${Board.esc(row.id)} merged into ${Board.esc(row.into)} by ${Board.esc(row.by?.id || "unknown")} at ${Board.esc(row.at || "unknown")}</p>`).join("")}</section>`)
+  if ((b?.merge_sources || []).length) boardEl.insertAdjacentHTML("beforeend", `<section class="merge-sources"><h2>Closed participants</h2>${b.merge_sources.filter((row) => Board.matchesAgent(row, state.query)).map((row) => `<article class="entry" data-agent="${Board.esc(row.id)}"><p>${Board.esc(row.name)} (${Board.esc(row.id)})</p>${mergeActionsHTML(row)}</article>`).join("")}</section>`)
+  if ((b?.merged_agents || []).length) boardEl.insertAdjacentHTML("beforeend", `<section class="merge-history"><h2>Merged participants</h2>${b.merged_agents.filter((row) => Board.matchesAgent(row, state.query)).map((row) => `<p>${Board.esc(row.id)} merged into ${Board.esc(row.into)} by ${Board.esc(row.by?.id || "unknown")} at ${Board.esc(row.at || "unknown")}</p>`).join("")}</section>`)
 
   const mailEl = document.getElementById("pane-mail")
   // No actionsHTML: the operator watches. Answering as somebody else's agent is
@@ -483,6 +512,7 @@ function drawPanes() {
   // Messages addressed to the human get a reply box. Everything else is still
   // read-only: answering as somebody else's agent is not something this view may
   // do, and the operator holds exactly one token: their own.
+  const shownMail = state.messages.filter((m) => Board.matchesMail(m, state.query))
   mailEl.innerHTML = `
     <div class="compose new-msg">
       <input type="text" id="msg-to" placeholder="agent id" aria-label="recipient">
@@ -500,8 +530,8 @@ function drawPanes() {
     // later refusal kept the cached mail and hid the warning, under a stream
     // still labelled live. Round fifty-two of the pre-release review.
     ? `<p class="pill warn mail-warn" role="alert">Mail unavailable: the mailbox could not be read (${Board.esc(state.mailError)}). What is shown may be stale; reload the board, and open it again from dibs web if this persists.</p>`
-    : "") + (state.messages.length
-    ? state.messages.map((m) => {
+    : "") + (shownMail.length
+    ? shownMail.map((m) => {
         const forMe = me && m.to === me && !Board.TERMINAL.has(m.state)
         // A REQUEST is approved or denied, never answered.
         //
@@ -527,12 +557,13 @@ function drawPanes() {
       }).join("")
     : state.mailError
       ? ""
-      : Board.emptyHTML("No mail", "Messages between agents appear here as they are sent."))
+      : state.query.trim() ? Board.noMatchesHTML() : Board.emptyHTML("No mail", "Messages between agents appear here as they are sent."))
 
   const actEl = document.getElementById("pane-activity")
-  actEl.innerHTML = state.events.length
-    ? state.events.map(Board.eventHTML).join("")
-    : Board.emptyHTML("Nothing yet", "Registrations, claims and messages appear here in ledger order.")
+  const shownEvents = state.events.filter((e) => Board.matchesEvent(e, state.query))
+  actEl.innerHTML = shownEvents.length
+    ? shownEvents.map(Board.eventHTML).join("")
+    : state.query.trim() ? Board.noMatchesHTML() : Board.emptyHTML("Nothing yet", "Registrations, claims and messages appear here in ledger order.")
 
   const tm = document.getElementById("tally-mail")
   tm.textContent = state.messages.length

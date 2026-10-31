@@ -56,6 +56,8 @@ func New(eng *engine.Engine) (*Server, error) {
 		// at compile time from this repository, or a string already passed through
 		// template.HTMLEscapeString on the line itself.
 		"styles": func() template.CSS { return template.CSS(assets.Styles()) },
+		// #nosec G203 -- compile-time product SVG, never participant content.
+		"productMark": func() template.HTML { return template.HTML(assets.Icon) },
 		// #nosec G203 -- not attacker-controlled: these are vendored assets embedded
 		// at compile time from this repository, or a string already passed through
 		// template.HTMLEscapeString on the line itself.
