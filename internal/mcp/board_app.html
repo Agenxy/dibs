@@ -178,7 +178,7 @@
    underneath below AA bought a little more contrast between cells at the cost of
    contrast against the background, which is the one that has to hold. */
 
-/* The human's affordance sits in the context row because that row already says
+/* The human's affordance sits beside search; the context still says
    who is reading. Quiet while locked, it is an offer, not an alarm, and it
    takes the live colour once a person has proved they are here, which is the
    one state change on this surface that is genuinely about identity. */
@@ -672,7 +672,7 @@
   </header>
   <div class="hairline"></div>
 
-  <div class="context" aria-label="Panel context">
+  <div class="context sr-only" aria-label="Panel context">
     <span class="agent-id" id="ctx-agent">awaiting board</span>
     <span id="ctx-caps">, </span>
     <!-- The human's way in. Locked until a fingerprint proves somebody is
@@ -694,15 +694,7 @@
          the conversation the agent controls. The button says what it does now.
          "Act as yourself" read as though the reader had been acting as somebody
          else, which is exactly backwards: they had not been acting at all. -->
-    <button id="human-lock" class="human-lock" type="button"
-            aria-describedby="human-lock-why">
-      <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true" fill="none"
-           stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
-        <circle cx="8" cy="5" r="2.6" />
-        <path d="M3.2 13.2a4.8 4.8 0 0 1 9.6 0" />
-      </svg>
-      <span id="human-lock-label">confirm it's you</span>
-    </button>
+
     <span class="sr-only" id="human-lock-why">The board is yours to read either
       way. This proves with Touch ID that a person is at this machine, which is
       what lets you post, announce and message agents under your own name rather
@@ -712,7 +704,18 @@
   <div class="summary" id="summary" role="status" aria-label="Board summary"></div>
 
   <section id="self-row" aria-label="Viewing agent"></section>
+  <div class="board-tools">
   <label class="board-search"><span class="sr-only">Search Dibs</span><input id="board-search" type="search" placeholder="Search Dibs" aria-label="Search Dibs" autocomplete="off"></label>
+    <button id="human-lock" class="human-lock" type="button"
+            aria-describedby="human-lock-why">
+      <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true" fill="none"
+           stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+        <circle cx="8" cy="5" r="2.6" />
+        <path d="M3.2 13.2a4.8 4.8 0 0 1 9.6 0" />
+      </svg>
+      <span id="human-lock-label">confirm it's you</span>
+    </button>
+  </div>
   <main id="main">
     <section class="view" id="pane-board" role="tabpanel" aria-labelledby="tab-board" tabindex="0"></section>
     <section class="view hide" id="pane-agents" role="tabpanel" aria-labelledby="tab-agents" tabindex="0" hidden></section>
