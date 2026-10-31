@@ -22,8 +22,10 @@ type snapshotFeature struct {
 var snapshotFeatures = []snapshotFeature{
 	{
 		name: "desktop-approval-confirmation/v1",
-		fields: []string{"core.State.DesktopApproval", "core.DesktopApprovalSetting.Enabled",
-			"core.DesktopApprovalSetting.By", "core.DesktopApprovalSetting.At"},
+		fields: []string{
+			"core.State.DesktopApproval", "core.DesktopApprovalSetting.Enabled",
+			"core.DesktopApprovalSetting.By", "core.DesktopApprovalSetting.At",
+		},
 		present: func(st *core.State) bool {
 			return st.DesktopApproval.Enabled || st.DesktopApproval.By != "" || !st.DesktopApproval.At.IsZero()
 		},

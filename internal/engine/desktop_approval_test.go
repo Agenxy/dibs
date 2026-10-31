@@ -37,8 +37,10 @@ func approvalEngine(t *testing.T, checker desktopPresenceChecker, notifier Human
 
 func approvalSend(t *testing.T, e *Engine, ctx context.Context, token, kind, grant string) uint64 {
 	t.Helper()
-	r, err := e.Do(ctx, &core.Op{Kind: core.OpSendMessage, Token: token, To: "human", MsgType: kind,
-		Grant: grant, Body: "UNTRUSTED request text must not become the sensor reason"})
+	r, err := e.Do(ctx, &core.Op{
+		Kind: core.OpSendMessage, Token: token, To: "human", MsgType: kind,
+		Grant: grant, Body: "UNTRUSTED request text must not become the sensor reason",
+	})
 	if err != nil || r["msg_serial"] == nil {
 		t.Fatalf("request setup: %v %v", r, err)
 	}

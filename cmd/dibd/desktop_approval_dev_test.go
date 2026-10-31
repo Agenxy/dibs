@@ -25,8 +25,10 @@ func TestNativePrivilegedApprovalCanceledByPresenceStaysPending(t *testing.T) {
 	if _, err := eng.Configure(ctx, token, "human.confirm_privileged_desktop", "true"); err != nil {
 		t.Fatalf("enable setup: %v", err)
 	}
-	sent, err := eng.Do(ctx, &core.Op{Kind: core.OpSendMessage, Token: token, To: "human",
-		MsgType: core.MsgRequest, Grant: core.RoleCoordinator, Body: "review this typed grant"})
+	sent, err := eng.Do(ctx, &core.Op{
+		Kind: core.OpSendMessage, Token: token, To: "human",
+		MsgType: core.MsgRequest, Grant: core.RoleCoordinator, Body: "review this typed grant",
+	})
 	if err != nil || sent["msg_serial"] == nil {
 		t.Fatalf("typed request setup: %v %v", sent, err)
 	}
