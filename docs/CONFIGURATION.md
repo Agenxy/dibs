@@ -921,8 +921,9 @@ deliberate: an earlier design put the nonces here and it was the wrong trade.
 
 An agent you have granted **admin** can read and change the settings that take
 effect while the board is running, with the `settings` tool. Reading needs
-only a token; changing normally needs admin. A coordinator can change only
-the two app-restart controls.
+only a token; changing normally needs admin. A coordinator can change the
+two app-restart controls. The human's optional desktop approval confirmation
+has the separate authority rule below.
 
 It is called `settings` and not `configure` because `dibs configure` is a CLI
 wizard that writes `dibs.toml` before a board runs, and two different things
@@ -951,6 +952,42 @@ and force-releasing are all visible on the board and undoable from it.
 Changing a setting changes how the board behaves for every agent on it,
 including the ones that will never look at this file, so it is the grant a
 person makes deliberately.
+
+### Confirming privileged desktop approvals
+
+`human.confirm_privileged_desktop` defaults to `false`. Turn it on in
+**Settings** on an unlocked `dibs web` board, or run:
+
+```console
+dibs desktop-approvals on
+dibs desktop-approvals --json
+dibs desktop-approvals off
+```
+
+Without `DIBS_TOKEN`, these commands use the existing human terminal and board
+password authentication. With a token, they act as that identity. Any
+authenticated agent may enable the check through the CLI or
+`settings(token, setting: "human.confirm_privileged_desktop", value: "true")`.
+Only the human identity may disable it; an admin agent cannot. `DIBS_ADMIN=1`
+only permits noninteractive terminal use and grants no human authority.
+
+When enabled, approving a desktop request that grants a role, permission or
+mailbox access requires a fresh daemon-side Touch ID confirmation. This applies
+both to the live notification and to a reopened native notification window.
+The confirmation names the exact board, request and typed effect; the daemon
+rechecks that effect and the current setting immediately before applying it.
+Cancellation, an unavailable sensor or another open confirmation leaves the
+request pending and points to `dibs web`. Ordinary questions, ordinary requests,
+denials and comments do not prompt. Human-authenticated board decisions and
+existing signed remote-relay rules retain their own authentication.
+
+This preference and its actor/time are ledgered and survive replay and
+compaction. Both changes appear in board activity. It is not a `dibs.toml`
+key or a file override. A snapshot containing this preference's provenance,
+or mailbox-recovery state, declares its required features in snapshot version
+2. Older version-1-only readers refuse that snapshot rather than silently
+dropping the new state; untouched boards still write version 1. This snapshot
+boundary alone does not fence recovery fields in an uncompacted ledger.
 
 ### Where a change is written
 

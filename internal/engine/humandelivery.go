@@ -200,7 +200,13 @@ func (e *Engine) askHumanDesktop(n HumanNotice, ask func(humanask.Message) (huma
 		return
 	}
 	if a.Disposition != "" {
-		if err := e.AnswerAsHuman(context.Background(), n.Serial, a.Disposition, a.Body); err != nil {
+		answer := func() error { return e.AnswerAsHuman(context.Background(), n.Serial, a.Disposition, a.Body) }
+		if a.Disposition == "approve" {
+			answer = func() error {
+				return e.AnswerNativeHuman(context.Background(), n.Node, n.Serial, a.Disposition, a.Body, "")
+			}
+		}
+		if err := answer(); err != nil {
 			e.report(err)
 		}
 	}

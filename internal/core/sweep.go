@@ -715,6 +715,7 @@ func (s *State) Board() map[string]any {
 	slices.SortFunc(claims, func(a, b *Claim) int { return strings.Compare(a.Path, b.Path) })
 	spaces := s.channelBoard()
 	out := map[string]any{"serial": s.Serial, "node": s.NodeID, "agents": agents, "claims": claims}
+	out["desktop_approval"] = s.DesktopApproval
 	if merged := s.mergedBoard(); len(merged) > 0 {
 		out["merged_agents"] = merged
 	}

@@ -33,6 +33,34 @@ func registerLogsAPI(mux *http.ServeMux, ring *logs.Ring) {
 // admin password, which is precisely why an agent can never promote itself or
 // another: no agent token reaches this handler.
 func registerAdminAPI(mux *http.ServeMux, eng *engine.Engine) {
+	mux.HandleFunc("POST /api/admin/desktop-approvals", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Enabled *bool `json:"enabled"`
+		}
+		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&body); err != nil {
+			writeAdminResult(w, nil, &core.Error{Code: "E_BAD_ARG", Msg: "expected an optional boolean enabled field",
+				Hint: "use Settings on dibs web or dibs desktop-approvals on|off"})
+			return
+		}
+		if body.Enabled == nil {
+			result, err := eng.DesktopApprovalSettings(r.Context())
+			writeAdminResult(w, result, err)
+			return
+		}
+		_, token, err := eng.HumanAgent(r.Context())
+		if err != nil {
+			writeAdminResult(w, nil, err)
+			return
+		}
+		value := "false"
+		if *body.Enabled {
+			value = "true"
+		}
+		result, err := eng.Configure(r.Context(), token, core.DesktopApprovalSettingKey, value)
+		writeAdminResult(w, result, err)
+	})
 	mux.HandleFunc("POST /api/admin/role", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Agent string `json:"agent"`

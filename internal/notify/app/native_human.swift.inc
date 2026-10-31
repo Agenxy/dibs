@@ -54,7 +54,9 @@ func nativeHumanRPC(profile: String, method: String, payload: [String: Any]) thr
     var audit = [UInt8](repeating: 0, count: 32), auditLength = socklen_t(32)
     guard getsockopt(fd, SOL_LOCAL, LOCAL_PEERTOKEN, &audit, &auditLength) == 0, auditLength == 32,
           nativeBoardPeerAttested(Data(audit)) else { throw NativeHumanFailure.boardChanged }
-    var timeout = timeval(tv_sec: 15, tv_usec: 0), noSignal: Int32 = 1
+    // The daemon can ask for a fresh Touch ID on a privileged approval. Its
+    // ninety-second presence bound must expire before this answer transport.
+    var timeout = timeval(tv_sec: method == "answer" ? 100 : 15, tv_usec: 0), noSignal: Int32 = 1
     _ = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
     _ = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
     _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout<Int32>.size))
