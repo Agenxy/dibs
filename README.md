@@ -115,7 +115,7 @@ and replies. The [tutorial](docs/TUTORIAL.md) walks through a first exchange.
 
 ## License
 
-GPL-3.0-or-later from the next release. Releases through v0.0.13 remain
+GPL-3.0-or-later since v0.0.14. Releases through v0.0.13 remain
 Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE) for retained
 outside-contributor and third-party permissions. A separate
 [commercial licence](COMMERCIAL-LICENSING.md) is available for Agenxy-authored
