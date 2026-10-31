@@ -15,6 +15,7 @@ package humanask
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"os/exec"
 	"strconv"
@@ -94,10 +95,13 @@ type Answer struct {
 func Ask(m Message) (Answer, error) {
 	if m.ask == nil && notify.NativePromptAvailable() && (m.Type == core.MsgQuestion || m.Type == core.MsgRequest) {
 		answer, err := m.nativeReply()
-		if !errors.Is(err, notify.ErrReplyUnavailable) {
-			return answer, err
+		if errors.Is(err, notify.ErrReplyUnavailable) {
+			answer, err = m.legacyReply()
 		}
-		return m.legacyReply()
+		if err != nil {
+			return Answer{}, fmt.Errorf("%w; no answer was recorded; answer on the Dibs board", err)
+		}
+		return answer, nil
 	}
 	title := "Dibs · " + m.displayFrom()
 	switch m.Type {

@@ -46,6 +46,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Disabled desktop notifications now stop native banners, questions, pickers
+  and text prompts before starting the notifier. Failed native prompts keep
+  the ask unanswered and direct the person to the board; malformed mixed
+  text/button replies cannot record a decision. Large-text windows follow
+  keyboard selection through the shared scroll region on smaller screens.
+
 - Mac reply windows show the full message in a scrolling view, with the sender
   and context above it, visible choices and a typed reply field. Questions can
   send a choice, text or both. Requests retain explicit Approve/Deny actions;

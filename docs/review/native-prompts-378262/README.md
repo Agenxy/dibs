@@ -54,6 +54,12 @@ helper receipts do not report their missing reply field. Separate exact-old-file
 controls fail for the new human-comment API and JSON-escaped 32 KiB answer.
 Those controls are not a production desktop or fleet test.
 
+The approval-path result above is the synthetic legacy helper deliberately
+choosing the offered Approve action in place of the new comment contract. It
+does not establish a released conversion of typed text into approval. The
+[hosted CI repair and pinned release audit](CI-REPAIR.md) distinguish that result
+from the measured native kill-switch bypass and failure/scrolling repairs.
+
 The extra render check samples the pinned mark after scrolling. It passes with
 the explicit viewport clipping. Removing that clipping did not reproduce the
 observed overpaint in two bounded controls, so those controls are **not** claimed

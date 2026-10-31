@@ -150,6 +150,9 @@ func bannerWithDeliveryReceipt(title, subtitle, body string, timeSensitive bool,
 func bannerWithDetail(
 	id, title, subtitle, body string, detail *AskDetail, timeSensitive bool, receipt DeliveryReceipt,
 ) error {
+	if silenced() {
+		return notificationSilencedError()
+	}
 	if goos == "linux" {
 		err := linuxBannerWithUrgency(title, subtitle, body, timeSensitive)
 		if err == nil && receipt != nil {
@@ -216,6 +219,9 @@ func askWithID(id, title, body string, receipt Receipt, buttons ...string) (stri
 func askWithDeliveryID(
 	id, title, body string, detail *AskDetail, receipt DeliveryReceipt, buttons ...string,
 ) (string, error) {
+	if silenced() {
+		return "", notificationSilencedError()
+	}
 	if len(buttons) == 0 || len(buttons) > 3 {
 		return "", errors.New("an alert takes one to three buttons; use Pick for more")
 	}
@@ -252,7 +258,7 @@ func Pick(title, body string, choices ...string) (string, error) {
 		return out, nil
 	}
 	return "", fmt.Errorf("%w: the native Dibs prompt is unavailable; "+
-		"run dibs doctor and answer on the board", ErrCannotNotify)
+		"run dibs doctor and answer on the Dibs board", ErrCannotNotify)
 }
 
 // CanPrompt reports whether Prompt can open a text field here at all, so a
@@ -277,7 +283,7 @@ func Prompt(title, body string) (string, error) {
 		return out, nil
 	}
 	return "", fmt.Errorf("%w: the native Dibs prompt is unavailable; "+
-		"run dibs doctor and answer on the board", ErrCannotNotify)
+		"run dibs doctor and answer on the Dibs board", ErrCannotNotify)
 }
 
 // onScreen runs the half of answering that needs a window, through the bundle.
@@ -293,6 +299,9 @@ func Prompt(title, body string) (string, error) {
 // ok=false means there is no usable bundle here. Prompt and Pick report that
 // the person must answer on the board; no AppleScript dialog is attempted.
 func onScreen(mode string, args ...string) (string, bool) {
+	if silenced() {
+		return "", false
+	}
 	h := helper()
 	if h == "" {
 		return "", false
@@ -487,6 +496,10 @@ var goos = runtime.GOOS
 // it spawns. Split out so it is testable from inside a test binary, where
 // Available() is already false for a different reason and would prove nothing.
 func silenced() bool { return os.Getenv(silenceEnv) == "off" }
+
+func notificationSilencedError() error {
+	return fmt.Errorf("%w: desktop notifications are disabled; answer on the Dibs board", ErrCannotNotify)
+}
 
 // silenceEnv turns every notification off for a process and everything it
 // spawns.

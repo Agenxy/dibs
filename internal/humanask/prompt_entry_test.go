@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,6 +25,14 @@ import (
 // broker pipes run for real. Only the human's UI gesture is doubled. The
 // legacy --pick branch is safe too, so the old-code control cannot open UI.
 func promptEntryHelper() {
+	if path := os.Getenv("DIBS_PROMPT_LAUNCH_CAPTURE"); path != "" {
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+		if err != nil {
+			os.Exit(3)
+		}
+		_, _ = f.WriteString("started\n")
+		_ = f.Close()
+	}
 	if len(os.Args) > 1 && os.Args[1] == "--pick" {
 		_, _ = os.Stdout.WriteString("fourth choice\n")
 		return
@@ -31,13 +40,20 @@ func promptEntryHelper() {
 	if len(os.Args) != 2 || os.Args[1] != "--broker" {
 		os.Exit(3)
 	}
+	phase := os.Getenv("DIBS_PROMPT_FAILURE")
+	if phase == "before-ready" {
+		os.Exit(9)
+	}
 	out := json.NewEncoder(os.Stdout)
-	old := os.Getenv("DIBS_PROMPT_OLD_HELPER") == "1"
+	old := os.Getenv("DIBS_PROMPT_OLD_HELPER") == "1" || strings.HasPrefix(phase, "legacy-")
 	ready := map[string]any{"v": 1, "event": "ready"}
 	if !old {
 		ready["reply"] = 1
 	}
 	_ = out.Encode(ready)
+	if phase == "after-ready" {
+		os.Exit(9)
+	}
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 4096), 2*1024*1024)
 	for scanner.Scan() {
@@ -53,6 +69,17 @@ func promptEntryHelper() {
 			os.Exit(3)
 		}
 		_ = out.Encode(map[string]any{"v": 1, "id": p.ID, "event": "posted", "receipt": map[string]string{"state": "posted"}})
+		if phase == "after-post" {
+			os.Exit(9)
+		}
+		if phase == "legacy-comment" || phase == "legacy-mixed" {
+			event, action := "reply", "comment"
+			if phase == "legacy-mixed" {
+				event, action = "action", "Approve"
+			}
+			_ = out.Encode(map[string]any{"v": 1, "id": p.ID, "event": event, "action": action, "text": "Approve"})
+			os.Exit(9)
+		}
 		if p.ReplyKind != "" {
 			action := "answer"
 			choice := "fourth choice"
@@ -73,6 +100,152 @@ func promptEntryHelper() {
 			}
 			_ = out.Encode(map[string]any{"v": 1, "id": p.ID, "event": "action", "action": choice})
 		}
+	}
+}
+
+// Each copy is created exclusively in a fresh private directory; no signed
+// executable inode is overwritten. Preparation executes the exact bytes once.
+func newHumanaskFixture(t *testing.T) (dir, driver, helper string) {
+	t.Helper()
+	dir = t.TempDir()
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	image, err := os.ReadFile(self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	driver, helper = filepath.Join(dir, "driver.test"), filepath.Join(dir, "Dibs.app", "Contents", "MacOS", "dibs-notify")
+	if err := os.MkdirAll(filepath.Dir(helper), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{driver, helper} {
+		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o700)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, writeErr := f.Write(image)
+		closeErr := f.Close()
+		if err := errors.Join(writeErr, closeErr); err != nil {
+			t.Fatal(err)
+		}
+		testexec.PrepareExecutable(t, exec.Command(path, "--dibs-test-prepare"))
+	}
+	return dir, driver, helper
+}
+
+func TestNativePromptFailureAndSilenceNeverProduceVerdicts(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("native macOS entry")
+	}
+	if os.Getenv("DIBS_PROMPT_FAILURE_DRIVER") == "1" {
+		phase := os.Getenv("DIBS_PROMPT_FAILURE")
+		body := strings.Repeat("full message <>& with code\n", 600) + "END OF MESSAGE"
+		if strings.HasPrefix(phase, "legacy-") {
+			body = "request with a typed comment"
+		}
+		got, err := Ask(Message{Type: core.MsgRequest, From: "sender", Body: body, Node: "failure-entry", Serial: 7})
+		if got.Disposition != "" || got.Body != "" || err == nil {
+			t.Fatalf("failed or silenced prompt produced a verdict: %+v error=%v", got, err)
+		}
+		if !strings.Contains(err.Error(), "Dibs board") {
+			t.Fatalf("failed prompt has no board route: %v", err)
+		}
+		if phase == "silenced" {
+			for name, call := range map[string]func() error{
+				"question": func() error {
+					a, e := Ask(Message{Type: core.MsgQuestion, Body: body, Choices: []string{"yes"}, Node: "silenced", Serial: 8})
+					if a.Disposition != "" {
+						t.Error("silenced question answered")
+					}
+					return e
+				},
+				"banner":   func() error { return notify.Banner("title", "", body) },
+				"priority": func() error { return notify.TimeSensitiveBannerWithReceipt("title", "", body, nil) },
+				"pick": func() error {
+					a, e := notify.Pick("title", body, "yes")
+					if a != "" {
+						t.Error("silenced pick answered")
+					}
+					return e
+				},
+				"prompt": func() error {
+					a, e := notify.Prompt("title", body)
+					if a != "" {
+						t.Error("silenced text prompt answered")
+					}
+					return e
+				},
+				"native reply": func() error {
+					a, e := notify.ReplyMessage("silenced", 9, "title", notify.AskDetail{Body: body, Kind: core.MsgRequest}, nil, nil)
+					if a.Action != "" {
+						t.Error("silenced native reply answered")
+					}
+					return e
+				},
+			} {
+				if err := call(); err == nil || !strings.Contains(err.Error(), "Dibs board") {
+					t.Fatalf("silenced %s missing error/board route: %v", name, err)
+				}
+			}
+		}
+		raw, readErr := os.ReadFile(os.Getenv("DIBS_PROMPT_ENTRY_CAPTURE"))
+		if phase != "after-post" && !strings.HasPrefix(phase, "legacy-") {
+			if !errors.Is(readErr, os.ErrNotExist) {
+				t.Fatalf("failed prompt posted or truncated data: %q %v", raw, readErr)
+			}
+		} else {
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			var sent struct {
+				ReplyKind string
+				Detail    struct{ Body string }
+			}
+			if err := json.Unmarshal(raw, &sent); err != nil {
+				t.Fatal(err)
+			}
+			if sent.Detail.Body != body {
+				t.Fatalf("failure fallback truncated message: got%d want%d", len(sent.Detail.Body), len(body))
+			}
+			if phase == "after-post" && sent.ReplyKind != core.MsgRequest {
+				t.Fatal("failure retried as a legacy prompt")
+			}
+		}
+		launches, _ := os.ReadFile(os.Getenv("DIBS_PROMPT_LAUNCH_CAPTURE"))
+		want := 1
+		if phase == "silenced" || phase == "cannot-start" {
+			want = 0
+		}
+		if strings.Count(string(launches), "started\n") != want {
+			t.Fatalf("prompt retried or ignored silence: launches=%q", launches)
+		}
+		return
+	}
+	for _, phase := range []string{"silenced", "cannot-start", "before-ready", "after-ready", "after-post", "legacy-comment", "legacy-mixed"} {
+		t.Run(phase, func(t *testing.T) {
+			dir, driver, helper := newHumanaskFixture(t)
+			if phase == "cannot-start" {
+				if err := os.Remove(helper); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(helper, []byte("not an executable"), 0o700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, driver, "-test.run=^TestNativePromptFailureAndSilenceNeverProduceVerdicts$")
+			silence := ""
+			if phase == "silenced" {
+				silence = "off"
+			}
+			cmd.Env = append(os.Environ(), "DIBS_NOTIFY="+silence, "DIBS_PROMPT_ENTRY_DRIVER=1", "DIBS_PROMPT_FAILURE_DRIVER=1", "DIBS_PROMPT_FAILURE="+phase, "DIBS_DIR="+dir, "DIBS_PROMPT_ENTRY_CAPTURE="+filepath.Join(dir, "frame.json"), "DIBS_PROMPT_LAUNCH_CAPTURE="+filepath.Join(dir, "launches"))
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("real failed-prompt entry: %v context=%v\n%s", err, ctx.Err(), out)
+			}
+		})
 	}
 }
 
@@ -137,25 +310,11 @@ func TestPromptEntryPreservesWholeMessageChoicesAndTypedReply(t *testing.T) {
 		}
 		return
 	}
-	dir := t.TempDir()
-	image, err := os.ReadFile(os.Args[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	driver, helper := filepath.Join(dir, "driver.test"), filepath.Join(dir, "Dibs.app", "Contents", "MacOS", "dibs-notify")
-	if err := os.MkdirAll(filepath.Dir(helper), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	for _, path := range []string{driver, helper} {
-		if err := os.WriteFile(path, image, 0o700); err != nil {
-			t.Fatal(err)
-		}
-		testexec.PrepareExecutable(t, exec.Command(path, "--dibs-test-prepare"))
-	}
+	dir, driver, _ := newHumanaskFixture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, driver, "-test.run=^TestPromptEntryPreservesWholeMessageChoicesAndTypedReply$")
-	cmd.Env = append(os.Environ(), "DIBS_PROMPT_ENTRY_DRIVER=1", "DIBS_PROMPT_ENTRY_CAPTURE="+filepath.Join(dir, "capture.json"), "DIBS_DIR="+dir)
+	cmd.Env = append(os.Environ(), "DIBS_NOTIFY=", "DIBS_PROMPT_ENTRY_DRIVER=1", "DIBS_PROMPT_ENTRY_CAPTURE="+filepath.Join(dir, "capture.json"), "DIBS_DIR="+dir)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("real prompt entry: %v\n%s", err, out)
 	}
@@ -213,25 +372,11 @@ func TestOldNativeHelperStillPostsWithoutClaimingTypedReply(t *testing.T) {
 		}
 		return
 	}
-	dir := t.TempDir()
-	image, err := os.ReadFile(os.Args[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	driver, helper := filepath.Join(dir, "driver.test"), filepath.Join(dir, "Dibs.app", "Contents", "MacOS", "dibs-notify")
-	if err := os.MkdirAll(filepath.Dir(helper), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	for _, path := range []string{driver, helper} {
-		if err := os.WriteFile(path, image, 0o700); err != nil {
-			t.Fatal(err)
-		}
-		testexec.PrepareExecutable(t, exec.Command(path, "--dibs-test-prepare"))
-	}
+	dir, driver, _ := newHumanaskFixture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, driver, "-test.run=^TestOldNativeHelperStillPostsWithoutClaimingTypedReply$")
-	cmd.Env = append(os.Environ(), "DIBS_PROMPT_ENTRY_DRIVER=1", "DIBS_PROMPT_OLD_HELPER=1", "DIBS_PROMPT_ENTRY_CAPTURE="+filepath.Join(dir, "capture.json"), "DIBS_DIR="+dir)
+	cmd.Env = append(os.Environ(), "DIBS_NOTIFY=", "DIBS_PROMPT_ENTRY_DRIVER=1", "DIBS_PROMPT_OLD_HELPER=1", "DIBS_PROMPT_ENTRY_CAPTURE="+filepath.Join(dir, "capture.json"), "DIBS_DIR="+dir)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("real old-helper entry: %v\n%s", err, out)
 	}

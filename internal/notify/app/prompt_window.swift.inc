@@ -27,6 +27,25 @@ final class PromptSurface: NSView {
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); appearanceChanged?() }
 }
 
+// A shared-scroll layout gives the message's own clip its full text height.
+// NSTextView otherwise considers a selection visible there even while the
+// outer viewport is still on page one. Propagate native keyboard/selection
+// reveals through both clips, using view conversion (points, not pixels).
+final class PromptMessageView: NSTextView {
+    override func scrollRangeToVisible(_ range: NSRange) {
+        super.scrollRangeToVisible(range)
+        guard let container = textContainer, let manager = layoutManager else { return }
+        manager.ensureLayout(for: container)
+        let glyphs = manager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+        let rect = manager.boundingRect(forGlyphRange: glyphs, in: container)
+            .offsetBy(dx: textContainerOrigin.x,dy:textContainerOrigin.y).insetBy(dx:0,dy:-12)
+        _ = super.scrollToVisible(rect)
+        if let scroll = enclosingScrollView, let parent = scroll.superview, parent.enclosingScrollView != nil {
+            _ = parent.scrollToVisible(convert(rect,to:parent))
+        }
+    }
+}
+
 final class PromptActionButton: NSButton {
     var fill = NSColor.clear
     var ink = NSColor.labelColor
@@ -130,7 +149,7 @@ final class HumanPromptWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
     let name = NSTextField(wrappingLabelWithString: "")
     let context = NSTextField(wrappingLabelWithString: "")
     let kind = NSTextField(labelWithString: "")
-    let message = NSTextView()
+    let message = PromptMessageView()
     let composer = PromptTextView()
     let messageScroll = NSScrollView()
     let replyScroll = NSScrollView()
@@ -551,7 +570,7 @@ final class HumanPromptWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
         let glyphs = manager.glyphRange(forCharacterRange: NSRange(location: max(0,text.length - 14), length: min(14,text.length)), actualCharacterRange: nil)
         return manager.boundingRect(forGlyphRange: glyphs, in: container).offsetBy(dx: message.textContainerOrigin.x, dy: message.textContainerOrigin.y)
     }
-    func revealMessageEnd() { message.scrollToVisible(messageEndRect().insetBy(dx: 0,dy: -12)) }
+    func revealMessageEnd() { panel.makeFirstResponder(message); message.moveToEndOfDocument(nil) }
     var viewInfo: [String: Any] {
         ["title": heading, "sender": detail.sender, "body": detail.body, "renderedBody": message.string,
          "buttons": actionButtons.map { $0.title }, "choices": choices,
@@ -571,6 +590,9 @@ final class HumanPromptWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
              return required <= radio.bounds.height - 16 * scale
          },
          "endBottomInset": message.visibleRect.maxY - messageEndRect().maxY,
+         "endRect": NSStringFromRect(messageEndRect()), "messageVisibleRect": NSStringFromRect(message.visibleRect),
+         "messageFrame": NSStringFromRect(message.frame), "messageClip": NSStringFromRect(messageScroll.contentView.bounds),
+         "outerClip": NSStringFromRect(overflowScroll.contentView.bounds), "backingScale": panel.backingScaleFactor,
          "moreBelow": !moreFade.isHidden, "firstChoiceVisible": radios.first.map { $0.visibleRect.height >= $0.bounds.height - 1 } ?? true,
          "overflowLaneX": overflowScroll.frame.maxX - 2, "overflowLaneY": root.bounds.height - overflowScroll.frame.midY,
          "commentPaddingX": (actionButtons.first?.frame.minX ?? 0) + 2, "commentPaddingY": root.bounds.height - (actionButtons.first?.frame.midY ?? 0),

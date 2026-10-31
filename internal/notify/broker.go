@@ -270,7 +270,10 @@ func awaitBrokerReply(
 		if err != nil {
 			return brokerEvent{}, err
 		}
-		if event.Event == "reply" && post.ReplyKind != "" {
+		if event.Event == "reply" {
+			if post.ReplyKind == "" {
+				return brokerEvent{}, errors.New("typed reply was not negotiated; no verdict was recorded; read the Dibs board")
+			}
 			if err := validatePromptReply(post, event); err != nil {
 				return brokerEvent{}, err
 			}
@@ -298,6 +301,9 @@ func consumeBrokerEvent(event brokerEvent, post brokerPost, receipt DeliveryRece
 		}
 		return "", true, nil
 	case "action":
+		if event.Text != "" || event.Choice != "" {
+			return "", true, errors.New("button action carried unnegotiated text; no verdict was recorded; read the Dibs board")
+		}
 		if slices.Contains(post.Buttons, event.Action) {
 			return event.Action, true, nil
 		}

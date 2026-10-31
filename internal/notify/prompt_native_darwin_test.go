@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -158,9 +159,34 @@ func TestNativePromptFullTextChoicesTypingAndNoImplicitApproval(t *testing.T) {
 	if strings.Contains(view["renderedBody"].(string), "`code`") {
 		t.Fatal("inline code still has literal backticks")
 	}
-	write(map[string]any{"type": "fixture_end", "id": "dibs.msg.prompt.7"})
-	if tail := read("end")["view"].(map[string]any); tail["endVisible"] != true || tail["endBottomInset"].(float64) < 11 {
-		t.Fatal("last message glyph cannot be revealed by scrolling")
+	geometryCases := [][2]int{{1280, 600}, {640, 600}, {1280, 800}, {1920, 1080}}
+	if raw := os.Getenv("DIBS_PROMPT_INITIAL_HEIGHT"); raw != "" {
+		height, err := strconv.Atoi(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		geometryCases = append([][2]int{{1280, height}}, geometryCases...)
+	}
+	for _, screen := range geometryCases {
+		path := filepath.Join(t.TempDir(), "geometry-1x.png")
+		write(map[string]any{"type": "fixture_snapshot", "id": "dibs.msg.prompt.7", "path": path, "scale": 1, "screenWidth": screen[0], "screenHeight": screen[1], "rasterScale": 1})
+		geometry := read("snapshot")["view"].(map[string]any)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		img, err := png.Decode(bytes.NewReader(data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if img.Bounds().Dx() != int(geometry["width"].(float64)) {
+			t.Fatal("native geometry fixture did not render at forced1x")
+		}
+		write(map[string]any{"type": "fixture_end", "id": "dibs.msg.prompt.7"})
+		tail := read("end")["view"].(map[string]any)
+		if tail["endVisible"] != true || tail["endBottomInset"].(float64) < 11 {
+			t.Fatalf("native end-of-document did not reveal the last glyph on%v: visible=%v inset=%v end=%v message=%v inner=%v outer=%v overflow=%v backing=%v", screen, tail["endVisible"], tail["endBottomInset"], tail["endRect"], tail["messageVisibleRect"], tail["messageClip"], tail["outerClip"], tail["overflow"], tail["backingScale"])
+		}
 	}
 	// A stray Return with neither selection nor text does not answer.
 	write(map[string]any{"type": "fixture_return", "id": "dibs.msg.prompt.7"})

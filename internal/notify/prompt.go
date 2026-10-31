@@ -34,6 +34,9 @@ func NativePromptAvailable() bool { return goos == "darwin" && helper() != "" &&
 func ReplyMessage(
 	node string, serial uint64, title string, detail AskDetail, choices []string, receipt DeliveryReceipt,
 ) (PromptReply, error) {
+	if silenced() {
+		return PromptReply{}, notificationSilencedError()
+	}
 	if !NativePromptAvailable() {
 		return PromptReply{}, fmt.Errorf("%w: install the Dibs native app and run dibs doctor; "+
 			"this build cannot collect a desktop reply", ErrCannotNotify)

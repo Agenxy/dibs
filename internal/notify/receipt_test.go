@@ -189,7 +189,7 @@ func TestPublicNotificationReceiptUsesTheInstalledHelper(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, driver, "-test.run=^TestPublicNotificationReceiptUsesTheInstalledHelper$") // #nosec G204 -- private copy of this test binary
-	cmd.Env = append(os.Environ(), "DIBS_TEST_RECEIPT_PUBLIC=1", "DIBS_DIR="+t.TempDir())
+	cmd.Env = append(os.Environ(), "DIBS_NOTIFY=", "DIBS_TEST_RECEIPT_PUBLIC=1", "DIBS_DIR="+t.TempDir())
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("notifier producer wiring: %v\n%s", err, out)
 	}

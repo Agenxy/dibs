@@ -58,7 +58,7 @@ func TestFocusQuestionUsesBannerThroughInstalledHelper(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, driver, "-test.run=^TestFocusQuestionUsesBannerThroughInstalledHelper$") // #nosec G204 -- private test binary
-	cmd.Env = append(os.Environ(), "HOME="+dir, "DIBS_DIR="+dir, "DIBS_TEST_RECEIPT_PUBLIC=1", "DIBS_TEST_FOCUS_DRIVER=1")
+	cmd.Env = append(os.Environ(), "DIBS_NOTIFY=", "HOME="+dir, "DIBS_DIR="+dir, "DIBS_TEST_RECEIPT_PUBLIC=1", "DIBS_TEST_FOCUS_DRIVER=1")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("public Focus route: %v\n%s", err, out)
 	}

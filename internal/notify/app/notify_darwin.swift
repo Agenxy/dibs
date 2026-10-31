@@ -943,7 +943,13 @@ final class NativeNotificationBroker: NSObject, UNUserNotificationCenterDelegate
             window.panel.effectiveAppearance.performAsCurrentDrawingAppearance {
                 window.layout(fit: value["preserveScroll"] as? Bool != true)
                 window.root.layoutSubtreeIfNeeded(); window.root.displayIfNeeded()
-                if let bitmap = window.root.bitmapImageRepForCachingDisplay(in: window.root.bounds) {
+                var bitmap = window.root.bitmapImageRepForCachingDisplay(in: window.root.bounds)
+                let rasterScale = value["rasterScale"] as? Double ?? Double(ProcessInfo.processInfo.environment["DIBS_PROMPT_RASTER_SCALE"] ?? "")
+                if rasterScale == 1 {
+                    bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(window.root.bounds.width), pixelsHigh: Int(window.root.bounds.height), bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .calibratedRGB, bytesPerRow: 0, bitsPerPixel: 0)
+                    bitmap?.size = window.root.bounds.size
+                }
+                if let bitmap {
                     window.root.cacheDisplay(in: window.root.bounds, to: bitmap)
                     try! bitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: path))
                 }
