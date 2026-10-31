@@ -240,7 +240,7 @@ const Board = (() => {
   // The head sits OUTSIDE the summary deliberately. It carries explainer marks
   // that are themselves buttons, and inside a summary every one of those
   // presses would also toggle the row.
-  function laneHTML(l, { selfId = null, events = null, expanded = null, mergeActions = null } = {}) {
+  function laneHTML(l, { selfId = null, events = null, expanded = null, mergeActions = null, pinned = false } = {}) {
     const st = l.status || "dormant"
     const self = selfId != null && l.id === selfId
     const pathsHTML = (s) =>
@@ -274,9 +274,8 @@ const Board = (() => {
       (declared && l.description ? `<p class="about">${esc(l.description)}</p>` : "") +
       identHTML(l.agent) + sessionHTML(l)
 
-    // Nothing further to open is not a disclosure. An agent that has declared
-    // one line and carries nothing else would otherwise offer a control that
-    // reveals an empty box.
+    // Even a description-only row needs a disclosure: the closed summary is
+    // one line, and opening it reveals the full text on keyboard or touch.
     const more = detail.trim()
     const open = expanded && expanded.has(l.id) ? " open" : ""
 
@@ -285,7 +284,7 @@ const Board = (() => {
           <span class="pip"></span>
           <span class="name">${esc(l.name || l.display_name || l.id)}</span>
           ${l.name && l.name !== l.id ? explained("tag", `formerly ${l.id}`, "stable id; this agent's current name is its address") : ""}
-          ${self ? '<span class="tag self">This agent</span>' : ""}
+          ${self ? `<span class="tag self">${pinned ? "You" : "This agent"}</span>` : ""}${pinned ? `<span class="tag self-status">${esc(st)}</span>` : ""}
           ${l.kind === "persistent" ? '<span class="tag">Standing</span>' : ""}
           ${agentBadges(l)}
           ${(l.possible_forks || []).length ? explained("tag", "possible duplicate", "same-name participants; review identity and direction before merging") : ""}
@@ -297,15 +296,13 @@ const Board = (() => {
           <time class="age" datetime="${esc(l.last_coordination_at || "")}">${esc(ago(l.last_coordination_at))}</time>
         </div>`
 
-    const body = !lede && more ? `<details class="says"${open}><summary>Session identity</summary><div class="said">${detail}</div></details>` : !lede ? "" : !more
-      ? `<p class="lede">${esc(lede)}</p>`
-      : `<details class="says"${open}>
+    const body = !lede && more ? `<details class="says"${open}><summary>Session identity</summary><div class="said">${detail}</div></details>` : !lede ? "" : `<details class="says"${open}>
           <summary><span class="lede">${esc(lede)}</span></summary>
           <div class="said">${detail}</div>
         </details>`
 
     return `
-      <article class="entry ${esc(st)}${self ? " self" : ""}" data-agent="${esc(l.id)}" data-recency="${recency(l.last_coordination_at)}">
+      <article class="entry ${esc(st)}${self ? " self" : ""}${pinned ? " pinned" : ""}" data-agent="${esc(l.id)}" data-recency="${recency(l.last_coordination_at)}">
         ${head}
         ${body}
         ${mergeActions ? mergeActions(l) : ""}
@@ -329,40 +326,55 @@ const Board = (() => {
   // meant to be between activations, was labelled "Idle" as though something
   // were wrong. Dibs knows an agent has spoken. It does not know what it is
   // doing, and this board must not say otherwise (SPEC §7).
-  function rosterHTML(agents, { selfId = null, empty = "", events = null, expanded = null, mergeActions = null } = {}) {
-    if (!agents || !agents.length) return empty
-    // Ordered by WHAT NEEDS A PERSON, not by status name.
-    //
-    // "Out of touch" sat third, below Working and Idle, so the one group that
-    // might want a human was the one you had to scroll past two healthy groups
-    // to reach, on a board whose entire job is telling you where to look. An
-    // agent in that group stopped coordinating and may still be holding an
-    // exclusive claim; the others are, by definition, fine.
-    //
-    // Careful about what that means, because the board must not overstate it:
-    // stale is loss of COORDINATION, never proof of a crash (SPEC §7). Putting
-    // it first says "look here first", which is true. It does not say "this is
-    // broken", which would not be.
+  // Search only fields already available to this reader. Never stringify a
+  // whole private carrier (which can include credentials or hidden metadata).
+  function matches(query, ...values) {
+    const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean)
+    const text = values.flat(Infinity).filter((v) => v != null).join(" ").toLocaleLowerCase()
+    return terms.every((term) => text.includes(term))
+  }
+  const matchesAgent = (l, q) => matches(q, l.id, l.name, l.display_name, l.name_aliases,
+    l.description, l.host, (l.slots || []).map((s) => s.text))
+  const matchesSpace = (c, q) => matches(q, c.id, c.topic, c.owner,
+    (c.members || []).map((m) => m.agent), (c.said || []).map((a) => a.body))
+  const matchesMail = (m, q) => matches(q, m.serial, m.from, m.from_name, m.to, m.to_name, m.type, m.body, m.choices)
+  const matchesEvent = (e, q) => matches(q, e.serial, e.type, e.agent, e.to, e.space, e.ts)
+  const noMatchesHTML = () => emptyHTML("No matches", "Try another search.")
+
+  function rosterHTML(agents, { selfId = null, empty = "", events = null, expanded = null, mergeActions = null, query = "", expandedGroups = null, omitSelf = false } = {}) {
+    const filtered = (agents || []).filter((l) => (!omitSelf || l.id !== selfId) && matchesAgent(l, query))
+    if (!filtered.length) return query.trim() ? noMatchesHTML() : empty
+    const recent = (a, b) => Number(b.id === selfId) - Number(a.id === selfId) ||
+      (Date.parse(b.last_coordination_at) || 0) - (Date.parse(a.last_coordination_at) || 0) || a.id.localeCompare(b.id)
     const groups = [
-      ["gone", "Out of touch", agents.filter((l) => l.status === "stale")],
-      ["working", "Active", agents.filter((l) => l.status === "active")],
-      ["idle", "Dormant", agents.filter((l) => l.status === "dormant")],
-      // Anything the server adds later still has to appear, or the board
-      // silently under-reports the fleet.
-      ["other", "Other", agents.filter((l) =>
-        !["active", "dormant", "stale"].includes(l.status))],
+      ["gone", "Out of touch", filtered.filter((l) => l.status === "stale")],
+      ["working", "Active", filtered.filter((l) => l.status === "active")],
+      ["idle", "Dormant", filtered.filter((l) => l.status === "dormant")],
+      ["other", "Other", filtered.filter((l) => !["active", "dormant", "stale"].includes(l.status))],
     ]
-    // Each band is a real heading owning a real group, so an agent's status is
-    // carried by structure and not only by where it happens to sit and what
-    // colour the divider is. A screen reader can jump between groups; a sighted
-    // reader sees exactly what they saw before.
-    return groups.filter(([, , ls]) => ls.length).map(([cls, label, ls]) => `
-      <section class="band-group" aria-labelledby="band-${cls}">
-        <h2 class="band ${cls}" id="band-${cls}">
-          <span>${esc(label)}</span><span class="n">${ls.length}</span><span class="hr"></span>
-        </h2>
-        ${ls.map((l) => laneHTML(l, { selfId, events, expanded, mergeActions })).join("")}
-      </section>`).join("")
+    return groups.filter(([, , ls]) => ls.length).map(([cls, label, ls]) => {
+      ls.sort(recent)
+      const rows = (items) => items.map((l) => laneHTML(l, { selfId, events, expanded, mergeActions })).join("")
+      const band = `<h2 class="band ${cls}" id="band-${cls}"><span>${label}</span><span class="n">${ls.length}</span><span class="hr"></span></h2>`
+      let body = rows(ls)
+      if (!query.trim() && cls === "idle") body = `<details class="roster-group" data-group="idle"${expandedGroups?.has("idle") ? " open" : ""}><summary>${band}</summary>${body}</details>`
+      else {
+        if (!query.trim() && cls === "working" && ls.length > 8) body = rows(ls.slice(0, 8)) + `<details class="roster-group" data-group="working"${expandedGroups?.has("working") ? " open" : ""}><summary><span class="when-closed">Show all ${ls.length}</span><span class="when-open">Show fewer</span></summary>${rows(ls.slice(8))}</details>`
+        body = band + body
+      }
+      return `<section class="band-group" aria-labelledby="band-${cls}">${body}</section>`
+    }).join("")
+  }
+
+  // A read-only index of mail this surface is already allowed to read. It
+  // neither fetches another mailbox nor adds a second answer path.
+  function attentionHTML(messages, query = "") {
+    const open = (messages || []).filter((m) =>
+      ["question", "request"].includes(m.type) && !TERMINAL.has(m.state) && matchesMail(m, query))
+    if (!open.length) return ""
+    return `<section class="attention" aria-label="Unanswered"><h2 class="band">Unanswered <span class="n">${open.length}</span></h2>
+      ${open.map((m) => `<p class="attention-mail"><span class="tag">${esc(m.type)}</span> <span>${esc(m.from_name || m.from)} → ${esc(m.to_name || m.to)}</span> <span class="attention-body">${esc(m.body || `#${m.serial} · open Mail to read`)}</span></p>`).join("")}
+      <button type="button" class="attention-open">Open Mail</button></section>`
   }
 
   // The contact record is a system summary, not the private mail that caused
@@ -697,7 +709,7 @@ const Board = (() => {
    */
   function agentBadges(l) {
     let out = ""
-    if (l.host) {
+    if (l.host && !l.local_host_label) {
       out += explained("badge machine", l.host, "machine label shared by agents with the same host identity")
     }
     if (l.role && l.role !== "member") {
@@ -1107,7 +1119,7 @@ const Board = (() => {
 
   return {
     esc, ago, TERMINAL, VERDICT,
-    identHTML, laneHTML, cadenceHTML, rosterHTML, contactAlertsHTML, messageHTML, eventHTML, agentBadges, explained, explainer, transition, ticker, recency,
+    attentionHTML, matchesAgent, matchesSpace, matchesMail, matchesEvent, noMatchesHTML, identHTML, laneHTML, cadenceHTML, rosterHTML, contactAlertsHTML, messageHTML, eventHTML, agentBadges, explained, explainer, transition, ticker, recency,
     channelHTML, channelsHTML,
     summaryHTML, emptyHTML, firstRunHTML,
   }

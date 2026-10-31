@@ -71,6 +71,7 @@ func boardApp() string {
 // require the file to contain its own digest.
 func boardAppTemplate() string {
 	out := strings.Replace(boardAppHTML, "/*__STYLES__*/", assets.Styles(), 1)
+	out = strings.Replace(out, "<!--__PRODUCT_MARK__-->", assets.Icon, 1)
 	return strings.Replace(out, "/*__BOARDJS__*/", assets.BoardJS(), 1)
 }
 

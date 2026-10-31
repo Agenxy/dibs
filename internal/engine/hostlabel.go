@@ -38,12 +38,15 @@ func (e *Engine) labelBoardHosts(b core.Result, localName string) {
 		id := row["id"].(string)
 		if id == human || id == reporter {
 			row["host"] = localName
+			row["local_host_label"] = true
 			continue
 		}
 		a := e.state.Agents[id]
 		if a == nil || a.Agent == nil {
 			continue
 		}
+		// Display provenance, not a claim about the person's physical location.
+		row["local_host_label"] = e.localBoardHost(a.Agent.HostID)
 		label := e.boardHostLabel(a.Agent, latest, localName)
 		if label != "" {
 			row["host"] = label
@@ -66,11 +69,17 @@ func (e *Engine) boardHostLabel(info *core.AgentInfo, latest map[string]*core.Ag
 	if id == "" {
 		return info.Host
 	}
-	if id == e.HostID() || id == e.state.NodeID || e.hostAliases[id] {
+	if e.localBoardHost(id) {
 		return localName
 	}
 	if newest := latest[id]; newest != nil {
 		return newest.Agent.Host
 	}
 	return info.Host
+}
+
+// Equal friendly labels do not identify equal machines.
+func (e *Engine) localBoardHost(id string) bool {
+	id = e.canonicalHost(id)
+	return id != "" && (id == e.HostID() || id == e.state.NodeID || e.hostAliases[id])
 }

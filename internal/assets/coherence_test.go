@@ -89,10 +89,12 @@ func TestEveryPaletteColourClearsAABody(t *testing.T) {
 	pal := palette(t)
 	for _, theme := range []string{"dark", "light"} {
 		for _, tok := range []string{"fg", "fg-2", "fg-3", "accent", "live", "warn"} {
-			if r := contrast(pal[theme][tok], pal[theme]["bg"]); r < aaBody {
-				t.Errorf("%s --%s is %.2f:1 on the page background, below AA body %.1f\n"+
-					"  3.0 is the LARGE-text allowance and this colour is used on 9-10px type",
-					theme, tok, r, aaBody)
+			for _, ground := range []string{"bg", "bg-1", "bg-2"} {
+				if r := contrast(pal[theme][tok], pal[theme][ground]); r < aaBody {
+					t.Errorf("%s --%s is %.2f:1 on --%s, below AA body %.1f\n"+
+						"  3.0 is the LARGE-text allowance and this colour is used on 9-10px type",
+						theme, tok, r, ground, aaBody)
+				}
 			}
 		}
 	}
@@ -124,6 +126,20 @@ func palette(t *testing.T) map[string]map[string]rgb {
 	for _, m := range decl.FindAllStringSubmatch(boardCSS, -1) {
 		out["light"][m[1]] = oklch(t, m[2], hues)
 		out["dark"][m[1]] = oklch(t, m[3], hues)
+	}
+	// Identity neutrals are specified as exact sRGB pairs. Audit their actual
+	// bytes too; do not duplicate the palette or lower the contrast floor.
+	hexDecl := regexp.MustCompile(`--([a-z0-9-]+):\s*light-dark\(\s*#([0-9A-Fa-f]{6})\s*,\s*#([0-9A-Fa-f]{6})\s*\)`)
+	decode := func(value string) rgb {
+		n, err := strconv.ParseUint(value, 16, 32)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rgb{float64(n>>16) / 255, float64((n>>8)&255) / 255, float64(n&255) / 255}
+	}
+	for _, m := range hexDecl.FindAllStringSubmatch(boardCSS, -1) {
+		out["light"][m[1]] = decode(m[2])
+		out["dark"][m[1]] = decode(m[3])
 	}
 	for _, theme := range []string{"dark", "light"} {
 		for _, need := range []string{"bg", "bg-1", "bg-2", "fg", "fg-2", "fg-3", "accent", "live", "warn"} {
