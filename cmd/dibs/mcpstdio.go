@@ -190,6 +190,7 @@ func runBridge(_ []string) error {
 	timing := defaultShipTiming()
 	onRegistered = shipIndexOnRegister(ctx, streamClient, url, secret, timing, onRegistered)
 	onRegistered = surfaceOnRegister(ctx, client, url, secret, &streams, onRegistered)
+	onRegistered = catalogOnReply(stampMissing, onRegistered)
 	in := bufio.NewReaderSize(os.Stdin, 1<<20)
 	self, haveSelf := currentSelf()
 	// Anything a previous image was holding, re-established before the first
@@ -311,12 +312,12 @@ func forward(client *http.Client, req *http.Request, line []byte, out *syncWrite
 	}
 	if len(body) > 0 {
 		rememberRegistrationNonce(line, body)
+		written := body
 		if claudeChannel {
-			out.line(withChannelCapability(line, body))
-		} else {
-			out.line(body) // empty means a notification / 202: no response line
+			written = withChannelCapability(line, body)
 		}
-		if saw != nil {
+		writeErr := out.writeLine(written)
+		if saw != nil && writeErr == nil {
 			saw(line, body)
 		}
 	}
@@ -556,18 +557,21 @@ func readLine(in *bufio.Reader) ([]byte, error) {
 // handoffState is everything the next image needs that an exec would
 // discard: the handshake, the caller's subscriptions, and the self-wake token.
 func handoffState() bridgeState {
+	served, revision := catalogServed()
 	streams := currentWakeStreams()
 	owed, owedNotice := currentWakePending()
 	st := bridgeState{
-		ClientInfo:  lastClientInfo,
-		WantsUI:     lastWantsUI,
-		Listens:     openListens(),
-		WakeStreams: streams,
-		WakePending: owed,
-		WakeNotice:  owedNotice,
-		Thread:      threadServed(),
-		Shipments:   currentShipments(),
-		ToolsHash:   mcp.ToolsFingerprint(),
+		ClientInfo:          lastClientInfo,
+		WantsUI:             lastWantsUI,
+		Listens:             openListens(),
+		WakeStreams:         streams,
+		WakePending:         owed,
+		WakeNotice:          owedNotice,
+		Thread:              threadServed(),
+		Shipments:           currentShipments(),
+		ToolsHash:           mcp.ToolsFingerprint(),
+		ServedToolsHash:     served,
+		ServedToolsRevision: revision,
 	}
 	// The single fields too, for an image older than WakeStreams: it
 	// restores one stream, which is what it could hold.
@@ -598,11 +602,19 @@ type syncWriter struct {
 
 // line writes one newline-delimited JSON-RPC message.
 func (s *syncWriter) line(b []byte) {
+	_ = s.writeLine(b)
+}
+
+func (s *syncWriter) writeLine(b []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, _ = s.w.Write(b)
-	_ = s.w.WriteByte('\n')
-	_ = s.w.Flush()
+	if _, err := s.w.Write(b); err != nil {
+		return err
+	}
+	if err := s.w.WriteByte('\n'); err != nil {
+		return err
+	}
+	return s.w.Flush()
 }
 
 func (s *syncWriter) flush() {

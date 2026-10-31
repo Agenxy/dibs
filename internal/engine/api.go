@@ -865,6 +865,7 @@ func (e *Engine) decoratedBoard() core.Result {
 	b := e.state.Board()
 	e.decorateFolderAccess(b)
 	e.decorateReconnectPending(b)
+	e.decorateToolCatalogs(b)
 	e.decorateContactAlerts(core.Result(b))
 	if names := e.configuredNameView(); len(names) > 0 {
 		b["configured_name_addresses"] = names

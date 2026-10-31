@@ -118,10 +118,14 @@ func (s *State) mergeOwnsMail(from string, m *Message) bool {
 // Delivery state on outgoing-only mail does not affect an address rewrite.
 // Row incarnation and private nonce mappings are covered, but never exposed.
 func (s *State) MergeFence(from, into string, ignore uint64) string {
+	return s.mergeFence(from, into, ignore, "merge:v1", []*Agent{s.Agents[from], s.Agents[into]})
+}
+
+func (s *State) mergeFence(from, into string, ignore uint64, domain string, rows []*Agent) string {
 	sum := sha256.New()
 	enc := newMergeEncoder(sum)
-	enc("merge:v1")
-	enc([]*Agent{s.Agents[from], s.Agents[into]})
+	enc(domain)
+	enc(rows)
 	for _, n := range sortedMessageKeys(s.Messages) {
 		if n == ignore {
 			continue

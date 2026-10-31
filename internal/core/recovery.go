@@ -8,8 +8,31 @@ import (
 	"time"
 )
 
-// RecoveryRequest records survivor consent and the exact coordinator incarnation.
-// It grants nothing until that distinct coordinator approves on the writer.
+// RecoveryProposalFence permits the recipient's normal wake/check_in/contact
+// while preserving every substantive input. Current eligibility still checks
+// status and coordination ordering at both admissions. Session, activation,
+// authority, identity, declarations, credentials and all other mail stay fenced.
+func (s *State) RecoveryProposalFence(from, into string, ignore uint64) string {
+	survivor := *s.Agents[into]
+	survivor.LastCoordination = time.Time{}
+	survivor.Status, survivor.StaleReason = "", ""
+	survivor.StaleSince, survivor.DormantSince = time.Time{}, time.Time{}
+	survivor.AckedSerial, survivor.ContactNoticeReadAt = 0, 0
+	return s.mergeFence(from, into, ignore, "recovery-proposal:v1", []*Agent{s.Agents[from], &survivor})
+}
+
+// RecoveryFence uses the self-describing envelope direction. Every historical recovery was
+// survivor-initiated, and keeps its original byte-for-byte merge projection.
+func (s *State) RecoveryFence(r *RecoveryRequest, proposer string, ignore uint64) string {
+	if proposer == r.Into {
+		return s.MergeFence(r.From, r.Into, ignore)
+	}
+	return s.RecoveryProposalFence(r.From, r.Into, ignore)
+}
+
+// RecoveryRequest binds source, survivor and coordinator incarnations. The
+// envelope records the first hand's proposal/consent; the other hand must
+// approve on the writer. It grants nothing before that approval.
 type RecoveryRequest struct {
 	From               string `json:"from"`
 	Into               string `json:"into"`

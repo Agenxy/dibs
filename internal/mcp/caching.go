@@ -74,9 +74,17 @@ func cacheable(result map[string]any, ttlMs int, scope string) map[string]any {
 // A Codex worker whose session predated `declare`'s `waiting` argument wrote
 // "waiting" into its declaration's text instead, which marks nothing, and was
 // continued in a loop for it (2026-10-01). Claude Code refreshes its tools on
-// the notification; Codex 0.159 only logs it.
+// the notification. The installed Codex 0.166 packaged client refreshes only
+// with its off-by-default mcp_tool_list_changed feature enabled; see
+// docs/TOOL-CATALOG-REFRESH.md for the measurement and its limits.
 func ToolsFingerprint() string {
-	raw, _ := json.Marshal(agentTools)
+	return FingerprintTools(agentTools)
+}
+
+// FingerprintTools hashes the complete served catalog, including descriptions
+// and schemas. A bridge must hash its daemon's reply, not its own binary.
+func FingerprintTools(tools any) string {
+	raw, _ := json.Marshal(tools)
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:8])
 }

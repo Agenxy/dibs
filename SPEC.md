@@ -512,6 +512,28 @@ on one writer trip. Source credential or a human-reviewed merge remains the
 corrective when those conditions do not hold. No public metadata reattaches a
 mailbox; `register(recover_from)` only returns a pending recovery offer.
 
+Clients with an older catalog need no new tool or argument for the reverse
+direction. A coordinator's existing `merge_agents(agent, into, dry_run:true)`
+offers `mode:recovery_request` when ordinary coordinator merge is ineligible but
+bounded recovery passes. The `recovery:` fence explicitly selects a typed
+request **to the survivor**, whose existing `respond(approve)` supplies consent.
+Normal merge fences retain their original meaning. Both directions enforce the
+same distinct-hands and current-incarnation checks at request and approval, and
+use the same recovery fold. The proposal fence excludes only the survivor's
+awareness/contact watermarks and active/dormant/stale observations, allowing its
+normal wake/check-in. It still fences session/activation/authority, declarations,
+credentials, all other mail, claims and memberships; current eligibility is
+always rechecked. Original survivor-initiated recovery keeps its original fence.
+
+Bridge catalog diagnostics are derived, bounded to 512 process incarnations,
+and lost safely on daemon restart. Bridges carry the last complete `tools/list`
+actually written to stdout across re-exec, separately from the binary hash used
+to emit `notifications/tools/list_changed`. Metadata completion is event-driven,
+does not mark agent contact or socket delivery, and grants no session authority.
+Legacy evidence is unknown. Doctor verifies local process incarnations in one
+inventory before naming mismatched/unknown catalogs. Neither a notification nor
+served bytes prove host adoption; no global reload or configuration write occurs.
+
 Approval atomically moves owned incoming mail and outgoing ownership, claims and
 space relationships, closes the source and retires its source-only credentials
 with negative authority. Every old declaration, including earlier inherited

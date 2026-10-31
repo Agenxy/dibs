@@ -7,6 +7,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Existing chats with an old tool catalog can recover through their coordinator's
+  existing `merge_agents` preview and a typed proposal they consent to with
+  `respond(approve)`. The same bounded recovery checks and fold apply; a distinct
+  fence selects this proposal instead of a direct merge. Doctor names live local
+  bridges with mismatched or unknown served catalogs. Bridges retain actual
+  served-list evidence across upgrades; a notification alone is never reported
+  as client uptake. No global chat reload or configuration change is performed.
+
 - Lost-credential recovery can be requested by a bound survivor and approved by
   a distinct coordinator for a matching dormant unbound seat. The preview says
   which future mail will route to the survivor. Old declarations are retained as

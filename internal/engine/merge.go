@@ -6,6 +6,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -58,6 +59,10 @@ func (e *Engine) mergeLocked(token, from, into string, options []MergeOptions) (
 		}
 		return e.applyAndLedger(op, now)
 	}
+	opt := options[0]
+	if strings.HasPrefix(opt.Fence, recoveryProposalPrefix) {
+		return e.proposeRecoveryLocked(a, token, from, into, opt)
+	}
 	if err := e.state.MergeSafety(from, into); err != nil {
 		return nil, err
 	}
@@ -65,20 +70,8 @@ func (e *Engine) mergeLocked(token, from, into string, options []MergeOptions) (
 	if err := mergeProcessSafe(from, evidence); err != nil {
 		return nil, err
 	}
-	plan := e.state.MergePlan(from, into, 0)
-	e.mergeCredentialPreview(plan, a, into)
-	_, eligible := e.coordinatorMergeActor(a, from, into, evidence)
-	plan["coordinator_eligible"] = eligible == nil
-	if eligible != nil {
-		plan["reason"] = eligible.Error()
-		plan["human_request"] = core.Result{
-			"to": "human", "type": "request",
-			"merge": core.MergeRequest{From: from, Into: into, Fence: plan["fence"].(string)},
-			"body":  "Please merge the duplicate into its surviving identity",
-		}
-	}
+	plan := e.mergePreview(a, token, from, into, evidence, opt)
 
-	opt := options[0]
 	if opt.DryRun {
 		return plan, nil
 	}
@@ -211,4 +204,28 @@ func (e *Engine) addAdoptionMergeHint(res core.Result, actor *core.Agent, op *co
 		res["merge_hint"] = fmt.Sprintf("to retire the duplicate too, preview merge_agents(agent:%q, into:%q, dry_run:true)",
 			op.To, into)
 	}
+}
+
+func (e *Engine) mergePreview(
+	a *core.Agent, token, from, into string, evidence core.MergeEvidence, opt MergeOptions,
+) core.Result {
+	plan := e.state.MergePlan(from, into, 0)
+	e.mergeCredentialPreview(plan, a, into)
+	_, eligible := e.coordinatorMergeActor(a, from, into, evidence)
+	if opt.DryRun && eligible != nil && a.IsCoordinator() {
+		if recovery, err := e.proposeRecoveryLocked(a, token, from, into, opt); err == nil {
+			return recovery
+		}
+	}
+	plan["coordinator_eligible"] = eligible == nil
+	if eligible != nil {
+		plan["reason"] = eligible.Error()
+		plan["human_request"] = core.Result{
+			"to": "human", "type": "request",
+			"merge": core.MergeRequest{From: from, Into: into, Fence: plan["fence"].(string)},
+			"body":  "Please merge the duplicate into its surviving identity",
+		}
+	}
+
+	return plan
 }

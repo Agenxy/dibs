@@ -118,6 +118,7 @@ func (s *Server) observeBridge(ctx context.Context, params json.RawMessage) {
 		return
 	}
 	pid, started := bridgeProcessMetadata(params)
+	s.observeToolCatalog(ctx, params, pid, started)
 	batch, givenUp := s.bridges.begin(pid, started)
 	if len(batch) == 0 && !givenUp {
 		return
