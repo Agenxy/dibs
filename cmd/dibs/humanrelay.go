@@ -466,6 +466,7 @@ func (r *relay) deliveryReceipt(serial uint64, data notify.ReceiptData, failure 
 			"requested_interruption_level": data.RequestedInterruptionLevel,
 			"effective_interruption_level": data.EffectiveInterruptionLevel,
 			"interruption_reason":          data.InterruptionReason,
+			"reply_field_available":        data.ReplyField, "reply_hint": data.ReplyHint,
 		}, nil)
 	if err != nil {
 		slog.Warn("notification receipt did not reach the board", "msg", serial, "state", state, "err", err)

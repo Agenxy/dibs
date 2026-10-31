@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -205,6 +206,30 @@ func (e *Engine) AnswerAsHuman(ctx context.Context, serial uint64, disposition, 
 	_, token, err := e.HumanAgent(ctx)
 	if err != nil {
 		return fmt.Errorf("could not act as the human: %w", err)
+	}
+	if disposition == "comment" {
+		if strings.TrimSpace(body) == "" {
+			return errors.New("a reply without deciding needs text")
+		}
+		n, open, err := e.HumanNoticeFor(ctx, serial)
+		if err != nil {
+			return err
+		}
+		if !open || n.Type != core.MsgRequest {
+			return errors.New("reply without deciding needs an open request to the human")
+		}
+		// A normal human-authored message, with an explicit reference; no
+		// response op, verdict, role grant or merge effect is fabricated.
+		res, err := e.Do(ctx, &core.Op{
+			Kind: core.OpSendMessage, Token: token, To: n.From, MsgType: core.MsgNotify,
+			Body: fmt.Sprintf("Reply to request #%d (no decision):\n\n%s", serial, body),
+		})
+		if err == nil {
+			if ce, ok := res["error"].(*core.Error); ok && ce != nil {
+				return ce
+			}
+		}
+		return err
 	}
 	res, err := e.Do(ctx, &core.Op{
 		Kind: core.OpRespond, Token: token, MsgSerial: serial,

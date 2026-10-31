@@ -26,7 +26,7 @@ func asBrokerHelper() {
 	pendingA := ""
 	output := json.NewEncoder(os.Stdout)
 	emit := func(e brokerEvent) { e.Version = 1; _ = output.Encode(e) }
-	emit(brokerEvent{Event: "ready"})
+	emit(brokerEvent{Event: "ready", Reply: 1})
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 4096), brokerFrameLimit+1)
 	for scanner.Scan() {
@@ -76,6 +76,10 @@ func asBrokerHelper() {
 			continue
 		}
 		if strings.Contains(string(frame.Detail), "WITHDRAW_FIXTURE") {
+			continue
+		}
+		if frame.ReplyKind == "question" {
+			emit(brokerEvent{ID: frame.ID, Event: "reply", Action: "answer", Choice: frame.Choices[0]})
 			continue
 		}
 		if frame.Title == "ignored" {

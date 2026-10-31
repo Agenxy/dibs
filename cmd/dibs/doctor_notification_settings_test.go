@@ -37,6 +37,10 @@ func notificationSettingsHelper() int {
 			return 4
 		}
 		mode := os.Getenv("DIBS_SETTINGS_GUARD_MODE")
+		if os.Getenv("DIBS_NOTIFY_PROMPT_V1") == "1" && mode != "old" && mode != "malformed" {
+			_, _ = os.Stdout.WriteString(`{"reply":1}`)
+			return 0
+		}
 		switch {
 		case mode == "old" || os.Getenv("DIBS_NOTIFY_SETTINGS_V1") != "1":
 			_, _ = os.Stdout.WriteString("authorized\n")
@@ -93,7 +97,7 @@ func TestDoctorMeasuresNativeNotificationSettings(t *testing.T) {
 			{"silent", "none", "enabled", "System Settings > Notifications > Dibs > Alerts", true},
 			{"disabled-sensitive", "alert", "disabled", "Time Sensitive", true},
 			{"unprovisioned", "alert", "not-supported", "this build has no Time Sensitive entitlement", false},
-			{"old-helper", "old", "enabled", "settings are unknown", false},
+			{"old-helper", "old", "enabled", "settings are unknown", true},
 			{"malformed-helper", "malformed", "enabled", "settings are unknown", true},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
@@ -129,6 +133,9 @@ func TestDoctorMeasuresNativeNotificationSettings(t *testing.T) {
 				}
 				if !strings.Contains(got, tc.want) {
 					t.Fatalf("actual doctor lacks %q: %s", tc.want, got)
+				}
+				if tc.style == "old" && !strings.Contains(got, "typed replies are unavailable") {
+					t.Fatalf("old helper has no stale reply warning: %s", got)
 				}
 				if tc.style != "old" && tc.style != "malformed" && !strings.Contains(got, "Focus is not observable") {
 					t.Fatalf("ungranted Focus was not retained as unknown: %s", got)

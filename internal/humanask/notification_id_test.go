@@ -23,6 +23,10 @@ func TestMain(m *testing.M) {
 	if len(os.Args) == 2 && os.Args[1] == "--dibs-test-prepare" {
 		os.Exit(0)
 	}
+	if os.Getenv("DIBS_PROMPT_ENTRY_DRIVER") == "1" && filepath.Base(os.Args[0]) == "dibs-notify" {
+		promptEntryHelper()
+		os.Exit(0)
+	}
 	if os.Getenv("DIBS_TEST_HUMAN_POST_DRIVER") == "1" && filepath.Base(os.Args[0]) == "dibs-notify" {
 		if len(os.Args) == 2 && os.Args[1] == "--settings" {
 			_, _ = os.Stdout.WriteString("timeSensitive=1\n")
@@ -32,7 +36,7 @@ func TestMain(m *testing.M) {
 			os.Exit(3)
 		}
 		output := json.NewEncoder(os.Stdout)
-		_ = output.Encode(map[string]any{"v": 1, "event": "ready"})
+		_ = output.Encode(map[string]any{"v": 1, "event": "ready", "reply": 1})
 		scanner := bufio.NewScanner(os.Stdin)
 		for scanner.Scan() {
 			var frame struct {
@@ -52,7 +56,7 @@ func TestMain(m *testing.M) {
 			}
 			_ = output.Encode(map[string]any{"v": 1, "id": frame.ID, "event": "posted", "receipt": map[string]string{"state": "posted"}})
 			if frame.Detail.Kind == core.MsgQuestion {
-				_ = output.Encode(map[string]any{"v": 1, "id": frame.ID, "event": "action", "action": "Yes"})
+				_ = output.Encode(map[string]any{"v": 1, "id": frame.ID, "event": "reply", "action": "answer", "choice": "Yes"})
 			}
 		}
 		os.Exit(0)

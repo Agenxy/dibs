@@ -9,6 +9,12 @@ Releases up to and including v0.0.13 remain Apache-2.0. This change does not
 withdraw historical permissions or relicense outside-contributor or third-party
 material. The retained Apache-2.0 text is in LICENSES/Apache-2.0.txt.
 
+The unmodified Atkinson Hyperlegible Next and Mono fonts in
+internal/notify/app/fonts are third-party material under SIL OFL-1.1.
+Their original copyright and licence notices, and pinned source/digests,
+ship beside them in that directory and in Dibs.app/Contents/Resources/Fonts.
+They are not relicensed under Dibs' GPL or commercial terms.
+
 Outside contributions
 =====================
 

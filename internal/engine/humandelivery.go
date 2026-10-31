@@ -46,6 +46,8 @@ type humanReceipt struct {
 	RequestedInterruptionLevel string           `json:"requested_interruption_level,omitempty"`
 	EffectiveInterruptionLevel string           `json:"effective_interruption_level,omitempty"`
 	InterruptionReason         string           `json:"interruption_reason,omitempty"`
+	ReplyField                 *bool            `json:"reply_field_available,omitempty"`
+	ReplyHint                  string           `json:"reply_hint,omitempty"`
 	Shown                      string           `json:"shown"`
 	Hint                       string           `json:"hint,omitempty"`
 }
@@ -185,7 +187,9 @@ func (e *Engine) askHumanDesktop(n HumanNotice, ask func(humanask.Message) (huma
 		return
 	}
 	if a.Disposition != "" {
-		e.respondAsHuman(n.Serial, a.Disposition, a.Body)
+		if err := e.AnswerAsHuman(context.Background(), n.Serial, a.Disposition, a.Body); err != nil {
+			e.report(err)
+		}
 	}
 }
 
@@ -230,6 +234,9 @@ func (e *Engine) recordHumanReceipt(serial uint64, source string, data notify.Re
 		return true
 	}
 	r.State, r.Error = state, failure
+	if data.ReplyField != nil {
+		r.ReplyField, r.ReplyHint = data.ReplyField, data.ReplyHint
+	}
 	if data.Settings != nil {
 		r.Settings = data.Settings
 	}

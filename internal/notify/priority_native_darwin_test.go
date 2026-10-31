@@ -24,7 +24,7 @@ func TestNativePassivePriorityRequestsTimeSensitive(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	binary := filepath.Join(t.TempDir(), "dibs-notify")
-	build := exec.CommandContext(ctx, "swiftc", "-D", "DIBS_PRIORITY_FIXTURE", "-o", binary, "app/notify_darwin.swift")
+	build := exec.CommandContext(ctx, "swiftc", "-D", "DIBS_PRIORITY_FIXTURE", "-o", binary, nativePromptSource(t))
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("native priority fixture build: %v\n%s", err, out)
 	}

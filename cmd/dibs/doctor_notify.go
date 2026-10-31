@@ -18,6 +18,14 @@ func (d *diagnosis) note(what string) {
 }
 
 func checkNotificationRoute(ok, note reportFn, warn fixFn) {
+	if runtime.GOOS == "darwin" {
+		if supported, err := notify.NativeReplySupport(); err == nil && !supported {
+			warn("Dibs native notifier is stale; action buttons still work, but typed replies are unavailable",
+				notify.LegacyReplyHint)
+		} else if err != nil {
+			note("Dibs native typed-reply capability is unknown: " + err.Error())
+		}
+	}
 	if status, err := notify.NotificationBrokerStatus(); err == nil && status.Held {
 		note(fmt.Sprintf("Dibs notification broker owns this Mac's notification route (PID %v); "+
 			"a second notifying parent refuses to post", status.PIDs))

@@ -31,14 +31,14 @@ func TestNativeBrokerOwnsConcurrentAsks(t *testing.T) {
 		t.Fatal(err)
 	}
 	binary := filepath.Join(contents, "MacOS", "dibs-notify")
-	if out, err := exec.CommandContext(ctx, "swiftc", "-D", "DIBS_BROKER_FIXTURE", "-D", "DIBS_READING_FIXTURE", "-o", binary, "app/notify_darwin.swift").CombinedOutput(); err != nil {
+	if out, err := exec.CommandContext(ctx, "swiftc", "-D", "DIBS_BROKER_FIXTURE", "-D", "DIBS_READING_FIXTURE", "-o", binary, nativePromptSource(t)).CombinedOutput(); err != nil {
 		t.Fatalf("build: %v\n%s", err, out)
 	}
 	if out, err := exec.CommandContext(ctx, binary, "--broker-fixture-capability").CombinedOutput(); err != nil || strings.TrimSpace(string(out)) != "broker-fixture-v1" {
 		t.Fatalf("safe broker fixture unavailable: %v %s", err, out)
 	}
 	production := filepath.Join(contents, "MacOS", "production-notifier")
-	if out, err := exec.CommandContext(ctx, "swiftc", "-o", production, "app/notify_darwin.swift").CombinedOutput(); err != nil {
+	if out, err := exec.CommandContext(ctx, "swiftc", "-o", production, nativePromptSource(t)).CombinedOutput(); err != nil {
 		t.Fatalf("production build: %v %s", err, out)
 	}
 	capability := exec.CommandContext(ctx, production, "--broker-fixture-capability")

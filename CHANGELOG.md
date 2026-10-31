@@ -46,6 +46,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Mac reply windows show the full message in a scrolling view, with the sender
+  and context above it, visible choices and a typed reply field. Questions can
+  send a choice, text or both. Requests retain explicit Approve/Deny actions;
+  Return never approves, and Reply without deciding sends a linked human note
+  while keeping the request open. Light/dark styling, large-text overflow and
+  keyboard access share one native window; the truncated AppleScript picker is
+  retired. Refresh the Dibs service after upgrading so its notifier supports
+  the new reply protocol. Existing notification receipts and fenced approvals
+  retain their original authority checks.
+
 - Contact alerts now show the known app and computer name. When no thread
   or session is recorded, the alert says so and suggests finding/restarting
   the agent or reassigning the work. Known app threads retain their Open link.

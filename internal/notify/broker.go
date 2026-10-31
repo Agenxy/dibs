@@ -19,7 +19,10 @@ import (
 	"time"
 )
 
-const brokerFrameLimit = 32 * 1024
+// A full 32 KiB mail body can expand sixfold under JSON escaping. The v1
+// legacy detail stays bounded separately; reply-capable helpers negotiate the
+// larger full-text frame before any post is sent.
+const brokerFrameLimit = 1024 * 1024
 
 type brokerPost struct {
 	Version       int             `json:"v"`
@@ -32,6 +35,8 @@ type brokerPost struct {
 	Buttons       []string        `json:"buttons,omitempty"`
 	Until         float64         `json:"until,omitempty"`
 	TimeSensitive bool            `json:"timeSensitive,omitempty"`
+	ReplyKind     string          `json:"replyKind,omitempty"`
+	Choices       []string        `json:"choices,omitempty"`
 }
 
 type brokerEvent struct {
@@ -41,6 +46,9 @@ type brokerEvent struct {
 	Action  string      `json:"action"`
 	Receipt ReceiptData `json:"receipt"`
 	Error   string      `json:"error"`
+	Reply   int         `json:"reply"`
+	Text    string      `json:"text"`
+	Choice  string      `json:"choice"`
 }
 
 // These anonymous pipes are the only answer transport. There is deliberately
@@ -54,6 +62,7 @@ type nativeBroker struct {
 	done    chan struct{}
 	ready   chan error
 	err     error
+	reply   bool
 }
 
 var nativeBrokerProcess struct {
@@ -120,7 +129,7 @@ func startNativeBroker(h string) (*nativeBroker, error) {
 
 func (b *nativeBroker) read(output io.Reader, cmd *exec.Cmd) {
 	scanner := bufio.NewScanner(output)
-	scanner.Buffer(make([]byte, 4096), 16*1024)
+	scanner.Buffer(make([]byte, 4096), brokerFrameLimit+1)
 	var protocolErr error
 	for scanner.Scan() {
 		var event brokerEvent
@@ -138,6 +147,9 @@ func (b *nativeBroker) read(output io.Reader, cmd *exec.Cmd) {
 
 func (b *nativeBroker) deliver(event brokerEvent) error {
 	if event.Event == "ready" {
+		b.mu.Lock()
+		b.reply = event.Reply == 1
+		b.mu.Unlock()
 		select {
 		case b.ready <- nil:
 		default:
@@ -198,7 +210,7 @@ func (b *nativeBroker) send(frame brokerPost) error {
 		return err
 	}
 	if len(data) > brokerFrameLimit {
-		return errors.New("native notification frame exceeds 32 KiB; read the Dibs board")
+		return errors.New("native notification frame exceeds 1 MiB; read the Dibs board")
 	}
 	b.writeMu.Lock()
 	defer b.writeMu.Unlock()
@@ -207,15 +219,26 @@ func (b *nativeBroker) send(frame brokerPost) error {
 }
 
 func brokerNotification(ctx context.Context, h string, post brokerPost, receipt DeliveryReceipt) (string, error) {
+	event, err := brokerExchange(ctx, h, post, receipt)
+	return event.Action, err
+}
+
+func brokerExchange(ctx context.Context, h string, post brokerPost, receipt DeliveryReceipt) (brokerEvent, error) {
 	if ctx.Err() != nil {
-		return "", nil
+		return brokerEvent{}, nil
 	}
 	b, err := currentBroker(h)
 	if err != nil {
-		return "", err
+		return brokerEvent{}, err
+	}
+	b.mu.Lock()
+	supported := b.reply
+	b.mu.Unlock()
+	if post.ReplyKind != "" && !supported {
+		return brokerEvent{}, ErrReplyUnavailable
 	}
 	if ctx.Err() != nil {
-		return "", nil
+		return brokerEvent{}, nil
 	}
 	if post.ID == "" {
 		post.ID = "dibs.msg.local-" + strconv.Itoa(os.Getpid()) + "." + strconv.FormatUint(unkeyedNotification.Add(1), 10)
@@ -225,25 +248,38 @@ func brokerNotification(ctx context.Context, h string, post brokerPost, receipt 
 	b.mu.Lock()
 	if b.pending[post.ID] != nil {
 		b.mu.Unlock()
-		return "", errors.New("this native notification is already pending; continue on the Dibs board")
+		return brokerEvent{}, errors.New("this native notification is already pending; continue on the Dibs board")
 	}
 	b.pending[post.ID] = responses
 	b.mu.Unlock()
 	defer func() { b.mu.Lock(); delete(b.pending, post.ID); b.mu.Unlock() }()
 	if err := b.send(post); err != nil {
-		return "", err
+		return brokerEvent{}, err
 	}
+	return awaitBrokerReply(ctx, b, post, responses, receipt)
+}
+
+func awaitBrokerReply(
+	ctx context.Context, b *nativeBroker, post brokerPost, responses <-chan brokerEvent, receipt DeliveryReceipt,
+) (brokerEvent, error) {
 	for {
 		event, err := b.next(ctx, post.ID, responses)
 		if errors.Is(err, context.Canceled) {
-			return "", nil
+			return brokerEvent{}, nil
 		}
 		if err != nil {
-			return "", err
+			return brokerEvent{}, err
+		}
+		if event.Event == "reply" && post.ReplyKind != "" {
+			if err := validatePromptReply(post, event); err != nil {
+				return brokerEvent{}, err
+			}
+			return event, nil
 		}
 		choice, finished, err := consumeBrokerEvent(event, post, receipt)
 		if finished {
-			return choice, err
+			event.Action = choice
+			return event, err
 		}
 	}
 }

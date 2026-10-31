@@ -200,6 +200,9 @@ if args == ["--priority-fixture"] {
 // Capability negotiation must precede every other status extension, including
 // one inherited from the caller's environment. It never touches notification
 // settings, asks permission, or creates an application window.
+if args == ["--status"], ProcessInfo.processInfo.environment["DIBS_NOTIFY_PROMPT_V1"] == "1" {
+    printDesk(["reply": 1, "fonts": PromptFonts.families, "bundledFonts": PromptFonts.urls.count]); exit(0)
+}
 if args == ["--status"], ProcessInfo.processInfo.environment["DIBS_BACKGROUND_OPEN_V1"] == "1" {
     printDesk(["background_open": 1])
     exit(0)
@@ -568,39 +571,16 @@ if args.first == "--status" {
 func askOnScreen(_ heading: String, _ detail: String, choices: [String]) -> Int32 {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
-    app.activate(ignoringOtherApps: true)
-
-    let alert = NSAlert()
-    alert.messageText = heading
-    alert.informativeText = detail
-    alert.alertStyle = .informational
-
-    var field: NSTextField?
-    var menu: NSPopUpButton?
-    if choices.isEmpty {
-        let f = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
-        f.placeholderString = "Your answer"
-        alert.accessoryView = f
-        field = f
-    } else {
-        // A pop-up rather than N buttons: an alert caps at three, and the whole
-        // reason this path exists is a list that did not fit on the banner.
-        let m = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 320, height: 26), pullsDown: false)
-        m.addItems(withTitles: choices)
-        alert.accessoryView = m
-        menu = m
+    var result = HumanPromptReply()
+    let window = HumanPromptWindow(title: heading, detail: AskReadingDetail(sender: "", body: detail, kind: "question"),
+                                   buttons: [], replyKind: "question", choices: choices) { reply in
+        result = reply; NSApp.stopModal()
     }
-    alert.addButton(withTitle: "Send")
-    alert.addButton(withTitle: "Cancel")
-    // Focus in the field, so they can type immediately rather than click first.
-    alert.window.initialFirstResponder = alert.accessoryView
-
-    guard alert.runModal() == .alertFirstButtonReturn else { return 1 }
-    let answer = field.map { $0.stringValue } ?? menu?.titleOfSelectedItem ?? ""
-    let trimmed = answer.trimmingCharacters(in: .whitespacesAndNewlines)
-    if trimmed.isEmpty { return 1 } // sending nothing is not an answer
-    print(trimmed)
-    return 0
+    window.show(); app.runModal(for: window.panel); window.close()
+    var text = result.choice
+    if !result.text.isEmpty { text += (text.isEmpty ? "" : "\n\n") + result.text }
+    guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return 1 }
+    print(text); return 0
 }
 
 // --delivered: post one notification, then ask macOS what it actually holds.
@@ -703,6 +683,7 @@ struct StoredReadingDetail: Codable {
     let kind: String
 }
 let readingKey = "org.agenxy.dibs.reading.v1"
+let fullReadingKey = "org.agenxy.dibs.reading.v2"
 
 func storedReading(_ heading: String, detail: AskReadingDetail) -> Data {
     var value = StoredReadingDetail(title: heading, sender: detail.sender, body: detail.body,
@@ -724,6 +705,9 @@ func storedReading(_ heading: String, detail: AskReadingDetail) -> Data {
 }
 
 func persistedReading(_ content: UNNotificationContent) -> StoredReadingDetail? {
+    if let bytes = content.userInfo[fullReadingKey] as? Data, bytes.count <= 1048576 {
+        return try? JSONDecoder().decode(StoredReadingDetail.self, from: bytes)
+    }
     guard let bytes = content.userInfo[readingKey] as? Data, bytes.count <= 8192 else { return nil }
     return try? JSONDecoder().decode(StoredReadingDetail.self, from: bytes)
 }
@@ -760,77 +744,22 @@ final class AskReadingClose: NSObject, NSWindowDelegate {
 
 // Called only by the banner's default action: the person asked to read it.
 // The daemon's effect title and sender stay outside the sender-written text.
-func readingAlert(_ heading: String, detail: AskReadingDetail, buttons: [String]) -> NSAlert {
-    let alert = NSAlert()
-    alert.messageText = heading
-    alert.informativeText = detail.sender
-    alert.alertStyle = .informational
-
-    let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 520, height: 320))
-    scroll.hasVerticalScroller = true
-    scroll.borderType = .bezelBorder
-    let text = NSTextView(frame: scroll.contentView.bounds)
-    text.isEditable = false
-    text.isSelectable = true
-    text.font = .systemFont(ofSize: NSFont.systemFontSize)
-    text.textContainerInset = NSSize(width: 8, height: 8)
-    text.isVerticallyResizable = true
-    text.isHorizontallyResizable = false
-    text.autoresizingMask = [.width]
-    text.textContainer?.widthTracksTextView = true
-    text.textContainer?.containerSize = NSSize(width: scroll.contentSize.width, height: .greatestFiniteMagnitude)
-    text.string = detail.body
-    scroll.documentView = text
-    alert.accessoryView = scroll
-    for button in buttons { alert.addButton(withTitle: button) }
-    alert.buttons.first?.keyEquivalent = ""
-    alert.buttons.last?.keyEquivalent = "\r"
-    return alert
-}
-
 func readAskOnScreen(_ heading: String, detail: AskReadingDetail, buttons: [String], storedBytes: Int = 0) -> String {
-    let alert = readingAlert(heading, detail: detail, buttons: buttons)
+    var result = ""
+    let window = HumanPromptWindow(title: heading, detail: detail, buttons: buttons) { reply in
+        result = reply.action; NSApp.stopModal()
+    }
     #if DIBS_READING_FIXTURE
-    if askFixture, let path = ProcessInfo.processInfo.environment["DIBS_READING_WINDOW"],
-       let scroll = alert.accessoryView as? NSScrollView, let text = scroll.documentView as? NSTextView {
-        let view: [String: Any] = ["Title": alert.messageText, "Sender": alert.informativeText,
-                                 "Body": text.string, "Buttons": alert.buttons.map { $0.title },
-                                 "StoredBytes": storedBytes]
+    if askFixture, let path = ProcessInfo.processInfo.environment["DIBS_READING_WINDOW"] {
+        let view: [String: Any] = ["Title": heading, "Sender": detail.sender, "Body": detail.body, "RenderedBody": window.message.string,
+                                 "Buttons": window.actionButtons.map { $0.title }, "StoredBytes": storedBytes]
         try! JSONSerialization.data(withJSONObject: view).write(to: URL(fileURLWithPath: path))
         let selected = ProcessInfo.processInfo.environment["DIBS_READING_CHOICE"] ?? ""
-        return alert.buttons.contains(where: { $0.title == selected }) ? selected : ""
+        return buttons.contains(selected) ? selected : ""
     }
     #endif
-    NSApplication.shared.activate(ignoringOtherApps: true)
-    let closing = AskReadingClose()
-    alert.window.styleMask.insert(.closable)
-    alert.window.delegate = closing
-    let response = withExtendedLifetime(closing) { alert.runModal() }
-    alert.window.orderOut(nil)
-    let index = response.rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
-    guard index >= 0, index < buttons.count else { return "" }
-    return buttons[index]
-}
-
-// One broker owns every live ask on this Mac. Its anonymous pipes belong to
-// the notifying Dibs parent; no process-openable action channel exists.
-final class BrokerReadingWindow: NSObject, NSWindowDelegate {
-    let alert: NSAlert
-    let picked: (String) -> Void
-    init(title: String, detail: AskReadingDetail, buttons: [String], picked: @escaping (String) -> Void) {
-        alert = readingAlert(title, detail: detail, buttons: buttons)
-        self.picked = picked
-        super.init()
-        alert.window.styleMask.insert(.closable)
-        alert.window.isReleasedWhenClosed = false
-        alert.window.delegate = self
-        for button in alert.buttons { button.target = self; button.action = #selector(choose(_:)) }
-        alert.layout()
-    }
-    @objc func choose(_ sender: NSButton) { picked(sender.title) }
-    func windowShouldClose(_ sender: NSWindow) -> Bool { picked(""); return false }
-    func show() { NSApp.activate(ignoringOtherApps: true); alert.window.makeKeyAndOrderFront(nil) }
-    func close() { alert.window.delegate = nil; alert.window.close() }
+    window.show(); NSApp.runModal(for: window.panel); window.close()
+    return result
 }
 
 final class BrokerEntry {
@@ -844,6 +773,8 @@ final class BrokerEntry {
     let timeSensitive: Bool
     var timer: DispatchSourceTimer?
     var beganPosting = false
+    var replyKind = ""
+    var choices = [String]()
     init(id: String, title: String, subtitle: String, excerpt: String, detail: AskReadingDetail,
          buttons: [String], until: Date, timeSensitive: Bool) {
         self.id = id; self.title = title; self.subtitle = subtitle; self.excerpt = excerpt
@@ -913,7 +844,7 @@ func brokerLockStatus() -> [String: Any] {
 final class NativeNotificationBroker: NSObject, UNUserNotificationCenterDelegate {
     let centre: UNUserNotificationCenter
     var entries = [String: BrokerEntry]()
-    var windows = [String: BrokerReadingWindow]()
+    var windows = [String: HumanPromptWindow]()
     let lockFD: Int32
     var caller: DispatchSourceProcess?
     init?(centre: UNUserNotificationCenter) {
@@ -924,11 +855,12 @@ final class NativeNotificationBroker: NSObject, UNUserNotificationCenterDelegate
     func emit(_ event: String, id: String = "", action: String? = nil,
               receipt: [String: Any]? = nil, error: String? = nil, view: [String: Any]? = nil) {
         var value: [String: Any] = ["v": 1, "event": event, "id": id]
+        if event == "ready" { value["reply"] = 1 }
         if let action { value["action"] = action }
         if let receipt { value["receipt"] = receipt }
         if let view { value["view"] = view }
         if let error { value["error"] = error }
-        guard let data = try? JSONSerialization.data(withJSONObject: value), data.count < 16384 else { exit(2) }
+        guard let data = try? JSONSerialization.data(withJSONObject: value), data.count < 1048576 else { exit(2) }
         FileHandle.standardOutput.write(data + Data([10]))
     }
     func start() {
@@ -938,7 +870,7 @@ final class NativeNotificationBroker: NSObject, UNUserNotificationCenterDelegate
                                                       queue: .global(qos: .utility))
         source.setEventHandler { exit(1) }; source.resume(); caller = source
         if getppid() != parent { exit(1) }
-        emit("ready")
+        emit("ready", view: ["reply": 1])
         DispatchQueue.global(qos: .utility).async {
             var buffer = Data()
             while true {
@@ -950,7 +882,7 @@ final class NativeNotificationBroker: NSObject, UNUserNotificationCenterDelegate
                         DispatchQueue.main.sync { self.command(line) }
                     } else {
                         buffer.append(byte)
-                        if buffer.count > 32768 { exit(2) }
+                        if buffer.count > 1048576 { exit(2) }
                     }
                 }
             }
@@ -967,8 +899,59 @@ final class NativeNotificationBroker: NSObject, UNUserNotificationCenterDelegate
         if type == "fixture_response", let action = value["action"] as? String {
             response(id: id, action: action, content: nil); return
         }
+        if type == "fixture_edit", let window = windows[id], let text = value["text"] as? String {
+            window.composer.insertText(text, replacementRange: NSRange(location: 0, length: (window.composer.string as NSString).length))
+            emit("editing", id: id, view: window.viewInfo); return
+        }
+        if type == "fixture_select", let window = windows[id], let index = value["index"] as? Int,
+           window.radios.indices.contains(index) {
+            window.radios[index].performClick(nil); emit("selected", id: id, view: window.viewInfo); return
+        }
+        if type == "fixture_return", let window = windows[id] {
+            if let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+                                           windowNumber: window.panel.windowNumber, context: nil, characters: "\r",
+                                           charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36) {
+                window.composer.keyDown(with: event)
+            }
+            if windows[id] != nil { emit("unchanged", id: id, view: window.viewInfo) }
+            return
+        }
+        if type == "fixture_end", let window = windows[id] {
+            window.revealMessageEnd(); emit("end", id: id, view: window.viewInfo); return
+        }
+        if type == "fixture_tab_choices", let window = windows[id] {
+            window.panel.makeFirstResponder(window.message); window.panel.selectNextKeyView(nil)
+            emit("focused", id: id, view: window.viewInfo); return
+        }
+        if type == "fixture_key", let window = windows[id], let code = value["keyCode"] as? Int {
+            if value["focus"] as? String == "reply" { window.panel.makeFirstResponder(window.composer) }
+            var modifiers: NSEvent.ModifierFlags = []
+            for flag in value["modifiers"] as? [String] ?? [] { if flag == "shift" { modifiers.insert(.shift) }; if flag == "option" { modifiers.insert(.option) } }
+            if let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0,
+                                        windowNumber: window.panel.windowNumber, context: nil,
+                                        characters: value["characters"] as? String ?? "", charactersIgnoringModifiers: value["characters"] as? String ?? "",
+                                        isARepeat: false, keyCode: UInt16(code)) {
+                _ = window.panel.performKeyEquivalent(with: event)
+            }
+            if windows[id] != nil { emit("keyed", id: id, view: window.viewInfo) }
+            return
+        }
+        if type == "fixture_snapshot", let window = windows[id], let path = value["path"] as? String {
+            if let scale = value["scale"] as? Double { window.fixtureScale = scale }
+            if let width = value["screenWidth"] as? Double, let height = value["screenHeight"] as? Double { window.fixtureScreen = NSSize(width: width, height: height) }
+            if let appearance = value["appearance"] as? String { window.panel.appearance = NSAppearance(named: appearance == "dark" ? .darkAqua : .aqua) }
+            window.panel.effectiveAppearance.performAsCurrentDrawingAppearance {
+                window.layout(fit: value["preserveScroll"] as? Bool != true)
+                window.root.layoutSubtreeIfNeeded(); window.root.displayIfNeeded()
+                if let bitmap = window.root.bitmapImageRepForCachingDisplay(in: window.root.bounds) {
+                    window.root.cacheDisplay(in: window.root.bounds, to: bitmap)
+                    try! bitmap.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: path))
+                }
+            }
+            emit("snapshot", id: id, view: window.viewInfo); return
+        }
         if type == "fixture_window", let action = value["action"] as? String {
-            if let window = windows[id], let button = window.alert.buttons.first(where: { $0.title == action }) {
+            if let window = windows[id], let button = window.actionButtons.first(where: { $0.title == action }) {
                 button.performClick(nil)
             } else { emit("refused", id: id) }
             return
@@ -979,7 +962,7 @@ final class NativeNotificationBroker: NSObject, UNUserNotificationCenterDelegate
               let excerpt = value["excerpt"] as? String,
               let rawDetail = value["detail"],
               let data = try? JSONSerialization.data(withJSONObject: rawDetail, options: [.withoutEscapingSlashes]),
-              data.count <= 8192, let detail = try? JSONDecoder().decode(AskReadingDetail.self, from: data),
+              data.count <= (value["replyKind"] == nil ? 8192 : 524288), let detail = try? JSONDecoder().decode(AskReadingDetail.self, from: data),
               let until = value["until"] as? Double, until.isFinite else {
             emit("failed", id: id, error: "invalid or duplicate notification detail; read the Dibs board"); return
         }
@@ -991,11 +974,23 @@ final class NativeNotificationBroker: NSObject, UNUserNotificationCenterDelegate
               buttons.allSatisfy({ !$0.isEmpty && $0.utf8.count <= 1024 }) else {
             emit("failed", id: id, error: "notification takes at most three distinct bounded buttons"); return
         }
+        guard value["replyKind"] == nil || value["replyKind"] is String,
+              value["choices"] == nil || value["choices"] is [String] else {
+            emit("failed", id: id, error: "invalid typed prompt fields"); return
+        }
+        let replyKind = value["replyKind"] as? String ?? ""
+        let choices = value["choices"] as? [String] ?? []
+        guard replyKind.isEmpty || ((replyKind == "question" || replyKind == "request") && replyKind == detail.kind),
+              choices.count <= 4, (replyKind != "request" || choices.isEmpty),
+              choices.allSatisfy({ !$0.isEmpty && $0.utf8.count <= 1024 }) else {
+            emit("failed", id: id, error: "invalid typed prompt"); return
+        }
         let cap: TimeInterval = detail.kind == "contact" ? 120 : 24 * 60 * 60
         let entry = BrokerEntry(id: id, title: title, subtitle: value["subtitle"] as? String ?? "",
                                 excerpt: excerpt, detail: detail, buttons: buttons,
                                 until: min(Date(timeIntervalSince1970: until), Date().addingTimeInterval(cap)),
                                 timeSensitive: value["timeSensitive"] as? Bool == true || !buttons.isEmpty)
+        entry.replyKind = replyKind; entry.choices = choices
         if !buttons.isEmpty && entry.until <= Date() { emit("expired", id: id); return }
         entries[id] = entry
         if !buttons.isEmpty {
@@ -1031,6 +1026,13 @@ final class NativeNotificationBroker: NSObject, UNUserNotificationCenterDelegate
         let content = UNMutableNotificationContent()
         content.title = entry.title; content.subtitle = entry.subtitle; content.body = entry.excerpt
         content.userInfo[readingKey] = storedReading(entry.title, detail: entry.detail)
+        if !entry.replyKind.isEmpty {
+            let full = StoredReadingDetail(title: entry.title, sender: entry.detail.sender, body: entry.detail.body, kind: entry.detail.kind ?? "message")
+            guard let bytes = try? JSONEncoder().encode(full), bytes.count <= 1048576 else {
+                remove(entry.id, removeBanner: false); emit("failed", id: entry.id, error: "full notification text exceeds the private frame bound"); return
+            }
+            content.userInfo[fullReadingKey] = bytes
+        }
         #if DIBS_BROKER_FIXTURE
         if let directory = ProcessInfo.processInfo.environment["DIBS_BROKER_POSTED_DIR"] {
             let saved: [String: Any] = ["title": content.title, "subtitle": content.subtitle,
@@ -1098,7 +1100,7 @@ final class NativeNotificationBroker: NSObject, UNUserNotificationCenterDelegate
             if !entry.buttons.isEmpty && entry.until <= Date() {
                 remove(id, removeBanner: true); emit("expired", id: id); return
             }
-            if action == UNNotificationDefaultActionIdentifier {
+            if action == UNNotificationDefaultActionIdentifier || (!entry.replyKind.isEmpty && action == "Reply…") {
                 show(id: id, title: entry.title, detail: entry.detail, buttons: entry.buttons.isEmpty ? ["Close"] : entry.buttons)
             } else if action == UNNotificationDismissActionIdentifier {
                 remove(id, removeBanner: false); emit("dismissed", id: id)
@@ -1118,22 +1120,34 @@ final class NativeNotificationBroker: NSObject, UNUserNotificationCenterDelegate
     }
     func show(id: String, title: String, detail: AskReadingDetail, buttons: [String]) {
         if let window = windows[id] { window.show(); return }
-        let window = BrokerReadingWindow(title: title, detail: detail, buttons: buttons) { [weak self] choice in
+        let live = entries[id]
+        let window = HumanPromptWindow(title: title, detail: detail, buttons: buttons,
+                                       replyKind: live?.replyKind ?? "", choices: live?.choices ?? []) { [weak self] reply in
             guard let self else { return }
             self.windows.removeValue(forKey: id)?.close()
             guard let entry = self.entries[id] else { return }
-            if choice.isEmpty || entry.buttons.isEmpty { self.remove(id, removeBanner: false); self.emit("dismissed", id: id) }
-            else if entry.buttons.contains(choice) { self.remove(id, removeBanner: true); self.emit("action", id: id, action: choice) }
+            if reply.action.isEmpty || entry.buttons.isEmpty {
+                self.remove(id, removeBanner: false); self.emit("dismissed", id: id)
+            } else if !entry.replyKind.isEmpty {
+                self.remove(id, removeBanner: true)
+                self.emitReply(id: id, reply: reply)
+            } else if entry.buttons.contains(reply.action) {
+                self.remove(id, removeBanner: true); self.emit("action", id: id, action: reply.action)
+            }
         }
         windows[id] = window
         #if DIBS_BROKER_FIXTURE
-        let scroll = window.alert.accessoryView as! NSScrollView
-        let text = scroll.documentView as! NSTextView
-        emit("reading", id: id, view: ["title": window.alert.messageText, "sender": window.alert.informativeText,
-             "body": text.string, "buttons": window.alert.buttons.map { $0.title }]); return
+        emit("reading", id: id, view: window.viewInfo); return
         #endif
         window.show()
     }
+    func emitReply(id: String, reply: HumanPromptReply) {
+        let value: [String: Any] = ["v": 1, "event": "reply", "id": id, "action": reply.action,
+                                    "text": reply.text, "choice": reply.choice]
+        guard let data = try? JSONSerialization.data(withJSONObject: value), data.count < 1048576 else { exit(2) }
+        FileHandle.standardOutput.write(data + Data([10]))
+    }
+
 }
 
 let askEnvironment = ProcessInfo.processInfo.environment
