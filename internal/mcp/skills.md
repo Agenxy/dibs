@@ -494,6 +494,13 @@ receiving native peer turns, another watcher adds no delivery guarantee.
   Queued/pending is unconfirmed, older helpers may supply no receipt, and status
   is `unknown` after restart until new evidence arrives (answers survive replay).
   Human notifications never open a decision window automatically. Local desktop
+  questions and requests remain answerable when the person reopens their Mac
+  notification after the asking process or notifier exits. The installed app
+  fetches the current message from the local board and submits through its
+  attested native route; saved notification text carries no answer credential.
+  Already answered, approved, withdrawn or expired mail opens read-only with
+  its state. An unavailable board gives corrective guidance, never a verdict.
+  Local desktop
   sends also return `human_delivery`: `posted: false` until the actual helper
   receipt, then `posted: true`. An active macOS Focus adds `shown: "unknown"`,
   its name and the person's own app-exception hint. Focus detection is not proof

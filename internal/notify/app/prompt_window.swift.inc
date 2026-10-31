@@ -193,7 +193,12 @@ final class HumanPromptWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
         name.stringValue = title.hasPrefix("Dibs · ") ? String(title.dropFirst(7)) : title
         name.maximumNumberOfLines = 0; context.maximumNumberOfLines = 0
         name.setAccessibilityRole(NSAccessibility.Role(rawValue: "AXHeading"))
-        context.stringValue = detail.sender
+        var contextLine = detail.sender
+        if let sender = contextLine.components(separatedBy: " · ").first, !sender.isEmpty,
+           name.stringValue == sender || name.stringValue.hasPrefix(sender + " ") {
+            contextLine = contextLine == sender ? "" : String(contextLine.dropFirst(sender.count + 3))
+        }
+        context.stringValue = contextLine
         kind.stringValue = replyKind == "request" ? "APPROVAL" : (detail.kind ?? "message").uppercased()
         separator.boxType = .separator
         if let url = Bundle.main.url(forResource: "Dibs", withExtension: "icns") ?? Bundle.main.url(forResource: "Dibs", withExtension: "png"), let icon = NSImage(contentsOf: url) {
@@ -309,7 +314,7 @@ final class HumanPromptWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
         more.font = font(11, weight: .medium, mono: true); more.textColor = contrast ? ink : color(0x4B5056,0x989793)
         let paper = color(0xE6E3DF,0x1C1C1A)
         moreGradient.colors = [paper.withAlphaComponent(0).cgColor,paper.cgColor]
-        hint.stringValue = replyKind == "request" ? "⎋ cancel" : "⏎ send · ⎋ cancel"
+        hint.stringValue = replyKind == "question" ? "⏎ send · ⎋ cancel" : replyKind == "request" ? "⎋ cancel" : "⎋ close"
         let paragraph = NSMutableParagraphStyle(); paragraph.lineSpacing = 7 * scale; paragraph.paragraphSpacing = 7 * scale
         let plain = detail.body.replacingOccurrences(of: "\n[\t ]*\n+", with: "\n", options: .regularExpression)
         let attributed = NSMutableAttributedString(string: plain, attributes: [.font: font(14), .foregroundColor: ink, .paragraphStyle: paragraph])
@@ -378,7 +383,7 @@ final class HumanPromptWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
         let nameWidth = stackedKind ? inner - 40 : inner - 40 - kindWidth - 12
         let contextWidth = stackedKind ? inner - 40 - kindWidth - 12 : inner - 40
         let nameHeight = max(24, height(name.stringValue, width: nameWidth, font: font(16, weight: .semibold)))
-        let contextHeight = max(stackedKind ? 20 * scale : 0,height(detail.sender, width: contextWidth, font: font(12, mono: true)))
+        let contextHeight = max(stackedKind ? 20 * scale : 0,height(context.stringValue, width: contextWidth, font: font(12, mono: true)))
         let headerHeight = nameHeight + contextHeight + 20
         let footerHeight: CGFloat = 32 * scale + 20
         let replyHeight = replyKind.isEmpty ? 0 : min(6 * 20 * scale, max(3 * 20 * scale, height(composer.string, width: inner - 28, font: font(14)))) + 16
@@ -572,7 +577,8 @@ final class HumanPromptWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
     }
     func revealMessageEnd() { panel.makeFirstResponder(message); message.moveToEndOfDocument(nil) }
     var viewInfo: [String: Any] {
-        ["title": heading, "sender": detail.sender, "body": detail.body, "renderedBody": message.string,
+        ["title": heading, "sender": detail.sender, "context": context.stringValue, "hint": hint.stringValue,
+         "body": detail.body, "renderedBody": message.string,
          "buttons": actionButtons.map { $0.title }, "choices": choices,
          "reply": !replyKind.isEmpty, "overflow": overflow, "width": panel.contentView!.bounds.width,
          "endVisible": message.visibleRect.intersects(messageEndRect()), "selected": selected as Any? ?? NSNull(),

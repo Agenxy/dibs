@@ -61,6 +61,7 @@ func ReplyMessage(
 		post.Buttons = []string{"Deny", "Later", "Approve"}
 	}
 	post.ReplyKind, post.Choices = detail.Kind, choices
+	post.Profile = detail.Profile
 	// Full text is data on a private pipe, never argv, and is not passed
 	// through the legacy 8 KiB excerpt encoder. Refuse rather than truncate.
 	var err error
@@ -118,4 +119,14 @@ func validatePromptReply(post brokerPost, event brokerEvent) error {
 		return errors.New("invalid native reply; no verdict was recorded; read the Dibs board")
 	}
 	return nil
+}
+
+// ValidateNativeReply applies the same typed boundary to a reconnected native
+// peer as to a reply on the daemon-owned anonymous broker pipe.
+func ValidateNativeReply(kind string, choices []string, reply PromptReply) error {
+	if kind != core.MsgQuestion && kind != core.MsgRequest {
+		return errors.New("message does not ask for a native reply")
+	}
+	return validatePromptReply(brokerPost{ReplyKind: kind, Choices: choices},
+		brokerEvent{Action: reply.Action, Choice: reply.Choice, Text: reply.Text})
 }

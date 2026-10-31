@@ -57,6 +57,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Pending Mac questions and requests remain answerable when reopened from
+  Notification Center or after the original helper or asking process exits.
+  Reopened windows fetch current text, choices and state from the local daemon;
+  answers use kernel audit-token/code-identity attestation and an atomic pending
+  check. Answered, approved, withdrawn and expired mail shows its state without
+  reply controls or a send hint. Sender context avoids repeating the heading
+  and uses the friendly computer name. Existing banner actions and remote
+  enrolled-relay approval rules are unchanged.
+
 - Linux Homebrew installation guidance documents an optional command-scoped
   workaround for the measured upstream credential-probe `Broken pipe` failure,
   and upgrading a cask that Homebrew registered before reporting the error.
