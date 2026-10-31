@@ -15,13 +15,17 @@ import (
 func (e *Engine) DesktopApprovalSettings(ctx context.Context) (core.Result, error) {
 	return e.query(ctx, func() core.Result {
 		s := e.state.DesktopApproval
-		return core.Result{"setting": core.DesktopApprovalSettingKey, "value": strconv.FormatBool(s.Enabled),
-			"by": s.By, "at": s.At, "saved": true, "serial": e.state.Serial}
+		return core.Result{
+			"setting": core.DesktopApprovalSettingKey, "value": strconv.FormatBool(s.Enabled),
+			"by": s.By, "at": s.At, "saved": true, "serial": e.state.Serial,
+		}
 	})
 }
 
 func desktopApprovalSettingError() error {
-	return &core.Error{Code: "E_HUMAN_SETTING", Msg: "only the human may turn off privileged desktop approval confirmation",
+	return &core.Error{
+		Code: "E_HUMAN_SETTING", Msg: "only the human may turn off privileged desktop approval confirmation",
 		Hint: "open dibs web and use Settings, or run dibs desktop-approvals off " +
-			"from your terminal with human authentication"}
+			"from your terminal with human authentication",
+	}
 }

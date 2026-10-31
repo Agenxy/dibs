@@ -95,8 +95,10 @@ func (e *Engine) confirmDesktopApproval(ctx context.Context, plan *desktopApprov
 	verdict, err := check(ctx, plan.reason)
 	if err != nil || verdict != humanauth.Verified {
 		slog.Info("privileged desktop approval remains pending after human confirmation", "verdict", verdict, "error", err)
-		return &core.Error{Code: "E_HUMAN_PRESENCE", Msg: "human confirmation was canceled or unavailable; the request remains pending",
-			Hint: "open dibs web to review and decide the request; only the human can turn off confirmation in Settings"}
+		return &core.Error{
+			Code: "E_HUMAN_PRESENCE", Msg: "human confirmation was canceled or unavailable; the request remains pending",
+			Hint: "open dibs web to review and decide the request; only the human can turn off confirmation in Settings",
+		}
 	}
 	plan.verified = true
 	return nil

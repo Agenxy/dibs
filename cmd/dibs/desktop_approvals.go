@@ -43,11 +43,11 @@ func desktopApprovalsCmd(args []string) error {
 	}
 	result, err := callDesktopApproval(enabled)
 	if err != nil {
-		return agentCLIError(err, *asJSON)
+		return desktopApprovalCLIError(err, *asJSON)
 	}
 	result, err = desktopApprovalResult(result)
 	if err != nil {
-		return agentCLIError(err, *asJSON)
+		return desktopApprovalCLIError(err, *asJSON)
 	}
 	value := result["value"].(string)
 	if *asJSON {
@@ -59,6 +59,16 @@ func desktopApprovalsCmd(args []string) error {
 	}
 	fmt.Printf("Confirm privileged desktop approvals with Touch ID: %s\n", state)
 	return nil
+}
+
+func desktopApprovalCLIError(err error, asJSON bool) error {
+	detail := agentCLIErrorDetail(err)
+	var domain *core.Error
+	if !errors.As(err, &domain) || domain.Hint == "" {
+		detail.Hint = "check dibs desktop-approvals --help, board access and human authentication; " +
+			"use Settings on dibs web"
+	}
+	return agentCLIError(&detail, asJSON)
 }
 
 func callDesktopApproval(enabled *bool) (map[string]any, error) {
