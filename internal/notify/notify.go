@@ -10,7 +10,7 @@
 // look, and the operator's own summary of it was that a fleet which needs a
 // human to notice is not much of a fleet.
 //
-// # Why osascript and not a Swift helper
+// # Native replies and passive fallback
 //
 // A passive banner needs a bundle identifier. `UNUserNotificationCenter`
 // crashes without one, and `NSUserNotification` has been deprecated since
@@ -65,22 +65,6 @@ const timeout = 2 * time.Minute
 // banner posts a notification. Arguments, never interpolation.
 const banner = `on run argv
   display notification (item 3 of argv) with title (item 1 of argv) subtitle (item 2 of argv)
-end run`
-
-// prompt asks for free text.
-const prompt = `on run argv
-  set r to display dialog (item 2 of argv) with title (item 1 of argv) default answer "" with icon note
-  return text returned of r
-end run`
-
-// pick offers an arbitrary number of choices, which a dialog cannot: macOS caps
-// those at three buttons.
-const pick = `on run argv
-  set n to count of argv
-  set opts to items 3 thru n of argv
-  set r to choose from list opts with title (item 1 of argv) with prompt (item 2 of argv)
-  if r is false then return ""
-  return item 1 of r
 end run`
 
 // helperName is the bundled notifier, which is what gives a notification Dibs'
@@ -166,6 +150,9 @@ func bannerWithDeliveryReceipt(title, subtitle, body string, timeSensitive bool,
 func bannerWithDetail(
 	id, title, subtitle, body string, detail *AskDetail, timeSensitive bool, receipt DeliveryReceipt,
 ) error {
+	if silenced() {
+		return notificationSilencedError()
+	}
 	if goos == "linux" {
 		err := linuxBannerWithUrgency(title, subtitle, body, timeSensitive)
 		if err == nil && receipt != nil {
@@ -232,6 +219,9 @@ func askWithID(id, title, body string, receipt Receipt, buttons ...string) (stri
 func askWithDeliveryID(
 	id, title, body string, detail *AskDetail, receipt DeliveryReceipt, buttons ...string,
 ) (string, error) {
+	if silenced() {
+		return "", notificationSilencedError()
+	}
 	if len(buttons) == 0 || len(buttons) > 3 {
 		return "", errors.New("an alert takes one to three buttons; use Pick for more")
 	}
@@ -267,7 +257,8 @@ func Pick(title, body string, choices ...string) (string, error) {
 	if out, ok := onScreen("--pick", append([]string{title, body}, choices...)...); ok {
 		return out, nil
 	}
-	return run(pick, append([]string{title, body}, choices...)...)
+	return "", fmt.Errorf("%w: the native Dibs prompt is unavailable; "+
+		"run dibs doctor and answer on the Dibs board", ErrCannotNotify)
 }
 
 // CanPrompt reports whether Prompt can open a text field here at all, so a
@@ -278,7 +269,7 @@ func Pick(title, body string, choices ...string) (string, error) {
 // swallowed one layer up, so the only user-facing boundary lied. Round
 // twenty-five of the pre-release review.
 func CanPrompt() bool {
-	return goos != "linux" && !silenced()
+	return goos == "darwin" && helper() != "" && !silenced()
 }
 
 // Prompt asks for free text and returns it, or "" if dismissed.
@@ -291,7 +282,8 @@ func Prompt(title, body string) (string, error) {
 	if out, ok := onScreen("--prompt", title, body); ok {
 		return out, nil
 	}
-	return run(prompt, title, body)
+	return "", fmt.Errorf("%w: the native Dibs prompt is unavailable; "+
+		"run dibs doctor and answer on the Dibs board", ErrCannotNotify)
 }
 
 // onScreen runs the half of answering that needs a window, through the bundle.
@@ -304,9 +296,12 @@ func Prompt(title, body string) (string, error) {
 // appeared. Reported exactly that way: "when I clicked answer it just went away,
 // there was nowhere to put an answer."
 //
-// ok=false means there is no bundle here, and the osascript path is still the
-// fallback: it works from a foreground process and this is a source build.
+// ok=false means there is no usable bundle here. Prompt and Pick report that
+// the person must answer on the board; no AppleScript dialog is attempted.
 func onScreen(mode string, args ...string) (string, bool) {
+	if silenced() {
+		return "", false
+	}
 	h := helper()
 	if h == "" {
 		return "", false
@@ -318,7 +313,7 @@ func onScreen(mode string, args ...string) (string, bool) {
 	out, err := exec.CommandContext(ctx, h, append([]string{mode}, args...)...).Output()
 	if err != nil {
 		if notAuthorised(err) {
-			return "", false // fall through to the script path rather than lie
+			return "", false // report that native prompting is unavailable
 		}
 		// EXIT 1 IS CANCEL. Anything else is the helper failing.
 		//
@@ -332,7 +327,7 @@ func onScreen(mode string, args ...string) (string, bool) {
 		if errors.As(err, &ee) && ee.ExitCode() == 1 {
 			return "", true // cancelled, or sent empty: an answer
 		}
-		return "", false // the machine failed: let the caller try the script path
+		return "", false // the machine failed: report unavailable, not cancelled
 	}
 	return strings.TrimSpace(string(out)), true
 }
@@ -501,6 +496,10 @@ var goos = runtime.GOOS
 // it spawns. Split out so it is testable from inside a test binary, where
 // Available() is already false for a different reason and would prove nothing.
 func silenced() bool { return os.Getenv(silenceEnv) == "off" }
+
+func notificationSilencedError() error {
+	return fmt.Errorf("%w: desktop notifications are disabled; answer on the Dibs board", ErrCannotNotify)
+}
 
 // silenceEnv turns every notification off for a process and everything it
 // spawns.

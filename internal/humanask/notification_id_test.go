@@ -15,12 +15,15 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
-	"github.com/agenxy/dibs/internal/testexec"
 )
 
 func TestMain(m *testing.M) {
 	// Private copied images can be assessed without entering a notifier or tool.
 	if len(os.Args) == 2 && os.Args[1] == "--dibs-test-prepare" {
+		os.Exit(0)
+	}
+	if os.Getenv("DIBS_PROMPT_ENTRY_DRIVER") == "1" && filepath.Base(os.Args[0]) == "dibs-notify" {
+		promptEntryHelper()
 		os.Exit(0)
 	}
 	if os.Getenv("DIBS_TEST_HUMAN_POST_DRIVER") == "1" && filepath.Base(os.Args[0]) == "dibs-notify" {
@@ -32,14 +35,14 @@ func TestMain(m *testing.M) {
 			os.Exit(3)
 		}
 		output := json.NewEncoder(os.Stdout)
-		_ = output.Encode(map[string]any{"v": 1, "event": "ready"})
+		_ = output.Encode(map[string]any{"v": 1, "event": "ready", "reply": 1})
 		scanner := bufio.NewScanner(os.Stdin)
 		for scanner.Scan() {
 			var frame struct {
-				V             int `json:"v"`
-				Type, ID      string
-				TimeSensitive bool
-				Detail        struct{ Kind string }
+				V                   int `json:"v"`
+				Type, ID, ReplyKind string
+				TimeSensitive       bool
+				Detail              struct{ Kind string }
 			}
 			if json.Unmarshal(scanner.Bytes(), &frame) != nil || frame.V != 1 || frame.Type != "post" {
 				os.Exit(3)
@@ -47,12 +50,16 @@ func TestMain(m *testing.M) {
 			if frame.Detail.Kind == core.MsgQuestion && frame.ID != "dibs.msg.board-A.7" {
 				os.Exit(3)
 			}
+			if frame.Detail.Kind == core.MsgQuestion && frame.ReplyKind != core.MsgQuestion {
+				_, _ = os.Stderr.WriteString("question unexpectedly entered the legacy action protocol\n")
+				os.Exit(3)
+			}
 			if frame.Detail.Kind == core.MsgNotify && !frame.TimeSensitive {
 				os.Exit(3)
 			}
 			_ = output.Encode(map[string]any{"v": 1, "id": frame.ID, "event": "posted", "receipt": map[string]string{"state": "posted"}})
 			if frame.Detail.Kind == core.MsgQuestion {
-				_ = output.Encode(map[string]any{"v": 1, "id": frame.ID, "event": "action", "action": "Yes"})
+				_ = output.Encode(map[string]any{"v": 1, "id": frame.ID, "event": "reply", "action": "answer", "choice": "Yes"})
 			}
 		}
 		os.Exit(0)
@@ -85,31 +92,12 @@ func TestHumanQuestionPostsItsBoardScopedMessageID(t *testing.T) {
 		}
 		return
 	}
-	dir := t.TempDir()
-	self, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	bytes, err := os.ReadFile(self)
-	if err != nil {
-		t.Fatal(err)
-	}
-	driver := filepath.Join(dir, "driver.test")
-	helper := filepath.Join(dir, "Dibs.app", "Contents", "MacOS", "dibs-notify")
-	if err := os.MkdirAll(filepath.Dir(helper), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	for _, path := range []string{driver, helper} {
-		if err := os.WriteFile(path, bytes, 0o700); err != nil {
-			t.Fatal(err)
-		}
-		testexec.PrepareExecutable(t, exec.Command(path, "--dibs-test-prepare"))
-	}
+	_, driver, _ := newHumanaskFixture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, driver, "-test.run=^TestHumanQuestionPostsItsBoardScopedMessageID$") // #nosec G204 -- private fixture binary
-	cmd.Env = append(os.Environ(), "DIBS_TEST_HUMAN_POST_DRIVER=1", "DIBS_DIR="+t.TempDir())
+	cmd.Env = append(os.Environ(), "DIBS_NOTIFY=", "DIBS_TEST_HUMAN_POST_DRIVER=1", "DIBS_DIR="+t.TempDir())
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("human notification identity wiring: %v\n%s", err, out)
+		t.Fatalf("human notification identity wiring: %v (context: %v)\n%s", err, ctx.Err(), out)
 	}
 }

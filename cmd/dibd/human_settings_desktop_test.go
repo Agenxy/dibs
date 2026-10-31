@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	notifyapp "github.com/agenxy/dibs/internal/notify/app"
 	"github.com/agenxy/dibs/internal/testexec"
 )
 
@@ -222,9 +223,17 @@ func TestNativeHelperSettingsModeIsPermissionFree(t *testing.T) {
 		t.Fatal(err)
 	}
 	executable := filepath.Join(macos, "dibs-notify")
+	source, err := notifyapp.ReadSource("../../internal/notify/app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	combined := filepath.Join(dir, "notify.swift")
+	if err := os.WriteFile(combined, source, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "xcrun", "swiftc", "-j1", "../../internal/notify/app/notify_darwin.swift", "-o", executable) // #nosec G204 -- exact production source and private test bundle
+	cmd := exec.CommandContext(ctx, "xcrun", "swiftc", "-j1", combined, "-o", executable) // #nosec G204 -- exact production source and private test bundle
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("native fixture compile setup: %v\n%s", err, out)
 	}

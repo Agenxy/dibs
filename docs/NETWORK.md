@@ -490,6 +490,27 @@ Secure Enclave is; a person on another platform uses the web portal, whose
 login is a passkey (WebAuthn), which is the same P-256 check through the
 browser.
 
+On macOS, clicking a notification opens the shared native reading/reply window.
+Its full message is selectable and scrollable; a question accepts a choice,
+typed text or both. A request has explicit **Approve** and **Deny** buttons,
+neither activated by ordinary Return. **Reply without deciding** sends a normal
+human-authored note referencing that request and leaves it pending; it grants
+nothing. The same presenter serves the local desktop and the relay, and relay
+approvals keep the signature and merge-fence checks above.
+
+New notifications retain their full text in macOS notification history for
+reading after the original helper exits. That retained text carries no answer
+capability: a reopened, unowned notification is read-only and says to continue
+on the board. Older notifications may contain only their previously stored
+excerpt; upgrading cannot recover text already omitted from that history.
+The native helper negotiates typed-reply support before posting. An older
+helper retains its original choices and approval buttons, with a receipt
+recording that typed replies are unavailable and a doctor refresh hint.
+Typed-only questions instead post their board-answer route and stay open.
+No fallback repeats an uncertain post or interprets text as a verdict.
+Source builds without the native app leave replies
+on the board; they no longer open an AppleScript text box or list.
+
 **What it does not do yet.** The portal's passkey login and per-agent
 credentials are the next two items in §7. Until the second exists the
 board's secret is shared, so a public address is still not recommended, and

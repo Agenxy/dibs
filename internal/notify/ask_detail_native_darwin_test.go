@@ -31,7 +31,7 @@ func TestNativeAskReadsBoundedDetailAndExpiresAtRequestDeadline(t *testing.T) {
 	binary := filepath.Join(contents, "MacOS", "dibs-notify")
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	if out, err := exec.CommandContext(ctx, "swiftc", "-D", "DIBS_ASK_FIXTURE", "-o", binary, "app/notify_darwin.swift").CombinedOutput(); err != nil {
+	if out, err := exec.CommandContext(ctx, "swiftc", "-D", "DIBS_ASK_FIXTURE", "-o", binary, nativePromptSource(t)).CombinedOutput(); err != nil {
 		t.Fatalf("native ask build: %v\n%s", err, out)
 	}
 	if out, err := exec.CommandContext(ctx, binary, "--ask-fixture-capability").CombinedOutput(); err != nil || strings.TrimSpace(string(out)) != "ask-fixture-v1" {

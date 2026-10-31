@@ -30,7 +30,7 @@ func TestNativeReadingWindowReopensPersistedNotification(t *testing.T) {
 		t.Fatal(err)
 	}
 	binary := filepath.Join(contents, "MacOS", "dibs-notify")
-	if out, err := exec.CommandContext(ctx, "swiftc", "-D", "DIBS_READING_FIXTURE", "-o", binary, "app/notify_darwin.swift").CombinedOutput(); err != nil {
+	if out, err := exec.CommandContext(ctx, "swiftc", "-D", "DIBS_READING_FIXTURE", "-o", binary, nativePromptSource(t)).CombinedOutput(); err != nil {
 		t.Fatalf("build: %v\n%s", err, out)
 	}
 	if out, err := exec.CommandContext(ctx, binary, "--reading-fixture-capability").CombinedOutput(); err != nil || strings.TrimSpace(string(out)) != "reading-fixture-v1" {

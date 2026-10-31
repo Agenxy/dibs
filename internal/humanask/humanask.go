@@ -15,6 +15,7 @@ package humanask
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"os/exec"
 	"strconv"
@@ -85,13 +86,23 @@ func (m Message) displayAdopt() string {
 // Answer is what the person said. An empty Disposition is no answer:
 // dismissed, deferred, or a message that asks for none.
 type Answer struct {
-	Disposition string // approve, deny, answer
+	Disposition string // approve, deny, answer; comment is a linked human note without a verdict
 	Body        string
 }
 
 // Ask raises the message and waits for the person. notify.ErrCannotNotify
 // means nobody saw it, which the caller reports.
 func Ask(m Message) (Answer, error) {
+	if m.ask == nil && notify.NativePromptAvailable() && (m.Type == core.MsgQuestion || m.Type == core.MsgRequest) {
+		answer, err := m.nativeReply()
+		if errors.Is(err, notify.ErrReplyUnavailable) {
+			answer, err = m.legacyReply()
+		}
+		if err != nil {
+			return Answer{}, fmt.Errorf("%w; no answer was recorded; answer on the Dibs board", err)
+		}
+		return answer, nil
+	}
 	title := "Dibs · " + m.displayFrom()
 	switch m.Type {
 	case "contact":
@@ -110,6 +121,62 @@ func Ask(m Message) (Answer, error) {
 	default:
 		return Answer{}, m.bannerNotification(title, "says", OneLine(m.Body))
 	}
+}
+
+func (m Message) legacyReply() (Answer, error) {
+	receipt := m.DeliveryReceipt
+	if receipt == nil && m.Receipt != nil {
+		receipt = func(r notify.ReceiptData) { m.Receipt(r.State) }
+	}
+	m.DeliveryReceipt = func(r notify.ReceiptData) {
+		available := false
+		r.ReplyField = &available
+		r.ReplyHint = notify.LegacyReplyHint
+		if receipt != nil {
+			receipt(r)
+		}
+	}
+	if m.Type == core.MsgRequest {
+		return approve(m)
+	}
+	if len(m.Choices) > 0 {
+		return answer(m)
+	}
+	// Nothing has been posted yet. An old helper cannot offer the new reply
+	// contract: keep this question open and post its honest board-answer route.
+	return Answer{}, m.bannerNotification("Dibs · "+m.displayFrom()+" asks",
+		"Reply on the Dibs board · native helper needs refresh", OneLine(m.Body))
+}
+
+func (m Message) nativeReply() (Answer, error) {
+	title := "Dibs · " + m.displayFrom() + " asks"
+	if m.Type == core.MsgRequest {
+		title = RequestTitle(m.displayFrom(), m.Grant, m.displayAdopt(), m.Merge)
+	}
+	sender := m.Who
+	if sender == "" {
+		sender = m.FromName
+		if sender == "" {
+			sender = m.From
+		}
+	}
+	receipt := m.DeliveryReceipt
+	if receipt == nil && m.Receipt != nil {
+		receipt = func(r notify.ReceiptData) { m.Receipt(r.State) }
+	}
+	detail := notify.AskDetail{Sender: sender, Body: m.Body, Kind: m.Type, Deadline: m.Deadline}
+	reply, err := notify.ReplyMessage(m.Node, m.Serial, title, detail, m.Choices, receipt)
+	if err != nil {
+		return Answer{}, err
+	}
+	body := reply.Text
+	if reply.Choice != "" {
+		body = reply.Choice
+		if reply.Text != "" {
+			body += "\n\n" + reply.Text
+		}
+	}
+	return Answer{Disposition: reply.Action, Body: body}, nil
 }
 
 var openContact = func(argv []string) error {

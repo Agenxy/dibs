@@ -29,6 +29,8 @@ type ReceiptData struct {
 	RequestedInterruptionLevel string    `json:"requested_interruption_level,omitempty"`
 	EffectiveInterruptionLevel string    `json:"effective_interruption_level,omitempty"`
 	InterruptionReason         string    `json:"interruption_reason,omitempty"`
+	ReplyField                 *bool     `json:"reply_field_available,omitempty"`
+	ReplyHint                  string    `json:"reply_hint,omitempty"`
 }
 
 func stateReceipt(receipt Receipt) DeliveryReceipt {
@@ -40,6 +42,16 @@ func stateReceipt(receipt Receipt) DeliveryReceipt {
 
 // Normalized returns a bounded independent observation from a helper or relay.
 func (r ReceiptData) Normalized() ReceiptData {
+	if r.ReplyField != nil {
+		available := *r.ReplyField
+		r.ReplyField = &available
+		r.ReplyHint = ""
+		if !available {
+			r.ReplyHint = LegacyReplyHint
+		}
+	} else {
+		r.ReplyHint = ""
+	}
 	r.Settings = r.Settings.Normalized()
 	requested := r.RequestedInterruptionLevel
 	if requested == "" {

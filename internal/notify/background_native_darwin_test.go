@@ -33,7 +33,7 @@ func TestNativeBackgroundOpenDecisionsThroughProductionMode(t *testing.T) {
 	binary := filepath.Join(contents, "MacOS", "dibs-notify")
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	build := exec.CommandContext(ctx, "swiftc", "-D", "DIBS_BACKGROUND_OPEN_FIXTURE", "-o", binary, "app/notify_darwin.swift")
+	build := exec.CommandContext(ctx, "swiftc", "-D", "DIBS_BACKGROUND_OPEN_FIXTURE", "-o", binary, nativePromptSource(t))
 	if raw, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("native fixture setup: %v\n%s", err, raw)
 	}

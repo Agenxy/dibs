@@ -28,6 +28,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+
+	notifyapp "github.com/agenxy/dibs/internal/notify/app"
 )
 
 // iconSizes are the ten an .icns carries. The names are iconutil's convention
@@ -62,6 +64,7 @@ const plist = `<?xml version="1.0" encoding="UTF-8"?>
   <key>CFBundleIdentifier</key><string>org.agenxy.dibs</string>
   <key>CFBundleExecutable</key><string>dibs-notify</string>
   <key>CFBundleIconFile</key><string>Dibs</string>
+  <key>ATSApplicationFontsPath</key><string>Fonts</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>%s</string>
   <key>CFBundleVersion</key><string>%s</string>
@@ -146,14 +149,48 @@ func run() error {
 			return err
 		}
 	}
-	if err := swiftc(filepath.Join(macos, "dibs-notify"),
-		filepath.Join(src, "notify_darwin.swift")); err != nil {
+	if err := buildNotifier(filepath.Join(macos, "dibs-notify"), work, src); err != nil {
 		return err
 	}
 	if err := copyFile(icns, filepath.Join(res, "Dibs.icns")); err != nil {
 		return err
 	}
+	if err := copyPromptFonts(src, res); err != nil {
+		return err
+	}
 	return finishBundle(out, version)
+}
+
+func copyPromptFonts(src, res string) error {
+	fonts := filepath.Join(res, "Fonts")
+	if err := os.MkdirAll(fonts, 0o750); err != nil {
+		return err
+	}
+	for _, name := range []string{
+		"AtkinsonHyperlegibleNext[wght].ttf", "AtkinsonHyperlegibleMono[wght].ttf",
+		"OFL-Next.txt", "OFL-Mono.txt", "PROVENANCE.md",
+	} {
+		if err := copyFile(filepath.Join(src, "fonts", name), filepath.Join(fonts, name)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Swift top-level entry points must be one translation unit. The source
+// directory is an operator build flag, never participant-written input; work
+// is the private MkdirTemp directory owned by this invocation.
+func buildNotifier(out, work, src string) error {
+	source, err := notifyapp.ReadSource(src)
+	if err != nil {
+		return err
+	}
+	combined := filepath.Join(work, "notify.swift")
+	// #nosec G703 -- work is a private MkdirTemp output, not a message-derived path.
+	if err := os.WriteFile(combined, source, 0o600); err != nil {
+		return err
+	}
+	return swiftc(out, combined)
 }
 
 func finishBundle(out, version string) error {

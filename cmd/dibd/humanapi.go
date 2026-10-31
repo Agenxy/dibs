@@ -84,6 +84,7 @@ func (h *humanAPI) delivery(w http.ResponseWriter, r *http.Request) {
 		RequestedInterruptionLevel string          `json:"requested_interruption_level"`
 		EffectiveInterruptionLevel string          `json:"effective_interruption_level"`
 		InterruptionReason         string          `json:"interruption_reason"`
+		ReplyField                 *bool           `json:"reply_field_available"`
 	}
 	if !decodeBody(w, r, &req) {
 		return
@@ -94,6 +95,7 @@ func (h *humanAPI) delivery(w http.ResponseWriter, r *http.Request) {
 		State: req.State, Settings: notify.DecodeSettings(req.Settings),
 		InterruptionLevel: legacyLevel, RequestedInterruptionLevel: req.RequestedInterruptionLevel,
 		EffectiveInterruptionLevel: req.EffectiveInterruptionLevel, InterruptionReason: req.InterruptionReason,
+		ReplyField: req.ReplyField,
 	}
 	if err := h.eng.ReportHumanReceipt(r.Context(), req.Serial, key, data, req.Error); err != nil {
 		humanRefuse(w, http.StatusBadRequest, err.Error(), "report posted, dismissed or failed for retained human mail")
@@ -114,7 +116,11 @@ func humanRefuse(w http.ResponseWriter, status int, why, hint string) {
 }
 
 func decodeBody(w http.ResponseWriter, r *http.Request, v any) bool {
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(v); err != nil {
+	return decodeBodyLimit(w, r, v, 1<<16)
+}
+
+func decodeBodyLimit(w http.ResponseWriter, r *http.Request, v any, limit int64) bool {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit)).Decode(v); err != nil {
 		humanRefuse(w, http.StatusBadRequest, "the body did not parse: "+err.Error(),
 			"send JSON, as `dibs human-relay` does")
 		return false
@@ -312,7 +318,9 @@ func (h *humanAPI) answer(w http.ResponseWriter, r *http.Request) {
 		Nonce       string `json:"nonce"`
 		Signature   string `json:"signature"`
 	}
-	if !decodeBody(w, r, &req) {
+	// A 32 KiB reply may expand sixfold under JSON escaping; the core
+	// still enforces its decoded body limit. Other endpoints keep 64 KiB.
+	if !decodeBodyLimit(w, r, &req, 1<<18) {
 		return
 	}
 	n, open, err := h.eng.HumanNoticeFor(r.Context(), req.Serial)

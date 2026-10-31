@@ -157,7 +157,11 @@ func TestHumanAskDetailUsesStdinAndWithdrawsLiveHelper(t *testing.T) {
 			if err != nil || until != deadline.Unix() {
 				t.Fatalf("helper lifetime lost request deadline: %q %v", capture.Until, err)
 			}
-			if len(capture.Stdin) > 8192 || !utf8.ValidString(capture.Stdin) {
+			bound := 8192
+			if m.Type == "question" || m.Type == "request" {
+				bound = 1024 * 1024
+			}
+			if len(capture.Stdin) > bound || !utf8.ValidString(capture.Stdin) {
 				t.Fatalf("detail is not bounded UTF-8: %d bytes", len(capture.Stdin))
 			}
 			var detail struct{ Sender, Body, Kind string }
@@ -172,11 +176,8 @@ func TestHumanAskDetailUsesStdinAndWithdrawsLiveHelper(t *testing.T) {
 			if detail.Sender != wantSender {
 				t.Fatalf("sender line lost: %q", detail.Sender)
 			}
-			if mode != "bounded" && detail.Body != wantBody {
+			if detail.Body != wantBody {
 				t.Fatalf("detail truncated before its limit: %q", detail.Body)
-			}
-			if mode == "bounded" && !strings.Contains(detail.Body, "Rest on the Dibs board") {
-				t.Fatal("truncated detail did not explain where to read the rest")
 			}
 			if strings.Contains(strings.Join(capture.Args, " "), "PRIVATE DETAIL AFTER EXCERPT") {
 				t.Fatal("private detail leaked into world-readable argv")
