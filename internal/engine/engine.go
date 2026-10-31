@@ -810,6 +810,11 @@ func (e *Engine) execWithReceipt(
 				// row, invent model contact, confirm a socket offer, or read mail.
 				return e.applyAndLedger(op, now)
 			}
+			// A refused recovery must not even ledger an incidental actor wake.
+			// Its request/approval evidence is checked on this same writer trip.
+			if err := e.prepareRecoveryEffect(op, actor); err != nil {
+				return nil, err
+			}
 			e.wakeIfSleeping(actor, now)
 		}
 	}
@@ -921,9 +926,6 @@ func (e *Engine) execWithReceipt(
 	}
 
 	if err := e.refuseAmbiguousRelease(op); err != nil {
-		return nil, err
-	}
-	if err := e.prepareRecoveryEffect(op, actor); err != nil {
 		return nil, err
 	}
 	if err := e.prepareMergeEffect(op, actor); err != nil {

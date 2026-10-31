@@ -248,6 +248,34 @@ func TestRecoverAgentInheritedWaitDoesNotParkRealOwedWork(t *testing.T) {
 	}
 }
 
+func TestRecoverAgentRefusalDoesNotWakeDormantCoordinator(t *testing.T) {
+	for _, version := range []string{"2025-11-25", "2026-07-28"} {
+		t.Run(version, func(t *testing.T) {
+			f := recoveryFixture(t, version)
+			serial := recoveryRequest(f)
+			f.call("check_in", map[string]any{"token": f.source["token"]})
+			if _, err := f.e.Do(context.Background(), &core.Op{Kind: core.OpSweep, StaleAgents: []string{"lead"}}); err != nil {
+				t.Fatal(err)
+			}
+			before, err := f.e.Board(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			refused := f.raw("respond", map[string]any{"token": f.lead["token"], "msg_serial": serial, "disposition": "approve"})
+			if refused["code"] != "E_AGENT_LIVE" {
+				t.Fatalf("expected protected refusal: %v", refused)
+			}
+			after, err := f.e.Board(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if after["serial"] != before["serial"] {
+				t.Fatal("protected refusal woke coordinator and changed durable serial")
+			}
+		})
+	}
+}
+
 // Enter through HTTP, as the recovering worker and the distinct coordinator do.
 // Adoption alone leaves new mail at the abandoned address; recovery must not.
 func TestRecoverAgentRoutesFutureMailAndInheritsDeclarations(t *testing.T) {
