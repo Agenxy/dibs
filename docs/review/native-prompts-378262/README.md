@@ -26,6 +26,11 @@ Requests retain explicit decision buttons, with no default approval:
 | 100% | ![Light request](request-light-100.png) | ![Dark request](request-dark-100.png) |
 | 160% | ![Light large request](request-light-160.png) | ![Dark large request](request-dark-160.png) |
 
+Typing enables the borderless no-decision reply, without making approval a
+default. The footer keeps its Esc hint and separates this reply from decisions:
+
+![Dark request after typing](request-dark-160-reply.png)
+
 ## How these were measured
 
 The before images use the notifier source at `f16b91573657b842431332bfbeea61634ef4920b`
@@ -61,6 +66,12 @@ the light lane measured `[65535 65535 65535]` while adjacent paper measured
 and sizing the document to the actual viewport, the same check passes in both
 appearances. This comparison uses neighbouring pixels in the same render,
 preserving colour-profile differences rather than hard-coding RGB bytes.
+
+The no-decision reply's disabled background was separately observed failing
+against adjacent paper (`[38293 38036 37265]` versus `[58853 58339 57311]`).
+Making it a text-only button passes the same pixel check in both appearances
+and text sizes. Native layout checks also reject overlapping footer controls
+or hints; the request keyboard checks still forbid an implicit verdict.
 
 Regenerate after images with:
 

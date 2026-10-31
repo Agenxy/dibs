@@ -30,6 +30,8 @@ final class PromptSurface: NSView {
 final class PromptActionButton: NSButton {
     var fill = NSColor.clear
     var ink = NSColor.labelColor
+    var disabledInk = NSColor.disabledControlTextColor
+    var textStyle = false
     var hovered = false
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -39,9 +41,12 @@ final class PromptActionButton: NSButton {
     override func mouseEntered(with event: NSEvent) { hovered = true; needsDisplay = true }
     override func mouseExited(with event: NSEvent) { hovered = false; needsDisplay = true }
     override func draw(_ dirtyRect: NSRect) {
-        (isEnabled ? (isHighlighted ? fill.blended(withFraction: 0.1, of: .black) ?? fill : hovered ? fill.blended(withFraction: 0.06, of: .white) ?? fill : fill) : fill.withAlphaComponent(0.35)).setFill()
-        NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 8, yRadius: 8).fill()
-        let attributes: [NSAttributedString.Key: Any] = [.font: font ?? NSFont.systemFont(ofSize: 13), .foregroundColor: isEnabled ? ink : NSColor.disabledControlTextColor]
+        if !textStyle {
+            (isEnabled ? (isHighlighted ? fill.blended(withFraction: 0.1, of: .black) ?? fill : hovered ? fill.blended(withFraction: 0.06, of: .white) ?? fill : fill) : fill.withAlphaComponent(0.35)).setFill()
+            NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 8, yRadius: 8).fill()
+        }
+        var attributes: [NSAttributedString.Key: Any] = [.font: font ?? NSFont.systemFont(ofSize: 13), .foregroundColor: isEnabled ? ink : disabledInk]
+        if textStyle && hovered && isEnabled { attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue }
         let size = (title as NSString).size(withAttributes: attributes)
         (title as NSString).draw(at: NSPoint(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2), withAttributes: attributes)
     }
@@ -285,7 +290,7 @@ final class HumanPromptWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
         more.font = font(11, weight: .medium, mono: true); more.textColor = contrast ? ink : color(0x4B5056,0x989793)
         let paper = color(0xE6E3DF,0x1C1C1A)
         moreGradient.colors = [paper.withAlphaComponent(0).cgColor,paper.cgColor]
-        hint.stringValue = replyKind == "request" ? "" : "⏎ send · ⎋ cancel"
+        hint.stringValue = replyKind == "request" ? "⎋ cancel" : "⏎ send · ⎋ cancel"
         let paragraph = NSMutableParagraphStyle(); paragraph.lineSpacing = 7 * scale; paragraph.paragraphSpacing = 7 * scale
         let plain = detail.body.replacingOccurrences(of: "\n[\t ]*\n+", with: "\n", options: .regularExpression)
         let attributed = NSMutableAttributedString(string: plain, attributes: [.font: font(14), .foregroundColor: ink, .paragraphStyle: paragraph])
@@ -323,7 +328,10 @@ final class HumanPromptWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
                 button.bezelColor = color(0x8A3F17, 0xDC7B40); button.contentTintColor = color(0xFFFFFF, 0x1C1C1A)
                 if let action = button as? PromptActionButton { action.fill = color(0x8A3F17,0xDC7B40); action.ink = color(0xFFFFFF,0x1C1C1A) }
             }
-            if button.title == "Reply without deciding", let action = button as? PromptActionButton { action.fill = .clear; action.ink = color(0x1C5284,0x5A9FD4) }
+            if button.title == "Reply without deciding", let action = button as? PromptActionButton {
+                action.textStyle = true; action.isBordered = false
+                action.ink = ink; action.disabledInk = color(0x4B5056,0x989793).withAlphaComponent(0.5)
+            }
         }
         mark.wantsLayer = true; mark.layer?.cornerRadius = 6.5
         let dark = panel.effectiveAppearance.bestMatch(from: [.darkAqua,.aqua]) == .darkAqua
@@ -402,12 +410,17 @@ final class HumanPromptWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
         updateMore()
         choiceGroup.isHidden = radios.isEmpty
         var right = width - inset
-        for button in actionButtons.reversed() {
+        for button in actionButtons.reversed() where button.title != "Reply without deciding" {
             let buttonWidth = max(96, (button.title as NSString).size(withAttributes: [.font:font(13,weight:.medium)]).width + 24)
             button.frame = NSRect(x: right - buttonWidth, y: inset, width: buttonWidth, height: 32 * scale)
             right -= buttonWidth + 8
         }
-        hint.frame = NSRect(x: inset, y: inset + 7 * scale, width: max(0,right - inset), height: 18 * scale)
+        let hintWidth = ceil((hint.stringValue as NSString).size(withAttributes:[.font:font(11,mono:true)]).width) + 2
+        hint.frame = NSRect(x: inset, y: inset + 7 * scale, width: min(hintWidth,max(0,right - inset)), height: 18 * scale)
+        if let comment = actionButtons.first(where: { $0.title == "Reply without deciding" }) {
+            let commentWidth = ceil((comment.title as NSString).size(withAttributes:[.font:font(13,weight:.medium)]).width) + 16
+            comment.frame = NSRect(x: hint.frame.maxX + 12,y:inset,width:commentWidth,height:32 * scale)
+        }
         message.nextKeyView = radios.first ?? (replyKind.isEmpty ? actionButtons.first : composer)
         for radio in radios { radio.nextKeyView = composer }
         composer.nextKeyView = actionButtons.first
@@ -547,7 +560,10 @@ final class HumanPromptWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
          "replyVisibleHeight": replyScroll.visibleRect.height, "replyHeight": replyScroll.bounds.height,
          "replyText": composer.string,
          "choiceGroupRole": choiceGroup.accessibilityRole()?.rawValue ?? "", "headerRole": name.accessibilityRole()?.rawValue ?? "",
-         "actionsFit": actionButtons.allSatisfy { root.bounds.contains($0.frame) },
+         "actionsFit": actionButtons.enumerated().allSatisfy { index,button in
+             root.bounds.contains(button.frame) && !hint.frame.intersects(button.frame) &&
+             !actionButtons.prefix(index).contains(where: { $0.frame.intersects(button.frame) })
+         },
          "kindFits": root.bounds.contains(kind.frame) && kind.frame.width >= (kind.stringValue as NSString).size(withAttributes:[.font:kind.font!]).width,
          "choiceLabelsFit": radios.allSatisfy { radio in
              let required = (radio.title as NSString).boundingRect(with: NSSize(width:radio.bounds.width - 40 * scale,height:CGFloat.greatestFiniteMagnitude),
@@ -557,6 +573,7 @@ final class HumanPromptWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
          "endBottomInset": message.visibleRect.maxY - messageEndRect().maxY,
          "moreBelow": !moreFade.isHidden, "firstChoiceVisible": radios.first.map { $0.visibleRect.height >= $0.bounds.height - 1 } ?? true,
          "overflowLaneX": overflowScroll.frame.maxX - 2, "overflowLaneY": root.bounds.height - overflowScroll.frame.midY,
+         "commentPaddingX": (actionButtons.first?.frame.minX ?? 0) + 2, "commentPaddingY": root.bounds.height - (actionButtons.first?.frame.midY ?? 0),
          "fontFamily": font(14).familyName ?? "unknown",
          "height": panel.contentView!.bounds.height, "bodyHeight": message.frame.height, "documentHeight": document.frame.height, "renderedLength": message.string.utf8.count, "defaultApproval": replyKind == "request" && panel.defaultButtonCell != nil]
     }
