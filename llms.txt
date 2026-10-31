@@ -1,10 +1,10 @@
 # Dibs
 
-> Coordination and situational awareness for fleets of AI agents working on one
-> project. Agents register an agent, declare what they are pursuing, and are told
+> Coordination and situational awareness for fleets of AI agents across
+> projects. Agents register an agent, declare what they are pursuing, and are told
 > if another agent is already pursuing it. They exchange typed mail and place
-> advisory claims. Dibs reports and never acts: no agent can drive another
-> through it. Local-first, MCP-native, two static binaries, no database.
+> advisory claims. Agents decide what to do next; approved typed requests
+> perform their recorded effects. Local-first, MCP-native, no database.
 
 Dibs solves *redundant effort* (two agents chasing one goal) not file
 conflicts, which version control already handles. It also detects when a spawned
@@ -45,7 +45,19 @@ code arrives.
 
 ## Using it
 
-- [README.md](README.md): What it is, install, and the whole feature surface.
+- [README.md](README.md): What it is, installation essentials and first use.
+- [Install](docs/INSTALL.md): Services, upgrades, downloads and verification.
+- [Other machines](docs/REMOTE.md): Joining a board and ChatGPT conversations.
+- [Agent use](docs/USAGE.md): Connecting, coordinating and moving files.
+- [Features](docs/OVERVIEW.md): The board, mail and human questions.
+- [Matching](docs/MATCHING.md): Duplicate work, calibration and optional models.
+- [Stalls](docs/STALLS.md): Detecting a subagent that stopped working.
+- [Configuration](docs/CONFIGURATION.md): Settings, examples and the full reference.
+- [Disk layout](docs/DISK-LAYOUT.md): Where the daemon writes its files.
+- [Protocol](docs/PROTOCOL.md): MCP versions, dated harness survey and cloud workers.
+- [Platforms](docs/PLATFORMS.md): What has been built, run and verified.
+- [Design](docs/DESIGN.md): The state machine and ledger.
+- [Engineering](docs/ENGINEERING.md): Gates, reproducible builds and contribution.
 - [SECURITY.md](SECURITY.md): The trust boundary is the machine. Read before
   pointing agents you do not trust at one daemon.
 - [SUPPORT.md](SUPPORT.md): Where to ask what.

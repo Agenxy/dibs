@@ -395,7 +395,8 @@ More in [SUPPORT.md](../SUPPORT.md).
 
 ## Where to go next
 
-- [README](../README.md), the full feature set, configuration, protocol support
+- [Features](OVERVIEW.md), [configuration](CONFIGURATION.md) and
+  [protocol support](PROTOCOL.md)
 - [SKILLS.md](../SKILLS.md), what an agent should know that the tool schemas do
   not say. Served to agents over MCP as `dibs://skills`; worth reading yourself
   to understand what your agents are being told

@@ -56,7 +56,7 @@ body:
       label: Platform
       description: >
         Dibs is verified on macOS. Linux reports are welcome and useful: they
-        are not a waste of anyone's time, but see README §Platform for what is
+        are not a waste of anyone's time, but see docs/PLATFORMS.md for what is
         known to be unverified there.
       options:
         - macOS (Apple Silicon)

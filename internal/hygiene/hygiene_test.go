@@ -1494,7 +1494,7 @@ func TestEveryToolBinaryIsIgnored(t *testing.T) {
 // internal/notify resolves Dibs.app/Contents/MacOS/dibs-notify beside the
 // executable, and Reach reports notifications unavailable when it is absent.
 // Only the Taskfile built it, so source builds had the branded, actionable
-// notification the README lists as a required artifact and every published
+// notification docs/INSTALL.md lists as a required artifact and every published
 // archive and brew install did not. CI therefore exercised a different
 // installation surface from the one people download.
 //

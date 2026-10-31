@@ -40,6 +40,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The README now covers installation, connecting agents and first use. Detailed
+  guides live under `docs/`; existing section anchors still lead to those guides.
+
 - After upgrading, restart every harness and run `dibs doctor`; every expected
   bridge must use local IPC or verified HTTPS before a shared-host rollout.
   Serving startup can tighten an owned directory such as `0755` to `0700`,

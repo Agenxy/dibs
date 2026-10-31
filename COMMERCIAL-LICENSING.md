@@ -10,5 +10,5 @@ and third-party material retain their original licences and attributions in
 Contact Agenxy to agree the scope and terms before using a commercial licence.
 
 Releases up to and including v0.0.13 remain available under Apache-2.0.
-GPL-3.0-or-later applies from the next release; historical permissions are not
+GPL-3.0-or-later applies since v0.0.14; historical permissions are not
 withdrawn by this change.
