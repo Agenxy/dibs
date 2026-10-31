@@ -236,11 +236,10 @@ var toolDefs = func() []map[string]any {
 			}, "token", "agent", "into"),
 		},
 		{
-			"name": "settings", "description": "Read current board settings. Admins " +
-				"may change any listed key; coordinators may change only the two " +
-				"app-restart controls. No arguments lists values and setters. Changes " +
-				"take effect immediately; restart controls are ledgered, while other " +
-				"overrides are saved beside dibs.toml.",
+			"name": "settings", "description": "List values/setters with a token. " +
+				"File overrides: admin; restart controls: coordinator/admin. Any agent may enable " +
+				"human.confirm_privileged_desktop; only human may disable (default off). " +
+				"Changes apply now; restart/approval settings are ledgered, other overrides saved beside dibs.toml.",
 			"inputSchema": obj(map[string]any{
 				"token":   tok,
 				"setting": str("the setting to change, as listed. Omit to read them all"),

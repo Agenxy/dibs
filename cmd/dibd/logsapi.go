@@ -33,6 +33,7 @@ func registerLogsAPI(mux *http.ServeMux, ring *logs.Ring) {
 // admin password, which is precisely why an agent can never promote itself or
 // another: no agent token reaches this handler.
 func registerAdminAPI(mux *http.ServeMux, eng *engine.Engine) {
+	registerDesktopApprovalAPI(mux, eng)
 	mux.HandleFunc("POST /api/admin/role", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Agent string `json:"agent"`

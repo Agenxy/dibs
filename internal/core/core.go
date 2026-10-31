@@ -880,6 +880,8 @@ type LegacyAckSnapshot struct {
 
 // State is the entire replayable truth. Only Apply mutates it.
 type State struct {
+	DesktopApproval DesktopApprovalSetting `json:"desktop_approval,omitzero"`
+
 	RecoveredAddresses map[string]RecoveredAddress `json:"recovered_addresses,omitempty"`
 
 	Traffic         *TrafficHistory `json:"traffic,omitempty"`

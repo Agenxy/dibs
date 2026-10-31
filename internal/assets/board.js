@@ -547,6 +547,8 @@ const Board = (() => {
 
   function eventHTML(e) {
     const kind = String(e.type || "")
+    const label = kind === "human.setting_changed" && e.data?.setting === "human.confirm_privileged_desktop"
+      ? `Touch ID for privileged desktop approvals turned ${e.data.enabled ? "on" : "off"}` : kind
     const cls = kind.startsWith("message") ? "msg-ev" : kind.startsWith("claim") ? "claim-ev" : ""
     const when = e.ts
       ? new Date(e.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
@@ -556,7 +558,7 @@ const Board = (() => {
         <span class="e-serial">#${esc(e.serial ?? "")}</span>
         <span class="e-when">${esc(when)}</span>
         <span class="e-agent">${esc(e.agent_name || e.agent || ", ")}${e.to ? ` <i>▶</i> ${esc(e.to_name || e.to)}` : ""}</span>
-        <span class="e-type">${esc(kind)}</span>
+        <span class="e-type">${esc(label)}</span>
       </div>`
   }
 

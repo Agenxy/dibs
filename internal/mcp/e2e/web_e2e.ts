@@ -123,10 +123,10 @@ const boardOf = async (token: string) => {
  * 20s is far too long for an event that should be instant: a number that large
  * timing out is evidence of a fault, not of a busy machine.
  */
-async function expectEvent(token: string, type: string, match: (e: any) => boolean, budgetMs = 20000) {
+async function expectEvent(token: string, type: string, match: (e: any) => boolean, budgetMs = 20000, sinceSerial = 0) {
   const deadline = Date.now() + budgetMs
   while (Date.now() < deadline) {
-    const evs = await tool("events_since", { token, since_serial: 0 })
+    const evs = await tool("events_since", { token, since_serial: sinceSerial })
     if ((evs.events ?? []).some((e: any) => e.type === type && match(e))) return
     await Bun.sleep(200)
   }
@@ -303,6 +303,12 @@ try {
   })
   check("a replayed cookie cannot grant a role",
     roleReplay.status === 401 || roleReplay.status === 403, String(roleReplay.status))
+  const settingReplay = await fetch(`http://${ADDR}/api/admin/desktop-approvals`, {
+    method: "POST", headers: { ...forged, "content-type": "application/json" },
+    body: JSON.stringify({ enabled: true }),
+  })
+  check("a replayed cookie cannot change desktop approval confirmation",
+    settingReplay.status === 401 || settingReplay.status === 403, String(settingReplay.status))
   const withKey = await fetch(`http://${ADDR}/api/me`, { headers: keyed })
   check("the board's own page still reads /api/me", withKey.status === 200,
     String(withKey.status))
@@ -440,6 +446,7 @@ try {
     const nokey = await bare.newPage()
     await nokey.goto(`http://${ADDR}/`, { waitUntil: "load" })
     await nokey.locator(".entry").first().waitFor({ timeout: 10000 })
+    check("an unkeyed board cannot expose the human setting control", await nokey.locator("#human-settings").isHidden())
     await nokey.locator("#tab-mail").click()
     let pane = ""
     for (let i = 0; i < 40 && !/Mail unavailable/.test(pane); i++) {
@@ -1430,6 +1437,54 @@ try {
     check("survivor actually reads older inherited mail", inherited.message?.body === "private merge fixture", JSON.stringify(inherited))
     await page.getByText(`merged into ${survivor.agent_id}`, { exact: false }).first().waitFor()
   }
+
+  const approvalCLI = (args: string[], token = "") => {
+    const result = Bun.spawnSync({
+      cmd: [agents, "desktop-approvals", ...args],
+      stdin: new TextEncoder().encode(`${PASSWORD}\n`),
+      env: { ...process.env, DIBS_DIR: dir, DIBS_ADDR: ADDR, DIBS_ADMIN: "1", DIBS_TOKEN: token },
+    })
+    return { status: result.exitCode, output: result.stdout.toString(), error: result.stderr.toString() }
+  }
+  const defaultApproval = approvalCLI(["--json"])
+  check("desktop approval CLI reads the default off setting through human authentication",
+    defaultApproval.status === 0 && JSON.parse(defaultApproval.output).value === "false", JSON.stringify(defaultApproval))
+  const memberEnable = approvalCLI(["on", "--json"], a.token)
+  check("authenticated member can enable desktop confirmation through the CLI",
+    memberEnable.status === 0 && JSON.parse(memberEnable.output).value === "true", JSON.stringify(memberEnable))
+  const memberDisable = approvalCLI(["--json", "off"], a.token)
+  check("DIBS_ADMIN does not let an agent CLI disable human confirmation",
+    memberDisable.status !== 0 && /E_HUMAN_SETTING/.test(memberDisable.output + memberDisable.error), JSON.stringify(memberDisable))
+  const humanDisable = approvalCLI(["off"])
+  check("human CLI can disable confirmation using its existing password route",
+    humanDisable.status === 0 && /Touch ID: off/.test(humanDisable.output), JSON.stringify(humanDisable))
+
+  await page.reload({ waitUntil: "load" })
+  await page.locator("#human-settings:not([hidden])").waitFor()
+  await page.locator("#human-settings summary").click()
+  const confirmation = page.locator("#desktop-approvals")
+  check("unlocked board exposes the single default off approval setting", !(await confirmation.isChecked()))
+  const beforeEnable = (await publicBoard()).serial
+  await confirmation.check()
+  await expectEvent(a.token, "human.setting_changed", (e) => e.serial > beforeEnable && e.data?.enabled === true, 20000, beforeEnable)
+  check("board setting enables the real daemon preference", (await publicBoard()).desktop_approval?.enabled === true)
+  await page.locator("#tab-activity").click()
+  await page.getByText("Touch ID for privileged desktop approvals turned on", { exact: true }).first().waitFor()
+  const changedBy = (await publicBoard()).desktop_approval.by
+  const settingEvent = page.locator("#pane-activity .event").filter({ hasText: "Touch ID for privileged desktop approvals turned on" }).first()
+  check("board activity names the setting change and actor", !!(await settingEvent.locator(".e-agent").innerText()).trim())
+  const beforeDisable = (await publicBoard()).serial
+  await confirmation.uncheck()
+  await expectEvent(a.token, "human.setting_changed", (e) => e.serial > beforeDisable && e.data?.enabled === false, 20000, beforeDisable)
+  await page.getByText("Touch ID for privileged desktop approvals turned off", { exact: true }).first().waitFor()
+  check("board setting disables the real preference and logs that change", (await publicBoard()).desktop_approval?.enabled === false)
+  await page.reload({ waitUntil: "load" })
+  await page.locator("#human-settings:not([hidden])").waitFor()
+  const reloadedApproval = await page.locator("#desktop-approval-state").textContent() || ""
+  check("board reload retains the human preference provenance", reloadedApproval.includes(`changed by ${changedBy}`),
+    JSON.stringify({ changedBy, text: reloadedApproval, stored: (await publicBoard()).desktop_approval }))
+  await page.locator("#tab-board").click()
+
 
   check("no uncaught errors in the page", realErrors().length === 0, realErrors().slice(0, 2).join(" | "))
   // And the injection really did happen: otherwise the exclusion above is

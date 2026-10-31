@@ -7,6 +7,18 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Optional Touch ID confirmation for privileged desktop approvals, default
+  off, controlled by Settings on the unlocked web board or
+  `dibs desktop-approvals [on|off]`. Any authenticated agent may enable it;
+  only the human may disable it. The preference, actor and time survive
+  replay and appear in activity. Both live and reopened native approvals
+  check the exact request effect before committing; canceled, busy or
+  unavailable confirmation leaves it pending with a board fallback.
+  Ordinary replies and existing board/remote authentication are unchanged.
+  Snapshots carrying this policy or mailbox-recovery state now declare
+  reader features in version 2, so older readers refuse instead of silently
+  dropping them. Boards without those features still write version 1.
+
 - Lost-credential recovery can be requested by a bound survivor and approved by
   a distinct coordinator for a matching dormant unbound seat. The preview says
   which future mail will route to the survivor. Old declarations are retained as

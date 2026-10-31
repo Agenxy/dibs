@@ -104,6 +104,13 @@
     <section class="view hide" id="pane-activity" role="tabpanel" aria-labelledby="tab-activity" tabindex="0"></section>
   </main>
 
+  <details class="human-settings" id="human-settings" hidden>
+    <summary>Settings</summary>
+    <label><input type="checkbox" id="desktop-approvals"> Confirm privileged desktop approvals with Touch ID</label>
+    <p class="setting-help">Applies to desktop approvals that grant a role, permission or mailbox access. Ordinary questions and requests are unaffected.</p>
+    <p id="desktop-approval-state" role="status" aria-live="polite"></p>
+  </details>
+
   <footer class="foot">
     <span id="foot-node">, </span>
     <span class="dot">·</span>
@@ -154,6 +161,46 @@ const boardFetch = (url, opts = {}) => {
   if (key) headers.set("X-Dibs-Board-Key", key)
   return fetch(url, { ...opts, headers })
 }
+
+// This preference is human-authenticated by the same page-key gate as mail
+// and actions. The section is shown only after that route accepts this page.
+let desktopApprovalRevision = -1
+function showDesktopApproval(setting, revision) {
+  if (!setting || Number(revision) < desktopApprovalRevision) return
+  desktopApprovalRevision = Number(revision)
+  document.getElementById("desktop-approvals").checked = !!setting.enabled
+  let text = setting.enabled ? "On" : "Off (default)"
+  if (setting.by) text += ` · changed by ${setting.by} · ${new Date(setting.at).toLocaleString()}`
+  document.getElementById("desktop-approval-state").textContent = text
+}
+async function desktopApprovalRequest(payload) {
+  const response = await boardFetch("/api/admin/desktop-approvals", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload),
+  })
+  const result = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) document.getElementById("human-settings").hidden = true
+    throw new Error(result.error || "Open a fresh board link with dibs web.")
+  }
+  showDesktopApproval({enabled: result.value === "true", by: result.by, at: result.at}, result.serial)
+  return result
+}
+async function loadDesktopApproval() {
+  try {
+    await desktopApprovalRequest({})
+    document.getElementById("human-settings").hidden = false
+  } catch { /* An unkeyed page must not expose an acting control. */ }
+}
+document.getElementById("desktop-approvals").addEventListener("change", async (event) => {
+  const control = event.target
+  control.disabled = true
+  control.setAttribute("aria-busy", "true")
+  try { await desktopApprovalRequest({enabled: control.checked}) }
+  catch (error) {
+    flash(error.message, true)
+    await loadDesktopApproval()
+  } finally { control.disabled = false; control.removeAttribute("aria-busy") }
+})
 
 // ── the web board's transport ────────────────────────────────
 // The panel receives its data as `structuredContent` over postMessage from an
@@ -391,6 +438,7 @@ function draw() { keepingDrafts(drawPanes) }
 function drawPanes() {
   drawSummary()
   const b = state.board
+  showDesktopApproval(b?.desktop_approval, b?.serial)
   const advice = document.getElementById("notification-advice")
   const adviceText = b?.notification_advice || ""
   if (advice.textContent !== adviceText) advice.textContent = adviceText
@@ -856,6 +904,7 @@ tab("board")
 // route. That order is deliberate: the document itself must not carry mail,
 // because a session cookie alone can fetch it.
 refreshMail()
+void loadDesktopApproval()
 Promise.all([whoAmI(), whyEmpty()]).then(() => {
   // "observing" until the operator does something. Watching is a legitimate
   // posture, not a degraded one, so it is not called "read-only".

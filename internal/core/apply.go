@@ -93,15 +93,16 @@ const (
 	// data directory holds.
 	OpClaimCoordinator = "claim_coordinator"
 	// OpVouchChild is how a parent proves it really is spawning a subagent.
-	OpVouchChild         = "vouch_child"
-	OpForceRelease       = "force_release"
-	OpSetRestartSetting  = "set_restart_setting"
-	OpAppRestartObserved = "app_restart_observed"
-	OpReadAppRestart     = "read_app_restart"
-	OpContactEscalate    = "contact_escalated"
-	OpContactNotified    = "contact_notified"
-	OpContactResolved    = "contact_resolved"
-	OpStallNotified      = "stall_notified"
+	OpVouchChild                = "vouch_child"
+	OpForceRelease              = "force_release"
+	OpSetRestartSetting         = "set_restart_setting"
+	OpSetDesktopApprovalSetting = "set_desktop_approval_setting"
+	OpAppRestartObserved        = "app_restart_observed"
+	OpReadAppRestart            = "read_app_restart"
+	OpContactEscalate           = "contact_escalated"
+	OpContactNotified           = "contact_notified"
+	OpContactResolved           = "contact_resolved"
+	OpStallNotified             = "stall_notified"
 )
 
 // Result is the caller-facing op result.
@@ -216,6 +217,8 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		res, evs, err = s.applyWake(l)
 	case OpSetRestartSetting:
 		res, evs, err = s.applyRestartSetting(l, op, now)
+	case OpSetDesktopApprovalSetting:
+		res, evs = s.applyDesktopApprovalSetting(l, op, now)
 	case OpReadAppRestart:
 		res, evs = s.applyReadAppRestart(l)
 	case OpRelocate:

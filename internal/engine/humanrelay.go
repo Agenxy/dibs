@@ -30,27 +30,31 @@ import (
 
 // HumanNotice is one message for the person, as a relay shows it.
 type HumanNotice struct {
-	Serial    uint64               `json:"serial"`
-	Type      string               `json:"type"`
-	Priority  string               `json:"priority,omitempty"`
-	From      string               `json:"from"`
-	FromName  string               `json:"from_name,omitempty"`
-	Who       string               `json:"who,omitempty"`
-	Body      string               `json:"body"`
-	Choices   []string             `json:"choices,omitempty"`
-	Grant     string               `json:"grant,omitempty"`
-	Adopt     string               `json:"adopt,omitempty"`
-	Merge     *core.MergeRequest   `json:"merge,omitempty"`
-	AdoptName string               `json:"adopt_name,omitempty"`
-	Node      string               `json:"node,omitempty"`
-	Cleanup   *NotificationCleanup `json:"notification_cleanup,omitempty"`
-	Contact   *humanask.Contact    `json:"contact,omitempty"`
-	Deadline  time.Time            `json:"deadline,omitzero"`
+	Serial    uint64                `json:"serial"`
+	Type      string                `json:"type"`
+	Priority  string                `json:"priority,omitempty"`
+	From      string                `json:"from"`
+	FromName  string                `json:"from_name,omitempty"`
+	Who       string                `json:"who,omitempty"`
+	Body      string                `json:"body"`
+	Choices   []string              `json:"choices,omitempty"`
+	Grant     string                `json:"grant,omitempty"`
+	Adopt     string                `json:"adopt,omitempty"`
+	Merge     *core.MergeRequest    `json:"merge,omitempty"`
+	Recovery  *core.RecoveryRequest `json:"recovery,omitempty"`
+	AdoptName string                `json:"adopt_name,omitempty"`
+	Node      string                `json:"node,omitempty"`
+	Cleanup   *NotificationCleanup  `json:"notification_cleanup,omitempty"`
+	Contact   *humanask.Contact     `json:"contact,omitempty"`
+	Deadline  time.Time             `json:"deadline,omitzero"`
 }
 
 // Privileged is whether approving this grants something: a role, a
 // permission, or another agent's mail. Approving one needs a fresh signature.
-func (n HumanNotice) Privileged() bool { return n.Grant != "" || n.Adopt != "" || n.Merge != nil }
+func (n HumanNotice) Privileged() bool {
+	m := core.Message{Grant: n.Grant, Adopt: n.Adopt, Merge: n.Merge, Recovery: n.Recovery}
+	return m.HasApprovalEffect()
+}
 
 // relayQueue bounds what one relay may fall behind by. A relay that cannot
 // keep up loses notices, never the mail: everything is still on the board.
@@ -170,6 +174,13 @@ func (e *Engine) noticeOf(m *core.Message) HumanNotice {
 		n.Body = fmt.Sprintf("Approve merges %s into %s, moving its mailbox, claims, memberships and nonce mappings. "+
 			"The source closes; the survivor keeps its identity and role; the fork's credential will open %s.\n\n%s",
 			m.Merge.From, m.Merge.Into, m.Merge.Into, m.Body)
+	}
+	if m.Recovery != nil {
+		effect := *m.Recovery
+		n.Recovery = &effect
+		n.Body = fmt.Sprintf("Approve recovers %s into %s, moving its future mail "+
+			"and retaining its declarations as inactive history.\n\n%s",
+			m.Recovery.From, m.Recovery.Into, m.Body)
 	}
 	if m.Adopt != "" {
 		n.AdoptName = e.agentName(m.Adopt)

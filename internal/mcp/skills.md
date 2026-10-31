@@ -453,6 +453,18 @@ receiving native peer turns, another watcher adds no delivery guarantee.
 
 ## Mail
 
+- **The human can require Touch ID for privileged desktop approvals.**
+  `human.confirm_privileged_desktop` defaults off. Any authenticated agent may
+  enable it with `settings(token, setting: "human.confirm_privileged_desktop",
+  value: "true")` or `dibs desktop-approvals on` with its own `DIBS_TOKEN`.
+  Only the human may disable it, through Settings on unlocked `dibs web`, the
+  human identity or the human-authenticated CLI. An admin agent cannot turn it
+  off. When on, live and reopened native approvals that grant roles,
+  permissions or mailbox access require daemon-side confirmation of the exact
+  effect. Canceled, busy or unavailable confirmation leaves the request
+  pending with a board route. Ordinary questions/requests, denials and
+  comments are unchanged. Never turn a refusal into an automatic retry.
+
 - **A plain process can post completion mail.** Use `dibs register --name
   labs-broker --json` once, with `DIBS_ADDR` and that process's own `DIBS_INVITE`
   for a public board (or the local secret for a local board). Save the returned

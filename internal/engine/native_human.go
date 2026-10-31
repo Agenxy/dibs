@@ -55,7 +55,11 @@ func (e *Engine) NativeHumanMessage(ctx context.Context, node string, serial uin
 func (e *Engine) AnswerNativeHuman(
 	ctx context.Context, node string, serial uint64, disposition, body, commentID string,
 ) error {
-	if _, err := e.NativeHumanMessage(ctx, node, serial); err != nil {
+	plan, err := e.planDesktopApproval(ctx, node, serial, disposition, body, commentID)
+	if err != nil {
+		return err
+	}
+	if err := e.confirmDesktopApproval(ctx, &plan); err != nil {
 		return err
 	}
 	_, token, err := e.HumanAgent(ctx)
@@ -70,6 +74,9 @@ func (e *Engine) AnswerNativeHuman(
 		}
 		if !view.Pending {
 			return core.Result{"error": nativeHumanError("E_ALREADY_ANSWERED", "message is "+view.State)}
+		}
+		if fault := e.recheckDesktopApprovalLocked(plan, node, serial, disposition); fault != nil {
+			return core.Result{"error": fault}
 		}
 		op, fault := nativeHumanResponseOp(view.Notice, token, serial, disposition, body, commentID)
 		if fault != nil {
