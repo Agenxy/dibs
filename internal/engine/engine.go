@@ -36,8 +36,10 @@ type Engine struct {
 	inviteClosed map[string]uint64 // derived from ledgered closes, rebuilt before ring trimming
 	// Must stay unbuffered: accepted registration holds belong to the writer.
 	ops              chan request
-	done             chan struct{} // immutable after New; closes when Run exits
-	reconnectPending atomic.Int64  // derived observation diagnostic; never replayable state
+	done             chan struct{}                // immutable after New; closes when Run exits
+	reconnectPending atomic.Int64                 // derived observation diagnostic; never replayable state
+	toolCatalogs     map[string]BridgeToolCatalog // writer-owned, bounded, derived
+	toolCatalogOrder uint64
 	subs             chan subReq
 	unsubs           chan chan core.Event
 	declarationTimes map[string]map[string]declarationTime // bounded derived display timestamps

@@ -117,6 +117,7 @@ func enrichBridgeProcessWithCompletion(line []byte, omitted chan<- struct{}) []b
 	}
 	meta[mcp.BridgePIDMetaKey] = os.Getpid()
 	meta[mcp.BridgeStartMetaKey] = started
+	meta[mcp.BridgeToolsHashMetaKey], meta[mcp.BridgeToolsRevisionMetaKey] = catalogServed()
 	// A tunnel's host must be stated on discovery too: loopback alone does
 	// not establish that the PID is on the daemon's computer.
 	if hid := hostID(); hid != "" {
@@ -128,7 +129,7 @@ func enrichBridgeProcessWithCompletion(line []byte, omitted chan<- struct{}) []b
 	return line
 }
 
-// One session-owned listener, armed only by a request that omitted the stamp.
+// One session-owned listener, armed by an omitted stamp or a served catalog.
 // This metadata-only notification is additive: an older daemon ignores its
 // unknown method, while an older bridge still uses ordinary request metadata.
 // It names no agent or session and cannot bind either. The daemon verifies

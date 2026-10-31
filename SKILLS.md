@@ -701,6 +701,20 @@ row; adoption remains one-time. If registering a new recovering identity,
 `recover_from` returns this pending offer while preserving the actual returned
 nonce/token; it never reattaches you by public identity claims.
 
+If your existing chat cannot see `recover_agent`, ask the coordinator to preview
+`merge_agents(agent:"<lost id>", into:"<your id>", dry_run:true)`. When ordinary
+coordinator merge is ineligible but bounded recovery is safe, the preview says
+`mode:"recovery_request"`, `approval_by:<your id>` and supplies a `recovery:`
+fence. The coordinator commits that exact fence to send **you** the typed
+proposal. Read it and use your existing `respond(..., disposition:"approve")`
+to consent. The coordinator cannot consent for you; neither request direction
+moves anything before the other hand approves. The same safety checks run again.
+
+`dibs doctor` reports live local bridge processes whose last served tool catalog
+differs from the daemon, or is unknown. Serving a list is not proof that the
+client adopted it. Use the client's own refresh if the person chooses one, or a
+new chat for that agent; Dibs never silently reloads every chat or edits config.
+
 For a permanent duplicate repair, preview
 `merge_agents(agent:"<fork>", into:"<survivor>", dry_run:true)`, inspect the
 metadata counts and direction, then repeat with its `fence`. A coordinator can

@@ -223,10 +223,9 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "merge_agents", "description": "Preview with dry_run:true, then commit with its fence. " +
-				"Coordinator: matching name/host/harness/surface/kind, unbound non-live undeclared fork, " +
-				"newer third-party survivor. " +
-				"Human/admin may override those matches, never a live source or claim conflict. " +
-				"Refusal offers a human request whose Approve executes.",
+				"Coordinator: idle matching fork merges; an eligible lost seat instead offers a recovery request " +
+				"for survivor respond(approve). Human/admin may override matches, never live source or claim conflict. " +
+				"Read dibs://skills.",
 			"inputSchema": obj(map[string]any{
 				"token":   tok,
 				"agent":   str("the forked agent to absorb. It must not be active"),

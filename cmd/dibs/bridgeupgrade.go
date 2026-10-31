@@ -91,10 +91,13 @@ type bridgeState struct {
 	// New images refresh it using the streams' carried Refresh capability;
 	// an acknowledged message must not reappear from an upgrade handoff.
 	WakeNotice string `json:"wake_notice,omitempty"`
-	// ToolsHash is the tool list the previous image served (mcp.ToolsFingerprint).
-	// The next image compares it with its own and tells the harness when they
-	// differ, so a session started on an older build learns new arguments.
+	// ToolsHash is the previous binary's catalog fingerprint. The next image
+	// uses it to announce changes; that notification cannot prove host uptake.
 	ToolsHash string `json:"tools_hash,omitempty"`
+	// Separate from ToolsHash: legacy images carried their binary fingerprint,
+	// which does not prove that the harness ever requested that image's tools.
+	ServedToolsHash     string `json:"served_tools_hash,omitempty"`
+	ServedToolsRevision uint64 `json:"served_tools_revision,omitempty"`
 	// WakeStreams is every agent this bridge watches for, with its
 	// credential and cursor: a bridge serves every agent that registers
 	// through it, and the single WakeToken above carried one. Found by the
@@ -330,6 +333,7 @@ func restoreCarried(ctx context.Context, client *http.Client, url, secret string
 		return
 	}
 	lastClientInfo, lastWantsUI = s.ClientInfo, s.WantsUI
+	restoreCatalog(s.ServedToolsHash, s.ServedToolsRevision)
 	announceToolsChanged(out, s.ToolsHash)
 	restoreShipments(ctx, client, url, secret, s.Shipments, timing)
 	if s.Thread != "" {

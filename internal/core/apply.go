@@ -334,7 +334,7 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 	}
 	if op.Kind == OpSendMessage && op.Recovery != nil {
 		if m := s.Messages[s.Serial+1]; m != nil && m.Recovery != nil {
-			m.Recovery.Fence = s.MergeFence(m.Recovery.From, m.Recovery.Into, m.Serial)
+			m.Recovery.Fence = s.RecoveryFence(m.Recovery, m.From, m.Serial)
 		}
 	}
 	if op.Kind == OpSendMessage && op.Merge != nil {
