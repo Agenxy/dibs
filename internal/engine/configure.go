@@ -155,8 +155,10 @@ func (e *Engine) ApplySetting(key, value string) {
 // look at this file, so it is the grant a human makes deliberately.
 func (e *Engine) Configure(ctx context.Context, token, key, value string) (core.Result, error) {
 	if key == core.DesktopApprovalSettingKey && value != "" {
-		return e.Do(ctx, &core.Op{Kind: core.OpSetDesktopApprovalSetting, Token: token,
-			SettingKey: key, SettingValue: value})
+		return e.Do(ctx, &core.Op{
+			Kind: core.OpSetDesktopApprovalSetting, Token: token,
+			SettingKey: key, SettingValue: value,
+		})
 	}
 	return e.configureOverride(ctx, token, key, value)
 }
@@ -260,9 +262,11 @@ func (e *Engine) listSettings() []map[string]any {
 		out = append(out, row)
 	}
 	approval := e.state.DesktopApproval
-	out = append(out, map[string]any{"setting": core.DesktopApprovalSettingKey,
-		"value": strconv.FormatBool(approval.Enabled), "set_by": approval.By, "set_at": approval.At,
-		"means": "confirm privileged desktop approvals with Touch ID; any agent may enable, only the human may disable"})
+	out = append(out, map[string]any{
+		"setting": core.DesktopApprovalSettingKey,
+		"value":   strconv.FormatBool(approval.Enabled), "set_by": approval.By, "set_at": approval.At,
+		"means": "confirm privileged desktop approvals with Touch ID; any agent may enable, only the human may disable",
+	})
 	for _, item := range []struct {
 		key, meaning string
 		fallback     time.Duration

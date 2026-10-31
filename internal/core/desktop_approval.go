@@ -47,6 +47,8 @@ func (s *State) applyDesktopApprovalSetting(l *Agent, op *Op, now time.Time) (Re
 	s.DesktopApproval = DesktopApprovalSetting{Enabled: enabled, By: l.ID, At: now}
 	result["changed"], result["by"] = true, l.ID
 	result["at"], result["serial"] = now, s.Serial+1
-	return result, []Event{{Type: "human.setting_changed", Agent: l.ID,
-		Data: map[string]any{"setting": DesktopApprovalSettingKey, "enabled": enabled}}}
+	return result, []Event{{
+		Type: "human.setting_changed", Agent: l.ID,
+		Data: map[string]any{"setting": DesktopApprovalSettingKey, "enabled": enabled},
+	}}
 }
