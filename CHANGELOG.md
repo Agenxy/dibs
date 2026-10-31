@@ -40,6 +40,21 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The board fits inside a bounded frame instead of growing with the fleet.
+  The MCP app uses the host's reported height (70%, capped at 560px, with a
+  560px fallback); the standalone board uses its viewport with the same cap.
+  Counts and search stay visible. The MCP viewer's own compact row stays
+  pinned above the scroll, without a duplicate in the roster. Unanswered mail
+  and out-of-touch agents come first; Active shows eight recent rows with
+  Show all, and Dormant starts collapsed. One search covers all four tabs,
+  including former names, work and collapsed agents. Repeated local host
+  badges are omitted using machine identity, retaining remote/unknown ones.
+  All sections use compact single-line agent rows, with full details on expand.
+  Search takes focus only on an explicit click or `/` inside the focused app;
+  incoming board delivery leaves the chat composer alone.
+  Both views use the shared warm neutral identity and full licensed Atkinson
+  faces, while keeping Dibs' blue/green signals and AA text contrast.
+
 - After upgrading, restart every harness and run `dibs doctor`; every expected
   bridge must use local IPC or verified HTTPS before a shared-host rollout.
   Serving startup can tighten an owned directory such as `0755` to `0700`,

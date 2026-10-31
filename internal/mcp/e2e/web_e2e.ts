@@ -26,6 +26,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { daemonReady } from "./ready"
+import { checkCompactWeb } from "./compact_web"
 
 const ADDR = `127.0.0.1:${process.env.PORT ?? 4932}`
 const PASSWORD = "e2e-scratch-password"
@@ -381,10 +382,10 @@ try {
   }
 
   // The shared font contract, from the web side.
-  check("fonts are inlined", html.includes("data:font/woff2;base64,"))
+  check("fonts are inlined", html.includes("data:font/ttf;base64,"))
   check("no external font origin", !html.includes("https://fonts."))
   check("no dangling reference to the removed serif", !html.includes("Newsreader"))
-  check("names only the vendored families", html.includes("Geist"))
+  check("names only the vendored families", html.includes("Atkinson Hyperlegible Next") && html.includes("Atkinson Hyperlegible Mono"))
 
   // Without the cookie it must not serve the board.
   const bare = await fetch(`http://${ADDR}/`)
@@ -429,6 +430,8 @@ try {
   check("the board renders agents in a real browser",
     rendered.includes("builder") && rendered.includes("checker"), rendered.join(","))
   check("it uses the shared roster grouping", (await page.locator(".band").count()) >= 1)
+  await checkCompactWeb(page, check)
+  if (process.env.DIBS_COMPACT_ONLY === "1") process.exit(failures ? 1 : 0)
   // A MAILBOX THAT CANNOT BE READ SAYS SO. A valid session with no page key
   // (a reload after localStorage was unavailable) gets 401 from the mail
   // route while the document and the stream load fine, and the pane painted
@@ -468,28 +471,33 @@ try {
   // not a promise anybody made. Painting it and reading the pixel back also
   // survives the browser clipping a wide-gamut colour into sRGB, which a string
   // comparison cannot see at all.
-  const painted = async () => page.evaluate(() => {
+  const painted = async (scheme?: "light" | "dark") => page.evaluate((scheme) => {
     const c = document.createElement("canvas")
     c.width = c.height = 1
     const ctx = c.getContext("2d", { willReadFrequently: true })!
-    ctx.fillStyle = getComputedStyle(document.body).backgroundColor
-    ctx.fillRect(0, 0, 1, 1)
-    return Array.from(ctx.getImageData(0, 0, 1, 1).data).slice(0, 3)
-  })
+    const pixel = (colour: string) => { ctx.fillStyle = colour; ctx.fillRect(0, 0, 1, 1); return Array.from(ctx.getImageData(0, 0, 1, 1).data).slice(0, 3) }
+    const probe = document.createElement("span")
+    probe.style.backgroundColor = "var(--bg)"
+    if (scheme) probe.style.colorScheme = scheme
+    document.body.append(probe)
+    const expected = pixel(getComputedStyle(probe).backgroundColor)
+    probe.remove()
+    return { actual: pixel(getComputedStyle(document.body).backgroundColor), expected,
+      family: getComputedStyle(document.body).fontFamily,
+      token: getComputedStyle(document.documentElement).getPropertyValue("--bg").trim() }
+  }, scheme)
   const bodyBg = await painted()
-  // Deliberately a RANGE and not a value: the assertion is "the sheet reached
-  // the page", and pinning an exact triplet made every palette adjustment
-  // break a test that does not care about the palette.
-  check("the shared design system is applied, in either theme",
-    Math.max(...bodyBg) < 40 || Math.min(...bodyBg) > 230, JSON.stringify(bodyBg))
-
-  // And BOTH themes are actually reachable, which is the claim the README makes.
+  const followsShared = (bg: typeof bodyBg) => bg.token.length > 0 && bg.family.includes("Atkinson Hyperlegible Next") && JSON.stringify(bg.actual) === JSON.stringify(bg.expected)
+  check("the shared design system is applied, in either theme", followsShared(bodyBg), JSON.stringify(bodyBg))
+  const themes: number[][] = []
   for (const scheme of ["dark", "light"] as const) {
     await page.emulateMedia({ colorScheme: scheme })
-    const bg = await painted()
-    check(`the board follows a ${scheme} system preference`,
-      scheme === "dark" ? Math.max(...bg) < 40 : Math.min(...bg) > 230, JSON.stringify(bg))
+    const bg = await painted(scheme)
+    themes.push(bg.actual)
+    check(`the board follows a ${scheme} system preference`, followsShared(bg), JSON.stringify(bg))
   }
+  check("light and dark resolve to different painted palettes", JSON.stringify(themes[0]) !== JSON.stringify(themes[1]))
+
   await page.emulateMedia({ colorScheme: "dark" })
 
   // A custom property can be perfectly valid where it is DECLARED and lethal
@@ -821,7 +829,7 @@ try {
   // The board's job is telling you where to look, so the group that might want
   // a person must come FIRST. It sat third, below two groups that are by
   // definition fine.
-  const bandOrder = await page.locator(".band > span:first-child").allTextContents()
+  const bandOrder = await page.locator(".band-group .band > span:first-child").allTextContents()
   if (bandOrder.includes("Out of touch")) {
     check("the group that needs a person is ranked above the ones that do not",
       bandOrder.indexOf("Out of touch") === 0, bandOrder.join(" | "))
@@ -838,9 +846,15 @@ try {
 
   // And the grouping is structural, not just a coloured divider: a reader who
   // cannot see the rules still gets the groups.
-  check("each band is a real heading owning its group",
-    (await page.locator('section.band-group[aria-labelledby] > h2.band').count()) === bandOrder.length,
-    `${await page.locator('section.band-group > h2.band').count()} of ${bandOrder.length}`)
+  await page.locator("#tab-board").click()
+  await page.locator("#pane-board").waitFor({ state: "visible" })
+  const bandGroups = await page.locator("section.band-group").evaluateAll((groups) => groups.map((group) => {
+    const heading = group.querySelector("h2.band")
+    return { labelled: !!heading && group.getAttribute("aria-labelledby") === heading.id,
+      visible: !!heading && heading.getBoundingClientRect().height > 0 }
+  }))
+  check("each band is a real visible heading owning its group",
+    bandGroups.length === bandOrder.length && bandGroups.every((g) => g.labelled && g.visible), JSON.stringify(bandGroups))
 
   // Focus must be VISIBLE, and it must be reached the way a keyboard user
   // reaches it. `:focus-visible` deliberately does NOT match after a mouse

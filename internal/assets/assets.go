@@ -18,16 +18,9 @@
 // external origins (see internal/mcp/apps.go), so any stylesheet, script or
 // font fetched over the network would fail closed and silently.
 //
-// Geist and Geist Mono are SIL OFL (see fonts/OFL.txt) and vendored for the
-// same reason. Two faces, two jobs: Geist Mono carries every identifier and
-// figure, agent names, serials, paths, counts, because those are read in
-// columns and columns need tabular figures and a fixed advance; Geist Sans
-// carries everything a person wrote in prose.
-//
-// A text serif was vendored here briefly and removed. It gave the panel the air
-// of a printed report, which is the wrong costume for a tool engineers keep
-// open next to their editor, and its italic, used for agent descriptions, read
-// as handwriting.
+// Atkinson Hyperlegible Next and Mono are unmodified upstream SIL OFL faces.
+// fonts/PROVENANCE.md records their source and hashes; the licenses ship beside
+// them. The same full font bytes are used by the native prompt.
 package assets
 
 import (
@@ -38,15 +31,23 @@ import (
 	"sync"
 )
 
-// GeistSans is the vendored sans face, inlined so no surface reaches a CDN.
+// AtkinsonNext is the vendored sans face, inlined so no surface reaches a CDN.
 //
-//go:embed fonts/Geist.woff2
-var GeistSans []byte
+//go:embed fonts/AtkinsonHyperlegibleNext*.ttf
+var AtkinsonNext []byte
 
-// GeistMono is the vendored mono face, inlined so no surface reaches a CDN.
+// AtkinsonMono is the vendored mono face, inlined so no surface reaches a CDN.
 //
-//go:embed fonts/GeistMono.woff2
-var GeistMono []byte
+//go:embed fonts/AtkinsonHyperlegibleMono*.ttf
+var AtkinsonMono []byte
+
+// Licenses accompany the inlined bytes in every shipped HTML artifact.
+//
+//go:embed fonts/OFL-Next.txt
+var nextLicense string
+
+//go:embed fonts/OFL-Mono.txt
+var monoLicense string
 
 // Icon is the Dibs mark, served as the favicon by both surfaces.
 //
@@ -89,17 +90,17 @@ func build() {
 		face := func(family, weight string, data []byte) {
 			fmt.Fprintf(&b,
 				"@font-face{font-family:'%s';font-style:normal;font-weight:%s;"+
-					"font-display:swap;src:url(data:font/woff2;base64,%s) format('woff2')}",
+					"font-display:swap;src:url(data:font/ttf;base64,%s) format('truetype')}",
 				family, weight, base64.StdEncoding.EncodeToString(data))
 		}
-		face("Geist", "300 700", GeistSans)
-		face("Geist Mono", "400 600", GeistMono)
+		face("Atkinson Hyperlegible Next", "200 800", AtkinsonNext)
+		face("Atkinson Hyperlegible Mono", "200 800", AtkinsonMono)
 		faces = b.String()
-		styles = faces + "\n" + boardCSS + "\n" + signalCSS
+		styles = "/*\n" + nextLicense + "\n" + monoLicense + "\n*/\n" + faces + "\n" + boardCSS + "\n" + signalCSS
 	})
 }
 
-// FontFaces returns @font-face rules with the woff2 payloads inlined as data
+// FontFaces returns @font-face rules with the TrueType payloads inlined as data
 // URIs. Deterministic, so callers embedding it stay safely cacheable.
 func FontFaces() string { build(); return faces }
 
