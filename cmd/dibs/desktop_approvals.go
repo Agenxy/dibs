@@ -34,13 +34,34 @@ func desktopApprovalsCmd(args []string) error {
 		return err
 	}
 	if fs.NArg() > 1 || fs.NArg() == 1 && fs.Arg(0) != "on" && fs.Arg(0) != "off" {
-		return errors.New(desktopApprovalsHelp)
+		return errors.New("expected on or off; see dibs desktop-approvals --help")
 	}
 	var enabled *bool
 	if fs.NArg() == 1 {
 		value := fs.Arg(0) == "on"
 		enabled = &value
 	}
+	result, err := callDesktopApproval(enabled)
+	if err != nil {
+		return agentCLIError(err, *asJSON)
+	}
+	result, err = desktopApprovalResult(result)
+	if err != nil {
+		return agentCLIError(err, *asJSON)
+	}
+	value := result["value"].(string)
+	if *asJSON {
+		return printJSON(result)
+	}
+	state := "off"
+	if value == "true" {
+		state = "on"
+	}
+	fmt.Printf("Confirm privileged desktop approvals with Touch ID: %s\n", state)
+	return nil
+}
+
+func callDesktopApproval(enabled *bool) (map[string]any, error) {
 	var result map[string]any
 	if token := os.Getenv("DIBS_TOKEN"); token != "" {
 		call := map[string]any{"token": token}
@@ -48,7 +69,7 @@ func desktopApprovalsCmd(args []string) error {
 			call["setting"], call["value"] = core.DesktopApprovalSettingKey, fmt.Sprint(*enabled)
 		}
 		if err := agentToolCall("settings", call, &result); err != nil {
-			return agentCLIError(err, *asJSON)
+			return nil, err
 		}
 	} else {
 		if err := adminOnly("desktop-approvals", func() error {
@@ -62,9 +83,13 @@ func desktopApprovalsCmd(args []string) error {
 			}
 			return json.Unmarshal(raw, &result)
 		}); err != nil {
-			return err
+			return nil, err
 		}
 	}
+	return result, nil
+}
+
+func desktopApprovalResult(result map[string]any) (map[string]any, error) {
 	if rows, ok := result["settings"].([]any); ok {
 		for _, entry := range rows {
 			row, rowOK := entry.(map[string]any)
@@ -76,16 +101,10 @@ func desktopApprovalsCmd(args []string) error {
 	}
 	value, ok := result["value"].(string)
 	if !ok || result["setting"] != core.DesktopApprovalSettingKey || value != "true" && value != "false" {
-		return agentCLIError(&core.Error{Code: "E_NO_SETTING", Msg: "this board does not expose desktop approval confirmation",
-			Hint: "upgrade the daemon, then retry this command"}, *asJSON)
+		return nil, &core.Error{
+			Code: "E_NO_SETTING", Msg: "this board does not expose desktop approval confirmation",
+			Hint: "upgrade the daemon, then retry this command",
+		}
 	}
-	if *asJSON {
-		return printJSON(result)
-	}
-	state := "off"
-	if value == "true" {
-		state = "on"
-	}
-	fmt.Printf("Confirm privileged desktop approvals with Touch ID: %s\n", state)
-	return nil
+	return result, nil
 }

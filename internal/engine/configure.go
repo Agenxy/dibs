@@ -158,6 +158,10 @@ func (e *Engine) Configure(ctx context.Context, token, key, value string) (core.
 		return e.Do(ctx, &core.Op{Kind: core.OpSetDesktopApprovalSetting, Token: token,
 			SettingKey: key, SettingValue: value})
 	}
+	return e.configureOverride(ctx, token, key, value)
+}
+
+func (e *Engine) configureOverride(ctx context.Context, token, key, value string) (core.Result, error) {
 	change := key != "" && value != ""
 	res, err := e.query(ctx, func() core.Result {
 		l := e.state.AgentByToken(token)

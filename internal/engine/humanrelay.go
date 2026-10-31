@@ -178,7 +178,8 @@ func (e *Engine) noticeOf(m *core.Message) HumanNotice {
 	if m.Recovery != nil {
 		effect := *m.Recovery
 		n.Recovery = &effect
-		n.Body = fmt.Sprintf("Approve recovers %s into %s, moving its future mail and retaining its declarations as inactive history.\n\n%s",
+		n.Body = fmt.Sprintf("Approve recovers %s into %s, moving its future mail "+
+			"and retaining its declarations as inactive history.\n\n%s",
 			m.Recovery.From, m.Recovery.Into, m.Body)
 	}
 	if m.Adopt != "" {
