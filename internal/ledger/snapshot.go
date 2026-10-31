@@ -38,8 +38,10 @@ import (
 // SnapshotName is the snapshot's file name beside ledger.jsonl.
 const SnapshotName = "snapshot.dibs"
 
-const snapshotVersion = 1
-const featureSnapshotVersion = 2
+const (
+	snapshotVersion        = 1
+	featureSnapshotVersion = 2
+)
 
 // SnapshotHeader anchors a snapshot in the hash chain.
 type SnapshotHeader struct {

@@ -27,8 +27,10 @@ func TestDesktopApprovalSnapshotRetainsPolicyAndRefusesOldReaders(t *testing.T) 
 	}
 	st := core.NewState("test", core.DefaultLimits())
 	apply(t, st, l, &core.Op{Kind: core.OpRegister, Name: "policy-member", NewToken: "member-token", Nonce: "member-nonce"}, t0)
-	apply(t, st, l, &core.Op{Kind: core.OpSetDesktopApprovalSetting, Token: "member-token",
-		SettingKey: core.DesktopApprovalSettingKey, SettingValue: "true"}, t0.Add(time.Second))
+	apply(t, st, l, &core.Op{
+		Kind: core.OpSetDesktopApprovalSetting, Token: "member-token",
+		SettingKey: core.DesktopApprovalSettingKey, SettingValue: "true",
+	}, t0.Add(time.Second))
 	if err := l.Close(); err != nil {
 		t.Fatal(err)
 	}
