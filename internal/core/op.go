@@ -19,6 +19,11 @@ import "time"
 // sourcing); all impure inputs are recorded in the op so replay applies
 // decisions rather than recomputing them (SPEC §2, §4).
 type Op struct {
+	RecoverFrom              string               `json:"-"` // ingress-only offer selector; never replayed
+	RecoveryDeclarationTimes map[string]time.Time `json:"recovery_declaration_times,omitempty"`
+	Recovery                 *RecoveryRequest     `json:"recovery,omitempty"`
+	RecoveryActor            *MergeActor          `json:"recovery_actor,omitempty"`
+
 	Kind string `json:"kind"`
 
 	// MailTrafficV1 opts new sends into bounded daily counts; old folds stay unchanged.

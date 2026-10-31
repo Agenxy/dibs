@@ -7,6 +7,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Lost-credential recovery can be requested by a bound survivor and approved by
+  a distinct coordinator for a matching dormant unbound seat. The preview says
+  which future mail will route to the survivor. Old declarations are retained as
+  inactive inherited history, with bounded views and explicit retirement; live
+  survivor slots stay intact. Unsafe, stale or over-capacity decisions refuse
+  before moving mail. Source-only credentials remain retired, and recovered
+  addresses stay reserved through retention. Existing merge/adoption rules are
+  unchanged; registration can return a pending recovery offer without old mail. The
+  CLI identifies `recover_agent` as an MCP verb; current documentation counts
+  include it, and the count guard now checks the “one tool of N” spelling.
+
 - Managed daemons can configure their invitation-only listener through
   `[public]` in `dibs.toml`, using the same validation as the command-line
   flags. Explicit flags, including false and empty values, take precedence;

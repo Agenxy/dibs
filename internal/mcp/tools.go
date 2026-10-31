@@ -80,7 +80,8 @@ var toolDefs = func() []map[string]any {
 				"kind": map[string]any{"type": "string", "enum": []string{"persistent", "ephemeral"}, "description": "persistent " +
 					"(default): a mailbox that outlives your process, so you can be woken. " +
 					"ephemeral: dies with the session"},
-				"nonce": str("secret random id >=128-bit; KEEP IT to recover after restart. Omitted: minted"),
+				"nonce":        str("secret random id >=128-bit; KEEP IT to recover after restart. Omitted: minted"),
+				"recover_from": str("lost seat: pending recovery offer"),
 				"recovery_nonces": stringArray("2–16 distinct secrets; oldest name/host match. " +
 					"No explicit/transport nonce; no match: error"),
 				"session_id": str("your harness session id, so lifecycle hooks find your mailbox " +
@@ -210,6 +211,15 @@ var toolDefs = func() []map[string]any {
 				"token": tok,
 				"nonce": str("the contents of coordinator.claim from the daemon's data directory"),
 			}, "token", "nonce"),
+		},
+		{
+			"name": "recover_agent", "description": "Recover a lost seat into YOUR identity. Preview with dry_run:true; " +
+				"its fence requests distinct coordinator approval. Read dibs://skills.",
+			"inputSchema": obj(map[string]any{
+				"token": tok, "agent": str("lost seat"),
+				"dry_run": map[string]any{"type": "boolean", "description": "counts only"},
+				"fence":   str("preview fence"),
+			}, "token", "agent"),
 		},
 		{
 			"name": "merge_agents", "description": "Preview with dry_run:true, then commit with its fence. " +

@@ -97,6 +97,11 @@ func (e *Engine) resolveAgentRefs(op *core.Op) (resolved map[string]string, err 
 		}
 		op.To = who
 	}
+	// Recovery is a mail-ingress route, never a global reference rewrite.
+	resolved, err = e.resolveRecoveredMail(op, resolved)
+	if err != nil {
+		return nil, err
+	}
 	refs := make([]agentRef, 0, 3)
 	// AND "human" IS THE OTHER ROLE, resolved later in exec by
 	// prepareHumanRecipient, which mints the person's mailbox on demand. It is
@@ -130,6 +135,29 @@ func (e *Engine) resolveAgentRefs(op *core.Op) (resolved map[string]string, err 
 		}
 		resolved[ref.label] = was
 	}
+	// Retained former aliases resolve to the retired id first. Exact recovered
+	// ids/current names also work when no source row remains.
+	return e.resolveRecoveredMail(op, resolved)
+}
+
+func (e *Engine) resolveRecoveredMail(op *core.Op, resolved map[string]string) (map[string]string, error) {
+	if op.Kind != core.OpSendMessage || op.To == core.HumanActor {
+		return resolved, nil
+	}
+	into, err := e.state.RecoveredRecipient(op.To)
+	if err != nil {
+		return nil, err
+	}
+	if into == op.To {
+		return resolved, nil
+	}
+	if resolved == nil {
+		resolved = map[string]string{}
+	}
+	if resolved["to"] == "" {
+		resolved["to"] = op.To
+	}
+	op.To = into
 	return resolved, nil
 }
 

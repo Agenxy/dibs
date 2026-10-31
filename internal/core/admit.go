@@ -39,6 +39,9 @@ func (s *State) Admit(op *Op) error {
 			return err
 		}
 	}
+	if err := s.admitRecovery(op); err != nil {
+		return err
+	}
 	if err := s.admitContact(op); err != nil {
 		return err
 	}

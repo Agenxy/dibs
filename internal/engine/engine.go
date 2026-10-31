@@ -481,6 +481,8 @@ func (e *Engine) execWithReceipt(
 	}
 	op.PriorAdoptionSerial = 0
 	op.MergeActor = nil // authentication decision is never caller input
+	op.RecoveryActor = nil
+	op.RecoveryDeclarationTimes = nil
 	op.MailTrafficV1 = op.Kind == core.OpSendMessage
 	op.DeliveryStart = false // ingress owns the new-send semantic flag
 	op.QueueDebt = false
@@ -807,6 +809,11 @@ func (e *Engine) execWithReceipt(
 				// prepareAliasUpdate preserved the description. Do not wake the
 				// row, invent model contact, confirm a socket offer, or read mail.
 				return e.applyAndLedger(op, now)
+			}
+			// A refused recovery must not even ledger an incidental actor wake.
+			// Its request/approval evidence is checked on this same writer trip.
+			if err := e.prepareRecoveryEffect(op, actor); err != nil {
+				return nil, err
 			}
 			e.wakeIfSleeping(actor, now)
 		}

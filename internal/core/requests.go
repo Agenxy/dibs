@@ -62,13 +62,16 @@ func (s *State) HasPendingEffectRequest(agentID string) bool {
 		if m.Terminal() {
 			continue
 		}
+		if m.Recovery != nil && (m.Recovery.From == agentID || m.Recovery.Into == agentID) {
+			return true
+		}
 		if m.Merge != nil && (m.Merge.From == agentID || m.Merge.Into == agentID) {
 			return true
 		}
 		if m.From != agentID {
 			continue
 		}
-		if m.Grant != "" || m.Adopt != "" || m.Merge != nil {
+		if m.Grant != "" || m.Adopt != "" || m.RetiresIdentity() {
 			return true
 		}
 	}

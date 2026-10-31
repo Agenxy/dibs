@@ -200,3 +200,23 @@ func TestMergeApprovalCapturesOutsideHumanMailbox(t *testing.T) {
 		}
 	}
 }
+
+func TestRecoveryApprovalCapturesOutsideCoordinatorMailbox(t *testing.T) {
+	st := scopeState(t)
+	scopeApply(t, st, &core.Op{Kind: core.OpSweep, StaleAgents: []string{"a"}})
+	res := scopeApply(t, st, &core.Op{
+		Kind: core.OpSendMessage, Token: "sender-token", To: "b",
+		MsgType: core.MsgRequest, Body: "recovery consent",
+		Recovery: &core.RecoveryRequest{From: "a", Into: "sender"},
+	})
+	op := &core.Op{
+		Kind: core.OpRespond, Token: "b-token", MsgSerial: res["msg_serial"].(uint64),
+		Disposition: "approve", RecoveryActor: &core.MergeActor{ID: "b", Authority: "coordinator"},
+	}
+	assertScopeCoverage(t, st, op, len(st.Messages))
+	for _, m := range st.Messages {
+		if m.To == "a" {
+			t.Fatal("actual recovery left source mail behind")
+		}
+	}
+}

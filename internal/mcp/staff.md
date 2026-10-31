@@ -20,11 +20,21 @@ themselves.
 |---|---|
 | `all_mail(census: true)` | count what is in a mailbox, of which types, from whom, how old, and how much is still waiting on an answer: never a body |
 | `adopt_agent` | move an abandoned mailbox onto a live agent |
+| `respond(disposition:"approve")` on a `recover_agent` request | recover a lost seat into its requesting survivor, retaining inactive declaration history and routing future mail there |
 | `prune` | remove a dormant peer's row, and with it the declarations that row still holds |
 | `force_release` | break a claim whose holder is gone |
 | `evict`, `admit`, `close_space`, `merge_spaces` | repair a space's membership |
 | `claim_coordinator` | take the role when nobody holds it |
 | `relocate` | run a CLOSED agent's thread in a different environment from the one it last ran in |
+
+A worker requests recovery with its own token through `recover_agent`: preview
+with `dry_run:true`, then commit the fence. You approve its typed request; you
+do not choose another destination. Both calls check the source and survivor
+incarnations, matching host/harness/surface/persistent kind, dormant unbound
+unprivileged source, newer bound survivor, process absence, conflicts and
+capacity. Your recorded session must be distinct from the survivor even if you
+are an admin. Old declarations become inactive inherited history, and source-only
+nonces cannot open the survivor. General adoption remains a one-time mail move.
 
 `relocate` is the one deliberate exception to the rule every wake keeps: an
 agent is woken in the app it runs in and nowhere else. Moving it is a decision,
