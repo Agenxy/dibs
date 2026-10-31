@@ -12,6 +12,37 @@ import (
 	"testing"
 )
 
+var toolCountClaim = regexp.MustCompile(
+	`(?i)(?:^|[^\w.])(\d+)\s+tools?\b|tools?\s*\((\d+)\)|\btool\s+of\s+(\d+)\b`)
+
+func toolCountNumber(match []string) (int, error) {
+	for i, digits := range match {
+		if i > 0 && digits != "" {
+			return strconv.Atoi(digits)
+		}
+	}
+	return 0, strconv.ErrSyntax
+}
+
+// These are different spellings of the same static documentation claim.
+// Keep the parser used against real files reachable through every spelling.
+func TestToolCountSpellings(t *testing.T) {
+	for _, text := range []string{
+		"17 tools", "17 TOOLS", "17 tool descriptions", "Tools (17)",
+		"one tool of 17", "one TOOL of 17", "one tool of\n17",
+	} {
+		got, err := toolCountNumber(toolCountClaim.FindStringSubmatch(text))
+		if err != nil || got != 17 {
+			t.Errorf("tool-count spelling %q: got %d, %v; want 17", text, got, err)
+		}
+	}
+	for _, text := range []string{"v1.0 tool table", "53% accuracy", "2021-01-12T11:53:27Z"} {
+		if got := toolCountClaim.FindStringSubmatch(text); got != nil {
+			t.Errorf("not a tool count: %q matches %v", text, got)
+		}
+	}
+}
+
 // Numbers in the documentation must match the software.
 //
 // The tool count is the most-quoted figure in this project: it appears in the
@@ -51,13 +82,12 @@ func TestDocumentedToolCountMatchesReality(t *testing.T) {
 	// version number. "v1.0 tool table" was read as a claim of "0 tools" and
 	// failed this test on a sentence that makes no numeric claim at all. A
 	// guard that fires on correct prose gets weakened by whoever hits it next.
-	// Both orders. "44 tools" and "Tools (44)" are the same claim to a reader,
-	// and the second walked past this test while SPEC.md advertised 40 for four
-	// releases. That is the third spelling this check has been blind to: the
-	// first was a plain stale number, the second was "one tool of forty-two",
-	// and each was found by somebody reading rather than by the guard whose
-	// whole job it is.
-	claim := regexp.MustCompile(`(?:^|[^\w.])(\d+)\s+tools?\b|(?i)tools?\s*\((\d+)\)`)
+	// All three orders name the same count: "44 tools", "Tools (44)" and
+	// "one tool of 44". The parenthesized form previously escaped this guard
+	// for four releases, and "one tool of forty-two" escaped the digit parser
+	// until the word check below was added. Recovery's new tool exposed the
+	// numeral-after-"of" variant too: README said "one tool of 53" at 54.
+	claim := toolCountClaim
 
 	// ONE list, read by both checks below.
 	//
@@ -129,13 +159,9 @@ func TestDocumentedToolCountMatchesReality(t *testing.T) {
 			}
 		}
 		for _, m := range claim.FindAllStringSubmatch(string(body), -1) {
-			// Whichever alternation matched: one group is the number, the other
-			// is empty.
-			digits := m[1]
-			if digits == "" {
-				digits = m[2]
-			}
-			n, err := strconv.Atoi(digits)
+			// Whichever alternation matched: one group is the number; the
+			// remaining groups are empty.
+			n, err := toolCountNumber(m)
 			if err != nil {
 				continue
 			}

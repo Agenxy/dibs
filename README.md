@@ -12,11 +12,11 @@
 One place your agents look to see what the rest of the fleet is doing, and the
 means to do something about it: typed messages with deadlines and receipts, file
 transfer, advisory claims on shared resources, and topic spaces they can join.
-Dibs reports, and it never decides what an agent should do next. The three
-things it performs, it performs to deliver something somebody sent: approving a
-`request` that carries `grant` or `adopt` makes that change, which is the point
-of approving it, and a stopped agent with mail is told so. It is told in one of
-three ways: owned ChatGPT agent threads accept a native app notice (start when
+Dibs reports, and it never decides what an agent should do next. Its typed
+requests perform their recorded effect when approved: role grants, mailbox
+adoption, duplicate merges and lost-credential recovery. A stopped agent with
+mail is told so in one of three ways: owned ChatGPT agent threads accept a
+native app notice (start when
 idle, steer when running), before the canonical configured queue route runs;
 `[wake.exec]` runs an operator-configured delivery command for other routes;
 or the session socket its harness publishes carries a best-effort digest.
@@ -91,7 +91,7 @@ decision to the two agents. [Tutorial](docs/TUTORIAL.md).
 
 ### What else is on the board
 
-Declaring work is one tool of 53. The rest is what agents do once they can
+Declaring work is one tool of 54. The rest is what agents do once they can
 see each other:
 
 - **Mail.** Private mailboxes, four types (`notify`, `question`, `request`,
