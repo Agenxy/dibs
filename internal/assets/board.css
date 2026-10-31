@@ -1316,13 +1316,13 @@ button, .act { padding-block: max(5px, calc((var(--ctl-h, 26px) - 1lh) / 2)); }
    host supplies --board-height from containerDimensions. Standalone pages use
    their viewport, with the same finite cap. Never use the iframe height as
    an input to its own reported size. */
-.sheet:has(> .board-search) {
+.sheet:has(> .board-tools) {
   display: flex; flex-direction: column; box-sizing: border-box;
   height: var(--board-height, min(70dvh, 35rem)); min-height: 0;
   padding-bottom: var(--s2); overflow: hidden;
 }
-.sheet:has(> .board-search) > :not(main) { flex: none; }
-.sheet:has(> .board-search) > main {
+.sheet:has(> .board-tools) > :not(main) { flex: none; }
+.sheet:has(> .board-tools) > main {
   min-height: 3rem; flex: 1 1 0; overflow: auto; scrollbar-gutter: stable;
   overscroll-behavior: contain;
   /* Fade the cut edge; end padding preserves the last row and its controls. */
@@ -1333,7 +1333,7 @@ button, .act { padding-block: max(5px, calc((var(--ctl-h, 26px) - 1lh) / 2)); }
 .board-search input { width: 100%; min-width: 0; font: inherit; color: var(--fg);
   background: var(--bg-input); border: 1px solid var(--line-3);
   border-radius: var(--r); padding: var(--s1) var(--s2); }
-.sheet:has(> .board-search) .foot {
+.sheet:has(> .board-tools) .foot {
   margin-top: var(--s1); padding: var(--s2) 0 0;
   flex-wrap: nowrap; white-space: nowrap; overflow: hidden;
 }
@@ -1358,9 +1358,9 @@ button, .act { padding-block: max(5px, calc((var(--ctl-h, 26px) - 1lh) / 2)); }
   display: block; line-height: 1.5; }
 .sheet .says[open] .lede { white-space: normal; overflow: visible; }
 @media (max-width: 680px) {
- .sheet:has(> .board-search) .masthead { gap: var(--s2); padding-top: var(--s2); }
- .sheet:has(> .board-search) .context { padding-block: var(--s2); }
- .sheet:has(> .board-search) .summary { padding-block: var(--s2); }
+ .sheet:has(> .board-tools) .masthead { gap: var(--s2); padding-top: var(--s2); }
+ .sheet:has(> .board-tools) .context { padding-block: var(--s2); }
+ .sheet:has(> .board-tools) .summary { padding-block: var(--s2); }
  .sheet .entry-head { flex-wrap: wrap; }
  .sheet .entry .name { max-width: 100%; }
 }
@@ -1380,10 +1380,10 @@ button, .act { padding-block: max(5px, calc((var(--ctl-h, 26px) - 1lh) / 2)); }
   font-size: var(--t-sm); cursor: pointer; padding: var(--s1) var(--s2); }
 
 @media (max-width: 480px) {
- .sheet:has(> .board-search) .summary { gap: var(--s1); }
- .sheet:has(> .board-search) .metric + .metric::before { margin-right: var(--s1); }
- .sheet:has(> .board-search) .metric { gap: var(--s1); }
- .sheet:has(> .board-search) .metric .label { font-size: var(--t-fine); }
+ .sheet:has(> .board-tools) .summary { gap: var(--s1); }
+ .sheet:has(> .board-tools) .metric + .metric::before { margin-right: var(--s1); }
+ .sheet:has(> .board-tools) .metric { gap: var(--s1); }
+ .sheet:has(> .board-tools) .metric .label { font-size: var(--t-fine); }
 }
 body { font-weight: var(--body-weight, 400); }
 :root[data-theme="dark"] { --body-weight: 412; --name-weight: 660; }
@@ -1393,10 +1393,10 @@ body { font-weight: var(--body-weight, 400); }
 }
 
 /* The one agent whose token opened the app stays in the fixed frame, never
-   duplicated in its section. Its work is one line (two on mobile) until explicitly expanded. */
+   duplicated in its section. Its work is one line at every width until explicitly expanded. */
 #self-row:empty { display: none; }
 #self-row { flex: none; min-width: 0; max-height: 34%; overflow: auto; }
-#self-row .entry.pinned { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+#self-row .entry.pinned { display: grid; grid-template-columns: auto minmax(0, 1fr);
   gap: var(--s2); padding: var(--s1) 0; border: 0; }
 #self-row .entry-head { flex-wrap: nowrap; overflow: hidden; }
 #self-row .entry-head > :not(.name, .self, .self-status, .age) { display: none; }
@@ -1413,9 +1413,9 @@ body { font-weight: var(--body-weight, 400); }
 #self-row .entry-head .self { order: -2; }
 #self-row .entry-head .name { order: -1; }
 
-.sheet:has(> .board-search) > #self-row:not(:empty) { flex: 0 1 auto; min-height: 1.8125rem; }
+.sheet:has(> .board-tools) > #self-row:not(:empty) { flex: 0 1 auto; min-height: 1.8125rem; }
 
-.panel .sheet:has(> .board-search) { margin-block: 0; }
+.panel .sheet:has(> .board-tools) { margin-block: 0; }
 
 /* The exact product mark keeps its tile in either theme. Connection evidence
    stays in the surrounding status label; it does not recolour the artwork. */
@@ -1428,19 +1428,12 @@ body { font-weight: var(--body-weight, 400); }
   scroll-padding-inline: 12px; }
 .panel .sheet .views button { flex: none; white-space: nowrap; overflow: visible; }
 @media (max-width: 480px) {
- .sheet:has(> .board-search) .context, .sheet:has(> .board-search) .summary { padding-block: var(--s1); }
- .sheet:has(> .board-search) .foot { flex-wrap: wrap; white-space: normal; overflow: visible; row-gap: 0; }
- #self-row .entry.pinned { display: block; }
- #self-row .entry-head { flex-wrap: wrap; overflow: visible; }
- #self-row .name { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
- #self-row .says > summary .lede { white-space: normal; display: -webkit-box;
-   -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
- #self-row .says[open] > summary .lede { -webkit-line-clamp: unset; }
+ .sheet:has(> .board-tools) .context, .sheet:has(> .board-tools) .summary { padding-block: var(--s1); }
+ .sheet:has(> .board-tools) .foot { flex-wrap: wrap; white-space: normal; overflow: visible; row-gap: 0; }
 }
 
 @media (max-width: 480px) {
- .panel .sheet:has(> .board-search) { padding-bottom: var(--s1); }
- .sheet:has(> .board-search) > #self-row:not(:empty) { min-height: 4.625rem; }
+ .panel .sheet:has(> .board-tools) { padding-bottom: var(--s1); }
 }
 
 /* The same compact row in every coordination section. Warning is a marker,
@@ -1455,8 +1448,8 @@ body { font-weight: var(--body-weight, 400); }
 .sheet .entry .says > summary { padding-block: 0; }
 .sheet .entry .says[open], .sheet .entry > :not(.entry-head, .says, .lede) { grid-column: 1 / -1; }
 .agent-extra { display: flex; flex-wrap: wrap; gap: var(--s1); margin-bottom: var(--s2); }
-.sheet:has(> .board-search) .masthead { padding-block: var(--s1); }
-.sheet:has(> .board-search) .context, .sheet:has(> .board-search) .summary { padding-block: var(--s1); }
+.sheet:has(> .board-tools) .masthead { padding-block: var(--s1); }
+.sheet:has(> .board-tools) .context, .sheet:has(> .board-tools) .summary { padding-block: var(--s1); }
 .board-search { padding-block: var(--s1); }
 .sheet .band { padding-block: var(--s2) var(--s1); margin: 0; }
 .attention-mail { line-height: 1.25; margin-block: 2px; }
@@ -1470,3 +1463,15 @@ body { font-weight: var(--body-weight, 400); }
 .attention-mail { margin-block: 0; }
 .sheet .view { padding-top: 0; }
 .sheet .view .band, .panel .sheet .view .band { padding-block: var(--s1) 2px; }
+
+/* Confirmation and search share one control row. The MCP context is retained
+   for assistive reading without repeating the viewing identity visually. */
+.board-tools { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
+.board-tools .board-search { flex: 1; min-width: 0; }
+.attention-mail { min-height: 1.75rem; line-height: 1.5; align-items: center; }
+.sheet .view .band, .panel .sheet .view .band { padding-block: 2px 0; }
+/* One pinned line at every width. Its name is never ellipsized; work takes
+   the remaining width and the disclosure retains its complete text. */
+#self-row .name { white-space: nowrap; overflow: visible; text-overflow: clip; }
+#self-row .says:not([open]) > summary .lede { display: block; white-space: nowrap;
+  -webkit-line-clamp: unset; overflow: hidden; text-overflow: ellipsis; }

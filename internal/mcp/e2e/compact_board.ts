@@ -131,6 +131,8 @@ export async function checkCompactBoard(page: Page, base: any, self: string, che
         heights: [...main.querySelectorAll(".entry:not(:has(.says[open]))")].filter((row) => !row.closest("details:not([open])") && row.getBoundingClientRect().height > 0).map((row) => row.getBoundingClientRect().height) }
     })
     check("four unanswered and two stale rows still leave three fully painted Active rows", scan.active >= 3, JSON.stringify(scan))
+    const urgentHeights = await panel.locator(".attention-mail").evaluateAll((rows) => rows.map((row) => row.getBoundingClientRect().height))
+    check("unanswered messages have the same readable row rhythm", urgentHeights.length === 4 && urgentHeights.every((h) => h >= 28 && h <= 30), JSON.stringify(urgentHeights))
     check("every coordination section uses the same one-line row", scan.heights.length > 0 && scan.heights.every((h) => h <= 32), JSON.stringify(scan.heights))
     const search = panel.getByRole("searchbox", { name: "Search Dibs" })
     const present = await search.count() === 1
@@ -194,6 +196,7 @@ export async function checkCompactBoard(page: Page, base: any, self: string, che
     const mobile = await panel.locator("#app").evaluate((el) => ({ height: el.getBoundingClientRect().height, overflow: document.documentElement.scrollWidth > innerWidth }))
     check("a smaller host updates the bound without horizontal overflow", mobile.height <= 351 && !mobile.overflow, JSON.stringify(mobile))
     await capture("mobile")
+    check("the mobile pin remains one compact line", await panel.locator("#self-row").evaluate((el) => el.getBoundingClientRect().height >= 25 && el.getBoundingClientRect().height < 42))
     const mobileUI = await panel.locator("#app").evaluate((app) => {
       const name = app.querySelector("#self-row .name")!, nav = app.querySelector(".views")!, foot = app.querySelector(".foot")!
       return { nameVisible: name.scrollWidth <= name.clientWidth, nameStyle: getComputedStyle(name).textOverflow,
