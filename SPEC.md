@@ -554,6 +554,11 @@ direction. A coordinator's existing `merge_agents(agent, into, dry_run:true)`
 offers `mode:recovery_request` when ordinary coordinator merge is ineligible but
 bounded recovery passes. The `recovery:` fence explicitly selects a typed
 request **to the survivor**, whose existing `respond(approve)` supplies consent.
+If recovery also refuses, the ordinary merge preview retains its merge plan
+and includes `recovery_refusal: {code, message, hint}` explaining that refusal.
+Recovery address reservations use the same exact-ID and live-name precedence
+as ordinary agent addressing: a retired namesake cannot shadow the source,
+and a competing stable ID or genuinely ambiguous live name is still refused.
 Normal merge fences retain their original meaning. Both directions enforce the
 same distinct-hands and current-incarnation checks at request and approval, and
 use the same recovery fold. The proposal fence excludes only the survivor's

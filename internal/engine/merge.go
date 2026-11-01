@@ -5,6 +5,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -215,6 +216,13 @@ func (e *Engine) mergePreview(
 	if opt.DryRun && eligible != nil && a.IsCoordinator() {
 		if recovery, err := e.proposeRecoveryLocked(a, token, from, into, opt); err == nil {
 			return recovery
+		} else {
+			refusal := core.Result{"code": "E_INTERNAL", "message": err.Error(), "hint": core.ReportHint}
+			var fault *core.Error
+			if errors.As(err, &fault) {
+				refusal = core.Result{"code": fault.Code, "message": fault.Msg, "hint": fault.Hint}
+			}
+			plan["recovery_refusal"] = refusal
 		}
 	}
 	plan["coordinator_eligible"] = eligible == nil
