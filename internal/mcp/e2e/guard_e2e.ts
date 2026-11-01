@@ -318,6 +318,7 @@ check("the holder may still edit what it claimed", own.decision === "allow", own
   // Now the poisoned case, on its own daemon so the counters are clean.
   const dBad = mkdtempSync(join(tmpdir(), "agents-inert-"))
   const ADDR2 = `127.0.0.1:${Number(PORT) + 5}`
+  const p2Started = performance.now()
   const p2 = Bun.spawn({ cmd: [dibd, "-dir", dBad, "-addr", ADDR2], stdout: "ignore", stderr: "ignore" })
   try {
     const s2 = await daemonReady(dBad, `http://${ADDR2}`, { proc: p2, label: "inert-guard" })
@@ -329,8 +330,13 @@ check("the holder may still edit what it claimed", own.decision === "allow", own
     })
     const before = await (await fetch(`http://${ADDR2}/api/hook-health`,
       { headers: { "X-Dibs-Local": s2 } })).json() as any
-    check("a daemon nothing has asked reports never-called",
-      before.verdict === "never-called", JSON.stringify(before).slice(0, 160))
+    check("a fresh zero-call daemon reports its bounded observation without install advice",
+      before.verdict === "observing" && Number.isInteger(before.observed_seconds)
+        && before.observed_seconds >= 0 && before.observed_seconds < 60
+        && before.observed_seconds <= Math.ceil((performance.now() - p2Started) / 1000)
+        && String(before.hint).includes("first 1m0s")
+        && !/install|plugin|new agent session/i.test(String(before.hint)),
+      JSON.stringify(before))
 
     // Two unresolved shapes, and only one is a fault.
     //
