@@ -19,6 +19,8 @@ import (
 // a fabricated verdict to a presentation helper. No hook is called in this test.
 func TestDoctorBoundsZeroHookClaimsToItsObservedWindow(t *testing.T) {
 	dir := cliIPCProfile(t)
+	t.Setenv("DIBS_DIR", dir)
+	t.Setenv("DIBS_NOTIFY", "off")
 	if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte("fixture-secret\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +41,6 @@ func TestDoctorBoundsZeroHookClaimsToItsObservedWindow(t *testing.T) {
 		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"tools":[]}}`))
 	}))
 	defer daemon.Close()
-	t.Setenv("DIBS_DIR", dir)
 	t.Setenv("DIBS_ADDR", strings.TrimPrefix(daemon.URL, "http://"))
 	read := func(t *testing.T) doctorCheck {
 		t.Helper()
