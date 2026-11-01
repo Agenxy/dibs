@@ -252,7 +252,7 @@ func (d *diagnosis) run(verbose bool) error {
 	checkWakeRoutes(dir, boardOrNil(), attachedHosts(), ok, warn)
 	checkHubAdvertisement(dir, boardOrNil(), ok, warn)
 	checkBoardName(dir, ok, warn)
-	checkHooks(client, sec, ok, bad, warn)
+	checkHooks(client, sec, ok, d.note, bad, warn)
 	checkLedgerAndBoard(dir, ok, d.note, bad, warn)
 	checkGit(verbose, ok, bad)
 	checkSupervision(verbose, ok, warn)
@@ -710,8 +710,9 @@ func bareHarness(key string) string {
 // misconfigured guard indistinguishable from a board where nothing is claimed.
 // The daemon sees every call and whether it resolved, so it is the only party
 // that can tell, and this is the failure that cost a day.
-func checkHooks(client *http.Client, sec string, ok reportFn, bad, warn fixFn) {
+func checkHooks(client *http.Client, sec string, ok, note reportFn, bad, warn fixFn) {
 	var h struct {
+		ObservedSeconds *int64 `json:"observed_seconds"`
 		GuardResolved   int64  `json:"guard_resolved"`
 		GuardUnresolved int64  `json:"guard_unresolved"`
 		GuardStrangers  int64  `json:"guard_strangers"`
@@ -754,8 +755,15 @@ func checkHooks(client *http.Client, sec string, ok reportFn, bad, warn fixFn) {
 	case "only-strangers":
 		warn(fmt.Sprintf("hooks reach this daemon, but all %d call(s) so far came from "+
 			"sessions whose agent never registered", strangers), h.Hint)
+	case "observing":
+		note(h.Hint)
 	case "never-called":
-		warn("no harness has ever called this daemon's hooks", h.Hint)
+		line := "no hook call observed by this daemon"
+		if h.ObservedSeconds != nil {
+			line = fmt.Sprintf("no hook call since this daemon started %s ago",
+				(time.Duration(*h.ObservedSeconds) * time.Second).String())
+		}
+		warn(line, h.Hint)
 	case "never-resolved", "guard-unresolved":
 		// A problem, not a warning: the guard is running and protecting nothing.
 		bad("hooks are reaching Dibs but resolving to NO agent: the guard is inert", h.Hint)

@@ -10,6 +10,10 @@ import (
 	"github.com/agenxy/dibs/internal/core"
 )
 
+// Wait for a full minute before suggesting configuration work on silence alone.
+// This is an observation window, not proof that a plugin is absent.
+const hookObservationWindow = time.Minute
+
 // Is anything actually asking?
 //
 // The claim guard fails open when it cannot resolve the caller to an agent, and
@@ -27,7 +31,8 @@ import (
 //
 //   - resolved == 0 and unresolved > 0 → hooks ARE wired, and not one of them
 //     names an agent this board knows. This is the day-costing bug, exactly.
-//   - both zero → nothing is asking at all: the hook or plugin is not installed.
+//   - both zero → no call has been observed in this daemon lifetime. A short
+//     window after restart is normal and cannot diagnose a missing plugin.
 //
 // Ephemeral and lock-free: this is operational telemetry, not coordination
 // state, and it must never cost a mutex on the request path.
@@ -42,6 +47,7 @@ import (
 // that agent is unwakeable. `dibs doctor` read the sum for a month and called
 // a board of unregistered sessions a broken guard.
 type hookHealth struct {
+	startedAt       time.Time // immutable after construction; counters reset with it
 	guardResolved   atomic.Int64
 	guardUnresolved atomic.Int64 // a live agent works there and was not matched
 	guardStrangers  atomic.Int64 // nobody is active there: an unregistered session
@@ -53,6 +59,7 @@ type hookHealth struct {
 
 // HookHealth is what `dibs doctor` reads.
 type HookHealth struct {
+	ObservedSeconds int64 `json:"observed_seconds"`
 	GuardResolved   int64 `json:"guard_resolved"`
 	GuardUnresolved int64 `json:"guard_unresolved"`
 	// Strangers are unresolved calls from directories where no agent is
@@ -159,6 +166,11 @@ func (e *Engine) HookHealth() HookHealth {
 		PollUnresolved:  e.hooks.pollUnresolved.Load(),
 		PollStrangers:   e.hooks.pollStrangers.Load(),
 	}
+	var observed time.Duration
+	if !e.hooks.startedAt.IsZero() {
+		observed = max(0, time.Since(e.hooks.startedAt))
+	}
+	h.ObservedSeconds = int64(observed / time.Second)
 	if ns := e.hooks.lastAt.Load(); ns > 0 {
 		h.Last = time.Unix(0, ns)
 	}
@@ -177,12 +189,17 @@ func (e *Engine) HookHealth() HookHealth {
 			"session whose agent never registered, so there was nobody to resolve " +
 			"to. Those sessions edit unguarded and get no mail until their agent " +
 			"calls register (a returning seat: same name and nonce)"
+	case total == 0 && observed < hookObservationWindow:
+		h.Verdict = "observing"
+		h.Hint = "no hook call since this daemon started " +
+			(time.Duration(h.ObservedSeconds) * time.Second).String() +
+			" ago; new observation window (first " + hookObservationWindow.String() + ")"
 	case total == 0:
 		h.Verdict = "never-called"
-		h.Hint = "no harness has ever asked this daemon a lifecycle question, so the " +
-			"claim guard has never run and mail is never injected. Install the plugin or " +
-			"hook for your harness (see plugins/), then start a NEW agent session. " +
-			"running sessions do not reload their config"
+		h.Hint = "no harness lifecycle call has reached this daemon during its current " +
+			"observation window. If your harness should be calling hooks, check its " +
+			"configuration. Install the plugin or hook for your harness (see plugins/), " +
+			"then start a NEW agent session; running sessions do not reload their config"
 	case resolved == 0:
 		// The exact signature of the bug that cost a day.
 		h.Verdict = "never-resolved"

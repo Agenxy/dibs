@@ -310,6 +310,7 @@ func New(st *core.State, led Ledger, prober Prober, history ...[]core.Event) *En
 		ring: ring,
 		ops:  make(chan request), subs: make(chan subReq), unsubs: make(chan chan core.Event),
 		state: st, led: led, prober: prober,
+		hooks:                  hookHealth{startedAt: time.Now()},
 		restartIntervalDefault: 2 * time.Second,
 		ringCap:                65536, buckets: map[string]*bucket{},
 		resumeAt: map[string]time.Time{},

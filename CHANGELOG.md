@@ -59,6 +59,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   post, announce and join controls send the declared space argument; joining
   without a text field no longer throws before the request.
 
+- Hook health states the window observed since this daemon started. With no
+  calls during its first minute, `dibs doctor` reports an informational
+  observation without install advice. After that window, it keeps the warning
+  and corrective hint; restarting does not establish that hooks are missing.
+
 - The README now covers installation, connecting agents and first use. Detailed
   guides live under `docs/`; existing section anchors still lead to those guides.
 
