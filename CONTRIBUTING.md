@@ -167,7 +167,8 @@ The answer is no every time, however good the traffic numbers look.
 Developed and verified on macOS. The process-inspection layer in
 `internal/liveness` shells out to `ps`, and its flags differ between BSD and GNU
 userlands, so the parts that read another process's environment and CPU time are
-the most likely to need work elsewhere. See the README for what is verified.
+the most likely to need work elsewhere. See [platform support](docs/PLATFORMS.md)
+for what is verified.
 
 Patches that make it correct on Linux are wanted. Please include the evidence,
 which command you ran, on which distribution, and what it printed: rather than

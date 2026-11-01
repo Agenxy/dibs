@@ -38,7 +38,8 @@ sandboxed steps with a private temporary `HOME`, and
 A command that registers a per-user service there can target the wrong home.
 We do not escape that sandbox or pass account-home access into a flight. Only
 Mac-only, non-fatal xattr preparation of the staged files and installed app
-remains. The caveats and README retain a manual fallback if that fails.
+remains. The caveats and [installation guide](INSTALL.md#homebrew-macos-and-linux)
+retain a manual fallback if that fails.
 
 An existing install updates with `brew upgrade dibs`, then `dibs upgrade`.
 Mac app registrations use the stable installed app path. Linux upgrade repairs

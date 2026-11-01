@@ -1,3 +1,102 @@
+# Configuration guide
+
+### Configuration
+
+Dibs runs correctly with no configuration file at all, and most fleets never
+write one. Everything the daemon accepts is in
+**[docs/CONFIGURATION.md](#configuring-dibs-dibstoml)**, with what happens if you
+leave each setting alone.
+
+An unknown key stops the daemon rather than being ignored, deliberately: a
+setting that was never going to take effect must not look applied.
+
+```sh
+man dibs      # the CLI
+man 8 dibd    # the daemon: flags, files, what a restart costs
+dibs doctor   # what is actually in effect right now
+```
+
+## Configuration
+
+Settings live in `<dir>/dibs.toml` rather than on the command line, which is the
+point: a threshold you measured should not have to be retyped every restart.
+
+```toml
+[match]
+repo = "/path/to/repo"
+join_threshold = 0.327      # from `dibs calibrate`
+notify_threshold = 0.163
+embed_url = "http://127.0.0.1:8737"
+embed_model = "qwen3-embedding:0.6b"
+# retrieval markers are inferred from the model name; set these only for a
+# family Dibs does not know:
+# embed_query_prefix = "query: "
+# embed_doc_prefix   = "passage: "
+# a bearer token is NOT a config key: export DIBS_MATCH_EMBED_KEY instead
+
+[limits]
+agent_ttl = "5m"                 # how long an agent that gave a PID may go silent
+idle_ttl = "45m"                # ...and one that did not: probably you, see below
+blob_store_bytes = 1073741824   # 1 GiB: hard cap on the attachment store
+
+[supervise]
+min_age  = "10m"   # how old before a whole-life idleness verdict is allowed
+min_duty = 0.0005  # CPU share below which a long-lived process counts as idle
+
+[roles]
+# Standing roles. The daemon grants these at startup and re-applies them as
+# agents register, so a role survives a board reset instead of having to be
+# re-granted by hand.
+coordinator = ["orchestrator"]   # broadcast, force-release, merge, evict
+admin       = ["fleet-lead"]     # all of that, plus reading every agent's mail
+
+[roles.identity]
+# REQUIRED, and this is the half that makes the block above safe. A name
+# authenticates nobody: any agent may register as "fleet-lead". Each entry is
+# the FINGERPRINT of the agent allowed to hold that name, which `register`
+# returns as `fingerprint` and the daemon prints at startup for you to paste. Never the nonce
+# itself, which is that agent's whole recovery credential.
+orchestrator = "…64 hex characters, from the startup log…"
+fleet-lead   = "…64 hex characters…"
+```
+
+**Declaring a role in config is a human decision.**
+No agent can promote itself: `grant_role` is not an MCP tool, it is admitted only
+on the daemon's admin path, and a system op presented with an agent token is
+refused outright. The file is authority because you own the file: an agent
+cannot reach it through Dibs, and cannot ask Dibs to.
+
+Granting by hand still works (`dibs admin coordinator <agent>`), but it dies with
+the ledger it lived in. A fleet that resets its board and silently has nobody
+able to merge two colliding agents is the failure this avoids.
+
+Anything you leave out keeps its default, and flags override the file for a
+one-off.
+
+**Which TTL applies to you is not obvious.** `agent_ttl` governs agents that
+registered a **PID**, where death can be checked directly and a short lease is
+safe. `idle_ttl` governs agents that did not, where silence is the only evidence,
+and silence is what a human-paced agent does between turns, so it defaults to 45
+minutes. The MCP config that `dibs mcp-config` prints is a plain HTTP client,
+which registers **without** a PID. If you set `agent_ttl` and nothing changed,
+this is why: set `idle_ttl`.
+
+`agent_ttl` is worth a thought before you leave it alone. Any authenticated call
+renews an agent's lease, so a chatty agent never goes near it, but an agent
+running a long build or a slow test suite makes no Dibs calls for its duration,
+and a crashed owner *yields its exclusive agents*. Set it above your longest
+silent step, or a busy agent loses an agent it is still working in. Lower it if you
+would rather find out about crashes sooner.
+
+`blob_store_bytes` is a *hard* bound, not a target: when the store is over it,
+eviction drops content that messages still reference rather than exceed the cap.
+A recipient then gets `E_BLOB_EVICTED`: which says plainly that its access was
+never the problem and the content is gone, but the artifact is gone all the
+same. Raise it if your fleet exchanges large build outputs.
+
+
+---
+
 # Configuring Dibs: `dibs.toml`
 
 Every setting the daemon reads, in one place, with what happens if you leave it

@@ -869,8 +869,8 @@ server's `CODEX_MCP_PROTOCOL_VERSION=2026-07-28`. The similarly named
 Take the complete configuration `dibs mcp-config` prints. Source and installed
 builds can differ: this machine's PATH Codex reports 0.0.0, and its Hermes
 adapter uses SDK 1.28.1/legacy 2025-11-25 despite fetched source pinning 2.0.0.
-README's dated survey separates source predicates, observed versions and
-actual wire measurements; an SDK's latest constant is not a session trace.
+The dated survey in `docs/PROTOCOL.md` separates source predicates, observed
+versions and actual wire measurements; an SDK's latest constant is not a session trace.
 
 **You cannot change this yourself, and you should not try.** Editing your
 operator's harness configuration is not yours to do. What is useful is to

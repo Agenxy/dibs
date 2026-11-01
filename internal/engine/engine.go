@@ -1008,8 +1008,8 @@ func (e *Engine) execWithReceipt(
 	// registration that reattached or resumed already had a credential, and the
 	// minted one was discarded.
 	if op.Kind == core.OpRegister && res != nil {
-		// The role-pinning instructions, in the README, the configuration guide
-		// and the daemon's own refusal, say `register` returns the fingerprint
+		// The role-pinning instructions in docs/CONFIGURATION.md and the
+		// daemon's own refusal say `register` returns the fingerprint
 		// to paste under [roles.identity]. It did not: the value existed for
 		// internal callers and the startup log only, so the advertised recovery
 		// step could not be followed. Found by the pre-release review, round

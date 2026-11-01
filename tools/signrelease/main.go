@@ -271,7 +271,7 @@ func signOne(path string) error {
 		args = append(args, "--keychain", keychain)
 	}
 	// NO TIMESTAMP. A trusted timestamp is a network call to Apple whose
-	// answer differs every run, and the README claims these binaries are
+	// answer differs every run, and docs/INSTALL.md claims these binaries are
 	// reproducible. It buys nothing here either: a timestamp proves a
 	// signature predates a certificate's expiry, and a self-signed identity
 	// has no revocation story for that to matter to.

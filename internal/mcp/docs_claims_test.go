@@ -102,6 +102,9 @@ func TestDocumentedToolCountMatchesReality(t *testing.T) {
 	// tools it found", which this test can see.
 	docs := []string{
 		"README.md", "SKILLS.md", "CHANGELOG.md",
+		// The long README sections moved here; their claims still need both
+		// the digit and word checks, and a missing destination must still fail.
+		"docs/OVERVIEW.md", "docs/PROTOCOL.md",
 		"docs/ARCHITECTURE.md", "internal/mcp/skills.md",
 		// Both carry the count and neither was guarded: SPEC.md states it as a
 		// contract, and the tutorial quotes a `dibs doctor` transcript that

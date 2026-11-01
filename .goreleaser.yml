@@ -42,7 +42,7 @@ before:
     # internal/notify looks for Dibs.app/Contents/MacOS/dibs-notify beside the
     # executable, and Reach reports notifications unavailable without it. Only
     # `task install` built it, so source builds had the branded, actionable
-    # notification the README lists as a required artifact and every published
+    # notification docs/INSTALL.md lists as a required artifact and every published
     # archive and brew install did not: a release whose whole
     # human-in-the-loop story is a component nobody downloading it receives.
     # The Touch ID helper above had exactly this hole one review round earlier.
@@ -141,7 +141,7 @@ archives:
     # binary's header keeps its build time and two archives built from identical
     # bytes still hash differently. The mtime IS applied to the doc files listed
     # further down. The BINARIES are byte-for-byte reproducible: verified by
-    # building twice and comparing hashes, and that is what the README claims;
+    # building twice and comparing hashes, as docs/INSTALL.md claims;
     # the tar wrapper around them is not, and this comment will not pretend
     # otherwise.
     builds_info:

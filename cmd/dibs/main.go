@@ -119,7 +119,7 @@ setup:
                            (--out FILE writes it, --date D pins the page date)
   dibs completion SHELL   print verb completions for bash, zsh or fish,
                            generated from the live verb table so the script
-                           cannot drift; the README says where each shell loads it
+                           cannot drift; docs/INSTALL.md says where each shell loads it
   dibs stop               stop the daemon serving THIS data directory, and only
                            that one, not "pkill dibd", which also kills the
                            isolated daemons other fleets are running. SIGTERM, so

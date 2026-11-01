@@ -24,7 +24,7 @@
 // against each other. Linux uses the release archives, and the manifest's
 // compatibility list says darwin and nothing else, so a Linux or Windows
 // host is told before it installs it. What a manifest cannot say is
-// "Apple silicon": Dibs ships no Intel Mac build (README, "Apple silicon
+// "Apple silicon": Dibs ships no Intel Mac build (docs/PLATFORMS.md, "Apple silicon
 // only on the Mac"), so an Intel Mac that installs this bundle gets a binary
 // it cannot run, and the only place that can be said is the description,
 // where it is. The second review asked whether removing Linux had removed
