@@ -32,12 +32,17 @@ func admitReaderFeatures(op *Op) error {
 		return errf("E_BAD_ARG", "name the required v0.0.17 features once", "invalid reader requirement count")
 	}
 	for i, feature := range op.RequiredFeatures {
-		if feature != FeatureDesktopApproval && feature != FeatureMailboxRecovery ||
+		if !SupportsV17Feature(feature) ||
 			i > 0 && op.RequiredFeatures[i-1] >= feature {
 			return errf("E_BAD_ARG", "use the supported sorted v0.0.17 feature set", "invalid reader requirement %q", feature)
 		}
 	}
 	return nil
+}
+
+// SupportsV17Feature is reader-format knowledge, shared with ledger decoding.
+func SupportsV17Feature(feature string) bool {
+	return feature == FeatureDesktopApproval || feature == FeatureMailboxRecovery
 }
 
 func (s *State) applyReaderFeatures(op *Op, now time.Time) (Result, []Event, error) {

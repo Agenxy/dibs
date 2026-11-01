@@ -236,6 +236,17 @@ func (l *Ledger) Replay(st *core.State) (int, error) {
 			if decErr := l.box.DecryptOp(rec.Op); decErr != nil {
 				return n, fmt.Errorf("decrypt serial %d: %w", rec.S, decErr)
 			}
+			// A requirement is a reader-format boundary, like the snapshot
+			// header. Do not confuse recognizing it with re-running today's
+			// admission policy or adding a retroactive rule to core.Apply.
+			if rec.Op.Kind == core.OpRequireV17Features {
+				for _, feature := range rec.Op.RequiredFeatures {
+					if !core.SupportsV17Feature(feature) {
+						return n, fmt.Errorf("ledger serial %d requires unsupported reader feature %q; upgrade dibd",
+							rec.S, feature)
+					}
+				}
+			}
 			_, replayEvents, applyErr := st.Apply(rec.Op, rec.T)
 			if l.OnEvents != nil && len(replayEvents) > 0 {
 				l.OnEvents(replayEvents)

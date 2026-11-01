@@ -238,6 +238,8 @@ filesystem writes (§9). It is a **coordination generation**, not a fencing toke
   replaying the marker prevents another append on the next boot. Untouched
   boards get no marker. Collection of the original data does not remove reader
   requirements, and snapshots declare both them and `ledger-requirements/v1`.
+  Ledger decoding refuses an unknown required feature before folding its
+  marker, with upgrade guidance, just as snapshot decoding checks its header.
   No historical feature op is revalidated or removed.
 
   Pre-fence binaries refuse this unknown kind, including earlier v0.0.17
