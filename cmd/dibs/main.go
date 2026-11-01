@@ -189,6 +189,7 @@ func styledUsage() string {
 }
 
 func main() {
+	configureCLILogging()
 	if err := paths.CatchServiceConfig(cliMain); err != nil {
 		fmt.Fprintln(os.Stderr, "dibs:", err)
 		os.Exit(1)

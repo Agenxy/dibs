@@ -73,7 +73,8 @@ func (p *surfaceProbe) result() (string, bool) {
 }
 
 // Wait for evidence off the request path, retrying one failed observation for
-// this pending batch. Each inventory has its own existing one-second bound.
+// this pending batch. Each inventory has a one-second command context and a
+// 100ms WaitDelay for inherited output pipes after cancellation or exit.
 func (p *surfaceProbe) completed(ctx context.Context) (string, bool) {
 	for range 2 {
 		if ctx.Err() != nil {
