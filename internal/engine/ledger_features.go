@@ -4,12 +4,51 @@
 package engine
 
 import (
+	"log/slog"
 	"slices"
 	"sort"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/mailhistory"
 )
+
+func (e *Engine) finishReaderBackstop(
+	op *core.Op, result core.Result, before mailhistory.Snapshot, events []core.Event, now time.Time,
+) (bool, error) {
+	missing := e.missingReaderFeaturesAt(op, result)
+	if len(missing) == 0 {
+		return false, nil
+	}
+	// A nested append replaces the native record receipt and reuses capture
+	// scratch. The normal predicted path keeps history after the send receipt;
+	// only actual fallback consumes this original capture before nesting.
+	observed := e.mailSource != nil
+	if observed {
+		e.mailSource.ObserveMail(before, e.state, op, events)
+	}
+	if err := e.requireReaderFeatures(missing, now); err != nil {
+		return observed, err
+	}
+	slog.Warn("ledger reader requirement backstop", "op", op.Kind, "features", missing)
+	return observed, nil
+}
+
+// Inspect the actual affected records independently of the pre-append
+// prediction. Already-fenced features require no further inspection.
+func (e *Engine) missingReaderFeaturesAt(op *core.Op, result core.Result) []string {
+	var missing []string
+	if !slices.Contains(e.state.RequiredFeatures, core.FeatureDesktopApproval) && !e.state.DesktopApproval.IsZero() {
+		missing = append(missing, core.FeatureDesktopApproval)
+	}
+	if !slices.Contains(e.state.RequiredFeatures, core.FeatureMailboxRecovery) {
+		id, _ := result["agent_id"].(string)
+		if e.state.HasMailboxRecoveryAt(op, e.state.Serial, id) {
+			missing = append(missing, core.FeatureMailboxRecovery)
+		}
+	}
+	return missing
+}
 
 func (e *Engine) initializeReaderFeatures(now time.Time) {
 	if err := e.requireReaderFeatures(e.state.FeatureData(), now); err != nil {

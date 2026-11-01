@@ -81,14 +81,74 @@ func (s *State) HasMailboxRecoveryData() bool {
 		return true
 	}
 	for _, agent := range s.Agents {
-		if agent != nil && len(agent.InheritedDeclarations) > 0 {
+		if recoveryAgentData(agent) {
 			return true
 		}
 	}
 	for _, message := range s.Messages {
-		if message != nil && message.Recovery != nil {
+		if recoveryMessageData(message) {
 			return true
 		}
 	}
 	return false
+}
+
+func recoveryAgentData(agent *Agent) bool {
+	return agent != nil && len(agent.InheritedDeclarations) > 0
+}
+
+func recoveryMessageData(message *Message) bool {
+	return message != nil && message.Recovery != nil
+}
+
+// HasMailboxRecoveryAt inspects only the operation's affected records. The
+// complete historical census belongs at boot, never on each writer append.
+func (s *State) HasMailboxRecoveryAt(op *Op, serial uint64, resultAgentID string) bool {
+	if len(s.RecoveredAddresses) > 0 || s.recoveryMessagesAt([]uint64{serial, op.MsgSerial}) ||
+		s.recoveryMessagesAt(op.MsgSerials) {
+		return true
+	}
+	if op.MailboxSerials != nil && s.recoveryMessagesAt(*op.MailboxSerials) {
+		return true
+	}
+	named := []string{op.AgentID, op.To, op.MergeInto, op.Adopt, op.Name, op.Space, op.Parent, resultAgentID}
+	if s.recoveryAgentsAt(named) {
+		return true
+	}
+	return s.recoveryMessageAgentsAt(op.MsgSerial) ||
+		op.Recovery != nil && s.recoveryAgentPair(op.Recovery.From, op.Recovery.Into) ||
+		op.Merge != nil && s.recoveryAgentPair(op.Merge.From, op.Merge.Into)
+}
+
+func (s *State) recoveryMessagesAt(serials []uint64) bool {
+	for _, serial := range serials {
+		if recoveryMessageData(s.Messages[serial]) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *State) recoveryAgentsAt(ids []string) bool {
+	for _, id := range ids {
+		if recoveryAgentData(s.Agents[id]) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *State) recoveryAgentPair(from, into string) bool {
+	return recoveryAgentData(s.Agents[from]) || recoveryAgentData(s.Agents[into])
+}
+
+func (s *State) recoveryMessageAgentsAt(serial uint64) bool {
+	message := s.Messages[serial]
+	if message == nil {
+		return false
+	}
+	if s.recoveryAgentsAt([]string{message.From, message.To, message.Adopt}) {
+		return true
+	}
+	return message.Merge != nil && s.recoveryAgentPair(message.Merge.From, message.Merge.Into)
 }

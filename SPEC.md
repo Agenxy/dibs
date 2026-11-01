@@ -240,6 +240,16 @@ filesystem writes (§9). It is a **coordination generation**, not a fencing toke
   requirements, and snapshots declare both them and `ledger-requirements/v1`.
   Ledger decoding refuses an unknown required feature before folding its
   marker, with upgrade guidance, just as snapshot decoding checks its header.
+  After each successful append, a separate check of affected message serials
+  and named agents, plus the address-map length and policy value, writes any
+  missing requirement and logs a warning naming the operation. Already-fenced
+  features are skipped; only boot scans all feature data. This backstop
+  detects a missed prediction; the preceding marker remains the normal path
+  that protects a crash between appends.
+
+  A predicted feature operation that Apply refuses can leave its one marker
+  without feature data. That safe-direction over-approximation is retained:
+  the refused operation is not appended, and retry writes no second marker.
   No historical feature op is revalidated or removed.
 
   Pre-fence binaries refuse this unknown kind, including earlier v0.0.17

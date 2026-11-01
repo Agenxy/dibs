@@ -10,7 +10,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -22,9 +24,15 @@ import (
 // control, and states the minimum reader in an old reader's refusal message.
 const requiredV17Kind = "require_dibs_v0.0.17"
 
-func TestRecoveryWriterFencesBeforeFirstFeatureAppend(t *testing.T) {
+func recoveryFenceBoard(t *testing.T) (*Engine, context.Context, *memLedger, map[string]string) {
+	t.Helper()
 	led := &memLedger{}
 	e, ctx := runContactReplayEngine(t, core.NewState("fence", core.DefaultLimits()), led, nil)
+	return e, ctx, led, populateRecoveryFenceBoard(t, e, ctx)
+}
+
+func populateRecoveryFenceBoard(t *testing.T, e *Engine, ctx context.Context) map[string]string {
+	t.Helper()
 	do := func(op *core.Op) core.Result { return contactReplayDo(t, e, ctx, op) }
 	tokens := map[string]string{}
 	for _, id := range []string{"source", "survivor", "lead"} {
@@ -43,6 +51,40 @@ func TestRecoveryWriterFencesBeforeFirstFeatureAppend(t *testing.T) {
 	if _, err := e.GrantRole(ctx, "lead", core.RoleCoordinator); err != nil {
 		t.Fatal("setup grant:", err)
 	}
+	return tokens
+}
+
+func BenchmarkReaderBackstopAffectedRecords(b *testing.B) {
+	for _, count := range []int{16_384, 65_536} {
+		for _, fenced := range []bool{false, true} {
+			b.Run(strconv.Itoa(count)+"/fenced="+strconv.FormatBool(fenced), func(b *testing.B) {
+				st := core.NewState("bounded-census", core.DefaultLimits())
+				for i := range 64 {
+					st.Agents[strconv.Itoa(i)] = &core.Agent{}
+				}
+				for i := range count {
+					st.Messages[uint64(i+1)] = &core.Message{Serial: uint64(i + 1)}
+				}
+				st.Serial = uint64(count + 1)
+				if fenced {
+					st.RequiredFeatures = []string{core.FeatureDesktopApproval, core.FeatureMailboxRecovery}
+				}
+				e := New(st, &memLedger{}, deadProber{})
+				op := &core.Op{Kind: core.OpActivityCheckpoint, AgentID: "1", MsgSerial: 1}
+				b.ReportAllocs()
+				b.ResetTimer()
+				for range b.N {
+					if len(e.missingReaderFeaturesAt(op, nil)) != 0 {
+						b.Fatal("setup: unrelated records unexpectedly contain recovery data")
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestRecoveryWriterFencesBeforeFirstFeatureAppend(t *testing.T) {
+	e, ctx, led, tokens := recoveryFenceBoard(t)
 	plan, err := e.RecoverAgent(ctx, tokens["survivor"], "source", MergeOptions{DryRun: true})
 	if err != nil {
 		t.Fatal("setup preview:", err)
@@ -65,8 +107,80 @@ func TestRecoveryWriterFencesBeforeFirstFeatureAppend(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	do(&core.Op{Kind: core.OpRespond, Token: tokens["lead"], MsgSerial: req["msg_serial"].(uint64), Disposition: "approve"})
+	contactReplayDo(t, e, ctx, &core.Op{Kind: core.OpRespond, Token: tokens["lead"], MsgSerial: req["msg_serial"].(uint64), Disposition: "approve"})
 	assertFeatureMarkerCount(t, e, ctx, led, 1)
+}
+
+// The strict prefix guard above remains separate. This guard also runs under
+// the prediction-removal mutation: a late marker must warn, and no completed
+// writer trip may leave feature data without its durable reader requirement.
+func TestRecoveryWriterAlwaysFencesAndWarnsOnBackstop(t *testing.T) {
+	var captured continuationWakeLog
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&captured, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	defer slog.SetDefault(previous)
+	e, ctx, led, tokens := recoveryFenceBoard(t)
+	plan, err := e.RecoverAgent(ctx, tokens["survivor"], "source", MergeOptions{DryRun: true})
+	if err != nil {
+		t.Fatal("setup preview:", err)
+	}
+	if _, err := e.RecoverAgent(ctx, tokens["survivor"], "source", MergeOptions{Fence: plan["fence"].(string)}); err != nil {
+		t.Fatal("setup recovery:", err)
+	}
+	assertFeatureMarkerCount(t, e, ctx, led, 1)
+	if _, err := e.query(ctx, func() core.Result {
+		marker, feature := -1, -1
+		for i, op := range led.ops {
+			if op.Kind == requiredV17Kind {
+				marker = i
+			}
+			if op.Kind == core.OpSendMessage && op.Recovery != nil {
+				feature = i
+			}
+		}
+		if marker < 0 || feature < 0 || !reflect.DeepEqual(e.state.RequiredFeatures, e.state.FeatureData()) {
+			t.Error("completed recovery append has unfenced feature data")
+		}
+		warned := strings.Contains(captured.String(), "level=WARN msg=\"ledger reader requirement backstop\" op=send")
+		if warned != (marker > feature) {
+			t.Errorf("late marker must warn naming its op: marker=%d feature=%d logs=%s", marker, feature, captured.String())
+		}
+		t.Logf("marker index=%d feature index=%d backstop Warn=%v logs=%s", marker, feature, warned, captured.String())
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRefusedFeatureAppendKeepsOnlyOneMarkerOnRetry(t *testing.T) {
+	led := &memLedger{}
+	e, ctx := runContactReplayEngine(t, core.NewState("refused-fence", core.DefaultLimits()), led, nil)
+	contactReplayDo(t, e, ctx, &core.Op{Kind: core.OpRegister, Name: "retained-actor"})
+	if _, err := e.query(ctx, func() core.Result {
+		before, records := e.state.Serial, len(led.ops)
+		for attempt := range 2 {
+			// Exercise the writer's admitted-but-refused fold directly. Public
+			// authentication normally refuses this token before reaching it.
+			op := &core.Op{
+				Kind: core.OpSetDesktopApprovalSetting, Token: "refused-token",
+				SettingKey: core.DesktopApprovalSettingKey, SettingValue: "true",
+			}
+			if err := e.state.Admit(op); err != nil {
+				return core.Result{"error": err}
+			}
+			if _, err := e.applyAndLedger(op, time.Now()); !errors.Is(err, core.ErrBadToken) {
+				t.Errorf("expected fold refusal on attempt %d: %v", attempt, err)
+			}
+			if e.state.Serial != before+1 || len(led.ops) != records+1 ||
+				led.ops[records].Kind != requiredV17Kind || !e.state.DesktopApproval.IsZero() {
+				t.Errorf("refused feature or retry appended more than its first marker: attempt=%d serial=%d records=%d",
+					attempt, e.state.Serial, len(led.ops))
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func assertFeatureMarkerCount(t *testing.T, e *Engine, ctx context.Context, led *memLedger, want int) {
