@@ -10,12 +10,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"time"
 
 	"github.com/agenxy/dibs/internal/paths"
 )
 
 func main() {
+	evidence("entered")
+	defer evidence("finished")
 	// Model a slow first execution without relying on this host's policy cache.
 	// The opt-in marker lives only in the calling test's private directory.
 	if marker := os.Getenv("DIBS_TEST_QUEUE_COLD_EXEC"); marker != "" {
@@ -46,6 +49,21 @@ func main() {
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "queue" {
+		if dir := os.Getenv("DIBS_TEST_QUEUE_EVIDENCE"); dir != "" {
+			stderr, err := os.OpenFile(filepath.Join(dir, "queue.stderr"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+			if err != nil {
+				panic(err)
+			}
+			os.Stderr = stderr
+			defer func() { _ = stderr.Close() }()
+			defer func() {
+				if problem := recover(); problem != nil {
+					_, _ = fmt.Fprintf(stderr, "panic: %v\n%s", problem, debug.Stack())
+					panic(problem)
+				}
+			}()
+		}
+		evidence("before-command")
 		if marker := os.Getenv("DIBS_TEST_QUEUE_COMMAND_DELAY"); marker != "" {
 			if err := os.WriteFile(marker, nil, 0o600); err != nil {
 				panic(err)
@@ -112,6 +130,7 @@ func main() {
 		if err = paths.LockExclusive(lock, true); err != nil {
 			panic(err)
 		}
+		evidence("queue-locked")
 		defer func() { paths.Unlock(lock); _ = lock.Close() }()
 		b, _ := os.ReadFile(path)
 		var rows []map[string]any
@@ -121,6 +140,7 @@ func main() {
 		if err := writeQueue(path, b); err != nil {
 			panic(err)
 		}
+		evidence("queue-committed")
 		return
 	}
 	if len(os.Args) != 4 || os.Args[1] != "app-server" || os.Args[2] != "--listen" || os.Args[3] != "stdio://" {
@@ -160,6 +180,7 @@ func main() {
 		if req.Method == "initialized" {
 			continue
 		}
+		evidence(req.Method)
 		var result any = map[string]any{}
 		if req.Method == "thread/queue/list" {
 			b, _ := os.ReadFile(path)
@@ -178,6 +199,30 @@ func main() {
 		if err := enc.Encode(map[string]any{"id": req.ID, "result": result}); err != nil {
 			panic(err)
 		}
+	}
+}
+
+// Private fixture evidence only. It never runs in a shipped command.
+func evidence(phase string) {
+	dir := os.Getenv("DIBS_TEST_QUEUE_EVIDENCE")
+	if dir == "" {
+		return
+	}
+	file, err := os.OpenFile(filepath.Join(dir, "stages.jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		panic(err)
+	}
+	mode := ""
+	if len(os.Args) > 1 {
+		mode = os.Args[1]
+	}
+	err = json.NewEncoder(file).Encode(map[string]any{"at_ns": time.Now().UnixNano(), "mode": mode, "phase": phase})
+	closeErr := file.Close()
+	if err != nil {
+		panic(err)
+	}
+	if closeErr != nil {
+		panic(closeErr)
 	}
 }
 
