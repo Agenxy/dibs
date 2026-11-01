@@ -88,8 +88,10 @@ func TestContactNoticeReadStopsCoordinatorNag(t *testing.T) {
 				Kind: core.OpSendMessage, Token: tokens["lead"], To: "sender",
 				MsgType: core.MsgQuestion, Body: "unrelated question",
 			})["msg_serial"].(uint64)
-			contactReplayDo(t, e, ctx, &core.Op{Kind: core.OpRespond, Token: tokens["sender"],
-				MsgSerial: question, Disposition: "answer", Body: "unrelated answer must still wake"})
+			contactReplayDo(t, e, ctx, &core.Op{
+				Kind: core.OpRespond, Token: tokens["sender"],
+				MsgSerial: question, Disposition: "answer", Body: "unrelated answer must still wake",
+			})
 			got, err := e.HookPoll(ctx, "lead-contact-session", "Stop", "", false, false)
 			if err != nil || got["decision"] != "block" || !strings.Contains(fmt.Sprint(got), "unrelated answer must still wake") {
 				t.Fatalf("unrelated blocking outcome no longer reaches Stop: %v %v", got, err)
@@ -123,8 +125,10 @@ func assertContactStopQuiet(t *testing.T, e *Engine, ctx context.Context, contac
 		t.Fatalf("Stop after authenticated read repeated contact: %v %v", got, err)
 	}
 	view, err := e.query(ctx, func() core.Result {
-		return core.Result{"blocking": e.blockingNotices("lead"), "alerts": e.state.Board()["contact_alerts"],
-			"resolved": !e.state.Contacts[contact].ResolvedAt.IsZero(), "mail": e.state.Messages[mail].State}
+		return core.Result{
+			"blocking": e.blockingNotices("lead"), "alerts": e.state.Board()["contact_alerts"],
+			"resolved": !e.state.Contacts[contact].ResolvedAt.IsZero(), "mail": e.state.Messages[mail].State,
+		}
 	})
 	if err != nil {
 		t.Fatal(err)
