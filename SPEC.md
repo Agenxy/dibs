@@ -223,6 +223,14 @@ filesystem writes (§9). It is a **coordination generation**, not a fencing toke
   kept lines. An older dibd refuses a compacted ledger (its chain does not
   start at the empty hash) rather than serving a partial board.
 
+  Snapshot version 2 declares required reader features when it contains
+  desktop-approval policy/provenance or mailbox-recovery state. Version-1-only
+  binaries refuse it before gob decoding can silently discard new fields;
+  current readers refuse unknown feature requirements with upgrade guidance.
+  Untouched boards keep version 1. New readers still accept historical
+  version-1 snapshots carrying recovery fields. These header requirements
+  cover snapshots; an uncompacted recovery ledger needs its own reader fence.
+
   Why: the ledger is the record and state is its fold, but every start re-ran
   every op the board ever applied, to rebuild a board whose sweeps had already
   pruned most of them. On 2026-10-12 that was 104,257 ops: 7m49s under machine
@@ -1741,6 +1749,18 @@ space surface (`open_space`, `join_space`, `read_space`, `post`,
 claim-level counterpart to `unlock_space`. v1.3 added `configure` and `merge_agents`, the
 admin-gated read and write of the settings the engine can apply while it
 runs; see docs/CONFIGURATION.md for why an address is not among them.
+The additive `human.confirm_privileged_desktop` setting is ledgered, default
+off, and visible with actor/time. Any authenticated identity may enable it;
+only the daemon's human identity may disable it, including when the caller
+is an admin agent. The unlocked web board's Settings control and
+`dibs desktop-approvals [on|off]` use existing human authentication. When on,
+live and reopened native approvals with a typed role, permission, adoption,
+merge or recovery effect require daemon-side `humanauth.Check`. Proof binds
+the exact node, serial, participants and effect, with pending/deadline,
+effect and current-setting checks on the writer immediately before execution.
+Canceled, busy or unavailable checks leave the request pending and point to
+the board. Ordinary questions/requests, denials, comments, board decisions
+and existing signed remote relay decisions retain their existing paths.
 Every board row carries `work` (`idle`, `working`, `declared` when the agent
 has not been seen in 30 minutes, `waiting`, `stalled`),
 derived by the daemon from the agent's declarations and the turns it has seen,

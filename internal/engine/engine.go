@@ -30,6 +30,10 @@ import (
 
 // Engine owns all state. Public methods are safe for concurrent use.
 type Engine struct {
+	// Nil uses humanauth.Check. Only compile-time fixtures replace the OS
+	// boundary; no setting, environment flag or exported setter can do so.
+	desktopApprovalPresence desktopPresenceChecker
+
 	folderAccess *folderaccess.Monitor
 	transfers    map[uint64]transferReservation // ephemeral staging reservations, writer-owned
 	transferNext uint64
@@ -789,6 +793,9 @@ func (e *Engine) execWithReceipt(
 			actor = e.state.AgentByToken(op.Token)
 			if actor == nil {
 				return nil, core.ErrBadToken // never wakes, never ledgers
+			}
+			if op.Kind == core.OpSetDesktopApprovalSetting && op.SettingValue == "false" && !e.isTheHuman(actor.ID) {
+				return nil, desktopApprovalSettingError()
 			}
 			if !prepaid && !e.allow(actor.ID, now) {
 				return nil, core.ErrRateLimited // admitted nothing; no wake

@@ -174,6 +174,7 @@ func (l *Ledger) Replay(st *core.State) (int, error) {
 	captured, sawOlder := false, false
 	capture := func(at int64) error {
 		h := SnapshotHeader{Serial: st.Serial, Head: prev, Node: st.NodeID, Created: l.now()}
+		h = snapshotHeaderForState(h, st)
 		if err := writeSnapshot(snapshotPath(l.path), h, st, l.box); err != nil {
 			return fmt.Errorf("snapshot at serial %d: %w", st.Serial, err)
 		}

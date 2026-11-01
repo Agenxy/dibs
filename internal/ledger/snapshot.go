@@ -38,15 +38,19 @@ import (
 // SnapshotName is the snapshot's file name beside ledger.jsonl.
 const SnapshotName = "snapshot.dibs"
 
-const snapshotVersion = 1
+const (
+	snapshotVersion        = 1
+	featureSnapshotVersion = 2
+)
 
 // SnapshotHeader anchors a snapshot in the hash chain.
 type SnapshotHeader struct {
-	Version int       `json:"version"`
-	Serial  uint64    `json:"serial"` // the last ledger serial folded in
-	Head    string    `json:"head"`   // hash of that serial's ledger line: the next line's prev
-	Node    string    `json:"node"`
-	Created time.Time `json:"created"`
+	Version  int       `json:"version"`
+	Serial   uint64    `json:"serial"` // the last ledger serial folded in
+	Head     string    `json:"head"`   // hash of that serial's ledger line: the next line's prev
+	Node     string    `json:"node"`
+	Created  time.Time `json:"created"`
+	Features []string  `json:"features,omitempty"`
 }
 
 func snapshotPath(ledgerPath string) string {
@@ -73,7 +77,7 @@ func writeSnapshot(path string, h SnapshotHeader, st *core.State, box *Box) erro
 	if err != nil {
 		return err
 	}
-	h.Version = snapshotVersion
+	h = snapshotHeaderForState(h, st)
 	header, err := json.Marshal(h)
 	if err != nil {
 		return err
@@ -118,9 +122,8 @@ func readSnapshotHeader(path string) (SnapshotHeader, bool, error) {
 	if err := json.Unmarshal(line, &h); err != nil {
 		return SnapshotHeader{}, false, fmt.Errorf("snapshot header: %w", err)
 	}
-	if h.Version != snapshotVersion {
-		return SnapshotHeader{}, false, fmt.Errorf("snapshot version %d is not one this build reads (%d)",
-			h.Version, snapshotVersion)
+	if err := validateSnapshotFeatures(h); err != nil {
+		return SnapshotHeader{}, false, err
 	}
 	return h, true, nil
 }

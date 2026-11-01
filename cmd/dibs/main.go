@@ -50,6 +50,8 @@ agent-safe (agent-scoped or public, fine to run from any agent):
                            (generic tail for humans/scripts. Dibs itself never
                            wires this into a harness; agents use await_events)
   dibs board              public board: agents, slots, claims (--json)
+  dibs desktop-approvals [on|off]  optional Touch ID for privileged desktop approvals
+                           (--json; agents may enable, only the human may disable)
   dibs register --name N  register a process's OWN agent; prints token and nonce
                            (--json; retain both privately; DIBS_NONCE recovers it)
   dibs send --to N <body|->  post mail as DIBS_TOKEN's agent; - reads stdin
@@ -224,6 +226,8 @@ func cliMain() {
 		err = fingerprintCmd(os.Args[2:])
 	case "doctor":
 		err = doctor(os.Args[2:])
+	case "desktop-approvals":
+		err = desktopApprovalsCmd(os.Args[2:])
 	case "codex-hooks":
 		err = codexHooksCmd(os.Args[2:])
 	case "codex-plugin":
@@ -380,6 +384,7 @@ var commands = []string{
 	"await", "probe", "watch", "monitor", "board", "log", "verify", "doctor",
 	"codex-hooks", "codex-plugin", "calibrate", "version", "help", "man", "completion", "configure", "messages",
 	"web", "admin", "invite",
+	"desktop-approvals",
 	"mcp-config", "mcp-stdio", "host-bridge", "human-relay", "hook-spawn", "hook-poll", "hook-session",
 	"identity",
 	"stop", "upgrade", "trust", "fingerprint",
