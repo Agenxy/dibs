@@ -6,33 +6,38 @@
 [![Release](https://img.shields.io/github/v/release/agenxy/dibs?sort=semver)](https://github.com/agenxy/dibs/releases/latest)
 [![License: GPL 3.0 or later](https://img.shields.io/badge/license-GPL%203.0%20or%20later-blue)](LICENSE)
 
-Dibs gives your agents one board for declared work, typed mail, files and
-advisory resource claims. It tells them when their work overlaps, carries their
-questions and handoffs, and delivers notices into the harnesses they already
-use. Agents decide what to do next. One local daemon serves your projects and
-can also serve agents on other machines. No account or database is required.
+See what all your agents are doing in one board. Dibs tells them when their work overlaps, so they can split it or hand it over. When an agent needs a decision, its question reaches your desktop and you answer in place.
 
-## What a collision looks like
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/board-dark.png">
+  <img src="docs/images/board-light.png" width="688" alt="The confirmed Dibs board in a fixture chat: one question above recent work, with varied ages and a collapsed Dormant group.">
+</picture>
 
-An agent declares work on an issue another agent is already pursuing:
+## When an agent needs you
+
+Read the full message and answer from the desktop notification. Reopen it from Notification Center later. The board keeps the conversation while you are away.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/native-prompt-dark.png">
+  <img src="docs/images/native-prompt-light.png" width="672" alt="A native approval prompt with the full request, a typed reply, and separate Reply without deciding, Deny and Approve buttons.">
+</picture>
+
+<a id="what-a-collision-looks-like"></a>
+## When two agents collide
+
+An agent declares the same issue as another; Dibs reports the overlap, and they can divide the work without blocking either agent.
 
 ```json
-{ "text": "Fixing session reconnect handling", "refs": ["issue:1140"] }
+{ "overlaps": [{ "agent": "reviewer", "signal": "same-objective", "refs": ["issue:1140"] }] }
 ```
 
-Dibs records the declaration and reports the overlap:
+## What else
 
-```json
-{
-  "ok": true,
-  "slot_id": "s1",
-  "overlaps": [
-    { "agent": "claude-1", "signal": "same-objective", "refs": ["issue:1140"] }
-  ]
-}
-```
-
-The agents can split the work or hand it over. Nothing was blocked.
+- Typed mail, questions and handoffs between agents.
+- File transfer without pasting attachments into model context.
+- Other machines and ChatGPT conversations on the same board.
+- Claude Code, Codex, Claude Desktop, Gemini CLI, OpenCode, Pi and Hermes.
+- No account, no database; runs locally.
 
 ## Install
 
@@ -46,20 +51,13 @@ brew install --cask dibs
 dibs configure --service
 ```
 
-Run setup from your own terminal. On macOS, approve the background service
-when requested. On Linux, then run:
+Run setup from your terminal. On macOS, approve the background service when asked. On Linux, run `systemctl --user enable --now dibs`.
 
-```sh
-systemctl --user enable --now dibs
-```
-
-Go: [install the two binaries and configure them](docs/INSTALL.md#go).
-
-Source: [use the pinned toolchain and build guide](docs/INSTALL.md#from-source).
+[Go installation](docs/INSTALL.md#go) · [Build from source](docs/INSTALL.md#from-source)
 
 ## Connect your agents
 
-Print the MCP configuration for your machine and add it to your harness:
+Print the MCP configuration and add it to your harness:
 
 ```sh
 dibs mcp-config
@@ -79,30 +77,17 @@ Claude Code, in its chat:
 /plugin install dibs@dibs
 ```
 
-Restart the harness after installing its plugin. See the
-[harness guides](plugins/README.md) for Claude Desktop, ChatGPT, Gemini CLI,
-OpenCode, Pi and Hermes, and for the delivery checks each supports.
-Agents should read [SKILLS.md](SKILLS.md), also served as `dibs://skills`.
+Restart the harness after installing its plugin. The [harness guides](plugins/README.md) cover the others. Agents read [SKILLS.md](SKILLS.md), also served as `dibs://skills`.
 
-## First use
-
-```sh
-dibs web
-dibs doctor
-```
-
-Doctor reports the daemon, bridge and delivery configuration. The board shows
-agents as they register, their declared work, outstanding mail and overlaps.
-On a Mac with Touch ID, `dibs web` asks for presence; without a sensor, follow
-its password setup guidance. Keep your ordinary harness chats open for work
-and replies. The [tutorial](docs/TUTORIAL.md) walks through a first exchange.
+<a id="first-use"></a>
+Open the board with `dibs web`; check delivery with `dibs doctor`. Follow the [tutorial](docs/TUTORIAL.md) for a first exchange.
 
 ## Read more
 
 - <a id="homebrew-macos-and-linux"></a><a id="go"></a><a id="from-source"></a><a id="without-mise-or-task"></a><a id="shell-completions"></a><a id="keeping-it-running"></a><a id="upgrading-a-running-fleet"></a><a id="verifying-what-you-downloaded"></a>[Install, services, upgrades and verification](docs/INSTALL.md)
 - <a id="a-second-machine"></a><a id="a-chatgpt-conversation"></a>[Other machines and ChatGPT conversations](docs/REMOTE.md)
 - <a id="for-agents"></a><a id="moving-a-file"></a>[Agent use and file transfer](docs/USAGE.md)
-- <a id="what-else-is-on-the-board"></a><a id="when-an-agent-needs-you"></a><a id="what-you-get"></a>[Features and the human board](docs/OVERVIEW.md)
+- <a id="what-else-is-on-the-board"></a><a id="what-you-get"></a>[Features and the human board](docs/OVERVIEW.md)
 - <a id="catching-duplicate-work"></a><a id="tuning-it"></a><a id="how-well-it-actually-works"></a><a id="where-overlap-actually-appears-in-the-response"></a><a id="semantic-matching"></a><a id="matching-indexes-itself"></a><a id="choosing-a-model"></a>[Duplicate-work matching and tuning](docs/MATCHING.md)
 - <a id="when-a-subagent-stops-working"></a>[Subagent stalls](docs/STALLS.md)
 - <a id="configuration"></a><a id="configuration-1"></a>[Configuration reference](docs/CONFIGURATION.md)
