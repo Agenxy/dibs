@@ -51,6 +51,28 @@ function check(name: string, cond: boolean, detail = "") {
   else { failures++; console.log(`  \x1b[31m✗\x1b[0m ${name}${detail ? ". " + detail : ""}`) }
 }
 
+function finishFixture(dir: string, log: string, passed: boolean, label: string) {
+  if (passed) {
+    rmSync(dir, { recursive: true, force: true })
+    return
+  }
+  console.error(`${label} failed; keeping daemon data and stderr at ${dir}`)
+  try { console.error(readFileSync(log, "utf8").split("\n").slice(-80).join("\n")) }
+  catch (error) { console.error(`Cannot read daemon stderr: ${error}`) }
+}
+
+async function toolResult(response: Response, name: string): Promise<any> {
+  const reply = await response.json() as any
+  if (!response.ok || reply.error || !reply.result?.content?.[0]?.text) {
+    throw new Error(`setup ${name}: HTTP ${response.status}, RPC ${reply.error?.message ?? "missing result"}`)
+  }
+  const value = JSON.parse(reply.result.content[0].text)
+  if (reply.result.isError || value.error || value.ok === false) {
+    throw new Error(`setup ${name}: ${value.code ?? "refused"}: ${value.message ?? value.error ?? "ok:false"}`)
+  }
+  return value
+}
+
 const home = process.env.HOME
 const dibd = process.env.DIBD ?? `${home}/.local/bin/dibd`
 
@@ -130,14 +152,14 @@ const daemonErr = join(dir, "dibd.err")
 const daemon = Bun.spawn({
   cmd: [dibd, "-dir", dir, "-addr", ADDR],
   env: {
-    ...process.env, DIBS_ALLOW_PARALLEL: "1",
+    ...process.env, DIBS_ALLOW_PARALLEL: "1", DIBS_LOG_DEBUG: "1",
     HOME: peerHome, XDG_RUNTIME_DIR: peerRun,
   },
   stdout: "ignore", stderr: Bun.file(daemonErr),
 })
-const cleanup = () => {
+const cleanup = (code = 1) => {
   try { daemon.kill() } catch {}
-  try { rmSync(dir, { recursive: true, force: true }) } catch {}
+  finishFixture(dir, daemonErr, code === 0 && failures === 0, "wake")
 }
 process.on("exit", cleanup)
 
@@ -163,8 +185,7 @@ async function call(name: string, args: Record<string, unknown>, meta?: Record<s
     headers: { "content-type": "application/json", "X-Dibs-Local": secret },
     body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method: "tools/call", params }),
   })
-  const body = await res.json() as any
-  return JSON.parse(body.result.content[0].text)
+  return toolResult(res, name)
 }
 
 // Every wake recorded so far, newest last.
@@ -300,7 +321,10 @@ check("a burst of six is one wake, and at most one re-ask", burst >= 1 && burst 
 await failedWakeDoesNotConsumeTheAttempt()
 
 async function failedWakeDoesNotConsumeTheAttempt() {
+  const failuresBefore = failures
+  let completed = false
   const d = mkdtempSync(join(tmpdir(), "dibs-wake-fail-"))
+  const daemonErr = join(d, "dibd.err")
   const proj = join(d, "project")
   mkdirSync(proj)
   const rec = join(d, "recorder.ts")
@@ -322,8 +346,8 @@ cooldown = "60s"
   const a = `127.0.0.1:${port}`
   const dae = Bun.spawn({
     cmd: [dibd, "-dir", d, "-addr", a],
-    env: { ...process.env, DIBS_ALLOW_PARALLEL: "1" },
-    stdout: "ignore", stderr: "ignore",
+    env: { ...process.env, DIBS_ALLOW_PARALLEL: "1", DIBS_LOG_DEBUG: "1" },
+    stdout: "ignore", stderr: Bun.file(daemonErr),
   })
   try {
     let sec = ""
@@ -340,7 +364,7 @@ cooldown = "60s"
         headers: { "content-type": "application/json", "X-Dibs-Local": sec },
         body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method: "tools/call", params: { name, arguments: args } }),
       })
-      return JSON.parse(((await r.json()) as any).result.content[0].text)
+      return toolResult(r, name)
     }
     // One file per wake, matching the recorder: counting lines in a shared
     // file cannot distinguish one process from three that clobbered each other.
@@ -378,9 +402,11 @@ cooldown = "60s"
       "no second wake inside a 60s cooldown. The failed command woke nobody and " +
       "kept the cooldown, so this agent is unreachable until some unrelated " +
       "event happens to arrive after the window, while send reported success")
+    completed = true
   } finally {
     try { dae.kill() } catch {}
-    try { rmSync(d, { recursive: true, force: true }) } catch {}
+    await dae.exited
+    finishFixture(d, daemonErr, completed && failures === failuresBefore, "failed-wake")
   }
 }
 
@@ -403,14 +429,18 @@ await mailDuringALongTurnIsNotLost()
 await mailDuringALongTurnIsNotLost(1500)
 
 async function mailDuringALongTurnIsNotLost(postMarkerDelay = 0) {
+  const failuresBefore = failures
+  let completed = false
   const name = "mail during a long turn reaches the agent after it ends" +
     (postMarkerDelay ? " (slow process exit)" : "")
   const d = mkdtempSync(join(tmpdir(), "dibs-wake-slow-"))
+  const daemonErr = join(d, "dibd.err")
   const proj = join(d, "project")
   mkdirSync(proj)
   const rec = join(d, "recorder.ts")
   const lg = join(d, "wakes.jsonl")
   const tokenFile = join(d, "sleeper.token")
+  const readyFile = join(d, "ready")
   const endedFile = join(d, "ended")
   const port = String(Number(PORT) + 2)
   const a = `127.0.0.1:${port}`
@@ -439,6 +469,7 @@ const checkIn = async () => {
   }
 }
 await checkIn()
+await Bun.write("${readyFile}", "ready")
 await Bun.sleep(3000)
 await checkIn()
 await Bun.write("${endedFile}", "ended")
@@ -452,8 +483,8 @@ cooldown = "60s"
 `)
   const dae = Bun.spawn({
     cmd: [dibd, "-dir", d, "-addr", a],
-    env: { ...process.env, DIBS_ALLOW_PARALLEL: "1" },
-    stdout: "ignore", stderr: "ignore",
+    env: { ...process.env, DIBS_ALLOW_PARALLEL: "1", DIBS_LOG_DEBUG: "1" },
+    stdout: "ignore", stderr: Bun.file(daemonErr),
   })
   try {
     // The LISTENER, not local.secret: the daemon writes the secret before it
@@ -473,7 +504,7 @@ cooldown = "60s"
         headers: { "content-type": "application/json", "X-Dibs-Local": sec },
         body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method: "tools/call", params: { name: tool, arguments: args } }),
       })
-      return JSON.parse(((await r.json()) as any).result.content[0].text)
+      return toolResult(r, tool)
     }
     const count = () => readdirSync(d).filter(f => f.startsWith(basename(lg) + ".")).length
 
@@ -491,7 +522,14 @@ cooldown = "60s"
     await c("hook_poll", { session_id: THREAD, event: "Stop", cwd: proj })
 
     await c("send", { token: from.token, to: "sleeper", type: "question", body: "first", deadline_s: 600 })
-    await settle(1200)
+    // File creation precedes check_in. Wait for the recorder's successful
+    // check_in, not a guessed process-start delay, before sending mid-turn mail.
+    // This bounds setup only; the post-exit delivery bound below is unchanged.
+    for (let until = Date.now() + 5000; !existsSync(readyFile) && Date.now() < until;) await Bun.sleep(20)
+    if (!existsSync(readyFile)) {
+      check(name, false, `setup: first recorder did not complete check_in within 5s (${count()} command files)`)
+      return
+    }
     if (count() !== 1) {
       check(name, false, `the first question started ${count()} command(s), not one, ` +
         "so there is no running turn for the second to arrive during")
@@ -552,9 +590,11 @@ cooldown = "60s"
       "The agent read its inbox before that message existed, so it never saw it, " +
       "and send reported it delivered: this is the case the exit re-check exists " +
       "for and the one no recorder here could reach")
+    completed = true
   } finally {
     try { dae.kill() } catch {}
-    try { rmSync(d, { recursive: true, force: true }) } catch {}
+    await dae.exited
+    finishFixture(d, daemonErr, completed && failures === failuresBefore, name)
   }
 }
 
