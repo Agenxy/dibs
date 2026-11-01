@@ -373,13 +373,18 @@ dibs doctor: data dir ~/.dibs
       → no repository indexed yet: each one is indexed when an agent first
         registers from it, so this turns itself on. -match-repo only
         pre-warms a tree
-  ! no harness has ever called this daemon's hooks
-      → no harness has ever asked this daemon a lifecycle question, so the
-        claim guard has never run and mail is never injected. Install the
-        plugin or hook for your harness (see plugins/), then start a NEW
-        agent session: running sessions do not reload their config
+  ! no hook call since this daemon started 2m0s ago
+      → no harness lifecycle call has reached this daemon during its current
+        observation window. If your harness should be calling hooks, check its
+        configuration. Install the plugin or hook for your harness (see plugins/),
+        then start a NEW agent session; running sessions do not reload their config
   ✓ ledger chain intact
 ```
+
+Hook counters reset when the daemon restarts. During its first minute, zero
+calls are an informational observation with the elapsed age, without install
+advice. After that minute, the warning states the window actually observed,
+as in the example above.
 
 The three first-run problems, in the order they actually happen:
 
