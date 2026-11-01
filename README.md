@@ -10,7 +10,7 @@ See what all your agents are doing in one board. Dibs tells them when their work
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/board-dark.png">
-  <img src="docs/images/board-light.png" width="688" alt="Dibs in a fixture chat: Implementation is pinned above recent work, search and a collapsed Dormant group.">
+  <img src="docs/images/board-light.png" width="688" alt="The confirmed Dibs board in a fixture chat: one question above recent work, with varied ages and a collapsed Dormant group.">
 </picture>
 
 ## When an agent needs you
