@@ -73,6 +73,19 @@ export async function checkCompactBoard(page: Page, base: any, self: string, che
     await page.evaluate(({ width, height, theme, fixed }) => (window as any).__bridge.setHostContext({
       theme, containerDimensions: { width, ...(height ? fixed ? { height } : { maxHeight: height } : {}) },
     }), { width, height, theme, fixed })
+    // setHostContext returns void: its postMessage notification is still in
+    // flight. Wait for the real layout before measuring that layout below.
+    const bound = height && height > 0 ? Math.min(560, height * .7) : 560
+    try {
+      await page.waitForFunction((expected) => {
+        const frame = document.getElementById("panel") as HTMLIFrameElement
+        const app = frame.contentDocument?.getElementById("app")
+        return !!app && Math.abs(app.getBoundingClientRect().height - expected) <= 1
+      }, bound, { timeout: 5000 })
+    } catch (cause) {
+      const measured = await panel.locator("#app").evaluate((el) => el.getBoundingClientRect().height)
+      throw new Error(`compact host context: expected ${bound}px within 5s; last measured height ${measured}px`, { cause })
+    }
   }
   try {
     await page.setViewportSize({ width: 1040, height: 800 })
