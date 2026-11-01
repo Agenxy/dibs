@@ -265,6 +265,7 @@ func (d *diagnosis) run(verbose bool) error {
 		checkCoordinatorIsReachable(b, ok, warn)
 		checkContactDeliveryFailures(b, warn)
 		checkReconnectPending(b, warn)
+		checkBridgeToolCatalogs(b, warn)
 		checkMailboxCapacity(b, warn)
 		checkConfiguredNameAliases(b, ok, warn)
 	}

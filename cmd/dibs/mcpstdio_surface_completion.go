@@ -159,6 +159,8 @@ func (c *surfaceCompletion) flush(ctx context.Context, client *http.Client, url,
 				}
 				return
 			}
+		} else {
+			slog.Debug("late bridge surface completion omitted: no recognized app or Codex fallback")
 		}
 		c.mu.Lock()
 		if c.pending[id] == entry { // a rotated credential belongs to its newer reply
@@ -206,10 +208,19 @@ func postBridgeSurface(ctx context.Context, client *http.Client, url, secret, to
 		return errors.New("surface evidence RPC was not accepted")
 	}
 	var result struct {
-		OK bool `json:"ok"`
+		OK      bool            `json:"ok"`
+		Changed json.RawMessage `json:"changed"`
 	}
 	if json.Unmarshal([]byte(reply.Result.Content[0].Text), &result) != nil || !result.OK {
 		return errors.New("surface evidence RPC did not confirm the update")
 	}
+	// This is the daemon's acknowledgement, not an independent observation
+	// of its state. Older replies may not report whether anything changed.
+	var changed any = "not_reported"
+	var explicit *bool
+	if json.Unmarshal(result.Changed, &explicit) == nil && explicit != nil {
+		changed = *explicit
+	}
+	slog.Debug("late bridge surface evidence acknowledged by daemon", "surface", surface, "changed", changed)
 	return nil
 }

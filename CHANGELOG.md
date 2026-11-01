@@ -25,6 +25,23 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reader features in version 2, so older readers refuse instead of silently
   dropping them. Boards without those features still write version 1.
 
+- Existing chats with an old tool catalog can recover through their coordinator's
+  existing `merge_agents` preview and a typed proposal they consent to with
+  `respond(approve)`. The same bounded recovery checks and fold apply; a distinct
+  fence selects this proposal instead of a direct merge. Doctor names live local
+  bridges with mismatched or unknown served catalogs. Bridges retain actual
+  served-list evidence across upgrades; a notification alone is never reported
+  as client uptake. No global chat reload or configuration change is performed.
+
+- `DIBS_LOG_DEBUG=1` enables CLI and stdio-bridge diagnostics on stderr, as it
+  already does for the daemon. The bridge now distinguishes completed ancestry
+  with no recognized app from a daemon acknowledgement, and reports whether
+  the daemon explicitly said nothing changed or omitted that information.
+
+- App process probes bound output-pipe cleanup after cancellation or command
+  exit. A descendant holding a pipe open no longer leaves ancestry completion
+  waiting indefinitely; incomplete probes remain unknown.
+
 - Lost-credential recovery can be requested by a bound survivor and approved by
   a distinct coordinator for a matching dormant unbound seat. The preview says
   which future mail will route to the survivor. Old declarations are retained as

@@ -27,6 +27,7 @@ import (
 
 	"github.com/agenxy/dibs/internal/build"
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/folderaccess"
 	"github.com/agenxy/dibs/internal/humanauth"
 	"github.com/agenxy/dibs/internal/paths"
@@ -188,6 +189,7 @@ func styledUsage() string {
 }
 
 func main() {
+	configureCLILogging()
 	if err := paths.CatchServiceConfig(cliMain); err != nil {
 		fmt.Fprintln(os.Stderr, "dibs:", err)
 		os.Exit(1)
@@ -1113,6 +1115,7 @@ type (
 		FolderAccessAdvice string                     `json:"folder_access_advice,omitempty"`
 		ReconnectPending   int                        `json:"reconnect_pending,omitempty"`
 		ReconnectAdvice    string                     `json:"reconnect_advice,omitempty"`
+		BridgeToolCatalogs []engine.BridgeToolCatalog `json:"bridge_tool_catalogs,omitempty"`
 		ContactAlerts      []contactAlertDiagnostic   `json:"contact_alerts"`
 		ConfiguredNames    []configuredNameAddress    `json:"configured_name_addresses,omitempty"`
 		Serial             uint64                     `json:"serial"`

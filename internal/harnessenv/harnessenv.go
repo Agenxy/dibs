@@ -209,6 +209,10 @@ func appProcessEvidence(raw string) (ThreadOwnership, []string) {
 // without reaching the operator's app or replacing the timeout policy.
 var appProbeOutput = func(ctx context.Context, binary string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, binary, args...) //nolint:gosec // fixed probe argv above
+	// Context cancellation kills the direct child, but an inherited output
+	// descriptor can keep Output waiting on a descendant. Bound that drain too;
+	// the resulting error remains unavailable evidence, never a classification.
+	cmd.WaitDelay = 100 * time.Millisecond
 	// Process start stamps must agree across bridges and the daemon even when
 	// their inherited locales or timezones differ. No participant-supplied environment.
 	cmd.Env = append(os.Environ(), "LC_ALL=C", "TZ=UTC")

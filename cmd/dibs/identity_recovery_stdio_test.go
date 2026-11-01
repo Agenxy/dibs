@@ -47,6 +47,7 @@ type recoveryStdio struct {
 	srv       *httptest.Server
 	eng       *engine.Engine
 	call      func(string, map[string]any) map[string]any
+	exchange  func(string, map[string]any) []byte
 	drop      atomic.Bool
 	refuse    atomic.Bool
 	registers atomic.Int64
@@ -138,9 +139,9 @@ func newRecoveryStdioWithPin(t *testing.T, pin string) *recoveryStdio {
 	}
 	t.Cleanup(func() { _ = in.Close(); stop(); _ = cmd.Wait() })
 	reader := bufio.NewReader(out)
-	f.call = func(name string, args map[string]any) map[string]any {
+	f.exchange = func(method string, params map[string]any) []byte {
 		t.Helper()
-		request := map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": name, "arguments": args}}
+		request := map[string]any{"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
 		if f.thread != "" {
 			request["params"].(map[string]any)["_meta"] = map[string]any{"threadId": f.thread}
 		}
@@ -151,11 +152,15 @@ func newRecoveryStdioWithPin(t *testing.T, pin string) *recoveryStdio {
 		go func() { b, _ := reader.ReadBytes('\n'); read <- b }()
 		select {
 		case b := <-read:
-			return recoveryStdioResult(t, b)
+			return b
 		case <-time.After(10 * time.Second):
 			t.Fatal("actual bridge did not answer before deadline")
 			return nil
 		}
+	}
+	f.call = func(name string, args map[string]any) map[string]any {
+		t.Helper()
+		return recoveryStdioResult(t, f.exchange("tools/call", map[string]any{"name": name, "arguments": args}))
 	}
 	return f
 }

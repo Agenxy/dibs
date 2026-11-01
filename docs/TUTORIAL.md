@@ -386,6 +386,14 @@ calls are an informational observation with the elapsed age, without install
 advice. After that minute, the warning states the window actually observed,
 as in the example above.
 
+For detailed diagnostics, set `DIBS_LOG_DEBUG=1` in the environment that starts
+`dibd` or a `dibs` command. Both read it once when the process starts. For a
+stdio bridge, set it in that MCP server's environment before the bridge starts;
+debug records go to stderr while stdout remains JSON-RPC. Bridge records
+distinguish an ancestry lookup that found no recognized app from the daemon's
+acknowledgement of surface evidence. An acknowledgement reports change status
+only when the daemon supplied it; it does not independently verify daemon state.
+
 The three first-run problems, in the order they actually happen:
 
 1. **The agent has no Dibs tools.** The config was added to a session that was
