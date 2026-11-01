@@ -28,6 +28,7 @@
 import { copyFileSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { checkConfirmedBoard } from "./confirmed_board.ts"
 
 let failures = 0
 function check(name: string, ok: boolean, detail = "") {
@@ -386,6 +387,7 @@ try {
   const resumed = textOf(await tool(dev, "inbox", { token: curious.token }))
   check("the fully quoted answer stays read after another real daemon restart",
     (resumed.agent_updates ?? []).length === 0, JSON.stringify(resumed.agent_updates ?? []))
+  await checkConfirmedBoard((method, params) => rpc(dev, method, params), devCaller, worker, check)
 } catch (e) {
   failures++
   console.log(`\n  \x1b[31m✗ suite threw\x1b[0m. ${e}`)

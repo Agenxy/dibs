@@ -52,6 +52,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Confirming the human in the board app keeps its compact rows. A Message
+  action opens one row composer at a time; Escape closes it and restores row
+  focus, and live board updates keep its draft. Human send controls retain
+  their own handlers instead of being overwritten by mail-reply actions.
+
 - The README now covers installation, connecting agents and first use. Detailed
   guides live under `docs/`; existing section anchors still lead to those guides.
 
