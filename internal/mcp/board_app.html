@@ -201,6 +201,11 @@
 }
 .panel .human-lock[data-state="asking"] { color: var(--fg-2); cursor: wait; }
 .panel .human-lock[data-state="unavailable"] { color: var(--fg-3); cursor: default; }
+.panel .row-message {
+  appearance: none; flex: none; border: 0; background: transparent;
+  padding: 0; margin-inline-start: var(--s1); color: var(--accent);
+  font: inherit; font-size: var(--t-meta); line-height: inherit; cursor: pointer;
+}
 
 /* One composer shape for every human action, so the reader learns it once. */
 .panel .human-compose {
@@ -852,6 +857,8 @@ let state = {
   agent: null,
   token: null,
   composing: null,
+  rowComposer: null,
+  rowDrafts: new Map(),
   pending: new Map(),
   errors: new Map(),
   settled: new Map(),
@@ -1631,17 +1638,18 @@ function wireHumanComposers(root) {
       if (btn.dataset.do !== "join" && !body) { field?.focus(); return }
       const target = box.dataset.target
       const verb = btn.dataset.do
-      field.value = ""
+      if (field) field.value = ""
+      if (box.closest("#pane-board")) state.rowDrafts.delete(target)
       if (verb === "post") {
-        void humanAct("post", { agent: target, body }, `posted to ${target}`)
+        void humanAct("post", { space: target, body }, `posted to ${target}`)
       } else if (verb === "announce") {
-        void humanAct("announce", { agent: target, body },
+        void humanAct("announce", { space: target, body },
           `announced to ${target}: every member must acknowledge`)
       } else if (verb === "notify") {
         void humanAct("send", { to: target, type: "notify", body },
           `sent to ${target}`)
       } else if (verb === "join") {
-        void humanAct("join_space", { agent: target }, `joined ${target}`)
+        void humanAct("join_space", { space: target }, `joined ${target}`)
       } else if (verb === "ask") {
         void humanAct("send", { to: target, type: "question", body, deadline_s: 3600 },
           `asked ${target}`)
@@ -1676,6 +1684,14 @@ function decorateMail(el, filtered) {
 function decorateRoster(el) {
   for (const node of el.querySelectorAll(".entry"))
     nameTransition(node, "agent", node.dataset.agent, "panel-agent")
+}
+
+function toggleRowComposer(id) {
+  const opening = state.rowComposer !== id
+  state.rowComposer = opening ? id : null
+  draw()
+  const row = document.querySelector(`#pane-board .entry[data-agent="${CSS.escape(id)}"]`)
+  row?.querySelector(opening ? ".human-compose input" : ".row-message")?.focus()
 }
 
 function decorateChannels(el, filtered) {
@@ -1722,6 +1738,12 @@ function draw() {
     if (e.target.closest(".attention-open")) document.getElementById("tab-mail").click()
   }
   const boardEl = document.getElementById("pane-board")
+  const previousBox = boardEl.querySelector('.human-compose[data-kind="agent"]')
+  const previousField = previousBox?.querySelector("input")
+  const previousFocus = previousField === document.activeElement
+    ? { target: previousBox.dataset.target, start: previousField.selectionStart, end: previousField.selectionEnd }
+    : null
+  if (previousField) state.rowDrafts.set(previousBox.dataset.target, previousField.value)
   patchHTML(boardEl, Board.attentionHTML(state.inbox, state.query) + Board.contactAlertsHTML(state.board?.contact_alerts) + Board.rosterHTML(state.board?.agents, {
     selfId: state.agent,
     events: state.events,
@@ -1732,16 +1754,54 @@ function draw() {
   }))
   decorateRoster(boardEl)
   if (state.human) {
-    for (const node of boardEl.querySelectorAll(".entry")) {
+    const rows = [...boardEl.querySelectorAll(".entry")]
+    if (state.rowComposer && !rows.some(row => row.dataset.agent === state.rowComposer)) state.rowComposer = null
+    for (const node of rows) {
       const who = node.dataset.agent
-      if (!who || who === state.human.agent || node.querySelector(".human-compose")) continue
-      node.insertAdjacentHTML("beforeend",
-        composerHTML("agent", who, `message ${who}`, [
+      if (!who || who === state.human.agent) continue
+      const name = node.querySelector(".name")?.textContent || who
+      let button = node.querySelector(".row-message")
+      if (!button) {
+        button = document.createElement("button")
+        button.type = "button"
+        button.className = "row-message"
+        button.textContent = "Message"
+        node.querySelector(".entry-head").append(button)
+      }
+      button.setAttribute("aria-label", `Message ${name}`)
+      button.setAttribute("aria-expanded", String(state.rowComposer === who))
+      button.onclick = () => toggleRowComposer(who)
+      if (state.rowComposer !== who) {
+        button.removeAttribute("aria-controls")
+        node.querySelector(".human-compose")?.remove()
+        continue
+      }
+      button.setAttribute("aria-controls", `row-composer-${who}`)
+      if (!node.querySelector(".human-compose")) node.insertAdjacentHTML("beforeend",
+        composerHTML("agent", who, `Message ${name}`, [
           { do: "notify", label: "tell" },
           { do: "ask", label: "ask" },
         ]))
+      const box = node.querySelector(".human-compose")
+      box.id = `row-composer-${who}`
+      box.setAttribute("role", "group")
+      box.setAttribute("aria-label", `Message ${name}`)
+      const field = box.querySelector("input")
+      const draft = state.rowDrafts.get(who) || ""
+      if (field.value !== draft) field.value = draft
+      field.oninput = () => state.rowDrafts.set(who, field.value)
+      box.onkeydown = (event) => {
+        if (event.key !== "Escape") return
+        event.preventDefault(); event.stopPropagation()
+        toggleRowComposer(who)
+      }
     }
     wireHumanComposers(boardEl)
+    if (previousFocus?.target === state.rowComposer) {
+      const field = boardEl.querySelector(".human-compose input")
+      field?.focus()
+      field?.setSelectionRange(previousFocus.start, previousFocus.end)
+    }
   }
 
   // Unlike the operator view, the panel DOES know which agent is reading, so
@@ -1846,7 +1906,7 @@ function draw() {
   document.getElementById("tab-activity").setAttribute(
     "aria-label", state.events.length ? `Activity, ${state.events.length} events` : "Activity")
 
-  for (const b of document.querySelectorAll(".act")) {
+  for (const b of document.querySelectorAll(".act[data-serial][data-act]")) {
     b.onclick = () => act(Number(b.dataset.serial), b.dataset.act)
   }
 }
