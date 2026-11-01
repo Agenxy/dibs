@@ -178,7 +178,7 @@
    underneath below AA bought a little more contrast between cells at the cost of
    contrast against the background, which is the one that has to hold. */
 
-/* The human's affordance sits in the context row because that row already says
+/* The human's affordance sits beside search; the context still says
    who is reading. Quiet while locked, it is an offer, not an alarm, and it
    takes the live colour once a person has proved they are here, which is the
    one state change on this surface that is genuinely about identity. */
@@ -545,7 +545,7 @@
      long-list optimization nor friendly to DOM-based assistive tooling. */
   .panel :is(.entry, .space, .msg):nth-child(n + 7) {
     content-visibility: auto;
-    contain-intrinsic-block-size: auto 7rem;
+    contain-intrinsic-block-size: auto 1.8125rem;
   }
   .panel .event:nth-child(n + 13) {
     content-visibility: auto;
@@ -659,10 +659,7 @@
   <header class="masthead">
     <div class="mark">
       <span class="status-mark" id="mark" role="status" aria-label="Connecting to host" data-why="Connecting to host" tabindex="0">
-        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke-width="1.1">
-          <circle class="ring" cx="8" cy="8" r="6" stroke-dasharray="3 3.4" />
-          <circle class="core" cx="8" cy="8" r="1.6" stroke="none" fill="currentColor" opacity=".45" />
-        </svg>
+        <!--__PRODUCT_MARK__-->
       </span>
       <span class="wordmark">Dibs</span>
     </div>
@@ -675,7 +672,7 @@
   </header>
   <div class="hairline"></div>
 
-  <div class="context" aria-label="Panel context">
+  <div class="context sr-only" aria-label="Panel context">
     <span class="agent-id" id="ctx-agent">awaiting board</span>
     <span id="ctx-caps">, </span>
     <!-- The human's way in. Locked until a fingerprint proves somebody is
@@ -697,6 +694,18 @@
          the conversation the agent controls. The button says what it does now.
          "Act as yourself" read as though the reader had been acting as somebody
          else, which is exactly backwards: they had not been acting at all. -->
+
+    <span class="sr-only" id="human-lock-why">The board is yours to read either
+      way. This proves with Touch ID that a person is at this machine, which is
+      what lets you post, announce and message agents under your own name rather
+      than the agent's.</span>
+  </div>
+
+  <div class="summary" id="summary" role="status" aria-label="Board summary"></div>
+
+  <section id="self-row" aria-label="Viewing agent"></section>
+  <div class="board-tools">
+  <label class="board-search"><span class="sr-only">Search Dibs</span><input id="board-search" type="search" placeholder="Search Dibs" aria-label="Search Dibs" autocomplete="off"></label>
     <button id="human-lock" class="human-lock" type="button"
             aria-describedby="human-lock-why">
       <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true" fill="none"
@@ -706,14 +715,7 @@
       </svg>
       <span id="human-lock-label">confirm it's you</span>
     </button>
-    <span class="sr-only" id="human-lock-why">The board is yours to read either
-      way. This proves with Touch ID that a person is at this machine, which is
-      what lets you post, announce and message agents under your own name rather
-      than the agent's.</span>
   </div>
-
-  <div class="summary" id="summary" role="status" aria-label="Board summary"></div>
-
   <main id="main">
     <section class="view" id="pane-board" role="tabpanel" aria-labelledby="tab-board" tabindex="0"></section>
     <section class="view hide" id="pane-agents" role="tabpanel" aria-labelledby="tab-agents" tabindex="0" hidden></section>
@@ -862,7 +864,7 @@ let state = {
   // snap it shut, on a surface that ticks every time anything happens anywhere.
   // The shared library is pure and holds no state, so each surface keeps its
   // own and hands it in.
-  expanded: new Set(),
+  query: "", expandedGroups: new Set(), expanded: new Set(),
   received: false,
   // Set once every carrier has been tried and none produced a board, so the
   // panel can stop claiming one is on the way. Cleared the moment one arrives.
@@ -990,6 +992,10 @@ function applyHostContext(patch = {}) {
     },
   }
 
+  const dims = host.ctx.containerDimensions || {}
+  const available = dims.height ?? dims.maxHeight
+  document.getElementById("app").style.setProperty("--board-height",
+    `${Number.isFinite(available) && available > 0 ? Math.min(560, available * .7) : 560}px`)
   const theme = host.ctx.theme
   if (theme === "light" || theme === "dark") {
     document.documentElement.setAttribute("data-theme", theme)
@@ -1644,10 +1650,10 @@ function wireHumanComposers(root) {
   }
 }
 
-function decorateMail(el) {
+function decorateMail(el, filtered) {
   const messages = [...el.querySelectorAll(".msg")]
   messages.forEach((node, index) => {
-    const m = state.inbox[index]
+    const m = filtered[index]
     if (!m) return
     // Landable, never tabbable. After an action the message it belonged to is
     // gone from the DOM, so focus fell to <body> and a keyboard reader was
@@ -1668,32 +1674,20 @@ function decorateMail(el) {
 }
 
 function decorateRoster(el) {
-  const agents = state.board?.agents || []
-  const ordered = [
-    ...agents.filter((agent) => agent.status === "stale"),
-    ...agents.filter((agent) => agent.status === "active"),
-    ...agents.filter((agent) => agent.status === "dormant"),
-    ...agents.filter((agent) =>
-      !["active", "dormant", "stale"].includes(agent.status)),
-  ]
-  ;[...el.querySelectorAll(".entry")].forEach((node, index) => {
-    const agent = ordered[index]
-    if (!agent) return
-    node.dataset.agent = agent.id || ""
-    nameTransition(node, "agent", agent.id, "panel-agent")
-  })
+  for (const node of el.querySelectorAll(".entry"))
+    nameTransition(node, "agent", node.dataset.agent, "panel-agent")
 }
 
-function decorateChannels(el) {
+function decorateChannels(el, filtered) {
   ;[...el.querySelectorAll(".space")].forEach((node, index) => {
-    const space = (state.board?.spaces || [])[index]
+    const space = filtered[index]
     if (!space) return
     node.dataset.space = space.id || ""
     nameTransition(node, "space", space.id, "panel-agent")
   })
 }
 
-function decorateEvents(el) {
+function decorateEvents(el, filtered) {
   // NOT by serial alone: one op emits several events under one serial (a
   // registration and the join it caused), and two elements sharing a
   // view-transition-name abort the whole transition with an exception. That
@@ -1703,7 +1697,7 @@ function decorateEvents(el) {
   // because the order is.
   const seen = new Map()
   ;[...el.querySelectorAll(".event")].forEach((node, index) => {
-    const event = state.events[index]
+    const event = filtered[index]
     if (!event) return
     const base = `${event.serial ?? index}-${event.type || ""}`
     const n = seen.get(base) || 0
@@ -1719,12 +1713,20 @@ function draw() {
   drawSummary()
 
   const opts = { selfId: state.agent, actionsHTML }
+  const own = (state.board?.agents || []).find((agent) => agent.id === state.agent)
+  patchHTML(document.getElementById("self-row"), own ? Board.laneHTML(own, {
+    selfId: state.agent, expanded: state.expanded, pinned: true,
+  }) : "")
 
+  document.getElementById("pane-board").onclick = (e) => {
+    if (e.target.closest(".attention-open")) document.getElementById("tab-mail").click()
+  }
   const boardEl = document.getElementById("pane-board")
-  patchHTML(boardEl, Board.contactAlertsHTML(state.board?.contact_alerts) + Board.rosterHTML(state.board?.agents, {
+  patchHTML(boardEl, Board.attentionHTML(state.inbox, state.query) + Board.contactAlertsHTML(state.board?.contact_alerts) + Board.rosterHTML(state.board?.agents, {
     selfId: state.agent,
     events: state.events,
     expanded: state.expanded,
+    query: state.query, expandedGroups: state.expandedGroups, omitSelf: true,
     empty: Board.emptyHTML("No agents yet",
       "Agents appear here the moment they register."),
   }))
@@ -1746,14 +1748,15 @@ function draw() {
   // its own memberships are marked. That is the whole difference between the
   // two surfaces here; the component is identical.
   const chans = state.board?.spaces || []
+  const shownChans = chans.filter((c) => Board.matchesSpace(c, state.query))
   const chEl = document.getElementById("pane-agents")
-  patchHTML(chEl, Board.channelsHTML(chans, {
+  patchHTML(chEl, Board.channelsHTML(shownChans, {
     selfId: state.agent,
     agents: state.board?.agents,
-    empty: Board.emptyHTML("No agents yet",
+    empty: state.query.trim() ? Board.noMatchesHTML() : Board.emptyHTML("No agents yet",
       "An agent is a piece of work several agents may need. Open one, or declare what you are doing and Dibs will match you."),
   }))
-  decorateChannels(chEl)
+  decorateChannels(chEl, shownChans)
   // The human's affordances appear only after a person proved they are here.
   // Appended after the shared component rather than passed into it: board.js
   // renders the operator board too, and that surface authenticates differently.
@@ -1801,9 +1804,10 @@ function draw() {
         end: openReply.selectionEnd, direction: openReply.selectionDirection,
         focused: document.activeElement === openReply }
     : null
-  const mailHTML = state.inbox.length
-    ? state.inbox.map((m) => Board.messageHTML(m, opts)).join("")
-    : Board.emptyHTML("Nothing waiting",
+  const shownMail = state.inbox.filter((m) => Board.matchesMail(m, state.query))
+  const mailHTML = shownMail.length
+    ? shownMail.map((m) => Board.messageHTML(m, opts)).join("")
+    : state.query.trim() ? Board.noMatchesHTML() : Board.emptyHTML("Nothing waiting",
         "Messages addressed to this agent arrive here. Mail between other agents is private to them.")
   const mailChanged = patchHTML(mailEl, mailHTML)
   // Re-arm the keyboard path first: the textarea is a NEW element, so its
@@ -1821,14 +1825,15 @@ function draw() {
       }
     }
   }
-  decorateMail(mailEl)
+  decorateMail(mailEl, shownMail)
 
   const actEl = document.getElementById("pane-activity")
-  patchHTML(actEl, state.events.length
-    ? state.events.map(Board.eventHTML).join("")
-    : Board.emptyHTML("Nothing new",
+  const shownEvents = state.events.filter((e) => Board.matchesEvent(e, state.query))
+  patchHTML(actEl, shownEvents.length
+    ? shownEvents.map(Board.eventHTML).join("")
+    : state.query.trim() ? Board.noMatchesHTML() : Board.emptyHTML("Nothing new",
         "Registrations, claims and messages appear here in ledger order as they happen."))
-  decorateEvents(actEl)
+  decorateEvents(actEl, shownEvents)
 
   const tm = document.getElementById("tally-mail")
   tm.textContent = state.inbox.length
@@ -2033,9 +2038,43 @@ function tab(which, { focus = false } = {}) {
 // One listener on the document, bound once, rather than rebound on every
 // redraw: the rows it watches are replaced constantly and a per-row handler
 // would have to be reattached each time, which is how one gets missed.
+// This listener belongs to this document only: it receives nothing while the
+// person's chat composer outside the iframe owns the keyboard.
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey ||
+      e.target.closest("input, textarea, select, [contenteditable]")) return
+  e.preventDefault()
+  document.getElementById("board-search").focus()
+})
+document.getElementById("board-search").addEventListener("input", (e) => {
+  state.query = e.target.value
+  draw()
+})
+
+// Save a native disclosure's next state in the same input turn. Its toggle
+// event is queued and can arrive after an intervening live redraw removed it.
+document.addEventListener("click", (e) => {
+  const d = e.target.closest("summary")?.parentElement
+  if (!(d instanceof HTMLDetailsElement)) return
+  if (d.classList.contains("roster-group")) {
+    if (d.open) state.expandedGroups.delete(d.dataset.group)
+    else state.expandedGroups.add(d.dataset.group)
+  } else if (d.classList.contains("says")) {
+    const id = d.closest("[data-agent]")?.dataset.agent
+    if (!id) return
+    if (d.open) state.expanded.delete(id)
+    else state.expanded.add(id)
+  }
+})
 document.addEventListener("toggle", (e) => {
   const d = e.target
-  if (!(d instanceof HTMLDetailsElement) || !d.classList.contains("says")) return
+  if (!(d instanceof HTMLDetailsElement) || !d.isConnected) return
+  if (d.classList.contains("roster-group")) {
+    if (d.open) state.expandedGroups.add(d.dataset.group)
+    else state.expandedGroups.delete(d.dataset.group)
+    return
+  }
+  if (!d.classList.contains("says")) return
   const id = d.closest("[data-agent]")?.dataset.agent
   if (!id) return
   if (d.open) state.expanded.add(id)

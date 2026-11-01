@@ -36,6 +36,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { checkBlobContent } from "./blob_content.ts"
+import { checkCompactBoard } from "./compact_board.ts"
 
 const HERE = import.meta.dir
 const DAEMON = `127.0.0.1:${process.env.PORT ?? 4931}`
@@ -145,7 +146,7 @@ try {
   check("declares the MCP Apps mime type",
     read.contents[0].mimeType === "text/html;profile=mcp-app")
   check("no external origin in the template", !html.includes("https://fonts."))
-  check("fonts are inlined", html.includes("data:font/woff2;base64,"))
+  check("fonts are inlined", html.includes("data:font/ttf;base64,"))
 
   const boardResult = await tool("board", { token: me.token })
   check("board attaches the UI resource",
@@ -237,6 +238,9 @@ try {
   // timeout, and a host that sizes to content then showed the human nothing.
   await panel.locator(".metric").first().waitFor({ timeout: 10000 })
   check("paints before any board data arrives", true)
+  const initialSearch = panel.getByRole("searchbox", { name: "Search Dibs" })
+  check("loading the app does not autofocus its search", await initialSearch.count() === 1 &&
+    await initialSearch.evaluate((el) => document.activeElement !== el && !el.hasAttribute("autofocus")))
 
   await page.waitForFunction("window.__probe.initialized === true", null, { timeout: 10000 })
     .then(() => check("the real AppBridge accepted our ui/initialize", true))
@@ -269,6 +273,10 @@ try {
       .waitFor({ timeout: 8000 }).then(() => true).catch(() => false)
     check("the activity tab fills from a board result",
       filled, (await panel.locator("#pane-activity").textContent())?.slice(0, 200) ?? "")
+  }
+  if (process.env.DIBS_COMPACT_ONLY === "1") {
+    await checkCompactBoard(page, boardResult, me.agent_id, check, { tool, token: me.token, peerToken: peer.token })
+    process.exit(failures ? 1 : 0)
   }
   // ── spaces in the panel ────────────────────────────────────────────────
   {
@@ -1173,6 +1181,8 @@ try {
 
   // The host can tear the resource down cleanly; this also exercises pending
   // timer cleanup in the hand-written transport.
+  await checkCompactBoard(page, boardResult, me.agent_id, check, { tool, token: me.token, peerToken: peer.token })
+
   const teardown = await page.evaluate(
     () => (window as any).__bridge.teardownResource({}))
   check("resource teardown is acknowledged", !!teardown && typeof teardown === "object",
