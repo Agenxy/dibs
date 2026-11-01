@@ -21,7 +21,12 @@ type snapshotFeature struct {
 
 var snapshotFeatures = []snapshotFeature{
 	{
-		name: "desktop-approval-confirmation/v1",
+		name:    "ledger-requirements/v1",
+		fields:  []string{"core.State.RequiredFeatures"},
+		present: func(st *core.State) bool { return len(st.RequiredFeatures) > 0 },
+	},
+	{
+		name: core.FeatureDesktopApproval,
 		fields: []string{
 			"core.State.DesktopApproval", "core.DesktopApprovalSetting.Enabled",
 			"core.DesktopApprovalSetting.By", "core.DesktopApprovalSetting.At",
@@ -31,7 +36,7 @@ var snapshotFeatures = []snapshotFeature{
 		},
 	},
 	{
-		name: "mailbox-recovery/v1",
+		name: core.FeatureMailboxRecovery,
 		fields: []string{
 			"core.State.RecoveredAddresses", "core.Agent.InheritedDeclarations", "core.Message.Recovery",
 			"core.RecoveredAddress.Source", "core.RecoveredAddress.SourceCreated", "core.RecoveredAddress.Into",
@@ -42,25 +47,8 @@ var snapshotFeatures = []snapshotFeature{
 			"core.RecoveryRequest.From", "core.RecoveryRequest.Into", "core.RecoveryRequest.SourceCreated",
 			"core.RecoveryRequest.SurvivorCreated", "core.RecoveryRequest.CoordinatorCreated", "core.RecoveryRequest.Fence",
 		},
-		present: hasRecoverySnapshotState,
+		present: (*core.State).HasMailboxRecoveryData,
 	},
-}
-
-func hasRecoverySnapshotState(st *core.State) bool {
-	if len(st.RecoveredAddresses) > 0 {
-		return true
-	}
-	for _, agent := range st.Agents {
-		if agent != nil && len(agent.InheritedDeclarations) > 0 {
-			return true
-		}
-	}
-	for _, message := range st.Messages {
-		if message != nil && message.Recovery != nil {
-			return true
-		}
-	}
-	return false
 }
 
 func requiredSnapshotFeatures(st *core.State) []string {
@@ -68,6 +56,11 @@ func requiredSnapshotFeatures(st *core.State) []string {
 	for _, feature := range snapshotFeatures {
 		if feature.present(st) {
 			names = append(names, feature.name)
+		}
+	}
+	for _, name := range st.RequiredFeatures {
+		if !slices.Contains(names, name) {
+			names = append(names, name)
 		}
 	}
 	return names

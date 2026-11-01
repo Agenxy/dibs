@@ -50,7 +50,9 @@ func TestSnapshotGoFieldNamesAreFrozen(t *testing.T) {
 	// Desktop approval adds State.DesktopApproval and its Enabled/By/At
 	// fields. Removing exactly these four names restores bc63c80a4b1e0eee;
 	// every pre-existing persisted Go name remains unchanged.
-	const want = "sha256:2de9989b836a0a0e"
+	// Reader fencing adds only State.RequiredFeatures. Removing that one name
+	// restores 2de9989b836a0a0e; all prior snapshot Go names are unchanged.
+	const want = "sha256:4f8a809b0bd50519"
 	if got := fingerprint(names); got != want {
 		sorted := make([]string, 0, len(names))
 		for n := range names {

@@ -79,6 +79,9 @@ func TestSnapshotFeatureMarkersThroughRealWriter(t *testing.T) {
 		want []string
 	}{
 		{"untouched", func(*core.State) {}, nil},
+		{"requirements-after-collection", func(s *core.State) {
+			s.RequiredFeatures = []string{core.FeatureMailboxRecovery}
+		}, []string{"ledger-requirements/v1", "mailbox-recovery/v1"}},
 		{"enabled", func(s *core.State) { s.DesktopApproval.Enabled = true }, []string{"desktop-approval-confirmation/v1"}},
 		{"disabled-with-provenance", func(s *core.State) { s.DesktopApproval.By = "human"; s.DesktopApproval.At = t0 }, []string{"desktop-approval-confirmation/v1"}},
 		{"recovered-address", func(s *core.State) {

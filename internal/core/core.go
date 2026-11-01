@@ -880,6 +880,9 @@ type LegacyAckSnapshot struct {
 
 // State is the entire replayable truth. Only Apply mutates it.
 type State struct {
+	// Reader requirements survive collection of the feature's original data.
+	RequiredFeatures []string `json:"required_features,omitempty"`
+
 	DesktopApproval DesktopApprovalSetting `json:"desktop_approval,omitzero"`
 
 	RecoveredAddresses map[string]RecoveredAddress `json:"recovered_addresses,omitempty"`

@@ -20,6 +20,9 @@ func (e *Engine) applyAndLedger(op *core.Op, now time.Time) (core.Result, error)
 func (e *Engine) applyAndLedgerWithReceipt(
 	op *core.Op, now time.Time, receipt chan core.Result, attempt *SendAttempt,
 ) (core.Result, error) {
+	if err := e.requireFeaturesForAppend(op, now); err != nil {
+		return nil, err
+	}
 	e.stampReviewRetention(op, now)
 	before := e.state.Serial
 	var mailBefore mailhistory.Snapshot

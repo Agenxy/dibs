@@ -43,7 +43,7 @@ func scopeOf(kind string) (mailScope, bool) {
 		core.OpSpaceJoin, core.OpSpaceLeave, core.OpSpaceMerge,
 		core.OpSpaceOpen, core.OpSpacePost, core.OpSpaceRetitle,
 		core.OpSpaceSubscribe, core.OpUpdate, core.OpVouchChild,
-		core.OpWake:
+		core.OpWake, core.OpRequireV17Features:
 		return scopeNone, true
 	default:
 		return scopeFull, false
