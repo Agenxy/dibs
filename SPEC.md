@@ -228,8 +228,37 @@ filesystem writes (§9). It is a **coordination generation**, not a fencing toke
   binaries refuse it before gob decoding can silently discard new fields;
   current readers refuse unknown feature requirements with upgrade guidance.
   Untouched boards keep version 1. New readers still accept historical
-  version-1 snapshots carrying recovery fields. These header requirements
-  cover snapshots; an uncompacted recovery ledger needs its own reader fence.
+  version-1 snapshots carrying recovery fields.
+
+  Before a new recovery-bearing append or desktop-approval policy change, the
+  writer records any missing reader requirements in a separate
+  `require_dibs_v0.0.17` op. It changes only the durable sorted requirement set
+  and advances one serial, then the feature op gets its own serial. Boot also
+  derives requirements from historical unfenced feature data before serving;
+  replaying the marker prevents another append on the next boot. Untouched
+  boards get no marker. Collection of the original data does not remove reader
+  requirements, and snapshots declare both them and `ledger-requirements/v1`.
+  Ledger decoding refuses an unknown required feature before folding its
+  marker, with upgrade guidance, just as snapshot decoding checks its header.
+  After each successful append, a separate check of affected message serials
+  and named agents, plus the address-map length and policy value, writes any
+  missing requirement and logs a warning naming the operation. Already-fenced
+  features are skipped; only boot scans all feature data. This backstop
+  detects a missed prediction; the preceding marker remains the normal path
+  that protects a crash between appends.
+
+  A predicted feature operation that Apply refuses can leave its one marker
+  without feature data. That safe-direction over-approximation is retained:
+  the refused operation is not appended, and retry writes no second marker.
+  No historical feature op is revalidated or removed.
+
+  Pre-fence binaries refuse this unknown kind, including earlier v0.0.17
+  development builds: rollback after the fence is written requires a build at
+  or after this change. The marker records an existing non-closed actor only
+  because old folds authenticate before diagnosing unknown kinds; it changes
+  no agent record, emits no agent event and creates no participant mail history.
+  With no such actor, old binaries still refuse but may report `E_BAD_TOKEN`
+  instead of the minimum version in the unknown-kind diagnostic.
 
   Why: the ledger is the record and state is its fold, but every start re-ran
   every op the board ever applied, to rebuild a board whose sweeps had already

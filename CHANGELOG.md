@@ -7,6 +7,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- A durable reader fence before recovery data or desktop approval policy is
+  written, and at boot for historical unfenced feature data. Older binaries
+  refuse the ledger instead of silently dropping recovery effects. Once
+  fenced, rollback requires a build containing this fence or newer; retained
+  history is preserved, and boards without these features are unchanged.
+
 - Optional Touch ID confirmation for privileged desktop approvals, default
   off, controlled by Settings on the unlocked web board or
   `dibs desktop-approvals [on|off]`. Any authenticated agent may enable it;

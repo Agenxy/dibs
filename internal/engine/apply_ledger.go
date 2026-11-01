@@ -20,9 +20,13 @@ func (e *Engine) applyAndLedger(op *core.Op, now time.Time) (core.Result, error)
 func (e *Engine) applyAndLedgerWithReceipt(
 	op *core.Op, now time.Time, receipt chan core.Result, attempt *SendAttempt,
 ) (core.Result, error) {
+	if err := e.requireFeaturesForAppend(op, now); err != nil {
+		return nil, err
+	}
 	e.stampReviewRetention(op, now)
 	before := e.state.Serial
 	var mailBefore mailhistory.Snapshot
+	historyObserved := false
 	if e.mailSource != nil && !e.mailSource.MailHistory().Status().Failed {
 		mailBefore = mailhistory.Capture(e.state, op, &e.mailScratch)
 	}
@@ -75,9 +79,6 @@ func (e *Engine) applyAndLedgerWithReceipt(
 			op.Kind, before, e.state.Serial,
 		))
 	}
-	// Post-Apply serial and caller coordination time describe this checkpoint,
-	// rather than the state just before it. Replay never projects a reply.
-	e.projectReplyBoard(op, res)
 	if e.state.Serial != before {
 		appended := beginSendStage(op, "ledger append")
 		fsyncStage := attempt.StartStage("fsync")
@@ -86,14 +87,21 @@ func (e *Engine) applyAndLedgerWithReceipt(
 		}
 		fsyncStage()
 		appended()
+		historyObserved, err = e.finishReaderBackstop(op, res, mailBefore, evs, now)
+		if err != nil {
+			return nil, err
+		}
 	}
+	// Include any backstop marker in the projected post-state. Replay never
+	// projects a reply, and an append failure must never expose one.
+	e.projectReplyBoard(op, res)
 	if op.Kind == core.OpSendMessage {
 		captureSendReceipt(receipt, res)
 		attempt.StopStage("receipt")
 	}
 	if e.state.Serial != before {
 		published := beginSendStage(op, "publish")
-		if e.mailSource != nil {
+		if e.mailSource != nil && !historyObserved {
 			e.mailSource.ObserveMail(mailBefore, e.state, op, evs)
 		}
 		e.observeNameAliases(op, evs)

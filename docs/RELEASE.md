@@ -1,5 +1,20 @@
 # Gate before tag, then resumable publication
 
+## Reader fence and rollback from v0.0.17
+
+The reader-fence change writes `require_dibs_v0.0.17` before the first new
+recovery-bearing append or desktop-approval policy change, and on boot when
+historical unfenced feature data exists. Once written, every pre-fence binary
+refuses that ledger, including earlier v0.0.17 development builds such as
+ea43f76b and b86b4356. Preserve a fresh rollback copy of the fence build after
+installation. A rollback must use that build or a newer one; do not remove
+the marker or prune retained history to make an older binary boot.
+
+Normally the refusal names the version-bearing unknown operation. If the
+board retains feature data but has no non-closed agent, old readers can report
+`E_BAD_TOKEN` before they reach the unknown-kind check. This is still refusal,
+and it is not a credential repair instruction: use a reader with the fence.
+
 ## macOS signing identity and deliberate rotation
 
 The release certificate root is pinned in

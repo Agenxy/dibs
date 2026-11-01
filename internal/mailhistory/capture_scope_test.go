@@ -121,6 +121,12 @@ func assertScopeCoverage(t *testing.T, st *core.State, op *core.Op, want int) {
 }
 
 func TestCaptureScopesCoverActualCanonicalChanges(t *testing.T) {
+	t.Run("reader-requirement", func(t *testing.T) {
+		assertScopeCoverage(t, scopeState(t), &core.Op{
+			Kind:    core.OpRequireV17Features,
+			AgentID: "sender", RequiredFeatures: []string{core.FeatureMailboxRecovery},
+		}, 0)
+	})
 	t.Run("none", func(t *testing.T) {
 		assertScopeCoverage(t, scopeState(t), &core.Op{Kind: core.OpActivityCheckpoint, Token: "sender-token"}, 0)
 	})
@@ -141,6 +147,27 @@ func TestCaptureScopesCoverActualCanonicalChanges(t *testing.T) {
 		scopeApply(t, st, &core.Op{Kind: core.OpSendMessage, Token: "sender-token", To: "a", MsgType: core.MsgQuestion, Body: "must expire on departure"})
 		assertScopeCoverage(t, st, &core.Op{Kind: core.OpSignOff, Token: "a-token"}, 41)
 	})
+}
+
+func TestReaderRequirementDoesNotAttributeParticipantHistory(t *testing.T) {
+	st := scopeState(t)
+	op := &core.Op{
+		Kind: core.OpRequireV17Features, AgentID: "sender",
+		RequiredFeatures: []string{core.FeatureMailboxRecovery},
+	}
+	var snapshot Snapshot
+	before := Capture(st, op, &snapshot)
+	_, events, err := st.Apply(op, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	emitted := 0
+	var scratch []uint64
+	err = projectChanges(Record{Serial: st.Serial}, before, st, op, events, &scratch,
+		func(snapshotUnit) error { emitted++; return nil }, func(partyKey, partyKey) error { return nil })
+	if err != nil || emitted != 0 || len(events) != 0 {
+		t.Fatalf("reader marker appeared as an agent's action/history: units=%d events=%v err=%v", emitted, events, err)
+	}
 }
 
 func TestMailboxScopesCoverActualQueuedSiblingChanges(t *testing.T) {

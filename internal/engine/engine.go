@@ -425,6 +425,7 @@ func (e *Engine) Done() <-chan struct{} { return e.done }
 // durable coordination checkpoint is within one TTL; the rest transition now,
 // ledgered, healed later by wake if the agent lives.
 func (e *Engine) boot(now time.Time) {
+	e.initializeReaderFeatures(now)
 	e.initializeReviewRead(now)
 	// STAMPED HERE, because this op never passes exec, where every other op
 	// gets its V7Semantics. The retention watermark repair is gated on that
@@ -468,6 +469,13 @@ func (e *Engine) execWithReceipt(
 ) (core.Result, error) {
 	admitted := beginSendStage(op, "admit")
 	defer admitted()
+	if op.Kind == core.OpRequireV17Features {
+		return nil, &core.Error{
+			Code: "E_NOT_PERMITTED", Msg: "reader requirements are written only by the daemon",
+			Hint: "submit the intended feature operation; its writer records the requirement",
+		}
+	}
+	op.RequiredFeatures = nil // writer-owned compatibility evidence
 	// Surface vocabulary is resolved before admission; the ledger records the
 	// new sender operation, never a changed interpretation of old responses.
 	if op.Kind == core.OpRespond && op.Disposition == "withdraw" {

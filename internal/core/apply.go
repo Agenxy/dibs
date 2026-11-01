@@ -117,6 +117,8 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 	// Strip before BOTH comparisons and storage, through the one mutation door.
 	now = now.Round(0)
 	switch op.Kind {
+	case OpRequireV17Features:
+		return s.applyReaderFeatures(op, now)
 	case OpInitializeReviewRead:
 		return s.applyInitializeReviewRead(op, now)
 	case OpAppRestartObserved:
