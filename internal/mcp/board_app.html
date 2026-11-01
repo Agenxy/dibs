@@ -1638,18 +1638,18 @@ function wireHumanComposers(root) {
       if (btn.dataset.do !== "join" && !body) { field?.focus(); return }
       const target = box.dataset.target
       const verb = btn.dataset.do
-      field.value = ""
+      if (field) field.value = ""
       if (box.closest("#pane-board")) state.rowDrafts.delete(target)
       if (verb === "post") {
-        void humanAct("post", { agent: target, body }, `posted to ${target}`)
+        void humanAct("post", { space: target, body }, `posted to ${target}`)
       } else if (verb === "announce") {
-        void humanAct("announce", { agent: target, body },
+        void humanAct("announce", { space: target, body },
           `announced to ${target}: every member must acknowledge`)
       } else if (verb === "notify") {
         void humanAct("send", { to: target, type: "notify", body },
           `sent to ${target}`)
       } else if (verb === "join") {
-        void humanAct("join_space", { agent: target }, `joined ${target}`)
+        void humanAct("join_space", { space: target }, `joined ${target}`)
       } else if (verb === "ask") {
         void humanAct("send", { to: target, type: "question", body, deadline_s: 3600 },
           `asked ${target}`)

@@ -9,6 +9,7 @@ type Check = (name: string, condition: boolean, detail?: string) => void
 // The real human-flow dev daemon supplies only the OS-presence leaf fixture.
 // App HTML, MCP calls, AppBridge, iframe, keyboard and layout are unchanged.
 export async function checkConfirmedBoard(rpc: RPC, caller: any, receiver: any, check: Check) {
+  await rpc("tools/call", { name: "open_space", arguments: { token: receiver.token, space: "auth-unjoined", topic: "Real browser join fixture" } })
   const result = await rpc("tools/call", { name: "board", arguments: { token: caller.token } })
   const payload = result._meta?.["com.dibs/panel"]
   if (!payload?.board?.agents?.some((a: any) => a.id === caller.agent_id)) throw new Error("confirmed board setup: real caller missing")
@@ -116,6 +117,31 @@ export async function checkConfirmedBoard(rpc: RPC, caller: any, receiver: any, 
       if (!delivered) await Bun.sleep(25)
     }
     check("the selected row sends actual human mail through the real MCP proxy", delivered)
+    await panel.locator("#tab-agents").click()
+    const space = panel.locator(".space").filter({ hasText: "auth-work" })
+    await space.getByRole("textbox", { name: "say something in auth-work", exact: true }).fill("Confirmed human space post through the real MCP app")
+    await space.getByRole("button", { name: "post", exact: true }).click()
+    let posted = false
+    for (let until = Date.now() + 5000; !posted && Date.now() < until;) {
+      const transcript = await rpc("tools/call", { name: "read_space", arguments: { token: receiver.token, space: "auth-work" } })
+      posted = JSON.stringify(transcript).includes("Confirmed human space post through the real MCP app")
+      if (!posted) await Bun.sleep(25)
+    }
+    check("space composers keep their real post action after row messaging is wired", posted)
+    await space.getByRole("textbox", { name: "say something in auth-work", exact: true }).fill("Confirmed human announcement through the real MCP app")
+    await space.getByRole("button", { name: "announce", exact: true }).click()
+    let announced = false
+    for (let until = Date.now() + 5000; !announced && Date.now() < until;) {
+      const transcript = await rpc("tools/call", { name: "read_space", arguments: { token: receiver.token, space: "auth-work" } })
+      announced = JSON.stringify(transcript).includes("Confirmed human announcement through the real MCP app")
+      if (!announced) await Bun.sleep(25)
+    }
+    check("space composers send real announcements through the MCP proxy", announced)
+    const unjoined = panel.locator(".space").filter({ hasText: "auth-unjoined" })
+    await unjoined.getByRole("button", { name: "join to speak", exact: true }).click()
+    const joinedComposer = unjoined.getByRole("textbox", { name: "say something in auth-unjoined", exact: true })
+    const joined = await joinedComposer.waitFor({ timeout: 5000 }).then(() => true, () => false)
+    check("joining through the browser refreshes real membership and opens its composer", joined)
     check("confirmed row interactions have no browser exceptions", errors.length === 0, errors.join(" | "))
   } finally {
     await browser.close(); server.stop(true)
