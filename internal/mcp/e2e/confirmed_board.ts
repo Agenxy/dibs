@@ -16,6 +16,7 @@ export async function checkConfirmedBoard(rpc: RPC, caller: any, receiver: any, 
   const html = resource.contents[0].text
   const fixture = structuredClone(result)
   const board = fixture._meta["com.dibs/panel"].board
+  if (!Number.isSafeInteger(board.serial)) throw new Error("confirmed board setup: missing real board serial")
   const now = Date.now()
   board.agents = Array.from({ length: 60 }, (_, index) => ({
     id: index === 0 ? caller.agent_id : index === 1 ? receiver.agent_id : `confirmed-${index}`,
@@ -55,11 +56,18 @@ export async function checkConfirmedBoard(rpc: RPC, caller: any, receiver: any, 
     const panel = page.frameLocator("#panel")
     await panel.locator("#self-row .entry").waitFor()
     await panel.getByRole("tab", { name: "Board", exact: true }).click()
+    const settled = () => panel.locator("body").evaluate(async () => {
+      await document.fonts.ready
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+      await Promise.all(document.getAnimations().filter(animation => Number.isFinite(animation.effect?.getComputedTiming().endTime)).map(animation => animation.finished.catch(() => {})))
+    })
     const rows = panel.locator("#pane-board .entry.active:visible")
+    await settled()
     const before = await rows.evaluateAll(els => els.map(el => ({ id: (el as HTMLElement).dataset.agent, height: el.getBoundingClientRect().height })))
     if (before.length !== 8) throw new Error(`confirmed board setup: expected eight recent rows, got ${before.length}`)
     await panel.locator("#human-lock").click()
     await panel.locator('#human-lock[data-state="unlocked"]').waitFor()
+    await settled()
     const composers = panel.locator("#pane-board .human-compose")
     const count = await composers.count()
     check("confirmed roster renders no composer before a row is opened", count === 0, `${count} composers`)
@@ -70,12 +78,28 @@ export async function checkConfirmedBoard(rpc: RPC, caller: any, receiver: any, 
     const first = panel.getByRole("button", { name: "Message Recipient", exact: true })
     await first.focus(); await first.press("Enter")
     const text = composers.getByRole("textbox")
-    check("Enter opens one labelled row composer and focuses it", await composers.count() === 1 && await composers.getAttribute("role") === "group" && await first.getAttribute("aria-controls") === await composers.getAttribute("id") && await first.getAttribute("aria-expanded") === "true" && await text.evaluate(el => el === document.activeElement))
+    check("Enter opens one labelled row composer and focuses it", await composers.count() === 1 && await panel.getByRole("group", { name: "Message Recipient", exact: true }).count() === 1 && await first.getAttribute("aria-controls") === await composers.getAttribute("id") && await first.getAttribute("aria-expanded") === "true" && await text.evaluate(el => el === document.activeElement))
     await text.fill("A draft survives the fleet changing")
     const pushed = structuredClone(fixture)
     pushed._meta["com.dibs/panel"].board.serial++
+    pushed._meta["com.dibs/panel"].board.agents[2].slots[0].text = "A real fleet update changes the roster HTML"
     await page.evaluate(result => (window as any).__deliver(result), pushed)
+    await panel.locator("#foot-node").filter({ hasText: `serial ${pushed._meta["com.dibs/panel"].board.serial}` }).waitFor()
     check("a board push keeps the open row draft and focus", await text.inputValue() === "A draft survives the fleet changing" && await text.evaluate(el => el === document.activeElement))
+    await page.evaluate(() => {
+      const input = document.createElement("input")
+      input.id = "host-composer"
+      input.setAttribute("aria-label", "Host message composer")
+      document.body.prepend(input)
+    })
+    const hostComposer = page.getByRole("textbox", { name: "Host message composer" })
+    await hostComposer.fill("I am typing in the host chat")
+    const outsidePush = structuredClone(pushed)
+    outsidePush._meta["com.dibs/panel"].board.serial++
+    outsidePush._meta["com.dibs/panel"].board.agents[2].slots[0].text = "Another fleet update while the host has focus"
+    await page.evaluate(result => (window as any).__deliver(result), outsidePush)
+    await panel.locator("#foot-node").filter({ hasText: `serial ${outsidePush._meta["com.dibs/panel"].board.serial}` }).waitFor()
+    check("a confirmed-row redraw does not take focus from the host chat", await hostComposer.evaluate(el => el === document.activeElement) && await hostComposer.inputValue() === "I am typing in the host chat")
     const second = panel.getByRole("button", { name: "Message Role 2", exact: true })
     await second.click()
     check("opening another row replaces the first composer", await composers.count() === 1 && await composers.getAttribute("data-target") === "confirmed-2" && await first.getAttribute("aria-expanded") === "false")
