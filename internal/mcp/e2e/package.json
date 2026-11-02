@@ -4,8 +4,8 @@
   "license": "GPL-3.0-or-later",
   "description": "Headless end-to-end test for the MCP Apps board panel.",
   "dependencies": {
-    "@modelcontextprotocol/ext-apps": "^2.0.3",
-    "@modelcontextprotocol/sdk": "^1.32.1"
+    "@modelcontextprotocol/ext-apps": "^2.0.4",
+    "@modelcontextprotocol/sdk": "^1.32.2"
   },
   "devDependencies": {
     "ajv": "8.20.0",
