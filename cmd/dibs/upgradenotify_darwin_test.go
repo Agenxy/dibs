@@ -24,6 +24,14 @@ func TestUpgradeFetchReportsInstalledNotificationPermission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	preparations := 0
+	nativeHelper := prepareReadOnlyNativeFixture(t, func(t *testing.T, cmd *exec.Cmd) {
+		preparations++
+		testexec.PrepareExecutable(t, cmd)
+	})
+	if preparations != 1 {
+		t.Fatalf("native fixture preparation count is %d, want exactly one", preparations)
+	}
 	for _, route := range []string{"fetch", "current-fetch", "current-bare"} {
 		current := route != "fetch"
 		for _, mode := range []string{"not-determined", "denied", "old", "malformed", "authorized"} {
@@ -43,13 +51,19 @@ func TestUpgradeFetchReportsInstalledNotificationPermission(t *testing.T) {
 					t.Fatal(err)
 				}
 				testexec.PrepareExecutable(t, exec.Command(probe, "--dibs-test-prepare"))
-				writeNativeFixtureHelper(t, filepath.Join(bin, "cosign"))
-				writeNativeFixtureHelper(t, filepath.Join(macos, "dibs-notify"))
-				if err := os.WriteFile(filepath.Join(bin, "dibd"), []byte("old fixture daemon"), 0o700); err != nil {
+				cosign, notifier := filepath.Join(bin, "cosign"), filepath.Join(macos, "dibs-notify")
+				linkReadOnlyNativeFixture(t, nativeHelper, cosign)
+				linkReadOnlyNativeFixture(t, nativeHelper, notifier)
+				aliases := []string{cosign, notifier}
+				if route == "current-bare" {
+					daemon := filepath.Join(bin, "dibd")
+					linkReadOnlyNativeFixture(t, nativeHelper, daemon)
+					aliases = append(aliases, daemon)
+				} else if err := os.WriteFile(filepath.Join(bin, "dibd"), []byte("old fixture daemon"), 0o700); err != nil {
 					t.Fatal(err)
 				}
-				if route == "current-bare" {
-					writeNativeFixtureHelper(t, filepath.Join(bin, "dibd"))
+				for _, alias := range aliases {
+					requireReadOnlyNativeAlias(t, nativeHelper, alias)
 				}
 				// The registrar sees only a private fixture identity, never the
 				// installed Dibs identity on the developer's machine.

@@ -122,6 +122,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The upgrade notification-permission contract prepares one read-only native
+  helper before its parallel cases and shares that prepared inode through
+  private hard links. Mutable lifecycle fixtures keep independent copies;
+  setup and product deadlines and all notification assertions remain unchanged.
+
 - Daemon shutdown and failed host-registry writes explicitly unlock before
   closing their lock files, so a descriptor retained across a concurrent fork
   cannot keep a released lock held. Ancestry and reconnect fixtures use the
