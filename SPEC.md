@@ -369,6 +369,12 @@ you can measure is never improved by asking.
   HTTPS. Windows local plaintext credentials fail closed; no Unix permission
   guarantee is claimed there. See SECURITY.md for browser, invitation-forward
   and old-image limits. This transport gate is not an agent identity.
+  The socket location is fixed inside the selected private profile; a shared
+  final directory is refused. The daemon binds a temporary name in that same
+  validated directory with mode `0700`, sets `0600`, then atomically publishes `dibd.sock`
+  without replacing a concurrent listener. Clients therefore see an absent
+  endpoint or a secured one, never the intermediate bind permissions. Neither
+  client validation nor the set of safely retryable errors is relaxed.
   A staged `doctor --ipc-preflight` and the daemon's replay check inspect the
   directory without changing its mode or contacting the old daemon. Serving
   startup may tighten a verified owned directory with no group/other write

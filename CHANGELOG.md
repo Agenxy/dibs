@@ -127,6 +127,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   cannot keep a released lock held. Ancestry and reconnect fixtures use the
   same release boundary; their existing response and recovery bounds remain.
 
+- Local IPC sockets become visible at `dibd.sock` only after their permissions
+  are secured. A bridge starting during a daemon start or upgrade can no longer
+  permanently refuse the brief bind-before-chmod state. Preparation stays in
+  the existing private profile with mode `0700`; atomic exclusive publication
+  preserves a concurrent listener, and the strict owner/mode and no-TCP-fallback checks
+  remain unchanged. Temporary names preserve the existing socket-path limit.
+
 - Coordinator merge previews now explain a refused recovery proposal with its
   code, message and corrective hint. Recovery respects ordinary exact-ID and
   live-name precedence, so a closed namesake cannot block a lost mailbox's
