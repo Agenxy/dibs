@@ -128,6 +128,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   recovery. Competing stable IDs and genuinely ambiguous live names remain
   protected; recovery cannot reserve the survivor's own ID back onto itself.
 
+- Doctor groups connected bridges with unknown served tool catalogs into one
+  count and deduplicated agent-name summary, explaining that it clears as the
+  bridges restart onto this build. Confirmed catalog mismatches keep their
+  individual guidance. Source verification removes two real-minute waits by
+  testing their full observation windows with isolated clocks and retaining
+  native-helper, daemon-route and doctor/board caller checks. CLI race cost
+  measured 369.565 seconds against 574.498 before; an explicit fifteen-minute
+  package budget provides over twice that measured runtime. Individual product
+  deadlines and assertions are unchanged.
+
 - Pending Mac questions and requests remain answerable when reopened from
   Notification Center or after the original helper or asking process exits.
   Reopened windows fetch current text, choices and state from the local daemon;

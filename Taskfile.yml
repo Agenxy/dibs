@@ -223,7 +223,11 @@ tasks:
       DIBS_NOTIFY: "off"
     desc: Full test suite with race detector
     cmds:
-      - go test -race ./...
+      # #544 reduced measured CLI race cost from 574.498s to 369.565s.
+      # Fifteen minutes gives 2.44x that measured cost (530.435s spare),
+      # preserving each product deadline and assertion. See #544 for load
+      # context and remaining bounded waits; this is a package budget.
+      - go test -race -timeout=15m ./...
 
   review:release:
     desc: "Pre-release review: a different model reads everything since the last tag"
@@ -252,7 +256,7 @@ tasks:
     # `test`.
     cmds:
       - go build -tags dibdev ./...
-      - go test -race -tags dibdev ./internal/humanauth/ ./internal/mcp/ ./cmd/dibd/
+      - go test -race -timeout=15m -tags dibdev ./internal/humanauth/ ./internal/mcp/ ./cmd/dibd/
 
   test:release:
     desc: Version-sensitive packages with a stable release linker stamp
@@ -262,7 +266,7 @@ tasks:
     # A fixed stable stamp is a regression fixture, not a claimed release:
     # every local/main/PR gate must exercise this branch before another tag.
     cmds:
-      - go test -race -count=1 -ldflags "-X github.com/agenxy/dibs/internal/build.Version=0.0.10" ./cmd/dibd/ ./cmd/dibs/ ./internal/selfupdate/ ./internal/build/
+      - go test -race -timeout=15m -count=1 -ldflags "-X github.com/agenxy/dibs/internal/build.Version=0.0.10" ./cmd/dibd/ ./cmd/dibs/ ./internal/selfupdate/ ./internal/build/
 
   test:minimal:
     desc: "The stripped diagnostic panel: a serving mode the default suite never enters"

@@ -29,8 +29,14 @@ func TestDoctorNamesConnectedMismatchedAndUnknownCatalogs(t *testing.T) {
 				if len(warnings) != 0 {
 					t.Fatal(warnings)
 				}
-			} else if len(warnings) != 1 || !strings.Contains(warnings[0], "worker") || !strings.Contains(warnings[0], "start a new chat") || !strings.Contains(warnings[0], "coordinator") {
-				t.Fatalf("dishonest/missing corrective: %v", warnings)
+			} else {
+				want := "clears as these bridges restart onto this build"
+				if hash != "" {
+					want = catalogRemedy
+				}
+				if len(warnings) != 1 || !strings.Contains(warnings[0], "worker") || !strings.Contains(warnings[0], want) {
+					t.Fatalf("dishonest/missing corrective: %v", warnings)
+				}
 			}
 			warnings = nil
 			b.BridgeToolCatalogs[0].StartedAt = "another-incarnation"
