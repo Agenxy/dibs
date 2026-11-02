@@ -496,7 +496,7 @@ function drawPanes() {
   // selfId is null: on a god view no agent is "this one", and marking one would
   // be a lie. The shared component takes it as a parameter precisely so this
   // surface can decline to answer the question.
-  boardEl.innerHTML = Board.attentionHTML(state.messages, state.query) + Board.contactAlertsHTML(b?.contact_alerts) + Board.rosterHTML(b?.agents, {
+  Board.renderPreservingComposers(boardEl, Board.attentionHTML(state.messages, state.query) + Board.contactAlertsHTML(b?.contact_alerts) + Board.rosterHTML(b?.agents, {
     selfId: null,
     mergeActions: mergeActionsHTML,
     // Same reason as the panel: this surface replaces the roster's innerHTML on
@@ -512,7 +512,8 @@ function drawPanes() {
       ? Board.firstRunHTML()
       : Board.emptyHTML("No agents right now",
           "Every agent has closed or aged out. They reappear the moment one registers."),
-  })
+  }) + ((b?.merge_sources || []).length ? `<section class="merge-sources"><h2>Closed participants</h2>${b.merge_sources.filter((row) => Board.matchesAgent(row, state.query)).map((row) => `<article class="entry" data-agent="${Board.esc(row.id)}"><p>${Board.esc(row.name)} (${Board.esc(row.id)})</p>${mergeActionsHTML(row)}</article>`).join("")}</section>` : "")
+    + ((b?.merged_agents || []).length ? `<section class="merge-history"><h2>Merged participants</h2>${b.merged_agents.filter((row) => Board.matchesAgent(row, state.query)).map((row) => `<p>${Board.esc(row.id)} merged into ${Board.esc(row.into)} by ${Board.esc(row.by?.id || "unknown")} at ${Board.esc(row.at || "unknown")}</p>`).join("")}</section>` : ""))
 
   // Spaces of work. selfId stays null for the same reason the roster's does:
   // on an operator view no agent is "you", and marking one would be a lie.
@@ -532,7 +533,7 @@ function drawPanes() {
   }))
   const chEl = document.getElementById("pane-agents")
   const shownChans = chans.filter((c) => Board.matchesSpace(c, state.query))
-  chEl.innerHTML = (shownChans.length
+  Board.renderPreservingComposers(chEl, (shownChans.length
     ? shownChans.map((c) => {
         const mine = (c.members || []).some((m) => m.agent === me)
         return Board.channelHTML(c, { selfId: me, agents: b?.agents }) + `
@@ -556,13 +557,10 @@ function drawPanes() {
       <input type="text" id="new-agent-id" placeholder="new agent id (e.g. auth-refactor)" aria-label="new agent id">
       <input type="text" id="new-agent-topic" placeholder="what the work is" aria-label="new agent topic">
       <button class="act open">open agent</button>
-    </div>`
+    </div>`)
   const tl = document.getElementById("tally-agents")
   tl.textContent = chans.length
   tl.classList.toggle("zero", chans.length === 0)
-
-  if ((b?.merge_sources || []).length) boardEl.insertAdjacentHTML("beforeend", `<section class="merge-sources"><h2>Closed participants</h2>${b.merge_sources.filter((row) => Board.matchesAgent(row, state.query)).map((row) => `<article class="entry" data-agent="${Board.esc(row.id)}"><p>${Board.esc(row.name)} (${Board.esc(row.id)})</p>${mergeActionsHTML(row)}</article>`).join("")}</section>`)
-  if ((b?.merged_agents || []).length) boardEl.insertAdjacentHTML("beforeend", `<section class="merge-history"><h2>Merged participants</h2>${b.merged_agents.filter((row) => Board.matchesAgent(row, state.query)).map((row) => `<p>${Board.esc(row.id)} merged into ${Board.esc(row.into)} by ${Board.esc(row.by?.id || "unknown")} at ${Board.esc(row.at || "unknown")}</p>`).join("")}</section>`)
 
   const mailEl = document.getElementById("pane-mail")
   // No actionsHTML: the operator watches. Answering as somebody else's agent is
@@ -571,7 +569,7 @@ function drawPanes() {
   // read-only: answering as somebody else's agent is not something this view may
   // do, and the operator holds exactly one token: their own.
   const shownMail = state.messages.filter((m) => Board.matchesMail(m, state.query))
-  mailEl.innerHTML = `
+  Board.renderPreservingComposers(mailEl, `
     <div class="compose new-msg">
       <input type="text" id="msg-to" placeholder="agent id" aria-label="recipient">
       <select id="msg-type" aria-label="message type">
@@ -615,7 +613,7 @@ function drawPanes() {
       }).join("")
     : state.mailError
       ? ""
-      : state.query.trim() ? Board.noMatchesHTML() : Board.emptyHTML("No mail", "Messages between agents appear here as they are sent."))
+      : state.query.trim() ? Board.noMatchesHTML() : Board.emptyHTML("No mail", "Messages between agents appear here as they are sent.")))
 
   const actEl = document.getElementById("pane-activity")
   const shownEvents = state.events.filter((e) => Board.matchesEvent(e, state.query))

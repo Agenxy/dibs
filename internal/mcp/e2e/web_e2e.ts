@@ -711,6 +711,8 @@ try {
   await page.locator("#msg-type").selectOption("request")
   await page.locator("#msg-body").fill("half a thought that must survive")
   await page.locator("#msg-body").focus()
+  const unchangedComposers = await page.locator(".compose").elementHandles()
+  if (!unchangedComposers.length) throw new Error("setup: no composers before the board event")
 
   // Force a real redraw the way the fleet does: a genuine board event.
   await tool("declare", { token: a.token, text: "something new, to force a redraw" })
@@ -728,6 +730,38 @@ try {
   check("and leaves focus where the person left it",
     (await page.evaluate(() => document.activeElement?.id)) === "msg-body",
     String(await page.evaluate(() => document.activeElement?.id)))
+  check("an unrelated board event keeps unchanged composers by identity",
+    (await Promise.all(unchangedComposers.map((composer) => composer.evaluate((el) => el.isConnected)))).every(Boolean))
+
+  // Browsers without the state-preserving move API still need the same
+  // control, draft and keyboard focus. Exercise that capability through a
+  // real board event, not a call to the renderer's internal helper.
+  await page.evaluate(() => {
+    ;(window as any).__composerMoveDescriptor = Object.getOwnPropertyDescriptor(Element.prototype, "moveBefore")
+    Object.defineProperty(Element.prototype, "moveBefore", { configurable: true, writable: true, value: undefined })
+  })
+  try {
+    const focusedSend = await page.locator(".compose.new-msg .act.send").elementHandle()
+    if (!focusedSend) throw new Error("setup: no send button for the fallback")
+    await focusedSend.focus()
+    await tool("declare", { token: a.token, text: "redraw without the native move capability" })
+    const observed = await publicBoard()
+    const serial = observed.serial ?? observed.board?.serial
+    if (!Number.isSafeInteger(serial)) throw new Error("setup: passive board has no serial")
+    await page.waitForFunction((n) => Number(document.getElementById("ctx-node")?.textContent?.match(/ledger (\d+)/)?.[1]) >= n, serial, { timeout: 5000 })
+    const fallback = await page.evaluate((button) => ({ connected: button.isConnected,
+      focused: document.activeElement === button,
+      same: button === document.querySelector(".compose.new-msg .act.send") }), focusedSend)
+    check("the move fallback keeps the same composer button and keyboard focus",
+      fallback.connected && fallback.focused && fallback.same, JSON.stringify(fallback))
+  } finally {
+    await page.evaluate(() => {
+      const descriptor = (window as any).__composerMoveDescriptor
+      if (descriptor) Object.defineProperty(Element.prototype, "moveBefore", descriptor)
+      else delete (Element.prototype as any).moveBefore
+      delete (window as any).__composerMoveDescriptor
+    })
+  }
   await page.locator('.views button[data-view="board"]').click()
 
   // ── the two things that go wrong on a network ────────────────────────────
@@ -770,9 +804,14 @@ try {
   })
   await page.locator("#msg-to").fill("builder")
   await page.locator("#msg-body").fill("must be sent exactly once")
+  const originalSend = await page.locator(".compose.new-msg .act.send").elementHandle()
+  if (!originalSend) throw new Error("setup: no send button before the request")
   await page.locator(".compose.new-msg .act.send").click()
   await tool("declare", { token: a.token, text: "a redraw, mid-flight" })
   await page.waitForTimeout(300)
+  check("a mid-flight redraw keeps the original send button connected",
+    await page.evaluate((button) => button.isConnected
+      && button === document.querySelector(".compose.new-msg .act.send"), originalSend))
   await page.locator(".compose.new-msg .act.send").click({ force: true })
   await page.waitForTimeout(1200)
   check("a redraw mid-request does not reopen the duplicate-submit guard",
@@ -1029,9 +1068,14 @@ try {
     check("and will not let them speak until they do",
       await box.locator('input[type="text"]').isDisabled())
 
+    const beforeJoin = await box.elementHandle()
+    if (!beforeJoin) throw new Error("setup: no composer before joining")
     await box.locator(".act.join").click()
     await page.locator('.compose[data-agent="web-render"] .act.leave').waitFor({ timeout: 5000 })
     check("joining flips the control to leave", true)
+    check("changed membership replaces the old composer and its obsolete actions",
+      await beforeJoin.evaluate((el) => !el.isConnected)
+        && await box.evaluate((el, previous) => el !== previous, beforeJoin))
     // The identity is minted by the first ACTION, not by the page load.
     await page.locator("#ctx-you").filter({ hasText: "you are" }).waitFor({ timeout: 5000 })
     check("acting is what gives you an identity", true)
