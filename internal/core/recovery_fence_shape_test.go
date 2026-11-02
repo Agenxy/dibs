@@ -17,17 +17,23 @@ func TestRecoveryAdmissionRequiresSelfDescribingFenceShape(t *testing.T) {
 	}{
 		{"v1", legacy, true},
 		{"v2", "v2:" + legacy, true},
+		{"v3", "v3:" + legacy, true},
 		{"empty", "", false},
 		{"short", legacy[:70], false},
 		{"long", legacy + "a", false},
 		{"v2-short", "v2:" + legacy[:70], false},
 		{"v2-long", "v2:" + legacy + "a", false},
-		{"unknown-version", "v3:" + legacy, false},
+		{"unknown-version", "v4:" + legacy, false},
+		{"v3-short", "v3:" + legacy[:70], false},
+		{"v3-long", "v3:" + legacy + "a", false},
 		{"wrong-hash", "sha512:" + strings.Repeat("a", 64), false},
 		{"wrong-v2-hash", "v2:sha512:" + strings.Repeat("a", 64), false},
 		{"non-hex", "sha256:" + strings.Repeat("g", 64), false},
 		{"upper-hex", "sha256:" + strings.Repeat("A", 64), false},
 		{"nested-prefix", "v2:v2:" + legacy, false},
+		{"nested-v3-prefix", "v3:v3:" + legacy, false},
+		{"mixed-prefix", "v3:v2:" + legacy, false},
+		{"reverse-mixed-prefix", "v2:v3:" + legacy, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			op := &Op{Kind: OpSendMessage, MsgType: MsgRequest, Recovery: &RecoveryRequest{From: "source", Into: "survivor", SourceCreated: 1, SurvivorCreated: 2, CoordinatorCreated: 3, Fence: tc.fence}}

@@ -29,7 +29,7 @@ type supportedMergeFixture struct {
 
 // Real encrypted replay, writer and HTTP acceptance, including the history
 // listener. Disable desktop notification BEFORE Run can re-arm old mail.
-func supportedMergeServer(t *testing.T, dir string) (*httptest.Server, *engine.Engine, func()) {
+func supportedMergeServer(t *testing.T, dir string, limits ...core.Limits) (*httptest.Server, *engine.Engine, func()) {
 	t.Helper()
 	box, err := ledger.LoadOrCreateKey(filepath.Join(dir, "key"))
 	if err != nil {
@@ -40,6 +40,12 @@ func supportedMergeServer(t *testing.T, dir string) (*httptest.Server, *engine.E
 		t.Fatal(err)
 	}
 	st := core.NewState("merge-fixture", core.DefaultLimits())
+	if len(limits) > 1 {
+		t.Fatal("fixture accepts one limit profile")
+	}
+	if len(limits) == 1 {
+		st = core.NewState("merge-fixture", limits[0])
+	}
 	var history []core.Event
 	led.OnEvents = func(events []core.Event) { history = append(history, events...) }
 	if _, err := led.Replay(st); err != nil {
@@ -69,10 +75,10 @@ func supportedMergeServer(t *testing.T, dir string) (*httptest.Server, *engine.E
 	return srv, e, stop
 }
 
-func newSupportedMerge(t *testing.T, version string) *supportedMergeFixture {
+func newSupportedMerge(t *testing.T, version string, limits ...core.Limits) *supportedMergeFixture {
 	t.Helper()
 	dir := t.TempDir()
-	srv, e, stop := supportedMergeServer(t, dir)
+	srv, e, stop := supportedMergeServer(t, dir, limits...)
 	f := &supportedMergeFixture{t: t, srv: srv, e: e, version: version, dir: dir, stop: stop}
 	e.SetHumanNotifier(desktopFixture{available: false})
 	f.lead = f.call("register", map[string]any{"name": "lead", "nonce": "lead-secret", "session_id": "coordinator-session"})

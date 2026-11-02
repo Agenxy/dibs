@@ -240,6 +240,10 @@ filesystem writes (§9). It is a **coordination generation**, not a fencing toke
   requirements, and snapshots declare both them and `ledger-requirements/v1`.
   Ledger decoding refuses an unknown required feature before folding its
   marker, with upgrade guidance, just as snapshot decoding checks its header.
+  V3 recovery consent additionally requires `mailbox-recovery-consent/v3`,
+  including when its pending records were historical and unfenced. The
+  requirement survives their collection. Builds such as 48773abc refuse a
+  board after v3 is recorded; rollback cannot silently recompute an older fence.
   After each successful append, a separate check of affected message serials
   and named agents, plus the address-map length and policy value, writes any
   missing requirement and logs a warning naming the operation. Already-fenced
@@ -572,7 +576,7 @@ as ordinary agent addressing: a retired namesake cannot shadow the source,
 and a competing stable ID or genuinely ambiguous live name is still refused.
 Normal merge fences retain their original meaning. Both directions enforce the
 same distinct-hands and current-incarnation checks at request and approval, and
-use the same recovery fold. The proposal fence excludes the survivor's
+use the same recovery fold. Both current recovery fences exclude the survivor's
 awareness/contact watermarks, active/dormant/stale observations and incoming
 mail, allowing normal arrival/wake/check-in/read/ack activity. Survivor incoming
 mail is neither moved nor previewed. Source incoming mail and source sender
@@ -580,13 +584,23 @@ rewrites remain fenced, including source-authored mail addressed to the survivor
 and survivor-authored mail addressed to the source. Session/activation/authority,
 declarations, credentials, claims and memberships remain fenced; current
 eligibility is always rechecked. Current proposal fences have the explicit
-`recovery:v2:sha256:<64 lowercase hex digits>` form. The recorded inner `v2:`
-prefix selects the fold's projection; historical unprefixed v1 records keep
-their exact encoding during replay, snapshots and compaction. Pending v1
-proposals refuse current consent with `E_RECOVERY_STALE` and a coordinator
-re-preview hint. This versioning repairs an incident where ordinary survivor
-mail made a coordinator proposal impossible to consent to; it does not change
-human merge or original survivor-initiated recovery fence encodings.
+`recovery:v3:sha256:<64 lowercase hex digits>` form; survivor-initiated recovery
+uses `v3:sha256:<64 lowercase hex digits>`. The recorded inner prefix selects
+the fold's projection. Historical survivor/v1 and proposal/v1/v2 records retain
+their exact encodings during replay, snapshots and compaction; general human
+and coordinator merge encodings are unchanged. Old pending requests refuse
+current consent with `E_RECOVERY_STALE`: preview again, then send a fresh
+request with that fence. Nothing retries or consents automatically.
+
+V3 excludes only incoming messages' `contact_escalated_serial` and
+`stall_notified_declaration_serial` from copied fence input. Stored markers
+and their separate notices remain intact. Delivery, consumption, unread
+outcome/review prefixes, response clocks, never-delivered ceilings, retention,
+queue order and all content/authority/ownership fields stay fenced. Expiry is
+deliberate maintenance interference: its state, terminal time and diagnosis
+change what can be answered and what moves, so approval must refuse stale
+consent and name the new preview/request call. The complete writer/field audit
+is in `docs/RECOVERY-CONSENT-V3.md`.
 
 Bridge catalog diagnostics are derived, bounded to 512 process incarnations,
 and lost safely on daemon restart. Bridges carry the last complete `tools/list`

@@ -87,6 +87,7 @@ func (e *Engine) recoveryPlan(from string, survivor, lead *core.Agent) (core.Res
 		return nil, nil, err
 	}
 	plan := e.state.MergePlan(from, survivor.ID, 0)
+	plan["fence"] = e.state.CurrentRecoveryFence(effect, survivor.ID, 0)
 	plan["claims"] = len(plan["claims"].([]*core.Claim))
 	plan["spaces"] = len(plan["spaces"].([]string))
 	source := e.state.Agents[from]
@@ -117,7 +118,7 @@ func (e *Engine) proposeRecoveryLocked(
 	if err != nil {
 		return nil, err
 	}
-	fence := e.state.RecoveryProposalFence(from, into, 0)
+	fence := e.state.CurrentRecoveryFence(effect, actor.ID, 0)
 	plan["fence"] = recoveryProposalPrefix + fence
 	plan["mode"], plan["approval_by"] = "recovery_request", into
 	plan["routing_effect"] = strings.ReplaceAll(plan["routing_effect"].(string),
@@ -138,7 +139,8 @@ func (e *Engine) proposeRecoveryLocked(
 func recoveryStale() error {
 	return &core.Error{
 		Code: "E_RECOVERY_STALE", Msg: "recovery inputs changed; nothing moved",
-		Hint: "preview recover_agent again, or ask the coordinator to preview merge_agents again; commit the fresh fence",
+		Hint: "re-run recover_agent(dry_run:true), then recover_agent with the fresh fence to request again; " +
+			"for coordinator recovery, preview merge_agents again (dry_run:true), then request again with that fresh fence",
 	}
 }
 
@@ -197,7 +199,7 @@ func (e *Engine) prepareRecoveryEffect(op *core.Op, actor *core.Agent) error {
 	if err != nil {
 		return err
 	}
-	if r.Fence != e.state.RecoveryFence(r, proposer, ignore) {
+	if r.Fence != e.state.CurrentRecoveryFence(r, proposer, ignore) {
 		return recoveryStale()
 	}
 	if approving {

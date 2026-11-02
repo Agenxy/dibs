@@ -93,6 +93,12 @@ func TestSnapshotFeatureMarkersThroughRealWriter(t *testing.T) {
 		{"pending-recovery", func(s *core.State) {
 			s.Messages[1] = &core.Message{Serial: 1, Type: core.MsgRequest, Recovery: &core.RecoveryRequest{From: "source", Into: "survivor"}}
 		}, []string{"mailbox-recovery/v1"}},
+		{"pending-v3-without-marker", func(s *core.State) {
+			s.Messages[1] = &core.Message{Serial: 1, Type: core.MsgRequest, Recovery: &core.RecoveryRequest{From: "source", Into: "survivor", Fence: "v3:sha256:" + strings.Repeat("a", 64)}}
+		}, []string{"mailbox-recovery/v1", "mailbox-recovery-consent/v3"}},
+		{"v3-requirement-after-collection", func(s *core.State) {
+			s.RequiredFeatures = []string{"mailbox-recovery-consent/v3"}
+		}, []string{"ledger-requirements/v1", "mailbox-recovery-consent/v3"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
