@@ -127,6 +127,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   private hard links. Mutable lifecycle fixtures keep independent copies;
   setup and product deadlines and all notification assertions remain unchanged.
 
+- Race-enabled daemon request fixtures use inexpensive test hashes while
+  retaining real password verification and every response deadline. A separate
+  guard pins production hashing at 600,000 rounds and checks real verification.
+
 - Daemon shutdown and failed host-registry writes explicitly unlock before
   closing their lock files, so a descriptor retained across a concurrent fork
   cannot keep a released lock held. Ancestry and reconnect fixtures use the

@@ -13,16 +13,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agenxy/dibs/internal/adminpw"
 	"github.com/agenxy/dibs/internal/core"
 )
 
 // Use the real administrative handler behind its real auth gate. DIBS_ADMIN
 // and possession of a bridge's local secret are not human authority.
 func TestDesktopApprovalSettingRequiresHumanHTTPAuthority(t *testing.T) {
+	useFastRequestPasswordHash(t)
 	eng, ctx := testEngine(t)
 	dir := t.TempDir()
-	hash, err := adminpw.Hash("test-human-password")
+	hash, err := requestPasswordHash("test-human-password")
 	if err != nil {
 		t.Fatal(err)
 	}

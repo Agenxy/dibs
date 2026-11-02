@@ -12,11 +12,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/agenxy/dibs/internal/adminpw"
 	"github.com/agenxy/dibs/internal/core"
 )
 
 func TestHumanQueueLockEntersThroughTheAdminGate(t *testing.T) {
+	useFastRequestPasswordHash(t)
 	eng, ctx := testEngine(t)
 	lead, err := eng.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "lead"})
 	if err != nil {
@@ -40,7 +40,7 @@ func TestHumanQueueLockEntersThroughTheAdminGate(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
-	hash, err := adminpw.Hash("queue-fixture-password")
+	hash, err := requestPasswordHash("queue-fixture-password")
 	if err != nil {
 		t.Fatal(err)
 	}

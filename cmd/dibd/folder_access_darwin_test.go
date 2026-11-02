@@ -20,7 +20,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agenxy/dibs/internal/adminpw"
 	"github.com/agenxy/dibs/internal/folderaccess"
 	"github.com/agenxy/dibs/internal/testport"
 )
@@ -116,8 +115,9 @@ type folderDaemon struct {
 
 func bootFolderAccessDaemon(t *testing.T, mode string) *folderDaemon {
 	t.Helper()
+	useFastRequestPasswordHash(t)
 	home, dir := t.TempDir(), qShortDir(t)
-	hash, err := adminpw.Hash("folder-fixture-password")
+	hash, err := requestPasswordHash("folder-fixture-password")
 	if err != nil {
 		t.Fatal(err)
 	}

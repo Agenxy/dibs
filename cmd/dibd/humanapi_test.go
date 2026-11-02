@@ -24,7 +24,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agenxy/dibs/internal/adminpw"
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/humankey"
@@ -44,9 +43,10 @@ type relayHarness struct {
 
 func newRelayHarness(t *testing.T) *relayHarness {
 	t.Helper()
+	useFastRequestPasswordHash(t)
 	eng, _ := testEngine(t)
 	dir := t.TempDir()
-	hash, err := adminpw.Hash("correct horse")
+	hash, err := requestPasswordHash("correct horse")
 	if err != nil {
 		t.Fatal(err)
 	}
