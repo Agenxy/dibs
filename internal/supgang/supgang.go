@@ -38,6 +38,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/sibling"
 )
 
@@ -330,7 +331,7 @@ func call(ctx context.Context, into any, args ...string) error {
 	// #nosec G204 -- argv, no shell: a fixed executable and Supgang's own
 	// subcommands; the one caller-supplied word (a peer) is refused above
 	// when it could read as a flag.
-	cmd := exec.CommandContext(ctx, exe, append([]string{"--json"}, args...)...)
+	cmd := procexec.Command(ctx, exe, append([]string{"--json"}, args...)...)
 	out, errOut := &limitedWriter{left: maxOutput}, &limitedWriter{left: 4096}
 	cmd.Stdout, cmd.Stderr = out, errOut
 	// WaitDelay bounds the wait for the PIPES, not only the process. A child
@@ -349,7 +350,10 @@ func call(ctx context.Context, into any, args ...string) error {
 	// exit with anything else on stdout (an ok envelope, nothing, garbage)
 	// is not an answer either: a missing library, a refused state directory,
 	// a process that printed a result and then failed.
-	if ctx.Err() != nil || errors.Is(err, exec.ErrWaitDelay) {
+	if errors.Is(err, exec.ErrWaitDelay) {
+		return fmt.Errorf("incomplete output from supgang; %s result is unknown: %w", args[0], err)
+	}
+	if ctx.Err() != nil {
 		return fmt.Errorf("supgang %s did not finish within %s: %w", args[0], callTimeout, err)
 	}
 	if refusal, ok := supgangRefusal(out.Bytes()); ok {

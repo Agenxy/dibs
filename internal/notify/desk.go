@@ -7,9 +7,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os/exec"
 	"strconv"
 	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // ErrNotAway means input resumed between the observation and the actual open.
@@ -40,7 +43,10 @@ func DesktopState() (Desk, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	// #nosec G204 -- the helper is resolved beside this executable; fixed mode.
-	raw, err := exec.CommandContext(ctx, path, "--desk-state").Output()
+	raw, err := procexec.Command(ctx, path, "--desk-state").Output()
+	if errors.Is(err, exec.ErrWaitDelay) {
+		return Desk{}, fmt.Errorf("incomplete output from dibs-notify; desktop state is unknown: %w", err)
+	}
 	if err != nil {
 		return Desk{}, err
 	}
@@ -61,7 +67,8 @@ func OpenWhenAway(url string, minIdle time.Duration) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 	defer cancel()
 	// #nosec G204 -- fixed helper mode; URL is checked again by the native helper.
-	err := exec.CommandContext(ctx, path, "--open-away", url,
+	// Run leaves stdio on the null device; an opened app inherits no copied pipe.
+	err := procexec.Command(ctx, path, "--open-away", url,
 		strconv.FormatFloat(minIdle.Seconds(), 'f', -1, 64)).Run()
 	var exited *exec.ExitError
 	if errors.As(err, &exited) && exited.ExitCode() == 3 {

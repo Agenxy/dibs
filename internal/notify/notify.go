@@ -38,6 +38,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -45,6 +46,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // ErrUnsupported is returned where there is no way to reach a person. Dibs
@@ -310,7 +313,11 @@ func onScreen(mode string, args ...string) (string, bool) {
 	defer cancel()
 	// #nosec G204 -- h is resolved beside this binary; mode is a constant and
 	// the rest is argv data the helper never interprets.
-	out, err := exec.CommandContext(ctx, h, append([]string{mode}, args...)...).Output()
+	out, err := procexec.Command(ctx, h, append([]string{mode}, args...)...).Output()
+	if errors.Is(err, exec.ErrWaitDelay) {
+		slog.Warn("incomplete output from dibs-notify; native answer is unavailable")
+		return "", false
+	}
 	if err != nil {
 		if notAuthorised(err) {
 			return "", false // report that native prompting is unavailable
@@ -544,8 +551,11 @@ func run(script string, args ...string) (string, error) {
 	// #nosec G204 -- `script` is one of the constants above and never built from
 	// input; args are DATA delivered to `on run argv`, which is the entire
 	// reason this file interpolates nothing.
-	cmd := exec.CommandContext(ctx, "osascript", append([]string{"-e", script}, args...)...)
+	cmd := procexec.Command(ctx, "osascript", append([]string{"-e", script}, args...)...)
 	out, err := cmd.Output()
+	if errors.Is(err, exec.ErrWaitDelay) {
+		return "", fmt.Errorf("incomplete output from osascript; native answer is unknown: %w", err)
+	}
 	if err != nil {
 		// A dismissed dialog exits non-zero, which is an answer rather than a
 		// fault: "the human said no" and "the machine could not ask" must not
@@ -638,11 +648,14 @@ func nativeReachSettings(h string) (bool, string, *Settings) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	// #nosec G204 -- h is resolved beside this binary; --status is a constant.
-	cmd := exec.CommandContext(ctx, h, "--status") // #nosec G204 -- installed helper, existing constant mode
+	cmd := procexec.Command(ctx, h, "--status") // #nosec G204 -- installed helper, existing constant mode
 	// Additive capability request: every older helper already understands
 	// --status and ignores the environment. Never send it a new positional flag.
 	cmd.Env = append(os.Environ(), "DIBS_NOTIFY_SETTINGS_V1=1")
 	out, err := cmd.Output()
+	if errors.Is(err, exec.ErrWaitDelay) {
+		return false, "incomplete output from dibs-notify; notification settings are unknown; run dibs doctor again", nil
+	}
 	if settings := DecodeSettings(out); settings != nil {
 		why := strings.TrimSpace(settings.Summary() + " " + settings.Information() + " " + settings.Hints(true))
 		if err != nil {

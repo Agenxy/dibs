@@ -20,6 +20,7 @@ import (
 	"github.com/agenxy/dibs/internal/build"
 	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/mcp"
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testexec"
 )
 
@@ -70,7 +71,7 @@ func init() {
 	child := filepath.Join(dir, "bridge ) observed")
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	command := exec.CommandContext(ctx, "go", "test", "-c", "-race", "-overlay="+overlay,
+	command := procexec.Command(ctx, "go", "test", "-c", "-race", "-overlay="+overlay,
 		"-ldflags=-X github.com/agenxy/dibs/internal/build.Version="+build.Version, "-o", child, "./cmd/dibs")
 	command.Dir = root
 	if out, err := command.CombinedOutput(); err != nil {

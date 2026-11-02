@@ -22,6 +22,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // Compose writes what a wake says on the route that cannot carry mail.
@@ -178,12 +180,19 @@ func RunCommandsObserved(
 		if observe != nil {
 			observe(result.observation)
 		}
-		if result.contended || result.observation.ThreadState == "gone" {
+		if result.contended || result.unconfirmed || result.observation.ThreadState == "gone" {
 			return false
 		}
 		ok, out = result.ok, result.out
 	} else {
-		ok, out = runForOut(argv, agent, dir, timeout, grace)
+		var needsReceipt bool
+		ok, out, needsReceipt = runForOutResult(argv, agent, dir, timeout, grace)
+		if needsReceipt {
+			slog.Warn("wake acceptance unknown after incomplete output", "agent", agent,
+				"err", exec.ErrWaitDelay,
+				"hint", "ErrWaitDelay: this wake command has no app receipt contract; no retry or fallback was attempted")
+			return false // no receipt contract and no fallback after ambiguous output
+		}
 	}
 	// Admission is released before trying another route, including a queue
 	// fallback for this same thread. Otherwise that route would lock itself.
@@ -245,6 +254,13 @@ func openThreadFailure(out []byte) bool {
 // checked only that wakeTimeout was at least two hours, which stays true while
 // Wait blocks past it.
 func runForOut(argv []string, agent, dir string, timeout, grace time.Duration) (bool, []byte) {
+	ok, out, _ := runForOutResult(argv, agent, dir, timeout, grace)
+	return ok, out
+}
+
+// The third result is successful exit with uncancelled context and incomplete
+// output drain. It permits a receipt observation, never automatic acceptance.
+func runForOutResult(argv []string, agent, dir string, timeout, grace time.Duration) (bool, []byte, bool) {
 	// EXCEPT THE QUEUE ROUTE, which needs no project directory.
 	//
 	// The reason below is `codex exec resume`, which refuses outside a trusted
@@ -265,7 +281,7 @@ func runForOut(argv []string, agent, dir string, timeout, grace time.Duration) (
 	// else: SetWakeCommands is the only writer, no tool or op reaches it, and
 	// substitution replaces whole elements rather than building a string. There
 	// is no shell in this path.
-	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd := procexec.Command(ctx, argv[0], argv[1:]...)
 	// IN THE AGENT'S DIRECTORY, WHICH IS THE WHOLE REASON THIS EVER WORKED.
 	//
 	// Without this the command inherits the DAEMON'S working directory, and a
@@ -303,6 +319,11 @@ func runForOut(argv []string, agent, dir string, timeout, grace time.Duration) (
 	cmd.WaitDelay = grace
 	err := cmd.Run()
 	out := tail.Bytes()
+	if errors.Is(err, exec.ErrWaitDelay) && ctx.Err() == nil && cmd.ProcessState != nil && cmd.ProcessState.Success() {
+		// This is successful process exit, not proof that the app accepted input.
+		// The queue adapter may make one exact-item observation; nothing retries.
+		return false, out, true
+	}
 	if err != nil {
 		// WHAT THE OS SAID, not what the agent printed.
 		//
@@ -367,10 +388,10 @@ func runForOut(argv []string, agent, dir string, timeout, grace time.Duration) (
 			message = "wake command cannot reach its app thread: no rollout found"
 		}
 		slog.Warn(message, fields...)
-		return false, out
+		return false, out, false
 	}
 	slog.Info("wake command accepted the notice", "agent", agent, "cmd", argv[0])
-	return true, out
+	return true, out, false
 }
 
 // Run is runForOut for callers that need the verdict alone.

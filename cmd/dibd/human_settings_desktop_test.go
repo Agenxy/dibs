@@ -18,6 +18,7 @@ import (
 
 	"github.com/agenxy/dibs/internal/core"
 	notifyapp "github.com/agenxy/dibs/internal/notify/app"
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testexec"
 )
 
@@ -192,13 +193,15 @@ func TestDesktopSettingsComeFromThePostingHelper(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(helper), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(helper, bytes, 0o700); err != nil {
+	// Only desktopSettingsHelper's pure OS double is uninstrumented.
+	// The copied engine/presenter driver above keeps this race-enabled image.
+	if err := os.WriteFile(helper, testexec.NativeFixtureImage(t), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	testexec.PrepareExecutable(t, exec.Command(helper, "--dibs-test-prepare"))
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, driver, "-test.run=^TestDesktopSettingsComeFromThePostingHelper$") // #nosec G204 -- private copied test binary and fixture helper
+	cmd := procexec.Command(ctx, driver, "-test.run=^TestDesktopSettingsComeFromThePostingHelper$") // #nosec G204 -- private copied test binary and fixture helper
 	cmd.Env = append(os.Environ(), "DIBS_SETTINGS_DESKTOP_DRIVER=1", "DIBS_NOTIFY=")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("actual desktop producer wiring: %v\n%s", err, out)
@@ -233,16 +236,16 @@ func TestNativeHelperSettingsModeIsPermissionFree(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "xcrun", "swiftc", "-j1", combined, "-o", executable) // #nosec G204 -- exact production source and private test bundle
+	cmd := procexec.Command(ctx, "xcrun", "swiftc", "-j1", combined, "-o", executable) // #nosec G204 -- exact production source and private test bundle
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("native fixture compile setup: %v\n%s", err, out)
 	}
-	if out, err := exec.CommandContext(ctx, "codesign", "--force", "--sign", "-", bundle).CombinedOutput(); err != nil {
+	if out, err := procexec.Command(ctx, "codesign", "--force", "--sign", "-", bundle).CombinedOutput(); err != nil {
 		t.Fatalf("native fixture sign setup: %v\n%s", err, out)
 	} // #nosec G204 -- private ad-hoc fixture bundle
 	readCtx, stop := context.WithTimeout(context.Background(), 12*time.Second)
 	defer stop()
-	cmd = exec.CommandContext(readCtx, executable, "--status") // #nosec G204 -- private compiled production helper, existing read-only mode
+	cmd = procexec.Command(readCtx, executable, "--status") // #nosec G204 -- private compiled production helper, existing read-only mode
 	cmd.Env = append(os.Environ(), "DIBS_NOTIFY_SETTINGS_V1=1")
 	out, err := cmd.Output()
 	if err != nil {

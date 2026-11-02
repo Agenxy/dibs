@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/invites"
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testexec"
 	"github.com/agenxy/dibs/internal/testport"
 )
@@ -84,7 +85,7 @@ func TestProcessCLIThroughPublicDaemon(t *testing.T) {
 	t.Cleanup(proxy.Close)
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	t.Cleanup(cancel)
-	daemon := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestProcessCLIThroughPublicDaemon$")
+	daemon := procexec.Command(ctx, os.Args[0], "-test.run=^TestProcessCLIThroughPublicDaemon$")
 	daemon.Env = append(nativeProbeEnv(t.TempDir(), "", ""),
 		"DIBS_PROCESS_CLI_DAEMON=1", "DIBS_PROCESS_CLI_DIR="+dir,
 		"DIBS_PROCESS_CLI_PRIVATE="+private.Addr, "DIBS_PROCESS_CLI_PUBLIC="+public.Addr,
@@ -130,7 +131,7 @@ func TestProcessCLIThroughPublicDaemon(t *testing.T) {
 	recoveryNonce := ""
 	runCLI := func(address, dataDir, invite, token, stdin string, args ...string) (string, error) {
 		t.Helper()
-		cmd := exec.CommandContext(ctx, bin, args...)
+		cmd := procexec.Command(ctx, bin, args...)
 		cmd.Env = append(nativeProbeEnv(t.TempDir(), "", ""), "DIBS_DIR="+dataDir,
 			"DIBS_ADDR="+address, "DIBS_INVITE="+invite, "DIBS_TOKEN="+token,
 			"DIBS_NONCE="+recoveryNonce)

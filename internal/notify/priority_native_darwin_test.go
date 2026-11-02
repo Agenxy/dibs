@@ -6,12 +6,13 @@ package notify
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // Compile the shipped helper's interruption policy, then exercise it without
@@ -24,12 +25,12 @@ func TestNativePassivePriorityRequestsTimeSensitive(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	binary := filepath.Join(t.TempDir(), "dibs-notify")
-	build := exec.CommandContext(ctx, "swiftc", "-D", "DIBS_PRIORITY_FIXTURE", "-o", binary, nativePromptSource(t))
+	build := procexec.Command(ctx, "swiftc", "-D", "DIBS_PRIORITY_FIXTURE", "-o", binary, nativePromptSource(t))
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("native priority fixture build: %v\n%s", err, out)
 	}
 	for _, tc := range []struct{ requested, want string }{{"", "active"}, {"1", "timeSensitive"}} {
-		cmd := exec.CommandContext(ctx, binary, "--priority-fixture") // #nosec G204 -- compiled from checked-in source
+		cmd := procexec.Command(ctx, binary, "--priority-fixture") // #nosec G204 -- compiled from checked-in source
 		cmd.Env = append(os.Environ(), "DIBS_NOTIFY_TIME_SENSITIVE="+tc.requested)
 		out, err := cmd.CombinedOutput()
 		if err != nil || strings.TrimSpace(string(out)) != tc.want {

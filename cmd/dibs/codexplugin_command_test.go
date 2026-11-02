@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testexec"
 )
 
@@ -48,7 +49,7 @@ func TestCodexPluginUsesOnlyAStableEntryForItsOwnExecutable(t *testing.T) {
 	}
 	call := func(exe, search string) string {
 		t.Helper()
-		cmd := exec.CommandContext(t.Context(), exe, "codex-plugin", "install", "--codex", codex)
+		cmd := procexec.Command(t.Context(), exe, "codex-plugin", "install", "--codex", codex)
 		cmd.Env = append(os.Environ(), "CODEX_HOME="+home, "DIBS_ADMIN=1", "DIBS_PLUGIN_FIXTURE=ok", "PATH="+search)
 		out, err := cmd.CombinedOutput()
 		if err != nil {

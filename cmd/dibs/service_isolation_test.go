@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/paths"
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testexec"
 )
 
@@ -133,7 +134,7 @@ func serviceFixtureImage(t *testing.T) ([]byte, error) {
 		image := filepath.Join(serviceFixtureRoot, "app-service-fixture")
 		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 		defer cancel()
-		cmd := exec.CommandContext(ctx, "go", "test", "-c", "-race=false", "-o", image, ".")
+		cmd := procexec.Command(ctx, "go", "test", "-c", "-race=false", "-o", image, ".")
 		cmd.Dir = serviceFixtureSource
 		output, err := cmd.CombinedOutput()
 		if err != nil {
@@ -200,7 +201,7 @@ func serviceFixtureApp(t *testing.T) (string, error) {
 		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 		defer cancel()
 		for _, at := range []string{filepath.Join(macos, "dibd"), serviceAppTemplate} {
-			if out, err := exec.CommandContext(ctx, "/usr/bin/codesign", "--force", "--sign", "-", "--timestamp=none", at).CombinedOutput(); err != nil {
+			if out, err := procexec.Command(ctx, "/usr/bin/codesign", "--force", "--sign", "-", "--timestamp=none", at).CombinedOutput(); err != nil {
 				serviceAppErr = fmt.Errorf("sign external service fixture: %w: %s", err, out)
 				return
 			}

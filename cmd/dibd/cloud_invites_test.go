@@ -19,7 +19,6 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -32,6 +31,7 @@ import (
 	"github.com/agenxy/dibs/internal/invites"
 	"github.com/agenxy/dibs/internal/ledger"
 	"github.com/agenxy/dibs/internal/mcp"
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testport"
 	"github.com/agenxy/dibs/internal/transfer"
 )
@@ -548,7 +548,7 @@ func cloudDaemonRunAttempt(t *testing.T, forceCollision bool) bool {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	t.Cleanup(cancel)
-	child := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestCloudPublicListenerIsWiredIntoDaemonRun$")
+	child := procexec.Command(ctx, os.Args[0], "-test.run=^TestCloudPublicListenerIsWiredIntoDaemonRun$")
 	child.Env = append(os.Environ(), "DIBS_CLOUD_TEST_CHILD=1", "DIBS_CLOUD_TEST_DIR="+dir, "DIBS_CLOUD_TEST_PRIVATE="+private, "DIBS_CLOUD_TEST_PUBLIC="+public, "DIBS_CLOUD_TEST_URL="+proxy.URL)
 	pipe, err := child.StdoutPipe()
 	if err != nil {

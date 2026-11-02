@@ -15,6 +15,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // The status request is harmless to an older helper: it ignores the capability
@@ -81,7 +83,7 @@ func legacyBackgroundOpen(url, reason string) error {
 		return backgroundLegacyFixture(ctx, argv)
 	}
 	// #nosec G204 -- fixed OS command and validated thread URL.
-	return exec.CommandContext(ctx, argv[0], argv[1:]...).Run()
+	return procexec.Command(ctx, argv[0], argv[1:]...).Run()
 }
 
 func backgroundOpenOutput(ctx context.Context, binary string, argv, env []string) ([]byte, error) {
@@ -97,7 +99,7 @@ func backgroundOpenOutput(ctx context.Context, binary string, argv, env []string
 		}
 	}
 	// #nosec G204 -- signed helper resolved beside this executable; fixed modes.
-	cmd := exec.CommandContext(ctx, binary, argv...)
+	cmd := procexec.Command(ctx, binary, argv...)
 	cmd.Env = append(os.Environ(), env...)
 	return cmd.Output()
 }
@@ -122,6 +124,9 @@ func OpenChatGPTBackground(url string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), helperBudget)
 	defer cancel()
 	raw, err := backgroundOpenOutput(ctx, binary, []string{"--status"}, []string{backgroundOpenCapability + "=1"})
+	if errors.Is(err, exec.ErrWaitDelay) {
+		return legacyBackgroundOpen(url, "incomplete output from dibs-notify; background-open capability is unknown")
+	}
 	if err != nil {
 		return legacyBackgroundOpen(url, "native helper capability could not be determined")
 	}
@@ -135,6 +140,9 @@ func OpenChatGPTBackground(url string) error {
 	backgroundFallbackNotice.logged = false
 	backgroundFallbackNotice.Unlock()
 	raw, err = backgroundOpenOutput(ctx, binary, []string{"--open-background", url}, nil)
+	if errors.Is(err, exec.ErrWaitDelay) {
+		return fmt.Errorf("incomplete output from dibs-notify; background-open result is unknown; do not retry: %w", err)
+	}
 	if err != nil {
 		return fmt.Errorf("native background open failed; mail remains queued: %w", err)
 	}

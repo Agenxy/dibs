@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/notify"
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // Off the daemon writer, and permission-free. Success moving the board says
@@ -58,7 +60,10 @@ func registerInstalledNotifier(into string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	// #nosec G204 -- fixed registrar and verified installed bundle, no shell
-	out, err := exec.CommandContext(ctx, registrar, "-f", app).CombinedOutput()
+	out, err := procexec.Command(ctx, registrar, "-f", app).CombinedOutput()
+	if errors.Is(err, exec.ErrWaitDelay) {
+		return fmt.Errorf("incomplete output from lsregister; notification registration is unknown: %w", err)
+	}
 	if err != nil {
 		return fmt.Errorf("registering %s: %w: %s", app, err, out)
 	}

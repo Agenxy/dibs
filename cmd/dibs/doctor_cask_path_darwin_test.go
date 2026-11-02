@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testexec"
 )
 
@@ -52,7 +53,7 @@ func TestMacCaskDoctorResolvesThePackageDaemon(t *testing.T) {
 		}
 	}
 	for _, entry := range []string{cli, filepath.Join(bin, "dibs")} {
-		cmd := exec.CommandContext(t.Context(), entry, "-test.run=^TestMacCaskDaemonPathProcess$")
+		cmd := procexec.Command(t.Context(), entry, "-test.run=^TestMacCaskDaemonPathProcess$")
 		cmd.Dir = home
 		cmd.Env = []string{
 			"HOME=" + home, "DIBS_DIR=" + board, "PATH=" + app + ":" + bin,

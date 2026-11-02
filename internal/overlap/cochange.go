@@ -8,11 +8,15 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
+	"fmt"
 	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // Commit is one commit's description and what it touched: the project
@@ -109,10 +113,13 @@ func MineCoChange(ctx context.Context, repo string, opt CoChangeOptions) (*CoCha
 	// file, without a model.
 	// %H, the commit id, is what the fingerprint is made of: the list of ids
 	// the index was built from is the identity of its coordinate system.
-	cmd := exec.CommandContext(ctx, "git", "-C", repo, "log",
+	cmd := procexec.Command(ctx, "git", "-C", repo, "log",
 		"--no-merges", "--name-only", "--pretty=format:"+recSep+"%H"+fldSep+"%s"+fldSep,
 		"-n", strconv.Itoa(opt.MaxCommits))
 	out, err := cmd.Output()
+	if errors.Is(err, exec.ErrWaitDelay) {
+		return nil, fmt.Errorf("incomplete output from git; co-change history is unknown: %w", err)
+	}
 	if err != nil {
 		return nil, err
 	}

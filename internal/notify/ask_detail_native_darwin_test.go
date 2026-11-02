@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // Compile the shipped program with ONLY the native posting contact doubled.
@@ -31,10 +33,10 @@ func TestNativeAskReadsBoundedDetailAndExpiresAtRequestDeadline(t *testing.T) {
 	binary := filepath.Join(contents, "MacOS", "dibs-notify")
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	if out, err := exec.CommandContext(ctx, "swiftc", "-D", "DIBS_ASK_FIXTURE", "-o", binary, nativePromptSource(t)).CombinedOutput(); err != nil {
+	if out, err := procexec.Command(ctx, "swiftc", "-D", "DIBS_ASK_FIXTURE", "-o", binary, nativePromptSource(t)).CombinedOutput(); err != nil {
 		t.Fatalf("native ask build: %v\n%s", err, out)
 	}
-	if out, err := exec.CommandContext(ctx, binary, "--ask-fixture-capability").CombinedOutput(); err != nil || strings.TrimSpace(string(out)) != "ask-fixture-v1" {
+	if out, err := procexec.Command(ctx, binary, "--ask-fixture-capability").CombinedOutput(); err != nil || strings.TrimSpace(string(out)) != "ask-fixture-v1" {
 		t.Fatalf("safe fixture contact unavailable: %q %v", out, err)
 	}
 	for _, mode := range []string{"deadline", "correct-action", "foreign-action", "oversize", "invalid"} {
@@ -56,7 +58,7 @@ func TestNativeAskReadsBoundedDetailAndExpiresAtRequestDeadline(t *testing.T) {
 			receipt := filepath.Join(dir, mode+".json")
 			callCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
 			defer stop()
-			cmd := exec.CommandContext(callCtx, binary, "Request effect", "", "excerpt", "Deny", "Later", "Approve")
+			cmd := procexec.Command(callCtx, binary, "Request effect", "", "excerpt", "Deny", "Later", "Approve")
 			cmd.Env = append(os.Environ(), "DIBS_ASK_FIXTURE=timeout", "DIBS_NOTIFY_DETAIL=stdin",
 				"DIBS_NOTIFY_UNTIL="+strconv.FormatFloat(float64(deadline.UnixNano())/float64(time.Second), 'f', -1, 64),
 				"DIBS_NOTIFY_ID=dibs.msg.ask-fixture.7",
@@ -108,7 +110,7 @@ func TestNativeAskReadsBoundedDetailAndExpiresAtRequestDeadline(t *testing.T) {
 		pidPath := filepath.Join(dir, "native-child.pid")
 		callCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
 		defer stop()
-		parent := exec.CommandContext(callCtx, self, "-test.run=^TestNativeAskParentDriver$")
+		parent := procexec.Command(callCtx, self, "-test.run=^TestNativeAskParentDriver$")
 		parent.Env = append(os.Environ(), "DIBS_ASK_PARENT_BINARY="+binary, "DIBS_ASK_PARENT_PID="+pidPath, "DIBS_ASK_PARENT_RECEIPT="+filepath.Join(dir, "parent-receipt.json"))
 		parent.WaitDelay = time.Second
 		out, err := parent.CombinedOutput()

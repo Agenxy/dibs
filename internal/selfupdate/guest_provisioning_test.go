@@ -17,6 +17,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 func TestGuestProvisioningNeedsSnapshotAndCanonicalProjection(t *testing.T) {
@@ -180,7 +182,7 @@ func TestGuestProvisioningLiteralPrimitivesStopBeforeUse(t *testing.T) {
 					argv[j] = replace(arg)
 				}
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+				cmd := procexec.Command(ctx, argv[0], argv[1:]...)
 				cmd.Dir = replace(step.Cwd)
 				var output bytes.Buffer
 				cmd.Stdout, cmd.Stderr = &output, &output

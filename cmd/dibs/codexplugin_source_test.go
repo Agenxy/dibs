@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testexec"
 )
 
@@ -41,7 +42,7 @@ func TestCodexPluginSourceChoiceThroughCommands(t *testing.T) {
 			env := append(os.Environ(), "CODEX_HOME="+home, "DIBS_ADMIN=1", "DIBS_PLUGIN_FIXTURE=ok", "DIBS_DIR="+filepath.Join(home, "absent-board"))
 			call := func(args ...string) ([]byte, error) {
 				t.Helper()
-				cmd := exec.CommandContext(t.Context(), dibs, args...)
+				cmd := procexec.Command(t.Context(), dibs, args...)
 				cmd.Env = env
 				return cmd.CombinedOutput()
 			}

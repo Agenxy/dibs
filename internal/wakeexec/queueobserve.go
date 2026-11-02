@@ -8,11 +8,11 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"os/exec"
 	"path/filepath"
 	"time"
 
 	"github.com/agenxy/dibs/internal/boardconfig"
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 const queueProbeTimeout = time.Second
@@ -55,7 +55,7 @@ func observeQueue(binary, thread string) (pending, known bool) {
 	return p.pending, p.known
 }
 
-func observeQueueDetail(binary, thread string) queueProbe {
+func observeQueueDetail(binary, thread string, receiptAt ...time.Time) queueProbe {
 	ctx, cancel := context.WithTimeout(context.Background(), queueProbeTimeout)
 	defer cancel()
 	argv := []string{binary, "app-server", "--listen", "stdio://"}
@@ -64,7 +64,7 @@ func observeQueueDetail(binary, thread string) queueProbe {
 	}
 	// #nosec G204 G702 -- binary is the operator's queue executable; all probe
 	// arguments are fixed literals, separately refused by ReadOnlyQueueProbe.
-	cmd := exec.CommandContext(ctx, binary, "app-server", "--listen", "stdio://")
+	cmd := procexec.Command(ctx, binary, "app-server", "--listen", "stdio://")
 	cmd.WaitDelay = 100 * time.Millisecond
 	in, err := cmd.StdinPipe()
 	if err != nil {
@@ -83,6 +83,9 @@ func observeQueueDetail(binary, thread string) queueProbe {
 	rpc := queueRPC{enc: json.NewEncoder(in), dec: json.NewDecoder(io.LimitReader(out, 4<<20))}
 	if err = rpc.initialize(); err != nil {
 		return queueProbe{}
+	}
+	if len(receiptAt) == 1 {
+		return rpc.receipt(thread, receiptAt[0])
 	}
 	pending, known := rpc.list(thread)
 	return queueProbe{pending: pending, known: known, issuedAt: rpc.issuedAt}
@@ -158,24 +161,76 @@ func queuePage(raw json.RawMessage) (pending, known bool, next *string) {
 }
 
 func queuePageDetail(raw json.RawMessage) (pending, known bool, next *string, issued time.Time) {
-	var fields map[string]json.RawMessage
-	if json.Unmarshal(raw, &fields) != nil {
-		return false, false, nil, time.Time{}
-	}
-	data, ok := fields["data"]
-	if !ok || string(data) == "null" {
-		return false, false, nil, time.Time{}
-	}
-	nc, ok := fields["nextCursor"]
-	if !ok || json.Unmarshal(nc, &next) != nil {
-		return false, false, nil, time.Time{}
-	}
-	var rows []queueItem
-	if json.Unmarshal(data, &rows) != nil {
+	rows, next, known := decodeQueuePage(raw)
+	if !known {
 		return false, false, nil, time.Time{}
 	}
 	p := observeQueueItems(rows)
 	return p.pending, p.known, next, p.issuedAt
+}
+
+func decodeQueuePage(raw json.RawMessage) (rows []queueItem, next *string, known bool) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil {
+		return nil, nil, false
+	}
+	data, ok := fields["data"]
+	if !ok || string(data) == "null" {
+		return nil, nil, false
+	}
+	nc, ok := fields["nextCursor"]
+	if !ok || json.Unmarshal(nc, &next) != nil {
+		return nil, nil, false
+	}
+	if json.Unmarshal(data, &rows) != nil {
+		return nil, nil, false
+	}
+	return rows, next, true
+}
+
+// A drain failure needs stronger evidence than the normal pending probe: scan
+// every bounded page and require exactly one Dibs item at the timestamp sent.
+// An item consumed before this observation is indistinguishable from missing.
+func (r queueRPC) receipt(thread string, expected time.Time) queueProbe {
+	var cursor *string
+	var found queueProbe
+	count := 0
+	for page := 0; page < 16; page++ {
+		raw, err := r.call(page+2, "thread/queue/list", map[string]any{"threadId": thread, "limit": 100, "cursor": cursor})
+		if err != nil {
+			return queueProbe{receipt: "observation_error"}
+		}
+		rows, next, known := decodeQueuePage(raw)
+		if !known {
+			return queueProbe{receipt: "observation_error"}
+		}
+		for _, row := range rows {
+			if row.ID == "" || row.Input == nil {
+				return queueProbe{receipt: "observation_error"}
+			}
+			if len(row.Input) != 1 || row.Input[0].Type != "text" || !isDibsWake(row.Input[0].Text) {
+				continue
+			}
+			count++
+			at, _ := noticeIssuedAt(row.Input[0].Text)
+			found = queueProbe{issuedAt: at, itemID: row.ID}
+		}
+		if next == nil {
+			switch {
+			case count == 0:
+				return queueProbe{receipt: "missing_or_dispatched"}
+			case count != 1:
+				return queueProbe{receipt: "ambiguous"}
+			case !found.issuedAt.Equal(expected):
+				return queueProbe{receipt: "wrong_timestamp"}
+			default:
+				found.pending, found.known, found.receipt = true, true, "matched"
+				return found
+			}
+		}
+		cursor = next
+	}
+	return queueProbe{receipt: "observation_error"}
 }
 
 type queueItem struct {

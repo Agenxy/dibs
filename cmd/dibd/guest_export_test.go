@@ -31,6 +31,7 @@ import (
 	"github.com/agenxy/dibs/internal/invites"
 	"github.com/agenxy/dibs/internal/ledger"
 	"github.com/agenxy/dibs/internal/mcp"
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/selfupdate"
 	"github.com/agenxy/dibs/internal/testexec"
 )
@@ -156,7 +157,7 @@ func TestGuestInviteExportThroughActualCLI(t *testing.T) {
 		t.Helper()
 		ctx, stop := context.WithTimeout(context.Background(), 20*time.Second)
 		defer stop()
-		cmd := exec.CommandContext(ctx, bin, append([]string{"invite"}, args...)...)
+		cmd := procexec.Command(ctx, bin, append([]string{"invite"}, args...)...)
 		cmd.Env = append(nativeProbeEnv(cliDir, "", ""), "DIBS_DIR="+cliDir, "DIBS_ADDR="+server.URL,
 			"DIBS_TOKEN="+issuer["token"].(string), "DIBS_TRANSPORT=https")
 		return cmd.CombinedOutput()
@@ -284,7 +285,7 @@ func TestGuestInviteExportThroughActualCLI(t *testing.T) {
 		t.Fatal("actual provisioning export exceeded its private-file bound")
 	}
 	goodCtx, cancelGood := context.WithTimeout(context.Background(), 5*time.Second)
-	goodCmd := exec.CommandContext(goodCtx, bin, "mcp-stdio", "--guest", metadataFile)
+	goodCmd := procexec.Command(goodCtx, bin, "mcp-stdio", "--guest", metadataFile)
 	goodCmd.Env = nativeProbeEnv(t.TempDir(), "", "")
 	goodOutput, goodErr := goodCmd.CombinedOutput() // EOF: parse only, no network request
 	cancelGood()
@@ -308,7 +309,7 @@ func TestGuestInviteExportThroughActualCLI(t *testing.T) {
 		t.Fatal(err)
 	}
 	badCtx, cancelBad := context.WithTimeout(context.Background(), 5*time.Second)
-	badCmd := exec.CommandContext(badCtx, bin, "mcp-stdio", "--guest", badFile)
+	badCmd := procexec.Command(badCtx, bin, "mcp-stdio", "--guest", badFile)
 	badCmd.Env = nativeProbeEnv(t.TempDir(), "", "")
 	badOutput, badErr := badCmd.CombinedOutput()
 	cancelBad()

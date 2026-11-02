@@ -7,11 +7,12 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // The transport double writes the actual posted content, exits, then a second
@@ -30,10 +31,10 @@ func TestNativeReadingWindowReopensPersistedNotification(t *testing.T) {
 		t.Fatal(err)
 	}
 	binary := filepath.Join(contents, "MacOS", "dibs-notify")
-	if out, err := exec.CommandContext(ctx, "swiftc", "-D", "DIBS_READING_FIXTURE", "-o", binary, nativePromptSource(t)).CombinedOutput(); err != nil {
+	if out, err := procexec.Command(ctx, "swiftc", "-D", "DIBS_READING_FIXTURE", "-o", binary, nativePromptSource(t)).CombinedOutput(); err != nil {
 		t.Fatalf("build: %v\n%s", err, out)
 	}
-	if out, err := exec.CommandContext(ctx, binary, "--reading-fixture-capability").CombinedOutput(); err != nil || strings.TrimSpace(string(out)) != "reading-fixture-v1" {
+	if out, err := procexec.Command(ctx, binary, "--reading-fixture-capability").CombinedOutput(); err != nil || strings.TrimSpace(string(out)) != "reading-fixture-v1" {
 		t.Fatalf("safe native reading fixture unavailable: %v %s", err, out)
 	}
 	for _, kind := range []string{"notify", "handoff", "contact", "request", "question"} {
@@ -73,7 +74,7 @@ func TestNativeReadingWindowReopensPersistedNotification(t *testing.T) {
 					if mode == "foreign" {
 						env = append(env, "DIBS_READING_RESPONSE_ID=dibs.msg.reading.8")
 					}
-					cmd := exec.CommandContext(ctx, binary, callArgs...)
+					cmd := procexec.Command(ctx, binary, callArgs...)
 					cmd.Env = env
 					cmd.Stdin = strings.NewReader(string(detail))
 					out, err := cmd.Output()
@@ -81,7 +82,7 @@ func TestNativeReadingWindowReopensPersistedNotification(t *testing.T) {
 						t.Fatalf("posting/live response: %v %s", err, out)
 					}
 					if mode == "cold" || mode == "cold-action" || mode == "oversize" || mode == "invalid" || mode == "missing" || mode == "bounded" {
-						cmd = exec.CommandContext(ctx, binary)
+						cmd = procexec.Command(ctx, binary)
 						// A fresh app launch has none of the original invocation's detail,
 						// buttons, deadline, ID or answer pipe. Only persisted content survives.
 						cmd.Env = append(os.Environ(), "DIBS_READING_FIXTURE=1", "DIBS_READING_POSTED="+posted, "DIBS_READING_WINDOW="+window, "DIBS_READING_ACTION="+action, "DIBS_READING_CORRUPT="+mode)

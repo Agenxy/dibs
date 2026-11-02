@@ -9,13 +9,13 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/harnessenv"
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 func TestCatalogDoctorProcess(_ *testing.T) {
@@ -33,7 +33,7 @@ func TestDoctorGroupsUnknownBridgeCatalogs(t *testing.T) {
 		t.Skip("process incarnation inventory unavailable")
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestCatalogDoctorProcess$")
+	cmd := procexec.Command(ctx, os.Args[0], "-test.run=^TestCatalogDoctorProcess$")
 	cmd.Env = append(os.Environ(), "DIBS_TEST_CATALOG_DOCTOR_HELPER=1")
 	input, err := cmd.StdinPipe()
 	if err != nil {

@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testexec"
 )
 
@@ -181,14 +182,18 @@ func TestPublicNotificationReceiptUsesTheInstalledHelper(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, path := range []string{driver, helper} {
-		if err := os.WriteFile(path, bytes, 0o700); err != nil {
+		content := bytes
+		if path == helper {
+			content = testexec.NativeFixtureImage(t) // pure asReceiptHelper; driver stays raced
+		}
+		if err := os.WriteFile(path, content, 0o700); err != nil {
 			t.Fatal(err)
 		}
 		testexec.PrepareExecutable(t, exec.Command(path, "--dibs-test-prepare"))
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, driver, "-test.run=^TestPublicNotificationReceiptUsesTheInstalledHelper$") // #nosec G204 -- private copy of this test binary
+	cmd := procexec.Command(ctx, driver, "-test.run=^TestPublicNotificationReceiptUsesTheInstalledHelper$") // #nosec G204 -- private copy of this test binary
 	cmd.Env = append(os.Environ(), "DIBS_NOTIFY=", "DIBS_TEST_RECEIPT_PUBLIC=1", "DIBS_DIR="+t.TempDir())
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("notifier producer wiring: %v\n%s", err, out)
@@ -226,7 +231,7 @@ func TestTimeSensitiveBannerFallsBackWithHonestReceipt(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, filepath.Join(dir, "fallback-driver"), "-test.run=^TestTimeSensitiveBannerFallsBackWithHonestReceipt$") // #nosec G204 -- private copy of this test binary
+	cmd := procexec.Command(ctx, filepath.Join(dir, "fallback-driver"), "-test.run=^TestTimeSensitiveBannerFallsBackWithHonestReceipt$") // #nosec G204 -- private copy of this test binary
 	cmd.Env = append(os.Environ(), "DIBS_TEST_FALLBACK_DRIVER=1", "DIBS_TEST_AS_OSASCRIPT=1", "PATH="+dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("fallback producer wiring: %v\n%s", err, out)
@@ -253,7 +258,7 @@ func TestReceiptArrivesBeforeAQuestionFinishesAndOldHelpersStayUnknown(t *testin
 			defer func() { _ = input.Close(); _ = release.Close() }()
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestReceiptChild$") // #nosec G204 -- this test binary
+			cmd := procexec.Command(ctx, os.Args[0], "-test.run=^TestReceiptChild$") // #nosec G204 -- this test binary
 			cmd.Stdin = input
 			receipts, done := make(chan string, 4), make(chan error, 1)
 			go func() { _, err := outputWithReceipt(cmd, func(s string) { receipts <- s }); done <- err }()

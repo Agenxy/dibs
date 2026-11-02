@@ -8,12 +8,13 @@ import (
 	"crypto/sha256"
 	"debug/buildinfo"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // The production install door, not a direct call to the guard. The bad stamp
@@ -54,7 +55,7 @@ func TestTaskInstallKeepsTheComputedStampBeforeReplacingAnything(t *testing.T) {
 			}
 			cleanup, done := context.WithTimeout(context.Background(), 10*time.Second)
 			defer done()
-			cmd := exec.CommandContext(cleanup,
+			cmd := procexec.Command(cleanup,
 				"/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister", "-u", app)
 			if out, err := cmd.CombinedOutput(); err != nil {
 				t.Errorf("unregister own fixture app: %v: %s", err, out)
@@ -121,7 +122,7 @@ func TestTaskInstallKeepsTheComputedStampBeforeReplacingAnything(t *testing.T) {
 
 func installCommand(t *testing.T, ctx context.Context, dir string, env []string, name string, args ...string) string {
 	t.Helper()
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd := procexec.Command(ctx, name, args...)
 	cmd.Dir, cmd.Env = dir, env
 	out, err := cmd.CombinedOutput()
 	if err != nil {

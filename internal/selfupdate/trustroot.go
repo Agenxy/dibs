@@ -8,12 +8,15 @@ import (
 	"crypto/sha256"
 	_ "embed"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // Authenticated through cosign 3.1.3's embedded production TUF root on
@@ -61,9 +64,12 @@ func CheckCurrentTrustedRoot(ctx context.Context) error {
 	// production repository rooted in cosign's embedded bootstrap, not whatever
 	// mirror/cache/root the developer happened to configure on this machine.
 	// #nosec G204 -- usable executable, fixed command and production mirror.
-	cmd := exec.CommandContext(ctx, cosign, "initialize", "--mirror", sigstoreTUFMirror)
+	cmd := procexec.Command(ctx, cosign, "initialize", "--mirror", sigstoreTUFMirror)
 	cmd.Env = productionTUFEnv(os.Environ(), dir)
 	if out, runErr := cmd.CombinedOutput(); runErr != nil {
+		if errors.Is(runErr, exec.ErrWaitDelay) {
+			return fmt.Errorf("incomplete output from cosign; authenticated Sigstore root is unknown: %w", runErr)
+		}
 		return fmt.Errorf("authenticated Sigstore initialize failed: %w: %s; "+
 			"fix cosign/TUF connectivity and retry; nothing may be published",
 			runErr, strings.TrimSpace(string(out)))

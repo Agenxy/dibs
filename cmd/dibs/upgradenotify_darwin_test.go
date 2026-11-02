@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testexec"
 )
 
@@ -86,7 +87,7 @@ func TestUpgradeFetchReportsInstalledNotificationPermission(t *testing.T) {
 				if route != "current-bare" {
 					args = append(args, "--fetch", "--dry-run")
 				}
-				cmd := exec.CommandContext(ctx, probe, args...)
+				cmd := procexec.Command(ctx, probe, args...)
 				cmd.Env = append(os.Environ(), "DIBS_TEST_UPGRADE_RECORD=1", "DIBS_TEST_UPGRADE_COSIGN=1", "DIBS_DIR="+root, "PATH="+bin+":/usr/bin:/bin", "DIBS_NOTIFY=", "DIBS_SETTINGS_HELPER_MODE=doctor", "DIBS_SETTINGS_HELPER_MARKER="+marker, "DIBS_SETTINGS_GUARD_MODE="+mode, "DIBS_SETTINGS_GUARD_VALUE="+value)
 				if current {
 					cmd.Env = append(cmd.Env, "DIBS_TEST_UPGRADE_CURRENT=1")

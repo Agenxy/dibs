@@ -12,6 +12,8 @@ import (
 	"os/exec"
 	"runtime"
 	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // VerifyNativePeer checks kernel-supplied audit evidence against the bundled
@@ -28,9 +30,12 @@ func verifyNativePeerUsing(ctx context.Context, binary string, audit []byte) err
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	// #nosec G204 -- installed bundled helper; audit evidence uses stdin only.
-	cmd := exec.CommandContext(ctx, binary, "--verify-notification-peer")
+	cmd := procexec.Command(ctx, binary, "--verify-notification-peer")
 	cmd.Stdin = bytes.NewReader(audit)
 	raw, err := cmd.Output()
+	if errors.Is(err, exec.ErrWaitDelay) {
+		return fmt.Errorf("incomplete output from dibs-notify; code identity could not be checked: %w", err)
+	}
 	var result struct {
 		Attested bool `json:"attested"`
 	}

@@ -11,6 +11,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // PrepareExecutable runs a fixture's explicit side-effect-free mode once, with
@@ -31,7 +33,7 @@ func PrepareExecutable(t testing.TB, command *exec.Cmd) {
 	started := time.Now()
 	for {
 		// #nosec G204 -- private fixture and explicit argv supplied by the test
-		probe := exec.CommandContext(ctx, command.Path, command.Args[1:]...)
+		probe := procexec.Command(ctx, command.Path, command.Args[1:]...)
 		probe.Dir, probe.Env = command.Dir, command.Env
 		probe.WaitDelay = time.Second
 		out, err := probe.CombinedOutput()

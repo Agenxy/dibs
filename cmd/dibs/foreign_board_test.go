@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testexec"
 	"github.com/agenxy/dibs/internal/testport"
 )
@@ -33,7 +34,7 @@ func TestCLIDistinguishesForeignBoardFromChangedSecret(t *testing.T) {
 		cli, daemon = cli+".exe", daemon+".exe"
 	}
 	for _, build := range []struct{ path, source string }{{cli, "."}, {daemon, "../dibd"}} {
-		cmd := exec.CommandContext(t.Context(), "go", "build", "-o", build.path, build.source)
+		cmd := procexec.Command(t.Context(), "go", "build", "-o", build.path, build.source)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("build command fixture: %v %s", err, out)
 		}
@@ -65,7 +66,7 @@ func TestCLIDistinguishesForeignBoardFromChangedSecret(t *testing.T) {
 		t.Helper()
 		ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 		defer cancel()
-		cmd := exec.CommandContext(ctx, cli, args...)
+		cmd := procexec.Command(ctx, cli, args...)
 		cmd.Dir, cmd.Env = first, diagnosticFixtureEnv(firstHome, first, address)
 		out, err := cmd.CombinedOutput()
 		if ctx.Err() != nil {
@@ -205,7 +206,7 @@ func startDiagnosticBoard(t *testing.T, binary, home string) string {
 		t.Fatal(err)
 	}
 	port.Release(t)
-	cmd := exec.CommandContext(t.Context(), binary, "-allow-parallel", "-dir", home, "-addr", "https://"+port.Addr)
+	cmd := procexec.Command(t.Context(), binary, "-allow-parallel", "-dir", home, "-addr", "https://"+port.Addr)
 	cmd.Dir, cmd.Env = home, diagnosticFixtureEnv(home, home, port.Addr)
 	cmd.Stdout, cmd.Stderr = log, log
 	if err := cmd.Start(); err != nil {

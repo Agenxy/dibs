@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testexec"
 )
 
@@ -175,7 +176,7 @@ func currentDaemonUpgradePluginFixture(t *testing.T) (*exec.Cmd, string) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	t.Cleanup(cancel)
-	cmd := exec.CommandContext(ctx, exe, "-test.run=^TestCLIUpgradeRecordProcess$", "--", "upgrade")
+	cmd := procexec.Command(ctx, exe, "-test.run=^TestCLIUpgradeRecordProcess$", "--", "upgrade")
 	cmd.Env = append(os.Environ(), "DIBS_TEST_UPGRADE_RECORD=1", "DIBS_TEST_UPGRADE_BARE=1",
 		"DIBS_TEST_PLUGIN_EXECUTABLE="+codex, "DIBS_TEST_PLUGIN_HOME="+home, "DIBS_PLUGIN_FIXTURE=late-fail",
 		"DIBS_DIR="+root, "DIBS_ADDR=127.0.0.1:49998", "HOME="+root, "PATH="+binDir+string(os.PathListSeparator)+os.Getenv("PATH"), "DIBS_NOTIFY=off")

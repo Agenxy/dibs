@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testexec"
 )
 
@@ -94,7 +95,7 @@ func TestGuestBridgeInvitationIsStartupSnapshot(t *testing.T) {
 	file := guestCommandRecipe(t, endpoint, key, pem, pin)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, "mcp-stdio", "--guest", file)
+	cmd := procexec.Command(ctx, bin, "mcp-stdio", "--guest", file)
 	cmd.Dir, cmd.Env = t.TempDir(), nativeProbeEnv(t.TempDir(), "", "")
 	input, err := cmd.StdinPipe()
 	if err != nil {

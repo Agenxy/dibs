@@ -9,12 +9,12 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testport"
 )
 
@@ -35,7 +35,7 @@ func TestDaemonBootsWithRetiredCooldownAndWarnsOnEveryStart(t *testing.T) {
 	for attempt := 0; attempt < 2; attempt++ {
 		port := testport.Reserve(t, "tcp", "127.0.0.1:0")
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestDaemonBootsWithRetiredCooldownAndWarnsOnEveryStart$")
+		cmd := procexec.Command(ctx, os.Args[0], "-test.run=^TestDaemonBootsWithRetiredCooldownAndWarnsOnEveryStart$")
 		args := []string{"dibd", "--dir", dir, "--addr", port.Addr, "--allow-parallel"}
 		cmd.Env = append(nativeProbeEnv(t.TempDir(), "", ""), "DIBS_NOTIFY=off", "GORACE=atexit_sleep_ms=0",
 			"DIBS_COOLDOWN_BOOT_CHILD=1", "DIBS_COOLDOWN_BOOT_ARGS="+strings.Join(args, "\n"))

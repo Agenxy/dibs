@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // Only the external ServiceManagement execution boundary is overlaid. The real
@@ -168,7 +170,7 @@ var executeAppServiceCommand = func(cmd *exec.Cmd) ([]byte,error) {
 
 func privateInstallTask(ctx context.Context, clone string, env []string, dest string) *exec.Cmd {
 	args := []string{"install", "DEST=" + dest}
-	cmd := exec.CommandContext(ctx, "task", args...)
+	cmd := procexec.Command(ctx, "task", args...)
 	if runtime.GOOS == "darwin" {
 		parent, err := filepath.EvalSymlinks(filepath.Dir(dest))
 		if err != nil {
@@ -177,7 +179,7 @@ func privateInstallTask(ctx context.Context, clone string, env []string, dest st
 		app := filepath.Join(dest, "Dibs.app")
 		canonical := filepath.Join(parent, filepath.Base(dest), "Dibs.app")
 		policy := fmt.Sprintf("(version 1)(allow default)(deny process-exec (subpath %s) (subpath %s))", strconv.Quote(app), strconv.Quote(canonical))
-		cmd = exec.CommandContext(ctx, "/usr/bin/sandbox-exec", append([]string{"-p", policy, "task"}, args...)...)
+		cmd = procexec.Command(ctx, "/usr/bin/sandbox-exec", append([]string{"-p", policy, "task"}, args...)...)
 	}
 	cmd.Dir, cmd.Env = clone, env
 	return cmd

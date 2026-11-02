@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // Compiles the shipped broker with only native posting and UI contact doubled.
@@ -31,21 +33,21 @@ func TestNativeBrokerOwnsConcurrentAsks(t *testing.T) {
 		t.Fatal(err)
 	}
 	binary := filepath.Join(contents, "MacOS", "dibs-notify")
-	if out, err := exec.CommandContext(ctx, "swiftc", "-D", "DIBS_BROKER_FIXTURE", "-D", "DIBS_READING_FIXTURE", "-o", binary, nativePromptSource(t)).CombinedOutput(); err != nil {
+	if out, err := procexec.Command(ctx, "swiftc", "-D", "DIBS_BROKER_FIXTURE", "-D", "DIBS_READING_FIXTURE", "-o", binary, nativePromptSource(t)).CombinedOutput(); err != nil {
 		t.Fatalf("build: %v\n%s", err, out)
 	}
-	if out, err := exec.CommandContext(ctx, binary, "--broker-fixture-capability").CombinedOutput(); err != nil || strings.TrimSpace(string(out)) != "broker-fixture-v1" {
+	if out, err := procexec.Command(ctx, binary, "--broker-fixture-capability").CombinedOutput(); err != nil || strings.TrimSpace(string(out)) != "broker-fixture-v1" {
 		t.Fatalf("safe broker fixture unavailable: %v %s", err, out)
 	}
 	production := filepath.Join(contents, "MacOS", "production-notifier")
-	if out, err := exec.CommandContext(ctx, "swiftc", "-o", production, nativePromptSource(t)).CombinedOutput(); err != nil {
+	if out, err := procexec.Command(ctx, "swiftc", "-o", production, nativePromptSource(t)).CombinedOutput(); err != nil {
 		t.Fatalf("production build: %v %s", err, out)
 	}
-	capability := exec.CommandContext(ctx, production, "--broker-fixture-capability")
+	capability := procexec.Command(ctx, production, "--broker-fixture-capability")
 	if out, err := capability.Output(); err == nil || strings.Contains(string(out), "broker-fixture-v1") {
 		t.Fatalf("production exposes fixture capability: %v %s", err, out)
 	}
-	cmd := exec.CommandContext(ctx, binary, "--broker")
+	cmd := procexec.Command(ctx, binary, "--broker")
 	postedDir := t.TempDir()
 	cmd.Env = append(os.Environ(), "DIBS_BROKER_FIXTURE_DIR="+t.TempDir(), "DIBS_BROKER_POSTED_DIR="+postedDir)
 	input, err := cmd.StdinPipe()
@@ -100,7 +102,7 @@ func TestNativeBrokerOwnsConcurrentAsks(t *testing.T) {
 	read("ready", "")
 	// The production image ignores the fixture-only path override. It may see
 	// the real notifier, but can never mistake our private fixture lock for it.
-	productionStatus := exec.CommandContext(ctx, production, "--broker-status")
+	productionStatus := procexec.Command(ctx, production, "--broker-status")
 	productionStatus.Env = cmd.Env
 	productionRaw, productionErr := productionStatus.Output()
 	var realStatus BrokerStatus
@@ -113,7 +115,7 @@ func TestNativeBrokerOwnsConcurrentAsks(t *testing.T) {
 		}
 	}
 
-	statusCmd := exec.CommandContext(ctx, binary, "--broker-status")
+	statusCmd := procexec.Command(ctx, binary, "--broker-status")
 	statusCmd.Env = cmd.Env
 	rawStatus, statusErr := statusCmd.Output()
 	var status BrokerStatus
@@ -121,7 +123,7 @@ func TestNativeBrokerOwnsConcurrentAsks(t *testing.T) {
 		t.Fatalf("lock holder diagnostic: %s %v", rawStatus, statusErr)
 	}
 	// A second parent cannot become another bundle instance and steal presses.
-	second := exec.CommandContext(ctx, binary, "--broker")
+	second := procexec.Command(ctx, binary, "--broker")
 	second.Env = cmd.Env
 	rejected, err := second.Output()
 	var exit *exec.ExitError
@@ -142,7 +144,7 @@ func TestNativeBrokerOwnsConcurrentAsks(t *testing.T) {
 	// The actual broker posting path must persist its text, not just the old
 	// argv path tested separately. A new no-args process reads that exact post.
 	windowPath := filepath.Join(t.TempDir(), "cold.json")
-	cold := exec.CommandContext(ctx, binary)
+	cold := procexec.Command(ctx, binary)
 	cold.Env = append(os.Environ(), "DIBS_READING_FIXTURE=1", "DIBS_READING_POSTED="+filepath.Join(postedDir, "dibs.msg.broker.7.plist"), "DIBS_READING_WINDOW="+windowPath)
 	if out, err := cold.Output(); err != nil || len(out) != 0 {
 		t.Fatalf("cold broker post: %v %q", err, out)

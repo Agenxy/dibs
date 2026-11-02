@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testexec"
 )
 
@@ -41,7 +42,7 @@ func TestCodexPluginReceiptUsesDirectoryIdentity(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(realHome, "config.toml"), []byte("[plugins.\"dibs@dibs\"]\nenabled = true\n"), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			cmd := exec.CommandContext(t.Context(), dibs, "codex-plugin", "install", "--codex", codex)
+			cmd := procexec.Command(t.Context(), dibs, "codex-plugin", "install", "--codex", codex)
 			cmd.Env = append(os.Environ(), "CODEX_HOME="+alias, "DIBS_ADMIN=1", "DIBS_PLUGIN_FIXTURE="+mode)
 			out, err := cmd.CombinedOutput()
 			if _, setupErr := os.Stat(filepath.Join(realHome, "installer-called")); setupErr != nil {

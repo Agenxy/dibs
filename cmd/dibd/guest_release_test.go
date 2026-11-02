@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testexec"
 	"github.com/agenxy/dibs/internal/testport"
 )
@@ -134,7 +135,7 @@ func testGuestReleaseMetadataThroughShippedDaemon(t *testing.T, version string, 
 	daemon := filepath.Join(bin, "dibd")
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	build := exec.CommandContext(ctx, "go", "build", "-ldflags", "-X github.com/agenxy/dibs/internal/selfupdate.GuestSupportingMinimum=v0.0.9 -X github.com/agenxy/dibs/internal/build.Version="+version, "-o", daemon, ".")
+	build := procexec.Command(ctx, "go", "build", "-ldflags", "-X github.com/agenxy/dibs/internal/selfupdate.GuestSupportingMinimum=v0.0.9 -X github.com/agenxy/dibs/internal/build.Version="+version, "-o", daemon, ".")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("daemon build setup: %v %s", err, out)
 	}
@@ -167,7 +168,7 @@ func testGuestReleaseMetadataThroughShippedDaemon(t *testing.T, version string, 
 		t.Fatal(err)
 	}
 	defer func() { _ = logFile.Close() }()
-	cmd := exec.CommandContext(ctx, daemon, "--dir", dir, "--addr", addr, "--allow-parallel", "--public-url", "https://board.invalid", "--public-addr", "127.0.0.1:0")
+	cmd := procexec.Command(ctx, daemon, "--dir", dir, "--addr", addr, "--allow-parallel", "--public-url", "https://board.invalid", "--public-addr", "127.0.0.1:0")
 	// The race-built verifier stand-in must not add Go's one-second exit
 	// grace period to each subprocess. Race detection itself remains enabled.
 	cmd.Env = append(os.Environ(), "GORACE=atexit_sleep_ms=0", "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "DIBS_NOTIFY=off", "DIBS_TEST_GUEST_ADMISSION_COSIGN=1", "DIBS_TEST_GUEST_ADMISSION_RECEIPT="+receipt)

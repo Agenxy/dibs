@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/selfupdate"
 )
 
@@ -250,7 +251,7 @@ func (r *runner) newCommand(ctx context.Context, env []string, args ...string) (
 		return nil, err
 	}
 	// #nosec G204 G702 -- shared child-PATH resolution and test containment precede every exec; argv only
-	cmd := exec.CommandContext(ctx, executable, args[1:]...)
+	cmd := procexec.Command(ctx, executable, args[1:]...)
 	cmd.Env, cmd.Dir = env, r.root
 	if r.cwd != "" {
 		cmd.Dir = r.cwd
@@ -265,6 +266,9 @@ func (r *runner) commandContext(ctx context.Context, name string, env []string, 
 	if err == nil {
 		cmd.Stdout, cmd.Stderr = &stdout, &stderr
 		err = cmd.Run()
+		if errors.Is(err, exec.ErrWaitDelay) {
+			err = fmt.Errorf("incomplete output from %s; install step result is unknown: %w", filepath.Base(cmd.Path), err)
+		}
 	} else {
 		stderr.WriteString(err.Error())
 	}

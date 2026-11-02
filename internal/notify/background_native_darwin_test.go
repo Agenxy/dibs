@@ -7,11 +7,12 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // Compile the shipped helper with only its native-contact factory replaced.
@@ -33,7 +34,7 @@ func TestNativeBackgroundOpenDecisionsThroughProductionMode(t *testing.T) {
 	binary := filepath.Join(contents, "MacOS", "dibs-notify")
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	build := exec.CommandContext(ctx, "swiftc", "-D", "DIBS_BACKGROUND_OPEN_FIXTURE", "-o", binary, nativePromptSource(t))
+	build := procexec.Command(ctx, "swiftc", "-D", "DIBS_BACKGROUND_OPEN_FIXTURE", "-o", binary, nativePromptSource(t))
 	if raw, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("native fixture setup: %v\n%s", err, raw)
 	}
@@ -101,7 +102,7 @@ func TestNativeBackgroundOpenDecisionsThroughProductionMode(t *testing.T) {
 				default:
 					t.Fatal("unexpected helper argv:", argv)
 				}
-				cmd := exec.CommandContext(ctx, path, argv...)
+				cmd := procexec.Command(ctx, path, argv...)
 				cmd.Env = append(os.Environ(), env...)
 				cmd.Env = append(cmd.Env, "DIBS_BACKGROUND_OPEN_FIXTURE="+string(payload))
 				raw, err := cmd.Output()

@@ -8,15 +8,27 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"io"
 	"io/fs"
+	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--hold-hook-pipes" {
+		hookPipeFixture(true)
+		return
+	}
 	if len(os.Args) == 2 && os.Args[1] == "app-server" {
+		if os.Getenv("DIBS_TEST_HOOK_PIPE_CONTROL") != "" {
+			hookPipeFixture(false)
+			return
+		}
 		serveHooks()
 		return
 	}
@@ -104,29 +116,81 @@ func main() {
 	}
 }
 
+func hookPipeFixture(grandchild bool) {
+	conn, err := net.DialTimeout("tcp", os.Getenv("DIBS_TEST_HOOK_PIPE_CONTROL"), 5*time.Second)
+	if err != nil {
+		panic(err)
+	}
+	if err := conn.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		panic(err)
+	}
+	role := byte('p')
+	if grandchild {
+		role = 'g'
+		st, err := os.Stdout.Stat()
+		if err != nil || st.Mode()&os.ModeNamedPipe == 0 {
+			panic("grandchild did not inherit the real hook protocol pipe")
+		}
+	}
+	if _, err := conn.Write([]byte{role}); err != nil {
+		panic(err)
+	}
+	if !grandchild {
+		child := exec.Command(os.Args[0], "--hold-hook-pipes") // #nosec G204 -- private fixture executable
+		child.Stdout, child.Stderr = os.Stdout, os.Stderr
+		if err := child.Start(); err != nil {
+			panic(err)
+		}
+		if err := child.Process.Release(); err != nil {
+			panic(err)
+		}
+	}
+	var release [1]byte
+	if _, err := io.ReadFull(conn, release[:]); err != nil || (role == 'p' && release[0] != 'e') || (role == 'g' && release[0] != 'x') {
+		panic("fixture was not released")
+	}
+}
+
 func serveHooks() {
 	scan := bufio.NewScanner(os.Stdin)
 	for scan.Scan() {
-		var req struct { ID *int `json:"id"`; Method string `json:"method"` }
-		if err := json.Unmarshal(scan.Bytes(), &req); err != nil { panic(err) }
-		if req.ID == nil { continue }
+		var req struct {
+			ID     *int   `json:"id"`
+			Method string `json:"method"`
+		}
+		if err := json.Unmarshal(scan.Bytes(), &req); err != nil {
+			panic(err)
+		}
+		if req.ID == nil {
+			continue
+		}
 		var result any = map[string]any{}
 		if req.Method == "hooks/list" {
 			home := os.Getenv("CODEX_HOME")
-			if err := os.WriteFile(filepath.Join(home, "hooks-listed"), []byte("listed"), 0o600); err != nil { panic(err) }
+			if err := os.WriteFile(filepath.Join(home, "hooks-listed"), []byte("listed"), 0o600); err != nil {
+				panic(err)
+			}
 			status := os.Getenv("DIBS_HOOK_FIXTURE_STATUS")
-			if status == "" { status = "modified" }
+			if status == "" {
+				status = "modified"
+			}
 			hooks := []map[string]any{}
 			if status != "missing" {
 				for _, event := range []string{"sessionStart", "stop", "subagentStop"} {
-					hooks = append(hooks, map[string]any{"key":"dibs@dibs:hooks.json:"+event+":0:0", "eventName":event,
-						"handlerType":"mcpTool", "server":"dibs", "tool":"hook_poll", "pluginId":"dibs@dibs",
-						"currentHash":"sha256:fixture", "trustStatus":status, "enabled":true})
+					hooks = append(hooks, map[string]any{
+						"key": "dibs@dibs:hooks.json:" + event + ":0:0", "eventName": event,
+						"handlerType": "mcpTool", "server": "dibs", "tool": "hook_poll", "pluginId": "dibs@dibs",
+						"currentHash": "sha256:fixture", "trustStatus": status, "enabled": true,
+					})
 				}
 			}
-			result = map[string]any{"data": []map[string]any{{"hooks":hooks}}}
+			result = map[string]any{"data": []map[string]any{{"hooks": hooks}}}
 		}
-		if err := json.NewEncoder(os.Stdout).Encode(map[string]any{"jsonrpc":"2.0", "id":*req.ID, "result":result}); err != nil { panic(err) }
+		if err := json.NewEncoder(os.Stdout).Encode(map[string]any{"jsonrpc": "2.0", "id": *req.ID, "result": result}); err != nil {
+			panic(err)
+		}
 	}
-	if err := scan.Err(); err != nil { panic(err) }
+	if err := scan.Err(); err != nil {
+		panic(err)
+	}
 }

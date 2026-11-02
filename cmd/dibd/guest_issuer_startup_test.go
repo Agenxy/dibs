@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/invites"
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testexec"
 	"github.com/agenxy/dibs/internal/testport"
 )
@@ -80,7 +81,7 @@ func TestGuestIssuerRecoveryThroughActualDaemonStartup(t *testing.T) {
 		publicPort := testport.Reserve(t, "tcp", "127.0.0.1:0")
 		private, public = privatePort.Addr, publicPort.Addr
 		ctx, cancel := context.WithCancel(context.Background())
-		cmd := exec.CommandContext(ctx, bin, "--allow-parallel", "--dir", dir, "--addr", private,
+		cmd := procexec.Command(ctx, bin, "--allow-parallel", "--dir", dir, "--addr", private,
 			"--public-url", origin, "--public-addr", public)
 		cmd.Env = append(nativeProbeEnv(t.TempDir(), "", ""), "DIBS_DIR="+dir, "DIBS_LOG_RPC=1")
 		cmd.Stderr = &logs

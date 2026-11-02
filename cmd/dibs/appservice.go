@@ -19,6 +19,7 @@ import (
 
 	"github.com/agenxy/dibs/internal/machoidentity"
 	"github.com/agenxy/dibs/internal/paths"
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 const (
@@ -60,9 +61,12 @@ func appServiceCall(app, mode string) (appServiceStatus, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	// #nosec G204,G702 -- validated installed app and allowlisted service mode, no shell
-	cmd := exec.CommandContext(ctx, filepath.Join(app, "Contents", "MacOS", "dibs-notify"), "--service-"+mode)
+	cmd := procexec.Command(ctx, filepath.Join(app, "Contents", "MacOS", "dibs-notify"), "--service-"+mode)
 	cmd.WaitDelay = time.Second
 	out, err := executeAppServiceCommand(cmd)
+	if errors.Is(err, exec.ErrWaitDelay) {
+		return appServiceStatus{}, fmt.Errorf("incomplete output from dibs-notify; app service %s is unknown: %w", mode, err)
+	}
 	if err != nil {
 		return appServiceStatus{}, fmt.Errorf("dibs app service %s: %w: %s", mode, err, out)
 	}
@@ -347,8 +351,11 @@ func (p *appServicePlan) preflight() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	// #nosec G204,G702 -- own installed app, fixed codesign verification mode, no shell
-	cmd := exec.CommandContext(ctx, "/usr/bin/codesign", "--verify", "--deep", "--strict", p.app)
+	cmd := procexec.Command(ctx, "/usr/bin/codesign", "--verify", "--deep", "--strict", p.app)
 	if out, err := cmd.CombinedOutput(); err != nil {
+		if errors.Is(err, exec.ErrWaitDelay) {
+			return fmt.Errorf("incomplete output from codesign; installed app verification is unknown: %w", err)
+		}
 		return fmt.Errorf("invalid installed Dibs.app; nothing has been stopped: %w: %s", err, out)
 	}
 	if err := validateAppServicePayload(p.app); err != nil {

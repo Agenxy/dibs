@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testexec"
 )
 
@@ -35,14 +36,18 @@ func TestBrokerRoutesConcurrentCallsAndRecoversAfterDeath(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, path := range []string{driver, helper} {
-			if err := os.WriteFile(path, image, 0o700); err != nil {
+			content := image
+			if path == helper {
+				content = testexec.NativeFixtureImage(t) // pure asBrokerHelper; driver stays raced
+			}
+			if err := os.WriteFile(path, content, 0o700); err != nil {
 				t.Fatal(err)
 			}
 			testexec.PrepareExecutable(t, exec.Command(path, "--dibs-test-prepare"))
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		cmd := exec.CommandContext(ctx, driver, "-test.run=^TestBrokerRoutesConcurrentCallsAndRecoversAfterDeath$")
+		cmd := procexec.Command(ctx, driver, "-test.run=^TestBrokerRoutesConcurrentCallsAndRecoversAfterDeath$")
 		cmd.Env = append(os.Environ(), "DIBS_NOTIFY=", "DIBS_TEST_RECEIPT_PUBLIC=1", "DIBS_TEST_BROKER_DRIVER=1", "DIBS_TEST_BROKER_PID_CAPTURE="+filepath.Join(dir, "pids"), "DIBS_DIR="+dir)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("real broker adapter: %v\n%s", err, out)

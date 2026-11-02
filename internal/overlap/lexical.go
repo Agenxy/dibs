@@ -7,12 +7,16 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
+	"fmt"
 	"math"
 	"os/exec"
 	"sort"
 	"strings"
 	"sync"
 	"unicode"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // Lexical is the tier-0 scorer: match the declaration's words against the
@@ -193,7 +197,10 @@ func newLexical(ctx context.Context, repo string, cc *CoChange, held map[string]
 	// #nosec G204 -- no shell is involved: exec.Command passes argv directly,
 	// so a path cannot inject arguments. The repository path comes from an
 	// operator flag or config, never from an agent.
-	out, err := exec.CommandContext(ctx, "git", "-C", repo, "ls-files").Output()
+	out, err := procexec.Command(ctx, "git", "-C", repo, "ls-files").Output()
+	if errors.Is(err, exec.ErrWaitDelay) {
+		return nil, fmt.Errorf("incomplete output from git; tracked files are unknown: %w", err)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -211,7 +218,10 @@ func NewLexicalFromFiles(files []string, cc *CoChange) *Lexical {
 // them, for the side that can: an agent shipping its index.
 func TrackedFiles(ctx context.Context, repo string) ([]string, error) {
 	// #nosec G204 -- argv, no shell; the path is the caller's own checkout.
-	out, err := exec.CommandContext(ctx, "git", "-C", repo, "ls-files").Output()
+	out, err := procexec.Command(ctx, "git", "-C", repo, "ls-files").Output()
+	if errors.Is(err, exec.ErrWaitDelay) {
+		return nil, fmt.Errorf("incomplete output from git; tracked files are unknown: %w", err)
+	}
 	if err != nil {
 		return nil, err
 	}

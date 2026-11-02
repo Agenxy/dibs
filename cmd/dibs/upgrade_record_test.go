@@ -23,6 +23,7 @@ import (
 
 	"github.com/agenxy/dibs/internal/build"
 	"github.com/agenxy/dibs/internal/paths"
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/selfupdate"
 	"github.com/agenxy/dibs/internal/testexec"
 )
@@ -73,7 +74,7 @@ func TestUpgradeRetainsOnlySignatureVerifiedEvidenceThroughActualCLI(t *testing.
 			if mode == "unsigned" {
 				args = append(args, "--allow-unsigned")
 			}
-			cmd := exec.CommandContext(ctx, probe, args...)
+			cmd := procexec.Command(ctx, probe, args...)
 			cmd.Env = []string{"DIBS_TEST_UPGRADE_RECORD=1", "DIBS_TEST_UPGRADE_COSIGN=1", "DIBS_DIR=" + dir, "PATH=" + bin}
 			for _, key := range []string{"TMPDIR", "TEMP", "SystemRoot", "SYSTEMROOT"} {
 				if value, ok := os.LookupEnv(key); ok {

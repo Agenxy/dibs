@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -15,6 +14,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 func TestRecoveryProposalVersionsPreserveRecordedFencesAcrossReplaySnapshotCompaction(t *testing.T) {
@@ -137,7 +137,7 @@ func assertV3SnapshotRequirement(t *testing.T, dir string) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, old, "-dir", dir, "-check", "-addr", "127.0.0.1:4777")
+	cmd := procexec.Command(ctx, old, "-dir", dir, "-check", "-addr", "127.0.0.1:4777")
 	cmd.WaitDelay = time.Second
 	cmd.Env = append(os.Environ(), "DIBS_DIR="+dir, "DIBS_NOTIFY=off")
 	out, runErr := cmd.CombinedOutput()

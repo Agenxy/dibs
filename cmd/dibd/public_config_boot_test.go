@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/invites"
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testexec"
 	"github.com/agenxy/dibs/internal/testport"
 )
@@ -68,7 +69,7 @@ func TestPublicFileBootAndProcessCLI(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = log.Close() })
-	daemon := exec.CommandContext(ctx, filepath.Join(binDir, "dibd"), "--dir", dir, "--allow-parallel")
+	daemon := procexec.Command(ctx, filepath.Join(binDir, "dibd"), "--dir", dir, "--allow-parallel")
 	daemon.Env = append(nativeProbeEnv(t.TempDir(), "", ""), "DIBS_NOTIFY=off")
 	daemon.Stdout, daemon.Stderr = log, log
 	private.Release(t)
@@ -114,7 +115,7 @@ func TestPublicFileBootAndProcessCLI(t *testing.T) {
 	}
 	cli := func(dataDir, address, invite, token string, args ...string) (map[string]any, string, error) {
 		t.Helper()
-		cmd := exec.CommandContext(ctx, filepath.Join(binDir, "dibs"), args...)
+		cmd := procexec.Command(ctx, filepath.Join(binDir, "dibs"), args...)
 		cmd.Env = append(nativeProbeEnv(t.TempDir(), "", ""), "DIBS_DIR="+dataDir,
 			"DIBS_ADDR="+address, "DIBS_INVITE="+invite, "DIBS_TOKEN="+token)
 		var stdout, stderr bytes.Buffer
@@ -219,7 +220,7 @@ func TestPublicFileBootAndProcessCLI(t *testing.T) {
 		t.Fatal("doctor probed the far-side loopback on the wrong machine")
 	}
 	check := func(extra ...string) (string, error) {
-		cmd := exec.CommandContext(ctx, filepath.Join(binDir, "dibd"), append([]string{"--dir", dir, "--check"}, extra...)...)
+		cmd := procexec.Command(ctx, filepath.Join(binDir, "dibd"), append([]string{"--dir", dir, "--check"}, extra...)...)
 		cmd.Env = nativeProbeEnv(t.TempDir(), "", "")
 		out, err := cmd.CombinedOutput()
 		return string(out), err
@@ -245,7 +246,7 @@ func TestPublicFileBootAndProcessCLI(t *testing.T) {
 		if err == nil || (!strings.Contains(out, "[public]") && !strings.Contains(out, "public.unknown")) {
 			t.Fatalf("bad public file was not loudly refused: %s: %v %s", bad, err, out)
 		}
-		boot := exec.CommandContext(ctx, filepath.Join(binDir, "dibd"), "--dir", dir, "--allow-parallel")
+		boot := procexec.Command(ctx, filepath.Join(binDir, "dibd"), "--dir", dir, "--allow-parallel")
 		boot.Env = append(nativeProbeEnv(t.TempDir(), "", ""), "DIBS_NOTIFY=off")
 		bootOut, bootErr := boot.CombinedOutput()
 		if bootErr == nil || (!bytes.Contains(bootOut, []byte("[public]")) && !bytes.Contains(bootOut, []byte("public.unknown"))) {

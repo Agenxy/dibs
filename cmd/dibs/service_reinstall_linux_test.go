@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testexec"
 )
 
@@ -321,7 +322,7 @@ func (f *systemdInstallFixture) configure(t *testing.T) string {
 
 func (f *systemdInstallFixture) command(ctx context.Context, args ...string) *exec.Cmd {
 	argv := append([]string{"-test.run=^TestSystemdConfigureProcess$", "--"}, args...)
-	cmd := exec.CommandContext(ctx, f.cli, argv...)
+	cmd := procexec.Command(ctx, f.cli, argv...)
 	cmd.Dir, cmd.Env = f.home, f.env()
 	return cmd
 }

@@ -9,12 +9,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 func TestCommandCatalogContainsEveryDispatchAlias(t *testing.T) {
@@ -61,7 +62,7 @@ func TestEveryDispatchedVerbAnswersHelpWithoutAuthority(t *testing.T) {
 				before := requests.Load()
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
-				cmd := exec.CommandContext(ctx, exe, "-test.run=^TestCLIHelpProcess$", "--", verb, help)
+				cmd := procexec.Command(ctx, exe, "-test.run=^TestCLIHelpProcess$", "--", verb, help)
 				cmd.Dir = t.TempDir()
 				// Never inherit board credentials, harness/session/socket hints,
 				// or the operator's data directory. Only a refusing fixture is

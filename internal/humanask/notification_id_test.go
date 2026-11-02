@@ -8,13 +8,13 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"testing"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 func TestMain(m *testing.M) {
@@ -95,7 +95,7 @@ func TestHumanQuestionPostsItsBoardScopedMessageID(t *testing.T) {
 	_, driver, _ := newHumanaskFixture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, driver, "-test.run=^TestHumanQuestionPostsItsBoardScopedMessageID$") // #nosec G204 -- private fixture binary
+	cmd := procexec.Command(ctx, driver, "-test.run=^TestHumanQuestionPostsItsBoardScopedMessageID$") // #nosec G204 -- private fixture binary
 	cmd.Env = append(os.Environ(), "DIBS_NOTIFY=", "DIBS_TEST_HUMAN_POST_DRIVER=1", "DIBS_DIR="+t.TempDir())
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("human notification identity wiring: %v (context: %v)\n%s", err, ctx.Err(), out)

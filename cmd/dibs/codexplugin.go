@@ -17,6 +17,7 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/agenxy/dibs/internal/mcp"
 	"github.com/agenxy/dibs/internal/plugins"
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 const codexPluginHelp = `dibs codex-plugin install [--dry-run] [--codex PATH]
@@ -203,6 +204,10 @@ func runCodexPlugin(bin string, args []string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	// #nosec G204 G702 -- discovered operator executable or explicit --codex path; argv, never a shell
-	cmd := exec.CommandContext(ctx, bin, args...)
-	return cmd.CombinedOutput()
+	cmd := procexec.Command(ctx, bin, args...)
+	out, err := cmd.CombinedOutput()
+	if errors.Is(err, exec.ErrWaitDelay) {
+		return nil, fmt.Errorf("incomplete output from %s; plugin result is unknown: %w", filepath.Base(bin), err)
+	}
+	return out, err
 }

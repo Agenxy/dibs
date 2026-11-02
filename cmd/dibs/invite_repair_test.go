@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/build"
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/selfupdate"
 	"github.com/agenxy/dibs/internal/testexec"
 )
@@ -65,7 +66,7 @@ func TestInviteExplicitRepairPublishesOnlyFreshSignatureVerifiedEvidence(t *test
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
-			cmd := exec.CommandContext(ctx, probe, "-test.run=^TestCLIInviteRepairProcess$", "--", "invite", "--verify-release", "v0.0.9")
+			cmd := procexec.Command(ctx, probe, "-test.run=^TestCLIInviteRepairProcess$", "--", "invite", "--verify-release", "v0.0.9")
 			cmd.Env = []string{
 				"DIBS_TEST_INVITE_REPAIR=" + mode, "DIBS_TEST_UPGRADE_COSIGN=1",
 				"DIBS_DIR=" + dir, "PATH=" + bin, "DIBS_TOKEN=fake-token-must-not-be-sent",

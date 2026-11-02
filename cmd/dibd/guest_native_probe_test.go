@@ -22,7 +22,6 @@ import (
 	"net/http"
 	"net/netip"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -35,6 +34,7 @@ import (
 	"github.com/agenxy/dibs/internal/invites"
 	"github.com/agenxy/dibs/internal/ledger"
 	"github.com/agenxy/dibs/internal/mcp"
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // Opt-in measurement of INSTALLED clients, not source-tree verifier substitutes.
@@ -74,7 +74,7 @@ func nativeVersion(t *testing.T, binary string) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, binary, "--version")
+	cmd := procexec.Command(ctx, binary, "--version")
 	cmd.Dir = t.TempDir()
 	cmd.Env = nativeProbeEnv(cmd.Dir, "", "")
 	out, err := cmd.CombinedOutput()
@@ -328,13 +328,13 @@ func nativeInventory(t *testing.T, client, binary, root, url, bearer string) (bo
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 	defer cancel()
 	if client == "claude" {
-		add := exec.CommandContext(ctx, binary, "mcp", "add", "--scope", "local", "--transport", "http", "guest", url,
+		add := procexec.Command(ctx, binary, "mcp", "add", "--scope", "local", "--transport", "http", "guest", url,
 			"--header", "Authorization: Bearer "+bearer)
 		add.Dir, add.Env = dir, nativeProbeEnv(dir, client, root)
 		if out, err := add.CombinedOutput(); err != nil {
 			return false, string(out), fmt.Errorf("isolated mcp add: %w", err)
 		}
-		cmd := exec.CommandContext(ctx, binary, "mcp", "list")
+		cmd := procexec.Command(ctx, binary, "mcp", "list")
 		cmd.Dir, cmd.Env = dir, nativeProbeEnv(dir, client, root)
 		out, err := cmd.CombinedOutput()
 		if err != nil {
@@ -352,7 +352,7 @@ func nativeInventory(t *testing.T, client, binary, root, url, bearer string) (bo
 	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(config), 0o600); err != nil {
 		return false, "", err
 	}
-	cmd := exec.CommandContext(ctx, binary, "app-server")
+	cmd := procexec.Command(ctx, binary, "app-server")
 	cmd.Dir, cmd.Env = dir, nativeProbeEnv(dir, client, root)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

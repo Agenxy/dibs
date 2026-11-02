@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 type pairedProcessEvidence struct {
@@ -68,7 +70,7 @@ func TestPairedDaemonExecPreservesProcessAndRefusesStaleCode(t *testing.T) {
 	run := func() (pairedProcessEvidence, int, []byte, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		cmd := exec.CommandContext(ctx, root, "-test.run=^TestPairedDaemonExecProcess$", "--", "literal space", "$(not-a-shell)")
+		cmd := procexec.Command(ctx, root, "-test.run=^TestPairedDaemonExecProcess$", "--", "literal space", "$(not-a-shell)")
 		cmd.Args[0] = "original argv zero"
 		cmd.Env = append(os.Environ(), "DIBS_TEST_PAIRED_EXEC=1", "DIBS_PAIRED_ENV=literal space=$value")
 		out, err := cmd.Output()
@@ -151,7 +153,7 @@ func TestProductionDaemonMainEntersItsPairedApp(t *testing.T) {
 	run := func() ([]byte, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		return exec.CommandContext(ctx, root, "-man").CombinedOutput()
+		return procexec.Command(ctx, root, "-man").CombinedOutput()
 	}
 	if out, err := run(); err != nil || !strings.Contains(string(out), ".Dt DIBD 8") {
 		t.Fatalf("positive actual-main control: %v %s", err, out)
@@ -178,7 +180,7 @@ func TestProductionDaemonMainEntersItsPairedApp(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if out, err := exec.CommandContext(ctx, development, "-man").CombinedOutput(); err != nil || !strings.Contains(string(out), ".Dt DIBD 8") {
+	if out, err := procexec.Command(ctx, development, "-man").CombinedOutput(); err != nil || !strings.Contains(string(out), ".Dt DIBD 8") {
 		t.Fatalf("differently named development image did not stay standalone: %v %s", err, out)
 	}
 }
