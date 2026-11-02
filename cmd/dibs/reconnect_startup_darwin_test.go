@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -101,10 +102,12 @@ func TestReconnectAppFixtureHelper(t *testing.T) {
 	if os.Getenv("DIBS_TEST_RECONNECT_APP") != "1" {
 		return
 	}
+	stages := ancestryFixtureStages(t, 1)
 	var bridges [2]reconnectBridge
+	stages.note(ancestryBridgesStarting)
 	for i := range bridges {
 		cmd := exec.Command(os.Getenv("DIBS_TEST_BRIDGE_BINARY"), "-test.run=^TestBridgeStartupHelper$")
-		cmd.Env = append(os.Environ(), "DIBS_TEST_STARTUP_BRIDGE=1")
+		cmd.Env = append(os.Environ(), "DIBS_TEST_STARTUP_BRIDGE=1", ancestryRoleEnv+"="+strconv.Itoa(i+2))
 		cmd.Stderr = os.Stderr
 		in, err := cmd.StdinPipe()
 		if err != nil {
@@ -120,6 +123,7 @@ func TestReconnectAppFixtureHelper(t *testing.T) {
 		bridges[i] = reconnectBridge{cmd: cmd, in: in, out: json.NewDecoder(out)}
 		defer func() { _ = in.Close(); _ = cmd.Process.Kill(); _ = cmd.Wait() }()
 	}
+	stages.note(ancestryBridgesStarted)
 	decoder, encoder := json.NewDecoder(os.Stdin), json.NewEncoder(os.Stdout)
 	for {
 		var request struct {
@@ -134,17 +138,22 @@ func TestReconnectAppFixtureHelper(t *testing.T) {
 		if request.Bridge < 0 || request.Bridge >= len(bridges) {
 			t.Fatal("invalid bridge fixture index")
 		}
+		stages.note(ancestryRequestDecoded)
 		bridge := &bridges[request.Bridge]
+		stages.note(ancestryRequestWriteStarting)
 		if _, err := bridge.in.Write(append(request.RPC, '\n')); err != nil {
 			t.Fatal(err)
 		}
+		stages.note(ancestryRequestWritten)
 		var reply json.RawMessage
 		if err := bridge.out.Decode(&reply); err != nil {
 			t.Fatal(err)
 		}
+		stages.note(ancestryReplyRead)
 		if err := encoder.Encode(reply); err != nil {
 			t.Fatal(err)
 		}
+		stages.note(ancestryReplyWritten)
 	}
 }
 
