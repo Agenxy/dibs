@@ -572,11 +572,21 @@ as ordinary agent addressing: a retired namesake cannot shadow the source,
 and a competing stable ID or genuinely ambiguous live name is still refused.
 Normal merge fences retain their original meaning. Both directions enforce the
 same distinct-hands and current-incarnation checks at request and approval, and
-use the same recovery fold. The proposal fence excludes only the survivor's
-awareness/contact watermarks and active/dormant/stale observations, allowing its
-normal wake/check-in. It still fences session/activation/authority, declarations,
-credentials, all other mail, claims and memberships; current eligibility is
-always rechecked. Original survivor-initiated recovery keeps its original fence.
+use the same recovery fold. The proposal fence excludes the survivor's
+awareness/contact watermarks, active/dormant/stale observations and incoming
+mail, allowing normal arrival/wake/check-in/read/ack activity. Survivor incoming
+mail is neither moved nor previewed. Source incoming mail and source sender
+rewrites remain fenced, including source-authored mail addressed to the survivor
+and survivor-authored mail addressed to the source. Session/activation/authority,
+declarations, credentials, claims and memberships remain fenced; current
+eligibility is always rechecked. Current proposal fences have the explicit
+`recovery:v2:sha256:<64 lowercase hex digits>` form. The recorded inner `v2:`
+prefix selects the fold's projection; historical unprefixed v1 records keep
+their exact encoding during replay, snapshots and compaction. Pending v1
+proposals refuse current consent with `E_RECOVERY_STALE` and a coordinator
+re-preview hint. This versioning repairs an incident where ordinary survivor
+mail made a coordinator proposal impossible to consent to; it does not change
+human merge or original survivor-initiated recovery fence encodings.
 
 Bridge catalog diagnostics are derived, bounded to 512 process incarnations,
 and lost safely on daemon restart. Bridges carry the last complete `tools/list`

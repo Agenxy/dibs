@@ -136,6 +136,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   exclusive hard link publishes the same secured inode. Other errors do not
   fall back. Temporary names preserve the existing socket-path limit.
 
+- Coordinator mailbox-recovery proposals survive ordinary incoming survivor
+  mail and its wake, read and acknowledgement. Source mail, sender rewrites,
+  identities, work, claims and bindings remain fenced. New proposals carry an
+  explicit v2 fence; historical v1 fences retain their exact replay encoding,
+  and pending v1 proposals require a fresh coordinator preview before consent.
+  Human merges and survivor-initiated recovery keep their existing encoding.
+
 - Coordinator merge previews now explain a refused recovery proposal with its
   code, message and corrective hint. Recovery respects ordinary exact-ID and
   live-name precedence, so a closed namesake cannot block a lost mailbox's

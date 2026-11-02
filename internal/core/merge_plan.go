@@ -118,10 +118,10 @@ func (s *State) mergeOwnsMail(from string, m *Message) bool {
 // Delivery state on outgoing-only mail does not affect an address rewrite.
 // Row incarnation and private nonce mappings are covered, but never exposed.
 func (s *State) MergeFence(from, into string, ignore uint64) string {
-	return s.mergeFence(from, into, ignore, "merge:v1", []*Agent{s.Agents[from], s.Agents[into]})
+	return s.mergeFence(from, into, ignore, "merge:v1", []*Agent{s.Agents[from], s.Agents[into]}, true)
 }
 
-func (s *State) mergeFence(from, into string, ignore uint64, domain string, rows []*Agent) string {
+func (s *State) mergeFence(from, into string, ignore uint64, domain string, rows []*Agent, survivorMail bool) string {
 	sum := sha256.New()
 	enc := newMergeEncoder(sum)
 	enc(domain)
@@ -132,9 +132,11 @@ func (s *State) mergeFence(from, into string, ignore uint64, domain string, rows
 		}
 		m := s.Messages[n]
 		switch {
-		case s.mergeOwnsMail(from, m), s.mergeOwnsMail(into, m):
+		case s.mergeOwnsMail(from, m), survivorMail && s.mergeOwnsMail(into, m):
 			enc([]any{"incoming", m})
 		case s.mergeRewritesSender(from, m):
+			// Even when survivor incoming is excluded, source-authored mail
+			// addressed to the survivor still carries a sender rewrite.
 			enc([]any{"outgoing", m.Serial, m.From, m.To})
 		}
 	}
