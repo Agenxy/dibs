@@ -7,10 +7,12 @@ package localtransport
 
 import (
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
+	"syscall"
 )
 
 // Serial behavioral tests can hold the actual publication boundary while two
@@ -42,19 +44,32 @@ func listenPrepared(dir, path string) (net.Listener, error) {
 	defer func() {
 		if !published {
 			_ = ln.Close()
-			removeSocketIfSame(temporary, info)
 		}
+		// Exclusive hard-link publication leaves this alias until cleanup.
+		// A cleanup failure must not revoke an already published listener.
+		removeSocketIfSame(temporary, info)
 	}()
 	if err := os.Chmod(temporary, 0o600); err != nil {
 		return nil, socketError(path, err)
 	}
-	if err := publishSocket(temporary, path); err != nil {
+	if err := publishPreparedSocket(temporary, path); err != nil {
 		return nil, fmt.Errorf("publish local IPC %s: %w; "+
 			"inspect this profile's endpoint and filesystem before retrying startup; "+
 			"never replace a serving daemon", path, err)
 	}
 	published = true
 	return &listener{UnixListener: ln, path: path, inode: info}, nil
+}
+
+func publishPreparedSocket(from, into string) error {
+	err := publishSocket(from, into)
+	if errors.Is(err, syscall.EINVAL) || errors.Is(err, syscall.ENOSYS) {
+		// Some Linux kernels/filesystems lack exclusive rename. link is also
+		// atomic and refuses an existing target. Cleanup removes our private
+		// preparation alias only after the final name has been published.
+		return os.Link(from, into)
+	}
+	return err
 }
 
 func removeSocketIfSame(path string, inode os.FileInfo) {

@@ -132,7 +132,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   permanently refuse the brief bind-before-chmod state. Preparation stays in
   the existing private profile with mode `0700`; atomic exclusive publication
   preserves a concurrent listener, and the strict owner/mode and no-TCP-fallback checks
-  remain unchanged. Temporary names preserve the existing socket-path limit.
+  remain unchanged. Where exclusive rename returns `EINVAL` or `ENOSYS`, an
+  exclusive hard link publishes the same secured inode. Other errors do not
+  fall back. Temporary names preserve the existing socket-path limit.
 
 - Coordinator merge previews now explain a refused recovery proposal with its
   code, message and corrective hint. Recovery respects ordinary exact-ID and

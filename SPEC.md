@@ -375,6 +375,11 @@ you can measure is never improved by asking.
   without replacing a concurrent listener. Clients therefore see an absent
   endpoint or a secured one, never the intermediate bind permissions. Neither
   client validation nor the set of safely retryable errors is relaxed.
+  If exclusive rename returns `EINVAL` or `ENOSYS`, publication uses an atomic
+  hard link with the same no-replacement property, then removes its private
+  preparation alias. Other errors do not select that fallback. A socket left
+  behind under a preparation name after a crash is outside the authority-file
+  set and does not prevent subsequent startup.
   A staged `doctor --ipc-preflight` and the daemon's replay check inspect the
   directory without changing its mode or contacting the old daemon. Serving
   startup may tighten a verified owned directory with no group/other write
