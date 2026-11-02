@@ -36,7 +36,11 @@ func TestBrokerRoutesConcurrentCallsAndRecoversAfterDeath(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, path := range []string{driver, helper} {
-			if err := os.WriteFile(path, image, 0o700); err != nil {
+			content := image
+			if path == helper {
+				content = testexec.NativeFixtureImage(t) // pure asBrokerHelper; driver stays raced
+			}
+			if err := os.WriteFile(path, content, 0o700); err != nil {
 				t.Fatal(err)
 			}
 			testexec.PrepareExecutable(t, exec.Command(path, "--dibs-test-prepare"))

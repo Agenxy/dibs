@@ -193,7 +193,9 @@ func TestDesktopSettingsComeFromThePostingHelper(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(helper), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(helper, bytes, 0o700); err != nil {
+	// Only desktopSettingsHelper's pure OS double is uninstrumented.
+	// The copied engine/presenter driver above keeps this race-enabled image.
+	if err := os.WriteFile(helper, testexec.NativeFixtureImage(t), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	testexec.PrepareExecutable(t, exec.Command(helper, "--dibs-test-prepare"))

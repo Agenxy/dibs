@@ -44,7 +44,11 @@ func TestFocusQuestionUsesBannerThroughInstalledHelper(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, p := range []string{driver, helper} {
-		if err := os.WriteFile(p, b, 0o700); err != nil {
+		content := b
+		if p == helper {
+			content = testexec.NativeFixtureImage(t) // pure asReceiptHelper; driver stays raced
+		}
+		if err := os.WriteFile(p, content, 0o700); err != nil {
 			t.Fatal(err)
 		}
 		testexec.PrepareExecutable(t, exec.Command(p, "--dibs-test-prepare"))

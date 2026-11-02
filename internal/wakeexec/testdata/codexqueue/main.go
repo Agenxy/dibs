@@ -44,6 +44,11 @@ func main() {
 	if len(os.Args) == 2 && os.Args[1] == "--version" {
 		return
 	}
+	if len(os.Args) == 2 && os.Args[1] == "nonqueue-pipe" {
+		queuePipeControl(false)
+		fmt.Println("thread already has an active writer")
+		return
+	}
 	path := filepath.Join(os.Getenv("CODEX_HOME"), "pending.json")
 	if len(os.Args) == 2 && os.Args[1] == "primary" {
 		fmt.Println("thread already has an active writer")

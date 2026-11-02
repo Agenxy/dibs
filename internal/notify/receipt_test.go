@@ -182,7 +182,11 @@ func TestPublicNotificationReceiptUsesTheInstalledHelper(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, path := range []string{driver, helper} {
-		if err := os.WriteFile(path, bytes, 0o700); err != nil {
+		content := bytes
+		if path == helper {
+			content = testexec.NativeFixtureImage(t) // pure asReceiptHelper; driver stays raced
+		}
+		if err := os.WriteFile(path, content, 0o700); err != nil {
 			t.Fatal(err)
 		}
 		testexec.PrepareExecutable(t, exec.Command(path, "--dibs-test-prepare"))

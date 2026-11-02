@@ -122,11 +122,17 @@ func newHumanaskFixture(t *testing.T) (dir, driver, helper string) {
 		t.Fatal(err)
 	}
 	for _, path := range []string{driver, helper} {
+		content := image
+		if path == helper {
+			// TestMain dispatches only the pure prompt/native protocol double.
+			// The driver still runs real humanask/notify code under race.
+			content = testexec.NativeFixtureImage(t)
+		}
 		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o700)
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, writeErr := f.Write(image)
+		_, writeErr := f.Write(content)
 		closeErr := f.Close()
 		if err := errors.Join(writeErr, closeErr); err != nil {
 			t.Fatal(err)

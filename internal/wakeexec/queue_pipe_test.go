@@ -17,7 +17,7 @@ import (
 
 func TestQueueDrainFailureRequiresOneObservedExactItem(t *testing.T) {
 	binary := staleQueueFixture(t)
-	for _, mode := range []string{"valid", "missing", "wrong-timestamp", "dispatched", "observation-error", "ambiguous"} {
+	for _, mode := range []string{"valid", "missing", "wrong-timestamp", "dispatched", "observation-error", "ambiguous", "nonqueue"} {
 		t.Run(mode, func(t *testing.T) {
 			home := staleQueueHome(t)
 			t.Setenv("DIBS_TEST_QUEUE_PIPE_CASE", mode)
@@ -37,6 +37,9 @@ func TestQueueDrainFailureRequiresOneObservedExactItem(t *testing.T) {
 			var observation QueueObservation
 			done := make(chan bool, 1)
 			argv := []string{binary, "queue", "--thread", "pipe-thread", "--message", Compose("notify")}
+			if mode == "nonqueue" {
+				argv = []string{binary, "nonqueue-pipe"}
+			}
 			fallback := []string{binary, "fallback-marker"}
 			go func() {
 				done <- RunCommandsObserved(argv, fallback, "worker", "", 5*time.Second, 100*time.Millisecond,
@@ -92,18 +95,29 @@ func TestQueueDrainFailureRequiresOneObservedExactItem(t *testing.T) {
 			case <-time.After(3 * time.Second):
 				t.Fatal("retained stdout blocked the real wake route")
 			}
-			if mode == "valid" {
+			switch mode {
+			case "valid":
 				if observation.Admission != "accepted" || observation.Pending != "pending" || observation.AgeSource != "notice" || observation.IssuedAt.IsZero() {
 					t.Fatalf("acceptance did not record an observed app item: %+v", observation)
 				}
-			} else if observation.Admission != "unknown" || !strings.Contains(log.String(), "ErrWaitDelay") || !strings.Contains(log.String(), "observation=") {
-				t.Fatalf("unknown lacked an honest drain/observation hint: %+v log=%s", observation, log.String())
+			case "nonqueue":
+				if observation != (QueueObservation{}) || !strings.Contains(log.String(), "ErrWaitDelay") || !strings.Contains(log.String(), "no app receipt contract") {
+					t.Fatalf("non-queue drain failure lacked its warning: %+v log=%s", observation, log.String())
+				}
+			default:
+				if observation.Admission != "unknown" || !strings.Contains(log.String(), "ErrWaitDelay") || !strings.Contains(log.String(), "observation=") {
+					t.Fatalf("unknown lacked an honest drain/observation hint: %+v log=%s", observation, log.String())
+				}
 			}
 			if !readReceipt("pipe-thread").QueuedAt.IsZero() {
 				t.Fatal("observed or unknown item was written as a local inference receipt")
 			}
 			probes, err := os.ReadFile(filepath.Join(home, "probe-processes"))
-			if err != nil || strings.Count(string(probes), "probe\n") != 2 {
+			if mode == "nonqueue" {
+				if !os.IsNotExist(err) {
+					t.Fatalf("non-queue route attempted an app observation: %q %v", probes, err)
+				}
+			} else if err != nil || strings.Count(string(probes), "probe\n") != 2 {
 				t.Fatalf("want initial observation plus exactly one receipt observation: %q %v", probes, err)
 			}
 			if _, err := os.Stat(filepath.Join(home, "fallback-ran")); !os.IsNotExist(err) {

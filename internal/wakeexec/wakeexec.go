@@ -188,6 +188,9 @@ func RunCommandsObserved(
 		var needsReceipt bool
 		ok, out, needsReceipt = runForOutResult(argv, agent, dir, timeout, grace)
 		if needsReceipt {
+			slog.Warn("wake acceptance unknown after incomplete output", "agent", agent,
+				"err", exec.ErrWaitDelay,
+				"hint", "ErrWaitDelay: this wake command has no app receipt contract; no retry or fallback was attempted")
 			return false // no receipt contract and no fallback after ambiguous output
 		}
 	}
