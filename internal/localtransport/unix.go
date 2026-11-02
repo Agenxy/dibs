@@ -286,22 +286,7 @@ func Listen(dir string) (net.Listener, error) {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
-	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
-	if err != nil {
-		return nil, fmt.Errorf("bind local IPC %s: %w; choose a shorter private data-directory path "+
-			"if the Unix socket pathname is too long", path, err)
-	}
-	ln.SetUnlinkOnClose(false)
-	if err := os.Chmod(path, 0o600); err != nil {
-		_ = ln.Close()
-		return nil, err
-	}
-	info, err := os.Lstat(path)
-	if err != nil {
-		_ = ln.Close()
-		return nil, err
-	}
-	return &listener{UnixListener: ln, path: path, inode: info}, nil
+	return listenPrepared(dir, path)
 }
 
 type listener struct {
@@ -310,10 +295,12 @@ type listener struct {
 	inode os.FileInfo
 }
 
+// The kernel bound a private preparation name, which is no longer a route.
+// Callers must continue to see the fixed, published endpoint.
+func (l *listener) Addr() net.Addr { return &net.UnixAddr{Name: l.path, Net: "unix"} }
+
 func (l *listener) Close() error {
 	err := l.UnixListener.Close()
-	if now, e := os.Lstat(l.path); e == nil && os.SameFile(l.inode, now) {
-		_ = os.Remove(l.path)
-	}
+	removeSocketIfSame(l.path, l.inode)
 	return err
 }
