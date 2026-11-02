@@ -11,10 +11,11 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // A real child and stdio request reach the real HTTP route, where this fixture
@@ -58,7 +59,7 @@ func TestSocketEconomyTimeoutDiagnosticsHelper(t *testing.T) {
 func TestSocketEconomyTimeoutReportsActualBridgeDiagnostics(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestSocketEconomyTimeoutDiagnosticsHelper$", "-test.v")
+	cmd := procexec.Command(ctx, os.Args[0], "-test.run=^TestSocketEconomyTimeoutDiagnosticsHelper$", "-test.v")
 	cmd.Env = append(os.Environ(), "DIBS_TEST_ECONOMY_TIMEOUT_CONTROL=1")
 	out, err := cmd.CombinedOutput()
 	if ctx.Err() != nil || err == nil {

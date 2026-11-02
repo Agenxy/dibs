@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/release"
 )
 
@@ -254,12 +255,15 @@ func (v VerifiedRelease) verifyOffline(ctx context.Context, buildVersion string)
 		}
 	}
 	// #nosec G204 -- usable executable, fixed args, validated tag, private snapshots.
-	cmd := exec.CommandContext(ctx, cosign, "verify-blob", filepath.Join(dir, ChecksumsName),
+	cmd := procexec.Command(ctx, cosign, "verify-blob", filepath.Join(dir, ChecksumsName),
 		"--bundle", filepath.Join(dir, BundleName), "--trusted-root", filepath.Join(dir, "trusted-root.json"),
 		"--certificate-identity", releaseIdentity(v.tag),
 		"--certificate-oidc-issuer", "https://token.actions.githubusercontent.com")
 	cmd.Env = productionTUFEnv(os.Environ(), filepath.Join(dir, "unused-tuf-cache"))
 	if out, runErr := cmd.CombinedOutput(); runErr != nil {
+		if errors.Is(runErr, exec.ErrWaitDelay) {
+			return fmt.Errorf("incomplete output from cosign; retained release signature could not be checked: %w", runErr)
+		}
 		hint := "treat the retained record as untrusted; no network fallback was attempted"
 		if release.Comparable(buildVersion) {
 			if newer, _ := release.Newer(v.tag, buildVersion); newer {

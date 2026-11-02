@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/humanask"
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testexec"
 )
 
@@ -77,7 +78,7 @@ func TestActualRelayStreamRemovesThroughItsNativeHelper(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, driver, "-test.run=^TestActualRelayStreamRemovesThroughItsNativeHelper$") // #nosec G204 -- private test fixture
+	cmd := procexec.Command(ctx, driver, "-test.run=^TestActualRelayStreamRemovesThroughItsNativeHelper$") // #nosec G204 -- private test fixture
 	cmd.Env = append(os.Environ(), "DIBS_TEST_RELAY_CLEANUP_DRIVER=1", "DIBS_DIR="+cliIPCProfile(t))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("relay stream/native wiring: %v\n%s", err, out)

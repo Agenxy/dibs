@@ -13,7 +13,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -23,6 +22,7 @@ import (
 
 	"github.com/agenxy/dibs/internal/localtransport"
 	notifyapp "github.com/agenxy/dibs/internal/notify/app"
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testport"
 )
 
@@ -67,7 +67,7 @@ func TestNativeHumanColdReopenUsesCurrentDaemonAndAttestedPeer(t *testing.T) {
 	}
 	run := func(name string, args ...string) {
 		t.Helper()
-		if out, err := exec.CommandContext(ctx, name, args...).CombinedOutput(); err != nil {
+		if out, err := procexec.Command(ctx, name, args...).CombinedOutput(); err != nil {
 			t.Fatalf("%s: %v\n%s", name, err, out)
 		}
 	}
@@ -88,7 +88,7 @@ func TestNativeHumanColdReopenUsesCurrentDaemonAndAttestedPeer(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = log.Close() }()
-	child := exec.CommandContext(ctx, daemon, "-dir", profile, "-addr", port.Addr, "-allow-parallel")
+	child := procexec.Command(ctx, daemon, "-dir", profile, "-addr", port.Addr, "-allow-parallel")
 	child.Env = env
 	child.Dir = root
 	child.Stdout = log
@@ -158,7 +158,7 @@ func TestNativeHumanColdReopenUsesCurrentDaemonAndAttestedPeer(t *testing.T) {
 	send := func(kind string) (uint64, string) {
 		t.Helper()
 		out := filepath.Join(root, kind+"-sent.json")
-		sender := exec.CommandContext(ctx, self, "-test.run=^TestNativeHumanAskerProcess$")
+		sender := procexec.Command(ctx, self, "-test.run=^TestNativeHumanAskerProcess$")
 		sender.Env = append(append([]string(nil), env...), "DIBS_NATIVE_ASKER=1", "DIBS_NATIVE_TOKEN="+token, "DIBS_NATIVE_KIND="+kind, "DIBS_NATIVE_RESULT="+out)
 		if raw, err := sender.CombinedOutput(); err != nil {
 			t.Fatalf("asker: %v %s", err, raw)
@@ -190,7 +190,7 @@ func TestNativeHumanColdReopenUsesCurrentDaemonAndAttestedPeer(t *testing.T) {
 	reopen := func(id, path, action, text string, choice int, extra ...string) map[string]any {
 		t.Helper()
 		view := filepath.Join(root, fmt.Sprintf("view-%d.json", time.Now().UnixNano()))
-		cmd := exec.CommandContext(ctx, helper)
+		cmd := procexec.Command(ctx, helper)
 		cmd.Env = append(append([]string(nil), env...), "DIBS_READING_FIXTURE=1", "DIBS_READING_POSTED="+path, "DIBS_READING_NOTIFICATION_ID="+id, "DIBS_READING_WINDOW="+view, "DIBS_NATIVE_REOPEN_VIEW="+view, "DIBS_NATIVE_REOPEN_ACTION="+action, "DIBS_NATIVE_REOPEN_TEXT="+text, "DIBS_NATIVE_REOPEN_CHOICE="+strconv.Itoa(choice))
 		if shot := os.Getenv("DIBS_NATIVE_REOPEN_ARTIFACTS"); shot != "" {
 			cmd.Env = append(cmd.Env, "DIBS_NATIVE_REOPEN_SCREENSHOT="+filepath.Join(shot, action+"-"+strconv.Itoa(choice)+".png"))
@@ -335,7 +335,7 @@ func TestNativeHumanColdReopenUsesCurrentDaemonAndAttestedPeer(t *testing.T) {
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			audit := localtransport.PeerAuditToken(r.Context())
 			verify := func(token []byte) error {
-				cmd := exec.CommandContext(ctx, helper, "--verify-notification-peer")
+				cmd := procexec.Command(ctx, helper, "--verify-notification-peer")
 				cmd.Stdin = bytes.NewReader(token)
 				return cmd.Run()
 			}
@@ -409,7 +409,7 @@ func nativeServerMustReceiveNoRequest(t *testing.T, ctx context.Context, helper 
 		}
 	}()
 	view := filepath.Join(root, "refused-server.json")
-	cmd := exec.CommandContext(ctx, helper)
+	cmd := procexec.Command(ctx, helper)
 	cmd.Env = append(append([]string(nil), env...), "DIBS_READING_FIXTURE=1", "DIBS_READING_POSTED="+posted, "DIBS_READING_NOTIFICATION_ID=dibs.msg.audit.1", "DIBS_NATIVE_REOPEN_VIEW="+view)
 	raw, err := cmd.CombinedOutput()
 	if err == nil {
@@ -442,7 +442,7 @@ func nativeLiveBrokerReopen(t *testing.T, ctx context.Context, helper string, en
 	if err := os.Mkdir(lockDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.CommandContext(ctx, helper, "--broker")
+	cmd := procexec.Command(ctx, helper, "--broker")
 	cmd.Env = append(append([]string(nil), env...), "DIBS_BROKER_FIXTURE_DIR="+lockDir, "DIBS_BROKER_DISMISS_POSTED=0")
 	input, err := cmd.StdinPipe()
 	if err != nil {

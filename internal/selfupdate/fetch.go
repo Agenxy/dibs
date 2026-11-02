@@ -17,6 +17,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // maxAsset bounds what will be pulled into memory or onto disk from a release.
@@ -135,12 +137,15 @@ func Verify(ctx context.Context, c *http.Client, rel Release, dir string) (strin
 	identity := releaseIdentity(rel.Tag)
 	// #nosec G204 -- no shell; every argument is built here from constants and
 	// the tag this release reported, never from caller-supplied text.
-	cmd := exec.CommandContext(ctx, cosign, "verify-blob", checksums,
+	cmd := procexec.Command(ctx, cosign, "verify-blob", checksums,
 		"--bundle", bundle,
 		"--certificate-identity", identity,
 		"--certificate-oidc-issuer", "https://token.actions.githubusercontent.com")
 	cmd.Env = productionTUFEnv(os.Environ(), filepath.Join(dir, "production-tuf-cache"))
 	out, err := cmd.CombinedOutput()
+	if errors.Is(err, exec.ErrWaitDelay) {
+		return "", fmt.Errorf("incomplete output from cosign; release signature could not be checked: %w", err)
+	}
 	if err != nil {
 		return "", fmt.Errorf("the signature over %s did not verify for %s, so this is not "+
 			"the release %s published and nothing has been installed:\n%s",
@@ -178,7 +183,10 @@ func usableCosign(ctx context.Context) (string, error) {
 			"again. Signature-backed release evidence cannot be created without it")
 	}
 	// #nosec G204 -- no shell; the path is whatever LookPath resolved.
-	if out, err := exec.CommandContext(ctx, path, "version").CombinedOutput(); err != nil {
+	if out, err := procexec.Command(ctx, path, "version").CombinedOutput(); err != nil {
+		if errors.Is(err, exec.ErrWaitDelay) {
+			return "", fmt.Errorf("incomplete output from cosign; executable capability is unknown: %w", err)
+		}
 		return "", fmt.Errorf("cosign is on PATH at %s but will not run, so the release's "+
 			"signature CANNOT BE CHECKED: this is not a failed verification, it is a "+
 			"missing tool. Fix the install (a mise or asdf shim with no version selected "+

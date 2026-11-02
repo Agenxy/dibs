@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testexec"
 )
 
@@ -104,7 +105,7 @@ func TestPublicMessageNotificationAndCleanupUseInstalledHelper(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, driver, "-test.run=^TestPublicMessageNotificationAndCleanupUseInstalledHelper$") // #nosec G204 -- private test binary
+	cmd := procexec.Command(ctx, driver, "-test.run=^TestPublicMessageNotificationAndCleanupUseInstalledHelper$") // #nosec G204 -- private test binary
 	cmd.Env = append(os.Environ(), "DIBS_TEST_RECEIPT_PUBLIC=1", "DIBS_TEST_CLEANUP_DRIVER=1", "DIBS_DIR="+t.TempDir())
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("public notification cleanup wiring: %v\n%s", err, out)

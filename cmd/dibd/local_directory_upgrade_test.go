@@ -9,12 +9,12 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testport"
 )
 
@@ -48,7 +48,7 @@ func TestDaemonStartupRefusesWritableDirectoryWithLiteralRepair(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestQDaemonChild$")
+	cmd := procexec.Command(ctx, os.Args[0], "-test.run=^TestQDaemonChild$")
 	port := testport.Reserve(t, "tcp", "127.0.0.1:0")
 	cmd.Env = append(nativeProbeEnv(t.TempDir(), "", ""),
 		"DIBS_Q_DAEMON_CHILD=1", "DIBS_DIR="+dir, "DIBS_ADDR="+port.Addr)
@@ -88,7 +88,7 @@ func qRefuseExposedStoredKey(t *testing.T, name string) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestQDaemonChild$")
+	cmd := procexec.Command(ctx, os.Args[0], "-test.run=^TestQDaemonChild$")
 	port := testport.Reserve(t, "tcp", "127.0.0.1:0")
 	cmd.Env = append(nativeProbeEnv(t.TempDir(), "", ""),
 		"DIBS_Q_DAEMON_CHILD=1", "DIBS_DIR="+dir, "DIBS_ADDR="+port.Addr)
@@ -144,7 +144,7 @@ func qDirectoryChild(t *testing.T, dir, addr string, check bool) ([]byte, error)
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestQDaemonChild$")
+	cmd := procexec.Command(ctx, os.Args[0], "-test.run=^TestQDaemonChild$")
 	cmd.Env = append(nativeProbeEnv(t.TempDir(), "", ""), "DIBS_Q_DAEMON_CHILD=1", "DIBS_DIR="+dir, "DIBS_ADDR="+addr)
 	if check {
 		cmd.Env = append(cmd.Env, "DIBS_Q_CHECK=1")
@@ -219,7 +219,7 @@ func TestDaemonReplayPreflightDoesNotTightenTheRunningBoardsDirectory(t *testing
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestQDaemonChild$")
+	cmd := procexec.Command(ctx, os.Args[0], "-test.run=^TestQDaemonChild$")
 	cmd.Env = append(nativeProbeEnv(t.TempDir(), "", ""), "DIBS_Q_DAEMON_CHILD=1", "DIBS_Q_CHECK=1",
 		"DIBS_DIR="+dir, "DIBS_ADDR="+addr)
 	out, err := cmd.CombinedOutput()

@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/transport"
 )
 
@@ -529,7 +530,10 @@ var skipBinary = regexp.MustCompile(`(?i)\.(png|jpe?g|gif|ico|pdf|zip|gz|woff2?|
 func (e *Embed) Build(ctx context.Context, repo string) error {
 	// #nosec G204,G702 -- no shell: exec.Command passes argv directly, and the
 	// repository path comes from operator config, never from an agent.
-	out, err := exec.CommandContext(ctx, "git", "-C", repo, "ls-files").Output()
+	out, err := procexec.Command(ctx, "git", "-C", repo, "ls-files").Output()
+	if errors.Is(err, exec.ErrWaitDelay) {
+		return fmt.Errorf("incomplete output from git; repository files could not be indexed: %w", err)
+	}
 	if err != nil {
 		return fmt.Errorf("listing files: %w", err)
 	}

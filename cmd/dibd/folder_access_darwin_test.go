@@ -13,7 +13,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -21,6 +20,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/folderaccess"
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testport"
 )
 
@@ -129,7 +129,7 @@ func bootFolderAccessDaemon(t *testing.T, mode string) *folderDaemon {
 	}
 	port := testport.Reserve(t, "tcp", "127.0.0.1:0")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestFolderAccessDaemonProcess$")
+	cmd := procexec.Command(ctx, os.Args[0], "-test.run=^TestFolderAccessDaemonProcess$")
 	args := []string{"dibd", "-dir", dir, "-addr", port.Addr, "-allow-parallel"}
 	cmd.Env = append(nativeProbeEnv(home, "", ""), "DIBS_NOTIFY=off", "GORACE=atexit_sleep_ms=0", "DIBS_FOLDER_ACCESS_TEST_CHILD="+mode, "DIBS_FOLDER_ACCESS_TEST_ARGS="+strings.Join(args, "\n"))
 	pipe, err := cmd.StdoutPipe()

@@ -24,4 +24,6 @@ type QueueObservation struct {
 type queueProbe struct {
 	pending, known bool
 	issuedAt       time.Time
+	itemID         string
+	receipt        string // exact observation result, never a delivery inference
 }

@@ -41,6 +41,8 @@ import (
 	"runtime"
 	"sync"
 	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // Verdict is what a presence check concluded.
@@ -146,7 +148,7 @@ func Check(ctx context.Context, reason string) (Verdict, error) {
 	// filename beside this executable and refuses anything else, which is the
 	// point (see findHelper). `reason` is an argument, never a shell string,
 	// there is no shell here.
-	cmd := exec.CommandContext(ctx, helper, reason)
+	cmd := procexec.Command(ctx, helper, reason)
 	err = cmd.Run()
 	return verdictFor(err, parent.Err(), ctx.Err())
 }

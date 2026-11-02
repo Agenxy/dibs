@@ -50,6 +50,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // Session is one harness session this machine can deliver to.
@@ -309,7 +311,11 @@ func writeLine(w net.Conn, v map[string]any) error {
 // psLstart runs `ps` for a process's start time; a variable so a test can
 // stand in for a slow or failing probe.
 var psLstart = func(ctx context.Context, pid int) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "ps", "-o", "lstart=", "-p", strconv.Itoa(pid)) // #nosec G204 -- pid is an int
+	cmd := procexec.Command(ctx, "ps", "-o", "lstart=", "-p", strconv.Itoa(pid)) // #nosec G204 -- pid is an int
 	cmd.Env = append(os.Environ(), "LC_ALL=C", "TZ=UTC")
-	return cmd.Output()
+	out, err := cmd.Output()
+	if errors.Is(err, exec.ErrWaitDelay) {
+		return nil, fmt.Errorf("incomplete output from ps; process start identity is unknown: %w", err)
+	}
+	return out, err
 }

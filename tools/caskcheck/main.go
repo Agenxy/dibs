@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -18,6 +19,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 const inspectCask = `
@@ -97,7 +100,7 @@ func run(path string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	// #nosec G204 -- fixed Homebrew interpreter and Ruby program; the argument is the generated local cask path
-	cmd := exec.CommandContext(ctx, "brew", "ruby", "-e", inspectCask, "--", abs)
+	cmd := procexec.Command(ctx, "brew", "ruby", "-e", inspectCask, "--", abs)
 	// Per-command developer mode avoids `brew ruby` enabling it persistently.
 	// The loader and recorded commands need neither network nor credentials.
 	cmd.Env = append(os.Environ(), "HOMEBREW_NO_AUTO_UPDATE=1", "HOMEBREW_DEVELOPER=1",
@@ -105,6 +108,9 @@ func run(path string) error {
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	data, err := cmd.Output()
+	if errors.Is(err, exec.ErrWaitDelay) {
+		return fmt.Errorf("incomplete output from brew; cask inspection is unknown: %w", err)
+	}
 	if err != nil {
 		return fmt.Errorf("homebrew loader/step inspection failed: %w: %s; use Homebrew 7 after `brew update`",
 			err, stderr.String())

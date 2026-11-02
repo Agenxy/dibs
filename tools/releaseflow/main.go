@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/release"
 )
 
@@ -70,7 +71,7 @@ type runner func(context.Context, []string, string, ...string) ([]byte, error)
 
 func command(ctx context.Context, env []string, name string, args ...string) ([]byte, error) {
 	// #nosec G204,G702 -- call sites use fixed executables, typed argv and validated version/SHA.
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd := procexec.Command(ctx, name, args...)
 	cmd.Env = append(os.Environ(), env...)
 	verify := name == "cosign" && len(args) > 0 && args[0] == "verify-blob"
 	keyCheck := name == "ssh-keygen" && len(args) > 0 && args[0] == "-y"
@@ -82,6 +83,9 @@ func command(ctx context.Context, env []string, name string, args ...string) ([]
 		return nil, nil
 	}
 	out, err := cmd.CombinedOutput()
+	if errors.Is(err, exec.ErrWaitDelay) {
+		return nil, fmt.Errorf("incomplete output from %s; release command result is unknown: %w", name, err)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, out)
 	}

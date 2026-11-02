@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/paths"
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // This private executable records ServiceManagement messages. It NEVER calls
@@ -196,7 +197,7 @@ func appServiceRegistryFixture() int {
 func (f *appServiceTestFixture) liveManual(t *testing.T) <-chan struct{} {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
-	cmd := exec.CommandContext(ctx, f.root, "--app-service-registry")
+	cmd := procexec.Command(ctx, f.root, "--app-service-registry")
 	input, err := cmd.StdinPipe()
 	if err != nil {
 		cancel()
@@ -468,7 +469,7 @@ func TestConfigureCurrentAppServiceIsANoOp(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, probe, "-test.run=^TestCurrentAppServiceConfigureDriver$")
+	cmd := procexec.Command(ctx, probe, "-test.run=^TestCurrentAppServiceConfigureDriver$")
 	cmd.Env = append(os.Environ(), "DIBS_TEST_APP_SERVICE_CONFIGURE_DRIVER=1")
 	output, err := cmd.CombinedOutput()
 	out := string(output)

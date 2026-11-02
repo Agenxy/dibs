@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/build"
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testexec"
 )
 
@@ -49,7 +50,7 @@ func TestReconnectReceiptSurvivesOneInventoryTimeout(t *testing.T) {
 	binary := filepath.Join(dir, "observed-reconnect.test")
 	buildCtx, stopBuild := context.WithTimeout(t.Context(), 90*time.Second)
 	defer stopBuild()
-	compile := exec.CommandContext(buildCtx, "go", "test", "-c", "-race", "-overlay="+overlay,
+	compile := procexec.Command(buildCtx, "go", "test", "-c", "-race", "-overlay="+overlay,
 		"-ldflags=-X github.com/agenxy/dibs/internal/build.Version="+build.Version, "-o", binary, "./cmd/dibs")
 	compile.Dir = root
 	if out, err := compile.CombinedOutput(); err != nil {
@@ -59,7 +60,7 @@ func TestReconnectReceiptSurvivesOneInventoryTimeout(t *testing.T) {
 	receipt := filepath.Join(dir, "inventory-timeout-receipt")
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, binary, "-test.run=^TestAppReconnectRecoversMailBeforeAModelCall/lost-queue-unavailable-observer$", "-test.v")
+	cmd := procexec.Command(ctx, binary, "-test.run=^TestAppReconnectRecoversMailBeforeAModelCall/lost-queue-unavailable-observer$", "-test.v")
 	cmd.Env = append(os.Environ(), "DIBS_TEST_RECONNECT_INVENTORY_RECEIPT="+receipt)
 	out, runErr := cmd.CombinedOutput()
 	proof, err := os.ReadFile(receipt)

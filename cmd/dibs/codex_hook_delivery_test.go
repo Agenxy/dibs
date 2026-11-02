@@ -19,6 +19,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testexec"
 )
 
@@ -72,7 +73,7 @@ func TestDoctorInstalledCodexHookTrustIsAProblemThroughCommand(t *testing.T) {
 				t.Fatal(err)
 			}
 			startFixtureIPC(t, dir, board.Config.Handler)
-			cmd := exec.CommandContext(t.Context(), exe, "-test.run=^TestDoctorCodexTrustCommandProcess$")
+			cmd := procexec.Command(t.Context(), exe, "-test.run=^TestDoctorCodexTrustCommandProcess$")
 			cmd.Env = append(os.Environ(), "DIBS_TEST_HOOK_DOCTOR=1", "DIBS_TEST_PLUGIN_EXECUTABLE="+codex,
 				"DIBS_TEST_PLUGIN_HOME="+ch,
 				"DIBS_HOOK_FIXTURE_STATUS="+mode, "DIBS_ADDR="+strings.TrimPrefix(board.URL, "http://"),

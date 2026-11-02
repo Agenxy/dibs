@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -17,6 +16,7 @@ import (
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/ledger"
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // A real encrypted, uncompacted ledger is first readable by an independently
@@ -135,7 +135,7 @@ func assertOldFeatureReader(t *testing.T, old, dir, path string, refuse bool) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, old, "-dir", dir, "-check", "-addr", "127.0.0.1:4777")
+	cmd := procexec.Command(ctx, old, "-dir", dir, "-check", "-addr", "127.0.0.1:4777")
 	cmd.Env = append(os.Environ(), "DIBS_DIR="+dir, "DIBS_NOTIFY=off")
 	out, runErr := cmd.CombinedOutput()
 	t.Logf("old reader fenced=%v exit-error=%v output=%s", refuse, runErr, out)

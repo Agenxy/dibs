@@ -29,6 +29,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/sibling"
 )
 
@@ -202,12 +203,15 @@ func call(ctx context.Context, kind string, into any, args ...string) error {
 	// #nosec G204 -- argv, no shell: a fixed executable, Remap's own
 	// subcommands, and a name and target refused above when they could
 	// read as flags.
-	cmd := exec.CommandContext(ctx, exe, append([]string{"--json"}, args...)...)
+	cmd := procexec.Command(ctx, exe, append([]string{"--json"}, args...)...)
 	out, errOut := &limitedWriter{left: maxOutput}, &limitedWriter{left: 4096}
 	cmd.Stdout, cmd.Stderr = out, errOut
 	cmd.WaitDelay = 2 * time.Second
 	err := cmd.Run()
-	if ctx.Err() != nil || errors.Is(err, exec.ErrWaitDelay) {
+	if errors.Is(err, exec.ErrWaitDelay) {
+		return fmt.Errorf("incomplete output from remap; %s result is unknown: %w", args[0], err)
+	}
+	if ctx.Err() != nil {
 		return fmt.Errorf("remap %s did not finish within %s: %w", args[0], callTimeout, err)
 	}
 	if out.truncated {

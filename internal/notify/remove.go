@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // CleanupBatch caps native helper work on startup and relay reconnect.
@@ -70,7 +72,19 @@ func RemoveMessages(node string, serials []uint64) Cleanup {
 	// ONE argument is refused by old helpers before their three-argument
 	// posting path, even for a batch. ONE process handles the whole batch.
 	arg := "--remove-messages=" + strings.Join(ids, ",")
-	out, err := exec.CommandContext(ctx, h, arg).Output() // #nosec G204 -- bundled helper; validated IDs
+	out, err := procexec.Command(ctx, h, arg).Output() // #nosec G204 -- bundled helper; validated IDs
+	if errors.Is(err, exec.ErrWaitDelay) {
+		err = fmt.Errorf("incomplete output from dibs-notify; cleanup result is unknown: %w", err)
+	}
+	return cleanupCommandReply(out, err)
+}
+
+// A complete reply is the evidence that cleanup was requested, not the child's
+// exit status. Keep transport failures separate from an old helper's refusal.
+func cleanupCommandReply(out []byte, err error) Cleanup {
+	fail := func(state string, err error) Cleanup {
+		return Cleanup{State: state, BestEffort: true, Error: err.Error()}
+	}
 	if err != nil {
 		var exit *exec.ExitError
 		if errors.As(err, &exit) && exit.ExitCode() == 2 {

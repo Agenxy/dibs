@@ -8,13 +8,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/harnessenv"
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // A local receiving incarnation can remain attached to an identity after its
@@ -74,7 +74,7 @@ func TestRemoteCommandDeduplicatesAfterObservedLocalAppIncarnation(t *testing.T)
 				if !open {
 					return
 				}
-				cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestCommandItemReceiptHelper$", "--", out, release)
+				cmd := procexec.Command(ctx, os.Args[0], "-test.run=^TestCommandItemReceiptHelper$", "--", out, release)
 				runErr := cmd.Run()
 				e.ReportWakeResult(WakeResult{ID: request.ID, Host: "remote-host", OK: runErr == nil})
 			}

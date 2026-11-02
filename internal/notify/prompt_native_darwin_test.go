@@ -11,12 +11,13 @@ import (
 	"fmt"
 	"image/png"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // Real shipped Swift broker + real AppKit controls. Compile-time fixtures
@@ -50,17 +51,17 @@ func TestNativePromptFullTextChoicesTypingAndNoImplicitApproval(t *testing.T) {
 		t.Fatal(err)
 	}
 	binary := filepath.Join(macos, "dibs-notify")
-	if out, err := exec.CommandContext(ctx, "swiftc", "-D", "DIBS_BROKER_FIXTURE", "-D", "DIBS_READING_FIXTURE", "-o", binary, nativePromptSource(t)).CombinedOutput(); err != nil {
+	if out, err := procexec.Command(ctx, "swiftc", "-D", "DIBS_BROKER_FIXTURE", "-D", "DIBS_READING_FIXTURE", "-o", binary, nativePromptSource(t)).CombinedOutput(); err != nil {
 		t.Fatalf("native build: %v\n%s", err, out)
 	}
 	icon := filepath.Join(t.TempDir(), "icon")
-	if out, err := exec.CommandContext(ctx, "swiftc", "-o", icon, "app/icon_darwin.swift").CombinedOutput(); err != nil {
+	if out, err := procexec.Command(ctx, "swiftc", "-o", icon, "app/icon_darwin.swift").CombinedOutput(); err != nil {
 		t.Fatalf("icon build: %v %s", err, out)
 	}
-	if out, err := exec.CommandContext(ctx, icon, filepath.Join(res, "Dibs.png"), "84").CombinedOutput(); err != nil {
+	if out, err := procexec.Command(ctx, icon, filepath.Join(res, "Dibs.png"), "84").CombinedOutput(); err != nil {
 		t.Fatalf("canonical icon: %v %s", err, out)
 	}
-	cmd := exec.CommandContext(ctx, binary, "--broker")
+	cmd := procexec.Command(ctx, binary, "--broker")
 	postedDir := t.TempDir()
 	cmd.Env = append(os.Environ(), "DIBS_BROKER_FIXTURE_DIR="+t.TempDir(), "DIBS_BROKER_POSTED_DIR="+postedDir)
 	input, err := cmd.StdinPipe()
@@ -135,7 +136,7 @@ func TestNativePromptFullTextChoicesTypingAndNoImplicitApproval(t *testing.T) {
 		t.Fatalf("bundled font not used by actual window: %v", view["fontFamily"])
 	}
 	coldPath := filepath.Join(t.TempDir(), "cold.json")
-	cold := exec.CommandContext(ctx, binary)
+	cold := procexec.Command(ctx, binary)
 	cold.Env = append(os.Environ(), "DIBS_READING_FIXTURE=1", "DIBS_READING_POSTED="+filepath.Join(postedDir, "dibs.msg.prompt.7.plist"), "DIBS_READING_WINDOW="+coldPath)
 	if out, err := cold.Output(); err != nil || len(out) != 0 {
 		t.Fatalf("safe cold reading: %v %q", err, out)

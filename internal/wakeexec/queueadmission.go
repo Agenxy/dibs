@@ -8,6 +8,7 @@ import (
 	"errors"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -19,6 +20,7 @@ type queueCommandOutcome struct {
 	ok          bool
 	out         []byte
 	contended   bool
+	unconfirmed bool
 	observation QueueObservation
 }
 
@@ -110,7 +112,11 @@ func runQueuedCommand(argv []string, thread, agent, dir string, timeout, grace t
 	slog.Debug("admitting a wake to the app queue", "agent", agent,
 		"observation_known", known)
 	queuedAt := time.Now().UTC()
-	ok, out := runForOut(queueNoticeAt(argv, queuedAt), agent, dir, timeout, grace)
+	sent := queueNoticeAt(argv, queuedAt)
+	ok, out, needsReceipt := runForOutResult(sent, agent, dir, timeout, grace)
+	if needsReceipt {
+		return observeRetainedQueueCommand(sent, thread, agent, out, observation)
+	}
 	if ok {
 		retainQueueReceipt(thread, queueReceipt{QueuedAt: queuedAt, Generation: generation}, agent)
 		observation.Admission = "accepted"
@@ -127,6 +133,37 @@ func runQueuedCommand(argv []string, thread, agent, dir string, timeout, grace t
 	// pending=true from exit zero, even when the pre-admission list was empty.
 	observation.At = time.Now().UTC()
 	return queueCommandOutcome{ok: ok, out: out, observation: observation}
+}
+
+func observeRetainedQueueCommand(
+	argv []string, thread, agent string, out []byte, observation QueueObservation,
+) queueCommandOutcome {
+	probe := queueProbe{receipt: "notice_has_no_timestamp"}
+	if nativeQueueRoute(argv) {
+		if sentAt, known := noticeIssuedAt(argv[5]); known {
+			// Exactly one read-only observation, and only after successful exit
+			// with uncancelled context and ErrWaitDelay. Normal admission is unchanged.
+			probe = observeQueueDetail(argv[0], thread, sentAt)
+		}
+	}
+	observation.At = time.Now().UTC()
+	if probe.known && probe.pending && probe.receipt == "matched" {
+		observation.Admission, observation.Pending, observation.AgeSource = "accepted", "pending", "notice"
+		observation.IssuedAt = probe.issuedAt
+		// Keep the observed item in the delivery observation, not in the local
+		// inference receipt file. Neither says that a turn started or mail was read.
+		slog.Info("wake accepted by observed app queue item after incomplete output",
+			"agent", agent, "item", probe.itemID, "issued_at", probe.issuedAt)
+		return queueCommandOutcome{ok: true, out: out, observation: observation}
+	}
+	if probe.receipt == "" {
+		probe.receipt = "observation_error"
+	}
+	observation.Admission = "unknown"
+	slog.Warn("wake acceptance unknown after incomplete output", "agent", agent,
+		"err", exec.ErrWaitDelay, "observation", probe.receipt,
+		"hint", "ErrWaitDelay: inspect the app queue; observation="+probe.receipt+"; no retry or open fallback was attempted")
+	return queueCommandOutcome{out: out, unconfirmed: true, observation: observation}
 }
 
 func missingQueueThread(argv []string, out []byte) bool {

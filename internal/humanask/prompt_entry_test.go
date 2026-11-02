@@ -18,6 +18,7 @@ import (
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/notify"
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testexec"
 )
 
@@ -236,7 +237,7 @@ func TestNativePromptFailureAndSilenceNeverProduceVerdicts(t *testing.T) {
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
-			cmd := exec.CommandContext(ctx, driver, "-test.run=^TestNativePromptFailureAndSilenceNeverProduceVerdicts$")
+			cmd := procexec.Command(ctx, driver, "-test.run=^TestNativePromptFailureAndSilenceNeverProduceVerdicts$")
 			silence := ""
 			if phase == "silenced" {
 				silence = "off"
@@ -313,7 +314,7 @@ func TestPromptEntryPreservesWholeMessageChoicesAndTypedReply(t *testing.T) {
 	dir, driver, _ := newHumanaskFixture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, driver, "-test.run=^TestPromptEntryPreservesWholeMessageChoicesAndTypedReply$")
+	cmd := procexec.Command(ctx, driver, "-test.run=^TestPromptEntryPreservesWholeMessageChoicesAndTypedReply$")
 	cmd.Env = append(os.Environ(), "DIBS_NOTIFY=", "DIBS_PROMPT_ENTRY_DRIVER=1", "DIBS_PROMPT_ENTRY_CAPTURE="+filepath.Join(dir, "capture.json"), "DIBS_DIR="+dir)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("real prompt entry: %v\n%s", err, out)
@@ -375,7 +376,7 @@ func TestOldNativeHelperStillPostsWithoutClaimingTypedReply(t *testing.T) {
 	dir, driver, _ := newHumanaskFixture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, driver, "-test.run=^TestOldNativeHelperStillPostsWithoutClaimingTypedReply$")
+	cmd := procexec.Command(ctx, driver, "-test.run=^TestOldNativeHelperStillPostsWithoutClaimingTypedReply$")
 	cmd.Env = append(os.Environ(), "DIBS_NOTIFY=", "DIBS_PROMPT_ENTRY_DRIVER=1", "DIBS_PROMPT_OLD_HELPER=1", "DIBS_PROMPT_ENTRY_CAPTURE="+filepath.Join(dir, "capture.json"), "DIBS_DIR="+dir)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("real old-helper entry: %v\n%s", err, out)

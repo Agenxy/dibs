@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // The Linux notifier: notify-send from libnotify, with actions (issue #63).
@@ -123,7 +125,11 @@ func daemonHasActions() (ok bool, why string) {
 		}
 	}
 	// #nosec G204 -- argv, no shell; bin is what PATH resolved.
-	out, err := exec.CommandContext(ctx, bin, args...).Output()
+	out, err := procexec.Command(ctx, bin, args...).Output()
+	if errors.Is(err, exec.ErrWaitDelay) {
+		return false, "incomplete output from " + filepath.Base(bin) +
+			"; notification capabilities are unknown; approvals remain on the board (`dibs web`)"
+	}
 	if err != nil {
 		return false, "no notification daemon answered on the session bus (" + err.Error() + "): " +
 			"nothing here can show a notification, and approvals wait on the board (`dibs web`)"
@@ -156,7 +162,10 @@ func notifySendVersion(bin string) ([3]int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	// #nosec G204 -- argv, no shell; bin is what PATH resolved.
-	out, err := exec.CommandContext(ctx, bin, "--version").Output()
+	out, err := procexec.Command(ctx, bin, "--version").Output()
+	if errors.Is(err, exec.ErrWaitDelay) {
+		return [3]int{}, fmt.Errorf("incomplete output from %s; version is unknown: %w", filepath.Base(bin), err)
+	}
 	if err != nil {
 		return [3]int{}, err
 	}
@@ -219,7 +228,10 @@ func linuxAsk(title, body string, buttons []string) (string, error) {
 	args = append(args, "--", title, body)
 	// #nosec G204 -- argv only, no shell: title and body are arguments after
 	// `--`, exactly as the macOS helper takes them.
-	out, err := exec.CommandContext(ctx, bin, args...).Output()
+	out, err := procexec.Command(ctx, bin, args...).Output()
+	if errors.Is(err, exec.ErrWaitDelay) {
+		return "", fmt.Errorf("incomplete output from %s; notification answer is unknown: %w", filepath.Base(bin), err)
+	}
 	if err != nil {
 		var ee *exec.ExitError
 		if errors.As(err, &ee) {
@@ -265,5 +277,6 @@ func linuxBannerWithUrgency(title, subtitle, body string, critical bool) error {
 	}
 	args = append(args, "--", title, text)
 	// #nosec G204 -- notify-send is a discovered executable; argv carries data, never a shell.
-	return exec.CommandContext(ctx, bin, args...).Run()
+	// Run uses null stdio, so a notification descendant inherits no copied pipe.
+	return procexec.Command(ctx, bin, args...).Run()
 }

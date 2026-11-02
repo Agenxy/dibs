@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 const backgroundSettings = "System Settings → General → Login Items & Extensions → Allow in the Background → Dibs"
@@ -40,9 +42,12 @@ func readLoadedAppService() ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	// #nosec G204 -- fixed print command and target derived only from this process's UID and canonical label.
-	cmd := exec.CommandContext(ctx, "/bin/launchctl", "print", target)
+	cmd := procexec.Command(ctx, "/bin/launchctl", "print", target)
 	cmd.WaitDelay = time.Second
 	body, err := appServiceDiagnostic(cmd)
+	if errors.Is(err, exec.ErrWaitDelay) {
+		return nil, fmt.Errorf("incomplete output from launchctl; loaded app service is unknown: %w", err)
+	}
 	if err != nil && (strings.Contains(string(body), "Could not find service") ||
 		strings.Contains(string(body), "Could not find specified service")) {
 		return nil, errAppServiceNotLoaded

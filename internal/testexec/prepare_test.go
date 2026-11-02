@@ -14,6 +14,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 func TestPrepareExecutableFixture(t *testing.T) {
@@ -69,7 +71,7 @@ func TestPrepareExecutableRefusesFailedOrStuckSetup(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
-			command := exec.CommandContext(ctx, self, "-test.run=^TestPrepareExecutableRefusesFailedOrStuckSetup$")
+			command := procexec.Command(ctx, self, "-test.run=^TestPrepareExecutableRefusesFailedOrStuckSetup$")
 			command.Env = append(os.Environ(), "DIBS_TEST_PREPARE_DRIVER="+mode, "GORACE=atexit_sleep_ms=0")
 			out, err := command.CombinedOutput()
 			if err == nil || ctx.Err() != nil || !strings.Contains(string(out), "executable fixture setup:") || !strings.Contains(string(out), "bound 10s") {

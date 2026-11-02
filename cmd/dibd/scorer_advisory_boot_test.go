@@ -28,6 +28,7 @@ import (
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/ledger"
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testport"
 )
 
@@ -279,7 +280,7 @@ func advisoryDaemonBoot(t *testing.T, dir string, repos []string, notify, join, 
 	port := testport.Reserve(t, "tcp", "127.0.0.1:0")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestScorerAdvisoryThroughDaemonBoot$")
+	cmd := procexec.Command(ctx, os.Args[0], "-test.run=^TestScorerAdvisoryThroughDaemonBoot$")
 	args := []string{
 		"dibd", "--dir", dir, "--addr", port.Addr, "--allow-parallel",
 		"--match-repo", repos[2], "--match-join", join, "--match-history", history,

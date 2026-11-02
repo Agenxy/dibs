@@ -7,13 +7,13 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/agenxy/dibs/internal/build"
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/selfupdate"
 )
 
@@ -83,7 +83,7 @@ func TestGuestReleaseCLIRealSignedFixture(t *testing.T) {
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
-			cmd := exec.CommandContext(ctx, exe, "-test.run=^TestCLIReleaseEvidenceProcess$", "--", "invite", "--verify-release", tc.tag)
+			cmd := procexec.Command(ctx, exe, "-test.run=^TestCLIReleaseEvidenceProcess$", "--", "invite", "--verify-release", tc.tag)
 			cmd.Env = []string{"DIBS_TEST_RELEASE_EVIDENCE=1", "DIBS_DIR=" + dir}
 			for _, key := range []string{"PATH", "TMPDIR", "TEMP", "SystemRoot", "SYSTEMROOT"} {
 				if val, ok := os.LookupEnv(key); ok {
@@ -145,7 +145,7 @@ func TestInviteReleaseCannotBeMixedWithMintOrUnsigned(t *testing.T) {
 		{"--verify-release", "v0.0.9", "--allow-unsigned"},
 	} {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		cmd := exec.CommandContext(ctx, exe, append([]string{"-test.run=^TestCLIHelpProcess$", "--", "invite"}, args...)...)
+		cmd := procexec.Command(ctx, exe, append([]string{"-test.run=^TestCLIHelpProcess$", "--", "invite"}, args...)...)
 		cmd.Env = []string{"DIBS_TEST_CLI_HELP=1", "DIBS_DIR=" + t.TempDir()}
 		out, err := cmd.CombinedOutput()
 		cancel()

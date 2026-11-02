@@ -9,10 +9,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // Build through the actual app-bundle entry and execute only its existing
@@ -27,7 +28,7 @@ func TestBuiltNotifierLoadsItsPinnedBundledFontsWithoutPosting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	build := exec.CommandContext(ctx, "go", "run", ".", "-o", bundle, "-src", src)
+	build := procexec.Command(ctx, "go", "run", ".", "-o", bundle, "-src", src)
 	build.Env = append(os.Environ(), "DIBS_CODESIGN_IDENTITY=-")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("real appbundle: %v\n%s", err, out)
@@ -47,7 +48,7 @@ func TestBuiltNotifierLoadsItsPinnedBundledFontsWithoutPosting(t *testing.T) {
 			t.Fatalf("bundled %s is not the pinned unmodified upstream file", name)
 		}
 	}
-	probe := exec.CommandContext(ctx, filepath.Join(bundle, "Contents", "MacOS", "dibs-notify"), "--status")
+	probe := procexec.Command(ctx, filepath.Join(bundle, "Contents", "MacOS", "dibs-notify"), "--status")
 	probe.Env = append(os.Environ(), "DIBS_NOTIFY_PROMPT_V1=1")
 	out, err := probe.Output()
 	if err != nil {

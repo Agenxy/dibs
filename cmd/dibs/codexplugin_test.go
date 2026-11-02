@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testexec"
 )
 
@@ -52,7 +53,7 @@ func TestCodexPluginCommand(t *testing.T) {
 			if mode == "dry" {
 				args = append(args, "--dry-run")
 			}
-			cmd := exec.CommandContext(t.Context(), dibs, args...)
+			cmd := procexec.Command(t.Context(), dibs, args...)
 			cmd.Env = append(os.Environ(), "CODEX_HOME="+home, "DIBS_ADMIN=1", "DIBS_PLUGIN_FIXTURE="+mode)
 			out, err := cmd.CombinedOutput()
 			if mode == "ok" || mode == "dry" {
@@ -102,7 +103,7 @@ func TestCodexPluginCommand(t *testing.T) {
 				}
 				// Enter doctor's shipped command too. It must identify the stale
 				// plugin even when an unrelated missing daemon secret exits early.
-				doctor := exec.CommandContext(t.Context(), dibs, "doctor", "--json")
+				doctor := procexec.Command(t.Context(), dibs, "doctor", "--json")
 				doctor.Env = append(append([]string{}, cmd.Env...), "DIBS_DIR="+filepath.Join(home, "absent-board"))
 				out, _ := doctor.CombinedOutput()
 				var report struct {
@@ -160,7 +161,7 @@ func TestCodexPluginCommand(t *testing.T) {
 			if err := os.WriteFile(marker, []byte("old failure"), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			repeat := exec.CommandContext(t.Context(), dibs, args...)
+			repeat := procexec.Command(t.Context(), dibs, args...)
 			repeat.Env = cmd.Env
 			if out, err := repeat.CombinedOutput(); err != nil {
 				t.Fatalf("repeat install: %v %s", err, out)

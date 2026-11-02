@@ -12,11 +12,12 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 const cliDebugMarker = "dibs CLI debug fixture"
@@ -61,7 +62,7 @@ func TestCLIDebugUsesStderrAndKeepsStdioAsJSONRPC(t *testing.T) {
 			defer srv.Close()
 			ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 			defer cancel()
-			cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestCLIDebugMainHelper$")
+			cmd := procexec.Command(ctx, os.Args[0], "-test.run=^TestCLIDebugMainHelper$")
 			cmd.Dir = dir
 			cmd.Env = []string{
 				"PATH=" + os.Getenv("PATH"), "HOME=" + dir, "USERPROFILE=" + dir,

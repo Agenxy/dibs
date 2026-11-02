@@ -6,8 +6,12 @@ package notify
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os/exec"
 	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // BrokerStatus is a read-only observation of the per-user notifier lock. It
@@ -30,7 +34,10 @@ func NotificationBrokerStatus() (BrokerStatus, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	// #nosec G204 -- bundled executable and fixed read-only diagnostic argument.
-	out, err := exec.CommandContext(ctx, h, "--broker-status").Output()
+	out, err := procexec.Command(ctx, h, "--broker-status").Output()
+	if errors.Is(err, exec.ErrWaitDelay) {
+		return BrokerStatus{}, fmt.Errorf("incomplete output from dibs-notify; broker status is unknown: %w", err)
+	}
 	if err != nil {
 		return BrokerStatus{}, err
 	}

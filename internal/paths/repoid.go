@@ -5,6 +5,8 @@ package paths
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/url"
 	"os"
 	"os/exec"
@@ -14,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 const (
@@ -172,9 +176,12 @@ func rootCommits(ctx context.Context, git, worktree string) string {
 
 func gitOutput(ctx context.Context, git, dir string, args ...string) (string, error) {
 	argv := append([]string{"-C", dir}, args...)
-	cmd := exec.CommandContext(ctx, git, argv...) // #nosec G204 -- LookPath resolved Git; exec never invokes a shell
+	cmd := procexec.Command(ctx, git, argv...) // #nosec G204 -- LookPath resolved Git; exec never invokes a shell
 	cmd.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0", "GIT_TERMINAL_PROMPT=0")
 	output, err := cmd.Output()
+	if errors.Is(err, exec.ErrWaitDelay) {
+		return "", fmt.Errorf("incomplete output from git; repository identity is unknown: %w", err)
+	}
 	return string(output), err
 }
 

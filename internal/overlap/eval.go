@@ -6,10 +6,14 @@ package overlap
 import (
 	"bufio"
 	"context"
+	"errors"
+	"fmt"
 	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // Evaluation: measuring a scorer on the repository it will actually run on.
@@ -72,9 +76,12 @@ func SampleCommits(ctx context.Context, repo string, n, maxFiles, skip int) ([]E
 	// #nosec G204 -- no shell is involved: exec.Command passes argv directly,
 	// so a path cannot inject arguments. The repository path comes from an
 	// operator flag or config, never from an agent.
-	cmd := exec.CommandContext(ctx, "git", "-C", repo, "log", "--no-merges",
+	cmd := procexec.Command(ctx, "git", "-C", repo, "log", "--no-merges",
 		"--name-only", "--pretty=format:"+recSep+"%H"+fldSep+"%s", "-n", strconv.Itoa(n+skip))
 	out, err := cmd.Output()
+	if errors.Is(err, exec.ErrWaitDelay) {
+		return nil, fmt.Errorf("incomplete output from git; calibration history is unknown: %w", err)
+	}
 	if err != nil {
 		return nil, err
 	}

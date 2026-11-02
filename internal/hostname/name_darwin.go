@@ -8,6 +8,8 @@ import (
 	"errors"
 	"os/exec"
 	"strings"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 var errUnset = errors.New("name is not set")
@@ -35,11 +37,11 @@ func scutilName(ctx context.Context, key string) (string, error) {
 	var cmd *exec.Cmd
 	switch key {
 	case "HostName":
-		cmd = exec.CommandContext(ctx, "/usr/sbin/scutil", "--get", "HostName")
+		cmd = procexec.Command(ctx, "/usr/sbin/scutil", "--get", "HostName")
 	case "LocalHostName":
-		cmd = exec.CommandContext(ctx, "/usr/sbin/scutil", "--get", "LocalHostName")
+		cmd = procexec.Command(ctx, "/usr/sbin/scutil", "--get", "LocalHostName")
 	case "ComputerName":
-		cmd = exec.CommandContext(ctx, "/usr/sbin/scutil", "--get", "ComputerName")
+		cmd = procexec.Command(ctx, "/usr/sbin/scutil", "--get", "ComputerName")
 	default:
 		return "", errors.New("unsupported computer name key")
 	}

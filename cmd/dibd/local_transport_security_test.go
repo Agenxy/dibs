@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testexec"
 	"github.com/agenxy/dibs/internal/testport"
 )
@@ -60,7 +61,7 @@ func qClientEnv(t *testing.T, bin, dir, addr, stdin string, extra []string, args
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd := procexec.Command(ctx, bin, args...)
 	cmd.Env = append(nativeProbeEnv(t.TempDir(), "", ""), "DIBS_DIR="+dir, "DIBS_ADDR="+addr, "DIBS_TRANSPORT=local")
 	cmd.Env = append(cmd.Env, extra...)
 	cmd.Stdin = strings.NewReader(stdin)
@@ -120,7 +121,7 @@ func TestLocalIPCProfilesRetainMCPFilesAndConnectedClientEvidence(t *testing.T) 
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	bridge := exec.CommandContext(ctx, bin, "mcp-stdio")
+	bridge := procexec.Command(ctx, bin, "mcp-stdio")
 	bridge.Env = append(nativeProbeEnv(t.TempDir(), "", ""), "DIBS_DIR="+dir, "DIBS_ADDR="+addr, "DIBS_TRANSPORT=local")
 	in, err := bridge.StdinPipe()
 	if err != nil {

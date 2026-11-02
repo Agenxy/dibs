@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/localtransport"
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testport"
 )
 
@@ -146,7 +147,7 @@ func TestLocalIPCKernelRejectsOtherUID(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, image, "-test.run=^TestQOtherUIDListener$")
+	cmd := procexec.Command(ctx, image, "-test.run=^TestQOtherUIDListener$")
 	cmd.Env = []string{"DIBS_Q_FOREIGN_CHILD=1", "DIBS_Q_SOCKET_DIR=" + dir}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: uid, Gid: gid, Groups: []uint32{gid}}}
 	in, err := cmd.StdinPipe()
@@ -235,7 +236,7 @@ func qACLWriteAsOtherUser(t *testing.T, uid, gid uint32, image, dir string, allo
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, image, "-test.run=^TestQOtherUIDACLWrite$")
+	cmd := procexec.Command(ctx, image, "-test.run=^TestQOtherUIDACLWrite$")
 	cmd.Env = []string{
 		"DIBS_Q_ACL_CHILD=1", "DIBS_Q_ACL_DIR=" + dir,
 		"DIBS_Q_ACL_ALLOW=" + strconv.FormatBool(allow),
@@ -277,7 +278,7 @@ func qCheckForeignDirectoryStartup(t *testing.T, uid, gid uint32, bin string) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestQDaemonChild$")
+	cmd := procexec.Command(ctx, os.Args[0], "-test.run=^TestQDaemonChild$")
 	port := testport.Reserve(t, "tcp", "127.0.0.1:0")
 	cmd.Env = append(nativeProbeEnv(t.TempDir(), "", ""),
 		"DIBS_Q_DAEMON_CHILD=1", "DIBS_DIR="+dir, "DIBS_ADDR="+port.Addr)
@@ -287,7 +288,7 @@ func qCheckForeignDirectoryStartup(t *testing.T, uid, gid uint32, bin string) {
 		!strings.Contains(string(out), dir) {
 		t.Fatalf("foreign-owned startup lost its literal ownership repair: %v %s", err, out)
 	}
-	client := exec.CommandContext(ctx, bin, "board", "--json")
+	client := procexec.Command(ctx, bin, "board", "--json")
 	client.Env = append(nativeProbeEnv(t.TempDir(), "", ""),
 		"DIBS_DIR="+dir, "DIBS_ADDR="+port.Addr, "DIBS_TRANSPORT=local")
 	// CLI errors are stderr, including with --json. The normal qClient helper

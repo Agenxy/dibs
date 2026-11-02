@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/paths"
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 func TestConfigureRefusedServiceOutlivesCLIAndMigratesBack(t *testing.T) {
@@ -54,7 +55,7 @@ func TestConfigureRefusedServiceOutlivesCLIAndMigratesBack(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
-	driver := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestConfigureRefusedServiceHandbackDriver$")
+	driver := procexec.Command(ctx, os.Args[0], "-test.run=^TestConfigureRefusedServiceHandbackDriver$")
 	driver.Env = append(os.Environ(), "DIBS_TEST_APP_SERVICE_HANDBACK_DRIVER=1")
 	// Only this private process group is signalled. A detached recovery daemon
 	// must not inherit the terminal group the configure command leaves behind.

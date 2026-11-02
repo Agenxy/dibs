@@ -7,10 +7,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // NativeReplySupport measures the installed image without posting or requesting
@@ -24,9 +27,12 @@ func NativeReplySupport() (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	// #nosec G204 -- installed helper, fixed existing non-posting status verb.
-	cmd := exec.CommandContext(ctx, h, "--status")
+	cmd := procexec.Command(ctx, h, "--status")
 	cmd.Env = append(os.Environ(), "DIBS_NOTIFY_PROMPT_V1=1")
 	out, err := cmd.Output()
+	if errors.Is(err, exec.ErrWaitDelay) {
+		return false, fmt.Errorf("incomplete output from dibs-notify; native reply capability is unknown: %w", err)
+	}
 	var value struct {
 		Reply   *int `json:"reply"`
 		Version int  `json:"version"`

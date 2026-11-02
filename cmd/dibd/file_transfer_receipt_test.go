@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // Observe the constructor-owned ciphertext temp, not a flag set by the test.
@@ -65,7 +67,7 @@ const (
 func TestPublicTransferSetupFailureClosesRawConnection(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	child := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestPublicTransferResumesAfterBrokenConnection$", "-test.timeout=30s")
+	child := procexec.Command(ctx, os.Args[0], "-test.run=^TestPublicTransferResumesAfterBrokenConnection$", "-test.timeout=30s")
 	child.Env = append(os.Environ(), uploadSetupFailureEnv+"=1")
 	out, err := child.CombinedOutput()
 	var exit *exec.ExitError

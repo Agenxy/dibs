@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testexec"
 )
 
@@ -116,7 +117,7 @@ func TestGuestBridgeRealCommand(t *testing.T) {
 				}
 				ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 				defer cancel()
-				cmd := exec.CommandContext(ctx, bin, "mcp-stdio", "--guest", file)
+				cmd := procexec.Command(ctx, bin, "mcp-stdio", "--guest", file)
 				cmd.Dir = t.TempDir()
 				// Poison local board state: guest mode must neither need a daemon
 				// here nor send a caller's local secret/proxy to the guest endpoint.
@@ -266,7 +267,7 @@ func guestCommandOutput(t *testing.T, bin, file string, request []byte) []byte {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, "mcp-stdio", "--guest", file)
+	cmd := procexec.Command(ctx, bin, "mcp-stdio", "--guest", file)
 	cmd.Dir = t.TempDir() // a fresh container-equivalent HOME, not the recipe's directory
 	for _, v := range nativeProbeEnv(cmd.Dir, "", "") {
 		if !strings.HasPrefix(v, "NO_PROXY=") {
@@ -310,7 +311,7 @@ func TestGuestBridgeInvalidRecipeBeforeHTTP(t *testing.T) {
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			cmd := exec.CommandContext(ctx, bin, "mcp-stdio", "--guest", file)
+			cmd := procexec.Command(ctx, bin, "mcp-stdio", "--guest", file)
 			cmd.Dir, cmd.Env = t.TempDir(), nativeProbeEnv(t.TempDir(), "", "")
 			cmd.Stdin = strings.NewReader("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"server/discover\"}\n")
 			var out, stderr bytes.Buffer

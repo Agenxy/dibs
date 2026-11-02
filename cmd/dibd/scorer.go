@@ -26,6 +26,7 @@ import (
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/overlap"
 	"github.com/agenxy/dibs/internal/paths"
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // Work-overlap scoring, installed at boot. See SPEC-CHANNELS.md.
@@ -359,7 +360,7 @@ func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, held *cla
 	// from an agent's own registration rather than only an operator flag, which
 	// is why that matters: -C takes the value as a working directory, never as
 	// part of a command line.
-	root, err := exec.CommandContext(topCtx, "git", "-C", repo, "rev-parse", "--show-toplevel").Output()
+	root, err := procexec.Command(topCtx, "git", "-C", repo, "rev-parse", "--show-toplevel").Output()
 	if err != nil {
 		// Every failure below sets a status as well as logging. A feature
 		// that silently switched itself off is indistinguishable from one
@@ -1069,8 +1070,11 @@ func repoRootOf(ctx context.Context, cwd string) (string, error) {
 	defer cancel()
 	// #nosec G204 -- argv is passed directly, no shell; cwd comes from an
 	// agent's own registration and is only ever used as a working directory.
-	cmd := exec.CommandContext(ctx, "git", "-C", cwd, "rev-parse", "--show-toplevel")
+	cmd := procexec.Command(ctx, "git", "-C", cwd, "rev-parse", "--show-toplevel")
 	out, err := cmd.CombinedOutput()
+	if errors.Is(err, exec.ErrWaitDelay) {
+		return "", fmt.Errorf("incomplete output from git; repository identity is unknown: %w", err)
+	}
 	if err == nil {
 		return repositoryOf(strings.TrimSpace(string(out))), nil
 	}
@@ -1306,7 +1310,7 @@ func historyUnreadable(ctx context.Context, eng *engine.Engine, dir string, err 
 // this one is ordinary.
 func unborn(ctx context.Context, dir string) bool {
 	// #nosec G204 -- git is a literal and dir came from rev-parse --show-toplevel.
-	err := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "--verify", "HEAD").Run()
+	err := procexec.Command(ctx, "git", "-C", dir, "rev-parse", "--verify", "HEAD").Run()
 	return err != nil
 }
 

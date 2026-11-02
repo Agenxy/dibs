@@ -22,6 +22,7 @@ package harnessenv
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,6 +33,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/notify"
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // The environments Dibs can reach a thread inside. Values are what
@@ -208,7 +210,7 @@ func appProcessEvidence(raw string) (ThreadOwnership, []string) {
 // Fixed binaries only. The seam lets a fixture block the real API's probe
 // without reaching the operator's app or replacing the timeout policy.
 var appProbeOutput = func(ctx context.Context, binary string, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, binary, args...) //nolint:gosec // fixed probe argv above
+	cmd := procexec.Command(ctx, binary, args...) // fixed probe argv above
 	// Context cancellation kills the direct child, but an inherited output
 	// descriptor can keep Output waiting on a descendant. Bound that drain too;
 	// the resulting error remains unavailable evidence, never a classification.
@@ -216,7 +218,11 @@ var appProbeOutput = func(ctx context.Context, binary string, args ...string) ([
 	// Process start stamps must agree across bridges and the daemon even when
 	// their inherited locales or timezones differ. No participant-supplied environment.
 	cmd.Env = append(os.Environ(), "LC_ALL=C", "TZ=UTC")
-	return cmd.Output()
+	out, err := cmd.Output()
+	if errors.Is(err, exec.ErrWaitDelay) {
+		return nil, fmt.Errorf("incomplete output from %s; app inventory is unknown: %w", filepath.Base(binary), err)
+	}
+	return out, err
 }
 
 // ChatGPTOpenArgv is the app's thread URL for an explicit relocation. Wakes
@@ -328,7 +334,7 @@ var RealShower = Shower{
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second) // see notify.helperBudget
 		defer cancel()
 		// #nosec G204 G702 -- fixed OS opener and generated Claude session URL, separate argv elements.
-		return exec.CommandContext(ctx, "/usr/bin/open", "-g", argv[1]).Run()
+		return procexec.Command(ctx, "/usr/bin/open", "-g", argv[1]).Run()
 	},
 	Wait: func(d time.Duration) { <-time.After(d) },
 }

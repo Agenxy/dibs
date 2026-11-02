@@ -25,6 +25,7 @@ import (
 	"github.com/agenxy/dibs/internal/ledger"
 	"github.com/agenxy/dibs/internal/mcp"
 	"github.com/agenxy/dibs/internal/notify"
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testexec"
 	"github.com/agenxy/dibs/internal/web"
 )
@@ -73,7 +74,7 @@ func TestBannerAdviceThroughNativeStatusAndActualSurfaces(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, driver, "-test.run=^TestBannerAdviceThroughNativeStatusAndActualSurfaces$") // #nosec G204 -- private copy of this test binary
+	cmd := procexec.Command(ctx, driver, "-test.run=^TestBannerAdviceThroughNativeStatusAndActualSurfaces$") // #nosec G204 -- private copy of this test binary
 	cmd.Env = append(os.Environ(), "DIBS_BANNER_ADVICE_DRIVER=1", "DIBS_NOTIFY=")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("native status and presentation driver: %v\n%s", err, out)

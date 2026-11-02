@@ -19,6 +19,7 @@ import (
 
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/humanask"
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testexec"
 )
 
@@ -167,7 +168,7 @@ func TestDoctorMeasuresNativeNotificationSettings(t *testing.T) {
 	writeNativeFixtureHelper(t, helper)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, driver, "-test.run=^TestDoctorMeasuresNativeNotificationSettings$") // #nosec G204 -- private copy of this test binary
+	cmd := procexec.Command(ctx, driver, "-test.run=^TestDoctorMeasuresNativeNotificationSettings$") // #nosec G204 -- private copy of this test binary
 	cmd.Env = append(os.Environ(), "DIBS_SETTINGS_DOCTOR_DRIVER=1", "DIBS_NOTIFY=")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("real doctor notification route: %v\n%s", err, out)
@@ -247,7 +248,7 @@ func TestRelayCarriesThePostingHelpersActualSettings(t *testing.T) {
 	writeNativeFixtureHelper(t, helper)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, driver, "-test.run=^TestRelayCarriesThePostingHelpersActualSettings$") // #nosec G204 -- private copy of this test binary, fixture helper
+	cmd := procexec.Command(ctx, driver, "-test.run=^TestRelayCarriesThePostingHelpersActualSettings$") // #nosec G204 -- private copy of this test binary, fixture helper
 	cmd.Env = append(os.Environ(), "DIBS_SETTINGS_RELAY_DRIVER=1", "DIBS_NOTIFY=")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("actual relay producer wiring: %v\n%s", err, out)

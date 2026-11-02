@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/sibling"
 )
 
@@ -262,7 +263,7 @@ func startAppServer(ctx context.Context, bin string) (*appServer, error) {
 }
 
 func startAppServerForHome(ctx context.Context, bin, home string) (*appServer, error) {
-	cmd := exec.CommandContext(ctx, bin, "app-server") // #nosec G204 G702 -- selected Codex executable, explicit argv
+	cmd := procexec.Command(ctx, bin, "app-server") // #nosec G204 G702 -- selected Codex executable, explicit argv
 	if home != "" {
 		cmd.Env = append(os.Environ(), "CODEX_HOME="+home)
 	}
@@ -324,7 +325,7 @@ func (a *appServer) call(method string, params any, result any) error {
 	for {
 		line, err := a.out.ReadBytes('\n')
 		if err != nil {
-			return fmt.Errorf("codex app-server closed during %s: %w", method, err)
+			return fmt.Errorf("incomplete output from codex app-server during %s: %w", method, err)
 		}
 		var msg struct {
 			ID     *int            `json:"id"`
