@@ -1004,8 +1004,8 @@ const Board = (() => {
   // while the surrounding rows are redrawn. Changed membership/actions must
   // still replace their controls; a key alone is not evidence of equivalence.
   function renderPreservingComposers(root, html) {
-    const composers = (node) => [...node.querySelectorAll(".compose")]
-      .filter((el) => !el.parentElement?.closest(".compose"))
+    const composers = (node) => [...node.querySelectorAll(".compose, .human-compose")]
+      .filter((el) => !el.parentElement?.closest(".compose, .human-compose"))
     const previous = composers(root)
     if (!previous.length) { root.innerHTML = html; return }
     const active = root.ownerDocument.activeElement
@@ -1013,7 +1013,8 @@ const Board = (() => {
     const template = root.ownerDocument.createElement("template")
     template.innerHTML = html
     const next = composers(template.content)
-    const key = (el) => JSON.stringify([el.className, el.id, el.dataset.agent, el.dataset.serial])
+    const key = (el) => JSON.stringify([el.className, el.id, el.dataset.agent, el.dataset.serial,
+      el.dataset.kind, el.dataset.target])
     const unique = (elements) => {
       const index = new Map()
       for (const el of elements) {

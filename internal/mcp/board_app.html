@@ -1485,11 +1485,9 @@ function focusAction(serial, action) {
 // the mouse to send is barely better than the dialog it replaced.
 // armReply binds the keyboard path to whichever textarea exists RIGHT NOW.
 //
-// It has to be re-run after every redraw. The handler is an element property,
-// and draw() replaces the mail pane with innerHTML, so the new textarea has no
-// handler at all, and ⌘+↵ silently stops working while the panel goes on
-// printing "⌘+↵ to send" underneath it. Nothing errors; the key just does
-// nothing, which is the worst way for a shortcut to fail.
+// Reassign the element property after every redraw: unchanged composers retain
+// their nodes, while a changed action/error state can create a new textarea.
+// Assigning it again is idempotent and keeps ⌘+↵ available on either path.
 function armReply(serial) {
   const box = document.getElementById("reply-" + serial)
   if (!box) return null
@@ -1507,10 +1505,18 @@ function focusReply(serial) {
   box.setSelectionRange(box.value.length, box.value.length)
 }
 
-function patchHTML(el, html) {
+function patchHTML(el, html, prepare = null) {
+  // Human controls belong in the candidate markup before comparing/reusing
+  // composers. Appending them after patchHTML leaves no replacement to match.
+  if (prepare) {
+    const staged = el.cloneNode(false)
+    staged.innerHTML = html
+    prepare(staged, false)
+    html = staged.innerHTML
+  }
   if (state.rendered.get(el.id) === html) return false
   state.rendered.set(el.id, html)
-  el.innerHTML = html
+  Board.renderPreservingComposers(el, html)
   return true
 }
 
@@ -1658,6 +1664,79 @@ function wireHumanComposers(root) {
   }
 }
 
+function decorateHumanRoster(root, bind = true) {
+  if (!state.human) return
+  const rows = [...root.querySelectorAll(".entry")]
+  if (state.rowComposer && !rows.some(row => row.dataset.agent === state.rowComposer)) state.rowComposer = null
+  for (const node of rows) {
+    const who = node.dataset.agent
+    if (!who || who === state.human.agent) continue
+    const name = node.querySelector(".name")?.textContent || who
+    let button = node.querySelector(".row-message")
+    if (!button) {
+      button = document.createElement("button")
+      button.type = "button"
+      button.className = "row-message"
+      button.textContent = "Message"
+      node.querySelector(".entry-head").append(button)
+    }
+    button.setAttribute("aria-label", `Message ${name}`)
+    button.setAttribute("aria-expanded", String(state.rowComposer === who))
+    if (bind) button.onclick = () => toggleRowComposer(who)
+    if (state.rowComposer !== who) {
+      button.removeAttribute("aria-controls")
+      node.querySelector(".human-compose")?.remove()
+      continue
+    }
+    button.setAttribute("aria-controls", `row-composer-${who}`)
+    if (!node.querySelector(".human-compose")) node.insertAdjacentHTML("beforeend",
+      composerHTML("agent", who, `Message ${name}`, [
+        { do: "notify", label: "tell" },
+        { do: "ask", label: "ask" },
+      ]))
+    const box = node.querySelector(".human-compose")
+    box.id = `row-composer-${who}`
+    box.setAttribute("role", "group")
+    box.setAttribute("aria-label", `Message ${name}`)
+    const field = box.querySelector("input")
+    const draft = state.rowDrafts.get(who) || ""
+    if (field.value !== draft) field.value = draft
+    if (bind) field.oninput = () => state.rowDrafts.set(who, field.value)
+    if (bind) box.onkeydown = (event) => {
+      if (event.key !== "Escape") return
+      event.preventDefault(); event.stopPropagation()
+      toggleRowComposer(who)
+    }
+  }
+  if (bind) wireHumanComposers(root)
+}
+
+function decorateHumanSpaces(root, bind = true) {
+  if (!state.human) return
+  for (const node of root.querySelectorAll(".space")) {
+    const agent = node.dataset.agent || node.dataset.space
+    if (!agent || node.querySelector(".human-compose")) continue
+    // Only members may speak. "subscribers read, members speak" is the
+    // engine's rule, and offering a button that returns E_NOT_MEMBER is a
+    // trap, not an affordance. Driving this for real is what found it: the
+    // post came back refused while the question to an agent went through.
+    // The web board reached the same conclusion and disables its post and
+    // announce for non-members; here there is room to offer the way in.
+    const mine = (state.board?.spaces || []).find((c) => c.id === agent)
+    const member = (mine?.members || []).some((m) => m.agent === state.human.agent)
+    node.insertAdjacentHTML("beforeend", member
+      ? composerHTML("agent", agent, `say something in ${agent}`, [
+          { do: "post", label: "post" },
+          { do: "announce", label: "announce" },
+        ])
+      : `<div class="human-compose" data-kind="join" data-target="${escapeAttr(agent)}">
+           <span class="join-note">you are not in this agent yet</span>
+           <button class="act" type="button" data-do="join" data-for="">join to speak</button>
+         </div>`)
+  }
+  if (bind) wireHumanComposers(root)
+}
+
 function decorateMail(el, filtered) {
   const messages = [...el.querySelectorAll(".msg")]
   messages.forEach((node, index) => {
@@ -1751,52 +1830,10 @@ function draw() {
     query: state.query, expandedGroups: state.expandedGroups, omitSelf: true,
     empty: Board.emptyHTML("No agents yet",
       "Agents appear here the moment they register."),
-  }))
+  }), decorateHumanRoster)
   decorateRoster(boardEl)
+  decorateHumanRoster(boardEl)
   if (state.human) {
-    const rows = [...boardEl.querySelectorAll(".entry")]
-    if (state.rowComposer && !rows.some(row => row.dataset.agent === state.rowComposer)) state.rowComposer = null
-    for (const node of rows) {
-      const who = node.dataset.agent
-      if (!who || who === state.human.agent) continue
-      const name = node.querySelector(".name")?.textContent || who
-      let button = node.querySelector(".row-message")
-      if (!button) {
-        button = document.createElement("button")
-        button.type = "button"
-        button.className = "row-message"
-        button.textContent = "Message"
-        node.querySelector(".entry-head").append(button)
-      }
-      button.setAttribute("aria-label", `Message ${name}`)
-      button.setAttribute("aria-expanded", String(state.rowComposer === who))
-      button.onclick = () => toggleRowComposer(who)
-      if (state.rowComposer !== who) {
-        button.removeAttribute("aria-controls")
-        node.querySelector(".human-compose")?.remove()
-        continue
-      }
-      button.setAttribute("aria-controls", `row-composer-${who}`)
-      if (!node.querySelector(".human-compose")) node.insertAdjacentHTML("beforeend",
-        composerHTML("agent", who, `Message ${name}`, [
-          { do: "notify", label: "tell" },
-          { do: "ask", label: "ask" },
-        ]))
-      const box = node.querySelector(".human-compose")
-      box.id = `row-composer-${who}`
-      box.setAttribute("role", "group")
-      box.setAttribute("aria-label", `Message ${name}`)
-      const field = box.querySelector("input")
-      const draft = state.rowDrafts.get(who) || ""
-      if (field.value !== draft) field.value = draft
-      field.oninput = () => state.rowDrafts.set(who, field.value)
-      box.onkeydown = (event) => {
-        if (event.key !== "Escape") return
-        event.preventDefault(); event.stopPropagation()
-        toggleRowComposer(who)
-      }
-    }
-    wireHumanComposers(boardEl)
     if (previousFocus?.target === state.rowComposer) {
       const field = boardEl.querySelector(".human-compose input")
       field?.focus()
@@ -1815,35 +1852,11 @@ function draw() {
     agents: state.board?.agents,
     empty: state.query.trim() ? Board.noMatchesHTML() : Board.emptyHTML("No agents yet",
       "An agent is a piece of work several agents may need. Open one, or declare what you are doing and Dibs will match you."),
-  }))
+  }), decorateHumanSpaces)
   decorateChannels(chEl, shownChans)
-  // The human's affordances appear only after a person proved they are here.
-  // Appended after the shared component rather than passed into it: board.js
-  // renders the operator board too, and that surface authenticates differently.
-  if (state.human) {
-    for (const node of chEl.querySelectorAll(".space")) {
-      const agent = node.dataset.agent || node.dataset.space
-      if (!agent || node.querySelector(".human-compose")) continue
-      // Only members may speak. "subscribers read, members speak" is the
-      // engine's rule, and offering a button that returns E_NOT_MEMBER is a
-      // trap, not an affordance. Driving this for real is what found it: the
-      // post came back refused while the question to an agent went through.
-      // The web board reached the same conclusion and disables its post and
-      // announce for non-members; here there is room to offer the way in.
-      const mine = (state.board?.spaces || []).find((c) => c.id === agent)
-      const member = (mine?.members || []).some((m) => m.agent === state.human.agent)
-      node.insertAdjacentHTML("beforeend", member
-        ? composerHTML("agent", agent, `say something in ${agent}`, [
-            { do: "post", label: "post" },
-            { do: "announce", label: "announce" },
-          ])
-        : `<div class="human-compose" data-kind="join" data-target="${escapeAttr(agent)}">
-             <span class="join-note">you are not in this agent yet</span>
-             <button class="act" type="button" data-do="join" data-for="">join to speak</button>
-           </div>`)
-    }
-    wireHumanComposers(chEl)
-  }
+  // Bind the confirmed human's controls on the live nodes. Their markup was
+  // staged before patchHTML; the shared component stays authentication-agnostic.
+  decorateHumanSpaces(chEl)
   const tl = document.getElementById("tally-agents")
   tl.textContent = chans.length
   tl.classList.toggle("zero", chans.length === 0)
@@ -1854,10 +1867,12 @@ function draw() {
   // A redraw must not eat a reply that is half-written.
   //
   // The host pushes a board update whenever this agent does anything, and every
-  // push calls draw(), which replaces this pane with innerHTML: destroying the
-  // reply textarea, its contents, the focus and the caret. Somebody answering a
+  // push used to replace this pane with innerHTML: destroying the reply
+  // textarea, its contents, the focus and the caret. Somebody answering a
   // question loses what they typed the moment their agent makes any tool call.
   // The same defect on the web board wiped a human's message mid-sentence.
+  // Unchanged composers now retain their nodes; changed ones still need the
+  // draft and caret restoration below.
   const openReply = document.querySelector('.compose textarea')
   const draft = openReply
     ? { id: openReply.id, value: openReply.value, start: openReply.selectionStart,
@@ -1870,8 +1885,7 @@ function draw() {
     : state.query.trim() ? Board.noMatchesHTML() : Board.emptyHTML("Nothing waiting",
         "Messages addressed to this agent arrive here. Mail between other agents is private to them.")
   const mailChanged = patchHTML(mailEl, mailHTML)
-  // Re-arm the keyboard path first: the textarea is a NEW element, so its
-  // handler went with the old one.
+  // Re-arm either the retained textarea or a changed composer, idempotently.
   if (state.composing != null) armReply(state.composing)
   if (mailChanged && draft) {
     const el = document.getElementById(draft.id)

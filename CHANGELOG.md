@@ -122,8 +122,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- Live board redraws preserve unchanged composer controls and their pending
-  request state, so a click cannot lose its button underneath it. Membership
+- Live board and embedded app redraws preserve unchanged composer controls and
+  their pending request state, so a click cannot lose its button underneath it. Membership
   and action changes still replace the affected controls.
 
 - Recovery consent survives autonomous contact escalation and stall-report
