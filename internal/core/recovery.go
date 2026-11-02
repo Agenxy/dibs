@@ -66,18 +66,18 @@ func (s *State) RecoveryFence(r *RecoveryRequest, proposer string, ignore uint64
 	return s.RecoveryProposalFence(r.From, r.Into, ignore)
 }
 
-// CurrentRecoveryFence changes only copied delivery-attempt/suppression markers.
-// Stored mail, delivery/debt/retention and every eligibility check stay intact.
+// CurrentRecoveryFence binds source custody while allowing the live survivor's
+// normal activity. Only copied attempt/suppression message markers are cleared;
+// stored mail, delivery/debt/retention and eligibility checks stay intact.
 // The recorded prefix selects this projection; historical projections above are
 // wire formats, never inferred from the reader's version or current clock.
 func (s *State) CurrentRecoveryFence(r *RecoveryRequest, proposer string, ignore uint64) string {
-	rows := []*Agent{s.Agents[r.From], s.Agents[r.Into]}
-	domain, survivorMail := "recovery-self:v3", true
+	rows := s.recoveryProposalRows(r.From, r.Into)
+	domain := "recovery-self:v3"
 	if proposer != r.Into {
-		rows = s.recoveryProposalRows(r.From, r.Into)
-		domain, survivorMail = "recovery-proposal:v3", false
+		domain = "recovery-proposal:v3"
 	}
-	return recoveryConsentV3Prefix + s.mergeFenceProjection(r.From, r.Into, ignore, domain, rows, survivorMail, true)
+	return recoveryConsentV3Prefix + s.mergeFenceProjection(r.From, r.Into, ignore, domain, rows, false, true)
 }
 
 // UsesV3Fence is shared reader-format knowledge, not an authorization decision.

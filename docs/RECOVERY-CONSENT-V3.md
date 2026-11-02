@@ -67,11 +67,21 @@ announcements and consumption remain fenced for the reasons above.
 
 Agent `Status`, `StaleReason`, `StaleSince`, `DormantSince`,
 `LastCoordination`, `AckedSerial` and `ContactNoticeReadAt` can change on
-liveness, contact and awareness events. The survivor-initiated row projection
-stays exact. Coordinator-initiated recovery retains precisely the existing v2
-normalization for its survivor; no additional row field is cleared. All current
-eligibility checks still run at request and approval. A source that becomes
-live cannot be recovered on an old consent.
+liveness, contact and awareness events. Both v3 directions apply the existing
+v2 survivor-row normalization and exclude survivor incoming mail. The survivor
+is the live consenting hand, and that mail is neither moved nor previewed.
+Source rows and source incoming mail stay fenced; source-authored mail to the
+survivor still contributes its sender rewrite. Session, activation, authority,
+credentials, declarations, claims and memberships remain fenced. Eligibility
+is rechecked at both admissions; a live source cannot be recovered on old consent.
+
+This is an explicit pre-merge revision to v3, measured at cec29c31 before any
+v3 main merge or installation. In the self direction, survivor check-in, new
+incoming mail and an acknowledgement each caused `E_RECOVERY_STALE`, on both
+protocols (six intended failures, package 1.241 seconds). Permanent real-HTTP
+guards cover those activities and replay after success; a per-party core guard
+keeps source custody and sender rewrites fenced in both directions. Historical
+survivor/v1 and proposal/v1/v2 encodings and fingerprints remain unchanged.
 
 ## Version and proof boundaries
 

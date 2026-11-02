@@ -576,7 +576,7 @@ as ordinary agent addressing: a retired namesake cannot shadow the source,
 and a competing stable ID or genuinely ambiguous live name is still refused.
 Normal merge fences retain their original meaning. Both directions enforce the
 same distinct-hands and current-incarnation checks at request and approval, and
-use the same recovery fold. The proposal fence excludes the survivor's
+use the same recovery fold. Both current recovery fences exclude the survivor's
 awareness/contact watermarks, active/dormant/stale observations and incoming
 mail, allowing normal arrival/wake/check-in/read/ack activity. Survivor incoming
 mail is neither moved nor previewed. Source incoming mail and source sender

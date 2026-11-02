@@ -65,3 +65,29 @@ func recoveryFieldValue(typ reflect.Type) reflect.Value {
 	}
 	return v
 }
+
+func TestRecoveryV3KeepsSourceCustodyAndExcludesSurvivorIncoming(t *testing.T) {
+	for _, proposer := range []string{"survivor", "lead"} {
+		for _, tc := range []struct {
+			from, to string
+			same     bool
+		}{
+			{"peer", "survivor", true},
+			{"survivor", "peer", true},
+			{"source", "survivor", false},
+			{"source", "peer", false},
+			{"peer", "source", false},
+			{"survivor", "source", false},
+		} {
+			t.Run(proposer+"/"+tc.from+"-to-"+tc.to, func(t *testing.T) {
+				s := recoveryState()
+				r := &RecoveryRequest{From: "source", Into: "survivor", Fence: "v3:sha256:" + strings.Repeat("a", 64)}
+				before := s.RecoveryFence(r, proposer, 0)
+				s.Messages[10] = &Message{Serial: 10, From: tc.from, To: tc.to, Type: MsgNotify, Body: "new mail"}
+				if same := before == s.RecoveryFence(r, proposer, 0); same != tc.same {
+					t.Fatalf("source custody/survivor mail: same=%v want=%v", same, tc.same)
+				}
+			})
+		}
+	}
+}

@@ -123,8 +123,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - Recovery consent survives autonomous contact escalation and stall-report
-  bookkeeping. Expiry and changes to mail, ownership, authority or delivery
-  obligations still require a fresh preview and request. Older pending
+  bookkeeping, and the live survivor's check-in, incoming mail and acknowledgement
+  while waiting for the other hand. Expiry and changes to source mail,
+  ownership, authority or delivery obligations still require a fresh preview
+  and request. Older pending
   recovery requests need that refresh too. V3 records and snapshots declare
   their reader requirement, so rollback to a build without v3 refuses to boot
   instead of silently changing the recorded consent.
