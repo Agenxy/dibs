@@ -3,13 +3,20 @@
 
 package core
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 // Recorded on b9f26269 before the proposal-only projection changed. These
 // literal fingerprints protect the other two paths, including mail, private
 // nonce mappings and both rows; recomputing an expected value would hide drift.
 func TestRecoveryProposalChangePreservesMergeAndSelfFenceFingerprints(t *testing.T) {
 	s := recoveryState()
+	// The general fixture uses time.Local. A wire fingerprint must pin its
+	// own offsets, independent of the machine running the guard.
+	s.Agents["source"].LastCoordination = time.Unix(1000, 0).UTC()
+	s.Agents["survivor"].LastCoordination = time.Unix(1000, 0).UTC().Add(time.Minute)
 	s.Serial = 20
 	s.Agents["source"].Slots["s1"] = Slot{ID: "s1", Text: "source work", UpdatedSerial: 3}
 	s.Agents["survivor"].Slots["s2"] = Slot{ID: "s2", Text: "survivor work", UpdatedSerial: 4}
@@ -24,7 +31,7 @@ func TestRecoveryProposalChangePreservesMergeAndSelfFenceFingerprints(t *testing
 	for _, tc := range []struct {
 		ignore uint64
 		want   string
-	}{{0, "sha256:cb76b4121972c5b940f8d5932b2dc6e9fbce0f02d85098de763a96bb6c83e1bb"}, {14, "sha256:bfbca0a709d4390e4a4d9e1f0ddc3c37080266a2b6d1fbefc7f4cb01d4a9a28a"}} {
+	}{{0, "sha256:459aed09bc78dfcf181336e868c556d470862e6b878b0778b669222585d8558c"}, {14, "sha256:3fc9177529463d7177d607e28576a2d087911591e9bd68a52b4aa4f6afc6e1ba"}} {
 		if got := s.MergeFence("source", "survivor", tc.ignore); got != tc.want {
 			t.Errorf("human merge ignore=%d: got %q want %q", tc.ignore, got, tc.want)
 		}
@@ -36,10 +43,10 @@ func TestRecoveryProposalChangePreservesMergeAndSelfFenceFingerprints(t *testing
 	// The v1 literal was measured through the public old projection at
 	// b9f26269. A common-encoder edit must fail here before rewriting history.
 	legacy := &RecoveryRequest{From: "source", Into: "survivor", Fence: "sha256:" + "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
-	if got := s.recordedRecoveryFence(legacy, "lead", 14); got != "sha256:a88f3620f125c2ba5b52cc97a205a512d1acf88bae7339ac64f91b80fdea942a" {
+	if got := s.recordedRecoveryFence(legacy, "lead", 14); got != "sha256:bd28e79aad8c6f761ad1b14b07905a084f1da592871e0a0479d2f2e860544b81" {
 		t.Fatalf("frozen v1 fold changed: %s", got)
 	}
-	const wantV2 = "v2:sha256:9eb4ebfbe31a3faeced1cf1090fa12360fc816b686db3781392b26d29ec3f998"
+	const wantV2 = "v2:sha256:336644c37317eb48a47e70251dea06247c4282662ca917464626a361ecdda995"
 	if got := s.RecoveryProposalFence("source", "survivor", 14); got != wantV2 {
 		t.Fatalf("v2 projection changed: %s", got)
 	}
