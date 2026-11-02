@@ -5,20 +5,43 @@ package core
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
+
+const recoveryProposalV2Prefix = "v2:"
 
 // RecoveryProposalFence permits the recipient's normal wake/check_in/contact
 // while preserving every substantive input. Current eligibility still checks
 // status and coordination ordering at both admissions. Session, activation,
-// authority, identity, declarations, credentials and all other mail stay fenced.
+// authority, identity, declarations and credentials stay fenced. Source-owned
+// incoming mail and source sender rewrites move, so stay fenced too. Survivor
+// incoming mail is neither moved nor previewed; its arrival/read/ack cannot
+// invalidate the consent that brings the survivor here in the first place.
 func (s *State) RecoveryProposalFence(from, into string, ignore uint64) string {
+	return recoveryProposalV2Prefix + s.recoveryProposalFence(from, into, ignore, "recovery-proposal:v2", false)
+}
+
+// The v1 fold is historical wire format. Its normalization and encoding must
+// remain byte-identical: both versions have fixed-input fingerprint guards.
+func (s *State) recoveryProposalFence(from, into string, ignore uint64, domain string, survivorMail bool) string {
 	survivor := *s.Agents[into]
 	survivor.LastCoordination = time.Time{}
 	survivor.Status, survivor.StaleReason = "", ""
 	survivor.StaleSince, survivor.DormantSince = time.Time{}, time.Time{}
 	survivor.AckedSerial, survivor.ContactNoticeReadAt = 0, 0
-	return s.mergeFence(from, into, ignore, "recovery-proposal:v1", []*Agent{s.Agents[from], &survivor})
+	return s.mergeFence(from, into, ignore, domain, []*Agent{s.Agents[from], &survivor}, survivorMail)
+}
+
+// A send updates its author's coordination checkpoint before recording the
+// fence. Replay selects the historical projection from the OP'S recorded
+// prefix alone, never from current state, time or build. Current ingress and
+// consent use RecoveryFence instead, so a pending v1 proposal requires review.
+func (s *State) recordedRecoveryFence(r *RecoveryRequest, proposer string, ignore uint64) string {
+	if proposer != r.Into && !strings.HasPrefix(r.Fence, recoveryProposalV2Prefix) {
+		return s.recoveryProposalFence(r.From, r.Into, ignore, "recovery-proposal:v1", true)
+	}
+	return s.RecoveryFence(r, proposer, ignore)
 }
 
 // RecoveryFence uses the self-describing envelope direction. Every historical recovery was
@@ -218,11 +241,24 @@ func admitRecoveryRequest(op *Op) error {
 	plain := op.Kind == OpSendMessage && op.MsgType == MsgRequest && op.Merge == nil &&
 		op.Grant == "" && op.Adopt == "" && len(op.Milestones) == 0
 	identified := r.From != "" && r.Into != "" && r.From != r.Into &&
-		r.SourceCreated > 0 && r.SurvivorCreated > 0 && r.CoordinatorCreated > 0 && len(r.Fence) == 71
+		r.SourceCreated > 0 && r.SurvivorCreated > 0 && r.CoordinatorCreated > 0 && validRecoveryFence(r.Fence)
 	if plain && identified {
 		return nil
 	}
 	return errf("E_BAD_ARG", "use recover_agent for a typed recovery request", "invalid recovery request")
+}
+
+func validRecoveryFence(fence string) bool {
+	fence = strings.TrimPrefix(fence, recoveryProposalV2Prefix)
+	if len(fence) != 71 || !strings.HasPrefix(fence, "sha256:") {
+		return false
+	}
+	for _, c := range fence[len("sha256:"):] {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *State) admitRecoveryAddressReuse(op *Op) error {
