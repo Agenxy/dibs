@@ -122,6 +122,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Coordinator merge previews now explain a refused recovery proposal with its
+  code, message and corrective hint. Recovery respects ordinary exact-ID and
+  live-name precedence, so a closed namesake cannot block a lost mailbox's
+  recovery. Competing stable IDs and genuinely ambiguous live names remain
+  protected; recovery cannot reserve the survivor's own ID back onto itself.
+
 - Pending Mac questions and requests remain answerable when reopened from
   Notification Center or after the original helper or asking process exits.
   Reopened windows fetch current text, choices and state from the local daemon;

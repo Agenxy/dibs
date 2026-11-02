@@ -134,11 +134,18 @@ func (s *State) recoveryAddressCapacity(a *Agent, into string) error {
 			return errf("E_NAME_TAKEN", "ask human to reconcile the reserved recovery address",
 				"address %q already reserved", address)
 		}
-		for _, row := range s.Agents {
-			if row.ID != a.ID && row.ID != into && (row.ID == address || row.Name == address) {
+		// Use the same precedence as ingress: exact IDs win, and a retired
+		// namesake cannot shadow a live source. A competing stable ID still
+		// owns its address even when closed; it must never be redirected.
+		id, candidates := s.AgentRef(address)
+		if id != "" {
+			candidates = []string{id}
+		}
+		for _, candidate := range candidates {
+			if candidate != a.ID && (candidate != into || address == into) {
 				return errf("E_AMBIGUOUS_AGENT",
 					"choose an unambiguous source address; ask human to reconcile names first",
-					"source address %q is shared with %s", address, row.ID)
+					"source address %q is shared with %s", address, candidate)
 			}
 		}
 		add++
