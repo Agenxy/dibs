@@ -26,7 +26,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agenxy/dibs/internal/adminpw"
 	"github.com/agenxy/dibs/internal/blobstore"
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/engine"
@@ -86,6 +85,7 @@ func TestCloudInvitationExpiryAndLegacyHandshakeUseTheSameGate(t *testing.T) {
 // client trusts the fixture's CA: no InsecureSkipVerify and no forged context.
 func newCloudFixture(t *testing.T) *cloudFixture {
 	t.Helper()
+	useFastRequestPasswordHash(t)
 	dir := t.TempDir()
 	box, err := ledger.LoadOrCreateKey(filepath.Join(dir, "key"))
 	if err != nil {
@@ -147,7 +147,7 @@ func newCloudFixture(t *testing.T) *cloudFixture {
 	proxy.Config.Handler = httputil.NewSingleHostReverseProxy(target)
 	proxy.StartTLS()
 	t.Cleanup(proxy.Close)
-	hash, err := adminpw.Hash("operator-proof")
+	hash, err := requestPasswordHash("operator-proof")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -16,7 +16,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agenxy/dibs/internal/adminpw"
 	"github.com/agenxy/dibs/internal/invites"
 	"github.com/agenxy/dibs/internal/testexec"
 	"github.com/agenxy/dibs/internal/testport"
@@ -26,13 +25,14 @@ import (
 // installs by hand. A TLS-proxy origin is operator configuration here; this
 // probe tests issuer startup/Bind/replay, not TLS or external reachability.
 func TestGuestIssuerRecoveryThroughActualDaemonStartup(t *testing.T) {
+	useFastRequestPasswordHash(t)
 	bin := filepath.Join(t.TempDir(), "dibd")
 	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
 		t.Fatalf("build daemon: %v %s", err, out)
 	}
 	testexec.PrepareExecutable(t, exec.Command(bin, "-h"))
 	dir := privateDaemonFixtureDir(t)
-	hash, err := adminpw.Hash("fixture-operator")
+	hash, err := requestPasswordHash("fixture-operator")
 	if err != nil {
 		t.Fatal(err)
 	}
