@@ -237,9 +237,9 @@ func assertBannerEventUsesCachedAdvice(t *testing.T, board *httptest.Server, mar
 	}
 }
 
-// Exercise the production API with the real clock and installed-helper door.
-// A simulated cache flag would miss a handler which bypasses the cache. The
-// minute is deliberate: the response, not a timer, must trigger the next probe.
+// Exercise the production API and installed-helper door: replacing the board's
+// CurrentApprovalAdvice call or the real probe makes this fail. Expiry and the
+// absence of a timer are tested in notify with an isolated virtual clock.
 func assertBannerBoardProbeCache(t *testing.T, board *httptest.Server, marker, advice string) {
 	t.Helper()
 	settings := func(style string) {
@@ -279,19 +279,5 @@ func assertBannerBoardProbeCache(t *testing.T, board *httptest.Server, marker, a
 	read(advice)
 	if _, err := os.Stat(marker); !os.IsNotExist(err) {
 		t.Fatal("two board API requests inside one minute launched another helper")
-	}
-	// The first probe completed before this timestamp. Waiting from here also
-	// works under -race and never depends on the helper's startup duration.
-	<-time.After(time.Minute + 50*time.Millisecond)
-	if _, err := os.Stat(marker); !os.IsNotExist(err) {
-		t.Fatal("native helper ran without a request after cache expiry")
-	}
-	settings("alert")
-	read("")
-	if data, err := os.ReadFile(marker); err != nil || string(data) != "status" {
-		t.Fatalf("API request after cache expiry did not measure Alerts: %s %v", data, err)
-	}
-	if err := os.Remove(marker); err != nil {
-		t.Fatal(err)
 	}
 }

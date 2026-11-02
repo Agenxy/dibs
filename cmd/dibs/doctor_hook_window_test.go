@@ -14,9 +14,8 @@ import (
 	"time"
 )
 
-// Keep the engine's actual ephemeral counters and its actual elapsed window.
-// Enter through doctor, its HTTP read and report recording, rather than passing
-// a fabricated verdict to a presentation helper. No hook is called in this test.
+// Real doctor/HTTP/counter wiring stays here. The owning engine test exercises
+// its constructor and full minute with a virtual clock and no external I/O.
 func TestDoctorBoundsZeroHookClaimsToItsObservedWindow(t *testing.T) {
 	dir := cliIPCProfile(t)
 	t.Setenv("DIBS_DIR", dir)
@@ -28,6 +27,7 @@ func TestDoctorBoundsZeroHookClaimsToItsObservedWindow(t *testing.T) {
 	eng := startupEngine(t, dir)
 	started := time.Now()
 	var reads atomic.Int32
+	var aged atomic.Bool
 	daemon := newLocalTestServer(t, dir, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/api/hook-health" {
@@ -35,17 +35,23 @@ func TestDoctorBoundsZeroHookClaimsToItsObservedWindow(t *testing.T) {
 			if r.Header.Get("X-Dibs-Local") != "fixture-secret" {
 				t.Error("doctor omitted the local credential")
 			}
-			_ = json.NewEncoder(w).Encode(eng.HookHealth())
+			h := eng.HookHealth()
+			if aged.Load() {
+				// A typed aged wire observation, encoded exactly as the daemon
+				// route encodes HookHealth. Its producer is tested separately.
+				h.ObservedSeconds, h.Verdict = 61, "never-called"
+				h.Hint = "Install the plugin for the fixture harness"
+			}
+			_ = json.NewEncoder(w).Encode(h)
 			return
 		}
 		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"tools":[]}}`))
 	}))
 	defer daemon.Close()
 	t.Setenv("DIBS_ADDR", strings.TrimPrefix(daemon.URL, "http://"))
-	read := func(t *testing.T) doctorCheck {
+	readReport := func(t *testing.T) doctorReport {
 		t.Helper()
 		before := reads.Load()
-		beforeRead := time.Now()
 		out, _ := captureStdout(t, func() error { return doctor([]string{"--json"}) })
 		if reads.Load() != before+1 {
 			t.Fatal("setup: doctor did not read actual hook health exactly once")
@@ -54,6 +60,12 @@ func TestDoctorBoundsZeroHookClaimsToItsObservedWindow(t *testing.T) {
 		if err := json.Unmarshal([]byte(out), &report); err != nil {
 			t.Fatalf("doctor output: %v: %s", err, out)
 		}
+		return report
+	}
+	read := func(t *testing.T) doctorCheck {
+		t.Helper()
+		beforeRead := time.Now()
+		report := readReport(t)
 		for _, check := range report.Checks {
 			if strings.Contains(check.What, "hook call") || strings.Contains(check.What, "no harness has ever called") {
 				window, hasAge := strings.CutPrefix(check.What, "no hook call since this daemon started ")
@@ -61,13 +73,16 @@ func TestDoctorBoundsZeroHookClaimsToItsObservedWindow(t *testing.T) {
 				age, err := time.ParseDuration(window)
 				minimum := max(0, beforeRead.Sub(started)).Truncate(time.Second)
 				maximum := time.Since(beforeStart).Truncate(time.Second)
+				if aged.Load() {
+					minimum, maximum = 61*time.Second, 61*time.Second
+				}
 				if !hasAge || !hasAgo || err != nil || age < minimum || age > maximum {
 					t.Errorf("reported observation age must be between %s and %s: %+v", minimum, maximum, check)
 				}
 				return check
 			}
 		}
-		t.Fatalf("doctor hid the zero-call observation: %s", out)
+		t.Fatalf("doctor hid the zero-call observation: %+v", report)
 		return doctorCheck{}
 	}
 	t.Run("fresh daemon", func(t *testing.T) {
@@ -80,18 +95,23 @@ func TestDoctorBoundsZeroHookClaimsToItsObservedWindow(t *testing.T) {
 		}
 	})
 	t.Run("aged daemon", func(t *testing.T) {
-		// Use the real interval. A test-only shortened grace or manually set
-		// start stamp would miss a constructor/wiring regression.
-		timer := time.NewTimer(time.Until(started.Add(61 * time.Second)))
-		defer timer.Stop()
-		select {
-		case <-timer.C:
-		case <-t.Context().Done():
-			t.Fatal("test ended before the real one-minute observation")
-		}
+		aged.Store(true)
 		check := read(t)
 		if check.Level != "warning" || !strings.Contains(check.Fix, "Install the plugin") || !strings.Contains(check.What, "since this daemon started") || strings.Contains(check.What, "ever") || strings.Contains(check.Fix, "ever") {
 			t.Errorf("aged daemon lost its honest observation or corrective hint: %+v", check)
 		}
+	})
+	t.Run("actual hook counters", func(t *testing.T) {
+		aged.Store(false)
+		if _, err := eng.HookPoll(t.Context(), "unregistered-fixture-session", "Stop", "/fixture", false, false); err != nil {
+			t.Fatal(err)
+		}
+		report := readReport(t)
+		for _, check := range report.Checks {
+			if strings.Contains(check.What, "all 1 call(s)") {
+				return
+			}
+		}
+		t.Fatalf("doctor did not read the real HookHealth counters: %+v", report)
 	})
 }

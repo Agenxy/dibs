@@ -138,7 +138,7 @@ func CurrentApprovalAdvice() string {
 	measuredAt := lastNativeSettings.measuredAt
 	lastNativeSettings.RUnlock()
 	if measuredAt.IsZero() || time.Since(measuredAt) >= time.Minute {
-		ReachWithSettings()
+		approvalAdviceReach()
 	}
 	return RecordedApprovalAdvice()
 }
@@ -155,6 +155,10 @@ func RecordedApprovalAdvice() string {
 }
 
 var approvalAdviceProbe sync.Mutex
+
+// Native measurement boundary; production never reassigns it. Clock tests
+// replace only the external probe, while CLI tests exercise the real helper.
+var approvalAdviceReach = ReachWithSettings
 
 var lastNativeSettings struct {
 	sync.RWMutex
