@@ -47,6 +47,7 @@ func TestBridgeStartupHelper(t *testing.T) {
 	if os.Getenv("DIBS_TEST_STARTUP_BRIDGE") != "1" {
 		return
 	}
+	stages := ancestryFixtureStages(t, 0)
 	if marker := os.Getenv("DIBS_TEST_RECONNECT_SLOW_STAMP"); marker != "" {
 		original := lookupSelfStart
 		lookupSelfStart = func() string {
@@ -68,6 +69,7 @@ func TestBridgeStartupHelper(t *testing.T) {
 		original := detectedSurface
 		failed := false
 		detectedSurface = func(ctx context.Context) (string, error) {
+			stages.note(ancestryLookupEntered)
 			f, err := os.OpenFile(gate, os.O_RDWR, 0o600)
 			if err != nil {
 				t.Error("surface gate setup:", err)
@@ -82,11 +84,13 @@ func TestBridgeStartupHelper(t *testing.T) {
 				t.Error("surface gate lock:", err)
 				return "", err
 			}
+			stages.note(ancestryLookupAcquired)
 			if os.Getenv("DIBS_TEST_SURFACE_FAIL_ONCE") == "1" && !failed {
 				failed = true
 				if err := os.WriteFile(gate+".failed", []byte("failed"), 0o600); err != nil {
 					t.Error("surface failure marker:", err)
 				}
+				stages.note(ancestryLookupFailed)
 				return "", context.DeadlineExceeded
 			}
 			return original(ctx)
@@ -115,6 +119,8 @@ func TestBridgeStartupHelper(t *testing.T) {
 			return harnessenv.ProcessStart(os.Getpid())
 		}
 	}
+	stages.note(ancestryBridgeRunning)
+	defer stages.note(ancestryBridgeReturned)
 	if err := runBridge(nil); err != nil {
 		t.Fatal(err)
 	}

@@ -66,6 +66,7 @@ func surfaceStartupContractWithGateCopy(t *testing.T, held, repair, retainGate b
 		t.Fatal(err)
 	}
 	eng := startupEngine(t, dir)
+	evidence := newAncestryEvidence(t)
 	// The app-shaped executable supplies actual ps evidence to both bridge and
 	// daemon while never contacting the operator's app.
 	app := filepath.Join(t.TempDir(), "ChatGPT.app", "Contents", "MacOS", "ChatGPT")
@@ -99,7 +100,7 @@ func surfaceStartupContractWithGateCopy(t *testing.T, held, repair, retainGate b
 		syscall.CloseOnExec(duplicate)
 		defer func() { _ = syscall.Close(duplicate) }()
 	}
-	srv := newLocalTestServer(t, dir, mcp.New(eng))
+	srv := newLocalTestServer(t, dir, evidence.handler(mcp.New(eng)))
 	defer srv.Close()
 	cmd := exec.Command(app, "-test.run=^TestReconnectAppFixtureHelper$")
 	bridgeBinary := os.Args[0]
@@ -107,11 +108,12 @@ func surfaceStartupContractWithGateCopy(t *testing.T, held, repair, retainGate b
 		bridgeBinary = binary
 	}
 	cmd.Env = append(os.Environ(), "DIBS_TEST_RECONNECT_APP=1", "DIBS_TEST_BRIDGE_BINARY="+bridgeBinary,
-		"DIBS_ADDR="+srv.URL)
+		"DIBS_ADDR="+srv.URL, "GOTRACEBACK=all")
 	if held {
 		cmd.Env = append(cmd.Env, "DIBS_TEST_SURFACE_GATE="+gate)
 	}
-	cmd.Stderr = os.Stderr
+	cmd.Stderr = evidence.stderr
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	in, err := cmd.StdinPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -120,10 +122,17 @@ func surfaceStartupContractWithGateCopy(t *testing.T, held, repair, retainGate b
 	if err != nil {
 		t.Fatal(err)
 	}
+	evidence.stages.note(ancestryAppStarting)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = in.Close(); _ = cmd.Process.Kill(); _ = cmd.Wait() }()
+	evidence.stages.note(ancestryAppStarted)
+	defer func() {
+		evidence.reportFailure(t, cmd.Process)
+		_ = in.Close()
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	}()
 	request := map[string]any{
 		"bridge": 0,
 		"rpc": map[string]any{
@@ -137,13 +146,16 @@ func surfaceStartupContractWithGateCopy(t *testing.T, held, repair, retainGate b
 		},
 	}
 	start := time.Now()
+	evidence.stages.note(ancestryRequestWriteStarting)
 	if err := json.NewEncoder(in).Encode(request); err != nil {
 		t.Fatal(err)
 	}
+	evidence.stages.note(ancestryRequestWritten)
 	replies := make(chan []byte, 1)
 	go func() { line, _ := bufio.NewReader(out).ReadBytes('\n'); replies <- line }()
 	select {
 	case line := <-replies:
+		evidence.stages.note(ancestryReplyRead)
 		result := economyToolResult(t, line)
 		if result["token"] == nil {
 			t.Fatalf("registration setup failed: %v", result)
