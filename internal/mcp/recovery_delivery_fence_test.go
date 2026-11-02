@@ -64,14 +64,28 @@ func TestRecoveryConsentSurvivesDeliveryBookkeeping(t *testing.T) {
 func recoveryBookkeepingChange(t *testing.T, f *supportedMergeFixture, field string) func() {
 	t.Helper()
 	if field == "contact" {
-		// Fill the real admitted mailbox without refusing a send. Periodic
-		// ordinary contact cannot pre-empt this distinct full-mailbox marker.
+		// Start with an unread oldest ask and a normal contact marker. Only an
+		// actual rejected send derives a full-mailbox escalation in production;
+		// Do deliberately ignores caller-supplied ContactMailboxFull evidence.
+		f.call("adopt_agent", map[string]any{"token": f.lead["token"], "agent": f.source["agent_id"], "into": f.into["agent_id"]})
+		f.mail = f.call("send", map[string]any{"token": f.lead["token"], "to": f.source["agent_id"], "type": "question", "body": "oldest unread source ask"})["msg_serial"]
+		initial, err := f.e.Do(context.Background(), &core.Op{Kind: core.OpContactEscalate, MsgSerial: uint64(f.mail.(float64))})
+		if err != nil || initial["contact_serial"] == nil {
+			t.Fatalf("setup: initial ordinary contact missing: %v %v", initial, err)
+		}
+		before := initial["contact_serial"].(uint64)
 		for range 2 {
-			f.mail = f.call("send", map[string]any{"token": f.lead["token"], "to": f.source["agent_id"], "type": "question", "body": "pending source mail"})["msg_serial"]
+			f.call("send", map[string]any{"token": f.lead["token"], "to": f.source["agent_id"], "type": "question", "body": "fills source mailbox"})
 		}
 		return func() {
-			result, err := f.e.Do(context.Background(), &core.Op{Kind: core.OpContactEscalate, MsgSerial: uint64(f.mail.(float64)), ContactMailboxFull: true})
-			if err != nil || result["contact_serial"] == nil || result["deduplicated"] == true {
+			refused := f.raw("send", map[string]any{"token": f.lead["token"], "to": f.source["agent_id"], "type": "question", "body": "not admitted"})
+			if refused["code"] != "E_MAILBOX_FULL" {
+				t.Fatalf("setup: full mailbox did not refuse the actual send: %v", refused)
+			}
+			// The idempotent ordinary operation returns the marker now stored on
+			// this ask; it must name a NEW full contact, not our initial attempt.
+			result, err := f.e.Do(context.Background(), &core.Op{Kind: core.OpContactEscalate, MsgSerial: uint64(f.mail.(float64))})
+			if err != nil || result["deduplicated"] != true || result["contact_serial"] == nil || result["contact_serial"] == before {
 				t.Fatalf("setup: contact marker did not change: %v %v", result, err)
 			}
 		}

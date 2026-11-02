@@ -18,6 +18,7 @@ const OpRequireV17Features = "require_dibs_v0.0.17"
 const (
 	FeatureDesktopApproval = "desktop-approval-confirmation/v1"
 	FeatureMailboxRecovery = "mailbox-recovery/v1"
+	FeatureRecoveryConsent = "mailbox-recovery-consent/v3"
 )
 
 func admitReaderFeatures(op *Op) error {
@@ -28,7 +29,7 @@ func admitReaderFeatures(op *Op) error {
 		}
 		return nil
 	}
-	if len(op.RequiredFeatures) == 0 || len(op.RequiredFeatures) > 2 {
+	if len(op.RequiredFeatures) == 0 || len(op.RequiredFeatures) > 3 {
 		return errf("E_BAD_ARG", "name the required v0.0.17 features once", "invalid reader requirement count")
 	}
 	for i, feature := range op.RequiredFeatures {
@@ -42,7 +43,7 @@ func admitReaderFeatures(op *Op) error {
 
 // SupportsV17Feature is reader-format knowledge, shared with ledger decoding.
 func SupportsV17Feature(feature string) bool {
-	return feature == FeatureDesktopApproval || feature == FeatureMailboxRecovery
+	return feature == FeatureDesktopApproval || feature == FeatureMailboxRecovery || feature == FeatureRecoveryConsent
 }
 
 func (s *State) applyReaderFeatures(op *Op, now time.Time) (Result, []Event, error) {
@@ -72,7 +73,33 @@ func (s *State) FeatureData() []string {
 	if s.HasMailboxRecoveryData() {
 		features = append(features, FeatureMailboxRecovery)
 	}
+	for _, message := range s.Messages {
+		if message != nil && message.Recovery.UsesV3Fence() {
+			features = append(features, FeatureRecoveryConsent)
+			break
+		}
+	}
+	sort.Strings(features)
 	return features
+}
+
+// HasRecoveryConsentAt is bounded to affected message records. The complete
+// census belongs to FeatureData at boot, not every writer operation.
+func (s *State) HasRecoveryConsentAt(op *Op, serial uint64) bool {
+	if op.Recovery.UsesV3Fence() || s.recoveryConsentMessages([]uint64{serial, op.MsgSerial}) ||
+		s.recoveryConsentMessages(op.MsgSerials) {
+		return true
+	}
+	return op.MailboxSerials != nil && s.recoveryConsentMessages(*op.MailboxSerials)
+}
+
+func (s *State) recoveryConsentMessages(serials []uint64) bool {
+	for _, serial := range serials {
+		if message := s.Messages[serial]; message != nil && message.Recovery.UsesV3Fence() {
+			return true
+		}
+	}
+	return false
 }
 
 // HasMailboxRecoveryData includes consent, inherited history and retained routes.

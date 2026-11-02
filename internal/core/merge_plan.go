@@ -122,6 +122,12 @@ func (s *State) MergeFence(from, into string, ignore uint64) string {
 }
 
 func (s *State) mergeFence(from, into string, ignore uint64, domain string, rows []*Agent, survivorMail bool) string {
+	return s.mergeFenceProjection(from, into, ignore, domain, rows, survivorMail, false)
+}
+
+func (s *State) mergeFenceProjection(
+	from, into string, ignore uint64, domain string, rows []*Agent, survivorMail, deliveryBookkeeping bool,
+) string {
 	sum := sha256.New()
 	enc := newMergeEncoder(sum)
 	enc(domain)
@@ -133,7 +139,13 @@ func (s *State) mergeFence(from, into string, ignore uint64, domain string, rows
 		m := s.Messages[n]
 		switch {
 		case s.mergeOwnsMail(from, m), survivorMail && s.mergeOwnsMail(into, m):
-			enc([]any{"incoming", m})
+			projected := m
+			if deliveryBookkeeping {
+				copy := *m
+				copy.ContactEscalatedAt, copy.StallNotifiedDeclaration = 0, 0
+				projected = &copy
+			}
+			enc([]any{"incoming", projected})
 		case s.mergeRewritesSender(from, m):
 			// Even when survivor incoming is excluded, source-authored mail
 			// addressed to the survivor still carries a sender rewrite.

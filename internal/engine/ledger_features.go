@@ -47,6 +47,10 @@ func (e *Engine) missingReaderFeaturesAt(op *core.Op, result core.Result) []stri
 			missing = append(missing, core.FeatureMailboxRecovery)
 		}
 	}
+	if !slices.Contains(e.state.RequiredFeatures, core.FeatureRecoveryConsent) &&
+		e.state.HasRecoveryConsentAt(op, e.state.Serial) {
+		missing = append(missing, core.FeatureRecoveryConsent)
+	}
 	return missing
 }
 
@@ -60,6 +64,9 @@ func (e *Engine) requireFeaturesForAppend(op *core.Op, now time.Time) error {
 	var features []string
 	if op.Recovery != nil || op.RecoveryActor != nil {
 		features = append(features, core.FeatureMailboxRecovery)
+	}
+	if op.Recovery.UsesV3Fence() || op.RecoveryActor != nil && e.state.HasRecoveryConsentAt(op, 0) {
+		features = append(features, core.FeatureRecoveryConsent)
 	}
 	if op.Kind == core.OpSetDesktopApprovalSetting &&
 		(op.SettingValue == "true") != e.state.DesktopApproval.Enabled {

@@ -58,9 +58,11 @@ func requiredSnapshotFeatures(st *core.State) []string {
 			names = append(names, feature.name)
 		}
 	}
-	for _, name := range st.RequiredFeatures {
-		if !slices.Contains(names, name) {
-			names = append(names, name)
+	for _, features := range [][]string{st.RequiredFeatures, st.FeatureData()} {
+		for _, name := range features {
+			if !slices.Contains(names, name) {
+				names = append(names, name)
+			}
 		}
 	}
 	return names
@@ -89,7 +91,8 @@ func validateSnapshotFeatures(h SnapshotHeader) error {
 			return fmt.Errorf("snapshot feature %q is declared twice", name)
 		}
 		seen[name] = true
-		if !slices.ContainsFunc(snapshotFeatures, func(f snapshotFeature) bool { return f.name == name }) {
+		declared := slices.ContainsFunc(snapshotFeatures, func(f snapshotFeature) bool { return f.name == name })
+		if !core.SupportsV17Feature(name) && !declared {
 			return fmt.Errorf("snapshot requires feature %q; upgrade dibd before opening this board", name)
 		}
 	}

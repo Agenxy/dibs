@@ -9,7 +9,10 @@ import (
 	"time"
 )
 
-const recoveryProposalV2Prefix = "v2:"
+const (
+	recoveryProposalV2Prefix = "v2:"
+	recoveryConsentV3Prefix  = "v3:"
+)
 
 // RecoveryProposalFence permits the recipient's normal wake/check_in/contact
 // while preserving every substantive input. Current eligibility still checks
@@ -25,12 +28,16 @@ func (s *State) RecoveryProposalFence(from, into string, ignore uint64) string {
 // The v1 fold is historical wire format. Its normalization and encoding must
 // remain byte-identical: both versions have fixed-input fingerprint guards.
 func (s *State) recoveryProposalFence(from, into string, ignore uint64, domain string, survivorMail bool) string {
+	return s.mergeFence(from, into, ignore, domain, s.recoveryProposalRows(from, into), survivorMail)
+}
+
+func (s *State) recoveryProposalRows(from, into string) []*Agent {
 	survivor := *s.Agents[into]
 	survivor.LastCoordination = time.Time{}
 	survivor.Status, survivor.StaleReason = "", ""
 	survivor.StaleSince, survivor.DormantSince = time.Time{}, time.Time{}
 	survivor.AckedSerial, survivor.ContactNoticeReadAt = 0, 0
-	return s.mergeFence(from, into, ignore, domain, []*Agent{s.Agents[from], &survivor}, survivorMail)
+	return []*Agent{s.Agents[from], &survivor}
 }
 
 // A send updates its author's coordination checkpoint before recording the
@@ -38,19 +45,44 @@ func (s *State) recoveryProposalFence(from, into string, ignore uint64, domain s
 // prefix alone, never from current state, time or build. Current ingress and
 // consent use RecoveryFence instead, so a pending v1 proposal requires review.
 func (s *State) recordedRecoveryFence(r *RecoveryRequest, proposer string, ignore uint64) string {
+	if r.UsesV3Fence() {
+		return s.CurrentRecoveryFence(r, proposer, ignore)
+	}
 	if proposer != r.Into && !strings.HasPrefix(r.Fence, recoveryProposalV2Prefix) {
 		return s.recoveryProposalFence(r.From, r.Into, ignore, "recovery-proposal:v1", true)
 	}
 	return s.RecoveryFence(r, proposer, ignore)
 }
 
-// RecoveryFence uses the self-describing envelope direction. Every historical recovery was
-// survivor-initiated, and keeps its original byte-for-byte merge projection.
+// RecoveryFence selects a recorded projection. Unprefixed survivor requests
+// retain their original byte-for-byte merge projection; v3 names the new one.
 func (s *State) RecoveryFence(r *RecoveryRequest, proposer string, ignore uint64) string {
+	if r.UsesV3Fence() {
+		return s.CurrentRecoveryFence(r, proposer, ignore)
+	}
 	if proposer == r.Into {
 		return s.MergeFence(r.From, r.Into, ignore)
 	}
 	return s.RecoveryProposalFence(r.From, r.Into, ignore)
+}
+
+// CurrentRecoveryFence changes only copied delivery-attempt/suppression markers.
+// Stored mail, delivery/debt/retention and every eligibility check stay intact.
+// The recorded prefix selects this projection; historical projections above are
+// wire formats, never inferred from the reader's version or current clock.
+func (s *State) CurrentRecoveryFence(r *RecoveryRequest, proposer string, ignore uint64) string {
+	rows := []*Agent{s.Agents[r.From], s.Agents[r.Into]}
+	domain, survivorMail := "recovery-self:v3", true
+	if proposer != r.Into {
+		rows = s.recoveryProposalRows(r.From, r.Into)
+		domain, survivorMail = "recovery-proposal:v3", false
+	}
+	return recoveryConsentV3Prefix + s.mergeFenceProjection(r.From, r.Into, ignore, domain, rows, survivorMail, true)
+}
+
+// UsesV3Fence is shared reader-format knowledge, not an authorization decision.
+func (r *RecoveryRequest) UsesV3Fence() bool {
+	return r != nil && strings.HasPrefix(r.Fence, recoveryConsentV3Prefix)
 }
 
 // RecoveryRequest binds source, survivor and coordinator incarnations. The
@@ -249,7 +281,11 @@ func admitRecoveryRequest(op *Op) error {
 }
 
 func validRecoveryFence(fence string) bool {
-	fence = strings.TrimPrefix(fence, recoveryProposalV2Prefix)
+	if strings.HasPrefix(fence, recoveryConsentV3Prefix) {
+		fence = strings.TrimPrefix(fence, recoveryConsentV3Prefix)
+	} else {
+		fence = strings.TrimPrefix(fence, recoveryProposalV2Prefix)
+	}
 	if len(fence) != 71 || !strings.HasPrefix(fence, "sha256:") {
 		return false
 	}

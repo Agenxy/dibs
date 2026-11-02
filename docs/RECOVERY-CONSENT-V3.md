@@ -42,6 +42,12 @@ v3 fence input**, never in stored state, replay records or the transferred mail.
 | `WithdrawalReason`, `WithdrawnBy`, `SupersededBy` | Author withdrawal/replacement; expiry does not invent one | Keep. These change the request's disposition or replacement relationship. |
 | `AdoptedFrom`, `AdoptedAt`, `PriorAdoptionSerial`, `MergedSentAt` | Authorized adoption/merge and recorded completion | Keep. These establish incarnation-specific mail ownership and previously completed effects. |
 
+Expiry is deliberate maintenance interference: if a response window expires
+between request and approval, `State`, `TerminalAt` and `ExpireDetail` change
+what can be answered and what will move. Consent must remain stale in that
+case. Its corrective hint tells the caller to preview again and send a fresh
+request with that fence. This is designed refusal, not a repeated delivery bug.
+
 ## Per-recipient delivery state outside Message
 
 `Contacts` contains `MailboxFull`, `Serial`, `Recipient`, `OldestSerial`,
@@ -84,7 +90,12 @@ needed.
 Each cleared field has a permanent real-HTTP preview/request/approval guard,
 on both protocol versions, both initiation directions and both boundaries.
 The daemon change is a recorded operation, with setup assertions that its
-marker changed. Restart uses the real encrypted ledger. The earlier synctest
+marker changed. Contact tests capture an ordinary contact on an unread source
+ask, fill its mailbox through admitted sends, then trigger a real capacity
+refusal across the consent boundary. The writer derives its full-mailbox
+escalation; the ask must name a new contact serial. Caller-supplied full-mailbox
+evidence is deliberately ignored, and cannot drive this guard. Restart uses
+the real encrypted ledger. The earlier synctest
 draft stalled on real HTTP I/O preventing fake-time advancement and was
 discarded; that was a fixture failure, not product evidence. Negative guards
 must retain changed-mail, authority and eligibility refusals. Every new guard

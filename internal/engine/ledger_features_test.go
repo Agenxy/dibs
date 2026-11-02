@@ -94,7 +94,7 @@ func TestRecoveryWriterFencesBeforeFirstFeatureAppend(t *testing.T) {
 	if err != nil {
 		t.Fatal("setup recovery:", err)
 	}
-	assertFeatureMarkerCount(t, e, ctx, led, 1)
+	assertFeatureMarkerCount(t, e, ctx, led, 1, "mailbox-recovery-consent/v3", "mailbox-recovery/v1")
 	if _, err := e.query(ctx, func() core.Result {
 		for i, op := range led.ops {
 			if op.Kind == core.OpSendMessage && op.Recovery != nil {
@@ -108,7 +108,7 @@ func TestRecoveryWriterFencesBeforeFirstFeatureAppend(t *testing.T) {
 		t.Fatal(err)
 	}
 	contactReplayDo(t, e, ctx, &core.Op{Kind: core.OpRespond, Token: tokens["lead"], MsgSerial: req["msg_serial"].(uint64), Disposition: "approve"})
-	assertFeatureMarkerCount(t, e, ctx, led, 1)
+	assertFeatureMarkerCount(t, e, ctx, led, 1, "mailbox-recovery-consent/v3", "mailbox-recovery/v1")
 }
 
 // The strict prefix guard above remains separate. This guard also runs under
@@ -127,7 +127,7 @@ func TestRecoveryWriterAlwaysFencesAndWarnsOnBackstop(t *testing.T) {
 	if _, err := e.RecoverAgent(ctx, tokens["survivor"], "source", MergeOptions{Fence: plan["fence"].(string)}); err != nil {
 		t.Fatal("setup recovery:", err)
 	}
-	assertFeatureMarkerCount(t, e, ctx, led, 1)
+	assertFeatureMarkerCount(t, e, ctx, led, 1, "mailbox-recovery-consent/v3", "mailbox-recovery/v1")
 	if _, err := e.query(ctx, func() core.Result {
 		marker, feature := -1, -1
 		for i, op := range led.ops {
@@ -183,8 +183,11 @@ func TestRefusedFeatureAppendKeepsOnlyOneMarkerOnRetry(t *testing.T) {
 	}
 }
 
-func assertFeatureMarkerCount(t *testing.T, e *Engine, ctx context.Context, led *memLedger, want int) {
+func assertFeatureMarkerCount(t *testing.T, e *Engine, ctx context.Context, led *memLedger, want int, features ...string) {
 	t.Helper()
+	if len(features) == 0 {
+		features = []string{"mailbox-recovery/v1"} // frozen historical expectation
+	}
 	if _, err := e.query(ctx, func() core.Result {
 		count := 0
 		for _, op := range led.ops {
@@ -192,7 +195,7 @@ func assertFeatureMarkerCount(t *testing.T, e *Engine, ctx context.Context, led 
 				count++
 				raw, err := json.Marshal(op)
 				var fields map[string]any
-				if err != nil || json.Unmarshal(raw, &fields) != nil || fmt.Sprint(fields["required_features"]) != "[mailbox-recovery/v1]" {
+				if err != nil || json.Unmarshal(raw, &fields) != nil || fmt.Sprint(fields["required_features"]) != fmt.Sprint(features) {
 					t.Errorf("marker does not name the required feature: %s %v", raw, err)
 				}
 			}
@@ -281,6 +284,29 @@ func TestBootFencesHistoricalRecoveryOnce(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestBootFencesV3RecoveryAndDesktopPolicyTogether(t *testing.T) {
+	st := historicalRecoveryState(t, nil)
+	now := time.Now()
+	for _, op := range []*core.Op{
+		{
+			Kind: core.OpSendMessage, Token: "survivor-token", To: "lead", MsgType: core.MsgRequest, Body: "historical v3 consent",
+			Recovery: &core.RecoveryRequest{From: "source", Into: "survivor", SourceCreated: 1, SurvivorCreated: 2, CoordinatorCreated: 3, Fence: "v3:sha256:" + strings.Repeat("a", 64)},
+		},
+		{
+			Kind: core.OpSetDesktopApprovalSetting, Token: "survivor-token",
+			SettingKey: core.DesktopApprovalSettingKey, SettingValue: "true",
+		},
+	} {
+		if _, _, err := st.Apply(op, now); err != nil {
+			t.Fatal("setup historical feature record:", err)
+		}
+	}
+	led := &memLedger{}
+	e, ctx := runContactReplayEngine(t, st, led, nil)
+	assertFeatureMarkerCount(t, e, ctx, led, 1,
+		"desktop-approval-confirmation/v1", "mailbox-recovery-consent/v3", "mailbox-recovery/v1")
 }
 
 func TestReaderRequirementIsWriterOwned(t *testing.T) {
