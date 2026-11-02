@@ -122,6 +122,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Daemon shutdown and failed host-registry writes explicitly unlock before
+  closing their lock files, so a descriptor retained across a concurrent fork
+  cannot keep a released lock held. Ancestry and reconnect fixtures use the
+  same release boundary; their existing response and recovery bounds remain.
+
 - Coordinator merge previews now explain a refused recovery proposal with its
   code, message and corrective hint. Recovery respects ordinary exact-ID and
   live-name precedence, so a closed namesake cannot block a lost mailbox's

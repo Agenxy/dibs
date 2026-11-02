@@ -249,6 +249,9 @@ func (s *Strangers) Error() string {
 	return fmt.Sprintf("%d other dibd process(es) already running", len(s.Others))
 }
 
+// The write boundary is replaceable by a private persistence-failure fixture.
+var writeDaemonEntry = (*os.File).WriteAt
+
 // Claim atomically decides whether this daemon may start and, if so, registers
 // it.
 //
@@ -305,24 +308,23 @@ func Claim(d Daemon, allowParallel bool) (release func(), err error) {
 	}
 	body, err := json.Marshal(d)
 	if err != nil {
-		_ = f.Close()
+		_ = UnlockAndClose(f)
 		return nil, err
 	}
 	if err := f.Truncate(0); err != nil {
-		_ = f.Close()
+		_ = UnlockAndClose(f)
 		return nil, err
 	}
-	if _, err := f.WriteAt(body, 0); err != nil {
-		_ = f.Close()
+	if _, err := writeDaemonEntry(f, body, 0); err != nil {
+		_ = UnlockAndClose(f)
 		return nil, err
 	}
 	if err := f.Sync(); err != nil {
-		_ = f.Close()
+		_ = UnlockAndClose(f)
 		return nil, err
 	}
 	return func() {
-		Unlock(f)
-		_ = f.Close()
+		_ = UnlockAndClose(f)
 		_ = os.Remove(path)
 	}, nil
 }

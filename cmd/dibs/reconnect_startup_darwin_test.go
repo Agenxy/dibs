@@ -349,7 +349,7 @@ func appReconnectContract(t *testing.T, lost, clockBack, legacy, lateStamp bool)
 			t.Fatal(err)
 		}
 		var once sync.Once
-		releaseStamp = func() { once.Do(func() { _ = f.Close() }) }
+		releaseStamp = func() { once.Do(func() { _ = paths.UnlockAndClose(f) }) }
 		t.Cleanup(releaseStamp)
 		t.Setenv("DIBS_TEST_START_STAMP_GATE", gate)
 	}
