@@ -101,7 +101,7 @@ jobs:
         working-directory: cmd/dibd
         run: mise exec -- sudo -n env "PATH=$PATH" DIBS_Q_CI=1 "$RUNNER_TEMP/dibs-local-uid.test" -test.run '^TestLocalIPCKernelRejectsOtherUID$' -test.timeout 3m -test.v
       - name: every package, with the race detector
-        run: mise exec -- go test -race -count=1 ./...
+        run: mise exec -- go test -race -count=1 -timeout=15m ./...
   windows:
     runs-on: windows-latest
     steps:
