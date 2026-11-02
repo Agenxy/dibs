@@ -1010,8 +1010,55 @@ try {
   const armed = await box.evaluate((el: any) => typeof el.onkeydown)
   check("and the ⌘+↵ hint it prints is still true afterwards",
     armed === "function", String(armed))
-  // The keyboard path is the one a person actually uses.
-  await box.press("Meta+Enter")
+  // Hold the real answer at the host proxy after the panel has drawn its
+  // pending state. An unrelated message changes this SAME pane while that
+  // request is in flight; an identical snapshot would let patchHTML skip it.
+  let startAnswer!: () => void
+  let releaseAnswer!: () => void
+  const answerStarted = new Promise<void>((resolve) => { startAnswer = resolve })
+  const answerGate = new Promise<void>((resolve) => { releaseAnswer = resolve })
+  let heldAnswers = 0
+  await page.route("**/rpc", async (route) => {
+    const request = route.request().postDataJSON() as any
+    if (request?.method === "tools/call" && request?.params?.name === "respond"
+        && request?.params?.arguments?.msg_serial === mail.q.msg_serial
+        && request?.params?.arguments?.disposition === "answer") {
+      heldAnswers++
+      startAnswer()
+      await answerGate
+    }
+    await route.continue()
+  })
+  try {
+    // The keyboard path is the one a person actually uses.
+    await box.press("Meta+Enter")
+    await Promise.race([answerStarted, Bun.sleep(5000).then(() => {
+      throw new Error("setup: the answer did not reach the host proxy")
+    })])
+    const inFlightSend = await sendReply.elementHandle()
+    if (!inFlightSend || await inFlightSend.getAttribute("aria-busy") !== "true")
+      throw new Error("setup: no busy reply control after the answer started")
+    const unrelated = textOf(await tool("send", { token: peer.token, to: me.agent_id,
+      type: "notify", body: "A separate row while the reply is in flight", op_id: "e2e-reply-identity" }))
+    const changed = await tool("board", { token: me.token, detail: true, view: "mail" })
+    await page.evaluate((r) => {
+      delete r.view
+      if (r._meta?.["com.dibs/panel"]) delete r._meta["com.dibs/panel"].view
+      ;(window as any).__deliver(r)
+    }, changed)
+    await panel.locator(`.msg[data-serial="${unrelated.msg_serial}"]`).waitFor({ state: "attached", timeout: 5000 })
+    const replyIdentity = await inFlightSend.evaluate((el) => ({
+      connected: el.isConnected, busy: el.getAttribute("aria-busy"),
+      same: el === document.querySelector(`.act[data-serial="${el.getAttribute("data-serial")}"][data-act="send"]`),
+    }))
+    check("an unrelated mail row keeps the in-flight MCP reply button by identity",
+      replyIdentity.connected && replyIdentity.same && replyIdentity.busy === "true" && heldAnswers === 1,
+      JSON.stringify({ ...replyIdentity, heldAnswers }))
+    await tool("ack", { token: me.token, msg_serial: unrelated.msg_serial })
+  } finally {
+    releaseAnswer()
+    await page.unroute("**/rpc")
+  }
   await Bun.sleep(900)
 
   await panel.locator(`.act[data-serial="${mail.r.msg_serial}"]`, { hasText: "Approve" }).click()

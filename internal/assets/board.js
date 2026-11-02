@@ -998,6 +998,72 @@ const Board = (() => {
   }
 
 
+  // Draft values are only half of a composer: a pointer or a pending request
+  // still names its ORIGINAL button. Restoring text into a replacement loses
+  // that identity. Keep unchanged composers, including their in-flight state,
+  // while the surrounding rows are redrawn. Changed membership/actions must
+  // still replace their controls; a key alone is not evidence of equivalence.
+  function renderPreservingComposers(root, html) {
+    const composers = (node) => [...node.querySelectorAll(".compose, .human-compose")]
+      .filter((el) => !el.parentElement?.closest(".compose, .human-compose"))
+    const previous = composers(root)
+    if (!previous.length) { root.innerHTML = html; return }
+    const active = root.ownerDocument.activeElement
+
+    const template = root.ownerDocument.createElement("template")
+    template.innerHTML = html
+    const next = composers(template.content)
+    const key = (el) => JSON.stringify([el.className, el.id, el.dataset.agent, el.dataset.serial,
+      el.dataset.kind, el.dataset.target])
+    const unique = (elements) => {
+      const index = new Map()
+      for (const el of elements) {
+        const k = key(el)
+        index.set(k, index.has(k) ? null : el)
+      }
+      return index
+    }
+    const oldByKey = unique(previous), newByKey = unique(next)
+    const signature = (el) => {
+      const copy = el.cloneNode(true)
+      // act() temporarily disables its control. That is request state to
+      // preserve, not a change to the server-rendered action or permissions.
+      for (const busy of copy.querySelectorAll('.act[aria-busy="true"]')) {
+        busy.removeAttribute("aria-busy")
+        busy.removeAttribute("disabled")
+      }
+      // tab() may leave an empty style attribute after restarting animation.
+      for (const node of [copy, ...copy.querySelectorAll('[style=""]')])
+        if (node.getAttribute("style") === "") node.removeAttribute("style")
+      return copy.outerHTML
+    }
+    const keep = next.flatMap((replacement) => {
+      const k = key(replacement), original = oldByKey.get(k)
+      return original && newByKey.get(k) === replacement && signature(original) === signature(replacement)
+        ? [{ original, replacement }] : []
+    })
+    const oldRoots = [...root.childNodes]
+    // Put the new parents in the live document BEFORE moving the original
+    // composers into them. Native moveBefore preserves connection and focus.
+    // Older browsers still retain the same nodes in this synchronous update;
+    // the surface's draft/focus wrapper supplies their focus restoration.
+    root.append(template.content)
+    for (const { original, replacement } of keep) {
+      if (typeof replacement.parentNode.moveBefore === "function" && root.isConnected) {
+        replacement.parentNode.moveBefore(original, replacement)
+        replacement.remove()
+      } else replacement.replaceWith(original)
+    }
+    const retained = new Set(keep.map(({ original }) => original))
+    for (const old of oldRoots) if (!retained.has(old)) old.remove()
+    // insertBefore/replaceWith in the fallback retains identity but clears
+    // native focus. Restore buttons too; the surface's draft wrapper only
+    // tracks editable fields. No asynchronous work or focus change intervenes.
+    if (active?.isConnected && root.ownerDocument.activeElement !== active
+        && keep.some(({ original }) => original.contains(active)) && typeof active.focus === "function")
+      active.focus({ preventScroll: true })
+  }
+
   /**
    * Run an update inside a View Transition, or run it plainly.
    *
@@ -1122,7 +1188,7 @@ const Board = (() => {
   return {
     esc, ago, TERMINAL, VERDICT,
     attentionHTML, matchesAgent, matchesSpace, matchesMail, matchesEvent, noMatchesHTML, identHTML, laneHTML, cadenceHTML, rosterHTML, contactAlertsHTML, messageHTML, eventHTML, agentBadges, explained, explainer, transition, ticker, recency,
-    channelHTML, channelsHTML,
+    channelHTML, channelsHTML, renderPreservingComposers,
     summaryHTML, emptyHTML, firstRunHTML,
   }
 })()

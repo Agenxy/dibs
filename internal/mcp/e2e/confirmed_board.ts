@@ -109,6 +109,33 @@ export async function checkConfirmedBoard(rpc: RPC, caller: any, receiver: any, 
     await first.click()
     check("reopening a row retains its own draft", await text.inputValue() === "A draft survives the fleet changing")
     await text.fill("Confirmed row message through the real MCP app")
+    const retainedTell = await composers.getByRole("button", { name: "tell", exact: true }).elementHandle()
+    if (!retainedTell) throw new Error("confirmed board setup: no human send control")
+    // Observe real rebinding on the retained node without changing its effect.
+    // Clearing the field can hide duplicate listeners from a request count,
+    // so also record any click-listener additions during the two redraws.
+    await retainedTell.evaluate((el) => {
+      const add = el.addEventListener
+      ;(window as any).__retainedClickListeners = 0
+      el.addEventListener = function(type: string, ...args: any[]) {
+        if (type === "click") (window as any).__retainedClickListeners++
+        return add.call(this, type, ...args as [any, any])
+      }
+    })
+    for (let redraw = 1; redraw <= 2; redraw++) {
+      const update = structuredClone(outsidePush)
+      update._meta["com.dibs/panel"].board.serial += redraw
+      update._meta["com.dibs/panel"].board.agents[2].slots[0].text = `Unrelated roster update ${redraw} before the human sends`
+      await page.evaluate(result => (window as any).__deliver(result), update)
+      await panel.locator("#foot-node").filter({ hasText: `serial ${update._meta["com.dibs/panel"].board.serial}` }).waitFor()
+    }
+    const retained = await retainedTell.evaluate((el) => ({
+      connected: el.isConnected, same: el === document.querySelector('.human-compose button[data-do="notify"]'),
+      propertyHandler: typeof el.onclick === "function", listenerAdds: (window as any).__retainedClickListeners,
+    }))
+    check("two roster redraws retain the human send control without adding click listeners",
+      retained.connected && retained.same && retained.propertyHandler && retained.listenerAdds === 0,
+      JSON.stringify(retained))
     await composers.getByRole("button", { name: "tell", exact: true }).click()
     let delivered = false
     for (let until = Date.now() + 5000; !delivered && Date.now() < until;) {
@@ -117,6 +144,9 @@ export async function checkConfirmedBoard(rpc: RPC, caller: any, receiver: any, 
       if (!delivered) await Bun.sleep(25)
     }
     check("the selected row sends actual human mail through the real MCP proxy", delivered)
+    const sendCalls = await page.evaluate(() => (window as any).__probe.toolCalls.filter((call: any) =>
+      call.name === "send" && call.arguments?.body === "Confirmed row message through the real MCP app").length)
+    check("one click after two redraws sends exactly one human request", sendCalls === 1, String(sendCalls))
     await panel.locator("#tab-agents").click()
     const space = panel.locator(".space").filter({ hasText: "auth-work" })
     await space.getByRole("textbox", { name: "say something in auth-work", exact: true }).fill("Confirmed human space post through the real MCP app")
