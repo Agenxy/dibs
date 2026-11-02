@@ -31,8 +31,9 @@ func LockShared(f *os.File, wait bool) error {
 	return syscall.Flock(int(f.Fd()), flags)
 }
 
-// Unlock releases a lock LockExclusive took. Errors are not reported: the
-// file is closed right after, which releases it anyway.
+// Unlock releases a lock LockExclusive or LockShared took. Errors are not
+// reported. Call UnlockAndClose to end a held lock's descriptor lifetime;
+// closing alone need not release a description retained by fork or dup.
 func Unlock(f *os.File) { _ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) }
 
 // LockHeldElsewhere reports whether a non-waiting LockExclusive failed because

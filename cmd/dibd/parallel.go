@@ -90,7 +90,7 @@ func claimHostSlot(addr, scheme, dir string, allowed bool) (func(), error) {
 		return func() {}, fmt.Errorf("another dibd already runs on %s (flock %s): %w",
 			dir, lockPath, err)
 	}
-	closeLock := func() { _ = lockFile.Close() }
+	closeLock := func() { _ = paths.UnlockAndClose(lockFile) }
 
 	// 2. This machine. Reading the registry and claiming a slot happen under one
 	//    host-wide lock, so two daemons starting together cannot both conclude

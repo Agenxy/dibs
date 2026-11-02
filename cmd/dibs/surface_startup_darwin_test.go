@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"syscall"
 	"testing"
 	"time"
 
@@ -45,7 +46,17 @@ func TestFailedAncestryRepairsSurfaceWithoutAnotherModelCall(t *testing.T) {
 	surfaceStartupContract(t, true, true)
 }
 
+func TestFailedAncestryRepairsSurfaceWithAnInheritedGate(t *testing.T) {
+	t.Setenv("DIBS_TEST_SURFACE_FAIL_ONCE", "1")
+	surfaceStartupContractWithGateCopy(t, true, true, true)
+}
+
 func surfaceStartupContract(t *testing.T, held, repair bool) {
+	t.Helper()
+	surfaceStartupContractWithGateCopy(t, held, repair, false)
+}
+
+func surfaceStartupContractWithGateCopy(t *testing.T, held, repair, retainGate bool) {
 	t.Helper()
 	dir := cliIPCProfile(t)
 	t.Setenv("DIBS_DIR", dir)
@@ -74,9 +85,19 @@ func surfaceStartupContract(t *testing.T, held, repair bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = f.Close() }()
+	defer func() { _ = paths.UnlockAndClose(f) }()
 	if err := paths.LockExclusive(f, false); err != nil {
 		t.Fatal(err)
+	}
+	if retainGate {
+		// A fork retains this open-file description until exec closes it.
+		// Keep a copy across release to prove Close is not our release signal.
+		duplicate, err := syscall.Dup(int(f.Fd()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		syscall.CloseOnExec(duplicate)
+		defer func() { _ = syscall.Close(duplicate) }()
 	}
 	srv := newLocalTestServer(t, dir, mcp.New(eng))
 	defer srv.Close()
@@ -155,7 +176,7 @@ func surfaceStartupContract(t *testing.T, held, repair bool) {
 			time.Sleep(time.Millisecond)
 		}
 	}
-	if err := f.Close(); err != nil {
+	if err := paths.UnlockAndClose(f); err != nil {
 		t.Fatal(err)
 	}
 	if repair {

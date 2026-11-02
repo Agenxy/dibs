@@ -73,7 +73,7 @@ func TestBridgeStartupHelper(t *testing.T) {
 				t.Error("surface gate setup:", err)
 				return "", err
 			}
-			defer func() { _ = f.Close() }()
+			defer func() { _ = paths.UnlockAndClose(f) }()
 			if err := os.WriteFile(gate+".entered", []byte("entered"), 0o600); err != nil {
 				t.Error("surface gate marker:", err)
 				return "", err
@@ -100,7 +100,7 @@ func TestBridgeStartupHelper(t *testing.T) {
 				t.Error("stamp gate setup:", err)
 				return ""
 			}
-			defer func() { _ = f.Close() }()
+			defer func() { _ = paths.UnlockAndClose(f) }()
 			if err := paths.LockExclusive(f, true); err != nil {
 				t.Error("stamp gate lock:", err)
 				return ""
