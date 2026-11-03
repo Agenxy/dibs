@@ -293,9 +293,9 @@ func (e *Engine) wakeSocketReady(l *core.Agent) {
 	go func() {
 		defer e.wakeExited(agent, plan.thread)
 		n := e.noteWakeAttempt(agent)
-		if !e.runWakeAndReport(plan, agent) {
+		if !e.runWakeAndReportPlan(&plan, agent) {
 			e.releaseWake(agent, stamp)
-			if n < 2 {
+			if n < 2 && plan.retryAllowed() {
 				e.armFailedWake(agent, cause, plan.cooldown)
 			}
 		}

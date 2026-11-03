@@ -32,21 +32,10 @@ func (e *Engine) afterAppReturn(ctx context.Context, epoch string, plans []wakeP
 	agents, threads := e.appAgentThreads(ctx)
 	if len(threads) > 0 && e.waitAppIPC(ctx, epoch, threads[0]) {
 		owned := func(thread string) (bool, error) { return appThreadOwned(ctx, thread) }
-		loaded, opened, err := shower.LoadChatGPTThreads(threads, owned, 5*time.Second)
-		if err != nil {
-			var missing *harnessenv.ChatGPTThreadOwnershipError
-			var unowned, unknown []string
-			if errors.As(err, &missing) {
-				unowned, unknown = missing.Unowned, missing.Unknown
-			}
-			slog.Warn("could not load every agent thread after the ChatGPT app restarted", "err", err,
-				"loaded", loaded, "opened", opened, "threads", len(threads),
-				"unowned_threads", unowned, "unknown_threads", unknown,
-				"hint", "an agent whose thread is not loaded is opened by its next mail instead")
-		} else {
-			slog.Info("loaded the agents' threads after the ChatGPT app restarted",
-				"loaded", loaded, "opened", opened, "threads", len(threads))
-		}
+		s := *shower
+		s.AllowOpen = func(thread string) bool { return e.restartNavigationAllowed(ctx, agents, thread) }
+		loaded, opened, err := s.LoadChatGPTThreads(threads, owned, 5*time.Second)
+		e.reportAppReturn(ctx, agents, threads, loaded, opened, err)
 	}
 	// Settled means the pass ENDED, not that every target became owned.
 	// Otherwise one missing thread holds unloaded agents' future mail forever:
@@ -69,8 +58,44 @@ func (e *Engine) afterAppReturn(ctx context.Context, epoch string, plans []wakeP
 	})
 }
 
-// appAgentThreads is every local ChatGPT-app agent on the native route and
-// its thread, sorted so the order of opens does not depend on map order.
+func (e *Engine) reportAppReturn(ctx context.Context, agents, threads []string, loaded, opened int, err error) {
+	if err == nil {
+		slog.Info("finished pending-agent chat loading after the ChatGPT app restarted",
+			"loaded", loaded, "opened", opened, "threads", len(threads))
+		return
+	}
+	var missing *harnessenv.ChatGPTThreadOwnershipError
+	var unowned, unknown []string
+	if errors.As(err, &missing) {
+		unowned, unknown = missing.Unowned, missing.Unknown
+		e.rememberStaleAppBindings(ctx, agents, unowned)
+	}
+	slog.Warn("could not load every pending agent chat after the ChatGPT app restarted", "err", err,
+		"loaded", loaded, "opened", opened, "threads", len(threads),
+		"unowned_threads", unowned, "unknown_threads", unknown,
+		"hint", "stale bindings stay held; doctor reports them, and other mail retains its ordinary route")
+}
+
+func (e *Engine) rememberStaleAppBindings(ctx context.Context, agents, unowned []string) {
+	quarantined := map[string]bool{}
+	for _, thread := range unowned {
+		if stale, err := harnessenv.ChatGPTBindingStale(thread); err == nil && stale {
+			quarantined[thread] = true
+		}
+	}
+	_, _ = e.query(ctx, func() core.Result {
+		for _, id := range agents {
+			if l := e.state.Agents[id]; l != nil && quarantined[threadIDOf(l)] {
+				e.noteAppBinding(l, "stale")
+			}
+		}
+		return nil
+	})
+}
+
+// All local native-route agents are reconsidered after return, including an
+// archived row whose thread is already owned. Navigation is narrower: only
+// non-archived agents with an original delivery still owed may be preloaded.
 func (e *Engine) appAgentThreads(ctx context.Context) (agents, threads []string) {
 	_, _ = e.query(ctx, func() core.Result {
 		ids := make([]string, 0, len(e.state.Agents))
@@ -86,11 +111,18 @@ func (e *Engine) appAgentThreads(ctx context.Context) (agents, threads []string)
 				continue
 			}
 			thread := threadIDOf(l)
-			if thread == "" || seen[thread] {
+			if thread == "" {
+				continue
+			}
+			agents = append(agents, id)
+			if l.Status == core.StatusArchived {
+				e.noteAppBinding(l, "archived")
+			}
+			if l.Gone() || len(e.freshCommandKeys(id, time.Now())) == 0 || seen[thread] {
 				continue
 			}
 			seen[thread] = true
-			agents, threads = append(agents, id), append(threads, thread)
+			threads = append(threads, thread)
 		}
 		return nil
 	})

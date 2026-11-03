@@ -41,6 +41,7 @@ var ErrAppOpenPairBusy = errors.New(
 var backgroundPairCacheDir = os.UserCacheDir
 
 type appOpenMemo struct {
+	Stale    bool      `json:"stale,omitempty"`
 	OpenedAt time.Time `json:"opened_at"`
 	Epoch    string    `json:"epoch"`
 	Loaded   bool      `json:"loaded"`
@@ -93,17 +94,9 @@ func (s Shower) showChatGPT(_ []string, thread string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	state := s.ownership(thread)
-	if state.Loaded {
-		memo.Loaded = true
-		if state.Epoch != "" {
-			memo.Epoch = state.Epoch
-		}
-		return false, saveAppOpen(path, memo)
-	}
-	now := time.Now().UTC()
-	if memo.suppresses(state, now) {
-		return false, nil
+	memo, allowed, err := s.prepareChatGPTOpen(path, thread, memo)
+	if err != nil || !allowed {
+		return false, err
 	}
 	// Every thread and every local producer uses this lock, acquired after
 	// the per-thread lock and before recording the attempt. Keep it for the
@@ -117,11 +110,11 @@ func (s Shower) showChatGPT(_ []string, thread string) (bool, error) {
 	defer paths.Unlock(pair)
 	// The probe and lock acquisition are inputs off the writer; record the
 	// actual attempted boundary, rather than the time we began probing.
-	now = time.Now().UTC()
-	memo.OpenedAt, memo.Loaded = now, false
-	if state.Epoch != "" {
-		memo.Epoch = state.Epoch
+	if !s.allowsOpen(thread) {
+		return false, nil
 	}
+	now := time.Now().UTC()
+	memo.OpenedAt, memo.Loaded = now, false
 	if err := saveAppOpen(path, memo); err != nil {
 		return false, err // never open without recording the bound
 	}
@@ -129,6 +122,24 @@ func (s Shower) showChatGPT(_ []string, thread string) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+func (s Shower) prepareChatGPTOpen(path, thread string, memo appOpenMemo) (appOpenMemo, bool, error) {
+	state := s.ownership(thread)
+	if state.Loaded {
+		memo.Stale, memo.Loaded = false, true
+		if state.Epoch != "" {
+			memo.Epoch = state.Epoch
+		}
+		return memo, false, saveAppOpen(path, memo)
+	}
+	if memo.Stale || !s.allowsOpen(thread) || memo.suppresses(state, time.Now().UTC()) {
+		return memo, false, nil
+	}
+	if state.Epoch != "" {
+		memo.Epoch = state.Epoch
+	}
+	return memo, true, nil
 }
 
 func lockBackgroundPair(dir string) (*os.File, error) {
@@ -232,4 +243,48 @@ func saveAppOpen(path string, memo appOpenMemo) error {
 		return err
 	}
 	return os.Rename(f.Name(), path)
+}
+
+// ChatGPTBindingStale is derived, local evidence that an unowned navigation
+// targeted a thread missing from a readable local rollout store. Ownership
+// absence alone and unavailable store evidence never set it.
+func ChatGPTBindingStale(thread string) (bool, error) {
+	key := sha256.Sum256([]byte(thread))
+	path := filepath.Join(paths.DataDir(), "app-opens", hex.EncodeToString(key[:])+".json")
+	memo, err := readAppOpen(path)
+	return memo.Stale, err
+}
+
+// ConfirmChatGPTBinding clears quarantine only after real ownership/input
+// acceptance. A timer or a different app incarnation cannot clear it.
+func ConfirmChatGPTBinding(thread string) error {
+	stale, err := ChatGPTBindingStale(thread)
+	if err != nil || !stale {
+		return err
+	}
+	return rememberChatGPTBinding(thread, false)
+}
+
+func rememberChatGPTBinding(thread string, stale bool) error {
+	key := sha256.Sum256([]byte(thread))
+	path := filepath.Join(paths.DataDir(), "app-opens", hex.EncodeToString(key[:])+".json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	// #nosec G304 -- fixed private data directory and hashed thread identifier.
+	f, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	if err = paths.LockExclusive(f, true); err != nil {
+		return err
+	}
+	defer paths.Unlock(f)
+	memo, err := readAppOpen(path)
+	if err != nil || memo.Stale == stale {
+		return err
+	}
+	memo.Stale = stale
+	return saveAppOpen(path, memo)
 }

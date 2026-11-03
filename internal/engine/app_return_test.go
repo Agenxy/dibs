@@ -28,7 +28,7 @@ import (
 // Through the production doors only: Engine.Run's epoch watcher, a send, the
 // real native client against a socket that refuses and then returns. The app
 // process observation, its window and the socket are fixtures.
-func TestAChatGPTRestartLoadsEveryAgentThreadOnceAndMailNeverOpensOne(t *testing.T) {
+func TestAChatGPTRestartLoadsOnlyTheOwedThreadAndLaterQuietMailUsesItsOrdinaryRoute(t *testing.T) {
 	const second = "0199a0b1-c2d3-4e5f-8a9b-0c1d2e3f4a5b"
 	t.Setenv("DIBS_DIR", t.TempDir())
 	app := testcodexipc.StartRestarting(t, "idle")
@@ -110,9 +110,9 @@ func TestAChatGPTRestartLoadsEveryAgentThreadOnceAndMailNeverOpensOne(t *testing
 	mu.Lock()
 	got := append([]string(nil), opens...)
 	mu.Unlock()
-	want := []string{"codex://threads/" + second, "codex://threads/" + testcodexipc.Thread, "codex://threads/new"}
+	want := []string{"codex://threads/" + testcodexipc.Thread, "codex://threads/new"}
 	if strings.Join(got, " ") != strings.Join(want, " ") {
-		t.Fatalf("after the restart the window went to %q, want each agent thread once and then the launch view %q", got, want)
+		t.Fatalf("after the restart the window went to %q, want only the owed thread then launch view %q", got, want)
 	}
 	inputs := app.Inputs()
 	if len(inputs) != 1 {
@@ -132,6 +132,18 @@ func TestAChatGPTRestartLoadsEveryAgentThreadOnceAndMailNeverOpensOne(t *testing
 	mu.Unlock()
 	if after != len(want) {
 		t.Fatalf("mail after the load opened a thread again: %d opens", after)
+	}
+	// Quiet agents are left alone, not made unreachable: their next real
+	// message takes the ordinary native-or-cold route and may load the chat.
+	if r, err := e.Do(ctx, &core.Op{Kind: core.OpSendMessage, Token: sender, To: "another-hand", MsgType: core.MsgNotify, Body: "new quiet-agent mail"}); err != nil || r["msg_serial"] == nil {
+		t.Fatalf("setup quiet mail: %v %v", r, err)
+	}
+	waitWakeDone(t, e, "another-hand")
+	mu.Lock()
+	final := append([]string(nil), opens...)
+	mu.Unlock()
+	if len(final) != len(want)+1 || final[len(final)-1] != "codex://threads/"+second {
+		t.Fatalf("quiet agent's new mail did not use the ordinary open route: %q", final)
 	}
 }
 

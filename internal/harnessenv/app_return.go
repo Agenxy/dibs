@@ -53,6 +53,7 @@ func (e *ChatGPTThreadOwnershipError) Error() string {
 func (s Shower) LoadChatGPTThreads(
 	threads []string, owned func(string) (bool, error), settle time.Duration,
 ) (loaded, opened int, err error) {
+	attempted := map[string]bool{}
 	dir := filepath.Join(paths.DataDir(), "app-opens")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return 0, 0, err
@@ -67,22 +68,18 @@ func (s Shower) LoadChatGPTThreads(
 		// Reconcile even on an open failure: earlier navigations may have
 		// completed meanwhile. Do not reopen anything or extend its wait.
 		var measurementErr error
-		loaded, measurementErr = measureChatGPTThreads(threads, owned)
+		loaded, measurementErr = reconcileChatGPTThreads(threads, owned, attempted)
 		err = errors.Join(err, measurementErr)
 	}()
 	for _, thread := range threads {
-		argv := chatGPTWakeArgv(thread)
-		if argv == nil {
-			continue
+		didOpen, openErr := s.loadChatGPTThread(thread, owned, settle)
+		if openErr != nil {
+			return loaded, opened, openErr
 		}
-		if held, err := owned(thread); err == nil && held {
-			continue
+		if didOpen {
+			opened++
+			attempted[thread] = true
 		}
-		if err := s.Open(argv); err != nil {
-			return loaded, opened, err
-		}
-		opened++
-		s.waitOwned(thread, owned, settle)
 	}
 	if opened > 0 {
 		if err := s.Open([]string{"/usr/bin/open", "-g", chatGPTHomeURL}); err != nil {
@@ -90,6 +87,43 @@ func (s Shower) LoadChatGPTThreads(
 		}
 	}
 	return loaded, opened, nil
+}
+
+func (s Shower) loadChatGPTThread(thread string, owned func(string) (bool, error), settle time.Duration) (bool, error) {
+	argv := chatGPTWakeArgv(thread)
+	if argv == nil {
+		return false, nil
+	}
+	if held, err := owned(thread); err == nil && held {
+		return false, rememberChatGPTBinding(thread, false)
+	}
+	stale, err := ChatGPTBindingStale(thread)
+	if err != nil {
+		return false, err
+	}
+	if stale || !s.allowsOpen(thread) {
+		return false, nil
+	}
+	if err = s.Open(argv); err != nil {
+		return false, err
+	}
+	s.waitOwned(thread, owned, settle)
+	return true, nil
+}
+
+func reconcileChatGPTThreads(
+	threads []string, owned func(string) (bool, error), attempted map[string]bool,
+) (int, error) {
+	loaded, err := measureChatGPTThreads(threads, owned)
+	var missing *ChatGPTThreadOwnershipError
+	if errors.As(err, &missing) {
+		for _, thread := range missing.Unowned {
+			if attempted[thread] && codexThreadMissing(thread) {
+				err = errors.Join(err, rememberChatGPTBinding(thread, true))
+			}
+		}
+	}
+	return loaded, err
 }
 
 func measureChatGPTThreads(threads []string, owned func(string) (bool, error)) (loaded int, err error) {

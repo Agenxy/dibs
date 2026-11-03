@@ -21,6 +21,9 @@ func (e *Engine) queueThreadGoneLocked(l *core.Agent) bool {
 }
 
 func (e *Engine) recordNonRetryableWake(plan wakePlan) {
+	if plan.routeRefused {
+		return // known refusal before handoff; the binding alert retains the mail
+	}
 	if plan.queueThreadGone() {
 		e.reportGoneQueueThread(plan)
 	} else {

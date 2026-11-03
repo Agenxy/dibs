@@ -134,6 +134,22 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the writer. Later contact updates, claim renewal or membership changes cannot
   race reply serialization or change an earlier board snapshot.
 
+- Archived remote Codex bindings with older metadata cannot reopen a chat,
+  including through a dormant bridge. Updated bridges can still deliver native
+  input to an already loaded chat using the receiving host's app-origin evidence.
+
+- App restart recovery opens only chats with current mail to deliver, leaving
+  quiet chats alone. Archived agents can still receive native notices in an
+  owned chat, but cannot navigate a window through restart, cold delivery,
+  Claude reopening or a remote bridge. A chat still unowned after an accepted
+  restart open is held as stale only if its local rollout is also missing from
+  a readable Codex store. Slow-loading chats retain their wake route; doctor
+  and board metadata name the binding while its mail remains stored. Older
+  bridges receive no archived app plan they could turn into an open. A remote
+  route whose thread, host or surface changed is rebuilt once from current
+  state before handoff; a fresh refusal retains the mail and a binding alert
+  without a retry loop. Delivery receipts follow the route actually used.
+
 - Live board and embedded app redraws preserve unchanged composer controls and
   their pending request state, so a click cannot lose its button underneath it. Membership
   and action changes still replace the affected controls.

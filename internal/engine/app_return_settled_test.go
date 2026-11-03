@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/codexipc"
+	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/testcodexipc"
 	"github.com/agenxy/dibs/internal/testexec"
@@ -75,7 +76,22 @@ func TestPartialRestartPassAllowsLaterUnownedMailToOpen(t *testing.T) {
 	if settled, _ := e.appSettled.Load().(string); settled != "app:A" {
 		t.Fatalf("setup: watcher baseline=%q", settled)
 	}
-	epoch.Store("app:B")
+	// Store real held mail before exposing the new epoch. The writer keeps
+	// the send's wake worker and the epoch watcher behind the same setup turn.
+	result, err := e.query(ctx, func() core.Result {
+		r, err := e.exec(&core.Op{
+			Kind: core.OpSendMessage, Token: sender, To: "worker",
+			MsgType: core.MsgQuestion, Body: "held during partial restart",
+		}, time.Now())
+		if err != nil {
+			return core.Result{"error": err}
+		}
+		epoch.Store("app:B")
+		return r
+	})
+	if err != nil || result["msg_serial"] == nil {
+		t.Fatalf("setup: held restart mail was not stored: %v %v", result, err)
+	}
 	// Let the watcher run the one real pass. Calling afterAppReturn here as
 	// well races the watcher's pass and can hold the ordinary-mail opener.
 	for deadline := time.Now().Add(9 * time.Second); ; {
@@ -91,7 +107,6 @@ func TestPartialRestartPassAllowsLaterUnownedMailToOpen(t *testing.T) {
 	if passOpens.Load() != 1 {
 		t.Fatalf("setup: partial load did not attempt one refused navigation: %d", passOpens.Load())
 	}
-	nativeAppSend(t, e, ctx, sender)
 	select {
 	case <-opened:
 	case <-time.After(5 * time.Second):

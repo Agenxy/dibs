@@ -47,14 +47,16 @@ func (e *Engine) nativeAppRoute(l *core.Agent) bool {
 }
 
 func (e *Engine) nativeAppRouteLocked(l *core.Agent) bool {
-	if surfaceOf(l) != harnessenv.ChatGPTApp {
+	legacyRemoteApp := archivedApp(l) && legacyCodexAppPossible(l) && e.remoteHostOf(l) != ""
+	if surfaceOf(l) != harnessenv.ChatGPTApp && !legacyRemoteApp {
 		return false
 	}
 	if e.remoteHostOf(l) != "" {
 		e.hostWakes.mu.Lock()
 		defer e.hostWakes.mu.Unlock()
 		b := e.hostWakes.bridges[e.remoteHostOf(l)]
-		return b != nil && b.nativeApp && wakeHarness(l) == "codex"
+		return b != nil && b.nativeApp && wakeHarness(l) == "codex" &&
+			(surfaceOf(l) == harnessenv.ChatGPTApp || b.nativeOnly)
 	}
 	c := e.commandFor(l)
 	return wakeexec.NativeQueueTemplate(c.argv)
@@ -68,6 +70,17 @@ func (e *Engine) tryNativeWake(plan wakePlan, agent string) (bool, bool) {
 	}
 	if !handled {
 		return e.beforeColdRoute(plan, agent, out, fresh)
+	}
+	if out.OK && nativeDeliveryAccepted(out.Disposition) {
+		if err := harnessenv.ConfirmChatGPTBinding(plan.thread); err != nil {
+			slog.Warn("could not clear confirmed app binding", "agent", agent, "err", err)
+		}
+		_, _ = e.query(e.wakeContext, func() core.Result {
+			if l := e.state.Agents[agent]; l != nil && l.CreatedSerial == plan.createdSerial && threadIDOf(l) == plan.thread {
+				delete(e.appBindings, agent)
+			}
+			return nil
+		})
 	}
 	e.noteQueueObservation(plan, agent, wakeexec.QueueObservation{
 		Admission: "not_queued", Pending: "not_applicable", At: time.Now().UTC(), Delivery: out.Disposition,

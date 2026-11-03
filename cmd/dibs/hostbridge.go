@@ -297,6 +297,7 @@ func (b *wakeBridge) listenBody() []byte {
 				mcp.WakeHarnessesMetaKey: b.harnesses(),
 				mcp.AwayOpenMetaKey:      3,
 				mcp.NativeAppMetaKey:     true,
+				mcp.NativeOnlyMetaKey:    true,
 			},
 		},
 	})
@@ -503,8 +504,7 @@ func (b *wakeBridge) executeOutcome(wr engine.WakeRequest) (bool, string, wakeex
 			"request", wr.ID, "sent", wr.Notice)
 	}
 	f := wakeexec.Fields{Thread: wr.Thread, Agent: wr.Agent, From: wr.From, MsgType: wr.MsgType, Message: notice}
-	outcome, handled := wakeexec.TryNative(wr.Surface, f, f.Apply(x.Argv),
-		func() (string, error) { return b.nativeNotice(wr, f) })
+	outcome, handled := b.tryNativeRequest(wr, f, f.Apply(x.Argv))
 	if handled {
 		return outcome.OK, outcome.Detail, outcome
 	}
@@ -534,14 +534,40 @@ func (b *wakeBridge) executeOutcome(wr engine.WakeRequest) (bool, string, wakeex
 	return false, "the wake command exited non-zero (the fallback too, when one is configured)", outcome
 }
 
+func (b *wakeBridge) tryNativeRequest(
+	wr engine.WakeRequest, f wakeexec.Fields, argv []string,
+) (wakeexec.NativeOutcome, bool) {
+	fresh := func() (string, error) { return b.nativeNotice(wr, f) }
+	out, handled := wakeexec.TryNative(nativeRequestSurface(wr), f, argv, fresh)
+	if !handled && wr.NoNavigation {
+		out.NoRetry = true
+		out.Detail = "native delivery unconfirmed; archived binding cannot navigate, mail remains stored"
+		return out, true
+	}
+	return out, handled
+}
+
 func (b *wakeBridge) nativeRoute(wr engine.WakeRequest) bool {
 	x := b.routes[strings.ToLower(wr.Harness)]
 	f := wakeexec.Fields{Thread: wr.Thread, Message: wakeexec.Compose(wr.MsgType)}
-	return wakeexec.NativeEligible(wr.Surface, f, f.Apply(x.Argv))
+	return wakeexec.NativeEligible(nativeRequestSurface(wr), f, f.Apply(x.Argv))
+}
+
+// Legacy registrations did not state a surface. Resolve their app origin on
+// this host, just as the cold opener does, so a navigation fence preserves
+// input to a thread the app already owns. Never infer over an explicit surface.
+func nativeRequestSurface(wr engine.WakeRequest) string {
+	if wr.NoNavigation && wr.Surface == "" {
+		return harnessenv.AppFor(wr.Surface, wr.Harness, wr.Thread)
+	}
+	return wr.Surface
 }
 
 // App visibility is independent of the command outcome already reported to the hub.
 func (b *wakeBridge) showQueuedThread(wr engine.WakeRequest) {
+	if wr.NoNavigation {
+		return
+	}
 	// Queued. The same step the hub takes for an agent on its own machine,
 	// taken here because the app is on this machine: open the thread in
 	// the app the agent runs in when the app is not holding it.
