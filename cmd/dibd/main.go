@@ -476,6 +476,10 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go eng.Run(ctx)
+	defer func() {
+		stop()
+		<-eng.Done() // includes the standing-advice save after its ledgered send
+	}()
 	// Watches this machine for subagents that have stopped working and tells
 	// the agent that spawned them. Its own goroutine: it forks ps, and the
 	// writer loop must never wait on a process scan. It reports and never acts.

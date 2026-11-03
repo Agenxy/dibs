@@ -27,6 +27,7 @@ type Advisory struct {
 
 type advisoryState struct {
 	mu       sync.Mutex
+	workers  sync.WaitGroup // only the writer starts senders; Run joins after it stops
 	file     string
 	seen     map[string]string
 	pending  map[string]Advisory
@@ -107,7 +108,7 @@ func (e *Engine) flushAdvisories() {
 	}
 	e.advisories.flushing = true
 	e.advisories.mu.Unlock()
-	go e.deliverAdvisories(batch)
+	e.advisories.workers.Go(func() { e.deliverAdvisories(batch) })
 }
 
 func (e *Engine) deliverAdvisories(batch []Advisory) {

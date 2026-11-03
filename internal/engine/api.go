@@ -76,7 +76,14 @@ func (e *Engine) send(ctx context.Context, req request) (core.Result, error) {
 		enqueued()
 		req.complete() // enqueue failed: ownership never passed to the writer
 		return nil, ctx.Err()
+	case <-e.stopping:
+		enqueued()
+		req.complete()
+		return nil, context.Canceled
 	}
+	// Unbuffered admission transfers this request to the writer, which always
+	// replies. Do not select stopping here: a committed advisory still needs
+	// its successful reply to save its revisions while Run joins the sender.
 	select {
 	case r := <-req.reply:
 		return r.res, r.err
