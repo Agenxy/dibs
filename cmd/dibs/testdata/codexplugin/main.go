@@ -25,7 +25,7 @@ func main() {
 		return
 	}
 	if len(os.Args) == 2 && os.Args[1] == "app-server" {
-		if os.Getenv("DIBS_TEST_HOOK_PIPE_CONTROL") != "" {
+		if os.Getenv("DIBS_TEST_HOOK_PIPE_CONTROL") != "" && os.Getenv("DIBS_TEST_HOOK_PIPE_PHASE") != "hooks/list" {
 			hookPipeFixture(false)
 			return
 		}
@@ -131,13 +131,22 @@ func hookPipeFixture(grandchild bool) {
 		if err != nil || st.Mode()&os.ModeNamedPipe == 0 {
 			panic("grandchild did not inherit the real hook protocol pipe")
 		}
+		if os.Getenv("DIBS_TEST_HOOK_STDOUT_ONLY") == "1" {
+			stderr, err := os.Stderr.Stat()
+			if err != nil || stderr.Mode()&os.ModeNamedPipe != 0 {
+				panic("stdout-only grandchild retained a stderr pipe")
+			}
+		}
 	}
 	if _, err := conn.Write([]byte{role}); err != nil {
 		panic(err)
 	}
 	if !grandchild {
 		child := exec.Command(os.Args[0], "--hold-hook-pipes") // #nosec G204 -- private fixture executable
-		child.Stdout, child.Stderr = os.Stdout, os.Stderr
+		child.Stdout = os.Stdout
+		if os.Getenv("DIBS_TEST_HOOK_STDOUT_ONLY") != "1" {
+			child.Stderr = os.Stderr
+		}
 		if err := child.Start(); err != nil {
 			panic(err)
 		}
@@ -166,6 +175,10 @@ func serveHooks() {
 		}
 		var result any = map[string]any{}
 		if req.Method == "hooks/list" {
+			if os.Getenv("DIBS_TEST_HOOK_PIPE_CONTROL") != "" && os.Getenv("DIBS_TEST_HOOK_PIPE_PHASE") == "hooks/list" {
+				hookPipeFixture(false)
+				return
+			}
 			home := os.Getenv("CODEX_HOME")
 			if err := os.WriteFile(filepath.Join(home, "hooks-listed"), []byte("listed"), 0o600); err != nil {
 				panic(err)
