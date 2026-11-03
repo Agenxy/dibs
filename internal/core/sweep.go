@@ -610,6 +610,8 @@ func (s *State) gc(now time.Time, purgeMail, clampWatermark, keepOwed bool) ([]E
 }
 
 // Board is the public snapshot (presentation fields are added by the engine).
+// Its caller serializes after the writer resumes. Copy mutable records and
+// slice storage here; copying only a collection header still shares live state.
 func (s *State) Board() map[string]any {
 	capacityWarnings := s.mailboxCapacityWarnings()
 	agents := make([]map[string]any, 0, len(s.Agents))
@@ -639,6 +641,7 @@ func (s *State) Board() map[string]any {
 			// that is where matching reads it.
 			sl.Predicted = nil
 			sl.Index, sl.Footprints = "", nil // the same intermediate, per peer index
+			sl.Dirs, sl.Refs, sl.Holds = slices.Clone(sl.Dirs), slices.Clone(sl.Refs), slices.Clone(sl.Holds)
 			slots = append(slots, sl)
 		}
 		slices.SortFunc(slots, func(a, b Slot) int { return strings.Compare(a.ID, b.ID) })
@@ -654,8 +657,8 @@ func (s *State) Board() map[string]any {
 			lm["mailbox_capacity"] = c
 		}
 		lm["sessions"] = map[string]any{
-			"host_id": agentHostID(l), "primary": l.SessionID, "aliases": l.SessionAliases,
-			"current": l.CurrentSession, "guessed": l.GuessedSessions,
+			"host_id": agentHostID(l), "primary": l.SessionID, "aliases": slices.Clone(l.SessionAliases),
+			"current": l.CurrentSession, "guessed": slices.Clone(l.GuessedSessions),
 		}
 		// Role and parent, only when they are not the default. A `role: "member"`
 		// on every agent and a `parent: ""` on almost all of them is payload the
@@ -664,10 +667,11 @@ func (s *State) Board() map[string]any {
 		// things a person reading the board needs to explain an agent turning
 		// up somewhere it did not start.
 		if len(l.Permissions) > 0 {
-			lm["permissions"] = l.Permissions
+			lm["permissions"] = slices.Clone(l.Permissions)
 		}
 		if l.Relocated != nil {
-			lm["relocated"] = l.Relocated
+			relocated := *l.Relocated
+			lm["relocated"] = &relocated
 		}
 		if l.Role != "" && l.Role != RoleMember {
 			lm["role"] = l.Role
@@ -711,7 +715,14 @@ func (s *State) Board() map[string]any {
 		return strings.Compare(a["id"].(string), b["id"].(string))
 	})
 	claims := make([]*Claim, len(s.Claims))
-	copy(claims, s.Claims)
+	for i, c := range s.Claims {
+		claim := *c
+		if c.Repo != nil {
+			repo := *c.Repo
+			claim.Repo = &repo
+		}
+		claims[i] = &claim
+	}
 	slices.SortFunc(claims, func(a, b *Claim) int { return strings.Compare(a.Path, b.Path) })
 	spaces := s.channelBoard()
 	out := map[string]any{"serial": s.Serial, "node": s.NodeID, "agents": agents, "claims": claims}
@@ -729,7 +740,8 @@ func (s *State) Board() map[string]any {
 	for _, serial := range sortedKeys(s.Contacts) {
 		c := s.Contacts[serial]
 		if c.ResolvedAt.IsZero() {
-			contacts = append(contacts, c)
+			contact := *c
+			contacts = append(contacts, &contact)
 		}
 	}
 	if len(contacts) > 0 {
@@ -806,7 +818,7 @@ func (s *State) channelBoard() []map[string]any {
 			cm["owner"] = ch.Owner
 		}
 		if len(ch.Queue) > 0 {
-			cm["queue"] = ch.Queue
+			cm["queue"] = slices.Clone(ch.Queue)
 		}
 		// What was actually SAID in the agent, for the human's board.
 		//
@@ -871,7 +883,7 @@ func (s *State) memberBoard(ch *Space) []map[string]any {
 			mm["scorer"] = m.ScorerID
 		}
 		if len(m.Evidence) > 0 {
-			mm["evidence"] = m.Evidence
+			mm["evidence"] = slices.Clone(m.Evidence)
 		}
 		out = append(out, mm)
 	}
