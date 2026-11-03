@@ -12,6 +12,7 @@ import (
 
 // transferAdmission owns the reply even when its caller cancels after sending.
 // A lost reply must not strand a reservation the manager never received.
+// No worker joined by Run uses this path; the caller's context bounds admission.
 func (e *Engine) transferAdmission(ctx context.Context, fn func() core.Result) (core.Result, error) {
 	req := request{fn: fn, reply: make(chan reply, 1)}
 	if i, ok := InvitationFrom(ctx); ok {
