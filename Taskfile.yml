@@ -523,7 +523,7 @@ tasks:
   vuln:
     desc: govulncheck (call-graph-aware)
     cmds:
-      - go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+      - go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
   dev:
     desc: Run the daemon in the foreground on a dev data dir
