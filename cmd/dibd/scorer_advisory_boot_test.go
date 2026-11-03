@@ -67,11 +67,15 @@ func TestScorerAdvisoryThroughDaemonBoot(t *testing.T) {
 		{"unchanged scorer restart is silent", "0.35", "0.5", "2", 0},
 	} {
 		t.Run(step.name, func(t *testing.T) {
-			advisoryDaemonBoot(t, dir, repos, step.notify, step.join, step.history)
+			memoryBefore, memoryBeforeErr := os.ReadFile(filepath.Join(dir, "scorer-advisories.json"))
+			logs := advisoryDaemonBoot(t, dir, repos, step.notify, step.join, step.history)
 			mail := committedScorerAdvice(t, dir)
 			if added := len(mail) - previous; added != step.added {
 				t.Errorf("actual boot added %d scorer advisories, want %d (before %d, after %d)",
 					added, step.added, previous, len(mail))
+				memoryAfter, memoryAfterErr := os.ReadFile(filepath.Join(dir, "scorer-advisories.json"))
+				t.Logf("advisory memory before=%s (%v), after=%s (%v)\n%s",
+					memoryBefore, memoryBeforeErr, memoryAfter, memoryAfterErr, logs)
 			}
 			for _, m := range mail[previous:] {
 				for _, repo := range repos {

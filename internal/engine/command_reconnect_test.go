@@ -42,8 +42,10 @@ func TestAppReconnectFencesAnEarlierCommandsReceipt(t *testing.T) {
 	}
 	await := func(label, want string, settled bool) {
 		t.Helper()
-		until := time.Now().Add(6 * time.Second)
+		started := time.Now()
+		until := started.Add(6 * time.Second)
 		var b []byte
+		var last core.Result
 		for time.Now().Before(until) {
 			r, err := e.query(ctx, func() core.Result {
 				e.wakers.mu.Lock()
@@ -53,6 +55,7 @@ func TestAppReconnectFencesAnEarlierCommandsReceipt(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			last = r
 			b, err = os.ReadFile(out)
 			if err != nil && !os.IsNotExist(err) {
 				t.Fatal(err)
@@ -62,7 +65,8 @@ func TestAppReconnectFencesAnEarlierCommandsReceipt(t *testing.T) {
 			}
 			<-time.After(5 * time.Millisecond)
 		}
-		t.Fatalf("%s: child receipts=%q want=%q", label, b, want)
+		t.Fatalf("%s: child receipts=%q want=%q; require settled=%t, running=%v batched=%v after %s (bound 6s)",
+			label, b, want, settled, last["running"], last["batched"], time.Since(started))
 	}
 	await("first command held", "x", false)
 	app := harnessenv.AppIncarnation{PID: 4242, Start: "observed-next-generation"}
