@@ -119,7 +119,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`go.mod` still declares `go 1.26.0`, so language semantics are unchanged).
   The release toolchain moves to its current upstream releases: GoReleaser
   2.19.0, cosign 3.1.4 and syft 1.55.0. The vulnerability gate uses
-  govulncheck 1.9.0 with current Go analysis dependencies.
+  govulncheck 1.9.0 with current Go analysis dependencies. The indirect
+  golang.org/x/net dependency moves to 0.62.0, fixing GO-2026-6866 and
+  GO-2026-6860. golang.org/x/crypto stays at 0.58.0: GO-2026-5932 affects
+  its unimported OpenPGP package, and the fix is only an unreleased commit.
 
 ### Fixed
 
