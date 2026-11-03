@@ -145,7 +145,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   restart open is held as stale only if its local rollout is also missing from
   a readable Codex store. Slow-loading chats retain their wake route; doctor
   and board metadata name the binding while its mail remains stored. Older
-  bridges receive no archived app plan they could turn into an open.
+  bridges receive no archived app plan they could turn into an open. A remote
+  route whose thread, host or surface changed is rebuilt once from current
+  state before handoff; a fresh refusal retains the mail and a binding alert
+  without a retry loop. Delivery receipts follow the route actually used.
 
 - Live board and embedded app redraws preserve unchanged composer controls and
   their pending request state, so a click cannot lose its button underneath it. Membership

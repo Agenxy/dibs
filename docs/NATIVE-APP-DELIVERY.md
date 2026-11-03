@@ -225,6 +225,13 @@ archived app recipient only a `no_navigation: true` plan, and only to a bridge
 advertising that capability and native app delivery. That plan permits native
 input and forbids queue fallback and app opening. A dormant older bridge cannot
 advertise the capability and receives no archived app plan it could open.
+The hub rechecks the captured incarnation, thread, host and surface on its
+writer immediately before the nonblocking bridge handoff. A changed binding
+gets one complete plan from current state in the same pass, including a local
+socket route when the recipient moved here. If that current route refuses,
+one current-binding alert retains the mail without an automatic retry loop.
+Delivery receipts describe the route actually executed. Mail already handled
+before handoff starts no turn and creates no missing-route alert.
 Requests already handed to older code before an archive cannot be recalled.
 
 A legacy Codex binding with no surface is conservatively treated as a possible

@@ -152,17 +152,18 @@ func (e *Engine) wakeStatusOf(agent string) string {
 // goroutine reaches is exactly how #245 shipped a feature called from nowhere,
 // so there is no copy: both call this.
 func (e *Engine) runWakeAndReport(cmd wakePlan, agent string) bool {
+	return e.runWakeAndReportPlan(&cmd, agent)
+}
+
+func (e *Engine) runWakeAndReportPlan(cmd *wakePlan, agent string) bool {
 	started := time.Now()
 	cmd.trackOffer = true
-	native := cmd.host == "" && len(cmd.argv) == 0
 	written := false
-	if native {
-		cmd.socketWritten = &written
-	}
-	if cmd.agent != "" {
+	cmd.socketWritten = &written
+	if cmd.agent != "" && cmd.host == "" {
 		stamp := e.wakeStamp(agent)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		fresh, keys, err := e.refreshWakePlan(ctx, cmd)
+		fresh, keys, err := e.refreshWakePlan(ctx, *cmd)
 		cancel()
 		if err != nil {
 			e.reportWakeFailure(agent)
@@ -181,15 +182,19 @@ func (e *Engine) runWakeAndReport(cmd wakePlan, agent string) bool {
 			cmd.notice = fresh // never copy private mail into command argv
 		}
 	}
-	if e.runWake(cmd, agent) {
+	ok := e.runWakePlan(cmd, agent)
+	// A remote handoff may have selected a fresh local route. Record the
+	// route actually executed, including its refreshed keys and socket write.
+	native := cmd.host == "" && len(cmd.argv) == 0
+	if ok {
 		if cmd.deliverySettled(native, written) {
 			e.releaseWake(agent, e.wakeStamp(agent))
 			return true // reservation lost or suppressed; no turn was started
 		}
 		if native {
-			e.recordSocketOutcome(cmd, true)
+			e.recordSocketOutcome(*cmd, true)
 		} else {
-			e.recordCommandWritten(cmd)
+			e.recordCommandWritten(*cmd)
 		}
 		e.noteDibsStartedTurn(agent, time.Now())
 		if cmd.queuedDelivery() {
@@ -202,10 +207,10 @@ func (e *Engine) runWakeAndReport(cmd wakePlan, agent string) bool {
 		return true
 	}
 	if native {
-		e.recordSocketOutcome(cmd, false)
+		e.recordSocketOutcome(*cmd, false)
 	}
 	if !cmd.retryAllowed() {
-		e.recordNonRetryableWake(cmd)
+		e.recordNonRetryableWake(*cmd)
 		return false
 	}
 	e.reportWakeFailure(agent)

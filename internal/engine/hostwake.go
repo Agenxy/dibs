@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
-	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/wakeexec"
 )
 
@@ -395,74 +394,71 @@ func (e *Engine) requestRemoteWake(plan wakePlan, agent string) bool {
 }
 
 func (e *Engine) requestRemoteWakeWithin(plan wakePlan, agent string, within time.Duration) bool {
-	// Recheck before handoff: archiving after planning must not hand an
-	// open-capable request to an older bridge. No bridge flag can recall a
-	// request an older process already received before the archive operation.
-	if !e.refreshRemoteNavigation(&plan, agent) {
-		return false
-	}
-	return e.requestRemoteWakePrepared(plan, agent, within)
+	return e.requestRemoteWakePlan(&plan, agent, within)
 }
 
-func (e *Engine) requestRemoteWakePrepared(plan wakePlan, agent string, within time.Duration) bool {
-	hw := &e.hostWakes
-	hw.mu.Lock()
-	b := hw.bridges[plan.host]
-	if b == nil {
-		hw.mu.Unlock()
-		slog.Info("no wake: the agent's host has no bridge attached",
-			"agent", agent, "host", plan.host)
+func (e *Engine) requestRemoteWakePlan(plan *wakePlan, agent string, within time.Duration) bool {
+	// A query caller can return on shutdown while its admitted closure is
+	// still running. The writer owns this copy, including the mutable outcome;
+	// it never mutates the worker's plan through a captured pointer.
+	captured := *plan
+	if plan.nativeOutcome != nil {
+		outcome := *plan.nativeOutcome
+		captured.nativeOutcome = &outcome
+	}
+	prepare := func() core.Result { return e.prepareRemoteWake(captured, agent) }
+	var result core.Result
+	if e.wakeContext == nil {
+		result = prepare() // decision fixtures have no writer
+	} else {
+		var err error
+		result, err = e.query(e.wakeContext, prepare)
+		if err != nil {
+			// Cancellation cannot prove whether the writer already handed off.
+			if plan.nativeOutcome == nil {
+				plan.nativeOutcome = new(wakeexec.NativeOutcome)
+			}
+			plan.nativeOutcome.NoRetry = true
+			plan.nativeOutcome.Disposition = "unknown"
+			return false
+		}
+	}
+	prepared := result["plan"].(wakePlan)
+	if plan.nativeOutcome != nil && prepared.nativeOutcome != nil {
+		*plan.nativeOutcome = *prepared.nativeOutcome
+		prepared.nativeOutcome = plan.nativeOutcome
+	}
+	*plan = prepared
+	if result["ready"] != true {
+		return plan.nativeOutcome != nil && plan.nativeOutcome.Settled
+	}
+	if plan.host == "" {
+		return e.runWakePlan(plan, agent)
+	}
+	id, _ := result["id"].(uint64)
+	if id == 0 {
 		return false
 	}
-	if !hostCanReceivePlan(plan, b) {
-		hw.mu.Unlock()
-		e.refuseRemoteNavigation(plan, agent)
-		return false // an older bridge could navigate after a native refusal
-	}
-	if hw.next == 0 {
-		hw.next = uint64(time.Now().UnixNano())
-	}
-	hw.next++
-	req := plan.request
-	req.ID = hw.next
-	result := make(chan WakeResult, 1)
-	if hw.pending == nil {
-		hw.pending = map[uint64]pendingWake{}
-	}
-	native := b.nativeApp && req.Surface == harnessenv.ChatGPTApp
-	hw.pending[req.ID] = pendingWake{host: plan.host, ch: result, plan: plan, native: native}
-	// SENT UNDER THE LOCK. The send is non-blocking, so holding hw.mu costs
-	// nothing, and it is what keeps this send and AttachHostBridge's
-	// close(old.ch) from racing: they used to be separated by an Unlock,
-	// with a recover() catching the panic when the bridge reattached in
-	// between, which the race detector reports as what it is. Found by the
-	// test for the reconnecting-bridge fix.
-	sent := false
-	select {
-	case b.ch <- req:
-		sent = true
-	default:
-	}
-	hw.mu.Unlock()
+	pending := result["pending"].(pendingWake)
+	hw := &e.hostWakes
 	defer func() {
 		hw.mu.Lock()
-		delete(hw.pending, req.ID)
+		delete(hw.pending, id)
 		hw.mu.Unlock()
 	}()
-	if !sent {
-		slog.Info("no wake: the host's bridge is not reading its requests",
-			"agent", agent, "host", plan.host)
-		return false
-	}
-	if native && plan.nativeOutcome != nil {
-		*plan.nativeOutcome = wakeexec.NativeOutcome{NoRetry: true, Disposition: "unknown"}
-	}
+	return e.awaitRemoteWake(plan, pending, id, agent, within)
+}
+
+// Waiting remains off the writer, after binding validation and handoff.
+func (e *Engine) awaitRemoteWake(
+	plan *wakePlan, pending pendingWake, id uint64, agent string, within time.Duration,
+) bool {
 	slog.Info("wake handed to the agent's host", "agent", agent, "host", plan.host,
-		"harness", req.Harness, "request", req.ID)
+		"harness", plan.request.Harness, "request", id)
 	timer := time.NewTimer(within)
 	defer timer.Stop()
 	select {
-	case res := <-result:
+	case res := <-pending.ch:
 		if plan.nativeOutcome != nil {
 			plan.nativeOutcome.NoRetry = res.NoRetry
 			plan.nativeOutcome.Disposition = res.NativeDelivery
@@ -470,27 +466,18 @@ func (e *Engine) requestRemoteWakePrepared(plan wakePlan, agent string, within t
 			plan.nativeOutcome.Settled = res.NativeDelivery == "settled"
 		}
 		if res.OK {
-			slog.Info("the agent's host reports the wake ran", "agent", agent, "host", plan.host, "request", req.ID)
+			slog.Info("the agent's host reports the wake ran", "agent", agent, "host", plan.host, "request", id)
 			return true
 		}
 		slog.Info("the agent's host reports the wake failed", "agent", agent, "host", plan.host,
-			"request", req.ID, "detail", res.Detail)
+			"request", id, "detail", res.Detail)
 		return false
 	case <-timer.C:
-		slog.Info("the agent's host never reported on the wake", "agent", agent, "host", plan.host, "request", req.ID)
+		slog.Info("the agent's host never reported on the wake", "agent", agent, "host", plan.host, "request", id)
 		return false
 	}
 }
 
 func hostCanReceivePlan(plan wakePlan, bridge *hostBridge) bool {
 	return !plan.request.NoNavigation || bridge.nativeOnly
-}
-
-func (e *Engine) refuseRemoteNavigation(plan wakePlan, agent string) {
-	if plan.nativeOutcome != nil {
-		plan.nativeOutcome.NoRetry = true
-	}
-	if e.wakeContext != nil {
-		_, _ = e.query(e.wakeContext, func() core.Result { e.noteAppBinding(e.state.Agents[agent], "archived"); return nil })
-	}
 }

@@ -14,8 +14,8 @@ import (
 )
 
 type appBindingAlert struct {
-	created        uint64
-	thread, reason string
+	created                       uint64
+	thread, host, surface, reason string
 }
 
 func archivedApp(l *core.Agent) bool {
@@ -39,7 +39,9 @@ func (e *Engine) noteAppBinding(l *core.Agent, reason string) {
 	if e.appBindings == nil {
 		e.appBindings = map[string]appBindingAlert{}
 	}
-	e.appBindings[l.ID] = appBindingAlert{l.CreatedSerial, threadIDOf(l), reason}
+	e.appBindings[l.ID] = appBindingAlert{
+		created: l.CreatedSerial, thread: threadIDOf(l), host: e.remoteHostOf(l), surface: surfaceOf(l), reason: reason,
+	}
 }
 
 func (e *Engine) appNavigationAllowedLocked(agent string, created uint64, thread string) bool {
@@ -77,6 +79,7 @@ func (e *Engine) decorateAppBindings(board core.Result) {
 	for id, alert := range e.appBindings {
 		l := e.state.Agents[id]
 		if l == nil || l.Retired() || l.CreatedSerial != alert.created || threadIDOf(l) != alert.thread ||
+			e.remoteHostOf(l) != alert.host || surfaceOf(l) != alert.surface ||
 			(alert.reason == "archived" && l.Status != core.StatusArchived) {
 			delete(e.appBindings, id)
 			continue
@@ -91,28 +94,6 @@ func (e *Engine) decorateAppBindings(board core.Result) {
 	if len(alerts) > 0 {
 		board["app_binding_alerts"] = alerts
 	}
-}
-
-func (e *Engine) refreshRemoteNavigation(plan *wakePlan, agent string) bool {
-	if e.wakeContext == nil {
-		return true
-	}
-	r, err := e.query(e.wakeContext, func() core.Result {
-		l := e.state.Agents[agent]
-		if l == nil || l.Retired() || l.CreatedSerial != plan.createdSerial || threadIDOf(l) != plan.thread {
-			return core.Result{"current": false}
-		}
-		archived := archivedApp(l)
-		if archived {
-			e.noteAppBinding(l, "archived")
-		}
-		return core.Result{"current": true, "archived": archived}
-	})
-	if err != nil || r["current"] != true {
-		return false
-	}
-	plan.request.NoNavigation = r["archived"] == true
-	return true
 }
 
 func (e *Engine) restartNavigationAllowed(ctx context.Context, agents []string, thread string) bool {

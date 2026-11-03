@@ -282,20 +282,18 @@ func (e *Engine) maybeWake(ev core.Event) {
 	}
 	cause := e.failedDeliveryKeys(l.ID)
 	agent, stamp := l.ID, e.wakeStamp(l.ID)
-	// THE PLAN'S COOLDOWN, not another lookup. See wakePlan.cooldown.
-	cool := cmd.cooldown
 	thread := cmd.thread
 	go func() {
 		defer e.wakeExited(agent, thread)
 		n := e.noteWakeAttempt(agent)
-		if e.runWakeAndReport(cmd, agent) {
+		if e.runWakeAndReportPlan(&cmd, agent) {
 			return
 		}
 		// A FAILED wake read nothing, so whatever arrived during it is still
 		// owed. One re-check, armed here where failure is actually known:
 		// retryWakeDecision does not arm another on ITS failure, so a command
 		// that is simply wrong costs two attempts rather than looping.
-		defer e.armFailedWakePlan(cmd, n, agent, cause, cool)
+		defer e.armFailedWakePlan(cmd, n, agent, cause, cmd.cooldown)
 		// A FAILED WAKE MUST NOT SPEND THE ATTEMPT.
 		//
 		// The cooldown is taken before the process starts, which is right: two
@@ -430,20 +428,19 @@ func (e *Engine) retryWakeDecision(agent string) {
 	}
 	cause := e.failedDeliveryKeys(agent)
 	stamp := e.wakeStamp(agent)
-	cool := cmd.cooldown
 	thread := cmd.thread
 	delete(e.reconnectMail, agent) // this cohort gets one ordinary reconsideration
 	go func() {
 		defer e.wakeExited(agent, thread)
 		n := e.noteWakeAttempt(agent)
-		if e.runWakeAndReport(cmd, agent) {
+		if e.runWakeAndReportPlan(&cmd, agent) {
 			return
 		}
 		e.releaseWake(agent, stamp)
 		if n < 2 && cmd.retryAllowed() {
 			// The first execution for this mail, arrived here deferred; it
 			// gets the one retry every first attempt is promised.
-			e.armFailedWake(agent, cause, cool)
+			e.armFailedWake(agent, cause, cmd.cooldown)
 		}
 	}()
 }
@@ -905,7 +902,6 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 	if !ok {
 		return wakePlan{}, false
 	}
-	thread := threadIDOf(l)
 	now := time.Now()
 	if !e.nativeAppRouteLocked(l) && e.holdForQueuedWakeLocked(l, configured, now) {
 		return wakePlan{}, false
@@ -944,6 +940,17 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 		e.wakers.running = map[string]bool{}
 	}
 	e.wakers.running[l.ID] = true
+
+	return e.buildWakePlan(l, msgType, ev, cooldown, configured, now)
+}
+
+// buildWakePlan constructs the current route while the writer and wakers lock
+// are held. It does not reserve a second worker: a captured remote route may
+// need one fresh plan while its original worker still owns that reservation.
+func (e *Engine) buildWakePlan(
+	l *core.Agent, msgType string, ev core.Event, cooldown time.Duration, configured bool, now time.Time,
+) (wakePlan, bool) {
+	thread := threadIDOf(l)
 
 	// A VERDICT PUTS THESE SOMEWHERE ELSE.
 	//
@@ -1119,6 +1126,8 @@ type wakePlan struct {
 	commandEpoch     string   // receiving incarnation captured before execution
 	commandKeys      []string // exact original items refreshed before command execution
 	agent            string   // whose outstanding state is rechecked before delivery
+	routeRefused     bool     // known refusal, never unknown native acceptance
+	routeRefreshed   bool     // at most one fresh route per captured attempt
 	trackOffer       bool     // production delivery shares presentation with lifecycle hooks
 	socketWritten    *bool    // actual kernel write, distinct from an empty settled plan
 	socketVersion    uint64   // actionable cohort captured before a native attempt
@@ -1247,11 +1256,15 @@ func looksLikeThreadID(s string) bool { return core.LooksLikeThreadID(s) }
 // runWake executes one wake, bounded and out of the way, and reports whether
 // anything was actually woken.
 func (e *Engine) runWake(plan wakePlan, agent string) bool {
+	return e.runWakePlan(&plan, agent)
+}
+
+func (e *Engine) runWakePlan(plan *wakePlan, agent string) bool {
 	if plan.host != "" {
-		return e.requestRemoteWake(plan, agent)
+		return e.requestRemoteWakePlan(plan, agent, wakeTimeout+wakeGrace)
 	}
 	if len(plan.argv) > 0 {
-		if result, handled := e.tryNativeWake(plan, agent); handled {
+		if result, handled := e.tryNativeWake(*plan, agent); handled {
 			return result
 		}
 		ok := wakeexec.RunCommandsObserved(plan.argv, plan.fallback, agent, plan.cwd,
@@ -1264,17 +1277,17 @@ func (e *Engine) runWake(plan wakePlan, agent string) bool {
 				} else if plan.nativeOutcome != nil && plan.nativeOutcome.Disposition == "native_failed" {
 					observation.Delivery = "queued_native_failed"
 				}
-				e.noteQueueObservation(plan, agent, observation)
+				e.noteQueueObservation(*plan, agent, observation)
 			})
 		if !plan.queueThreadGone() {
 			e.noteCommandOutcome(agent, plan.argv, ok)
 		}
 		if ok {
-			e.showInApp(plan, agent) // queued; now make sure its app will deliver it
+			e.showInApp(*plan, agent) // queued; now make sure its app will deliver it
 		}
 		return ok
 	}
-	return e.wakeOverSocket(plan, agent)
+	return e.wakeOverSocket(*plan, agent)
 }
 
 // wakeTimeout and wakeGrace are the engine's names for the bounds every wake
