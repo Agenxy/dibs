@@ -346,6 +346,11 @@ func New(st *core.State, led Ledger, prober Prober, history ...[]core.Event) *En
 // Run drives the loop until ctx is done. Call in exactly one goroutine.
 func (e *Engine) Run(ctx context.Context) {
 	defer close(e.done)
+	// A committed advice send still has to save its derived suppression
+	// memory. Closing Done first would let the daemon exit in that window and
+	// announce the same unchanged advice again on its next boot. The writer
+	// alone starts these workers, so none can be added after this loop exits.
+	defer e.advisories.workers.Wait()
 	reconcileContext, eCancel := context.WithCancel(ctx)
 	e.blobReconcileContext = reconcileContext
 	e.wakeContext = reconcileContext

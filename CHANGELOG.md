@@ -122,6 +122,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Graceful daemon shutdown waits for an in-flight standing advisory to save
+  its suppression memory after committing the mail, so an unchanged restart
+  does not announce that same advice again because the sender was abandoned.
+
 - Board replies copy contact alerts and other mutable records before leaving
   the writer. Later contact updates, claim renewal or membership changes cannot
   race reply serialization or change an earlier board snapshot.

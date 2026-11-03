@@ -281,6 +281,13 @@ func advisoryDaemonBoot(t *testing.T, dir string, repos []string, notify, join, 
 	afterStartup ...func(string),
 ) string {
 	t.Helper()
+	return advisoryDaemonBootWithShutdown(t, dir, repos, notify, join, history, nil, afterStartup...)
+}
+
+func advisoryDaemonBootWithShutdown(t *testing.T, dir string, repos []string, notify, join, history string,
+	afterInterrupt func(chan error), afterStartup ...func(string),
+) string {
+	t.Helper()
 	port := testport.Reserve(t, "tcp", "127.0.0.1:0")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -341,6 +348,9 @@ func advisoryDaemonBoot(t *testing.T, dir string, repos []string, notify, join, 
 		}
 		stopped = true
 		_ = cmd.Process.Signal(os.Interrupt)
+		if afterInterrupt != nil {
+			afterInterrupt(exited)
+		}
 		select {
 		case err := <-exited:
 			if err != nil {
@@ -457,7 +467,7 @@ func committedScorerAdvice(t *testing.T, dir string) []*core.Message {
 	if err != nil {
 		t.Fatal("read committed key:", err)
 	}
-	led, err := ledger.Open(filepath.Join(dir, "ledger.jsonl"), "advisory-fixture", box)
+	led, err := ledger.OpenReadOnly(filepath.Join(dir, "ledger.jsonl"), "advisory-fixture", box)
 	if err != nil {
 		t.Fatal("read committed ledger:", err)
 	}
