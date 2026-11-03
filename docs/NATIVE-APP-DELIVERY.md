@@ -211,8 +211,10 @@ but navigation is forbidden at restart, ordinary cold opening, Claude reopening
 and remote delivery. A fresh eligibility fence remains attached to a deferred
 local open, so an archive during the ownership probe cancels navigation too.
 
-An accepted restart open still explicitly unowned at the final measurement is
-retained as a stale binding in the local app-open memo. It is not reopened on
+An accepted restart open still unowned at the final measurement is retained as
+stale only when its rollout is also missing from a readable local Codex store.
+An existing rollout, unavailable store or an ownership timeout is never evidence
+that the thread does not exist; its next mail retains the ordinary cold route. It is not reopened on
 later mail, a retry timer or another app incarnation. Unknown measurements and
 refused opens never establish this diagnosis. Positive native acceptance clears
 it. One metadata entry per current binding appears in `app_binding_alerts` and

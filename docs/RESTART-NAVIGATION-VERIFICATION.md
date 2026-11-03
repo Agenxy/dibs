@@ -18,8 +18,9 @@ filenames contained no match. No production data or binding was changed.
 
 The repair separates delivery from navigation. Quiet chats are not preloaded.
 An archived agent can still receive native input in an owned chat; it cannot
-open a window. Failed restart loading that ends explicitly unowned is retained
-as a stale binding, honored by ordinary app opening too. Unknown probes and
+open a window. Failed restart loading is retained as stale only when its thread
+is also missing from a readable local rollout store. Ownership absence alone can
+mean a slow load or a closed chat and never justifies permanent suppression. Unknown probes and
 refused navigations do not establish that diagnosis. Positive native acceptance
 clears it. Doctor reads the same binding metadata as the public board, including
 an archived binding that has no ordinary board row.
@@ -36,7 +37,7 @@ handed to old code before archiving cannot be recalled by a new protocol field.
 
 ## Regression discrimination
 
-All nine new guard files were copied byte for byte to a detached checkout of
+All eleven new guard files were copied byte for byte to a detached checkout of
 `7ed9f5bed040822fe37f617548a581a8ecc65f53`. The old implementation produced the
 following **18 intended failing leaf cases**; the candidate passed them all.
 
@@ -53,7 +54,7 @@ following **18 intended failing leaf cases**; the candidate passed them all.
 | Stale restart binding, later mail and restart | 1 |
 | Doctor reading an archived binding without a normal board row | 1 |
 
-The matched control runs took 25.268 s on old code and 15.486 s on the candidate,
+The matched control runs took 27.132 s on old code and 17.602 s on the candidate,
 including their test build/run overhead. These are discrimination receipts,
 not an end-to-end performance benchmark. Owned archived native delivery remains
 a passing positive control. Unknown ownership remains a negative control for
@@ -96,6 +97,16 @@ change. It does not prove idle-start behavior, delayed selection behavior, fleet
 behavior, production installation or acceptance of the source repair. Private
 receipts retain the request timing, matched turn receipt and window observations;
 thread identifiers and the person's selected chat title are not published here.
+
+The exact-source review of 77b952c6 rejected using final ownership absence as
+permanent missing-thread evidence. A real existing-rollout guard and two
+unavailable-store guards fail on that candidate. The repaired guard drives
+`afterAppReturn`, reads the initial mail through the real acknowledgement path
+while ownership remains false, then sends new mail: that mail must actually open
+the chat. It also verifies later native ownership without another navigation.
+The missing-rollout quarantine remains a separate positive case. The final
+lookup shares the origin resolver, distinguishes unreadable/missing stores from
+a searched readable store, and never reads transcript bodies for absence.
 
 The PR carries the separate whole-local-gate and hosted-CI receipts. Source
 verification, merge, installation and live product acceptance remain distinct.

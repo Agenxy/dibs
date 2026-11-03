@@ -798,8 +798,10 @@ repeat opens or increase the per-thread ownership wait.
 Quiet chats are left alone; their next mail takes the ordinary route. Archived
 recipients retain their mail and may receive native input in an already owned
 chat, but no navigation is permitted. An accepted restart navigation still
-explicitly unowned at the final measurement records a local derived stale-binding
-memo. Later mail and restarts do not reopen it; positive ownership/native
+unowned at the final measurement records a local derived stale-binding memo only
+when its rollout is missing from a readable local Codex store. An existing rollout
+or unavailable store never establishes absence; a slow or closed thread retains
+its ordinary route on later mail. Later mail and restarts do not reopen it; positive ownership/native
 acceptance or a different binding permits recovery. Unknown probes never establish
 that diagnosis. `app_binding_alerts` in the public board and `dibs doctor` expose
 bounded binding metadata, including archived rows omitted from the ordinary board.

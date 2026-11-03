@@ -118,7 +118,7 @@ func reconcileChatGPTThreads(
 	var missing *ChatGPTThreadOwnershipError
 	if errors.As(err, &missing) {
 		for _, thread := range missing.Unowned {
-			if attempted[thread] {
+			if attempted[thread] && codexThreadMissing(thread) {
 				err = errors.Join(err, rememberChatGPTBinding(thread, true))
 			}
 		}

@@ -142,7 +142,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   quiet chats alone. Archived agents can still receive native notices in an
   owned chat, but cannot navigate a window through restart, cold delivery,
   Claude reopening or a remote bridge. A chat still unowned after an accepted
-  restart open is held as a stale binding instead of repeatedly opened; doctor
+  restart open is held as stale only if its local rollout is also missing from
+  a readable Codex store. Slow-loading chats retain their wake route; doctor
   and board metadata name the binding while its mail remains stored. Older
   bridges receive no archived app plan they could turn into an open.
 

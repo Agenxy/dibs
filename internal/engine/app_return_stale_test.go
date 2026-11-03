@@ -4,6 +4,7 @@
 package engine
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sync/atomic"
@@ -18,6 +19,9 @@ import (
 func TestUnownedAfterRestartOpenIsQuarantinedAcrossLaterMailAndRestart(t *testing.T) {
 	t.Setenv("DIBS_DIR", t.TempDir())
 	app := testcodexipc.Start(t, "idle", nil)
+	if err := os.Mkdir(filepath.Join(os.Getenv("CODEX_HOME"), "sessions"), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	var owned atomic.Bool
 	app.Owns = func(string) bool { return owned.Load() }
 	var opens atomic.Int32

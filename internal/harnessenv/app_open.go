@@ -245,8 +245,9 @@ func saveAppOpen(path string, memo appOpenMemo) error {
 	return os.Rename(f.Name(), path)
 }
 
-// ChatGPTBindingStale is derived, local evidence that an accepted navigation
-// ended with an explicit no-owner result. Unknown probes never set it.
+// ChatGPTBindingStale is derived, local evidence that an unowned navigation
+// targeted a thread missing from a readable local rollout store. Ownership
+// absence alone and unavailable store evidence never set it.
 func ChatGPTBindingStale(thread string) (bool, error) {
 	key := sha256.Sum256([]byte(thread))
 	path := filepath.Join(paths.DataDir(), "app-opens", hex.EncodeToString(key[:])+".json")

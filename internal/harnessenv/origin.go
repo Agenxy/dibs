@@ -6,6 +6,7 @@ package harnessenv
 import (
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -99,9 +100,25 @@ func codexOriginator(home, thread string) string {
 // bits are that creation time in milliseconds: so the directory is known, and
 // the day either side covers a timezone the daemon and Codex disagree on.
 func rolloutFile(home, thread string) string {
-	if home == "" {
-		return ""
+	path, _ := rolloutFileEvidence(home, thread)
+	return path
+}
+
+// Absence is evidence only after a readable local rollout store was searched.
+// A missing profile, permission error or unknown thread id cannot quarantine.
+func codexThreadMissing(thread string) bool {
+	if !isThreadID(thread) {
+		return false
 	}
+	path, known := rolloutFileEvidence(codexHome(), thread)
+	return known && path == ""
+}
+
+func rolloutFileEvidence(home, thread string) (string, bool) {
+	if home == "" {
+		return "", false
+	}
+	known := false
 	suffix := "-" + thread + ".jsonl"
 	var days []time.Time
 	if at, ok := uuidv7Time(thread); ok {
@@ -110,28 +127,37 @@ func rolloutFile(home, thread string) string {
 	for _, root := range []string{"sessions", "archived_sessions"} {
 		for _, d := range days {
 			dir := filepath.Join(home, root, d.Format("2006"), d.Format("01"), d.Format("02"))
-			if p := findSuffix(dir, suffix); p != "" {
-				return p
+			p, err := findSuffix(dir, suffix)
+			if err != nil && !errors.Is(err, os.ErrNotExist) {
+				return "", false
+			}
+			if p != "" {
+				return p, true
 			}
 		}
-		if p := findSuffix(filepath.Join(home, root), suffix); p != "" {
-			return p // archived_sessions is flat
+		p, err := findSuffix(filepath.Join(home, root), suffix)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return "", false
 		}
+		known = known || err == nil
+		if p != "" {
+			return p, true
+		} // archived_sessions is flat
 	}
-	return ""
+	return "", known
 }
 
-func findSuffix(dir, suffix string) string {
+func findSuffix(dir, suffix string) (string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return ""
+		return "", err
 	}
 	for _, e := range entries {
 		if !e.IsDir() && strings.HasPrefix(e.Name(), "rollout-") && strings.HasSuffix(e.Name(), suffix) {
-			return filepath.Join(dir, e.Name())
+			return filepath.Join(dir, e.Name()), nil
 		}
 	}
-	return ""
+	return "", nil
 }
 
 // uuidv7Time is the creation time a UUIDv7 carries, in local time.
