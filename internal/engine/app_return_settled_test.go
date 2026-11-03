@@ -79,8 +79,10 @@ func TestPartialRestartPassAllowsLaterUnownedMailToOpen(t *testing.T) {
 	// Store real held mail before exposing the new epoch. The writer keeps
 	// the send's wake worker and the epoch watcher behind the same setup turn.
 	result, err := e.query(ctx, func() core.Result {
-		r, err := e.exec(&core.Op{Kind: core.OpSendMessage, Token: sender, To: "worker",
-			MsgType: core.MsgQuestion, Body: "held during partial restart"}, time.Now())
+		r, err := e.exec(&core.Op{
+			Kind: core.OpSendMessage, Token: sender, To: "worker",
+			MsgType: core.MsgQuestion, Body: "held during partial restart",
+		}, time.Now())
 		if err != nil {
 			return core.Result{"error": err}
 		}
