@@ -48,7 +48,16 @@ func TestBoardDoesNotClaimAnAwayWaitAfterImmediateClaudeRecovery(t *testing.T) {
 		t.Fatal("setup:", err)
 	}
 	id := reg["agent_id"].(string)
-	e.showInApp(wakePlan{thread: thread, harness: "Claude Code", surface: harnessenv.ClaudeDesktop}, id)
+	current, err := e.query(ctx, func() core.Result {
+		return core.Result{"created": e.state.Agents[id].CreatedSerial}
+	})
+	if err != nil || current["created"] == uint64(0) {
+		t.Fatalf("setup current binding: %v %v", current, err)
+	}
+	e.showInApp(wakePlan{
+		thread: thread, agent: id, createdSerial: current["created"].(uint64),
+		harness: "Claude Code", surface: harnessenv.ClaudeDesktop,
+	}, id)
 	board, err := e.Board(ctx)
 	if err != nil {
 		t.Fatal(err)
