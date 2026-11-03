@@ -76,7 +76,18 @@ func TestPartialRestartPassAllowsLaterUnownedMailToOpen(t *testing.T) {
 		t.Fatalf("setup: watcher baseline=%q", settled)
 	}
 	epoch.Store("app:B")
-	e.afterAppReturn(ctx, "app:B", nil, 0)
+	// Let the watcher run the one real pass. Calling afterAppReturn here as
+	// well races the watcher's pass and can hold the ordinary-mail opener.
+	for deadline := time.Now().Add(9 * time.Second); ; {
+		settled, _ := e.appSettled.Load().(string)
+		if passOpens.Load() > 0 && settled == "app:B" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("setup: watcher pass did not refuse and settle: attempts=%d settled=%q", passOpens.Load(), settled)
+		}
+		<-time.After(20 * time.Millisecond)
+	}
 	if passOpens.Load() != 1 {
 		t.Fatalf("setup: partial load did not attempt one refused navigation: %d", passOpens.Load())
 	}

@@ -122,6 +122,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Board replies copy contact alerts and other mutable records before leaving
+  the writer. Later contact updates, claim renewal or membership changes cannot
+  race reply serialization or change an earlier board snapshot.
+
 - Live board and embedded app redraws preserve unchanged composer controls and
   their pending request state, so a click cannot lose its button underneath it. Membership
   and action changes still replace the affected controls.

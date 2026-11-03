@@ -6,6 +6,7 @@ package harnessenv
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -18,6 +19,15 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	backgroundPairCacheDir = func() (string, error) { return cache, nil }
+	// Claude session/settings and the default Codex home are also profile
+	// reads. Individual fixtures may replace these with another private home.
+	for key, value := range map[string]string{
+		"HOME": cache, "USERPROFILE": cache, "XDG_CACHE_HOME": filepath.Join(cache, "cache"), "LOCALAPPDATA": filepath.Join(cache, "cache"),
+	} {
+		if err := os.Setenv(key, value); err != nil {
+			panic(err)
+		}
+	}
 	code := m.Run()
 	_ = os.RemoveAll(cache)
 	os.Exit(code)
