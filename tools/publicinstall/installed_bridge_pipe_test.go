@@ -46,7 +46,10 @@ func TestInstalledBridgeDeadlineClosesItsManualStdoutReader(t *testing.T) {
 				}
 				if !joined {
 					select {
-					case <-done:
+					case err := <-done:
+						if err == nil {
+							t.Error("cancelled bridge cleanup qualified as success")
+						}
 					case <-time.After(5 * time.Second):
 						t.Error("bridge did not finish after fixture release")
 					}
