@@ -1507,6 +1507,12 @@ only to a bridge advertising both capabilities. An older bridge receives no
 such plan; retained mail and its binding diagnostic remain. A request already
 handed to older code before archiving cannot be recalled by a new protocol field.
 
+A legacy Codex binding with no surface is conservatively treated as a possible
+app binding for this fence. Only the receiving host resolves its rollout origin
+for native input; an explicit terminal surface remains authoritative. Older
+bridges receive no ambiguous archived Codex plan, so mail waits for an upgraded
+bridge or reattachment instead of risking navigation.
+
 An absent app socket, the router's explicit `no-client-found`, or a proven
 before-input adapter failure permits the existing cold queue and open route
 below. Its receipt distinguishes an unloaded thread from a failed native

@@ -134,6 +134,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the writer. Later contact updates, claim renewal or membership changes cannot
   race reply serialization or change an earlier board snapshot.
 
+- Archived remote Codex bindings with older metadata cannot reopen a chat,
+  including through a dormant bridge. Updated bridges can still deliver native
+  input to an already loaded chat using the receiving host's app-origin evidence.
+
 - App restart recovery opens only chats with current mail to deliver, leaving
   quiet chats alone. Archived agents can still receive native notices in an
   owned chat, but cannot navigate a window through restart, cold delivery,

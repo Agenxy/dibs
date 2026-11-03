@@ -225,6 +225,12 @@ input and forbids queue fallback and app opening. A dormant older bridge cannot
 advertise the capability and receives no archived app plan it could open.
 Requests already handed to older code before an archive cannot be recalled.
 
+A legacy Codex binding with no surface is conservatively treated as a possible
+app binding for this fence. Only the receiving host resolves its rollout origin
+for native input; an explicit terminal surface remains authoritative. Older
+bridges receive no ambiguous archived Codex plan, so mail waits for an upgraded
+bridge or reattachment instead of risking navigation.
+
 A bounded live probe on **2026-11-03**, ChatGPT **26.1027.61615**, delivered one
 native notice into the implementation agent's already active, owned thread.
 Acceptance took **54 ms**. Accessibility observations immediately before and

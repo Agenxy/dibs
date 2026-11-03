@@ -47,14 +47,16 @@ func (e *Engine) nativeAppRoute(l *core.Agent) bool {
 }
 
 func (e *Engine) nativeAppRouteLocked(l *core.Agent) bool {
-	if surfaceOf(l) != harnessenv.ChatGPTApp {
+	legacyRemoteApp := archivedApp(l) && legacyCodexAppPossible(l) && e.remoteHostOf(l) != ""
+	if surfaceOf(l) != harnessenv.ChatGPTApp && !legacyRemoteApp {
 		return false
 	}
 	if e.remoteHostOf(l) != "" {
 		e.hostWakes.mu.Lock()
 		defer e.hostWakes.mu.Unlock()
 		b := e.hostWakes.bridges[e.remoteHostOf(l)]
-		return b != nil && b.nativeApp && wakeHarness(l) == "codex"
+		return b != nil && b.nativeApp && wakeHarness(l) == "codex" &&
+			(surfaceOf(l) == harnessenv.ChatGPTApp || b.nativeOnly)
 	}
 	c := e.commandFor(l)
 	return wakeexec.NativeQueueTemplate(c.argv)

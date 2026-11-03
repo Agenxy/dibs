@@ -6,6 +6,7 @@ package engine
 import (
 	"context"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -19,7 +20,14 @@ type appBindingAlert struct {
 
 func archivedApp(l *core.Agent) bool {
 	return l != nil && l.Status == core.StatusArchived &&
-		(surfaceOf(l) == harnessenv.ChatGPTApp || surfaceOf(l) == harnessenv.ClaudeDesktop)
+		(surfaceOf(l) == harnessenv.ChatGPTApp || surfaceOf(l) == harnessenv.ClaudeDesktop || legacyCodexAppPossible(l))
+}
+
+// Only the receiving host can read the old binding's rollout header. Until
+// then a missing surface on Codex is possible app evidence, never permission
+// to navigate. An explicit terminal surface remains authoritative.
+func legacyCodexAppPossible(l *core.Agent) bool {
+	return l != nil && surfaceOf(l) == "" && strings.Contains(wakeHarness(l), "codex")
 }
 
 // Writer-owned, derived metadata. Repeated mail does not add alerts or move

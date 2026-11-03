@@ -537,7 +537,8 @@ func (b *wakeBridge) executeOutcome(wr engine.WakeRequest) (bool, string, wakeex
 func (b *wakeBridge) tryNativeRequest(
 	wr engine.WakeRequest, f wakeexec.Fields, argv []string,
 ) (wakeexec.NativeOutcome, bool) {
-	out, handled := wakeexec.TryNative(wr.Surface, f, argv, func() (string, error) { return b.nativeNotice(wr, f) })
+	fresh := func() (string, error) { return b.nativeNotice(wr, f) }
+	out, handled := wakeexec.TryNative(nativeRequestSurface(wr), f, argv, fresh)
 	if !handled && wr.NoNavigation {
 		out.NoRetry = true
 		out.Detail = "native delivery unconfirmed; archived binding cannot navigate, mail remains stored"
@@ -549,7 +550,17 @@ func (b *wakeBridge) tryNativeRequest(
 func (b *wakeBridge) nativeRoute(wr engine.WakeRequest) bool {
 	x := b.routes[strings.ToLower(wr.Harness)]
 	f := wakeexec.Fields{Thread: wr.Thread, Message: wakeexec.Compose(wr.MsgType)}
-	return wakeexec.NativeEligible(wr.Surface, f, f.Apply(x.Argv))
+	return wakeexec.NativeEligible(nativeRequestSurface(wr), f, f.Apply(x.Argv))
+}
+
+// Legacy registrations did not state a surface. Resolve their app origin on
+// this host, just as the cold opener does, so a navigation fence preserves
+// input to a thread the app already owns. Never infer over an explicit surface.
+func nativeRequestSurface(wr engine.WakeRequest) string {
+	if wr.NoNavigation && wr.Surface == "" {
+		return harnessenv.AppFor(wr.Surface, wr.Harness, wr.Thread)
+	}
+	return wr.Surface
 }
 
 // App visibility is independent of the command outcome already reported to the hub.

@@ -25,14 +25,20 @@ clears it. Doctor reads the same binding metadata as the public board, including
 an archived binding that has no ordinary board row.
 
 Remote native-only requests are capability gated on the hub. Older bridges
-receive no archived app request they could turn into an open. A request already
+receive no archived app request they could turn into an open. A legacy Codex
+binding without a surface is conservatively included: only its receiving host
+can read the rollout header that proves its app origin. A capable receiver uses
+that local evidence to retain native input without navigation; an explicit
+terminal surface still outranks origin. Old bridges also receive no ambiguous
+archived Codex plan. Mail remains readable while a bridge is upgraded or the
+same agent reattaches with a current surface. A request already
 handed to old code before archiving cannot be recalled by a new protocol field.
 
 ## Regression discrimination
 
-All seven new guard files were copied byte for byte to a detached checkout of
+All nine new guard files were copied byte for byte to a detached checkout of
 `7ed9f5bed040822fe37f617548a581a8ecc65f53`. The old implementation produced the
-following **13 intended failing leaf cases**; the candidate passed them all.
+following **18 intended failing leaf cases**; the candidate passed them all.
 
 | Production door | Failing old cases |
 |---|---:|
@@ -42,10 +48,12 @@ following **13 intended failing leaf cases**; the candidate passed them all.
 | Claude closed-session reopening | 1 |
 | Hub handoff to old and native-only-capable bridges | 2 |
 | Bridge native-refusal fallback and app opening | 2 |
+| Legacy blank-surface hub handoff to old and native-only bridges | 2 |
+| Legacy receiver owned input, no-owner fallback and app opening | 3 |
 | Stale restart binding, later mail and restart | 1 |
 | Doctor reading an archived binding without a normal board row | 1 |
 
-The matched control runs took 10.792 s on old code and 7.788 s on the candidate,
+The matched control runs took 25.268 s on old code and 15.486 s on the candidate,
 including their test build/run overhead. These are discrimination receipts,
 not an end-to-end performance benchmark. Owned archived native delivery remains
 a passing positive control. Unknown ownership remains a negative control for
@@ -59,6 +67,17 @@ evidence despite changing the status to archived. The corrected fixture expires
 that evidence and drives the actual writer-side closed-session entry before
 observing its diagnostic. Its old run records the actual forbidden app open.
 No deadline, mail assertion, failure evidence or gate was weakened.
+
+Self-review during the second whole gate found the legacy blank-surface case.
+The gate was canceled after its normal race phase passed; it is not a whole-gate
+pass. The first legacy probe incorrectly observed an automatic admission worker
+before it had started. The corrected guard stores real mail and enters the
+production plan factory and execution path, observing the actual remote request.
+It fails both the old implementation and the earlier candidate at the unsafe
+wire handoff. The receiver guard writes a real isolated rollout header and
+asserts that app inference succeeds before exercising input and app opening.
+The earlier candidate passes navigation refusal but fails owned legacy input;
+the repaired candidate passes both properties.
 
 ## One native input and visible-selection observation
 
