@@ -1111,6 +1111,7 @@ type (
 		Departed  int           `json:"departed_unacked"`
 	}
 	boardView struct {
+		AppBindingAlerts   []appBindingDiagnostic     `json:"app_binding_alerts,omitempty"`
 		FolderAccess       []folderaccess.Observation `json:"folder_access,omitempty"`
 		FolderAccessAdvice string                     `json:"folder_access_advice,omitempty"`
 		ReconnectPending   int                        `json:"reconnect_pending,omitempty"`

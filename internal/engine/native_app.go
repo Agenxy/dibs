@@ -69,6 +69,17 @@ func (e *Engine) tryNativeWake(plan wakePlan, agent string) (bool, bool) {
 	if !handled {
 		return e.beforeColdRoute(plan, agent, out, fresh)
 	}
+	if out.OK && nativeDeliveryAccepted(out.Disposition) {
+		if err := harnessenv.ConfirmChatGPTBinding(plan.thread); err != nil {
+			slog.Warn("could not clear confirmed app binding", "agent", agent, "err", err)
+		}
+		_, _ = e.query(e.wakeContext, func() core.Result {
+			if l := e.state.Agents[agent]; l != nil && l.CreatedSerial == plan.createdSerial && threadIDOf(l) == plan.thread {
+				delete(e.appBindings, agent)
+			}
+			return nil
+		})
+	}
 	e.noteQueueObservation(plan, agent, wakeexec.QueueObservation{
 		Admission: "not_queued", Pending: "not_applicable", At: time.Now().UTC(), Delivery: out.Disposition,
 	})

@@ -46,15 +46,18 @@ import (
 // handed to that machine's bridge to run: exactly the substitutions a
 // [wake.exec] entry there may take, and nothing an agent wrote.
 type WakeRequest struct {
-	ID      uint64 `json:"id"`
-	Host    string `json:"host"`
-	Agent   string `json:"agent"`
-	Harness string `json:"harness"`
-	Thread  string `json:"thread"`
-	CWD     string `json:"cwd"`
-	From    string `json:"from"`
-	MsgType string `json:"msg_type"`
-	Notice  string `json:"notice"`
+	// NoNavigation permits native app input only. The hub hands this to a
+	// bridge only after it explicitly advertises that it understands it.
+	NoNavigation bool   `json:"no_navigation,omitempty"`
+	ID           uint64 `json:"id"`
+	Host         string `json:"host"`
+	Agent        string `json:"agent"`
+	Harness      string `json:"harness"`
+	Thread       string `json:"thread"`
+	CWD          string `json:"cwd"`
+	From         string `json:"from"`
+	MsgType      string `json:"msg_type"`
+	Notice       string `json:"notice"`
 	// Surface is the app the agent runs in, derived on its own machine
 	// (harnessenv). ADDITIVE: a bridge too old to know it ignores it, which
 	// leaves that bridge exactly as it was, queueing and never opening an app.
@@ -82,8 +85,9 @@ type HostBridgeInfo struct {
 }
 
 type hostBridge struct {
-	nativeApp bool // additive delivery support, never inferred for a dormant old bridge
-	harnesses map[string]bool
+	nativeOnly bool
+	nativeApp  bool // additive delivery support, never inferred for a dormant old bridge
+	harnesses  map[string]bool
 	// cooldowns is what the bridge's own [wake.exec] table says per harness,
 	// zero for the default: the hub spends the joined machine's cooldown for
 	// its agents, not its own. Round nine of the pre-release review found
@@ -180,7 +184,8 @@ func (e *Engine) AttachHostBridgeCapabilities(
 		harnesses: map[string]bool{}, cooldowns: map[string]time.Duration{},
 		since: time.Now(), ch: make(chan WakeRequest, wakeRequestBuffer), awayOpen: awayOpen,
 	}
-	b.nativeApp = len(nativeApp) == 1 && nativeApp[0]
+	b.nativeApp = len(nativeApp) >= 1 && nativeApp[0]
+	b.nativeOnly = len(nativeApp) >= 2 && nativeApp[1] && b.nativeApp
 	for _, h := range harnesses {
 		if h = strings.ToLower(strings.TrimSpace(h)); h != "" {
 			b.harnesses[h] = true
@@ -390,6 +395,16 @@ func (e *Engine) requestRemoteWake(plan wakePlan, agent string) bool {
 }
 
 func (e *Engine) requestRemoteWakeWithin(plan wakePlan, agent string, within time.Duration) bool {
+	// Recheck before handoff: archiving after planning must not hand an
+	// open-capable request to an older bridge. No bridge flag can recall a
+	// request an older process already received before the archive operation.
+	if !e.refreshRemoteNavigation(&plan, agent) {
+		return false
+	}
+	return e.requestRemoteWakePrepared(plan, agent, within)
+}
+
+func (e *Engine) requestRemoteWakePrepared(plan wakePlan, agent string, within time.Duration) bool {
 	hw := &e.hostWakes
 	hw.mu.Lock()
 	b := hw.bridges[plan.host]
@@ -398,6 +413,11 @@ func (e *Engine) requestRemoteWakeWithin(plan wakePlan, agent string, within tim
 		slog.Info("no wake: the agent's host has no bridge attached",
 			"agent", agent, "host", plan.host)
 		return false
+	}
+	if !hostCanReceivePlan(plan, b) {
+		hw.mu.Unlock()
+		e.refuseRemoteNavigation(plan, agent)
+		return false // an older bridge could navigate after a native refusal
 	}
 	if hw.next == 0 {
 		hw.next = uint64(time.Now().UnixNano())
@@ -459,5 +479,18 @@ func (e *Engine) requestRemoteWakeWithin(plan wakePlan, agent string, within tim
 	case <-timer.C:
 		slog.Info("the agent's host never reported on the wake", "agent", agent, "host", plan.host, "request", req.ID)
 		return false
+	}
+}
+
+func hostCanReceivePlan(plan wakePlan, bridge *hostBridge) bool {
+	return !plan.request.NoNavigation || bridge.nativeOnly
+}
+
+func (e *Engine) refuseRemoteNavigation(plan wakePlan, agent string) {
+	if plan.nativeOutcome != nil {
+		plan.nativeOutcome.NoRetry = true
+	}
+	if e.wakeContext != nil {
+		_, _ = e.query(e.wakeContext, func() core.Result { e.noteAppBinding(e.state.Agents[agent], "archived"); return nil })
 	}
 }

@@ -197,6 +197,7 @@ type Engine struct {
 	// running app differs, its threads are about to be loaded, and a wake
 	// that finds its thread unloaded waits for that rather than opening it.
 	appSettled      atomic.Value
+	appBindings     map[string]appBindingAlert // derived navigation failures, never mail consumption
 	nameAliases     *core.AgentNameAliases
 	configuredNames map[string]configuredNameAddress // derived role-address diagnostics
 	reconnectMail   map[string]uint64                // row incarnation awaiting one reconnect reconsideration

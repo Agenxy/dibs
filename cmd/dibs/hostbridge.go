@@ -297,6 +297,7 @@ func (b *wakeBridge) listenBody() []byte {
 				mcp.WakeHarnessesMetaKey: b.harnesses(),
 				mcp.AwayOpenMetaKey:      3,
 				mcp.NativeAppMetaKey:     true,
+				mcp.NativeOnlyMetaKey:    true,
 			},
 		},
 	})
@@ -503,8 +504,7 @@ func (b *wakeBridge) executeOutcome(wr engine.WakeRequest) (bool, string, wakeex
 			"request", wr.ID, "sent", wr.Notice)
 	}
 	f := wakeexec.Fields{Thread: wr.Thread, Agent: wr.Agent, From: wr.From, MsgType: wr.MsgType, Message: notice}
-	outcome, handled := wakeexec.TryNative(wr.Surface, f, f.Apply(x.Argv),
-		func() (string, error) { return b.nativeNotice(wr, f) })
+	outcome, handled := b.tryNativeRequest(wr, f, f.Apply(x.Argv))
 	if handled {
 		return outcome.OK, outcome.Detail, outcome
 	}
@@ -534,6 +534,18 @@ func (b *wakeBridge) executeOutcome(wr engine.WakeRequest) (bool, string, wakeex
 	return false, "the wake command exited non-zero (the fallback too, when one is configured)", outcome
 }
 
+func (b *wakeBridge) tryNativeRequest(
+	wr engine.WakeRequest, f wakeexec.Fields, argv []string,
+) (wakeexec.NativeOutcome, bool) {
+	out, handled := wakeexec.TryNative(wr.Surface, f, argv, func() (string, error) { return b.nativeNotice(wr, f) })
+	if !handled && wr.NoNavigation {
+		out.NoRetry = true
+		out.Detail = "native delivery unconfirmed; archived binding cannot navigate, mail remains stored"
+		return out, true
+	}
+	return out, handled
+}
+
 func (b *wakeBridge) nativeRoute(wr engine.WakeRequest) bool {
 	x := b.routes[strings.ToLower(wr.Harness)]
 	f := wakeexec.Fields{Thread: wr.Thread, Message: wakeexec.Compose(wr.MsgType)}
@@ -542,6 +554,9 @@ func (b *wakeBridge) nativeRoute(wr engine.WakeRequest) bool {
 
 // App visibility is independent of the command outcome already reported to the hub.
 func (b *wakeBridge) showQueuedThread(wr engine.WakeRequest) {
+	if wr.NoNavigation {
+		return
+	}
 	// Queued. The same step the hub takes for an agent on its own machine,
 	// taken here because the app is on this machine: open the thread in
 	// the app the agent runs in when the app is not holding it.

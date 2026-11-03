@@ -38,11 +38,17 @@ func TestRestartQueueOpensThroughSharedShower(t *testing.T) {
 		Holds: func(string) bool { ownershipChecks.Add(1); return false },
 		Open:  func(argv []string) error { opened <- argv; return nil },
 	}
-	e := New(core.NewState("fixture", core.DefaultLimits()), &memLedger{}, deadProber{})
+	st := core.NewState("fixture", core.DefaultLimits())
+	registered, _, err := st.Apply(&core.Op{Kind: core.OpRegister, Name: "worker", NewToken: "fixture-worker", SessionID: thread}, time.Now())
+	if err != nil || registered["agent_id"] != "worker" {
+		t.Fatalf("setup recipient: %v %v", registered, err)
+	}
+	e := New(st, &memLedger{}, deadProber{})
 	plan := wakePlan{
 		argv:   []string{"codex", "queue", "--thread", thread, "--message", wakeexec.Compose(wakeexec.KindAppRestart)},
 		thread: thread, agent: "worker", cwd: t.TempDir(),
 		surface: harnessenv.ChatGPTApp, harness: "Codex",
+		createdSerial: st.Agents["worker"].CreatedSerial,
 	}
 	if !e.sendRestartQueue(context.Background(), "app:2", plan) || admissions.Load() != 1 {
 		t.Fatalf("setup: restart queue admission failed or repeated: %d", admissions.Load())

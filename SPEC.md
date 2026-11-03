@@ -783,8 +783,9 @@ and nothing else: the board wakes an agent and does not steer one. See
 **Loading agent threads after a ChatGPT app restart** is not optional and
 does not read `resume_after_app_restart`. A refused native dial while the app's
 process runs holds the mail (no queue, no open). On each new app incarnation
-the daemon waits for the app's socket, loads every local ChatGPT-app agent
-thread it does not already hold in one pass under the desktop-wide open lock,
+the daemon waits for the app's socket, loads only local ChatGPT-app agent
+threads with a current unoffered delivery, excluding archived recipients,
+in one pass under the desktop-wide open lock,
 returns the window to `codex://threads/new` (the launch view) when it opened
 anything, and then delivers restart notices and held mail natively. See
 `docs/NATIVE-APP-DELIVERY.md`. Ownership is measured again at the end of the
@@ -793,6 +794,15 @@ Settled means that the pass ended, including on failure, so later mail for an
 unloaded thread can take the ordinary route; it is not a completeness claim.
 A late pass cannot settle a different app incarnation. Reconciliation does not
 repeat opens or increase the per-thread ownership wait.
+
+Quiet chats are left alone; their next mail takes the ordinary route. Archived
+recipients retain their mail and may receive native input in an already owned
+chat, but no navigation is permitted. An accepted restart navigation still
+explicitly unowned at the final measurement records a local derived stale-binding
+memo. Later mail and restarts do not reopen it; positive ownership/native
+acceptance or a different binding permits recovery. Unknown probes never establish
+that diagnosis. `app_binding_alerts` in the public board and `dibs doctor` expose
+bounded binding metadata, including archived rows omitted from the ordinary board.
 
 **Optional ChatGPT app-restart recovery.** `[wake]
 resume_after_app_restart = "1h"` enables a local, macOS-only sweep of known
@@ -1489,6 +1499,13 @@ hold. The bridge uses `/api/wake-owed` with the existing board credential just
 before input; only its pending request and stated host qualify. Old bridges
 keep their existing route. This read neither marks mail delivered nor confirms
 socket outcomes. See SECURITY.md and docs/NATIVE-APP-DELIVERY.md for boundaries.
+
+`com.dibs/native_only_wake: true` additionally declares that a bridge understands
+`no_navigation: true` on a wake request: native input is allowed, cold fallback
+and app opening are forbidden. The hub emits an archived app recipient's plan
+only to a bridge advertising both capabilities. An older bridge receives no
+such plan; retained mail and its binding diagnostic remain. A request already
+handed to older code before archiving cannot be recalled by a new protocol field.
 
 An absent app socket, the router's explicit `no-client-found`, or a proven
 before-input adapter failure permits the existing cold queue and open route

@@ -3,6 +3,21 @@
 
 package main
 
+type appBindingDiagnostic struct {
+	Agent  string `json:"agent"`
+	Reason string `json:"reason"`
+	Hint   string `json:"hint"`
+}
+
+func checkAppBindings(b *boardView, warn fixFn) {
+	if b == nil {
+		return
+	}
+	for _, alert := range b.AppBindingAlerts {
+		warn("app navigation held for "+alert.Agent+": "+alert.Reason+" thread binding", alert.Hint)
+	}
+}
+
 type boardQueueWake struct {
 	ThreadState string `json:"thread_state"`
 }

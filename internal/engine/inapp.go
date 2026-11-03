@@ -44,13 +44,23 @@ func (e *Engine) showInApp(plan wakePlan, agent string) {
 	if plan.thread == "" {
 		return
 	}
+	if !e.appNavigationAllowed(agent, plan.createdSerial, plan.thread) {
+		return
+	}
+	if stale, err := harnessenv.ChatGPTBindingStale(plan.thread); err != nil || stale {
+		if stale && e.wakeContext != nil {
+			_, _ = e.query(e.wakeContext, func() core.Result { e.noteAppBinding(e.state.Agents[agent], "stale"); return nil })
+		}
+		return
+	}
 	argv := harnessenv.OpenArgv(harnessenv.AppFor(plan.surface, plan.harness, plan.thread), plan.thread)
 	stranded := plan.strandedQueue()
 	if stranded {
 		slog.Info("earlier app wake is still undispatched; retrying the original thread's app-open path",
 			"agent", agent, "hint", "queue retention is not delivery; unresolved mail will raise a contact alert")
 	}
-	shower.ShowWhenIdle(argv, plan.thread, func(opened, deferred bool, err error) {
+	s := e.appShower(agent, plan.createdSerial, plan.thread)
+	s.ShowWhenIdle(argv, plan.thread, func(opened, deferred bool, err error) {
 		logShow(opened, deferred, err, "agent", agent)
 		if !deferred && (err != nil || stranded) {
 			e.contactAfterQueuedOpen(plan, agent, err != nil)
@@ -88,7 +98,12 @@ func (e *Engine) openClosedSession(l *core.Agent) {
 	if surfaceOf(l) != harnessenv.ClaudeDesktop {
 		return
 	}
+	if l.Gone() {
+		e.noteAppBinding(l, "archived")
+		return
+	}
 	session, agent, created := threadIDOf(l), l.ID, l.CreatedSerial
+	boundThread := session
 	known := knownHarnessSessions(l)
 	if len(known) == 0 {
 		slog.Warn("cannot reopen this agent's Claude app session: Dibs holds no Claude Code session id for it",
@@ -126,7 +141,8 @@ func (e *Engine) openClosedSession(l *core.Agent) {
 				return
 			}
 		}
-		shower.ShowWhenIdle(argv, session, func(opened, deferred bool, err error) {
+		s := e.appShower(agent, created, boundThread)
+		s.ShowWhenIdle(argv, session, func(opened, deferred bool, err error) {
 			logShow(opened, deferred, err, "agent", agent)
 			if err != nil && !deferred {
 				e.contactAfterAppFailure(agent, created)

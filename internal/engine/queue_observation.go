@@ -28,6 +28,7 @@ func (e *Engine) decorateQueueWake(row map[string]any, agent *core.Agent, now ti
 // Mutating calls return the fold's board, while Board() builds its own view.
 // Both projections must expose the same derived queue observation.
 func (e *Engine) decorateBoardQueueWakes(board core.Result, now time.Time) {
+	e.decorateAppBindings(board)
 	rows, _ := board["agents"].([]map[string]any)
 	for _, row := range rows {
 		id, _ := row["id"].(string)

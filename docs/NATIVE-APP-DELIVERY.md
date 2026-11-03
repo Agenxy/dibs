@@ -188,7 +188,8 @@ chose, once per agent. Now:
   mail is held: no queue, no open. A refused dial with the process gone is a
   stale socket, and the cold route launches the app as before.
 - On each new app incarnation (two stable process samples), Dibs waits for the
-  socket to accept, then loads every local ChatGPT-app agent thread in one
+  socket to accept, then loads only local ChatGPT-app agent threads with a
+  current unoffered delivery, excluding archived recipients, in one
   pass under the desktop-wide open/restore lock: owner discovery first, an
   open only for a thread not held, a bounded wait for it to load, and then
   `codex://threads/new`, which returns the primary window to `/`, the route a
@@ -203,6 +204,36 @@ chose, once per agent. Now:
   mail for an unloaded thread can then take the ordinary queue/open route.
   A late pass cannot settle a different app incarnation. Restart notices and
   held mail can reach owned threads natively.
+
+Quiet chats are not preloaded. Their next real mail takes the ordinary route.
+Archived agents can still receive native input when their chat is already owned,
+but navigation is forbidden at restart, ordinary cold opening, Claude reopening
+and remote delivery. A fresh eligibility fence remains attached to a deferred
+local open, so an archive during the ownership probe cancels navigation too.
+
+An accepted restart open still explicitly unowned at the final measurement is
+retained as a stale binding in the local app-open memo. It is not reopened on
+later mail, a retry timer or another app incarnation. Unknown measurements and
+refused opens never establish this diagnosis. Positive native acceptance clears
+it. One metadata entry per current binding appears in `app_binding_alerts` and
+doctor; mail stays stored. A new thread binding has its own memo.
+
+New host bridges advertise `com.dibs/native_only_wake: true`. The hub hands an
+archived app recipient only a `no_navigation: true` plan, and only to a bridge
+advertising that capability and native app delivery. That plan permits native
+input and forbids queue fallback and app opening. A dormant older bridge cannot
+advertise the capability and receives no archived app plan it could open.
+Requests already handed to older code before an archive cannot be recalled.
+
+A bounded live probe on **2026-11-03**, ChatGPT **26.1027.61615**, delivered one
+native notice into the implementation agent's already active, owned thread.
+Acceptance took **54 ms**. Accessibility observations immediately before and
+after retained the same app process, frontmost bundle and window title on a
+different selected chat. The active thread received the exact notice. This
+measures one active-turn admission without an observed selection change; it
+does not establish idle-start, delayed-selection or fleet-wide behavior. The
+historical restart navigation counts and executable regression proof are in
+the PR's verification note.
 
 What this cannot do is restore a chat the person opened during those first
 seconds. The app exposes no focused-thread query over IPC, persists no route,

@@ -287,14 +287,19 @@ func OpenArgv(surface, thread string) []string {
 // test that reached the real `open codex://...` would switch the operator's
 // ChatGPT window every time the suite ran.
 type Shower struct {
-	Holds func(thread string) bool
-	Open  func(argv []string) error
+	// AllowOpen is an optional fresh navigation fence, checked at contact,
+	// including after a bounded lock deferral. Native input does not use it.
+	AllowOpen func(string) bool
+	Holds     func(thread string) bool
+	Open      func(argv []string) error
 	// Ownership is the production tri-state probe. Holds is the test seam and
 	// takes precedence when supplied; false there is positive unloaded evidence.
 	Ownership func(thread string) ThreadOwnership
 	// Wait is only for the bounded ChatGPT open/restore pair lock.
 	Wait func(time.Duration)
 }
+
+func (s Shower) allowsOpen(thread string) bool { return s.AllowOpen == nil || s.AllowOpen(thread) }
 
 // appOpenFixture replaces only the native contact, keeping RealShower's
 // production route selector in the test. Nil is the only production value.
@@ -348,6 +353,9 @@ func (s Shower) Show(argv []string, thread string) (opened bool, err error) {
 		return s.showChatGPT(argv, thread)
 	}
 	if len(argv) == 0 || s.holds(thread) {
+		return false, nil
+	}
+	if !s.allowsOpen(thread) {
 		return false, nil
 	}
 	if err := s.Open(argv); err != nil {

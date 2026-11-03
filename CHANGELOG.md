@@ -134,6 +134,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the writer. Later contact updates, claim renewal or membership changes cannot
   race reply serialization or change an earlier board snapshot.
 
+- App restart recovery opens only chats with current mail to deliver, leaving
+  quiet chats alone. Archived agents can still receive native notices in an
+  owned chat, but cannot navigate a window through restart, cold delivery,
+  Claude reopening or a remote bridge. A chat still unowned after an accepted
+  restart open is held as a stale binding instead of repeatedly opened; doctor
+  and board metadata name the binding while its mail remains stored. Older
+  bridges receive no archived app plan they could turn into an open.
+
 - Live board and embedded app redraws preserve unchanged composer controls and
   their pending request state, so a click cannot lose its button underneath it. Membership
   and action changes still replace the affected controls.
