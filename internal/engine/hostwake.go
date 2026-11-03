@@ -415,6 +415,7 @@ func (e *Engine) requestRemoteWakePlan(plan *wakePlan, agent string, within time
 		result, err = e.query(e.wakeContext, prepare)
 		if err != nil {
 			// Cancellation cannot prove whether the writer already handed off.
+			// A late pending entry belongs only to this retiring daemon engine.
 			if plan.nativeOutcome == nil {
 				plan.nativeOutcome = new(wakeexec.NativeOutcome)
 			}
