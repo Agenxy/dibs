@@ -41,6 +41,7 @@ type Engine struct {
 	// Must stay unbuffered: accepted registration holds belong to the writer.
 	ops              chan request
 	done             chan struct{}                // immutable after New; closes when Run exits
+	stopping         chan struct{}                // writer exited; rejects only requests not yet admitted
 	reconnectPending atomic.Int64                 // derived observation diagnostic; never replayable state
 	toolCatalogs     map[string]BridgeToolCatalog // writer-owned, bounded, derived
 	toolCatalogOrder uint64
@@ -308,7 +309,7 @@ func New(st *core.State, led Ledger, prober Prober, history ...[]core.Event) *En
 		ring = history[0]
 	}
 	e := &Engine{
-		done: make(chan struct{}),
+		done: make(chan struct{}), stopping: make(chan struct{}),
 		ring: ring,
 		ops:  make(chan request), subs: make(chan subReq), unsubs: make(chan chan core.Event),
 		state: st, led: led, prober: prober,
@@ -356,7 +357,8 @@ func (e *Engine) Run(ctx context.Context) {
 	e.wakeContext = reconcileContext
 	e.startHumanCleanup(reconcileContext)
 	defer func() {
-		eCancel() // also unblock completion receipts on a fail-stop writer panic
+		close(e.stopping) // reject new queries before joining workers that may submit one
+		eCancel()         // also unblock completion receipts on a fail-stop writer panic
 		e.finishBlobReconciles()
 	}()
 	e.boot(time.Now())
