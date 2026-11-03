@@ -108,5 +108,9 @@ The missing-rollout quarantine remains a separate positive case. The final
 lookup shares the origin resolver, distinguishes unreadable/missing stores from
 a searched readable store, and never reads transcript bodies for absence.
 
+The absence check assumes Codex writes a local rollout before a bound thread
+can hold mail. That held for the local bindings measured here; a future storage
+layout or a thread without local rollout persistence is outside this proof.
+
 The PR carries the separate whole-local-gate and hosted-CI receipts. Source
 verification, merge, installation and live product acceptance remain distinct.
