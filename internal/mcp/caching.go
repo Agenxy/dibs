@@ -91,8 +91,9 @@ var localToolsFingerprint = sync.OnceValue(func() string { return FingerprintToo
 // and schemas. A bridge must hash its daemon's reply, not its own binary.
 func FingerprintTools(tools any) string {
 	hash := sha256.New()
-	// Encoder keeps the module's existing Go API floor. Its only byte change
-	// from Marshal is a final newline: withhold that byte, across any writes.
+	// Encoder avoids Marshal's final result copy; it still constructs the
+	// whole value in pooled state. Withhold its final newline to retain the
+	// same bytes while keeping the module's existing Go API floor.
 	w := fingerprintJSONWriter{hash: hash}
 	if err := json.NewEncoder(&w).Encode(tools); err != nil || !w.pending || w.tail[0] != '\n' {
 		hash.Reset() // Marshal returned no bytes on failure; keep that identity.
@@ -110,8 +111,8 @@ func (w *fingerprintJSONWriter) Write(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
-	// hash.Hash.Write never returns an error. Only the final byte is held;
-	// neither this writer nor the bridge retains a serialized catalog buffer.
+	// hash.Hash.Write never returns an error. This adapter holds only the
+	// final byte; Encoder owns its pooled whole-value serialization buffer.
 	if w.pending {
 		_, _ = w.hash.Write(w.tail[:])
 	}

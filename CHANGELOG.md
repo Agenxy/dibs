@@ -126,8 +126,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- Stdio bridges use less memory in fresh sessions and after in-place upgrades,
-  while preserving the tool and panel fingerprints harnesses already cache.
+- Stdio bridges defer unused server initialization and compute panel identity
+  from a shared assets writer. Fresh sessions and in-place upgrades retain less
+  memory, with unchanged tool and panel fingerprints.
 
 - Codex hook-approval probes stop at their context deadline even when a
   descendant retains stdout, so plugin installation and upgrades report
