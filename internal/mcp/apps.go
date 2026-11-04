@@ -14,12 +14,15 @@ package mcp
 import (
 	"context"
 	"crypto/sha256"
-	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"reflect"
 	"strings"
+	"sync"
+
+	_ "embed"
 
 	"github.com/agenxy/dibs/internal/assets"
 	"github.com/agenxy/dibs/internal/core"
@@ -60,7 +63,7 @@ func boardApp() string {
 	// Two substitutions, both inlined rather than linked: the panel's CSP
 	// declares no external origins, so a stylesheet or script fetched over the
 	// network would fail closed and silently.
-	return strings.Replace(boardAppTemplate(), "/*__PANELBUILD__*/", panelBuild, 1)
+	return strings.Replace(boardAppTemplate(), "/*__PANELBUILD__*/", panelBuild(), 1)
 }
 
 // boardAppTemplate is the panel with its styles and script inlined but its build
@@ -70,9 +73,46 @@ func boardApp() string {
 // template's content, and the template then carries the id. Hashing after would
 // require the file to contain its own digest.
 func boardAppTemplate() string {
-	out := strings.Replace(boardAppHTML, "/*__STYLES__*/", assets.Styles(), 1)
-	out = strings.Replace(out, "<!--__PRODUCT_MARK__-->", assets.Icon, 1)
-	return strings.Replace(out, "/*__BOARDJS__*/", assets.BoardJS(), 1)
+	var b strings.Builder
+	_ = writeBoardAppTemplate(&b) // strings.Builder cannot fail.
+	return b.String()
+}
+
+// Rendering and hashing consume the same template stream. In particular a
+// bridge comparing catalogs after re-exec must not cache a rendered panel or
+// the font HTML merely to learn the panel's content identity.
+func writeBoardAppTemplate(w io.Writer) error {
+	slots := []struct {
+		marker string
+		write  func(io.Writer) error
+	}{
+		{"/*__STYLES__*/", assets.WriteStyles},
+		{"<!--__PRODUCT_MARK__-->", func(w io.Writer) error { _, err := io.WriteString(w, assets.Icon); return err }},
+		{"/*__BOARDJS__*/", func(w io.Writer) error { _, err := io.WriteString(w, assets.BoardJS()); return err }},
+	}
+	source := boardAppHTML
+	for len(slots) > 0 {
+		chosen, at := -1, len(source)
+		for i, slot := range slots {
+			if n := strings.Index(source, slot.marker); n >= 0 && n < at {
+				chosen, at = i, n
+			}
+		}
+		if chosen < 0 {
+			break
+		}
+		if _, err := io.WriteString(w, source[:at]); err != nil {
+			return err
+		}
+		slot := slots[chosen]
+		if err := slot.write(w); err != nil {
+			return err
+		}
+		source = source[at+len(slot.marker):]
+		slots = append(slots[:chosen], slots[chosen+1:]...)
+	}
+	_, err := io.WriteString(w, source)
+	return err
 }
 
 // panelBuild identifies the template's content. It names the URI hosts cache by
@@ -86,14 +126,15 @@ func boardAppTemplate() string {
 // then left a host holding completely different content under a URI it was told
 // was content-derived, which is the exact caching failure the hash exists to
 // prevent, reintroduced by the hash not covering the switch.
-var panelBuild = func() string {
-	source := boardAppTemplate()
+var panelBuild = sync.OnceValue(func() string {
+	hash := sha256.New()
 	if panelMinimal {
-		source = minimalPanelHTML
+		_, _ = io.WriteString(hash, minimalPanelHTML)
+	} else {
+		_ = writeBoardAppTemplate(hash) // hash.Hash writes cannot fail.
 	}
-	sum := sha256.Sum256([]byte(source))
-	return hex.EncodeToString(sum[:])[:12]
-}()
+	return hex.EncodeToString(hash.Sum(nil))[:12]
+})
 
 // uiBoardBase is the panel template's family name; uiBoardURI adds the hash of
 // the template actually being served.
@@ -125,7 +166,7 @@ var panelBuild = func() string {
 // applied to. TestNoToolDeclaresTheUnhashedPanelURI holds this.
 const uiBoardBase = "ui://dibs/board"
 
-var uiBoardURI = uiBoardBase + "/" + panelBuild
+var uiBoardURI = sync.OnceValue(func() string { return uiBoardBase + "/" + panelBuild() })
 
 // panelDataMetaKey is intentionally namespaced. Tool-result _meta is delivered
 // to the MCP App and withheld from model context; putting the board in ordinary
@@ -138,7 +179,7 @@ const uiMime = "text/html;profile=mcp-app"
 // uiResourceDescriptor is the resources/list entry for the board app.
 func uiResourceDescriptor() map[string]any {
 	return map[string]any{
-		"uri":         uiBoardURI,
+		"uri":         uiBoardURI(),
 		"name":        "board-app",
 		"description": "Interactive Dibs board (MCP Apps UI template)",
 		"mimeType":    uiMime,
@@ -149,7 +190,7 @@ func uiResourceDescriptor() map[string]any {
 // across invocations, so baking in a board snapshot would serve stale state.
 func readUIBoard() map[string]any {
 	return map[string]any{"contents": []map[string]any{{
-		"uri":      uiBoardURI,
+		"uri":      uiBoardURI(),
 		"mimeType": uiMime,
 		"text":     boardApp(),
 		"_meta": map[string]any{
@@ -578,7 +619,7 @@ func panelBootstrap(payload core.Result) core.Result {
 
 func panelMeta(payload core.Result) map[string]any {
 	return map[string]any{
-		"ui":             map[string]any{"resourceUri": uiBoardURI},
+		"ui":             map[string]any{"resourceUri": uiBoardURI()},
 		panelDataMetaKey: withoutBodies(payload),
 	}
 }

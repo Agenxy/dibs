@@ -648,7 +648,7 @@ func (s *Server) dispatch(
 		return map[string]any{}, nil
 	case "tools/list":
 		// Identical for every caller and fixed for the life of the process.
-		return cacheable(map[string]any{"tools": agentTools}, ttlStatic, scopePublic), nil
+		return cacheable(map[string]any{"tools": agentTools()}, ttlStatic, scopePublic), nil
 	case "resources/list":
 		// The DESCRIPTORS are static; what they point at is not, and each read
 		// carries its own hint.
@@ -763,7 +763,7 @@ func (s *Server) dispatch(
 			return cacheable(map[string]any{"contents": []map[string]any{
 				{"uri": p.URI, "mimeType": "application/json", "text": string(text)},
 			}}, ttlLive, scopePrivate), nil
-		case uiBoardURI:
+		case uiBoardURI():
 			return readUIBoard(), nil
 		default:
 			// A host holding a PREVIOUS build's panel URI still gets a panel.

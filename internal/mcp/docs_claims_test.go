@@ -66,8 +66,8 @@ func TestToolCountSpellings(t *testing.T) {
 // the docs may quote as "N tools". This test kept asserting the larger figure and
 // so demanded the docs state something no reader could confirm.
 func TestDocumentedToolCountMatchesReality(t *testing.T) {
-	actual := len(agentTools)
-	if len(toolDefs) <= actual {
+	actual := len(agentTools())
+	if len(toolDefs()) <= actual {
 		t.Fatal("nothing is hidden from tools/list; this test is then pinning the wrong number")
 	}
 	if actual == 0 {
@@ -236,7 +236,7 @@ func TestDocumentedToolCountMatchesReality(t *testing.T) {
 // a client that caches its token across a reattach is holding a dead one.
 func TestRegisterDocumentsBothContinuityPaths(t *testing.T) {
 	var desc string
-	for _, td := range agentTools {
+	for _, td := range agentTools() {
 		if td["name"] == "register" {
 			desc, _ = td["description"].(string)
 		}
@@ -293,7 +293,7 @@ func TestRegisterDocumentsBothContinuityPaths(t *testing.T) {
 // out. Found by the pre-release review.
 func TestPruneDoesNotOfferWhatItRefuses(t *testing.T) {
 	var desc, param string
-	for _, td := range agentTools {
+	for _, td := range agentTools() {
 		if td["name"] != "prune" {
 			continue
 		}
@@ -328,7 +328,7 @@ func TestPruneDoesNotOfferWhatItRefuses(t *testing.T) {
 // pre-release review, after the two log lines saying the same thing were fixed.
 func TestClaimCoordinatorDoesNotNameAnAgentThatDoesNotExist(t *testing.T) {
 	var desc string
-	for _, td := range agentTools {
+	for _, td := range agentTools() {
 		if td["name"] == "claim_coordinator" {
 			desc, _ = td["description"].(string)
 		}
@@ -360,7 +360,7 @@ func TestClaimCoordinatorDoesNotNameAnAgentThatDoesNotExist(t *testing.T) {
 // "recipient is dormant" back, and reported the product broken.
 func TestMessageTypesDoNotPromiseAnInstantWake(t *testing.T) {
 	var desc string
-	for _, td := range agentTools {
+	for _, td := range agentTools() {
 		if td["name"] != "send" {
 			continue
 		}

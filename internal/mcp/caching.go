@@ -7,6 +7,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"hash"
+	"sync"
 )
 
 // Cache hints for the 2026-07-28 stateless core.
@@ -78,13 +80,43 @@ func cacheable(result map[string]any, ttlMs int, scope string) map[string]any {
 // with its off-by-default mcp_tool_list_changed feature enabled; see
 // docs/TOOL-CATALOG-REFRESH.md for the measurement and its limits.
 func ToolsFingerprint() string {
-	return FingerprintTools(agentTools)
+	return localToolsFingerprint()
 }
+
+// The local definitions are immutable for the life of an image. A re-exec
+// compares and logs this identity; neither needs to marshal the catalog again.
+var localToolsFingerprint = sync.OnceValue(func() string { return FingerprintTools(agentTools()) })
 
 // FingerprintTools hashes the complete served catalog, including descriptions
 // and schemas. A bridge must hash its daemon's reply, not its own binary.
 func FingerprintTools(tools any) string {
-	raw, _ := json.Marshal(tools)
-	sum := sha256.Sum256(raw)
-	return hex.EncodeToString(sum[:8])
+	hash := sha256.New()
+	// Encoder avoids Marshal's final result copy; it still constructs the
+	// whole value in pooled state. Withhold its final newline to retain the
+	// same bytes while keeping the module's existing Go API floor.
+	w := fingerprintJSONWriter{hash: hash}
+	if err := json.NewEncoder(&w).Encode(tools); err != nil || !w.pending || w.tail[0] != '\n' {
+		hash.Reset() // Marshal returned no bytes on failure; keep that identity.
+	}
+	return hex.EncodeToString(hash.Sum(nil)[:8])
+}
+
+type fingerprintJSONWriter struct {
+	hash    hash.Hash
+	tail    [1]byte
+	pending bool
+}
+
+func (w *fingerprintJSONWriter) Write(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	// hash.Hash.Write never returns an error. This adapter holds only the
+	// final byte; Encoder owns its pooled whole-value serialization buffer.
+	if w.pending {
+		_, _ = w.hash.Write(w.tail[:])
+	}
+	_, _ = w.hash.Write(p[:len(p)-1])
+	w.tail[0], w.pending = p[len(p)-1], true
+	return len(p), nil
 }

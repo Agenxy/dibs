@@ -13,7 +13,7 @@ import "testing"
 // Reaching the daemon proves you are on this machine. It does not make you a
 // participant, and the two must not be conflated.
 func TestShowBoardRequiresAToken(t *testing.T) {
-	for _, tool := range toolDefs {
+	for _, tool := range toolDefs() {
 		if tool["name"] != "board" {
 			continue
 		}

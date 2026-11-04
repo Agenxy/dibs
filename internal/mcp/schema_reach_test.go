@@ -45,7 +45,7 @@ func TestEveryDeclaredParameterIsReadByAHandler(t *testing.T) {
 
 	read := fieldsReadIn(t, ".")
 
-	for _, tool := range toolDefs {
+	for _, tool := range toolDefs() {
 		name, _ := tool["name"].(string)
 		schema, ok := tool["inputSchema"].(map[string]any)
 		if !ok {

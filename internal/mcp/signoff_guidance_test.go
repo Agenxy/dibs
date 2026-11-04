@@ -68,7 +68,7 @@ func TestPersistentSignOffGuidanceThroughMCP(t *testing.T) {
 }
 
 func TestSignOffGuidanceDistinguishesTasksFromAgents(t *testing.T) {
-	for _, def := range toolDefs {
+	for _, def := range toolDefs() {
 		if def["name"] != "sign_off" {
 			continue
 		}

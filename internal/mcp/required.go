@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 )
 
 type missingRequired struct {
@@ -37,9 +38,9 @@ func requiredHint(tool string, err error) string {
 // inputSchema, indexed for enforcement. Derived from toolDefs rather than
 // written out again, so a tool cannot declare one contract and be held to
 // another.
-var requiredParams = func() map[string][]string {
+var requiredParams = sync.OnceValue(func() map[string][]string {
 	out := map[string][]string{}
-	for _, t := range toolDefs {
+	for _, t := range toolDefs() {
 		name, _ := t["name"].(string)
 		schema, _ := t["inputSchema"].(map[string]any)
 		if name == "" || schema == nil {
@@ -50,13 +51,13 @@ var requiredParams = func() map[string][]string {
 		}
 	}
 	return out
-}()
+})
 
 // knownParams is every property each tool accepts, for suggesting the right
 // name when a caller supplies a near-miss.
-var knownParams = func() map[string][]string {
+var knownParams = sync.OnceValue(func() map[string][]string {
 	out := map[string][]string{}
-	for _, t := range toolDefs {
+	for _, t := range toolDefs() {
 		name, _ := t["name"].(string)
 		schema, _ := t["inputSchema"].(map[string]any)
 		if name == "" || schema == nil {
@@ -69,7 +70,7 @@ var knownParams = func() map[string][]string {
 		sort.Strings(out[name])
 	}
 	return out
-}()
+})
 
 // checkRequired rejects a call that omits a parameter the tool declares
 // required, and says which one.
@@ -89,7 +90,7 @@ var knownParams = func() map[string][]string {
 // bearerToken is passed because `token` may legitimately arrive in the HTTP
 // Authorization header instead of the arguments object.
 func checkRequired(tool string, raw json.RawMessage, bearerToken, agentNonce string) error {
-	req := requiredParams[tool]
+	req := requiredParams()[tool]
 	present := map[string]bool{}
 	if len(raw) > 0 {
 		var got map[string]json.RawMessage
@@ -175,7 +176,7 @@ func checkRequired(tool string, raw json.RawMessage, bearerToken, agentNonce str
 
 func unknownGiven(tool string, present map[string]bool) []string {
 	known := map[string]bool{}
-	for _, p := range knownParams[tool] {
+	for _, p := range knownParams()[tool] {
 		known[p] = true
 	}
 	// "token" is authentication, not domain: it may arrive in the arguments or
@@ -265,7 +266,7 @@ var wrongTool = map[string]map[string]string{
 // actually has one, or the tool they probably wanted.
 func synonymHint(tool string, extra []string) string {
 	known := map[string]bool{}
-	for _, p := range knownParams[tool] {
+	for _, p := range knownParams()[tool] {
 		known[p] = true
 	}
 	var found []string

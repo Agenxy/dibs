@@ -84,13 +84,13 @@ func TestValidCallsAreNotRejected(t *testing.T) {
 // derivation actually found the schemas: an empty map would make every check
 // above vacuously pass.
 func TestRequiredIsDerivedFromTheSchemasThemselves(t *testing.T) {
-	if len(requiredParams) < 10 {
+	if len(requiredParams()) < 10 {
 		t.Fatalf("only %d tools have required params indexed: the derivation is broken, "+
-			"and every enforcement test above would pass vacuously", len(requiredParams))
+			"and every enforcement test above would pass vacuously", len(requiredParams()))
 	}
-	for tool, req := range requiredParams {
+	for tool, req := range requiredParams() {
 		known := map[string]bool{}
-		for _, p := range knownParams[tool] {
+		for _, p := range knownParams()[tool] {
 			known[p] = true
 		}
 		for _, r := range req {
@@ -148,7 +148,7 @@ func TestShippedHooksSatisfyTheSchemasTheyCall(t *testing.T) {
 				if err := checkRequired(tool, args, "hook-supplied-token", ""); err != nil {
 					t.Errorf("%s calls %s but the schema rejects it: %v", where, tool, err)
 				}
-				if _, known := knownParams[tool]; !known {
+				if _, known := knownParams()[tool]; !known {
 					t.Errorf("%s calls %q, which is not a tool this server serves:\n"+
 						"  a hook wired to a tool that does not exist fails silently at runtime,\n"+
 						"  which is indistinguishable from the hook never having been written",
@@ -203,7 +203,7 @@ func TestEveryDispatchedToolIsDeclared(t *testing.T) {
 		t.Fatalf("reading mcp.go: %v", err)
 	}
 	declared := map[string]bool{}
-	for _, d := range toolDefs {
+	for _, d := range toolDefs() {
 		if n, _ := d["name"].(string); n != "" {
 			declared[n] = true
 		}
@@ -308,7 +308,7 @@ func TestTheBridgeOnlySendsFieldsTheSchemaDeclares(t *testing.T) {
 		"pid", "cwd", "branch", "host", "harness", "surface", "session_id", "title",
 	}
 	known := map[string]bool{}
-	for _, p := range knownParams["register"] {
+	for _, p := range knownParams()["register"] {
 		known[p] = true
 	}
 	for _, f := range injected {

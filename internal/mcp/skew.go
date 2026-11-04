@@ -48,7 +48,7 @@ func serverBuildInfo() map[string]any {
 		// The panel's content hash, so "which panel is this daemon serving" is
 		// answerable without rendering anything. A screenshot could not answer it;
 		// this can.
-		"panel_build": panelBuild,
+		"panel_build": panelBuild(),
 	}
 	// The mtime of the binary this process is RUNNING, which is not necessarily
 	// the one now on disk at that path: replacing a file does not change what an

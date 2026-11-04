@@ -22,7 +22,7 @@ import (
 // lifecycle hook silently.
 func TestHarnessOnlyToolsAreHiddenButNotRemoved(t *testing.T) {
 	listed := map[string]bool{}
-	for _, td := range agentTools {
+	for _, td := range agentTools() {
 		name, _ := td["name"].(string)
 		listed[name] = true
 	}
@@ -32,7 +32,7 @@ func TestHarnessOnlyToolsAreHiddenButNotRemoved(t *testing.T) {
 		}
 	}
 	defined := map[string]bool{}
-	for _, td := range toolDefs {
+	for _, td := range toolDefs() {
 		name, _ := td["name"].(string)
 		defined[name] = true
 	}
@@ -51,7 +51,7 @@ func TestHarnessOnlyToolsAreHiddenButNotRemoved(t *testing.T) {
 // forbid it. If a change needs more room, raise it in the same commit and say
 // what the agent gets for the tokens.
 func TestToolListingStaysAffordable(t *testing.T) {
-	b, err := json.Marshal(map[string]any{"tools": agentTools})
+	b, err := json.Marshal(map[string]any{"tools": agentTools()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,13 +150,13 @@ func TestToolListingStaysAffordable(t *testing.T) {
 	}
 	// A ceiling alone punishes adding a well-written tool and permits bloating
 	// the ones already there. This catches the second.
-	if avg := len(b) / len(agentTools); avg > perTool {
+	if avg := len(b) / len(agentTools()); avg > perTool {
 		t.Errorf("tools/list averages %d chars per tool, over %d: the surface is getting "+
 			"wordier rather than wider, and prose belongs in dibs://skills, which is "+
 			"fetched once", avg, perTool)
 	}
 	t.Logf("tools/list: %d tools, %d chars (~%d tokens), %d chars/tool",
-		len(agentTools), len(b), len(b)/4, len(b)/len(agentTools))
+		len(agentTools()), len(b), len(b)/4, len(b)/len(agentTools()))
 }
 
 // `no_process` is the daemon's word about a participant, never an agent's about
@@ -174,7 +174,7 @@ func TestToolListingStaysAffordable(t *testing.T) {
 // fails the moment a tool declares it, which is the shape of change that would
 // otherwise arrive as a plausible-looking convenience.
 func TestNoToolLetsAnAgentSayItHasNoProcess(t *testing.T) {
-	b, err := json.Marshal(map[string]any{"tools": agentTools})
+	b, err := json.Marshal(map[string]any{"tools": agentTools()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +214,7 @@ func TestTheDesktopManifestOnlyPromisesToolsThatExist(t *testing.T) {
 		t.Fatal("setup: the manifest names no tools, so this test proves nothing")
 	}
 	defined := map[string]bool{}
-	for _, td := range toolDefs {
+	for _, td := range toolDefs() {
 		name, _ := td["name"].(string)
 		defined[name] = true
 	}
