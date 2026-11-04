@@ -64,6 +64,12 @@ func mcpStdio(args []string) error {
 	if err := bridgePreflight(); err != nil {
 		return err
 	}
+	if os.Getenv(bridgeStateEnv) != "" {
+		// An upgraded image will compare its local catalog in restoreCarried.
+		// Keep this temporary work ahead of the ancestry/start workers, as
+		// package initialization did, rather than overlapping their heaps.
+		_ = mcp.ToolsFingerprint()
+	}
 	return runBridge(args)
 }
 
