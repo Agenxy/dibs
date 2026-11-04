@@ -447,7 +447,7 @@ func (b toolSchemas) agentAndMailTools() []map[string]any {
 		},
 		{
 			"name": "respond",
-			"description": "approve means 'I'll do it': you owe delivery; done delivers, approving first if needed. " +
+			"description": "approve accepts work; done delivers ordinary pending work in one call. Queued work and typed effects require approve. " +
 				"For permission, send type:question with choices. " +
 				"Answer/review/report work; withdraw only your unanswered question or unfinished request, " +
 				"including after approval and before done. Withdrawal clears owed work and notifies the recipient once.",

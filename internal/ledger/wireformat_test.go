@@ -182,6 +182,7 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		"no_process": true, "adopt_authorised": true, "choices": true, "grant": true, "adopt": true,
 		// Additive replay-gated adoption repair and exact earlier receipt.
 		"adoption_recovery": true, "prior_adoption_serial": true, "mail_traffic_v1": true,
+		"merge_adoptions": true,
 		// The version-bearing new-kind marker records its durable reader set.
 		"required_features": true,
 		// Declared by core.Op and reachable on disk, though the fixture below
@@ -484,7 +485,7 @@ const (
 	// Bridge evidence adds one flag; every historical spelling remains frozen.
 	// Recovery adds three op tags and one Message tag; no historical key changed.
 	// required_features is additive; all earlier tags remain frozen.
-	frozenOpFingerprint       = "sha256:c59a614d8f57b581"
+	frozenOpFingerprint       = "sha256:86cba90507775aff"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`

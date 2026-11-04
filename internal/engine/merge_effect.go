@@ -36,6 +36,7 @@ func (e *Engine) prepareMergeEffect(op *core.Op, actor *core.Agent) error {
 	}
 	if approving {
 		op.MergeActor = &core.MergeActor{ID: actor.ID, Created: actor.CreatedSerial, Authority: "human", Evidence: evidence}
+		op.MergeAdoptions = e.state.PendingMergeAdoptions(effect.From, effect.Into)
 	}
 	return e.state.Admit(op)
 }

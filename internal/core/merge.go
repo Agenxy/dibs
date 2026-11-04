@@ -35,6 +35,7 @@ import (
 func (s *State) applyMerge(op *Op, now time.Time) (Result, []Event, error) {
 	if op.MergeActor != nil {
 		res, evs := s.mergeSupported(op.To, op.MergeInto, op.MergeActor, now)
+		evs = append(evs, s.resolveMergeAdoptions(op, op.To, op.MergeInto, now)...)
 		res["serial"] = s.finish(&evs, now)
 		return res, evs, nil
 	}

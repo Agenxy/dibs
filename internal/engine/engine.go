@@ -416,7 +416,8 @@ func (e *Engine) execWithReceipt(
 		op.AdoptionRecovery = true
 	}
 	op.PriorAdoptionSerial = 0
-	op.MergeActor = nil // authentication decision is never caller input
+	op.MergeActor = nil     // authentication decision is never caller input
+	op.MergeAdoptions = nil // the writer selects exact requests before the merge
 	op.RecoveryActor = nil
 	op.RecoveryDeclarationTimes = nil
 	op.MailTrafficV1 = op.Kind == core.OpSendMessage
