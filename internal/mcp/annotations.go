@@ -66,10 +66,12 @@ func toolAnnotations(name string) map[string]any {
 
 // Annotated where the definitions are built, so the advertised list and the
 // full one carry the same answers: agentTools shares these maps.
-func init() {
-	for _, t := range toolDefs {
+func buildAnnotatedToolDefs() []map[string]any {
+	defs := buildToolDefs()
+	for _, t := range defs {
 		if name, _ := t["name"].(string); name != "" {
 			t["annotations"] = toolAnnotations(name)
 		}
 	}
+	return defs
 }

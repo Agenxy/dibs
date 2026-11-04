@@ -27,6 +27,7 @@ import (
 	_ "embed"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 )
@@ -78,37 +79,70 @@ var signalCSS string
 //go:embed board.js
 var boardJS string
 
-var (
-	once   sync.Once
-	faces  string
-	styles string
-)
+var cachedFaces = sync.OnceValue(func() string {
+	var b strings.Builder
+	_ = writeFontFaces(&b) // strings.Builder cannot fail.
+	return b.String()
+})
 
-func build() {
-	once.Do(func() {
-		var b strings.Builder
-		face := func(family, weight string, data []byte) {
-			fmt.Fprintf(&b,
-				"@font-face{font-family:'%s';font-style:normal;font-weight:%s;"+
-					"font-display:swap;src:url(data:font/ttf;base64,%s) format('truetype')}",
-				family, weight, base64.StdEncoding.EncodeToString(data))
+var cachedStyles = sync.OnceValue(func() string {
+	var b strings.Builder
+	_ = WriteStyles(&b) // strings.Builder cannot fail.
+	return b.String()
+})
+
+func writeFontFaces(w io.Writer) error {
+	for _, face := range []struct {
+		family, weight string
+		data           []byte
+	}{
+		{"Atkinson Hyperlegible Next", "200 800", AtkinsonNext},
+		{"Atkinson Hyperlegible Mono", "200 800", AtkinsonMono},
+	} {
+		if _, err := fmt.Fprintf(w, "@font-face{font-family:'%s';font-style:normal;font-weight:%s;"+
+			"font-display:swap;src:url(data:font/ttf;base64,", face.family, face.weight); err != nil {
+			return err
 		}
-		face("Atkinson Hyperlegible Next", "200 800", AtkinsonNext)
-		face("Atkinson Hyperlegible Mono", "200 800", AtkinsonMono)
-		faces = b.String()
-		styles = "/*\n" + nextLicense + "\n" + monoLicense + "\n*/\n" + faces + "\n" + boardCSS + "\n" + signalCSS
-	})
+		encoder := base64.NewEncoder(base64.StdEncoding, w)
+		if _, err := encoder.Write(face.data); err != nil {
+			return err
+		}
+		if err := encoder.Close(); err != nil {
+			return err
+		}
+		if _, err := io.WriteString(w, ") format('truetype')}"); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-// FontFaces returns @font-face rules with the TrueType payloads inlined as data
-// URIs. Deterministic, so callers embedding it stay safely cacheable.
-func FontFaces() string { build(); return faces }
+// WriteStyles writes the same stylesheet as Styles without materializing or
+// caching its base64 font HTML. Content hashes use this path; rendering can
+// retain the materialized string. Both have exactly one encoding rule.
+func WriteStyles(w io.Writer) error {
+	for _, s := range []string{"/*\n", nextLicense, "\n", monoLicense, "\n*/\n"} {
+		if _, err := io.WriteString(w, s); err != nil {
+			return err
+		}
+	}
+	if err := writeFontFaces(w); err != nil {
+		return err
+	}
+	for _, s := range []string{"\n", boardCSS, "\n", signalCSS} {
+		if _, err := io.WriteString(w, s); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
-// Styles is the complete stylesheet for either surface: the inlined faces
-// followed by the shared design system. Both surfaces use this whole string,
-// a surface that took only part of it would be the beginning of the drift this
-// package exists to prevent.
-func Styles() string { build(); return styles }
+// FontFaces returns deterministic @font-face rules with inline TrueType data.
+func FontFaces() string { return cachedFaces() }
+
+// Styles is the complete stylesheet shared by both surfaces: licensed inline
+// faces, then the board and signal styles. It materializes only when requested.
+func Styles() string { return cachedStyles() }
 
 // BoardJS is the shared component library: pure functions from board data to
 // HTML strings, exposed as a `Board` object. It contains no transport and no

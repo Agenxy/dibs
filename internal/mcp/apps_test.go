@@ -74,8 +74,8 @@ func TestShowBoardSplitsModelAndUIPayloads(t *testing.T) {
 	}
 
 	ui := meta["ui"].(map[string]any)
-	if ui["resourceUri"] != uiBoardURI {
-		t.Errorf("resourceUri = %v, want %v", ui["resourceUri"], uiBoardURI)
+	if ui["resourceUri"] != uiBoardURI() {
+		t.Errorf("resourceUri = %v, want %v", ui["resourceUri"], uiBoardURI())
 	}
 
 	// The model line must stay far smaller than the UI payload, or the tool has
@@ -188,8 +188,8 @@ func TestUIBoardTemplateIsStaticAndWellFormed(t *testing.T) {
 	if a["mimeType"] != uiMime {
 		t.Errorf("mimeType = %v, want %v", a["mimeType"], uiMime)
 	}
-	if a["uri"] != uiBoardURI {
-		t.Errorf("uri = %v, want %v", a["uri"], uiBoardURI)
+	if a["uri"] != uiBoardURI() {
+		t.Errorf("uri = %v, want %v", a["uri"], uiBoardURI())
 	}
 	html, _ := a["text"].(string)
 	if !strings.Contains(html, "ui/initialize") || !strings.Contains(html, "ui/notifications/tool-result") {
@@ -300,7 +300,7 @@ func TestInboxCountHandlesBothShapes(t *testing.T) {
 // it would make every panel edit a test edit.
 func TestThePanelURIChangesWhenThePanelDoes(t *testing.T) {
 	requireFullPanel(t)
-	uri := uiBoardURI
+	uri := uiBoardURI()
 	if !strings.HasPrefix(uri, uiBoardBase+"/") {
 		t.Fatalf("panel URI %q left its family name behind; hosts and the resource "+
 			"dispatch both key off %q", uri, uiBoardBase)
@@ -341,7 +341,7 @@ func TestThePanelURIChangesWhenThePanelDoes(t *testing.T) {
 	// looks identical to a server that never shipped the fix, and for one round
 	// of this the difference was guessed at rather than read.
 	html, _ := readUIBoard()["contents"].([]map[string]any)[0]["text"].(string)
-	if !strings.Contains(html, "panel "+panelBuild) {
+	if !strings.Contains(html, "panel "+panelBuild()) {
 		t.Error("the panel does not print its build id; a screenshot cannot say which " +
 			"template is on screen")
 	}
@@ -426,7 +426,7 @@ func TestShowBoardCarriesTheBoardToAHostThatSaysItRenders(t *testing.T) {
 // run, so it never has a cache to serve stale bytes from: a green instrument
 // and a stale screen, at the same time, for the same build.
 func TestNoToolDeclaresTheUnhashedPanelURI(t *testing.T) {
-	for _, tool := range toolDefs {
+	for _, tool := range toolDefs() {
 		meta, ok := tool["_meta"].(map[string]any)
 		if !ok {
 			continue
@@ -452,9 +452,9 @@ func TestNoToolDeclaresTheUnhashedPanelURI(t *testing.T) {
 				"template under this URI at connect time and will never see a changed "+
 				"panel; use uiBoardURI", tool["name"], uri)
 		}
-		if uri != "" && uri != uiBoardURI {
+		if uri != "" && uri != uiBoardURI() {
 			t.Errorf("tool %v declares panel URI %q, want the current %q",
-				tool["name"], uri, uiBoardURI)
+				tool["name"], uri, uiBoardURI())
 		}
 	}
 }
@@ -477,14 +477,14 @@ func TestEverySurfaceNamesTheSamePanelURI(t *testing.T) {
 	// when somebody asks for it, through board, and TestOnlyBoardDrawsThePanel
 	// holds that nothing else declares it.
 	mustDeclare := map[string]bool{"board": false}
-	for _, tool := range toolDefs {
+	for _, tool := range toolDefs() {
 		name, _ := tool["name"].(string)
 		if _, wanted := mustDeclare[name]; !wanted {
 			continue
 		}
 		meta, _ := tool["_meta"].(map[string]any)
 		ui, _ := meta["ui"].(map[string]any)
-		if uri, _ := ui["resourceUri"].(string); uri == uiBoardURI {
+		if uri, _ := ui["resourceUri"].(string); uri == uiBoardURI() {
 			mustDeclare[name] = true
 		}
 	}
@@ -496,11 +496,11 @@ func TestEverySurfaceNamesTheSamePanelURI(t *testing.T) {
 		}
 	}
 	listed, _ := uiResourceDescriptor()["uri"].(string)
-	if listed != uiBoardURI {
-		t.Errorf("resources/list advertises %q, tools declare %q", listed, uiBoardURI)
+	if listed != uiBoardURI() {
+		t.Errorf("resources/list advertises %q, tools declare %q", listed, uiBoardURI())
 	}
-	if !strings.HasPrefix(uiBoardURI, uiBoardBase+"/") {
-		t.Errorf("uiBoardURI %q is not a versioned form of %q", uiBoardURI, uiBoardBase)
+	if !strings.HasPrefix(uiBoardURI(), uiBoardBase+"/") {
+		t.Errorf("uiBoardURI %q is not a versioned form of %q", uiBoardURI(), uiBoardBase)
 	}
 }
 
@@ -522,15 +522,15 @@ func TestThePanelBuildNamesTheBytesActuallyServed(t *testing.T) {
 	source := boardAppTemplate()
 	if panelMinimal {
 		source = minimalPanelHTML
-		if served != panelBuild {
+		if served != panelBuild() {
 			t.Errorf("minimal panel serves %s but the URI names %s: a host would cache "+
-				"one under the other's identity", served, panelBuild)
+				"one under the other's identity", served, panelBuild())
 		}
 	}
 	sum2 := sha256.Sum256([]byte(source))
-	if want := hex.EncodeToString(sum2[:])[:12]; want != panelBuild {
+	if want := hex.EncodeToString(sum2[:])[:12]; want != panelBuild() {
 		t.Errorf("panelBuild = %s, want %s: the id does not name the template this "+
-			"daemon would serve", panelBuild, want)
+			"daemon would serve", panelBuild(), want)
 	}
 }
 
@@ -575,12 +575,12 @@ func TestTheMinimalPanelIsServableAndIdentified(t *testing.T) {
 			"cause of anything", len(body))
 	}
 	sum := sha256.Sum256([]byte(minimalPanelHTML))
-	if want := hex.EncodeToString(sum[:])[:12]; panelBuild != want {
+	if want := hex.EncodeToString(sum[:])[:12]; panelBuild() != want {
 		t.Errorf("panelBuild = %s, want %s: in this mode the URI must name the stub, "+
-			"or a host caches one panel under the other's identity", panelBuild, want)
+			"or a host caches one panel under the other's identity", panelBuild(), want)
 	}
-	if !strings.HasPrefix(uiBoardURI, uiBoardBase+"/") {
-		t.Errorf("uiBoardURI %q is not versioned", uiBoardURI)
+	if !strings.HasPrefix(uiBoardURI(), uiBoardBase+"/") {
+		t.Errorf("uiBoardURI %q is not versioned", uiBoardURI())
 	}
 	// And it must still be a UI resource a host can actually mount.
 	res := readUIBoard()

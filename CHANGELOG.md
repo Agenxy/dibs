@@ -126,6 +126,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Stdio bridges use less memory in fresh sessions and after in-place upgrades,
+  while preserving the tool and panel fingerprints harnesses already cache.
+
 - Codex hook-approval probes stop at their context deadline even when a
   descendant retains stdout, so plugin installation and upgrades report
   approval as unverified instead of hanging. Installed-bridge acceptance

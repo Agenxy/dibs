@@ -3,6 +3,8 @@
 
 package mcp
 
+import "sync"
+
 // Tool definitions (tools/list). Schemas kept deliberately small: every
 // property the model does not need is context it should not pay for.
 // harnessOnly are tools an AGENT must never call: the lifecycle hooks a harness
@@ -20,17 +22,22 @@ var harnessOnly = map[string]bool{
 }
 
 // agentTools is what tools/list advertises: everything an agent may actually use.
-var agentTools = func() []map[string]any {
-	out := make([]map[string]any, 0, len(toolDefs))
-	for _, t := range toolDefs {
+var agentTools = sync.OnceValue(func() []map[string]any {
+	out := make([]map[string]any, 0, len(toolDefs()))
+	for _, t := range toolDefs() {
 		if name, _ := t["name"].(string); !harnessOnly[name] {
 			out = append(out, t)
 		}
 	}
 	return out
-}()
+})
 
-var toolDefs = func() []map[string]any {
+// The CLI also imports mcp for wire keys and fingerprint helpers. In a stdio
+// bridge the daemon owns the catalog: building it here eagerly also renders
+// and caches the panel's embedded fonts, once per otherwise idle session.
+var toolDefs = sync.OnceValue(buildAnnotatedToolDefs)
+
+func buildToolDefs() []map[string]any {
 	obj := func(props map[string]any, required ...string) map[string]any {
 		s := map[string]any{"type": "object", "properties": props}
 		if len(required) > 0 {
@@ -594,7 +601,7 @@ var toolDefs = func() []map[string]any {
 				},
 			}, "token"),
 			"_meta": map[string]any{"ui": map[string]any{
-				"resourceUri": uiBoardURI,
+				"resourceUri": uiBoardURI(),
 				"visibility":  []string{"model", "app"},
 			}},
 		},
@@ -889,7 +896,7 @@ var toolDefs = func() []map[string]any {
 			}, "token", "since_serial"),
 		},
 	}
-}()
+}
 
 // ToolNames is every tool tools/list advertises.
 //
@@ -898,8 +905,8 @@ var toolDefs = func() []map[string]any {
 // offering them the nearest unrelated verb, and that copy has to be held to
 // this list by something.
 func ToolNames() []string {
-	out := make([]string, 0, len(agentTools))
-	for _, t := range agentTools {
+	out := make([]string, 0, len(agentTools()))
+	for _, t := range agentTools() {
 		if n, ok := t["name"].(string); ok {
 			out = append(out, n)
 		}
@@ -914,7 +921,7 @@ func ToolNames() []string {
 // the call. That cost every Claude Code session with CLAUDE_EFFORT set its
 // registration.
 func ToolProperties(tool string) map[string]bool {
-	for _, t := range toolDefs {
+	for _, t := range toolDefs() {
 		if n, _ := t["name"].(string); n != tool {
 			continue
 		}

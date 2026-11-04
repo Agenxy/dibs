@@ -26,7 +26,7 @@ import (
 // because that is what a validating host rejects.
 func TestShippedHooksMatchTheAdvertisedToolSchemas(t *testing.T) {
 	schemas := map[string]map[string]any{}
-	for _, td := range toolDefs {
+	for _, td := range toolDefs() {
 		name, _ := td["name"].(string)
 		in, _ := td["inputSchema"].(map[string]any)
 		props, _ := in["properties"].(map[string]any)

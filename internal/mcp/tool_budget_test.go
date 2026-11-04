@@ -32,7 +32,7 @@ func TestTheAdvertisedToolSurfaceStaysWithinBudget(t *testing.T) {
 		maxDescriptions = 24 << 10 // prose an agent must read
 		maxOneTool      = 4 << 10  // any single tool's description + schema
 	)
-	payload, err := json.Marshal(map[string]any{"tools": agentTools})
+	payload, err := json.Marshal(map[string]any{"tools": agentTools()})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
@@ -43,7 +43,7 @@ func TestTheAdvertisedToolSurfaceStaysWithinBudget(t *testing.T) {
 	}
 
 	descs := 0
-	for _, tool := range agentTools {
+	for _, tool := range agentTools() {
 		d, _ := tool["description"].(string)
 		descs += len(d)
 		schema, _ := json.Marshal(tool["inputSchema"])
@@ -69,7 +69,7 @@ func TestTheAdvertisedToolSurfaceStaysWithinBudget(t *testing.T) {
 // sent once.
 func TestNoSentenceIsRepeatedAcrossToolDescriptions(t *testing.T) {
 	seen := map[string]string{}
-	for _, tool := range agentTools {
+	for _, tool := range agentTools() {
 		name, _ := tool["name"].(string)
 		d, _ := tool["description"].(string)
 		for _, sentence := range strings.Split(d, ". ") {

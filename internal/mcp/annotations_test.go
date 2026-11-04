@@ -30,7 +30,7 @@ type advertisedHints struct {
 // What a client actually reads: the tools/list result, through JSON.
 func advertisedAnnotations(t *testing.T) map[string]*advertisedHints {
 	t.Helper()
-	raw, err := json.Marshal(agentTools)
+	raw, err := json.Marshal(agentTools())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestASeatCanReattachAndCoordinateWithoutApproval(t *testing.T) {
 // tools, because a misspelt entry would classify nothing and say nothing.
 func TestEveryToolDeclaresItsAnnotations(t *testing.T) {
 	names := map[string]bool{}
-	for _, def := range toolDefs {
+	for _, def := range toolDefs() {
 		name, _ := def["name"].(string)
 		names[name] = true
 		a, ok := def["annotations"].(map[string]any)

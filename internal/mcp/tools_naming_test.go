@@ -24,7 +24,7 @@ import (
 // where the collision has to be defused.
 func TestTheTwoCloseToolsDisambiguateEachOther(t *testing.T) {
 	desc := map[string]string{}
-	for _, tool := range toolDefs {
+	for _, tool := range toolDefs() {
 		name, _ := tool["name"].(string)
 		if name == "sign_off" || name == "close_space" {
 			desc[name], _ = tool["description"].(string)

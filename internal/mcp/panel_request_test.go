@@ -66,7 +66,7 @@ func TestOnlyBoardDrawsThePanel(t *testing.T) {
 	shown := rawToolResult(t, srv, "board", map[string]any{"token": tokA})
 	meta, _ := shown["_meta"].(map[string]any)
 	ui, _ := meta["ui"].(map[string]any)
-	if ui["resourceUri"] != uiBoardURI {
+	if ui["resourceUri"] != uiBoardURI() {
 		t.Fatalf("board did not draw the panel: %v", shown["_meta"])
 	}
 }
