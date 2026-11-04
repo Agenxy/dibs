@@ -702,8 +702,9 @@ func (b toolSchemas) boardAndSpaceTools() []map[string]any {
 				"whenever they get to it. Use announce instead when others MUST know, " +
 				"or the post will be skimmed past.",
 			"inputSchema": b.obj(
-				map[string]any{"token": b.tok, "space": b.str("space id"), "body": b.str("what you want the agent to know")}, "token",
-				"space", "body",
+				map[string]any{
+					"token": b.tok, "space": b.str("space id"), "body": b.str("what you want the agent to know"),
+				}, "token", "space", "body",
 			),
 		},
 		{
@@ -715,8 +716,9 @@ func (b toolSchemas) boardAndSpaceTools() []map[string]any {
 				"because this obliges everyone else to answer you: read what the space has " +
 				"already been told before adding to it.",
 			"inputSchema": b.obj(
-				map[string]any{"token": b.tok, "space": b.str("space id"), "body": b.str("what everyone must know")}, "token", "space",
-				"body",
+				map[string]any{
+					"token": b.tok, "space": b.str("space id"), "body": b.str("what everyone must know"),
+				}, "token", "space", "body",
 			),
 		},
 		{
