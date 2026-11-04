@@ -14,6 +14,8 @@ import (
 // the child, but a grandchild can retain its output descriptors; without this
 // bound Wait can outlive both the child and its context indefinitely.
 // Callers keep ownership of their context, stdio and any explicit WaitDelay.
+// WaitDelay does not bound a caller's direct StdoutPipe read before Wait;
+// that reader needs its own context cancellation and close.
 // ErrWaitDelay remains an error: only a caller knows whether incomplete output
 // makes its result unknown or a successful launch is already sufficient.
 func Command(ctx context.Context, name string, arg ...string) *exec.Cmd {

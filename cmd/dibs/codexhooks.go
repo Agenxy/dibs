@@ -252,10 +252,12 @@ func isDibsHook(h codexHook) bool {
 // appServer is one `codex app-server` process spoken to over newline-framed
 // JSON-RPC on its stdio, the transport the TUI and the desktop app use.
 type appServer struct {
-	cmd    *exec.Cmd
-	in     io.WriteCloser
-	out    *bufio.Reader
-	nextID int
+	cmd      *exec.Cmd
+	in       io.WriteCloser
+	out      *bufio.Reader
+	output   io.ReadCloser
+	stopRead func() bool
+	nextID   int
 }
 
 func startAppServer(ctx context.Context, bin string) (*appServer, error) {
@@ -273,13 +275,21 @@ func startAppServerForHome(ctx context.Context, bin, home string) (*appServer, e
 	}
 	outPipe, err := cmd.StdoutPipe()
 	if err != nil {
+		_ = in.Close()
 		return nil, err
 	}
 	cmd.Stderr = io.Discard
 	if err := cmd.Start(); err != nil {
+		_ = in.Close()
+		_ = outPipe.Close()
 		return nil, fmt.Errorf("starting %s app-server: %w", bin, err)
 	}
-	a := &appServer{cmd: cmd, in: in, out: bufio.NewReaderSize(outPipe, 1<<20)}
+	// This reader belongs to us, not exec's copy goroutines. A descendant
+	// holding only stdout can otherwise keep call blocked before Wait starts.
+	stopRead := context.AfterFunc(ctx, func() { _ = outPipe.Close() })
+	a := &appServer{
+		cmd: cmd, in: in, out: bufio.NewReaderSize(outPipe, 1<<20), output: outPipe, stopRead: stopRead,
+	}
 	var init json.RawMessage
 	if err := a.call("initialize", map[string]any{
 		"clientInfo":   map[string]any{"name": "dibs", "version": version},
@@ -296,6 +306,8 @@ func startAppServerForHome(ctx context.Context, bin, home string) (*appServer, e
 }
 
 func (a *appServer) close() {
+	a.stopRead()
+	_ = a.output.Close()
 	_ = a.in.Close()
 	_ = a.cmd.Process.Kill()
 	_ = a.cmd.Wait()

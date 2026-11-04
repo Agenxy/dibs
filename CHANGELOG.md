@@ -126,6 +126,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Codex hook-approval probes stop at their context deadline even when a
+  descendant retains stdout, so plugin installation and upgrades report
+  approval as unverified instead of hanging. Installed-bridge acceptance
+  probes enforce the same bound and retain the failure in their receipt.
+
 - Graceful daemon shutdown waits for an in-flight standing advisory to save
   its suppression memory after committing the mail, so an unchanged restart
   does not announce that same advice again because the sender was abandoned.

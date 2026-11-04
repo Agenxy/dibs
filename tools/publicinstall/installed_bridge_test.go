@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -114,6 +115,9 @@ func TestInstalledBridgeChecksProtocolsRepliesAndPrivateLogs(t *testing.T) {
 
 func installedCommandFixture() int {
 	mode := os.Getenv("DIBS_TEST_INSTALLED_MODE")
+	if mode == "retained-stdout" {
+		return retainedInstalledStdoutFixture()
+	}
 	if mode == "smoke" && !smokeEndpointObserved() {
 		return 20
 	}
@@ -174,6 +178,58 @@ func installedCommandFixture() int {
 			return 5
 		}
 	}
+}
+
+func retainedInstalledStdoutFixture() int {
+	child := len(os.Args) == 2 && os.Args[1] == "--hold-stdout"
+	if child {
+		stdout, outErr := os.Stdout.Stat()
+		stderr, errErr := os.Stderr.Stat()
+		if outErr != nil || errErr != nil || stdout.Mode()&os.ModeNamedPipe == 0 || stderr.Mode()&os.ModeNamedPipe != 0 {
+			return 31
+		}
+	} else {
+		if len(os.Args) != 2 || os.Args[1] != "mcp-stdio" {
+			return 32
+		}
+		var request struct{ Method string }
+		if json.NewDecoder(os.Stdin).Decode(&request) != nil {
+			return 33
+		}
+		want := "server/discover"
+		if os.Getenv("DIBS_TEST_INSTALLED_PROTOCOL") == "2025-11-25" {
+			want = "initialize"
+		}
+		if request.Method != want {
+			return 34
+		}
+	}
+	control, err := net.DialTimeout("tcp", os.Getenv("DIBS_TEST_INSTALLED_CONTROL"), 5*time.Second)
+	if err != nil {
+		return 35
+	}
+	defer func() { _ = control.Close() }()
+	_ = control.SetDeadline(time.Now().Add(10 * time.Second))
+	role := byte('p')
+	if child {
+		role = 'g'
+	}
+	if _, err := control.Write([]byte{role}); err != nil {
+		return 36
+	}
+	if !child {
+		cmd := exec.Command(os.Args[0], "--hold-stdout") // #nosec G204 -- private test executable
+		cmd.Stdout = os.Stdout                           // stderr deliberately closes with the direct child
+		if err := cmd.Start(); err != nil {
+			return 37
+		}
+		_ = cmd.Process.Release()
+	}
+	var release [1]byte
+	if _, err := io.ReadFull(control, release[:]); err != nil || release[0] != 'x' {
+		return 38
+	}
+	return 0
 }
 
 func installedFixtureResult(method string, params map[string]any, mode string) map[string]any {

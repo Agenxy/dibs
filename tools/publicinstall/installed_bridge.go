@@ -75,9 +75,14 @@ func (r *runner) installedBridge(bin, home string, env []string, protocol string
 	if err != nil {
 		return err
 	}
+	defer func() { _ = out.Close() }()
 	if err := cmd.Start(); err != nil {
 		return err
 	}
+	// Decode runs before Wait. Its pipe needs its own cancellation even when
+	// every exec-managed copy goroutine has already drained.
+	stopRead := context.AfterFunc(ctx, func() { _ = out.Close() })
+	defer stopRead()
 	bridge := &installedRPC{
 		encoder: json.NewEncoder(in), decoder: json.NewDecoder(io.LimitReader(out, 8<<20)),
 		protocol: protocol,
