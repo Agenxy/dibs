@@ -546,6 +546,9 @@ func (p *plan) report() error {
 // read at load time, and a directory cannot be moved out from under the process
 // holding its lock.
 func (p *plan) preflight() error {
+	if err := p.running.parallelPolicyError(); err != nil {
+		return err
+	}
 	if p.systemdErr != nil {
 		return p.systemdErr
 	}
@@ -618,6 +621,9 @@ func (p *plan) preflight() error {
 // cutover is the only phase that stops anything, and it is responsible for the
 // daemon being up again however it ends.
 func (p *plan) cutover() error {
+	if err := p.running.parallelPolicyError(); err != nil {
+		return err
+	}
 	if p.app != nil {
 		return p.cutoverAppService()
 	}
@@ -934,6 +940,9 @@ func unitBinary(unit string) string {
 // that quietly downgrades a supervised service to an orphan process is a worse
 // outcome than the drift it was fixing.
 func startDaemon(installed, dir, unit string, was daemonState) error {
+	if err := was.parallelPolicyError(); err != nil {
+		return err
+	}
 	// UNLESS THE UNIT NAMES A DIFFERENT BOARD.
 	//
 	// --adopt-dir renames the data directory and rewrites the unit to match. If
@@ -972,10 +981,8 @@ func startDaemon(installed, dir, unit string, was daemonState) error {
 	if a := replacementAddr(dir, was.addr); a != "" {
 		args = append(args, "-addr", a)
 	}
-	// A second board on one machine is a deliberate configuration (isolating
-	// agents you do not trust, SECURITY.md), and it is refused by default. A
-	// daemon that was running alongside others has to be allowed to again, or
-	// the restart fails on a rule the operator already answered.
+	// Retain only this daemon's explicit permission. Parallel test boards do
+	// not block its start, and their presence cannot grant production a flag.
 	if was.parallel {
 		args = append(args, "-allow-parallel")
 	}
@@ -1179,9 +1186,12 @@ func tooOldForCheck(out []byte) bool {
 // daemonState is how the daemon was running before this command stopped it, so
 // it can be started the same way.
 type daemonState struct {
-	pid      int
-	addr     string
+	pid  int
+	addr string
+	// parallel is ONLY the selected daemon's recorded -allow-parallel flag.
 	parallel bool
+	// Other non-parallel rows can prevent a restart, never grant permission.
+	restartBlockers []paths.Daemon
 	// unknown means the registry could not be READ, which is not the same as
 	// nothing running.
 	//
@@ -1196,21 +1206,28 @@ type daemonState struct {
 	unknown bool
 }
 
-// runningDaemon reads the registry for the daemon serving dir, and notes
-// whether it was sharing this machine with others.
+// runningDaemon reads the selected daemon's own policy separately from any
+// strangers that would block its replacement. Parallel strangers do not block.
 //
-// Best-effort by design: a registry that cannot be read means starting with
-// defaults, which is what happens today anyway. Silence here must not stop an
-// upgrade, because the alternative is an operator left with a stopped daemon
-// and a command that refused to finish.
+// An unreadable registry remains unknown, rather than evidence of absence.
+// A readable one can forbid a restart, but cannot grant a new startup flag.
 func runningDaemon(dir string) daemonState {
 	live, err := paths.LiveDaemons()
 	if err != nil {
 		return daemonState{unknown: true}
 	}
-	mine, others, err := selectDaemon(live, dir)
-	if err != nil || mine == nil {
-		return daemonState{parallel: others > 0}
+	mine, _, err := selectDaemon(live, dir)
+	if err != nil {
+		return daemonState{unknown: true}
+	}
+	var was daemonState
+	for _, row := range live {
+		if row.IsStranger(dir) && !row.Parallel {
+			was.restartBlockers = append(was.restartBlockers, row)
+		}
+	}
+	if mine == nil {
+		return was
 	}
 	// WITH THE SCHEME IT WAS ASKED FOR. The registry records the bare
 	// listener and, when the daemon was told a transport on its flag or in
@@ -1222,7 +1239,8 @@ func runningDaemon(dir string) daemonState {
 	if mine.Scheme != "" && addr != "" {
 		addr = mine.Scheme + "://" + addr
 	}
-	return daemonState{pid: mine.PID, addr: addr, parallel: others > 0}
+	was.pid, was.addr, was.parallel = mine.PID, addr, mine.Parallel
+	return was
 }
 
 // systemdTokens splits a unit the way systemd does, and reverses what
