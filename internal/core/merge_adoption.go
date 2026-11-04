@@ -53,7 +53,10 @@ func (s *State) admitMergeAdoptions(op *Op) error {
 
 // Fold the exact decision recorded by the writer, never reselect at replay.
 // The merge and these outcomes share their caller's one finish/ledger append.
-func (s *State) resolveMergeAdoptions(op *Op, from, into string, now time.Time) []Event {
+func (s *State) resolveMergeAdoptions(op *Op, from, into string, now time.Time) ([]Event, error) {
+	if err := s.checkMergeAdoptionRecords(op); err != nil {
+		return nil, err
+	}
 	var events []Event
 	for _, serial := range op.MergeAdoptions {
 		m := s.Messages[serial]
@@ -65,5 +68,21 @@ func (s *State) resolveMergeAdoptions(op *Op, from, into string, now time.Time) 
 			Data: map[string]any{"msg_serial": serial, "merged_from": from, "merged_into": into,
 				"by": op.MergeActor.ID, "via": "merge_agents"}})
 	}
-	return events
+	return events, nil
+}
+
+// Recorded-reference integrity, not a new policy decision. Check before ANY
+// mutation as well as at the resolver: a damaged snapshot must fail replay
+// deterministically, never panic, silently skip, or partially apply the merge.
+// Historical operations have no recorded selection and retain their fold.
+func (s *State) checkMergeAdoptionRecords(op *Op) error {
+	for _, serial := range op.MergeAdoptions {
+		m := s.Messages[serial]
+		if m == nil || m.Terminal() {
+			return errf("E_MERGE_RECORD",
+				"restore a verified snapshot or replay the complete ledger; do not skip the recorded merge",
+				"merge op serial %d references missing or already terminal adoption request %d", s.Serial+1, serial)
+		}
+	}
+	return nil
 }

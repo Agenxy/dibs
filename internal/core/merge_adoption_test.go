@@ -5,9 +5,42 @@ package core
 
 import (
 	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestMergeAdoptionReplayRejectsDamagedRecordedReferences(t *testing.T) {
+	for _, route := range []string{"direct", "approval"} {
+		for _, damage := range []string{"missing", "terminal"} {
+			t.Run(route+"/"+damage, func(t *testing.T) {
+				s, now := mergeAdoptionState(t)
+				op := mergeAdoptionOp(t, []uint64{10})
+				if route == "approval" {
+					s.Messages[11] = &Message{Serial: 11, From: "survivor", To: "lead", Type: MsgRequest, State: MsgStatePending, Merge: &MergeRequest{From: "fork", Into: "survivor"}}
+					op.Kind, op.Token, op.MsgSerial, op.Disposition = OpRespond, s.Agents["lead"].Token, 11, "approve"
+				}
+				if damage == "missing" {
+					delete(s.Messages, 10)
+				} else {
+					s.Messages[10].State = MsgStateDenied
+				}
+				_, events, err := s.Apply(op, now)
+				var fault *Error
+				if !errors.As(err, &fault) || fault.Code != "E_MERGE_RECORD" || !strings.Contains(fault.Msg, "serial 21") || !strings.Contains(fault.Msg, "request 10") || fault.Hint == "" {
+					t.Fatalf("damaged record did not fail replay with exact serials: %v", err)
+				}
+				if s.Serial != 20 || len(events) != 0 || s.Agents["fork"].Status != StatusDormant || s.Agents["fork"].MergedInto != "" {
+					t.Fatal("failed replay partially applied the merge")
+				}
+				if route == "approval" && (s.Messages[11].State != MsgStatePending || s.Messages[11].Consumed) {
+					t.Fatal("failed replay partially approved the human merge request")
+				}
+			})
+		}
+	}
+}
 
 // Decode the recorded wire field, so old-code controls compile and fail on
 // behavior rather than on an identifier introduced with the implementation.

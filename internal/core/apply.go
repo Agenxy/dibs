@@ -1607,6 +1607,9 @@ func (s *State) oldestDisplaceableNotify(agent string) *Message {
 }
 
 func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
+	if err := s.checkMergeAdoptionRecords(op); err != nil {
+		return nil, nil, err
+	}
 	if op.Disposition == "accept" || op.Disposition == "flag" {
 		return s.applyReview(l, op, now) // the SENDER's side of a task
 	}
@@ -1794,7 +1797,11 @@ func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, 
 	}
 	if st == MsgStateApproved && m.Merge != nil {
 		merged, events := s.mergeSupported(m.Merge.From, m.Merge.Into, op.MergeActor, now)
-		events = append(events, s.resolveMergeAdoptions(op, m.Merge.From, m.Merge.Into, now)...)
+		closed, err := s.resolveMergeAdoptions(op, m.Merge.From, m.Merge.Into, now)
+		if err != nil {
+			return nil, nil, err
+		}
+		events = append(events, closed...)
 		res["merged"] = merged
 		evs[0].To = m.From // a requester that was the source now belongs to the survivor
 		evs[0].Data["merged_from"], evs[0].Data["merged_into"] = m.Merge.From, m.Merge.Into
