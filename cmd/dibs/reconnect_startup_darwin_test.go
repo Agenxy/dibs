@@ -172,11 +172,10 @@ func appReconnectContract(t *testing.T, lost, clockBack, legacy, lateStamp bool)
 	t.Setenv("DIBS_DIR", dir)
 	t.Setenv("DIBS_HOST_ID", "reconnect-host")
 	t.Setenv("DIBS_NOTIFY", "off")
-	queueBinary := filepath.Join(t.TempDir(), "codex")
-	if out, err := exec.Command("go", "build", "-o", queueBinary, "../../internal/wakeexec/testdata/codexqueue").CombinedOutput(); err != nil {
-		t.Fatalf("queue setup: %v %s", err, out)
-	}
-	testexec.PrepareExecutable(t, exec.Command(queueBinary, "--version"))
+	queueBinary := reconnectQueueFixture(t)
+	// The actual contract consumes the prepared immutable image. A fresh copy
+	// would repeat macOS assessment and a writable alias could corrupt peers.
+	requireReadOnlyNativeAlias(t, reconnectQueueFixture(t), queueBinary)
 	limits := core.DefaultLimits()
 	state := core.NewState("reconnect-host", limits)
 	box, err := ledger.LoadOrCreateKey(filepath.Join(dir, "key"))

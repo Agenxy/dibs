@@ -95,11 +95,13 @@ jobs:
         run: mise exec -- go vet ./...
       - name: compile real other-user IPC guard
         run: mise exec -- go test -race -c -o "$RUNNER_TEMP/dibs-local-uid.test" ./cmd/dibd
+      - name: compile CLI fixture before privilege change
+        run: mise exec -- go build -o "$RUNNER_TEMP/dibs-local-uid-cli" ./cmd/dibs
       - name: POSIX ACL proof prerequisite
         run: sudo -n apt-get install --yes acl
       - name: kernel peer identity and port squatting by a second OS user
         working-directory: cmd/dibd
-        run: mise exec -- sudo -n env "PATH=$PATH" DIBS_Q_CI=1 "$RUNNER_TEMP/dibs-local-uid.test" -test.run '^TestLocalIPCKernelRejectsOtherUID$' -test.timeout 3m -test.v
+        run: mise exec -- sudo -n env "PATH=$PATH" GOPROXY=off DIBS_Q_CI=1 "DIBS_Q_CLI=$RUNNER_TEMP/dibs-local-uid-cli" "$RUNNER_TEMP/dibs-local-uid.test" -test.run '^TestLocalIPCKernelRejectsOtherUID$' -test.timeout 3m -test.v
       - name: every package, with the race detector
         run: mise exec -- go test -race -count=1 -timeout=15m ./...
   windows:

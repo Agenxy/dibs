@@ -75,6 +75,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- CLI reconnect fixtures share a prepared immutable queue executable, and the
+  fresh-service fixture serves its real local IPC request instead of exhausting
+  the startup wait. The Linux second-user guard receives a CLI built before
+  privilege changes, with module downloads disabled inside the privileged step.
+  Native-client probe reads also stop on cancellation when a descendant retains
+  stdout. Product deadlines, race instrumentation and kernel assertions remain.
+
 - Confirming the human in the board app keeps its compact rows. A Message
   action opens one row composer at a time; Escape closes it and restores row
   focus, and live board updates keep its draft. Human send controls retain

@@ -192,7 +192,9 @@ func nativeGuestMatrix(t *testing.T, client, binary string) {
 				nativeFixturePreflight(t, tc.root, tc.host, tc.cert, tc.accept)
 			}
 			url, bearer, requests := nativeGuestFixture(t, tc.cert, tc.host)
-			connected, detail, err := nativeInventory(t, client, binary, tc.root, url, bearer)
+			ctx, cancel := context.WithTimeout(t.Context(), 40*time.Second)
+			defer cancel()
+			connected, detail, err := nativeInventory(ctx, t, client, binary, tc.root, url, bearer)
 			if err != nil {
 				t.Fatalf("probe setup/protocol failed: %v; %s", err, detail)
 			}
@@ -322,11 +324,11 @@ func nativeProbeEnv(dir, client, root string) []string {
 	return env
 }
 
-func nativeInventory(t *testing.T, client, binary, root, url, bearer string) (bool, string, error) {
+func nativeInventory(
+	ctx context.Context, t *testing.T, client, binary, root, url, bearer string,
+) (bool, string, error) {
 	t.Helper()
 	dir := t.TempDir()
-	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
-	defer cancel()
 	if client == "claude" {
 		add := procexec.Command(ctx, binary, "mcp", "add", "--scope", "local", "--transport", "http", "guest", url,
 			"--header", "Authorization: Bearer "+bearer)
@@ -367,6 +369,11 @@ func nativeInventory(t *testing.T, client, binary, root, url, bearer string) (bo
 	if err := cmd.Start(); err != nil {
 		return false, "", err
 	}
+	// WaitDelay applies inside Wait, after these manual scans. An external
+	// app-server's descendant may retain stdout after the direct child exits.
+	// The same production probe context must interrupt both reply phases.
+	stopRead := context.AfterFunc(ctx, func() { _ = stdout.Close() })
+	defer stopRead()
 	defer func() { _ = stdin.Close(); _ = cmd.Process.Kill(); _ = cmd.Wait() }()
 	enc := json.NewEncoder(stdin)
 	if err := enc.Encode(map[string]any{"id": 1, "method": "initialize", "params": map[string]any{
