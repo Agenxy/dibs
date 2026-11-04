@@ -527,8 +527,12 @@ row, and the rule that a capability in source is not a behaviour:
   empty as of 2026-09-12. The wake path (`plugins/opencode`) works.
 - **Hermes**: its `mcp` extra pins `mcp==2.0.0`, which implements 2026-07-28; what
   a session negotiates is unmeasured. Run one against the scratch daemon.
-- **Pi**: `git grep -il modelcontextprotocol origin/HEAD -- packages/*/src`; a
-  lockfile hit is not an MCP client. None as of 2026-09-12.
+- **Pi**: inspect the hand-written client in `packages/mcp` on `origin/HEAD`,
+  especially `LATEST_PROTOCOL_VERSION` in `src/protocol/types.ts` (2025-11-25
+  on 2026-11-04). A grep for the dependency name `modelcontextprotocol` under
+  `packages/*/src` is empty even though that client exists; a dependency-name
+  grep cannot establish absence of an MCP client, and a lockfile hit cannot
+  establish its presence. Keep installed-version and wire evidence separate.
 - **Gemini CLI**: `initialize` 2025-06-18 over `httpUrl` (2026-09-12,
   unchanged). Its HOOKS moved: as of 2026-09-25 (20f7075) the types are
   `command`, `http` and `prompt`, the hook input carries a real `session_id`

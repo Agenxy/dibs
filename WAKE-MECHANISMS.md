@@ -478,60 +478,66 @@ probe. Old rows are historical measurements, not claims about today's binaries:
 | Claude Desktop, local agent mode (`local-agent-mode-<server>/1.0.0`) | 1.52386.6 | `initialize` 2025-11-25 | `roots`, `extensions.io.modelcontextprotocol/ui` | initialize, tools/list (2026-09-15) |
 | Codex | 0.144.1 / **0.146.0-alpha.7** | `initialize` **2025-06-18** | `elicitation {form,url}` | initialize, tools/list |
 | Codex configured stdio, isolated trust control | **0.159.2** | `server/discover` **2026-07-28** | `experimental.codex/auth-change`, `elicitation {form,url}` | server/discover, tools/list, two hook_poll calls (SessionStart and Stop), **2026-10-03**; no automatic resources/list |
+| Codex private app-server, explicit full catalog query | PATH **0.165.0** / app CLI **0.166.0-alpha.5.1** | Default `initialize` **2025-06-18**; feature + marker `server/discover` **2026-07-28** | `elicitation {form,url}` | handshake/discovery, tools/list (54), resources/list, resources/templates/list; **2026-11-04**, no hook or model turn |
+| Codex private app-server, configuration controls | App CLI **0.166.0-alpha.5.1** | Modern feature alone: `initialize` **2025-06-18**; connection sharing alone: `server/discover` **2026-07-28** | `elicitation {form,url}` | same explicit catalog methods; **2026-11-04**, no hook or model turn |
 | opencode | 1.18.4 | `initialize` **2025-11-25** | `roots` | initialize, tools/list |
 | Copilot CLI | 1.0.75 | 2025-11-25 | none | tools only |
 | Gemini CLI | 0.54.0-nightly.20260722 | `initialize` **2025-06-18** | `roots` | initialize, tools/list, resources/list (2026-09-12, over `httpUrl`) |
-| Hermes installed MCP adapter, no model/provider session | **0.20.2**, SDK **1.28.1** | `initialize` **2025-11-25** | `elicitation {form,url}` | initialize, notifications/initialized, tools/list (52 tools), **2026-10-03**, isolated HTTP daemon |
+| Hermes installed MCP adapter, no model/provider session | **0.20.2**, SDK **1.28.1** | `initialize` **2025-11-25** | `elicitation {form,url}` | initialize, notifications/initialized, tools/list; 58 registered names (54 Dibs tools + four adapter helpers), **2026-11-04**, isolated HTTP daemon |
 
-Re-checked **2026-10-22 (UTC)** before v0.0.15: Codex (`342ed69a1`), opencode (`248bfbe11`), pi-mono (`58c0b02c`), Gemini (`09d81bf`) and Hermes (`4e58c721c8`) heads moved; ext-apps did not. Every predicate below is unchanged: opencode's 2026-07-28 client and Hermes' `mcp==2.3.0` pin were already recorded on 2026-10-18. The installed ChatGPT app is 26.1013.40934 with app CLI **0.163.0-alpha.10.2** (version observed only, not re-measured); the other installed versions are unchanged, so the rows keep their 2026-10-18 readings.
+**Release survey refreshed 2026-11-04 (UTC), with source and runtime separated.**
+All seven checkouts were fetched and `origin/HEAD` read, without moving local
+branches or rebuilding the installed tools. The snapshots are Codex
+`b260ee5e8`, opencode `f12abcaf3`, Pi `5ff8c0270`, Gemini `4b72f3d8a`, Hermes
+`ce82757d2`, ext-tasks `5f68e1446` and ext-apps `19256f52c`.
 
-Re-checked **2026-10-27 (UTC)** before v0.0.16: every head moved: Codex (`c8091aeee`), opencode (`45b53fe6f`), pi-mono (`85c2ee3e`), Gemini (`fa5c173`), Hermes (`bdaef8d90b`) and ext-apps (`07cda25`). Every predicate is unchanged: Codex keeps `CoreHookMcpExecutor`, `mcp_2026_07_28` is still `UnderDevelopment` and off, and `requires_mcp_tool_approval` still reads missing hints as destructive and open-world; Pi's `packages/mcp` latest is still 2025-11-25; Gemini hook types are still command/runtime; Hermes still pins `mcp==2.3.0`. ext-apps is now **2.0.4** (2026-10-27): example-server changes and a dependency security bump, nothing on the surface Dibs uses. Installed versions observed only, not re-measured: ChatGPT app CLI still **0.163.0-alpha.10.2** (ChatGPT 26.1013.40934), Claude Code **2.1.310**, Claude Desktop **3.6556.2**; opencode `local` is still the 2026-08-17 build, older than its 2026-07-28 client, and the others are unchanged. The rows keep their measured dates.
+Installed versions were checked separately: PATH Codex **0.165.0**, ChatGPT app
+CLI **0.166.0-alpha.5.1** (ChatGPT **26.1027.61615**), Claude Code **2.1.310**,
+Claude Desktop **4.4212.0**, opencode literal **local**, Pi **0.84.2**, Gemini
+**0.54.0-nightly.20260722.gf743ab579**, Hermes **0.20.2 (2026.8.16)** with SDK
+**1.28.1**. Desktop versions came from bundle metadata. The owner deferred
+Claude Desktop's wire re-measurement rather than restarting the app and its
+running sessions; its rows retain **2026-09-15**. No temporary app-level MCP
+entry was added, no real app was opened or contacted, and no trust approval,
+credential change, harness install or upgrade was performed.
 
-**Release survey refreshed 2026-10-18 (UTC), with source and runtime separated.**
-The six harness checkouts (including ext-tasks) and ext-apps were fetched, and
-`origin/HEAD` read rather than their local branch. Installed versions were
-observed separately: PATH Codex **0.0.0**, ChatGPT app CLI
-**0.162.0-alpha.17.2** (ChatGPT 26.1007.71326), Claude Code **2.1.233**,
-Claude Desktop **2.26454.2**, opencode literal **local**, Pi **0.84.2**,
-Gemini **0.54.0-nightly.20260722.gf743ab579**, Hermes **0.20.2 (2026.8.16)**.
-Only app bundle metadata was read; no app was opened or restarted and no
-configuration was changed. No new wire, hook execution, model/provider session
-or host rendering probe was run. The table above keeps its original measured
-versions and dates; version checks do not refresh those.
+- **Codex, new wire evidence:** six isolated private `app-server` catalog
+  probes all exited 0 and returned 54 Dibs tools. Both installed CLIs used
+  legacy 2025-06-18 by default and modern 2026-07-28 with the explicit feature
+  and per-server marker. On the app CLI, the feature alone stayed legacy;
+  experimental `mcp_connection_sharing = true` selected modern discovery
+  without the feature or marker. Each probe explicitly called full
+  `mcpServerStatus/list`, which requested resource lists too: that is catalog
+  behavior, not automatic chat startup. No thread, model turn or real app IPC
+  ran. **Hook execution was not re-measured:** the 2026-10-03 trust control on
+  0.159.2 remains the latest proof. Source retains `CoreHookMcpExecutor` and its
+  session wiring; modern MCP and connection sharing are under development and
+  off by default. Missing annotations still mean destructive/open-world in
+  `requires_mcp_tool_approval`; the host-owned apps flag is not the Dibs flag.
+- **opencode, source only:** the 2026-07-28 client remains, with schema modes
+  `legacy` (default), `auto` (modern probe with legacy fallback), and pinned
+  `2026-07-28`. The installed `local` launcher runs an older checkout. Its
+  historical wire row is not a measurement of fetched source.
+- **Pi, source only:** the prescribed `modelcontextprotocol` grep under
+  `packages/*/src` is empty, but its own client in `packages/mcp` exists and
+  keeps latest protocol 2025-11-25. A dependency-name grep is not proof of no
+  client. Installed 0.84.2 was version-checked; no MCP session was measured.
+- **Gemini, source only:** hook types remain command/runtime, with real
+  `session_id`/transcript input and BeforeAgent additional-context dispatch.
+  The installed July bundle was only version-checked; the 2026-09-12 wire row
+  and Dibs's command/SessionStart-only plugin remain distinct from source.
+- **Hermes, new adapter wire evidence:** public `register_mcp_servers` against
+  a scratch HTTP daemon sent the legacy exchange shown above. It registered
+  58 names, confirmed as 54 Dibs tools plus four resource/prompt helper tools.
+  Latest and handshake report 2025-11-25 in the installed SDK 1.28.1. Sampling
+  was disabled; no model/provider session ran. Fetched source still pins
+  `mcp==2.3.0`, which does not describe that installed environment.
+- **ext-apps, extension source only:** package **2.0.4**, split SDK 2.0.0
+  peers and published-1.x interoperability fixture. This is not a host
+  rendering measurement. ext-tasks was fetched too, not run as a harness.
 
-- **Codex source inspected 2026-10-18 (UTC), `8c076942c`:**
-  `CoreHookMcpExecutor` (`codex-rs/core/src/hook_mcp_executor.rs`) and its
-  session wiring remain. `mcp_2026_07_28` is still `UnderDevelopment` and off
-  by default, and the per-server stdio marker remains required;
-  `codex_apps_mcp_2026_07_28` still governs only the host-owned apps server.
-  `requires_mcp_tool_approval` still treats a tool with no annotations as
-  destructive and open-world, so Dibs's declared hints remain load-bearing for
-  sandboxed threads. Installed app CLI 0.162.0-alpha.17.2 was version-checked
-  only; the 2026-10-03 hook control on 0.159.2 is the latest execution proof.
-- **opencode source inspected 2026-10-18 (UTC), `501b15af2`: CHANGED.**
-  The MCP client was reworked for SDK v2 and the 2026-07-28 revision
-  (`packages/core/src/mcp/client.ts`, commit `cbe882367`); it records whether a
-  connection negotiated 2026-07-28 or the legacy handshake. The installed
-  launcher reports `local` and was not rebuilt from that head, so what an
-  installed session negotiates with Dibs is unmeasured. Measure it before
-  claiming opencode on the 2026 path.
-- **Pi source inspected 2026-10-18 (UTC), `1402973a`:**
-  its own MCP client in `packages/mcp` keeps latest protocol 2025-11-25.
-  Installed Pi remains 0.84.2; no MCP session was measured.
-- **Gemini source inspected 2026-10-18 (UTC), `ed96fae`:**
-  hook types remain command/runtime. The installed July bundle was
-  version-checked only. Dibs's plugin remains command/SessionStart-only.
-- **Hermes source inspected 2026-10-18 (UTC), `3752497cc4`: pin moved.**
-  Its MCP extras now pin SDK **2.3.0** (was 2.0.0). The installed interpreter
-  measured 2026-10-07 reported SDK 1.28.1 and the installed version is
-  unchanged, so the 2026-10-03 legacy wire exchange stands.
-- **ext-apps source inspected 2026-10-18 (UTC), `82221c0`:**
-  package **2.0.3**, unchanged since 2026-09-25.
-
-No inspected predicate changes the documented Dibs compatibility requirements.
-Two source moves (opencode's 2026-07-28 client, Hermes's SDK 2.3.0) are the
-rows to re-measure on the wire next. This read-only survey does not establish
-fresh installed handshakes or wake delivery.
+The complete compatibility table is in [docs/PROTOCOL.md](docs/PROTOCOL.md).
+These measurements qualify catalog negotiation, not wake delivery.
 
 **None of these measured startup exchanges automatically sent
 `subscriptions/listen`, `resources/subscribe`, or `resources/read`.**
@@ -548,16 +554,21 @@ HTTP header that stdio does not have. For a day that looked exactly like a clien
 2026 support. See `TestStdioClientAskingFor2026IsServed2026`, and treat "the harness does
 not implement it" as a hypothesis needing a daemon log, not a conclusion.
 
-Two conditions on the Codex side, and neither is the default:
+For the explicit Codex stdio route with experimental connection sharing off,
+two conditions apply, and neither is the default:
 
 1. the `mcp_2026_07_28` feature enabled, and
 2. `CODEX_MCP_PROTOCOL_VERSION=2026-07-28` in **that server's `env`** block.
 
-The stdio rule is exact (`codex-rs/rmcp-client/src/protocol_mode.rs`): the feature alone
-stays on 2025-06-18, and a wrong value is a hard error rather than a fallback. With both
+That route (`codex-rs/rmcp-client/src/protocol_mode.rs`) stays on 2025-06-18
+with the feature alone; in modern mode, source treats a wrong nonempty marker
+as a hard error. With both
 set, Codex sends `server/discover` instead of `initialize`. Verified twice, against a
 probe server that logged the raw method and against Dibs itself, where the agent then
-called `board` and got the real board back.
+called `board` and got the real board back. The 2026-11-04 catalog probe
+additionally measured the separate experimental connection-sharing route:
+eligible local stdio uses `DiscoverLocalStdio` and negotiated 2026-07-28
+without the explicit feature or marker. That feature is off by default.
 
 **Claude Desktop carries the 2026 machinery too** (1.30096.5): an `era: "2026-07-28"`
 wire codec, a `>= "2026-07-28"` version predicate, and a switch mapping `server/discover`
