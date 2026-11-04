@@ -61,12 +61,17 @@ func (s *State) resolveMergeAdoptions(op *Op, from, into string, now time.Time) 
 	for _, serial := range op.MergeAdoptions {
 		m := s.Messages[serial]
 		m.State, m.Consumed = MsgStateApproved, true
-		m.Response = fmt.Sprintf("fulfilled by merge_agents from %s into %s, by %s at serial %d; nothing remains to approve or close",
+		m.Response = fmt.Sprintf("fulfilled by merge_agents from %s into %s, by %s at serial %d; "+
+			"nothing remains to approve or close",
 			from, into, op.MergeActor.ID, s.Serial+1)
 		m.RespondedAt, m.TerminalAt = s.Serial+1, now
-		events = append(events, Event{Type: "message.approved", Agent: op.MergeActor.ID, To: m.From,
-			Data: map[string]any{"msg_serial": serial, "merged_from": from, "merged_into": into,
-				"by": op.MergeActor.ID, "via": "merge_agents"}})
+		events = append(events, Event{
+			Type: "message.approved", Agent: op.MergeActor.ID, To: m.From,
+			Data: map[string]any{
+				"msg_serial": serial, "merged_from": from, "merged_into": into,
+				"by": op.MergeActor.ID, "via": "merge_agents",
+			},
+		})
 	}
 	return events, nil
 }

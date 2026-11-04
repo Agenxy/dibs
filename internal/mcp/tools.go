@@ -447,7 +447,8 @@ func (b toolSchemas) agentAndMailTools() []map[string]any {
 		},
 		{
 			"name": "respond",
-			"description": "approve accepts work; done delivers ordinary pending work in one call. Queued work and typed effects require approve. " +
+			"description": "approve accepts work; done delivers ordinary pending work in one call. " +
+				"Queued work and typed effects require approve. " +
 				"For permission, send type:question with choices. " +
 				"Answer/review/report work; withdraw only your unanswered question or unfinished request, " +
 				"including after approval and before done. Withdrawal clears owed work and notifies the recipient once.",

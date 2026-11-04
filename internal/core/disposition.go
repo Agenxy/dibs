@@ -18,9 +18,11 @@ func questionResponseHint(m *Message, fallback string) string {
 func messageDispositionHint(m *Message) string {
 	if m.Type == MsgRequest && (m.Grant != "" || m.Adopt != "" || m.RetiresIdentity() || m.State == MsgStateQueued) {
 		if m.Terminal() && m.State != MsgStateQueued {
-			return fmt.Sprintf("nothing remains to approve or close; read_mail(msg_serial:%d) shows the completed outcome", m.Serial)
+			return fmt.Sprintf("nothing remains to approve or close; "+
+				"read_mail(msg_serial:%d) shows the completed outcome", m.Serial)
 		}
-		return fmt.Sprintf("respond(msg_serial:%d, disposition:\"approve\") performs the typed effect or accepts the queued work; deny or decline if you will not approve it", m.Serial)
+		return fmt.Sprintf("respond(msg_serial:%d, disposition:\"approve\") performs the typed effect "+
+			"or accepts the queued work; deny or decline if you will not approve it", m.Serial)
 	}
 	return dispositionHint(m.Type, m.Serial)
 }

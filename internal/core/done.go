@@ -88,7 +88,8 @@ func (s *State) refuseDone(m *Message, op *Op, impliedApproval bool) error {
 	}
 	if m.Grant != "" || m.Adopt != "" && (!op.AdoptionRecovery || m.PriorAdoptionSerial == 0) || m.RetiresIdentity() {
 		return errf("E_BAD_DISPOSITION",
-			"this effect is already completed: nothing remains to close; read_mail(msg_serial:"+strconv.FormatUint(m.Serial, 10)+") shows the outcome",
+			"this effect is already completed: nothing remains to close; "+
+				"read_mail(msg_serial:"+strconv.FormatUint(m.Serial, 10)+") shows the outcome",
 			"message %d carried its own effect", m.Serial)
 	}
 	if len(op.Body) > s.Limits.MaxBodyBytes {
