@@ -3,26 +3,26 @@
 
 package mcp
 
+// MCP Apps (SEP-1865, extension spec 2026-01-26): an interactive board the
+// human can look at, rendered by the host in a sandboxed iframe.
+//
+// The split that makes this worth doing: `content` and `structuredContent` are
+// model-facing base-MCP fields, while a tool result's `_meta` is the component's
+// private backchannel. So the model pays for one compact line while the human
+// gets the whole board. That is the efficiency pillar, applied to pixels.
+
 import (
 	"context"
 	"crypto/sha256"
-	"sync"
-
-	// MCP Apps (SEP-1865, extension spec 2026-01-26): an interactive board the
-	// human can look at, rendered by the host in a sandboxed iframe.
-	//
-	// The split that makes this worth doing: `content` and `structuredContent` are
-	// model-facing base-MCP fields, while a tool result's `_meta` is the component's
-	// private backchannel. So the model pays for one compact line while the human
-	// gets the whole board. That is the efficiency pillar, applied to pixels.
-
-	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"reflect"
 	"strings"
+	"sync"
+
+	_ "embed"
 
 	"github.com/agenxy/dibs/internal/assets"
 	"github.com/agenxy/dibs/internal/core"
