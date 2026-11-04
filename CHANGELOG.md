@@ -133,6 +133,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A parallel test board no longer blocks app-service migration or causes an
+  upgrade to add `-allow-parallel` to production. The selected daemon retains
+  its own recorded flag, even when alone. A conflicting non-parallel board
+  is identified and refused before anything stops, with a corrective hint.
+
 - Stdio bridges defer unused server initialization and compute panel identity
   from a shared assets writer. Fresh sessions and in-place upgrades retain less
   memory, with unchanged tool and panel fingerprints.
