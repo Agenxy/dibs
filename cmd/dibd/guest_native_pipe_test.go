@@ -67,7 +67,8 @@ func nativeInventoryRetainedStdout(t *testing.T, bin, phase string) {
 		}
 		if !waited {
 			select {
-			case <-done:
+			case err := <-done:
+				t.Logf("native inventory returned after fixture release: %v", err)
 			case <-time.After(5 * time.Second):
 				t.Error("native inventory fixture did not finish after release")
 			}
