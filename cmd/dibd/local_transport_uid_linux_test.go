@@ -222,12 +222,27 @@ func qPrebuiltOtherUIDCLI(t *testing.T) string {
 }
 
 func TestOtherUIDCLIUsesPrebuiltImageWithoutCompiler(t *testing.T) {
+	if os.Getenv("DIBS_Q_REBUILD_CONTROL") == "1" {
+		_ = qBuildCLI(t) // exact pre-fix privileged setup, expected to fail
+		return
+	}
 	bin := qBuildCLI(t) // ordinary-user setup, before the privilege boundary
 	t.Setenv("DIBS_Q_CLI", bin)
 	t.Setenv("PATH", t.TempDir()) // no compiler is available after handoff
 	t.Setenv("GOPROXY", "off")
 	if got := qPrebuiltOtherUIDCLI(t); got != bin {
 		t.Fatalf("privileged fixture replaced the handed-in image: %q, want %q", got, bin)
+	}
+	// Prove the same no-compiler fixture rejects the old setup path. This
+	// control is also run by hosted Linux, where this kernel fixture belongs.
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	old := procexec.Command(ctx, os.Args[0], "-test.run=^TestOtherUIDCLIUsesPrebuiltImageWithoutCompiler$")
+	old.Env = append(os.Environ(), "DIBS_Q_REBUILD_CONTROL=1")
+	out, err := old.CombinedOutput()
+	if ctx.Err() != nil || err == nil || !strings.Contains(string(out), "build CLI") ||
+		!strings.Contains(string(out), "executable file not found") {
+		t.Fatalf("old rebuild path did not fail for the intended missing compiler: %v %s", err, out)
 	}
 }
 
