@@ -19,6 +19,7 @@ type contactEvidence struct {
 // authObserve and does not enter here. The seen stamps in boot and in exec's
 // register/resume result path deliberately do not create authenticated contact.
 func (e *Engine) noteAuthenticatedContact(l *core.Agent, now time.Time) {
+	delete(e.acceptedContacts, l.ID)
 	if e.contact == nil {
 		e.contact = map[string]contactEvidence{}
 	}

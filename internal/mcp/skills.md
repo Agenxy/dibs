@@ -439,6 +439,15 @@ request, handoff, or high/urgent notify can produce one coalesced, metadata-only
 the coordinator and person. It never gives Dibs permission to start or move
 the recipient's session; ordinary FYI notifies do not trigger this path.
 
+An accepted native app notice without an authenticated model call for 30 minutes
+can raise that contact alert for unread questions, requests and handoffs, too.
+Repeated acceptances do not reset the first clock. Background subscriptions and
+hooks are not model contact. This observation is lost on daemon restart; a later
+actual acceptance starts a fresh interval. This additional path excludes every
+notify. Alerts mean **delivery unconfirmed**, never that the recipient is dead.
+Unread asks expose `undelivered_for_seconds` until recipient awareness; that age
+does not start or shorten the response window.
+
 **Verify your delivery route.** A Claude Code session started with Dibs as a
 channel receives mail notices as `<channel>` events, which start a turn when
 you are idle. Otherwise there are two routes and only one of them can

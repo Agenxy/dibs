@@ -894,6 +894,15 @@ socket, and Dibs has none to give: it is a daemon, not a session. So the write
 succeeds, nothing comes back, and Dibs cannot tell delivered from held. The log
 line says so in those words rather than claiming a wake happened.
 
+A peer notice can enter the harness's queue before a Stop hook presents the
+same mail, yet appear in the conversation after the Stop feedback. A later
+presentation suppresses new socket offers; it cannot recall bytes already
+queued. Without evidence that the harness accepted the peer into a turn, the
+Stop fallback stays available: removing it would lose mail held by the receiving
+permission gate. This can produce two presentations of one message. Only a
+harness receipt establishing acceptance could remove that ambiguity; a successful
+socket write is not that receipt.
+
 **So the two routes are not equals, and the documentation used to imply they
 were.** `[wake.exec]` is the route an operator can rely on: it spawns a process
 and Dibs sees the exit status. The socket is best-effort and free, worth trying

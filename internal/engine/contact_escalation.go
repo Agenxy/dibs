@@ -74,7 +74,7 @@ func (e *Engine) contactNotice(c *core.ContactEscalation) (HumanNotice, contactL
 		Contact: &humanask.Contact{
 			Recipient: name, Sender: sender, Kind: kind, MailboxFull: c.MailboxFull,
 			Message: c.OldestSerial, Count: c.Count,
-			OpenHint: e.contactOpenHint(name, e.state.Agents[c.Recipient]),
+			OpenHint: "delivery unconfirmed; " + e.contactOpenHint(name, e.state.Agents[c.Recipient]),
 		},
 	}
 	return n, plan

@@ -10,7 +10,7 @@ import "time"
 // bounded summary, without copying a participant's body into a system notice.
 const ContactWindow = 10 * time.Minute
 
-// ContactEscalation is replayable proof that Dibs could not reach an agent and
+// ContactEscalation is replayable proof that delivery remained unconfirmed and Dibs
 // asked for help reaching it. NotifiedAt means an OS posting receipt arrived;
 // merely queuing or attempting a notification is not that proof.
 type ContactEscalation struct {

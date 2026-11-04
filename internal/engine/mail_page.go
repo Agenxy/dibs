@@ -190,6 +190,9 @@ func (e *Engine) compactMail(m *core.Message, now time.Time) core.Result {
 		"read_hint": fmt.Sprintf("read_mail(%d) reads this conversation; include_body:true returns the full envelope",
 			m.Serial),
 	}
+	if age := UndeliveredForSeconds(m, now); age != nil {
+		out["undelivered_for_seconds"] = *age
+	}
 	if out["body"] != m.Body {
 		out["body_truncated"] = true
 	}

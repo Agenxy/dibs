@@ -227,7 +227,7 @@ func askContact(m Message) (Answer, error) {
 	m.Body, m.Who = reading, c.Sender
 	argv := contactOpenArgv(c.OpenURL)
 	if argv == nil {
-		return Answer{}, m.bannerNotification(title, "cannot reach this agent", line)
+		return Answer{}, m.bannerNotification(title, "delivery unconfirmed", line)
 	}
 	pressed, err := m.askNotification(title, line, "Later", "Open")
 	if err != nil || pressed != "Open" {

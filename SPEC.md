@@ -1166,6 +1166,20 @@ callback after a read, session/configuration change, newer queue observation or
 app-incarnation change cannot escalate the old attempt. Queue suppression is
 logged at INFO, and an open callback remains unconfirmed delivery.
 
+A local native app input acceptance also remains unconfirmed delivery. If its
+exact unread question, request or handoff has no subsequent authenticated model
+call within 30 minutes, the existing send, wake-result and sweep events record
+the same contact escalation even though the route exists. Each message keeps
+its first accepted clock across repeat acceptances. Background observation,
+hooks and PID liveness do not confirm model contact; a model call racing the
+adapter's result does. Notify is excluded from this additional path, including
+high/urgent notify. The derived observation is fenced to the recipient
+incarnation, session and configured route. Restart loses the observation, not
+mail: a later actual acceptance starts a fresh interval. No timer is added.
+Alerts state **delivery unconfirmed**, not that an agent or process is dead.
+Authorized unread-ask projections include `undelivered_for_seconds` from the
+actual send time until recipient awareness, without changing any deadline.
+
 An app-open contact also gives the original sender metadata-only contact news
 with the exact bound session (a ChatGPT link for local ChatGPT-app seats). It
 does not copy the participant body or the OS error. Sender warnings rebuild
