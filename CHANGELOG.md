@@ -7,6 +7,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The pre-release harness survey separates fetched 2026-11-04 source from
+  installed versions and dated wire evidence. Isolated Codex catalog probes
+  cover default, explicit modern and experimental connection-sharing routes;
+  Hermes's installed adapter still negotiates 2025-11-25. Hook execution,
+  Claude Desktop wire behavior and wake delivery retain their earlier proof
+  boundaries; no operator configuration or installed tool was changed.
+
 - An accepted native app notice followed by 30 minutes without an authenticated
   model call raises the existing metadata-only contact alert for unread questions,
   requests and handoffs. Repeated acceptances keep each message's first clock;
