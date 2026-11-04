@@ -30,7 +30,7 @@
  *   -> the operator's command runs, carrying the UUID and not host-<ppid>
  *
  * It also pins the three decisions that make the feature safe rather than
- * merely working: a `notify` wakes nobody, a burst is one wake and not three,
+ * merely working: a `notify` arrives too, a burst is one wake and not three,
  * and an agent with no resumable identifier is left alone.
  *
  * Run: DIBD=$PWD/bin/dibd bun internal/mcp/e2e/wake_e2e.ts
@@ -88,28 +88,42 @@ mkdirSync(project)
 const recorder = join(dir, "recorder.ts")
 const log = join(dir, "wakes.jsonl")
 // It can also FAIL, on demand: a wake command that cannot run is the case the
-// cooldown accounting gets wrong, and a recorder that always exits 0 can never
+// failure accounting gets wrong, and a recorder that always exits 0 can never
 // show it.
 // APPENDS, and that word has to be true. It read the whole file and rewrote
-// old-contents-plus-line, which is a read-modify-write: if cooldown suppression
+// old-contents-plus-line, which is a read-modify-write: if duplicate suppression
 // regressed and three processes started at once, all three could read the same
 // old content and clobber each other, the file could finish one line longer,
 // and the burst check below would pass against the exact defect it exists to
 // catch. Each process writes its own file instead, and the count is the number
 // of files.
 await Bun.write(recorder, `
+import { writeFileSync } from "node:fs"
+import { dirname, join } from "node:path"
+// Real wake commands need not start within the test's 1500ms settling window.
+// Delay the first notify AND question through the daemon's actual command path,
+// so reverting either arrival barrier deterministically breaks this fixture.
+const kind = Bun.argv[7]
+let first = false
+if (kind === "notify" || kind === "question") {
+  try {
+    writeFileSync(join(dirname(Bun.argv[2]), "slow-first-" + kind), "", { flag: "wx" })
+    first = true
+  } catch (error) {
+    if (error.code !== "EEXIST") throw error
+  }
+}
+if (first) await Bun.sleep(1600)
 const line = JSON.stringify(Bun.argv.slice(3)) + "\\n"
 await Bun.write(Bun.argv[2] + "." + process.pid + "." + Bun.nanoseconds(), line)
 if (await Bun.file(Bun.argv[2] + ".fail").exists()) process.exit(3)
 `)
 
-// cooldown doubles as the recency window: an agent that spoke to the board
-// within it is certainly running and is never woken. One second keeps this test
-// quick while still exercising the real gate.
+// No wake cooldown: successful arrivals are not paced. The fixture waits for
+// each arrival, then keeps its original settling and exact-count checks.
 await Bun.write(join(dir, "dibs.toml"), `
 [wake.exec.codex]
 argv = ["${process.execPath}", "${recorder}", "${log}", "{thread}", "{message}", "{agent}", "{from}", "{type}"]
-cooldown = "1s"
 `)
 
 // ── a harness session the daemon can actually reach ──────────────────────
@@ -200,6 +214,18 @@ function wakes(): string[][] {
 }
 async function settle(ms = 1500) { await Bun.sleep(ms) }
 
+// Arrival and settling are different observations. Counting after a fixed
+// sleep let a late notify be counted as the following question's wake. No
+// product latency is asserted here: a missing arrival still fails, boundedly.
+async function awaitArrival(kind: "notify" | "question") {
+  const deadline = performance.now() + 5000
+  while (performance.now() < deadline) {
+    if (wakes().some(wake => wake[4] === kind)) return
+    await Bun.sleep(20)
+  }
+  throw new Error(`wake ${kind} did not arrive within 5s; ${JSON.stringify(wakes())}`)
+}
+
 console.log("\nwake e2e")
 console.log("─".repeat(60))
 
@@ -241,6 +267,7 @@ const asker = await call("register", {
 // notify to an idle agent reached it an hour later, through its human.
 await Bun.sleep(1200)
 await call("send", { token: asker.token, to: "sleeper", type: "notify", body: "fyi, no reply needed" })
+await awaitArrival("notify")
 await settle()
 const fyi = wakes()
 check("a notify wakes the agent", fyi.length === 1,
@@ -248,6 +275,7 @@ check("a notify wakes the agent", fyi.length === 1,
 
 // ── and a question does too, carrying the THREAD ──────────────────────────
 await call("send", { token: asker.token, to: "sleeper", type: "question", body: "are you there?", deadline_s: 600 })
+await awaitArrival("question")
 await settle()
 const first = wakes().slice(fyi.length)
 check("a question starts the operator's command", first.length === 1,
@@ -278,12 +306,9 @@ if (first.length === 1) {
 // would be indistinguishable from "one per message" the moment a re-ask is also
 // legitimate, and six is not.
 //
-// A PROPERTY, covered by two suppressors, and a passing run is not proof that
-// both work. `running` excludes a second process while one is alive and the
-// cooldown excludes one started too recently; either alone coalesces this
-// burst, so disabling one leaves this green. Verified by disabling BOTH, which
-// produces exactly six. Anything that needs to know which mechanism fired is a
-// unit test in internal/engine, and both have one.
+// The arrival batch coalesces simultaneous mail, while `running` prevents
+// parallel commands for one agent. This whole-path property does not isolate
+// those mechanisms; their individual guards live in internal/engine.
 //
 // One or two, and the second is deliberate. Mail that arrives while a wake is
 // running is re-asked when that wake EXITS, because the command reads its inbox
@@ -291,9 +316,8 @@ if (first.length === 1) {
 // that read would otherwise sit until an unrelated event. This recorder never
 // reads anything, so the mail is still blocking at the exit and the board
 // correctly tries once more; a real agent answers, hasBlockingMail goes false,
-// and nothing fires. The re-ask lands inside this window only because the
-// cooldown here is one second, and it happens at most once because no new mail
-// arrives during the second command.
+// and nothing fires. It happens at most once here because no new mail arrives
+// during the second command.
 await Bun.sleep(1200)
 const before = wakes().length
 await Promise.all([1, 2, 3, 4, 5, 6].map(n =>
@@ -306,18 +330,12 @@ check("a burst of six is one wake, and at most one re-ask", burst >= 1 && burst 
   `asking once`)
 
 // ── a FAILED wake does not consume the agent's one attempt ────────────────
-// The cooldown is taken before the process starts, which is right: two messages
-// arriving together must not become two processes. Keeping it after the command
-// FAILED spent the single attempt this message was ever going to get on a
-// process that woke nobody, and `send` still reported the mailbox written. That
-// is this release's recurring shape, on the one path it exists to add.
+// A failed command must not consume delivery: it woke nobody, while `send`
+// still reported the mailbox written. A later event must be able to try again.
 //
-// ITS OWN BOARD, with a long cooldown. On the board above the cooldown is one
-// second, so a second wake would be allowed by simple expiry and would prove
-// nothing; measuring inside that second works and is a race on a loaded
-// machine, which is a flaky gate rather than a check. Sixty seconds makes the
-// question unambiguous: a second wake in that window happened because the
-// failure released the cooldown, or not at all.
+// ITS OWN BOARD. Failure has its own bounded retry accounting; successful
+// arrivals have no cooldown. The second real command below must follow the
+// deliberately failed one, rather than borrowing activity from another case.
 await failedWakeDoesNotConsumeTheAttempt()
 
 async function failedWakeDoesNotConsumeTheAttempt() {
@@ -340,7 +358,6 @@ if (await Bun.file(Bun.argv[2] + ".fail").exists()) process.exit(3)
   await Bun.write(join(d, "dibs.toml"), `
 [wake.exec.codex]
 argv = ["${process.execPath}", "${rec}", "${lg}", "{thread}"]
-cooldown = "60s"
 `)
   const port = String(Number(PORT) + 1)
   const a = `127.0.0.1:${port}`
@@ -380,8 +397,7 @@ cooldown = "60s"
       name: "asker", description: "wake e2e", session_id: "asker-session",
       nonce: "e2e-failasker-nonce-0123456789abcdef01234567",
     })
-    // A finished turn, so the 60s cooldown does not also read as "recently in
-    // touch" and suppress the wake for a reason that is not the one under test.
+    // Establish an idle turn before exercising the command failure.
     await c("hook_poll", { session_id: THREAD, event: "Stop", cwd: proj })
 
     await Bun.write(lg + ".fail", "x")
@@ -399,9 +415,8 @@ cooldown = "60s"
     await c("send", { token: from.token, to: "sleeper", type: "question", body: "after the failure", deadline_s: 600 })
     await settle(2500)
     check("a failed wake does not consume the attempt", count() > 1,
-      "no second wake inside a 60s cooldown. The failed command woke nobody and " +
-      "kept the cooldown, so this agent is unreachable until some unrelated " +
-      "event happens to arrive after the window, while send reported success")
+      "no second wake after the failure. The failed command woke nobody, " +
+      "and the later event did not get another attempt, while send reported success")
     completed = true
   } finally {
     try { dae.kill() } catch {}
@@ -479,7 +494,6 @@ await Bun.sleep(${postMarkerDelay})
   await Bun.write(join(d, "dibs.toml"), `
 [wake.exec.codex]
 argv = ["${process.execPath}", "${rec}", "${lg}", "${tokenFile}", "${join(d, "local.secret")}"]
-cooldown = "60s"
 `)
   const dae = Bun.spawn({
     cmd: [dibd, "-dir", d, "-addr", a],

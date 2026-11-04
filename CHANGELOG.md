@@ -7,6 +7,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Wake end-to-end tests wait for each command recorder's arrival before
+  checking its settled count, so a slow notify cannot be counted as the next
+  question. Missing arrivals still fail within a bounded deadline, and exact
+  counts and routing metadata remain checked. Deliberately slow first commands
+  exercise this boundary on every run; retired cooldown fixture settings are
+  removed. Production delivery behavior is unchanged.
+
 - A durable reader fence before recovery data or desktop approval policy is
   written, and at boot for historical unfenced feature data. Older binaries
   refuse the ledger instead of silently dropping recovery effects. Once
