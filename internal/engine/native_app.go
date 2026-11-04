@@ -63,6 +63,7 @@ func (e *Engine) nativeAppRouteLocked(l *core.Agent) bool {
 }
 
 func (e *Engine) tryNativeWake(plan wakePlan, agent string) (bool, bool) {
+	started := time.Now()
 	fresh := func() (string, error) { return e.nativePlanNotice(plan, agent) }
 	out, handled := wakeexec.TryNative(plan.surface, plan.fields, plan.argv, fresh)
 	if plan.nativeOutcome != nil {
@@ -78,6 +79,7 @@ func (e *Engine) tryNativeWake(plan wakePlan, agent string) (bool, bool) {
 		_, _ = e.query(e.wakeContext, func() core.Result {
 			if l := e.state.Agents[agent]; l != nil && l.CreatedSerial == plan.createdSerial && threadIDOf(l) == plan.thread {
 				delete(e.appBindings, agent)
+				e.noteAcceptedContact(plan, started, time.Now())
 			}
 			return nil
 		})

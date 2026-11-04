@@ -267,7 +267,7 @@ func specialSituationalNotice(ev core.Event) (who, text string, blocking, handle
 				ev.Agent, ev.Data["contact_serial"]), true, true
 		}
 		return ev.To, fmt.Sprintf(
-			"Dibs cannot reach agent %q about unread mail; contact alert %d is also going to the person. "+
+			"Dibs delivery unconfirmed for agent %q about unread mail; contact alert %d is also going to the person. "+
 				"Read the board's contact_alerts; do not start or relocate its session on Dibs' behalf.",
 			ev.Agent, ev.Data["contact_serial"]), true, true
 	}

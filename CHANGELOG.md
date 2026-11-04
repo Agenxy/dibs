@@ -7,6 +7,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- An accepted native app notice followed by 30 minutes without an authenticated
+  model call raises the existing metadata-only contact alert for unread questions,
+  requests and handoffs. Repeated acceptances keep each message's first clock;
+  background observation does not confirm contact. Existing send, wake-result and
+  sweep events evaluate it, without a new timer. The derived receipt is lost on
+  daemon restart; mail survives and a later actual acceptance starts a fresh
+  interval. Alerts say delivery is unconfirmed. Unread asks expose
+  `undelivered_for_seconds` without starting their response deadline.
+
 - Wake end-to-end tests wait for each command recorder's arrival before
   checking its settled count, so a slow notify cannot be counted as the next
   question. Missing arrivals still fail within a bounded deadline, and exact

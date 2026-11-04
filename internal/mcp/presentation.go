@@ -5,17 +5,20 @@ package mcp
 
 import (
 	"context"
+	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/engine"
 )
 
 // messagePresentation adds current addresses only at the outgoing boundary.
 // Message itself is a ledger type: its from/to JSON fields must remain IDs.
 type messagePresentation struct {
 	*core.Message
-	FromName  string `json:"from_name"`
-	ToName    string `json:"to_name"`
-	AdoptName string `json:"adopt_name,omitempty"`
+	FromName              string `json:"from_name"`
+	ToName                string `json:"to_name"`
+	AdoptName             string `json:"adopt_name,omitempty"`
+	UndeliveredForSeconds *int64 `json:"undelivered_for_seconds,omitempty"`
 }
 
 type eventPresentation struct {
@@ -46,7 +49,10 @@ func (s *Server) presentNames(ctx context.Context, res core.Result) {
 		return id
 	}
 	wrap := func(m *core.Message) messagePresentation {
-		view := messagePresentation{Message: m, FromName: name(m.From), ToName: name(m.To)}
+		view := messagePresentation{
+			Message: m, FromName: name(m.From), ToName: name(m.To),
+			UndeliveredForSeconds: engine.UndeliveredForSeconds(m, time.Now()),
+		}
 		if m.Adopt != "" {
 			view.AdoptName = name(m.Adopt)
 		}

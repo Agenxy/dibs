@@ -75,7 +75,8 @@ type Engine struct {
 	seen map[string]time.Time
 	// Actual model contact, fenced to the row incarnation; boot and registration
 	// grace are not authenticated model calls. See contact.go.
-	contact map[string]contactEvidence
+	contact          map[string]contactEvidence
+	acceptedContacts map[string]acceptedContact // native acceptance without later model contact; writer-owned
 	// Which seen stamps were granted at boot rather than observed. This map
 	// contains only the bounded startup roster and is fenced to its incarnations.
 	// A real seen stamp supersedes it; the bounded map needs no runtime trim.
@@ -1172,6 +1173,7 @@ func (e *Engine) sweep(now time.Time) {
 	}
 	_, _ = e.applyAndLedger(op, now)
 	e.dropNoticesWithoutMail()
+	e.reconsiderAcceptedContacts(now)
 }
 
 func (e *Engine) publish(evs []core.Event) {
@@ -1180,6 +1182,9 @@ func (e *Engine) publish(evs []core.Event) {
 		return
 	}
 	for _, ev := range evs {
+		if ev.Type == "message.sent" {
+			e.considerAcceptedContact(ev.To, ev.TS)
+		}
 		e.observeDeclarationTime(ev)
 		// An agent that has gone must take its cached footprint with it, HERE, at
 		// the moment it goes.

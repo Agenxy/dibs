@@ -63,9 +63,9 @@ func (e *Engine) escalateAppOpenMessage(l *core.Agent, m *core.Message, failed b
 	if res["deduplicated"] == true {
 		return
 	}
-	reason := "the earlier app wake remains undispatched after the app-open recovery window"
+	reason := "the earlier queued app wake remains undispatched after the app-open recovery window"
 	if failed {
-		reason = "the app open failed"
+		reason = "the queued input's app open failed"
 	}
 	if e.notifyAppOpenSender(l, m, reason, now) {
 		e.wakeAppContactSender(m, now)
@@ -87,7 +87,7 @@ func (e *Engine) notifyAppOpenSender(l *core.Agent, m *core.Message, reason stri
 	if e.ownsHost(l) && surfaceOf(l) == harnessenv.ChatGPTApp && threadIDOf(l) != "" {
 		hint = "open codex://threads/" + threadIDOf(l)
 	}
-	text := fmt.Sprintf("Message %d remains queued for %s; %s and no started turn or read mail is confirmed. "+
+	text := fmt.Sprintf("Message %d to %s: delivery unconfirmed; %s and no started turn or read mail is confirmed. "+
 		"Contact alert %d is recorded for the person; %s. OS posting does not prove visibility.",
 		m.Serial, l.ID, reason, c.Serial, hint)
 	// This is contact news, not an envelope outcome. Reading the still-pending
