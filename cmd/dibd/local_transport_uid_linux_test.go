@@ -23,6 +23,7 @@ import (
 
 	"github.com/agenxy/dibs/internal/localtransport"
 	"github.com/agenxy/dibs/internal/procexec"
+	"github.com/agenxy/dibs/internal/testexec"
 	"github.com/agenxy/dibs/internal/testport"
 )
 
@@ -90,6 +91,7 @@ func TestLocalIPCKernelRejectsOtherUID(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Fatal("setup: second-user fixture requires the isolated root CI invocation")
 	}
+	bin := qPrebuiltOtherUIDCLI(t)
 	name := fmt.Sprintf("dibs-q-%d", os.Getpid())
 	if out, err := exec.Command("/usr/sbin/useradd", "--system", "--user-group", "--no-create-home", "--shell", "/usr/sbin/nologin", name).CombinedOutput(); err != nil {
 		t.Fatalf("create second fixture user: %v %s", err, out)
@@ -115,7 +117,6 @@ func TestLocalIPCKernelRejectsOtherUID(t *testing.T) {
 	if uid == uint32(os.Geteuid()) {
 		t.Fatal("setup: foreign account has the client's UID")
 	} // #nosec G115 -- euid is nonnegative.
-	bin := qBuildCLI(t)
 	dir := qShortDir(t)
 	if err := os.Chmod(dir, 0o777); err != nil {
 		t.Fatal(err)
@@ -203,6 +204,31 @@ func TestLocalIPCKernelRejectsOtherUID(t *testing.T) {
 	}
 	qCheckPOSIXACLMask(t, uid, gid, image)
 	qCheckForeignDirectoryStartup(t, uid, gid, bin)
+}
+
+// The ordinary runner builds this image before sudo. The privileged parent
+// must not build, fetch modules, or write into the runner's compiler caches.
+// No fallback: a missing artifact is an explicit setup failure, not a reason
+// to fetch dependencies as root inside the kernel-identity assertion.
+func qPrebuiltOtherUIDCLI(t *testing.T) string {
+	t.Helper()
+	bin := os.Getenv("DIBS_Q_CLI")
+	info, err := os.Lstat(bin)
+	if !filepath.IsAbs(bin) || err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
+		t.Fatalf("setup: DIBS_Q_CLI must name the CLI fixture built before sudo: %q (%v)", bin, err)
+	}
+	testexec.PrepareExecutable(t, exec.Command(bin, "--help"))
+	return bin
+}
+
+func TestOtherUIDCLIUsesPrebuiltImageWithoutCompiler(t *testing.T) {
+	bin := qBuildCLI(t) // ordinary-user setup, before the privilege boundary
+	t.Setenv("DIBS_Q_CLI", bin)
+	t.Setenv("PATH", t.TempDir()) // no compiler is available after handoff
+	t.Setenv("GOPROXY", "off")
+	if got := qPrebuiltOtherUIDCLI(t); got != bin {
+		t.Fatalf("privileged fixture replaced the handed-in image: %q, want %q", got, bin)
+	}
 }
 
 func qCheckPOSIXACLMask(t *testing.T, uid, gid uint32, image string) {

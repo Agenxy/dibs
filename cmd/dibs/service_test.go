@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -523,6 +524,18 @@ func TestWritingAServiceUnitCreatesTheDataDirectory(t *testing.T) {
 		dir := filepath.Join(f.home, "fresh-install")
 		t.Setenv("DIBS_DIR", dir)
 		t.Setenv("DIBS_TEST_APP_SERVICE_MATERIALIZE", "1")
+		// Registration materializes the directory before a daemon can listen.
+		// Complete that actual fixture boundary rather than spending the real
+		// ten-second startup allowance on a socket the fixture never created.
+		execute := executeAppServiceCommand
+		t.Cleanup(func() { executeAppServiceCommand = execute })
+		executeAppServiceCommand = func(cmd *exec.Cmd) ([]byte, error) {
+			out, err := execute(cmd)
+			if err == nil && len(cmd.Args) == 2 && cmd.Args[1] == "--service-register" {
+				startFixtureIPC(t, dir, f.server.Config.Handler)
+			}
+			return out, err
+		}
 		if _, err := os.Stat(dir); !os.IsNotExist(err) {
 			t.Fatal("setup already created service directory", err)
 		}
@@ -531,6 +544,9 @@ func TestWritingAServiceUnitCreatesTheDataDirectory(t *testing.T) {
 		}
 		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
 			t.Fatal("service started before creating its directory", err)
+		}
+		if f.requests.Load() != 1 {
+			t.Fatal("fresh service did not serve the authenticated folder-access request")
 		}
 		return
 	}
