@@ -613,7 +613,10 @@ receiving native peer turns, another watcher adds no delivery guarantee.
   under `owes` and Dibs treats it like a declaration that says you are working.
   Work you finish before saying you'll do it needs one call: `done` on a
   request still waiting for its verdict approves and closes it together (a
-  queued request, a grant and an adoption still take `approve`). A handoff or
+  queued request, a grant and an adoption still take `approve`). A supported
+  merge closes a matching outstanding adoption request from its survivor for
+  the merged source, recording the real actor and serial: nothing remains to
+  approve or report done on that request. A handoff or
   notify sent to you closes with `ack`, never `respond`. If finishing it is blocked on someone else, park it: declare with `waiting`
   and `request:<serial>` in `refs`, and it is left alone until a reply or
   another event. Never report done to stop being continued. Acknowledge

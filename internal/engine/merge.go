@@ -84,6 +84,7 @@ func (e *Engine) mergeLocked(token, from, into string, options []MergeOptions) (
 		return nil, mergeStale()
 	}
 	op.MergeActor = actor
+	op.MergeAdoptions = e.state.PendingMergeAdoptions(from, into)
 	if err := e.state.Admit(op); err != nil {
 		return nil, err
 	}

@@ -274,7 +274,7 @@ func (s *State) reviewTarget(l *Agent, op *Op) (*Message, error) {
 		// Mail TO you, reviewed with the requester's verbs. A handoff's
 		// recipient "accepting" it is natural English and was answered with
 		// E_NO_MESSAGE, which reads as the mail having vanished.
-		return nil, errf("E_BAD_DISPOSITION", dispositionHint(m.Type, m.Serial),
+		return nil, errf("E_BAD_DISPOSITION", messageDispositionHint(m),
 			"%s reviews a request you sent; message %d is a %s sent to you", op.Disposition, m.Serial, m.Type)
 	}
 	if !ok || m.From != l.ID || m.Type != MsgRequest {

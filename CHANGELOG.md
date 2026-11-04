@@ -14,6 +14,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   exercise this boundary on every run; retired cooldown fixture settings are
   removed. Production delivery behavior is unchanged.
 
+- A supported identity merge now closes outstanding adoption requests from the
+  exact survivor for that source in the same recorded operation. The outcome
+  names the actual merge actor and serial; no second approval or false decline
+  is needed. Other requesters, earlier incarnations and finished requests stay
+  unchanged. Historical merge records keep their original behavior. Response
+  hints distinguish ordinary work's one-call `done` from typed effects that
+  require `approve`.
+
 - A durable reader fence before recovery data or desktop approval policy is
   written, and at boot for historical unfenced feature data. Older binaries
   refuse the ledger instead of silently dropping recovery effects. Once

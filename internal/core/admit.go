@@ -31,6 +31,9 @@ func (s *State) Admit(op *Op) error {
 	if err := s.admitMergeActor(op); err != nil {
 		return err
 	}
+	if err := s.admitMergeAdoptions(op); err != nil {
+		return err
+	}
 	if err := s.admitPriorAdoption(op); err != nil {
 		return err
 	}
