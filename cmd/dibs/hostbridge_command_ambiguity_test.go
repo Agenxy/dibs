@@ -75,6 +75,7 @@ func hostBridgeCommandAmbiguity(t *testing.T, binary, mode string) {
 		Thread: testcodexipc.Thread, MsgType: "request",
 	}
 	controls := map[byte]net.Conn{}
+	released := map[byte]bool{}
 	if mode != "definite-failure" {
 		ln, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
@@ -90,11 +91,18 @@ func hostBridgeCommandAmbiguity(t *testing.T, binary, mode string) {
 		t.Cleanup(func() {
 			for role, control := range controls {
 				_ = control.SetDeadline(time.Now().Add(5 * time.Second))
-				release := byte('x')
-				if role == 'p' {
-					release = 'e'
+				// Preserve the parent's exit receipt: it already received its
+				// one byte before the drain wait, so cleanup must not write again.
+				if !released[role] {
+					released[role] = true
+					release := byte('x')
+					if role == 'p' {
+						release = 'e'
+					}
+					if _, err := control.Write([]byte{release}); err != nil {
+						t.Errorf("fixture %c release: %v", role, err)
+					}
 				}
-				_, _ = control.Write([]byte{release})
 				if extra, err := io.ReadAll(control); err != nil || len(extra) != 0 {
 					t.Errorf("fixture %c exit receipt: %q %v", role, extra, err)
 				}
@@ -115,6 +123,7 @@ func hostBridgeCommandAmbiguity(t *testing.T, binary, mode string) {
 			}
 			controls[role[0]] = control
 		}
+		released['p'] = true
 		if _, err := controls['p'].Write([]byte{'e'}); err != nil {
 			t.Fatal("setup parent release:", err)
 		}

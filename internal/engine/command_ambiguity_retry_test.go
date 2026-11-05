@@ -91,6 +91,7 @@ func commandRetryScenario(t *testing.T, binary, mode string, deferred bool) {
 		return serial
 	}
 	controls := map[byte]net.Conn{}
+	released := map[byte]bool{}
 	if mode != "definite-failure" {
 		ln, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
@@ -107,11 +108,18 @@ func commandRetryScenario(t *testing.T, binary, mode string, deferred bool) {
 		t.Cleanup(func() {
 			for role, control := range controls {
 				_ = control.SetDeadline(time.Now().Add(5 * time.Second))
-				release := byte('x')
-				if role == 'p' {
-					release = 'e'
+				// A second byte after the parent has exited can reset TCP and
+				// destroy its EOF receipt. Each role is released exactly once.
+				if !released[role] {
+					released[role] = true
+					release := byte('x')
+					if role == 'p' {
+						release = 'e'
+					}
+					if _, err := control.Write([]byte{release}); err != nil {
+						t.Errorf("fixture %c release: %v", role, err)
+					}
 				}
-				_, _ = control.Write([]byte{release})
 				if extra, err := io.ReadAll(control); err != nil || len(extra) != 0 {
 					t.Errorf("fixture %c exit receipt: %q %v", role, extra, err)
 				}
@@ -134,6 +142,7 @@ func commandRetryScenario(t *testing.T, binary, mode string, deferred bool) {
 			}
 			controls[role[0]] = control
 		}
+		released['p'] = true
 		if _, err := controls['p'].Write([]byte{'e'}); err != nil {
 			t.Fatal("setup parent release:", err)
 		}
