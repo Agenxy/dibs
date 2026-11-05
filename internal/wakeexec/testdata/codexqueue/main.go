@@ -267,7 +267,16 @@ func queuePipeControl(grandchild bool) {
 	if err != nil {
 		panic(err)
 	}
-	if err := conn.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
+	limit := 10 * time.Second
+	// Engine tests keep the real ten-second command grace. Only those tests
+	// extend this private control connection so the descendant outlives it.
+	if raw := os.Getenv("DIBS_TEST_QUEUE_PIPE_CONTROL_TIMEOUT"); raw != "" {
+		limit, err = time.ParseDuration(raw)
+		if err != nil || limit <= 0 {
+			panic("invalid fixture pipe control timeout")
+		}
+	}
+	if err := conn.SetDeadline(time.Now().Add(limit)); err != nil {
 		panic(err)
 	}
 	role := byte('p')

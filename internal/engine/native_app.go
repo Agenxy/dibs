@@ -17,7 +17,7 @@ func nativeDeliveryAccepted(disposition string) bool {
 }
 
 func (p wakePlan) retryAllowed() bool {
-	return !p.queueThreadGone() && (p.nativeOutcome == nil || !p.nativeOutcome.NoRetry)
+	return !p.commandOutcome.NoRetry && !p.queueThreadGone() && (p.nativeOutcome == nil || !p.nativeOutcome.NoRetry)
 }
 
 func (p wakePlan) queueThreadGone() bool {

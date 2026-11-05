@@ -220,7 +220,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   stdout no longer makes a command wait indefinitely after its child exits.
   Incomplete query output remains unknown. A queue command with successful exit
   and incomplete output is accepted only after one read-only observation finds
-  its exact, unambiguous app item; otherwise it triggers no retry or open fallback.
+  its exact, unambiguous app item; otherwise its unknown acceptance reaches the
+  engine without arming a retry or open fallback. Non-queue delivery commands
+  with successful exit and incomplete output also suppress automatic retry and
+  fallback. The host bridge carries the same no-retry outcome to its hub;
+  definite command failures retain their existing bounded retry.
 
 - The upgrade notification-permission contract prepares one read-only native
   helper before its parallel cases and shares that prepared inode through

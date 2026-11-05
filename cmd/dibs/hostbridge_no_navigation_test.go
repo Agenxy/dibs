@@ -15,6 +15,7 @@ import (
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/testcodexipc"
+	"github.com/agenxy/dibs/internal/wakeexec"
 )
 
 func TestHostBridgeNativeOnlyPlanNeverFallsBackOrNavigates(t *testing.T) {
@@ -32,7 +33,10 @@ func TestHostBridgeNativeOnlyPlanNeverFallsBackOrNavigates(t *testing.T) {
 			t.Cleanup(hub.Close)
 			b := newWakeBridge(hub.URL, "fixture", "local", map[string]boardconfig.WakeExec{"codex": {Argv: []string{"codex", "queue", "--thread", "{thread}", "--message", "{message}"}}})
 			queued, opened := 0, 0
-			b.run = func(_, _ []string, _, _ string, _, _ time.Duration) bool { queued++; return true }
+			b.run = func(_, _ []string, _, _ string, _, _ time.Duration) wakeexec.CommandOutcome {
+				queued++
+				return wakeexec.CommandOutcome{OK: true}
+			}
 			b.show = harnessenv.Shower{Ownership: func(string) harnessenv.ThreadOwnership { return harnessenv.ThreadOwnership{Running: true, Known: true} }, Open: func([]string) error { opened++; return nil }}
 			var request engine.WakeRequest
 			// A wire fixture lets this guard run against the old reader: ignoring the

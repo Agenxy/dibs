@@ -43,7 +43,7 @@ func TestQueueDrainFailureRequiresOneObservedExactItem(t *testing.T) {
 			fallback := []string{binary, "fallback-marker"}
 			go func() {
 				done <- RunCommandsObserved(argv, fallback, "worker", "", 5*time.Second, 100*time.Millisecond,
-					func(value QueueObservation) { observation = value })
+					func(value QueueObservation) { observation = value }).OK
 			}()
 			controls := map[byte]net.Conn{}
 			waited := false

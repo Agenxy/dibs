@@ -138,7 +138,7 @@ type wakeBridge struct {
 	routes  map[string]boardconfig.WakeExec
 	client  *http.Client // reports
 	streams *http.Client // the listen, with no deadline
-	run     func(argv, fallback []string, agent, dir string, timeout, grace time.Duration) bool
+	run     func(argv, fallback []string, agent, dir string, timeout, grace time.Duration) wakeexec.CommandOutcome
 	show    harnessenv.Shower // opens a thread in its app (replaceable by a test)
 	// EVERYTHING A HUB CAN MAKE THIS MACHINE DO IS BOUNDED HERE. slots
 	// bounds how many wake commands run at once; reports bounds the
@@ -188,7 +188,7 @@ func newWakeBridge(origin, secret, host string, routes map[string]boardconfig.Wa
 		routes:  routes,
 		client:  daemonClient(30 * time.Second),
 		streams: daemonClient(0),
-		run:     wakeexec.RunCommands,
+		run:     wakeexec.RunCommandsWithOutcome,
 		show:    harnessenv.RealShower,
 		slots:   make(chan struct{}, maxConcurrentWakes),
 		reports: make(chan engine.WakeResult, reportQueue),
@@ -521,7 +521,18 @@ func (b *wakeBridge) executeOutcome(wr engine.WakeRequest) (bool, string, wakeex
 	if len(x.Fallback) > 0 {
 		fallback = f.Apply(x.Fallback)
 	}
-	if b.run(f.Apply(x.Argv), fallback, wr.Agent, wr.CWD, wakeexec.Timeout, wakeexec.Grace) {
+	command := b.run(f.Apply(x.Argv), fallback, wr.Agent, wr.CWD, wakeexec.Timeout, wakeexec.Grace)
+	return commandWakeOutcome(command, outcome)
+}
+
+func commandWakeOutcome(
+	command wakeexec.CommandOutcome, outcome wakeexec.NativeOutcome,
+) (bool, string, wakeexec.NativeOutcome) {
+	if command.NoRetry {
+		outcome.NoRetry, outcome.Disposition = true, "command_unknown"
+		return false, "wake command acceptance unknown after incomplete output; no automatic retry or fallback", outcome
+	}
+	if command.OK {
 		if outcome.Disposition == "unloaded" {
 			return true, "thread not loaded in the app; queued until opened", outcome
 		}

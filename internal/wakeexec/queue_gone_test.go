@@ -39,7 +39,7 @@ func TestMissingRolloutIsGoneThroughRunCommandsObserved(t *testing.T) {
 			var observation QueueObservation
 			queue := []string{binary, "queue", "--thread", "missing-thread", "--message", Compose("request")}
 			if RunCommandsObserved(queue, []string{binary, "fallback-marker"}, "worker", "", 5*time.Second, time.Second,
-				func(o QueueObservation) { observation = o }) {
+				func(o QueueObservation) { observation = o }).OK {
 				t.Fatal("failed queue command was reported as delivery")
 			}
 			attempts, err := os.ReadFile(filepath.Join(home, "queue-attempts"))

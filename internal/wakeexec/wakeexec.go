@@ -165,6 +165,17 @@ const Grace = 10 * time.Second
 // had been sent. The reverse case, a closed thread, is the one the primary
 // already handled.
 func RunCommands(argv, fallback []string, agent, dir string, timeout, grace time.Duration) bool {
+	return RunCommandsWithOutcome(argv, fallback, agent, dir, timeout, grace).OK
+}
+
+// CommandOutcome preserves uncertainty after a command may have taken effect.
+// A caller that schedules retries must retain NoRetry, not only OK.
+type CommandOutcome struct {
+	OK, NoRetry bool
+}
+
+// RunCommandsWithOutcome is the command route for callers that can retry.
+func RunCommandsWithOutcome(argv, fallback []string, agent, dir string, timeout, grace time.Duration) CommandOutcome {
 	return RunCommandsObserved(argv, fallback, agent, dir, timeout, grace, nil)
 }
 
@@ -172,7 +183,7 @@ func RunCommands(argv, fallback []string, agent, dir string, timeout, grace time
 // It adds no probe, retry or admission policy; callbacks receive values only.
 func RunCommandsObserved(
 	argv, fallback []string, agent, dir string, timeout, grace time.Duration, observe func(QueueObservation),
-) bool {
+) CommandOutcome {
 	var ok bool
 	var out []byte
 	if thread, queued := queueTarget(argv); queued {
@@ -180,8 +191,11 @@ func RunCommandsObserved(
 		if observe != nil {
 			observe(result.observation)
 		}
-		if result.contended || result.unconfirmed || result.observation.ThreadState == "gone" {
-			return false
+		if result.unconfirmed {
+			return CommandOutcome{NoRetry: true}
+		}
+		if result.contended || result.observation.ThreadState == "gone" {
+			return CommandOutcome{}
 		}
 		ok, out = result.ok, result.out
 	} else {
@@ -191,7 +205,7 @@ func RunCommandsObserved(
 			slog.Warn("wake acceptance unknown after incomplete output", "agent", agent,
 				"err", exec.ErrWaitDelay,
 				"hint", "ErrWaitDelay: this wake command has no app receipt contract; no retry or fallback was attempted")
-			return false // no receipt contract and no fallback after ambiguous output
+			return CommandOutcome{NoRetry: true} // no receipt contract or safe retry/fallback
 		}
 	}
 	// Admission is released before trying another route, including a queue
@@ -202,12 +216,12 @@ func RunCommandsObserved(
 func runFallback(
 	argv, fallback []string, agent, dir string, timeout, grace time.Duration,
 	ok bool, out []byte, observe func(QueueObservation),
-) bool {
+) CommandOutcome {
 	if ok {
-		return true
+		return CommandOutcome{OK: true}
 	}
 	if len(fallback) == 0 {
-		return false
+		return CommandOutcome{}
 	}
 	// ONLY WHEN THE THREAD IS OPEN. The fallback exists for one failure: the
 	// harness refusing to resume a thread its desktop app holds open. Run
@@ -220,7 +234,7 @@ func runFallback(
 		slog.Info("the wake command failed for a reason that is not an open thread; "+
 			"the fallback would park the message, so it does not run",
 			"agent", agent, "cmd", argv[0], "run_it_yourself", strings.Join(argv, " "))
-		return false
+		return CommandOutcome{}
 	}
 	slog.Info("the wake command found the thread open; trying the fallback",
 		"agent", agent, "cmd", argv[0], "fallback", fallback[0])

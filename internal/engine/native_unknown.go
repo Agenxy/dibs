@@ -13,6 +13,16 @@ import (
 // items as unknown until the receiving incarnation changes; new items qualify.
 // This is derived evidence, never a ledger or mailbox mutation.
 func (e *Engine) recordNativeUnknown(plan wakePlan) {
+	e.recordWakeUnknown(plan, "The native app's reply for "+plan.agent+" is unknown. Mail remains in its mailbox; "+
+		"no queue fallback or automatic retry will run in this app incarnation. A new app incarnation may re-offer it.")
+}
+
+func (e *Engine) recordCommandUnknown(plan wakePlan) {
+	e.recordWakeUnknown(plan, "The wake command's acceptance for "+plan.agent+" is unknown. Mail remains in its mailbox; "+
+		"no automatic retry or fallback will run for this attempt. Inspect the command outcome before trying again.")
+}
+
+func (e *Engine) recordWakeUnknown(plan wakePlan, text string) {
 	_, _ = e.query(e.wakeContext, func() core.Result {
 		l := e.state.Agents[plan.agent]
 		if l == nil || l.Retired() || l.CreatedSerial != plan.createdSerial ||
@@ -30,9 +40,7 @@ func (e *Engine) recordNativeUnknown(plan wakePlan) {
 				!e.nativeUnknown["mail:"+noticeKey(plan.agent, m.Serial)] {
 				continue
 			}
-			e.pushNoticeFor(m.From, "The native app's reply for "+plan.agent+" is unknown. Mail remains in its mailbox; "+
-				"no queue fallback or automatic retry will run in this app incarnation. A new app incarnation may re-offer it.",
-				e.state.Serial, m.Serial, time.Now())
+			e.pushNoticeFor(m.From, text, e.state.Serial, m.Serial, time.Now())
 		}
 		return nil
 	})

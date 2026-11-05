@@ -24,9 +24,13 @@ func (e *Engine) recordNonRetryableWake(plan wakePlan) {
 	if plan.routeRefused {
 		return // known refusal before handoff; the binding alert retains the mail
 	}
-	if plan.queueThreadGone() {
+	switch {
+	case plan.queueThreadGone():
 		e.reportGoneQueueThread(plan)
-	} else {
+	case plan.commandOutcome.NoRetry,
+		plan.nativeOutcome != nil && plan.nativeOutcome.Disposition == "command_unknown":
+		e.recordCommandUnknown(plan)
+	default:
 		e.recordNativeUnknown(plan)
 	}
 }

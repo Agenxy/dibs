@@ -1102,10 +1102,11 @@ func wakeSessionOf(l *core.Agent) string {
 // rules were each paid for by a bug, and a second delivery path that skipped
 // them would re-buy every one.
 type wakePlan struct {
-	fields        wakeexec.Fields            // private native notice facts, never a message body
-	nativeOutcome *wakeexec.NativeOutcome    // shared with attempt's retry decision
-	queueOutcome  *wakeexec.QueueObservation // shared with the command attempt's retry decision
-	argv          []string                   // the operator's command
+	fields         wakeexec.Fields            // private native notice facts, never a message body
+	nativeOutcome  *wakeexec.NativeOutcome    // shared with attempt's retry decision
+	queueOutcome   *wakeexec.QueueObservation // shared with the command attempt's retry decision
+	commandOutcome wakeexec.CommandOutcome    // derived command acceptance and retry safety
+	argv           []string                   // the operator's command
 	// host is the OTHER machine this wake runs on, or "": a plan for a remote
 	// agent carries no argv, because the hub never learns one; request is
 	// what its bridge is handed instead. See hostwake.go.
@@ -1267,7 +1268,7 @@ func (e *Engine) runWakePlan(plan *wakePlan, agent string) bool {
 		if result, handled := e.tryNativeWake(*plan, agent); handled {
 			return result
 		}
-		ok := wakeexec.RunCommandsObserved(plan.argv, plan.fallback, agent, plan.cwd,
+		plan.commandOutcome = wakeexec.RunCommandsObserved(plan.argv, plan.fallback, agent, plan.cwd,
 			wakeexec.Timeout, wakeexec.Grace, func(observation wakeexec.QueueObservation) {
 				if plan.queueOutcome != nil {
 					*plan.queueOutcome = observation
@@ -1279,13 +1280,13 @@ func (e *Engine) runWakePlan(plan *wakePlan, agent string) bool {
 				}
 				e.noteQueueObservation(*plan, agent, observation)
 			})
-		if !plan.queueThreadGone() {
-			e.noteCommandOutcome(agent, plan.argv, ok)
+		if !plan.queueThreadGone() && !plan.commandOutcome.NoRetry {
+			e.noteCommandOutcome(agent, plan.argv, plan.commandOutcome.OK)
 		}
-		if ok {
+		if plan.commandOutcome.OK {
 			e.showInApp(*plan, agent) // queued; now make sure its app will deliver it
 		}
-		return ok
+		return plan.commandOutcome.OK
 	}
 	return e.wakeOverSocket(*plan, agent)
 }
