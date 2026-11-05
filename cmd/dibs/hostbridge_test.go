@@ -34,12 +34,12 @@ type recordingRun struct {
 	ok   bool
 }
 
-func (r *recordingRun) run(argv, fallback []string, _, dir string, _, _ time.Duration) bool {
+func (r *recordingRun) run(argv, fallback []string, _, dir string, _, _ time.Duration) wakeexec.CommandOutcome {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.runs = append(r.runs, append(append([]string{}, argv...), append([]string{"|"}, fallback...)...))
 	r.dirs = append(r.dirs, dir)
-	return r.ok
+	return wakeexec.CommandOutcome{OK: r.ok}
 }
 
 func bridgeUnderTest(t *testing.T, rec *recordingRun) *wakeBridge {
@@ -68,10 +68,10 @@ type blockingRun struct {
 	release chan struct{}
 }
 
-func (r *blockingRun) run(_, _ []string, _, _ string, _, _ time.Duration) bool {
+func (r *blockingRun) run(_, _ []string, _, _ string, _, _ time.Duration) wakeexec.CommandOutcome {
 	r.started <- struct{}{}
 	<-r.release
-	return true
+	return wakeexec.CommandOutcome{OK: true}
 }
 
 // A hub holding the secret can send as many requests as it likes; this

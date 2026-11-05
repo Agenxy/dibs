@@ -16,6 +16,7 @@ import (
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/testcodexipc"
+	"github.com/agenxy/dibs/internal/wakeexec"
 )
 
 func TestHostBridgeNativeDeliveryDoesNotQueue(t *testing.T) {
@@ -57,7 +58,10 @@ func TestHostBridgeNativeDeliveryDoesNotQueue(t *testing.T) {
 				"codex": {Argv: []string{"codex", "queue", "--thread", "{thread}", "--message", "{message}"}},
 			})
 			queued := 0
-			b.run = func(_, _ []string, _, _ string, _, _ time.Duration) bool { queued++; return true }
+			b.run = func(_, _ []string, _, _ string, _, _ time.Duration) wakeexec.CommandOutcome {
+				queued++
+				return wakeexec.CommandOutcome{OK: true}
+			}
 			wr := engine.WakeRequest{
 				ID: 1, Host: "local", Agent: "worker", Harness: "codex", Thread: testcodexipc.Thread,
 				Surface: harnessenv.ChatGPTApp, From: "sender", MsgType: "request", Notice: "hub imperative rejected",

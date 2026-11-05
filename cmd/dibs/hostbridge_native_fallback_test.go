@@ -15,6 +15,7 @@ import (
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/testcodexipc"
+	"github.com/agenxy/dibs/internal/wakeexec"
 )
 
 func TestHostBridgePreInputFailureUsesColdRouteWithFreshness(t *testing.T) {
@@ -41,12 +42,12 @@ func TestHostBridgePreInputFailureUsesColdRouteWithFreshness(t *testing.T) {
 				"codex": {Argv: []string{"codex", "queue", "--thread", "{thread}", "--message", "{message}"}},
 			})
 			queued := 0
-			b.run = func(argv, _ []string, _, _ string, _, _ time.Duration) bool {
+			b.run = func(argv, _ []string, _, _ string, _, _ time.Duration) wakeexec.CommandOutcome {
 				queued++
 				if len(argv) != 6 || argv[5] != "Dibs: a new request is waiting." {
 					t.Errorf("private facts entered argv: %v", argv)
 				}
-				return true
+				return wakeexec.CommandOutcome{OK: true}
 			}
 			ok, _, out := b.executeOutcome(engine.WakeRequest{
 				ID: 1, Host: "local", Agent: "worker", Harness: "codex", Thread: testcodexipc.Thread,
