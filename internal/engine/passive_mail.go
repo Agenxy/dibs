@@ -155,9 +155,19 @@ func (e *Engine) passiveMailLines(b *strings.Builder, mail []*core.Message) []fy
 
 func (e *Engine) passiveHookOutput(l *core.Agent, event string, strict bool) core.Result {
 	out := core.Result{"agent": l.ID, "queued": "passive recovery at a natural activation; wake freshness is unchanged"}
+	presentation := e.passivePresentationFor(l)
+	if previous, ok := e.passivePresented[l.ID]; ok && previous == presentation {
+		return e.hookOutput(out, strict, event)
+	}
 	if digest := e.passiveMailboxDigest(l, time.Now()); digest != "" {
 		addDelivery(out, event, digest)
 	}
+	if e.passivePresented == nil {
+		e.passivePresented = map[string]passivePresentation{}
+	}
+	// Snapshot BEFORE formatting: presenting a full FYI consumes it. That
+	// changes the set and must let the next call present the next bounded page.
+	e.passivePresented[l.ID] = presentation
 	return e.hookOutput(out, strict, event)
 }
 

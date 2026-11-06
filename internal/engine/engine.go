@@ -104,6 +104,7 @@ type Engine struct {
 	wakeBursts         map[string]*wakeBurst
 	wakeContext        context.Context
 	noticePresented    map[string]time.Time
+	passivePresented   map[string]passivePresentation // derived, one current session per agent
 	nextSocketOffer    uint64
 	// reachedByHook: agents at least one lifecycle hook has resolved to, so a
 	// later miss in their directory is somebody else's session rather than
