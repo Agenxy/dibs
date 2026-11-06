@@ -61,6 +61,9 @@ func parentOutcomeAckTarget(actor *core.Agent, m *core.Message) (sender, handled
 		return false, false // a self-addressed incoming ask can still be acknowledged
 	}
 	sender = m.From == actor.ID
-	reviews := m.To == actor.ID && m.Type == core.MsgRequest && m.Terminal()
+	// A withdrawn request is the recipient's withdrawal receipt, not a
+	// review of its completed work. Let the ordinary ack consume it, just
+	// as for a withdrawn question; the sender's own outcome is independent.
+	reviews := m.To == actor.ID && m.Type == core.MsgRequest && m.Terminal() && m.State != core.MsgStateWithdrawn
 	return sender, sender || reviews
 }

@@ -173,6 +173,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   it accepted earlier; Dibs cannot retract those frames, and continues waking
   every fresh cause. Items pending together already share one socket digest.
 
+- Acknowledging a withdrawn question or request clears its outstanding notice
+  from hooks and counters. A consumed withdrawal no longer occupies the generic
+  notice cache or buys another Stop turn. Request acknowledgements now consume
+  the recipient's withdrawal receipt instead of treating it as a work review;
+  unread withdrawals and the sender's independent outcome stay available.
+
 - A parallel test board no longer blocks app-service migration or causes an
   upgrade to add `-allow-parallel` to production. The selected daemon retains
   its own recorded flag, even when alone. A conflicting non-parallel board
