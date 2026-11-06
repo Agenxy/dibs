@@ -362,8 +362,9 @@ func (e *Engine) pushNoticeKind(who, text string, serial, msg uint64, blocking b
 	// Bounded: an agent that never polls must not accumulate forever. The
 	// newest matter most: being told you were admitted an hour ago and then
 	// evicted is worse than being told only the eviction.
-	// Obsolete contact warnings must not occupy protected blocking slots.
-	e.notices[who] = slices.DeleteFunc(e.notices[who], e.contactNoticeObsolete)
+	// Obsolete contact warnings and consumed withdrawals must not occupy
+	// protected blocking slots.
+	e.notices[who] = slices.DeleteFunc(e.notices[who], e.noticeObsolete)
 	e.notices[who] = append(e.notices[who],
 		notice{Serial: serial, Msg: msg, Text: text, Blocking: blocking, At: at, Kind: kind})
 	if n := len(e.notices[who]); n > maxNotices {
@@ -406,7 +407,7 @@ func (e *Engine) takeNotices(agent string) []notice {
 		// watermark, not this bounded/ephemeral pointer cache.
 		if e.state != nil {
 			m := e.state.Messages[n.Msg]
-			if e.contactNoticeObsolete(n) || cachedNoticeHasEnvelope(m, agent, n.Serial) {
+			if e.noticeObsolete(n) || cachedNoticeHasEnvelope(m, agent, n.Serial) {
 				continue
 			}
 		}
@@ -430,6 +431,22 @@ func (e *Engine) takeNotices(agent string) []notice {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Serial < out[j].Serial })
 	return out
+}
+
+// Terminal does not itself make a withdrawal obsolete: its recipient must
+// still read or acknowledge that receipt. Once consumed, neither the generic
+// cache's counters nor its capacity can keep the old blocking pointer alive.
+// The same predicate serves insertion and every outstanding-notice read.
+func (e *Engine) noticeObsolete(n notice) bool {
+	if e.contactNoticeObsolete(n) {
+		return true
+	}
+	if e.state == nil {
+		return false
+	}
+	m := e.state.Messages[n.Msg]
+	return m != nil && m.State == core.MsgStateWithdrawn &&
+		(m.Consumed || !e.withdrawalReceiptBelongs(m))
 }
 
 func cachedNoticeHasEnvelope(m *core.Message, agent string, serial uint64) bool {
