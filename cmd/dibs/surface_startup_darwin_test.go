@@ -161,6 +161,13 @@ func surfaceStartupContractWithGateCopy(t *testing.T, held, repair, retainGate b
 			t.Fatalf("registration setup failed: %v", result)
 		}
 		t.Logf("register replied in %s (ancestry held=%v)", time.Since(start), held)
+		if os.Getenv("DIBS_TEST_SURFACE_FAIL_ONCE") == "1" {
+			// The child may inspect its worker only after the parent has read
+			// and validated the real reply, outside the measured request path.
+			if err := os.WriteFile(gate+".replied", []byte("replied"), 0o600); err != nil {
+				t.Fatal("surface reply marker:", err)
+			}
+		}
 	case <-time.After(5 * time.Second):
 		if _, err := os.Stat(gate + ".entered"); err != nil {
 			t.Fatalf("probe setup never entered held ancestry: %v", err)
@@ -187,6 +194,7 @@ func surfaceStartupContractWithGateCopy(t *testing.T, held, repair, retainGate b
 			}
 			time.Sleep(time.Millisecond)
 		}
+		evidence.assertWaiterScansAfterReply(t)
 	}
 	if err := paths.UnlockAndClose(f); err != nil {
 		t.Fatal(err)

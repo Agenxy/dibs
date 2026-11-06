@@ -32,6 +32,7 @@ const (
 	ancestryLookupEntered
 	ancestryLookupAcquired
 	ancestryLookupFailed
+	ancestryWaiterScanStarted
 	ancestryStageCount
 )
 

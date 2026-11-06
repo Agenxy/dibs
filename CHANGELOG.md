@@ -164,6 +164,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The ancestry registration fixture waits for the parent to receive and
+  validate the real reply before its worker observer scans all goroutine
+  stacks. The observer could stop the test bridge before it forwarded the
+  request, causing the intermittent five-second timeout in #553. The real
+  worker-wait check and reply bound remain enforced; a recorded ordering
+  assertion guards the actual fixture path.
+
 - The local transport test fixture joins active IPC handler callbacks before
   releasing their ancestry evidence mapping. Closing HTTP connections alone
   could leave a callback writing to unmapped diagnostic memory during stress
