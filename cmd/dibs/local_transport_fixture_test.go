@@ -44,7 +44,10 @@ func newLocalTestServer(t *testing.T, dir string, handler http.Handler) *localTe
 		result.mu.Lock()
 		if result.closing {
 			result.mu.Unlock()
-			return
+			// Preserve outage semantics for a request dispatched between
+			// the admission fence and connection closure: never send an
+			// empty success for a handler we did not run.
+			panic(http.ErrAbortHandler)
 		}
 		result.callbacks.Add(1)
 		result.mu.Unlock()

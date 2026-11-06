@@ -168,6 +168,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   releasing their ancestry evidence mapping. Closing HTTP connections alone
   could leave a callback writing to unmapped diagnostic memory during stress
   tests; a permanent guard holds a real callback across fixture shutdown.
+  Requests reaching the fixture after its shutdown fence abort their connection
+  rather than returning an empty success response.
 
 - Passive prompt/start hooks present an unchanged coordination summary once
   per agent/session. Comparison uses all outstanding item identities and
