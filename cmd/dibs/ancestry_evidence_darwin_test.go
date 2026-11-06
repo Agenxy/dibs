@@ -29,6 +29,7 @@ var ancestryStageNames = [...]string{
 	"request decoded", "request write starting", "request written", "reply read", "reply written",
 	"HTTP handler entered", "HTTP handler returned", "bridge running", "bridge returned",
 	"ancestry lookup entered", "ancestry lock acquired", "synthetic lookup failed",
+	"waiter stack scan started",
 }
 
 type ancestryEvidence struct {
@@ -144,6 +145,24 @@ func (d *ancestryEvidence) handler(real http.Handler) http.Handler {
 		defer d.stages.note(ancestryHandlerReturned)
 		real.ServeHTTP(w, r)
 	})
+}
+
+func (d *ancestryEvidence) assertWaiterScansAfterReply(t *testing.T) {
+	t.Helper()
+	reply := atomic.LoadInt64(ancestryCell(d.memory, 0, int(ancestryReplyRead)+1))
+	if reply == 0 {
+		t.Fatal("setup: no real registration reply was recorded")
+	}
+	for role := 2; role < ancestryEvidenceRoles; role++ {
+		scan := atomic.LoadInt64(ancestryCell(d.memory, role, int(ancestryWaiterScanStarted)+1))
+		if role == 2 && scan == 0 {
+			t.Fatal("setup: active bridge waiter did not record its real stack scan")
+		}
+		if scan != 0 && scan < reply {
+			t.Fatalf("bridge role %d scanned stacks before the real registration reply: scan=%s reply=%s", role,
+				time.Unix(0, scan).UTC().Format(time.RFC3339Nano), time.Unix(0, reply).UTC().Format(time.RFC3339Nano))
+		}
+	}
 }
 
 func (d *ancestryEvidence) reportFailure(t *testing.T, app *os.Process) {

@@ -64,7 +64,7 @@ func TestBridgeStartupHelper(t *testing.T) {
 	}
 	if gate := os.Getenv("DIBS_TEST_SURFACE_GATE"); gate != "" {
 		if os.Getenv("DIBS_TEST_SURFACE_FAIL_ONCE") == "1" {
-			go observeSurfaceCompletionWaiter(t, gate)
+			go observeSurfaceCompletionWaiter(t, gate, stages)
 		}
 		original := detectedSurface
 		failed := false
@@ -129,12 +129,28 @@ func TestBridgeStartupHelper(t *testing.T) {
 // Observe the real worker blocked on the held lookup before releasing it to
 // fail. A registration reply alone does not establish that: the worker might
 // not run until after failure and start a fresh probe, masking the regression.
-// This observer runs only in the private child; it changes no production state.
-func observeSurfaceCompletionWaiter(t *testing.T, gate string) {
+// The parent must receive the reply before this observer scans: runtime.Stack
+// with all=true stops this child, and a stalled scan must not become the very
+// pre-reply delay the contract measures. This changes no production state.
+func observeSurfaceCompletionWaiter(t *testing.T, gate string, stages ancestryStages) {
 	t.Helper()
-	stack := make([]byte, 256<<10)
 	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(gate + ".replied"); err == nil {
+			break
+		} else if !os.IsNotExist(err) {
+			t.Error("surface reply marker:", err)
+			return
+		}
+		if time.Now().After(deadline) {
+			return // the parent still owns the unchanged registration bound
+		}
+		time.Sleep(time.Millisecond)
+	}
+	stack := make([]byte, 256<<10)
+	deadline = time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
+		stages.note(ancestryWaiterScanStarted)
 		n := runtime.Stack(stack, true)
 		for _, goroutine := range bytes.Split(stack[:n], []byte("\n\n")) {
 			if bytes.Contains(goroutine, []byte("[select]:\n")) &&
