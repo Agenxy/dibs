@@ -251,6 +251,7 @@ func (e *Engine) signalSocketReady(l *core.Agent) {
 }
 
 func (e *Engine) pruneSocketState() {
+	e.prunePassivePresentations()
 	e.pruneClosedSelfWakers()
 	e.pruneSocketWritten()
 	live := map[string]bool{}

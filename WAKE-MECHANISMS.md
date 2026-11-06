@@ -836,6 +836,23 @@ Delivery is mediated by the recipient's own harness, which labels the message
 as coming from a peer, tells the model it is not user input, and gates it on
 that human's permission mode.
 
+**A long blocking prompt can accumulate accepted input (measured 2026-11-05).**
+Claude Code 2.1.309 in the desktop app held an `AskUserQuestion` for about
+6 hours 31 minutes. Dibs handed its socket 49 distinct notices over about
+5 hours, each for a new cause. When a human message released the question,
+the harness attached those 49 peer inputs and the human input together,
+running `UserPromptSubmit` for each: 50 hook summaries in about 3 seconds,
+26 distinct, with the final summary repeated 25 times. No Stop continuation
+was involved. The per-frame flood was the harness draining queued input,
+not Dibs sending duplicates at release. Dibs now suppresses unchanged passive
+summaries by the full outstanding identity and state for that agent/session,
+including items beyond the shown page. A changed set or state re-emits; losing
+the derived cache on daemon restart can repeat a pointer but cannot lose mail.
+Pending items at a single Dibs send boundary already share one socket digest.
+Frames the harness accepted earlier cannot be retracted or coalesced by this
+protocol; later fresh causes still get their own wake. No upstream report was
+filed from this measurement.
+
 **Why it is better than a command.** A command has to be told which thread to
 resume, so Dibs has to work out which id the agent answers to, and every wake
 defect this project has had is downstream of getting that wrong. A socket is
