@@ -11,8 +11,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instead of refusing while idle seats fill the limit. Verified-alive processes,
   the human, coordinators and admins are protected. The human never counts
   toward either agent ceiling and can be minted even on a full board.
-  Verified-dead seats rank
-  before unknown processes, then by oldest real activity and id. The recorded
+  Verified-dead seats rank before unknown processes, then by oldest real activity
+  and id. Mail history records the same affected-mail expiries live and after
+  replay. The recorded
   decision replays unchanged. Affected mail raises a metadata-only human notice;
   a displaced nonce refuses with a fresh-registration hint. Admins and
   coordinators can save `limits.full_board` as `displace_idle` (default) or
