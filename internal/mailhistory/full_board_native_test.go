@@ -21,8 +21,10 @@ func TestFullBoardDisplacementHistoryMatchesLiveAndColdReplay(t *testing.T) {
 	f := nativeHistoryWithLifetime(t, dir, limits, 30*time.Second)
 	_ = historyIdentity(t, f, "victim")
 	sender := historyIdentity(t, f, "sender")
-	historyOp(t, f, &core.Op{Kind: core.OpSendMessage, Token: sender,
-		To: "victim", MsgType: core.MsgQuestion, Body: "retained displacement question"})
+	historyOp(t, f, &core.Op{
+		Kind: core.OpSendMessage, Token: sender,
+		To: "victim", MsgType: core.MsgQuestion, Body: "retained displacement question",
+	})
 	before := historyJSON(t, settledHistory(t, f, sender, true))
 	if !strings.Contains(before, "retained displacement question") || !strings.Contains(before, core.MsgStatePending) {
 		t.Fatalf("setup: pending question missing from history: %s", before)
