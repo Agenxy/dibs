@@ -19,6 +19,7 @@ const (
 	FeatureDesktopApproval = "desktop-approval-confirmation/v1"
 	FeatureMailboxRecovery = "mailbox-recovery/v1"
 	FeatureRecoveryConsent = "mailbox-recovery-consent/v3"
+	FeatureFullBoardPolicy = "full-board-policy/v1"
 )
 
 func admitReaderFeatures(op *Op) error {
@@ -29,7 +30,7 @@ func admitReaderFeatures(op *Op) error {
 		}
 		return nil
 	}
-	if len(op.RequiredFeatures) == 0 || len(op.RequiredFeatures) > 3 {
+	if len(op.RequiredFeatures) == 0 || len(op.RequiredFeatures) > 4 {
 		return errf("E_BAD_ARG", "name the required v0.0.17 features once", "invalid reader requirement count")
 	}
 	for i, feature := range op.RequiredFeatures {
@@ -43,7 +44,7 @@ func admitReaderFeatures(op *Op) error {
 
 // SupportsV17Feature is reader-format knowledge, shared with ledger decoding.
 func SupportsV17Feature(feature string) bool {
-	return feature == FeatureDesktopApproval || feature == FeatureMailboxRecovery || feature == FeatureRecoveryConsent
+	return feature == FeatureDesktopApproval || feature == FeatureMailboxRecovery || feature == FeatureRecoveryConsent || feature == FeatureFullBoardPolicy
 }
 
 func (s *State) applyReaderFeatures(op *Op, now time.Time) (Result, []Event, error) {
@@ -67,6 +68,9 @@ func (s *State) applyReaderFeatures(op *Op, now time.Time) (Result, []Event, err
 // written before requirement markers existed. Reading it never changes history.
 func (s *State) FeatureData() []string {
 	var features []string
+	if s.HasFullBoardData() {
+		features = append(features, FeatureFullBoardPolicy)
+	}
 	if !s.DesktopApproval.IsZero() {
 		features = append(features, FeatureDesktopApproval)
 	}

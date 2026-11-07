@@ -7,6 +7,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Full boards now recycle one eligible dormant seat when admitting a new agent,
+  instead of refusing while idle seats fill the limit. Verified-alive processes,
+  the human, coordinators and admins are protected. Verified-dead seats rank
+  before unknown processes, then by oldest real activity and id. The recorded
+  decision replays unchanged. Affected mail raises a metadata-only human notice;
+  a displaced nonce refuses with a fresh-registration hint. Admins and
+  coordinators can save `limits.full_board` as `displace_idle` (default) or
+  `refuse`; `[limits] full_board` supplies the file default.
+
 - The pre-release harness survey separates fetched 2026-11-04 source from
   installed versions and dated wire evidence. Isolated Codex catalog probes
   cover default, explicit modern and experimental connection-sharing routes;

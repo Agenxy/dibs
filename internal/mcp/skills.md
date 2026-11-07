@@ -462,6 +462,17 @@ receiving native peer turns, another watcher adds no delivery guarantee.
 
 ## Mail
 
+- **A full board can recycle an idle seat.** `limits.full_board` defaults to
+  `displace_idle`: registration closes one eligible dormant seat when either
+  agent ceiling binds. Verified-alive processes, the human, coordinators,
+  admins and recovering identities are protected. Verified-dead processes rank
+  before unknown, then by oldest real activity and id. Admins and coordinators
+  can select strict refusal with `settings(token, setting: "limits.full_board",
+  value: "refuse")`; the change is ledgered with its setter. Affected mail
+  raises a metadata-only human notice, and unanswered asks expire as on prune.
+  A returning displaced nonce gets `E_AGENT_DISPLACED`: register with a fresh
+  nonce and ask the human about old mail; the replacement mailbox is separate.
+
 - **The human can require Touch ID for privileged desktop approvals.**
   `human.confirm_privileged_desktop` defaults off. Any authenticated agent may
   enable it with `settings(token, setting: "human.confirm_privileged_desktop",

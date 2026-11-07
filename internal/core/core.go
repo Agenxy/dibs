@@ -880,6 +880,7 @@ type LegacyAckSnapshot struct {
 
 // State is the entire replayable truth. Only Apply mutates it.
 type State struct {
+	FullBoardSetting FullBoardSetting `json:"full_board_setting,omitzero"`
 	// Reader requirements survive collection of the feature's original data.
 	RequiredFeatures []string `json:"required_features,omitempty"`
 

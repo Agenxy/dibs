@@ -38,6 +38,10 @@ func (e *Engine) finishReaderBackstop(
 // prediction. Already-fenced features require no further inspection.
 func (e *Engine) missingReaderFeaturesAt(op *core.Op, result core.Result) []string {
 	var missing []string
+	if !slices.Contains(e.state.RequiredFeatures, core.FeatureFullBoardPolicy) &&
+		(op.Displaced != nil || !e.state.FullBoardSetting.IsZero()) {
+		missing = append(missing, core.FeatureFullBoardPolicy)
+	}
 	if !slices.Contains(e.state.RequiredFeatures, core.FeatureDesktopApproval) && !e.state.DesktopApproval.IsZero() {
 		missing = append(missing, core.FeatureDesktopApproval)
 	}
@@ -62,6 +66,9 @@ func (e *Engine) initializeReaderFeatures(now time.Time) {
 
 func (e *Engine) requireFeaturesForAppend(op *core.Op, now time.Time) error {
 	var features []string
+	if op.Displaced != nil || op.Kind == core.OpSetFullBoardSetting {
+		features = append(features, core.FeatureFullBoardPolicy)
+	}
 	if op.Recovery != nil || op.RecoveryActor != nil {
 		features = append(features, core.FeatureMailboxRecovery)
 	}

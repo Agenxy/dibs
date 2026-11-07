@@ -7,10 +7,11 @@ package core
 // The map is private replayable state, encrypted with the rest of the ledger.
 // Dropping it would let the same credential mint a new fork after retention.
 type MergedNonce struct {
-	From   string `json:"from"`
-	Into   string `json:"into"`
-	By     string `json:"by"`
-	Serial uint64 `json:"serial"`
+	Displaced bool   `json:"displaced,omitempty"`
+	From      string `json:"from"`
+	Into      string `json:"into"`
+	By        string `json:"by"`
+	Serial    uint64 `json:"serial"`
 }
 
 // MergedNonceError is ingress policy, never a condition in the replay fold.
@@ -23,6 +24,10 @@ func (s *State) MergedNonceError(nonce string) error {
 	t, ok := s.MergedNonces[nonce]
 	if !ok {
 		return nil
+	}
+	if t.Displaced {
+		return errf("E_AGENT_DISPLACED", "this dormant seat was displaced under limits.full_board. Register again with a new nonce to create a new identity; ask the human to inspect the old mail with all_mail",
+			"agent %s was displaced to admit %s", t.From, t.Into)
 	}
 	return errf("E_SEAT_MERGED", "this seat was merged into "+t.Into+" by "+t.By+
 		"; reattach with "+t.Into+"'s own nonce", "seat %s was merged into %s by %s", t.From, t.Into, t.By)

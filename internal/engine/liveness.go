@@ -63,6 +63,10 @@ type bootEvidence struct {
 // Presentation provenance of the same timestamp used by the sweep. Boot grace
 // stays valid for liveness, but is never presented as an observed client call.
 func (e *Engine) lastEvidenceWithSource(l *core.Agent) (time.Time, string) {
+	return e.evidenceWithSource(l, true)
+}
+
+func (e *Engine) evidenceWithSource(l *core.Agent, includeBootGrace bool) (time.Time, string) {
 	if l == nil {
 		return time.Time{}, "none"
 	}
@@ -72,11 +76,16 @@ func (e *Engine) lastEvidenceWithSource(l *core.Agent) (time.Time, string) {
 		source = "none"
 	}
 	if t, ok := e.seen[l.ID]; ok && (t.After(at) || t.Equal(at)) {
+		grace, isGrace := e.bootGrace[l.ID]
+		isGrace = isGrace && grace.created == l.CreatedSerial && grace.at.Equal(t)
+		if !includeBootGrace && isGrace {
+			t = at
+		}
 		if t.After(at) {
 			at = t
 		}
 		source = "activity"
-		if grace, ok := e.bootGrace[l.ID]; ok && grace.created == l.CreatedSerial && grace.at.Equal(t) {
+		if includeBootGrace && isGrace {
 			source = "boot_grace"
 		}
 	}

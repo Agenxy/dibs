@@ -261,9 +261,9 @@ func (b toolSchemas) agentAndMailTools() []map[string]any {
 		},
 		{
 			"name": "settings", "description": "List values/setters with a token. " +
-				"File overrides: admin; restart controls: coordinator/admin. Any agent may enable " +
+				"File overrides: admin; restart controls and limits.full_board (displace_idle default, or refuse): coordinator/admin. Any agent may enable " +
 				"human.confirm_privileged_desktop; only human may disable (default off). " +
-				"Changes apply now; restart/approval settings are ledgered, other overrides saved beside dibs.toml.",
+				"Changes apply now; restart/full-board/approval settings are ledgered, other overrides saved beside dibs.toml.",
 			"inputSchema": b.obj(map[string]any{
 				"token":   b.tok,
 				"setting": b.str("the setting to change, as listed. Omit to read them all"),

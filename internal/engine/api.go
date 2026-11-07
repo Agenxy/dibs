@@ -17,13 +17,14 @@ import (
 
 // request and reply carry submissions across the single-writer boundary.
 type request struct {
-	op      *core.Op
-	fn      func() core.Result
-	reply   chan reply
-	invite  *Invitation
-	finish  func()
-	receipt chan core.Result
-	attempt *SendAttempt
+	capacity *registerCapacityPlan
+	op       *core.Op
+	fn       func() core.Result
+	reply    chan reply
+	invite   *Invitation
+	finish   func()
+	receipt  chan core.Result
+	attempt  *SendAttempt
 	// prepaid: the op is one leg of a fan-out whose caller already paid the
 	// rate limit once for the whole of it (Broadcast).
 	prepaid bool
@@ -36,6 +37,9 @@ type reply struct {
 
 // Do submits one mutating op to the loop and waits.
 func (e *Engine) Do(ctx context.Context, op *core.Op) (core.Result, error) {
+	if op != nil && op.Kind == core.OpRegister {
+		return e.registerWithCapacity(ctx, op)
+	}
 	req := request{
 		op: op, reply: make(chan reply, 1), receipt: sendReceiptFrom(ctx), attempt: sendAttemptFrom(ctx),
 		prepaid: fanoutPrepaid(ctx),

@@ -96,6 +96,7 @@ const (
 	OpVouchChild                = "vouch_child"
 	OpForceRelease              = "force_release"
 	OpSetRestartSetting         = "set_restart_setting"
+	OpSetFullBoardSetting       = "set_full_board_setting"
 	OpSetDesktopApprovalSetting = "set_desktop_approval_setting"
 	OpAppRestartObserved        = "app_restart_observed"
 	OpReadAppRestart            = "read_app_restart"
@@ -219,6 +220,8 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		res, evs, err = s.applyWake(l)
 	case OpSetRestartSetting:
 		res, evs, err = s.applyRestartSetting(l, op, now)
+	case OpSetFullBoardSetting:
+		res, evs = s.applyFullBoardSetting(l, op, now)
 	case OpSetDesktopApprovalSetting:
 		res, evs = s.applyDesktopApprovalSetting(l, op, now)
 	case OpReadAppRestart:
@@ -626,24 +629,17 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 	// finished agents signed off; a full PERSISTENT board usually means standing
 	// identities accumulated as siblings, and the fix is to reclaim them rather
 	// than to raise anything.
-	if live >= s.Limits.MaxAgents {
-		return nil, nil, errf("E_AGENT_LIMIT",
-			"sign_off the agents that have finished, or ask the human to raise "+
-				"max_agents in dibs.toml",
-			"this board holds its maximum of %d live agents", s.Limits.MaxAgents)
+	if op.FullBoardPolicy == "" && live >= s.Limits.MaxAgents {
+		return nil, nil, s.registrationLimitError(true)
 	}
-	if kind == KindPersistent && persistent >= s.Limits.MaxPersistentAgents {
-		return nil, nil, errf("E_AGENT_LIMIT",
-			"a standing identity holds its slot while dormant, which is the point of "+
-				"one, so this usually means siblings accumulated: an agent that could "+
-				"not prove it was itself and registered again. Reclaim them with "+
-				"adopt_agent, or ask the human to raise max_persistent_agents in "+
-				"dibs.toml. Registering as ephemeral works now and keeps no mailbox",
-			"this board holds its maximum of %d persistent agents (of %d agents in "+
-				"total, so it is the PERSISTENT ceiling you have hit)",
-			s.Limits.MaxPersistentAgents, s.Limits.MaxAgents)
+	if op.FullBoardPolicy == "" && kind == KindPersistent && persistent >= s.Limits.MaxPersistentAgents {
+		return nil, nil, s.registrationLimitError(false)
 	}
 	id := agentID(s, op.Name)
+	var displacementEvents []Event
+	if op.Displaced != nil {
+		displacementEvents = s.closeDisplacedAgent(op.Displaced, id, now)
+	}
 	// Lineage is claimed and proven separately. An unproven parent is displayed
 	// and grants nothing; a vouched one inherits its parent's agents, skips an
 	// exclusive queue, and is exempt from the parent's claims in the guard.
@@ -720,9 +716,9 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 	if nonce != "" {
 		s.Nonces[nonce] = id
 	}
-	evs := []Event{{Type: "agent.registered", Agent: id, Data: map[string]any{
+	evs := append(displacementEvents, Event{Type: "agent.registered", Agent: id, Data: map[string]any{
 		"name": op.Name, "kind": kind, "description": op.Description,
-	}}}
+	}})
 	serial := s.finish(&evs, now)
 	l.CreatedSerial = serial
 	res := Result{

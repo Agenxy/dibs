@@ -261,6 +261,8 @@ type WakeConfig struct {
 // changes. Everything else in core.Limits is a safety bound rather than a
 // preference, and is deliberately not exposed.
 type LimitsConfig struct {
+	// FullBoard selects idle-seat displacement (the default) or strict refusal.
+	FullBoard string `toml:"full_board"`
 	// AgentTTL is how long an agent may go silent before it is treated as
 	// crashed. It matters more than it looks: a stale owner YIELDS its
 	// exclusive agents, so an agent that is merely busy: a long build, a slow
@@ -912,6 +914,9 @@ func HostToVerify(addr string) string {
 }
 
 func (c Config) validateLimits() error {
+	if c.Limits.FullBoard != "" && !core.ValidFullBoardPolicy(c.Limits.FullBoard) {
+		return fmt.Errorf("[limits] full_board: use displace_idle or refuse")
+	}
 	for _, d := range []struct{ key, raw string }{
 		{"agent_ttl", c.Limits.AgentTTL},
 		{"idle_ttl", c.Limits.IdleTTL},

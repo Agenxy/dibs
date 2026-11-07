@@ -45,6 +45,9 @@ func (s *State) Admit(op *Op) error {
 	if err := s.admitRecovery(op); err != nil {
 		return err
 	}
+	if err := s.admitFullBoard(op); err != nil {
+		return err
+	}
 	if err := s.admitContact(op); err != nil {
 		return err
 	}

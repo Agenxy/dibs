@@ -807,6 +807,7 @@ than open a partial board.
 | `idle_ttl` | `45m` | The same for agents with **no PID**, where silence is the only evidence. This governs the config `dibs mcp-config` prints, so an operator who tunes `agent_ttl` and sees nothing change is hitting this one. |
 | `max_persistent_agents` | `64` | How many STANDING identities the board may hold. Unset, it follows `max_agents` when that is set lower. |
 | `max_agents` | `64` | How many live agents of any kind. |
+| `full_board` | `"displace_idle"` | At either ceiling, recycle one eligible dormant seat; `"refuse"` keeps strict refusal. |
 | `blob_store_bytes` | *(built-in)* | A hard cap on the attachment store. Over it, eviction drops referenced content rather than exceed the bound, so a recipient can hold a message naming a blob that is gone. |
 
 **`max_persistent_agents` is reached by accumulation, not by concurrency.** A
@@ -824,6 +825,20 @@ registered again, leaving its predecessor holding a mailbox nobody reads.
 `adopt_agent` reclaims those, and on a stdio bridge they should stop appearing
 at all, because the bridge now keeps each agent's nonce. Raise it when the fleet
 genuinely runs that many standing roles.
+
+With the default `full_board = "displace_idle"`, a new registration closes one
+eligible dormant seat at either ceiling. Verified-alive processes, the human,
+coordinators, admins and recovering identities are protected. Verified-dead
+processes rank before unknown liveness, then by oldest real activity and id;
+a binding persistent ceiling needs a persistent victim. The decision is
+recorded for replay. Unanswered asks expire as on prune; affected mail raises
+a metadata-only native human notice, while an empty recycle stays in the
+activity feed. Old mail follows prune's normal admin access and retention.
+A displaced nonce refuses with a fresh-registration hint.
+
+Set `full_board = "refuse"` for strict capacity refusal. A human/admin or
+coordinator may also save `limits.full_board` through `settings`; that ledgered
+choice overrides this file default and reports its setter and time.
 
 Raising it above `max_agents` is refused rather than accepted: the lower ceiling
 is the one that binds, so the setting would read as applied and do nothing.
@@ -1021,7 +1036,7 @@ deliberate: an earlier design put the nonces here and it was the wrong trade.
 An agent you have granted **admin** can read and change the settings that take
 effect while the board is running, with the `settings` tool. Reading needs
 only a token; changing normally needs admin. A coordinator can change the
-two app-restart controls. The human's optional desktop approval confirmation
+two app-restart controls and `limits.full_board`. The human's optional desktop approval confirmation
 has the separate authority rule below.
 
 It is called `settings` and not `configure` because `dibs configure` is a CLI
@@ -1040,7 +1055,8 @@ The five admin file overrides are `wake.extend_turn_for`,
 `wake.notices_wake`, `wake.sockets`, `hooks.mail_bodies` and
 `identity.unidentified`. The two restart controls are
 `wake.resume_after_app_restart` and `wake.restart_open_interval`; coordinator
-or admin changes to those are ledgered with the actor and time. All seven take
+or admin changes to those and `limits.full_board` are ledgered with the actor
+and time. All eight take
 effect immediately. An address or a certificate
 needs a restart, so `settings` refuses it with `E_NO_SETTING` rather than
 reporting success and doing nothing until somebody happens to restart the
