@@ -100,6 +100,8 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 	}
 	// The op payload: the union of every tag that reached disk above.
 	wantOp := map[string]bool{
+		// Additive admission decision; older registrations omit all three fields.
+		"full_board_policy": true, "displaced": true, "capacity_human": true,
 		// Additive bridge evidence; every historical tag remains unchanged.
 		"bridge_surface_evidence": true,
 		// Additive page selection on activity_checkpoint; historical check_in
@@ -485,7 +487,8 @@ const (
 	// Bridge evidence adds one flag; every historical spelling remains frozen.
 	// Recovery adds three op tags and one Message tag; no historical key changed.
 	// required_features is additive; all earlier tags remain frozen.
-	frozenOpFingerprint       = "sha256:86cba90507775aff"
+	// Adds only displaced, full_board_policy and capacity_human; all prior tags stay frozen.
+	frozenOpFingerprint       = "sha256:c6e16cb2f43a8a97"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`
@@ -632,6 +635,7 @@ func TestOpKindStringsAreFrozen(t *testing.T) {
 		"OpWake":                      {core.OpWake, "wake"},
 		"OpAppRestartObserved":        {core.OpAppRestartObserved, "app_restart_observed"},
 		"OpSetRestartSetting":         {core.OpSetRestartSetting, "set_restart_setting"},
+		"OpSetFullBoardSetting":       {core.OpSetFullBoardSetting, "set_full_board_setting"},
 		"OpSetDesktopApprovalSetting": {core.OpSetDesktopApprovalSetting, "set_desktop_approval_setting"},
 		"OpReadAppRestart":            {core.OpReadAppRestart, "read_app_restart"},
 		"OpContactEscalate":           {core.OpContactEscalate, "contact_escalated"},
@@ -862,9 +866,13 @@ func TestMergeDecisionFieldsAreFrozen(t *testing.T) {
 		{"evidence", reflect.TypeOf(core.MergeEvidence{}), map[string]bool{
 			"known": true, "live": true, "source": true, "created_serial": true, "host": true, "pid": true, "proc_start": true,
 		}, "sha256:8bb087ae0a34eac1"},
+		// Additive full-board decision; every existing nested tag stays frozen.
+		{"displacement", reflect.TypeOf(core.AgentDisplacement{}), map[string]bool{
+			"id": true, "created_serial": true, "last_activity": true, "process": true, "human": true,
+		}, "sha256:d37442e859c8b8fd"},
 		{"credential tombstone", reflect.TypeOf(core.MergedNonce{}), map[string]bool{
-			"from": true, "into": true, "by": true, "serial": true,
-		}, "sha256:db8511c7880064bc"},
+			"from": true, "into": true, "by": true, "serial": true, "displaced": true,
+		}, "sha256:c02fc90371a97381"},
 		{"recovery effect", reflect.TypeOf(core.RecoveryRequest{}), map[string]bool{"from": true, "into": true, "source_created_serial": true, "survivor_created_serial": true, "coordinator_created_serial": true, "fence": true}, "sha256:ee4fe1d74c52ca59"},
 		{"recovered address", reflect.TypeOf(core.RecoveredAddress{}), map[string]bool{"source": true, "source_created_serial": true, "into": true, "survivor_created_serial": true, "by": true, "serial": true}, "sha256:47da394c6d3234ee"},
 		{"inherited declaration", reflect.TypeOf(core.InheritedDeclaration{}), map[string]bool{"source": true, "source_created_serial": true, "host": true, "recovered_serial": true, "updated_at": true, "declaration": true}, "sha256:3973358160c7aa37"},

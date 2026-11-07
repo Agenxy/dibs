@@ -21,6 +21,14 @@ type snapshotFeature struct {
 
 var snapshotFeatures = []snapshotFeature{
 	{
+		name: core.FeatureFullBoardPolicy,
+		fields: []string{
+			"core.State.FullBoardSetting", "core.FullBoardSetting.Value",
+			"core.FullBoardSetting.By", "core.FullBoardSetting.At", "core.MergedNonce.Displaced",
+		},
+		present: (*core.State).HasFullBoardData,
+	},
+	{
 		name:    "ledger-requirements/v1",
 		fields:  []string{"core.State.RequiredFeatures"},
 		present: func(st *core.State) bool { return len(st.RequiredFeatures) > 0 },

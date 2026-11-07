@@ -19,6 +19,12 @@ import "time"
 // sourcing); all impure inputs are recorded in the op so replay applies
 // decisions rather than recomputing them (SPEC §2, §4).
 type Op struct {
+	// Presence of FullBoardPolicy moves new registration capacity validation
+	// to Admit. Old ops keep their original Apply-time limit checks.
+	FullBoardPolicy string             `json:"full_board_policy,omitempty"`
+	Displaced       *AgentDisplacement `json:"displaced,omitempty"`
+	CapacityHuman   string             `json:"capacity_human,omitempty"` // writer-identified human, outside agent ceilings
+
 	RequiredFeatures []string `json:"required_features,omitempty"`
 
 	RecoverFrom              string               `json:"-"` // ingress-only offer selector; never replayed

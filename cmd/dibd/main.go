@@ -391,6 +391,9 @@ func run() error {
 		return fmt.Errorf("reading %s/dibs.toml: %w", *dir, err)
 	}
 	eng.SetWakePolicy(wake)
+	if err := eng.SetFullBoardPolicyDefault(cfg.Limits.FullBoard); err != nil {
+		return err
+	}
 	if window, interval, err := cfg.Wake.AppRestart(); err == nil {
 		eng.SetAppRestartDefaults(window, interval,
 			cfg.Wake.ResumeAfterAppRestart != "", cfg.Wake.RestartOpenInterval != "")

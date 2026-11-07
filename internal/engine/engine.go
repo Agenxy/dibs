@@ -29,6 +29,7 @@ import (
 
 // Engine owns all state. Public methods are safe for concurrent use.
 type Engine struct {
+	fullBoardDefault atomic.Pointer[fullBoardDefault]
 	// Nil uses humanauth.Check. Only compile-time fixtures replace the OS
 	// boundary; no setting, environment flag or exported setter can do so.
 	desktopApprovalPresence desktopPresenceChecker
@@ -386,11 +387,14 @@ func (e *Engine) boot(now time.Time) {
 
 // exec runs the request phases for a mutating op.
 func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
-	return e.execWithReceipt(op, now, nil, nil, false)
+	// Internal registrations run on the writer and cannot probe or re-enter
+	// Do. Without an off-loop observation they refuse capacity honestly.
+	return e.execWithReceipt(op, now, nil, nil, false, &registerCapacityPlan{needed: true})
 }
 
 func (e *Engine) execWithReceipt(
-	op *core.Op, now time.Time, receipt chan core.Result, attempt *SendAttempt, prepaid bool,
+	op *core.Op, now time.Time, receipt chan core.Result, attempt *SendAttempt,
+	prepaid bool, capacity *registerCapacityPlan,
 ) (core.Result, error) {
 	admitted := beginSendStage(op, "admit")
 	defer admitted()
@@ -401,6 +405,8 @@ func (e *Engine) execWithReceipt(
 		}
 	}
 	op.RequiredFeatures = nil // writer-owned compatibility evidence
+	op.FullBoardPolicy, op.Displaced = "", nil
+	op.CapacityHuman = ""
 	// Surface vocabulary is resolved before admission; the ledger records the
 	// new sender operation, never a changed interpretation of old responses.
 	if op.Kind == core.OpRespond && op.Disposition == "withdraw" {
@@ -900,6 +906,11 @@ func (e *Engine) execWithReceipt(
 	if pageErr != nil {
 		return nil, pageErr
 	}
+	if op.Kind == core.OpRegister {
+		if err := e.admitRegisterCapacity(op, capacity); err != nil {
+			return nil, err
+		}
+	}
 	admitted()
 	res, err := e.applyAndLedgerWithReceipt(op, now, receipt, attempt)
 	if err != nil {
@@ -1183,6 +1194,9 @@ func (e *Engine) publish(evs []core.Event) {
 		return
 	}
 	for _, ev := range evs {
+		if ev.Type == "agent.displaced" {
+			e.notifyDisplacedMail(ev)
+		}
 		if ev.Type == "message.sent" {
 			e.considerAcceptedContact(ev.To, ev.TS)
 		}

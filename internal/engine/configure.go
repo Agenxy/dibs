@@ -148,12 +148,18 @@ func (e *Engine) ApplySetting(key, value string) {
 // remain admin-only file overrides.
 //
 // ADMIN, NOT COORDINATOR for the five file overrides. The two app-restart
-// controls are a narrow exception, ledgered with actor and time. A coordinator runs
+// controls and full-board policy are narrow exceptions, ledgered with actor and time. A coordinator runs
 // the fleet: it evicts, adopts and force-releases, all of which are visible on
 // the board and undoable from it. Changing a setting changes how the board
 // itself behaves for every agent on it, including the ones that will never
 // look at this file, so it is the grant a human makes deliberately.
 func (e *Engine) Configure(ctx context.Context, token, key, value string) (core.Result, error) {
+	if key == core.FullBoardSettingKey && value != "" {
+		return e.Do(ctx, &core.Op{
+			Kind: core.OpSetFullBoardSetting, Token: token,
+			SettingKey: key, SettingValue: value,
+		})
+	}
 	if key == core.DesktopApprovalSettingKey && value != "" {
 		return e.Do(ctx, &core.Op{
 			Kind: core.OpSetDesktopApprovalSetting, Token: token,
@@ -262,6 +268,16 @@ func (e *Engine) listSettings() []map[string]any {
 		out = append(out, row)
 	}
 	approval := e.state.DesktopApproval
+	policy, source := e.fullBoardPolicy()
+	policyRow := map[string]any{
+		"setting": core.FullBoardSettingKey, "value": policy, "set_by": source,
+		"means": "when full, displace one dormant unprotected seat or refuse registration; " +
+			"human/coordinator/admin may change",
+	}
+	if saved := e.state.FullBoardSetting; !saved.IsZero() {
+		policyRow["set_by"], policyRow["set_at"] = saved.By, saved.At
+	}
+	out = append(out, policyRow)
 	out = append(out, map[string]any{
 		"setting": core.DesktopApprovalSettingKey,
 		"value":   strconv.FormatBool(approval.Enabled), "set_by": approval.By, "set_at": approval.At,

@@ -1704,7 +1704,7 @@ unacknowledged announcement not yet due does not justify a placeholder wake.
 | Resource | Default | On exceed |
 |---|---|---|
 | ops per agent | 10/s, burst 30 | `E_RATE_LIMITED` (no wake, no ledger) |
-| live agents / persistent agents | 64 / 64 (the persistent ceiling follows `max_agents` when only that is set lower) | `E_AGENT_LIMIT` |
+| live agent seats / persistent seats (excluding the human) | 64 / 64 (the persistent ceiling follows `max_agents` when only that is set lower) | `E_AGENT_LIMIT` |
 | slots per agent | 32 | `E_SLOT_LIMIT` |
 | claims per agent / global | 32 / 256 | `E_CLAIM_LIMIT` |
 | mailbox admission depth (pending mail except announced FYIs, plus accepted debt) | 256 | §8 backpressure; separate retained-FYI bound 256 |
@@ -1879,6 +1879,38 @@ space surface (`open_space`, `join_space`, `read_space`, `post`,
 claim-level counterpart to `unlock_space`. v1.3 added `configure` and `merge_agents`, the
 admin-gated read and write of the settings the engine can apply while it
 runs; see docs/CONFIGURATION.md for why an address is not among them.
+`limits.full_board` is readable by authenticated agents and settable by admins
+and coordinators. The human identity never consumes either agent ceiling and can be minted on a
+full board without a probe or displacement. New register ops record the
+writer-identified `capacity_human` exemption; callers cannot supply it.
+Changes are ledgered with actor and time, overriding the
+`[limits] full_board` file default. `displace_idle` is the default; `refuse`
+retains strict capacity refusal. When a new registration binds either agent
+ceiling, `displace_idle` closes exactly one dormant, unprotected seat using the
+same claim, membership and unanswered-ask cleanup as prune. The human,
+coordinators, admins, verified-alive processes and recovering identities are
+protected. A binding persistent ceiling requires a persistent victim.
+Verified-dead processes rank before unknown process liveness, then by oldest
+real activity and id; startup grace is not activity. Host-local probes run
+outside the writer. The writer revalidates the selected incarnation, status,
+role and activity, permits one off-writer re-pick on change, then refuses with
+an honest hint. It never loops or probes on the writer.
+
+New register ops record the effective `full_board_policy` and optional
+`displaced` victim, incarnation, ranking timestamp and probe class. Apply folds
+that exact decision without probing or re-ranking; old ops without these fields
+retain their historical limit checks. A reader-feature marker precedes new
+displacement/setting records, and snapshots declare their required feature.
+`agent.displaced` names victim/newcomer and affected-mail counts. Undelivered
+mail and expired unanswered asks raise a metadata-only native human notice
+(through an attached human relay when present); empty recycling stays in the
+activity feed. No durable inbox notice is created. Old mail remains subject to
+prune's normal retention and admin inspection. Displaced nonces are retained as
+negative authority, including beyond row GC, and refuse with
+`E_AGENT_DISPLACED` and a hint to register with a fresh nonce; they cannot reopen
+or inherit the replacement mailbox. If no eligible seat exists, admission
+returns `E_AGENT_LIMIT` explaining the protections and policy.
+
 The additive `human.confirm_privileged_desktop` setting is ledgered, default
 off, and visible with actor/time. Any authenticated identity may enable it;
 only the daemon's human identity may disable it, including when the caller

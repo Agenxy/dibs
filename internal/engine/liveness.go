@@ -63,6 +63,10 @@ type bootEvidence struct {
 // Presentation provenance of the same timestamp used by the sweep. Boot grace
 // stays valid for liveness, but is never presented as an observed client call.
 func (e *Engine) lastEvidenceWithSource(l *core.Agent) (time.Time, string) {
+	return e.evidenceWithSource(l, true)
+}
+
+func (e *Engine) evidenceWithSource(l *core.Agent, includeBootGrace bool) (time.Time, string) {
 	if l == nil {
 		return time.Time{}, "none"
 	}
@@ -71,14 +75,11 @@ func (e *Engine) lastEvidenceWithSource(l *core.Agent) (time.Time, string) {
 	if at.IsZero() {
 		source = "none"
 	}
-	if t, ok := e.seen[l.ID]; ok && (t.After(at) || t.Equal(at)) {
+	if t, sourceOfSeen := e.seenEvidence(l, includeBootGrace); sourceOfSeen != "" && (t.After(at) || t.Equal(at)) {
 		if t.After(at) {
 			at = t
 		}
-		source = "activity"
-		if grace, ok := e.bootGrace[l.ID]; ok && grace.created == l.CreatedSerial && grace.at.Equal(t) {
-			source = "boot_grace"
-		}
+		source = sourceOfSeen
 	}
 	if t, ok := e.hookAlive[l.ID]; ok && t.After(at) {
 		at = t
@@ -147,4 +148,20 @@ func (e *Engine) sessionMovedProcess(l *core.Agent) bool {
 	}
 	s, ok := peerSessionIn(e.peerSnapshot(), sessionsOf(l))
 	return ok && s.PID != 0 && s.PID != l.PID
+}
+
+// Startup grace is evidence for liveness only, never an observed activity.
+func (e *Engine) seenEvidence(l *core.Agent, includeBootGrace bool) (time.Time, string) {
+	t, ok := e.seen[l.ID]
+	if !ok {
+		return time.Time{}, ""
+	}
+	grace, ok := e.bootGrace[l.ID]
+	if ok && grace.created == l.CreatedSerial && grace.at.Equal(t) {
+		if !includeBootGrace {
+			return time.Time{}, ""
+		}
+		return t, "boot_grace"
+	}
+	return t, "activity"
 }
