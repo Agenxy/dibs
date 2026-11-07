@@ -66,7 +66,7 @@ func (e *Engine) initializeReaderFeatures(now time.Time) {
 
 func (e *Engine) requireFeaturesForAppend(op *core.Op, now time.Time) error {
 	var features []string
-	if op.Displaced != nil || op.Kind == core.OpSetFullBoardSetting {
+	if op.Displaced != nil || op.CapacityHuman != "" || op.HumanMint || op.Kind == core.OpSetFullBoardSetting {
 		features = append(features, core.FeatureFullBoardPolicy)
 	}
 	if op.Recovery != nil || op.RecoveryActor != nil {

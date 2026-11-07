@@ -393,7 +393,8 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 }
 
 func (e *Engine) execWithReceipt(
-	op *core.Op, now time.Time, receipt chan core.Result, attempt *SendAttempt, prepaid bool, capacity *registerCapacityPlan,
+	op *core.Op, now time.Time, receipt chan core.Result, attempt *SendAttempt,
+	prepaid bool, capacity *registerCapacityPlan,
 ) (core.Result, error) {
 	admitted := beginSendStage(op, "admit")
 	defer admitted()
@@ -405,6 +406,7 @@ func (e *Engine) execWithReceipt(
 	}
 	op.RequiredFeatures = nil // writer-owned compatibility evidence
 	op.FullBoardPolicy, op.Displaced = "", nil
+	op.CapacityHuman = ""
 	// Surface vocabulary is resolved before admission; the ledger records the
 	// new sender operation, never a changed interpretation of old responses.
 	if op.Kind == core.OpRespond && op.Disposition == "withdraw" {

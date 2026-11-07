@@ -1704,7 +1704,7 @@ unacknowledged announcement not yet due does not justify a placeholder wake.
 | Resource | Default | On exceed |
 |---|---|---|
 | ops per agent | 10/s, burst 30 | `E_RATE_LIMITED` (no wake, no ledger) |
-| live agents / persistent agents | 64 / 64 (the persistent ceiling follows `max_agents` when only that is set lower) | `E_AGENT_LIMIT` |
+| live agent seats / persistent seats (excluding the human) | 64 / 64 (the persistent ceiling follows `max_agents` when only that is set lower) | `E_AGENT_LIMIT` |
 | slots per agent | 32 | `E_SLOT_LIMIT` |
 | claims per agent / global | 32 / 256 | `E_CLAIM_LIMIT` |
 | mailbox admission depth (pending mail except announced FYIs, plus accepted debt) | 256 | §8 backpressure; separate retained-FYI bound 256 |
@@ -1880,7 +1880,10 @@ claim-level counterpart to `unlock_space`. v1.3 added `configure` and `merge_age
 admin-gated read and write of the settings the engine can apply while it
 runs; see docs/CONFIGURATION.md for why an address is not among them.
 `limits.full_board` is readable by authenticated agents and settable by admins
-and coordinators. Changes are ledgered with actor and time, overriding the
+and coordinators. The human identity never consumes either agent ceiling and can be minted on a
+full board without a probe or displacement. New register ops record the
+writer-identified `capacity_human` exemption; callers cannot supply it.
+Changes are ledgered with actor and time, overriding the
 `[limits] full_board` file default. `displace_idle` is the default; `refuse`
 retains strict capacity refusal. When a new registration binds either agent
 ceiling, `displace_idle` closes exactly one dormant, unprotected seat using the

@@ -18,6 +18,7 @@ var errRegisterRepick = errors.New("registration capacity observation changed")
 
 type fullBoardDefault struct{ value, source string }
 
+// SetFullBoardPolicyDefault supplies the validated file default before serving.
 func (e *Engine) SetFullBoardPolicyDefault(value string) error {
 	source := "dibs.toml"
 	if value == "" {
@@ -61,16 +62,20 @@ func (e *Engine) registerWithCapacity(ctx context.Context, original *core.Op) (c
 		if err != nil {
 			return nil, err
 		}
-		result, err := e.send(ctx, request{op: &op, capacity: plan, reply: make(chan reply, 1),
-			receipt: sendReceiptFrom(ctx), attempt: sendAttemptFrom(ctx), prepaid: fanoutPrepaid(ctx)})
+		result, err := e.send(ctx, request{
+			op: &op, capacity: plan, reply: make(chan reply, 1),
+			receipt: sendReceiptFrom(ctx), attempt: sendAttemptFrom(ctx), prepaid: fanoutPrepaid(ctx),
+		})
 		if errors.Is(err, errRegisterRepick) {
 			continue // no Apply or append occurred
 		}
 		*original = op
 		return result, err
 	}
-	return nil, &core.Error{Code: "E_AGENT_LIMIT", Msg: "idle seats changed during both registration attempts",
-		Hint: "retry register; the writer re-picks only once and never displaces an agent that woke or changed"}
+	return nil, &core.Error{
+		Code: "E_AGENT_LIMIT", Msg: "idle seats changed during both registration attempts",
+		Hint: "retry register; the writer re-picks only once and never displaces an agent that woke or changed",
+	}
 }
 
 func displacementHost(agent *core.Agent) string {
@@ -84,37 +89,9 @@ func (e *Engine) observeRegisterCapacity(ctx context.Context, incoming *core.Op)
 	plan := &registerCapacityPlan{}
 	var candidates []displacementEvidence
 	_, err := e.query(ctx, func() core.Result {
-		op := *incoming
-		op.V7Semantics = true
-		if op.AgentKind == "" {
-			op.AgentKind = core.KindPersistent
-		}
-		if err := e.state.MergedNonceError(op.Nonce); err != nil {
-			return core.Result{"error": err}
-		}
-		policy, _ := e.fullBoardPolicy()
-		total, persistent := e.state.RegistrationCapacity(&op)
-		if policy != core.FullBoardDisplaceIdle || (!total && !persistent) ||
-			e.state.KnownRegistration(&op) || len(op.RecoveryNonces) != 0 {
-			return core.Result{"ok": true}
-		}
-		plan.needed = true
-		for _, row := range e.state.Agents {
-			if row.Status != core.StatusDormant || row.IsCoordinator() || e.isTheHuman(row.ID) ||
-				(persistent && row.Kind != core.KindPersistent) {
-				continue
-			}
-			local := e.ownsHost(row)
-			if local && e.sessionMovedProcess(row) {
-				continue // live harness evidence is stronger than an old PID
-			}
-			activity, _ := e.evidenceWithSource(row, false)
-			candidates = append(candidates, displacementEvidence{
-				recorded: core.AgentDisplacement{ID: row.ID, CreatedSerial: row.CreatedSerial, LastActivity: activity},
-				pid:      row.PID, start: row.ProcStart, host: displacementHost(row), local: local,
-			})
-		}
-		return core.Result{"ok": true}
+		var err error
+		plan, candidates, err = e.registerCapacitySnapshot(incoming)
+		return core.Result{"error": err}
 	})
 	if err != nil {
 		return nil, err
@@ -150,8 +127,50 @@ func (e *Engine) observeRegisterCapacity(ctx context.Context, incoming *core.Op)
 	return plan, nil
 }
 
+func (e *Engine) registerCapacitySnapshot(incoming *core.Op) (*registerCapacityPlan, []displacementEvidence, error) {
+	plan := &registerCapacityPlan{}
+	op := *incoming
+	op.CapacityHuman = e.humanRowLocked()
+	op.V7Semantics = true
+	if op.AgentKind == "" {
+		op.AgentKind = core.KindPersistent
+	}
+	if err := e.state.MergedNonceError(op.Nonce); err != nil {
+		return nil, nil, err
+	}
+	policy, _ := e.fullBoardPolicy()
+	total, persistent := e.state.RegistrationCapacity(&op)
+	if policy != core.FullBoardDisplaceIdle || (!total && !persistent) ||
+		e.state.KnownRegistration(&op) || len(op.RecoveryNonces) != 0 {
+		return plan, nil, nil
+	}
+	plan.needed = true
+	return plan, e.displacementCandidates(persistent), nil
+}
+
+func (e *Engine) displacementCandidates(persistent bool) []displacementEvidence {
+	var candidates []displacementEvidence
+	for _, row := range e.state.Agents {
+		if row.Status != core.StatusDormant || row.IsCoordinator() || e.isTheHuman(row.ID) ||
+			(persistent && row.Kind != core.KindPersistent) {
+			continue
+		}
+		local := e.ownsHost(row)
+		if local && e.sessionMovedProcess(row) {
+			continue // live harness evidence is stronger than an old PID
+		}
+		activity, _ := e.evidenceWithSource(row, false)
+		candidates = append(candidates, displacementEvidence{
+			recorded: core.AgentDisplacement{ID: row.ID, CreatedSerial: row.CreatedSerial, LastActivity: activity},
+			pid:      row.PID, start: row.ProcStart, host: displacementHost(row), local: local,
+		})
+	}
+	return candidates
+}
+
 func (e *Engine) admitRegisterCapacity(op *core.Op, plan *registerCapacityPlan) error {
 	op.FullBoardPolicy, _ = e.fullBoardPolicy()
+	op.CapacityHuman = e.humanRowLocked()
 	op.Displaced = nil
 	total, persistent := e.state.RegistrationCapacity(op)
 	if op.FullBoardPolicy == core.FullBoardDisplaceIdle && (total || persistent) && !e.state.KnownRegistration(op) {
@@ -190,10 +209,13 @@ func (e *Engine) notifyDisplacedMail(ev core.Event) {
 	if unread == 0 && asks == 0 {
 		return
 	}
-	n := HumanNotice{Serial: ev.Serial, Node: e.state.NodeID, Type: core.MsgNotify,
+	n := HumanNotice{
+		Serial: ev.Serial, Node: e.state.NodeID, Type: core.MsgNotify,
 		From: "dibs", FromName: "Dibs", Body: fmt.Sprintf(
-			"Recycled dormant seat %s to admit %s: %d undelivered mail item(s), %d unanswered ask(s) expired. Inspect the old mailbox with all_mail as an admin.",
-			ev.Data["victim"], ev.Data["newcomer"], unread, asks)}
+			"Recycled dormant seat %s to admit %s: %d undelivered mail item(s), %d unanswered ask(s) expired. "+
+				"Inspect the old mailbox with all_mail as an admin.",
+			ev.Data["victim"], ev.Data["newcomer"], unread, asks),
+	}
 	if e.enqueueHumanNotice(n) > 0 {
 		return
 	}
@@ -205,8 +227,10 @@ func (e *Engine) notifyDisplacedMail(ev core.Event) {
 		if !available() {
 			return
 		}
-		_, err := ask(humanask.Message{Serial: n.Serial, Node: n.Node, Type: n.Type,
-			From: n.From, FromName: n.FromName, Body: n.Body, NotificationProfile: profile})
+		_, err := ask(humanask.Message{
+			Serial: n.Serial, Node: n.Node, Type: n.Type,
+			From: n.From, FromName: n.FromName, Body: n.Body, NotificationProfile: profile,
+		})
 		if err != nil {
 			slog.Warn("displaced-mail notice could not be posted; audit remains on the board", "serial", n.Serial, "err", err)
 		}

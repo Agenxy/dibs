@@ -13,7 +13,7 @@ func TestFullBoardPolicyLoadsAndRefusesInvalidValues(t *testing.T) {
 	for _, value := range []string{"displace_idle", "refuse", "discard"} {
 		t.Run(value, func(t *testing.T) {
 			dir := t.TempDir()
-			if err := os.WriteFile(filepath.Join(dir, "dibs.toml"), []byte("[limits]\nfull_board = \""+value+"\"\n"), 0600); err != nil {
+			if err := os.WriteFile(filepath.Join(dir, "dibs.toml"), []byte("[limits]\nfull_board = \""+value+"\"\n"), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			cfg, err := Load(dir)

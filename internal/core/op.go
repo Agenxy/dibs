@@ -23,6 +23,7 @@ type Op struct {
 	// to Admit. Old ops keep their original Apply-time limit checks.
 	FullBoardPolicy string             `json:"full_board_policy,omitempty"`
 	Displaced       *AgentDisplacement `json:"displaced,omitempty"`
+	CapacityHuman   string             `json:"capacity_human,omitempty"` // writer-identified human, outside agent ceilings
 
 	RequiredFeatures []string `json:"required_features,omitempty"`
 

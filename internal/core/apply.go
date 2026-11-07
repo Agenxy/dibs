@@ -636,9 +636,9 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 		return nil, nil, s.registrationLimitError(false)
 	}
 	id := agentID(s, op.Name)
-	var displacementEvents []Event
+	var evs []Event
 	if op.Displaced != nil {
-		displacementEvents = s.closeDisplacedAgent(op.Displaced, id, now)
+		evs = s.closeDisplacedAgent(op.Displaced, id, now)
 	}
 	// Lineage is claimed and proven separately. An unproven parent is displayed
 	// and grants nothing; a vouched one inherits its parent's agents, skips an
@@ -716,7 +716,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 	if nonce != "" {
 		s.Nonces[nonce] = id
 	}
-	evs := append(displacementEvents, Event{Type: "agent.registered", Agent: id, Data: map[string]any{
+	evs = append(evs, Event{Type: "agent.registered", Agent: id, Data: map[string]any{
 		"name": op.Name, "kind": kind, "description": op.Description,
 	}})
 	serial := s.finish(&evs, now)

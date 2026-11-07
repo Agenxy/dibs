@@ -806,7 +806,7 @@ than open a partial board.
 | `agent_ttl` | `5m` | How long an agent **that registered a PID** may be silent before its lease lapses. Shorter is faster crash detection; longer suits agents that run long silent steps. |
 | `idle_ttl` | `45m` | The same for agents with **no PID**, where silence is the only evidence. This governs the config `dibs mcp-config` prints, so an operator who tunes `agent_ttl` and sees nothing change is hitting this one. |
 | `max_persistent_agents` | `64` | How many STANDING identities the board may hold. Unset, it follows `max_agents` when that is set lower. |
-| `max_agents` | `64` | How many live agents of any kind. |
+| `max_agents` | `64` | How many live agent seats of any kind, excluding the human. |
 | `full_board` | `"displace_idle"` | At either ceiling, recycle one eligible dormant seat; `"refuse"` keeps strict refusal. |
 | `blob_store_bytes` | *(built-in)* | A hard cap on the attachment store. Over it, eviction drops referenced content rather than exceed the bound, so a recipient can hold a message naming a blob that is gone. |
 
@@ -825,6 +825,9 @@ registered again, leaving its predecessor holding a mailbox nobody reads.
 `adopt_agent` reclaims those, and on a stdio bridge they should stop appearing
 at all, because the bridge now keeps each agent's nonce. Raise it when the fleet
 genuinely runs that many standing roles.
+
+The human identity does not count toward either agent ceiling and can always
+be minted on a full board.
 
 With the default `full_board = "displace_idle"`, a new registration closes one
 eligible dormant seat at either ceiling. Verified-alive processes, the human,

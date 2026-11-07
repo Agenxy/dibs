@@ -44,7 +44,8 @@ func admitReaderFeatures(op *Op) error {
 
 // SupportsV17Feature is reader-format knowledge, shared with ledger decoding.
 func SupportsV17Feature(feature string) bool {
-	return feature == FeatureDesktopApproval || feature == FeatureMailboxRecovery || feature == FeatureRecoveryConsent || feature == FeatureFullBoardPolicy
+	return feature == FeatureDesktopApproval || feature == FeatureMailboxRecovery ||
+		feature == FeatureRecoveryConsent || feature == FeatureFullBoardPolicy
 }
 
 func (s *State) applyReaderFeatures(op *Op, now time.Time) (Result, []Event, error) {

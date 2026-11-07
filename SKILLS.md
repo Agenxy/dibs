@@ -463,7 +463,8 @@ receiving native peer turns, another watcher adds no delivery guarantee.
 ## Mail
 
 - **A full board can recycle an idle seat.** `limits.full_board` defaults to
-  `displace_idle`: registration closes one eligible dormant seat when either
+  `displace_idle`: the human never consumes either agent ceiling, and
+  registration closes one eligible dormant seat when either
   agent ceiling binds. Verified-alive processes, the human, coordinators,
   admins and recovering identities are protected. Verified-dead processes rank
   before unknown, then by oldest real activity and id. Admins and coordinators

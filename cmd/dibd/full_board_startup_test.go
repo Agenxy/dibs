@@ -30,7 +30,7 @@ func TestFullBoardPolicyReachesActualDaemonFromTOML(t *testing.T) {
 	testexec.PrepareExecutable(t, exec.Command(bin, "-h"))
 	dir := privateDaemonFixtureDir(t)
 	for name, body := range map[string]string{"local.secret": "capacity-fixture-secret", "dibs.toml": "[limits]\nfull_board = \"refuse\"\n"} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -45,7 +45,12 @@ func TestFullBoardPolicyReachesActualDaemonFromTOML(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
-	t.Cleanup(func() { cancel(); <-done })
+	t.Cleanup(func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Logf("fixture daemon exited after cancellation: %v", err)
+		}
+	})
 	ready := false
 	for end := time.Now().Add(10 * time.Second); time.Now().Before(end); {
 		conn, err := net.DialTimeout("tcp", port.Addr, 100*time.Millisecond)

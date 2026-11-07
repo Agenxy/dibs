@@ -100,8 +100,8 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 	}
 	// The op payload: the union of every tag that reached disk above.
 	wantOp := map[string]bool{
-		// Additive admission decision; older registrations omit both fields.
-		"full_board_policy": true, "displaced": true,
+		// Additive admission decision; older registrations omit all three fields.
+		"full_board_policy": true, "displaced": true, "capacity_human": true,
 		// Additive bridge evidence; every historical tag remains unchanged.
 		"bridge_surface_evidence": true,
 		// Additive page selection on activity_checkpoint; historical check_in
@@ -487,8 +487,8 @@ const (
 	// Bridge evidence adds one flag; every historical spelling remains frozen.
 	// Recovery adds three op tags and one Message tag; no historical key changed.
 	// required_features is additive; all earlier tags remain frozen.
-	// Adds only displaced and full_board_policy; all prior tags stay frozen.
-	frozenOpFingerprint       = "sha256:1f13ce9d7861f2c5"
+	// Adds only displaced, full_board_policy and capacity_human; all prior tags stay frozen.
+	frozenOpFingerprint       = "sha256:c6e16cb2f43a8a97"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`

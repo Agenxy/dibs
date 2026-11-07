@@ -74,8 +74,10 @@ func capacityState(t *testing.T, ids ...string) *core.State {
 	limits.MaxAgents, limits.MaxPersistentAgents = len(ids), len(ids)
 	st := core.NewState("capacity-test", limits)
 	for i, id := range ids {
-		_, _, err := st.Apply(&core.Op{Kind: core.OpRegister, Name: id, NewToken: "token-" + id,
-			AgentKind: core.KindPersistent, Nonce: "nonce-" + id, PID: 100 + i},
+		_, _, err := st.Apply(&core.Op{
+			Kind: core.OpRegister, Name: id, NewToken: "token-" + id,
+			AgentKind: core.KindPersistent, Nonce: "nonce-" + id, PID: 100 + i,
+		},
 			time.Now().Add(time.Duration(i-100)*time.Hour))
 		if err != nil {
 			t.Fatal("seed:", err)
@@ -132,6 +134,7 @@ func TestFullBoardDisplacementRequiresReaderBeforeRegisterAppend(t *testing.T) {
 
 func TestFullBoardProtectsRolesAliveAndStaleRows(t *testing.T) {
 	st := capacityState(t, "human", "coordinator", "admin", "live", "stale", "unknown", "dead")
+	st.Limits.MaxAgents, st.Limits.MaxPersistentAgents = 6, 6
 	st.Agents["coordinator"].Role, st.Agents["admin"].Role = "coordinator", "admin"
 	st.Agents["stale"].Status = core.StatusStale
 	st.Agents["unknown"].PID = 0
@@ -227,8 +230,10 @@ func TestFullBoardRecoveryAndCallerFieldsNeverDisplace(t *testing.T) {
 	st := capacityState(t, "old")
 	e := New(st, &memLedger{}, fullBoardProber{})
 	ctx := runCapacityEngine(t, e)
-	op := &core.Op{Kind: core.OpRegister, Name: "old", Nonce: "nonce-old", FullBoardPolicy: core.FullBoardDisplaceIdle,
-		Displaced: &core.AgentDisplacement{ID: "old"}}
+	op := &core.Op{
+		Kind: core.OpRegister, Name: "old", Nonce: "nonce-old", FullBoardPolicy: core.FullBoardDisplaceIdle,
+		Displaced: &core.AgentDisplacement{ID: "old"},
+	}
 	res, err := e.Do(ctx, op)
 	if err != nil || res["agent_id"] != "old" || op.Displaced != nil {
 		t.Fatalf("recovery displaced: %v %v %+v", res, err, op.Displaced)
@@ -348,6 +353,7 @@ func TestFullBoardNoticeOnlyForAffectedMailAndOldNonceRefused(t *testing.T) {
 	for _, mail := range []bool{false, true} {
 		t.Run(map[bool]string{false: "empty", true: "affected"}[mail], func(t *testing.T) {
 			st := capacityState(t, "old", "human")
+			st.Limits.MaxAgents, st.Limits.MaxPersistentAgents = 1, 1
 			st.Nonces[humanNonce()] = "human"
 			if mail {
 				st.Messages[99] = &core.Message{Serial: 99, To: "old", From: "human", Type: core.MsgQuestion, State: core.MsgStatePending, Body: "PRIVATE BODY"}

@@ -9,7 +9,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Full boards now recycle one eligible dormant seat when admitting a new agent,
   instead of refusing while idle seats fill the limit. Verified-alive processes,
-  the human, coordinators and admins are protected. Verified-dead seats rank
+  the human, coordinators and admins are protected. The human never counts
+  toward either agent ceiling and can be minted even on a full board.
+  Verified-dead seats rank
   before unknown processes, then by oldest real activity and id. The recorded
   decision replays unchanged. Affected mail raises a metadata-only human notice;
   a displaced nonce refuses with a fresh-registration hint. Admins and

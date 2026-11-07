@@ -26,7 +26,8 @@ func (s *State) MergedNonceError(nonce string) error {
 		return nil
 	}
 	if t.Displaced {
-		return errf("E_AGENT_DISPLACED", "this dormant seat was displaced under limits.full_board. Register again with a new nonce to create a new identity; ask the human to inspect the old mail with all_mail",
+		return errf("E_AGENT_DISPLACED", "this dormant seat was displaced under limits.full_board. "+
+			"Register again with a new nonce to create a new identity; ask the human to inspect the old mail with all_mail",
 			"agent %s was displaced to admit %s", t.From, t.Into)
 	}
 	return errf("E_SEAT_MERGED", "this seat was merged into "+t.Into+" by "+t.By+
