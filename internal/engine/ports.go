@@ -107,3 +107,11 @@ type Store interface {
 type Prober interface {
 	Alive(pid int) bool
 }
+
+// StartClock is the optional half of a Prober that can say WHEN a process
+// started, in unix milliseconds. It is what tells an agent's own process from
+// a later one that was handed the same pid, which is the only reason a live pid
+// was never allowed to stand for a live agent.
+type StartClock interface {
+	StartMillis(pid int) (int64, bool)
+}

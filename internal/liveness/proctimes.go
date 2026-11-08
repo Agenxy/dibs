@@ -58,3 +58,30 @@ func parseProcUptime(s string) (float64, bool) {
 	v, err := strconv.ParseFloat(f[0], 64)
 	return v, err == nil
 }
+
+// parseStartTicks reads starttime (field 22, USER_HZ ticks since boot) out of
+// one /proc/<pid>/stat line, splitting after the last ')' for the reason
+// parseProcStat gives.
+func parseStartTicks(line string) (int64, bool) {
+	i := strings.LastIndex(line, ")")
+	if i < 0 {
+		return 0, false
+	}
+	f := strings.Fields(line[i+1:])
+	if len(f) < 20 {
+		return 0, false
+	}
+	start, err := strconv.ParseInt(f[22-3], 10, 64)
+	return start, err == nil && start >= 0
+}
+
+// parseBootTime reads the btime line of /proc/stat: seconds since the epoch.
+func parseBootTime(s string) (int64, bool) {
+	for _, line := range strings.Split(s, "\n") {
+		if v, ok := strings.CutPrefix(line, "btime "); ok {
+			n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+			return n, err == nil && n > 0
+		}
+	}
+	return 0, false
+}

@@ -691,6 +691,10 @@ func (e *Engine) execWithReceipt(
 		return nil, core.ErrBadToken
 	}
 
+	if !system {
+		e.stampProcStart(op)
+	}
+
 	var actor *core.Agent
 	// Set when this register had no nonce and one was made for it, so the
 	// response can hand it over. An agent that is never told its own recovery
@@ -1148,6 +1152,9 @@ func (e *Engine) sweep(now time.Time) {
 		if l.PID != 0 && e.prober != nil && e.ownsHost(l) {
 			if e.prober.Alive(l.PID) {
 				op.AlivePIDs = append(op.AlivePIDs, l.PID)
+				if e.sameProcess(l) {
+					continue // its own process is running: quiet is not gone
+				}
 			} else if !e.sessionMovedProcess(l) && !e.recentAuthenticatedContact(l, now) {
 				op.DeadAgents = append(op.DeadAgents, id)
 				continue

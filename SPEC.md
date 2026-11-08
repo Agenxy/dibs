@@ -833,9 +833,21 @@ best effort, not a promised catch-up.
 | Signal | Mechanism | PROVES | Does NOT prove |
 |---|---|---|---|
 | `dead` | `kill(pid,0)` per sweep + (pid, start-time) identity | The registered process is gone. Caveat: an unreaped zombie still *appears alive* to `kill(0)`; true zombie detection arrives with kqueue `NOTE_EXIT`/pidfd (v1.1) | That its children or in-flight effects stopped |
-| `stale`/`dormant` | Lease lapse: no model contact for `idle_ttl` (default 45 min); `agent_ttl` (default 5 min) applies only to a recorded PID with no configured prober | The agent stopped *coordinating* | That it stopped *working*, `stale + proc:alive` renders as "hung?", a hint, never a verdict |
+| `stale`/`dormant` | Lease lapse: no model contact for `idle_ttl` (default 45 min), and no proof that the agent's own process is running; `agent_ttl` (default 5 min) applies only to a recorded PID with no configured prober | The agent stopped *coordinating* and nothing shows it is still there | That it stopped *working*, `stale + proc:alive` renders as "hung?", a hint, never a verdict |
 | `expired_unanswered` | Deadline passed, recipient active | This message wasn't answered | Anything about recipient health |
 
+- **A running process is not silence.** *Revised 2026-11-08.* A local agent whose
+  registered process is alive AND started at the recorded `proc_start` stays
+  `active` however long it has gone without calling Dibs: building, testing and
+  waiting on a person are all time not spent coordinating. The daemon records
+  `proc_start` itself from the same kernel the sweep probes, at register, resume
+  and reattach, so replay reads the recorded value and never re-probes. The start
+  time is what makes a live pid evidence: without it a reused pid could be any
+  program, so a row with no `proc_start` (registered before this, or on a
+  platform with no start clock, such as Windows) and an agent on another host
+  are still judged by the lease. Previously the lease applied to every agent,
+  and on the day this changed 13 of a board's 42 dormant rows had a process the
+  daemon had just confirmed alive.
 - **Implicit heartbeat**: authenticated model calls (reads included) refresh the
   ephemeral lease. Explicit `heartbeat` is for otherwise-idle agents; ledgered only
   when it wakes/recovers an agent.
