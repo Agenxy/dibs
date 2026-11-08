@@ -13,6 +13,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -27,7 +28,7 @@ import (
 
 type options struct {
 	mode, tag, out, runtime, image string
-	sha, candidateDir              string
+	sha, candidateDir, dns         string
 	fresh                          int
 }
 
@@ -93,6 +94,8 @@ func runCLI() int {
 	flag.StringVar(&o.sha, "sha", "", "full exact candidate SHA; required by candidate-build and candidate-linux")
 	flag.StringVar(&o.candidateDir, "candidate-dir", "", "downloaded candidate artifact directory for candidate-linux")
 	flag.IntVar(&o.fresh, "fresh-installs", 5, "fresh Linux containers, 1 through 20")
+	flag.StringVar(&o.dns, "dns", "", "nameserver IP for each Linux container, for a host whose "+
+		"local resolver the runtime's gateway DNS cannot reach; the host is unchanged")
 	flag.Parse()
 	if o.mode == "candidate-build" && o.tag != "" && !strings.HasPrefix(o.tag, "v") {
 		o.tag = "v" + o.tag
@@ -123,6 +126,9 @@ func validate(o options, goos string) error {
 	}
 	if o.runtime != "container" && o.runtime != "docker" {
 		return errors.New("-runtime must be container or docker")
+	}
+	if o.dns != "" && net.ParseIP(o.dns) == nil {
+		return errors.New("-dns must be a nameserver IP address")
 	}
 	return nil
 }

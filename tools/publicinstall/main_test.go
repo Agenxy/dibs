@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -203,4 +204,25 @@ func TestPublicCommandJSONFixture(_ *testing.T) {
 	fmt.Fprintln(os.Stderr, "Warning: Calling `postflight` is deprecated! Use `postflight_steps` instead.")
 	fmt.Print(`{"casks":[{"token":"dibs","version":"0.0.16"}]}`)
 	os.Exit(0)
+}
+
+func TestDNSReachesOnlyTheChildContainer(t *testing.T) {
+	o := options{mode: "linux", tag: "v0.0.17", out: "new-receipt", runtime: "container", fresh: 1}
+	plain := childRunArgs(o, "n", "/p", "/r", "img")
+	if slices.Contains(plain, "--dns") {
+		t.Fatal("a run without -dns set a nameserver:", plain)
+	}
+	o.dns = "1.1.1.1"
+	if err := validate(o, "linux"); err != nil {
+		t.Fatal("an IP nameserver was refused:", err)
+	}
+	args := childRunArgs(o, "n", "/p", "/r", "img")
+	i, img := slices.Index(args, "--dns"), slices.Index(args, "img")
+	if i < 0 || args[i+1] != "1.1.1.1" || img < i {
+		t.Fatal("-dns is not a runtime option before the image:", args)
+	}
+	o.dns = "dns.example"
+	if err := validate(o, "linux"); err == nil {
+		t.Fatal("a hostname nameserver was accepted; resolving it is the thing that fails")
+	}
 }
