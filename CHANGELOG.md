@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.0.18] - 2026-11-08
+
 ### Fixed
 
 - An agent whose process is still running no longer shows as dormant just
