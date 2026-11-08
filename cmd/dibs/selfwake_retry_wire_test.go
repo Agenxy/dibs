@@ -168,6 +168,17 @@ func testBridgeReconnectAttemptBudget(t *testing.T, failRetry bool) {
 	}
 	iw.startFor(ctx, srv.Client(), srv.URL, "secret", "worker", "token", 0)
 	if failRetry {
+		// Wait for the failed retry itself rather than a fixed interval: under
+		// the whole gate's load the cooldown timer can fire well after 550ms,
+		// and asserting the cap before the retry exists measured the scheduler.
+		for deadline := time.Now().Add(10 * time.Second); attempts.Load() < 2; {
+			if time.Now().After(deadline) {
+				t.Fatalf("setup: the retry never ran: attempts=%d retries=%d", attempts.Load(), retries.Load())
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		// The streams reconnected (replaying serial 7) between the first
+		// failure and the retry; the window below is for any rearmed attempt.
 		got := collect(lines, 1, 550*time.Millisecond)
 		if streams.Load() < 2 {
 			t.Fatal("setup: stream did not reconnect")
