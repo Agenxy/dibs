@@ -167,3 +167,36 @@ func TestAProcessWithNoParentIsAlreadyGone(t *testing.T) {
 		t.Error("watching a pid that is not this process's parent never returned")
 	}
 }
+
+// A harness run as a container's entrypoint is pid 1, and its bridge's parent
+// is therefore 1. That parent is alive and waiting for answers; treating it as
+// "already reparented to init" made every such bridge exit at once, silently,
+// which the v0.0.17 Linux public-install check found. Only a missing parent
+// (0) is gone before anything has been watched.
+func TestAParentOfPidOneIsWatchedNotAssumedDead(t *testing.T) {
+	real := getppid
+	t.Cleanup(func() { getppid = real })
+
+	getppid = func() int { return 1 }
+	ctx, cancel := context.WithCancel(context.Background())
+	gone := parentGone(ctx)
+	select {
+	case <-gone:
+		cancel()
+		t.Fatal("a bridge whose parent is pid 1 was told its harness had gone")
+	case <-time.After(300 * time.Millisecond):
+	}
+	cancel()
+	select {
+	case <-gone: // the watcher still ends with the session
+	case <-time.After(15 * time.Second):
+		t.Fatal("cancelling the session did not end the pid 1 watch")
+	}
+
+	getppid = func() int { return 0 }
+	select {
+	case <-parentGone(context.Background()):
+	case <-time.After(time.Second):
+		t.Fatal("a process with no parent at all was not gone at once")
+	}
+}

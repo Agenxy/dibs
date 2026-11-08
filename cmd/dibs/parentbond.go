@@ -38,15 +38,26 @@ import (
 // registers. Both therefore re-check os.Getppid() afterwards, because a
 // reparented process is an orphan by definition.
 
+// getppid is os.Getppid, a variable so the startup decision below can be
+// tested with the one parent a test process never has.
+var getppid = os.Getppid
+
 // parentGone returns a channel closed when the process that spawned this one
 // exits. It never blocks the caller.
+//
+// A parent of 1 is WATCHED, not taken as proof of orphanhood. It used to be:
+// "1 is init/launchd, neither is a harness waiting for answers". In a
+// container it is exactly that: a harness run as the entrypoint is pid 1 of
+// its namespace, and every bridge it spawned exited at once with no output
+// and no stderr, from v0.0.6 until the v0.0.17 Linux public-install check
+// ran its children that way. Being reparented before the first instruction
+// needs the harness to die within microseconds of spawning us, and even then
+// stdin EOF still ends the session; a dead bridge under a live harness has no
+// backstop at all. Only 0, no parent whatsoever, is gone already.
 func parentGone(ctx context.Context) <-chan struct{} {
 	done := make(chan struct{})
-	ppid := os.Getppid()
-	// Already an orphan: spawned by something that has gone, or reparented
-	// before we looked. 1 is init/launchd; 0 should not happen and is treated
-	// the same way, because neither is a harness waiting for answers.
-	if ppid <= 1 {
+	ppid := getppid()
+	if ppid <= 0 {
 		close(done)
 		return done
 	}
@@ -73,7 +84,7 @@ func pollParent(ctx context.Context, ppid int) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			if os.Getppid() != ppid {
+			if getppid() != ppid {
 				return
 			}
 		}
