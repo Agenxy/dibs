@@ -7,7 +7,6 @@ package main
 
 import (
 	"context"
-	"os"
 	"syscall"
 )
 
@@ -24,18 +23,22 @@ func watchParent(ctx context.Context, ppid int) {
 	defer func() { _ = syscall.Close(kq) }()
 
 	ev := syscall.Kevent_t{
-		Ident:  uint64(ppid), // #nosec G115 -- a pid from os.Getppid(), always positive
+		Ident:  uint64(ppid), // #nosec G115 -- a pid from getppid(), always positive
 		Filter: syscall.EVFILT_PROC,
 		Flags:  syscall.EV_ADD | syscall.EV_ONESHOT,
 		Fflags: syscall.NOTE_EXIT,
 	}
 	if _, err := syscall.Kevent(kq, []syscall.Kevent_t{ev}, nil, nil); err != nil {
 		// ESRCH means it is already gone, which is the answer, not a failure.
+		// Anything else is a refusal to watch, not news about the parent.
+		if err != syscall.ESRCH {
+			pollParent(ctx, ppid)
+		}
 		return
 	}
 	// Registered, so re-check: the parent may have exited in the window above,
 	// and a one-shot registration for a dead pid never fires.
-	if os.Getppid() != ppid {
+	if getppid() != ppid {
 		return
 	}
 	// Cancellation is why this waits in bounded slices rather than forever: the
@@ -52,7 +55,7 @@ func watchParent(ctx context.Context, ppid int) {
 			pollParent(ctx, ppid)
 			return
 		}
-		if n > 0 || os.Getppid() != ppid {
+		if n > 0 || getppid() != ppid {
 			return
 		}
 	}

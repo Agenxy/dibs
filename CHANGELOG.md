@@ -5,6 +5,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- `dibs mcp-stdio` now works under a harness that is pid 1, such as a
+  container's entrypoint. Since v0.0.6 the bridge took a parent of pid 1 as
+  proof it had been orphaned and exited at once, with no reply and no error,
+  so Dibs did nothing in that harness. It now watches that parent like any
+  other; only a process with no parent at all exits immediately. On macOS, a
+  refused parent watch now falls back to polling instead of exiting.
+
 ## [0.0.17] - 2026-11-07
 
 ### Added

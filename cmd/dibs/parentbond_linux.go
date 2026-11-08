@@ -7,7 +7,6 @@ package main
 
 import (
 	"context"
-	"os"
 	"syscall"
 )
 
@@ -22,7 +21,7 @@ func watchParent(ctx context.Context, ppid int) {
 	_, _, _ = syscall.RawSyscall(syscall.SYS_PRCTL, prSetPdeathsig, uintptr(syscall.SIGTERM), 0)
 	// The signal is armed against whoever the parent is NOW. If it changed in
 	// the window above, this process is already an orphan.
-	if os.Getppid() != ppid {
+	if getppid() != ppid {
 		return
 	}
 	pollParent(ctx, ppid)
