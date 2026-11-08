@@ -165,3 +165,59 @@ func (e *Engine) seenEvidence(l *core.Agent, includeBootGrace bool) (time.Time, 
 	}
 	return t, "activity"
 }
+
+// stampProcStart records when the process an op names was started, so the
+// sweep can later recognise that same process (sameProcess).
+//
+// THE FIELD WAS THERE AND NOTHING FILLED IT. proc_start has been on the op and
+// the row since the fold learned to copy it, under a comment saying it
+// defeats pid reuse, and no client ever sent one. The daemon can read it
+// itself: it is the same kernel the sweep probes. Read here, before the fold,
+// and recorded in the op, so replay applies the value and never re-reads it.
+//
+// Only for a process on this machine. A pid from another host names nothing
+// here, and stamping it with whatever local process holds that number would
+// write a measurement of the wrong program into the ledger.
+func (e *Engine) stampProcStart(op *core.Op) {
+	if op.PID <= 0 || op.ProcStart != 0 {
+		return
+	}
+	clock, ok := e.prober.(StartClock)
+	if !ok {
+		return
+	}
+	if op.Agent != nil && !e.ownsHost(&core.Agent{Agent: op.Agent}) {
+		return
+	}
+	if ms, ok := clock.StartMillis(op.PID); ok {
+		op.ProcStart = ms
+	}
+}
+
+// sameProcess reports whether the process at l.PID is the one this agent
+// registered with: alive, and started at the recorded moment.
+//
+// A RUNNING PROCESS IS NOT SILENCE, and the board said it was. Agents were
+// swept dormant for not calling Dibs within idle_ttl while the daemon had
+// just watched their process answer: 13 of 42 dormant rows on 2026-11-08,
+// the architect among them, mid-call. Agents had complained for weeks that
+// working colleagues read as dormant. Working is mostly NOT talking to the
+// coordination service; an agent building, testing or waiting on its person
+// is exactly as present as one calling check_in.
+//
+// The clock was kept for live pids only because a pid can be reused: the
+// harness exits, the number is handed to an unrelated program, and kill(pid,0)
+// cannot tell. The start time can. A row without one (registered before this,
+// or on a platform with no start clock) keeps the clock, which is weaker and
+// is the most that can honestly be said.
+func (e *Engine) sameProcess(l *core.Agent) bool {
+	if l.PID <= 0 || l.ProcStart == 0 {
+		return false
+	}
+	clock, ok := e.prober.(StartClock)
+	if !ok {
+		return false
+	}
+	ms, ok := clock.StartMillis(l.PID)
+	return ok && ms == l.ProcStart
+}

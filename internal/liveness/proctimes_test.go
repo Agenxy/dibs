@@ -36,3 +36,19 @@ func TestProcStatKeepsSubSecondProcessorTime(t *testing.T) {
 		t.Errorf("uptime = %v %v", up, ok)
 	}
 }
+
+func TestStartTicksAndBootTimeParse(t *testing.T) {
+	line := "4242 (a) b) S 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 987654 20 21"
+	if got, ok := parseStartTicks(line); !ok || got != 987654 {
+		t.Errorf("parseStartTicks = %d, %v; want field 22 past the last ')'", got, ok)
+	}
+	if _, ok := parseStartTicks("4242 no paren"); ok {
+		t.Error("a line with no comm field parsed")
+	}
+	if got, ok := parseBootTime("cpu 1 2\nbtime 1700000000\nprocesses 9\n"); !ok || got != 1700000000 {
+		t.Errorf("parseBootTime = %d, %v", got, ok)
+	}
+	if _, ok := parseBootTime("cpu 1 2\n"); ok {
+		t.Error("a /proc/stat with no btime parsed")
+	}
+}

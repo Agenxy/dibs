@@ -7,6 +7,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- An agent whose process is still running no longer shows as dormant just
+  because it has not called Dibs for a while (45 minutes by default). Agents
+  had long reported colleagues who were plainly working reading as dormant; on
+  one board, 13 of 42 dormant rows had a process the daemon had just seen
+  alive. Dibs now records when each local agent's process started and keeps the
+  agent active while that same process runs, so building, testing or waiting
+  on a person is no longer read as gone. A reused pid is still caught, because
+  its start time differs. Agents on another machine, rows registered before
+  this release and Windows are still judged by time since their last call,
+  until they next register.
 - `dibs mcp-stdio` now works under a harness that is pid 1, such as a
   container's entrypoint. Since v0.0.6 the bridge took a parent of pid 1 as
   proof it had been orphaned and exited at once, with no reply and no error,
