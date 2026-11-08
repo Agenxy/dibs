@@ -118,12 +118,7 @@ func (r *runner) linuxAttempt(o options, image, probe string, i int) (receipt, e
 	if err := os.Chmod(root, 0o777); err != nil {
 		return receipt{}, err
 	} // #nosec G302 G703 -- same unprivileged receipt mount
-	args := []string{
-		o.runtime, "run", "--rm", "--name", name, "--mount", "type=bind,source=" + probe + ",target=/probe,readonly",
-		"--mount", "type=bind,source=" + root + ",target=/receipts", "--env", "DIBS_PUBLIC_INSTALL_CHILD=1",
-		image, "/probe/publicinstall", "-mode", "linux-child", "-tag", o.tag, "-out", "/receipts/run",
-	}
-	_, runErr := r.command(fmt.Sprintf("linux-%02d", i+1), os.Environ(), args...)
+	_, runErr := r.command(fmt.Sprintf("linux-%02d", i+1), os.Environ(), childRunArgs(o, name, probe, root, image)...)
 	if r.ctx.Err() != nil {
 		return receipt{}, errors.Join(runErr, r.cleanupFixture(o.runtime, name))
 	}
@@ -177,4 +172,22 @@ func resolvedImage(image, inspection string) (string, error) {
 		return "", errors.New("image inspection has no content digest")
 	}
 	return reference, nil
+}
+
+// childRunArgs is the runtime invocation for one fresh Linux child. -dns is
+// passed to the container only. On macOS the guest's nameserver is the
+// gateway's Internet Sharing DNS proxy, which binds the IPv4 wildcard :53 as
+// an unprivileged user; if a root resolver (remapd) already holds
+// 127.0.0.1:53 when the container network is created, that bind fails, the
+// proxy listens on IPv6 only, and an IPv4-only guest resolves nothing. The
+// child then fails at brew update for a reason unrelated to the release.
+func childRunArgs(o options, name, probe, root, image string) []string {
+	args := []string{
+		o.runtime, "run", "--rm", "--name", name, "--mount", "type=bind,source=" + probe + ",target=/probe,readonly",
+		"--mount", "type=bind,source=" + root + ",target=/receipts", "--env", "DIBS_PUBLIC_INSTALL_CHILD=1",
+	}
+	if o.dns != "" {
+		args = append(args, "--dns", o.dns)
+	}
+	return append(args, image, "/probe/publicinstall", "-mode", "linux-child", "-tag", o.tag, "-out", "/receipts/run")
 }

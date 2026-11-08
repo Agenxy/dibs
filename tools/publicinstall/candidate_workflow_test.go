@@ -75,8 +75,8 @@ func TestCandidateAcceptanceIsReadOnlyAndRequiredBeforeReleasePreflight(t *testi
 		}
 	}
 	published := read("public-install-check.yml")
-	if !strings.Contains(published, "-tag v0.0.16") || strings.Contains(published, "continue-on-error:") ||
+	if !strings.Contains(published, "-tag v0.0.17") || strings.Contains(published, "continue-on-error:") ||
 		strings.Contains(published, "candidate-install") {
-		t.Fatal("published v0.0.16 finding was hidden or combined with candidate acceptance")
+		t.Fatal("published v0.0.17 finding was hidden or combined with candidate acceptance")
 	}
 }
