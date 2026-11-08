@@ -13,6 +13,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   so Dibs did nothing in that harness. It now watches that parent like any
   other; only a process with no parent at all exits immediately. On macOS, a
   refused parent watch now falls back to polling instead of exiting.
+- A wake to an archived ChatGPT thread on another machine, whose bridge
+  cannot take an input-only wake, is now recorded as a known refusal. It could
+  be reported to the sender as an unknown native reply and treated as possibly
+  delivered, depending on which of two paths the wake reached first.
 
 ## [0.0.17] - 2026-11-07
 
