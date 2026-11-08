@@ -19,7 +19,7 @@ func (e *Engine) prepareRemoteWake(plan wakePlan, agent string) core.Result {
 		return core.Result{"plan": plan}
 	}
 	if plan.host != "" {
-		pending, id = e.enqueueRemoteWake(plan, agent)
+		pending, id = e.enqueueRemoteWake(&plan, agent)
 		if id == 0 && plan.routeRefreshed {
 			e.refuseChangedRouteLocked(&plan, e.state.Agents[agent])
 		}
@@ -126,7 +126,15 @@ func (e *Engine) refuseChangedRouteLocked(plan *wakePlan, l *core.Agent) {
 
 // Caller holds the writer (except decision-only fixtures). The host mutex
 // also protects a bridge channel from concurrent replacement/close.
-func (e *Engine) enqueueRemoteWake(plan wakePlan, agent string) (pendingWake, uint64) {
+//
+// A host that cannot take a no-navigation plan is a KNOWN refusal before any
+// handoff, the same as refuseChangedRouteLocked, so it marks routeRefused on
+// the caller's plan. It once set NoRetry on a copy and left routeRefused
+// unset, and an archived-thread wake that reached this branch rather than
+// the route refresh was then reported to its senders as an unknown native
+// reply. Which branch an archived wake reached depended on timing, so the
+// production-wake test failed only under load.
+func (e *Engine) enqueueRemoteWake(plan *wakePlan, agent string) (pendingWake, uint64) {
 	hw := &e.hostWakes
 	hw.mu.Lock()
 	defer hw.mu.Unlock()
@@ -135,10 +143,12 @@ func (e *Engine) enqueueRemoteWake(plan wakePlan, agent string) (pendingWake, ui
 		slog.Info("no wake: the agent's host has no bridge attached", "agent", agent, "host", plan.host)
 		return pendingWake{}, 0
 	}
-	if !hostCanReceivePlan(plan, b) {
-		if plan.nativeOutcome != nil {
-			plan.nativeOutcome.NoRetry = true
+	if !hostCanReceivePlan(*plan, b) {
+		if plan.nativeOutcome == nil {
+			plan.nativeOutcome = new(wakeexec.NativeOutcome)
 		}
+		plan.nativeOutcome.NoRetry = true
+		plan.routeRefused = true
 		if e.wakeContext != nil {
 			e.noteAppBinding(e.state.Agents[agent], "archived")
 		}
@@ -151,7 +161,7 @@ func (e *Engine) enqueueRemoteWake(plan wakePlan, agent string) (pendingWake, ui
 	req := plan.request
 	req.ID = hw.next
 	pending := pendingWake{
-		host: plan.host, ch: make(chan WakeResult, 1), plan: plan,
+		host: plan.host, ch: make(chan WakeResult, 1), plan: *plan,
 		native: b.nativeApp && req.Surface == harnessenv.ChatGPTApp,
 	}
 	if hw.pending == nil {
