@@ -54,7 +54,7 @@ type humanAPI struct {
 	now    func() time.Time
 }
 
-func registerHumanAPI(mux *http.ServeMux, eng *engine.Engine, gate *authGate, dir string) {
+func registerHumanAPI(mux *http.ServeMux, eng *engine.Engine, gate *authGate, dir string) *humanAPI {
 	h := &humanAPI{
 		eng: eng, gate: gate, keys: humankey.NewStore(dir),
 		ledger: humankey.NewLedger(), now: time.Now,
@@ -65,6 +65,7 @@ func registerHumanAPI(mux *http.ServeMux, eng *engine.Engine, gate *authGate, di
 	mux.HandleFunc("GET /api/human/stream", h.stream)
 	mux.HandleFunc("POST /api/human/answer", h.answer)
 	mux.HandleFunc("POST /api/human/delivery", h.delivery)
+	return h
 }
 
 // A receipt proves only what the relay reports about its own OS. It grants

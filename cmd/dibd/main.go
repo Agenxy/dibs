@@ -571,8 +571,8 @@ func run() error {
 	gate := newAuthGate(secret, filepath.Join(*dir, "admin.hash"), listenAddr)
 	gate.boardFingerprint = boardconfig.BoardFingerprint(eng.NodeID())
 	gate.SetNames(cfg.Name)
-	registerHumanAPI(mux, eng, gate, *dir)
-	registerNativeHumanAPI(mux, eng)
+	human := registerHumanAPI(mux, eng, gate, *dir)
+	registerNativeHumanAPI(mux, eng, human)
 	clients := &localtransport.Clients{}
 	registerClientTransports(mux, clients)
 	privateHandler := clients.Handler(fileRoutes(files, gate.wrap(mux)))

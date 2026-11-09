@@ -37,7 +37,16 @@ type Key struct {
 	Label     string    `json:"label"`
 	PublicKey string    `json:"public_key"` // base64 DER SubjectPublicKeyInfo
 	Enrolled  time.Time `json:"enrolled"`
+	// Kind is KindDevice for a key the person added from the Mac app, and
+	// empty for one enrolled with the admin password.
+	Kind string `json:"kind,omitempty"`
+	// Transcript is the pairing transcript digest a device grant was bound
+	// to, so a client that lost the answer can tell its own attempt apart.
+	Transcript string `json:"transcript_digest,omitempty"`
 }
+
+// KindDevice marks a key granted by the person from the installed app.
+const KindDevice = "device"
 
 // FileName is where a board keeps its enrolled keys, beside its other
 // credentials in the data directory.
@@ -93,6 +102,18 @@ func (s *Store) write(keys []Key) error {
 // Add enrols a public key. Enrolling the same key again returns the existing
 // entry, so a retried enrolment is not a second relay.
 func (s *Store) Add(publicKey, label string, now time.Time) (Key, error) {
+	return s.add(publicKey, Key{Label: label}, now)
+}
+
+// AddDevice enrols a key the person granted from the installed app, bound to
+// the pairing transcript it was confirmed under. Like Add it is idempotent on
+// the public key: a retry returns the entry already there, with the digest
+// it was first granted under, and never a second device.
+func (s *Store) AddDevice(publicKey, label, transcript string, now time.Time) (Key, error) {
+	return s.add(publicKey, Key{Label: label, Kind: KindDevice, Transcript: transcript}, now)
+}
+
+func (s *Store) add(publicKey string, k Key, now time.Time) (Key, error) {
 	pub, err := parsePublic(publicKey)
 	if err != nil {
 		return Key{}, err
@@ -105,12 +126,12 @@ func (s *Store) Add(publicKey, label string, now time.Time) (Key, error) {
 	if err != nil {
 		return Key{}, err
 	}
-	for _, k := range keys {
-		if k.ID == id {
-			return k, nil
+	for _, existing := range keys {
+		if existing.ID == id {
+			return existing, nil
 		}
 	}
-	k := Key{ID: id, Label: label, PublicKey: base64.StdEncoding.EncodeToString(der), Enrolled: now.UTC()}
+	k.ID, k.PublicKey, k.Enrolled = id, base64.StdEncoding.EncodeToString(der), now.UTC()
 	if err := s.write(append(keys, k)); err != nil {
 		return Key{}, err
 	}

@@ -7,6 +7,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The Mac app can add a phone to the board, list the board's human devices,
+  and remove one, without the admin password. The installed app's click is the
+  authority, checked the way every native route checks it. Adding the same
+  phone again returns the first grant rather than a second device, and removing
+  a device ends its sessions at once.
 - The board shows image attachments as bounded previews with a larger view
   on click, and loads videos when Play is pressed. Other files have a download
   link; expired files keep an expired marker. New messages and replies can
