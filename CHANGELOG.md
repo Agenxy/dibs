@@ -18,6 +18,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   row's work state no longer quotes every request it owes to decide whether
   it is working.
 
+- On macOS, the window that opens from a question or approval notification now
+  walks through everything else waiting for you. Answering one opens the next
+  in the same window instead of closing it, so a run of waiting messages takes
+  one click on one banner instead of one click on each. The left and right
+  arrow keys move between them without answering, and the label shows where
+  you are (`QUESTION · 2 OF 5`). While you are typing a reply the arrows move
+  the cursor as usual, and Command-[ and Command-] still move between
+  messages. A reply you started is kept if you walk away and come back. Esc
+  still closes the window.
+
 ## [0.0.18] - 2026-11-08
 
 ### Fixed

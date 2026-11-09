@@ -6,6 +6,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -27,12 +28,75 @@ func (e *Engine) nativeHumanViewLocked(node string, serial uint64, now time.Time
 	if m == nil || m.To != e.humanIdentityLocked() {
 		return NativeHumanView{}, ErrNotTheHumans
 	}
+	pending, state := nativeHumanPending(m, now)
+	return NativeHumanView{Notice: e.noticeOf(m), State: state, Pending: pending}, nil
+}
+
+// nativeHumanPending is the one rule for whether the window may still answer.
+func nativeHumanPending(m *core.Message, now time.Time) (bool, string) {
 	state := m.State
 	pending := state == core.MsgStatePending || state == core.MsgStateDelivered
 	if pending && !m.Deadline.IsZero() && !now.Before(m.Deadline) {
 		pending, state = false, "expired"
 	}
-	return NativeHumanView{Notice: e.noticeOf(m), State: state, Pending: pending}, nil
+	return pending, state
+}
+
+// NativeHumanQueue places one message among the human's answerable mail,
+// oldest first, so a window the person opened walks on to the rest of it
+// instead of the person clicking every banner in turn. Next and Previous
+// wrap around and are zero when nothing else is waiting.
+type NativeHumanQueue struct {
+	Position int    `json:"position"` // 1-based; 0 once this message is settled
+	Total    int    `json:"total"`
+	Next     uint64 `json:"next,omitempty"`
+	Previous uint64 `json:"previous,omitempty"`
+}
+
+// NativeHumanQueue reads only human-addressed questions and requests, after
+// transport attestation, and never another board's.
+func (e *Engine) NativeHumanQueue(ctx context.Context, node string, serial uint64) (NativeHumanQueue, error) {
+	var q NativeHumanQueue
+	_, err := e.query(ctx, func() core.Result {
+		if node != e.state.NodeID {
+			return nil
+		}
+		now, human := time.Now(), e.humanIdentityLocked()
+		var open []uint64
+		for _, m := range e.state.Messages {
+			if m.To != human || (m.Type != core.MsgQuestion && m.Type != core.MsgRequest) {
+				continue
+			}
+			if pending, _ := nativeHumanPending(m, now); pending {
+				open = append(open, m.Serial)
+			}
+		}
+		q = queueAround(open, serial)
+		return nil
+	})
+	return q, err
+}
+
+func queueAround(open []uint64, serial uint64) NativeHumanQueue {
+	slices.Sort(open)
+	q := NativeHumanQueue{Total: len(open)}
+	i, found := slices.BinarySearch(open, serial)
+	others := len(open)
+	after := i
+	if found {
+		q.Position, others, after = i+1, others-1, i+1
+	}
+	if others == 0 {
+		return q
+	}
+	q.Next, q.Previous = open[0], open[len(open)-1]
+	if after < len(open) {
+		q.Next = open[after]
+	}
+	if i > 0 {
+		q.Previous = open[i-1]
+	}
+	return q
 }
 
 // NativeHumanMessage reads only human-addressed mail, after transport attestation.

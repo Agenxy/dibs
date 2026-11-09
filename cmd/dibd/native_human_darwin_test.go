@@ -293,6 +293,26 @@ func TestNativeHumanColdReopenUsesCurrentDaemonAndAttestedPeer(t *testing.T) {
 	if withdrawnView["state"] != "withdrawn" || withdrawnView["reply"] != false {
 		t.Fatalf("withdrawn question still actionable: %v", withdrawnView)
 	}
+	// One click on one banner walks the rest: answering opens the next waiting
+	// message in the same window, and the right arrow skips one unanswered.
+	idOf := func(path string) string { return strings.TrimSuffix(filepath.Base(path), ".plist") }
+	serialOf := func(view map[string]any) uint64 { f, _ := view["serial"].(float64); return uint64(f) }
+	_, firstPath := send("question")
+	second, secondPath := send("question")
+	third, _ := send("request")
+	send("question") // a fourth, so previous and next differ
+	walked := reopen(idOf(firstPath), firstPath, "Send", "first of three", 0)
+	if serialOf(walked) != second || walked["reply"] != true || walked["walks"] != true || walked["kind"] != "QUESTION · 1 OF 3" {
+		t.Fatalf("answering did not open the next waiting message: %v", walked)
+	}
+	skipped := reopen(idOf(secondPath), secondPath, "Right", "", -1)
+	if serialOf(skipped) != third || skipped["reply"] != true || skipped["kind"] != "APPROVAL · 2 OF 3" {
+		t.Fatalf("right arrow did not walk to the next waiting message: %v", skipped)
+	}
+	left := reopen(idOf(secondPath), secondPath, "", "", -1)
+	if serialOf(left) != second || left["reply"] != true || left["state"] == "answered" {
+		t.Fatalf("walking past a message answered it: %v", left)
+	}
 	// Kernel audit tokens bind the process incarnation, not only its PID. Keep
 	// the real notifier waiting on this fixture server while checking both the
 	// actual token and a token with only pidversion changed.
