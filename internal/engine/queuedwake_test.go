@@ -102,13 +102,9 @@ func TestASecondWakeIsNotQueuedBehindOneNotYetDelivered(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// A wake runs the fake app in a child process, which under a loaded
-	// whole-package -race run took over a second to appear (PR #600's CI,
-	// 2026-11-09). Waiting for a wake gets that long; waiting to show none
-	// came keeps the original second.
-	waitWake := func(rounds int) bool {
+	woke := func() bool {
 		t.Helper()
-		for range rounds {
+		for range 100 {
 			if _, err := os.Stat(marker); err == nil {
 				_ = os.Remove(marker)
 				return true
@@ -117,11 +113,9 @@ func TestASecondWakeIsNotQueuedBehindOneNotYetDelivered(t *testing.T) {
 		}
 		return false
 	}
-	woke := func() bool { t.Helper(); return waitWake(100) }
-	wakes := func() bool { t.Helper(); return waitWake(1000) }
 
 	send("q1")
-	if !wakes() {
+	if !woke() {
 		t.Fatal("setup: the first question woke nobody, so nothing below tests a second")
 	}
 	send("q2")
@@ -147,7 +141,7 @@ func TestASecondWakeIsNotQueuedBehindOneNotYetDelivered(t *testing.T) {
 		t.Fatal(err)
 	}
 	send("q4")
-	if !wakes() {
+	if !woke() {
 		t.Error("after the agent picked up its wake, new mail woke nobody")
 	}
 }
