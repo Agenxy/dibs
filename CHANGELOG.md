@@ -5,6 +5,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Attachments are cleared after a maximum age, seven days by default, whether
+  or not a message still refers to them. Set `blob_max_age` under `[limits]`
+  in `dibs.toml` (a Go duration, at least `1h`) to change it. The existing
+  `blob_store_bytes` cap still evicts the oldest files first when the store is
+  full. A message whose file has been cleared keeps its line and says the
+  attachment expired, rather than losing it silently.
+
 ## [0.0.18] - 2026-11-08
 
 ### Fixed
