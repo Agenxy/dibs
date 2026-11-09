@@ -4,6 +4,7 @@
 package engine
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -86,7 +87,7 @@ func TestLiveBoardReplyProjectionPreservesBytesAndFold(t *testing.T) {
 			}
 		}
 		resultHash := boardReplyHash(t, res)
-		foldHash := boardReplyHash(t, []any{e.state, e.ring})
+		foldHash := boardReplyHash(t, []any{foldWithoutConfiguredMaxAge(t, e.state), e.ring})
 		t.Logf("BOARD_REPLY_CANARY %s %s %s", entry.name, resultHash, foldHash)
 		expected, ok := want[entry.name]
 		if !ok {
@@ -105,4 +106,23 @@ func boardReplyHash(t *testing.T, value any) string {
 		t.Fatal("setup: canonical canary encoding", err)
 	}
 	return fmt.Sprintf("%x", sha256.Sum256(raw))
+}
+
+// foldWithoutConfiguredMaxAge is the state's canonical bytes minus
+// limits.blob_max_age. Limits are this daemon's configuration copied into the
+// state (loadSnapshot keeps the configured ones), not something the fold
+// produced, and that field arrived after these hashes were recorded. Removing
+// exactly that one field keeps every recorded hash byte-exact, so the canary
+// still proves nothing the fold produces has moved.
+func foldWithoutConfiguredMaxAge(t *testing.T, st *core.State) json.RawMessage {
+	t.Helper()
+	raw, err := json.Marshal(st)
+	if err != nil {
+		t.Fatal("setup: canonical canary encoding", err)
+	}
+	field := []byte(fmt.Sprintf(`,"blob_max_age":%d`, int64(st.Limits.BlobMaxAge)))
+	if bytes.Count(raw, field) != 1 {
+		t.Fatalf("setup: limits.blob_max_age appears %d times, want exactly once", bytes.Count(raw, field))
+	}
+	return bytes.Replace(raw, field, nil, 1)
 }
