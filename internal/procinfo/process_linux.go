@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -135,6 +136,12 @@ func Command(pid int) ([]string, error) {
 // Environ reads inherited entries without logging their content.
 func Environ(pid int) ([]string, error) {
 	raw, err := os.ReadFile(procPath(pid, "environ"))
+	if len(raw) == 0 && os.Getenv("DIBS_LINUX_PROBE_DIAG") == "1" {
+		command, commandErr := os.ReadFile(procPath(pid, "cmdline"))
+		stat, statErr := os.ReadFile(procPath(pid, "stat"))
+		again, againErr := os.ReadFile(procPath(pid, "environ"))
+		slog.Warn("LINUX_DIAG_EMPTY_ENV", "pid", pid, "first_bytes", len(raw), "first_error", err, "command_bytes", len(command), "command_error", commandErr, "stat", string(stat), "stat_error", statErr, "second_bytes", len(again), "second_error", againErr)
+	}
 	return nullFields(raw), err
 }
 

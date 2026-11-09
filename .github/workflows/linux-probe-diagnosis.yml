@@ -1,0 +1,24 @@
+name: Linux native probe diagnosis
+on:
+  push:
+    branches: [codex/linux-probes-424716]
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      DIBS_LINUX_PROBE_DIAG: '1'
+      DIBS_NOTIFY: 'off'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b
+        with:
+          version: 2026.10.23
+          experimental: true
+      - name: Repeated focused runtime reproductions
+        run: mise exec -- go test -race -count=20 -timeout=10m -v -run '^(TestASecondWakeIsNotQueuedBehindOneNotYetDelivered|TestTheEnvironmentIsReadableForUserBinaries)$' ./internal/engine ./internal/liveness
+      - name: Full package order with decision evidence
+        if: ${{ always() }}
+        run: mise exec -- go test -race -count=1 -timeout=15m -v ./internal/engine ./internal/liveness

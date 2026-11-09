@@ -116,6 +116,7 @@ func TestASecondWakeIsNotQueuedBehindOneNotYetDelivered(t *testing.T) {
 
 	send("q1")
 	if !woke() {
+		linuxWakeDiagnostic(t, e)
 		t.Fatal("setup: the first question woke nobody, so nothing below tests a second")
 	}
 	send("q2")
