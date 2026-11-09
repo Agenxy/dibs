@@ -2117,7 +2117,7 @@ guidance. macOS Alerts versus Banners is the person's OS setting, which Dibs
 diagnoses but does not change.
 
 The native reconnect routes (`POST /api/human/native/message`, `answer`,
-`media` and `upload`) do
+`media`, `upload` and the `devices` routes below) do
 not accept the general local secret, a PID, a claimed bundle id, a bearer token
 or HTTPS relay credentials. They require the daemon's same-UID Unix connection
 and its kernel-supplied macOS `LOCAL_PEERTOKEN`, including process incarnation.
@@ -2142,6 +2142,22 @@ a deliberate window action may submit. This is a local native UI/code-identity
 boundary, not a claim against same-user process injection or desktop control.
 No fresh presence sheet is added to either desktop path. The enrolled remote
 relay's existing privileged signature/presence rule is unchanged.
+
+The person adds a phone through the same door. `POST /api/human/native/devices`
+takes `{node, label, public_key, transcript_digest}`: this board's node, the
+device label exactly as the pairing transcript bound it (1 to 128 bytes, no
+control characters, never trimmed), the phone's P-256 key as base64 DER
+SubjectPublicKeyInfo, and the transcript's SHA-256 in lowercase hex. It enrols
+the key as a human key of kind `device`, and the phone then authenticates with
+the ordinary `/api/human/challenge` and `/api/human/session`. No admin password
+is typed, and nothing the phone signs can enrol a key. The grant is idempotent
+on the public key: a retry after a lost answer returns the entry already there
+with the digest it was FIRST granted under, so the client can tell its own
+attempt from an earlier one. `devices/list {node}` returns every human key,
+devices and password-enrolled relays alike; `devices/revoke {node, key_id}`
+removes one and ends its sessions and challenges at once, and reports
+`revoked: false` for a key that was not there. All three refuse a request
+naming another board's node.
 
 The writer checks board, human addressee, current pending state and deadline
 again on the same writer trip that records the ordinary human response op.

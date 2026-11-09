@@ -19,14 +19,21 @@ import (
 type nativeHumanAPI struct {
 	eng    *engine.Engine
 	verify func(context.Context, []byte) error
+	// human is the relay door, whose key store and sessions a device grant
+	// or revocation changes.
+	human *humanAPI
 }
 
-func registerNativeHumanAPI(mux *http.ServeMux, eng *engine.Engine) {
-	h := &nativeHumanAPI{eng: eng, verify: notify.VerifyNativePeer}
+func registerNativeHumanAPI(mux *http.ServeMux, eng *engine.Engine, human *humanAPI) *nativeHumanAPI {
+	h := &nativeHumanAPI{eng: eng, verify: notify.VerifyNativePeer, human: human}
 	mux.HandleFunc("POST /api/human/native/message", h.message)
 	mux.HandleFunc("POST /api/human/native/answer", h.answer)
 	mux.HandleFunc("POST /api/human/native/media", h.media)
 	mux.HandleFunc("POST /api/human/native/upload", h.upload)
+	mux.HandleFunc("POST /api/human/native/devices", h.grantDevice)
+	mux.HandleFunc("POST /api/human/native/devices/list", h.listDevices)
+	mux.HandleFunc("POST /api/human/native/devices/revoke", h.revokeDevice)
+	return h
 }
 
 func (h *nativeHumanAPI) attest(w http.ResponseWriter, r *http.Request) bool {
