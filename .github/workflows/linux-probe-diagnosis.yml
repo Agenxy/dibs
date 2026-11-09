@@ -33,4 +33,4 @@ jobs:
           version: 2026.10.23
           experimental: true
       - name: Old production source must fail the new supervision guard
-        run: mise exec -- uv run --script tools/linux_probe_old_control.py
+        run: mise exec -- python3 tools/linux_probe_old_control.py
