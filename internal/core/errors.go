@@ -102,7 +102,8 @@ var (
 	// holds the reference in its own mail, so it reveals nothing (A6's oracle
 	// concern is about strangers, not recipients).
 	ErrBlobEvicted = &Error{
-		Code: "E_BLOB_EVICTED", Msg: "that blob was evicted to keep the store under its cap",
+		Code: "E_BLOB_EVICTED",
+		Msg:  "that blob was evicted: it reached the board's maximum attachment age, or the store reached its cap",
 		Hint: "your message still names it, and your access was never the problem: the " +
 			"content is gone. Ask the sender to put_blob it again, or to send the data another way",
 	}

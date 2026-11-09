@@ -38,6 +38,7 @@ embed_model = "qwen3-embedding:0.6b"
 agent_ttl = "5m"                 # how long an agent that gave a PID may go silent
 idle_ttl = "45m"                # ...and one that did not: probably you, see below
 blob_store_bytes = 1073741824   # 1 GiB: hard cap on the attachment store
+blob_max_age = "168h"           # 7 days: the longest any attachment is kept
 
 [supervise]
 min_age  = "10m"   # how old before a whole-life idleness verdict is allowed
@@ -93,6 +94,15 @@ eviction drops content that messages still reference rather than exceed the cap.
 A recipient then gets `E_BLOB_EVICTED`: which says plainly that its access was
 never the problem and the content is gone, but the artifact is gone all the
 same. Raise it if your fleet exchanges large build outputs.
+
+`blob_max_age` clears every attachment once it is this old, whether a message
+still names it or not: screenshots and designs agents send you, and files you
+send them. Without it, an image attached to mail that is never consumed lived as
+long as the message. The message keeps its line about the attachment, and the
+board and `get_blob` say it expired. It is written in hours (`"72h"`), and
+anything under an hour is refused because a file could expire before anyone
+opened it. Between the two settings, attachments leave in the order they
+arrived, by age or to make room, whichever comes first.
 
 
 ---
@@ -809,6 +819,7 @@ than open a partial board.
 | `max_agents` | `64` | How many live agent seats of any kind, excluding the human. |
 | `full_board` | `"displace_idle"` | At either ceiling, recycle one eligible dormant seat; `"refuse"` keeps strict refusal. |
 | `blob_store_bytes` | *(built-in)* | A hard cap on the attachment store. Over it, eviction drops referenced content rather than exceed the bound, so a recipient can hold a message naming a blob that is gone. |
+| `blob_max_age` | `168h` | The longest any attachment is kept, referenced or not. At least `1h`. The message keeps its attachment line and says it expired. |
 
 **`max_persistent_agents` is reached by accumulation, not by concurrency.** A
 persistent agent holds its slot while dormant, which is the point of one: its

@@ -2116,7 +2116,8 @@ not exist. Contacts and unavailable or invalid legacy detail retain board
 guidance. macOS Alerts versus Banners is the person's OS setting, which Dibs
 diagnoses but does not change.
 
-The native reconnect routes (`POST /api/human/native/message` and `answer`) do
+The native reconnect routes (`POST /api/human/native/message`, `answer`,
+`media` and `upload`) do
 not accept the general local secret, a PID, a claimed bundle id, a bearer token
 or HTTPS relay credentials. They require the daemon's same-UID Unix connection
 and its kernel-supplied macOS `LOCAL_PEERTOKEN`, including process incarnation.
@@ -2147,6 +2148,26 @@ again on the same writer trip that records the ordinary human response op.
 Only one final answer can win. Reply without deciding records a linked human
 note and leaves the request pending, with a random per-window submission id
 deduplicating a transport retry; that id is not authority.
+
+The native message view includes attachment metadata. `media` takes board
+`node`, message `serial` and attachment `index`, and returns raster image bytes
+as base64 only for mail to or from the person. Previews are capped at 16 MiB;
+SVG, HTML, video, advisory local paths and larger files retain board guidance.
+The window decodes raster pixels into bounded thumbnails below the body;
+clicking an image opens a larger panel. Expired attachments keep an expired
+placeholder. Attach, file drop and image paste add removable files to the
+per-message draft, which survives walking to another message.
+
+`upload` takes `node`, `name`, `mime` and base64 `data`, using the ordinary
+human blob quota and configured file limit. Only upload requests and media
+responses have larger, bounded native transport limits. `answer` retains its
+256 KiB cap and accepts `attachments` containing uploaded blob ids. The helper
+uploads before submitting any answer or decision; an upload failure preserves
+the draft. After a successful reply, its files follow as a notify to the asker.
+The optional reply submission id gives that notify its own `/files` idempotency
+key, separate from the text reply. A file-send failure returns `ok` with
+`files_error`, shown in the window: the reply already recorded is not undone
+or submitted a second time. Approve is still never a default action.
 
 One native notifier broker per Mac/user owns the live request table. The
 notifying Dibs parent (daemon or authenticated human relay) creates anonymous

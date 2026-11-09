@@ -70,6 +70,11 @@ func TestContactCheckpointLedgerCompatibility(t *testing.T) {
 	if err := json.Unmarshal(raw, &historical); err != nil {
 		t.Fatal(err)
 	}
+	// Limits are the daemon's configuration, folded over on every start, not
+	// replayed state: a limit added since the capture is not a replay change.
+	for _, view := range []map[string]any{before, added, historical} {
+		delete(view, "Limits")
+	}
 	if !reflect.DeepEqual(before, historical) {
 		t.Fatal("pre-change ledger no longer replays to the historical state")
 	}

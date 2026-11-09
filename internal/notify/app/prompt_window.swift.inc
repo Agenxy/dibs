@@ -20,10 +20,16 @@ struct HumanPromptReply {
     var action = ""
     var choice = ""
     var text = ""
+    var files = [NativeHumanFile]()
 }
 
 final class PromptSurface: NSView {
     var appearanceChanged: (() -> Void)?
+    var dropped: ((NSPasteboard) -> Bool)?
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        dropped != nil && nativeFilePasteboard(sender.draggingPasteboard) ? .copy : []
+    }
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool { dropped?(sender.draggingPasteboard) ?? false }
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); appearanceChanged?() }
 }
 
@@ -31,7 +37,19 @@ final class PromptSurface: NSView {
 // NSTextView otherwise considers a selection visible there even while the
 // outer viewport is still on page one. Propagate native keyboard/selection
 // reveals through both clips, using view conversion (points, not pixels).
-final class PromptMessageView: NSTextView {
+class PromptAttachmentTextView: NSTextView {
+    var attachmentDrop: ((NSPasteboard) -> Bool)?
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        if attachmentDrop != nil && nativeFilePasteboard(sender.draggingPasteboard) { return .copy }
+        return super.draggingEntered(sender)
+    }
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        if nativeFilePasteboard(sender.draggingPasteboard), attachmentDrop?(sender.draggingPasteboard) == true { return true }
+        return super.performDragOperation(sender)
+    }
+}
+
+final class PromptMessageView: PromptAttachmentTextView {
     override func scrollRangeToVisible(_ range: NSRange) {
         super.scrollRangeToVisible(range)
         guard let container = textContainer, let manager = layoutManager else { return }
@@ -102,8 +120,18 @@ final class PromptChoiceButton: NSButton {
     override var focusRingMaskBounds: NSRect { bounds }
 }
 
-final class PromptTextView: NSTextView {
+final class PromptTextView: PromptAttachmentTextView {
     var returnPressed: (() -> Void)?
+    var pasteImage: ((NSPasteboard) -> Bool)?
+    override func paste(_ sender: Any?) {
+        if pasteImage?((sender as? NSPasteboard) ?? .general) == true { return }
+        #if DIBS_READING_FIXTURE
+        // A fixture's private pasteboard never falls through to the person's
+        // actual clipboard, including when a regression drops the image hook.
+        if sender is NSPasteboard { return }
+        #endif
+        super.paste(sender)
+    }
     var placeholder = "Reply (optional)"
     var placeholderColor = NSColor.placeholderTextColor
     var focused: (() -> Void)?
@@ -144,6 +172,7 @@ final class HumanPromptWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
     let choices: [String]
     let legacyButtons: [String]
     let counter: String
+    let allowAttachments: Bool
     let picked: (HumanPromptReply) -> Void
     // Walks to the person's previous (-1) or next (+1) waiting message.
     var step: ((Int) -> Void)?
@@ -156,6 +185,12 @@ final class HumanPromptWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
     let kind = NSTextField(labelWithString: "")
     let message = PromptMessageView()
     let composer = PromptTextView()
+    let incomingMedia = PromptMediaList(), fileChips = PromptFileChips()
+    let attachButton = PromptActionButton()
+    var files = [NativeHumanFile]()
+    var fileByteLimit = 64 * 1024 * 1024, fileCountLimit = 8
+    var draftChanged: (() -> Void)?
+    var submitting = false
     let messageScroll = NSScrollView()
     let replyScroll = NSScrollView()
     let overflowScroll = NSScrollView()
@@ -184,9 +219,10 @@ final class HumanPromptWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
     #endif
 
     init(title: String, detail: AskReadingDetail, buttons: [String], replyKind: String = "",
-         choices: [String] = [], counter: String = "", picked: @escaping (HumanPromptReply) -> Void) {
+         choices: [String] = [], counter: String = "", allowAttachments: Bool = false, picked: @escaping (HumanPromptReply) -> Void) {
         self.heading = title; self.detail = detail; self.legacyButtons = buttons
         self.replyKind = replyKind; self.choices = choices; self.counter = counter; self.picked = picked
+        self.allowAttachments = allowAttachments
         panel = HumanPromptPanel(contentRect: NSRect(x: 0, y: 0, width: 560, height: 420),
                                  styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         super.init()
@@ -263,6 +299,19 @@ final class HumanPromptWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
             if label == "Cancel" || label == "Close" { button.keyEquivalent = "\u{1b}" }
             if replyKind == "question" && label == "Send" { button.keyEquivalent = "\r" }
             root.addSubview(button); actionButtons.append(button)
+        }
+        attachButton.title = "Attach…"; attachButton.target = self; attachButton.action = #selector(chooseFiles(_:))
+        attachButton.textStyle = true; attachButton.setAccessibilityLabel("Attach files")
+        fileChips.remove = { [weak self] index in
+            guard let self, self.files.indices.contains(index) else { return }
+            var files = self.files; files.remove(at: index); self.setFiles(files)
+        }
+        if allowAttachments {
+            root.registerForDraggedTypes([.fileURL, .png, .tiff])
+            root.dropped = { [weak self] board in self?.acceptDrop(board) ?? false }
+            composer.pasteImage = { [weak self] board in self?.pasteImage(board) ?? false }
+            composer.attachmentDrop = { [weak self] board in self?.acceptDrop(board) ?? false }
+            message.attachmentDrop = { [weak self] board in self?.acceptDrop(board) ?? false }
         }
         // An approval has no default button. Return cannot manufacture a grant.
         if replyKind == "request" { panel.defaultButtonCell = nil }
@@ -402,7 +451,9 @@ final class HumanPromptWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
                                    font: font(14,weight:index == selected ? .medium : .regular), line: 1.35) + 16 * scale)
         }
         let choicesHeight = rowHeights.reduce(0, +) + CGFloat(max(0,radios.count - 1)) * 4
-        let contentExtra = (radios.isEmpty ? 0 : choicesHeight + 16) + (replyHeight > 0 ? replyHeight + 16 : 0)
+        let mediaHeight = incomingMedia.measuredHeight(inner)
+        let filesHeight = allowAttachments ? fileChips.measuredHeight + 40 : 0
+        let contentExtra = (radios.isEmpty ? 0 : choicesHeight + 16) + (replyHeight > 0 ? replyHeight + 16 : 0) + mediaHeight + filesHeight
         let fullMessageHeight = bodyHeight(width: inner - 30)
         let chrome = headerHeight + contentExtra + footerHeight + 60
         let cap = min(680 * scale, screen.height * 0.85)
@@ -427,16 +478,17 @@ final class HumanPromptWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
             let viewportWidth = overflowScroll.contentSize.width
             let docHeight = fullMessageHeight + contentExtra
             document.frame = NSRect(x: 0, y: 0, width: viewportWidth, height: docHeight)
-            for view in [messageScroll, replyScroll, choiceGroup] { if view.superview !== document { document.addSubview(view) } }
+            for view in [messageScroll, incomingMedia, replyScroll, choiceGroup, attachButton, fileChips] { if view.superview !== document { document.addSubview(view) } }
             placeContent(parentWidth: viewportWidth, top: docHeight, messageHeight: fullMessageHeight, rowHeights: rowHeights, replyHeight: replyHeight)
             if !wasOverflow || fit { overflowScroll.contentView.scroll(to: NSPoint(x: 0, y: max(0, docHeight - available))) }
         } else {
             overflowScroll.isHidden = true
-            for view in [messageScroll, replyScroll, choiceGroup] { if view.superview !== root { root.addSubview(view) } }
+            for view in [messageScroll, incomingMedia, replyScroll, choiceGroup, attachButton, fileChips] { if view.superview !== root { root.addSubview(view) } }
             placeContent(parentWidth: inner, top: available, messageHeight: max(40, available - contentExtra), rowHeights: rowHeights, replyHeight: replyHeight)
-            for view in [messageScroll, replyScroll, choiceGroup] { view.frame.origin.x += inset; view.frame.origin.y += bottom }
+            for view in [messageScroll, incomingMedia, replyScroll, choiceGroup, attachButton, fileChips] { view.frame.origin.x += inset; view.frame.origin.y += bottom }
         }
         messageScroll.isHidden = false; replyScroll.isHidden = replyKind.isEmpty
+        attachButton.isHidden = !allowAttachments; fileChips.isHidden = !allowAttachments
         moreFade.frame = NSRect(x: inset,y:bottom,width:inner,height:32 * scale)
         moreGradient.frame = moreFade.bounds
         let moreWidth = ceil((more.stringValue as NSString).size(withAttributes:[.font:font(11,weight:.medium,mono:true)]).width) + 8
@@ -467,6 +519,9 @@ final class HumanPromptWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
         messageScroll.frame = NSRect(x: 0, y: y - messageHeight, width: parentWidth, height: messageHeight); y -= messageHeight
         message.frame = NSRect(x: 0, y: 0, width: parentWidth - 16, height: max(messageHeight, bodyHeight(width: parentWidth - 44)))
         message.textContainer?.containerSize = NSSize(width: parentWidth - 44, height: .greatestFiniteMagnitude)
+        let mediaHeight = incomingMedia.measuredHeight(parentWidth)
+        incomingMedia.frame = NSRect(x: 0, y: y - mediaHeight, width: parentWidth, height: mediaHeight)
+        incomingMedia.place(width: parentWidth); y -= mediaHeight
         if !radios.isEmpty { y -= 16 }
         let rowsHeight = rowHeights.reduce(0,+) + CGFloat(max(0,radios.count - 1)) * 4
         choiceGroup.frame = NSRect(x: 0, y: y - rowsHeight, width: parentWidth, height: rowsHeight)
@@ -477,6 +532,11 @@ final class HumanPromptWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
         replyScroll.frame = NSRect(x: 0, y: y - replyHeight, width: parentWidth, height: replyHeight)
         composer.frame = NSRect(x: 0, y: 0, width: parentWidth - 16, height: max(replyHeight, height(composer.string, width: parentWidth - 36, font: font(14)) + 16))
         composer.textContainer?.containerSize = NSSize(width: parentWidth - 36, height: .greatestFiniteMagnitude)
+        y -= replyHeight
+        attachButton.frame = NSRect(x: 0, y: y - 36, width: 96, height: 32)
+        y -= allowAttachments ? 40 : 0
+        fileChips.frame = NSRect(x: 0, y: y - fileChips.measuredHeight, width: parentWidth, height: fileChips.measuredHeight)
+        fileChips.place(width: parentWidth)
     }
     func bodyHeight(width: CGFloat) -> CGFloat {
         // usedRect on the live text view describes the portion already laid
@@ -492,10 +552,16 @@ final class HumanPromptWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
         let bytes = composer.string.utf8.count + choice.utf8.count + (text && !choice.isEmpty ? 2 : 0)
         let bounded = bytes <= (replyKind == "request" ? 32640 : 32768)
         for button in actionButtons {
-            if button.title == "Send" { button.isEnabled = bounded && (selected != nil || text); button.setAccessibilityHelp(!bounded ? "Shorten the reply before sending" : button.isEnabled ? "Send reply" : "Choose an option or type a reply first") }
-            if button.title == "Reply without deciding" { button.isEnabled = text && bounded }
+            if button.title == "Send" { button.isEnabled = bounded && (selected != nil || text || !files.isEmpty); button.setAccessibilityHelp(!bounded ? "Shorten the reply before sending" : button.isEnabled ? "Send reply" : "Choose an option or type a reply first") }
+            if button.title == "Reply without deciding" { button.isEnabled = (text || !files.isEmpty) && bounded }
             if button.title == "Approve" || button.title == "Deny" { button.isEnabled = bounded }
+            if submitting { button.isEnabled = false }
         }
+    }
+    func setSubmitting(_ value: Bool) {
+        submitting = value; composer.isEditable = !value
+        attachButton.isEnabled = !value; fileChips.buttons.forEach { $0.isEnabled = !value }
+        radios.forEach { $0.isEnabled = !value }; updateEnabled()
     }
     func updateMore() { moreFade.isHidden = !overflow || overflowScroll.contentView.bounds.minY <= 1 }
     @objc func selectChoice(_ sender: NSButton) {
@@ -548,7 +614,10 @@ final class HumanPromptWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
         }
         return false
     }
-    func complete(_ reply: HumanPromptReply) { guard !finished else { return }; finished = true; sent = !reply.action.isEmpty; picked(reply) }
+    func complete(_ reply: HumanPromptReply) {
+        guard !finished else { return }; finished = true; sent = !reply.action.isEmpty
+        var value = reply; value.files = files; picked(value)
+    }
     func textDidChange(_ notification: Notification) {
         layout(fit: false); composer.needsDisplay = true
         if overflow { replyScroll.scrollToVisible(replyScroll.bounds) }
@@ -585,6 +654,7 @@ final class HumanPromptWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
         if !shown && anchor == nil { Self.cascade = (Self.cascade + 1) % 6 }; shown = true
     }
     func close() {
+        incomingMedia.preview?.close()
         panel.delegate = nil
         if panel.isVisible && sent && NSApp.modalWindow == nil && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
             NSAnimationContext.runAnimationGroup({ context in context.duration = 0.12; panel.animator().alphaValue = 0 }, completionHandler: { [panel] in panel.orderOut(nil); panel.close() })
@@ -604,7 +674,7 @@ final class HumanPromptWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
          "reply": !replyKind.isEmpty, "overflow": overflow, "width": panel.contentView!.bounds.width,
          "endVisible": message.visibleRect.intersects(messageEndRect()), "selected": selected as Any? ?? NSNull(),
          "replyVisibleHeight": replyScroll.visibleRect.height, "replyHeight": replyScroll.bounds.height,
-         "replyText": composer.string,
+         "replyText": composer.string, "attachedFiles": files.map { $0.name }, "media": incomingMedia.viewInfo,
          "choiceGroupRole": choiceGroup.accessibilityRole()?.rawValue ?? "", "headerRole": name.accessibilityRole()?.rawValue ?? "",
          "actionsFit": actionButtons.enumerated().allSatisfy { index,button in
              root.bounds.contains(button.frame) && !hint.frame.intersects(button.frame) &&

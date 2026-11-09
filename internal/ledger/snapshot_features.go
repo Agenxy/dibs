@@ -59,6 +59,14 @@ var snapshotFeatures = []snapshotFeature{
 	},
 }
 
+// configuredSnapshotFields are written into a snapshot and never read back
+// from one: loadSnapshot replaces the limits with this daemon's own config, so
+// an older reader that drops one of these loses nothing it would have used.
+// They need no reader feature, which would only make that reader refuse a
+// snapshot it can read correctly. TestLoadedSnapshotKeepsTheConfiguredLimits
+// is what makes the claim true; a field belongs here only while it holds.
+var configuredSnapshotFields = []string{"core.Limits.BlobMaxAge"}
+
 func requiredSnapshotFeatures(st *core.State) []string {
 	var names []string
 	for _, feature := range snapshotFeatures {

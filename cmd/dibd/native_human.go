@@ -25,6 +25,8 @@ func registerNativeHumanAPI(mux *http.ServeMux, eng *engine.Engine) {
 	h := &nativeHumanAPI{eng: eng, verify: notify.VerifyNativePeer}
 	mux.HandleFunc("POST /api/human/native/message", h.message)
 	mux.HandleFunc("POST /api/human/native/answer", h.answer)
+	mux.HandleFunc("POST /api/human/native/media", h.media)
+	mux.HandleFunc("POST /api/human/native/upload", h.upload)
 }
 
 func (h *nativeHumanAPI) attest(w http.ResponseWriter, r *http.Request) bool {
@@ -43,12 +45,13 @@ func (h *nativeHumanAPI) attest(w http.ResponseWriter, r *http.Request) bool {
 }
 
 type nativeHumanRequest struct {
-	Node       string `json:"node"`
-	Serial     uint64 `json:"serial"`
-	Action     string `json:"action"`
-	Text       string `json:"text"`
-	Choice     string `json:"choice"`
-	Submission string `json:"submission"`
+	Node        string   `json:"node"`
+	Serial      uint64   `json:"serial"`
+	Action      string   `json:"action"`
+	Text        string   `json:"text"`
+	Choice      string   `json:"choice"`
+	Submission  string   `json:"submission"`
+	Attachments []string `json:"attachments"`
 }
 
 func (h *nativeHumanAPI) message(w http.ResponseWriter, r *http.Request) {
@@ -82,7 +85,11 @@ func (h *nativeHumanAPI) message(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Warn("native human queue unavailable", "error", err)
 	}
-	nativeHumanJSON(w, http.StatusOK, map[string]any{"ok": true, "view": view, "title": title, "queue": queue})
+	maxBytes, maxFiles := h.eng.HumanUploadLimits()
+	nativeHumanJSON(w, map[string]any{
+		"ok": true, "view": view, "title": title, "queue": queue,
+		"upload_limits": map[string]any{"bytes": maxBytes, "files": maxFiles},
+	})
 }
 
 func (h *nativeHumanAPI) answer(w http.ResponseWriter, r *http.Request) {
@@ -115,16 +122,21 @@ func (h *nativeHumanAPI) answer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slog.Info("the human answered from the native notification", "msg", req.Serial, "disposition", req.Action)
+	var filesError string
+	if _, err := h.eng.HumanReplyFiles(r.Context(), req.Serial, req.Attachments, req.Submission); err != nil {
+		filesError = "Your reply was recorded, but its files were not sent. Open the board to attach them again."
+		slog.Warn("native human reply recorded without its files", "msg", req.Serial, "error", err)
+	}
 	// The answer is recorded whatever happens next: a queue that cannot be read
 	// only means the window closes instead of opening the next message.
 	queue, err := h.eng.NativeHumanQueue(r.Context(), req.Node, req.Serial)
 	if err != nil {
 		slog.Warn("native human queue unavailable", "error", err)
 	}
-	nativeHumanJSON(w, http.StatusOK, map[string]any{"ok": true, "next": queue.Next})
+	nativeHumanJSON(w, map[string]any{"ok": true, "next": queue.Next, "files_error": filesError})
 }
 
-func nativeHumanJSON(w http.ResponseWriter, status int, value any) {
+func nativeHumanJSON(w http.ResponseWriter, value any) {
 	data, err := json.Marshal(value)
 	if err != nil {
 		http.Error(w, "cannot encode native notification", http.StatusInternalServerError)
@@ -133,6 +145,6 @@ func nativeHumanJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
-	w.WriteHeader(status)
+	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
 }

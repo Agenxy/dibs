@@ -5,6 +5,24 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- On macOS, notification reply windows show image attachments as thumbnails
+  that open a larger preview when clicked. Attach files with the file picker,
+  drop them onto the window, or paste a screenshot; remove a file before
+  sending with its chip's remove button. Files stay with each message's draft
+  when walking between waiting questions and requests. Replies send their
+  files to the asking agent, and a file-send failure says when the reply itself
+  was already recorded. Videos, other files and images above the native
+  16 MiB preview limit keep guidance to open the board; expired files keep
+  an expired marker.
+- Attachments are cleared after a maximum age, seven days by default, whether
+  or not a message still refers to them. Set `blob_max_age` under `[limits]`
+  in `dibs.toml` (a Go duration, at least `1h`) to change it. The existing
+  `blob_store_bytes` cap still evicts the oldest files first when the store is
+  full. A message whose file has been cleared keeps its line and says the
+  attachment expired, rather than losing it silently.
+
 ### Changed
 
 - An idle daemon no longer spends its time rescanning mail. Once a second it

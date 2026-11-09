@@ -61,7 +61,9 @@ func nativeHumanRPC(profile: String, method: String, payload: [String: Any]) thr
     _ = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
     _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout<Int32>.size))
     let body = try JSONSerialization.data(withJSONObject: payload)
-    guard body.count <= 262144 else { throw NativeHumanFailure.unavailable }
+    let requestLimit = method == "upload" ? ((64 * 1024 * 1024 + 2) / 3) * 4 + 16384 : 262144
+    let responseLimit = method == "media" ? 24 * 1024 * 1024 : 1048576
+    guard body.count <= requestLimit else { throw NativeHumanFailure.unavailable }
     var request = Data("POST /api/human/native/\(method) HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n".utf8)
     request.append(body)
     try request.withUnsafeBytes { buffer in
@@ -80,7 +82,7 @@ func nativeHumanRPC(profile: String, method: String, payload: [String: Any]) thr
         guard count >= 0 else { throw NativeHumanFailure.unavailable }
         if count == 0 { break }
         response.append(contentsOf: chunk.prefix(count))
-        guard response.count <= 1048576 else { throw NativeHumanFailure.unavailable }
+        guard response.count <= responseLimit else { throw NativeHumanFailure.unavailable }
     }
     guard let boundary = response.range(of: Data("\r\n\r\n".utf8)),
           let header = String(data: response[..<boundary.lowerBound], encoding: .utf8),
@@ -99,6 +101,10 @@ enum NativeHumanStorage {
     #endif
     #if DIBS_READING_FIXTURE
     static var fixtureActed = false
+    static var fixtureAttachmentSeeded = false
+    static var fixtureCycleStep = 0
+    static var fixtureDraftTrace = [[String: Any]]()
+    static var fixtureProbed = false
     #endif
 }
 var nativeHumanWindows: [String: NativeHumanController] {
@@ -136,6 +142,9 @@ final class NativeHumanController: @unchecked Sendable {
     var choices = [String](), state = "unknown"
     var position = 0, total = 0, next: UInt64 = 0, previous: UInt64 = 0
     var anchor: NSRect?
+    var media = [NativePromptMedia]()
+    var fileByteLimit = 64 * 1024 * 1024, fileCountLimit = 8
+    var filesError = ""
     init(id: String, profile: String?, title: String, detail: AskReadingDetail) {
         self.id = id; self.profileHint = profile; self.title = title; self.detail = detail
         let parts = id.components(separatedBy: ".")
@@ -146,7 +155,10 @@ final class NativeHumanController: @unchecked Sendable {
             do {
                 let profile = try nativeHumanProfile(self.profileHint)
                 let value = try nativeHumanRPC(profile: profile, method: "message", payload: ["node": self.node, "serial": self.serial])
-                DispatchQueue.main.async { self.profile = profile; self.receive(value) }
+                let view = value["view"] as? [String: Any] ?? [:]
+                let media = nativePromptMedia(profile: profile, node: self.node, serial: self.serial,
+                                              metadata: view["media"] as? [[String: Any]] ?? [])
+                DispatchQueue.main.async { self.profile = profile; self.media = media; self.receive(value) }
             } catch { DispatchQueue.main.async { self.render(error: true) } }
         }
     }
@@ -158,6 +170,10 @@ final class NativeHumanController: @unchecked Sendable {
         self.title = title; self.pending = pending; self.confirmed = true; self.state = state
         self.detail = AskReadingDetail(sender: notice["who"] as? String ?? "", body: body, kind: kind)
         self.choices = notice["choices"] as? [String] ?? []
+        if let limits = value["upload_limits"] as? [String: Any] {
+            fileByteLimit = min(64 * 1024 * 1024, max(0, (limits["bytes"] as? NSNumber)?.intValue ?? 0))
+            fileCountLimit = min(8, max(0, (limits["files"] as? NSNumber)?.intValue ?? 0))
+        }
         let queue = value["queue"] as? [String: Any] ?? [:]
         position = queue["position"] as? Int ?? 0; total = queue["total"] as? Int ?? 0
         next = (queue["next"] as? NSNumber)?.uint64Value ?? 0
@@ -165,21 +181,27 @@ final class NativeHumanController: @unchecked Sendable {
         render()
     }
     func render(error: Bool = false) {
+        saveDraft()
         let replaced = window.flatMap { $0.shown ? $0.panel.frame : nil } ?? anchor
         window?.close()
         let label = state.replacingOccurrences(of: "_", with: " ")
         var body = pending ? detail.body : "This message is \(label).\n\n" + detail.body
         if error { body = "The board is restarting or changed. Answer on the Dibs board.\n\n" + body }
+        if !filesError.isEmpty { body = filesError + "\n\n" + body }
         let reading = AskReadingDetail(sender: detail.sender, body: body, kind: detail.kind)
         let walks = !error && next != 0
         let counter = !walks ? "" : position > 0 ? "\(position) of \(total)" : "\(total) waiting"
         let prompt = HumanPromptWindow(title: title, detail: reading, buttons: ["Close"],
                                        replyKind: pending ? detail.kind ?? "" : "", choices: choices,
-                                       counter: counter) { [weak self] reply in self?.submit(reply) }
+                                       counter: counter, allowAttachments: pending) { [weak self] reply in self?.submit(reply) }
         window = prompt; prompt.anchor = replaced
+        prompt.incomingMedia.set(media)
+        prompt.fileByteLimit = fileByteLimit; prompt.fileCountLimit = fileCountLimit
+        prompt.draftChanged = { [weak self] in self?.saveDraft() }
         if walks { prompt.step = { [weak self] direction in self?.walk(direction) } }
-        if pending, let reply = refusedReply ?? NativeHumanStorage.drafts[id] {
+        if pending, let reply = NativeHumanStorage.drafts[id] ?? refusedReply {
             prompt.composer.insertText(reply.text, replacementRange: NSRange(location: 0, length: 0))
+            prompt.setFiles(reply.files)
             if let index = choices.firstIndex(of: reply.choice) { prompt.radios[index].performClick(nil) }
         }
         if pending, refusedReply != nil {
@@ -198,14 +220,41 @@ final class NativeHumanController: @unchecked Sendable {
     func submit(_ reply: HumanPromptReply) {
         guard !reply.action.isEmpty, reply.action != "Close", pending else { close(); return }
         guard confirmed else { window?.finished = false; refresh(); return } // show current authoritative text before sending
-        window?.actionButtons.forEach { $0.isEnabled = false }
-        let payload: [String: Any] = ["node": node, "serial": serial, "action": reply.action,
-                                      "text": reply.text, "choice": reply.choice, "submission": submission]
+        window?.setSubmitting(true)
+        saveDraft()
+        let fileLimit = fileByteLimit
         DispatchQueue.global(qos: .userInitiated).async {
             do {
+                var ids = [String]()
+                for file in reply.files {
+                    let data = try file.bytes(limit: fileLimit)
+                    let uploaded = try nativeHumanRPC(profile: self.profile, method: "upload", payload:
+                        ["node": self.node, "name": file.name, "mime": file.mime, "data": data.base64EncodedString()])
+                    guard uploaded["ok"] as? Bool == true, let id = uploaded["blob"] as? String else {
+                        throw NativeFileError(message: (uploaded["error"] as? String ?? "File upload failed") + ". " + (uploaded["hint"] as? String ?? "Open the board"))
+                    }
+                    ids.append(id)
+                }
+                #if DIBS_READING_FIXTURE
+                if !ids.isEmpty && ProcessInfo.processInfo.environment["DIBS_NATIVE_REOPEN_BAD_BLOB"] == "1" {
+                    ids[0] = "sha256:" + String(repeating: "0", count: 64)
+                }
+                #endif
+                let text = reply.text.isEmpty && reply.choice.isEmpty && !ids.isEmpty ? "See attached files." : reply.text
+                let payload: [String: Any] = ["node": self.node, "serial": self.serial, "action": reply.action,
+                    "text": text, "choice": reply.choice, "submission": self.submission, "attachments": ids]
                 let value = try nativeHumanRPC(profile: self.profile, method: "answer", payload: payload)
+                #if DIBS_READING_FIXTURE
+                if ProcessInfo.processInfo.environment["DIBS_NATIVE_REOPEN_REPEAT"] == "1" {
+                    let repeated = try nativeHumanRPC(profile: self.profile, method: "answer", payload: payload)
+                    guard repeated["ok"] as? Bool == true else { throw NativeHumanFailure.unavailable }
+                }
+                #endif
                 DispatchQueue.main.async {
                     if value["ok"] as? Bool == true {
+                        if let failure = value["files_error"] as? String, !failure.isEmpty {
+                            self.filesError = failure; self.pending = false; self.window?.finished = false; self.refresh(); return
+                        }
                         NativeHumanStorage.drafts.removeValue(forKey: self.id)
                         #if DIBS_READING_FIXTURE
                         nativeHumanFixtureSent(self.id)
@@ -224,6 +273,7 @@ final class NativeHumanController: @unchecked Sendable {
                 let changed = (error as? NativeHumanFailure) == .boardChanged
                 DispatchQueue.main.async {
                     self.window?.finished = false; self.window?.sent = false
+                    self.window?.setSubmitting(false)
                     if changed {
                         self.confirmed = false; self.refusedReply = reply
                         self.render(error: true)
@@ -232,7 +282,9 @@ final class NativeHumanController: @unchecked Sendable {
                         #endif
                         return
                     }
-                    self.window?.hint.stringValue = "Not confirmed · try again"
+                    if let fileError = error as? NativeFileError {
+                        self.window?.hint.stringValue = "Not sent · " + fileError.message
+                    } else { self.window?.hint.stringValue = "Not confirmed · try again" }
                     self.window?.updateEnabled()
                     #if DIBS_READING_FIXTURE
                     nativeHumanFixtureFailed(self.id)
@@ -241,12 +293,16 @@ final class NativeHumanController: @unchecked Sendable {
             }
         }
     }
+    func saveDraft() {
+        guard pending, let window else { return }
+        let reply = HumanPromptReply(choice: window.selected.map { choices[$0] } ?? "", text: window.composer.string, files: window.files)
+        NativeHumanStorage.drafts[id] = reply.text.isEmpty && reply.choice.isEmpty && reply.files.isEmpty ? nil : reply
+    }
     func walk(_ direction: Int) {
         let target = direction > 0 ? next : previous
         guard target != 0, let window, !window.finished else { return }
         if pending {
-            let reply = HumanPromptReply(choice: window.selected.map { choices[$0] } ?? "", text: window.composer.string)
-            NativeHumanStorage.drafts[id] = reply.text.isEmpty && reply.choice.isEmpty ? nil : reply
+            saveDraft()
         }
         window.finished = true
         open(target)
@@ -282,8 +338,46 @@ func nativeHumanFixtureRender(_ owner: NativeHumanController, _ window: HumanPro
     guard let path = ProcessInfo.processInfo.environment["DIBS_NATIVE_REOPEN_VIEW"] else { return false }
     window.panel.appearance = NSAppearance(named: ProcessInfo.processInfo.environment["DIBS_NATIVE_REOPEN_APPEARANCE"] == "light" ? .aqua : .darkAqua)
     window.panel.effectiveAppearance.performAsCurrentDrawingAppearance { window.layout(fit: true) }
+    if let file = ProcessInfo.processInfo.environment["DIBS_NATIVE_REOPEN_ATTACH"], !NativeHumanStorage.fixtureAttachmentSeeded {
+        NativeHumanStorage.fixtureAttachmentSeeded = true
+        let input = ProcessInfo.processInfo.environment["DIBS_NATIVE_REOPEN_INPUT"] ?? "file"
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        if input == "paste" {
+            if let data = try? Data(contentsOf: URL(fileURLWithPath: file)) {
+                board.setData(data, forType: .png); window.composer.paste(board)
+            }
+        } else if input == "drop" {
+            board.writeObjects([URL(fileURLWithPath: file) as NSURL])
+            _ = window.root.performDragOperation(NativeFixtureDrag(board))
+        } else { window.addFiles([URL(fileURLWithPath: file)]) }
+        window.layout(fit: true)
+    }
+    if ProcessInfo.processInfo.environment["DIBS_NATIVE_REOPEN_ZOOM"] == "1", let image = window.incomingMedia.rows.first?.picture,
+       let click = NSEvent.mouseEvent(with: .leftMouseDown, location: .zero, modifierFlags: [], timestamp: 0,
+                                     windowNumber: window.panel.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 1) {
+        image.mouseDown(with: click)
+    }
     var view = window.viewInfo; view["state"] = owner.state; view["confirmed"] = owner.confirmed
+    view["zoomHeight"] = window.incomingMedia.preview?.contentView?.bounds.height ?? 0
+    if let path = ProcessInfo.processInfo.environment["DIBS_NATIVE_REOPEN_PROBE"], !NativeHumanStorage.fixtureProbed {
+        NativeHumanStorage.fixtureProbed = true
+        do {
+            let data = try Data(contentsOf: URL(fileURLWithPath: path))
+            guard data.count <= 32768, let record = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let method = record["method"] as? String, ["media", "upload"].contains(method),
+                  let payload = record["payload"] as? [String: Any] else { throw NativeHumanFailure.unavailable }
+            var value = try nativeHumanRPC(profile: owner.profile, method: method, payload: payload)
+            if let bytes = value.removeValue(forKey: "data") as? String { value["data_base64_bytes"] = bytes.utf8.count }
+            view["probe"] = value
+        } catch { view["probe_error"] = error.localizedDescription }
+    }
     view["serial"] = owner.serial; view["walks"] = window.step != nil
+    let cycle = ProcessInfo.processInfo.environment["DIBS_NATIVE_REOPEN_CYCLE"] == "1"
+    if cycle {
+        NativeHumanStorage.fixtureDraftTrace.append(["serial": owner.serial, "files": window.files.map { $0.name }])
+        view["draftTrace"] = NativeHumanStorage.fixtureDraftTrace
+    }
     try! JSONSerialization.data(withJSONObject: view).write(to: URL(fileURLWithPath: path))
     if let path = ProcessInfo.processInfo.environment["DIBS_NATIVE_REOPEN_SCREENSHOT"] {
         window.panel.effectiveAppearance.performAsCurrentDrawingAppearance {
@@ -295,6 +389,11 @@ func nativeHumanFixtureRender(_ owner: NativeHumanController, _ window: HumanPro
         }
     }
     guard owner.confirmed else { nativeHumanFixtureFailed(owner.id); return true }
+    if cycle, NativeHumanStorage.fixtureCycleStep < 2 {
+        let direction = NativeHumanStorage.fixtureCycleStep == 0 ? 1 : -1
+        NativeHumanStorage.fixtureCycleStep += 1
+        owner.walk(direction); return true
+    }
     guard !NativeHumanStorage.fixtureActed, let action = ProcessInfo.processInfo.environment["DIBS_NATIVE_REOPEN_ACTION"], !action.isEmpty,
           owner.pending || action == "Right" else {
         if !brokerLaunch { exit(0) }; return true

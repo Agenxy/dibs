@@ -251,6 +251,7 @@ func TestNativeHumanColdReopenUsesCurrentDaemonAndAttestedPeer(t *testing.T) {
 	if answered["state"] != "answered" || answered["reply"] != false || strings.Contains(fmt.Sprint(answered["hint"]), "send") {
 		t.Fatalf("answered reopen not read-only: %v", answered)
 	}
+	nativeHumanMediaRoundTrip(t, call, reopen, token, posted, root)
 	liveSerial, livePath := send("question")
 	liveID := strings.TrimSuffix(filepath.Base(livePath), ".plist")
 	nativeLiveBrokerReopen(t, ctx, helper, env, profile, root, liveID)
@@ -261,7 +262,7 @@ func TestNativeHumanColdReopenUsesCurrentDaemonAndAttestedPeer(t *testing.T) {
 	}
 	// A general local-secret holder is not a native human peer. Header-selected
 	// PIDs, a declared bundle id and the correct agent/board secret cannot help.
-	for _, method := range []string{"message", "answer"} {
+	for _, method := range []string{"message", "answer", "media", "upload"} {
 		body, _ := json.Marshal(map[string]any{"node": strings.Split(id, ".")[2], "serial": serial, "action": "answer", "text": "forged"})
 		req, _ := http.NewRequestWithContext(ctx, "POST", "http://localhost/api/human/native/"+method, bytes.NewReader(body))
 		req.Header.Set("X-Dibs-Local", secret)
@@ -274,7 +275,7 @@ func TestNativeHumanColdReopenUsesCurrentDaemonAndAttestedPeer(t *testing.T) {
 		data, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
 		if resp.StatusCode != http.StatusForbidden {
-			t.Fatalf("same UID non-notifier %s accepted: %d %s", method, resp.StatusCode, data)
+			t.Errorf("same UID non-notifier %s accepted: %d %s", method, resp.StatusCode, data)
 		}
 	}
 	_, requestPath := send("request")
@@ -371,12 +372,16 @@ func TestNativeHumanColdReopenUsesCurrentDaemonAndAttestedPeer(t *testing.T) {
 				}
 			}
 			proof <- fault
-			nativeHumanJSON(w, http.StatusOK, map[string]any{"ok": true, "title": "Dibs · audit asks", "view": map[string]any{"pending": false, "state": "withdrawn", "notice": map[string]any{"type": "question", "who": "audit", "body": "Audit identity fixture"}}})
+			nativeHumanJSON(w, map[string]any{"ok": true, "title": "Dibs · audit asks", "view": map[string]any{"pending": false, "state": "withdrawn", "notice": map[string]any{"type": "question", "who": "audit", "body": "Audit identity fixture"}, "media": []map[string]any{{"index": 0, "kind": "image", "mime": "image/png", "size": 1024, "expired": true}}}})
 		}),
 	}
 	go func() { _ = server.Serve(listener) }()
 	defer func() { _ = server.Close() }()
-	reopen("dibs.msg.audit.1", auditPath, "", "", -1)
+	expiredView := reopen("dibs.msg.audit.1", auditPath, "", "", -1)
+	expiredMedia, ok := expiredView["media"].([]any)
+	if !ok || len(expiredMedia) != 1 || expiredMedia[0].(map[string]any)["expired"] != true || expiredMedia[0].(map[string]any)["rendered"] != false {
+		t.Errorf("expired native image did not retain an expired placeholder: %v", expiredView)
+	}
 	select {
 	case err := <-proof:
 		if err != nil {
@@ -553,12 +558,32 @@ func nativeToolCall(t *testing.T, client *http.Client, secret, name string, args
 	var rpc struct {
 		Result struct {
 			Content []struct {
-				Text string `json:"text"`
+				Text     string  `json:"text"`
+				Data     *string `json:"data"`
+				Resource struct {
+					Blob string `json:"blob"`
+				} `json:"resource"`
 			} `json:"content"`
 		} `json:"result"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&rpc); err != nil || len(rpc.Result.Content) == 0 {
 		t.Fatalf("%s rpc: %v %+v", name, err, rpc)
+	}
+	if name == "get_blob" {
+		for _, item := range rpc.Result.Content {
+			raw := item.Resource.Blob
+			if item.Data != nil {
+				raw = *item.Data
+			}
+			if raw != "" {
+				body, err := base64.StdEncoding.DecodeString(raw)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return map[string]any{"bytes": body}
+			}
+		}
+		t.Fatal("get_blob did not embed the requested file bytes")
 	}
 	var result map[string]any
 	if err := json.Unmarshal([]byte(rpc.Result.Content[0].Text), &result); err != nil {

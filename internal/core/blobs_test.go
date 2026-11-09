@@ -166,7 +166,9 @@ func TestBlobPerSpaceQuota(t *testing.T) {
 // TestBlobTTLEviction: an unreferenced blob is evicted after the hard TTL; a
 // referenced one is not.
 func TestBlobTTLEviction(t *testing.T) {
-	s := NewState("n1", DefaultLimits())
+	lim := DefaultLimits()
+	lim.BlobMaxAge = 0 // the age bound has its own test; this one is the unreferenced TTL
+	s := NewState("n1", lim)
 	ackReg(t, s, "alpha", "ta", t0)
 	ackReg(t, s, "beta", "tb", t0)
 	unref := putBlob(t, s, "ta", "ephemeral", t0)["blob"].(string)
@@ -183,6 +185,45 @@ func TestBlobTTLEviction(t *testing.T) {
 	}
 	if _, ok := s.Blobs[refd]; !ok {
 		t.Fatal("referenced blob must survive TTL")
+	}
+}
+
+// A screenshot sent to the person sits on mail that may never be consumed, so
+// referenced or not, an attachment is cleared at the maximum age. The message
+// keeps its handle, and its holders are told the content expired rather than
+// that they may not read it.
+func TestBlobMaxAgeClearsEvenReferencedAttachments(t *testing.T) {
+	lim := DefaultLimits()
+	lim.BlobMaxAge = 48 * time.Hour
+	s := NewState("n1", lim)
+	ackReg(t, s, "alpha", "ta", t0)
+	ackReg(t, s, "beta", "tb", t0)
+	old := putBlob(t, s, "ta", "old screenshot", t0)["blob"].(string)
+	fresh := putBlob(t, s, "ta", "new screenshot", t0.Add(30*time.Hour))["blob"].(string)
+	for _, id := range []string{old, fresh} {
+		mustApply(t, s, &Op{
+			Kind: OpSendMessage, Token: "ta", To: "beta", OpID: id,
+			MsgType: MsgNotify, Body: "look", Attachments: []Attachment{{Blob: id}},
+		}, t0.Add(30*time.Hour))
+	}
+	_, evs, err := s.Apply(&Op{Kind: OpSweep}, t0.Add(49*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Blobs[old] != nil || s.Blobs[fresh] == nil {
+		t.Fatalf("after 49h: old kept %v, fresh kept %v", s.Blobs[old] != nil, s.Blobs[fresh] != nil)
+	}
+	cause := ""
+	for _, ev := range evs {
+		if ev.Type == "blob.evicted" && ev.Data["id"] == old {
+			cause, _ = ev.Data["cause"].(string)
+		}
+	}
+	if cause != "age" {
+		t.Fatalf("eviction cause %q, want age", cause)
+	}
+	if !s.BlobWasEvicted(old, "beta") {
+		t.Fatal("the recipient still holds the message; that is expiry, not a permission problem")
 	}
 }
 
