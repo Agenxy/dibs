@@ -7,22 +7,24 @@ package engine
 
 import (
 	"context"
-	"github.com/agenxy/dibs/internal/core"
-	"github.com/agenxy/dibs/internal/liveness"
-	"github.com/agenxy/dibs/internal/testexec"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/liveness"
+	"github.com/agenxy/dibs/internal/procexec"
+	"github.com/agenxy/dibs/internal/testexec"
 )
 
 func TestUnknownEnvironmentCannotFeedSupervision(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	binary := filepath.Join(t.TempDir(), "claude")
-	build := exec.CommandContext(ctx, "go", "build", "-o", binary, "./testdata/emptyenv")
+	build := procexec.Command(ctx, "go", "build", "-o", binary, "./testdata/emptyenv")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("setup: empty-env fixture build: %v: %s", err, out)
 	}
@@ -32,7 +34,7 @@ func TestUnknownEnvironmentCannotFeedSupervision(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = input.Close(); _ = release.Close() }()
-	child := exec.CommandContext(ctx, binary)
+	child := procexec.Command(ctx, binary)
 	child.Env = []string{}
 	child.Stdin = input
 	ready, err := child.StdoutPipe()

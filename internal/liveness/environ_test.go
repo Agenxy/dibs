@@ -7,11 +7,12 @@ import (
 	"context"
 	"io"
 	"os"
-	"os/exec"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // The environment IS readable for the processes this has to work on, and the
@@ -41,7 +42,7 @@ import (
 func TestTheEnvironmentIsReadableForUserBinaries(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
-	c := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestHelperStaysAlive$", "-test.timeout=90s")
+	c := procexec.Command(ctx, os.Args[0], "-test.run=^TestHelperStaysAlive$", "-test.timeout=90s")
 	ready, err := c.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)

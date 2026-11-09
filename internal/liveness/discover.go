@@ -18,7 +18,9 @@ import (
 const AttributionUnknown = "unknown"
 
 // AttributionUnknownHint explains why a process remains visible but unowned.
-const AttributionUnknownHint = "The process environment is empty or unreadable, so DIBS_PARENT could not be established. No parent was guessed; a later complete read may establish ownership."
+const AttributionUnknownHint = "The process environment is empty or unreadable, so " +
+	"DIBS_PARENT could not be established. No parent was guessed; " +
+	"a later complete read may establish ownership."
 
 // Agent is an agent-shaped process found running on this machine.
 type Agent struct {

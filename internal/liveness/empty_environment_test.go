@@ -7,20 +7,20 @@ package liveness
 
 import (
 	"context"
-	"github.com/agenxy/dibs/internal/procexec"
-	"github.com/agenxy/dibs/internal/procinfo"
 	"io"
 	"os"
-	"os/exec"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
+	"github.com/agenxy/dibs/internal/procinfo"
 )
 
 func TestEmptyNativeEnvironmentCannotChooseAHeuristicOwner(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
-	child := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestEmptyNativeEnvironmentHelper$", "-test.timeout=90s")
+	child := procexec.Command(ctx, os.Args[0], "-test.run=^TestEmptyNativeEnvironmentHelper$", "-test.timeout=90s")
 	child.Args[0] = "claude"
 	child.Env = []string{}
 	ready, err := child.StdoutPipe()
