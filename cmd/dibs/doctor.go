@@ -1020,7 +1020,7 @@ func checkSupervision(verbose bool, ok reportFn, warn fixFn) {
 			"subagent ownership stays UNKNOWN when its environment cannot be read; "+
 				"no weaker parent guess is used: see SPEC-SUPERVISION.md §5")
 	} else if verbose {
-		ok("process environments are readable: subagent attribution is exact")
+		ok("this process environment is readable; unreadable child environments remain UNKNOWN")
 	}
 }
 

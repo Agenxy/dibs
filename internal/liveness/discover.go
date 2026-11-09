@@ -287,7 +287,10 @@ func environmentOf(pid int) (string, bool) {
 	}
 	if procinfo.Native {
 		env, err := procinfo.Environ(pid)
-		return strings.Join(env, " "), err == nil
+		if err != nil {
+			return "", false
+		}
+		return strings.Join(env, " "), true
 	}
 	// Unsupported platforms retain their existing command implementation.
 	// #nosec G204 -- pid is an integer, never shell input.
