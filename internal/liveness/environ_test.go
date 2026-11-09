@@ -4,11 +4,15 @@
 package liveness
 
 import (
+	"context"
+	"io"
 	"os"
-	"os/exec"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // The environment IS readable for the processes this has to work on, and the
@@ -36,14 +40,25 @@ import (
 // unconditional rather than "skip if the platform is shy", which would have
 // hidden a real regression behind an environmental excuse.
 func TestTheEnvironmentIsReadableForUserBinaries(t *testing.T) {
-	c := exec.Command(os.Args[0], "-test.run=TestHelperStaysAlive", "-test.timeout=90s")
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	c := procexec.Command(ctx, os.Args[0], "-test.run=^TestHelperStaysAlive$", "-test.timeout=90s")
+	ready, err := c.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
 	c.Env = append(os.Environ(), "DIBS_PARENT=sentinel-agent", "DIBS_TEST_HELPER=1")
 	if err := c.Start(); err != nil {
 		t.Fatalf("could not spawn a user binary to inspect: %v", err)
 	}
 	defer func() { _ = c.Process.Kill(); _ = c.Wait() }()
 
-	// The child may exit quickly; read while it is certainly alive.
+	// Start returning does not prove the new image has entered main. The
+	// readiness byte is emitted by the child, without delaying or retrying reads.
+	var signal [1]byte
+	if _, err := io.ReadFull(ready, signal[:]); err != nil || signal[0] != 'R' {
+		t.Fatalf("setup: child readiness %q: %v", signal, err)
+	}
 	blob := EnvironOf(c.Process.Pid)
 	if !strings.Contains(blob, "DIBS_PARENT=sentinel-agent") {
 		if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
@@ -81,6 +96,9 @@ func TestNoProcessMeansNoEnvironment(t *testing.T) {
 func TestHelperStaysAlive(t *testing.T) {
 	if os.Getenv("DIBS_TEST_HELPER") == "" {
 		t.Skip("not the helper invocation")
+	}
+	if _, err := io.WriteString(os.Stdout, "R"); err != nil {
+		t.Fatal(err)
 	}
 	// Blocks until the parent kills it. A sleep would be banned here (and
 	// rightly: a test that sleeps is a test that is guessing); this is not

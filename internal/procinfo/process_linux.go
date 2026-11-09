@@ -135,6 +135,9 @@ func Command(pid int) ([]string, error) {
 // Environ reads inherited entries without logging their content.
 func Environ(pid int) ([]string, error) {
 	raw, err := os.ReadFile(procPath(pid, "environ"))
+	if err == nil && len(raw) == 0 {
+		return nil, ErrUnavailable
+	}
 	return nullFields(raw), err
 }
 

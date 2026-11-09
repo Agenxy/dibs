@@ -154,15 +154,28 @@ func listAgents(cfg liveness.Config, asJSON bool) error {
 		if owner == "" {
 			owner = "unattributed"
 		}
+		hint := ""
+		if a.Via == liveness.AttributionUnknown {
+			owner = "UNKNOWN"
+			hint = liveness.AttributionUnknownHint
+		}
 		if asJSON {
-			out, _ := json.Marshal(map[string]any{
+			row := map[string]any{
 				"pid": a.PID, "harness": a.Harness, "owner": a.Owner,
 				"via": a.Via, "state": string(v.State), "why": v.Why,
-			})
+			}
+			if hint != "" {
+				row["attribution_hint"] = hint
+			}
+			out, _ := json.Marshal(row)
 			fmt.Println(string(out))
 			continue
 		}
-		fmt.Printf("%-7d %-9s %-10s %-22s %s\n", a.PID, a.Harness, v.State, owner, v.Why)
+		why := v.Why
+		if hint != "" {
+			why += "; attribution UNKNOWN: " + hint
+		}
+		fmt.Printf("%-7d %-9s %-10s %-22s %s\n", a.PID, a.Harness, v.State, owner, why)
 	}
 	return nil
 }
