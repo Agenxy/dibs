@@ -40,6 +40,12 @@ func TestEveryNewSnapshotFieldHasADeclaredFeature(t *testing.T) {
 			delete(names, field)
 		}
 	}
+	for _, field := range configuredSnapshotFields {
+		if !names[field] || assigned[field] {
+			t.Fatalf("configured field is missing or also assigned a feature: %s", field)
+		}
+		delete(names, field)
+	}
 	// Exact fingerprint of the published v0.0.16 reachable State fields.
 	// Never update this baseline for new fields: assign a feature above.
 	if got := fingerprint(names); got != "sha256:a1d51d01f9dc23d0" {
@@ -171,5 +177,32 @@ func TestSnapshotFeatureMarkersThroughRealWriter(t *testing.T) {
 			}
 			t.Logf("actual old binary: legacy control accepted; feature snapshot refused: %s", output)
 		})
+	}
+}
+
+// The claim configuredSnapshotFields rests on: a snapshot's limits are never
+// read, so the daemon's configured limits survive loading one.
+func TestLoadedSnapshotKeepsTheConfiguredLimits(t *testing.T) {
+	dir := t.TempDir()
+	box, err := LoadOrCreateKey(filepath.Join(dir, "key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "ledger.jsonl")
+	written := core.DefaultLimits()
+	written.BlobMaxAge = 2 * time.Hour
+	st := core.NewState("test", written)
+	if err := writeSnapshot(snapshotPath(path), SnapshotHeader{Serial: st.Serial, Node: st.NodeID}, st, box); err != nil {
+		t.Fatal(err)
+	}
+	configured := core.DefaultLimits()
+	configured.BlobMaxAge = 30 * 24 * time.Hour
+	loaded := core.NewState("test", configured)
+	l := &Ledger{path: path, box: box}
+	if _, ok, err := l.loadSnapshot(loaded); err != nil || !ok {
+		t.Fatalf("load: %v %v", ok, err)
+	}
+	if loaded.Limits.BlobMaxAge != configured.BlobMaxAge {
+		t.Fatalf("a snapshot's max age %v replaced the configured %v", loaded.Limits.BlobMaxAge, configured.BlobMaxAge)
 	}
 }
