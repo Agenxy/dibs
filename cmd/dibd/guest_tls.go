@@ -146,7 +146,9 @@ func guestTLS(dir string, ip netip.Addr) (*tls.Config, string, string, error) {
 	if err != nil {
 		return nil, "", "", err
 	}
-	pair := tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}
+	// The CA rides after the leaf: a guest pins the CA's key, and a client
+	// holding only the pin (the phone) has nothing to hash unless it is sent.
+	pair := tls.Certificate{Certificate: [][]byte{der, ca.Raw}, PrivateKey: key}
 	// Verify what is about to be served, not just the presence of extensions.
 	parsed, err := x509.ParseCertificate(der)
 	if err != nil {

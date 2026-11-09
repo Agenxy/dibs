@@ -676,7 +676,10 @@ This listener terminates TLS 1.3 itself, using `guest-ca.pem` and
 `guest-ca-key.pem` in the private data directory. That identity is separate
 from the fleet's `tls-ca.pem`: exact IPv6 /128 permitted scope, critical name
 constraints excluding every DNS name, and CA path length zero. Leaves contain
-only the selected IP, no DNS SAN or CN identity. Leaf renewal preserves the
+only the selected IP, no DNS SAN or CN identity. The handshake sends the guest
+CA after the leaf, so a client that holds only the SPKI pin (a phone paired
+nearby, with no CA file) can hash the certificate the pin names and check it
+signed the leaf. Leaf renewal preserves the
 guest CA. Corrupt, partial or differently scoped guest identities refuse
 startup rather than silently overwriting a pinned root.
 

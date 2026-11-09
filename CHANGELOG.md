@@ -51,6 +51,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   messages. A reply you started is kept if you walk away and come back. Esc
   still closes the window.
 
+- The guest TLS listener now sends its CA after the leaf certificate. A guest
+  that knows only the board's pin, with no copy of the CA, can now check the
+  pin during the handshake. Clients that already hold the CA are unaffected.
+
 ### Fixed
 
 - `dibs upgrade` rides out a brief GitHub download outage instead of failing
