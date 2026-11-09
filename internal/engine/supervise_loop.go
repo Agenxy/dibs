@@ -79,30 +79,13 @@ func (e *Engine) superviseOnce(ctx context.Context, cfg liveness.Config,
 	live := make(map[int]bool, len(found))
 
 	for _, a := range found {
+		// Unknown ownership is still visible in probe/doctor, but cannot choose a
+		// transcript, accumulate a verdict, or suppress a later owner's notice.
+		if a.Via == liveness.AttributionUnknown {
+			continue
+		}
 		live[a.PID] = true
-		// The transcript the child ANNOUNCED beats the one discovered by asking
-		// its process which files it holds open. Same file when both work; the
-		// announced one is right when the child is too wedged to hold it open.
-		path := e.transcriptFor(ctx, a.Owner)
-		if path == "" {
-			path = liveness.FindTranscript(a.PID)
-		}
-		sample := liveness.Observe(a.PID, path)
-		// A child that reports its own progress is believed when there is no
-		// transcript to read. opencode keeps sessions in SQLite and shares one
-		// log across every run on the machine, so there is no per-process file
-		// to watch, but its plugin can count its own turns, and a counter that
-		// only goes up is exactly what the classifier needs. Without this, an
-		// opencode child is judged on CPU alone: a hard stall is caught, a slow
-		// one is not.
-		//
-		// Only used when the transcript gave nothing, so a harness that has both
-		// keeps the stronger signal.
-		if sample.Tokens == 0 {
-			if p := e.progressFor(ctx, a.Owner); p > 0 {
-				sample.Tokens = p
-			}
-		}
+		sample, path := e.sampleForSupervision(ctx, a)
 		history[a.PID] = append(history[a.PID], sample)
 		if len(history[a.PID]) > 64 {
 			history[a.PID] = history[a.PID][32:]
@@ -132,6 +115,35 @@ func (e *Engine) superviseOnce(ctx context.Context, cfg liveness.Config,
 			delete(told, pid)
 		}
 	}
+}
+
+// sampleForSupervision joins the child's own transcript/progress evidence
+// before classification. Call only after ownership evidence is available.
+func (e *Engine) sampleForSupervision(ctx context.Context, a liveness.Agent) (liveness.Sample, string) {
+	// The transcript the child ANNOUNCED beats the one discovered by asking
+	// its process which files it holds open. Same file when both work; the
+	// announced one is right when the child is too wedged to hold it open.
+	path := e.transcriptFor(ctx, a.Owner)
+	if path == "" {
+		path = liveness.FindTranscript(a.PID)
+	}
+	sample := liveness.Observe(a.PID, path)
+	// A child that reports its own progress is believed when there is no
+	// transcript to read. opencode keeps sessions in SQLite and shares one
+	// log across every run on the machine, so there is no per-process file
+	// to watch, but its plugin can count its own turns, and a counter that
+	// only goes up is exactly what the classifier needs. Without this, an
+	// opencode child is judged on CPU alone: a hard stall is caught, a slow
+	// one is not.
+	//
+	// Only used when the transcript gave nothing, so a harness that has both
+	// keeps the stronger signal.
+	if sample.Tokens == 0 {
+		if p := e.progressFor(ctx, a.Owner); p > 0 {
+			sample.Tokens = p
+		}
+	}
+	return sample, path
 }
 
 // transcriptFor returns the transcript a child announced through its own

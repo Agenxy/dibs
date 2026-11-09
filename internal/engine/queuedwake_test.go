@@ -6,11 +6,13 @@ package engine
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/testexec"
 )
 
 func TestOnlyCodexQueueCountsAsAQueuingCommand(t *testing.T) {
@@ -50,17 +52,15 @@ func splitArgs(s string) []string {
 // prompt/start hook is a fallback receipt; tool and MCP traffic are not.
 func TestASecondWakeIsNotQueuedBehindOneNotYetDelivered(t *testing.T) {
 	t.Setenv("DIBS_DIR", t.TempDir())
-	touch, err := filepath.Abs("/usr/bin/touch")
-	if _, serr := os.Stat(touch); err != nil || serr != nil {
-		t.Skip("no /usr/bin/touch on this platform")
+	codex := filepath.Join(t.TempDir(), "codex")
+	// A system utility cannot impersonate codex: Ubuntu's uutils touch
+	// dispatches by argv[0] and refuses an alias named for another program.
+	if output, err := exec.Command("go", "build", "-o", codex, "./testdata/queuemarker").CombinedOutput(); err != nil {
+		t.Fatalf("setup: queue marker fixture build: %v: %s", err, output)
 	}
-	bin := t.TempDir()
-	codex := filepath.Join(bin, "codex") // a queuing command by name, touch by nature
-	if err := os.Symlink(touch, codex); err != nil {
-		t.Fatal(err)
-	}
+	testexec.PrepareExecutable(t, exec.Command(codex, "--version"))
 	cwd := t.TempDir()
-	marker := filepath.Join(cwd, "queue") // touch makes a file named for its first argument
+	marker := filepath.Join(cwd, "queue")
 
 	e := New(core.NewState("test", core.DefaultLimits()), &memLedger{}, deadProber{})
 	e.SetWakeCommands(map[string]WakeCommand{"codex": {

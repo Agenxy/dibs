@@ -37,6 +37,9 @@ func Stamp(start time.Time) string {
 // ErrUnsupported asks the caller to retain its existing platform fallback.
 var ErrUnsupported = errors.New("native process observation is unsupported")
 
+// ErrUnavailable marks evidence the kernel did not make readable this pass.
+var ErrUnavailable = errors.New("native process evidence is unavailable")
+
 // Gone distinguishes a kernel observation of absence from an unavailable ABI.
 func Gone(err error) bool { return errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ESRCH) }
 

@@ -36,6 +36,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- An empty or unreadable process environment leaves subagent ownership
+  UNKNOWN, without guessing its parent or starting a command to read it again.
+  Probe and doctor explain the missing evidence; supervision defers decisions
+  until ownership can be established. Readiness handshakes and an owned queue
+  fixture keep the Linux guards valid across GNU and uutils userlands.
+
 - Idle process checks use native kernel reads on macOS and Linux instead of
   repeatedly starting `ps`; macOS CPU and transcript-file checks use native
   process information too. Process start identities still protect against PID
