@@ -312,6 +312,12 @@ type LimitsConfig struct {
 	// is gone. Fleets that exchange large artifacts want this bigger; a machine
 	// with little disk to spare wants it smaller. Accepts a plain byte count.
 	BlobStoreBytes int64 `toml:"blob_store_bytes"`
+
+	// BlobMaxAge is the longest any attachment is kept, attached to a message
+	// or not: screenshots, designs and files agents send the person, and files
+	// the person sends back. The message keeps its line about the attachment
+	// and says it expired. Default 168h (seven days); at least one hour.
+	BlobMaxAge string `toml:"blob_max_age"`
 }
 
 // MatchConfig is the [match] table (SPEC-CHANNELS.md §7).
@@ -592,6 +598,27 @@ func CheckDuration(table, key, raw string) (time.Duration, error) {
 		return 0, fmt.Errorf("[%s] %s = %q is below the %s floor: agents renew their "+
 			"lease at half the TTL, so anything shorter marks healthy agents crashed "+
 			"between their own keepalives", table, key, raw, MinAgentTTL)
+	}
+	return d, nil
+}
+
+// MinBlobMaxAge keeps an attachment alive long enough to be attached and
+// read: the put→send grace window is ten minutes.
+const MinBlobMaxAge = time.Hour
+
+// CheckBlobMaxAge parses [limits] blob_max_age; "" means the default.
+func CheckBlobMaxAge(raw string) (time.Duration, error) {
+	if raw == "" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, fmt.Errorf("[limits] blob_max_age = %q is not a duration: write it "+
+			"in hours, like \"168h\" for seven days: %w", raw, err)
+	}
+	if d < MinBlobMaxAge {
+		return 0, fmt.Errorf("[limits] blob_max_age = %q is below %s: an attachment "+
+			"could expire before its recipient opened it", raw, MinBlobMaxAge)
 	}
 	return d, nil
 }
@@ -935,6 +962,9 @@ func (c Config) validateLimits() error {
 		if err := CheckCount("limits", n.key, n.raw); err != nil {
 			return err
 		}
+	}
+	if _, err := CheckBlobMaxAge(c.Limits.BlobMaxAge); err != nil {
+		return err
 	}
 	if c.Limits.BlobStoreBytes < 0 {
 		return fmt.Errorf("[limits] blob_store_bytes = %d: a store cannot hold a "+

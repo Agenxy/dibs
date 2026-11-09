@@ -239,6 +239,23 @@ func TestBlobStoreCapIsConfigurable(t *testing.T) {
 	}
 }
 
+// The person sets how long attachments live; the daemon must apply it, and an
+// absent setting keeps the seven-day default rather than turning ageing off.
+func TestBlobMaxAgeIsAppliedFromTheFile(t *testing.T) {
+	base := core.DefaultLimits()
+	set, err := applyLimits(LimitsConfig{BlobMaxAge: "72h"}, base)
+	if err != nil || set.BlobMaxAge != 72*time.Hour {
+		t.Fatalf("blob_max_age = 72h gave %v / %v", set.BlobMaxAge, err)
+	}
+	unset, err := applyLimits(LimitsConfig{}, base)
+	if err != nil || unset.BlobMaxAge != 7*24*time.Hour {
+		t.Fatalf("an absent age keeps the default, got %v / %v", unset.BlobMaxAge, err)
+	}
+	if _, err := applyLimits(LimitsConfig{BlobMaxAge: "30m"}, base); err == nil || !strings.Contains(err.Error(), "blob_max_age") {
+		t.Fatalf("an age under an hour must be refused by name, got %v", err)
+	}
+}
+
 // A store too small to hold one attachment evicts everything the moment it is
 // used, which looks like attachments being broken rather than a cap doing its
 // job. Refuse it at startup, where the operator can still see why.
@@ -679,6 +696,9 @@ func TestTheSharedLoaderRefusesEverythingTheDaemonRefuses(t *testing.T) {
 		{"a blob store too small for one blob", "[limits]\nblob_store_bytes = 1024\n"},
 		{"a blob store of exactly one blob", "[limits]\nblob_store_bytes = 67108864\n"},
 		{"a negative blob store", "[limits]\nblob_store_bytes = -1\n"},
+		{"an attachment age that is not a duration", "[limits]\nblob_max_age = \"a week\"\n"},
+		{"an attachment age under an hour", "[limits]\nblob_max_age = \"30m\"\n"},
+		{"a three-day attachment age", "[limits]\nblob_max_age = \"72h\"\n"},
 		{"a negative agent count", "[limits]\nmax_agents = -1\n"},
 		{"a bad duration", "[limits]\nagent_ttl = \"soon\"\n"},
 		{"nothing at all", ""},
