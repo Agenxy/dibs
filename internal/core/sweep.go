@@ -260,7 +260,7 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 	if s.gcRestartNotices() {
 		pruned = true
 	}
-	evs = append(evs, s.gcBlobs(now, 0)...) // TTL/cap blob eviction (A5)
+	evs = append(evs, s.gcBlobs(now, 0, op.BlobMaxAge)...) // TTL/age/cap blob eviction (A5)
 
 	// Ledger the sweep if it MUTATED anything, not only if it announced
 	// something.
