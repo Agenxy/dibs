@@ -92,8 +92,13 @@ func nativeHumanRPC(profile: String, method: String, payload: [String: Any]) thr
 
 enum NativeHumanStorage {
     static var windows = [String: NativeHumanController]() // main-thread only, lazily initialised before app.run
+    // Unsent replies left behind by walking away, so walking back finds them.
+    static var drafts = [String: HumanPromptReply]() // main-thread only
     #if DIBS_BROKER_FIXTURE || DIBS_READING_FIXTURE
     static var fixtureEvent: ((String, String, [String: Any]) -> Void)?
+    #endif
+    #if DIBS_READING_FIXTURE
+    static var fixtureActed = false
     #endif
 }
 var nativeHumanWindows: [String: NativeHumanController] {
@@ -129,6 +134,8 @@ final class NativeHumanController: @unchecked Sendable {
     var refusalHelp = ""
     var pending = true, confirmed = false
     var choices = [String](), state = "unknown"
+    var position = 0, total = 0, next: UInt64 = 0, previous: UInt64 = 0
+    var anchor: NSRect?
     init(id: String, profile: String?, title: String, detail: AskReadingDetail) {
         self.id = id; self.profileHint = profile; self.title = title; self.detail = detail
         let parts = id.components(separatedBy: ".")
@@ -151,20 +158,31 @@ final class NativeHumanController: @unchecked Sendable {
         self.title = title; self.pending = pending; self.confirmed = true; self.state = state
         self.detail = AskReadingDetail(sender: notice["who"] as? String ?? "", body: body, kind: kind)
         self.choices = notice["choices"] as? [String] ?? []
+        let queue = value["queue"] as? [String: Any] ?? [:]
+        position = queue["position"] as? Int ?? 0; total = queue["total"] as? Int ?? 0
+        next = (queue["next"] as? NSNumber)?.uint64Value ?? 0
+        previous = (queue["previous"] as? NSNumber)?.uint64Value ?? 0
         render()
     }
     func render(error: Bool = false) {
+        let replaced = window.flatMap { $0.shown ? $0.panel.frame : nil } ?? anchor
         window?.close()
         let label = state.replacingOccurrences(of: "_", with: " ")
         var body = pending ? detail.body : "This message is \(label).\n\n" + detail.body
         if error { body = "The board is restarting or changed. Answer on the Dibs board.\n\n" + body }
         let reading = AskReadingDetail(sender: detail.sender, body: body, kind: detail.kind)
+        let walks = !error && next != 0
+        let counter = !walks ? "" : position > 0 ? "\(position) of \(total)" : "\(total) waiting"
         let prompt = HumanPromptWindow(title: title, detail: reading, buttons: ["Close"],
-                                       replyKind: pending ? detail.kind ?? "" : "", choices: choices) { [weak self] reply in self?.submit(reply) }
-        window = prompt
-        if pending, let reply = refusedReply {
+                                       replyKind: pending ? detail.kind ?? "" : "", choices: choices,
+                                       counter: counter) { [weak self] reply in self?.submit(reply) }
+        window = prompt; prompt.anchor = replaced
+        if walks { prompt.step = { [weak self] direction in self?.walk(direction) } }
+        if pending, let reply = refusedReply ?? NativeHumanStorage.drafts[id] {
             prompt.composer.insertText(reply.text, replacementRange: NSRange(location: 0, length: 0))
             if let index = choices.firstIndex(of: reply.choice) { prompt.radios[index].performClick(nil) }
+        }
+        if pending, refusedReply != nil {
             prompt.hint.stringValue = "Not sent · use the Dibs board"
             prompt.hint.setAccessibilityHelp(refusalHelp)
         }
@@ -188,10 +206,14 @@ final class NativeHumanController: @unchecked Sendable {
                 let value = try nativeHumanRPC(profile: self.profile, method: "answer", payload: payload)
                 DispatchQueue.main.async {
                     if value["ok"] as? Bool == true {
+                        NativeHumanStorage.drafts.removeValue(forKey: self.id)
                         #if DIBS_READING_FIXTURE
                         nativeHumanFixtureSent(self.id)
                         #endif
-                        self.close()
+                        // Answering one opens the next, so a run of waiting
+                        // messages takes one click on one banner, not one each.
+                        let next = (value["next"] as? NSNumber)?.uint64Value ?? 0
+                        if next != 0 { self.open(next) } else { self.close() }
                     } else {
                         self.refusedReply = reply
                         self.refusalHelp = (value["error"] as? String ?? "Reply refused") + ". " + (value["hint"] as? String ?? "Use the Dibs board")
@@ -219,6 +241,29 @@ final class NativeHumanController: @unchecked Sendable {
             }
         }
     }
+    func walk(_ direction: Int) {
+        let target = direction > 0 ? next : previous
+        guard target != 0, let window, !window.finished else { return }
+        if pending {
+            let reply = HumanPromptReply(choice: window.selected.map { choices[$0] } ?? "", text: window.composer.string)
+            NativeHumanStorage.drafts[id] = reply.text.isEmpty && reply.choice.isEmpty ? nil : reply
+        }
+        window.finished = true
+        open(target)
+    }
+    // Replace this window with another message from the same board, in place.
+    func open(_ serial: UInt64) {
+        let target = "dibs.msg.\(node).\(serial)"
+        if let existing = nativeHumanWindows[target] {
+            existing.refresh()
+        } else if validMessageID(target) {
+            let controller = NativeHumanController(id: target, profile: profile.isEmpty ? profileHint : profile, title: "Dibs",
+                                                   detail: AskReadingDetail(sender: "", body: "", kind: detail.kind))
+            controller.anchor = window.flatMap { $0.shown ? $0.panel.frame : nil } ?? anchor
+            nativeHumanWindows[target] = controller; controller.refresh()
+        }
+        close()
+    }
     func close() {
         window?.close(); nativeHumanWindows.removeValue(forKey: id)
         if coldLaunch && nativeHumanWindows.isEmpty { exit(0) }
@@ -238,6 +283,7 @@ func nativeHumanFixtureRender(_ owner: NativeHumanController, _ window: HumanPro
     window.panel.appearance = NSAppearance(named: ProcessInfo.processInfo.environment["DIBS_NATIVE_REOPEN_APPEARANCE"] == "light" ? .aqua : .darkAqua)
     window.panel.effectiveAppearance.performAsCurrentDrawingAppearance { window.layout(fit: true) }
     var view = window.viewInfo; view["state"] = owner.state; view["confirmed"] = owner.confirmed
+    view["serial"] = owner.serial; view["walks"] = window.step != nil
     try! JSONSerialization.data(withJSONObject: view).write(to: URL(fileURLWithPath: path))
     if let path = ProcessInfo.processInfo.environment["DIBS_NATIVE_REOPEN_SCREENSHOT"] {
         window.panel.effectiveAppearance.performAsCurrentDrawingAppearance {
@@ -249,8 +295,17 @@ func nativeHumanFixtureRender(_ owner: NativeHumanController, _ window: HumanPro
         }
     }
     guard owner.confirmed else { nativeHumanFixtureFailed(owner.id); return true }
-    guard owner.pending, let action = ProcessInfo.processInfo.environment["DIBS_NATIVE_REOPEN_ACTION"], !action.isEmpty else {
+    guard !NativeHumanStorage.fixtureActed, let action = ProcessInfo.processInfo.environment["DIBS_NATIVE_REOPEN_ACTION"], !action.isEmpty,
+          owner.pending || action == "Right" else {
         if !brokerLaunch { exit(0) }; return true
+    }
+    NativeHumanStorage.fixtureActed = true
+    if action == "Right" {
+        // The actual key path: an unmodified right arrow through the panel.
+        let key = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.panel.windowNumber,
+                                   context: nil, characters: "\u{F703}", charactersIgnoringModifiers: "\u{F703}", isARepeat: false, keyCode: 124)!
+        guard window.panel.performKeyEquivalent(with: key) else { nativeHumanFixtureFailed(owner.id); return true }
+        return true
     }
     if let text = ProcessInfo.processInfo.environment["DIBS_NATIVE_REOPEN_TEXT"] { window.composer.insertText(text, replacementRange: NSRange(location: 0, length: 0)) }
     if let raw = ProcessInfo.processInfo.environment["DIBS_NATIVE_REOPEN_CHOICE"], let index = Int(raw), window.radios.indices.contains(index) { window.radios[index].performClick(nil) }
@@ -259,8 +314,9 @@ func nativeHumanFixtureRender(_ owner: NativeHumanController, _ window: HumanPro
     return true
 }
 func nativeHumanFixtureSent(_ id: String) {
+    // No exit here: the shipped path decides between the next message and
+    // closing, and a cold launch with nothing left exits through close().
     nativeHumanFixtureEvent?("native_sent", id, [:])
-    if !brokerLaunch { exit(0) }
 }
 func nativeHumanFixtureFailed(_ id: String) {
     nativeHumanFixtureEvent?("native_failed", id, [:])

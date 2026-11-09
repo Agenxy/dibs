@@ -143,7 +143,12 @@ final class HumanPromptWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
     let replyKind: String
     let choices: [String]
     let legacyButtons: [String]
+    let counter: String
     let picked: (HumanPromptReply) -> Void
+    // Walks to the person's previous (-1) or next (+1) waiting message.
+    var step: ((Int) -> Void)?
+    // The frame of the window this one replaces, so walking does not jump.
+    var anchor: NSRect?
     let root = PromptSurface()
     let mark = NSImageView()
     let name = NSTextField(wrappingLabelWithString: "")
@@ -179,9 +184,9 @@ final class HumanPromptWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
     #endif
 
     init(title: String, detail: AskReadingDetail, buttons: [String], replyKind: String = "",
-         choices: [String] = [], picked: @escaping (HumanPromptReply) -> Void) {
+         choices: [String] = [], counter: String = "", picked: @escaping (HumanPromptReply) -> Void) {
         self.heading = title; self.detail = detail; self.legacyButtons = buttons
-        self.replyKind = replyKind; self.choices = choices; self.picked = picked
+        self.replyKind = replyKind; self.choices = choices; self.counter = counter; self.picked = picked
         panel = HumanPromptPanel(contentRect: NSRect(x: 0, y: 0, width: 560, height: 420),
                                  styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         super.init()
@@ -200,6 +205,10 @@ final class HumanPromptWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
         }
         context.stringValue = contextLine
         kind.stringValue = replyKind == "request" ? "APPROVAL" : (detail.kind ?? "message").uppercased()
+        if !counter.isEmpty {
+            kind.stringValue += " · " + counter.uppercased()
+            kind.setAccessibilityLabel("\(kind.stringValue). Left and right arrows move between waiting messages.")
+        }
         separator.boxType = .separator
         if let url = Bundle.main.url(forResource: "Dibs", withExtension: "icns") ?? Bundle.main.url(forResource: "Dibs", withExtension: "png"), let icon = NSImage(contentsOf: url) {
             icon.isTemplate = false; mark.image = icon
@@ -315,6 +324,7 @@ final class HumanPromptWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
         let paper = color(0xE6E3DF,0x1C1C1A)
         moreGradient.colors = [paper.withAlphaComponent(0).cgColor,paper.cgColor]
         hint.stringValue = replyKind == "question" ? "⏎ send · ⎋ cancel" : replyKind == "request" ? "⎋ cancel" : "⎋ close"
+        if !counter.isEmpty { hint.stringValue = "← → · " + hint.stringValue }
         let paragraph = NSMutableParagraphStyle(); paragraph.lineSpacing = 7 * scale; paragraph.paragraphSpacing = 7 * scale
         let plain = detail.body.replacingOccurrences(of: "\n[\t ]*\n+", with: "\n", options: .regularExpression)
         let attributed = NSMutableAttributedString(string: plain, attributes: [.font: font(14), .foregroundColor: ink, .paragraphStyle: paragraph])
@@ -512,6 +522,15 @@ final class HumanPromptWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
     }
     func key(_ event: NSEvent) -> Bool {
         if event.keyCode == 53 || (event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == ".") { complete(HumanPromptReply()); return true }
+        // Left and right walk the waiting messages, except while they are
+        // moving the cursor through a reply; Command-[ and ] work even then.
+        if let step, !finished {
+            let typing = panel.firstResponder === composer && !composer.string.isEmpty
+            let bare = event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty
+            if bare && !typing && (event.keyCode == 123 || event.keyCode == 124) { step(event.keyCode == 124 ? 1 : -1); return true }
+            if event.modifierFlags.intersection([.command, .option, .control, .shift]) == .command,
+               let key = event.charactersIgnoringModifiers, key == "[" || key == "]" { step(key == "]" ? 1 : -1); return true }
+        }
         if panel.firstResponder === composer, (event.keyCode == 36 || event.keyCode == 76),
            !event.modifierFlags.intersection([.shift,.option]).isEmpty {
             composer.insertNewline(nil); return true
@@ -549,11 +568,13 @@ final class HumanPromptWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
             if saved >= 320 { panel.setContentSize(NSSize(width: preferredWidth, height: min(screen.height - 48, saved))); layout(fit: false) }
         }
         let offset = CGFloat(Self.cascade % 6) * 24
-        let origin = NSPoint(x: min(screen.maxX - panel.frame.width - 16, screen.midX - panel.frame.width / 2 + offset),
+        var origin = NSPoint(x: min(screen.maxX - panel.frame.width - 16, screen.midX - panel.frame.width / 2 + offset),
                              y: max(screen.minY + 16, screen.maxY - screen.height * 0.22 - panel.frame.height - offset))
+        // A replacement keeps the top edge of the window it replaces.
+        if let anchor, !shown { origin = NSPoint(x: anchor.minX, y: max(screen.minY + 16, anchor.maxY - panel.frame.height)) }
         panel.setFrameOrigin(origin)
         panel.level = .floating
-        let animate = !shown && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let animate = !shown && anchor == nil && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         if animate { panel.alphaValue = 0; panel.setFrameOrigin(NSPoint(x: origin.x, y: origin.y - 6)) }
         NSApp.activate(ignoringOtherApps: true); panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(radios.first ?? (replyKind.isEmpty ? actionButtons.first : composer))
@@ -561,7 +582,7 @@ final class HumanPromptWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
             context.duration = 0.18; context.timingFunction = CAMediaTimingFunction(controlPoints: 0.32, 0.72, 0, 1)
             panel.animator().alphaValue = 1; panel.animator().setFrameOrigin(origin)
         } }
-        if !shown { Self.cascade = (Self.cascade + 1) % 6 }; shown = true
+        if !shown && anchor == nil { Self.cascade = (Self.cascade + 1) % 6 }; shown = true
     }
     func close() {
         panel.delegate = nil
@@ -577,7 +598,7 @@ final class HumanPromptWindow: NSObject, NSWindowDelegate, NSTextViewDelegate {
     }
     func revealMessageEnd() { panel.makeFirstResponder(message); message.moveToEndOfDocument(nil) }
     var viewInfo: [String: Any] {
-        ["title": heading, "sender": detail.sender, "context": context.stringValue, "hint": hint.stringValue,
+        ["title": heading, "kind": kind.stringValue, "sender": detail.sender, "context": context.stringValue, "hint": hint.stringValue,
          "body": detail.body, "renderedBody": message.string,
          "buttons": actionButtons.map { $0.title }, "choices": choices,
          "reply": !replyKind.isEmpty, "overflow": overflow, "width": panel.contentView!.bounds.width,

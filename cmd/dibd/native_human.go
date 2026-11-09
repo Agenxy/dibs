@@ -76,7 +76,13 @@ func (h *nativeHumanAPI) message(w http.ResponseWriter, r *http.Request) {
 		}
 		title = humanask.RequestTitle(from, view.Notice.Grant, adopt, view.Notice.Merge)
 	}
-	nativeHumanJSON(w, http.StatusOK, map[string]any{"ok": true, "view": view, "title": title})
+	// A queue that cannot be read costs the window its next and previous
+	// steps, never the message the person clicked.
+	queue, err := h.eng.NativeHumanQueue(r.Context(), req.Node, req.Serial)
+	if err != nil {
+		slog.Warn("native human queue unavailable", "error", err)
+	}
+	nativeHumanJSON(w, http.StatusOK, map[string]any{"ok": true, "view": view, "title": title, "queue": queue})
 }
 
 func (h *nativeHumanAPI) answer(w http.ResponseWriter, r *http.Request) {
@@ -109,7 +115,13 @@ func (h *nativeHumanAPI) answer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slog.Info("the human answered from the native notification", "msg", req.Serial, "disposition", req.Action)
-	nativeHumanJSON(w, http.StatusOK, map[string]any{"ok": true})
+	// The answer is recorded whatever happens next: a queue that cannot be read
+	// only means the window closes instead of opening the next message.
+	queue, err := h.eng.NativeHumanQueue(r.Context(), req.Node, req.Serial)
+	if err != nil {
+		slog.Warn("native human queue unavailable", "error", err)
+	}
+	nativeHumanJSON(w, http.StatusOK, map[string]any{"ok": true, "next": queue.Next})
 }
 
 func nativeHumanJSON(w http.ResponseWriter, status int, value any) {
