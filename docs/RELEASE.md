@@ -193,7 +193,8 @@ When a local runtime is unavailable, the `published Linux install` workflow
 uses the same checker on an ephemeral GitHub-hosted Ubuntu runner with its real
 Homebrew installation. It runs `-mode linux-hosted -fresh-installs 1`; the receipt
 names the hosted run and explicitly distinguishes it from a Mac container.
-The current acceptance job pins published `v0.0.16`, runs Brew update before
+The acceptance job checks the latest published release, resolved with
+`gh release view` at run time rather than pinned, runs Brew update before
 the public tap/install commands, then performs the same service setup,
 reinstall, archive verification, exact-tag Go install and MCP checks. It is a
 separate public-release report, not the candidate's required `gate`. Failures
