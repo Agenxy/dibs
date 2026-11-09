@@ -25,16 +25,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- An idle daemon no longer spends its time rescanning mail. Once a second it
+- An idle daemon uses about half the CPU it did: 3.3% to 1.8% on the same
+  board of about a hundred rows, measured over half an hour. Once a second it
   rebuilt every row's inbox and outcomes, scanning every message on the board
   for each row, to bound a receipt cache that only needs bounding now and
-  then; on a board of about a hundred rows that was all of its idle CPU (3%
-  continuously). Mail is now indexed per sender and per addressee, so a
-  row's lookups touch only its own messages, and the receipt bound runs when
-  there is something to bound. A board read is about five times cheaper too
-  (28 ms and 5.8 MB to about 3 ms and 1.2 MB on the same board), because a
-  row's work state no longer quotes every request it owes to decide whether
-  it is working.
+  then. Mail is now indexed per sender and per addressee, so a row's lookups
+  touch only its own messages, and the receipt bound runs when there is
+  something to bound. A board read is about ten times faster too (28 ms to
+  under 3 ms, and 5.8 MB of allocation to 1.2 MB), because a row's work state
+  no longer quotes every request it owes to decide whether it is working.
 
 - On macOS, the window that opens from a question or approval notification now
   walks through everything else waiting for you. Answering one opens the next
