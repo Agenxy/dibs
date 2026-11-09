@@ -39,7 +39,23 @@ func TestReconnectReceiptSurvivesOneInventoryTimeout(t *testing.T) {
 	if err := os.WriteFile(replacement, source, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	raw, err := json.Marshal(map[string]any{"Replace": map[string]string{path: replacement}})
+	inventoryPath := filepath.Join(root, "internal", "harnessenv", "incarnation.go")
+	inventorySource, err := os.ReadFile(inventoryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const originalInventory = "return appProcessPass(ctx)"
+	if strings.Count(string(inventorySource), originalInventory) != 1 {
+		t.Fatal("setup: production ancestry inventory edge changed")
+	}
+	observedInventory := strings.Replace(
+		string(inventorySource), originalInventory, "return reconnectInventoryObserved(ctx)", 1)
+	inventoryReplacement := filepath.Join(dir, "observed_incarnation.go")
+	if err := os.WriteFile(inventoryReplacement, []byte(observedInventory), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	replacements := map[string]string{path: replacement, inventoryPath: inventoryReplacement}
+	raw, err := json.Marshal(map[string]any{"Replace": replacements})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,29 +88,28 @@ func TestReconnectReceiptSurvivesOneInventoryTimeout(t *testing.T) {
 	}
 }
 
+// Observe only the real ancestry inventory door. App-epoch inventories have a
+// different caller and must not consume the controlled first/second ordering.
 const reconnectInventoryTimeoutObserver = `
-func init() {
- original := appProbeOutput
- appProbeOutput = func(ctx context.Context, binary string, args ...string) ([]byte,error) {
-  receipt:=os.Getenv("DIBS_TEST_RECONNECT_INVENTORY_RECEIPT")
-  if receipt!="" && os.Getenv("DIBS_TEST_STARTUP_BRIDGE")!="1" && strings.Join(args," ")=="-axo pid=,ppid=,lstart=,comm=" {
-   base:=filepath.Join(os.Getenv("DIBS_DIR"),"reconnect-inventory-first")
-   first,err:=os.OpenFile(base,os.O_CREATE|os.O_EXCL|os.O_WRONLY,0600)
-   if err==nil { first.Close() } else {
-    second,e:=os.OpenFile(base+"-second",os.O_CREATE|os.O_EXCL|os.O_WRONLY,0600)
-    if e==nil {
-     second.Close()
-     f,e:=os.OpenFile(receipt,os.O_CREATE|os.O_WRONLY,0600)
-     if e!=nil {panic(e)}
-     f.WriteString("entered\n")
-     <-ctx.Done()
-     f.WriteString(ctx.Err().Error()+"\n")
-     f.Close()
-     return nil,ctx.Err()
-    }
+func reconnectInventoryObserved(ctx context.Context) (*processPass,error) {
+ receipt:=os.Getenv("DIBS_TEST_RECONNECT_INVENTORY_RECEIPT")
+ if receipt!="" && os.Getenv("DIBS_TEST_STARTUP_BRIDGE")!="1" {
+  base:=filepath.Join(os.Getenv("DIBS_DIR"),"reconnect-inventory-first")
+  first,err:=os.OpenFile(base,os.O_CREATE|os.O_EXCL|os.O_WRONLY,0600)
+  if err==nil { first.Close() } else {
+   second,e:=os.OpenFile(base+"-second",os.O_CREATE|os.O_EXCL|os.O_WRONLY,0600)
+   if e==nil {
+    second.Close()
+    f,e:=os.OpenFile(receipt,os.O_CREATE|os.O_WRONLY,0600)
+    if e!=nil {panic(e)}
+    f.WriteString("entered\n")
+    <-ctx.Done()
+    f.WriteString(ctx.Err().Error()+"\n")
+    f.Close()
+    return nil,ctx.Err()
    }
   }
-  return original(ctx,binary,args...)
  }
+ return appProcessPass(ctx)
 }
 `
