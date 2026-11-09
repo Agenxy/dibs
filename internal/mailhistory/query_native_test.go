@@ -42,7 +42,10 @@ func nativeHistory(t *testing.T, dir string, wrap ...func(*ledger.Ledger) engine
 
 func nativeHistoryWithLimits(t *testing.T, dir string, limits core.Limits, wrap ...func(*ledger.Ledger) engine.Ledger) nativeHistoryFixture {
 	t.Helper()
-	return nativeHistoryWithLifetime(t, dir, limits, 10*time.Second, wrap...)
+	// Outlives settledHistory's 30s bound. At 10s the context expired first
+	// on a loaded machine, so the settle budget could never be spent and the
+	// test failed as "setup: context deadline exceeded" with time to spare.
+	return nativeHistoryWithLifetime(t, dir, limits, 45*time.Second, wrap...)
 }
 
 func nativeHistoryWithLifetime(t *testing.T, dir string, limits core.Limits, lifetime time.Duration, wrap ...func(*ledger.Ledger) engine.Ledger) nativeHistoryFixture {
