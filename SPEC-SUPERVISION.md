@@ -143,6 +143,16 @@ that can hears nothing.
 | 3 | PPID, while the child is still a descendant | built |
 | 4 | nothing, said plainly | built |
 
+**Unavailable environment evidence stops the ladder.** A successful empty
+native read does not prove the absence of `DIBS_PARENT`: immediately after exec,
+Linux can expose the command before its environment is readable. There is no
+age exception, because an old wrapper can exec a new harness without changing
+its PID or kernel start time. Empty or failed native reads therefore leave
+attribution UNKNOWN for this pass, without a command fallback, PPID guess,
+supervision verdict or notice suppression. A genuinely empty environment stays
+unattributed too. Probe and doctor retain the process and explain the missing
+evidence; only a complete environment read permits the lower rungs.
+
 Validated live: three codex processes attributed to the session that owns them,
 including one that was a *grandchild*, so inheritance carries through the whole
 descendant tree rather than one level.

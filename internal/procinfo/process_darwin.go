@@ -149,7 +149,13 @@ func Arguments(pid int) ([]string, []string, error) {
 func Command(pid int) ([]string, error) { args, _, err := Arguments(pid); return args, err }
 
 // Environ reads inherited environment entries without exposing them to logs.
-func Environ(pid int) ([]string, error) { _, env, err := Arguments(pid); return env, err }
+func Environ(pid int) ([]string, error) {
+	_, env, err := Arguments(pid)
+	if err == nil && len(env) == 0 {
+		return nil, ErrUnavailable
+	}
+	return env, err
+}
 
 func parseArguments(raw []byte) ([]string, []string, error) {
 	if len(raw) < 5 {

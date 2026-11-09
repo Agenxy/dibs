@@ -994,7 +994,16 @@ func checkSupervision(verbose bool, ok reportFn, warn fixFn) {
 	// process rather than assumed, and reported as informational: the rung is a
 	// FALLBACK below the deterministic stamp, so losing it is a degradation and
 	// not a fault.
-	if n := liveness.SessionPathRungWorking(); n > 0 {
+	n := 0
+	for _, process := range liveness.Discover() {
+		if process.Via == "session-path" {
+			n++
+		}
+		if process.Via == liveness.AttributionUnknown {
+			warn(fmt.Sprintf("%s process %d attribution UNKNOWN", process.Harness, process.PID), liveness.AttributionUnknownHint)
+		}
+	}
+	if n > 0 {
 		if verbose {
 			ok(fmt.Sprintf("the session-path fallback still matches (%d process(es))", n))
 		}
@@ -1007,11 +1016,11 @@ func checkSupervision(verbose bool, ok reportFn, warn fixFn) {
 	// here means the mechanism is unavailable on this machine rather than
 	// merely restricted for platform binaries.
 	if !strings.Contains(liveness.EnvironOf(os.Getpid()), "PATH=") {
-		warn("this machine does not expose process environments to `ps`",
-			"stall reports will still work, but a stalled subagent will be attributed "+
-				"to its parent by weaker signals: see SPEC-SUPERVISION.md §5")
+		warn("this process environment is unavailable",
+			"subagent ownership stays UNKNOWN when its environment cannot be read; "+
+				"no weaker parent guess is used: see SPEC-SUPERVISION.md §5")
 	} else if verbose {
-		ok("process environments are readable: subagent attribution is exact")
+		ok("this process environment is readable; unreadable child environments remain UNKNOWN")
 	}
 }
 
