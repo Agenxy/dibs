@@ -129,10 +129,10 @@ func (e *Engine) cleanupLateHumanPost(serial uint64) {
 func (e *Engine) humanCleanupAt(now time.Time) []uint64 {
 	human := e.humanIdentityLocked()
 	var serials []uint64
-	for serial, m := range e.state.Messages {
+	for _, m := range e.state.MailTo(human) {
 		if human != "" && m.To == human && humanDecision(m) &&
 			!m.RetainUntil.IsZero() && m.RetainUntil.After(now) {
-			serials = append(serials, serial)
+			serials = append(serials, m.Serial)
 		}
 	}
 	for serial, c := range e.state.Contacts {

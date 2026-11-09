@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -34,7 +35,7 @@ const maxObligationQuote = 200
 // done, newest first. On the writer loop.
 func (e *Engine) obligationsOf(agent string, now time.Time) []*core.Message {
 	var owed []*core.Message
-	for _, m := range e.state.Messages {
+	for _, m := range e.state.MailTo(agent) {
 		if m.To != agent || !m.Owed(now) {
 			continue
 		}
@@ -49,21 +50,37 @@ func (e *Engine) obligationsOf(agent string, now time.Time) []*core.Message {
 // obligation's version is its serial, so a new approval is progress and
 // reporting one done removes it.
 func (e *Engine) workSlotsOf(l *core.Agent, now time.Time) []core.Slot {
+	return e.workSlots(l, now, true)
+}
+
+// workSlots is workSlotsOf, and with quote false the owed requests carry a
+// fixed text instead of a quote of their body: for a caller that reads only
+// which slots are open (open means not waiting and with text), which is what
+// the board's `work` word needs for every row on every read.
+func (e *Engine) workSlots(l *core.Agent, now time.Time, quote bool) []core.Slot {
 	slots := slotsOf(l)
+	var parked map[uint64]core.Slot
 	for _, m := range e.obligationsOf(l.ID, now) {
 		if m.State == core.MsgStateQueued {
 			continue
 		} // accepted for later, not working
-		body := strings.Join(strings.Fields(m.Body), " ")
-		if len(body) > maxObligationQuote {
-			body = body[:maxObligationQuote] + "..."
+		text := "approved request, not yet reported done"
+		if quote {
+			body := squashSpace(m.Body, maxObligationQuote)
+			if len(body) > maxObligationQuote {
+				body = body[:maxObligationQuote] + "..."
+			}
+			text = fmt.Sprintf("approved request from %s, not yet reported done: %s", m.From, body)
 		}
 		owed := core.Slot{
 			ID:            fmt.Sprintf("request %d", m.Serial),
-			Text:          fmt.Sprintf("approved request from %s, not yet reported done: %s", m.From, body),
+			Text:          text,
 			UpdatedSerial: m.Serial,
 		}
-		if park, ok := parkedBy(slots, m.Serial); ok {
+		if parked == nil {
+			parked = parkedSerials(slots)
+		}
+		if park, ok := parked[m.Serial]; ok {
 			owed.Waiting = park.Waiting
 			owed.UpdatedSerial = max(owed.UpdatedSerial, park.UpdatedSerial)
 		}
@@ -72,7 +89,8 @@ func (e *Engine) workSlotsOf(l *core.Agent, now time.Time) []core.Slot {
 	return slots
 }
 
-// parkedBy is the waiting declaration that names an owed request, if any.
+// parkedSerials maps each owed request a waiting declaration names to that
+// declaration.
 //
 // An owed request blocked on somebody else could not be parked: it was added
 // as work in progress whatever the agent declared, so a worker whose published
@@ -83,22 +101,35 @@ func (e *Engine) workSlotsOf(l *core.Agent, now time.Time) []core.Slot {
 // it inherits the wait until an event arrives. Linked explicitly, by the
 // agent, because a wait on one thing is not a
 // wait on everything it owes.
-func parkedBy(slots []core.Slot, serial uint64) (core.Slot, bool) {
-	want := map[string]bool{
-		fmt.Sprintf("request:%d", serial): true,
-		fmt.Sprintf("msg:%d", serial):     true,
-	}
+//
+// For every serial at once, built once per row: the first waiting slot, in
+// slot order, naming each request. A ref names a serial only in its canonical
+// spelling, as the formatted comparison this replaced required.
+func parkedSerials(slots []core.Slot) map[uint64]core.Slot {
+	out := map[uint64]core.Slot{}
 	for _, s := range slots {
 		if strings.TrimSpace(s.Waiting) == "" {
 			continue
 		}
 		for _, r := range s.Refs {
-			if want[strings.ToLower(strings.TrimSpace(r))] {
-				return s, true
+			r = strings.ToLower(strings.TrimSpace(r))
+			digits, ok := strings.CutPrefix(r, "request:")
+			if !ok {
+				digits, ok = strings.CutPrefix(r, "msg:")
+			}
+			if !ok {
+				continue
+			}
+			n, err := strconv.ParseUint(digits, 10, 64)
+			if err != nil || strconv.FormatUint(n, 10) != digits {
+				continue
+			}
+			if _, seen := out[n]; !seen {
+				out[n] = s
 			}
 		}
 	}
-	return core.Slot{}, false
+	return out
 }
 
 // owedSerials is the row's `owes`.
@@ -137,7 +168,7 @@ func (e *Engine) UnansweredFrom(ctx context.Context, token, to string) string {
 // unansweredNote is the decision, apart from the engine.
 func unansweredNote(st *core.State, me, to string, now time.Time) string {
 	var owed []*core.Message
-	for _, m := range st.Messages {
+	for _, m := range st.MailTo(me) {
 		if m.To == me && m.From == to && m.Expecting() && !m.Terminal() {
 			owed = append(owed, m)
 		}

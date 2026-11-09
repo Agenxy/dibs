@@ -121,7 +121,7 @@ func (e *Engine) PendingForHuman(ctx context.Context) ([]HumanNotice, error) {
 	plans := map[uint64]contactLinkPlan{}
 	_, err := e.query(ctx, func() core.Result {
 		human := e.humanIdentityLocked()
-		for _, m := range e.state.Messages {
+		for _, m := range e.state.MailTo(human) {
 			if m.To != human || m.Terminal() {
 				continue
 			}

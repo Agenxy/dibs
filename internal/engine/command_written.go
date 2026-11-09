@@ -82,12 +82,16 @@ func (e *Engine) resetCommandIncarnation(agent, epoch string) {
 	}
 }
 
-func (e *Engine) pruneCommandWritten(live map[string]bool) {
+func (e *Engine) pruneCommandEpochs() {
 	for agent := range e.commandEpoch {
 		if row := e.state.Agents[agent]; row == nil || row.Retired() {
 			delete(e.commandEpoch, agent)
 		}
 	}
+}
+
+func (e *Engine) pruneCommandWritten(live map[string]bool) {
+	e.pruneCommandEpochs()
 	for key := range e.commandWritten {
 		if !live[key] {
 			delete(e.commandWritten, key)

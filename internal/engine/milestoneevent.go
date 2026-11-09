@@ -5,6 +5,7 @@ package engine
 
 import (
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -82,7 +83,7 @@ func (e *Engine) dismissMilestoneNotice(agent string, serial uint64) {
 }
 
 func (e *Engine) milestoneEventFor(actor *core.Agent, serial uint64) (*core.Message, core.Progress) {
-	for _, m := range e.state.Messages {
+	for _, m := range slices.Concat(e.state.MailFrom(actor.ID), e.state.MailTo(actor.ID)) {
 		adopted := m.To == actor.ID && e.state.AdoptedFor(m, actor.ID)
 		if actor.CreatedSerial > 0 && m.Serial < actor.CreatedSerial && !adopted {
 			continue

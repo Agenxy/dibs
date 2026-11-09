@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/overlap"
@@ -1881,6 +1882,28 @@ func (e *Engine) SetCoordinatorClaim(verify func(secret string) (bool, func())) 
 }
 
 // trimRunes shortens to at most n runes, on a rune boundary.
+// squashSpace is strings.Join(strings.Fields(s), " ") for a caller that keeps
+// at most limit runes (or bytes) of it: it stops once it has more than limit
+// runes, which is enough for either truncation to come out identical. A board
+// row quoted 200 characters of every owed request by normalising the whole
+// body first, on every board read, for every row.
+func squashSpace(s string, limit int) string {
+	var b strings.Builder
+	runes := 0
+	for f := range strings.FieldsSeq(s) {
+		if b.Len() > 0 {
+			b.WriteByte(' ')
+			runes++
+		}
+		b.WriteString(f)
+		runes += utf8.RuneCountInString(f)
+		if runes > limit {
+			break
+		}
+	}
+	return b.String()
+}
+
 func trimRunes(s string, n int) string {
 	r := []rune(s)
 	if len(r) <= n {

@@ -29,6 +29,7 @@ func admitMergeRequest(op *Op, lim Limits) error {
 func (s *State) moveOwnedMailRecord(m *Message, from, into string) {
 	m.AdoptedFrom, m.AdoptedAt = from, s.Serial+1
 	m.To = into
+	s.mailChanged()
 }
 
 // mergeSupported does not allocate a serial: an approval and its effect are ONE

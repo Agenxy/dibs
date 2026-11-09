@@ -160,8 +160,8 @@ func (e *Engine) saveAdvisories(raw []byte) {
 		return
 	}
 	tmp := e.advisories.file + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0o600); err == nil { // #nosec G304 -- daemon-owned data directory
-		if err := os.Rename(tmp, e.advisories.file); err == nil {
+	if err := os.WriteFile(tmp, raw, 0o600); err == nil { // #nosec G304 G703 -- daemon-owned data directory
+		if err := os.Rename(tmp, e.advisories.file); err == nil { // #nosec G703 -- the same file
 			return
 		}
 	}

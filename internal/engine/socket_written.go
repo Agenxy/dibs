@@ -68,9 +68,24 @@ func (e *Engine) unwrittenSocketKeys(kind string, keys []string) []string {
 	return out
 }
 
+const writtenPruneEvery = 30 * time.Second
+
 // Bound the derived receipt view to retained coordination items. A restart
 // loses these transport receipts, never mail or the one-writer claims.
 func (e *Engine) pruneSocketWritten() {
+	// A BOUND, NOT A RULE, so it runs when there is something to bound and
+	// not every second. Every key carries the serial of the item it records,
+	// and serials are never reused, so a key that outlives its item cannot
+	// match anything later: pruning late costs memory and nothing else. It
+	// was run on every tick and rebuilt every retained item of every row to
+	// do it, which was most of an idle daemon's CPU.
+	now := time.Now()
+	if len(e.socketWritten)+len(e.commandWritten)+len(e.nativeUnknown) == 0 ||
+		now.Sub(e.writtenPrunedAt) < writtenPruneEvery {
+		e.pruneCommandEpochs()
+		return
+	}
+	e.writtenPrunedAt = now
 	live := map[string]bool{}
 	for id, row := range e.state.Agents {
 		if row.Retired() {

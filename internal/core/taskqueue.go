@@ -119,7 +119,7 @@ func (m *Message) ContactEligible() bool {
 // second index pointing into someone else's mailbox; ranks travel with the mail.
 func (s *State) TaskQueue(agent string) []*Message {
 	var q []*Message
-	for _, m := range s.Messages {
+	for _, m := range s.MailTo(agent) {
 		if m.To == agent && m.State == MsgStateQueued {
 			q = append(q, m)
 		}
@@ -184,7 +184,7 @@ func (s *State) QueuePosition(m *Message) int {
 // AcceptedDebtCount counts durable accepted work against the existing mailbox bound.
 func (s *State) AcceptedDebtCount(agent string) int {
 	n := 0
-	for _, m := range s.Messages {
+	for _, m := range s.MailTo(agent) {
 		if m.To == agent && m.acceptedQueueDebt() {
 			n++
 		}
