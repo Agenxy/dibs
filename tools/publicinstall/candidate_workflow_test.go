@@ -75,7 +75,7 @@ func TestCandidateAcceptanceIsReadOnlyAndRequiredBeforeReleasePreflight(t *testi
 		}
 	}
 	published := read("public-install-check.yml")
-	if !strings.Contains(published, "gh release view") || !strings.Contains(published, `-tag "$TAG"`) ||
+	if !strings.Contains(published, "-tag published ") ||
 		strings.Contains(published, "continue-on-error:") || strings.Contains(published, "candidate-install") {
 		t.Fatal("published-release finding was pinned, hidden or combined with candidate acceptance")
 	}
