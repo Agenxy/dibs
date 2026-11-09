@@ -68,8 +68,8 @@ func TestInitialFailureFallsBackAndLaterRecovers(t *testing.T) {
 	}
 }
 
-func TestColdFallbackIsNotCached(t *testing.T) {
-	for _, idle := range []time.Duration{0, 30 * time.Second} {
+func TestColdFallbackRecoversAfterRetryBackoff(t *testing.T) {
+	for _, idle := range []time.Duration{retryTTL, retryTTL + time.Second} {
 		t.Run(idle.String(), func(t *testing.T) {
 			now := time.Unix(100, 0)
 			calls, fallbacks := 0, 0
@@ -85,8 +85,8 @@ func TestColdFallbackIsNotCached(t *testing.T) {
 			if got := r.name(); got != "network-kernel" || calls != 1 || fallbacks != 1 {
 				t.Fatalf("setup: first timeout got %q, calls=%d fallbacks=%d", got, calls, fallbacks)
 			}
-			// An expired cache also used to return the fallback once more,
-			// starting its asynchronous refresh only after showing it again.
+			// A cold retry still waits for its bounded lookup, rather than
+			// showing an old fallback after a successful recovery.
 			now = now.Add(idle)
 			if got := r.name(); got != "friendly" {
 				t.Fatalf("cold fallback survived the next successful lookup: %q", got)

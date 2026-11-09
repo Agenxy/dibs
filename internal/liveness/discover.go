@@ -4,11 +4,14 @@
 package liveness
 
 import (
-	"os/exec"
+	"context"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/agenxy/dibs/internal/procexec"
+	"github.com/agenxy/dibs/internal/procinfo"
 )
 
 // Agent is an agent-shaped process found running on this machine.
@@ -56,14 +59,19 @@ type Agent struct {
 // stall report to an agent that cannot act on it while the one that can hears
 // nothing.
 func Discover() []Agent {
+	processes := listProcesses()
+	commands := make(map[int]string, len(processes))
+	for _, p := range processes {
+		commands[p.pid] = p.cmd
+	}
 	var found []Agent
-	for _, p := range listProcesses() {
+	for _, p := range processes {
 		h := HarnessOf(p.cmd)
 		if h == "" {
 			continue
 		}
 		a := Agent{PID: p.pid, PPID: p.ppid, Harness: h, Cmd: p.cmd}
-		a.Owner, a.Via = attribute(p.pid, p.ppid)
+		a.Owner, a.Via = attributeIn(p.pid, p.ppid, commands)
 		found = append(found, a)
 	}
 	return found
@@ -71,6 +79,10 @@ func Discover() []Agent {
 
 // attribute walks the ladder for one process.
 func attribute(pid, ppid int) (owner, via string) {
+	return attributeIn(pid, ppid, nil)
+}
+
+func attributeIn(pid, ppid int, commands map[int]string) (owner, via string) {
 	env := EnvironOf(pid)
 	// 1. An explicit marker beats every inference. A harness hook, or a parent
 	//    that cares, sets this once and every descendant inherits it.
@@ -89,7 +101,13 @@ func attribute(pid, ppid int) (owner, via string) {
 	// 3. Ancestry, which works only while the child is still a descendant,
 	//    true for a tool call that blocks, false for anything detached.
 	if ppid > 1 {
-		if h := HarnessOf(commandOf(ppid)); h != "" {
+		var command string
+		if commands != nil {
+			command = commands[ppid]
+		} else {
+			command = commandOf(ppid)
+		}
+		if h := HarnessOf(command); h != "" {
 			return strconv.Itoa(ppid), "ppid"
 		}
 	}
@@ -140,13 +158,42 @@ type rawProc struct {
 
 // listProcesses enumerates this user's processes.
 //
-// One `ps` call for the whole table rather than a syscall per process: it is
-// the same interface on macOS and Linux, needs no cgo and no new dependency,
-// and costs a single fork on a cadence measured in seconds. macOS has no /proc,
-// so the alternative is sysctl(KERN_PROCARGS2) through x/sys: meaningfully
-// faster, and worth doing only if this ever runs often enough to notice.
+// One fresh native table belongs to this discovery pass. Parent commands come
+// from the same inventory, so a dead parent cannot be resurrected by a later
+// per-parent lookup. Unavailable native inventory retains the command fallback.
 func listProcesses() []rawProc {
-	out, err := exec.Command("ps", "-axo", "pid=,ppid=,command=").Output()
+	if procinfo.Native {
+		procs, err := nativeProcesses()
+		if err == nil {
+			return procs
+		}
+		procinfo.WarnFallback("process discovery", err)
+	}
+	return psProcesses()
+}
+
+func nativeProcesses() ([]rawProc, error) {
+	rows, err := procinfo.Snapshot(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	procs := make([]rawProc, 0, len(rows))
+	for _, row := range rows {
+		args, err := procinfo.Command(row.PID)
+		if err != nil {
+			continue
+		} // inaccessible/exited rows cannot establish a harness
+		same, err := procinfo.SameProcess(row)
+		if err != nil || !same {
+			continue
+		}
+		procs = append(procs, rawProc{pid: row.PID, ppid: row.PPID, cmd: strings.Join(args, " ")})
+	}
+	return procs, nil
+}
+
+func psProcesses() []rawProc {
+	out, err := procexec.Command(context.Background(), "ps", "-axo", "pid=,ppid=,command=").Output()
 	if err != nil {
 		return nil
 	}
@@ -171,7 +218,18 @@ func commandOf(pid int) string {
 	if pid <= 0 {
 		return ""
 	}
-	out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "command=").Output() // #nosec G204 -- pid is an int
+	if procinfo.Native {
+		args, err := procinfo.Command(pid)
+		if err == nil {
+			return strings.Join(args, " ")
+		}
+		if procinfo.Gone(err) {
+			return ""
+		}
+		procinfo.WarnFallback("process command line", err)
+	}
+	cmd := procexec.Command(context.Background(), "ps", "-p", strconv.Itoa(pid), "-o", "command=")
+	out, err := cmd.Output()
 	if err != nil {
 		return ""
 	}
@@ -206,8 +264,18 @@ func EnvironOf(pid int) string {
 	if pid <= 0 {
 		return ""
 	}
+	if procinfo.Native {
+		env, err := procinfo.Environ(pid)
+		if err == nil {
+			return strings.Join(env, " ")
+		}
+		if procinfo.Gone(err) {
+			return ""
+		}
+		procinfo.WarnFallback("process environment", err)
+	}
 	// #nosec G204 -- pid is an int, so no shell metacharacter can reach argv
-	out, err := exec.Command("ps", "eww", "-p", strconv.Itoa(pid)).Output()
+	out, err := procexec.Command(context.Background(), "ps", "eww", "-p", strconv.Itoa(pid)).Output()
 	if err != nil {
 		return ""
 	}

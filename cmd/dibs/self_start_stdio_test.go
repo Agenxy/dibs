@@ -14,11 +14,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/agenxy/dibs/internal/build"
-	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/mcp"
 	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testexec"
@@ -26,7 +27,7 @@ import (
 
 // Compile a counting observer into ONLY the private child, not the product or
 // the parent daemon. Its armed receipt proves the actual bridge has the hook.
-// The observer calls the real runner; a zero is not a substituted probe result.
+// The observer calls the real typed inventory; a zero is not a substituted probe result.
 func ownStartObservedBridge(t *testing.T) string {
 	t.Helper()
 	wd, err := os.Getwd()
@@ -44,13 +45,13 @@ func init() {
     path := os.Getenv("DIBS_TEST_OWN_START_PROBES")
     if path == "" { return }
     if err := os.WriteFile(path, []byte("armed\n"), 0600); err != nil { panic(err) }
-    original := appProbeOutput
-    appProbeOutput = func(ctx context.Context, binary string, args ...string) ([]byte, error) {
+    original := appProcessPass
+    appProcessPass = func(ctx context.Context) (*processPass, error) {
         f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0600)
         if err != nil { panic(err) }
         if _, err := f.WriteString("probe\n"); err != nil { panic(err) }
         if err := f.Close(); err != nil { panic(err) }
-        return original(ctx, binary, args...)
+        return original(ctx)
     }
 }
 `)...)
@@ -83,7 +84,7 @@ func init() {
 
 // Ancestry now primes one asynchronous inventory of its own. The native self
 // start stamp must still avoid inventory: falling back there adds a SECOND
-// probe. The observer calls the real OS runner for both paths.
+// inventory. The observer calls the real typed inventory for both paths.
 func TestFirstBridgeRegisterOnlyInventoriesAncestry(t *testing.T) {
 	child := ownStartObservedBridge(t)
 	count := filepath.Join(t.TempDir(), "inventory-probes")
@@ -127,8 +128,15 @@ func TestFirstBridgeRegisterOnlyInventoriesAncestry(t *testing.T) {
 		if observed.pid != f.diagnostics.cmd.Process.Pid || observed.start == "" {
 			t.Fatalf("first register did not identify its actual bridge: %+v", observed)
 		}
-		// This OTHER-pid lookup deliberately retains the real ps inventory.
-		if reference := harnessenv.ProcessStart(observed.pid); reference == "" || reference != observed.start {
+		// Keep an independent OS witness for the native self stamp.
+		probe := procexec.Command(t.Context(), "ps", "-o", "lstart=", "-p", strconv.Itoa(observed.pid))
+		probe.Env = append(os.Environ(), "LC_ALL=C", "TZ=UTC")
+		raw, err := probe.Output()
+		reference := strings.Join(strings.Fields(string(raw)), " ")
+		if err != nil || reference == "" {
+			t.Fatalf("setup: independent UTC ps stamp unavailable: %q %v", reference, err)
+		}
+		if reference != observed.start {
 			t.Fatalf("first register start=%q, want actual ps start=%q", observed.start, reference)
 		}
 	default:

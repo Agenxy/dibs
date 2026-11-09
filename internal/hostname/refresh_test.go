@@ -55,8 +55,8 @@ func TestColdSnapshotDoesNotWaitForLookupOrRegistration(t *testing.T) {
 	}
 }
 
-func TestColdSnapshotRetriesAfterTimeoutWithoutCachingFallback(t *testing.T) {
-	for _, idle := range []time.Duration{0, 30 * time.Second} {
+func TestColdSnapshotRetriesAfterBackoffWithoutCachingFallback(t *testing.T) {
+	for _, idle := range []time.Duration{retryTTL, retryTTL + time.Second} {
 		t.Run(idle.String(), func(t *testing.T) {
 			now := time.Unix(100, 0)
 			var calls atomic.Int64

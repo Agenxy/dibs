@@ -27,10 +27,12 @@
 package appfirewall
 
 import (
-	"os/exec"
+	"context"
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // Verdict is what the firewall will do with an inbound connection to a binary.
@@ -180,7 +182,7 @@ func byHandFix(binary string) string {
 // the tool states it unprompted. Its usage text is the cheapest verb that
 // carries the refusal, and reading usage changes nothing.
 func managed() bool {
-	out, err := exec.Command(firewallTool, "-h").CombinedOutput() // #nosec G204 -- fixed argv
+	out, err := procexec.Command(context.Background(), firewallTool, "-h").CombinedOutput() // #nosec G204 -- fixed argv
 	if err != nil && len(out) == 0 {
 		return false
 	}
@@ -197,6 +199,6 @@ func shellQuote(s string) string {
 
 func run(arg string) (string, error) {
 	// #nosec G204 -- no shell, and arg is one of this file's own constants.
-	out, err := exec.Command(firewallTool, arg).Output()
+	out, err := procexec.Command(context.Background(), firewallTool, arg).Output()
 	return string(out), err
 }

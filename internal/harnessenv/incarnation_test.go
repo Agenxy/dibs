@@ -12,17 +12,17 @@ import (
 )
 
 func TestBridgeIncarnationMustMatchTheObservedProcessTree(t *testing.T) {
-	original := appProbeOutput
-	t.Cleanup(func() { appProbeOutput = original })
+	original := appProcessPass
+	t.Cleanup(func() { appProcessPass = original })
 	const started = "Sun Oct 4 03:10:00 2026"
 	rows := "301 200 Sun Oct 4 03:10:00 2026 /bin/dibs\n" +
 		"200 100 Sun Oct 4 03:09:59 2026 /Applications/ChatGPT.app/runtime\n" +
 		"100 1 Sun Oct 4 03:09:57 2026 /Applications/ChatGPT.app/Contents/MacOS/ChatGPT\n"
-	appProbeOutput = func(ctx context.Context, binary string, args ...string) ([]byte, error) {
-		if _, bounded := ctx.Deadline(); !bounded || binary != "/bin/ps" || strings.Join(args, " ") != "-axo pid=,ppid=,lstart=,comm=" {
-			t.Fatalf("unbounded or changed production probe: %s %v", binary, args)
+	appProcessPass = func(ctx context.Context) (*processPass, error) {
+		if _, bounded := ctx.Deadline(); !bounded {
+			t.Fatal("unbounded production inventory")
 		}
-		return []byte(rows), nil
+		return fixtureProcessPass(ctx, rows, true), nil
 	}
 	if app, ok, err := AppForBridge(301, started); err != nil || !ok || app.PID != 100 || app.Start != "Sun Oct 4 03:09:57 2026" {
 		t.Fatalf("did not observe owning app: %+v %v", app, ok)
@@ -34,15 +34,15 @@ func TestBridgeIncarnationMustMatchTheObservedProcessTree(t *testing.T) {
 	if app, ok, _ := AppForBridge(301, started); ok {
 		t.Fatalf("nested harness acquired the outer app cohort: %+v", app)
 	}
-	appProbeOutput = func(context.Context, string, ...string) ([]byte, error) { return nil, errors.New("probe failed") }
+	appProcessPass = func(context.Context) (*processPass, error) { return nil, errors.New("probe failed") }
 	if app, ok, err := AppForBridge(301, started); ok || err == nil {
 		t.Fatalf("unavailable process evidence was accepted: %+v", app)
 	}
 }
 
 func TestReconnectBatchTakesOneInventoryAndRejectsStaleAncestry(t *testing.T) {
-	original := appProbeOutput
-	t.Cleanup(func() { appProbeOutput = original })
+	original := appProcessPass
+	t.Cleanup(func() { appProcessPass = original })
 	const started = "Sun Oct 4 03:10:00 2026"
 	var rows strings.Builder
 	rows.WriteString("100 1 Sun Oct 4 03:09:57 2026 /Applications/ChatGPT.app/Contents/MacOS/ChatGPT\n")
@@ -53,12 +53,12 @@ func TestReconnectBatchTakesOneInventoryAndRejectsStaleAncestry(t *testing.T) {
 	}
 	bridges[0].Start = "a stale process"
 	probes := 0
-	appProbeOutput = func(ctx context.Context, binary string, args ...string) ([]byte, error) {
+	appProcessPass = func(ctx context.Context) (*processPass, error) {
 		probes++
-		if _, ok := ctx.Deadline(); !ok || binary != "/bin/ps" {
+		if _, ok := ctx.Deadline(); !ok {
 			t.Fatal("unbounded/non-production inventory")
 		}
-		return []byte(rows.String()), nil
+		return fixtureProcessPass(ctx, rows.String(), true), nil
 	}
 	observed, err := AppForBridges(t.Context(), bridges)
 	if err != nil || len(observed) != 128 || probes != 1 {
@@ -75,9 +75,9 @@ func TestReconnectBatchTakesOneInventoryAndRejectsStaleAncestry(t *testing.T) {
 }
 
 func TestAppIncarnationProbeDeadlineIsEnforced(t *testing.T) {
-	original := appProbeOutput
-	t.Cleanup(func() { appProbeOutput = original })
-	appProbeOutput = func(ctx context.Context, _ string, _ ...string) ([]byte, error) {
+	original := appProcessPass
+	t.Cleanup(func() { appProcessPass = original })
+	appProcessPass = func(ctx context.Context) (*processPass, error) {
 		if _, bounded := ctx.Deadline(); !bounded {
 			return nil, fmt.Errorf("unbounded probe")
 		}

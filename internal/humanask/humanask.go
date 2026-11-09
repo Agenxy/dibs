@@ -14,10 +14,10 @@
 package humanask
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +25,7 @@ import (
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/notify"
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // Message is one message for the person.
@@ -184,7 +185,7 @@ func (m Message) nativeReply() (Answer, error) {
 var openContact = func(argv []string) error {
 	// #nosec G204 -- argv is reconstructed by the two validated app-link
 	// builders below, with a fixed /usr/bin/open executable and no shell.
-	return exec.Command(argv[0], argv[1:]...).Run()
+	return procexec.Command(context.Background(), argv[0], argv[1:]...).Run()
 }
 
 func contactOpenArgv(url string) []string {

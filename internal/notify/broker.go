@@ -17,6 +17,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 // A full 32 KiB mail body can expand sixfold under JSON escaping. The v1
@@ -91,7 +93,7 @@ func currentBroker(h string) (*nativeBroker, error) {
 
 func startNativeBroker(h string) (*nativeBroker, error) {
 	// #nosec G204 -- bundled executable resolved next to this binary; no user argv.
-	cmd := exec.Command(h, "--broker")
+	cmd := procexec.Command(context.Background(), h, "--broker")
 	cmd.Stderr = os.Stderr
 	input, err := cmd.StdinPipe()
 	if err != nil {

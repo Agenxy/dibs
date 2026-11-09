@@ -48,7 +48,7 @@ type appEpochWatch struct {
 }
 
 // Tests replace only this process-observation edge. Production always uses
-// the bounded /bin/ps probe; the watcher and every delivery recheck still
+// the bounded typed process observation; the watcher and every delivery recheck still
 // enter through the same path when an app epoch changes. Atomic replacement
 // keeps test teardown safe while the watcher goroutine is winding down.
 var appRestartEpoch = func() *atomic.Value {

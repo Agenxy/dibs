@@ -60,9 +60,9 @@ func TestBuiltChildInheritsAppOpenRefusal(t *testing.T) {
 // on every message. This guard compiles on the production before this fix.
 func TestUnknownProbeCannotRepeatAppSwitching304(t *testing.T) {
 	t.Setenv("DIBS_DIR", t.TempDir())
-	original := appProbeOutput
-	t.Cleanup(func() { appProbeOutput = original })
-	appProbeOutput = func(context.Context, string, ...string) ([]byte, error) {
+	original := appProcessPass
+	t.Cleanup(func() { appProcessPass = original })
+	appProcessPass = func(context.Context) (*processPass, error) {
 		return nil, context.DeadlineExceeded
 	}
 	s := RealShower
@@ -94,9 +94,9 @@ func TestUnknownProbeCannotRepeatAppSwitching304(t *testing.T) {
 func TestUnknownAppOpenExpiresWithoutResettingForEachMessage(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("DIBS_DIR", dir)
-	original := appProbeOutput
-	t.Cleanup(func() { appProbeOutput = original })
-	appProbeOutput = func(context.Context, string, ...string) ([]byte, error) {
+	original := appProcessPass
+	t.Cleanup(func() { appProcessPass = original })
+	appProcessPass = func(context.Context) (*processPass, error) {
 		return nil, errors.New("probe unavailable")
 	}
 	s := RealShower
@@ -154,19 +154,20 @@ func TestUnknownAppOpenExpiresWithoutResettingForEachMessage(t *testing.T) {
 // probe must exclude them before lsof, retaining the same overall deadline.
 func TestOwnershipProbeQueriesOnlyBundledCodexRuntimes(t *testing.T) {
 	original := appProbeOutput
-	t.Cleanup(func() { appProbeOutput = original })
+	originalPass := appProcessPass
+	t.Cleanup(func() { appProbeOutput = original; appProcessPass = originalPass })
+	appProcessPass = func(ctx context.Context) (*processPass, error) {
+		if _, bounded := ctx.Deadline(); !bounded {
+			t.Fatal("unbounded ownership inventory")
+		}
+		stamp := "Mon Oct 5 06:01:00 2026 "
+		return fixtureProcessPass(ctx, "101 "+stamp+chatGPTRoot+"Contents/MacOS/ChatGPT\n"+
+			"102 "+stamp+chatGPTRoot+"helper\n"+
+			"999 "+stamp+chatGPTRoot+"Contents/Resources/codex-cli/bin/codex\n", false), nil
+	}
 	appProbeOutput = func(ctx context.Context, binary string, args ...string) ([]byte, error) {
 		if _, bounded := ctx.Deadline(); !bounded {
 			t.Fatal("unbounded ownership probe")
-		}
-		if binary == "/bin/ps" {
-			stamp := ""
-			if strings.Contains(strings.Join(args, " "), "lstart=") {
-				stamp = "Mon Oct 5 06:01:00 2026 "
-			}
-			return []byte("101 " + stamp + chatGPTRoot + "Contents/MacOS/ChatGPT\n" +
-				"102 " + stamp + chatGPTRoot + "helper\n" +
-				"999 " + stamp + chatGPTRoot + "Contents/Resources/codex-cli/bin/codex\n"), nil
 		}
 		if binary != "/usr/sbin/lsof" || strings.Join(args, " ") != "-a -p 999 -Fn" {
 			t.Errorf("helpers reached expensive ownership probe: %s %q", binary, args)
@@ -234,17 +235,15 @@ func TestAppIncarnationRearmsAnOpenWithoutAProbeResult(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("DIBS_DIR", dir)
 	original := appProbeOutput
-	t.Cleanup(func() { appProbeOutput = original })
+	originalPass := appProcessPass
+	t.Cleanup(func() { appProbeOutput = original; appProcessPass = originalPass })
 	stamp := "06:01:00"
-	appProbeOutput = func(_ context.Context, binary string, args ...string) ([]byte, error) {
-		if binary == "/bin/ps" {
-			date := ""
-			if strings.Contains(strings.Join(args, " "), "lstart=") {
-				date = "Mon Oct 5 " + stamp + " 2026 "
-			}
-			return []byte("101 " + date + chatGPTRoot + "Contents/MacOS/ChatGPT\n" +
-				"999 " + date + chatGPTRoot + "Contents/Resources/codex-cli/bin/codex\n"), nil
-		}
+	appProcessPass = func(ctx context.Context) (*processPass, error) {
+		date := "Mon Oct 5 " + stamp + " 2026 "
+		return fixtureProcessPass(ctx, "101 "+date+chatGPTRoot+"Contents/MacOS/ChatGPT\n"+
+			"999 "+date+chatGPTRoot+"Contents/Resources/codex-cli/bin/codex\n", false), nil
+	}
+	appProbeOutput = func(context.Context, string, ...string) ([]byte, error) {
 		return nil, context.DeadlineExceeded // process epoch known, ownership unknown
 	}
 	s := RealShower

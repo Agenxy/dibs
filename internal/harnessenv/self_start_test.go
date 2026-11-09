@@ -8,20 +8,26 @@ package harnessenv
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
+	"strings"
 	"testing"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 func TestSelfProcessStartDoesNotRunInventoryAndMatchesPS(t *testing.T) {
-	processes, err := processInventory()
-	reference := processes[os.Getpid()].start
+	probe := procexec.Command(t.Context(), "ps", "-o", "lstart=", "-p", fmt.Sprint(os.Getpid()))
+	probe.Env = append(os.Environ(), "LC_ALL=C", "TZ=UTC")
+	raw, err := probe.Output()
+	reference := strings.Join(strings.Fields(string(raw)), " ")
 	if err != nil || reference == "" {
 		t.Fatalf("setup: actual ps start stamp unavailable: %q %v", reference, err)
 	}
-	original := appProbeOutput
-	t.Cleanup(func() { appProbeOutput = original })
+	original := appProcessPass
+	t.Cleanup(func() { appProcessPass = original })
 	calls := 0
-	appProbeOutput = func(context.Context, string, ...string) ([]byte, error) {
+	appProcessPass = func(context.Context) (*processPass, error) {
 		calls++
 		return nil, errors.New("self lookup must not launch an inventory subprocess")
 	}

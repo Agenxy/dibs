@@ -5,11 +5,12 @@ package harnessenv
 
 import (
 	"context"
-	"errors"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/agenxy/dibs/internal/procinfo"
 )
 
 // AppIncarnation is a process observation, never an agent or session binding.
@@ -37,6 +38,8 @@ type processIdentity struct {
 	parent int
 	start  string
 	path   string
+	comm   string
+	kernel procinfo.Process
 }
 
 // ProcessStart supplies the bridge's own incarnation on stateless requests.
@@ -50,8 +53,13 @@ func ProcessStart(pid int) string {
 			return started.UTC().Format("Mon Jan 2 15:04:05 2006")
 		}
 	}
-	processes, _ := processInventory()
-	return processes[pid].start
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	processes, _ := processInventoryContext(ctx)
+	if processes == nil {
+		return ""
+	}
+	return processes.rows[pid].start
 }
 
 // AppForBridge independently verifies the claimed bridge process and walks
@@ -75,60 +83,66 @@ func AppForBridges(ctx context.Context, bridges []BridgeIncarnation) ([]BridgeOb
 	if len(bridges) == 0 {
 		return nil, nil
 	}
+	ctx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
 	processes, err := processInventoryContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]BridgeObservation, len(bridges))
 	for i, bridge := range bridges {
-		if bridge.PID <= 1 || bridge.Start == "" || processes[bridge.PID].start != bridge.Start {
+		if bridge.PID <= 1 || bridge.Start == "" {
+			continue
+		}
+		present, err := processes.present(bridge.PID)
+		if err != nil {
+			return nil, err
+		}
+		if !present || processes.rows[bridge.PID].start != bridge.Start {
 			continue
 		}
 		out[i].Present = true
-		out[i].App = appInInventory(processes, bridge.PID, bridge.Start)
+		out[i].App, err = appInInventory(processes, bridge.PID, bridge.Start)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return out, nil
 }
 
-func appInInventory(processes map[int]processIdentity, pid int, started string) AppIncarnation {
-	if processes[pid].start != started {
-		return AppIncarnation{}
+func appInInventory(processes *processPass, pid int, started string) (AppIncarnation, error) {
+	if processes.rows[pid].start != started {
+		return AppIncarnation{}, nil
 	}
 	for range 12 {
-		p, ok := processes[pid]
+		p, ok := processes.rows[pid]
 		if !ok || p.parent <= 1 || p.parent == pid {
 			break
 		}
 		pid = p.parent
-		parent := processes[pid]
-		if strings.HasSuffix(parent.path, "/ChatGPT.app/Contents/MacOS/ChatGPT") {
+		parent := processes.rows[pid]
+		path := processes.path(pid)
+		if path.state == processUnknown {
+			return AppIncarnation{}, path.err
+		}
+		if path.state == processAbsent {
+			break
+		}
+		if strings.HasSuffix(path.value, "/ChatGPT.app/Contents/MacOS/ChatGPT") {
 			if parent.start != "" {
-				return AppIncarnation{PID: pid, Start: parent.start}
+				return AppIncarnation{PID: pid, Start: parent.start}, nil
 			}
 			break
 		}
-		if Classify([]string{parent.path}) == ClaudeDesktop {
+		if Classify([]string{path.value}) == ClaudeDesktop {
 			break // a nearer harness owns this bridge
 		}
 	}
-	return AppIncarnation{}
+	return AppIncarnation{}, nil
 }
 
-func processInventory() (map[int]processIdentity, error) {
-	return processInventoryContext(context.Background())
-}
-
-func processInventoryContext(ctx context.Context) (map[int]processIdentity, error) {
-	ctx, cancel := context.WithTimeout(ctx, time.Second)
-	defer cancel()
-	raw, err := appProbeOutput(ctx, "/bin/ps", "-axo", "pid=,ppid=,lstart=,comm=")
-	if err != nil {
-		return nil, err
-	}
-	if len(raw) > 4<<20 {
-		return nil, errors.New("process inventory exceeds bound")
-	}
-	return parseProcessInventory(string(raw)), nil
+func processInventoryContext(ctx context.Context) (*processPass, error) {
+	return appProcessPass(ctx)
 }
 
 func parseProcessInventory(raw string) map[int]processIdentity {

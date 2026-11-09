@@ -10,25 +10,25 @@ import (
 )
 
 func TestChatGPTAppEpochSeparatesUnknownAbsentAndRunning(t *testing.T) {
-	old := appProbeOutput
-	t.Cleanup(func() { appProbeOutput = old })
-	appProbeOutput = func(context.Context, string, ...string) ([]byte, error) { return nil, errors.New("ps failed") }
+	old := appProcessPass
+	t.Cleanup(func() { appProcessPass = old })
+	appProcessPass = func(context.Context) (*processPass, error) { return nil, errors.New("inventory failed") }
 	if epoch, known := ChatGPTAppEpoch(); known || epoch != "" {
 		t.Fatalf("failed probe looked known: %q %t", epoch, known)
 	}
-	appProbeOutput = func(context.Context, string, ...string) ([]byte, error) { return []byte(""), nil }
+	appProcessPass = func(ctx context.Context) (*processPass, error) { return fixtureProcessPass(ctx, "", false), nil }
 	if epoch, known := ChatGPTAppEpoch(); !known || epoch != "absent" {
 		t.Fatalf("absent app looked unknown: %q %t", epoch, known)
 	}
-	appProbeOutput = func(context.Context, string, ...string) ([]byte, error) {
-		return []byte("123 Mon Oct 5 13:00:00 2026 /Applications/ChatGPT.app/Contents/MacOS/ChatGPT\n"), nil
+	appProcessPass = func(ctx context.Context) (*processPass, error) {
+		return fixtureProcessPass(ctx, "123 Mon Oct 5 13:00:00 2026 /Applications/ChatGPT.app/Contents/MacOS/ChatGPT\n", false), nil
 	}
 	a, known := ChatGPTAppEpoch()
 	if !known || len(a) != 64 {
 		t.Fatalf("running epoch = %q %t", a, known)
 	}
-	appProbeOutput = func(context.Context, string, ...string) ([]byte, error) {
-		return []byte("456 Mon Oct 5 13:01:00 2026 /Applications/ChatGPT.app/Contents/MacOS/ChatGPT\n"), nil
+	appProcessPass = func(ctx context.Context) (*processPass, error) {
+		return fixtureProcessPass(ctx, "456 Mon Oct 5 13:01:00 2026 /Applications/ChatGPT.app/Contents/MacOS/ChatGPT\n", false), nil
 	}
 	b, known := ChatGPTAppEpoch()
 	if !known || a == b {
