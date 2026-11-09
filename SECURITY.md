@@ -228,8 +228,14 @@ session's hook digest, not proof that the caller owns the session.
 A caller can also LIE about a session's lifecycle on this path: a `Stop` for a
 peer still working, or a `SessionStart` for one that has stopped, and session
 ids are readable through `spawned_agents`. Those labels no longer pace delivery:
-busy state, recent contact and the retired cooldown cannot defer a fresh mail
-event. Per-original-item write deduplication and the in-flight reservation do
+recent contact and the retired cooldown cannot defer a fresh mail event, and
+busy state cannot defer the first one. While a session is busy and a notice
+already written to it has not been taken up, further socket writes wait for
+the turn to end, because the harness queues them behind the first. A forged
+busy label can therefore hold back additional socket writes to a session that
+already has a notice outstanding. It cannot hold back the first write, the
+hook presentation of everything outstanding, or the blocking Stop fallback.
+Per-original-item write deduplication and the in-flight reservation do
 not reset on a busy label. A forged lifecycle call may still cause an otherwise
 eligible outstanding item to be considered, and lifecycle-derived contact can
 affect liveness diagnostics. A lifecycle label alone proves neither receiver
