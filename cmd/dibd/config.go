@@ -107,6 +107,9 @@ func applyLimits(c LimitsConfig, base core.Limits) (core.Limits, error) {
 				base.MaxPersistentAgents, base.MaxAgents)
 		}
 	}
+	if err := applyBlobMaxAge(c, &base); err != nil {
+		return base, err
+	}
 	return base, applyBlobCap(c, &base)
 }
 
@@ -161,6 +164,16 @@ func applyBlobCap(c LimitsConfig, base *core.Limits) error {
 		)
 	}
 	base.BlobStoreBytes = int(c.BlobStoreBytes)
+	return nil
+}
+
+// applyBlobMaxAge folds blob_max_age over the default.
+func applyBlobMaxAge(c LimitsConfig, base *core.Limits) error {
+	d, err := boardconfig.CheckBlobMaxAge(c.BlobMaxAge)
+	if err != nil || d == 0 {
+		return err
+	}
+	base.BlobMaxAge = d
 	return nil
 }
 

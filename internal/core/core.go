@@ -151,6 +151,11 @@ type Limits struct {
 	// eviction, bounding the put→send race; TTL is the hard unreferenced life.
 	BlobGraceWindow time.Duration `json:"blob_grace_window"`
 	BlobTTL         time.Duration `json:"blob_ttl"`
+	// BlobMaxAge is the longest any attachment lives, referenced or not. A
+	// screenshot sent to the person is attached to mail that may never be
+	// consumed, so without it the image lived as long as the message did.
+	// Zero means no age bound (a snapshot or caller that never set it).
+	BlobMaxAge time.Duration `json:"blob_max_age"`
 }
 
 // DefaultLimits are the SPEC §11 defaults.
@@ -209,6 +214,7 @@ func DefaultLimits() Limits {
 		MaxDeadlineDormant:    7 * 24 * time.Hour,
 		BlobGraceWindow:       10 * time.Minute,
 		BlobTTL:               7 * 24 * time.Hour,
+		BlobMaxAge:            7 * 24 * time.Hour,
 	}
 }
 

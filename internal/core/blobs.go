@@ -227,7 +227,9 @@ func (s *State) applyPutBlob(l *Agent, op *Op, now time.Time) (Result, []Event, 
 //
 // Policy (deterministic; created-order, not access-order: true LRU would
 // require ledgering reads, which we refuse to do for a read path):
-//  1. unreferenced blobs older than the hard TTL → evicted (cause "ttl");
+//  1. unreferenced blobs older than the hard TTL → evicted (cause "ttl"),
+//     and any blob older than the maximum age, referenced or not (cause
+//     "age"): the message keeps its handle and get_blob says it expired;
 //  2. under cap pressure, unreferenced blobs past the grace window, oldest
 //     first, until under cap (cause "cap"): grace protects freshly-put,
 //     not-yet-attached blobs so put→send works;
@@ -244,9 +246,12 @@ func (s *State) gcBlobs(now time.Time, reserve int64) []Event {
 	// audit history. Map order differs per process, so an unsorted traversal
 	// reordered those events on replay.
 	for _, id := range sortedKeys(s.Blobs) {
-		b := s.Blobs[id]
-		if s.blobRefs(id) == 0 && now.Sub(b.CreatedAt) > s.Limits.BlobTTL {
+		age := now.Sub(s.Blobs[id].CreatedAt)
+		switch {
+		case s.blobRefs(id) == 0 && age > s.Limits.BlobTTL:
 			drop(id, "ttl")
+		case s.Limits.BlobMaxAge > 0 && age > s.Limits.BlobMaxAge:
+			drop(id, "age")
 		}
 	}
 	limit := int64(s.Limits.BlobStoreBytes) - reserve
