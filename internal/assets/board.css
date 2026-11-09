@@ -195,7 +195,12 @@ body {
   display: block; width: 100%; height: 240px; max-height: 240px; object-fit: contain;
   background: var(--bg, #101014); border-radius: 8px;
 }
-.board .attachment-media figcaption { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; }
+/* Fit the preview, message and caption inside the board's finite results
+   window. The full viewer retains the image's natural dimensions below. */
+.board .sheet > main { container-type: size; }
+.board:not(.media-view) .attachment-media img, .board:not(.media-view) .attachment-media video { height: clamp(64px, calc(100cqh - 10rem), 240px); }
+.board .attachment-media figcaption { display: block; font-size: var(--t-sm); line-height: 1.5; }
+.board .attachment-media figcaption .proto { padding: 0; }
 .board .attachment-expired { margin-left: 8px; color: var(--muted); }
 .board .file-tools { flex-basis: 100%; min-width: 0; }
 .board .file-pick { position: relative; display: inline-block; cursor: pointer; padding: 4px 8px; }

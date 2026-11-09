@@ -103,6 +103,11 @@ export async function checkWebMedia(page: Page, check: Check, tool: Tool, token:
     if(await large.count()){
       await full.waitForFunction(()=>{const image=document.querySelector("#media-view .atts img") as HTMLImageElement;return image?.naturalWidth>0})
       check("full-image document offers a larger painted preview",await large.evaluate(el=>el.getBoundingClientRect().height>240))
+      check("viewer caption shares one baseline and ordinary spacing",await full.locator("#media-view figcaption").evaluate(caption=>{
+        const text=caption.querySelector(".media-caption")!,link=caption.querySelector("a")!,range=document.createRange()
+        range.selectNodeContents(text);const a=range.getBoundingClientRect();range.selectNodeContents(link);const b=range.getBoundingClientRect()
+        return Math.abs(a.bottom-b.bottom)<=1&&b.left-a.right>0&&b.left-a.right<24
+      }))
       if(process.env.DIBS_MEDIA_ARTIFACTS)await full.screenshot({path:join(process.env.DIBS_MEDIA_ARTIFACTS,"board-full-image.png"),animations:"disabled",mask:[full.locator(".who.focal")]})
     }
     await full.close();await page.bringToFront()
@@ -120,6 +125,16 @@ export async function checkWebMedia(page: Page, check: Check, tool: Tool, token:
       await themed.close();await page.bringToFront()
     }
     await page.evaluate(theme=>{if(theme===null)document.documentElement.removeAttribute("data-theme");else document.documentElement.setAttribute("data-theme",theme)},previousTheme)
+    const originalViewport=page.viewportSize()
+    for(const height of [720,1000]){
+      await page.setViewportSize({width:1280,height})
+      await page.locator(`#message-${serial}`).evaluate(el=>el.scrollIntoView({block:"start"}))
+      check(`inline caption stays below the preview and above the fade at ${height}px`,await page.locator(`#message-${serial} figcaption`).evaluate(caption=>{
+        const frame=caption.closest("figure")!.querySelector("[data-media-preview]")!.getBoundingClientRect(),label=caption.getBoundingClientRect(),clip=caption.closest("main")!.getBoundingClientRect()
+        return label.top>=frame.bottom&&label.bottom<=clip.bottom-20&&label.top>=clip.top&&caption.textContent!.includes("image ·")&&!!caption.querySelector("a[download]")
+      }))
+    }
+    if(originalViewport)await page.setViewportSize(originalViewport)
     if (process.env.DIBS_MEDIA_ARTIFACTS) {
       const viewport=page.viewportSize()
       await page.setViewportSize({width:1280,height:1000})
