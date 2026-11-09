@@ -18,8 +18,11 @@ jobs:
   artifacts:
     runs-on: macos-latest
     timeout-minutes: 30
+    env:
+      CANDIDATE_ARTIFACT_NAME: candidate-install-${{ github.run_id }}-${{ github.run_attempt }}
     outputs:
       tag: ${{ steps.build.outputs.tag }}
+      artifact_name: ${{ env.CANDIDATE_ARTIFACT_NAME }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -38,7 +41,7 @@ jobs:
         run: go run ./tools/publicinstall -mode candidate-build -sha "$CANDIDATE_SHA" -tag "$CANDIDATE_VERSION" -out "$RUNNER_TEMP/dibs-candidate"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: candidate-install-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ${{ env.CANDIDATE_ARTIFACT_NAME }}
           path: |
             ${{ runner.temp }}/dibs-candidate/candidate.json
             ${{ runner.temp }}/dibs-candidate/dibs.rb
@@ -61,7 +64,7 @@ jobs:
           experimental: true
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          name: candidate-install-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ${{ needs.artifacts.outputs.artifact_name }}
           path: ${{ runner.temp }}/candidate-input
       - name: Real candidate install, repeat, reinstall, migration and MCP
         env:
