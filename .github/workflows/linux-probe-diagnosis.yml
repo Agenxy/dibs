@@ -6,7 +6,11 @@ permissions:
   contents: read
 jobs:
   diagnose:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-26.04]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 25
     env:
       DIBS_LINUX_PROBE_DIAG: '1'
@@ -18,7 +22,7 @@ jobs:
           version: 2026.10.23
           experimental: true
       - name: Repeated focused runtime reproductions
-        run: mise exec -- go test -race -count=20 -timeout=10m -v -run '^(TestASecondWakeIsNotQueuedBehindOneNotYetDelivered|TestTheEnvironmentIsReadableForUserBinaries)$' ./internal/engine ./internal/liveness
+        run: mise exec -- go test -race -count=20 -timeout=10m -v -run '^(TestLinuxTouchAliasDiagnostic|TestASecondWakeIsNotQueuedBehindOneNotYetDelivered|TestTheEnvironmentIsReadableForUserBinaries)$' ./internal/engine ./internal/liveness
       - name: Full package order with decision evidence
         if: ${{ always() }}
         run: mise exec -- go test -race -count=1 -timeout=15m -v ./internal/engine ./internal/liveness
