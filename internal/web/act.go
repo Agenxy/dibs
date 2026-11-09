@@ -33,16 +33,18 @@ import (
 // act is the one shape every write endpoint accepts, so the browser has one
 // helper rather than seven.
 type act struct {
-	Agent       string `json:"agent"`       // space id, for lane_* actions
-	To          string `json:"to"`          // agent id, for send
-	Body        string `json:"body"`        // message or post text
-	Type        string `json:"type"`        // notify | question | request | handoff
-	Serial      uint64 `json:"serial"`      // message being answered/acked
-	Disposition string `json:"disposition"` // answer | approve | deny | decline
-	DeadlineS   int    `json:"deadline_s"`
-	Into        string `json:"into"`
-	Fence       string `json:"fence"`
-	DryRun      bool   `json:"dry_run"`
+	Agent       string   `json:"agent"`       // space id, for lane_* actions
+	To          string   `json:"to"`          // agent id, for send
+	Body        string   `json:"body"`        // message or post text
+	Type        string   `json:"type"`        // notify | question | request | handoff
+	Serial      uint64   `json:"serial"`      // message being answered/acked
+	Disposition string   `json:"disposition"` // answer | approve | deny | decline
+	DeadlineS   int      `json:"deadline_s"`
+	Into        string   `json:"into"`
+	Fence       string   `json:"fence"`
+	DryRun      bool     `json:"dry_run"`
+	Attachments []string `json:"attachments"`
+	Submission  string   `json:"submission"`
 }
 
 // registerActions mounts the human's write routes.
@@ -106,6 +108,11 @@ func (s *Server) apiAct(w http.ResponseWriter, r *http.Request) {
 		writeActJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
 		return
 	}
+	if op.Kind == core.OpRespond && len(a.Attachments) > 0 {
+		if _, err := s.eng.HumanReplyFiles(r.Context(), a.Serial, a.Attachments, a.Submission); err != nil {
+			res["files_error"] = "Your reply was recorded, but its files were not sent. Attach them to a new message."
+		}
+	}
 	writeActJSON(w, http.StatusOK, res)
 }
 
@@ -130,6 +137,12 @@ func (a act) op(what, token string) (*core.Op, bool) {
 	case "send":
 		op.Kind, op.To, op.Body = core.OpSendMessage, a.To, a.Body
 		op.MsgType, op.DeadlineSec = a.msgType(), a.deadline()
+		for _, id := range a.Attachments {
+			op.Attachments = append(op.Attachments, core.Attachment{Blob: id})
+		}
+		if a.Submission != "" {
+			op.OpID = "board-send:" + a.Submission
+		}
 	case "respond":
 		op.Kind, op.MsgSerial, op.Body = core.OpRespond, a.Serial, a.Body
 		op.Disposition = a.disposition()

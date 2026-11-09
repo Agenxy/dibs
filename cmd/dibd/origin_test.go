@@ -167,4 +167,19 @@ func TestTheBoardCannotBeFramed(t *testing.T) {
 			"it a page on another local port frames the authenticated board and "+
 			"drives it with the human's own session", csp)
 	}
+	for _, directive := range []string{"img-src 'self' blob:", "media-src 'self' blob:"} {
+		if !strings.Contains(csp, directive) {
+			t.Errorf("board CSP does not allow its authenticated media: %q missing %q", csp, directive)
+		}
+	}
+	if strings.Contains(csp, "data:") || strings.Contains(csp, "*") {
+		t.Errorf("board CSP widened media beyond same-origin and blob: %q", csp)
+	}
+	for _, directive := range strings.Split(csp, ";") {
+		directive = strings.TrimSpace(directive)
+		if strings.Contains(directive, "blob:") &&
+			!strings.HasPrefix(directive, "img-src ") && !strings.HasPrefix(directive, "media-src ") {
+			t.Errorf("blob URLs must not reach scripts, frames or objects: %q", directive)
+		}
+	}
 }

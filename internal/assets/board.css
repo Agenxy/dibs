@@ -183,6 +183,30 @@ body {
   background: linear-gradient(180deg, var(--sheen) 0%, transparent 220px);
 }
 
+/* Authenticated web media. Stable dimensions keep incoming mail from moving
+   the reader while lazy images load. The panel keeps handle-only attachments. */
+.board .msg .att:has(.attachment-media) { display: block; flex-basis: 100%; min-width: 0; max-width: 100%; }
+.board .attachment-media { display: block; margin: 8px 0; width: min(100%, 480px); }
+.board .attachment-media img, .board .attachment-media video {
+  display: block; width: 100%; height: 240px; max-height: 240px; object-fit: contain;
+  background: var(--bg, #101014); border-radius: 8px;
+}
+.board .attachment-media figcaption { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; }
+.board .attachment-expired { margin-left: 8px; color: var(--muted); }
+.board .file-tools { flex-basis: 100%; min-width: 0; }
+.board .file-pick { position: relative; display: inline-block; cursor: pointer; padding: 4px 8px; }
+.board .file-pick:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.board .file-pick input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.board .file-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.board [data-file-chip] { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 3px 6px; border: 1px solid var(--line); border-radius: 5px; }
+.board [data-file-chip] span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px; }
+.board [data-file-chip] button { padding: 2px 6px; }
+.board.media-view > .sheet { display: none; }
+.board #media-view { position: relative; max-width: 1100px; margin: 24px auto; padding: 0 20px; }
+.board #media-view h1 { margin: 12px 0; }
+.board #media-view .attachment-media { width: 100%; }
+.board #media-view .attachment-media img { width: auto; max-width: 100%; height: auto; max-height: none; }
+
 .sheet {
   position: relative; z-index: 1;
   max-width: 900px;

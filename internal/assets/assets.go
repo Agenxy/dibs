@@ -79,6 +79,9 @@ var signalCSS string
 //go:embed board.js
 var boardJS string
 
+//go:embed attachments.js
+var attachmentsJS string
+
 var cachedFaces = sync.OnceValue(func() string {
 	var b strings.Builder
 	_ = writeFontFaces(&b) // strings.Builder cannot fail.
@@ -145,7 +148,7 @@ func FontFaces() string { return cachedFaces() }
 func Styles() string { return cachedStyles() }
 
 // BoardJS is the shared component library: pure functions from board data to
-// HTML strings, exposed as a `Board` object. It contains no transport and no
-// state, because the two surfaces get their data by completely different means
-// postMessage from an MCP host, and server-sent events from dibd.
-func BoardJS() string { return boardJS }
+// HTML strings, exposed as a `Board` object. The optional attachment controllers
+// are constructed only by the authenticated web page with its keyed fetcher;
+// the MCP panel keeps its own transport and handle-only attachments.
+func BoardJS() string { return boardJS + "\n" + attachmentsJS }

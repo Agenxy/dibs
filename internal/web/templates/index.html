@@ -11,7 +11,10 @@
 <title>Dibs: coordination board</title>
   <link rel="icon" type="image/svg+xml" href="/icon.svg">
   <link rel="apple-touch-icon" href="/icon-512.png">
-<style>{{styles}}</style>
+<style>{{styles}}
+/* The board's CSP allows same-origin media and blob:, never data:. */
+.board .surface::before { background-image: url("/grain.svg"); }
+</style>
 </head>
 
 <!--
@@ -161,6 +164,13 @@ const boardFetch = (url, opts = {}) => {
   if (key) headers.set("X-Dibs-Board-Key", key)
   return fetch(url, { ...opts, headers })
 }
+const fileComposers = new BoardFiles(document,boardFetch,{{.MaxBlobBytes}},{{.MaxAttachmentFiles}},flash)
+const attachmentMedia = new BoardMedia(document,boardFetch,{{.MaxBlobBytes}},flash)
+const mediaParts = (new URLSearchParams(location.search).get("media") || "").split("/")
+const mediaSelection = mediaParts.length === 2 && mediaParts.every(part => /^[0-9]+$/.test(part) && Number.isSafeInteger(Number(part)))
+  ? mediaParts.map(Number) : null
+const mediaView = mediaSelection ? document.body.appendChild(Object.assign(document.createElement("main"),{id:"media-view"})) : null
+if(mediaView)document.body.classList.add("media-view")
 
 // This preference is human-authenticated by the same page-key gate as mail
 // and actions. The section is shown only after that route accepts this page.
@@ -316,7 +326,7 @@ function flash(msg, bad) {
 // EventSource cannot send a header, and cookies are host-scoped so any local
 // service the operator visits is handed one. Mail comes from /api/messages,
 // which requires the page key.
-let state = { board: {{.BoardJSON}}, messages: [], announcements: [], mailError: "", events: {{.EventsJSON}},
+let state = { board: {{.BoardJSON}}, messages: [], announcements: [], mailError: "", mailLoaded: false, events: {{.EventsJSON}},
   // Which agents the reader opened. Held here because the roster is rebuilt
   // from scratch on every board change and a `details` does not survive that.
   query: "", expandedGroups: new Set(), expanded: new Set() }
@@ -469,6 +479,24 @@ function keepingDrafts(render) {
 // destructive innerHTML on this page is inside here.
 function draw() { keepingDrafts(drawPanes) }
 
+// A full-size tab is this trusted board document, never a blob document.
+// Attachment bytes still enter only an image element after the keyed fetch.
+function drawMediaPreview() {
+  if(!mediaView)return
+  const heading='<header><a href="/">Back to board</a><h1>Image attachment</h1></header>'
+  const message=state.messages.find(message=>Number(message.serial)===mediaSelection[0])
+  const attachment=message?.attachments?.[mediaSelection[1]]
+  if(!attachment || (!attachment.expired && attachment.kind!=="image")){
+    const text=state.mailError?"Mail unavailable. Reopen the board.":state.mailLoaded?"Attachment unavailable.":"Loading attachment…"
+    mediaView.innerHTML=heading+`<p>${text}</p>`;return
+  }
+  const template=document.createElement("template")
+  template.innerHTML=Board.messageHTML(message,{selfId:me,media:true})
+  for(const [index,item] of [...template.content.querySelectorAll(".atts > li")].entries())if(index!==mediaSelection[1])item.remove()
+  for(const link of template.content.querySelectorAll("[data-media-preview]")){link.removeAttribute("href");link.removeAttribute("target")}
+  Board.renderPreservingComposers(mediaView,heading+template.innerHTML)
+}
+
 function drawPanes() {
   drawSummary()
   const b = state.board
@@ -570,7 +598,7 @@ function drawPanes() {
   // do, and the operator holds exactly one token: their own.
   const shownMail = state.messages.filter((m) => Board.matchesMail(m, state.query))
   Board.renderPreservingComposers(mailEl, `
-    <div class="compose new-msg">
+    <div class="compose new-msg" data-files>
       <input type="text" id="msg-to" placeholder="agent id" aria-label="recipient">
       <select id="msg-type" aria-label="message type">
         <option value="notify">notify</option>
@@ -579,6 +607,7 @@ function drawPanes() {
         <option value="handoff">handoff</option>
       </select>
       <input type="text" id="msg-body" placeholder="message…" aria-label="message body">
+      ${BoardFiles.controls()}
       <button class="act send">send</button>
     </div>` + (state.mailError
     // ABOVE WHATEVER IS CACHED. The first cut said the mailbox could not be
@@ -599,14 +628,16 @@ function drawPanes() {
         // to when notifications cannot be raised. Found by a pre-release
         // review.
         const isRequest = m.type === "request"
-        return Board.messageHTML(m, { selfId: me }) + (forMe ? (isRequest ? `
-          <div class="compose reply" data-serial="${m.serial}">
+        return Board.messageHTML(m, { selfId: me, media: true }) + (forMe ? (isRequest ? `
+          <div class="compose reply" data-serial="${m.serial}" data-files>
             <input type="text" placeholder="why (optional)…" aria-label="reason">
+            ${BoardFiles.controls()}
             <button class="act approve">approve</button>
             <button class="act deny">deny</button>
           </div>` : `
-          <div class="compose reply" data-serial="${m.serial}">
+          <div class="compose reply" data-serial="${m.serial}" data-files>
             <input type="text" placeholder="reply to ${Board.esc(m.from)}…" aria-label="reply">
+            ${BoardFiles.controls()}
             <button class="act respond">answer</button>
             <button class="act ackmsg" data-why="acknowledge without answering">ack<span class="sr-only">: acknowledge without answering</span></button>
           </div>`) : "")
@@ -615,6 +646,9 @@ function drawPanes() {
       ? ""
       : state.query.trim() ? Board.noMatchesHTML() : Board.emptyHTML("No mail", "Messages between agents appear here as they are sent.")))
 
+  fileComposers.sync(state.messages)
+  drawMediaPreview()
+  attachmentMedia.sync()
   const actEl = document.getElementById("pane-activity")
   const shownEvents = state.events.filter((e) => Board.matchesEvent(e, state.query))
   actEl.innerHTML = shownEvents.length
@@ -809,12 +843,13 @@ document.addEventListener("click", async (ev) => {
     }
   } else if (btn.classList.contains("send")) {
     const to = document.getElementById("msg-to").value.trim()
-    const body = document.getElementById("msg-body").value.trim()
+    const body = document.getElementById("msg-body").value.trim() || (fileComposers.state(box).files.length ? "See attached files." : "")
     const type = document.getElementById("msg-type").value
     if (!to || !body) return flash("a message needs a recipient and a body", true)
-    if (await act("send", { to, body, type }, btn)) {
+    const result = await fileComposers.run(box,(attachments,submission)=>act("send", { to, body, type, attachments, submission }, btn))
+    if (result) {
       document.getElementById("msg-body").value = ""
-      flash("sent to " + to)
+      flash(result.files_error || "sent to " + to,!!result.files_error)
     }
   } else if (btn.classList.contains("approve") || btn.classList.contains("deny")) {
     // A reason is optional here, deliberately: an approval that requires an
@@ -822,14 +857,16 @@ document.addEventListener("click", async (ev) => {
     // by convention rather than by rule.
     const disposition = btn.classList.contains("approve") ? "approve" : "deny"
     const body = input?.value.trim() || ""
-    if (await act("respond", { serial, body, disposition }, btn)) {
+    const result = await fileComposers.run(box,(attachments,submission)=>act("respond", { serial, body, disposition, attachments, submission }, btn))
+    if (result) {
       if (input) input.value = ""
-      flash(disposition === "approve" ? "approved" : "denied")
+      flash(result.files_error || (disposition === "approve" ? "approved" : "denied"),!!result.files_error)
     }
   } else if (btn.classList.contains("respond")) {
-    const body = input?.value.trim()
+    const body = input?.value.trim() || (fileComposers.state(box).files.length ? "See attached files." : "")
     if (!body) return flash("nothing to say", true)
-    if (await act("respond", { serial, body, disposition: "answer" }, btn)) { input.value = ""; flash("answered") }
+    const result = await fileComposers.run(box,(attachments,submission)=>act("respond", { serial, body, disposition: "answer", attachments, submission }, btn))
+    if (result) { input.value = ""; flash(result.files_error || "answered",!!result.files_error) }
   } else if (btn.classList.contains("ackmsg")) {
     if (await act("ack", { serial }, btn)) flash("acknowledged")
   }
@@ -880,12 +917,12 @@ async function refreshMail() {
     // the document and the stream loaded fine, and an operator could not
     // tell an inaccessible mailbox from an empty one. The last good view is
     // kept, and the pane says the mailbox could not be read and why.
-    if (!res.ok) { state.mailError = "HTTP " + res.status; draw(); return }
+    if (!res.ok) { state.mailLoaded=true;state.mailError = "HTTP " + res.status; draw(); return }
     const d = await res.json()
     state.mailError = ""
     if (Array.isArray(d.announcements)) state.announcements = d.announcements
-    if (Array.isArray(d.messages)) { state.messages = d.messages; draw() }
-  } catch (_) { state.mailError = "unreachable"; draw() }
+    if (Array.isArray(d.messages)) { state.mailLoaded=true;state.messages = d.messages; draw() }
+  } catch (_) { state.mailLoaded=true;state.mailError = "unreachable"; draw() }
   finally {
     mailPending = false
     // Exactly one more, however many arrived while that was in flight: the
