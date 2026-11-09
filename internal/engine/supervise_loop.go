@@ -79,6 +79,11 @@ func (e *Engine) superviseOnce(ctx context.Context, cfg liveness.Config,
 	live := make(map[int]bool, len(found))
 
 	for _, a := range found {
+		// Unknown ownership is still visible in probe/doctor, but cannot choose a
+		// transcript, accumulate a verdict, or suppress a later owner's notice.
+		if a.Via == liveness.AttributionUnknown {
+			continue
+		}
 		live[a.PID] = true
 		// The transcript the child ANNOUNCED beats the one discovered by asking
 		// its process which files it holds open. Same file when both work; the

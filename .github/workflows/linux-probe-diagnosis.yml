@@ -21,4 +21,4 @@ jobs:
           version: 2026.10.23
           experimental: true
       - name: Repeated focused runtime guards
-        run: mise exec -- go test -race -count=10 -timeout=8m -v -run '^(TestASecondWakeIsNotQueuedBehindOneNotYetDelivered|TestTheEnvironmentIsReadableForUserBinaries|TestEmptyNativeEnvironmentCannotChooseAHeuristicOwner)$' ./internal/engine ./internal/liveness
+        run: mise exec -- go test -race -count=10 -timeout=8m -v -run '^(TestASecondWakeIsNotQueuedBehindOneNotYetDelivered|TestTheEnvironmentIsReadableForUserBinaries|TestEmptyNativeEnvironmentCannotChooseAHeuristicOwner|TestUnknownEnvironmentCannotFeedSupervision)$' ./internal/engine ./internal/liveness

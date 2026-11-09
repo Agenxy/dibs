@@ -14,6 +14,12 @@ import (
 	"github.com/agenxy/dibs/internal/procinfo"
 )
 
+// AttributionUnknown means the strongest ownership evidence was unavailable.
+const AttributionUnknown = "unknown"
+
+// AttributionUnknownHint explains why a process remains visible but unowned.
+const AttributionUnknownHint = "The process environment is empty or unreadable, so DIBS_PARENT could not be established. No parent was guessed; a later complete read may establish ownership."
+
 // Agent is an agent-shaped process found running on this machine.
 type Agent struct {
 	PID     int
@@ -83,7 +89,14 @@ func attribute(pid, ppid int) (owner, via string) {
 }
 
 func attributeIn(pid, ppid int, commands map[int]string) (owner, via string) {
-	env := EnvironOf(pid)
+	env, known := environmentOf(pid)
+	if !known {
+		// Empty is not evidence that the process has no stamp. Even an old PID
+		// can be in a fresh exec: kernel start time identifies fork, not exec,
+		// so an age threshold would still let a wrapper's new harness acquire
+		// a guessed owner. A genuinely empty environment remains UNKNOWN too.
+		return "", AttributionUnknown
+	}
 	// 1. An explicit marker beats every inference. A harness hook, or a parent
 	//    that cares, sets this once and every descendant inherits it.
 	if m := agentsParent.FindStringSubmatch(env); len(m) == 2 {
@@ -261,25 +274,25 @@ func commandOf(pid int) string {
 // environment while the agent it execs shows the variable it inherited. Both
 // halves are asserted in environ_test.go against a user-compiled binary.
 func EnvironOf(pid int) string {
+	env, _ := environmentOf(pid)
+	return env
+}
+
+// environmentOf preserves uncertainty until attribution has decided whether
+// lower rungs are allowed. A command rereads the same native evidence after
+// a fork's delay; it cannot establish that an empty first read meant no stamp.
+func environmentOf(pid int) (string, bool) {
 	if pid <= 0 {
-		return ""
+		return "", false
 	}
 	if procinfo.Native {
 		env, err := procinfo.Environ(pid)
-		if err == nil {
-			return strings.Join(env, " ")
-		}
-		if procinfo.Gone(err) {
-			return ""
-		}
-		procinfo.WarnFallback("process environment", err)
+		return strings.Join(env, " "), err == nil
 	}
-	// #nosec G204 -- pid is an int, so no shell metacharacter can reach argv
+	// Unsupported platforms retain their existing command implementation.
+	// #nosec G204 -- pid is an integer, never shell input.
 	out, err := procexec.Command(context.Background(), "ps", "eww", "-p", strconv.Itoa(pid)).Output()
-	if err != nil {
-		return ""
-	}
-	return string(out)
+	return string(out), err == nil && len(out) != 0
 }
 
 // agentsParent matches the explicit marker. Its value is an agent id, which is
