@@ -27,7 +27,7 @@ func (e *Engine) prepareMailboxCapacity(op *core.Op, now time.Time) error {
 // blocking ask; copy neither the refused body nor caller-supplied alert text.
 func (e *Engine) escalateMailboxFull(recipient string, now time.Time) {
 	var source *core.Message
-	for _, m := range e.state.Messages {
+	for _, m := range e.state.MailTo(recipient) {
 		if m.To != recipient || m.Type == core.MsgNotify || m.Terminal() && !m.DurableDebt() {
 			continue
 		}

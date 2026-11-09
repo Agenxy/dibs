@@ -102,6 +102,7 @@ type Engine struct {
 	commandWritten     map[string]bool   // per original command item, derived and writer-owned
 	nativeUnknown      map[string]bool   // unknown input in this receiving incarnation; not an acceptance receipt
 	socketWritten      map[string]bool   // per original item; not a receiver acceptance receipt
+	writtenPrunedAt    time.Time         // last full prune of the three receipt maps above
 	wakeBursts         map[string]*wakeBurst
 	wakeContext        context.Context
 	noticePresented    map[string]time.Time

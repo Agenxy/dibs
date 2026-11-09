@@ -305,7 +305,7 @@ func resyncEvents(st *core.State, l *core.Agent, cursor uint64) []core.Event {
 			})
 		}
 	}
-	for _, m := range st.Messages {
+	for _, m := range st.MailFrom(l.ID) {
 		inherited := l.CreatedSerial > 0 && m.Serial < l.CreatedSerial && !core.MergedSenderOwns(m, l)
 		if m.From != l.ID || inherited || m.RespondedAt <= cursor {
 			continue
@@ -772,7 +772,7 @@ func (e *Engine) noteOutcomeRead(l *core.Agent, m *core.Message, token string, n
 // See AGENTS.md.
 func pendingFor(st *core.State, l *core.Agent) []uint64 {
 	var serials []uint64
-	for _, m := range st.Messages {
+	for _, m := range st.MailTo(l.ID) {
 		// The same exemption Inbox applies, or inbox hands over a body whose
 		// state stays pending and the sender never gets its receipt. Found by
 		// the pre-release review, round four.

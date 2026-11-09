@@ -348,6 +348,7 @@ func (s *State) gc(now time.Time, purgeMail, clampWatermark, keepOwed bool) ([]E
 		}
 		if m.Terminal() && m.Consumed && m.consumedRetentionExpired(now, s.Limits.ConsumedRetention) {
 			delete(s.Messages, serial) // sender had its read window (real-agent finding)
+			s.mailChanged()
 			pruned = true
 			continue
 		}
@@ -374,6 +375,7 @@ func (s *State) gc(now time.Time, purgeMail, clampWatermark, keepOwed bool) ([]E
 		}
 		for _, m := range evict {
 			delete(s.Messages, m.Serial)
+			s.mailChanged()
 			// A DELETION IS A CHANGE EVEN WHEN NOBODY IS LEFT TO TELL.
 			//
 			// This relied on the event below, which is only emitted when the
@@ -421,7 +423,7 @@ func (s *State) gc(now time.Time, purgeMail, clampWatermark, keepOwed bool) ([]E
 			if clampWatermark {
 				floor = fence
 			}
-			for _, m := range s.Messages {
+			for _, m := range s.MailTo(agent) {
 				if m.To == agent && m.Serial < l.TruncatedBefore && m.Serial >= floor {
 					l.TruncatedBefore = m.Serial
 				}
@@ -515,9 +517,11 @@ func (s *State) gc(now time.Time, purgeMail, clampWatermark, keepOwed bool) ([]E
 			switch {
 			case m.To == id:
 				delete(s.Messages, serial)
+				s.mailChanged()
 				mail++
 			case m.From == id:
 				m.From = RetiredSender(id)
+				s.mailChanged()
 				retired++
 			case (m.Adopt == id || (m.Merge != nil && (m.Merge.From == id || m.Merge.Into == id))) && !m.Terminal():
 				// A REQUEST TO ADOPT THIS MAILBOX DIES WITH IT. Approval

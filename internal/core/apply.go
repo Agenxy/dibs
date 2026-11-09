@@ -380,6 +380,7 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 // finish assigns the op's serial and stamps events.
 func (s *State) finish(evs *[]Event, now time.Time) uint64 {
 	s.Serial++
+	s.mailIdx = nil // see mailIndex: no derived view survives an op
 	for i := range *evs {
 		(*evs)[i].Serial = s.Serial
 		(*evs)[i].Sub = i
@@ -693,7 +694,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 	// any later ack of one working: an ack resolves by serial and does not
 	// consult this.
 	if op.V7Semantics {
-		for _, m := range s.Messages {
+		for _, m := range s.MailTo(id) {
 			if m.To == id && m.Serial >= l.TruncatedBefore {
 				l.TruncatedBefore = m.Serial + 1
 			}
@@ -1547,6 +1548,7 @@ func (s *State) finishSend(
 		m.Merge = &effect
 	}
 	s.Messages[serial] = m
+	s.mailChanged()
 	evs := []Event{{Type: "message.sent", Agent: l.ID, To: to.ID, Data: map[string]any{
 		"msg_type": op.MsgType, "from": l.ID, "attachments": len(op.Attachments),
 	}}}
@@ -1590,7 +1592,7 @@ func (s *State) finishSend(
 func (s *State) oldestDisplaceableNotify(agent string) *Message {
 	var oldest *Message
 	floor := s.mailFloor(agent)
-	for _, m := range s.Messages {
+	for _, m := range s.MailTo(agent) {
 		if m.To == agent && m.Type == MsgNotify &&
 			(m.Serial >= floor || s.adoptedFor(m, agent)) &&
 			(m.State == MsgStatePending || m.State == MsgStateDelivered) {

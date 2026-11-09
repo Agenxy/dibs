@@ -5,7 +5,6 @@ package core
 
 import (
 	"encoding/json"
-	"reflect"
 	"testing"
 	"time"
 )
@@ -77,7 +76,7 @@ func TestBridgeSurfaceEvidenceAdmissionIsNarrowAndReplayable(t *testing.T) {
 		}
 		mustApply(t, replayed, &decoded, now.Add(time.Duration(i)*time.Minute))
 	}
-	if !reflect.DeepEqual(s, replayed) {
+	if !sameState(s, replayed) {
 		t.Fatal("surface evidence fold diverged after JSON replay")
 	}
 	serial := s.Serial

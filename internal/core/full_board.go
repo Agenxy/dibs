@@ -201,7 +201,7 @@ func (s *State) applyFullBoardSetting(actor *Agent, op *Op, now time.Time) (Resu
 func (s *State) closeDisplacedAgent(d *AgentDisplacement, newcomer string, now time.Time) []Event {
 	victim := s.Agents[d.ID] // Admit established the incarnation and eligibility.
 	undelivered, unanswered := 0, 0
-	for _, message := range s.Messages {
+	for _, message := range s.MailTo(victim.ID) {
 		if message.To != victim.ID || message.Terminal() {
 			continue
 		}

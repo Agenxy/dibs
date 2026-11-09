@@ -159,6 +159,7 @@ func (s *State) readdressMail(from, into *Agent, v7 bool) int {
 			}
 			m.AdoptedFrom, m.AdoptedAt = from.ID, s.Serial+1
 			m.To = into.ID
+			s.mailChanged()
 			moved++
 			continue
 		}
@@ -239,7 +240,7 @@ func (s *State) movedMailEvents(into, from *Agent, debtAndFYI bool) []Event {
 func (s *State) RecoveryCount(agent string) int {
 	count := 0
 	floor := s.mailFloor(agent)
-	for _, m := range s.Messages {
+	for _, m := range s.MailTo(agent) {
 		if m.To == agent && (m.Serial >= floor || s.adoptedFor(m, agent)) &&
 			(m.readable() || m.DurableDebt()) {
 			count++

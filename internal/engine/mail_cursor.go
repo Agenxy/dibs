@@ -37,7 +37,7 @@ func (e *Engine) mailboxItems(l *core.Agent, cut uint64, now time.Time) []*core.
 	for _, m := range mail {
 		included[m.Serial] = true
 	}
-	for _, m := range e.state.Messages {
+	for _, m := range e.state.MailTo(l.ID) {
 		if e.mailBelongsTo(m, l) && m.Owed(now) && !included[m.Serial] {
 			mail = append(mail, m)
 		}

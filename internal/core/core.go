@@ -912,6 +912,9 @@ type State struct {
 	// (SPEC-CHANNELS.md). Keyed by space id and by announce serial.
 	Spaces        map[string]*Space
 	Announcements map[uint64]*Announcement
+
+	// Derived and never encoded: see mailIndex.
+	mailIdx *mailIndex
 }
 
 // NewState returns an empty state for a node.
@@ -1021,7 +1024,7 @@ func (s *State) Inbox(agent string) []*Message {
 	// deliberately kept, and the next agent to take that name was handed them,
 	// bodies included. Measured. Found by the pre-release review.
 	floor := s.mailFloor(agent)
-	for _, m := range s.Messages {
+	for _, m := range s.MailTo(agent) {
 		// An ADOPTED message sits below the heir's own watermark by construction
 		// when that heir is a reused name: adoption reported it moved and the
 		// inbox hid it. The watermark fences a predecessor's mail, which carries
@@ -1084,7 +1087,7 @@ func (s *State) mailFloor(agent string) uint64 {
 func nonTerminalCount(s *State, agent string) int {
 	n := 0
 	floor := s.mailFloor(agent)
-	for _, m := range s.Messages {
+	for _, m := range s.MailTo(agent) {
 		// The same exemption as Inbox, so what the agent can see is what counts
 		// against its capacity.
 		if m.To == agent && (m.Serial >= floor || s.adoptedFor(m, agent)) && !m.Terminal() {

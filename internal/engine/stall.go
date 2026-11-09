@@ -16,7 +16,7 @@ import (
 // process between calls, and its row said "dormant (process gone)" while it
 // was busy. Reported by k7-dev (Dibs #1152).
 func (e *Engine) workStateOf(l *core.Agent) string {
-	slots := e.workSlotsOf(l, time.Now())
+	slots := e.workSlots(l, time.Now(), false)
 	if len(slots) == 0 {
 		return "idle"
 	}

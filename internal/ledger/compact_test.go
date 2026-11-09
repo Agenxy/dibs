@@ -116,6 +116,12 @@ func assertCompactionPreservesState(t *testing.T, path string, want *core.State,
 	}
 }
 
+// derivedStateFields are the unexported fields the snapshot drops ON PURPOSE:
+// caches rebuilt from the encoded fields on first use, which no op leaves
+// behind (see core.mailIndex). Anything else unexported is state the
+// snapshot would lose.
+var derivedStateFields = map[string]bool{"State.mailIdx": true}
+
 // The snapshot carries core.State through gob, which encodes exported fields
 // and nothing else. A field gob cannot carry would be lost at the first
 // compaction and for good, silently: so the shape is guarded statically,
@@ -139,6 +145,9 @@ func TestEveryStateFieldCanBeCarriedByTheSnapshot(t *testing.T) {
 		case reflect.Struct:
 			for i := 0; i < ty.NumField(); i++ {
 				f := ty.Field(i)
+				if derivedStateFields[path+"."+f.Name] {
+					continue
+				}
 				if !f.IsExported() {
 					t.Errorf("%s.%s is unexported: the snapshot drops it", path, f.Name)
 					continue

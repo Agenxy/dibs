@@ -65,7 +65,7 @@ func (e *Engine) receivedReviews(agent string) []*core.Message {
 		return nil
 	}
 	var messages []*core.Message
-	for _, m := range e.state.Messages {
+	for _, m := range e.state.MailTo(agent) {
 		if m.To == agent && m.From != agent &&
 			(l.CreatedSerial == 0 || m.Serial >= l.CreatedSerial || e.state.AdoptedFor(m, agent)) && len(e.reviewUnits(m)) > 0 {
 			messages = append(messages, m)

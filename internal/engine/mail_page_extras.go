@@ -6,7 +6,6 @@ package engine
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/agenxy/dibs/internal/core"
 )
@@ -59,7 +58,7 @@ func compactMailboxAnnouncements(res core.Result) {
 		for k, v := range row {
 			summary[k] = v
 		}
-		summary["body"] = trimRunes(strings.Join(strings.Fields(body), " "), 80)
+		summary["body"] = trimRunes(squashSpace(body, 80), 80)
 		summary["read_hint"] = fmt.Sprintf("read_space(space:%q) has the full announcement", row["agent"])
 		if summary["body"] != body {
 			summary["body_truncated"] = true

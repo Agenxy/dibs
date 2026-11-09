@@ -80,7 +80,7 @@ func (s *State) completeAdoption(from, into *Agent, now time.Time) []Event {
 }
 
 func (s *State) noteCompletedAdoptionRequests(from, into *Agent) {
-	for _, m := range s.Messages {
+	for _, m := range s.MailFrom(into.ID) {
 		if m.Type == MsgRequest && m.Adopt == from.ID && m.From == into.ID &&
 			(!m.Terminal() || m.State == MsgStateQueued) && m.Serial >= from.CreatedSerial && m.Serial >= into.CreatedSerial {
 			m.PriorAdoptionSerial = s.Serial + 1
@@ -113,7 +113,7 @@ func (s *State) contactStillNeeded(c *ContactEscalation) bool {
 	if c.MailboxFull {
 		return s.MailboxCapacity(c.Recipient).Depth >= s.Limits.MaxMailboxDepth
 	}
-	for _, m := range s.Messages {
+	for _, m := range s.MailTo(c.Recipient) {
 		if m.To == c.Recipient && m.State == MsgStatePending && m.ContactEscalatedAt == c.Serial {
 			return true
 		}

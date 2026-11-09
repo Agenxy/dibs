@@ -153,7 +153,7 @@ func (e *Engine) sentOutcomes(agent string) []*core.Message {
 		return nil
 	}
 	var out []*core.Message
-	for _, m := range e.state.Messages {
+	for _, m := range e.state.MailFrom(agent) {
 		// Preserve the old read-all meaning before the recorded upgrade epoch.
 		// New bounded deliveries cannot use the board awareness watermark.
 		if e.hasReadLegacyOutcome(l, m) {

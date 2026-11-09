@@ -4,7 +4,6 @@
 package core
 
 import (
-	"reflect"
 	"testing"
 )
 
@@ -28,7 +27,7 @@ func TestWithdrawalClearsLockedQueueAndReplaysExactly(t *testing.T) {
 			t.Fatal("replay:", err)
 		}
 	}
-	if !reflect.DeepEqual(replayed, f.s) {
+	if !sameState(replayed, f.s) {
 		t.Fatal("live state differs from replay")
 	}
 	f.refused(Op{Kind: OpWithdrawMessage, Token: "t-lead", MsgSerial: a}, "E_MSG_FINAL")

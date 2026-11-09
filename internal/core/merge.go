@@ -91,10 +91,12 @@ func (s *State) moveMail(from, into string) int {
 	for _, serial := range sortedMessageKeys(s.Messages) {
 		m := s.Messages[serial]
 		if m.To == from {
+			s.mailChanged()
 			m.To = into
 			moved++
 		}
 		if m.From == from {
+			s.mailChanged()
 			m.From = into
 		}
 	}

@@ -19,7 +19,7 @@ type MailboxCapacity struct {
 // MailboxCapacity counts current admission debt and separately retained FYIs.
 func (s *State) MailboxCapacity(agent string) MailboxCapacity {
 	var c MailboxCapacity
-	for _, m := range s.Messages {
+	for _, m := range s.MailTo(agent) {
 		if m.To == agent {
 			s.countMailboxCapacity(&c, m)
 		}
