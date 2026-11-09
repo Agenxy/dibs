@@ -79,6 +79,8 @@ type runner struct {
 	testExecRoot string
 	env          []string
 	report       receipt
+	// privateHomes puts each fixture home outside root: see fixtureHome.
+	privateHomes bool
 }
 
 func main() { os.Exit(runCLI()) }
@@ -87,7 +89,8 @@ func runCLI() int {
 	var o options
 	flag.StringVar(&o.mode, "mode", "native",
 		"native, linux, linux-hosted, candidate-build, candidate-linux, or internal linux-child")
-	flag.StringVar(&o.tag, "tag", "", "exact published tag or candidate version; candidate-build defaults to next patch")
+	flag.StringVar(&o.tag, "tag", "", "exact published tag or candidate version; candidate-build defaults to next patch; "+
+		"published resolves the latest GitHub release of $GITHUB_REPOSITORY")
 	flag.StringVar(&o.out, "out", "", "new receipt directory; existing directories are refused")
 	flag.StringVar(&o.runtime, "runtime", "container", "container or docker; never starts the runtime service")
 	flag.StringVar(&o.image, "image", "docker.io/homebrew/brew:latest", "Homebrew image; observed digest is recorded")
@@ -102,11 +105,40 @@ func runCLI() int {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
 	defer cancel()
+	if o.tag == "published" {
+		tag, err := publishedTag(os.Getenv("GITHUB_REPOSITORY"), func(args ...string) (string, error) {
+			out, err := procexec.Command(ctx, "gh", args...).Output()
+			return string(out), err
+		})
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "publicinstall:", err)
+			return 1
+		}
+		o.tag = tag
+	}
 	if err := execute(ctx, o); err != nil {
 		fmt.Fprintln(os.Stderr, "publicinstall:", err)
 		return 1
 	}
 	return 0
+}
+
+// publishedTag is the latest published release, so the hosted check tests
+// what a person installs today. A tag pinned in the workflow went stale at
+// every release and then failed every PR that touched this checker.
+func publishedTag(repo string, gh func(args ...string) (string, error)) (string, error) {
+	if repo == "" {
+		return "", errors.New("-tag published needs GITHUB_REPOSITORY to name the repository")
+	}
+	out, err := gh("release", "view", "--repo", repo, "--json", "tagName", "--jq", ".tagName")
+	if err != nil {
+		return "", fmt.Errorf("resolving the latest published release of %s: %w", repo, err)
+	}
+	tag := strings.TrimSpace(out)
+	if _, err := selfupdate.ReleaseForTag(tag); err != nil {
+		return "", fmt.Errorf("latest published release of %s is %q: %w", repo, tag, err)
+	}
+	return tag, nil
 }
 
 func validate(o options, goos string) error {
@@ -223,6 +255,7 @@ func (r *runner) prepareNativeMode(o options) error {
 			return errors.New("linux child requires its tag-bound readonly fixture marker and isolated receipt mount")
 		}
 		r.env = isolatedEnv(os.Getenv("HOME"), r.root)
+		r.privateHomes = true
 		if err := r.brew(o.tag); err != nil {
 			return err
 		}
@@ -346,10 +379,10 @@ func (r *runner) native(tag string) error {
 		return err
 	}
 	for _, source := range []string{"archive", "go"} {
-		home := filepath.Join(r.root, source+"-home")
-		if err := os.Mkdir(home, 0o700); err != nil {
+		home, err := r.fixtureHome(source)
+		if err != nil {
 			return err
-		} // #nosec G703 -- own fixture home
+		}
 		env := isolatedEnv(home, r.root)
 		bin := archive
 		if source == "go" {
@@ -362,11 +395,47 @@ func (r *runner) native(tag string) error {
 			}
 			r.report.GoTag = tag
 		}
-		if err := r.smoke(bin, home, env); err != nil {
+		err = r.smoke(bin, home, env)
+		r.keepDaemonLog(home, source)
+		if err != nil {
 			return fmt.Errorf("%s MCP: %w", source, err)
 		}
 	}
 	return nil
+}
+
+// fixtureHome is where one leg's private Dibs profile lives.
+//
+// Beside the receipts, except in a Linux child, where the receipts are a bind
+// mount from the Mac and /receipts is not root-owned. Dibs refuses a data
+// directory with an ancestor another user can replace, which is right, and
+// it refused this one: every v0.0.18 archive leg polled readiness until its
+// deadline while each poll said why. The brew leg passed throughout because
+// it uses the container's own HOME. A child's legs now go under the
+// container's root-owned sticky temporary directory, the place the refusal
+// itself names, and their daemon logs are copied back as evidence.
+func (r *runner) fixtureHome(source string) (string, error) {
+	if r.privateHomes {
+		return os.MkdirTemp("", "dibs-public-"+source+"-home-")
+	}
+	home := filepath.Join(r.root, source+"-home")
+	if err := os.Mkdir(home, 0o700); err != nil {
+		return "", err
+	} // #nosec G703 -- own fixture home
+	return home, nil
+}
+
+// keepDaemonLog copies a private home's daemon log into the receipts, which
+// outlive the container. Best effort: a missing log is itself the evidence.
+func (r *runner) keepDaemonLog(home, source string) {
+	if filepath.Dir(home) == r.root {
+		return // already in the receipts
+	}
+	// #nosec G304 -- fixed log name below this run's own fixture home
+	if raw, err := os.ReadFile(filepath.Join(home, "daemon.log")); err == nil {
+		// #nosec G703 -- fixed log name below this run's new receipt directory
+		_ = os.WriteFile(filepath.Join(r.root, source+"-daemon.log"), raw, 0o600)
+	}
 }
 
 func caskVersion(out, tag string) error {

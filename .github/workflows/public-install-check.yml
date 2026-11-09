@@ -22,14 +22,18 @@ jobs:
         with:
           version: 2026.10.23
           experimental: true
-      - name: Published v0.0.17 README install and release check
-        run: env PATH="/home/linuxbrew/.linuxbrew/bin:$PATH" mise exec -- go run ./tools/publicinstall -mode linux-hosted -fresh-installs 1 -tag v0.0.17 -out "$RUNNER_TEMP/dibs-public-linux-v0.0.17"
+      # -tag published tests whatever is published now: a tag pinned here
+      # went stale at every release and then failed every PR touching the checker.
+      - name: Latest published README install and release check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: env PATH="/home/linuxbrew/.linuxbrew/bin:$PATH" mise exec -- go run ./tools/publicinstall -mode linux-hosted -fresh-installs 1 -tag published -out "$RUNNER_TEMP/dibs-public-linux"
       - name: Preserve the real receipt, including failures
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: published-linux-v0.0.17-${{ github.run_id }}-${{ github.run_attempt }}
+          name: published-linux-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            ${{ runner.temp }}/dibs-public-linux-v0.0.17/receipt.json
-            ${{ runner.temp }}/dibs-public-linux-v0.0.17/*.log
+            ${{ runner.temp }}/dibs-public-linux/receipt.json
+            ${{ runner.temp }}/dibs-public-linux/*.log
           if-no-files-found: error
