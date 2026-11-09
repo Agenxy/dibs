@@ -5,8 +5,10 @@ package engine
 
 import (
 	"context"
+	"runtime"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -241,15 +243,25 @@ func TestReleasingASuppliedIndexRetractsTheSuppliedStatus(t *testing.T) {
 // failure and an eviction at the same moment held each other's next lock,
 // with the writer loop next in line behind either. Round seven of the
 // pre-release review. Bounded here rather than left to the test timeout.
+//
+// THE BOUND IS ON PROGRESS, NOT ON WALL TIME. It was a 10 s deadline on the
+// whole run, and the run is quadratic by construction (each release copies the
+// Supplied map under the status lock), so under -race on a loaded machine it
+// took 15 s with no deadlock anywhere and failed whole gates twice, reading
+// "the two locks are taken in both orders" when they were not. A deadlock is
+// the absence of progress, so that is what fails it: no call completing for
+// stallAfter while calls are still outstanding.
 func TestReleasingASuppliedIndexDoesNotDeadlockWithAFailureReport(t *testing.T) {
 	e := &Engine{}
 	const n = 4000
+	const stallAfter = 5 * time.Second
 	scorer := overlap.NewLexicalFromFiles(nil, nil)
 	for i := range n {
 		root := "/repo/" + strconv.Itoa(i)
 		e.SetIndex(root, scorer, MatchConfig{}, IndexInfo{SuppliedBy: "shipper"})
 		e.NoteSuppliedIndex(root, "shipper")
 	}
+	var finished atomic.Int64
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -257,17 +269,31 @@ func TestReleasingASuppliedIndexDoesNotDeadlockWithAFailureReport(t *testing.T) 
 		for i := range n {
 			wg.Add(2)
 			root := "/repo/" + strconv.Itoa(i)
-			go func() { defer wg.Done(); e.RemoveScorerForRepo(root) }()
+			go func() { defer wg.Done(); e.RemoveScorerForRepo(root); finished.Add(1) }()
 			go func() {
 				defer wg.Done()
 				e.SetMatchStatus(MatchStatus{Phase: MatchOff, Repo: "/other/" + strconv.Itoa(i), Hint: "failed"})
+				finished.Add(1)
 			}()
 		}
 		wg.Wait()
 	}()
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
-		t.Fatal("releasing supplied indexes beside failure reports did not finish: the two locks are taken in both orders")
+	tick := time.NewTicker(stallAfter)
+	defer tick.Stop()
+	last := int64(-1)
+	for {
+		select {
+		case <-done:
+			return
+		case <-tick.C:
+			now := finished.Load()
+			if now == last {
+				stacks := make([]byte, 1<<20)
+				stacks = stacks[:runtime.Stack(stacks, true)]
+				t.Fatalf("releasing supplied indexes beside failure reports stopped: %d of %d calls finished and none "+
+					"in %s, so the two locks are taken in both orders\n%s", now, 2*n, stallAfter, stacks)
+			}
+			last = now
+		}
 	}
 }
