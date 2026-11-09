@@ -598,7 +598,7 @@ func TestSocketEconomyFreshMailBeyondOldCooldown(t *testing.T) {
 						t.Fatalf("silence repeated mail: %v", wire)
 					}
 				}
-				f.tool(t, "send", map[string]any{"token": f.sender, "to": "worker", "type": "question", "body": body})
+				sent := f.tool(t, "send", map[string]any{"token": f.sender, "to": "worker", "type": "question", "body": body})
 				text := f.waitOffer(t)
 				if !strings.Contains(text, body) || (body == "long-window-second" && strings.Contains(text, "long-window-first")) {
 					t.Fatalf("fresh item omitted or old item repeated: %q", text)
@@ -607,6 +607,19 @@ func TestSocketEconomyFreshMailBeyondOldCooldown(t *testing.T) {
 					t.Fatalf("fresh item had no write: %v", wire)
 				}
 				f.waitWritten(t)
+				if mode == "busy" {
+					// Mid-turn, the harness queues the notice and dequeues it at
+					// the next turn boundary, which runs UserPromptSubmit and
+					// presents the item. Until then a later item is carried by
+					// that hook, not written.
+					serial := fmt.Sprintf("#%.0f question", sent["msg_serial"])
+					if got := f.hook(t, "UserPromptSubmit"); !strings.Contains(got, serial) {
+						t.Fatalf("dequeued notice did not present its item: %s", got)
+					}
+				}
+			}
+			if mode == "busy" {
+				return
 			}
 			if got := f.hook(t, "Stop"); !strings.Contains(got, "long-window-first") || !strings.Contains(got, "long-window-second") {
 				t.Fatalf("held-message fallback lost unread mail: %s", got)
