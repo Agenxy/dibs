@@ -9,6 +9,12 @@
 <meta name="description" content="Every agent on this machine, what each is working on, and where two are about to collide.">
 <meta name="application-name" content="Dibs">
 <title>Dibs: coordination board</title>
+<script>
+// A full-size image tab inherits an explicit board/host theme. Without one,
+// both documents continue to follow the system preference through board.css.
+const inheritedTheme = new URLSearchParams(location.search).get("theme")
+if (inheritedTheme === "dark" || inheritedTheme === "light") document.documentElement.dataset.theme = inheritedTheme
+</script>
   <link rel="icon" type="image/svg+xml" href="/icon.svg">
   <link rel="apple-touch-icon" href="/icon-512.png">
 <style>{{styles}}
@@ -483,7 +489,9 @@ function draw() { keepingDrafts(drawPanes) }
 // Attachment bytes still enter only an image element after the keyed fetch.
 function drawMediaPreview() {
   if(!mediaView)return
-  const heading='<header><a href="/">Back to board</a><h1>Image attachment</h1></header>'
+  const theme=document.documentElement.dataset.theme
+  const back=theme==="dark"||theme==="light"?"/?theme="+theme:"/"
+  const heading=`<header><a class="proto" href="${back}">Back to board</a><h1>Image attachment</h1></header>`
   const message=state.messages.find(message=>Number(message.serial)===mediaSelection[0])
   const attachment=message?.attachments?.[mediaSelection[1]]
   if(!attachment || (!attachment.expired && attachment.kind!=="image")){

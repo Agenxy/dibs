@@ -186,7 +186,11 @@ body {
 /* Authenticated web media. Stable dimensions keep incoming mail from moving
    the reader while lazy images load. The panel keeps handle-only attachments. */
 .board .msg .att:has(.attachment-media) { display: block; flex-basis: 100%; min-width: 0; max-width: 100%; }
+.board:not(.media-view) .att.visual > .attachment-handle { display: none; }
 .board .attachment-media { display: block; margin: 8px 0; width: min(100%, 480px); }
+.board .attachment-media [data-media-preview] { display: block; position: relative; color: var(--fg); text-decoration: none; }
+.board .media-expand { position: absolute; top: 8px; right: 8px; padding: 4px 8px; border: 1px solid var(--line-3); border-radius: var(--r); background: var(--bg); color: var(--fg-2); font-size: var(--t-sm); }
+.board.media-view .media-expand { display: none; }
 .board .attachment-media img, .board .attachment-media video {
   display: block; width: 100%; height: 240px; max-height: 240px; object-fit: contain;
   background: var(--bg, #101014); border-radius: 8px;

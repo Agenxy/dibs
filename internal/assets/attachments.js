@@ -15,6 +15,8 @@ class BoardMedia {
     this.changes = new MutationObserver(() => this.cleanup())
     this.changes.observe(root, {childList:true,subtree:true})
     root.addEventListener("click", event => {
+      const preview = event.target.closest?.("a[data-media-preview][href]")
+      if (preview) this.previewTheme(preview)
       const download = event.target.closest?.("[data-attachment-download]")
       if (download) {event.preventDefault();void this.download(download.closest("[data-media-key]"));return}
       const play = event.target.closest?.("[data-media-play]")
@@ -27,11 +29,18 @@ class BoardMedia {
   }
   sync() {
     this.cleanup()
+    for (const link of this.root.querySelectorAll("a[data-media-preview][href]")) this.previewTheme(link)
     for (const node of this.root.querySelectorAll('[data-media-key][data-kind="image"]')) {
       if (!this.observed.has(node) && !node.dataset.mediaState) {
         this.observed.add(node);this.observer.observe(node)
       }
     }
+  }
+  previewTheme(link) {
+    const theme=document.documentElement.dataset.theme,url=new URL(link.href)
+    if(theme==="dark"||theme==="light")url.searchParams.set("theme",theme)
+    else url.searchParams.delete("theme")
+    link.href=url.href
   }
   cleanup() {
     for (const node of [...this.urls.keys()]) if (!node.isConnected) this.release(node)

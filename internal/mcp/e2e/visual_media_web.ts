@@ -80,10 +80,11 @@ export async function checkWebMedia(page: Page, check: Check, tool: Tool, token:
       inClip:img.getBoundingClientRect().bottom>img.closest(".view")!.getBoundingClientRect().top && img.getBoundingClientRect().top<img.closest(".view")!.getBoundingClientRect().bottom,
     }))
     check("board image is painted and bounded", painted.inClip && painted.natural === 640 && painted.height > 0 && painted.height <= 240 && painted.fit === "contain", JSON.stringify(painted))
-    check("image preview follows its handle without displacing the file line",await picture.evaluate(img=>{
-      const handle=img.closest("li")!.querySelector(".handle")!,image=img.getBoundingClientRect(),line=handle.getBoundingClientRect()
-      return image.top>=line.bottom&&image.left<line.right
+    check("inline image is content rather than a raw blob header",await picture.evaluate(img=>{
+      const handle=img.closest("li")!.querySelector(".handle")!,image=img.getBoundingClientRect(),body=img.closest("article")!.querySelector(".body")!.getBoundingClientRect()
+      return image.top>=body.bottom&&handle.getBoundingClientRect().width===0
     }))
+    check("bounded image has an explicit full-size affordance",(await page.locator(`#message-${serial} [data-media-preview]`).innerText()).includes("View full size"))
     const old = await picture.elementHandle()
     const requests: string[] = []
     page.on("request", request => {if(request.url().includes(`/api/messages/${serial}/attachments/`))requests.push(request.url())})
@@ -105,6 +106,20 @@ export async function checkWebMedia(page: Page, check: Check, tool: Tool, token:
       if(process.env.DIBS_MEDIA_ARTIFACTS)await full.screenshot({path:join(process.env.DIBS_MEDIA_ARTIFACTS,"board-full-image.png"),animations:"disabled",mask:[full.locator(".who.focal")]})
     }
     await full.close();await page.bringToFront()
+    const previousTheme=await page.evaluate(()=>document.documentElement.getAttribute("data-theme"))
+    for(const theme of ["dark","light"]){
+      await page.evaluate(theme=>{document.documentElement.dataset.theme=theme},theme)
+      await page.evaluate(()=>Promise.all(document.getAnimations().filter(animation=>animation.effect?.getComputedTiming().endTime!==Infinity).map(animation=>animation.finished.catch(()=>{}))))
+      const nextPage=page.context().waitForEvent("page");await picture.click()
+      const themed=await nextPage;await themed.waitForLoadState("load")
+      await themed.locator("#media-view .atts img").waitFor()
+      const colours=async(target:Page,link:string)=>target.evaluate(selector=>({background:getComputedStyle(document.body).backgroundColor,link:getComputedStyle(document.querySelector(selector)!).color,decoration:getComputedStyle(document.querySelector(selector)!).textDecorationLine}),link)
+      const boardColours=await colours(page,".proto"),viewerColours=await colours(themed,"#media-view header a"),downloadColours=await colours(themed,"#media-view a[download]")
+      check(`full viewer uses the board's ${theme} background and link style`,boardColours.background===viewerColours.background&&boardColours.link===viewerColours.link&&boardColours.link===downloadColours.link&&viewerColours.decoration===boardColours.decoration&&downloadColours.decoration===boardColours.decoration,JSON.stringify({boardColours,viewerColours,downloadColours}))
+      if(process.env.DIBS_MEDIA_ARTIFACTS)await themed.screenshot({path:join(process.env.DIBS_MEDIA_ARTIFACTS,`board-full-image-${theme}.png`),animations:"disabled",mask:[themed.locator(".who.focal")]})
+      await themed.close();await page.bringToFront()
+    }
+    await page.evaluate(theme=>{if(theme===null)document.documentElement.removeAttribute("data-theme");else document.documentElement.setAttribute("data-theme",theme)},previousTheme)
     if (process.env.DIBS_MEDIA_ARTIFACTS) {
       const viewport=page.viewportSize()
       await page.setViewportSize({width:1280,height:1000})

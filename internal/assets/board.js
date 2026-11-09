@@ -422,18 +422,20 @@ const Board = (() => {
       const size = a.size ? ` <span class="size">${esc(fmtBytes(a.size))}</span>` : ""
       if (a.blob) {
         let preview = ""
+        const visual = media && (a.kind === "image" || a.kind === "video")
         if (media && a.expired) preview = '<span class="attachment-expired">expired</span>'
         else if (media) {
           const kind = a.kind === "image" || a.kind === "video" ? a.kind : ""
           const key = JSON.stringify([serial,index,a.blob,kind,a.mime,a.size])
           const picture = kind === "image"
-            ? `<a data-media-preview href="/?media=${encodeURIComponent(serial+"/"+index)}" target="_blank" rel="noopener noreferrer"><img loading="lazy" width="640" height="320" alt="Image attachment"></a><button type="button" data-media-load hidden>Load image</button>`
+            ? `<a data-media-preview href="/?media=${encodeURIComponent(serial+"/"+index)}" target="_blank" rel="noopener noreferrer"><img loading="lazy" width="640" height="320" alt="Image attachment"><span class="media-expand">View full size</span></a><button type="button" data-media-load hidden>Load image</button>`
             : kind === "video" ? '<video controls preload="metadata" aria-label="Video attachment"></video><button type="button" data-media-play>Play video</button>' : ""
-          preview = `<figure class="attachment-media" data-media-key="${esc(key)}" data-serial="${esc(serial)}" data-index="${index}" data-kind="${kind}" data-size="${esc(a.size || 0)}">
-            ${picture}<figcaption><span class="media-caption">${kind || "file"}${size}</span> <a href="#" download data-attachment-download>Download</a></figcaption></figure>`
+          preview = `<figure class="attachment-media" title="${esc(a.blob)}" data-media-key="${esc(key)}" data-serial="${esc(serial)}" data-index="${index}" data-kind="${kind}" data-size="${esc(a.size || 0)}">
+            ${picture}<figcaption><span class="media-caption">${kind || "file"} · ${esc(fmtBytes(a.size || 0))}</span> · <a class="proto" href="#" download data-attachment-download>Download</a></figcaption></figure>`
         }
-        return `<li class="att blob">
-          <span class="kind">blob</span> <code class="handle">${esc(a.blob)}</code>${size}${preview}</li>`
+        const handle = `<span class="kind">blob</span> <code class="handle">${esc(a.blob)}</code>${size}`
+        return `<li class="att blob${visual ? " visual" : ""}">
+          ${media ? `<span class="attachment-handle">${handle}</span>` : handle}${preview}</li>`
       }
       return `<li class="att fileref">
         <span class="kind">file</span> <code class="handle">${esc(a.path || ", ")}</code>${size}
