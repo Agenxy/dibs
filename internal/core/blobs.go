@@ -193,7 +193,7 @@ func (s *State) applyPutBlob(l *Agent, op *Op, now time.Time) (Result, []Event, 
 		// eviction events ride this op's serial, so replay reproduces them.
 		var evs []Event
 		if s.storeBytes()+op.Size > int64(s.Limits.BlobStoreBytes) {
-			evs = append(evs, s.gcBlobs(now, op.Size)...) // reclaim, protecting the incoming size
+			evs = append(evs, s.gcBlobs(now, op.Size, 0)...) // reclaim, protecting the incoming size
 		}
 		if s.storeBytes()+op.Size > int64(s.Limits.BlobStoreBytes) {
 			return nil, nil, ErrStoreFull // nothing reclaimable
@@ -236,7 +236,9 @@ func (s *State) applyPutBlob(l *Agent, op *Op, now time.Time) (Result, []Event, 
 //  3. still over cap → last-resort: referenced blobs oldest first (cause
 //     "cap"), so a store full of referenced blobs degrades honestly instead of
 //     dead-locking (fixes P1-3).
-func (s *State) gcBlobs(now time.Time, reserve int64) []Event {
+//
+// maxAge comes from the sweep op (Op.BlobMaxAge), never from s.Limits.
+func (s *State) gcBlobs(now time.Time, reserve int64, maxAge time.Duration) []Event {
 	var evs []Event
 	drop := func(id, cause string) {
 		delete(s.Blobs, id)
@@ -250,7 +252,7 @@ func (s *State) gcBlobs(now time.Time, reserve int64) []Event {
 		switch {
 		case s.blobRefs(id) == 0 && age > s.Limits.BlobTTL:
 			drop(id, "ttl")
-		case s.Limits.BlobMaxAge > 0 && age > s.Limits.BlobMaxAge:
+		case maxAge > 0 && age > maxAge:
 			drop(id, "age")
 		}
 	}

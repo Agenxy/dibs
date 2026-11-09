@@ -130,7 +130,7 @@ func TestThePersonSeesAndSendsAttachments(t *testing.T) {
 
 	// Past the maximum age the attachment is gone, and both surfaces say so.
 	if _, err := e.query(ctx, func() core.Result {
-		_, _ = e.exec(&core.Op{Kind: core.OpSweep}, time.Now().Add(3*time.Hour))
+		e.sweep(time.Now().Add(3 * time.Hour)) // the production sweep, which stamps the bound
 		return nil
 	}); err != nil {
 		t.Fatal(err)

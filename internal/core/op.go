@@ -460,6 +460,15 @@ type Op struct {
 	// one: it changes what an ALREADY LEDGERED kind does, so a sweep recorded
 	// before it existed decodes false and deletes exactly what it deleted.
 	KeepOwed bool `json:"keep_owed,omitempty"`
+	// BlobMaxAge is the attachment age bound this sweep clears at, stamped
+	// by the engine from the board's limits. On the op, not read from
+	// State.Limits, for the reason KeepOwed is: it changes what an ALREADY
+	// LEDGERED kind does. Read from the limits, a sweep ledgered before the
+	// bound existed dropped a referenced attachment on replay, a later send
+	// that had attached it again was refused, and the daemon would not boot
+	// on its own ledger. Zero, as every older sweep decodes, clears nothing
+	// by age.
+	BlobMaxAge time.Duration `json:"blob_max_age,omitempty"`
 	// TakeIdentity says a same-nonce register of a LIVE agent may apply the
 	// identity it carries, and count a differing one as a change.
 	//
