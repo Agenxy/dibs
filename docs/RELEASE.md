@@ -135,6 +135,12 @@ After the owner approves the actual release, dispatch from main:
 gh workflow run release.yml --ref main -f mode=preflight -f version=<canonical-version> -f sha=<full-current-main-sha> -f full_publication_run=<successful-exact-candidate-rehearsal-run>
 ```
 
+If `commit-tag` fails, retry with a fresh preflight dispatch at the same SHA
+and version (the candidate must still be main's tip). Failed-only reruns of
+`commit-tag` cannot pass by design: the receipt is bound to its attempt. The
+artifact download runs first and reports a missing `release-preflight-<attempt>`
+for the new attempt, before the receipt's own attempt check can run.
+
 If the finalizer or a downstream service fails, authenticate the successful
 preflight run and retry publication without rebuilding a public release:
 
