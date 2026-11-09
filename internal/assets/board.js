@@ -430,7 +430,7 @@ const Board = (() => {
           const picture = kind === "image"
             ? `<a data-media-preview href="/?media=${encodeURIComponent(serial+"/"+index)}" target="_blank" rel="noopener noreferrer"><img loading="lazy" width="640" height="320" alt="Image attachment"><span class="media-expand">View full size</span></a><button type="button" data-media-load hidden>Load image</button>`
             : kind === "video" ? '<video controls preload="metadata" aria-label="Video attachment"></video><button type="button" data-media-play>Play video</button>' : ""
-          preview = `<figure class="attachment-media" title="${esc(a.blob)}" data-media-key="${esc(key)}" data-serial="${esc(serial)}" data-index="${index}" data-kind="${kind}" data-size="${esc(a.size || 0)}">
+          preview = `<figure class="attachment-media" data-media-key="${esc(key)}" data-serial="${esc(serial)}" data-index="${index}" data-kind="${kind}" data-size="${esc(a.size || 0)}">
             ${picture}<figcaption><span class="media-caption">${kind || "file"} · ${esc(fmtBytes(a.size || 0))}</span> · <a class="proto" href="#" download data-attachment-download>Download</a></figcaption></figure>`
         }
         const handle = `<span class="kind">blob</span> <code class="handle">${esc(a.blob)}</code>${size}`
