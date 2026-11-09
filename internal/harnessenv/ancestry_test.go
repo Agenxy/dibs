@@ -6,24 +6,22 @@ package harnessenv
 import (
 	"context"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 )
 
 func TestAncestryUsesOneBoundedInventory(t *testing.T) {
-	original := appProbeOutput
-	t.Cleanup(func() { appProbeOutput = original })
+	original := appProcessPass
+	t.Cleanup(func() { appProcessPass = original })
 	calls := 0
-	appProbeOutput = func(ctx context.Context, binary string, args ...string) ([]byte, error) {
+	appProcessPass = func(ctx context.Context) (*processPass, error) {
 		calls++
-		if _, bounded := ctx.Deadline(); !bounded || binary != "/bin/ps" ||
-			strings.Join(args, " ") != "-axo pid=,ppid=,lstart=,comm=" {
-			t.Fatalf("ancestry probe lacks the shared bounded inventory: %s %v", binary, args)
+		if _, bounded := ctx.Deadline(); !bounded {
+			t.Fatal("ancestry probe lacks the shared bounded inventory")
 		}
-		return []byte("301 200 Sun Oct 4 03:10:00 2026 /bin/dibs\n" +
-			"200 100 Sun Oct 4 03:09:59 2026 /Applications/ChatGPT.app/runtime\n" +
-			"100 1 Sun Oct 4 03:09:57 2026 /Applications/ChatGPT.app/Contents/MacOS/ChatGPT\n"), nil
+		return fixtureProcessPass(ctx, "301 200 Sun Oct 4 03:10:00 2026 /bin/dibs\n"+
+			"200 100 Sun Oct 4 03:09:59 2026 /Applications/ChatGPT.app/runtime\n"+
+			"100 1 Sun Oct 4 03:09:57 2026 /Applications/ChatGPT.app/Contents/MacOS/ChatGPT\n", true), nil
 	}
 	want := []string{"/Applications/ChatGPT.app/runtime", "/Applications/ChatGPT.app/Contents/MacOS/ChatGPT"}
 	if got := Ancestors(301, 6); calls != 1 || !reflect.DeepEqual(got, want) {
@@ -32,9 +30,9 @@ func TestAncestryUsesOneBoundedInventory(t *testing.T) {
 }
 
 func TestAncestryInventoryDeadlineStaysUnknown(t *testing.T) {
-	original := appProbeOutput
-	t.Cleanup(func() { appProbeOutput = original })
-	appProbeOutput = func(ctx context.Context, _ string, _ ...string) ([]byte, error) {
+	original := appProcessPass
+	t.Cleanup(func() { appProcessPass = original })
+	appProcessPass = func(ctx context.Context) (*processPass, error) {
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}

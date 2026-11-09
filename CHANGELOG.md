@@ -36,6 +36,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Idle process checks use native kernel reads on macOS and Linux instead of
+  repeatedly starting `ps`; macOS CPU and transcript-file checks use native
+  process information too. Process start identities still protect against PID
+  reuse. Unavailable CPU and file queries warn once and keep the command
+  fallback; executable-path fallbacks inspect only the requested process.
+  Unrelated permission denials do not cause probes, and denied ancestry stays
+  unknown. Friendly host names refresh on demand at most every five minutes;
+  failed lookups back off for 30 seconds without blocking the board.
+
 - An idle daemon uses about half the CPU it did: 3.3% to 1.8% on the same
   board of about a hundred rows, measured over half an hour. Once a second it
   rebuilt every row's inbox and outcomes, scanning every message on the board

@@ -16,11 +16,14 @@ import (
 func ChatGPTAppEpoch() (string, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	out, err := appProbeOutput(ctx, "/bin/ps", "-axo", "pid=,lstart=,comm=")
-	if err != nil || len(out) > 4<<20 {
+	processes, err := appProcessPass(ctx)
+	if err != nil {
 		return "", false
 	}
-	state, _ := appProcessEvidence(string(out))
+	state, _, err := processes.appEvidence()
+	if err != nil {
+		return "", false
+	}
 	if state.Epoch == "" || state.Epoch == "absent" {
 		return state.Epoch, state.Epoch != ""
 	}

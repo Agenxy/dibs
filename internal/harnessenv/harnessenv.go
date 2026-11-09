@@ -26,8 +26,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -75,41 +73,60 @@ func Detect(self int) string {
 // DetectContext preserves unavailable evidence as an error rather than treating
 // an inventory timeout as proof that the bridge lives outside an app.
 func DetectContext(ctx context.Context, self int) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
 	processes, err := processInventoryContext(ctx)
 	if err != nil {
 		return "", err
 	}
-	if _, present := processes[self]; !present {
+	present, err := processes.present(self)
+	if err != nil {
+		return "", err
+	}
+	if !present {
 		return "", errors.New("bridge process absent from process inventory")
 	}
-	return Classify(ancestorsInInventory(processes, self, 6)), nil
+	ancestors, err := ancestorsInInventory(processes, self, 6)
+	if err != nil {
+		return "", err
+	}
+	return Classify(ancestors), nil
 }
 
 // Ancestors lists the executable paths of pid's ancestors, nearest first,
 // stopping at launchd or after depth steps. Errors end the walk: an ancestry we
 // cannot read classifies as unknown, never as an app.
 func Ancestors(pid, depth int) []string {
-	processes, err := processInventoryContext(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	processes, err := processInventoryContext(ctx)
 	if err != nil {
 		return nil
 	}
-	return ancestorsInInventory(processes, pid, depth)
+	ancestors, _ := ancestorsInInventory(processes, pid, depth)
+	return ancestors
 }
 
-func ancestorsInInventory(processes map[int]processIdentity, pid, depth int) []string {
+func ancestorsInInventory(processes *processPass, pid, depth int) ([]string, error) {
 	var out []string
 	seen := map[int]bool{}
 	for i := 0; i < depth && pid > 1; i++ {
 		seen[pid] = true
-		parent := processes[pid].parent
-		p, ok := processes[parent]
-		if parent <= 1 || !ok || seen[parent] {
+		parent := processes.rows[pid].parent
+		if parent <= 1 || seen[parent] {
 			break
 		}
-		out = append(out, p.path)
+		path := processes.path(parent)
+		if path.state == processUnknown {
+			return nil, path.err
+		}
+		if path.state == processAbsent {
+			break
+		}
+		out = append(out, path.value)
 		pid = parent
 	}
-	return out
+	return out, nil
 }
 
 // chatGPTRoot is where the ChatGPT app lives; its own Codex runtime runs from
@@ -146,11 +163,14 @@ func ChatGPTOwnership(thread string) ThreadOwnership {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	out, err := appProbeOutput(ctx, "/bin/ps", "-axo", "pid=,lstart=,comm=")
-	if err != nil || len(out) > 4<<20 {
+	processes, err := appProcessPass(ctx)
+	if err != nil {
 		return ThreadOwnership{}
 	}
-	state, pids := appProcessEvidence(string(out))
+	state, pids, err := processes.appEvidence()
+	if err != nil {
+		return ThreadOwnership{}
+	}
 	if !state.Running {
 		return state
 	}
@@ -168,43 +188,6 @@ func ChatGPTOwnership(thread string) ThreadOwnership {
 	}
 	state.Known = err == nil && ctx.Err() == nil
 	return state
-}
-
-func appProcessEvidence(raw string) (ThreadOwnership, []string) {
-	var pids, epochs []string
-	var appEpoch string
-	running := false
-	for _, line := range strings.Split(raw, "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 7 {
-			continue
-		}
-		path := strings.Join(fields[6:], " ")
-		if !strings.HasPrefix(path, chatGPTRoot) {
-			continue
-		}
-		running = true
-		pid, err := strconv.Atoi(fields[0])
-		if err != nil || pid <= 0 {
-			continue
-		}
-		epoch := fields[0] + ":" + strings.Join(fields[1:6], " ")
-		if path == chatGPTRoot+"Contents/MacOS/ChatGPT" {
-			appEpoch = epoch
-		}
-		if filepath.Base(path) == "codex" {
-			pids = append(pids, strconv.Itoa(pid))
-			epochs = append(epochs, epoch)
-		}
-	}
-	if !running {
-		return ThreadOwnership{Known: true, Epoch: "absent"}, nil
-	}
-	if appEpoch == "" {
-		sort.Strings(epochs)
-		appEpoch = strings.Join(epochs, ",")
-	}
-	return ThreadOwnership{Running: true, Epoch: appEpoch}, pids
 }
 
 // Fixed binaries only. The seam lets a fixture block the real API's probe

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright 2026 Agenxy
 
-//go:build !linux
+//go:build !linux && !darwin
 
 package liveness
 

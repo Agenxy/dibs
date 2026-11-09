@@ -82,6 +82,10 @@ func insideCommandHelper(f *ast.File, pos token.Pos) bool {
 // Import spellings are not policy: aliases, dot imports and constructor values
 // all name the same raw constructor. Strings and comments name no Go object.
 func contextCommandReferences(f *ast.File) []token.Pos {
+	return commandReferences(f, map[string]bool{"CommandContext": true})
+}
+
+func commandReferences(f *ast.File, names map[string]bool) []token.Pos {
 	aliases, dot := map[string]bool{}, false
 	for _, imp := range f.Imports {
 		path, err := strconv.Unquote(imp.Path.Value)
@@ -104,7 +108,7 @@ func contextCommandReferences(f *ast.File) []token.Pos {
 		if sel, ok := n.(*ast.SelectorExpr); ok {
 			selectors[sel.Sel] = true
 			pkg, ok := sel.X.(*ast.Ident)
-			if ok && pkg.Obj == nil && aliases[pkg.Name] && sel.Sel.Name == "CommandContext" {
+			if ok && pkg.Obj == nil && aliases[pkg.Name] && names[sel.Sel.Name] {
 				positions = append(positions, sel.Pos())
 			}
 		}
@@ -113,7 +117,7 @@ func contextCommandReferences(f *ast.File) []token.Pos {
 	if dot {
 		ast.Inspect(f, func(n ast.Node) bool {
 			id, ok := n.(*ast.Ident)
-			if ok && id.Name == "CommandContext" && id.Obj == nil && !selectors[id] {
+			if ok && names[id.Name] && id.Obj == nil && !selectors[id] {
 				positions = append(positions, id.Pos())
 			}
 			return true

@@ -5,13 +5,17 @@ package liveness
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
+	"github.com/agenxy/dibs/internal/procinfo"
 )
 
 // base is the monotonic origin for every Sample this process takes.
@@ -52,7 +56,7 @@ func Observe(pid int, transcript string) Sample {
 // stalled agent from a single observation, and asking twice would be two forks
 // for one fact.
 //
-// This is the BSD path, and it is the whole answer on macOS. It used to claim
+// This is the fallback path. It used to claim
 // ps "reads the same on macOS and Linux", which is the wrong assumption stated
 // out loud: the TIME column is hundredths of a second on macOS (`0:00.05`) and
 // whole seconds on procps (`00:00:00`), so a process that had burned 50 ms was
@@ -64,7 +68,7 @@ func psTimes(pid int) (cpu, elapsed time.Duration) {
 		return 0, 0
 	}
 	// #nosec G204 -- pid is an int, so no shell metacharacter can reach argv
-	out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "time=,etime=").Output()
+	out, err := procexec.Command(context.Background(), "ps", "-p", strconv.Itoa(pid), "-o", "time=,etime=").Output()
 	if err != nil {
 		return 0, 0
 	}
@@ -223,6 +227,23 @@ func openFiles(pid int) []string {
 	if pid <= 0 {
 		return nil
 	}
+	if procinfo.Native {
+		maxFD := int(^uint(0) >> 1) // Linux's existing /proc path enumerates every descriptor
+		if runtime.GOOS == "darwin" {
+			maxFD = 999
+		} // preserve the existing macOS lsof selector
+		files, err := nativeOpenFiles(pid, maxFD)
+		if err == nil {
+			return files
+		}
+		if procinfo.Gone(err) {
+			return nil
+		}
+		procinfo.WarnFallback("process open files", err)
+	}
+	if pid <= 0 {
+		return nil
+	}
 	if entries, err := os.ReadDir(filepath.Join("/proc", strconv.Itoa(pid), "fd")); err == nil {
 		var out []string
 		for _, e := range entries {
@@ -237,7 +258,8 @@ func openFiles(pid int) []string {
 	// scanned. Errors are ignored deliberately: lsof exits non-zero when some
 	// descriptors are unreadable while still printing the ones that are.
 	// #nosec G204 -- pid is an int, so no shell metacharacter can reach argv
-	out, _ := exec.Command("lsof", "-p", strconv.Itoa(pid), "-a", "-d", "0-999", "-F", "n").Output()
+	cmd := procexec.Command(context.Background(), "lsof", "-p", strconv.Itoa(pid), "-a", "-d", "0-999", "-F", "n")
+	out, _ := cmd.Output()
 	var files []string
 	for _, line := range strings.Split(string(out), "\n") {
 		if name, ok := strings.CutPrefix(line, "n"); ok {
@@ -246,6 +268,8 @@ func openFiles(pid int) []string {
 	}
 	return files
 }
+
+var nativeOpenFiles = procinfo.OpenFiles
 
 // transcriptGlobs is where the harnesses put their session transcripts.
 //

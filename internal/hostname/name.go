@@ -15,7 +15,8 @@ import (
 )
 
 const (
-	cacheTTL     = 5 * time.Second
+	cacheTTL     = 5 * time.Minute
+	retryTTL     = 30 * time.Second
 	lookupBudget = 100 * time.Millisecond
 )
 
@@ -32,7 +33,7 @@ type resolver struct {
 
 var local = resolver{lookup: platformName, fallback: os.Hostname, now: time.Now}
 
-// Name returns the current display name, with a brief cache. A failed refresh
+// Name returns the display name with a request-driven five-minute cache. A failed refresh
 // keeps the last good label; the kernel hostname is only the initial fallback.
 // Cold callers wait for one bounded lookup. Use Current on the writer loop.
 func Name() string { return local.name() }
@@ -44,14 +45,14 @@ type Label struct {
 }
 
 // Current returns immediately, starting at most one background lookup when
-// needed. A fallback never counts as a successful cache entry: the next call
-// retries after a failed lookup, without waiting for the friendly cache's TTL.
+// needed. A fallback never counts as a successful cache entry. Failed lookups
+// back off for 30 seconds, including cold failures, without adding a timer.
 func Current() Label { return local.current() }
 
 func (r *resolver) read() (string, bool, chan struct{}) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if (!r.initialized || !r.now().Before(r.expires)) && r.refreshing == nil {
+	if (r.expires.IsZero() || !r.now().Before(r.expires)) && r.refreshing == nil {
 		r.refreshing = make(chan struct{})
 		go r.refresh(r.refreshing)
 	}
@@ -60,7 +61,7 @@ func (r *resolver) read() (string, bool, chan struct{}) {
 
 func (r *resolver) name() string {
 	value, cold, done := r.read()
-	if cold {
+	if cold && done != nil {
 		<-done
 		r.mu.Lock()
 		value, cold = r.value, !r.initialized
@@ -92,7 +93,11 @@ func (r *resolver) refresh(done chan struct{}) {
 		r.value = value
 		r.initialized = true
 	}
-	r.expires = r.now().Add(cacheTTL)
+	ttl := retryTTL
+	if ok {
+		ttl = cacheTTL
+	}
+	r.expires = r.now().Add(ttl)
 	r.refreshing = nil
 	close(done)
 }

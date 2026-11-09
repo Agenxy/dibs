@@ -52,6 +52,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/procexec"
+	"github.com/agenxy/dibs/internal/procinfo"
 )
 
 // Session is one harness session this machine can deliver to.
@@ -311,6 +312,19 @@ func writeLine(w net.Conn, v map[string]any) error {
 // psLstart runs `ps` for a process's start time; a variable so a test can
 // stand in for a slow or failing probe.
 var psLstart = func(ctx context.Context, pid int) ([]byte, error) {
+	if procinfo.Native {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		started, err := procinfo.Start(pid)
+		if err == nil {
+			return []byte(started.UTC().Format("Mon Jan _2 15:04:05 2006")), nil
+		}
+		if procinfo.Gone(err) {
+			return nil, nil
+		}
+		procinfo.WarnFallback("peer process start", err)
+	}
 	cmd := procexec.Command(ctx, "ps", "-o", "lstart=", "-p", strconv.Itoa(pid)) // #nosec G204 -- pid is an int
 	cmd.Env = append(os.Environ(), "LC_ALL=C", "TZ=UTC")
 	out, err := cmd.Output()
