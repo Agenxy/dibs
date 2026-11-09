@@ -70,8 +70,10 @@ func TestThePersonSeesAndSendsAttachments(t *testing.T) {
 	shot := put["blob"].(string)
 	send := func(token, to, kind string) uint64 {
 		t.Helper()
-		r, err := e.Do(ctx, &core.Op{Kind: core.OpSendMessage, Token: token, To: to, MsgType: kind,
-			Body: "see attached", Attachments: []core.Attachment{{Blob: shot}}})
+		r, err := e.Do(ctx, &core.Op{
+			Kind: core.OpSendMessage, Token: token, To: to, MsgType: kind,
+			Body: "see attached", Attachments: []core.Attachment{{Blob: shot}},
+		})
 		if err != nil || r["msg_serial"] == nil {
 			t.Fatalf("send: %v %v", r, err)
 		}
@@ -107,9 +109,13 @@ func TestThePersonSeesAndSendsAttachments(t *testing.T) {
 	if err := e.AnswerNativeHuman(ctx, "media-node", toHuman, "answer", "like this", ""); err != nil {
 		t.Fatal(err)
 	}
-	res, err := e.HumanReplyFiles(ctx, toHuman, []string{up["blob"].(string)})
+	res, err := e.HumanReplyFiles(ctx, toHuman, []string{up["blob"].(string)}, "reply-submission")
 	if err != nil || res["msg_serial"] == nil {
 		t.Fatalf("reply files: %v %v", res, err)
+	}
+	retry, err := e.HumanReplyFiles(ctx, toHuman, []string{up["blob"].(string)}, "reply-submission")
+	if err != nil || retry["msg_serial"] != res["msg_serial"] {
+		t.Fatalf("retry sent another file notification: first=%v retry=%v error=%v", res, retry, err)
 	}
 	got, err := e.GetBlob(ctx, agent, up["blob"].(string), "inline")
 	if err != nil || !bytes.Equal(got["bytes"].([]byte), concept) {

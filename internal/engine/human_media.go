@@ -19,6 +19,11 @@ import (
 // store, quotas and maximum age as an agent's attachment, as the person's own
 // agent, so an attachment from the person is an ordinary attachment.
 
+// HumanUploadLimits returns immutable constructor limits without a writer hop.
+func (e *Engine) HumanUploadLimits() (bytes, files int) {
+	return e.state.Limits.MaxBlobSize, e.state.Limits.MaxAttachments
+}
+
 // MediaKind is what a person's surface may render inline: raster images and
 // common video. Everything else, SVG and HTML above all because they can carry
 // script, is offered as a download and never rendered in the board's origin.
@@ -123,7 +128,11 @@ func (e *Engine) HumanPutBlob(ctx context.Context, data []byte, mime string) (co
 // text stored on the asker's message, so the files follow it as a notify to
 // the asker naming the message they answer, rather than widening respond and
 // the snapshot it is stored in. Call it after the reply itself succeeded.
-func (e *Engine) HumanReplyFiles(ctx context.Context, serial uint64, blobs []string) (core.Result, error) {
+// The optional reply submission id deduplicates a retry of this file notify
+// separately from the text reply's op id. Omit it only for a one-shot caller.
+func (e *Engine) HumanReplyFiles(
+	ctx context.Context, serial uint64, blobs []string, submission ...string,
+) (core.Result, error) {
 	if len(blobs) == 0 {
 		return nil, nil
 	}
@@ -151,9 +160,13 @@ func (e *Engine) HumanReplyFiles(ctx context.Context, serial uint64, blobs []str
 	if len(blobs) > 1 {
 		noun = "files"
 	}
+	var opID string
+	if len(submission) > 0 && submission[0] != "" {
+		opID = "human-reply:" + submission[0] + "/files"
+	}
 	return e.Do(ctx, &core.Op{
 		Kind: core.OpSendMessage, Token: token, To: asker, MsgType: core.MsgNotify,
 		Body:        fmt.Sprintf("The %s attached to my reply to #%d.", noun, serial),
-		Attachments: atts,
+		Attachments: atts, OpID: opID,
 	})
 }
