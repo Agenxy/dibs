@@ -1,0 +1,24 @@
+name: Linux native probe diagnosis
+on:
+  push:
+    branches: [codex/linux-probe-fix-424716]
+permissions:
+  contents: read
+jobs:
+  focused:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-26.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    env:
+      DIBS_NOTIFY: 'off'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b
+        with:
+          version: 2026.10.23
+          experimental: true
+      - name: Repeated focused runtime guards
+        run: mise exec -- go test -race -count=10 -timeout=8m -v -run '^(TestASecondWakeIsNotQueuedBehindOneNotYetDelivered|TestTheEnvironmentIsReadableForUserBinaries|TestEmptyNativeEnvironmentCannotChooseAHeuristicOwner)$' ./internal/engine ./internal/liveness
