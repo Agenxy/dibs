@@ -265,6 +265,10 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		// recipient still owes. Same shape as keep_archived_nonce: absent
 		// decodes false and the sweep deletes what it always deleted.
 		"keep_owed": true,
+		// blob_max_age: the attachment age bound THIS sweep clears at. Same
+		// shape again: absent decodes zero and the sweep clears nothing by
+		// age, which is what every sweep before the bound did.
+		"blob_max_age": true,
 		// A request as a task (core/progress.go): the steps its sender names,
 		// the step a progress report ticks, and where done says the work
 		// landed. A rename would replay every task with no steps, no ticks
@@ -488,7 +492,7 @@ const (
 	// Recovery adds three op tags and one Message tag; no historical key changed.
 	// required_features is additive; all earlier tags remain frozen.
 	// Adds only displaced, full_board_policy and capacity_human; all prior tags stay frozen.
-	frozenOpFingerprint       = "sha256:c6e16cb2f43a8a97"
+	frozenOpFingerprint       = "sha256:1bec1dac9a22cdca"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`

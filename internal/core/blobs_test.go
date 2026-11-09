@@ -206,7 +206,7 @@ func TestBlobMaxAgeClearsEvenReferencedAttachments(t *testing.T) {
 			MsgType: MsgNotify, Body: "look", Attachments: []Attachment{{Blob: id}},
 		}, t0.Add(30*time.Hour))
 	}
-	_, evs, err := s.Apply(&Op{Kind: OpSweep}, t0.Add(49*time.Hour))
+	_, evs, err := s.Apply(&Op{Kind: OpSweep, BlobMaxAge: lim.BlobMaxAge}, t0.Add(49*time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}

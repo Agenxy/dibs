@@ -365,6 +365,7 @@ func (e *Engine) boot(now time.Time) {
 		// And a build that leaves an archived agent its nonce. Stamped in both
 		// sweep sites for the reason V7Semantics is: neither passes exec.
 		KeepArchivedNonce: true, KeepOwed: true, // KeepOwed likewise: see Op.KeepOwed
+		BlobMaxAge: e.state.Limits.BlobMaxAge, // and the age bound: see Op.BlobMaxAge
 	}
 	for id, l := range e.state.Agents {
 		if l.Status != core.StatusActive {
@@ -1119,6 +1120,7 @@ func (e *Engine) sweep(now time.Time) {
 		GiveUpAnnounce:    e.exhaustedAnnouncements(),
 		V7Semantics:       true,                 // see boot: this op never passes exec
 		KeepArchivedNonce: true, KeepOwed: true, // likewise
+		BlobMaxAge: e.state.Limits.BlobMaxAge,
 	}
 	for id, l := range e.state.Agents {
 		if l.Status != core.StatusActive {
