@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/agenxy/dibs/internal/procexec"
 )
@@ -255,20 +256,53 @@ func download(ctx context.Context, c *http.Client, url, path string) (string, er
 	return hex.EncodeToString(sum.Sum(nil)), nil
 }
 
+// retryDelays are the waits before the second and third attempts at a release
+// asset. A variable so a test can shorten them.
+var retryDelays = []time.Duration{2 * time.Second, 6 * time.Second}
+
+// fetchBody GETs one release asset. A gateway error (502, 503, 504) or a
+// failed connection is retried, because GitHub's download path has answered
+// 504 to about half of all requests for most of an hour while the same bytes
+// were one retry away. Anything else is an answer and is returned at once.
+// Retrying is safe because nothing here trusts the bytes: the checksums and
+// the Sigstore bundle decide that, whichever attempt delivered them.
 func fetchBody(ctx context.Context, c *http.Client, url string) (io.ReadCloser, error) {
+	var last error
+	for attempt := 0; ; attempt++ {
+		body, err, retry := fetchOnce(ctx, c, url)
+		if !retry {
+			return body, err
+		}
+		last = err
+		if attempt == len(retryDelays) {
+			return nil, fmt.Errorf("%w (after %d attempts)", last, attempt+1)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("%w (cancelled while retrying)", last)
+		case <-time.After(retryDelays[attempt]):
+		}
+	}
+}
+
+func fetchOnce(ctx context.Context, c *http.Client, url string) (body io.ReadCloser, err error, retry bool) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, err
+		return nil, err, false
 	}
 	resp, err := c.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, err, ctx.Err() == nil
 	}
 	if resp.StatusCode != http.StatusOK {
 		_ = resp.Body.Close()
-		return nil, fmt.Errorf("GET %s: HTTP %d", url, resp.StatusCode)
+		switch resp.StatusCode {
+		case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+			retry = true
+		}
+		return nil, fmt.Errorf("GET %s: HTTP %d", url, resp.StatusCode), retry
 	}
-	return resp.Body, nil
+	return resp.Body, nil, false
 }
 
 // extract unpacks the payload of a release archive into dir.

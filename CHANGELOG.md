@@ -45,6 +45,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   messages. A reply you started is kept if you walk away and come back. Esc
   still closes the window.
 
+### Fixed
+
+- `dibs upgrade` rides out a brief GitHub download outage instead of failing
+  on the first error. A 502, 503 or 504, or a dropped connection, is retried
+  twice over about eight seconds; anything else, such as a missing file,
+  still fails at once. GitHub answered 504 to about half of all release
+  downloads for most of an hour on 2026-11-09. The downloaded files are still
+  verified against the signed checksums, so a retry changes nothing about
+  what is trusted.
+
 ## [0.0.18] - 2026-11-08
 
 ### Fixed
