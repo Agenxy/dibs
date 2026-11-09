@@ -18,6 +18,7 @@ type NativeHumanView struct {
 	Notice  HumanNotice `json:"notice"`
 	State   string      `json:"state"`
 	Pending bool        `json:"pending"`
+	Media   []MediaInfo `json:"media,omitempty"`
 }
 
 func (e *Engine) nativeHumanViewLocked(node string, serial uint64, now time.Time) (NativeHumanView, error) {
@@ -29,7 +30,7 @@ func (e *Engine) nativeHumanViewLocked(node string, serial uint64, now time.Time
 		return NativeHumanView{}, ErrNotTheHumans
 	}
 	pending, state := nativeHumanPending(m, now)
-	return NativeHumanView{Notice: e.noticeOf(m), State: state, Pending: pending}, nil
+	return NativeHumanView{Notice: e.noticeOf(m), State: state, Pending: pending, Media: e.mediaOfLocked(m)}, nil
 }
 
 // nativeHumanPending is the one rule for whether the window may still answer.
