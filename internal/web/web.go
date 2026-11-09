@@ -37,6 +37,9 @@ import (
 //go:embed templates
 var content embed.FS
 
+//go:embed grain.svg
+var boardGrain []byte
+
 // Server renders the board UI and admin JSON APIs.
 type Server struct {
 	eng  *engine.Engine
@@ -122,6 +125,13 @@ func (s *Server) Register(mux *http.ServeMux) {
 		w.Header().Set("Cache-Control", "public, max-age=86400")
 		_, _ = w.Write(assets.IconPNG)
 	})
+	// Same fixed texture as the panel, without a data: image in the board CSP.
+	mux.HandleFunc("GET /grain.svg", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/svg+xml")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		_, _ = w.Write(boardGrain)
+	})
 	mux.HandleFunc("GET /help", s.help)
 	mux.HandleFunc("GET /events", s.sse)
 	mux.HandleFunc("GET /api/board", s.apiBoard)
@@ -134,6 +144,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	})
 	// The human's write surface. Same session gate as the board itself.
 	s.registerActions(mux)
+	s.registerMedia(mux)
 }
 
 func (s *Server) help(w http.ResponseWriter, _ *http.Request) {
@@ -224,6 +235,7 @@ func (s *Server) indexData(r *http.Request) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	maxBytes, maxFiles := s.eng.HumanUploadLimits()
 	return map[string]any{
 		"BoardJSON":          boardJSON,
 		"EventsJSON":         evJSON,
@@ -231,6 +243,8 @@ func (s *Server) indexData(r *http.Request) (map[string]any, error) {
 		"NotificationAdvice": board["notification_advice"],
 		"FolderAccessAdvice": board["folder_access_advice"],
 		"ReconnectAdvice":    board["reconnect_advice"],
+		"MaxBlobBytes":       maxBytes,
+		"MaxAttachmentFiles": maxFiles,
 	}, nil
 }
 
@@ -399,6 +413,8 @@ func (s *Server) apiBoard(w http.ResponseWriter, r *http.Request) {
 func (s *Server) apiMessages(w http.ResponseWriter, r *http.Request) {
 	res, err := s.eng.AllMessages(r.Context())
 	if err == nil {
+		media, _ := res["media"].(map[uint64][]engine.MediaInfo)
+		delete(res, "media")
 		var names map[string]string
 		names, err = s.eng.AgentNames(r.Context())
 		if err == nil {
@@ -408,6 +424,7 @@ func (s *Server) apiMessages(w http.ResponseWriter, r *http.Request) {
 					view := messagePresentation{
 						Message:  m,
 						FromName: displayName(names, m.From), ToName: displayName(names, m.To),
+						Attachments: presentAttachments(m.Attachments, media[m.Serial]),
 					}
 					if m.Adopt != "" {
 						view.AdoptName = displayName(names, m.Adopt)

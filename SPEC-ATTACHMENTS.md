@@ -166,6 +166,10 @@ These counts and holds are ephemeral, outside the ledger and the pure core.
   `E_BLOB_UNAVAILABLE{cause:"evicted"}`: the A5 contract already makes loss explicit, so
   a full store degrades gracefully instead of dead-locking. Without this, a store full of
   pinned/referenced blobs is unreclaimable and every agent's `put_blob` fails forever.
+- **Maximum age applies even to referenced and pinned blobs.** At
+  `blob_max_age` the daemon records `blob.evicted{cause:"age"}`. The message
+  keeps its attachment handle and displays an expired marker; a later read
+  reports `E_BLOB_UNAVAILABLE`, never replacement bytes.
 - **Eviction order is creation order, not access order.** Two earlier drafts of this
   document said LRU; the daemon has always evicted oldest-created-first, and the
   daemon is right. LRU needs a last-access timestamp, that timestamp is replayed
@@ -316,6 +320,7 @@ store, not a leak of the encryption-at-rest guarantee:
 | **pins per agent** | 32 | `E_QUOTA` |
 | blob **grace window** (refcount 0, freshly put) | 10 min, measured from `created_serial` | eligible for eviction after |
 | blob **hard TTL** (unreferenced) | 7 days | `blob.evicted{cause:"ttl"}` |
+| `blob_max_age` (including referenced/pinned) | 168h; minimum 1h | `blob.evicted{cause:"age"}` |
 | inline delivery threshold | 256 KiB | larger ⇒ materialize to path |
 | `out/` materialized files | no separate cap or TTL, bounded by the blob store above | `Reconcile` deletes any `out/` file whose blob is no longer live |
 | fileref path length | 1 KiB | `E_TOO_LARGE` |

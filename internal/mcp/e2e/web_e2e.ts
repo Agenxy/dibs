@@ -27,6 +27,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { daemonReady } from "./ready"
 import { checkCompactWeb } from "./compact_web"
+import { checkWebMedia } from "./visual_media_web"
 
 const ADDR = `127.0.0.1:${process.env.PORT ?? 4932}`
 const PASSWORD = "e2e-scratch-password"
@@ -438,6 +439,12 @@ try {
   check("it uses the shared roster grouping", (await page.locator(".band").count()) >= 1)
   await checkCompactWeb(page, check)
   if (process.env.DIBS_COMPACT_ONLY === "1") process.exit(failures ? 1 : 0)
+  if (process.env.DIBS_MEDIA_ONLY === "1") {
+    await checkWebMedia(page, check, tool, b.token, b.agent_id)
+    check("no uncaught errors in the media page", realErrors().length === 0, realErrors().slice(0, 2).join(" | "))
+    console.log(`\n${checks - failures}/${checks} focused media checks passed`)
+    process.exit(failures ? 1 : 0)
+  }
   // A MAILBOX THAT CANNOT BE READ SAYS SO. A valid session with no page key
   // (a reload after localStorage was unavailable) gets 401 from the mail
   // route while the document and the stream load fine, and the pane painted
@@ -1544,6 +1551,7 @@ try {
   await page.locator("#tab-board").click()
 
 
+  await checkWebMedia(page, check, tool, b.token, b.agent_id)
   check("no uncaught errors in the page", realErrors().length === 0, realErrors().slice(0, 2).join(" | "))
   // And the injection really did happen: otherwise the exclusion above is
   // hiding nothing and the transport test proved nothing.

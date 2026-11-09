@@ -852,6 +852,21 @@ a role grant. Use file transfer or inline bytes, never hub paths. Signing off
 the issuer revokes its children permanently for that issuance generation;
 resume/token rotation/archive do not. Details: docs/NETWORK.md §9.
 
+## Showing the person something
+
+Upload an image with `put_blob(path:"/path/to/concept.png", mime:"image/png")`,
+then use its returned handle in
+`send(to:"human", type:"notify", body:"Concept image", attachments:[{blob}])`.
+The board previews images and videos; other files have a download control.
+Native macOS reply windows preview images up to 16 MiB and point to the board
+for other media. The person can attach files to a new message or reply.
+Files attached to a reply arrive as a separate notify immediately after the
+reply; read that mail's attachment handles with `get_blob`.
+
+Attachments expire at `blob_max_age` (seven days by default), even while a
+message still refers to them. Store pressure can evict them earlier. An expired
+marker means the bytes are gone; attach a fresh copy when needed.
+
 ## Moving a file
 
 For bytes outside model context, use installed `dibs put artifact.bin --json`

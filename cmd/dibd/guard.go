@@ -281,7 +281,7 @@ func browsableWithSession(r *http.Request, g *authGate) bool {
 		return false
 	}
 	switch path.Clean(r.URL.Path) {
-	case "/help", "/icon.svg", "/icon-512.png":
+	case "/help", "/icon.svg", "/icon-512.png", "/grain.svg":
 		return true
 	}
 	return false
@@ -371,7 +371,7 @@ func godViewPath(p string) bool {
 		return true
 	}
 	switch clean {
-	case "/", "/events", "/api/messages":
+	case "/", "/events", "/api/messages", "/api/upload":
 		return true
 	// The human's IDENTITY and everything that ACTS as them.
 	//
@@ -394,7 +394,7 @@ func godViewPath(p string) bool {
 	// Prefix, because /api/act/<what> is a family. Compared after cleaning so
 	// /api//act/post and /x/../api/act/post cannot dodge the gate and still
 	// reach the handler through the mux's own cleaning.
-	return strings.HasPrefix(clean, "/api/act/")
+	return strings.HasPrefix(clean, "/api/act/") || strings.HasPrefix(clean, "/api/messages/")
 }
 
 // godViewAuthorized: a browser session cookie (from the magic-link), OR: for
@@ -591,7 +591,8 @@ func (g *authGate) wrap(next http.Handler) http.Handler {
 		// Both headers, because the modern one is authoritative where it is
 		// understood and the old one is what everything else obeys. Found by a
 		// pre-release review.
-		w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
+		w.Header().Set("Content-Security-Policy",
+			"frame-ancestors 'none'; img-src 'self' blob:; media-src 'self' blob:")
 		w.Header().Set("X-Frame-Options", "DENY")
 
 		// Mint a god-view bootstrap token: requires BOTH the local secret

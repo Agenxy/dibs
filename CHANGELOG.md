@@ -7,6 +7,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The board shows image attachments as bounded previews with a larger view
+  on click, and loads videos when Play is pressed. Other files have a download
+  link; expired files keep an expired marker. New messages and replies can
+  attach multiple files by picker, drop or image paste, with removable chips
+  that survive live board updates. A file-send failure says when the reply
+  itself was already recorded. Decrypted downloads are never cached on disk.
 - On macOS, notification reply windows show image attachments as thumbnails
   that open a larger preview when clicked. Attach files with the file picker,
   drop them onto the window, or paste a screenshot; remove a file before

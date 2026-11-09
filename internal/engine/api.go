@@ -959,8 +959,12 @@ func (e *Engine) decoratedBoard() core.Result {
 func (e *Engine) AllMessages(ctx context.Context) (core.Result, error) {
 	return e.query(ctx, func() core.Result {
 		out := make([]*core.Message, 0, len(e.state.Messages))
+		media := make(map[uint64][]MediaInfo)
 		for _, m := range e.state.Messages {
 			out = append(out, e.queueMessageView(m))
+			if len(m.Attachments) > 0 {
+				media[m.Serial] = e.mediaOfLocked(m)
+			}
 		}
 		// Announcement bodies ride WITH the mail, and for the same reason.
 		//
@@ -983,7 +987,7 @@ func (e *Engine) AllMessages(ctx context.Context) (core.Result, error) {
 				"serial": a.Serial, "space": a.Space, "from": a.From, "body": a.Body,
 			})
 		}
-		return core.Result{"messages": out, "announcements": said}
+		return core.Result{"messages": out, "announcements": said, "media": media}
 	})
 }
 

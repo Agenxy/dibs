@@ -409,7 +409,7 @@ const Board = (() => {
   // would dominate the message, but the leading digits are what a reader
   // matches against get_blob output. A fileref shows its path, and is marked as
   // one, because Dibs never opened it and cannot vouch that it is there.
-  function attachmentsHTML(atts) {
+  function attachmentsHTML(atts, serial, media = false) {
     if (!Array.isArray(atts) || atts.length === 0) return ""
     // The FULL handle goes in the DOM and CSS narrows it, rather than slicing
     // the string here and putting the rest in a title. A title reaches only a
@@ -418,11 +418,24 @@ const Board = (() => {
     // mark. Left in full it stays selectable, copyable, findable with the
     // browser's own search, and readable to a screen reader, while showing the
     // leading characters that match get_blob output.
-    const one = (a) => {
+    const one = (a, index) => {
       const size = a.size ? ` <span class="size">${esc(fmtBytes(a.size))}</span>` : ""
       if (a.blob) {
-        return `<li class="att blob">
-          <span class="kind">blob</span> <code class="handle">${esc(a.blob)}</code>${size}</li>`
+        let preview = ""
+        const visual = media && (a.kind === "image" || a.kind === "video")
+        if (media && a.expired) preview = '<span class="attachment-expired">expired</span>'
+        else if (media) {
+          const kind = a.kind === "image" || a.kind === "video" ? a.kind : ""
+          const key = JSON.stringify([serial,index,a.blob,kind,a.mime,a.size])
+          const picture = kind === "image"
+            ? `<a data-media-preview href="/?media=${encodeURIComponent(serial+"/"+index)}" target="_blank" rel="noopener noreferrer"><img loading="lazy" width="640" height="320" alt="Image attachment"><span class="media-expand">View full size</span></a><button type="button" data-media-load hidden>Load image</button>`
+            : kind === "video" ? '<video controls preload="metadata" aria-label="Video attachment"></video><button type="button" data-media-play>Play video</button>' : ""
+          preview = `<figure class="attachment-media" data-media-key="${esc(key)}" data-serial="${esc(serial)}" data-index="${index}" data-kind="${kind}" data-size="${esc(a.size || 0)}">
+            ${picture}<figcaption><span class="media-caption">${kind || "file"} · ${esc(fmtBytes(a.size || 0))}</span> · <a class="proto" href="#" download data-attachment-download>Download</a></figcaption></figure>`
+        }
+        const handle = `<span class="kind">blob</span> <code class="handle">${esc(a.blob)}</code>${size}`
+        return `<li class="att blob${visual ? " visual" : ""}">
+          ${media ? `<span class="attachment-handle">${handle}</span>` : handle}${preview}</li>`
       }
       return `<li class="att fileref">
         <span class="kind">file</span> <code class="handle">${esc(a.path || ", ")}</code>${size}
@@ -466,7 +479,7 @@ const Board = (() => {
     return `<p class="effect"><span class="pill attn">effect</span> ${bits.join("; ")}</p>`
   }
 
-  function messageHTML(m, { selfId = null, actionsHTML = null } = {}) {
+  function messageHTML(m, { selfId = null, actionsHTML = null, media = false } = {}) {
     const t = m.type || "notify"
     // `response` is a STRING; an earlier version read `.body` / `.disposition`
     // off it (both always undefined) so every answered message rendered an
@@ -504,7 +517,7 @@ const Board = (() => {
         <p class="body">${esc(m.body)}</p>
         ${effectHTML(m)}
         ${taskHTML(m)}
-        ${attachmentsHTML(m.attachments)}
+        ${attachmentsHTML(m.attachments, m.serial, media)}
         ${settled ? `<div class="reply ${esc(m.state)}">
           <span class="verdict">${esc(verdict)}</span>
           ${m.state === "withdrawn" ? esc(m.withdrawal_reason || "No reason given") : (m.response ? esc(m.response) : '<span class="none">No message given</span>')}
@@ -1007,7 +1020,7 @@ const Board = (() => {
     const composers = (node) => [...node.querySelectorAll(".compose, .human-compose")]
       .filter((el) => !el.parentElement?.closest(".compose, .human-compose"))
     const previous = composers(root)
-    if (!previous.length) { root.innerHTML = html; return }
+    if (!previous.length && !root.querySelector("[data-media-key]")) { root.innerHTML = html; return }
     const active = root.ownerDocument.activeElement
 
     const template = root.ownerDocument.createElement("template")
@@ -1026,6 +1039,10 @@ const Board = (() => {
     const oldByKey = unique(previous), newByKey = unique(next)
     const signature = (el) => {
       const copy = el.cloneNode(true)
+      for (const chips of copy.querySelectorAll("[data-file-chips]")) chips.replaceChildren()
+      for (const busy of copy.querySelectorAll('[data-file-request-busy="true"]')) {
+        busy.removeAttribute("data-file-request-busy");busy.removeAttribute("disabled")
+      }
       // act() temporarily disables its control. That is request state to
       // preserve, not a change to the server-rendered action or permissions.
       for (const busy of copy.querySelectorAll('.act[aria-busy="true"]')) {
@@ -1042,6 +1059,17 @@ const Board = (() => {
       return original && newByKey.get(k) === replacement && signature(original) === signature(replacement)
         ? [{ original, replacement }] : []
     })
+    // Preserve immutable attachment identity and metadata, never a changed
+    // expiry/kind. The bytes and playback state belong to the retained node.
+    const media = node => [...node.querySelectorAll("[data-media-key]")]
+    const mediaKey = el => el.dataset.mediaKey
+    const previousMedia = new Map(media(root).map(el=>[mediaKey(el),el]))
+    const mediaKeep = media(template.content).flatMap(replacement=>{
+      const original=previousMedia.get(mediaKey(replacement))
+      return original && ["serial","index","kind","size"].every(key=>original.dataset[key]===replacement.dataset[key])
+        ? [{original,replacement}] : []
+    })
+    keep.push(...mediaKeep)
     const oldRoots = [...root.childNodes]
     // Put the new parents in the live document BEFORE moving the original
     // composers into them. Native moveBefore preserves connection and focus.
@@ -1186,7 +1214,7 @@ const Board = (() => {
   }
 
   return {
-    esc, ago, TERMINAL, VERDICT,
+    esc, ago, TERMINAL, VERDICT, fmtBytes,
     attentionHTML, matchesAgent, matchesSpace, matchesMail, matchesEvent, noMatchesHTML, identHTML, laneHTML, cadenceHTML, rosterHTML, contactAlertsHTML, messageHTML, eventHTML, agentBadges, explained, explainer, transition, ticker, recency,
     channelHTML, channelsHTML, renderPreservingComposers,
     summaryHTML, emptyHTML, firstRunHTML,
