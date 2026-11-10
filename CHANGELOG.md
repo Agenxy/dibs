@@ -91,6 +91,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   knows them, including on the board and in the coordinator's notice. A
   desktop Open button still requires the recipient's local app provenance.
 
+- After two accepted ChatGPT inputs lead to distinct turns that fail
+  immediately before reaching Dibs, Dibs holds further native notices for
+  that thread and reports the observed failure in its contact alert. The
+  mail stays available in the original mailbox. Dibs resumes notices after
+  authenticated contact or a new receiving binding.
+
 - A Claude Code session that is waiting on the person no longer receives a
   pile of Dibs notices when the person answers. Claude Code queues a message
   that arrives during a turn, and Dibs wrote one for every new item, so a

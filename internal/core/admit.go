@@ -90,6 +90,11 @@ func (s *State) Admit(op *Op) error {
 func (s *State) admitContact(op *Op) error {
 	switch op.Kind {
 	case OpContactEscalate:
+		switch op.ContactReason {
+		case "", ContactTurnsEnded, ContactCompactionFailed, ContactContextFull:
+		default:
+			return errf("E_BAD_CONTACT", "use a known daemon contact reason", "invalid contact reason")
+		}
 		m := s.Messages[op.MsgSerial]
 		if op.ContactMailboxFull {
 			if m == nil || m.Type == MsgNotify || m.Terminal() && !m.DurableDebt() ||

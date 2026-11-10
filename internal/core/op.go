@@ -43,7 +43,8 @@ type Op struct {
 	// Recipient-selected prefix for a single bulk FYI acknowledgement.
 	NotifyThroughSerial uint64 `json:"notify_through_serial,omitempty"`
 	// A refused send records a contact failure against an existing blocking ask.
-	ContactMailboxFull bool `json:"contact_mailbox_full,omitempty"`
+	ContactMailboxFull bool          `json:"contact_mailbox_full,omitempty"`
+	ContactReason      ContactReason `json:"contact_reason,omitempty"`
 
 	// Historical check_in ops retain read-all semantics. An activity_checkpoint
 	// with a present selection, even an empty one, records the returned page;

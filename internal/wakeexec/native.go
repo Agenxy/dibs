@@ -18,6 +18,7 @@ import (
 type NativeOutcome struct {
 	OK, Settled, NoRetry bool
 	Disposition          string
+	TurnID               string
 	Detail               string
 	// AppNotListening marks a native_failed outcome whose socket exists and
 	// refused the connection: an app starting, stopping or restarting. A
@@ -99,5 +100,5 @@ func TryNative(surface string, f Fields, argv []string, fresh func() (string, er
 	if !settled {
 		slog.Info("native app accepted Dibs notice", "agent", f.Agent, "disposition", r.Disposition)
 	}
-	return NativeOutcome{OK: true, Settled: settled, Disposition: r.Disposition}, true
+	return NativeOutcome{OK: true, Settled: settled, Disposition: r.Disposition, TurnID: r.TurnID}, true
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/harnessenv"
 )
 
 // Measured accepted-notice/model-call associations are normally seconds; the
@@ -20,12 +21,23 @@ const acceptedContactAfter = 30 * time.Minute
 
 // Writer-owned observations, never coordination state. Restart loses the
 // receipt, not mail: a later actual acceptance establishes a fresh interval.
-type acceptedContact struct {
+type nativeContactFence struct {
 	created         uint64
 	session, thread string
 	queueEpoch      uint64
 	commandEpoch    string
-	items           map[uint64]time.Time
+}
+
+func (p wakePlan) nativeContactFence() nativeContactFence {
+	return nativeContactFence{
+		created: p.createdSerial, session: p.session, thread: p.thread,
+		queueEpoch: p.queueEpoch, commandEpoch: p.commandEpoch,
+	}
+}
+
+type acceptedContact struct {
+	fence nativeContactFence
+	items map[uint64]time.Time
 }
 
 func unreadContactAsk(m *core.Message) bool {
@@ -33,8 +45,9 @@ func unreadContactAsk(m *core.Message) bool {
 		m.Type != core.MsgNotify && m.ContactEligible()
 }
 
-func (e *Engine) acceptedContactMatches(c acceptedContact, l *core.Agent) bool {
+func (e *Engine) acceptedContactMatches(c nativeContactFence, l *core.Agent) bool {
 	if l == nil || l.Retired() || l.CreatedSerial != c.created ||
+		!e.ownsHost(l) || surfaceOf(l) != harnessenv.ChatGPTApp ||
 		!l.SessionIsCurrent(c.session) || threadIDOf(l) != c.thread ||
 		e.commandEpoch[l.ID] != c.commandEpoch {
 		return false
@@ -49,10 +62,7 @@ func (e *Engine) acceptedContactMatches(c acceptedContact, l *core.Agent) bool {
 // with attempt start, rather than mistaking callback completion for delivery.
 func (e *Engine) noteAcceptedContact(p wakePlan, started, now time.Time) {
 	l := e.state.Agents[p.agent]
-	fence := acceptedContact{
-		created: p.createdSerial, session: p.session,
-		thread: p.thread, queueEpoch: p.queueEpoch, commandEpoch: p.commandEpoch,
-	}
+	fence := p.nativeContactFence()
 	if !e.acceptedContactMatches(fence, l) {
 		return
 	}
@@ -60,9 +70,8 @@ func (e *Engine) noteAcceptedContact(p wakePlan, started, now time.Time) {
 		return
 	}
 	c, ok := e.acceptedContacts[l.ID]
-	if !ok || !e.acceptedContactMatches(c, l) {
-		c = fence
-		c.items = map[uint64]time.Time{}
+	if !ok || !e.acceptedContactMatches(c.fence, l) {
+		c = acceptedContact{fence, map[uint64]time.Time{}}
 	}
 	e.captureAcceptedMail(c.items, p.commandKeys, l, now)
 	if len(c.items) == 0 {
@@ -96,7 +105,7 @@ func (e *Engine) considerAcceptedContact(agent string, now time.Time) {
 		return
 	}
 	l := e.state.Agents[agent]
-	if !e.acceptedContactMatches(c, l) {
+	if !e.acceptedContactMatches(c.fence, l) {
 		delete(e.acceptedContacts, agent)
 		return
 	}

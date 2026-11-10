@@ -148,6 +148,18 @@ attributes recovery to a human open. In this report the Dev 0 queue observation
 also had unknown pending/thread state, so the retained-known-pending guard
 below does not claim to classify that earlier attempt.
 
+For a machine-local native route, the acceptance receipt's exact turn ID can
+identify a turn in its original rollout. Two distinct accepted turns that
+each fail within two seconds without authenticated model contact or a tool
+call hold further native notices for that binding. The daemon checks a
+bounded read-only rollout tail off the writer, once for a quiet pair and
+before a further offer. It requires the matching start after submission and
+a matching failed completion. A missing or unrecognized record leaves the
+route eligible. Only an explicit context-window error paired with a
+compaction failure supports a full-context diagnosis. The alert records the
+diagnosis class without transcript content. Authenticated contact, a new
+binding or an observed new app incarnation re-arms the route.
+
 Every wake must run its turn in the original app thread the person can inspect.
 A headless successor or resume process does not satisfy that requirement; an
 app-owned session-messaging route can, when it starts the visible session's turn.

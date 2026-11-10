@@ -388,6 +388,7 @@ const Board = (() => {
         (first #${esc(c.oldest_serial)}, ${esc(c.count)} coalesced).
         ${c.notified_at ? `Human notification posted at ${esc(c.notified_at)}; ${c.mailbox_full ? "mailbox is still full." : "recipient mail is still unread."}` :
           c.retry_exhausted ? `Human notification failed twice: ${esc(c.delivery_failure)}. No further automatic retry.` : "Human notification not yet confirmed."}
+        ${c.failure_hint ? esc(c.failure_hint) : ""}
         ${c.open_hint ? esc(c.open_hint) : ""}</li>`).join("")}</ul>
     </section>`
   }

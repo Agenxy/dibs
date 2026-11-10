@@ -20,6 +20,7 @@ type contactEvidence struct {
 // register/resume result path deliberately do not create authenticated contact.
 func (e *Engine) noteAuthenticatedContact(l *core.Agent, now time.Time) {
 	delete(e.acceptedContacts, l.ID)
+	delete(e.nativeTurnWatches, l.ID)
 	if e.contact == nil {
 		e.contact = map[string]contactEvidence{}
 	}

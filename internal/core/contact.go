@@ -10,19 +10,29 @@ import "time"
 // bounded summary, without copying a participant's body into a system notice.
 const ContactWindow = 10 * time.Minute
 
+// ContactReason records the daemon's evidence class without transcript content.
+type ContactReason string
+
+const (
+	ContactTurnsEnded       ContactReason = "codex_turns_ended"
+	ContactCompactionFailed ContactReason = "codex_compaction_failed"
+	ContactContextFull      ContactReason = "codex_context_full"
+)
+
 // ContactEscalation is replayable proof that delivery remained unconfirmed and Dibs
 // asked for help reaching it. NotifiedAt means an OS posting receipt arrived;
 // merely queuing or attempting a notification is not that proof.
 type ContactEscalation struct {
-	MailboxFull  bool      `json:"mailbox_full,omitempty"`
-	Serial       uint64    `json:"serial"`
-	Recipient    string    `json:"recipient"`
-	OldestSerial uint64    `json:"oldest_serial"`
-	HighWater    uint64    `json:"high_water"`
-	Count        int       `json:"count"`
-	WindowStart  time.Time `json:"window_start"`
-	NotifiedAt   time.Time `json:"notified_at,omitzero"`
-	ResolvedAt   time.Time `json:"resolved_at,omitzero"`
+	Reason       ContactReason `json:"reason,omitempty"`
+	MailboxFull  bool          `json:"mailbox_full,omitempty"`
+	Serial       uint64        `json:"serial"`
+	Recipient    string        `json:"recipient"`
+	OldestSerial uint64        `json:"oldest_serial"`
+	HighWater    uint64        `json:"high_water"`
+	Count        int           `json:"count"`
+	WindowStart  time.Time     `json:"window_start"`
+	NotifiedAt   time.Time     `json:"notified_at,omitzero"`
+	ResolvedAt   time.Time     `json:"resolved_at,omitzero"`
 }
 
 func (s *State) latestContact(recipient string) *ContactEscalation {
@@ -48,7 +58,7 @@ func (s *State) applyContactEscalate(op *Op, now time.Time) (Result, []Event, er
 	// desktop or absent relay must not produce a new alert every ten minutes.
 	if needsNewContact(c, op.ContactMailboxFull, now) {
 		c = &ContactEscalation{
-			MailboxFull: op.ContactMailboxFull, Serial: s.Serial + 1, Recipient: m.To, OldestSerial: m.Serial,
+			Reason: op.ContactReason, MailboxFull: op.ContactMailboxFull, Serial: s.Serial + 1, Recipient: m.To, OldestSerial: m.Serial,
 			HighWater: m.Serial, Count: 1, WindowStart: now,
 		}
 		if s.Contacts == nil {
@@ -72,6 +82,9 @@ func (s *State) applyContactEscalate(op *Op, now time.Time) (Result, []Event, er
 		s.finish(&ev, now)
 		m.ContactEscalatedAt = c.Serial
 		return Result{"ok": true, "contact_serial": c.Serial, "coalesced": false}, ev, nil
+	}
+	if c.Reason == "" {
+		c.Reason = op.ContactReason
 	}
 	c.Count++
 	if m.Serial < c.OldestSerial {

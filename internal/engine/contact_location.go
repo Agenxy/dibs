@@ -36,7 +36,7 @@ func (e *Engine) contactOpenHint(name string, l *core.Agent) string {
 	}
 	location := name + " in " + app + " on " + host
 	if url := chatGPTContactURL(l); url != "" {
-		return "open " + location + "; original session " + thread + "; " + url
+		return "Open " + location + " at " + url + " (original session " + thread + ")"
 	}
 	if thread != "" {
 		return "open " + location + "; original session " + thread

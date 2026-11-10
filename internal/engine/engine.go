@@ -78,6 +78,7 @@ type Engine struct {
 	// grace are not authenticated model calls. See contact.go.
 	contact            map[string]contactEvidence
 	queuedOpenContacts map[string]queuedOpenContact // retained queue recovery; writer-owned
+	nativeTurnWatches  map[string]nativeTurnWatch   // recent app turn receipts; writer-owned
 	acceptedContacts   map[string]acceptedContact   // native acceptance without later model contact; writer-owned
 	// Which seen stamps were granted at boot rather than observed. This map
 	// contains only the bounded startup roster and is fenced to its incarnations.
@@ -1196,6 +1197,7 @@ func (e *Engine) sweep(now time.Time) {
 	}
 	_, _ = e.applyAndLedger(op, now)
 	e.dropNoticesWithoutMail()
+	e.reconsiderNativeTurns(now)
 	e.reconsiderAcceptedContacts(now)
 	e.reconsiderQueuedOpenContacts(now)
 }

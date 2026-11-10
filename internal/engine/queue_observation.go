@@ -159,6 +159,8 @@ func queueWakeNote(v core.Result) string {
 			return nativeAcceptedNote(delivery, v)
 		case "settled":
 			return "Last native app notice was cancelled because its mail was already handled or its identity closed."
+		case "turns_ended":
+			return "Native notices are held after repeated early app turn failures. Mail remains stored. See the contact alert."
 		default:
 			return "Last native app input not confirmed; no automatic retry or queue fallback."
 		}

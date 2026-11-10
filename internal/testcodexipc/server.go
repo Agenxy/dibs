@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -223,6 +224,7 @@ func (s *Server) answer(f map[string]any) map[string]any {
 func (s *Server) inputReply(f, r map[string]any) map[string]any {
 	s.mu.Lock()
 	s.inputs = append(s.inputs, f)
+	input := len(s.inputs)
 	s.mu.Unlock()
 	if s.Mode == "router-timeout" {
 		return routerError(f, "request-timeout")
@@ -235,6 +237,9 @@ func (s *Server) inputReply(f, r map[string]any) map[string]any {
 	}
 	if f["method"] == "thread-follower-start-turn" {
 		turn := "new-turn"
+		if s.Mode == "sequence" {
+			turn = "turn-" + strconv.Itoa(input)
+		}
 		if s.Mode == "active" || s.Mode == "large-active" {
 			turn = "prior-turn"
 		}

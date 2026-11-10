@@ -63,8 +63,25 @@ func (e *Engine) nativeAppRouteLocked(l *core.Agent) bool {
 }
 
 func (e *Engine) tryNativeWake(plan wakePlan, agent string) (bool, bool) {
+	if wakeexec.NativeEligible(plan.surface, plan.fields, plan.argv) && e.nativeTurnDeliveryHeld(plan) {
+		const disposition = "turns_ended"
+		if plan.nativeOutcome != nil {
+			*plan.nativeOutcome = wakeexec.NativeOutcome{Disposition: disposition, NoRetry: true}
+		}
+		e.noteQueueObservation(plan, agent, wakeexec.QueueObservation{
+			Admission: "not_queued", Pending: "not_applicable", At: time.Now().UTC(), Delivery: disposition,
+		})
+		return false, true
+	}
 	started := time.Now()
-	fresh := func() (string, error) { return e.nativePlanNotice(plan, agent) }
+	var offeredAt time.Time
+	fresh := func() (string, error) {
+		notice, err := e.nativePlanNotice(plan, agent)
+		if notice != "" && err == nil {
+			offeredAt = time.Now()
+		}
+		return notice, err
+	}
 	out, handled := wakeexec.TryNative(plan.surface, plan.fields, plan.argv, fresh)
 	if plan.nativeOutcome != nil {
 		*plan.nativeOutcome = out
@@ -79,7 +96,9 @@ func (e *Engine) tryNativeWake(plan wakePlan, agent string) (bool, bool) {
 		_, _ = e.query(e.wakeContext, func() core.Result {
 			if l := e.state.Agents[agent]; l != nil && l.CreatedSerial == plan.createdSerial && threadIDOf(l) == plan.thread {
 				delete(e.appBindings, agent)
-				e.noteAcceptedContact(plan, started, time.Now())
+				now := time.Now()
+				e.noteNativeTurn(plan, out.TurnID, offeredAt, now)
+				e.noteAcceptedContact(plan, started, now)
 			}
 			return nil
 		})

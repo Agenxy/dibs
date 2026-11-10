@@ -170,8 +170,11 @@ func (e *Engine) noteEventFor(ev core.Event, wants func(agent string) bool) {
 		return
 	}
 	if ev.Type == "contact.escalated" {
+		if c := e.state.Contacts[ev.Serial]; c != nil && c.Reason != "" {
+			text += " " + contactReasonText(c.Reason)
+		}
 		if l := e.state.Agents[ev.Agent]; chatGPTContactURL(l) != "" {
-			text += " Original thread: " + e.contactOpenHint(e.agentName(ev.Agent), l) + "."
+			text += " " + e.contactOpenHint(e.agentName(ev.Agent), l) + "."
 		}
 	}
 	// The message this notice points at, when it points at one. ev.Serial is
