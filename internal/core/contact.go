@@ -13,6 +13,7 @@ const ContactWindow = 10 * time.Minute
 // ContactReason records the daemon's evidence class without transcript content.
 type ContactReason string
 
+// Known evidence classes for unsuccessful native app turns.
 const (
 	ContactTurnsEnded       ContactReason = "codex_turns_ended"
 	ContactCompactionFailed ContactReason = "codex_compaction_failed"
@@ -58,8 +59,8 @@ func (s *State) applyContactEscalate(op *Op, now time.Time) (Result, []Event, er
 	// desktop or absent relay must not produce a new alert every ten minutes.
 	if needsNewContact(c, op.ContactMailboxFull, now) {
 		c = &ContactEscalation{
-			Reason: op.ContactReason, MailboxFull: op.ContactMailboxFull, Serial: s.Serial + 1, Recipient: m.To, OldestSerial: m.Serial,
-			HighWater: m.Serial, Count: 1, WindowStart: now,
+			Reason: op.ContactReason, MailboxFull: op.ContactMailboxFull, Serial: s.Serial + 1,
+			Recipient: m.To, OldestSerial: m.Serial, HighWater: m.Serial, Count: 1, WindowStart: now,
 		}
 		if s.Contacts == nil {
 			s.Contacts = map[uint64]*ContactEscalation{}

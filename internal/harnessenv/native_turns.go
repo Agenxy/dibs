@@ -171,13 +171,18 @@ func classifyCodexTurnTail(tail []byte, turns [2]CodexTurnReceipt, result *[2]co
 		case "mcp_tool_call_begin":
 			active = -1
 		case "task_complete":
-			if active >= 0 && p.TurnID == turns[active].ID && !row.Timestamp.Before(started) &&
-				p.Error != nil && p.DurationMS > 0 && p.DurationMS <= earlyTurnLimit.Milliseconds() {
+			if active >= 0 && row.failedQuickly(turns[active].ID, started) {
 				result[active] = codexTurnFailureFor(row)
 			}
 			active = -1
 		}
 	}
+}
+
+func (row codexTurnRecord) failedQuickly(id string, started time.Time) bool {
+	p := row.Payload
+	return p.TurnID == id && !row.Timestamp.Before(started) && p.Error != nil &&
+		p.DurationMS > 0 && p.DurationMS <= earlyTurnLimit.Milliseconds()
 }
 
 func codexTurnFailureFor(row codexTurnRecord) core.ContactReason {

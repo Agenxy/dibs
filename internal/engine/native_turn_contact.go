@@ -150,7 +150,8 @@ func contactReasonText(reason core.ContactReason) string {
 	case core.ContactCompactionFailed:
 		return "ChatGPT reports a compaction failure and its turns end before reading mail." + remedy
 	case core.ContactTurnsEnded:
-		return "ChatGPT turns end immediately without reading mail. Open the original thread to inspect the failure or move the agent."
+		return "ChatGPT turns end immediately without reading mail. " +
+			"Open the original thread to inspect the failure or move the agent."
 	}
 	return ""
 }

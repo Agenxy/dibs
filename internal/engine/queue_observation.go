@@ -142,28 +142,7 @@ func queueWakeNote(v core.Result) string {
 			"Mail remains in the mailbox; bind this agent from an existing app thread."
 	}
 	if delivery, ok := v["native_delivery"].(string); ok {
-		switch delivery {
-		case "in_progress":
-			return "Direct delivery in progress; check the board for the outcome. " +
-				"App acceptance and read mail are not yet confirmed."
-		case "queued_native_failed":
-			return "Native input was not sent; cold queue admission: " + fmt.Sprint(v["admission"]) +
-				". Queue admission does not confirm a started turn or read mail."
-		case "queued_unloaded":
-			if v["admission"] == "accepted" || v["admission"] == "retained" {
-				return "Thread not loaded in the app; queued until opened. " +
-					"Queue admission does not confirm a started turn or read mail."
-			}
-			return "Thread not loaded in the app; queue admission not confirmed."
-		case "accepted", "started", "steered":
-			return nativeAcceptedNote(delivery, v)
-		case "settled":
-			return "Last native app notice was cancelled because its mail was already handled or its identity closed."
-		case "turns_ended":
-			return "Native notices are held after repeated early app turn failures. Mail remains stored. See the contact alert."
-		default:
-			return "Last native app input not confirmed; no automatic retry or queue fallback."
-		}
+		return nativeQueueWakeNote(delivery, v)
 	}
 	text := "App queue admission: " + fmt.Sprint(v["admission"]) +
 		"; last pending observation: " + fmt.Sprint(v["pending"]) + "."
@@ -179,4 +158,29 @@ func queueWakeNote(v core.Result) string {
 		text += fmt.Sprintf(" Last retained queue receipt: %ds ago.", age)
 	}
 	return text + " Thread state: unknown. Queue admission does not confirm a started turn or read mail."
+}
+
+func nativeQueueWakeNote(delivery string, v core.Result) string {
+	switch delivery {
+	case "in_progress":
+		return "Direct delivery in progress; check the board for the outcome. " +
+			"App acceptance and read mail are not yet confirmed."
+	case "queued_native_failed":
+		return "Native input was not sent; cold queue admission: " + fmt.Sprint(v["admission"]) +
+			". Queue admission does not confirm a started turn or read mail."
+	case "queued_unloaded":
+		if v["admission"] == "accepted" || v["admission"] == "retained" {
+			return "Thread not loaded in the app; queued until opened. " +
+				"Queue admission does not confirm a started turn or read mail."
+		}
+		return "Thread not loaded in the app; queue admission not confirmed."
+	case "accepted", "started", "steered":
+		return nativeAcceptedNote(delivery, v)
+	case "settled":
+		return "Last native app notice was cancelled because its mail was already handled or its identity closed."
+	case "turns_ended":
+		return "Native notices are held after repeated early app turn failures. Mail remains stored. See the contact alert."
+	default:
+		return "Last native app input not confirmed; no automatic retry or queue fallback."
+	}
 }
