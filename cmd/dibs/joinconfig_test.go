@@ -592,6 +592,7 @@ func TestTheConfigFollowsTheWizardsChoice(t *testing.T) {
 	}
 	t.Setenv("DIBS_DIR", dir)
 	t.Setenv("DIBS_ADDR", "")
+	onAPrivateNetwork(t)
 
 	out, err := captureStdout(t, func() error { return mcpConfig(nil) })
 	if err != nil {

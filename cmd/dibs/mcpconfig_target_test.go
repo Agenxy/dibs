@@ -4,6 +4,7 @@
 package main
 
 import (
+	"net"
 	"strings"
 	"testing"
 )
@@ -25,6 +26,7 @@ func TestAWildcardEnvironmentAddressIsResolvedForClients(t *testing.T) {
 	} {
 		t.Run(tc.set, func(t *testing.T) {
 			t.Setenv("DIBS_ADDR", tc.set)
+			onAPrivateNetwork(t)
 			// THROUGH nonDefaultEnv, which is the branch that was broken.
 			//
 			// The first version of this called dialableAddr directly, and
@@ -50,4 +52,16 @@ func TestAWildcardEnvironmentAddressIsResolvedForClients(t *testing.T) {
 			}
 		})
 	}
+}
+
+// onAPrivateNetwork pins the machine's addresses to one RFC1918 address, the
+// network these tests describe. Without it they assert about whatever network
+// the machine happens to be on: they failed a gate on a laptop that had just
+// moved to a network with only public, CGNAT and link-local addresses.
+// Not for parallel tests: it replaces a package variable.
+func onAPrivateNetwork(t *testing.T) {
+	t.Helper()
+	was := interfaceIPs
+	interfaceIPs = func() ([]net.IP, error) { return []net.IP{net.ParseIP("192.168.7.20")}, nil }
+	t.Cleanup(func() { interfaceIPs = was })
 }
