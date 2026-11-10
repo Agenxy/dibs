@@ -82,6 +82,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   report identifies whether Dibs evicted an idle observation or skipped the
   arrival because all entries were in flight. Pending mail is available on
   the board.
+
+- Dibs gives a queued ChatGPT wake time to reach its thread after reopening
+  it. A suppressed repeat open also leaves time for recovery. The alert goes
+  out only if the covered mail stays unread through that window.
+
+- Contact alerts show the original ChatGPT thread URL and host when Dibs
+  knows them, including on the board and in the coordinator's notice. A
+  desktop Open button still requires the recipient's local app provenance.
+
 - A Claude Code session that is waiting on the person no longer receives a
   pile of Dibs notices when the person answers. Claude Code queues a message
   that arrives during a turn, and Dibs wrote one for every new item, so a

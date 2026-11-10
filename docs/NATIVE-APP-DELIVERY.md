@@ -156,10 +156,11 @@ The separate reproducible defect was an OS open failure after queue acceptance:
 it was logged, but the configured queue route prevented ordinary human contact.
 The local engine now escalates captured unread asks on that failure. A later
 mail event that observes an existing Dibs item still pending beyond the same
-ten-minute window already used for app-open recovery retries that load path
-and escalates continued unconfirmed delivery. It never enqueues a duplicate
-for the retained item. This is an event-driven observation, not a scheduled
-poll or a promise to recover an otherwise quiet seat at ten minutes.
+ten-minute window already used for app-open recovery retries that load path.
+A successful open, or an open suppressed by the app or its rate limit, gets a
+recovery window before the daemon pages the person. The existing sweep checks
+only that window and the original unread mail. It never enqueues a duplicate
+or polls the app, and it never raises the deferred alert after the mail is read.
 
 The sender receives the exact original thread link and the human gets the
 existing metadata-only contact alert. Late callbacks are fenced by identity,

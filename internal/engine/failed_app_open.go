@@ -25,36 +25,96 @@ func (p wakePlan) strandedQueue() bool {
 	return !o.IssuedAt.IsZero() && o.At.Sub(o.IssuedAt) >= harnessenv.AppOpenRetryAfter
 }
 
-func (e *Engine) contactAfterQueuedOpen(plan wakePlan, agent string, failed bool) {
+// At most one unresolved recovery window per agent. This is a derived
+// observation, checked by the existing sweep without another app probe.
+type queuedOpenContact struct {
+	plan wakePlan
+	due  time.Time
+}
+
+func sameQueuedOpen(a, b wakePlan) bool {
+	return a.createdSerial == b.createdSerial && a.session == b.session && a.thread == b.thread &&
+		a.queueEpoch == b.queueEpoch && a.commandEpoch == b.commandEpoch &&
+		a.queueOutcome != nil && b.queueOutcome != nil && a.queueOutcome.IssuedAt.Equal(b.queueOutcome.IssuedAt)
+}
+
+func (e *Engine) contactAfterQueuedOpen(plan wakePlan, agent string, opened, failed bool) {
 	_, _ = e.query(e.wakeContext, func() core.Result {
 		l := e.state.Agents[agent]
-		e.wakers.mu.Lock()
-		current := plan.queueEpoch == e.wakers.queueEpoch
-		if observation, ok := e.wakers.queueObserved[agent]; ok && plan.queueOutcome != nil {
-			current = current && !observation.observation.At.After(plan.queueOutcome.At)
-		}
-		e.wakers.mu.Unlock()
-		if l == nil || l.Retired() || l.CreatedSerial != plan.createdSerial ||
-			!current || !l.SessionIsCurrent(plan.session) || e.commandEpoch[agent] != plan.commandEpoch {
+		if !e.queuedOpenCurrent(plan, l) {
 			return nil
 		}
-		for _, m := range e.state.Inbox(agent) {
-			if m.State != core.MsgStatePending || !m.ContactEligible() ||
-				!slices.Contains(plan.commandKeys, "mail:"+noticeKey(agent, m.Serial)) {
-				continue
-			}
-			e.escalateAppOpenMessage(l, m, failed)
+		now := time.Now()
+		if failed {
+			delete(e.queuedOpenContacts, agent)
+			e.escalateQueuedOpen(plan, l, true, now)
+			return nil
 		}
+		due := now.Add(harnessenv.AppOpenRetryAfter)
+		if previous, ok := e.queuedOpenContacts[agent]; ok && sameQueuedOpen(previous.plan, plan) {
+			// A suppressed open earns a window, but repeated observations
+			// of the same retained item cannot keep pushing that window out.
+			if !opened {
+				due = previous.due
+			}
+			keys := slices.Concat(previous.plan.commandKeys, plan.commandKeys)
+			slices.Sort(keys)
+			plan.commandKeys = slices.Compact(keys)
+		}
+		if e.queuedOpenContacts == nil {
+			e.queuedOpenContacts = map[string]queuedOpenContact{}
+		}
+		e.queuedOpenContacts[agent] = queuedOpenContact{plan, due}
 		return nil
 	})
 }
 
-func (e *Engine) escalateAppOpenMessage(l *core.Agent, m *core.Message, failed bool) {
+func (e *Engine) queuedOpenCurrent(plan wakePlan, l *core.Agent) bool {
+	if l == nil || l.Retired() || l.Status == core.StatusArchived || l.CreatedSerial != plan.createdSerial ||
+		!l.SessionIsCurrent(plan.session) || threadIDOf(l) != plan.thread || !e.ownsHost(l) ||
+		e.commandEpoch[l.ID] != plan.commandEpoch {
+		return false
+	}
+	e.wakers.mu.Lock()
+	defer e.wakers.mu.Unlock()
+	if plan.queueEpoch != e.wakers.queueEpoch {
+		return false
+	}
+	observation, ok := e.wakers.queueObserved[l.ID]
+	return !ok || plan.queueOutcome == nil || !observation.observation.At.After(plan.queueOutcome.At)
+}
+
+func (e *Engine) reconsiderQueuedOpenContacts(now time.Time) {
+	var ready []string
+	for agent, pending := range e.queuedOpenContacts {
+		if !now.Before(pending.due) {
+			ready = append(ready, agent)
+		}
+	}
+	slices.Sort(ready)
+	for _, agent := range ready {
+		pending := e.queuedOpenContacts[agent]
+		delete(e.queuedOpenContacts, agent)
+		if l := e.state.Agents[agent]; e.queuedOpenCurrent(pending.plan, l) {
+			e.escalateQueuedOpen(pending.plan, l, false, now)
+		}
+	}
+}
+
+func (e *Engine) escalateQueuedOpen(plan wakePlan, l *core.Agent, failed bool, now time.Time) {
+	for _, m := range e.state.Inbox(l.ID) {
+		if m.State == core.MsgStatePending && !m.Consumed && m.ContactEligible() &&
+			slices.Contains(plan.commandKeys, "mail:"+noticeKey(l.ID, m.Serial)) {
+			e.escalateAppOpenMessage(l, m, failed, now)
+		}
+	}
+}
+
+func (e *Engine) escalateAppOpenMessage(l *core.Agent, m *core.Message, failed bool, now time.Time) {
 	op := &core.Op{Kind: core.OpContactEscalate, MsgSerial: m.Serial}
 	if err := e.state.Admit(op); err != nil {
 		return
 	}
-	now := time.Now()
 	res, err := e.applyAndLedger(op, now)
 	if err != nil {
 		slog.Error("could not record failed app-open contact", "agent", l.ID, "msg", m.Serial, "err", err)
@@ -63,7 +123,7 @@ func (e *Engine) escalateAppOpenMessage(l *core.Agent, m *core.Message, failed b
 	if res["deduplicated"] == true {
 		return
 	}
-	reason := "the earlier queued app wake remains undispatched after the app-open recovery window"
+	reason := "mail remains unread after the app-open recovery window"
 	if failed {
 		reason = "the queued input's app open failed"
 	}

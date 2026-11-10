@@ -4,6 +4,7 @@
 package engine
 
 import (
+	"errors"
 	"log/slog"
 	"time"
 
@@ -57,13 +58,16 @@ func (e *Engine) showInApp(plan wakePlan, agent string) {
 	stranded := plan.strandedQueue()
 	if stranded {
 		slog.Info("earlier app wake is still undispatched; retrying the original thread's app-open path",
-			"agent", agent, "hint", "queue retention is not delivery; unresolved mail will raise a contact alert")
+			"agent", agent, "hint", "queue retention is not delivery; an alert waits for the app-open recovery window")
 	}
 	s := e.appShower(agent, plan.createdSerial, plan.thread)
 	s.ShowWhenIdle(argv, plan.thread, func(opened, deferred bool, err error) {
 		logShow(opened, deferred, err, "agent", agent)
-		if !deferred && (err != nil || stranded) {
-			e.contactAfterQueuedOpen(plan, agent, err != nil)
+		if deferred || errors.Is(err, harnessenv.ErrAppOpenPairBusy) {
+			return // lock contention did not attempt an open
+		}
+		if err != nil || stranded {
+			e.contactAfterQueuedOpen(plan, agent, opened, err != nil)
 		}
 	})
 }
