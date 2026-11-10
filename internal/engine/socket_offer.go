@@ -5,6 +5,7 @@ package engine
 
 import (
 	"context"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -40,6 +41,12 @@ func (e *Engine) beginSocketOffers(agents []*core.Agent, session string) core.Re
 	now := time.Now()
 	l := agents[0]
 	key := socketSessionKey(l)
+	if e.socketNoticeQueued(key) {
+		slog.Info("socket wake not written: an earlier notice is still queued in this session's turn",
+			"agent", l.ID, "session_id", l.CurrentSession,
+			"hint", "the hook that runs when the harness dequeues it presents every item outstanding then")
+		return core.Result{"digest": ""}
+	}
 	if old, ok := e.socketEpochs[key]; ok {
 		// A writer disappearing before settlement cannot wedge the route.
 		// This is only an in-flight reservation, never a successful-write
@@ -74,6 +81,38 @@ func (e *Engine) beginSocketOffers(agents []*core.Agent, session string) core.Re
 	}
 	e.logSocketOffer(l, now, id)
 	return res
+}
+
+// socketNoticeQueued reports a notice already written into this session while
+// it was mid-turn and not yet taken up. Claude Code queues a peer message
+// that arrives during a turn and presents it at the next turn boundary, and
+// the UserPromptSubmit hook that runs then presents everything outstanding,
+// so a second notice behind the first carries nothing the first does not.
+//
+// Every new item was written regardless (#419), on the reasoning that the
+// harness decides what to do with mail during a turn. It does: it queues all
+// of them. A session that asked the person a question and waited six hours
+// for the answer had eighteen notices queued, received them in one burst
+// when the person answered, and was pushed into compaction by them.
+//
+// The plain busy ceiling does not apply here. It exists so a lost Stop does
+// not suppress wakes forever, and it cannot: a notice written to a session
+// that is really idle starts a turn, whose UserPromptSubmit confirms the
+// offer and lifts this. A session blocked on the person stays busy for as
+// long as the person takes, which is exactly the case this is for. A Stop
+// makes the session idle and restores a write per new item, so a notice the
+// receiver held rather than queued cannot starve the ones after the turn.
+func (e *Engine) socketNoticeQueued(key string) bool {
+	if e.socketTurns[key].state != "busy" {
+		return false
+	}
+	for who, o := range e.socketOffers {
+		row := e.state.Agents[who]
+		if o.written && row != nil && socketSessionKey(row) == key && row.SessionIsCurrent(o.session) {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *Engine) settleSocketOffer(agent, session, id string, written bool) {

@@ -8,6 +8,20 @@ import { join } from "node:path"
 
 type Check = (name: string, ok: boolean, detail?: string) => void
 type Tool = (name: string, args: Record<string, any>) => Promise<any>
+type Scrollable = { scrollIntoViewIfNeeded(): Promise<void> }
+
+// The mail pane re-renders whenever the board's serial moves, and delivery
+// of the fixture mail keeps moving it after the sends return. A locator
+// re-resolves, but scrollIntoViewIfNeeded throws when the node it resolved
+// is replaced mid-action instead of retrying as click does. Retry exactly
+// that, so a render racing the scroll is not reported as a media failure.
+async function scrollTo(target: Scrollable) {
+  for (let attempt = 1; ; attempt++) {
+    try { return await target.scrollIntoViewIfNeeded() } catch (err) {
+      if (attempt >= 5 || !String(err).includes("not attached to the DOM")) throw err
+    }
+  }
+}
 
 // The real password-unlocked board, real mail and real file inputs. These
 // pixels are synthetic fixture artwork; no camera, clipboard or real board.
@@ -63,13 +77,13 @@ export async function checkWebMedia(page: Page, check: Check, tool: Tool, token:
   const picture = page.locator(`#message-${serial} .atts img`)
   check("board renders an attached image", await picture.count() === 1)
   if (await picture.count()) {
-    await picture.scrollIntoViewIfNeeded()
+    await scrollTo(picture)
     // The custom loader may fetch near the clip before the native lazy image
     // decodes. Await that source, settle fonts, then establish the viewport
     // premise again before claiming anything was painted.
     await page.waitForFunction((serial) => !!document.querySelector(`#message-${serial} .atts img`)?.getAttribute("src"), serial)
     await page.evaluate(()=>document.fonts.ready)
-    await picture.scrollIntoViewIfNeeded()
+    await scrollTo(picture)
     await page.waitForFunction((serial) => {
       const img = document.querySelector(`#message-${serial} .atts img`) as HTMLImageElement
       return img?.complete && img.naturalWidth > 0
@@ -158,7 +172,7 @@ export async function checkWebMedia(page: Page, check: Check, tool: Tool, token:
     return entry?.type==="application/octet-stream"&&probe.revoked.includes(entry.url)
   }))
   const bad = page.locator(`#message-${disguisedSerial}`)
-  await bad.scrollIntoViewIfNeeded()
+  await scrollTo(bad)
   if (await bad.locator("img").count()) {
     await page.waitForFunction((id) => {
       const img = document.querySelector(`#message-${id} .atts img`) as HTMLImageElement
@@ -275,7 +289,7 @@ async function checkMediaLifetime(page:Page,check:Check,tool:Tool,token:string,
   await page.reload({waitUntil:"load"});await page.locator("#tab-mail").click()
   await page.locator(`#message-${expired}`).waitFor()
   const ordinary=page.locator(`#message-${video} .atts video`)
-  await ordinary.scrollIntoViewIfNeeded()
+  await scrollTo(ordinary)
   check("video has controls and waits for Play before fetching",await ordinary.getAttribute("controls")!==null&&await ordinary.getAttribute("preload")==="metadata"&&!reads.includes(video))
   await page.locator(`#message-${video} [data-media-play]`).click()
   await page.waitForFunction(id=>(document.querySelector(`#message-${id} video`) as HTMLVideoElement)?.videoWidth>0,video)
@@ -284,13 +298,13 @@ async function checkMediaLifetime(page:Page,check:Check,tool:Tool,token:string,
   await page.locator(`#message-${oversized} [data-media-play]`).click()
   await page.waitForFunction(id=>["failed","ready"].includes(document.querySelector(`#message-${id} [data-media-key]`)?.getAttribute("data-media-state")||""),oversized)
   check("oversized video is refused before any fetch",!reads.includes(oversized)&&(await page.locator(`#message-${oversized} .media-caption`).innerText()).toLowerCase().includes("open/download"))
-  const gone=page.locator(`#message-${expired}`);await gone.scrollIntoViewIfNeeded()
+  const gone=page.locator(`#message-${expired}`);await scrollTo(gone)
   check("expired attachment is a marker with no fetch or broken image",await gone.locator(".attachment-expired").count()===1&&await gone.locator(".attachment-expired").innerText()==="expired"&&await gone.locator("img,video").count()===0&&!reads.includes(expired))
-  await page.locator(`#message-${registryOnly}`).scrollIntoViewIfNeeded()
+  await scrollTo(page.locator(`#message-${registryOnly}`))
   await page.waitForFunction(id=>["failed","ready"].includes(document.querySelector(`#message-${id} [data-media-key]`)?.getAttribute("data-media-state")||""),registryOnly)
   check("server response refuses a sender-typed image Blob",await page.evaluate(()=>!(globalThis as any).__dibsMediaProbe.created.some((entry:any)=>entry.type==="application/octet-stream")))
   for(const id of many){
-    const row=page.locator(`#message-${id}`);await row.scrollIntoViewIfNeeded()
+    const row=page.locator(`#message-${id}`);await scrollTo(row)
     if(await row.locator('[data-media-state="evicted"]').count())await row.locator("[data-media-load]").click()
     await page.waitForFunction(id=>document.querySelector(`#message-${id} [data-media-key]`)?.getAttribute("data-media-state")==="ready",id)
   }

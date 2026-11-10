@@ -252,9 +252,14 @@ func defaultLANAddr() string {
 	return "0.0.0.0:4777"
 }
 
+// interfaceIPs is the machine's addresses. Tests pin it: which addresses a
+// laptop has is a fact about the network it is on at that moment, and two
+// tests that assumed a private one failed the gate on a public network.
+var interfaceIPs = netInterfaceAddrs
+
 // privateIPv4 returns this host's first RFC1918 address, or "".
 func privateIPv4() string {
-	addrs, err := netInterfaceAddrs()
+	addrs, err := interfaceIPs()
 	if err != nil {
 		return ""
 	}

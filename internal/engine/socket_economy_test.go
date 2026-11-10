@@ -143,6 +143,10 @@ func TestSocketEconomyAuthenticatedBusyWithoutStopStillDelivers(t *testing.T) {
 		if !strings.Contains(text, body) || (body == "missing-stop-second" && strings.Contains(text, "missing-stop-first")) {
 			t.Fatalf("busy delivery lost new mail or repeated an old item: %q", text)
 		}
+		// The harness takes the notice up at its next turn boundary; until it
+		// does, a second notice would only queue behind this one (see
+		// TestASessionWaitingOnThePersonGetsOneNoticeNotOnePerItem).
+		f.hook(t, "UserPromptSubmit", false)
 	}
 	select {
 	case text := <-f.wire:
@@ -192,6 +196,7 @@ func TestSocketFreshAnnouncementAndOutcomeAreNotTurnSuppressed(t *testing.T) {
 				if !strings.Contains(text, strconv.FormatUint(serial, 10)) {
 					t.Fatalf("fresh %s %d not offered: %q", kind, i, text)
 				}
+				f.hook(t, "UserPromptSubmit", false) // taken up, as above
 			}
 			select {
 			case text := <-f.wire:

@@ -193,6 +193,10 @@ func TestPassivePresentationPreservesSocketBatchAndNewWake(t *testing.T) {
 				t.Fatal("setup: no offer reservation")
 			}
 			read(map[string]any{SocketOfferMetaKey: true, SocketOfferIDMetaKey: id, SocketWrittenMetaKey: true})
+			// The session is mid-turn, so the harness queued that notice; its
+			// dequeue runs UserPromptSubmit, and only then is a later item
+			// written rather than carried by that hook.
+			passivePresentationText(t, srv, version, "reader-session")
 			send("fresh-after-written-batch")
 			if got := text(read(map[string]any{SocketOfferMetaKey: true})); !strings.Contains(got, "fresh-after-written-batch") {
 				t.Fatalf("later new item lost its own wake: %q", got)

@@ -77,6 +77,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A Claude Code session that is waiting on the person no longer receives a
+  pile of Dibs notices when the person answers. Claude Code queues a message
+  that arrives during a turn, and Dibs wrote one for every new item, so a
+  session that waited six hours for an answer had eighteen queued and took
+  them all at once, enough to push it into compaction. While one notice is
+  still queued in a session's turn, Dibs now writes no more: the hook that
+  runs when the session takes that notice up shows everything outstanding by
+  then. Once the turn ends, each new item gets its own notice again.
 - `dibs upgrade` rides out a brief GitHub download outage instead of failing
   on the first error. A 502, 503 or 504, or a dropped connection, is retried
   twice over about eight seconds; anything else, such as a missing file,

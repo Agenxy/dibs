@@ -149,7 +149,12 @@ func TestSendSocketNoteReportsDecisionThroughMCP(t *testing.T) {
 					t.Fatal("the actual socket writer did not report its completed write")
 				}
 			}
-			// A later original item gets its own frame, even without turn evidence.
+			// A later original item gets its own frame, even without turn
+			// evidence. Mid-turn the harness queued the first notice, and its
+			// dequeue runs UserPromptSubmit before the later item is written.
+			if busy {
+				call("hook_poll", map[string]any{"session_id": session, "event": "UserPromptSubmit"})
+			}
 			second := marker + "-second"
 			coalesced := call("send", map[string]any{"token": sendToken, "to": "worker", "type": kind, "body": second})
 			if !strings.Contains(fmt.Sprint(coalesced["note"]), "being handed") {

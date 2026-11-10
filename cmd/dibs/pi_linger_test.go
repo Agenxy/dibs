@@ -64,7 +64,7 @@ func TestPiKeepsTheBridgeThatRegisteredAndStillExits(t *testing.T) {
 	cmd := exec.Command(bun, "run", path) // #nosec G204 -- paths this test created
 	out, err := cmd.CombinedOutput()      // returns only when the harness EXITS
 	if err != nil {
-		t.Fatalf("the transport did not finish cleanly: %v\n%s", err, out)
+		t.Fatalf("the transport did not finish cleanly: %v\n%s\nfake bridge lifecycle:\n%s", err, out, fakeLifecycle(dir))
 	}
 	line := strings.TrimSpace(string(out))
 	pid := 0
@@ -140,19 +140,27 @@ func piTransport(t *testing.T) (transport, fake string) {
 	// almost never sends, so it passed against code that handled only
 	// that shape. DIBS_FAKE_RPC_ERROR keeps the rarer one, because both
 	// have to fail the same way.
+	// The transport discards the bridge's stderr, so a fake that dies or
+	// never answers leaves nothing to read. It records its own lifecycle in
+	// fake.log beside it, which a failing test prints: one gate run reported
+	// NOANSWER three seconds in, before the call's five-second timeout, and
+	// thirty loaded reruns could not reproduce it.
 	script := "#!/usr/bin/env -S bun run\n" +
+		"const note = (s: string) => require(\"node:fs\").appendFileSync(" + strconv.Quote(filepath.Join(dir, "fake.log")) +
+		", `${process.pid} ${s}\\n`)\n" +
+		"note(\"start\"); process.on(\"exit\", (c: number) => note(`exit ${c}`))\n" +
 		"const fail = process.env.DIBS_FAKE_ERROR === \"1\" || process.env.DIBS_FAKE_RPC_ERROR === \"1\"\n" +
 		"process.stdin.setEncoding(\"utf8\")\n" +
 		"process.stdin.on(\"data\", (c: string) => {\n" +
 		"  for (const l of c.split(\"\\n\")) { if (!l.trim()) continue\n" +
-		"    try { const m = JSON.parse(l); if (m.id !== 2) continue\n" +
+		"    try { const m = JSON.parse(l); note(`line id=${m.id}`); if (m.id !== 2) continue\n" +
 		"      const toolErr = {jsonrpc:\"2.0\",id:2,result:{isError:true,content:[{type:\"text\"," +
 		"text:JSON.stringify({code:\"E_RATE_LIMITED\",message:\"called Dibs recently\"})}]}}\n" +
 		"      const rpcErr = {jsonrpc:\"2.0\",id:2,error:{code:-32000,message:\"E_RATE_LIMITED\"}}\n" +
 		"      const body = process.env.DIBS_FAKE_RPC_ERROR === \"1\" ? rpcErr\n" +
 		"                 : fail ? toolErr : {jsonrpc:\"2.0\",id:2,result:{ok:true}}\n" +
-		"      process.stdout.write(JSON.stringify(body) + \"\\n\")\n" +
-		"    } catch {}\n" +
+		"      process.stdout.write(JSON.stringify(body) + \"\\n\"); note(\"answered\")\n" +
+		"    } catch { note(`unparsed ${l.length} bytes`) }\n" +
 		"  }\n" +
 		"})\n" +
 		"setInterval(() => {}, 1000)\n" // a shipper's ticker: it does not exit on its own
@@ -161,6 +169,14 @@ func piTransport(t *testing.T) (transport, fake string) {
 	}
 
 	return fn, fake
+}
+
+func fakeLifecycle(dir string) string {
+	raw, err := os.ReadFile(filepath.Join(dir, "fake.log")) // #nosec G304 -- a file this test's fixture writes
+	if err != nil {
+		return "(none recorded: " + err.Error() + ")"
+	}
+	return string(raw)
 }
 
 // A refused call does not kill the bridge that is already shipping.
@@ -218,7 +234,7 @@ func refusedPiCallKeepsTheBridge(t *testing.T, bun, fn, fake, dir, shape string)
 	cmd := exec.Command(bun, "run", path) // #nosec G204 -- paths this test created
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("the transport did not finish cleanly: %v\n%s", err, out)
+		t.Fatalf("the transport did not finish cleanly: %v\n%s\nfake bridge lifecycle:\n%s", err, out, fakeLifecycle(dir))
 	}
 	kept, first := 0, 0
 	for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
@@ -367,7 +383,7 @@ func TestALaterPiCallDoesNotKillTheBridgeTheBoardIsWatching(t *testing.T) {
 	cmd := exec.Command(bun, "run", path) // #nosec G204 -- paths this test created
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("the transport did not finish cleanly: %v\n%s", err, out)
+		t.Fatalf("the transport did not finish cleanly: %v\n%s\nfake bridge lifecycle:\n%s", err, out, fakeLifecycle(dir))
 	}
 	var pids []int
 	for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {

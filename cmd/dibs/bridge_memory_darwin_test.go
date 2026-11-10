@@ -25,13 +25,20 @@ import (
 	"github.com/agenxy/dibs/internal/testexec"
 )
 
-// RSS includes resident code and runtime pages, not just live Go objects. This
-// budget is for a normal, non-race production image on the gate's macOS/arm64
-// platform. A test helper calling runBridge would miss command/package init.
-// Three measured fresh bridges used 20.3–20.6 MiB idle and 24.3–24.5 MiB after
-// a burst before the trim, versus 18.0–18.2 and 22.0–22.5 MiB afterwards. The
-// 20/24 MiB budgets retain about 1.8/1.5 MiB margin above the new observations.
-func TestBridgeRSSBudget(t *testing.T) {
+// Physical footprint is the measure, not RSS. This budget is for a normal,
+// non-race production image on the gate's macOS/arm64 platform. A test helper
+// calling runBridge would miss command/package init.
+//
+// The guard used to read RSS, which this platform cannot hold still: it moves
+// with the runtime scavenger's timing and with compression. On one quiet
+// machine at one commit, five-second startup RSS ranged 12.5-21.1 MiB across
+// ten bridges, so a 20 MiB budget failed about one run in four and failed a
+// loaded gate at 20.3 MiB with no code change. #567 already found footprint
+// the stable figure (its trim: idle 10.9 -> 8.9 MiB, ranges under 0.7 MiB).
+// The same ten bridges, at main + #600 + #601 on 2026-11-09, used 9.08-10.49
+// MiB at startup and 10.84-12.83 MiB after 100 calls; the 11.5/14 MiB budgets
+// keep about 1 MiB above the largest of those.
+func TestBridgeMemoryBudget(t *testing.T) {
 	bin := filepath.Join(t.TempDir(), "dibs")
 	build := procexec.Command(t.Context(), "go", "build", "-trimpath", "-ldflags=-s -w", "-o", bin, ".")
 	if out, err := build.CombinedOutput(); err != nil {
@@ -43,11 +50,11 @@ func TestBridgeRSSBudget(t *testing.T) {
 		if upgraded {
 			name = "upgraded"
 		}
-		t.Run(name, func(t *testing.T) { testBridgeRSSBudget(t, bin, upgraded) })
+		t.Run(name, func(t *testing.T) { testBridgeMemoryBudget(t, bin, upgraded) })
 	}
 }
 
-func testBridgeRSSBudget(t *testing.T, bin string, upgraded bool) {
+func testBridgeMemoryBudget(t *testing.T, bin string, upgraded bool) {
 	t.Helper()
 	dir := cliIPCProfile(t)
 	for name, data := range map[string]string{
@@ -180,7 +187,7 @@ func testBridgeRSSBudget(t *testing.T, bin string, upgraded bool) {
 	if changed != wantChanged {
 		t.Fatalf("setup: upgrade restoration notifications=%d, want %d", changed, wantChanged)
 	}
-	bridgeRSSAtIdle(t, cmd.Process.Pid, "startup", 20*1024)
+	bridgeFootprintAtIdle(t, cmd.Process.Pid, "startup", 11.5)
 	for i := range 100 {
 		method := "server/discover"
 		if i%2 == 0 {
@@ -188,30 +195,33 @@ func testBridgeRSSBudget(t *testing.T, bin string, upgraded bool) {
 		}
 		rpc(i+2, method)
 	}
-	bridgeRSSAtIdle(t, cmd.Process.Pid, "after 100 calls", 24*1024)
+	bridgeFootprintAtIdle(t, cmd.Process.Pid, "after 100 calls", 14)
 }
 
-func bridgeRSSAtIdle(t *testing.T, pid int, phase string, budgetKiB int) {
+func bridgeFootprintAtIdle(t *testing.T, pid int, phase string, budgetMiB float64) {
 	t.Helper()
-	// Same five-second quiescent interval as the before/after measurements.
+	// Same five-second quiescent interval as #567's before/after measurements.
 	// No GC or memory-pressure operation is injected into the bridge.
 	time.Sleep(5 * time.Second)
-	var samples []int
+	var samples []string
 	for range 3 {
-		out, err := procexec.Command(t.Context(), "/bin/ps", "-p", strconv.Itoa(pid), "-o", "rss=").Output()
+		out, err := procexec.Command(t.Context(), "/usr/bin/footprint", "-f", "bytes", "-p", strconv.Itoa(pid)).Output()
 		if err != nil {
-			t.Fatal("setup: read actual bridge RSS:", err)
+			t.Fatal("setup: read actual bridge footprint:", err)
 		}
-		rss, err := strconv.Atoi(strings.TrimSpace(string(out)))
-		if err != nil || rss <= 0 {
-			t.Fatalf("setup: invalid RSS %q: %v", out, err)
+		_, rest, ok := strings.Cut(string(out), "Footprint: ")
+		field, _, _ := strings.Cut(rest, " B")
+		n, err := strconv.Atoi(field)
+		if !ok || err != nil || n <= 0 {
+			t.Fatalf("setup: unreadable footprint output %q", out)
 		}
-		samples = append(samples, rss)
-		if rss > budgetKiB {
-			t.Errorf("%s bridge RSS %d KiB exceeds %d KiB budget", phase, rss, budgetKiB)
+		mib := float64(n) / (1 << 20)
+		samples = append(samples, strconv.FormatFloat(mib, 'f', 2, 64))
+		if mib > budgetMiB {
+			t.Errorf("%s bridge footprint %.2f MiB exceeds %.1f MiB budget", phase, mib, budgetMiB)
 		}
 	}
-	t.Logf("%s bridge RSS samples %v KiB; budget %d KiB", phase, samples, budgetKiB)
+	t.Logf("%s bridge footprint samples %v MiB; budget %.1f MiB", phase, samples, budgetMiB)
 }
 
 func bridgeMemoryEnv(dir, address string) []string {
