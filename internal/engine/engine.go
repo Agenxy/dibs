@@ -408,6 +408,12 @@ func (e *Engine) execWithReceipt(
 			Hint: "submit the intended feature operation; its writer records the requirement",
 		}
 	}
+	if op.Kind == core.OpContactDiagnosed {
+		return nil, &core.Error{
+			Code: "E_NOT_PERMITTED", Msg: "the daemon records its own native app diagnosis",
+			Hint: "read the contact alert to inspect the diagnosis",
+		}
+	}
 	op.RequiredFeatures = nil // writer-owned compatibility evidence
 	op.FullBoardPolicy, op.Displaced = "", nil
 	op.CapacityHuman = ""

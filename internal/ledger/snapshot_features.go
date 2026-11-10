@@ -21,6 +21,18 @@ type snapshotFeature struct {
 
 var snapshotFeatures = []snapshotFeature{
 	{
+		name:   "native-turn-contact-reason/v1",
+		fields: []string{"core.ContactEscalation.Reason"},
+		present: func(st *core.State) bool {
+			for _, contact := range st.Contacts {
+				if contact != nil && contact.Reason != "" {
+					return true
+				}
+			}
+			return false
+		},
+	},
+	{
 		name: core.FeatureFullBoardPolicy,
 		fields: []string{
 			"core.State.FullBoardSetting", "core.FullBoardSetting.Value",

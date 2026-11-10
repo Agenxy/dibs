@@ -141,6 +141,17 @@ func TestNativeTurnFailuresHoldFurtherDelivery(t *testing.T) {
 				t.Fatalf("contact did not report only the proved reason and original thread: %+v", n)
 			}
 			led := e.led.(*memLedger)
+			fenced, err := e.query(ctx, func() core.Result {
+				for _, op := range led.ops {
+					if op.Kind == "contact_escalated_v0.0.18" && op.AgentID == "worker" {
+						return core.Result{"fenced": true}
+					}
+				}
+				return nil
+			})
+			if err != nil || fenced["fenced"] != true {
+				t.Fatalf("real diagnosis append lacked its reader boundary: %v / %v", fenced, err)
+			}
 			replayed, replayCtx := replayContactEngine(t, e, ctx, led)
 			persisted, err := replayed.PendingForHuman(replayCtx)
 			if err != nil || len(persisted) != 1 || persisted[0].Contact == nil ||

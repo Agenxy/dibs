@@ -132,7 +132,9 @@ func (e *Engine) escalateNativeTurnMail(l *core.Agent, reason core.ContactReason
 		if m.State != core.MsgStatePending || m.Consumed || !m.ContactEligible() || m.ContactEscalatedAt != 0 {
 			continue
 		}
-		op := &core.Op{Kind: core.OpContactEscalate, MsgSerial: m.Serial, ContactReason: reason}
+		// The versioned kind makes earlier ledger readers refuse before
+		// silently dropping the diagnosis. The actor is for their error path.
+		op := &core.Op{Kind: core.OpContactDiagnosed, MsgSerial: m.Serial, ContactReason: reason, AgentID: l.ID}
 		if err := e.state.Admit(op); err != nil {
 			continue
 		}

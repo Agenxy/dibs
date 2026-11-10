@@ -46,6 +46,20 @@ func (s *State) latestContact(recipient string) *ContactEscalation {
 	return latest
 }
 
+func admitContactReason(op *Op) error {
+	if op.Kind == OpContactEscalate && op.ContactReason == "" {
+		return nil
+	}
+	if op.Kind == OpContactDiagnosed && !op.ContactMailboxFull {
+		switch op.ContactReason {
+		case ContactTurnsEnded, ContactCompactionFailed, ContactContextFull:
+			return nil
+		}
+	}
+	return errf("E_BAD_CONTACT", "record a known daemon diagnosis on its versioned contact operation",
+		"invalid contact reason")
+}
+
 func (s *State) applyContactEscalate(op *Op, now time.Time) (Result, []Event, error) {
 	m := s.Messages[op.MsgSerial]
 	if m == nil {
@@ -55,11 +69,15 @@ func (s *State) applyContactEscalate(op *Op, now time.Time) (Result, []Event, er
 		return Result{"ok": true, "deduplicated": true, "contact_serial": id}, nil, nil
 	}
 	c := s.latestContact(m.To)
+	var reason ContactReason
+	if op.Kind == OpContactDiagnosed {
+		reason = op.ContactReason
+	}
 	// An unposted contact remains one outstanding plea for help. A quiet
 	// desktop or absent relay must not produce a new alert every ten minutes.
 	if needsNewContact(c, op.ContactMailboxFull, now) {
 		c = &ContactEscalation{
-			Reason: op.ContactReason, MailboxFull: op.ContactMailboxFull, Serial: s.Serial + 1,
+			Reason: reason, MailboxFull: op.ContactMailboxFull, Serial: s.Serial + 1,
 			Recipient: m.To, OldestSerial: m.Serial, HighWater: m.Serial, Count: 1, WindowStart: now,
 		}
 		if s.Contacts == nil {
@@ -85,7 +103,7 @@ func (s *State) applyContactEscalate(op *Op, now time.Time) (Result, []Event, er
 		return Result{"ok": true, "contact_serial": c.Serial, "coalesced": false}, ev, nil
 	}
 	if c.Reason == "" {
-		c.Reason = op.ContactReason
+		c.Reason = reason
 	}
 	c.Count++
 	if m.Serial < c.OldestSerial {
