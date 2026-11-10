@@ -38,7 +38,26 @@ func sameQueuedOpen(a, b wakePlan) bool {
 		a.queueOutcome != nil && b.queueOutcome != nil && a.queueOutcome.IssuedAt.Equal(b.queueOutcome.IssuedAt)
 }
 
-func (e *Engine) contactAfterQueuedOpen(plan wakePlan, agent string, opened, failed bool) {
+// A subsequent observation of the same retained input joins the pending
+// window. Starting a fresh open every time its memo expires could otherwise
+// renew the window before it ever reports a stranded thread.
+func (e *Engine) queuedOpenRecoveryPending(plan wakePlan, agent string) bool {
+	r, err := e.query(e.wakeContext, func() core.Result {
+		pending, ok := e.queuedOpenContacts[agent]
+		if !ok || !sameQueuedOpen(pending.plan, plan) || !e.queuedOpenCurrent(plan, e.state.Agents[agent]) {
+			return nil
+		}
+		keys := slices.Concat(pending.plan.commandKeys, plan.commandKeys)
+		slices.Sort(keys)
+		plan.commandKeys = slices.Compact(keys)
+		pending.plan = plan
+		e.queuedOpenContacts[agent] = pending
+		return core.Result{"pending": true}
+	})
+	return err == nil && r["pending"] == true
+}
+
+func (e *Engine) contactAfterQueuedOpen(plan wakePlan, agent string, failed bool) {
 	_, _ = e.query(e.wakeContext, func() core.Result {
 		l := e.state.Agents[agent]
 		if !e.queuedOpenCurrent(plan, l) {
@@ -50,21 +69,10 @@ func (e *Engine) contactAfterQueuedOpen(plan wakePlan, agent string, opened, fai
 			e.escalateQueuedOpen(plan, l, true, now)
 			return nil
 		}
-		due := now.Add(harnessenv.AppOpenRetryAfter)
-		if previous, ok := e.queuedOpenContacts[agent]; ok && sameQueuedOpen(previous.plan, plan) {
-			// A suppressed open earns a window, but repeated observations
-			// of the same retained item cannot keep pushing that window out.
-			if !opened {
-				due = previous.due
-			}
-			keys := slices.Concat(previous.plan.commandKeys, plan.commandKeys)
-			slices.Sort(keys)
-			plan.commandKeys = slices.Compact(keys)
-		}
 		if e.queuedOpenContacts == nil {
 			e.queuedOpenContacts = map[string]queuedOpenContact{}
 		}
-		e.queuedOpenContacts[agent] = queuedOpenContact{plan, due}
+		e.queuedOpenContacts[agent] = queuedOpenContact{plan, now.Add(harnessenv.AppOpenRetryAfter)}
 		return nil
 	})
 }

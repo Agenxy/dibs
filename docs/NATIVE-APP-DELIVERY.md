@@ -170,8 +170,9 @@ The local engine now escalates captured unread asks on that failure. A later
 mail event that observes an existing Dibs item still pending beyond the same
 ten-minute window already used for app-open recovery retries that load path.
 A successful open, or an open suppressed by the app or its rate limit, gets a
-recovery window before the daemon pages the person. The existing sweep checks
-only that window and the original unread mail. It never enqueues a duplicate
+recovery window before the daemon pages the person. Further observations of
+the same retained input join that window without opening again or extending
+the deadline. The existing sweep checks the window and the covered unread mail. It never enqueues a duplicate
 or polls the app, and it never raises the deferred alert after the mail is read.
 
 The sender receives the exact original thread link and the human gets the

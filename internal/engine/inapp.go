@@ -57,6 +57,9 @@ func (e *Engine) showInApp(plan wakePlan, agent string) {
 	argv := harnessenv.OpenArgv(harnessenv.AppFor(plan.surface, plan.harness, plan.thread), plan.thread)
 	stranded := plan.strandedQueue()
 	if stranded {
+		if e.queuedOpenRecoveryPending(plan, agent) {
+			return
+		}
 		slog.Info("earlier app wake is still undispatched; retrying the original thread's app-open path",
 			"agent", agent, "hint", "queue retention is not delivery; an alert waits for the app-open recovery window")
 	}
@@ -67,7 +70,7 @@ func (e *Engine) showInApp(plan wakePlan, agent string) {
 			return // lock contention did not attempt an open
 		}
 		if err != nil || stranded {
-			e.contactAfterQueuedOpen(plan, agent, opened, err != nil)
+			e.contactAfterQueuedOpen(plan, agent, err != nil)
 		}
 	})
 }

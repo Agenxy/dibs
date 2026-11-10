@@ -184,7 +184,7 @@ func TestStrandedQueueOpenHasRecoveryWindow(t *testing.T) {
 		t.Fatalf("build fixture: %v: %s", err, b)
 	}
 	testexec.PrepareExecutable(t, exec.Command(binary, "--version"))
-	for _, mode := range []string{"fresh", "recent-open-then-read", "recent-open-unread", "retry-unread"} {
+	for _, mode := range []string{"fresh", "recent-open-then-read", "recent-open-unread", "retry-unread", "repeat-while-waiting"} {
 		t.Run(mode, func(t *testing.T) {
 			dir := t.TempDir()
 			t.Setenv("DIBS_DIR", dir)
@@ -239,7 +239,8 @@ func TestStrandedQueueOpenHasRecoveryWindow(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if mode == "retry-unread" {
+			ageOpenMemo := func() {
+				t.Helper()
 				at := time.Now().Add(-20 * time.Minute).UTC()
 				entries, err := os.ReadDir(filepath.Join(dir, "app-opens"))
 				if err != nil {
@@ -272,6 +273,9 @@ func TestStrandedQueueOpenHasRecoveryWindow(t *testing.T) {
 				if aged != 1 {
 					t.Fatalf("setup aged %d open receipts", aged)
 				}
+			}
+			if mode == "retry-unread" {
+				ageOpenMemo()
 			}
 			var log economyLog
 			previousLog := slog.Default()
@@ -317,6 +321,13 @@ func TestStrandedQueueOpenHasRecoveryWindow(t *testing.T) {
 			}
 			if got := snapshot(); got["contact"] != uint64(0) {
 				t.Fatalf("paged immediately, before the app-open recovery window: %v", got)
+			}
+			if mode == "repeat-while-waiting" {
+				ageOpenMemo() // the next wake could open again if it ignored the pending window
+				serial = send()
+				if opens != wantOpens {
+					t.Fatalf("same retained item opened again during its recovery window: %d opens", opens)
+				}
 			}
 			sweep(before.Add(harnessenv.AppOpenRetryAfter - 10*time.Second))
 			if got := snapshot(); got["contact"] != uint64(0) {
