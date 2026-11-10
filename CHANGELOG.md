@@ -77,6 +77,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A bridge that exits after a failed reconnect check now clears its pending
+  observation quietly. If the observation table reaches capacity, the fault
+  report identifies whether Dibs evicted an idle observation or skipped the
+  arrival because all entries were in flight. Pending mail is available on
+  the board.
 - A Claude Code session that is waiting on the person no longer receives a
   pile of Dibs notices when the person answers. Claude Code queues a message
   that arrives during a turn, and Dibs wrote one for every new item, so a

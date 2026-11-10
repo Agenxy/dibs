@@ -42,16 +42,16 @@ type bridgeObservation struct {
 // Reserve the caller and all retryable entries as one inventory batch. An
 // unrelated concurrent first discovery remains independent; no process scan,
 // writer query or disk I/O holds this mutex. All remembered work is bounded.
-func (b *observedBridges) begin(pid int, started string) (map[string]harnessenv.BridgeIncarnation, bool) {
+func (b *observedBridges) begin(pid int, started string) (map[string]harnessenv.BridgeIncarnation, string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.entries == nil {
 		b.entries = map[string]*bridgeObservation{}
 	}
-	givenUp := false
+	capacityAction := ""
 	key := fmt.Sprintf("%d@%s", pid, started)
 	if pid > 1 && started != "" && !b.seen[key] && b.entries[key] == nil {
-		givenUp = b.makeRoomLocked()
+		capacityAction = b.makeRoomLocked()
 		if len(b.entries) < maxObservedBridges {
 			b.next++
 			b.entries[key] = &bridgeObservation{process: harnessenv.BridgeIncarnation{PID: pid, Start: started}, order: b.next}
@@ -64,14 +64,14 @@ func (b *observedBridges) begin(pid int, started string) (map[string]harnessenv.
 			batch[k] = entry.process
 		}
 	}
-	return batch, givenUp
+	return batch, capacityAction
 }
 
-// Called under mu. Never evict a reservation still doing I/O; when all 512
-// entries are in flight, the newly arriving observation is the one given up.
-func (b *observedBridges) makeRoomLocked() bool {
+// Called under mu. Return the capacity decision for the fault report. A
+// reservation doing I/O keeps its place until its observation completes.
+func (b *observedBridges) makeRoomLocked() string {
 	if len(b.entries) < maxObservedBridges {
-		return false
+		return ""
 	}
 	var oldest string
 	for key, entry := range b.entries {
@@ -79,21 +79,23 @@ func (b *observedBridges) makeRoomLocked() bool {
 			oldest = key
 		}
 	}
-	if oldest != "" {
-		delete(b.entries, oldest)
+	if oldest == "" {
+		return "skipped the arriving observation because all entries were in flight"
 	}
-	return true
+	delete(b.entries, oldest)
+	return "evicted the oldest idle observation"
 }
 
-func (b *observedBridges) finish(key string, observed, present bool) bool {
+func (b *observedBridges) finish(key string, observed bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	entry := b.entries[key]
 	if !observed {
 		entry.inFlight, entry.failed = false, true
-		return false
+		return
 	}
-	givenUp := entry.failed && !present
+	// A completed negative probe also retires the reservation. The bridge can
+	// exit between attempts, and that observation requires no fault mail.
 	delete(b.entries, key)
 	if len(b.seen) >= maxObservedBridges {
 		// Re-probing is safe: the engine independently coalesces app cohorts.
@@ -103,7 +105,6 @@ func (b *observedBridges) finish(key string, observed, present bool) bool {
 		b.seen = map[string]bool{}
 	}
 	b.seen[key] = true
-	return givenUp
 }
 
 // The observation grants no identity, session binding, or access to mail.
@@ -119,8 +120,8 @@ func (s *Server) observeBridge(ctx context.Context, params json.RawMessage) {
 	}
 	pid, started := bridgeProcessMetadata(params)
 	s.observeToolCatalog(ctx, params, pid, started)
-	batch, givenUp := s.bridges.begin(pid, started)
-	if len(batch) == 0 && !givenUp {
+	batch, capacityAction := s.bridges.begin(pid, started)
+	if len(batch) == 0 && capacityAction == "" {
 		return
 	}
 	// Admission used this request's transport authority. Completion belongs to
@@ -135,7 +136,7 @@ func (s *Server) observeBridge(ctx context.Context, params json.RawMessage) {
 		case <-ctx.Done():
 		}
 	}()
-	givenUp = s.observeBridgeBatch(ctx, local, batch) || givenUp
+	s.observeBridgeBatch(ctx, local, batch)
 	s.bridges.mu.Lock()
 	pending := 0
 	for _, entry := range s.bridges.entries {
@@ -145,12 +146,12 @@ func (s *Server) observeBridge(ctx context.Context, params json.RawMessage) {
 	}
 	s.eng.SetReconnectPending(pending)
 	s.bridges.mu.Unlock()
-	if givenUp && ctx.Err() == nil {
+	if capacityAction != "" && ctx.Err() == nil {
 		s.bridges.faultMu.Lock()
 		s.eng.ReportFault(ctx, engine.Fault{
 			Kind: "app-reconnect-given-up", Bug: true, Where: "internal/mcp/reconnect.go",
-			What: "Dibs gave up a pending app reconnect observation: its bridge incarnation disappeared " +
-				"or the 512-entry bound was reached. Mail remains on the board; automatic reconnect recovery was not confirmed.",
+			What: fmt.Sprintf("Dibs reached its %d-entry app reconnect observation limit and %s.",
+				maxObservedBridges, capacityAction),
 			Remedy: "Read the outstanding mail on the board. A later local bridge request supplies fresh process evidence; " +
 				"run `dibs doctor` to inspect observations still pending.",
 		})
@@ -160,7 +161,10 @@ func (s *Server) observeBridge(ctx context.Context, params json.RawMessage) {
 
 func (s *Server) observeBridgeBatch(
 	ctx context.Context, local string, batch map[string]harnessenv.BridgeIncarnation,
-) bool {
+) {
+	if len(batch) == 0 {
+		return
+	}
 	keys := make([]string, 0, len(batch))
 	for key := range batch {
 		keys = append(keys, key)
@@ -183,19 +187,13 @@ func (s *Server) observeBridgeBatch(
 		s.bridges.mu.Unlock()
 		results, err = s.probeBridges(ctx, processes)
 	}
-	givenUp := false
 	for i, key := range keys {
-		observed, present := err == nil, false
-		if observed {
-			result := results[i]
-			present = result.Present
-			if result.App.PID > 1 {
-				observed = s.eng.AppReconnected(ctx, local, result.App) == nil
-			}
+		observed := err == nil
+		if observed && results[i].App.PID > 1 {
+			observed = s.eng.AppReconnected(ctx, local, results[i].App) == nil
 		}
-		givenUp = s.bridges.finish(key, observed, present) || givenUp
+		s.bridges.finish(key, observed)
 	}
-	return givenUp
 }
 
 func (s *Server) probeBridges(

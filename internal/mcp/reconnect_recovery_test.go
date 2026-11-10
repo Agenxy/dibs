@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"reflect"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -35,6 +36,7 @@ func TestReconnectRetryBatchIsBoundedAndGivesUpOnlyOnce(t *testing.T) {
 	}
 	var scans, largest int
 	ready := false
+	var recovered []harnessenv.BridgeIncarnation
 	s.bridges.batchProbe = func(_ context.Context, bridges []harnessenv.BridgeIncarnation) ([]harnessenv.BridgeObservation, error) {
 		scans++
 		if len(bridges) > largest {
@@ -46,6 +48,7 @@ func TestReconnectRetryBatchIsBoundedAndGivesUpOnlyOnce(t *testing.T) {
 		if !ready {
 			return nil, os.ErrDeadlineExceeded
 		}
+		recovered = bridges
 		out := make([]harnessenv.BridgeObservation, len(bridges))
 		for i := range out {
 			out[i].Present = true
@@ -71,14 +74,15 @@ func TestReconnectRetryBatchIsBoundedAndGivesUpOnlyOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	messages := inbox["messages"].([]*core.Message)
-	if len(messages) != 1 || messages[0].From != "dibs" {
-		t.Fatalf("eviction must send one deduplicated fault, got %v", messages)
-	}
+	assertReconnectFault(t, messages, "evicted the oldest idle observation")
 	ready = true
 	before := scans
 	result(t, rpc(t, srv, "2026-07-28", "server/discover", map[string]any{}), "retry entire pending batch")
 	if scans != before+1 {
 		t.Fatalf("recovery took %d inventories", scans-before)
+	}
+	if len(recovered) != maxObservedBridges || recovered[0].PID != 1002 || recovered[len(recovered)-1].PID != 1513 {
+		t.Fatalf("recovery did not retain the newest %d observations: %v", maxObservedBridges, recovered)
 	}
 	board, err = eng.Board(t.Context())
 	if err != nil || board["reconnect_pending"] != nil {
@@ -88,6 +92,89 @@ func TestReconnectRetryBatchIsBoundedAndGivesUpOnlyOnce(t *testing.T) {
 	if err != nil || len(inbox["messages"].([]*core.Message)) != 1 {
 		t.Fatalf("recovery sent extra mail: %v %v", inbox, err)
 	}
+}
+
+// Both capacity outcomes must retain the bug classification and name the
+// decision. The old shared report cannot distinguish either from a departure.
+func assertReconnectFault(t *testing.T, messages []*core.Message, action string) {
+	t.Helper()
+	if len(messages) != 1 || messages[0].From != "dibs" {
+		t.Fatalf("capacity must send one deduplicated Dibs fault, got %v", messages)
+	}
+	body := messages[0].Body
+	if !strings.Contains(body, action) || !strings.Contains(body, "This looks like a defect in Dibs") {
+		t.Errorf("capacity fault must identify %q and retain the bug classification, got %q", action, body)
+	}
+}
+
+func TestReconnectCapacityRejectsArrivalWhileAllProbesAreInFlight(t *testing.T) {
+	srv, eng, s := newServerWithEngine(t)
+	_, token, err := eng.HumanAgent(t.Context())
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	arm := make(chan struct{})
+	entered := make(chan int, 1)
+	release := make(chan struct{})
+	var holding atomic.Bool
+	s.bridges.batchProbe = func(_ context.Context, bridges []harnessenv.BridgeIncarnation) ([]harnessenv.BridgeObservation, error) {
+		select {
+		case <-arm:
+		default:
+			return nil, os.ErrDeadlineExceeded
+		}
+		if len(bridges) != 0 {
+			if holding.CompareAndSwap(false, true) {
+				entered <- len(bridges)
+				<-release
+			} else {
+				t.Error("an arriving observation got a probe while every slot was reserved")
+			}
+		}
+		return make([]harnessenv.BridgeObservation, len(bridges)), nil
+	}
+	for i := range maxObservedBridges {
+		result(t, rpc(t, srv, "2026-07-28", "server/discover", reconnectParams(s, 2000+i)), "retain failed observation")
+	}
+	close(arm)
+	req := httptest.NewRequest(http.MethodPost, srv.URL, strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"server/discover"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	req.Header.Set("MCP-Protocol-Version", "2026-07-28")
+	out := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		s.ServeHTTP(out, req)
+		close(done)
+	}()
+	defer func() {
+		close(release)
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+			t.Error("held discovery did not finish after release")
+			return
+		}
+		if out.Code != http.StatusOK {
+			t.Errorf("held discovery failed: HTTP %d", out.Code)
+		}
+	}()
+	select {
+	case n := <-entered:
+		if n != maxObservedBridges {
+			t.Fatalf("setup reserved %d observations, want %d", n, maxObservedBridges)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("setup did not enter the held inventory probe")
+	}
+	for _, pid := range []int{3000, 3001} {
+		result(t, rpc(t, srv, "2026-07-28", "server/discover", reconnectParams(s, pid)), "arrival at capacity")
+	}
+	inbox, err := eng.Inbox(t.Context(), token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertReconnectFault(t, inbox["messages"].([]*core.Message),
+		"skipped the arriving observation because all entries were in flight")
 }
 
 func TestReconnectRetriesStopWithTheEngine(t *testing.T) {
@@ -124,7 +211,7 @@ func TestReconnectRetriesStopWithTheEngine(t *testing.T) {
 	}
 }
 
-func TestPendingReconnectReportsGiveUpWhenItsIncarnationIsGone(t *testing.T) {
+func TestDepartedPendingReconnectClearsWithoutFault(t *testing.T) {
 	srv, eng, s := newServerWithEngine(t)
 	_, token, err := eng.HumanAgent(t.Context())
 	if err != nil {
@@ -139,14 +226,25 @@ func TestPendingReconnectReportsGiveUpWhenItsIncarnationIsGone(t *testing.T) {
 		return make([]harnessenv.BridgeObservation, len(bridges)), nil // PID/start no longer match
 	}
 	result(t, rpc(t, srv, "2026-07-28", "server/discover", reconnectParams(s, 5000)), "failed observation")
-	result(t, rpc(t, srv, "2026-07-28", "server/discover", map[string]any{}), "bridge departed")
-	inbox, err := eng.Inbox(t.Context(), token)
-	if err != nil || len(inbox["messages"].([]*core.Message)) != 1 {
-		t.Fatalf("departed pending bridge was silently dropped: %v %v", inbox, err)
+	before, err := eng.Board(t.Context())
+	if err != nil || scans != 2 || before["reconnect_pending"] != 1 {
+		t.Fatalf("setup did not retain the failed observation after one retry: scans=%d, board=%v, error=%v",
+			scans, before, err)
 	}
+	result(t, rpc(t, srv, "2026-07-28", "server/discover", map[string]any{}), "bridge departed")
 	board, err := eng.Board(t.Context())
-	if err != nil || board["reconnect_pending"] != nil {
-		t.Fatalf("departed incarnation left a stale pending diagnostic: %v %v", board, err)
+	if err != nil || scans != 3 || board["reconnect_pending"] != nil {
+		t.Fatalf("departed incarnation left a stale pending diagnostic: scans=%d, board=%v, error=%v", scans, board, err)
+	}
+	inbox, err := eng.Inbox(t.Context(), token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if messages := inbox["messages"].([]*core.Message); len(messages) != 0 {
+		t.Errorf("ordinary bridge departure sent fault mail: %q", messages[0].Body)
+	}
+	if board["serial"] != before["serial"] {
+		t.Errorf("bridge departure changed coordination state: %v -> %v", before["serial"], board["serial"])
 	}
 }
 
