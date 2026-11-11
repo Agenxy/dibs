@@ -31,10 +31,19 @@ func TestAppEpochSelectsDesktopProcessesBeforeReadingPaths(t *testing.T) {
 		name    string
 		desktop bool
 	}{
-		{"ChatGPT", true}, {"ChatGPT Helper", true}, {"ChatGPT Helper (", true},
-		{"Codex (GPU)", true}, {"Codex (Renderer", true},
-		{"codex", true}, {"chrome_crashpad", true},
-		{"ChatGPT for Chro", false}, {"ChatGPT for Chr", false}, {"ChatGPT for Chrome", false},
+		{"ChatGPT", true},
+		{"ChatGPT Helper", true},
+		{"ChatGPT Helper (", true},
+		{"Codex (GPU)", true},
+		{"Codex (Renderer", true},
+		{"codex", true},
+		{"codex-code-mode-host", true},
+		{"codex-code-mode-", true},
+		{"codex-code-mode", true},
+		{"chrome_crashpad", true},
+		{"ChatGPT for Chro", false},
+		{"ChatGPT for Chr", false},
+		{"ChatGPT for Chrome", false},
 		{"ChatGPT plugin", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -58,6 +67,48 @@ func TestAppEpochSelectsDesktopProcessesBeforeReadingPaths(t *testing.T) {
 				}
 			} else if !known || epoch != "absent" || reads != 0 || fallbacks != 0 {
 				t.Fatalf("unrelated process triggered desktop path observation: epoch=%q known=%v reads=%d fallbacks=%d",
+					epoch, known, reads, fallbacks)
+			}
+		})
+	}
+}
+
+func TestAppEpochKeepsReadableHelperOnlyRemnantsUnknown(t *testing.T) {
+	rows, err := procinfo.Snapshot(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var own procinfo.Process
+	for _, row := range rows {
+		if row.PID == os.Getpid() {
+			own = row
+		}
+	}
+	if own.PID == 0 {
+		t.Fatal("setup: own kernel row missing")
+	}
+	for _, name := range []string{"ChatGPT Helper", "Codex (GPU)", "codex-code-mode-host"} {
+		t.Run(name, func(t *testing.T) {
+			oldSnapshot, oldPath, oldFallback := nativeProcessSnapshot, nativeProcessPath, processPathFallback
+			t.Cleanup(func() {
+				nativeProcessSnapshot, nativeProcessPath, processPathFallback = oldSnapshot, oldPath, oldFallback
+			})
+			row := own
+			row.Comm = name
+			nativeProcessSnapshot = func(context.Context) ([]procinfo.Process, error) {
+				return []procinfo.Process{row}, nil
+			}
+			reads, fallbacks := 0, 0
+			nativeProcessPath = func(int) (string, error) {
+				reads++
+				return chatGPTRoot + "Contents/Helpers/" + name, nil
+			}
+			processPathFallback = func(context.Context, int) (string, error) {
+				fallbacks++
+				return "", os.ErrPermission
+			}
+			if epoch, known := ChatGPTAppEpoch(); known || epoch != "" || reads != 1 || fallbacks != 0 {
+				t.Fatalf("helper became absent or a complete app incarnation: epoch=%q known=%v reads=%d fallbacks=%d",
 					epoch, known, reads, fallbacks)
 			}
 		})

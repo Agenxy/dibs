@@ -204,7 +204,8 @@ so every agent's next mail navigated the person's window, at moments nobody
 chose, once per agent. Now:
 
 Native process names select path-read candidates, not app authority. The
-measured desktop names are `ChatGPT`, `codex`, current `Codex (...)` helpers,
+measured desktop names are `ChatGPT`, `codex`, `codex-code-mode-host` (including
+kernel-truncated forms), current `Codex (...)` helpers,
 legacy `ChatGPT Helper...` names and crashpad helpers. The separate ChatGPT for
 Chrome extension host is not a desktop candidate. On macOS the kernel's command
 field ends at its first NUL; bytes beyond it are not part of the name. Every

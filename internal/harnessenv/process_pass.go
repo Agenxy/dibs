@@ -172,12 +172,15 @@ var processPathFallback = func(ctx context.Context, pid int) (string, error) {
 // current Codex and legacy ChatGPT helpers, so helper-only remnants stay visible.
 // A broad ChatGPT prefix also selected the separate "ChatGPT for Chrome" host;
 // its denied native path made idle desktop observation spawn ps fallbacks.
+// The app-bundled code-mode host is included conservatively: its observed
+// ancestry does not prove it must exit with the app. Kernels truncate its name.
 func appProcessCandidate(row processIdentity) bool {
 	if row.kernel.PID == 0 {
 		return true
 	}
 	return row.comm == "codex" || row.comm == "ChatGPT" || strings.HasPrefix(row.comm, "ChatGPT Helper") ||
-		strings.HasPrefix(row.comm, "Codex (") || strings.HasPrefix(row.comm, "chrome_crashpad")
+		strings.HasPrefix(row.comm, "Codex (") || strings.HasPrefix(row.comm, "codex-code-mode") ||
+		strings.HasPrefix(row.comm, "chrome_crashpad")
 }
 
 func (p *processPass) appEvidence() (ThreadOwnership, []string, error) {
