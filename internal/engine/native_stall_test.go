@@ -5,6 +5,7 @@ package engine
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,7 +17,11 @@ func TestNativeAppWriterStallBeforeInputDoesNotStrandMail(t *testing.T) {
 	ready, entered, release := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	finished := make(chan error, 1)
 	var e *Engine
+	var armed atomic.Bool
 	s := testcodexipc.Start(t, "idle", func() {
+		if !armed.Load() {
+			return // stall delivery's freshness query, never registration
+		}
 		<-ready
 		go func() {
 			_, err := e.query(context.Background(), func() core.Result {
@@ -31,6 +36,7 @@ func TestNativeAppWriterStallBeforeInputDoesNotStrandMail(t *testing.T) {
 	var ctx context.Context
 	var sender string
 	e, ctx, _, sender = nativeAppEngine(t)
+	armed.Store(true)
 	t.Cleanup(func() {
 		select {
 		case <-release:

@@ -1606,13 +1606,41 @@ receipt, with notice age unknown; legacy notice age also stays unknown.
 report the app's running turn. A queue command reporting `no rollout found for thread id`
 for its exact target instead sets it to `gone`: automatic retry and later-message
 queue attempts stop for that agent/thread binding, and unread eligible mail uses
-the existing contact-alert path. Board and doctor report the missing route. The
+the existing contact-alert path. The recipient and pending senders also receive
+ordinary daemon-authored notify mail, retained and replayed under normal mailbox
+rules. No participant bodies are copied into these warnings. They identify the
+failed binding and corrective `register`/`bind_session` calls; they do not consume
+the original mail. Warning sends use normal admission, capacity and idempotency
+rules (once per binding/party within the ordinary deduplication window). A full
+mailbox or other refusal is logged with a hint; the person alert remains independent.
+Board and doctor report the missing route. The
 negative evidence is derived and fenced to the agent incarnation, thread and
 configured wake-command epoch; a replacement binding or configuration may try again.
 Other command failures retain their retry policy. Queue admission, native input and mail consumption
 are distinct; a queue observation confirms neither of the latter. No thread or item ID is
-published, no private harness database is read, and reads add no probes. Session
+published in the board queue view, no private harness database is read, and board
+reads add no probes. Session
 rebinding or loss of this rebuildable cache returns the view to unknown.
+
+Own-host ChatGPT app `register`, `resume` and `bind_session` replies additionally
+carry advisory `binding_warning` when no local rollout is found and read-only app
+owner discovery cannot confirm the target. The owner probe runs outside the writer,
+is bounded to one second, sends no input and never opens a window. Missing files,
+no owner and probe errors all stay `unverified`; only an explicit queue refusal
+can report `gone`. A warning never refuses registration or changes the binding.
+Remote and invited pull-only agents are not checked against this machine's app
+or filesystem. A UUID-shaped caller alias is not proof of a local rollout: the
+ChatGPT app can run local tools through a cloud-connected execution server whose
+conversation ID is unavailable to its local Codex queue.
+The bridge records positive native `codex exec-server --remote` ancestry under
+the ChatGPT app as surface `chatgpt-cloud-exec`, preserving the actual local tool
+host and cwd. Its advisory names the unsupported cloud binding and recovery in
+a local app thread. Unavailable command evidence never invents cloud provenance;
+the generic binding warning stays unverified. This does not add a cloud wake route.
+Registration, cloud-send advice and missing-thread mail share one recovery hint:
+recover from a local app thread with the saved nonce; without it, register and
+send the coordinator the adoption request returned by registration. Binding with
+the existing token remains an option when that credential is still held.
 
 For the local session-socket route, a stated binding on a known local host
 outranks a difference between the agent's work directory and the harness's launch

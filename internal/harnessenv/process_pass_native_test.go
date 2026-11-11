@@ -239,7 +239,17 @@ func TestNativeInventoryErrorStaysUnknownWithoutTableFallback(t *testing.T) {
 
 func nativeAppProcesses(t *testing.T) (procinfo.Process, procinfo.Process) {
 	t.Helper()
-	executable := filepath.Join(t.TempDir(), "ChatGPT.app", "Contents", "MacOS", "ChatGPT")
+	return nativeAppProcessesWithArgs(t, "ChatGPT", nil)
+}
+
+func nativeAppProcessesWithArgs(t *testing.T, name string, extra []string) (procinfo.Process, procinfo.Process) {
+	t.Helper()
+	return nativeAppProcessTree(t, name, extra, false)
+}
+
+func nativeAppProcessTree(t *testing.T, name string, extra []string, nested bool) (procinfo.Process, procinfo.Process) {
+	t.Helper()
+	executable := filepath.Join(t.TempDir(), "ChatGPT.app", "Contents", "MacOS", name)
 	if err := os.MkdirAll(filepath.Dir(executable), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -255,8 +265,13 @@ func nativeAppProcesses(t *testing.T) (procinfo.Process, procinfo.Process) {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
-	parent := procexec.Command(ctx, executable, "-test.run=^TestNativeAppProcessHelper$")
-	parent.Env = append(os.Environ(), "DIBS_NATIVE_APP_ROLE=parent")
+	args := append([]string{"-test.run=^TestNativeAppProcessHelper$"}, extra...)
+	parent := procexec.Command(ctx, executable, args...)
+	role := "parent"
+	if nested {
+		role = "outer"
+	}
+	parent.Env = append(os.Environ(), "DIBS_NATIVE_APP_ROLE="+role)
 	parent.Stdin = input
 	output, err := parent.StdoutPipe()
 	if err != nil {
@@ -299,6 +314,14 @@ func nativeAppProcesses(t *testing.T) (procinfo.Process, procinfo.Process) {
 			parentRow = row
 		}
 	}
+	if nested {
+		for _, row := range rows {
+			if row.PID == bridgeRow.PPID && row.PPID == parentRow.PID {
+				parentRow = row
+				break
+			}
+		}
+	}
 	if bridgeRow.PID == 0 || parentRow.PID == 0 || bridgeRow.PPID != parentRow.PID {
 		t.Fatal("setup actual parent/child relation missing")
 	}
@@ -314,6 +337,14 @@ func nativeAppProcesses(t *testing.T) (procinfo.Process, procinfo.Process) {
 
 func TestNativeAppProcessHelper(t *testing.T) {
 	switch os.Getenv("DIBS_NATIVE_APP_ROLE") {
+	case "outer":
+		child := procexec.Command(context.Background(), os.Args[0],
+			"-test.run=^TestNativeAppProcessHelper$", "--", "app-server")
+		child.Env = append(os.Environ(), "DIBS_NATIVE_APP_ROLE=parent")
+		child.Stdin, child.Stdout, child.Stderr = os.Stdin, os.Stdout, os.Stderr
+		if err := child.Run(); err != nil {
+			t.Fatal(err)
+		}
 	case "parent":
 		child := procexec.Command(context.Background(), os.Args[0], "-test.run=^TestNativeAppProcessHelper$")
 		child.Env = append(os.Environ(), "DIBS_NATIVE_APP_ROLE=child")

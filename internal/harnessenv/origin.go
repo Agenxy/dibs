@@ -58,6 +58,13 @@ func CodexBornInApp(thread string) bool {
 	return codexOriginator(codexHome(), thread) == codexAppOriginator
 }
 
+// CodexRolloutPresent is positive local-file evidence only. A false result
+// includes unreadable stores and IDs whose filing date cannot be determined;
+// it cannot establish absence or override a live app's ownership reply.
+func CodexRolloutPresent(thread string) bool {
+	return isThreadID(thread) && rolloutFile(codexHome(), thread) != ""
+}
+
 func codexHome() string {
 	if h := os.Getenv("CODEX_HOME"); h != "" {
 		return h

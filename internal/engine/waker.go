@@ -1457,6 +1457,9 @@ func (e *Engine) PullOnlyNote(l *core.Agent) string {
 	if l.Retired() || e.isTheHuman(l.ID) {
 		return ""
 	}
+	if surfaceOf(l) == harnessenv.ChatGPTCloudExec {
+		return "Stored in the mailbox for " + l.ID + ". " + cloudBindingReason + " " + bindingRemedy
+	}
 	harness := wakeHarness(l)
 	if note, remote := e.remotePullOnlyNote(l); remote {
 		return note

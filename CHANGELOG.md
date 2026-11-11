@@ -7,6 +7,18 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- App registrations and explicit session bindings now warn when neither a
+  local rollout nor read-only app ownership confirms their wake target.
+  Registration still succeeds; unavailable evidence stays unverified. If the
+  queue later reports a missing thread, Dibs also sends ordinary, replayable
+  mailbox warnings to the recipient and each pending sender, with a recovery
+  hint: at most one per binding and party within ordinary dedup bounds
+  (default 24 hours, capped at 256 operation IDs per sending agent). An immediate
+  rebind to the same dead thread does not repeat the warnings. It retains the original mail and
+  the existing person contact alert. Measured cloud-connected execution-server
+  ancestry now names that unsupported route and says to start a local thread
+  and adopt the identity; its local tool host and folder remain accurate.
+  All recovery hints include coordinator adoption when the old nonce was lost.
 - Daemon shutdown cancels and joins its normal and retry delivery workers
   for at most ten seconds, warning which workers were abandoned at the cap.
   Their late results cannot write the ledger. Queue admission, command execution, native app

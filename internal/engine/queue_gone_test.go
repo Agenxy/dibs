@@ -4,6 +4,7 @@
 package engine
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -96,6 +97,7 @@ func goneQueueThreadScenario(t *testing.T, priorFailures int) {
 	if err != nil || len(strings.Fields(string(attempts))) != 1 {
 		t.Errorf("permanently missing thread ran again: %q %v", attempts, err)
 	}
+	assertGoneBindingMail(t, e, ctx)
 	// A new binding must not inherit the old thread's permanent failure.
 	const replacement = "dc8fea77-2092-4c69-b810-c96a7bc5575d"
 	if _, err := e.Do(ctx, &core.Op{Kind: core.OpUpdate, Token: worker, SessionAlias: replacement, V7Semantics: true}); err != nil {
@@ -105,5 +107,64 @@ func goneQueueThreadScenario(t *testing.T, priorFailures int) {
 	attempts, err = os.ReadFile(filepath.Join(os.Getenv("CODEX_HOME"), "queue-attempts"))
 	if err != nil || !strings.Contains(string(attempts), replacement) {
 		t.Fatalf("replacement thread inherited gone route: %q %v", attempts, err)
+	}
+	// Return to the same dead target after a real replacement wake. Its cached
+	// observation has changed, so the queue refuses it again; ordinary op_id
+	// dedup must suppress another round of recipient/sender warning mail.
+	if _, err := e.BindSession(ctx, worker, testcodexipc.Thread); err != nil {
+		t.Fatal("setup same dead target:", err)
+	}
+	send()
+	attempts, err = os.ReadFile(filepath.Join(os.Getenv("CODEX_HOME"), "queue-attempts"))
+	if err != nil || len(strings.Fields(string(attempts))) != 3 {
+		t.Fatalf("setup: same dead binding was not attempted again: %q %v", attempts, err)
+	}
+	assertGoneBindingMail(t, e, ctx)
+}
+
+// Enter through real send -> native no-owner -> queue's explicit no-rollout
+// refusal. Mail survives replay without a transient notice or event-ring body.
+func assertGoneBindingMail(t *testing.T, e *Engine, ctx context.Context) {
+	t.Helper()
+	var ops []*core.Op
+	var reporter string
+	_, err := e.query(ctx, func() core.Result {
+		reporter = e.dibsRowLocked()
+		assertGoneBindingInboxes(t, e.state, reporter)
+		ops = append(ops, e.led.(*memLedger).ops...)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := core.NewState("native-app", core.DefaultLimits())
+	for i, op := range ops {
+		if _, _, err := st.Apply(op, time.Unix(1000+int64(i), 0)); err != nil {
+			t.Fatalf("replay op %d (%s): %v", i, op.Kind, err)
+		}
+	}
+	assertGoneBindingInboxes(t, st, reporter)
+}
+
+func assertGoneBindingInboxes(t *testing.T, st *core.State, reporter string) {
+	t.Helper()
+	for _, who := range []string{"worker", "sender"} {
+		count := 0
+		for _, m := range st.Inbox(who) {
+			if m.From != reporter || !strings.Contains(m.Body, "no rollout found") {
+				continue
+			}
+			count++
+			if m.Type != core.MsgNotify || !strings.Contains(m.Body, "bind_session") ||
+				strings.Contains(m.Body, "private request") {
+				t.Errorf("unusable binding warning is not factual, corrective system mail: %+v", m)
+			}
+			if !strings.Contains(m.Body, "Without the nonce") || !strings.Contains(m.Body, `adopt:"<old id>"`) {
+				t.Errorf("durable warning stranded %s without its nonce: %s", who, m.Body)
+			}
+		}
+		if count != 1 {
+			t.Errorf("%s has %d durable missing-thread warnings, want exactly one", who, count)
+		}
 	}
 }
