@@ -7,6 +7,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Builds use Go 1.27.4, fixing the reachable standard-library HTTP/1 server
+  crash reported as GO-2026-6859. The Go language floor remains 1.26.0.
 - Desktop app observation selects the desktop runtime and helper names before
   reading executable paths. The separate ChatGPT for Chrome extension host no
   longer triggers process-command fallbacks on an idle board. Executable paths
