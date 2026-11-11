@@ -179,7 +179,7 @@ func nativeQueueWakeNote(delivery string, v core.Result) string {
 	case "settled":
 		return "Last native app notice was cancelled because its mail was already handled or its identity closed."
 	case "turns_ended":
-		return "Native retries are held after repeated early app turn failures. New mail can try again. See the contact alert."
+		return "Native retries are held after repeated early app failures. New mail can try again."
 	default:
 		return "Last native app input not confirmed; no automatic retry or queue fallback."
 	}

@@ -1199,7 +1199,8 @@ seconds without a tool call or authenticated contact, Dibs holds native
 retries for already pending mail and records the proved diagnosis on the
 contact. Each new message can make one native recovery attempt. The next
 delivery decision uses a bounded read-only rollout check to reconcile the
-matching receipt. A failed probe keeps the hold without paging again. A turn
+matching receipt. A failed probe keeps the hold without repeating a page.
+A turn
 that progresses, authenticated model contact, or a new receiving binding
 clears the hold. The alert identifies the original thread so the person can
 repair it or move the agent.

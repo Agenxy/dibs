@@ -33,6 +33,7 @@ func TestNativeTurnFailuresHoldFurtherDelivery(t *testing.T) {
 		{"successful", "", "", ""},
 		{"quiet-pair", "other", "private quiet failure", "turns end immediately"},
 		{"recovery-probe", "other", "private recovery failure", "turns end immediately"},
+		{"notify-recovery", "other", "private FYI recovery failure", "turns end immediately"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("DIBS_DIR", t.TempDir())
@@ -73,9 +74,13 @@ func TestNativeTurnFailuresHoldFurtherDelivery(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
+			kind := core.MsgRequest
+			if tc.name == "notify-recovery" {
+				kind = core.MsgNotify
+			}
 			var lastAccepted time.Time
 			for n := 1; n <= 2; n++ {
-				_, accepted := f.send(t, core.MsgRequest, n)
+				_, accepted := f.send(t, kind, n)
 				lastAccepted = accepted
 				id := fmt.Sprintf("turn-%d", n)
 				start := accepted
@@ -118,7 +123,7 @@ func TestNativeTurnFailuresHoldFurtherDelivery(t *testing.T) {
 				}
 			}
 			third := contactReplayDo(t, e, ctx, &core.Op{
-				Kind: core.OpSendMessage, Token: sender, To: "worker", MsgType: core.MsgRequest, Body: "private third request",
+				Kind: core.OpSendMessage, Token: sender, To: "worker", MsgType: kind, Body: "private third notice",
 			})
 			if third["msg_serial"] == nil {
 				t.Fatalf("setup: third request not stored: %v", third)
@@ -135,6 +140,10 @@ func TestNativeTurnFailuresHoldFurtherDelivery(t *testing.T) {
 			if got := len(server.Inputs()); got != wantInputs {
 				t.Fatalf("native inputs after two failures: got %d, want %d", got, wantInputs)
 			}
+			if tc.name == "notify-recovery" {
+				testNativeTurnRecovery(t, f, write, false)
+				return
+			}
 			notices, err := e.PendingForHuman(ctx)
 			if err != nil || len(notices) != 1 || notices[0].Contact == nil {
 				t.Fatalf("two failed turns did not produce one contact alert: %v / %v", notices, err)
@@ -146,7 +155,7 @@ func TestNativeTurnFailuresHoldFurtherDelivery(t *testing.T) {
 				t.Fatalf("contact did not report only the proved reason and original thread: %+v", n)
 			}
 			if tc.name == "recovery-probe" {
-				testNativeTurnRecovery(t, f, write)
+				testNativeTurnRecovery(t, f, write, true)
 				return
 			}
 			led := e.led.(*memLedger)
@@ -175,7 +184,9 @@ func TestNativeTurnFailuresHoldFurtherDelivery(t *testing.T) {
 	}
 }
 
-func testNativeTurnRecovery(t *testing.T, f *acceptedContactFixture, write func(string, time.Time, map[string]any)) {
+func testNativeTurnRecovery(
+	t *testing.T, f *acceptedContactFixture, write func(string, time.Time, map[string]any), alreadyAlerted bool,
+) {
 	t.Helper()
 	ledger := f.e.led.(*memLedger)
 	diagnoses := func() int {
@@ -215,8 +226,8 @@ func testNativeTurnRecovery(t *testing.T, f *acceptedContactFixture, write func(
 	}
 
 	original := diagnoses()
-	if original == 0 {
-		t.Fatal("setup: initial hold has no diagnosis")
+	if (original > 0) != alreadyAlerted {
+		t.Fatalf("setup: initial hold has %d diagnoses, want prior alert=%v", original, alreadyAlerted)
 	}
 	_, failed := f.send(t, core.MsgRequest, 3)
 	record("turn-3", failed, true)
@@ -224,9 +235,11 @@ func testNativeTurnRecovery(t *testing.T, f *acceptedContactFixture, write func(
 	if n := len(f.ipc.Inputs()); n != 3 {
 		t.Fatalf("old mail triggered another native input after the failed recovery probe: %d", n)
 	}
-	if n := diagnoses(); n != original {
-		t.Fatalf("failed recovery probe added a diagnosis: before=%d after=%d", original, n)
+	n := diagnoses()
+	if alreadyAlerted && n != original || !alreadyAlerted && n != 1 {
+		t.Fatalf("failed recovery probe should only raise a first diagnosis: before=%d after=%d", original, n)
 	}
+	original = n
 	_, recovered := f.send(t, core.MsgRequest, 4)
 	record("turn-4", recovered, false)
 	retry()

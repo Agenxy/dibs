@@ -159,8 +159,10 @@ a matching failed completion. A missing or unrecognized record leaves the
 route eligible. Only an explicit context-window error paired with a
 compaction failure supports a full-context diagnosis. The alert records the
 diagnosis class without transcript content. On the next delivery decision,
-a matching early failure keeps the hold and creates no additional page.
-A matching turn that progresses clears the hold. Authenticated contact, a
+a matching early failure keeps the hold and does not repeat a page. If
+the original failures involved only ordinary FYIs, a failed attempt on
+alert-eligible mail can raise the first alert. A matching turn that
+progresses clears the hold. Authenticated contact, a
 new binding or an observed new app incarnation also re-arms the route.
 
 Every wake must run its turn in the original app thread the person can inspect.
