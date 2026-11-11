@@ -112,16 +112,7 @@ func (s *State) applyWithdraw(l *Agent, op *Op, now time.Time) (Result, []Event,
 
 func withdrawalEligibility(m *Message) error {
 	if m.Type == MsgNotify {
-		// A count-only announcement is not body presentation. Complete body
-		// presentations and explicit acknowledgements consume FYIs.
-		if m.Consumed {
-			return errf("E_MSG_FINAL", "this notify was already presented; send a follow-up to correct it",
-				"notify already presented")
-		}
-		if m.State == MsgStatePending || m.State == MsgStateDelivered {
-			return nil
-		}
-		return errf("E_MSG_FINAL", "this notify is finished; send a new notify instead", "notify already %s", m.State)
+		return notifyWithdrawalEligibility(m)
 	}
 	if m.Type != MsgRequest && m.Type != MsgQuestion {
 		return errf("E_BAD_DISPOSITION",
@@ -165,4 +156,17 @@ func (s *State) removeNotifyContactSource(m *Message) {
 		}
 		c.HighWater = max(c.HighWater, other.Serial)
 	}
+}
+
+func notifyWithdrawalEligibility(m *Message) error {
+	// A count-only announcement is not body presentation. Complete body
+	// presentations and explicit acknowledgements consume FYIs.
+	if m.Consumed {
+		return errf("E_MSG_FINAL", "this notify was already presented; send a follow-up to correct it",
+			"notify already presented")
+	}
+	if m.State == MsgStatePending || m.State == MsgStateDelivered {
+		return nil
+	}
+	return errf("E_MSG_FINAL", "this notify is finished; send a new notify instead", "notify already %s", m.State)
 }

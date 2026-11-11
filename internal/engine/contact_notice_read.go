@@ -18,7 +18,8 @@ func (e *Engine) contactNoticeObsolete(agent string, n notice) bool {
 		return false
 	}
 	c := e.state.Contacts[n.Serial]
-	return c == nil || !c.ResolvedAt.IsZero() || (n.Msg == 0 && !e.contactSenderPending(agent, c.Serial))
+	return c == nil || !c.ResolvedAt.IsZero() || (n.Msg == 0 &&
+		(!e.contactSenderPending(agent, c.Serial) || e.senderContactWithdrawn(agent, c.Serial)))
 }
 
 // Only authenticated pulls call this, after their updates were rendered.
@@ -58,4 +59,26 @@ func (e *Engine) contactSenderPending(sender string, contact uint64) bool {
 		}
 	}
 	return false
+}
+
+// At most one warning per sender per episode while the withdrawn source is
+// retained. Restart after retention drops that source can repeat one sender
+// warning; we intentionally do not persist a separate dismissal set.
+func (e *Engine) senderContactWithdrawn(sender string, contact uint64) bool {
+	var through uint64
+	for _, m := range e.state.Messages {
+		if m.ContactEscalatedAt == contact && m.From == sender && m.State == core.MsgStateWithdrawn {
+			through = max(through, m.RespondedAt)
+		}
+	}
+	if through == 0 {
+		return false
+	}
+	for _, m := range e.state.Messages {
+		if m.ContactEscalatedAt == contact && m.From == sender && m.Serial < through &&
+			m.State == core.MsgStatePending && !m.Consumed && m.ContactEligible() {
+			return false
+		}
+	}
+	return true
 }

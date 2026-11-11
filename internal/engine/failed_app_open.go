@@ -142,19 +142,8 @@ func (e *Engine) escalateAppOpenMessage(l *core.Agent, m *core.Message, failed b
 
 func (e *Engine) notifyAppOpenSender(l *core.Agent, m *core.Message, reason string, now time.Time) bool {
 	c := e.state.Contacts[m.ContactEscalatedAt]
-	sender := e.state.Agents[m.From]
-	if c == nil || !c.ResolvedAt.IsZero() || m.From == "" || m.From == l.ID || sender.Retired() ||
-		c.Serial <= sender.ContactNoticeReadAt || !e.contactSenderPending(m.From, c.Serial) {
+	if !e.senderContactWarningDue(l, m, c) {
 		return false
-	}
-	// At most one warning per sender per episode while the withdrawn source is
-	// retained. Restart after retention drops that source can repeat one sender
-	// warning; we intentionally do not persist a separate dismissal set.
-	// While retained, new mail cannot resurrect the cleared derived warning.
-	for _, previous := range e.state.Messages {
-		if previous.ContactEscalatedAt == c.Serial && previous.From == m.From && previous.State == core.MsgStateWithdrawn {
-			return false
-		}
 	}
 	for _, n := range e.notices[m.From] {
 		if n.Kind == "contact.escalated" && n.Serial == c.Serial && n.Msg == 0 {
@@ -213,4 +202,11 @@ func (e *Engine) rebuildAppContactSenders() {
 		}
 		e.notifyAppOpenSender(recipient, m, "delivery to the original app is still unconfirmed", c.WindowStart)
 	}
+}
+
+func (e *Engine) senderContactWarningDue(l *core.Agent, m *core.Message, c *core.ContactEscalation) bool {
+	sender := e.state.Agents[m.From]
+	return c != nil && c.ResolvedAt.IsZero() && m.From != "" && m.From != l.ID && !sender.Retired() &&
+		c.Serial > sender.ContactNoticeReadAt && e.contactSenderPending(m.From, c.Serial) &&
+		!e.senderContactWithdrawn(m.From, c.Serial)
 }
