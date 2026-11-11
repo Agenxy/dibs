@@ -38,7 +38,11 @@ type reply struct {
 // Do submits one mutating op to the loop and waits.
 func (e *Engine) Do(ctx context.Context, op *core.Op) (core.Result, error) {
 	if op != nil && op.Kind == core.OpRegister {
-		return e.registerWithCapacity(ctx, op)
+		res, err := e.registerWithCapacity(ctx, op)
+		if err == nil {
+			e.addBindingAdvice(ctx, op, res)
+		}
+		return res, err
 	}
 	req := request{
 		op: op, reply: make(chan reply, 1), receipt: sendReceiptFrom(ctx), attempt: sendAttemptFrom(ctx),
@@ -48,6 +52,9 @@ func (e *Engine) Do(ctx context.Context, op *core.Op) (core.Result, error) {
 		e.holdRegistration(&req, op.Blob)
 	}
 	res, err := e.send(ctx, req)
+	if err == nil {
+		e.addBindingAdvice(ctx, op, res)
+	}
 	if err == nil && res != nil && res["human_route"] == "desktop" {
 		e.humanSendPresentation(res, op.MsgType == core.MsgRequest || op.MsgType == core.MsgQuestion)
 	}

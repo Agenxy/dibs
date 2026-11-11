@@ -239,7 +239,12 @@ func TestNativeInventoryErrorStaysUnknownWithoutTableFallback(t *testing.T) {
 
 func nativeAppProcesses(t *testing.T) (procinfo.Process, procinfo.Process) {
 	t.Helper()
-	executable := filepath.Join(t.TempDir(), "ChatGPT.app", "Contents", "MacOS", "ChatGPT")
+	return nativeAppProcessesWithArgs(t, "ChatGPT", nil)
+}
+
+func nativeAppProcessesWithArgs(t *testing.T, name string, extra []string) (procinfo.Process, procinfo.Process) {
+	t.Helper()
+	executable := filepath.Join(t.TempDir(), "ChatGPT.app", "Contents", "MacOS", name)
 	if err := os.MkdirAll(filepath.Dir(executable), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -255,7 +260,8 @@ func nativeAppProcesses(t *testing.T) (procinfo.Process, procinfo.Process) {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
-	parent := procexec.Command(ctx, executable, "-test.run=^TestNativeAppProcessHelper$")
+	args := append([]string{"-test.run=^TestNativeAppProcessHelper$"}, extra...)
+	parent := procexec.Command(ctx, executable, args...)
 	parent.Env = append(os.Environ(), "DIBS_NATIVE_APP_ROLE=parent")
 	parent.Stdin = input
 	output, err := parent.StdoutPipe()

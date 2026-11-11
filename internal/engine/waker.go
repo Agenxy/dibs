@@ -1457,6 +1457,10 @@ func (e *Engine) PullOnlyNote(l *core.Agent) string {
 	if l.Retired() || e.isTheHuman(l.ID) {
 		return ""
 	}
+	if surfaceOf(l) == harnessenv.ChatGPTCloudExec {
+		return "Stored in the mailbox for " + l.ID + ". " + cloudBindingReason +
+			" Have the recipient start a local thread and adopt this identity using its saved nonce."
+	}
 	harness := wakeHarness(l)
 	if note, remote := e.remotePullOnlyNote(l); remote {
 		return note

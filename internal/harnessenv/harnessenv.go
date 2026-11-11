@@ -40,6 +40,8 @@ import (
 const (
 	ChatGPTApp    = "chatgpt-app"
 	ClaudeDesktop = "claude-desktop"
+	// Local tools for a cloud conversation are not a local Codex app thread.
+	ChatGPTCloudExec = "chatgpt-cloud-exec"
 	// CodexOutsideApp is a Codex that is not under the ChatGPT app: a
 	// terminal, an IDE, `codex exec`. Not an app Dibs opens anything in; it is
 	// stated so that a thread that moved out of the app stops reading as one
@@ -90,7 +92,11 @@ func DetectContext(ctx context.Context, self int) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return Classify(ancestors), nil
+	surface := Classify(ancestors)
+	if surface == ChatGPTApp && processes.cloudExecutionAncestor(self, 6) {
+		return ChatGPTCloudExec, nil
+	}
+	return surface, nil
 }
 
 // Ancestors lists the executable paths of pid's ancestors, nearest first,
@@ -248,7 +254,7 @@ func isThreadID(s string) bool {
 // about itself is ignored: otherwise a terminal Codex could name the app and
 // have Dibs open its thread there, which is the relocation this package exists
 // to prevent.
-func OnlyDerived(surface string) bool { return surface == ChatGPTApp }
+func OnlyDerived(surface string) bool { return surface == ChatGPTApp || surface == ChatGPTCloudExec }
 
 // OpenArgv is the command that opens thread inside the app named by surface,
 // or nil when that is not an app Dibs knows how to reach a thread inside. It is

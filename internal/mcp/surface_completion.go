@@ -59,7 +59,8 @@ func (s *Server) callBridgeSurfaceEvidence(ctx context.Context, params json.RawM
 		return refusal()
 	}
 	surface := resolveSurface(params, "")
-	if surface != harnessenv.ChatGPTApp && surface != harnessenv.ClaudeDesktop && surface != harnessenv.CodexOutsideApp {
+	if surface != harnessenv.ChatGPTApp && surface != harnessenv.ChatGPTCloudExec &&
+		surface != harnessenv.ClaudeDesktop && surface != harnessenv.CodexOutsideApp {
 		return refusal()
 	}
 	op := &core.Op{
