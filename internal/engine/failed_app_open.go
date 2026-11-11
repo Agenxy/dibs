@@ -142,8 +142,19 @@ func (e *Engine) escalateAppOpenMessage(l *core.Agent, m *core.Message, failed b
 
 func (e *Engine) notifyAppOpenSender(l *core.Agent, m *core.Message, reason string, now time.Time) bool {
 	c := e.state.Contacts[m.ContactEscalatedAt]
-	if c == nil || !c.ResolvedAt.IsZero() || m.From == "" || m.From == l.ID {
+	sender := e.state.Agents[m.From]
+	if c == nil || !c.ResolvedAt.IsZero() || m.From == "" || m.From == l.ID || sender.Retired() ||
+		c.Serial <= sender.ContactNoticeReadAt || !e.contactSenderPending(m.From, c.Serial) {
 		return false
+	}
+	// At most one warning per sender per episode while the withdrawn source is
+	// retained. Restart after retention drops that source can repeat one sender
+	// warning; we intentionally do not persist a separate dismissal set.
+	// While retained, new mail cannot resurrect the cleared derived warning.
+	for _, previous := range e.state.Messages {
+		if previous.ContactEscalatedAt == c.Serial && previous.From == m.From && previous.State == core.MsgStateWithdrawn {
+			return false
+		}
 	}
 	for _, n := range e.notices[m.From] {
 		if n.Kind == "contact.escalated" && n.Serial == c.Serial && n.Msg == 0 {
@@ -158,6 +169,11 @@ func (e *Engine) notifyAppOpenSender(l *core.Agent, m *core.Message, reason stri
 	text := fmt.Sprintf("Message %d to %s: delivery unconfirmed; %s and no started turn or read mail is confirmed. "+
 		"Contact alert %d is recorded for the person; %s. OS posting does not prove visibility.",
 		m.Serial, l.ID, reason, c.Serial, hint)
+	if c.Reason != "" {
+		text = fmt.Sprintf("Delivery to %s remains unconfirmed. %s "+
+			"Contact alert %d is recorded for the person; %s. OS posting does not prove visibility.",
+			l.ID, contactReasonText(c.Reason), c.Serial, hint)
+	}
 	// This is contact news, not an envelope outcome. Reading the still-pending
 	// source mail neither presents nor consumes this separate delivery warning.
 	e.pushNoticeKind(m.From, text, c.Serial, 0, true, now, "contact.escalated")

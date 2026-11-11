@@ -26,7 +26,7 @@ func scopeOf(kind string) (mailScope, bool) {
 	case core.OpAckBoard, core.OpSendMessage, core.OpStallNotified, core.OpRespond,
 		core.OpQueueUpdate, core.OpWithdrawMessage:
 		return scopeMailbox, true
-	case core.OpAckMessage, core.OpOutcomeRead, core.OpContactEscalate, core.OpContactDiagnosed:
+	case core.OpAckMessage, core.OpOutcomeRead, core.OpContactEscalate, core.OpContactDiagnosed, core.OpContactJoin:
 		return scopePoint, true
 	case core.OpMarkDelivered:
 		return scopeListed, true

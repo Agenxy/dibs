@@ -4,6 +4,7 @@
 package core
 
 import (
+	"encoding/json"
 	"testing"
 )
 
@@ -30,9 +31,9 @@ func TestWithdrawalClearsLockedQueueAndReplaysExactly(t *testing.T) {
 	if !sameState(replayed, f.s) {
 		t.Fatal("live state differs from replay")
 	}
-	f.refused(Op{Kind: OpWithdrawMessage, Token: "t-lead", MsgSerial: a}, "E_MSG_FINAL")
-	f.refused(Op{Kind: OpWithdrawMessage, Token: "t-worker", MsgSerial: b}, "E_NOT_SENDER")
-	f.refused(Op{Kind: OpWithdrawMessage, Token: "t-lead", MsgSerial: b, SupersededBy: 999}, "E_NO_MESSAGE")
+	withdrawRefused(t, f, Op{Kind: OpWithdrawMessage, Token: "t-lead", MsgSerial: a}, "E_MSG_FINAL")
+	withdrawRefused(t, f, Op{Kind: OpWithdrawMessage, Token: "t-worker", MsgSerial: b}, "E_NOT_SENDER")
+	withdrawRefused(t, f, Op{Kind: OpWithdrawMessage, Token: "t-lead", MsgSerial: b, SupersededBy: 999}, "E_NO_MESSAGE")
 }
 
 func TestWithdrawalRefusesInheritedSenderAndPerformedEffect(t *testing.T) {
@@ -41,11 +42,11 @@ func TestWithdrawalRefusesInheritedSenderAndPerformedEffect(t *testing.T) {
 	// A historical board could leave outgoing mail behind a reused ID. This
 	// fixture is precisely that replay state, not a modern purge's retired From.
 	f.s.Agents["lead"].CreatedSerial = n + 1
-	f.refused(Op{Kind: OpWithdrawMessage, Token: "t-lead", MsgSerial: n}, "E_NOT_SENDER")
+	withdrawRefused(t, f, Op{Kind: OpWithdrawMessage, Token: "t-lead", MsgSerial: n}, "E_NOT_SENDER")
 	f.s.Agents["lead"].CreatedSerial = 1
 	m := f.s.Messages[n]
 	m.State, m.Grant = MsgStateApproved, RoleCoordinator
-	f.refused(Op{Kind: OpWithdrawMessage, Token: "t-lead", MsgSerial: n}, "E_MSG_FINAL")
+	withdrawRefused(t, f, Op{Kind: OpWithdrawMessage, Token: "t-lead", MsgSerial: n}, "E_MSG_FINAL")
 }
 
 func TestWithdrawalShapeStaysAtAdmission(t *testing.T) {
@@ -67,22 +68,52 @@ func TestQuestionWithdrawalOwnershipFinalityAndExactFold(t *testing.T) {
 	send := func(kind string) uint64 {
 		return f.apply(Op{Kind: OpSendMessage, Token: "t-lead", To: "worker", MsgType: kind, Body: "question"})["msg_serial"].(uint64)
 	}
-	n, replacement, wrongType := send(MsgQuestion), send(MsgRequest), send(MsgNotify)
-	f.refused(Op{Kind: OpWithdrawMessage, Token: "t-worker", MsgSerial: n}, "E_NOT_SENDER")
-	f.refused(Op{Kind: OpWithdrawMessage, Token: "t-lead", MsgSerial: wrongType}, "E_BAD_DISPOSITION")
-	f.refused(Op{Kind: OpWithdrawMessage, Token: "t-lead", MsgSerial: n, SupersededBy: wrongType}, "E_NO_MESSAGE")
+	n, replacement, wrongType := send(MsgQuestion), send(MsgRequest), send(MsgHandoff)
+	withdrawRefused(t, f, Op{Kind: OpWithdrawMessage, Token: "t-worker", MsgSerial: n}, "E_NOT_SENDER")
+	withdrawRefused(t, f, Op{Kind: OpWithdrawMessage, Token: "t-lead", MsgSerial: wrongType}, "E_BAD_DISPOSITION")
+	withdrawRefused(t, f, Op{Kind: OpWithdrawMessage, Token: "t-lead", MsgSerial: n, SupersededBy: wrongType}, "E_NO_MESSAGE")
 	f.s.Agents["lead"].CreatedSerial = n + 1
-	f.refused(Op{Kind: OpWithdrawMessage, Token: "t-lead", MsgSerial: n}, "E_NOT_SENDER")
+	withdrawRefused(t, f, Op{Kind: OpWithdrawMessage, Token: "t-lead", MsgSerial: n}, "E_NOT_SENDER")
 	f.s.Agents["lead"].CreatedSerial = 0
 	f.apply(Op{Kind: OpWithdrawMessage, Token: "t-lead", MsgSerial: n, Body: "answered elsewhere", SupersededBy: replacement})
 	// Restore the fixture's preexisting creation fence before replay comparison.
 	// These temporary checks did not append an operation.
 	f.s.Agents["lead"].CreatedSerial = 1
-	f.refused(Op{Kind: OpWithdrawMessage, Token: "t-lead", MsgSerial: n}, "E_MSG_FINAL")
+	withdrawRefused(t, f, Op{Kind: OpWithdrawMessage, Token: "t-lead", MsgSerial: n}, "E_MSG_FINAL")
 	f.apply(Op{Kind: OpRespond, Token: "t-worker", MsgSerial: replacement, Disposition: "deny", Body: "no"})
-	f.refused(Op{Kind: OpWithdrawMessage, Token: "t-lead", MsgSerial: replacement}, "E_MSG_FINAL")
+	withdrawRefused(t, f, Op{Kind: OpWithdrawMessage, Token: "t-lead", MsgSerial: replacement}, "E_MSG_FINAL")
 	if m := f.s.Messages[n]; m.State != MsgStateWithdrawn || m.Response != "" || m.WithdrawalReason != "answered elsewhere" {
 		t.Fatalf("withdrawal forged an answer: %+v", m)
 	}
 	f.replay()
+}
+
+func withdrawRefused(t *testing.T, f *queueFoldFixture, op Op, code string) {
+	t.Helper()
+	before, err := json.Marshal(f.s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = f.s.Admit(&op)
+	if e, ok := err.(*Error); !ok || e.Code != code {
+		t.Fatalf("Admit withdrawal = %v, want %s", err, code)
+	}
+	after, err := json.Marshal(f.s)
+	if err != nil || string(before) != string(after) {
+		t.Fatal("refused admission changed replayable state")
+	}
+}
+
+func TestNotifyWithdrawalValidationDoesNotChangeTheFold(t *testing.T) {
+	f := newQueueFoldFixture(t)
+	msg := f.apply(Op{Kind: OpSendMessage, Token: "t-lead", To: "worker", MsgType: MsgNotify, Body: "presented"})["msg_serial"].(uint64)
+	f.apply(Op{Kind: OpAckMessage, Token: "t-worker", MsgSerial: msg})
+	op := Op{Kind: OpWithdrawMessage, Token: "t-lead", MsgSerial: msg}
+	withdrawRefused(t, f, op, "E_MSG_FINAL")
+	// A future stricter validator must never reject a formerly accepted ledger
+	// entry during replay. Admission alone owns presentation eligibility.
+	result, _, err := f.s.Apply(&op, t0)
+	if err != nil || result["state"] != MsgStateWithdrawn {
+		t.Fatalf("fold revalidated withdrawal: %v / %v", result, err)
+	}
 }

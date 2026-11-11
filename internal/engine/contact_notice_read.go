@@ -13,12 +13,12 @@ import (
 // The escalation's first event serial is its contact serial. Resolution makes
 // that reachability warning obsolete, independently of whether the coordinator
 // read it. This is derived from replayed state, not a fabricated read receipt.
-func (e *Engine) contactNoticeObsolete(n notice) bool {
+func (e *Engine) contactNoticeObsolete(agent string, n notice) bool {
 	if n.Kind != "contact.escalated" || e.state == nil {
 		return false
 	}
 	c := e.state.Contacts[n.Serial]
-	return c == nil || !c.ResolvedAt.IsZero()
+	return c == nil || !c.ResolvedAt.IsZero() || (n.Msg == 0 && !e.contactSenderPending(agent, c.Serial))
 }
 
 // Only authenticated pulls call this, after their updates were rendered.
@@ -48,4 +48,14 @@ func (e *Engine) consumeContactNotices(agent string, shown map[uint64]bool, now 
 		e.notices[agent] = kept
 	}
 	return nil
+}
+
+func (e *Engine) contactSenderPending(sender string, contact uint64) bool {
+	for _, m := range e.state.Messages {
+		if m.ContactEscalatedAt == contact && m.From == sender && m.State == core.MsgStatePending &&
+			!m.Consumed && m.ContactEligible() {
+			return true
+		}
+	}
+	return false
 }

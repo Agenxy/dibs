@@ -616,10 +616,14 @@ receiving native peer turns, another watcher adds no delivery guarantee.
 - A retained question marked `expired_unanswered` still accepts your late
   `respond(answer)` and notifies its asker. Expiry is not a health verdict.
   Other finished verdicts stay final; an expired request cannot be approved.
-- As sender, retract your unfinished request or unanswered question with
+- As sender, retract your unread notify, unfinished request or unanswered question with
   `respond(msg_serial, disposition: "withdraw", body: reason, superseded_by: replacement)`.
   An ordinary request can be withdrawn any time before `done`, including after
   approval: this clears the recipient's owed work and notifies them once.
+  A notify can be withdrawn until its complete body has been presented or it
+  has been acknowledged. A pointer or queued notice alone does not prevent withdrawal.
+  Withdrawing it stops its wakes and clears its sender delivery warning without
+  sending the recipient a new withdrawal notice. Already-presented notifies require a follow-up.
   Reason and replacement are optional; the replacement must be another ordinary
   question or request you sent. Withdrawal clears queued/owed work without claiming delivery
   or stopping an agent. The recipient's `read_mail(msg_serial)` shows the reason

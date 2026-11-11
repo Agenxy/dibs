@@ -48,6 +48,9 @@ func (s *State) Admit(op *Op) error {
 	if err := s.admitFullBoard(op); err != nil {
 		return err
 	}
+	if err := s.admitWithdrawal(op); err != nil {
+		return err
+	}
 	if err := s.admitContact(op); err != nil {
 		return err
 	}
@@ -89,6 +92,8 @@ func (s *State) Admit(op *Op) error {
 
 func (s *State) admitContact(op *Op) error {
 	switch op.Kind {
+	case OpContactJoin:
+		return s.admitContactJoin(op)
 	case OpContactEscalate, OpContactDiagnosed:
 		if err := admitContactReason(op); err != nil {
 			return err

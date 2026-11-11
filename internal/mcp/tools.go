@@ -450,8 +450,8 @@ func (b toolSchemas) agentAndMailTools() []map[string]any {
 			"description": "approve accepts work; done delivers ordinary pending work in one call. " +
 				"Queued work and typed effects require approve. " +
 				"For permission, send type:question with choices. " +
-				"Answer/review/report work; withdraw only your unanswered question or unfinished request, " +
-				"including after approval and before done. Withdrawal clears owed work and notifies the recipient once.",
+				"Answer/review/report work; withdraw your unread notify, unanswered question or unfinished request, " +
+				"even after approval. Withdrawal clears owed work; requests/questions notify the recipient once.",
 			"inputSchema": b.obj(map[string]any{
 				"token": b.tok, "msg_serial": b.num("serial of the message"),
 				"disposition": map[string]any{

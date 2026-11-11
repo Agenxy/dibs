@@ -5,6 +5,19 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- A confirmed native turn failure remains held after daemon restart. New mail
+  probes recovery and joins the same diagnosed contact, without another person
+  alert or a warning for every message. Each sender gets one diagnosis per
+  episode while its source history is retained; a restart after withdrawal
+  retention ends can repeat that sender warning. Changing the recipient's
+  session resolves the old diagnosis.
+- Senders can withdraw notifies whose complete body has not been presented or
+  acknowledged. Withdrawal stops their wakes, removes them from open contact
+  summaries, and clears the sender's warning, including in Stop hooks and after
+  restart. Already-presented notifies explain that a follow-up is required.
+
 ### Added
 
 - The Mac app can add a phone to the board, list the board's human devices,

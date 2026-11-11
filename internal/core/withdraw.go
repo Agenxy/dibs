@@ -6,7 +6,7 @@ package core
 import "time"
 
 const (
-	// OpWithdrawMessage retracts a sender's unfinished request or question.
+	// OpWithdrawMessage retracts a sender's unfinished request, question or unread notify.
 	OpWithdrawMessage = "withdraw_message"
 	// MsgStateWithdrawn is a retracted message, never an answer or completed work.
 	MsgStateWithdrawn = "withdrawn"
@@ -21,7 +21,7 @@ func checkWithdrawal(op *Op, lim Limits) error {
 		return nil
 	}
 	if op.MsgSerial == 0 || op.SupersededBy == op.MsgSerial {
-		return errf("E_BAD_ARG", "name a request or question serial and a different replacement, if any",
+		return errf("E_BAD_ARG", "name a request, question or notify serial and a different replacement, if any",
 			"invalid withdrawal serial")
 	}
 	if len(op.Body) > lim.MaxBodyBytes {
@@ -49,25 +49,40 @@ func senderOwnsWithdrawable(m *Message, l *Agent) bool {
 	return senderOwnsMessage(m, l) && (m.Type == MsgRequest || m.Type == MsgQuestion)
 }
 
-// Only this NEW op reaches these state checks. Historical responses keep
-// exactly their old interpretation on replay.
-func (s *State) applyWithdraw(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
+// Admission alone decides whether a NEW withdrawal is permitted. The fold
+// keeps historical operations replayable as these rules evolve.
+func (s *State) admitWithdrawal(op *Op) error {
+	if op.Kind != OpWithdrawMessage && (op.Kind != OpRespond || op.Disposition != "withdraw") {
+		return nil
+	}
+	l := s.AgentByToken(op.Token)
+	if l == nil {
+		return nil // normal authentication supplies the token error
+	}
 	m := s.Messages[op.MsgSerial]
 	if !senderOwnsMessage(m, l) {
-		return nil, nil, errf("E_NOT_SENDER",
+		return errf("E_NOT_SENDER",
 			"withdraw a message YOU sent in this identity incarnation; read_mail shows its sender",
 			"message is not owned by your current sender identity")
 	}
 	if err := withdrawalEligibility(m); err != nil {
-		return nil, nil, err
+		return err
 	}
 	if op.SupersededBy != 0 {
 		replacement := s.Messages[op.SupersededBy]
 		if !senderOwnsWithdrawable(replacement, l) ||
 			replacement.Grant != "" || replacement.Adopt != "" || replacement.RetiresIdentity() {
-			return nil, nil, errf("E_NO_MESSAGE", "superseded_by names another ordinary question or request YOU sent",
+			return errf("E_NO_MESSAGE", "superseded_by names another ordinary question or request YOU sent",
 				"replacement is not your ordinary question or request")
 		}
+	}
+	return nil
+}
+
+func (s *State) applyWithdraw(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
+	m := s.Messages[op.MsgSerial]
+	if m.Type == MsgNotify {
+		s.removeNotifyContactSource(m)
 	}
 	queued := m.State == MsgStateQueued
 	m.State, m.WithdrawalReason, m.WithdrawnBy = MsgStateWithdrawn, op.Body, l.ID
@@ -96,10 +111,22 @@ func (s *State) applyWithdraw(l *Agent, op *Op, now time.Time) (Result, []Event,
 }
 
 func withdrawalEligibility(m *Message) error {
+	if m.Type == MsgNotify {
+		// A count-only announcement is not body presentation. Complete body
+		// presentations and explicit acknowledgements consume FYIs.
+		if m.Consumed {
+			return errf("E_MSG_FINAL", "this notify was already presented; send a follow-up to correct it",
+				"notify already presented")
+		}
+		if m.State == MsgStatePending || m.State == MsgStateDelivered {
+			return nil
+		}
+		return errf("E_MSG_FINAL", "this notify is finished; send a new notify instead", "notify already %s", m.State)
+	}
 	if m.Type != MsgRequest && m.Type != MsgQuestion {
 		return errf("E_BAD_DISPOSITION",
 			"withdraw only an unfinished request or unanswered question YOU sent; "+
-				"notify and handoff cannot be withdrawn",
+				"an unread notify is also withdrawable; handoff cannot be withdrawn",
 			"cannot withdraw a %s", m.Type)
 	}
 	switch m.State {
@@ -118,4 +145,24 @@ func withdrawalEligibility(m *Message) error {
 	}
 	return errf("E_MSG_FINAL", "this message is finished; send a new request or question instead",
 		"message already %s", m.State)
+}
+
+// New notify withdrawals remove a source from the retained summary. Historical
+// request/question withdrawals retain their original fold.
+func (s *State) removeNotifyContactSource(m *Message) {
+	c := s.Contacts[m.ContactEscalatedAt]
+	if c == nil || !c.ResolvedAt.IsZero() {
+		return
+	}
+	c.Count = max(0, c.Count-1)
+	c.OldestSerial, c.HighWater = 0, 0
+	for _, other := range s.Messages {
+		if other.Serial == m.Serial || other.ContactEscalatedAt != c.Serial || other.State == MsgStateWithdrawn {
+			continue
+		}
+		if c.OldestSerial == 0 || other.Serial < c.OldestSerial {
+			c.OldestSerial = other.Serial
+		}
+		c.HighWater = max(c.HighWater, other.Serial)
+	}
 }

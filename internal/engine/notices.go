@@ -372,7 +372,7 @@ func (e *Engine) pushNoticeKind(who, text string, serial, msg uint64, blocking b
 	// evicted is worse than being told only the eviction.
 	// Obsolete contact warnings and consumed withdrawals must not occupy
 	// protected blocking slots.
-	e.notices[who] = slices.DeleteFunc(e.notices[who], e.noticeObsolete)
+	e.notices[who] = slices.DeleteFunc(e.notices[who], func(n notice) bool { return e.noticeObsolete(who, n) })
 	e.notices[who] = append(e.notices[who],
 		notice{Serial: serial, Msg: msg, Text: text, Blocking: blocking, At: at, Kind: kind})
 	if n := len(e.notices[who]); n > maxNotices {
@@ -415,7 +415,7 @@ func (e *Engine) takeNotices(agent string) []notice {
 		// watermark, not this bounded/ephemeral pointer cache.
 		if e.state != nil {
 			m := e.state.Messages[n.Msg]
-			if e.noticeObsolete(n) || cachedNoticeHasEnvelope(m, agent, n.Serial) {
+			if e.noticeObsolete(agent, n) || cachedNoticeHasEnvelope(m, agent, n.Serial) {
 				continue
 			}
 		}
@@ -445,8 +445,8 @@ func (e *Engine) takeNotices(agent string) []notice {
 // still read or acknowledge that receipt. Once consumed, neither the generic
 // cache's counters nor its capacity can keep the old blocking pointer alive.
 // The same predicate serves insertion and every outstanding-notice read.
-func (e *Engine) noticeObsolete(n notice) bool {
-	if e.contactNoticeObsolete(n) {
+func (e *Engine) noticeObsolete(agent string, n notice) bool {
+	if e.contactNoticeObsolete(agent, n) {
 		return true
 	}
 	if e.state == nil {

@@ -645,6 +645,7 @@ func TestOpKindStringsAreFrozen(t *testing.T) {
 		"OpSetDesktopApprovalSetting": {core.OpSetDesktopApprovalSetting, "set_desktop_approval_setting"},
 		"OpReadAppRestart":            {core.OpReadAppRestart, "read_app_restart"},
 		"OpContactEscalate":           {core.OpContactEscalate, "contact_escalated"},
+		"OpContactJoin":               {core.OpContactJoin, "contact_joined"},
 		"OpContactDiagnosed":          {core.OpContactDiagnosed, "contact_diagnosed"},
 		"OpContactNotified":           {core.OpContactNotified, "contact_notified"},
 		"OpContactResolved":           {core.OpContactResolved, "contact_resolved"},

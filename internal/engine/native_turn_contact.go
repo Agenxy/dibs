@@ -22,7 +22,8 @@ type nativeTurnWatch struct {
 	reason  core.ContactReason
 	heldAt  uint64 // only messages written after this hold may probe it
 	probe   harnessenv.CodexTurnReceipt
-	alerted bool // an ordinary FYI can establish a hold without an alert
+	contact uint64 // replayable diagnosed episode; transient binding stays in fence
+	alerted bool   // an ordinary FYI can establish a hold without an alert
 }
 
 func (e *Engine) noteNativeTurn(p wakePlan, id string, offeredAt, now time.Time) {
@@ -60,6 +61,9 @@ func (e *Engine) nativeTurnOffer(p wakePlan) (held bool, probe uint64) {
 		w, ok := e.nativeTurnWatches[p.agent]
 		if !ok || w.fence != p.nativeContactFence() || !e.acceptedContactMatches(w.fence, l) {
 			return nil
+		}
+		if w.reason != "" {
+			e.joinNativeEpisode(l, w, time.Now())
 		}
 		snapshot = w
 		return nil
@@ -120,6 +124,7 @@ func (e *Engine) observeNativeProbe(agent string, w nativeTurnWatch) bool {
 		current.probe.ID = "" // retain offer time as the stale-receipt fence
 		if !current.alerted {
 			current.alerted = e.escalateNativeTurnMail(l, out.Failure, time.Now())
+			current.contact = e.nativeEpisode(l)
 		}
 		e.nativeTurnWatches[agent] = current
 		slog.Debug("native app recovery probe failed early", "agent", agent, "reason", out.Failure)
@@ -175,6 +180,7 @@ func (e *Engine) observeNativeTurnFailures(agent string, w nativeTurnWatch) bool
 			slog.Warn("native app turns ended before Dibs contact; automatic retries held",
 				"agent", agent, "reason", reason, "hint", contactReasonText(reason))
 			current.alerted = e.escalateNativeTurnMail(l, reason, time.Now())
+			current.contact = e.nativeEpisode(l)
 			e.nativeTurnWatches[agent] = current
 		}
 		return core.Result{"held": true}
@@ -184,6 +190,7 @@ func (e *Engine) observeNativeTurnFailures(agent string, w nativeTurnWatch) bool
 
 func (e *Engine) escalateNativeTurnMail(l *core.Agent, reason core.ContactReason, now time.Time) bool {
 	alerted := false
+	episode := e.nativeEpisode(l)
 	for _, m := range e.state.Inbox(l.ID) {
 		if m.State != core.MsgStatePending || m.Consumed || !m.ContactEligible() {
 			continue
@@ -195,6 +202,9 @@ func (e *Engine) escalateNativeTurnMail(l *core.Agent, reason core.ContactReason
 		// The diagnosis kind makes earlier ledger readers refuse before
 		// silently dropping the diagnosis. The actor is for their error path.
 		op := &core.Op{Kind: core.OpContactDiagnosed, MsgSerial: m.Serial, ContactReason: reason, AgentID: l.ID}
+		if episode != 0 {
+			op.Kind, op.ContactSerial = core.OpContactJoin, episode
+		}
 		if err := e.state.Admit(op); err != nil {
 			continue
 		}
@@ -202,6 +212,10 @@ func (e *Engine) escalateNativeTurnMail(l *core.Agent, reason core.ContactReason
 			slog.Error("could not record native turn contact", "agent", l.ID, "msg", m.Serial, "err", err)
 		} else {
 			alerted = true
+			episode = e.nativeEpisode(l)
+			if e.notifyAppOpenSender(l, m, "", now) {
+				e.wakeAppContactSender(m, now)
+			}
 		}
 	}
 	return alerted

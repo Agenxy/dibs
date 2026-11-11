@@ -4,6 +4,7 @@
 package engine
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -34,6 +35,9 @@ func TestNativeTurnFailuresHoldFurtherDelivery(t *testing.T) {
 		{"quiet-pair", "other", "private quiet failure", "turns end immediately"},
 		{"recovery-probe", "other", "private recovery failure", "turns end immediately"},
 		{"notify-recovery", "other", "private FYI recovery failure", "turns end immediately"},
+		{"episode-binding", "other", "private binding failure", "turns end immediately"},
+		{"episode-restart", "other", "private replay failure", "turns end immediately"},
+		{"episode-sharing", "other", "private episode failure", "turns end immediately"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("DIBS_DIR", t.TempDir())
@@ -158,6 +162,17 @@ func TestNativeTurnFailuresHoldFurtherDelivery(t *testing.T) {
 				testNativeTurnRecovery(t, f, write, true)
 				return
 			}
+			switch tc.name {
+			case "episode-binding":
+				testNativeEpisodeBinding(t, f)
+				return
+			case "episode-restart":
+				testNativeEpisodeRestart(t, f)
+				return
+			case "episode-sharing":
+				testNativeEpisodeSharing(t, f)
+				return
+			}
 			led := e.led.(*memLedger)
 			fenced, err := e.query(ctx, func() core.Result {
 				for _, op := range led.ops {
@@ -249,5 +264,128 @@ func testNativeTurnRecovery(
 	}
 	if n := diagnoses(); n != original {
 		t.Fatalf("recovery added a diagnosis: before=%d after=%d", original, n)
+	}
+}
+
+func replayNativeEpisode(t *testing.T, f *acceptedContactFixture) *acceptedContactFixture {
+	t.Helper()
+	var ops []*core.Op
+	if _, err := f.e.query(f.ctx, func() core.Result {
+		ops = append(ops, f.e.led.(*memLedger).ops...)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	st := core.NewState("native-app", core.DefaultLimits())
+	var history []core.Event
+	for _, op := range ops {
+		_, events, err := st.Apply(op, time.Now())
+		if err != nil {
+			t.Fatal("replay:", err)
+		}
+		history = append(history, events...)
+	}
+	e := New(st, &memLedger{ops: ops}, deadProber{}, history)
+	e.SetHumanNotifier(noContactDesktop{})
+	e.SetWakeCommands(map[string]WakeCommand{"codex": {Argv: []string{
+		filepath.Join(t.TempDir(), "codex"), "queue", "--thread", "{thread}", "--message", "{message}",
+	}}})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { e.Run(ctx); close(done) }()
+	t.Cleanup(func() { cancel(); <-done })
+	stopWakeTimersOnCleanup(t, e)
+	if _, err := e.Board(ctx); err != nil {
+		t.Fatal(err)
+	}
+	waitWakeDone(t, e, "worker")
+	return &acceptedContactFixture{e, ctx, f.ipc, f.worker, f.sender}
+}
+
+func testNativeEpisodeRestart(t *testing.T, f *acceptedContactFixture) {
+	t.Helper()
+	n := len(f.ipc.Inputs())
+	replayed := replayNativeEpisode(t, f)
+	if got := len(f.ipc.Inputs()); got != n {
+		t.Fatalf("restart re-offered old mail despite an unresolved diagnosis: before=%d after=%d", n, got)
+	}
+	replayed.send(t, core.MsgRequest, n+1) // a real new message still probes the hold
+}
+
+func testNativeEpisodeBinding(t *testing.T, f *acceptedContactFixture) {
+	t.Helper()
+	contactReplayDo(t, f.e, f.ctx, &core.Op{
+		Kind: core.OpBindSession, Token: f.worker, SessionID: "019ffe52-0eaf-7f60-81cc-6ab1298d76ec",
+	})
+	board, err := f.e.Board(f.ctx)
+	if err != nil || board["contact_alerts"] != nil {
+		t.Fatalf("binding change retained its diagnosed contact: %v / %v", board["contact_alerts"], err)
+	}
+}
+
+func testNativeEpisodeSharing(t *testing.T, f *acceptedContactFixture) {
+	t.Helper()
+	snapshot := func() core.Result {
+		t.Helper()
+		r, err := f.e.query(f.ctx, func() core.Result {
+			var c *core.ContactEscalation
+			for _, contact := range f.e.state.Contacts {
+				c = contact
+			}
+			return core.Result{
+				"contacts": len(f.e.state.Contacts), "serial": c.Serial, "count": c.Count,
+				"sender": fmt.Sprint(f.e.takeNotices("sender")),
+			}
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	before := snapshot()
+	if !strings.Contains(before["sender"].(string), "turns end immediately") {
+		t.Errorf("sender lacks the episode diagnosis: %v", before)
+	}
+	contactReplayDo(t, f.e, f.ctx, &core.Op{Kind: core.OpContactNotified, ContactSerial: before["serial"].(uint64)})
+	if _, err := f.e.Inbox(f.ctx, f.sender); err != nil {
+		t.Fatal(err)
+	}
+	f.send(t, core.MsgRequest, 3)
+	after := snapshot()
+	if after["contacts"] != 1 || after["count"] != before["count"].(int)+1 ||
+		after["sender"] != "[]" {
+		t.Errorf("new mail did not join the posted episode quietly: before=%v after=%v", before, after)
+	}
+	other := contactReplayDo(t, f.e, f.ctx, &core.Op{
+		Kind: core.OpRegister, Name: "other", SessionID: "episode-other",
+	})
+	second := *f
+	second.sender = other["token"].(string)
+	msg, _ := second.send(t, core.MsgNotify, 4, "high")
+	if r, err := f.e.query(f.ctx, func() core.Result {
+		return core.Result{"notices": fmt.Sprint(f.e.takeNotices("other"))}
+	}); err != nil || !strings.Contains(r["notices"].(string), "turns end immediately") {
+		t.Fatalf("another sender did not receive its one diagnosis: %v / %v", r, err)
+	}
+	result := contactReplayDo(t, f.e, f.ctx, &core.Op{
+		Kind: core.OpRespond, Token: second.sender, MsgSerial: msg, Disposition: "withdraw",
+	})
+	if result["state"] != "withdrawn" {
+		t.Fatalf("notify withdrawal failed: %v", result)
+	}
+	if got := snapshot(); got["count"] != before["count"].(int)+1 {
+		t.Fatalf("withdrawal did not decrement shared contact count: %v", got)
+	}
+	for _, current := range []*acceptedContactFixture{f, replayNativeEpisode(t, f)} {
+		hook, err := current.e.HookPoll(current.ctx, "episode-other", "Stop", "", false, false)
+		if err != nil || hook["decision"] == "block" || strings.Contains(fmt.Sprint(hook), "outstanding update units") {
+			t.Fatalf("withdrawn sender warning returned in Stop: %v / %v", hook, err)
+		}
+	}
+	second.send(t, core.MsgNotify, 5, "high")
+	if r, err := f.e.query(f.ctx, func() core.Result {
+		return core.Result{"notices": fmt.Sprint(f.e.takeNotices("other"))}
+	}); err != nil || r["notices"] != "[]" {
+		t.Fatalf("same-episode mail resurrected the retained withdrawn-source warning: %v / %v", r, err)
 	}
 }
