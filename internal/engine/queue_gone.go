@@ -24,6 +24,9 @@ func (e *Engine) recordNonRetryableWake(plan wakePlan) {
 	if plan.routeRefused {
 		return // known refusal before handoff; the binding alert retains the mail
 	}
+	if out := plan.nativeOutcome; out != nil && (out.Disposition == "turns_ended" || out.Disposition == "not_sent") {
+		return // no submission. Leave the mail eligible when the thread recovers.
+	}
 	switch {
 	case plan.queueThreadGone():
 		e.reportGoneQueueThread(plan)

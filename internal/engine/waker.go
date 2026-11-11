@@ -1071,9 +1071,14 @@ func (e *Engine) buildWakePlan(
 	// The first version of that test called runWakeFor directly, so it passed
 	// against a plan that never carried a directory at all.
 	cmd := e.commandFor(l)
+	var mailArrival uint64
+	if ev.Type == "message.sent" {
+		mailArrival = ev.Serial
+	}
 	return wakePlan{
 		argv: f.Apply(cmd.argv), fallback: f.Apply(cmd.fallback),
-		fields: f, nativeOutcome: new(wakeexec.NativeOutcome), queueOutcome: new(wakeexec.QueueObservation),
+		fields: f, mailArrival: mailArrival,
+		nativeOutcome: new(wakeexec.NativeOutcome), queueOutcome: new(wakeexec.QueueObservation),
 		agent: l.ID, session: wakeSessionOf(l), kind: kind,
 		createdSerial: l.CreatedSerial, queueEpoch: e.wakers.queueEpoch, commandEpoch: e.commandEpoch[l.ID],
 		cwd: cwdOf(l), cooldown: cooldown, thread: f.Thread,
@@ -1126,6 +1131,7 @@ type wakePlan struct {
 	surface, harness string
 	commandEpoch     string   // receiving incarnation captured before execution
 	commandKeys      []string // exact original items refreshed before command execution
+	mailArrival      uint64   // actual message.sent serial. Retries carry zero.
 	agent            string   // whose outstanding state is rechecked before delivery
 	routeRefused     bool     // known refusal, never unknown native acceptance
 	routeRefreshed   bool     // at most one fresh route per captured attempt
@@ -1265,7 +1271,7 @@ func (e *Engine) runWakePlan(plan *wakePlan, agent string) bool {
 		return e.requestRemoteWakePlan(plan, agent, wakeTimeout+wakeGrace)
 	}
 	if len(plan.argv) > 0 {
-		if result, handled := e.tryNativeWake(*plan, agent); handled {
+		if result, handled := e.tryNativeWake(plan, agent); handled {
 			return result
 		}
 		plan.commandOutcome = wakeexec.RunCommandsObserved(plan.argv, plan.fallback, agent, plan.cwd,

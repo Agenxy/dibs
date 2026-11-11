@@ -54,7 +54,9 @@ func TestSnapshotGoFieldNamesAreFrozen(t *testing.T) {
 	// restores 2de9989b836a0a0e; all prior snapshot Go names are unchanged.
 	// Full-board policy adds State.FullBoardSetting, its Value/By/At, and
 	// MergedNonce.Displaced; removing those five restores 4f8a809b0bd50519.
-	const want = "sha256:82f7dcda94fcbe20"
+	// Contact diagnosis adds only ContactEscalation.Reason. Removing it
+	// restores 82f7dcda94fcbe20; old snapshots decode an empty reason.
+	const want = "sha256:fb5263b37eb09620"
 	if got := fingerprint(names); got != want {
 		sorted := make([]string, 0, len(names))
 		for n := range names {

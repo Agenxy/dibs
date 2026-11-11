@@ -76,8 +76,10 @@ type Engine struct {
 	seen map[string]time.Time
 	// Actual model contact, fenced to the row incarnation; boot and registration
 	// grace are not authenticated model calls. See contact.go.
-	contact          map[string]contactEvidence
-	acceptedContacts map[string]acceptedContact // native acceptance without later model contact; writer-owned
+	contact            map[string]contactEvidence
+	queuedOpenContacts map[string]queuedOpenContact // retained queue recovery; writer-owned
+	nativeTurnWatches  map[string]nativeTurnWatch   // recent app turn receipts; writer-owned
+	acceptedContacts   map[string]acceptedContact   // native acceptance without later model contact; writer-owned
 	// Which seen stamps were granted at boot rather than observed. This map
 	// contains only the bounded startup roster and is fenced to its incarnations.
 	// A real seen stamp supersedes it; the bounded map needs no runtime trim.
@@ -404,6 +406,12 @@ func (e *Engine) execWithReceipt(
 		return nil, &core.Error{
 			Code: "E_NOT_PERMITTED", Msg: "reader requirements are written only by the daemon",
 			Hint: "submit the intended feature operation; its writer records the requirement",
+		}
+	}
+	if op.Kind == core.OpContactDiagnosed {
+		return nil, &core.Error{
+			Code: "E_NOT_PERMITTED", Msg: "the daemon records its own native app diagnosis",
+			Hint: "read the contact alert to inspect the diagnosis",
 		}
 	}
 	op.RequiredFeatures = nil // writer-owned compatibility evidence
@@ -1195,7 +1203,9 @@ func (e *Engine) sweep(now time.Time) {
 	}
 	_, _ = e.applyAndLedger(op, now)
 	e.dropNoticesWithoutMail()
+	e.reconsiderNativeTurns(now)
 	e.reconsiderAcceptedContacts(now)
+	e.reconsiderQueuedOpenContacts(now)
 }
 
 func (e *Engine) publish(evs []core.Event) {

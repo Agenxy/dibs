@@ -148,6 +148,23 @@ attributes recovery to a human open. In this report the Dev 0 queue observation
 also had unknown pending/thread state, so the retained-known-pending guard
 below does not claim to classify that earlier attempt.
 
+For a machine-local native route, the acceptance receipt's exact turn ID can
+identify a turn in its original rollout. Two distinct accepted turns that
+each fail within two seconds without authenticated model contact or a tool
+call hold retries for already pending mail on that binding. New mail can
+make one native recovery attempt. The daemon checks a
+bounded read-only rollout tail off the writer, once for a quiet pair and
+before a further offer. It requires the matching start after submission and
+a matching failed completion. A missing or unrecognized record leaves the
+route eligible. Only an explicit context-window error paired with a
+compaction failure supports a full-context diagnosis. The alert records the
+diagnosis class without transcript content. On the next delivery decision,
+a matching early failure keeps the hold and does not repeat a page. If
+the original failures involved only ordinary FYIs, a failed attempt on
+alert-eligible mail can raise the first alert. A matching turn that
+progresses clears the hold. Authenticated contact, a
+new binding or an observed new app incarnation also re-arms the route.
+
 Every wake must run its turn in the original app thread the person can inspect.
 A headless successor or resume process does not satisfy that requirement; an
 app-owned session-messaging route can, when it starts the visible session's turn.
@@ -156,10 +173,12 @@ The separate reproducible defect was an OS open failure after queue acceptance:
 it was logged, but the configured queue route prevented ordinary human contact.
 The local engine now escalates captured unread asks on that failure. A later
 mail event that observes an existing Dibs item still pending beyond the same
-ten-minute window already used for app-open recovery retries that load path
-and escalates continued unconfirmed delivery. It never enqueues a duplicate
-for the retained item. This is an event-driven observation, not a scheduled
-poll or a promise to recover an otherwise quiet seat at ten minutes.
+ten-minute window already used for app-open recovery retries that load path.
+A successful open, or an open suppressed by the app or its rate limit, gets a
+recovery window before the daemon pages the person. Further observations of
+the same retained input join that window without opening again or extending
+the deadline. The existing sweep checks the window and the covered unread mail. It never enqueues a duplicate
+or polls the app, and it never raises the deferred alert after the mail is read.
 
 The sender receives the exact original thread link and the human gets the
 existing metadata-only contact alert. Late callbacks are fenced by identity,

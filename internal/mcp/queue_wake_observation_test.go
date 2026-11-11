@@ -121,7 +121,14 @@ func queueWakeObservationCase(t *testing.T, binary, mode string) {
 	// The actual send advisory path must carry the same derived facts. This
 	// assertion cannot be satisfied by wiring only an unused exported wrapper.
 	receipt := send()
-	awaitQueueAppContact(t, contacts, dir, thread)
+	if mode == "pending-aged" {
+		// Reobserving the same retained item joins its existing recovery
+		// window without another app contact. Wait for the real adapter's
+		// newer observation, which is what this receipt test relies on.
+		awaitQueueWakeObservationAfter(t, eng, view["observed_at"])
+	} else {
+		awaitQueueAppContact(t, contacts, dir, thread)
+	}
 	received, ok := receipt["queue_wake"].(map[string]any)
 	if !ok || received["thread_state"] != "unknown" || received["observed_at"] == nil {
 		t.Fatalf("send receipt lost the adapter observation: %v", receipt)
@@ -238,6 +245,39 @@ func assertQueueWakeView(t *testing.T, srv *httptest.Server, token any, admissio
 		t.Fatalf("board lost actual queue observation %s/%s: %v", admission, pending, found)
 	}
 	return found
+}
+
+func awaitQueueWakeObservationAfter(t *testing.T, eng *engine.Engine, prior any) {
+	t.Helper()
+	stamp, ok := prior.(string)
+	if !ok {
+		t.Fatalf("setup: expected a serialized observation clock, got %v", prior)
+	}
+	previous, err := time.Parse(time.RFC3339Nano, stamp)
+	if err != nil {
+		t.Fatal("setup: parse observation clock:", err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	for {
+		board, err := eng.Board(ctx)
+		if err != nil {
+			t.Fatal("read queue observation:", err)
+		}
+		for _, row := range board["agents"].([]map[string]any) {
+			if row["id"] == "queue-worker" {
+				wake, _ := row["queue_wake"].(core.Result)
+				if at, ok := wake["observed_at"].(time.Time); ok && at.After(previous) {
+					return
+				}
+			}
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("setup: second queue observation did not arrive")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
 }
 
 func awaitQueueAppContact(t *testing.T, contacts <-chan struct{}, dir, thread string) {

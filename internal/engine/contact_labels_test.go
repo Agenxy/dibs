@@ -5,6 +5,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -27,6 +28,8 @@ func TestContactLabelsThroughRegisterSendAndRestart(t *testing.T) {
 		{"local-missing-session", harnessenv.ChatGPTApp, "", "ChatGPT", false},
 		{"remote-missing-session", harnessenv.ClaudeDesktop, "", "Claude", true},
 		{"known-thread", harnessenv.ChatGPTApp, thread, "ChatGPT", false},
+		{"remote-known-thread", harnessenv.ChatGPTApp, thread, "ChatGPT", true},
+		{"terminal-thread", harnessenv.CodexOutsideApp, thread, "terminal or IDE", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("DIBS_DIR", t.TempDir())
@@ -43,6 +46,8 @@ func TestContactLabelsThroughRegisterSendAndRestart(t *testing.T) {
 			if tc.remote {
 				hostID, label = strings.Repeat("a", 64), "ContactRemote"
 			}
+			lead := contactReplayDo(t, e, ctx, &core.Op{Kind: core.OpRegister, Name: "lead", Nonce: "contact-label-lead"})
+			contactReplayDo(t, e, ctx, &core.Op{Kind: core.OpGrantRole, To: "lead", Mode: core.RoleCoordinator})
 			asker := contactReplayDo(t, e, ctx, &core.Op{Kind: core.OpRegister, Name: "asker", Nonce: "contact-label-asker"})
 			registered := contactReplayDo(t, e, ctx, &core.Op{
 				Kind: core.OpRegister, Name: "worker", Nonce: "contact-label-worker", AgentKind: core.KindPersistent, PID: 424242,
@@ -105,18 +110,39 @@ func TestContactLabelsThroughRegisterSendAndRestart(t *testing.T) {
 				if pending[0].Contact.OpenURL != "" {
 					t.Error("missing thread produced an actionable window link")
 				}
-			} else if !strings.Contains(hint, "original session "+thread) || pending[0].Contact.OpenURL != "codex://threads/"+thread {
-				t.Errorf("known original thread lost its hint/link: %+v", pending[0].Contact)
+			} else if !strings.Contains(hint, "original session "+thread) {
+				t.Errorf("known original thread lost its hint: %+v", pending[0].Contact)
+			}
+			url := "codex://threads/" + thread
+			wantURL := tc.surface == harnessenv.ChatGPTApp && tc.session != ""
+			wantAction := wantURL && !tc.remote
+			if strings.Contains(hint, url) != wantURL || (pending[0].Contact.OpenURL == url) != wantAction {
+				t.Errorf("human contact URL/provenance: %+v; want text=%v action=%v", pending[0].Contact, wantURL, wantAction)
+			}
+			board, err := e.Board(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			alerts, err := json.Marshal(board["contact_alerts"])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(alerts), "worker") || strings.Contains(string(alerts), url) != wantURL {
+				t.Errorf("board alert URL/provenance: %s; want URL=%v", alerts, wantURL)
 			}
 			// A real cold engine rebuilds this warning from the actual ledger.
 			restarted, restartCtx := replayContactEngineOnNode(t, e, ctx, led, "contact-labels")
+			coordinator := readContactUpdates(t, restarted, restartCtx, lead["token"].(string), "inbox")
+			if !strings.Contains(coordinator, "contact alert") || strings.Contains(coordinator, url) != wantURL {
+				t.Errorf("replayed coordinator alert URL/provenance: %s; want URL=%v", coordinator, wantURL)
+			}
 			news := readContactUpdates(t, restarted, restartCtx, asker["token"].(string), "check_in")
 			if tc.session == "" {
 				assertMissingContactSession(t, news)
 				if !strings.Contains(news, tc.app) || strings.Contains(news, "codex-dibs-recovery") || strings.Contains(news, hostID) {
 					t.Errorf("cold sender notice lost app/host display: %s", news)
 				}
-			} else if !strings.Contains(news, "codex://threads/"+thread) {
+			} else if wantURL && !strings.Contains(news, url) {
 				t.Errorf("cold known-thread notice lost its real window link: %s", news)
 			}
 		})

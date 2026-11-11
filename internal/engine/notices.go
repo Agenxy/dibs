@@ -169,6 +169,14 @@ func (e *Engine) noteEventFor(ev core.Event, wants func(agent string) bool) {
 	if who == "" || text == "" || !wants(who) {
 		return
 	}
+	if ev.Type == "contact.escalated" {
+		if c := e.state.Contacts[ev.Serial]; c != nil && c.Reason != "" {
+			text += " " + contactReasonText(c.Reason)
+		}
+		if l := e.state.Agents[ev.Agent]; chatGPTContactURL(l) != "" {
+			text += " " + e.contactOpenHint(e.agentName(ev.Agent), l) + "."
+		}
+	}
 	// The message this notice points at, when it points at one. ev.Serial is
 	// the event; msg_serial is what the agent is told to read.
 	msg, _ := ev.Data["msg_serial"].(uint64)

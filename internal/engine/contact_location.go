@@ -35,6 +35,9 @@ func (e *Engine) contactOpenHint(name string, l *core.Agent) string {
 		}
 	}
 	location := name + " in " + app + " on " + host
+	if url := chatGPTContactURL(l); url != "" {
+		return "Open " + location + " at " + url + " (original session " + thread + ")"
+	}
 	if thread != "" {
 		return "open " + location + "; original session " + thread
 	}
@@ -43,4 +46,17 @@ func (e *Engine) contactOpenHint(name string, l *core.Agent) string {
 			"; find or restart the agent there, or reassign the work"
 	}
 	return "no thread or session is known for " + location + "; find or restart the agent there, or reassign the work"
+}
+
+// The URL is descriptive on any host. An actionable desktop Open button
+// still requires matching local provenance in enrichContactURL and the relay.
+func chatGPTContactURL(l *core.Agent) string {
+	if surfaceOf(l) != harnessenv.ChatGPTApp {
+		return ""
+	}
+	argv := harnessenv.ChatGPTOpenArgv(threadIDOf(l))
+	if argv == nil {
+		return ""
+	}
+	return argv[len(argv)-1]
 }

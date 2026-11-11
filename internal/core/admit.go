@@ -89,7 +89,10 @@ func (s *State) Admit(op *Op) error {
 
 func (s *State) admitContact(op *Op) error {
 	switch op.Kind {
-	case OpContactEscalate:
+	case OpContactEscalate, OpContactDiagnosed:
+		if err := admitContactReason(op); err != nil {
+			return err
+		}
 		m := s.Messages[op.MsgSerial]
 		if op.ContactMailboxFull {
 			if m == nil || m.Type == MsgNotify || m.Terminal() && !m.DurableDebt() ||

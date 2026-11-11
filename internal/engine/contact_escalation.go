@@ -69,12 +69,16 @@ func (e *Engine) contactNotice(c *core.ContactEscalation) (HumanNotice, contactL
 	if c.MailboxFull {
 		kind = "mailbox full"
 	}
+	hint := e.contactOpenHint(name, e.state.Agents[c.Recipient])
+	if reason := contactReasonText(c.Reason); reason != "" {
+		hint = reason + " " + hint
+	}
 	n := HumanNotice{
 		Serial: c.Serial, Type: "contact", Node: e.state.NodeID,
 		Contact: &humanask.Contact{
 			Recipient: name, Sender: sender, Kind: kind, MailboxFull: c.MailboxFull,
 			Message: c.OldestSerial, Count: c.Count,
-			OpenHint: "delivery unconfirmed; " + e.contactOpenHint(name, e.state.Agents[c.Recipient]),
+			OpenHint: "delivery unconfirmed; " + hint,
 		},
 	}
 	return n, plan

@@ -101,6 +101,7 @@ const (
 	OpAppRestartObserved        = "app_restart_observed"
 	OpReadAppRestart            = "read_app_restart"
 	OpContactEscalate           = "contact_escalated"
+	OpContactDiagnosed          = "contact_diagnosed" // Unknown to readers that cannot preserve a diagnosis.
 	OpContactNotified           = "contact_notified"
 	OpContactResolved           = "contact_resolved"
 	OpStallNotified             = "stall_notified"
@@ -132,7 +133,7 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		return s.applySweep(op, now)
 	case OpMarkDelivered:
 		return s.applyMarkDelivered(op, now)
-	case OpContactEscalate:
+	case OpContactEscalate, OpContactDiagnosed:
 		return s.applyContactEscalate(op, now)
 	case OpContactNotified:
 		return s.applyContactNotified(op, now)

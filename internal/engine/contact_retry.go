@@ -20,6 +20,8 @@ type contactAlertView struct {
 	DeliveryAttempts int    `json:"delivery_attempts,omitempty"`
 	DeliveryFailure  string `json:"delivery_failure,omitempty"`
 	RetryExhausted   bool   `json:"retry_exhausted,omitempty"`
+	OpenHint         string `json:"open_hint,omitempty"`
+	FailureHint      string `json:"failure_hint,omitempty"`
 }
 
 // On the writer: only a failed post arms the single retry of this contact.
@@ -63,7 +65,15 @@ func (e *Engine) decorateContactAlerts(b core.Result) {
 	views := make([]contactAlertView, 0, len(alerts))
 	for _, c := range alerts {
 		rec := e.contactAttempts[c.Serial]
-		views = append(views, contactAlertView{c, rec.count, rec.failure, rec.count >= 2 && rec.failure != ""})
+		view := contactAlertView{
+			ContactEscalation: c, DeliveryAttempts: rec.count,
+			DeliveryFailure: rec.failure, RetryExhausted: rec.count >= 2 && rec.failure != "",
+			FailureHint: contactReasonText(c.Reason),
+		}
+		if l := e.state.Agents[c.Recipient]; chatGPTContactURL(l) != "" {
+			view.OpenHint = e.contactOpenHint(e.agentName(c.Recipient), l)
+		}
+		views = append(views, view)
 	}
 	if len(views) > 0 {
 		b["contact_alerts"] = views

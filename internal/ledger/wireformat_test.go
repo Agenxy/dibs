@@ -109,6 +109,8 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		"mailbox_serials": true,
 		// Three additive decisions: new send capacity, bulk FYI prefix, contact reason.
 		"mailbox_capacity": true, "notify_through_serial": true, "contact_mailbox_full": true,
+		// The contact_diagnosed op adds its evidence class. Old contacts omit it.
+		"contact_reason":   true,
 		"notify_announced": true, "notify_consumption": true,
 		// Atomic daemon stall notice and its request watermark, additive only.
 		"declaration_serial": true,
@@ -492,7 +494,7 @@ const (
 	// Recovery adds three op tags and one Message tag; no historical key changed.
 	// required_features is additive; all earlier tags remain frozen.
 	// Adds only displaced, full_board_policy and capacity_human; all prior tags stay frozen.
-	frozenOpFingerprint       = "sha256:1bec1dac9a22cdca"
+	frozenOpFingerprint       = "sha256:472f7a1bf5f0690a"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`
@@ -643,6 +645,7 @@ func TestOpKindStringsAreFrozen(t *testing.T) {
 		"OpSetDesktopApprovalSetting": {core.OpSetDesktopApprovalSetting, "set_desktop_approval_setting"},
 		"OpReadAppRestart":            {core.OpReadAppRestart, "read_app_restart"},
 		"OpContactEscalate":           {core.OpContactEscalate, "contact_escalated"},
+		"OpContactDiagnosed":          {core.OpContactDiagnosed, "contact_diagnosed"},
 		"OpContactNotified":           {core.OpContactNotified, "contact_notified"},
 		"OpContactResolved":           {core.OpContactResolved, "contact_resolved"},
 		"OpStallNotified":             {core.OpStallNotified, "stall_notified"},

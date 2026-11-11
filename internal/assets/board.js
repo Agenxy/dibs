@@ -387,7 +387,9 @@ const Board = (() => {
       <ul>${alerts.map((c) => `<li>${c.mailbox_full ? `Mailbox capacity reached for ${esc(c.recipient)}` : `Cannot reach ${esc(c.recipient)} for unread mail`}
         (first #${esc(c.oldest_serial)}, ${esc(c.count)} coalesced).
         ${c.notified_at ? `Human notification posted at ${esc(c.notified_at)}; ${c.mailbox_full ? "mailbox is still full." : "recipient mail is still unread."}` :
-          c.retry_exhausted ? `Human notification failed twice: ${esc(c.delivery_failure)}. No further automatic retry.` : "Human notification not yet confirmed."}</li>`).join("")}</ul>
+          c.retry_exhausted ? `Human notification failed twice: ${esc(c.delivery_failure)}. No further automatic retry.` : "Human notification not yet confirmed."}
+        ${c.failure_hint ? esc(c.failure_hint) : ""}
+        ${c.open_hint ? esc(c.open_hint) : ""}</li>`).join("")}</ul>
     </section>`
   }
 

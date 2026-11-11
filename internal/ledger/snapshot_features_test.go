@@ -85,6 +85,12 @@ func TestSnapshotFeatureMarkersThroughRealWriter(t *testing.T) {
 		want []string
 	}{
 		{"untouched", func(*core.State) {}, nil},
+		{"contact-without-diagnosis", func(s *core.State) {
+			s.Contacts[1] = &core.ContactEscalation{Serial: 1}
+		}, nil},
+		{"contact-with-diagnosis", func(s *core.State) {
+			s.Contacts[1] = &core.ContactEscalation{Serial: 1, Reason: core.ContactContextFull}
+		}, []string{"native-turn-contact-reason/v1"}},
 		{"requirements-after-collection", func(s *core.State) {
 			s.RequiredFeatures = []string{core.FeatureMailboxRecovery}
 		}, []string{"ledger-requirements/v1", "mailbox-recovery/v1"}},

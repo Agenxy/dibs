@@ -178,18 +178,18 @@ func TestFailedColdAppOpenAlertsSenderAndHuman(t *testing.T) {
 	}
 }
 
-func TestStrandedQueueSecondWakeReopensAndEscalates(t *testing.T) {
+func TestStrandedQueueOpenHasRecoveryWindow(t *testing.T) {
 	binary := filepath.Join(t.TempDir(), "codex")
 	if b, err := exec.Command("go", "build", "-o", binary, "../wakeexec/testdata/codexqueue").CombinedOutput(); err != nil {
 		t.Fatalf("build fixture: %v: %s", err, b)
 	}
 	testexec.PrepareExecutable(t, exec.Command(binary, "--version"))
-	for _, old := range []bool{false, true} {
-		t.Run(fmt.Sprintf("old=%v", old), func(t *testing.T) {
+	for _, mode := range []string{"fresh", "recent-open-then-read", "recent-open-unread", "retry-unread", "repeat-while-waiting"} {
+		t.Run(mode, func(t *testing.T) {
 			dir := t.TempDir()
 			t.Setenv("DIBS_DIR", dir)
 			testcodexipc.Start(t, "no-owner", nil)
-			e, ctx, _, sender := nativeAppEngine(t)
+			e, ctx, worker, sender := nativeAppEngine(t)
 			e.SetHumanNotifier(noContactDesktop{})
 			e.SetWakeCommands(map[string]WakeCommand{"codex": {Argv: []string{
 				binary, "queue", "--thread", "{thread}", "--message", "{message}",
@@ -226,7 +226,7 @@ func TestStrandedQueueSecondWakeReopensAndEscalates(t *testing.T) {
 			if json.Unmarshal(raw, &rows) != nil || len(rows) != 1 {
 				t.Fatalf("setup queue: %s", raw)
 			}
-			if old {
+			if mode != "fresh" {
 				// Only the external queue and open-receipt fixtures are aged.
 				// The second send still enters through the real admission path.
 				at := time.Now().Add(-20 * time.Minute).UTC()
@@ -238,6 +238,10 @@ func TestStrandedQueueSecondWakeReopensAndEscalates(t *testing.T) {
 				if err := os.WriteFile(queue, raw, 0o600); err != nil {
 					t.Fatal(err)
 				}
+			}
+			ageOpenMemo := func() {
+				t.Helper()
+				at := time.Now().Add(-20 * time.Minute).UTC()
 				entries, err := os.ReadDir(filepath.Join(dir, "app-opens"))
 				if err != nil {
 					t.Fatal(err)
@@ -270,19 +274,36 @@ func TestStrandedQueueSecondWakeReopensAndEscalates(t *testing.T) {
 					t.Fatalf("setup aged %d open receipts", aged)
 				}
 			}
+			if mode == "retry-unread" {
+				ageOpenMemo()
+			}
 			var log economyLog
 			previousLog := slog.Default()
 			slog.SetDefault(slog.New(slog.NewTextHandler(&log, &slog.HandlerOptions{Level: slog.LevelInfo})))
 			t.Cleanup(func() { slog.SetDefault(previousLog) })
+			before := time.Now()
 			serial := send()
-			got, err := e.query(ctx, func() core.Result {
-				return core.Result{
-					"contact":       e.state.Messages[serial].ContactEscalatedAt,
-					"sender_notice": fmt.Sprint(e.takeNotices("sender")),
+			after := time.Now()
+			snapshot := func() core.Result {
+				t.Helper()
+				got, err := e.query(ctx, func() core.Result {
+					m := e.state.Messages[serial]
+					c := e.state.Contacts[m.ContactEscalatedAt]
+					return core.Result{
+						"contact": m.ContactEscalatedAt, "resolved": c != nil && !c.ResolvedAt.IsZero(),
+						"sender_notice": fmt.Sprint(e.takeNotices("sender")),
+					}
+				})
+				if err != nil {
+					t.Fatal(err)
 				}
-			})
-			if err != nil {
-				t.Fatal(err)
+				return got
+			}
+			sweep := func(now time.Time) {
+				t.Helper()
+				if _, err := e.query(ctx, func() core.Result { e.sweep(now); return nil }); err != nil {
+					t.Fatal(err)
+				}
 			}
 			raw, err = os.ReadFile(queue)
 			if err != nil {
@@ -291,20 +312,54 @@ func TestStrandedQueueSecondWakeReopensAndEscalates(t *testing.T) {
 			if json.Unmarshal(raw, &rows) != nil || len(rows) != 1 {
 				t.Fatalf("retained wake was duplicated: %s", raw)
 			}
-			if !old {
-				if opens != 1 || got["contact"] != uint64(0) {
-					t.Fatalf("fresh queue re-opened/escalated: opens=%d %v", opens, got)
+			wantOpens := 1
+			if mode == "retry-unread" {
+				wantOpens = 2
+			}
+			if opens != wantOpens {
+				t.Fatalf("setup: opens=%d want %d", opens, wantOpens)
+			}
+			if got := snapshot(); got["contact"] != uint64(0) {
+				t.Fatalf("paged immediately, before the app-open recovery window: %v", got)
+			}
+			if mode == "repeat-while-waiting" {
+				ageOpenMemo() // the next wake could open again if it ignored the pending window
+				serial = send()
+				if opens != wantOpens {
+					t.Fatalf("same retained item opened again during its recovery window: %d opens", opens)
+				}
+			}
+			sweep(before.Add(harnessenv.AppOpenRetryAfter - 10*time.Second))
+			if got := snapshot(); got["contact"] != uint64(0) {
+				t.Fatalf("paged before the app-open recovery window elapsed: %v", got)
+			}
+			if mode == "recent-open-then-read" {
+				if _, err := e.Inbox(ctx, worker); err != nil {
+					t.Fatal(err)
+				}
+			}
+			sweep(after.Add(harnessenv.AppOpenRetryAfter + time.Second))
+			got := snapshot()
+			if mode == "fresh" || mode == "recent-open-then-read" {
+				if got["contact"] != uint64(0) {
+					t.Fatalf("fresh queue or read mail raised contact: %v", got)
 				}
 				return
 			}
-			if opens != 2 || got["contact"] == uint64(0) {
-				t.Fatalf("stranded wake suppressed recovery/contact: opens=%d %v", opens, got)
+			if got["contact"] == uint64(0) {
+				t.Fatalf("unread retained queue lost its contact after recovery: %v", got)
 			}
 			if !strings.Contains(log.String(), "enqueue suppressed, delivery unconfirmed") {
 				t.Fatalf("retention invisible at INFO: %s", log.String())
 			}
 			if !strings.Contains(got["sender_notice"].(string), "codex://threads/"+testcodexipc.Thread) {
 				t.Fatalf("sender lacks exact thread: %v", got)
+			}
+			if _, err := e.Inbox(ctx, worker); err != nil {
+				t.Fatal(err)
+			}
+			if got := snapshot(); got["resolved"] != true {
+				t.Fatalf("late read did not resolve contact: %v", got)
 			}
 		})
 	}

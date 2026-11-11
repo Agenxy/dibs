@@ -264,6 +264,11 @@ filesystem writes (§9). It is a **coordination generation**, not a fencing toke
   With no such actor, old binaries still refuse but may report `E_BAD_TOKEN`
   instead of the minimum version in the unknown-kind diagnostic.
 
+  A native app turn diagnosis uses the distinct `contact_diagnosed` op and requires the `native-turn-contact-reason/v1` snapshot feature while
+  that diagnosis is retained. Existing contact ops and snapshots without a
+  diagnosis keep their earlier format. A reader that cannot preserve the
+  diagnosis refuses the versioned op or snapshot instead of dropping it.
+
   Why: the ledger is the record and state is its fold, but every start re-ran
   every op the board ever applied, to rebuild a board whose sweeps had already
   pruned most of them. On 2026-10-12 that was 104,257 ops: 7m49s under machine
@@ -1170,13 +1175,14 @@ link only when the recipient's app/thread provenance permits one. This asks a
 person to open the original harness; Dibs does not host or relocate the agent.
 For a local ChatGPT-app queue route, an OS app-open failure also makes the
 captured unread asks contact-eligible even though the queue command succeeded.
-A later mail event that observes the same Dibs queue item still pending after
-the existing ten-minute app-open recovery window retries the ordinary app load
-path, without adding another queue item; if delivery is still unconfirmed,
-it records the same contact alert. No new observation timer is added. A stale
-callback after a read, session/configuration change, newer queue observation or
-app-incarnation change cannot escalate the old attempt. Queue suppression is
-logged at INFO, and an open callback remains unconfirmed delivery.
+A later mail event that observes a retained Dibs queue item older than ten
+minutes offers the ordinary app load path, without adding another queue item.
+A successful or suppressed open gets the recovery window before contact is
+raised. More observations of that same retained input join the window without
+another open or an extension. The existing sweep can escalate the covered
+unread mail after the window. A read, session or configuration change, a newer
+queue item or an app-incarnation change fences an obsolete attempt. Queue
+suppression is logged at INFO. An open callback remains unconfirmed delivery.
 
 A local native app input acceptance also remains unconfirmed delivery. If its
 exact unread question, request or handoff has no subsequent authenticated model
@@ -1188,6 +1194,17 @@ adapter's result does. Notify is excluded from this additional path, including
 high/urgent notify. The derived observation is fenced to the recipient
 incarnation, session and configured route. Restart loses the observation, not
 mail: a later actual acceptance starts a fresh interval. No timer is added.
+For two distinct, receipt-matched local native turns that fail within two
+seconds without a tool call or authenticated contact, Dibs holds native
+retries for already pending mail and records the proved diagnosis on the
+contact. Each new message can make one native recovery attempt. The next
+delivery decision uses a bounded read-only rollout check to reconcile the
+matching receipt. A failed probe keeps the hold without repeating a page.
+A turn
+that progresses, authenticated model contact, or a new receiving binding
+clears the hold. The alert identifies the original thread so the person can
+repair it or move the agent.
+
 Alerts state **delivery unconfirmed**, not that an agent or process is dead.
 Authorized unread-ask projections include `undelivered_for_seconds` from the
 actual send time until recipient awareness, without changing any deadline.
