@@ -121,6 +121,12 @@ func TestNativeSendReceiptNamesPendingRouteAndPreservesPriorOutcome(t *testing.T
 			if strings.Contains(string(raw), testcodexipc.Thread) || strings.Contains(string(raw), "private receipt marker") {
 				t.Errorf("send observation leaked thread or mail: %s", raw)
 			}
+			// This test observes the receipt before the second app call finishes.
+			// Its newer native observation is published after the real IPC client
+			// has read the reply and closed its connection. Wait for that boundary
+			// before server cleanup cancels the engine, rather than cutting off
+			// the fixture while it is still writing the second reply.
+			awaitQueueWakeObservationAfter(t, eng, prior["observed_at"])
 		})
 	}
 }
