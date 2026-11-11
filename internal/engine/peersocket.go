@@ -346,7 +346,7 @@ func (e *Engine) wakeOverSocket(plan wakePlan, agent string) bool {
 		return false
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(e.deliveryContext(), 5*time.Second)
 	defer cancel()
 	var offer string
 	if plan.trackOffer && plan.agent != "" {

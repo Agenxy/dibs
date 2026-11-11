@@ -1194,10 +1194,13 @@ adapter's result does. Notify is excluded from this additional path, including
 high/urgent notify. The derived observation is fenced to the recipient
 incarnation, session and configured route. Restart loses the observation, not
 mail: a later actual acceptance starts a fresh interval. No timer is added.
-For two distinct, receipt-matched local native turns that fail within two
-seconds without a tool call or authenticated contact, Dibs holds native
-retries for already pending mail and records the proved diagnosis on the
-contact. Each new message can make one native recovery attempt. The next
+For two distinct, receipt-matched local native turns that explicitly report
+context-window or remote-compaction failure without a tool call or authenticated
+contact, Dibs holds native retries for already pending mail and records the
+proved diagnosis on the contact, regardless of turn duration. An unnamed error
+qualifies only within two seconds; a longer turn may have done useful work
+without tools. Elapsed time alone does not turn an unfinished tool-free turn
+into progress. Each new message can make one native recovery attempt. The next
 delivery decision uses a bounded read-only rollout check to reconcile the
 matching receipt. A failed probe keeps the hold without repeating a page.
 A turn

@@ -150,16 +150,21 @@ below does not claim to classify that earlier attempt.
 
 For a machine-local native route, the acceptance receipt's exact turn ID can
 identify a turn in its original rollout. Two distinct accepted turns that
-each fail within two seconds without authenticated model contact or a tool
-call hold retries for already pending mail on that binding. New mail can
+each report an explicit context-window or remote-compaction failure without
+authenticated model contact or a tool call hold retries for already pending
+mail on that binding, regardless of duration. An unnamed error qualifies only
+within two seconds: longer turns may have done useful work without tools.
+New mail can
 make one native recovery attempt. The daemon checks a
 bounded read-only rollout tail off the writer, once for a quiet pair and
 before a further offer. It requires the matching start after submission and
 a matching failed completion. A missing or unrecognized record leaves the
-route eligible. Only an explicit context-window error paired with a
-compaction failure supports a full-context diagnosis. The alert records the
+route eligible. An explicit context-window error supports a full-context
+diagnosis; the remote-compaction prefix alone supports only compaction failure.
+An unfinished tool-free turn remains unknown, however long it has run.
+The alert records the
 diagnosis class without transcript content. On the next delivery decision,
-a matching early failure keeps the hold and does not repeat a page. If
+a matching classified failure keeps the hold and does not repeat a page. If
 the original failures involved only ordinary FYIs, a failed attempt on
 alert-eligible mail can raise the first alert. A matching turn that
 progresses clears the hold. Authenticated contact, a

@@ -24,6 +24,7 @@ func (e *Engine) Run(ctx context.Context) {
 	defer func() {
 		close(e.stopping) // reject new queries before joining workers that may submit one
 		eCancel()         // also unblock completion receipts on a fail-stop writer panic
+		e.waitWakeWorkers()
 		e.finishBlobReconciles()
 	}()
 	e.boot(time.Now())
@@ -94,3 +95,12 @@ func (e *Engine) Run(ctx context.Context) {
 // Done bounds admitted off-loop observations by the writer's lifetime rather
 // than an individual HTTP request. It is available before Run starts.
 func (e *Engine) Done() <-chan struct{} { return e.done }
+
+// Decision fixtures have no running writer; real delivery workers always use
+// Run's context so stopping cancels their transports before they are joined.
+func (e *Engine) deliveryContext() context.Context {
+	if e.wakeContext != nil {
+		return e.wakeContext
+	}
+	return context.Background()
+}

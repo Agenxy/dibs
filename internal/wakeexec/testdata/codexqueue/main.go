@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime/debug"
+	"strconv"
 	"time"
 
 	"github.com/agenxy/dibs/internal/paths"
@@ -61,6 +62,23 @@ func main() {
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "queue" {
+		if marker := os.Getenv("DIBS_TEST_QUEUE_FAIL_ONCE"); marker != "" {
+			f, err := os.OpenFile(marker, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+			if err == nil {
+				_ = f.Close()
+				os.Exit(1)
+			}
+			if !os.IsExist(err) {
+				panic(err)
+			}
+		}
+		if marker := os.Getenv("DIBS_TEST_QUEUE_BLOCK"); marker != "" {
+			if err := os.WriteFile(marker, []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
+				panic(err)
+			}
+			time.Sleep(time.Hour) // only the test owner's cancellation can finish this command
+			return
+		}
 		if dir := os.Getenv("DIBS_TEST_QUEUE_EVIDENCE"); dir != "" {
 			stderr, err := os.OpenFile(filepath.Join(dir, "queue.stderr"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 			if err != nil {
