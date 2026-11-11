@@ -8,7 +8,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - Daemon shutdown cancels and joins its normal and retry delivery workers
-  before reporting completion. Queue admission, command execution, native app
+  for at most ten seconds, warning which workers were abandoned at the cap.
+  Their late results cannot write the ledger. Queue admission, command execution, native app
   IPC and remote-host waits follow that lifetime; existing socket and native
   opener deadlines remain in force. An in-flight wake can no longer outlive
   the engine and race app-adapter cleanup.

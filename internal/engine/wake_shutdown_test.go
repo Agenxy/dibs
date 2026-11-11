@@ -46,6 +46,10 @@ func TestShutdownJoinsWakeInsideAppCallback(t *testing.T) {
 	}
 }
 
+func TestShutdownAbandonsUnresponsiveAppCallback(t *testing.T) {
+	testShutdownJoinsWakeInsideAppCallback(t, "abandon")
+}
+
 func testShutdownJoinsWakeInsideAppCallback(t *testing.T, mode string) {
 	t.Helper()
 	t.Setenv("DIBS_DIR", t.TempDir())
@@ -58,11 +62,12 @@ func testShutdownJoinsWakeInsideAppCallback(t *testing.T, mode string) {
 		t.Fatalf("setup queue fixture: %v %s", err, out)
 	}
 	testexec.PrepareExecutable(t, exec.Command(binary, "--version"))
-	entered, release := make(chan struct{}), make(chan struct{})
+	entered, release, returned := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	var once sync.Once
 	defer once.Do(func() { close(release) })
 	previous := shower
 	shower = &harnessenv.Shower{Holds: func(string) bool {
+		defer close(returned)
 		close(entered)
 		<-release
 		return true
@@ -77,6 +82,25 @@ func testShutdownJoinsWakeInsideAppCallback(t *testing.T, mode string) {
 	}
 	cancel()
 	<-e.stopping // writer has actually left its loop; this is not scheduler timing
+	if mode == "abandon" {
+		started := time.Now()
+		select {
+		case <-e.Done():
+			if elapsed := time.Since(started); elapsed < 9*time.Second {
+				t.Errorf("shutdown abandoned a worker before its grace: %s", elapsed)
+			}
+		case <-time.After(12 * time.Second):
+			t.Error("shutdown ignored its cap for an uncancellable app callback")
+		}
+		lateCtx, lateCancel := context.WithTimeout(context.Background(), time.Second)
+		defer lateCancel()
+		if _, err := e.Do(lateCtx, &core.Op{Kind: core.OpAckBoard, Token: sender}); err == nil {
+			t.Error("stopped writer admitted a late operation after abandoning the worker")
+		}
+		once.Do(func() { close(release) })
+		<-returned // release the deliberately stuck fixture before restoring it
+		return
+	}
 	select {
 	case <-e.Done():
 		t.Error("Done closed while its delivery worker was still inside the app callback")

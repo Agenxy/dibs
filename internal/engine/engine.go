@@ -57,7 +57,7 @@ type Engine struct {
 	blobReconcileHeld    map[string]bool
 	blobReconcileContext context.Context
 	blobReconcileWorkers sync.WaitGroup
-	wakeWorkers          sync.WaitGroup // writer adds before launch; joined after stopping closes
+	wakeWorkers          deliveryWorkers // writer adds before launch; bounded join after stopping closes
 	prober               Prober
 	ring                 []core.Event
 	humanDelivery        humanDeliveries

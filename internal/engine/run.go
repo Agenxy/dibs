@@ -24,7 +24,7 @@ func (e *Engine) Run(ctx context.Context) {
 	defer func() {
 		close(e.stopping) // reject new queries before joining workers that may submit one
 		eCancel()         // also unblock completion receipts on a fail-stop writer panic
-		e.wakeWorkers.Wait()
+		e.waitWakeWorkers()
 		e.finishBlobReconciles()
 	}()
 	e.boot(time.Now())

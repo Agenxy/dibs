@@ -40,8 +40,13 @@ back through it.
 
 The writer counts a normal or retry delivery worker before starting it. After
 leaving the loop it closes `stopping` (so worker queries refuse immediately),
-cancels the delivery context, and joins those workers before `Run` returns or
-`Done` closes. Joining never blocks a running writer. This boundary matters to
+cancels the delivery context, and joins those workers for at most ten seconds
+before `Run` returns or `Done` closes. At the cap it warns with each remaining
+worker's agent and attempt, then abandons their results. The stopped writer
+refuses late result queries, so they cannot append the ledger or leave an
+operation half-written. This leaves room for HTTP shutdown before launchd's
+default twenty-second kill, without changing its `ExitTimeOut`.
+Joining never blocks a running writer. This boundary matters to
 the daemon as well as fixtures: waiting for the loop alone used to leave a wake
 using the app adapter after its owner had finished cleanup.
 
@@ -60,8 +65,9 @@ The transports retain explicit bounds:
 Shutdown tests enter through real sends and transport fixtures: both the first
 delivery and its actual failed-command retry hold the app callback until release;
 a native app that never answers is disconnected on cancellation; a blocked queue
-executable is reaped before completion. No callback is abandoned to make `Done`
-return early.
+executable is reaped before completion. A callback that deliberately ignores
+cancellation is abandoned only at the ten-second cap, and cannot keep `Done`
+from returning indefinitely.
 
 ## Layout
 
