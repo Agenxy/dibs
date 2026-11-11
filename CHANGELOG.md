@@ -7,6 +7,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Receipt-matched native turns that explicitly fail compaction or exhaust the
+  context now establish the retry hold even when the compact attempt takes
+  longer than two seconds. An unfinished tool-free turn stays unknown, so a
+  slow compact attempt cannot prematurely clear a recovery hold. Unnamed errors
+  retain the two-second bound; unrelated turns and turns that used a tool do
+  not supply the diagnosis.
 - Builds use Go 1.27.4, fixing the reachable standard-library HTTP/1 server
   crash reported as GO-2026-6859. The Go language floor remains 1.26.0.
 - Desktop app observation selects the desktop runtime and helper names before

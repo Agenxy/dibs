@@ -25,6 +25,11 @@ func TestNativeTurnFailuresHoldFurtherDelivery(t *testing.T) {
 	}{
 		{"context-full", "context_window_exceeded", "Error running remote compact task: fixture", "context is full"},
 		{"compaction", "other", "Error running remote compact task: fixture", "reports a compaction failure"},
+		{"context-full-18s", "context_window_exceeded", "Error running remote compact task: fixture", "context is full"},
+		{"compaction-37s", "other", "Error running remote compact task: fixture", "reports a compaction failure"},
+		{"context-code-only-18s", "context_window_exceeded", "context exhausted", "context is full"},
+		{"tool-called-37s", "context_window_exceeded", "Error running remote compact task: fixture", ""},
+		{"different-id-37s", "context_window_exceeded", "Error running remote compact task: fixture", ""},
 		{"other", "other", "private unknown failure details", "turns end immediately"},
 		{"old-turn", "other", "private busy failure details", ""},
 		{"different-id", "other", "private unrelated failure details", ""},
@@ -91,18 +96,26 @@ func TestNativeTurnFailuresHoldFurtherDelivery(t *testing.T) {
 				if tc.name == "old-turn" {
 					start = start.Add(-time.Minute)
 				}
-				if tc.name == "different-id" {
+				if strings.HasPrefix(tc.name, "different-id") {
 					id = "unrelated-" + id
 				}
 				write("event_msg", start, map[string]any{"type": "task_started", "turn_id": id})
-				if tc.name == "tool-called" {
+				if strings.HasPrefix(tc.name, "tool-called") {
 					write("response_item", start, map[string]any{"type": "function_call", "name": "mcp__dibs__inbox"})
 				}
-				complete := map[string]any{"type": "task_complete", "turn_id": id, "duration_ms": 1}
+				// Trace timestamps carry the measured slow-completion shape without
+				// sleeping or making a real app turn.
+				duration := time.Millisecond
+				if strings.HasSuffix(tc.name, "18s") {
+					duration = 18 * time.Second
+				} else if strings.HasSuffix(tc.name, "37s") {
+					duration = 37 * time.Second
+				}
+				complete := map[string]any{"type": "task_complete", "turn_id": id, "duration_ms": duration.Milliseconds()}
 				if tc.errorText != "" {
 					complete["error"] = map[string]any{"message": tc.errorText, "codex_error_info": tc.code}
 				}
-				write("event_msg", start.Add(time.Millisecond), complete)
+				write("event_msg", start.Add(duration), complete)
 				if n == 1 && tc.name == "auth-between-turns" {
 					if _, err := e.Inbox(ctx, worker); err != nil {
 						t.Fatal(err)
@@ -155,7 +168,7 @@ func TestNativeTurnFailuresHoldFurtherDelivery(t *testing.T) {
 			n := notices[0].Contact
 			if !strings.Contains(n.OpenHint, tc.want) || n.OpenURL != "codex://threads/"+testcodexipc.Thread ||
 				strings.Contains(n.OpenHint, tc.errorText) ||
-				tc.name != "context-full" && strings.Contains(n.OpenHint, "context is full") {
+				tc.want != "context is full" && strings.Contains(n.OpenHint, "context is full") {
 				t.Fatalf("contact did not report only the proved reason and original thread: %+v", n)
 			}
 			if tc.name == "recovery-probe" {

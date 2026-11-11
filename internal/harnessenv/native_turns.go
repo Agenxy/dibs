@@ -21,7 +21,10 @@ const (
 	codexTurnHeaderMax = 128 << 10
 	codexTurnFileLimit = 4
 	codexTurnDirLimit  = 256
-	earlyTurnLimit     = 2 * time.Second
+	// An unnamed error is evidence of an immediate abort only within two
+	// seconds; a longer turn may have done useful work without a tool call.
+	// Explicit compact/context errors identify the failure without this cap.
+	genericTurnFailureLimit = 2 * time.Second
 )
 
 // CodexTurnReceipt refers to the exact turn in the app's acceptance reply.
@@ -58,12 +61,10 @@ func ObserveCodexTurns(thread string, turns [2]CodexTurnReceipt) [2]CodexTurnObs
 			break
 		}
 	}
-	now := time.Now()
 	for i, seen := range evidence {
+		// Elapsed time alone is not progress: remote compaction can still
+		// fail after tens of seconds. An unfinished tool-free turn is unknown.
 		result[i] = seen.outcome
-		if result[i].Failure == "" && !seen.started.IsZero() && now.Sub(seen.started) > earlyTurnLimit {
-			result[i].Normal = true
-		}
 	}
 	return result
 }
@@ -225,18 +226,22 @@ func (row codexTurnRecord) completion(started time.Time) CodexTurnObservation {
 		return CodexTurnObservation{}
 	}
 	p := row.Payload
-	if p.Error != nil && p.DurationMS > 0 && p.DurationMS <= earlyTurnLimit.Milliseconds() {
-		return CodexTurnObservation{Failure: codexTurnFailureFor(row)}
+	if p.Error == nil {
+		return CodexTurnObservation{Normal: true}
 	}
-	return CodexTurnObservation{Normal: p.Error == nil || p.DurationMS > earlyTurnLimit.Milliseconds()}
+	reason := codexTurnFailureFor(row)
+	if reason != core.ContactTurnsEnded || p.DurationMS > 0 && p.DurationMS <= genericTurnFailureLimit.Milliseconds() {
+		return CodexTurnObservation{Failure: reason}
+	}
+	return CodexTurnObservation{Normal: p.DurationMS > genericTurnFailureLimit.Milliseconds()}
 }
 
 func codexTurnFailureFor(row codexTurnRecord) core.ContactReason {
 	failure := row.Payload.Error
+	if string(failure.Code) == `"context_window_exceeded"` {
+		return core.ContactContextFull
+	}
 	if strings.HasPrefix(failure.Message, "Error running remote compact task:") {
-		if string(failure.Code) == `"context_window_exceeded"` {
-			return core.ContactContextFull
-		}
 		return core.ContactCompactionFailed
 	}
 	return core.ContactTurnsEnded
