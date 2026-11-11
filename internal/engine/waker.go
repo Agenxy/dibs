@@ -1278,7 +1278,8 @@ func (e *Engine) runWakePlan(plan *wakePlan, agent string) bool {
 		if result, handled := e.tryNativeWake(plan, agent); handled {
 			return result
 		}
-		plan.commandOutcome = wakeexec.RunCommandsObservedContext(e.deliveryContext(), plan.argv, plan.fallback, agent, plan.cwd,
+		plan.commandOutcome = wakeexec.RunCommandsObservedContext(
+			e.deliveryContext(), plan.argv, plan.fallback, agent, plan.cwd,
 			wakeexec.Timeout, wakeexec.Grace, func(observation wakeexec.QueueObservation) {
 				if plan.queueOutcome != nil {
 					*plan.queueOutcome = observation

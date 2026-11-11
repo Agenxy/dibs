@@ -74,7 +74,9 @@ func runQueuedCommand(argv []string, thread, agent, dir string, timeout, grace t
 	return runQueuedCommandContext(context.Background(), argv, thread, agent, dir, timeout, grace)
 }
 
-func runQueuedCommandContext(ctx context.Context, argv []string, thread, agent, dir string, timeout, grace time.Duration) queueCommandOutcome {
+func runQueuedCommandContext(
+	ctx context.Context, argv []string, thread, agent, dir string, timeout, grace time.Duration,
+) queueCommandOutcome {
 	observation := QueueObservation{Admission: "not_attempted", Pending: "unknown", At: time.Now().UTC()}
 	release, refused, locked := acquireQueueAdmission(ctx, thread, agent, timeout, observation)
 	if !locked {

@@ -190,7 +190,8 @@ func RunCommandsObserved(
 // RunCommandsObservedContext carries the owner's lifetime through admission,
 // command execution and fallback; the command's existing timeout remains a cap.
 func RunCommandsObservedContext(
-	ctx context.Context, argv, fallback []string, agent, dir string, timeout, grace time.Duration, observe func(QueueObservation),
+	ctx context.Context, argv, fallback []string, agent, dir string, timeout, grace time.Duration,
+	observe func(QueueObservation),
 ) CommandOutcome {
 	var ok bool
 	var out []byte
@@ -286,7 +287,9 @@ func runForOutResult(argv []string, agent, dir string, timeout, grace time.Durat
 	return runForOutResultContext(context.Background(), argv, agent, dir, timeout, grace)
 }
 
-func runForOutResultContext(parent context.Context, argv []string, agent, dir string, timeout, grace time.Duration) (bool, []byte, bool) {
+func runForOutResultContext(
+	parent context.Context, argv []string, agent, dir string, timeout, grace time.Duration,
+) (bool, []byte, bool) {
 	// EXCEPT THE QUEUE ROUTE, which needs no project directory.
 	//
 	// The reason below is `codex exec resume`, which refuses outside a trusted

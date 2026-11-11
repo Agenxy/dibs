@@ -61,7 +61,9 @@ func TryNative(surface string, f Fields, argv []string, fresh func() (string, er
 
 // TryNativeContext lets the owning daemon cancel an in-flight app call at
 // shutdown. The IPC client's own deadline still bounds other callers.
-func TryNativeContext(ctx context.Context, surface string, f Fields, argv []string, fresh func() (string, error)) (NativeOutcome, bool) {
+func TryNativeContext(
+	ctx context.Context, surface string, f Fields, argv []string, fresh func() (string, error),
+) (NativeOutcome, bool) {
 	if !NativeEligible(surface, f, argv) {
 		return NativeOutcome{}, false
 	}
