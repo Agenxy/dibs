@@ -56,13 +56,19 @@ func ComposeNative(f Fields) string {
 // before-input failures permit that; a possibly submitted input never can.
 // Matched refusals remain explicit rather than overriding app admission.
 func TryNative(surface string, f Fields, argv []string, fresh func() (string, error)) (NativeOutcome, bool) {
+	return TryNativeContext(context.Background(), surface, f, argv, fresh)
+}
+
+// TryNativeContext lets the owning daemon cancel an in-flight app call at
+// shutdown. The IPC client's own deadline still bounds other callers.
+func TryNativeContext(ctx context.Context, surface string, f Fields, argv []string, fresh func() (string, error)) (NativeOutcome, bool) {
 	if !NativeEligible(surface, f, argv) {
 		return NativeOutcome{}, false
 	}
 	if fresh == nil {
 		fresh = func() (string, error) { return ComposeNative(f), nil }
 	}
-	r, err := codexipc.DeliverFresh(context.Background(), f.Thread, fresh)
+	r, err := codexipc.DeliverFresh(ctx, f.Thread, fresh)
 	if errors.Is(err, codexipc.ErrNoOwner) {
 		return NativeOutcome{Disposition: "unloaded"}, false
 	}

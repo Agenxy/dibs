@@ -283,7 +283,9 @@ func (e *Engine) maybeWake(ev core.Event) {
 	cause := e.failedDeliveryKeys(l.ID)
 	agent, stamp := l.ID, e.wakeStamp(l.ID)
 	thread := cmd.thread
+	e.wakeWorkers.Add(1)
 	go func() {
+		defer e.wakeWorkers.Done()
 		defer e.wakeExited(agent, thread)
 		n := e.noteWakeAttempt(agent)
 		if e.runWakeAndReportPlan(&cmd, agent) {
@@ -430,7 +432,9 @@ func (e *Engine) retryWakeDecision(agent string) {
 	stamp := e.wakeStamp(agent)
 	thread := cmd.thread
 	delete(e.reconnectMail, agent) // this cohort gets one ordinary reconsideration
+	e.wakeWorkers.Add(1)
 	go func() {
+		defer e.wakeWorkers.Done()
 		defer e.wakeExited(agent, thread)
 		n := e.noteWakeAttempt(agent)
 		if e.runWakeAndReportPlan(&cmd, agent) {
@@ -1274,7 +1278,7 @@ func (e *Engine) runWakePlan(plan *wakePlan, agent string) bool {
 		if result, handled := e.tryNativeWake(plan, agent); handled {
 			return result
 		}
-		plan.commandOutcome = wakeexec.RunCommandsObserved(plan.argv, plan.fallback, agent, plan.cwd,
+		plan.commandOutcome = wakeexec.RunCommandsObservedContext(e.deliveryContext(), plan.argv, plan.fallback, agent, plan.cwd,
 			wakeexec.Timeout, wakeexec.Grace, func(observation wakeexec.QueueObservation) {
 				if plan.queueOutcome != nil {
 					*plan.queueOutcome = observation

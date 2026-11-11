@@ -83,7 +83,7 @@ func (e *Engine) tryNativeWake(plan *wakePlan, agent string) (bool, bool) {
 		}
 		return notice, err
 	}
-	out, handled := wakeexec.TryNative(plan.surface, plan.fields, plan.argv, fresh)
+	out, handled := wakeexec.TryNativeContext(e.deliveryContext(), plan.surface, plan.fields, plan.argv, fresh)
 	if probe != 0 && handled && !out.OK {
 		out.NoRetry = true
 	}

@@ -36,6 +36,33 @@ The cost is that the writer must never block. Anything slow, process scans,
 embedding calls, HTTP, happens *outside* the loop, and only the verdict goes
 back through it.
 
+### Delivery workers at shutdown
+
+The writer counts a normal or retry delivery worker before starting it. After
+leaving the loop it closes `stopping` (so worker queries refuse immediately),
+cancels the delivery context, and joins those workers before `Run` returns or
+`Done` closes. Joining never blocks a running writer. This boundary matters to
+the daemon as well as fixtures: waiting for the loop alone used to leave a wake
+using the app adapter after its owner had finished cleanup.
+
+The transports retain explicit bounds:
+
+| Wait | Shutdown bound |
+|---|---|
+| Native app IPC | Engine context reaches `DeliverFresh`; cancellation closes the connection. The client also sets a 20-second deadline. |
+| Queue admission lock | Engine context interrupts the nonblocking lock/backoff loop. |
+| Queue or other wake command, including fallback | Engine context reaches the subprocess; the ordinary two-hour ceiling is not a shutdown wait. Output-pipe drain is bounded by the existing ten-second grace. A cancelled owner starts no fallback. |
+| Read-only queue probe | Its own one-second deadline plus 100 ms output-drain bound. |
+| Session socket | Engine context and the existing five-second I/O deadline; dial also has a two-second bound. |
+| Remote host reply | Engine cancellation ends the wait; an unconfirmed native outcome remains unknown. |
+| App ownership and native open | Ownership IPC has its own 20-second deadline. Each native opener helper has a 20-second budget and one-second subprocess drain; these calls cannot wait indefinitely for the app. A fresh navigation fence refuses a new open after stopping. |
+
+Shutdown tests enter through real sends and transport fixtures: both the first
+delivery and its actual failed-command retry hold the app callback until release;
+a native app that never answers is disconnected on cancellation; a blocked queue
+executable is reaped before completion. No callback is abandoned to make `Done`
+return early.
+
 ## Layout
 
 ```

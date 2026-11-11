@@ -51,9 +51,9 @@ func RunRestartQueue(argv []string, agent, dir string) RestartQueueOutcome {
 // acquireQueueAdmission takes the board-wide admission lock. A busy writer is
 // contention, retried later; any other failure means the wake was not sent.
 func acquireQueueAdmission(
-	thread, agent string, timeout time.Duration, observation QueueObservation,
+	ctx context.Context, thread, agent string, timeout time.Duration, observation QueueObservation,
 ) (release func(), refused queueCommandOutcome, locked bool) {
-	release, err := lockQueueAdmission(thread, timeout)
+	release, err := lockQueueAdmission(ctx, thread, timeout)
 	if err == nil {
 		return release, queueCommandOutcome{}, true
 	}
@@ -71,8 +71,12 @@ func acquireQueueAdmission(
 // and every bridge on this board. A process-local mutex allowed both writers
 // to observe the same empty queue before either committed its item.
 func runQueuedCommand(argv []string, thread, agent, dir string, timeout, grace time.Duration) queueCommandOutcome {
+	return runQueuedCommandContext(context.Background(), argv, thread, agent, dir, timeout, grace)
+}
+
+func runQueuedCommandContext(ctx context.Context, argv []string, thread, agent, dir string, timeout, grace time.Duration) queueCommandOutcome {
 	observation := QueueObservation{Admission: "not_attempted", Pending: "unknown", At: time.Now().UTC()}
-	release, refused, locked := acquireQueueAdmission(thread, agent, timeout, observation)
+	release, refused, locked := acquireQueueAdmission(ctx, thread, agent, timeout, observation)
 	if !locked {
 		return refused
 	}
@@ -113,7 +117,7 @@ func runQueuedCommand(argv []string, thread, agent, dir string, timeout, grace t
 		"observation_known", known)
 	queuedAt := time.Now().UTC()
 	sent := queueNoticeAt(argv, queuedAt)
-	ok, out, needsReceipt := runForOutResult(sent, agent, dir, timeout, grace)
+	ok, out, needsReceipt := runForOutResultContext(ctx, sent, agent, dir, timeout, grace)
 	if needsReceipt {
 		return observeRetainedQueueCommand(sent, thread, agent, out, observation)
 	}
@@ -174,7 +178,7 @@ func missingQueueThread(argv []string, out []byte) bool {
 // The OS releases this lock on process exit. Never unlink it: replacing a
 // locked inode would let the next writer lock a different file. Prompt and
 // reconnect records remain separate and never wait for a queue command.
-func lockQueueAdmission(thread string, limit time.Duration) (func(), error) {
+func lockQueueAdmission(parent context.Context, thread string, limit time.Duration) (func(), error) {
 	path := receiptPath(thread) + ".lock"
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
@@ -184,7 +188,7 @@ func lockQueueAdmission(thread string, limit time.Duration) (func(), error) {
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), limit)
+	ctx, cancel := context.WithTimeout(parent, limit)
 	defer cancel()
 	for {
 		if err = paths.LockExclusive(f, false); err == nil {

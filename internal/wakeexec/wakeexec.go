@@ -184,10 +184,18 @@ func RunCommandsWithOutcome(argv, fallback []string, agent, dir string, timeout,
 func RunCommandsObserved(
 	argv, fallback []string, agent, dir string, timeout, grace time.Duration, observe func(QueueObservation),
 ) CommandOutcome {
+	return RunCommandsObservedContext(context.Background(), argv, fallback, agent, dir, timeout, grace, observe)
+}
+
+// RunCommandsObservedContext carries the owner's lifetime through admission,
+// command execution and fallback; the command's existing timeout remains a cap.
+func RunCommandsObservedContext(
+	ctx context.Context, argv, fallback []string, agent, dir string, timeout, grace time.Duration, observe func(QueueObservation),
+) CommandOutcome {
 	var ok bool
 	var out []byte
 	if thread, queued := queueTarget(argv); queued {
-		result := runQueuedCommand(argv, thread, agent, dir, timeout, grace)
+		result := runQueuedCommandContext(ctx, argv, thread, agent, dir, timeout, grace)
 		if observe != nil {
 			observe(result.observation)
 		}
@@ -200,7 +208,7 @@ func RunCommandsObserved(
 		ok, out = result.ok, result.out
 	} else {
 		var needsReceipt bool
-		ok, out, needsReceipt = runForOutResult(argv, agent, dir, timeout, grace)
+		ok, out, needsReceipt = runForOutResultContext(ctx, argv, agent, dir, timeout, grace)
 		if needsReceipt {
 			slog.Warn("wake acceptance unknown after incomplete output", "agent", agent,
 				"err", exec.ErrWaitDelay,
@@ -210,17 +218,17 @@ func RunCommandsObserved(
 	}
 	// Admission is released before trying another route, including a queue
 	// fallback for this same thread. Otherwise that route would lock itself.
-	return runFallback(argv, fallback, agent, dir, timeout, grace, ok, out, observe)
+	return runFallback(ctx, argv, fallback, agent, dir, timeout, grace, ok, out, observe)
 }
 
 func runFallback(
-	argv, fallback []string, agent, dir string, timeout, grace time.Duration,
+	ctx context.Context, argv, fallback []string, agent, dir string, timeout, grace time.Duration,
 	ok bool, out []byte, observe func(QueueObservation),
 ) CommandOutcome {
 	if ok {
 		return CommandOutcome{OK: true}
 	}
-	if len(fallback) == 0 {
+	if len(fallback) == 0 || ctx.Err() != nil {
 		return CommandOutcome{}
 	}
 	// ONLY WHEN THE THREAD IS OPEN. The fallback exists for one failure: the
@@ -238,7 +246,7 @@ func runFallback(
 	}
 	slog.Info("the wake command found the thread open; trying the fallback",
 		"agent", agent, "cmd", argv[0], "fallback", fallback[0])
-	return RunCommandsObserved(fallback, nil, agent, dir, timeout, grace, observe)
+	return RunCommandsObservedContext(ctx, fallback, nil, agent, dir, timeout, grace, observe)
 }
 
 func retainQueueReceipt(thread string, r queueReceipt, agent string) {
@@ -275,6 +283,10 @@ func runForOut(argv []string, agent, dir string, timeout, grace time.Duration) (
 // The third result is successful exit with uncancelled context and incomplete
 // output drain. It permits a receipt observation, never automatic acceptance.
 func runForOutResult(argv []string, agent, dir string, timeout, grace time.Duration) (bool, []byte, bool) {
+	return runForOutResultContext(context.Background(), argv, agent, dir, timeout, grace)
+}
+
+func runForOutResultContext(parent context.Context, argv []string, agent, dir string, timeout, grace time.Duration) (bool, []byte, bool) {
 	// EXCEPT THE QUEUE ROUTE, which needs no project directory.
 	//
 	// The reason below is `codex exec resume`, which refuses outside a trusted
@@ -289,7 +301,7 @@ func runForOutResult(argv []string, agent, dir string, timeout, grace time.Durat
 	if _, queued := queueTarget(argv); queued {
 		dir, queueRoute = "", true
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	// #nosec G204 G702 -- argv comes from the operator's own config file and nowhere
 	// else: SetWakeCommands is the only writer, no tool or op reaches it, and

@@ -476,6 +476,12 @@ func (e *Engine) awaitRemoteWake(
 	case <-timer.C:
 		slog.Info("the agent's host never reported on the wake", "agent", agent, "host", plan.host, "request", id)
 		return false
+	case <-e.deliveryContext().Done():
+		if plan.nativeOutcome != nil {
+			plan.nativeOutcome.NoRetry = true
+			plan.nativeOutcome.Disposition = "unknown"
+		}
+		return false
 	}
 }
 
