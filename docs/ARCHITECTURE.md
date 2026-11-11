@@ -44,8 +44,9 @@ cancels the delivery context, and joins those workers for at most ten seconds
 before `Run` returns or `Done` closes. At the cap it warns with each remaining
 worker's agent and attempt, then abandons their results. The stopped writer
 refuses late result queries, so they cannot append the ledger or leave an
-operation half-written. This leaves room for HTTP shutdown before launchd's
-default twenty-second kill, without changing its `ExitTimeOut`.
+operation half-written. The ten-second grace leaves room for HTTP shutdown
+within our twenty-second service-stop budget. The platform's `ExitTimeOut`
+default is system-defined; Dibs does not change it or claim a numeric OS guarantee.
 Joining never blocks a running writer. This boundary matters to
 the daemon as well as fixtures: waiting for the loop alone used to leave a wake
 using the app adapter after its owner had finished cleanup.

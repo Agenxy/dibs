@@ -11,8 +11,9 @@ import (
 	"time"
 )
 
-// Leave room for HTTP shutdown before launchd's default 20-second kill. Native
-// opener deadlines can exceed this grace, so cancellation alone is insufficient.
+// Leave room for HTTP shutdown within our 20-second service-stop budget; the
+// platform's ExitTimeOut default is system-defined. Native opener deadlines can
+// exceed this grace, so cancellation alone is insufficient.
 const wakeShutdownGrace = 10 * time.Second
 
 type deliveryWorker struct {
