@@ -26,9 +26,10 @@ func (p *processPass) cloudExecutionAncestor(pid, depth int) bool {
 			strings.Contains(path.value, "/ChatGPT.app/") {
 			args, err := procinfo.Command(parent)
 			present, sameErr := p.present(parent)
-			if err == nil && sameErr == nil && present && cloudExecutionCommand(args) {
-				return true
-			}
+			// The nearest runtime owns this bridge. A local app-server may
+			// itself have been launched by an outer cloud executor; inheriting
+			// that outer provenance would falsely disable its local binding.
+			return err == nil && sameErr == nil && present && cloudExecutionCommand(args)
 		}
 		pid = parent
 	}

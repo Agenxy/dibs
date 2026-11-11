@@ -29,3 +29,12 @@ func TestDetectCloudExecutionServerThroughRealAncestry(t *testing.T) {
 		})
 	}
 }
+
+func TestDetectNearestLocalRuntimeOverridesOuterCloudExecutor(t *testing.T) {
+	bridge, _ := nativeAppProcessTree(t, "codex",
+		[]string{"--", "exec-server", "--remote", "https://fixture.invalid/api"}, true)
+	got, err := DetectContext(t.Context(), bridge.PID)
+	if err != nil || got != ChatGPTApp {
+		t.Fatalf("local app-server inherited outer cloud provenance: surface=%q err=%v", got, err)
+	}
+}
