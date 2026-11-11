@@ -6,6 +6,7 @@ package engine
 import (
 	"context"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -186,7 +187,11 @@ func TestModelContactRacingNativeResultCancelsEscalation(t *testing.T) {
 	ready := make(chan struct{})
 	called := make(chan error, 1)
 	var f *acceptedContactFixture
+	var armed atomic.Bool
 	s := testcodexipc.Start(t, "idle", func() {
+		if !armed.Load() {
+			return // registration's read-only ownership probe is setup
+		}
 		<-ready
 		_, err := f.e.SpaceRead(f.ctx, f.worker, "does-not-exist", 1)
 		called <- err
@@ -194,6 +199,7 @@ func TestModelContactRacingNativeResultCancelsEscalation(t *testing.T) {
 	e, ctx, worker, sender := nativeAppEngine(t)
 	e.SetHumanNotifier(noContactDesktop{})
 	f = &acceptedContactFixture{e, ctx, s, worker, sender}
+	armed.Store(true)
 	close(ready)
 	id, at := f.send(t, core.MsgQuestion, 1)
 	select {

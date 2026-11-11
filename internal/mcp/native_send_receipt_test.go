@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -26,7 +27,11 @@ func TestNativeSendReceiptNamesPendingRouteAndPreservesPriorOutcome(t *testing.T
 		t.Run(mode, func(t *testing.T) {
 			entered, release := make(chan struct{}), make(chan struct{})
 			var seen, freed sync.Once
+			var armed atomic.Bool
 			app := testcodexipc.Start(t, mode, func() {
+				if !armed.Load() {
+					return // hold send receipt discovery after registration probes
+				}
 				seen.Do(func() { close(entered) })
 				<-release
 			})
@@ -40,6 +45,7 @@ func TestNativeSendReceiptNamesPendingRouteAndPreservesPriorOutcome(t *testing.T
 			if sender["token"] == nil || sender["code"] != nil {
 				t.Fatalf("setup sender: %v", sender)
 			}
+			armed.Store(true)
 			send := func() map[string]any {
 				return toolCall(t, srv, "send", map[string]any{
 					"token": sender["token"], "to": "queue-worker", "type": "notify", "body": "private receipt marker",

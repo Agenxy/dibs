@@ -41,7 +41,11 @@ func TestNativePreInputFailureQueuesOriginalMailThroughSend(t *testing.T) {
 			var ctx context.Context
 			var worker string
 			var serial uint64
+			var armed atomic.Bool
 			s := testcodexipc.Start(t, "changed", func() {
+				if !armed.Load() {
+					return // the registration probe must not consume this injection
+				}
 				<-ready
 				if handled {
 					if _, err := e.Do(ctx, &core.Op{Kind: core.OpAckMessage, Token: worker, MsgSerial: serial}); err != nil {
@@ -54,6 +58,7 @@ func TestNativePreInputFailureQueuesOriginalMailThroughSend(t *testing.T) {
 			e.SetWakeCommands(map[string]WakeCommand{"codex": {Argv: []string{
 				binary, "queue", "--thread", "{thread}", "--message", "{message}",
 			}}})
+			armed.Store(true)
 			serial = nativeAppSend(t, e, ctx, sender)
 			close(ready)
 			waitWakeDone(t, e, "worker")

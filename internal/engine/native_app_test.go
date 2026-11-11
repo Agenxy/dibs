@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -103,7 +104,11 @@ func TestNativeAppCancelsAfterDiscoveryWhenMailHandledOrIdentityClosed(t *testin
 			var ctx context.Context
 			var worker string
 			var serial uint64
+			var armed atomic.Bool
 			s := testcodexipc.Start(t, "idle", func() {
+				if !armed.Load() {
+					return // inject only during delivery, after registration
+				}
 				<-ready
 				op := &core.Op{Kind: core.OpAckMessage, Token: worker, MsgSerial: serial}
 				if closed {
@@ -114,6 +119,7 @@ func TestNativeAppCancelsAfterDiscoveryWhenMailHandledOrIdentityClosed(t *testin
 			})
 			var sender string
 			e, ctx, worker, sender = nativeAppEngine(t)
+			armed.Store(true)
 			serial = nativeAppSend(t, e, ctx, sender)
 			close(ready)
 			select {
@@ -171,8 +177,14 @@ func TestNativeAppUnknownReoffersOnceOnNewAppIncarnation(t *testing.T) {
 func TestNativeAppEachArrivalBypassesBatchAndInFlightHold(t *testing.T) {
 	entered, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
-	s := testcodexipc.Start(t, "active", func() { once.Do(func() { close(entered); <-release }) })
+	var armed atomic.Bool
+	s := testcodexipc.Start(t, "active", func() {
+		if armed.Load() {
+			once.Do(func() { close(entered); <-release })
+		}
+	})
 	e, ctx, _, sender := nativeAppEngine(t)
+	armed.Store(true)
 	t.Cleanup(func() {
 		select {
 		case <-release:
