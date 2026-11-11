@@ -20,6 +20,8 @@ type nativeTurnWatch struct {
 	checkAt time.Time
 	checked bool
 	reason  core.ContactReason
+	heldAt  uint64 // only messages written after this hold may probe it
+	probe   harnessenv.CodexTurnReceipt
 }
 
 func (e *Engine) noteNativeTurn(p wakePlan, id string, offeredAt, now time.Time) {
@@ -49,28 +51,75 @@ func (e *Engine) noteNativeTurn(p wakePlan, id string, offeredAt, now time.Time)
 
 // This is before a further native submission. It also covers a new message
 // that arrives just ahead of the sweep, without waiting for that sweep.
-func (e *Engine) nativeTurnDeliveryHeld(p wakePlan) bool {
+// The second result identifies the hold episode when this offer is a probe.
+func (e *Engine) nativeTurnOffer(p wakePlan) (held bool, probe uint64) {
 	var snapshot nativeTurnWatch
-	r, err := e.query(e.wakeContext, func() core.Result {
+	_, err := e.query(e.wakeContext, func() core.Result {
 		l := e.state.Agents[p.agent]
 		w, ok := e.nativeTurnWatches[p.agent]
 		if !ok || w.fence != p.nativeContactFence() || !e.acceptedContactMatches(w.fence, l) {
 			return nil
 		}
-		if w.reason != "" {
-			e.escalateNativeTurnMail(l, w.reason, time.Now())
-			return core.Result{"held": true}
-		}
 		snapshot = w
 		return nil
 	})
 	if err != nil {
+		return false, 0
+	}
+	if snapshot.reason == "" {
+		return snapshot.turns[0].ID != "" && e.observeNativeTurnFailures(p.agent, snapshot), 0
+	}
+	if e.observeNativeProbe(p.agent, snapshot) {
+		return false, 0
+	}
+	if p.mailArrival <= snapshot.heldAt || !slices.Contains(p.commandKeys, p.nativeProbeKey()) {
+		return true, 0
+	}
+	return false, snapshot.heldAt
+}
+
+func (p wakePlan) nativeProbeKey() string {
+	return "mail:" + noticeKey(p.agent, p.mailArrival)
+}
+
+// Probe receipts are reconciled on the next delivery decision. No timer
+// starts a probe or waits for its outcome. A later receipt supersedes an
+// older one, even if its input callback finished first.
+func (e *Engine) noteNativeProbe(p wakePlan, heldAt uint64, id string, offeredAt time.Time) {
+	w, ok := e.nativeTurnWatches[p.agent]
+	if !ok || w.heldAt != heldAt || w.fence != p.nativeContactFence() ||
+		!e.acceptedContactMatches(w.fence, e.state.Agents[p.agent]) ||
+		id == "" || id == w.probe.ID || !offeredAt.After(w.probe.OfferedAt) {
+		return
+	}
+	w.probe = harnessenv.CodexTurnReceipt{ID: id, OfferedAt: offeredAt}
+	e.nativeTurnWatches[p.agent] = w
+}
+
+func (e *Engine) observeNativeProbe(agent string, w nativeTurnWatch) bool {
+	if w.probe.ID == "" {
 		return false
 	}
-	if r["held"] == true {
-		return true
+	out := harnessenv.ObserveCodexTurns(w.fence.thread, [2]harnessenv.CodexTurnReceipt{w.probe})[0]
+	if out.Failure == "" && !out.Normal {
+		return false
 	}
-	return snapshot.turns[0].ID != "" && e.observeNativeTurnFailures(p.agent, snapshot)
+	r, err := e.query(e.wakeContext, func() core.Result {
+		current, ok := e.nativeTurnWatches[agent]
+		if !ok || current.heldAt != w.heldAt || current.fence != w.fence || current.probe != w.probe {
+			return nil
+		}
+		if out.Normal {
+			delete(e.nativeTurnWatches, agent)
+			slog.Debug("native app recovery probe progressed", "agent", agent)
+			return core.Result{"recovered": true}
+		}
+		current.probe.ID = "" // retain offer time as the stale-receipt fence
+		e.nativeTurnWatches[agent] = current
+		slog.Debug("native app recovery probe failed early", "agent", agent, "reason", out.Failure)
+		return nil
+	})
+	return err == nil && r["recovered"] == true
 }
 
 // The existing sweep takes at most one quiet-thread observation per pair.
@@ -100,12 +149,12 @@ func (e *Engine) observeNativeTurnFailures(agent string, w nativeTurnWatch) bool
 	if e.wakeContext.Err() != nil {
 		return false
 	}
-	failures := harnessenv.CodexEarlyTurnFailures(w.fence.thread, w.turns)
-	if failures[0] == "" || failures[1] == "" {
+	turns := harnessenv.ObserveCodexTurns(w.fence.thread, w.turns)
+	if turns[0].Failure == "" || turns[1].Failure == "" {
 		return false
 	}
-	reason := failures[1]
-	if failures[0] != reason {
+	reason := turns[1].Failure
+	if turns[0].Failure != reason {
 		reason = core.ContactTurnsEnded
 	}
 	r, err := e.query(e.wakeContext, func() core.Result {
@@ -115,13 +164,13 @@ func (e *Engine) observeNativeTurnFailures(agent string, w nativeTurnWatch) bool
 			return nil
 		}
 		if current.reason == "" {
-			current.reason = reason
+			current.reason, current.heldAt = reason, e.state.Serial
 			e.nativeTurnWatches[agent] = current
 			delete(e.acceptedContacts, agent)
 			slog.Warn("native app turns ended before Dibs contact; further native notices held",
 				"agent", agent, "reason", reason, "hint", contactReasonText(reason))
+			e.escalateNativeTurnMail(l, reason, time.Now())
 		}
-		e.escalateNativeTurnMail(l, current.reason, time.Now())
 		return core.Result{"held": true}
 	})
 	return err == nil && r["held"] == true
@@ -132,7 +181,7 @@ func (e *Engine) escalateNativeTurnMail(l *core.Agent, reason core.ContactReason
 		if m.State != core.MsgStatePending || m.Consumed || !m.ContactEligible() || m.ContactEscalatedAt != 0 {
 			continue
 		}
-		// The versioned kind makes earlier ledger readers refuse before
+		// The diagnosis kind makes earlier ledger readers refuse before
 		// silently dropping the diagnosis. The actor is for their error path.
 		op := &core.Op{Kind: core.OpContactDiagnosed, MsgSerial: m.Serial, ContactReason: reason, AgentID: l.ID}
 		if err := e.state.Admit(op); err != nil {

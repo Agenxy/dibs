@@ -62,51 +62,80 @@ func (e *Engine) nativeAppRouteLocked(l *core.Agent) bool {
 	return wakeexec.NativeQueueTemplate(c.argv)
 }
 
-func (e *Engine) tryNativeWake(plan wakePlan, agent string) (bool, bool) {
-	if wakeexec.NativeEligible(plan.surface, plan.fields, plan.argv) && e.nativeTurnDeliveryHeld(plan) {
-		const disposition = "turns_ended"
-		if plan.nativeOutcome != nil {
-			*plan.nativeOutcome = wakeexec.NativeOutcome{Disposition: disposition, NoRetry: true}
-		}
-		e.noteQueueObservation(plan, agent, wakeexec.QueueObservation{
-			Admission: "not_queued", Pending: "not_applicable", At: time.Now().UTC(), Delivery: disposition,
-		})
+func (e *Engine) tryNativeWake(plan *wakePlan, agent string) (bool, bool) {
+	if !wakeexec.NativeEligible(plan.surface, plan.fields, plan.argv) {
+		return false, false
+	}
+	held, probe := e.nativeTurnOffer(*plan)
+	if held {
+		e.recordHeldNativeWake(plan, agent)
 		return false, true
+	}
+	if probe != 0 {
+		plan.commandKeys = []string{plan.nativeProbeKey()}
 	}
 	started := time.Now()
 	var offeredAt time.Time
 	fresh := func() (string, error) {
-		notice, err := e.nativePlanNotice(plan, agent)
+		notice, err := e.nativePlanNotice(*plan, agent)
 		if notice != "" && err == nil {
 			offeredAt = time.Now()
 		}
 		return notice, err
 	}
 	out, handled := wakeexec.TryNative(plan.surface, plan.fields, plan.argv, fresh)
+	if probe != 0 && handled && !out.OK {
+		out.NoRetry = true
+	}
 	if plan.nativeOutcome != nil {
 		*plan.nativeOutcome = out
 	}
 	if !handled {
-		return e.beforeColdRoute(plan, agent, out, fresh)
+		return e.beforeColdRoute(*plan, agent, out, fresh)
 	}
 	if out.OK && nativeDeliveryAccepted(out.Disposition) {
-		if err := harnessenv.ConfirmChatGPTBinding(plan.thread); err != nil {
-			slog.Warn("could not clear confirmed app binding", "agent", agent, "err", err)
-		}
-		_, _ = e.query(e.wakeContext, func() core.Result {
-			if l := e.state.Agents[agent]; l != nil && l.CreatedSerial == plan.createdSerial && threadIDOf(l) == plan.thread {
-				delete(e.appBindings, agent)
-				now := time.Now()
-				e.noteNativeTurn(plan, out.TurnID, offeredAt, now)
-				e.noteAcceptedContact(plan, started, now)
-			}
-			return nil
-		})
+		e.noteNativeAcceptance(*plan, out, probe, started, offeredAt)
 	}
-	e.noteQueueObservation(plan, agent, wakeexec.QueueObservation{
+	e.noteQueueObservation(*plan, agent, wakeexec.QueueObservation{
 		Admission: "not_queued", Pending: "not_applicable", At: time.Now().UTC(), Delivery: out.Disposition,
 	})
 	return out.OK, true
+}
+
+func (e *Engine) recordHeldNativeWake(plan *wakePlan, agent string) {
+	const disposition = "turns_ended"
+	if plan.nativeOutcome != nil {
+		*plan.nativeOutcome = wakeexec.NativeOutcome{Disposition: disposition, NoRetry: true}
+	}
+	e.noteQueueObservation(*plan, agent, wakeexec.QueueObservation{
+		Admission: "not_queued", Pending: "not_applicable", At: time.Now().UTC(), Delivery: disposition,
+	})
+}
+
+func (e *Engine) noteNativeAcceptance(
+	plan wakePlan, out wakeexec.NativeOutcome, probe uint64, started, offeredAt time.Time,
+) {
+	if err := harnessenv.ConfirmChatGPTBinding(plan.thread); err != nil {
+		slog.Warn("could not clear confirmed app binding", "agent", plan.agent, "err", err)
+	}
+	_, _ = e.query(e.wakeContext, func() core.Result {
+		l := e.state.Agents[plan.agent]
+		if l == nil || l.CreatedSerial != plan.createdSerial || threadIDOf(l) != plan.thread {
+			return nil
+		}
+		delete(e.appBindings, plan.agent)
+		if probe != 0 {
+			e.noteNativeProbe(plan, probe, out.TurnID, offeredAt)
+			return nil // a probe of an alerted thread does not start another page clock
+		}
+		if watch := e.nativeTurnWatches[plan.agent]; watch.heldAt != 0 && watch.fence == plan.nativeContactFence() {
+			return nil // the hold was set while this earlier submission was in flight
+		}
+		now := time.Now()
+		e.noteNativeTurn(plan, out.TurnID, offeredAt, now)
+		e.noteAcceptedContact(plan, started, now)
+		return nil
+	})
 }
 
 // beforeColdRoute runs when native input was not sent. handled=true means

@@ -92,10 +92,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   desktop Open button still requires the recipient's local app provenance.
 
 - After two accepted ChatGPT inputs lead to distinct turns that fail
-  immediately before reaching Dibs, Dibs holds further native notices for
-  that thread and reports the observed failure in its contact alert. The
-  mail stays available in the original mailbox. Dibs resumes notices after
-  authenticated contact or a new receiving binding.
+  immediately before reaching Dibs, Dibs holds retries for pending mail
+  and reports the observed failure in its contact alert. New mail can make
+  one native recovery attempt. A recovered turn restores ordinary delivery.
+  A failed attempt keeps the hold without paging again.
 
 - A Claude Code session that is waiting on the person no longer receives a
   pile of Dibs notices when the person answers. Claude Code queues a message

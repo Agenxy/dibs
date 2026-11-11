@@ -109,7 +109,7 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		"mailbox_serials": true,
 		// Three additive decisions: new send capacity, bulk FYI prefix, contact reason.
 		"mailbox_capacity": true, "notify_through_serial": true, "contact_mailbox_full": true,
-		// Additive daemon evidence class; old contacts omit the reason.
+		// The contact_diagnosed op adds its evidence class. Old contacts omit it.
 		"contact_reason":   true,
 		"notify_announced": true, "notify_consumption": true,
 		// Atomic daemon stall notice and its request watermark, additive only.
@@ -645,7 +645,7 @@ func TestOpKindStringsAreFrozen(t *testing.T) {
 		"OpSetDesktopApprovalSetting": {core.OpSetDesktopApprovalSetting, "set_desktop_approval_setting"},
 		"OpReadAppRestart":            {core.OpReadAppRestart, "read_app_restart"},
 		"OpContactEscalate":           {core.OpContactEscalate, "contact_escalated"},
-		"OpContactDiagnosed":          {core.OpContactDiagnosed, "contact_escalated_v0.0.18"},
+		"OpContactDiagnosed":          {core.OpContactDiagnosed, "contact_diagnosed"},
 		"OpContactNotified":           {core.OpContactNotified, "contact_notified"},
 		"OpContactResolved":           {core.OpContactResolved, "contact_resolved"},
 		"OpStallNotified":             {core.OpStallNotified, "stall_notified"},

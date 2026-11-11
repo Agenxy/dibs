@@ -31,18 +31,38 @@ type CodexTurnReceipt struct {
 	OfferedAt time.Time
 }
 
-// CodexEarlyTurnFailures reads a bounded tail of the original app thread.
-// Missing, truncated or unfamiliar evidence leaves delivery eligible. Never
-// return transcript content: only classifications from exact start/end pairs.
-func CodexEarlyTurnFailures(thread string, turns [2]CodexTurnReceipt) [2]core.ContactReason {
-	var result [2]core.ContactReason
-	if !core.LooksLikeThreadID(thread) || turns[0].ID == "" || turns[0].ID == turns[1].ID || turns[1].ID == "" {
+// CodexTurnObservation reports the proved outcome of an exact receipt.
+type CodexTurnObservation struct {
+	Failure core.ContactReason
+	Normal  bool
+}
+
+type codexTurnEvidence struct {
+	started time.Time
+	outcome CodexTurnObservation
+}
+
+// ObserveCodexTurns reads a bounded tail of the original app thread and
+// returns classifications for up to two receipts. It returns no transcript
+// content. A start must match the receipt and occur after the input offer.
+func ObserveCodexTurns(thread string, turns [2]CodexTurnReceipt) [2]CodexTurnObservation {
+	var result [2]CodexTurnObservation
+	if !core.LooksLikeThreadID(thread) || turns[0].ID == "" || turns[0].ID == turns[1].ID {
 		return result
 	}
+	var evidence [2]codexTurnEvidence
 	for _, path := range codexTurnRollouts(codexHome(), thread) {
-		classifyCodexTurnTail(codexTurnTail(path, thread), turns, &result)
-		if result[0] != "" && result[1] != "" {
+		classifyCodexTurnTail(codexTurnTail(path, thread), turns, &evidence)
+		if evidence[0].outcome != (CodexTurnObservation{}) &&
+			(turns[1].ID == "" || evidence[1].outcome != (CodexTurnObservation{})) {
 			break
+		}
+	}
+	now := time.Now()
+	for i, seen := range evidence {
+		result[i] = seen.outcome
+		if result[i].Failure == "" && !seen.started.IsZero() && now.Sub(seen.started) > earlyTurnLimit {
+			result[i].Normal = true
 		}
 	}
 	return result
@@ -147,42 +167,68 @@ type codexTurnRecord struct {
 	} `json:"payload"`
 }
 
-func classifyCodexTurnTail(tail []byte, turns [2]CodexTurnReceipt, result *[2]core.ContactReason) {
+func classifyCodexTurnTail(tail []byte, turns [2]CodexTurnReceipt, result *[2]codexTurnEvidence) {
 	active := -1
-	var started time.Time
 	for line := range bytes.SplitSeq(tail, []byte{'\n'}) {
 		var row codexTurnRecord
 		if json.Unmarshal(line, &row) != nil {
 			continue
 		}
-		p := row.Payload
-		if row.Type == "response_item" && (p.Type == "function_call" || p.Type == "custom_tool_call") {
-			active = -1 // cannot call it a failed pre-tool turn
+		if active >= 0 && row.toolActivityFor(turns[active].ID) {
+			result[active].outcome.Normal = true
+			active = -1
 		}
 		if row.Type != "event_msg" {
 			continue
 		}
-		switch p.Type {
+		switch row.Payload.Type {
 		case "task_started":
-			active = slices.IndexFunc(turns[:], func(turn CodexTurnReceipt) bool {
-				return p.TurnID == turn.ID && !turn.OfferedAt.IsZero() && !row.Timestamp.Before(turn.OfferedAt)
-			})
-			started = row.Timestamp
-		case "mcp_tool_call_begin":
-			active = -1
+			clearCodexActiveStart(active, result)
+			active = matchCodexTurnStart(row, turns, result)
 		case "task_complete":
-			if active >= 0 && row.failedQuickly(turns[active].ID, started) {
-				result[active] = codexTurnFailureFor(row)
+			if active >= 0 && row.Payload.TurnID == turns[active].ID {
+				result[active].outcome = row.completion(result[active].started)
+				clearCodexActiveStart(active, result)
+				active = -1
 			}
-			active = -1
 		}
 	}
 }
 
-func (row codexTurnRecord) failedQuickly(id string, started time.Time) bool {
+func clearCodexActiveStart(active int, result *[2]codexTurnEvidence) {
+	if active >= 0 {
+		result[active].started = time.Time{}
+	}
+}
+
+func (row codexTurnRecord) toolActivityFor(id string) bool {
+	if row.Payload.TurnID != "" && row.Payload.TurnID != id {
+		return false
+	}
+	return row.Type == "event_msg" && row.Payload.Type == "mcp_tool_call_begin" ||
+		row.Type == "response_item" && (row.Payload.Type == "function_call" || row.Payload.Type == "custom_tool_call")
+}
+
+func matchCodexTurnStart(row codexTurnRecord, turns [2]CodexTurnReceipt, result *[2]codexTurnEvidence) int {
+	for i, turn := range turns {
+		if turn.ID != "" && row.Payload.TurnID == turn.ID && !turn.OfferedAt.IsZero() &&
+			!row.Timestamp.Before(turn.OfferedAt) && result[i].outcome == (CodexTurnObservation{}) {
+			result[i].started = row.Timestamp
+			return i
+		}
+	}
+	return -1
+}
+
+func (row codexTurnRecord) completion(started time.Time) CodexTurnObservation {
+	if row.Timestamp.Before(started) {
+		return CodexTurnObservation{}
+	}
 	p := row.Payload
-	return p.TurnID == id && !row.Timestamp.Before(started) && p.Error != nil &&
-		p.DurationMS > 0 && p.DurationMS <= earlyTurnLimit.Milliseconds()
+	if p.Error != nil && p.DurationMS > 0 && p.DurationMS <= earlyTurnLimit.Milliseconds() {
+		return CodexTurnObservation{Failure: codexTurnFailureFor(row)}
+	}
+	return CodexTurnObservation{Normal: p.Error == nil || p.DurationMS > earlyTurnLimit.Milliseconds()}
 }
 
 func codexTurnFailureFor(row codexTurnRecord) core.ContactReason {

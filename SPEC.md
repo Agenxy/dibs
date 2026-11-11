@@ -264,8 +264,7 @@ filesystem writes (§9). It is a **coordination generation**, not a fencing toke
   With no such actor, old binaries still refuse but may report `E_BAD_TOKEN`
   instead of the minimum version in the unknown-kind diagnostic.
 
-  A native app turn diagnosis uses the versioned `contact_escalated_v0.0.18`
-  op and requires the `native-turn-contact-reason/v1` snapshot feature while
+  A native app turn diagnosis uses the distinct `contact_diagnosed` op and requires the `native-turn-contact-reason/v1` snapshot feature while
   that diagnosis is retained. Existing contact ops and snapshots without a
   diagnosis keep their earlier format. A reader that cannot preserve the
   diagnosis refuses the versioned op or snapshot instead of dropping it.
@@ -1196,12 +1195,14 @@ high/urgent notify. The derived observation is fenced to the recipient
 incarnation, session and configured route. Restart loses the observation, not
 mail: a later actual acceptance starts a fresh interval. No timer is added.
 For two distinct, receipt-matched local native turns that fail within two
-seconds without a tool call or authenticated contact, Dibs holds further
-native notices and records the proved diagnosis on the contact. The daemon
-uses a bounded read-only rollout check. Missing evidence leaves the route
-eligible. Authenticated model contact or a new receiving binding clears the
-hold. The alert identifies the original thread so the person can repair it
-or move the agent.
+seconds without a tool call or authenticated contact, Dibs holds native
+retries for already pending mail and records the proved diagnosis on the
+contact. Each new message can make one native recovery attempt. The next
+delivery decision uses a bounded read-only rollout check to reconcile the
+matching receipt. A failed probe keeps the hold without paging again. A turn
+that progresses, authenticated model contact, or a new receiving binding
+clears the hold. The alert identifies the original thread so the person can
+repair it or move the agent.
 
 Alerts state **delivery unconfirmed**, not that an agent or process is dead.
 Authorized unread-ask projections include `undelivered_for_seconds` from the

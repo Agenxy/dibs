@@ -151,14 +151,17 @@ below does not claim to classify that earlier attempt.
 For a machine-local native route, the acceptance receipt's exact turn ID can
 identify a turn in its original rollout. Two distinct accepted turns that
 each fail within two seconds without authenticated model contact or a tool
-call hold further native notices for that binding. The daemon checks a
+call hold retries for already pending mail on that binding. New mail can
+make one native recovery attempt. The daemon checks a
 bounded read-only rollout tail off the writer, once for a quiet pair and
 before a further offer. It requires the matching start after submission and
 a matching failed completion. A missing or unrecognized record leaves the
 route eligible. Only an explicit context-window error paired with a
 compaction failure supports a full-context diagnosis. The alert records the
-diagnosis class without transcript content. Authenticated contact, a new
-binding or an observed new app incarnation re-arms the route.
+diagnosis class without transcript content. On the next delivery decision,
+a matching early failure keeps the hold and creates no additional page.
+A matching turn that progresses clears the hold. Authenticated contact, a
+new binding or an observed new app incarnation also re-arms the route.
 
 Every wake must run its turn in the original app thread the person can inspect.
 A headless successor or resume process does not satisfy that requirement; an

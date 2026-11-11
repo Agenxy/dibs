@@ -32,6 +32,7 @@ func TestNativeTurnFailuresHoldFurtherDelivery(t *testing.T) {
 		{"tool-called", "other", "private failure after a tool", ""},
 		{"successful", "", "", ""},
 		{"quiet-pair", "other", "private quiet failure", "turns end immediately"},
+		{"recovery-probe", "other", "private recovery failure", "turns end immediately"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("DIBS_DIR", t.TempDir())
@@ -127,8 +128,12 @@ func TestNativeTurnFailuresHoldFurtherDelivery(t *testing.T) {
 				awaitNative(t, server, 3)
 				return
 			}
-			if got := len(server.Inputs()); got != 2 {
-				t.Fatalf("further native input was submitted after two failed turns: %d", got)
+			wantInputs := 2
+			if tc.name == "quiet-pair" {
+				wantInputs = 3 // the sweep already set the hold before this new message
+			}
+			if got := len(server.Inputs()); got != wantInputs {
+				t.Fatalf("native inputs after two failures: got %d, want %d", got, wantInputs)
 			}
 			notices, err := e.PendingForHuman(ctx)
 			if err != nil || len(notices) != 1 || notices[0].Contact == nil {
@@ -140,10 +145,14 @@ func TestNativeTurnFailuresHoldFurtherDelivery(t *testing.T) {
 				tc.name != "context-full" && strings.Contains(n.OpenHint, "context is full") {
 				t.Fatalf("contact did not report only the proved reason and original thread: %+v", n)
 			}
+			if tc.name == "recovery-probe" {
+				testNativeTurnRecovery(t, f, write)
+				return
+			}
 			led := e.led.(*memLedger)
 			fenced, err := e.query(ctx, func() core.Result {
 				for _, op := range led.ops {
-					if op.Kind == "contact_escalated_v0.0.18" && op.AgentID == "worker" {
+					if op.Kind == "contact_diagnosed" && op.AgentID == "worker" {
 						return core.Result{"fenced": true}
 					}
 				}
@@ -161,7 +170,71 @@ func TestNativeTurnFailuresHoldFurtherDelivery(t *testing.T) {
 			if _, err := e.Inbox(ctx, worker); err != nil {
 				t.Fatal(err)
 			}
-			f.send(t, core.MsgRequest, 3)
+			f.send(t, core.MsgRequest, wantInputs+1)
 		})
+	}
+}
+
+func testNativeTurnRecovery(t *testing.T, f *acceptedContactFixture, write func(string, time.Time, map[string]any)) {
+	t.Helper()
+	ledger := f.e.led.(*memLedger)
+	diagnoses := func() int {
+		t.Helper()
+		r, err := f.e.query(f.ctx, func() core.Result {
+			n := 0
+			for _, op := range ledger.ops {
+				if op.ContactReason != "" {
+					n++
+				}
+			}
+			return core.Result{"n": n}
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r["n"].(int)
+	}
+	retry := func() {
+		t.Helper()
+		if _, err := f.e.query(f.ctx, func() core.Result {
+			f.e.retryWakeDecision("worker")
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		waitWakeDone(t, f.e, "worker")
+	}
+	record := func(id string, at time.Time, failed bool) {
+		t.Helper()
+		write("event_msg", at, map[string]any{"type": "task_started", "turn_id": id})
+		done := map[string]any{"type": "task_complete", "turn_id": id, "duration_ms": 1}
+		if failed {
+			done["error"] = map[string]any{"message": "fixture failure", "codex_error_info": "other"}
+		}
+		write("event_msg", at.Add(time.Millisecond), done)
+	}
+
+	original := diagnoses()
+	if original == 0 {
+		t.Fatal("setup: initial hold has no diagnosis")
+	}
+	_, failed := f.send(t, core.MsgRequest, 3)
+	record("turn-3", failed, true)
+	retry()
+	if n := len(f.ipc.Inputs()); n != 3 {
+		t.Fatalf("old mail triggered another native input after the failed recovery probe: %d", n)
+	}
+	if n := diagnoses(); n != original {
+		t.Fatalf("failed recovery probe added a diagnosis: before=%d after=%d", original, n)
+	}
+	_, recovered := f.send(t, core.MsgRequest, 4)
+	record("turn-4", recovered, false)
+	retry()
+	awaitNative(t, f.ipc, 5)
+	if n := len(f.ipc.Inputs()); n != 5 {
+		t.Fatalf("the normal probe did not restore ordinary delivery: %d", n)
+	}
+	if n := diagnoses(); n != original {
+		t.Fatalf("recovery added a diagnosis: before=%d after=%d", original, n)
 	}
 }

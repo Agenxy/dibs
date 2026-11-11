@@ -101,7 +101,7 @@ const (
 	OpAppRestartObserved        = "app_restart_observed"
 	OpReadAppRestart            = "read_app_restart"
 	OpContactEscalate           = "contact_escalated"
-	OpContactDiagnosed          = "contact_escalated_v0.0.18"
+	OpContactDiagnosed          = "contact_diagnosed" // Unknown to readers that cannot preserve a diagnosis.
 	OpContactNotified           = "contact_notified"
 	OpContactResolved           = "contact_resolved"
 	OpStallNotified             = "stall_notified"
