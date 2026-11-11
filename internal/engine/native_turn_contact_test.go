@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/testcodexipc"
 )
 
@@ -28,6 +29,7 @@ func TestNativeTurnFailuresHoldFurtherDelivery(t *testing.T) {
 		{"context-full-18s", "context_window_exceeded", "Error running remote compact task: fixture", "context is full"},
 		{"compaction-37s", "other", "Error running remote compact task: fixture", "reports a compaction failure"},
 		{"context-code-only-18s", "context_window_exceeded", "context exhausted", "context is full"},
+		{"tool-checkin-recovery", "context_window_exceeded", "Error running remote compact task: fixture", "context is full"},
 		{"tool-called-37s", "context_window_exceeded", "Error running remote compact task: fixture", ""},
 		{"different-id-37s", "context_window_exceeded", "Error running remote compact task: fixture", ""},
 		{"other", "other", "private unknown failure details", "turns end immediately"},
@@ -175,6 +177,10 @@ func TestNativeTurnFailuresHoldFurtherDelivery(t *testing.T) {
 				testNativeTurnRecovery(t, f, write, true)
 				return
 			}
+			if tc.name == "tool-checkin-recovery" {
+				testNativeToolCheckInRecovery(t, f, write)
+				return
+			}
 			switch tc.name {
 			case "episode-binding":
 				testNativeEpisodeBinding(t, f)
@@ -210,6 +216,45 @@ func TestNativeTurnFailuresHoldFurtherDelivery(t *testing.T) {
 			f.send(t, core.MsgRequest, wantInputs+1)
 		})
 	}
+}
+
+func testNativeToolCheckInRecovery(
+	t *testing.T, f *acceptedContactFixture, write func(string, time.Time, map[string]any),
+) {
+	t.Helper()
+	_, at := f.send(t, core.MsgRequest, 3)
+	var probe harnessenv.CodexTurnReceipt
+	if _, err := f.e.query(f.ctx, func() core.Result {
+		w := f.e.nativeTurnWatches["worker"]
+		if w.reason != core.ContactContextFull || w.probe.ID != "turn-3" {
+			t.Errorf("setup: new mail did not probe an established hold: %+v", w)
+		}
+		probe = w.probe
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if t.Failed() {
+		return
+	}
+	write("event_msg", at, map[string]any{"type": "task_started", "turn_id": probe.ID})
+	write("response_item", at, map[string]any{
+		"type": "function_call", "turn_id": probe.ID, "name": "mcp__dibs__check_in",
+	})
+	// Tool activity still proves progress without waiting for task_complete.
+	if got := harnessenv.ObserveCodexTurns(testcodexipc.Thread, [2]harnessenv.CodexTurnReceipt{probe})[0]; got != (harnessenv.CodexTurnObservation{Normal: true}) {
+		t.Fatalf("probe tool activity did not prove progress: %+v", got)
+	}
+	// Enter check_in through the actual engine operation, not the contact setter.
+	contactReplayDo(t, f.e, f.ctx, &core.Op{Kind: core.OpAckBoard, Token: f.worker})
+	r, err := f.e.query(f.ctx, func() core.Result {
+		_, held := f.e.nativeTurnWatches["worker"]
+		return core.Result{"held": held, "contact": f.e.recentAuthenticatedContact(f.e.state.Agents["worker"], time.Now())}
+	})
+	if err != nil || r["held"] != false || r["contact"] != true {
+		t.Fatalf("authenticated probe check_in did not clear the hold: %v / %v", r, err)
+	}
+	f.send(t, core.MsgRequest, 4)
 }
 
 func testNativeTurnRecovery(
