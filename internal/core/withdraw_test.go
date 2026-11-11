@@ -5,6 +5,7 @@ package core
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 )
 
@@ -95,7 +96,8 @@ func withdrawRefused(t *testing.T, f *queueFoldFixture, op Op, code string) {
 		t.Fatal(err)
 	}
 	err = f.s.Admit(&op)
-	if e, ok := err.(*Error); !ok || e.Code != code {
+	var e *Error
+	if !errors.As(err, &e) || e.Code != code {
 		t.Fatalf("Admit withdrawal = %v, want %s", err, code)
 	}
 	after, err := json.Marshal(f.s)

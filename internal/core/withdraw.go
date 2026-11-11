@@ -79,7 +79,7 @@ func (s *State) admitWithdrawal(op *Op) error {
 	return nil
 }
 
-func (s *State) applyWithdraw(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
+func (s *State) applyWithdraw(l *Agent, op *Op, now time.Time) (Result, []Event) {
 	m := s.Messages[op.MsgSerial]
 	if m.Type == MsgNotify {
 		s.removeNotifyContactSource(m)
@@ -107,7 +107,7 @@ func (s *State) applyWithdraw(l *Agent, op *Op, now time.Time) (Result, []Event,
 	s.finish(&evs, now)
 	return Result{
 		"ok": true, "state": MsgStateWithdrawn, "msg_serial": m.Serial, "superseded_by": m.SupersededBy,
-	}, evs, nil
+	}, evs
 }
 
 func withdrawalEligibility(m *Message) error {
