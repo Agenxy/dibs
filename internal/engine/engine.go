@@ -387,6 +387,7 @@ func (e *Engine) boot(now time.Time) {
 		_, _ = e.applyAndLedger(op, now)
 	}
 	e.dropNoticesWithoutMail()
+	e.restoreNativeTurnHolds()
 }
 
 // exec runs the request phases for a mutating op.
@@ -408,7 +409,7 @@ func (e *Engine) execWithReceipt(
 			Hint: "submit the intended feature operation; its writer records the requirement",
 		}
 	}
-	if op.Kind == core.OpContactDiagnosed {
+	if op.Kind == core.OpContactDiagnosed || op.Kind == core.OpContactJoin {
 		return nil, &core.Error{
 			Code: "E_NOT_PERMITTED", Msg: "the daemon records its own native app diagnosis",
 			Hint: "read the contact alert to inspect the diagnosis",

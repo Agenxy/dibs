@@ -24,6 +24,7 @@ func (e *Engine) applyAndLedgerWithReceipt(
 		return nil, err
 	}
 	e.stampReviewRetention(op, now)
+	bindings := e.diagnosedBindingsBefore(op)
 	before := e.state.Serial
 	var mailBefore mailhistory.Snapshot
 	historyObserved := false
@@ -109,6 +110,7 @@ func (e *Engine) applyAndLedgerWithReceipt(
 		published()
 		e.noteHumanCleanup(evs)
 		e.resolveContactsAfter(evs, now)
+		e.resolveChangedDiagnosedBindings(bindings, now)
 	}
 	if op.Kind == core.OpPutBlob {
 		e.protectBlobRegistration(op.Blob)

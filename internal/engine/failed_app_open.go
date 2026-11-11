@@ -142,7 +142,7 @@ func (e *Engine) escalateAppOpenMessage(l *core.Agent, m *core.Message, failed b
 
 func (e *Engine) notifyAppOpenSender(l *core.Agent, m *core.Message, reason string, now time.Time) bool {
 	c := e.state.Contacts[m.ContactEscalatedAt]
-	if c == nil || !c.ResolvedAt.IsZero() || m.From == "" || m.From == l.ID {
+	if !e.senderContactWarningDue(l, m, c) {
 		return false
 	}
 	for _, n := range e.notices[m.From] {
@@ -158,6 +158,11 @@ func (e *Engine) notifyAppOpenSender(l *core.Agent, m *core.Message, reason stri
 	text := fmt.Sprintf("Message %d to %s: delivery unconfirmed; %s and no started turn or read mail is confirmed. "+
 		"Contact alert %d is recorded for the person; %s. OS posting does not prove visibility.",
 		m.Serial, l.ID, reason, c.Serial, hint)
+	if c.Reason != "" {
+		text = fmt.Sprintf("Delivery to %s remains unconfirmed. %s "+
+			"Contact alert %d is recorded for the person; %s. OS posting does not prove visibility.",
+			l.ID, contactReasonText(c.Reason), c.Serial, hint)
+	}
 	// This is contact news, not an envelope outcome. Reading the still-pending
 	// source mail neither presents nor consumes this separate delivery warning.
 	e.pushNoticeKind(m.From, text, c.Serial, 0, true, now, "contact.escalated")
@@ -197,4 +202,11 @@ func (e *Engine) rebuildAppContactSenders() {
 		}
 		e.notifyAppOpenSender(recipient, m, "delivery to the original app is still unconfirmed", c.WindowStart)
 	}
+}
+
+func (e *Engine) senderContactWarningDue(l *core.Agent, m *core.Message, c *core.ContactEscalation) bool {
+	sender := e.state.Agents[m.From]
+	return c != nil && c.ResolvedAt.IsZero() && m.From != "" && m.From != l.ID && !sender.Retired() &&
+		c.Serial > sender.ContactNoticeReadAt && e.contactSenderPending(m.From, c.Serial) &&
+		!e.senderContactWithdrawn(m.From, c.Serial)
 }

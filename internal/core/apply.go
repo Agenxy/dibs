@@ -102,6 +102,7 @@ const (
 	OpReadAppRestart            = "read_app_restart"
 	OpContactEscalate           = "contact_escalated"
 	OpContactDiagnosed          = "contact_diagnosed" // Unknown to readers that cannot preserve a diagnosis.
+	OpContactJoin               = "contact_joined"    // Explicit diagnosed episode, including after its posting window.
 	OpContactNotified           = "contact_notified"
 	OpContactResolved           = "contact_resolved"
 	OpStallNotified             = "stall_notified"
@@ -133,6 +134,8 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		return s.applySweep(op, now)
 	case OpMarkDelivered:
 		return s.applyMarkDelivered(op, now)
+	case OpContactJoin:
+		return s.applyContactJoin(op, now)
 	case OpContactEscalate, OpContactDiagnosed:
 		return s.applyContactEscalate(op, now)
 	case OpContactNotified:
@@ -305,7 +308,7 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 	case OpRespond:
 		res, evs, err = s.applyRespond(l, op, now)
 	case OpWithdrawMessage:
-		res, evs, err = s.applyWithdraw(l, op, now)
+		res, evs = s.applyWithdraw(l, op, now)
 	case OpQueueUpdate:
 		res, evs, err = s.applyQueueUpdate(l, op, now)
 	case OpAckMessage:

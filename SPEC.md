@@ -1964,10 +1964,10 @@ coordinator or admin role, or the `relocate` permission the human grants
 `grant: "relocate"`). Every relocation is ledgered as `agent.relocated` with
 who, the agent, and from and to; the board row shows the last one.
 
-The sender can retract an unfinished request or unanswered question with `respond(disposition:"withdraw",
+The sender can retract an unread notify, unfinished request or unanswered question with `respond(disposition:"withdraw",
 body: reason?, superseded_by: serial?)`. Engine ingress translates this into the
 new `withdraw_message` ledger op before recipient response guards. Admission
-checks field shapes and rejects work-report fields; the fold checks sender
+checks field shapes, rejects work-report fields and checks sender
 ownership, creation-serial privacy fence, message state and replacement. Only
 pending, delivered, acknowledged, queued and approved requests qualify; an approved grant or
 adoption already performed its effect and cannot be withdrawn. Pending, delivered
@@ -1975,8 +1975,11 @@ and acknowledged questions qualify; answered and expired questions do not.
 Unknown, other-sender or self replacement references
 are refused; a replacement is another ordinary question or request by the same sender,
 possibly to a different recipient, and this operation never starts it.
-An own notify or handoff is refused as `E_BAD_DISPOSITION`, naming its actual
-type; a final question/request is refused as `E_MSG_FINAL`, naming its state.
+A notify qualifies until its complete body has been presented or it is consumed.
+A pointer-only announcement or queue acceptance is insufficient; a presented notify
+is refused as `E_MSG_FINAL` with guidance to send a follow-up. A handoff is refused
+as `E_BAD_DISPOSITION`, naming its type; a final question/request is refused as
+`E_MSG_FINAL`, naming its state.
 `E_NOT_SENDER` is reserved for a missing or foreign-incarnation sender identity.
 Withdrawal retains approval/progress history in separate fields, clears queue
 debt/rank/task ordering lock, compacts remaining ranks and notifies the recipient
@@ -1985,6 +1988,19 @@ without an imperative. The terminal envelope becomes unconsumed until recipient
 is the successful call; no delivery is asserted. No work is owed on a withdrawn
 request, and no declaration or agent process is altered. Historical ops retain
 their exact semantics; old field names remain unchanged.
+An unread notify withdrawal removes its source from the open contact summary and
+resolves the contact if no pending source remains. Its sender warning is obsolete
+as soon as that sender has no pending source in the episode; Stop uses the same
+predicate. It generates no recipient withdrawal receipt or wake.
+
+Native turn holds are rebuilt at boot from unresolved diagnosed contacts for the
+current recipient incarnation. Binding changes resolve diagnosed contacts through
+`contact_resolved`. New eligible mail joins a held episode with `contact_joined`,
+including after a posted contact's ten-minute window; it changes the summary without
+a second human alert. Each sender receives at most one diagnosis warning per episode while retained,
+with the authenticated contact-read prefix surviving restart. Withdrawal-based
+suppression lasts while its source is retained: restarting after that source leaves
+retention can repeat one sender warning in an otherwise unchanged hold episode.
 
 For human questions and requests, a committed decision or withdrawal requests
 best-effort removal of the delivered notification through the bundled macOS

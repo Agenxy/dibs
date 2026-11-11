@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"strings"
 	"time"
 
 	"github.com/agenxy/dibs/internal/procinfo/libproc"
@@ -82,7 +81,7 @@ func Snapshot(ctx context.Context) ([]Process, error) {
 		out = append(out, Process{
 			PID: int(row.Proc.P_pid), PPID: int(row.Eproc.Ppid),
 			Start: time.Unix(row.Proc.P_starttime.Sec, int64(row.Proc.P_starttime.Usec)*1000),
-			Comm:  strings.TrimRight(string(row.Proc.P_comm[:]), "\x00"),
+			Comm:  unix.ByteSliceToString(row.Proc.P_comm[:]),
 		})
 	}
 	return out, ctx.Err()

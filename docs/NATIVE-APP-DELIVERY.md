@@ -203,6 +203,15 @@ connections for some seconds while it comes back (about five, measured
 so every agent's next mail navigated the person's window, at moments nobody
 chose, once per agent. Now:
 
+Native process names select path-read candidates, not app authority. The
+measured desktop names are `ChatGPT`, `codex`, `codex-code-mode-host` (including
+kernel-truncated forms), current `Codex (...)` helpers,
+legacy `ChatGPT Helper...` names and crashpad helpers. The separate ChatGPT for
+Chrome extension host is not a desktop candidate. On macOS the kernel's command
+field ends at its first NUL; bytes beyond it are not part of the name. Every
+selected candidate still needs its executable path checked against the app
+bundle, and an unreadable desktop path stays unknown through its bounded fallback.
+
 - A refused dial while the app's process is up is a restart, not a fault. The
   mail is held: no queue, no open. A refused dial with the process gone is a
   stale socket, and the cold route launches the app as before.

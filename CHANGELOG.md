@@ -5,6 +5,27 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Builds use Go 1.27.4, fixing the reachable standard-library HTTP/1 server
+  crash reported as GO-2026-6859. The Go language floor remains 1.26.0.
+- Desktop app observation selects the desktop runtime and helper names before
+  reading executable paths. The separate ChatGPT for Chrome extension host no
+  longer triggers process-command fallbacks on an idle board. Executable paths
+  still establish app identity; denied desktop paths remain unknown. macOS
+  process names stop at their first NUL, so leftover kernel-buffer bytes no
+  longer hide ChatGPT or its Codex runtimes from the inventory.
+- A confirmed native turn failure remains held after daemon restart. New mail
+  probes recovery and joins the same diagnosed contact, without another person
+  alert or a warning for every message. Each sender gets one diagnosis per
+  episode while its source history is retained; a restart after withdrawal
+  retention ends can repeat that sender warning. Changing the recipient's
+  session resolves the old diagnosis.
+- Senders can withdraw notifies whose complete body has not been presented or
+  acknowledged. Withdrawal stops their wakes, removes them from open contact
+  summaries, and clears the sender's warning, including in Stop hooks and after
+  restart. Already-presented notifies explain that a follow-up is required.
+
 ### Added
 
 - The Mac app can add a phone to the board, list the board's human devices,
