@@ -159,6 +159,9 @@ func assertGoneBindingInboxes(t *testing.T, st *core.State, reporter string) {
 				strings.Contains(m.Body, "private request") {
 				t.Errorf("unusable binding warning is not factual, corrective system mail: %+v", m)
 			}
+			if !strings.Contains(m.Body, "Without the nonce") || !strings.Contains(m.Body, `adopt:"<old id>"`) {
+				t.Errorf("durable warning stranded %s without its nonce: %s", who, m.Body)
+			}
 		}
 		if count != 1 {
 			t.Errorf("%s has %d durable missing-thread warnings, want exactly one", who, count)

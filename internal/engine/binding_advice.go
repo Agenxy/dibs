@@ -12,8 +12,11 @@ import (
 	"github.com/agenxy/dibs/internal/harnessenv"
 )
 
-const bindingRemedy = "From an existing app thread, register with this agent's saved nonce to recover it, " +
-	"or call bind_session(token, session_id:<that thread's actual ID>). Keep the current token and nonce."
+const bindingRemedy = "Start a local app thread and register with this agent's saved nonce to recover it. " +
+	"Without the nonce, register and send the coordinator the adoption request registration returns " +
+	"(send(to:\"coordinator\", type:\"request\", adopt:\"<old id>\")). " +
+	"Or call bind_session(token, session_id:<that local thread's actual ID>) if you hold that agent's current token. " +
+	"Keep the returned token and nonce."
 
 const cloudBindingReason = "Bound to a cloud-environment Codex thread; Dibs can only wake local app threads."
 
@@ -65,8 +68,7 @@ func (e *Engine) addBindingAdvice(ctx context.Context, op *core.Op, res core.Res
 			"No automatic retry will run; mail remains in the mailbox."
 	}
 	if current.cloud {
-		status, message = "unsupported", cloudBindingReason+" "+
-			"Start a local thread and adopt this identity using its saved nonce. Registration/binding succeeded."
+		status, message = "unsupported", cloudBindingReason+" Registration/binding succeeded."
 	}
 	res["binding_warning"] = core.Result{
 		"status": status, "thread_id": current.thread, "message": message, "hint": bindingRemedy,

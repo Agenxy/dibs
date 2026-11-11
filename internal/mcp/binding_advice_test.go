@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/testcodexipc"
 )
 
@@ -41,6 +42,7 @@ func assertUnverifiedBinding(t *testing.T, r map[string]any, thread string) {
 		!strings.Contains(hint, "bind_session") {
 		t.Errorf("successful binding hid unverified delivery or lost corrective call: %v", r)
 	}
+	assertNoNonceRecovery(t, hint)
 }
 
 func TestRegisterOwnedAppThreadNeedsNoBindingWarning(t *testing.T) {
@@ -83,8 +85,45 @@ func TestRegisterCloudExecutionBindingNamesTheMeasuredCause(t *testing.T) {
 	}, map[string]any{"threadId": "6af44c23-af48-8191-b86e-c80e20c6802d", SurfaceMetaKey: "chatgpt-cloud-exec"})
 	warning, _ := r["binding_warning"].(map[string]any)
 	message, _ := warning["message"].(string)
+	hint, _ := warning["hint"].(string)
 	if r["token"] == nil || warning["status"] != "unsupported" ||
-		!strings.Contains(message, "cloud-environment Codex thread") || !strings.Contains(message, "local thread") {
+		!strings.Contains(message, "cloud-environment Codex thread") || !strings.Contains(hint, "local app thread") {
 		t.Fatalf("measured cloud binding did not warn honestly with a local recovery step: %v", r)
+	}
+	assertNoNonceRecovery(t, hint)
+}
+
+func TestCloudSendAdvisoryIncludesNoNonceRecovery(t *testing.T) {
+	testcodexipc.Start(t, "no-owner", nil)
+	srv, eng, _ := newServerWithEngine(t)
+	eng.SetWakePolicy(engine.WakeNone) // this guard reads the real send reply, never submits input
+	worker := toolCallWithMeta(t, srv, "register", map[string]any{
+		"name": "cloud-recovery", "harness": "Codex",
+	}, map[string]any{"threadId": testcodexipc.Thread, SurfaceMetaKey: "chatgpt-cloud-exec"})
+	if worker["token"] == nil || worker["agent_id"] == nil {
+		t.Fatalf("setup worker: %v", worker)
+	}
+	sender := toolCall(t, srv, "register", map[string]any{"name": "recovery-sender"})
+	if sender["token"] == nil {
+		t.Fatalf("setup sender: %v", sender)
+	}
+	sent := toolCall(t, srv, "send", map[string]any{
+		"token": sender["token"], "to": worker["agent_id"], "type": "notify", "body": "recovery fixture",
+	})
+	if sent["msg_serial"] == nil || sent["code"] != nil {
+		t.Fatalf("setup send: %v", sent)
+	}
+	note, _ := sent["note"].(string)
+	if !strings.Contains(note, "cloud-environment Codex thread") {
+		t.Fatalf("send hid measured cloud cause: %v", sent)
+	}
+	assertNoNonceRecovery(t, note)
+}
+
+func assertNoNonceRecovery(t *testing.T, text string) {
+	t.Helper()
+	if !strings.Contains(text, "Without the nonce") ||
+		!strings.Contains(text, `send(to:"coordinator", type:"request", adopt:"<old id>")`) {
+		t.Errorf("recovery hint stranded an agent without its nonce: %s", text)
 	}
 }

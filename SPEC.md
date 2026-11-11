@@ -1637,6 +1637,10 @@ the ChatGPT app as surface `chatgpt-cloud-exec`, preserving the actual local too
 host and cwd. Its advisory names the unsupported cloud binding and recovery in
 a local app thread. Unavailable command evidence never invents cloud provenance;
 the generic binding warning stays unverified. This does not add a cloud wake route.
+Registration, cloud-send advice and missing-thread mail share one recovery hint:
+recover from a local app thread with the saved nonce; without it, register and
+send the coordinator the adoption request returned by registration. Binding with
+the existing token remains an option when that credential is still held.
 
 For the local session-socket route, a stated binding on a known local host
 outranks a difference between the agent's work directory and the harness's launch

@@ -99,8 +99,7 @@ func (e *Engine) mailGoneBinding(l *core.Agent, reporter string, plan wakePlan, 
 				plan.thread, bindingRemedy)
 		}
 		if surfaceOf(l) == harnessenv.ChatGPTCloudExec {
-			body += " " + cloudBindingReason + " " +
-				"Start a local thread and adopt this identity using its saved nonce."
+			body += " " + cloudBindingReason
 		}
 		// Effectively-once within ordinary mail dedup (default 24h/256 ids).
 		// Row incarnation and target prevent a rebind inheriting an old warning.
