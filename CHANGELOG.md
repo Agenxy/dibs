@@ -7,6 +7,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Desktop app observation selects the desktop runtime and helper names before
+  reading executable paths. The separate ChatGPT for Chrome extension host no
+  longer triggers process-command fallbacks on an idle board. Executable paths
+  still establish app identity; denied desktop paths remain unknown. macOS
+  process names stop at their first NUL, so leftover kernel-buffer bytes no
+  longer hide ChatGPT or its Codex runtimes from the inventory.
 - A confirmed native turn failure remains held after daemon restart. New mail
   probes recovery and joins the same diagnosed contact, without another person
   alert or a warning for every message. Each sender gets one diagnosis per

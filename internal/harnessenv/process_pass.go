@@ -168,13 +168,16 @@ var processPathFallback = func(ctx context.Context, pid int) (string, error) {
 }
 
 // Comm selects candidates, never authority. Only an observed executable path
-// can place a process in the app bundle. Include helper names so a helper-only
-// remnant remains unknown rather than becoming a known running incarnation.
+// can place a process in the app bundle. Match desktop runtime names, including
+// current Codex and legacy ChatGPT helpers, so helper-only remnants stay visible.
+// A broad ChatGPT prefix also selected the separate "ChatGPT for Chrome" host;
+// its denied native path made idle desktop observation spawn ps fallbacks.
 func appProcessCandidate(row processIdentity) bool {
 	if row.kernel.PID == 0 {
 		return true
 	}
-	return row.comm == "codex" || strings.HasPrefix(row.comm, "ChatGPT") || strings.HasPrefix(row.comm, "chrome_crashpad")
+	return row.comm == "codex" || row.comm == "ChatGPT" || strings.HasPrefix(row.comm, "ChatGPT Helper") ||
+		strings.HasPrefix(row.comm, "Codex (") || strings.HasPrefix(row.comm, "chrome_crashpad")
 }
 
 func (p *processPass) appEvidence() (ThreadOwnership, []string, error) {
