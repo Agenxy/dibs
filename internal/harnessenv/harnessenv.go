@@ -312,6 +312,11 @@ var RealShower = Shower{
 		}
 		if len(argv) == 3 && argv[0] == "/usr/bin/open" && argv[1] == "-g" &&
 			strings.HasPrefix(argv[2], "codex://threads/") && isThreadID(strings.TrimPrefix(argv[2], "codex://threads/")) {
+			// Every ChatGPT thread open, cold route and reload pass alike,
+			// passes here, so this is where a Quit is respected.
+			if !chatGPTMainRunning() {
+				return ErrChatGPTNotRunning
+			}
 			if appOpenFixture != nil {
 				return appOpenFixture("chatgpt-background", argv[2], 0)
 			}

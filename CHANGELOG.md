@@ -7,6 +7,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Dibs no longer launches the ChatGPT app after the person quits it. Every
+  thread open, from the cold route and from the reload pass after an app
+  restart, now checks that the app's main process is running at that moment;
+  leftover helper processes do not count. A refused open is reported as a
+  contact failure, so the person is asked to open ChatGPT, and the mail waits
+  in the mailbox.
 - App registrations and explicit session bindings now warn when neither a
   local rollout nor read-only app ownership confirms their wake target.
   Registration still succeeds; unavailable evidence stays unverified. If the
