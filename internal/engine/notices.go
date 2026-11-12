@@ -405,8 +405,9 @@ func (e *Engine) pushNoticeKind(who, text string, serial, msg uint64, blocking b
 // socket delivery followed by actual turn activity, or a delivering hook,
 // bounds duplicate nudges while check_in still delivers the complete queue.
 // A holder of the session capability can suppress a token-less nudge; it cannot
-// spend the notice itself. Only the agent's authenticated check_in or action
-// on the particular message clears that information.
+// spend the notice itself through this raw read. Authenticated reads clear
+// generic news; complete outcome and contact presentations are consumed
+// separately by the renderer after a delivering hook has carried them.
 func (e *Engine) takeNotices(agent string) []notice {
 	all := e.notices[agent]
 	var out []notice
@@ -415,7 +416,7 @@ func (e *Engine) takeNotices(agent string) []notice {
 		// watermark, not this bounded/ephemeral pointer cache.
 		if e.state != nil {
 			m := e.state.Messages[n.Msg]
-			if e.noticeObsolete(agent, n) || cachedNoticeHasEnvelope(m, agent, n.Serial) {
+			if e.noticeObsolete(agent, n) || cachedNoticeHasEnvelope(m, agent, n) {
 				continue
 			}
 		}
@@ -457,8 +458,11 @@ func (e *Engine) noticeObsolete(agent string, n notice) bool {
 		(m.Consumed || !e.withdrawalReceiptBelongs(m))
 }
 
-func cachedNoticeHasEnvelope(m *core.Message, agent string, serial uint64) bool {
-	return m != nil && ((m.From == agent && m.Expecting()) || (m.To == agent && noticeIsReview(m, serial)))
+func cachedNoticeHasEnvelope(m *core.Message, agent string, n notice) bool {
+	// A coordinator may also have sent the source request. Its contact alert
+	// is separate news, not an outcome reconstructed from that request.
+	return n.Kind != "contact.escalated" && m != nil &&
+		((m.From == agent && m.Expecting()) || (m.To == agent && noticeIsReview(m, n.Serial)))
 }
 
 // pendingNotices returns every notice an agent has outstanding, regardless of

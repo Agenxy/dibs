@@ -1231,8 +1231,12 @@ terminal handling resolves the contact. `contact_alerts` on the board contains
 every unresolved contact, including posted alerts with `notified_at` showing
 when the person was notified: posting does not prove the agent read its mail.
 It contains metadata, never participant bodies. The coordinator's metadata-only
-notice is consumed when shown by its authenticated `check_in` or `inbox`; hooks
-do not consume it. This read does not resolve the contact or consume source mail.
+notice is consumed when shown by authenticated `check_in` or `inbox`, or in
+an actually delivered hook digest, including Stop. Building a socket offer,
+throttling a nudge, or a hook that delivers nothing does not consume it. The
+coordinator's notice stays distinct from its own outgoing request's outcomes
+when the coordinator also sent the source mail. This presentation does not
+resolve the contact or consume source mail.
 Once the contact is resolved or removed, its coordinator reachability notice is
 no longer outstanding and cannot block Stop, including after ledger replay.
 This obsolescence does not mark the notice read or erase the contact history.

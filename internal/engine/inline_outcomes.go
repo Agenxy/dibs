@@ -84,10 +84,7 @@ func (e *Engine) presentGenericUpdatesWithContacts(
 			continue
 		}
 		if e.state != nil {
-			if m := e.state.Messages[n.Msg]; m != nil && m.From == agent && m.Expecting() {
-				continue // already rendered in oldest-prefix order above
-			}
-			if m := e.state.Messages[n.Msg]; m != nil && m.To == agent && noticeIsReview(m, n.Serial) {
+			if cachedNoticeHasEnvelope(e.state.Messages[n.Msg], agent, n) {
 				continue
 			}
 		}

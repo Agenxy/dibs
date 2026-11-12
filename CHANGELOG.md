@@ -7,6 +7,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Coordinator contact updates stop repeating once shown by a delivering hook
+  or an authenticated mailbox read, including when the coordinator sent the
+  original request. Presentation survives restart and does not resolve the
+  person's contact alert or consume the recipient's unread mail. A new
+  contact diagnosis remains eligible to be shown.
 - ChatGPT reloads skip bindings the queue has reported gone, and recheck
   cloud provenance before each thread navigation. Contact alerts for cloud
   and known-gone bindings explain how to recover the identity in a local
