@@ -30,6 +30,7 @@ func TestContactLabelsThroughRegisterSendAndRestart(t *testing.T) {
 		{"known-thread", harnessenv.ChatGPTApp, thread, "ChatGPT", false},
 		{"remote-known-thread", harnessenv.ChatGPTApp, thread, "ChatGPT", true},
 		{"terminal-thread", harnessenv.CodexOutsideApp, thread, "terminal or IDE", false},
+		{"cloud-thread", harnessenv.ChatGPTCloudExec, thread, "local app thread", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("DIBS_DIR", t.TempDir())
@@ -105,12 +106,17 @@ func TestContactLabelsThroughRegisterSendAndRestart(t *testing.T) {
 			if strings.Contains(hint, "PRIVATE-CONTACT-CONTENT") {
 				t.Fatal("participant body leaked into contact")
 			}
-			if tc.session == "" {
+			switch {
+			case tc.session == "":
 				assertMissingContactSession(t, hint)
 				if pending[0].Contact.OpenURL != "" {
 					t.Error("missing thread produced an actionable window link")
 				}
-			} else if !strings.Contains(hint, "original session "+thread) {
+			case tc.surface == harnessenv.ChatGPTCloudExec:
+				if !strings.Contains(hint, bindingRemedy) || strings.Contains(hint, "codex://threads/") {
+					t.Errorf("cloud contact lost the local-thread recovery remedy: %s", hint)
+				}
+			case !strings.Contains(hint, "original session "+thread):
 				t.Errorf("known original thread lost its hint: %+v", pending[0].Contact)
 			}
 			url := "codex://threads/" + thread
@@ -135,6 +141,9 @@ func TestContactLabelsThroughRegisterSendAndRestart(t *testing.T) {
 			coordinator := readContactUpdates(t, restarted, restartCtx, lead["token"].(string), "inbox")
 			if !strings.Contains(coordinator, "contact alert") || strings.Contains(coordinator, url) != wantURL {
 				t.Errorf("replayed coordinator alert URL/provenance: %s; want URL=%v", coordinator, wantURL)
+			}
+			if tc.surface == harnessenv.ChatGPTCloudExec && !strings.Contains(coordinator, bindingRemedy) {
+				t.Errorf("replayed cloud coordinator alert lost the recovery remedy: %s", coordinator)
 			}
 			news := readContactUpdates(t, restarted, restartCtx, asker["token"].(string), "check_in")
 			if tc.session == "" {

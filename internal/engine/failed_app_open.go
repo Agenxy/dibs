@@ -152,7 +152,7 @@ func (e *Engine) notifyAppOpenSender(l *core.Agent, m *core.Message, reason stri
 	}
 	n, _ := e.contactNotice(c)
 	hint := n.Contact.OpenHint
-	if e.ownsHost(l) && surfaceOf(l) == harnessenv.ChatGPTApp && threadIDOf(l) != "" {
+	if e.ownsHost(l) && surfaceOf(l) == harnessenv.ChatGPTApp && threadIDOf(l) != "" && !e.bindingNeedsRecovery(l) {
 		hint = "open codex://threads/" + threadIDOf(l)
 	}
 	text := fmt.Sprintf("Message %d to %s: delivery unconfirmed; %s and no started turn or read mail is confirmed. "+
@@ -197,7 +197,7 @@ func (e *Engine) rebuildAppContactSenders() {
 		}
 		recipient := e.state.Agents[c.Recipient]
 		if recipient == nil || (surfaceOf(recipient) != harnessenv.ChatGPTApp &&
-			surfaceOf(recipient) != harnessenv.ClaudeDesktop) {
+			surfaceOf(recipient) != harnessenv.ClaudeDesktop && surfaceOf(recipient) != harnessenv.ChatGPTCloudExec) {
 			continue
 		}
 		e.notifyAppOpenSender(recipient, m, "delivery to the original app is still unconfirmed", c.WindowStart)

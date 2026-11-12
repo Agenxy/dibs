@@ -226,7 +226,8 @@ bundle, and an unreadable desktop path stays unknown through its bounded fallbac
   open refused this way is a contact failure, so the person is asked instead.
 - On each new app incarnation (two stable process samples), Dibs waits for the
   socket to accept, then loads only local ChatGPT-app agent threads with a
-  current unoffered delivery, excluding archived recipients, in one
+  current unoffered delivery, excluding archived recipients, explicit cloud
+  surfaces and bindings the queue has reported gone, in one
   pass under the desktop-wide open/restore lock: owner discovery first, an
   open only for a thread not held, a bounded wait for it to load, and then
   `codex://threads/new`, which returns the primary window to `/`, the route a
@@ -241,6 +242,16 @@ bundle, and an unreadable desktop path stays unknown through its bounded fallbac
   mail for an unloaded thread can then take the ordinary queue/open route.
   A late pass cannot settle a different app incarnation. Restart notices and
   held mail can reach owned threads natively.
+
+The epoch watcher uses the main executable too: readable helper or bundled
+Codex remnants after Quit are not a new app incarnation. Thread ownership
+keeps its separate conservative evidence rules. Reload navigation rechecks
+the binding immediately before opening, so a cloud-surface update or a
+queue-gone observation during ownership discovery cancels that navigation.
+Cloud and known-gone contact alerts offer identity recovery in a local app
+thread, using the saved nonce or a coordinator adoption request, rather than
+a link to a thread the app cannot load. A gone observation describes the
+specific binding, not the agent forever; a new binding does not inherit it.
 
 Quiet chats are not preloaded. Their next real mail takes the ordinary route.
 Archived agents can still receive native input when their chat is already owned,

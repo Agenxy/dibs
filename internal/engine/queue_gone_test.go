@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agenxy/dibs/internal/codexipc"
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/testcodexipc"
@@ -79,6 +80,22 @@ func goneQueueThreadScenario(t *testing.T, priorFailures int) {
 	}
 	if alerts, _ := board["contact_alerts"].([]contactAlertView); len(alerts) == 0 {
 		t.Errorf("missing thread did not enter the existing contact-alert path: %v", board["contact_alerts"])
+	}
+	// The explicit queue refusal is also a reload refusal. Enter the real
+	// return pass with the same still-pending mail, not a manually set gone flag.
+	previousEpoch, previousOwned := appRestartEpoch.Load(), appThreadOwned
+	appRestartEpoch.Store(func() (string, bool) { return "app:B", true })
+	appThreadOwned = codexipc.Owned
+	t.Cleanup(func() { appRestartEpoch.Store(previousEpoch); appThreadOwned = previousOwned })
+	e.afterAppReturn(ctx, "app:B", nil, 0)
+	waitWakeDone(t, e, "worker")
+	pending, err := e.PendingForHuman(ctx)
+	if err != nil || len(pending) == 0 || pending[0].Contact == nil {
+		t.Fatalf("missing-thread contact disappeared: %v %v", pending, err)
+	}
+	if hint := pending[0].Contact.OpenHint; !strings.Contains(hint, bindingRemedy) ||
+		strings.Contains(hint, "codex://threads/") || pending[0].Contact.OpenURL != "" {
+		t.Fatalf("missing-thread contact offers an unusable link instead of recovery: %+v", pending[0].Contact)
 	}
 	e.wakers.mu.Lock()
 	retry := e.wakers.deferred["worker"]

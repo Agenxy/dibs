@@ -39,6 +39,7 @@ func (e *Engine) contactLooksLive(l *core.Agent) bool {
 
 type contactLinkPlan struct {
 	local, knownHost               bool
+	recovery                       bool
 	host, surface, harness, thread string
 }
 
@@ -58,6 +59,7 @@ func (e *Engine) contactNotice(c *core.ContactEscalation) (HumanNotice, contactL
 	plan := contactLinkPlan{}
 	if l := e.state.Agents[c.Recipient]; l != nil {
 		plan.local = e.ownsHost(l)
+		plan.recovery = e.bindingNeedsRecovery(l)
 		plan.surface, plan.thread = surfaceOf(l), threadIDOf(l)
 		if l.Agent != nil {
 			plan.harness = l.Agent.Harness
@@ -85,7 +87,7 @@ func (e *Engine) contactNotice(c *core.ContactEscalation) (HumanNotice, contactL
 }
 
 func enrichContactURL(n *HumanNotice, plan contactLinkPlan) {
-	if n.Contact == nil || !plan.local || !plan.knownHost || plan.thread == "" {
+	if n.Contact == nil || plan.recovery || !plan.local || !plan.knownHost || plan.thread == "" {
 		return
 	}
 	surface := harnessenv.AppFor(plan.surface, plan.harness, plan.thread)

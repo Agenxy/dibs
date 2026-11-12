@@ -7,6 +7,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- ChatGPT reloads skip bindings the queue has reported gone, and recheck
+  cloud provenance before each thread navigation. Contact alerts for cloud
+  and known-gone bindings explain how to recover the identity in a local
+  thread instead of offering an unusable thread link. Readable helpers left
+  after Quit no longer count as an app restart; only the main process does.
 - Dibs no longer launches the ChatGPT app after the person quits it. Every
   thread open, from the cold route and from the reload pass after an app
   restart, now checks that the app's main process is running at that moment;

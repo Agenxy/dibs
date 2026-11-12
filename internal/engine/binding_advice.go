@@ -20,6 +20,17 @@ const bindingRemedy = "Start a local app thread and register with this agent's s
 
 const cloudBindingReason = "Bound to a cloud-environment Codex thread; Dibs can only wake local app threads."
 
+// On the writer: a cloud surface is explicit provenance; gone is the queue's
+// refusal for this exact local binding. Missing files alone establish neither.
+func (e *Engine) bindingNeedsRecovery(l *core.Agent) bool {
+	if surfaceOf(l) == harnessenv.ChatGPTCloudExec {
+		return true
+	}
+	e.wakers.mu.Lock()
+	defer e.wakers.mu.Unlock()
+	return e.queueThreadGoneLocked(l)
+}
+
 type bindingAdviceTarget struct {
 	created uint64
 	thread  string
