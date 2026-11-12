@@ -172,7 +172,7 @@ func TestQuestionWithdrawalRefusalsNameTheActualRuleThroughMCP(t *testing.T) {
 					case "notify":
 						kind, code, hint = scenario, "E_MSG_FINAL", "presented"
 					case "handoff":
-						kind, code, hint = scenario, "E_BAD_DISPOSITION", scenario
+						kind, code, hint = scenario, "E_MSG_FINAL", "follow-up"
 					case "denied", "done":
 						kind = "request"
 					case "foreign":
@@ -181,7 +181,7 @@ func TestQuestionWithdrawalRefusalsNameTheActualRuleThroughMCP(t *testing.T) {
 					n := questionWithdrawalOK(t, srv, version, "send", map[string]any{
 						"token": lead, "to": "worker", "type": kind, "body": "refusal test",
 					})["msg_serial"]
-					if scenario == "notify" {
+					if scenario == "notify" || scenario == "handoff" {
 						questionWithdrawalOK(t, srv, version, "ack", map[string]any{"token": worker, "msg_serial": n})
 					}
 					if scenario == "answered" || scenario == "denied" || scenario == "done" {

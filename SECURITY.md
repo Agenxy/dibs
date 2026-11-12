@@ -320,6 +320,10 @@ it too. Counts, truncated text and oversized-result file pointers do not count
 as full-body presentation. An unconfirmed socket write does not consume a FYI.
 Hook presentation also records the existing outcome read receipts for the
 complete prefix shown. These effects must not be described as side-effect-free.
+Presenting a complete handoff records its existing delivered receipt and prevents
+sender withdrawal, but leaves the explicit recipient acknowledgement outstanding.
+A shortened handoff pointer, held hook or unconfirmed socket offer cannot do that.
+This grants no claim, role or ownership transfer.
 
 The alternative was tried and is worse. Moving the mark to the agent's own
 authenticated `check_in` makes a peer unable to spend anything, and makes an

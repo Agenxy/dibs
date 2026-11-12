@@ -609,7 +609,7 @@ func (e *Engine) mailPresentationForBudget(
 		}
 		line, complete := e.mailPresentationLine(m, now, budget)
 		out = append(out, line)
-		if m.Type == core.MsgNotify {
+		if m.Type == core.MsgNotify || m.Type == core.MsgHandoff {
 			shown = append(shown, fyiPresentation{serial: m.Serial, full: complete})
 		}
 	}

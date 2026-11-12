@@ -49,20 +49,35 @@ func (e *Engine) consumeFYI(l *core.Agent, id uint64, reason string, now time.Ti
 func (e *Engine) recordFYIPresentation(l *core.Agent, shown []fyiPresentation, reminder bool, now time.Time) error {
 	for _, item := range shown {
 		m := e.state.Messages[item.serial]
-		if m == nil || !e.mailBelongsTo(m, l) || m.Type != core.MsgNotify || m.Consumed {
+		if m == nil || !e.mailBelongsTo(m, l) || m.Consumed {
 			continue
 		}
-		if item.full {
-			if err := e.consumeFYI(l, item.serial, "presented", now); err != nil {
-				return err
-			}
-		} else if reminder && e.notifyPresented(l.ID, m) {
-			if err := e.consumeFYI(l, item.serial, "reminded", now); err != nil {
-				return err
-			}
-		} else if err := e.announceFYI(l, item.serial, now); err != nil {
+		if err := e.recordMailPresentation(l, m, item.full, reminder, now); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func (e *Engine) recordMailPresentation(l *core.Agent, m *core.Message, full, reminder bool, now time.Time) error {
+	switch m.Type {
+	case core.MsgHandoff:
+		// Handoffs still need an explicit ack. Complete presentation records
+		// the same replayable delivery as read_mail, without consuming it.
+		// Pointer-only hooks and unconfirmed offers cannot manufacture one.
+		if full && m.State == core.MsgStatePending {
+			op := &core.Op{Kind: core.OpMarkDelivered, MsgSerials: []uint64{m.Serial}}
+			_, err := e.applyAndLedger(op, now)
+			return err
+		}
+	case core.MsgNotify:
+		if full {
+			return e.consumeFYI(l, m.Serial, "presented", now)
+		}
+		if reminder && e.notifyPresented(l.ID, m) {
+			return e.consumeFYI(l, m.Serial, "reminded", now)
+		}
+		return e.announceFYI(l, m.Serial, now)
 	}
 	return nil
 }

@@ -71,7 +71,8 @@ func TestQuestionWithdrawalOwnershipFinalityAndExactFold(t *testing.T) {
 	}
 	n, replacement, wrongType := send(MsgQuestion), send(MsgRequest), send(MsgHandoff)
 	withdrawRefused(t, f, Op{Kind: OpWithdrawMessage, Token: "t-worker", MsgSerial: n}, "E_NOT_SENDER")
-	withdrawRefused(t, f, Op{Kind: OpWithdrawMessage, Token: "t-lead", MsgSerial: wrongType}, "E_BAD_DISPOSITION")
+	// Handoffs are withdrawable in their own right, but remain invalid as
+	// replacements for a question (the two protocols are not interchangeable).
 	withdrawRefused(t, f, Op{Kind: OpWithdrawMessage, Token: "t-lead", MsgSerial: n, SupersededBy: wrongType}, "E_NO_MESSAGE")
 	f.s.Agents["lead"].CreatedSerial = n + 1
 	withdrawRefused(t, f, Op{Kind: OpWithdrawMessage, Token: "t-lead", MsgSerial: n}, "E_NOT_SENDER")
@@ -118,4 +119,85 @@ func TestNotifyWithdrawalValidationDoesNotChangeTheFold(t *testing.T) {
 	if err != nil || result["state"] != MsgStateWithdrawn {
 		t.Fatalf("fold revalidated withdrawal: %v / %v", result, err)
 	}
+}
+
+func TestHandoffWithdrawalAdmissionAndExactFold(t *testing.T) {
+	for _, state := range []string{MsgStatePending, MsgStateDelivered, MsgStateAcked} {
+		t.Run(state, func(t *testing.T) {
+			f := newQueueFoldFixture(t)
+			f.apply(Op{Kind: OpClaim, Token: "t-lead", Path: "/evidence", Mode: ClaimExclusive})
+			msg := f.apply(Op{Kind: OpSendMessage, Token: "t-lead", To: "worker", MsgType: MsgHandoff, Body: "evidence"})["msg_serial"].(uint64)
+			claims, err := json.Marshal(f.s.Claims)
+			if err != nil {
+				t.Fatal(err)
+			}
+			leadRole, workerRole := f.s.Agents["lead"].Role, f.s.Agents["worker"].Role
+			withdrawRefused(t, f, Op{Kind: OpWithdrawMessage, Token: "t-worker", MsgSerial: msg}, "E_NOT_SENDER")
+			f.s.Agents["lead"].CreatedSerial = msg + 1
+			withdrawRefused(t, f, Op{Kind: OpWithdrawMessage, Token: "t-lead", MsgSerial: msg}, "E_NOT_SENDER")
+			f.s.Agents["lead"].CreatedSerial = 1
+			switch state {
+			case MsgStateDelivered:
+				f.apply(Op{Kind: OpMarkDelivered, MsgSerials: []uint64{msg}})
+			case MsgStateAcked:
+				f.apply(Op{Kind: OpAckMessage, Token: "t-worker", MsgSerial: msg})
+			}
+			op := Op{Kind: OpWithdrawMessage, Token: "t-lead", MsgSerial: msg}
+			if state == MsgStatePending {
+				if err := f.s.Admit(&op); err != nil {
+					t.Fatalf("pending handoff admission: %v", err)
+				}
+				f.apply(op)
+				f.apply(Op{Kind: OpAckMessage, Token: "t-worker", MsgSerial: msg})
+				if f.s.Messages[msg].State != MsgStateWithdrawn {
+					t.Fatal("ack resurrected withdrawn handoff")
+				}
+				f.replay()
+			} else {
+				withdrawRefused(t, f, op, "E_MSG_FINAL")
+				// Replay never applies new admission rules to existing ops.
+				if res, _, err := f.s.Apply(&op, t0); err != nil || res["state"] != MsgStateWithdrawn {
+					t.Fatalf("fold revalidated handoff: %v / %v", res, err)
+				}
+			}
+			after, err := json.Marshal(f.s.Claims)
+			if err != nil || string(claims) != string(after) || leadRole != f.s.Agents["lead"].Role || workerRole != f.s.Agents["worker"].Role {
+				t.Fatal("handoff withdrawal or acknowledgement transferred a claim/role")
+			}
+		})
+	}
+}
+
+func TestHandoffWithdrawalRemovesOnlyItsContactSource(t *testing.T) {
+	f := newQueueFoldFixture(t)
+	send := func(kind string) uint64 {
+		return f.apply(Op{Kind: OpSendMessage, Token: "t-lead", To: "worker", MsgType: kind, Body: "evidence"})["msg_serial"].(uint64)
+	}
+	a, b := send(MsgHandoff), send(MsgQuestion)
+	f.apply(Op{Kind: OpContactEscalate, MsgSerial: a})
+	// The queue fixture records eventful ops only. A coalesced contact
+	// advances the serial without an event, so retain that op explicitly.
+	coalesced := Op{Kind: OpContactEscalate, MsgSerial: b}
+	if err := f.s.Admit(&coalesced); err != nil {
+		t.Fatal("setup coalesced contact admission:", err)
+	}
+	before := f.s.Serial
+	if _, _, err := f.s.Apply(&coalesced, t0); err != nil || f.s.Serial <= before {
+		t.Fatalf("setup coalesced contact did not advance: %v", err)
+	}
+	f.ops = append(f.ops, coalesced)
+	c := f.s.Contacts[f.s.Messages[a].ContactEscalatedAt]
+	if c == nil || c.Count != 2 || f.s.Messages[b].ContactEscalatedAt != c.Serial {
+		t.Fatal("setup: sources did not coalesce")
+	}
+	// This is a fold test: the MCP guard separately proves admission. A
+	// retained withdrawal must remove only its own source on every replay.
+	f.apply(Op{Kind: OpWithdrawMessage, Token: "t-lead", MsgSerial: a})
+	if c.Count != 1 || c.OldestSerial != b || c.HighWater != b || !c.ResolvedAt.IsZero() {
+		t.Fatalf("withdrawal changed the wrong contact summary: %+v", c)
+	}
+	if f.s.Messages[b].State != MsgStatePending {
+		t.Fatal("withdrawal changed the other source")
+	}
+	f.replay()
 }

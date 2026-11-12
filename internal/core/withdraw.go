@@ -6,7 +6,7 @@ package core
 import "time"
 
 const (
-	// OpWithdrawMessage retracts a sender's unfinished request, question or unread notify.
+	// OpWithdrawMessage retracts a sender's unfinished ask or unread informational mail.
 	OpWithdrawMessage = "withdraw_message"
 	// MsgStateWithdrawn is a retracted message, never an answer or completed work.
 	MsgStateWithdrawn = "withdrawn"
@@ -21,7 +21,7 @@ func checkWithdrawal(op *Op, lim Limits) error {
 		return nil
 	}
 	if op.MsgSerial == 0 || op.SupersededBy == op.MsgSerial {
-		return errf("E_BAD_ARG", "name a request, question or notify serial and a different replacement, if any",
+		return errf("E_BAD_ARG", "name a request, question, notify or handoff serial and a different replacement, if any",
 			"invalid withdrawal serial")
 	}
 	if len(op.Body) > lim.MaxBodyBytes {
@@ -45,8 +45,13 @@ func senderOwnsMessage(m *Message, l *Agent) bool {
 		(l.CreatedSerial == 0 || m.Serial >= l.CreatedSerial || MergedSenderOwns(m, l))
 }
 
-func senderOwnsWithdrawable(m *Message, l *Agent) bool {
-	return senderOwnsMessage(m, l) && (m.Type == MsgRequest || m.Type == MsgQuestion)
+func senderOwnsWithdrawalReplacement(m, replacement *Message, l *Agent) bool {
+	if !senderOwnsMessage(replacement, l) || replacement.Grant != "" ||
+		replacement.Adopt != "" || replacement.RetiresIdentity() {
+		return false
+	}
+	return replacement.Type == MsgRequest || replacement.Type == MsgQuestion ||
+		(m.Type == MsgHandoff && replacement.Type == MsgHandoff)
 }
 
 // Admission alone decides whether a NEW withdrawal is permitted. The fold
@@ -70,9 +75,12 @@ func (s *State) admitWithdrawal(op *Op) error {
 	}
 	if op.SupersededBy != 0 {
 		replacement := s.Messages[op.SupersededBy]
-		if !senderOwnsWithdrawable(replacement, l) ||
-			replacement.Grant != "" || replacement.Adopt != "" || replacement.RetiresIdentity() {
-			return errf("E_NO_MESSAGE", "superseded_by names another ordinary question or request YOU sent",
+		if !senderOwnsWithdrawalReplacement(m, replacement, l) {
+			hint := "superseded_by names another ordinary question or request YOU sent"
+			if m.Type == MsgHandoff {
+				hint += "; another handoff YOU sent also qualifies"
+			}
+			return errf("E_NO_MESSAGE", hint,
 				"replacement is not your ordinary question or request")
 		}
 	}
@@ -81,8 +89,8 @@ func (s *State) admitWithdrawal(op *Op) error {
 
 func (s *State) applyWithdraw(l *Agent, op *Op, now time.Time) (Result, []Event) {
 	m := s.Messages[op.MsgSerial]
-	if m.Type == MsgNotify {
-		s.removeNotifyContactSource(m)
+	if m.Type == MsgNotify || m.Type == MsgHandoff {
+		s.removeUnreadContactSource(m)
 	}
 	queued := m.State == MsgStateQueued
 	m.State, m.WithdrawalReason, m.WithdrawnBy = MsgStateWithdrawn, op.Body, l.ID
@@ -114,10 +122,13 @@ func withdrawalEligibility(m *Message) error {
 	if m.Type == MsgNotify {
 		return notifyWithdrawalEligibility(m)
 	}
+	if m.Type == MsgHandoff {
+		return handoffWithdrawalEligibility(m)
+	}
 	if m.Type != MsgRequest && m.Type != MsgQuestion {
 		return errf("E_BAD_DISPOSITION",
 			"withdraw only an unfinished request or unanswered question YOU sent; "+
-				"an unread notify is also withdrawable; handoff cannot be withdrawn",
+				"an unread notify or handoff is also withdrawable",
 			"cannot withdraw a %s", m.Type)
 	}
 	switch m.State {
@@ -138,9 +149,17 @@ func withdrawalEligibility(m *Message) error {
 		"message already %s", m.State)
 }
 
-// New notify withdrawals remove a source from the retained summary. Historical
+func handoffWithdrawalEligibility(m *Message) error {
+	if m.State == MsgStatePending && !m.Consumed && m.DeliveredAt == 0 && m.AckedAt == 0 {
+		return nil
+	}
+	return errf("E_MSG_FINAL", "this handoff was read, acknowledged or finished; send a follow-up to correct it",
+		"handoff already %s", m.State)
+}
+
+// New notify/handoff withdrawals remove a source from the retained summary. Historical
 // request/question withdrawals retain their original fold.
-func (s *State) removeNotifyContactSource(m *Message) {
+func (s *State) removeUnreadContactSource(m *Message) {
 	c := s.Contacts[m.ContactEscalatedAt]
 	if c == nil || !c.ResolvedAt.IsZero() {
 		return
