@@ -53,6 +53,9 @@ func (e *Engine) appNavigationAllowedLocked(agent string, created uint64, thread
 		e.noteAppBinding(l, "archived")
 		return false
 	}
+	if e.bindingNeedsRecovery(l) {
+		return false
+	}
 	return true
 }
 

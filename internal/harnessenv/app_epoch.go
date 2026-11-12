@@ -24,6 +24,12 @@ func ChatGPTAppEpoch() (string, bool) {
 	if err != nil {
 		return "", false
 	}
+	// Ownership may conservatively retain readable bundle remnants, but only
+	// the main executable establishes an app incarnation. A helper surviving
+	// Quit is absence, not a return that can start a reload pass.
+	if !processes.mainAppRunning() {
+		return "absent", true
+	}
 	if state.Epoch == "" || state.Epoch == "absent" {
 		return state.Epoch, state.Epoch != ""
 	}

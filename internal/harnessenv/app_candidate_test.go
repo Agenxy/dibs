@@ -73,7 +73,7 @@ func TestAppEpochSelectsDesktopProcessesBeforeReadingPaths(t *testing.T) {
 	}
 }
 
-func TestAppEpochKeepsReadableHelperOnlyRemnantsUnknown(t *testing.T) {
+func TestAppEpochReadsReadableHelperOnlyRemnantsAsAbsent(t *testing.T) {
 	rows, err := procinfo.Snapshot(t.Context())
 	if err != nil {
 		t.Fatal(err)
@@ -107,8 +107,8 @@ func TestAppEpochKeepsReadableHelperOnlyRemnantsUnknown(t *testing.T) {
 				fallbacks++
 				return "", os.ErrPermission
 			}
-			if epoch, known := ChatGPTAppEpoch(); known || epoch != "" || reads != 1 || fallbacks != 0 {
-				t.Fatalf("helper became absent or a complete app incarnation: epoch=%q known=%v reads=%d fallbacks=%d",
+			if epoch, known := ChatGPTAppEpoch(); !known || epoch != "absent" || reads != 1 || fallbacks != 0 {
+				t.Fatalf("helper became an app incarnation or unknown: epoch=%q known=%v reads=%d fallbacks=%d",
 					epoch, known, reads, fallbacks)
 			}
 		})

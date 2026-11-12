@@ -173,7 +173,7 @@ func (e *Engine) noteEventFor(ev core.Event, wants func(agent string) bool) {
 		if c := e.state.Contacts[ev.Serial]; c != nil && c.Reason != "" {
 			text += " " + contactReasonText(c.Reason)
 		}
-		if l := e.state.Agents[ev.Agent]; chatGPTContactURL(l) != "" {
+		if l := e.state.Agents[ev.Agent]; chatGPTContactURL(l) != "" || e.bindingNeedsRecovery(l) {
 			text += " " + e.contactOpenHint(e.agentName(ev.Agent), l) + "."
 		}
 	}

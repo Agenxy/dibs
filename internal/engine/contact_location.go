@@ -35,6 +35,13 @@ func (e *Engine) contactOpenHint(name string, l *core.Agent) string {
 		}
 	}
 	location := name + " in " + app + " on " + host
+	if e.bindingNeedsRecovery(l) {
+		reason := "The queue reported no rollout found for this binding."
+		if surfaceOf(l) == harnessenv.ChatGPTCloudExec {
+			reason = cloudBindingReason
+		}
+		return "Cannot wake " + name + " on " + host + ": " + reason + " " + bindingRemedy
+	}
 	if url := chatGPTContactURL(l); url != "" {
 		return "Open " + location + " at " + url + " (original session " + thread + ")"
 	}

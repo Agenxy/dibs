@@ -70,7 +70,7 @@ func (e *Engine) decorateContactAlerts(b core.Result) {
 			DeliveryFailure: rec.failure, RetryExhausted: rec.count >= 2 && rec.failure != "",
 			FailureHint: contactReasonText(c.Reason),
 		}
-		if l := e.state.Agents[c.Recipient]; chatGPTContactURL(l) != "" {
+		if l := e.state.Agents[c.Recipient]; chatGPTContactURL(l) != "" || e.bindingNeedsRecovery(l) {
 			view.OpenHint = e.contactOpenHint(e.agentName(c.Recipient), l)
 		}
 		views = append(views, view)

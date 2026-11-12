@@ -111,7 +111,7 @@ func (e *Engine) appAgentThreads(ctx context.Context) (agents, threads []string)
 				continue
 			}
 			thread := threadIDOf(l)
-			if thread == "" {
+			if thread == "" || e.bindingNeedsRecovery(l) {
 				continue
 			}
 			agents = append(agents, id)
