@@ -105,8 +105,8 @@ func TestContactAlertReadQuietsCoordinatorWithoutResolvingContact(t *testing.T) 
 							}
 						}
 						first := call(read, map[string]any{"token": lead})
-						if !strings.Contains(fmt.Sprint(first["agent_updates"]), marker) {
-							t.Fatalf("setup: authenticated first read did not deliver the contact alert: %v", first)
+						if got, want := strings.Contains(fmt.Sprint(first["agent_updates"]), marker), activation == "cold"; got != want {
+							t.Fatalf("authenticated read after %s activation has contact=%v, want%v: %v", activation, got, want, first)
 						}
 						second := call(read, map[string]any{"token": lead})
 						if strings.Contains(fmt.Sprint(second["agent_updates"]), marker) {

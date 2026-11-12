@@ -51,10 +51,9 @@ func TestContactNoticeReadStopsCoordinatorNag(t *testing.T) {
 			})["msg_serial"].(uint64)
 			contact := waitResolvedContactEscalation(t, events).Serial
 			needle := fmt.Sprintf("contact alert %d", contact)
-			firstStop, err := e.HookPoll(ctx, "lead-contact-session", "Stop", "", false, false)
-			if err != nil || firstStop["decision"] != "block" || !strings.Contains(fmt.Sprint(firstStop), needle) {
-				t.Fatalf("setup: unread escalation does not reach Stop: %v %v", firstStop, err)
-			}
+			// This matrix exercises authenticated reads as the first
+			// presentation. A delivering Stop is tested separately: it now
+			// consumes contact news too, so it cannot precede this first read.
 			if got := readContactStopUpdates(t, e, ctx, tokens["lead"], path); !strings.Contains(got, needle) {
 				t.Fatalf("setup: first authenticated read lacks contact: %s", got)
 			}

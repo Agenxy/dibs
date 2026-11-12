@@ -445,6 +445,9 @@ func (e *Engine) deliverHookDigest(
 	if err := e.consumeOutcomes(l.ID, through, now); err != nil {
 		return core.Result{"error": err}
 	}
+	if err := e.consumePresentedContactNotices(l.ID, noticeKeys, now); err != nil {
+		return core.Result{"error": err}
+	}
 	e.markInformationalNoticesDelivered(event, l.ID, noticeKeys)
 	e.noteDeliveringHook(l, event, now)
 	return e.hookOutput(out, strict, event)

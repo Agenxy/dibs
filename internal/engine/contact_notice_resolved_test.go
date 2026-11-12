@@ -60,12 +60,6 @@ func TestResolvedContactNoticeStopsBlockingHooksAndReplay(t *testing.T) {
 				!strings.Contains(probe["news"].(string), needle) {
 				t.Fatalf("setup: real send did not raise coordinator contact news: %v", probe)
 			}
-			if resolution == "unresolved" {
-				before, err := e.HookPoll(ctx, "lead-contact-session", "Stop", "", false, false)
-				if err != nil || before["decision"] != "block" || !strings.Contains(fmt.Sprint(before), needle) {
-					t.Fatalf("setup: unresolved real alert did not reach Stop: %v %v", before, err)
-				}
-			}
 			switch resolution {
 			case "read":
 				if _, err := e.Inbox(ctx, tokens["unreachable"]); err != nil {
@@ -83,7 +77,9 @@ func TestResolvedContactNoticeStopsBlockingHooksAndReplay(t *testing.T) {
 			if got := strings.Contains(state["news"].(string), needle); got != (resolution == "unresolved") {
 				t.Errorf("%s contact notice outstanding=%v: %v", resolution, got, state)
 			}
-			for _, phase := range []string{"live", "replay"} {
+			// Each phase begins before presentation: the replay fixture must
+			// not inherit the live Stop's newly durable contact read.
+			for _, phase := range []string{"replay", "live"} {
 				current, currentCtx := e, ctx
 				if phase == "replay" {
 					current, currentCtx = replayContactEngine(t, e, ctx, led)
@@ -109,6 +105,13 @@ func TestResolvedContactNoticeStopsBlockingHooksAndReplay(t *testing.T) {
 					if resolution != "unresolved" && (got["decision"] == "block" || strings.Contains(fmt.Sprint(got), needle)) {
 						t.Errorf("%s %s still carries/blocks for %s contact: %v", phase, event, resolution, got)
 					}
+					if resolution == "unresolved" {
+						shown := strings.Contains(fmt.Sprint(got), needle)
+						if (event == "Stop" && (got["decision"] != "block" || !shown)) ||
+							(event == "SessionStart" && shown) {
+							t.Errorf("%s %s did not present unresolved news exactly once: %v", phase, event, got)
+						}
+					}
 				}
 			}
 			if _, err := e.query(ctx, func() core.Result {
@@ -117,7 +120,7 @@ func TestResolvedContactNoticeStopsBlockingHooksAndReplay(t *testing.T) {
 				for _, n := range e.notices["lead"] {
 					cachedContact = cachedContact || n.Kind == "contact.escalated"
 				}
-				if cachedContact != (resolution == "unresolved") ||
+				if cachedContact ||
 					!strings.Contains(fmt.Sprint(e.takeNotices("lead")), "unrelated coordination news") {
 					t.Error("new notice retained obsolete protected contact or lost unrelated news")
 				}

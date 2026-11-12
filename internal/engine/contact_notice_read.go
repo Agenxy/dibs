@@ -22,7 +22,7 @@ func (e *Engine) contactNoticeObsolete(agent string, n notice) bool {
 		(!e.contactSenderPending(agent, c.Serial) || e.senderContactWithdrawn(agent, c.Serial)))
 }
 
-// Only authenticated pulls call this, after their updates were rendered.
+// Authenticated pulls and delivering hooks call this after rendering updates.
 // Reading reachability news consumes that notice, not the source mail or the
 // contact's independent human delivery. Other generic notices keep their rules.
 func (e *Engine) consumeContactNotices(agent string, shown map[uint64]bool, now time.Time) error {
@@ -49,6 +49,19 @@ func (e *Engine) consumeContactNotices(agent string, shown map[uint64]bool, now 
 		e.notices[agent] = kept
 	}
 	return nil
+}
+
+// A hook's session capability spends only notices in its delivered digest.
+// Socket writes have no receipt; merely building or throttling their offer
+// must never advance the durable read prefix.
+func (e *Engine) consumePresentedContactNotices(agent string, keys []string, now time.Time) error {
+	shown := map[uint64]bool{}
+	for _, n := range e.takeNotices(agent) {
+		if n.Kind == "contact.escalated" && slices.Contains(keys, noticeKey(agent, n.Serial)) {
+			shown[n.Serial] = true
+		}
+	}
+	return e.consumeContactNotices(agent, shown, now)
 }
 
 func (e *Engine) contactSenderPending(sender string, contact uint64) bool {

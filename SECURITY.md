@@ -240,7 +240,12 @@ not reset on a busy label. A forged lifecycle call may still cause an otherwise
 eligible outstanding item to be considered, and lifecycle-derived contact can
 affect liveness diagnostics. A lifecycle label alone proves neither receiver
 acceptance nor mail consumption; a fitting hook digest that presents a complete
-FYI body does consume that FYI. Requests and questions remain owed until
+FYI body does consume that FYI. A delivering hook also consumes the contact
+news it actually renders, using the same durable prefix as authenticated
+reads. A holder of the local secret and a session capability can therefore
+suppress that session's repeated contact notice, but cannot resolve the
+person's contact alert or consume the recipient's source mail that way.
+Requests and questions remain owed until
 answered, and this path grants no role. A credential
 per agent that the hub can distinguish remains the boundary described in
 `docs/NETWORK.md` §6 (#74); removing cooldown deferral does not authenticate

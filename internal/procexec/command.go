@@ -13,7 +13,7 @@ import (
 
 var commands struct {
 	sync.RWMutex
-	observe func(string)
+	observe func(string, []string)
 }
 
 // ObserveCommands observes command construction, without argv or output. The
@@ -21,6 +21,16 @@ var commands struct {
 // prove that an observation does not even prepare a child; a source guard keeps
 // production constructors from bypassing it. Observers must not call Command.
 func ObserveCommands(observe func(string)) func() {
+	if observe == nil {
+		return ObserveCommandArgs(nil)
+	}
+	return ObserveCommandArgs(func(name string, _ []string) { observe(name) })
+}
+
+// ObserveCommandArgs is the diagnostic form of ObserveCommands. Arguments are
+// copied so an observer cannot alter the command being constructed. It logs
+// nothing itself; a fixture owns any failure-only output and its bounds.
+func ObserveCommandArgs(observe func(string, []string)) func() {
 	commands.Lock()
 	previous := commands.observe
 	commands.observe = observe
@@ -45,7 +55,7 @@ func Command(ctx context.Context, name string, arg ...string) *exec.Cmd {
 	observe := commands.observe
 	commands.RUnlock()
 	if observe != nil {
-		observe(name)
+		observe(name, append([]string(nil), arg...))
 	}
 	// #nosec G204 G702 -- callers own executable selection and typed argv; this wrapper adds no shell or input surface.
 	cmd := exec.CommandContext(ctx, name, arg...)
