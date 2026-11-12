@@ -38,8 +38,10 @@ func TestRestartReturnRechecksCloudSurfaceBeforeNavigation(t *testing.T) {
 	var once sync.Once
 	appThreadOwned = func(ctx context.Context, thread string) (bool, error) {
 		once.Do(func() {
-			res, err := e.Do(ctx, &core.Op{Kind: core.OpUpdate, Token: worker,
-				Agent: &core.AgentInfo{Surface: harnessenv.ChatGPTCloudExec}})
+			res, err := e.Do(ctx, &core.Op{
+				Kind: core.OpUpdate, Token: worker,
+				Agent: &core.AgentInfo{Surface: harnessenv.ChatGPTCloudExec},
+			})
 			if err != nil || res["ok"] != true {
 				t.Fatalf("setup: cloud surface update failed: %v %v", res, err)
 			}

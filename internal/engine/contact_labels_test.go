@@ -106,16 +106,17 @@ func TestContactLabelsThroughRegisterSendAndRestart(t *testing.T) {
 			if strings.Contains(hint, "PRIVATE-CONTACT-CONTENT") {
 				t.Fatal("participant body leaked into contact")
 			}
-			if tc.session == "" {
+			switch {
+			case tc.session == "":
 				assertMissingContactSession(t, hint)
 				if pending[0].Contact.OpenURL != "" {
 					t.Error("missing thread produced an actionable window link")
 				}
-			} else if tc.surface == harnessenv.ChatGPTCloudExec {
+			case tc.surface == harnessenv.ChatGPTCloudExec:
 				if !strings.Contains(hint, bindingRemedy) || strings.Contains(hint, "codex://threads/") {
 					t.Errorf("cloud contact lost the local-thread recovery remedy: %s", hint)
 				}
-			} else if !strings.Contains(hint, "original session "+thread) {
+			case !strings.Contains(hint, "original session "+thread):
 				t.Errorf("known original thread lost its hint: %+v", pending[0].Contact)
 			}
 			url := "codex://threads/" + thread
