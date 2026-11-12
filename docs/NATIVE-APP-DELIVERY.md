@@ -219,7 +219,11 @@ bundle, and an unreadable desktop path stays unknown through its bounded fallbac
 
 - A refused dial while the app's process is up is a restart, not a fault. The
   mail is held: no queue, no open. A refused dial with the process gone is a
-  stale socket, and the cold route launches the app as before.
+  stale socket. The cold route queues the notice and does not open the
+  thread: Dibs never launches the app, because a Quit is the person's
+  decision. Every thread open checks for the app's main executable at the
+  moment of the open (helpers and the bundled codex outlive a Quit), and an
+  open refused this way is a contact failure, so the person is asked instead.
 - On each new app incarnation (two stable process samples), Dibs waits for the
   socket to accept, then loads only local ChatGPT-app agent threads with a
   current unoffered delivery, excluding archived recipients, in one

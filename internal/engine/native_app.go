@@ -197,7 +197,8 @@ func (e *Engine) originalNativeWakeOwed(plan wakePlan, agent string) bool {
 // appRestarting reads a refused native dial as a restart when the app's
 // process is up: the cold route would open the thread in a window that is
 // coming back, which is the switching every ChatGPT restart caused. With the
-// process gone the socket is stale, and the cold route is what launches it.
+// process gone the socket is stale; the cold route queues the notice and does
+// not open the thread, because opening it would launch an app the person quit.
 func appRestarting(out wakeexec.NativeOutcome) bool {
 	if !out.AppNotListening {
 		return false
@@ -221,7 +222,7 @@ func (e *Engine) heldForAppReturn(plan wakePlan, agent string, out wakeexec.Nati
 		return true
 	}
 	if out.AppNotListening {
-		slog.Info("the ChatGPT app is not running; using the cold route, which launches it", "agent", agent)
+		slog.Info("the ChatGPT app is not running; using the cold route, which queues without launching it", "agent", agent)
 	}
 	return false
 }

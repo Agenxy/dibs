@@ -19,6 +19,9 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	backgroundPairCacheDir = func() (string, error) { return cache, nil }
+	// The person's app is not part of any test. Fixtures that open assume it
+	// is running; TestRealShowerNeverLaunchesAQuitChatGPT covers the refusal.
+	chatGPTMainRunning = func() bool { return true }
 	// Claude session/settings and the default Codex home are also profile
 	// reads. Individual fixtures may replace these with another private home.
 	for key, value := range map[string]string{
