@@ -8,8 +8,10 @@ package engine
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -78,7 +80,25 @@ func TestIdleProcessObservationStartsNoChildren(t *testing.T) {
 	defer func() { cancel(); <-e.Done() }()
 	var mu sync.Mutex
 	commands := map[string]int{}
-	restore := procexec.ObserveCommands(func(name string) { mu.Lock(); commands[name]++; mu.Unlock() })
+	var traces []string
+	restore := procexec.ObserveCommandArgs(func(name string, args []string) {
+		mu.Lock()
+		defer mu.Unlock()
+		commands[name]++
+		if len(traces) == 4 {
+			return
+		}
+		// A failed hosted guard must name the actual call path, including a
+		// stray worker outside this test. No output on success; bounded argv
+		// and one bounded goroutine stack per unexpected constructor.
+		args = args[:min(len(args), 8)]
+		for i, arg := range args {
+			args[i] = arg[:min(len(arg), 256)]
+		}
+		var stack [4096]byte
+		n := runtime.Stack(stack[:], false)
+		traces = append(traces, fmt.Sprintf("%q %q\n%s", name, args, stack[:n]))
+	})
 	defer restore()
 	for range 2 {
 		if _, err := e.query(ctx, func() core.Result {
@@ -118,7 +138,7 @@ func TestIdleProcessObservationStartsNoChildren(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 	if len(commands) != 0 {
-		t.Fatalf("idle observation prepared child processes: %v", commands)
+		t.Fatalf("idle observation prepared child processes: %v\n%s", commands, strings.Join(traces, "\n"))
 	}
 }
 

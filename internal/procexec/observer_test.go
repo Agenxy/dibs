@@ -40,3 +40,20 @@ func TestCommandObserverChild(t *testing.T) {
 		}
 	}
 }
+
+func TestArgumentObserverCannotRewriteCommand(t *testing.T) {
+	const arg = "-test.run=^TestCommandObserverChild$"
+	seen := false
+	restore := ObserveCommandArgs(func(name string, args []string) {
+		seen = true
+		if name != os.Args[0] || len(args) != 1 || args[0] != arg {
+			t.Fatalf("observer missed the actual constructor arguments: %q %q", name, args)
+		}
+		args[0] = "rewritten"
+	})
+	defer restore()
+	cmd := Command(t.Context(), os.Args[0], arg)
+	if !seen || len(cmd.Args) != 2 || cmd.Args[1] != arg {
+		t.Fatalf("observer changed command execution: %q", cmd.Args)
+	}
+}
