@@ -95,87 +95,91 @@ func TestUnreadNotifyWithdrawalThroughMCPAndRestart(t *testing.T) {
 	}
 }
 
-func TestNotifyWithdrawalClearsContactAndSenderStop(t *testing.T) {
+func TestUnreadInformationalWithdrawalClearsContactAndSenderStop(t *testing.T) {
 	binary := filepath.Join(t.TempDir(), "codex")
 	if out, err := exec.Command("go", "build", "-o", binary, "../wakeexec/testdata/codexqueue").CombinedOutput(); err != nil {
 		t.Fatalf("build queue fixture: %v %s", err, out)
 	}
 	testexec.PrepareExecutable(t, exec.Command(binary, "--version"))
 	for _, version := range []string{"2026-07-28", "2025-11-25"} {
-		t.Run(version, func(t *testing.T) {
-			testcodexipc.Start(t, "no-owner", nil)
-			previous := harnessenv.RealShower
-			harnessenv.RealShower = harnessenv.Shower{
-				Holds: func(string) bool { return false },
-				Open:  func([]string) error { return errors.New("fixture open failure") },
-			}
-			t.Cleanup(func() { harnessenv.RealShower = previous })
-			dir := t.TempDir()
-			t.Setenv("DIBS_DIR", dir)
-			srv, eng, stop := questionWithdrawalServer(t, dir, version)
-			eng.SetWakeCommands(map[string]engine.WakeCommand{"codex": {Argv: []string{
-				binary, "queue", "--thread", "{thread}", "--message", "{message}",
-			}}})
-			worker := toolCallWithMeta(t, srv, "register", map[string]any{
-				"name": "worker", "session_id": testcodexipc.Thread, "harness": "Codex",
-			}, map[string]any{SurfaceMetaKey: harnessenv.ChatGPTApp})
-			if worker["token"] == nil {
-				t.Fatalf("setup registration: %v", worker)
-			}
-			lead := questionWithdrawalOK(t, srv, version, "register", map[string]any{
-				"name": "lead", "session_id": "notify-withdraw-lead",
-			})["token"]
-			n := questionWithdrawalOK(t, srv, version, "send", map[string]any{
-				"token": lead, "to": "worker", "type": "notify", "priority": "high", "body": "pending high-priority FYI",
-			})["msg_serial"]
-			until := time.Now().Add(5 * time.Second)
-			for {
-				board, err := eng.Board(context.Background())
-				if err != nil {
-					t.Fatal(err)
+		for _, kind := range []string{"notify", "handoff"} {
+			t.Run(version+"/"+kind, func(t *testing.T) {
+				testcodexipc.Start(t, "no-owner", nil)
+				previous := harnessenv.RealShower
+				harnessenv.RealShower = harnessenv.Shower{
+					Holds: func(string) bool { return false },
+					Open:  func([]string) error { return errors.New("fixture open failure") },
 				}
-				if alerts := board["contact_alerts"]; strings.Contains(fmt.Sprint(alerts), "worker") {
-					break
+				t.Cleanup(func() { harnessenv.RealShower = previous })
+				dir := t.TempDir()
+				t.Setenv("DIBS_DIR", dir)
+				srv, eng, stop := questionWithdrawalServer(t, dir, version)
+				eng.SetWakeCommands(map[string]engine.WakeCommand{"codex": {Argv: []string{
+					binary, "queue", "--thread", "{thread}", "--message", "{message}",
+				}}})
+				worker := toolCallWithMeta(t, srv, "register", map[string]any{
+					"name": "worker", "session_id": testcodexipc.Thread, "harness": "Codex",
+				}, map[string]any{SurfaceMetaKey: harnessenv.ChatGPTApp})
+				if worker["token"] == nil {
+					t.Fatalf("setup registration: %v", worker)
 				}
-				if time.Now().After(until) {
-					t.Fatalf("setup: app failure did not produce a contact: %v", board)
+				lead := questionWithdrawalOK(t, srv, version, "register", map[string]any{
+					"name": "lead", "session_id": "notify-withdraw-lead",
+				})["token"]
+				args := map[string]any{"token": lead, "to": "worker", "type": kind, "body": "pending evidence"}
+				if kind == "notify" {
+					args["priority"] = "high"
 				}
-				<-time.After(5 * time.Millisecond)
-			}
-			before := questionWithdrawalOK(t, srv, version, "hook_poll", map[string]any{
-				"session_id": "notify-withdraw-lead", "event": "UserPromptSubmit",
-			})
-			if !strings.Contains(fmt.Sprint(before), "outstanding update units") {
-				t.Fatalf("setup: sender was not warned: %v", before)
-			}
-			r := questionWithdrawalCall(t, srv, version, "respond", map[string]any{
-				"token": lead, "msg_serial": n, "disposition": "withdraw",
-			})
-			if r["__is_error"] == true || r["state"] != "withdrawn" {
-				t.Fatalf("withdraw notify after failed delivery: %v", r)
-			}
-			for _, phase := range []string{"live", "restart"} {
-				if phase == "restart" {
-					stop()
-					srv, eng, stop = questionWithdrawalServer(t, dir, version)
+				n := questionWithdrawalOK(t, srv, version, "send", args)["msg_serial"]
+				until := time.Now().Add(5 * time.Second)
+				for {
+					board, err := eng.Board(context.Background())
+					if err != nil {
+						t.Fatal(err)
+					}
+					if alerts := board["contact_alerts"]; strings.Contains(fmt.Sprint(alerts), "worker") {
+						break
+					}
+					if time.Now().After(until) {
+						t.Fatalf("setup: app failure did not produce a contact: %v", board)
+					}
+					<-time.After(5 * time.Millisecond)
 				}
-				board, err := eng.Board(context.Background())
-				if err != nil {
-					t.Fatal(err)
+				before := questionWithdrawalOK(t, srv, version, "hook_poll", map[string]any{
+					"session_id": "notify-withdraw-lead", "event": "UserPromptSubmit",
+				})
+				if !strings.Contains(fmt.Sprint(before), "outstanding update units") {
+					t.Fatalf("setup: sender was not warned: %v", before)
 				}
-				if board["contact_alerts"] != nil {
-					t.Errorf("%s retained contact after its only source was withdrawn: %v", phase, board["contact_alerts"])
+				r := questionWithdrawalCall(t, srv, version, "respond", map[string]any{
+					"token": lead, "msg_serial": n, "disposition": "withdraw",
+				})
+				if r["__is_error"] == true || r["state"] != "withdrawn" {
+					t.Fatalf("withdraw notify after failed delivery: %v", r)
 				}
-				for _, event := range []string{"Stop", "UserPromptSubmit", "Stop"} {
-					got := questionWithdrawalOK(t, srv, version, "hook_poll", map[string]any{
-						"session_id": "notify-withdraw-lead", "event": event,
-					})
-					if strings.Contains(fmt.Sprint(got), "outstanding update units") || got["decision"] == "block" {
-						t.Errorf("%s %s re-raised withdrawn source: %v", phase, event, got)
+				for _, phase := range []string{"live", "restart"} {
+					if phase == "restart" {
+						stop()
+						srv, eng, stop = questionWithdrawalServer(t, dir, version)
+					}
+					board, err := eng.Board(context.Background())
+					if err != nil {
+						t.Fatal(err)
+					}
+					if board["contact_alerts"] != nil {
+						t.Errorf("%s retained contact after its only source was withdrawn: %v", phase, board["contact_alerts"])
+					}
+					for _, event := range []string{"Stop", "UserPromptSubmit", "Stop"} {
+						got := questionWithdrawalOK(t, srv, version, "hook_poll", map[string]any{
+							"session_id": "notify-withdraw-lead", "event": event,
+						})
+						if strings.Contains(fmt.Sprint(got), "outstanding update units") || got["decision"] == "block" {
+							t.Errorf("%s %s re-raised withdrawn source: %v", phase, event, got)
+						}
 					}
 				}
-			}
-			stop()
-		})
+				stop()
+			})
+		}
 	}
 }

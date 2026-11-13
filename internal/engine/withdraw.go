@@ -43,7 +43,7 @@ func (e *Engine) rebuildWithdrawalNotices() {
 }
 
 func (e *Engine) withdrawalReceiptBelongs(m *core.Message) bool {
-	if m == nil || m.Type == core.MsgNotify {
+	if m == nil || m.Type == core.MsgNotify || m.Type == core.MsgHandoff {
 		return false
 	}
 	l := e.state.Agents[m.To]

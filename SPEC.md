@@ -966,6 +966,7 @@ wake epoch, not its response semantics or the recipient's explicit wake policy.
 | `pending/delivered` (notify only) | `displaced` | evicted by a new send at mailbox capacity or a new notify at the retained-FYI bound | `message.displaced` (same serial as the displacing send, atomic) |
 | `pending/delivered/acked/queued/approved` (request) | `withdrawn`, unconsumed recipient receipt | sender `respond(withdraw)`; already-performed approvals refused | `message.withdrawn` |
 | `pending/delivered/acked` (question) | `withdrawn`, unconsumed recipient receipt | sender `respond(withdraw)`; no answer fabricated | `message.withdrawn` |
+| `pending`, unread and unconsumed (handoff) | `withdrawn`, no new recipient notice | sender `respond(withdraw)`; no ownership transfer | `message.withdrawn` |
 
 **Terminal predicate (exact, used consistently by capacity, displacement, inbox,
 retention, and GC):**
@@ -1999,7 +2000,7 @@ coordinator or admin role, or the `relocate` permission the human grants
 `grant: "relocate"`). Every relocation is ledgered as `agent.relocated` with
 who, the agent, and from and to; the board row shows the last one.
 
-The sender can retract an unread notify, unfinished request or unanswered question with `respond(disposition:"withdraw",
+The sender can retract an unread notify or handoff, unfinished request or unanswered question with `respond(disposition:"withdraw",
 body: reason?, superseded_by: serial?)`. Engine ingress translates this into the
 new `withdraw_message` ledger op before recipient response guards. Admission
 checks field shapes, rejects work-report fields and checks sender
@@ -2009,21 +2010,28 @@ adoption already performed its effect and cannot be withdrawn. Pending, delivere
 and acknowledged questions qualify; answered and expired questions do not.
 Unknown, other-sender or self replacement references
 are refused; a replacement is another ordinary question or request by the same sender,
-possibly to a different recipient, and this operation never starts it.
+possibly to a different recipient, and this operation never starts it. A handoff
+may also name another handoff from the same sender as its replacement; this
+does not make handoffs valid replacements for questions or requests.
 A notify qualifies until its complete body has been presented or it is consumed.
 A pointer-only announcement or queue acceptance is insufficient; a presented notify
-is refused as `E_MSG_FINAL` with guidance to send a follow-up. A handoff is refused
-as `E_BAD_DISPOSITION`, naming its type; a final question/request is refused as
+is refused as `E_MSG_FINAL` with guidance to send a follow-up. A handoff qualifies
+only while pending, unconsumed and without a delivery or acknowledgement receipt.
+Recipient mailbox reads and complete hook presentations record delivery; a
+shortened hook pointer, held Stop or unconfirmed socket offer does not. Complete
+handoff presentation leaves its explicit acknowledgement outstanding. Handoffs
+have no approval or ownership-transfer effect. Reading, acknowledging or finishing
+one makes withdrawal final, with a follow-up hint. A final question/request is refused as
 `E_MSG_FINAL`, naming its state.
 `E_NOT_SENDER` is reserved for a missing or foreign-incarnation sender identity.
-Withdrawal retains approval/progress history in separate fields, clears queue
+Question/request withdrawal retains approval/progress history in separate fields, clears queue
 debt/rank/task ordering lock, compacts remaining ranks and notifies the recipient
 without an imperative. The terminal envelope becomes unconsumed until recipient
 `ack`, and its receipt is rebuilt from that state after restart. Sender receipt
 is the successful call; no delivery is asserted. No work is owed on a withdrawn
 request, and no declaration or agent process is altered. Historical ops retain
 their exact semantics; old field names remain unchanged.
-An unread notify withdrawal removes its source from the open contact summary and
+An unread notify or handoff withdrawal removes its source from the open contact summary and
 resolves the contact if no pending source remains. Its sender warning is obsolete
 as soon as that sender has no pending source in the episode; Stop uses the same
 predicate. It generates no recipient withdrawal receipt or wake.

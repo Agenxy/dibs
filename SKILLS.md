@@ -616,7 +616,7 @@ receiving native peer turns, another watcher adds no delivery guarantee.
 - A retained question marked `expired_unanswered` still accepts your late
   `respond(answer)` and notifies its asker. Expiry is not a health verdict.
   Other finished verdicts stay final; an expired request cannot be approved.
-- As sender, retract your unread notify, unfinished request or unanswered question with
+- As sender, retract your unread notify or handoff, unfinished request or unanswered question with
   `respond(msg_serial, disposition: "withdraw", body: reason, superseded_by: replacement)`.
   An ordinary request can be withdrawn any time before `done`, including after
   approval: this clears the recipient's owed work and notifies them once.
@@ -624,8 +624,13 @@ receiving native peer turns, another watcher adds no delivery guarantee.
   has been acknowledged. A pointer or queued notice alone does not prevent withdrawal.
   Withdrawing it stops its wakes and clears its sender delivery warning without
   sending the recipient a new withdrawal notice. Already-presented notifies require a follow-up.
+  A handoff can be withdrawn before a recipient mailbox read, complete hook
+  presentation or acknowledgement. A shortened hook pointer or held Stop is not
+  a read. After reading, send a follow-up instead. Handoffs transfer no claim or
+  ownership, and a complete presentation still needs the recipient's explicit ack.
   Reason and replacement are optional; the replacement must be another ordinary
-  question or request you sent. Withdrawal clears queued/owed work without claiming delivery
+  question or request you sent; a handoff may also name another handoff you sent.
+  Withdrawal clears queued/owed work without claiming delivery
   or stopping an agent. The recipient's `read_mail(msg_serial)` shows the reason
   and clears the withdrawal for good; `ack(msg_serial)` clears it unread. An already-performed grant/adoption approval cannot be undone.
   Answered or expired questions stay final. Human notifications receive a

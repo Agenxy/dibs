@@ -12,6 +12,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   original request. Presentation survives restart and does not resolve the
   person's contact alert or consume the recipient's unread mail. A new
   contact diagnosis remains eligible to be shown.
+- Senders can withdraw unread handoffs, including naming a superseding handoff
+  they sent. Withdrawal clears the obsolete delivery warning and contact source
+  without waking the recipient again. Mailbox reads, complete hook presentations
+  and acknowledgement prevent withdrawal and explain that a follow-up is needed.
+  Handoff presentation now records delivery while retaining the explicit ack;
+  shortened pointers and held hooks do not invent a read receipt.
 - ChatGPT reloads skip bindings the queue has reported gone, and recheck
   cloud provenance before each thread navigation. Contact alerts for cloud
   and known-gone bindings explain how to recover the identity in a local
