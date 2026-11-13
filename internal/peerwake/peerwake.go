@@ -323,7 +323,7 @@ var psLstart = func(ctx context.Context, pid int) ([]byte, error) {
 		if procinfo.Gone(err) {
 			return nil, nil
 		}
-		procinfo.WarnFallback("peer process start", err)
+		procinfo.WarnFallback(procinfo.FallbackPeerStart, pid, err)
 	}
 	cmd := procexec.Command(ctx, "ps", "-o", "lstart=", "-p", strconv.Itoa(pid)) // #nosec G204 -- pid is an int
 	cmd.Env = append(os.Environ(), "LC_ALL=C", "TZ=UTC")

@@ -13,6 +13,8 @@ import (
 // Native reports whether this OS has an in-process identity/inventory backend.
 const Native = false
 
+func processComm(int) (string, error) { return "", ErrUnsupported }
+
 // SameProcess is unavailable on this platform.
 func SameProcess(Process) (bool, error) { return false, ErrUnsupported }
 
