@@ -113,6 +113,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   verified against the signed checksums, so a retry changes nothing about
   what is trusted.
 
+- Exited, unreaped processes no longer count as live native identities on
+  macOS or Linux. Process inventories omit zombies, and cached identity checks
+  recognize their exit before executable-path, CPU or descriptor fallbacks
+  can start child commands.
+
 ### Added
 
 - The Mac app can add a phone to the board, list the board's human devices,
