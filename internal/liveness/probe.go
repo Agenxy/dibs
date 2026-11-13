@@ -239,7 +239,7 @@ func openFiles(pid int) []string {
 		if procinfo.Gone(err) {
 			return nil
 		}
-		procinfo.WarnFallback("process open files", err)
+		procinfo.WarnFallback(procinfo.FallbackOpenFiles, pid, err)
 	}
 	if pid <= 0 {
 		return nil

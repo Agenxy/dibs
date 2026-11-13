@@ -38,6 +38,6 @@ func processTimes(pid int) (cpu, elapsed time.Duration) {
 			}
 		}
 	}
-	procinfo.WarnFallback("process CPU", err)
+	procinfo.WarnFallback(procinfo.FallbackCPU, pid, err)
 	return psTimes(pid)
 }

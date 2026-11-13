@@ -103,6 +103,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Native process fallback warnings identify the observed PID, its readable
+  kernel name and a short caller list. Debug logs report cumulative counts
+  at powers of two per operation, exposing repeated fallbacks without a log
+  line for every sweep. Diagnostics launch no additional commands and do not
+  change the fallback decisions.
 - An empty or unreadable process environment leaves subagent ownership
   UNKNOWN, without guessing its parent or starting a command to read it again.
   Probe and doctor explain the missing evidence; supervision defers decisions

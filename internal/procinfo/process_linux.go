@@ -110,6 +110,11 @@ func Start(pid int) (time.Time, error) {
 	return row.Start, err
 }
 
+func processComm(pid int) (string, error) {
+	row, err := processAt(pid, 0)
+	return row.Comm, err
+}
+
 // Path reads the executable link, retaining permission errors as unknown.
 func Path(pid int) (string, error) { return os.Readlink(procPath(pid, "exe")) }
 

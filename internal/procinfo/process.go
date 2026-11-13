@@ -8,9 +8,7 @@ package procinfo
 
 import (
 	"errors"
-	"log/slog"
 	"os"
-	"sync"
 	"syscall"
 	"time"
 )
@@ -42,14 +40,3 @@ var ErrUnavailable = errors.New("native process evidence is unavailable")
 
 // Gone distinguishes a kernel observation of absence from an unavailable ABI.
 func Gone(err error) bool { return errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ESRCH) }
-
-var warned sync.Map
-
-// WarnFallback reports an unavailable native observation once per operation.
-// A caller then runs its existing command fallback for this pass. A failed
-// native read never silently becomes zero CPU, an empty inventory or no files.
-func WarnFallback(operation string, err error) {
-	if _, seen := warned.LoadOrStore(operation, true); !seen {
-		slog.Warn("native process observation unavailable; using command fallback", "operation", operation, "err", err)
-	}
-}

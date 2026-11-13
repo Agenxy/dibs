@@ -105,6 +105,17 @@ func Start(pid int) (time.Time, error) {
 	return time.Unix(row.Proc.P_starttime.Sec, int64(row.Proc.P_starttime.Usec)*1000), nil
 }
 
+func processComm(pid int) (string, error) {
+	row, err := unix.SysctlKinfoProc("kern.proc.pid", pid)
+	if err != nil {
+		return "", err
+	}
+	if int(row.Proc.P_pid) != pid {
+		return "", unix.ESRCH
+	}
+	return unix.ByteSliceToString(row.Proc.P_comm[:]), nil
+}
+
 // SameProcess rechecks a row's incarnation after its other observations.
 func SameProcess(row Process) (bool, error) {
 	started, err := Start(row.PID)
