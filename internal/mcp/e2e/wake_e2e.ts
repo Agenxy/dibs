@@ -322,6 +322,11 @@ await Bun.sleep(1200)
 const before = wakes().length
 await Promise.all([1, 2, 3, 4, 5, 6].map(n =>
   call("send", { token: asker.token, to: "sleeper", type: "question", body: `burst ${n}`, deadline_s: 600 })))
+// Wait for the burst's first wake, then settle for a possible re-ask. A fixed
+// sleep alone counted 0 under a loaded whole gate, the latency #570 removed
+// from the arrivals above. The bound still fails a burst that never wakes.
+const arrivalDeadline = performance.now() + 5000
+while (wakes().length === before && performance.now() < arrivalDeadline) await Bun.sleep(20)
 await settle()
 const burst = wakes().length - before
 check("a burst of six is one wake, and at most one re-ask", burst >= 1 && burst <= 2,
