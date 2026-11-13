@@ -67,6 +67,12 @@ func psTimes(pid int) (cpu, elapsed time.Duration) {
 	if pid <= 0 {
 		return 0, 0
 	}
+	// Every native CPU failure reaches this entrance, including all four
+	// Linux /proc failures. The process may have exited since that read;
+	// unavailable evidence still permits fallback, but a known exit does not.
+	if processKnownGone(pid) {
+		return 0, 0
+	}
 	// #nosec G204 -- pid is an int, so no shell metacharacter can reach argv
 	out, err := procexec.Command(context.Background(), "ps", "-p", strconv.Itoa(pid), "-o", "time=,etime=").Output()
 	if err != nil {
@@ -78,6 +84,16 @@ func psTimes(pid int) (cpu, elapsed time.Duration) {
 	}
 	// etime uses the same [[dd-]hh:]mm:ss shape as time.
 	return parsePSTime(f[0]), parsePSTime(f[1])
+}
+
+// processKnownGone distinguishes a native absence from unavailable evidence.
+// Only absence prevents an existing command fallback from being attempted.
+func processKnownGone(pid int) bool {
+	if !procinfo.Native {
+		return false
+	}
+	_, err := procinfo.Start(pid)
+	return procinfo.Gone(err)
 }
 
 // parsePSTime reads ps's cumulative-time column, which is [[dd-]hh:]mm:ss(.ff).
@@ -239,10 +255,10 @@ func openFiles(pid int) []string {
 		if procinfo.Gone(err) {
 			return nil
 		}
+		if processKnownGone(pid) {
+			return nil
+		}
 		procinfo.WarnFallback("process open files", err)
-	}
-	if pid <= 0 {
-		return nil
 	}
 	if entries, err := os.ReadDir(filepath.Join("/proc", strconv.Itoa(pid), "fd")); err == nil {
 		var out []string
@@ -252,6 +268,12 @@ func openFiles(pid int) []string {
 			}
 		}
 		return out
+	}
+	// The native read or the /proc retry may have raced the process's exit.
+	// Keep permission failures eligible for fallback, but do not ask lsof
+	// about an identity the native backend now knows has gone.
+	if processKnownGone(pid) {
+		return nil
 	}
 	// -F n prints one field per line, each open name prefixed with 'n'; -a -d
 	// restricts to regular file descriptors so sockets and pipes are not
