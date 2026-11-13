@@ -269,8 +269,27 @@ func TestRecoverAgentRefusalDoesNotWakeDormantCoordinator(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if after["serial"] != before["serial"] {
-				t.Fatal("protected refusal woke coordinator and changed durable serial")
+			// The sweep may escalate the dormant lead's owed mail a beat
+			// later, off this goroutine, or not at all if the lead still counts
+			// as recently in touch. That is the sweep's consequence, not the
+			// refusal's, so it is the one event allowed to land in this window.
+			from := before["serial"].(uint64)
+			moved, err := f.e.EventsFrom(context.Background(), from)
+			if err != nil {
+				t.Fatal(err)
+			}
+			later := 0
+			for _, ev := range moved["events"].([]core.Event) {
+				if ev.Serial <= from {
+					continue // the cursor's own event is the sweep
+				}
+				later++
+				if ev.Type != "contact.escalated" || ev.Agent != "lead" {
+					t.Fatalf("protected refusal woke coordinator and changed durable state: %v", ev)
+				}
+			}
+			if after["serial"] != before["serial"] && later == 0 {
+				t.Fatal("protected refusal changed durable serial without an event")
 			}
 		})
 	}
