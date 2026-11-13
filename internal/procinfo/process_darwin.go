@@ -32,6 +32,7 @@ const (
 	vnodePathSize   = 1200
 	vnodePathOffset = 176
 	maxProcessFiles = 65536
+	zombieState     = 5 // sys/proc.h SZOMB: exited, awaiting collection by parent
 )
 
 // The seam replaces only the kernel boundary, including short successful
@@ -75,7 +76,7 @@ func Snapshot(ctx context.Context) ([]Process, error) {
 	}
 	out := make([]Process, 0, len(rows))
 	for _, row := range rows {
-		if row.Proc.P_pid <= 0 || row.Proc.P_starttime.Sec <= 0 {
+		if row.Proc.P_pid <= 0 || row.Proc.P_starttime.Sec <= 0 || row.Proc.P_stat == zombieState {
 			continue
 		}
 		out = append(out, Process{
@@ -87,7 +88,8 @@ func Snapshot(ctx context.Context) ([]Process, error) {
 	return out, ctx.Err()
 }
 
-// Start reads the full kernel incarnation, retaining microsecond precision.
+// Start reads a live kernel incarnation, retaining microsecond precision.
+// An unreaped zombie retains a PID/start record, but no executable process.
 func Start(pid int) (time.Time, error) {
 	if pid <= 0 {
 		return time.Time{}, unix.ESRCH
@@ -99,7 +101,7 @@ func Start(pid int) (time.Time, error) {
 		}
 		return time.Time{}, err
 	}
-	if int(row.Proc.P_pid) != pid || row.Proc.P_starttime.Sec <= 0 {
+	if int(row.Proc.P_pid) != pid || row.Proc.P_starttime.Sec <= 0 || row.Proc.P_stat == zombieState {
 		return time.Time{}, unix.ESRCH
 	}
 	return time.Unix(row.Proc.P_starttime.Sec, int64(row.Proc.P_starttime.Usec)*1000), nil
