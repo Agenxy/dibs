@@ -102,6 +102,9 @@ type wakers struct {
 	// prevent, arriving through the gap between "recently started" and "still
 	// going".
 	running map[string]bool
+	// inFlight counts admitted plans, including concurrent native deliveries.
+	// Only their last exit may clear running or consume the arrived re-check.
+	inFlight map[string]int
 	// arrived: mail turned up for this agent while its wake command was still
 	// running, so the exit has to look again.
 	//
@@ -568,14 +571,24 @@ func (e *Engine) noteArrivalDuringWake(agent string) bool {
 // blocking message may start another. It reports whether mail arrived while it
 // was running, which is a question only the exit can answer.
 func (e *Engine) wakeFinished(agent string) bool {
+	owed, _ := e.finishWake(agent)
+	return owed
+}
+
+func (e *Engine) finishWake(agent string) (owed, last bool) {
 	e.wakers.mu.Lock()
 	defer e.wakers.mu.Unlock()
+	if n := e.wakers.inFlight[agent]; n > 1 {
+		e.wakers.inFlight[agent] = n - 1
+		return false, false
+	}
+	delete(e.wakers.inFlight, agent)
 	delete(e.wakers.running, agent)
 	if e.wakers.arrived[agent] {
 		delete(e.wakers.arrived, agent)
-		return true
+		return true, true
 	}
-	return false
+	return false, true
 }
 
 // wakeExited is wakeFinished plus the re-check, for the goroutine that ran the
@@ -612,7 +625,10 @@ func (e *Engine) wakeExitedDecision(agent, thread string) {
 	// maybeWake runs on this loop too, so doing both inside one closure
 	// makes the intermediate state unobservable rather than unlikely. A
 	// window this narrow is not worth closing with a smaller window.
-	owed := e.wakeFinished(agent)
+	owed, last := e.finishWake(agent)
+	if !last {
+		return // another delivery still owns the agent's in-flight state
+	}
 	// ALWAYS, not only when a re-check is owed.
 	//
 	// The command runs the agent's whole turn in that process, so the
@@ -939,13 +955,21 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 			"agent", l.ID)
 		return wakePlan{}, false
 	}
+	plan, valid := e.buildWakePlan(l, msgType, ev, cooldown, configured, now)
+	if !valid {
+		return wakePlan{}, false
+	}
 	e.wakers.last[l.ID] = now
 	if e.wakers.running == nil {
 		e.wakers.running = map[string]bool{}
 	}
 	e.wakers.running[l.ID] = true
+	if e.wakers.inFlight == nil {
+		e.wakers.inFlight = map[string]int{}
+	}
+	e.wakers.inFlight[l.ID]++
 
-	return e.buildWakePlan(l, msgType, ev, cooldown, configured, now)
+	return plan, true
 }
 
 // buildWakePlan constructs the current route while the writer and wakers lock
