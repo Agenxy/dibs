@@ -36,6 +36,7 @@ type Server struct {
 	mu      sync.Mutex
 	inputs  []map[string]any
 	follows int
+	ended   int
 	errors  []error
 }
 
@@ -134,6 +135,16 @@ func (s *Server) Inputs() []map[string]any {
 	return append([]map[string]any(nil), s.inputs...)
 }
 
+// Ended counts connections that submitted an input and then closed. A
+// recorded input is not the end of a delivery: the client still reads the
+// reply, so a test that stops the engine on Inputs alone can cancel a call
+// mid-exchange. Connections without an input (owner checks) are not counted.
+func (s *Server) Ended() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.ended
+}
+
 // Follows counts stream-follow requests, which fetch full thread history.
 func (s *Server) Follows() int {
 	s.mu.Lock()
@@ -142,7 +153,15 @@ func (s *Server) Follows() int {
 }
 
 func (s *Server) serve(c net.Conn) {
-	defer func() { _ = c.Close() }()
+	carried := false
+	defer func() {
+		_ = c.Close()
+		if carried {
+			s.mu.Lock()
+			s.ended++
+			s.mu.Unlock()
+		}
+	}()
 	_ = c.SetDeadline(time.Now().Add(25 * time.Second))
 	for {
 		f, err := read(c)
@@ -152,6 +171,9 @@ func (s *Server) serve(c net.Conn) {
 		if err != nil {
 			s.recordError(err)
 			return
+		}
+		if m := f["method"]; m == "thread-follower-start-turn" || m == "thread-follower-steer-turn" {
+			carried = true
 		}
 		response := s.answer(f)
 		if response == nil {
