@@ -31,6 +31,11 @@ type supportedMergeFixture struct {
 // listener. Disable desktop notification BEFORE Run can re-arm old mail.
 func supportedMergeServer(t *testing.T, dir string, limits ...core.Limits) (*httptest.Server, *engine.Engine, func()) {
 	t.Helper()
+	return supportedMergeServerWithLedger(t, dir, nil, limits...)
+}
+
+func supportedMergeServerWithLedger(t *testing.T, dir string, wrap func(*ledger.Ledger) engine.Ledger, limits ...core.Limits) (*httptest.Server, *engine.Engine, func()) {
+	t.Helper()
 	box, err := ledger.LoadOrCreateKey(filepath.Join(dir, "key"))
 	if err != nil {
 		t.Fatal(err)
@@ -52,7 +57,11 @@ func supportedMergeServer(t *testing.T, dir string, limits ...core.Limits) (*htt
 		t.Fatal(err)
 	}
 	led.OnEvents = nil
-	e := engine.New(st, led, nil, history)
+	var source engine.Ledger = led
+	if wrap != nil {
+		source = wrap(led)
+	}
+	e := engine.New(st, source, nil, history)
 	e.SetHumanNotifier(desktopFixture{available: false})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -77,8 +86,13 @@ func supportedMergeServer(t *testing.T, dir string, limits ...core.Limits) (*htt
 
 func newSupportedMerge(t *testing.T, version string, limits ...core.Limits) *supportedMergeFixture {
 	t.Helper()
+	return newSupportedMergeWithLedger(t, version, nil, limits...)
+}
+
+func newSupportedMergeWithLedger(t *testing.T, version string, wrap func(*ledger.Ledger) engine.Ledger, limits ...core.Limits) *supportedMergeFixture {
+	t.Helper()
 	dir := t.TempDir()
-	srv, e, stop := supportedMergeServer(t, dir, limits...)
+	srv, e, stop := supportedMergeServerWithLedger(t, dir, wrap, limits...)
 	f := &supportedMergeFixture{t: t, srv: srv, e: e, version: version, dir: dir, stop: stop}
 	e.SetHumanNotifier(desktopFixture{available: false})
 	f.lead = f.call("register", map[string]any{"name": "lead", "nonce": "lead-secret", "session_id": "coordinator-session"})
@@ -261,11 +275,8 @@ func TestSupportedMergeUnknownProcessEvidenceIsNotAbsence(t *testing.T) {
 
 func assertMergedHistory(f *supportedMergeFixture) {
 	f.t.Helper()
-	full := historyCall(f.t, f.srv, f.version, map[string]any{
-		"token": f.into["token"], "include_bodies": true, "limit": 100,
-	})
-	if !mentions(full, "private original mail") || !mentions(full, "source outgoing question") {
-		f.t.Fatal("real history query lost incoming or sender inheritance")
+	if err := readMergedHistory(f, []string{"private original mail", "source outgoing question"}); err != nil {
+		f.t.Fatal(err)
 	}
 }
 
