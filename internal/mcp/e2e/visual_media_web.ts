@@ -284,8 +284,13 @@ async function checkMediaLifetime(page:Page,check:Check,tool:Tool,token:string,
     const response=await route.fetch()
     await route.fulfill({response,headers:{...response.headers(),"content-type":"application/octet-stream","x-dibs-media-kind":""}})
   })
+  // Only the reloaded document's reads count. The page before the reload got
+  // the expired fixture without its synthetic marker, so its lazy loader may
+  // still fetch that image after this listener exists and before navigation.
   const reads:number[]=[]
-  page.on("request",request=>{const match=request.url().match(/\/api\/messages\/(\d+)\/attachments\//);if(match)reads.push(Number(match[1]))})
+  let reloaded=false
+  page.on("framenavigated",frame=>{if(frame===page.mainFrame())reloaded=true})
+  page.on("request",request=>{const match=request.url().match(/\/api\/messages\/(\d+)\/attachments\//);if(match&&reloaded)reads.push(Number(match[1]))})
   await page.reload({waitUntil:"load"});await page.locator("#tab-mail").click()
   await page.locator(`#message-${expired}`).waitFor()
   const ordinary=page.locator(`#message-${video} .atts video`)
