@@ -154,14 +154,7 @@ func (s *Server) Follows() int {
 
 func (s *Server) serve(c net.Conn) {
 	carried := false
-	defer func() {
-		_ = c.Close()
-		if carried {
-			s.mu.Lock()
-			s.ended++
-			s.mu.Unlock()
-		}
-	}()
+	defer func() { s.end(c, carried) }()
 	_ = c.SetDeadline(time.Now().Add(25 * time.Second))
 	for {
 		f, err := read(c)
@@ -172,9 +165,7 @@ func (s *Server) serve(c net.Conn) {
 			s.recordError(err)
 			return
 		}
-		if m := f["method"]; m == "thread-follower-start-turn" || m == "thread-follower-steer-turn" {
-			carried = true
-		}
+		carried = carried || isInput(f)
 		response := s.answer(f)
 		if response == nil {
 			continue
@@ -201,6 +192,21 @@ func (s *Server) serve(c net.Conn) {
 			return
 		}
 	}
+}
+
+// end closes a served connection and counts it when it carried an input.
+func (s *Server) end(c net.Conn, carried bool) {
+	_ = c.Close()
+	if carried {
+		s.mu.Lock()
+		s.ended++
+		s.mu.Unlock()
+	}
+}
+
+func isInput(f map[string]any) bool {
+	m := f["method"]
+	return m == "thread-follower-start-turn" || m == "thread-follower-steer-turn"
 }
 
 func (s *Server) recordError(err error) {
