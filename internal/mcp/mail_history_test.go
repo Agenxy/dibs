@@ -72,7 +72,11 @@ func historyCall(t *testing.T, srv *httptest.Server, version string, args map[st
 
 func historyExchange(t *testing.T, srv *httptest.Server, version string, args map[string]any) (map[string]any, map[string]any) {
 	t.Helper()
-	until := time.Now().Add(5 * time.Second)
+	return historyExchangeBefore(t, srv, version, args, time.Now().Add(5*time.Second))
+}
+
+func historyExchangeBefore(t *testing.T, srv *httptest.Server, version string, args map[string]any, until time.Time) (map[string]any, map[string]any) {
+	t.Helper()
 	for {
 		out := rpc(t, srv, version, "tools/call", map[string]any{"name": "mail_history", "arguments": args})
 		result, ok := out["result"].(map[string]any)
