@@ -9,6 +9,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Concurrent native deliveries retain their in-flight state until the last
+  delivery exits. An earlier exit no longer marks the agent's turn ended,
+  changes contact liveness or starts a premature arrival re-check.
 - Coordinator contact updates stop repeating once shown by a delivering hook
   or an authenticated mailbox read, including when the coordinator sent the
   original request. Presentation survives restart and does not resolve the
