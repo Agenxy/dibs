@@ -14,17 +14,15 @@ import (
 func TestWakeRoutesNeverNavigateOrActivate(t *testing.T) {
 	const thread = "01696949-1111-4222-8333-444455556666"
 	const wakeURL = "codex://threads/wake/" + thread
-	for _, route := range []string{"cold", "legacy-show", "reload", "claude-show"} {
+	for _, route := range []string{"cold", "legacy-show", "claude-show"} {
 		t.Run(route, func(t *testing.T) {
 			t.Setenv("DIBS_DIR", t.TempDir())
 			calls := 0
-			loaded := false
 			s := Shower{Holds: func(string) bool { return false }, Open: func(argv []string) error {
 				calls++
 				if len(argv) != 3 || argv[0] != "/usr/bin/open" || argv[1] != "-g" || argv[2] != wakeURL {
 					t.Errorf("wake attempted focus/navigation argv: %q", argv)
 				}
-				loaded = true
 				return nil
 			}, Wait: func(time.Duration) {}}
 			switch route {
@@ -32,8 +30,6 @@ func TestWakeRoutesNeverNavigateOrActivate(t *testing.T) {
 				_, _ = s.Show(OpenArgv(ChatGPTApp, thread), thread)
 			case "legacy-show":
 				_, _ = s.Show(ChatGPTOpenArgv(thread), thread)
-			case "reload":
-				_, _, _ = s.LoadChatGPTThreads([]string{thread}, func(string) (bool, error) { return loaded, nil }, 0)
 			case "claude-show":
 				_, _ = s.Show(ClaudeOpenArgv("local_background-guard"), thread)
 			}

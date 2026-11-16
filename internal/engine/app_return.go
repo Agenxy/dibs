@@ -24,23 +24,16 @@ var appThreadOwned = codexipc.Owned
 // seconds of a ChatGPT restart.
 var appReturnReady = 30 * time.Second
 
-// afterAppReturn runs once per new ChatGPT app incarnation, off the writer.
-// Order matters: threads are loaded first, so the restart notices and the
-// mail held while the app was down are then delivered natively, into loaded
-// threads, and none of them opens anything.
+// afterAppReturn waits for IPC, settles the current epoch and re-offers work
+// through the ordinary native-first, then queue, then wake route. A wake URL
+// cannot preload an empty queue, so there is no separate loading pass.
 func (e *Engine) afterAppReturn(ctx context.Context, epoch string, plans []wakePlan, interval time.Duration) {
 	agents, threads := e.appAgentThreads(ctx)
-	if len(threads) > 0 && e.waitAppIPC(ctx, epoch, threads[0]) {
-		owned := func(thread string) (bool, error) { return appThreadOwned(ctx, thread) }
-		s := *shower
-		s.AllowOpen = func(thread string) bool { return e.restartNavigationAllowed(ctx, agents, thread) }
-		loaded, opened, err := s.LoadChatGPTThreads(threads, owned, 5*time.Second)
-		e.reportAppReturn(ctx, agents, threads, loaded, opened, err)
+	if len(threads) > 0 {
+		_ = e.waitAppIPC(ctx, epoch, threads[0])
 	}
-	// Settled means the pass ENDED, not that every target became owned.
-	// Otherwise one missing thread holds unloaded agents' future mail forever:
-	// there is no timer to release the hold. They now take the ordinary route.
-	// A late pass cannot settle a different app incarnation.
+	// Settled describes the return handshake, never ownership or delivery.
+	// A late handshake cannot settle a different app incarnation.
 	if current, known := currentAppRestartEpoch(); known && current == epoch {
 		e.appSettled.Store(epoch)
 	}
@@ -58,44 +51,9 @@ func (e *Engine) afterAppReturn(ctx context.Context, epoch string, plans []wakeP
 	})
 }
 
-func (e *Engine) reportAppReturn(ctx context.Context, agents, threads []string, loaded, opened int, err error) {
-	if err == nil {
-		slog.Info("finished pending-agent chat loading after the ChatGPT app restarted",
-			"loaded", loaded, "opened", opened, "threads", len(threads))
-		return
-	}
-	var missing *harnessenv.ChatGPTThreadOwnershipError
-	var unowned, unknown []string
-	if errors.As(err, &missing) {
-		unowned, unknown = missing.Unowned, missing.Unknown
-		e.rememberStaleAppBindings(ctx, agents, unowned)
-	}
-	slog.Warn("could not load every pending agent chat after the ChatGPT app restarted", "err", err,
-		"loaded", loaded, "opened", opened, "threads", len(threads),
-		"unowned_threads", unowned, "unknown_threads", unknown,
-		"hint", "stale bindings stay held; doctor reports them, and other mail retains its ordinary route")
-}
-
-func (e *Engine) rememberStaleAppBindings(ctx context.Context, agents, unowned []string) {
-	quarantined := map[string]bool{}
-	for _, thread := range unowned {
-		if stale, err := harnessenv.ChatGPTBindingStale(thread); err == nil && stale {
-			quarantined[thread] = true
-		}
-	}
-	_, _ = e.query(ctx, func() core.Result {
-		for _, id := range agents {
-			if l := e.state.Agents[id]; l != nil && quarantined[threadIDOf(l)] {
-				e.noteAppBinding(l, "stale")
-			}
-		}
-		return nil
-	})
-}
-
 // All local native-route agents are reconsidered after return, including an
 // archived row whose thread is already owned. Navigation is narrower: only
-// non-archived agents with an original delivery still owed may be preloaded.
+// non-archived agents with original delivery still owed provide an IPC probe target.
 func (e *Engine) appAgentThreads(ctx context.Context) (agents, threads []string) {
 	_, _ = e.query(ctx, func() core.Result {
 		ids := make([]string, 0, len(e.state.Agents))
@@ -141,8 +99,8 @@ func (e *Engine) waitAppIPC(ctx context.Context, epoch, probe string) bool {
 		}
 		starting := errors.Is(err, codexipc.ErrAppNotListening) || errors.Is(err, codexipc.ErrNoSocket)
 		if !starting || !time.Now().Before(deadline) {
-			slog.Warn("the ChatGPT app did not accept IPC connections after it restarted; not loading agent threads",
-				"err", err, "hint", "each agent's next mail opens its thread instead")
+			slog.Warn("the ChatGPT app did not accept IPC connections after it restarted; ordinary delivery remains unconfirmed",
+				"err", err, "hint", "mail retains its ordinary background route")
 			return false
 		}
 		select {
@@ -156,8 +114,7 @@ func (e *Engine) waitAppIPC(ctx context.Context, epoch, probe string) bool {
 	}
 }
 
-// appReturnPending reports a running app incarnation whose threads have not
-// been loaded yet: afterAppReturn is due or under way.
+// appReturnPending reports a running app incarnation whose IPC-return handshake is due or under way.
 func (e *Engine) appReturnPending() bool {
 	settled, _ := e.appSettled.Load().(string)
 	current, known := currentAppRestartEpoch()

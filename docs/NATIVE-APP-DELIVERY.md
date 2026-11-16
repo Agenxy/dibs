@@ -56,8 +56,13 @@ scratch chat was archived after measurement. Tests replace app contacts.
 The only automatic ChatGPT cold request is therefore
 `/usr/bin/open -g codex://threads/wake/<uuid>`, after ordinary queue admission.
 Already-owned threads keep native start/steer. A failed or unconfirmed request
-does not fall back to `codex://threads/<uuid>`. Restart recovery uses the same
-wake-only request and never navigates to `threads/new` at completion. Quit,
+does not fall back to `codex://threads/<uuid>`. Restart recovery waits for IPC, settles the current app epoch and re-offers
+owed work through that same native-first, then queue, then wake route. The
+handler resumes only when `thread/queue/list` contains admitted input, so the
+old preload-before-admission pass is retired. There is no per-thread loading
+wait or aggregate loading receipt, and no `threads/new` navigation. A permanent
+real-send/epoch-watcher test uses an empty-queue no-op fake and requires exactly
+one wake URL and one consumed turn per owed message; the old pass fails it. Quit,
 archived, cloud and known-gone binding fences still apply. URL acceptance,
 queued input consumption and Dibs mail reads remain different receipts.
 
@@ -286,26 +291,21 @@ bundle, and an unreadable desktop path stays unknown through its bounded fallbac
   decision. Every thread open checks for the app's main executable at the
   moment of the open (helpers and the bundled codex outlive a Quit), and an
   open refused this way is a contact failure, so the person is asked instead.
-- On each new app incarnation (two stable process samples), Dibs waits for the
-  socket to accept, then loads only local ChatGPT-app agent threads with a
-  current unoffered delivery, excluding archived recipients, explicit cloud
-  surfaces and bindings the queue has reported gone, in one
-  pass under the retained desktop-wide lock: owner discovery first, a
-  wake-only URL for a thread not held, and a bounded wait for ownership.
-  There is no navigation to a thread or to `threads/new` afterward.
-- Ownership is measured again at the end of the pass: a wake may finish
-  asynchronously while later targets load. An incomplete measurement warns
-  with the threads still unowned or whose ownership could not be measured,
-  without another open or a longer per-thread wait. Settled means the pass
-  ended, including after a failure; it never means every thread loaded. Later
-  mail for an unloaded thread can then take the ordinary queue/open route.
-  A late pass cannot settle a different app incarnation. Restart notices and
-  held mail can reach owned threads natively.
+- On each new app incarnation (two stable process samples), Dibs waits for
+  IPC, settles that epoch and re-offers eligible original mail and restart
+  notices through the ordinary delivery route. Owned threads receive native
+  input; unowned eligible threads receive queue admission followed by one
+  background wake. There is no separate preload pass and no per-thread
+  ownership settle loop before admission.
+- Settled describes the return handshake only. It never means every thread
+  loaded or every message was consumed. A late handshake cannot settle another
+  app incarnation. Queue admission, URL dispatch and native input acceptance
+  retain their separate receipts. Quiet chats receive no speculative load.
 
 The epoch watcher uses the main executable too: readable helper or bundled
 Codex remnants after Quit are not a new app incarnation. Thread ownership
-keeps its separate conservative evidence rules. Reload navigation rechecks
-the binding immediately before opening, so a cloud-surface update or a
+keeps its separate conservative evidence rules. Ordinary background delivery rechecks
+the binding immediately before its app request, so a cloud-surface update or a
 queue-gone observation during ownership discovery cancels that navigation.
 Cloud and known-gone contact alerts offer identity recovery in a local app
 thread, using the saved nonce or a coordinator adoption request, rather than
@@ -357,7 +357,7 @@ does not establish idle-start, delayed-selection or fleet-wide behavior. The
 historical restart navigation counts and executable regression proof are in
 the PR's verification note.
 
-The wake-only pass neither selects a chat nor restores a previous selection.
+The ordinary wake-only route neither selects a chat nor restores a previous selection.
 The earlier upstream draft requesting a background loader is superseded in
 part by the new route. A matched, versioned loading/input receipt would still
 be useful: successful URL dispatch alone does not prove ownership or a turn.

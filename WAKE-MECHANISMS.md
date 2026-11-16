@@ -33,8 +33,13 @@ scratch chat was archived after measurement. Tests replace app contacts.
 The only automatic ChatGPT cold request is therefore
 `/usr/bin/open -g codex://threads/wake/<uuid>`, after ordinary queue admission.
 Already-owned threads keep native start/steer. A failed or unconfirmed request
-does not fall back to `codex://threads/<uuid>`. Restart recovery uses the same
-wake-only request and never navigates to `threads/new` at completion. Quit,
+does not fall back to `codex://threads/<uuid>`. Restart recovery waits for IPC, settles the current app epoch and re-offers
+owed work through that same native-first, then queue, then wake route. The
+handler resumes only when `thread/queue/list` contains admitted input, so the
+old preload-before-admission pass is retired. There is no per-thread loading
+wait or aggregate loading receipt, and no `threads/new` navigation. A permanent
+real-send/epoch-watcher test uses an empty-queue no-op fake and requires exactly
+one wake URL and one consumed turn per owed message; the old pass fails it. Quit,
 archived, cloud and known-gone binding fences still apply. URL acceptance,
 queued input consumption and Dibs mail reads remain different receipts.
 

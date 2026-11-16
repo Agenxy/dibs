@@ -30,11 +30,11 @@ func TestRealShowerNeverLaunchesAQuitChatGPT(t *testing.T) {
 	if opened || !errors.Is(err, ErrChatGPTNotRunning) || calls != 0 {
 		t.Fatalf("cold route with the app quit: opened=%v calls=%d err=%v", opened, calls, err)
 	}
-	// The reload pass after an app epoch change.
-	notOwned := func(string) (bool, error) { return false, nil }
-	_, opened2, err := s.LoadChatGPTThreads([]string{"quit-reload"}, notOwned, time.Millisecond)
-	if opened2 != 0 || !errors.Is(err, ErrChatGPTNotRunning) || calls != 0 {
-		t.Fatalf("reload pass with the app quit: opened=%d calls=%d err=%v", opened2, calls, err)
+	// Restart recovery now uses this same ordinary route; also test the
+	// final opener directly so neither entrance can relaunch a quit app.
+	err = s.Open(OpenArgv(ChatGPTApp, "quit-restart"))
+	if !errors.Is(err, ErrChatGPTNotRunning) || calls != 0 {
+		t.Fatalf("direct wake after Quit: calls=%d err=%v", calls, err)
 	}
 
 	// The same doors still open a running app: the guard is the app's state,

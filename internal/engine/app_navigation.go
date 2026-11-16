@@ -4,7 +4,6 @@
 package engine
 
 import (
-	"context"
 	"sort"
 	"strings"
 	"time"
@@ -107,20 +106,4 @@ func (e *Engine) decorateAppBindings(board core.Result) {
 	if len(alerts) > 0 {
 		board["app_binding_alerts"] = alerts
 	}
-}
-
-func (e *Engine) restartNavigationAllowed(ctx context.Context, agents []string, thread string) bool {
-	r, err := e.query(ctx, func() core.Result {
-		for _, id := range agents {
-			l := e.state.Agents[id]
-			if l == nil || threadIDOf(l) != thread {
-				continue
-			}
-			if e.appNavigationAllowedLocked(id, l.CreatedSerial, thread) && len(e.freshCommandKeys(id, time.Now())) > 0 {
-				return core.Result{"allowed": true}
-			}
-		}
-		return core.Result{"allowed": false}
-	})
-	return err == nil && r["allowed"] == true
 }
