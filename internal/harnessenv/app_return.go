@@ -13,13 +13,6 @@ import (
 	"github.com/agenxy/dibs/internal/paths"
 )
 
-// chatGPTHomeURL returns the app's primary window to its launch view, "/".
-// Read from the deep link handler of ChatGPT 26.1002.52244: threads/new with
-// no path, origin or project resolves no workspace, opens no dialog, and
-// navigates the primary window to "/", which is also the route the window
-// starts on after a launch.
-const chatGPTHomeURL = "codex://threads/new"
-
 // ChatGPTThreadOwnershipError records the final discovery results that did
 // not confirm ownership. Unknown is distinct from the app saying no owner.
 type ChatGPTThreadOwnershipError struct {
@@ -32,23 +25,12 @@ func (e *ChatGPTThreadOwnershipError) Error() string {
 		e.Total-len(e.Unowned)-len(e.Unknown), e.Total)
 }
 
-// LoadChatGPTThreads loads every thread into a ChatGPT app that has just come
-// back, in one pass, and leaves the window where a launch leaves it.
-//
-// The app loads a thread into its runtime only by navigating its window to
-// it, and after a restart it has loaded none. Before this, each agent's next
-// mail opened that agent's thread when it arrived, so the person's window
-// moved once per agent, at moments nobody chose, for as long as mail kept
-// arriving. Loading them all straight after the restart concentrates that
-// into the seconds when the window is still on its launch view, and returns
-// it there; after that every delivery is native and nothing navigates.
-//
-// It holds the desktop-wide open/restore lock for the whole pass, so no
-// per-mail open interleaves with it. owned is the app's own owner discovery:
-// a thread already loaded is not opened, and an opened one is waited on, up
-// to settle, before the next. opened counts the opens made; loaded counts the
-// threads owner discovery confirms at the END of the pass. A navigation can
-// finish asynchronously after its individual wait, while a later one runs.
+// LoadChatGPTThreads offers pending work to a restarted app's wake-only
+// handler, without selecting a chat or returning its window to a launch view.
+// It retains the desktop-wide lock for compatibility with older producers.
+// owned is the app's owner discovery: already-owned threads need no URL.
+// opened counts URL requests; loaded counts ownership confirmed at the END
+// of the pass. The app may resume asynchronously while later requests run.
 // An incomplete final measurement returns an error, never a complete load.
 func (s Shower) LoadChatGPTThreads(
 	threads []string, owned func(string) (bool, error), settle time.Duration,
@@ -79,11 +61,6 @@ func (s Shower) LoadChatGPTThreads(
 		if didOpen {
 			opened++
 			attempted[thread] = true
-		}
-	}
-	if opened > 0 {
-		if err := s.Open([]string{"/usr/bin/open", "-g", chatGPTHomeURL}); err != nil {
-			return loaded, opened, err
 		}
 	}
 	return loaded, opened, nil

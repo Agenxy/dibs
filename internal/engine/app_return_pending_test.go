@@ -40,7 +40,7 @@ func TestRestartReturnOpensOnlyNonArchivedAgentsWithMailToDeliver(t *testing.T) 
 					defer mu.Unlock()
 					url := argv[len(argv)-1]
 					opens = append(opens, url)
-					loaded[strings.TrimPrefix(url, "codex://threads/")] = true
+					loaded[strings.TrimPrefix(url, "codex://threads/wake/")] = true
 					return nil
 				},
 			}
@@ -89,7 +89,7 @@ func TestRestartReturnOpensOnlyNonArchivedAgentsWithMailToDeliver(t *testing.T) 
 			mu.Unlock()
 			want := ""
 			if scenario == "held" {
-				want = "codex://threads/" + testcodexipc.Thread + " codex://threads/new"
+				want = "codex://threads/wake/" + testcodexipc.Thread
 			}
 			if strings.Join(got, " ") != want {
 				t.Fatalf("restart navigated %q; only current non-archived delivery may navigate, want %q", got, want)

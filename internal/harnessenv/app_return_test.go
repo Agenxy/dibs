@@ -9,10 +9,9 @@ import (
 	"time"
 )
 
-// A thread the app already holds is not navigated to, and a pass that opened
-// nothing leaves the window where the person put it: the return to the launch
-// view is only ever the end of a pass that moved the window.
-func TestLoadingThreadsOpensOnlyUnloadedOnesAndReturnsHomeOnlyAfterAnOpen(t *testing.T) {
+// A wake-only pass does not navigate any window, including at completion.
+// A thread already owned receives no additional wake request.
+func TestLoadingThreadsWakesOnlyUnloadedOnesAndNeverNavigatesHome(t *testing.T) {
 	t.Setenv("DIBS_DIR", t.TempDir())
 	previousCache := backgroundPairCacheDir
 	backgroundPairCacheDir = func() (string, error) { return t.TempDir(), nil }
@@ -24,7 +23,7 @@ func TestLoadingThreadsOpensOnlyUnloadedOnesAndReturnsHomeOnlyAfterAnOpen(t *tes
 		Open: func(argv []string) error {
 			url := argv[len(argv)-1]
 			opens = append(opens, url)
-			loaded[strings.TrimPrefix(url, "codex://threads/")] = true
+			loaded[strings.TrimPrefix(url, "codex://threads/wake/")] = true
 			return nil
 		},
 		Wait: func(time.Duration) {},
@@ -33,7 +32,7 @@ func TestLoadingThreadsOpensOnlyUnloadedOnesAndReturnsHomeOnlyAfterAnOpen(t *tes
 
 	got, opened, err := s.LoadChatGPTThreads([]string{held, cold, "not a thread"}, owned, time.Second)
 	if err != nil || got != 2 || opened != 1 ||
-		strings.Join(opens, " ") != "codex://threads/"+cold+" codex://threads/new" {
+		strings.Join(opens, " ") != "codex://threads/wake/"+cold {
 		t.Fatalf("loaded=%d opened=%d err=%v opens=%q", got, opened, err, opens)
 	}
 	opens = nil

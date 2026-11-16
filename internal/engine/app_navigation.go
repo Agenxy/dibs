@@ -16,6 +16,7 @@ import (
 type appBindingAlert struct {
 	created                       uint64
 	thread, host, surface, reason string
+	evidence                      time.Time
 }
 
 func archivedApp(l *core.Agent) bool {
@@ -41,6 +42,7 @@ func (e *Engine) noteAppBinding(l *core.Agent, reason string) {
 	}
 	e.appBindings[l.ID] = appBindingAlert{
 		created: l.CreatedSerial, thread: threadIDOf(l), host: e.remoteHostOf(l), surface: surfaceOf(l), reason: reason,
+		evidence: e.lastEvidenceOf(l),
 	}
 }
 
@@ -87,10 +89,18 @@ func (e *Engine) decorateAppBindings(board core.Result) {
 			delete(e.appBindings, id)
 			continue
 		}
+		if alert.reason == "waiting-thread-open" && (!e.hasBlockingMail(id) || e.lastEvidenceOf(l).After(alert.evidence)) {
+			delete(e.appBindings, id)
+			continue
+		}
+		hint := "Mail remains stored. Reattach the same agent from an existing app thread; archived bindings never navigate."
+		if alert.reason == "waiting-thread-open" {
+			hint = "Waiting for its thread to be opened. Mail remains stored and is delivered when this session next runs; " +
+				"Dibs does not activate or navigate the app."
+		}
 		alerts = append(alerts, core.Result{
 			"agent": id, "reason": alert.reason,
-			"hint": "Mail remains stored. Reattach the same agent from an existing app thread; " +
-				"archived bindings never navigate.",
+			"hint": hint,
 		})
 	}
 	sort.Slice(alerts, func(i, j int) bool { return alerts[i]["agent"].(string) < alerts[j]["agent"].(string) })

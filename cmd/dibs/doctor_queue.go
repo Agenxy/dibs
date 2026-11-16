@@ -14,6 +14,10 @@ func checkAppBindings(b *boardView, warn fixFn) {
 		return
 	}
 	for _, alert := range b.AppBindingAlerts {
+		if alert.Reason == "waiting-thread-open" {
+			warn(alert.Agent+": waiting for its thread to be opened", alert.Hint)
+			continue
+		}
 		warn("app navigation held for "+alert.Agent+": "+alert.Reason+" thread binding", alert.Hint)
 	}
 }

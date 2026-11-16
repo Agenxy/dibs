@@ -20,6 +20,9 @@ type queueWakeRecord struct {
 }
 
 func (e *Engine) decorateQueueWake(row map[string]any, agent *core.Agent, now time.Time) {
+	if agent != nil && e.appBindings[agent.ID].reason == "waiting-thread-open" {
+		row["app_wait_reason"] = "waiting for its thread to be opened"
+	}
 	if view := e.queueWakeView(agent, now); view != nil {
 		row["queue_wake"] = view
 	}

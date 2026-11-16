@@ -52,7 +52,7 @@ func TestAChatGPTRestartLoadsOnlyTheOwedThreadAndLaterQuietMailUsesItsOrdinaryRo
 			mu.Lock()
 			defer mu.Unlock()
 			opens = append(opens, url)
-			loaded[strings.TrimPrefix(url, "codex://threads/")] = true // navigation loads it
+			loaded[strings.TrimPrefix(url, "codex://threads/wake/")] = true // the app resumes queued work
 			return nil
 		},
 		Wait: func(d time.Duration) { <-time.After(d) },
@@ -110,9 +110,9 @@ func TestAChatGPTRestartLoadsOnlyTheOwedThreadAndLaterQuietMailUsesItsOrdinaryRo
 	mu.Lock()
 	got := append([]string(nil), opens...)
 	mu.Unlock()
-	want := []string{"codex://threads/" + testcodexipc.Thread, "codex://threads/new"}
+	want := []string{"codex://threads/wake/" + testcodexipc.Thread}
 	if strings.Join(got, " ") != strings.Join(want, " ") {
-		t.Fatalf("after the restart the window went to %q, want only the owed thread then launch view %q", got, want)
+		t.Fatalf("after the restart the app received %q, want only the owed thread's wake request %q", got, want)
 	}
 	inputs := app.Inputs()
 	if len(inputs) != 1 {
@@ -142,7 +142,7 @@ func TestAChatGPTRestartLoadsOnlyTheOwedThreadAndLaterQuietMailUsesItsOrdinaryRo
 	mu.Lock()
 	final := append([]string(nil), opens...)
 	mu.Unlock()
-	if len(final) != len(want)+1 || final[len(final)-1] != "codex://threads/"+second {
+	if len(final) != len(want)+1 || final[len(final)-1] != "codex://threads/wake/"+second {
 		t.Fatalf("quiet agent's new mail did not use the ordinary open route: %q", final)
 	}
 }

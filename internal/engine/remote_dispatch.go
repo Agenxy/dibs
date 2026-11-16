@@ -143,13 +143,14 @@ func (e *Engine) enqueueRemoteWake(plan *wakePlan, agent string) (pendingWake, u
 		slog.Info("no wake: the agent's host has no bridge attached", "agent", agent, "host", plan.host)
 		return pendingWake{}, 0
 	}
+	e.restrictOldAppBridge(plan, b, agent)
 	if !hostCanReceivePlan(*plan, b) {
 		if plan.nativeOutcome == nil {
 			plan.nativeOutcome = new(wakeexec.NativeOutcome)
 		}
 		plan.nativeOutcome.NoRetry = true
 		plan.routeRefused = true
-		if e.wakeContext != nil {
+		if e.wakeContext != nil && archivedApp(e.state.Agents[agent]) {
 			e.noteAppBinding(e.state.Agents[agent], "archived")
 		}
 		return pendingWake{}, 0
@@ -178,5 +179,19 @@ func (e *Engine) enqueueRemoteWake(plan *wakePlan, agent string) (pendingWake, u
 		delete(hw.pending, req.ID)
 		slog.Info("no wake: the host's bridge is not reading its requests", "agent", agent, "host", plan.host)
 		return pendingWake{}, 0
+	}
+}
+
+// A dormant older bridge may still navigate on a cold route. Restrict it
+// to its explicitly negotiated native-only contract; absence of the new
+// capability cannot authorize app activation. Called on the writer with
+// the host-bridge lock held, before admitting any request.
+func (e *Engine) restrictOldAppBridge(plan *wakePlan, bridge *hostBridge, agent string) {
+	if bridge.backgroundOnly || !remoteAppWake(plan.request) {
+		return
+	}
+	plan.request.NoNavigation = true
+	if e.wakeContext != nil && !archivedApp(e.state.Agents[agent]) {
+		e.noteAppBinding(e.state.Agents[agent], "waiting-thread-open")
 	}
 }

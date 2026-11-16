@@ -23,7 +23,7 @@ func TestRealShowerRoutesChatGPTToNativeBackgroundMode(t *testing.T) {
 	calls := 0
 	appOpenFixture = func(mode, url string, idle time.Duration) error {
 		calls++
-		if mode != "chatgpt-background" || url != "codex://threads/native-route" || idle != 0 {
+		if mode != "chatgpt-background" || url != "codex://threads/wake/native-route" || idle != 0 {
 			t.Fatalf("wrong production native mode: %q %q %v", mode, url, idle)
 		}
 		return nil

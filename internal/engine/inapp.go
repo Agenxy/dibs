@@ -6,7 +6,6 @@ package engine
 import (
 	"errors"
 	"log/slog"
-	"time"
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/harnessenv"
@@ -83,7 +82,7 @@ func logShow(opened, deferred bool, err error, args ...any) {
 			"until the thread is opened", append(args, "err", err)...)
 	case deferred:
 		slog.Info("the agent's thread is not loaded in its app; waiting briefly for the background "+
-			"open/restore lock; the notice stays queued until the thread opens", args...)
+			"wake lock; the notice stays queued until the thread runs", args...)
 	case opened:
 		slog.Info("opened the agent's thread in the app it runs in; queued input remains unconfirmed", args...)
 	}
@@ -96,11 +95,9 @@ func surfaceOf(l *core.Agent) string {
 	return l.Agent.Surface
 }
 
-// openClosedSession opens a Claude app session whose process has ended, so a
-// wake has a running session to reach (harnessenv/claude.go). Only for an
-// agent in the Claude app: a terminal Claude Code session has no app to open
-// in, and the mapping finds no record for it. The open runs immediately, off the writer loop because it reads
-// the app's records.
+// openClosedSession records why this app's ended session cannot be woken.
+// Its URL handler explicitly shows/focuses a window even with open -g. Mail
+// remains stored for the session's next ordinary start or delivering hook.
 func (e *Engine) openClosedSession(l *core.Agent) {
 	if surfaceOf(l) != harnessenv.ClaudeDesktop {
 		return
@@ -109,111 +106,10 @@ func (e *Engine) openClosedSession(l *core.Agent) {
 		e.noteAppBinding(l, "archived")
 		return
 	}
-	session, agent, created := threadIDOf(l), l.ID, l.CreatedSerial
-	boundThread := session
-	known := knownHarnessSessions(l)
-	if len(known) == 0 {
-		slog.Warn("cannot reopen this agent's Claude app session: Dibs holds no Claude Code session id for it",
-			"agent", agent, "hint", "it is reached again when its session next calls Dibs")
-		return
-	}
-	if session == "" {
-		session = known[len(known)-1]
-	}
-	go func() {
-		// Every id Dibs has seen for this agent, matched against the app's whole
-		// lineage for each session (ClaudeAppSession), so a resume that gave the
-		// session a new Claude Code id cannot hide it.
-		local, current := harnessenv.ClaudeAppSessionNow("", known...)
-		argv := harnessenv.ClaudeOpenArgv(local)
-		if argv == nil {
-			slog.Warn("cannot reopen this agent's Claude app session: the app has no unarchived session "+
-				"whose history contains its ids", "agent", agent, "known", known,
-				"hint", "the person is asked instead; open the agent's session in the Claude app")
-			e.contactAfterAppFailure(agent, created)
-			return
-		}
-		// Running is asked of the id the app session runs as NOW. Asked of the
-		// bound id, a session resumed under a new one always read as closed,
-		// and agenxy-supply's was "reopened" twenty times in eight hours while
-		// it was open the whole time (2026-10-11).
-		if current != "" {
-			session = current
-			if claudeRunning(current) {
-				// Open already: the socket route is what is missing, most likely
-				// because the cache has not linked this id to the agent yet.
-				// Link it now and deliver, once; a session that still has no
-				// socket is left for its next Dibs call rather than reopened.
-				e.deliverToRunningSession(agent, known)
-				return
-			}
-		}
-		s := e.appShower(agent, created, boundThread)
-		s.ShowWhenIdle(argv, session, func(opened, deferred bool, err error) {
-			logShow(opened, deferred, err, "agent", agent)
-			if err != nil && !deferred {
-				e.contactAfterAppFailure(agent, created)
-				return
-			}
-			if opened {
-				e.deliverAfterReopen(agent, created, local, known)
-			}
-		})
-	}()
+	e.noteAppBinding(l, "waiting-thread-open")
+	slog.Debug("waiting for its thread to be opened", "agent", l.ID,
+		"reason", "the app's ended-session route navigates and takes focus; mail remains stored")
 }
-
-// deliverToRunningSession relinks the peer cache to the app's current ids
-// and redelivers if that found a socket for this agent. Off the writer.
-func (e *Engine) deliverToRunningSession(agent string, known []string) {
-	if _, ok := peerSessionIn(e.refreshPeersNow(), known); !ok {
-		slog.Info("this agent's Claude app session is open but publishes no socket Dibs can reach",
-			"agent", agent, "hint", "its mail is delivered at its next Dibs call")
-		return
-	}
-	_, _ = e.query(e.wakeContext, func() core.Result {
-		e.retryWakeDecision(agent)
-		return nil
-	})
-}
-
-// deliverAfterReopen waits for the process requested by the open, then runs
-// the agent's delivery again, once. A successful open is not admission: its
-// SessionStart hook can hand over mail for the next turn but cannot start one,
-// so without this the reopened session sat idle with its mail. No process at
-// the deadline is a contact failure for the incarnation that requested it.
-func (e *Engine) deliverAfterReopen(agent string, created uint64, local string, known []string) {
-	if e.wakeContext.Err() != nil {
-		return
-	}
-	deadline := time.Now().Add(reopenSettle)
-	for time.Now().Before(deadline) {
-		if e.wakeContext.Err() != nil {
-			return
-		}
-		if l, cli := harnessenv.ClaudeAppSessionNow(local, known...); l == local && claudeRunning(cli) {
-			e.deliverToRunningSession(agent, known)
-			return
-		}
-		select {
-		case <-e.wakeContext.Done():
-			return
-		case <-time.After(500 * time.Millisecond):
-		}
-	}
-	if e.wakeContext.Err() != nil {
-		return
-	}
-	slog.Warn("reopened this agent's Claude app session but no process for it appeared",
-		"agent", agent, "app_session", local,
-		"hint", "the person is asked instead; open the agent's session in the Claude app")
-	e.contactAfterAppFailure(agent, created)
-}
-
-// Replaced by tests: the process check and how long a reopen may take.
-var (
-	claudeRunning = harnessenv.ClaudeSessionRunning
-	reopenSettle  = 30 * time.Second
-)
 
 // knownHarnessSessions is every thread-shaped session id Dibs has recorded for
 // an agent, oldest first: the bound one, its aliases, then the current one.

@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
-	"strconv"
 	"time"
 
 	"github.com/agenxy/dibs/internal/procexec"
@@ -57,22 +56,8 @@ func DesktopState() (Desk, error) {
 	return desk, nil
 }
 
-// OpenWhenAway rechecks OS presence at the actual open boundary and restores
-// the prior frontmost app while away. It never falls back to an activating open.
-func OpenWhenAway(url string, minIdle time.Duration) error {
-	path := helper()
-	if path == "" {
-		return errors.New("native desktop helper unavailable; thread remains queued")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
-	defer cancel()
-	// #nosec G204 -- fixed helper mode; URL is checked again by the native helper.
-	// Run leaves stdio on the null device; an opened app inherits no copied pipe.
-	err := procexec.Command(ctx, path, "--open-away", url,
-		strconv.FormatFloat(minIdle.Seconds(), 'f', -1, 64)).Run()
-	var exited *exec.ExitError
-	if errors.As(err, &exited) && exited.ExitCode() == 3 {
-		return ErrNotAway
-	}
-	return err
+// OpenWhenAway is retained only to refuse old callers. Being away cannot
+// authorize a navigating wake, and an old installed helper must not revive it.
+func OpenWhenAway(_ string, _ time.Duration) error {
+	return errors.New("automatic app navigation is retired; mail remains queued until its thread runs")
 }

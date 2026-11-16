@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/wakeexec"
 )
 
@@ -76,17 +77,19 @@ type WakeResult struct {
 
 // HostBridgeInfo describes one attached bridge, for doctor.
 type HostBridgeInfo struct {
-	Host       string    `json:"host"`
-	Harnesses  []string  `json:"harnesses"`
-	Since      time.Time `json:"since"`
-	AwayOpen   int       `json:"away_open"`
-	OpenPolicy string    `json:"open_policy"`
+	BackgroundOnly bool      `json:"background_only_wake"`
+	Host           string    `json:"host"`
+	Harnesses      []string  `json:"harnesses"`
+	Since          time.Time `json:"since"`
+	AwayOpen       int       `json:"away_open"`
+	OpenPolicy     string    `json:"open_policy"`
 }
 
 type hostBridge struct {
-	nativeOnly bool
-	nativeApp  bool // additive delivery support, never inferred for a dormant old bridge
-	harnesses  map[string]bool
+	nativeOnly     bool
+	backgroundOnly bool
+	nativeApp      bool // additive delivery support, never inferred for a dormant old bridge
+	harnesses      map[string]bool
 	// cooldowns is what the bridge's own [wake.exec] table says per harness,
 	// zero for the default: the hub spends the joined machine's cooldown for
 	// its agents, not its own. Round nine of the pre-release review found
@@ -153,7 +156,8 @@ func (e *Engine) AttachHostBridgeWith(
 }
 
 // AttachHostBridgeCapabilities records additive opening and native-input support.
-// An old bridge omits nativeApp and retains its existing queue admission policy.
+// The optional flags are native input, native-only refusal, and background-only
+// cold delivery. An omitted flag never grants that capability to an old bridge.
 func (e *Engine) AttachHostBridgeCapabilities(
 	host string, harnesses []string, cooldowns map[string]time.Duration, awayOpen int,
 	nativeApp ...bool,
@@ -185,6 +189,7 @@ func (e *Engine) AttachHostBridgeCapabilities(
 	}
 	b.nativeApp = len(nativeApp) >= 1 && nativeApp[0]
 	b.nativeOnly = len(nativeApp) >= 2 && nativeApp[1] && b.nativeApp
+	b.backgroundOnly = len(nativeApp) >= 3 && nativeApp[2]
 	for _, h := range harnesses {
 		if h = strings.ToLower(strings.TrimSpace(h)); h != "" {
 			b.harnesses[h] = true
@@ -261,15 +266,13 @@ func (e *Engine) HostBridges() []HostBridgeInfo {
 			hs = append(hs, h)
 		}
 		sort.Strings(hs)
-		policy := "legacy idle opening; restart dibs host-bridge on this host for prompt bounded ChatGPT opening"
-		switch b.awayOpen {
-		case 1:
-			policy = "away-only opening with focus restoration"
-		case 2:
-			policy = "prompt background ChatGPT opening, bounded per thread; away-only Claude recovery"
+		policy := "app wakes restricted to negotiated native input or held until this host bridge is upgraded"
+		if b.backgroundOnly {
+			policy = "background-only ChatGPT wake requests; ended Claude sessions wait for their next ordinary run"
 		}
 		out = append(out, HostBridgeInfo{
 			Host: host, Harnesses: hs, Since: b.since, AwayOpen: b.awayOpen, OpenPolicy: policy,
+			BackgroundOnly: b.backgroundOnly,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Since.Before(out[j].Since) })
@@ -487,4 +490,9 @@ func (e *Engine) awaitRemoteWake(
 
 func hostCanReceivePlan(plan wakePlan, bridge *hostBridge) bool {
 	return !plan.request.NoNavigation || bridge.nativeOnly
+}
+
+func remoteAppWake(r WakeRequest) bool {
+	return r.Surface == harnessenv.ChatGPTApp || r.Surface == harnessenv.ClaudeDesktop ||
+		(r.Surface == "" && strings.Contains(strings.ToLower(r.Harness), "codex"))
 }

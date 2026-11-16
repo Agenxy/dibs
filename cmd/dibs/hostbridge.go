@@ -293,11 +293,12 @@ func (b *wakeBridge) listenBody() []byte {
 		"params": map[string]any{
 			"notifications": map[string]any{"resourceSubscriptions": []string{mcp.WakeURI}},
 			"_meta": map[string]any{
-				mcp.HostMetaKey:          b.host,
-				mcp.WakeHarnessesMetaKey: b.harnesses(),
-				mcp.AwayOpenMetaKey:      3,
-				mcp.NativeAppMetaKey:     true,
-				mcp.NativeOnlyMetaKey:    true,
+				mcp.HostMetaKey:           b.host,
+				mcp.WakeHarnessesMetaKey:  b.harnesses(),
+				mcp.AwayOpenMetaKey:       3,
+				mcp.NativeAppMetaKey:      true,
+				mcp.NativeOnlyMetaKey:     true,
+				mcp.BackgroundOnlyMetaKey: true,
 			},
 		},
 	})
@@ -589,7 +590,7 @@ func (b *wakeBridge) showQueuedThread(wr engine.WakeRequest) {
 			slog.Warn("could not open the agent's thread in its app; the message waits there",
 				"request", wr.ID, "err", err)
 		case deferred:
-			slog.Info("waiting briefly for the background app open/restore lock", "request", wr.ID)
+			slog.Info("waiting briefly for the background app wake lock", "request", wr.ID)
 		case opened:
 			slog.Info("opened the agent's thread in the app it runs in", "request", wr.ID)
 		}

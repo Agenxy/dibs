@@ -31,11 +31,15 @@ func TestBridgeAdvertisesPromptOpeningThroughTheActualListen(t *testing.T) {
 			if meta["com.dibs/native_app_delivery"] != true {
 				t.Fatalf("production bridge omitted native app capability: %v", meta)
 			}
+			if meta["com.dibs/background_only_wake"] != true {
+				t.Fatalf("production bridge omitted background-only capability: %v", meta)
+			}
 			if meta["com.dibs/away_open"] != float64(3) {
 				t.Fatalf("production bridge did not advertise prompt bounded opening: %v", meta)
 			}
 			if legacy {
 				delete(meta, "com.dibs/away_open") // the pre-upgrade wire shape
+				delete(meta, "com.dibs/background_only_wake")
 				body, _ = json.Marshal(request)
 			}
 			// Subscription attachment is deliberately safe on the zero-value
@@ -81,6 +85,9 @@ func TestBridgeAdvertisesPromptOpeningThroughTheActualListen(t *testing.T) {
 			}
 			if view["away_open"] != float64(want) {
 				t.Fatalf("bridge capability = %v; want %d", view["away_open"], want)
+			}
+			if view["background_only_wake"] != !legacy {
+				t.Fatalf("MCP listen lost the background-only policy: %v", view)
 			}
 		})
 	}

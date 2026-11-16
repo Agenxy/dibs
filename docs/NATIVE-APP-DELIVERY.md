@@ -8,7 +8,8 @@ It does not open a window after native acceptance.
 
 An absent socket, explicit owner-discovery `no-client-found`, or a proven
 failure before input selects the existing cold queue/open route, after checking
-the original owed work again. That route can navigate the app. A socket
+the original owed work again. Its wake-only URL does not select a chat; no
+ordinary-thread navigation fallback is permitted. A socket
 write, queue admission and matching native app acceptance are distinct receipts;
 none proves that the agent consumed mail. Before-input failures (connection,
 initialization or discovery) never strand an owed notice solely because the
@@ -21,6 +22,63 @@ conservatively submitted. Unknown original inputs are reserved within one receiv
 incarnation. New mail qualifies immediately; an observed new app incarnation
 clears those reservations and re-offers outstanding work once. Losing derived
 evidence on a daemon restart permits a bounded recovery offer.
+
+## Background-only harness delivery (2026-11-16)
+
+Automatic wakes must not activate an app, select a chat, create a window or
+restore a previous app. This replaces the earlier navigation/restoration
+policy recorded below. Explicit human-click links and approved relocation
+remain separate actions; there is no setting that restores automatic navigation.
+
+Measured on installed **ChatGPT 26.1111.21308, build 27194**, with bundled
+**codex-cli 0.169.0-alpha.11.1**. The app now recognizes
+`codex://threads/wake/<uuid>` as `wakeQueuedThread`. Its handler keeps a separate
+wake set, checks `thread/queue/list`, then calls `resumeThread`; it does not
+enter `ensureWindow` or `navigate-to-route`. This uses the existing app's
+runtime, never a daemon or app-server started by Dibs.
+
+Two probes used one disposable, owned scratch chat. Before each, the chat was
+archived and unarchived and owner discovery explicitly returned
+`no-client-found`. A unique input was queued without `--resume`:
+
+| Request | Observed input result | Frontmost app and windows |
+|---|---|---|
+| `open -g codex://threads/wake/<uuid>` | Original scratch chat started a turn and acknowledged the queued marker | Claude remained frontmost over 20 samples in 10 seconds; no activation events; the same 10 ChatGPT window IDs throughout |
+| Plain `open codex://threads/wake/<uuid>` | Scratch chat acknowledged the second queued marker | ChatGPT activation observed 119 ms after the request, despite Claude being frontmost again at the end; window IDs unchanged |
+
+No app was activated to arrange a baseline. Later natural user app changes in
+the plain run do not erase its transient activation. An earlier ordinary-thread
+`-g` probe began with ChatGPT already frontmost and is inconclusive for focus.
+The valid `-g` run establishes one unloaded-chat delivery on this version,
+not a fleet guarantee or a promise about every future harness version. The
+scratch chat was archived after measurement. Tests replace app contacts.
+
+The only automatic ChatGPT cold request is therefore
+`/usr/bin/open -g codex://threads/wake/<uuid>`, after ordinary queue admission.
+Already-owned threads keep native start/steer. A failed or unconfirmed request
+does not fall back to `codex://threads/<uuid>`. Restart recovery uses the same
+wake-only request and never navigates to `threads/new` at completion. Quit,
+archived, cloud and known-gone binding fences still apply. URL acceptance,
+queued input consumption and Dibs mail reads remain different receipts.
+
+Installed **Claude 5.11492.5** was read statically. Its `open-url` callback
+calls `qB`, and a handled URL explicitly runs `V.show()` and `V.focus()` (and
+`restore()` when minimized). The Code `/continue` branch calls `tQr`, which
+resolves the session and navigates through `KB` (`dispatchNavigate` or
+`webContents.loadURL`). `-g` cannot prevent those handler actions. A live
+Claude reopen probe was deliberately declined after this source finding.
+No external background resume route is established. Ended Claude sessions
+are not reopened: mail remains stored for their next ordinary session start
+or delivering hook. The board and `dibs doctor` say **waiting for its thread
+to be opened**; fresh authenticated contact clears the obsolete wait label.
+
+The old native-helper `--open-background` and `--open-away` modes refuse
+navigation without contacting the desktop. The old capability advertisement
+is retained so a dormant old producer reaches an explicit refusal instead of
+selecting its legacy fallback. A remote bridge must advertise background-only
+cold delivery; otherwise an app wake is restricted to its already-negotiated
+native-only contract, or held with its mail retained. Requests already handed
+to old code cannot be recalled. Local derived views do not change the ledger.
 
 ## Measured version and proof boundary
 
@@ -193,9 +251,9 @@ state and retains its authenticated read prefix. Remote host-bridge open
 callbacks are a separate transport boundary; this local repair does not claim
 a new remote app-open receipt.
 
-The installed source exposes follower handlers for threads already owned. No
-external load-without-navigation interface was found in this trace; that is a
-source boundary, not proof that no such interface can exist elsewhere.
+The older source trace exposed follower handlers for threads already owned.
+It did not find an external load-without-navigation interface. That historical
+boundary is superseded by the measured 2026-11-16 wake-only URL above.
 `codex://threads/<id>` invokes `ensureWindow({forNavigation:true})` and
 `navigate-to-route` (main offsets 3386410/3381630; bootstrap 2209448).
 `open -g` does not prevent the app from selecting a chat or revealing its window.
@@ -228,13 +286,10 @@ bundle, and an unreadable desktop path stays unknown through its bounded fallbac
   socket to accept, then loads only local ChatGPT-app agent threads with a
   current unoffered delivery, excluding archived recipients, explicit cloud
   surfaces and bindings the queue has reported gone, in one
-  pass under the desktop-wide open/restore lock: owner discovery first, an
-  open only for a thread not held, a bounded wait for it to load, and then
-  `codex://threads/new`, which returns the primary window to `/`, the route a
-  launch starts on (read from the app's deep link handler: no path, origin or
-  project means no workspace lookup and no dialog). A pass that opened nothing
-  moves nothing.
-- Ownership is measured again at the end of the pass: a navigation may finish
+  pass under the retained desktop-wide lock: owner discovery first, a
+  wake-only URL for a thread not held, and a bounded wait for ownership.
+  There is no navigation to a thread or to `threads/new` afterward.
+- Ownership is measured again at the end of the pass: a wake may finish
   asynchronously while later targets load. An incomplete measurement warns
   with the threads still unowned or whose ownership could not be measured,
   without another open or a longer per-thread wait. Settled means the pass
@@ -298,30 +353,24 @@ does not establish idle-start, delayed-selection or fleet-wide behavior. The
 historical restart navigation counts and executable regression proof are in
 the PR's verification note.
 
-What this cannot do is restore a chat the person opened during those first
-seconds. The app exposes no focused-thread query over IPC, persists no route,
-and honours its automation broadcasts only from its own `desktop` client,
-which Dibs does not impersonate. The pass therefore runs as early as the
-socket allows and returns to the launch view, which is where the window
-stands unless the person has already moved it.
-
-**Draft for upstream review; not posted:** Please expose a versioned local IPC
-operation that loads an existing local agent conversation into the desktop
-app's owning runtime without selecting its chat, revealing its window or
-changing focus. It should return a matched ownership/loading receipt and an
-explicit refusal, preserve the thread's model/permissions/workspace, and allow
-ordinary owner-targeted start/steer after success. Cold delivery currently needs
-navigation even though already owned conversations accept native follower
-input. A daemon must never start its own app-server as a substitute.
+The wake-only pass neither selects a chat nor restores a previous selection.
+The earlier upstream draft requesting a background loader is superseded in
+part by the new route. A matched, versioned loading/input receipt would still
+be useful: successful URL dispatch alone does not prove ownership or a turn.
 
 Claude Desktop's measured `ccd_session_mgmt.send_message` is an in-process,
 session-scoped native tool. The read-only trace of Claude **2.26454.2** found no
 external daemon-callable listener. That unresolved boundary does not justify
-impersonating a session or inventing a transport. Closed-session recovery now
-opens the generated background link immediately. That fallback can navigate or
-activate the app and supplies no native message receipt; running sessions need
-no open. Retiring the presence/idle delay does not resolve the external
-messaging boundary.
+impersonating a session or inventing a transport. Closed-session navigation is
+retired. Mail waits for the next ordinary
+session start or delivering hook, and the board/doctor expose that reason.
+The 2026-11-16 follow-up on Claude 5.11492.5 traced the tool descriptor through
+`InternalMcpServerManager.createProxyServers`, the SDK's in-process transport
+and `mcp_message` control requests on the existing parent/CLI stream. The
+transport's start is a no-op and its send invokes a callback; it exposes no
+listener in this traced path. No independent daemon-callable address was
+established. This does not prove that none exists elsewhere; no unverified
+endpoint is called and no session identity is impersonated.
 
 The process budget is another observed boundary. A read of Claude
 **2.26454.2** (`app.asar` SHA-256
