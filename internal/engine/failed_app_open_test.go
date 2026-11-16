@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -66,7 +67,7 @@ func TestFailedColdAppOpenAlertsSenderAndHuman(t *testing.T) {
 			shower = &harnessenv.Shower{
 				Holds: func(string) bool { return false },
 				Open: func(argv []string) error {
-					if len(argv) != 3 || argv[2] != "codex://threads/"+testcodexipc.Thread {
+					if len(argv) != 3 || argv[2] != "codex://threads/wake/"+testcodexipc.Thread {
 						t.Errorf("wrong original app/thread: %v", argv)
 					}
 					entered <- struct{}{}
@@ -365,35 +366,37 @@ func TestStrandedQueueOpenHasRecoveryWindow(t *testing.T) {
 	}
 }
 
-func TestFailedClaudeReopenNotifiesOriginalSender(t *testing.T) {
-	f := newReopenContactFixture(t)
-	sent := f.do(t, &core.Op{Kind: core.OpSendMessage, Token: f.sender, To: "lead", MsgType: core.MsgRequest, Body: "PRIVATE-CLAUDE-ASK"})
-	serial := sent["msg_serial"].(uint64)
-	select {
-	case <-f.opened:
-	case <-time.After(2 * time.Second):
-		t.Fatal("setup: no real reopen callback")
-	}
-	deadline := time.Now().Add(2 * time.Second)
-	for {
+// No opener is attempted for an ended Claude session, so no failed-open
+// contact or sender notice may be manufactured. The pending request stays stored.
+func TestEndedClaudeWaitDoesNotInventAnOpenFailureForSender(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		f := newReopenContactFixture(t)
+		sent := f.do(t, &core.Op{Kind: core.OpSendMessage, Token: f.sender, To: "lead", MsgType: core.MsgRequest, Body: "PRIVATE-CLAUDE-ASK"})
+		serial := sent["msg_serial"].(uint64)
+		synctest.Sleep(time.Second)
+		synctest.Wait()
 		got, err := f.e.query(f.ctx, func() core.Result {
-			return core.Result{"contact": f.e.state.Messages[serial].ContactEscalatedAt, "news": fmt.Sprint(f.e.takeNotices("asker"))}
+			m := f.e.state.Messages[serial]
+			return core.Result{
+				"contact": m.ContactEscalatedAt, "news": fmt.Sprint(f.e.takeNotices("asker")),
+				"retained": m.Body == "PRIVATE-CLAUDE-ASK", "reason": f.e.appBindings["lead"].reason,
+			}
 		})
 		if err != nil {
 			t.Fatal(err)
 		}
-		news := got["news"].(string)
-		if got["contact"] != uint64(0) && strings.Contains(news, "6336088d-1111-4222-8333-444455556666") {
-			if strings.Contains(news, "PRIVATE-CLAUDE-ASK") {
-				t.Fatal("notice copied private body")
-			}
-			return
+		if got["contact"] != uint64(0) || got["retained"] != true || got["reason"] != "waiting-thread-open" {
+			t.Fatalf("ended-session wait dropped mail or invented an open failure: %v", got)
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("failed reopen never told original sender which session to open: %v", got)
+		if strings.Contains(got["news"].(string), "PRIVATE-CLAUDE-ASK") {
+			t.Fatal("sender notice copied private mail")
 		}
-		<-time.After(5 * time.Millisecond)
-	}
+		select {
+		case argv := <-f.opened:
+			t.Fatalf("ended session received app contact: %q", argv)
+		default:
+		}
+	})
 }
 
 func TestClosedHarnessSendDoesNotClaimDelivery(t *testing.T) {

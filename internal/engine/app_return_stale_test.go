@@ -31,9 +31,10 @@ func TestUnownedAfterRestartOpenIsQuarantinedAcrossLaterMailAndRestart(t *testin
 	shower = &harnessenv.Shower{Ownership: func(string) harnessenv.ThreadOwnership {
 		return harnessenv.ThreadOwnership{Running: true, Known: true, Loaded: owned.Load(), Epoch: "app:B"}
 	}, Open: func(argv []string) error {
-		if argv[len(argv)-1] != "codex://threads/new" {
-			opens.Add(1)
+		if argv[len(argv)-1] != "codex://threads/wake/"+testcodexipc.Thread {
+			t.Errorf("restart attempted a navigating URL: %q", argv)
 		}
+		opens.Add(1)
 		return nil
 	}}
 	t.Cleanup(func() { appRestartEpoch.Store(previousEpoch); appThreadOwned, shower = previousOwned, previousShower })

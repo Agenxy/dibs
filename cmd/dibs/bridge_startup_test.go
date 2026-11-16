@@ -175,7 +175,7 @@ func installReconnectFakeAppOpen() {
 		Ownership: harnessenv.ChatGPTOwnership,
 		Open: func(argv []string) error {
 			if len(argv) != 3 || argv[0] != "/usr/bin/open" || argv[1] != "-g" ||
-				!strings.HasPrefix(argv[2], "codex://threads/") {
+				!strings.HasPrefix(argv[2], "codex://threads/wake/") {
 				return fmt.Errorf("unexpected reconnect app open: %q", argv)
 			}
 			f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)

@@ -27,8 +27,13 @@ func TestBackgroundWakeUsesOnlyTheNonNavigatingCommand(t *testing.T) {
 		}
 		return nil
 	}
-	if err := OpenChatGPTBackground(url); err != nil || calls != 1 {
-		t.Fatalf("wake: calls=%d err=%v", calls, err)
+	for range 3 {
+		if err := OpenChatGPTBackground(url); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if calls != 3 {
+		t.Fatalf("wake: calls=%d, want 3", calls)
 	}
 }
 

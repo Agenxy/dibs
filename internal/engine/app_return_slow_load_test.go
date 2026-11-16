@@ -43,9 +43,11 @@ func TestExistingUnownedThreadRemainsOpenableAfterRestartSettle(t *testing.T) {
 	shower = &harnessenv.Shower{Ownership: func(string) harnessenv.ThreadOwnership {
 		return harnessenv.ThreadOwnership{Running: true, Known: true, Loaded: owned.Load(), Epoch: "app:B"}
 	}, Open: func(argv []string) error {
-		if argv[len(argv)-1] != "codex://threads/new" {
-			opens.Add(1)
-		} else if original != 0 {
+		if argv[len(argv)-1] != "codex://threads/wake/"+testcodexipc.Thread {
+			t.Fatalf("restart attempted a navigating URL: %q", argv)
+		}
+		opens.Add(1)
+		if original != 0 {
 			// The initial mail is read through Dibs while the owner is still absent.
 			// This isolates the next real mail from the existing original-mail retry.
 			r, err := e.Do(ctx, &core.Op{Kind: core.OpAckMessage, Token: worker, MsgSerial: original})
