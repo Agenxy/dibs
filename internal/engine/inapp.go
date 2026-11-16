@@ -95,20 +95,65 @@ func surfaceOf(l *core.Agent) string {
 	return l.Agent.Surface
 }
 
-// openClosedSession records why this app's ended session cannot be woken.
-// Its URL handler explicitly shows/focuses a window even with open -g. Mail
-// remains stored for the session's next ordinary start or delivering hook.
+// openClosedSession recovers a running app session's socket route, or records
+// why an ended one waits. Its URL handler shows/focuses a window even with
+// open -g, so ended sessions keep mail for an ordinary start or delivering hook.
 func (e *Engine) openClosedSession(l *core.Agent) {
-	if surfaceOf(l) != harnessenv.ClaudeDesktop {
+	if surfaceOf(l) != harnessenv.ClaudeDesktop || e.remoteHostOf(l) != "" {
 		return
 	}
 	if l.Gone() {
 		e.noteAppBinding(l, "archived")
 		return
 	}
-	e.noteAppBinding(l, "waiting-thread-open")
-	slog.Debug("waiting for its thread to be opened", "agent", l.ID,
-		"reason", "the app's ended-session route navigates and takes focus; mail remains stored")
+	agent, created, thread := l.ID, l.CreatedSerial, threadIDOf(l)
+	known := knownHarnessSessions(l)
+	finished := e.startWakeWorker(agent, "claude-lineage")
+	go func() {
+		defer finished()
+		if e.deliveryContext().Err() != nil {
+			return
+		}
+		// A resumed app session may be running under a newer CLI id than
+		// the writer's peer snapshot. This lookup and process probe do I/O.
+		_, current := harnessenv.ClaudeAppSessionNow("", known...)
+		if current != "" && claudeRunning(current) {
+			e.deliverToRunningSession(agent, created, thread, known)
+			return
+		}
+		_, _ = e.query(e.deliveryContext(), func() core.Result {
+			l := e.state.Agents[agent]
+			if l != nil && !l.Gone() && l.CreatedSerial == created && threadIDOf(l) == thread &&
+				surfaceOf(l) == harnessenv.ClaudeDesktop && e.remoteHostOf(l) == "" && !e.noCurrentWakeWork(l) {
+				e.noteAppBinding(l, "waiting-thread-open")
+				slog.Debug("waiting for its thread to be opened", "agent", agent,
+					"reason", "the app's ended-session route navigates and takes focus; mail remains stored")
+			}
+			return nil
+		})
+	}()
+}
+
+var claudeRunning = harnessenv.ClaudeSessionRunning
+
+// Preserve the background half of closed-session recovery: refresh the
+// actual peer/lineage cache and offer one socket wake on the writer. No
+// app URL or process launch is involved; a missing socket stays unconfirmed.
+func (e *Engine) deliverToRunningSession(agent string, created uint64, thread string, known []string) {
+	if _, ok := peerSessionIn(e.refreshPeersNow(), known); !ok {
+		slog.Info("this agent's Claude app session is open but publishes no socket Dibs can reach",
+			"agent", agent, "hint", "its mail is delivered at its next Dibs call")
+		return
+	}
+	_, _ = e.query(e.deliveryContext(), func() core.Result {
+		l := e.state.Agents[agent]
+		if l != nil && !l.Retired() && l.CreatedSerial == created && threadIDOf(l) == thread &&
+			surfaceOf(l) == harnessenv.ClaudeDesktop && e.remoteHostOf(l) == "" {
+			delete(e.appBindings, agent)
+			e.retryWakeDecision(agent)
+		}
+		return nil
+	})
 }
 
 // knownHarnessSessions is every thread-shaped session id Dibs has recorded for

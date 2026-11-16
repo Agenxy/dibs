@@ -48,6 +48,10 @@ No external background resume route is established. Ended Claude sessions
 are not reopened: mail remains stored for their next ordinary session start
 or delivering hook. The board and `dibs doctor` say **waiting for its thread
 to be opened**; fresh authenticated contact clears the obsolete wait label.
+Already-running Claude sessions keep background recovery when a resume changed
+their CLI id: the off-writer lineage/process check refreshes the peer cache and
+offers one socket delivery. Only a session with no running process found gets
+the waiting-for-open label; a live session is never reopened.
 
 The old native-helper `--open-background` and `--open-away` modes refuse
 navigation without contacting the desktop. The old capability advertisement

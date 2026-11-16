@@ -89,7 +89,7 @@ func (e *Engine) decorateAppBindings(board core.Result) {
 			delete(e.appBindings, id)
 			continue
 		}
-		if alert.reason == "waiting-thread-open" && (!e.hasBlockingMail(id) || e.lastEvidenceOf(l).After(alert.evidence)) {
+		if alert.reason == "waiting-thread-open" && (e.noCurrentWakeWork(l) || e.lastEvidenceOf(l).After(alert.evidence)) {
 			delete(e.appBindings, id)
 			continue
 		}

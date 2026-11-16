@@ -26,6 +26,7 @@ type reopenContactFixture struct {
 	recipient string
 	sender    string
 	created   uint64
+	joined    chan struct{}
 }
 
 // All app and process observations belong to this fixture; the send, wake
@@ -60,7 +61,7 @@ func newReopenContactFixture(t *testing.T) reopenContactFixture {
 	go func() { e.Run(ctx); close(joined) }()
 	t.Cleanup(func() { cancel(); <-joined })
 	stopWakeTimersOnCleanup(t, e)
-	f := reopenContactFixture{e: e, ctx: ctx, cancel: cancel, ledger: led, opened: opened}
+	f := reopenContactFixture{e: e, ctx: ctx, cancel: cancel, ledger: led, opened: opened, joined: joined}
 	worker := f.do(t, &core.Op{
 		Kind: core.OpRegister, Name: "lead", Nonce: "reopen-contact-lead",
 		SessionID: cli, AgentKind: core.KindPersistent,
@@ -93,13 +94,17 @@ func (f reopenContactFixture) do(t *testing.T, op *core.Op) core.Result {
 }
 
 func TestEndedClaudeWaitsWithoutNavigatingAndRetainsMail(t *testing.T) {
-	synctest.Test(t, testEndedClaudeWaitsWithoutNavigatingAndRetainsMail)
+	for _, kind := range []string{core.MsgRequest, core.MsgNotify} {
+		t.Run(kind, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) { testEndedClaudeWaitsWithoutNavigatingAndRetainsMail(t, kind) })
+		})
+	}
 }
 
-func testEndedClaudeWaitsWithoutNavigatingAndRetainsMail(t *testing.T) {
+func testEndedClaudeWaitsWithoutNavigatingAndRetainsMail(t *testing.T, kind string) {
 	f := newReopenContactFixture(t)
 	const private = "PRIVATE-BACKGROUND-WAIT-MAIL"
-	sent := f.do(t, &core.Op{Kind: core.OpSendMessage, Token: f.sender, To: "lead", MsgType: core.MsgRequest, Body: private})
+	sent := f.do(t, &core.Op{Kind: core.OpSendMessage, Token: f.sender, To: "lead", MsgType: kind, Body: private})
 	// The real send goes through the finite arrival batch. Observe its
 	// published result rather than calling the wake decision by hand.
 	synctest.Sleep(time.Second)
