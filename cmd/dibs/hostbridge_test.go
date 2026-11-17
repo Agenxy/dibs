@@ -502,7 +502,7 @@ func TestTheBridgeOpensTheThreadInTheAppTheAgentRunsIn(t *testing.T) {
 		})
 		return opened
 	}
-	if got := run(t, harnessenv.ChatGPTApp, true); len(got) != 1 || len(got[0]) != 3 || got[0][1] != "-g" || got[0][2] != "codex://threads/"+thread {
+	if got := run(t, harnessenv.ChatGPTApp, true); len(got) != 1 || len(got[0]) != 3 || got[0][1] != "-g" || got[0][2] != "codex://threads/wake/"+thread {
 		t.Errorf("an app agent's thread was opened as %q: the queued message waits in a "+
 			"thread the app on this machine never loaded", got)
 	}

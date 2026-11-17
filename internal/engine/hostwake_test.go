@@ -22,6 +22,7 @@ const remoteThread = "019ffe52-0eaf-7f60-81cc-6ab1298d76ec"
 func remoteAgent(id, host string) *core.Agent {
 	a := bridgeAgent(id, "Codex", remoteThread)
 	a.Agent.HostID = host
+	a.Agent.Surface = "codex" // these command-relay fixtures are explicitly outside the app
 	return a
 }
 
@@ -346,7 +347,7 @@ func TestAnAttachingBridgeWakesTheMailItsAgentsWereOwed(t *testing.T) {
 		}
 		return tok
 	}
-	reg("far", &core.AgentInfo{Harness: "Codex", HostID: "laptop", CWD: "/srv/work"}, remoteThread)
+	reg("far", &core.AgentInfo{Harness: "Codex", Surface: "codex", HostID: "laptop", CWD: "/srv/work"}, remoteThread)
 	asker := reg("asker", &core.AgentInfo{Harness: "Codex"}, "")
 
 	// The question lands while no bridge for "laptop" is attached.

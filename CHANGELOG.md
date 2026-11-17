@@ -12,6 +12,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Concurrent native deliveries retain their in-flight state until the last
   delivery exits. An earlier exit no longer marks the agent's turn ended,
   changes contact liveness or starts a premature arrival re-check.
+- Automatic app wakes no longer select chats or take focus. ChatGPT cold
+  delivery uses the measured background wake-only URL with `-g`, including
+  restart recovery, with no navigation or focus-restoration fallback. The
+  obsolete preload pass is retired: return waits for IPC, then re-offers
+  ordinary delivery so queued input exists before a cold wake. Ended
+  Claude sessions retain mail until their next ordinary run; the board and
+  doctor explain that they are waiting for their thread to be opened. Running
+  Claude sessions resumed under a newer id retain socket recovery. Older
+  remote bridges receive only negotiated native input or retain the wake;
+  retired native-helper navigation modes refuse old callers.
+
 - Coordinator contact updates stop repeating once shown by a delivering hook
   or an authenticated mailbox read, including when the coordinator sent the
   original request. Presentation survives restart and does not resolve the

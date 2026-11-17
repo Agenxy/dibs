@@ -209,13 +209,13 @@ func appRestarting(out wakeexec.NativeOutcome) bool {
 
 // heldForAppReturn decides between waiting for the app and the cold route,
 // for a native attempt that did not deliver. Held mail is neither queued nor
-// opened: the app's return loads the thread and redelivers it
+// opened: the app's return re-offers ordinary background delivery
 // (afterAppReturn). The one bounded retry stays armed in case the app never
 // comes back as a new process.
 func (e *Engine) heldForAppReturn(plan wakePlan, agent string, out wakeexec.NativeOutcome) bool {
 	if appRestarting(out) || (out.Disposition == "unloaded" && e.appReturnPending()) {
-		slog.Info("the ChatGPT app is restarting; holding this agent's mail until its thread is loaded",
-			"agent", agent, "hint", "delivered natively once the app is back; nothing is opened meanwhile")
+		slog.Info("the ChatGPT app is restarting; holding this agent's mail until IPC is ready",
+			"agent", agent, "hint", "delivery is reconsidered on return through the ordinary background route")
 		e.noteQueueObservation(plan, agent, wakeexec.QueueObservation{
 			Admission: "not_queued", Pending: "not_applicable", At: time.Now().UTC(), Delivery: "held_app_restarting",
 		})

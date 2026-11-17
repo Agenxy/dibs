@@ -322,13 +322,12 @@ func (e *Engine) maybeWake(ev core.Event) {
 // A snapshot miss is not a verdict. A socket may have appeared after the
 // writer's cache was sampled; only a confirmed route miss asks for contact.
 func (e *Engine) handleMissingWakeRoute(l *core.Agent) {
+	if surfaceOf(l) == harnessenv.ClaudeDesktop && e.remoteHostOf(l) == "" {
+		e.openClosedSession(l)
+		return
+	}
 	if e.contactRouteMissingNow(l) {
 		e.escalateContact(l.ID)
-	}
-	if e.socketMayHaveAppeared(l) {
-		// If a Claude app session ended, opening its existing thread can make
-		// the socket route available at the next cache refresh.
-		e.openClosedSession(l)
 	}
 }
 

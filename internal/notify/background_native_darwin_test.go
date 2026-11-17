@@ -8,18 +8,16 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"reflect"
 	"testing"
 	"time"
 
 	"github.com/agenxy/dibs/internal/procexec"
 )
 
-// Compile the shipped helper with only its native-contact factory replaced.
-// Each case enters OpenChatGPTBackground, capability negotiation, and the real
-// --open-background dispatcher. Neither the current nor old-code proof may
-// touch the person's apps: an old helper gets --status only, never a new mode.
-func TestNativeBackgroundOpenDecisionsThroughProductionMode(t *testing.T) {
+// The prior feature restored focus after navigation. Its replacement refuses
+// every legacy request, including from dormant old bridges. The old-code
+// control uses the original native-contact fixture, so it never opens apps.
+func TestRetiredNativeNavigationModeNeverOpensOrRestores(t *testing.T) {
 	t.Setenv("DIBS_TEST_FORBID_APP_OPEN", "1")
 	t.Setenv("DIBS_NOTIFY_SETTINGS_V1", "1") // inherited status mode must not shadow capability
 	dir := t.TempDir()
@@ -41,11 +39,6 @@ func TestNativeBackgroundOpenDecisionsThroughProductionMode(t *testing.T) {
 	if info, err := os.Stat(binary); err != nil || info.Size() == 0 {
 		t.Fatalf("native fixture setup artifact: %v %v", info, err)
 	}
-	oldHelper, oldOutput, oldLegacy := backgroundHelper, backgroundOpenFixture, backgroundLegacyFixture
-	t.Cleanup(func() {
-		backgroundHelper, backgroundOpenFixture, backgroundLegacyFixture = oldHelper, oldOutput, oldLegacy
-	})
-	backgroundHelper = func() string { return binary }
 	prior := map[string]any{"pid": 1, "launch": "prior-epoch", "bundle": "com.apple.Safari"}
 	target := map[string]any{"pid": 2, "launch": "target-epoch", "bundle": "com.openai.codex"}
 	other := map[string]any{"pid": 3, "launch": "other-epoch", "bundle": "com.anthropic.claudefordesktop"}
@@ -84,44 +77,17 @@ func TestNativeBackgroundOpenDecisionsThroughProductionMode(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+
+			cmd := procexec.Command(ctx, binary, "--open-background", "codex://threads/focus-fixture")
+			cmd.Env = append(os.Environ(), "DIBS_BACKGROUND_OPEN_FIXTURE="+string(payload))
+			raw, runErr := cmd.Output()
 			var receipt map[string]any
-			modeCalls, statusCalls, legacyCalls := 0, 0, 0
-			backgroundLegacyFixture = func(context.Context, []string) error {
-				legacyCalls++ // old-code proof must not open the person's app
-				return nil
+			if err := json.Unmarshal(raw, &receipt); err != nil {
+				t.Fatalf("retired-mode receipt: %q %v", raw, err)
 			}
-			backgroundOpenFixture = func(ctx context.Context, path string, argv, env []string) ([]byte, error) {
-				if path != binary {
-					t.Fatal("fixture helper resolution drifted:", path)
-				}
-				switch {
-				case reflect.DeepEqual(argv, []string{"--status"}):
-					statusCalls++
-				case reflect.DeepEqual(argv, []string{"--open-background", "codex://threads/focus-fixture"}):
-					modeCalls++
-				default:
-					t.Fatal("unexpected helper argv:", argv)
-				}
-				cmd := procexec.Command(ctx, path, argv...)
-				cmd.Env = append(os.Environ(), env...)
-				cmd.Env = append(cmd.Env, "DIBS_BACKGROUND_OPEN_FIXTURE="+string(payload))
-				raw, err := cmd.Output()
-				if argv[0] == "--open-background" {
-					if decodeErr := json.Unmarshal(raw, &receipt); decodeErr != nil {
-						t.Fatalf("native receipt: %q %v", raw, decodeErr)
-					}
-				}
-				return raw, err
-			}
-			err = OpenChatGPTBackground("codex://threads/focus-fixture")
-			if statusCalls != 1 || modeCalls != 1 || legacyCalls != 0 {
-				t.Fatalf("native mode missing: status=%d mode=%d legacy=%d err=%v", statusCalls, modeCalls, legacyCalls, err)
-			}
-			if (err == nil) != tc.open {
-				t.Fatalf("open outcome: err=%v open=%v", err, tc.open)
-			}
-			if receipt["reason"] != tc.reason || receipt["fixture_restore_count"] != float64(tc.attempts) || receipt["fixture_open_count"] != float64(1) {
-				t.Fatalf("native decision: %v; want reason=%s restores=%d opens=1", receipt, tc.reason, tc.attempts)
+			if runErr == nil || receipt["opened"] != false || receipt["reason"] != "retired-navigation" ||
+				receipt["fixture_open_count"] != float64(0) || receipt["fixture_restore_count"] != float64(0) {
+				t.Fatalf("retired mode touched the desktop: receipt=%v err=%v", receipt, runErr)
 			}
 		})
 	}

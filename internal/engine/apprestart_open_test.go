@@ -56,7 +56,7 @@ func TestRestartQueueOpensThroughSharedShower(t *testing.T) {
 	select {
 	case argv := <-opened:
 		if ownershipChecks.Load() == 0 || len(argv) != 3 || argv[0] != "/usr/bin/open" ||
-			argv[1] != "-g" || argv[2] != "codex://threads/"+thread {
+			argv[1] != "-g" || argv[2] != "codex://threads/wake/"+thread {
 			t.Fatalf("restart bypassed the shared app-open path: ownership=%d argv=%v", ownershipChecks.Load(), argv)
 		}
 	case <-time.After(12 * time.Second):

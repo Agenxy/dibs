@@ -785,31 +785,29 @@ where the harness publishes one, is tried best-effort. Both carry "you have mail
 and nothing else: the board wakes an agent and does not steer one. See
 `WAKE-MECHANISMS.md` §5 and §5b.
 
-**Loading agent threads after a ChatGPT app restart** is not optional and
-does not read `resume_after_app_restart`. A refused native dial while the app's
-process runs holds the mail (no queue, no open). On each new app incarnation
-the daemon waits for the app's socket, loads only local ChatGPT-app agent
-threads with a current unoffered delivery, excluding archived recipients,
-in one pass under the desktop-wide open lock,
-returns the window to `codex://threads/new` (the launch view) when it opened
-anything, and then delivers restart notices and held mail natively. See
-`docs/NATIVE-APP-DELIVERY.md`. Ownership is measured again at the end of the
-pass. An incomplete load warns with unowned and unconfirmed thread identifiers.
-Settled means that the pass ended, including on failure, so later mail for an
-unloaded thread can take the ordinary route; it is not a completeness claim.
-A late pass cannot settle a different app incarnation. Reconciliation does not
-repeat opens or increase the per-thread ownership wait.
+**Background delivery after a ChatGPT app restart** is not optional and does
+not read `resume_after_app_restart`. A refused native dial while the app's
+process runs holds mail (no queue, no app request). On a new app incarnation,
+the daemon waits for IPC, settles that epoch, then re-offers owed work through
+the ordinary native-first, then queue, then background wake route. Settled is
+not an ownership or delivery receipt. A late handshake cannot settle a different
+app incarnation. There is no separate preload phase, per-thread ownership wait,
+aggregate loading result or return-to-home navigation.
 
-Quiet chats are left alone; their next mail takes the ordinary route. Archived
-recipients retain their mail and may receive native input in an already owned
-chat, but no navigation is permitted. An accepted restart navigation still
-unowned at the final measurement records a local derived stale-binding memo only
-when its rollout is missing from a readable local Codex store. An existing rollout
-or unavailable store never establishes absence; a slow or closed thread retains
-its ordinary route on later mail. Later mail and restarts do not reopen it; positive ownership/native
-acceptance or a different binding permits recovery. Unknown probes never establish
-that diagnosis. `app_binding_alerts` in the public board and `dibs doctor` expose
-bounded binding metadata, including archived rows omitted from the ordinary board.
+Changed 2026-11-16: the measured `wakeQueuedThread` handler resumes only when
+its queue contains admitted input. Preloading before admission therefore did
+nothing and delayed the real delivery. The actual-return regression requires
+one wake URL and one consumed turn per owed message; URL acceptance alone is
+not counted as a turn. See `docs/NATIVE-APP-DELIVERY.md` for versions and limits.
+
+Quiet chats are left alone until real mail arrives. Archived recipients retain
+mail and may receive native input in an already-owned chat, but no app request
+may navigate them. An authoritative queue refusal for a gone binding retains
+the recovery diagnosis; unknown ownership or an unavailable local store does
+not establish absence. Older derived stale-binding memos remain until positive
+ownership/native acceptance or reattachment clears them. `app_binding_alerts`
+and doctor expose bounded diagnosis metadata, including archived recipients
+and ended Claude sessions waiting for an ordinary thread start.
 
 **Optional ChatGPT app-restart recovery.** `[wake]
 resume_after_app_restart = "1h"` enables a local, macOS-only sweep of known
@@ -1570,8 +1568,10 @@ An absent app socket, the router's explicit `no-client-found`, or a proven
 before-input adapter failure permits the existing cold queue and open route
 below. Its receipt distinguishes an unloaded thread from a failed native
 adapter, reports queue admission and never claims native delivery.
-There is no externally exposed cold-load interface measured here. Opening a
-cold chat can still navigate the app; the owned-thread path makes no open call.
+Measured 2026-11-16, the cold route uses only
+`/usr/bin/open -g codex://threads/wake/<id>` after queue admission. This handler
+does not navigate a window; the owned-thread path makes no open call. No
+ordinary thread URL, home URL or focus-restoration fallback is permitted.
 
 **Cold native queue admission.** A pending Dibs notice of any canonical mail-event
 kind coalesces later notices. The native runner serializes observation, enqueue
@@ -1674,9 +1674,9 @@ thread; this accepted transition fails toward waking. Ordinary exec and socket
 wording are unchanged. A queued notice can still start an empty turn after mail
 was handled; this format does not cancel it.
 
-**Prompt ChatGPT opening.** After a successful queue outcome, an app-owned
-thread opens promptly via `/usr/bin/open -g codex://threads/<id>` even while
-the person is active. A loaded thread is never opened. A bounded one-second
+**Background-only ChatGPT waking.** After successful queue admission, an
+eligible unowned app thread receives `/usr/bin/open -g codex://threads/wake/<id>`.
+The measured handler consumes admitted work without selecting a chat. A loaded thread is never opened. A bounded one-second
 process probe observes only bundled Codex runtimes; failure is UNKNOWN, never
 positive unloaded evidence. A private per-thread memo and OS lock are shared
 by local daemon and host-bridge producers using the same board directory. The
@@ -1686,10 +1686,11 @@ opening. New messages do not reset it. App incarnation changes and an observed l
 re-arm an epoch, subject to a twenty-second per-thread rate limit; otherwise
 a ten-minute expiry permits another attempt so an unavailable probe cannot
 strand future wakes. Lost derived memos permit a bounded extra attempt and
-never lose coordination mail. Measured on 2026-10-04: -g loaded an unloaded
-thread and drained its queue, but briefly activated ChatGPT for about 0.6s
-before focus returned without assistance. No window escalation or focus
-restoration is attempted. Claude closed-session recovery retains its away gate.
+never lose coordination mail. The earlier ordinary-URL focus/restoration mitigation is retired. Claude's
+continue handler explicitly shows/focuses a window, so ended sessions retain
+mail until an ordinary start or hook; no presence gate enables navigation.
+Running Claude sessions keep their background lineage/process lookup and
+socket recovery, including after a resume changes the CLI id.
 
 A newer self-wake notification also advertises `com.dibs/socket_offer: true`.
 A capable writer includes that key on the hidden digest read to reserve the
@@ -2441,8 +2442,11 @@ when a host can prove itself. See `docs/NETWORK.md`.
 **An agent's app is recorded the same way.** The bridge reads it from its own
 process ancestry and sends it as `_meta["com.dibs/surface"]`; it wins over the
 `surface` an agent states, and a stated surface a wake acts on (`chatgpt-app`)
-is ignored. A wake for an agent in the ChatGPT app opens its thread there when
-the app is not holding it, and for no other agent (WAKE-MECHANISMS.md).
+is ignored. A cold wake for a ChatGPT-app agent uses its non-navigating wake-only
+handler after queue admission, and only for an eligible local app binding.
+Remote bridges advertise `com.dibs/background_only_wake`; an older bridge gets
+only negotiated native-only app delivery or retains the wake until upgraded.
+Requests already handed to old code cannot be recalled (WAKE-MECHANISMS.md).
 
 **Remote agents (v1).** One daemon serves agents on other machines directly: there is
 no sharding, no replication, and therefore no split-brain: a single writer keeps every

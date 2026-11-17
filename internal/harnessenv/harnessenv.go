@@ -215,7 +215,7 @@ var appProbeOutput = func(ctx context.Context, binary string, args ...string) ([
 }
 
 // ChatGPTOpenArgv is the app's thread URL for an explicit relocation. Wakes
-// add the background option through chatGPTWakeArgv below. Both use the app's
+// use the separate non-navigating route below. Both use the app's
 // own runtime, launching it if needed, never a headless agent process.
 //
 // nil for a thread id that is not one: the id is the agent's to state, and it
@@ -229,11 +229,10 @@ func ChatGPTOpenArgv(thread string) []string {
 }
 
 func chatGPTWakeArgv(thread string) []string {
-	argv := ChatGPTOpenArgv(thread)
-	if argv == nil {
+	if !isThreadID(thread) {
 		return nil
 	}
-	return []string{argv[0], "-g", argv[1]}
+	return []string{"/usr/bin/open", "-g", "codex://threads/wake/" + thread}
 }
 
 func isThreadID(s string) bool {
@@ -261,11 +260,8 @@ func OnlyDerived(surface string) bool { return surface == ChatGPTApp || surface 
 // the ONLY place a wake learns how to open an app, so an agent that did not
 // start in an app is never opened in one.
 func OpenArgv(surface, thread string) []string {
-	switch surface {
-	case ChatGPTApp:
+	if surface == ChatGPTApp {
 		return chatGPTWakeArgv(thread)
-	case ClaudeDesktop:
-		return ClaudeOpenArgv(ClaudeLocalSession(thread)) // reads the app's records: off the writer loop
 	}
 	return nil
 }
@@ -311,7 +307,8 @@ var RealShower = Shower{
 			return errors.New("real app opener forbidden by DIBS_TEST_FORBID_APP_OPEN")
 		}
 		if len(argv) == 3 && argv[0] == "/usr/bin/open" && argv[1] == "-g" &&
-			strings.HasPrefix(argv[2], "codex://threads/") && isThreadID(strings.TrimPrefix(argv[2], "codex://threads/")) {
+			strings.HasPrefix(argv[2], "codex://threads/wake/") &&
+			isThreadID(strings.TrimPrefix(argv[2], "codex://threads/wake/")) {
 			// Every ChatGPT thread open, cold route and reload pass alike,
 			// passes here, so this is where a Quit is respected.
 			if !chatGPTMainRunning() {
@@ -322,18 +319,7 @@ var RealShower = Shower{
 			}
 			return notify.OpenChatGPTBackground(argv[2])
 		}
-		if len(argv) != 2 || argv[0] != "/usr/bin/open" ||
-			!strings.HasPrefix(argv[1], "claude://code/continue?session=") ||
-			!localSessionID.MatchString(strings.TrimPrefix(argv[1], "claude://code/continue?session=")) {
-			return errors.New("unsupported native app open")
-		}
-		if appOpenFixture != nil {
-			return appOpenFixture("claude-background", argv[1], 0)
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second) // see notify.helperBudget
-		defer cancel()
-		// #nosec G204 G702 -- fixed OS opener and generated Claude session URL, separate argv elements.
-		return procexec.Command(ctx, "/usr/bin/open", "-g", argv[1]).Run()
+		return errors.New("unsupported automatic app route; mail waits for its thread to be opened")
 	},
 	Wait: func(d time.Duration) { <-time.After(d) },
 }
@@ -346,16 +332,10 @@ func (s Shower) Show(argv []string, thread string) (opened bool, err error) {
 	if isChatGPTOpen(argv) {
 		return s.showChatGPT(argv, thread)
 	}
-	if len(argv) == 0 || s.holds(thread) {
+	if len(argv) == 0 {
 		return false, nil
 	}
-	if !s.allowsOpen(thread) {
-		return false, nil
-	}
-	if err := s.Open(argv); err != nil {
-		return false, err
-	}
-	return true, nil
+	return false, errors.New("unsupported automatic app route; mail waits for its thread to be opened")
 }
 
 func (s Shower) holds(thread string) bool {

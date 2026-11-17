@@ -16,7 +16,7 @@ import (
 
 func TestHostWakeFenceUsesOriginalMailAndIdentity(t *testing.T) {
 	e := New(core.NewState("host-native", core.DefaultLimits()), &memLedger{}, deadProber{})
-	wakes, release, err := e.AttachHostBridge("remote-host", []string{"codex"})
+	wakes, release, err := e.AttachHostBridgeCapabilities("remote-host", []string{"codex"}, nil, 3, false, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}

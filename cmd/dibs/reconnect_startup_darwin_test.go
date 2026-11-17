@@ -422,7 +422,7 @@ func appReconnectContract(t *testing.T, lost, clockBack, legacy, lateStamp bool)
 	openDeadline := time.Now().Add(2 * time.Second)
 	for {
 		opened, readErr := os.ReadFile(openLog)
-		if readErr == nil && bytes.Contains(opened, []byte("codex://threads/"+thread)) {
+		if readErr == nil && bytes.Contains(opened, []byte("codex://threads/wake/"+thread)) {
 			break
 		}
 		if time.Now().After(openDeadline) {

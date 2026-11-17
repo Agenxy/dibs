@@ -19,13 +19,10 @@ import (
 	"github.com/agenxy/dibs/internal/testexec"
 )
 
-// Settled is the end of the pass, including a failed/partial pass. If it
-// instead means every target was loaded, one missing thread holds future
-// unloaded mail forever. The regression enters through a registered app
-// agent, the real epoch watcher baseline and load helper, then a REAL send,
-// native refusal, queue command and ordinary app-open route. Only the app
-// and process observation are fixtures; no test sets appSettled itself.
-func TestPartialRestartPassAllowsLaterUnownedMailToOpen(t *testing.T) {
+// Settled describes the IPC-return handshake, never ownership of every thread.
+// A real held send must reach the ordinary queue/wake route afterward, without
+// any speculative pre-admission open. No test sets appSettled itself.
+func TestAppReturnHandshakeAllowsLaterUnownedMailToWake(t *testing.T) {
 	t.Setenv("DIBS_DIR", t.TempDir())
 	app := testcodexipc.Start(t, "idle", nil)
 	app.Owns = func(string) bool { return false }
@@ -42,6 +39,7 @@ func TestPartialRestartPassAllowsLaterUnownedMailToOpen(t *testing.T) {
 	appThreadOwned = codexipc.Owned
 	opened := make(chan struct{}, 1)
 	var passOpens atomic.Int32
+	var ordinaryOpens atomic.Int32
 	shower = &harnessenv.Shower{
 		Ownership: func(string) harnessenv.ThreadOwnership {
 			return harnessenv.ThreadOwnership{Running: true, Known: true, Loaded: false, Epoch: "app:B"}
@@ -54,6 +52,7 @@ func TestPartialRestartPassAllowsLaterUnownedMailToOpen(t *testing.T) {
 				passOpens.Add(1)
 				return errors.New("fixture: restart navigation refused")
 			}
+			ordinaryOpens.Add(1)
 			select {
 			case opened <- struct{}{}:
 			default:
@@ -96,7 +95,7 @@ func TestPartialRestartPassAllowsLaterUnownedMailToOpen(t *testing.T) {
 	// well races the watcher's pass and can hold the ordinary-mail opener.
 	for deadline := time.Now().Add(9 * time.Second); ; {
 		settled, _ := e.appSettled.Load().(string)
-		if passOpens.Load() > 0 && settled == "app:B" {
+		if settled == "app:B" {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -104,8 +103,8 @@ func TestPartialRestartPassAllowsLaterUnownedMailToOpen(t *testing.T) {
 		}
 		<-time.After(20 * time.Millisecond)
 	}
-	if passOpens.Load() != 1 {
-		t.Fatalf("setup: partial load did not attempt one refused navigation: %d", passOpens.Load())
+	if passOpens.Load() != 0 {
+		t.Fatalf("return attempted an open before queue admission: %d", passOpens.Load())
 	}
 	select {
 	case <-opened:
@@ -113,6 +112,9 @@ func TestPartialRestartPassAllowsLaterUnownedMailToOpen(t *testing.T) {
 		t.Fatalf("later unloaded mail did not reach its ordinary open route; appReturnPending=%t", e.appReturnPending())
 	}
 	waitWakeDone(t, e, "worker")
+	if ordinaryOpens.Load() != 1 {
+		t.Fatalf("ordinary delivery requested %d wakes, want one", ordinaryOpens.Load())
+	}
 	if e.appReturnPending() {
 		t.Fatal("finished partial pass still holds later mail")
 	}
