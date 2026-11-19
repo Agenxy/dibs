@@ -50,6 +50,13 @@ function check(name: string, cond: boolean, detail = "") {
   else { failures++; console.log(`  \x1b[31m✗\x1b[0m ${name}${detail ? ". " + detail : ""}`) }
 }
 
+// Bun can report a rejected route callback and still exit 0. Count harness
+// rejections as browser-stage failures while preserving the original diagnostic.
+process.on("unhandledRejection", (reason) => {
+  check("no unhandled promise rejection in the browser harness", false, String(reason))
+  console.error(reason)
+})
+
 function livePipSnapshot() {
   // Playwright's locator resolves a handle before a separate evaluate call.
   // The panel may redraw in between. Query and measure the current node in
@@ -1057,7 +1064,9 @@ try {
     await tool("ack", { token: me.token, msg_serial: unrelated.msg_serial })
   } finally {
     releaseAnswer()
-    await page.unroute("**/rpc")
+    // Drain the resumed callback before disabling interception; otherwise
+    // Playwright may continue its request before route.continue() runs.
+    await page.unrouteAll({ behavior: "wait" })
   }
   await Bun.sleep(900)
 
@@ -1190,7 +1199,7 @@ try {
     (await stateOf(refreshMail.msg_serial)).state === "approved")
   check("the refresh failure was actually injected", blockedRefreshes === 1,
     String(blockedRefreshes))
-  await page.unroute("**/rpc")
+  await page.unrouteAll({ behavior: "wait" })
   const healedInbox = await tool("inbox", { token: me.token })
   const healedPlain = textOf(healedInbox)
   await page.evaluate((messages) => (window as any).__deliver({
