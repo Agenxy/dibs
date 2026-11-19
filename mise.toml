@@ -25,8 +25,8 @@ bun = "1.4.4"
 # A release chain that has never been run is a claim, not a guarantee, and the
 # docs/INSTALL.md advertises reproducible builds + cosign + SBOM as facts.
 # Declarative cask steps support the current GoReleaser schema.
-goreleaser = "2.19.0"
-syft = "1.55.0"
+goreleaser = "2.20.2"
+syft = "1.57.2"
 # Cosign 3, matching the --bundle signing config in .goreleaser.yml.
 #
 # This was briefly pinned to 2.x, which had it backwards: the config was old, so

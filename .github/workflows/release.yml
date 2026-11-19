@@ -61,9 +61,9 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
-          version: 2026.10.23
+          version: 2026.11.10
           experimental: true
       - name: Validate protected source before candidate checkout or build
         run: go run ./tools/releaseflow -phase validate
@@ -94,9 +94,9 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
-          version: 2026.10.23
+          version: 2026.11.10
           experimental: true
       - name: validate exact protected-main candidate before secrets or build
         run: go run ./tools/releaseflow -phase validate
@@ -107,7 +107,7 @@ jobs:
           cosign-release: v3.1.4
       - uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
-          syft-version: v1.55.0
+          syft-version: v1.57.2
       - name: macOS signing preflight
         if: '!inputs.rehearsal_fail && !inputs.delivery_rehearsal'
         env:
@@ -135,9 +135,9 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
-      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
-          version: 2026.10.23
+          version: 2026.11.10
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: release-preflight-${{ github.run_attempt }}
@@ -161,9 +161,9 @@ jobs:
           ref: main
           fetch-depth: 0
           persist-credentials: false
-      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
-          version: 2026.10.23
+          version: 2026.11.10
           experimental: true
       - name: authenticate receipt before tag checkout or signing
         run: go run ./tools/releaseflow -phase authorize-receipt
@@ -181,7 +181,7 @@ jobs:
         run: go run ./tools/sigstore-root-check
       - uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
-          syft-version: v1.55.0
+          syft-version: v1.57.2
       - name: macOS signing identity
         env:
           DIBS_SIGNING_P12: ${{ secrets.DIBS_SIGNING_P12 }}
@@ -213,9 +213,9 @@ jobs:
           ref: main
           fetch-depth: 0
           persist-credentials: false
-      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
-          version: 2026.10.23
+          version: 2026.11.10
       - name: authenticate receipt before tag checkout
         run: go run ./tools/releaseflow -phase authorize-receipt
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -247,9 +247,9 @@ jobs:
           ref: main
           fetch-depth: 0
           persist-credentials: false
-      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
-          version: 2026.10.23
+          version: 2026.11.10
       - name: measure secret key format without printing key material
         env:
           HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
@@ -266,9 +266,9 @@ jobs:
         with:
           ref: main
           persist-credentials: false
-      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
-          version: 2026.10.23
+          version: 2026.11.10
       - name: authenticate delivered rehearsal receipt; only this run record is written
         env:
           DIBS_PREFLIGHT_RUN: ${{ inputs.preflight_run }}

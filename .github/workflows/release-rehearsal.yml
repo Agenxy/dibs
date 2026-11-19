@@ -48,9 +48,9 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
-          version: 2026.10.23
+          version: 2026.11.10
           experimental: true
       - name: closed repository, exact candidate, unique tag; refuse before build/sign
         run: go run ./tools/releaseflow -phase full-publication-validate
@@ -59,6 +59,6 @@ jobs:
           cosign-release: v3.1.4
       - uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
-          syft-version: v1.55.0
+          syft-version: v1.57.2
       - name: shared publisher and read-only public retry; dry downstream plans only
         run: go run ./tools/releaseflow -phase full-publication
