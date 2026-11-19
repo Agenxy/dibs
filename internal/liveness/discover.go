@@ -182,7 +182,7 @@ func listProcesses() []rawProc {
 		if err == nil {
 			return procs
 		}
-		procinfo.WarnFallback("process discovery", err)
+		procinfo.WarnFallback(procinfo.FallbackDiscovery, 0, err)
 	}
 	return psProcesses()
 }
@@ -241,7 +241,7 @@ func commandOf(pid int) string {
 		if procinfo.Gone(err) {
 			return ""
 		}
-		procinfo.WarnFallback("process command line", err)
+		procinfo.WarnFallback(procinfo.FallbackCommand, pid, err)
 	}
 	cmd := procexec.Command(context.Background(), "ps", "-p", strconv.Itoa(pid), "-o", "command=")
 	out, err := cmd.Output()

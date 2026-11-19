@@ -258,7 +258,7 @@ func openFiles(pid int) []string {
 		if processKnownGone(pid) {
 			return nil
 		}
-		procinfo.WarnFallback("process open files", err)
+		procinfo.WarnFallback(procinfo.FallbackOpenFiles, pid, err)
 	}
 	if entries, err := os.ReadDir(filepath.Join("/proc", strconv.Itoa(pid), "fd")); err == nil {
 		var out []string

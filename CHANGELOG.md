@@ -5,6 +5,20 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Native process fallback warnings identify the observed PID, its readable
+  kernel name and a short caller list. Debug logs report cumulative counts
+  at powers of two per operation, exposing repeated fallbacks without a log
+  line for every sweep. Diagnostics launch no additional commands and do not
+  change the fallback decisions.
+
+### Maintenance
+
+- Cask inspection uses Homebrew's explicit file loader and disables package
+  catalog bootstrap, so generated local casks can be validated with Homebrew
+  7.0.14 when its package API is unavailable.
+
 ## [0.0.19] - 2026-11-12
 
 ### Fixed

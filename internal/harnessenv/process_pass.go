@@ -136,7 +136,7 @@ func (p *processPass) readPath(pid int) processPath {
 		return processPath{state: processAbsent}
 	}
 	if err != nil {
-		procinfo.WarnFallback("process executable path", err)
+		procinfo.WarnFallback(procinfo.FallbackPath, pid, err)
 		path, err = processPathFallback(p.ctx, pid)
 		// The command may have raced a second incarnation change.
 		same, checkErr = nativeProcessSame(row.kernel)
