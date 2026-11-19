@@ -44,7 +44,8 @@ class DibsRecordingCommand < SystemCommand
 end
 observations = [[:macos, :arm], [:linux, :arm], [:linux, :intel]].map do |os, arch|
   Homebrew::SimulateSystem.with(os: os, arch: arch) do
-    cask = Cask::CaskLoader.load(Pathname(ARGV.fetch(0)))
+    # Homebrew 7.0.14 restricts load to names; this input is a selected file.
+    cask = Cask::CaskLoader.from_path(Pathname(ARGV.fetch(0)))
     DibsRecordingCommand.calls = []
     legacy = cask.artifacts.any? { |a| a.is_a?(Cask::Artifact::AbstractFlightBlock) }
     cask.artifacts.grep(Cask::Artifact::AbstractInstallSteps).each do |artifact|
@@ -102,9 +103,9 @@ func run(path string) error {
 	// #nosec G204 -- fixed Homebrew interpreter and Ruby program; the argument is the generated local cask path
 	cmd := procexec.Command(ctx, "brew", "ruby", "-e", inspectCask, "--", abs)
 	// Per-command developer mode avoids `brew ruby` enabling it persistently.
-	// The loader and recorded commands need neither network nor credentials.
+	// A selected file needs neither package catalog bootstrap nor credentials.
 	cmd.Env = append(os.Environ(), "HOMEBREW_NO_AUTO_UPDATE=1", "HOMEBREW_DEVELOPER=1",
-		"HOMEBREW_NO_GITHUB_API=1", "HOMEBREW_NO_ANALYTICS=1")
+		"HOMEBREW_NO_GITHUB_API=1", "HOMEBREW_NO_ANALYTICS=1", "HOMEBREW_NO_INSTALL_FROM_API=1")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	data, err := cmd.Output()

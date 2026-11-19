@@ -13,6 +13,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   line for every sweep. Diagnostics launch no additional commands and do not
   change the fallback decisions.
 
+### Maintenance
+
+- Cask inspection uses Homebrew's explicit file loader and disables package
+  catalog bootstrap, so generated local casks can be validated with Homebrew
+  7.0.14 when its package API is unavailable.
+
 ## [0.0.19] - 2026-11-12
 
 ### Fixed

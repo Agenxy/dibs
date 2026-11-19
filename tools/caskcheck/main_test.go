@@ -4,10 +4,13 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -76,5 +79,35 @@ func TestGuardsEnterHomebrewLoaderAndStepRunner(t *testing.T) {
 				t.Fatalf("expected rejection %q; got %v", tc.want, err)
 			}
 		})
+	}
+}
+
+// Inspection loads a selected local file, so a cold Homebrew catalog is not a
+// prerequisite. Enter through run and count real package-API requests rather
+// than asserting that a particular environment variable was passed.
+func TestLocalCaskInspectionNeedsNoPackageAPI(t *testing.T) {
+	if _, err := exec.LookPath("brew"); err != nil {
+		t.Skip("Homebrew DSL contract runs in the macOS gate; actual caskcheck never skips")
+	}
+	var requests atomic.Int64
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(api.Close)
+	t.Setenv("HOMEBREW_API_DOMAIN", api.URL)
+	t.Setenv("HOMEBREW_CACHE", filepath.Join(t.TempDir(), "cold-cache"))
+	// The checker must select offline inspection even if its caller did not.
+	t.Setenv("HOMEBREW_NO_INSTALL_FROM_API", "")
+	path := filepath.Join(t.TempDir(), "dibs.rb")
+	if err := os.WriteFile(path, []byte(soundCask), 0o600); err != nil {
+		t.Fatal("setup: write sound cask:", err)
+	}
+	err := run(path)
+	if calls := requests.Load(); calls != 0 {
+		t.Fatalf("local cask inspection contacted the package API (%d requests); result: %v", calls, err)
+	}
+	if err != nil {
+		t.Fatal("sound local cask rejected without package API:", err)
 	}
 }
