@@ -15,6 +15,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Maintenance
 
+- Drain browser-test request interceptors before removing them, and fail the
+  panel gate on unhandled harness promise rejections instead of passing noisy logs.
 - Refresh release tooling and CI to GoReleaser 2.20.2, Syft 1.57.2, mise
   2026.11.10 and mise-action 5.2.8; update x/crypto to 0.59.0 and x/sys to 0.50.0.
   Drift checks inspect the project pins independently of global developer tools.
