@@ -18,6 +18,7 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Refresh release tooling and CI to GoReleaser 2.20.2, Syft 1.57.2, mise
   2026.11.10 and mise-action 5.2.8; update x/crypto to 0.59.0 and x/sys to 0.50.0.
   Drift checks inspect the project pins independently of global developer tools.
+  Keep local cask inspection compatible with Homebrew 7.0.11 as well as 7.0.14.
 - Cask inspection uses Homebrew's explicit file loader and disables package
   catalog bootstrap, so generated local casks can be validated with Homebrew
   7.0.14 when its package API is unavailable.
