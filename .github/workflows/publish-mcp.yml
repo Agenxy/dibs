@@ -63,7 +63,7 @@ jobs:
       # so the toolchain is pinned here the same way ci.yml and release.yml pin
       # it. The runner image ships a Go, and which one it ships is not ours to
       # depend on.
-      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
           # PINNED, like ci.yml and release.yml. The action commit was pinned
           # and the mise VERSION was not, so this step downloaded whatever
@@ -71,7 +71,7 @@ jobs:
           # is the same "a moving target with our identity" shape the comment
           # below refuses for mcp-publisher, three lines further down, and it
           # went in with the step that quotes it.
-          version: 2026.10.23
+          version: 2026.11.10
 
       # PINNED and CHECKSUMMED, not piped from a redirect.
       #

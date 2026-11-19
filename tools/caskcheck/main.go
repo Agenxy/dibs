@@ -44,8 +44,11 @@ class DibsRecordingCommand < SystemCommand
 end
 observations = [[:macos, :arm], [:linux, :arm], [:linux, :intel]].map do |os, arch|
   Homebrew::SimulateSystem.with(os: os, arch: arch) do
-    # Homebrew 7.0.14 restricts load to names; this input is a selected file.
-    cask = Cask::CaskLoader.from_path(Pathname(ARGV.fetch(0)))
+    # Select the file loader directly: older Homebrew 7 lacks from_path,
+    # while 7.0.14 restricts the generic load entry point to names.
+    path = Pathname(ARGV.fetch(0))
+    raise "invalid cask source path" if Cask::CaskLoader::FromPathLoader.invalid_path?(path)
+    cask = Cask::CaskLoader::FromPathLoader.new(path).load(config: nil)
     DibsRecordingCommand.calls = []
     legacy = cask.artifacts.any? { |a| a.is_a?(Cask::Artifact::AbstractFlightBlock) }
     cask.artifacts.grep(Cask::Artifact::AbstractInstallSteps).each do |artifact|

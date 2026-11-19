@@ -83,7 +83,8 @@ func verdict(outdated map[string]outdatedTool, pinned []string, latestMise strin
 }
 
 func miseOutdated() (map[string]outdatedTool, error) {
-	out, err := exec.Command("mise", "outdated", "--bump", "--json").Output()
+	// This check owns the repository pins, not unrelated user-global tools.
+	out, err := exec.Command("mise", "outdated", "--no-global", "--bump", "--json").Output()
 	if err != nil {
 		return nil, fmt.Errorf("mise outdated: %w", err)
 	}

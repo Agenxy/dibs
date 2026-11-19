@@ -56,9 +56,9 @@ jobs:
       # controls that host can run anything, with those permissions, and no
       # version or digest was recorded. The action is pinned to a SHA like
       # everything else here, and it handles trust + install itself.
-      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
-          version: 2026.10.23
+          version: 2026.11.10
           experimental: true
       - name: Playwright browser
         run: task e2e:deps
@@ -85,9 +85,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
-          version: 2026.10.23
+          version: 2026.11.10
           experimental: true
       - name: build
         run: mise exec -- go build ./...
@@ -108,9 +108,9 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
-          version: 2026.10.23
+          version: 2026.11.10
           experimental: true
       - name: build
         run: mise exec -- go build ./...
