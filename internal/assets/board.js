@@ -119,6 +119,9 @@ const Board = (() => {
   }
 
   function queueWakeHTML(l) {
+    if (l.app_wait_reason) {
+      return explained("tag", l.app_wait_reason, "Mail remains stored and is delivered when this session next runs. Dibs does not activate or navigate the app.")
+    }
     const q = l.queue_wake
     if (!q) return ""
     if (q.thread_state === "gone") {

@@ -18,7 +18,7 @@ import (
 func TestCanceledRemotePreparationOwnsItsOutcome(t *testing.T) {
 	e := New(core.NewState("hub", core.DefaultLimits()), &memLedger{}, deadProber{})
 	e.SetWakePolicy(WakeNone)
-	_, detach, err := e.AttachHostBridgeCapabilities("remote", []string{"codex"}, nil, 0, true)
+	_, detach, err := e.AttachHostBridgeCapabilities("remote", []string{"codex"}, nil, 0, true, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}

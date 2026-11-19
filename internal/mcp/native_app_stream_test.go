@@ -41,7 +41,9 @@ func TestNativeAppCapabilityChangesActualWakeStreamAdmission(t *testing.T) {
 				Agent: &core.AgentInfo{Harness: "Codex", Surface: harnessenv.ChatGPTApp, HostID: "laptop"},
 			})
 			sender := do(&core.Op{Kind: core.OpRegister, Name: "sender"})["token"].(string)
-			meta := map[string]any{HostMetaKey: "laptop", WakeHarnessesMetaKey: []string{"Codex"}}
+			// Both fixtures implement the current background-only opener. Only
+			// native input admission varies in this test.
+			meta := map[string]any{HostMetaKey: "laptop", WakeHarnessesMetaKey: []string{"Codex"}, BackgroundOnlyMetaKey: true}
 			if native {
 				meta["com.dibs/native_app_delivery"] = true
 			}

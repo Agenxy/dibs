@@ -34,7 +34,7 @@ const (
 // this off the writer; callers using Show directly can retry while mail stays
 // queued. Contention is never an attempted open.
 var ErrAppOpenPairBusy = errors.New(
-	"another local background open/restore pair is active; defer the open, mail remains queued")
+	"another local background wake request is active; defer the request, mail remains queued")
 
 // Tests replace only this filesystem edge, never the lock decision. The
 // production cache root is independent of the board's DIBS_DIR.
@@ -100,8 +100,8 @@ func (s Shower) showChatGPT(_ []string, thread string) (bool, error) {
 	}
 	// Every thread and every local producer uses this lock, acquired after
 	// the per-thread lock and before recording the attempt. Keep it for the
-	// complete native open/restore pair; two overlapping pairs could restore
-	// each other's temporarily frontmost ChatGPT window.
+	// complete wake request. Retain the same lock for older local producers;
+	// the current route neither navigates nor restores focus.
 	pair, err := lockBackgroundPair(filepath.Dir(path))
 	if err != nil {
 		return false, err

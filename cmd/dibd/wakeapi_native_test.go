@@ -19,7 +19,9 @@ import (
 
 func TestNativeWakeFenceHasNoForeignMailboxOracle(t *testing.T) {
 	e, ctx := testEngine(t)
-	wakes, release, err := e.AttachHostBridge("own-host", []string{"codex"})
+	// Use the current background-only bridge contract so this reaches the
+	// real handoff. The assertions below test mailbox fencing, not upgrade refusal.
+	wakes, release, err := e.AttachHostBridgeCapabilities("own-host", []string{"codex"}, nil, 3, false, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -60,8 +60,8 @@ change it when reality disagrees, and record why).
    See `docs/NATIVE-APP-DELIVERY.md` for the measured contract and proof boundaries.
    The remaining delivery routes are:
    `[wake.exec]`, argv from the operator's config, which must DELIVER into a running
-   harness (for Codex, `codex queue` into the ChatGPT app, which Dibs then opens on that
-   thread when the app is not holding it, and only for an agent whose bridge found the
+   harness (for Codex, `codex queue` into the ChatGPT app, followed by its background
+   wake-only handler when the app is not holding the thread, and only for an agent whose bridge found the
    app in its own process tree) and is the one Dibs can confirm; and the session socket the harness publishes, which needs no config and is
    BEST EFFORT, because the receiver decides whether to accept a peer message and sends
    no receipt. A session in bypassPermissions mode holds them. Neither carries an

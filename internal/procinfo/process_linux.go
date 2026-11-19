@@ -52,6 +52,9 @@ func processAt(pid int, boot int64) (Process, error) {
 	if len(fields) < 20 {
 		return Process{}, fmt.Errorf("short process stat")
 	}
+	if fields[0] == "Z" {
+		return Process{}, os.ErrNotExist // exited; the parent has not collected its status
+	}
 	parent, e1 := strconv.Atoi(fields[1])
 	ticks, e2 := strconv.ParseInt(fields[19], 10, 64)
 	if e1 != nil || e2 != nil || parent < 0 || ticks < 0 {

@@ -4,10 +4,10 @@
 package engine
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -83,7 +83,7 @@ func TestAWakeOpensTheThreadInTheAppTheAgentRunsIn(t *testing.T) {
 		if !wake(t, app, harnessenv.ChatGPTApp, "/usr/bin/true") {
 			t.Fatal("setup: the queue command was reported as failing")
 		}
-		if len(app.opened) != 1 || len(app.opened[0]) != 3 || app.opened[0][1] != "-g" || app.opened[0][2] != "codex://threads/"+thread {
+		if len(app.opened) != 1 || len(app.opened[0]) != 3 || app.opened[0][1] != "-g" || app.opened[0][2] != "codex://threads/wake/"+thread {
 			t.Fatalf("asked the app for %q: the message is queued for a thread the app has "+
 				"not loaded, and nobody can see the agent act on it", app.opened)
 		}
@@ -136,7 +136,7 @@ func TestAThreadIDThatIsNotOneNeverReachesTheApp(t *testing.T) {
 func TestARemoteWakeTellsTheBridgeWhichAppTheAgentRunsIn(t *testing.T) {
 	e := hubEngine()
 	e.SetWakeCommands(map[string]WakeCommand{"codex": {Argv: []string{"codex", "queue", "{thread}"}}})
-	reqs, release, err := e.AttachHostBridge("laptop", []string{"Codex"})
+	reqs, release, err := e.AttachHostBridgeCapabilities("laptop", []string{"Codex"}, nil, 3, false, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,131 +244,34 @@ func TestAWakeOpensAnUnloadedAppThreadWhileThePersonIsActive(t *testing.T) {
 	}
 }
 
-// A Claude app agent whose session has no process is opened in the Claude
-// app, so the wake that follows finds a running session. Measured: the link
-// started a closed session's process in two seconds.
-func TestMailForAClosedClaudeAppSessionOpensItInTheApp(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	const cli = "6336088d-1111-4222-8333-444455556666"
-	dir := filepath.Join(home, "Library", "Application Support", "Claude", "claude-code-sessions", "a", "o")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "local_08697f65-6786-4c61-96f8-9af1aa07b24e.json"),
-		[]byte(`{"sessionId":"local_08697f65-6786-4c61-96f8-9af1aa07b24e","cliSessionId":"`+cli+`"}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	app := &fakeApp{}
-	app.install(t)
-	opened := make(chan []string, 1)
-	shower.Open = func(argv []string) error { opened <- argv; return nil }
-
-	e := New(core.NewState("test", core.DefaultLimits()), &memLedger{}, deadProber{})
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	stopWakeTimersOnCleanup(t, e)
-	go e.Run(ctx)
-	if _, err := e.Do(ctx, &core.Op{
-		Kind: core.OpRegister, Name: "lead", Nonce: "n-lead-0123456789abcdef", SessionID: cli,
-		AgentKind: core.KindPersistent,
-		Agent:     &core.AgentInfo{Harness: "Claude Code", CWD: t.TempDir(), Surface: harnessenv.ClaudeDesktop},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := e.Do(ctx, &core.Op{Kind: core.OpSweep, DeadAgents: []string{"lead"}}); err != nil {
-		t.Fatal(err)
-	}
-	sender, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "asker", Nonce: "n-asker-0123456789abcdef"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: sender["token"].(string)}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := e.Do(ctx, &core.Op{
-		Kind: core.OpSendMessage, Token: sender["token"].(string), To: "lead",
-		MsgType: core.MsgQuestion, Body: "are you there?", OpID: "q1",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case argv := <-opened:
-		if len(argv) != 2 || argv[1] != "claude://code/continue?session=local_08697f65-6786-4c61-96f8-9af1aa07b24e" {
-			t.Errorf("opened %q", argv)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("mail for a closed Claude app session did not open it in the app")
-	}
+// An app-side resume may change the CLI id, but never authorizes navigation
+// to that session. The original mailbox remains bound and readable.
+func TestMailForAResumedClaudeAppSessionWaitsWithoutNavigation(t *testing.T) {
+	synctest.Test(t, testMailForAResumedClaudeAppSessionWaitsWithoutNavigation)
 }
 
-// The k7-dev failure of 2026-10-10, through the production door. The agent is
-// known by the Claude Code session it registered with; the app has since
-// resumed that session, which gave it a new Claude Code id and moved the old
-// one into priorCliSessionIds. Mail must still reopen the app session, and no
-// contact alert may go to the person for an agent Dibs could have reached.
-func TestMailReopensAClaudeAppSessionThatWasResumedSinceRegistration(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	const (
-		registered = "9ba6f463-1ae8-4a40-884d-c4b5fed55179"
-		current    = "07b5f68d-c28c-4d3f-9615-6d6bff9d92c6"
-		local      = "local_fd69ccb7-6d52-481c-bbd9-ebede76dbdda"
-	)
-	dir := filepath.Join(home, "Library", "Application Support", "Claude", "claude-code-sessions", "a", "o")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, local+".json"), []byte(`{"sessionId":"`+local+
-		`","cliSessionId":"`+current+`","priorCliSessionIds":["`+registered+`"],"isArchived":false}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	app := &fakeApp{}
-	app.install(t)
-	opened := make(chan []string, 1)
-	shower.Open = func(argv []string) error { opened <- argv; return nil }
-
-	e := New(core.NewState("test", core.DefaultLimits()), &memLedger{}, deadProber{})
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	stopWakeTimersOnCleanup(t, e)
-	go e.Run(ctx)
-	if _, err := e.Do(ctx, &core.Op{
-		Kind: core.OpRegister, Name: "k7-dev", Nonce: "n-k7dev-0123456789abcdef", SessionID: registered,
-		AgentKind: core.KindPersistent,
-		Agent:     &core.AgentInfo{Harness: "Claude Code", CWD: t.TempDir(), Surface: harnessenv.ClaudeDesktop},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := e.Do(ctx, &core.Op{Kind: core.OpSweep, DeadAgents: []string{"k7-dev"}}); err != nil {
-		t.Fatal(err)
-	}
-	sender, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "asker", Nonce: "n-asker-0123456789abcdef"})
+func testMailForAResumedClaudeAppSessionWaitsWithoutNavigation(t *testing.T) {
+	f := newReopenContactFixture(t)
+	const registered = "6336088d-1111-4222-8333-444455556666"
+	const local = "local_08697f65-6786-4c61-96f8-9af1aa07b24e"
+	home, err := os.UserHomeDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: sender["token"].(string)}); err != nil {
+	path := filepath.Join(home, "Library", "Application Support", "Claude", "claude-code-sessions", "a", "o", local+".json")
+	if err := os.WriteFile(path, []byte(`{"sessionId":"`+local+`","cliSessionId":"07b5f68d-c28c-4d3f-9615-6d6bff9d92c6","priorCliSessionIds":["`+registered+`"],"isArchived":false}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.Do(ctx, &core.Op{
-		Kind: core.OpSendMessage, Token: sender["token"].(string), To: "k7-dev",
-		MsgType: core.MsgQuestion, Body: "are you there?", OpID: "q1",
-	}); err != nil {
-		t.Fatal(err)
+	f.do(t, &core.Op{Kind: core.OpSendMessage, Token: f.sender, To: "lead", MsgType: core.MsgQuestion, Body: "retained resumed-session mail"})
+	synctest.Sleep(time.Second)
+	synctest.Wait()
+	board, err := f.e.Board(f.ctx)
+	if err != nil || board["app_binding_alerts"] == nil {
+		t.Fatalf("resumed session has no wait diagnosis: %v %v", board, err)
 	}
 	select {
-	case argv := <-opened:
-		if len(argv) != 2 || argv[1] != "claude://code/continue?session="+local {
-			t.Errorf("opened %q, want the app session that holds the registered id in its history", argv)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("mail for a resumed Claude app session did not reopen it; the agent stays asleep")
-	}
-	res, err := e.query(ctx, func() core.Result { return core.Result{"n": len(e.state.Contacts)} })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n := res["n"].(int); n != 0 {
-		t.Errorf("%d contact alert(s) went to the person for an agent Dibs reopened", n)
+	case argv := <-f.opened:
+		t.Fatalf("resumed session navigated: %v", argv)
+	default:
 	}
 }

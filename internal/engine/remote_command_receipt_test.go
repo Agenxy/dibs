@@ -59,7 +59,7 @@ func TestRemoteCommandDeduplicatesAfterObservedLocalAppIncarnation(t *testing.T)
 	if err != nil || r["host"] != "remote-host" {
 		t.Fatalf("setup host move did not apply: %v %v", r, err)
 	}
-	requests, detach, err := e.AttachHostBridge("remote-host", []string{"codex"})
+	requests, detach, err := e.AttachHostBridgeCapabilities("remote-host", []string{"codex"}, nil, 3, false, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}

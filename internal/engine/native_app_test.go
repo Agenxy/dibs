@@ -209,4 +209,15 @@ func TestNativeAppEachArrivalBypassesBatchAndInFlightHold(t *testing.T) {
 	}
 	close(release)
 	awaitNative(t, s, 2)
+	// Both calls must finish before cleanup stops the engine. waitWakeDone
+	// cannot see the second: the first call's exit clears the agent's running
+	// flag while the second is still reading its reply, so cleanup cancelled it
+	// mid-exchange and the fixture saw a reset (linux) or a broken pipe.
+	deadline := time.Now().Add(3 * time.Second)
+	for s.Ended() < 2 && time.Now().Before(deadline) {
+		<-time.After(5 * time.Millisecond)
+	}
+	if got := s.Ended(); got < 2 {
+		t.Fatalf("native calls finished %d, want 2", got)
+	}
 }

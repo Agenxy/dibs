@@ -25,12 +25,12 @@ func TestRemoteRouteChangeThroughProductionWake(t *testing.T) {
 			limits.StaleGrace = time.Nanosecond
 			e := New(core.NewState("hub", limits), &memLedger{}, deadProber{})
 			e.SetWakePolicy(WakeNone)
-			old, detach, err := e.AttachHostBridgeCapabilities("remote", []string{"codex"}, nil, 0, true)
+			old, detach, err := e.AttachHostBridgeCapabilities("remote", []string{"codex"}, nil, 0, true, false, true)
 			if err != nil {
 				t.Fatal(err)
 			}
 			t.Cleanup(detach)
-			current, detachCurrent, err := e.AttachHostBridgeCapabilities("current", []string{"codex"}, nil, 0, true)
+			current, detachCurrent, err := e.AttachHostBridgeCapabilities("current", []string{"codex"}, nil, 0, true, false, true)
 			if err != nil {
 				t.Fatal(err)
 			}

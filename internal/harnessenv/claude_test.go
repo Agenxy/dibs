@@ -31,9 +31,12 @@ func TestAClaudeSessionIsOpenedByTheAppsOwnID(t *testing.T) {
 	writeClaudeRecord(t, home, "local_08697f65-6786-4c61-96f8-9af1aa07b24e", cli, false)
 	writeClaudeRecord(t, home, "local_aaaaaaaa-0000-4000-8000-000000000000", "11111111-2222-4333-8444-555566667777", true)
 
-	got := OpenArgv(ClaudeDesktop, cli)
+	got := ClaudeOpenArgv(ClaudeLocalSession(cli))
 	if len(got) != 2 || got[1] != "claude://code/continue?session=local_08697f65-6786-4c61-96f8-9af1aa07b24e" {
-		t.Fatalf("OpenArgv = %q", got)
+		t.Fatalf("explicit human-open link = %q", got)
+	}
+	if OpenArgv(ClaudeDesktop, cli) != nil {
+		t.Fatal("automatic wake exposed the activating Claude link")
 	}
 	if OpenArgv(ClaudeDesktop, "11111111-2222-4333-8444-555566667777") != nil {
 		t.Error("an archived session was opened")
@@ -129,12 +132,11 @@ func TestARunningClaudeSessionIsNotOpenedAgain(t *testing.T) {
 	if !RealShower.holds(cli) {
 		t.Error("the production shower would open a Claude session that is already running")
 	}
-	// Also enter the production open door: its ownership dispatch must reach
-	// ClaudeSessionRunning, not ChatGPT-only Ownership or the presence gate.
+	// Even a supplied legacy navigation URL is refused at the production door.
 	s := RealShower
 	s.Open = func([]string) error { t.Error("running Claude session was re-opened"); return nil }
 	s.ShowWhenIdle(ClaudeOpenArgv("local_live-fixture"), cli, func(opened, deferred bool, err error) {
-		if opened || deferred || err != nil {
+		if opened || deferred || err == nil {
 			t.Errorf("running Claude session entered open path: %v %v %v", opened, deferred, err)
 		}
 	})

@@ -91,7 +91,13 @@ func enrichContactURL(n *HumanNotice, plan contactLinkPlan) {
 		return
 	}
 	surface := harnessenv.AppFor(plan.surface, plan.harness, plan.thread)
-	argv := harnessenv.OpenArgv(surface, plan.thread)
+	var argv []string
+	switch surface {
+	case harnessenv.ChatGPTApp:
+		argv = harnessenv.ChatGPTOpenArgv(plan.thread)
+	case harnessenv.ClaudeDesktop:
+		argv = harnessenv.ClaudeOpenArgv(harnessenv.ClaudeLocalSession(plan.thread))
+	}
 	if len(argv) >= 2 && argv[0] == "/usr/bin/open" {
 		n.Contact.OpenURL = argv[len(argv)-1]
 		n.Contact.OpenHost = plan.host

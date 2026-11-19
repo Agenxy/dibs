@@ -248,7 +248,8 @@ const WakeCooldownsMetaKey = "com.dibs/wake_cooldowns"
 // retaining away-only Claude recovery. Version 3 also opens closed Claude
 // sessions immediately, with no presence/idle gate. Older readers ignore
 // unknown versions.
-// Absence describes an older bridge, whose opening behavior is left alone.
+// This is historical metadata, not permission to navigate. BackgroundOnlyMetaKey
+// now determines whether a bridge can receive a cold app plan.
 const AwayOpenMetaKey = "com.dibs/away_open"
 
 // NativeAppMetaKey explicitly opts a bridge into immediate native app input.
@@ -258,6 +259,10 @@ const NativeAppMetaKey = "com.dibs/native_app_delivery"
 // NativeOnlyMetaKey makes an archived native-only plan safe for this reader.
 // A dormant old bridge cannot advertise it, so the hub never gives it one.
 const NativeOnlyMetaKey = "com.dibs/native_only_wake"
+
+// BackgroundOnlyMetaKey advertises non-navigating cold delivery. Without it,
+// an app plan is restricted to negotiated native input or retained at the hub.
+const BackgroundOnlyMetaKey = "com.dibs/background_only_wake"
 
 // serveWakeSubscription holds one stream open for one host's bridge and
 // pushes each wake request the hub decides on for that host as a
@@ -273,8 +278,9 @@ func (s *Server) serveWakeSubscription(w http.ResponseWriter, r *http.Request, r
 	harnesses := wakeHarnessesIn(p.Meta)
 	native, _ := p.Meta[NativeAppMetaKey].(bool)
 	nativeOnly, _ := p.Meta[NativeOnlyMetaKey].(bool)
+	backgroundOnly, _ := p.Meta[BackgroundOnlyMetaKey].(bool)
 	reqs, release, err := s.eng.AttachHostBridgeCapabilities(
-		host, harnesses, wakeCooldownsIn(p.Meta), awayOpenIn(p.Meta), native, nativeOnly)
+		host, harnesses, wakeCooldownsIn(p.Meta), awayOpenIn(p.Meta), native, nativeOnly, backgroundOnly)
 	if err != nil {
 		writeRPC(w, http.StatusBadRequest, req.ID, nil, &rpcError{
 			Code: -32602, Message: WakeURI + " subscription requires the bridge's host in _meta['" + HostMetaKey + "']",

@@ -1,5 +1,72 @@
 # Waking an agent: what actually works (decision record)
 
+## Background-only harness delivery (2026-11-16)
+
+Automatic wakes must not activate an app, select a chat, create a window or
+restore a previous app. This replaces the earlier navigation/restoration
+policy recorded below. Explicit human-click links and approved relocation
+remain separate actions; there is no setting that restores automatic navigation.
+
+Measured on installed **ChatGPT 26.1111.21308, build 27194**, with bundled
+**codex-cli 0.169.0-alpha.11.1**. The app now recognizes
+`codex://threads/wake/<uuid>` as `wakeQueuedThread`. Its handler keeps a separate
+wake set, checks `thread/queue/list`, then calls `resumeThread`; it does not
+enter `ensureWindow` or `navigate-to-route`. This uses the existing app's
+runtime, never a daemon or app-server started by Dibs.
+
+Two probes used one disposable, owned scratch chat. Before each, the chat was
+archived and unarchived and owner discovery explicitly returned
+`no-client-found`. A unique input was queued without `--resume`:
+
+| Request | Observed input result | Frontmost app and windows |
+|---|---|---|
+| `open -g codex://threads/wake/<uuid>` | Original scratch chat started a turn and acknowledged the queued marker | Claude remained frontmost over 20 samples in 10 seconds; no activation events; the same 10 ChatGPT window IDs throughout |
+| Plain `open codex://threads/wake/<uuid>` | Scratch chat acknowledged the second queued marker | ChatGPT activation observed 119 ms after the request, despite Claude being frontmost again at the end; window IDs unchanged |
+
+No app was activated to arrange a baseline. Later natural user app changes in
+the plain run do not erase its transient activation. An earlier ordinary-thread
+`-g` probe began with ChatGPT already frontmost and is inconclusive for focus.
+The valid `-g` run establishes one unloaded-chat delivery on this version,
+not a fleet guarantee or a promise about every future harness version. The
+scratch chat was archived after measurement. Tests replace app contacts.
+
+The only automatic ChatGPT cold request is therefore
+`/usr/bin/open -g codex://threads/wake/<uuid>`, after ordinary queue admission.
+Already-owned threads keep native start/steer. A failed or unconfirmed request
+does not fall back to `codex://threads/<uuid>`. Restart recovery waits for IPC, settles the current app epoch and re-offers
+owed work through that same native-first, then queue, then wake route. The
+handler resumes only when `thread/queue/list` contains admitted input, so the
+old preload-before-admission pass is retired. There is no per-thread loading
+wait or aggregate loading receipt, and no `threads/new` navigation. A permanent
+real-send/epoch-watcher test uses an empty-queue no-op fake and requires exactly
+one wake URL and one consumed turn per owed message; the old pass fails it. Quit,
+archived, cloud and known-gone binding fences still apply. URL acceptance,
+queued input consumption and Dibs mail reads remain different receipts.
+
+Installed **Claude 5.11492.5** was read statically. Its `open-url` callback
+calls `qB`, and a handled URL explicitly runs `V.show()` and `V.focus()` (and
+`restore()` when minimized). The Code `/continue` branch calls `tQr`, which
+resolves the session and navigates through `KB` (`dispatchNavigate` or
+`webContents.loadURL`). `-g` cannot prevent those handler actions. A live
+Claude reopen probe was deliberately declined after this source finding.
+No external background resume route is established. Ended Claude sessions
+are not reopened: mail remains stored for their next ordinary session start
+or delivering hook. The board and `dibs doctor` say **waiting for its thread
+to be opened**; fresh authenticated contact clears the obsolete wait label.
+Already-running Claude sessions keep background recovery when a resume changed
+their CLI id: the off-writer lineage/process check refreshes the peer cache and
+offers one socket delivery. Only a session with no running process found gets
+the waiting-for-open label; a live session is never reopened.
+
+The old native-helper `--open-background` and `--open-away` modes refuse
+navigation without contacting the desktop. The old capability advertisement
+is retained so a dormant old producer reaches an explicit refusal instead of
+selecting its legacy fallback. A remote bridge must advertise background-only
+cold delivery; otherwise an app wake is restricted to its already-negotiated
+native-only contract, or held with its mail retained. Requests already handed
+to old code cannot be recalled. Local derived views do not change the ledger.
+
+
 **Question:** when a peer sends a Dibs message, how does the recipient agent find out,
 without Dibs shelling out, driving the harness, or orchestrating sessions? Dibs is a
 coordination *service* agents use, not a harness.
@@ -170,7 +237,7 @@ so it goes stale when that application updates, and nothing in Dibs can know
 that until it tries.
 
 
-### A closed Claude app session is opened in the app (2026-10-01)
+### Historical Claude session reopening (2026-10-01; retired 2026-11-16)
 
 The Claude desktop app keeps a Code session's process alive while the app
 runs, so the socket route reaches it; a session with no process (the app was
@@ -293,9 +360,10 @@ somebody happened to open it. The operator's rule settles what to do about it:
 an agent is woken in the app it started in, launching the app if it has to, and
 never in another environment unless somebody moves it there on purpose.
 
-So after the queue succeeds, Dibs asks the app to open the thread through the
-app's own route, `open codex://threads/<id>`, when the app is not already
-holding it. Measured: an unloaded thread was held by the app's runtime within a
+Historically, after the queue succeeded, Dibs asked the app to open the thread through the
+app's own route, `open codex://threads/<id>`, when the app was not already
+holding it. This navigation is retired by the background-only contract above.
+Measured then: an unloaded thread was held by the app's runtime within a
 second, and the app came to the front. A thread the app already holds is left
 alone, because opening it would pull the app forward for nothing the queue was
 not already doing. "Holding" is read the way the app shows it: its own Codex
@@ -369,38 +437,17 @@ created is opened there. A bridge that has stated one still wins, because it
 says where the agent ran LAST: a thread born in the app and since run from a
 terminal stays out of the app.
 
-**Prompt dormant wakes, bounded app opening (2026-10-04).** The person clarified
-that dormant agents must be wakeable whatever they are doing; the bug was live
-agents repeatedly switching the app. ChatGPT queued wakes therefore no longer
-wait for lock, display sleep or HID idle. Earlier Dibs used `open -g` for their
-thread links. Measurement on the installed app and codex-cli 0.160.0: an unloaded
-throwaway thread drained its queued marker after this background open, with a
-roughly 0.6-second ChatGPT foreground blip and focus returning without help.
-That was a historical observation, not a guarantee that focus returns. On
-2026-10-05, five loaded-thread comparisons activated ChatGPT on every background
-open, while five background queue-only comparisons did not. The native helper
-now opens the thread and attempts one restoration during a bounded 250 ms
-observation interval. New input, another app activation, process-incarnation
-changes, unknown observations or a failed restoration end that attempt; there
-is no retry. This mitigates a persistent switch with a possible blip, and does
-not promise zero activation or restoration of ChatGPT's selected chat. A
-capability query uses the old helper's harmless status mode before sending the
-new command. An unavailable or unsupported helper retains the previous
-`/usr/bin/open -g` wake, with no restoration and a once-per-unavailability-episode
-INFO diagnostic. This fallback keeps dormant agents wakeable during a mixed
-install. An uncertain receipt after an attempted native open is never retried.
+**Historical navigation mitigation (2026-10-04, retired 2026-11-16).**
+Earlier ordinary thread URLs self-activated even with `open -g`. The old
+native helper attempted one bounded restoration of the previous app, and
+older helpers fell back to ordinary background URL opening. Neither prevented
+the transient focus change. That policy, its restoration helper and fallback
+are retired by the background-only contract above.
 
-Local producers serialize each open/restore pair across threads, processes and
-boards under the same user cache root: `os.UserCacheDir()/dibs/background-pair.lock`,
-independent of `DIBS_DIR`, with a private directory and file. An unavailable cache
-path falls back to the board's pair lock with an INFO diagnostic, preserving
-wakes while giving up cross-board serialization. Removing an active lock file
-can break serialization until outstanding pairs finish; cache cleanup is not a
-coordination receipt. Contention does not advance the attempt
-memo. The off-writer delivery path coalesces and waits up to ten seconds for
-that pair, plus any already-started bounded probe/helper call; if it cannot
-proceed, it reports the queued wake without claiming an open. No decision
-window is introduced for agent mail.
+The existing desktop-wide pair lock remains derived compatibility state,
+independent of the board data directory. Contention records no attempted
+wake and runs off the writer. Neither lock ownership nor URL acceptance
+establishes an app turn or a mail read.
 
 **2026-10-09 correction:** owned ChatGPT threads now receive native app input
 (start when idle, steer when running), before any queue/open path. This replaces
@@ -431,11 +478,11 @@ The old switching path was queue success -> `showInApp` / bridge
 had no memo; #304/7428955 repaired an ownership probe that missed loaded
 runtimes behind helpers, but another unknown/false result could still open on
 every queued wake. The shared production opener now bounds that branch itself.
-Claude closed-session recovery opens immediately in the background. The
-`open_app_after_idle` setting and presence/idle gate are retired: delivery
-is never delayed until the person leaves. A running session needs no open.
-Background opening can still activate an app; this promises prompt recovery,
-not focus preservation.
+Claude closed-session recovery no longer opens a URL. Its handler takes
+focus explicitly. Mail waits for the session's next ordinary run, with a
+visible board/doctor reason. The `open_app_after_idle` setting remains retired;
+being away does not authorize navigation. A running session uses its socket
+and hooks without any open.
 
 This policy governs agent wakes. Human questions and requests post native
 notifications without opening a decision window, including while Focus is on.

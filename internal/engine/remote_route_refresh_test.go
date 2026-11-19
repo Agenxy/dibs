@@ -23,7 +23,7 @@ func TestChangedRemoteSurfaceDeliversOnlyThroughCurrentBinding(t *testing.T) {
 			limits.StaleGrace = time.Nanosecond
 			e := New(core.NewState("hub", limits), &memLedger{}, deadProber{})
 			e.SetWakePolicy(WakeNone)
-			requests, detach, err := e.AttachHostBridgeCapabilities("remote", []string{"codex"}, nil, 0, true)
+			requests, detach, err := e.AttachHostBridgeCapabilities("remote", []string{"codex"}, nil, 0, true, false, true)
 			if err != nil {
 				t.Fatal(err)
 			}

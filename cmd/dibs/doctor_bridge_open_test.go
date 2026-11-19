@@ -12,7 +12,7 @@ import (
 
 func TestDoctorNamesEarlierBridgeAndPrintsItsRemedy(t *testing.T) {
 	hosts := hubHosts{bridges: []engine.HostBridgeInfo{
-		{Host: "older-host"}, {Host: "updated-host", AwayOpen: 3},
+		{Host: "older-host", AwayOpen: 3}, {Host: "updated-host", AwayOpen: 3, BackgroundOnly: true},
 	}}
 	var warnings []string
 	reportBridgeOpenPolicy(hosts, func(what, fix string) {
