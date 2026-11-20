@@ -82,6 +82,8 @@ func TestNativeSendReceiptNamesPendingRouteAndPreservesPriorOutcome(t *testing.T
 			freed.Do(func() { close(release) })
 			want := "accepted"
 			switch mode {
+			case "active":
+				want = "steered" // a running thread is steered, never sent a start
 			case "disconnect":
 				want = "unknown"
 			case "refused":
