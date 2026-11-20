@@ -1118,7 +1118,6 @@ func (s *State) applyAckBoard(l *Agent, op *Op, now time.Time) (Result, []Event)
 	// One walk, and reused below: Inbox scans every message on the board and
 	// sorts, and this result asked for it twice under two names.
 	inbox := s.Inbox(l.ID)
-	firstCheckIn := l.AckedSerial == 0
 	l.AckedSerial = s.Serial + 1
 	res := Result{
 		"ok": true, "acked_serial": s.Serial + 1, "serial": s.Serial + 1,
@@ -1133,9 +1132,6 @@ func (s *State) applyAckBoard(l *Agent, op *Op, now time.Time) (Result, []Event)
 		// Empty unless this call bound one: a binding nothing reports is a
 		// binding nobody can check.
 		"session_id": bound,
-	}
-	if firstCheckIn {
-		res["first_check_in"] = true
 	}
 	// Absent unless it applies, which is nearly always. See UnanswerableSenders.
 	if gone := s.UnanswerableSenders(inbox); len(gone) > 0 {

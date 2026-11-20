@@ -20,6 +20,13 @@ const BridgeSurfaceEvidenceMetaKey = "com.dibs/bridge_surface_evidence"
 // BridgeSurfaceEvidenceMethod is not a tool and has no model-facing schema.
 const BridgeSurfaceEvidenceMethod = "dibs/bridge-surface"
 
+func checkInReceipt(ctx context.Context, name string) (context.Context, func() bool) {
+	if name == "check_in" {
+		return engine.WithCheckInReceipt(ctx)
+	}
+	return ctx, func() bool { return false }
+}
+
 // Only an own-host registration reply on the local listener can arm the
 // bridge's optional completion. Other tools and invited/remote callers cannot
 // use that RPC, so advertising it there would promise an unavailable route.
