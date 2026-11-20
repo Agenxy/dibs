@@ -213,8 +213,11 @@ func (e *Engine) appRestarting(out wakeexec.NativeOutcome) bool {
 	if !known || epoch == "absent" {
 		return false
 	}
+	// No incarnation observed yet is a daemon starting beside a running app,
+	// not a restart: nothing would re-offer mail held now. appReturnPending
+	// reads an empty settlement the same way.
 	settled, _ := e.appSettled.Load().(string)
-	return settled != epoch
+	return settled != "" && settled != epoch
 }
 
 // heldForAppReturn decides between waiting for the app and the cold route,
