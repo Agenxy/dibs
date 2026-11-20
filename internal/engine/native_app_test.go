@@ -83,7 +83,18 @@ func TestNativeAppDeliveryEntersThroughSend(t *testing.T) {
 			if len(calls) != 1 {
 				t.Fatalf("duplicate native input: %d", len(calls))
 			}
-			p := calls[0]["params"].(map[string]any)["turnStart"].(map[string]any)["request"].(map[string]any)
+			// A running thread is steered, never sent a start: the app answers
+			// a start into a running turn with that turn's id, but leaves an
+			// id-less optimistic turn in its window that the person's next
+			// message then fails to steer ("without an active turn id").
+			want := map[string]string{"idle": "thread-follower-start-turn", "active": "thread-follower-steer-turn"}[mode]
+			if calls[0]["method"] != want {
+				t.Fatalf("%s thread got %v, want %s", mode, calls[0]["method"], want)
+			}
+			p := calls[0]["params"].(map[string]any)
+			if mode == "idle" {
+				p = p["turnStart"].(map[string]any)["request"].(map[string]any)
+			}
 			text := p["input"].([]any)[0].(map[string]any)["text"]
 			if text != "Dibs: new notify from sender." {
 				t.Fatalf("notice leaked body or changed facts: %v", text)

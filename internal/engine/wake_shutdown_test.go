@@ -129,7 +129,9 @@ func TestShutdownCancelsRunningQueueCommand(t *testing.T) {
 	var pid int
 	until := time.Now().Add(5 * time.Second)
 	for pid == 0 {
-		if raw, err := os.ReadFile(marker); err == nil {
+		// The fixture creates the marker and then writes its pid, so an
+		// empty read is the gap between the two, not an invalid pid.
+		if raw, err := os.ReadFile(marker); err == nil && len(raw) > 0 {
 			pid, err = strconv.Atoi(string(raw))
 			if err != nil || pid <= 0 {
 				t.Fatalf("setup: invalid command pid %q: %v", raw, err)

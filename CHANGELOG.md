@@ -5,6 +5,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Mail delivered into a ChatGPT app thread that is mid-turn no longer breaks
+  the person's next message with "Cannot steer conversation … without an
+  active turn id". Dibs used to send a start request, which the app admits
+  into the running turn while leaving an empty, id-less turn in its window.
+  Dibs now steers the running turn and starts one only after the app says no
+  turn is running.
+
 ### Changed
 
 - Native process fallback warnings identify the observed PID, its readable

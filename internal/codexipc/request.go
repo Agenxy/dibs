@@ -7,7 +7,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 )
+
+// errNoActiveTurn is the owner's refusal to steer a thread that is not
+// running a turn. An owner's handler error reaches Dibs in the router's shape
+// (no method, no handling client) with the thrown message as its code, so the
+// message is the only evidence; this is the app's own test for it, verbatim.
+var errNoActiveTurn = errors.New("the thread has no running turn to steer")
+
+var noActiveTurn = regexp.MustCompile(`^Cannot steer conversation \S+ because its active turn already ended$`)
 
 // Only matched replies can establish acceptance. No response or unrelated
 // traffic can imply an owner, an empty queue, or a started turn.
@@ -62,6 +71,9 @@ func matchedReply(method, owner string, r frame) (frame, error) {
 // down the cold route, which opened it in the person's window (agenxy-dev-2,
 // 2026-10-11 03:43), and stopped the post-restart load from ever starting.
 func routerError(method, code string) error {
+	if method == "thread-follower-steer-turn" && noActiveTurn.MatchString(code) {
+		return fmt.Errorf("native %s: %w", method, errNoActiveTurn)
+	}
 	switch code {
 	case "no-client-found":
 		if method == "thread-owner-discovery" {
@@ -127,21 +139,56 @@ func (c *client) deliver(thread string, notice func() (string, error)) (Receipt,
 		return Receipt{Disposition: "settled"}, nil
 	}
 	input := []map[string]any{{"type": "text", "text": text, "text_elements": []any{}}}
-	params := map[string]any{
+	// Steer first. A start request into a thread that is already running a
+	// turn is admitted by the app-server, which answers with the running
+	// turn's id, but the app's window has by then pushed an optimistic turn
+	// with no id that nothing ever fills in. The next message the person types
+	// is routed to steer that empty turn, waits 30 s for its id and fails with
+	// "Cannot steer conversation ... without an active turn id" (ChatGPT
+	// 26.1111.21308, the person's report of 2026-11-20). Steering is the app's
+	// own path for input into a running turn and pushes no turn of its own.
+	r, err := c.call("thread-follower-steer-turn", 1, owner, map[string]any{
+		"conversationId":      thread,
+		"clientUserMessageId": requestID(),
+		"input":               input,
+		"restoreMessage": map[string]any{
+			"id": requestID(), "context": map[string]any{"prompt": text},
+		},
+	})
+	if err == nil {
+		return steerReceipt(r.Result)
+	}
+	if !errors.Is(err, errNoActiveTurn) {
+		return Receipt{}, err
+	}
+	// The owner refused the steer because no turn is running, which it decides
+	// before sending anything to the agent: the app's own composer starts a
+	// turn after exactly this refusal (canStartAfterSteerError). Exactly one
+	// start follows; no retry follows a possibly submitted input.
+	r, err = c.call("thread-follower-start-turn", 2, owner, map[string]any{
 		"conversationId": thread,
 		"turnStart": map[string]any{
 			"request": map[string]any{"threadId": thread, "input": input},
 			"context": map[string]bool{"inheritThreadSettings": true},
 		},
-	}
-	// The app owns start-or-steer. Never fetch the thread's growing history
-	// merely to predict a decision the harness already makes atomically.
-	// Exactly one submission; no retry follows a possibly submitted input.
-	r, err := c.call("thread-follower-start-turn", 2, owner, params)
+	})
 	if err != nil {
 		return Receipt{}, err
 	}
 	return deliveryReceipt(r.Result)
+}
+
+// steerReceipt reads the owner's reply to a steer: the running turn's id.
+func steerReceipt(raw json.RawMessage) (Receipt, error) {
+	var value struct {
+		Result struct {
+			TurnID string `json:"turnId"`
+		} `json:"result"`
+	}
+	if json.Unmarshal(raw, &value) != nil || value.Result.TurnID == "" {
+		return Receipt{}, errors.New("native steer receipt lacks turn id")
+	}
+	return Receipt{"steered", value.Result.TurnID}, nil
 }
 
 func deliveryReceipt(raw json.RawMessage) (Receipt, error) {

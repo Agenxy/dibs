@@ -18,7 +18,8 @@ func TestNativeLargeHistorySnapshotStillDeliversOnce(t *testing.T) {
 			if err != nil {
 				t.Fatalf("protocol-valid 10 MiB history blocked native delivery: %v", err)
 			}
-			if r.Disposition != "accepted" || len(s.Inputs()) != 1 || s.Follows() != 0 ||
+			want := map[string]string{"large-idle": "accepted", "large-active": "steered"}[mode]
+			if r.Disposition != want || len(s.Inputs()) != 1 || s.Follows() != 0 ||
 				(mode == "large-active" && r.TurnID != "prior-turn") {
 				t.Fatalf("large snapshot lost current state: receipt=%+v inputs=%d", r, len(s.Inputs()))
 			}

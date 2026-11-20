@@ -2,8 +2,10 @@
 
 Dibs first offers each notice to the existing desktop app when the recipient
 agent was registered from ChatGPT and uses the canonical local Codex queue
-route. One follower-start-turn request lets the app start or steer. The app decides
-turn admission. Dibs starts no app-server, router, harness or other agent process.
+route. Dibs first asks the owner to steer the thread's running turn; when the
+owner refuses because no turn is running, which it decides before any input
+reaches the agent, one follower-start-turn request follows. A start into a
+running turn is never sent (see "Steer before start" below). Dibs starts no app-server, router, harness or other agent process.
 It does not open a window after native acceptance.
 
 An absent socket, explicit owner-discovery `no-client-found`, or a proven
@@ -144,13 +146,15 @@ launcher participates.
 |---|---:|---|
 | `initialize` | 0 | Obtain the app router's client ID |
 | `thread-owner-discovery` | 1 | Find an existing owner for `hostId: local` and the agent's conversation ID |
-| `thread-follower-start-turn` | 2 | One text input with `inheritThreadSettings: true`; app chooses start-or-steer |
+| `thread-follower-steer-turn` | 1 | One text input into the running turn; refused with "Cannot steer conversation … because its active turn already ended" when none runs |
+| `thread-follower-start-turn` | 2 | One text input with `inheritThreadSettings: true`, sent only after that refusal |
 
 Requests have fresh IDs and replies must match request ID, method and target
 owner. Dibs advertises no owned threads and answers discovery with `canHandle:
 false`. It requires `supportsUntrustedAppInput: true` from the owner. Start
-acceptance requires the nested turn ID and in-progress status. The same receipt
-represents starting or steering, so Dibs reports accepted. Returned IDs are
+acceptance requires the nested turn ID and in-progress status and is reported
+accepted; steer acceptance requires the running turn's ID and is reported
+steered. Returned IDs are
 private verification data, never board state.
 
 The source anchors in the measured archive are byte offsets, not line numbers:
@@ -405,3 +409,28 @@ start event. Unknown post-submission outcomes must remain explicit so callers
 can avoid blind duplicate submissions. Stale or archived targets should receive
 an explicit refusal rather than silently selecting another session. The
 existing immediate background-link fallback does not supply these guarantees.
+
+## Steer before start
+
+Measured 2026-11-20 against ChatGPT 26.1111.21308, from the person's report of
+"cannot steer conversation without valid turn id" in agent threads. The app's
+`thread-follower-start-turn` handler calls its own `startTurn`, which pushes an
+optimistic turn with no ID into the window's state before calling
+`turn/start`. Into an idle thread the reply's new turn ID fills it in. Into a
+running thread the app-server admits the input and answers with the RUNNING
+turn's ID; the app matches that ID to the existing turn first, so the
+optimistic turn keeps a null ID and an in-progress status. The person's next
+message is routed to steer, waits for that turn's ID, and fails after 30 s with
+"Cannot steer conversation … without an active turn id". The earlier active-turn
+measurement above was correct about admission and blind to this: it read the
+rollout, and the defect is in the window's state.
+
+So Dibs steers first. The owner's `steerTurn` throws "Cannot steer conversation
+<id> because its active turn already ended" when the latest turn is not in
+progress, before it sends anything to the agent, and the app's own composer
+starts a turn after exactly that error (`canStartAfterSteerError`). An owner's
+handler error reaches the router-shaped reply with the message as its code, so
+Dibs matches that message verbatim and treats every other steer error as it
+treats any other: refused or unknown, never followed by a start. A window that
+already holds an id-less turn from an earlier Dibs start clears when that
+thread is reloaded in the app.

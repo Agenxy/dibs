@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -250,6 +251,15 @@ func (s *Server) answer(f map[string]any) map[string]any {
 
 // inputReply records a submitted input and answers it as the owner would.
 func (s *Server) inputReply(f, r map[string]any) map[string]any {
+	if f["method"] == "thread-follower-steer-turn" && s.Mode != "active" && s.Mode != "large-active" &&
+		s.Mode != "refused" && s.Mode != "wrong-owner" {
+		// Refused before any input reaches the agent, so it is not recorded.
+		// The owner's refusal to steer a thread with no running turn, in the
+		// router's shape with the thrown message as its code (26.1111.21308).
+		p, _ := f["params"].(map[string]any)
+		const ended = "Cannot steer conversation %v because its active turn already ended"
+		return routerError(f, fmt.Sprintf(ended, p["conversationId"]))
+	}
 	s.mu.Lock()
 	s.inputs = append(s.inputs, f)
 	input := len(s.inputs)
