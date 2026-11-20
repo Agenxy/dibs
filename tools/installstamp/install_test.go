@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agenxy/dibs/internal/testexec"
+
 	"github.com/agenxy/dibs/internal/procexec"
 )
 
@@ -28,7 +30,7 @@ func TestTaskInstallKeepsTheComputedStampBeforeReplacingAnything(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds and installs both real binaries in an isolated clean clone")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	ctx, cancel := testexec.BuildContext(t, 4*time.Minute)
 	t.Cleanup(cancel)
 	root := filepath.Join("..", "..")
 	head := strings.TrimSpace(installCommand(t, ctx, root, nil, "git", "rev-parse", "HEAD"))

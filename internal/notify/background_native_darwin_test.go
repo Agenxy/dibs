@@ -4,12 +4,13 @@
 package notify
 
 import (
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/testexec"
 
 	"github.com/agenxy/dibs/internal/procexec"
 )
@@ -30,7 +31,7 @@ func TestRetiredNativeNavigationModeNeverOpensOrRestores(t *testing.T) {
 		t.Fatal(err)
 	}
 	binary := filepath.Join(contents, "MacOS", "dibs-notify")
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := testexec.BuildContext(t, 2*time.Minute)
 	defer cancel()
 	build := procexec.Command(ctx, "swiftc", "-D", "DIBS_BACKGROUND_OPEN_FIXTURE", "-o", binary, nativePromptSource(t))
 	if raw, err := build.CombinedOutput(); err != nil {

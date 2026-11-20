@@ -5,7 +5,6 @@ package notify
 
 import (
 	"bufio"
-	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -15,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agenxy/dibs/internal/testexec"
+
 	"github.com/agenxy/dibs/internal/procexec"
 )
 
@@ -22,7 +23,7 @@ import (
 // Both concurrent asks enter through its real command pipe. A synthetic native
 // response for A is delivered while B remains live; only A may be answered.
 func TestNativeBrokerOwnsConcurrentAsks(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	ctx, cancel := testexec.BuildContext(t, time.Minute)
 	defer cancel()
 	contents := filepath.Join(t.TempDir(), "BrokerFixture.app", "Contents")
 	if err := os.MkdirAll(filepath.Join(contents, "MacOS"), 0o700); err != nil {
