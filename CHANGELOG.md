@@ -33,6 +33,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   authenticated contact is more recent than its activation. A call from the
   agent's own local Claude bridge can repair its current session and process
   from the verified sidecar, including a session the board has never seen.
+- A recovery survivor can use `update(name: ...)` to retake its own recovered
+  name while the address keeps routing to the same identity.
 
 ### Changed
 

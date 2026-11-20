@@ -298,24 +298,52 @@ func validRecoveryFence(fence string) bool {
 }
 
 func (s *State) admitRecoveryAddressReuse(op *Op) error {
-	knownNonce := s.Agents[s.Nonces[op.Nonce]] != nil
-	if op.Kind == OpRegister && !knownNonce {
-		if _, reserved := s.RecoveredAddresses[agentID(s, op.Name)]; reserved {
-			return errf("E_NAME_TAKEN", "choose another identity name; recovered ids stay reserved",
-				"registration would reuse a recovered id")
-		}
-	}
-	if (op.Kind != OpRegister && op.Kind != OpUpdate) || op.Name == "" {
+	if op.Name == "" {
 		return nil
 	}
-	if _, reserved := s.RecoveredAddresses[op.Name]; !reserved {
+	if op.Kind == OpUpdate {
+		return s.admitRecoveredName(op, s.AgentByToken(op.Token))
+	}
+	if op.Kind != OpRegister || s.Agents[s.Nonces[op.Nonce]] != nil {
 		return nil
 	}
-	if op.Kind == OpRegister && knownNonce {
+	if _, reserved := s.RecoveredAddresses[agentID(s, op.Name)]; reserved {
+		return errf("E_NAME_TAKEN", "choose another identity name; recovered ids stay reserved",
+			"registration would reuse a recovered id")
+	}
+	if _, reserved := s.RecoveredAddresses[op.Name]; reserved {
+		return errf("E_NAME_TAKEN", "choose a free name with register(name=…)",
+			"name %q is a recovered address", op.Name)
+	}
+	return nil
+}
+
+// Only the authenticated survivor may promote a recovered address to its
+// display name. The address remains reserved and continues routing to it.
+func (s *State) admitRecoveredName(op *Op, l *Agent) error {
+	if _, reserved := s.RecoveredAddresses[op.Name]; !reserved || s.ownsRecoveredName(op, l) {
 		return nil
 	}
-	return errf("E_NAME_TAKEN", "keep your own identity and use recover_agent; recovered addresses remain reserved",
+	return errf("E_NAME_TAKEN",
+		"choose a free name with update(name=…); you can retake your own recovered name with update(name=…)",
 		"name %q is a recovered address", op.Name)
+}
+
+func (s *State) ownsRecoveredName(op *Op, l *Agent) bool {
+	if op.Kind != OpUpdate || l.Retired() || op.Token == "" || l.Token != op.Token {
+		return false
+	}
+	recovery, ok := s.RecoveredAddresses[op.Name]
+	if !ok {
+		return false
+	}
+	// A different incarnation holding this id is still a competing address.
+	if old := s.Agents[op.Name]; old != nil && (old.Status != StatusClosed ||
+		old.ID != recovery.Source || old.CreatedSerial != recovery.SourceCreated) {
+		return false
+	}
+	id, err := s.RecoveredRecipient(op.Name)
+	return err == nil && id == l.ID
 }
 
 // RetiresIdentity distinguishes typed retirement effects from ordinary work:

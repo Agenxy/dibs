@@ -109,6 +109,9 @@ func (st *State) admitNextName(l *Agent, op *Op, next string) error {
 	if next == l.Name {
 		return nil
 	}
+	if err := st.admitRecoveredName(op, l); err != nil {
+		return err
+	}
 	if err := st.nameIsAnotherAddress(op, l); err != nil {
 		return err
 	}

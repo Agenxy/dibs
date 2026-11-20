@@ -188,7 +188,7 @@ func (s *State) shadowedNameNote(want, name string) string {
 // and replay must continue accepting it without a new wire flag.
 func (s *State) nameIsAnotherAddress(op *Op, l *Agent) error {
 	other, taken := s.Agents[op.Name]
-	if !taken || other.ID == l.ID {
+	if !taken || other.ID == l.ID || s.ownsRecoveredName(op, l) {
 		return nil
 	}
 	if other.Status == StatusClosed {
