@@ -19,7 +19,13 @@ func TestNativeOneInputUsesAppOwnerAndState(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			// Idle: the steer is refused before input and one start follows.
+			// Active: the running turn is steered; a start would leave an
+			// id-less turn in the app's window (26.1111.21308).
 			method, disposition, version := "thread-follower-start-turn", "accepted", float64(2)
+			if mode == "active" {
+				method, disposition, version = "thread-follower-steer-turn", "steered", float64(1)
+			}
 			if r.Disposition != disposition || r.TurnID == "" {
 				t.Fatalf("receipt: %+v", r)
 			}
@@ -36,15 +42,19 @@ func TestNativeOneInputUsesAppOwnerAndState(t *testing.T) {
 				t.Fatal("wrong thread")
 			}
 			if s.Follows() != 0 {
-				t.Fatal("delivery fetched history instead of letting the app choose start or steer")
+				t.Fatal("delivery fetched history instead of asking the owner")
 			}
-			turn := p["turnStart"].(map[string]any)
-			if turn["context"].(map[string]any)["inheritThreadSettings"] != true {
-				t.Fatal("settings not inherited")
-			}
-			p = turn["request"].(map[string]any)
-			if p["threadId"] != testcodexipc.Thread {
-				t.Fatal("wrong turn thread")
+			if mode == "idle" {
+				turn := p["turnStart"].(map[string]any)
+				if turn["context"].(map[string]any)["inheritThreadSettings"] != true {
+					t.Fatal("settings not inherited")
+				}
+				p = turn["request"].(map[string]any)
+				if p["threadId"] != testcodexipc.Thread {
+					t.Fatal("wrong turn thread")
+				}
+			} else if p["clientUserMessageId"] == "" || p["restoreMessage"] == nil {
+				t.Fatalf("steer lacks the fields the owner's steer reads: %+v", p)
 			}
 			input := p["input"].([]any)[0].(map[string]any)
 			if input["type"] != "text" || input["text"] != "Dibs: new request from reviewer." || len(input["text_elements"].([]any)) != 0 {

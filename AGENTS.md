@@ -51,8 +51,11 @@ change it when reality disagrees, and record why).
    admins, or an agent the human granted it), ledgered with who did it; the operator's
    `[relocate]` commands are the only ones Dibs runs that host an agent, and no wake reads
    that table. The canonical ChatGPT queue route first attempts native input
-   through the existing app's private IPC: owner discovery, then one start or
-   steer according to its snapshot, without queue execution or opening a window.
+   through the existing app's private IPC: owner discovery, then a steer into
+   the running turn, or one start after the owner refuses that steer because no
+   turn runs (never a start into a running turn: it leaves an id-less turn in
+   the window that breaks the person's next message), without queue execution
+   or opening a window.
    The factual notice carries the event and sender, never mail bodies or an
    imperative. A matching app reply confirms input acceptance only. A missing
    socket or explicit no-owner refusal retains the existing cold queue/open
