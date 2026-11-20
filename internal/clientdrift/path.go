@@ -105,3 +105,14 @@ func sameReleaseCore(a, b string) bool {
 	b, _, _ = strings.Cut(b, "+")
 	return a == b
 }
+
+// VersionLabel bounds and filters version evidence before it is displayed.
+func VersionLabel(value string) string {
+	const versionChars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.+-"
+	if len(value) > 128 || strings.IndexFunc(value, func(r rune) bool {
+		return !strings.ContainsRune(versionChars, r)
+	}) >= 0 {
+		return ""
+	}
+	return value
+}

@@ -51,6 +51,20 @@ func claudeInstalls(home string) map[string][]claudeInstall {
 // doctor’s desktop shadowing check.
 func ClaudeInstalled(home string) bool { return len(claudeInstalls(home)) > 0 }
 
+// ClaudeInstallVersion identifies a single canonical installed version when
+// the harness did not provide the loaded plugin root. Multiple versions are
+// ambiguous, so they cannot identify this session's plugin.
+func ClaudeInstallVersion(home string) string {
+	var version string
+	for _, entry := range claudeInstalls(home)["dibs@dibs"] {
+		if entry.Version == "" || (version != "" && entry.Version != version) {
+			return ""
+		}
+		version = entry.Version
+	}
+	return version
+}
+
 // OlderClaudeVersions compares the canonical marketplace install records
 // against the shipped manifest, including distinct installs in other scopes.
 func OlderClaudeVersions(home string) (older []string, shipped string) {

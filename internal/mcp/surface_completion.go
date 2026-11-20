@@ -24,9 +24,12 @@ const BridgeSurfaceEvidenceMethod = "dibs/bridge-surface"
 // bridge's optional completion. Other tools and invited/remote callers cannot
 // use that RPC, so advertising it there would promise an unavailable route.
 func (s *Server) surfaceRegistrationResult(
-	ctx context.Context, name string, params json.RawMessage, res core.Result, text string,
-) any {
+	ctx context.Context, name string, params json.RawMessage, res core.Result, text string, firstCheckIn bool,
+) map[string]any {
 	result := map[string]any{"content": []map[string]any{{"type": "text", "text": text}}}
+	if name == "check_in" && firstCheckIn {
+		result["_meta"] = map[string]any{FirstCheckInMetaKey: true}
+	}
 	local, _ := ctx.Value(hostIDKey{}).(string)
 	_, invited := engine.InvitationFrom(ctx)
 	// Failed tools return earlier in callTool. A superseded resume is also
