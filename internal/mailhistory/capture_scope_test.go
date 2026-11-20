@@ -130,6 +130,11 @@ func TestCaptureScopesCoverActualCanonicalChanges(t *testing.T) {
 	t.Run("none", func(t *testing.T) {
 		assertScopeCoverage(t, scopeState(t), &core.Op{Kind: core.OpActivityCheckpoint, Token: "sender-token"}, 0)
 	})
+	t.Run("session-process-refresh", func(t *testing.T) {
+		assertScopeCoverage(t, scopeState(t), &core.Op{
+			Kind: core.OpRefreshSessionProcess, Token: "a-token", SessionID: "new-session", PID: 42, ProcStart: 1000,
+		}, 0)
+	})
 	t.Run("mailbox", func(t *testing.T) {
 		assertScopeCoverage(t, scopeState(t), &core.Op{Kind: core.OpAckBoard, Token: "a-token"}, 20)
 	})
