@@ -19,15 +19,16 @@ import (
 
 // request and reply carry submissions across the single-writer boundary.
 type request struct {
-	capacity *registerCapacityPlan
-	op       *core.Op
-	fn       func() core.Result
-	reply    chan reply
-	invite   *Invitation
-	finish   func()
-	receipt  chan core.Result
-	attempt  *SendAttempt
-	process  harnessenv.ClaudeProcess
+	capacity     *registerCapacityPlan
+	op           *core.Op
+	fn           func() core.Result
+	reply        chan reply
+	invite       *Invitation
+	finish       func()
+	receipt      chan core.Result
+	attempt      *SendAttempt
+	firstCheckIn *atomic.Bool
+	process      harnessenv.ClaudeProcess
 	// prepaid: the op is one leg of a fan-out whose caller already paid the
 	// rate limit once for the whole of it (Broadcast).
 	prepaid bool
@@ -36,6 +37,15 @@ type request struct {
 type reply struct {
 	res core.Result
 	err error
+}
+
+type checkInReceiptKey struct{}
+
+// WithCheckInReceipt observes the writer's first-check-in decision without
+// changing the core result, its projections, or the ledger.
+func WithCheckInReceipt(ctx context.Context) (context.Context, func() bool) {
+	first := new(atomic.Bool)
+	return context.WithValue(ctx, checkInReceiptKey{}, first), first.Load
 }
 
 // Do submits one mutating op to the loop and waits.
@@ -47,10 +57,12 @@ func (e *Engine) Do(ctx context.Context, op *core.Op) (core.Result, error) {
 		}
 		return res, err
 	}
+	first, _ := ctx.Value(checkInReceiptKey{}).(*atomic.Bool)
 	req := request{
 		op: op, reply: make(chan reply, 1), receipt: sendReceiptFrom(ctx), attempt: sendAttemptFrom(ctx),
-		prepaid: fanoutPrepaid(ctx),
-		process: claudeProcessFrom(ctx),
+		prepaid:      fanoutPrepaid(ctx),
+		process:      claudeProcessFrom(ctx),
+		firstCheckIn: first,
 	}
 	if op != nil && op.Kind == core.OpPutBlob {
 		e.holdRegistration(&req, op.Blob)

@@ -1076,6 +1076,7 @@ func (s *Server) callTool(
 	}
 	ctx = s.prepareSessionForTool(ctx, a.Token, params)
 
+	ctx, firstCheckIn := checkInReceipt(ctx, call.Name)
 	res, err := s.run(ctx, call.Name, &a, params, sessionClient)
 	if err != nil {
 		// An unstructured error used to go out as a bare {"error": "..."} with no
@@ -1130,15 +1131,13 @@ func (s *Server) callTool(
 		wantsUI := clientWantsUI(params) || sessionUI
 		return showBoardResult(s.panelState(ctx, res, a.View, a.Token), a.Detail, wantsUI), nil
 	}
-	firstCheckIn, _ := res["first_check_in"].(bool)
-	delete(res, "first_check_in")
 	res = orientationBoard(res, call.Name, a.Detail)
 	s.presentNames(ctx, res)
 	text, merr := json.Marshal(res)
 	if merr != nil {
 		return nil, &rpcError{Code: -32603, Message: merr.Error()}
 	}
-	return s.surfaceRegistrationResult(ctx, call.Name, params, res, string(text), firstCheckIn), nil
+	return s.surfaceRegistrationResult(ctx, call.Name, params, res, string(text), firstCheckIn()), nil
 }
 
 // putBlob decodes the inline base64 (if any) and stores the blob.

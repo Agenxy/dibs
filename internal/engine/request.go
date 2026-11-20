@@ -48,13 +48,28 @@ func (e *Engine) serveRequest(req request) {
 		}
 		return
 	}
+	first := e.firstCheckInFor(req)
 	res, err := e.execWithReceipt(req.op, time.Now(), req.receipt, req.attempt, req.prepaid, req.capacity, req.process)
 	if err == nil {
+		if first {
+			req.firstCheckIn.Store(true)
+		}
 		advisories := req.attempt.StartStage("advisories")
 		e.sendAdvisories(req.op, res, time.Now())
 		advisories()
 	}
 	req.reply <- reply{res, err}
+}
+
+// At ingress to the single writer the previous awareness checkpoint is still
+// intact. Authentication in exec is authoritative. A refused call never
+// publishes the receipt, and a liveness wake does not reset the gate.
+func (e *Engine) firstCheckInFor(req request) bool {
+	if req.firstCheckIn == nil || req.op.Kind != core.OpAckBoard {
+		return false
+	}
+	actor := e.state.AgentByToken(req.op.Token)
+	return actor != nil && actor.AckedSerial == 0
 }
 
 // Keep the query's result/error convention for registration closures without
