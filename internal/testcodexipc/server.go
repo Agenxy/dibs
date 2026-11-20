@@ -257,7 +257,8 @@ func (s *Server) inputReply(f, r map[string]any) map[string]any {
 		// The owner's refusal to steer a thread with no running turn, in the
 		// router's shape with the thrown message as its code (26.1111.21308).
 		p, _ := f["params"].(map[string]any)
-		return routerError(f, fmt.Sprintf("Cannot steer conversation %v because its active turn already ended", p["conversationId"]))
+		const ended = "Cannot steer conversation %v because its active turn already ended"
+		return routerError(f, fmt.Sprintf(ended, p["conversationId"]))
 	}
 	s.mu.Lock()
 	s.inputs = append(s.inputs, f)
