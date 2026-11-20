@@ -152,7 +152,7 @@ func (e *Engine) owedSerials(agent string, now time.Time) []uint64 {
 // say so at the moment it is sent.
 func (e *Engine) UnansweredFrom(ctx context.Context, token, to string) string {
 	res, err := e.query(ctx, func() core.Result {
-		l, errRes := e.authRead(token, time.Now())
+		l, errRes := e.authRead(ctx, token, time.Now())
 		if errRes != nil || l == nil {
 			return core.Result{}
 		}

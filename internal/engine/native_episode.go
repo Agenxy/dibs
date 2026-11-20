@@ -59,7 +59,7 @@ func (e *Engine) diagnosedBinding(c *core.ContactEscalation) diagnosedBinding {
 
 func (e *Engine) diagnosedBindingsBefore(op *core.Op) map[uint64]diagnosedBinding {
 	switch op.Kind {
-	case core.OpRegister, core.OpResume, core.OpUpdate, core.OpBindSession, core.OpRelocate,
+	case core.OpRegister, core.OpResume, core.OpUpdate, core.OpBindSession, core.OpRefreshSessionProcess, core.OpRelocate,
 		core.OpRelocateByHuman, core.OpMergeAgents, core.OpAdoptAgent, core.OpHostRenamed,
 		core.OpSignOff, core.OpPrune, core.OpPruneOwn, core.OpSweep:
 	default:

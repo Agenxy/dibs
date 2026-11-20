@@ -23,6 +23,7 @@ import (
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/folderaccess"
+	"github.com/agenxy/dibs/internal/harnessenv"
 	hostdisplay "github.com/agenxy/dibs/internal/hostname"
 	"github.com/agenxy/dibs/internal/overlap"
 )
@@ -78,7 +79,7 @@ type Engine struct {
 	// Actual model contact, fenced to the row incarnation; boot and registration
 	// grace are not authenticated model calls. See contact.go.
 	contact            map[string]contactEvidence
-	pastProcessExit    map[string]processActivation
+	processContact     map[string]processActivation
 	queuedOpenContacts map[string]queuedOpenContact // retained queue recovery; writer-owned
 	nativeTurnWatches  map[string]nativeTurnWatch   // recent app turn receipts; writer-owned
 	acceptedContacts   map[string]acceptedContact   // native acceptance without later model contact; writer-owned
@@ -396,12 +397,12 @@ func (e *Engine) boot(now time.Time) {
 func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// Internal registrations run on the writer and cannot probe or re-enter
 	// Do. Without an off-loop observation they refuse capacity honestly.
-	return e.execWithReceipt(op, now, nil, nil, false, &registerCapacityPlan{needed: true})
+	return e.execWithReceipt(op, now, nil, nil, false, &registerCapacityPlan{needed: true}, harnessenv.ClaudeProcess{})
 }
 
 func (e *Engine) execWithReceipt(
 	op *core.Op, now time.Time, receipt chan core.Result, attempt *SendAttempt,
-	prepaid bool, capacity *registerCapacityPlan,
+	prepaid bool, capacity *registerCapacityPlan, process harnessenv.ClaudeProcess,
 ) (core.Result, error) {
 	admitted := beginSendStage(op, "admit")
 	defer admitted()
@@ -409,6 +410,12 @@ func (e *Engine) execWithReceipt(
 		return nil, &core.Error{
 			Code: "E_NOT_PERMITTED", Msg: "reader requirements are written only by the daemon",
 			Hint: "submit the intended feature operation; its writer records the requirement",
+		}
+	}
+	if op.Kind == core.OpRefreshSessionProcess {
+		return nil, &core.Error{
+			Code: "E_NOT_PERMITTED", Msg: "the daemon verifies its own session process evidence",
+			Hint: "call through your own local harness bridge with your agent token",
 		}
 	}
 	if op.Kind == core.OpContactDiagnosed || op.Kind == core.OpContactJoin {
@@ -760,9 +767,7 @@ func (e *Engine) execWithReceipt(
 			}
 			if res, err := e.prepareAliasUpdate(op, actor); err != nil || res != nil {
 				if err == nil {
-					e.seen[actor.ID] = now
-					e.noteAuthenticatedContact(actor, now)
-					e.confirmSocketOffer(actor, now)
+					err = e.noteAuthenticatedContact(actor, process, now)
 				}
 				return res, err
 			}
@@ -781,7 +786,7 @@ func (e *Engine) execWithReceipt(
 				return nil, err
 			}
 			e.wakeIfSleeping(actor, now)
-			e.refreshCheckInProcess(op, actor)
+			e.refreshCheckInProcess(op, actor, process)
 		}
 	}
 
@@ -818,10 +823,10 @@ func (e *Engine) execWithReceipt(
 	if err := e.refuseActingOnInheritedMail(op, actor); err != nil {
 		return nil, err
 	}
-	if res, err, handled := e.handleParentOutcomeAck(op, actor, now); handled {
+	if res, err, handled := e.handleParentOutcomeAck(op, actor, process, now); handled {
 		return res, err
 	}
-	if res, err, handled := e.handleMilestoneEvent(op, actor, now); handled {
+	if res, err, handled := e.handleMilestoneEvent(op, actor, process, now); handled {
 		return res, err
 	}
 
@@ -1005,9 +1010,12 @@ func (e *Engine) execWithReceipt(
 		spendClaim()
 	}
 	if actor != nil {
-		e.seen[actor.ID] = now
-		e.noteAuthenticatedContact(actor, now)
-		e.confirmSocketOffer(actor, now)
+		if op.ReleaseSession {
+			process = harnessenv.ClaudeProcess{}
+		}
+		if err := e.noteAuthenticatedContact(actor, process, now); err != nil {
+			return nil, err
+		}
 		if op.Kind == core.OpWithdrawMessage ||
 			(op.Kind == core.OpRespond && (op.Disposition == "accept" || op.Disposition == "flag")) {
 			e.clearNoticesFor(actor.ID, op.MsgSerial)

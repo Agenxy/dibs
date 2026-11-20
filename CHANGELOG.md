@@ -25,8 +25,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - An active re-registration reports `token_rotated: true` when its returned
   token replaces the previous credential.
 - Mail receipts no longer infer harness closure from an outdated process when
-  authenticated contact or a live Claude session disproves it. A check-in
-  naming the session can record a verified replacement process.
+  authenticated contact is more recent than its activation. A call from the
+  agent's own local Claude bridge can repair its current session and process
+  from the verified sidecar, including a session the board has never seen.
 
 ### Changed
 

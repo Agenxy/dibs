@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/procinfo"
 )
 
@@ -170,12 +171,21 @@ func hasParentPlaceholder(id string) bool {
 // refreshCheckInProcess records a replacement only when an authenticated
 // check-in names a session the agent already holds and the local harness
 // advertises that exact session in a verified, running process.
-func (e *Engine) refreshCheckInProcess(op *core.Op, l *core.Agent) {
-	if op.Kind != core.OpAckBoard || op.SessionGuessed || !e.ownsHost(l) ||
-		l.PID <= 1 || e.prober == nil || e.prober.Alive(l.PID) {
+func (e *Engine) refreshCheckInProcess(op *core.Op, l *core.Agent, process harnessenv.ClaudeProcess) {
+	if op.Kind != core.OpAckBoard || op.SessionGuessed {
 		return
 	}
 	sid := op.SessionAlias
+	if sid != "" && sid == process.Session {
+		if ok, taken := e.verifiedProcessReplacement(l, process); ok {
+			op.SessionAliasTakenFrom = taken
+			op.PID, op.ProcStart, op.ProcessRefresh = process.PID, process.Start, true
+			return
+		}
+	}
+	if !e.ownsHost(l) || l.PID <= 1 || e.prober == nil || e.prober.Alive(l.PID) {
+		return
+	}
 	if !core.LooksLikeThreadID(sid) || (sid != l.CurrentSession && sid != l.SessionID) {
 		return
 	}

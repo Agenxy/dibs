@@ -41,7 +41,7 @@ func (e *Engine) SetQueueOrderLock(
 	var mutationErr error
 	res, err := e.query(ctx, func() core.Result {
 		now := time.Now()
-		actor, refused := e.authRead(token, now)
+		actor, refused := e.authRead(ctx, token, now)
 		if refused != nil {
 			return refused
 		}

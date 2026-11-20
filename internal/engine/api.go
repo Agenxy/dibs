@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/harnessenv"
 	hostdisplay "github.com/agenxy/dibs/internal/hostname"
 )
 
@@ -25,6 +26,7 @@ type request struct {
 	finish   func()
 	receipt  chan core.Result
 	attempt  *SendAttempt
+	process  harnessenv.ClaudeProcess
 	// prepaid: the op is one leg of a fan-out whose caller already paid the
 	// rate limit once for the whole of it (Broadcast).
 	prepaid bool
@@ -47,6 +49,7 @@ func (e *Engine) Do(ctx context.Context, op *core.Op) (core.Result, error) {
 	req := request{
 		op: op, reply: make(chan reply, 1), receipt: sendReceiptFrom(ctx), attempt: sendAttemptFrom(ctx),
 		prepaid: fanoutPrepaid(ctx),
+		process: claudeProcessFrom(ctx),
 	}
 	if op != nil && op.Kind == core.OpPutBlob {
 		e.holdRegistration(&req, op.Blob)
@@ -106,15 +109,15 @@ func (e *Engine) send(ctx context.Context, req request) (core.Result, error) {
 // authRead performs the read-path phases (SPEC §2): auth, rate, ledgered wake,
 // ephemeral touch, durable checkpoint coalescing. Must run inside the loop.
 // Returns nil (with an error result set) if the caller is not authenticated.
-func (e *Engine) authRead(token string, now time.Time) (*core.Agent, core.Result) {
+func (e *Engine) authRead(ctx context.Context, token string, now time.Time) (*core.Agent, core.Result) {
 	l, refused := e.authObserve(token, now)
 	if refused != nil {
 		return nil, refused
 	}
 	e.wakeIfSleeping(l, now)
-	e.seen[l.ID] = now
-	e.noteAuthenticatedContact(l, now)
-	e.confirmSocketOffer(l, now)
+	if err := e.noteAuthenticatedContact(l, claudeProcessFrom(ctx), now); err != nil {
+		return nil, core.Result{"error": err}
+	}
 	e.touchDurable(l, now)
 	return l, nil
 }
@@ -468,7 +471,7 @@ func (e *Engine) AwaitEvents(
 func (e *Engine) Inbox(ctx context.Context, token string) (core.Result, error) {
 	return e.query(ctx, func() core.Result {
 		now := time.Now()
-		l, errRes := e.authRead(token, now)
+		l, errRes := e.authRead(ctx, token, now)
 		if errRes != nil {
 			return errRes
 		}
@@ -533,7 +536,7 @@ func (e *Engine) Inbox(ctx context.Context, token string) (core.Result, error) {
 // silently discharge an ack the agent never accounted for.
 func (e *Engine) SpaceRead(ctx context.Context, token, agent string, limit int) (core.Result, error) {
 	return e.query(ctx, func() core.Result {
-		l, errRes := e.authRead(token, time.Now())
+		l, errRes := e.authRead(ctx, token, time.Now())
 		if errRes != nil {
 			return errRes
 		}
@@ -617,7 +620,7 @@ func (e *Engine) GetMessage(ctx context.Context, token string, serial uint64) (c
 func (e *Engine) ReadMail(ctx context.Context, token string, serial uint64, includeBody bool) (core.Result, error) {
 	return e.query(ctx, func() core.Result {
 		now := time.Now()
-		l, errRes := e.authRead(token, now)
+		l, errRes := e.authRead(ctx, token, now)
 		if errRes != nil {
 			return errRes
 		}

@@ -30,6 +30,9 @@ func Snapshot(context.Context) ([]Process, error) { return nil, ErrUnsupported }
 // Start is unavailable on this platform.
 func Start(int) (time.Time, error) { return time.Time{}, ErrUnsupported }
 
+// Inspect is unavailable on this platform.
+func Inspect(int) (Process, error) { return Process{}, ErrUnsupported }
+
 // Path is unavailable on this platform.
 func Path(int) (string, error) { return "", ErrUnsupported }
 

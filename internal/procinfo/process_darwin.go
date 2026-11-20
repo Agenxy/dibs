@@ -91,20 +91,30 @@ func Snapshot(ctx context.Context) ([]Process, error) {
 // Start reads a live kernel incarnation, retaining microsecond precision.
 // An unreaped zombie retains a PID/start record, but no executable process.
 func Start(pid int) (time.Time, error) {
+	row, err := Inspect(pid)
+	return row.Start, err
+}
+
+// Inspect reads one live process and its native parent and incarnation.
+func Inspect(pid int) (Process, error) {
 	if pid <= 0 {
-		return time.Time{}, unix.ESRCH
+		return Process{}, unix.ESRCH
 	}
 	row, err := unix.SysctlKinfoProc("kern.proc.pid", pid)
 	if err != nil {
 		if errors.Is(err, unix.EIO) && errors.Is(unix.Kill(pid, 0), unix.ESRCH) {
-			return time.Time{}, unix.ESRCH
+			return Process{}, unix.ESRCH
 		}
-		return time.Time{}, err
+		return Process{}, err
 	}
 	if int(row.Proc.P_pid) != pid || row.Proc.P_starttime.Sec <= 0 || row.Proc.P_stat == zombieState {
-		return time.Time{}, unix.ESRCH
+		return Process{}, unix.ESRCH
 	}
-	return time.Unix(row.Proc.P_starttime.Sec, int64(row.Proc.P_starttime.Usec)*1000), nil
+	return Process{
+		PID: pid, PPID: int(row.Eproc.Ppid),
+		Start: time.Unix(row.Proc.P_starttime.Sec, int64(row.Proc.P_starttime.Usec)*1000),
+		Comm:  unix.ByteSliceToString(row.Proc.P_comm[:]),
+	}, nil
 }
 
 func processComm(pid int) (string, error) {

@@ -107,7 +107,7 @@ type InviteIssuer struct {
 // recursion even if the human later gives an invited agent a staff role.
 func (e *Engine) InvitationIssuer(ctx context.Context, token string) (InviteIssuer, error) {
 	res, err := e.query(ctx, func() core.Result {
-		a, refused := e.authRead(token, time.Now())
+		a, refused := e.authRead(ctx, token, time.Now())
 		if refused != nil {
 			return refused
 		}

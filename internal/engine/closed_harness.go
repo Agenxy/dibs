@@ -10,7 +10,7 @@ import "github.com/agenxy/dibs/internal/core"
 func (e *Engine) closedHarnessNote(l *core.Agent, socket bool) string {
 	if socket || l.PID <= 1 || e.prober == nil || !e.ownsHost(l) ||
 		e.prober.Alive(l.PID) || e.sessionMovedProcess(l) ||
-		e.pastProcessExit[l.ID] == recordedProcess(l) {
+		e.processContact[l.ID] == recordedProcess(l) {
 		return ""
 	}
 	note := "Stored in " + l.ID + "'s mailbox; harness closed. No started turn or read mail is confirmed. " +

@@ -247,3 +247,29 @@ func TestAuthenticatedContactDisprovesClosureFromAnAlreadyDeadPID(t *testing.T) 
 		t.Fatalf("receipt claimed closure from a process that had already exited before authenticated contact: %s", got)
 	}
 }
+
+func TestClosureDoesNotOutrankAuthenticatedContactAfterActivation(t *testing.T) {
+	const pid = 424246
+	start := time.Now().Add(-time.Hour).UnixMilli()
+	prober := &startProber{started: map[int]int64{pid: start}}
+	e, ctx := newEconomyNoteEngine(t, prober)
+	worker, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "worker", PID: pid})
+	if err != nil {
+		t.Fatal("setup: register:", err)
+	}
+	if _, err := e.InboxFor(ctx, worker["token"].(string)); err != nil {
+		t.Fatal("setup: authenticated inbox:", err)
+	}
+	if _, err := e.query(ctx, func() core.Result {
+		delete(prober.started, pid)
+		// Expire the sweep's short-term idle evidence. The recorded process
+		// still cannot tell whether the same agent continued in another one.
+		e.trimContactEvidence(time.Now().Add(2 * e.state.Limits.IdleTTL))
+		return nil
+	}); err != nil {
+		t.Fatal("setup: mark old proc exited:", err)
+	}
+	if note := e.PullOnlyNoteFor(ctx, "worker"); strings.Contains(note, "harness closed") {
+		t.Fatalf("the dead PID overrode authenticated contact newer than its recorded activation: %s", note)
+	}
+}

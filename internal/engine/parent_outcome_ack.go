@@ -7,12 +7,15 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/harnessenv"
 )
 
 // A parent serial is the bounded, body-free alternative to reading every
 // report. Reuse the explicit read op: an acknowledgement here neither consumes
 // the envelope nor accepts work, and historical ack operations fold unchanged.
-func (e *Engine) handleParentOutcomeAck(op *core.Op, actor *core.Agent, now time.Time) (core.Result, error, bool) {
+func (e *Engine) handleParentOutcomeAck(
+	op *core.Op, actor *core.Agent, process harnessenv.ClaudeProcess, now time.Time,
+) (core.Result, error, bool) {
 	if actor == nil || op.Kind != core.OpAckMessage {
 		return nil, nil, false
 	}
@@ -43,9 +46,9 @@ func (e *Engine) handleParentOutcomeAck(op *core.Op, actor *core.Agent, now time
 		}
 	}
 	e.clearNoticesFor(actor.ID, m.Serial)
-	e.seen[actor.ID] = now
-	e.noteAuthenticatedContact(actor, now)
-	e.confirmSocketOffer(actor, now)
+	if err := e.noteAuthenticatedContact(actor, process, now); err != nil {
+		return nil, err, true
+	}
 	read := m.OutcomeReadAt
 	if !sender {
 		read = m.ReviewReadAt
