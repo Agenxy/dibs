@@ -4,8 +4,10 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -65,5 +67,42 @@ func TestDesktopConfigAndPluginRecordAreReadForTheOneFieldEach(t *testing.T) {
 	}
 	if !claudeCodePluginInstalled(home) {
 		t.Error("dibs@dibs installed and not seen")
+	}
+}
+
+// Run doctor itself against Claude Code's installed-plugin record, including
+// cases where the file supplies no comparable evidence.
+func TestDoctorWarnsAboutOlderClaudePlugin(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("DIBS_DIR", t.TempDir())
+	t.Setenv("DIBS_ADDR", "127.0.0.1:1")
+	record := filepath.Join(home, ".claude", "plugins", "installed_plugins.json")
+	if err := os.MkdirAll(filepath.Dir(record), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range []string{"0.0.9", "100.0.0", "unknown"} {
+		t.Run(v, func(t *testing.T) {
+			if err := os.WriteFile(record, []byte(`{"version":2,"plugins":{"dibs@dibs":[{"scope":"user","version":"`+v+`"}],"other@dibs":[{"version":"0.0.1"}]}}`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			out, _ := captureStdout(t, func() error { return doctor([]string{"--json"}) })
+			var report doctorReport
+			if err := json.Unmarshal([]byte(out), &report); err != nil {
+				t.Fatal(err)
+			}
+			found := false
+			for _, check := range report.Checks {
+				if check.Level == "warning" && strings.Contains(check.What, "Claude Code") &&
+					strings.Contains(check.What, v) && strings.Contains(check.Fix, "claude plugin marketplace update dibs") &&
+					strings.Contains(check.Fix, "claude plugin update dibs@dibs") {
+					found = true
+				}
+			}
+			if found != (v == "0.0.9") {
+				t.Fatalf("Claude plugin version %s: found warning = %v", v, found)
+			}
+		})
 	}
 }

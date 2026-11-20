@@ -4,55 +4,17 @@
 package main
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/agenxy/dibs/internal/paths"
+	"github.com/agenxy/dibs/internal/plugins"
 )
 
-// Hash all actual payload inputs and the served tool schema. Only our own
-// generated version/stamp are excluded to avoid a self-referential digest.
-// A Dibs release label or commit is not plugin content and must never enter
-// these approved bytes: an unchanged plugin must not ask for approval again.
 func stampCodexPlugin(files map[string]string, toolsHash string) (string, error) {
-	var manifest map[string]any
-	if err := json.Unmarshal([]byte(files[".codex-plugin/plugin.json"]), &manifest); err != nil {
-		return "", err
-	}
-	delete(manifest, "version")
-	canonical, err := json.Marshal(manifest)
-	if err != nil {
-		return "", err
-	}
-	files[".codex-plugin/plugin.json"] = string(canonical)
-	delete(files, ".dibs-tools.json")
-	raw, err := json.Marshal(struct {
-		Files     map[string]string `json:"files"`
-		ToolsHash string            `json:"tools_hash"`
-	}{files, toolsHash})
-	if err != nil {
-		return "", err
-	}
-	sum := sha256.Sum256(raw)
-	digest := hex.EncodeToString(sum[:])
-	v := "content-tools-" + toolsHash + "-" + digest
-	manifest["version"] = v
-	b, err := json.MarshalIndent(manifest, "", "  ")
-	if err != nil {
-		return "", err
-	}
-	files[".codex-plugin/plugin.json"] = string(b) + "\n"
-	stamp, err := json.Marshal(map[string]string{"tools_hash": toolsHash, "bundle_hash": digest})
-	if err != nil {
-		return "", err
-	}
-	files[".dibs-tools.json"] = string(stamp) + "\n"
-	return v, nil
+	return plugins.StampCodex(files, toolsHash)
 }
 
 // os.Executable resolves a package-manager symlink to its versioned target.

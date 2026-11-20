@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/agenxy/dibs/internal/build"
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/harnessenv"
 	hostdisplay "github.com/agenxy/dibs/internal/hostname"
@@ -886,7 +887,9 @@ func (e *Engine) decoratedBoard() core.Result {
 	b := e.state.Board()
 	e.decorateFolderAccess(b)
 	e.decorateReconnectPending(b)
+	b["daemon_build"] = build.Version
 	e.decorateToolCatalogs(b)
+	e.decorateBridgeBuildDrift(b)
 	e.decorateContactAlerts(core.Result(b))
 	if names := e.configuredNameView(); len(names) > 0 {
 		b["configured_name_addresses"] = names

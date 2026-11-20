@@ -675,6 +675,7 @@ func run() error {
 	up = append(up, "hint", "run `dibs web` for a board link, `dibs mcp-config` for the agent config")
 	slog.Info("dibd up", up...)
 	warnIfTheFirewallWillSwallowThis(listenAddr)
+	go monitorClientDrift(ctx, eng, *dir)
 	if mail := led.MailHistory(); mail != nil {
 		ln = mail.ServingListener(ctx, ln)
 	}

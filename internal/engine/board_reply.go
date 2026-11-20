@@ -52,5 +52,6 @@ func (e *Engine) projectReplyBoard(op *core.Op, res core.Result) {
 	b := e.state.Board()
 	e.decorateFolderAccess(b)
 	e.decorateReconnectPending(b)
+	e.decorateBridgeBuildDrift(b)
 	res["board"] = b
 }

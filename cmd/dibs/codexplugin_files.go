@@ -4,7 +4,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +11,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/agenxy/dibs/internal/plugins"
 )
 
 func (p *codexPluginPlan) materialize() error {
@@ -54,40 +55,11 @@ func writePluginFile(path string, b []byte) error {
 }
 
 func (p *codexPluginPlan) verifyFiles(root string) error {
-	for name, want := range p.files {
-		path := filepath.Join(root, filepath.FromSlash(name))
-		info, err := os.Lstat(path) // #nosec G703 -- expected files below Codex's returned install root
-		if err != nil {
-			return err
-		}
-		if !info.Mode().IsRegular() {
-			return fmt.Errorf("plugin file is not regular: %s", path)
-		}
-		got, err := os.ReadFile(path) // #nosec G304 G703 -- same verified regular file
-		if err != nil {
-			return err
-		}
-		if !bytes.Equal(got, []byte(want)) {
-			return fmt.Errorf("installed plugin bytes differ: %s", path)
-		}
-	}
-	return nil
+	return plugins.VerifyCodexFiles(root, p.files)
 }
 
 func (p *codexPluginPlan) current() bool {
-	installed, err := installedCodexPlugin(p.home)
-	if err != nil || !installed {
-		return false
-	}
-	entries, err := os.ReadDir(p.cacheBase())
-	if err != nil || len(entries) != 1 || entries[0].Name() != p.version || !entries[0].IsDir() {
-		return false
-	}
-	// #nosec G304 G703 -- own verified-install receipt
-	b, err := os.ReadFile(filepath.Join(p.home, "dibs-marketplace", "receipt.json"))
-	var receipt struct{ Version string }
-	return err == nil && json.Unmarshal(b, &receipt) == nil && receipt.Version == p.version &&
-		p.verifyFiles(filepath.Join(p.cacheBase(), p.version)) == nil
+	return plugins.CurrentCodexRoot(p.home, p.version, p.files)
 }
 
 func (p *codexPluginPlan) install(out io.Writer) (retErr error) {

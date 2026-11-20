@@ -380,6 +380,15 @@ const Board = (() => {
       </section>`
   }
 
+  function bridgeBuildDriftHTML(drift) {
+    if (!drift?.count) return ""
+    const names = drift.agents?.length ? ": " + drift.agents.map(esc).join(", ") : ""
+    const summary = drift.count === 1
+      ? "1 session is running an older Dibs bridge"
+      : `${esc(drift.count)} sessions are running an older Dibs bridge`
+    return `<section class="contact-alerts"><ul><li>${summary}${names}. Bridges update when the session restarts.</li></ul></section>`
+  }
+
   // The contact record is a system summary, not the private mail that caused
   // it. Every board reader may see whom Dibs could not reach and whether a
   // person has yet been notified, without receiving the sender's body.
@@ -1220,7 +1229,7 @@ const Board = (() => {
 
   return {
     esc, ago, TERMINAL, VERDICT, fmtBytes,
-    attentionHTML, matchesAgent, matchesSpace, matchesMail, matchesEvent, noMatchesHTML, identHTML, laneHTML, cadenceHTML, rosterHTML, contactAlertsHTML, messageHTML, eventHTML, agentBadges, explained, explainer, transition, ticker, recency,
+    attentionHTML, matchesAgent, matchesSpace, matchesMail, matchesEvent, noMatchesHTML, identHTML, laneHTML, cadenceHTML, rosterHTML, bridgeBuildDriftHTML, contactAlertsHTML, messageHTML, eventHTML, agentBadges, explained, explainer, transition, ticker, recency,
     channelHTML, channelsHTML, renderPreservingComposers,
     summaryHTML, emptyHTML, firstRunHTML,
   }
