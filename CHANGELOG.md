@@ -13,6 +13,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   into the running turn while leaving an empty, id-less turn in its window.
   Dibs now steers the running turn and starts one only after the app says no
   turn is running.
+- ChatGPT agents' mail is no longer held indefinitely when the ChatGPT app
+  runs without its IPC socket. ChatGPT 26.1117.31558 ships without the IPC
+  router native delivery used, and Dibs read the refused socket as "the app
+  is restarting" for as long as it lasted. A refused socket now holds mail
+  only until that app launch has settled (at most 30 seconds); after that,
+  mail takes the background queue route, which never navigates or takes
+  focus.
 
 ### Changed
 

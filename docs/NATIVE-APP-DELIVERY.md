@@ -434,3 +434,22 @@ Dibs matches that message verbatim and treats every other steer error as it
 treats any other: refused or unknown, never followed by a start. A window that
 already holds an id-less turn from an earlier Dibs start clears when that
 thread is reloaded in the app.
+
+## A build without the IPC router (2026-11-20)
+
+ChatGPT 26.1117.31558 removed the main-process IPC router and every
+`thread-follower-*` method from the app bundle: the renderer now calls the
+app server's own `turn/steer` and `turn/start`, and the app server it runs is
+stdio-only. `~/.codex/ipc/ipc.sock` is left over from the previous build and
+refuses connections, so native delivery cannot reach a thread on this build.
+The `codex://threads/wake/<id>` handler and the `thread/queue/*` methods are
+still present, and the wake handler still records the thread without routing
+a window to it.
+
+Dibs used to read a refused socket beside a running app as a restart with no
+time limit, so every ChatGPT agent's mail was held "until IPC is ready". A
+restart is now a window: it ends when `afterAppReturn` settles that app
+incarnation, whether or not IPC answered (`appReturnReady`, 30 seconds).
+After that a refused socket is the build, and mail takes the background queue
+route (`codex queue`, then `open -g` on the wake URL). That route confirms a
+queued item, not a turn: the turn runs when the app dispatches the queue.
