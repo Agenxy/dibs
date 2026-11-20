@@ -7,18 +7,19 @@ package main
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 func TestDaemonWarnsAboutLocalClientVersions(t *testing.T) {
 	home, path := t.TempDir(), t.TempDir()
 	stale := filepath.Join(path, "dibs")
 	const stamp = "-X github.com/agenxy/dibs/internal/build.Version=0.0.5"
-	if out, err := exec.CommandContext(t.Context(), "go", "build", "-ldflags", stamp, "-o", stale, "../dibs").CombinedOutput(); err != nil {
+	if out, err := procexec.Command(t.Context(), "go", "build", "-ldflags", stamp, "-o", stale, "../dibs").CombinedOutput(); err != nil {
 		t.Fatalf("setup: build a stamped CLI: %v %s", err, out)
 	}
 	write := func(name, body string, mode os.FileMode) {
