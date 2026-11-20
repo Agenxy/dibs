@@ -23,6 +23,7 @@ import (
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/folderaccess"
+	"github.com/agenxy/dibs/internal/harnessenv"
 	hostdisplay "github.com/agenxy/dibs/internal/hostname"
 	"github.com/agenxy/dibs/internal/overlap"
 )
@@ -39,17 +40,18 @@ type Engine struct {
 	transferNext uint64
 	inviteClosed map[string]uint64 // derived from ledgered closes, rebuilt before ring trimming
 	// Must stay unbuffered: accepted registration holds belong to the writer.
-	ops              chan request
-	done             chan struct{}                // immutable after New; closes when Run exits
-	stopping         chan struct{}                // writer exited; rejects only requests not yet admitted
-	reconnectPending atomic.Int64                 // derived observation diagnostic; never replayable state
-	toolCatalogs     map[string]BridgeToolCatalog // writer-owned, bounded, derived
-	toolCatalogOrder uint64
-	subs             chan subReq
-	unsubs           chan chan core.Event
-	declarationTimes map[string]map[string]declarationTime // bounded derived display timestamps
-	state            *core.State
-	led              Ledger
+	ops                 chan request
+	done                chan struct{}                // immutable after New; closes when Run exits
+	stopping            chan struct{}                // writer exited; rejects only requests not yet admitted
+	reconnectPending    atomic.Int64                 // derived observation diagnostic; never replayable state
+	toolCatalogs        map[string]BridgeToolCatalog // writer-owned, bounded, derived
+	toolCatalogOrder    uint64
+	bridgeBuildWarnings map[harnessenv.BridgeIncarnation]bool // verified, live process incarnations
+	subs                chan subReq
+	unsubs              chan chan core.Event
+	declarationTimes    map[string]map[string]declarationTime // bounded derived display timestamps
+	state               *core.State
+	led                 Ledger
 	mailHistoryObserver
 	blobs Store
 	// Derived protection against snapshots older than a blob registration.

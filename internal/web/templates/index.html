@@ -532,7 +532,7 @@ function drawPanes() {
   // selfId is null: on a god view no agent is "this one", and marking one would
   // be a lie. The shared component takes it as a parameter precisely so this
   // surface can decline to answer the question.
-  Board.renderPreservingComposers(boardEl, Board.attentionHTML(state.messages, state.query) + Board.contactAlertsHTML(b?.contact_alerts) + Board.rosterHTML(b?.agents, {
+  Board.renderPreservingComposers(boardEl, Board.attentionHTML(state.messages, state.query) + Board.bridgeBuildDriftHTML(b?.bridge_build_drift) + Board.contactAlertsHTML(b?.contact_alerts) + Board.rosterHTML(b?.agents, {
     selfId: null,
     mergeActions: mergeActionsHTML,
     // Same reason as the panel: this surface replaces the roster's innerHTML on

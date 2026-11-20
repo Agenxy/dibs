@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agenxy/dibs/internal/build"
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/ledger"
@@ -36,6 +37,9 @@ func TestIdentityRecoveryBridgeProcess(t *testing.T) {
 	}
 	if os.Getenv("DIBS_TEST_IDENTITY_RECOVERY_BRIDGE") != "1" {
 		return
+	}
+	if v := os.Getenv("DIBS_TEST_BRIDGE_BUILD"); v != "" {
+		build.Version = v
 	}
 	if err := runBridge(nil); err != nil {
 		t.Fatal(err)
@@ -61,6 +65,10 @@ func newRecoveryStdio(t *testing.T) *recoveryStdio {
 }
 
 func newRecoveryStdioWithPin(t *testing.T, pin string) *recoveryStdio {
+	return newRecoveryStdioWithBuild(t, pin, "")
+}
+
+func newRecoveryStdioWithBuild(t *testing.T, pin, bridgeBuild string) *recoveryStdio {
 	t.Helper()
 	dir := cliIPCProfile(t)
 	box, err := ledger.LoadOrCreateKey(filepath.Join(dir, "key"))
@@ -121,6 +129,9 @@ func newRecoveryStdioWithPin(t *testing.T, pin string) *recoveryStdio {
 	cmd := procexec.Command(childCtx, os.Args[0], "-test.run=^TestIdentityRecoveryBridgeProcess$")
 	cmd.Dir = dir
 	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + dir, "USERPROFILE=" + dir, "TMPDIR=" + os.TempDir(), "TEMP=" + os.TempDir(), "SYSTEMROOT=" + os.Getenv("SYSTEMROOT"), "DIBS_TEST_IDENTITY_RECOVERY_BRIDGE=1", "DIBS_DIR=" + dir, "DIBS_ADDR=" + strings.TrimPrefix(srv.URL, "http://"), "DIBS_HOST_ID=recovery-host", "DIBS_NOTIFY=off"}
+	if bridgeBuild != "" {
+		cmd.Env = append(cmd.Env, "DIBS_TEST_BRIDGE_BUILD="+bridgeBuild)
+	}
 	if pin != "" {
 		cmd.Env = append(cmd.Env, "DIBS_AGENT_NONCE="+pin)
 	}

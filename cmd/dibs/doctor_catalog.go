@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agenxy/dibs/internal/clientdrift"
+	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/harnessenv"
 )
 
@@ -38,6 +40,7 @@ func checkBridgeToolCatalogs(b *boardView, warn fixFn) {
 			"A local process inventory failed; retry dibs doctor. No catalog freshness was confirmed.")
 		return
 	}
+	checkBridgeBuilds(b.BridgeToolCatalogs, observed, warn)
 	unknown := 0
 	names := map[string]bool{}
 	for i, row := range b.BridgeToolCatalogs {
@@ -62,6 +65,29 @@ func checkBridgeToolCatalogs(b *boardView, warn fixFn) {
 		}
 	}
 	reportUnknownCatalogs(unknown, names, warn)
+}
+
+func checkBridgeBuilds(rows []engine.BridgeToolCatalog, observed []harnessenv.BridgeObservation, warn fixFn) {
+	unknown := 0
+	for i, row := range rows {
+		if !observed[i].Present {
+			continue
+		}
+		if row.Build == "unknown" {
+			unknown++
+		}
+		if row.Behind {
+			label := fmt.Sprintf("connected session bridge pid %d", row.PID)
+			if len(row.Agents) > 0 {
+				label += " (" + strings.Join(row.Agents, ", ") + ")"
+			}
+			warn(label+" runs older Dibs build "+row.Build, clientdrift.BridgeUpdate)
+		}
+	}
+	if unknown > 0 {
+		warn(fmt.Sprintf("Dibs bridge build unknown for %d connected session(s)", unknown),
+			clientdrift.BridgeUpdate)
+	}
 }
 
 func reportUnknownCatalogs(count int, names map[string]bool, warn fixFn) {
