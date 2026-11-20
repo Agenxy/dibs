@@ -688,18 +688,19 @@ func TestOpKindStringsAreFrozen(t *testing.T) {
 		// A hand-maintained list somebody must remember is exactly as good as the
 		// memory, which is why the completeness check below now enumerates the
 		// package rather than trusting this. Found by the pre-release review.
-		"OpActivityCheckpoint": {core.OpActivityCheckpoint, "activity_checkpoint"},
-		"OpBindSession":        {core.OpBindSession, "bind_session"},
-		"OpRespond":            {core.OpRespond, "respond"},
-		"OpAckMessage":         {core.OpAckMessage, "ack"},
-		"OpPruneOwn":           {core.OpPruneOwn, "prune_own"},
-		"OpClaimCoordinator":   {core.OpClaimCoordinator, "claim_coordinator"},
-		"OpVouchChild":         {core.OpVouchChild, "vouch_child"},
-		"OpSpaceForceRelease":  {core.OpSpaceForceRelease, "unlock_space"},
-		"OpSpaceAdmit":         {core.OpSpaceAdmit, "admit"},
-		"OpSpaceClose":         {core.OpSpaceClose, "close_space"},
-		"OpSpaceEvict":         {core.OpSpaceEvict, "evict"},
-		"OpSpaceMerge":         {core.OpSpaceMerge, "merge_spaces"},
+		"OpActivityCheckpoint":    {core.OpActivityCheckpoint, "activity_checkpoint"},
+		"OpBindSession":           {core.OpBindSession, "bind_session"},
+		"OpRefreshSessionProcess": {core.OpRefreshSessionProcess, "refresh_session_process"},
+		"OpRespond":               {core.OpRespond, "respond"},
+		"OpAckMessage":            {core.OpAckMessage, "ack"},
+		"OpPruneOwn":              {core.OpPruneOwn, "prune_own"},
+		"OpClaimCoordinator":      {core.OpClaimCoordinator, "claim_coordinator"},
+		"OpVouchChild":            {core.OpVouchChild, "vouch_child"},
+		"OpSpaceForceRelease":     {core.OpSpaceForceRelease, "unlock_space"},
+		"OpSpaceAdmit":            {core.OpSpaceAdmit, "admit"},
+		"OpSpaceClose":            {core.OpSpaceClose, "close_space"},
+		"OpSpaceEvict":            {core.OpSpaceEvict, "evict"},
+		"OpSpaceMerge":            {core.OpSpaceMerge, "merge_spaces"},
 		// Folding a forked seat back into the one it should have been. The
 		// kind is matched by VALUE in Apply, so renaming it stops the fold on
 		// every board that has merged one: loudly, unlike a renamed field,
