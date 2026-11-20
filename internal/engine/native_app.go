@@ -222,6 +222,10 @@ func (e *Engine) appRestarting(out wakeexec.NativeOutcome) bool {
 // opened: the app's return re-offers ordinary background delivery
 // (afterAppReturn). The one bounded retry stays armed in case the app never
 // comes back as a new process.
+// noIPCHint names the build change and what the queue route confirms.
+const noIPCHint = "ChatGPT 26.1117 and later ship without the IPC router; the queue route " +
+	"never navigates and confirms a queued item, not a turn"
+
 func (e *Engine) heldForAppReturn(plan wakePlan, agent string, out wakeexec.NativeOutcome) bool {
 	if e.appRestarting(out) || (out.Disposition == "unloaded" && e.appReturnPending()) {
 		slog.Info("the ChatGPT app is restarting; holding this agent's mail until IPC is ready",
@@ -233,8 +237,8 @@ func (e *Engine) heldForAppReturn(plan wakePlan, agent string, out wakeexec.Nati
 	}
 	if out.AppNotListening {
 		if epoch, known := currentAppRestartEpoch(); known && epoch != "absent" {
-			slog.Info("the running ChatGPT app does not accept native delivery; using the background queue route, which never navigates",
-				"agent", agent, "hint", "ChatGPT builds from 26.1117 ship without the IPC router; delivery is confirmed only when the thread runs the queued message")
+			slog.Info("the running ChatGPT app refuses native delivery; using the background queue route",
+				"agent", agent, "hint", noIPCHint)
 		} else {
 			slog.Info("the ChatGPT app is not running; using the cold route, which queues without launching it", "agent", agent)
 		}
