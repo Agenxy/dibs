@@ -244,14 +244,14 @@ func TestRegisterDocumentsBothContinuityPaths(t *testing.T) {
 	if desc == "" {
 		t.Fatal("no register tool: the probe is not reading the listing")
 	}
-	for _, want := range []string{"resumed", "reattached"} {
+	for _, want := range []string{"resumed", "token_rotated", "reattached"} {
 		if !strings.Contains(desc, want) {
 			t.Errorf("register's description never names %q: an agent that gets it back "+
 				"has no way to know what it means", want)
 		}
 	}
 
-	// The two keys must be BOUND to their token rules, not merely present.
+	// Each key must be BOUND to its token rule, not merely present.
 	//
 	// The first version searched for `resumed`, `reattached` and `ROTATED`
 	// independently, so swapping the two rules, telling a client its token
@@ -274,12 +274,11 @@ func TestRegisterDocumentsBothContinuityPaths(t *testing.T) {
 		t.Errorf("reattachment is not the thing the token rotation is attached to, so a "+
 			"client cannot tell which path invalidates its token: %q", c)
 	}
-	if c := clause("resumed"); !strings.Contains(c, "same token") {
-		t.Errorf("resume does not say the token is unchanged, so a client cannot tell "+
-			"it from the path that rotates: %q", c)
+	if c := clause("resumed"); !strings.Contains(c, "same token on an identical retry") {
+		t.Errorf("resume does not restrict credential reuse to an identical retry: %q", c)
 	}
-	if c := clause("resumed"); strings.Contains(c, "ROTATED") {
-		t.Errorf("the resume clause claims a rotation, which is the reattach rule: %q", c)
+	if c := clause("token_rotated"); !strings.Contains(c, "active registration changed") || !strings.Contains(c, "ROTATED") {
+		t.Errorf("active registration rotation is undocumented: %q", c)
 	}
 }
 

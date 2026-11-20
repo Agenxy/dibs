@@ -152,7 +152,8 @@ func (s *State) resumeLiveAgent(l *Agent, op *Op, now time.Time) (Result, []Even
 		// handing back a new credential there would revoke the one the caller
 		// is already using. That case does not reach here, because nothing
 		// changed. Found by the pre-release review, round seventy-nine.
-		if op.NewToken != "" {
+		rotated := op.NewToken != "" && l.Token != op.NewToken
+		if rotated {
 			l.Token = op.NewToken
 		}
 		// THE IDENTITY, whether or not the session moved. takeActivation above
@@ -196,10 +197,14 @@ func (s *State) resumeLiveAgent(l *Agent, op *Op, now time.Time) (Result, []Even
 			"via": "nonce", "session_bound": true,
 		}}}
 		serial := s.finish(&evs, now)
-		return Result{
+		result := Result{
 			"agent_id": l.ID, "token": l.Token, "serial": serial,
 			"resumed": true,
-		}, evs
+		}
+		if rotated {
+			result["token_rotated"] = true
+		}
+		return result, evs
 	}
 	return Result{
 		"agent_id": l.ID, "token": l.Token, "serial": s.Serial,

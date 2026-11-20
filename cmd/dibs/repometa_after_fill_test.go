@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
-	"sync"
 	"testing"
 
 	"github.com/agenxy/dibs/internal/mcp"
@@ -74,10 +73,7 @@ func TestRegisterRepoMetaDescribesTheCheckoutTheSidecarNames(t *testing.T) {
 	}
 	t.Setenv("HOME", home)
 	t.Setenv("CLAUDE_PID", pid)
-	sessionOnce = struct {
-		sync.Once
-		id string
-	}{}
+	knownSessionID.Store(nil)
 	prevClient := lastClientInfo
 	lastClientInfo = map[string]any{"name": "claude-code", "version": "0"}
 	t.Cleanup(func() { lastClientInfo = prevClient })

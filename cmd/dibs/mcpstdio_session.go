@@ -49,6 +49,37 @@ func sessionContext(isClaude bool) map[string]string {
 		}
 	}
 
+	side, home, ok := readClaudeSidecar(isClaude)
+	if !ok {
+		return out
+	}
+	if side.CWD != "" {
+		out["cwd"] = side.CWD
+		if br := gitBranch(side.CWD); br != "" {
+			out["branch"] = br
+		}
+	}
+	if side.Entrypoint != "" {
+		out["surface"] = side.Entrypoint
+	}
+	if side.SessionID != "" {
+		out["session_id"] = side.SessionID
+		if t := sessionTitle(home, side.CWD, side.SessionID); t != "" {
+			out["title"] = t
+		}
+	}
+	return out
+}
+
+type claudeSidecar struct {
+	SessionID  string `json:"sessionId"`
+	CWD        string `json:"cwd"`
+	Entrypoint string `json:"entrypoint"`
+}
+
+// readClaudeSidecar reads just the sidecar, without scanning a transcript or
+// inspecting the worktree. An absent or partial write is inconclusive.
+func readClaudeSidecar(isClaude bool) (claudeSidecar, string, bool) {
 	// Hostname and cwd are universal; everything below is Claude Code's own
 	// bookkeeping, and is authoritative where it exists: the sidecar knows the
 	// session's real cwd even if the bridge were spawned somewhere else.
@@ -69,7 +100,7 @@ func sessionContext(isClaude bool) map[string]string {
 	}
 	home, _ := os.UserHomeDir()
 	if home == "" {
-		return out
+		return claudeSidecar{}, "", false
 	}
 	// OUR OWN PARENT, or the handshake said so. Either is proof; neither alone
 	// is enough, and getting this wrong breaks the wake path in one direction or
@@ -94,42 +125,23 @@ func sessionContext(isClaude bool) map[string]string {
 	// Nested processes fail that test, which is exactly what the guard e2e
 	// checks when it starts daemons of its own.
 	if !isClaude && pid != ppid {
-		return out
+		return claudeSidecar{}, "", false
 	}
 	// A pid is digits. Checking that is not ceremony: the value becomes a path
 	// component below, and "../../.." is a legal environment variable.
 	if _, err := strconv.Atoi(pid); err != nil {
-		return out
-	}
-	var side struct {
-		SessionID  string `json:"sessionId"`
-		CWD        string `json:"cwd"`
-		Entrypoint string `json:"entrypoint"`
+		return claudeSidecar{}, "", false
 	}
 	// Reads the user's OWN ~/.claude sidecar. `pid` is validated numeric above,
 	// so it cannot carry traversal segments, and this process already runs as
 	// the user whose files these are.
 	sidecar := filepath.Join(home, ".claude", "sessions", pid+".json")
+	var side claudeSidecar
 	b, err := os.ReadFile(sidecar) //nolint:gosec // same-user path; pid validated numeric above
 	if err != nil || json.Unmarshal(b, &side) != nil {
-		return out
+		return claudeSidecar{}, "", false
 	}
-	if side.CWD != "" {
-		out["cwd"] = side.CWD
-		if br := gitBranch(side.CWD); br != "" {
-			out["branch"] = br
-		}
-	}
-	if side.Entrypoint != "" {
-		out["surface"] = side.Entrypoint
-	}
-	if side.SessionID != "" {
-		out["session_id"] = side.SessionID
-		if t := sessionTitle(home, side.CWD, side.SessionID); t != "" {
-			out["title"] = t
-		}
-	}
-	return out
+	return side, home, true
 }
 
 // Unknown-ID rows still rely on the daemon's legacy kernel-name comparison.

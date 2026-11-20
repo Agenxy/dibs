@@ -301,8 +301,11 @@ the final delivery report, not a report for its earlier intermediate steps.
 **Keep a nonce, or a restart will cost you your mailbox.** Pass `nonce` to
 `register`: any random id you generate and hold on to. Registering again
 with the same `nonce` recovers your existing agent, its mail and its claims.
-Omit `name` to keep its current label. An active retry returns `resumed: true`
-with the same token; a stopped row returns `reattached: true` with a fresh token.
+Omit `name` to keep its current label. A still-active identity returns
+`resumed: true`. An identical retry keeps its token. When an active registration
+changes and the token rotates, the reply also returns `token_rotated: true`.
+Use the returned token. A stopped row returns `reattached: true` with a fresh
+token.
 
 Without one you can still reattach within a session, via `name` + `session_id`,
 but that id names your *harness process*, so it does not survive your harness

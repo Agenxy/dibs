@@ -14,6 +14,18 @@ type contactEvidence struct {
 	created uint64
 }
 
+// Authenticated contact after a process exited disproves that PID as
+// evidence of closure for this activation, independently of the idle lease.
+type processActivation struct {
+	created, activation uint64
+	pid                 int
+	start               int64
+}
+
+func recordedProcess(l *core.Agent) processActivation {
+	return processActivation{l.CreatedSerial, l.Activation, l.PID, l.ProcStart}
+}
+
 // Successful token-authenticated model calls prove the identity is present,
 // even when its old harness PID is gone. Subscription machinery uses
 // authObserve and does not enter here. The seen stamps in boot and in exec's
@@ -25,6 +37,12 @@ func (e *Engine) noteAuthenticatedContact(l *core.Agent, now time.Time) {
 		e.contact = map[string]contactEvidence{}
 	}
 	e.contact[l.ID] = contactEvidence{at: now, created: l.CreatedSerial}
+	if l.PID > 1 && e.prober != nil && e.ownsHost(l) && !e.prober.Alive(l.PID) {
+		if e.pastProcessExit == nil {
+			e.pastProcessExit = map[string]processActivation{}
+		}
+		e.pastProcessExit[l.ID] = recordedProcess(l)
+	}
 	e.noteSocketBusy(l, now)
 }
 
@@ -36,8 +54,14 @@ func (e *Engine) recentAuthenticatedContact(l *core.Agent, now time.Time) bool {
 	return ok && c.created == l.CreatedSerial && now.Sub(c.at) <= e.state.Limits.IdleTTL
 }
 
-// Bound the derived cache to live incarnations and the same freshness window.
+// Retire replaced process observations and expire idle-lease contact evidence.
 func (e *Engine) trimContactEvidence(now time.Time) {
+	for id, earlier := range e.pastProcessExit {
+		l := e.state.Agents[id]
+		if l == nil || recordedProcess(l) != earlier {
+			delete(e.pastProcessExit, id)
+		}
+	}
 	for id, c := range e.contact {
 		l := e.state.Agents[id]
 		if l == nil || l.Status != core.StatusActive || l.CreatedSerial != c.created ||

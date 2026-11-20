@@ -78,6 +78,7 @@ type Engine struct {
 	// Actual model contact, fenced to the row incarnation; boot and registration
 	// grace are not authenticated model calls. See contact.go.
 	contact            map[string]contactEvidence
+	pastProcessExit    map[string]processActivation
 	queuedOpenContacts map[string]queuedOpenContact // retained queue recovery; writer-owned
 	nativeTurnWatches  map[string]nativeTurnWatch   // recent app turn receipts; writer-owned
 	acceptedContacts   map[string]acceptedContact   // native acceptance without later model contact; writer-owned
@@ -780,6 +781,7 @@ func (e *Engine) execWithReceipt(
 				return nil, err
 			}
 			e.wakeIfSleeping(actor, now)
+			e.refreshCheckInProcess(op, actor)
 		}
 	}
 

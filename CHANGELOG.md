@@ -20,6 +20,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   only until that app launch has settled (at most 30 seconds); after that,
   mail takes the background queue route, which never navigates or takes
   focus.
+- Claude bridges retry a missing or partially written session sidecar and bind
+  the published session on the next check-in.
+- An active re-registration reports `token_rotated: true` when its returned
+  token replaces the previous credential.
+- Mail receipts no longer infer harness closure from an outdated process when
+  authenticated contact or a live Claude session disproves it. A check-in
+  naming the session can record a verified replacement process.
 
 ### Changed
 

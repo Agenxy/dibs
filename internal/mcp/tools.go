@@ -90,7 +90,8 @@ func (b toolSchemas) agentAndMailTools() []map[string]any {
 				"It is the only credential " +
 				"that survives your harness restarting: the same nonce returns you to your " +
 				"agent, mail and claims without creating a sibling. Omit name to keep it, or rename the " +
-				"same identity. `resumed:true` = active retry, same token; `reattached:true` = " +
+				"same identity. `resumed:true` = still-active identity, same token on an identical retry; " +
+				"`token_rotated:true` = active registration changed and the token ROTATED; `reattached:true` = " +
 				"nonce recovered a stopped row, TOKEN HAS ROTATED. Use the returned token. Without a nonce, reattach " +
 				"works only within a session. kind 'persistent' is for standing roles that " +
 				"sleep and return via resume.",

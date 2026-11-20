@@ -1092,6 +1092,9 @@ func (s *State) applyAckBoard(l *Agent, op *Op, now time.Time) (Result, []Event)
 	// use: it is the one call they all keep making. See bindHarnessSession.
 	s.dropTakenSession(op, l)
 	bound := l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed, op.V7Semantics)
+	if op.ProcessRefresh {
+		l.PID, l.ProcStart = op.PID, op.ProcStart
+	}
 	selected := map[uint64]bool{}
 	if op.MailboxSerials != nil {
 		for _, serial := range *op.MailboxSerials {

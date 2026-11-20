@@ -166,9 +166,12 @@ type Op struct {
 	Track bool `json:"track,omitempty"`
 	// Deliverable is where finished work landed (a path or a URL), on done.
 	Deliverable string `json:"deliverable,omitempty"`
-	ProcStart   int64  `json:"proc_start,omitempty"`
-	NewToken    string `json:"token,omitempty"` // engine-generated; encrypted at rest
-	Nonce       string `json:"nonce,omitempty"` // encrypted at rest
+	// A check-in verified a replacement process and recorded PID and ProcStart.
+	// Older check-ins omit this and preserve the recorded activation process.
+	ProcessRefresh bool   `json:"process_refresh,omitempty"`
+	ProcStart      int64  `json:"proc_start,omitempty"`
+	NewToken       string `json:"token,omitempty"` // engine-generated; encrypted at rest
+	Nonce          string `json:"nonce,omitempty"` // encrypted at rest
 	// MintedNonce is a nonce the daemon generated for a caller that sent none,
 	// to be used ONLY if this registration creates a new agent.
 	//
