@@ -47,15 +47,16 @@ func TestIdentityRecoveryBridgeProcess(t *testing.T) {
 }
 
 type recoveryStdio struct {
-	dir       string
-	srv       *httptest.Server
-	eng       *engine.Engine
-	call      func(string, map[string]any) map[string]any
-	exchange  func(string, map[string]any) []byte
-	drop      atomic.Bool
-	refuse    atomic.Bool
-	registers atomic.Int64
-	thread    string
+	dir        string
+	srv        *httptest.Server
+	eng        *engine.Engine
+	call       func(string, map[string]any) map[string]any
+	exchange   func(string, map[string]any) []byte
+	drop       atomic.Bool
+	stripBuild atomic.Bool
+	refuse     atomic.Bool
+	registers  atomic.Int64
+	thread     string
 }
 
 const recoveryFixtureThread = "01a10520-0000-7000-8000-000000000010"
@@ -109,6 +110,18 @@ func newRecoveryStdioWithBuild(t *testing.T, pin, bridgeBuild string) *recoveryS
 			w.WriteHeader(http.StatusBadGateway) // accepted op, deliberately lost reply
 			return
 		}
+
+		if f.stripBuild.Load() {
+			old := httptest.NewRecorder()
+			server.ServeHTTP(old, r)
+			old.Header().Del(mcp.DaemonBuildHeader)
+			for key, values := range old.Header() {
+				w.Header()[key] = values
+			}
+			w.WriteHeader(old.Code)
+			_, _ = w.Write(old.Body.Bytes())
+			return
+		}
 		server.ServeHTTP(w, r)
 	}))
 	f.srv = srv.Server
@@ -129,6 +142,9 @@ func newRecoveryStdioWithBuild(t *testing.T, pin, bridgeBuild string) *recoveryS
 	cmd := procexec.Command(childCtx, os.Args[0], "-test.run=^TestIdentityRecoveryBridgeProcess$")
 	cmd.Dir = dir
 	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + dir, "USERPROFILE=" + dir, "TMPDIR=" + os.TempDir(), "TEMP=" + os.TempDir(), "SYSTEMROOT=" + os.Getenv("SYSTEMROOT"), "DIBS_TEST_IDENTITY_RECOVERY_BRIDGE=1", "DIBS_DIR=" + dir, "DIBS_ADDR=" + strings.TrimPrefix(srv.URL, "http://"), "DIBS_HOST_ID=recovery-host", "DIBS_NOTIFY=off"}
+	if root := os.Getenv("DIBS_CODEX_PLUGIN_ROOT"); root != "" {
+		cmd.Env = append(cmd.Env, "DIBS_CODEX_PLUGIN_ROOT="+root)
+	}
 	if bridgeBuild != "" {
 		cmd.Env = append(cmd.Env, "DIBS_TEST_BRIDGE_BUILD="+bridgeBuild)
 	}

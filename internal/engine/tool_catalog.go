@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
-	"strings"
 
 	"github.com/agenxy/dibs/internal/build"
 	"github.com/agenxy/dibs/internal/clientdrift"
@@ -47,7 +46,7 @@ func (e *Engine) ObserveBridgeToolCatalog(ctx context.Context, token string, obs
 		if observation.Revision < old.Revision {
 			observation.Hash, observation.Revision = old.Hash, old.Revision
 		}
-		observation.Build = bridgeBuild(observation.Build)
+		observation.Build = clientdrift.VersionLabel(observation.Build)
 		if observation.Build == "" {
 			observation.Build = old.Build
 		}
@@ -135,17 +134,6 @@ func (e *Engine) decorateBridgeBuildDrift(b core.Result) {
 		slices.Sort(agents)
 		b["bridge_build_drift"] = core.Result{"count": count, "agents": agents}
 	}
-}
-
-// These labels are display evidence and never authorize a bridge or agent.
-func bridgeBuild(value string) string {
-	const versionChars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.+-"
-	if len(value) > 128 || strings.IndexFunc(value, func(r rune) bool {
-		return !strings.ContainsRune(versionChars, r)
-	}) >= 0 {
-		return ""
-	}
-	return value
 }
 
 func bridgeProcess(row BridgeToolCatalog) harnessenv.BridgeIncarnation {

@@ -99,7 +99,7 @@ func enrichRegister(line []byte) []byte {
 	if json.Unmarshal(line, &msg) != nil {
 		return line
 	}
-	if msg["method"] == "initialize" {
+	if msg["method"] == "initialize" || msg["method"] == "server/discover" {
 		noteClientInfo(msg)
 		return line
 	}
