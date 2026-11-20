@@ -85,16 +85,12 @@ func (b toolSchemas) agentAndMailTools() []map[string]any {
 	return []map[string]any{
 		{
 			"name": "register",
-			"description": "Register an agent: who you are, publicly. Returns your token and the " +
-				"compact board (detail:true for every field). PASS A NONCE: a random id >=128-bit that you keep. " +
-				"It is the only credential " +
-				"that survives your harness restarting: the same nonce returns you to your " +
-				"agent, mail and claims without creating a sibling. Omit name to keep it, or rename the " +
-				"same identity. `resumed:true` = still-active identity, same token on an identical retry; " +
-				"`token_rotated:true` = active registration changed and the token ROTATED; `reattached:true` = " +
-				"nonce recovered a stopped row, TOKEN HAS ROTATED. Use the returned token. Without a nonce, reattach " +
-				"works only within a session. kind 'persistent' is for standing roles that " +
-				"sleep and return via resume.",
+			"description": "Register a public identity and get its token and compact board (detail:true for all fields). " +
+				"Keep a random nonce (>=128 bits) to recover the same agent, mail and claims across restarts. " +
+				"Omit name to keep it. `resumed:true` = still active, same token on an identical retry; " +
+				"`token_rotated:true` = active registration changed, token ROTATED; `reattached:true` = " +
+				"nonce recovered a stopped row, token ROTATED. Use the returned token. " +
+				"Without a nonce, reattach only within the same session. kind 'persistent' keeps a standing role.",
 			"inputSchema": b.obj(map[string]any{
 				"detail": map[string]any{"type": "boolean", "description": "every board field " +
 					"(default: one row per agent, like check_in)"},
