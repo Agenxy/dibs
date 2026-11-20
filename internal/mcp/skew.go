@@ -28,6 +28,13 @@ import (
 // the process serving, the process is stale.
 var daemonStarted = time.Now()
 
+// DaemonBuildHeader carries a build on every MCP HTTP reply, including
+// SessionStart. Clients treat absence as unknown.
+const DaemonBuildHeader = "X-Dibs-Daemon-Build"
+
+// FirstCheckInMetaKey is activation evidence, independent of version advice.
+const FirstCheckInMetaKey = "com.dibs/first_check_in"
+
 // serverBuildInfo is what the daemon says about itself, beyond a version.
 func serverBuildInfo() map[string]any {
 	info := map[string]any{

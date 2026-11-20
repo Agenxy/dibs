@@ -133,7 +133,7 @@ const maxPanelEvents = 40
 
 func trimBoard(b map[string]any) core.Result {
 	out := core.Result{}
-	for _, k := range []string{"node", "serial"} {
+	for _, k := range []string{"node", "serial", "bridge_build_drift"} {
 		if v, ok := b[k]; ok {
 			out[k] = v
 		}

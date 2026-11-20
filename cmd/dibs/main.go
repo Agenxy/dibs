@@ -1116,6 +1116,7 @@ type (
 		FolderAccessAdvice string                     `json:"folder_access_advice,omitempty"`
 		ReconnectPending   int                        `json:"reconnect_pending,omitempty"`
 		ReconnectAdvice    string                     `json:"reconnect_advice,omitempty"`
+		DaemonBuild        string                     `json:"daemon_build,omitempty"`
 		BridgeToolCatalogs []engine.BridgeToolCatalog `json:"bridge_tool_catalogs,omitempty"`
 		ContactAlerts      []contactAlertDiagnostic   `json:"contact_alerts"`
 		ConfiguredNames    []configuredNameAddress    `json:"configured_name_addresses,omitempty"`

@@ -25,6 +25,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/agenxy/dibs/internal/build"
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/invites"
@@ -162,6 +163,7 @@ type rpcError struct {
 // ServeHTTP implements streamable HTTP (POST only; attention is pull-shaped
 // via the await_events tool, SPEC §10).
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set(DaemonBuildHeader, build.Version)
 	if s.transfers != nil {
 		origin := s.transferOrigin
 		if origin == "" {
@@ -1077,6 +1079,7 @@ func (s *Server) callTool(
 		s.adoptSession(ctx, a.Token, params)
 	}
 
+	ctx, firstCheckIn := checkInReceipt(ctx, call.Name)
 	res, err := s.run(ctx, call.Name, &a, params, sessionClient)
 	if err != nil {
 		// An unstructured error used to go out as a bare {"error": "..."} with no
@@ -1136,7 +1139,7 @@ func (s *Server) callTool(
 	if merr != nil {
 		return nil, &rpcError{Code: -32603, Message: merr.Error()}
 	}
-	return s.surfaceRegistrationResult(ctx, call.Name, params, res, string(text)), nil
+	return s.surfaceRegistrationResult(ctx, call.Name, params, res, string(text), firstCheckIn()), nil
 }
 
 // putBlob decodes the inline base64 (if any) and stores the blob.

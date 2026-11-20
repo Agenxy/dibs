@@ -189,6 +189,10 @@ func (s *Server) observeBridgeBatch(
 	}
 	for i, key := range keys {
 		observed := err == nil
+		if observed {
+			p := batch[key]
+			s.eng.VerifyBridgeIncarnation(ctx, p.PID, p.Start, results[i].Present)
+		}
 		if observed && results[i].App.PID > 1 {
 			observed = s.eng.AppReconnected(ctx, local, results[i].App) == nil
 		}
