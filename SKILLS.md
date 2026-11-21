@@ -66,8 +66,9 @@ actual recipient. Two eligible alias owners are refused with both ids, so use
 the intended id. New renames retain at most 64 former names; release some before
 adding another. Releasing an already absent alias changes nothing.
 
-Your **nonce recovers your id**, even after renaming: `register(nonce: ...)`
-keeps the current name; adding `name` revises that same row after recovery.
+Your **register nonce is your recovery credential**, even after renaming.
+`register(nonce: ...)` keeps the current name. Adding a free `name` revises
+the same identity after recovery.
 Keep and use the returned token. A refused name is checked before recovery can
 rotate a token or wake the row. A new identity still needs a name; a closed
 identity requires a new nonce. Configured
@@ -78,7 +79,9 @@ inheriting a role.
 Two renames are refused rather than suffixed the way
 `register` suffixes an id: a name another live agent holds, and a name that is
 another agent's id. The first makes a label ambiguous; the second publishes a
-label that reaches the other row, because an id wins over a name.
+label that reaches the other row, because an id wins over a name. If an approved
+recovery made an old name an address for your own identity, you can retake it
+with `update(name: ...)`. The old seat stays retired.
 
 If two live agents do share a name, addressing it is refused and you are given
 both ids: Dibs will not pick a mailbox for you.
