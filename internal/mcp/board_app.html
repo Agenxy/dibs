@@ -1823,7 +1823,7 @@ function draw() {
     ? { target: previousBox.dataset.target, start: previousField.selectionStart, end: previousField.selectionEnd }
     : null
   if (previousField) state.rowDrafts.set(previousBox.dataset.target, previousField.value)
-  patchHTML(boardEl, Board.attentionHTML(state.inbox, state.query) + Board.contactAlertsHTML(state.board?.contact_alerts) + Board.rosterHTML(state.board?.agents, {
+  patchHTML(boardEl, Board.attentionHTML(state.inbox, state.query) + Board.bridgeBuildDriftHTML(state.board?.bridge_build_drift) + Board.contactAlertsHTML(state.board?.contact_alerts) + Board.rosterHTML(state.board?.agents, {
     selfId: state.agent,
     events: state.events,
     expanded: state.expanded,

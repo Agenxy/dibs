@@ -318,12 +318,13 @@ func forward(client *http.Client, req *http.Request, line []byte, out *syncWrite
 	}
 	if len(body) > 0 {
 		rememberRegistrationNonce(line, body)
-		written := body
+		written := withClientVersionNotice(line, body, resp.Header.Get(mcp.DaemonBuildHeader))
 		if claudeChannel {
-			written = withChannelCapability(line, body)
+			written = withChannelCapability(line, written)
 		}
 		writeErr := out.writeLine(written)
 		if saw != nil && writeErr == nil {
+			// Observers record daemon evidence. Advice belongs only in the harness reply.
 			saw(line, body)
 		}
 	}
@@ -441,16 +442,24 @@ func refusedReply(line []byte, status int, body []byte) []byte {
 
 // toolNameOf reports which tool a tools/call names, or "".
 func toolNameOf(line []byte) string {
+	method, tool := methodAndTool(line)
+	if method == "tools/call" {
+		return tool
+	}
+	return ""
+}
+
+func methodAndTool(line []byte) (string, string) {
 	var m struct {
 		Method string `json:"method"`
 		Params struct {
 			Name string `json:"name"`
 		} `json:"params"`
 	}
-	if json.Unmarshal(line, &m) != nil || m.Method != "tools/call" {
-		return ""
+	if json.Unmarshal(line, &m) != nil {
+		return "", ""
 	}
-	return m.Params.Name
+	return m.Method, m.Params.Name
 }
 
 // agentTokenIn digs the token out of a register reply, or "".

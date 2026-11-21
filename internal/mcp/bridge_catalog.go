@@ -11,8 +11,9 @@ import (
 	"github.com/agenxy/dibs/internal/engine"
 )
 
-// BridgeToolsHashMetaKey and BridgeToolsRevisionMetaKey carry served evidence.
+// Bridge metadata keys distinguish the running build from the tool list actually served.
 const (
+	BridgeBuildMetaKey         = "com.dibs/bridge_build"
 	BridgeToolsHashMetaKey     = "com.dibs/served_tools_hash"
 	BridgeToolsRevisionMetaKey = "com.dibs/served_tools_revision"
 )
@@ -29,8 +30,9 @@ func (s *Server) observeToolCatalog(ctx context.Context, params json.RawMessage,
 			Token string `json:"token"`
 		} `json:"arguments"`
 		Meta struct {
-			Hash     string `json:"com.dibs/served_tools_hash"`
-			Revision uint64 `json:"com.dibs/served_tools_revision"`
+			Build    json.RawMessage `json:"com.dibs/bridge_build"`
+			Hash     string          `json:"com.dibs/served_tools_hash"`
+			Revision uint64          `json:"com.dibs/served_tools_revision"`
 		} `json:"_meta"`
 	}
 	if json.Unmarshal(params, &p) != nil {
@@ -46,7 +48,12 @@ func (s *Server) observeToolCatalog(ctx context.Context, params json.RawMessage,
 	if p.Token == "" {
 		p.Token = p.Arguments.Token
 	}
+	var build string
+	if err := json.Unmarshal(p.Meta.Build, &build); err != nil {
+		build = ""
+	}
 	_ = s.eng.ObserveBridgeToolCatalog(ctx, p.Token, engine.BridgeToolCatalog{
-		PID: pid, StartedAt: started, Hash: p.Meta.Hash, Revision: p.Meta.Revision, CurrentHash: ToolsFingerprint(),
+		PID: pid, StartedAt: started, Build: build,
+		Hash: p.Meta.Hash, Revision: p.Meta.Revision, CurrentHash: ToolsFingerprint(),
 	})
 }

@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agenxy/dibs/internal/build"
 	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/mcp"
 )
@@ -117,6 +118,7 @@ func enrichBridgeProcessWithCompletion(line []byte, omitted chan<- struct{}) []b
 	}
 	meta[mcp.BridgePIDMetaKey] = os.Getpid()
 	meta[mcp.BridgeStartMetaKey] = started
+	meta[mcp.BridgeBuildMetaKey] = build.Version
 	meta[mcp.BridgeToolsHashMetaKey], meta[mcp.BridgeToolsRevisionMetaKey] = catalogServed()
 	// A tunnel's host must be stated on discovery too: loopback alone does
 	// not establish that the PID is on the daemon's computer.

@@ -7,7 +7,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
+
+	"github.com/agenxy/dibs/internal/plugins"
 )
 
 // checkDesktopShadowsPlugin catches the one Claude Desktop configuration that
@@ -64,21 +65,5 @@ func desktopConfiguresDibs(path string) bool {
 // claudeCodePluginInstalled reads Claude Code's own record of installed
 // plugins; the key is `<plugin>@<marketplace>` and ours is `dibs@dibs`.
 func claudeCodePluginInstalled(home string) bool {
-	record := filepath.Join(home, ".claude", "plugins", "installed_plugins.json")
-	body, err := os.ReadFile(record) // #nosec G304 -- fixed well-known path
-	if err != nil {
-		return false
-	}
-	var rec struct {
-		Plugins map[string]json.RawMessage `json:"plugins"`
-	}
-	if json.Unmarshal(body, &rec) != nil {
-		return false
-	}
-	for key := range rec.Plugins {
-		if strings.HasPrefix(key, "dibs@") {
-			return true
-		}
-	}
-	return false
+	return plugins.ClaudeInstalled(home)
 }

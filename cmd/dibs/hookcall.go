@@ -22,6 +22,10 @@ import (
 // nothing. A hook that can stall the thing it decorates is a hook that gets
 // removed.
 func callHookTool(tool string, args map[string]any, out any) error {
+	return callHookToolWithBuild(tool, args, out, nil)
+}
+
+func callHookToolWithBuild(tool string, args map[string]any, out any, daemonBuild *string) error {
 	secret, err := localSecret()
 	if err != nil {
 		return err
@@ -73,7 +77,13 @@ func callHookTool(tool string, args map[string]any, out any) error {
 	if env.Result.IsError || len(env.Result.Content) == 0 {
 		return fmt.Errorf("%s returned nothing usable", tool)
 	}
-	return json.Unmarshal([]byte(env.Result.Content[0].Text), out)
+	if err := json.Unmarshal([]byte(env.Result.Content[0].Text), out); err != nil {
+		return err
+	}
+	if daemonBuild != nil {
+		*daemonBuild = resp.Header.Get(mcp.DaemonBuildHeader)
+	}
+	return nil
 }
 
 // mcpEndpoint is where a lifecycle hook posts, and every other command that

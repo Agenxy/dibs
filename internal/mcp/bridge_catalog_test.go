@@ -74,7 +74,7 @@ func TestBridgeCatalogObservationEntersThroughMCPWithoutContact(t *testing.T) {
 				t.Fatal("observation changed contact, authority or replayable state")
 			}
 			rows, ok := after["bridge_tool_catalogs"].([]engine.BridgeToolCatalog)
-			if !ok || len(rows) != 2 || rows[0].PID != 102 || rows[0].Hash != "0123456789abcdef" || rows[0].Revision != 2 || len(rows[0].Agents) != 1 || rows[0].Agents[0] != "worker" || rows[1].Hash != "" || rows[0].CurrentHash != ToolsFingerprint() {
+			if !ok || len(rows) != 2 || rows[0].PID != 102 || rows[0].Hash != "0123456789abcdef" || rows[0].Revision != 2 || len(rows[0].Agents) != 1 || rows[0].Agents[0] != "worker" || rows[1].Hash != "" || rows[1].Build != "unknown" || rows[0].CurrentHash != ToolsFingerprint() {
 				t.Fatalf("wrong bounded catalog evidence: %v", after["bridge_tool_catalogs"])
 			}
 		})

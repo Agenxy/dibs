@@ -75,6 +75,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Dibs warns about older connected stdio bridges, outdated local Claude Code
+  and Codex plugin installs, and older Dibs binaries on PATH. The board names
+  affected sessions, and `dibs doctor` gives the repair commands.
+- A bridge that can compare its build with the daemon now warns the affected
+  agent at registration and its first check-in. Claude's SessionStart hook also
+  reports an older plugin before the first tool call, with update instructions.
 - Native process fallback warnings identify the observed PID, its readable
   kernel name and a short caller list. Debug logs report cumulative counts
   at powers of two per operation, exposing repeated fallbacks without a log

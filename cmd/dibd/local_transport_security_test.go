@@ -24,6 +24,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agenxy/dibs/internal/build"
+
 	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testexec"
 	"github.com/agenxy/dibs/internal/testport"
@@ -154,6 +156,9 @@ func TestQDaemonChild(t *testing.T) {
 	if os.Getenv("DIBS_Q_DAEMON_CHILD") != "1" {
 		return
 	}
+	if version := os.Getenv("DIBS_TEST_DAEMON_BUILD"); version != "" {
+		build.Version = version
+	}
 	os.Args = []string{"dibd", "-dir", os.Getenv("DIBS_DIR"), "-addr", os.Getenv("DIBS_ADDR"), "-allow-parallel"}
 	if os.Getenv("DIBS_Q_CHECK") == "1" {
 		os.Args = append(os.Args, "-check")
@@ -169,7 +174,24 @@ func qStartBoard(t *testing.T, dir string) (string, func()) {
 	return addr, stop
 }
 
-func qStartBoardCaptured(t *testing.T, dir string) (string, func(), func() string) {
+type qDaemonLogs struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (l *qDaemonLogs) Write(data []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.Write(data)
+}
+
+func (l *qDaemonLogs) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.String()
+}
+
+func qStartBoardCaptured(t *testing.T, dir string, env ...string) (string, func(), func() string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte(qFixtureSecret), 0o600); err != nil {
 		t.Fatal(err)
@@ -180,7 +202,8 @@ func qStartBoardCaptured(t *testing.T, dir string) (string, func(), func() strin
 	port := testport.Reserve(t, "tcp", "127.0.0.1:0")
 	cmd := exec.Command(os.Args[0], "-test.run=^TestQDaemonChild$")
 	cmd.Env = append(nativeProbeEnv(t.TempDir(), "", ""), "DIBS_Q_DAEMON_CHILD=1", "DIBS_DIR="+dir, "DIBS_ADDR="+port.Addr)
-	var logs bytes.Buffer
+	cmd.Env = append(cmd.Env, env...)
+	var logs qDaemonLogs
 	cmd.Stdout, cmd.Stderr = &logs, &logs
 	port.Release(t)
 	if err := cmd.Start(); err != nil {

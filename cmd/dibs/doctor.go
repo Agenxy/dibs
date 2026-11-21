@@ -65,6 +65,7 @@ func doctor(args []string) error {
 	}
 	if !*ipcPreflight {
 		d.checkCodexPluginVersion()
+		d.checkLocalClientVersions()
 	}
 	err := d.run(*verbose)
 	if *asJSON {

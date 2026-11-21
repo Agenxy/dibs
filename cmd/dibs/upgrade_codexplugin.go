@@ -8,6 +8,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/agenxy/dibs/internal/mcp"
+	"github.com/agenxy/dibs/internal/plugins"
 )
 
 // A plugin failure is not a reason to withhold a daemon fix. This entry runs
@@ -93,8 +96,16 @@ func (d *diagnosis) checkCodexPluginVersion() {
 	// Inspection needs no executable. Construct the same expected payload, but
 	// never invoke an installer or contact the app from doctor.
 	if err != nil || !p.current() {
-		d.bad("Codex's Dibs plugin does not have a verified current version root; "+
-			"running chats may still use an older tool list", codexPluginRepair)
+		const what = "Codex's Dibs plugin does not have a verified current version root; " +
+			"running chats may still use an older tool list"
+		// Version drift is advisory. An invalid/ambiguous root, failed
+		// verification or a command mismatch retains the existing problem.
+		installed, current, statusErr := plugins.CodexRootStatus(home, mcp.ToolsFingerprint())
+		if err == nil && installed && !current && statusErr == nil {
+			d.warn(what, codexPluginRepair)
+		} else {
+			d.bad(what, codexPluginRepair)
+		}
 		return
 	}
 	d.ok("Codex's Dibs plugin has the current verified version root; " +

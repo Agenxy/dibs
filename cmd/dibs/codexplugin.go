@@ -14,7 +14,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/BurntSushi/toml"
 	"github.com/agenxy/dibs/internal/mcp"
 	"github.com/agenxy/dibs/internal/plugins"
 	"github.com/agenxy/dibs/internal/procexec"
@@ -90,46 +89,24 @@ type codexPluginPlan struct {
 	files                      map[string]string
 }
 
-func codexPluginHome() (string, error) {
-	if home := os.Getenv("CODEX_HOME"); home != "" {
-		return filepath.Abs(home)
-	}
-	home, err := os.UserHomeDir()
-	return filepath.Join(home, ".codex"), err
-}
+func codexPluginHome() (string, error) { return plugins.CodexHome() }
 
 func planCodexPlugin(bin string) (*codexPluginPlan, error) {
 	home, err := codexPluginHome()
 	if err != nil {
 		return nil, err
 	}
-	plugin, ok := plugins.For("codex")
-	if !ok {
-		return nil, errors.New("embedded Codex plugin unavailable")
-	}
 	exe, err := codexPluginCommand()
 	if err != nil {
 		return nil, err
 	}
-	var servers struct {
-		Servers map[string]map[string]any `json:"mcpServers"`
-	}
-	if err := json.Unmarshal([]byte(plugin.Files[".mcp.json"]), &servers); err != nil {
-		return nil, err
-	}
-	servers.Servers["dibs"]["command"] = exe
-	b, err := json.MarshalIndent(servers, "", "  ")
-	if err != nil {
-		return nil, err
-	}
-	plugin.Files[".mcp.json"] = string(b) + "\n"
-	v, err := stampCodexPlugin(plugin.Files, mcp.ToolsFingerprint())
+	files, v, err := plugins.CodexPayload(exe, mcp.ToolsFingerprint())
 	if err != nil {
 		return nil, err
 	}
 	p := &codexPluginPlan{
 		home: home, bin: bin, version: v,
-		source: filepath.Join(home, "dibs-marketplace", v), files: plugin.Files,
+		source: filepath.Join(home, "dibs-marketplace", v), files: files,
 	}
 	if err := p.checkMarketplaceSource(); err != nil {
 		return nil, err
@@ -160,45 +137,13 @@ func (p *codexPluginPlan) report(out io.Writer) error {
 }
 
 func (p *codexPluginPlan) cacheBase() string {
-	return filepath.Join(p.home, "plugins", "cache", "dibs", "dibs")
+	return plugins.CodexCacheBase(p.home)
 }
 
 // Only this installed and enabled identity is upgraded. A manual MCP setup,
 // another marketplace's Dibs, or an intentionally disabled plugin is not consent
 // to install/enable this integration.
-func installedCodexPlugin(home string) (bool, error) {
-	// #nosec G304 G703 -- operator's Codex config, read only
-	b, err := os.ReadFile(filepath.Join(home, "config.toml"))
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	var config struct {
-		Plugins map[string]struct{ Enabled *bool }
-	}
-	if err := toml.Unmarshal(b, &config); err != nil {
-		return false, err
-	}
-	entry, exists := config.Plugins["dibs@dibs"]
-	if !exists || entry.Enabled != nil && !*entry.Enabled {
-		return false, nil
-	}
-	entries, err := os.ReadDir(filepath.Join(home, "plugins", "cache", "dibs", "dibs"))
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	for _, entry := range entries {
-		if entry.IsDir() {
-			return true, nil
-		}
-	}
-	return false, nil
-}
+func installedCodexPlugin(home string) (bool, error) { return plugins.CodexInstalled(home) }
 
 func runCodexPlugin(bin string, args []string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

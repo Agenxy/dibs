@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+
+	"github.com/agenxy/dibs/internal/plugins"
 )
 
 // hookPoll is `dibs hook-poll`: the wake path for a harness whose hooks are
@@ -68,8 +70,7 @@ import (
 // object followed by garbage was "JSON", which the Codex review of this
 // change caught. What the harness wrote is one object and nothing after it.
 func hookPoll(args []string) error {
-	_ = args // the dispatch table in main.go requires this signature
-	out, err := hookPollOutput(os.Stdin, callHookTool)
+	out, err := hookPollOutput(os.Stdin, sessionStartPoll(args))
 	if err != nil {
 		return fmt.Errorf("hook-poll: %w", err)
 	}
@@ -79,6 +80,26 @@ func hookPoll(args []string) error {
 	}
 	_, err = os.Stdout.Write(append(enc, '\n'))
 	return err
+}
+
+func sessionStartPoll(args []string) func(string, map[string]any, any) error {
+	if len(args) != 1 || args[0] != "--claude-plugin" {
+		return callHookTool
+	}
+	return func(tool string, params map[string]any, out any) error {
+		var daemonBuild string
+		if err := callHookToolWithBuild(tool, params, out, &daemonBuild); err != nil {
+			return err
+		}
+		result := out.(*map[string]any)
+		if *result == nil {
+			*result = map[string]any{}
+		}
+		if info, ok := olderClient("claude_plugin", claudePluginVersion(), daemonBuild, plugins.ClaudeUpdate); ok {
+			addVersionHookContext(*result, clientVersionNotice{DaemonBuild: daemonBuild, Clients: []behindClient{info}})
+		}
+		return nil
+	}
 }
 
 // hookInputLimit bounds what is read from the harness before decoding. A

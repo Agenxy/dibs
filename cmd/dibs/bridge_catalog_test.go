@@ -9,12 +9,18 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/agenxy/dibs/internal/build"
+	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/mcp"
 )
@@ -50,6 +56,110 @@ func TestRealBridgeReportsServedCatalogWithoutAnotherHarnessCall(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("actual stdio loop never reported its served catalog without another harness call")
+}
+
+type bridgeTestLog struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (l *bridgeTestLog) Write(data []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(data)
+}
+
+func (l *bridgeTestLog) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
+}
+
+// Exercise the stdio request and the daemon board together: a server-side
+// default equal to the daemon version cannot stand in for bridge evidence.
+func TestRealBridgeReportsOwnBuild(t *testing.T) {
+	const clientBuild = "0.0.5"
+	var log bridgeTestLog
+	logger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&log, nil)))
+	t.Cleanup(func() { slog.SetDefault(logger) })
+	// The fixture runs the actual bridge loop in a child with a different
+	// build. The daemon and child must never share an inferred version.
+	old := build.Version
+	build.Version = "0.0.19"
+	t.Cleanup(func() { build.Version = old })
+	f := newRecoveryStdioWithBuild(t, "", clientBuild)
+	worker := recoveryStdioOK(t, f.call("register", map[string]any{"name": "worker", "cwd": t.TempDir()}))
+	recoveryStdioOK(t, f.call("check_in", map[string]any{"token": worker["token"]}))
+	f.exchange("tools/list", map[string]any{})
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+		board, err := f.eng.Board(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := json.Marshal(board["bridge_tool_catalogs"])
+		if err != nil {
+			t.Fatal(err)
+		}
+		var rows []struct {
+			PID       int
+			StartedAt string `json:"started_at"`
+			Build     string `json:"build"`
+		}
+		if err := json.Unmarshal(data, &rows); err != nil {
+			t.Fatal(err)
+		}
+		for _, row := range rows {
+			if row.PID > 1 && row.PID != os.Getpid() && row.StartedAt != "" && row.Build == clientBuild {
+				if drift, ok := board["bridge_build_drift"].(core.Result); ok &&
+					drift["count"] == 1 && slices.Equal(drift["agents"].([]string), []string{"worker"}) {
+					// Subsequent real requests must not post another WARN for
+					// the same bridge process.
+					for range 3 {
+						recoveryStdioOK(t, f.call("check_in", map[string]any{"token": worker["token"]}))
+					}
+					if count := strings.Count(log.String(), "connected session is running an older Dibs bridge"); count != 1 {
+						t.Fatalf("bridge logged %d warnings, want one: %s", count, log.String())
+					}
+					return
+				}
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("real stdio bridge did not report its own older build and named board row")
+}
+
+func TestRealBridgeVersionAdvicePreservesDaemonCatalogHash(t *testing.T) {
+	const clientBuild = "0.0.5"
+	fixtureVersionDaemon(t)
+	bridge := newRecoveryStdioWithBuild(t, "", clientBuild)
+	bridge.exchange("server/discover", map[string]any{"clientInfo": map[string]any{"name": "claude-code"}})
+	reply := bridge.exchange("tools/list", map[string]any{})
+	if !bytes.Contains(reply, []byte("Dibs client version")) {
+		t.Fatal("setup: the real stdio bridge did not decorate tools/list with version advice")
+	}
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+		board, err := bridge.eng.Board(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		rows, _ := board["bridge_tool_catalogs"].([]engine.BridgeToolCatalog)
+		for _, row := range rows {
+			if row.Build != clientBuild || row.Hash == "" {
+				continue
+			}
+			if row.CurrentHash == "" {
+				t.Fatal("setup: the daemon did not report its current catalog hash")
+			}
+			if row.Hash != row.CurrentHash {
+				t.Fatalf("version advice changed the daemon catalog hash: observed %s, want %s", row.Hash, row.CurrentHash)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("real bridge did not report a fingerprint for the list")
 }
 
 type failedCatalogWriter struct{}
