@@ -6,7 +6,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
-
+- A bridge whose session slot already held a nonce minted before the
+  process-scope carry-over existed still got `E_SESSION_TAKEN` on register:
+  the carry-over ran only into an empty slot. Its own process-scoped nonce is
+  now merged in either way, and the daemon proves the right one from the
+  recovery group.
 - A ChatGPT agent keeps its stated app thread when a shell-launched Dibs bridge
   checks in with only a temporary process identifier. When Codex supplies the
   thread in the shell environment, the bridge carries it on the call.

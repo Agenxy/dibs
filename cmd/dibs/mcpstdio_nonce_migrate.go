@@ -96,8 +96,12 @@ func transactScopedNonce(legacyPath, project, role, scope, chosen string) ([]str
 		changed = recordNonceIn(all, project, name, chosen, true) || changed
 	}
 	candidates := nonceCandidatesIn(all, project, name)
-	if len(candidates) == 0 && chosen == "" {
-		changed = carryProcessNonces(all, project, role, name, scope) || changed
+	if chosen == "" && carryProcessNonces(all, project, role, name, scope) {
+		// Merged even into a slot that already holds one: a register that ran
+		// before this carry-over existed minted a nonce there, and the slot is
+		// no longer empty. More than one candidate goes to the daemon as a
+		// recovery group, which proves the right one instead of guessing.
+		changed = true
 		candidates = nonceCandidatesIn(all, project, name)
 	}
 	if len(candidates) == 0 {
@@ -239,8 +243,8 @@ func syncNonceDirectory(path string) error {
 	return dir.Sync()
 }
 
-// carryProcessNonces moves this bridge's own process-scoped credentials into a
-// session scope that has none yet.
+// carryProcessNonces copies this bridge's own process-scoped credentials into
+// its session scope.
 //
 // A bridge that could not see its harness session used to file its nonce under
 // its own process incarnation. Once the same bridge learns the session (a late
