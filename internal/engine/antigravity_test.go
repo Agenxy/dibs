@@ -13,6 +13,21 @@ import (
 	"github.com/agenxy/dibs/internal/core"
 )
 
+func TestMissingAntigravityEvidenceKeepsConfiguredDelivery(t *testing.T) {
+	const conversation = "01a10520-0000-7000-8000-000000000007"
+	e := New(core.NewState("test", core.DefaultLimits()), &memLedger{}, deadProber{})
+	e.SetWakeCommands(map[string]WakeCommand{
+		antigravity.Client: {Argv: []string{"delivery-fixture", "{thread}", "{message}"}},
+	})
+	worker := &core.Agent{
+		ID: "worker", CurrentSession: conversation, Agent: &core.AgentInfo{Harness: antigravity.Client},
+	}
+	plan, ok := e.wakeFor(worker, core.MsgQuestion, core.Event{Type: "message.sent", To: "worker"})
+	if !ok || len(plan.argv) != 3 || plan.antigravity.PID != 0 {
+		t.Fatal("a missing built-in binding discarded configured delivery")
+	}
+}
+
 func TestSentMailOffersOnlyOneFactualNoticeToVerifiedAntigravityConversation(t *testing.T) {
 	const conversation = "01a10520-0000-7000-8000-000000000007"
 	const body = "private mail never enters the app notice"

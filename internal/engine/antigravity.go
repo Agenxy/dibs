@@ -80,6 +80,19 @@ func (e *Engine) antigravityBinding(l *core.Agent) antigravityBinding {
 	return binding
 }
 
+func (e *Engine) antigravityPullOnlyNote(l *core.Agent, harness string) (string, bool) {
+	if !antigravityHarness(l) {
+		return "", false
+	}
+	if e.antigravityBinding(l).hub.PID != 0 {
+		return "", true
+	}
+	if e.localCommandConfigured(harness) || e.mightReachOverSocket(l) {
+		return "", false
+	}
+	return "Stored in the mailbox for " + l.ID + ". " + antigravityUnbound, true
+}
+
 func (e *Engine) runAntigravityWake(plan *wakePlan, agent string) bool {
 	ctx := e.deliveryContext()
 	// The descriptor, its credentials and the exact conversation are checked

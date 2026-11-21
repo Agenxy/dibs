@@ -810,8 +810,8 @@ func (e *Engine) wakeRoute(l *core.Agent) (cool time.Duration, byCommand, ok boo
 	if cool, by, ok, remote := e.remoteWakeRoute(l); remote {
 		return cool, by, ok
 	}
-	if antigravityHarness(l) {
-		return defaultPeerCooldown, true, e.antigravityBinding(l).hub.PID != 0
+	if e.antigravityBinding(l).hub.PID != 0 {
+		return defaultPeerCooldown, true, true
 	}
 	return e.configuredWakeRoute(l)
 }
@@ -1510,11 +1510,8 @@ func (e *Engine) PullOnlyNote(l *core.Agent) string {
 	if note, remote := e.remotePullOnlyNote(l); remote {
 		return note
 	}
-	if antigravityHarness(l) {
-		if e.antigravityBinding(l).hub.PID == 0 {
-			return "Stored in the mailbox for " + l.ID + ". " + antigravityUnbound
-		}
-		return ""
+	if note, handled := e.antigravityPullOnlyNote(l, harness); handled {
+		return note
 	}
 	return e.configuredPullOnlyNote(l, harness)
 }
