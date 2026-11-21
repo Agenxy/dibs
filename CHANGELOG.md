@@ -5,7 +5,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Coordinators can inspect an agent's binding, last wake attempt, and local
+  app delivery evidence with `diagnose_wake`. The tool returns metadata without
+  posting input or reading mail.
+
 ### Fixed
+
+- Recovery chooses an independent coordinator when several hold the role and
+  the first coordinator is the survivor.
 
 - A Claude session whose process carries a stale inherited `CLAUDE_PID` is
   no longer shown as closed while it is running. Its Dibs bridge looked for

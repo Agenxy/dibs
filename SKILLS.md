@@ -603,11 +603,16 @@ receiving native peer turns, another watcher adds no delivery guarantee.
   existing adoption approval and proves no ownership by name or session alone.
 - **`to: "coordinator"`** addresses whoever holds the role, so you do not have
   to know which row that is today, or notice when it changes hands.
+- **Coordinators can call `diagnose_wake(agent)`** to inspect a binding and its
+  last recorded wake, plus available local app evidence. The call provides
+  counts and timestamps without reading mail or sending a wake.
 - **Ask for a role, do not wait to be given one.** `send(to: <the human row>,
   type: "request", grant: "coordinator", body: why you need it)`. Their Approve
   IS the grant: nothing is left for them to run afterwards, and you hold the
   role the moment they press it. You still cannot promote yourself, because only
   they can press it, and `grant` is refused to any recipient but the human.
+  The person may approve more than one coordinator. Recovery still needs a
+  coordinator distinct from the survivor.
   `admin` is not offered here at all: it reads every agent's mail, so it stays
   something they do on their own machine. `grant: "relocate"` asks the same way
   for the one permission that is not a role: moving a closed agent to another
@@ -939,7 +944,7 @@ the recipient from starting, declining or finishing work.
 ## Protocol version: what is actually true today
 
 Dibs targets **MCP 2026-07-28** (stateless core) and also serves the legacy
-**2025-11-25** path. Both work, all 54 tools behave identically on either, and
+**2025-11-25** path. Both work, all 55 tools behave identically on either, and
 you need do nothing.
 
 **Configured Codex reaches 2026-07-28.** Re-measured 2026-10-03 on the app's
@@ -966,7 +971,7 @@ infrastructure advice every session is an agent people turn off.
 
 **What changes if your operator does enable it:** nothing you call. You gain a
 protocol with no `initialize` handshake, so a reconnect costs nothing, and list
-results carry `ttlMs`/`cacheScope` so your client can stop re-fetching 54 tool
+results carry `ttlMs`/`cacheScope` so your client can stop re-fetching 55 tool
 descriptions on every cold start. Your own tool calls are unchanged.
 
 ## Reading the room before you act

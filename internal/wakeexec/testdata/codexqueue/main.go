@@ -236,7 +236,9 @@ func main() {
 			ID     any    `json:"id"`
 			Method string `json:"method"`
 			Params struct {
-				Thread string `json:"threadId"`
+				Thread       string `json:"threadId"`
+				IncludeTurns bool   `json:"includeTurns"`
+				ItemsView    string `json:"itemsView"`
 			} `json:"params"`
 		}
 		if json.Unmarshal(s.Bytes(), &req) != nil {
@@ -269,6 +271,22 @@ func main() {
 				}
 			}
 			result = map[string]any{"data": selected, "nextCursor": nil}
+		} else if req.Method == "thread/read" {
+			if req.Params.IncludeTurns {
+				panic("wake probe requested transcript turns")
+			}
+			thread := req.Params.Thread
+			if reported := os.Getenv("DIBS_TEST_QUEUE_SOURCE_THREAD"); reported != "" {
+				thread = reported
+			}
+			result = map[string]any{"thread": map[string]any{
+				"id": thread, "source": os.Getenv("DIBS_TEST_QUEUE_THREAD_SOURCE"),
+			}}
+		} else if req.Method == "thread/turns/list" {
+			if req.Params.ItemsView != "notLoaded" {
+				panic("wake diagnostics requested turn content")
+			}
+			result = map[string]any{"data": []map[string]any{{"startedAt": 1795200000}}, "nextCursor": nil}
 		} else if req.Method != "initialize" {
 			os.Exit(4)
 		}
