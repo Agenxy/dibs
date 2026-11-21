@@ -5,11 +5,55 @@ package engine
 
 import (
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/harnessenv"
 )
+
+// A check-in or update can arrive through a short-lived shell bridge. Its
+// process placeholder alone is no evidence that the agent left the app thread.
+// Resolve that uncertainty at ingress. Explicit activation moves still record
+// their new session, and replay applies the alias that its own op recorded.
+func (e *Engine) preserveAppThreadOnAmbientCall(op *core.Op) {
+	if op.Kind != core.OpAckBoard && op.Kind != core.OpUpdate {
+		return
+	}
+	if op.SessionID != "" || !processSessionPlaceholder(op.SessionAlias) {
+		return
+	}
+	if op.Agent != nil && op.Agent.Surface != "" && op.Agent.Surface != harnessenv.ChatGPTApp {
+		return
+	}
+	a := e.state.AgentByToken(op.Token)
+	if a != nil && surfaceOf(a) == harnessenv.ChatGPTApp && looksLikeThreadID(a.CurrentSession) &&
+		!a.GuessedSession(a.CurrentSession) {
+		op.SessionAlias = ""
+	}
+}
+
+func processSessionPlaceholder(session string) bool {
+	if id, ok := strings.CutPrefix(session, "host-"); ok {
+		pid, err := strconv.Atoi(id)
+		return err == nil && pid > 1
+	}
+	rest, ok := strings.CutPrefix(session, "bridge-")
+	if !ok {
+		return false
+	}
+	id, random, hasRandom := strings.Cut(rest, "-")
+	pid, err := strconv.Atoi(id)
+	if err != nil || pid < 1 {
+		return false
+	}
+	if !hasRandom {
+		return true
+	}
+	_, err = strconv.ParseUint(random, 16, 64)
+	return len(random) == 16 && err == nil
+}
 
 // Joining the names one harness session goes by, because its two halves do not
 // agree on one and each can only say its own.

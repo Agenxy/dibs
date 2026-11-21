@@ -7,6 +7,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A ChatGPT agent keeps its stated app thread when a shell-launched Dibs bridge
+  checks in with only a temporary process identifier. When Codex supplies the
+  thread in the shell environment, the bridge carries it on the call.
 - A Claude agent whose Dibs bridge now finds its session (after the stale
   `CLAUDE_PID` fix) keeps the recovery credential it was handed before.
   Re-registering by name minted a new one instead, so an active agent was
