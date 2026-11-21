@@ -222,17 +222,17 @@ func (b toolSchemas) agentAndMailTools() []map[string]any {
 			"inputSchema": b.obj(map[string]any{"token": b.tok}, "token"),
 		},
 		{
-			"name": "claim_coordinator", "description": "Take the coordinator role: pass " +
-				"the contents of `coordinator.claim` from the daemon's data directory as " +
-				"`nonce`. Reading that file is the authorisation. It exists only while the board has no coordinator and " +
-				"the first claim consumes it, so if there already is one, ask them or ask " +
-				"the human (send with grant). You must be kind \"persistent\": the role " +
-				"outlives this process, and an ephemeral agent would take it away on " +
-				"sign_off. Coordinator can broadcast, force_release, and close a space.",
+			"name": "claim_coordinator", "description": "Bootstrap the first coordinator. A persistent agent passes " +
+				"the one-use coordinator.claim as nonce. To add another, send a request to human with grant:coordinator.",
 			"inputSchema": b.obj(map[string]any{
 				"token": b.tok,
 				"nonce": b.str("the contents of coordinator.claim from the daemon's data directory"),
 			}, "token", "nonce"),
+		},
+		{
+			"name": "diagnose_wake", "description": "Inspect an agent's binding, last wake and local app evidence. " +
+				"Coordinators only. Read-only.",
+			"inputSchema": b.obj(map[string]any{"token": b.tok, "agent": b.str("agent id or name")}, "token", "agent"),
 		},
 		{
 			"name": "recover_agent", "description": "Recover a lost seat into YOUR identity. Preview with dry_run:true; " +

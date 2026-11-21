@@ -64,6 +64,7 @@ type wakers struct {
 	queued        map[string]time.Time
 	queuedPrompt  map[string]time.Time
 	queueObserved map[string]queueWakeRecord
+	diagnostics   map[string]wakeDiagnostic
 	queueEpoch    uint64
 	last          map[string]time.Time
 	// Only actual failed delivery may arm one cause-fenced retry.
@@ -131,6 +132,7 @@ func (e *Engine) SetWakeCommands(cmds map[string]WakeCommand) {
 	}
 	e.wakers.fails = nil         // a changed configuration is what fixing a command looks like
 	e.wakers.queueObserved = nil // observations describe the previous route
+	e.wakers.diagnostics = nil
 	e.wakers.queueEpoch++
 	for harness, c := range cmds {
 		if len(c.Argv) == 0 {
@@ -1312,7 +1314,9 @@ func (e *Engine) runWake(plan wakePlan, agent string) bool {
 	return e.runWakePlan(&plan, agent)
 }
 
-func (e *Engine) runWakePlan(plan *wakePlan, agent string) bool {
+func (e *Engine) runWakePlan(plan *wakePlan, agent string) (accepted bool) {
+	started := time.Now()
+	defer func() { e.noteWakeDiagnostic(plan, agent, started, accepted) }()
 	if plan.host != "" {
 		return e.requestRemoteWakePlan(plan, agent, wakeTimeout+wakeGrace)
 	}

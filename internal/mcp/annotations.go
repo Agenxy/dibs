@@ -39,7 +39,7 @@ package mcp
 var readOnlyTools = map[string]bool{
 	"board": true, "read_space": true, "events_since": true, "await_events": true,
 	"mail_history": true, "all_mail": true, "get_blob": true, "spawned_agents": true,
-	"guard_path": true,
+	"guard_path": true, "diagnose_wake": true,
 }
 
 // destructiveTools remove or override another agent's state irreversibly.

@@ -75,7 +75,6 @@ func (e *Engine) queueWakeView(agent *core.Agent, now time.Time) core.Result {
 	}
 	r, found := e.wakers.queueObserved[agent.ID]
 	if !found || r.createdSerial != agent.CreatedSerial || r.thread != threadIDOf(agent) {
-		delete(e.wakers.queueObserved, agent.ID)
 		return v
 	}
 	o := r.observation

@@ -88,10 +88,12 @@ func withQueueRPC(ctx context.Context, binary string, read func(queueRPC)) {
 	if err != nil {
 		return
 	}
+	defer func() { _ = in.Close() }()
 	out, err := cmd.StdoutPipe()
 	if err != nil {
 		return
 	}
+	defer func() { _ = out.Close() }()
 	if err = cmd.Start(); err != nil {
 		return
 	}
@@ -221,6 +223,11 @@ func decodeQueuePage(raw json.RawMessage) (rows []queueItem, next *string, known
 	if json.Unmarshal(data, &rows) != nil {
 		return nil, nil, false
 	}
+	for _, row := range rows {
+		if row.ID == "" || row.Input == nil {
+			return nil, nil, false
+		}
+	}
 	return rows, next, true
 }
 
@@ -241,14 +248,12 @@ func (r queueRPC) receipt(thread string, expected time.Time) queueProbe {
 			return queueProbe{receipt: "observation_error"}
 		}
 		for _, row := range rows {
-			if row.ID == "" || row.Input == nil {
-				return queueProbe{receipt: "observation_error"}
-			}
-			if len(row.Input) != 1 || row.Input[0].Type != "text" || !isDibsWake(row.Input[0].Text) {
+			notice, ok := row.dibsNotice()
+			if !ok {
 				continue
 			}
 			count++
-			at, _ := noticeIssuedAt(row.Input[0].Text)
+			at, _ := noticeIssuedAt(notice)
 			found = queueProbe{issuedAt: at, itemID: row.ID}
 		}
 		if next == nil {
@@ -277,17 +282,22 @@ type queueItem struct {
 	} `json:"input"`
 }
 
+func (r queueItem) dibsNotice() (string, bool) {
+	if len(r.Input) != 1 || r.Input[0].Type != "text" {
+		return "", false
+	}
+	s := r.Input[0].Text
+	return s, isDibsWake(s)
+}
+
 func observeQueueItems(rows []queueItem) queueProbe {
 	var pending bool
 	var issued time.Time
 	legacyAge := false
 	for _, r := range rows {
-		if r.ID == "" || r.Input == nil {
-			return queueProbe{}
-		}
-		if len(r.Input) == 1 && r.Input[0].Type == "text" && isDibsWake(r.Input[0].Text) {
+		if notice, ok := r.dibsNotice(); ok {
 			pending = true
-			at, _ := noticeIssuedAt(r.Input[0].Text)
+			at, _ := noticeIssuedAt(notice)
 			legacyAge = legacyAge || at.IsZero()
 			if !at.IsZero() && (issued.IsZero() || at.Before(issued)) {
 				issued = at

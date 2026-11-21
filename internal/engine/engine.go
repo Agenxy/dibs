@@ -1910,9 +1910,8 @@ func (e *Engine) refuseClaimWhenCoordinatorExists(op *core.Op) error {
 		return &core.Error{
 			Code: "E_HAVE_COORDINATOR",
 			Msg:  "this board already has a coordinator (" + id + ")",
-			Hint: "ask them, or ask the human to move the role (send with grant). " +
-				"The claim file is the bootstrap for a board with NO coordinator, " +
-				"and is not a second way in once there is one",
+			Hint: "To add another coordinator, have the agent send a request to human with " +
+				"grant:coordinator. The claim file bootstraps the first coordinator.",
 		}
 	}
 	return nil

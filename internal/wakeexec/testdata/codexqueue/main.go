@@ -241,6 +241,7 @@ func main() {
 			Params struct {
 				Thread       string `json:"threadId"`
 				IncludeTurns bool   `json:"includeTurns"`
+				ItemsView    string `json:"itemsView"`
 			} `json:"params"`
 		}
 		if json.Unmarshal(s.Bytes(), &req) != nil {
@@ -294,6 +295,11 @@ func main() {
 				panic(err)
 			}
 			result = map[string]any{"thread": thread}
+		} else if req.Method == "thread/turns/list" {
+			if req.Params.ItemsView != "notLoaded" {
+				panic("wake diagnostics requested turn content")
+			}
+			result = map[string]any{"data": []map[string]any{{"startedAt": 1795200000}}, "nextCursor": nil}
 		} else if req.Method != "initialize" {
 			os.Exit(4)
 		}
