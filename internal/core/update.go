@@ -80,7 +80,8 @@ func (s *State) applyUpdate(l *Agent, op *Op) (Result, []Event, error) {
 		had := l.SessionID
 		aliases := len(l.SessionAliases) + len(l.GuessedSessions)
 		bound := l.hasSessionBinding()
-		l.SessionID, l.SessionAliases, l.GuessedSessions, l.CurrentSession = "", nil, nil, ""
+		l.SessionID, l.SessionAliases, l.GuessedSessions = "", nil, nil
+		l.setCurrentSession("")
 		// Honest even when this op DID change something else, which is the case
 		// the early return above deliberately does not cover.
 		res["session_released"] = bound

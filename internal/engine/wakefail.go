@@ -118,7 +118,7 @@ func (e *Engine) decorateWakeStatus(row map[string]any, l *core.Agent) {
 		row["wake"] = w
 	}
 	if e.localAntigravity(l) {
-		row["antigravity_wake_bound"] = e.antigravityBinding(l).hub.PID != 0
+		row["antigravity_wake_bound"] = e.antigravityBinding(l) != 0
 	}
 }
 
@@ -136,7 +136,7 @@ func (e *Engine) wakeStatusOf(agent string) string {
 		!invitedAgent(l) && harnessenv.PendingAppOpen(threadIDOf(l)) {
 		return "queued; waiting briefly for the background app open/restore lock"
 	}
-	if l := e.state.Agents[agent]; e.localAntigravity(l) && e.antigravityBinding(l).hub.PID == 0 {
+	if l := e.state.Agents[agent]; e.localAntigravity(l) && e.antigravityBinding(l) == 0 {
 		return antigravityUnbound
 	}
 	if invitedAgent(e.state.Agents[agent]) {

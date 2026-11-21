@@ -295,7 +295,7 @@ func (a *Agent) dropSession(sid string) {
 		a.SessionID = ""
 	}
 	if a.CurrentSession == sid {
-		a.CurrentSession = ""
+		a.setCurrentSession("")
 	}
 	a.SessionAliases = withoutString(a.SessionAliases, sid)
 	a.GuessedSessions = withoutString(a.GuessedSessions, sid)
@@ -544,7 +544,7 @@ func (a *Agent) currentFrom(op *Op, held bool) {
 	if op.SessionID == "" || !a.holdsSession(op.SessionID) {
 		return
 	}
-	a.CurrentSession = a.currentAfter(op, held)
+	a.setCurrentSession(a.currentAfter(op, held))
 }
 
 // currentAfter is the session that applying op would leave current, without
@@ -774,7 +774,7 @@ func (a *Agent) bindHarnessSession(sid string, v7 bool) string {
 	// Found by the pre-release review, round thirty-seven.
 	keepThread := a.holdsSession(sid) && !LooksLikeThreadID(sid) && LooksLikeThreadID(a.CurrentSession)
 	if !keepThread {
-		a.CurrentSession = sid
+		a.setCurrentSession(sid)
 	}
 	if sid == a.SessionID {
 		return ""

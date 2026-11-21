@@ -31,6 +31,10 @@ type descriptor struct {
 }
 
 func hubDescriptor(home string, hub Hub) (descriptor, bool) {
+	return selectHubDescriptor(home, func(d descriptor) bool { return d.PID == hub.PID })
+}
+
+func selectHubDescriptor(home string, accept func(descriptor) bool) (descriptor, bool) {
 	dir := filepath.Join(home, ".gemini", "antigravity", "daemon")
 	files, err := os.ReadDir(dir)
 	if err != nil {
@@ -45,7 +49,7 @@ func hubDescriptor(home string, hub Hub) (descriptor, bool) {
 			continue
 		}
 		d, ok := readDescriptor(filepath.Join(dir, entry.Name()))
-		if ok && d.PID == hub.PID && d.HTTPPort == port {
+		if ok && d.PID > 1 && d.HTTPPort == port && accept(d) {
 			if match.PID != 0 {
 				return descriptor{}, false
 			}
@@ -67,14 +71,14 @@ func readDescriptor(path string) (descriptor, bool) {
 	return d, ok
 }
 
-// Prepare verifies that the exact conversation still answers from its
-// original app hub. The returned delivery checks that the hub descriptor and
-// credentials still match before handing off the notice.
-func Prepare(ctx context.Context, hub Hub, conversation, cwd string) (func(context.Context, string) error, error) {
+// Prepare discovers the current desktop hub and verifies that the exact
+// conversation still answers. The returned delivery rechecks that the hub
+// and its credentials still match before handing off the notice.
+func Prepare(ctx context.Context, conversation, cwd string) (func(context.Context, string) error, error) {
 	if !core.LooksLikeThreadID(conversation) {
 		return nil, errors.New("invalid Antigravity conversation")
 	}
-	d, err := liveDescriptor(hub)
+	hub, d, err := currentDesktopDescriptor()
 	if err != nil {
 		return nil, err
 	}
@@ -132,6 +136,25 @@ func workspaceMatches(cwd string, uris []string) bool {
 		}
 	}
 	return false
+}
+
+func currentDesktopDescriptor() (Hub, descriptor, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return Hub{}, descriptor{}, err
+	}
+	var hub Hub
+	d, ok := selectHubDescriptor(home, func(d descriptor) bool {
+		candidate, live := desktopHub(d.PID)
+		if live {
+			hub = candidate
+		}
+		return live
+	})
+	if !ok {
+		return Hub{}, descriptor{}, errors.New("the Antigravity desktop does not have one verified live hub")
+	}
+	return hub, d, nil
 }
 
 func liveDescriptor(hub Hub) (descriptor, error) {

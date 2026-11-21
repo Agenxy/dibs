@@ -17,7 +17,7 @@ func nativeDeliveryAccepted(disposition string) bool {
 }
 
 func (p wakePlan) commandDelivery() bool {
-	return p.host != "" || len(p.argv) > 0 || p.antigravity.PID != 0
+	return p.host != "" || len(p.argv) > 0 || p.antigravity != 0
 }
 
 func (p wakePlan) retryAllowed() bool {
