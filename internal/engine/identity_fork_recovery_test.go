@@ -152,30 +152,54 @@ func TestRecoverAgentRefusesSignedOffForkSharingLivePID(t *testing.T) {
 	}
 }
 
+const sharedForkPID = 499
+
+type signedOffForkCase struct {
+	survivorPID                int
+	sourceStart, survivorStart int64
+	typed, refuse              bool
+}
+
 func TestSupportedMergeAcceptsSignedOffForkSharingLivePID(t *testing.T) {
-	for _, typed := range []bool{false, true} {
-		name := "direct"
-		if typed {
-			name = "typed approval"
-		}
-		t.Run(name, func(t *testing.T) { testSignedOffForkMerge(t, typed) })
+	t.Run("direct", func(t *testing.T) {
+		testSignedOffForkMerge(t, signedOffForkCase{survivorPID: sharedForkPID})
+	})
+	t.Run("typed approval", func(t *testing.T) {
+		testSignedOffForkMerge(t, signedOffForkCase{survivorPID: sharedForkPID, typed: true})
+	})
+}
+
+func TestSupportedMergeRefusesSignedOffForkWithoutSharedLiveProcess(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		args signedOffForkCase
+	}{
+		{"separate PID", signedOffForkCase{survivorPID: 501, refuse: true}},
+		{"different recorded starts", signedOffForkCase{survivorPID: sharedForkPID, sourceStart: 1, refuse: true}},
+		{"both recorded starts are stale", signedOffForkCase{survivorPID: sharedForkPID, sourceStart: 1, survivorStart: 1, refuse: true}},
+	} {
+		t.Run(test.name, func(t *testing.T) { testSignedOffForkMerge(t, test.args) })
 	}
 }
 
-func testSignedOffForkMerge(t *testing.T, typed bool) {
+type mergeForkProber struct{ deadProber }
+
+func (mergeForkProber) StartMillis(int) (int64, bool) { return 5000, true }
+
+func testSignedOffForkMerge(t *testing.T, args signedOffForkCase) {
 	t.Helper()
-	e, ctx := runContactReplayEngine(t, core.NewState("closed-fork", core.DefaultLimits()), &memLedger{}, nil)
+	e, ctx := newEconomyNoteEngine(t, mergeForkProber{})
 	_, human, err := e.HumanAgent(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	register := func(nonce string) core.Result {
+	register := func(nonce string, pid int, start int64) core.Result {
 		return contactReplayDo(t, e, ctx, &core.Op{
-			Kind: core.OpRegister, Name: "worker", Nonce: nonce, PID: 499,
+			Kind: core.OpRegister, Name: "worker", Nonce: nonce, PID: pid, ProcStart: start,
 			Agent: &core.AgentInfo{HostID: e.HostID(), Harness: "test"},
 		})
 	}
-	source, survivor := register("source-credential"), register("survivor-credential")
+	source, survivor := register("source-credential", sharedForkPID, args.sourceStart), register("survivor-credential", args.survivorPID, args.survivorStart)
 	from, into := source["agent_id"].(string), survivor["agent_id"].(string)
 	if from == into {
 		t.Fatal("setup: there is no fork to merge")
@@ -190,16 +214,24 @@ func testSignedOffForkMerge(t *testing.T, typed bool) {
 	contactReplayDo(t, e, ctx, &core.Op{Kind: core.OpSignOff, Token: source["token"].(string)})
 	onLoop(t, ctx, e, func(s *core.State) {
 		a, b := s.Agents[from], s.Agents[into]
-		if a.Status != core.StatusClosed || a.PID == 0 || a.PID != b.PID {
-			t.Fatal("setup: closed source no longer has the survivor's live PID")
+		if a.Status != core.StatusClosed || a.PID != sharedForkPID || b.PID != args.survivorPID ||
+			!e.prober.Alive(a.PID) || b.ProcStart == 0 {
+			t.Fatal("setup: expected signed-off source and recorded running processes")
 		}
 	})
 	plan, err := e.MergeAgents(ctx, human, from, into, MergeOptions{DryRun: true})
+	if args.refuse {
+		var fault *core.Error
+		if !errors.As(err, &fault) || fault.Code != "E_AGENT_LIVE" {
+			t.Fatalf("closed fork preview must still refuse an unshared live process, got %v", err)
+		}
+		return
+	}
 	if err != nil {
 		t.Fatal("closed fork preview refused because its bridge is still running:", err)
 	}
 	fence := plan["fence"].(string)
-	if typed {
+	if args.typed {
 		contactReplayDo(t, e, ctx, &core.Op{Kind: core.OpAckBoard, Token: human})
 		request := contactReplayDo(t, e, ctx, &core.Op{
 			Kind: core.OpSendMessage, Token: sender, To: "human", MsgType: core.MsgRequest, Body: "merge the signed-off fork",

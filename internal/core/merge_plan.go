@@ -38,10 +38,20 @@ type MergeEvidence struct {
 	ProcStart int64  `json:"proc_start"`
 }
 
-// AllowsMerge accepts a signed-off row independently of the liveness of a
-// process it once shared. Other rows still need a verified absent process.
-func (e MergeEvidence) AllowsMerge(source *Agent) bool {
-	return e.Known && !e.Live || (source != nil && source.Status == StatusClosed)
+// AllowsMerge requires observed absence or a signed-off source whose
+// verified running process is also the survivor's recorded process.
+func (e MergeEvidence) AllowsMerge(source, survivor *Agent) bool {
+	if e.Known && !e.Live {
+		return true
+	}
+	return e.Known && e.Live && source != nil && source.Status == StatusClosed &&
+		e.Source == source.ID && e.Created == source.CreatedSerial &&
+		e.matchesProcess(source) && e.matchesProcess(survivor)
+}
+
+func (e MergeEvidence) matchesProcess(a *Agent) bool {
+	return a != nil && e.Host != "" && e.Host == agentHostID(a) &&
+		e.PID > 1 && e.PID == a.PID && e.ProcStart > 0 && e.ProcStart == a.ProcStart
 }
 
 // MergeEligibility is the ONE coordinator rule, including its human-readable
@@ -52,12 +62,12 @@ func (s *State) MergeEligibility(from, into string, evidence MergeEvidence) erro
 	}
 	a, b := s.Agents[from], s.Agents[into]
 	if !sameMergeIdentity(a, b) || len(a.Slots) != 0 || a.hasSessionBinding() || a.CurrentSession != "" ||
-		!b.LastCoordination.After(a.LastCoordination) || !evidence.AllowsMerge(a) {
+		!b.LastCoordination.After(a.LastCoordination) || !evidence.AllowsMerge(a, b) {
 		return errf("E_MERGE_NEEDS_HUMAN",
 			"use the preview's human_request: send(to:\"human\", type:\"request\", merge:{from:\""+from+
 				"\", into:\""+into+"\", fence:<preview fence>}, body:...); their Approve performs the merge",
 			"coordinator merge requires matching known name/host/harness/surface/kind, "+
-				"an unbound fork without declarations that has signed off or has no live process, "+
+				"an unbound fork without declarations and no independently running process, "+
 				"and a more recently coordinating survivor")
 	}
 	return nil

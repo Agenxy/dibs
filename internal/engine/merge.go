@@ -68,7 +68,7 @@ func (e *Engine) mergeLocked(token, from, into string, options []MergeOptions) (
 		return nil, err
 	}
 	evidence := e.mergeEvidence(from)
-	if err := e.mergeProcessSafe(from, evidence); err != nil {
+	if err := e.mergeProcessSafe(from, into, evidence); err != nil {
 		return nil, err
 	}
 	plan := e.mergePreview(a, token, from, into, evidence, opt)
@@ -162,17 +162,21 @@ func (e *Engine) mergeEvidence(from string) core.MergeEvidence {
 	if a.Agent != nil {
 		evidence.Host = a.Agent.HostID
 	}
-	if a.Status == core.StatusClosed {
-		return evidence // process ownership is no longer relevant to the retired row
-	}
 	// Snapshot, binding and kernel observation are taken on this same writer
 	// trip. A reused/live PID is conservatively live, never guessed absent.
 	if peer, ok := peerSessionIn(e.peerSnapshot(), sessionsOf(a)); ok && peer.PID != 0 {
 		evidence.Known, evidence.Live = true, true
+		evidence.PID = peer.PID
 	} else if a.PID == 0 {
 		evidence.Known = true
 	} else if evidence.Host != "" && e.ownsHost(a) && e.prober != nil {
 		evidence.Known, evidence.Live = e.mergePIDObservation(a.PID)
+	}
+	// On a signed-off row, a live PID alone cannot show that the running
+	// bridge is the same process both rows registered. Verify its start.
+	if a.Status == core.StatusClosed && evidence.Live &&
+		(evidence.PID != a.PID || !e.ownsHost(a) || !e.sameProcess(a)) {
+		evidence.ProcStart = 0
 	}
 	return evidence
 }
@@ -186,12 +190,12 @@ func (e *Engine) mergePIDObservation(pid int) (known, live bool) {
 	return live, live // legacy false does not distinguish absence from an error
 }
 
-func (e *Engine) mergeProcessSafe(from string, evidence core.MergeEvidence) error {
-	if evidence.AllowsMerge(e.state.Agents[from]) {
+func (e *Engine) mergeProcessSafe(from, into string, evidence core.MergeEvidence) error {
+	if evidence.AllowsMerge(e.state.Agents[from], e.state.Agents[into]) {
 		return nil
 	}
 	return mergeProcessRefusal(from,
-		"sign off the source or stop its process first; unknown process evidence does not establish absence")
+		"stop the source process first; a signed-off fork can merge while it shares the survivor's verified bridge")
 }
 
 func mergeProcessRefusal(from, hint string) error {
