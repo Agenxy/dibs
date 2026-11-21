@@ -77,9 +77,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - ChatGPT contact alerts wait while the app thread shows recent activity.
-  Dibs confirms the original queue item is still pending before asking the
-  person to open the thread. Local contact text uses the daemon's friendly
-  machine name.
+  Dibs checks the original queue item and the thread's activity before asking
+  the person to open it. If repeated checks remain inconclusive after the
+  notice is 30 minutes old, the alert explains the uncertainty. Local contact
+  text uses the daemon's friendly machine name.
 - Concurrent native deliveries retain their in-flight state until the last
   delivery exits. An earlier exit no longer marks the agent's turn ended,
   changes contact liveness or starts a premature arrival re-check.

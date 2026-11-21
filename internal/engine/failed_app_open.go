@@ -14,6 +14,8 @@ import (
 	"github.com/agenxy/dibs/internal/wakeexec"
 )
 
+const queuedContactUnknownAfter = 30 * time.Minute
+
 // A queued input is not a usable wake route after its app-open step failed.
 // The callback can arrive after a read, rebind or app-incarnation change.
 // Keep the original item fence, but do not use freshCommandKeys: acceptance
@@ -29,10 +31,11 @@ func (p wakePlan) strandedQueue() bool {
 // At most one unresolved recovery window or app query per agent. A due
 // window is checked by the existing sweep without touching the ledger.
 type queuedOpenContact struct {
-	plan     wakePlan
-	due      time.Time
-	failed   bool
-	checking bool
+	plan         wakePlan
+	due          time.Time
+	unknownSince time.Time
+	failed       bool
+	checking     bool
 }
 
 func sameQueuedOpen(a, b wakePlan) bool {
@@ -73,7 +76,7 @@ func (e *Engine) contactAfterQueuedOpen(plan wakePlan, agent string, failed bool
 		now := time.Now()
 		if failed && !plan.canObserveQueuedContact() {
 			delete(e.queuedOpenContacts, agent)
-			e.escalateQueuedOpen(plan, l, true, now)
+			e.escalateQueuedOpen(plan, l, true, "", now)
 			return nil
 		}
 		if e.queuedOpenContacts == nil {
@@ -141,7 +144,7 @@ func (e *Engine) checkQueuedOpenContact(agent string, pending queuedOpenContact,
 	}
 	if !pending.plan.canObserveQueuedContact() {
 		delete(e.queuedOpenContacts, agent)
-		e.escalateQueuedOpen(pending.plan, l, pending.failed, now)
+		e.escalateQueuedOpen(pending.plan, l, pending.failed, "", now)
 		return
 	}
 	if !e.queuedContactHasMail(pending.plan, agent) {
@@ -171,25 +174,36 @@ func (e *Engine) finishQueuedOpenContact(
 		return
 	}
 	l := e.state.Agents[agent]
-	if !e.queuedOpenCurrent(pending.plan, l) {
+	if !e.queuedOpenCurrent(pending.plan, l) || !e.queuedContactHasMail(pending.plan, agent) {
 		delete(e.queuedOpenContacts, agent)
 		return
 	}
+	var reason core.ContactReason
 	switch evidence {
 	case wakeexec.QueueContactGone:
 		delete(e.queuedOpenContacts, agent)
+		return
 	case wakeexec.QueueContactReady:
-		delete(e.queuedOpenContacts, agent)
-		e.escalateQueuedOpen(pending.plan, l, pending.failed, now)
-	default:
-		if !e.queuedContactHasMail(pending.plan, agent) {
-			delete(e.queuedOpenContacts, agent)
-			return
+		// The quiet thread and matching item authorize the usual alert below.
+	case wakeexec.QueueContactActive:
+		pending.unknownSince = time.Time{}
+	case wakeexec.QueueContactWait:
+		if pending.unknownSince.IsZero() {
+			pending.unknownSince = now
 		}
-		pending.checking = false
-		pending.due = now.Add(contactActivityGrace)
-		e.queuedOpenContacts[agent] = pending
+		if now.Sub(plan.queueOutcome.IssuedAt) >= queuedContactUnknownAfter &&
+			now.Sub(pending.unknownSince) >= contactActivityGrace {
+			reason = core.ContactQueueStateUnknown
+		}
 	}
+	if evidence == wakeexec.QueueContactReady || reason != "" {
+		delete(e.queuedOpenContacts, agent)
+		e.escalateQueuedOpen(pending.plan, l, pending.failed, reason, now)
+		return
+	}
+	pending.checking = false
+	pending.due = now.Add(contactActivityGrace)
+	e.queuedOpenContacts[agent] = pending
 }
 
 func (e *Engine) queuedContactHasMail(plan wakePlan, agent string) bool {
@@ -206,16 +220,25 @@ func queuedContactMail(plan wakePlan, agent string, m *core.Message) bool {
 		slices.Contains(plan.commandKeys, "mail:"+noticeKey(agent, m.Serial))
 }
 
-func (e *Engine) escalateQueuedOpen(plan wakePlan, l *core.Agent, failed bool, now time.Time) {
+func (e *Engine) escalateQueuedOpen(
+	plan wakePlan, l *core.Agent, failed bool, reason core.ContactReason, now time.Time,
+) {
 	for _, m := range e.state.Inbox(l.ID) {
 		if queuedContactMail(plan, l.ID, m) {
-			e.escalateAppOpenMessage(l, m, failed, now)
+			e.escalateAppOpenMessage(l, m, failed, reason, now)
 		}
 	}
 }
 
-func (e *Engine) escalateAppOpenMessage(l *core.Agent, m *core.Message, failed bool, now time.Time) {
+func (e *Engine) escalateAppOpenMessage(
+	l *core.Agent, m *core.Message, failed bool, diagnosis core.ContactReason, now time.Time,
+) {
 	op := &core.Op{Kind: core.OpContactEscalate, MsgSerial: m.Serial}
+	if diagnosis != "" {
+		op.Kind = core.OpContactDiagnosed
+		op.AgentID = l.ID
+		op.ContactReason = diagnosis
+	}
 	if err := e.state.Admit(op); err != nil {
 		return
 	}

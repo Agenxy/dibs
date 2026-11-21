@@ -188,7 +188,7 @@ func TestStrandedQueueOpenHasRecoveryWindow(t *testing.T) {
 	testexec.PrepareExecutable(t, exec.Command(binary, "--version"))
 	for _, mode := range []string{
 		"fresh", "recent-open-then-read", "recent-open-unread", "retry-unread",
-		"repeat-while-waiting", "active-then-idle", "queue-consumed",
+		"repeat-while-waiting", "active-then-idle", "queue-consumed", "inconclusive",
 	} {
 		t.Run(mode, func(t *testing.T) {
 			dir := t.TempDir()
@@ -231,11 +231,15 @@ func TestStrandedQueueOpenHasRecoveryWindow(t *testing.T) {
 			if json.Unmarshal(raw, &rows) != nil || len(rows) != 1 {
 				t.Fatalf("setup queue: %s", raw)
 			}
+			var issued time.Time
 			if mode != "fresh" {
 				// Only the external queue and open-receipt fixtures are aged.
 				// The second send still enters through the real admission path.
-				at := time.Now().Add(-20 * time.Minute).UTC()
-				rows[0]["input"] = []map[string]string{{"type": "text", "text": "Dibs: request notice issued at " + at.Format(time.RFC3339) + ". It may already be handled."}}
+				issued = time.Now().Add(-20 * time.Minute).UTC().Truncate(time.Second)
+				if mode == "inconclusive" {
+					issued = time.Now().Add(-12 * time.Minute).UTC().Truncate(time.Second)
+				}
+				rows[0]["input"] = []map[string]string{{"type": "text", "text": "Dibs: request notice issued at " + issued.Format(time.RFC3339) + ". It may already be handled."}}
 				raw, err = json.Marshal(rows)
 				if err != nil {
 					t.Fatal(err)
@@ -294,9 +298,15 @@ func TestStrandedQueueOpenHasRecoveryWindow(t *testing.T) {
 				got, err := e.query(ctx, func() core.Result {
 					m := e.state.Messages[serial]
 					c := e.state.Contacts[m.ContactEscalatedAt]
+					hint := ""
+					if c != nil {
+						n, _ := e.contactNotice(c)
+						hint = n.Contact.OpenHint
+					}
 					return core.Result{
 						"contact": m.ContactEscalatedAt, "resolved": c != nil && !c.ResolvedAt.IsZero(),
 						"sender_notice": fmt.Sprint(e.takeNotices("sender")),
+						"contacts":      len(e.state.Contacts), "hint": hint,
 					}
 				})
 				if err != nil {
@@ -345,6 +355,29 @@ func TestStrandedQueueOpenHasRecoveryWindow(t *testing.T) {
 				}
 			}
 			due := after.Add(harnessenv.AppOpenRetryAfter + time.Second)
+			if mode == "inconclusive" {
+				path := filepath.Join(os.Getenv("CODEX_HOME"), "thread-observation.json")
+				if err := os.WriteFile(path, []byte(`{"updatedAt":0}`), 0o600); err != nil {
+					t.Fatal("setup: set inconclusive app evidence:", err)
+				}
+				for _, beforeCap := range []time.Time{due, issued.Add(29 * time.Minute)} {
+					sweep(beforeCap)
+					if got := snapshot(); got["contact"] != uint64(0) {
+						t.Fatalf("paged before the inconclusive-evidence cap: %v", got)
+					}
+				}
+				sweep(issued.Add(31 * time.Minute))
+				got := snapshot()
+				if got["contact"] == uint64(0) || got["contacts"] != 1 ||
+					!strings.Contains(got["hint"].(string), "could not confirm the thread's state") {
+					t.Fatalf("cap should raise one honest contact alert: %v", got)
+				}
+				sweep(issued.Add(34 * time.Minute))
+				if got := snapshot(); got["contacts"] != 1 {
+					t.Fatalf("persistent uncertainty raised another contact alert: %v", got)
+				}
+				return
+			}
 			if mode == "queue-consumed" {
 				if err := os.WriteFile(queue, []byte("[]"), 0o600); err != nil {
 					t.Fatal("setup: consume the queued item:", err)

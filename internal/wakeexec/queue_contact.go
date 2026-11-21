@@ -10,15 +10,16 @@ import (
 )
 
 // QueueContactEvidence is the read-only verdict for one dated Dibs queue
-// item. Inconclusive app or queue evidence does not authorize an alert.
+// item. Unknown evidence is separate from confirmed activity.
 type QueueContactEvidence uint8
 
-// QueueContactWait defers an alert, Gone ends the candidate, and Ready
-// confirms a quiet thread with the original queue item still pending.
+// QueueContactWait is inconclusive. Gone ends the candidate, Ready confirms
+// a quiet thread with the original item still pending, and Active defers it.
 const (
 	QueueContactWait QueueContactEvidence = iota
 	QueueContactGone
 	QueueContactReady
+	QueueContactActive
 )
 
 // ObserveQueueContact checks the exact retained notice and the thread's
@@ -31,22 +32,22 @@ func ObserveQueueContact(
 	evidence := QueueContactWait
 	withQueueRPC(ctx, binary, func(rpc queueRPC) {
 		p := rpc.receipt(thread, issuedAt.Truncate(time.Second))
-		switch p.receipt {
-		case "missing_or_dispatched", "wrong_timestamp":
+		if p.receipt == "missing_or_dispatched" || p.receipt == "wrong_timestamp" {
 			evidence = QueueContactGone
-		case "matched":
-			if rpc.threadQuiet(thread, idleBefore) {
-				evidence = QueueContactReady
-			}
+			return
+		}
+		threadEvidence := rpc.threadContactEvidence(thread, idleBefore)
+		if threadEvidence == QueueContactActive || p.receipt == "matched" {
+			evidence = threadEvidence
 		}
 	})
 	return evidence
 }
 
-func (r queueRPC) threadQuiet(thread string, idleBefore time.Time) bool {
+func (r queueRPC) threadContactEvidence(thread string, idleBefore time.Time) QueueContactEvidence {
 	raw, err := r.call(32, "thread/read", map[string]any{"threadId": thread, "includeTurns": false})
 	if err != nil {
-		return false
+		return QueueContactWait
 	}
 	var result struct {
 		Thread struct {
@@ -57,12 +58,19 @@ func (r queueRPC) threadQuiet(thread string, idleBefore time.Time) bool {
 			} `json:"status"`
 		} `json:"thread"`
 	}
-	if json.Unmarshal(raw, &result) != nil || result.Thread.ID != thread || result.Thread.UpdatedAt <= 0 {
-		return false
+	if json.Unmarshal(raw, &result) != nil || result.Thread.ID != thread {
+		return QueueContactWait
 	}
 	// A separate read-only app server reports notLoaded even while the
 	// desktop is working. The shared update timestamp carries the activity
 	// in that case. An explicit active status always keeps the alert waiting.
 	status := result.Thread.Status.Type
-	return (status == "idle" || status == "notLoaded") && result.Thread.UpdatedAt <= idleBefore.Unix()
+	updatedAt := result.Thread.UpdatedAt
+	if status == "active" || (updatedAt > 0 && updatedAt > idleBefore.Unix()) {
+		return QueueContactActive
+	}
+	if updatedAt > 0 && (status == "idle" || status == "notLoaded") {
+		return QueueContactReady
+	}
+	return QueueContactWait
 }
