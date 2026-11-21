@@ -65,3 +65,41 @@ func TestMissingRolloutIsGoneThroughRunCommandsObserved(t *testing.T) {
 		})
 	}
 }
+
+func TestExecThreadIsGoneBeforeQueueAdmission(t *testing.T) {
+	binary := filepath.Join(t.TempDir(), "codex")
+	if b, err := exec.Command("go", "build", "-o", binary, "./testdata/codexqueue").CombinedOutput(); err != nil {
+		t.Fatalf("setup: fixture build %v: %s", err, b)
+	}
+	testexec.PrepareExecutable(t, exec.Command(binary, "--version"))
+	for _, tc := range []struct {
+		name, source, reported string
+		gone                   bool
+	}{
+		{name: "one-shot exec", source: "exec", gone: true},
+		{name: "app thread", source: "appServer"},
+		{name: "unknown source"},
+		{name: "mismatched identity", source: "exec", reported: "different-thread"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("CODEX_HOME", home)
+			t.Setenv("DIBS_DIR", t.TempDir())
+			t.Setenv("DIBS_TEST_QUEUE_THREAD_SOURCE", tc.source)
+			t.Setenv("DIBS_TEST_QUEUE_SOURCE_THREAD", tc.reported)
+			queue := []string{binary, "queue", "--thread", "fixture-thread", "--message", Compose("request")}
+			var observation QueueObservation
+			result := RunCommandsObserved(queue, []string{binary, "fallback-marker"}, "worker", "", 5*time.Second,
+				time.Second, func(o QueueObservation) { observation = o })
+			if got := observation.ThreadState == "gone"; got != tc.gone || result.OK == tc.gone {
+				t.Fatalf("thread refused=%v, want %v: result=%+v observation=%+v", got, tc.gone, result, observation)
+			}
+			if _, err := os.Stat(filepath.Join(home, "pending.json")); tc.gone && !os.IsNotExist(err) || !tc.gone && err != nil {
+				t.Fatalf("queue write disagreed with the thread verdict: %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(home, "fallback-ran")); !os.IsNotExist(err) {
+				t.Fatal("unexpected fallback command")
+			}
+		})
+	}
+}

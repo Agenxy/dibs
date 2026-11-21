@@ -1607,11 +1607,13 @@ retained, failed, not_attempted or unconfirmed; `pending` is pending or unknown.
 from this command's local admission. An unavailable probe may expose
 `retained_receipt_at` and `receipt_age_seconds`, dating only the retained fallback
 receipt, with notice age unknown; legacy notice age also stays unknown.
-`thread_state` is normally unknown because the supported queue list interface does not
-report the app's running turn. A queue command reporting `no rollout found for thread id`
-for its exact target instead sets it to `gone`: automatic retry and later-message
-queue attempts stop for that agent/thread binding, and unread eligible mail uses
-the existing contact-alert path. The recipient and pending senders also receive
+`thread_state` is normally unknown. A metadata-only `thread/read` reply for the
+exact target can supply `thread_source`. Source `exec` identifies a one-shot
+CLI run and sets `thread_state` to `gone` before queue admission. A queue
+command reporting `no rollout found for thread id` for its exact target also
+sets it to `gone`. Both observations stop automatic retry and later-message
+queue attempts for that agent/thread binding. Unread eligible mail uses the
+existing contact-alert path. The recipient and pending senders also receive
 ordinary daemon-authored notify mail, retained and replayed under normal mailbox
 rules. No participant bodies are copied into these warnings. They identify the
 failed binding and corrective `register`/`bind_session` calls; they do not consume

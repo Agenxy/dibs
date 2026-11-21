@@ -82,6 +82,9 @@ func (e *Engine) queueWakeView(agent *core.Agent, now time.Time) core.Result {
 	if o.ThreadState != "" {
 		v["thread_state"] = o.ThreadState
 	}
+	if o.ThreadSource != "" {
+		v["thread_source"] = o.ThreadSource
+	}
 	if o.Delivery != "" {
 		v["native_delivery"] = o.Delivery
 	}
@@ -141,7 +144,8 @@ func queueWakeNote(v core.Result) string {
 		return ""
 	}
 	if v["thread_state"] == "gone" {
-		return "The app thread is gone (no rollout found). No automatic retry will run for this binding. " +
+		source, _ := v["thread_source"].(string)
+		return wakeexec.QueueUnavailableReason(source) + " No automatic retry will run for this binding. " +
 			"Mail remains in the mailbox; bind this agent from an existing app thread."
 	}
 	if delivery, ok := v["native_delivery"].(string); ok {

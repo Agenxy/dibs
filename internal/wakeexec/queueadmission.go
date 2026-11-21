@@ -84,17 +84,11 @@ func runQueuedCommandContext(
 	}
 	defer release()
 	generation := reconnectGeneration(thread)
-	pending, known := false, false
-	if nativeQueueRoute(argv) {
-		observation.ProbeBinary = argv[0]
-		probe := observeQueueDetail(argv[0], thread)
-		pending, known = probe.pending, probe.known
-		observation.IssuedAt = probe.issuedAt
-		if !probe.issuedAt.IsZero() {
-			observation.AgeSource = "notice"
-		}
+	probe := observeQueueAdmission(argv, thread, &observation)
+	if observation.ThreadState == "gone" {
+		return queueCommandOutcome{observation: observation}
 	}
-	observation.At = time.Now().UTC()
+	pending, known := probe.pending, probe.known
 	if known && pending {
 		// A real app item wins over inference, including after a prompt,
 		// receipt expiry or reconnect. Retain it for an unavailable next probe.
@@ -140,6 +134,23 @@ func runQueuedCommandContext(
 	// pending=true from exit zero, even when the pre-admission list was empty.
 	observation.At = time.Now().UTC()
 	return queueCommandOutcome{ok: ok, out: out, observation: observation}
+}
+
+func observeQueueAdmission(argv []string, thread string, observation *QueueObservation) queueProbe {
+	var probe queueProbe
+	if nativeQueueRoute(argv) {
+		observation.ProbeBinary = argv[0]
+		probe = observeQueueDetail(argv[0], thread)
+	}
+	observation.At = time.Now().UTC()
+	observation.ThreadSource = probe.threadSource
+	if probe.threadSource == QueueThreadExecSource {
+		observation.ThreadState = "gone"
+	}
+	if !probe.issuedAt.IsZero() {
+		observation.IssuedAt, observation.AgeSource = probe.issuedAt, "notice"
+	}
+	return probe
 }
 
 func observeRetainedQueueCommand(

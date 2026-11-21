@@ -239,7 +239,8 @@ func main() {
 			ID     any    `json:"id"`
 			Method string `json:"method"`
 			Params struct {
-				Thread string `json:"threadId"`
+				Thread       string `json:"threadId"`
+				IncludeTurns bool   `json:"includeTurns"`
 			} `json:"params"`
 		}
 		if json.Unmarshal(s.Bytes(), &req) != nil {
@@ -273,9 +274,16 @@ func main() {
 			}
 			result = map[string]any{"data": selected, "nextCursor": nil}
 		} else if req.Method == "thread/read" {
+			if req.Params.IncludeTurns {
+				panic("wake probe requested transcript turns")
+			}
 			thread := map[string]any{
 				"id": req.Params.Thread, "updatedAt": time.Now().Add(-10 * time.Minute).Unix(),
 				"status": map[string]string{"type": "notLoaded"},
+				"source": os.Getenv("DIBS_TEST_QUEUE_THREAD_SOURCE"),
+			}
+			if reported := os.Getenv("DIBS_TEST_QUEUE_SOURCE_THREAD"); reported != "" {
+				thread["id"] = reported
 			}
 			override, err := os.ReadFile(filepath.Join(os.Getenv("CODEX_HOME"), "thread-observation.json"))
 			if err == nil {

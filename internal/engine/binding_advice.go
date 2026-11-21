@@ -23,24 +23,28 @@ const cloudBindingReason = "Bound to a cloud-environment Codex thread; Dibs can 
 // On the writer: a cloud surface is explicit provenance; gone is the queue's
 // refusal for this exact local binding. Missing files alone establish neither.
 func (e *Engine) bindingNeedsRecovery(l *core.Agent) bool {
+	return e.bindingRecoveryReason(l) != ""
+}
+
+func (e *Engine) bindingRecoveryReason(l *core.Agent) string {
 	if surfaceOf(l) == harnessenv.ChatGPTCloudExec {
-		return true
+		return cloudBindingReason
 	}
 	e.wakers.mu.Lock()
 	defer e.wakers.mu.Unlock()
-	return e.queueThreadGoneLocked(l)
+	return e.queueUnavailableReasonLocked(l)
 }
 
 type bindingAdviceTarget struct {
-	created uint64
-	thread  string
-	gone    bool
-	cloud   bool
+	created    uint64
+	thread     string
+	goneReason string
+	cloud      bool
 }
 
 // Advisory reply evidence, outside the writer: ownership discovery sends no
 // input and never opens the app. Neither absent files nor a failed probe proves
-// a thread is gone. Only the queue's explicit refusal can say that.
+// a thread is gone. A queue refusal or verified exec provenance can establish it.
 func (e *Engine) addBindingAdvice(ctx context.Context, op *core.Op, res core.Result) {
 	if op == nil || res == nil || res["superseded"] == true {
 		return
@@ -74,8 +78,8 @@ func (e *Engine) addBindingAdvice(ctx context.Context, op *core.Op, res core.Res
 	}
 	status, message := "unverified", "Registration/binding succeeded, but wake delivery is unverified: "+
 		"no local rollout was found and app ownership was not confirmed. This does not prove the thread is gone."
-	if current.gone {
-		status, message = "gone", "The queue reported no rollout found for this binding. "+
+	if current.goneReason != "" {
+		status, message = "gone", current.goneReason+" "+
 			"No automatic retry will run; mail remains in the mailbox."
 	}
 	if current.cloud {
@@ -87,7 +91,7 @@ func (e *Engine) addBindingAdvice(ctx context.Context, op *core.Op, res core.Res
 }
 
 func bindingEvidenceVerified(ctx context.Context, target bindingAdviceTarget) bool {
-	if target.gone || target.cloud {
+	if target.goneReason != "" || target.cloud {
 		return false
 	}
 	if harnessenv.CodexRolloutPresent(target.thread) {
@@ -108,7 +112,7 @@ func (e *Engine) bindingAdviceTarget(token string) bindingAdviceTarget {
 		return bindingAdviceTarget{}
 	}
 	e.wakers.mu.Lock()
-	gone := e.queueThreadGoneLocked(l)
+	goneReason := e.queueUnavailableReasonLocked(l)
 	e.wakers.mu.Unlock()
-	return bindingAdviceTarget{l.CreatedSerial, threadIDOf(l), gone, surfaceOf(l) == harnessenv.ChatGPTCloudExec}
+	return bindingAdviceTarget{l.CreatedSerial, threadIDOf(l), goneReason, surfaceOf(l) == harnessenv.ChatGPTCloudExec}
 }

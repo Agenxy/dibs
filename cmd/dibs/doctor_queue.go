@@ -3,6 +3,8 @@
 
 package main
 
+import "github.com/agenxy/dibs/internal/wakeexec"
+
 type appBindingDiagnostic struct {
 	Agent  string `json:"agent"`
 	Reason string `json:"reason"`
@@ -23,7 +25,8 @@ func checkAppBindings(b *boardView, warn fixFn) {
 }
 
 type boardQueueWake struct {
-	ThreadState string `json:"thread_state"`
+	ThreadState  string `json:"thread_state"`
+	ThreadSource string `json:"thread_source"`
 }
 
 func goneQueueWake(a boardAgent) bool {
@@ -33,7 +36,7 @@ func goneQueueWake(a boardAgent) bool {
 func goneQueueRepair(b *boardView) string {
 	for _, a := range b.Agents {
 		if a.Kind == "persistent" && wakeable(a) && goneQueueWake(a) {
-			return "the app reports no rollout for this thread, so retries cannot reach it. " +
+			return wakeexec.QueueUnavailableReason(a.QueueWake.ThreadSource) + " Retries cannot reach it. " +
 				"Bind the same agent from an existing app thread through its Dibs plugin; its mailbox is retained"
 		}
 	}

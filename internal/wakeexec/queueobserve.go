@@ -64,8 +64,13 @@ func observeQueueDetail(binary, thread string, receiptAt ...time.Time) queueProb
 			probe = rpc.receipt(thread, receiptAt[0])
 			return
 		}
+		source := rpc.threadSource(thread)
+		if source == QueueThreadExecSource {
+			probe = queueProbe{threadSource: source}
+			return
+		}
 		pending, known := rpc.list(thread)
-		probe = queueProbe{pending: pending, known: known, issuedAt: rpc.issuedAt}
+		probe = queueProbe{pending: pending, known: known, issuedAt: rpc.issuedAt, threadSource: source}
 	})
 	return probe
 }
@@ -139,6 +144,28 @@ func (r queueRPC) initialize() error {
 		return err
 	}
 	return r.enc.Encode(map[string]any{"method": "initialized", "params": map[string]any{}})
+}
+
+func (r queueRPC) threadSource(thread string) string {
+	raw, err := r.call(90, "thread/read", map[string]any{"threadId": thread, "includeTurns": false})
+	if err != nil {
+		return ""
+	}
+	var result struct {
+		Thread struct {
+			ID     string `json:"id"`
+			Source string `json:"source"`
+		} `json:"thread"`
+	}
+	if json.Unmarshal(raw, &result) != nil || result.Thread.ID != thread {
+		return ""
+	}
+	switch result.Thread.Source {
+	case QueueThreadExecSource, "appServer", "cli", "vscode":
+		return result.Thread.Source
+	default:
+		return ""
+	}
 }
 
 func (r *queueRPC) list(thread string) (pending, known bool) {

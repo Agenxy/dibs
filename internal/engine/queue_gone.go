@@ -12,10 +12,11 @@ import (
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/harnessenv"
+	"github.com/agenxy/dibs/internal/wakeexec"
 )
 
-// Caller holds wakers.mu. A missing rollout describes one local target, not
-// the agent forever. New bindings, incarnations and wake configurations re-arm it.
+// Caller holds wakers.mu. A queue refusal describes one local target. New
+// bindings, incarnations and wake configurations re-arm delivery.
 func (e *Engine) queueThreadGoneLocked(l *core.Agent) bool {
 	if l == nil || l.Retired() || e.remoteHostOf(l) != "" {
 		return false
@@ -23,6 +24,13 @@ func (e *Engine) queueThreadGoneLocked(l *core.Agent) bool {
 	r, ok := e.wakers.queueObserved[l.ID]
 	return ok && r.createdSerial == l.CreatedSerial && r.thread == threadIDOf(l) &&
 		r.observation.ThreadState == "gone"
+}
+
+func (e *Engine) queueUnavailableReasonLocked(l *core.Agent) string {
+	if !e.queueThreadGoneLocked(l) {
+		return ""
+	}
+	return wakeexec.QueueUnavailableReason(e.wakers.queueObserved[l.ID].observation.ThreadSource)
 }
 
 func (e *Engine) recordNonRetryableWake(plan wakePlan) {
@@ -90,13 +98,14 @@ func (e *Engine) mailGoneBinding(l *core.Agent, reporter string, plan wakePlan, 
 		ids = append(ids, id)
 	}
 	slices.Sort(ids)
+	reason := wakeexec.QueueUnavailableReason(plan.queueOutcome.ThreadSource)
 	for _, id := range ids {
-		body := fmt.Sprintf("The board cannot wake %q: the app queue reported no rollout found for its bound thread. "+
-			"No automatic retry will run for this binding. Unread mail remains in its mailbox. %s", l.ID, bindingRemedy)
+		body := fmt.Sprintf("The board cannot wake %q. %s "+
+			"No automatic retry will run for this binding. Unread mail remains in its mailbox. %s", l.ID, reason, bindingRemedy)
 		if id == l.ID {
-			body = fmt.Sprintf("Your bound app thread %s could not be woken: the app queue reported no rollout found. "+
+			body = fmt.Sprintf("Your bound thread %s could not be woken. %s "+
 				"No automatic retry will run for this binding. Your unread mail remains in your mailbox. %s",
-				plan.thread, bindingRemedy)
+				plan.thread, reason, bindingRemedy)
 		}
 		if surfaceOf(l) == harnessenv.ChatGPTCloudExec {
 			body += " " + cloudBindingReason
