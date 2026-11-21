@@ -461,9 +461,22 @@ func (s *State) applyVouchChild(l *Agent, op *Op) (Result, []Event, error) {
 // against, where the standing coordinator was an agent nobody could log back
 // into. Addressing the role has to reach somebody who can answer.
 func (s *State) CoordinatorID() string {
+	return s.coordinatorID(nil)
+}
+
+// RecoveryCoordinatorID selects an independent coordinator using the same
+// ordering as the coordinator address.
+func (s *State) RecoveryCoordinatorID(survivor *Agent) string {
+	return s.coordinatorID(survivor)
+}
+
+func (s *State) coordinatorID(survivor *Agent) string {
 	best, bestLive := "", false
 	for _, l := range s.Agents {
 		if l.Status == StatusClosed || l.Status == StatusArchived || !l.IsCoordinator() {
+			continue
+		}
+		if survivor != nil && (l.ID == survivor.ID || !l.OtherHands(survivor)) {
 			continue
 		}
 		live := l.Status == StatusActive

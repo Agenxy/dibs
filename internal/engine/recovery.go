@@ -48,7 +48,12 @@ func (e *Engine) recoverLocked(token, from string, opt MergeOptions) (core.Resul
 		return nil, err
 	}
 	from = op.To
-	lead := e.state.Agents[e.state.CoordinatorID()]
+	lead := e.state.Agents[e.state.RecoveryCoordinatorID(survivor)]
+	if lead == nil {
+		// The decision gives the existing corrective hint when a holder
+		// exists but cannot supply independent consent.
+		lead = e.state.Agents[e.state.CoordinatorID()]
+	}
 	if lead == nil {
 		return nil, core.ErrNoCoordinator
 	}

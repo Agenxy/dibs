@@ -5,6 +5,9 @@ package wakeexec
 
 import "time"
 
+// QueueThreadExecSource denotes a one-shot Codex CLI run.
+const QueueThreadExecSource = "exec"
+
 // QueueObservation distinguishes command admission from a read-only queue
 // observation. Neither is evidence of a started turn or consumed mail.
 // IssuedAt dates a timestamped notice or this command's admission attempt.

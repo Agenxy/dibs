@@ -58,9 +58,22 @@ func observeQueue(binary, thread string) (pending, known bool) {
 func observeQueueDetail(binary, thread string, receiptAt ...time.Time) queueProbe {
 	ctx, cancel := context.WithTimeout(context.Background(), queueProbeTimeout)
 	defer cancel()
+	var probe queueProbe
+	withQueueRPC(ctx, binary, func(rpc queueRPC) {
+		if len(receiptAt) == 1 {
+			probe = rpc.receipt(thread, receiptAt[0])
+			return
+		}
+		pending, known := rpc.list(thread)
+		probe = queueProbe{pending: pending, known: known, issuedAt: rpc.issuedAt}
+	})
+	return probe
+}
+
+func withQueueRPC(ctx context.Context, binary string, read func(queueRPC)) {
 	argv := []string{binary, "app-server", "--listen", "stdio://"}
 	if !boardconfig.ReadOnlyQueueProbe(argv) {
-		return queueProbe{}
+		return
 	}
 	// #nosec G204 G702 -- binary is the operator's queue executable; all probe
 	// arguments are fixed literals, separately refused by ReadOnlyQueueProbe.
@@ -68,27 +81,25 @@ func observeQueueDetail(binary, thread string, receiptAt ...time.Time) queueProb
 	cmd.WaitDelay = 100 * time.Millisecond
 	in, err := cmd.StdinPipe()
 	if err != nil {
-		return queueProbe{}
+		return
 	}
+	defer func() { _ = in.Close() }()
 	out, err := cmd.StdoutPipe()
 	if err != nil {
-		return queueProbe{}
+		return
 	}
+	defer func() { _ = out.Close() }()
 	if err = cmd.Start(); err != nil {
-		return queueProbe{}
+		return
 	}
 	stop := context.AfterFunc(ctx, func() { _ = out.Close() })
 	defer stop()
 	defer func() { _ = in.Close(); _ = cmd.Process.Kill(); _ = cmd.Wait() }()
 	rpc := queueRPC{enc: json.NewEncoder(in), dec: json.NewDecoder(io.LimitReader(out, 4<<20))}
 	if err = rpc.initialize(); err != nil {
-		return queueProbe{}
+		return
 	}
-	if len(receiptAt) == 1 {
-		return rpc.receipt(thread, receiptAt[0])
-	}
-	pending, known := rpc.list(thread)
-	return queueProbe{pending: pending, known: known, issuedAt: rpc.issuedAt}
+	read(rpc)
 }
 
 type queueRPC struct {
@@ -130,6 +141,28 @@ func (r queueRPC) initialize() error {
 		return err
 	}
 	return r.enc.Encode(map[string]any{"method": "initialized", "params": map[string]any{}})
+}
+
+func (r queueRPC) threadSource(thread string) string {
+	raw, err := r.call(90, "thread/read", map[string]any{"threadId": thread, "includeTurns": false})
+	if err != nil {
+		return ""
+	}
+	var result struct {
+		Thread struct {
+			ID     string `json:"id"`
+			Source string `json:"source"`
+		} `json:"thread"`
+	}
+	if json.Unmarshal(raw, &result) != nil || result.Thread.ID != thread {
+		return ""
+	}
+	switch result.Thread.Source {
+	case QueueThreadExecSource, "appServer", "cli", "vscode":
+		return result.Thread.Source
+	default:
+		return ""
+	}
 }
 
 func (r *queueRPC) list(thread string) (pending, known bool) {
@@ -185,6 +218,11 @@ func decodeQueuePage(raw json.RawMessage) (rows []queueItem, next *string, known
 	if json.Unmarshal(data, &rows) != nil {
 		return nil, nil, false
 	}
+	for _, row := range rows {
+		if row.ID == "" || row.Input == nil {
+			return nil, nil, false
+		}
+	}
 	return rows, next, true
 }
 
@@ -205,14 +243,12 @@ func (r queueRPC) receipt(thread string, expected time.Time) queueProbe {
 			return queueProbe{receipt: "observation_error"}
 		}
 		for _, row := range rows {
-			if row.ID == "" || row.Input == nil {
-				return queueProbe{receipt: "observation_error"}
-			}
-			if len(row.Input) != 1 || row.Input[0].Type != "text" || !isDibsWake(row.Input[0].Text) {
+			notice, ok := row.dibsNotice()
+			if !ok {
 				continue
 			}
 			count++
-			at, _ := noticeIssuedAt(row.Input[0].Text)
+			at, _ := noticeIssuedAt(notice)
 			found = queueProbe{issuedAt: at, itemID: row.ID}
 		}
 		if next == nil {
@@ -241,17 +277,22 @@ type queueItem struct {
 	} `json:"input"`
 }
 
+func (r queueItem) dibsNotice() (string, bool) {
+	if len(r.Input) != 1 || r.Input[0].Type != "text" {
+		return "", false
+	}
+	s := r.Input[0].Text
+	return s, isDibsWake(s)
+}
+
 func observeQueueItems(rows []queueItem) queueProbe {
 	var pending bool
 	var issued time.Time
 	legacyAge := false
 	for _, r := range rows {
-		if r.ID == "" || r.Input == nil {
-			return queueProbe{}
-		}
-		if len(r.Input) == 1 && r.Input[0].Type == "text" && isDibsWake(r.Input[0].Text) {
+		if notice, ok := r.dibsNotice(); ok {
 			pending = true
-			at, _ := noticeIssuedAt(r.Input[0].Text)
+			at, _ := noticeIssuedAt(notice)
 			legacyAge = legacyAge || at.IsZero()
 			if !at.IsZero() && (issued.IsZero() || at.Before(issued)) {
 				issued = at

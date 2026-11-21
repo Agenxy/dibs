@@ -1846,9 +1846,24 @@ an unfinished request and maps its tracked task to `cancelled`, with a factual
 result and optional replacement reference. Task listeners publish this terminal
 snapshot and stop following it. Neither operation stops an agent process.
 
-**Tools (54).** All take `token` except `register`, `resume`,
+**Tools (55).** All take `token` except `register`, `resume`,
 `hook_poll` and `guard_path` (the last two are lifecycle-hook surfaces and have
 no token to give: see SECURITY.md).
+
+`diagnose_wake(token, agent)` requires a coordinator on either MCP version.
+It reports the agent's current harness binding and the latest wake route and
+outcome observed by this daemon, when retained. The person may grant the
+coordinator role to multiple agents. A survivor's recovery request is sent to
+an eligible independent coordinator when one exists.
+
+For a configured local ChatGPT app route the tool also reads thread source,
+app queue counts, the oldest dated Dibs item, the tracked Dibs receipt, the
+latest persisted app turn timestamp, and native IPC availability and ownership.
+Native IPC discovery and the last delivery result are separate observations.
+Unavailable fields are omitted, and foreign-host app metadata is unavailable.
+The tool does not send or consume mail, wake a thread, return input bodies, or
+record authenticated contact. A binding change during app observation requires
+a fresh call.
 
 `mail_history(token, since_serial=0, limit=25, include_bodies=false, cursor?)`
 returns chronological committed audit units for the caller's sender/recipient
@@ -2490,7 +2505,7 @@ binaries (`dibd` and `dibs`) both CGO_ENABLED=0 and byte-reproducible.
 ledgered wake transitions; ephemeral + persistent agents; resume; awareness gate
 per activation; mailbox (full state machine, read_mail, op_id dedup,
 dormant-recipient semantics); claims (§9 matrix); bounded liveness with bounded
-restart grace; limits incl. state GC; MCP 2026-07-28 dual-version surface (54 tools);
+restart grace; limits incl. state GC; MCP 2026-07-28 dual-version surface (55 tools);
 local access secret + Origin validation; CLI (board/messages/log/verify/mcp-config);
 SSE web board; static binaries (`dibd` + `dibs`, no cgo, no runtime deps).
 
