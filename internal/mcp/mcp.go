@@ -1230,12 +1230,12 @@ func (s *Server) run(
 	op := &core.Op{Token: a.Token}
 	// The harness's own name for this thread, if it volunteered one.
 	//
-	// Codex puts `threadId` in _meta on every tools/call, unconditionally and
-	// for every server, and the value is the id `codex resume` takes. So the
+	// Codex puts `threadId` in _meta on calls through its native MCP client.
+	// Its value is the harness thread identifier. So the
 	// stable identity arrives on the connection the agent already holds: no
 	// hook, no directory guess, no second process. It was missed for a day
 	// because every inspection of _meta looked at the handshake, where it is
-	// absent, rather than at tool calls, where it is always present.
+	// absent. A shell-launched bridge is a separate client.
 	//
 	// Carried as a session ALIAS because that is what it is: another name for
 	// the session this agent is running in, alongside the `host-<ppid>` the

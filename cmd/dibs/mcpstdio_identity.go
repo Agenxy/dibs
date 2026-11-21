@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/mcp"
 	"github.com/agenxy/dibs/internal/paths"
@@ -141,6 +142,9 @@ func enrichRegister(line []byte) []byte {
 			// as the caller's own User-Agent, and as a path named for
 			// another agent: what the caller states about ITSELF stands.
 			warnIfThisLooksRemote(meta)
+			if !remoteSession {
+				stampLocalBridgeSurface(params, meta)
+			}
 			if _, stated := meta["com.dibs/session"].(string); !stated {
 				// A remote conversation's session is the one IT names. This
 				// bridge's own session id belongs to the machine running the
@@ -169,14 +173,6 @@ func enrichRegister(line []byte) []byte {
 			// machine. See mcpstdio_remote.go.
 			if hid := hostID(); hid != "" && !remoteSession {
 				meta[mcp.HostMetaKey] = hid
-			}
-			// WHICH APP, from this bridge's own ancestry, never from the model.
-			// See mcp.SurfaceMetaKey. Not for a relayed caller: its app is on
-			// the other end of the tunnel, not above this process.
-			if !remoteSession {
-				if surf := bridgeSurface(); surf != "" {
-					meta[mcp.SurfaceMetaKey] = surf
-				}
 			}
 			if remoteSession {
 				// Stating "nowhere" rather than leaving it blank, because the
@@ -382,6 +378,33 @@ func enrichRegister(line []byte) []byte {
 	return out
 }
 
+var appShellThreadOwner = harnessenv.AppShellThreadOwner
+
+// stampLocalBridgeSurface takes the app from the process tree. Native Codex
+// calls supply threadId themselves. A bridge started by a shell tool sees no
+// app MCP metadata, but that shell inherits Codex's own thread identifier.
+func stampLocalBridgeSurface(params, meta map[string]any) {
+	surface := bridgeSurface()
+	if surface == "" {
+		return
+	}
+	meta[mcp.SurfaceMetaKey] = surface
+	if surface != harnessenv.ChatGPTApp {
+		return
+	}
+	thread, _ := meta["threadId"].(string)
+	session, _ := meta[mcp.SessionMetaKey].(string)
+	args, _ := params["arguments"].(map[string]any)
+	explicit, _ := args["session_id"].(string)
+	if strings.TrimSpace(thread) != "" || strings.TrimSpace(session) != "" || strings.TrimSpace(explicit) != "" {
+		return
+	}
+	if id := strings.TrimSpace(os.Getenv("CODEX_THREAD_ID")); core.LooksLikeThreadID(id) &&
+		appShellThreadOwner(os.Getpid()) {
+		meta["threadId"] = id
+	}
+}
+
 // Only Claude's published identity is stable. The parent placeholder is
 // evidence for one call while the sidecar is absent or being rewritten.
 var knownSessionID atomic.Pointer[string]
@@ -398,8 +421,8 @@ func sessionID() string {
 }
 
 // servedThread is the harness thread this bridge is running inside, as the
-// harness names it on every tool call (`_meta.threadId`, which Codex sends
-// unconditionally). It is what the self-wake stream says it serves, in
+// harness names it on native tool calls (`_meta.threadId`). It is what the
+// self-wake stream says it serves, in
 // preference to the process-derived session id: the daemon measures a
 // thread against the agent's current session, and a bridge left behind by
 // an identity the hooks moved to another thread must not go on waking the

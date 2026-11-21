@@ -111,6 +111,9 @@ func TestMain(m *testing.M) {
 	if err := os.Setenv("CODEX_HOME", dir); err != nil {
 		panic(err)
 	}
+	if err := os.Unsetenv("CODEX_THREAD_ID"); err != nil {
+		panic(err)
+	}
 	isolateCLIServiceHome(dir)
 	harnessenv.RealShower = harnessenv.Shower{
 		Holds: func(string) bool { panic("unfaked app access in dibs CLI test") },

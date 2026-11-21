@@ -568,9 +568,10 @@ func (e *Engine) execWithReceipt(
 	// same board without consulting a children map that no longer exists.
 	// See sessionjoin.go for why this is the register path and not hook_poll.
 	// A harness that NAMED its own thread is believed over anything inferred,
-	// once it is checked. Codex sends `threadId` on every tool call, and it is
+	// once it is checked. Native Codex calls send `threadId`, and it is
 	// the id `codex resume` takes, so this is the identity rather than a
 	// correlation. Vetted, not trusted: see mayClaimSession.
+	e.preserveAppThreadOnAmbientCall(op)
 	if claimed := op.SessionAlias; claimed != "" {
 		host := e.hostOfOp(op)
 		ok, takenFrom := e.mayClaimSession(claimed, op.Token, op.Nonce, host)
