@@ -83,11 +83,6 @@ func (e *Engine) resetCommandIncarnation(agent, epoch string) {
 }
 
 func (e *Engine) pruneCommandEpochs() {
-	for agent := range e.antigravity {
-		if e.antigravityBinding(e.state.Agents[agent]).hub.PID == 0 {
-			delete(e.antigravity, agent)
-		}
-	}
 	for agent := range e.commandEpoch {
 		if row := e.state.Agents[agent]; row == nil || row.Retired() {
 			delete(e.commandEpoch, agent)

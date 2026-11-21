@@ -17,7 +17,6 @@ import (
 type antigravityCallKey struct{}
 
 type antigravityCall struct {
-	hub          antigravity.Hub
 	conversation string
 }
 
@@ -38,7 +37,7 @@ func (s *Server) antigravityCall(ctx context.Context, params json.RawMessage) *a
 		metaHostless(params) || !slices.Contains(s.eng.SelfHostIDs(), resolveHostID(ctx, params)) {
 		return nil
 	}
-	hub, ok := verifyAntigravityBridge(peer)
+	_, ok := verifyAntigravityBridge(peer)
 	if !ok {
 		return nil
 	}
@@ -47,7 +46,7 @@ func (s *Server) antigravityCall(ctx context.Context, params json.RawMessage) *a
 	if !core.LooksLikeThreadID(conversation) {
 		conversation = ""
 	}
-	return &antigravityCall{hub: hub, conversation: conversation}
+	return &antigravityCall{conversation: conversation}
 }
 
 func (s *Server) prepareSessionForTool(ctx context.Context, token string, params json.RawMessage) context.Context {
@@ -75,7 +74,7 @@ func (s *Server) bindAntigravityCall(ctx context.Context, tool, token string, re
 		return
 	}
 	if token != "" {
-		s.eng.BindAntigravity(ctx, token, app.hub, app.conversation)
+		s.eng.BindAntigravity(ctx, token, app.conversation)
 	}
 }
 

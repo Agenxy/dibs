@@ -21,6 +21,10 @@ snapshot feature. Once a board retains either, roll back only to a build
 that supports them. Older daemons refuse the record or snapshot rather than
 forgetting that a sender was already notified.
 
+Persisted Antigravity wake enrollment adds the `antigravity_binding` ledger
+record and the `antigravity-wake-binding/v1` snapshot feature. Once a board
+retains either, roll back only to a build that supports both.
+
 ## macOS signing identity and deliberate rotation
 
 The release certificate root is pinned in

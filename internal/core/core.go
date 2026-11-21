@@ -441,6 +441,9 @@ type Agent struct {
 	// that was not the one holding the mail, and the daemon logged a
 	// successful wake. Found by the pre-release review, round eight.
 	CurrentSession string `json:"current_session,omitempty"`
+	// AntigravityBindingSerial records which ledger entry verified CurrentSession
+	// through its local desktop bridge. A changed session or host clears it.
+	AntigravityBindingSerial uint64 `json:"antigravity_binding_serial,omitempty"`
 	// RegisteredFrom is the session the register that minted this row arrived
 	// from, kept even when that session is somebody else's and so was never
 	// bound here as an alias. It answers one question and it is the adoption

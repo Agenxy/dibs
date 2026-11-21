@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agenxy/dibs/internal/antigravity"
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/wakeexec"
@@ -810,7 +809,7 @@ func (e *Engine) wakeRoute(l *core.Agent) (cool time.Duration, byCommand, ok boo
 	if cool, by, ok, remote := e.remoteWakeRoute(l); remote {
 		return cool, by, ok
 	}
-	if e.antigravityBinding(l).hub.PID != 0 {
+	if e.antigravityBinding(l) != 0 {
 		return defaultPeerCooldown, true, true
 	}
 	return e.configuredWakeRoute(l)
@@ -1063,10 +1062,10 @@ func (e *Engine) buildWakePlan(
 			},
 		}, true
 	}
-	if binding := e.antigravityBinding(l); binding.hub.PID != 0 {
+	if binding := e.antigravityBinding(l); binding != 0 {
 		return wakePlan{
-			antigravity: binding.hub, fields: f, thread: binding.conversation,
-			session: binding.conversation, createdSerial: binding.created, commandEpoch: binding.epoch,
+			antigravity: binding, fields: f, thread: l.CurrentSession,
+			session: l.CurrentSession, createdSerial: l.CreatedSerial, commandEpoch: e.commandEpoch[l.ID],
 			agent: l.ID, cwd: cwdOf(l), kind: kind, cooldown: cooldown,
 		}, true
 	}
@@ -1153,7 +1152,7 @@ func wakeSessionOf(l *core.Agent) string {
 // rules were each paid for by a bug, and a second delivery path that skipped
 // them would re-buy every one.
 type wakePlan struct {
-	antigravity    antigravity.Hub
+	antigravity    uint64
 	fields         wakeexec.Fields            // private native notice facts, never a message body
 	nativeOutcome  *wakeexec.NativeOutcome    // shared with attempt's retry decision
 	queueOutcome   *wakeexec.QueueObservation // shared with the command attempt's retry decision
@@ -1317,7 +1316,7 @@ func (e *Engine) runWakePlan(plan *wakePlan, agent string) bool {
 	if plan.host != "" {
 		return e.requestRemoteWakePlan(plan, agent, wakeTimeout+wakeGrace)
 	}
-	if plan.antigravity.PID != 0 {
+	if plan.antigravity != 0 {
 		return e.runAntigravityWake(plan, agent)
 	}
 	if len(plan.argv) > 0 {

@@ -692,6 +692,7 @@ func TestOpKindStringsAreFrozen(t *testing.T) {
 		// package rather than trusting this. Found by the pre-release review.
 		"OpActivityCheckpoint":    {core.OpActivityCheckpoint, "activity_checkpoint"},
 		"OpBindSession":           {core.OpBindSession, "bind_session"},
+		"OpAntigravityBinding":    {core.OpAntigravityBinding, "antigravity_binding"},
 		"OpRefreshSessionProcess": {core.OpRefreshSessionProcess, "refresh_session_process"},
 		"OpRespond":               {core.OpRespond, "respond"},
 		"OpAckMessage":            {core.OpAckMessage, "ack"},

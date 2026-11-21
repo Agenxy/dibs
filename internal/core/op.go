@@ -559,3 +559,15 @@ type Op struct {
 	// the pre-release review.
 	IndexSupplied bool `json:"index_supplied,omitempty"`
 }
+
+// finish assigns the op's serial and stamps events.
+func (s *State) finish(evs *[]Event, now time.Time) uint64 {
+	s.Serial++
+	s.mailIdx = nil // see mailIndex: no derived view survives an op
+	for i := range *evs {
+		(*evs)[i].Serial = s.Serial
+		(*evs)[i].Sub = i
+		(*evs)[i].TS = now
+	}
+	return s.Serial
+}

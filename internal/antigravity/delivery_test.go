@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 )
 
@@ -71,5 +72,36 @@ func TestAntigravityWorkspaceUsesAbsoluteLocalPathBoundaries(t *testing.T) {
 		workspaceMatches(root+"-sibling", uris) ||
 		workspaceMatches(root, []string{"file://other-host" + root}) {
 		t.Fatal("workspace verification crossed a host or project boundary")
+	}
+}
+
+func TestSelectHubDescriptorRequiresOneLiveCandidate(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, ".gemini", "antigravity", "daemon")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	write := func(pid, port int) {
+		t.Helper()
+		data, err := json.Marshal(descriptor{PID: pid, HTTPPort: port, Token: "fixture"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "hub_"+strconv.Itoa(port)+".json"), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(42, 38198)
+	write(43, 38199)
+	onlyCurrent := func(d descriptor) bool { return d.PID == 43 }
+	if d, ok := selectHubDescriptor(home, onlyCurrent); !ok || d.HTTPPort != 38199 {
+		t.Fatal("stale descriptor obscured the live desktop hub")
+	}
+	if _, ok := selectHubDescriptor(home, func(descriptor) bool { return false }); ok {
+		t.Fatal("selected a descriptor without a live desktop")
+	}
+	write(43, 38200)
+	if _, ok := selectHubDescriptor(home, onlyCurrent); ok {
+		t.Fatal("selected an ambiguous live descriptor")
 	}
 }

@@ -30,7 +30,8 @@ func scopeOf(kind string) (mailScope, bool) {
 		return scopePoint, true
 	case core.OpMarkDelivered:
 		return scopeListed, true
-	case core.OpActivityCheckpoint, core.OpAppRestartObserved, core.OpBindSession, core.OpRefreshSessionProcess,
+	case core.OpActivityCheckpoint, core.OpAntigravityBinding, core.OpAppRestartObserved,
+		core.OpBindSession, core.OpRefreshSessionProcess,
 		core.OpClaim, core.OpClaimCoordinator, core.OpClearSlot,
 		core.OpContactNotified, core.OpContactResolved, core.OpForceRelease,
 		core.OpGrantPermission, core.OpGrantRole, core.OpHeartbeat,

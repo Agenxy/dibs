@@ -58,7 +58,9 @@ func TestSnapshotGoFieldNamesAreFrozen(t *testing.T) {
 	// restores 82f7dcda94fcbe20; old snapshots decode an empty reason.
 	// Finished execution notices add only Message.FinishedWakeNotice. Removing
 	// it restores fb5263b37eb09620. Old snapshots have no notice marker.
-	const want = "sha256:4c79f8fd8ce73852"
+	// Antigravity wake enrollment adds only Agent.AntigravityBindingSerial.
+	// Removing it restores 4c79f8fd8ce73852. Older rows have no app attestation.
+	const want = "sha256:3176dc27fe99709a"
 	if got := fingerprint(names); got != want {
 		sorted := make([]string, 0, len(names))
 		for n := range names {

@@ -41,6 +41,7 @@ const (
 	// together. A distinct kind prevents an older reader from treating this
 	// as a primary binding or an acknowledgement of the board.
 	OpRefreshSessionProcess = "refresh_session_process"
+	OpAntigravityBinding    = "antigravity_binding"
 	// OpOutcomeRead records that the SENDER of a message has read its verdict.
 	// Written by the engine when read_mail hands an asker a terminal message
 	// of its own, for the reason mark_delivered is written when a recipient
@@ -246,6 +247,9 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		res, evs = s.applyAckBoard(l, op, now)
 	case OpUpdate:
 		res, evs, err = s.applyUpdate(l, op)
+	case OpAntigravityBinding:
+		res, evs := s.applyAntigravityBinding(l, op.SessionID, now)
+		return res, evs, nil
 	case OpRefreshSessionProcess:
 		s.dropTakenSession(op, l)
 		l.bindHarnessSessionAs(op.SessionID, false, op.V7Semantics)
@@ -292,7 +296,7 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		// holder; an explicit bind that left it a guess confirmed nothing.
 		// Found by the pre-release review, round seven.
 		l.GuessedSessions = withoutString(l.GuessedSessions, op.SessionID)
-		l.CurrentSession = op.SessionID // reported as bound, so it is the one to wake
+		l.setCurrentSession(op.SessionID) // reported as bound, so it is the one to wake
 		res = Result{"ok": true, "agent": l.ID, "session_id": l.SessionID, "bound": true}
 		evs = []Event{{Type: "agent.updated", Agent: l.ID}}
 	case OpClaimCoordinator:
@@ -391,18 +395,6 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		s.recordTrafficV1(l.ID, op.To, op.MsgType, now)
 	}
 	return res, evs, nil
-}
-
-// finish assigns the op's serial and stamps events.
-func (s *State) finish(evs *[]Event, now time.Time) uint64 {
-	s.Serial++
-	s.mailIdx = nil // see mailIndex: no derived view survives an op
-	for i := range *evs {
-		(*evs)[i].Serial = s.Serial
-		(*evs)[i].Sub = i
-		(*evs)[i].TS = now
-	}
-	return s.Serial
 }
 
 func dedupKey(agent, id string) string { return agent + "\x00" + id }
@@ -1038,6 +1030,7 @@ func (a *Agent) mergeIdentity(in *AgentInfo) []string {
 	// title change.
 	if in.HostID != "" && in.HostID != a.Agent.HostID {
 		a.Agent.HostID = in.HostID
+		a.AntigravityBindingSerial = 0
 		changed = append(changed, "host")
 	}
 	if in.CWD != "" {

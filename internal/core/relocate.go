@@ -158,6 +158,7 @@ func (s *State) applyRelocate(by *Agent, op *Op, now time.Time) (Result, []Event
 		from = l.Agent.Surface
 	}
 	l.Relocated = &Relocation{By: who, From: from, To: op.Mode, At: now}
+	l.AntigravityBindingSerial = 0
 	evs := []Event{{
 		Type: "agent.relocated", Agent: l.ID,
 		Data: map[string]any{"by": who, "from": from, "to": op.Mode},

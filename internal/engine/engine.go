@@ -103,12 +103,11 @@ type Engine struct {
 	socketTurns        map[string]socketTurn
 	socketEpochs       map[string]socketEpoch
 	socketFailures     map[string]socketFailure
-	commandEpoch       map[string]string             // receiving app incarnation, writer-owned
-	antigravity        map[string]antigravityBinding // verified app conversation, writer-owned
-	commandWritten     map[string]bool               // per original command item, derived and writer-owned
-	nativeUnknown      map[string]bool               // unconfirmed input in this receiving incarnation
-	socketWritten      map[string]bool               // per original item; not a receiver acceptance receipt
-	writtenPrunedAt    time.Time                     // last full prune of the three receipt maps above
+	commandEpoch       map[string]string // receiving app incarnation, writer-owned
+	commandWritten     map[string]bool   // per original command item, derived and writer-owned
+	nativeUnknown      map[string]bool   // unconfirmed input in this receiving incarnation
+	socketWritten      map[string]bool   // per original item; not a receiver acceptance receipt
+	writtenPrunedAt    time.Time         // last full prune of the three receipt maps above
 	wakeBursts         map[string]*wakeBurst
 	wakeContext        context.Context
 	noticePresented    map[string]time.Time
