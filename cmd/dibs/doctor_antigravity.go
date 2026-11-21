@@ -23,3 +23,14 @@ func reportAntigravityCoverage(b *boardView, ok reportFn, warn fixFn) {
 func countsForConfiguredWake(a boardAgent) bool {
 	return a.Kind == "persistent" && a.AntigravityWakeBound == nil && wakeable(a)
 }
+
+func disabledWakeRoutes(b *boardView) string {
+	if b != nil {
+		for _, a := range b.Agents {
+			if a.AntigravityWakeBound != nil && *a.AntigravityWakeBound {
+				return "socket and configured command wakes are disabled"
+			}
+		}
+	}
+	return "no wake route at all: [wake] sockets = false and no [wake.exec] command"
+}

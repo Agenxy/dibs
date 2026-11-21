@@ -6,12 +6,13 @@ package procinfo
 import (
 	"io"
 	"os"
-	"os/exec"
 	"testing"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 func TestOwnsStdioPipePeers(t *testing.T) {
-	child := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestAntigravityPipeChild$")
+	child := procexec.Command(t.Context(), os.Args[0], "-test.run=^TestAntigravityPipeChild$")
 	input, err := child.StdinPipe()
 	if err != nil {
 		t.Fatal(err)

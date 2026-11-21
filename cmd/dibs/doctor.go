@@ -538,7 +538,7 @@ func checkWakeRoutes(dir string, b *boardView, hosts hubHosts, ok reportFn, warn
 		// unsolicited activations; this said the socket "is tried first" and
 		// called delivery unconfirmed when it was off. Found by the
 		// pre-release review, round forty-two.
-		warn("socket and configured command wakes are disabled",
+		warn(disabledWakeRoutes(b),
 			"mail reaches an idle agent only at its next activation, which is what "+
 				"that configuration asks for. It covers THIS machine: a bridge that "+
 				"joined a remote hub reads the switch from its own data directory, so "+
