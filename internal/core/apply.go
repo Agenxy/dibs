@@ -1445,6 +1445,9 @@ func operatorFallback(s *State) string {
 }
 
 func (s *State) applySend(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
+	if source := s.Messages[op.FinishedWakeOf]; source != nil && source.FinishedWakeNotice != 0 {
+		return Result{"ok": true, "msg_serial": source.FinishedWakeNotice, "deduplicated": true}, nil, nil
+	}
 	to := s.Agents[op.To]
 	if !s.Answerable(op.To) {
 		// Name the candidates. "Check the board" is advice the agent has to act
@@ -1565,6 +1568,9 @@ func (s *State) finishSend(
 		m.Merge = &effect
 	}
 	s.Messages[serial] = m
+	if source := s.Messages[op.FinishedWakeOf]; source != nil {
+		source.FinishedWakeNotice = serial
+	}
 	s.mailChanged()
 	evs := []Event{{Type: "message.sent", Agent: l.ID, To: to.ID, Data: map[string]any{
 		"msg_type": op.MsgType, "from": l.ID, "attachments": len(op.Attachments),
@@ -1597,28 +1603,6 @@ func (s *State) finishSend(
 		res["note"] = n
 	}
 	return res, evs, nil
-}
-
-// oldestDisplaceableNotify picks the notify a full mailbox gives up for a new
-// one. ONLY FROM THE MAIL THAT COUNTS: capacity excludes a previous occupant's
-// mail below the watermark, and this picked from all of it, so a notify to a
-// full mailbox displaced an invisible predecessor notify, freed no counted
-// slot, and landed anyway. With capacity two the replacement held three, and
-// every further predecessor notify allowed one more. Found by the pre-release
-// review, round twenty-six.
-func (s *State) oldestDisplaceableNotify(agent string) *Message {
-	var oldest *Message
-	floor := s.mailFloor(agent)
-	for _, m := range s.MailTo(agent) {
-		if m.To == agent && m.Type == MsgNotify &&
-			(m.Serial >= floor || s.adoptedFor(m, agent)) &&
-			(m.State == MsgStatePending || m.State == MsgStateDelivered) {
-			if oldest == nil || m.Serial < oldest.Serial {
-				oldest = m
-			}
-		}
-	}
-	return oldest
 }
 
 func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, error) {

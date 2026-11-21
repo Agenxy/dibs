@@ -6,6 +6,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- Finished one-shot Codex runs no longer page the person on daemon restart.
+  Each sender gets one notice per unread message. Contact hints omit an app
+  when the recorded Codex and Claude labels conflict, and the macOS display
+  name prefers a local label over a fully qualified DNS name.
 - Dibs keeps wake mail in the mailbox when the bound Codex thread comes from
   a one-shot `codex exec` run. The board and doctor identify the thread source
   and explain how to bind the agent from an existing app thread.

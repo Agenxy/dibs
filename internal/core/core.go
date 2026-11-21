@@ -671,9 +671,11 @@ type Message struct {
 	// Zero in historical requests means no recorded stall notice. This survives
 	// the notice's retention because the approved request remains owed work.
 	StallNotifiedDeclaration uint64 `json:"stall_notified_declaration_serial,omitempty"`
-	WithdrawalReason         string `json:"withdrawal_reason,omitempty"`
-	WithdrawnBy              string `json:"withdrawn_by,omitempty"`
-	SupersededBy             uint64 `json:"superseded_by,omitempty"`
+	// Serial of the durable sender notice for a finished one-shot binding.
+	FinishedWakeNotice uint64 `json:"finished_wake_notice_serial,omitempty"`
+	WithdrawalReason   string `json:"withdrawal_reason,omitempty"`
+	WithdrawnBy        string `json:"withdrawn_by,omitempty"`
+	SupersededBy       uint64 `json:"superseded_by,omitempty"`
 	// Historical JSON tag is frozen; this sender priority now applies to notify too.
 	RequestPriority    string    `json:"request_priority,omitempty"`
 	QueuePriority      string    `json:"queue_priority,omitempty"`

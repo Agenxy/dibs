@@ -60,8 +60,8 @@ func (e *Engine) contactNotice(c *core.ContactEscalation) (HumanNotice, contactL
 	if l := e.state.Agents[c.Recipient]; l != nil {
 		plan.local = e.ownsHost(l)
 		plan.recovery = e.bindingNeedsRecovery(l)
-		plan.surface, plan.thread = surfaceOf(l), threadIDOf(l)
-		if l.Agent != nil {
+		plan.surface, plan.thread = contactSurface(l), threadIDOf(l)
+		if l.Agent != nil && plan.surface == surfaceOf(l) {
 			plan.harness = l.Agent.Harness
 		}
 	}
@@ -285,6 +285,10 @@ func (e *Engine) contactRouteMissingNow(l *core.Agent) bool {
 // The system op contains a source serial, never a participant's text.
 func (e *Engine) escalateContact(agent string) {
 	l := e.state.Agents[agent]
+	if e.finishedExecQueueBinding(l) {
+		e.mailFinishedExecBinding(l, time.Now())
+		return
+	}
 	if l == nil || l.Retired() || agent == e.humanIdentityLocked() ||
 		e.hasWakeRoute(l) || e.recentlyInTouch(l) || e.contactLooksLive(l) {
 		return

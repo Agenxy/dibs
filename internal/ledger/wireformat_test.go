@@ -202,7 +202,8 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		"parent": true, "parent_nonce": true, "claim_verified": true,
 		"activity": true, "holds": true, "disposition": true,
 		"msg_serial": true, "msg_serials": true, "attachments": true,
-		"blob": true, "mime": true, "size": true,
+		"finished_wake_of": true,
+		"blob":             true, "mime": true, "size": true,
 		"dead_agents": true, "give_up_announce": true,
 		// purge_mail: whether THIS sweep may take a purged agent's mailbox with
 		// it. Absent on every sweep written before v0.0.7, and that absence is
@@ -496,7 +497,8 @@ const (
 	// Recovery adds three op tags and one Message tag; no historical key changed.
 	// required_features is additive; all earlier tags remain frozen.
 	// Adds only displaced, full_board_policy and capacity_human; all prior tags stay frozen.
-	frozenOpFingerprint       = "sha256:3e69d7473198559b"
+	// Finished wake notices add finished_wake_of only.
+	frozenOpFingerprint       = "sha256:7d6934b604b50afe"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`
@@ -510,7 +512,8 @@ const (
 	// Stall notices add one durable declaration-version scalar, absent historically.
 	// FYI receipts add an announcement serial and consumption reason only.
 	// Merge adds typed effect and sender-ownership tags; no historical tag renamed.
-	frozenMessageFingerprint = "sha256:a1fb142844d477f8"
+	// Finished wake notices add finished_wake_notice_serial only.
+	frozenMessageFingerprint = "sha256:6be2369bd6c9cd6e"
 	// The identity inside op.agent. Set when the fingerprint was added; one
 	// new tag at a time from here, never a rename.
 	frozenAgentFingerprint = "sha256:c630d3cc9f27eb95"
@@ -743,6 +746,7 @@ func TestLedgerMessageFieldNamesAreFrozen(t *testing.T) {
 	frozen := map[string]bool{
 		// Additive durable stall-notice suppression; historical zero is unchanged.
 		"stall_notified_declaration_serial": true,
+		"finished_wake_notice_serial":       true,
 		// Additive withdrawal receipt; existing response/progress remain intact.
 		"withdrawal_reason": true, "withdrawn_by": true, "superseded_by": true,
 		// Additive task queue state: no historical field renamed.

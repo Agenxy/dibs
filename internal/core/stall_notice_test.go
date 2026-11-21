@@ -61,3 +61,39 @@ func TestStallNoticeAdmitAndAtomicSend(t *testing.T) {
 		t.Fatal("same-version retry created a second notice")
 	}
 }
+
+func TestFinishedWakeNoticeCommitsOnlyWithDaemonSend(t *testing.T) {
+	s := NewState("finished-wake", DefaultLimits())
+	ackReg(t, s, "sender", "sender", t0)
+	ackReg(t, s, "worker", "worker", t0)
+	ackReg(t, s, "reporter", "reporter", t0)
+	s.AgentByToken("reporter").Nonce = DibsNonce
+	r := mustApply(t, s, &Op{Kind: OpSendMessage, Token: "sender", To: "worker", MsgType: MsgRequest, Body: "work"}, t0)
+	source := s.Messages[r["msg_serial"].(uint64)]
+	op := &Op{
+		Kind: OpSendMessage, Token: "worker", To: "sender", MsgType: MsgNotify,
+		Body: "finished wake", FinishedWakeOf: source.Serial,
+	}
+	if err := s.Admit(op); err == nil {
+		t.Fatal("ordinary agent can forge a finished-wake notice")
+	}
+	op.Token = "reporter"
+	if err := s.Admit(op); err != nil {
+		t.Fatal(err)
+	}
+	s.Limits.MaxMailboxDepth = 1
+	mustApply(t, s, &Op{Kind: OpSendMessage, Token: "worker", To: "sender", MsgType: MsgQuestion, Body: "capacity"}, t0)
+	before := s.Serial
+	if _, _, err := s.Apply(op, t0); err == nil || s.Serial != before || source.FinishedWakeNotice != 0 {
+		t.Fatalf("refused send consumed a notice opportunity: %v", err)
+	}
+	s.Limits.MaxMailboxDepth = 2
+	receipt := mustApply(t, s, op, t0)["msg_serial"].(uint64)
+	if receipt != before+1 || source.FinishedWakeNotice != receipt || source.State != MsgStatePending {
+		t.Fatalf("notice and source marker were not committed together: %+v", source)
+	}
+	mustApply(t, s, op, t0)
+	if s.Serial != receipt {
+		t.Fatal("retry created a second notice")
+	}
+}

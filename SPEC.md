@@ -1612,14 +1612,16 @@ exact target can supply `thread_source`. Source `exec` identifies a one-shot
 CLI run and sets `thread_state` to `gone` before queue admission. A queue
 command reporting `no rollout found for thread id` for its exact target also
 sets it to `gone`. Both observations stop automatic retry and later-message
-queue attempts for that agent/thread binding. Unread eligible mail uses the
-existing contact-alert path. The recipient and pending senders also receive
-ordinary daemon-authored notify mail, retained and replayed under normal mailbox
-rules. No participant bodies are copied into these warnings. They identify the
-failed binding and corrective `register`/`bind_session` calls; they do not consume
-the original mail. Warning sends use normal admission, capacity and idempotency
-rules (once per binding/party within the ordinary deduplication window). A full
-mailbox or other refusal is logged with a hint; the person alert remains independent.
+queue attempts for that agent/thread binding. For a one-shot CLI binding,
+Dibs sends one ordinary daemon-authored notice per unread message to its
+sender and leaves the message in the original mailbox. The ledger records the
+notice and its source together, so restart does not send it again. This case
+raises no person contact alert or separate coordinator notification.
+For a missing rollout, eligible unread mail follows the contact-alert path.
+The recipient and pending senders receive ordinary daemon-authored notify
+mail, once per binding and party within the ordinary deduplication window.
+Neither warning copies participant bodies or consumes the original mail.
+Failed sends are logged and leave the source eligible for notice.
 Board and doctor report the missing route. The
 negative evidence is derived and fenced to the agent incarnation, thread and
 configured wake-command epoch; a replacement binding or configuration may try again.

@@ -17,6 +17,7 @@ var errUnset = errors.New("name is not set")
 func platformName(ctx context.Context) (string, error) { return macName(ctx, scutilName) }
 
 func macName(ctx context.Context, get func(context.Context, string) (string, error)) (string, error) {
+	var networkName string
 	for _, key := range []string{"HostName", "LocalHostName", "ComputerName"} {
 		value, err := get(ctx, key)
 		if errors.Is(err, errUnset) {
@@ -26,8 +27,15 @@ func macName(ctx context.Context, get func(context.Context, string) (string, err
 			return "", err
 		}
 		if value = strings.TrimSpace(value); value != "" {
+			if key == "HostName" && strings.Contains(value, ".") {
+				networkName = value
+				continue
+			}
 			return value, nil
 		}
+	}
+	if networkName != "" {
+		return networkName, nil
 	}
 	return "", errUnset
 }

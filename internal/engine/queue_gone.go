@@ -33,6 +33,13 @@ func (e *Engine) queueUnavailableReasonLocked(l *core.Agent) string {
 	return wakeexec.QueueUnavailableReason(e.wakers.queueObserved[l.ID].observation.ThreadSource)
 }
 
+func (e *Engine) finishedExecQueueBinding(l *core.Agent) bool {
+	e.wakers.mu.Lock()
+	defer e.wakers.mu.Unlock()
+	return e.queueThreadGoneLocked(l) &&
+		e.wakers.queueObserved[l.ID].observation.ThreadSource == wakeexec.QueueThreadExecSource
+}
+
 func (e *Engine) recordNonRetryableWake(plan wakePlan) {
 	if plan.routeRefused {
 		return // known refusal before handoff; the binding alert retains the mail
@@ -71,6 +78,10 @@ func (e *Engine) reportGoneQueueThread(plan wakePlan) {
 		}
 		e.wakers.mu.Unlock()
 		if current {
+			if e.finishedExecQueueBinding(l) {
+				e.mailFinishedExecBinding(l, time.Now())
+				return nil
+			}
 			if reporter != "" {
 				e.mailGoneBinding(l, reporter, plan, time.Now())
 			} else {
@@ -80,6 +91,35 @@ func (e *Engine) reportGoneQueueThread(plan wakePlan) {
 		}
 		return nil
 	})
+}
+
+// A one-shot Codex run has no app session for the person to open. Its
+// unread mail stays put, and its senders get an ordinary durable notice.
+func (e *Engine) mailFinishedExecBinding(l *core.Agent, now time.Time) {
+	reporter := e.state.Agents[e.dibsRowLocked()]
+	if reporter == nil || reporter.Token == "" {
+		return
+	}
+	finished := !e.recentlyInTouch(l) && !e.contactLooksLive(l)
+	for _, m := range e.state.Inbox(l.ID) {
+		if m.State != core.MsgStatePending || m.Consumed || m.FinishedWakeNotice != 0 ||
+			m.From == "" || m.From == l.ID || m.From == reporter.ID || !e.state.Answerable(m.From) {
+			continue
+		}
+		body := fmt.Sprintf("Your %s #%d to %q remains unread. This one-shot Codex binding has no app wake route. "+
+			"The mail stays in its mailbox.", m.Type, m.Serial, l.ID)
+		if finished {
+			body = fmt.Sprintf("Your %s #%d to %q remains unread. The binding was a finished one-shot Codex run "+
+				"and will not read it. The mail stays in its mailbox.", m.Type, m.Serial, l.ID)
+		}
+		if _, err := e.exec(&core.Op{
+			Kind: core.OpSendMessage, Token: reporter.Token, To: m.From, MsgType: core.MsgNotify,
+			Body: body, FinishedWakeOf: m.Serial,
+		}, now); err != nil {
+			slog.Warn("could not notify sender about a one-shot Codex binding", "agent", l.ID, "msg", m.Serial,
+				"err", err, "hint", "check the sender's mailbox capacity; source mail is retained")
+		}
+	}
 }
 
 // Ordinary daemon-authored mail reaches both parties through the same durable

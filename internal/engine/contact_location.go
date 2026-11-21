@@ -19,7 +19,7 @@ func (e *Engine) contactOpenHint(name string, l *core.Agent) string {
 		if session == "" {
 			session = l.SessionID
 		}
-		switch surfaceOf(l) {
+		switch contactSurface(l) {
 		case harnessenv.ChatGPTApp:
 			app = "ChatGPT"
 		case harnessenv.ClaudeDesktop:
@@ -43,6 +43,16 @@ func (e *Engine) contactOpenHint(name string, l *core.Agent) string {
 			"; find or restart the agent there, or reassign the work"
 	}
 	return "no thread or session is known for " + location + "; find or restart the agent there, or reassign the work"
+}
+
+func contactSurface(l *core.Agent) string {
+	surface := surfaceOf(l)
+	// Older registrations can carry the outer Claude session on a nested
+	// Codex worker. Conflicting evidence cannot name an app for contact.
+	if surface == harnessenv.ClaudeDesktop && wakeHarness(l) == "codex" {
+		return ""
+	}
+	return surface
 }
 
 func (e *Engine) contactHost(l *core.Agent) string {

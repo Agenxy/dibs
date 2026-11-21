@@ -8,6 +8,22 @@ import "time"
 // DibsNonce is reserved for the daemon's reporting identity, never an agent.
 const DibsNonce = "system:dibs"
 
+func (s *State) admitFinishedWakeNotice(op *Op) error {
+	if op.Kind != OpSendMessage || op.FinishedWakeOf == 0 {
+		return nil
+	}
+	actor := s.AgentByToken(op.Token)
+	if actor == nil || actor.Nonce != DibsNonce {
+		return errf("E_FORBIDDEN", "only the daemon records its own wake outcomes", "finished wake notice is daemon-authored")
+	}
+	m := s.Messages[op.FinishedWakeOf]
+	if m == nil || m.State != MsgStatePending || m.Consumed || m.From != op.To ||
+		op.MsgType != MsgNotify || op.Body == "" {
+		return errf("E_BAD_ARG", "notify the original sender of still-unread mail", "invalid finished wake notice")
+	}
+	return nil
+}
+
 // SendsMessage includes the daemon's atomic stall-notice operation. Derived
 // history and human delivery must recognize the same birth as the fold does.
 func SendsMessage(kind string) bool { return kind == OpSendMessage || kind == OpStallNotified }

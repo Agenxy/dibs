@@ -30,6 +30,7 @@ func TestContactLabelsThroughRegisterSendAndRestart(t *testing.T) {
 		{"known-thread", harnessenv.ChatGPTApp, thread, "ChatGPT", false},
 		{"remote-known-thread", harnessenv.ChatGPTApp, thread, "ChatGPT", true},
 		{"terminal-thread", harnessenv.CodexOutsideApp, thread, "terminal or IDE", false},
+		{"conflicting-surface", harnessenv.ClaudeDesktop, thread, "original harness", true},
 		{"cloud-thread", harnessenv.ChatGPTCloudExec, thread, "local app thread", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -49,9 +50,13 @@ func TestContactLabelsThroughRegisterSendAndRestart(t *testing.T) {
 			lead := contactReplayDo(t, e, ctx, &core.Op{Kind: core.OpRegister, Name: "lead", Nonce: "contact-label-lead"})
 			contactReplayDo(t, e, ctx, &core.Op{Kind: core.OpGrantRole, To: "lead", Mode: core.RoleCoordinator})
 			asker := contactReplayDo(t, e, ctx, &core.Op{Kind: core.OpRegister, Name: "asker", Nonce: "contact-label-asker"})
+			harness := "codex-dibs-recovery"
+			if tc.name == "conflicting-surface" {
+				harness = "Codex"
+			}
 			registered := contactReplayDo(t, e, ctx, &core.Op{
 				Kind: core.OpRegister, Name: "worker", Nonce: "contact-label-worker", AgentKind: core.KindPersistent, PID: 424242,
-				SessionID: tc.session, Agent: &core.AgentInfo{Harness: "codex-dibs-recovery", Surface: tc.surface, HostID: hostID, Host: label},
+				SessionID: tc.session, Agent: &core.AgentInfo{Harness: harness, Surface: tc.surface, HostID: hostID, Host: label},
 			})
 			if registered["token"] == nil {
 				t.Fatal("setup: actual registration failed")
@@ -95,6 +100,10 @@ func TestContactLabelsThroughRegisterSendAndRestart(t *testing.T) {
 			if !strings.Contains(hint, tc.app) || strings.Contains(hint, "codex-dibs-recovery") ||
 				(hostID != "" && strings.Contains(hint, hostID)) {
 				t.Errorf("contact does not name the app and human host: %s", hint)
+			}
+			if tc.name == "conflicting-surface" &&
+				(strings.Contains(hint, "Claude") || pending[0].Contact.OpenURL != "") {
+				t.Errorf("contact trusted a Claude surface on a Codex registration: %+v", pending[0].Contact)
 			}
 			switch {
 			case tc.name == "unknown-bridge-label":

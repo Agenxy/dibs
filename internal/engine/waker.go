@@ -322,6 +322,10 @@ func (e *Engine) maybeWake(ev core.Event) {
 // A snapshot miss is not a verdict. A socket may have appeared after the
 // writer's cache was sampled; only a confirmed route miss asks for contact.
 func (e *Engine) handleMissingWakeRoute(l *core.Agent) {
+	if e.finishedExecQueueBinding(l) {
+		e.mailFinishedExecBinding(l, time.Now())
+		return
+	}
 	if surfaceOf(l) == harnessenv.ClaudeDesktop && e.remoteHostOf(l) == "" {
 		e.openClosedSession(l)
 		return
@@ -425,7 +429,7 @@ func (e *Engine) retryWakeDecision(agent string) {
 		// This retry follows a fresh peer-cache scan. For a terminal or a
 		// remote agent, a continuing route miss is evidence to ask for help.
 		// Claude Desktop's asynchronous app-open path reports its own failure.
-		if e.contactRouteMissingAfterRetry(l) {
+		if e.finishedExecQueueBinding(l) || e.contactRouteMissingAfterRetry(l) {
 			e.escalateContact(agent)
 		}
 		return
