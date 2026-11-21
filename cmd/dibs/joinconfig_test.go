@@ -11,6 +11,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"encoding/pem"
 	"math/big"
 	"net"
@@ -264,6 +265,28 @@ func TestConfigNamesANonDefaultDaemon(t *testing.T) {
 			t.Errorf("the printed config never names %q, so a second daemon is handed a "+
 				"configuration for the first:\n%s", want, out)
 		}
+	}
+
+	// The Antigravity instruction must point to the actual stdio form.
+	_, after, found := strings.Cut(out, "Antigravity desktop (~/.gemini/config/mcp_config.json):\n")
+	if !found {
+		t.Fatal("the CLI omitted Antigravity desktop's MCP configuration path")
+	}
+	block, _, _ := strings.Cut(after, "\n\n")
+	var antigravity struct {
+		MCPServers map[string]struct {
+			Command string
+			Args    []string
+			Env     map[string]string
+		}
+	}
+	if err := json.Unmarshal([]byte(block), &antigravity); err != nil {
+		t.Fatalf("Antigravity's printed form is not JSON: %v", err)
+	}
+	server := antigravity.MCPServers["dibs"]
+	if !filepath.IsAbs(server.Command) || len(server.Args) != 1 || server.Args[0] != "mcp-stdio" ||
+		server.Env["DIBS_DIR"] != dir || !strings.Contains(server.Env["DIBS_ADDR"], "127.0.0.1:4791") {
+		t.Fatalf("Antigravity's printed form did not select this board's stdio bridge: %+v", server)
 	}
 
 	// One env key per TOML table. This was briefly two lines, a protocol

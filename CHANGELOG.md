@@ -6,6 +6,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- `dibs mcp-config` names the Antigravity desktop settings file for its
+  stdio configuration.
 - A verified Antigravity desktop wake binding survives Dibs daemon restarts.
   Dibs rechecks the live desktop app and the recorded conversation before
   each wake. One check-in enrolls a conversation after upgrading from the
