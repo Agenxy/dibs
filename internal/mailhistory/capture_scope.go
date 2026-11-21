@@ -23,8 +23,8 @@ func scopeOf(kind string) (mailScope, bool) {
 		core.OpMergeAgents, core.OpAdoptAgent, core.OpSignOff,
 		core.OpInitializeReviewRead:
 		return scopeFull, true
-	case core.OpAckBoard, core.OpSendMessage, core.OpStallNotified, core.OpRespond,
-		core.OpQueueUpdate, core.OpWithdrawMessage:
+	case core.OpAckBoard, core.OpSendMessage, core.OpStallNotified, core.OpFinishedWakeNotified,
+		core.OpRespond, core.OpQueueUpdate, core.OpWithdrawMessage:
 		return scopeMailbox, true
 	case core.OpAckMessage, core.OpOutcomeRead, core.OpContactEscalate, core.OpContactDiagnosed, core.OpContactJoin:
 		return scopePoint, true

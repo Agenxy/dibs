@@ -202,8 +202,7 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		"parent": true, "parent_nonce": true, "claim_verified": true,
 		"activity": true, "holds": true, "disposition": true,
 		"msg_serial": true, "msg_serials": true, "attachments": true,
-		"finished_wake_of": true,
-		"blob":             true, "mime": true, "size": true,
+		"blob": true, "mime": true, "size": true,
 		"dead_agents": true, "give_up_announce": true,
 		// purge_mail: whether THIS sweep may take a purged agent's mailbox with
 		// it. Absent on every sweep written before v0.0.7, and that absence is
@@ -497,8 +496,7 @@ const (
 	// Recovery adds three op tags and one Message tag; no historical key changed.
 	// required_features is additive; all earlier tags remain frozen.
 	// Adds only displaced, full_board_policy and capacity_human; all prior tags stay frozen.
-	// Finished wake notices add finished_wake_of only.
-	frozenOpFingerprint       = "sha256:7d6934b604b50afe"
+	frozenOpFingerprint       = "sha256:3e69d7473198559b"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`
@@ -655,6 +653,7 @@ func TestOpKindStringsAreFrozen(t *testing.T) {
 		"OpContactNotified":           {core.OpContactNotified, "contact_notified"},
 		"OpContactResolved":           {core.OpContactResolved, "contact_resolved"},
 		"OpStallNotified":             {core.OpStallNotified, "stall_notified"},
+		"OpFinishedWakeNotified":      {core.OpFinishedWakeNotified, "finished_wake_notified"},
 		"OpAckBoard":                  {core.OpAckBoard, "check_in"},
 		"OpUpdate":                    {core.OpUpdate, "update"},
 		"OpSignOff":                   {core.OpSignOff, "sign_off"},

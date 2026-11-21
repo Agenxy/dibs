@@ -112,10 +112,15 @@ func (e *Engine) mailFinishedExecBinding(l *core.Agent, now time.Time) {
 			body = fmt.Sprintf("Your %s #%d to %q remains unread. The binding was a finished one-shot Codex run "+
 				"and will not read it. The mail stays in its mailbox.", m.Type, m.Serial, l.ID)
 		}
-		if _, err := e.exec(&core.Op{
-			Kind: core.OpSendMessage, Token: reporter.Token, To: m.From, MsgType: core.MsgNotify,
-			Body: body, FinishedWakeOf: m.Serial,
-		}, now); err != nil {
+		op := &core.Op{
+			Kind: core.OpFinishedWakeNotified, AgentID: reporter.ID, Token: reporter.Token,
+			To: m.From, MsgType: core.MsgNotify, Body: body, MsgSerial: m.Serial, MailboxCapacity: true,
+		}
+		err := e.state.Admit(op)
+		if err == nil {
+			_, err = e.applyAndLedger(op, now)
+		}
+		if err != nil {
 			slog.Warn("could not notify sender about a one-shot Codex binding", "agent", l.ID, "msg", m.Serial,
 				"err", err, "hint", "check the sender's mailbox capacity; source mail is retained")
 		}

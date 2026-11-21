@@ -71,8 +71,8 @@ func TestFinishedWakeNoticeCommitsOnlyWithDaemonSend(t *testing.T) {
 	r := mustApply(t, s, &Op{Kind: OpSendMessage, Token: "sender", To: "worker", MsgType: MsgRequest, Body: "work"}, t0)
 	source := s.Messages[r["msg_serial"].(uint64)]
 	op := &Op{
-		Kind: OpSendMessage, Token: "worker", To: "sender", MsgType: MsgNotify,
-		Body: "finished wake", FinishedWakeOf: source.Serial,
+		Kind: OpFinishedWakeNotified, Token: "worker", To: "sender", MsgType: MsgNotify,
+		Body: "finished wake", MsgSerial: source.Serial,
 	}
 	if err := s.Admit(op); err == nil {
 		t.Fatal("ordinary agent can forge a finished-wake notice")

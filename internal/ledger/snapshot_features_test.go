@@ -85,6 +85,9 @@ func TestSnapshotFeatureMarkersThroughRealWriter(t *testing.T) {
 		want []string
 	}{
 		{"untouched", func(*core.State) {}, nil},
+		{"finished-exec-notice", func(s *core.State) {
+			s.Messages[1] = &core.Message{Serial: 1, FinishedWakeNotice: 2}
+		}, []string{"finished-wake-notice/v1"}},
 		{"contact-without-diagnosis", func(s *core.State) {
 			s.Contacts[1] = &core.ContactEscalation{Serial: 1}
 		}, nil},

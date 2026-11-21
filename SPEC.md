@@ -1615,7 +1615,9 @@ sets it to `gone`. Both observations stop automatic retry and later-message
 queue attempts for that agent/thread binding. For a one-shot CLI binding,
 Dibs sends one ordinary daemon-authored notice per unread message to its
 sender and leaves the message in the original mailbox. The ledger records the
-notice and its source together, so restart does not send it again. This case
+notice and its source together in a `finished_wake_notified` record, so restart
+does not send it again. Snapshots retaining the marker require
+`finished-wake-notice/v1`. This case
 raises no person contact alert or separate coordinator notification.
 For a missing rollout, eligible unread mail follows the contact-alert path.
 The recipient and pending senders receive ordinary daemon-authored notify

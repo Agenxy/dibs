@@ -83,28 +83,6 @@ func (m *Message) FYIPresented() bool {
 		(m.State == MsgStateDelivered && m.DeliveredAt >= m.AdoptedAt))
 }
 
-// oldestDisplaceableNotify picks the notify a full mailbox gives up for a new
-// one. ONLY FROM THE MAIL THAT COUNTS: capacity excludes a previous occupant's
-// mail below the watermark, and this picked from all of it, so a notify to a
-// full mailbox displaced an invisible predecessor notify, freed no counted
-// slot, and landed anyway. With capacity two the replacement held three, and
-// every further predecessor notify allowed one more. Found by the pre-release
-// review, round twenty-six.
-func (s *State) oldestDisplaceableNotify(agent string) *Message {
-	var oldest *Message
-	floor := s.mailFloor(agent)
-	for _, m := range s.MailTo(agent) {
-		if m.To == agent && m.Type == MsgNotify &&
-			(m.Serial >= floor || s.adoptedFor(m, agent)) &&
-			(m.State == MsgStatePending || m.State == MsgStateDelivered) {
-			if oldest == nil || m.Serial < oldest.Serial {
-				oldest = m
-			}
-		}
-	}
-	return oldest
-}
-
 func (s *State) capacityDisplacement(op *Op) (*Message, bool) {
 	full := s.MailboxCapacity(op.To).Depth >= s.Limits.MaxMailboxDepth
 	var oldest *Message
@@ -136,7 +114,7 @@ func (s *State) admitMailboxCapacity(op *Op) error {
 	if !op.MailboxCapacity {
 		return nil
 	}
-	if op.Kind != OpSendMessage {
+	if op.Kind != OpSendMessage && op.Kind != OpFinishedWakeNotified {
 		return errf("E_BAD_ARG", "mailbox capacity is recorded on sends only", "invalid capacity carrier")
 	}
 	if s.AgentByToken(op.Token) == nil {

@@ -260,9 +260,6 @@ type Op struct {
 	DeliveryStart bool   `json:"delivery_start,omitempty"`
 	OpID          string `json:"op_id,omitempty"`
 	MsgSerial     uint64 `json:"msg_serial,omitempty"`
-	// FinishedWakeOf links a daemon-authored notify to the unread source mail
-	// whose one-shot execution could not be woken.
-	FinishedWakeOf uint64 `json:"finished_wake_of,omitempty"`
 	// ContactSerial names a daemon-authored contact window, not participant mail.
 	ContactSerial uint64 `json:"contact_serial,omitempty"`
 	// A rendered contact-notice prefix on activity_checkpoint. Absent on old
