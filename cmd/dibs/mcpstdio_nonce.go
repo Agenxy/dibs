@@ -128,10 +128,11 @@ func recordNonceIn(all map[string]string, project, name, nonce string, chosen bo
 	// an explicit change cannot erase a still-owned identity's recovery secret.
 	saved := canonical + "\x00" + fmtNonceDigest(nonce)
 	choice := canonical + "\x00choice"
-	if all[canonical] == nonce && all[saved] == nonce && all[key] != "" && (!chosen || all[choice] == nonce) {
+	keepExact := !strings.HasPrefix(name, scopedNamePrefix) || canonical != "dir:v1:"+key
+	if all[canonical] == nonce && all[saved] == nonce && (!keepExact || all[key] != "") && (!chosen || all[choice] == nonce) {
 		return false
 	}
-	if all[key] == "" {
+	if keepExact && all[key] == "" {
 		all[key] = nonce
 	}
 	all[canonical], all[saved] = nonce, nonce
@@ -142,7 +143,7 @@ func recordNonceIn(all map[string]string, project, name, nonce string, chosen bo
 }
 
 func writeNonces(path string, all map[string]string) error {
-	b, err := json.MarshalIndent(all, "", "  ")
+	b, err := json.Marshal(all)
 	if err != nil {
 		return err
 	}

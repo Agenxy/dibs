@@ -636,6 +636,11 @@ func TestCorruptCredentialCacheRefusesBeforeRegistration(t *testing.T) {
 			if !strings.Contains(fmt.Sprint(r["rpc_error"]), "E_NONCE_CACHE") {
 				t.Fatal("corrupt cache did not refuse registration")
 			}
+			rpc, _ := r["rpc_error"].(map[string]any)
+			message, _ := rpc["message"].(string)
+			if !strings.Contains(message, "credential cache is unreadable") {
+				t.Fatalf("visible error omitted the cache failure: %q", message)
+			}
 			after, err := f.eng.Board(context.Background())
 			if err != nil {
 				t.Fatal(err)

@@ -7,6 +7,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Scoped bridge recovery caches compact redundant entries, prune ended process
+  incarnations, and expire inactive session scopes after 90 days. Earlier
+  scopes receive a 90-day grace period, and legacy recovery owners retain
+  their credentials. Cache refusals show the cause in the client message.
 - A Claude session whose process carries a stale inherited `CLAUDE_PID` is
   no longer shown as closed while it is running. Its Dibs bridge looked for
   the session file under that dead pid, found nothing, and identified the

@@ -83,7 +83,7 @@ func transactScopedNonce(legacyPath, project, role, scope, chosen string) ([]str
 	if err != nil {
 		return nil, err
 	}
-	owner := "owner:v1:" + canonicalNonceKey(project, role)
+	owner := scopedNonceOwnerPrefix + canonicalNonceKey(project, role)
 	legacy, unlock, err := prepareLegacyNonceClaim(all, legacyPath, project, role, name, chosen)
 	if err != nil {
 		return nil, err
@@ -103,6 +103,9 @@ func transactScopedNonce(legacyPath, project, role, scope, chosen string) ([]str
 		changed = recordNonceIn(all, project, name, nonce, false) || changed
 		candidates = []string{nonce}
 	}
+	now := time.Now()
+	changed = noteNonceScopeUse(all, name, scope, now) || changed
+	changed = maintainNonceScopes(all, name, now) || changed
 	if changed {
 		if err := writeNonces(path, all); err != nil {
 			return nil, err
@@ -119,7 +122,7 @@ func transactScopedNonce(legacyPath, project, role, scope, chosen string) ([]str
 func prepareLegacyNonceClaim(
 	all map[string]string, path, project, role, name, chosen string,
 ) (map[string]string, func(), error) {
-	owner := "owner:v1:" + canonicalNonceKey(project, role)
+	owner := scopedNonceOwnerPrefix + canonicalNonceKey(project, role)
 	needs := all[owner] == name || (all[owner] == "" && (chosen != "" || len(nonceCandidatesIn(all, project, name)) == 0))
 	if !needs {
 		return nil, func() {}, nil
@@ -137,7 +140,7 @@ func matchingNonceKeys(all map[string]string, project, name string) []string {
 	canonical := paths.Canonical(project)
 	var keys []string
 	for key := range all {
-		if strings.HasPrefix(key, "owner:v1:") {
+		if strings.HasPrefix(key, scopedNonceOwnerPrefix) {
 			continue
 		}
 		dir, suffix, found := strings.Cut(key, "\x00")
@@ -199,7 +202,7 @@ const nonceCacheErrorSource = "dibs.bridge.nonce-cache"
 func nonceCacheRefusal(line []byte, err error) []byte {
 	reply, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": idOf(line), "error": map[string]any{
-			"code": -32000, "message": "credential cache migration failed; registration was not forwarded",
+			"code": -32000, "message": fmt.Sprintf("credential cache migration failed (%v). Registration was not forwarded.", err),
 			"data": map[string]any{
 				"source": nonceCacheErrorSource, "code": "E_NONCE_CACHE", "cause": err.Error(),
 				"hint": "keep this session and its stored credentials; check the private cache's lock, permissions " +
