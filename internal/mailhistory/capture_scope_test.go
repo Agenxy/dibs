@@ -130,6 +130,17 @@ func TestCaptureScopesCoverActualCanonicalChanges(t *testing.T) {
 	t.Run("none", func(t *testing.T) {
 		assertScopeCoverage(t, scopeState(t), &core.Op{Kind: core.OpActivityCheckpoint, Token: "sender-token"}, 0)
 	})
+	t.Run("antigravity-binding", func(t *testing.T) {
+		const conversation = "01a10520-0000-7000-8000-000000000093"
+		st := scopeState(t)
+		scopeApply(t, st, &core.Op{Kind: core.OpBindSession, Token: "a-token", SessionID: conversation})
+		assertScopeCoverage(t, st, &core.Op{
+			Kind: core.OpAntigravityBinding, Token: "a-token", SessionID: conversation,
+		}, 0)
+		if st.Agents["a"].AntigravityBindingSerial == 0 {
+			t.Fatal("fixture did not record an Antigravity binding")
+		}
+	})
 	t.Run("session-process-refresh", func(t *testing.T) {
 		assertScopeCoverage(t, scopeState(t), &core.Op{
 			Kind: core.OpRefreshSessionProcess, Token: "a-token", SessionID: "new-session", PID: 42, ProcStart: 1000,
