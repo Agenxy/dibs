@@ -18,9 +18,11 @@ func TestAppShellBridgeCarriesTheInheritedThread(t *testing.T) {
 	t.Setenv("CODEX_THREAD_ID", shellThread)
 	previousClient, previousDetect, previousProbe := lastClientInfo, detectedSurface, bridgeAncestry
 	previousOwner := appShellThreadOwner
+	previousThread := threadServed()
 	t.Cleanup(func() {
 		lastClientInfo, detectedSurface, bridgeAncestry = previousClient, previousDetect, previousProbe
 		appShellThreadOwner = previousOwner
+		noteThread(previousThread)
 	})
 	lastClientInfo = nil
 	for _, tc := range []struct {
