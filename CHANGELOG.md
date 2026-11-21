@@ -18,6 +18,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   posting input or reading mail.
 
 ### Fixed
+- Sending to a closed harness explains that unconfirmed delivery can raise a
+  contact alert and suggests choosing a reachable recipient for urgent work.
 - Recovery chooses an independent coordinator when several hold the role and
   the first coordinator is the survivor.
 - Finished one-shot Codex runs no longer page the person on daemon restart.
