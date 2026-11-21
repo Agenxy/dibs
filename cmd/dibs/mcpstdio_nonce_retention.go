@@ -146,7 +146,7 @@ func pruneNonceEntries(
 		}
 		_, tracked := uses[name]
 		redundant := !extra && !strings.HasPrefix(dir, "dir:v1:") && all["dir:v1:"+key] == value
-		if redundant || !protected[name] && (expired[name] || !tracked && opaqueExpired) {
+		if !protected[name] && (redundant || expired[name] || !tracked && opaqueExpired) {
 			delete(all, key)
 		}
 	}

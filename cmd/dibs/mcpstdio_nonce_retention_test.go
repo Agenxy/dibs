@@ -4,6 +4,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -38,6 +39,7 @@ func TestRegisterCompactsScopedNonceCacheAndRetainsRecovery(t *testing.T) {
 		"scope:v1:" + held:                  oldThread,
 		ownerKey:                            held,
 		canonicalNonceKey(project, unknown): "opaque-fixture",
+		nonceKey(project, unknown):          "opaque-fixture",
 	}
 	if err := writeNonces(path, before); err != nil {
 		t.Fatal(err)
@@ -49,6 +51,7 @@ func TestRegisterCompactsScopedNonceCacheAndRetainsRecovery(t *testing.T) {
 	if args["nonce"] != "current-fixture" {
 		t.Fatal("registration lost the active scope's cached nonce")
 	}
+	acceptScopedNonceFixture(t, args)
 	after, err := readNonceStore(path)
 	if err != nil {
 		t.Fatal(err)
@@ -56,7 +59,7 @@ func TestRegisterCompactsScopedNonceCacheAndRetainsRecovery(t *testing.T) {
 	if after[canonicalNonceKey(project, idle)] != "" || after["scope:v1:"+idle] != "" {
 		t.Error("expired scoped credentials stayed in the cache")
 	}
-	if after[nonceKey(project, active)] != "" {
+	if after[nonceKey(project, unknown)] != "" {
 		t.Error("redundant exact-path copy stayed in the cache")
 	}
 	if after[ownerKey] != held || after[canonicalNonceKey(project, held)] != "legacy-fixture" {
@@ -96,6 +99,7 @@ func TestRegisterPrunesDeadBridgeScopesAndRetainsTheLiveIncarnation(t *testing.T
 	if err := enrichNonce(args, "", "codex-thread:current"); err != nil {
 		t.Fatal(err)
 	}
+	acceptScopedNonceFixture(t, args)
 	after, err := readNonceStore(path)
 	if err != nil {
 		t.Fatal(err)
@@ -125,6 +129,7 @@ func TestRegisterExpiresUnseenOpaqueScopesAfterMigrationGrace(t *testing.T) {
 	if err := enrichNonce(args, "", "codex-thread:current"); err != nil {
 		t.Fatal(err)
 	}
+	acceptScopedNonceFixture(t, args)
 	after, err := readNonceStore(path)
 	if err != nil {
 		t.Fatal(err)
@@ -135,4 +140,18 @@ func TestRegisterExpiresUnseenOpaqueScopesAfterMigrationGrace(t *testing.T) {
 	if after[canonicalNonceKey(project, old)] != "" {
 		t.Error("an unused scope outlived its migration grace period")
 	}
+}
+
+func acceptScopedNonceFixture(t *testing.T, args map[string]any) {
+	t.Helper()
+	request, err := json.Marshal(map[string]any{
+		"method": "tools/call", "params": map[string]any{
+			"name": "register", "arguments": args, "_meta": map[string]any{"threadId": "current"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reply := []byte(`{"result":{"content":[{"text":"{\"token\":\"fixture\",\"agent_id\":\"worker\"}"}]}}`)
+	rememberRegistrationNonce(request, reply)
 }

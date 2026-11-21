@@ -103,9 +103,6 @@ func transactScopedNonce(legacyPath, project, role, scope, chosen string) ([]str
 		changed = recordNonceIn(all, project, name, nonce, false) || changed
 		candidates = []string{nonce}
 	}
-	now := time.Now()
-	changed = noteNonceScopeUse(all, name, scope, now) || changed
-	changed = maintainNonceScopes(all, name, now) || changed
 	if changed {
 		if err := writeNonces(path, all); err != nil {
 			return nil, err
