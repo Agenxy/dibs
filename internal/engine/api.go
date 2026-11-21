@@ -917,9 +917,7 @@ func (e *Engine) decoratedBoard() core.Result {
 		lm["status"] = l.Status
 		// HOW IT IS REACHED, when that is going wrong. A worker read `active`
 		// on the board while every wake for it failed; see wakefail.go.
-		if w := e.wakeStatusOf(id); w != "" {
-			lm["wake"] = w
-		}
+		e.decorateWakeStatus(lm, l)
 		// What the agent is DOING, from what it declared and what the board has
 		// seen, beside status, which is about its process. See workStateOf.
 		lm["work"] = e.workStateOf(l)

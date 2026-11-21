@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agenxy/dibs/internal/antigravity"
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/wakeexec"
@@ -809,6 +810,13 @@ func (e *Engine) wakeRoute(l *core.Agent) (cool time.Duration, byCommand, ok boo
 	if cool, by, ok, remote := e.remoteWakeRoute(l); remote {
 		return cool, by, ok
 	}
+	if e.antigravityBinding(l).hub.PID != 0 {
+		return defaultPeerCooldown, true, true
+	}
+	return e.configuredWakeRoute(l)
+}
+
+func (e *Engine) configuredWakeRoute(l *core.Agent) (cool time.Duration, byCommand, ok bool) {
 	harness := ""
 	if l.Agent != nil {
 		harness = l.Agent.Harness
@@ -1055,6 +1063,13 @@ func (e *Engine) buildWakePlan(
 			},
 		}, true
 	}
+	if binding := e.antigravityBinding(l); binding.hub.PID != 0 {
+		return wakePlan{
+			antigravity: binding.hub, fields: f, thread: binding.conversation,
+			session: binding.conversation, createdSerial: binding.created, commandEpoch: binding.epoch,
+			agent: l.ID, cwd: cwdOf(l), kind: kind, cooldown: cooldown,
+		}, true
+	}
 	if !configured {
 		// THE SOCKET CARRIES THE MAIL, AND THE COMMAND CARRIES A SENTENCE.
 		//
@@ -1138,6 +1153,7 @@ func wakeSessionOf(l *core.Agent) string {
 // rules were each paid for by a bug, and a second delivery path that skipped
 // them would re-buy every one.
 type wakePlan struct {
+	antigravity    antigravity.Hub
 	fields         wakeexec.Fields            // private native notice facts, never a message body
 	nativeOutcome  *wakeexec.NativeOutcome    // shared with attempt's retry decision
 	queueOutcome   *wakeexec.QueueObservation // shared with the command attempt's retry decision
@@ -1300,6 +1316,9 @@ func (e *Engine) runWake(plan wakePlan, agent string) bool {
 func (e *Engine) runWakePlan(plan *wakePlan, agent string) bool {
 	if plan.host != "" {
 		return e.requestRemoteWakePlan(plan, agent, wakeTimeout+wakeGrace)
+	}
+	if plan.antigravity.PID != 0 {
+		return e.runAntigravityWake(plan, agent)
 	}
 	if len(plan.argv) > 0 {
 		if result, handled := e.tryNativeWake(plan, agent); handled {
@@ -1491,6 +1510,13 @@ func (e *Engine) PullOnlyNote(l *core.Agent) string {
 	if note, remote := e.remotePullOnlyNote(l); remote {
 		return note
 	}
+	if note, handled := e.antigravityPullOnlyNote(l, harness); handled {
+		return note
+	}
+	return e.configuredPullOnlyNote(l, harness)
+}
+
+func (e *Engine) configuredPullOnlyNote(l *core.Agent, harness string) string {
 	configured := e.localCommandConfigured(harness)
 	// CONFIGURED IS NOT THE SAME AS CAPABLE, and this asked only the first.
 	//

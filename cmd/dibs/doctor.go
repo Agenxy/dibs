@@ -499,6 +499,7 @@ func checkHarnessConfigs(sec, addr string, ok reportFn, warn, bad fixFn) {
 func checkWakeRoutes(dir string, b *boardView, hosts hubHosts, ok reportFn, warn fixFn) {
 	checkAppBindings(b, warn)
 	checkSocketBindings(b, warn)
+	reportAntigravityCoverage(b, ok, warn)
 	// THE HUB'S CONFIGURATION IS ON THE HUB. A joining machine runs this
 	// against a remote board with its own data directory, and this read that
 	// directory's dibs.toml as the board's wake configuration: "no wake
@@ -537,7 +538,7 @@ func checkWakeRoutes(dir string, b *boardView, hosts hubHosts, ok reportFn, warn
 		// unsolicited activations; this said the socket "is tried first" and
 		// called delivery unconfirmed when it was off. Found by the
 		// pre-release review, round forty-two.
-		warn("no wake route at all: [wake] sockets = false and no [wake.exec] command",
+		warn(disabledWakeRoutes(b),
 			"mail reaches an idle agent only at its next activation, which is what "+
 				"that configuration asks for. It covers THIS machine: a bridge that "+
 				"joined a remote hub reads the switch from its own data directory, so "+
@@ -1700,7 +1701,7 @@ func wakeCoverage(
 ) (covered int, missing map[string]int) {
 	missing = map[string]int{}
 	for _, a := range b.Agents {
-		if a.Kind != "persistent" || !wakeable(a) {
+		if !countsForConfiguredWake(a) {
 			continue
 		}
 		h := ""

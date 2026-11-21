@@ -16,6 +16,10 @@ func nativeDeliveryAccepted(disposition string) bool {
 	return disposition == "accepted" || disposition == "started" || disposition == "steered"
 }
 
+func (p wakePlan) commandDelivery() bool {
+	return p.host != "" || len(p.argv) > 0 || p.antigravity.PID != 0
+}
+
 func (p wakePlan) retryAllowed() bool {
 	return !p.commandOutcome.NoRetry && !p.queueThreadGone() && (p.nativeOutcome == nil || !p.nativeOutcome.NoRetry)
 }

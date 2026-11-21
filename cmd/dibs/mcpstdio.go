@@ -1005,7 +1005,7 @@ func endSessionWhenTheHarnessGoes(ctx context.Context, sigs <-chan os.Signal, en
 // happens to speak. The bridge's own nonce store stays as the automatic path
 // for a harness that pins nothing: ergonomics, no longer the mechanism.
 func setPinnedIdentity(req *http.Request) {
-	if n := pinnedNonce(); n != "" {
+	if n := pinnedNonce(); n != "" && !antigravityStdio() {
 		req.Header.Set("X-Dibs-Agent-Nonce", n)
 	}
 }

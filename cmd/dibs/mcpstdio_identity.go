@@ -144,6 +144,7 @@ func enrichRegister(line []byte) []byte {
 			warnIfThisLooksRemote(meta)
 			if !remoteSession {
 				stampLocalBridgeSurface(params, meta)
+				enrichAntigravity(meta)
 			}
 			if _, stated := meta["com.dibs/session"].(string); !stated {
 				// A remote conversation's session is the one IT names. This
@@ -184,7 +185,9 @@ func enrichRegister(line []byte) []byte {
 			// repository rule for two clones on two machines needs the answer;
 			// a daemon on THIS machine ignores it and derives its own.
 			if !remoteSession {
-				supplyWorkingDirectory(params)
+				if !antigravityBridgeMarked(params) {
+					supplyWorkingDirectory(params)
+				}
 				stampRepo(params)
 			}
 			if tid, _ := meta["threadId"].(string); strings.TrimSpace(tid) != "" {
@@ -208,13 +211,22 @@ func enrichRegister(line []byte) []byte {
 		args = map[string]any{}
 		params["arguments"] = args
 	}
+	sharedAntigravity := antigravityBridgeMarked(params)
 	var touched bool
+	if sharedAntigravity {
+		delete(args, "pid")
+		delete(args, "session_id")
+		touched = true
+	}
 	// Host, cwd and branch are observed for every harness; session id, title and
 	// surface come from Claude Code's on-disk sidecar and so are Claude-only.
 	// Anything the caller already filled in wins: we only supply what is blank.
 	for k, v := range sessionContext(clientIs("claude")) {
 		if remoteSession {
 			break // host, cwd and branch are this machine's, and the caller is not on it
+		}
+		if sharedAntigravity && (k == "cwd" || k == "branch" || k == "session_id") {
+			continue // the bridge has no working directory specific to this conversation
 		}
 		if cur, ok := args[k].(string); ok && cur != "" {
 			continue
@@ -256,7 +268,7 @@ func enrichRegister(line []byte) []byte {
 	// alive for as long as the tunnel runs. No pid suppresses the proc_alive
 	// signal, which leaves `last_coordination_at` to say whether a remote
 	// participant is still about: the only evidence there actually is.
-	if cur, ok := args["pid"].(float64); (!ok || cur == 0) && !remoteSession {
+	if cur, ok := args["pid"].(float64); (!ok || cur == 0) && !remoteSession && !sharedAntigravity {
 		args["pid"] = os.Getpid()
 		touched = true
 	}
@@ -272,7 +284,11 @@ func enrichRegister(line []byte) []byte {
 	// that manages its own credential once does not have to manage it twice.
 	nonceBefore, _ := args["nonce"].(string)
 	hadRecovery := args["recovery_nonces"] != nil
-	if err := enrichNonce(args, pinnedNonce(), registrationNonceScope(params)); err != nil {
+	pinned := pinnedNonce()
+	if sharedAntigravity {
+		pinned = "" // a process-wide credential cannot identify a conversation
+	}
+	if err := enrichNonce(args, pinned, registrationNonceScope(params)); err != nil {
 		return nonceCacheRefusal(line, err)
 	}
 	nonceAfter, _ := args["nonce"].(string)
@@ -348,7 +364,7 @@ func enrichRegister(line []byte) []byte {
 		// documentation for that field says to tolerate its absence and a
 		// made-up id is worse than none.
 		switch {
-		case !remoteSession:
+		case !remoteSession && !sharedAntigravity:
 			args["session_id"] = sessionID()
 			touched = true
 		case remoteRegisterSession != "":

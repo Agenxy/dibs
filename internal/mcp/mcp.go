@@ -1072,12 +1072,7 @@ func (s *Server) callTool(
 		b, _ := json.Marshal(inviteErr)
 		return map[string]any{"isError": true, "content": []map[string]any{{"type": "text", "text": string(b)}}}, nil
 	}
-	// Attach the agent to the session it is actually running in, if nothing
-	// has. Before the call, so `check_in`'s own answer already reflects it.
-	if _, invited := engine.InvitationFrom(ctx); !invited {
-		s.adoptSession(ctx, a.Token, params)
-		ctx = s.observeSessionProcess(ctx, params, a.Token)
-	}
+	ctx = s.prepareSessionForTool(ctx, a.Token, params)
 
 	res, err := s.run(ctx, call.Name, &a, params, sessionClient)
 	if err != nil {
@@ -1096,6 +1091,7 @@ func (s *Server) callTool(
 		text, _ := json.Marshal(payload)
 		return map[string]any{"isError": true, "content": []map[string]any{{"type": "text", "text": string(text)}}}, nil
 	}
+	s.bindAntigravityCall(ctx, call.Name, a.Token, res)
 	if call.Name == "get_blob" {
 		return map[string]any{"content": blobContent(res)}, nil
 	}
@@ -1227,55 +1223,12 @@ func (s *Server) run(
 	if err := validateMailboxLimit(name, params, a); err != nil {
 		return nil, err
 	}
-	op := &core.Op{Token: a.Token}
-	// The harness's own name for this thread, if it volunteered one.
-	//
-	// Codex puts `threadId` in _meta on calls through its native MCP client.
-	// Its value is the harness thread identifier. So the
-	// stable identity arrives on the connection the agent already holds: no
-	// hook, no directory guess, no second process. It was missed for a day
-	// because every inspection of _meta looked at the handshake, where it is
-	// absent. A shell-launched bridge is a separate client.
-	//
-	// Carried as a session ALIAS because that is what it is: another name for
-	// the session this agent is running in, alongside the `host-<ppid>` the
-	// bridge derives. The engine decides whether it may be bound.
-	op.SessionAlias = clientThreadID(params)
-	// AND THE BRIDGE'S OWN ANSWER, when the harness volunteered no thread.
-	//
-	// The engine falls back to INFERRING a session by directory when no alias
-	// arrives (announcedSession). That inference is a guess: it takes an id
-	// announced from this cwd recently and assumes the agent registering now is
-	// that session. It skips ids an agent already holds, which is not the same
-	// thing as ids that are still in USE. So when an agent is swept while its
-	// session keeps running, the id it held becomes unheld but stays live, and
-	// the next agent to register in that directory inherits a LIVE session's id
-	// and starts receiving its wake notifications.
-	//
-	// Measured on this project's own board: an ephemeral row was swept, the
-	// session behind it was still announcing, and the next agent in that
-	// directory ended up resolving that session's hooks to itself. One agent's
-	// unread list was rendered into another agent's context for hours, and three
-	// agents spent a night deriving why.
-	//
-	// There is no need to guess. The stdio bridge already sends the session it
-	// is running inside on EVERY call, and a caller's own id needs no inference.
-	// So this is preferred over the directory guess and the guess is left for
-	// callers that send neither. Still vetted, not trusted: the engine puts this
-	// through mayClaimSession like any other claim, so naming somebody else's
-	// session is refused rather than believed.
-	if op.SessionAlias == "" {
-		op.SessionAlias = metaSession(params)
-	}
-	if _, invited := engine.InvitationFrom(ctx); invited {
-		op.SessionAlias = ""
-		op.NoProcess = true
-	}
+	op := toolOp(ctx, params, a)
 	switch name {
 	case "invite":
 		return s.issueInvite(ctx, a)
 	case "register":
-		op.Agent = agentInfo(ctx, params, a, sessionClient)
+		s.prepareAgentRegistration(ctx, params, a, sessionClient, op)
 		op.Kind, op.Name, op.Description, op.PID = core.OpRegister, a.Name, a.Description, a.PID
 		op.Nonce, op.AgentKind, op.SessionID = a.Nonce, core.AgentKind(a.Kind), a.SessionID
 		op.RecoveryNonces = a.RecoveryNonces
