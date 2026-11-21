@@ -637,6 +637,7 @@ func mcpConfig(args []string) error {
 	stdioCfg := map[string]any{"mcpServers": map[string]any{"dibs": dibs}}
 	stdioOut, _ := json.MarshalIndent(stdioCfg, "", "  ")
 	fmt.Println("# Claude Code and JSON-config hosts: add to .mcp.json:")
+	fmt.Println("# Antigravity desktop (~/.gemini/config/mcp_config.json):")
 	fmt.Println(string(stdioOut))
 	fmt.Println()
 	fmt.Println("# Better still: the plugin, which brings the wake hooks and the skill")
