@@ -137,9 +137,24 @@ func (s *State) admitMergeActor(op *Op) error {
 		return nil
 	}
 	a := op.MergeActor
-	if a.ID == "" || !a.Evidence.Known || a.Evidence.Live {
+	from, into := s.mergeEvidenceParties(op)
+	if a.ID == "" || !a.Evidence.AllowsMerge(s.Agents[from], s.Agents[into]) {
 		return errf("E_NOT_PERMITTED", "use the authenticated merge entry point",
 			"merge decision lacks authority or evidence")
 	}
 	return nil
+}
+
+// Only a direct merge or typed merge approval names a pair for the
+// shared-process exception. Recovery still requires process absence.
+func (s *State) mergeEvidenceParties(op *Op) (from, into string) {
+	switch op.Kind {
+	case OpMergeAgents:
+		return op.To, op.MergeInto
+	case OpRespond:
+		if m := s.Messages[op.MsgSerial]; m != nil && m.Merge != nil {
+			return m.Merge.From, m.Merge.Into
+		}
+	}
+	return "", ""
 }

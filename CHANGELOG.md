@@ -18,6 +18,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   posting input or reading mail.
 
 ### Fixed
+- A stray nonce no longer forks a dormant agent when the name and current
+  session match. Session-only reattachment still works for eligible agents
+  with a Dibs-minted nonce. Agents with a self-chosen nonce get recovery advice.
+- An authorized merge can absorb a signed-off fork whose former bridge
+  process still serves another agent.
 - Recovery chooses an independent coordinator when several hold the role and
   the first coordinator is the survivor.
 - Finished one-shot Codex runs no longer page the person on daemon restart.

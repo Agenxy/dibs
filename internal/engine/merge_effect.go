@@ -28,7 +28,7 @@ func (e *Engine) prepareMergeEffect(op *core.Op, actor *core.Agent) error {
 		return err
 	}
 	evidence := e.mergeEvidence(effect.From)
-	if err := mergeProcessSafe(effect.From, evidence); err != nil {
+	if err := e.mergeProcessSafe(effect.From, effect.Into, evidence); err != nil {
 		return err
 	}
 	if effect.Fence != e.state.MergeFence(effect.From, effect.Into, ignore) {

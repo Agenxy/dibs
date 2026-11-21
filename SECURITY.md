@@ -260,6 +260,8 @@ for an agent that sent none does not close this path: that agent is still
 reclaimable by name and session id, deliberately, because the alternative is an
 agent that lost its context and can never recover, and its registration result
 says so. Choose the nonce yourself for anything you care about.
+When such a dormant row holds the supplied current session, an unowned
+stray nonce follows the same reattachment path rather than creating a fork.
 
 **Two kinds of row are held out of that convenience entirely, and recovered
 by their nonce alone.** A row that holds a role, or bears a name the operator
