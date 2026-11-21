@@ -510,7 +510,8 @@ const (
 	// Stall notices add one durable declaration-version scalar, absent historically.
 	// FYI receipts add an announcement serial and consumption reason only.
 	// Merge adds typed effect and sender-ownership tags; no historical tag renamed.
-	frozenMessageFingerprint = "sha256:a1fb142844d477f8"
+	// Finished wake notices add finished_wake_notice_serial only.
+	frozenMessageFingerprint = "sha256:6be2369bd6c9cd6e"
 	// The identity inside op.agent. Set when the fingerprint was added; one
 	// new tag at a time from here, never a rename.
 	frozenAgentFingerprint = "sha256:c630d3cc9f27eb95"
@@ -652,6 +653,7 @@ func TestOpKindStringsAreFrozen(t *testing.T) {
 		"OpContactNotified":           {core.OpContactNotified, "contact_notified"},
 		"OpContactResolved":           {core.OpContactResolved, "contact_resolved"},
 		"OpStallNotified":             {core.OpStallNotified, "stall_notified"},
+		"OpFinishedWakeNotified":      {core.OpFinishedWakeNotified, "finished_wake_notified"},
 		"OpAckBoard":                  {core.OpAckBoard, "check_in"},
 		"OpUpdate":                    {core.OpUpdate, "update"},
 		"OpSignOff":                   {core.OpSignOff, "sign_off"},
@@ -743,6 +745,7 @@ func TestLedgerMessageFieldNamesAreFrozen(t *testing.T) {
 	frozen := map[string]bool{
 		// Additive durable stall-notice suppression; historical zero is unchanged.
 		"stall_notified_declaration_serial": true,
+		"finished_wake_notice_serial":       true,
 		// Additive withdrawal receipt; existing response/progress remain intact.
 		"withdrawal_reason": true, "withdrawn_by": true, "superseded_by": true,
 		// Additive task queue state: no historical field renamed.

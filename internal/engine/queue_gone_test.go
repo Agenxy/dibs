@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -24,6 +25,130 @@ func TestGoneQueueThreadStopsRetryAndEscalatesThroughSend(t *testing.T) {
 	for _, prior := range []int{0, spawnFailureCap - 1} {
 		t.Run(fmt.Sprintf("prior-failures-%d", prior), func(t *testing.T) { goneQueueThreadScenario(t, prior) })
 	}
+}
+
+func TestFinishedExecWakeOnDaemonRestartNotifiesOnlySenders(t *testing.T) {
+	t.Setenv("DIBS_DIR", t.TempDir())
+	testcodexipc.Start(t, "no-owner", nil)
+	t.Setenv("DIBS_TEST_QUEUE_THREAD_SOURCE", "exec")
+	binary := filepath.Join(t.TempDir(), "codex")
+	if b, err := exec.Command("go", "build", "-o", binary, "../wakeexec/testdata/codexqueue").CombinedOutput(); err != nil {
+		t.Fatalf("setup: build queue fixture: %v: %s", err, b)
+	}
+	testexec.PrepareExecutable(t, exec.Command(binary, "--version"))
+
+	const node = "finished-exec-restart"
+	workers := []string{"builder", "maintainer", "repairer"}
+	seed := core.NewState(node, core.DefaultLimits())
+	old := time.Now().Add(-5 * 24 * time.Hour)
+	var records []*core.Op
+	add := func(op *core.Op) core.Result {
+		t.Helper()
+		res, _, err := seed.Apply(op, old)
+		if err != nil {
+			t.Fatalf("setup %s: %v", op.Kind, err)
+		}
+		records = append(records, op)
+		return res
+	}
+	add(&core.Op{Kind: core.OpRegister, Name: "sender", NewToken: "token-sender", Nonce: "nonce-sender"})
+	add(&core.Op{Kind: core.OpRegister, Name: "coordinator", NewToken: "token-lead", Nonce: "nonce-lead"})
+	add(&core.Op{Kind: core.OpGrantRole, To: "coordinator", Mode: core.RoleCoordinator})
+	var requests, handoffs []uint64
+	for i, worker := range workers {
+		add(&core.Op{
+			Kind: core.OpRegister, Name: worker, AgentKind: core.KindPersistent,
+			NewToken: "token-" + worker, Nonce: "nonce-" + worker,
+			SessionID: fmt.Sprintf("019ffe52-0eaf-7f60-81cc-%012d", i+1),
+			Agent:     &core.AgentInfo{Harness: "Codex", Surface: harnessenv.ChatGPTApp},
+		})
+		request := add(&core.Op{
+			Kind: core.OpSendMessage, Token: "token-sender", To: worker, MsgType: core.MsgRequest,
+			Body: "private source body", DeliveryStart: true,
+		})["msg_serial"].(uint64)
+		requests = append(requests, request)
+		handoff := add(&core.Op{
+			Kind: core.OpSendMessage, Token: "token-sender", To: worker, MsgType: core.MsgHandoff,
+			Body: "private source body",
+		})["msg_serial"].(uint64)
+		handoffs = append(handoffs, handoff)
+	}
+	add(&core.Op{Kind: core.OpMarkDelivered, MsgSerials: handoffs})
+	start := func(st *core.State) (*Engine, *memLedger, context.Context, func()) {
+		led := &memLedger{}
+		e := New(st, led, deadProber{})
+		e.SetHumanNotifier(noContactDesktop{})
+		e.SetWakeCommands(map[string]WakeCommand{"codex": {Argv: []string{
+			binary, "queue", "--thread", "{thread}", "--message", "{message}",
+		}}})
+		ctx, cancel := context.WithCancel(t.Context())
+		go e.Run(ctx)
+		stop := func() { cancel(); <-e.Done() }
+		t.Cleanup(stop)
+		if _, err := e.query(ctx, func() core.Result { return nil }); err != nil {
+			t.Fatalf("startup: %v", err)
+		}
+		for _, worker := range workers {
+			waitWakeDone(t, e, worker)
+		}
+		return e, led, ctx, stop
+	}
+	check := func(e *Engine, ctx context.Context) {
+		t.Helper()
+		if _, err := e.query(ctx, func() core.Result {
+			for _, worker := range workers {
+				observed := e.wakers.queueObserved[worker].observation
+				if observed.ThreadSource != "exec" || observed.ThreadState != "gone" {
+					t.Errorf("setup: %s did not exercise exec refusal on startup: %+v", worker, observed)
+				}
+			}
+			if len(e.state.Contacts) != 0 {
+				t.Errorf("finished exec runs raised %d person contact alerts", len(e.state.Contacts))
+			}
+			if n := len(e.state.Inbox("coordinator")) + len(e.notices["coordinator"]); n > 1 {
+				t.Errorf("finished exec runs produced %d coordinator alerts", n)
+			}
+			senderMail := e.state.Inbox("sender")
+			for _, serial := range append(slices.Clone(requests), handoffs...) {
+				m := e.state.Messages[serial]
+				kind, state := core.MsgRequest, core.MsgStatePending
+				if slices.Contains(handoffs, serial) {
+					kind, state = core.MsgHandoff, core.MsgStateDelivered
+				}
+				if m == nil || m.Consumed || m.State != state {
+					t.Errorf("source %s %d did not retain its original state", kind, serial)
+				}
+				var matches int
+				marker := fmt.Sprintf("%s #%d ", kind, serial)
+				for _, n := range senderMail {
+					if n.Type == core.MsgNotify && n.From == e.dibsRowLocked() && strings.Contains(n.Body, marker) {
+						matches++
+						if !strings.Contains(n.Body, "finished one-shot Codex run") || strings.Contains(n.Body, "private source body") {
+							t.Errorf("inaccurate or private sender notice: %q", n.Body)
+						}
+					}
+				}
+				if matches != 1 {
+					t.Errorf("%s %d has %d sender notices, want one", kind, serial, matches)
+				}
+			}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first, ledger, ctx, stop := start(seed)
+	check(first, ctx)
+	stop()
+
+	replayed := core.NewState(node, core.DefaultLimits())
+	for i, op := range append(records, ledger.ops...) {
+		if _, _, err := replayed.Apply(op, old.Add(time.Duration(i)*time.Second)); err != nil {
+			t.Fatalf("replay %s: %v", op.Kind, err)
+		}
+	}
+	second, _, secondCtx, _ := start(replayed)
+	check(second, secondCtx)
 }
 
 func goneQueueThreadScenario(t *testing.T, priorFailures int) {

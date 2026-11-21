@@ -15,6 +15,12 @@ board retains feature data but has no non-closed agent, old readers can report
 `E_BAD_TOKEN` before they reach the unknown-kind check. This is still refusal,
 and it is not a credential repair instruction: use a reader with the fence.
 
+Finished one-shot wake notices require a daemon that reads
+`finished_wake_notified` ledger records and the `finished-wake-notice/v1`
+snapshot feature. Once a board retains either, roll back only to a build
+that supports them. Older daemons refuse the record or snapshot rather than
+forgetting that a sender was already notified.
+
 ## macOS signing identity and deliberate rotation
 
 The release certificate root is pinned in

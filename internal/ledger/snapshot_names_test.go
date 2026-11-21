@@ -56,7 +56,9 @@ func TestSnapshotGoFieldNamesAreFrozen(t *testing.T) {
 	// MergedNonce.Displaced; removing those five restores 4f8a809b0bd50519.
 	// Contact diagnosis adds only ContactEscalation.Reason. Removing it
 	// restores 82f7dcda94fcbe20; old snapshots decode an empty reason.
-	const want = "sha256:fb5263b37eb09620"
+	// Finished execution notices add only Message.FinishedWakeNotice. Removing
+	// it restores fb5263b37eb09620. Old snapshots have no notice marker.
+	const want = "sha256:4c79f8fd8ce73852"
 	if got := fingerprint(names); got != want {
 		sorted := make([]string, 0, len(names))
 		for n := range names {

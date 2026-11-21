@@ -21,6 +21,18 @@ type snapshotFeature struct {
 
 var snapshotFeatures = []snapshotFeature{
 	{
+		name:   "finished-wake-notice/v1",
+		fields: []string{"core.Message.FinishedWakeNotice"},
+		present: func(st *core.State) bool {
+			for _, message := range st.Messages {
+				if message != nil && message.FinishedWakeNotice != 0 {
+					return true
+				}
+			}
+			return false
+		},
+	},
+	{
 		name:   "native-turn-contact-reason/v1",
 		fields: []string{"core.ContactEscalation.Reason"},
 		present: func(st *core.State) bool {

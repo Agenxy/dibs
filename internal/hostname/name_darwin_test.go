@@ -42,3 +42,21 @@ func TestMacNamePreferenceAndFailureBoundary(t *testing.T) {
 		t.Fatalf("failed source silently fell to a lower name: %v %v", keys, err)
 	}
 }
+
+func TestMacNamePrefersLocalLabelToADNSName(t *testing.T) {
+	got, err := macName(t.Context(), func(_ context.Context, key string) (string, error) {
+		switch key {
+		case "HostName":
+			return "MacMarine.attlocal.net", nil
+		case "LocalHostName":
+			return "MacMarine", nil
+		case "ComputerName":
+			return "MacMarine", nil
+		default:
+			return "", errUnset
+		}
+	})
+	if err != nil || got != "MacMarine" {
+		t.Fatalf("display label = %q (%v), want MacMarine", got, err)
+	}
+}
