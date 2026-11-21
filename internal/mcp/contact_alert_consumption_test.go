@@ -98,6 +98,11 @@ func TestContactAlertReadQuietsCoordinatorWithoutResolvingContact(t *testing.T) 
 							t.Fatal("setup: no contact delivered through the person's notifier fixture")
 						}
 						marker := fmt.Sprintf("contact alert %d", contact)
+						written := call("update", map[string]any{"token": lead, "description": "check contact guidance"})
+						waiting, _ := written["waiting"].(string)
+						if !strings.Contains(waiting, "call inbox for contact alerts") || strings.Contains(waiting, "ack(") {
+							t.Errorf("contact alert did not name its supported read: %q", waiting)
+						}
 						if activation == "hooked" {
 							wake := call("hook_poll", map[string]any{"session_id": "contact-read-lead", "event": "Stop", "strict_output": true})
 							if !strings.Contains(fmt.Sprint(wake), marker) {

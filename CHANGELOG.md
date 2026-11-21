@@ -18,6 +18,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   posting input or reading mail.
 
 ### Fixed
+- The waiting hint directs contact alerts to `inbox` and identifies which
+  message numbers can be used with `ack` or `read_mail`.
 - A stray nonce no longer forks a dormant agent when the name and current
   session match. Session-only reattachment still works for eligible agents
   with a Dibs-minted nonce. Agents with a self-chosen nonce get recovery advice.
