@@ -53,8 +53,9 @@ const MissingHint = "start or upgrade dibd for this data directory; for a remote
 	"including through an HTTPS SSH forward; plaintext TCP fallback is refused"
 
 type (
-	localKey struct{}
-	auditKey struct{}
+	localKey   struct{}
+	auditKey   struct{}
+	peerPIDKey struct{}
 )
 
 // PeerAuditToken is kernel connection evidence, never a request header. Empty
@@ -70,6 +71,13 @@ func IsLocal(ctx context.Context) bool {
 	return v
 }
 
+// PeerPID is the Unix socket peer reported by the kernel. An HTTP header,
+// loopback TCP or a remote relay cannot supply it.
+func PeerPID(ctx context.Context) int {
+	pid, _ := ctx.Value(peerPIDKey{}).(int)
+	return pid
+}
+
 // ConnContext is installed only on a daemon's local listener. Verification
 // precedes net/http reading application bytes; an unverified peer is closed.
 func ConnContext(ctx context.Context, conn net.Conn) context.Context {
@@ -81,6 +89,9 @@ func ConnContext(ctx context.Context, conn net.Conn) context.Context {
 		return ctx
 	}
 	ctx = context.WithValue(ctx, localKey{}, true)
+	if pid := peerPID(conn); pid > 1 {
+		ctx = context.WithValue(ctx, peerPIDKey{}, pid)
+	}
 	if token := peerAuditToken(conn); len(token) == 32 {
 		ctx = context.WithValue(ctx, auditKey{}, token)
 	}

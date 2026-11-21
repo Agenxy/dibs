@@ -8,7 +8,9 @@ import "github.com/agenxy/dibs/internal/core"
 // Absence of a route or a dormant status alone proves no harness closure. Use
 // the same positive process evidence the board's proc_alive projection uses.
 func (e *Engine) closedHarnessNote(l *core.Agent, socket bool) string {
-	if socket || l.PID <= 1 || e.prober == nil || e.prober.Alive(l.PID) || e.sessionMovedProcess(l) {
+	if socket || l.PID <= 1 || e.prober == nil || !e.ownsHost(l) ||
+		e.prober.Alive(l.PID) || e.sessionMovedProcess(l) ||
+		e.processContact[l.ID] == recordedProcess(l) {
 		return ""
 	}
 	note := "Stored in " + l.ID + "'s mailbox; harness closed. No started turn or read mail is confirmed. " +

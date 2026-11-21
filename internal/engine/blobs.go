@@ -72,7 +72,7 @@ func (e *Engine) GetBlob(ctx context.Context, token, id, as string) (core.Result
 	}
 	meta, err := e.query(ctx, func() core.Result {
 		now := time.Now()
-		l, errRes := e.authRead(token, now)
+		l, errRes := e.authRead(ctx, token, now)
 		if errRes != nil {
 			return errRes
 		}

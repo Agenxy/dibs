@@ -38,7 +38,7 @@ func (e *Engine) Broadcast(ctx context.Context, token, msgType, body string) (co
 	// Resolve the sender and the recipient set inside the loop, so the fan-out
 	// is taken from one consistent snapshot of the board.
 	snap, err := e.query(ctx, func() core.Result {
-		l, errRes := e.authRead(token, time.Now())
+		l, errRes := e.authRead(ctx, token, time.Now())
 		if errRes != nil {
 			return errRes
 		}
@@ -112,7 +112,7 @@ func (e *Engine) Broadcast(ctx context.Context, token, msgType, body string) (co
 // Two of the three mailboxes turned out to hold nothing. Issue #77.
 func (e *Engine) AllMail(ctx context.Context, token string, census bool, agent string) (core.Result, error) {
 	res, err := e.query(ctx, func() core.Result {
-		l, errRes := e.authRead(token, time.Now())
+		l, errRes := e.authRead(ctx, token, time.Now())
 		if errRes != nil {
 			return errRes
 		}

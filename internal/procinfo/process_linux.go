@@ -105,12 +105,17 @@ func Snapshot(ctx context.Context) ([]Process, error) {
 
 // Start reads the kernel's boot-relative process incarnation.
 func Start(pid int) (time.Time, error) {
+	row, err := Inspect(pid)
+	return row.Start, err
+}
+
+// Inspect reads one live process and its native parent and incarnation.
+func Inspect(pid int) (Process, error) {
 	boot, err := bootTime()
 	if err != nil {
-		return time.Time{}, err
+		return Process{}, err
 	}
-	row, err := processAt(pid, boot)
-	return row.Start, err
+	return processAt(pid, boot)
 }
 
 func processComm(pid int) (string, error) {

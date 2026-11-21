@@ -47,7 +47,7 @@ func (e *Engine) authorizeTransfer(
 		if err := ctx.Err(); err != nil {
 			return core.Result{"error": err}
 		}
-		a, refused := e.authRead(token, time.Now())
+		a, refused := e.authRead(ctx, token, time.Now())
 		if refused != nil {
 			return refused
 		}

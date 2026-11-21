@@ -256,6 +256,23 @@ func verifyPeer(conn net.Conn) error {
 	return peerErr
 }
 
+func peerPID(conn net.Conn) int {
+	uc, ok := conn.(*net.UnixConn)
+	if !ok {
+		return 0
+	}
+	raw, err := uc.SyscallConn()
+	if err != nil {
+		return 0
+	}
+	var pid int
+	// #nosec G115 -- a live socket fd fits int.
+	if err := raw.Control(func(fd uintptr) { pid = kernelPeerPID(int(fd)) }); err != nil {
+		return 0
+	}
+	return pid
+}
+
 // Listen never steals an existing live endpoint. A stale owned socket is
 // removed only after a refused connection and an unchanged inode check.
 func Listen(dir string) (net.Listener, error) {

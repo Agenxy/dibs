@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"sync"
 	"testing"
 )
 
@@ -52,10 +51,7 @@ func TestRegisterBindsTheHarnessSessionNotTheBridgePid(t *testing.T) {
 	t.Setenv("CLAUDE_PID", pid)
 	// sessionID() memoises for the life of the bridge process, which is right in
 	// production and wrong inside a test binary that has already resolved it.
-	sessionOnce = struct {
-		sync.Once
-		id string
-	}{}
+	knownSessionID.Store(nil)
 	// The handshake, because the sidecar is read only for a client that says it
 	// is Claude Code. That gate is deliberate: CLAUDE_PID is inherited by every
 	// process a Claude Code session spawns, so an ungated read lets an unrelated

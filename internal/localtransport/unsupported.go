@@ -14,6 +14,7 @@ import (
 )
 
 func Supported() bool                                { return false }
+func peerPID(net.Conn) int                           { return 0 }
 func owned(os.FileInfo) bool                         { return false }
 func CheckDir(string, bool) error                    { return errors.New(UnsupportedHint) }
 func checkSocket(string) error                       { return errors.New(UnsupportedHint) }

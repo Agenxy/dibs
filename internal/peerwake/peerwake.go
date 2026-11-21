@@ -59,6 +59,7 @@ import (
 type Session struct {
 	PID       int
 	SessionID string // the id the harness's own hooks quote
+	ProcStart string // the harness key's UTC start stamp, empty if unavailable
 	// CWD is where that session is running, as the harness records it.
 	//
 	// Carried so a caller can notice that the session it is about to wake is
@@ -162,7 +163,7 @@ func load(dir string, pid int, key string, alive func(int, string) bool) (Sessio
 		return Session{}, false // no live endpoint: nothing to deliver to
 	}
 	return Session{
-		PID: pid, SessionID: side.SessionID, CWD: side.CWD,
+		PID: pid, SessionID: side.SessionID, ProcStart: strings.Join(strings.Fields(k.ProcStart), " "), CWD: side.CWD,
 		Socket: sock, token: k.PeerToken,
 	}, true
 }

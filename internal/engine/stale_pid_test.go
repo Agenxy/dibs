@@ -5,10 +5,14 @@ package engine
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/procinfo"
 )
 
 // onePIDDead is a prober that says exactly one pid is gone. Written out rather
@@ -121,4 +125,151 @@ func TestADeadProcessWithNoLiveSessionIsStillACrash(t *testing.T) {
 		}
 		return core.Result{}
 	})
+}
+
+func TestDeadPlaceholderDoesNotHideLivePrimarySession(t *testing.T) {
+	_, live := listeningSession(t)
+	const dead, replacement = 424244, 999001
+	const started = 1_792_312_000_123
+	key := filepath.Join(os.Getenv("HOME"), ".claude", "sessions", "999001."+strings.Repeat("b", 64)+".key")
+	payload := `{"peerToken":"` + strings.Repeat("a", 32) + `","procStart":"` +
+		procinfo.Stamp(time.UnixMilli(started)) + `"}`
+	if err := os.WriteFile(key, []byte(payload), 0o600); err != nil {
+		t.Fatal("setup: stamp the live peer key:", err)
+	}
+	prober := &startProber{started: map[int]int64{replacement: started}}
+	e, ctx := newEconomyNoteEngine(t, prober)
+	worker, err := e.Do(ctx, &core.Op{
+		Kind: core.OpRegister, Name: "live-primary", PID: dead, SessionID: live,
+		Agent: &core.AgentInfo{Harness: "Claude Code"},
+	})
+	if err != nil {
+		t.Fatal("setup: register worker:", err)
+	}
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpAckBoard, Token: worker["token"].(string), SessionAlias: "host-424244",
+	}); err != nil {
+		t.Fatal("setup: bind the cached bridge placeholder:", err)
+	}
+	board, err := e.Board(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := board["agents"].([]map[string]any)[0]
+	sessions := row["sessions"].(map[string]any)
+	if sessions["primary"] != live || sessions["current"] != "host-424244" {
+		t.Fatalf("setup did not retain the stale placeholder beside its primary: %v", sessions)
+	}
+	if _, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: worker["token"].(string)}); err != nil {
+		t.Fatal("setup: authenticated check-in:", err)
+	}
+	e.primePeerSessions()
+	if note := e.PullOnlyNoteFor(ctx, "live-primary"); strings.Contains(note, "harness closed") {
+		t.Fatalf("send receipt claims harness closure for a known live primary session: %s", note)
+	}
+	checkIn := func(session string) {
+		t.Helper()
+		if _, err := e.Do(ctx, &core.Op{
+			Kind: core.OpAckBoard, Token: worker["token"].(string), SessionAlias: session,
+		}); err != nil {
+			t.Fatal("check-in:", err)
+		}
+	}
+	checkIn("host-424244")
+	if _, err := e.query(ctx, func() core.Result {
+		row := e.state.Agents["live-primary"]
+		if row.CurrentSession != "host-424244" || row.PID != dead {
+			t.Error("liveness evidence alone replaced the current wake activation")
+		}
+		// The cache was warmed before the PID was reused. A live PID with a
+		// different start stamp cannot become the recorded process.
+		prober.started[replacement] += 1000
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	checkIn(live)
+	if _, err := e.query(ctx, func() core.Result {
+		row := e.state.Agents["live-primary"]
+		if row.CurrentSession != live || row.PID != dead {
+			t.Error("check-in should bind the stated session and reject the reused PID")
+		}
+		prober.started[replacement] = started
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	checkIn(live)
+	if _, err := e.query(ctx, func() core.Result {
+		ops := e.led.(*memLedger).ops
+		last := ops[len(ops)-1]
+		if last.Kind != core.OpAckBoard || !last.ProcessRefresh || last.PID != replacement || last.ProcStart != started {
+			t.Error("the verified replacement process was not ledgered")
+		}
+		replayed := core.NewState("notes", core.DefaultLimits())
+		for n, op := range ops {
+			_, _, err := replayed.Apply(op, time.Unix(int64(n), 0))
+			if err != nil {
+				t.Fatalf("replay operation %d: %v", n, err)
+			}
+		}
+		row := replayed.Agents["live-primary"]
+		if row.CurrentSession != live || row.PID != replacement || row.ProcStart != started {
+			t.Error("replay lost the verified replacement process")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAuthenticatedContactDisprovesClosureFromAnAlreadyDeadPID(t *testing.T) {
+	const pid = 424245
+	e, ctx := newEconomyNoteEngine(t, onePIDDead{dead: pid})
+	worker, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "check-in", PID: pid})
+	if err != nil {
+		t.Fatal("setup: register:", err)
+	}
+	note := func() string { return e.PullOnlyNoteFor(ctx, "check-in") }
+	if got := note(); !strings.Contains(got, "harness closed") {
+		t.Fatalf("setup: the dead process alone should establish closure: %s", got)
+	}
+	if _, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: "wrong"}); err == nil {
+		t.Fatal("setup: unauthenticated contact was accepted")
+	}
+	if got := note(); !strings.Contains(got, "harness closed") {
+		t.Fatalf("unauthenticated call invalidated process evidence: %s", got)
+	}
+	if _, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: worker["token"].(string)}); err != nil {
+		t.Fatal("setup: authenticated check-in:", err)
+	}
+	if got := note(); strings.Contains(got, "harness closed") {
+		t.Fatalf("receipt claimed closure from a process that had already exited before authenticated contact: %s", got)
+	}
+}
+
+func TestClosureDoesNotOutrankAuthenticatedContactAfterActivation(t *testing.T) {
+	const pid = 424246
+	start := time.Now().Add(-time.Hour).UnixMilli()
+	prober := &startProber{started: map[int]int64{pid: start}}
+	e, ctx := newEconomyNoteEngine(t, prober)
+	worker, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "worker", PID: pid})
+	if err != nil {
+		t.Fatal("setup: register:", err)
+	}
+	if _, err := e.InboxFor(ctx, worker["token"].(string)); err != nil {
+		t.Fatal("setup: authenticated inbox:", err)
+	}
+	if _, err := e.query(ctx, func() core.Result {
+		delete(prober.started, pid)
+		// Expire the sweep's short-term idle evidence. The recorded process
+		// still cannot tell whether the same agent continued in another one.
+		e.trimContactEvidence(time.Now().Add(2 * e.state.Limits.IdleTTL))
+		return nil
+	}); err != nil {
+		t.Fatal("setup: mark old proc exited:", err)
+	}
+	if note := e.PullOnlyNoteFor(ctx, "worker"); strings.Contains(note, "harness closed") {
+		t.Fatalf("the dead PID overrode authenticated contact newer than its recorded activation: %s", note)
+	}
 }

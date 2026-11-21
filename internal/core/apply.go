@@ -37,6 +37,10 @@ const (
 	OpSendMessage        = "send"
 	OpRespond            = "respond"
 	OpAckMessage         = "ack"
+	// OpRefreshSessionProcess records a verified PID and its current session
+	// together. A distinct kind prevents an older reader from treating this
+	// as a primary binding or an acknowledgement of the board.
+	OpRefreshSessionProcess = "refresh_session_process"
 	// OpOutcomeRead records that the SENDER of a message has read its verdict.
 	// Written by the engine when read_mail hands an asker a terminal message
 	// of its own, for the reason mark_delivered is written when a recipient
@@ -242,6 +246,12 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		res, evs = s.applyAckBoard(l, op, now)
 	case OpUpdate:
 		res, evs, err = s.applyUpdate(l, op)
+	case OpRefreshSessionProcess:
+		s.dropTakenSession(op, l)
+		l.bindHarnessSessionAs(op.SessionID, false, op.V7Semantics)
+		l.PID, l.ProcStart = op.PID, op.ProcStart
+		res = Result{"ok": true}
+		evs = []Event{{Type: "agent.updated", Agent: l.ID}}
 	case OpBindSession:
 		if op.BindIfUnbound && l.hasSessionBinding() {
 			return Result{
@@ -1092,6 +1102,9 @@ func (s *State) applyAckBoard(l *Agent, op *Op, now time.Time) (Result, []Event)
 	// use: it is the one call they all keep making. See bindHarnessSession.
 	s.dropTakenSession(op, l)
 	bound := l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed, op.V7Semantics)
+	if op.ProcessRefresh {
+		l.PID, l.ProcStart = op.PID, op.ProcStart
+	}
 	selected := map[uint64]bool{}
 	if op.MailboxSerials != nil {
 		for _, serial := range *op.MailboxSerials {

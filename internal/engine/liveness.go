@@ -4,9 +4,13 @@
 package engine
 
 import (
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/harnessenv"
+	"github.com/agenxy/dibs/internal/procinfo"
 )
 
 // Deciding whether an agent is there, without asking it.
@@ -114,7 +118,7 @@ func (e *Engine) noteHookAlive(l *core.Agent) {
 // but its harness session is alive in ANOTHER process: the session moved, the
 // agent did not die.
 //
-// A DEAD PID WAS BEATING DIRECT EVIDENCE, and it locked an agent out. A pid is
+// A DEAD PID WAS BEATING DIRECT EVIDENCE, and it locked an agent out. A pid was
 // recorded once, at register, and a harness can restart the process behind a
 // session without the agent registering again: switching the model in Claude
 // Code does exactly that, resuming the same session id in a new process. The
@@ -143,11 +147,67 @@ func (e *Engine) noteHookAlive(l *core.Agent) {
 // Harnesses that publish no sidecar are unchanged: the snapshot has nothing
 // for them, and a dead pid still means dead.
 func (e *Engine) sessionMovedProcess(l *core.Agent) bool {
-	if l == nil {
+	if l == nil || !e.ownsHost(l) {
 		return false
 	}
-	s, ok := peerSessionIn(e.peerSnapshot(), sessionsOf(l))
-	return ok && s.PID != 0 && s.PID != l.PID
+	live := e.peerSnapshot()
+	session, ok := peerSessionIn(live, sessionsOf(l))
+	if !ok && hasParentPlaceholder(l.CurrentSession) &&
+		core.LooksLikeThreadID(l.SessionID) && !l.GuessedSession(l.SessionID) {
+		// The primary can disprove closure when the current name is just a
+		// bridge placeholder. Wake delivery still uses the current binding.
+		session, ok = live[l.SessionID]
+		ok = ok && session.SessionID == l.SessionID
+	}
+	return ok && session.PID > 1 && session.PID != l.PID
+}
+
+func hasParentPlaceholder(id string) bool {
+	parent, ok := strings.CutPrefix(id, "host-")
+	pid, err := strconv.Atoi(parent)
+	return ok && err == nil && pid > 1
+}
+
+// refreshCheckInProcess records a replacement only when an authenticated
+// check-in names a session the agent already holds and the local harness
+// advertises that exact session in a verified, running process.
+func (e *Engine) refreshCheckInProcess(op *core.Op, l *core.Agent, process harnessenv.ClaudeProcess) {
+	if op.Kind != core.OpAckBoard || op.SessionGuessed {
+		return
+	}
+	sid := op.SessionAlias
+	if sid != "" && sid == process.Session {
+		if ok, taken := e.verifiedProcessReplacement(l, process); ok {
+			op.SessionAliasTakenFrom = taken
+			op.PID, op.ProcStart, op.ProcessRefresh = process.PID, process.Start, true
+			return
+		}
+	}
+	if !e.ownsHost(l) || l.PID <= 1 || e.prober == nil || e.prober.Alive(l.PID) {
+		return
+	}
+	if !core.LooksLikeThreadID(sid) || (sid != l.CurrentSession && sid != l.SessionID) {
+		return
+	}
+	pid, start := e.confirmedSessionProcess(sid)
+	if pid != 0 && pid != l.PID {
+		op.PID, op.ProcStart, op.ProcessRefresh = pid, start, true
+	}
+}
+
+// A cached socket record may outlive the process that wrote its key. Compare
+// the harness's recorded start to the kernel before recording the PID.
+func (e *Engine) confirmedSessionProcess(sid string) (int, int64) {
+	peer, ok := e.peerSnapshot()[sid]
+	clock, probe := e.prober.(StartClock)
+	if !ok || !probe || peer.SessionID != sid || peer.PID <= 1 {
+		return 0, 0
+	}
+	start, found := clock.StartMillis(peer.PID)
+	if !found || start <= 0 || procinfo.Stamp(time.UnixMilli(start)) != peer.ProcStart {
+		return 0, 0
+	}
+	return peer.PID, start
 }
 
 // Startup grace is evidence for liveness only, never an observed activity.

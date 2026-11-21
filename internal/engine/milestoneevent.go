@@ -9,12 +9,15 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/harnessenv"
 )
 
 // Progress/review events are derived notices, not separate mailbox messages.
 // Resolve through the retained parent's entries, never a public event-ring
 // lookup: strangers and replacement identities must learn no parent serial.
-func (e *Engine) handleMilestoneEvent(op *core.Op, actor *core.Agent, now time.Time) (core.Result, error, bool) {
+func (e *Engine) handleMilestoneEvent(
+	op *core.Op, actor *core.Agent, process harnessenv.ClaudeProcess, now time.Time,
+) (core.Result, error, bool) {
 	if actor == nil || (op.Kind != core.OpAckMessage && op.Kind != core.OpRespond) {
 		return nil, nil, false
 	}
@@ -38,9 +41,9 @@ func (e *Engine) handleMilestoneEvent(op *core.Op, actor *core.Agent, now time.T
 		return nil, err, true
 	}
 	e.dismissMilestoneNotice(actor.ID, p.Serial)
-	e.seen[actor.ID] = now
-	e.noteAuthenticatedContact(actor, now)
-	e.confirmSocketOffer(actor, now)
+	if err := e.noteAuthenticatedContact(actor, process, now); err != nil {
+		return nil, err, true
+	}
 	result := core.Result{"ok": true, "state": "acked"}
 	if len(alsoRead) > 0 {
 		result["also_read"] = alsoRead

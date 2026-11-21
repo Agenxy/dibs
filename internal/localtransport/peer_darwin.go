@@ -20,3 +20,8 @@ func peerIsUser(fd int) error {
 	}
 	return nil
 }
+
+func kernelPeerPID(fd int) int {
+	pid, _ := unix.GetsockoptInt(fd, unix.SOL_LOCAL, unix.LOCAL_PEERPID)
+	return pid
+}

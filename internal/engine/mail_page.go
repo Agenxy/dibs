@@ -260,7 +260,7 @@ func (e *Engine) refreshMailboxReceipts(res core.Result, l *core.Agent, p mailPa
 func (e *Engine) InboxPage(ctx context.Context, token, cursor string, limit int) (core.Result, error) {
 	return e.query(ctx, func() core.Result {
 		now := time.Now()
-		l, refused := e.authRead(token, now)
+		l, refused := e.authRead(ctx, token, now)
 		if refused != nil {
 			return refused
 		}

@@ -751,6 +751,7 @@ func (s *Server) dispatch(
 					Message: "dibs://inbox requires an agent token in _meta['" + metaTokenKey + "']",
 				}
 			}
+			ctx = s.observeSessionProcess(ctx, req.Params, tok)
 			box, err := s.eng.InboxFor(ctx, tok)
 			if err != nil {
 				return nil, rpcErrFrom(err)
@@ -1075,6 +1076,7 @@ func (s *Server) callTool(
 	// has. Before the call, so `check_in`'s own answer already reflects it.
 	if _, invited := engine.InvitationFrom(ctx); !invited {
 		s.adoptSession(ctx, a.Token, params)
+		ctx = s.observeSessionProcess(ctx, params, a.Token)
 	}
 
 	res, err := s.run(ctx, call.Name, &a, params, sessionClient)

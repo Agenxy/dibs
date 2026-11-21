@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/agenxy/dibs/internal/harnessenv"
@@ -381,38 +382,19 @@ func enrichRegister(line []byte) []byte {
 	return out
 }
 
-// sessionID is the harness session this bridge is running inside, resolved once.
-//
-// Memoised because it is now sent on every tool call and resolving it is file
-// work: Claude Code's per-process sidecar, plus a bounded scan of the
-// transcript for the session title. Once per bridge process is the right
-// frequency for something that cannot change while the process lives.
-var sessionOnce struct {
-	sync.Once
-	id string
-}
+// Only Claude's published identity is stable. The parent placeholder is
+// evidence for one call while the sidecar is absent or being rewritten.
+var knownSessionID atomic.Pointer[string]
 
 func sessionID() string {
-	sessionOnce.Do(func() {
-		// STILL GATED ON clientIs("claude"), and I removed it once and put it
-		// back. The reasoning for removing it was that clientIs answers from a
-		// handshake and this call is not handshake-ordered, so a 2026 caller
-		// that sends no `initialize` would read no sidecar. That risk is real.
-		//
-		// The gate is load-bearing for a bigger one. CLAUDE_PID is INHERITED by
-		// every process a Claude Code session spawns, so an unrelated bridge
-		// started anywhere beneath one reads that session's sidecar and adopts
-		// its session id. Removing the gate broke nine checks in the guard e2e
-		// immediately, where test daemons began registering under the developer's
-		// own session. In production that would mean a nested harness silently
-		// answering to its parent's wake path.
-		if v := sessionContext(clientIs("claude"))["session_id"]; v != "" {
-			sessionOnce.id = v
-			return
-		}
-		sessionOnce.id = bridgeSessionID()
-	})
-	return sessionOnce.id
+	if id := knownSessionID.Load(); id != nil {
+		return *id
+	}
+	if side, _, ok := readClaudeSidecar(clientIs("claude")); ok && side.SessionID != "" {
+		knownSessionID.CompareAndSwap(nil, &side.SessionID)
+		return *knownSessionID.Load()
+	}
+	return bridgeSessionID()
 }
 
 // servedThread is the harness thread this bridge is running inside, as the
