@@ -122,10 +122,14 @@ func diagnosticWakeResult(plan *wakePlan, success bool) (route, outcome string) 
 	if success {
 		outcome = "accepted"
 	}
+	var disposition string
+	if plan.nativeOutcome != nil {
+		disposition = plan.nativeOutcome.Disposition
+	}
 	switch {
 	case plan.host != "":
-		if plan.nativeOutcome != nil && plan.nativeOutcome.Disposition != "" {
-			return "host_bridge", plan.nativeOutcome.Disposition
+		if disposition != "" {
+			return "host_bridge", disposition
 		}
 		return "host_bridge", outcome
 	case plan.antigravity != 0:
@@ -134,8 +138,8 @@ func diagnosticWakeResult(plan *wakePlan, success bool) (route, outcome string) 
 		return "app_queue", "gone"
 	case plan.queueOutcome != nil && plan.queueOutcome.Admission != "":
 		return "app_queue", plan.queueOutcome.Admission
-	case plan.nativeOutcome != nil && plan.nativeOutcome.Disposition != "":
-		return "native_app", plan.nativeOutcome.Disposition
+	case disposition != "":
+		return "native_app", disposition
 	case len(plan.argv) > 0:
 		return "command", outcome
 	case plan.socketWritten != nil && *plan.socketWritten:
