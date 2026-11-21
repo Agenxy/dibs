@@ -6,6 +6,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- `dibs mcp-config` names the Antigravity desktop settings file for its
+  stdio configuration.
 - A verified Antigravity desktop wake binding survives Dibs daemon restarts.
   Dibs rechecks the live desktop app and the recorded conversation before
   each wake. One check-in enrolls a conversation after upgrading from the
@@ -18,6 +20,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   posting input or reading mail.
 
 ### Fixed
+- Sending to a closed harness explains that unconfirmed delivery can raise a
+  contact alert and suggests choosing a reachable recipient for urgent work.
+- The waiting hint directs contact alerts to `inbox` and identifies which
+  message numbers can be used with `ack` or `read_mail`.
 - A stray nonce no longer forks a dormant agent when the name and current
   session match. Session-only reattachment still works for eligible agents
   with a Dibs-minted nonce. Agents with a self-chosen nonce get recovery advice.

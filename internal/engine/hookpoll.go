@@ -833,10 +833,12 @@ func (e *Engine) waiting(agent string, now time.Time) string {
 // notice view, deduplicated and ordered by their first outstanding event.
 func waitingReadHint(mail, announced int, notices []notice) string {
 	inbox := mail > 0 || announced > 0
+	contact := false
 	at := map[uint64]int{}
 	var parents []string
 	for _, n := range notices {
 		if !n.ReadParent || n.Msg == 0 {
+			contact = contact || n.Kind == "contact.escalated"
 			inbox = true
 			continue
 		}
@@ -855,7 +857,9 @@ func waitingReadHint(mail, announced int, notices []notice) string {
 		}
 	}
 	var reads []string
-	if inbox {
+	if contact {
+		reads = append(reads, "call inbox for contact alerts, mail, announcements and other updates")
+	} else if inbox {
 		reads = append(reads, "call inbox for mail, announcements and other updates")
 	}
 	if len(parents) > 0 {
@@ -863,7 +867,7 @@ func waitingReadHint(mail, announced int, notices []notice) string {
 		// returning the envelope, which read_mail repeats in full (one
 		// agent paid about 10k tokens per clear; 2026-10-21 survey).
 		reads = append(reads, "updates on "+strings.Join(parents, ", ")+
-			": ack(N) to clear without bodies; read_mail(N) to read and clear")
+			": use those message numbers with ack(N) to clear without bodies or read_mail(N) to read and clear")
 	}
 	return strings.Join(reads, "; ") + "."
 }
