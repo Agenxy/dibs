@@ -113,6 +113,15 @@ func (e *Engine) forgetWakeFailures(agent string) {
 	}
 }
 
+func (e *Engine) decorateWakeStatus(row map[string]any, l *core.Agent) {
+	if w := e.wakeStatusOf(l.ID); w != "" {
+		row["wake"] = w
+	}
+	if e.localAntigravity(l) {
+		row["antigravity_wake_bound"] = e.antigravityBinding(l).hub.PID != 0
+	}
+}
+
 // wakeStatusOf is what the board row says about reaching this agent: "" when
 // nothing is wrong. The row is where the person running the board looks, and
 // until this it showed a worker as active while every wake for it was failing.

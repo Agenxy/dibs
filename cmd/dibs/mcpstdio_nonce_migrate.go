@@ -84,31 +84,39 @@ func transactScopedNonce(legacyPath, project, role, scope, chosen string) ([]str
 	if err != nil {
 		return nil, err
 	}
+	if strings.HasPrefix(scope, antigravityNoncePrefix) {
+		return persistNonceChoice(all, path, project, name, chosen, false)
+	}
 	owner := scopedNonceOwnerPrefix + canonicalNonceKey(project, role)
-	isolatedConversation := strings.HasPrefix(scope, antigravityNoncePrefix)
-	var legacy map[string]string
-	var changed bool
-	if !isolatedConversation {
-		var unlock func()
-		legacy, unlock, err = prepareLegacyNonceClaim(all, legacyPath, project, role, name, chosen)
-		if err != nil {
+	legacy, unlock, err := prepareLegacyNonceClaim(all, legacyPath, project, role, name, chosen)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+
+	changed := claimLegacyNonces(all, legacy, project, role, name, owner, chosen)
+	if chosen == "" {
+		// Merge this bridge's own process-scoped candidates into its session
+		// slot even if that slot already has another candidate.
+		changed = carryProcessNonces(all, project, role, name, scope) || changed
+	}
+	candidates, err := persistNonceChoice(all, path, project, name, chosen, changed)
+	if err != nil {
+		return nil, err
+	}
+	if all[owner] == name {
+		if err := removeClaimedLegacyCopies(all, legacy, project, role, name, legacyPath); err != nil {
 			return nil, err
 		}
-		defer unlock()
-		changed = claimLegacyNonces(all, legacy, project, role, name, owner, chosen)
 	}
+	return candidates, nil
+}
+
+func persistNonceChoice(all map[string]string, path, project, name, chosen string, changed bool) ([]string, error) {
 	if chosen != "" {
 		changed = recordNonceIn(all, project, name, chosen, true) || changed
 	}
 	candidates := nonceCandidatesIn(all, project, name)
-	if !isolatedConversation && chosen == "" && carryProcessNonces(all, project, role, name, scope) {
-		// Merged even into a slot that already holds one: a register that ran
-		// before this carry-over existed minted a nonce there, and the slot is
-		// no longer empty. More than one candidate goes to the daemon as a
-		// recovery group, which proves the right one instead of guessing.
-		changed = true
-		candidates = nonceCandidatesIn(all, project, name)
-	}
 	if len(candidates) == 0 {
 		nonce := mintNonce()
 		if nonce == "" {
@@ -118,14 +126,7 @@ func transactScopedNonce(legacyPath, project, role, scope, chosen string) ([]str
 		candidates = []string{nonce}
 	}
 	if changed {
-		if err := writeNonces(path, all); err != nil {
-			return nil, err
-		}
-	}
-	if !isolatedConversation && all[owner] == name {
-		if err := removeClaimedLegacyCopies(all, legacy, project, role, name, legacyPath); err != nil {
-			return nil, err
-		}
+		return candidates, writeNonces(path, all)
 	}
 	return candidates, nil
 }

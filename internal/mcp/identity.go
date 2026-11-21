@@ -528,3 +528,56 @@ func resolveSurface(params json.RawMessage, stated string) string {
 	}
 	return stated
 }
+
+func toolOp(ctx context.Context, params json.RawMessage, a *toolArgs) *core.Op {
+	op := &core.Op{Token: a.Token}
+	// The harness's own name for this thread, if it volunteered one.
+	//
+	// Codex puts `threadId` in _meta on calls through its native MCP client.
+	// Its value is the harness thread identifier. So the
+	// stable identity arrives on the connection the agent already holds: no
+	// hook, no directory guess, no second process. It was missed for a day
+	// because every inspection of _meta looked at the handshake, where it is
+	// absent. A shell-launched bridge is a separate client.
+	//
+	// Carried as a session ALIAS because that is what it is: another name for
+	// the session this agent is running in, alongside the `host-<ppid>` the
+	// bridge derives. The engine decides whether it may be bound.
+	op.SessionAlias = clientThreadID(params)
+	// AND THE BRIDGE'S OWN ANSWER, when the harness volunteered no thread.
+	//
+	// The engine falls back to INFERRING a session by directory when no alias
+	// arrives (announcedSession). That inference is a guess: it takes an id
+	// announced from this cwd recently and assumes the agent registering now is
+	// that session. It skips ids an agent already holds, which is not the same
+	// thing as ids that are still in USE. So when an agent is swept while its
+	// session keeps running, the id it held becomes unheld but stays live, and
+	// the next agent to register in that directory inherits a LIVE session's id
+	// and starts receiving its wake notifications.
+	//
+	// Measured on this project's own board: an ephemeral row was swept, the
+	// session behind it was still announcing, and the next agent in that
+	// directory ended up resolving that session's hooks to itself. One agent's
+	// unread list was rendered into another agent's context for hours, and three
+	// agents spent a night deriving why.
+	//
+	// There is no need to guess. The stdio bridge already sends the session it
+	// is running inside on EVERY call, and a caller's own id needs no inference.
+	// So this is preferred over the directory guess and the guess is left for
+	// callers that send neither. Still vetted, not trusted: the engine puts this
+	// through mayClaimSession like any other claim, so naming somebody else's
+	// session is refused rather than believed.
+	if op.SessionAlias == "" {
+		op.SessionAlias = metaSession(params)
+	}
+	app, _ := ctx.Value(antigravityCallKey{}).(*antigravityCall)
+	if app != nil {
+		op.SessionAlias = app.conversation
+		a.SessionID, a.PID = "", 0
+	}
+	if _, invited := engine.InvitationFrom(ctx); invited {
+		op.SessionAlias = ""
+		op.NoProcess = true
+	}
+	return op
+}

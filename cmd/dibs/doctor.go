@@ -1513,23 +1513,6 @@ func noWakeCommandNeeded(harness string) bool { return harnessenv.NeedsNoWakeCom
 // something anybody expects to wake; counting it as uncovered would report a
 // fault on every correctly configured board, and a check that cries wolf is
 // one people stop reading.
-func reportAntigravityCoverage(b *boardView, ok reportFn, warn fixFn) {
-	if b == nil {
-		return
-	}
-	for _, agent := range b.Agents {
-		if agent.AntigravityWakeBound == nil || !wakeable(agent) {
-			continue
-		}
-		if *agent.AntigravityWakeBound {
-			ok("Antigravity desktop conversation recorded for " + agent.ID)
-			continue
-		}
-		warn("Antigravity has supplied no verified conversation for "+agent.ID,
-			"check in through Dibs inside the Antigravity desktop conversation")
-	}
-}
-
 func reportWakeCoverage(
 	exec map[string]boardconfig.WakeExec, b *boardView, hosts hubHosts, dir string, ok reportFn, warn fixFn,
 ) {
@@ -1718,7 +1701,7 @@ func wakeCoverage(
 ) (covered int, missing map[string]int) {
 	missing = map[string]int{}
 	for _, a := range b.Agents {
-		if a.Kind != "persistent" || !wakeable(a) || a.AntigravityWakeBound != nil {
+		if !countsForConfiguredWake(a) {
 			continue
 		}
 		h := ""

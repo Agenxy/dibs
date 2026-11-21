@@ -14,8 +14,6 @@ import (
 	"github.com/agenxy/dibs/internal/localtransport"
 )
 
-const antigravityHarness = antigravity.Harness
-
 type antigravityCallKey struct{}
 
 type antigravityCall struct {
@@ -52,7 +50,23 @@ func (s *Server) antigravityCall(ctx context.Context, params json.RawMessage) *a
 	return &antigravityCall{hub: hub, conversation: conversation}
 }
 
-func (s *Server) bindAntigravityCall(ctx context.Context, tool, token string, res core.Result, app *antigravityCall) {
+func (s *Server) prepareSessionForTool(ctx context.Context, token string, params json.RawMessage) context.Context {
+	if app := s.antigravityCall(ctx, params); app != nil {
+		return context.WithValue(ctx, antigravityCallKey{}, app)
+	}
+	if _, invited := engine.InvitationFrom(ctx); invited {
+		return ctx
+	}
+	// Attach before the tool, so check_in can return the current session.
+	s.adoptSession(ctx, token, params)
+	return s.observeSessionProcess(ctx, params, token)
+}
+
+func (s *Server) bindAntigravityCall(ctx context.Context, tool, token string, res core.Result) {
+	app, _ := ctx.Value(antigravityCallKey{}).(*antigravityCall)
+	if app == nil {
+		return
+	}
 	switch tool {
 	case "register", "resume":
 		token, _ = res["token"].(string)
@@ -62,5 +76,16 @@ func (s *Server) bindAntigravityCall(ctx context.Context, tool, token string, re
 	}
 	if token != "" {
 		s.eng.BindAntigravity(ctx, token, app.hub, app.conversation)
+	}
+}
+
+func (s *Server) prepareAgentRegistration(
+	ctx context.Context, params json.RawMessage, a *toolArgs, client *clientInfoJSON, op *core.Op,
+) {
+	op.Agent = agentInfo(ctx, params, a, client)
+	if app, _ := ctx.Value(antigravityCallKey{}).(*antigravityCall); app != nil {
+		op.Agent.Harness = antigravity.Harness
+		op.Agent.Surface = ""
+		op.NoProcess = true
 	}
 }

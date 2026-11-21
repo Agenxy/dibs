@@ -813,6 +813,10 @@ func (e *Engine) wakeRoute(l *core.Agent) (cool time.Duration, byCommand, ok boo
 	if antigravityHarness(l) {
 		return defaultPeerCooldown, true, e.antigravityBinding(l).hub.PID != 0
 	}
+	return e.configuredWakeRoute(l)
+}
+
+func (e *Engine) configuredWakeRoute(l *core.Agent) (cool time.Duration, byCommand, ok bool) {
 	harness := ""
 	if l.Agent != nil {
 		harness = l.Agent.Harness
@@ -1512,6 +1516,10 @@ func (e *Engine) PullOnlyNote(l *core.Agent) string {
 		}
 		return ""
 	}
+	return e.configuredPullOnlyNote(l, harness)
+}
+
+func (e *Engine) configuredPullOnlyNote(l *core.Agent, harness string) string {
 	configured := e.localCommandConfigured(harness)
 	// CONFIGURED IS NOT THE SAME AS CAPABLE, and this asked only the first.
 	//
