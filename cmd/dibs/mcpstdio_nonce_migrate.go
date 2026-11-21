@@ -85,18 +85,23 @@ func transactScopedNonce(legacyPath, project, role, scope, chosen string) ([]str
 		return nil, err
 	}
 	owner := scopedNonceOwnerPrefix + canonicalNonceKey(project, role)
-	legacy, unlock, err := prepareLegacyNonceClaim(all, legacyPath, project, role, name, chosen)
-	if err != nil {
-		return nil, err
+	isolatedConversation := strings.HasPrefix(scope, antigravityNoncePrefix)
+	var legacy map[string]string
+	var changed bool
+	if !isolatedConversation {
+		var unlock func()
+		legacy, unlock, err = prepareLegacyNonceClaim(all, legacyPath, project, role, name, chosen)
+		if err != nil {
+			return nil, err
+		}
+		defer unlock()
+		changed = claimLegacyNonces(all, legacy, project, role, name, owner, chosen)
 	}
-	defer unlock()
-
-	changed := claimLegacyNonces(all, legacy, project, role, name, owner, chosen)
 	if chosen != "" {
 		changed = recordNonceIn(all, project, name, chosen, true) || changed
 	}
 	candidates := nonceCandidatesIn(all, project, name)
-	if chosen == "" && carryProcessNonces(all, project, role, name, scope) {
+	if !isolatedConversation && chosen == "" && carryProcessNonces(all, project, role, name, scope) {
 		// Merged even into a slot that already holds one: a register that ran
 		// before this carry-over existed minted a nonce there, and the slot is
 		// no longer empty. More than one candidate goes to the daemon as a
@@ -117,7 +122,7 @@ func transactScopedNonce(legacyPath, project, role, scope, chosen string) ([]str
 			return nil, err
 		}
 	}
-	if all[owner] == name {
+	if !isolatedConversation && all[owner] == name {
 		if err := removeClaimedLegacyCopies(all, legacy, project, role, name, legacyPath); err != nil {
 			return nil, err
 		}

@@ -12,7 +12,10 @@ import (
 	"strings"
 )
 
-const scopedNonceStore = "harness-session-nonces-v1.json"
+const (
+	scopedNonceStore       = "harness-session-nonces-v1.json"
+	antigravityNoncePrefix = "harness-session:antigravity:"
+)
 
 func nonceStorePath(name string) string {
 	legacy := noncePath()
@@ -31,6 +34,12 @@ func registrationNonceScope(params map[string]any) string {
 		return "" // a tunnel cannot borrow a credential from this Mac's cache
 	}
 	meta, _ := params["_meta"].(map[string]any)
+	if antigravityBridgeMarked(params) {
+		if conversation := antigravityConversation(meta); conversation != "" {
+			return antigravityNoncePrefix + conversation
+		}
+		return ""
+	}
 	if thread, _ := meta["threadId"].(string); strings.TrimSpace(thread) != "" {
 		return "codex-thread:" + strings.TrimSpace(thread)
 	}

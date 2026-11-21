@@ -96,7 +96,7 @@ func (e *Engine) refreshCurrentRouteMail(l *core.Agent, plan *wakePlan) bool {
 		settleWakePlan(plan)
 		return false // the mail was already handled; no turn was started
 	}
-	if plan.host != "" || len(plan.argv) > 0 {
+	if plan.commandDelivery() {
 		plan.commandKeys = e.freshCommandKeys(l.ID, now)
 	} else {
 		plan.notice = text // private digest never enters command argv

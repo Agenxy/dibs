@@ -5,6 +5,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- The macOS Antigravity desktop bridge can offer factual wake notices to a
+  conversation when the app provides its ID on an authenticated MCP call.
+  The board and doctor report whether the session supplied that evidence.
+  The initial measurement build needs another app check-in after daemon restart.
+
 ### Fixed
 - Finished one-shot Codex runs no longer page the person on daemon restart.
   Each sender gets one notice per unread message. Contact hints omit an app

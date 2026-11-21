@@ -41,3 +41,27 @@ language server can launch terminals for multiple conversations, and a caller
 can supply its own environment. An automatic Dibs binding needs evidence that
 the app associated the specific call with the exact conversation.
 [Session attestation boundary](PROCESS-REFRESH-DESIGN.md#attestation-threat-review-request-18594).
+
+## Measurement build
+
+The existing Antigravity stdio bridge reports whether a valid conversation ID
+appears in the app's per-call MCP metadata. It logs presence only, once for
+each observed conversation and once for a missing or invalid field. The daemon
+requires its local Unix socket peer to be the actual MCP child. A native
+process inspection checks the installed desktop language server, its parent
+app and both stdio pipe peers. One bridge may serve several conversations.
+Each call names its own conversation, and each conversation has its own
+recovery credential cache.
+
+A successful authenticated check-in records the live route for the agent's
+current session. The board and doctor show its binding status. Before each
+wake the daemon checks that the exact conversation still answers, compares
+the workspace if the row has a working directory, and checks the hub again
+before offering input. The offer carries a factual event kind. An ambiguous
+result leaves the mail available without a fallback or an automatic retry.
+
+This build requires an app check-in after the daemon restarts. Restart-safe
+provenance is separate work. The live bridge and scratch conversation passed
+the read-only process and metadata checks above using the current code.
+Actual per-call app metadata and a Dibs-triggered wake for an enrolled agent
+still need to be observed on the installed build.

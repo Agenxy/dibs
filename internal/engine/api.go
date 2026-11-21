@@ -920,6 +920,9 @@ func (e *Engine) decoratedBoard() core.Result {
 		if w := e.wakeStatusOf(id); w != "" {
 			lm["wake"] = w
 		}
+		if e.localAntigravity(l) {
+			lm["antigravity_wake_bound"] = e.antigravityBinding(l).hub.PID != 0
+		}
 		// What the agent is DOING, from what it declared and what the board has
 		// seen, beside status, which is about its process. See workStateOf.
 		lm["work"] = e.workStateOf(l)

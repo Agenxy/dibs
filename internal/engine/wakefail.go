@@ -127,6 +127,9 @@ func (e *Engine) wakeStatusOf(agent string) string {
 		!invitedAgent(l) && harnessenv.PendingAppOpen(threadIDOf(l)) {
 		return "queued; waiting briefly for the background app open/restore lock"
 	}
+	if l := e.state.Agents[agent]; e.localAntigravity(l) && e.antigravityBinding(l).hub.PID == 0 {
+		return antigravityUnbound
+	}
 	if invitedAgent(e.state.Agents[agent]) {
 		return "pull-only (invited cloud agent)"
 	}
@@ -178,14 +181,14 @@ func (e *Engine) runWakeAndReportPlan(cmd *wakePlan, agent string) bool {
 			return true
 		}
 		cmd.commandKeys = keys
-		if cmd.host == "" && len(cmd.argv) == 0 {
+		if !cmd.commandDelivery() {
 			cmd.notice = fresh // never copy private mail into command argv
 		}
 	}
 	ok := e.runWakePlan(cmd, agent)
 	// A remote handoff may have selected a fresh local route. Record the
 	// route actually executed, including its refreshed keys and socket write.
-	native := cmd.host == "" && len(cmd.argv) == 0
+	native := !cmd.commandDelivery()
 	if ok {
 		if cmd.deliverySettled(native, written) {
 			e.releaseWake(agent, e.wakeStamp(agent))
@@ -225,7 +228,7 @@ func (e *Engine) refreshWakePlan(ctx context.Context, cmd wakePlan) (string, []s
 		if l != nil && !l.Retired() && l.SessionIsCurrent(cmd.session) {
 			now := time.Now()
 			text = e.freshPlanText(l, cmd, now)
-			if text != "" && (cmd.host != "" || len(cmd.argv) > 0) {
+			if text != "" && cmd.commandDelivery() {
 				keys = e.freshCommandKeys(l.ID, now)
 			}
 		}
@@ -250,7 +253,7 @@ func (e *Engine) refreshWakePlan(ctx context.Context, cmd wakePlan) (string, []s
 
 func (e *Engine) freshPlanText(l *core.Agent, cmd wakePlan, now time.Time) string {
 	switch {
-	case cmd.host == "" && len(cmd.argv) == 0:
+	case !cmd.commandDelivery():
 		if e.socketDaemonReady(l, now) {
 			return e.socketDigest(l, now)
 		}

@@ -1074,7 +1074,10 @@ func (s *Server) callTool(
 	}
 	// Attach the agent to the session it is actually running in, if nothing
 	// has. Before the call, so `check_in`'s own answer already reflects it.
-	if _, invited := engine.InvitationFrom(ctx); !invited {
+	app := s.antigravityCall(ctx, params)
+	if app != nil {
+		ctx = context.WithValue(ctx, antigravityCallKey{}, app)
+	} else if _, invited := engine.InvitationFrom(ctx); !invited {
 		s.adoptSession(ctx, a.Token, params)
 		ctx = s.observeSessionProcess(ctx, params, a.Token)
 	}
@@ -1095,6 +1098,9 @@ func (s *Server) callTool(
 		appendHistoryRefusal(call.Name, payload, res)
 		text, _ := json.Marshal(payload)
 		return map[string]any{"isError": true, "content": []map[string]any{{"type": "text", "text": string(text)}}}, nil
+	}
+	if app != nil {
+		s.bindAntigravityCall(ctx, call.Name, a.Token, res, app)
 	}
 	if call.Name == "get_blob" {
 		return map[string]any{"content": blobContent(res)}, nil
@@ -1267,6 +1273,11 @@ func (s *Server) run(
 	if op.SessionAlias == "" {
 		op.SessionAlias = metaSession(params)
 	}
+	app, _ := ctx.Value(antigravityCallKey{}).(*antigravityCall)
+	if app != nil {
+		op.SessionAlias = app.conversation
+		a.SessionID, a.PID = "", 0
+	}
 	if _, invited := engine.InvitationFrom(ctx); invited {
 		op.SessionAlias = ""
 		op.NoProcess = true
@@ -1276,6 +1287,11 @@ func (s *Server) run(
 		return s.issueInvite(ctx, a)
 	case "register":
 		op.Agent = agentInfo(ctx, params, a, sessionClient)
+		if app != nil {
+			op.Agent.Harness = antigravityHarness
+			op.Agent.Surface = ""
+			op.NoProcess = true
+		}
 		op.Kind, op.Name, op.Description, op.PID = core.OpRegister, a.Name, a.Description, a.PID
 		op.Nonce, op.AgentKind, op.SessionID = a.Nonce, core.AgentKind(a.Kind), a.SessionID
 		op.RecoveryNonces = a.RecoveryNonces

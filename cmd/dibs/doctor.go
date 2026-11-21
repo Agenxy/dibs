@@ -499,6 +499,7 @@ func checkHarnessConfigs(sec, addr string, ok reportFn, warn, bad fixFn) {
 func checkWakeRoutes(dir string, b *boardView, hosts hubHosts, ok reportFn, warn fixFn) {
 	checkAppBindings(b, warn)
 	checkSocketBindings(b, warn)
+	reportAntigravityCoverage(b, ok, warn)
 	// THE HUB'S CONFIGURATION IS ON THE HUB. A joining machine runs this
 	// against a remote board with its own data directory, and this read that
 	// directory's dibs.toml as the board's wake configuration: "no wake
@@ -537,7 +538,7 @@ func checkWakeRoutes(dir string, b *boardView, hosts hubHosts, ok reportFn, warn
 		// unsolicited activations; this said the socket "is tried first" and
 		// called delivery unconfirmed when it was off. Found by the
 		// pre-release review, round forty-two.
-		warn("no wake route at all: [wake] sockets = false and no [wake.exec] command",
+		warn("socket and configured command wakes are disabled",
 			"mail reaches an idle agent only at its next activation, which is what "+
 				"that configuration asks for. It covers THIS machine: a bridge that "+
 				"joined a remote hub reads the switch from its own data directory, so "+
@@ -1512,6 +1513,23 @@ func noWakeCommandNeeded(harness string) bool { return harnessenv.NeedsNoWakeCom
 // something anybody expects to wake; counting it as uncovered would report a
 // fault on every correctly configured board, and a check that cries wolf is
 // one people stop reading.
+func reportAntigravityCoverage(b *boardView, ok reportFn, warn fixFn) {
+	if b == nil {
+		return
+	}
+	for _, agent := range b.Agents {
+		if agent.AntigravityWakeBound == nil || !wakeable(agent) {
+			continue
+		}
+		if *agent.AntigravityWakeBound {
+			ok("Antigravity desktop conversation recorded for " + agent.ID)
+			continue
+		}
+		warn("Antigravity has supplied no verified conversation for "+agent.ID,
+			"check in through Dibs inside the Antigravity desktop conversation")
+	}
+}
+
 func reportWakeCoverage(
 	exec map[string]boardconfig.WakeExec, b *boardView, hosts hubHosts, dir string, ok reportFn, warn fixFn,
 ) {
@@ -1700,7 +1718,7 @@ func wakeCoverage(
 ) (covered int, missing map[string]int) {
 	missing = map[string]int{}
 	for _, a := range b.Agents {
-		if a.Kind != "persistent" || !wakeable(a) {
+		if a.Kind != "persistent" || !wakeable(a) || a.AntigravityWakeBound != nil {
 			continue
 		}
 		h := ""

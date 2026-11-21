@@ -103,11 +103,12 @@ type Engine struct {
 	socketTurns        map[string]socketTurn
 	socketEpochs       map[string]socketEpoch
 	socketFailures     map[string]socketFailure
-	commandEpoch       map[string]string // receiving app incarnation, writer-owned
-	commandWritten     map[string]bool   // per original command item, derived and writer-owned
-	nativeUnknown      map[string]bool   // unknown input in this receiving incarnation; not an acceptance receipt
-	socketWritten      map[string]bool   // per original item; not a receiver acceptance receipt
-	writtenPrunedAt    time.Time         // last full prune of the three receipt maps above
+	commandEpoch       map[string]string             // receiving app incarnation, writer-owned
+	antigravity        map[string]antigravityBinding // verified app conversation, writer-owned
+	commandWritten     map[string]bool               // per original command item, derived and writer-owned
+	nativeUnknown      map[string]bool               // unconfirmed input in this receiving incarnation
+	socketWritten      map[string]bool               // per original item; not a receiver acceptance receipt
+	writtenPrunedAt    time.Time                     // last full prune of the three receipt maps above
 	wakeBursts         map[string]*wakeBurst
 	wakeContext        context.Context
 	noticePresented    map[string]time.Time
@@ -640,7 +641,7 @@ func (e *Engine) execWithReceipt(
 	// already holds, is restored if the inference finds nothing. Round
 	// nineteen of the pre-release review.
 	stated := op.SessionAlias
-	if !e.invitedOperation(op) && e.aliasSaysNothingNew(op) &&
+	if !e.invitedOperation(op) && !e.isAntigravityOp(op) && e.aliasSaysNothingNew(op) &&
 		!looksLikeThreadID(op.SessionID) && !e.callerHoldsAStatedThread(op) {
 		// ANYTHING SET BELOW IS A GUESS, AND THIS LINE IS THE WHOLE REPAIR.
 		//
