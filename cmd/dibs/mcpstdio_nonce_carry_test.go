@@ -59,3 +59,45 @@ func TestASessionScopeInheritsThisBridgesOwnProcessNonce(t *testing.T) {
 		t.Error("a session scope adopted another process's credential")
 	}
 }
+
+// The slot may already hold a nonce minted by a register that ran before the
+// carry-over existed (measured: the architect seat, whose first refused
+// register filled it). The handed nonce must still reach the daemon, as one of
+// a recovery group when it is not alone.
+func TestACarryReachesASessionSlotThatAlreadyMintedOne(t *testing.T) {
+	t.Setenv("DIBS_DIR", t.TempDir())
+	started := bridgeStarted()
+	if started == "" {
+		t.Fatal("setup: no start time for this process")
+	}
+	own := "bridge-process:" + strconv.Itoa(os.Getpid()) + ":" + started
+	session := "harness-session:12345678-1234-1234-1234-123456789abc"
+
+	minted := map[string]any{"name": "architect", "cwd": "/work/dibs"}
+	if err := enrichNonce(minted, "", session); err != nil {
+		t.Fatal("setup:", err)
+	}
+	stray, _ := minted["nonce"].(string)
+	handedArgs := map[string]any{"name": "architect", "cwd": "/work/dibs"}
+	if err := enrichNonce(handedArgs, "", own); err != nil {
+		t.Fatal("setup:", err)
+	}
+	handed, _ := handedArgs["nonce"].(string)
+	if stray == "" || handed == "" || stray == handed {
+		t.Fatalf("setup: wanted two distinct nonces, got %q and %q", short8(stray), short8(handed))
+	}
+
+	after := map[string]any{"name": "architect", "cwd": "/work/dibs"}
+	if err := enrichNonce(after, "", session); err != nil {
+		t.Fatal(err)
+	}
+	group, _ := after["recovery_nonces"].([]string)
+	found := false
+	for _, n := range group {
+		found = found || n == handed
+	}
+	if got, _ := after["nonce"].(string); got != handed && !found {
+		t.Fatalf("the handed nonce %q reached the daemon neither as the nonce (%q) nor in the recovery group %d",
+			short8(handed), short8(got), len(group))
+	}
+}
