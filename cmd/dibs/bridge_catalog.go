@@ -10,8 +10,8 @@ import (
 	"github.com/agenxy/dibs/internal/mcp"
 )
 
-// This is evidence of a complete list written to stdout, never of a client
-// adopting it. In particular an upgrade notification is not a list response.
+// This records the daemon's complete catalog after a successful stdout write.
+// Local presentation advice does not change the daemon's catalog fingerprint.
 var servedCatalog struct {
 	sync.Mutex
 	hash     string

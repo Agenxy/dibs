@@ -324,7 +324,8 @@ func forward(client *http.Client, req *http.Request, line []byte, out *syncWrite
 		}
 		writeErr := out.writeLine(written)
 		if saw != nil && writeErr == nil {
-			saw(line, written)
+			// Observers record daemon evidence. Advice belongs only in the harness reply.
+			saw(line, body)
 		}
 	}
 }

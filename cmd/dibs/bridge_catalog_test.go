@@ -130,6 +130,38 @@ func TestRealBridgeReportsOwnBuild(t *testing.T) {
 	t.Fatal("real stdio bridge did not report its own older build and named board row")
 }
 
+func TestRealBridgeVersionAdvicePreservesDaemonCatalogHash(t *testing.T) {
+	const clientBuild = "0.0.5"
+	fixtureVersionDaemon(t)
+	bridge := newRecoveryStdioWithBuild(t, "", clientBuild)
+	bridge.exchange("server/discover", map[string]any{"clientInfo": map[string]any{"name": "claude-code"}})
+	reply := bridge.exchange("tools/list", map[string]any{})
+	if !bytes.Contains(reply, []byte("Dibs client version")) {
+		t.Fatal("setup: the real stdio bridge did not decorate tools/list with version advice")
+	}
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+		board, err := bridge.eng.Board(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		rows, _ := board["bridge_tool_catalogs"].([]engine.BridgeToolCatalog)
+		for _, row := range rows {
+			if row.Build != clientBuild || row.Hash == "" {
+				continue
+			}
+			if row.CurrentHash == "" {
+				t.Fatal("setup: the daemon did not report its current catalog hash")
+			}
+			if row.Hash != row.CurrentHash {
+				t.Fatalf("version advice changed the daemon catalog hash: observed %s, want %s", row.Hash, row.CurrentHash)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("real bridge did not report a fingerprint for the list")
+}
+
 type failedCatalogWriter struct{}
 
 func (failedCatalogWriter) Write([]byte) (int, error) { return 0, errors.New("closed harness") }
