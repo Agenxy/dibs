@@ -121,6 +121,7 @@ func TestFailedColdAppOpenAlertsSenderAndHuman(t *testing.T) {
 			close(release)
 			closed = true
 			waitWakeDone(t, e, "worker")
+			awaitQueuedContactProbe(t, e)
 			got, err := e.query(ctx, func() core.Result {
 				m := e.state.Messages[serial]
 				return core.Result{
@@ -185,7 +186,10 @@ func TestStrandedQueueOpenHasRecoveryWindow(t *testing.T) {
 		t.Fatalf("build fixture: %v: %s", err, b)
 	}
 	testexec.PrepareExecutable(t, exec.Command(binary, "--version"))
-	for _, mode := range []string{"fresh", "recent-open-then-read", "recent-open-unread", "retry-unread", "repeat-while-waiting"} {
+	for _, mode := range []string{
+		"fresh", "recent-open-then-read", "recent-open-unread", "retry-unread",
+		"repeat-while-waiting", "active-then-idle", "queue-consumed",
+	} {
 		t.Run(mode, func(t *testing.T) {
 			dir := t.TempDir()
 			t.Setenv("DIBS_DIR", dir)
@@ -305,6 +309,7 @@ func TestStrandedQueueOpenHasRecoveryWindow(t *testing.T) {
 				if _, err := e.query(ctx, func() core.Result { e.sweep(now); return nil }); err != nil {
 					t.Fatal(err)
 				}
+				awaitQueuedContactProbe(t, e)
 			}
 			raw, err = os.ReadFile(queue)
 			if err != nil {
@@ -339,9 +344,39 @@ func TestStrandedQueueOpenHasRecoveryWindow(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			sweep(after.Add(harnessenv.AppOpenRetryAfter + time.Second))
+			due := after.Add(harnessenv.AppOpenRetryAfter + time.Second)
+			if mode == "queue-consumed" {
+				if err := os.WriteFile(queue, []byte("[]"), 0o600); err != nil {
+					t.Fatal("setup: consume the queued item:", err)
+				}
+			}
+			if mode == "active-then-idle" {
+				path := filepath.Join(os.Getenv("CODEX_HOME"), "thread-observation.json")
+				observation := fmt.Appendf(nil, "{\"updatedAt\":%d}", due.Add(-time.Second).Unix())
+				if err := os.WriteFile(path, observation, 0o600); err != nil {
+					t.Fatal("setup: record active thread:", err)
+				}
+				sweep(due)
+				if got := snapshot(); got["contact"] != uint64(0) {
+					t.Fatalf("paged the human while the thread was active: %v", got)
+				}
+				due = due.Add(3 * time.Minute)
+				active := fmt.Appendf(nil, "{\"updatedAt\":%d,\"status\":{\"type\":\"active\"}}", due.Add(-time.Hour).Unix())
+				if err := os.WriteFile(path, active, 0o600); err != nil {
+					t.Fatal("setup: record the explicit active status:", err)
+				}
+				sweep(due)
+				if got := snapshot(); got["contact"] != uint64(0) {
+					t.Fatalf("paged the human despite explicit active status: %v", got)
+				}
+				if err := os.Remove(path); err != nil {
+					t.Fatal("setup: return the app to idle:", err)
+				}
+				due = due.Add(3 * time.Minute)
+			}
+			sweep(due)
 			got := snapshot()
-			if mode == "fresh" || mode == "recent-open-then-read" {
+			if mode == "fresh" || mode == "recent-open-then-read" || mode == "queue-consumed" {
 				if got["contact"] != uint64(0) {
 					t.Fatalf("fresh queue or read mail raised contact: %v", got)
 				}
@@ -363,6 +398,29 @@ func TestStrandedQueueOpenHasRecoveryWindow(t *testing.T) {
 				t.Fatalf("late read did not resolve contact: %v", got)
 			}
 		})
+	}
+}
+
+func awaitQueuedContactProbe(t *testing.T, e *Engine) {
+	t.Helper()
+	deadline := time.After(5 * time.Second)
+	tick := time.NewTicker(5 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		e.wakeWorkers.mu.Lock()
+		running := false
+		for _, w := range e.wakeWorkers.active {
+			running = running || w.Attempt == "queued-contact"
+		}
+		e.wakeWorkers.mu.Unlock()
+		if !running {
+			return
+		}
+		select {
+		case <-tick.C:
+		case <-deadline:
+			t.Fatal("the queued-contact probe did not finish")
+		}
 	}
 }
 

@@ -269,6 +269,20 @@ func main() {
 				}
 			}
 			result = map[string]any{"data": selected, "nextCursor": nil}
+		} else if req.Method == "thread/read" {
+			thread := map[string]any{
+				"id": req.Params.Thread, "updatedAt": time.Now().Add(-10 * time.Minute).Unix(),
+				"status": map[string]string{"type": "notLoaded"},
+			}
+			override, err := os.ReadFile(filepath.Join(os.Getenv("CODEX_HOME"), "thread-observation.json"))
+			if err == nil {
+				if err := json.Unmarshal(override, &thread); err != nil {
+					panic(err)
+				}
+			} else if !os.IsNotExist(err) {
+				panic(err)
+			}
+			result = map[string]any{"thread": thread}
 		} else if req.Method != "initialize" {
 			os.Exit(4)
 		}

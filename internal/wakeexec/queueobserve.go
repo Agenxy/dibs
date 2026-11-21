@@ -58,9 +58,22 @@ func observeQueue(binary, thread string) (pending, known bool) {
 func observeQueueDetail(binary, thread string, receiptAt ...time.Time) queueProbe {
 	ctx, cancel := context.WithTimeout(context.Background(), queueProbeTimeout)
 	defer cancel()
+	var probe queueProbe
+	withQueueRPC(ctx, binary, func(rpc queueRPC) {
+		if len(receiptAt) == 1 {
+			probe = rpc.receipt(thread, receiptAt[0])
+			return
+		}
+		pending, known := rpc.list(thread)
+		probe = queueProbe{pending: pending, known: known, issuedAt: rpc.issuedAt}
+	})
+	return probe
+}
+
+func withQueueRPC(ctx context.Context, binary string, read func(queueRPC)) {
 	argv := []string{binary, "app-server", "--listen", "stdio://"}
 	if !boardconfig.ReadOnlyQueueProbe(argv) {
-		return queueProbe{}
+		return
 	}
 	// #nosec G204 G702 -- binary is the operator's queue executable; all probe
 	// arguments are fixed literals, separately refused by ReadOnlyQueueProbe.
@@ -68,27 +81,23 @@ func observeQueueDetail(binary, thread string, receiptAt ...time.Time) queueProb
 	cmd.WaitDelay = 100 * time.Millisecond
 	in, err := cmd.StdinPipe()
 	if err != nil {
-		return queueProbe{}
+		return
 	}
 	out, err := cmd.StdoutPipe()
 	if err != nil {
-		return queueProbe{}
+		return
 	}
 	if err = cmd.Start(); err != nil {
-		return queueProbe{}
+		return
 	}
 	stop := context.AfterFunc(ctx, func() { _ = out.Close() })
 	defer stop()
 	defer func() { _ = in.Close(); _ = cmd.Process.Kill(); _ = cmd.Wait() }()
 	rpc := queueRPC{enc: json.NewEncoder(in), dec: json.NewDecoder(io.LimitReader(out, 4<<20))}
 	if err = rpc.initialize(); err != nil {
-		return queueProbe{}
+		return
 	}
-	if len(receiptAt) == 1 {
-		return rpc.receipt(thread, receiptAt[0])
-	}
-	pending, known := rpc.list(thread)
-	return queueProbe{pending: pending, known: known, issuedAt: rpc.issuedAt}
+	read(rpc)
 }
 
 type queueRPC struct {

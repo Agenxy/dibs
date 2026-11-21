@@ -19,6 +19,7 @@ type QueueObservation struct {
 	IssuedAt    time.Time
 	ReceiptAt   time.Time
 	AgeSource   string
+	ProbeBinary string `json:"-"` // local executable that admitted this item
 }
 
 type queueProbe struct {
