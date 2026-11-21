@@ -63,3 +63,51 @@ func TestRecoveryInheritedHistoryDoesNotContinueARealDibsTurn(t *testing.T) {
 		t.Fatalf("inherited history continued turn: %v", stopped)
 	}
 }
+
+func TestRecoveryUsesAnIndependentCoordinatorWhenTheFirstHolderIsTheSurvivor(t *testing.T) {
+	b := newContinuationBoard(t)
+	do := func(op *core.Op) core.Result {
+		t.Helper()
+		result, err := b.e.Do(b.ctx, op)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+	register := func(name, session string) string {
+		t.Helper()
+		result := do(&core.Op{
+			Kind: core.OpRegister, Name: name, SessionID: session,
+			Nonce: "test-nonce-" + name, AgentKind: core.KindPersistent,
+			Agent: &core.AgentInfo{HostID: b.e.HostID(), Harness: "Codex", Surface: "cli"},
+		})
+		token, _ := result["token"].(string)
+		if token == "" {
+			t.Fatalf("setup: no token for %s", name)
+		}
+		do(&core.Op{Kind: core.OpAckBoard, Token: token})
+		return token
+	}
+	register("old-identity", "")
+	survivor := register("a-survivor", "survivor-session")
+	lead := register("z-other-lead", "other-session")
+	for _, name := range []string{"a-survivor", "z-other-lead"} {
+		if _, err := b.e.GrantRole(b.ctx, name, core.RoleCoordinator); err != nil {
+			t.Fatal("setup: grant coordinator:", err)
+		}
+	}
+	do(&core.Op{Kind: core.OpSweep, StaleAgents: []string{"old-identity"}})
+	preview, err := b.e.RecoverAgent(b.ctx, survivor, "old-identity", MergeOptions{DryRun: true})
+	if err != nil {
+		t.Fatalf("recovery refused while an independent coordinator was available: %v", err)
+	}
+	request, err := b.e.RecoverAgent(b.ctx, survivor, "old-identity", MergeOptions{Fence: preview["fence"].(string)})
+	if err != nil {
+		t.Fatal("submit the recovery:", err)
+	}
+	serial := request["msg_serial"].(uint64)
+	if _, err := b.e.Do(b.ctx, &core.Op{Kind: core.OpRespond, Token: survivor, MsgSerial: serial, Disposition: "approve"}); err == nil {
+		t.Fatal("the coordinator who requested recovery could approve its own recovery")
+	}
+	do(&core.Op{Kind: core.OpRespond, Token: lead, MsgSerial: serial, Disposition: "approve"})
+}

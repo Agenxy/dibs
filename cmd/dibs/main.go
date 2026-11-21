@@ -412,7 +412,7 @@ var commands = []string{
 var mcpTools = []string{
 	"upload", "download",
 	"ack", "ack_announcement", "admit", "adopt_agent", "all_mail", "announce",
-	"await_events", "broadcast", "check_in", "claim", "claim_coordinator",
+	"await_events", "broadcast", "check_in", "claim", "claim_coordinator", "diagnose_wake",
 	"close_space", "declare", "events_since", "evict", "force_release",
 	"get_blob", "heartbeat", "human_unlock", "inbox", "join_space",
 	"leave_space", "lock_space", "mail_history", "merge_agents", "merge_spaces", "open_space",

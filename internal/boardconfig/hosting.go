@@ -66,8 +66,8 @@ func HostsAnAgent(argv []string) string {
 
 // ReadOnlyQueueProbe is the sole app-server invocation Dibs may construct.
 // Resume/start/exec verbs and extra flags are never accepted. The caller sends
-// only initialize, initialized, metadata-only thread/read and thread/queue/list
-// over this transport.
+// initialize and initialized, metadata-only thread/read and thread/turns/list,
+// and thread/queue/list over this transport.
 func ReadOnlyQueueProbe(argv []string) bool {
 	return len(argv) == 4 && filepath.Base(argv[0]) == "codex" && argv[1] == "app-server" &&
 		argv[2] == "--listen" && argv[3] == "stdio://"

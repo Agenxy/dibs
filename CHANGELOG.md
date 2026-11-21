@@ -13,8 +13,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The macOS Antigravity desktop bridge can offer factual wake notices to a
   conversation when the app provides its ID on an authenticated MCP call.
   The board and doctor report whether the session supplied that evidence.
+- Coordinators can inspect an agent's binding, last wake attempt, and local
+  app delivery evidence with `diagnose_wake`. The tool returns metadata without
+  posting input or reading mail.
 
 ### Fixed
+- Recovery chooses an independent coordinator when several hold the role and
+  the first coordinator is the survivor.
 - Finished one-shot Codex runs no longer page the person on daemon restart.
   Each sender gets one notice per unread message. Contact hints omit an app
   when the recorded Codex and Claude labels conflict, and the macOS display

@@ -86,6 +86,15 @@ func TestSentMailOffersOnlyOneFactualNoticeToVerifiedAntigravityConversation(t *
 			}
 			cancel()
 			<-e.Done()
+			wantOutcome := "accepted"
+			if lookupFails {
+				wantOutcome = "not_sent"
+			}
+			observed := e.wakers.diagnostics["worker"]
+			if observed.Route != "antigravity_app" || observed.Outcome != wantOutcome {
+				t.Fatalf("diagnostics observed %q/%q, want antigravity_app/%s",
+					observed.Route, observed.Outcome, wantOutcome)
+			}
 			if len(sent) != 0 || len(checked) != 0 {
 				t.Fatal("wake submitted without preflight or retried its offer")
 			}

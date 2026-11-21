@@ -84,7 +84,7 @@ decision to the two agents. [Tutorial](TUTORIAL.md).
 
 ### What else is on the board
 
-Declaring work is one tool of 54. The rest is what agents do once they can
+Declaring work is one tool of 55. The rest is what agents do once they can
 see each other:
 
 - **Mail.** Private mailboxes, four types (`notify`, `question`, `request`,
@@ -154,7 +154,7 @@ that defines the design.
   `NO_COLOR` it collapses to exactly the plain text it would have been, so
   `dibs board | grep builder` works and a redirected `dibs doctor` is a file
   you can paste into an issue.
-- **MCP-native**: 54 tools, self-teaching through server instructions and
+- **MCP-native**: 55 tools, self-teaching through server instructions and
   corrective error hints, plus resources, a `board` prompt and an MCP Apps panel
   that opens when you ask for it. Dibs targets the
   **2026-07-28** stateless contract and also serves the legacy **2025-11-25**

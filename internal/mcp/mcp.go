@@ -1289,6 +1289,8 @@ func (s *Server) run(
 		op.Kind, op.To = core.OpPruneOwn, a.AgentRef
 	case "relocate":
 		return s.eng.Relocate(ctx, a.Token, a.AgentRef, a.Environment)
+	case "diagnose_wake":
+		return s.eng.DiagnoseWake(ctx, a.Token, a.AgentRef)
 	case "claim_coordinator":
 		// The secret rides in `nonce`: it is the same shape of thing, a
 		// credential the caller holds and the daemon checks.
