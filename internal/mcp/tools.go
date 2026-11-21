@@ -457,7 +457,7 @@ func (b toolSchemas) agentAndMailTools() []map[string]any {
 						"answer", "queue", "approve", "deny", "decline", "progress", "done", "accept", "flag", "withdraw",
 					},
 				},
-				"body":          b.str("response text"),
+				"body":          b.str("response text. For a question choice, put the exact selected label here with disposition answer"),
 				"superseded_by": b.num("withdraw replacement"),
 				"milestone":     b.num("step number, from 1"),
 				"deliverable":   b.str("path or URL: the work (done), a step's artifact (progress)"),

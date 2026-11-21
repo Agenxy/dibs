@@ -20,6 +20,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   posting input or reading mail.
 
 ### Fixed
+- Responding to a question with a `choice` argument now points to placing
+  the selected label in `body` with disposition `answer`.
 - Sending to a closed harness explains that unconfirmed delivery can raise a
   contact alert and suggests choosing a reachable recipient for urgent work.
 - The waiting hint directs contact alerts to `inbox` and identifies which
