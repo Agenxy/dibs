@@ -4,7 +4,6 @@
 package main
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -12,6 +11,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/testexec"
 
 	"github.com/agenxy/dibs/internal/procexec"
 )
@@ -21,7 +22,7 @@ import (
 // called. Ad-hoc signing a private fixture never asks for a signing identity,
 // notification permission or access to the real service.
 func TestBuiltNotifierLoadsItsPinnedBundledFontsWithoutPosting(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := testexec.BuildContext(t, 2*time.Minute)
 	defer cancel()
 	bundle := filepath.Join(t.TempDir(), "Dibs.app")
 	src, err := filepath.Abs("../../internal/notify/app")

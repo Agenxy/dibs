@@ -26,13 +26,13 @@ func TestColdSnapshotDoesNotWaitForLookupOrRegistration(t *testing.T) {
 		close(release)
 		select {
 		case <-registration:
-		case <-time.After(time.Second):
+		case <-time.After(lookupBudget + time.Second):
 			t.Error("registration did not finish after releasing the lookup")
 		}
 	})
 	select {
 	case <-entered:
-	case <-time.After(time.Second):
+	case <-time.After(lookupBudget + time.Second):
 		t.Fatal("setup: registration did not enter the lookup")
 	}
 	read := make(chan Label, 1)
@@ -82,7 +82,7 @@ func TestColdSnapshotRetriesAfterBackoffWithoutCachingFallback(t *testing.T) {
 			}
 			select {
 			case <-entered:
-			case <-time.After(time.Second):
+			case <-time.After(lookupBudget + time.Second):
 				t.Fatal("fallback was cached instead of retrying")
 			}
 			releaseLookup()
@@ -102,7 +102,7 @@ func waitForRefresh(t *testing.T, r *resolver) {
 	if done != nil {
 		select {
 		case <-done:
-		case <-time.After(time.Second):
+		case <-time.After(lookupBudget + time.Second):
 			t.Fatal("lookup did not finish")
 		}
 	}
@@ -128,7 +128,7 @@ func TestExpiredNameReturnsImmediatelyWithOnlyOneRefresh(t *testing.T) {
 		if done != nil {
 			select {
 			case <-done:
-			case <-time.After(time.Second):
+			case <-time.After(lookupBudget + time.Second):
 				t.Error("refresh did not finish after fixture release")
 			}
 		}
@@ -149,7 +149,7 @@ func TestExpiredNameReturnsImmediatelyWithOnlyOneRefresh(t *testing.T) {
 	}
 	select {
 	case <-entered:
-	case <-time.After(time.Second):
+	case <-time.After(lookupBudget + time.Second):
 		t.Fatal("refresh did not start")
 	}
 	for range 16 {

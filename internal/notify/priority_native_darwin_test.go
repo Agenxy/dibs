@@ -4,13 +4,14 @@
 package notify
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/testexec"
 
 	"github.com/agenxy/dibs/internal/procexec"
 )
@@ -22,7 +23,7 @@ func TestNativePassivePriorityRequestsTimeSensitive(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("macOS notification helper")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := testexec.BuildContext(t, 2*time.Minute)
 	defer cancel()
 	binary := filepath.Join(t.TempDir(), "dibs-notify")
 	build := procexec.Command(ctx, "swiftc", "-D", "DIBS_PRIORITY_FIXTURE", "-o", binary, nativePromptSource(t))

@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agenxy/dibs/internal/testexec"
+
 	"github.com/agenxy/dibs/internal/procexec"
 )
 
@@ -31,7 +33,7 @@ func TestNativeAskReadsBoundedDetailAndExpiresAtRequestDeadline(t *testing.T) {
 		t.Fatal(err)
 	}
 	binary := filepath.Join(contents, "MacOS", "dibs-notify")
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	ctx, cancel := testexec.BuildContext(t, time.Minute)
 	defer cancel()
 	if out, err := procexec.Command(ctx, "swiftc", "-D", "DIBS_ASK_FIXTURE", "-o", binary, nativePromptSource(t)).CombinedOutput(); err != nil {
 		t.Fatalf("native ask build: %v\n%s", err, out)

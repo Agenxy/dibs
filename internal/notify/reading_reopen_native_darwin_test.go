@@ -4,13 +4,14 @@
 package notify
 
 import (
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/testexec"
 
 	"github.com/agenxy/dibs/internal/procexec"
 )
@@ -20,7 +21,7 @@ import (
 // same response handler as UNUserNotificationCenter. No real notification or
 // UI opens. This proves persistence/dispatch/layout, not LaunchServices itself.
 func TestNativeReadingWindowReopensPersistedNotification(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := testexec.BuildContext(t, 2*time.Minute)
 	defer cancel()
 	contents := filepath.Join(t.TempDir(), "ReadingFixture.app", "Contents")
 	if err := os.MkdirAll(filepath.Join(contents, "MacOS"), 0o700); err != nil {

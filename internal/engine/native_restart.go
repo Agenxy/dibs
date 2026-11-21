@@ -13,7 +13,7 @@ import (
 func (e *Engine) tryNativeRestart(ctx context.Context, epoch string, plan wakePlan) (bool, bool) {
 	fresh := func() (string, error) { return e.nativeRestartNotice(ctx, epoch, plan) }
 	out, handled := wakeexec.TryNativeContext(ctx, plan.surface, plan.fields, plan.argv, fresh)
-	if !handled && appRestarting(out) {
+	if !handled && e.appRestarting(out) {
 		handled = true // the notice stays owed; afterAppReturn delivers it once the app is back
 	}
 	if !handled && (out.Disposition == "unloaded" || out.Disposition == "native_failed") {

@@ -120,7 +120,7 @@ func refreshForTest(t *testing.T, r *resolver, clock *atomic.Int64) {
 	if done != nil {
 		select {
 		case <-done:
-		case <-time.After(time.Second):
+		case <-time.After(lookupBudget + time.Second):
 			t.Fatal("refresh did not complete")
 		}
 	}
@@ -139,7 +139,7 @@ func TestOneDeadlineBoundsTheDisplayLookup(t *testing.T) {
 	if got := r.name(); got != "kernel" {
 		t.Fatal(got)
 	}
-	if time.Since(start) > time.Second {
+	if time.Since(start) > 10*lookupBudget {
 		t.Fatal("lookup exceeded bounded deadline by an order of magnitude")
 	}
 }

@@ -6,7 +6,6 @@ package notify
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"image/png"
@@ -17,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agenxy/dibs/internal/testexec"
+
 	"github.com/agenxy/dibs/internal/procexec"
 )
 
@@ -24,7 +25,7 @@ import (
 // double only OS notification contact and user gestures. No live window,
 // notification authorisation, external app, or process-openable action route.
 func TestNativePromptFullTextChoicesTypingAndNoImplicitApproval(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := testexec.BuildContext(t, 2*time.Minute)
 	defer cancel()
 	contents := filepath.Join(t.TempDir(), "PromptFixture.app", "Contents")
 	macos, res := filepath.Join(contents, "MacOS"), filepath.Join(contents, "Resources")

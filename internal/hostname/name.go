@@ -15,9 +15,13 @@ import (
 )
 
 const (
-	cacheTTL     = 5 * time.Minute
-	retryTTL     = 30 * time.Second
-	lookupBudget = 100 * time.Millisecond
+	cacheTTL = 5 * time.Minute
+	retryTTL = 30 * time.Second
+	// The whole lookup, which is up to three scutil spawns: a Mac with no
+	// HostName set needs two. 100 ms did not fit two spawns on a loaded
+	// machine, and the board then showed the kernel name for 30 seconds. The
+	// lookup runs in the background; only a cold Name() caller waits on it.
+	lookupBudget = time.Second
 )
 
 type resolver struct {
