@@ -20,6 +20,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   posting input or reading mail.
 
 ### Fixed
+- Sending to a closed harness explains that unconfirmed delivery can raise a
+  contact alert and suggests choosing a reachable recipient for urgent work.
 - The waiting hint directs contact alerts to `inbox` and identifies which
   message numbers can be used with `ack` or `read_mail`.
 - A stray nonce no longer forks a dormant agent when the name and current

@@ -504,12 +504,18 @@ func TestClosedHarnessSendDoesNotClaimDelivery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, err := e.Do(ctx, &core.Op{Kind: core.OpSendMessage, Token: sender["token"].(string), To: "closed", MsgType: core.MsgRequest, Body: "private"})
+	r, err := e.Do(ctx, &core.Op{Kind: core.OpSendMessage, Token: sender["token"].(string), To: "closed", MsgType: core.MsgRequest, Body: "private", DeadlineSec: 600})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if r["ok"] != true || r["msg_serial"] == nil || r["deadline_pending"] != true || r["response_window_s"] != 600 {
+		t.Fatalf("setup: send did not preserve the request and its response window: %v", r)
 	}
 	text := fmt.Sprint(r["note"])
 	if !strings.Contains(text, "No started turn or read mail is confirmed") || !strings.Contains(text, thread) || strings.Contains(text, "delivered on its next start") {
 		t.Fatalf("send invented delivery or omitted exact session: %s", text)
+	}
+	if !strings.Contains(text, "may raise a contact alert") || !strings.Contains(text, "choose another agent") {
+		t.Fatalf("send did not explain the contact alert or offer a reachable recipient: %s", text)
 	}
 }

@@ -14,8 +14,9 @@ func (e *Engine) closedHarnessNote(l *core.Agent, socket bool) string {
 		return ""
 	}
 	note := "Stored in " + l.ID + "'s mailbox; harness closed. No started turn or read mail is confirmed. " +
-		"An app reopen may be attempted where supported; otherwise it waits for the original harness to start. " +
-		"An unanswered question or request can expire before then."
+		"The mail waits for the original harness to start or a supported background wake to reach it. " +
+		"An unanswered question or request can expire, and unconfirmed delivery may raise a contact alert to the person. " +
+		"For time-sensitive work, choose another agent with a reachable harness."
 	if thread := threadIDOf(l); thread != "" {
 		note += " Original session: " + thread + "."
 	}
