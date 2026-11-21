@@ -83,7 +83,7 @@ func transactScopedNonce(legacyPath, project, role, scope, chosen string) ([]str
 	if err != nil {
 		return nil, err
 	}
-	owner := "owner:v1:" + canonicalNonceKey(project, role)
+	owner := scopedNonceOwnerPrefix + canonicalNonceKey(project, role)
 	legacy, unlock, err := prepareLegacyNonceClaim(all, legacyPath, project, role, name, chosen)
 	if err != nil {
 		return nil, err
@@ -119,7 +119,7 @@ func transactScopedNonce(legacyPath, project, role, scope, chosen string) ([]str
 func prepareLegacyNonceClaim(
 	all map[string]string, path, project, role, name, chosen string,
 ) (map[string]string, func(), error) {
-	owner := "owner:v1:" + canonicalNonceKey(project, role)
+	owner := scopedNonceOwnerPrefix + canonicalNonceKey(project, role)
 	needs := all[owner] == name || (all[owner] == "" && (chosen != "" || len(nonceCandidatesIn(all, project, name)) == 0))
 	if !needs {
 		return nil, func() {}, nil
@@ -137,7 +137,7 @@ func matchingNonceKeys(all map[string]string, project, name string) []string {
 	canonical := paths.Canonical(project)
 	var keys []string
 	for key := range all {
-		if strings.HasPrefix(key, "owner:v1:") {
+		if strings.HasPrefix(key, scopedNonceOwnerPrefix) {
 			continue
 		}
 		dir, suffix, found := strings.Cut(key, "\x00")
@@ -197,9 +197,10 @@ func removeClaimedLegacyCopies(all, legacy map[string]string, project, role, nam
 const nonceCacheErrorSource = "dibs.bridge.nonce-cache"
 
 func nonceCacheRefusal(line []byte, err error) []byte {
+	message := fmt.Sprintf("credential cache migration failed (%v). Registration was not forwarded.", err)
 	reply, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": idOf(line), "error": map[string]any{
-			"code": -32000, "message": "credential cache migration failed; registration was not forwarded",
+			"code": -32000, "message": message,
 			"data": map[string]any{
 				"source": nonceCacheErrorSource, "code": "E_NONCE_CACHE", "cause": err.Error(),
 				"hint": "keep this session and its stored credentials; check the private cache's lock, permissions " +

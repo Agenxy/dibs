@@ -48,7 +48,5 @@ func rememberRegistrationNonce(line, reply []byte) {
 		}
 		nonce, _ = group[*chosen.Index].(string)
 	}
-	if nonce != "" {
-		rememberNonce(projectKey(args), name, nonce)
-	}
+	recordNonce(projectKey(args), name, nonce, scope, false)
 }

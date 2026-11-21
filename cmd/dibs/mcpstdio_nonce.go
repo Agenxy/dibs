@@ -71,15 +71,15 @@ func rememberedNonce(project, name string) string {
 // costs a sibling, which is what happened before this existed, and must never
 // cost the registration itself.
 func rememberNonce(project, name, nonce string) {
-	recordNonce(project, name, nonce, false)
+	recordNonce(project, name, nonce, "", false)
 }
 
 func rememberChosenNonce(project, name, nonce string) {
-	recordNonce(project, name, nonce, true)
+	recordNonce(project, name, nonce, "", true)
 }
 
-func recordNonce(project, name, nonce string, chosen bool) {
-	if project == "" || name == "" || nonce == "" {
+func recordNonce(project, name, nonce, scope string, chosen bool) {
+	if project == "" || name == "" || (nonce == "" && scope == "") {
 		return
 	}
 	path := nonceStorePath(name)
@@ -115,7 +115,15 @@ func recordNonce(project, name, nonce string, chosen bool) {
 	if err != nil {
 		return // never replace a damaged store with an empty one
 	}
-	if recordNonceIn(all, project, name, nonce, chosen) {
+	changed := nonce != "" && recordNonceIn(all, project, name, nonce, chosen)
+	if scope != "" {
+		// The daemon has accepted this registration. Cache maintenance must
+		// not change any recovery evidence on refused or lost replies.
+		now := time.Now()
+		changed = noteNonceScopeUse(all, name, scope, now) || changed
+		changed = maintainNonceScopes(all, name, now) || changed
+	}
+	if changed {
 		_ = writeNonces(path, all)
 	}
 }
@@ -128,10 +136,12 @@ func recordNonceIn(all map[string]string, project, name, nonce string, chosen bo
 	// an explicit change cannot erase a still-owned identity's recovery secret.
 	saved := canonical + "\x00" + fmtNonceDigest(nonce)
 	choice := canonical + "\x00choice"
-	if all[canonical] == nonce && all[saved] == nonce && all[key] != "" && (!chosen || all[choice] == nonce) {
+	keepExact := !strings.HasPrefix(name, scopedNamePrefix) || canonical != "dir:v1:"+key
+	if all[canonical] == nonce && all[saved] == nonce &&
+		(!keepExact || all[key] != "") && (!chosen || all[choice] == nonce) {
 		return false
 	}
-	if all[key] == "" {
+	if keepExact && all[key] == "" {
 		all[key] = nonce
 	}
 	all[canonical], all[saved] = nonce, nonce
@@ -142,7 +152,7 @@ func recordNonceIn(all map[string]string, project, name, nonce string, chosen bo
 }
 
 func writeNonces(path string, all map[string]string) error {
-	b, err := json.MarshalIndent(all, "", "  ")
+	b, err := json.Marshal(all)
 	if err != nil {
 		return err
 	}

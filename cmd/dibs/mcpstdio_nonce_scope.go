@@ -16,7 +16,7 @@ const scopedNonceStore = "harness-session-nonces-v1.json"
 
 func nonceStorePath(name string) string {
 	legacy := noncePath()
-	if legacy != "" && strings.HasPrefix(name, "session:v1:") {
+	if legacy != "" && strings.HasPrefix(name, scopedNamePrefix) {
 		return filepath.Join(filepath.Dir(legacy), scopedNonceStore)
 	}
 	return legacy
@@ -49,5 +49,5 @@ func registrationNonceScope(params map[string]any) string {
 // Its owner fence lives in a separate file which old writers cannot overwrite.
 func nonceCacheName(name, scope string) string {
 	sum := sha256.Sum256([]byte(scope))
-	return "session:v1:" + hex.EncodeToString(sum[:]) + ":" + name
+	return scopedNamePrefix + hex.EncodeToString(sum[:]) + ":" + name
 }
