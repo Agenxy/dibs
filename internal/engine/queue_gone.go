@@ -102,7 +102,7 @@ func (e *Engine) mailFinishedExecBinding(l *core.Agent, now time.Time) {
 	}
 	finished := !e.recentlyInTouch(l) && !e.contactLooksLive(l)
 	for _, m := range e.state.Inbox(l.ID) {
-		if m.State != core.MsgStatePending || m.Consumed || m.FinishedWakeNotice != 0 ||
+		if !m.UnconsumedEnvelope() || m.FinishedWakeNotice != 0 ||
 			m.From == "" || m.From == l.ID || m.From == reporter.ID || !e.state.Answerable(m.From) {
 			continue
 		}

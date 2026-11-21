@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -37,7 +38,6 @@ func TestFinishedExecWakeOnDaemonRestartNotifiesOnlySenders(t *testing.T) {
 	testexec.PrepareExecutable(t, exec.Command(binary, "--version"))
 
 	const node = "finished-exec-restart"
-	const requestsPerWorker = 2
 	workers := []string{"builder", "maintainer", "repairer"}
 	seed := core.NewState(node, core.DefaultLimits())
 	old := time.Now().Add(-5 * 24 * time.Hour)
@@ -54,7 +54,7 @@ func TestFinishedExecWakeOnDaemonRestartNotifiesOnlySenders(t *testing.T) {
 	add(&core.Op{Kind: core.OpRegister, Name: "sender", NewToken: "token-sender", Nonce: "nonce-sender"})
 	add(&core.Op{Kind: core.OpRegister, Name: "coordinator", NewToken: "token-lead", Nonce: "nonce-lead"})
 	add(&core.Op{Kind: core.OpGrantRole, To: "coordinator", Mode: core.RoleCoordinator})
-	var requests []uint64
+	var requests, handoffs []uint64
 	for i, worker := range workers {
 		add(&core.Op{
 			Kind: core.OpRegister, Name: worker, AgentKind: core.KindPersistent,
@@ -62,14 +62,18 @@ func TestFinishedExecWakeOnDaemonRestartNotifiesOnlySenders(t *testing.T) {
 			SessionID: fmt.Sprintf("019ffe52-0eaf-7f60-81cc-%012d", i+1),
 			Agent:     &core.AgentInfo{Harness: "Codex", Surface: harnessenv.ChatGPTApp},
 		})
-		for range requestsPerWorker {
-			res := add(&core.Op{
-				Kind: core.OpSendMessage, Token: "token-sender", To: worker, MsgType: core.MsgRequest,
-				Body: "private source body", DeliveryStart: true,
-			})
-			requests = append(requests, res["msg_serial"].(uint64))
-		}
+		request := add(&core.Op{
+			Kind: core.OpSendMessage, Token: "token-sender", To: worker, MsgType: core.MsgRequest,
+			Body: "private source body", DeliveryStart: true,
+		})["msg_serial"].(uint64)
+		requests = append(requests, request)
+		handoff := add(&core.Op{
+			Kind: core.OpSendMessage, Token: "token-sender", To: worker, MsgType: core.MsgHandoff,
+			Body: "private source body",
+		})["msg_serial"].(uint64)
+		handoffs = append(handoffs, handoff)
 	}
+	add(&core.Op{Kind: core.OpMarkDelivered, MsgSerials: handoffs})
 	start := func(st *core.State) (*Engine, *memLedger, context.Context, func()) {
 		led := &memLedger{}
 		e := New(st, led, deadProber{})
@@ -105,13 +109,17 @@ func TestFinishedExecWakeOnDaemonRestartNotifiesOnlySenders(t *testing.T) {
 				t.Errorf("finished exec runs produced %d coordinator alerts", n)
 			}
 			senderMail := e.state.Inbox("sender")
-			for _, serial := range requests {
+			for _, serial := range append(slices.Clone(requests), handoffs...) {
 				m := e.state.Messages[serial]
-				if m == nil || m.Consumed || m.State != core.MsgStatePending {
-					t.Errorf("source request %d did not remain unread", serial)
+				kind, state := core.MsgRequest, core.MsgStatePending
+				if slices.Contains(handoffs, serial) {
+					kind, state = core.MsgHandoff, core.MsgStateDelivered
+				}
+				if m == nil || m.Consumed || m.State != state {
+					t.Errorf("source %s %d did not retain its original state", kind, serial)
 				}
 				var matches int
-				marker := fmt.Sprintf("request #%d ", serial)
+				marker := fmt.Sprintf("%s #%d ", kind, serial)
 				for _, n := range senderMail {
 					if n.Type == core.MsgNotify && n.From == e.dibsRowLocked() && strings.Contains(n.Body, marker) {
 						matches++
@@ -121,7 +129,7 @@ func TestFinishedExecWakeOnDaemonRestartNotifiesOnlySenders(t *testing.T) {
 					}
 				}
 				if matches != 1 {
-					t.Errorf("request %d has %d sender notices, want one", serial, matches)
+					t.Errorf("%s %d has %d sender notices, want one", kind, serial, matches)
 				}
 			}
 			return nil
