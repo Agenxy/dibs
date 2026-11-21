@@ -18,6 +18,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   posting input or reading mail.
 
 ### Fixed
+- Registering under the same name and current session as a dormant agent
+  requires its recovery credential. A stray nonce receives recovery advice
+  without creating a second mailbox.
+- An authorized merge can absorb a signed-off fork whose former bridge
+  process still serves another agent.
 - Recovery chooses an independent coordinator when several hold the role and
   the first coordinator is the survivor.
 - Finished one-shot Codex runs no longer page the person on daemon restart.

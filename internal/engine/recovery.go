@@ -161,7 +161,7 @@ func (e *Engine) recoveryDecision(r *core.RecoveryRequest, coordinator *core.Age
 		return nil, err
 	}
 	evidence := e.mergeEvidence(from.ID)
-	if err := mergeProcessSafe(from.ID, evidence); err != nil {
+	if err := e.mergeProcessSafe(from.ID, evidence); err != nil {
 		return nil, err
 	}
 	sourceHost, survivorHost := "", ""

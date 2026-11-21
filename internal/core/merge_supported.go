@@ -137,9 +137,32 @@ func (s *State) admitMergeActor(op *Op) error {
 		return nil
 	}
 	a := op.MergeActor
-	if a.ID == "" || !a.Evidence.Known || a.Evidence.Live {
+	if a.ID == "" || !a.Evidence.AllowsMerge(s.mergeEvidenceSource(op)) {
 		return errf("E_NOT_PERMITTED", "use the authenticated merge entry point",
 			"merge decision lacks authority or evidence")
 	}
 	return nil
+}
+
+// Only the source named by this transition may use its signed-off state as
+// evidence. Recovery approvals still require an observed absent process.
+func (s *State) mergeEvidenceSource(op *Op) *Agent {
+	var from string
+	switch op.Kind {
+	case OpMergeAgents:
+		from = op.To
+	case OpRespond:
+		if m := s.Messages[op.MsgSerial]; m != nil && m.Merge != nil {
+			from = m.Merge.From
+		}
+	}
+	evidence := op.MergeActor.Evidence
+	if from == "" || evidence.Source != from {
+		return nil
+	}
+	row := s.Agents[from]
+	if row == nil || row.CreatedSerial != evidence.Created {
+		return nil
+	}
+	return row
 }

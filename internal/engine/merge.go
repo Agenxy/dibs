@@ -68,7 +68,7 @@ func (e *Engine) mergeLocked(token, from, into string, options []MergeOptions) (
 		return nil, err
 	}
 	evidence := e.mergeEvidence(from)
-	if err := mergeProcessSafe(from, evidence); err != nil {
+	if err := e.mergeProcessSafe(from, evidence); err != nil {
 		return nil, err
 	}
 	plan := e.mergePreview(a, token, from, into, evidence, opt)
@@ -162,6 +162,9 @@ func (e *Engine) mergeEvidence(from string) core.MergeEvidence {
 	if a.Agent != nil {
 		evidence.Host = a.Agent.HostID
 	}
+	if a.Status == core.StatusClosed {
+		return evidence // process ownership is no longer relevant to the retired row
+	}
 	// Snapshot, binding and kernel observation are taken on this same writer
 	// trip. A reused/live PID is conservatively live, never guessed absent.
 	if peer, ok := peerSessionIn(e.peerSnapshot(), sessionsOf(a)); ok && peer.PID != 0 {
@@ -183,12 +186,12 @@ func (e *Engine) mergePIDObservation(pid int) (known, live bool) {
 	return live, live // legacy false does not distinguish absence from an error
 }
 
-func mergeProcessSafe(from string, evidence core.MergeEvidence) error {
-	if !evidence.Known || evidence.Live {
+func (e *Engine) mergeProcessSafe(from string, evidence core.MergeEvidence) error {
+	if !evidence.AllowsMerge(e.state.Agents[from]) {
 		return &core.Error{
 			Code: "E_AGENT_LIVE",
 			Msg:  fmt.Sprintf("%s has a live process or its absence cannot be established", from),
-			Hint: "stop the fork's process first; unknown or remote process evidence is not proof of absence",
+			Hint: "sign off the source or stop its process first; unknown process evidence does not establish absence",
 		}
 	}
 	return nil

@@ -38,6 +38,12 @@ type MergeEvidence struct {
 	ProcStart int64  `json:"proc_start"`
 }
 
+// AllowsMerge accepts a signed-off row independently of the liveness of a
+// process it once shared. Other rows still need a verified absent process.
+func (e MergeEvidence) AllowsMerge(source *Agent) bool {
+	return e.Known && !e.Live || (source != nil && source.Status == StatusClosed)
+}
+
 // MergeEligibility is the ONE coordinator rule, including its human-readable
 // refusal. It makes no process or filesystem observations itself.
 func (s *State) MergeEligibility(from, into string, evidence MergeEvidence) error {
@@ -46,12 +52,13 @@ func (s *State) MergeEligibility(from, into string, evidence MergeEvidence) erro
 	}
 	a, b := s.Agents[from], s.Agents[into]
 	if !sameMergeIdentity(a, b) || len(a.Slots) != 0 || a.hasSessionBinding() || a.CurrentSession != "" ||
-		!b.LastCoordination.After(a.LastCoordination) || !evidence.Known || evidence.Live {
+		!b.LastCoordination.After(a.LastCoordination) || !evidence.AllowsMerge(a) {
 		return errf("E_MERGE_NEEDS_HUMAN",
 			"use the preview's human_request: send(to:\"human\", type:\"request\", merge:{from:\""+from+
 				"\", into:\""+into+"\", fence:<preview fence>}, body:...); their Approve performs the merge",
 			"coordinator merge requires matching known name/host/harness/surface/kind, "+
-				"an unbound fork without declarations or a live process, and a more recently coordinating survivor")
+				"an unbound fork without declarations that has signed off or has no live process, "+
+				"and a more recently coordinating survivor")
 	}
 	return nil
 }
