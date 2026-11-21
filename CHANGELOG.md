@@ -7,6 +7,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A Claude session whose process carries a stale inherited `CLAUDE_PID` is
+  no longer shown as closed while it is running. Its Dibs bridge looked for
+  the session file under that dead pid, found nothing, and identified the
+  session by a placeholder that no check-in could repair. The bridge now
+  reads its own parent session's file first.
 - Mail delivered into a ChatGPT app thread that is mid-turn no longer breaks
   the person's next message with "Cannot steer conversation … without an
   active turn id". Dibs used to send a start request, which the app admits

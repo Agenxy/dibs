@@ -93,13 +93,23 @@ func readClaudeSidecar(isClaude bool) (claudeSidecar, string, bool) {
 	// bound that as an alias while the sidecar's cwd, surface and title never
 	// reached the board. Measured on this project's own board on 2026-09-19.
 	// The variable is still honoured when it is set, under the gate below.
-	pid := os.Getenv("CLAUDE_PID")
-	ppid := strconv.Itoa(os.Getppid())
-	if pid == "" {
-		pid = ppid
-	}
+	//
+	// The parent is tried FIRST, whatever CLAUDE_PID says. The desktop app can
+	// hand a session an inherited CLAUDE_PID naming a process that exited long
+	// ago: measured 2026-11-20, a session at pid 26579 carried CLAUDE_PID=4485
+	// and so did its bridge. Keyed on that, the bridge read no sidecar for two
+	// days, every call carried `host-26579`, and the row stayed bound to a dead
+	// process while the board told senders the live session was closed.
 	home, _ := os.UserHomeDir()
 	if home == "" {
+		return claudeSidecar{}, "", false
+	}
+	ppid := strconv.Itoa(os.Getppid())
+	if side, ok := readSidecarFile(home, ppid); ok {
+		return side, home, true
+	}
+	pid := os.Getenv("CLAUDE_PID")
+	if pid == "" || pid == ppid {
 		return claudeSidecar{}, "", false
 	}
 	// OUR OWN PARENT, or the handshake said so. Either is proof; neither alone
@@ -124,13 +134,22 @@ func readClaudeSidecar(isClaude bool) (claudeSidecar, string, bool) {
 	// positive evidence that this session is ours rather than one we inherited.
 	// Nested processes fail that test, which is exactly what the guard e2e
 	// checks when it starts daemons of its own.
-	if !isClaude && pid != ppid {
+	if !isClaude {
 		return claudeSidecar{}, "", false
 	}
+	if side, ok := readSidecarFile(home, pid); ok {
+		return side, home, true
+	}
+	return claudeSidecar{}, "", false
+}
+
+// readSidecarFile reads ~/.claude/sessions/<pid>.json. An absent or partial
+// write is inconclusive.
+func readSidecarFile(home, pid string) (claudeSidecar, bool) {
 	// A pid is digits. Checking that is not ceremony: the value becomes a path
 	// component below, and "../../.." is a legal environment variable.
 	if _, err := strconv.Atoi(pid); err != nil {
-		return claudeSidecar{}, "", false
+		return claudeSidecar{}, false
 	}
 	// Reads the user's OWN ~/.claude sidecar. `pid` is validated numeric above,
 	// so it cannot carry traversal segments, and this process already runs as
@@ -139,9 +158,9 @@ func readClaudeSidecar(isClaude bool) (claudeSidecar, string, bool) {
 	var side claudeSidecar
 	b, err := os.ReadFile(sidecar) //nolint:gosec // same-user path; pid validated numeric above
 	if err != nil || json.Unmarshal(b, &side) != nil {
-		return claudeSidecar{}, "", false
+		return claudeSidecar{}, false
 	}
-	return side, home, true
+	return side, true
 }
 
 // Unknown-ID rows still rely on the daemon's legacy kernel-name comparison.
