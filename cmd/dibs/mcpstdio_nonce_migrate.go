@@ -200,9 +200,10 @@ func removeClaimedLegacyCopies(all, legacy map[string]string, project, role, nam
 const nonceCacheErrorSource = "dibs.bridge.nonce-cache"
 
 func nonceCacheRefusal(line []byte, err error) []byte {
+	message := fmt.Sprintf("credential cache migration failed (%v). Registration was not forwarded.", err)
 	reply, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": idOf(line), "error": map[string]any{
-			"code": -32000, "message": fmt.Sprintf("credential cache migration failed (%v). Registration was not forwarded.", err),
+			"code": -32000, "message": message,
 			"data": map[string]any{
 				"source": nonceCacheErrorSource, "code": "E_NONCE_CACHE", "cause": err.Error(),
 				"hint": "keep this session and its stored credentials; check the private cache's lock, permissions " +

@@ -129,7 +129,8 @@ func recordNonceIn(all map[string]string, project, name, nonce string, chosen bo
 	saved := canonical + "\x00" + fmtNonceDigest(nonce)
 	choice := canonical + "\x00choice"
 	keepExact := !strings.HasPrefix(name, scopedNamePrefix) || canonical != "dir:v1:"+key
-	if all[canonical] == nonce && all[saved] == nonce && (!keepExact || all[key] != "") && (!chosen || all[choice] == nonce) {
+	if all[canonical] == nonce && all[saved] == nonce &&
+		(!keepExact || all[key] != "") && (!chosen || all[choice] == nonce) {
 		return false
 	}
 	if keepExact && all[key] == "" {
