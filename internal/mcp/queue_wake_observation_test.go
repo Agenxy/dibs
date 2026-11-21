@@ -211,7 +211,7 @@ func awaitObservationQueueCommand(t *testing.T, home string) {
 		_, queued := os.Stat(filepath.Join(home, "pending.json"))
 		if err == nil && queued == nil && strings.Contains(string(methods), "thread/queue/list") {
 			for _, method := range strings.Fields(string(methods)) {
-				if method != "initialize" && method != "initialized" && method != "thread/queue/list" {
+				if method != "initialize" && method != "initialized" && method != "thread/read" && method != "thread/queue/list" {
 					t.Fatalf("queue observer used a mutating method: %s", method)
 				}
 			}

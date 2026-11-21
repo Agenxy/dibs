@@ -77,7 +77,7 @@ func TestNativeQueueRouteCoalescesAndRearmsAcrossProcesses(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, m := range strings.Fields(string(methods)) {
-		if m != "initialize" && m != "initialized" && m != "thread/queue/list" {
+		if m != "initialize" && m != "initialized" && m != "thread/read" && m != "thread/queue/list" {
 			t.Fatalf("observer used mutating method %s", m)
 		}
 	}

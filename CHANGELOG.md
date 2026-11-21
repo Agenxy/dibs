@@ -6,6 +6,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- Dibs keeps wake mail in the mailbox when the bound Codex thread comes from
+  a one-shot `codex exec` run. The board and doctor identify the thread source
+  and explain how to bind the agent from an existing app thread.
 - A bridge whose session slot already held a nonce minted before the
   process-scope carry-over existed still got `E_SESSION_TAKEN` on register:
   the carry-over ran only into an empty slot. Its own process-scoped nonce is

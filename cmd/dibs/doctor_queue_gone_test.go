@@ -51,3 +51,17 @@ func TestDoctorReportsGoneQueueThreadFromBoard(t *testing.T) {
 		})
 	}
 }
+
+func TestDoctorExplainsExecThreadQueueRefusal(t *testing.T) {
+	var board boardView
+	data := `{"agents":[{"id":"worker","kind":"persistent","status":"dormant","resumable":true,` +
+		`"agent":{"harness":"Codex","surface":"ChatGPT App","cwd":"/work"},` +
+		`"queue_wake":{"thread_state":"gone","thread_source":"exec"}}]}`
+	if err := json.Unmarshal([]byte(data), &board); err != nil {
+		t.Fatal(err)
+	}
+	if hint := goneQueueRepair(&board); !strings.Contains(hint, "one-shot codex exec") ||
+		!strings.Contains(hint, "existing app thread") {
+		t.Fatalf("doctor did not explain the exec refusal and recovery: %q", hint)
+	}
+}

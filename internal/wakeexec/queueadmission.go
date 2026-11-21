@@ -88,6 +88,12 @@ func runQueuedCommandContext(
 	if nativeQueueRoute(argv) {
 		observation.ProbeBinary = argv[0]
 		probe := observeQueueDetail(argv[0], thread)
+		observation.ThreadSource = probe.threadSource
+		if probe.threadSource == QueueThreadExecSource {
+			observation.ThreadState = "gone"
+			observation.At = time.Now().UTC()
+			return queueCommandOutcome{observation: observation}
+		}
 		pending, known = probe.pending, probe.known
 		observation.IssuedAt = probe.issuedAt
 		if !probe.issuedAt.IsZero() {
