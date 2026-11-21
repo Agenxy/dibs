@@ -85,6 +85,9 @@ func TestSnapshotFeatureMarkersThroughRealWriter(t *testing.T) {
 		want []string
 	}{
 		{"untouched", func(*core.State) {}, nil},
+		{"antigravity-wake-binding", func(s *core.State) {
+			s.Agents["agent"] = &core.Agent{ID: "agent", AntigravityBindingSerial: 1}
+		}, []string{"antigravity-wake-binding/v1"}},
 		{"finished-exec-notice", func(s *core.State) {
 			s.Messages[1] = &core.Message{Serial: 1, FinishedWakeNotice: 2}
 		}, []string{"finished-wake-notice/v1"}},
