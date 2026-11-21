@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -95,6 +96,10 @@ func transactScopedNonce(legacyPath, project, role, scope, chosen string) ([]str
 		changed = recordNonceIn(all, project, name, chosen, true) || changed
 	}
 	candidates := nonceCandidatesIn(all, project, name)
+	if len(candidates) == 0 && chosen == "" {
+		changed = carryProcessNonces(all, project, role, name, scope) || changed
+		candidates = nonceCandidatesIn(all, project, name)
+	}
 	if len(candidates) == 0 {
 		nonce := mintNonce()
 		if nonce == "" {
@@ -232,4 +237,33 @@ func syncNonceDirectory(path string) error {
 	}
 	defer func() { _ = dir.Close() }()
 	return dir.Sync()
+}
+
+// carryProcessNonces moves this bridge's own process-scoped credentials into a
+// session scope that has none yet.
+//
+// A bridge that could not see its harness session used to file its nonce under
+// its own process incarnation. Once the same bridge learns the session (a late
+// sidecar, or #630's stale CLAUDE_PID fix), its scope changes and the new slot
+// is empty: register then minted a fresh nonce, so an active agent got
+// E_SESSION_TAKEN and a dormant one could fork a sibling instead of
+// reattaching. Measured 2026-11-20 on this board's own architect seat.
+//
+// Only THIS process's slot is read. Its pid and start time are this bridge,
+// so the credential is one this bridge was handed, which is the strongest
+// evidence the cache has; any other process's slot stays where it is.
+func carryProcessNonces(all map[string]string, project, role, name, scope string) bool {
+	started := bridgeStarted()
+	if started == "" {
+		return false
+	}
+	own := "bridge-process:" + strconv.Itoa(os.Getpid()) + ":" + started
+	if own == scope {
+		return false
+	}
+	changed := false
+	for _, nonce := range nonceCandidatesIn(all, project, nonceCacheName(role, own)) {
+		changed = recordNonceIn(all, project, name, nonce, false) || changed
+	}
+	return changed
 }

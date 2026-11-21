@@ -7,6 +7,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A Claude agent whose Dibs bridge now finds its session (after the stale
+  `CLAUDE_PID` fix) keeps the recovery credential it was handed before.
+  Re-registering by name minted a new one instead, so an active agent was
+  refused with `E_SESSION_TAKEN` and a dormant one could be split into a
+  second identity.
 - Scoped bridge recovery caches compact redundant entries, prune ended process
   incarnations, and expire inactive session scopes after 90 days. Earlier
   scopes receive a 90-day grace period, and legacy recovery owners retain
