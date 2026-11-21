@@ -187,14 +187,19 @@ func (e *Engine) mergePIDObservation(pid int) (known, live bool) {
 }
 
 func (e *Engine) mergeProcessSafe(from string, evidence core.MergeEvidence) error {
-	if !evidence.AllowsMerge(e.state.Agents[from]) {
-		return &core.Error{
-			Code: "E_AGENT_LIVE",
-			Msg:  fmt.Sprintf("%s has a live process or its absence cannot be established", from),
-			Hint: "sign off the source or stop its process first; unknown process evidence does not establish absence",
-		}
+	if evidence.AllowsMerge(e.state.Agents[from]) {
+		return nil
 	}
-	return nil
+	return mergeProcessRefusal(from,
+		"sign off the source or stop its process first; unknown process evidence does not establish absence")
+}
+
+func mergeProcessRefusal(from, hint string) error {
+	return &core.Error{
+		Code: "E_AGENT_LIVE",
+		Msg:  fmt.Sprintf("%s has a live process or its absence cannot be established", from),
+		Hint: hint,
+	}
 }
 
 func (e *Engine) addAdoptionMergeHint(res core.Result, actor *core.Agent, op *core.Op) {

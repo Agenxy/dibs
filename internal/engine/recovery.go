@@ -161,8 +161,9 @@ func (e *Engine) recoveryDecision(r *core.RecoveryRequest, coordinator *core.Age
 		return nil, err
 	}
 	evidence := e.mergeEvidence(from.ID)
-	if err := e.mergeProcessSafe(from.ID, evidence); err != nil {
-		return nil, err
+	if !evidence.Known || evidence.Live {
+		return nil, mergeProcessRefusal(from.ID, "recovery requires a dormant source and verified process absence; "+
+			"if the source signed off, ask human to preview merge_agents")
 	}
 	sourceHost, survivorHost := "", ""
 	if from.Agent != nil {

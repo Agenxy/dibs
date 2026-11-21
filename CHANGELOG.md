@@ -18,9 +18,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   posting input or reading mail.
 
 ### Fixed
-- Registering under the same name and current session as a dormant agent
-  requires its recovery credential. A stray nonce receives recovery advice
-  without creating a second mailbox.
+- A stray nonce no longer forks a dormant agent when the name and current
+  session match. Session-only reattachment still works for eligible agents
+  with a Dibs-minted nonce. Agents with a self-chosen nonce get recovery advice.
 - An authorized merge can absorb a signed-off fork whose former bridge
   process still serves another agent.
 - Recovery chooses an independent coordinator when several hold the role and

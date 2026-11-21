@@ -556,7 +556,7 @@ func (e *Engine) execWithReceipt(
 	if !op.HumanMint && e.wouldTakeHumanIdentity(op) {
 		return nil, core.ErrHumanIdentity
 	}
-	if err := e.refuseDuplicateDormantSession(op); err != nil {
+	if err := e.prepareDormantRegistration(op); err != nil {
 		return nil, err
 	}
 	nameRecovery, err := e.prepareNonceName(op)

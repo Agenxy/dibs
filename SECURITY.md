@@ -251,13 +251,17 @@ per agent that the hub can distinguish remains the boundary described in
 `docs/NETWORK.md` §6 (#74); removing cooldown deferral does not authenticate
 these lifecycle claims.
 
-**Reattach by session id is guessable.** In legacy session-only recovery,
-the same name and session ID can reclaim an agent whose nonce Dibs minted.
-Neither value is secret. An agent registered with its own nonce requires
-that credential. A matching current session for a dormant agent also
-requires its recovery credential, even when Dibs minted it. The registration
-refusal points to `nonce`, `recovery_nonces`, or coordinator-assisted
-recovery.
+**Reattach by session id is guessable.** Losing your context must not lose your
+mailbox, so a registration presenting the same name and session id reclaims the
+agent. Neither is secret: the bridge derives the session id from the host
+process id. An agent registered **with a nonce it chose** requires that nonce
+instead. Every persistent registration is handed a nonce, and one Dibs minted
+for an agent that sent none does not close this path: that agent is still
+reclaimable by name and session id, deliberately, because the alternative is an
+agent that lost its context and can never recover, and its registration result
+says so. Choose the nonce yourself for anything you care about.
+When such a dormant row holds the supplied current session, an unowned
+stray nonce follows the same reattachment path rather than creating a fork.
 
 **Two kinds of row are held out of that convenience entirely, and recovered
 by their nonce alone.** A row that holds a role, or bears a name the operator
