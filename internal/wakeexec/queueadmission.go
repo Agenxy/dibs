@@ -86,6 +86,7 @@ func runQueuedCommandContext(
 	generation := reconnectGeneration(thread)
 	pending, known := false, false
 	if nativeQueueRoute(argv) {
+		observation.ProbeBinary = argv[0]
 		probe := observeQueueDetail(argv[0], thread)
 		pending, known = probe.pending, probe.known
 		observation.IssuedAt = probe.issuedAt

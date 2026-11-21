@@ -6,7 +6,6 @@ package engine
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -26,6 +25,7 @@ func TestContactLabelsThroughRegisterSendAndRestart(t *testing.T) {
 		remote                      bool
 	}{
 		{"local-missing-session", harnessenv.ChatGPTApp, "", "ChatGPT", false},
+		{"unknown-bridge-label", harnessenv.ChatGPTApp, "", "ChatGPT", false},
 		{"remote-missing-session", harnessenv.ClaudeDesktop, "", "Claude", true},
 		{"known-thread", harnessenv.ChatGPTApp, thread, "ChatGPT", false},
 		{"remote-known-thread", harnessenv.ChatGPTApp, thread, "ChatGPT", true},
@@ -37,13 +37,12 @@ func TestContactLabelsThroughRegisterSendAndRestart(t *testing.T) {
 			t.Setenv("CODEX_HOME", t.TempDir())
 			t.Setenv("DIBS_TEST_FORBID_APP_OPEN", "1")
 			friendly := hostdisplay.Name() // bounded lookup outside the writer
-			kernel, err := os.Hostname()
-			if err != nil {
-				t.Fatal(err)
-			}
 			led := &memLedger{}
 			e, ctx := runContactReplayEngine(t, core.NewState("contact-labels", core.DefaultLimits()), led, nil)
 			hostID, label := e.HostID(), "obsolete-network-label"
+			if tc.name == "unknown-bridge-label" {
+				hostID, label = "", "2327e342-028d-4368-b595-764fe978d540.attlocal.net"
+			}
 			if tc.remote {
 				hostID, label = strings.Repeat("a", 64), "ContactRemote"
 			}
@@ -93,15 +92,24 @@ func TestContactLabelsThroughRegisterSendAndRestart(t *testing.T) {
 				t.Fatalf("setup: missing real contact: %v %v", pending, err)
 			}
 			hint := pending[0].Contact.OpenHint
-			if !strings.Contains(hint, tc.app) || strings.Contains(hint, "codex-dibs-recovery") || strings.Contains(hint, hostID) {
+			if !strings.Contains(hint, tc.app) || strings.Contains(hint, "codex-dibs-recovery") ||
+				(hostID != "" && strings.Contains(hint, hostID)) {
 				t.Errorf("contact does not name the app and human host: %s", hint)
 			}
-			if tc.remote {
+			switch {
+			case tc.name == "unknown-bridge-label":
+				if strings.Contains(hint, label) || !strings.Contains(hint, "unidentified machine") {
+					t.Errorf("contact treated an unverified bridge label as a destination: %s", hint)
+				}
+			case tc.remote:
 				if !strings.Contains(hint, "ContactRemote") {
 					t.Errorf("remote host label missing: %s", hint)
 				}
-			} else if !strings.Contains(hint, friendly) && !strings.Contains(hint, kernel) && !strings.Contains(hint, hostdisplay.Name()) {
-				t.Errorf("contact omitted the current display label or its honest kernel fallback: %s", hint)
+			default:
+				neutral := hostdisplay.Current().Fallback && strings.Contains(hint, "on this machine")
+				if !strings.Contains(hint, friendly) && !strings.Contains(hint, hostdisplay.Name()) && !neutral {
+					t.Errorf("contact omitted the daemon's friendly label or its neutral fallback: %s", hint)
+				}
 			}
 			if strings.Contains(hint, "PRIVATE-CONTACT-CONTENT") {
 				t.Fatal("participant body leaked into contact")
@@ -148,7 +156,8 @@ func TestContactLabelsThroughRegisterSendAndRestart(t *testing.T) {
 			news := readContactUpdates(t, restarted, restartCtx, asker["token"].(string), "check_in")
 			if tc.session == "" {
 				assertMissingContactSession(t, news)
-				if !strings.Contains(news, tc.app) || strings.Contains(news, "codex-dibs-recovery") || strings.Contains(news, hostID) {
+				if !strings.Contains(news, tc.app) || strings.Contains(news, "codex-dibs-recovery") ||
+					(hostID != "" && strings.Contains(news, hostID)) || strings.Contains(news, label) && tc.name == "unknown-bridge-label" {
 					t.Errorf("cold sender notice lost app/host display: %s", news)
 				}
 			} else if wantURL && !strings.Contains(news, url) {

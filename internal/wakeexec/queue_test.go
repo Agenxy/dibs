@@ -5,10 +5,14 @@ package wakeexec
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -141,7 +145,8 @@ func TestQueueFallbackSurvivesRestart(t *testing.T) {
 }
 
 func TestQueueProbeTimeoutAndChangedShapeAreUnknown(t *testing.T) {
-	t.Setenv("CODEX_HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("CODEX_HOME", home)
 	t.Setenv("DIBS_QUEUE_PROBE_STALL", "1")
 	binary := filepath.Join(t.TempDir(), "codex")
 	if b, err := exec.Command("go", "build", "-o", binary, "./testdata/codexqueue").CombinedOutput(); err != nil {
@@ -155,6 +160,40 @@ func TestQueueProbeTimeoutAndChangedShapeAreUnknown(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed > 2*time.Second {
 		t.Fatalf("probe did not kill/reap at its deadline: %v", elapsed)
+	}
+	pidPath := filepath.Join(home, "probe.pid")
+	if err := os.Remove(pidPath); err != nil {
+		t.Fatalf("setup: queue probe did not reach the stall: %v", err)
+	}
+	start = time.Now()
+	if got := ObserveQueueContact(t.Context(), binary, "fixture-thread", start, start.Add(-time.Minute)); got != QueueContactWait {
+		t.Fatalf("contact probe guessed at thread activity after a timeout: %v", got)
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Errorf("contact probe exceeded its deadline: %v", elapsed)
+	}
+	probePID, err := os.ReadFile(pidPath)
+	if err != nil {
+		t.Fatalf("setup: contact probe did not reach the stall: %v", err)
+	}
+	pid, err := strconv.Atoi(string(probePID))
+	if err != nil || pid <= 0 {
+		t.Fatalf("setup: invalid contact probe PID %q", probePID)
+	}
+	if runtime.GOOS != "windows" {
+		process, err := os.FindProcess(pid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = process.Release() }()
+		err = process.Signal(syscall.Signal(0))
+		if err == nil {
+			_ = process.Kill()
+			t.Fatal("timed-out contact subprocess remained in the process table")
+		}
+		if !errors.Is(err, os.ErrProcessDone) && !errors.Is(err, syscall.ESRCH) {
+			t.Fatalf("could not verify contact subprocess cleanup: %v", err)
+		}
 	}
 	for _, s := range []string{`{}`, `{"data":null,"nextCursor":null}`, `{"data":[],"nextCursor":4}`, `{"data":[{}],"nextCursor":null}`} {
 		if _, known, _ := queuePage([]byte(s)); known {

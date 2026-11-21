@@ -11,7 +11,10 @@ import (
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/harnessenv"
+	"github.com/agenxy/dibs/internal/wakeexec"
 )
+
+const queuedContactUnknownAfter = 30 * time.Minute
 
 // A queued input is not a usable wake route after its app-open step failed.
 // The callback can arrive after a read, rebind or app-incarnation change.
@@ -25,11 +28,14 @@ func (p wakePlan) strandedQueue() bool {
 	return !o.IssuedAt.IsZero() && o.At.Sub(o.IssuedAt) >= harnessenv.AppOpenRetryAfter
 }
 
-// At most one unresolved recovery window per agent. This is a derived
-// observation, checked by the existing sweep without another app probe.
+// At most one unresolved recovery window or app query per agent. A due
+// window is checked by the existing sweep without touching the ledger.
 type queuedOpenContact struct {
-	plan wakePlan
-	due  time.Time
+	plan         wakePlan
+	due          time.Time
+	unknownSince time.Time
+	failed       bool
+	checking     bool
 }
 
 func sameQueuedOpen(a, b wakePlan) bool {
@@ -47,14 +53,18 @@ func (e *Engine) queuedOpenRecoveryPending(plan wakePlan, agent string) bool {
 		if !ok || !sameQueuedOpen(pending.plan, plan) || !e.queuedOpenCurrent(plan, e.state.Agents[agent]) {
 			return nil
 		}
-		keys := slices.Concat(pending.plan.commandKeys, plan.commandKeys)
-		slices.Sort(keys)
-		plan.commandKeys = slices.Compact(keys)
-		pending.plan = plan
+		pending.plan = joinQueuedOpenPlan(pending.plan, plan)
 		e.queuedOpenContacts[agent] = pending
 		return core.Result{"pending": true}
 	})
 	return err == nil && r["pending"] == true
+}
+
+func joinQueuedOpenPlan(previous, current wakePlan) wakePlan {
+	keys := slices.Concat(previous.commandKeys, current.commandKeys)
+	slices.Sort(keys)
+	current.commandKeys = slices.Compact(keys)
+	return current
 }
 
 func (e *Engine) contactAfterQueuedOpen(plan wakePlan, agent string, failed bool) {
@@ -64,15 +74,28 @@ func (e *Engine) contactAfterQueuedOpen(plan wakePlan, agent string, failed bool
 			return nil
 		}
 		now := time.Now()
-		if failed {
+		if failed && !plan.canObserveQueuedContact() {
 			delete(e.queuedOpenContacts, agent)
-			e.escalateQueuedOpen(plan, l, true, now)
+			e.escalateQueuedOpen(plan, l, true, "", now)
 			return nil
 		}
 		if e.queuedOpenContacts == nil {
 			e.queuedOpenContacts = map[string]queuedOpenContact{}
 		}
-		e.queuedOpenContacts[agent] = queuedOpenContact{plan, now.Add(harnessenv.AppOpenRetryAfter)}
+		if pending, ok := e.queuedOpenContacts[agent]; ok && sameQueuedOpen(pending.plan, plan) {
+			pending.plan = joinQueuedOpenPlan(pending.plan, plan)
+			pending.failed = pending.failed || failed
+			e.queuedOpenContacts[agent] = pending
+			return nil
+		}
+		pending := queuedOpenContact{plan: plan, due: now.Add(harnessenv.AppOpenRetryAfter), failed: failed}
+		if failed {
+			pending.due = now
+		}
+		e.queuedOpenContacts[agent] = pending
+		if failed {
+			e.checkQueuedOpenContact(agent, pending, now)
+		}
 		return nil
 	})
 }
@@ -95,31 +118,127 @@ func (e *Engine) queuedOpenCurrent(plan wakePlan, l *core.Agent) bool {
 func (e *Engine) reconsiderQueuedOpenContacts(now time.Time) {
 	var ready []string
 	for agent, pending := range e.queuedOpenContacts {
-		if !now.Before(pending.due) {
+		if !pending.checking && !now.Before(pending.due) {
 			ready = append(ready, agent)
 		}
 	}
 	slices.Sort(ready)
 	for _, agent := range ready {
 		pending := e.queuedOpenContacts[agent]
+		e.checkQueuedOpenContact(agent, pending, now)
+	}
+}
+
+func (p wakePlan) canObserveQueuedContact() bool {
+	return p.host == "" && p.surface == harnessenv.ChatGPTApp && p.thread != "" &&
+		p.queueOutcome != nil && p.queueOutcome.ProbeBinary != "" && !p.queueOutcome.IssuedAt.IsZero()
+}
+
+// The writer checks the original notice cohort and binding before and after
+// the bounded app-server call. One in-flight check serves that cohort.
+func (e *Engine) checkQueuedOpenContact(agent string, pending queuedOpenContact, now time.Time) {
+	l := e.state.Agents[agent]
+	if !e.queuedOpenCurrent(pending.plan, l) {
 		delete(e.queuedOpenContacts, agent)
-		if l := e.state.Agents[agent]; e.queuedOpenCurrent(pending.plan, l) {
-			e.escalateQueuedOpen(pending.plan, l, false, now)
-		}
+		return
 	}
+	if !pending.plan.canObserveQueuedContact() {
+		delete(e.queuedOpenContacts, agent)
+		e.escalateQueuedOpen(pending.plan, l, pending.failed, "", now)
+		return
+	}
+	if !e.queuedContactHasMail(pending.plan, agent) {
+		delete(e.queuedOpenContacts, agent)
+		return
+	}
+	pending.checking = true
+	e.queuedOpenContacts[agent] = pending
+	finish := e.startWakeWorker(agent, "queued-contact")
+	go func() {
+		defer finish()
+		queue := pending.plan.queueOutcome
+		evidence := wakeexec.ObserveQueueContact(
+			e.wakeContext, queue.ProbeBinary, pending.plan.thread, queue.IssuedAt, now.Add(-contactActivityGrace))
+		_, _ = e.query(e.wakeContext, func() core.Result {
+			e.finishQueuedOpenContact(agent, pending.plan, evidence, now)
+			return nil
+		})
+	}()
 }
 
-func (e *Engine) escalateQueuedOpen(plan wakePlan, l *core.Agent, failed bool, now time.Time) {
+func (e *Engine) finishQueuedOpenContact(
+	agent string, plan wakePlan, evidence wakeexec.QueueContactEvidence, now time.Time,
+) {
+	pending, ok := e.queuedOpenContacts[agent]
+	if !ok || !pending.checking || !sameQueuedOpen(pending.plan, plan) {
+		return
+	}
+	l := e.state.Agents[agent]
+	if !e.queuedOpenCurrent(pending.plan, l) || !e.queuedContactHasMail(pending.plan, agent) {
+		delete(e.queuedOpenContacts, agent)
+		return
+	}
+	var reason core.ContactReason
+	switch evidence {
+	case wakeexec.QueueContactGone:
+		delete(e.queuedOpenContacts, agent)
+		return
+	case wakeexec.QueueContactReady:
+		// The quiet thread and matching item authorize the usual alert below.
+	case wakeexec.QueueContactActive:
+		pending.unknownSince = time.Time{}
+	case wakeexec.QueueContactWait:
+		if pending.unknownSince.IsZero() {
+			pending.unknownSince = now
+		}
+		if now.Sub(plan.queueOutcome.IssuedAt) >= queuedContactUnknownAfter &&
+			now.Sub(pending.unknownSince) >= contactActivityGrace {
+			reason = core.ContactQueueStateUnknown
+		}
+	}
+	if evidence == wakeexec.QueueContactReady || reason != "" {
+		delete(e.queuedOpenContacts, agent)
+		e.escalateQueuedOpen(pending.plan, l, pending.failed, reason, now)
+		return
+	}
+	pending.checking = false
+	pending.due = now.Add(contactActivityGrace)
+	e.queuedOpenContacts[agent] = pending
+}
+
+func (e *Engine) queuedContactHasMail(plan wakePlan, agent string) bool {
+	for _, m := range e.state.Inbox(agent) {
+		if queuedContactMail(plan, agent, m) {
+			return true
+		}
+	}
+	return false
+}
+
+func queuedContactMail(plan wakePlan, agent string, m *core.Message) bool {
+	return m.State == core.MsgStatePending && !m.Consumed && m.ContactEligible() &&
+		slices.Contains(plan.commandKeys, "mail:"+noticeKey(agent, m.Serial))
+}
+
+func (e *Engine) escalateQueuedOpen(
+	plan wakePlan, l *core.Agent, failed bool, reason core.ContactReason, now time.Time,
+) {
 	for _, m := range e.state.Inbox(l.ID) {
-		if m.State == core.MsgStatePending && !m.Consumed && m.ContactEligible() &&
-			slices.Contains(plan.commandKeys, "mail:"+noticeKey(l.ID, m.Serial)) {
-			e.escalateAppOpenMessage(l, m, failed, now)
+		if queuedContactMail(plan, l.ID, m) {
+			e.escalateAppOpenMessage(l, m, failed, reason, now)
 		}
 	}
 }
 
-func (e *Engine) escalateAppOpenMessage(l *core.Agent, m *core.Message, failed bool, now time.Time) {
+func (e *Engine) escalateAppOpenMessage(
+	l *core.Agent, m *core.Message, failed bool, diagnosis core.ContactReason, now time.Time,
+) {
 	op := &core.Op{Kind: core.OpContactEscalate, MsgSerial: m.Serial}
+	if diagnosis != "" {
+		op.Kind = core.OpContactDiagnosed
+		op.AgentID = l.ID
+		op.ContactReason = diagnosis
+	}
 	if err := e.state.Admit(op); err != nil {
 		return
 	}

@@ -1627,6 +1627,19 @@ published in the board queue view, no private harness database is read, and boar
 reads add no probes. Session
 rebinding or loss of this rebuildable cache returns the view to unknown.
 
+A contact alert for a dated notice on the local ChatGPT queue normally requires
+a fresh queue observation of that item and a quiet thread. A bounded read-only
+app-server query rechecks both off the writer. An explicit active status or an
+update within two minutes defers escalation and clears any accumulated
+uncertainty. If evidence remains inconclusive for at least two minutes and
+the notice is at least 30 minutes old, unread eligible mail raises an alert
+that says Dibs could not confirm the thread state or queue delivery. A consumed
+or superseded queue item ends that candidate without changing the underlying
+mail. Cached queue metadata and rebinding remain fenced to the
+same agent and thread. A local contact alert names the machine with the
+daemon's own friendly label, or says `this machine` while that label is
+unavailable.
+
 Own-host ChatGPT app `register`, `resume` and `bind_session` replies additionally
 carry advisory `binding_warning` when no local rollout is found and read-only app
 owner discovery cannot confirm the target. The owner probe runs outside the writer,

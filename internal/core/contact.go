@@ -13,11 +13,12 @@ const ContactWindow = 10 * time.Minute
 // ContactReason records the daemon's evidence class without transcript content.
 type ContactReason string
 
-// Known evidence classes for unsuccessful native app turns.
+// Known diagnoses for unconfirmed native app delivery.
 const (
-	ContactTurnsEnded       ContactReason = "codex_turns_ended"
-	ContactCompactionFailed ContactReason = "codex_compaction_failed"
-	ContactContextFull      ContactReason = "codex_context_full"
+	ContactTurnsEnded        ContactReason = "codex_turns_ended"
+	ContactCompactionFailed  ContactReason = "codex_compaction_failed"
+	ContactContextFull       ContactReason = "codex_context_full"
+	ContactQueueStateUnknown ContactReason = "codex_queue_state_unknown"
 )
 
 // ContactEscalation is replayable proof that delivery remained unconfirmed and Dibs
@@ -52,7 +53,7 @@ func admitContactReason(op *Op) error {
 	}
 	if op.Kind == OpContactDiagnosed && !op.ContactMailboxFull {
 		switch op.ContactReason {
-		case ContactTurnsEnded, ContactCompactionFailed, ContactContextFull:
+		case ContactTurnsEnded, ContactCompactionFailed, ContactContextFull, ContactQueueStateUnknown:
 			return nil
 		}
 	}

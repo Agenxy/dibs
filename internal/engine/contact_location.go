@@ -10,20 +10,14 @@ import (
 )
 
 // A registration's harness label is not an app, and a host ID is not a
-// human destination. Use the same cached display projection as the board,
-// without changing any identity or consulting an app on the writer.
+// human destination. Local contact instructions use this daemon's own
+// friendly label, with a neutral fallback while the lookup is unavailable.
 func (e *Engine) contactOpenHint(name string, l *core.Agent) string {
-	host, app, session, thread := "an unidentified machine", "its original harness", "", ""
+	host, app, session, thread := e.contactHost(l), "its original harness", "", ""
 	if l != nil {
 		thread, session = threadIDOf(l), l.CurrentSession
 		if session == "" {
 			session = l.SessionID
-		}
-		if l.Agent != nil {
-			label := e.boardHostLabel(l.Agent, nil, hostdisplay.Current().Name)
-			if label != "" && label != l.Agent.HostID {
-				host = label
-			}
 		}
 		switch surfaceOf(l) {
 		case harnessenv.ChatGPTApp:
@@ -53,6 +47,23 @@ func (e *Engine) contactOpenHint(name string, l *core.Agent) string {
 			"; find or restart the agent there, or reassign the work"
 	}
 	return "no thread or session is known for " + location + "; find or restart the agent there, or reassign the work"
+}
+
+func (e *Engine) contactHost(l *core.Agent) string {
+	if l == nil || l.Agent == nil {
+		return "an unidentified machine"
+	}
+	if e.ownsHost(l) && (l.Agent.HostID != "" || l.Agent.Host != "") {
+		label := hostdisplay.Current()
+		if label.Name != "" && !label.Fallback {
+			return label.Name
+		}
+		return "this machine"
+	}
+	if l.Agent.HostID != "" && l.Agent.Host != "" && l.Agent.Host != l.Agent.HostID {
+		return l.Agent.Host
+	}
+	return "an unidentified machine"
 }
 
 // The URL is descriptive on any host. An actionable desktop Open button

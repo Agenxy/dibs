@@ -231,6 +231,8 @@ func contactReasonText(reason core.ContactReason) string {
 	case core.ContactTurnsEnded:
 		return "ChatGPT turns end immediately without reading mail. " +
 			"Open the original thread to inspect the failure or move the agent."
+	case core.ContactQueueStateUnknown:
+		return "Dibs could not confirm the thread's state or whether its queued notice was delivered."
 	}
 	return ""
 }
