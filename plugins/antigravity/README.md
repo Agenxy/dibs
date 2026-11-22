@@ -6,10 +6,18 @@ Install with the Antigravity CLI on your `PATH`:
 dibs antigravity-plugin install
 ```
 
-From a Dibs checkout, `agy plugin install ./plugins/antigravity` installs the
-same native plugin with `dibs` resolved from the harness's `PATH`. The Dibs
-installer records the executable and the selected board's bridge settings.
-`agy plugin list --json` shows the installed skill and MCP server.
+The Dibs installer moves an existing `dibs` entry from the desktop profile's
+`mcp_config.json` into the native plugin. It preserves the server's settings
+and the other servers in the profile. Reinstalling preserves the configured
+server. For a fresh install it records the current executable and the selected
+board's bridge settings. `dibs doctor` warns if both paths define the server.
+If Antigravity still shows the old manual entry, restart it to reload the MCP
+configuration.
+
+From a Dibs checkout with no manual `dibs` entry, `agy plugin install
+./plugins/antigravity` installs the native plugin with `dibs` resolved from
+the harness's `PATH`. `agy plugin list --json` shows the installed skill and
+MCP server.
 
 To allow calls to the Dibs MCP server, run this command as the operator:
 
@@ -19,7 +27,8 @@ dibs antigravity-plugin --trust
 
 The command adds `mcp(dibs/*)` to the desktop profile's allow list in
 `~/.gemini/config/config.json`. It preserves existing settings and permission
-rules. Antigravity gives Deny and Ask rules precedence over Allow. `dibs doctor`
+rules. Open Antigravity once to create the profile if it is missing.
+Antigravity gives Deny and Ask rules precedence over Allow. `dibs doctor`
 reports when the Dibs server is configured without the scoped allow rule.
 The [Antigravity MCP documentation](https://antigravity.google/docs/mcp/)
 describes the server-scoped rule.
@@ -63,4 +72,6 @@ the mail about 19 seconds after send while Safari stayed frontmost. See the
 On 2026-11-22, `agy` 1.1.10 validated isolated plugin fixtures and `agy` 1.5.14
 installed the Dibs package with the selected board. In that scratch CLI profile,
 the trust command added the documented rule and preserved existing grants.
-Runtime approval matching on Antigravity desktop 2.34.0 remains to be measured.
+The migration kept the plugin's configured server name `dibs` in the plugin
+inventory. Runtime server naming and approval matching on Antigravity desktop
+2.34.0 remain to be measured.

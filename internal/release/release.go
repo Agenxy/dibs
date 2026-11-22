@@ -5,7 +5,7 @@
 // version, and the only thing that writes it.
 //
 // The version exists in the tree as prose in one place (the changelog heading)
-// and as data in four (the registry manifest and three plugin manifests). That
+// and as data in the registry and plugin manifests. That
 // is a duplication the format forces: a plugin manifest states its own version
 // at rest, because whatever installs it reads the file and not this repository.
 //
@@ -46,6 +46,8 @@ import (
 // release quietly ships the wrong number in it.
 var Manifests = []string{
 	"server.json",
+	"plugins/antigravity/plugin.json",
+	"internal/plugins/data/antigravity/plugin.json",
 	"plugins/claude-code/.claude-plugin/plugin.json",
 	"internal/plugins/data/claude-code/.claude-plugin/plugin.json",
 	"plugins/codex/.codex-plugin/plugin.json",

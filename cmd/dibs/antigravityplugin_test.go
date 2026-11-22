@@ -6,6 +6,8 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -16,7 +18,7 @@ func TestAntigravityPluginStagesTheSelectedBridge(t *testing.T) {
 	root := t.TempDir()
 	exe := filepath.Join(t.TempDir(), "dibs")
 	env := map[string]string{"DIBS_ADDR": "127.0.0.1:49319", "DIBS_DIR": t.TempDir()}
-	if err := stageAntigravityPlugin(root, exe, env); err != nil {
+	if err := stageAntigravityPlugin(root, exe, env, nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"plugin.json", "rules/AGENTS.md", "skills/dibs/SKILL.md"} {
@@ -45,6 +47,91 @@ func TestAntigravityPluginStagesTheSelectedBridge(t *testing.T) {
 	if len(config.MCPServers) != 1 || server.Command != exe ||
 		!reflect.DeepEqual(server.Args, []string{"mcp-stdio"}) || !reflect.DeepEqual(server.Env, env) {
 		t.Fatalf("incorrect staged MCP server: %+v", config.MCPServers)
+	}
+}
+
+func TestAntigravityMigratesManualServer(t *testing.T) {
+	for _, succeed := range []bool{true, false} {
+		t.Run(fmt.Sprint(succeed), func(t *testing.T) {
+			checkAntigravityMigration(t, succeed)
+		})
+	}
+}
+
+func checkAntigravityMigration(t *testing.T, succeed bool) {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	dir := filepath.Join(home, ".gemini", "config")
+	plugin := antigravityPluginServerPath(dir)
+	if err := os.MkdirAll(filepath.Dir(plugin), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	manual := filepath.Join(dir, "mcp_config.json")
+	entry := `{"command":"dibs","args":["mcp-stdio"],"env":{"DIBS_ADDR":"127.0.0.1:49496"}}`
+	const other = `{"url":"https://example.test/mcp"}`
+	original := []byte(`{"extra":true,"mcpServers":{"dibs":` + entry + `,"other":` + other + `}}`)
+	if err := os.WriteFile(manual, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	installError := errors.New("fixture installer refused")
+	err := installAntigravityPayload(dir, root, "unused", nil, func() error {
+		if hasAntigravityDibsServer(manual) {
+			t.Error("manual Dibs entry was still present while installing the native server")
+		}
+		staged, err := os.ReadFile(filepath.Join(root, "mcp_config.json"))
+		if err != nil {
+			return err
+		}
+		assertAntigravityJSON(t, staged, `{"mcpServers":{"dibs":`+entry+`}}`)
+		if !succeed {
+			return installError
+		}
+		return os.WriteFile(plugin, staged, 0o600)
+	})
+	updated, readErr := os.ReadFile(manual)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if !succeed {
+		if !errors.Is(err, installError) || !bytes.Equal(updated, original) || hasAntigravityDibsServer(plugin) {
+			t.Fatalf("failed install did not restore the original server: %s (%v)", updated, err)
+		}
+		return
+	}
+	if err != nil || !hasAntigravityDibsServer(plugin) {
+		t.Fatalf("migration did not install the native server: %v", err)
+	}
+	assertAntigravityJSON(t, updated, `{"extra":true,"mcpServers":{"other":`+other+`}}`)
+	retryRoot := t.TempDir()
+	if err := installAntigravityPayload(dir, retryRoot, "different-exe", nil, func() error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	retry, err := os.ReadFile(filepath.Join(retryRoot, "mcp_config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertAntigravityJSON(t, retry, `{"mcpServers":{"dibs":`+entry+`}}`)
+	if err := os.WriteFile(manual, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d := &diagnosis{json: true}
+	d.checkAntigravityGrants()
+	if len(d.checks) != 2 || d.checks[0].Fix != antigravityPluginUsage {
+		t.Fatalf("doctor did not warn about the duplicate: %+v", d.checks)
+	}
+}
+
+func assertAntigravityJSON(t *testing.T, raw []byte, expected string) {
+	t.Helper()
+	var got, want any
+	if err := json.Unmarshal([]byte(expected), &want); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &got); err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected Antigravity JSON: %s (%v)", raw, err)
 	}
 }
 

@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -29,6 +30,10 @@ func trustAntigravityPlugin() error {
 	}
 	changed, err := addAntigravityDibsGrant(filepath.Join(dir, "config.json"))
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("open Antigravity once to create its desktop profile, then run %s: %w",
+				antigravityTrustCommand, err)
+		}
 		return fmt.Errorf("update Antigravity desktop permissions: %w", err)
 	}
 	if changed {
@@ -70,23 +75,11 @@ func decodeAntigravityGrants(data []byte) (antigravityGrantConfig, error) {
 }
 
 func addAntigravityDibsGrant(path string) (bool, error) {
-	target, err := filepath.EvalSymlinks(path)
+	settings, err := readAntigravitySettings(path)
 	if err != nil {
 		return false, err
 	}
-	info, err := os.Stat(target)
-	if err != nil {
-		return false, err
-	}
-	if !info.Mode().IsRegular() {
-		return false, fmt.Errorf("expected a regular file for Antigravity settings")
-	}
-	// #nosec G304 -- derived from the operator's Antigravity desktop config path
-	data, err := os.ReadFile(target)
-	if err != nil {
-		return false, err
-	}
-	config, err := decodeAntigravityGrants(data)
+	config, err := decodeAntigravityGrants(settings.data)
 	if err != nil || slices.Contains(config.allow, antigravityDibsGrant) {
 		return false, err
 	}
@@ -98,10 +91,37 @@ func addAntigravityDibsGrant(path string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if err := replaceAntigravitySettings(target, info.Mode().Perm(), data, append(updated, '\n')); err != nil {
+	if err := settings.replace(append(updated, '\n')); err != nil {
 		return false, err
 	}
 	return true, nil
+}
+
+type antigravitySettingsFile struct {
+	path string
+	mode os.FileMode
+	data []byte
+}
+
+func readAntigravitySettings(path string) (antigravitySettingsFile, error) {
+	target, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return antigravitySettingsFile{}, err
+	}
+	info, err := os.Stat(target)
+	if err != nil {
+		return antigravitySettingsFile{}, err
+	}
+	if !info.Mode().IsRegular() {
+		return antigravitySettingsFile{}, fmt.Errorf("expected a regular file for Antigravity settings")
+	}
+	// #nosec G304 -- derived from the operator's Antigravity desktop config path
+	data, err := os.ReadFile(target)
+	return antigravitySettingsFile{target, info.Mode().Perm(), data}, err
+}
+
+func (f antigravitySettingsFile) replace(updated []byte) error {
+	return replaceAntigravitySettings(f.path, f.mode, f.data, updated)
 }
 
 func replaceAntigravitySettings(path string, mode os.FileMode, original, updated []byte) error {
@@ -136,7 +156,15 @@ func replaceAntigravitySettings(path string, mode os.FileMode, original, updated
 
 func (d *diagnosis) checkAntigravityGrants() {
 	dir, err := antigravityConfigDir()
-	if err != nil || !hasAntigravityDibsServer(dir) {
+	if err != nil {
+		return
+	}
+	manual := hasAntigravityDibsServer(filepath.Join(dir, "mcp_config.json"))
+	native := hasAntigravityDibsServer(antigravityPluginServerPath(dir))
+	if manual && native {
+		d.warn("Antigravity has Dibs MCP servers in both the profile and the native plugin", antigravityPluginUsage)
+	}
+	if !manual && !native {
 		return
 	}
 	// #nosec G304 -- read only the local Antigravity desktop settings
@@ -153,19 +181,16 @@ func (d *diagnosis) checkAntigravityGrants() {
 	}
 }
 
-func hasAntigravityDibsServer(dir string) bool {
-	for _, path := range []string{"mcp_config.json", "plugins/dibs/mcp_config.json"} {
-		// #nosec G304 -- fixed config names beneath the local Antigravity profile
-		data, err := os.ReadFile(filepath.Join(dir, path))
-		if err != nil {
-			continue
-		}
-		var cfg struct {
-			MCPServers map[string]json.RawMessage `json:"mcpServers"`
-		}
-		if json.Unmarshal(data, &cfg) == nil && cfg.MCPServers["dibs"] != nil {
-			return true
-		}
+func hasAntigravityDibsServer(path string) bool {
+	server, err := readAntigravityDibsServer(path)
+	return err == nil && server != nil
+}
+
+func readAntigravityDibsServer(path string) (json.RawMessage, error) {
+	file, err := readAntigravitySettings(path)
+	if err != nil {
+		return nil, err
 	}
-	return false
+	_, servers, err := decodeAntigravityServers(file.data)
+	return servers["dibs"], err
 }

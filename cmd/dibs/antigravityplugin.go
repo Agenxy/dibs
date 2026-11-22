@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -58,9 +59,16 @@ func installAntigravityPlugin() error {
 		return err
 	}
 	defer func() { _ = os.RemoveAll(root) }() // #nosec G703 -- freshly created staging directory
-	if err := stageAntigravityPlugin(root, exe, nonDefaultEnv(scheme)); err != nil {
+	dir, err := antigravityConfigDir()
+	if err != nil {
 		return err
 	}
+	return installAntigravityPayload(dir, root, exe, nonDefaultEnv(scheme), func() error {
+		return runAntigravityInstaller(agy, root)
+	})
+}
+
+func runAntigravityInstaller(agy, root string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	// #nosec G204 G702 -- operator's installed Antigravity CLI and a private staging directory
@@ -72,14 +80,57 @@ func installAntigravityPlugin() error {
 	return nil
 }
 
-func stageAntigravityPlugin(root, exe string, env map[string]string) error {
+func installAntigravityPayload(dir, root, exe string, env map[string]string, install func() error) error {
+	profile, manual, withoutDibs, err := antigravityServerMigration(dir)
+	if err != nil {
+		return fmt.Errorf("read Antigravity profile MCP configuration: %w", err)
+	}
+	pluginPath := antigravityPluginServerPath(dir)
+	installed, err := readAntigravityDibsServer(pluginPath)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("read existing Antigravity plugin MCP configuration: %w", err)
+	}
+	server := manual
+	if server == nil {
+		server = installed
+	}
+	if err := stageAntigravityPlugin(root, exe, env, server); err != nil {
+		return err
+	}
+	if manual == nil {
+		return install()
+	}
+	// Remove the manual entry before loading the plugin so a freshly migrated
+	// profile never offers the same server through both configuration paths.
+	if err := profile.replace(withoutDibs); err != nil {
+		return fmt.Errorf("remove Dibs from Antigravity profile MCP configuration: %w", err)
+	}
+	if err := install(); err != nil {
+		if installed == nil && hasAntigravityDibsServer(pluginPath) {
+			return fmt.Errorf("inspect or retry the partially installed Antigravity Dibs plugin: %w", err)
+		}
+		restoreErr := replaceAntigravitySettings(profile.path, profile.mode, withoutDibs, profile.data)
+		if restoreErr != nil {
+			return errors.Join(err, fmt.Errorf("restore the original Dibs MCP entry: %w", restoreErr))
+		}
+		return err
+	}
+	fmt.Println("Moved the existing Dibs server from the Antigravity profile into the native plugin.")
+	return nil
+}
+
+func stageAntigravityPlugin(root, exe string, env map[string]string, manual json.RawMessage) error {
 	p, ok := plugins.For("antigravity")
 	if !ok {
 		return fmt.Errorf("this Dibs binary has no embedded Antigravity plugin")
 	}
-	server := map[string]any{"command": exe, "args": []string{"mcp-stdio"}}
-	if len(env) != 0 {
-		server["env"] = env
+	var server any = manual
+	if manual == nil {
+		entry := map[string]any{"command": exe, "args": []string{"mcp-stdio"}}
+		if len(env) != 0 {
+			entry["env"] = env
+		}
+		server = entry
 	}
 	config, err := json.MarshalIndent(map[string]any{"mcpServers": map[string]any{"dibs": server}}, "", "  ")
 	if err != nil {

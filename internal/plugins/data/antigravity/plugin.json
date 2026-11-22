@@ -1,7 +1,7 @@
 {
   "name": "dibs",
   "displayName": "Dibs",
-  "version": "0.1.0",
+  "version": "0.0.19",
   "description": "Coordinate work, claims, and mail through your Dibs board.",
   "author": { "name": "Agenxy" },
   "homepage": "https://github.com/Agenxy/dibs",
