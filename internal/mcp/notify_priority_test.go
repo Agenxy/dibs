@@ -3,7 +3,10 @@
 
 package mcp
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestPriorityNotifyRoundTripsThroughMCP(t *testing.T) {
 	srv, _, _ := newServerWithEngine(t)
@@ -45,6 +48,31 @@ func TestPriorityNotifyRoundTripsThroughMCP(t *testing.T) {
 		if result := toolCall(t, srv, "send", bad); result["code"] != "E_BAD_ARG" {
 			t.Fatalf("invalid priority accepted: %v", result)
 		}
+	}
+}
+
+func TestQuestionPriorityRefusalPointsToOmission(t *testing.T) {
+	for _, version := range []string{"2026-07-28", "2025-11-25"} {
+		t.Run(version, func(t *testing.T) {
+			srv, _ := newServer(t)
+			sender := registerOn(t, srv, version, "sender")
+			registerOn(t, srv, version, "reviewer")
+			args := map[string]any{
+				"token": sender, "to": "reviewer", "type": "question",
+				"body": "Can you check?", "priority": "high",
+			}
+			result := toolCallOn(t, srv, version, "send", args)
+			hint, _ := result["hint"].(string)
+			if result["code"] != "E_BAD_ARG" || !strings.Contains(hint, "notify") ||
+				!strings.Contains(hint, "ordinary request") || !strings.Contains(hint, "Omit priority") {
+				t.Errorf("priority refusal did not name the accepted types and corrective action: %v", result)
+			}
+			delete(args, "priority")
+			accepted := toolCallOn(t, srv, version, "send", args)
+			if accepted["msg_serial"] == nil {
+				t.Fatalf("question without priority was refused: %v", accepted)
+			}
+		})
 	}
 }
 
