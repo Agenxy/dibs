@@ -10,7 +10,13 @@ import (
 	"github.com/agenxy/dibs/internal/core"
 )
 
-func validateMailboxLimit(name string, params json.RawMessage, a *toolArgs) error {
+func validateCheckpointArgs(name string, params json.RawMessage, a *toolArgs) error {
+	if name == "check_in" && a.BoardView != "" && (a.BoardView != coordinationBoardMode || a.Detail) {
+		return &core.Error{
+			Code: "E_BAD_ARG", Msg: "invalid check_in board view",
+			Hint: "choose board_view:coordination for bounded work detail, or detail:true for the full board",
+		}
+	}
 	if (name == "inbox" || name == "check_in") && argumentPresent(params, "limit") && a.Limit < 1 {
 		return &core.Error{Code: "E_BAD_ARG", Msg: "invalid mailbox limit", Hint: "choose limit between 1 and 8"}
 	}

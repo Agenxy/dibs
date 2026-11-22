@@ -309,7 +309,10 @@ func boardSummary(sc map[string]any, declaredUI bool) string {
 
 // Orientation calls share one compact roster unless every field was asked for.
 // Registration must not charge for peers' whole declaration histories.
-func orientationBoard(res core.Result, name string, detail bool) core.Result {
+func orientationBoard(res core.Result, name string, detail bool, boardView string) core.Result {
+	if name == "check_in" && boardView == coordinationBoardMode {
+		return coordinationBoard(res)
+	}
 	if detail {
 		return res
 	}
@@ -353,14 +356,8 @@ func orientationBoard(res core.Result, name string, detail bool) core.Result {
 // same failure one step later: the claim was visible and unattributable.
 // Bounded by MaxClaimsGlobal.
 func slimBoard(res core.Result) core.Result {
-	raw, _ := json.Marshal(res["board"])
-	var b struct {
-		Serial uint64           `json:"serial"`
-		Agents []map[string]any `json:"agents"`
-		Spaces []any            `json:"spaces"`
-		Claims []map[string]any `json:"claims"`
-	}
-	if json.Unmarshal(raw, &b) != nil {
+	b, ok := boardSnapshotForOrientation(res)
+	if !ok {
 		return res
 	}
 	rows := make([]map[string]any, 0, len(b.Agents))
@@ -369,27 +366,7 @@ func slimBoard(res core.Result) core.Result {
 	}
 	claims := make([]map[string]any, 0, len(b.Claims))
 	for _, c := range b.Claims {
-		row := map[string]any{"agent": c["agent"], "path": c["path"], "mode": c["mode"]}
-		// AND WHAT THE PATH MEANS, which is the rest of the claim's scope.
-		//
-		// A path is evidence on one computer and a repository-relative
-		// path on one repository, which is why the claim records the host
-		// and the repository it was taken in AT CLAIM TIME rather than
-		// reading the holder's current ones. This projection kept the
-		// path and dropped all three, so an agent that checked in could
-		// not tell a claim on its own /workspace/repo from an unrelated
-		// machine's, nor recognise its own file under another clone's
-		// root: exactly the two mistakes those fields exist to prevent,
-		// reintroduced at the last step before the model reads it. They
-		// are omitempty on the claim, so nothing is added for a board
-		// that never had them. Round sixty-five of the pre-release
-		// review.
-		for _, k := range []string{"host", "repo", "repo_path"} {
-			if v, ok := c[k]; ok {
-				row[k] = v
-			}
-		}
-		claims = append(claims, row)
+		claims = append(claims, rosterClaim(c))
 	}
 	out := core.Result{}
 	for k, v := range res {
@@ -401,6 +378,47 @@ func slimBoard(res core.Result) core.Result {
 		"detail": "one row per agent; pass detail true for every field",
 	}
 	return out
+}
+
+type orientationSnapshot struct {
+	Serial uint64           `json:"serial"`
+	Agents []map[string]any `json:"agents"`
+	Spaces []any            `json:"spaces"`
+	Claims []map[string]any `json:"claims"`
+}
+
+func boardSnapshotForOrientation(res core.Result) (orientationSnapshot, bool) {
+	var board orientationSnapshot
+	raw, err := json.Marshal(res["board"])
+	if err != nil {
+		return board, false
+	}
+	err = json.Unmarshal(raw, &board)
+	return board, err == nil
+}
+
+func rosterClaim(c map[string]any) map[string]any {
+	row := map[string]any{"agent": c["agent"], "path": c["path"], "mode": c["mode"]}
+	// AND WHAT THE PATH MEANS, which is the rest of the claim's scope.
+	//
+	// A path is evidence on one computer and a repository-relative
+	// path on one repository, which is why the claim records the host
+	// and the repository it was taken in AT CLAIM TIME rather than
+	// reading the holder's current ones. This projection kept the
+	// path and dropped all three, so an agent that checked in could
+	// not tell a claim on its own /workspace/repo from an unrelated
+	// machine's, nor recognise its own file under another clone's
+	// root: exactly the two mistakes those fields exist to prevent,
+	// reintroduced at the last step before the model reads it. They
+	// are omitempty on the claim, so nothing is added for a board
+	// that never had them. Round sixty-five of the pre-release
+	// review.
+	for _, k := range []string{"host", "repo", "repo_path"} {
+		if v, ok := c[k]; ok {
+			row[k] = v
+		}
+	}
+	return row
 }
 
 // rosterRow is one agent as the roster shows it. See slimBoard for what

@@ -6,6 +6,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- `check_in(board_view:"coordination")` shows work and claims in a board
+  projection capped at 24 KiB.
 - `dibs mcp-config` names the Antigravity desktop settings file for its
   stdio configuration.
 - A verified Antigravity desktop wake binding survives Dibs daemon restarts.
