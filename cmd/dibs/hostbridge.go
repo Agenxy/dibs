@@ -464,7 +464,7 @@ func (b *wakeBridge) serve(ctx context.Context, wr engine.WakeRequest) {
 	b.finish(wr.ID, wr.Agent)
 	if res.OK {
 		slog.Info("woke", "agent", wr.Agent, "harness", wr.Harness, "request", wr.ID)
-	} else {
+	} else if outcome.Disposition != wakeexec.QueueDeferred {
 		slog.Warn("wake failed", "agent", wr.Agent, "harness", wr.Harness, "request", wr.ID, "detail", res.Detail)
 	}
 	if err := b.report(ctx, res); err != nil {
@@ -529,6 +529,10 @@ func (b *wakeBridge) executeOutcome(wr engine.WakeRequest) (bool, string, wakeex
 func commandWakeOutcome(
 	command wakeexec.CommandOutcome, outcome wakeexec.NativeOutcome,
 ) (bool, string, wakeexec.NativeOutcome) {
+	if command.Deferred {
+		outcome.Disposition = wakeexec.QueueDeferred
+		return false, "app queue observation unavailable; recent receipt deferred this attempt", outcome
+	}
 	if command.NoRetry {
 		outcome.NoRetry, outcome.Disposition = true, "command_unknown"
 		return false, "wake command acceptance unknown after incomplete output; no automatic retry or fallback", outcome

@@ -221,6 +221,12 @@ func (e *Engine) runWakeAndReportPlan(cmd *wakePlan, agent string) bool {
 	if native {
 		e.recordSocketOutcome(*cmd, false)
 	}
+	if cmd.commandOutcome.Deferred {
+		// No input was submitted. Leave these keys fresh for new mail or
+		// reconnect; receipt-only deferral is neither an offer nor a failure.
+		e.clearWakeAttempts(agent)
+		return false
+	}
 	if !cmd.retryAllowed() {
 		e.recordNonRetryableWake(*cmd)
 		return false

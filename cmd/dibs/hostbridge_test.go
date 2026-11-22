@@ -484,6 +484,40 @@ func TestBridgeReportsAQueuedWakeBeforeCheckingAppVisibility(t *testing.T) {
 	}
 }
 
+func TestBridgeReportsQueueDeferralWithoutOpeningTheApp(t *testing.T) {
+	b := bridgeUnderTest(t, &recordingRun{})
+	b.run = func(_, _ []string, _, _ string, _, _ time.Duration) wakeexec.CommandOutcome {
+		return wakeexec.CommandOutcome{Deferred: true}
+	}
+	b.show = harnessenv.Shower{Open: func([]string) error {
+		t.Error("receipt-only deferral opened an app window")
+		return nil
+	}}
+	reports := make(chan engine.WakeResult, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var res engine.WakeResult
+		if err := json.NewDecoder(r.Body).Decode(&res); err != nil {
+			t.Error(err)
+		}
+		reports <- res
+		_, _ = w.Write([]byte(`{"accepted":true}`))
+	}))
+	t.Cleanup(srv.Close)
+	b.origin, b.client = srv.URL, srv.Client()
+	b.serve(t.Context(), engine.WakeRequest{
+		ID: 99, Host: b.host, Agent: "worker", Harness: "codex", Thread: "fixture-thread",
+		Surface: harnessenv.ChatGPTApp, MsgType: "question",
+	})
+	select {
+	case res := <-reports:
+		if res.OK || res.NoRetry || res.NativeDelivery != wakeexec.QueueDeferred {
+			t.Fatalf("queue deferral report = %+v", res)
+		}
+	default:
+		t.Fatal("queue deferral was not reported")
+	}
+}
+
 func TestTheBridgeOpensTheThreadInTheAppTheAgentRunsIn(t *testing.T) {
 	t.Setenv("DIBS_DIR", t.TempDir())
 	const thread = "0199a0b1-c2d3-4e5f-8a9b-0c1d2e3f4a5b"

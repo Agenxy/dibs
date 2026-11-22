@@ -15,7 +15,10 @@ import (
 	"github.com/agenxy/dibs/internal/paths"
 )
 
-const pendingWakeTTL = 2 * time.Hour
+// A receipt can bridge the short gap before an idle thread takes its input.
+// Measured idle delivery is about six seconds. The observed queue is
+// authoritative for longer waits, including an unloaded thread.
+const pendingWakeTTL = 10 * time.Second
 
 type queueReceipt struct {
 	QueuedAt   time.Time `json:"queued_at"`
@@ -87,12 +90,18 @@ func NoteQueuePrompt(thread string, at time.Time) {
 	}
 }
 
-func fallbackPending(thread string, now time.Time) bool {
+func fallbackQueueReceipt(thread string, now time.Time) queueReceipt {
 	r := readReceipt(thread)
+	age := now.Sub(r.QueuedAt)
+	if r.QueuedAt.IsZero() || age < 0 || age >= pendingWakeTTL {
+		return queueReceipt{}
+	}
 	p := readReceiptFile(receiptPath(thread) + ".prompt")
 	reconnect := readReceiptFile(receiptPath(thread) + ".reconnect")
-	return !r.QueuedAt.IsZero() && now.Sub(r.QueuedAt) < pendingWakeTTL &&
-		!p.PromptAt.After(r.QueuedAt) && r.Generation == reconnect.Generation
+	if p.PromptAt.After(r.QueuedAt) || r.Generation != reconnect.Generation {
+		return queueReceipt{}
+	}
+	return r
 }
 
 func reconnectGeneration(thread string) string {

@@ -37,12 +37,25 @@ present gaps, not a retrospective claim that one gap caused all thirteen turns.
 
 ## The explicit recovery trade
 
-Architect answer 29103 retains the existing unavailable-observer policy.
-When observation is unavailable, an authenticated current prompt, a new app
-reconnect generation or the two-hour receipt expiry can each admit at most
-one additional notice. A possible empty activation is preferred to losing a
-wake. When observation succeeds, an actual pending notice wins over all those
-inferred causes, and actual consumption re-arms immediately.
+An actual pending notice wins over inferred causes, and an observed empty
+queue re-arms immediately. When observation is unavailable, a current prompt,
+a new app reconnect generation, or expiry of the ten-second receipt can
+re-arm admission. A bounded duplicate follows the direction of architect
+answer 29103.
+
+On 2026-11-22 the installed Codex 0.165.0 returned all 20 usual cold queue
+observations within the one-second budget. Including subprocess cleanup, the
+median was 162ms, the p95 was 244ms and the maximum was 509ms. Load average was
+about 10 on 12 logical CPUs. Another 20 probes that also read metadata-only
+turn starts took at most 364ms. The incident's unknown observation remained
+unreproduced in those samples. The fast path retains its one-second deadline.
+
+An unknown observation with a recent receipt can take one two-second read-only
+corroboration. A turn reported for the exact thread with a start at or after
+the receipt re-arms admission if the queue remains unknown. Ten seconds bounds
+receipt-only deferral, allowing for the measured six-second idle-thread delay
+and observation margin. Deferral leaves the current mail eligible for another
+mail or reconnect event and schedules no timer.
 
 Every upgraded writer using the same board receipt directory takes the OS
 lock. It remains on disk, because unlinking a held lock would create two

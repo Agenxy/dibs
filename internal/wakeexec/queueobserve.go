@@ -56,7 +56,11 @@ func observeQueue(binary, thread string) (pending, known bool) {
 }
 
 func observeQueueDetail(binary, thread string, receiptAt ...time.Time) queueProbe {
-	ctx, cancel := context.WithTimeout(context.Background(), queueProbeTimeout)
+	return observeQueueDetailContext(context.Background(), binary, thread, receiptAt...)
+}
+
+func observeQueueDetailContext(parent context.Context, binary, thread string, receiptAt ...time.Time) queueProbe {
+	ctx, cancel := context.WithTimeout(parent, queueProbeTimeout)
 	defer cancel()
 	var probe queueProbe
 	withQueueRPC(ctx, binary, func(rpc queueRPC) {
@@ -64,15 +68,33 @@ func observeQueueDetail(binary, thread string, receiptAt ...time.Time) queueProb
 			probe = rpc.receipt(thread, receiptAt[0])
 			return
 		}
-		source := rpc.threadSource(thread)
-		if source == QueueThreadExecSource {
-			probe = queueProbe{threadSource: source}
-			return
-		}
-		pending, known := rpc.list(thread)
-		probe = queueProbe{pending: pending, known: known, issuedAt: rpc.issuedAt, threadSource: source}
+		probe = rpc.admission(thread, false)
 	})
 	return probe
+}
+
+func corroborateQueueReceipt(parent context.Context, binary, thread string) queueProbe {
+	// The regular list keeps its short budget. Only a receipt about to defer
+	// a wake merits another bounded read, with room for turn metadata.
+	ctx, cancel := context.WithTimeout(parent, 2*queueProbeTimeout)
+	defer cancel()
+	var probe queueProbe
+	withQueueRPC(ctx, binary, func(r queueRPC) { probe = r.admission(thread, true) })
+	return probe
+}
+
+func (r queueRPC) admission(thread string, corroborate bool) queueProbe {
+	p := queueProbe{threadSource: r.threadSource(thread)}
+	if p.threadSource == QueueThreadExecSource {
+		return p
+	}
+	p.pending, p.known = r.list(thread)
+	p.issuedAt = r.issuedAt
+	if corroborate && !p.known && p.threadSource != "" {
+		// threadSource required the metadata reply to name this exact target.
+		p.lastTurn = r.lastAppTurnStarted(thread)
+	}
+	return p
 }
 
 func withQueueRPC(ctx context.Context, binary string, read func(queueRPC)) {

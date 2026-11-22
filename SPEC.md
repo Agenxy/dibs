@@ -1580,12 +1580,18 @@ and bridge processes using that board directory. Queue fallbacks use the same
 door. Failed admission does not enqueue or report acceptance. Contention timeout
 is logged at Debug, skips fallback execution and leaves the engine to retry.
 Real lock errors retain their warning and ordinary fallback qualification. Older running
-writers do not participate until upgraded. When observation is unavailable,
-the retained fallback may add at most one duplicate per current prompt, new
-reconnect generation or two-hour receipt expiry; this preserves lost-wake
-recovery. An observed empty queue re-arms immediately, and an observed pending
-notice wins over those inferred causes. ChatGPT opening follows the separately
-bounded prompt background policy. No queue item is deleted and no coordination state is changed.
+writers do not participate until upgraded. If the usual one-second observation
+is unknown and a receipt could defer the wake, the canonical route makes one
+read-only corroboration with a two-second budget. It checks the queue and can
+read the last turn start for the exact thread. An observed pending notice wins.
+An observed empty queue, a turn started at or after the receipt time, a current
+prompt, a new reconnect generation, or ten seconds of receipt age allows a new
+admission attempt. The app reports turn start in whole seconds. A timestamp
+earlier than the receipt leaves that evidence inconclusive. A recent receipt
+alone yields `admission: deferred` and `pending: unknown`. It makes no offer, so
+new mail or an app or board reconnect can re-evaluate the original mail. This
+deferral schedules no timer. ChatGPT opening follows the separately bounded
+prompt background policy. No queue item is deleted and no coordination state is changed.
 
 Board rows (including compact `check_in`) and agent `send` receipts expose
 `queue_wake` for a configured local ChatGPT queue route. `native_delivery`
@@ -1601,7 +1607,7 @@ acquire a pending attempt. When a prior native outcome exists, it remains
 explicitly a prior observation. Native success confirms app input only.
 Cold accepted/retained queue outcomes confirm queue admission only. This derived view holds
 the last adapter observation, never a fresh read: `admission` is accepted,
-retained, failed, not_attempted or unconfirmed; `pending` is pending or unknown.
+retained, deferred, failed, not_attempted or unconfirmed; `pending` is pending or unknown.
 `observed_at` and `observation_age_seconds` date that observation. When known,
 `issued_at`, `wake_age_seconds` and `age_source` distinguish a timestamped notice
 from this command's local admission. An unavailable probe may expose

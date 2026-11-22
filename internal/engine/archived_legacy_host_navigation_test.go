@@ -61,7 +61,7 @@ func TestArchivedLegacyRemoteAppPlansCannotReachAnOldOpeningBridge(t *testing.T)
 				t.Fatalf("setup did not make a real remote plan: %v %v", setup, err)
 			}
 			done := make(chan bool, 1)
-			go func() { defer e.wakeExited("worker", plan.thread); done <- e.runWake(plan, "worker") }()
+			go func() { defer e.wakeExited("worker", plan.thread, true); done <- e.runWake(plan, "worker") }()
 			select {
 			case request := <-requests:
 				if !e.ReportWakeResult(WakeResult{ID: request.ID, Host: "remote", OK: true, NativeDelivery: "accepted"}) {

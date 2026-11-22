@@ -292,7 +292,7 @@ func (e *Engine) wakeSocketReady(l *core.Agent) {
 	cause := e.failedDeliveryKeys(l.ID)
 	agent, stamp := l.ID, e.wakeStamp(l.ID)
 	go func() {
-		defer e.wakeExited(agent, plan.thread)
+		defer e.wakeExited(agent, plan.thread, true)
 		n := e.noteWakeAttempt(agent)
 		if !e.runWakeAndReportPlan(&plan, agent) {
 			e.releaseWake(agent, stamp)

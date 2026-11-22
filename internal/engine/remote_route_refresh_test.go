@@ -72,7 +72,7 @@ func TestChangedRemoteSurfaceDeliversOnlyThroughCurrentBinding(t *testing.T) {
 				t.Fatalf("setup transition: %v %v", state, err)
 			}
 			done := make(chan bool, 1)
-			go func() { defer e.wakeExited("worker", plan.thread); done <- e.runWake(plan, "worker") }()
+			go func() { defer e.wakeExited("worker", plan.thread, true); done <- e.runWake(plan, "worker") }()
 			select {
 			case request := <-requests:
 				if request.Surface != "codex" || request.NoNavigation {

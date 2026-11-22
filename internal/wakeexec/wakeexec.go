@@ -172,7 +172,13 @@ func RunCommands(argv, fallback []string, agent, dir string, timeout, grace time
 // A caller that schedules retries must retain NoRetry, not only OK.
 type CommandOutcome struct {
 	OK, NoRetry bool
+	// Deferred means a recent unconfirmed queue receipt postponed the command.
+	// The mail remains eligible for the next relevant event.
+	Deferred bool
 }
+
+// QueueDeferred identifies a remote bridge's receipt-only deferral.
+const QueueDeferred = "queue_deferred"
 
 // RunCommandsWithOutcome is the command route for callers that can retry.
 func RunCommandsWithOutcome(argv, fallback []string, agent, dir string, timeout, grace time.Duration) CommandOutcome {
@@ -202,6 +208,9 @@ func RunCommandsObservedContext(
 		}
 		if result.unconfirmed {
 			return CommandOutcome{NoRetry: true}
+		}
+		if result.observation.Admission == "deferred" {
+			return CommandOutcome{Deferred: true}
 		}
 		if result.contended || result.observation.ThreadState == "gone" {
 			return CommandOutcome{}

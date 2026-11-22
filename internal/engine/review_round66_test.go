@@ -29,7 +29,7 @@ func TestAnOldWakesExitDoesNotMarkTheCurrentThreadFinished(t *testing.T) {
 	// B is running: it called in just now.
 	e.seen["mover"] = time.Now()
 	// The wake that had started on the OLD thread A now exits.
-	e.wakeExitedDecision("mover", threadA)
+	e.wakeExitedDecision("mover", threadA, true)
 	if !e.recentlyInTouch(l) {
 		t.Error("an old wake's exit on thread A marked the agent finished, so its current " +
 			"thread B reads as idle despite calling in just now: the next blocking message " +
@@ -38,7 +38,7 @@ func TestAnOldWakesExitDoesNotMarkTheCurrentThreadFinished(t *testing.T) {
 
 	// A wake exiting on the CURRENT thread still ends the turn, so the fix does
 	// not blind the guard.
-	e.wakeExitedDecision("mover", threadB)
+	e.wakeExitedDecision("mover", threadB, true)
 	if e.recentlyInTouch(l) {
 		t.Error("a wake exiting on the current thread did not end the turn")
 	}

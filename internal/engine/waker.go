@@ -291,7 +291,7 @@ func (e *Engine) maybeWake(ev core.Event) {
 	finished := e.startWakeWorker(agent, "initial")
 	go func() {
 		defer finished()
-		defer e.wakeExited(agent, thread)
+		defer func() { e.wakeExited(agent, thread, !cmd.commandOutcome.Deferred) }()
 		n := e.noteWakeAttempt(agent)
 		if e.runWakeAndReportPlan(&cmd, agent) {
 			return
@@ -443,7 +443,7 @@ func (e *Engine) retryWakeDecision(agent string) {
 	finished := e.startWakeWorker(agent, "retry")
 	go func() {
 		defer finished()
-		defer e.wakeExited(agent, thread)
+		defer func() { e.wakeExited(agent, thread, !cmd.commandOutcome.Deferred) }()
 		n := e.noteWakeAttempt(agent)
 		if e.runWakeAndReportPlan(&cmd, agent) {
 			return
@@ -603,9 +603,9 @@ func (e *Engine) finishWake(agent string) (owed, last bool) {
 // on e.ops, which is nil on an engine with no running loop, so a test calling
 // this would block forever rather than fail. Tests take wakeFinished and its
 // answer; production takes this.
-func (e *Engine) wakeExited(agent, thread string) {
+func (e *Engine) wakeExited(agent, thread string, markTurnEnded bool) {
 	_, _ = e.query(context.Background(), func() core.Result {
-		e.wakeExitedDecision(agent, thread)
+		e.wakeExitedDecision(agent, thread, markTurnEnded)
 		return core.Result{"ok": true}
 	})
 }
@@ -615,7 +615,7 @@ func (e *Engine) wakeExited(agent, thread string) {
 // test calling the wrapper would block forever rather than fail.
 //
 // Callers run on the writer loop.
-func (e *Engine) wakeExitedDecision(agent, thread string) {
+func (e *Engine) wakeExitedDecision(agent, thread string, markTurnEnded bool) {
 	// CLEARED AND RECORDED IN ONE TURN OF THE LOOP.
 	//
 	// wakeFinished ran out here, before the closure was queued, and the two
@@ -634,7 +634,8 @@ func (e *Engine) wakeExitedDecision(agent, thread string) {
 	if !last {
 		return // another delivery still owns the agent's in-flight state
 	}
-	// ALWAYS, not only when a re-check is owed.
+	// Record completion independent of whether a re-check is owed. A
+	// receipt-only queue deferral submitted no input and ends no turn.
 	//
 	// The command runs the agent's whole turn in that process, so the
 	// process exiting IS the turn finishing: that is true whether or not
@@ -648,7 +649,9 @@ func (e *Engine) wakeExitedDecision(agent, thread string) {
 	// found the agent recently in touch on the strength of a turn that had
 	// already ended, and returned without even arming a deferred re-check.
 	// The message was stored, reported delivered, and waited for a human.
-	e.noteWakeEnded(agent, thread)
+	if markTurnEnded {
+		e.noteWakeEnded(agent, thread)
+	}
 	if owed {
 		// The command's exit is an event, not elapsed-time evidence. New
 		// arrivals must be reconsidered now rather than scheduling a timer
@@ -1340,7 +1343,7 @@ func (e *Engine) runWakePlan(plan *wakePlan, agent string) (accepted bool) {
 				}
 				e.noteQueueObservation(*plan, agent, observation)
 			})
-		if !plan.queueThreadGone() && !plan.commandOutcome.NoRetry {
+		if !plan.queueThreadGone() && !plan.commandOutcome.NoRetry && !plan.commandOutcome.Deferred {
 			e.noteCommandOutcome(agent, plan.argv, plan.commandOutcome.OK)
 		}
 		if plan.commandOutcome.OK {

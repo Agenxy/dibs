@@ -103,8 +103,8 @@ func queueWakeObservationCase(t *testing.T, binary, mode string) {
 	if mode == "probe-unknown" {
 		t.Setenv("DIBS_QUEUE_PROBE_FAIL", "1")
 		send()
-		awaitQueueAppContact(t, contacts, dir, thread)
-		view = assertQueueWakeView(t, srv, token, "retained", "unknown")
+		awaitQueueWakeObservationAfter(t, eng, view["observed_at"])
+		view = assertQueueWakeView(t, srv, token, "deferred", "unknown")
 		if view["age_source"] != "unknown" || view["wake_age_seconds"] != nil || view["receipt_age_seconds"] == nil {
 			t.Fatalf("unavailable probe lost its receipt age or invented a notice age: %v", view)
 		}
@@ -121,10 +121,9 @@ func queueWakeObservationCase(t *testing.T, binary, mode string) {
 	// The actual send advisory path must carry the same derived facts. This
 	// assertion cannot be satisfied by wiring only an unused exported wrapper.
 	receipt := send()
-	if mode == "pending-aged" {
-		// Reobserving the same retained item joins its existing recovery
-		// window without another app contact. Wait for the real adapter's
-		// newer observation, which is what this receipt test relies on.
+	if mode == "pending-aged" || mode == "probe-unknown" {
+		// Coalescing in its recovery window and receipt-only deferral publish
+		// a newer observation without another app contact.
 		awaitQueueWakeObservationAfter(t, eng, view["observed_at"])
 	} else {
 		awaitQueueAppContact(t, contacts, dir, thread)
@@ -132,6 +131,16 @@ func queueWakeObservationCase(t *testing.T, binary, mode string) {
 	received, ok := receipt["queue_wake"].(map[string]any)
 	if !ok || received["thread_state"] != "unknown" || received["observed_at"] == nil {
 		t.Fatalf("send receipt lost the adapter observation: %v", receipt)
+	}
+	if mode == "probe-unknown" {
+		if received["admission"] != "deferred" || received["pending"] != "unknown" || received["receipt_age_seconds"] == nil {
+			t.Fatalf("send receipt lost its prior deferral or receipt age: %v", received)
+		}
+		select {
+		case <-contacts:
+			t.Fatal("receipt-only deferral contacted the app")
+		default:
+		}
 	}
 	b, err := json.Marshal(received)
 	if err != nil {
@@ -226,8 +235,8 @@ func awaitObservationQueueCommand(t *testing.T, home string) {
 
 func assertQueueWakeView(t *testing.T, srv *httptest.Server, token any, admission, pending string) map[string]any {
 	t.Helper()
-	// The actual app-contact event happens after the adapter publishes its
-	// observation. One checkpoint is sufficient; a 10ms polling loop exhausted
+	// The caller waits for the real app contact or the adapter observation.
+	// One checkpoint is sufficient; a 10ms polling loop exhausted
 	// the real read limit and hid the intended assertion behind E_RATE_LIMITED.
 	out := toolCall(t, srv, "check_in", map[string]any{"token": token})
 	board, ok := out["board"].(map[string]any)
