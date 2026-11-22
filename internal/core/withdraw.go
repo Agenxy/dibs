@@ -76,12 +76,12 @@ func (s *State) admitWithdrawal(op *Op) error {
 	if op.SupersededBy != 0 {
 		replacement := s.Messages[op.SupersededBy]
 		if !senderOwnsWithdrawalReplacement(m, replacement, l) {
-			hint := "superseded_by names another ordinary question or request YOU sent"
+			hint := "superseded_by names another ordinary question or request YOU sent."
 			if m.Type == MsgHandoff {
-				hint += "; another handoff YOU sent also qualifies"
+				hint += " Another handoff YOU sent also qualifies."
 			}
-			return errf("E_NO_MESSAGE", hint,
-				"replacement is not your ordinary question or request")
+			hint += " The recipient may differ. Use read_mail to check the replacement or omit superseded_by."
+			return errf("E_NO_MESSAGE", hint, "replacement is unavailable or ineligible")
 		}
 	}
 	return nil
