@@ -28,6 +28,34 @@ func guestFixtureChecksums() string {
 	return s
 }
 
+func TestGuestSnapshotRequiresBothRISCV64DigestsWhenPublished(t *testing.T) {
+	archive := strings.Repeat("c", 64) + "  dibs_0.0.9_linux_riscv64.tar.gz\n"
+	member := strings.Repeat("d", 64) + "  members/linux_riscv64/dibs\n"
+	v := VerifiedRelease{tag: "v0.0.9", checksums: guestFixtureChecksums() + archive + member}
+	snapshot, err := v.GuestSnapshot("v0.0.9", "devel")
+	if err != nil {
+		t.Fatal("supporting RISC-V snapshot:", err)
+	}
+	m := snapshot.Metadata()
+	if n := len(m.Assets); n != 4 || m.Assets[3].Arch != "riscv64" {
+		t.Fatalf("verified RISC-V archive and member are missing from %v", m.Assets)
+	}
+	rendered, err := snapshot.Provisioning()
+	if err != nil || rendered.Validate(m) != nil || rendered.Checksums != v.checksums {
+		t.Fatalf("RISC-V guest plan did not retain the verified digests: %v", err)
+	}
+	for _, absent := range []string{archive, member} {
+		partial := VerifiedRelease{tag: v.tag, checksums: strings.Replace(v.checksums, absent, "", 1)}
+		if _, err := partial.GuestSnapshot("v0.0.9", "devel"); err == nil {
+			t.Errorf("accepted an incomplete RISC-V digest pair with %q absent", strings.TrimSpace(absent))
+		}
+	}
+	m.Assets = m.Assets[1:]
+	if err := m.Validate(); err == nil {
+		t.Error("a RISC-V asset displaced a target required by every guest release")
+	}
+}
+
 // Direct values below test detached projection and signed-input shape only,
 // not signature cryptography. Actual admission always enters the offline door.
 func TestGuestSnapshotRequiresEveryExactArchiveAndMemberDigest(t *testing.T) {

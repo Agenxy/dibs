@@ -6,7 +6,7 @@ package selfupdate
 import "testing"
 
 func TestGuestMemberNamesOnlyPublishedTargets(t *testing.T) {
-	for _, target := range [][2]string{{"darwin", "arm64"}, {"linux", "amd64"}, {"linux", "arm64"}} {
+	for _, target := range [][2]string{{"darwin", "arm64"}, {"linux", "amd64"}, {"linux", "arm64"}, {"linux", "riscv64"}} {
 		got, err := GuestMemberName(target[0], target[1])
 		want := "members/" + target[0] + "_" + target[1] + "/dibs"
 		if err != nil || got != want {

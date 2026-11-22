@@ -71,8 +71,9 @@ func TestGuestProvisioningLiteralPrimitivesStopBeforeUse(t *testing.T) {
 			t.Fatal("required fixture primitive unavailable:", tool, err)
 		}
 	}
-	for _, mode := range []string{"good", "archive mismatch", "missing checksum", "member mismatch", "symlink member", "duplicate member", "existing version", "late competitor", "late directory", "interrupted"} {
-		t.Run(mode, func(t *testing.T) {
+	for _, label := range []string{"good", "archive mismatch", "missing checksum", "member mismatch", "symlink member", "duplicate member", "existing version", "late competitor", "late directory", "interrupted", "riscv64 good", "riscv64 member mismatch"} {
+		t.Run(label, func(t *testing.T) {
+			mode, riscv64 := strings.CutPrefix(label, "riscv64 ")
 			payload := []byte("exact packaged executable fixture; never executed\n")
 			var compressed bytes.Buffer
 			gz := gzip.NewWriter(&compressed)
@@ -116,6 +117,9 @@ func TestGuestProvisioningLiteralPrimitivesStopBeforeUse(t *testing.T) {
 			}
 			sums = strings.ReplaceAll(sums, strings.Repeat("a", 64), archiveSHA)
 			sums = strings.ReplaceAll(sums, strings.Repeat("b", 64), binarySHA)
+			if riscv64 {
+				sums += archiveSHA + "  dibs_0.0.9_linux_riscv64.tar.gz\n" + binarySHA + "  members/linux_riscv64/dibs\n"
+			}
 			snapshot, err := (VerifiedRelease{tag: "v0.0.9", checksums: sums}).GuestSnapshot("v0.0.9", "devel+fixture")
 			if err != nil {
 				t.Fatal(err)
@@ -127,6 +131,17 @@ func TestGuestProvisioningLiteralPrimitivesStopBeforeUse(t *testing.T) {
 			target := p.Targets[1]
 			if runtime.GOOS == "darwin" {
 				target = p.Targets[0]
+			}
+			if riscv64 {
+				target = p.Targets[len(p.Targets)-1]
+				if target.OS != "linux" || target.Arch != "riscv64" {
+					t.Fatalf("RISC-V verification steps were not rendered: %v", target)
+				}
+				if runtime.GOOS != "linux" {
+					if _, err := exec.LookPath("sha256sum"); err != nil {
+						t.Skip("the RISC-V Linux plan needs the Linux hash utility for this execution fixture")
+					}
+				}
 			}
 			if _, err := exec.LookPath(target.Steps[3].Argv[0]); err != nil {
 				t.Fatal("hash fixture primitive unavailable:", err)

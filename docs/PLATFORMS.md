@@ -8,8 +8,9 @@ test. Require `linux` alongside `gate` in the main branch ruleset.
 released Mac archive and the Homebrew cask are arm64: an Intel Mac has to build
 from source, which works, and `go install` covers the two Go binaries. Linux
 release archives cover amd64, arm64, and riscv64. Install on RISC-V from the
-signed release archive. Homebrew casks cover macOS arm64 and Linux amd64 and
-arm64.
+signed release archive. A guest handoff includes the RISC-V archive and `dibs`
+member when both digests are in the signed release checksums. Homebrew casks
+cover macOS arm64 and Linux amd64 and arm64.
 
 It cross-compiles for those Linux targets on every push, and since September 2026 the
 whole suite also RUNS on an ubuntu runner in CI, under the race detector: that

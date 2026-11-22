@@ -65,15 +65,12 @@ func checkMembers(root string) error {
 }
 
 func memberKeyForArchive(name string) (string, error) {
-	if strings.HasSuffix(name, "_linux_riscv64.tar.gz") {
-		return "members/linux_riscv64/dibs", nil
+	stem, ok := strings.CutSuffix(name, ".tar.gz")
+	parts := strings.Split(stem, "_")
+	if !ok || len(parts) < 4 || parts[0] != "dibs" {
+		return "", fmt.Errorf("%s is not a published release archive", name)
 	}
-	for _, target := range [][2]string{{"darwin", "arm64"}, {"linux", "amd64"}, {"linux", "arm64"}} {
-		if strings.HasSuffix(name, "_"+target[0]+"_"+target[1]+".tar.gz") {
-			return selfupdate.GuestMemberName(target[0], target[1])
-		}
-	}
-	return "", fmt.Errorf("%s is not a published release target", name)
+	return selfupdate.GuestMemberName(parts[len(parts)-2], parts[len(parts)-1])
 }
 
 func packagedMemberDigest(archive string) (string, error) {
