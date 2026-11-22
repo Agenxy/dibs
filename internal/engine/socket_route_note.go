@@ -20,6 +20,9 @@ func (e *Engine) sendDeliveryNote(l *core.Agent, m *core.Message) string {
 	if note, remote := e.remotePullOnlyNote(l); remote {
 		return note
 	}
+	if e.antigravityBinding(l) != 0 && !e.socketOwnsDelivery(l) {
+		return e.antigravityWakeNote(l, m)
+	}
 	socket, self := e.sendNoteSocketRoute(l)
 	command := e.localCommandConfigured(wakeHarness(l)) && threadIDOf(l) != ""
 	if !socket && !command {
@@ -31,6 +34,10 @@ func (e *Engine) sendDeliveryNote(l *core.Agent, m *core.Message) string {
 	if !socket {
 		return e.PullOnlyNote(l)
 	}
+	return e.socketWakeNote(l, m, self)
+}
+
+func (e *Engine) socketWakeNote(l *core.Agent, m *core.Message, self bool) string {
 	why := "its session socket is the selected delivery route"
 	if self {
 		why = "its in-session bridge owns the socket route"

@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -78,9 +79,7 @@ func queueWakeObservationCase(t *testing.T, binary, mode string) {
 	call("check_in", map[string]any{"token": token})
 	send := func() map[string]any {
 		t.Helper()
-		if _, err := eng.Do(context.Background(), &core.Op{Kind: core.OpSweep, DeadAgents: []string{"queue-worker"}}); err != nil {
-			t.Fatal("setup: dormant worker:", err)
-		}
+		requireDormantSendFixture(t, eng, "queue-worker")
 		return call("send", map[string]any{"token": token, "to": "queue-worker", "type": "question", "body": "private observation fixture"})
 	}
 	if mode == "pending-aged" || mode == "legacy-age" {
@@ -90,7 +89,12 @@ func queueWakeObservationCase(t *testing.T, binary, mode string) {
 		}
 		writeObservationQueue(t, home, thread, text)
 	}
-	send()
+	initial := send()
+	note, _ := initial["note"].(string)
+	if (!strings.Contains(note, "App queue admission") && !strings.Contains(note, "Direct delivery in progress")) ||
+		strings.Contains(note, "when it next wakes") {
+		t.Fatalf("dormant Codex send did not describe its app route: %q", note)
+	}
 	// Confirm the real subprocess door ran before checking a new field. On old
 	// code the setup remains green, and only the missing visibility is RED.
 	awaitObservationQueueCommand(t, home)
@@ -178,7 +182,7 @@ func registerObservationAppWorker(t *testing.T, srv *httptest.Server, eng *engin
 	t.Helper()
 	worker := toolCallWithMeta(t, srv, "register", map[string]any{
 		"name": "queue-worker", "nonce": "queue-observation-worker-nonce",
-		"session_id": thread, "harness": "Codex", "cwd": home,
+		"session_id": thread, "harness": "Codex", "cwd": home, "kind": "persistent",
 	}, map[string]any{SurfaceMetaKey: harnessenv.ChatGPTApp})
 	if worker["token"] == nil || worker["code"] != nil {
 		t.Fatalf("setup: app-owned worker registration: %v", worker)
@@ -198,6 +202,26 @@ func registerObservationAppWorker(t *testing.T, srv *httptest.Server, eng *engin
 	}
 	t.Fatal("setup: app-owned worker is absent from the board")
 	return nil
+}
+
+func requireDormantSendFixture(t *testing.T, eng *engine.Engine, agent string) {
+	t.Helper()
+	if _, err := eng.Do(t.Context(), &core.Op{Kind: core.OpSweep, DeadAgents: []string{agent}}); err != nil {
+		t.Fatal("setup: mark dormant:", err)
+	}
+	board, err := eng.Board(t.Context())
+	if err != nil {
+		t.Fatal("setup: read status:", err)
+	}
+	for _, row := range board["agents"].([]map[string]any) {
+		if row["id"] == agent {
+			if state := fmt.Sprint(row["status"]); state != string(core.StatusDormant) {
+				t.Fatalf("setup: %s is %q, want dormant", agent, state)
+			}
+			return
+		}
+	}
+	t.Fatalf("setup: %s is not dormant", agent)
 }
 
 func writeObservationQueue(t *testing.T, home, thread, text string) {

@@ -31,6 +31,8 @@ func (e *Engine) isAntigravityOp(op *core.Op) bool {
 const antigravityUnbound = "Antigravity has not supplied a verified conversation on the local MCP bridge. " +
 	"Check in from that desktop conversation."
 
+const antigravityRoute = "antigravity_app"
+
 // BindAntigravity records the app's attestation on authenticated local ingress.
 // Its proof is the verified current conversation, never a PID or credential.
 func (e *Engine) BindAntigravity(ctx context.Context, token, conversation string) {
@@ -66,12 +68,63 @@ func (e *Engine) antigravityPullOnlyNote(l *core.Agent, harness string) (string,
 		return "", false
 	}
 	if e.antigravityBinding(l) != 0 {
-		return "", true
+		if e.socketOwnsDelivery(l) {
+			return "", false
+		}
+		return e.antigravityWakeNote(l, nil), true
 	}
 	if e.localCommandConfigured(harness) || e.mightReachOverSocket(l) {
 		return "", false
 	}
 	return "Stored in the mailbox for " + l.ID + ". " + antigravityUnbound, true
+}
+
+// The send is already durable. A scheduled admission and the previous app
+// observation are different facts, and the latter must match this binding.
+func (e *Engine) antigravityWakeNote(l *core.Agent, m *core.Message) string {
+	why := ""
+	if m != nil {
+		why = e.sendWakeCauseNote(l, m)
+	}
+	note := why
+	if note == "" {
+		note = "Stored in the mailbox for " + l.ID + "."
+	}
+	pending := why == "" && e.antigravityWakeScheduled(l, m)
+	if pending {
+		note += " Wake delivery to its Antigravity conversation is in progress. App acceptance is unconfirmed."
+	}
+	last, observed := e.currentWakeDiagnostic(e.wakeDiagnosticTarget(l))
+	if observed && last.Route == antigravityRoute {
+		return note + antigravityLastWakeNote(last.Outcome)
+	}
+	if !pending && why == "" {
+		note += " Wake status for its verified Antigravity conversation is unknown."
+	}
+	return note
+}
+
+func (e *Engine) antigravityWakeScheduled(l *core.Agent, m *core.Message) bool {
+	if !m.UnconsumedEnvelope() || e.wakeBursts[l.ID] == nil {
+		return false
+	}
+	key := "mail:" + noticeKey(l.ID, m.Serial)
+	return !e.commandWritten[key] && !e.nativeUnknown[key]
+}
+
+func antigravityLastWakeNote(outcome string) string {
+	switch outcome {
+	case "accepted":
+		return " The app accepted the last Antigravity wake. Mail read status is unconfirmed."
+	case "not_sent":
+		return " The last Antigravity wake stopped before submission."
+	case "settled":
+		return " The last Antigravity wake was cancelled before submission."
+	case "failed":
+		return " The last Antigravity wake attempt failed."
+	default:
+		return " App acceptance of the last Antigravity wake is unknown."
+	}
 }
 
 func (e *Engine) runAntigravityWake(plan *wakePlan, agent string) bool {

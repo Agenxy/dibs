@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -32,8 +33,15 @@ func TestMissingAntigravityEvidenceKeepsConfiguredDelivery(t *testing.T) {
 func TestSentMailOffersOnlyOneFactualNoticeToVerifiedAntigravityConversation(t *testing.T) {
 	const conversation = "01a10520-0000-7000-8000-000000000007"
 	const body = "private mail never enters the app notice"
-	for _, lookupFails := range []bool{false, true} {
-		t.Run(map[bool]string{false: "accepted", true: "unavailable"}[lookupFails], func(t *testing.T) {
+	for _, tc := range []struct {
+		name, outcome, note    string
+		lookupFails, uncertain bool
+	}{
+		{name: "accepted", outcome: "accepted", note: "app accepted the last Antigravity wake"},
+		{name: "unavailable", outcome: "not_sent", note: "last Antigravity wake stopped before submission", lookupFails: true},
+		{name: "unknown", outcome: "unknown", note: "App acceptance of the last Antigravity wake is unknown", uncertain: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			e := New(core.NewState("test", core.DefaultLimits()), &memLedger{}, deadProber{})
 			cwd := t.TempDir()
 			type attempt struct {
@@ -45,11 +53,14 @@ func TestSentMailOffersOnlyOneFactualNoticeToVerifiedAntigravityConversation(t *
 				func(context.Context, string) error, error,
 			) {
 				checked <- attempt{session, dir}
-				if lookupFails {
+				if tc.lookupFails {
 					return nil, errors.New("fixture hub unavailable")
 				}
 				return func(_ context.Context, notice string) error {
 					sent <- notice
+					if tc.uncertain {
+						return errors.New("fixture lost the app response")
+					}
 					return nil
 				}, nil
 			}
@@ -59,13 +70,25 @@ func TestSentMailOffersOnlyOneFactualNoticeToVerifiedAntigravityConversation(t *
 			t.Cleanup(func() { cancel(); <-e.Done() })
 			res := contactReplayDo(t, e, ctx, &core.Op{
 				Kind: core.OpRegister, Name: "worker", SessionAlias: conversation,
-				Agent: &core.AgentInfo{Harness: antigravity.Harness, CWD: cwd, HostID: e.HostID()},
+				AgentKind: core.KindPersistent,
+				Agent:     &core.AgentInfo{Harness: antigravity.Harness, CWD: cwd, HostID: e.HostID()},
 			})
-			e.BindAntigravity(ctx, res["token"].(string), conversation)
+			worker := res["token"].(string)
+			e.BindAntigravity(ctx, worker, conversation)
 			sender := registerAgent(t, e, "sender")
-			contactReplayDo(t, e, ctx, &core.Op{
-				Kind: core.OpSendMessage, To: "worker", Token: sender, MsgType: core.MsgQuestion, Body: body,
-			})
+			sleepAntigravitySendRecipient(t, e, ctx)
+			send := func() core.Result {
+				t.Helper()
+				return contactReplayDo(t, e, ctx, &core.Op{
+					Kind: core.OpSendMessage, To: "worker", Token: sender, MsgType: core.MsgQuestion,
+					Body: body, OpID: "test-antigravity-wake-note",
+				})
+			}
+			sentMail := send()
+			if note, _ := sentMail["note"].(string); !strings.Contains(note, "Antigravity conversation") ||
+				!strings.Contains(note, "in progress") || strings.Contains(note, "when it next wakes") {
+				t.Errorf("bound Antigravity send did not describe its wake attempt: %q", note)
+			}
 			select {
 			case got := <-checked:
 				if got != (attempt{conversation, cwd}) {
@@ -74,7 +97,7 @@ func TestSentMailOffersOnlyOneFactualNoticeToVerifiedAntigravityConversation(t *
 			case <-time.After(5 * time.Second):
 				t.Fatal("real send never attempted the bound application route")
 			}
-			if !lookupFails {
+			if !tc.lookupFails {
 				select {
 				case notice := <-sent:
 					if notice != "Dibs: a new question is waiting." {
@@ -84,21 +107,65 @@ func TestSentMailOffersOnlyOneFactualNoticeToVerifiedAntigravityConversation(t *
 					t.Fatal("verified send did not issue a notice")
 				}
 			}
+			waitWakeDone(t, e, "worker")
+			serial := sentMail["msg_serial"].(uint64)
+			duplicate := send()
+			if duplicate["deduplicated"] != true || duplicate["msg_serial"] != serial {
+				t.Fatalf("setup: second send did not reuse its original mail: %+v", duplicate)
+			}
+			note, _ := duplicate["note"].(string)
+			if !strings.Contains(note, tc.note) || strings.Contains(note, "in progress") {
+				t.Errorf("send advisory after observation = %q, want %q", note, tc.note)
+			}
+			e.BindAntigravity(ctx, worker, "")
+			e.BindAntigravity(ctx, worker, conversation)
+			if note := e.SendDeliveryNoteFor(ctx, "worker", serial); !strings.Contains(note, "conversation is unknown") ||
+				strings.Contains(note, "last Antigravity wake") {
+				t.Errorf("a renewed binding inherited its old wake outcome: %q", note)
+			}
 			cancel()
 			<-e.Done()
-			wantOutcome := "accepted"
-			if lookupFails {
-				wantOutcome = "not_sent"
-			}
 			observed := e.wakers.diagnostics["worker"]
-			if observed.Route != "antigravity_app" || observed.Outcome != wantOutcome {
+			if observed.Route != "antigravity_app" || observed.Outcome != tc.outcome {
 				t.Fatalf("diagnostics observed %q/%q, want antigravity_app/%s",
-					observed.Route, observed.Outcome, wantOutcome)
+					observed.Route, observed.Outcome, tc.outcome)
 			}
 			if len(sent) != 0 || len(checked) != 0 {
 				t.Fatal("wake submitted without preflight or retried its offer")
 			}
 		})
+	}
+}
+
+func sleepAntigravitySendRecipient(t *testing.T, e *Engine, ctx context.Context) {
+	t.Helper()
+	contactReplayDo(t, e, ctx, &core.Op{Kind: core.OpSweep, DeadAgents: []string{"worker"}})
+	if _, err := e.query(ctx, func() core.Result {
+		if l := e.state.Agents["worker"]; l == nil || !l.Sleeping() {
+			t.Error("setup: the recipient is not sleeping")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSendToUnboundAntigravityKeepsTheExistingHint(t *testing.T) {
+	e := New(core.NewState("test", core.DefaultLimits()), &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(t.Context())
+	go e.Run(ctx)
+	t.Cleanup(func() { cancel(); <-e.Done() })
+	contactReplayDo(t, e, ctx, &core.Op{
+		Kind: core.OpRegister, Name: "worker", AgentKind: core.KindPersistent,
+		Agent: &core.AgentInfo{Harness: antigravity.Client, HostID: e.HostID()},
+	})
+	sender := registerAgent(t, e, "sender")
+	sleepAntigravitySendRecipient(t, e, ctx)
+	sent := contactReplayDo(t, e, ctx, &core.Op{
+		Kind: core.OpSendMessage, To: "worker", Token: sender, MsgType: core.MsgQuestion, Body: "unbound fixture",
+	})
+	if note, _ := sent["note"].(string); !strings.Contains(note, antigravityUnbound) {
+		t.Fatalf("unbound Antigravity wake hint = %q", note)
 	}
 }
 

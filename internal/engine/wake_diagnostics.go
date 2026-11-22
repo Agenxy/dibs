@@ -108,13 +108,18 @@ func (e *Engine) localWakeDiagnostics(l *core.Agent, target wakeDiagnosticTarget
 	if q := e.queueWakeView(l, time.Now()); q != nil {
 		out["last_queue_observation"] = q
 	}
-	e.wakers.mu.Lock()
-	defer e.wakers.mu.Unlock()
-	if d, ok := e.wakers.diagnostics[l.ID]; ok && d.created == l.CreatedSerial &&
-		d.session == target.session && d.thread == target.thread && d.antigravity == target.antigravity {
+	if d, ok := e.currentWakeDiagnostic(target); ok {
 		out["last_attempt"] = d
 	}
 	return out
+}
+
+func (e *Engine) currentWakeDiagnostic(target wakeDiagnosticTarget) (wakeDiagnostic, bool) {
+	e.wakers.mu.Lock()
+	defer e.wakers.mu.Unlock()
+	d, ok := e.wakers.diagnostics[target.owner]
+	return d, ok && d.created == target.incarnation && d.session == target.session &&
+		d.thread == target.thread && d.antigravity == target.antigravity
 }
 
 func diagnosticWakeResult(plan *wakePlan, success bool) (route, outcome string) {
@@ -133,7 +138,7 @@ func diagnosticWakeResult(plan *wakePlan, success bool) (route, outcome string) 
 		}
 		return "host_bridge", outcome
 	case plan.antigravity != 0:
-		return "antigravity_app", antigravityDiagnosticOutcome(plan, outcome)
+		return antigravityRoute, antigravityDiagnosticOutcome(plan, outcome)
 	case plan.queueOutcome != nil && plan.queueOutcome.ThreadState == "gone":
 		return "app_queue", "gone"
 	case plan.queueOutcome != nil && plan.queueOutcome.Admission != "":

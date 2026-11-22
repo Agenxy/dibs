@@ -22,6 +22,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   posting input or reading mail.
 
 ### Fixed
+- Sends to a verified Antigravity conversation report the current wake attempt
+  and its last observed app outcome when available.
 - When the Codex queue cannot be observed, only receipts younger than ten
   seconds can defer a wake. New delivery events can retry the same unread mail.
 - Withdrawal errors explain that an eligible replacement can have a different

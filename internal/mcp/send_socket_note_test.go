@@ -86,7 +86,7 @@ func sendNoteSocket(t *testing.T) (string, <-chan string) {
 }
 
 func TestSendSocketNoteReportsDecisionThroughMCP(t *testing.T) {
-	for _, mode := range []string{"idle-notify", "idle-human-notify", "idle-question", "busy-notify", "busy-question"} {
+	for _, mode := range []string{"idle-notify", "idle-human-notify", "idle-question", "busy-notify", "busy-question", "dormant-question"} {
 		t.Run(mode, func(t *testing.T) {
 			session, wire := sendNoteSocket(t)
 			dir := t.TempDir()
@@ -95,7 +95,11 @@ func TestSendSocketNoteReportsDecisionThroughMCP(t *testing.T) {
 				t.Helper()
 				return sendNoteCall(t, srv, name, args)
 			}
-			worker := call("register", map[string]any{"name": "worker", "session_id": session, "harness": "Claude Code"})
+			workerArgs := map[string]any{"name": "worker", "session_id": session, "harness": "Claude Code"}
+			if mode == "dormant-question" {
+				workerArgs["kind"] = "persistent"
+			}
+			worker := call("register", workerArgs)
 			sender := call("register", map[string]any{"name": "sender", "session_id": "send-note-sender"})
 			call("check_in", map[string]any{"token": worker["token"]})
 			call("check_in", map[string]any{"token": sender["token"]})
@@ -108,6 +112,9 @@ func TestSendSocketNoteReportsDecisionThroughMCP(t *testing.T) {
 			if busy {
 				call("hook_poll", map[string]any{"session_id": session, "event": "PreToolUse"})
 			}
+			if mode == "dormant-question" {
+				requireDormantSendFixture(t, eng, "worker")
+			}
 			sendToken := sender["token"]
 			if mode == "idle-human-notify" {
 				_, humanToken, err := eng.HumanAgent(context.Background())
@@ -119,7 +126,7 @@ func TestSendSocketNoteReportsDecisionThroughMCP(t *testing.T) {
 			marker := "send-note-" + mode
 			sent := call("send", map[string]any{"token": sendToken, "to": "worker", "type": kind, "body": marker})
 			note, _ := sent["note"].(string)
-			if !strings.Contains(note, "best-effort notice") ||
+			if !strings.Contains(note, "best-effort notice") || strings.Contains(note, "when it next wakes") ||
 				(!strings.Contains(note, "being handed") && !strings.Contains(note, "already written")) {
 				t.Errorf("idle authored mail lost the wake-attempt wording: %v", sent)
 			}
