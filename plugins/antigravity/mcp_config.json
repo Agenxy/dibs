@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "dibs": {
+      "command": "dibs",
+      "args": ["mcp-stdio"]
+    }
+  }
+}

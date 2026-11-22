@@ -8,6 +8,14 @@ import (
 	"testing"
 )
 
+func TestAntigravityPluginDescribesNativeDesktopDelivery(t *testing.T) {
+	hint := pluginHint("Antigravity", false, false, true)
+	status, _ := hint["status"].(string)
+	if !strings.Contains(status, "verified Antigravity desktop conversation") || hint["hooks_live"] != false {
+		t.Fatalf("expected desktop binding advice without hook evidence, got %+v", hint)
+	}
+}
+
 // A registration with no agent block must not take the daemon down.
 //
 // The agent block is optional and descriptive, so most registrations arrive

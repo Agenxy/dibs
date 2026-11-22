@@ -30,7 +30,7 @@ func TestEmbeddedPluginsMatchTheRepository(t *testing.T) {
 	// vanished from a payload documented as the whole plugin while this test
 	// stayed green. A missing file is the defect this exists to catch, so the
 	// source of truth has to be the directory, not the test.
-	for _, dir := range []string{"claude-code", "codex", "gemini-cli"} {
+	for _, dir := range []string{"antigravity", "claude-code", "codex", "gemini-cli"} {
 		root := filepath.Join("..", "..", "plugins", dir)
 		err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 			if err != nil || d.IsDir() {
@@ -76,6 +76,20 @@ func TestEmbeddedPluginsMatchTheRepository(t *testing.T) {
 	}
 	if string(marketplace) != string(canonical) {
 		t.Error("the embedded marketplace descriptor has drifted from .claude-plugin/marketplace.json")
+	}
+}
+
+func TestAntigravityLoadsTheWholeSkill(t *testing.T) {
+	skill, err := files.ReadFile("data/antigravity/skills/dibs/SKILL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, body, ok := strings.Cut(string(skill), "\n---\n\n")
+	if !ok || !strings.Contains(body, "dibs://skills") {
+		t.Fatal("Antigravity's skill needs frontmatter and the full guide's MCP resource")
+	}
+	if len(body) > 24_000 {
+		t.Fatalf("agy plugin validate limits the skill body to 24000 bytes, got %d", len(body))
 	}
 }
 

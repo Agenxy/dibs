@@ -20,7 +20,7 @@ func stampCodexPlugin(files map[string]string, toolsHash string) (string, error)
 // os.Executable resolves a package-manager symlink to its versioned target.
 // Prefer an existing stable entry only when file identity proves it launches
 // this exact image. Never create a launcher or choose a different PATH binary.
-func codexPluginCommand() (string, error) {
+func pluginDibsCommand() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return "", err

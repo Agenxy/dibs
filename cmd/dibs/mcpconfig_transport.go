@@ -19,6 +19,13 @@ import (
 // would use. Each is a question with more than one thing holding an opinion,
 // and every one of them was answered from the wrong opinion at least once.
 
+func servedScheme(servesTLS bool) string {
+	if servesTLS {
+		return "https"
+	}
+	return "http"
+}
+
 // resolveTransport answers what this daemon actually serves, and with which
 // certificate, from everything that has an opinion.
 //

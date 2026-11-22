@@ -6,6 +6,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- A native Antigravity plugin installs the Dibs MCP server and coordination
+  skill with `dibs antigravity-plugin install`.
+- Antigravity operators can add a server-scoped Dibs allow rule with
+  `dibs antigravity-plugin --trust`. `dibs doctor` reports a missing scoped grant.
 - Release archives include static Linux riscv64 binaries. CI cross-builds
   that target and runs the state machine, ledger, and board configuration tests
   under QEMU.

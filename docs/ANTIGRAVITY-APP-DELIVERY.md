@@ -4,6 +4,12 @@ Measured on macOS 2026-11-21 with Antigravity.app 2.34.0 and language server
 2.34.0. The test target was an existing disposable conversation in the desktop
 app. The test created that conversation separately from the wake.
 
+Antigravity supports native plugin lifecycle hooks. Dibs currently uses the
+verified desktop send-message route for delivery. On 2026-11-22, `agy` 1.5.14
+installed the native MCP plugin in an isolated home and preserved its existing
+permission grants. An isolated runtime probe with `agy` 1.1.10 reached the
+account prompt, leaving lifecycle output and permission matching unmeasured.
+
 ## Native delivery
 
 The app-owned `language_server agentapi send-message` command accepted a
