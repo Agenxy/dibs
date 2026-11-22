@@ -153,9 +153,9 @@ func (b *Box) EncryptOp(op *core.Op) error {
 	// Two content surfaces with one confidentiality contract and only one of
 	// them sealed. Found by an agent reading the ledger of a candidate build
 	// rather than reading the code.
-	switch op.Kind {
-	case core.OpSendMessage, core.OpStallNotified, core.OpFinishedWakeNotified,
-		core.OpRespond, core.OpSpaceAnnounce, core.OpSpacePost:
+	switch {
+	case core.SendsMessage(op.Kind), op.Kind == core.OpRespond,
+		op.Kind == core.OpSpaceAnnounce, op.Kind == core.OpSpacePost:
 		if op.Body, err = b.seal(op.Body); err != nil {
 			return err
 		}

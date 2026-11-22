@@ -15,11 +15,11 @@ board retains feature data but has no non-closed agent, old readers can report
 `E_BAD_TOKEN` before they reach the unknown-kind check. This is still refusal,
 and it is not a credential repair instruction: use a reader with the fence.
 
-Finished one-shot wake notices require a daemon that reads
-`finished_wake_notified` ledger records and the `finished-wake-notice/v1`
-snapshot feature. Once a board retains either, roll back only to a build
-that supports them. Older daemons refuse the record or snapshot rather than
-forgetting that a sender was already notified.
+Finished one-shot wake notices use `finished_wake_notified` and
+`finished_wake_batch_notified` ledger records. Both store their source markers
+in the `finished-wake-notice/v1` snapshot feature. Roll back only to a daemon
+that reads the records retained by the board and supports that snapshot
+feature. An older reader refuses an unknown notice record explicitly.
 
 Persisted Antigravity wake enrollment adds the `antigravity_binding` ledger
 record and the `antigravity-wake-binding/v1` snapshot feature. Once a board

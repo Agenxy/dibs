@@ -42,9 +42,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Recovery chooses an independent coordinator when several hold the role and
   the first coordinator is the survivor.
 - Finished one-shot Codex runs no longer page the person on daemon restart.
-  Each sender gets one notice per unread message. Contact hints omit an app
+  Each sender gets a notice listing the unread message serials for each
+  finished recipient. Contact hints omit an app
   when the recorded Codex and Claude labels conflict, and the macOS display
   name prefers a local label over a fully qualified DNS name.
+- A missing-thread check reuses the warning already sent for that binding
+  and party within the deduplication window, including after its wording changes.
 - Dibs keeps wake mail in the mailbox when the bound Codex thread comes from
   a one-shot `codex exec` run. The board and doctor identify the thread source
   and explain how to bind the agent from an existing app thread.

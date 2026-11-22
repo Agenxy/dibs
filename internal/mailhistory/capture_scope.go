@@ -18,13 +18,15 @@ const (
 // The classification is exhaustive and guarded against every core op kind.
 // Unknown future kinds conservatively capture all mail until classified.
 func scopeOf(kind string) (mailScope, bool) {
+	if core.SendsMessage(kind) {
+		return scopeMailbox, true
+	}
 	switch kind {
 	case core.OpSweep, core.OpPrune, core.OpPruneOwn,
 		core.OpMergeAgents, core.OpAdoptAgent, core.OpSignOff,
 		core.OpInitializeReviewRead:
 		return scopeFull, true
-	case core.OpAckBoard, core.OpSendMessage, core.OpStallNotified, core.OpFinishedWakeNotified,
-		core.OpRespond, core.OpQueueUpdate, core.OpWithdrawMessage:
+	case core.OpAckBoard, core.OpRespond, core.OpQueueUpdate, core.OpWithdrawMessage:
 		return scopeMailbox, true
 	case core.OpAckMessage, core.OpOutcomeRead, core.OpContactEscalate, core.OpContactDiagnosed, core.OpContactJoin:
 		return scopePoint, true
