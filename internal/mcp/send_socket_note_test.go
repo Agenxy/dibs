@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/peerwake"
 )
 
@@ -114,6 +115,10 @@ func TestSendSocketNoteReportsDecisionThroughMCP(t *testing.T) {
 			}
 			if mode == "dormant-question" {
 				requireDormantSendFixture(t, eng, "worker")
+				if note := eng.PullOnlyNoteFor(t.Context(), "worker"); !strings.Contains(note, "between turns") ||
+					!strings.Contains(note, "best-effort notice") || strings.Contains(note, "dormant") {
+					t.Errorf("reachable dormant fixture's route advisory = %q", note)
+				}
 			}
 			sendToken := sender["token"]
 			if mode == "idle-human-notify" {
@@ -129,6 +134,9 @@ func TestSendSocketNoteReportsDecisionThroughMCP(t *testing.T) {
 			if !strings.Contains(note, "best-effort notice") || strings.Contains(note, "when it next wakes") ||
 				(!strings.Contains(note, "being handed") && !strings.Contains(note, "already written")) {
 				t.Errorf("idle authored mail lost the wake-attempt wording: %v", sent)
+			}
+			if mode == "dormant-question" && (!strings.Contains(note, "between turns") || strings.Contains(note, "dormant")) {
+				t.Errorf("reachable Claude socket was described by its lapsed lease: %q", note)
 			}
 			select {
 			case frame := <-wire:
@@ -184,6 +192,54 @@ func TestSendSocketNoteReportsDecisionThroughMCP(t *testing.T) {
 			again := call("hook_poll", map[string]any{"session_id": session, "event": "Stop", "strict_output": true})
 			if again["decision"] == "block" || again["reason"] != nil {
 				t.Fatalf("authored mail blocked Stop twice: %v", again)
+			}
+		})
+	}
+}
+
+func TestSendWithoutClaudeSocketReportsTheCurrentMailHook(t *testing.T) {
+	const session = "e2c03160-6000-4000-8000-000000000002"
+	for _, event := range []string{"Stop", "SessionStart", "SessionEnd", "PreToolUse"} {
+		t.Run(event, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+			t.Setenv("DIBS_DIR", t.TempDir())
+			srv, eng, _ := restartableQueueServer(t, t.TempDir())
+			worker := toolCallWithMeta(t, srv, "register", map[string]any{
+				"name": "worker", "session_id": session, "harness": "Claude Code", "kind": "persistent",
+			}, map[string]any{SurfaceMetaKey: harnessenv.ClaudeDesktop})
+			if worker["token"] == nil || worker["code"] != nil {
+				t.Fatalf("setup: Claude desktop registration: %v", worker)
+			}
+			sender := sendNoteCall(t, srv, "register", map[string]any{"name": "sender"})
+			sendNoteCall(t, srv, "check_in", map[string]any{"token": worker["token"]})
+			sendNoteCall(t, srv, "check_in", map[string]any{"token": sender["token"]})
+			if event == "SessionEnd" {
+				sendNoteCall(t, srv, "hook_poll", map[string]any{"session_id": session, "event": "Stop"})
+			}
+			sendNoteCall(t, srv, "hook_poll", map[string]any{"session_id": session, "event": event})
+			requireDormantSendFixture(t, eng, "worker")
+			const body = "fixture delivery at a Claude hook"
+			sent := sendNoteCall(t, srv, "send", map[string]any{
+				"token": sender["token"], "to": "worker", "type": "question", "body": body,
+			})
+			note, _ := sent["note"].(string)
+			if event == "SessionEnd" || event == "PreToolUse" {
+				if strings.Contains(note, "next Stop or SessionStart") || strings.Contains(note, "between turns") {
+					t.Errorf("%s falsely advertised a live Claude mail hook: %q", event, note)
+				}
+				return
+			}
+			if !strings.Contains(note, "next Stop or SessionStart") || strings.Contains(note, "which is dormant") ||
+				strings.Contains(note, "a person starts") || strings.Contains(note, "being handed") ||
+				(event == "Stop" && !strings.Contains(note, "between turns")) {
+				t.Errorf("reachable Claude without a socket did not report its hook route: %q", note)
+			}
+			got := sendNoteCall(t, srv, "hook_poll", map[string]any{
+				"session_id": session, "event": event, "strict_output": true,
+			})
+			if !mentions(got, body) {
+				t.Fatalf("setup: the reported mail hook did not deliver the actual message: %v", got)
 			}
 		})
 	}

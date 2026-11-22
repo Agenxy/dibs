@@ -44,6 +44,9 @@ type Child struct {
 	Turn  string
 	Since time.Time // when it entered State
 	Seen  time.Time // last time it said anything at all
+	// A delivery poll can carry mail at Stop or SessionStart. Other child
+	// announcements cannot establish that delivery path.
+	mailHook string
 }
 
 // NoteChildSession records a lifecycle event from a spawned agent.
@@ -172,6 +175,7 @@ func mergeChild(prev, next Child) Child {
 	next.AgentType = keep(prev.AgentType, next.AgentType)
 	next.Parent = keep(prev.Parent, next.Parent)
 	next.Turn = keep(prev.Turn, next.Turn)
+	next.mailHook = keep(prev.mailHook, next.mailHook)
 	// Monotonic by contract, so a later event that omits it must not reset it,
 	// and one that goes BACKWARDS is a restarted counter, not lost work.
 	if next.Progress < prev.Progress {
