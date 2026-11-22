@@ -59,7 +59,9 @@ func checkRequestPriority(op *Op) error {
 		(op.MsgType != MsgNotify && (op.MsgType != MsgRequest || op.Grant != "" || op.Adopt != "" ||
 			op.Merge != nil || op.Recovery != nil)) ||
 		priorityValue(op.RequestPriority) < 0 {
-		return errf("E_BAD_ARG", "priority is low|normal|high|urgent on a notify or ordinary request",
+		return errf("E_BAD_ARG",
+			"Use priority low, normal, high, or urgent on a notify or an ordinary request. "+
+				"Omit priority on questions, handoffs, and requests with typed effects.",
 			"invalid message priority")
 	}
 	return nil

@@ -20,6 +20,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   posting input or reading mail.
 
 ### Fixed
+- The send priority error names the supported message types and explains
+  when to omit priority.
 - Responding to a question with a `choice` argument now points to placing
   the selected label in `body` with disposition `answer`.
 - Sending to a closed harness explains that unconfirmed delivery can raise a
