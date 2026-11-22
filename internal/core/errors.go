@@ -265,7 +265,8 @@ var (
 // happened. An agent on a live board concluded mail was being lost.
 func ErrNotYourMessage(serial uint64, from, to string) *Error {
 	return errf("E_NOT_YOUR_MESSAGE",
-		"only "+from+" and "+to+" can read it; use inbox() for your own mail",
+		"only "+from+" and "+to+" can read it. For a copy or summary, ask "+from+
+			" to share it. Use inbox() for your own mail.",
 		"message %d is between %s and %s, not addressed to you", serial, from, to)
 }
 

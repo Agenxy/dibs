@@ -20,6 +20,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   posting input or reading mail.
 
 ### Fixed
+- When a retained message belongs to other agents, the read refusal names
+  the sender to ask for a copy or summary.
 - The send priority error names the supported message types and explains
   when to omit priority.
 - Responding to a question with a `choice` argument now points to placing
