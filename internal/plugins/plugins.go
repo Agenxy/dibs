@@ -117,7 +117,7 @@ var catalog = []struct {
 			},
 			{
 				Do:     "If the operator wants to allow Dibs MCP calls, run dibs antigravity-plugin --trust.",
-				Check:  "dibs doctor reports a warning when the scoped allow rule is absent.",
+				Check:  "dibs doctor reports a warning when a Dibs tool lacks an explicit allow rule.",
 				Manual: true,
 			},
 			{

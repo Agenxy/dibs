@@ -25,11 +25,15 @@ To allow calls to the Dibs MCP server, run this command as the operator:
 dibs antigravity-plugin --trust
 ```
 
-The command adds `mcp(dibs/*)` to the desktop profile's allow list in
-`~/.gemini/config/config.json`. It preserves existing settings and permission
-rules. Open Antigravity once to create the profile if it is missing.
-Antigravity gives Deny and Ask rules precedence over Allow. `dibs doctor`
-reports when the Dibs server is configured without the scoped allow rule.
+The command adds the documented `mcp(dibs/*)` wildcard and one `mcp(dibs/<tool>)`
+rule for each tool in your Dibs binary. The per-tool rules are a fallback until
+Antigravity desktop wildcard matching is measured. Run the command again after
+an upgrade to add rules for new tools.
+
+The command updates the allow list in `~/.gemini/config/config.json` and
+preserves existing settings and rules. Open Antigravity once to create the
+profile if it is missing. Antigravity gives Deny and Ask rules precedence over
+Allow. `dibs doctor` reports when any Dibs tool is missing an explicit rule.
 The [Antigravity MCP documentation](https://antigravity.google/docs/mcp/)
 describes the server-scoped rule.
 

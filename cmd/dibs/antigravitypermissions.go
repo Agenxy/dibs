@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+
+	"github.com/agenxy/dibs/internal/mcp"
 )
 
 const antigravityDibsGrant = "mcp(dibs/*)"
@@ -28,7 +30,7 @@ func trustAntigravityPlugin() error {
 	if err != nil {
 		return err
 	}
-	changed, err := addAntigravityDibsGrant(filepath.Join(dir, "config.json"))
+	added, err := addAntigravityDibsGrants(filepath.Join(dir, "config.json"))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("open Antigravity once to create its desktop profile, then run %s: %w",
@@ -36,10 +38,10 @@ func trustAntigravityPlugin() error {
 		}
 		return fmt.Errorf("update Antigravity desktop permissions: %w", err)
 	}
-	if changed {
-		fmt.Println("Added Antigravity allow rule " + antigravityDibsGrant + ".")
+	if added != 0 {
+		fmt.Printf("Added %d Antigravity Dibs MCP allow rule(s).\n", added)
 	} else {
-		fmt.Println("Antigravity already has allow rule " + antigravityDibsGrant + ".")
+		fmt.Println("Antigravity already has the Dibs wildcard and per-tool allow rules.")
 	}
 	return nil
 }
@@ -74,27 +76,49 @@ func decodeAntigravityGrants(data []byte) (antigravityGrantConfig, error) {
 	return config, nil
 }
 
-func addAntigravityDibsGrant(path string) (bool, error) {
+// Count exact rules even when the documented wildcard is already present.
+// Desktop matching of that form has yet to be measured independently.
+func missingAntigravityToolGrants(allow []string) []string {
+	var missing []string
+	for _, tool := range mcp.ToolNames() {
+		rule := "mcp(dibs/" + tool + ")"
+		if !slices.Contains(allow, rule) {
+			missing = append(missing, rule)
+		}
+	}
+	return missing
+}
+
+func addAntigravityDibsGrants(path string) (int, error) {
 	settings, err := readAntigravitySettings(path)
 	if err != nil {
-		return false, err
+		return 0, err
 	}
 	config, err := decodeAntigravityGrants(settings.data)
-	if err != nil || slices.Contains(config.allow, antigravityDibsGrant) {
-		return false, err
+	if err != nil {
+		return 0, err
+	}
+	before := len(config.allow)
+	if !slices.Contains(config.allow, antigravityDibsGrant) {
+		config.allow = append(config.allow, antigravityDibsGrant)
+	}
+	config.allow = append(config.allow, missingAntigravityToolGrants(config.allow)...)
+	added := len(config.allow) - before
+	if added == 0 {
+		return 0, nil
 	}
 	// These values are JSON validated on read and contain no custom encoders.
-	config.grants["allow"], _ = json.Marshal(append(config.allow, antigravityDibsGrant))
+	config.grants["allow"], _ = json.Marshal(config.allow)
 	config.settings["globalPermissionGrants"], _ = json.Marshal(config.grants)
 	config.root["userSettings"], _ = json.Marshal(config.settings)
 	updated, err := json.MarshalIndent(config.root, "", "  ")
 	if err != nil {
-		return false, err
+		return 0, err
 	}
 	if err := settings.replace(append(updated, '\n')); err != nil {
-		return false, err
+		return 0, err
 	}
-	return true, nil
+	return added, nil
 }
 
 type antigravitySettingsFile struct {
@@ -176,8 +200,8 @@ func (d *diagnosis) checkAntigravityGrants() {
 	config, err := decodeAntigravityGrants(data)
 	if err != nil {
 		d.warn("Antigravity desktop permissions could not be parsed", "open Antigravity's permission settings")
-	} else if !slices.Contains(config.allow, antigravityDibsGrant) {
-		d.warn("no server-scoped Dibs MCP grant in Antigravity desktop settings", antigravityTrustCommand)
+	} else if missing := len(missingAntigravityToolGrants(config.allow)); missing > 0 {
+		d.warn(fmt.Sprintf("%d Dibs MCP tool(s) lack an explicit Antigravity allow rule", missing), antigravityTrustCommand)
 	}
 }
 

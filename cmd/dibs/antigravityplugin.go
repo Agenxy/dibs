@@ -29,7 +29,7 @@ func antigravityPluginCmd(args []string) error {
 	if helpOnly(args) {
 		fmt.Println(antigravityPluginSynopsis)
 		fmt.Println("  install  install the native Dibs plugin")
-		fmt.Println("  --trust  add a permission grant for the Dibs MCP server")
+		fmt.Println("  --trust  add permission grants for the Dibs MCP server")
 		return nil
 	}
 	if len(args) == 1 {
