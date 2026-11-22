@@ -241,7 +241,7 @@ var synonyms = map[string]string{
 }
 
 // wrongTool maps a (tool, argument) that means the caller wanted a DIFFERENT
-// tool, not a different parameter.
+// tool or a specific call shape.
 //
 // k7-b reached for read_mail(agent:…) because read_mail reads like a lister,
 // and for check_in(view:…) because `view` is real on `board`. Both refusals were
@@ -259,6 +259,9 @@ var wrongTool = map[string]map[string]string{
 	},
 	"inbox": {
 		"msg_serial": "read_mail(msg_serial) fetches one message; inbox lists them",
+	},
+	"respond": {
+		"choice": `for a question, use disposition "answer" and put the selected label in body`,
 	},
 }
 
