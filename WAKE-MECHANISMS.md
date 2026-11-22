@@ -374,16 +374,15 @@ processes says whether it does.
 while an agent makes MCP calls in a long turn. On 2026-10-02, 22 command wakes
 became a series of empty turns; daemon restarts also forgot the old guard.
 Before the conventional local `codex queue` route enqueues, a one-second
-`codex app-server --listen stdio://` observer sends only initialize, initialized
-and thread/queue/list. It loads no thread and starts no model, as measured on
+`codex app-server --listen stdio://` observer sends initialize, initialized,
+metadata-only thread/read and thread/queue/list. It loads no thread and starts no model, as measured on
 the installed binary; a pending Dibs wake already carries every new event's
 invitation to read mail. It never deletes queue items. A changed experimental
 response, unavailable app or alternate operator route uses a retained 0600
 receipt under the board's data directory. Only the current thread's start or
-prompt hook re-arms that fallback, never tool or MCP traffic, and two hours
-bounds a lost receipt. A human prompt may therefore admit one duplicate when
-observation is unavailable; refusing to re-arm could lose a wake. An observed
-empty queue is authoritative and re-arms immediately.
+prompt hook records prompt evidence. A current prompt can admit one duplicate
+when observation is unavailable, allowing a wake whose earlier receipt is
+stale to reach the thread. An observed empty queue re-arms immediately.
 
 The observed notice includes verdicts, using the core mail-event vocabulary;
 an answer already invites the next turn to read every newer message. An OS
@@ -395,12 +394,14 @@ Contention timeout logs at Debug and skips fallback execution; real lock
 errors retain their warning and ordinary fallback qualification.
 An old writer still running pre-upgrade code does not participate in this lock.
 
-When observation is unavailable, the retained fallback deliberately permits
-at most one additional notice per re-arm cause: a current prompt, a new app
-reconnect generation or expiry of the two-hour receipt. That possible empty
-turn is the chosen trade against losing a wake. These limits do not establish
-the cause of each historical queue entry; see `docs/QUEUE-WAKE-DESIGN.md` for
-the measured gaps and regression evidence.
+When an unavailable observation would defer on a recent receipt, one
+two-second read-only corroboration can check the queue and metadata-only
+`thread/turns/list` for the exact thread. A verified pending notice wins. A
+turn start at or after the receipt, current prompt, new app reconnect
+generation or ten seconds of receipt age can re-arm admission. A fresh receipt
+on its own defers the wake and leaves the mail eligible for the next delivery
+event. It schedules no timer. See `docs/QUEUE-WAKE-DESIGN.md` for measurement
+and regression evidence.
 
 **A durable notice can outlive its mail.** Measured on the bundled
 `codex-cli 0.160.0` on 2026-10-05: `queue --help` exposes enqueue only, while

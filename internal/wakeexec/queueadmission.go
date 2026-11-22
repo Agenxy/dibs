@@ -27,7 +27,7 @@ type queueCommandOutcome struct {
 // RestartQueueOutcome distinguishes a confirmed queue/admission from lock
 // contention, which proves no command was run and permits one bounded retry.
 type RestartQueueOutcome struct {
-	OK, Retryable bool
+	OK, Retryable, Deferred bool
 }
 
 // RunRestartQueue uses the same serialized native queue admission as ordinary
@@ -45,7 +45,7 @@ func RunRestartQueue(argv []string, agent, dir string) RestartQueueOutcome {
 		return RestartQueueOutcome{}
 	}
 	out := runQueuedCommand(argv, thread, agent, dir, Timeout, Grace)
-	return RestartQueueOutcome{OK: out.ok, Retryable: out.contended}
+	return RestartQueueOutcome{OK: out.ok, Retryable: out.contended, Deferred: out.observation.Admission == "deferred"}
 }
 
 // acquireQueueAdmission takes the board-wide admission lock. A busy writer is
@@ -84,34 +84,14 @@ func runQueuedCommandContext(
 	}
 	defer release()
 	generation := reconnectGeneration(thread)
-	probe := observeQueueAdmission(argv, thread, &observation)
+	probe := observeQueueAdmission(ctx, argv, thread, &observation)
 	if observation.ThreadState == "gone" {
 		return queueCommandOutcome{observation: observation}
 	}
-	pending, known := probe.pending, probe.known
-	if known && pending {
-		// A real app item wins over inference, including after a prompt,
-		// receipt expiry or reconnect. Retain it for an unavailable next probe.
-		r := readReceipt(thread)
-		if r.QueuedAt.IsZero() {
-			r.QueuedAt = time.Now().UTC()
-		}
-		r.Generation = generation
-		retainQueueReceipt(thread, r, agent)
+	if retained, stop := retainedQueueAdmission(thread, agent, generation, probe, observation); stop {
+		return retained
 	}
-	if (known && pending) || (!known && fallbackPending(thread, time.Now())) {
-		slog.Info("existing Dibs wake retained in the app queue; enqueue suppressed, delivery unconfirmed", "agent", agent,
-			"observation_known", known)
-		observation.Admission = "retained"
-		if known {
-			observation.Pending = "pending"
-		} else {
-			observation.ReceiptAt = readReceipt(thread).QueuedAt
-		}
-		return queueCommandOutcome{ok: true, observation: observation}
-	}
-	slog.Debug("admitting a wake to the app queue", "agent", agent,
-		"observation_known", known)
+	slog.Debug("admitting a wake to the app queue", "agent", agent, "observation_known", probe.known)
 	queuedAt := time.Now().UTC()
 	sent := queueNoticeAt(argv, queuedAt)
 	ok, out, needsReceipt := runForOutResultContext(ctx, sent, agent, dir, timeout, grace)
@@ -136,11 +116,53 @@ func runQueuedCommandContext(
 	return queueCommandOutcome{ok: ok, out: out, observation: observation}
 }
 
-func observeQueueAdmission(argv []string, thread string, observation *QueueObservation) queueProbe {
+func retainedQueueAdmission(
+	thread, agent, generation string, probe queueProbe, observation QueueObservation,
+) (queueCommandOutcome, bool) {
+	if probe.known && probe.pending {
+		// A real app item wins over inference, including after a prompt,
+		// receipt expiry or reconnect. Retain it for an unavailable next probe.
+		r := readReceipt(thread)
+		if r.QueuedAt.IsZero() {
+			r.QueuedAt = time.Now().UTC()
+		}
+		r.Generation = generation
+		retainQueueReceipt(thread, r, agent)
+		slog.Info("existing Dibs wake retained in the app queue; enqueue suppressed, delivery unconfirmed", "agent", agent,
+			"observation_known", true)
+		observation.Admission, observation.Pending = "retained", "pending"
+		return queueCommandOutcome{ok: true, observation: observation}, true
+	}
+	if probe.known {
+		return queueCommandOutcome{}, false
+	}
+	// Prompt, reconnect, and elapsed age can change while probing. Read the
+	// inference again at the decision, under this same queue admission lock.
+	r := fallbackQueueReceipt(thread, time.Now())
+	if r.QueuedAt.IsZero() || (probe.lastTurn != nil && !probe.lastTurn.Before(r.QueuedAt)) {
+		return queueCommandOutcome{}, false
+	}
+	slog.Debug("app queue observation unknown; wake deferred on a recent receipt", "agent", agent,
+		"receipt_at", r.QueuedAt)
+	observation.Admission, observation.ReceiptAt = "deferred", r.QueuedAt
+	return queueCommandOutcome{observation: observation}, true
+}
+
+func observeQueueAdmission(
+	ctx context.Context, argv []string, thread string, observation *QueueObservation,
+) queueProbe {
 	var probe queueProbe
 	if nativeQueueRoute(argv) {
 		observation.ProbeBinary = argv[0]
-		probe = observeQueueDetail(argv[0], thread)
+		probe = observeQueueDetailContext(ctx, argv[0], thread)
+		if !probe.known && probe.threadSource != QueueThreadExecSource &&
+			!fallbackQueueReceipt(thread, time.Now()).QueuedAt.IsZero() {
+			checked := corroborateQueueReceipt(ctx, argv[0], thread)
+			if checked.threadSource == "" {
+				checked.threadSource = probe.threadSource
+			}
+			probe = checked
+		}
 	}
 	observation.At = time.Now().UTC()
 	observation.ThreadSource = probe.threadSource

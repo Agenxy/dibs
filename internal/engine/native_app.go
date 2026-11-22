@@ -21,7 +21,8 @@ func (p wakePlan) commandDelivery() bool {
 }
 
 func (p wakePlan) retryAllowed() bool {
-	return !p.commandOutcome.NoRetry && !p.queueThreadGone() && (p.nativeOutcome == nil || !p.nativeOutcome.NoRetry)
+	return !p.commandOutcome.NoRetry && !p.commandOutcome.Deferred && !p.queueThreadGone() &&
+		(p.nativeOutcome == nil || !p.nativeOutcome.NoRetry)
 }
 
 func (p wakePlan) queueThreadGone() bool {

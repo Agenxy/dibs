@@ -40,4 +40,5 @@ type queueProbe struct {
 	itemID         string
 	receipt        string // exact observation result, never a delivery inference
 	threadSource   string
+	lastTurn       *time.Time
 }

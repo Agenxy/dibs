@@ -1421,7 +1421,7 @@ func TestTheWakeExitProducesBothOfItsFactsTogether(t *testing.T) {
 	}
 	e.seen[l.ID] = time.Now()
 
-	e.wakeExitedDecision(l.ID, "")
+	e.wakeExitedDecision(l.ID, "", true)
 
 	e.wakers.mu.Lock()
 	running := e.wakers.running[l.ID]

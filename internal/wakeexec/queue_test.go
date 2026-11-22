@@ -59,7 +59,7 @@ func TestNativeQueueRouteCoalescesAndRearmsAcrossProcesses(t *testing.T) {
 	}
 	// The real observation must remain useful if the next probe is unavailable.
 	t.Setenv("DIBS_QUEUE_PROBE_FAIL", "1")
-	if !RunCommands(argv, nil, "worker", "", time.Second, time.Second) || count() != 1 {
+	if out := RunCommandsWithOutcome(argv, nil, "worker", "", time.Second, time.Second); !out.Deferred || out.OK || count() != 1 {
 		t.Fatal("unknown probe duplicated a wake retained on reconnect")
 	}
 	t.Setenv("DIBS_QUEUE_PROBE_FAIL", "")
@@ -86,8 +86,8 @@ func TestNativeQueueRouteCoalescesAndRearmsAcrossProcesses(t *testing.T) {
 func TestQueueFallbackSurvivesRestart(t *testing.T) {
 	if os.Getenv("DIBS_QUEUE_RESTART_HELPER") == "1" {
 		argv := []string{os.Getenv("DIBS_QUEUE_FIXTURE"), "queue", "--thread", "fixture-thread", "--message", Compose("question")}
-		if !RunCommands(argv, nil, "worker", "", time.Second, time.Second) {
-			t.Fatal("restart route failed")
+		if out := RunCommandsWithOutcome(argv, nil, "worker", "", time.Second, time.Second); !out.Deferred || out.OK {
+			t.Fatalf("restart route did not defer on the recent receipt: %+v", out)
 		}
 		return
 	}
@@ -136,11 +136,62 @@ func TestQueueFallbackSurvivesRestart(t *testing.T) {
 	if !RunCommands(argv, nil, "worker", "", time.Second, time.Second) || count() != 2 {
 		t.Fatal("prompt did not re-arm fallback")
 	}
-	if err = writeReceipt("fixture-thread", queueReceipt{QueuedAt: time.Now().Add(-3 * time.Hour)}); err != nil {
+	if err = writeReceipt("fixture-thread", queueReceipt{QueuedAt: time.Now().Add(-30 * time.Second)}); err != nil {
 		t.Fatal(err)
 	}
 	if !RunCommands(argv, nil, "worker", "", time.Second, time.Second) || count() != 3 {
 		t.Fatal("TTL did not re-arm fallback")
+	}
+}
+
+func TestUnknownQueueObservationDoesNotClaimAStaleReceipt(t *testing.T) {
+	binary := staleQueueFixture(t)
+	for _, tc := range []struct {
+		name, reportedThread   string
+		age                    time.Duration
+		newTurn, wantAdmission bool
+	}{
+		{name: "same-thread-turned", age: 2 * time.Second, newTurn: true, wantAdmission: true},
+		{name: "expired-inference", age: 30 * time.Second, wantAdmission: true},
+		{name: "ambiguous-recent-receipt", age: 2 * time.Second},
+		{name: "different-thread", age: 2 * time.Second, newTurn: true, reportedThread: "other-thread"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := staleQueueHome(t)
+			const thread = "receipt-thread"
+			argv := []string{binary, "queue", "--thread", thread, "--message", Compose("notify")}
+			queuedAt := time.Now().UTC().Add(-tc.age).Truncate(time.Second)
+			turnAt := queuedAt.Add(-time.Second)
+			if tc.newTurn {
+				turnAt = queuedAt
+			}
+			t.Setenv("DIBS_TEST_QUEUE_THREAD_SOURCE", "appServer")
+			t.Setenv("DIBS_TEST_QUEUE_LIST_UNKNOWN", "1")
+			t.Setenv("DIBS_TEST_QUEUE_LAST_TURN_STARTED", strconv.FormatInt(turnAt.Unix(), 10))
+			t.Setenv("DIBS_TEST_QUEUE_SOURCE_THREAD", tc.reportedThread)
+			if err := writeReceipt(thread, queueReceipt{QueuedAt: queuedAt}); err != nil {
+				t.Fatal("setup: write receipt:", err)
+			}
+			var seen QueueObservation
+			out := RunCommandsObserved(argv, nil, "worker", "", time.Second, time.Second, func(o QueueObservation) {
+				seen = o
+			})
+			if tc.wantAdmission {
+				if !out.OK || seen.Admission != "accepted" {
+					t.Fatalf("receipt suppressed an admissible wake: outcome=%+v observation=%+v", out, seen)
+				}
+				if n := len(staleQueueRows(t, home)); n != 1 {
+					t.Fatalf("admitted %d items, want one", n)
+				}
+				return
+			}
+			if out.OK || out.NoRetry || seen.Admission != "deferred" || seen.Pending != "unknown" || !seen.ReceiptAt.Equal(queuedAt) {
+				t.Fatalf("inferred receipt did not defer honestly: outcome=%+v observation=%+v", out, seen)
+			}
+			if _, err := os.Stat(filepath.Join(home, "pending.json")); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("deferred route executed the queue command: %v", err)
+			}
+		})
 	}
 }
 

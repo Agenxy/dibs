@@ -264,16 +264,18 @@ func main() {
 		evidence(req.Method)
 		var result any = map[string]any{}
 		if req.Method == "thread/queue/list" {
-			b, _ := os.ReadFile(path)
-			rows := []map[string]any{}
-			_ = json.Unmarshal(b, &rows)
-			selected := []map[string]any{}
-			for _, row := range rows {
-				if row["threadId"] == req.Params.Thread {
-					selected = append(selected, row)
+			if os.Getenv("DIBS_TEST_QUEUE_LIST_UNKNOWN") != "1" {
+				b, _ := os.ReadFile(path)
+				rows := []map[string]any{}
+				_ = json.Unmarshal(b, &rows)
+				selected := []map[string]any{}
+				for _, row := range rows {
+					if row["threadId"] == req.Params.Thread {
+						selected = append(selected, row)
+					}
 				}
+				result = map[string]any{"data": selected, "nextCursor": nil}
 			}
-			result = map[string]any{"data": selected, "nextCursor": nil}
 		} else if req.Method == "thread/read" {
 			if req.Params.IncludeTurns {
 				panic("wake probe requested transcript turns")
@@ -299,7 +301,14 @@ func main() {
 			if req.Params.ItemsView != "notLoaded" {
 				panic("wake diagnostics requested turn content")
 			}
-			result = map[string]any{"data": []map[string]any{{"startedAt": 1795200000}}, "nextCursor": nil}
+			started := int64(1795200000)
+			if raw := os.Getenv("DIBS_TEST_QUEUE_LAST_TURN_STARTED"); raw != "" {
+				started, err = strconv.ParseInt(raw, 10, 64)
+				if err != nil {
+					panic(err)
+				}
+			}
+			result = map[string]any{"data": []map[string]any{{"startedAt": started}}, "nextCursor": nil}
 		} else if req.Method != "initialize" {
 			os.Exit(4)
 		}

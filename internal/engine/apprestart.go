@@ -332,9 +332,16 @@ func (e *Engine) sendRestartQueue(ctx context.Context, epoch string, plan wakePl
 		}
 		out = restartQueue(plan.argv, plan.agent, plan.cwd)
 	}
+	return e.finishRestartQueue(plan, out)
+}
+
+func (e *Engine) finishRestartQueue(plan wakePlan, out wakeexec.RestartQueueOutcome) bool {
 	if out.Retryable {
 		slog.Warn("app-restart queue admission remained contended after one retry", "agent", plan.agent)
 		return false
+	}
+	if out.Deferred {
+		return false // afterAppReturn reconsidering original mail is still due
 	}
 	e.noteCommandOutcome(plan.agent, plan.argv, out.OK)
 	if !out.OK {

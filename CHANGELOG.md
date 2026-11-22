@@ -22,6 +22,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   posting input or reading mail.
 
 ### Fixed
+- When the Codex queue cannot be observed, only receipts younger than ten
+  seconds can defer a wake. New delivery events can retry the same unread mail.
 - Withdrawal errors explain that an eligible replacement can have a different
   recipient and how to check the replacement serial.
 - When a retained message belongs to other agents, the read refusal names

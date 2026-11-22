@@ -469,6 +469,10 @@ func (e *Engine) awaitRemoteWake(
 			plan.nativeOutcome.OK = nativeDeliveryAccepted(res.NativeDelivery)
 			plan.nativeOutcome.Settled = res.NativeDelivery == "settled"
 		}
+		if res.NativeDelivery == wakeexec.QueueDeferred {
+			plan.commandOutcome.Deferred = true
+			return false
+		}
 		if res.OK {
 			slog.Info("the agent's host reports the wake ran", "agent", agent, "host", plan.host, "request", id)
 			return true

@@ -147,6 +147,10 @@ func queueWakeNote(v core.Result) string {
 		return wakeexec.QueueUnavailableReason(source) + " No automatic retry will run for this binding. " +
 			"Mail remains in the mailbox; bind this agent from an existing app thread."
 	}
+	if v["admission"] == "deferred" {
+		return "App queue observation unavailable. A recent receipt deferred this wake. " +
+			"Unread mail remains eligible when another delivery event arrives."
+	}
 	if delivery, ok := v["native_delivery"].(string); ok {
 		return nativeQueueWakeNote(delivery, v)
 	}
