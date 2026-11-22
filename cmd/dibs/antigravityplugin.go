@@ -20,14 +20,16 @@ import (
 )
 
 const (
-	antigravityPluginUsage  = "dibs antigravity-plugin install"
-	antigravityTrustCommand = "dibs antigravity-plugin --trust"
+	antigravityPluginUsage    = "dibs antigravity-plugin install"
+	antigravityTrustCommand   = "dibs antigravity-plugin --trust"
+	antigravityPluginSynopsis = "usage: dibs antigravity-plugin <install|--trust>"
 )
 
 func antigravityPluginCmd(args []string) error {
 	if helpOnly(args) {
-		fmt.Println(antigravityPluginUsage)
-		fmt.Println(antigravityTrustCommand + "  add a permission grant for the Dibs MCP server")
+		fmt.Println(antigravityPluginSynopsis)
+		fmt.Println("  install  install the native Dibs plugin")
+		fmt.Println("  --trust  add a permission grant for the Dibs MCP server")
 		return nil
 	}
 	if len(args) == 1 {
@@ -38,7 +40,7 @@ func antigravityPluginCmd(args []string) error {
 			return adminOnly("antigravity-plugin --trust", trustAntigravityPlugin)
 		}
 	}
-	return fmt.Errorf("usage: %s or %s", antigravityPluginUsage, antigravityTrustCommand)
+	return errors.New(antigravityPluginSynopsis)
 }
 
 func installAntigravityPlugin() error {
