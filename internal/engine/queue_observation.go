@@ -24,8 +24,8 @@ func (e *Engine) decorateQueueWake(row map[string]any, agent *core.Agent, now ti
 		row["queue_wake"] = view
 	}
 	if advice := e.unavailableAppBindingAdvice(agent); advice != "" {
-		// This is the view of the binding. The fold keeps its lifecycle state.
-		if !agent.Gone() {
+		// An active lease reports current contact even if the wake route is unavailable.
+		if agent.Sleeping() || agent.Status == core.StatusArchived {
 			row["status"] = core.StatusUnreachable
 		}
 		row["wake"] = advice

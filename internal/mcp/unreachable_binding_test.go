@@ -24,7 +24,7 @@ func TestUnavailableCodexBindingInSendAndCheckIn(t *testing.T) {
 		t.Fatalf("setup: queue executable: %v: %s", err, out)
 	}
 	testexec.PrepareExecutable(t, exec.Command(binary, "--version"))
-	for _, mode := range []string{"missing", "gone"} {
+	for _, mode := range []string{"missing", "gone", "active"} {
 		t.Run(mode, func(t *testing.T) {
 			home, dir := t.TempDir(), t.TempDir()
 			t.Setenv("HOME", home)
@@ -50,7 +50,13 @@ func TestUnavailableCodexBindingInSendAndCheckIn(t *testing.T) {
 			worker := registerObservationAppWorker(t, srv, eng, thread, home)
 			sender := sendNoteCall(t, srv, "register", map[string]any{"name": "sender"})["token"]
 			sendNoteCall(t, srv, "check_in", map[string]any{"token": sender})
-			aliasSweep(t, eng, "queue-worker")
+			lifecycle, projected := core.StatusDormant, core.StatusUnreachable
+			if mode == "active" {
+				lifecycle, projected = core.StatusActive, core.StatusActive
+				sendNoteCall(t, srv, "check_in", map[string]any{"token": worker["token"]})
+			} else {
+				aliasSweep(t, eng, "queue-worker")
+			}
 			send := func() map[string]any {
 				t.Helper()
 				return sendNoteCall(t, srv, "send", map[string]any{
@@ -70,7 +76,7 @@ func TestUnavailableCodexBindingInSendAndCheckIn(t *testing.T) {
 			check := func(projection string, row map[string]any) {
 				t.Helper()
 				wake, _ := row["wake"].(string)
-				if fmt.Sprint(row["status"]) != "unreachable" || !strings.Contains(wake, want) ||
+				if fmt.Sprint(row["status"]) != string(projected) || !strings.Contains(wake, want) ||
 					!strings.Contains(wake, "Start a local app thread") || !strings.HasSuffix(note, wake) {
 					t.Errorf("%s disagreed with the send's binding remedy: status=%v wake=%q", projection, row["status"], wake)
 				}
@@ -86,8 +92,13 @@ func TestUnavailableCodexBindingInSendAndCheckIn(t *testing.T) {
 				"name": "board", "arguments": map[string]any{"token": sender},
 			})
 			panel := asMap(asMap(asMap(response["result"])["_meta"])["com.dibs/panel"])
-			check("board panel", bindingCheckpointRow(t, panel))
-			if state := readStopLedger(t, dir).Agents["queue-worker"].Status; state != core.StatusDormant {
+			panelRow := bindingCheckpointRow(t, panel)
+			if mode != "active" {
+				check("board panel", panelRow)
+			} else if panelRow["status"] != string(core.StatusActive) {
+				t.Errorf("board panel marked a currently active agent as %v", panelRow["status"])
+			}
+			if state := readStopLedger(t, dir).Agents["queue-worker"].Status; state != lifecycle {
 				t.Errorf("binding view changed the replayable lifecycle state to %q", state)
 			}
 			const nextThread = "0199a0b1-c2d3-4e5f-8a9b-0c1d2e3f4a5c"
