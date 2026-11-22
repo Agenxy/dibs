@@ -921,6 +921,7 @@ type toolArgs struct {
 	StrictOutput any    `json:"strict_output"`
 	View         string `json:"view"`
 	Detail       bool   `json:"detail"`
+	BoardView    string `json:"board_view"`
 	Census       bool   `json:"census"`
 	Traffic      bool   `json:"traffic"`
 	Harness      string `json:"harness"`
@@ -1131,7 +1132,7 @@ func (s *Server) callTool(
 		wantsUI := clientWantsUI(params) || sessionUI
 		return showBoardResult(s.panelState(ctx, res, a.View, a.Token), a.Detail, wantsUI), nil
 	}
-	res = orientationBoard(res, call.Name, a.Detail)
+	res = orientationBoard(res, call.Name, a.Detail, a.BoardView)
 	s.presentNames(ctx, res)
 	text, merr := json.Marshal(res)
 	if merr != nil {
@@ -1223,7 +1224,7 @@ func (s *Server) run(
 	ctx context.Context, name string, a *toolArgs,
 	params json.RawMessage, sessionClient *clientInfoJSON,
 ) (core.Result, error) {
-	if err := validateMailboxLimit(name, params, a); err != nil {
+	if err := validateCheckpointArgs(name, params, a); err != nil {
 		return nil, err
 	}
 	op := toolOp(ctx, params, a)

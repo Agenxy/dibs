@@ -161,17 +161,17 @@ func (b toolSchemas) agentAndMailTools() []map[string]any {
 		},
 		{
 			"name": "check_in",
-			"description": "Acknowledge the board: required once per activation, before declare " +
-				"or claim. One atomic checkpoint: the board (one row per agent; detail true " +
-				"for every field), your inbox, your cursor serial, `announcements` you owe an " +
-				"ack on, and `agent_updates`, whatever happened TO you in a space since you " +
-				"last checked. The authoritative path for all of it; the wake hook only " +
-				"nudges. Mail uses compact pages, unseen mail first, then owed work; follow next_cursor " +
-				"and read_mail(include_body:true) for full envelopes. Also the recovery after E_CURSOR_TOO_OLD.",
+			"description": "Required once per activation before declare or claim. Atomic checkpoint of board, inbox, " +
+				"serial, announcements and agent_updates. Mail pages show unseen mail first, then owed work. " +
+				"Follow next_cursor and use read_mail(include_body:true) for full envelopes. Recovers E_CURSOR_TOO_OLD.",
 			"inputSchema": b.obj(map[string]any{
 				"token": b.tok,
 				"detail": map[string]any{
 					"type": "boolean", "description": "every board field (default: one row per agent)",
+				},
+				"board_view": map[string]any{
+					"type": "string", "enum": []string{coordinationBoardMode},
+					"description": "work and claim detail under 24 KiB. Use without detail:true",
 				},
 				"cursor": b.str("mailbox next_cursor; omit for the first compact page"),
 				"limit":  b.num("mail items, 1–8; default 8. read_mail(include_body:true) has full envelopes"),
