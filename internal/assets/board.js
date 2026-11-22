@@ -113,12 +113,14 @@ const Board = (() => {
     return ""
   }
   function staleReasonHTML(l) {
+    if (l.status === "unreachable" && l.wake) return explained("tag why", "unreachable", l.wake)
     const why = STALE_WHY[l.stale_reason]
     if (!why) return ""
     return explained(`tag why ${esc(l.stale_reason)}`, why[0], why[1])
   }
 
   function queueWakeHTML(l) {
+    if (l.status === "unreachable" && l.wake) return ""
     if (l.app_wait_reason) {
       return explained("tag", l.app_wait_reason, "Mail remains stored and is delivered when this session next runs. Dibs does not activate or navigate the app.")
     }
@@ -767,6 +769,7 @@ const Board = (() => {
   function memberStateHTML(agent, agents) {
     const l = (agents || []).find((x) => x.id === agent)
     if (!l || l.status === "active") return ""
+    if (l.status === "unreachable" && l.wake) return explained("member-tag gone", "unreachable", l.wake)
     const why = STALE_WHY[l.stale_reason]
     const label = l.status === "dormant" ? "asleep" : (why ? why[0] : "out of touch")
     return explained("member-tag gone", label, why ? why[1] : "this member is not currently working")

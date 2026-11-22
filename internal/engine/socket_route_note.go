@@ -22,6 +22,9 @@ func (e *Engine) sendDeliveryNote(l *core.Agent, m *core.Message) string {
 	if note, remote := e.remotePullOnlyNote(l); remote {
 		return note
 	}
+	if note := e.unavailableAppBindingSendNote(l); note != "" {
+		return note
+	}
 	if e.antigravityBinding(l) != 0 && !e.socketOwnsDelivery(l) {
 		return e.antigravityWakeNote(l, m)
 	}
@@ -106,6 +109,10 @@ func (e *Engine) currentClaudeMailHook(l *core.Agent) string {
 func (e *Engine) claudeHookSendNote(l *core.Agent) string {
 	if surfaceOf(l) != harnessenv.ClaudeDesktop || !e.ownsHost(l) {
 		return ""
+	}
+	if l.Status == core.StatusArchived {
+		return "Stored in the mailbox for " + l.ID + ". " +
+			"The archived agent must register again with the same nonce to read its mail."
 	}
 	switch e.currentClaudeMailHook(l) {
 	case "Stop", "SessionStart":

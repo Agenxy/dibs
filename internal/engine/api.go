@@ -907,7 +907,6 @@ func (e *Engine) decoratedBoard() core.Result {
 		b["configured_name_addresses"] = names
 	}
 	e.labelBoardHosts(b, hostdisplay.Current().Name)
-	e.decorateBoardQueueWakes(b, time.Now())
 	e.decorateBoardSocketBindings(b)
 	// The identity this daemon stamps its own machine's agents with, beside
 	// the ledger's node: doctor compares it with what Supgang says the
@@ -975,6 +974,7 @@ func (e *Engine) decoratedBoard() core.Result {
 			lm["resumable"] = true
 		}
 	}
+	e.decorateBoardQueueWakes(b, time.Now())
 	return core.Result(b)
 }
 

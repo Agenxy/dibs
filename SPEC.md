@@ -1617,7 +1617,11 @@ receipt, with notice age unknown; legacy notice age also stays unknown.
 exact target can supply `thread_source`. Source `exec` identifies a one-shot
 CLI run and sets `thread_state` to `gone` before queue admission. A queue
 command reporting `no rollout found for thread id` for its exact target also
-sets it to `gone`. Both observations stop automatic retry and later-message
+sets it to `gone`. A local ChatGPT app row without a known thread or with a
+confirmed-gone binding shows `status: unreachable` in board views when no
+socket route is available. The projection is derived from the current binding
+and the observed route. Its `wake` text and the send note give the same
+recovery instructions. Both gone observations stop automatic retry and later-message
 queue attempts for that agent/thread binding. For a one-shot CLI binding,
 Dibs groups still-unreported unread mail by sender for that recipient. Each
 ordinary daemon-authored notice lists its source serials in order and leaves
