@@ -22,6 +22,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   posting input or reading mail.
 
 ### Fixed
+- Withdrawal errors explain that an eligible replacement can have a different
+  recipient and how to check the replacement serial.
 - When a retained message belongs to other agents, the read refusal names
   the sender to ask for a copy or summary.
 - The send priority error names the supported message types and explains
