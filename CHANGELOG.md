@@ -25,6 +25,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   posting input or reading mail.
 
 ### Fixed
+- Sends and board views identify missing or confirmed-gone Codex app thread
+  bindings and explain how to recover them. Archived Claude mail requires
+  re-registration before a hook can present it.
 - Shutdown discards late ChatGPT ownership probe results before they can update
   local wake recovery records.
 - Sends to a reachable Claude session describe its socket or next mail hook,

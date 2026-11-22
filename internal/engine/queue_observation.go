@@ -20,11 +20,20 @@ type queueWakeRecord struct {
 }
 
 func (e *Engine) decorateQueueWake(row map[string]any, agent *core.Agent, now time.Time) {
-	if agent != nil && e.appBindings[agent.ID].reason == "waiting-thread-open" {
-		row["app_wait_reason"] = "waiting for its thread to be opened"
-	}
 	if view := e.queueWakeView(agent, now); view != nil {
 		row["queue_wake"] = view
+	}
+	if advice := e.unavailableAppBindingAdvice(agent); advice != "" {
+		// An active lease reports current contact even if the wake route is unavailable.
+		if agent.Sleeping() || agent.Status == core.StatusArchived {
+			row["status"] = core.StatusUnreachable
+		}
+		row["wake"] = advice
+		delete(row, "resumable")
+		return
+	}
+	if agent != nil && e.appBindings[agent.ID].reason == "waiting-thread-open" {
+		row["app_wait_reason"] = "waiting for its thread to be opened"
 	}
 }
 
@@ -111,7 +120,8 @@ func (e *Engine) queueWakeEligible(agent *core.Agent) bool {
 // older queue observation describe the route this send is about to attempt.
 func (e *Engine) sendQueueWakeView(agent *core.Agent, message *core.Message, now time.Time) core.Result {
 	v := e.queueWakeView(agent, now)
-	if v == nil || v["native_delivery"] != nil || message == nil || message.To != agent.ID ||
+	if v == nil || v["thread_state"] == "gone" || v["native_delivery"] != nil || message == nil ||
+		message.To != agent.ID ||
 		e.sendWakeCauseNote(agent, message) != "" || !e.nativeAppRoute(agent) ||
 		!slices.Contains(e.freshCommandKeys(agent.ID, now), "mail:"+noticeKey(agent.ID, message.Serial)) {
 		return v

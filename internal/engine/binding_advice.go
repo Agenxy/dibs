@@ -20,6 +20,35 @@ const bindingRemedy = "Start a local app thread and register with this agent's s
 
 const cloudBindingReason = "Bound to a cloud-environment Codex thread; Dibs can only wake local app threads."
 
+const missingAppThreadReason = "No local ChatGPT app thread is known for this agent."
+
+// Send and board views share the recovery advice for an unusable local app
+// binding. A separate working socket can still reach the session.
+func (e *Engine) unavailableAppBindingAdvice(l *core.Agent) string {
+	if l.Retired() || surfaceOf(l) != harnessenv.ChatGPTApp || invitedAgent(l) || !e.ownsHost(l) {
+		return ""
+	}
+	reason := missingAppThreadReason
+	if threadIDOf(l) != "" {
+		reason = e.bindingRecoveryReason(l)
+		if reason == "" {
+			return ""
+		}
+		reason = "The bound app thread is gone. " + reason
+	}
+	if socket, _ := e.sendNoteSocketRoute(l); socket {
+		return ""
+	}
+	return reason + " " + bindingRemedy
+}
+
+func (e *Engine) unavailableAppBindingSendNote(l *core.Agent) string {
+	if advice := e.unavailableAppBindingAdvice(l); advice != "" {
+		return "Stored in the mailbox for " + l.ID + ". " + advice
+	}
+	return ""
+}
+
 // On the writer: a cloud surface is explicit provenance; gone is the queue's
 // refusal for this exact local binding. Missing files alone establish neither.
 func (e *Engine) bindingNeedsRecovery(l *core.Agent) bool {

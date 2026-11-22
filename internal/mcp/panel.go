@@ -140,18 +140,7 @@ func trimBoard(b map[string]any) core.Result {
 	}
 	var agents []map[string]any
 	for _, raw := range asMaps(b["agents"]) {
-		l := pick(raw, agentFields)
-		if sessions := asMap(raw["sessions"]); sessions != nil {
-			l["sessions"] = pick(sessions, []string{"host_id", "primary", "aliases", "current", "guessed", "app_thread"})
-		}
-		var slots []map[string]any
-		for _, s := range asMaps(raw["slots"]) {
-			slots = append(slots, pick(s, slotFields))
-		}
-		if slots != nil {
-			l["slots"] = slots
-		}
-		agents = append(agents, l)
+		agents = append(agents, trimPanelAgent(raw))
 	}
 	out["agents"] = agents
 	// Contact alerts are daemon-authored metadata only. The panel needs them
@@ -182,6 +171,26 @@ func trimBoard(b map[string]any) core.Result {
 		out["spaces"] = chans
 	}
 	return out
+}
+
+func trimPanelAgent(raw map[string]any) map[string]any {
+	l := pick(raw, agentFields)
+	if raw["status"] == core.StatusUnreachable || raw["status"] == string(core.StatusUnreachable) {
+		if advice, ok := raw["wake"].(string); ok && advice != "" {
+			l["wake"] = advice
+		}
+	}
+	if sessions := asMap(raw["sessions"]); sessions != nil {
+		l["sessions"] = pick(sessions, []string{"host_id", "primary", "aliases", "current", "guessed", "app_thread"})
+	}
+	var slots []map[string]any
+	for _, s := range asMaps(raw["slots"]) {
+		slots = append(slots, pick(s, slotFields))
+	}
+	if slots != nil {
+		l["slots"] = slots
+	}
+	return l
 }
 
 func extractMessages(box any) []map[string]any {

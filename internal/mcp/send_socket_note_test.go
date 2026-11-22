@@ -245,6 +245,47 @@ func TestSendWithoutClaudeSocketReportsTheCurrentMailHook(t *testing.T) {
 	}
 }
 
+func TestArchivedClaudeRequiresRecoveryBeforeItsHookCanReadMail(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	t.Setenv("DIBS_DIR", t.TempDir())
+	limits := core.DefaultLimits()
+	limits.DormancyMax = 0
+	srv, eng, _ := aliasReplayServer(t, t.TempDir(), limits)
+	const session = "e2c03160-6000-4000-8000-000000000003"
+	worker := toolCallWithMeta(t, srv, "register", map[string]any{
+		"name": "worker", "session_id": session, "harness": "Claude Code", "kind": "persistent", "nonce": "archive-claude",
+	}, map[string]any{SurfaceMetaKey: harnessenv.ClaudeDesktop})
+	if worker["token"] == nil || worker["code"] != nil {
+		t.Fatalf("setup: Claude desktop registration: %v", worker)
+	}
+	actor := sendNoteCall(t, srv, "register", map[string]any{"name": "sender"})
+	sender := actor["token"]
+	if _, err := eng.GrantRole(t.Context(), actor["agent_id"].(string), "admin"); err != nil {
+		t.Fatal("setup: census access:", err)
+	}
+	sendNoteCall(t, srv, "check_in", map[string]any{"token": sender})
+	sendNoteCall(t, srv, "hook_poll", map[string]any{"session_id": session, "event": "Stop"})
+	aliasSweep(t, eng, "worker")
+	aliasSweep(t, eng, "")
+	census := sendNoteCall(t, srv, "all_mail", map[string]any{"token": sender, "census": true, "agent": "worker"})
+	if rows := asMaps(census["census"]); len(rows) != 1 || rows[0]["status"] != "archived" {
+		t.Fatalf("setup: expected a retained archived worker: %v", census)
+	}
+	const body = "archived Claude mail fixture"
+	sent := sendNoteCall(t, srv, "send", map[string]any{
+		"token": sender, "to": "worker", "type": "question", "body": body,
+	})
+	note, _ := sent["note"].(string)
+	if strings.Contains(note, "next Stop or SessionStart") || !strings.Contains(note, "same nonce") {
+		t.Errorf("archived actor's sender did not get the recovery remedy: %q", note)
+	}
+	hook := sendNoteCall(t, srv, "hook_poll", map[string]any{"session_id": session, "event": "Stop", "strict_output": true})
+	if mentions(hook, body) || hook["decision"] == "block" {
+		t.Fatalf("setup: an archived identity's hook actually delivered the mail: %v", hook)
+	}
+}
+
 func sendNoteFrameContent(t *testing.T, frame string) string {
 	t.Helper()
 	var out []string

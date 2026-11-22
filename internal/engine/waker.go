@@ -1516,6 +1516,9 @@ func (e *Engine) PullOnlyNote(l *core.Agent) string {
 	if note, remote := e.remotePullOnlyNote(l); remote {
 		return note
 	}
+	if note := e.unavailableAppBindingSendNote(l); note != "" {
+		return note
+	}
 	if note, handled := e.antigravityPullOnlyNote(l, harness); handled {
 		return note
 	}
@@ -1556,6 +1559,8 @@ func (e *Engine) configuredPullOnlyNote(l *core.Agent, harness string) string {
 	if note := e.closedHarnessNote(l, socket); note != "" {
 		return note
 	}
+	// Sleeping covers stale and dormant leases. Archiving also leaves retained
+	// mail to recover, and the agent needs to register again with its nonce.
 	sleeping := l.Sleeping() || l.Status == core.StatusArchived
 	if socket {
 		state := "active"
