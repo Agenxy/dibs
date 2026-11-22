@@ -130,7 +130,12 @@ func (e *Engine) announceHookSessionFrom(sessionID, cwd, event, host string) {
 	if sessionID == "" {
 		return
 	}
-	e.noteChild(Child{SessionID: sessionID, CWD: cwd, Host: host, State: StateForEvent(event)}, time.Now())
+	child := Child{SessionID: sessionID, CWD: cwd, Host: host, State: StateForEvent(event)}
+	switch event {
+	case "Stop", "SessionStart", "SessionEnd":
+		child.mailHook = event
+	}
+	e.noteChild(child, time.Now())
 }
 
 // hookWakeTerms decides whether there is anything worth a turn, and whether

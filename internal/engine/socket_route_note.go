@@ -4,6 +4,8 @@
 package engine
 
 import (
+	"time"
+
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/harnessenv"
 )
@@ -47,7 +49,7 @@ func (e *Engine) socketWakeNote(l *core.Agent, m *core.Message, self bool) strin
 			"for this message, so no additional socket frame was sent. This mail remains " +
 			"available at Stop or its next activation; the earlier write confirms no receiver acceptance."
 	}
-	return bestEffortSocketNote(l, wakeHarness(l), string(l.Status), why)
+	return e.bestEffortSocketNote(l, wakeHarness(l), string(l.Status), why)
 }
 
 func (e *Engine) sendWakeCauseNote(l *core.Agent, m *core.Message) string {
@@ -70,26 +72,55 @@ func (e *Engine) sendNoteSocketRoute(l *core.Agent) (socket, bridge bool) {
 	return bridge || e.mightReachOverSocket(l), bridge
 }
 
-func bestEffortSocketNote(l *core.Agent, named, state, why string) string {
+func (e *Engine) bestEffortSocketNote(l *core.Agent, named, state, why string) string {
 	lead := why + ", but a session socket for it is open, so a best-effort notice will be tried."
 	if harnessenv.NeedsNoWakeCommand(named) {
 		lead = why + ", and one is open for it, so a best-effort notice is being handed to it now."
 	}
+	destination := "delivered to " + l.ID + ", which is " + state + "."
+	if harnessenv.NeedsNoWakeCommand(named) || surfaceOf(l) == harnessenv.ClaudeDesktop {
+		destination = "delivered to " + l.ID + e.claudeBetweenTurns(l) + "."
+	}
 	// The receipt caveat stays, the explanation of WHY moved to dibs://skills:
 	// three sentences on every send were read once and skimmed for ever after
 	// (claude-k7-ui-dev and brooklyn-desk, fleet survey 2026-10-18).
-	return "delivered to " + l.ID + ", which is " + state + ". " + lead + " Nothing can confirm it arrived: " +
+	return destination + " " + lead + " Nothing can confirm it arrived: " +
 		"if its session holds peer messages, it arrives at that agent's next inbox or check_in."
 }
 
-func sleepingPullOnlyNote(l *core.Agent, named string, configured, socket bool) string {
+func (e *Engine) claudeBetweenTurns(l *core.Agent) string {
+	if e.socketLifecycle(l, time.Now()) == "idle" && e.currentClaudeMailHook(l) != "SessionEnd" {
+		return ", which is between turns"
+	}
+	return ""
+}
+
+func (e *Engine) currentClaudeMailHook(l *core.Agent) string {
+	session := l.CurrentSession
+	if session == "" {
+		session = l.SessionID
+	}
+	return e.children[e.childKey(e.HostID(), session)].mailHook
+}
+
+func (e *Engine) claudeHookSendNote(l *core.Agent) string {
+	if surfaceOf(l) != harnessenv.ClaudeDesktop || !e.ownsHost(l) {
+		return ""
+	}
+	switch e.currentClaudeMailHook(l) {
+	case "Stop", "SessionStart":
+		return "Stored in the mailbox for " + l.ID + e.claudeBetweenTurns(l) +
+			". Mail is available at its next Stop or SessionStart hook. A new turn is unconfirmed."
+	default:
+		return ""
+	}
+}
+
+func sleepingPullOnlyNote(l *core.Agent, named string, configured bool) string {
 	why := "nothing on this board can wake " + named
 	if configured {
 		why = named + " has a wake command, but " + l.ID + " has never supplied " +
 			"a harness thread id for it to resume"
-	}
-	if socket {
-		return bestEffortSocketNote(l, named, string(l.Status), commandSideReason(named, configured))
 	}
 	return "delivered to " + l.ID + ", which is " + string(l.Status) + ", and " +
 		why + ". Nothing will start it: this is NOT a message that will be seen " +

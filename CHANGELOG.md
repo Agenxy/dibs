@@ -22,6 +22,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   posting input or reading mail.
 
 ### Fixed
+- Sends to a reachable Claude session describe its socket or next mail hook,
+  including when the coordination lease has lapsed between turns.
 - Sends to a verified Antigravity conversation report the current wake attempt
   and its last observed app outcome when available.
 - When the Codex queue cannot be observed, only receipts younger than ten

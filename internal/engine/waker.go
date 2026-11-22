@@ -1556,23 +1556,19 @@ func (e *Engine) configuredPullOnlyNote(l *core.Agent, harness string) string {
 	if note := e.closedHarnessNote(l, socket); note != "" {
 		return note
 	}
-	// A SLEEPING AGENT NOTHING CAN REACH. Said plainly, because the alternative
-	// is the sender believing a wake is coming.
-	//
-	// The socket route is not a rescue here the way it can be for an active
-	// agent: it lives in the harness session, and this agent's session has
-	// ended. Configured-and-nameable is the whole of what is left.
-	//
-	// AND ARCHIVED COUNTS AS SLEEPING HERE. Sleeping() is stale-or-dormant, which
-	// is the fold's vocabulary and stays as it is; what this branch actually
-	// needs is "not running, and its harness session has ended", and an archived
-	// agent is the clearest instance of that. It is also the state whose sender
-	// most needs the warning, since recovering it costs a re-registration.
-	if l.Sleeping() || l.Status == core.StatusArchived {
-		return sleepingPullOnlyNote(l, named, configured, socket)
-	}
+	sleeping := l.Sleeping() || l.Status == core.StatusArchived
 	if socket {
-		return bestEffortSocketNote(l, named, "active", commandSideReason(named, configured))
+		state := "active"
+		if sleeping {
+			state = string(l.Status)
+		}
+		return e.bestEffortSocketNote(l, named, state, commandSideReason(named, configured))
+	}
+	if note := e.claudeHookSendNote(l); note != "" {
+		return note
+	}
+	if sleeping {
+		return sleepingPullOnlyNote(l, named, configured)
 	}
 	if configured {
 		return "delivered to " + l.ID + ", which is active, and " + named + " HAS a wake " +
