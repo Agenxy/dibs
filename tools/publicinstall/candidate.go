@@ -170,6 +170,7 @@ func candidateNames(version string) []string {
 	return []string{
 		"dibs.rb", "checksums.txt", "dibs_" + version + "_darwin_arm64.tar.gz",
 		"dibs_" + version + "_linux_amd64.tar.gz", "dibs_" + version + "_linux_arm64.tar.gz",
+		"dibs_" + version + "_linux_riscv64.tar.gz",
 	}
 }
 

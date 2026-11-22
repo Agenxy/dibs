@@ -70,17 +70,9 @@ jobs:
       # inside `task ci` now, which is what CONTRIBUTING.md always claimed, so
       # running them again would only double the slowest part of the job.
 
-  # THE OTHER TWO PLATFORMS, as far as GitHub's own runners take them.
-  #
-  # The gate above is macOS only, and for months the answer to "does this work
-  # on Linux" was "nobody has run it" (#4, #11, #63). GitHub hosts ubuntu and
-  # windows runners for nothing, so the portable half of the suite runs on
-  # both here: every package under -race on Linux, where `internal/liveness`
-  # probes real processes and `internal/notify` has a backend to exercise;
-  # build, vet and the pure packages on Windows, where the unix-tagged files
-  # are absent by construction. Neither is the gate: the required check stays
-  # `gate`, and these say what is true on a platform rather than block on it.
-  # A failure here is a finding to file, not a reason to make the job green.
+  # Require `linux` alongside `gate` in the main branch ruleset. Linux runs
+  # every package under -race and verifies kernel peer identity. The Windows
+  # and emulated RISC-V jobs provide additional platform evidence.
   linux:
     runs-on: ubuntu-latest
     steps:
@@ -104,6 +96,25 @@ jobs:
         run: mise exec -- sudo -n env "PATH=$PATH" GOPROXY=off DIBS_Q_CI=1 "DIBS_Q_CLI=$RUNNER_TEMP/dibs-local-uid-cli" "$RUNNER_TEMP/dibs-local-uid.test" -test.run '^TestLocalIPCKernelRejectsOtherUID$' -test.timeout 3m -test.v
       - name: every package, with the race detector
         run: mise exec -- go test -race -count=1 -timeout=15m ./...
+  linux-riscv64:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.11.10
+          experimental: true
+      - name: install user-mode emulation
+        run: sudo -n apt-get install --yes qemu-user
+      - name: build and run RISC-V tests under QEMU
+        env:
+          CGO_ENABLED: '0'
+          GOOS: linux
+          GOARCH: riscv64
+        run: >-
+          mise exec -- go test -exec qemu-riscv64 -count=1 -timeout=5m
+          ./internal/core ./internal/ledger ./internal/boardconfig
   windows:
     runs-on: windows-latest
     steps:

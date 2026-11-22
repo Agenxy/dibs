@@ -20,7 +20,7 @@ import (
 
 // checkMembers enters after the real release tool, not at a hand-built digest.
 // It checks the exact checksums.txt that the signing step receives against the
-// final executable bytes inside EVERY published guest archive, after codesign.
+// final executable bytes inside every published archive, after codesign.
 func checkMembers(root string) error {
 	// #nosec G304 -- root is repoRoot(), and both trailing path components are fixed.
 	b, err := os.ReadFile(filepath.Join(root, "dist", selfupdate.ChecksumsName))
@@ -57,20 +57,23 @@ func checkMembers(root string) error {
 			return fmt.Errorf("%s: %s digest does not match the packaged executable", archive, key)
 		}
 	}
-	if len(seen) != 3 {
-		return fmt.Errorf("checked %d guest archives, expected all 3 published targets", len(seen))
+	if len(seen) != 4 {
+		return fmt.Errorf("checked %d archives, expected all 4 published targets", len(seen))
 	}
-	fmt.Println("archivecheck: all 3 packaged guest CLI digests match the signing input")
+	fmt.Println("archivecheck: all 4 packaged CLI digests match the signing input")
 	return nil
 }
 
 func memberKeyForArchive(name string) (string, error) {
+	if strings.HasSuffix(name, "_linux_riscv64.tar.gz") {
+		return "members/linux_riscv64/dibs", nil
+	}
 	for _, target := range [][2]string{{"darwin", "arm64"}, {"linux", "amd64"}, {"linux", "arm64"}} {
 		if strings.HasSuffix(name, "_"+target[0]+"_"+target[1]+".tar.gz") {
 			return selfupdate.GuestMemberName(target[0], target[1])
 		}
 	}
-	return "", fmt.Errorf("%s is not a published guest target", name)
+	return "", fmt.Errorf("%s is not a published release target", name)
 }
 
 func packagedMemberDigest(archive string) (string, error) {

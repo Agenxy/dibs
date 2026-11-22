@@ -19,9 +19,12 @@ func generatedCaskFixture(t *testing.T, c config, repo, tag string) string {
 	t.Helper()
 	var body strings.Builder
 	fmt.Fprintf(&body, "cask \"dibs\" do\n version \"%s\"\n", c.version)
-	for _, name := range assets(c.version) {
-		if !strings.HasSuffix(name, ".tar.gz") {
-			continue
+	// GoReleaser emits cask entries for these platform archives. The Linux
+	// RISC-V release archive is published independently of the cask.
+	for _, target := range [][2]string{{"darwin", "arm64"}, {"linux", "amd64"}, {"linux", "arm64"}} {
+		name, err := selfupdate.ArchiveName(c.version, target[0], target[1])
+		if err != nil {
+			t.Fatal(err)
 		}
 		sum, err := digest(filepath.Join("dist", name))
 		if err != nil {
