@@ -130,11 +130,14 @@ func TestADaemonDoesNotChangeItsIdentityWhileServing(t *testing.T) {
 
 	eng := engineNamed(t)
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	oldRetry := identifyRetry
 	identifyRetry = 10 * time.Millisecond
 	t.Cleanup(func() { identifyRetry = oldRetry })
-	keepAskingSupgang(ctx, eng, false)
+	done := keepAskingSupgang(ctx, eng, false)
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
 
 	// The running daemon keeps the identity it has been serving under, and
 	// nothing else on this machine is told otherwise: remembering the new
@@ -142,7 +145,11 @@ func TestADaemonDoesNotChangeItsIdentityWhileServing(t *testing.T) {
 	// split from the other side. The daemon that ADOPTS the identity is the
 	// one that remembers it, at startup. Round thirty-four of the
 	// pre-release review.
-	time.Sleep(200 * time.Millisecond) // several ticks of the shortened retry
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Supgang identity retry did not finish")
+	}
 	if got := eng.HostID(); got != boardNode {
 		t.Fatalf("the daemon changed its identity to %q while serving: agents registered before and "+
 			"after read as two computers, and both can take one path exclusively", got)
@@ -193,8 +200,11 @@ func TestAFallbackIdentityStillRecognisesThisComputersOldIds(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	go eng.Run(ctx)
+	t.Cleanup(func() {
+		cancel()
+		<-eng.Done()
+	})
 
 	// Two agents here: one from a bridge started since the restart, one
 	// from a bridge that predates it and still asserts the ledger id.

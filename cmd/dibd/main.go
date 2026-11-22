@@ -1415,12 +1415,16 @@ func renameHost(ctx context.Context, eng *engine.Engine, adopted hostAdoption) {
 // is a plain field the request path reads, so writing it after the engine
 // started is a data race. An identity is settled before serving or not at
 // all. Round thirty of the pre-release review.
-func keepAskingSupgang(ctx context.Context, eng *engine.Engine, settled bool) {
+// The returned channel closes when the retry worker exits.
+func keepAskingSupgang(ctx context.Context, eng *engine.Engine, settled bool) <-chan struct{} {
+	done := make(chan struct{})
 	if settled {
-		return
+		close(done)
+		return done
 	}
 	serving := eng.HostID()
 	go func() {
+		defer close(done)
 		t := time.NewTicker(identifyRetry)
 		defer t.Stop()
 		for {
@@ -1452,6 +1456,7 @@ func keepAskingSupgang(ctx context.Context, eng *engine.Engine, settled bool) {
 			return
 		}
 	}()
+	return done
 }
 
 // identifyRetry is how often a daemon that could not reach Supgang asks
