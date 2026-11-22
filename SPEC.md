@@ -1613,11 +1613,14 @@ CLI run and sets `thread_state` to `gone` before queue admission. A queue
 command reporting `no rollout found for thread id` for its exact target also
 sets it to `gone`. Both observations stop automatic retry and later-message
 queue attempts for that agent/thread binding. For a one-shot CLI binding,
-Dibs sends one ordinary daemon-authored notice per unread message to its
-sender and leaves the message in the original mailbox. The ledger records the
-notice and its source together in a `finished_wake_notified` record, so restart
-does not send it again. Snapshots retaining the marker require
-`finished-wake-notice/v1`. This case
+Dibs groups still-unreported unread mail by sender for that recipient. Each
+ordinary daemon-authored notice lists its source serials in order and leaves
+the original mail in place. A mailbox enlarged beyond the notice body limit
+uses as many notices as needed to list every serial. A
+`finished_wake_batch_notified` record commits one notice and all its source
+markers together, so restart does not send them again. Historical
+`finished_wake_notified` records retain their single source. Snapshots
+retaining the marker require `finished-wake-notice/v1`. This case
 raises no person contact alert or separate coordinator notification.
 For a missing rollout, eligible unread mail follows the contact-alert path.
 The recipient and pending senders receive ordinary daemon-authored notify

@@ -5,7 +5,9 @@ package engine
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,8 +25,9 @@ import (
 
 func TestGoneQueueThreadStopsRetryAndEscalatesThroughSend(t *testing.T) {
 	for _, prior := range []int{0, spawnFailureCap - 1} {
-		t.Run(fmt.Sprintf("prior-failures-%d", prior), func(t *testing.T) { goneQueueThreadScenario(t, prior) })
+		t.Run(fmt.Sprintf("prior-failures-%d", prior), func(t *testing.T) { goneQueueThreadScenario(t, prior, false) })
 	}
+	t.Run("historical-warning", func(t *testing.T) { goneQueueThreadScenario(t, 0, true) })
 }
 
 func TestFinishedExecWakeOnDaemonRestartNotifiesOnlySenders(t *testing.T) {
@@ -52,6 +55,7 @@ func TestFinishedExecWakeOnDaemonRestartNotifiesOnlySenders(t *testing.T) {
 		return res
 	}
 	add(&core.Op{Kind: core.OpRegister, Name: "sender", NewToken: "token-sender", Nonce: "nonce-sender"})
+	add(&core.Op{Kind: core.OpRegister, Name: "other-sender", NewToken: "token-other", Nonce: "nonce-other"})
 	add(&core.Op{Kind: core.OpRegister, Name: "coordinator", NewToken: "token-lead", Nonce: "nonce-lead"})
 	add(&core.Op{Kind: core.OpGrantRole, To: "coordinator", Mode: core.RoleCoordinator})
 	var requests, handoffs []uint64
@@ -73,6 +77,10 @@ func TestFinishedExecWakeOnDaemonRestartNotifiesOnlySenders(t *testing.T) {
 		})["msg_serial"].(uint64)
 		handoffs = append(handoffs, handoff)
 	}
+	other := add(&core.Op{
+		Kind: core.OpSendMessage, Token: "token-other", To: workers[0], MsgType: core.MsgRequest,
+		Body: "private source body", DeliveryStart: true,
+	})["msg_serial"].(uint64)
 	add(&core.Op{Kind: core.OpMarkDelivered, MsgSerials: handoffs})
 	start := func(st *core.State) (*Engine, *memLedger, context.Context, func()) {
 		led := &memLedger{}
@@ -108,8 +116,39 @@ func TestFinishedExecWakeOnDaemonRestartNotifiesOnlySenders(t *testing.T) {
 			if n := len(e.state.Inbox("coordinator")) + len(e.notices["coordinator"]); n > 1 {
 				t.Errorf("finished exec runs produced %d coordinator alerts", n)
 			}
-			senderMail := e.state.Inbox("sender")
-			for _, serial := range append(slices.Clone(requests), handoffs...) {
+			checkNotice := func(sender, worker string, serials []uint64) {
+				var notices []*core.Message
+				for _, notice := range e.state.Inbox(sender) {
+					if notice.Type == core.MsgNotify && notice.From == e.dibsRowLocked() &&
+						strings.Contains(notice.Body, fmt.Sprintf("to %q", worker)) {
+						notices = append(notices, notice)
+					}
+				}
+				if len(notices) != 1 {
+					t.Errorf("%s has %d notices for %s, want one", sender, len(notices), worker)
+					return
+				}
+				notice := notices[0]
+				if !strings.Contains(notice.Body, "finished one-shot Codex run") ||
+					strings.Contains(notice.Body, "private source body") {
+					t.Errorf("inaccurate or private notice: %q", notice.Body)
+				}
+				var want []string
+				for _, serial := range serials {
+					want = append(want, fmt.Sprintf("#%d", serial))
+					if m := e.state.Messages[serial]; m == nil || m.FinishedWakeNotice != notice.Serial {
+						t.Errorf("source %d does not point to shared notice %d", serial, notice.Serial)
+					}
+				}
+				if !strings.Contains(notice.Body, strings.Join(want, ", ")) || strings.Count(notice.Body, "#") != len(want) {
+					t.Errorf("notice %q does not list exactly %v", notice.Body, want)
+				}
+			}
+			for i, worker := range workers {
+				checkNotice("sender", worker, []uint64{requests[i], handoffs[i]})
+			}
+			checkNotice("other-sender", workers[0], []uint64{other})
+			for _, serial := range append(append(slices.Clone(requests), handoffs...), other) {
 				m := e.state.Messages[serial]
 				kind, state := core.MsgRequest, core.MsgStatePending
 				if slices.Contains(handoffs, serial) {
@@ -117,19 +156,6 @@ func TestFinishedExecWakeOnDaemonRestartNotifiesOnlySenders(t *testing.T) {
 				}
 				if m == nil || m.Consumed || m.State != state {
 					t.Errorf("source %s %d did not retain its original state", kind, serial)
-				}
-				var matches int
-				marker := fmt.Sprintf("%s #%d ", kind, serial)
-				for _, n := range senderMail {
-					if n.Type == core.MsgNotify && n.From == e.dibsRowLocked() && strings.Contains(n.Body, marker) {
-						matches++
-						if !strings.Contains(n.Body, "finished one-shot Codex run") || strings.Contains(n.Body, "private source body") {
-							t.Errorf("inaccurate or private sender notice: %q", n.Body)
-						}
-					}
-				}
-				if matches != 1 {
-					t.Errorf("%s %d has %d sender notices, want one", kind, serial, matches)
 				}
 			}
 			return nil
@@ -151,8 +177,12 @@ func TestFinishedExecWakeOnDaemonRestartNotifiesOnlySenders(t *testing.T) {
 	check(second, secondCtx)
 }
 
-func goneQueueThreadScenario(t *testing.T, priorFailures int) {
+func goneQueueThreadScenario(t *testing.T, priorFailures int, historicalWarning bool) {
 	t.Helper()
+	var logs economyLog
+	previousLog := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previousLog) })
 	testcodexipc.Start(t, "no-owner", nil)
 	binary := filepath.Join(t.TempDir(), "codex")
 	if b, err := exec.Command("go", "build", "-o", binary, "../wakeexec/testdata/codexqueue").CombinedOutput(); err != nil {
@@ -179,6 +209,9 @@ func goneQueueThreadScenario(t *testing.T, priorFailures int) {
 		return nil
 	}); err != nil {
 		t.Fatal("setup:", err)
+	}
+	if historicalWarning {
+		seedHistoricalMissingThreadWarning(t, e, ctx)
 	}
 	send := func() {
 		t.Helper()
@@ -262,6 +295,34 @@ func goneQueueThreadScenario(t *testing.T, priorFailures int) {
 		t.Fatalf("setup: same dead binding was not attempted again: %q %v", attempts, err)
 	}
 	assertGoneBindingMail(t, e, ctx)
+	for line := range strings.SplitSeq(logs.String(), "\n") {
+		if strings.Contains(line, "could not record missing-thread mailbox warning") {
+			t.Errorf("missing-thread retry reported a send failure: %s", line)
+		}
+	}
+}
+
+// Seed the #607 warning wording and identifier through ordinary send. #632
+// changed the body while retaining the identifier for the same binding.
+func seedHistoricalMissingThreadWarning(t *testing.T, e *Engine, ctx context.Context) {
+	t.Helper()
+	_, token, err := e.dibsAgent(ctx)
+	if err != nil {
+		t.Fatal("setup: daemon reporter:", err)
+	}
+	got, err := e.query(ctx, func() core.Result { return core.Result{"created": e.state.Agents["worker"].CreatedSerial} })
+	if err != nil {
+		t.Fatal("setup: worker incarnation:", err)
+	}
+	key := sha256.Sum256(fmt.Appendf(nil, "worker\x00%d\x00%s\x00sender", got["created"], testcodexipc.Thread))
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpSendMessage, Token: token, To: "sender", MsgType: core.MsgNotify,
+		OpID: fmt.Sprintf("wake-thread-gone:%x", key),
+		Body: "The board cannot wake \"worker\": the app queue reported no rollout found for its bound thread. " +
+			"No automatic retry will run for this binding. Unread mail remains in its mailbox. " + bindingRemedy,
+	}); err != nil {
+		t.Fatal("setup: historical warning:", err)
+	}
 }
 
 // Enter through real send -> native no-owner -> queue's explicit no-rollout

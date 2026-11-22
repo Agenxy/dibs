@@ -7,7 +7,9 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"log/slog"
+	"maps"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -94,37 +96,78 @@ func (e *Engine) reportGoneQueueThread(plan wakePlan) {
 }
 
 // A one-shot Codex run has no app session for the person to open. Its
-// unread mail stays put, and its senders get an ordinary durable notice.
+// unread mail stays put, and each sender gets a durable notice for the batch.
 func (e *Engine) mailFinishedExecBinding(l *core.Agent, now time.Time) {
 	reporter := e.state.Agents[e.dibsRowLocked()]
 	if reporter == nil || reporter.Token == "" {
 		return
 	}
 	finished := !e.recentlyInTouch(l) && !e.contactLooksLive(l)
+	bySender := make(map[string][]uint64)
 	for _, m := range e.state.Inbox(l.ID) {
 		if !m.UnconsumedEnvelope() || m.FinishedWakeNotice != 0 ||
 			m.From == "" || m.From == l.ID || m.From == reporter.ID || !e.state.Answerable(m.From) {
 			continue
 		}
-		body := fmt.Sprintf("Your %s #%d to %q remains unread. This one-shot Codex binding has no app wake route. "+
-			"The mail stays in its mailbox.", m.Type, m.Serial, l.ID)
-		if finished {
-			body = fmt.Sprintf("Your %s #%d to %q remains unread. The binding was a finished one-shot Codex run "+
-				"and will not read it. The mail stays in its mailbox.", m.Type, m.Serial, l.ID)
+		bySender[m.From] = append(bySender[m.From], m.Serial)
+	}
+	for _, sender := range slices.Sorted(maps.Keys(bySender)) {
+		e.sendFinishedExecNotices(reporter, l.ID, sender, bySender[sender], finished, now)
+	}
+}
+
+func (e *Engine) sendFinishedExecNotices(
+	reporter *core.Agent, recipient, sender string, serials []uint64, finished bool, now time.Time,
+) {
+	for len(serials) > 0 {
+		body, count := finishedExecNoticeBody(recipient, serials, finished, e.state.Limits.MaxBodyBytes)
+		if count == 0 {
+			slog.Warn("one-shot Codex notice exceeds the body limit", "agent", recipient, "to", sender,
+				"hint", "inspect the original mailbox; the source mail is retained")
+			return
 		}
 		op := &core.Op{
-			Kind: core.OpFinishedWakeNotified, AgentID: reporter.ID, Token: reporter.Token,
-			To: m.From, MsgType: core.MsgNotify, Body: body, MsgSerial: m.Serial, MailboxCapacity: true,
+			Kind: core.OpFinishedWakeBatchNotified, AgentID: reporter.ID, Token: reporter.Token,
+			To: sender, MsgType: core.MsgNotify, Body: body, MsgSerials: serials[:count], MailboxCapacity: true,
 		}
 		err := e.state.Admit(op)
 		if err == nil {
 			_, err = e.applyAndLedger(op, now)
 		}
 		if err != nil {
-			slog.Warn("could not notify sender about a one-shot Codex binding", "agent", l.ID, "msg", m.Serial,
+			slog.Warn("could not notify sender about a one-shot Codex binding", "agent", recipient, "to", sender,
+				"first_msg", serials[0], "count", count,
 				"err", err, "hint", "check the sender's mailbox capacity; source mail is retained")
+			return
 		}
+		serials = serials[count:]
 	}
+}
+
+// A normal mailbox fits in one notice. A mailbox enlarged by an adoption or
+// merge can need more than the body limit allows, so list a complete prefix.
+func finishedExecNoticeBody(recipient string, serials []uint64, finished bool, limit int) (string, int) {
+	var body strings.Builder
+	fmt.Fprintf(&body, "Your mail to %q (", recipient)
+	tail := ") remains unread. This one-shot Codex binding has no app wake route. The mail stays in its mailbox."
+	if finished {
+		tail = ") remains unread. The binding was a finished one-shot Codex run and will not read it. " +
+			"The mail stays in its mailbox."
+	}
+	count := 0
+	for _, serial := range serials {
+		entry := fmt.Sprintf("#%d", serial)
+		if count > 0 {
+			entry = ", " + entry
+		}
+		if body.Len()+len(entry)+len(tail) > limit {
+			break
+		}
+		body.WriteString(entry)
+		count++
+	}
+	body.WriteString(tail)
+	return body.String(), count
 }
 
 // Ordinary daemon-authored mail reaches both parties through the same durable
@@ -132,9 +175,10 @@ func (e *Engine) mailFinishedExecBinding(l *core.Agent, now time.Time) {
 // filtered from inline outcomes; that cannot be the only failure report.
 // The writer rechecks the attempted binding before sending any warnings.
 func (e *Engine) mailGoneBinding(l *core.Agent, reporter string, plan wakePlan, now time.Time) {
+	reporterID := e.dibsRowLocked()
 	parties := map[string]bool{l.ID: true}
 	for _, m := range e.state.Inbox(l.ID) {
-		if m.State == core.MsgStatePending && !m.Consumed && m.From != "" && m.From != e.dibsRowLocked() {
+		if m.State == core.MsgStatePending && !m.Consumed && m.From != "" && m.From != reporterID {
 			parties[m.From] = true
 		}
 	}
@@ -145,6 +189,13 @@ func (e *Engine) mailGoneBinding(l *core.Agent, reporter string, plan wakePlan, 
 	slices.Sort(ids)
 	reason := wakeexec.QueueUnavailableReason(plan.queueOutcome.ThreadSource)
 	for _, id := range ids {
+		// The binding and party identify the warning within ordinary send
+		// retention. A previous version may have used different wording.
+		key := sha256.Sum256(fmt.Appendf(nil, "%s\x00%d\x00%s\x00%s", l.ID, l.CreatedSerial, plan.thread, id))
+		opID := fmt.Sprintf("wake-thread-gone:%x", key)
+		if e.state.HasIdentifiedSend(reporterID, opID) {
+			continue
+		}
 		body := fmt.Sprintf("The board cannot wake %q. %s "+
 			"No automatic retry will run for this binding. Unread mail remains in its mailbox. %s", l.ID, reason, bindingRemedy)
 		if id == l.ID {
@@ -155,12 +206,9 @@ func (e *Engine) mailGoneBinding(l *core.Agent, reporter string, plan wakePlan, 
 		if surfaceOf(l) == harnessenv.ChatGPTCloudExec {
 			body += " " + cloudBindingReason
 		}
-		// Effectively-once within ordinary mail dedup (default 24h/256 ids).
-		// Row incarnation and target prevent a rebind inheriting an old warning.
-		key := sha256.Sum256(fmt.Appendf(nil, "%s\x00%d\x00%s\x00%s", l.ID, l.CreatedSerial, plan.thread, id))
 		if _, err := e.exec(&core.Op{
 			Kind: core.OpSendMessage, Token: reporter, To: id, MsgType: core.MsgNotify,
-			Body: body, OpID: fmt.Sprintf("wake-thread-gone:%x", key),
+			Body: body, OpID: opID,
 		}, now); err != nil {
 			slog.Warn("could not record missing-thread mailbox warning", "agent", l.ID, "to", id,
 				"err", err, "hint", "inspect the binding and mailbox capacity; pending mail is retained")

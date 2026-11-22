@@ -4,6 +4,7 @@
 package core
 
 import (
+	"errors"
 	"testing"
 	"time"
 )
@@ -91,6 +92,62 @@ func TestFinishedWakeNoticeCommitsOnlyWithDaemonSend(t *testing.T) {
 	receipt := mustApply(t, s, op, t0)["msg_serial"].(uint64)
 	if receipt != before+1 || source.FinishedWakeNotice != receipt || source.State != MsgStatePending {
 		t.Fatalf("notice and source marker were not committed together: %+v", source)
+	}
+	mustApply(t, s, op, t0)
+	if s.Serial != receipt {
+		t.Fatal("retry created a second notice")
+	}
+}
+
+func TestFinishedWakeBatchNoticeCommitsAllSources(t *testing.T) {
+	s := NewState("finished-wake-batch", DefaultLimits())
+	for _, name := range []string{"sender", "worker", "other", "reporter"} {
+		ackReg(t, s, name, name, t0)
+	}
+	s.AgentByToken("reporter").Nonce = DibsNonce
+	send := func(to, kind string) uint64 {
+		t.Helper()
+		return mustApply(t, s, &Op{Kind: OpSendMessage, Token: "sender", To: to, MsgType: kind, Body: "work"}, t0)["msg_serial"].(uint64)
+	}
+	request, handoff, other := send("worker", MsgRequest), send("worker", MsgHandoff), send("other", MsgRequest)
+	mustApply(t, s, &Op{Kind: OpMarkDelivered, MsgSerials: []uint64{handoff}}, t0)
+	op := &Op{
+		Kind: OpFinishedWakeBatchNotified, Token: "reporter", To: "sender", MsgType: MsgNotify,
+		Body: "finished wake", MsgSerials: []uint64{request, handoff}, MailboxCapacity: true,
+	}
+	for _, mutate := range []func(*Op){
+		func(o *Op) { o.Token = "worker" },
+		func(o *Op) { o.To = "other" },
+		func(o *Op) { o.MsgSerials = nil },
+		func(o *Op) { o.MsgSerials = []uint64{request, other} },
+		func(o *Op) { o.MsgSerials = []uint64{request, request} },
+		func(o *Op) { o.MsgSerials = []uint64{handoff, request} },
+	} {
+		bad := *op
+		mutate(&bad)
+		if err := s.Admit(&bad); err == nil {
+			t.Errorf("invalid batch admitted: %+v", bad)
+		}
+	}
+	s.Limits.MaxMailboxDepth = 1
+	mustApply(t, s, &Op{Kind: OpSendMessage, Token: "worker", To: "sender", MsgType: MsgQuestion, Body: "capacity"}, t0)
+	before := s.Serial
+	if err := s.Admit(op); !errors.Is(err, ErrMailboxFull) || s.Serial != before ||
+		s.Messages[request].FinishedWakeNotice != 0 || s.Messages[handoff].FinishedWakeNotice != 0 {
+		t.Fatalf("full mailbox recorded an already-told fact: %v", err)
+	}
+	s.Limits.MaxMailboxDepth = 2
+	if err := s.Admit(op); err != nil {
+		t.Fatal(err)
+	}
+	receipt := mustApply(t, s, op, t0)["msg_serial"].(uint64)
+	if receipt != before+1 || s.Messages[request].FinishedWakeNotice != receipt ||
+		s.Messages[handoff].FinishedWakeNotice != receipt || s.Messages[other].FinishedWakeNotice != 0 {
+		t.Fatal("the notice did not commit exactly the two source markers at one serial")
+	}
+	if s.Messages[request].State != MsgStatePending || s.Messages[handoff].State != MsgStateDelivered ||
+		s.Messages[request].Consumed || s.Messages[handoff].Consumed {
+		t.Fatal("the notice changed the original mail's state")
 	}
 	mustApply(t, s, op, t0)
 	if s.Serial != receipt {

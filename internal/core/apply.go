@@ -319,7 +319,7 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		res, evs, err = s.applySend(l, op, now)
 	case OpStallNotified:
 		res, evs, err = s.applyStallNotified(l, op, now)
-	case OpFinishedWakeNotified:
+	case OpFinishedWakeNotified, OpFinishedWakeBatchNotified:
 		res, evs, err = s.applyFinishedWakeNotified(l, op, now)
 	case OpRespond:
 		res, evs, err = s.applyRespond(l, op, now)

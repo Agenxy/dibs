@@ -654,6 +654,7 @@ func TestOpKindStringsAreFrozen(t *testing.T) {
 		"OpContactResolved":           {core.OpContactResolved, "contact_resolved"},
 		"OpStallNotified":             {core.OpStallNotified, "stall_notified"},
 		"OpFinishedWakeNotified":      {core.OpFinishedWakeNotified, "finished_wake_notified"},
+		"OpFinishedWakeBatchNotified": {core.OpFinishedWakeBatchNotified, "finished_wake_batch_notified"},
 		"OpAckBoard":                  {core.OpAckBoard, "check_in"},
 		"OpUpdate":                    {core.OpUpdate, "update"},
 		"OpSignOff":                   {core.OpSignOff, "sign_off"},
