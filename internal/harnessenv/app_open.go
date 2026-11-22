@@ -126,6 +126,11 @@ func (s Shower) showChatGPT(_ []string, thread string) (bool, error) {
 
 func (s Shower) prepareChatGPTOpen(path, thread string, memo appOpenMemo) (appOpenMemo, bool, error) {
 	state := s.ownership(thread)
+	// An ownership probe can finish after the wake worker's shutdown grace.
+	// Recheck eligibility before even a loaded-thread memo write.
+	if !s.allowsOpen(thread) {
+		return memo, false, nil
+	}
 	if state.Loaded {
 		memo.Stale, memo.Loaded = false, true
 		if state.Epoch != "" {
@@ -133,7 +138,7 @@ func (s Shower) prepareChatGPTOpen(path, thread string, memo appOpenMemo) (appOp
 		}
 		return memo, false, saveAppOpen(path, memo)
 	}
-	if memo.Stale || !s.allowsOpen(thread) || memo.suppresses(state, time.Now().UTC()) {
+	if memo.Stale || memo.suppresses(state, time.Now().UTC()) {
 		return memo, false, nil
 	}
 	if state.Epoch != "" {

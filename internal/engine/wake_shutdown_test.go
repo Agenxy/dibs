@@ -52,7 +52,8 @@ func TestShutdownAbandonsUnresponsiveAppCallback(t *testing.T) {
 
 func testShutdownJoinsWakeInsideAppCallback(t *testing.T, mode string) {
 	t.Helper()
-	t.Setenv("DIBS_DIR", t.TempDir())
+	dir := t.TempDir()
+	t.Setenv("DIBS_DIR", dir)
 	testcodexipc.Start(t, "no-owner", nil)
 	if mode == "retry" {
 		t.Setenv("DIBS_TEST_QUEUE_FAIL_ONCE", filepath.Join(t.TempDir(), "failed-first"))
@@ -62,12 +63,11 @@ func testShutdownJoinsWakeInsideAppCallback(t *testing.T, mode string) {
 		t.Fatalf("setup queue fixture: %v %s", err, out)
 	}
 	testexec.PrepareExecutable(t, exec.Command(binary, "--version"))
-	entered, release, returned := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	entered, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
 	defer once.Do(func() { close(release) })
 	previous := shower
 	shower = &harnessenv.Shower{Holds: func(string) bool {
-		defer close(returned)
 		close(entered)
 		<-release
 		return true
@@ -97,8 +97,21 @@ func testShutdownJoinsWakeInsideAppCallback(t *testing.T, mode string) {
 		if _, err := e.Do(lateCtx, &core.Op{Kind: core.OpAckBoard, Token: sender}); err == nil {
 			t.Error("stopped writer admitted a late operation after abandoning the worker")
 		}
+		e.wakeWorkers.mu.Lock()
+		workersDone := e.wakeWorkers.done
+		e.wakeWorkers.mu.Unlock()
 		once.Do(func() { close(release) })
-		<-returned // release the deliberately stuck fixture before restoring it
+		select {
+		case <-workersDone:
+		case <-time.After(3 * time.Second):
+			t.Fatal("released delivery worker did not exit")
+		}
+		// Returning from the probe alone does not join the worker. Check its
+		// effects after it exits, with the fixture directory still alive.
+		memos, err := filepath.Glob(filepath.Join(dir, "app-opens", "*.json"))
+		if err != nil || len(memos) != 0 {
+			t.Fatalf("delivery worker saved an app-open memo after shutdown: %v, %v", memos, err)
+		}
 		return
 	}
 	select {
