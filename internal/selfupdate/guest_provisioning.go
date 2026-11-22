@@ -72,10 +72,14 @@ func renderGuestProvisioning(m GuestReleaseMetadata) (GuestProvisioning, error) 
 	if err != nil {
 		return GuestProvisioning{}, err
 	}
+	platforms := "darwin/arm64, linux/amd64 and linux/arm64"
+	if len(m.Assets) == len(guestReleaseTargets) {
+		platforms = "darwin/arm64, linux/amd64, linux/arm64 and linux/riscv64"
+	}
 	p := GuestProvisioning{Status: "INCOMPLETE", Rules: []string{
 		"These are discrete steps, not a script. Stop on every nonzero exit, missing/mismatched checksum " +
 			"or unavailable primitive; never continue to extraction or use after a failed check.",
-		"Choose exactly your OS/architecture. Only darwin/arm64, linux/amd64 and linux/arm64 are published; " +
+		"Choose exactly your OS/architecture. Only " + platforms + " are published; " +
 			"Windows and macOS Intel are unsupported. Do not run an image for another target.",
 		"Replace placeholders with clean absolute guest-owned paths, without quotes or newlines. " +
 			"<absolute-version-parent> is an existing private (0700), non-symlink, user-writable directory " +
@@ -98,12 +102,16 @@ func renderGuestProvisioning(m GuestReleaseMetadata) (GuestProvisioning, error) 
 	}}
 	// Fixed target ordering makes projection stable even when received metadata
 	// lists assets in another order. Every value was validated before rendering.
-	for _, target := range [][2]string{{"darwin", "arm64"}, {"linux", "amd64"}, {"linux", "arm64"}} {
+	for _, target := range guestReleaseTargets {
 		var a GuestAsset
 		for _, asset := range m.Assets {
 			if asset.OS == target[0] && asset.Arch == target[1] {
 				a = asset
+				break
 			}
+		}
+		if a.OS == "" {
+			continue
 		}
 		archive, _ := ArchiveName(rel.Version, a.OS, a.Arch)
 		member, _ := GuestMemberName(a.OS, a.Arch)

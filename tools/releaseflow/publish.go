@@ -99,7 +99,7 @@ func listReleasePage(ctx context.Context, c config, page int, run runner) ([]rel
 
 func assets(version string) []string {
 	names := []string{selfupdate.ChecksumsName, selfupdate.BundleName, "dibs.mcpb", "dibs.mcpb.sha256", "dibs.rb"}
-	for _, target := range [][2]string{{"darwin", "arm64"}, {"linux", "amd64"}, {"linux", "arm64"}} {
+	for _, target := range [][2]string{{"darwin", "arm64"}, {"linux", "amd64"}, {"linux", "arm64"}, {"linux", "riscv64"}} {
 		name, _ := selfupdate.ArchiveName(version, target[0], target[1])
 		names = append(names, name, name+".sbom.json")
 	}

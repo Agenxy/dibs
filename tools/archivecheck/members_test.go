@@ -19,7 +19,7 @@ func TestPackagedMembersMatchTheChecksumSigningInput(t *testing.T) {
 		t.Fatal(err)
 	}
 	var sums strings.Builder
-	for _, target := range []string{"darwin_arm64", "linux_amd64", "linux_arm64"} {
+	for _, target := range []string{"darwin_arm64", "linux_amd64", "linux_arm64", "linux_riscv64"} {
 		body := []byte("final packaged bytes including the signature: " + target)
 		archive := filepath.Join(dist, "dibs_0.0.0-SNAPSHOT_"+target+".tar.gz")
 		writeArchive(t, archive, map[string]file{"dibs": {body, 0o755}})
@@ -50,7 +50,7 @@ func TestPackagedMembersMatchTheChecksumSigningInput(t *testing.T) {
 		})
 	}
 	write(sums.String())
-	archive := filepath.Join(dist, "dibs_0.0.0-SNAPSHOT_linux_arm64.tar.gz")
+	archive := filepath.Join(dist, "dibs_0.0.0-SNAPSHOT_linux_riscv64.tar.gz")
 	writeArchive(t, archive, map[string]file{"dibs": {[]byte("changed after checksum calculation"), 0o755}})
 	if err := checkMembers(root); err == nil {
 		t.Fatal("changed packaged executable admitted")

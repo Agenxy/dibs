@@ -6,6 +6,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Release archives include static Linux riscv64 binaries. CI cross-builds
+  that target and runs the state machine, ledger, and board configuration tests
+  under QEMU.
 - `check_in(board_view:"coordination")` shows work and claims in a board
   projection capped at 24 KiB.
 - `dibs mcp-config` names the Antigravity desktop settings file for its

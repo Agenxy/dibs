@@ -68,7 +68,7 @@ builds:
     flags: [-trimpath]
     ldflags: ["-s -w -X github.com/agenxy/dibs/internal/build.Version={{.Version}}"]
     goos: [darwin, linux]
-    goarch: [amd64, arm64]
+    goarch: [amd64, arm64, riscv64]
     # NO MAC INTEL BUILD. Apple is ending Intel support, and carrying the target
     # means a second Swift slice for the presence helper, a second one for the
     # notifier, lipo for both, and an archive nobody will install: cost paid
@@ -78,7 +78,7 @@ builds:
     # Removing the target rather than shipping universal binaries is the whole
     # point: a fat binary still has to be built, joined and checked on both
     # sides, and the checking is where the last two defects were.
-    ignore: [{goos: darwin, goarch: amd64}]
+    ignore: [{goos: darwin, goarch: amd64}, {goos: darwin, goarch: riscv64}]
     # SIGNED HERE, between the build and the archive, because that is the only
     # moment the file exists and nothing has packed it yet.
     #
@@ -100,7 +100,7 @@ builds:
     flags: [-trimpath]
     ldflags: ["-s -w -X github.com/agenxy/dibs/internal/build.Version={{.Version}}"]
     goos: [darwin, linux]
-    goarch: [amd64, arm64]
+    goarch: [amd64, arm64, riscv64]
     # NO MAC INTEL BUILD. Apple is ending Intel support, and carrying the target
     # means a second Swift slice for the presence helper, a second one for the
     # notifier, lipo for both, and an archive nobody will install: cost paid
@@ -110,7 +110,7 @@ builds:
     # Removing the target rather than shipping universal binaries is the whole
     # point: a fat binary still has to be built, joined and checked on both
     # sides, and the checking is where the last two defects were.
-    ignore: [{goos: darwin, goarch: amd64}]
+    ignore: [{goos: darwin, goarch: amd64}, {goos: darwin, goarch: riscv64}]
     # SIGNED HERE, between the build and the archive, because that is the only
     # moment the file exists and nothing has packed it yet.
     #
@@ -232,6 +232,8 @@ checksum:
       name_template: members/linux_amd64/dibs
     - glob: "dist/dibs_linux_arm64_*/dibs"
       name_template: members/linux_arm64/dibs
+    - glob: "dist/dibs_linux_riscv64_*/dibs"
+      name_template: members/linux_riscv64/dibs
 
 sboms:
   - artifacts: archive

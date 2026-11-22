@@ -105,7 +105,7 @@ func (v VerifiedRelease) GuestSnapshot(minimum, boardVersion string) (GuestRelea
 		return GuestReleaseSnapshot{}, err
 	}
 	m := GuestReleaseMetadata{Tag: rel.Tag, BoardBuild: boardVersion, Status: "INCOMPLETE"}
-	for _, target := range [][2]string{{"darwin", "arm64"}, {"linux", "amd64"}, {"linux", "arm64"}} {
+	for i, target := range guestReleaseTargets {
 		archive, err := ArchiveName(rel.Version, target[0], target[1])
 		if err != nil {
 			return GuestReleaseSnapshot{}, err
@@ -113,6 +113,9 @@ func (v VerifiedRelease) GuestSnapshot(minimum, boardVersion string) (GuestRelea
 		member, err := GuestMemberName(target[0], target[1])
 		if err != nil {
 			return GuestReleaseSnapshot{}, err
+		}
+		if i >= requiredGuestTargets && sums[archive] == "" && sums[member] == "" {
+			continue // a release published before this optional target existed
 		}
 		if sums[archive] == "" || sums[member] == "" {
 			return GuestReleaseSnapshot{}, fmt.Errorf("INCOMPLETE: signed %s names no exact archive/member digests "+
@@ -137,8 +140,9 @@ func (m GuestReleaseMetadata) Validate() error {
 		return err
 	}
 	if m.Status != "INCOMPLETE" || m.BoardBuild == "" || len(m.BoardBuild) > 256 ||
-		strings.ContainsAny(m.BoardBuild, "\r\n\x00") || len(m.Assets) != 3 {
-		return errors.New("guest release metadata needs actual board provenance and exactly three published targets")
+		strings.ContainsAny(m.BoardBuild, "\r\n\x00") ||
+		len(m.Assets) < requiredGuestTargets || len(m.Assets) > len(guestReleaseTargets) {
+		return errors.New("guest release metadata needs actual board provenance and the published targets")
 	}
 	seen := map[string]bool{}
 	for _, a := range m.Assets {
@@ -150,6 +154,12 @@ func (m GuestReleaseMetadata) Validate() error {
 			return errors.New("guest release metadata repeats or invents a published target")
 		}
 		seen[member] = true
+	}
+	for _, target := range guestReleaseTargets[:requiredGuestTargets] {
+		member, _ := GuestMemberName(target[0], target[1])
+		if !seen[member] {
+			return fmt.Errorf("guest release metadata omits required target %s/%s", target[0], target[1])
+		}
 	}
 	return nil
 }

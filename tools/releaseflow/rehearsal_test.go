@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -82,22 +81,8 @@ func TestFullPublicationTraversesDraftDoorsAndDiscoveryOnlyNegativeControl(t *te
 						t.Fatal(err)
 					}
 					write(t, "dist/dibs.mcpb.sha256", bundleSum+"  dibs.mcpb\n")
-					var body strings.Builder
-					fmt.Fprintf(&body, "cask \"dibs\" do\n version \"%s\"\n", c.version)
-					for _, asset := range assets(c.version) {
-						if !strings.HasSuffix(asset, ".tar.gz") {
-							continue
-						}
-						sum, err := digest(filepath.Join("dist", asset))
-						if err != nil {
-							t.Fatal(err)
-						}
-						// Measured on the real scratch run: GoReleaser derives the
-						// repository from the job, but still uses the canonical tag.
-						fmt.Fprintf(&body, " sha256 \"%s\"\n url \"https://github.com/%s/releases/download/v#{version}/%s\"\n", sum, d.repository, strings.ReplaceAll(asset, c.version, "#{version}"))
-					}
-					body.WriteString("end\n")
-					write(t, "dist/homebrew/Casks/dibs.rb", body.String())
+					// GoReleaser uses the scratch repository with the canonical tag.
+					write(t, "dist/homebrew/Casks/dibs.rb", generatedCaskFixture(t, c, d.repository, "v#{version}"))
 					// GoReleaser signs all generated archive member entries, not
 					// the separately copied cask until stageUnsigned runs.
 					write(t, "dist/checksums.txt", "")
