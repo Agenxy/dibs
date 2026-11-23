@@ -53,6 +53,8 @@ var Manifests = []string{
 	"plugins/codex/.codex-plugin/plugin.json",
 	"internal/plugins/data/codex/.codex-plugin/plugin.json",
 	"plugins/claude-desktop/manifest.json",
+	"plugins/gemini-cli/gemini-extension.json",
+	"internal/plugins/data/gemini-cli/gemini-extension.json",
 }
 
 // Changelog is where the version is stated as prose, and is the source of truth
