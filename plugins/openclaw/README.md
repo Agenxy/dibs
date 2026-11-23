@@ -1,18 +1,27 @@
 # Dibs for OpenClaw
 
-**Deferred.** Not surveyed, not cloned, not measured.
+This Agent Plugins v1 bundle provides the Dibs stdio MCP server and coordination
+skill. Mail is pull-only. Check in on each activation and use `inbox` to read
+what arrived.
 
-Every other platform in this directory was investigated by reading its source and
-driving it. OpenClaw has had none of that, so there is nothing here worth
-asserting, and a plausible-looking config block for a harness nobody has run is
-worse than an empty page.
+## Install
 
-When it is picked up, the order that worked elsewhere:
+Put `dibs` on the PATH of the OpenClaw Gateway. From a Dibs checkout, run:
 
-1. Clone the source; never infer capabilities from a shipped binary's strings
-   (that mistake is recorded in [WAKE-MECHANISMS.md](https://github.com/agenxy/dibs/blob/main/WAKE-MECHANISMS.md) §3).
-2. Probe a live handshake with `DIBS_LOG_RPC=1`: protocol version, declared
-   capabilities, which methods it actually sends.
-3. If it is an MCP client, a config entry is the whole integration.
-4. Only then look for a wake path, and only accept one that needs no subprocess.
-5. Drive it live before claiming anything works.
+```text
+openclaw plugins install ./plugins/openclaw
+openclaw plugins inspect dibs
+```
+
+Inspect the bundle and confirm that it is enabled under your Gateway's plugin
+policy. Open a new embedded agent session with bundle MCP tools enabled. Look
+for the coordination skill, register with Dibs, and call `dibs__board` with
+the returned token.
+The local Dibs bridge handles board authentication.
+
+## Verification
+
+The manifests pass the Agent Plugins v1 schemas. The install layout and stdio
+configuration were checked against OpenClaw source at
+`e42e2404dc3383c4f4b2ccfc00610bf36857b586`. Local OpenClaw runtime installation
+and tool execution remain unverified.

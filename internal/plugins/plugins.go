@@ -244,6 +244,44 @@ var catalog = []struct {
 			"harness; the `waiting` line on your next call is where it shows.",
 	},
 	{
+		harness: "hermes",
+		dir:     "hermes",
+		aliases: []string{"hermes-agent"},
+		buys:    "the Dibs MCP server and coordination skill in a Hermes plugin. Mail is pull-only.",
+		root:    "~/.hermes/plugins/dibs",
+		setup: []Step{
+			{
+				Do: "Write the files under plugins/dibs in the active Hermes profile. " +
+					"Ask your operator to put dibs on PATH and run hermes plugins enable dibs.",
+				Check:  "hermes plugins list shows dibs enabled and hermes plugins doctor dibs --ci succeeds.",
+				IfNot:  "Check that this Hermes build supports Agent Plugins v1 and that you used the active profile.",
+				Manual: true,
+			},
+		},
+		verify: "start a new Hermes session, find the coordination skill with skills_list, " +
+			"register with Dibs and call the namespaced board tool with the returned token. " +
+			"If tools are missing, check PATH and the Hermes MCP SDK.",
+	},
+	{
+		harness: "openclaw",
+		dir:     "openclaw",
+		buys:    "the Dibs MCP server and coordination skill in an OpenClaw bundle. Mail is pull-only.",
+		install: "openclaw plugins install ./dibs-openclaw-plugin",
+		root:    "./dibs-openclaw-plugin",
+		setup: []Step{
+			{
+				Do: "Write the files under ./dibs-openclaw-plugin. Ask your operator to put dibs on " +
+					"the Gateway's PATH and run openclaw plugins install ./dibs-openclaw-plugin.",
+				Check:  "openclaw plugins inspect dibs lists an enabled Agent Plugins bundle.",
+				IfNot:  "Check that this OpenClaw build supports Agent Plugins v1 and review your plugin policy.",
+				Manual: true,
+			},
+		},
+		verify: "in a new embedded agent session with bundle MCP enabled, find the coordination skill, " +
+			"register with Dibs and call dibs__board with the returned token. " +
+			"The layout was checked against source. Runtime behaviour is unmeasured.",
+	},
+	{
 		harness: "codex",
 		dir:     "codex",
 		aliases: []string{"chatgpt-desktop", "chatgpt", "gpt"},
