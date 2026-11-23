@@ -6,7 +6,6 @@ package paths
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/url"
 	"os"
 	"os/exec"
@@ -22,7 +21,8 @@ import (
 
 const (
 	repoIDCacheLimit = 256
-	gitIdentityLimit = time.Second
+	gitCommandLimit  = time.Second
+	gitIdentityLimit = 3 * time.Second
 )
 
 // RepoID is the Git identity of one checkout. WorktreeID names the individual
@@ -46,14 +46,12 @@ type RepoID struct {
 var identifiedRepos = newRepoIDCache(repoIDCacheLimit)
 
 // Identify returns dir's Git repository identity. It never panics or returns an
-// error: absence of Git, a non-repository directory, malformed Git output, and
-// a Git command that exceeds one second all produce an unknown RepoID.
+// error. Failed observations leave the corresponding fields unknown.
 //
 // Identification invokes Git only on a cache miss. The process-wide cache is
 // bounded to avoid turning every cwd ever reported by a long-running fleet into
-// permanent daemon memory. Results have no time-based expiry: from the caller's
-// point of view an observed identity is stable until it is evicted, and a slow
-// or missing Git executable cannot make matching intermittently change answers.
+// permanent daemon memory. A timed-out lookup returns the evidence it obtained
+// and leaves the next call free to recover the missing fields.
 func Identify(dir string) RepoID {
 	if dir == "" {
 		return RepoID{}
@@ -62,8 +60,10 @@ func Identify(dir string) RepoID {
 	if id, ok := identifiedRepos.get(dir); ok {
 		return id
 	}
-	id := identifyRepo(dir)
-	identifiedRepos.add(dir, id)
+	id, complete := identifyRepo(dir)
+	if complete {
+		identifiedRepos.add(dir, id)
+	}
 	return id
 }
 
@@ -106,31 +106,39 @@ func (r RepoID) Identity() (commonDir, remote, roots string, ok bool) {
 	return r.commonDir, r.remote, r.roots, r.repository
 }
 
-func identifyRepo(dir string) RepoID {
+func identifyRepo(dir string) (RepoID, bool) {
 	git, err := exec.LookPath("git")
 	if err != nil {
-		return RepoID{}
+		return RepoID{}, true
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), gitIdentityLimit)
 	defer cancel()
+	probe := repoGit{ctx: ctx, binary: git}
 
-	output, err := gitOutput(ctx, git, dir, "rev-parse", "--show-toplevel", "--git-common-dir")
+	output, err := probe.output(dir, "rev-parse", "--show-toplevel", "--git-common-dir")
 	if err != nil {
-		return RepoID{}
+		return RepoID{}, !probe.incomplete
 	}
 	lines := strings.Split(strings.TrimSuffix(output, "\n"), "\n")
 	if len(lines) != 2 || lines[0] == "" || lines[1] == "" {
-		return RepoID{}
+		return RepoID{}, true
 	}
 	worktree := Canonical(resolveGitPath(dir, lines[0]))
 	commonDir := Canonical(resolveGitPath(dir, lines[1]))
-	return RepoID{
+	id := RepoID{
 		WorktreeID: worktree,
 		commonDir:  commonDir,
-		remote:     primaryRemote(ctx, git, worktree),
-		roots:      rootCommits(ctx, git, worktree),
+		remote:     probe.primaryRemote(worktree),
+		roots:      probe.rootCommits(worktree),
 		repository: true,
 	}
+	return id, !probe.incomplete
+}
+
+type repoGit struct {
+	ctx        context.Context
+	binary     string
+	incomplete bool
 }
 
 // rootCommits returns the parentless commits of a repository, sorted and space
@@ -148,13 +156,13 @@ func identifyRepo(dir string) RepoID {
 // boundary rather than the true root, so two shallow clones cut at different
 // depths disagree. They are clones, so they carry a remote, and the remote is
 // consulted first.
-func rootCommits(ctx context.Context, git, worktree string) string {
+func (p *repoGit) rootCommits(worktree string) string {
 	// A shallow clone does not HAVE its root commit: what rev-list reports is the
 	// boundary where the clone was cut, so two shallow clones of one repository at
 	// different depths report different ids and look like strangers. Say nothing
 	// rather than something false. Absence of evidence has to stay absence of
 	// evidence, which is the mistake this whole area keeps making.
-	if shallow, err := gitOutput(ctx, git, worktree, "rev-parse", "--is-shallow-repository"); err != nil ||
+	if shallow, err := p.output(worktree, "rev-parse", "--is-shallow-repository"); err != nil ||
 		strings.TrimSpace(shallow) == "true" {
 		return ""
 	}
@@ -162,7 +170,7 @@ func rootCommits(ctx context.Context, git, worktree string) string {
 	// calls a root, and it is a LOCAL decoration: two clones of one upstream
 	// disagree about their roots the moment one of them uses it. Identity must
 	// come from the objects themselves, not from a local view of them.
-	out, err := gitOutput(ctx, git, worktree, "--no-replace-objects", "rev-list", "--max-parents=0", "HEAD")
+	out, err := p.output(worktree, "--no-replace-objects", "rev-list", "--max-parents=0", "HEAD")
 	if err != nil {
 		return ""
 	}
@@ -174,13 +182,16 @@ func rootCommits(ctx context.Context, git, worktree string) string {
 	return strings.Join(ids, " ")
 }
 
-func gitOutput(ctx context.Context, git, dir string, args ...string) (string, error) {
+func (p *repoGit) output(dir string, args ...string) (string, error) {
+	// Give each Git child its own allowance within the total lookup cap.
+	ctx, cancel := context.WithTimeout(p.ctx, gitCommandLimit)
+	defer cancel()
 	argv := append([]string{"-C", dir}, args...)
-	cmd := procexec.Command(ctx, git, argv...) // #nosec G204 -- LookPath resolved Git; exec never invokes a shell
+	cmd := procexec.Command(ctx, p.binary, argv...) // #nosec G204 -- LookPath resolved Git; exec never invokes a shell
 	cmd.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0", "GIT_TERMINAL_PROMPT=0")
 	output, err := cmd.Output()
-	if errors.Is(err, exec.ErrWaitDelay) {
-		return "", fmt.Errorf("incomplete output from git; repository identity is unknown: %w", err)
+	if err != nil && (ctx.Err() != nil || errors.Is(err, exec.ErrWaitDelay)) {
+		p.incomplete = true
 	}
 	return string(output), err
 }
@@ -192,8 +203,8 @@ func resolveGitPath(dir, gitPath string) string {
 	return filepath.Join(dir, gitPath)
 }
 
-func primaryRemote(ctx context.Context, git, worktree string) string {
-	output, err := gitOutput(ctx, git, worktree, "config", "--local", "--get-regexp", `^remote\..*\.url$`)
+func (p *repoGit) primaryRemote(worktree string) string {
+	output, err := p.output(worktree, "config", "--local", "--get-regexp", `^remote\..*\.url$`)
 	if err != nil {
 		return ""
 	}
@@ -234,9 +245,12 @@ func primaryRemote(ctx context.Context, git, worktree string) string {
 	// config and fetch from the same place, and comparing the strings called them
 	// different projects. Ask Git for the effective url instead; --get-url expands
 	// and prints without contacting the remote, so this stays local and cheap.
-	effective, err := gitOutput(ctx, git, worktree, "ls-remote", "--get-url", remotes[0].name)
+	effective, err := p.output(worktree, "ls-remote", "--get-url", remotes[0].name)
 	if url := strings.TrimSpace(effective); err == nil && url != "" {
 		return normalizeRemote(url, worktree)
+	}
+	if p.incomplete {
+		return ""
 	}
 	return normalizeRemote(remotes[0].url, worktree)
 }
@@ -452,9 +466,13 @@ func (c *repoIDCache) add(dir string, id RepoID) {
 // that has cd'd into a subdirectory is still working on the same project, and
 // "internal" or "src" names nothing.
 func ProjectName(dir string) string {
-	id := Identify(dir)
-	if id.WorktreeID == "" {
+	return Identify(dir).ProjectName()
+}
+
+// ProjectName returns the label from this already-resolved identity.
+func (r RepoID) ProjectName() string {
+	if r.WorktreeID == "" {
 		return ""
 	}
-	return filepath.Base(id.WorktreeID)
+	return filepath.Base(r.WorktreeID)
 }

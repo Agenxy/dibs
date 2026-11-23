@@ -14,7 +14,7 @@ import (
 // using identities resolved BEFORE the state loop was entered.
 //
 // The resolution has to happen out here. Matching runs on the loop, and
-// paths.Identify shells out to `git rev-parse` behind a one-second timeout on a
+// paths.Identify shells out to Git with bounded deadlines on a
 // cache miss: a cold cwd would hold up every other agent on the board for as
 // long as Git took to answer. So the engine resolves each directory once, off
 // the loop, and core is handed a lookup that cannot block and cannot fail.
@@ -45,9 +45,9 @@ type repoLens struct {
 
 // newRepoLens resolves every directory it is given, concurrently.
 //
-// Concurrently because the cost is a cold `git rev-parse` bounded at one second
-// EACH: resolved in turn, a board of a dozen agents that Git has not been asked
-// about yet would put twelve seconds in front of one declare, and declare is
+// Concurrently because the cost is a cold Git lookup for each directory.
+// Resolved in turn, a board of a dozen agents that Git has not been asked
+// about yet could put dozens of seconds in front of one declare, and declare is
 // the call agents make constantly. Fanning out bounds the whole thing to roughly
 // one timeout. Repeats are free: paths.Identify is memoised process-wide behind
 // a mutex, so this is a first-encounter cost per directory, not a per-call one.

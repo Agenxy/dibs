@@ -9,6 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/agenxy/dibs/internal/procexec"
 )
 
 func TestSameRepoRecognisesLinkedWorktrees(t *testing.T) {
@@ -51,10 +54,47 @@ func TestSameRepoNormalisesPrimaryRemoteAcrossClones(t *testing.T) {
 	runGit(t, git, clones[1], "remote", "set-url", "origin", "https://github.com/agenxy/dibs")
 	runGit(t, git, clones[2], "remote", "set-url", "origin", "ssh://git@github.com/agenxy/dibs.git")
 
+	scp := Canonical(clones[0])
+	restore := procexec.ObserveCommandArgs(func(_ string, args []string) {
+		if len(args) > 3 && args[1] == scp && (args[2] == "rev-parse" && args[3] == "--show-toplevel" || args[2] == "config") {
+			<-time.After(600 * time.Millisecond)
+		}
+	})
+	t.Cleanup(restore)
+
 	for i := 1; i < len(clones); i++ {
 		if same, known := SameRepo(Identify(clones[0]), Identify(clones[i])); !same || !known {
 			t.Errorf("SameRepo(%q, %q) = (%v, %v), want (true, true)", clones[0], clones[i], same, known)
 		}
+	}
+}
+
+func TestIdentifyRetriesAfterEffectiveRemoteProbeTimesOut(t *testing.T) {
+	git := requireGit(t)
+	repo := t.TempDir()
+	initRepo(t, git, repo)
+	runGit(t, git, repo, "remote", "add", "origin", "https://alias.example/team/repo.git")
+	runGit(t, git, repo, "config", "url.https://example.com/.insteadOf", "https://alias.example/")
+
+	dir := Canonical(repo)
+	stalled := false
+	restore := procexec.ObserveCommandArgs(func(_ string, args []string) {
+		if len(args) > 3 && args[1] == dir && args[2] == "ls-remote" && !stalled {
+			stalled = true
+			<-time.After(1100 * time.Millisecond)
+		}
+	})
+	t.Cleanup(restore)
+
+	first := Identify(dir)
+	if !stalled || first.WorktreeID != dir {
+		t.Fatalf("setup did not reach the slow effective-remote lookup: %+v", first)
+	}
+	if first.remote != "" {
+		t.Errorf("timed-out effective URL substituted the raw remote %q", first.remote)
+	}
+	if got := Identify(dir).remote; got != "example.com/team/repo" {
+		t.Errorf("next lookup after a transient timeout got %q, want the effective remote", got)
 	}
 }
 

@@ -108,9 +108,14 @@ func TestNativeQueueNoticeRecordsAdmissionAndKeepsOriginalTimeAcrossWriters(t *t
 		t.Fatal("setup: expire inference:", err)
 	}
 	child := exec.Command(os.Args[0], "-test.run=^TestNativeQueueNoticeRecordsAdmissionAndKeepsOriginalTimeAcrossWriters$")
-	child.Env = append(os.Environ(), "DIBS_STALE_NOTICE_CHILD=1", "DIBS_STALE_NOTICE_BINARY="+binary)
+	stall := filepath.Join(home, "stalled-list")
+	child.Env = append(os.Environ(), "DIBS_STALE_NOTICE_CHILD=1", "DIBS_STALE_NOTICE_BINARY="+binary,
+		"DIBS_TEST_QUEUE_STALL_LIST_ONCE="+stall)
 	if b, err := child.CombinedOutput(); err != nil {
 		t.Fatalf("independent writer: %v: %s", err, b)
+	}
+	if _, err := os.Stat(stall); err != nil {
+		t.Fatalf("setup: independent writer did not reach the stalled list: %v", err)
 	}
 	rows = staleQueueRows(t, home)
 	if len(rows) != 1 || rows[0].Input[0].Text != original {
