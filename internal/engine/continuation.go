@@ -222,6 +222,7 @@ func (e *Engine) continuationReply(l *core.Agent, event string, stopActive bool)
 	// as ended would falsely describe the lifecycle. On the writer loop,
 	// which owns turnEnded.
 	delete(e.turnEnded, l.ID)
+	delete(e.hookBoardTurns, l.ID)
 	e.noteSocketBusy(l, time.Now())
 	return core.Result{"decision": "block", "reason": reason}
 }

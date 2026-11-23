@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/agenxy/dibs/internal/testexec"
@@ -83,6 +84,11 @@ func TestNativeQueueNoticeRecordsAdmissionAndKeepsOriginalTimeAcrossWriters(t *t
 		return
 	}
 	binary := staleQueueFixture(t)
+	retryUnreadyQueueFixture(t, func() error { return runQueueNoticeAcrossWriters(t, binary) })
+}
+
+func runQueueNoticeAcrossWriters(t *testing.T, binary string) error {
+	t.Helper()
 	home := staleQueueHome(t)
 	argv := []string{binary, "queue", "--thread", "stale-thread", "--message", Compose("question")}
 	started := time.Now().UTC()
@@ -111,16 +117,30 @@ func TestNativeQueueNoticeRecordsAdmissionAndKeepsOriginalTimeAcrossWriters(t *t
 	stall := filepath.Join(home, "stalled-list")
 	child.Env = append(os.Environ(), "DIBS_STALE_NOTICE_CHILD=1", "DIBS_STALE_NOTICE_BINARY="+binary,
 		"DIBS_TEST_QUEUE_STALL_LIST_ONCE="+stall)
-	if b, err := child.CombinedOutput(); err != nil {
-		t.Fatalf("independent writer: %v: %s", err, b)
+	output, commandErr := child.CombinedOutput()
+	if err := stalledListReadiness(t, stall); err != nil {
+		return err
 	}
-	if _, err := os.Stat(stall); err != nil {
-		t.Fatalf("setup: independent writer did not reach the stalled list: %v", err)
+	if commandErr != nil {
+		t.Fatalf("independent writer: %v: %s", commandErr, output)
 	}
 	rows = staleQueueRows(t, home)
 	if len(rows) != 1 || rows[0].Input[0].Text != original {
 		t.Fatalf("later mail changed the pending notice's original time or duplicated it: %#v", rows)
 	}
+	return nil
+}
+
+func stalledListReadiness(t *testing.T, stall string) error {
+	t.Helper()
+	for _, path := range []string{stall, stall + ".reply-ready"} {
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			return fmt.Errorf("stalled-list fixture did not reach %s", filepath.Base(path))
+		} else if err != nil {
+			t.Fatalf("read stalled-list readiness: %v", err)
+		}
+	}
+	return nil
 }
 
 func seedStaleQueue(t *testing.T, binary, text string) {
@@ -136,34 +156,53 @@ func TestNativeQueueRecognizesDatedPendingItemsThroughCommandDoor(t *testing.T) 
 	binary := staleQueueFixture(t)
 	for _, kind := range []string{"coordination", "notify", "question", "request", "handoff", "answered", "approved", "done", "adopted"} {
 		t.Run(kind, func(t *testing.T) {
-			home := staleQueueHome(t)
-			text := fmt.Sprintf("Dibs: %s notice issued at 2026-01-01T00:00:00Z. It may already be handled.", kind)
-			seedStaleQueue(t, binary, text)
-			if rows := staleQueueRows(t, home); len(rows) != 1 || rows[0].Input[0].Text != text {
-				t.Fatal("setup: historical dated item was not retained")
-			}
-			stall := filepath.Join(home, "stalled-list")
 			if kind == "adopted" {
-				// The historical item has no receipt in this Dibs directory.
-				// A delayed first queue read must give it the same bounded
-				// corroboration as a delayed read of a locally admitted item.
-				t.Setenv("DIBS_TEST_QUEUE_STALL_LIST_ONCE", stall)
+				cold := filepath.Join(t.TempDir(), "cold-list")
+				retryUnreadyQueueFixture(t, func() error { return recognizeDatedQueueItem(t, binary, kind, cold) })
+				return
 			}
-			argv := []string{binary, "queue", "--thread", "stale-thread", "--message", Compose("handoff")}
-			if !RunCommands(argv, nil, "worker", "", time.Second, time.Second) {
-				t.Fatal("setup: new writer's command route failed")
-			}
-			if kind == "adopted" {
-				if _, err := os.Stat(stall); err != nil {
-					t.Fatalf("setup: queue probe did not reach the stalled read: %v", err)
+			// These cases check classification of actual queue entries.
+			synctest.Test(t, func(t *testing.T) {
+				if err := recognizeDatedQueueItem(t, binary, kind, ""); err != nil {
+					t.Fatal(err)
 				}
-			}
-			rows := staleQueueRows(t, home)
-			if len(rows) != 1 || rows[0].Input[0].Text != text {
-				t.Fatalf("new writer duplicated or changed the dated pending %s item: %#v", kind, rows)
-			}
+			})
 		})
 	}
+}
+
+func recognizeDatedQueueItem(t *testing.T, binary, kind, cold string) error {
+	t.Helper()
+	home := staleQueueHome(t)
+	text := fmt.Sprintf("Dibs: %s notice issued at 2026-01-01T00:00:00Z. It may already be handled.", kind)
+	seedStaleQueue(t, binary, text)
+	if rows := staleQueueRows(t, home); len(rows) != 1 || rows[0].Input[0].Text != text {
+		t.Fatal("setup: historical dated item was not retained")
+	}
+	stall := filepath.Join(home, "stalled-list")
+	if kind == "adopted" {
+		// The historical item has no receipt in this Dibs directory. Keep
+		// the real deadline so the first read's stall forces corroboration.
+		t.Setenv("DIBS_TEST_QUEUE_STALL_LIST_ONCE", stall)
+		// On the first trial the intended first reader never reaches the list.
+		// The second reader then claims the stall, so it cannot reply either.
+		t.Setenv("DIBS_TEST_QUEUE_COLD_EXEC", cold)
+	}
+	argv := []string{binary, "queue", "--thread", "stale-thread", "--message", Compose("handoff")}
+	ok := RunCommands(argv, nil, "worker", "", time.Second, time.Second)
+	if kind == "adopted" {
+		if err := stalledListReadiness(t, stall); err != nil {
+			return err
+		}
+	}
+	if !ok {
+		t.Fatal("setup: new writer's command route failed")
+	}
+	rows := staleQueueRows(t, home)
+	if len(rows) != 1 || rows[0].Input[0].Text != text {
+		t.Fatalf("new writer duplicated or changed the dated pending %s item: %#v", kind, rows)
+	}
+	return nil
 }
 
 func TestNativeQueueHistoricalAndUnrecognizedItemsKeepDeliverySafe(t *testing.T) {
@@ -184,25 +223,27 @@ func TestNativeQueueHistoricalAndUnrecognizedItemsKeepDeliverySafe(t *testing.T)
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			home := staleQueueHome(t)
-			seedStaleQueue(t, binary, c.text)
-			started := time.Now().UTC()
-			argv := []string{binary, "queue", "--thread", "stale-thread", "--message", Compose("question")}
-			if !RunCommands(argv, nil, "worker", "", time.Second, time.Second) {
-				t.Fatal("setup: actual command route failed")
-			}
-			finished := time.Now().UTC()
-			rows := staleQueueRows(t, home)
-			want := 2
-			if c.pending {
-				want = 1
-			}
-			if len(rows) != want || rows[0].Input[0].Text != c.text {
-				t.Fatalf("unrecognised text suppressed a wake or a legacy wake duplicated: %#v", rows)
-			}
-			if !c.pending {
-				assertIssuedQueueNotice(t, rows[1].Input[0].Text, "question", started, finished)
-			}
+			synctest.Test(t, func(t *testing.T) {
+				home := staleQueueHome(t)
+				seedStaleQueue(t, binary, c.text)
+				started := time.Now().UTC()
+				argv := []string{binary, "queue", "--thread", "stale-thread", "--message", Compose("question")}
+				if !RunCommands(argv, nil, "worker", "", time.Second, time.Second) {
+					t.Fatal("setup: actual command route failed")
+				}
+				finished := time.Now().UTC()
+				rows := staleQueueRows(t, home)
+				want := 2
+				if c.pending {
+					want = 1
+				}
+				if len(rows) != want || rows[0].Input[0].Text != c.text {
+					t.Fatalf("unrecognised text suppressed a wake or a legacy wake duplicated: %#v", rows)
+				}
+				if !c.pending {
+					assertIssuedQueueNotice(t, rows[1].Input[0].Text, "question", started, finished)
+				}
+			})
 		})
 	}
 	t.Run("unavailable observation still issues a dated wake", func(t *testing.T) {

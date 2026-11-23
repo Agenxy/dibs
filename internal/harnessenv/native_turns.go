@@ -40,6 +40,67 @@ type CodexTurnObservation struct {
 	Normal  bool
 }
 
+const (
+	// TurnInProgress describes evidence that a turn is underway.
+	TurnInProgress = "in_turn"
+	// TurnBetween describes evidence that the latest turn ended.
+	TurnBetween = "between_turns"
+	// TurnUnknown means no applicable evidence established a state.
+	TurnUnknown = "unknown"
+)
+
+// TurnActivity is a bounded observation of a particular harness binding.
+type TurnActivity struct {
+	State      string
+	ObservedAt time.Time
+}
+
+// ObserveCodexTurnActivity corroborates the app's latest turn metadata with
+// the newest rollout for the exact thread. A headless app-server can report
+// a running turn as interrupted because it does not own the thread.
+func ObserveCodexTurnActivity(thread, turnID string, startedAt, observedAt time.Time) TurnActivity {
+	activity := TurnActivity{State: TurnUnknown, ObservedAt: observedAt}
+	if !core.LooksLikeThreadID(thread) || turnID == "" || startedAt.IsZero() {
+		return activity
+	}
+	for _, path := range codexTurnRollouts(codexHome(), thread) {
+		if tail := codexTurnTail(path, thread); len(tail) != 0 {
+			activity.State = latestCodexTurnState(tail, turnID, startedAt, observedAt)
+			break
+		}
+	}
+	return activity
+}
+
+func latestCodexTurnState(tail []byte, turnID string, startedAt, observedAt time.Time) string {
+	state := TurnUnknown
+	if tail[len(tail)-1] != '\n' {
+		return state // the newest record may be in the middle of being written
+	}
+	for line := range bytes.SplitSeq(tail, []byte{'\n'}) {
+		if len(line) == 0 {
+			continue
+		}
+		var row codexTurnRecord
+		if json.Unmarshal(line, &row) != nil {
+			return TurnUnknown
+		}
+		if row.Type != "event_msg" || row.Payload.Type != "task_started" && row.Payload.Type != "task_complete" {
+			continue
+		}
+		state = TurnUnknown
+		if row.Payload.TurnID != turnID || row.Timestamp.Before(startedAt) || row.Timestamp.After(observedAt) {
+			continue
+		}
+		if row.Payload.Type == "task_complete" {
+			state = TurnBetween
+		} else {
+			state = TurnInProgress
+		}
+	}
+	return state
+}
+
 type codexTurnEvidence struct {
 	started time.Time
 	outcome CodexTurnObservation
