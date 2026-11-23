@@ -1,0 +1,11 @@
+{
+  "name": "dibs",
+  "version": "1.0.0",
+  "description": "Coordinate work, claims, and mail through your Dibs board.",
+  "mcpServers": {
+    "dibs": {
+      "command": "dibs",
+      "args": ["mcp-stdio"]
+    }
+  }
+}
