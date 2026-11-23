@@ -35,6 +35,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   posting input or reading mail.
 
 ### Fixed
+- Send receipts and the board show successful ChatGPT queue admission when
+  direct input is unavailable, with separate outcomes for native adapter
+  failure and a thread the router reports as unloaded.
 - The board labels old pending Codex queue observations as stale and keeps
   the original observation time.
 - The idle ChatGPT restart poll checks native main-process evidence without

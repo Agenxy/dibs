@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -20,14 +21,22 @@ import (
 )
 
 func TestHostBridgeNativeDeliveryDoesNotQueue(t *testing.T) {
-	for _, mode := range []string{"idle", "active", "disconnect", "no-owner", "cancelled"} {
+	for _, mode := range []string{"idle", "active", "disconnect", "no-owner", "cancelled", "no-socket", "not-listening"} {
 		t.Run(mode, func(t *testing.T) {
 			dir := cliIPCProfile(t)
 			t.Setenv("DIBS_DIR", dir)
 			if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte("fixture"), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			s := testcodexipc.Start(t, mode, nil)
+			var s *testcodexipc.Server
+			switch mode {
+			case "no-socket":
+				t.Setenv("CODEX_HOME", t.TempDir())
+			case "not-listening":
+				testcodexipc.StartRestarting(t, "idle")
+			default:
+				s = testcodexipc.Start(t, mode, nil)
+			}
 			reports := make(chan engine.WakeResult, 1)
 			hub := newLocalTestServer(t, dir, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Header.Get("X-Dibs-Local") != "fixture" {
@@ -70,6 +79,14 @@ func TestHostBridgeNativeDeliveryDoesNotQueue(t *testing.T) {
 				ok, detail := b.execute(wr)
 				if !ok || queued != 1 || detail != "thread not loaded in the app; queued until opened" {
 					t.Fatalf("cold route: %v %d %s", ok, queued, detail)
+				}
+				return
+			}
+			if s == nil {
+				ok, detail, outcome := b.executeOutcome(wr)
+				if !ok || queued != 1 || outcome.OK || outcome.Disposition != "queue_only" ||
+					!strings.HasPrefix(detail, "queued in the ChatGPT app") {
+					t.Fatalf("queue-only route: %v %d %+v %q", ok, queued, outcome, detail)
 				}
 				return
 			}

@@ -1336,11 +1336,7 @@ func (e *Engine) runWakePlan(plan *wakePlan, agent string) (accepted bool) {
 				if plan.queueOutcome != nil {
 					*plan.queueOutcome = observation
 				}
-				if plan.nativeOutcome != nil && plan.nativeOutcome.Disposition == "unloaded" {
-					observation.Delivery = "queued_unloaded"
-				} else if plan.nativeOutcome != nil && plan.nativeOutcome.Disposition == "native_failed" {
-					observation.Delivery = "queued_native_failed"
-				}
+				observation.Delivery = queueFallbackDelivery(plan.nativeOutcome)
 				e.noteQueueObservation(*plan, agent, observation)
 			})
 		if !plan.queueThreadGone() && !plan.commandOutcome.NoRetry && !plan.commandOutcome.Deferred {
