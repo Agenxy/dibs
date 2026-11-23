@@ -378,6 +378,9 @@ func run() error {
 	hostname.Current()
 	eng := engine.New(st, led, liveness.New(), history)
 	eng.SetNativeNotificationProfile(*dir)
+	if err := eng.SetHumanPostingStore(*dir); err != nil {
+		slog.Warn("human notification recovery unavailable; outstanding asks remain on the board", "err", err)
+	}
 	eng.SetHintFile(filepath.Join(*dir, "reattach-hints.json"))
 	eng.SetAdvisoryFile(filepath.Join(*dir, "scorer-advisories.json"))
 	// SETTLED BEFORE SERVING. Nothing changes this identity afterwards; see

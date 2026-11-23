@@ -2205,12 +2205,21 @@ source's last receipt/error and retained posting/dismissal evidence. `posted` me
 the OS accepted posting, not that a
 banner appeared or the person saw it; `dismissed` requires explicit dismissal
 or defer evidence, not a timeout. Queued/pending supplies no posting proof.
-Posting/dismissal on one source outranks failure on another; a real human
-response gives `answered`. Receipts grant nothing and use the relay's existing
-authenticated session. No receipt state is ledgered: after restart the route
-and state are `unknown` until new evidence arrives; actual answers replay.
-Old helpers/relays supply no invented receipt. Retrying `op_id` returns the
-original route (or unknown after restart) without another alert.
+Posting and dismissal evidence takes precedence over a failure on another
+source. A human response gives `answered`. The relay's authenticated session
+carries receipts. The daemon stores affirmative posting for questions and
+requests in a local derived view with the board ID, serial, and route. Per-source
+settings and dismissal evidence live for the daemon run. Actual answers replay
+from the ledger. When posting evidence is missing after restart,
+`human_delivery` reports it as unknown. Human mail omits
+`undelivered_for_seconds`.
+
+On startup, the daemon makes one paced pass over still-answerable human asks
+sent after the upgrade checkpoint. It skips asks already read or confirmed
+posted. When available, a read-only native query checks Notification Center
+for the keyed notice. An unconfirmed ask is retried using its existing
+notification ID. The relay still receives its pending mailbox on reconnect.
+Retrying `op_id` returns the existing route or unknown without posting again.
 
 Current macOS notifications open a reading window when the person clicks the
 banner body: requests, questions, handoffs, ordinary/urgent notifications and

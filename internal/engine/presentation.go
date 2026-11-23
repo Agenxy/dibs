@@ -21,16 +21,24 @@ func (e *Engine) agentName(id string) string {
 // AgentNames returns one coherent read-time address map for an outgoing
 // surface. The map is derived and never copied into an op or the ledger.
 func (e *Engine) AgentNames(ctx context.Context) (map[string]string, error) {
+	names, _, err := e.AgentNamesAndHuman(ctx)
+	return names, err
+}
+
+// AgentNamesAndHuman returns the address projection and human mailbox ID from
+// the same writer read. The ID identifies human-facing mail presentations.
+func (e *Engine) AgentNamesAndHuman(ctx context.Context) (map[string]string, string, error) {
 	result, err := e.query(ctx, func() core.Result {
 		names := make(map[string]string, len(e.state.Agents))
 		for id := range e.state.Agents {
 			names[id] = e.agentName(id)
 		}
-		return core.Result{"names": names}
+		return core.Result{"names": names, "human": e.humanIdentityLocked()}
 	})
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	names, _ := result["names"].(map[string]string)
-	return names, nil
+	human, _ := result["human"].(string)
+	return names, human, nil
 }

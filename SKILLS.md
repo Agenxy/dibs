@@ -456,8 +456,8 @@ Repeated acceptances do not reset the first clock. Background subscriptions and
 hooks are not model contact. This observation is lost on daemon restart; a later
 actual acceptance starts a fresh interval. This additional path excludes every
 notify. Alerts mean **delivery unconfirmed**, never that the recipient is dead.
-Unread asks expose `undelivered_for_seconds` until recipient awareness; that age
-does not start or shorten the response window.
+Unread asks addressed to agents expose `undelivered_for_seconds` until
+recipient awareness. That age leaves the response window unchanged.
 
 **Verify your delivery route.** A Claude Code session started with Dibs as a
 channel receives mail notices as `<channel>` events, which start a turn when
@@ -535,8 +535,10 @@ receiving native peer turns, another watcher adds no delivery guarantee.
   `read_mail` returns `human_delivery` with per-source receipts. `posted` means
   OS acceptance, never that the person saw a banner; `dismissed` is an explicit
   dismissal/defer, `failed` carries the error, and `answered` is a real response.
-  Queued/pending is unconfirmed, older helpers may supply no receipt, and status
-  is `unknown` after restart until new evidence arrives (answers survive replay).
+  Queued/pending is unconfirmed. A daemon restart preserves affirmative posting
+  evidence for questions and requests, or reports unknown if there is no saved
+  evidence. The daemon can retry an unconfirmed ask with its original
+  notification ID while it remains answerable. Actual answers survive replay.
   Human notifications never open a decision window automatically. Local desktop
   questions and requests remain answerable when the person reopens their Mac
   notification after the asking process or notifier exits. The installed app
