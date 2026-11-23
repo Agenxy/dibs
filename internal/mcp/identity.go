@@ -42,8 +42,8 @@ import (
 // agent registered from /tmp/x could never be found by a hook asking about
 // /private/tmp/x, or vice versa.
 //
-// The only impure step in assembling an identity: paths.ProjectName shells out
-// to Git on a cache miss, bounded at a second. Affordable because it runs at
+// The only impure step in assembling an identity: paths.Identify shells out
+// to Git on a cache miss, with bounded deadlines. Affordable because it runs at
 // registration, and now on the rare update that carries a cwd, and it must not
 // move anywhere hotter. In particular it cannot be derived when the board is
 // READ: that runs on the single-writer loop, where a cold `git rev-parse` per
@@ -52,11 +52,11 @@ import (
 // and handed in.
 func resolveLocation(info *core.AgentInfo, cwd string) {
 	info.CWD = canonPath(cwd)
-	info.Project = paths.ProjectName(info.CWD)
 	// The identity behind the label, resolved in the same breath because both
 	// come from one memoised Identify, and recorded because the fold compares
 	// them and the fold cannot call Git.
 	id := paths.Identify(info.CWD)
+	info.Project = id.ProjectName()
 	info.RepoDir, info.RepoRemote, info.RepoRoots, _ = id.Identity()
 	// The checkout's own top level, which is what a path is measured FROM. The
 	// three above say WHICH repository; this one is what lets the fold subtract a

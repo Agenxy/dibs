@@ -45,12 +45,18 @@ func TestBridgeMemoryBudget(t *testing.T) {
 		t.Fatalf("setup: build production CLI: %v %s", err, out)
 	}
 	testexec.PrepareExecutable(t, exec.Command(bin, "--help"))
+	t.Parallel()
 	for _, upgraded := range []bool{false, true} {
 		name := "fresh"
 		if upgraded {
 			name = "upgraded"
 		}
-		t.Run(name, func(t *testing.T) { testBridgeMemoryBudget(t, bin, upgraded) })
+		t.Run(name, func(t *testing.T) {
+			// Each bridge has its own daemon, environment, and footprint target.
+			// Both still get the full idle intervals and sample count.
+			t.Parallel()
+			testBridgeMemoryBudget(t, bin, upgraded)
+		})
 	}
 }
 

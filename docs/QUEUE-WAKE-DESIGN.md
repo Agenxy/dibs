@@ -57,6 +57,10 @@ receipt-only deferral, allowing for the measured six-second idle-thread delay
 and observation margin. Deferral leaves the current mail eligible for another
 mail or reconnect event and schedules no timer.
 
+If the one-second list times out and a prior admission receipt exists, the
+same two-second read can recover the real pending item after a prompt or
+receipt expiry. The old receipt alone still cannot defer admission.
+
 Every upgraded writer using the same board receipt directory takes the OS
 lock. It remains on disk, because unlinking a held lock would create two
 independent inodes; process exit releases ownership. Acquisition is bounded

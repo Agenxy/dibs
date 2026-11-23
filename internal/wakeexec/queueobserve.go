@@ -70,12 +70,13 @@ func observeQueueDetailContext(parent context.Context, binary, thread string, re
 		}
 		probe = rpc.admission(thread, false)
 	})
+	probe.timedOut = !probe.known && errors.Is(ctx.Err(), context.DeadlineExceeded)
 	return probe
 }
 
 func corroborateQueueReceipt(parent context.Context, binary, thread string) queueProbe {
-	// The regular list keeps its short budget. Only a receipt about to defer
-	// a wake merits another bounded read, with room for turn metadata.
+	// The regular list keeps its short budget. The longer bounded read has
+	// room for turn metadata when a current receipt could defer admission.
 	ctx, cancel := context.WithTimeout(parent, 2*queueProbeTimeout)
 	defer cancel()
 	var probe queueProbe

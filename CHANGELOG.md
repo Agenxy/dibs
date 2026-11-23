@@ -30,6 +30,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   posting input or reading mail.
 
 ### Fixed
+- Slow Git commands keep their own deadlines within a bounded repository
+  lookup. A timed-out lookup can recover missing identity on the next call.
+- After a Codex queue probe times out, a prior admission receipt allows one
+  bounded read to find the original pending notice and avoid a duplicate.
 - Sends and board views identify missing or confirmed-gone Codex app thread
   bindings and explain how to recover them. Archived Claude mail requires
   re-registration before a hook can present it.

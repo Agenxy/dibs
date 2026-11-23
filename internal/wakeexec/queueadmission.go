@@ -155,8 +155,8 @@ func observeQueueAdmission(
 	if nativeQueueRoute(argv) {
 		observation.ProbeBinary = argv[0]
 		probe = observeQueueDetailContext(ctx, argv[0], thread)
-		if !probe.known && probe.threadSource != QueueThreadExecSource &&
-			!fallbackQueueReceipt(thread, time.Now()).QueuedAt.IsZero() {
+		if !probe.known && probe.threadSource != QueueThreadExecSource && ctx.Err() == nil &&
+			shouldCorroborateQueue(thread, probe.timedOut) {
 			checked := corroborateQueueReceipt(ctx, argv[0], thread)
 			if checked.threadSource == "" {
 				checked.threadSource = probe.threadSource
@@ -173,6 +173,15 @@ func observeQueueAdmission(
 		observation.IssuedAt, observation.AgeSource = probe.issuedAt, "notice"
 	}
 	return probe
+}
+
+func shouldCorroborateQueue(thread string, timedOut bool) bool {
+	if timedOut && !readReceipt(thread).QueuedAt.IsZero() {
+		// An old admission justifies one more observation after a deadline,
+		// even though it is too old to defer a wake by itself.
+		return true
+	}
+	return !fallbackQueueReceipt(thread, time.Now()).QueuedAt.IsZero()
 }
 
 func observeRetainedQueueCommand(

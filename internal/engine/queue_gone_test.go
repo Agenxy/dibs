@@ -6,6 +6,7 @@ package engine
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -194,7 +195,8 @@ func goneQueueThreadScenario(t *testing.T, priorFailures int, historicalWarning 
 	previous := shower
 	shower = &harnessenv.Shower{Holds: func(string) bool { return true }, Open: func([]string) error { t.Error("failed queue opened the app"); return nil }}
 	t.Cleanup(func() { shower = previous })
-	e, ctx, worker, sender := nativeAppEngine(t)
+	ledger := &queueReplayLedger{}
+	e, ctx, worker, sender := nativeAppEngineWithLedger(t, ledger)
 	e.SetHumanNotifier(noContactDesktop{})
 	e.SetWakeCommands(map[string]WakeCommand{"codex": {Argv: []string{
 		binary, "queue", "--thread", "{thread}", "--message", "{message}",
@@ -202,16 +204,28 @@ func goneQueueThreadScenario(t *testing.T, priorFailures int, historicalWarning 
 	e.wakers.mu.Lock()
 	e.wakers.fails = map[string]int{"worker": priorFailures}
 	e.wakers.mu.Unlock()
+	if _, err := e.Do(ctx, &core.Op{Kind: core.OpSweep, StaleAgents: []string{"worker"}}); err != nil {
+		t.Fatal("setup dormancy:", err)
+	}
 	if _, err := e.query(ctx, func() core.Result {
 		l := e.state.Agents["worker"]
-		l.Status, l.LastCoordination = core.StatusDormant, time.Now().Add(-contactActivityGrace-time.Minute)
-		delete(e.seen, "worker")
+		if l.Status != core.StatusDormant || l.DormantSince.IsZero() {
+			t.Errorf("setup: worker must have a recorded dormancy transition, got %s at %v", l.Status, l.DormantSince)
+		}
+		// The fixture registered just now. Supply the matching turn-end
+		// evidence so recency does not stand in for a turn still running.
+		e.noteWakeEnded("worker", testcodexipc.Thread)
 		return nil
 	}); err != nil {
 		t.Fatal("setup:", err)
 	}
 	if historicalWarning {
 		seedHistoricalMissingThreadWarning(t, e, ctx)
+	}
+	// Exercise the periodic sweep before send so its maintenance cannot pass
+	// outside this test merely because setup finished within one tick.
+	if _, err := e.query(ctx, func() core.Result { e.sweep(time.Now()); return nil }); err != nil {
+		t.Fatal("setup sweep:", err)
 	}
 	send := func() {
 		t.Helper()
@@ -272,7 +286,7 @@ func goneQueueThreadScenario(t *testing.T, priorFailures int, historicalWarning 
 	if err != nil || len(strings.Fields(string(attempts))) != 1 {
 		t.Errorf("permanently missing thread ran again: %q %v", attempts, err)
 	}
-	assertGoneBindingMail(t, e, ctx)
+	assertGoneBindingMail(t, e, ctx, ledger)
 	// A new binding must not inherit the old thread's permanent failure.
 	const replacement = "dc8fea77-2092-4c69-b810-c96a7bc5575d"
 	if _, err := e.Do(ctx, &core.Op{Kind: core.OpUpdate, Token: worker, SessionAlias: replacement, V7Semantics: true}); err != nil {
@@ -294,7 +308,7 @@ func goneQueueThreadScenario(t *testing.T, priorFailures int, historicalWarning 
 	if err != nil || len(strings.Fields(string(attempts))) != 3 {
 		t.Fatalf("setup: same dead binding was not attempted again: %q %v", attempts, err)
 	}
-	assertGoneBindingMail(t, e, ctx)
+	assertGoneBindingMail(t, e, ctx, ledger)
 	for line := range strings.SplitSeq(logs.String(), "\n") {
 		if strings.Contains(line, "could not record missing-thread mailbox warning") {
 			t.Errorf("missing-thread retry reported a send failure: %s", line)
@@ -327,24 +341,33 @@ func seedHistoricalMissingThreadWarning(t *testing.T, e *Engine, ctx context.Con
 
 // Enter through real send -> native no-owner -> queue's explicit no-rollout
 // refusal. Mail survives replay without a transient notice or event-ring body.
-func assertGoneBindingMail(t *testing.T, e *Engine, ctx context.Context) {
+func assertGoneBindingMail(t *testing.T, e *Engine, ctx context.Context, ledger *queueReplayLedger) {
 	t.Helper()
-	var ops []*core.Op
+	var records []queueReplayRecord
 	var reporter string
+	var liveSerial uint64
 	_, err := e.query(ctx, func() core.Result {
 		reporter = e.dibsRowLocked()
 		assertGoneBindingInboxes(t, e.state, reporter)
-		ops = append(ops, e.led.(*memLedger).ops...)
+		records = slices.Clone(ledger.records)
+		liveSerial = e.state.Serial
 		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	st := core.NewState("native-app", core.DefaultLimits())
-	for i, op := range ops {
-		if _, _, err := st.Apply(op, time.Unix(1000+int64(i), 0)); err != nil {
+	for i, record := range records {
+		var op core.Op
+		if err := json.Unmarshal(record.raw, &op); err != nil {
+			t.Fatalf("decode ledger op %d: %v", i, err)
+		}
+		if _, _, err := st.Apply(&op, record.at); err != nil {
 			t.Fatalf("replay op %d (%s): %v", i, op.Kind, err)
 		}
+	}
+	if st.Serial != liveSerial {
+		t.Errorf("replay serial = %d, live serial = %d", st.Serial, liveSerial)
 	}
 	assertGoneBindingInboxes(t, st, reporter)
 }

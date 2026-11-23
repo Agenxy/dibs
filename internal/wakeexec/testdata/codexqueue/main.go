@@ -264,6 +264,19 @@ func main() {
 		evidence(req.Method)
 		var result any = map[string]any{}
 		if req.Method == "thread/queue/list" {
+			if marker := os.Getenv("DIBS_TEST_QUEUE_STALL_LIST_ONCE"); marker != "" {
+				f, err := os.OpenFile(marker, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+				if err == nil {
+					if err = f.Close(); err != nil {
+						panic(err)
+					}
+					// The first request has arrived but its response is held
+					// until the parent's probe deadline reaps this process.
+					<-time.After(time.Hour)
+				} else if !os.IsExist(err) {
+					panic(err)
+				}
+			}
 			if os.Getenv("DIBS_TEST_QUEUE_LIST_UNKNOWN") != "1" {
 				b, _ := os.ReadFile(path)
 				rows := []map[string]any{}

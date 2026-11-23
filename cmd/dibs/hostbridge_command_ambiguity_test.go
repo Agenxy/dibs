@@ -19,19 +19,37 @@ import (
 	"github.com/agenxy/dibs/internal/boardconfig"
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/harnessenv"
+	"github.com/agenxy/dibs/internal/procexec"
 	"github.com/agenxy/dibs/internal/testcodexipc"
 	"github.com/agenxy/dibs/internal/testexec"
 	"github.com/agenxy/dibs/internal/wakeexec"
 )
 
 func TestHostBridgeReportsCommandAmbiguityWithoutRetry(t *testing.T) {
+	if mode := os.Getenv("DIBS_TEST_HOST_AMBIGUITY_MODE"); mode != "" {
+		hostBridgeCommandAmbiguity(t, os.Getenv("DIBS_TEST_HOST_AMBIGUITY_BINARY"), mode)
+		return
+	}
 	binary := filepath.Join(t.TempDir(), "codex")
 	if out, err := exec.Command("go", "build", "-o", binary, "../../internal/wakeexec/testdata/codexqueue").CombinedOutput(); err != nil {
 		t.Fatalf("setup fixture build: %v: %s", err, out)
 	}
 	testexec.PrepareExecutable(t, exec.Command(binary, "--version"))
+	t.Parallel()
 	for _, mode := range []string{"queue", "nonqueue", "definite-failure"} {
-		t.Run(mode, func(t *testing.T) { hostBridgeCommandAmbiguity(t, binary, mode) })
+		t.Run(mode, func(t *testing.T) {
+			// Each case changes the environment read by the executable and
+			// its observer. Separate test processes can wait out the full
+			// drain grace concurrently while keeping that state private.
+			t.Parallel()
+			ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+			defer cancel()
+			cmd := procexec.Command(ctx, os.Args[0], "-test.run=^TestHostBridgeReportsCommandAmbiguityWithoutRetry$", "-test.v")
+			cmd.Env = append(os.Environ(), "DIBS_TEST_HOST_AMBIGUITY_MODE="+mode, "DIBS_TEST_HOST_AMBIGUITY_BINARY="+binary)
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("isolated %s bridge case: %v\n%s", mode, err, out)
+			}
+		})
 	}
 }
 
