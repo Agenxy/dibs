@@ -109,6 +109,8 @@ is not a mystery):
                            something to rewrite
 
 setup:
+  dibs antigravity-plugin install  install this binary's Antigravity plugin
+  dibs antigravity-plugin --trust  allow calls to the Dibs MCP server in Antigravity desktop
   dibs codex-plugin install  install this binary's content-versioned Codex plugin;
                            new chats can load current tools, while running
                            chats keep their list until a genuine app refresh
@@ -234,6 +236,8 @@ func cliMain() {
 		err = codexHooksCmd(os.Args[2:])
 	case "codex-plugin":
 		err = codexPluginCmd(os.Args[2:])
+	case "antigravity-plugin":
+		err = antigravityPluginCmd(os.Args[2:])
 	case "calibrate":
 		err = calibrate(os.Args[2:])
 	case "invite":
@@ -386,7 +390,7 @@ var commands = []string{
 	"await", "probe", "watch", "monitor", "board", "log", "verify", "doctor",
 	"codex-hooks", "codex-plugin", "calibrate", "version", "help", "man", "completion", "configure", "messages",
 	"web", "admin", "invite",
-	"desktop-approvals",
+	"desktop-approvals", "antigravity-plugin",
 	"mcp-config", "mcp-stdio", "host-bridge", "human-relay", "hook-spawn", "hook-poll", "hook-session",
 	"identity",
 	"stop", "upgrade", "trust", "fingerprint",
@@ -773,13 +777,6 @@ func recipeInputs(scheme, joiner string) (servesTLS bool, addr string) {
 // verified TLS to the daemon, trusting exactly the certificate this machine
 // recorded and nothing else, so the harness needs no TLS configuration and no
 // certificate of its own. It is also the only shape some harnesses accept.
-// servedScheme names the transport for boardShape.
-func servedScheme(servesTLS bool) string {
-	if servesTLS {
-		return "https"
-	}
-	return "http"
-}
 
 func printRemoteRecipe(servesTLS bool, joiner string) {
 	if !servesTLS {

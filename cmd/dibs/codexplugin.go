@@ -96,7 +96,7 @@ func planCodexPlugin(bin string) (*codexPluginPlan, error) {
 	if err != nil {
 		return nil, err
 	}
-	exe, err := codexPluginCommand()
+	exe, err := pluginDibsCommand()
 	if err != nil {
 		return nil, err
 	}

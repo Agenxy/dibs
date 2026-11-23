@@ -93,6 +93,14 @@ func pluginHint(harness string, reattached, hooksLive, hasSession bool) map[stri
 		"hooks_live": hooksLive,
 		"read":       "dibs://plugin",
 	}
+	if p.Harness == "antigravity" {
+		hint["status"] = "Dibs can deliver to a verified Antigravity desktop conversation through the app. " +
+			"The native plugin provides the MCP server and coordination skill."
+		hint["note"] = "Check in from the desktop conversation you want to receive mail. " +
+			"The board and dibs doctor report the conversation binding."
+		hint["verify"] = p.Verify
+		return hint
+	}
 	if hooksLive {
 		hint["status"] = "Your lifecycle hooks reached this daemon before you registered, " +
 			"so the plugin is installed AND loaded. Nothing to do."

@@ -103,6 +103,31 @@ var catalog = []struct {
 	delivers                                  bool
 }{
 	{
+		harness: "antigravity",
+		dir:     "antigravity",
+		aliases: []string{"antigravity-client", "antigravity-desktop"},
+		buys:    "install the Dibs MCP server and coordination skill in Antigravity",
+		install: "dibs antigravity-plugin install",
+		root:    "~/.gemini/config/plugins/dibs",
+		setup: []Step{
+			{
+				Do:     "Ask your operator to run dibs antigravity-plugin install.",
+				Check:  "agy plugin list shows dibs and its MCP server.",
+				Manual: true,
+			},
+			{
+				Do:     "If the operator wants to allow Dibs MCP calls, run dibs antigravity-plugin --trust.",
+				Check:  "dibs doctor reports a warning when the scoped allow rule is absent.",
+				Manual: true,
+			},
+			{
+				Do:    "Check in from the desktop conversation you intend to wake.",
+				Check: "dibs doctor shows a verified conversation binding.",
+			},
+		},
+		verify: "send a question from another agent and check that it reaches this desktop conversation",
+	},
+	{
 		harness: "claude-code",
 		dir:     "claude-code",
 		aliases: []string{"claude", "claudecode", "claude_code"},

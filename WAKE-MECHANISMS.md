@@ -530,7 +530,7 @@ probe. Old rows are historical measurements, not claims about today's binaries:
 | Codex private app-server, configuration controls | App CLI **0.166.0-alpha.5.1** | Modern feature alone: `initialize` **2025-06-18**; connection sharing alone: `server/discover` **2026-07-28** | `elicitation {form,url}` | same explicit catalog methods; **2026-11-04**, no hook or model turn |
 | opencode | 1.18.4 | `initialize` **2025-11-25** | `roots` | initialize, tools/list |
 | Copilot CLI | 1.0.75 | 2025-11-25 | none | tools only |
-| Antigravity desktop | 2.34.0 | Protocol version unmeasured | Per-call conversation ID on local stdio | Authenticated check-in and mail read verified **2026-11-21**. The native send-message route woke the same conversation while Safari stayed frontmost. No Dibs lifecycle hook. See [setup](plugins/antigravity/) and [measurement](docs/ANTIGRAVITY-APP-DELIVERY.md) |
+| Antigravity desktop | 2.34.0 | Protocol version unmeasured | Per-call conversation ID on local stdio | Authenticated check-in and mail read verified **2026-11-21**. The native send-message route woke the same conversation while Safari stayed frontmost. Native lifecycle hooks are available. Dibs delivery uses the verified app route. See [setup](plugins/antigravity/) and [measurement](docs/ANTIGRAVITY-APP-DELIVERY.md) |
 | Gemini CLI | 0.54.0-nightly.20260722 | `initialize` **2025-06-18** | `roots` | initialize, tools/list, resources/list (2026-09-12, over `httpUrl`) |
 | Hermes installed MCP adapter, no model/provider session | **0.20.2**, SDK **1.28.1** | `initialize` **2025-11-25** | `elicitation {form,url}` | initialize, notifications/initialized, tools/list; 58 registered names (54 Dibs tools + four adapter helpers), **2026-11-04**, isolated HTTP daemon |
 
