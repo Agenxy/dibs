@@ -166,6 +166,7 @@ func observeQueueAdmission(
 	}
 	observation.At = time.Now().UTC()
 	observation.ThreadSource = probe.threadSource
+	observation.TurnActivity = probe.turnActivity
 	if probe.threadSource == QueueThreadExecSource {
 		observation.ThreadState = "gone"
 	}

@@ -321,7 +321,10 @@ func main() {
 					panic(err)
 				}
 			}
-			result = map[string]any{"data": []map[string]any{{"startedAt": started}}, "nextCursor": nil}
+			result = map[string]any{"data": []map[string]any{{
+				"startedAt": started, "id": os.Getenv("DIBS_TEST_QUEUE_LAST_TURN_ID"),
+				"status": os.Getenv("DIBS_TEST_QUEUE_LAST_TURN_STATUS"),
+			}}, "nextCursor": nil}
 		} else if req.Method != "initialize" {
 			os.Exit(4)
 		}

@@ -10,19 +10,21 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/codexipc"
+	"github.com/agenxy/dibs/internal/harnessenv"
 )
 
 // AppThreadDiagnostics is observed app metadata. Optional values are absent
 // when the app refused a probe or returned an incomplete page sequence.
 type AppThreadDiagnostics struct {
-	ThreadSource       string     `json:"thread_source,omitempty"`
-	PendingCount       *int       `json:"pending_count,omitempty"`
-	DibsPendingCount   *int       `json:"dibs_pending_count,omitempty"`
-	OldestDibsNoticeAt *time.Time `json:"oldest_dibs_notice_at,omitempty"`
-	DibsReceiptAt      *time.Time `json:"dibs_receipt_at,omitempty"`
-	LastTurnStartedAt  *time.Time `json:"last_turn_started_at,omitempty"`
-	NativeIPC          string     `json:"native_ipc"`
-	AppOwnsThread      *bool      `json:"app_owns_thread,omitempty"`
+	ThreadSource       string                  `json:"thread_source,omitempty"`
+	PendingCount       *int                    `json:"pending_count,omitempty"`
+	DibsPendingCount   *int                    `json:"dibs_pending_count,omitempty"`
+	OldestDibsNoticeAt *time.Time              `json:"oldest_dibs_notice_at,omitempty"`
+	DibsReceiptAt      *time.Time              `json:"dibs_receipt_at,omitempty"`
+	LastTurnStartedAt  *time.Time              `json:"last_turn_started_at,omitempty"`
+	NativeIPC          string                  `json:"native_ipc"`
+	AppOwnsThread      *bool                   `json:"app_owns_thread,omitempty"`
+	TurnActivity       harnessenv.TurnActivity `json:"-"`
 }
 
 // DiagnoseAppThread reads the configured app and Dibs receipt without
@@ -33,12 +35,19 @@ func DiagnoseAppThread(ctx context.Context, binary, thread string) AppThreadDiag
 		out.DibsReceiptAt = &receipt.QueuedAt
 	}
 	probe, cancel := context.WithTimeout(ctx, 2*queueProbeTimeout)
+	observedAt := time.Now().UTC()
+	var latest appTurnMetadata
 	withQueueRPC(probe, binary, func(r queueRPC) {
 		out.ThreadSource = r.threadSource(thread)
 		out.PendingCount, out.DibsPendingCount, out.OldestDibsNoticeAt = r.pendingCounts(thread)
-		out.LastTurnStartedAt = r.lastAppTurnStarted(thread)
+		latest = r.lastAppTurn(thread)
 	})
 	cancel()
+	out.LastTurnStartedAt = latest.StartedAt
+	out.TurnActivity = harnessenv.TurnActivity{State: harnessenv.TurnUnknown, ObservedAt: observedAt}
+	if out.ThreadSource != "" && out.ThreadSource != QueueThreadExecSource {
+		out.TurnActivity = latest.activity(thread, observedAt)
+	}
 	native, cancel := context.WithTimeout(ctx, queueProbeTimeout)
 	defer cancel()
 	owns, err := codexipc.Owned(native, thread)
@@ -85,21 +94,42 @@ func (r queueRPC) pendingCounts(thread string) (total, dibs *int, oldest *time.T
 	return nil, nil, nil
 }
 
-func (r queueRPC) lastAppTurnStarted(thread string) *time.Time {
+type appTurnMetadata struct {
+	ID        string
+	StartedAt *time.Time
+	Status    string
+}
+
+func (m appTurnMetadata) activity(thread string, at time.Time) harnessenv.TurnActivity {
+	if m.StartedAt == nil {
+		return harnessenv.TurnActivity{State: harnessenv.TurnUnknown, ObservedAt: at}
+	}
+	activity := harnessenv.ObserveCodexTurnActivity(thread, m.ID, *m.StartedAt, at)
+	if activity.State == harnessenv.TurnInProgress && m.Status != "inProgress" {
+		// A separate app-server can normalize an unfinished rollout to
+		// interrupted. Only an explicit running status confirms the start.
+		activity.State = harnessenv.TurnUnknown
+	}
+	return activity
+}
+
+func (r queueRPC) lastAppTurn(thread string) appTurnMetadata {
 	raw, err := r.call(120, "thread/turns/list", map[string]any{
 		"threadId": thread, "limit": 1, "sortDirection": "desc", "itemsView": "notLoaded",
 	})
 	if err != nil {
-		return nil
+		return appTurnMetadata{}
 	}
 	var result struct {
 		Data []struct {
-			StartedAt int64 `json:"startedAt"`
+			StartedAt int64  `json:"startedAt"`
+			ID        string `json:"id"`
+			Status    string `json:"status"`
 		} `json:"data"`
 	}
 	if json.Unmarshal(raw, &result) != nil || len(result.Data) != 1 || result.Data[0].StartedAt <= 0 {
-		return nil
+		return appTurnMetadata{}
 	}
 	at := time.Unix(result.Data[0].StartedAt, 0).UTC()
-	return &at
+	return appTurnMetadata{ID: result.Data[0].ID, StartedAt: &at, Status: result.Data[0].Status}
 }

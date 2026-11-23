@@ -6,6 +6,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- The board shows observed turn activity and its age separately from
+  registration and reachability.
 - Hermes and OpenClaw plugin bundles provide the Dibs MCP server and
   coordination skill through each harness's plugin loader.
 - A Gemini CLI extension installs the Dibs MCP server, coordination skill, and

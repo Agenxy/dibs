@@ -833,6 +833,15 @@ best effort, not a promised catch-up.
 
 ## 7. Liveness: three signals, honestly labeled
 
+Board status describes registration and reachability. Every row also reports
+`turn` as `in_turn`, `between_turns`, or `unknown` when there is no applicable
+turn evidence. Known states carry `turn_observed_at`. A Claude Code prompt,
+tool, permission or Stop hook can supply this evidence. On Codex app routes,
+existing wake and diagnostic observations may corroborate running or completed
+turns against the bound thread's rollout. Queue admission and registration
+alone supply no turn evidence. A newer wake attempt invalidates an earlier
+app observation. This view is derived and board reads do not probe harnesses.
+
 | Signal | Mechanism | PROVES | Does NOT prove |
 |---|---|---|---|
 | `dead` | `kill(pid,0)` per sweep + (pid, start-time) identity | The registered process is gone. Caveat: an unreaped zombie still *appears alive* to `kill(0)`; true zombie detection arrives with kqueue `NOTE_EXIT`/pidfd (v1.1) | That its children or in-flight effects stopped |
