@@ -889,8 +889,8 @@ func (e *Engine) HostID() string {
 	return e.NodeID()
 }
 
-// Board returns the public snapshot with presentation annotations (SPEC §2):
-// last_seen (ephemeral freshness) and proc_alive, computed at read time.
+// Board returns the public snapshot with read-time presentation annotations
+// for contact, process liveness, and observed turn activity.
 func (e *Engine) Board(ctx context.Context) (core.Result, error) {
 	return e.query(ctx, func() core.Result { return e.decoratedBoard() })
 }
@@ -932,8 +932,8 @@ func (e *Engine) decoratedBoard() core.Result {
 		// HOW IT IS REACHED, when that is going wrong. A worker read `active`
 		// on the board while every wake for it failed; see wakefail.go.
 		e.decorateWakeStatus(lm, l)
-		// What the agent is DOING, from what it declared and what the board has
-		// seen, beside status, which is about its process. See workStateOf.
+		// Coordination work comes from declarations and observed activity.
+		// Registration and current-turn evidence have their own fields.
 		lm["work"] = e.workStateOf(l)
 		e.decorateDeclarationAges(lm, l, time.Now())
 		// Requests it approved and has not reported done: obligations.go.
@@ -975,6 +975,7 @@ func (e *Engine) decoratedBoard() core.Result {
 		}
 	}
 	e.decorateBoardQueueWakes(b, time.Now())
+	e.decorateBoardTurns(b)
 	return core.Result(b)
 }
 

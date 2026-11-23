@@ -294,6 +294,7 @@ func (e *Engine) HookPollFrom(
 		e.noteHookAlive(l)
 		e.noteHookFor("poll", l, cwd, host)
 		e.noteTurnState(l, sessionID, event)
+		e.noteBoardHook(l, sessionID, event)
 		e.logHookResolution(sessionID, cwd, event, host, l)
 		if l == nil {
 			// A session that resolves to nobody may still BE somebody, returning.
@@ -434,6 +435,7 @@ func (e *Engine) HookPollFrom(
 
 func (e *Engine) noteDeliveringHook(l *core.Agent, event string, now time.Time) {
 	if isStopEvent(event) {
+		delete(e.hookBoardTurns, l.ID)
 		e.noteSocketBusy(l, now) // this Stop blocked; the turn continues
 	}
 }

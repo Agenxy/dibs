@@ -23,6 +23,7 @@ import (
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/harnessenv"
 	"github.com/agenxy/dibs/internal/paths"
+	"github.com/agenxy/dibs/internal/testcodexipc"
 	"github.com/agenxy/dibs/internal/testexec"
 )
 
@@ -35,7 +36,10 @@ func TestQueueWakeObservationsThroughMCPAndActualCommand(t *testing.T) {
 		t.Fatalf("setup: fixture build: %v: %s", err, b)
 	}
 	testexec.PrepareExecutable(t, exec.Command(binary, "--version"))
-	for _, mode := range []string{"admitted", "pending-aged", "probe-unknown", "legacy-age", "fallback", "rebound"} {
+	for _, mode := range []string{
+		"admitted", "not-listening", "native-failed", "thread-unloaded",
+		"pending-aged", "probe-unknown", "legacy-age", "fallback", "rebound",
+	} {
 		t.Run(mode, func(t *testing.T) { queueWakeObservationCase(t, binary, mode) })
 	}
 }
@@ -44,6 +48,17 @@ func queueWakeObservationCase(t *testing.T, binary, mode string) {
 	t.Helper()
 	const thread = "0199a0b1-c2d3-4e5f-8a9b-0c1d2e3f4a5b"
 	home := t.TempDir()
+	switch mode {
+	case "not-listening":
+		testcodexipc.StartRestarting(t, "idle")
+		home = os.Getenv("CODEX_HOME")
+	case "native-failed":
+		testcodexipc.Start(t, "changed", nil)
+		home = os.Getenv("CODEX_HOME")
+	case "thread-unloaded":
+		testcodexipc.Start(t, "no-owner", nil)
+		home = os.Getenv("CODEX_HOME")
+	}
 	t.Setenv("HOME", home)
 	t.Setenv("CODEX_HOME", home)
 	dir := t.TempDir()
@@ -135,6 +150,21 @@ func queueWakeObservationCase(t *testing.T, binary, mode string) {
 	received, ok := receipt["queue_wake"].(map[string]any)
 	if !ok || received["thread_state"] != "unknown" || received["observed_at"] == nil {
 		t.Fatalf("send receipt lost the adapter observation: %v", receipt)
+	}
+	if want := map[string]string{
+		"admitted": "queue_only", "not-listening": "queue_only",
+		"native-failed": "queued_native_failed", "thread-unloaded": "queued_unloaded",
+	}[mode]; want != "" {
+		if board, receipt := view["native_delivery"], received["native_delivery"]; board != want || receipt != want {
+			t.Errorf("accepted queue wake reported board %v and receipt %v, want %q", board, receipt, want)
+		}
+		if want == "queue_only" {
+			note, _ := receipt["note"].(string)
+			if !strings.Contains(note, "Last wake queued in the ChatGPT app.") ||
+				!strings.Contains(note, "Queue admission does not confirm a started turn or read mail.") {
+				t.Errorf("queue-only receipt hid admission or overstated delivery: %q", note)
+			}
+		}
 	}
 	if mode == "probe-unknown" {
 		if received["admission"] != "deferred" || received["pending"] != "unknown" || received["receipt_age_seconds"] == nil {

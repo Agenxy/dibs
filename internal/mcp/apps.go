@@ -259,17 +259,24 @@ func (s *Server) showBoard(ctx context.Context, token, view string) (core.Result
 func boardSummary(sc map[string]any, declaredUI bool) string {
 	b, _ := sc["board"].(map[string]any)
 	agents, _ := b["agents"].([]any)
-	var live int
+	var registered, inTurn, between int
 	for _, l := range agents {
 		if m, ok := l.(map[string]any); ok {
-			if st, _ := m["status"].(string); st == "active" {
-				live++
+			if m["status"] == "active" {
+				registered++
+			}
+			switch m["turn"] {
+			case "in_turn":
+				inTurn++
+			case "between_turns":
+				between++
 			}
 		}
 	}
-	msg := fmt.Sprintf("Dibs board: %d agent(s), %d active", len(agents), live)
+	msg := fmt.Sprintf("Dibs board: %d agent(s), %d registered. %d in turn, %d between turns, %d unknown",
+		len(agents), registered, inTurn, between, len(agents)-inTurn-between)
 	if n := inboxCount(sc["inbox"]); n > 0 {
-		msg += fmt.Sprintf("; %d unread message(s)", n)
+		msg += fmt.Sprintf(". %d unread", n)
 	}
 	// The ROWS, not just the count.
 	//
@@ -344,7 +351,7 @@ func orientationBoard(res core.Result, name string, detail bool, boardView strin
 // A subset of the full shape rather than a different one, so `board.agents[i]
 // .id` and `.status` read the same either way and an agent that indexes by
 // them does not break when it turns detail on. What survives per row: id,
-// status, name when it differs from the id, role, whether it is the human, the
+// status, measured turn, name when it differs from the id, role, whether it is the human, the
 // host and project labels, the description cut to a line, and the first slot's
 // text cut to one line with its activity.
 //
@@ -428,7 +435,9 @@ func rosterRow(a map[string]any) map[string]any {
 	if n, _ := a["name"].(string); n != "" && n != a["id"] {
 		row["name"] = n
 	}
-	for _, k := range []string{"role", "human", "wake", "queued", "queue_wake", "mailbox_capacity"} {
+	for _, k := range []string{
+		"role", "human", "wake", "queued", "queue_wake", "mailbox_capacity", "turn", "turn_observed_at",
+	} {
 		if v, ok := a[k]; ok && v != "" && v != false {
 			row[k] = v
 		}
@@ -943,9 +952,23 @@ func boardRows(agents []any) string {
 		if n := len(slots) - 1; n > 0 {
 			what += fmt.Sprintf(" (+%d more)", n)
 		}
-		fmt.Fprintf(&b, "  %-28s %-9s %s\n", who, status, what)
+		if status == "active" {
+			status = "registered"
+		}
+		fmt.Fprintf(&b, "  %-28s %-10s  %-13s  %s\n", who, status, boardRowTurn(m), what)
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// boardRowTurn labels observed turn evidence. Unknown means no evidence.
+func boardRowTurn(row map[string]any) string {
+	switch row["turn"] {
+	case "in_turn":
+		return "in turn"
+	case "between_turns":
+		return "between turns"
+	}
+	return "turn unknown"
 }
 
 func boardRowName(row map[string]any, id string) string {

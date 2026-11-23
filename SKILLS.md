@@ -184,6 +184,10 @@ Dibs does not schedule rechecks or later stall wakes. `recheck_after` was remove
 any call that still includes it is refused with a corrective hint. Arrange your
 own timer when needed and declare waiting without it. Mail, app restart/reconnect
 and the bounded Stop continuation still wake through their event paths.
+On the board, `status` describes registration and reachability. `active` is
+an active registration. `turn` reports observed harness activity as `in_turn`,
+`between_turns`, or `unknown` when Dibs has no current evidence. Known turn
+observations include `turn_observed_at`.
 Every row carries `work`: `idle`, `working`, `waiting`, `declared` or `stalled`.
 `stalled` is a read-time label for an open declaration and activity unchanged
 for at least 30 minutes; it sends no wake or notice to an assigner. Each known

@@ -92,9 +92,7 @@ func DeliverFresh(ctx context.Context, thread string, notice func() (string, err
 	return c.deliver(thread, notice)
 }
 
-// ErrNoSocket is Owned's word for an app with no IPC socket at all, which is
-// not evidence about any thread. Delivery calls the same case ErrNoOwner and
-// takes the cold route.
+// ErrNoSocket means the app has no IPC socket. Thread ownership is unknown.
 var ErrNoSocket = errors.New("the app has no IPC socket")
 
 // Owned reports whether the running app has thread loaded, through the same
@@ -136,7 +134,7 @@ func connect(ctx context.Context) (*client, func(), error) {
 	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", endpoint)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil, ErrNoOwner
+			return nil, nil, ErrNoSocket
 		}
 		if errors.Is(err, syscall.ECONNREFUSED) {
 			return nil, nil, fmt.Errorf("native app connection: %w: %w", ErrAppNotListening, err)

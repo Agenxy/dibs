@@ -67,6 +67,11 @@ func (e *Engine) noteQueueObservation(plan wakePlan, agent string, observation w
 		return
 	}
 	e.wakers.queueObserved[agent] = queueWakeRecord{plan.thread, plan.createdSerial, observation}
+	// This observation preceded admission. When admission added a new input,
+	// only a later observation can describe what the app did with that input.
+	if observation.Admission == "retained" || observation.Admission == "deferred" {
+		e.wakers.noteAppBoardTurnLocked(agent, plan.nativeContactFence(), observation.TurnActivity)
+	}
 }
 
 // No I/O at board or send time. This is the last adapter observation, with its
@@ -141,6 +146,21 @@ func (e *Engine) sendQueueWakeView(agent *core.Agent, message *core.Message, now
 
 func elapsedSeconds(at, now time.Time) int64 { return max(0, int64(now.Sub(at)/time.Second)) }
 
+func queueFallbackDelivery(out *wakeexec.NativeOutcome) string {
+	switch {
+	case out == nil:
+		return ""
+	case out.DirectInputUnavailable():
+		return wakeexec.QueueOnly
+	case out.Disposition == "unloaded":
+		return "queued_unloaded"
+	case out.Disposition == "native_failed":
+		return "queued_native_failed"
+	default:
+		return ""
+	}
+}
+
 // nativeAcceptedNote says how old the observation is when it is not fresh:
 // it can be hours old and about an earlier message. "Last native app notice:
 // accepted" from a five-hour-old observation read as this send's outcome,
@@ -192,6 +212,13 @@ func nativeQueueWakeNote(delivery string, v core.Result) string {
 	case "in_progress":
 		return "Direct delivery in progress; check the board for the outcome. " +
 			"App acceptance and read mail are not yet confirmed."
+	case wakeexec.QueueOnly:
+		if v["admission"] == "accepted" || v["admission"] == "retained" {
+			return "Last wake queued in the ChatGPT app. Direct input was unavailable. " +
+				"The app can start the thread's next turn from the queue. " +
+				"Queue admission does not confirm a started turn or read mail."
+		}
+		return "Direct input was unavailable in the ChatGPT app. Queue admission was not confirmed."
 	case "queued_native_failed":
 		return "Native input was not sent; cold queue admission: " + fmt.Sprint(v["admission"]) +
 			". Queue admission does not confirm a started turn or read mail."
