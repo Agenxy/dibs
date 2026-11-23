@@ -176,12 +176,9 @@ func observeQueueAdmission(
 }
 
 func shouldCorroborateQueue(thread string, timedOut bool) bool {
-	if timedOut && !readReceipt(thread).QueuedAt.IsZero() {
-		// An old admission justifies one more observation after a deadline,
-		// even though it is too old to defer a wake by itself.
-		return true
-	}
-	return !fallbackQueueReceipt(thread, time.Now()).QueuedAt.IsZero()
+	// The app can hold a historical item even when this board has no receipt
+	// for it. A timed-out read gets one bounded second look before admission.
+	return timedOut || !fallbackQueueReceipt(thread, time.Now()).QueuedAt.IsZero()
 }
 
 func observeRetainedQueueCommand(

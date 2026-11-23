@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"testing"
@@ -21,8 +22,8 @@ func TestInstalledBridgeDeadlineClosesItsManualStdoutReader(t *testing.T) {
 			}
 			t.Cleanup(func() { _ = listener.Close() })
 			_ = listener.(*net.TCPListener).SetDeadline(time.Now().Add(5 * time.Second))
-			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
-			defer cancel()
+			ctx, cancel := context.WithCancelCause(t.Context())
+			defer cancel(nil)
 			r.ctx = ctx
 			done := make(chan error, 1)
 			go func() {
@@ -35,7 +36,7 @@ func TestInstalledBridgeDeadlineClosesItsManualStdoutReader(t *testing.T) {
 			controls := map[byte]net.Conn{}
 			joined := false
 			t.Cleanup(func() {
-				cancel()
+				cancel(nil)
 				for _, control := range controls {
 					_ = control.SetDeadline(time.Now().Add(5 * time.Second))
 					_, _ = control.Write([]byte{'x'})
@@ -77,15 +78,22 @@ func TestInstalledBridgeDeadlineClosesItsManualStdoutReader(t *testing.T) {
 			}
 			_ = parent.Close()
 			delete(controls, 'p')
-			if ctx.Err() != nil {
-				t.Fatal("setup: fixture missed its probe deadline")
-			}
-			deadline, _ := ctx.Deadline()
+			// Both fixtures are ready and the direct child has released its
+			// control socket. Only now start the deadline that should stop
+			// the decoder, while the grandchild still holds stdout.
+			expiry, stopExpiry := context.WithTimeout(t.Context(), time.Second)
+			defer stopExpiry()
+			stopForward := context.AfterFunc(expiry, func() { cancel(context.Cause(expiry)) })
+			defer stopForward()
+			deadline, _ := expiry.Deadline()
 			select {
 			case err := <-done:
 				joined = true
 				if err == nil {
 					t.Fatal("incomplete bridge handshake qualified as success")
+				}
+				if !errors.Is(context.Cause(ctx), context.DeadlineExceeded) {
+					t.Fatal("bridge returned before the deadline, with the fixture still holding stdout")
 				}
 				if len(r.report.Steps) != 1 || r.report.Steps[0].Exit == 0 {
 					t.Fatalf("bridge failure missing from its receipt: %+v", r.report.Steps)

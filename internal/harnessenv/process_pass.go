@@ -100,12 +100,12 @@ func (p *processPass) path(pid int) processPath {
 	if observed, ok := p.paths[pid]; ok {
 		return observed
 	}
-	observed := p.readPath(pid)
+	observed := p.readPath(pid, true)
 	p.paths[pid] = observed
 	return observed
 }
 
-func (p *processPass) readPath(pid int) processPath {
+func (p *processPass) readPath(pid int, allowFallback bool) processPath {
 	if err := p.ctx.Err(); err != nil {
 		return processPath{state: processUnknown, err: err}
 	}
@@ -135,7 +135,7 @@ func (p *processPass) readPath(pid int) processPath {
 	if !same {
 		return processPath{state: processAbsent}
 	}
-	if err != nil {
+	if err != nil && allowFallback {
 		procinfo.WarnFallback(procinfo.FallbackPath, pid, err)
 		path, err = processPathFallback(p.ctx, pid)
 		// The command may have raced a second incarnation change.
