@@ -370,6 +370,13 @@ func TestCommandHooksCannotBreakTheToolTheyDecorate(t *testing.T) {
 					if h.Type != "command" {
 						continue
 					}
+					// Gemini warns about a failed SessionStart and still runs
+					// the prompt, including when a stale binary exits 2 with
+					// usage text. Keep this exception on the measured hook.
+					if filepath.ToSlash(f) == "../../plugins/gemini-cli/hooks/hooks.json" &&
+						event == "SessionStart" && h.Command == "dibs hook-poll" {
+						continue
+					}
 					checked++
 					if !strings.Contains(h.Command, "exit 0") {
 						t.Errorf("%s %s runs a command hook that can fail:\n  %s\n"+
