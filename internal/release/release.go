@@ -55,6 +55,10 @@ var Manifests = []string{
 	"plugins/claude-desktop/manifest.json",
 	"plugins/gemini-cli/gemini-extension.json",
 	"internal/plugins/data/gemini-cli/gemini-extension.json",
+	"plugins/hermes/plugin.json",
+	"internal/plugins/data/hermes/plugin.json",
+	"plugins/openclaw/plugin.json",
+	"internal/plugins/data/openclaw/plugin.json",
 }
 
 // Changelog is where the version is stated as prose, and is the source of truth
